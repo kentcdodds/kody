@@ -1,20 +1,23 @@
 ---
 id: first_win
-title: First win — welcome email, reply, memories
+title: Email and memories — welcome email, reply, memories
 summary:
-  Agent playbook for a freshly connected Kody account: send the welcome email,
-  point the person at their own inbox to reply, look the reply up when they say
-  it is sent, save what matters as memories, then offer a one-click integration.
-  Load this right after an MCP host authorizes for the first time. Includes the
-  no-polling rule and troubleshooting for missing mail and unbound tools.
+  Optional agent playbook: send a welcome email, point the person at their own
+  inbox to reply, look the reply up when they say it is sent, save what matters
+  as memories, then offer a one-click integration. Onboarding Step 2 uses the
+  quick-example fork→invoke flow instead; load this when someone wants the
+  email loop. Includes the no-polling rule and troubleshooting for missing mail
+  and unbound tools.
 category: platform
 ---
 
-# First win — welcome email, reply, memories
+# Email and memories — welcome email, reply, memories
 
 <!--
-Agent notes — for AI agents driving a new user's first win from this page:
+Agent notes — for AI agents driving the optional email loop from this page:
 
+- Onboarding Step 2 climax is /guides/quick-example (fork → invoke → own).
+  Use this guide only when the person wants the email-and-memories loop.
 - You drive the whole loop. The person stays in this chat; they should not need
   to go back to the Kody web page for anything except the optional integration
   connect at the end.
@@ -35,16 +38,15 @@ Agent notes — for AI agents driving a new user's first win from this page:
   short loop, not a build session.
 -->
 
-This guide is the playbook for a Kody account's first minute of real use: the
-assistant introduces itself over email, the person replies from their normal
-email client, and the answers become durable memories that follow them into
-every agent they connect later. It exercises the parts of Kody that are hard to
-describe and easy to feel — stored mail, durable memory, and per-user isolation.
+This guide is an optional playbook for exercising stored mail and durable
+memory: the assistant introduces itself over email, the person replies from
+their normal email client, and the answers become memories that follow them into
+every agent they connect later. For the default post-connect climax (fork a
+zero-auth example and invoke a package you own), use
+[`quick-example`](./quick-example.md) instead.
 
-The person reading along may have arrived here from the onboarding page
-(`/onboarding` on the same origin this guide was fetched from — every path below
-is relative to that same deployment); everything after this happens in their
-agent, not on the web page.
+Paths below are relative to the same deployment origin this guide was fetched
+from; everything after this happens in their agent, not on the web page.
 
 ## Before you start
 
@@ -165,8 +167,7 @@ step in this loop happens because an agent asked for it.
 ## Try it
 
 Paste this into the agent connected to your Kody account, swapping in your
-deployment's origin if it is not heykody.app (the `/onboarding` page copies this
-prompt with the right origin already filled in):
+deployment's origin if it is not heykody.app:
 
 > Ask the connected Kody server to read https://heykody.app/guides/first-win and
-> then walk me through my first win with Kody, one step at a time.
+> then walk me through the optional email-and-memories loop, one step at a time.

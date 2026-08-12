@@ -1,6 +1,5 @@
 import { type Handle, css, ref } from 'remix/ui'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
-import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
@@ -18,9 +17,12 @@ import {
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
-	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
+import {
+	selectOnboardingExampleListings,
+	selectOnboardingServiceStarterListings,
+} from '#universal/onboarding-examples.ts'
 import {
 	fetchOnboardingPayload,
 	onboardingApiPath,
@@ -33,6 +35,7 @@ import {
 	shouldShowOnboardingChecklist,
 } from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
+import { OnboardingExampleCard } from '#client/routes/onboarding-example-card.tsx'
 import {
 	OnboardingStarterCard,
 	starterCardCss,
@@ -59,34 +62,35 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 /**
- * Onboarding wizard, ported from the redesign prototype
- * (`landing/onboarding.html`): shirt-pattern head, four-step stepper
- * (Connect your agent · See it work · Connect your tools), one surface
+ * Onboarding wizard: shirt-pattern head, three-step stepper (Connect your
+ * agent · Try a quick example · Connect your real services), one surface
  * panel at a time with hand-tilted mascot art, and the BYOK argument folded
- * behind a disclosure. All server state (prompts, MCP URL, featured
- * listings, hasMcpClient / first-win polling) stays in the route state —
- * this is a restyle, not a rearchitecture.
+ * behind a disclosure. Server state (prompts, MCP URL, featured listings,
+ * hasMcpClient / install polling) stays in the route state.
  *
- * Step 3 leads with built-in integration cards (the path of least
- * resistance) when the deployment has any enabled; starter packages demote
- * to a compact "Advanced" list. With no built-ins, packages keep the card
- * grid.
+ * Step 2 is the permanence lesson: fork a zero-auth example, copy a prompt
+ * while install finishes, invoke the owned package. Step 3 is real services
+ * (built-in OAuth + starters that need accounts). Built-ins lead when the
+ * deployment has any; remaining featured starters demote to Advanced.
  */
 
 type OnboardingStep = 1 | 2 | 3
 
-/** Sub-steps of the See-it-work mini-wizard: Send, Reply, Remember. */
-type FirstWinSubStep = 1 | 2 | 3
-
 const onboardingSteps = [
 	{ number: 1, label: 'Connect your agent', hash: 'connect-agent' },
-	{ number: 2, label: 'See it work', hash: 'first-win' },
-	{ number: 3, label: 'Connect your tools', hash: 'starter-packages' },
+	{ number: 2, label: 'Try a quick example', hash: 'quick-example' },
+	{ number: 3, label: 'Connect your real services', hash: 'connect-services' },
 ] as const satisfies ReadonlyArray<{
 	number: OnboardingStep
 	label: string
 	hash: string
 }>
+
+/** Older hashes from the email/memory first-win + tools step labels. */
+const legacyOnboardingStepHashes: Record<string, OnboardingStep> = {
+	'first-win': 2,
+	'starter-packages': 3,
+}
 
 function isOnboardingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === onboardingPath
@@ -95,7 +99,9 @@ function isOnboardingPath(href: string) {
 function readStepFromHref(href: string): OnboardingStep | null {
 	const hash = new URL(href, 'http://localhost').hash.slice(1)
 	return (
-		onboardingSteps.find((candidate) => candidate.hash === hash)?.number ?? null
+		onboardingSteps.find((candidate) => candidate.hash === hash)?.number ??
+		legacyOnboardingStepHashes[hash] ??
+		null
 	)
 }
 
@@ -133,14 +139,11 @@ export function OnboardingRoute(handle: Handle) {
 	let loggedIn = false
 	let mcpServerUrl = ''
 	let setupPrompt = ''
-	let firstWinPrompt = ''
 	let hasMcpClient = false
-	let hasSentWelcomeEmail = false
-	let welcomeEmail: OnboardingWelcomeEmail | null = null
-	let hasFirstHello = false
-	let hasSavedMemory = false
-	let hasFirstWin = false
+	let hasQuickExample = false
 	let featuredListings: Array<OnboardingFeaturedListing> = []
+	let exampleListings: Array<OnboardingFeaturedListing> = []
+	let serviceStarterListings: Array<OnboardingFeaturedListing> = []
 	let builtInProviders: Array<OnboardingBuiltInProvider> = []
 	let checklist: OnboardingChecklistLoaderData | null = null
 	let checklistHidden = false
@@ -152,77 +155,47 @@ export function OnboardingRoute(handle: Handle) {
 	let panelAnimationArmed = false
 	const loadLatch = createRouteLoadLatch()
 
-	function firstWinSubStep(): FirstWinSubStep {
-		if (!hasSentWelcomeEmail) return 1
-		if (!hasFirstHello) return 2
-		return 3
-	}
-
-	/**
-	 * Footer Back/Next let people walk the mini-wizard manually; null means
-	 * "follow the signals". Signal-driven advances reset it so the flow
-	 * snaps back to the real current sub-step.
-	 */
-	let viewedFirstWinStep: FirstWinSubStep | null = null
-
-	function shownFirstWinStep(): FirstWinSubStep {
-		return viewedFirstWinStep ?? firstWinSubStep()
-	}
-
-	function selectFirstWinStep(step: FirstWinSubStep) {
-		viewedFirstWinStep = step
-		scrollToNav('first-win-steps-nav')
-		handle.update()
+	function readHasQuickExample(
+		payload: Pick<OnboardingPayload, 'checklist' | 'featuredListings'>,
+	) {
+		if (isOnboardingChecklistItemDone(payload.checklist, 'install-starter')) {
+			return true
+		}
+		return selectOnboardingExampleListings(
+			payload.featuredListings ?? [],
+		).some((listing) => listing.viewerInstall != null)
 	}
 
 	function applyPayload(payload: OnboardingPayload) {
 		const wasConnected = hasMcpClient
-		const wasFirstWin = hasFirstWin
-		const previousSubStep = firstWinSubStep()
+		const wasQuickExample = hasQuickExample
 		loggedIn = payload.loggedIn
 		mcpServerUrl = payload.mcpServerUrl
 		setupPrompt = payload.setupPrompt
-		firstWinPrompt = payload.firstWinPrompt
 		hasMcpClient = payload.hasMcpClient
-		hasSentWelcomeEmail = payload.hasSentWelcomeEmail
-		welcomeEmail = payload.welcomeEmail
-		hasFirstHello = isOnboardingChecklistItemDone(
-			payload.checklist,
-			'first-hello',
-		)
-		hasSavedMemory = isOnboardingChecklistItemDone(
-			payload.checklist,
-			'save-memory',
-		)
-		// Cumulative on purpose: the win is the whole loop, so a memory or
-		// reply that arrived outside it never skips the earlier sub-steps.
-		hasFirstWin = hasSentWelcomeEmail && hasFirstHello && hasSavedMemory
 		featuredListings = payload.featuredListings ?? []
+		exampleListings = selectOnboardingExampleListings(featuredListings)
+		serviceStarterListings =
+			selectOnboardingServiceStarterListings(featuredListings)
+		hasQuickExample = readHasQuickExample(payload)
 		builtInProviders = payload.builtInProviders ?? []
 		checklist = payload.checklist
 		if (payload.checklist?.dismissed) checklistHidden = true
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
-			activeStep = hasFirstWin ? 3 : payload.hasMcpClient ? 2 : 1
+			activeStep = hasQuickExample ? 3 : payload.hasMcpClient ? 2 : 1
 			initializedStep = true
-		} else if (!wasConnected && payload.hasMcpClient && !hasFirstWin) {
+		} else if (!wasConnected && payload.hasMcpClient && !hasQuickExample) {
 			panelAnimationArmed = true
 			activeStep = 2
 			updateStepHash(2)
 			scrollToNav('onboarding-steps-nav')
-		} else if (!wasFirstWin && hasFirstWin) {
-			// The Remember sub-step finishing completes the whole first win.
+		} else if (!wasQuickExample && hasQuickExample) {
 			panelAnimationArmed = true
 			activeStep = 3
 			updateStepHash(3)
 			scrollToNav('onboarding-steps-nav')
-		} else if (activeStep === 2 && firstWinSubStep() !== previousSubStep) {
-			// Mini-wizard auto-advance (email sent, reply landed): snap back
-			// to the signal-driven sub-step and keep the person anchored on
-			// the pills.
-			viewedFirstWinStep = null
-			scrollToNav('first-win-steps-nav')
 		}
 	}
 
@@ -256,8 +229,6 @@ export function OnboardingRoute(handle: Handle) {
 	function selectStep(step: OnboardingStep) {
 		panelAnimationArmed = true
 		activeStep = step
-		// Entering a step fresh always shows the signal-driven sub-step.
-		viewedFirstWinStep = null
 		updateStepHash(step)
 		scrollToNav('onboarding-steps-nav')
 		void handle.update().then((signal) => {
@@ -275,177 +246,15 @@ export function OnboardingRoute(handle: Handle) {
 		})
 	}
 
-	/** Cumulative, matching `hasFirstWin`: a later pill never shows done
-	 * while an earlier one is still waiting. */
-	function firstWinSubStepDone(step: FirstWinSubStep): boolean {
-		if (step === 1) return hasSentWelcomeEmail
-		if (step === 2) return hasSentWelcomeEmail && hasFirstHello
-		return hasSentWelcomeEmail && hasFirstHello && hasSavedMemory
-	}
-
-	/**
-	 * The mini-wizard pills: Send – – – Reply – – – Remember, joined by
-	 * dashed connectors. The sub-step we are waiting on swaps its number for
-	 * a spinner (signals arrive via the progress poll); finished sub-steps
-	 * show a check.
-	 */
-	function renderFirstWinSteps() {
-		const waitingStep = firstWinSubStep()
-		const shown = shownFirstWinStep()
-		return (
-			<ol
-				id="first-win-steps-nav"
-				aria-label="See it work sub-steps"
-				mix={css(firstWinStepsCss)}
-			>
-				{firstWinSubStepDefinitions.map((step) => {
-					const done = firstWinSubStepDone(step.number)
-					const waiting = loggedIn && step.number === waitingStep && !done
-					return (
-						<li key={step.number}>
-							<button
-								type="button"
-								mix={[
-									css(firstWinStepPillCss),
-									on('click', () => selectFirstWinStep(step.number)),
-								]}
-								data-state={done ? 'done' : waiting ? 'waiting' : undefined}
-								aria-current={step.number === shown ? 'step' : undefined}
-							>
-								<span mix={css(firstWinStepMarkCss)} aria-hidden="true">
-									{done ? (
-										'✓'
-									) : waiting ? (
-										<span
-											mix={css(firstWinStepSpinnerCss)}
-											data-testid={`first-win-waiting-${step.number}`}
-										/>
-									) : (
-										step.number
-									)}
-								</span>
-								<span>{step.label}</span>
-							</button>
-						</li>
-					)
-				})}
-			</ol>
-		)
-	}
-
-	/**
-	 * The shown sub-step's instructions — the "do" half, unlabeled. Only the
-	 * first sub-step asks for a paste; after that the agent owns the loop and
-	 * the pills are read-only progress, so the later sub-steps say what to do
-	 * in the inbox and in the chat instead of handing out more prompts.
-	 */
-	function renderFirstWinContent() {
-		if (hasFirstWin && viewedFirstWinStep === null) {
-			return (
-				<p mix={css(firstWinDoneCss)} data-testid="onboarding-first-win-done">
-					Done — Kody introduced itself, you replied, and your answers are saved
-					as memories.
-				</p>
-			)
+	async function refreshOnboardingAfterInstall() {
+		try {
+			const payload = await fetchOnboardingPayload(handle.signal)
+			if (handle.signal.aborted || !payload) return
+			applyPayload(payload)
+			handle.update()
+		} catch {
+			// Install already succeeded in the card; the next poll retries.
 		}
-		const current = shownFirstWinStep()
-		if (current === 1) {
-			return (
-				<div mix={css(firstWinContentCss)}>
-					<p mix={css(firstWinGuidanceCss)}>
-						Paste this into your connected agent once. Your agent reads the
-						first-win guide and takes it from there — it sends the welcome
-						email, tells you what to do in your own inbox, and saves what
-						matters when you come back to it.
-					</p>
-					<figure mix={css(promptBlockCss)}>
-						<blockquote data-testid="onboarding-first-win-prompt">
-							{firstWinPrompt}
-						</blockquote>
-					</figure>
-					<CopyTextButton
-						value={firstWinPrompt}
-						idleLabel="Copy the prompt"
-						variant="pill"
-					/>
-					<p mix={css(firstWinGuidanceCss)}>
-						Curious what your agent is following?{' '}
-						<a
-							href="/guides/first-win"
-							target="_blank"
-							rel="noreferrer noopener"
-							mix={css(primaryLinkCss)}
-						>
-							Read the first-win guide
-						</a>
-						.
-					</p>
-				</div>
-			)
-		}
-		if (current === 2) {
-			return (
-				<div mix={css(firstWinContentCss)}>
-					<p mix={css(firstWinGuidanceCss)}>
-						Kody recorded the send. Open your own inbox — the address on your
-						Kody account — and reply with your answers. About thirty seconds.
-					</p>
-					{renderWelcomeEmailFacts()}
-					<p mix={css(firstWinGuidanceCss)}>
-						Then go back to your agent and tell it you replied. It looks the
-						message up and saves what matters — you do not need to come back
-						here.
-					</p>
-					<p mix={css(firstWinGuidanceCss)}>
-						Not in your inbox? Check spam or promotions, or{' '}
-						<a
-							href="/account/email"
-							target="_blank"
-							rel="noreferrer noopener"
-							mix={css(primaryLinkCss)}
-						>
-							open your Kody inbox
-						</a>{' '}
-						for the stored copy.
-					</p>
-				</div>
-			)
-		}
-		return (
-			<div mix={css(firstWinContentCss)}>
-				<p mix={css(firstWinGuidanceCss)}>
-					Your reply landed in Kody. Tell your agent you replied — it reads the
-					message and saves what matters about you as memories, then confirms
-					what it saved.
-				</p>
-			</div>
-		)
-	}
-
-	/**
-	 * The real subject and sender of the stored welcome email. A person who
-	 * cannot find the message needs the exact string to search for, so this
-	 * quotes what Kody actually sent rather than the copy the prompt suggests.
-	 */
-	function renderWelcomeEmailFacts() {
-		if (!welcomeEmail) return null
-		return (
-			<dl
-				mix={css(welcomeEmailFactsCss)}
-				data-testid="onboarding-welcome-email-facts"
-			>
-				<div>
-					<dt>Subject</dt>
-					<dd>{welcomeEmail.subject}</dd>
-				</div>
-				{welcomeEmail.fromAddress ? (
-					<div>
-						<dt>From</dt>
-						<dd>{welcomeEmail.fromAddress}</dd>
-					</div>
-				) : null}
-			</dl>
-		)
 	}
 
 	/**
@@ -513,9 +322,9 @@ export function OnboardingRoute(handle: Handle) {
 	}
 
 	// Users typically keep this page open while their MCP client runs OAuth
-	// and while they finish the first-win prompts, so poll the same JSON
-	// endpoint until those signals land and collapse completed steps without
-	// a manual refresh.
+	// and while a Step 2 install finishes, so poll the same JSON endpoint
+	// until those signals land and collapse completed steps without a manual
+	// refresh.
 	//
 	// The interval must stay clear of 5000ms: workerd's HTTP server closes
 	// idle keep-alive connections after exactly 5s (kj pipeline timeout), so
@@ -527,8 +336,19 @@ export function OnboardingRoute(handle: Handle) {
 	let pollIntervalId: ReturnType<typeof setInterval> | undefined
 	let pollInFlight = false
 
+	function exampleInstallFingerprint(
+		listings: Array<OnboardingFeaturedListing>,
+	) {
+		return selectOnboardingExampleListings(listings)
+			.map(
+				(listing) =>
+					`${listing.id}:${listing.viewerInstall?.status ?? ''}:${listing.viewerInstall?.targetName ?? ''}`,
+			)
+			.join('|')
+	}
+
 	async function pollOnboardingProgress() {
-		if (hasFirstWin) {
+		if (hasQuickExample && hasMcpClient) {
 			clearInterval(pollIntervalId)
 			return
 		}
@@ -540,25 +360,14 @@ export function OnboardingRoute(handle: Handle) {
 			const payload = await fetchOnboardingPayload(handle.signal)
 			if (handle.signal.aborted || !payload) return
 			const nextHasMcpClient = payload.hasMcpClient
-			const nextHasSentWelcomeEmail = payload.hasSentWelcomeEmail
-			const nextHasFirstHello = isOnboardingChecklistItemDone(
-				payload.checklist,
-				'first-hello',
-			)
-			const nextHasSavedMemory = isOnboardingChecklistItemDone(
-				payload.checklist,
-				'save-memory',
+			const nextHasQuickExample = readHasQuickExample(payload)
+			const nextExampleInstalls = exampleInstallFingerprint(
+				payload.featuredListings ?? [],
 			)
 			if (
 				nextHasMcpClient === hasMcpClient &&
-				nextHasSentWelcomeEmail === hasSentWelcomeEmail &&
-				nextHasFirstHello === hasFirstHello &&
-				nextHasSavedMemory === hasSavedMemory &&
-				// The meter can mark Send done before the mailbox mirror stores the
-				// message, so the subject and sender can arrive a poll or two after
-				// the progress signals settle.
-				payload.welcomeEmail?.subject === welcomeEmail?.subject &&
-				payload.welcomeEmail?.fromAddress === welcomeEmail?.fromAddress
+				nextHasQuickExample === hasQuickExample &&
+				nextExampleInstalls === exampleInstallFingerprint(featuredListings)
 			) {
 				return
 			}
@@ -643,8 +452,9 @@ export function OnboardingRoute(handle: Handle) {
 						Get started with <em>Kody</em>
 					</h1>
 					<p data-rise style={{ '--rise': '1' }}>
-						Connect any MCP-capable AI agent to your Kody account, then ask it
-						to help you set things up. New here?{' '}
+						Give your agent a personal software factory: connect any
+						MCP-capable host, fork a ready-made package, then wire real
+						services when you are ready. New here?{' '}
 						<a
 							href="/guides/what-is-kody"
 							target="_blank"
@@ -677,7 +487,7 @@ export function OnboardingRoute(handle: Handle) {
 								const isActive = activeStep === step.number
 								const isComplete =
 									(step.number === 1 && hasMcpClient) ||
-									(step.number === 2 && hasFirstWin)
+									(step.number === 2 && hasQuickExample)
 								return (
 									<button
 										key={step.number}
@@ -740,7 +550,7 @@ export function OnboardingRoute(handle: Handle) {
 									<span>
 										After you add the server, your client opens a browser window
 										or shows an <strong>Authenticate</strong> button. Approve
-										the request to finish connecting.
+										the request so your agent can use your Kody factory.
 									</span>
 								</div>
 								<div
@@ -765,95 +575,20 @@ export function OnboardingRoute(handle: Handle) {
 
 						{activeStep === 2 ? (
 							<section
-								id="first-win"
-								aria-labelledby="first-win-title"
-								data-testid="onboarding-first-win"
+								id="quick-example"
+								aria-labelledby="quick-example-title"
+								data-testid="onboarding-quick-example"
 								mix={[css(wizardPanelCss), panelEntrance()]}
 							>
 								<div mix={css(panelHeadCss)}>
 									<div>
 										<p mix={css(panelKickerCss)}>Step 2</p>
 										<h2
-											id="first-win-title"
+											id="quick-example-title"
 											tabIndex={-1}
 											mix={css(panelTitleCss)}
 										>
-											See it work
-										</h2>
-									</div>
-									<img
-										data-panel-art
-										src="/images/kody-greeting.webp"
-										width={627}
-										height={627}
-										loading="lazy"
-										alt="Kody waving beside a warm envelope"
-										style={{ '--tilt': '1.5deg' }}
-										mix={css(panelArtCss)}
-									/>
-								</div>
-								<p mix={css(panelLedeCss)}>
-									One quick loop — Kody emails you, you reply from your own
-									inbox, your agent remembers. Paste one prompt and your agent
-									will take it from here; these three markers just show how far
-									along you are.
-								</p>
-								{renderFirstWinSteps()}
-								{renderFirstWinContent()}
-								<aside
-									aria-label="How it works"
-									mix={css(howItWorksCss)}
-									data-testid="onboarding-how-it-works"
-								>
-									<p mix={css(howItWorksLabelCss)}>How it works</p>
-									<p>
-										Kody stores mail and memories on your account. Nothing
-										answers by itself — your agent reads the inbox and writes
-										memories when you ask, and what it saves follows you into
-										every agent you connect. That is also why your agent should
-										not sit and wait for your reply: tell it when you have sent
-										one.
-									</p>
-								</aside>
-								<WizardNavigation
-									activeStep={activeStep}
-									onSelectStep={selectStep}
-									onBack={() => {
-										const shown = shownFirstWinStep()
-										if (shown > 1) {
-											selectFirstWinStep((shown - 1) as FirstWinSubStep)
-											return
-										}
-										selectStep(1)
-									}}
-									onNext={() => {
-										const shown = shownFirstWinStep()
-										if (shown < 3) {
-											selectFirstWinStep((shown + 1) as FirstWinSubStep)
-											return
-										}
-										selectStep(3)
-									}}
-								/>
-							</section>
-						) : null}
-
-						{activeStep === 3 ? (
-							<section
-								id="starter-packages"
-								aria-labelledby="starters-title"
-								data-testid="onboarding-starter-packages"
-								mix={[css(wizardPanelCss), panelEntrance()]}
-							>
-								<div mix={css(panelHeadCss)}>
-									<div>
-										<p mix={css(panelKickerCss)}>Step 3</p>
-										<h2
-											id="starters-title"
-											tabIndex={-1}
-											mix={css(panelTitleCss)}
-										>
-											Connect your tools
+											Try a quick example
 										</h2>
 									</div>
 									<img
@@ -863,6 +598,104 @@ export function OnboardingRoute(handle: Handle) {
 										height={627}
 										loading="lazy"
 										alt="Kody kneeling beside a stack of parcels, one open and glowing with a eucalyptus sprig"
+										style={{ '--tilt': '1.5deg' }}
+										mix={css(panelArtCss)}
+									/>
+								</div>
+								<p mix={css(panelLedeCss)}>
+									Fork a ready-made package, run it once, and see how Kody turns
+									agent work into something you own. No accounts to connect yet.
+								</p>
+								{exampleListings.length > 0 ? (
+									<ul
+										mix={css(starterGridCss)}
+										data-testid="onboarding-example-packages"
+									>
+										{exampleListings.map((listing) => (
+											<OnboardingExampleCard
+												key={listing.id}
+												listing={listing}
+												loggedIn={loggedIn}
+												onInstalled={() => {
+													void refreshOnboardingAfterInstall()
+												}}
+											/>
+										))}
+									</ul>
+								) : (
+									<p
+										mix={css(panelLedeCss)}
+										data-testid="onboarding-example-packages-empty"
+									>
+										Featured examples are unavailable right now. Continue to
+										connect real services, or{' '}
+										<a
+											href="/community"
+											target="_blank"
+											rel="noreferrer noopener"
+											mix={css(primaryLinkCss)}
+										>
+											browse community packages
+										</a>
+										.
+									</p>
+								)}
+								{hasQuickExample ? (
+									<p
+										mix={css(quickExampleDoneCss)}
+										data-testid="onboarding-quick-example-done"
+									>
+										Done — you have a package in your account. Paste the prompt
+										into your agent if you have not already, then connect real
+										services next.
+									</p>
+								) : null}
+								<aside
+									aria-label="How it works"
+									mix={css(howItWorksCss)}
+									data-testid="onboarding-how-it-works"
+								>
+									<p mix={css(howItWorksLabelCss)}>How it works</p>
+									<p>
+										Pick a card to start install immediately. Copy the agent
+										prompt while install finishes — your agent waits for the
+										fork, invokes <em>your</em> copy of the package, and can
+										offer optional triggers (webhook, app, cron). That owned
+										package is the point of Kody.
+									</p>
+								</aside>
+								<WizardNavigation
+									activeStep={activeStep}
+									onSelectStep={selectStep}
+								/>
+							</section>
+						) : null}
+
+						{activeStep === 3 ? (
+							<section
+								id="connect-services"
+								aria-labelledby="connect-services-title"
+								data-testid="onboarding-starter-packages"
+								mix={[css(wizardPanelCss), panelEntrance()]}
+							>
+								<div mix={css(panelHeadCss)}>
+									<div>
+										<p mix={css(panelKickerCss)}>Step 3</p>
+										<h2
+											id="connect-services-title"
+											tabIndex={-1}
+											mix={css(panelTitleCss)}
+										>
+											Connect your real services
+										</h2>
+									</div>
+									<img
+										data-panel-art
+										src="/images/kody-greeting.webp"
+										width={627}
+										height={627}
+										loading="lazy"
+										alt="Kody waving beside a warm envelope"
 										style={{ '--tilt': '-1.5deg' }}
 										mix={css(panelArtCss)}
 									/>
@@ -870,8 +703,9 @@ export function OnboardingRoute(handle: Handle) {
 								{builtInProviders.length > 0 ? (
 									<>
 										<p mix={css(panelLedeCss)}>
-											Connect a built-in integration in one click — Kody hosts
-											the provider app, so there is nothing to register.
+											This is where it gets useful — GitHub, Google, Slack,
+											Notion, and more. Built-in for speed, or bring your own
+											keys for full control.
 										</p>
 										<ul
 											mix={css(starterGridCss)}
@@ -921,7 +755,14 @@ export function OnboardingRoute(handle: Handle) {
 												Bring your own OAuth app
 											</a>{' '}
 											for more power — the guide explains how connections and
-											helper packages work.
+											helper packages work. Or open{' '}
+											<a
+												href="#byok"
+												mix={css(primaryLinkCss)}
+											>
+												Bring your own API keys
+											</a>{' '}
+											below.
 										</p>
 										<div mix={css(advancedSectionCss)}>
 											<p mix={css(advancedLabelCss)}>
@@ -929,12 +770,12 @@ export function OnboardingRoute(handle: Handle) {
 												<span mix={css(advancedBadgeCss)}>Advanced</span>
 											</p>
 											<p mix={css(advancedLedeCss)}>
-												{featuredListings.length > 0
-													? 'Admin-reviewed packages with one-click install. After install, use Copy prompt so your agent can finish any remaining setup.'
-													: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
+												{serviceStarterListings.length > 0
+													? 'Admin-reviewed packages that usually need a connected account. After install, use Copy prompt so your agent can finish setup.'
+													: 'No OAuth starter packages are featured right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
 											</p>
 											<ul mix={css(starterListCss)}>
-												{featuredListings.map((listing) => (
+												{serviceStarterListings.map((listing) => (
 													<OnboardingStarterCard
 														key={listing.id}
 														listing={listing}
@@ -962,12 +803,13 @@ export function OnboardingRoute(handle: Handle) {
 								) : (
 									<>
 										<p mix={css(panelLedeCss)}>
-											{featuredListings.length > 0
-												? 'These packages were reviewed by an admin and support one-click install here. After install, use Copy prompt so your agent can finish any remaining setup — or pick Choose your own adventure to explore with your agent instead.'
-												: 'No featured starters are available right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
+											This is where it gets useful — connect the services you
+											actually use. Prefer featured starters that need an
+											account, bring your own keys, or ask your agent what to
+											build next.
 										</p>
 										<ul mix={css(starterGridCss)}>
-											{featuredListings.map((listing) => (
+											{serviceStarterListings.map((listing) => (
 												<OnboardingStarterCard
 													key={listing.id}
 													listing={listing}
@@ -1034,11 +876,7 @@ function WizardNavigation(
 	handle: Handle<{
 		activeStep: OnboardingStep
 		onSelectStep: (step: OnboardingStep) => void
-		/**
-		 * Override for steps that own inner navigation (the See-it-work
-		 * mini-wizard): when provided, the buttons delegate instead of
-		 * stepping the outer wizard.
-		 */
+		/** Optional overrides when a step owns custom Back/Next behavior. */
 		onBack?: () => void
 		onNext?: () => void
 	}>,
@@ -1095,7 +933,7 @@ function WizardNavigation(
  */
 function renderByokDetails(hasBuiltIns: boolean) {
 	return (
-		<details mix={css(byokDetailsCss)}>
+		<details id="byok" mix={css(byokDetailsCss)}>
 			<summary mix={css(byokSummaryCss)}>Bring your own API keys</summary>
 			{/*
 			 * A `section` rather than a `div`: a generic element has no role, so
@@ -1366,159 +1204,10 @@ const headerGuideLinkCss = {
 	textUnderlineOffset: '3px',
 }
 
-const promptBlockCss = {
-	margin: 0,
-	minWidth: 0,
-	'& blockquote': {
-		margin: 0,
-		/*
-		 * The prompt embeds full URLs, which are unbreakable words. Without this
-		 * the blockquote's min-content width is the longest URL, and since a grid
-		 * item cannot shrink below min-content that width propagated all the way
-		 * out to the page — 172px of horizontal scroll on a 390px viewport,
-		 * dragging the lede, the action row, and the wizard footer wide with it.
-		 */
-		overflowWrap: 'anywhere' as const,
-		fontSize: '0.98rem',
-		lineHeight: 1.6,
-		color: colors.text,
-		backgroundColor: colors.background,
-		border: `1.5px solid ${colors.border}`,
-		borderRadius: radius.card,
-		padding: '1.1rem 1.3rem',
-	},
-}
-
-/** Mini-wizard pill definitions: three sub-steps inside "See it work". */
-const firstWinSubStepDefinitions = [
-	{ number: 1, label: 'Send' },
-	{ number: 2, label: 'Reply' },
-	{ number: 3, label: 'Remember' },
-] as const satisfies ReadonlyArray<{ number: FirstWinSubStep; label: string }>
-
-/* Pills joined by dashed connectors: 1 Send – – – 2 Reply – – – 3 Remember. */
-const firstWinStepsCss = {
-	listStyle: 'none',
-	margin: 0,
-	padding: 0,
-	display: 'flex',
-	alignItems: 'center',
-	'& li': {
-		display: 'flex',
-		alignItems: 'center',
-		flex: 1,
-		minWidth: 0,
-	},
-	'& li:first-child': {
-		flex: 'none',
-	},
-	'& li:not(:first-child)::before': {
-		content: '""',
-		flex: 1,
-		borderTop: `2px dashed ${colors.border}`,
-		marginInline: '0.7rem',
-	},
-}
-
-const firstWinStepPillCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	gap: '0.55rem',
-	padding: '0.45rem 0.9rem 0.45rem 0.5rem',
-	font: `600 0.94rem/1.2 ${typography.fontFamilyBody}`,
-	color: colors.textMuted,
-	backgroundColor: colors.background,
-	border: `1.5px solid ${colors.border}`,
-	borderRadius: '999px',
-	whiteSpace: 'nowrap' as const,
-	cursor: 'pointer',
-	transition: 'border-color 120ms ease, color 120ms ease',
-	[hoverMq]: {
-		'&:hover': {
-			borderColor: `oklch(from ${colors.primary} l c h / 0.6)`,
-			color: colors.text,
-		},
-	},
-	'&[data-state="done"]': {
-		borderColor: `oklch(from ${colors.primary} l c h / 0.5)`,
-		color: colors.primaryText,
-	},
-	// The highlight tracks the sub-step being VIEWED (Next/Back can peek
-	// ahead of the signals); the spinner alone marks the one being waited
-	// on. Declared last so viewing a done pill still reads as current.
-	'&[aria-current="step"]': {
-		borderColor: colors.primary,
-		color: colors.text,
-	},
-}
-
-const firstWinStepMarkCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	width: '1.5rem',
-	height: '1.5rem',
-	flex: 'none',
-	borderRadius: '50%',
-	backgroundColor: `oklch(from ${colors.primary} l c h / 0.14)`,
-	fontSize: '0.85rem',
-	fontWeight: 700,
-	color: colors.primaryText,
-}
-
-const firstWinStepSpinnerCss = {
-	...inlineSpinnerCss,
-	width: '0.95rem',
-	height: '0.95rem',
-}
-
-const firstWinContentCss = {
-	display: 'grid',
-	gap: '0.75rem',
-	justifyItems: 'start',
-}
-
-const firstWinDoneCss = {
+const quickExampleDoneCss = {
 	margin: 0,
 	color: colors.primaryText,
 	fontWeight: 600,
-}
-
-/* The exact strings to search a personal inbox for, in a quiet well so they
-   read as data rather than more instructions. */
-const welcomeEmailFactsCss = {
-	margin: 0,
-	width: '100%',
-	display: 'grid',
-	gap: '0.4rem',
-	padding: '0.85rem 1.05rem',
-	backgroundColor: colors.background,
-	border: `1.5px solid ${colors.border}`,
-	borderRadius: radius.card,
-	fontSize: '0.94rem',
-	lineHeight: 1.5,
-	'& > div': {
-		display: 'flex',
-		flexWrap: 'wrap' as const,
-		gap: '0.2rem 0.6rem',
-	},
-	'& dt': {
-		flex: 'none',
-		minWidth: '4.5rem',
-		color: colors.textMuted,
-		font: `700 0.78rem/1.6 ${typography.fontFamilyBody}`,
-		letterSpacing: '0.06em',
-		textTransform: 'uppercase' as const,
-	},
-	'& dd': {
-		margin: 0,
-		minWidth: 0,
-		/* Subjects and addresses are unbreakable words often enough to widen
-		   the whole panel; let them wrap instead. */
-		overflowWrap: 'anywhere' as const,
-		color: colors.text,
-		fontWeight: 600,
-	},
 }
 
 /* The "learn" half lives here, labeled and out of the instructions' way. */
@@ -1530,6 +1219,11 @@ const howItWorksCss = {
 		fontSize: '0.92rem',
 		lineHeight: 1.55,
 	},
+	'& em': {
+		fontStyle: 'normal',
+		fontWeight: 650,
+		color: colors.text,
+	},
 }
 
 const howItWorksLabelCss = {
@@ -1537,13 +1231,6 @@ const howItWorksLabelCss = {
 	letterSpacing: '0.06em',
 	textTransform: 'uppercase' as const,
 	color: colors.primaryText,
-}
-
-const firstWinGuidanceCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: '0.94rem',
-	lineHeight: 1.55,
 }
 
 /* One-time authorization callout: the only hard-edged warning on the page. */

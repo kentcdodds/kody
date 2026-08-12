@@ -53,6 +53,7 @@ test('stateless lane lists onboarding prompts and emits execute progress', async
 	expect(promptNames).toEqual([
 		'onboarding_discovery',
 		'onboarding_first_win',
+		'onboarding_quick_example',
 		'onboarding_setup',
 	])
 

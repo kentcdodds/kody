@@ -16,10 +16,11 @@ test('registerPrompts advertises the templated onboarding prompts', async () => 
 
 	await registerPrompts(agent as never)
 
-	expect(registerPrompt).toHaveBeenCalledTimes(3)
+	expect(registerPrompt).toHaveBeenCalledTimes(4)
 	expect(registerPrompt.mock.calls.map((call) => call[0])).toEqual([
 		'onboarding_setup',
 		'onboarding_discovery',
+		'onboarding_quick_example',
 		'onboarding_first_win',
 	])
 

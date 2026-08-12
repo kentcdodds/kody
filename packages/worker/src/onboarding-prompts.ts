@@ -53,10 +53,8 @@ export function buildDiscoveryPrompt(input: {
 }
 
 /**
- * The whole first win in one paste: the agent owns the loop (send the welcome
- * email, hand off to the person's own inbox, look the reply up when they say
- * so, save memories), and the steering for each part lives in the `first-win`
- * guide as embedded notes for agents rather than in the prompt.
+ * Optional email → reply → memories loop. Onboarding Step 2 no longer uses
+ * this as the climax; keep the MCP prompt for people who want that path.
  *
  * Address the connected Kody server rather than "Hey Kody" — some hosts treat
  * that as impersonation / prompt injection and skip MCP tools. The no-polling
@@ -72,8 +70,30 @@ export function buildFirstWinPrompt(input: {
 		requestUrl: input.requestUrl,
 	})
 	return [
-		`Ask the connected Kody server to read ${origin}/guides/first-win and then walk me through my first win with Kody, one step at a time.`,
+		`Ask the connected Kody server to read ${origin}/guides/first-win and then walk me through the optional email-and-memories loop, one step at a time.`,
 		'Start by sending the welcome email, then tell me exactly what to do in my own inbox.',
 		"Do not poll or wait for my reply — I'll come back to this chat and tell you when I have replied.",
+	].join(' ')
+}
+
+/**
+ * Onboarding Step 2 climax: fork/install a zero-auth example, invoke the
+ * user's owned copy, explain permanence, offer triggers without ranking them.
+ * Per-package paste prompts live in `#universal/onboarding-examples.ts`; this
+ * MCP prompt points at the shared guide when no card was picked yet.
+ */
+export function buildQuickExamplePrompt(input: {
+	env: OnboardingPromptEnv
+	requestUrl: string | URL
+}) {
+	const origin = getAppBaseUrl({
+		env: input.env,
+		requestUrl: input.requestUrl,
+	})
+	return [
+		`Ask the connected Kody server to read ${origin}/guides/quick-example and help me with my first build on Kody.`,
+		'I am forking a zero-auth example package from /onboarding Step 2.',
+		'Wait until my install/fork is ready (search once; retry once if missing — do not poll), invoke MY installed package with packages.invoke, show the result, explain that I own it, and ask if I want a trigger (webhook, Kody app, cron, or skip) without recommending one.',
+		'Keep messages short.',
 	].join(' ')
 }

@@ -104,16 +104,17 @@ the stored mark. `listFeaturedCommunityListings` feeds the onboarding page (slim
 `OnboardingFeaturedListing` shapes, capped at 12). Surfaces: the `Featured`
 badge on the detail page, the admin-only toggle
 (`POST /community/:listingId/feature.json`, audited), the admin-only
-`community_set_featured` capability, and the onboarding "Install a starter
-package" step (square-card grid with in-place Install, then Copy prompt for
-agent setup, plus a trailing Choose your own adventure card). Signed-in
-onboarding, `/community` cards, and listing detail overlay a per-request
-`viewerInstall` when the viewer already has a matching `kody_id` saved package
-or a `community_forks` row for that listing, so those surfaces show Copy prompt
-instead of Install. Listing cards and detail place Trusted / Installed / Forked
-badges on a row under the title so wrapping `@scope/name` stays aligned.
-`community_get` exposes the effective `featured` flag. Onboarding loads up to 12
-featured listings.
+`community_set_featured` capability, and onboarding Steps 2–3: Step 2 shows
+featured zero-auth example listings (tag `zero-auth`) as Try this cards that
+start install immediately and expose Copy prompt while install finishes; Step 3
+keeps built-in service connects plus non-example featured starters (Install then
+Copy prompt, with Choose your own adventure). Signed-in onboarding, `/community`
+cards, and listing detail overlay a per-request `viewerInstall` when the viewer
+already has a matching `kody_id` saved package or a `community_forks` row for
+that listing, so those surfaces show Copy prompt instead of Install. Listing
+cards and detail place Trusted / Installed / Forked badges on a row under the
+title so wrapping `@scope/name` stays aligned. `community_get` exposes the
+effective `featured` flag. Onboarding loads up to 12 featured listings.
 
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.

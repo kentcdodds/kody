@@ -69,13 +69,14 @@ coding agent (Cursor, Claude Code, Codex, Copilot, OpenCode, and similar) is
 usually smoother because those hosts can edit files and iterate on code more
 easily.
 
-## Install a starter or build your own
+## Try a quick example, then connect services
 
-After the connection works, the Get started page offers admin-reviewed starter
-packages for one-click install. Each card can copy a short agent prompt for
-remaining setup. Prefer a starter when one is close to what you want.
+After the connection works, Get started Step 2 offers zero-auth example packages
+for one-click fork/install. Copy the agent prompt while install finishes — your
+agent waits for the fork, runs your copy, and can offer optional triggers.
 
-If nothing fits, use **Choose your own adventure** on that page to copy a prompt
+Step 3 is for real services (built-in connects plus starters that usually need
+an account). If nothing fits, use **Choose your own adventure** to copy a prompt
 that asks your agent what Kody can do and helps you connect an integration and
 build something custom.
 

@@ -23,7 +23,7 @@ export const onboardingChecklistItemLabels: Record<
 	'first-hello': 'Exchange a first email with Kody',
 	'save-memory': 'Save a memory',
 	'connect-integration': 'Connect an integration',
-	'install-starter': 'Install a starter package',
+	'install-starter': 'Try a quick example package',
 }
 
 const integrationGuideProviders = [
@@ -41,11 +41,12 @@ function readChecklistItemHref(id: OnboardingChecklistItemId): string | null {
 			return `${onboardingPath}#connect-agent`
 		case 'first-hello':
 		case 'save-memory':
-			return `${onboardingPath}#first-win`
+			// Optional deeper loop (email → memories); not the Step 2 climax.
+			return '/guides/first-win'
 		case 'connect-integration':
-			return null
+			return `${onboardingPath}#connect-services`
 		case 'install-starter':
-			return `${onboardingPath}#starter-packages`
+			return `${onboardingPath}#quick-example`
 		default: {
 			const neverId: never = id
 			return neverId

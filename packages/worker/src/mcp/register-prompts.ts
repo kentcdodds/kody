@@ -2,6 +2,7 @@ import {
 	buildDiscoveryPrompt,
 	buildFirstWinPrompt,
 	buildOnboardingSetupPrompt,
+	buildQuickExamplePrompt,
 } from '#worker/onboarding-prompts.ts'
 import { type McpRegistrationAgent } from './mcp-registration-agent.ts'
 
@@ -60,11 +61,30 @@ export async function registerPrompts(agent: McpRegistrationAgent) {
 	)
 
 	agent.server.registerPrompt(
+		'onboarding_quick_example',
+		{
+			title: 'Quick example',
+			description:
+				'Onboarding Step 2: wait for a one-click example install/fork, invoke the owned package, explain ownership, offer optional triggers. No polling.',
+		},
+		() => {
+			const requestUrl = agent.requireDomain()
+			return textPromptResult({
+				description: 'Kody quick-example prompt',
+				text: buildQuickExamplePrompt({
+					env: agent.getEnv(),
+					requestUrl,
+				}),
+			})
+		},
+	)
+
+	agent.server.registerPrompt(
 		'onboarding_first_win',
 		{
-			title: 'First win',
+			title: 'Email and memories',
 			description:
-				'Agent-driven first win: send the welcome email, wait for the person to reply from their inbox, then look it up and save memories. No polling.',
+				'Optional email loop: send a welcome email, wait for the person to reply from their inbox, then look it up and save memories. No polling.',
 		},
 		() => {
 			const requestUrl = agent.requireDomain()
