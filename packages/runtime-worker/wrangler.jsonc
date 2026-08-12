@@ -212,10 +212,6 @@
 						"queue": "kody-community-activity-dispatch",
 					},
 					{
-						"binding": "SCHEDULED_DISPATCH_QUEUE",
-						"queue": "kody-scheduled-dispatch",
-					},
-					{
 						"binding": "PACKAGE_EVENTS_DISPATCH_QUEUE",
 						"queue": "kody-package-events-dispatch",
 					},
