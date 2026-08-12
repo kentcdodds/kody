@@ -16,7 +16,7 @@ script via a Wrangler `transferred_classes` migration.
 
 | Concern                                                                       | Owner                                                                       |
 | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Package-app origin (`PACKAGE_APP_BASE_URL`, `kodyapps.dev`) custom domain     | `kody-runtime`                                                              |
+| Package-app origin (`PACKAGE_APP_BASE_URL`, `kodyapps.dev`) zone routes       | `kody-runtime`                                                              |
 | Inline package-app serving (`/apps/...` on the app origin)                    | `kody-runtime` (forwarded by main via the `RUNTIME_WORKER` service binding) |
 | Package invocation API                                                        | `kody-runtime` (forwarded by main)                                          |
 | `DynamicCallableWorkflow` (Cloudflare Workflow)                               | `kody-runtime` (main binds it cross-script)                                 |
@@ -85,15 +85,16 @@ hand.
      itself (preview pairs are created fresh with `new_sqlite_classes`); the
      transfer is exercised for the first time in production, which is why the
      deploy order below matters.
-2. **Detach the `kodyapps.dev` custom domain from `kody` (one-time, just before
-   merging).** Cloudflare refuses to assign a custom domain that another Worker
-   still owns, so the first `kody-runtime` deploy fails while `kody` holds
-   `kodyapps.dev`. In the Cloudflare dashboard (Workers & Pages → `kody` →
-   Settings → Domains & Routes) remove the `kodyapps.dev` custom domain, then
-   merge promptly — between the detach and the runtime deploy's domain attach,
-   package-app traffic on `kodyapps.dev` is unserved. This is only needed on the
-   first production deploy; later deploys find the domain already on
-   `kody-runtime`.
+2. **Ensure the package-app zone is free for `kody-runtime` (one-time, just
+   before merging).** Production serves `kodyapps.dev` via **zone routes** on
+   the runtime Worker (apex + `*.kodyapps.dev/*`), never a Workers custom domain
+   in that zone — publishing a zone's route table detaches any custom domain
+   there. If the main worker still owns a leftover `kodyapps.dev` custom domain
+   or zone routes from before the split, remove them in the Cloudflare dashboard
+   (Workers & Pages → `kody` → Settings → Domains & Routes) so the first
+   `kody-runtime` deploy can publish the package-app routes. Between that detach
+   and the runtime deploy, package-app traffic on `kodyapps.dev` is unserved —
+   merge promptly. Later deploys find the zone routes already on `kody-runtime`.
 3. **Merge the PR.** The production deploy workflow then:
    1. generates the runtime config from the provisioned main config
       (`tools/ci/runtime-worker-config.ts`);
@@ -114,7 +115,9 @@ hand.
    6. healthchecks `kody` (`/health`) and `kody-runtime` (`/__runtime/health`),
       then runs the execute smoke check.
 4. **Post-deploy verification.**
-   - Load a production package app on `https://kodyapps.dev`.
+   - Load a production package app on
+     `https://{username}.kodyapps.dev/packages/{kodyId}/...` (the apex only
+     redirects; it does not serve package code).
    - Run a package invocation; confirm the run appears with streaming logs
      (proves RunLog storage transferred, not recreated empty).
    - Open an existing pre-migration run's logs (proves old DO storage moved).

@@ -108,11 +108,12 @@ This project uses the following resources:
     `https://{username}.kodyapps.dev/packages/{kodyId}/...`; the apex serves
     legacy redirects (`/@user/packages/...` → per-user subdomain, `/` → app
     origin).
-  - **No custom domain in this zone (incident-tested).** The deploy publishes
-    this zone's Worker route table, and replacing a zone's routes detaches any
-    Workers custom domain in that zone and deletes its DNS record — that took
-    `kodyapps.dev` down on 2026-08-11. Custom domains stay reserved for the
-    app-origin zones, whose route tables the deploy never publishes.
+  - **No custom domain in this zone.** The deploy publishes this zone's Worker
+    route table, and replacing a zone's routes detaches any Workers custom
+    domain in that zone and deletes its DNS record. Package-app hosts therefore
+    use zone routes plus proxied placeholder DNS only. Custom domains stay
+    reserved for the app-origin zones, whose route tables the deploy never
+    publishes.
   - **DNS records (idempotent, per deploy).** Zone routes do not create DNS
     records. Production CI (`tools/ci/production-resources.ts ensure`)
     idempotently ensures proxied records for both names in the package-app zone:

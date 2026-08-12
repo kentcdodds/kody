@@ -300,21 +300,11 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `grantee_user_id`, `created_by_user_id`, `created_at`; migration 0072). Grants
   are only representable when the scope owner is a platform account.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
-- `jobs`: persisted job metadata, caller context, schedule state, repo source
-  pointers, `preserved` (skip platform auto-cleanup), and optional `expires_at`
-  (UTC ISO; when reached the scheduler skips the job and auto-disables it with
-  `enabled = 0`). Account retention windows live on `users`
-  (`job_retention_*_days`; NULL = platform defaults 14/60/90). Completed ad-hoc
-  jobs are cleaned by the hourly `job_retention` sweeper; package-owned and
-  preserved jobs are not. `expires_at` stops scheduling only — it does not
-  delete rows and is independent of `preserved`. D1 keeps schedule fields
-  (`next_run_at`, `schedule_json`, …) and `last_run_at` / `last_run_status` as
-  retention anchors only; terminal run error, duration, and counters for
-  observability live in the per-user `RunLog` `job_run_observability` table (see
-  [Run records](./run-records.md)). Execution history rows live in the same DO.
 - Workflow, activation, and package-success state lives in dedicated RunLog
   tables; D1 has no corresponding projection tables (see
   [Run records](./run-records.md)).
+- There is no `jobs` or `archived_job_artifacts` table in `APP_DB` — those live
+  in the jobs worker's `JOBS_DB` (see [D1 (`JOBS_DB`)](#d1-jobs_db)).
 - `package_service_states` (`0095-package-service-states.sql`): per-service
   liveness projection (`running` / `idle` / `stopped` / `error`) for discovery,
   account export/deletion inventory, and disaster recovery. Upserted and
@@ -405,6 +395,30 @@ App access pattern:
 - app handlers and the mock Resend worker perform CRUD/query operations through
   `remix/data-table` (including `findOne`, `create`, `update`, `deleteMany`, and
   `count`)
+
+## D1 (`JOBS_DB`)
+
+Job schedule metadata lives in the dedicated `kody-jobs` D1 database bound as
+`JOBS_DB` on the jobs worker (`packages/jobs-worker/`), not in `APP_DB`. Schema:
+`packages/jobs-worker/migrations/`. The main worker reaches it only through the
+`JOBS` service binding (`JobsService`). See
+[ADR 0016](../decisions/0016-mono-worker-extraction.md) and the
+[jobs worker migration runbook](./jobs-worker-migration-runbook.md).
+
+- `jobs`: persisted job metadata, caller context, schedule state, repo source
+  pointers, `preserved` (skip platform auto-cleanup), and optional `expires_at`
+  (UTC ISO; when reached the scheduler skips the job and auto-disables it with
+  `enabled = 0`). Account retention windows live on `APP_DB` `users`
+  (`job_retention_*_days`; NULL = platform defaults 14/60/90). Completed ad-hoc
+  jobs are cleaned by the hourly `job_retention` sweeper on the jobs worker;
+  package-owned and preserved jobs are not. `expires_at` stops scheduling only —
+  it does not delete rows and is independent of `preserved`. This database keeps
+  schedule fields (`next_run_at`, `schedule_json`, …) and `last_run_at` /
+  `last_run_status` as retention anchors only; terminal run error, duration, and
+  counters for observability live in the per-user `RunLog`
+  `job_run_observability` table (see [Run records](./run-records.md)).
+- `archived_job_artifacts`: retained job artifact rows with per-row
+  `retain_until` cleanup (exempt from the global age prunes on `APP_DB`).
 
 ## Analytics Engine reporting
 
@@ -517,13 +531,13 @@ MCP server runtime state is hosted via a Durable Object class (`MCP`) in
 
 ## Durable Objects (`JobManager` and `StorageRunner`)
 
-Jobs use two Durable Object roles:
+Jobs use two Durable Object roles across workers:
 
-- `JobManager`: one object per user, responsible only for alarm scheduling and
-  dispatching due jobs from D1-backed metadata
-- `StorageRunner`: one object per durable storage id, responsible for isolated
-  SQLite state that can be bound to execute calls, jobs, and dedicated storage
-  inspection capabilities
+- `JobManager` (jobs worker): one object per user, responsible only for alarm
+  scheduling and dispatching due jobs from `JOBS_DB`-backed metadata
+- `StorageRunner` (runtime worker): one object per durable storage id,
+  responsible for isolated SQLite state that can be bound to execute calls,
+  jobs, and dedicated storage inspection capabilities
 
 Each `JobManager` alarm processes at most `maxDueJobsPerAlarm` due jobs
 (`packages/worker/src/jobs/repo.ts`, oldest `next_run_at` first). When more due
@@ -533,11 +547,11 @@ instead of one Durable Object wake.
 
 Storage split:
 
-- D1 `jobs` table: job metadata, persisted caller context, schedule fields,
-  `last_run_at` / `last_run_status` as retention anchors, repo source pointers
-  (`source_id`, `published_commit`), and stable `storage_id`. Terminal run
-  error, duration, counters, and pruned execution history live in the per-user
-  `RunLog` (`job_run_observability` and `runs`; see
+- `JOBS_DB` `jobs` table: job metadata, persisted caller context, schedule
+  fields, `last_run_at` / `last_run_status` as retention anchors, repo source
+  pointers (`source_id`, `published_commit`), and stable `storage_id`. Terminal
+  run error, duration, counters, and pruned execution history live in the
+  per-user `RunLog` (`job_run_observability` and `runs`; see
   [Run records](./run-records.md))
 - `JobManager` SQLite: only alarm bookkeeping needed to wake the right user's
   due jobs
@@ -853,7 +867,7 @@ Package and plain-repo state maps onto storage homes as follows:
   writes D1 `package_service_states` (enumeration) and UserMeter (authoritative
   running counts). App facets and package-internal DO namespaces are extra
   StorageRunner buckets under the package id, not a general actor model.
-- **Package jobs** — schedule metadata in D1 `jobs`; run-local scratch in
+- **Package jobs** — schedule metadata in `JOBS_DB` `jobs`; run-local scratch in
   `job:package-job:{packageId}:{encodeURIComponent(jobName)}`; shared durable
   data in package storage.
 
@@ -936,18 +950,24 @@ imports and `packages.invoke` as the supported alternatives.
 ## Configuration reference
 
 Bindings are configured per environment in `packages/worker/wrangler.jsonc`
-(names and bindings only; remote D1/KV IDs come from deploy-generated configs):
+(names and bindings only; remote D1/KV IDs come from deploy-generated configs).
+`JobManager` and `JOBS_DB` live on the jobs worker
+(`packages/jobs-worker/wrangler.jsonc`); the main worker reaches them through
+the `JOBS` service binding. Runtime Durable Objects (`StorageRunner`, `RunLog`,
+`PackageRealtimeSession`, `PackageServiceInstance`) live on the runtime worker
+and are bound cross-script from main — see
+[ADR 0016](../decisions/0016-mono-worker-extraction.md).
 
 - `APP_DB` (D1)
 - `AUDIT_DB` (D1, global hashed security audit trail)
+- `JOBS` (service binding to the jobs worker `JobsService` entrypoint)
 - `OAUTH_KV` (KV)
 - `BUNDLE_ARTIFACTS_KV` (KV)
 - `EMAIL_BLOBS` (R2, raw email MIME blobs)
 - `MCP_OBJECT` (Durable Objects)
 - `REMOTE_CONNECTOR_SESSION` (Durable Objects)
-- `JOB_MANAGER` (Durable Objects)
 - `RUN_LOG` (Durable Objects; per-user run records — see
-  [Run records](./run-records.md))
+  [Run records](./run-records.md); class hosted on the runtime worker)
 - `USER_METER` (Durable Objects; per-user daily entitlement counters — see
   [Entitlements](./entitlements.md#usermeter))
 - `STRIPE_PLAN_REFRESH` (Durable Objects; per-user, activity-driven Stripe plan
@@ -955,10 +975,12 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 - `MAILBOX` (Durable Objects; sole per-user email graph, inbound-ledger,
   retention, read, export, and mutation authority — see
   [Mailbox](#durable-objects-mailbox))
-- `STORAGE_RUNNER` (Durable Objects)
+- `STORAGE_RUNNER` (Durable Objects; class hosted on the runtime worker)
 - `REPO_SESSION` (Durable Objects)
-- `PACKAGE_REALTIME_SESSION` (Durable Objects)
-- `PACKAGE_SERVICE_INSTANCE` (Durable Objects)
+- `PACKAGE_REALTIME_SESSION` (Durable Objects; class hosted on the runtime
+  worker)
+- `PACKAGE_SERVICE_INSTANCE` (Durable Objects; class hosted on the runtime
+  worker)
 - `MCP_CLIENT_HUB` (Durable Objects; user-added remote MCP servers — see
   [MCP client servers](./mcp-client-servers.md))
 - `OAUTH_PURGE_COORDINATOR` (Durable Objects)
@@ -1140,11 +1162,11 @@ than in D1 constraints. Changes must be backward compatible on read and additive
 on write unless a migration backfills existing rows.
 
 - `jobs.params_json`, `jobs.schedule_json`, `jobs.caller_context_json`, and
-  `jobs.repo_check_policy_json` (`packages/worker/migrations/0018-jobs.sql`,
-  `0025-jobs-repo-check-policy.sql`, `packages/worker/src/jobs/repo.ts`) rely on
-  parser and normalizer compatibility. Package jobs persist both
-  `storageContext.appId` for value scope and `storageContext.packageId` for
-  package-owned secret scope.
+  `jobs.repo_check_policy_json`
+  (`packages/jobs-worker/migrations/0001-jobs-init.sql`,
+  `packages/worker/src/jobs/repo.ts`) rely on parser and normalizer
+  compatibility. Package jobs persist both `storageContext.appId` for value
+  scope and `storageContext.packageId` for package-owned secret scope.
 - `saved_packages.tags_json` and `community_listings.tags_json`
   (`0027-saved-packages.sql`, `0045-community-listings.sql`) are `string[]`
   projections.

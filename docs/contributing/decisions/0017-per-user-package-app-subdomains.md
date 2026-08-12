@@ -74,6 +74,7 @@ package-app apex:
 - The one production underscore account was renamed by hand on 2026-08-12; no
   underscore usernames remain, so no rename affordances exist in the app.
 - `parsePackageSearchIdentity`, status probes, and author docs must recognize
-  both subdomain URLs and legacy path shapes during transition.
+  both subdomain URLs and the apex/path redirect shapes that still resolve to an
+  owner's hosted app.
 - Revisit per-package subdomains only if same-owner isolation becomes a reported
   abuse vector or a product requirement.

@@ -26,9 +26,9 @@ operator (or the coordinating parent session) runs the steps below in order.
 - The `jobs` / `archived_job_artifacts` tables must not take writes while rows
   are copied (brief write pause; the pause window only blocks job
   create/update/delete and job finalization, not the rest of the app).
-- `APP_DB` keeps its `jobs` and `archived_job_artifacts` tables until a later,
-  separate migration drops them. That drop is intentionally **not** part of this
-  PR or this cutover window.
+- After the read/write flip, `APP_DB` retains a cold copy of those tables only
+  until migration `packages/worker/migrations/0010-drop-jobs-tables.sql` drops
+  them (step 8). Live authority is `JOBS_DB` on the jobs worker.
 
 ## Cloudflare mechanics (why the order below)
 
@@ -143,12 +143,12 @@ in this order automatically.
 - Confirm dashboards (`/account/jobs`) and MCP `jobs_*` capabilities list the
   copied rows.
 
-### 8. Later: drop the old tables from `APP_DB`
+### 8. Drop the old tables from `APP_DB`
 
-The soak period was accelerated pre-launch: after every main-worker surface that
-still read the old `APP_DB` copies (entitlement counts and storage bytes, DR
-exporter inventory, admin insights, account export / user-inventory storage ids,
-account data targets) was ported to the JOBS service contract, migration
+After every main-worker surface that still read the old `APP_DB` copies
+(entitlement counts and storage bytes, DR exporter inventory, admin insights,
+account export / user-inventory storage ids, account data targets) is ported to
+the JOBS service contract, migration
 `packages/worker/migrations/0010-drop-jobs-tables.sql` drops `jobs` and
 `archived_job_artifacts` from `APP_DB` (applied by the regular deploy pipeline's
 D1 migration step).

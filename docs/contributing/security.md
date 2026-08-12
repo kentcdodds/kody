@@ -134,17 +134,18 @@ headers. This holds regardless of hosting mode, so local dev and preview are
 covered too.
 
 **2. A separate registrable domain (production).** `PACKAGE_APP_BASE_URL`
-(production Worker var, `https://kodyapps.dev` — the apex; the deploy attaches
-that host to the Worker as a Cloudflare custom domain plus a wildcard zone route
-for per-user subdomains — see [`setup-manifest.md`](./setup-manifest.md)) makes
-package apps cross-site from the app origin, so the `SameSite=Lax`, `HttpOnly`
-`kody_session` cookie never attaches to them and cross-origin `fetch` from
-package pages has no CORS grant (`withCors` only reflects same-origin, plus
-`/mcp`). It must stay a **separate registrable domain**: a subdomain of the app
-origin would still be same-site for cookie purposes. `getPackageAppBaseUrl`
-(`packages/worker/src/app-base-url.ts`) resolves the apex origin, and
-`getAppBaseUrl` refuses to resolve the package-app origin as the app origin so
-package runtime callbacks and first-party links always point back at the app.
+(production Worker var, `https://kodyapps.dev` — the apex; the deploy publishes
+apex and wildcard **zone routes** on the runtime Worker for that host, never a
+Workers custom domain in this zone — see
+[`setup-manifest.md`](./setup-manifest.md)) makes package apps cross-site from
+the app origin, so the `SameSite=Lax`, `HttpOnly` `kody_session` cookie never
+attaches to them and cross-origin `fetch` from package pages has no CORS grant
+(`withCors` only reflects same-origin, plus `/mcp`). It must stay a **separate
+registrable domain**: a subdomain of the app origin would still be same-site for
+cookie purposes. `getPackageAppBaseUrl` (`packages/worker/src/app-base-url.ts`)
+resolves the apex origin, and `getAppBaseUrl` refuses to resolve the package-app
+origin as the app origin so package runtime callbacks and first-party links
+always point back at the app.
 
 **3. Per-user subdomains (production).** Each owner's hosted apps are served
 from `{username}.<package-app host>` (`buildPackageAppSubdomainOrigin` in
@@ -153,11 +154,10 @@ from `{username}.<package-app host>` (`buildPackageAppSubdomainOrigin` in
 must be a valid single DNS label: lowercase letters, digits, and hyphens only,
 3–32 characters, alphanumeric edges (`dnsSafeUsernamePattern` in
 `packages/shared/src/public-urls.ts`). Every username satisfies this shape —
-underscores are rejected everywhere, and the pre-existing underscore accounts
-were migrated by hand on 2026-08-12 (decision 0017), so there is no lenient
-legacy tier. Wildcard DNS still routes invalid or nested labels to the Worker,
-so hostnames that are not exactly one valid username label fail closed with
-`404`.
+underscores are rejected everywhere, and there is no lenient recognition tier
+(decision 0017). Wildcard DNS still routes invalid or nested labels to the
+Worker, so hostnames that are not exactly one valid username label fail closed
+with `404`.
 
 Dispatch lives in `packages/worker/src/app/package-app-origin.ts`, called first
 in the Worker `fetch` handler:

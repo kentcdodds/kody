@@ -46,6 +46,10 @@ to become.
   coordinated deploy order and Durable Object script migration for extracting
   the package runtime lane into the `kody-runtime` Worker
   ([ADR 0016](../decisions/0016-mono-worker-extraction.md)).
+- [Jobs worker migration runbook](./jobs-worker-migration-runbook.md): Durable
+  Object transfer and bounded D1 copy for extracting the jobs/scheduled lane
+  into the `kody-jobs` Worker
+  ([ADR 0016](../decisions/0016-mono-worker-extraction.md)).
 - [Primitives map](./primitives.yaml): stable taxonomy of system primitives and
   invariants for the visual-recap skill
   (`.agents/skills/visual-recap/SKILL.md`). It is not a living feature changelog

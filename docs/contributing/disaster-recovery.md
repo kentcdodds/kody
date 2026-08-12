@@ -298,16 +298,17 @@ Restore rebuilds the derived stores below; do not treat them as recovery media:
   sealed dump. Storage ids absent from the inventory are not deleted by restore.
 - R2 restore puts sealed objects back by key; it does not sweep orphans that
   appeared after the sealed day.
-- **StorageRunner inventory** unions authoritative D1 sources: `jobs`,
-  `archived_job_artifacts`, the `user_storage_buckets` registry (including
-  ad-hoc / execute buckets), and `package_service_states` (projected service
-  storage ids). Platform DR has only a `D1Database`, so it does **not** walk
-  package manifests. A service whose Durable Object never projected into
-  `package_service_states` is therefore absent from sealed-day inventory until
-  it heartbeats or transitions; account deletion/export cover those via manifest
-  enumeration. Buckets known only inside a user's `RunLog` (and never registered
-  in `user_storage_buckets` or an entity table) remain outside DR inventory by
-  design; the selective RunLog lane does not export run-associated storage ids.
+- **StorageRunner inventory** unions authoritative sources: `jobs` and
+  `archived_job_artifacts` storage ids from the jobs worker (`JOBS_DB` via the
+  `JOBS` / `JobsStore` path), plus `APP_DB` `user_storage_buckets` (including
+  ad-hoc / execute buckets) and `package_service_states` (projected service
+  storage ids). Platform DR does **not** walk package manifests. A service whose
+  Durable Object never projected into `package_service_states` is therefore
+  absent from sealed-day inventory until it heartbeats or transitions; account
+  deletion/export cover those via manifest enumeration. Buckets known only
+  inside a user's `RunLog` (and never registered in `user_storage_buckets` or an
+  entity table) remain outside DR inventory by design; the selective RunLog lane
+  does not export run-associated storage ids.
 
 ## Credentials and Access
 
