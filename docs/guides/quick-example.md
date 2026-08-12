@@ -69,7 +69,7 @@ Show a short summary of the result.
 
 ## Step 3 — Name the ownership lesson
 
-In one short message, explain that this is now a package in **their** account:
+In one short message, explain that the package lives in **their** account:
 they can edit it, hang triggers on it, or fork something else. This is the
 permanence lesson for onboarding — not a practice run.
 

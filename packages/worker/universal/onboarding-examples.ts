@@ -80,7 +80,7 @@ export function buildOnboardingExamplePrompt(input: {
 		'Wait until that install is ready: search for the package by that kody id once, and if it is missing, try again once after I say install finished — do not poll in a loop.',
 		`Then invoke MY installed/forked package with packages.invoke using kody id "${input.kodyId}" (not a bare platform @kody/* static import — that fails for packages that need my account's packageStorage until forked).`,
 		exampleInvokeHint(input.kodyId),
-		'Show the result briefly. Explain that this is now a package I own.',
+		'Show the result briefly. Explain that the package is one I own.',
 		'Ask if I want to hang a trigger on it (webhook, Kody app, cron, or skip) — list options without recommending one.',
 		'Keep messages short.',
 	].join(' ')

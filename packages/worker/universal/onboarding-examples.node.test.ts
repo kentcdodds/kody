@@ -65,7 +65,7 @@ test('example prompt tells the agent to wait, invoke the fork, and offer trigger
 	expect(prompt).toContain('personal-capture')
 	expect(prompt).toContain('packages.invoke')
 	expect(prompt).toContain('do not poll')
-	expect(prompt).toContain('package I own')
+	expect(prompt).toContain('one I own')
 	expect(prompt).toContain('webhook')
 	expect(prompt).not.toMatch(/practice|toy/i)
 })
