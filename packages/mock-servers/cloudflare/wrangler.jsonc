@@ -6,13 +6,17 @@
 	"main": "./src/worker.ts",
 	"preview_urls": true,
 	"observability": { "enabled": true },
+	// SQLite-backed classes: Cloudflare rejects creating new key-value backed
+	// Durable Object namespaces (error 10099), and every PR preview deploys a
+	// fresh mock script that runs these migrations from scratch. Long-lived
+	// scripts already applied these tags, so the edit only affects new scripts.
 	"migrations": [
 		{
-			"new_classes": ["MockCloudflareEmailMessagesDurableObject"],
+			"new_sqlite_classes": ["MockCloudflareEmailMessagesDurableObject"],
 			"tag": "v1",
 		},
 		{
-			"new_classes": ["MockCloudflareArtifactsDurableObject"],
+			"new_sqlite_classes": ["MockCloudflareArtifactsDurableObject"],
 			"tag": "v2",
 		},
 	],
