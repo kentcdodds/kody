@@ -229,4 +229,60 @@ test('install overlaps Artifacts persist with publish checks', async () => {
 	resolvePersist?.()
 	resolveChecks?.()
 	await expect(installPromise).resolves.toMatchObject({ status: 'installed' })
+
+	let persistFinished = false
+	let persistStarted = false
+	const checksFailPersistGate = new Promise<void>((resolve) => {
+		resolvePersist = resolve
+	})
+	mockModule.prepareCommunityFork.mockResolvedValue(preparedFork())
+	mockModule.persistPreparedCommunityFork.mockImplementation(async () => {
+		persistStarted = true
+		await checksFailPersistGate
+		persistFinished = true
+		return forkResult()
+	})
+	mockModule.runRepoChecks.mockRejectedValue(
+		new Error('isolated check isolate reset'),
+	)
+	mockModule.refreshSavedPackageProjection.mockClear()
+	const checksThrowPromise = installCommunityListing(installInput())
+	for (let attempt = 0; attempt < 50; attempt += 1) {
+		if (persistStarted) break
+		await new Promise((resolve) => setTimeout(resolve, 0))
+	}
+	expect(persistStarted).toBe(true)
+	expect(persistFinished).toBe(false)
+	resolvePersist?.()
+	await expect(checksThrowPromise).rejects.toThrow(
+		'isolated check isolate reset',
+	)
+	expect(persistFinished).toBe(true)
+	expect(mockModule.refreshSavedPackageProjection).not.toHaveBeenCalled()
+
+	let checksFinished = false
+	let checksStarted = false
+	const persistFailChecksGate = new Promise<void>((resolve) => {
+		resolveChecks = resolve
+	})
+	mockModule.prepareCommunityFork.mockResolvedValue(preparedFork())
+	mockModule.persistPreparedCommunityFork.mockRejectedValue(
+		new Error('artifact bootstrap failed'),
+	)
+	mockModule.runRepoChecks.mockImplementation(async () => {
+		checksStarted = true
+		await persistFailChecksGate
+		checksFinished = true
+		return { ok: true, results: [] }
+	})
+	const persistThrowPromise = installCommunityListing(installInput())
+	for (let attempt = 0; attempt < 50; attempt += 1) {
+		if (checksStarted) break
+		await new Promise((resolve) => setTimeout(resolve, 0))
+	}
+	expect(checksStarted).toBe(true)
+	expect(checksFinished).toBe(false)
+	resolveChecks?.()
+	await expect(persistThrowPromise).rejects.toThrow('artifact bootstrap failed')
+	expect(checksFinished).toBe(true)
 })

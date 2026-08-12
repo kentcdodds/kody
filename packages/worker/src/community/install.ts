@@ -142,26 +142,52 @@ export async function installCommunityListing(input: {
 			'Typechecking and bundling npm deps — overlapping Artifacts bootstrap…',
 	})
 	const overlapStartedAt = Date.now()
-	const [fork, checks] = await Promise.all([
-		persistPreparedCommunityFork(prepared),
-		runRepoChecks({
-			workspace: createSnapshotFilesWorkspace(prepared.files),
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
-			expectedPackageScope: input.expectedPackageScope,
-		}),
+	const persistPromise = persistPreparedCommunityFork(prepared)
+	const checksPromise = runRepoChecks({
+		workspace: createSnapshotFilesWorkspace(prepared.files),
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		expectedPackageScope: input.expectedPackageScope,
+	})
+	// Overlap is safe only if both sides finish before we return. Promise.all
+	// would reject as soon as checks throw and abandon an in-flight persist,
+	// leaving a fork the client never received (retry then collides).
+	const [persistSettled, checksSettled] = await Promise.allSettled([
+		persistPromise,
+		checksPromise,
 	])
 	logInstallPhaseTiming({
 		phase: 'install-persist-and-checks',
 		durationMs: Date.now() - overlapStartedAt,
 		listingId: input.listingId,
-		packageId: fork.packageId,
-		filesCount: fork.filesCount,
-		status: checks.ok ? 'checks-ok' : 'checks-failed',
+		packageId:
+			persistSettled.status === 'fulfilled'
+				? persistSettled.value.packageId
+				: prepared.packageId,
+		filesCount:
+			persistSettled.status === 'fulfilled'
+				? persistSettled.value.filesCount
+				: Object.keys(prepared.files).length,
+		status:
+			persistSettled.status === 'rejected'
+				? 'persist-failed'
+				: checksSettled.status === 'rejected'
+					? 'checks-threw'
+					: checksSettled.value.ok
+						? 'checks-ok'
+						: 'checks-failed',
 	})
+	if (persistSettled.status === 'rejected') {
+		throw persistSettled.reason
+	}
+	if (checksSettled.status === 'rejected') {
+		throw checksSettled.reason
+	}
+	const fork = persistSettled.value
+	const checks = checksSettled.value
 	const summary: InstallForkSummary = {
 		forkId: fork.forkId,
 		packageId: fork.packageId,
