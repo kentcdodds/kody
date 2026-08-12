@@ -71,8 +71,8 @@ package-app apex:
   [`security.md`](../security.md)).
 - Production deploys require wildcard DNS and a `*.kodyapps.dev/*` Worker route
   (see [`setup-manifest.md`](../setup-manifest.md)).
-- Username renames become mandatory for underscore holders before subdomain
-  hosting works.
+- The one production underscore account was renamed by hand on 2026-08-12; no
+  underscore usernames remain, so no rename affordances exist in the app.
 - `parsePackageSearchIdentity`, status probes, and author docs must recognize
   both subdomain URLs and legacy path shapes during transition.
 - Revisit per-package subdomains only if same-owner isolation becomes a reported
