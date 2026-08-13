@@ -330,12 +330,13 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   same inboxes; outbound always sends from the canonical domains. Production
   commits `inbox.heykody.app,inbox.heykody.dev` / `heykody.app,heykody.dev`.
   Empty the lists when retiring the old domains' email DNS.
-- `ARTIFACTS_NAMESPACE` — Cloudflare Artifacts namespace for repo REST calls.
-  Defaults to `default` when unset (local dev and tests). Wrangler sets
-  `production` and `preview` per environment in
-  `packages/worker/wrangler.jsonc`. New repo sessions persist this value in D1
-  as `session_repo_namespace` so follow-up lookups resolve the correct namespace
-  even after env changes.
+- `ARTIFACTS_NAMESPACE` — Cloudflare Artifacts namespace for repo REST calls
+  and for choosing the env-scoped `ARTIFACTS` binding. Defaults to `default`
+  when unset (local dev and tests). Wrangler sets `production` and `preview`
+  per environment in `packages/worker/wrangler.jsonc`. Production/preview also
+  bind `ARTIFACTS` (JSRPC); create/get prefer that binding and fall back to
+  REST. New repo sessions persist this value in D1 as `session_repo_namespace`
+  so follow-up lookups resolve the correct namespace even after env changes.
 
 ## Disaster recovery (production Worker)
 

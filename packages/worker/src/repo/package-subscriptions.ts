@@ -20,7 +20,6 @@ import {
 	repoPushedTopic,
 	topicForArtifactsRepoEvent,
 } from './artifacts-events.ts'
-import { ensureArtifactsRepoPushSubscription } from './artifacts-push-subscriptions.ts'
 import { getEntitySourceByRepoId } from './entity-sources.ts'
 import { type EntitySourceRow } from './types.ts'
 import { getUserRepoById } from './user-repos.ts'
@@ -408,15 +407,6 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 	)
 	if (!source) {
 		return { outcome: 'unmatched', providerEvent }
-	}
-
-	if (providerEvent.type === 'cf.artifacts.repo.created') {
-		await ensureArtifactsRepoPushSubscription({
-			env: input.env,
-			userId: source.user_id,
-			sourceId: source.id,
-			repoName: source.repo_id,
-		})
 	}
 
 	await dispatchRepoSubscriptionEvents({

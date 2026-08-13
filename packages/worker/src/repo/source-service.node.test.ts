@@ -181,18 +181,6 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 		getRepoCountRef: newJobGetRepoCount,
 	})
 
-	let releasePushSubscription!: (value: {
-		subscriptionId: string | null
-		skipped: boolean
-	}) => void
-	mocks.ensureArtifactsRepoPushSubscription.mockImplementation(
-		() =>
-			new Promise((resolve) => {
-				releasePushSubscription = resolve
-			}),
-	)
-	mocks.waitUntil.mockImplementation(() => {})
-
 	try {
 		const serverTiming: Array<{ name: string; durationMs: number }> = []
 		const newSource = await ensureEntitySource({
@@ -210,7 +198,7 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 			serverTiming,
 		})
 
-		expect(newJobFetchMock).toHaveBeenCalledTimes(3)
+		expect(newJobFetchMock).toHaveBeenCalledTimes(2)
 		expect(newSource.repo_id).toBe('job-job-1')
 		expect(newSource.bootstrapAccess).toEqual({
 			defaultBranch: 'main',
@@ -222,9 +210,7 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 			'artifacts-repo-ready',
 			'entity-source-insert',
 		])
-		expect(mocks.waitUntil).toHaveBeenCalledTimes(1)
-		releasePushSubscription({ subscriptionId: null, skipped: true })
-		await mocks.waitUntil.mock.calls[0]?.[0]
+		expect(mocks.waitUntil).toHaveBeenCalledTimes(0)
 	} finally {
 		newJobFetchMock.mockRestore()
 		// Restore settled defaults before later phases so hanging push-subscription
@@ -281,7 +267,7 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 			sourceRoot: '/',
 		})
 
-		expect(recreateFetchMock).toHaveBeenCalledTimes(3)
+		expect(recreateFetchMock).toHaveBeenCalledTimes(2)
 		expect(recreateRunMock).toHaveBeenCalledTimes(1)
 		expect(recreatedSource).toMatchObject({
 			...existingRow,
@@ -375,7 +361,7 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 		expect(reuseRunMock).not.toHaveBeenCalled()
 		expect(reusedSource).toEqual(existingRow)
 		expect(reusedSource.bootstrapAccess).toBeUndefined()
-		expect(mocks.waitUntil).toHaveBeenCalledTimes(1)
+		expect(mocks.waitUntil).toHaveBeenCalledTimes(0)
 	} finally {
 		reuseFetchMock.mockRestore()
 	}

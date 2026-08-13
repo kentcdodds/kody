@@ -72,6 +72,10 @@ subscriptions for the owning user:
 | `repo.created` | `cf.artifacts.repo.created` | A managed Artifacts repo is created      |
 | `repo.deleted` | `cf.artifacts.repo.deleted` | A managed Artifacts repo is deleted      |
 
+Account-level Artifacts subscriptions deliver `repo.pushed` as
+`cf.artifacts.repo.pushed` with `source.type === "artifacts"`. Repo-scoped
+wrappers use the same event type with `source.type === "artifacts.repo"`.
+
 Declare handlers under `package.json#kody.subscriptions`. Delivery is same-user
 only: packages saved by the entity owner that declare the topic receive the
 event. Session fork Artifacts repos never fan out.

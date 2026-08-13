@@ -85,6 +85,7 @@ export const emailSendingEventTypes = [
 export const artifactsAccountEventTypes = [
 	'repo.created',
 	'repo.deleted',
+	'repo.pushed',
 ] as const
 
 export function fail(message: string): never {

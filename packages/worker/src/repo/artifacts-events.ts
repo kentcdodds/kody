@@ -34,16 +34,25 @@ const artifactsEventMetadataSchema = z.object({
 	eventTimestamp: z.iso.datetime(),
 })
 
+const artifactsEventUserSchema = z
+	.object({
+		id: z.string(),
+		email: z.string(),
+	})
+	.optional()
+
 const artifactsAccountSourceSchema = z.object({
 	type: z.literal('artifacts'),
 	namespace: z.string().min(1),
 	repoName: z.string().min(1),
+	user: artifactsEventUserSchema,
 })
 
 const artifactsRepoSourceSchema = z.object({
 	type: z.literal('artifacts.repo'),
 	namespace: z.string().min(1),
 	repoName: z.string().min(1),
+	user: artifactsEventUserSchema,
 })
 
 const artifactsRepoLifecyclePayloadSchema = z.object({
@@ -72,7 +81,7 @@ const cloudflareArtifactsRepoDeletedEventSchema = z.object({
 
 const cloudflareArtifactsRepoPushedEventSchema = z.object({
 	type: z.literal('cf.artifacts.repo.pushed'),
-	source: artifactsRepoSourceSchema,
+	source: z.union([artifactsAccountSourceSchema, artifactsRepoSourceSchema]),
 	payload: z.object({
 		ref: z.string().min(1),
 		before: z.string().min(1),

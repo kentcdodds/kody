@@ -863,7 +863,7 @@ test('ensureArtifactsAccountEventSubscription creates account-level lifecycle su
 					type: 'queues.queue',
 					queue_id: 'queue-artifacts',
 				},
-				events: ['repo.created', 'repo.deleted'],
+				events: ['repo.created', 'repo.deleted', 'repo.pushed'],
 			}),
 		}),
 	)

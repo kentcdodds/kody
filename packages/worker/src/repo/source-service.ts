@@ -1,11 +1,9 @@
-import { waitUntil } from 'cloudflare:workers'
 import {
 	buildEntityRepoId,
 	hasArtifactsAccess,
 	ensureArtifactRepoReady,
 	type ArtifactBootstrapAccess,
 } from './artifacts.ts'
-import { ensureArtifactsRepoPushSubscription } from './artifacts-push-subscriptions.ts'
 import {
 	getEntitySourceByEntity,
 	insertEntitySource,
@@ -124,12 +122,6 @@ export async function ensureEntitySource(input: {
 				indexedCommit: null,
 			})
 		}
-		scheduleArtifactsRepoPushSubscription({
-			env: input.env,
-			userId: existing.user_id,
-			sourceId: existing.id,
-			repoName: existing.repo_id,
-		})
 		return source
 	}
 	const row = buildEntitySourceRow({
@@ -149,27 +141,10 @@ export async function ensureEntitySource(input: {
 	await pushServerTiming(input.serverTiming, 'entity-source-insert', () =>
 		insertEntitySource(input.db, row),
 	)
-	scheduleArtifactsRepoPushSubscription({
-		env: input.env,
-		userId: row.user_id,
-		sourceId: row.id,
-		repoName: row.repo_id,
-	})
 	return {
 		...row,
 		bootstrapAccess: repoReady.recreated ? repoReady.bootstrapAccess : null,
 	}
-}
-
-function scheduleArtifactsRepoPushSubscription(input: {
-	env: Env
-	userId: string
-	sourceId: string
-	repoName: string
-}) {
-	// Best-effort; also runs from the repo.created consumer. Do not await —
-	// listing queues/subscriptions is not on the source-creation hot path.
-	waitUntil(ensureArtifactsRepoPushSubscription(input))
 }
 
 function hasAppDbBinding(db: D1Database | null | undefined) {
@@ -185,7 +160,7 @@ function missingPersistenceRequirements(input: {
 		missing.push('APP_DB')
 	}
 	if (!input.hasArtifactsAccess) {
-		missing.push('CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN')
+		missing.push('ARTIFACTS binding or CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN')
 	}
 	return missing
 }

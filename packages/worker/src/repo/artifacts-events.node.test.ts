@@ -44,7 +44,28 @@ test('artifacts event helpers parse envelopes, reject unknowns, and detect sessi
 		metadata,
 	})
 	expect(pushed?.type).toBe('cf.artifacts.repo.pushed')
+	expect(pushed?.source.type).toBe('artifacts.repo')
 	expect(topicForArtifactsRepoEvent(pushed!)).toBe(repoPushedTopic)
+
+	const accountPushed = parseCloudflareArtifactsRepoEvent({
+		type: 'cf.artifacts.repo.pushed',
+		source: {
+			type: 'artifacts',
+			namespace: 'production',
+			repoName: 'repo-abc',
+		},
+		payload: {
+			ref: 'refs/heads/main',
+			before: 'abc123def456abc123def456abc123def456abc1',
+			after: 'def789ghi012def789ghi012def789ghi012def7',
+			commits: [],
+			totalCommitsCount: 0,
+			commitsTruncated: false,
+		},
+		metadata,
+	})
+	expect(accountPushed?.source.type).toBe('artifacts')
+	expect(topicForArtifactsRepoEvent(accountPushed!)).toBe(repoPushedTopic)
 
 	const created = parseCloudflareArtifactsRepoEvent({
 		type: 'cf.artifacts.repo.created',
