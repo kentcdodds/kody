@@ -799,3 +799,308 @@ export function run(huge: HugeInput, small: SmallInput): string {
 		},
 	])
 })
+
+test('buildPackageSearchProjection follows local default-export bindings and one-hop imported types', () => {
+	const spotifyManifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/spotify-like-tools',
+			exports: {
+				'./search': './src/search.ts',
+			},
+			kody: {
+				id: 'spotify-like-tools',
+				description: 'Spotify-like thin-export package',
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+
+	const spotifyProjection = buildPackageSearchProjection(spotifyManifest, {
+		'src/search.ts': `import type { SearchParams } from '../lib/export-types.ts'
+import { searchCatalog } from '../lib/search-catalog.ts'
+
+/**
+ * Search the Spotify catalog.
+ */
+async function spotifySearch(params: SearchParams = {}) {
+	return await searchCatalog(params)
+}
+
+export default spotifySearch
+`,
+		'lib/export-types.ts': `import type { PagingParams } from './paging.ts'
+
+export type SearchParams = {
+	q?: string
+	types?: Array<'album' | 'artist' | 'track'>
+	limit?: number
+	paging?: PagingParams
+}
+
+export type UnrelatedExportType = {
+	ignored: boolean
+}
+`,
+		'lib/paging.ts': `export type PagingParams = {
+	offset?: number
+}
+`,
+		'lib/search-catalog.ts': `export async function searchCatalog(params: { q?: string }) {
+	return params
+}
+`,
+	})
+
+	const [spotifyExport] = spotifyProjection.exports
+	expect(spotifyExport).toMatchObject({
+		subpath: './search',
+		runtimeTarget: 'src/search.ts',
+		description: 'Search the Spotify catalog.',
+		typeDefinition:
+			'export default async function spotifySearch(params: SearchParams = {})',
+	})
+	expect(spotifyExport?.functions).toEqual([
+		expect.objectContaining({
+			name: 'default',
+			description: 'Search the Spotify catalog.',
+			typeDefinition:
+				'export default async function spotifySearch(params: SearchParams = {})',
+		}),
+	])
+	expect(spotifyExport?.referencedTypes.map((type) => type.name)).toEqual([
+		'SearchParams',
+	])
+	expect(spotifyExport?.referencedTypes[0]?.kind).toBe('type')
+	expect(spotifyExport?.referencedTypes[0]?.definition).toContain('q?: string')
+	expect(spotifyExport?.referencedTypes.map((type) => type.name)).not.toContain(
+		'PagingParams',
+	)
+	expect(spotifyExport?.referencedTypes.map((type) => type.name)).not.toContain(
+		'UnrelatedExportType',
+	)
+
+	const inlineDefaultManifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/inline-default-tools',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'inline-default-tools',
+				description: 'Inline default export package',
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	const inlineDefaultProjection = buildPackageSearchProjection(
+		inlineDefaultManifest,
+		{
+			'src/index.ts': `/**
+ * Look up a city forecast.
+ */
+export default async function forecast(city: string): Promise<string> {
+	return city
+}
+`,
+		},
+	)
+	expect(inlineDefaultProjection.exports[0]).toMatchObject({
+		description: 'Look up a city forecast.',
+		typeDefinition:
+			'export default async function forecast(city: string): Promise<string>',
+		functions: [
+			expect.objectContaining({
+				name: 'default',
+				description: 'Look up a city forecast.',
+			}),
+		],
+	})
+
+	const namedAndLocalTypeManifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/named-local-type-tools',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'named-local-type-tools',
+				description: 'Named export with a same-file type',
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	const namedAndLocalTypeProjection = buildPackageSearchProjection(
+		namedAndLocalTypeManifest,
+		{
+			'src/index.ts': `export type ForecastInput = {
+	city: string
+}
+
+/**
+ * Look up a city forecast.
+ */
+export async function forecast(input: ForecastInput): Promise<string> {
+	return input.city
+}
+`,
+		},
+	)
+	expect(namedAndLocalTypeProjection.exports[0]?.functions[0]).toMatchObject({
+		name: 'forecast',
+		description: 'Look up a city forecast.',
+		typeDefinition:
+			'export async function forecast(input: ForecastInput): Promise<string>',
+	})
+	expect(
+		namedAndLocalTypeProjection.exports[0]?.referencedTypes.map(
+			(type) => type.name,
+		),
+	).toEqual(['ForecastInput'])
+
+	const specifierImportManifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/imported-type-variants',
+			exports: {
+				'./inline-type': './src/inline-type.ts',
+				'./value-type': './src/value-type.ts',
+				'./arrow-default': './src/arrow-default.ts',
+			},
+			kody: {
+				id: 'imported-type-variants',
+				description: 'Imported type specifier variants',
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	const specifierImportProjection = buildPackageSearchProjection(
+		specifierImportManifest,
+		{
+			'src/inline-type.ts': `import { type SearchParams } from '../lib/export-types.ts'
+
+/**
+ * Search with an inline type import.
+ */
+export default async function search(params: SearchParams = {}) {
+	return params
+}
+`,
+			'src/value-type.ts': `import { SearchParams } from '../lib/export-types'
+
+/**
+ * Search with a value import used only as a type.
+ */
+export async function search(params: SearchParams = {}): Promise<SearchParams> {
+	return params
+}
+`,
+			'src/arrow-default.ts': `import type { SearchParams } from '../lib/export-types.ts'
+
+/**
+ * Search with a local arrow binding.
+ */
+const search = async (params: SearchParams = {}) => params
+
+export default search
+`,
+			'lib/export-types.ts': `export type SearchParams = {
+	q?: string
+}
+`,
+		},
+	)
+	const bySubpath = Object.fromEntries(
+		specifierImportProjection.exports.map((exportDetail) => [
+			exportDetail.subpath,
+			exportDetail,
+		]),
+	)
+	expect(bySubpath['./inline-type']?.description).toBe(
+		'Search with an inline type import.',
+	)
+	expect(
+		bySubpath['./inline-type']?.referencedTypes.map((type) => type.name),
+	).toEqual(['SearchParams'])
+	expect(bySubpath['./value-type']?.functions[0]).toMatchObject({
+		name: 'search',
+		description: 'Search with a value import used only as a type.',
+	})
+	expect(
+		bySubpath['./value-type']?.referencedTypes.map((type) => type.name),
+	).toEqual(['SearchParams'])
+	expect(bySubpath['./arrow-default']).toMatchObject({
+		description: 'Search with a local arrow binding.',
+		typeDefinition:
+			'export default async function search(params: SearchParams = {}): unknown',
+	})
+	expect(
+		bySubpath['./arrow-default']?.referencedTypes.map((type) => type.name),
+	).toEqual(['SearchParams'])
+
+	const jsDocFallbackManifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/jsdoc-fallback-tools',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'jsdoc-fallback-tools',
+				description: 'JSDoc fallback on export default',
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	const jsDocFallbackProjection = buildPackageSearchProjection(
+		jsDocFallbackManifest,
+		{
+			'src/index.ts': `async function search(query: string) {
+	return query
+}
+
+/**
+ * Docs live on the export default line.
+ */
+export default search
+`,
+		},
+	)
+	expect(jsDocFallbackProjection.exports[0]).toMatchObject({
+		description: 'Docs live on the export default line.',
+		typeDefinition: 'export default async function search(query: string)',
+	})
+
+	const reexportManifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/reexport-tools',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'reexport-tools',
+				description: 'Imported value re-export package',
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	const reexportProjection = buildPackageSearchProjection(reexportManifest, {
+		'src/index.ts': `import foo from './other.ts'
+
+/**
+ * Should not be attributed to an imported re-export.
+ */
+export default foo
+`,
+		'src/other.ts': `/**
+ * Implemented in another module.
+ */
+export default async function foo(params: { q: string }) {
+	return params
+}
+`,
+	})
+	expect(reexportProjection.exports[0]).toMatchObject({
+		description: null,
+		typeDefinition: null,
+		functions: [],
+		referencedTypes: [],
+	})
+})

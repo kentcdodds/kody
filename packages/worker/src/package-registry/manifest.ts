@@ -634,6 +634,27 @@ function collectTypeReferenceNamesFromNodes(nodes: Array<unknown>) {
 	return names
 }
 
+function getParamTypeAnnotationNodes(param: unknown): Array<unknown> {
+	if (!param || typeof param !== 'object') return []
+	const nodes: Array<unknown> = []
+	const typeAnnotation = (param as { typeAnnotation?: unknown }).typeAnnotation
+	if (typeAnnotation) nodes.push(typeAnnotation)
+	const type = getNodeType(param)
+	if (type === 'AssignmentPattern') {
+		nodes.push(
+			...getParamTypeAnnotationNodes((param as { left?: unknown }).left),
+		)
+	}
+	if (type === 'RestElement') {
+		nodes.push(
+			...getParamTypeAnnotationNodes(
+				(param as { argument?: unknown }).argument,
+			),
+		)
+	}
+	return nodes
+}
+
 function getFunctionReferenceNodes(
 	node: unknown,
 	options: { includeTypeParameters?: boolean } = {},
@@ -648,9 +669,7 @@ function getFunctionReferenceNodes(
 		...((options.includeTypeParameters ?? true)
 			? [functionNode.typeParameters]
 			: []),
-		...params.map(
-			(param) => (param as { typeAnnotation?: unknown }).typeAnnotation,
-		),
+		...params.flatMap(getParamTypeAnnotationNodes),
 		functionNode.returnType,
 	]
 }
@@ -786,7 +805,7 @@ function getReturnType(source: string, node: unknown) {
 function getVariableFunctionSignature(input: {
 	source: string
 	declarator: ModuleAstNode
-	exportKind: 'export' | 'export declare'
+	exportKind: 'export' | 'export declare' | 'export default'
 }) {
 	const id = (input.declarator as { id?: unknown }).id
 	const name = readIdentifierName(id)
@@ -795,7 +814,9 @@ function getVariableFunctionSignature(input: {
 	const typeStart = getNodeStart(typeAnnotation)
 	const typeEnd = getNodeEnd(typeAnnotation)
 	if (typeStart != null && typeEnd != null) {
-		return `${input.exportKind} const ${name}${input.source.slice(typeStart, typeEnd)}`
+		return input.exportKind === 'export default'
+			? `${input.exportKind} ${name}${input.source.slice(typeStart, typeEnd)}`
+			: `${input.exportKind} const ${name}${input.source.slice(typeStart, typeEnd)}`
 	}
 	const init = (input.declarator as { init?: unknown }).init as
 		| ModuleAstNode
@@ -844,7 +865,285 @@ function getVariableDeclarationExportKind(
 		: 'export'
 }
 
-function collectExportedFunctionsFromSource(source: string) {
+type LocalFunctionBinding = {
+	kind: 'function' | 'variable'
+	node: ModuleAstNode
+	jsDocStart: number | null
+}
+
+type ImportedTypeSpecifier = {
+	localName: string
+	importedName: string
+	moduleSpecifier: string
+}
+
+function dirnamePackagePath(filePath: string) {
+	const normalized = normalizePackageWorkspacePath(filePath)
+	const separator = normalized.lastIndexOf('/')
+	return separator === -1 ? '' : normalized.slice(0, separator)
+}
+
+function normalizeRelativePackagePath(path: string) {
+	const parts: Array<string> = []
+	for (const segment of path.replace(/\\/g, '/').split('/')) {
+		if (!segment || segment === '.') continue
+		if (segment === '..') {
+			parts.pop()
+			continue
+		}
+		parts.push(segment)
+	}
+	return parts.join('/')
+}
+
+function resolveSamePackageTypeImportPath(input: {
+	files: Record<string, string>
+	fromPath: string
+	specifier: string
+}) {
+	if (!input.specifier.startsWith('./') && !input.specifier.startsWith('../')) {
+		return null
+	}
+	const fromDir = dirnamePackagePath(input.fromPath)
+	const resolved = normalizeRelativePackagePath(
+		fromDir ? `${fromDir}/${input.specifier}` : input.specifier,
+	)
+	const candidates = [resolved]
+	if (!resolved.endsWith('.ts')) {
+		candidates.push(`${resolved}.ts`)
+	}
+	return candidates.find((candidate) => input.files[candidate] != null) ?? null
+}
+
+function collectImportedBindingNames(body: Array<ModuleAstNode>) {
+	const names = new Set<string>()
+	for (const statement of body) {
+		if (statement.type !== 'ImportDeclaration') continue
+		const specifiers = (statement as { specifiers?: unknown }).specifiers
+		if (!Array.isArray(specifiers)) continue
+		for (const specifier of specifiers) {
+			const localName = readIdentifierName(
+				(specifier as { local?: unknown }).local,
+			)
+			if (localName) names.add(localName)
+		}
+	}
+	return names
+}
+
+function collectLocalFunctionBindings(body: Array<ModuleAstNode>) {
+	const bindings = new Map<string, LocalFunctionBinding>()
+	function addFunctionDeclaration(
+		declaration: ModuleAstNode,
+		jsDocStart: number | null,
+	) {
+		const name = readIdentifierName((declaration as { id?: unknown }).id)
+		if (!name || bindings.has(name)) return
+		bindings.set(name, {
+			kind: 'function',
+			node: declaration,
+			jsDocStart,
+		})
+	}
+	function addVariableDeclaration(
+		declaration: ModuleAstNode,
+		jsDocStart: number | null,
+	) {
+		const declarations = (declaration as { declarations?: unknown })
+			.declarations
+		if (!Array.isArray(declarations)) return
+		for (const declarator of (declarations as Array<ModuleAstNode>).filter(
+			isFunctionDeclarator,
+		)) {
+			const name = readIdentifierName((declarator as { id?: unknown }).id)
+			if (!name || bindings.has(name)) continue
+			bindings.set(name, {
+				kind: 'variable',
+				node: declarator,
+				jsDocStart,
+			})
+		}
+	}
+	for (const statement of body) {
+		if (isFunctionDeclaration(statement)) {
+			addFunctionDeclaration(statement, getNodeStart(statement))
+			continue
+		}
+		if (getNodeType(statement) === 'VariableDeclaration') {
+			addVariableDeclaration(statement, getNodeStart(statement))
+			continue
+		}
+		if (statement.type !== 'ExportNamedDeclaration') continue
+		const declaration = (statement as { declaration?: unknown }).declaration as
+			| ModuleAstNode
+			| undefined
+		if (isFunctionDeclaration(declaration)) {
+			addFunctionDeclaration(
+				declaration,
+				getNodeStart(declaration) ?? getNodeStart(statement),
+			)
+			continue
+		}
+		if (declaration && getNodeType(declaration) === 'VariableDeclaration') {
+			addVariableDeclaration(
+				declaration,
+				getNodeStart(declaration) ?? getNodeStart(statement),
+			)
+		}
+	}
+	return bindings
+}
+
+function readImportSourceSpecifier(node: ModuleAstNode) {
+	const value = (node as { source?: { value?: unknown } }).source?.value
+	return typeof value === 'string' && value.trim() ? value : null
+}
+
+function collectImportedTypeSpecifiers(body: Array<ModuleAstNode>) {
+	const specifiers: Array<ImportedTypeSpecifier> = []
+	for (const statement of body) {
+		if (statement.type !== 'ImportDeclaration') continue
+		const moduleSpecifier = readImportSourceSpecifier(statement)
+		if (
+			!moduleSpecifier ||
+			(!moduleSpecifier.startsWith('./') && !moduleSpecifier.startsWith('../'))
+		) {
+			continue
+		}
+		const rawSpecifiers = (statement as { specifiers?: unknown }).specifiers
+		if (!Array.isArray(rawSpecifiers)) continue
+		for (const specifier of rawSpecifiers) {
+			if (getNodeType(specifier) !== 'ImportSpecifier') continue
+			const localName = readIdentifierName(
+				(specifier as { local?: unknown }).local,
+			)
+			if (!localName) continue
+			const importedName =
+				readIdentifierName((specifier as { imported?: unknown }).imported) ??
+				localName
+			specifiers.push({
+				localName,
+				importedName,
+				moduleSpecifier,
+			})
+		}
+	}
+	return specifiers
+}
+
+function remapAliasedImportedType(input: {
+	localTypes: Map<string, LocalTypeDeclaration>
+	specifier: ImportedTypeSpecifier
+}) {
+	if (input.specifier.importedName === input.specifier.localName) return
+	if (input.localTypes.has(input.specifier.localName)) return
+	const declaration = input.localTypes.get(input.specifier.importedName)
+	if (!declaration) return
+	input.localTypes.set(input.specifier.localName, {
+		...declaration,
+		name: input.specifier.localName,
+	})
+}
+
+function createImportedTypeMerger(input: {
+	sourcePath: string | null
+	files?: Record<string, string>
+	body: Array<ModuleAstNode>
+	localTypes: Map<string, LocalTypeDeclaration>
+}) {
+	const importedSpecifiers = collectImportedTypeSpecifiers(input.body)
+	const resolvedModules = new Set<string>()
+	return (typeNames: Array<string>) => {
+		if (!input.sourcePath || !input.files || typeNames.length === 0) return
+		for (const specifier of importedSpecifiers) {
+			if (!typeNames.includes(specifier.localName)) continue
+			if (!resolvedModules.has(specifier.moduleSpecifier)) {
+				const resolvedPath = resolveSamePackageTypeImportPath({
+					files: input.files,
+					fromPath: input.sourcePath,
+					specifier: specifier.moduleSpecifier,
+				})
+				if (!resolvedPath) continue
+				const importedSource = input.files[resolvedPath]
+				if (importedSource == null) continue
+				let importedBody: Array<ModuleAstNode>
+				try {
+					importedBody = getProgramBody(parseModuleSource(importedSource))
+				} catch {
+					continue
+				}
+				resolvedModules.add(specifier.moduleSpecifier)
+				for (const [name, declaration] of collectLocalTypeDeclarations(
+					importedSource,
+					importedBody,
+				)) {
+					if (!input.localTypes.has(name)) {
+						input.localTypes.set(name, declaration)
+					}
+				}
+			}
+			remapAliasedImportedType({
+				localTypes: input.localTypes,
+				specifier,
+			})
+		}
+	}
+}
+
+function projectDefaultExportIdentifier(input: {
+	source: string
+	statement: ModuleAstNode
+	declaration: ModuleAstNode
+	localFunctions: Map<string, LocalFunctionBinding>
+	importedBindings: Set<string>
+	referencedTypesFor: (
+		typeNames: Array<string>,
+	) => Array<PackageReferencedTypeProjection>
+}): PackageExportFunctionProjection | null {
+	const name = readIdentifierName(input.declaration)
+	if (!name || input.importedBindings.has(name)) return null
+	const binding = input.localFunctions.get(name)
+	if (!binding) return null
+	const typeDefinition =
+		binding.kind === 'function'
+			? getFunctionSignature({
+					source: input.source,
+					node: binding.node,
+					exportKeyword: 'export default',
+				})
+			: getVariableFunctionSignature({
+					source: input.source,
+					declarator: binding.node,
+					exportKind: 'export default',
+				})
+	const typeNames = typeDefinition
+		? collectTypeReferenceNamesFromNodes(
+				binding.kind === 'function'
+					? getFunctionReferenceNodes(binding.node)
+					: getVariableFunctionReferenceNodes(binding.node),
+			)
+		: []
+	const bindingJsDoc =
+		binding.jsDocStart == null
+			? null
+			: readLeadingJsDoc(input.source, binding.jsDocStart)
+	const exportStart = getNodeStart(input.statement)
+	const exportJsDoc =
+		exportStart == null ? null : readLeadingJsDoc(input.source, exportStart)
+	return {
+		name: 'default',
+		description: bindingJsDoc ?? exportJsDoc,
+		typeDefinition,
+		referencedTypes: typeDefinition ? input.referencedTypesFor(typeNames) : [],
+	}
+}
+
+function collectExportedFunctionsFromSource(input: {
+	source: string
+	files?: Record<string, string>
+	sourcePath?: string | null
+}) {
+	const { source } = input
 	let body: Array<ModuleAstNode>
 	try {
 		body = getProgramBody(parseModuleSource(source))
@@ -852,6 +1151,21 @@ function collectExportedFunctionsFromSource(source: string) {
 		return []
 	}
 	const localTypes = collectLocalTypeDeclarations(source, body)
+	const localFunctions = collectLocalFunctionBindings(body)
+	const importedBindings = collectImportedBindingNames(body)
+	const mergeImportedTypes = createImportedTypeMerger({
+		sourcePath: input.sourcePath ?? null,
+		files: input.files,
+		body,
+		localTypes,
+	})
+	function referencedTypesFor(typeNames: Array<string>) {
+		mergeImportedTypes(typeNames)
+		return collectReferencedTypes({
+			typeNames,
+			localTypes,
+		})
+	}
 	const functions: Array<PackageExportFunctionProjection> = []
 	for (const statement of body) {
 		if (statement.type === 'ExportDefaultDeclaration') {
@@ -875,14 +1189,23 @@ function collectExportedFunctionsFromSource(source: string) {
 							: readLeadingJsDoc(source, getNodeStart(statement) ?? 0)),
 					typeDefinition,
 					referencedTypes: typeDefinition
-						? collectReferencedTypes({
-								typeNames: collectTypeReferenceNamesFromNodes(
+						? referencedTypesFor(
+								collectTypeReferenceNamesFromNodes(
 									getFunctionReferenceNodes(declaration),
 								),
-								localTypes,
-							})
+							)
 						: [],
 				})
+			} else if (getNodeType(declaration) === 'Identifier') {
+				const projected = projectDefaultExportIdentifier({
+					source,
+					statement,
+					declaration,
+					localFunctions,
+					importedBindings,
+					referencedTypesFor,
+				})
+				if (projected) functions.push(projected)
 			}
 			continue
 		}
@@ -906,12 +1229,11 @@ function collectExportedFunctionsFromSource(source: string) {
 				description,
 				typeDefinition,
 				referencedTypes: typeDefinition
-					? collectReferencedTypes({
-							typeNames: collectTypeReferenceNamesFromNodes(
+					? referencedTypesFor(
+							collectTypeReferenceNamesFromNodes(
 								getFunctionReferenceNodes(declaration),
 							),
-							localTypes,
-						})
+						)
 					: [],
 			})
 			continue
@@ -938,12 +1260,11 @@ function collectExportedFunctionsFromSource(source: string) {
 				description,
 				typeDefinition,
 				referencedTypes: typeDefinition
-					? collectReferencedTypes({
-							typeNames: collectTypeReferenceNamesFromNodes(
+					? referencedTypesFor(
+							collectTypeReferenceNamesFromNodes(
 								getVariableFunctionReferenceNodes(declarator),
 							),
-							localTypes,
-						})
+						)
 					: [],
 			})
 		}
@@ -964,9 +1285,19 @@ function summarizePackageExport(input: {
 	const typesSource = typesPath
 		? (input.files?.[normalizePackageWorkspacePath(typesPath)] ?? null)
 		: null
-	const functions = collectExportedFunctionsFromSource(
-		typesSource ?? runtimeSource ?? '',
-	)
+	const source = typesSource ?? runtimeSource ?? ''
+	const sourcePath = typesSource
+		? typesPath
+			? normalizePackageWorkspacePath(typesPath)
+			: null
+		: runtimeTarget
+			? normalizePackageWorkspacePath(runtimeTarget)
+			: null
+	const functions = collectExportedFunctionsFromSource({
+		source,
+		files: input.files,
+		sourcePath,
+	})
 	const [firstFunction] = functions
 	return {
 		subpath: normalizePackageExportKey(input.exportName),
