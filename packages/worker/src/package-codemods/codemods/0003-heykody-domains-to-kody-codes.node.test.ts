@@ -65,6 +65,22 @@ test('0003 never rewrites subdomains, emails, bare hostnames, or lookalike hosts
 	])
 })
 
+test('0003 flags a lookalike-only file for manual review (never clean-scans it)', () => {
+	const files = {
+		'phish.ts': "const evil = 'https://heykody.app.evil.example/login'\n",
+	}
+	const findings = heykodyDomainsToKodyCodesCodemod.detect(files)
+	expect(findings).toEqual([
+		{ path: 'phish.ts', message: expect.stringContaining('manually') },
+	])
+	const result = heykodyDomainsToKodyCodesCodemod.transform(files)
+	expect(result.changed).toBe(false)
+	expect(result.files['phish.ts']).toBe(files['phish.ts'])
+	expect(result.needsManual).toEqual([
+		{ path: 'phish.ts', message: expect.stringContaining('manually') },
+	])
+})
+
 test('0003 detect reports rewritable origins and skips binary-ish paths', () => {
 	const files = {
 		'index.ts': "export const url = 'https://heykody.app/guides'\n",

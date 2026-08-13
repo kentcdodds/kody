@@ -19,13 +19,21 @@ export const heykodyDomainsToKodyCodesCodemodId =
 const legacyOriginPattern = /https:\/\/heykody\.(?:app|dev)(?!\.?[A-Za-z0-9-])/g
 
 /**
- * Legacy hostname mentions that are not full https:// origins (bare
+ * Legacy hostname mentions that survive the origin rewrite (bare
  * `heykody.app` prose, email addresses on `heykody.*` domains, subdomain
- * hosts). These are reported for manual review, never rewritten: bare
- * mentions can be data (stored addresses, config values, historical notes)
- * where a blind rewrite silently changes meaning.
+ * hosts, and lookalike hostnames such as `heykody.app.evil.example`).
+ * These are reported for manual review, never rewritten: they can be data
+ * (stored addresses, config values, historical notes) where a blind
+ * rewrite silently changes meaning. Tested against the post-rewrite text
+ * so every non-rewritable occurrence is flagged, including ones embedded
+ * in an https:// origin the rewriter refused.
  */
-const legacyMentionPattern = /(?<!https:\/\/)\bheykody\.(?:app|dev)\b/
+const legacyMentionPattern = /\bheykody\.(?:app|dev)\b/
+
+function hasManualMention(source: string) {
+	legacyOriginPattern.lastIndex = 0
+	return legacyMentionPattern.test(source.replace(legacyOriginPattern, ''))
+}
 
 const rewriteMessage =
 	'References a legacy Kody origin (https://heykody.app or https://heykody.dev); rewrite to https://kody.codes.'
@@ -60,7 +68,7 @@ function detectLegacyDomains(
 		findings.push({ path, message: rewriteMessage })
 	}
 	for (const path of listFilesMatching(files, (source) =>
-		legacyMentionPattern.test(source),
+		hasManualMention(source),
 	)) {
 		if (findings.some((finding) => finding.path === path)) continue
 		findings.push({ path, message: manualMentionMessage })
@@ -86,7 +94,7 @@ function transformLegacyDomains(
 			nextFiles[path] = rewritten
 			changedPaths.push(path)
 		}
-		if (legacyMentionPattern.test(rewritten)) {
+		if (hasManualMention(rewritten)) {
 			needsManual.push({ path, message: manualMentionMessage })
 		}
 	}
