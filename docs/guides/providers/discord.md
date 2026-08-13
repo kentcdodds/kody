@@ -60,7 +60,7 @@ OAuth lane is quicker to set up.
    and click **New Application**.
 2. On the **OAuth2** tab, copy the **Client ID**, and reset/reveal the **Client
    Secret**.
-3. Under **Redirects**, add `https://heykody.app/connect/oauth` (a self-hosted
+3. Under **Redirects**, add `https://kody.codes/connect/oauth` (a self-hosted
    deployment registers its own origin plus `/connect/oauth`).
 4. Optional: enable the **Public Client** toggle to allow a secret-less PKCE
    exchange; otherwise the app is confidential.
@@ -70,7 +70,7 @@ OAuth lane is quicker to set up.
 Confidential (default) shape:
 
 ```text
-https://heykody.app/connect/oauth?provider=discord&authorizeUrl=https%3A%2F%2Fdiscord.com%2Foauth2%2Fauthorize&tokenUrl=https%3A%2F%2Fdiscord.com%2Fapi%2Foauth2%2Ftoken&flow=confidential&scopes=identify%20guilds
+https://kody.codes/connect/oauth?provider=discord&authorizeUrl=https%3A%2F%2Fdiscord.com%2Foauth2%2Fauthorize&tokenUrl=https%3A%2F%2Fdiscord.com%2Fapi%2Foauth2%2Ftoken&flow=confidential&scopes=identify%20guilds
 ```
 
 Decoded: authorize URL `https://discord.com/oauth2/authorize`, token URL
@@ -98,7 +98,7 @@ client secret. Paste the client credentials into the setup form, then authorize.
 Save it through the account secrets page — never paste the token into chat:
 
 ```text
-https://heykody.app/account/secrets/new?name=discordBotToken&description=Discord%20bot%20token&allowedHosts=discord.com&scope=user
+https://kody.codes/account/secrets/new?name=discordBotToken&description=Discord%20bot%20token&allowedHosts=discord.com&scope=user
 ```
 
 Approve the `discord.com` host on the same page after saving.

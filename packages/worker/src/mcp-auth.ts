@@ -268,6 +268,13 @@ export async function handleMcpRequest({
 		clientName: classification.clientName,
 		clientVersion: classification.clientVersion,
 		userId: mcpUser.userId,
+		requestHost: (() => {
+			try {
+				return new URL(request.url).hostname
+			} catch {
+				return ''
+			}
+		})(),
 	})
 
 	return await withAccountWriteLease({

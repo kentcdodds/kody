@@ -24,10 +24,10 @@ export function TermsRoute(_handle: Handle) {
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Who runs Kody</h2>
 				<p mix={css(descriptionCss)}>
-					Kody at heykody.app is operated by Kent C. Dodds. Questions about
-					these terms or the service can go to{' '}
-					<a href="mailto:support@heykody.app" mix={css(mutedLinkCss)}>
-						support@heykody.app
+					Kody at kody.codes is operated by Kent C. Dodds. Questions about these
+					terms or the service can go to{' '}
+					<a href="mailto:support@kody.codes" mix={css(mutedLinkCss)}>
+						support@kody.codes
 					</a>
 					.
 				</p>
@@ -111,8 +111,8 @@ export function TermsRoute(_handle: Handle) {
 				</p>
 				<p mix={css(descriptionCss)}>
 					There are no automatic refunds. If something went wrong, email{' '}
-					<a href="mailto:support@heykody.app" mix={css(mutedLinkCss)}>
-						support@heykody.app
+					<a href="mailto:support@kody.codes" mix={css(mutedLinkCss)}>
+						support@kody.codes
 					</a>
 					. Refund requests are considered case by case. Taxes and payment
 					processor terms may also apply.

@@ -60,7 +60,7 @@ only sign-in method (no usable password, no passkey, no other connection).
 ## Provider app setup
 
 Use `https://<your-domain>/auth/<provider>/callback` as the callback/redirect
-URL, for example `https://heykody.app/auth/github/callback`. For local testing
+URL, for example `https://kody.codes/auth/github/callback`. For local testing
 against real providers use `http://localhost:3742/auth/<provider>/callback`.
 
 ### GitHub

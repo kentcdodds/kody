@@ -92,7 +92,7 @@ If those conditions are not met, stop and fix the integration first.
      `search({ entity: "{id}:secret" })`.
 3. If the required integration or secret is missing, **stop**.
    - For a matching built-in, surface
-     `https://heykody.app/connect/oauth?provider=<slug>`.
+     `https://kody.codes/connect/oauth?provider=<slug>`.
    - Otherwise surface the exact BYO `/connect/oauth` or `/account/secrets/new`
      URL in chat.
    - Wait for the user to confirm they completed the connect flow.
@@ -185,10 +185,10 @@ Even in that case:
 
 When setup is incomplete, tell the user what must happen next in concrete terms:
 
-- what connect URL to open (`https://heykody.app/...` — the origin users open
+- what connect URL to open (`https://kody.codes/...` — the origin users open
   Kody on)
 - what provider settings or redirect URI to register (exactly
-  `https://heykody.app/connect/oauth`)
+  `https://kody.codes/connect/oauth`)
 - that you are waiting for confirmation before building the dependent package or
   package app
 - that you will run a minimal authenticated verification step after setup

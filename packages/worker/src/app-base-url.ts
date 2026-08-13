@@ -5,7 +5,7 @@ import {
 } from '@kody-internal/shared/public-urls.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 
-const DEFAULT_APP_BASE_URL = 'https://heykody.app'
+const DEFAULT_APP_BASE_URL = 'https://kody.codes'
 
 type PackageAppBaseUrlEnv = {
 	PACKAGE_APP_BASE_URL?: string | null

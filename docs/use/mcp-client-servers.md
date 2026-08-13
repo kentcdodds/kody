@@ -8,8 +8,8 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 
 ## Add a server
 
-1. Open [`/account/mcp-servers`](https://heykody.app/account/mcp-servers), or
-   ask your agent to use `mcp_server_add` with a short kebab-case `name` and the
+1. Open [`/account/mcp-servers`](https://kody.codes/account/mcp-servers), or ask
+   your agent to use `mcp_server_add` with a short kebab-case `name` and the
    server `url` (https required).
 2. If the server authenticates with a static bearer token (or other
    Authorization scheme), paste it in the optional Bearer token field — or pass
@@ -27,7 +27,7 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 When Kody connects, it registers as an OAuth client using:
 
 - **Client origin:** the deployment's canonical app origin (for hosted Kody,
-  `https://heykody.app`)
+  `https://kody.codes`)
 - **Redirect URI:** `{origin}/account/mcp-servers/oauth/callback`
 
 Many authorization servers (including FusionAuth "authorized origins" / redirect

@@ -24,10 +24,10 @@ export function PrivacyRoute(_handle: Handle) {
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Who is responsible for your data</h2>
 				<p mix={css(descriptionCss)}>
-					Kent C. Dodds, operator of Kody at heykody.app, is the data controller
+					Kent C. Dodds, operator of Kody at kody.codes, is the data controller
 					for the hosted service. You can reach the operator at{' '}
-					<a href="mailto:support@heykody.app" mix={css(mutedLinkCss)}>
-						support@heykody.app
+					<a href="mailto:support@kody.codes" mix={css(mutedLinkCss)}>
+						support@kody.codes
 					</a>
 					. A separately operated Kody deployment has its own operator and data
 					controller.
@@ -228,8 +228,8 @@ export function PrivacyRoute(_handle: Handle) {
 					Use Account settings to export a copy of your Kody data or delete your
 					account. You can also ask to access, correct, delete, restrict, or
 					receive your personal data, or object to its processing, by emailing{' '}
-					<a href="mailto:support@heykody.app" mix={css(mutedLinkCss)}>
-						support@heykody.app
+					<a href="mailto:support@kody.codes" mix={css(mutedLinkCss)}>
+						support@kody.codes
 					</a>
 					. Which rights apply depends on where you live. We may need to verify
 					your identity before acting on a request.

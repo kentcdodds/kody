@@ -2,5 +2,5 @@
 
 This page moved into the bundled guides catalog. Read
 [What is Kody?](../guides/what-is-kody.md) — also served at
-[heykody.app/guides/what-is-kody](https://heykody.app/guides/what-is-kody)
-(append `.md` for raw markdown).
+[kody.codes/guides/what-is-kody](https://kody.codes/guides/what-is-kody) (append
+`.md` for raw markdown).

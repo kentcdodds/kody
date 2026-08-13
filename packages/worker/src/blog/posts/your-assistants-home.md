@@ -46,7 +46,7 @@ state:
 - **Values and durable storage.** Configuration and data your packages read and
   write.
 - **An email inbox.** Your assistant gets its own address (like
-  you@inbox.heykody.app) so services can reach it.
+  you@inbox.kody.codes) so services can reach it.
   ([Email docs](https://github.com/kentcdodds/kody/blob/main/docs/use/email-primitives.md))
 - **OAuth integrations and remote connectors.** Authenticated access to the
   services you actually use.
@@ -62,7 +62,7 @@ ships next month might be better than all of them. You should be free to jump on
 it the day it launches.
 
 That freedom only exists if your accumulated state is portable. Kody connects to
-the agent you already use over MCP at https://heykody.app/mcp. Cursor, Claude
+the agent you already use over MCP at https://kody.codes/mcp. Cursor, Claude
 Desktop, Claude Code, Codex and ChatGPT, OpenCode, VS Code: if it speaks MCP, it
 can be your assistant's front door.
 ([Connection docs](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md))
@@ -110,13 +110,13 @@ the above. Read the code.
 There's a version of this product where I broker every OAuth connection for you
 and you click one button. I deliberately didn't build that version. In Kody, you
 create your own OAuth app at the provider and connect it at
-https://heykody.app/connect/oauth. That costs you a few minutes of setup. What
+https://kody.codes/connect/oauth. That costs you a few minutes of setup. What
 you get for those minutes: your app, your scopes, your rate limits, no
 middleman, and no fixed list of providers I got around to supporting.
 ([OAuth guide](https://github.com/kentcdodds/kody/blob/main/docs/guides/oauth.md))
 
 The community works the same way. When you install a package from
-https://heykody.app/community, that one click creates a published fork you own.
+https://kody.codes/community, that one click creates a published fork you own.
 Open it, edit it, schedule it, publish your improvements back. You can only rate
 a package you've actually forked and run, which keeps ratings honest.
 ([Community docs](https://github.com/kentcdodds/kody/blob/main/docs/use/community-packages.md))
@@ -144,7 +144,7 @@ nothing.
 ## Your move
 
 Signup is invite-gated right now, but there's a waitlist right on the signup
-page: https://heykody.app/signup. If you'd rather kick the tires on the code
+page: https://kody.codes/signup. If you'd rather kick the tires on the code
 first, it's all at https://github.com/kentcdodds/kody.
 
 Either way, start noticing what your assistant accumulates that's worth keeping.

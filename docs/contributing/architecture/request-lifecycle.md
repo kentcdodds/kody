@@ -19,7 +19,7 @@ clients (e.g. some MCP stacks) that discover metadata from the 401
 `resource_metadata` URL and would otherwise get `invalid_target` at the token
 endpoint. Protected-resource metadata and MCP auth challenges resolve the origin
 from the inbound request URL (via `getAppBaseUrl`) so clients connecting through
-`heykody.app` or a workers.dev host get matching resource values. `APP_BASE_URL`
+`kody.codes` or a workers.dev host get matching resource values. `APP_BASE_URL`
 is only the fallback for background work with no request URL.
 
 ## Routing order

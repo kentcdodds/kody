@@ -142,7 +142,10 @@ export async function classifyMcpProtocolRequest(
  */
 export function recordMcpProtocolEvent(
 	env: McpProtocolEventEnv,
-	input: Omit<McpProtocolClassification, 'parsedBody'> & { userId?: string },
+	input: Omit<McpProtocolClassification, 'parsedBody'> & {
+		userId?: string
+		requestHost?: string
+	},
 ): void {
 	try {
 		env.MCP_PROTOCOL_EVENTS?.writeDataPoint({
@@ -156,6 +159,9 @@ export function recordMcpProtocolEvent(
 				input.clientName,
 				input.clientVersion,
 				input.userId ?? '',
+				// blob7: request host, so domain migrations can measure which
+				// users still connect through a legacy hostname.
+				input.requestHost ?? '',
 			],
 			doubles: [1],
 		})

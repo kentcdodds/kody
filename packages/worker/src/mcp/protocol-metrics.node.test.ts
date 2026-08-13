@@ -140,6 +140,7 @@ test('recordMcpProtocolEvent writes a data point, no-ops without binding, and sw
 		clientName: 'claude-ai',
 		clientVersion: '0.1.0',
 		userId: 'user-1',
+		requestHost: 'kody.codes',
 	})
 	expect(writeDataPoint).toHaveBeenCalledExactlyOnceWith({
 		indexes: ['legacy'],
@@ -150,6 +151,7 @@ test('recordMcpProtocolEvent writes a data point, no-ops without binding, and sw
 			'claude-ai',
 			'0.1.0',
 			'user-1',
+			'kody.codes',
 		],
 		doubles: [1],
 	})

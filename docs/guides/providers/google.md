@@ -35,7 +35,7 @@ List enabled built-ins with `integration_platform_app_list`. When `google` is
 enabled, connect with:
 
 ```text
-https://heykody.app/connect/oauth?provider=google
+https://kody.codes/connect/oauth?provider=google
 ```
 
 No Google Cloud project, redirect URI, or client ID/secret. Token exchange uses
@@ -73,7 +73,7 @@ scope menu cannot express the access you need.
    (choose **External**), and contact information.
 4. On the **Clients** tab, click **Create Client**, choose application type
    **Web application**, and add the redirect URI
-   `https://heykody.app/connect/oauth` (exact match; a self-hosted deployment
+   `https://kody.codes/connect/oauth` (exact match; a self-hosted deployment
    registers its own origin plus `/connect/oauth`).
 5. Copy the **client ID** and **client secret** shown after creation.
 6. On the **Data Access** tab, add the scopes you plan to request (see the
@@ -102,7 +102,7 @@ client (the client secret is sent form-encoded to the token endpoint), and
 `access_type=offline` plus `prompt=consent` make sure a refresh token is issued:
 
 ```text
-https://heykody.app/connect/oauth?provider=google&authorizeUrl=https%3A%2F%2Faccounts.google.com%2Fo%2Foauth2%2Fv2%2Fauth&tokenUrl=https%3A%2F%2Foauth2.googleapis.com%2Ftoken&flow=confidential&scopes=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly&allowedHosts=www.googleapis.com&extraAuthorizeParams=%7B%22access_type%22%3A%22offline%22%2C%22prompt%22%3A%22consent%22%7D
+https://kody.codes/connect/oauth?provider=google&authorizeUrl=https%3A%2F%2Faccounts.google.com%2Fo%2Foauth2%2Fv2%2Fauth&tokenUrl=https%3A%2F%2Foauth2.googleapis.com%2Ftoken&flow=confidential&scopes=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.readonly&allowedHosts=www.googleapis.com&extraAuthorizeParams=%7B%22access_type%22%3A%22offline%22%2C%22prompt%22%3A%22consent%22%7D
 ```
 
 Decoded, that is authorize URL `https://accounts.google.com/o/oauth2/v2/auth`,
@@ -177,7 +177,7 @@ reconnects use `/connect/oauth?provider=google` and the connect UI scope menu.
 - Built-in connect still asks for a client ID: the `google` platform app is
   disabled or missing — call `integration_platform_app_list`, or use Lane B.
 - `redirect_uri_mismatch` during BYO consent: the registered redirect URI must
-  be exactly `https://heykody.app/connect/oauth` — no trailing slash, no `www`.
+  be exactly `https://kody.codes/connect/oauth` — no trailing slash, no `www`.
 - BYO integration works for a week, then fails with `invalid_grant`: the app is
   in **Testing** publishing status. Publish it to Production and reconnect.
 - No refresh token saved (BYO): Google only returns one on first consent.

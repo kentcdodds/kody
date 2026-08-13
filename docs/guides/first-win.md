@@ -167,7 +167,7 @@ step in this loop happens because an agent asked for it.
 ## Try it
 
 Paste this into the agent connected to your Kody account, swapping in your
-deployment's origin if it is not heykody.app:
+deployment's origin if it is not kody.codes:
 
-> Ask the connected Kody server to read https://heykody.app/guides/first-win and
+> Ask the connected Kody server to read https://kody.codes/guides/first-win and
 > then walk me through the optional email-and-memories loop, one step at a time.

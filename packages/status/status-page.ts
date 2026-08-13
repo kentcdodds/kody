@@ -282,7 +282,7 @@ export function renderStatusPage(snapshot: StatusSnapshot): string {
 	${recentIncidents}
 	<footer>
 		${renderProductionCommit(snapshot.productionCommit)}Probes run every minute from an independently deployed worker.
-		<a href="https://heykody.app">heykody.app</a> ·
+		<a href="https://kody.codes">kody.codes</a> ·
 		<a href="/status.json">JSON</a>
 	</footer>
 </main>

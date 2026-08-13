@@ -25,7 +25,7 @@ const itemLabels: Record<OnboardingChecklistItemId, string> = {
 export async function buildOnboardingSearchNotice(input: {
 	env: Env
 	userId: string
-	/** Deployment origin for the details link, e.g. https://heykody.app */
+	/** Deployment origin for the details link, e.g. https://kody.codes */
 	baseUrl: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<string | null> {

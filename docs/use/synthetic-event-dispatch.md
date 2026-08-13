@@ -103,7 +103,7 @@ Example minimal `run.error.recorded` fixture:
 			"error_name": "Error",
 			"error_message": "Synthetic smoke failure"
 		},
-		"activity_url": "https://heykody.app/account/activity/00000000000000000000000000000001"
+		"activity_url": "https://kody.codes/account/activity/00000000000000000000000000000001"
 	}
 }
 ```

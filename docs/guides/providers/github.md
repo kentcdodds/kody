@@ -45,7 +45,7 @@ List enabled built-ins with `integration_platform_app_list`. When `github` is
 enabled, connect with:
 
 ```text
-https://heykody.app/connect/oauth?provider=github
+https://kody.codes/connect/oauth?provider=github
 ```
 
 No GitHub developer-console app registration. Default scopes typically include
@@ -71,7 +71,7 @@ scopes or your own rate limits.
 Save it through the account secrets page — never paste the token into chat:
 
 ```text
-https://heykody.app/account/secrets/new?name=githubAccessToken&description=GitHub%20fine-grained%20personal%20access%20token&allowedHosts=api.github.com&scope=user
+https://kody.codes/account/secrets/new?name=githubAccessToken&description=GitHub%20fine-grained%20personal%20access%20token&allowedHosts=api.github.com&scope=user
 ```
 
 Approve the `api.github.com` host on the same page after saving. The name
@@ -83,7 +83,7 @@ package reads by default, so a fork of it works without renaming anything.
 1. Open [github.com/settings/developers](https://github.com/settings/developers)
    -> **OAuth Apps** -> **New OAuth App**.
 2. Fill in the application name and homepage URL, and set the **Authorization
-   callback URL** to `https://heykody.app/connect/oauth` (OAuth Apps accept one
+   callback URL** to `https://kody.codes/connect/oauth` (OAuth Apps accept one
    callback URL; a self-hosted deployment registers its own origin plus
    `/connect/oauth`).
 3. After creating the app, click **Generate a new client secret** and copy the
@@ -98,7 +98,7 @@ the grant from GitHub settings to kill one sooner.
 ### Connect to Kody
 
 ```text
-https://heykody.app/connect/oauth?provider=github&authorizeUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Fauthorize&tokenUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Faccess_token&flow=confidential&scopes=read%3Auser%20notifications&allowedHosts=api.github.com
+https://kody.codes/connect/oauth?provider=github&authorizeUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Fauthorize&tokenUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Faccess_token&flow=confidential&scopes=read%3Auser%20notifications&allowedHosts=api.github.com
 ```
 
 Decoded: authorize URL `https://github.com/login/oauth/authorize`, token URL
@@ -174,7 +174,7 @@ per-capability.
 - Built-in connect still asks for a client ID: the `github` platform app is
   disabled or missing — call `integration_platform_app_list`, or use Lane C.
 - `The redirect_uri MUST match the registered callback URL`: the callback must
-  be exactly `https://heykody.app/connect/oauth`.
+  be exactly `https://kody.codes/connect/oauth`.
 - Organization repositories missing from results: the org restricts OAuth App
   access. Request approval under the org's third-party access settings, or use a
   fine-grained token approved for that org.

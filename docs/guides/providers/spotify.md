@@ -53,7 +53,7 @@ prerequisites.
    [Spotify developer dashboard](https://developer.spotify.com/dashboard) and
    click **Create app**.
 2. Fill in the app name and description, set the redirect URI to
-   `https://heykody.app/connect/oauth`, select **Web API** under the APIs used,
+   `https://kody.codes/connect/oauth`, select **Web API** under the APIs used,
    and accept the developer terms. Spotify requires HTTPS redirect URIs and does
    not accept `localhost`, so use the hosted Kody URI (a self-hosted deployment
    registers its own HTTPS origin plus `/connect/oauth`). Matching is exact.
@@ -70,7 +70,7 @@ prerequisites.
 secret:
 
 ```text
-https://heykody.app/connect/oauth?provider=spotify&authorizeUrl=https%3A%2F%2Faccounts.spotify.com%2Fauthorize&tokenUrl=https%3A%2F%2Faccounts.spotify.com%2Fapi%2Ftoken&scopes=user-read-recently-played%20user-read-playback-state%20user-library-read&allowedHosts=api.spotify.com
+https://kody.codes/connect/oauth?provider=spotify&authorizeUrl=https%3A%2F%2Faccounts.spotify.com%2Fauthorize&tokenUrl=https%3A%2F%2Faccounts.spotify.com%2Fapi%2Ftoken&scopes=user-read-recently-played%20user-read-playback-state%20user-library-read&allowedHosts=api.spotify.com
 ```
 
 Decoded: authorize URL `https://accounts.spotify.com/authorize`, token URL
@@ -124,7 +124,7 @@ Changing scopes means reconnecting: `/connect/oauth?provider=spotify` with a new
 ## Troubleshooting
 
 - `INVALID_CLIENT: Invalid redirect URI`: the dashboard redirect URI must be
-  exactly `https://heykody.app/connect/oauth`. Spotify rejects `localhost` and
+  exactly `https://kody.codes/connect/oauth`. Spotify rejects `localhost` and
   any non-HTTPS URI.
 - `403 User not registered in the Developer Dashboard`: someone other than the
   app owner tried to authorize a Development Mode app. Add them under **User

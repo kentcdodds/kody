@@ -87,7 +87,7 @@ Wrangler `vars` (public and non-secret; see
 `packages/worker/src/app-base-url.ts`,
 `packages/worker/src/app-legacy-redirect.ts`, and `tools/ci/resource-utils.ts`):
 
-- `APP_BASE_URL` — the canonical public app origin (`https://heykody.app` in
+- `APP_BASE_URL` — the canonical public app origin (`https://kody.codes` in
   production, set as a GitHub Actions repository variable and injected by the
   deploy). Unset for local dev and set to the ephemeral worker URL for previews.
   The deploy derives a Workers `custom_domain` route from it, and
@@ -276,29 +276,29 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   calls do not need the live Artifacts REST API.
 - `USER_EMAIL_DOMAIN` — optional override for the user email domain (see
   `packages/worker/src/email/platform-address.ts`). Defaults to
-  `inbox.<APP_BASE_URL hostname>` (for example `inbox.heykody.dev`): every user
+  `inbox.<APP_BASE_URL hostname>` (for example `inbox.kody.codes`): every user
   inbox and user outbound sender lives at `{username}@<this domain>`. User mail
   deliberately lives on a subdomain so the user-controlled namespace and its
   sender reputation stay separate from system transactional mail
   (`kody@<apex>`). The deployment's Cloudflare zone needs Email Routing enabled
   for this subdomain (Email > Email Routing > Settings > Add subdomain) with its
   catch-all routed to the Worker. Production commits
-  `USER_EMAIL_DOMAIN=inbox.heykody.app` in `packages/worker/wrangler.jsonc` so
+  `USER_EMAIL_DOMAIN=inbox.kody.codes` in `packages/worker/wrangler.jsonc` so
   the domain can never silently rederive from `APP_BASE_URL`; the deploy tooling
   (`tools/ci/production-resources.ts`) reads the same committed pin when
   configuring the Email Sending event subscription.
 - `SYSTEM_EMAIL_DOMAIN` — optional override for the system email domain (the
   `kody@<domain>` transactional sender and operator system inboxes). Defaults to
   the `APP_BASE_URL` hostname. Production commits
-  `SYSTEM_EMAIL_DOMAIN=heykody.app`.
+  `SYSTEM_EMAIL_DOMAIN=kody.codes`.
 - `LEGACY_USER_EMAIL_DOMAINS` / `LEGACY_SYSTEM_EMAIL_DOMAINS` — optional
   comma-separated previous email domains that inbound mail is still accepted on
   during a domain migration (see
   `packages/worker/src/email/platform-address.ts`). Delivery resolves to the
   same inboxes; outbound always sends from the canonical domains. Production
-  commits `inbox.heykody.dev` / `heykody.dev` for the heykody.app migration
-  window (through end of August 2026), after which the lists can be emptied and
-  the `heykody.dev` email DNS retired.
+  commits `inbox.heykody.app,inbox.heykody.dev` / `heykody.app,heykody.dev` for
+  the kody.codes migration window (through end of August 2026), after which the
+  lists can be emptied and the old domains' email DNS retired.
 - `ARTIFACTS_NAMESPACE` — Cloudflare Artifacts namespace for repo REST calls.
   Defaults to `default` when unset (local dev and tests). Wrangler sets
   `production` and `preview` per environment in

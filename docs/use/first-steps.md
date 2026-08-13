@@ -42,8 +42,8 @@ secret reference, then run work through **execute**.
   connect guides are available: load
   `coding_guide_get({ guide: "provider_<name>" })` (for example
   `provider_github`) or browse
-  [https://heykody.app/guides](https://heykody.app/guides) (each page also
-  serves raw markdown at `/guides/<slug>.md`).
+  [https://kody.codes/guides](https://kody.codes/guides) (each page also serves
+  raw markdown at `/guides/<slug>.md`).
 - **Confirm destructive work** before mutating GitHub, Cloudflare, or Cursor
   Cloud Agents. See [Mutating actions and confirmations](./mutating-actions.md).
 - **Verify before changing memory.** If you think something should become

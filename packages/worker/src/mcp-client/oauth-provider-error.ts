@@ -4,7 +4,7 @@
  *
  * Providers such as FusionAuth reject authorize requests whose browser
  * Origin/Referer is not on an authorized-origins allowlist, producing messages
- * like `Invalid origin uri https://heykody.app`. Redirect-URI mismatches are a
+ * like `Invalid origin uri https://kody.codes`. Redirect-URI mismatches are a
  * related class. Both are configured on the remote authorization server, not
  * in Kody.
  */

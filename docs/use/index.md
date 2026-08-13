@@ -15,7 +15,7 @@ Read in order for a full tour, or jump to a topic.
 
 ## Guides
 
-- [Official guides](https://heykody.app/guides) — bundled setup and workflow
+- [Official guides](https://kody.codes/guides) — bundled setup and workflow
   markdown (MCP `coding_guide_get`, web index, and raw `.md` per page)
 - [What is Kody?](../guides/what-is-kody.md) — capability tour and discovery
   prompt for people (and agents) deciding whether Kody fits, before any setup
@@ -46,11 +46,11 @@ Read in order for a full tour, or jump to a topic.
   real-surface subscription handler smoke tests
 - [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,
   and other runtimes (`/account/activity` and the `runs` MCP capabilities)
-- [Plans and pricing](https://heykody.app/pricing) — Free, Standard, and Pro
+- [Plans and pricing](https://kody.codes/pricing) — Free, Standard, and Pro
   prices and the finite limits enforced for each plan
 - [Mutating actions and confirmations](./mutating-actions.md)
 - [Privacy](./privacy.md) — what Kody stores and what deployment admins can see
-  (Terms and Acceptable Use are in-app at [`/terms`](https://heykody.app/terms))
+  (Terms and Acceptable Use are in-app at [`/terms`](https://kody.codes/terms))
 - [Troubleshooting](./troubleshooting.md)
 - [Memory and conversation context](./memory.md)
 - [Community Project mark](./community-project-mark.md) — logo for unofficial

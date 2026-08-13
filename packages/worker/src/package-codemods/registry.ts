@@ -1,10 +1,12 @@
 import { ambientStorageToPackageStorageCodemod } from './codemods/0001-ambient-storage-to-package-storage.ts'
 import { staticFirstInvocationCodemod } from './codemods/0002-static-first-invocation.ts'
+import { heykodyDomainsToKodyCodesCodemod } from './codemods/0003-heykody-domains-to-kody-codes.ts'
 import { type PackageCodemod } from './types.ts'
 
 const packageCodemods: Array<PackageCodemod> = [
 	ambientStorageToPackageStorageCodemod,
 	staticFirstInvocationCodemod,
+	heykodyDomainsToKodyCodesCodemod,
 ]
 
 const packageCodemodsById = new Map(

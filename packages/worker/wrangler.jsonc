@@ -457,17 +457,17 @@
 				"PACKAGE_APP_BASE_URL": "https://kodyapps.dev",
 				// Email domains are committed (not just GitHub Actions vars) so
 				// they can never silently rederive from APP_BASE_URL. Canonical
-				// email lives on heykody.app; the LEGACY_* lists keep inbound
-				// mail to the previous heykody.dev addresses resolving to the
-				// same inboxes during the migration window (through end of
-				// August 2026), after which they can be emptied. Outbound
-				// always sends from the canonical domains, which requires
-				// Email Routing + Email Sending verification on the
-				// heykody.app zone before this deploys.
-				"USER_EMAIL_DOMAIN": "inbox.heykody.app",
-				"SYSTEM_EMAIL_DOMAIN": "heykody.app",
-				"LEGACY_USER_EMAIL_DOMAINS": "inbox.heykody.dev",
-				"LEGACY_SYSTEM_EMAIL_DOMAINS": "heykody.dev",
+				// email lives on kody.codes; the LEGACY_* lists keep inbound
+				// mail to the previous heykody.app and heykody.dev addresses
+				// resolving to the same inboxes during the migration window
+				// (through end of August 2026), after which they can be
+				// emptied. Outbound always sends from the canonical domains,
+				// which requires Email Routing + Email Sending verification on
+				// the kody.codes zone before this deploys.
+				"USER_EMAIL_DOMAIN": "inbox.kody.codes",
+				"SYSTEM_EMAIL_DOMAIN": "kody.codes",
+				"LEGACY_USER_EMAIL_DOMAINS": "inbox.heykody.app,inbox.heykody.dev",
+				"LEGACY_SYSTEM_EMAIL_DOMAINS": "heykody.app,heykody.dev",
 				// Fathom Analytics site id (public, non-secret). Production
 				// only so local dev, preview, and tests never send pageviews.
 				"FATHOM_SITE_ID": "WKKSDJGN",

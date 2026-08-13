@@ -24,7 +24,7 @@ test('getAppBaseUrl prefers the request origin when present', () => {
 	).toBe('https://heykody.dev')
 })
 
-test('getAppBaseUrl falls back to APP_BASE_URL then heykody.app, and joinAppUrl strips trailing slashes', () => {
+test('getAppBaseUrl falls back to APP_BASE_URL then kody.codes, and joinAppUrl strips trailing slashes', () => {
 	expect(
 		getAppBaseUrl({
 			env: { APP_BASE_URL: 'https://configured.example/path' },
@@ -35,14 +35,14 @@ test('getAppBaseUrl falls back to APP_BASE_URL then heykody.app, and joinAppUrl 
 		getAppBaseUrl({
 			env: { APP_BASE_URL: '' },
 		}),
-	).toBe('https://heykody.app')
+	).toBe('https://kody.codes')
 
 	expect(
 		getAppBaseUrl({
 			env: {},
 			requestUrl: null,
 		}),
-	).toBe('https://heykody.app')
+	).toBe('https://kody.codes')
 
 	expect(
 		joinAppUrl({
@@ -77,7 +77,7 @@ test('getCanonicalAppBaseUrl prefers the configured origin over the request orig
 		}),
 	).toBe('http://localhost:3742')
 
-	expect(getCanonicalAppBaseUrl({ env: {} })).toBe('https://heykody.app')
+	expect(getCanonicalAppBaseUrl({ env: {} })).toBe('https://kody.codes')
 })
 
 test('the package-app origin is configurable and never resolves as the app origin', () => {

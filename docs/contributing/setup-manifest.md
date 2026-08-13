@@ -324,7 +324,7 @@ automatically:
 - `COOKIE_SECRET` (generate with `openssl rand -hex 32`)
 - `SECRET_STORE_KEY` (required; generate with `openssl rand -base64 48`)
 - `APP_BASE_URL` (optional; used as the fallback public origin when no request
-  URL is available — e.g. workflows and email. Example `https://heykody.app`.
+  URL is available — e.g. workflows and email. Example `https://kody.codes`.
   Most request-scoped app/MCP URLs use the inbound request origin so OAuth
   metadata matches the host the client connected to. Password reset email sends
   require a system email domain and use `kody@<domain>` as the sender — the
@@ -492,7 +492,7 @@ How to get/set each value:
   - Generate locally: `openssl rand -hex 32`
   - Store the exact value as a repository secret in GitHub Actions.
 - `APP_BASE_URL` (optional)
-  - Use your production app URL (for example `https://heykody.app`) as the
+  - Use your production app URL (for example `https://kody.codes`) as the
     fallback public origin for workflows and password-reset email.
   - Add it when password reset email should send; the sender is
     `kody@<system email domain>` (the `SYSTEM_EMAIL_DOMAIN` override when set,
@@ -516,15 +516,15 @@ How to get/set each value:
   Email Sending event subscription).
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     it only when the production user email domain differs from the default.
-  - Production also commits `USER_EMAIL_DOMAIN=inbox.heykody.app` (and
-    `SYSTEM_EMAIL_DOMAIN=heykody.app`) in `packages/worker/wrangler.jsonc` so
+  - Production also commits `USER_EMAIL_DOMAIN=inbox.kody.codes` (and
+    `SYSTEM_EMAIL_DOMAIN=kody.codes`) in `packages/worker/wrangler.jsonc` so
     the email domains can never silently rederive from `APP_BASE_URL`; the
-    deploy tooling reads the same committed pin. During the heykody.dev
-    migration window (through end of August 2026) the committed
-    `LEGACY_USER_EMAIL_DOMAINS=inbox.heykody.dev` and
-    `LEGACY_SYSTEM_EMAIL_DOMAINS=heykody.dev` keep inbound mail to the old
-    addresses resolving to the same inboxes; empty the lists (and retire the
-    `heykody.dev` email DNS) after the window ends.
+    deploy tooling reads the same committed pin. During the migration window
+    (through end of August 2026) the committed
+    `LEGACY_USER_EMAIL_DOMAINS=inbox.heykody.app,inbox.heykody.dev` and
+    `LEGACY_SYSTEM_EMAIL_DOMAINS=heykody.app,heykody.dev` keep inbound mail
+    to the old addresses resolving to the same inboxes; empty the lists (and
+    retire the old domains' email DNS) after the window ends.
 - `APP_LEGACY_HOSTS` / `APP_LEGACY_REDIRECT` (optional GitHub Actions
   **variables** for domain migrations; see
   [environment-variables.md](./environment-variables.md#app-origin-and-domain-migration)).

@@ -4,7 +4,7 @@ import { normalizeStableUserId } from '#worker/user-id.ts'
 
 /**
  * The label prepended to the app hostname to form the default user email
- * domain (`inbox.heykody.app` for `APP_BASE_URL` `https://heykody.app`).
+ * domain (`inbox.kody.codes` for `APP_BASE_URL` `https://kody.codes`).
  */
 export const defaultUserEmailSubdomainLabel = 'inbox'
 
@@ -48,7 +48,7 @@ export function getSystemEmailDomain(env: {
 /**
  * The email domain every user inbox and user outbound sender lives on: the
  * `USER_EMAIL_DOMAIN` env var when set, otherwise `inbox.` plus the
- * hostname of `APP_BASE_URL` (for example `inbox.heykody.app`).
+ * hostname of `APP_BASE_URL` (for example `inbox.kody.codes`).
  *
  * User mail deliberately lives on a dedicated subdomain, not the apex: the
  * user-controlled address namespace stays structurally separate from system

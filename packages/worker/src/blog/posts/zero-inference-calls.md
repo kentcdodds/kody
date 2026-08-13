@@ -7,7 +7,7 @@ description:
 order: 4
 ---
 
-Here's a claim from the [Kody](https://heykody.app) home page that sounds like a
+Here's a claim from the [Kody](https://kody.codes) home page that sounds like a
 limitation until you think about it: Kody makes zero inference calls.
 
 No agent loop. No second model. No tokens billed to you. When my assistant
@@ -125,7 +125,7 @@ stays with the agent you chose, the capability accumulates in an account you
 own, and nobody profits from putting a meter on your assistant's thoughts.
 
 If that's the kind of home you want your assistant to have,
-[heykody.app/signup](https://heykody.app/signup) is the place (invite-gated for
+[kody.codes/signup](https://kody.codes/signup) is the place (invite-gated for
 now; the waitlist is right on that page). And either way, next time you evaluate
 an assistant product, ask the vendor one question: who pays for the inference,
 and what does that make them want? The answer tells you most of what you need to

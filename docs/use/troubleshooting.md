@@ -2,8 +2,8 @@
 
 ## Contact support
 
-For help with the hosted Kody service at `heykody.app`, email
-[`support@heykody.app`](mailto:support@heykody.app). Operators of other Kody
+For help with the hosted Kody service at `kody.codes`, email
+[`support@kody.codes`](mailto:support@kody.codes). Operators of other Kody
 deployments receive support mail at `support@<apex>`, where `<apex>` is the
 deployment's `APP_BASE_URL` hostname.
 

@@ -32,7 +32,7 @@ List enabled built-ins with `integration_platform_app_list`. When `slack` is
 enabled, connect with:
 
 ```text
-https://heykody.app/connect/oauth?provider=slack
+https://kody.codes/connect/oauth?provider=slack
 ```
 
 No Slack app dashboard setup for the common path. Token exchange uses the
@@ -44,7 +44,7 @@ needs a rare permission.
 
 Use this when the built-in is unavailable or its scope menu cannot cover the
 task. Create a Slack app, register the redirect URI
-`https://heykody.app/connect/oauth`, choose the bot/user scopes you need, then
+`https://kody.codes/connect/oauth`, choose the bot/user scopes you need, then
 build a BYO `/connect/oauth` URL with Slack's authorize and token endpoints
 (`https://slack.com/oauth/v2/authorize` and
 `https://slack.com/api/oauth.v2.access`). See the [OAuth guide](../oauth.md) for
@@ -91,4 +91,4 @@ export default async function main() {
   method. Widen scopes within the built-in menu or reconnect with a BYO app that
   includes them.
 - `redirect_uri` mismatches on BYO: the registered redirect must be exactly
-  `https://heykody.app/connect/oauth`.
+  `https://kody.codes/connect/oauth`.
