@@ -399,9 +399,9 @@ automatically:
   when packages are saved or published.)
 - `JOB_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-jobs` for a jobs-only Vectorize rebuild. Not
-  required for production deploys — the capability reindex path already refreshes
-  job vectors. Omit locally and for previews unless you need the jobs-only
-  endpoint.)
+  required for production deploys — the capability reindex path already
+  refreshes job vectors. Omit locally and for previews unless you need the
+  jobs-only endpoint.)
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID` /
   `GOOGLE_CLIENT_SECRET`, `X_CLIENT_ID` / `X_CLIENT_SECRET` (optional Worker
   secrets; enable the "Sign in with GitHub / Google / X" login buttons. A
@@ -462,9 +462,10 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `CAPABILITY_REINDEX_SECRET` (strongly recommended for production; optional
   locally and for previews; authenticates post-deploy maintenance calls such as
   capability reindex — CI skips those calls when it is unset)
-- `JOB_REINDEX_SECRET` (optional; authenticates `POST /__maintenance/reindex-jobs`
-  for a jobs-only Vectorize rebuild. Production deploys do not require it —
-  capability reindex already refreshes job vectors.)
+- `JOB_REINDEX_SECRET` (optional; authenticates
+  `POST /__maintenance/reindex-jobs` for a jobs-only Vectorize rebuild.
+  Production deploys do not require it — capability reindex already refreshes
+  job vectors.)
 - `DR_BACKUP_ACCOUNT_ID` / `DR_BACKUP_BUCKET_NAME` / `DR_BACKUP_ACCESS_KEY_ID` /
   `DR_BACKUP_SECRET_ACCESS_KEY` (production DR staging into the DR bucket; also
   used by `.github/workflows/dr-escrow.yml`. `DR_BACKUP_ACCOUNT_ID` is also the

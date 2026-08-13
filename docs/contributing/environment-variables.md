@@ -280,9 +280,9 @@ Worker secrets:
 - **`JOB_REINDEX_SECRET`** — optional Worker secret; bearer token for
   `POST /__maintenance/reindex-jobs` when you want a jobs-only Vectorize rebuild
   (without the full capability/memory/package reindex that
-  `CAPABILITY_REINDEX_SECRET` drives). When unset, the jobs-only endpoint returns
-  not-configured; production deploys rely on the capability reindex path for job
-  vectors and do not require this secret.
+  `CAPABILITY_REINDEX_SECRET` drives). When unset, the jobs-only endpoint
+  returns not-configured; production deploys rely on the capability reindex path
+  for job vectors and do not require this secret.
 
 ## Cloudflare API (Worker + Email)
 
