@@ -70,8 +70,9 @@ new map entry).
 ## Block format
 
 The block lives in the PR description between HTML comment markers, wrapped in
-`<details>`. Fixed section order — a future ingestion process parses this
-structure. Omit optional sections rather than leaving them empty.
+`<details>`. Fixed section order — keep the structure stable so the
+marker-delimited block stays machine-readable. Omit optional sections rather
+than leaving them empty.
 
 ````markdown
 <!-- system-recap:start -->
