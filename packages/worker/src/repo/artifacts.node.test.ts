@@ -675,7 +675,32 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 		readOnly: false,
 	})
 
-	nativeGet.mockClear()
+	nativeGet.mockReset()
+	nativeGet.mockImplementation(async () => {
+		throw {
+			name: 'ArtifactsError',
+			message: 'Repository not found: repo-native-message-only',
+		}
+	})
+	await expect(binding.get('repo-native-message-only')).resolves.toEqual({
+		status: 'not_found',
+	})
+	nativeGet.mockReset()
+	nativeGet.mockImplementation(async () => {
+		throw new Error('git: repository not found on the remote')
+	})
+	await expect(binding.get('repo-unrelated-not-found')).rejects.toThrow(
+		/git: repository not found/,
+	)
+
+	nativeGet.mockReset()
+	nativeGet.mockImplementation(async () => {
+		throw {
+			name: 'ArtifactsError',
+			code: 'NOT_FOUND',
+			message: 'Repository not found: repo-native-no-exp',
+		}
+	})
 	nativeCreate.mockImplementation(async () => ({
 		id: 'repo_native_no_exp',
 		name: 'repo-native-no-exp',

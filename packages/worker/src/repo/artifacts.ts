@@ -202,18 +202,23 @@ function isArtifactsBindingError(error: unknown): error is ArtifactsError {
 
 function artifactsBindingErrorCode(error: unknown) {
 	if (isArtifactsBindingError(error)) return error.code
-	const message =
-		error instanceof Error
-			? error.message
-			: typeof error === 'object' &&
-				  error !== null &&
-				  'message' in error &&
-				  typeof error.message === 'string'
-				? error.message
-				: ''
-	if (/repository not found/i.test(message)) return 'NOT_FOUND'
-	if (/already[\s_-]*exists/i.test(message)) return 'ALREADY_EXISTS'
-	if (/import[\s_-]*in[\s_-]*progress/i.test(message)) {
+	if (error === null || typeof error !== 'object') return null
+	const candidate = error as { name?: unknown; message?: unknown }
+	// Message fallback only for ArtifactsError with known prefixes so a
+	// generic git/HTTP "not found" cannot look like a create-safe miss.
+	if (
+		candidate.name !== 'ArtifactsError' ||
+		typeof candidate.message !== 'string'
+	) {
+		return null
+	}
+	if (/^Repository not found(?::|\b)/.test(candidate.message)) {
+		return 'NOT_FOUND'
+	}
+	if (/^Repository already exists(?::|\b)/.test(candidate.message)) {
+		return 'ALREADY_EXISTS'
+	}
+	if (/^Import in progress(?::|\b)/i.test(candidate.message)) {
 		return 'IMPORT_IN_PROGRESS'
 	}
 	return null
