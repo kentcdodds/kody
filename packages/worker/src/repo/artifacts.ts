@@ -791,6 +791,9 @@ export async function readMockArtifactSnapshot(input: {
 }
 
 function isArtifactRepoAlreadyExistsError(error: unknown) {
+	if (artifactsBindingErrorCode(error) === 'ALREADY_EXISTS') {
+		return true
+	}
 	if (!(error instanceof Error)) {
 		return false
 	}
@@ -806,7 +809,6 @@ function isArtifactRepoAlreadyExistsError(error: unknown) {
 			: null
 	return (
 		causeCode === 10201 ||
-		artifactsBindingErrorCode(error) === 'ALREADY_EXISTS' ||
 		/already[\s_-]*exists|already_exists/i.test(`${text} ${causeMessage}`)
 	)
 }

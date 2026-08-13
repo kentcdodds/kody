@@ -694,6 +694,52 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 			expiresAt: '2025-10-09T08:53:20.000Z',
 		},
 	})
+
+	const readyHandle = {
+		id: 'repo_exists',
+		name: 'repo-native-exists',
+		description: null,
+		defaultBranch: 'main',
+		createdAt: '2026-08-13T00:00:00.000Z',
+		updatedAt: '2026-08-13T00:00:00.000Z',
+		lastPushAt: null,
+		source: null,
+		readOnly: false,
+		remote:
+			'https://acct.artifacts.cloudflare.net/git/production/repo-native-exists.git',
+		createToken: vi.fn(),
+		listTokens: vi.fn(),
+		revokeToken: vi.fn(),
+	}
+	let existsGets = 0
+	nativeGet.mockReset()
+	nativeGet.mockImplementation(async () => {
+		existsGets += 1
+		if (existsGets === 1) {
+			throw {
+				name: 'ArtifactsError',
+				code: 'NOT_FOUND',
+				message: 'Repository not found: repo-native-exists',
+			}
+		}
+		return readyHandle
+	})
+	nativeCreate.mockReset()
+	nativeCreate.mockImplementation(async () => {
+		throw {
+			name: 'ArtifactsError',
+			code: 'ALREADY_EXISTS',
+			message: 'Repository already exists: repo-native-exists',
+		}
+	})
+	await expect(
+		ensureArtifactRepoReady(env, 'repo-native-exists', binding),
+	).resolves.toMatchObject({
+		recreated: false,
+		repo: expect.any(Object),
+	})
+	expect(nativeCreate).toHaveBeenCalledTimes(1)
+	expect(existsGets).toBeGreaterThan(1)
 })
 
 test('artifacts REST logs redact plaintext tokens on revoke', async () => {
