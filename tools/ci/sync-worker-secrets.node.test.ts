@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { buildSpawnEnv } from './sync-worker-secrets'
+import {
+	buildSpawnEnv,
+	buildWranglerSecretBulkFlags,
+} from './sync-worker-secrets'
 
 const baseOptions = {
 	env: undefined,
@@ -42,4 +45,46 @@ test('buildSpawnEnv preserves optional vars only when they have values', () => {
 	expect(spawnEnvWithOptionalValues.SENTRY_DSN).toBe(
 		'https://examplePublicKey@o0.ingest.sentry.io/0',
 	)
+})
+
+test('secret bulk omits empty --env so --name pins the unsuffixed script', () => {
+	const secretsFile = '/tmp/wrangler-secrets.env'
+	expect(
+		buildWranglerSecretBulkFlags(
+			{
+				...baseOptions,
+				env: '',
+				name: 'kody-runtime',
+				config: 'packages/runtime-worker/wrangler-production.generated.json',
+			},
+			secretsFile,
+		),
+	).toEqual([
+		'secret',
+		'bulk',
+		secretsFile,
+		'--name',
+		'kody-runtime',
+		'--config',
+		'packages/runtime-worker/wrangler-production.generated.json',
+	])
+
+	expect(
+		buildWranglerSecretBulkFlags(
+			{
+				...baseOptions,
+				env: 'production',
+				config: 'packages/worker/wrangler-production.generated.json',
+			},
+			secretsFile,
+		),
+	).toEqual([
+		'secret',
+		'bulk',
+		secretsFile,
+		'--env',
+		'production',
+		'--config',
+		'packages/worker/wrangler-production.generated.json',
+	])
 })

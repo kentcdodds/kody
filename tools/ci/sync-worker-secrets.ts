@@ -230,9 +230,35 @@ function toDotenv(secrets: ReadonlyMap<string, string>) {
 	return `${lines.join('\n')}\n`
 }
 
+/**
+ * `wrangler secret bulk --env <env> --name <script>` still targets
+ * `<script>-<env>` (unlike `wrangler deploy --name`, which overrides the
+ * suffix). Callers that pin a script with `--name` must omit `--env`.
+ */
+export function buildWranglerSecretBulkFlags(
+	options: CliOptions,
+	secretsFilePath: string,
+): Array<string> {
+	if (options.name && options.env && options.env.length > 0) {
+		fail(
+			`wrangler secret bulk appends -<env> even when --name is set, so "${options.name}" with --env ${options.env} would target "${options.name}-${options.env}". Pass --env "" with --name to pin the unsuffixed script.`,
+		)
+	}
+	const args = ['secret', 'bulk', secretsFilePath]
+	if (options.env !== undefined && options.env.length > 0) {
+		args.push('--env', options.env)
+	}
+	if (options.name) {
+		args.push('--name', options.name)
+	}
+	if (options.config) {
+		args.push('--config', options.config)
+	}
+	return args
+}
+
 async function runWranglerSecretBulk(options: CliOptions, dotenvText: string) {
 	const wranglerBin = resolveLocalBinary('wrangler')
-	const args = [wranglerBin, 'secret', 'bulk']
 	const spawnEnv = buildSpawnEnv(options)
 	const secretsFilePath = join(
 		tmpdir(),
@@ -242,16 +268,10 @@ async function runWranglerSecretBulk(options: CliOptions, dotenvText: string) {
 		encoding: 'utf8',
 		mode: 0o600,
 	})
-	args.push(secretsFilePath)
-	if (options.env !== undefined) {
-		args.push('--env', options.env)
-	}
-	if (options.name) {
-		args.push('--name', options.name)
-	}
-	if (options.config) {
-		args.push('--config', options.config)
-	}
+	const args = [
+		wranglerBin,
+		...buildWranglerSecretBulkFlags(options, secretsFilePath),
+	]
 
 	try {
 		const [command, ...commandArgs] = args

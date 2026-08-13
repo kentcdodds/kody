@@ -143,6 +143,7 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 			name?: string
 			env?: {
 				preview?: {
+					name?: string
 					durable_objects?: { bindings?: Array<Record<string, unknown>> }
 					d1_databases?: Array<Record<string, unknown>>
 					queues?: { producers?: Array<Record<string, unknown>> }
@@ -154,6 +155,7 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 		}>(await readFile(outConfigPath, 'utf8'))
 
 		expect(runtimeConfig.name).toBe('kody-pr-7-runtime')
+		expect(runtimeConfig.env?.preview?.name).toBe('kody-pr-7-runtime')
 		const previewEnv = runtimeConfig.env?.preview
 		// Cross-script references point at the resolved main worker name.
 		const userMeter = previewEnv?.durable_objects?.bindings?.find(
@@ -246,6 +248,7 @@ test('generate publishes the package-app custom domain for production', async ()
 		const runtimeConfig = parseJsonc<{
 			env?: {
 				production?: {
+					name?: string
 					routes?: Array<{
 						pattern: string
 						custom_domain?: boolean
@@ -265,6 +268,7 @@ test('generate publishes the package-app custom domain for production', async ()
 			{ pattern: 'kodyapps.dev/*', zone_name: 'kodyapps.dev' },
 			{ pattern: '*.kodyapps.dev/*', zone_name: 'kodyapps.dev' },
 		])
+		expect(runtimeConfig.env?.production?.name).toBe('kody-runtime')
 		expect(runtimeConfig.env?.production?.workers_dev).toBe(true)
 		// The storage transfer migration survives generation untouched.
 		expect(runtimeConfig.migrations?.[0]?.tag).toBe('v1')

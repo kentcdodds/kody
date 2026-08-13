@@ -168,7 +168,10 @@ jobs:
             echo "SENTRY_DSN is not configured; skipping jobs worker secret sync."
             exit 0
           fi
-          node tools/ci/sync-worker-secrets.ts --env production --config \
+          # --env "" with --name: wrangler secret bulk still suffixes
+          # -<env> even when --name is set, so --env production would write
+          # to kody-jobs-production while deploy uploads kody-jobs.
+          node tools/ci/sync-worker-secrets.ts --env "" --config \
             "$WRANGLER_CONFIG" --name kody-jobs --set-from-env-optional SENTRY_DSN
 
       - name: ☁️ Deploy jobs worker
@@ -343,6 +346,10 @@ jobs:
       # (Cloudflare REST capabilities). Billing (Stripe), waiting-list (Kit),
       # OAuth client credentials, and maintenance secrets stay main-only so a
       # runtime-Worker compromise cannot reach them.
+      # --env "" with --name: wrangler secret bulk still suffixes -<env>
+      # even when --name is set, so --env production would write
+      # COOKIE_SECRET to kody-runtime-production while deploy uploads
+      # kody-runtime. Preview uses the same empty-env pin.
       - name: 🔐 Sync Cloudflare Secrets to runtime worker (bulk)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -353,7 +360,7 @@ jobs:
           AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: >
-          node tools/ci/sync-worker-secrets.ts --env production --name
+          node tools/ci/sync-worker-secrets.ts --env "" --name
           kody-runtime --config "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
           --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN

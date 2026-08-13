@@ -391,9 +391,13 @@ carries the parameter is rewritten without it before package code sees it.
 
 Mint and consume must share `COOKIE_SECRET`. In production the app-origin mint
 (`/@{username}/packages/...`) is forwarded to `kody-runtime`, and the subdomain
-exchange is served by that same script's zone routes. If a leftover main-worker
-route still receives `{username}.kodyapps.dev`, the main Worker must forward it
-too (`isRuntimeWorkerOwnedRequest` matches every package-app host, not only the
+exchange is served by that same script's zone routes. Production CI therefore
+syncs `COOKIE_SECRET` onto the unsuffixed `kody-runtime` script (`--env ""`
+plus `--name`); `wrangler secret bulk --env production --name kody-runtime`
+still writes `kody-runtime-production`, which the runtime deploy does not
+serve. If a leftover main-worker route still receives
+`{username}.kodyapps.dev`, the main Worker must forward it too
+(`isRuntimeWorkerOwnedRequest` matches every package-app host, not only the
 apex). A `COOKIE_SECRET` mismatch, or a missing secret swallowed as "invalid
 token", leaves the visitor on the 403 page with `__kody_handoff` still in the
 URL and no `Set-Cookie`. Missing `COOKIE_SECRET` on consume fails closed with

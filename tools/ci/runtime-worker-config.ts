@@ -367,6 +367,10 @@ export async function generate(options: CliOptions) {
 	)
 
 	runtimeConfig.name = options.runtimeWorkerName
+	// Pin the selected env's name too. Wrangler otherwise deploys and
+	// secret-bulks `--env production` as `<name>-production`, which would not
+	// match the main worker's cross-script bindings (`kody-runtime`).
+	runtimeEnv.name = options.runtimeWorkerName
 	delete runtimeConfig.$schema
 	copyResourceIdentifiers({
 		runtimeEnv,

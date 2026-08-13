@@ -141,11 +141,15 @@ node tools/ci/runtime-worker-config.ts generate \
   --out-config packages/runtime-worker/wrangler-production.generated.json
 
 # Sync secrets to both workers (full secret set to main; runtime-lane
-# allowlist to kody-runtime — see deploy.yml for the current lists):
+# allowlist to kody-runtime — see deploy.yml for the current lists).
+# Runtime uses --env "" --name so wrangler does not write
+# kody-runtime-production (secret bulk still suffixes -<env> even with
+# --name; deploy uses --name to override).
 node tools/ci/sync-worker-secrets.ts --env production \
   --config packages/worker/wrangler-production.generated.json \
   --set-from-env COOKIE_SECRET ... # copy the main-worker flag list from deploy.yml
-node tools/ci/sync-worker-secrets.ts --env production \
+node tools/ci/sync-worker-secrets.ts --env "" \
+  --name kody-runtime \
   --config packages/runtime-worker/wrangler-production.generated.json \
   --set-from-env COOKIE_SECRET \
   --set-from-env-optional SECRET_STORE_KEY \
