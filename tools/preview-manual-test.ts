@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import { usernameFromEmail } from '../packages/worker/src/identity/username.ts'
 import { runtimeWorkerHealthPath } from '../packages/shared/src/runtime-worker.ts'
@@ -17,8 +18,9 @@ const usageLines = [
 	'Usage: node tools/preview-manual-test.ts [options]',
 	'',
 	"Discover this PR's Cloudflare preview, wait until it is serving the",
-	'deployed commit, run a no-browser smoke, and print a briefing for',
-	'manual UI testing. Use on medium-to-high risk PRs after pushing.',
+	'deployed commit, sign in as the seeded user, then run authenticated',
+	'requests so you can create specific data and assert the change.',
+	'Use on medium-to-high risk PRs after pushing.',
 	'',
 	'Options:',
 	'  --pr <n>            PR number (default: gh pr view)',
@@ -29,8 +31,14 @@ const usageLines = [
 	'  --timeout-ms <n>    Wait budget in milliseconds (default: 900000)',
 	'  --poll-ms <n>       Poll interval in milliseconds (default: 8000)',
 	'  --skip-login        Skip POST /auth and cookie-backed checks',
+	'  --request <spec>    Authenticated HTTP as the seed user (repeatable).',
+	'                      Spec: METHOD /path [status] [json-body]',
+	'                      Default success is any 2xx. Example:',
+	'                      POST /account/values.json {"action":"save",...}',
 	'  --check <path>      Extra authenticated GET after login (repeatable)',
-	'  --json              Machine-readable output on stdout',
+	'  --cookie-file <p>   Write the session Cookie header value to a file',
+	'  --json              Machine-readable output on stdout (includes',
+	'                      session.cookieHeader for follow-up curl)',
 	'  --help              Print this help',
 	'',
 	'Docs: docs/contributing/preview-manual-testing.md',
@@ -45,8 +53,19 @@ export type PreviewManualTestOptions = {
 	pollIntervalMs: number
 	skipLogin: boolean
 	checkPaths: Array<string>
+	sessionRequests: Array<SessionRequestSpec>
+	cookieFile: string | null
 	json: boolean
 	help: boolean
+}
+
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+
+export type SessionRequestSpec = {
+	method: HttpMethod
+	path: string
+	expectedStatus: number | null
+	body: unknown | null
 }
 
 export type ParsedPreviewComment = {
@@ -90,6 +109,13 @@ export type SmokeReport = {
 	sessionEmail: string | null
 	commitSha: string | null
 	runtimeCommitSha: string | null
+	cookieHeader: string | null
+}
+
+export type PreviewSession = {
+	cookieHeader: string | null
+	origin: string | null
+	cookieFile: string | null
 }
 
 export type PreviewManualTestResult = {
@@ -98,6 +124,7 @@ export type PreviewManualTestResult = {
 	options: PreviewManualTestOptions
 	snapshot: PreviewSnapshot
 	smoke: SmokeReport | null
+	session: PreviewSession
 	login: {
 		email: string
 		password: string
@@ -121,6 +148,7 @@ export type PreviewManualTestDeps = {
 	log: (message: string) => void
 	error: (message: string) => void
 	print: (message: string) => void
+	writeFile: (path: string, contents: string) => Promise<void>
 }
 
 const defaultDeps: PreviewManualTestDeps = {
@@ -137,6 +165,7 @@ const defaultDeps: PreviewManualTestDeps = {
 	print: (message) => {
 		console.log(message)
 	},
+	writeFile,
 }
 
 export function previewSeedUsername() {
@@ -153,6 +182,8 @@ export function parseArgs(argv: Array<string>): PreviewManualTestOptions {
 		pollIntervalMs: defaultPollIntervalMs,
 		skipLogin: false,
 		checkPaths: [],
+		sessionRequests: [],
+		cookieFile: null,
 		json: false,
 		help: false,
 	}
@@ -208,6 +239,18 @@ export function parseArgs(argv: Array<string>): PreviewManualTestOptions {
 				index += 1
 				break
 			}
+			case '--request': {
+				options.sessionRequests.push(
+					parseSessionRequest(requireValue(argv[index + 1], '--request')),
+				)
+				index += 1
+				break
+			}
+			case '--cookie-file': {
+				options.cookieFile = requireValue(argv[index + 1], '--cookie-file')
+				index += 1
+				break
+			}
 			default: {
 				if (arg.startsWith('-')) {
 					throw new PreviewManualTestError(
@@ -221,13 +264,93 @@ export function parseArgs(argv: Array<string>): PreviewManualTestOptions {
 		}
 	}
 
-	if (options.checkPaths.length > 0 && options.skipLogin) {
-		throw new PreviewManualTestError(
-			'--check requires a session cookie; omit --skip-login.',
-		)
+	if (options.skipLogin) {
+		if (options.checkPaths.length > 0) {
+			throw new PreviewManualTestError(
+				'--check requires a session cookie; omit --skip-login.',
+			)
+		}
+		if (options.sessionRequests.length > 0) {
+			throw new PreviewManualTestError(
+				'--request requires a session cookie; omit --skip-login.',
+			)
+		}
+		if (options.cookieFile) {
+			throw new PreviewManualTestError(
+				'--cookie-file requires a session cookie; omit --skip-login.',
+			)
+		}
 	}
 
 	return options
+}
+
+const httpMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
+
+function isHttpMethod(value: string): value is HttpMethod {
+	return (httpMethods as ReadonlyArray<string>).includes(value)
+}
+
+export function parseSessionRequest(spec: string): SessionRequestSpec {
+	const trimmed = spec.trim()
+	const match =
+		/^(GET|POST|PUT|PATCH|DELETE)\s+(\S+)(?:\s+(\d{3}))?(?:\s+([\s\S]+))?$/i.exec(
+			trimmed,
+		)
+	if (!match?.[1] || !match[2]) {
+		throw new PreviewManualTestError(
+			`Invalid --request spec: ${spec}\nExpected: METHOD /path [status] [json-body]`,
+		)
+	}
+	const methodName = match[1].toUpperCase()
+	if (!isHttpMethod(methodName)) {
+		throw new PreviewManualTestError(`Unsupported HTTP method: ${methodName}`)
+	}
+	const path = match[2]
+	if (!path.startsWith('/')) {
+		throw new PreviewManualTestError(
+			`--request path must start with /: ${path}`,
+		)
+	}
+	const expectedStatus = match[3] ? Number.parseInt(match[3], 10) : null
+	const rawBody = match[4]?.trim() ?? ''
+	let body: unknown | null = null
+	if (rawBody.length > 0) {
+		if (methodName === 'GET') {
+			throw new PreviewManualTestError(
+				'GET --request cannot include a JSON body.',
+			)
+		}
+		try {
+			body = JSON.parse(rawBody) as unknown
+		} catch {
+			throw new PreviewManualTestError(
+				`--request body is not valid JSON: ${rawBody}`,
+			)
+		}
+	}
+	return {
+		method: methodName,
+		path,
+		expectedStatus,
+		body,
+	}
+}
+
+export function sessionRequestName(spec: SessionRequestSpec) {
+	const status =
+		spec.expectedStatus === null ? '2xx' : String(spec.expectedStatus)
+	return `${spec.method} ${spec.path} (${status})`
+}
+
+export function evaluateSessionRequestStatus(
+	actualStatus: number,
+	expectedStatus: number | null,
+) {
+	if (expectedStatus === null) {
+		return actualStatus >= 200 && actualStatus < 300
+	}
+	return actualStatus === expectedStatus
 }
 
 export function parsePreviewComment(body: string): ParsedPreviewComment | null {
@@ -422,6 +545,9 @@ export function formatBriefing(result: PreviewManualTestResult): string {
 		`Login (preview seed, non-admin): ${result.login.email} / ${result.login.password}`,
 		`Username: ${result.login.username}`,
 		'`/admin` is expected to 403 — preview does not seed an admin account.',
+		result.session.cookieHeader
+			? 'Session cookie: `--json` field `session.cookieHeader`, or `--cookie-file`.'
+			: null,
 	].filter((line): line is string => line !== null)
 
 	if (result.snapshot.mocks.length > 0) {
@@ -440,12 +566,17 @@ export function formatBriefing(result: PreviewManualTestResult): string {
 
 	lines.push(
 		'',
-		'Manual UI next steps:',
-		'1. Open the preview URL in a browser (computerUse on Cloud Agents).',
-		'2. Sign in at `/login` with Email + Password, then the "Sign in" button.',
-		'3. Exercise the user-visible flows this PR changes. Stay on the preview origin.',
-		'4. `/mcp` needs OAuth; unauthenticated GET `/mcp` is 401 by design.',
-		'5. Record what you saw in the PR. This does not replace `npm run validate`.',
+		'Logged-in testing (required for medium/high risk):',
+		'The seed account starts empty except the user row. Create the data this',
+		'PR needs through the same JSON APIs the UI uses, then assert them:',
+		'  npm run preview:manual-test -- --request \'POST /account/values.json {"action":"save","name":"preview-locale","value":"en-US"}\' --request \'GET /account/values.json\'',
+		'Follow-up curl with the session cookie:',
+		`  curl -sS -H "Cookie: $COOKIE" -H 'Accept: application/json' ${result.session.origin ?? '<preview-url>'}/account/values.json`,
+		'Stay on the preview origin. `/mcp` is 401 without OAuth by design.',
+		'',
+		'UI pass after data exists: open the preview URL (computerUse on Cloud',
+		'Agents), sign in with the credentials above, and exercise the changed flows.',
+		'Record what you saw in the PR. This does not replace `npm run validate`.',
 		'',
 		'Docs: docs/contributing/preview-manual-testing.md',
 	)
@@ -814,6 +945,7 @@ async function runSmokeChecks(
 			sessionEmail: null,
 			commitSha: null,
 			runtimeCommitSha: null,
+			cookieHeader: null,
 		}
 	}
 
@@ -945,6 +1077,25 @@ async function runSmokeChecks(
 					: `expected HTTP 200, got ${account.status}`,
 			})
 
+			if (options.cookieFile) {
+				await deps.writeFile(options.cookieFile, `${cookieHeader}\n`)
+				checks.push({
+					name: 'cookie-file',
+					ok: true,
+					detail: options.cookieFile,
+				})
+			}
+
+			for (const spec of options.sessionRequests) {
+				const requestCheck = await runAuthenticatedSessionRequest(
+					deps,
+					origin,
+					cookieHeader,
+					spec,
+				)
+				checks.push(requestCheck)
+			}
+
 			for (const path of options.checkPaths) {
 				const normalized = path.startsWith('/') ? path : `/${path}`
 				const extra = await fetchText(deps, `${origin}${normalized}`, {
@@ -966,6 +1117,7 @@ async function runSmokeChecks(
 		sessionEmail,
 		commitSha,
 		runtimeCommitSha,
+		cookieHeader: cookieHeader || null,
 	}
 }
 
@@ -995,6 +1147,13 @@ function buildResult(
 		options,
 		snapshot,
 		smoke,
+		session: {
+			cookieHeader: smoke?.cookieHeader ?? null,
+			origin: snapshot.previewUrl
+				? snapshot.previewUrl.replace(/\/$/, '')
+				: null,
+			cookieFile: options.cookieFile,
+		},
 		login,
 		briefing: '',
 	}
@@ -1036,6 +1195,48 @@ function isFailedConclusion(conclusion: string) {
 		conclusion === 'timed_out' ||
 		conclusion === 'startup_failure'
 	)
+}
+
+async function runAuthenticatedSessionRequest(
+	deps: PreviewManualTestDeps,
+	origin: string,
+	cookieHeader: string,
+	spec: SessionRequestSpec,
+): Promise<SmokeCheck> {
+	const headers: Record<string, string> = {
+		Cookie: cookieHeader,
+		Accept: spec.path.includes('.json') ? 'application/json' : '*/*',
+	}
+	const init: RequestInit = {
+		method: spec.method,
+		headers,
+		redirect: 'manual',
+	}
+	if (spec.body !== null) {
+		headers['Content-Type'] = 'application/json'
+		init.body = JSON.stringify(spec.body)
+	}
+	const response = spec.path.includes('.json')
+		? await fetchJson(deps, `${origin}${spec.path}`, init)
+		: await fetchText(deps, `${origin}${spec.path}`, init)
+	const ok = evaluateSessionRequestStatus(response.status, spec.expectedStatus)
+	const expected =
+		spec.expectedStatus === null ? '2xx' : String(spec.expectedStatus)
+	return {
+		name: sessionRequestName(spec),
+		ok,
+		detail: ok
+			? `HTTP ${response.status} ${truncateDetail(response.body)}`
+			: `expected ${expected}, got HTTP ${response.status} ${truncateDetail(response.body)}`,
+	}
+}
+
+function truncateDetail(body: unknown, maxLength = 400) {
+	const text =
+		typeof body === 'string' ? body : body === null ? '' : JSON.stringify(body)
+	const compact = text.replace(/\s+/g, ' ').trim()
+	if (compact.length <= maxLength) return compact
+	return `${compact.slice(0, maxLength)}…`
 }
 
 type FetchedJson = {

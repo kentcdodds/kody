@@ -12,6 +12,7 @@ import {
 	formatBriefing,
 	parseArgs,
 	parsePreviewComment,
+	parseSessionRequest,
 	previewCommentMarker,
 	previewSeedEmail,
 	previewSeedPassword,
@@ -61,6 +62,44 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 	expect(() => parseArgs(['--check', '/account', '--skip-login'])).toThrow(
 		/--check requires a session cookie/,
 	)
+	expect(() =>
+		parseArgs(['--request', 'GET /account/values.json', '--skip-login']),
+	).toThrow(/--request requires a session cookie/)
+	expect(
+		parseArgs([
+			'--request',
+			'POST /account/values.json {"action":"save","name":"locale","value":"en-US"}',
+			'--request',
+			'GET /admin 403',
+			'--cookie-file',
+			'.tmp/preview-cookie',
+		]),
+	).toEqual(
+		expect.objectContaining({
+			cookieFile: '.tmp/preview-cookie',
+			sessionRequests: [
+				{
+					method: 'POST',
+					path: '/account/values.json',
+					expectedStatus: null,
+					body: { action: 'save', name: 'locale', value: 'en-US' },
+				},
+				{
+					method: 'GET',
+					path: '/admin',
+					expectedStatus: 403,
+					body: null,
+				},
+			],
+		}),
+	)
+	expect(parseSessionRequest('GET /account/values.json')).toEqual({
+		method: 'GET',
+		path: '/account/values.json',
+		expectedStatus: null,
+		body: null,
+	})
+	expect(() => parseSessionRequest('FETCH /nope')).toThrow(/Invalid --request/)
 
 	expect(parsePreviewComment('no marker here')).toBeNull()
 	expect(parsePreviewComment(sampleComment)).toEqual({
@@ -153,6 +192,12 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 			sessionEmail: previewSeedEmail,
 			commitSha: 'mergesha',
 			runtimeCommitSha: 'mergesha',
+			cookieHeader: 'kody_session=abc',
+		},
+		session: {
+			cookieHeader: 'kody_session=abc',
+			origin: 'https://kody-pr-42.kody.workers.dev',
+			cookieFile: null,
 		},
 		login: {
 			email: previewSeedEmail,
@@ -167,20 +212,39 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 	expect(briefing).toContain('user-me')
 	expect(briefing).toContain('merge commit')
 	expect(briefing).toContain('computerUse')
+	expect(briefing).toContain('--request')
+	expect(briefing).toContain('session.cookieHeader')
 })
 
 test('preview manual test smokes a local preview: health, login page, auth, session, account, mcp', async () => {
 	await using server = await createPreviewFixtureServer()
 	const logs: Array<string> = []
+	const files = new Map<string, string>()
 	const { exitCode, result } = await runPreviewManualTest(
-		['--url', server.origin, '--no-wait', '--check', '/account/secrets'],
-		createSilentDeps({ logs }),
+		[
+			'--url',
+			server.origin,
+			'--no-wait',
+			'--cookie-file',
+			'.tmp/preview-cookie',
+			'--request',
+			'POST /account/values.json {"action":"save","name":"preview-locale","value":"en-US"}',
+			'--request',
+			'GET /account/values.json',
+			'--request',
+			'GET /admin 403',
+			'--check',
+			'/account/secrets',
+		],
+		createSilentDeps({ logs, files }),
 	)
 
 	expect(exitCode).toBe(0)
 	expect(result?.ok).toBe(true)
 	expect(result?.smoke?.ok).toBe(true)
 	expect(result?.smoke?.sessionEmail).toBe(previewSeedEmail)
+	expect(result?.session.cookieHeader).toBe('kody_session=test-cookie')
+	expect(files.get('.tmp/preview-cookie')).toBe('kody_session=test-cookie\n')
 	expect(result?.smoke?.checks.map((check) => check.name)).toEqual([
 		'GET /health',
 		'GET /login',
@@ -188,6 +252,10 @@ test('preview manual test smokes a local preview: health, login page, auth, sess
 		'POST /auth',
 		'GET /session',
 		'GET /account',
+		'cookie-file',
+		'POST /account/values.json (2xx)',
+		'GET /account/values.json (2xx)',
+		'GET /admin (403)',
 		'GET /account/secrets',
 	])
 	expect(result?.briefing).toContain(server.origin)
@@ -287,9 +355,12 @@ function sampleCommentWithUrl(previewUrl: string) {
 }
 
 function createSilentDeps(
-	overrides: Partial<PreviewManualTestDeps> & { logs: Array<string> },
+	overrides: Partial<PreviewManualTestDeps> & {
+		logs: Array<string>
+		files?: Map<string, string>
+	},
 ): PreviewManualTestDeps {
-	const { logs, ...rest } = overrides
+	const { logs, files = new Map<string, string>(), ...rest } = overrides
 	return {
 		execGh: async () => ({ status: 1, stdout: '', stderr: 'unused' }),
 		fetch,
@@ -305,6 +376,9 @@ function createSilentDeps(
 		},
 		print: (message) => {
 			logs.push(message)
+		},
+		writeFile: async (path, contents) => {
+			files.set(path, contents)
 		},
 		...rest,
 	}
@@ -408,6 +482,33 @@ async function createPreviewFixtureServer() {
 				json(response, 200, {
 					ok: true,
 					session: { email: previewSeedEmail, username: 'user-me' },
+				})
+				return
+			}
+			if (request.method === 'GET' && url.pathname === '/admin') {
+				response.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' })
+				response.end('forbidden')
+				return
+			}
+			if (
+				request.method === 'POST' &&
+				url.pathname === '/account/values.json'
+			) {
+				if (!hasSessionCookie(request)) {
+					json(response, 401, { ok: false, error: 'Unauthorized.' })
+					return
+				}
+				json(response, 200, { ok: true, selectedValueId: 'preview-locale' })
+				return
+			}
+			if (request.method === 'GET' && url.pathname === '/account/values.json') {
+				if (!hasSessionCookie(request)) {
+					json(response, 401, { ok: false, error: 'Unauthorized.' })
+					return
+				}
+				json(response, 200, {
+					ok: true,
+					values: [{ id: 'preview-locale', value: 'en-US' }],
 				})
 				return
 			}

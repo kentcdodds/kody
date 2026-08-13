@@ -4,9 +4,10 @@ Use a PR preview when local `npm run validate` is not enough: medium or high
 risk recaps (`extends` / `adds` in
 [`.agents/skills/visual-recap/SKILL.md`](../../.agents/skills/visual-recap/SKILL.md)),
 auth or deploy-path changes, or anything that needs the real isolated preview
-workers, mocks, and seeded login.
+workers, mocks, and a **logged-in user with the data the change cares about**.
 
-This is a manual check. It does not replace `npm run validate`.
+This does not replace `npm run validate`. A green health/login smoke is not
+evidence that an untested flow works.
 
 ## One command
 
@@ -16,31 +17,39 @@ From the repo root, on a pushed PR branch, with `gh` authenticated:
 npm run preview:manual-test
 ```
 
-Same thing:
+Same thing: `node tools/preview-manual-test.ts`.
+
+The script signs in as the preview seed user and keeps that session. The seed
+account starts **empty** except the user row — there are no secrets, values,
+packages, or jobs until you create them. Create that data and assert the change
+as the same user:
 
 ```bash
-node tools/preview-manual-test.ts
+npm run preview:manual-test -- \
+  --request 'POST /account/values.json {"action":"save","name":"preview-locale","value":"en-US"}' \
+  --request 'GET /account/values.json' \
+  --check /account/values
 ```
 
-The script:
+`--request` is authenticated HTTP as the seed user. Spec:
+`METHOD /path [expected-status] [json-body]`. Default success is any 2xx.
+Example negative check: `--request 'GET /admin 403'`.
 
-1. Resolves the current PR (`gh pr view`, or pass `--pr <n>`).
-2. Reads the `<!-- kody-preview-url -->` comment posted by
-   `.github/workflows/preview.yml`.
-3. Waits until `GET /health` returns `{ ok: true, commitSha }` matching the
-   GitHub preview deployment SHA.
-4. Smokes the preview without a browser: `/health`, `/login`, `/mcp` (401),
-   runtime `/__runtime/health` when the URL is known, then `POST /auth`,
-   `/session`, and `/account`.
-5. Prints a briefing: URL, seed login, worker names, smoke results, and UI next
-   steps.
+`--json` prints `session.cookieHeader` so follow-up `curl` can reuse the
+session. `--cookie-file .tmp/preview-cookie` writes that header value:
 
-Pass `--json` when a caller needs the structured result. Pass `--no-wait` to
-fail immediately if the preview is not up yet. Pass `--url <preview-url>` to
-skip GitHub discovery (useful once the comment already exists).
+```bash
+COOKIE=$(cat .tmp/preview-cookie)
+curl -sS -H "Cookie: $COOKIE" -H 'Accept: application/json' \
+  "$PREVIEW_URL/account/values.json"
+```
 
-`--check /account/secrets` (repeatable) adds authenticated GET checks after
-login.
+`--no-wait` fails immediately if the preview is not up. `--url` skips GitHub
+discovery. `--help` lists the rest.
+
+On medium or high risk, running only the default smoke (health + empty login) is
+not enough. Add `--request` / `--check` for the flows this PR changes, or reuse
+the session cookie and drive those APIs yourself. Then do a UI pass.
 
 ## When a preview exists
 
@@ -63,24 +72,29 @@ seeded remotely):
 - Password: `ilikecode`
 - Username: `user-me`
 
-Sign in at `/login` with Email + Password and the **Sign in** button. `/admin`
-is expected to 403. Turnstile is off on preview (partial or missing keys stay
-disabled), so password login works from a script or a browser.
+The script signs in through `POST /auth` (Turnstile is off on preview). Sign in
+in a browser at `/login` with Email + Password and the **Sign in** button.
+`/admin` is expected to 403.
 
-`/mcp` stays OAuth-protected; an unauthenticated GET is 401 by design. Manual
-preview testing is the browser app and HTTP smoke, not a full MCP OAuth dance.
+Do not seed preview D1 from the agent VM with `tools/ci/preview-resources.ts`
+unless you are an operator with Cloudflare credentials. Create user data through
+the product JSON APIs instead (`/account/*.json` in
+`packages/worker/universal/routes.ts`). Those are the same endpoints the UI
+posts to.
 
-## Manual UI pass
+`/mcp` stays OAuth-protected; an unauthenticated GET is 401 by design. Logged-in
+preview testing is the browser app and cookie-backed HTTP, not a full MCP OAuth
+dance.
 
-After the script succeeds:
+## Logged-in data and UI pass
 
-1. Open the printed URL in a browser. On Cursor Cloud Agents, drive that with
-   the `computerUse` subagent.
-2. Log in with the seed credentials above.
-3. Exercise the user-visible flows **this PR changes**. Stay on the preview
-   origin (do not follow package-app handoff into production).
-4. Note what you saw in the PR (pass, bug, screenshot). Keep the recap honest: a
-   green smoke is not evidence that an untested flow works.
+1. Run the script with `--request` (and `--check` for HTML) covering the change.
+2. If you need a longer session, take `session.cookieHeader` from `--json` or
+   `--cookie-file` and `curl` more endpoints.
+3. Open the preview URL (computerUse on Cloud Agents), sign in with the seed
+   credentials, and confirm the same data in the UI. Stay on the preview origin
+   (do not follow package-app handoff into production).
+4. Record what you saw in the PR.
 
 Do not point Playwright at the preview. Local E2E (`npm run test:e2e:run`) boots
 its own worker against `.wrangler/state/e2e`.
