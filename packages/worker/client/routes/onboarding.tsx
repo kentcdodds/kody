@@ -19,6 +19,7 @@ import {
 	type OnboardingChecklistLoaderData,
 } from '#universal/loader-data.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	selectOnboardingExampleListings,
 	selectOnboardingServiceStarterListings,
@@ -705,38 +706,56 @@ export function OnboardingRoute(handle: Handle) {
 											mix={css(starterGridCss)}
 											data-testid="onboarding-built-in-integrations"
 										>
-											{builtInProviders.map((provider) => (
-												<li key={provider.slug} mix={css(providerCardCss)}>
-													<a
-														href={`/connect/oauth?provider=${encodeURIComponent(provider.slug)}`}
-														mix={css(providerCardLinkCss)}
+											{builtInProviders.map((provider) => {
+												const href =
+													provider.connected && provider.connectionName
+														? routes.accountIntegrationDetail.href({
+																integrationName: provider.connectionName,
+															})
+														: `/connect/oauth?provider=${encodeURIComponent(provider.slug)}`
+												return (
+													<li
+														key={provider.slug}
+														mix={css(providerCardCss)}
+														data-connected={
+															provider.connected ? 'true' : undefined
+														}
+														data-testid={`onboarding-provider-${provider.slug}`}
 													>
-														<span mix={css(providerIconWellCss)}>
-															{provider.logoPath ? (
-																<img
-																	src={provider.logoPath}
-																	alt=""
-																	width={30}
-																	height={30}
-																	loading="lazy"
-																	mix={css(providerLogoCss)}
-																/>
-															) : (
-																<ProviderIcon
-																	providerId={provider.slug}
-																	size="30"
-																/>
-															)}
-														</span>
-														<strong mix={css(providerCardNameCss)}>
-															{provider.label}
-														</strong>
-														<span mix={css(providerConnectPillCss)}>
-															Connect
-														</span>
-													</a>
-												</li>
-											))}
+														<a href={href} mix={css(providerCardLinkCss)}>
+															<span mix={css(providerIconWellCss)}>
+																{provider.logoPath ? (
+																	<img
+																		src={provider.logoPath}
+																		alt=""
+																		width={30}
+																		height={30}
+																		loading="lazy"
+																		mix={css(providerLogoCss)}
+																	/>
+																) : (
+																	<ProviderIcon
+																		providerId={provider.slug}
+																		size="30"
+																	/>
+																)}
+															</span>
+															<strong mix={css(providerCardNameCss)}>
+																{provider.label}
+															</strong>
+															<span
+																mix={css(
+																	provider.connected
+																		? providerConnectedPillCss
+																		: providerConnectPillCss,
+																)}
+															>
+																{provider.connected ? 'Connected' : 'Connect'}
+															</span>
+														</a>
+													</li>
+												)
+											})}
 										</ul>
 										<p mix={css(builtInByoCss)}>
 											Want scopes or rate limits Kody's app does not offer?{' '}
@@ -1352,6 +1371,19 @@ const providerConnectPillCss = {
 	width: '100%',
 	fontSize: '0.95rem',
 	textAlign: 'center' as const,
+}
+
+/** Already-connected providers: solid status pill, not another Connect CTA. */
+const providerConnectedPillCss = {
+	...getGhostButtonCss(),
+	marginTop: 'auto',
+	width: '100%',
+	fontSize: '0.95rem',
+	textAlign: 'center' as const,
+	color: colors.primaryText,
+	borderColor: `oklch(from ${colors.primary} l c h / 0.45)`,
+	backgroundColor: `oklch(from ${colors.primary} l c h / 0.08)`,
+	cursor: 'pointer',
 }
 
 const builtInByoCss = {

@@ -15,6 +15,7 @@ import {
 } from '#worker/email/owner-email-reader.ts'
 import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
 import { listTopPlatformAppsByUse } from '#worker/integrations/platform-apps.ts'
+import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
@@ -108,22 +109,47 @@ const onboardingBuiltInProviderLimit = 6
 
 /**
  * Top enabled built-in integrations by adoption, offered as one-click
- * connects in the wizard. Fails open to an empty list so a D1 blip (or a
- * deployment with no platform apps) never breaks the onboarding payload.
+ * connects in the wizard. When `userId` is set, overlays whether the viewer
+ * already has a platform connection for each app. Fails open to an empty
+ * list so a D1 blip (or a deployment with no platform apps) never breaks
+ * the onboarding payload; connection lookup failures leave cards disconnected.
  */
 export async function loadOnboardingBuiltInProviders(
 	env: Env,
+	userId?: string | null,
 ): Promise<Array<OnboardingBuiltInProvider>> {
 	try {
 		const apps = await listTopPlatformAppsByUse({
 			db: env.APP_DB,
 			limit: onboardingBuiltInProviderLimit,
 		})
-		return apps.map((app) => ({
-			slug: app.slug,
-			label: app.label ?? app.slug,
-			logoPath: buildPlatformOauthAppLogoPath(app),
-		}))
+		const connectedBySlug = new Map<string, string>()
+		if (userId) {
+			try {
+				const integrations = await listJoinedIntegrations({ env, userId })
+				for (const joined of integrations) {
+					if (joined.lane !== 'platform') continue
+					const slug = joined.connection.platformAppSlug
+					if (!slug || connectedBySlug.has(slug)) continue
+					connectedBySlug.set(slug, joined.connection.name)
+				}
+			} catch (error) {
+				console.error(
+					'Failed to load viewer connections for onboarding providers:',
+					error,
+				)
+			}
+		}
+		return apps.map((app) => {
+			const connectionName = connectedBySlug.get(app.slug) ?? null
+			return {
+				slug: app.slug,
+				label: app.label ?? app.slug,
+				logoPath: buildPlatformOauthAppLogoPath(app),
+				connected: connectionName != null,
+				connectionName,
+			}
+		})
 	} catch {
 		return []
 	}
@@ -172,7 +198,10 @@ export function createOnboardingHandler(env: Env) {
 				stableUserId: user.mcpUser.userId,
 				emailVerified: user.emailVerified,
 				featuredListings: await loadOnboardingFeaturedListings(env, request),
-				builtInProviders: await loadOnboardingBuiltInProviders(env),
+				builtInProviders: await loadOnboardingBuiltInProviders(
+					env,
+					user.mcpUser.userId,
+				),
 			})
 			;[
 				onboarding.checklist,
@@ -224,7 +253,7 @@ export function createOnboardingApiHandler(env: Env) {
 					? await loadOnboardingFeaturedListings(env, request)
 					: [],
 				builtInProviders: user.emailVerified
-					? await loadOnboardingBuiltInProviders(env)
+					? await loadOnboardingBuiltInProviders(env, user.mcpUser.userId)
 					: [],
 			})
 			if (user.emailVerified) {

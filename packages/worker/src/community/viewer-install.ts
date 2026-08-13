@@ -22,6 +22,8 @@ export type ResolvedViewerListingInstall = {
 	status: 'installed' | 'adaptation_required'
 	targetName: string
 	sourceId: string
+	/** Live saved package id when status is `installed`; otherwise null. */
+	packageId: string | null
 }
 
 function compareCreatedAtDesc(left: string, right: string) {
@@ -74,6 +76,7 @@ export function resolveViewerListingInstalls(input: {
 				status: 'installed',
 				targetName: savedByKody.name,
 				sourceId: savedByKody.sourceId,
+				packageId: savedByKody.id,
 			})
 			continue
 		}
@@ -91,6 +94,7 @@ export function resolveViewerListingInstalls(input: {
 				status: 'installed',
 				targetName: forkedSaved.name,
 				sourceId: forkedSaved.sourceId,
+				packageId: forkedSaved.id,
 			})
 			continue
 		}
@@ -98,6 +102,7 @@ export function resolveViewerListingInstalls(input: {
 			status: 'adaptation_required',
 			targetName: scopedPackageName(input.packageScope, fork.targetKodyId),
 			sourceId: fork.forkedSourceId,
+			packageId: null,
 		})
 	}
 	return resolved

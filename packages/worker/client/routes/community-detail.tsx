@@ -81,6 +81,7 @@ type CommunityInstallApiPayload = {
 	ok: boolean
 	requiresAcknowledgement?: boolean
 	status?: 'installed' | 'adaptation_required'
+	packageId?: string
 	targetName?: string
 	agentPrompt?: string
 	failedChecks?: Array<{ kind: string; message: string }>
@@ -91,6 +92,7 @@ type CommunityInstallOutcome = {
 	status: 'installed' | 'adaptation_required'
 	targetName: string
 	agentPrompt: string
+	packageId: string | null
 	failedChecks: Array<{ kind: string; message: string }>
 }
 
@@ -631,6 +633,8 @@ export function CommunityDetailRoute(handle: Handle) {
 				status: payload.status,
 				targetName: payload.targetName,
 				agentPrompt: payload.agentPrompt,
+				packageId:
+					payload.status === 'installed' ? (payload.packageId ?? null) : null,
 				failedChecks: payload.failedChecks ?? [],
 			}
 			installState = 'idle'
@@ -774,6 +778,7 @@ export function CommunityDetailRoute(handle: Handle) {
 						status: existingInstall.status,
 						targetName: existingInstall.targetName,
 						agentPrompt: existingInstall.agentPrompt,
+						packageId: existingInstall.packageId,
 						failedChecks: [] as Array<{ kind: string; message: string }>,
 						existing: true,
 					}
@@ -829,10 +834,19 @@ export function CommunityDetailRoute(handle: Handle) {
 										</p>
 										<p>
 											<a
-												href={routes.accountPackages.href()}
+												href={
+													shownInstall.packageId
+														? routes.accountPackageDetail.href({
+																packageId: shownInstall.packageId,
+															})
+														: routes.accountPackages.href()
+												}
 												mix={css(inlineLinkCss)}
+												data-testid="community-install-open-package"
 											>
-												View it in your packages
+												{shownInstall.packageId
+													? 'Open in your packages'
+													: 'View it in your packages'}
 											</a>
 										</p>
 										<p>

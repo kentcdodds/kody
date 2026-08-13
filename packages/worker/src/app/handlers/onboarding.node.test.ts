@@ -4,6 +4,7 @@ import { setAuthSessionSecret } from '#app/auth-session.ts'
 import {
 	createOnboardingApiHandler,
 	createOnboardingHandler,
+	loadOnboardingBuiltInProviders,
 	loadWelcomeEmail,
 } from '#app/handlers/onboarding.ts'
 import {
@@ -18,6 +19,9 @@ const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
 	listOwnerEmailMessages: vi.fn(),
 	searchOwnerEmailMessages: vi.fn(),
+	listTopPlatformAppsByUse: vi.fn(),
+	listJoinedIntegrations: vi.fn(),
+	buildPlatformOauthAppLogoPath: vi.fn(),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -38,6 +42,21 @@ vi.mock('#worker/email/owner-email-reader.ts', () => ({
 		mockModule.listOwnerEmailMessages(...args),
 	searchOwnerEmailMessages: (...args: Array<unknown>) =>
 		mockModule.searchOwnerEmailMessages(...args),
+}))
+
+vi.mock('#worker/integrations/platform-apps.ts', () => ({
+	listTopPlatformAppsByUse: (...args: Array<unknown>) =>
+		mockModule.listTopPlatformAppsByUse(...args),
+}))
+
+vi.mock('#worker/integrations/service.ts', () => ({
+	listJoinedIntegrations: (...args: Array<unknown>) =>
+		mockModule.listJoinedIntegrations(...args),
+}))
+
+vi.mock('#worker/integrations/platform-app-logo.ts', () => ({
+	buildPlatformOauthAppLogoPath: (...args: Array<unknown>) =>
+		mockModule.buildPlatformOauthAppLogoPath(...args),
 }))
 
 test('onboarding serves public setup content to anonymous visitors', async () => {
@@ -105,4 +124,98 @@ test('the Reply sub-step names the welcome email, not merely the newest outbound
 		new Error('mailbox unavailable'),
 	)
 	await expect(loadWelcomeEmail(env, 'user-1')).resolves.toBeNull()
+})
+
+test('onboarding built-in providers mark connected vs not from viewer integrations', async () => {
+	const env = {} as Env
+	mockModule.listTopPlatformAppsByUse.mockResolvedValue([
+		{ slug: 'github', label: 'GitHub', logoKey: null },
+		{ slug: 'google', label: 'Google', logoKey: null },
+		{ slug: 'slack', label: null, logoKey: null },
+	])
+	mockModule.buildPlatformOauthAppLogoPath.mockImplementation(
+		(app: { slug: string }) => `/integrations/logos/${app.slug}`,
+	)
+	mockModule.listJoinedIntegrations.mockResolvedValue([
+		{
+			lane: 'platform',
+			app: { slug: 'github' },
+			connection: {
+				name: 'github',
+				platformAppSlug: 'github',
+			},
+		},
+		{
+			lane: 'user',
+			app: { slug: 'custom-slack' },
+			connection: {
+				name: 'my-slack',
+				platformAppSlug: null,
+			},
+		},
+	])
+
+	const anonymous = await loadOnboardingBuiltInProviders(env)
+	expect(anonymous).toEqual([
+		{
+			slug: 'github',
+			label: 'GitHub',
+			logoPath: '/integrations/logos/github',
+			connected: false,
+			connectionName: null,
+		},
+		{
+			slug: 'google',
+			label: 'Google',
+			logoPath: '/integrations/logos/google',
+			connected: false,
+			connectionName: null,
+		},
+		{
+			slug: 'slack',
+			label: 'slack',
+			logoPath: '/integrations/logos/slack',
+			connected: false,
+			connectionName: null,
+		},
+	])
+	expect(mockModule.listJoinedIntegrations).not.toHaveBeenCalled()
+
+	const signedIn = await loadOnboardingBuiltInProviders(env, 'viewer-1')
+	expect(signedIn).toEqual([
+		{
+			slug: 'github',
+			label: 'GitHub',
+			logoPath: '/integrations/logos/github',
+			connected: true,
+			connectionName: 'github',
+		},
+		{
+			slug: 'google',
+			label: 'Google',
+			logoPath: '/integrations/logos/google',
+			connected: false,
+			connectionName: null,
+		},
+		{
+			slug: 'slack',
+			label: 'slack',
+			logoPath: '/integrations/logos/slack',
+			connected: false,
+			connectionName: null,
+		},
+	])
+	expect(mockModule.listJoinedIntegrations).toHaveBeenCalledWith({
+		env,
+		userId: 'viewer-1',
+	})
+
+	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+	mockModule.listJoinedIntegrations.mockRejectedValue(new Error('d1 blip'))
+	const failedLookup = await loadOnboardingBuiltInProviders(env, 'viewer-1')
+	expect(failedLookup.every((provider) => provider.connected === false)).toBe(
+		true,
+	)
+	expect(consoleError).toHaveBeenCalled()
+	consoleError.mockRestore()
 })

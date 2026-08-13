@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { resetDataCacheForTests } from './data-cache.ts'
 import {
+	loadCommunityDetailData,
 	loadCommunityIndexData,
 	loadOnboardingFeaturedListings,
 } from './community-data.ts'
@@ -15,10 +16,14 @@ const mockModule = vi.hoisted(() => ({
 	listCommunityListingsWithAggregates: vi.fn(),
 	searchCommunityListings: vi.fn(),
 	listFeaturedCommunityListingsWithAggregates: vi.fn(),
+	getCommunityListingWithAggregates: vi.fn(),
 	listCommunityForksByListingIdsAndUser: vi.fn(),
 	listSavedPackagesByKodyIds: vi.fn(),
 	listSavedPackagesByIds: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
+	getCommunityStar: vi.fn(),
+	getUserFollow: vi.fn(),
+	getUserSocialRowByUsername: vi.fn(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -33,12 +38,22 @@ vi.mock('#worker/community/service.ts', () => ({
 		mockModule.searchCommunityListings(...args),
 	listFeaturedCommunityListingsWithAggregates: (...args: Array<unknown>) =>
 		mockModule.listFeaturedCommunityListingsWithAggregates(...args),
-	getCommunityListingWithAggregates: vi.fn(),
+	getCommunityListingWithAggregates: (...args: Array<unknown>) =>
+		mockModule.getCommunityListingWithAggregates(...args),
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
 	listCommunityForksByListingIdsAndUser: (...args: Array<unknown>) =>
 		mockModule.listCommunityForksByListingIdsAndUser(...args),
+}))
+
+vi.mock('#worker/community/social-repo.ts', () => ({
+	getCommunityStar: (...args: Array<unknown>) =>
+		mockModule.getCommunityStar(...args),
+	getUserFollow: (...args: Array<unknown>) =>
+		mockModule.getUserFollow(...args),
+	getUserSocialRowByUsername: (...args: Array<unknown>) =>
+		mockModule.getUserSocialRowByUsername(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -118,6 +133,7 @@ test('community index overlays matching kody_id installs for signed-in viewers',
 		status: 'installed',
 		targetName: '@burhan/github',
 		agentPrompt: buildExistingInstallPrompt({ targetName: '@burhan/github' }),
+		packageId: 'pkg-github',
 	})
 	expect(mockModule.listSavedPackagesByKodyIds).toHaveBeenCalledWith(
 		undefined,
@@ -160,7 +176,63 @@ test('onboarding featured listings overlay inert forks as adaptation_required', 
 			targetName: '@burhan/github',
 			sourceId: 'src-inert',
 		}),
+		packageId: null,
 	})
+})
+
+test('community detail overlays viewerInstall for forked listings and omits it when not forked', async () => {
+	resetDataCacheForTests()
+	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
+	mockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+	mockModule.getCommunityStar.mockResolvedValue(false)
+	mockModule.getUserFollow.mockResolvedValue(false)
+	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
+	mockModule.listSavedPackagesByIds.mockResolvedValue([])
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(signedInUser())
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
+	const notForked = await loadCommunityDetailData(
+		{} as Env,
+		new Request('https://example.com/community/listing-github'),
+		'listing-github',
+	)
+	expect(notForked?.viewerInstall).toBeNull()
+
+	resetDataCacheForTests()
+	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([
+		{
+			listingId: 'listing-github',
+			targetKodyId: 'github',
+			forkedPackageId: 'pkg-github',
+			forkedSourceId: 'src-github',
+			createdAt: '2026-08-01T00:00:00.000Z',
+		},
+	])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([
+		{
+			id: 'pkg-github',
+			kodyId: 'github',
+			name: '@burhan/github',
+			sourceId: 'src-github',
+		},
+	])
+	const forked = await loadCommunityDetailData(
+		{} as Env,
+		new Request('https://example.com/community/listing-github-forked'),
+		'listing-github',
+	)
+	expect(forked?.viewerInstall).toEqual({
+		status: 'installed',
+		targetName: '@burhan/github',
+		agentPrompt: buildExistingInstallPrompt({ targetName: '@burhan/github' }),
+		packageId: 'pkg-github',
+	})
+	expect(forked?.listing.viewerInstall).toEqual(forked?.viewerInstall)
 })
 
 test('community index omits viewerInstall for anonymous viewers and auth failures', async () => {

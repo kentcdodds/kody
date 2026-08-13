@@ -70,21 +70,25 @@ test('resolveViewerListingInstalls prefers matching kody_id, then listing forks'
 		status: 'installed',
 		targetName: '@burhan/github',
 		sourceId: 'src-github',
+		packageId: 'pkg-github',
 	})
 	expect(resolved.get('listing-cloudflare')).toEqual({
 		status: 'adaptation_required',
 		targetName: '@burhan/cloudflare',
 		sourceId: 'src-cf',
+		packageId: null,
 	})
 	expect(resolved.get('listing-notion')).toEqual({
 		status: 'installed',
 		targetName: '@burhan/my-notion',
 		sourceId: 'src-notion',
+		packageId: 'pkg-notion-custom',
 	})
 	expect(resolved.has('listing-slack')).toBe(false)
 	expect(resolved.get('listing-dropbox')).toEqual({
 		status: 'adaptation_required',
 		targetName: '@burhan/my-dropbox',
 		sourceId: 'src-dropbox-new',
+		packageId: null,
 	})
 })

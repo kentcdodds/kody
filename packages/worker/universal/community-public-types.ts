@@ -6,6 +6,11 @@ export type ViewerListingInstall = {
 	status: 'installed' | 'adaptation_required'
 	targetName: string
 	agentPrompt: string
+	/**
+	 * Saved package id when the viewer has a live package for this listing.
+	 * Null for inert forks that still need adaptation.
+	 */
+	packageId: string | null
 }
 
 /**

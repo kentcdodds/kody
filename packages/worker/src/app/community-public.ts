@@ -190,6 +190,7 @@ export function toViewerListingInstall(input: {
 	status: 'installed' | 'adaptation_required'
 	targetName: string
 	sourceId: string
+	packageId: string | null
 }): ViewerListingInstall {
 	if (input.status === 'installed') {
 		return {
@@ -198,6 +199,7 @@ export function toViewerListingInstall(input: {
 			agentPrompt: buildExistingInstallPrompt({
 				targetName: input.targetName,
 			}),
+			packageId: input.packageId,
 		}
 	}
 	return {
@@ -207,5 +209,6 @@ export function toViewerListingInstall(input: {
 			targetName: input.targetName,
 			sourceId: input.sourceId,
 		}),
+		packageId: null,
 	}
 }

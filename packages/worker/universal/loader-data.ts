@@ -701,6 +701,13 @@ export type OnboardingBuiltInProvider = {
 	slug: string
 	label: string
 	logoPath: string | null
+	/** True when the signed-in viewer already has a connection for this app. */
+	connected: boolean
+	/**
+	 * Connection name for `/account/integrations/:name` when `connected`.
+	 * Null when disconnected or anonymous.
+	 */
+	connectionName: string | null
 }
 
 /**
