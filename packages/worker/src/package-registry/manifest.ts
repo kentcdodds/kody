@@ -965,7 +965,10 @@ function collectLocalFunctionBindings(body: Array<ModuleAstNode>) {
 		}
 	}
 	for (const statement of body) {
-		if (isFunctionDeclaration(statement)) {
+		if (
+			getNodeType(statement) === 'FunctionDeclaration' ||
+			getNodeType(statement) === 'TSDeclareFunction'
+		) {
 			addFunctionDeclaration(statement, getNodeStart(statement))
 			continue
 		}
@@ -973,7 +976,7 @@ function collectLocalFunctionBindings(body: Array<ModuleAstNode>) {
 			addVariableDeclaration(statement, getNodeStart(statement))
 			continue
 		}
-		if (statement.type !== 'ExportNamedDeclaration') continue
+		if (getNodeType(statement) !== 'ExportNamedDeclaration') continue
 		const declaration = (statement as { declaration?: unknown }).declaration as
 			| ModuleAstNode
 			| undefined
@@ -1196,7 +1199,7 @@ function collectExportedFunctionsFromSource(input: {
 							)
 						: [],
 				})
-			} else if (getNodeType(declaration) === 'Identifier') {
+			} else if (declaration && getNodeType(declaration) === 'Identifier') {
 				const projected = projectDefaultExportIdentifier({
 					source,
 					statement,
