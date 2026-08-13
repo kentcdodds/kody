@@ -16,7 +16,7 @@ import {
 	buildPlainRepoPromotionErrorMessage,
 	findPlainRepoPromotionHint,
 } from '#worker/repo/user-repos.ts'
-import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
+import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { packageDetailSchema } from './shared.ts'
 
 export const getPackageCapability = defineDomainCapability(
@@ -78,13 +78,16 @@ export const getPackageCapability = defineDomainCapability(
 				username: owner.ownerScope,
 				email: owner.ownerEmail,
 			})
-			const loaded = await loadPackageManifestBySourceId({
+			const loaded = await loadPackageSourceBySourceId({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: owner.ownerUserId,
 				sourceId: saved.sourceId,
 			})
-			const projection = buildPackageSearchProjection(loaded.manifest)
+			const projection = buildPackageSearchProjection(
+				loaded.manifest,
+				loaded.files,
+			)
 			return {
 				package_id: saved.id,
 				kody_id: saved.kodyId,
