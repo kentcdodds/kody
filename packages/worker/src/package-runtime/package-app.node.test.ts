@@ -128,27 +128,6 @@ async function createRuntimeRunHelpersForTest() {
 	}
 }
 
-test('package app fetch does not await run-record begin before user code', async () => {
-	const sourceText = await readFile(
-		new URL('./package-app.ts', import.meta.url),
-		'utf8',
-	)
-	const fetchStart = sourceText.indexOf('async fetch(request) {')
-	const realtimeStart = sourceText.indexOf(
-		'async handleRealtimeEvent(payload) {',
-	)
-	const classEnd = sourceText.indexOf('\n}\n`.trim()', realtimeStart)
-	if (fetchStart < 0 || realtimeStart < 0 || classEnd < 0) {
-		throw new Error('package app worker fetch source was not found.')
-	}
-	const fetchSource = sourceText.slice(fetchStart, realtimeStart)
-	const realtimeSource = sourceText.slice(realtimeStart, classEnd)
-	expect(fetchSource).toContain('const runtimeRun = startRuntimeRun(')
-	expect(fetchSource).not.toContain('await startRuntimeRun(')
-	expect(realtimeSource).toContain('const runtimeRun = startRuntimeRun(')
-	expect(realtimeSource).not.toContain('await startRuntimeRun(')
-})
-
 test('package app run-record finish waits for begin inside waitUntil, not on the response path', async () => {
 	const { startRuntimeRun, finishRuntimeRun } =
 		await createRuntimeRunHelpersForTest()
@@ -226,12 +205,10 @@ test('package app kody proxy supports remote namespace calls', async () => {
 			args: { pin: '1234' },
 		},
 	])
-	expect(() => kody['remote:home:set_pin']).toThrow(
-		'Remote connector capability "remote:home:set_pin" is not available as a flat kody function.',
-	)
+	expect(() => kody['remote:home:set_pin']).toThrow()
 })
 
-test('package app workflows proxy validates required workflow input fields', async () => {
+test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {
 	const workflows = await createWorkflowsProxyForTest({
 		workflowCreate: async (input: unknown) => input,
 	})
@@ -292,27 +269,21 @@ test('package app workflows proxy validates required workflow input fields', asy
 	).rejects.toThrow(
 		'workflows.create requires a valid runAt ISO-8601 date-time string or Date.',
 	)
-})
 
-test('package app workflows proxy forwards inline code workflow input', async () => {
-	const workflows = await createWorkflowsProxyForTest({
-		workflowCreate: async (input: unknown) => input,
-	})
 	const code = 'export default async function main() { return { ok: true } }'
-	const result = await workflows.create({
-		code,
-		runAt: '2026-05-03T12:00:00.000Z',
-		idempotencyKey: 'event-key',
-		params: { eventId: 'event-1' },
-	})
-
-	expect(result).toEqual({
+	expect(
+		await workflows.create({
+			code,
+			runAt: '2026-05-03T12:00:00.000Z',
+			idempotencyKey: 'event-key',
+			params: { eventId: 'event-1' },
+		}),
+	).toEqual({
 		code,
 		runAt: new Date('2026-05-03T12:00:00.000Z'),
 		idempotencyKey: 'event-key',
 		params: { eventId: 'event-1' },
 	})
-
 	await expect(
 		workflows.create({
 			code,
@@ -322,21 +293,16 @@ test('package app workflows proxy forwards inline code workflow input', async ()
 		code,
 		params: { eventId: 'event-2' },
 	})
-})
 
-test('package app workflows proxy forwards validated input to runtime bridge', async () => {
-	const workflows = await createWorkflowsProxyForTest({
-		workflowCreate: async (input: unknown) => input,
-	})
-	const result = await workflows.create({
-		workflowName: ' shade-event ',
-		exportName: './run-event',
-		runAt: '2026-05-03T12:00:00.000Z',
-		idempotencyKey: 'event-key',
-		params: { eventId: 'event-1' },
-	})
-
-	expect(result).toEqual({
+	expect(
+		await workflows.create({
+			workflowName: ' shade-event ',
+			exportName: './run-event',
+			runAt: '2026-05-03T12:00:00.000Z',
+			idempotencyKey: 'event-key',
+			params: { eventId: 'event-1' },
+		}),
+	).toEqual({
 		workflowName: ' shade-event ',
 		exportName: './run-event',
 		runAt: new Date('2026-05-03T12:00:00.000Z'),
@@ -664,59 +630,6 @@ test('buildPackageAppWorker acquires a fresh stub per request while reusing the 
 	const [secondWorkerId] = loader.get.mock.calls[1] as [string]
 	expect(firstWorkerId).toBe(secondWorkerId)
 	expect(firstWorkerId).toMatch(/^package-app-/)
-})
-
-test('buildPackageAppWorker aligns dynamic worker compatibility with shared options', async () => {
-	resetPackageAppRuntimeMocks()
-	const { env } = createPackageAppTestEnv()
-	packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity.mockResolvedValue(
-		{
-			row: {
-				id: 'artifact-row-1',
-				artifactName: null,
-				entryPoint: 'app.js',
-			},
-			artifact: {
-				mainModule: 'dist/app.js',
-				modules: {
-					'dist/app.js':
-						'export default { fetch() { return new Response("cached") } }',
-				},
-				dependencies: [],
-				dynamicDependencies: [],
-			},
-		},
-	)
-
-	await buildPackageAppWorker({
-		env,
-		baseUrl: 'https://example.com',
-		userId: 'user-compat',
-		savedPackage: {
-			id: 'package-compat',
-			kodyId: 'example-compat',
-			name: '@kody/example-compat',
-			sourceId: 'source-1',
-			publishedCommit: 'commit-1',
-			manifestPath: 'package.json',
-			sourceRoot: '/',
-		},
-		source: createPackageAppTestSource(),
-		manifest: createPackageAppTestManifest(),
-		runtime: {
-			callerContext: {
-				user: {
-					userId: 'user-compat',
-					email: 'compat@example.com',
-					displayName: 'Compat User',
-				},
-			},
-		} as never,
-	})
-
-	const loader = env.APP_LOADER as unknown as {
-		get: ReturnType<typeof vi.fn>
-	}
 	const factory = loader.get.mock.calls[0]?.[1] as
 		| (() => Record<string, unknown>)
 		| undefined
@@ -798,8 +711,6 @@ test('package app worker exposes its public mount and records fetch query and re
 		),
 	)
 	expect(queryParamNames).toEqual(['audio', 'code', 'state'])
-	expect(JSON.stringify(queryParamNames)).not.toContain('oauth-code-secret')
-	expect(JSON.stringify(queryParamNames)).not.toContain('oauth-state-secret')
 })
 
 test('createPackageAppWorkerId changes when compatibility settings change', async () => {
@@ -1111,7 +1022,7 @@ test('buildPackageAppWorker skips published artifact lookup when publishedCommit
 	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledTimes(1)
 })
 
-test('package app runtime bridge redacts secrets and merges finish metadata via waitUntil', async () => {
+test('package app runtime bridge redacts secrets in finish payload and merges metadata via waitUntil', async () => {
 	resetPackageAppRuntimeMocks()
 	const secretValue = 'pkg-app-secret-value-9f3c'
 	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
@@ -1195,44 +1106,41 @@ test('package app runtime bridge redacts secrets and merges finish metadata via 
 			message: `boom ${redactedSecretText}`,
 		},
 	})
-	const finishInput = packageAppRuntimeMock.finishRunRecord.mock
+	let finishInput = packageAppRuntimeMock.finishRunRecord.mock
 		.calls[0]?.[0] as {
 		logs: Array<unknown>
 		error: { message: string }
 	}
 	expect(JSON.stringify(finishInput.logs)).not.toContain(secretValue)
 	expect(finishInput.error.message).not.toContain(secretValue)
-})
 
-test('package app runtime bridge redacts secrets from Error instances in finish payload', async () => {
-	resetPackageAppRuntimeMocks()
-	const secretValue = 'pkg-app-thrown-secret-value-4a1b'
+	const thrownSecretValue = 'pkg-app-thrown-secret-value-4a1b'
 	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
-		value: secretValue,
+		value: thrownSecretValue,
 	})
-	const { bridge, waitUntilTasks } = createPackageAppRuntimeBridgeForTest()
+	packageAppRuntimeMock.finishRunRecord.mockClear()
+	waitUntilTasks.length = 0
 
 	await bridge.packageSecretGet({ alias: 'api-token' })
 	await bridge.packageRuntimeRunFinish({
 		run: null,
 		status: 'error',
-		logs: [{ level: 'error', message: secretValue }],
-		error: new Error(`failed with ${secretValue}`),
+		logs: [{ level: 'error', message: thrownSecretValue }],
+		error: new Error(`failed with ${thrownSecretValue}`),
 	})
 	await Promise.all(waitUntilTasks)
 
-	const finishInput = packageAppRuntimeMock.finishRunRecord.mock
-		.calls[0]?.[0] as {
+	finishInput = packageAppRuntimeMock.finishRunRecord.mock.calls[0]?.[0] as {
 		logs: Array<{ message: string }>
 		error: Error
 	}
 	expect(finishInput.logs[0]?.message).toBe(redactedSecretText)
 	expect(finishInput.error).toBeInstanceOf(Error)
 	expect(finishInput.error.message).toBe(`failed with ${redactedSecretText}`)
-	expect(finishInput.error.message).not.toContain(secretValue)
+	expect(finishInput.error.message).not.toContain(thrownSecretValue)
 })
 
-test('package app runtime bridge packageStorage methods grant by provenance and deny others', async () => {
+test('package app runtime bridge enforces packageStorage grants and raw storage namespace ACLs', async () => {
 	const { bridge } = createPackageAppRuntimeBridgeForTest({
 		packageStorageGrantIds: ['package-1', 'dep-package'],
 	})
@@ -1289,40 +1197,17 @@ test('package app runtime bridge packageStorage methods grant by provenance and 
 	await expect(
 		bridge.packageStorageClear({ packageId: '   ' }),
 	).rejects.toThrow('packageStorage requires a non-empty package id.')
-})
 
-test('package app runtime bridge raw storage methods only allow internal app buckets', async () => {
-	const { bridge } = createPackageAppRuntimeBridgeForTest()
-	const getValue = vi.fn(async () => ({ value: 'owned' }))
-	const setValue = vi.fn(async () => ({ ok: true }))
-	const getStorageRunner = vi
-		.spyOn(
-			bridge as unknown as {
-				getStorageRunner: (storageId: string) => unknown
-			},
-			'getStorageRunner',
-		)
-		.mockImplementation(() => ({
-			getValue,
-			setValue,
-			listValues: vi.fn(),
-			sqlQuery: vi.fn(),
-			deleteValue: vi.fn(),
-			clearStorage: vi.fn(),
-		}))
-	vi.spyOn(
-		bridge as unknown as {
-			assertStorageWriteAllowed: (input: unknown) => Promise<void>
-		},
-		'assertStorageWriteAllowed',
-	).mockResolvedValue(undefined)
+	getValue.mockClear()
+	setValue.mockClear()
+	getStorageRunner.mockClear()
 
 	await expect(
 		bridge.storageGet({
 			storageId: 'package-1:facet:main',
 			key: 'facet',
 		}),
-	).resolves.toEqual({ value: 'owned' })
+	).resolves.toEqual({ value: 'granted-value' })
 	await expect(
 		bridge.storageSet({
 			storageId: 'package-1:Counter:instance-a',

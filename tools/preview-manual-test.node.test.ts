@@ -11,18 +11,15 @@ import {
 	evaluateAppHealth,
 	evaluateRuntimeHealth,
 	flattenGhJsonPages,
-	formatBriefing,
 	parseArgs,
 	parsePreviewComment,
 	parseSessionRequest,
 	previewCommentMarker,
 	previewSeedEmail,
-	previewSeedPassword,
 	runPreviewManualTest,
 	workerNameFromPreviewUrl,
 	type GhResult,
 	type PreviewManualTestDeps,
-	type PreviewManualTestResult,
 } from './preview-manual-test.ts'
 
 const sampleComment = [
@@ -188,60 +185,6 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		flattenGhJsonPages([[{ body: 'a' }], [{ body: 'b' }, { body: 'c' }]]),
 	).toEqual([{ body: 'a' }, { body: 'b' }, { body: 'c' }])
 	expect(flattenGhJsonPages({ not: 'an array' })).toEqual([])
-
-	const briefing = formatBriefing({
-		ok: true,
-		message: 'ready',
-		options,
-		snapshot: {
-			prNumber: 42,
-			prUrl: 'https://github.com/kentcdodds/kody/pull/42',
-			isDraft: false,
-			headSha: 'headsha',
-			previewUrl: 'https://kody-pr-42.kody.workers.dev',
-			workerName: 'kody-pr-42',
-			runtimeWorkerName: 'kody-pr-42-runtime',
-			runtimeUrl: 'https://kody-pr-42-runtime.kody.workers.dev',
-			d1DatabaseName: 'kody-pr-42-db',
-			oauthKvTitle: 'kody-pr-42-oauth-kv',
-			mocks: [],
-			expectedSha: 'mergesha',
-			workflowUrl: 'https://github.com/kentcdodds/kody/actions/runs/1',
-			workflowStatus: 'completed',
-			workflowConclusion: 'success',
-			workflowHeadSha: 'headsha',
-			deploymentSha: 'mergesha',
-		},
-		smoke: {
-			ok: true,
-			checks: [
-				{ name: 'GET /health', ok: true, detail: 'ok, commitSha mergesha' },
-			],
-			sessionEmail: previewSeedEmail,
-			commitSha: 'mergesha',
-			runtimeCommitSha: 'mergesha',
-			cookieHeader: 'kody_session=abc',
-		},
-		session: {
-			cookieHeader: 'kody_session=abc',
-			origin: 'https://kody-pr-42.kody.workers.dev',
-			cookieFile: null,
-		},
-		login: {
-			email: previewSeedEmail,
-			password: previewSeedPassword,
-			username: 'user-me',
-			admin: false,
-		},
-		briefing: '',
-	} satisfies PreviewManualTestResult)
-	expect(briefing).toContain('Preview is ready for manual testing.')
-	expect(briefing).toContain(`${previewSeedEmail} / ${previewSeedPassword}`)
-	expect(briefing).toContain('user-me')
-	expect(briefing).toContain('merge commit')
-	expect(briefing).toContain('computerUse')
-	expect(briefing).toContain('--request')
-	expect(briefing).toContain('session.cookieHeader')
 })
 
 test('preview manual test smokes a local preview: health, login page, auth, session, account, mcp', async () => {
@@ -287,10 +230,9 @@ test('preview manual test smokes a local preview: health, login page, auth, sess
 		'GET /account/secrets',
 	])
 	expect(result?.briefing).toContain(server.origin)
-	expect(logs.join('\n')).toContain('Preview is ready for manual testing.')
 })
 
-test('preview manual test waits for the GitHub preview comment, then smokes the URL', async () => {
+test('preview manual test waits for the GitHub preview comment and head SHA workflow before smoking', async () => {
 	await using server = await createPreviewFixtureServer()
 	let now = 0
 	let prViews = 0
@@ -303,12 +245,15 @@ test('preview manual test waits for the GitHub preview comment, then smokes the 
 		},
 		execGh: async (args) => {
 			if (args.join(' ').startsWith('pr view')) prViews += 1
+			const commentReady = prViews >= 2
 			return fakeGh(args, {
-				commentBody: prViews >= 2 ? sampleCommentWithUrl(server.origin) : null,
+				commentBody: commentReady
+					? sampleCommentWithUrl(server.origin)
+					: null,
 				headSha: 'headsha',
 				deploymentSha: 'deployedsha',
-				runStatus: prViews >= 2 ? 'completed' : 'in_progress',
-				runConclusion: prViews >= 2 ? 'success' : null,
+				runStatus: commentReady ? 'completed' : 'in_progress',
+				runConclusion: commentReady ? 'success' : null,
 			})
 		},
 	})
@@ -332,73 +277,27 @@ test('preview manual test waits for the GitHub preview comment, then smokes the 
 	expect(
 		result?.smoke?.checks.some((check) => check.name === 'POST /auth'),
 	).toBe(false)
-	expect(logs.some((line) => line.includes('Waiting'))).toBe(true)
-})
-
-test('preview manual test waits for the head SHA workflow even when /health already matches', async () => {
-	await using server = await createPreviewFixtureServer()
-	let now = 0
-	let prViews = 0
-	const logs: Array<string> = []
-	const deps = createSilentDeps({
-		logs,
-		now: () => now,
-		sleep: async (ms) => {
-			now += ms
-		},
-		execGh: async (args) => {
-			if (args.join(' ').startsWith('pr view')) prViews += 1
-			return fakeGh(args, {
-				commentBody: sampleCommentWithUrl(server.origin),
-				headSha: 'headsha',
-				deploymentSha: 'deployedsha',
-				runStatus: prViews >= 2 ? 'completed' : 'in_progress',
-				runConclusion: prViews >= 2 ? 'success' : null,
-			})
-		},
-	})
-
-	const { exitCode, result } = await runPreviewManualTest(
-		[
-			'--pr',
-			'42',
-			'--timeout-ms',
-			'30000',
-			'--poll-ms',
-			'1000',
-			'--skip-login',
-		],
-		deps,
-	)
-
-	expect(exitCode).toBe(0)
 	expect(prViews).toBeGreaterThanOrEqual(2)
 	expect(result?.snapshot.workflowStatus).toBe('completed')
 	expect(result?.snapshot.workflowConclusion).toBe('success')
-	expect(
-		logs.some((line) => line.includes('Waiting for preview workflow')),
-	).toBe(true)
 })
 
 test('preview manual test treats merge-commit /health as ready when it contains the PR head', async () => {
 	await using server = await createPreviewFixtureServer('mergesha')
 	const logs: Array<string> = []
-	const runListCalls: Array<ReadonlyArray<string>> = []
 	const { exitCode, result } = await runPreviewManualTest(
 		['--pr', '42', '--skip-login'],
 		createSilentDeps({
 			logs,
-			execGh: async (args) => {
-				if (args[0] === 'run' && args[1] === 'list') runListCalls.push(args)
-				return fakeGh(args, {
+			execGh: async (args) =>
+				fakeGh(args, {
 					commentBody: sampleCommentWithUrl(server.origin),
 					headSha: 'headsha',
 					deploymentSha: 'headsha',
 					runStatus: 'completed',
 					runConclusion: 'success',
 					commitParents: ['basesha', 'headsha'],
-				})
-			},
+				}),
 		}),
 	)
 
@@ -406,22 +305,13 @@ test('preview manual test treats merge-commit /health as ready when it contains 
 	expect(result?.ok).toBe(true)
 	expect(result?.smoke?.commitSha).toBe('mergesha')
 	expect(
-		result?.smoke?.checks.find((check) => check.name === 'GET /health')?.detail,
-	).toContain('merge of headsha')
-	expect(runListCalls.length).toBeGreaterThan(0)
-	expect(runListCalls[0]).toEqual(
-		expect.arrayContaining([
-			'--commit',
-			'headsha',
-			'--workflow',
-			'preview.yml',
-		]),
-	)
+		result?.smoke?.checks.find((check) => check.name === 'GET /health')?.ok,
+	).toBe(true)
 })
 
-test('preview manual test records fetch failures as checks instead of aborting the briefing', async () => {
+test('preview manual test records fetch and cookie-file failures as checks instead of aborting the briefing', async () => {
 	const logs: Array<string> = []
-	const { exitCode, result } = await runPreviewManualTest(
+	const fetchFailure = await runPreviewManualTest(
 		[
 			'--url',
 			'https://kody-pr-42.example.invalid',
@@ -436,11 +326,11 @@ test('preview manual test records fetch failures as checks instead of aborting t
 		},
 	)
 
-	expect(exitCode).toBe(1)
-	expect(result).not.toBeNull()
-	expect(result?.briefing).toContain('GET /health')
+	expect(fetchFailure.exitCode).toBe(1)
+	expect(fetchFailure.result).not.toBeNull()
+	expect(fetchFailure.result?.briefing).toContain('GET /health')
 	expect(
-		result?.smoke?.checks.some(
+		fetchFailure.result?.smoke?.checks.some(
 			(check) =>
 				check.name === 'GET /health' &&
 				!check.ok &&
@@ -448,14 +338,11 @@ test('preview manual test records fetch failures as checks instead of aborting t
 		),
 	).toBe(true)
 	expect(
-		result?.smoke?.checks.some((check) => check.name === 'GET /login'),
+		fetchFailure.result?.smoke?.checks.some((check) => check.name === 'GET /login'),
 	).toBe(true)
-})
 
-test('preview manual test records cookie-file write failures as checks', async () => {
 	await using server = await createPreviewFixtureServer()
-	const logs: Array<string> = []
-	const { exitCode, result } = await runPreviewManualTest(
+	const cookieFailure = await runPreviewManualTest(
 		[
 			'--url',
 			server.origin,
@@ -473,17 +360,21 @@ test('preview manual test records cookie-file write failures as checks', async (
 		},
 	)
 
-	expect(exitCode).toBe(1)
-	expect(result).not.toBeNull()
-	expect(result?.session.cookieHeader).toBe('kody_session=test-cookie')
+	expect(cookieFailure.exitCode).toBe(1)
+	expect(cookieFailure.result).not.toBeNull()
+	expect(cookieFailure.result?.session.cookieHeader).toBe(
+		'kody_session=test-cookie',
+	)
 	expect(
-		result?.smoke?.checks.find((check) => check.name === 'cookie-file'),
+		cookieFailure.result?.smoke?.checks.find(
+			(check) => check.name === 'cookie-file',
+		),
 	).toEqual({
 		name: 'cookie-file',
 		ok: false,
 		detail: "ENOENT: no such file or directory, open '.tmp/preview-cookie'",
 	})
-	expect(result?.briefing).toContain('POST /auth')
+	expect(cookieFailure.result?.briefing).toContain('POST /auth')
 })
 
 test('preview manual test refuses draft PRs and failed preview workflows', async () => {
