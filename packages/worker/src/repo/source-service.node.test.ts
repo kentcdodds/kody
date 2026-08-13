@@ -1,10 +1,26 @@
 import { expect, test, vi } from 'vitest'
 
-vi.mock('./artifacts-push-subscriptions.ts', () => ({
+const mocks = vi.hoisted(() => ({
+	waitUntil: vi.fn((promise: Promise<unknown>) => {
+		void promise
+	}),
 	ensureArtifactsRepoPushSubscription: vi.fn(async () => ({
 		subscriptionId: null,
 		skipped: true,
 	})),
+}))
+
+vi.mock('cloudflare:workers', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('cloudflare:workers')>()
+	return {
+		...actual,
+		waitUntil: (...args: Array<unknown>) => mocks.waitUntil(...args),
+	}
+})
+
+vi.mock('./artifacts-push-subscriptions.ts', () => ({
+	ensureArtifactsRepoPushSubscription: (...args: Array<unknown>) =>
+		mocks.ensureArtifactsRepoPushSubscription(...args),
 }))
 
 const { ensureEntitySource } = await import('./source-service.ts')
@@ -154,6 +170,17 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 		})
 
 	try {
+		let releasePushSubscription!: (value: {
+			subscriptionId: string | null
+			skipped: boolean
+		}) => void
+		mocks.ensureArtifactsRepoPushSubscription.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					releasePushSubscription = resolve
+				}),
+		)
+		mocks.waitUntil.mockImplementation(() => {})
 		const serverTiming: Array<{ name: string; durationMs: number }> = []
 		const source = await ensureEntitySource({
 			db,
@@ -181,9 +208,20 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 		expect(serverTiming.map((entry) => entry.name)).toEqual([
 			'artifacts-repo-ready',
 			'entity-source-insert',
-			'artifacts-push-subscription',
 		])
+		expect(mocks.waitUntil).toHaveBeenCalledTimes(1)
+		releasePushSubscription({ subscriptionId: null, skipped: true })
+		await mocks.waitUntil.mock.calls[0]?.[0]
 	} finally {
+		mocks.ensureArtifactsRepoPushSubscription.mockReset()
+		mocks.ensureArtifactsRepoPushSubscription.mockResolvedValue({
+			subscriptionId: null,
+			skipped: true,
+		})
+		mocks.waitUntil.mockReset()
+		mocks.waitUntil.mockImplementation((promise: Promise<unknown>) => {
+			void promise
+		})
 		fetchMock.mockRestore()
 	}
 })
@@ -376,6 +414,7 @@ test('ensureEntitySource reuses an existing entity source when its Artifacts rep
 		})
 
 	try {
+		mocks.waitUntil.mockClear()
 		const source = await ensureEntitySource({
 			db,
 			env: {
@@ -394,6 +433,7 @@ test('ensureEntitySource reuses an existing entity source when its Artifacts rep
 		expect(runMock).not.toHaveBeenCalled()
 		expect(source).toEqual(existingRow)
 		expect(source.bootstrapAccess).toBeUndefined()
+		expect(mocks.waitUntil).toHaveBeenCalledTimes(1)
 	} finally {
 		fetchMock.mockRestore()
 	}

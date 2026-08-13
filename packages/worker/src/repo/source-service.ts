@@ -1,3 +1,4 @@
+import { waitUntil } from 'cloudflare:workers'
 import {
 	buildEntityRepoId,
 	hasArtifactsAccess,
@@ -123,17 +124,12 @@ export async function ensureEntitySource(input: {
 				indexedCommit: null,
 			})
 		}
-		await pushServerTiming(
-			input.serverTiming,
-			'artifacts-push-subscription',
-			() =>
-				ensureArtifactsRepoPushSubscription({
-					env: input.env,
-					userId: existing.user_id,
-					sourceId: existing.id,
-					repoName: existing.repo_id,
-				}),
-		)
+		scheduleArtifactsRepoPushSubscription({
+			env: input.env,
+			userId: existing.user_id,
+			sourceId: existing.id,
+			repoName: existing.repo_id,
+		})
 		return source
 	}
 	const row = buildEntitySourceRow({
@@ -153,21 +149,27 @@ export async function ensureEntitySource(input: {
 	await pushServerTiming(input.serverTiming, 'entity-source-insert', () =>
 		insertEntitySource(input.db, row),
 	)
-	await pushServerTiming(
-		input.serverTiming,
-		'artifacts-push-subscription',
-		() =>
-			ensureArtifactsRepoPushSubscription({
-				env: input.env,
-				userId: row.user_id,
-				sourceId: row.id,
-				repoName: row.repo_id,
-			}),
-	)
+	scheduleArtifactsRepoPushSubscription({
+		env: input.env,
+		userId: row.user_id,
+		sourceId: row.id,
+		repoName: row.repo_id,
+	})
 	return {
 		...row,
 		bootstrapAccess: repoReady.recreated ? repoReady.bootstrapAccess : null,
 	}
+}
+
+function scheduleArtifactsRepoPushSubscription(input: {
+	env: Env
+	userId: string
+	sourceId: string
+	repoName: string
+}) {
+	// Best-effort; also runs from the repo.created consumer. Do not await —
+	// listing queues/subscriptions is not on the source-creation hot path.
+	waitUntil(ensureArtifactsRepoPushSubscription(input))
 }
 
 function hasAppDbBinding(db: D1Database | null | undefined) {

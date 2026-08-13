@@ -46,6 +46,10 @@ const stubSpan: StubSpan = {
 	end() {},
 }
 
+export function waitUntil(promise: Promise<unknown>): void {
+	void Promise.resolve(promise).catch(() => {})
+}
+
 export const tracing = {
 	enterSpan<T, A extends Array<unknown>>(
 		_name: string,

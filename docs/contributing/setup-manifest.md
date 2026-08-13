@@ -30,12 +30,14 @@ This project uses the following resources:
   - Dead-letter queue: `kody-artifacts-repo-events-dlq`
   - Production CI ensures both queues and reconciles an account-level
     `artifacts` event subscription for `repo.created` / `repo.deleted`.
-  - Per-repo `artifacts.repo` push subscriptions (`pushed`) are created at
-    runtime when durable `entity_sources` rows are ensured, using
-    `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN`. The Worker looks up the
-    destination queue by name. Subscription ids are stored in
+  - Per-repo `artifacts.repo` push subscriptions (`pushed`) are scheduled via
+    `waitUntil` when durable `entity_sources` rows are ensured, and also from
+    the account-level `repo.created` queue consumer. Source creation does not
+    await that REST setup. The Worker looks up the destination queue
+    (`kody-artifacts-repo-events`) by name and caches the queue id for the
+    isolate lifetime. Subscription ids are stored in
     `entity_source_artifacts_push_subscriptions` and deleted during artifact
-    cleanup.
+    cleanup. Uses `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN`.
   - The production consumer batches at most 10 messages for 5 seconds, retries
     three times, and routes exhausted messages to the dedicated dead-letter
     queue. Consumers filter by `ARTIFACTS_NAMESPACE` and ignore session fork

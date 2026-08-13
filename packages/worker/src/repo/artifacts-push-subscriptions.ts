@@ -53,9 +53,19 @@ function readCloudflareResult<T>(body: unknown): T | null {
 	return (record['result'] as T | undefined) ?? null
 }
 
+let cachedArtifactsRepoEventsQueueId: string | undefined
+
+/** Test hook: clears the per-isolate Artifacts repo-events queue id cache. */
+export function resetArtifactsRepoEventsQueueIdCache() {
+	cachedArtifactsRepoEventsQueueId = undefined
+}
+
 async function resolveArtifactsRepoEventsQueueId(
 	env: Env,
 ): Promise<string | null> {
+	if (cachedArtifactsRepoEventsQueueId) {
+		return cachedArtifactsRepoEventsQueueId
+	}
 	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
 	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!accountId || !apiToken) return null
@@ -81,6 +91,7 @@ async function resolveArtifactsRepoEventsQueueId(
 			(queue) => queue.queue_name === artifactsRepoEventsQueueName,
 		)
 		if (match?.queue_id) {
+			cachedArtifactsRepoEventsQueueId = match.queue_id
 			return match.queue_id
 		}
 		const info =
@@ -173,9 +184,191 @@ function sameStringSet(
 	)
 }
 
+function readCloudflareErrorText(body: unknown) {
+	if (!body || typeof body !== 'object' || Array.isArray(body)) return ''
+	const errors = (body as Record<string, unknown>)['errors']
+	if (!Array.isArray(errors)) return ''
+	return errors
+		.map((entry) => {
+			if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+				return ''
+			}
+			const message = (entry as Record<string, unknown>)['message']
+			return typeof message === 'string' ? message : ''
+		})
+		.join(' ')
+}
+
+function isEventSubscriptionNameConflict(status: number, body: unknown) {
+	if (status === 409) return true
+	if (status < 400 || status >= 500) return false
+	return /already exists|duplicate|conflict/i.test(
+		readCloudflareErrorText(body),
+	)
+}
+
+function isCurrentPushSubscription(input: {
+	subscription: CloudflareEventSubscription
+	namespace: string
+	repoName: string
+	queueId: string
+	events: ReadonlyArray<string>
+}) {
+	const sourceIsCurrent =
+		input.subscription.source['type'] === 'artifacts.repo' &&
+		input.subscription.source['namespace'] === input.namespace &&
+		(input.subscription.source['repo_name'] === input.repoName ||
+			input.subscription.source['repoName'] === input.repoName)
+	return {
+		sourceIsCurrent,
+		isCurrent:
+			input.subscription.enabled === true &&
+			input.subscription.destination.type === 'queues.queue' &&
+			input.subscription.destination.queue_id === input.queueId &&
+			sourceIsCurrent &&
+			sameStringSet(input.subscription.events, input.events),
+	}
+}
+
+async function createArtifactsPushSubscription(input: {
+	env: Env
+	accountId: string
+	name: string
+	namespace: string
+	repoName: string
+	queueId: string
+	events: ReadonlyArray<string>
+}) {
+	const client = createCloudflareRestClient(input.env)
+	const createBody = {
+		name: input.name,
+		enabled: true,
+		source: {
+			type: 'artifacts.repo',
+			namespace: input.namespace,
+			repo_name: input.repoName,
+		},
+		destination: { type: 'queues.queue', queue_id: input.queueId },
+		events: [...input.events],
+	}
+	const response = await client.rawRequest({
+		method: 'POST',
+		path: `/client/v4/accounts/${encodeURIComponent(input.accountId)}/event_subscriptions/subscriptions`,
+		body: createBody,
+	})
+	if (response.status < 400) {
+		const result = readCloudflareResult<CloudflareEventSubscription>(
+			response.body,
+		)
+		if (!result?.id) {
+			throw new Error(
+				`Cloudflare created Artifacts push event subscription without an id: ${input.name}`,
+			)
+		}
+		return result.id
+	}
+	if (!isEventSubscriptionNameConflict(response.status, response.body)) {
+		throw new CloudflareApiError(
+			`Failed to create Artifacts push event subscription (${response.status}).`,
+			{ status: response.status },
+		)
+	}
+	return await reuseOrRepairArtifactsPushSubscription(input)
+}
+
+async function reuseOrRepairArtifactsPushSubscription(input: {
+	env: Env
+	accountId: string
+	name: string
+	namespace: string
+	repoName: string
+	queueId: string
+	events: ReadonlyArray<string>
+}) {
+	const subscriptions = await listEventSubscriptions(input.env, input.accountId)
+	const existing = subscriptions.find(
+		(subscription) => subscription.name === input.name,
+	)
+	if (!existing) {
+		throw new CloudflareApiError(
+			`Artifacts push event subscription name conflict but no existing subscription named ${input.name}.`,
+			{ status: 409 },
+		)
+	}
+	const { sourceIsCurrent, isCurrent } = isCurrentPushSubscription({
+		subscription: existing,
+		namespace: input.namespace,
+		repoName: input.repoName,
+		queueId: input.queueId,
+		events: input.events,
+	})
+	if (isCurrent) {
+		return existing.id
+	}
+	const client = createCloudflareRestClient(input.env)
+	if (sourceIsCurrent) {
+		const response = await client.rawRequest({
+			method: 'PATCH',
+			path: `/client/v4/accounts/${encodeURIComponent(input.accountId)}/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`,
+			body: {
+				name: input.name,
+				enabled: true,
+				destination: { type: 'queues.queue', queue_id: input.queueId },
+				events: [...input.events],
+			},
+		})
+		if (response.status >= 400) {
+			throw new CloudflareApiError(
+				`Failed to update Artifacts push event subscription (${response.status}).`,
+				{ status: response.status },
+			)
+		}
+		const result = readCloudflareResult<CloudflareEventSubscription>(
+			response.body,
+		)
+		return result?.id ?? existing.id
+	}
+	await client.rawRequest({
+		method: 'DELETE',
+		path: `/client/v4/accounts/${encodeURIComponent(input.accountId)}/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`,
+	})
+	const response = await client.rawRequest({
+		method: 'POST',
+		path: `/client/v4/accounts/${encodeURIComponent(input.accountId)}/event_subscriptions/subscriptions`,
+		body: {
+			name: input.name,
+			enabled: true,
+			source: {
+				type: 'artifacts.repo',
+				namespace: input.namespace,
+				repo_name: input.repoName,
+			},
+			destination: { type: 'queues.queue', queue_id: input.queueId },
+			events: [...input.events],
+		},
+	})
+	if (response.status >= 400) {
+		throw new CloudflareApiError(
+			`Failed to create Artifacts push event subscription (${response.status}).`,
+			{ status: response.status },
+		)
+	}
+	const result = readCloudflareResult<CloudflareEventSubscription>(
+		response.body,
+	)
+	if (!result?.id) {
+		throw new Error(
+			`Cloudflare created Artifacts push event subscription without an id: ${input.name}`,
+		)
+	}
+	return result.id
+}
+
 /**
  * Ensure a repository-level Cloudflare Artifacts push event subscription exists
  * for a durable entity source Artifacts repo. Session forks are skipped.
+ * Creates with POST and only lists existing subscriptions on a name conflict.
+ * The destination queue id is cached for the isolate lifetime.
  * Best-effort: missing Queues credentials, the destination queue, or Cloudflare
  * API failures return without throwing so source creation still succeeds.
  */
@@ -246,86 +439,16 @@ async function ensureArtifactsRepoPushSubscriptionUnsafe(input: {
 
 	const namespace = getArtifactsNamespace(input.env)
 	const name = buildPushSubscriptionName({ namespace, repoName })
-	const subscriptions = await listEventSubscriptions(input.env, accountId)
-	const existing = subscriptions.find(
-		(subscription) => subscription.name === name,
-	)
 	const events = [...pushEventTypes]
-	const sourceIsCurrent =
-		existing?.source['type'] === 'artifacts.repo' &&
-		existing.source['namespace'] === namespace &&
-		(existing.source['repo_name'] === repoName ||
-			existing.source['repoName'] === repoName)
-	const isCurrent =
-		existing?.enabled === true &&
-		existing.destination.type === 'queues.queue' &&
-		existing.destination.queue_id === queueId &&
-		sourceIsCurrent &&
-		sameStringSet(existing.events, events)
-
-	const client = createCloudflareRestClient(input.env)
-	let subscriptionId: string
-	if (existing && isCurrent) {
-		subscriptionId = existing.id
-	} else if (existing && sourceIsCurrent) {
-		const response = await client.rawRequest({
-			method: 'PATCH',
-			path: `/client/v4/accounts/${encodeURIComponent(accountId)}/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`,
-			body: {
-				name,
-				enabled: true,
-				destination: { type: 'queues.queue', queue_id: queueId },
-				events,
-			},
-		})
-		if (response.status >= 400) {
-			throw new CloudflareApiError(
-				`Failed to update Artifacts push event subscription (${response.status}).`,
-				{ status: response.status },
-			)
-		}
-		const result = readCloudflareResult<CloudflareEventSubscription>(
-			response.body,
-		)
-		subscriptionId = result?.id ?? existing.id
-	} else {
-		if (existing) {
-			await client.rawRequest({
-				method: 'DELETE',
-				path: `/client/v4/accounts/${encodeURIComponent(accountId)}/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`,
-			})
-		}
-		const response = await client.rawRequest({
-			method: 'POST',
-			path: `/client/v4/accounts/${encodeURIComponent(accountId)}/event_subscriptions/subscriptions`,
-			body: {
-				name,
-				enabled: true,
-				source: {
-					type: 'artifacts.repo',
-					namespace,
-					repo_name: repoName,
-				},
-				destination: { type: 'queues.queue', queue_id: queueId },
-				events,
-			},
-		})
-		if (response.status >= 400) {
-			throw new CloudflareApiError(
-				`Failed to create Artifacts push event subscription (${response.status}).`,
-				{ status: response.status },
-			)
-		}
-		const result = readCloudflareResult<CloudflareEventSubscription>(
-			response.body,
-		)
-		if (!result?.id) {
-			throw new Error(
-				`Cloudflare created Artifacts push event subscription without an id: ${name}`,
-			)
-		}
-		subscriptionId = result.id
-	}
+	const subscriptionId = await createArtifactsPushSubscription({
+		env: input.env,
+		accountId,
+		name,
+		namespace,
+		repoName,
+		queueId,
+		events,
+	})
 
 	const now = new Date().toISOString()
 	await upsertArtifactsPushSubscription(input.env.APP_DB, {
