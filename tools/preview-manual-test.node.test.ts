@@ -383,19 +383,22 @@ test('preview manual test waits for the head SHA workflow even when /health alre
 test('preview manual test treats merge-commit /health as ready when it contains the PR head', async () => {
 	await using server = await createPreviewFixtureServer('mergesha')
 	const logs: Array<string> = []
+	const runListCalls: Array<ReadonlyArray<string>> = []
 	const { exitCode, result } = await runPreviewManualTest(
 		['--pr', '42', '--skip-login'],
 		createSilentDeps({
 			logs,
-			execGh: async (args) =>
-				fakeGh(args, {
+			execGh: async (args) => {
+				if (args[0] === 'run' && args[1] === 'list') runListCalls.push(args)
+				return fakeGh(args, {
 					commentBody: sampleCommentWithUrl(server.origin),
 					headSha: 'headsha',
 					deploymentSha: 'headsha',
 					runStatus: 'completed',
 					runConclusion: 'success',
 					commitParents: ['basesha', 'headsha'],
-				}),
+				})
+			},
 		}),
 	)
 
@@ -405,6 +408,15 @@ test('preview manual test treats merge-commit /health as ready when it contains 
 	expect(
 		result?.smoke?.checks.find((check) => check.name === 'GET /health')?.detail,
 	).toContain('merge of headsha')
+	expect(runListCalls.length).toBeGreaterThan(0)
+	expect(runListCalls[0]).toEqual(
+		expect.arrayContaining([
+			'--commit',
+			'headsha',
+			'--workflow',
+			'preview.yml',
+		]),
+	)
 })
 
 test('preview manual test records fetch failures as checks instead of aborting the briefing', async () => {

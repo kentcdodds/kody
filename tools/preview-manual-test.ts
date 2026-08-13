@@ -970,10 +970,12 @@ async function loadPreviewWorkflow(
 		'list',
 		'--workflow',
 		'preview.yml',
+		'--commit',
+		pr.headRefOid,
 		'--json',
 		'databaseId,status,conclusion,headSha,event,url,displayTitle',
 		'--limit',
-		'30',
+		'10',
 	])
 	return (
 		runs.find((run) => run.headSha === pr.headRefOid) ??
