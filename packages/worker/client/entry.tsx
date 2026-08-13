@@ -7,7 +7,10 @@ import {
 	initSentryClient,
 } from '#client/sentry-client.ts'
 import { AppRoot, APP_ROOT_ENTRY_ID } from './app-root.tsx'
+import { ensureCryptoRandomUUID } from './ensure-crypto-random-uuid.ts'
 
+// Remix frame ids call crypto.randomUUID(); some in-app browsers omit it.
+ensureCryptoRandomUUID()
 initSentryClient(document)
 
 const clientRegistry: Record<string, typeof AppRoot> = {
