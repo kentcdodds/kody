@@ -43,8 +43,8 @@ function createEntitySourceRow() {
 	}
 }
 
-test('ensureEntitySource fails closed when durable persistence is required without Artifacts REST credentials', async () => {
-	const db = {
+function createEmptyEntitySourcesDb() {
+	return {
 		prepare() {
 			return {
 				bind() {
@@ -57,11 +57,86 @@ test('ensureEntitySource fails closed when durable persistence is required witho
 			}
 		},
 	} as unknown as D1Database
+}
 
+function createArtifactsFetchMock(options: {
+	repoName: string
+	getRepoCountRef: { value: number }
+}) {
+	return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+		const url = new URL(String(input))
+		const method = init?.method ?? 'GET'
+		if (method === 'GET' && url.pathname.endsWith(`/repos/${options.repoName}`)) {
+			options.getRepoCountRef.value += 1
+			if (options.getRepoCountRef.value === 1) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						result: null,
+						errors: [{ code: 1000, message: 'Repo not found' }],
+						messages: [],
+					}),
+					{
+						status: 404,
+						headers: { 'content-type': 'application/json' },
+					},
+				)
+			}
+			return new Response(
+				JSON.stringify({
+					success: true,
+					result: {
+						id: 'repo-1',
+						name: options.repoName,
+						description: null,
+						default_branch: 'main',
+						created_at: '2026-04-18T00:00:00.000Z',
+						updated_at: '2026-04-18T00:00:00.000Z',
+						last_push_at: null,
+						source: null,
+						read_only: false,
+						remote: `https://acct.artifacts.cloudflare.net/git/default/${options.repoName}.git`,
+					},
+					errors: [],
+					messages: [],
+				}),
+				{
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				},
+			)
+		}
+		if (method === 'POST' && url.pathname.endsWith('/repos')) {
+			return new Response(
+				JSON.stringify({
+					success: true,
+					result: {
+						id: 'repo-1',
+						name: options.repoName,
+						description: null,
+						default_branch: 'main',
+						remote: `https://acct.artifacts.cloudflare.net/git/default/${options.repoName}.git`,
+						token: 'art_v1_create?expires=1760000000',
+					},
+					errors: [],
+					messages: [],
+				}),
+				{
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				},
+			)
+		}
+		throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
+	})
+}
+
+test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo, reuse ready repo', async () => {
+	const emptyDb = createEmptyEntitySourcesDb()
 	await expect(
 		ensureEntitySource({
-			db,
-			env: { APP_DB: db } as Env,
+			db: emptyDb,
+			env: { APP_DB: emptyDb } as Env,
 			userId: 'user-1',
 			entityKind: 'job',
 			entityId: 'job-1',
@@ -69,10 +144,8 @@ test('ensureEntitySource fails closed when durable persistence is required witho
 			requirePersistence: true,
 		}),
 	).rejects.toThrow()
-})
 
-test('ensureEntitySource returns bootstrap access for brand-new repos', async () => {
-	const db = {
+	const newJobDb = {
 		prepare(query: string) {
 			return {
 				bind(...params: Array<unknown>) {
@@ -97,95 +170,30 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 		},
 	} as unknown as D1Database
 
-	let getRepoCount = 0
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			if (method === 'GET' && url.pathname.endsWith('/repos/job-job-1')) {
-				getRepoCount += 1
-				if (getRepoCount === 1) {
-					return new Response(
-						JSON.stringify({
-							success: false,
-							result: null,
-							errors: [{ code: 1000, message: 'Repo not found' }],
-							messages: [],
-						}),
-						{
-							status: 404,
-							headers: { 'content-type': 'application/json' },
-						},
-					)
-				}
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo-1',
-							name: 'job-job-1',
-							description: null,
-							default_branch: 'main',
-							created_at: '2026-04-18T00:00:00.000Z',
-							updated_at: '2026-04-18T00:00:00.000Z',
-							last_push_at: null,
-							source: null,
-							read_only: false,
-							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/job-job-1.git',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			if (method === 'POST' && url.pathname.endsWith('/repos')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo-1',
-							name: 'job-job-1',
-							description: null,
-							default_branch: 'main',
-							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/job-job-1.git',
-							token: 'art_v1_create?expires=1760000000',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
+	const newJobGetRepoCount = { value: 0 }
+	const newJobFetchMock = createArtifactsFetchMock({
+		repoName: 'job-job-1',
+		getRepoCountRef: newJobGetRepoCount,
+	})
+
+	let releasePushSubscription!: (value: {
+		subscriptionId: string | null
+		skipped: boolean
+	}) => void
+	mocks.ensureArtifactsRepoPushSubscription.mockImplementation(
+		() =>
+			new Promise((resolve) => {
+				releasePushSubscription = resolve
+			}),
+	)
+	mocks.waitUntil.mockImplementation(() => {})
 
 	try {
-		let releasePushSubscription!: (value: {
-			subscriptionId: string | null
-			skipped: boolean
-		}) => void
-		mocks.ensureArtifactsRepoPushSubscription.mockImplementation(
-			() =>
-				new Promise((resolve) => {
-					releasePushSubscription = resolve
-				}),
-		)
-		mocks.waitUntil.mockImplementation(() => {})
 		const serverTiming: Array<{ name: string; durationMs: number }> = []
-		const source = await ensureEntitySource({
-			db,
+		const newSource = await ensureEntitySource({
+			db: newJobDb,
 			env: {
-				APP_DB: db,
+				APP_DB: newJobDb,
 				CLOUDFLARE_ACCOUNT_ID: 'acct',
 				CLOUDFLARE_API_TOKEN: 'token-123',
 				CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
@@ -197,9 +205,9 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 			serverTiming,
 		})
 
-		expect(fetchMock).toHaveBeenCalledTimes(3)
-		expect(source.repo_id).toBe('job-job-1')
-		expect(source.bootstrapAccess).toEqual({
+		expect(newJobFetchMock).toHaveBeenCalledTimes(3)
+		expect(newSource.repo_id).toBe('job-job-1')
+		expect(newSource.bootstrapAccess).toEqual({
 			defaultBranch: 'main',
 			remote: 'https://acct.artifacts.cloudflare.net/git/default/job-job-1.git',
 			token: 'art_v1_create?expires=1760000000',
@@ -213,23 +221,12 @@ test('ensureEntitySource returns bootstrap access for brand-new repos', async ()
 		releasePushSubscription({ subscriptionId: null, skipped: true })
 		await mocks.waitUntil.mock.calls[0]?.[0]
 	} finally {
-		mocks.ensureArtifactsRepoPushSubscription.mockReset()
-		mocks.ensureArtifactsRepoPushSubscription.mockResolvedValue({
-			subscriptionId: null,
-			skipped: true,
-		})
-		mocks.waitUntil.mockReset()
-		mocks.waitUntil.mockImplementation((promise: Promise<unknown>) => {
-			void promise
-		})
-		fetchMock.mockRestore()
+		newJobFetchMock.mockRestore()
 	}
-})
 
-test('ensureEntitySource recreates a missing Artifacts repo for an existing entity source', async () => {
 	const existingRow = createEntitySourceRow()
-	const runMock = vi.fn(async () => ({ meta: { changes: 1 } }))
-	const db = {
+	const recreateRunMock = vi.fn(async () => ({ meta: { changes: 1 } }))
+	const recreateDb = {
 		prepare(query: string) {
 			return {
 				bind() {
@@ -240,93 +237,24 @@ test('ensureEntitySource recreates a missing Artifacts repo for an existing enti
 							}
 							return null
 						},
-						run: runMock,
+						run: recreateRunMock,
 					}
 				},
 			}
 		},
 	} as unknown as D1Database
 
-	let getRepoCount = 0
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			if (
-				method === 'GET' &&
-				url.pathname.endsWith('/repos/package-package-1')
-			) {
-				getRepoCount += 1
-				if (getRepoCount === 1) {
-					return new Response(
-						JSON.stringify({
-							success: false,
-							result: null,
-							errors: [{ code: 1000, message: 'Repo not found' }],
-							messages: [],
-						}),
-						{
-							status: 404,
-							headers: { 'content-type': 'application/json' },
-						},
-					)
-				}
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo-1',
-							name: 'package-package-1',
-							description: null,
-							default_branch: 'main',
-							created_at: '2026-04-18T00:00:00.000Z',
-							updated_at: '2026-04-18T00:00:00.000Z',
-							last_push_at: null,
-							source: null,
-							read_only: false,
-							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			if (method === 'POST' && url.pathname.endsWith('/repos')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: {
-							id: 'repo-1',
-							name: 'package-package-1',
-							description: null,
-							default_branch: 'main',
-							remote:
-								'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
-							token: 'art_v1_create?expires=1760000000',
-						},
-						errors: [],
-						messages: [],
-					}),
-					{
-						status: 200,
-						headers: { 'content-type': 'application/json' },
-					},
-				)
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
+	const recreateGetRepoCount = { value: 0 }
+	const recreateFetchMock = createArtifactsFetchMock({
+		repoName: 'package-package-1',
+		getRepoCountRef: recreateGetRepoCount,
+	})
 
 	try {
-		const source = await ensureEntitySource({
-			db,
+		const recreatedSource = await ensureEntitySource({
+			db: recreateDb,
 			env: {
-				APP_DB: db,
+				APP_DB: recreateDb,
 				CLOUDFLARE_ACCOUNT_ID: 'acct',
 				CLOUDFLARE_API_TOKEN: 'token-123',
 				CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
@@ -337,14 +265,14 @@ test('ensureEntitySource recreates a missing Artifacts repo for an existing enti
 			sourceRoot: '/',
 		})
 
-		expect(fetchMock).toHaveBeenCalledTimes(3)
-		expect(runMock).toHaveBeenCalledTimes(1)
-		expect(source).toMatchObject({
+		expect(recreateFetchMock).toHaveBeenCalledTimes(3)
+		expect(recreateRunMock).toHaveBeenCalledTimes(1)
+		expect(recreatedSource).toMatchObject({
 			...existingRow,
 			published_commit: null,
 			indexed_commit: null,
 		})
-		expect(source.bootstrapAccess).toEqual({
+		expect(recreatedSource.bootstrapAccess).toEqual({
 			defaultBranch: 'main',
 			remote:
 				'https://acct.artifacts.cloudflare.net/git/default/package-package-1.git',
@@ -352,14 +280,11 @@ test('ensureEntitySource recreates a missing Artifacts repo for an existing enti
 			expiresAt: '2025-10-09T08:53:20.000Z',
 		})
 	} finally {
-		fetchMock.mockRestore()
+		recreateFetchMock.mockRestore()
 	}
-})
 
-test('ensureEntitySource reuses an existing entity source when its Artifacts repo is ready', async () => {
-	const existingRow = createEntitySourceRow()
-	const runMock = vi.fn()
-	const db = {
+	const reuseRunMock = vi.fn()
+	const reuseDb = {
 		prepare(query: string) {
 			return {
 				bind() {
@@ -370,13 +295,14 @@ test('ensureEntitySource reuses an existing entity source when its Artifacts rep
 							}
 							return null
 						},
-						run: runMock,
+						run: reuseRunMock,
 					}
 				},
 			}
 		},
 	} as unknown as D1Database
-	const fetchMock = vi
+
+	const reuseFetchMock = vi
 		.spyOn(globalThis, 'fetch')
 		.mockImplementation(async (input, init) => {
 			const url = new URL(String(input))
@@ -415,10 +341,10 @@ test('ensureEntitySource reuses an existing entity source when its Artifacts rep
 
 	try {
 		mocks.waitUntil.mockClear()
-		const source = await ensureEntitySource({
-			db,
+		const reusedSource = await ensureEntitySource({
+			db: reuseDb,
 			env: {
-				APP_DB: db,
+				APP_DB: reuseDb,
 				CLOUDFLARE_ACCOUNT_ID: 'acct',
 				CLOUDFLARE_API_TOKEN: 'token-123',
 				CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
@@ -429,12 +355,21 @@ test('ensureEntitySource reuses an existing entity source when its Artifacts rep
 			sourceRoot: '/',
 		})
 
-		expect(fetchMock).toHaveBeenCalledTimes(1)
-		expect(runMock).not.toHaveBeenCalled()
-		expect(source).toEqual(existingRow)
-		expect(source.bootstrapAccess).toBeUndefined()
+		expect(reuseFetchMock).toHaveBeenCalledTimes(1)
+		expect(reuseRunMock).not.toHaveBeenCalled()
+		expect(reusedSource).toEqual(existingRow)
+		expect(reusedSource.bootstrapAccess).toBeUndefined()
 		expect(mocks.waitUntil).toHaveBeenCalledTimes(1)
 	} finally {
-		fetchMock.mockRestore()
+		reuseFetchMock.mockRestore()
+		mocks.ensureArtifactsRepoPushSubscription.mockReset()
+		mocks.ensureArtifactsRepoPushSubscription.mockResolvedValue({
+			subscriptionId: null,
+			skipped: true,
+		})
+		mocks.waitUntil.mockReset()
+		mocks.waitUntil.mockImplementation((promise: Promise<unknown>) => {
+			void promise
+		})
 	}
 })

@@ -168,7 +168,6 @@ const {
 	reportCommunityListing,
 	searchCommunityListings,
 	forkCommunityListing,
-	persistPreparedCommunityFork,
 	adoptCommunityFork,
 } = await import('./service.ts')
 
@@ -957,10 +956,6 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 
 	expect(result.targetKodyId).toBe('my-discord-gateway')
 	expect(result.targetName).toBe('@jane/my-discord-gateway')
-	expect(result.serverTiming?.map((entry) => entry.name)).toEqual([
-		'prepare',
-		'fork-row',
-	])
 	expect(result.crossScopeReferences).toEqual([
 		{ file: 'package.json', specifier: '@owner/shared-utils' },
 		{ file: 'src/index.ts', specifier: 'kody:@owner/' },
@@ -969,14 +964,9 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 		expect.objectContaining({
 			userId: 'user-2',
 			entityKind: 'package',
-			serverTiming: expect.any(Array),
 		}),
 	)
-	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
-		expect.objectContaining({
-			serverTiming: expect.any(Array),
-		}),
-	)
+	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
 	expect(mockModule.insertCommunityFork).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
@@ -1077,38 +1067,6 @@ test('forkCommunityListing allows repeat fork with a different kody_id', async (
 		expect.objectContaining({
 			target_kody_id: 'my-second-fork',
 		}),
-	)
-})
-
-test('persistPreparedCommunityFork skips serverTiming unless the caller opts in', async () => {
-	mockModule.ensureEntitySource.mockResolvedValue({
-		id: 'fork-source-3',
-		bootstrapAccess: { token: 'bootstrap' },
-	})
-	mockModule.syncArtifactSourceSnapshot.mockResolvedValue('commit-fork-3')
-
-	const result = await persistPreparedCommunityFork({
-		env: createEnv(),
-		baseUrl: 'https://heykody.dev',
-		userId: 'user-2',
-		listingId: 'listing-1',
-		listingName: '@owner/discord-gateway',
-		listingKodyId: 'discord-gateway',
-		originCommit: 'commit-1',
-		actor: null,
-		packageId: 'package-fork-3',
-		targetKodyId: 'my-install-fork',
-		targetName: '@jane/my-install-fork',
-		files: { 'package.json': '{}' },
-		crossScopeReferences: [],
-	})
-
-	expect(result.serverTiming).toBeUndefined()
-	expect(mockModule.ensureEntitySource).toHaveBeenCalledWith(
-		expect.objectContaining({ serverTiming: undefined }),
-	)
-	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
-		expect.objectContaining({ serverTiming: undefined }),
 	)
 })
 

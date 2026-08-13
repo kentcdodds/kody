@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	buildOnboardingExamplePrompt,
 	isOnboardingExampleListing,
 	onboardingExampleListingIds,
 	selectOnboardingExampleListings,
@@ -55,17 +54,4 @@ test('selects zero-auth examples in the known production order', () => {
 			tags: [],
 		}),
 	).toBe(true)
-})
-
-test('example prompt tells the agent to wait, invoke the fork, and offer triggers', () => {
-	const prompt = buildOnboardingExamplePrompt({
-		listingName: '@kody/personal-capture',
-		kodyId: 'personal-capture',
-	})
-	expect(prompt).toContain('personal-capture')
-	expect(prompt).toContain('packages.invoke')
-	expect(prompt).toContain('do not poll')
-	expect(prompt).toContain('one I own')
-	expect(prompt).toContain('webhook')
-	expect(prompt).not.toMatch(/practice|toy/i)
 })

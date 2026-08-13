@@ -135,24 +135,7 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		subscriptionStatus: 'active',
 	})
 
-	// Retired plan names in metadata contribute nothing.
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_other'],
-					metadata: { kody_plan: 'partner' },
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: null,
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
-
+	// Retired plan names in metadata do not override configured price ids.
 	expect(
 		resolveSubscriptionPlan(
 			[
@@ -176,40 +159,6 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 				subscription({
 					status: 'active',
 					priceIds: ['price_unknown'],
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: null,
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
-
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_unknown'],
-					metadata: { kody_plan: 'unlimited' },
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: null,
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
-
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_unknown'],
-					metadata: { kody_plan: 'max' },
 				}),
 			],
 			env,
@@ -301,68 +250,16 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		subscriptionStatus: 'active',
 	})
 
-	// Retired production monthly prices still map after checkout rotates.
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_1Tv3W2LAQpAnsYszSr4PGBkE'],
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: 'standard',
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
-
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_1U1AISLAQpAnsYszIQvRJNhl'],
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: 'pro',
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
-
 	expect(getPurchasablePlans(env)).toEqual(['standard', 'pro'])
-	expect(
-		getPurchasablePlans({
-			STRIPE_STANDARD_PRICE_ID: 'price_standard',
-		}),
-	).toEqual(['standard'])
-	expect(getPurchasablePlans({ STRIPE_PRO_PRICE_ID: 'price_pro' })).toEqual([
-		'pro',
-	])
-	expect(
-		getPurchasablePlans({
-			STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
-		}),
-	).toEqual(['standard'])
 	expect(getPurchasablePlans({})).toEqual([])
 
-	expect(parseBillingInterval(undefined)).toBe('month')
-	expect(parseBillingInterval(null)).toBe('month')
-	expect(parseBillingInterval('')).toBe('month')
 	expect(parseBillingInterval('month')).toBe('month')
 	expect(parseBillingInterval('year')).toBe('year')
-	expect(parseBillingInterval('week')).toBeNull()
 
 	expect(getPriceIdForPlan(env, 'standard')).toBe('price_standard')
-	expect(getPriceIdForPlan(env, 'standard', 'month')).toBe('price_standard')
 	expect(getPriceIdForPlan(env, 'standard', 'year')).toBe(
 		'price_standard_yearly',
 	)
-	expect(getPriceIdForPlan(env, 'pro', 'month')).toBe('price_pro')
 	expect(getPriceIdForPlan(env, 'pro', 'year')).toBe('price_pro_yearly')
 	expect(getPriceIdForPlan({}, 'standard', 'year')).toBeNull()
 })

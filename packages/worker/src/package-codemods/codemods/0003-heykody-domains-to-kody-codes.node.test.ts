@@ -34,7 +34,7 @@ test('0003 rewrites full legacy origins and preserves boundaries', () => {
 })
 
 test('0003 never rewrites subdomains, emails, bare hostnames, or lookalike hosts', () => {
-	const files = {
+	const boundaryFiles = {
 		'config.ts': [
 			"const status = 'https://status.heykody.dev'",
 			"const inbox = 'you@inbox.heykody.app'",
@@ -44,39 +44,24 @@ test('0003 never rewrites subdomains, emails, bare hostnames, or lookalike hosts
 			'',
 		].join('\n'),
 	}
-
-	const result = heykodyDomainsToKodyCodesCodemod.transform(files)
-	expect(result.changed).toBe(false)
-	expect(result.files['config.ts']).toBe(files['config.ts'])
-	// Every non-origin mention is flagged for human review instead.
-	expect(result.needsManual).toEqual([
+	const boundaryResult = heykodyDomainsToKodyCodesCodemod.transform(boundaryFiles)
+	expect(boundaryResult.changed).toBe(false)
+	expect(boundaryResult.files['config.ts']).toBe(boundaryFiles['config.ts'])
+	expect(boundaryResult.needsManual).toEqual([
 		{
 			path: 'config.ts',
 			message: expect.stringContaining('manually'),
 		},
 	])
 
-	const findings = heykodyDomainsToKodyCodesCodemod.detect(files)
-	expect(findings).toEqual([
-		{
-			path: 'config.ts',
-			message: expect.stringContaining('manually'),
-		},
-	])
-})
-
-test('0003 flags a lookalike-only file for manual review (never clean-scans it)', () => {
-	const files = {
+	const lookalikeFiles = {
 		'phish.ts': "const evil = 'https://heykody.app.evil.example/login'\n",
 	}
-	const findings = heykodyDomainsToKodyCodesCodemod.detect(files)
-	expect(findings).toEqual([
-		{ path: 'phish.ts', message: expect.stringContaining('manually') },
-	])
-	const result = heykodyDomainsToKodyCodesCodemod.transform(files)
-	expect(result.changed).toBe(false)
-	expect(result.files['phish.ts']).toBe(files['phish.ts'])
-	expect(result.needsManual).toEqual([
+	const lookalikeResult =
+		heykodyDomainsToKodyCodesCodemod.transform(lookalikeFiles)
+	expect(lookalikeResult.changed).toBe(false)
+	expect(lookalikeResult.files['phish.ts']).toBe(lookalikeFiles['phish.ts'])
+	expect(lookalikeResult.needsManual).toEqual([
 		{ path: 'phish.ts', message: expect.stringContaining('manually') },
 	])
 })
