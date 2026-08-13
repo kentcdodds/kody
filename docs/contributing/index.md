@@ -10,6 +10,7 @@ style, tests, MCP capabilities, and runtime architecture.
   build something)
 - [Setup](./setup.md), [environment variables](./environment-variables.md),
   [setup manifest](./setup-manifest.md)
+- [Manual PR preview testing](./preview-manual-testing.md)
 - [Optional Cloudflare offerings](./cloudflare-offerings.md)
 - [Cursor Cloud Agent notes](./cloud-agents.md)
 - [Harness engineering](./harness-engineering.md) (agent-first loop, promoting

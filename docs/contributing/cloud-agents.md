@@ -47,6 +47,7 @@ manually with native `unzip`:
 | Migrate local D1   | `npm run migrate:local`                                         |
 | Seed test login    | `node tools/seed-test-data.ts --local` (see seeding note below) |
 | Full validate gate | `npm run validate` (CI runs the same checks as parallel jobs)   |
+| Manual PR preview  | `npm run preview:manual-test` (see preview-manual-testing.md)   |
 
 ## Dev server
 

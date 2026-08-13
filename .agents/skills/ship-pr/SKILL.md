@@ -24,7 +24,9 @@ Self-assess; user policy overrides.
    `{ prUrl, status: 'ready' }` (or owner/repo/prNumber).
 2. Wait for CI — `gh pr checks` (or compose `loop-on-ci` / `fix-ci`).
 3. Fix failures; for **medium+**, wait on AI reviewer(s) and address valid
-   feedback. Rebase only when actually unmergeable.
+   feedback. Rebase only when actually unmergeable. For **medium+**, also run
+   `npm run preview:manual-test` and exercise the preview
+   ([preview-manual-test skill](../preview-manual-test/SKILL.md)).
 4. Green + (medium+: valid feedback cleared) → break.
 5. Push → repeat.
 

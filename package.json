@@ -57,6 +57,7 @@
     "migrate:e2e": "node tools/apply-local-app-migrations.ts --persist-to .wrangler/state/e2e && node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply AUDIT_DB --local --persist-to .wrangler/state/e2e && node --env-file=packages/worker/.env ./wrangler-env.ts d1 migrations apply JOBS_DB --local --config packages/jobs-worker/wrangler.jsonc --persist-to .wrangler/state/e2e",
     "preview": "nx run worker:build-client && npm run migrate:local && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local",
     "preview:e2e": "node --env-file=packages/worker/.env tools/prepare-e2e-env.ts && nx run worker:build-client && npm run migrate:e2e && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",
+    "preview:manual-test": "node tools/preview-manual-test.ts",
     "generate-types": "node --env-file=packages/worker/.env ./wrangler-env.ts types ./packages/worker/worker-configuration.d.ts",
     "typecheck": "nx run worker:typecheck && tsc --noEmit -p packages/backup-control-plane/tsconfig.json && tsc --noEmit -p packages/status/tsconfig.json && tsc --noEmit -p packages/jobs-worker/tsconfig.json",
     "test": "nx run worker:test",
