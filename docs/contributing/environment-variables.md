@@ -277,6 +277,12 @@ Worker secrets:
   built-in capability, memory, job, and saved-package vectors with per-user
   `userId` metadata on user-owned rows. Local dev uses offline search while
   `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
+- **`JOB_REINDEX_SECRET`** — optional Worker secret; bearer token for
+  `POST /__maintenance/reindex-jobs` when you want a jobs-only Vectorize rebuild
+  (without the full capability/memory/package reindex that
+  `CAPABILITY_REINDEX_SECRET` drives). When unset, the jobs-only endpoint returns
+  not-configured; production deploys rely on the capability reindex path for job
+  vectors and do not require this secret.
 
 ## Cloudflare API (Worker + Email)
 

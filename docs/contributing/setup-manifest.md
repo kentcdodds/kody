@@ -397,6 +397,11 @@ automatically:
   to refresh all capability-search vectors in Vectorize: built-in capabilities,
   memories, jobs, and saved packages. Saved package projections also refresh
   when packages are saved or published.)
+- `JOB_REINDEX_SECRET` (optional Worker secret; bearer auth for
+  `POST /__maintenance/reindex-jobs` for a jobs-only Vectorize rebuild. Not
+  required for production deploys — the capability reindex path already refreshes
+  job vectors. Omit locally and for previews unless you need the jobs-only
+  endpoint.)
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID` /
   `GOOGLE_CLIENT_SECRET`, `X_CLIENT_ID` / `X_CLIENT_SECRET` (optional Worker
   secrets; enable the "Sign in with GitHub / Google / X" login buttons. A
@@ -457,6 +462,9 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `CAPABILITY_REINDEX_SECRET` (strongly recommended for production; optional
   locally and for previews; authenticates post-deploy maintenance calls such as
   capability reindex — CI skips those calls when it is unset)
+- `JOB_REINDEX_SECRET` (optional; authenticates `POST /__maintenance/reindex-jobs`
+  for a jobs-only Vectorize rebuild. Production deploys do not require it —
+  capability reindex already refreshes job vectors.)
 - `DR_BACKUP_ACCOUNT_ID` / `DR_BACKUP_BUCKET_NAME` / `DR_BACKUP_ACCESS_KEY_ID` /
   `DR_BACKUP_SECRET_ACCESS_KEY` (production DR staging into the DR bucket; also
   used by `.github/workflows/dr-escrow.yml`. `DR_BACKUP_ACCOUNT_ID` is also the
@@ -604,6 +612,11 @@ How to get/set each value:
     Vectorize index dimensions so existing rows are rebuilt with compatible
     vectors. Local and preview environments can omit it; CI skips reindex and
     execute-smoke when the secret is unset.
+- `JOB_REINDEX_SECRET` (optional; jobs-only reindex)
+  - Bearer token for `POST /__maintenance/reindex-jobs`. Generate and sync the
+    same way as `CAPABILITY_REINDEX_SECRET` only if you want the jobs-only
+    maintenance endpoint. Production deploys do not require it; the capability
+    reindex path already refreshes job vectors. Local and preview can omit it.
 
 Preview deploys for pull requests create an app Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`), sibling runtime and jobs

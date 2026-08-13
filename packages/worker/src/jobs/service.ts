@@ -834,31 +834,6 @@ export async function syncPackageJobsForPackage(input: {
 	})
 }
 
-export async function deletePackageJobsForSourceId(input: {
-	env: Env
-	userId: string
-	sourceId: string
-}) {
-	return await withAccountWriteLease({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-		env: input.env,
-		async write() {
-			const existingRows = await jobsData(input.env).listJobsForUser({
-				userId: input.userId,
-			})
-			for (const row of existingRows) {
-				if (row.source_id !== input.sourceId) continue
-				await jobsData(input.env).deleteJob({
-					userId: input.userId,
-					jobId: row.id,
-				})
-				await deleteJobVector(input.env, row.id)
-			}
-		},
-	})
-}
-
 function resolveCreateShape(input: JobCreateInput) {
 	return {
 		moduleSource: normalizeJobCode(input.code),
