@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { promisify } from 'node:util'
 import { usernameFromEmail } from '../packages/worker/src/identity/username.ts'
 import { runtimeWorkerHealthPath } from '../packages/shared/src/runtime-worker.ts'
@@ -94,6 +95,7 @@ export type PreviewSnapshot = {
 	workflowUrl: string | null
 	workflowStatus: string | null
 	workflowConclusion: string | null
+	workflowHeadSha: string | null
 	deploymentSha: string | null
 }
 
@@ -151,6 +153,11 @@ export type PreviewManualTestDeps = {
 	writeFile: (path: string, contents: string) => Promise<void>
 }
 
+async function writeFileCreatingParents(path: string, contents: string) {
+	await mkdir(dirname(path), { recursive: true })
+	await writeFile(path, contents)
+}
+
 const defaultDeps: PreviewManualTestDeps = {
 	execGh,
 	fetch,
@@ -165,7 +172,7 @@ const defaultDeps: PreviewManualTestDeps = {
 	print: (message) => {
 		console.log(message)
 	},
-	writeFile,
+	writeFile: writeFileCreatingParents,
 }
 
 export function previewSeedUsername() {
@@ -426,6 +433,22 @@ export function cookieHeaderFromSetCookie(
 		.join('; ')
 }
 
+export function displayTitleMentionsPr(
+	displayTitle: string | undefined,
+	prNumber: number,
+) {
+	if (!displayTitle) return false
+	return new RegExp(`(?:^|\\D)#${prNumber}(?:\\D|$)`).test(displayTitle)
+}
+
+export function flattenGhJsonPages(parsed: unknown): Array<unknown> {
+	if (!Array.isArray(parsed)) return []
+	if (parsed.length > 0 && Array.isArray(parsed[0])) {
+		return parsed.flat()
+	}
+	return parsed
+}
+
 export function evaluateAppHealth(
 	body: unknown,
 	expectedSha: string | null,
@@ -527,7 +550,9 @@ export function formatBriefing(result: PreviewManualTestResult): string {
 			? `Deployed commit: ${result.smoke.commitSha}`
 			: result.snapshot.expectedSha
 				? `Expected commit: ${result.snapshot.expectedSha}`
-				: null,
+				: result.snapshot.previewUrl
+					? 'Warning: no expected /health commitSha (no GitHub preview deployment SHA and no --sha). Any healthy worker is accepted.'
+					: null,
 		result.snapshot.headSha &&
 		result.smoke?.commitSha &&
 		result.snapshot.headSha !== result.smoke.commitSha
@@ -745,6 +770,7 @@ async function resolveAndWait(
 
 	while (true) {
 		if (
+			snapshot.workflowHeadSha === snapshot.headSha &&
 			snapshot.workflowConclusion &&
 			isFailedConclusion(snapshot.workflowConclusion)
 		) {
@@ -752,7 +778,11 @@ async function resolveAndWait(
 				`Preview workflow ${snapshot.workflowConclusion}${snapshot.workflowUrl ? `: ${snapshot.workflowUrl}` : ''}`,
 			)
 		}
-		if (snapshot.previewUrl && (await previewHealthReady(snapshot, deps))) {
+		const healthReady =
+			Boolean(snapshot.previewUrl) && (await previewHealthReady(snapshot, deps))
+		const workflowReady = previewWorkflowReady(snapshot, options)
+		if (healthReady && workflowReady) {
+			warnIfMissingExpectedSha(snapshot, deps)
 			return snapshot
 		}
 		if (deps.now() >= deadline) {
@@ -760,9 +790,38 @@ async function resolveAndWait(
 				`Timed out after ${options.timeoutMs}ms. ${notReadyMessage(snapshot)}`,
 			)
 		}
-		deps.log(waitStatusMessage(snapshot))
+		deps.log(waitStatusMessage(snapshot, healthReady, workflowReady))
 		await deps.sleep(options.pollIntervalMs)
 		snapshot = await loadSnapshot(options, deps)
+	}
+}
+
+function skipPreviewWorkflowGate(options: PreviewManualTestOptions) {
+	return Boolean(options.previewUrl) && options.prNumber === null
+}
+
+function previewWorkflowReady(
+	snapshot: PreviewSnapshot,
+	options: PreviewManualTestOptions,
+) {
+	if (skipPreviewWorkflowGate(options)) return true
+	if (!snapshot.headSha || snapshot.workflowHeadSha !== snapshot.headSha) {
+		return false
+	}
+	return (
+		snapshot.workflowStatus === 'completed' &&
+		snapshot.workflowConclusion === 'success'
+	)
+}
+
+function warnIfMissingExpectedSha(
+	snapshot: PreviewSnapshot,
+	deps: PreviewManualTestDeps,
+) {
+	if (snapshot.previewUrl && !snapshot.expectedSha) {
+		deps.log(
+			'Warning: no expected /health commitSha (no GitHub preview deployment SHA and no --sha). Any healthy worker is accepted.',
+		)
 	}
 }
 
@@ -796,6 +855,7 @@ async function loadSnapshot(
 			workflowUrl: null,
 			workflowStatus: null,
 			workflowConclusion: null,
+			workflowHeadSha: null,
 			deploymentSha: null,
 		}
 	}
@@ -833,6 +893,7 @@ async function loadSnapshot(
 		workflowUrl: workflow?.url ?? null,
 		workflowStatus: workflow?.status ?? null,
 		workflowConclusion: workflow?.conclusion ?? null,
+		workflowHeadSha: workflow?.headSha ?? null,
 		deploymentSha,
 	}
 }
@@ -858,10 +919,14 @@ async function loadPreviewComment(
 		'--json',
 		'nameWithOwner',
 	])
-	const comments = await ghJson<Array<IssueComment>>(deps, [
-		'api',
-		`repos/${repo.nameWithOwner}/issues/${prNumber}/comments?per_page=100`,
-	])
+	const comments = flattenGhJsonPages(
+		await ghJson<unknown>(deps, [
+			'api',
+			'--paginate',
+			'--slurp',
+			`repos/${repo.nameWithOwner}/issues/${prNumber}/comments?per_page=100`,
+		]),
+	) as Array<IssueComment>
 	const match = comments.find((comment) =>
 		comment.body?.includes(previewCommentMarker),
 	)
@@ -882,12 +947,11 @@ async function loadPreviewWorkflow(
 		'--limit',
 		'30',
 	])
-	const matching = runs.filter(
-		(run) =>
-			run.headSha === pr.headRefOid ||
-			run.displayTitle.includes(`#${pr.number}`),
+	return (
+		runs.find((run) => run.headSha === pr.headRefOid) ??
+		runs.find((run) => displayTitleMentionsPr(run.displayTitle, pr.number)) ??
+		null
 	)
-	return matching[0] ?? null
 }
 
 async function loadDeploymentSha(
@@ -957,61 +1021,93 @@ async function runSmokeChecks(
 	let cookieHeader = ''
 
 	const health = await fetchJson(deps, `${origin}/health`)
-	const healthEval = evaluateAppHealth(health.body, snapshot.expectedSha)
-	commitSha = healthEval.commitSha
-	checks.push({
-		name: 'GET /health',
-		ok: health.status === 200 && healthEval.ok,
-		detail:
-			health.status === 200
-				? healthEval.detail
-				: `HTTP ${health.status}: ${healthEval.detail}`,
-	})
+	if (health.error) {
+		checks.push({
+			name: 'GET /health',
+			ok: false,
+			detail: health.error,
+		})
+	} else {
+		const healthEval = evaluateAppHealth(health.body, snapshot.expectedSha)
+		commitSha = healthEval.commitSha
+		checks.push({
+			name: 'GET /health',
+			ok: health.status === 200 && healthEval.ok,
+			detail:
+				health.status === 200
+					? healthEval.detail
+					: `HTTP ${health.status}: ${healthEval.detail}`,
+		})
+	}
 
 	const loginPage = await fetchText(deps, `${origin}/login`)
-	const loginPageOk =
-		loginPage.status === 200 &&
-		loginPage.body.includes('Welcome back') &&
-		/email/i.test(loginPage.body) &&
-		/password/i.test(loginPage.body)
-	checks.push({
-		name: 'GET /login',
-		ok: loginPageOk,
-		detail: loginPageOk
-			? 'login form rendered'
-			: `HTTP ${loginPage.status}; expected "Welcome back" plus email/password fields`,
-	})
+	if (loginPage.error) {
+		checks.push({
+			name: 'GET /login',
+			ok: false,
+			detail: loginPage.error,
+		})
+	} else {
+		const loginPageOk =
+			loginPage.status === 200 &&
+			loginPage.body.includes('Welcome back') &&
+			/email/i.test(loginPage.body) &&
+			/password/i.test(loginPage.body)
+		checks.push({
+			name: 'GET /login',
+			ok: loginPageOk,
+			detail: loginPageOk
+				? 'login form rendered'
+				: `HTTP ${loginPage.status}; expected "Welcome back" plus email/password fields`,
+		})
+	}
 
 	const mcp = await fetchText(deps, `${origin}/mcp`, {
 		headers: { Accept: 'application/json, text/event-stream' },
 	})
-	checks.push({
-		name: 'GET /mcp',
-		ok: mcp.status === 401,
-		detail:
-			mcp.status === 401
-				? '401 without OAuth, as expected'
-				: `expected 401, got HTTP ${mcp.status}`,
-	})
+	if (mcp.error) {
+		checks.push({
+			name: 'GET /mcp',
+			ok: false,
+			detail: mcp.error,
+		})
+	} else {
+		checks.push({
+			name: 'GET /mcp',
+			ok: mcp.status === 401,
+			detail:
+				mcp.status === 401
+					? '401 without OAuth, as expected'
+					: `expected 401, got HTTP ${mcp.status}`,
+		})
+	}
 
 	if (snapshot.runtimeUrl) {
 		const runtimeHealth = await fetchJson(
 			deps,
 			`${snapshot.runtimeUrl.replace(/\/$/, '')}${runtimeWorkerHealthPath}`,
 		)
-		const runtimeEval = evaluateRuntimeHealth(
-			runtimeHealth.body,
-			snapshot.expectedSha,
-		)
-		runtimeCommitSha = runtimeEval.commitSha
-		checks.push({
-			name: `GET ${runtimeWorkerHealthPath}`,
-			ok: runtimeHealth.status === 200 && runtimeEval.ok,
-			detail:
-				runtimeHealth.status === 200
-					? runtimeEval.detail
-					: `HTTP ${runtimeHealth.status}: ${runtimeEval.detail}`,
-		})
+		if (runtimeHealth.error) {
+			checks.push({
+				name: `GET ${runtimeWorkerHealthPath}`,
+				ok: false,
+				detail: runtimeHealth.error,
+			})
+		} else {
+			const runtimeEval = evaluateRuntimeHealth(
+				runtimeHealth.body,
+				snapshot.expectedSha,
+			)
+			runtimeCommitSha = runtimeEval.commitSha
+			checks.push({
+				name: `GET ${runtimeWorkerHealthPath}`,
+				ok: runtimeHealth.status === 200 && runtimeEval.ok,
+				detail:
+					runtimeHealth.status === 200
+						? runtimeEval.detail
+						: `HTTP ${runtimeHealth.status}: ${runtimeEval.detail}`,
+			})
+		}
 	}
 
 	if (!options.skipLogin) {
@@ -1024,66 +1120,101 @@ async function runSmokeChecks(
 				mode: 'login',
 			}),
 		})
-		cookieHeader = cookieHeaderFromSetCookie(auth.setCookie)
-		const authOk =
-			auth.status === 200 &&
-			Boolean(cookieHeader) &&
-			(auth.body as { ok?: unknown } | null)?.ok !== false
-		checks.push({
-			name: 'POST /auth',
-			ok: authOk,
-			detail: authOk
-				? `signed in as ${previewSeedEmail}`
-				: `HTTP ${auth.status} ${JSON.stringify(auth.body)}; Set-Cookie ${auth.setCookie.length > 0 ? 'present' : 'missing'}`,
-		})
+		if (auth.error) {
+			checks.push({
+				name: 'POST /auth',
+				ok: false,
+				detail: auth.error,
+			})
+		} else {
+			cookieHeader = cookieHeaderFromSetCookie(auth.setCookie)
+			const authOk =
+				auth.status === 200 &&
+				Boolean(cookieHeader) &&
+				(auth.body as { ok?: unknown } | null)?.ok !== false
+			checks.push({
+				name: 'POST /auth',
+				ok: authOk,
+				detail: authOk
+					? `signed in as ${previewSeedEmail}`
+					: `HTTP ${auth.status} ${JSON.stringify(auth.body)}; Set-Cookie ${auth.setCookie.length > 0 ? 'present' : 'missing'}`,
+			})
+		}
 
 		if (cookieHeader) {
 			const session = await fetchJson(deps, `${origin}/session`, {
 				headers: { Cookie: cookieHeader, Accept: 'application/json' },
 			})
-			const sessionRecord =
-				session.body && typeof session.body === 'object'
-					? (session.body as {
-							ok?: unknown
-							session?: { email?: unknown }
-						})
-					: null
-			sessionEmail =
-				typeof sessionRecord?.session?.email === 'string'
-					? sessionRecord.session.email
-					: null
-			const sessionOk =
-				session.status === 200 &&
-				sessionRecord?.ok === true &&
-				sessionEmail?.toLowerCase() === previewSeedEmail
-			checks.push({
-				name: 'GET /session',
-				ok: sessionOk,
-				detail: sessionOk
-					? `session email ${sessionEmail}`
-					: `HTTP ${session.status} ${JSON.stringify(session.body)}`,
-			})
+			if (session.error) {
+				checks.push({
+					name: 'GET /session',
+					ok: false,
+					detail: session.error,
+				})
+			} else {
+				const sessionRecord =
+					session.body && typeof session.body === 'object'
+						? (session.body as {
+								ok?: unknown
+								session?: { email?: unknown }
+							})
+						: null
+				sessionEmail =
+					typeof sessionRecord?.session?.email === 'string'
+						? sessionRecord.session.email
+						: null
+				const sessionOk =
+					session.status === 200 &&
+					sessionRecord?.ok === true &&
+					sessionEmail?.toLowerCase() === previewSeedEmail
+				checks.push({
+					name: 'GET /session',
+					ok: sessionOk,
+					detail: sessionOk
+						? `session email ${sessionEmail}`
+						: `HTTP ${session.status} ${JSON.stringify(session.body)}`,
+				})
+			}
 
 			const account = await fetchText(deps, `${origin}/account`, {
 				headers: { Cookie: cookieHeader },
 				redirect: 'manual',
 			})
-			const accountOk = account.status === 200
-			checks.push({
-				name: 'GET /account',
-				ok: accountOk,
-				detail: accountOk
-					? 'authenticated account page'
-					: `expected HTTP 200, got ${account.status}`,
-			})
+			if (account.error) {
+				checks.push({
+					name: 'GET /account',
+					ok: false,
+					detail: account.error,
+				})
+			} else {
+				const accountOk = account.status === 200
+				checks.push({
+					name: 'GET /account',
+					ok: accountOk,
+					detail: accountOk
+						? 'authenticated account page'
+						: `expected HTTP 200, got ${account.status}`,
+				})
+			}
 
 			if (options.cookieFile) {
-				await deps.writeFile(options.cookieFile, `${cookieHeader}\n`)
-				checks.push({
-					name: 'cookie-file',
-					ok: true,
-					detail: options.cookieFile,
-				})
+				try {
+					await deps.writeFile(options.cookieFile, `${cookieHeader}\n`)
+					checks.push({
+						name: 'cookie-file',
+						ok: true,
+						detail: options.cookieFile,
+					})
+				} catch (error) {
+					checks.push({
+						name: 'cookie-file',
+						ok: false,
+						detail:
+							error instanceof Error
+								? error.message
+								: `failed to write ${options.cookieFile}`,
+					})
+				}
 			}
 
 			for (const spec of options.sessionRequests) {
@@ -1104,8 +1235,12 @@ async function runSmokeChecks(
 				})
 				checks.push({
 					name: `GET ${normalized}`,
-					ok: extra.status === 200,
-					detail: extra.status === 200 ? '200' : `HTTP ${extra.status}`,
+					ok: extra.error ? false : extra.status === 200,
+					detail: extra.error
+						? extra.error
+						: extra.status === 200
+							? '200'
+							: `HTTP ${extra.status}`,
 				})
 			}
 		}
@@ -1177,7 +1312,21 @@ function notReadyMessage(snapshot: PreviewSnapshot) {
 		.join(' ')
 }
 
-function waitStatusMessage(snapshot: PreviewSnapshot) {
+function waitStatusMessage(
+	snapshot: PreviewSnapshot,
+	healthReady: boolean,
+	workflowReady: boolean,
+) {
+	if (snapshot.previewUrl && healthReady && !workflowReady) {
+		if (
+			snapshot.headSha &&
+			snapshot.workflowHeadSha &&
+			snapshot.workflowHeadSha !== snapshot.headSha
+		) {
+			return `Waiting for a preview workflow run for ${snapshot.headSha}`
+		}
+		return `Waiting for preview workflow (${snapshot.workflowStatus ?? 'unknown'}${snapshot.workflowConclusion ? `/${snapshot.workflowConclusion}` : ''})${snapshot.workflowUrl ? `: ${snapshot.workflowUrl}` : ''}`
+	}
 	if (snapshot.previewUrl) {
 		return `Waiting for /health to match${snapshot.expectedSha ? ` ${snapshot.expectedSha}` : ''} at ${snapshot.previewUrl}`
 	}
@@ -1219,6 +1368,13 @@ async function runAuthenticatedSessionRequest(
 	const response = spec.path.includes('.json')
 		? await fetchJson(deps, `${origin}${spec.path}`, init)
 		: await fetchText(deps, `${origin}${spec.path}`, init)
+	if (response.error) {
+		return {
+			name: sessionRequestName(spec),
+			ok: false,
+			detail: response.error,
+		}
+	}
 	const ok = evaluateSessionRequestStatus(response.status, spec.expectedStatus)
 	const expected =
 		spec.expectedStatus === null ? '2xx' : String(spec.expectedStatus)
@@ -1243,12 +1399,14 @@ type FetchedJson = {
 	status: number
 	body: unknown
 	setCookie: Array<string>
+	error?: string
 }
 
 type FetchedText = {
 	status: number
 	body: string
 	setCookie: Array<string>
+	error?: string
 }
 
 async function fetchJson(
@@ -1256,15 +1414,24 @@ async function fetchJson(
 	url: string,
 	init: RequestInit = {},
 ): Promise<FetchedJson> {
-	const response = await deps.fetch(url, {
-		...init,
-		signal: init.signal ?? AbortSignal.timeout(defaultRequestTimeoutMs),
-	})
-	const body = await response.json().catch(() => null)
-	return {
-		status: response.status,
-		body,
-		setCookie: readSetCookie(response),
+	try {
+		const response = await deps.fetch(url, {
+			...init,
+			signal: init.signal ?? AbortSignal.timeout(defaultRequestTimeoutMs),
+		})
+		const body = await response.json().catch(() => null)
+		return {
+			status: response.status,
+			body,
+			setCookie: readSetCookie(response),
+		}
+	} catch (error) {
+		return {
+			status: 0,
+			body: null,
+			setCookie: [],
+			error: error instanceof Error ? error.message : String(error),
+		}
 	}
 }
 
@@ -1273,14 +1440,23 @@ async function fetchText(
 	url: string,
 	init: RequestInit = {},
 ): Promise<FetchedText> {
-	const response = await deps.fetch(url, {
-		...init,
-		signal: init.signal ?? AbortSignal.timeout(defaultRequestTimeoutMs),
-	})
-	return {
-		status: response.status,
-		body: await response.text().catch(() => ''),
-		setCookie: readSetCookie(response),
+	try {
+		const response = await deps.fetch(url, {
+			...init,
+			signal: init.signal ?? AbortSignal.timeout(defaultRequestTimeoutMs),
+		})
+		return {
+			status: response.status,
+			body: await response.text().catch(() => ''),
+			setCookie: readSetCookie(response),
+		}
+	} catch (error) {
+		return {
+			status: 0,
+			body: '',
+			setCookie: [],
+			error: error instanceof Error ? error.message : String(error),
+		}
 	}
 }
 

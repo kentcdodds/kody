@@ -107,8 +107,11 @@ its own worker against `.wrangler/state/e2e`.
 - **Workflow still running** — default mode waits (15 minutes). Watch the run
   URL the script prints.
 - **Workflow failed** — open the run, fix the deploy, push, re-run the script.
-- **Stale URL after a push** — wait; a new deploy updates the same PR comment
-  and `/health` `commitSha`.
+- **Stale URL after a push** — `/health` can still match the previous deployment
+  SHA until GitHub records a new preview deployment. The script waits until the
+  🔎 Preview workflow run for this PR head is `completed`/`success` (unless you
+  pass `--url` without `--pr`) and `/health` matches the expected SHA. Do not
+  treat a healthy worker as the new commit until that happens.
 
 Do not `gh workflow run preview.yml` with `target=pr` to "force" a PR preview.
 That dispatch checks out the workflow's ref (usually `main`), not the PR head.

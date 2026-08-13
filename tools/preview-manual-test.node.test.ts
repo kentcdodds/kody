@@ -7,8 +7,10 @@ import { expect, test } from 'vitest'
 import {
 	cookieHeaderFromSetCookie,
 	deriveSiblingWorkerUrl,
+	displayTitleMentionsPr,
 	evaluateAppHealth,
 	evaluateRuntimeHealth,
+	flattenGhJsonPages,
 	formatBriefing,
 	parseArgs,
 	parsePreviewComment,
@@ -162,6 +164,21 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		).ok,
 	).toBe(false)
 
+	expect(displayTitleMentionsPr('Preview #42', 42)).toBe(true)
+	expect(displayTitleMentionsPr('Preview #42', 4)).toBe(false)
+	expect(displayTitleMentionsPr('Preview #4', 4)).toBe(true)
+	expect(displayTitleMentionsPr('Preview #4 from main', 4)).toBe(true)
+	expect(displayTitleMentionsPr(undefined, 4)).toBe(false)
+
+	expect(flattenGhJsonPages([{ body: 'a' }, { body: 'b' }])).toEqual([
+		{ body: 'a' },
+		{ body: 'b' },
+	])
+	expect(
+		flattenGhJsonPages([[{ body: 'a' }], [{ body: 'b' }, { body: 'c' }]]),
+	).toEqual([{ body: 'a' }, { body: 'b' }, { body: 'c' }])
+	expect(flattenGhJsonPages({ not: 'an array' })).toEqual([])
+
 	const briefing = formatBriefing({
 		ok: true,
 		message: 'ready',
@@ -182,6 +199,7 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 			workflowUrl: 'https://github.com/kentcdodds/kody/actions/runs/1',
 			workflowStatus: 'completed',
 			workflowConclusion: 'success',
+			workflowHeadSha: 'headsha',
 			deploymentSha: 'mergesha',
 		},
 		smoke: {
@@ -307,6 +325,118 @@ test('preview manual test waits for the GitHub preview comment, then smokes the 
 	expect(logs.some((line) => line.includes('Waiting'))).toBe(true)
 })
 
+test('preview manual test waits for the head SHA workflow even when /health already matches', async () => {
+	await using server = await createPreviewFixtureServer()
+	let now = 0
+	let prViews = 0
+	const logs: Array<string> = []
+	const deps = createSilentDeps({
+		logs,
+		now: () => now,
+		sleep: async (ms) => {
+			now += ms
+		},
+		execGh: async (args) => {
+			if (args.join(' ').startsWith('pr view')) prViews += 1
+			return fakeGh(args, {
+				commentBody: sampleCommentWithUrl(server.origin),
+				headSha: 'headsha',
+				deploymentSha: 'deployedsha',
+				runStatus: prViews >= 2 ? 'completed' : 'in_progress',
+				runConclusion: prViews >= 2 ? 'success' : null,
+			})
+		},
+	})
+
+	const { exitCode, result } = await runPreviewManualTest(
+		[
+			'--pr',
+			'42',
+			'--timeout-ms',
+			'30000',
+			'--poll-ms',
+			'1000',
+			'--skip-login',
+		],
+		deps,
+	)
+
+	expect(exitCode).toBe(0)
+	expect(prViews).toBeGreaterThanOrEqual(2)
+	expect(result?.snapshot.workflowStatus).toBe('completed')
+	expect(result?.snapshot.workflowConclusion).toBe('success')
+	expect(
+		logs.some((line) => line.includes('Waiting for preview workflow')),
+	).toBe(true)
+})
+
+test('preview manual test records fetch failures as checks instead of aborting the briefing', async () => {
+	const logs: Array<string> = []
+	const { exitCode, result } = await runPreviewManualTest(
+		[
+			'--url',
+			'https://kody-pr-42.example.invalid',
+			'--no-wait',
+			'--skip-login',
+		],
+		{
+			...createSilentDeps({ logs }),
+			fetch: async () => {
+				throw new Error('The operation was aborted due to timeout')
+			},
+		},
+	)
+
+	expect(exitCode).toBe(1)
+	expect(result).not.toBeNull()
+	expect(result?.briefing).toContain('GET /health')
+	expect(
+		result?.smoke?.checks.some(
+			(check) =>
+				check.name === 'GET /health' &&
+				!check.ok &&
+				check.detail.includes('aborted due to timeout'),
+		),
+	).toBe(true)
+	expect(
+		result?.smoke?.checks.some((check) => check.name === 'GET /login'),
+	).toBe(true)
+})
+
+test('preview manual test records cookie-file write failures as checks', async () => {
+	await using server = await createPreviewFixtureServer()
+	const logs: Array<string> = []
+	const { exitCode, result } = await runPreviewManualTest(
+		[
+			'--url',
+			server.origin,
+			'--no-wait',
+			'--cookie-file',
+			'.tmp/preview-cookie',
+		],
+		{
+			...createSilentDeps({ logs }),
+			writeFile: async () => {
+				throw new Error(
+					"ENOENT: no such file or directory, open '.tmp/preview-cookie'",
+				)
+			},
+		},
+	)
+
+	expect(exitCode).toBe(1)
+	expect(result).not.toBeNull()
+	expect(result?.session.cookieHeader).toBe('kody_session=test-cookie')
+	expect(
+		result?.smoke?.checks.find((check) => check.name === 'cookie-file'),
+	).toEqual({
+		name: 'cookie-file',
+		ok: false,
+		detail: "ENOENT: no such file or directory, open '.tmp/preview-cookie'",
+	})
+	expect(result?.briefing).toContain('POST /auth')
+})
+
 test('preview manual test refuses draft PRs and failed preview workflows', async () => {
 	const logs: Array<string> = []
 	const draft = await runPreviewManualTest(['--pr', '9', '--no-wait'], {
@@ -409,7 +539,11 @@ function fakeGh(
 		return jsonGh({ nameWithOwner: 'kentcdodds/kody' })
 	}
 	if (joined.includes('/issues/') && joined.includes('/comments')) {
-		return jsonGh(input.commentBody ? [{ body: input.commentBody }] : [])
+		const comments = input.commentBody ? [{ body: input.commentBody }] : []
+		if (args.includes('--slurp')) {
+			return jsonGh([comments])
+		}
+		return jsonGh(comments)
 	}
 	if (joined.startsWith('run list')) {
 		return jsonGh([
