@@ -449,9 +449,20 @@ export function flattenGhJsonPages(parsed: unknown): Array<unknown> {
 	return parsed
 }
 
+export function commitShaMatchesExpected(
+	commitSha: string | null,
+	expectedSha: string | null,
+	commitParents: ReadonlyArray<string> = [],
+) {
+	if (!expectedSha) return true
+	if (!commitSha) return false
+	return commitSha === expectedSha || commitParents.includes(expectedSha)
+}
+
 export function evaluateAppHealth(
 	body: unknown,
 	expectedSha: string | null,
+	commitParents: ReadonlyArray<string> = [],
 ): { ok: boolean; commitSha: string | null; detail: string } {
 	if (!body || typeof body !== 'object') {
 		return {
@@ -472,7 +483,7 @@ export function evaluateAppHealth(
 			detail: `health ok is not true (${JSON.stringify(body)})`,
 		}
 	}
-	if (expectedSha && commitSha !== expectedSha) {
+	if (!commitShaMatchesExpected(commitSha, expectedSha, commitParents)) {
 		return {
 			ok: false,
 			commitSha,
@@ -482,13 +493,14 @@ export function evaluateAppHealth(
 	return {
 		ok: true,
 		commitSha,
-		detail: commitSha ? `ok, commitSha ${commitSha}` : 'ok',
+		detail: healthMatchDetail(commitSha, expectedSha, commitParents),
 	}
 }
 
 export function evaluateRuntimeHealth(
 	body: unknown,
 	expectedSha: string | null,
+	commitParents: ReadonlyArray<string> = [],
 ): { ok: boolean; commitSha: string | null; detail: string } {
 	if (!body || typeof body !== 'object') {
 		return {
@@ -516,7 +528,7 @@ export function evaluateRuntimeHealth(
 			detail: 'runtime cookieSecretConfigured is not true',
 		}
 	}
-	if (expectedSha && commitSha !== expectedSha) {
+	if (!commitShaMatchesExpected(commitSha, expectedSha, commitParents)) {
 		return {
 			ok: false,
 			commitSha,
@@ -526,8 +538,24 @@ export function evaluateRuntimeHealth(
 	return {
 		ok: true,
 		commitSha,
-		detail: commitSha ? `ok, commitSha ${commitSha}` : 'ok',
+		detail: healthMatchDetail(commitSha, expectedSha, commitParents),
 	}
+}
+
+function healthMatchDetail(
+	commitSha: string | null,
+	expectedSha: string | null,
+	commitParents: ReadonlyArray<string>,
+) {
+	if (!commitSha) return 'ok'
+	if (
+		expectedSha &&
+		commitSha !== expectedSha &&
+		commitParents.includes(expectedSha)
+	) {
+		return `ok, commitSha ${commitSha} (merge of ${expectedSha})`
+	}
+	return `ok, commitSha ${commitSha}`
 }
 
 export function formatBriefing(result: PreviewManualTestResult): string {
@@ -889,7 +917,7 @@ async function loadSnapshot(
 		d1DatabaseName: parsed?.d1DatabaseName ?? null,
 		oauthKvTitle: parsed?.oauthKvTitle ?? null,
 		mocks: parsed?.mocks ?? [],
-		expectedSha: options.expectedSha ?? deploymentSha,
+		expectedSha: options.expectedSha ?? deploymentSha ?? pr.headRefOid,
 		workflowUrl: workflow?.url ?? null,
 		workflowStatus: workflow?.status ?? null,
 		workflowConclusion: workflow?.conclusion ?? null,
@@ -985,9 +1013,55 @@ async function previewHealthReady(
 			deps,
 			`${snapshot.previewUrl.replace(/\/$/, '')}/health`,
 		)
-		return evaluateAppHealth(response.body, snapshot.expectedSha).ok
+		const healthEval = await evaluateFetchedHealth(
+			deps,
+			evaluateAppHealth,
+			response.body,
+			snapshot.expectedSha,
+		)
+		return healthEval.ok
 	} catch {
 		return false
+	}
+}
+
+async function evaluateFetchedHealth(
+	deps: PreviewManualTestDeps,
+	evaluate: (
+		body: unknown,
+		expectedSha: string | null,
+		commitParents?: ReadonlyArray<string>,
+	) => { ok: boolean; commitSha: string | null; detail: string },
+	body: unknown,
+	expectedSha: string | null,
+) {
+	const first = evaluate(body, expectedSha)
+	if (first.ok || !first.commitSha || !expectedSha) return first
+	const parents = await loadCommitParents(deps, first.commitSha)
+	if (!parents) return first
+	return evaluate(body, expectedSha, parents)
+}
+
+async function loadCommitParents(
+	deps: PreviewManualTestDeps,
+	sha: string,
+): Promise<Array<string> | null> {
+	try {
+		const repo = await ghJson<{ nameWithOwner: string }>(deps, [
+			'repo',
+			'view',
+			'--json',
+			'nameWithOwner',
+		])
+		const commit = await ghJson<{ parents?: Array<{ sha?: string }> }>(deps, [
+			'api',
+			`repos/${repo.nameWithOwner}/commits/${sha}`,
+		])
+		return (commit.parents ?? [])
+			.map((parent) => parent.sha)
+			.filter((parentSha): parentSha is string => Boolean(parentSha))
+	} catch {
+		return null
 	}
 }
 
@@ -1028,7 +1102,12 @@ async function runSmokeChecks(
 			detail: health.error,
 		})
 	} else {
-		const healthEval = evaluateAppHealth(health.body, snapshot.expectedSha)
+		const healthEval = await evaluateFetchedHealth(
+			deps,
+			evaluateAppHealth,
+			health.body,
+			snapshot.expectedSha,
+		)
 		commitSha = healthEval.commitSha
 		checks.push({
 			name: 'GET /health',
@@ -1094,7 +1173,9 @@ async function runSmokeChecks(
 				detail: runtimeHealth.error,
 			})
 		} else {
-			const runtimeEval = evaluateRuntimeHealth(
+			const runtimeEval = await evaluateFetchedHealth(
+				deps,
+				evaluateRuntimeHealth,
 				runtimeHealth.body,
 				snapshot.expectedSha,
 			)
@@ -1328,7 +1409,9 @@ function waitStatusMessage(
 		return `Waiting for preview workflow (${snapshot.workflowStatus ?? 'unknown'}${snapshot.workflowConclusion ? `/${snapshot.workflowConclusion}` : ''})${snapshot.workflowUrl ? `: ${snapshot.workflowUrl}` : ''}`
 	}
 	if (snapshot.previewUrl) {
-		return `Waiting for /health to match${snapshot.expectedSha ? ` ${snapshot.expectedSha}` : ''} at ${snapshot.previewUrl}`
+		return snapshot.expectedSha
+			? `Waiting for /health to serve ${snapshot.expectedSha} (exact or merge commit) at ${snapshot.previewUrl}`
+			: `Waiting for a healthy /health at ${snapshot.previewUrl}`
 	}
 	if (snapshot.workflowUrl) {
 		return `Waiting for preview workflow (${snapshot.workflowStatus ?? 'unknown'}): ${snapshot.workflowUrl}`

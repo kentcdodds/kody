@@ -60,8 +60,10 @@ cleanup live in [`setup.md`](./setup.md#pr-preview-deployments).
 
 `/health` `commitSha` is GitHub's `github.sha` for that workflow run. On
 `pull_request` events that is the merge commit, not the branch tip, so it can
-differ from `HEAD` / `headRefOid`. The script compares against the GitHub
-deployment SHA for `preview-<pr-number>` rather than local `HEAD`.
+differ from `HEAD` / `headRefOid`. GitHub environment deployments record the PR
+head SHA, not that merge commit. The script treats `/health` as ready when
+`commitSha` equals the PR head **or** is a merge commit that has the PR head as
+a parent. Pass `--sha` to override the expected commit.
 
 ## Seed login
 

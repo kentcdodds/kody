@@ -152,6 +152,16 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		false,
 	)
 	expect(
+		evaluateAppHealth({ ok: true, commitSha: 'mergesha' }, 'headsha', [
+			'basesha',
+			'headsha',
+		]),
+	).toEqual({
+		ok: true,
+		commitSha: 'mergesha',
+		detail: 'ok, commitSha mergesha (merge of headsha)',
+	})
+	expect(
 		evaluateRuntimeHealth(
 			{ status: 'ok', commitSha: 'abc', cookieSecretConfigured: true },
 			null,
@@ -370,6 +380,33 @@ test('preview manual test waits for the head SHA workflow even when /health alre
 	).toBe(true)
 })
 
+test('preview manual test treats merge-commit /health as ready when it contains the PR head', async () => {
+	await using server = await createPreviewFixtureServer('mergesha')
+	const logs: Array<string> = []
+	const { exitCode, result } = await runPreviewManualTest(
+		['--pr', '42', '--skip-login'],
+		createSilentDeps({
+			logs,
+			execGh: async (args) =>
+				fakeGh(args, {
+					commentBody: sampleCommentWithUrl(server.origin),
+					headSha: 'headsha',
+					deploymentSha: 'headsha',
+					runStatus: 'completed',
+					runConclusion: 'success',
+					commitParents: ['basesha', 'headsha'],
+				}),
+		}),
+	)
+
+	expect(exitCode).toBe(0)
+	expect(result?.ok).toBe(true)
+	expect(result?.smoke?.commitSha).toBe('mergesha')
+	expect(
+		result?.smoke?.checks.find((check) => check.name === 'GET /health')?.detail,
+	).toContain('merge of headsha')
+})
+
 test('preview manual test records fetch failures as checks instead of aborting the briefing', async () => {
 	const logs: Array<string> = []
 	const { exitCode, result } = await runPreviewManualTest(
@@ -524,6 +561,7 @@ function fakeGh(
 		runStatus?: string
 		runConclusion?: string | null
 		runUrl?: string
+		commitParents?: Array<string>
 	},
 ): GhResult {
 	const joined = args.join(' ')
@@ -572,6 +610,12 @@ function fakeGh(
 				: [],
 		)
 	}
+	if (joined.includes('/commits/')) {
+		return jsonGh({
+			sha: joined.split('/commits/')[1] ?? '',
+			parents: (input.commitParents ?? []).map((sha) => ({ sha })),
+		})
+	}
 	return { status: 1, stdout: '', stderr: `unexpected gh ${joined}` }
 }
 
@@ -579,8 +623,7 @@ function jsonGh(value: unknown): GhResult {
 	return { status: 0, stdout: `${JSON.stringify(value)}\n`, stderr: '' }
 }
 
-async function createPreviewFixtureServer() {
-	const commitSha = 'deployedsha'
+async function createPreviewFixtureServer(commitSha = 'deployedsha') {
 	const server = createServer(
 		(request: IncomingMessage, response: ServerResponse) => {
 			const url = new URL(request.url ?? '/', 'http://127.0.0.1')
