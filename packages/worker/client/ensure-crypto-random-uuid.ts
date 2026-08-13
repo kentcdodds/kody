@@ -11,7 +11,7 @@ export function ensureCryptoRandomUUID(
 	if (typeof cryptoApi.randomUUID === 'function') return
 	if (typeof cryptoApi.getRandomValues !== 'function') return
 
-const polyfill = function randomUUID(
+	const polyfill = function randomUUID(
 		this: Crypto,
 	): `${string}-${string}-${string}-${string}-${string}` {
 		const bytes = new Uint8Array(16)
