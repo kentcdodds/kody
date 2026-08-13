@@ -1103,4 +1103,44 @@ export default async function foo(params: { q: string }) {
 		functions: [],
 		referencedTypes: [],
 	})
+
+	const namedPlusDefaultManifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/named-plus-default-tools',
+			exports: {
+				'.': './src/index.ts',
+			},
+			kody: {
+				id: 'named-plus-default-tools',
+				description: 'Named export also re-exported as default',
+			},
+		}),
+		manifestPath: 'package.json',
+	})
+	const namedPlusDefaultProjection = buildPackageSearchProjection(
+		namedPlusDefaultManifest,
+		{
+			'src/index.ts': `/**
+ * Look up a city forecast.
+ */
+export async function forecast(city: string): Promise<string> {
+	return city
+}
+
+export default forecast
+`,
+		},
+	)
+	expect(namedPlusDefaultProjection.exports[0]).toMatchObject({
+		description: 'Look up a city forecast.',
+		typeDefinition:
+			'export async function forecast(city: string): Promise<string>',
+		functions: [
+			expect.objectContaining({
+				name: 'forecast',
+				description: 'Look up a city forecast.',
+			}),
+		],
+	})
+	expect(namedPlusDefaultProjection.exports[0]?.functions).toHaveLength(1)
 })

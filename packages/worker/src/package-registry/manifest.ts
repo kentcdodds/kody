@@ -915,6 +915,35 @@ function resolveSamePackageTypeImportPath(input: {
 	return candidates.find((candidate) => input.files[candidate] != null) ?? null
 }
 
+function hasNamedExportedFunction(body: Array<ModuleAstNode>, name: string) {
+	for (const statement of body) {
+		if (getNodeType(statement) !== 'ExportNamedDeclaration') continue
+		const declaration = (statement as { declaration?: unknown }).declaration as
+			| ModuleAstNode
+			| undefined
+		if (isFunctionDeclaration(declaration)) {
+			if (readIdentifierName((declaration as { id?: unknown }).id) === name) {
+				return true
+			}
+			continue
+		}
+		if (!declaration || getNodeType(declaration) !== 'VariableDeclaration') {
+			continue
+		}
+		const declarations = (declaration as { declarations?: unknown })
+			.declarations
+		if (!Array.isArray(declarations)) continue
+		for (const declarator of (declarations as Array<ModuleAstNode>).filter(
+			isFunctionDeclarator,
+		)) {
+			if (readIdentifierName((declarator as { id?: unknown }).id) === name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 function collectImportedBindingNames(body: Array<ModuleAstNode>) {
 	const names = new Set<string>()
 	for (const statement of body) {
@@ -1200,6 +1229,10 @@ function collectExportedFunctionsFromSource(input: {
 						: [],
 				})
 			} else if (declaration && getNodeType(declaration) === 'Identifier') {
+				const bindingName = readIdentifierName(declaration)
+				if (bindingName && hasNamedExportedFunction(body, bindingName)) {
+					continue
+				}
 				const projected = projectDefaultExportIdentifier({
 					source,
 					statement,
