@@ -147,8 +147,10 @@ export function OnboardingExampleCard(
 		})
 		const existingInstall = listing.viewerInstall ?? null
 		const alreadyReady = existingInstall != null
+		// Already-installed packages expand on land so the agent prompt is
+		// visible without an extra click (same UI as after "Try this").
 		const showExpandedPrompt =
-			selected || phase === 'installing' || phase === 'error'
+			selected || alreadyReady || phase === 'installing' || phase === 'error'
 		const examplePrompt = buildOnboardingExamplePrompt({
 			listingName: listing.name,
 			kodyId: listing.kodyId,
@@ -250,31 +252,6 @@ export function OnboardingExampleCard(
 							</a>
 						</p>
 					</>
-				) : alreadyReady ? (
-					<button
-						type="button"
-						aria-describedby={`onboarding-example-prompt-tip-${listing.id}`}
-						mix={[
-							css(exampleCopyButtonCss),
-							on('click', () => {
-								selected = true
-								void copyPrompt(examplePrompt)
-							}),
-						]}
-						data-testid={`onboarding-example-copy-${listing.id}`}
-					>
-						{copyState === 'copied'
-							? 'Copied'
-							: copyState === 'error'
-								? 'Copy failed'
-								: 'Copy prompt'}
-						<span
-							id={`onboarding-example-prompt-tip-${listing.id}`}
-							role="tooltip"
-						>
-							{copyPromptTooltip}
-						</span>
-					</button>
 				) : (
 					<button
 						type="button"
@@ -287,15 +264,6 @@ export function OnboardingExampleCard(
 						Try this
 					</button>
 				)}
-				{!showExpandedPrompt && readyStatus ? (
-					<p
-						mix={css(exampleStatusCss)}
-						role="status"
-						data-testid={`onboarding-example-status-${listing.id}`}
-					>
-						{readyStatus}
-					</p>
-				) : null}
 				{errorMessage ? (
 					<p
 						mix={css(exampleErrorCss)}

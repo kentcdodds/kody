@@ -110,6 +110,8 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(publicHtml).toContain('data-testid="community-detail-frame"')
 	expect(publicHtml).toContain('data-testid="community-listing-icon-detail"')
 	expect(publicHtml).toContain('/community/listing-1/icon/abc1234567890')
+	expect(publicHtml).toContain('data-testid="community-detail-owner-line"')
+	expect(publicHtml).toContain('>by</')
 	expect(publicHtml).toContain('href="/@kentcdodds"')
 	expect(publicHtml).toContain('>@kentcdodds</a>')
 	expect(publicHtml).toContain('data-testid="community-detail-owner-follow"')
@@ -133,7 +135,8 @@ test('community detail handler returns bare detail frame HTML for target header'
 		url: new URL('https://example.com/community/listing-1'),
 	} as never)
 	const privateHtml = await privateResponse.text()
-	expect(privateHtml).toContain('by @kentcdodds')
+	expect(privateHtml).toContain('>by</')
+	expect(privateHtml).toContain('@kentcdodds')
 	expect(privateHtml).toContain('data-testid="community-detail-owner-private"')
 	expect(privateHtml).toContain('title="This profile is private"')
 	expect(privateHtml).not.toContain('href="/@kentcdodds"')

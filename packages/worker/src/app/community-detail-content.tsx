@@ -106,48 +106,48 @@ export function CommunityDetailContent(
 							) : null}
 						</span>
 					) : null}
-					<p mix={css(ownerLineCss)}>
-						<span mix={css(ownerUsernameCss)}>
-							by{' '}
-							{ownerProfilePublic ? (
-								<a
-									href={routes.profile.href({
-										username: listing.ownerUsername,
-									})}
-									mix={css(ownerLinkCss)}
+					<p mix={css(ownerLineCss)} data-testid="community-detail-owner-line">
+						{/* Separate flex items (not nested flex + trailing space) so
+						    "by" / @username / follow glyph stay on one line with gap. */}
+						<span>by</span>
+						{ownerProfilePublic ? (
+							<a
+								href={routes.profile.href({
+									username: listing.ownerUsername,
+								})}
+								mix={css(ownerLinkCss)}
+							>
+								@{listing.ownerUsername}
+							</a>
+						) : (
+							<span mix={css(ownerPrivateNameCss)}>
+								@{listing.ownerUsername}
+								<span
+									data-testid="community-detail-owner-private"
+									title="This profile is private"
+									mix={css(ownerPrivateLockCss)}
 								>
-									@{listing.ownerUsername}
-								</a>
-							) : (
-								<>
-									@{listing.ownerUsername}
-									<span
-										data-testid="community-detail-owner-private"
-										title="This profile is private"
-										mix={css(ownerPrivateLockCss)}
+									<svg
+										viewBox="0 0 16 16"
+										width="0.9em"
+										height="0.9em"
+										aria-hidden="true"
+										focusable={false}
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="1.5"
+										strokeLinecap="round"
+										strokeLinejoin="round"
 									>
-										<svg
-											viewBox="0 0 16 16"
-											width="0.9em"
-											height="0.9em"
-											aria-hidden="true"
-											focusable={false}
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="1.5"
-											strokeLinecap="round"
-											strokeLinejoin="round"
-										>
-											<rect x="3.5" y="7.2" width="9" height="6.3" rx="1.4" />
-											<path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8" />
-										</svg>
-										<span mix={css(visuallyHiddenCss)}>
-											This profile is private
-										</span>
+										<rect x="3.5" y="7.2" width="9" height="6.3" rx="1.4" />
+										<path d="M5.4 7.2V5.4a2.6 2.6 0 0 1 5.2 0v1.8" />
+									</svg>
+									<span mix={css(visuallyHiddenCss)}>
+										This profile is private
 									</span>
-								</>
-							)}
-						</span>
+								</span>
+							</span>
+						)}
 						{ownerProfilePublic && !viewerIsOwner
 							? renderProfileFollowControl({
 									username: listing.ownerUsername,
@@ -278,17 +278,12 @@ const ownerLineCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
 	flexWrap: 'nowrap' as const,
-	gap: '0.45rem',
+	gap: '0.35rem',
 	margin: 0,
 	color: colors.textMuted,
 	fontSize: '0.95rem',
-}
-
-const ownerUsernameCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	flexWrap: 'nowrap' as const,
-	minWidth: 0,
+	width: 'max-content',
+	maxWidth: '100%',
 }
 
 const ownerLinkCss = {
@@ -300,12 +295,17 @@ const ownerLinkCss = {
 	},
 }
 
+const ownerPrivateNameCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.25rem',
+	minWidth: 0,
+}
+
 const ownerPrivateLockCss = {
 	display: 'inline-flex',
 	alignItems: 'center',
-	marginLeft: '0.35rem',
 	color: colors.textMuted,
-	verticalAlign: 'middle',
 	cursor: 'help',
 	flexShrink: 0,
 }
