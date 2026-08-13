@@ -11,7 +11,9 @@ export function ensureCryptoRandomUUID(
 	if (typeof cryptoApi.randomUUID === 'function') return
 	if (typeof cryptoApi.getRandomValues !== 'function') return
 
-	const polyfill = function randomUUID(this: Crypto): string {
+const polyfill = function randomUUID(
+		this: Crypto,
+	): `${string}-${string}-${string}-${string}-${string}` {
 		const bytes = new Uint8Array(16)
 		this.getRandomValues(bytes)
 		// Version 4 + RFC 4122 variant bits.
@@ -20,7 +22,7 @@ export function ensureCryptoRandomUUID(
 		const hex = Array.from(bytes, (byte) =>
 			byte.toString(16).padStart(2, '0'),
 		).join('')
-		return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+		return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}` as `${string}-${string}-${string}-${string}-${string}`
 	}
 
 	try {
@@ -32,8 +34,7 @@ export function ensureCryptoRandomUUID(
 		})
 	} catch {
 		try {
-			;(cryptoApi as Crypto & { randomUUID: typeof polyfill }).randomUUID =
-				polyfill
+			cryptoApi.randomUUID = polyfill
 		} catch {
 			// Leave crypto unchanged; Remix will still throw if it calls randomUUID.
 		}
