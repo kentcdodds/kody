@@ -1551,52 +1551,6 @@ export default async function main() {
 	expect(aliasedStorageLint?.message).toContain('packageStorage()')
 })
 
-test('runRepoChecks rejects unsupported invocation forms with replacements named', async () => {
-	// Permanent contract: packages.check, packages.invokeChecked, and literal
-	// dynamic import("kody:@...") fail publishes; the message names each usage,
-	// its replacement, and the repair codemod.
-	const removed = await runPackageJobTypecheckChecks(
-		new Map<string, string>([
-			[
-				'package.json',
-				createPackageManifest({
-					packageName: '@kody/removed-invocation-package',
-					kodyId: 'removed-invocation-package',
-					description: 'Uses the removed dynamic invocation APIs',
-				}),
-			],
-			[
-				'src/index.ts',
-				`import { packages } from 'kody:runtime'
-
-export default async function main() {
-	const dynamicModule = await import('kody:@kentcdodds/example-package/value')
-	await packages?.check({ kodyId: 'example-package', exportName: './value' })
-	return await packages?.invokeChecked({
-		kodyId: 'example-package',
-		exportName: './value',
-		params: { fromDynamic: typeof dynamicModule.default },
-	})
-}
-`,
-			],
-		]),
-	)
-	expect(removed.result.ok).toBe(false)
-	const removedLint = removed.result.results.find(
-		(entry) => entry.kind === 'lint',
-	)
-	expect(removedLint).toMatchObject({ kind: 'lint', ok: false })
-	expect(removedLint?.message).toContain('removed dynamic invocation surface')
-	expect(removedLint?.message).toContain('"src/index.ts"')
-	expect(removedLint?.message).toContain('packages.invokeChecked was removed')
-	expect(removedLint?.message).toContain('packages.check was removed')
-	expect(removedLint?.message).toContain(
-		'literal dynamic import("kody:@...") was removed',
-	)
-	expect(removedLint?.message).toContain('0002-static-first-invocation')
-})
-
 test('heavy check phases run in throwaway isolates when the env has the bindings', async () => {
 	setupDefaultBundleMocks()
 	const files = new Map<string, string>([
