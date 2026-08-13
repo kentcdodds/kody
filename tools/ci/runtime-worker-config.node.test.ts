@@ -284,3 +284,68 @@ test('generate publishes the package-app custom domain for production', async ()
 		await rm(tempDir, { force: true, recursive: true })
 	}
 })
+
+test('generate keeps a GitHub PACKAGE_APP_LEGACY_HOSTS overlay on runtime zone routes', async () => {
+	consoleError.mockImplementation(() => {})
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-runtime-overlay-'))
+	try {
+		const mainConfig = buildMainGeneratedConfig('production')
+		const productionEnv = mainConfig.env.production as {
+			vars: Record<string, unknown>
+		}
+		// Overlay already applied to the main generated config, the way
+		// `writeGeneratedWranglerConfig` does for a non-empty GitHub var.
+		// Runtime wrangler still commits `kodyapps.dev` only — without
+		// preferring the main overlay, zone routes would omit the extra host.
+		productionEnv.vars.PACKAGE_APP_LEGACY_HOSTS =
+			'kodyapps.dev,legacy-apps.example.org'
+		productionEnv.vars.PACKAGE_APP_LEGACY_REDIRECT = 'true'
+		const mainConfigPath = path.join(tempDir, 'main.generated.json')
+		await writeFile(mainConfigPath, JSON.stringify(mainConfig))
+		const outConfigPath = path.join(tempDir, 'runtime.generated.json')
+
+		await generate({
+			envName: 'production',
+			mainConfigPath,
+			runtimeWorkerName: 'kody-runtime',
+			mainWorkerName: 'kody',
+			baseConfigPath: runtimeBaseConfigPath,
+			outConfigPath,
+		})
+
+		const runtimeConfig = parseJsonc<{
+			env?: {
+				production?: {
+					routes?: Array<{
+						pattern: string
+						zone_name?: string
+					}>
+					vars?: Record<string, unknown>
+				}
+			}
+		}>(await readFile(outConfigPath, 'utf8'))
+
+		expect(runtimeConfig.env?.production?.vars?.PACKAGE_APP_LEGACY_HOSTS).toBe(
+			'kodyapps.dev,legacy-apps.example.org',
+		)
+		expect(
+			runtimeConfig.env?.production?.vars?.PACKAGE_APP_LEGACY_REDIRECT,
+		).toBe('true')
+		expect(runtimeConfig.env?.production?.routes).toEqual([
+			{ pattern: 'kody.run/*', zone_name: 'kody.run' },
+			{ pattern: '*.kody.run/*', zone_name: 'kody.run' },
+			{ pattern: 'kodyapps.dev/*', zone_name: 'kodyapps.dev' },
+			{ pattern: '*.kodyapps.dev/*', zone_name: 'kodyapps.dev' },
+			{
+				pattern: 'legacy-apps.example.org/*',
+				zone_name: 'example.org',
+			},
+			{
+				pattern: '*.legacy-apps.example.org/*',
+				zone_name: 'example.org',
+			},
+		])
+	} finally {
+		await rm(tempDir, { force: true, recursive: true })
+	}
+})

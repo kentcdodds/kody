@@ -464,10 +464,16 @@ async function resolveProductionBindings({
 		productionVars && typeof productionVars === 'object'
 			? (productionVars as Record<string, unknown>).PACKAGE_APP_BASE_URL
 			: undefined
-	const packageAppLegacyHostsRaw =
+	const committedPackageAppLegacyHostsRaw =
 		productionVars && typeof productionVars === 'object'
 			? (productionVars as Record<string, unknown>).PACKAGE_APP_LEGACY_HOSTS
 			: undefined
+	const overlayPackageAppLegacyHosts = process.env.PACKAGE_APP_LEGACY_HOSTS
+	const packageAppLegacyHostsRaw =
+		typeof overlayPackageAppLegacyHosts === 'string' &&
+		overlayPackageAppLegacyHosts.length > 0
+			? overlayPackageAppLegacyHosts
+			: committedPackageAppLegacyHostsRaw
 	let packageAppHostname: string | null = null
 	if (
 		typeof packageAppBaseUrlRaw === 'string' &&
