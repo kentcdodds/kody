@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import {
+	listPackageAppHostnames,
 	packageAppApexRoutePattern,
 	packageAppWildcardRoutePattern,
 	parseJsonc,
@@ -200,6 +201,10 @@ function copyResourceIdentifiers(input: {
  * `kodyapps.dev` down on 2026-08-11). Both hostnames are instead served by
  * proxied placeholder DNS records that production CI ensures separately
  * (zone routes do not create DNS records).
+ *
+ * `PACKAGE_APP_LEGACY_HOSTS` entries get the same apex + wildcard zone
+ * routes so flipping `PACKAGE_APP_BASE_URL` cannot omit (and therefore
+ * detach) the previous package-app zone.
  */
 function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 	const vars =
@@ -210,37 +215,49 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 	if (typeof packageAppBaseUrl !== 'string' || !packageAppBaseUrl.trim()) {
 		return
 	}
-	let hostname: string
+	let hostnames: Array<string>
 	try {
-		hostname = new URL(packageAppBaseUrl).hostname
+		hostnames = listPackageAppHostnames({
+			packageAppBaseUrl,
+			packageAppLegacyHosts:
+				typeof vars.PACKAGE_APP_LEGACY_HOSTS === 'string'
+					? vars.PACKAGE_APP_LEGACY_HOSTS
+					: null,
+		})
 	} catch {
 		fail(
 			`runtime env.${envName}.vars.PACKAGE_APP_BASE_URL is not a valid URL: ${packageAppBaseUrl}`,
 		)
 	}
-	const zoneName = readPackageAppZoneName(hostname)
-	if (!zoneName) {
-		fail(
-			`runtime env.${envName}.vars.PACKAGE_APP_BASE_URL host "${hostname}" has no registrable zone name. Use a hostname on a public suffix (for example kodyapps.dev).`,
+	if (hostnames.length === 0) return
+
+	const publishedPatterns = new Set<string>()
+	const newRoutes: Array<Record<string, unknown>> = []
+	for (const hostname of hostnames) {
+		const zoneName = readPackageAppZoneName(hostname)
+		if (!zoneName) {
+			fail(
+				`runtime env.${envName}.vars package-app host "${hostname}" has no registrable zone name. Use a hostname on a public suffix (for example kody.run).`,
+			)
+		}
+		const apexPattern = packageAppApexRoutePattern(hostname)
+		const wildcardPattern = packageAppWildcardRoutePattern(hostname)
+		publishedPatterns.add(hostname)
+		publishedPatterns.add(apexPattern)
+		publishedPatterns.add(wildcardPattern)
+		newRoutes.push(
+			{ pattern: apexPattern, zone_name: zoneName },
+			{ pattern: wildcardPattern, zone_name: zoneName },
 		)
 	}
-	const apexPattern = packageAppApexRoutePattern(hostname)
-	const wildcardPattern = packageAppWildcardRoutePattern(hostname)
 	const existingRoutes = Array.isArray(runtimeEnv.routes)
-		? runtimeEnv.routes.filter(
-				(route) =>
-					!route ||
-					typeof route !== 'object' ||
-					((route as JsonRecord).pattern !== hostname &&
-						(route as JsonRecord).pattern !== apexPattern &&
-						(route as JsonRecord).pattern !== wildcardPattern),
-			)
+		? runtimeEnv.routes.filter((route) => {
+				if (!route || typeof route !== 'object') return true
+				const pattern = (route as JsonRecord).pattern
+				return typeof pattern !== 'string' || !publishedPatterns.has(pattern)
+			})
 		: []
-	runtimeEnv.routes = [
-		...existingRoutes,
-		{ pattern: apexPattern, zone_name: zoneName },
-		{ pattern: wildcardPattern, zone_name: zoneName },
-	]
+	runtimeEnv.routes = [...existingRoutes, ...newRoutes]
 	// Keep the workers.dev trigger as the deploy healthcheck target and a
 	// backup access path (publishing routes would otherwise disable it).
 	runtimeEnv.workers_dev = true

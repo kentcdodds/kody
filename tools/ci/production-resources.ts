@@ -10,6 +10,7 @@ import {
 	listCloudflareQueues,
 	listD1Databases,
 	listKvNamespaces,
+	listPackageAppHostnames,
 	parseJsonc,
 	runWrangler,
 	truncateWithSuffix,
@@ -53,6 +54,7 @@ type ResolvedProductionBindings = {
 	webhookDispatchDeadLetterQueueName: string
 	committedUserEmailDomain: string | null
 	packageAppHostname: string | null
+	packageAppLegacyHostnames: Array<string>
 }
 
 function parseArgs(argv: Array<string>): {
@@ -462,6 +464,10 @@ async function resolveProductionBindings({
 		productionVars && typeof productionVars === 'object'
 			? (productionVars as Record<string, unknown>).PACKAGE_APP_BASE_URL
 			: undefined
+	const packageAppLegacyHostsRaw =
+		productionVars && typeof productionVars === 'object'
+			? (productionVars as Record<string, unknown>).PACKAGE_APP_LEGACY_HOSTS
+			: undefined
 	let packageAppHostname: string | null = null
 	if (
 		typeof packageAppBaseUrlRaw === 'string' &&
@@ -480,6 +486,27 @@ async function resolveProductionBindings({
 			)
 		}
 	}
+	let packageAppLegacyHostnames: Array<string> = []
+	try {
+		packageAppLegacyHostnames = listPackageAppHostnames({
+			packageAppBaseUrl: null,
+			packageAppLegacyHosts:
+				typeof packageAppLegacyHostsRaw === 'string'
+					? packageAppLegacyHostsRaw
+					: null,
+		}).filter((hostname) => hostname !== packageAppHostname)
+	} catch {
+		fail(
+			`wrangler config "${wranglerConfigPath}" has an invalid "env.production.vars.PACKAGE_APP_LEGACY_HOSTS": ${String(packageAppLegacyHostsRaw)}`,
+		)
+	}
+	for (const hostname of packageAppLegacyHostnames) {
+		if (!isValidBareHostname(hostname)) {
+			fail(
+				`wrangler config "${wranglerConfigPath}" has an invalid hostname in "env.production.vars.PACKAGE_APP_LEGACY_HOSTS": ${hostname}. Use bare hostnames (no scheme), comma-separated.`,
+			)
+		}
+	}
 
 	const resolved: ResolvedProductionBindings = {
 		workerName,
@@ -495,6 +522,7 @@ async function resolveProductionBindings({
 		emailBlobsBucketName,
 		committedUserEmailDomain,
 		packageAppHostname,
+		packageAppLegacyHostnames,
 		...queueResources,
 	}
 
@@ -642,11 +670,15 @@ async function ensureProductionResources(options: CliOptions) {
 			dryRun: options.dryRun,
 		})
 
-	if (bindings.packageAppHostname) {
+	const packageAppHostnames = [
+		bindings.packageAppHostname,
+		...bindings.packageAppLegacyHostnames,
+	].filter((hostname): hostname is string => Boolean(hostname))
+	for (const packageAppHostname of [...new Set(packageAppHostnames)]) {
 		await ensurePackageAppDnsRecords({
 			accountId: accountId ?? 'dry-run-account',
 			apiToken: apiToken ?? 'dry-run-token',
-			packageAppHostname: bindings.packageAppHostname,
+			packageAppHostname,
 			dryRun: options.dryRun,
 		})
 	}
@@ -668,6 +700,8 @@ async function ensureProductionResources(options: CliOptions) {
 			APP_BASE_URL: process.env.APP_BASE_URL,
 			APP_LEGACY_HOSTS: process.env.APP_LEGACY_HOSTS,
 			APP_LEGACY_REDIRECT: process.env.APP_LEGACY_REDIRECT,
+			PACKAGE_APP_LEGACY_HOSTS: process.env.PACKAGE_APP_LEGACY_HOSTS,
+			PACKAGE_APP_LEGACY_REDIRECT: process.env.PACKAGE_APP_LEGACY_REDIRECT,
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 			USER_EMAIL_DOMAIN: process.env.USER_EMAIL_DOMAIN,
 			SYSTEM_EMAIL_DOMAIN: process.env.SYSTEM_EMAIL_DOMAIN,

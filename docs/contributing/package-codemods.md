@@ -124,7 +124,7 @@ transformed map.
    running the fleet scan, breaking the
    [privacy policy's codemod disclosure](../use/privacy.md#platform-maintenance-package-codemods)
    ("codemods are forbidden from embedding file contents in their findings").
-   Both shipped codemods use constant messages; keep it that way.
+   Shipped codemods use constant messages; keep it that way.
 
 ### `0001-ambient-storage-to-package-storage`
 
@@ -169,6 +169,32 @@ two-rule contract enforced at publish time (see
   findings and failing publish lint results stay in lockstep. Unparseable files
   produce codemod-only `needsManual` findings because publish lint cannot
   classify them.
+
+### `0003-heykody-domains-to-kody-codes`
+
+This origin-migration codemod rewrites published package references from the
+legacy web origins to the canonical app origin:
+
+- Rewrites `https://heykody.app` and `https://heykody.dev` (hostname-boundary
+  safe, including a sentence-final period) to `https://kody.codes`.
+- Does **not** rewrite subdomains (`status.heykody.dev`, `inbox.heykody.app`),
+  lookalike hosts, emails, or `LEGACY_*` configuration values.
+- Emits `needsManual` for every remaining `heykody.app` / `heykody.dev` mention
+  after the origin rewrite (bare hostnames, emails, nested labels).
+
+### `0004-kodyapps-dev-to-kody-run`
+
+This origin-migration codemod rewrites published package references from the
+legacy package-app origin to the canonical hosted-app origin:
+
+- Rewrites `https://kodyapps.dev` and `https://{user}.kodyapps.dev` (one DNS
+  label, hostname-boundary safe) to `https://kody.run` /
+  `https://{user}.kody.run`.
+- Does **not** rewrite `kody.codes`, `heykody.app`, `heykody.dev`, inbox hosts,
+  MCP paths, `status.heykody.dev`, nested labels (`https://a.b.kodyapps.dev`),
+  lookalike hosts, or `PACKAGE_APP_LEGACY_*` configuration values.
+- Emits `needsManual` for every remaining `kodyapps.dev` mention after the
+  origin rewrite (bare hostnames, nested labels, lookalikes).
 
 ## Engine
 

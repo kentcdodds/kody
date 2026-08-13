@@ -451,9 +451,14 @@
 				// separately. The routes deliberately do not live here, because
 				// Wrangler resolves *local dev* request URLs against the first
 				// configured route — every `npm run dev` request would arrive
-				// as https://kodyapps.dev/... and send local logins to the real
+				// as https://kody.run/... and send local logins to the real
 				// domain. See docs/contributing/setup-manifest.md.
-				"PACKAGE_APP_BASE_URL": "https://kodyapps.dev",
+				"PACKAGE_APP_BASE_URL": "https://kody.run",
+				// Previous package-app apex kept attached (and dual-served)
+				// during the kodyapps.dev → kody.run window. Generated runtime
+				// zone routes replace the whole set, so omitting this host
+				// would detach `*.kodyapps.dev` and delete its DNS.
+				"PACKAGE_APP_LEGACY_HOSTS": "kodyapps.dev",
 				// Email domains are committed (not just GitHub Actions vars) so
 				// they can never silently rederive from APP_BASE_URL. Canonical
 				// email lives on kody.codes; the LEGACY_* lists also accept

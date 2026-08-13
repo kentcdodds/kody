@@ -490,6 +490,8 @@ type CloudflareDnsRecord = {
 const packageAppWildcardDnsContent = '100::'
 
 export function readPackageAppZoneName(packageAppHostname: string) {
+	// Default tldts parse (no `allowPrivateDomains`): a future PSL PRIVATE
+	// listing for this apex must not change the zone name the deploy attaches.
 	const parsed = parsePublicSuffix(packageAppHostname)
 	return parsed.domain ?? null
 }
@@ -519,6 +521,32 @@ export function packageAppDnsRecordNames(packageAppHostname: string) {
 		packageAppHostname,
 		packageAppWildcardDnsRecordName(packageAppHostname),
 	]
+}
+
+/**
+ * Canonical `PACKAGE_APP_BASE_URL` hostname plus any
+ * `PACKAGE_APP_LEGACY_HOSTS` entries, de-duplicated. Used by production DNS
+ * ensure and runtime zone-route generation so flipping the canonical origin
+ * cannot omit (and therefore detach) the previous package-app zone.
+ */
+export function listPackageAppHostnames(input: {
+	packageAppBaseUrl?: string | null
+	packageAppLegacyHosts?: string | null
+}) {
+	const hostnames: Array<string> = []
+	const configured = input.packageAppBaseUrl?.trim()
+	if (configured) {
+		const hostname = new URL(configured).hostname
+			.toLowerCase()
+			.replace(/\.$/, '')
+		if (hostname) hostnames.push(hostname)
+	}
+	for (const hostname of parseCommaSeparatedHostnames(
+		input.packageAppLegacyHosts,
+	)) {
+		if (!hostnames.includes(hostname)) hostnames.push(hostname)
+	}
+	return hostnames
 }
 
 async function lookupCloudflareZoneId(input: {
@@ -570,7 +598,7 @@ export async function ensurePackageAppDnsRecords(input: {
 	const zoneName = readPackageAppZoneName(input.packageAppHostname)
 	if (!zoneName) {
 		return fail(
-			`Could not derive a registrable zone name from PACKAGE_APP_BASE_URL host "${input.packageAppHostname}". Use a hostname on a public suffix (for example kodyapps.dev).`,
+			`Could not derive a registrable zone name from PACKAGE_APP_BASE_URL host "${input.packageAppHostname}". Use a hostname on a public suffix (for example kody.run).`,
 		)
 	}
 	const recordNames = packageAppDnsRecordNames(input.packageAppHostname)
@@ -1266,17 +1294,27 @@ export function isValidBareHostname(hostname: string) {
 	return hostname.split('.').every((label) => hostnameLabelPattern.test(label))
 }
 
+function parseCommaSeparatedHostnames(configured: string | null | undefined) {
+	if (!configured) return []
+	const hostnames: Array<string> = []
+	for (const entry of configured.split(',')) {
+		const hostname = entry.trim().toLowerCase().replace(/\.$/, '')
+		if (hostname && !hostnames.includes(hostname)) hostnames.push(hostname)
+	}
+	return hostnames
+}
+
 /**
- * Parse the comma-separated `APP_LEGACY_HOSTS` var into bare hostnames.
- * These are the previous app origins (for example `heykody.dev`) the Worker
- * keeps serving during a domain migration.
+ * Parse a comma-separated hostname var (APP_LEGACY_HOSTS or
+ * PACKAGE_APP_LEGACY_HOSTS) into bare hostnames.
  */
-function readLegacyHostsVar(input: {
+function readHostnamesVar(input: {
 	resolvedVars: Record<string, unknown>
+	varName: 'APP_LEGACY_HOSTS' | 'PACKAGE_APP_LEGACY_HOSTS'
 	baseConfigPath: string
 	envName: WranglerEnvName
 }) {
-	const configured = input.resolvedVars.APP_LEGACY_HOSTS
+	const configured = input.resolvedVars[input.varName]
 	if (typeof configured !== 'string' || !configured.trim()) return []
 
 	const hostnames: Array<string> = []
@@ -1285,12 +1323,28 @@ function readLegacyHostsVar(input: {
 		if (!hostname) continue
 		if (!isValidBareHostname(hostname)) {
 			return fail(
-				`wrangler config "${input.baseConfigPath}" has an invalid hostname in "env.${input.envName}.vars.APP_LEGACY_HOSTS": ${entry.trim()}. Use bare hostnames (no scheme), comma-separated.`,
+				`wrangler config "${input.baseConfigPath}" has an invalid hostname in "env.${input.envName}.vars.${input.varName}": ${entry.trim()}. Use bare hostnames (no scheme), comma-separated.`,
 			)
 		}
 		if (!hostnames.includes(hostname)) hostnames.push(hostname)
 	}
 	return hostnames
+}
+
+function readLegacyHostsVar(input: {
+	resolvedVars: Record<string, unknown>
+	baseConfigPath: string
+	envName: WranglerEnvName
+}) {
+	return readHostnamesVar({ ...input, varName: 'APP_LEGACY_HOSTS' })
+}
+
+function readPackageAppLegacyHostsVar(input: {
+	resolvedVars: Record<string, unknown>
+	baseConfigPath: string
+	envName: WranglerEnvName
+}) {
+	return readHostnamesVar({ ...input, varName: 'PACKAGE_APP_LEGACY_HOSTS' })
 }
 
 /**
@@ -1359,17 +1413,32 @@ function addPackageAppCustomDomainRoute(input: {
 	const legacyHostnames = readLegacyHostsVar(input).filter(
 		(hostname) => hostname !== appHostname,
 	)
-	if (legacyHostnames.includes(packageAppHostname)) {
+	const packageAppLegacyHostnames = readPackageAppLegacyHostsVar(input).filter(
+		(hostname) => hostname !== packageAppHostname,
+	)
+	const packageAppHostnames = [packageAppHostname, ...packageAppLegacyHostnames]
+	const overlappingAppHost = packageAppHostnames.find((hostname) =>
+		legacyHostnames.includes(hostname),
+	)
+	if (overlappingAppHost) {
 		return fail(
-			`wrangler config "${input.baseConfigPath}" lists the "PACKAGE_APP_BASE_URL" host (${packageAppHostname}) in "env.${input.envName}.vars.APP_LEGACY_HOSTS". Hosted package apps must stay a separate registrable domain from every app origin.`,
+			`wrangler config "${input.baseConfigPath}" lists the package-app host (${overlappingAppHost}) in "env.${input.envName}.vars.APP_LEGACY_HOSTS". Hosted package apps must stay a separate registrable domain from every app origin.`,
 		)
 	}
 
 	const packageAppZoneName = readPackageAppZoneName(packageAppHostname)
 	if (!packageAppZoneName) {
 		return fail(
-			`wrangler config "${input.baseConfigPath}" has "env.${input.envName}.vars.PACKAGE_APP_BASE_URL" host "${packageAppHostname}" without a registrable zone name. Use a hostname on a public suffix (for example kodyapps.dev).`,
+			`wrangler config "${input.baseConfigPath}" has "env.${input.envName}.vars.PACKAGE_APP_BASE_URL" host "${packageAppHostname}" without a registrable zone name. Use a hostname on a public suffix (for example kody.run).`,
 		)
+	}
+	for (const hostname of packageAppLegacyHostnames) {
+		const zoneName = readPackageAppZoneName(hostname)
+		if (!zoneName) {
+			return fail(
+				`wrangler config "${input.baseConfigPath}" has "env.${input.envName}.vars.PACKAGE_APP_LEGACY_HOSTS" host "${hostname}" without a registrable zone name. Use a hostname on a public suffix (for example kodyapps.dev).`,
+			)
+		}
 	}
 
 	const existingRoutes = Array.isArray(input.targetEnv.routes)
@@ -1405,8 +1474,11 @@ function addPackageAppCustomDomainRoute(input: {
 	const legacyNote = legacyHostnames.length
 		? `, ${legacyHostnames.join(', ')} (APP_LEGACY_HOSTS)`
 		: ''
+	const packageAppLegacyNote = packageAppLegacyHostnames.length
+		? ` plus ${packageAppLegacyHostnames.join(', ')} (PACKAGE_APP_LEGACY_HOSTS)`
+		: ''
 	console.error(
-		`Worker routes: ${appHostname} (APP_BASE_URL)${legacyNote}; workers.dev trigger kept. Package-app host ${packageAppHostname} (PACKAGE_APP_BASE_URL custom domain) and ${wildcardRoutePattern} (zone ${packageAppZoneName}) are attached to the runtime worker.`,
+		`Worker routes: ${appHostname} (APP_BASE_URL)${legacyNote}; workers.dev trigger kept. Package-app host ${packageAppHostname} (PACKAGE_APP_BASE_URL) and ${wildcardRoutePattern} (zone ${packageAppZoneName})${packageAppLegacyNote} are attached to the runtime worker.`,
 	)
 }
 

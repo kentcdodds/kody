@@ -7,6 +7,7 @@ import {
 import {
 	getAppBaseUrl,
 	getPackageAppBaseUrl,
+	getPackageAppLegacySubdomainRedirect,
 	getPackageAppOriginConfigurationError,
 	parsePackageAppRequestHost,
 } from '#worker/app-base-url.ts'
@@ -429,13 +430,20 @@ export async function handlePackageAppOriginRequest(
 					packagePath,
 					packageAppOrigin,
 				})
-			case 'user-subdomain':
+			case 'user-subdomain': {
+				const legacyRedirect = getPackageAppLegacySubdomainRedirect({
+					request,
+					env,
+					requestHost,
+				})
+				if (legacyRedirect) return legacyRedirect
 				return await handleUserSubdomainRequest({
 					request,
 					env,
 					url,
 					username: requestHost.username,
 				})
+			}
 			case 'unrecognized-subdomain':
 				return createUnmatchedPackageAppPathResponse()
 			default: {

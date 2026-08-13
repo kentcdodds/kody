@@ -283,6 +283,8 @@ jobs:
           # during a domain migration; see tools/ci/resource-utils.ts.
           APP_LEGACY_HOSTS: ${{ vars.APP_LEGACY_HOSTS }}
           APP_LEGACY_REDIRECT: ${{ vars.APP_LEGACY_REDIRECT }}
+          PACKAGE_APP_LEGACY_HOSTS: ${{ vars.PACKAGE_APP_LEGACY_HOSTS }}
+          PACKAGE_APP_LEGACY_REDIRECT: ${{ vars.PACKAGE_APP_LEGACY_REDIRECT }}
           USER_EMAIL_DOMAIN: ${{ vars.USER_EMAIL_DOMAIN }}
           SYSTEM_EMAIL_DOMAIN: ${{ vars.SYSTEM_EMAIL_DOMAIN }}
           LEGACY_USER_EMAIL_DOMAINS: ${{ vars.LEGACY_USER_EMAIL_DOMAINS }}

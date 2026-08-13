@@ -101,7 +101,17 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 
 	// Hosted package apps run on their own origin in production, so the URL a
 	// user copies from the address bar is on that host.
-	const hosted = { ...common, packageAppBaseUrl: 'https://kodyapps.dev' }
+	const hosted = {
+		...common,
+		packageAppBaseUrl: 'https://kody.run',
+		packageAppLegacyHosts: 'kodyapps.dev',
+	}
+	expect(
+		parsePackageSearchIdentity({
+			...hosted,
+			query: 'https://kody.run/@user/packages/daily-notes',
+		}),
+	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
 	expect(
 		parsePackageSearchIdentity({
 			...hosted,
@@ -119,6 +129,12 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 
 	// The canonical hosted URL is the caller's per-user subdomain, where the
 	// username lives in the hostname and the path carries only the mount.
+	expect(
+		parsePackageSearchIdentity({
+			...hosted,
+			query: 'https://user.kody.run/packages/daily-notes?tab=source#top',
+		}),
+	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
 	expect(
 		parsePackageSearchIdentity({
 			...hosted,

@@ -36,7 +36,7 @@
 	],
 	"vars": {
 		"PRIMARY_ORIGIN": "https://kody.codes",
-		"PACKAGE_APP_ORIGIN": "https://kodyapps.dev",
+		"PACKAGE_APP_ORIGIN": "https://kody.run",
 		"STATUS_PAGE_URL": "https://status.heykody.dev",
 		"ALERT_EMAIL_TO": "me@kentcdodds.com",
 		"ALERT_EMAIL_FROM": "kody@kody.codes",

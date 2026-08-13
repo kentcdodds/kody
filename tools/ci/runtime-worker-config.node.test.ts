@@ -110,8 +110,8 @@ function buildMainGeneratedConfig(envName: string) {
 		],
 		vars: {
 			APP_BASE_URL: 'https://kody-pr-7.example.workers.dev',
-			PACKAGE_APP_BASE_URL:
-				envName === 'production' ? 'https://kodyapps.dev' : '',
+			PACKAGE_APP_BASE_URL: envName === 'production' ? 'https://kody.run' : '',
+			PACKAGE_APP_LEGACY_HOSTS: envName === 'production' ? 'kodyapps.dev' : '',
 		},
 	}
 	return { name: 'kody', env: { [envName]: env } }
@@ -261,10 +261,15 @@ test('generate publishes the package-app custom domain for production', async ()
 			migrations?: Array<{ tag?: string; transferred_classes?: unknown }>
 		}>(await readFile(outConfigPath, 'utf8'))
 
-		// Both package-app routes are zone routes, never custom domains: a
+		// Both package-app zones are zone routes, never custom domains: a
 		// custom domain in a zone whose route table the deploy also publishes
 		// gets detached (deleting its DNS record) when the routes are replaced.
+		// Canonical kody.run plus legacy kodyapps.dev must both stay attached —
+		// omitting the previous zone would detach `*.kodyapps.dev` and delete
+		// its DNS.
 		expect(runtimeConfig.env?.production?.routes).toEqual([
+			{ pattern: 'kody.run/*', zone_name: 'kody.run' },
+			{ pattern: '*.kody.run/*', zone_name: 'kody.run' },
 			{ pattern: 'kodyapps.dev/*', zone_name: 'kodyapps.dev' },
 			{ pattern: '*.kodyapps.dev/*', zone_name: 'kodyapps.dev' },
 		])

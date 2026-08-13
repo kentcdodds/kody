@@ -262,7 +262,7 @@ test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', 
 		getEnv: () =>
 			({
 				APP_DB: {},
-				PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
+				PACKAGE_APP_BASE_URL: 'https://kody.run',
 			}) as Env,
 		getCallerContext: () => callerContext,
 	} as unknown as McpRegistrationAgent
@@ -278,7 +278,7 @@ test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', 
 
 	expect(detail).toMatchObject({
 		type: 'package',
-		hostedUrl: 'https://kentcdodds.kodyapps.dev/packages/demo',
+		hostedUrl: 'https://kentcdodds.kody.run/packages/demo',
 		baseUrl: 'https://heykody.dev',
 	})
 })

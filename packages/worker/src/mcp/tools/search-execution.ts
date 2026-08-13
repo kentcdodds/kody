@@ -73,6 +73,7 @@ export async function executeSearchList(input: {
 					query: input.query,
 					baseUrl: input.callerContext.baseUrl,
 					packageAppBaseUrl: getPackageAppBaseUrl({ env: input.env }),
+					packageAppLegacyHosts: input.env.PACKAGE_APP_LEGACY_HOSTS,
 					username,
 					includeHiddenPackages: input.includeHiddenPackages,
 				})

@@ -224,6 +224,20 @@ export const EnvSchema = object({
 	// where the same-origin path-based behavior remains available.
 	// See docs/contributing/security.md.
 	PACKAGE_APP_BASE_URL: optionalUrlStringSchema,
+	// Comma-separated previous package-app apex hostnames (for example
+	// `kodyapps.dev`) the runtime Worker keeps serving alongside the
+	// canonical `PACKAGE_APP_BASE_URL` host during a domain migration.
+	// Generated zone routes replace the whole set, so omitting a listed
+	// host would detach it and delete its DNS.
+	PACKAGE_APP_LEGACY_HOSTS: optionalNonEmptyStringSchema,
+	// Exact string 'true' enables 308 redirects from legacy package-app
+	// *user subdomains* to the matching canonical subdomain for safe
+	// browser GET/HEAD. Leave unset to dual-serve (required while
+	// `__Host-kody_pkg_session` cookies and published package URLs still
+	// live on the old host). Apex `/` on a legacy package-app host still
+	// goes to the app origin; it is never redirected onto the canonical
+	// package-app apex.
+	PACKAGE_APP_LEGACY_REDIRECT: optionalNonEmptyStringSchema,
 	USER_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
 	// Overrides the system email domain derived from APP_BASE_URL. Committed
 	// in production so email and the web origin can move independently.

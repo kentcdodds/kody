@@ -114,7 +114,7 @@ confirmed non-production runtimes; see `packages/worker/src/app-base-url.ts` and
 `packages/worker/src/app/package-app-origin.ts`):
 
 - `PACKAGE_APP_BASE_URL` — the **apex** origin of the package-app domain that
-  hosted package apps are served from. Production sets `https://kodyapps.dev` in
+  hosted package apps are served from. Production sets `https://kody.run` in
   `packages/worker/wrangler.jsonc`, and the deploy publishes **zone routes** for
   the apex (`<apex-host>/*`) and the per-user wildcard (`*.<apex-host>/*`) on
   the runtime Worker — never a custom domain in this zone (replacing a zone's
@@ -140,6 +140,23 @@ confirmed non-production runtimes; see `packages/worker/src/app-base-url.ts` and
   `PACKAGE_APP_BASE_URL=http://packages.localhost:<port>` in
   `packages/worker/.env` to exercise the two-origin flow locally. See
   [Hosted package app origin isolation](./security.md#hosted-package-app-origin-isolation).
+
+- `PACKAGE_APP_LEGACY_HOSTS` — optional comma-separated previous package-app
+  apex hostnames (production commits `kodyapps.dev`) that remain attached and
+  dual-served alongside `PACKAGE_APP_BASE_URL`. Generated runtime zone routes
+  replace the Worker's whole route set, so every dual-served package-app host
+  must be listed here — otherwise the next deploy detaches omitted origins and
+  deletes their DNS records. May also be set as a GitHub Actions repository
+  variable (non-empty overlay wins).
+- `PACKAGE_APP_LEGACY_REDIRECT` — exact string `true` enables path-and-query-
+  preserving `308` redirects from legacy package-app **user subdomains**
+  (`{username}.kodyapps.dev` → `{username}.kody.run`) for browser GET/HEAD only.
+  Leave unset to dual-serve: package-app session cookies use the `__Host-`
+  prefix, so they are host-only and cannot follow a redirect. Apex `/` on a
+  legacy package-app host still redirects to the app origin (`kody.codes`); it
+  is never sent to the canonical package-app apex. Dual-serve is the default;
+  set this GitHub Actions repository variable to `true` only for the GET/HEAD
+  redirect window.
 
 ## MCP `execute` and outbound HTTP
 

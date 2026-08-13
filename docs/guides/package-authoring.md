@@ -70,8 +70,8 @@ success means for the user, not duplicate every implementation detail.
 ## Package app routing
 
 Production-hosted package apps live at
-`https://{username}.kodyapps.dev/packages/<kody-id>/<path>` (the username is in
-the hostname; the path mount is `/packages/<kody-id>`). Confirmed non-production
+`https://{username}.kody.run/packages/<kody-id>/<path>` (the username is in the
+hostname; the path mount is `/packages/<kody-id>`). Confirmed non-production
 runtimes may serve inline on the app origin at
 `/@username/packages/<kody-id>/<path>` instead. The app receives only `/<path>`
 in its fetch request in both cases. Root-relative links such as `/audio/123`

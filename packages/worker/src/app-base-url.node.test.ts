@@ -3,6 +3,7 @@ import {
 	getAppBaseUrl,
 	getCanonicalAppBaseUrl,
 	getPackageAppBaseUrl,
+	getPackageAppLegacySubdomainRedirect,
 	getPackageAppOriginConfigurationError,
 	joinAppUrl,
 	parsePackageAppRequestHost,
@@ -151,10 +152,14 @@ test('parsePackageAppRequestHost classifies apex, user subdomains, and rejects e
 	const parse = (url: string) =>
 		parsePackageAppRequestHost({ env, url: new URL(url) })
 
-	expect(parse('https://kodyapps.dev/anything')).toEqual({ kind: 'apex' })
+	expect(parse('https://kodyapps.dev/anything')).toEqual({
+		kind: 'apex',
+		role: 'canonical',
+	})
 	expect(parse('https://kentcdodds.kodyapps.dev/packages/demo')).toEqual({
 		kind: 'user-subdomain',
 		username: 'kentcdodds',
+		role: 'canonical',
 	})
 	// Hostnames the wildcard route still delivers, but that no user can own.
 	for (const url of [
@@ -170,7 +175,10 @@ test('parsePackageAppRequestHost classifies apex, user subdomains, and rejects e
 		'https://kodyapps.dev./',
 		'https://kentcdodds.kodyapps.dev./',
 	]) {
-		expect(parse(url), url).toEqual({ kind: 'unrecognized-subdomain' })
+		expect(parse(url), url).toEqual({
+			kind: 'unrecognized-subdomain',
+			role: 'canonical',
+		})
 	}
 	// Not the package-app domain at all.
 	for (const url of [
@@ -224,6 +232,130 @@ test('production package-app origin configuration requires a separate registrabl
 			APP_BASE_URL: 'https://heykody.dev',
 			PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
 			SENTRY_ENVIRONMENT: 'production',
+		}),
+	).toBeNull()
+
+	expect(
+		getPackageAppOriginConfigurationError({
+			APP_BASE_URL: 'https://kody.codes',
+			PACKAGE_APP_BASE_URL: 'https://kody.run',
+			SENTRY_ENVIRONMENT: 'production',
+		}),
+	).toBeNull()
+
+	expect(
+		getPackageAppOriginConfigurationError({
+			APP_BASE_URL: 'https://kody.codes',
+			PACKAGE_APP_BASE_URL: 'https://kody.run',
+			PACKAGE_APP_LEGACY_HOSTS: 'kodyapps.dev',
+			SENTRY_ENVIRONMENT: 'production',
+		}),
+	).toBeNull()
+
+	expect(
+		getPackageAppOriginConfigurationError({
+			APP_BASE_URL: 'https://kody.codes',
+			PACKAGE_APP_BASE_URL: 'https://kody.run',
+			PACKAGE_APP_LEGACY_HOSTS: 'apps.kody.codes',
+			SENTRY_ENVIRONMENT: 'production',
+		}),
+	).toContain('PACKAGE_APP_LEGACY_HOSTS')
+})
+
+test('parsePackageAppRequestHost dual-serves PACKAGE_APP_LEGACY_HOSTS', () => {
+	const env = {
+		PACKAGE_APP_BASE_URL: 'https://kody.run',
+		PACKAGE_APP_LEGACY_HOSTS: 'kodyapps.dev',
+	}
+	const parse = (url: string) =>
+		parsePackageAppRequestHost({ env, url: new URL(url) })
+
+	expect(parse('https://alice.kody.run/packages/demo')).toEqual({
+		kind: 'user-subdomain',
+		username: 'alice',
+		role: 'canonical',
+	})
+	expect(parse('https://alice.kodyapps.dev/packages/demo')).toEqual({
+		kind: 'user-subdomain',
+		username: 'alice',
+		role: 'legacy',
+	})
+	expect(parse('https://kodyapps.dev/')).toEqual({
+		kind: 'apex',
+		role: 'legacy',
+	})
+	expect(parse('https://kody.run/')).toEqual({
+		kind: 'apex',
+		role: 'canonical',
+	})
+	expect(parse('https://kody.codes/')).toBeNull()
+})
+
+test('legacy package-app subdomain redirect is opt-in GET/HEAD only', () => {
+	const env = {
+		PACKAGE_APP_BASE_URL: 'https://kody.run',
+		PACKAGE_APP_LEGACY_HOSTS: 'kodyapps.dev',
+		PACKAGE_APP_LEGACY_REDIRECT: 'true',
+	}
+	const legacyHost = parsePackageAppRequestHost({
+		env,
+		url: new URL('https://alice.kodyapps.dev/packages/demo?tab=1'),
+	})
+	expect(legacyHost).toEqual({
+		kind: 'user-subdomain',
+		username: 'alice',
+		role: 'legacy',
+	})
+
+	const response = getPackageAppLegacySubdomainRedirect({
+		request: new Request('https://alice.kodyapps.dev/packages/demo?tab=1'),
+		env,
+		requestHost: legacyHost!,
+	})
+	expect(response?.status).toBe(308)
+	expect(response?.headers.get('location')).toBe(
+		'https://alice.kody.run/packages/demo?tab=1',
+	)
+
+	expect(
+		getPackageAppLegacySubdomainRedirect({
+			request: new Request('https://alice.kodyapps.dev/packages/demo', {
+				method: 'POST',
+			}),
+			env,
+			requestHost: legacyHost!,
+		}),
+	).toBeNull()
+
+	const apexHost = parsePackageAppRequestHost({
+		env,
+		url: new URL('https://kodyapps.dev/'),
+	})
+	expect(
+		getPackageAppLegacySubdomainRedirect({
+			request: new Request('https://kodyapps.dev/'),
+			env,
+			requestHost: apexHost!,
+		}),
+	).toBeNull()
+
+	const canonicalHost = parsePackageAppRequestHost({
+		env,
+		url: new URL('https://alice.kody.run/packages/demo'),
+	})
+	expect(
+		getPackageAppLegacySubdomainRedirect({
+			request: new Request('https://alice.kody.run/packages/demo'),
+			env,
+			requestHost: canonicalHost!,
+		}),
+	).toBeNull()
+
+	expect(
+		getPackageAppLegacySubdomainRedirect({
+			request: new Request('https://alice.kodyapps.dev/packages/demo'),
+			env: { ...env, PACKAGE_APP_LEGACY_REDIRECT: 'false' },
+			requestHost: legacyHost!,
 		}),
 	).toBeNull()
 })

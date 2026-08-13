@@ -70,6 +70,5 @@ longer exports.
   `{"ok":false,"error":{"code":"unauthorized"}}` from the runtime worker.
 - Binding status line in dev output:
   `env.RUNTIME_WORKER (...) Worker local [connected]` vs `[not connected]`.
-- Beware: logged-in package-app requests redirect to the real
-  `https://kodyapps.dev` (production `PACKAGE_APP_BASE_URL`) — don't follow the
-  handoff into prod.
+- Beware: logged-in package-app requests redirect to the real `https://kody.run`
+  (production `PACKAGE_APP_BASE_URL`) — don't follow the handoff into prod.

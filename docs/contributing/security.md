@@ -101,8 +101,8 @@ need their own looser policies to run author-authored code.
 
 Hosted package apps execute author-supplied HTML, JS, and worker code. In
 production they run on per-user subdomains of the package-app domain
-(`https://{username}.kodyapps.dev/packages/{kodyId}/...`); confirmed
-non-production runtimes may serve them inline on the app origin at
+(`https://{username}.kody.run/packages/{kodyId}/...`); confirmed non-production
+runtimes may serve them inline on the app origin at
 `/@{username}/packages/{kodyId}/...` instead. Anything that shares an origin
 with a package app is inside its reach, and package apps get no CSP backstop
 (invariant 2), so the origin boundary _is_ the control.
@@ -134,8 +134,8 @@ headers. This holds regardless of hosting mode, so local dev and preview are
 covered too.
 
 **2. A separate registrable domain (production).** `PACKAGE_APP_BASE_URL`
-(production Worker var, `https://kodyapps.dev` — the apex; the deploy publishes
-apex and wildcard **zone routes** on the runtime Worker for that host, never a
+(production Worker var, `https://kody.run` — the apex; the deploy publishes apex
+and wildcard **zone routes** on the runtime Worker for that host, never a
 Workers custom domain in this zone — see
 [`setup-manifest.md`](./setup-manifest.md)) makes package apps cross-site from
 the app origin, so the `SameSite=Lax`, `HttpOnly` `kody_session` cookie never
@@ -166,18 +166,19 @@ in the Worker `fetch` handler:
   methods redirect (`302`) to the owner's package-app subdomain with a handoff
   token; other methods get a `307` to that subdomain. Unauthenticated visitors
   are sent to `/login` on the app origin first.
-- **Package-app apex** (`kodyapps.dev`): serves no package code. `/` redirects
-  to the app origin. Legacy path-based URLs (`/@{username}/packages/*`) redirect
-  (`302`/`307`) to the owning user's subdomain. Everything else — including
-  `/account/*`, `/login`, `/mcp`, and the
+- **Package-app apex** (`kody.run`, and dual-served `kodyapps.dev`): serves no
+  package code. `/` redirects to the app origin. Legacy path-based URLs
+  (`/@{username}/packages/*`) redirect (`302`/`307`) to the owning user's
+  subdomain. Everything else — including `/account/*`, `/login`, `/mcp`, and the
   `/@{username}/api/package-invocations/*`, `/connectors/*`, `/webhooks/*`
   machine APIs — is `404`. Those APIs stay on the app origin on purpose: they
   are authenticated by their own bearer tokens or URL secrets, they are never
   called by package browser code, and hosting them on the package-app domain
   would only widen its surface.
-- **Per-user package-app subdomain** (`{username}.kodyapps.dev`): serves only
-  `/packages/{kodyId}/*` for that hostname's username label. `/` redirects to
-  the app origin; every other path is `404`.
+- **Per-user package-app subdomain** (`{username}.kody.run`, and dual-served
+  `{username}.kodyapps.dev`): serves only `/packages/{kodyId}/*` for that
+  hostname's username label. `/` redirects to the app origin; every other path
+  is `404`.
 
 **Handoff session and fixation defense.** The app origin mints a short-lived
 single-use handoff token; the owner's subdomain exchanges it for a host-scoped
@@ -248,13 +249,16 @@ That is a smaller blast radius than first-party access (all of it stays inside
 one owner's own data, since serving is `userId`-scoped and the session is bound
 to one account), but it is not zero.
 
-**Operational follow-up (not code).** Submit `kodyapps.dev` to the
+**Operational follow-up (not code).** Submit `kody.run` to the
 [Public Suffix List](https://publicsuffix.org/submit/) for defense-in-depth
 (sibling subdomains treated as separate registrable domains by browsers). That
 requires a `_psl` TXT record on the zone and a PR to
-[publicsuffix/list](https://github.com/publicsuffix/list) by the domain owner.
-The `__Host-` cookie is the primary cookie-tossing control; PSL entry is an
-additional layer.
+[publicsuffix/list](https://github.com/publicsuffix/list) by the domain owner,
+plus 2+ years remaining on the registration. Abuse/contact mail is
+`psl@kody.codes`. Do not enable `allowPrivateDomains` on tldts:
+`readPackageAppZoneName` must keep resolving the public-suffix zone without the
+PRIVATE list. The `__Host-` cookie is the primary cookie-tossing control; PSL
+entry is an additional layer.
 
 ## Auth rate limiting
 

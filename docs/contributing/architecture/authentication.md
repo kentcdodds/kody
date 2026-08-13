@@ -358,7 +358,7 @@ Hosted package apps run on their own registrable domain in production
 origin — see
 [Hosted package app origin isolation](../security.md#hosted-package-app-origin-isolation)
 for why. Production serves each owner's apps on a per-user subdomain of that
-domain (`https://{username}.kodyapps.dev/packages/{kodyId}/...`); the apex only
+domain (`https://{username}.kody.run/packages/{kodyId}/...`); the apex only
 redirects. That means `kody_session` never reaches them, so the package-app
 subdomain needs its own, deliberately smaller credential.
 
@@ -395,13 +395,14 @@ exchange is served by that same script's zone routes. Production CI therefore
 syncs `COOKIE_SECRET` onto the unsuffixed `kody-runtime` script (`--env ""` plus
 `--name`); `wrangler secret bulk --env production --name kody-runtime` still
 writes `kody-runtime-production`, which the runtime deploy does not serve. If a
-leftover main-worker route still receives `{username}.kodyapps.dev`, the main
-Worker must forward it too (`isRuntimeWorkerOwnedRequest` matches every
-package-app host, not only the apex). A `COOKIE_SECRET` mismatch, or a missing
-secret swallowed as "invalid token", leaves the visitor on the 403 page with
-`__kody_handoff` still in the URL and no `Set-Cookie`. Missing `COOKIE_SECRET`
-on consume fails closed with 500; signature / expiry / path / replay rejects log
-a reason without the token and set `X-Kody-Handoff: rejected`.
+leftover main-worker route still receives `{username}.kody.run` or
+`{username}.kodyapps.dev`, the main Worker must forward it too
+(`isRuntimeWorkerOwnedRequest` matches every package-app host, not only the
+apex). A `COOKIE_SECRET` mismatch, or a missing secret swallowed as "invalid
+token", leaves the visitor on the 403 page with `__kody_handoff` still in the
+URL and no `Set-Cookie`. Missing `COOKIE_SECRET` on consume fails closed with
+500; signature / expiry / path / replay rejects log a reason without the token
+and set `X-Kody-Handoff: rejected`.
 
 **Package-app session cookie**
 (`packages/worker/src/app/package-app-session.ts`). Exchanging a valid token on

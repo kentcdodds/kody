@@ -8,8 +8,9 @@ deploys, code, or database are broken (see decision record 0004).
 ## How it works
 
 - A cron trigger runs one probe pass per minute against public endpoints:
-  `GET /health` and `GET /health/components` on `heykody.dev`, the
-  unauthenticated OAuth challenge on `/mcp`, and `kodyapps.dev`.
+  `GET /health` and `GET /health/components` on the primary origin, the
+  unauthenticated OAuth challenge on `/mcp`, and the package-app apex
+  (`kody.run`).
 - A single `StatusStore` Durable Object (SQLite) stores per-minute samples (24
   h), daily uptime rollups (90 days), incidents, and sent notifications.
 - A component opens an incident after two consecutive probe failures and

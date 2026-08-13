@@ -2,6 +2,7 @@ import {
 	buildPackageAppSubdomainOrigin,
 	isDnsSafeUsername,
 } from '@kody-internal/shared/public-urls.ts'
+import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { type SearchMatch } from '#mcp/tools/search-format.ts'
 import {
@@ -51,7 +52,7 @@ function safelyDecodePathSegment(value: string) {
 function parsePackageUrl(input: {
 	query: string
 	baseUrl: string
-	packageAppBaseUrl: string | null
+	packageAppOrigins: Array<string>
 	username: string | null
 }): ParsedPackageIdentity {
 	const looksLikeUrl =
@@ -72,21 +73,14 @@ function parsePackageUrl(input: {
 	}
 	// Hosted package apps are served from their own domain in production, so the
 	// URL a user copies out of the address bar is on that host, not the app host.
-	// Both are this deployment's own origins; anything else is another site's URL
-	// and must not resolve to one of this user's packages.
-	let packageAppOrigin: string | null = null
-	if (input.packageAppBaseUrl) {
-		try {
-			packageAppOrigin = new URL(input.packageAppBaseUrl).origin
-		} catch {
-			packageAppOrigin = null
-		}
-	}
+	// Canonical and dual-served legacy package-app origins are this deployment's
+	// own origins; anything else is another site's URL and must not resolve to
+	// one of this user's packages.
 
 	const parts = url.pathname.split('/').filter(Boolean)
 
 	// Per-user subdomain form: `https://{username}.<package-app host>/packages/{kodyId}`.
-	if (packageAppOrigin) {
+	for (const packageAppOrigin of input.packageAppOrigins) {
 		const packageAppBase = new URL(packageAppOrigin)
 		const hostname = url.hostname.toLowerCase()
 		if (
@@ -128,9 +122,7 @@ function parsePackageUrl(input: {
 	// live on the app origin alone.
 	const isOwnOrigin =
 		url.origin === baseUrl.origin ||
-		(isHostedPackagePath &&
-			packageAppOrigin !== null &&
-			url.origin === packageAppOrigin)
+		(isHostedPackagePath && input.packageAppOrigins.includes(url.origin))
 	if (!isOwnOrigin || url.username.length > 0 || url.password.length > 0) {
 		return { kind: 'invalid-package-identity' }
 	}
@@ -156,11 +148,33 @@ function parsePackageUrl(input: {
 	return { kind: 'kody-id', value: kodyId, authoritative: true }
 }
 
+function listSearchPackageAppOrigins(input: {
+	packageAppBaseUrl?: string | null
+	packageAppLegacyHosts?: string | null
+}) {
+	const origins: Array<string> = []
+	if (input.packageAppBaseUrl) {
+		try {
+			origins.push(new URL(input.packageAppBaseUrl).origin)
+		} catch {
+			// Invalid configured origin is ignored here; callers that need a
+			// production failure already go through getPackageAppOriginConfigurationError.
+		}
+	}
+	for (const hostname of parseLegacyHosts(input.packageAppLegacyHosts)) {
+		const origin = `https://${hostname}`
+		if (!origins.includes(origin)) origins.push(origin)
+	}
+	return origins
+}
+
 export function parsePackageSearchIdentity(input: {
 	query: string
 	baseUrl: string
 	/** Origin hosted package apps are served from, when it is a separate host. */
 	packageAppBaseUrl?: string | null
+	/** Comma-separated previous package-app apex hosts still dual-served. */
+	packageAppLegacyHosts?: string | null
 	username: string | null
 }): ParsedPackageIdentity {
 	const query = input.query.trim()
@@ -169,7 +183,7 @@ export function parsePackageSearchIdentity(input: {
 	const parsedUrl = parsePackageUrl({
 		query,
 		baseUrl: input.baseUrl,
-		packageAppBaseUrl: input.packageAppBaseUrl ?? null,
+		packageAppOrigins: listSearchPackageAppOrigins(input),
 		username: input.username,
 	})
 	if (parsedUrl.kind !== 'not-package-identity') return parsedUrl
@@ -206,6 +220,7 @@ export async function resolvePackageIdentitySearch(input: {
 	query: string
 	baseUrl: string
 	packageAppBaseUrl?: string | null
+	packageAppLegacyHosts?: string | null
 	username: string | null
 	includeHiddenPackages: boolean
 }): Promise<PackageIdentitySearchResolution> {
