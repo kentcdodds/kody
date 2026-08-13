@@ -16,10 +16,13 @@ test('Cloudflare REST clients read mock responses, enforce API paths, and send J
 	using _server = createMswNodeServer([
 		http.get(`${baseUrl}/client/v4/accounts`, ({ request }) => {
 			accountsRequest = request.clone()
-			return HttpResponse.json({
-				success: true,
-				result: [{ id: 'cf_account_mock_123' }],
-			})
+			return HttpResponse.json(
+				{
+					success: true,
+					result: [{ id: 'cf_account_mock_123' }],
+				},
+				{ headers: { 'cf-ray': 'accounts-ray-1' } },
+			)
 		}),
 		http.get(`${baseUrl}/client/v4/user/tokens/verify`, ({ request }) => {
 			verifyRequest = request.clone()
@@ -46,6 +49,7 @@ test('Cloudflare REST clients read mock responses, enforce API paths, and send J
 		path: '/client/v4/accounts',
 	})
 	expect(accountsResponse.status).toBe(200)
+	expect(accountsResponse.cfRay).toBe('accounts-ray-1')
 	const accountsBody = accountsResponse.body as {
 		success?: boolean
 		result?: Array<{ id?: string }>

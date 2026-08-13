@@ -89,6 +89,8 @@ export type ArtifactNamespaceBinding = {
 		total: number
 		cursor?: string
 	}>
+	/** Local handle for `name`. Does not fetch; `info` / tokens hit the API later. */
+	repo(name: string): ArtifactRepoHandle
 }
 
 export function resolveArtifactsNamespace(env: Env, namespace?: string | null) {
@@ -96,17 +98,25 @@ export function resolveArtifactsNamespace(env: Env, namespace?: string | null) {
 	return trimmed && trimmed.length > 0 ? trimmed : getArtifactsNamespace(env)
 }
 
+function readNativeArtifactsBinding(env: Env): Artifacts | null {
+	const binding = env.ARTIFACTS
+	if (!binding || typeof binding.create !== 'function') return null
+	return binding
+}
+
 export function getArtifactsBinding(
 	env: Env,
 	namespace?: string | null,
 ): ArtifactNamespaceBinding & Record<string, unknown> {
-	const restBinding = createArtifactsRestBinding(
-		env,
-		resolveArtifactsNamespace(env, namespace),
-	)
+	const requestedNamespace = resolveArtifactsNamespace(env, namespace)
+	const native = readNativeArtifactsBinding(env)
+	if (native && requestedNamespace === getArtifactsNamespace(env)) {
+		return adaptNativeArtifactsBinding(native)
+	}
+	const restBinding = createArtifactsRestBinding(env, requestedNamespace)
 	if (!restBinding) {
 		throw new Error(
-			'Cloudflare Artifacts REST access requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.',
+			'Cloudflare Artifacts access requires the ARTIFACTS binding or CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.',
 		)
 	}
 	return restBinding
@@ -178,6 +188,121 @@ type ArtifactRestStoredToken = {
 	scope: string
 	expires_at: string
 	created_at?: string | null
+}
+
+function isArtifactsBindingError(
+	error: unknown,
+): error is ArtifactsError {
+	return (
+		error instanceof Error &&
+		error.name === 'ArtifactsError' &&
+		'code' in error &&
+		typeof error.code === 'string'
+	)
+}
+
+function adaptNativeRepoHandle(repo: ArtifactsRepo): ArtifactRepoHandle {
+	return {
+		info: async () => ({
+			id: repo.id,
+			name: repo.name,
+			description: repo.description,
+			defaultBranch: repo.defaultBranch,
+			createdAt: repo.createdAt,
+			updatedAt: repo.updatedAt,
+			lastPushAt: repo.lastPushAt,
+			source: repo.source,
+			readOnly: repo.readOnly,
+			remote: repo.remote,
+		}),
+		createToken: async (scope = 'write', ttl = 3600) => {
+			const token = await repo.createToken(scope, ttl)
+			return {
+				id: token.id,
+				plaintext: token.plaintext,
+				scope: token.scope,
+				expiresAt: token.expiresAt,
+			}
+		},
+		listTokens: async () => {
+			const listed = await repo.listTokens()
+			return listed.tokens.map((token) => ({
+				id: token.id,
+				scope: token.scope,
+				expiresAt: token.expiresAt,
+				createdAt: token.createdAt,
+			}))
+		},
+		revokeToken: async (idOrPlaintext) => {
+			await repo.revokeToken(idOrPlaintext)
+		},
+	}
+}
+
+function adaptNativeArtifactsBinding(
+	native: Artifacts,
+): ArtifactNamespaceBinding & Record<string, unknown> {
+	const repo = (name: string): ArtifactRepoHandle => ({
+		info: async () => {
+			const handle = await native.get(name)
+			return adaptNativeRepoHandle(handle).info()
+		},
+		createToken: async (scope = 'write', ttl = 3600) => {
+			const handle = await native.get(name)
+			return adaptNativeRepoHandle(handle).createToken(scope, ttl)
+		},
+		listTokens: async () => {
+			const handle = await native.get(name)
+			return adaptNativeRepoHandle(handle).listTokens?.() ?? []
+		},
+		revokeToken: async (idOrPlaintext) => {
+			const handle = await native.get(name)
+			await adaptNativeRepoHandle(handle).revokeToken?.(idOrPlaintext)
+		},
+	})
+	return {
+		create: async (name, opts) => {
+			const created = await native.create(name, opts)
+			return {
+				id: created.id,
+				name: created.name,
+				description: created.description,
+				defaultBranch: created.defaultBranch,
+				remote: created.remote,
+				token: created.token,
+				expiresAt: created.tokenExpiresAt,
+			}
+		},
+		get: async (name) => {
+			try {
+				const handle = await native.get(name)
+				return {
+					status: 'ready' as const,
+					repo: adaptNativeRepoHandle(handle),
+				}
+			} catch (error) {
+				if (isArtifactsBindingError(error) && error.code === 'NOT_FOUND') {
+					return { status: 'not_found' as const }
+				}
+				if (
+					isArtifactsBindingError(error) &&
+					error.code === 'IMPORT_IN_PROGRESS'
+				) {
+					return { status: 'importing' as const, retryAfter: 5 }
+				}
+				throw error
+			}
+		},
+		delete: async (name) => {
+			const deleted = await native.delete(name)
+			return {
+				id: null,
+				alreadyDeleted: !deleted,
+			}
+		},
+		list: async (opts) => await native.list(opts),
+		repo,
+	}
 }
 
 function createArtifactsRestBinding(env: Env, namespace: string) {
@@ -338,6 +463,7 @@ function createArtifactsRestBinding(env: Env, namespace: string) {
 				cursor: envelope.result_info?.cursor,
 			}
 		},
+		repo: (name) => repoHandle(name),
 	} satisfies ArtifactNamespaceBinding & Record<string, unknown>
 }
 
@@ -375,6 +501,14 @@ async function requestArtifactsEnvelope<T>(
 			query: input.query,
 			body: input.body,
 		})
+		if (response.cfRay) {
+			console.info('artifacts-rest', {
+				method: input.method,
+				path: input.path,
+				status: response.status,
+				cfRay: response.cfRay,
+			})
+		}
 		const envelope = response.body as ArtifactApiEnvelope<T> | null
 		if (!envelope?.success) {
 			const primaryError = envelope?.errors?.[0]
@@ -628,6 +762,7 @@ function isArtifactRepoAlreadyExistsError(error: unknown) {
 			: null
 	return (
 		causeCode === 10201 ||
+		(isArtifactsBindingError(error) && error.code === 'ALREADY_EXISTS') ||
 		/already[\s_-]*exists|already_exists/i.test(`${text} ${causeMessage}`)
 	)
 }
@@ -691,12 +826,6 @@ export async function ensureArtifactRepoReady(
 		}
 		throw error
 	}
-	const getResult = await binding.get(created.name)
-	if (getResult.status !== 'ready') {
-		throw new Error(
-			`Artifacts repo "${created.name}" is ${getResult.status} after create.`,
-		)
-	}
 	const bootstrapAccess = {
 		defaultBranch: created.defaultBranch,
 		remote: created.remote,
@@ -706,7 +835,7 @@ export async function ensureArtifactRepoReady(
 	return {
 		recreated: true,
 		bootstrapAccess,
-		repo: getResult.repo,
+		repo: binding.repo(created.name),
 	}
 }
 

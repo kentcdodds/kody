@@ -45,6 +45,13 @@ const optionalAiSchema = createSchema<unknown, Ai | undefined>(
 	},
 )
 
+const optionalArtifactsSchema = createSchema<unknown, Artifacts | undefined>(
+	(value, _context) => {
+		if (value === undefined) return { value: undefined }
+		return { value: value as Artifacts }
+	},
+)
+
 // Service binding to the package runtime Worker (`kody-runtime`). Present in
 // production/preview and multi-worker local dev; absent in tests and
 // single-worker dev, where the main Worker serves the runtime lane itself.
@@ -275,6 +282,9 @@ export const EnvSchema = object({
 	CLOUDFLARE_API_TOKEN: optionalNonEmptyStringSchema,
 	CLOUDFLARE_API_BASE_URL: optionalUrlStringSchema,
 	ARTIFACTS_NAMESPACE: optionalNonEmptyStringSchema,
+	// Worker-to-Worker Artifacts binding. Present in production/preview when
+	// wrangler `artifacts` is configured; local/tests fall back to REST.
+	ARTIFACTS: optionalArtifactsSchema,
 	AI: optionalAiSchema,
 	AI_GATEWAY_ID: optionalNonEmptyStringSchema,
 	CAPABILITY_REINDEX_SECRET: optionalNonEmptyStringSchema,

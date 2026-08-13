@@ -427,6 +427,12 @@
 			"ai": {
 				"binding": "AI",
 			},
+			"artifacts": [
+				{
+					"binding": "ARTIFACTS",
+					"namespace": "production",
+				},
+			],
 			"vars": {
 				"SENTRY_ENVIRONMENT": "production",
 				"SIGNUP_MODE": "invite",
@@ -784,6 +790,12 @@
 			"ai": {
 				"binding": "AI",
 			},
+			"artifacts": [
+				{
+					"binding": "ARTIFACTS",
+					"namespace": "preview",
+				},
+			],
 			"vars": {
 				"SENTRY_ENVIRONMENT": "preview",
 				"SIGNUP_MODE": "invite",
