@@ -465,6 +465,10 @@ function createArtifactsRestBinding(env: Env, namespace: string) {
 	} satisfies ArtifactNamespaceBinding & Record<string, unknown>
 }
 
+function redactArtifactsRestPath(path: string) {
+	return path.replace(/\/tokens\/[^/?#]+/g, '/tokens/:token')
+}
+
 async function requestArtifactsApi<T>(
 	client: ReturnType<typeof createCloudflareRestClient>,
 	input: {
@@ -502,7 +506,7 @@ async function requestArtifactsEnvelope<T>(
 		if (response.cfRay) {
 			console.info('artifacts-rest', {
 				method: input.method,
-				path: input.path,
+				path: redactArtifactsRestPath(input.path),
 				status: response.status,
 				cfRay: response.cfRay,
 			})

@@ -640,3 +640,51 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 	expect(nativeCreate).toHaveBeenCalledWith('repo-native', { readOnly: false })
 	expect(nativeGet).toHaveBeenCalledTimes(2)
 })
+
+test('artifacts REST logs redact plaintext tokens on revoke', async () => {
+	const plaintext = 'art_v1_secret?expires=1760000100'
+	const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+	const fetchMock = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
+			const url = new URL(String(input))
+			const method = init?.method ?? 'GET'
+			expect(method).toBe('DELETE')
+			expect(url.pathname).toContain(`/tokens/${encodeURIComponent(plaintext)}`)
+			return new Response(
+				JSON.stringify({
+					success: true,
+					result: null,
+					errors: [],
+					messages: [],
+				}),
+				{
+					status: 200,
+					headers: {
+						'content-type': 'application/json',
+						'cf-ray': 'revoke-ray-1',
+					},
+				},
+			)
+		})
+
+	const env = {
+		CLOUDFLARE_ACCOUNT_ID: 'acct',
+		CLOUDFLARE_API_TOKEN: 'token-123',
+		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+	} as Env
+	await getArtifactsBinding(env).repo('repo-1').revokeToken?.(plaintext)
+
+	const logged = info.mock.calls.filter((call) => call[0] === 'artifacts-rest')
+	expect(logged).toHaveLength(1)
+	expect(logged[0]?.[1]).toEqual({
+		method: 'DELETE',
+		path: '/client/v4/accounts/acct/artifacts/namespaces/default/tokens/:token',
+		status: 200,
+		cfRay: 'revoke-ray-1',
+	})
+	expect(JSON.stringify(logged)).not.toContain(plaintext)
+	expect(JSON.stringify(logged)).not.toContain(encodeURIComponent(plaintext))
+	info.mockRestore()
+	fetchMock.mockRestore()
+})
