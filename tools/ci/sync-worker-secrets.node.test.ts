@@ -1,4 +1,5 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	buildSpawnEnv,
 	buildWranglerSecretBulkFlags,
@@ -87,4 +88,28 @@ test('secret bulk omits empty --env so --name pins the unsuffixed script', () =>
 		'--config',
 		'packages/worker/wrangler-production.generated.json',
 	])
+})
+
+test('secret bulk rejects --env with --name so it cannot target name-env', () => {
+	const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
+		throw new Error('process.exit called')
+	}) as never)
+	consoleError.mockImplementation(() => {})
+	try {
+		expect(() =>
+			buildWranglerSecretBulkFlags(
+				{
+					...baseOptions,
+					env: 'production',
+					name: 'kody-runtime',
+				},
+				'/tmp/wrangler-secrets.env',
+			),
+		).toThrow('process.exit called')
+		expect(consoleError).toHaveBeenCalledWith(
+			expect.stringContaining('kody-runtime-production'),
+		)
+	} finally {
+		exitSpy.mockRestore()
+	}
 })

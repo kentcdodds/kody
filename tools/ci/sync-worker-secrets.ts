@@ -264,14 +264,14 @@ async function runWranglerSecretBulk(options: CliOptions, dotenvText: string) {
 		tmpdir(),
 		`wrangler-secrets-${Date.now()}-${randomBytes(6).toString('hex')}.env`,
 	)
-	await writeFile(secretsFilePath, dotenvText, {
-		encoding: 'utf8',
-		mode: 0o600,
-	})
 	const args = [
 		wranglerBin,
 		...buildWranglerSecretBulkFlags(options, secretsFilePath),
 	]
+	await writeFile(secretsFilePath, dotenvText, {
+		encoding: 'utf8',
+		mode: 0o600,
+	})
 
 	try {
 		const [command, ...commandArgs] = args
