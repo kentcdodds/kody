@@ -689,6 +689,7 @@ test('mcp requests route by protocol era and record lane metrics', async () => {
 			'legacy-client',
 			'1.0.0',
 			'user',
+			'example.com',
 		],
 		doubles: [1],
 	})
@@ -754,6 +755,7 @@ test('mcp requests route by protocol era and record lane metrics', async () => {
 			'modern-client',
 			'2.0.0',
 			'user',
+			'example.com',
 		],
 		doubles: [1],
 	})

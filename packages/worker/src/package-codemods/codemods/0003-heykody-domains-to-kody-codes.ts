@@ -16,8 +16,7 @@ export const heykodyDomainsToKodyCodesCodemodId =
  * `https://status.heykody.dev` or `https://inbox.heykody.app` do not
  * contain this prefix and are untouched.
  */
-const legacyOriginPattern =
-	/https:\/\/heykody\.(?:app|dev)(?!\.?[A-Za-z0-9-])/g
+const legacyOriginPattern = /https:\/\/heykody\.(?:app|dev)(?!\.?[A-Za-z0-9-])/g
 
 /**
  * Legacy hostname mentions that are not full https:// origins (bare
@@ -82,10 +81,7 @@ function transformLegacyDomains(
 		if (!textFilePattern.test(path)) continue
 		if (typeof source !== 'string') continue
 		legacyOriginPattern.lastIndex = 0
-		const rewritten = source.replace(
-			legacyOriginPattern,
-			'https://kody.codes',
-		)
+		const rewritten = source.replace(legacyOriginPattern, 'https://kody.codes')
 		if (rewritten !== source) {
 			nextFiles[path] = rewritten
 			changedPaths.push(path)

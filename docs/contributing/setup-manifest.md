@@ -517,14 +517,14 @@ How to get/set each value:
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     it only when the production user email domain differs from the default.
   - Production also commits `USER_EMAIL_DOMAIN=inbox.kody.codes` (and
-    `SYSTEM_EMAIL_DOMAIN=kody.codes`) in `packages/worker/wrangler.jsonc` so
-    the email domains can never silently rederive from `APP_BASE_URL`; the
-    deploy tooling reads the same committed pin. During the migration window
-    (through end of August 2026) the committed
+    `SYSTEM_EMAIL_DOMAIN=kody.codes`) in `packages/worker/wrangler.jsonc` so the
+    email domains can never silently rederive from `APP_BASE_URL`; the deploy
+    tooling reads the same committed pin. During the migration window (through
+    end of August 2026) the committed
     `LEGACY_USER_EMAIL_DOMAINS=inbox.heykody.app,inbox.heykody.dev` and
-    `LEGACY_SYSTEM_EMAIL_DOMAINS=heykody.app,heykody.dev` keep inbound mail
-    to the old addresses resolving to the same inboxes; empty the lists (and
-    retire the old domains' email DNS) after the window ends.
+    `LEGACY_SYSTEM_EMAIL_DOMAINS=heykody.app,heykody.dev` keep inbound mail to
+    the old addresses resolving to the same inboxes; empty the lists (and retire
+    the old domains' email DNS) after the window ends.
 - `APP_LEGACY_HOSTS` / `APP_LEGACY_REDIRECT` (optional GitHub Actions
   **variables** for domain migrations; see
   [environment-variables.md](./environment-variables.md#app-origin-and-domain-migration)).
