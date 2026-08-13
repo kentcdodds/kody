@@ -392,12 +392,18 @@ automatically:
 - `STRIPE_API_BASE_URL` (optional; defaults to `https://api.stripe.com`.
   Override for tests/mocks.)
 - `STRIPE_STANDARD_PRICE_ID` (optional public Wrangler var committed in
-  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $5/month
+  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $12/month
   `standard` plan and used for authenticated Checkout Sessions.)
+- `STRIPE_STANDARD_YEARLY_PRICE_ID` (optional public Wrangler var committed in
+  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $120/year
+  `standard` plan.)
 - `STRIPE_PRO_PRICE_ID` (optional public Wrangler var committed in
-  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $20/month
-  `pro` plan and used for authenticated Checkout Sessions.) Each price id is
-  independent; an unset value only disables checkout for that tier.
+  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $29/month
+  `pro` plan and used for authenticated Checkout Sessions.)
+- `STRIPE_PRO_YEARLY_PRICE_ID` (optional public Wrangler var committed in
+  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $288/year
+  `pro` plan.) Each price id is independent; an unset value only disables
+  checkout for that tier and interval.
 
 Tests run with `CLOUDFLARE_ENV=test` (set by Playwright) and read local secrets
 from `packages/worker/.env`.

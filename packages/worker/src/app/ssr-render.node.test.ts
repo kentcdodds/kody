@@ -26,6 +26,7 @@ import {
 } from '#worker/blog/catalog.ts'
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { planLimits } from '#universal/plans.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -752,6 +753,22 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	})
 
 	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	expect(html).toContain('$12')
+	expect(html).toContain('$29')
+	expect(html).toContain('$10/mo billed annually')
+	expect(html).toContain('$24/mo billed annually')
+	expect(html).not.toContain('$5/mo')
+	expect(html).not.toContain('$20/mo')
+	const count = new Intl.NumberFormat('en-US')
+	expect(html).toContain(count.format(planLimits.free.maxRepos))
+	expect(html).toContain(count.format(planLimits.standard.maxRepos))
+	expect(html).toContain(count.format(planLimits.pro.maxRepos))
+	expect(html).toContain(count.format(planLimits.free.maxExecuteCallsPerDay))
+	expect(html).toContain(
+		count.format(planLimits.standard.maxExecuteCallsPerDay),
+	)
+	expect(html).toContain(count.format(planLimits.pro.maxExecuteCallsPerDay))
 })
 
 test('renderAppPage renders the redesigned blog index', async () => {

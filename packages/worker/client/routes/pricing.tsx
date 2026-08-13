@@ -105,9 +105,10 @@ export function PricingRoute(_handle: Handle) {
 					Pay when it <em>earns it</em>.
 				</h1>
 				<p data-rise style={{ '--rise': '1' }}>
-					Standard is $5 a month when you need more room to run; Pro is $20 for
-					heavy daily automation. No metered surprises — every limit is finite
-					and published below.
+					Standard is $12 a month when you need more room to run; Pro is $29 for
+					heavy daily automation. Pay annually and it&rsquo;s $10/mo or $24/mo
+					(two months free). No metered surprises — every limit is finite and
+					published below.
 				</p>
 			</header>
 
@@ -131,7 +132,7 @@ export function PricingRoute(_handle: Handle) {
 
 				{/*
 				 * Standard carries the accent. The prototype accented the one
-				 * paid plan at $5, and Standard is that plan — Pro is the newer
+				 * paid plan, and Standard is that plan — Pro is the newer
 				 * tier above it. Accenting both would make the border stop
 				 * meaning anything.
 				 */}
@@ -143,8 +144,9 @@ export function PricingRoute(_handle: Handle) {
 						Standard
 					</h2>
 					<p mix={css(featuredPlanPriceCss)}>
-						$5<small mix={css(planPriceUnitCss)}>/month</small>
+						$12<small mix={css(planPriceUnitCss)}>/month</small>
 					</p>
+					<p mix={css(planPriceNoteCss)}>$10/mo billed annually</p>
 					<p mix={css(planCopyCss)}>
 						Higher daily volume, more running services, and persistent package
 						services.
@@ -162,8 +164,9 @@ export function PricingRoute(_handle: Handle) {
 						Pro
 					</h2>
 					<p mix={css(planPriceCss)}>
-						$20<small mix={css(planPriceUnitCss)}>/month</small>
+						$29<small mix={css(planPriceUnitCss)}>/month</small>
 					</p>
+					<p mix={css(planPriceNoteCss)}>$24/mo billed annually</p>
 					<p mix={css(planCopyCss)}>
 						For heavy daily automation — roughly double Standard on every axis.
 					</p>
@@ -194,11 +197,13 @@ export function PricingRoute(_handle: Handle) {
 								</th>
 								<th scope="col">
 									<span data-limits-plan>Standard</span>
-									<span data-limits-price>$5/mo</span>
+									<span data-limits-price>$12/mo</span>
+									<span data-limits-annual>$10/mo billed annually</span>
 								</th>
 								<th scope="col">
 									<span data-limits-plan>Pro</span>
-									<span data-limits-price>$20/mo</span>
+									<span data-limits-price>$29/mo</span>
+									<span data-limits-annual>$24/mo billed annually</span>
 								</th>
 							</tr>
 						</thead>
@@ -332,6 +337,12 @@ const planPriceUnitCss = {
 	marginLeft: '0.2rem',
 }
 
+const planPriceNoteCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.92rem',
+}
+
 const planCopyCss = {
 	margin: 0,
 	color: colors.textMuted,
@@ -441,6 +452,15 @@ const limitsTableCss = {
 		letterSpacing: 0,
 		textTransform: 'none' as const,
 		color: colors.textMuted,
+	},
+	'& [data-limits-annual]': {
+		display: 'block',
+		marginTop: '0.15rem',
+		font: `500 0.72rem/1.25 ${typography.fontFamilyBody}`,
+		letterSpacing: 0,
+		textTransform: 'none' as const,
+		color: colors.textMuted,
+		whiteSpace: 'normal' as const,
 	},
 	/* Group titles are the table's spine: display face, extra air above. */
 	'& tr[data-group] th': {

@@ -16,6 +16,7 @@ import {
 	createBillingLinkReference,
 	getPriceIdForPlan,
 	isBillingConfigured,
+	parseBillingInterval,
 } from '#worker/billing/billing-config.ts'
 import {
 	BillingLinkError,
@@ -92,6 +93,7 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 
 			const body = (await request.json().catch(() => null)) as {
 				plan?: unknown
+				interval?: unknown
 			} | null
 			const plan =
 				body?.plan === 'standard' || body?.plan === 'pro' ? body.plan : null
@@ -101,7 +103,14 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					400,
 				)
 			}
-			const priceId = getPriceIdForPlan(env, plan)
+			const interval = parseBillingInterval(body?.interval)
+			if (!interval) {
+				return jsonResponse(
+					{ ok: false, error: 'Choose monthly or annual billing.' },
+					400,
+				)
+			}
+			const priceId = getPriceIdForPlan(env, plan, interval)
 			if (!isBillingConfigured(env) || !priceId) {
 				return jsonResponse(
 					{

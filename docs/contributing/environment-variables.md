@@ -201,13 +201,23 @@ safely. Manual `users.plan` grants and invite-assigned plans apply regardless.
   production deploy when set.
 - `STRIPE_API_BASE_URL` — optional API base URL; defaults to
   `https://api.stripe.com` when unset. Override for tests/mocks.
-- `STRIPE_STANDARD_PRICE_ID` — Stripe Price id for the $5/month `standard` plan.
-- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the $20/month `pro` plan.
+- `STRIPE_STANDARD_PRICE_ID` — Stripe Price id for the $12/month `standard`
+  plan.
+- `STRIPE_STANDARD_YEARLY_PRICE_ID` — Stripe Price id for the
+  $120/year
+  `standard` plan ($10/month billed annually).
+- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the $29/month `pro` plan.
+- `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the
+  $288/year `pro` plan
+  ($24/month billed annually).
 
 Each price id independently enables authenticated Checkout and subscription
-matching for its tier; leaving either unset makes only that tier unavailable for
-purchase. Price ids are public (non-secret) values committed as production
-Wrangler vars in `packages/worker/wrangler.jsonc`, not Worker secrets.
+matching for its tier and interval; leaving a monthly or yearly id unset makes
+only that interval unavailable for purchase. Price ids are public (non-secret)
+values committed as production Wrangler vars in
+`packages/worker/wrangler.jsonc`, not Worker secrets. Retired $5/$20 monthly
+prices remain in Stripe and are still matched so existing subscribers keep their
+plan.
 
 See [`architecture/entitlements.md`](./architecture/entitlements.md) (Billing).
 

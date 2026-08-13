@@ -65,7 +65,7 @@ export const publicOgPages = {
 	pricing: {
 		imageTitle: 'Simple Kody pricing',
 		imageSubtitle:
-			'Start free. Standard is $5/month; Pro is $20/month for heavier use.',
+			'Start free. Standard is $12/month; Pro is $29/month for heavier use.',
 		ogTitle: 'Pricing — Kody',
 		ogDescription:
 			'Compare the Free, Standard, and Pro plans and their finite limits.',

@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest'
 import {
 	createBillingLinkReference,
+	getPriceIdForPlan,
 	getPurchasablePlans,
+	parseBillingInterval,
 	resolveSubscriptionPlan,
 } from './billing-config.ts'
 import { type StripeSubscription } from './stripe-client.ts'
@@ -43,7 +45,9 @@ test('createBillingLinkReference is stable per user and not the raw stable id', 
 test('resolveSubscriptionPlan maps active price and metadata plans with soonest cancel_at', () => {
 	const env = {
 		STRIPE_STANDARD_PRICE_ID: 'price_standard',
+		STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
 		STRIPE_PRO_PRICE_ID: 'price_pro',
+		STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
 	}
 
 	expect(
@@ -265,6 +269,71 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 		subscriptionStatus: 'past_due',
 	})
 
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_standard_yearly'],
+				}),
+			],
+			env,
+		),
+	).toEqual({
+		stripePlan: 'standard',
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
+
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_pro_yearly'],
+				}),
+			],
+			env,
+		),
+	).toEqual({
+		stripePlan: 'pro',
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
+
+	// Retired production monthly prices still map after checkout rotates.
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_1Tv3W2LAQpAnsYszSr4PGBkE'],
+				}),
+			],
+			env,
+		),
+	).toEqual({
+		stripePlan: 'standard',
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
+
+	expect(
+		resolveSubscriptionPlan(
+			[
+				subscription({
+					status: 'active',
+					priceIds: ['price_1U1AISLAQpAnsYszIQvRJNhl'],
+				}),
+			],
+			env,
+		),
+	).toEqual({
+		stripePlan: 'pro',
+		cancelAt: null,
+		subscriptionStatus: 'active',
+	})
+
 	expect(getPurchasablePlans(env)).toEqual(['standard', 'pro'])
 	expect(
 		getPurchasablePlans({
@@ -274,5 +343,26 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 	expect(getPurchasablePlans({ STRIPE_PRO_PRICE_ID: 'price_pro' })).toEqual([
 		'pro',
 	])
+	expect(
+		getPurchasablePlans({
+			STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
+		}),
+	).toEqual(['standard'])
 	expect(getPurchasablePlans({})).toEqual([])
+
+	expect(parseBillingInterval(undefined)).toBe('month')
+	expect(parseBillingInterval(null)).toBe('month')
+	expect(parseBillingInterval('')).toBe('month')
+	expect(parseBillingInterval('month')).toBe('month')
+	expect(parseBillingInterval('year')).toBe('year')
+	expect(parseBillingInterval('week')).toBeNull()
+
+	expect(getPriceIdForPlan(env, 'standard')).toBe('price_standard')
+	expect(getPriceIdForPlan(env, 'standard', 'month')).toBe('price_standard')
+	expect(getPriceIdForPlan(env, 'standard', 'year')).toBe(
+		'price_standard_yearly',
+	)
+	expect(getPriceIdForPlan(env, 'pro', 'month')).toBe('price_pro')
+	expect(getPriceIdForPlan(env, 'pro', 'year')).toBe('price_pro_yearly')
+	expect(getPriceIdForPlan({}, 'standard', 'year')).toBeNull()
 })

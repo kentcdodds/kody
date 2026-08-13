@@ -37,6 +37,7 @@ import {
 	layoutMaxWidths,
 	mutedLinkCss,
 	primaryLinkCss,
+	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 
 const billingApiPath = '/account/billing.json'
@@ -46,12 +47,15 @@ const billingPortalPath = '/account/billing/portal'
 
 type PaidTier = 'standard' | 'pro'
 type PlanTier = 'free' | PaidTier
+type BillingInterval = 'month' | 'year'
 type SubscriptionStatusTone = 'ok' | 'warn' | 'action' | 'muted'
+type CheckoutPending = { plan: PaidTier; interval: BillingInterval } | null
 
 const planTiers: Array<{
 	id: PlanTier
 	name: string
 	price: string
+	annualPrice?: string
 	description: string
 }> = [
 	{
@@ -64,13 +68,15 @@ const planTiers: Array<{
 	{
 		id: 'standard',
 		name: 'Standard',
-		price: '$5/month',
+		price: '$12/month',
+		annualPrice: '$10/mo billed annually',
 		description: 'Higher daily volume, more services, and persistent ones.',
 	},
 	{
 		id: 'pro',
 		name: 'Pro',
-		price: '$20/month',
+		price: '$29/month',
+		annualPrice: '$24/mo billed annually',
 		description:
 			'For heavy daily automation — roughly double Standard on every axis.',
 	},
@@ -235,7 +241,11 @@ export function AccountBillingRoute(handle: Handle) {
 	let data: AccountBillingLoaderData | null = null
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
-	let checkoutPendingPlan: PaidTier | null = null
+	let checkoutPending: CheckoutPending = null
+	const selectedIntervalByPlan: Record<PaidTier, BillingInterval> = {
+		standard: 'month',
+		pro: 'month',
+	}
 	const loadLatch = createRouteLoadLatch()
 
 	function applyPayload(payload: AccountBillingLoaderData) {
@@ -247,8 +257,9 @@ export function AccountBillingRoute(handle: Handle) {
 
 	async function startCheckout(plan: PlanTier) {
 		if (plan === 'free') return
-		if (checkoutPendingPlan) return
-		checkoutPendingPlan = plan
+		if (checkoutPending) return
+		const interval = selectedIntervalByPlan[plan]
+		checkoutPending = { plan, interval }
 		message = null
 		handle.update()
 		try {
@@ -259,7 +270,7 @@ export function AccountBillingRoute(handle: Handle) {
 					'Content-Type': 'application/json',
 				},
 				credentials: 'include',
-				body: JSON.stringify({ plan }),
+				body: JSON.stringify({ plan, interval }),
 			})
 			const payload = await readJson<{
 				ok?: boolean
@@ -275,7 +286,7 @@ export function AccountBillingRoute(handle: Handle) {
 					? payload.error
 					: 'Unable to start checkout. Try again shortly.'
 			messageTone = 'error'
-			checkoutPendingPlan = null
+			checkoutPending = null
 			handle.update()
 		} catch (error) {
 			message =
@@ -283,7 +294,7 @@ export function AccountBillingRoute(handle: Handle) {
 					? error.message
 					: 'Unable to start checkout. Try again shortly.'
 			messageTone = 'error'
-			checkoutPendingPlan = null
+			checkoutPending = null
 			handle.update()
 		}
 	}
@@ -511,11 +522,13 @@ export function AccountBillingRoute(handle: Handle) {
 									const isCurrent = billing.effectivePlan === tier.id
 									const isIncluded =
 										!isCurrent && planCoversTier(billing.effectivePlan, tier.id)
+									const paidTier: PaidTier | null =
+										tier.id === 'free' ? null : tier.id
 									const showSubscribe =
-										tier.id !== 'free' &&
+										paidTier != null &&
 										!isCurrent &&
 										!isIncluded &&
-										billing.purchasablePlans.includes(tier.id) &&
+										billing.purchasablePlans.includes(paidTier) &&
 										!paymentActionNeeded
 
 									return (
@@ -549,6 +562,16 @@ export function AccountBillingRoute(handle: Handle) {
 											>
 												{tier.price}
 											</span>
+											{tier.annualPrice ? (
+												<span
+													mix={css({
+														fontSize: typography.fontSize.sm,
+														color: colors.textMuted,
+													})}
+												>
+													{tier.annualPrice}
+												</span>
+											) : null}
 											<p mix={css(descriptionCss)}>{tier.description}</p>
 											<p mix={css({ margin: 0 })}>
 												<a href="/account/usage" mix={css(primaryLinkCss)}>
@@ -567,20 +590,86 @@ export function AccountBillingRoute(handle: Handle) {
 															: 'Included in your plan'}
 													</button>
 												</div>
-											) : showSubscribe ? (
-												<div>
-													<button
-														type="button"
-														disabled={checkoutPendingPlan !== null}
-														mix={[
-															on('click', () => void startCheckout(tier.id)),
-															css(primaryButtonCss),
-														]}
+											) : showSubscribe && paidTier ? (
+												<div
+													mix={css({
+														display: 'grid',
+														gap: spacing.sm,
+													})}
+												>
+													<fieldset
+														mix={css({
+															margin: 0,
+															padding: 0,
+															border: 'none',
+															display: 'grid',
+															gap: spacing.xs,
+														})}
 													>
-														{checkoutPendingPlan === tier.id
-															? 'Starting checkout…'
-															: 'Subscribe'}
-													</button>
+														<legend mix={css(visuallyHiddenCss)}>
+															{tier.name} billing interval
+														</legend>
+														<label
+															mix={css({
+																display: 'flex',
+																gap: spacing.sm,
+																alignItems: 'center',
+															})}
+														>
+															<input
+																type="radio"
+																name={`${paidTier}-interval`}
+																checked={
+																	selectedIntervalByPlan[paidTier] === 'month'
+																}
+																mix={[
+																	on('change', () => {
+																		selectedIntervalByPlan[paidTier] = 'month'
+																		handle.update()
+																	}),
+																]}
+															/>
+															<span>Monthly</span>
+														</label>
+														<label
+															mix={css({
+																display: 'flex',
+																gap: spacing.sm,
+																alignItems: 'center',
+															})}
+														>
+															<input
+																type="radio"
+																name={`${paidTier}-interval`}
+																checked={
+																	selectedIntervalByPlan[paidTier] === 'year'
+																}
+																mix={[
+																	on('change', () => {
+																		selectedIntervalByPlan[paidTier] = 'year'
+																		handle.update()
+																	}),
+																]}
+															/>
+															<span>Annual</span>
+														</label>
+													</fieldset>
+													<div>
+														<button
+															type="button"
+															disabled={checkoutPending !== null}
+															mix={[
+																on('click', () => void startCheckout(paidTier)),
+																css(primaryButtonCss),
+															]}
+														>
+															{checkoutPending?.plan === paidTier
+																? 'Starting checkout…'
+																: selectedIntervalByPlan[paidTier] === 'year'
+																	? 'Subscribe annually'
+																	: 'Subscribe monthly'}
+														</button>
+													</div>
 												</div>
 											) : null}
 										</div>

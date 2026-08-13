@@ -702,19 +702,23 @@ Use `getCurrent` only when the built-in D1 counter cannot express the resource.
 Optional Stripe subscription billing lives in `packages/worker/src/billing/`
 (raw `fetch` client — no Stripe SDK; `STRIPE_API_BASE_URL` overrides the API
 host for tests/mocks). Without `STRIPE_SECRET_KEY`, billing surfaces degrade to
-manual plans only. `STRIPE_STANDARD_PRICE_ID` and `STRIPE_PRO_PRICE_ID`
-independently enable checkout for their corresponding tier; an unset price id
-only disables purchase of that tier.
+manual plans only. `STRIPE_STANDARD_PRICE_ID` /
+`STRIPE_STANDARD_YEARLY_PRICE_ID` and `STRIPE_PRO_PRICE_ID` /
+`STRIPE_PRO_YEARLY_PRICE_ID` independently enable checkout for their
+corresponding tier and interval; an unset price id only disables purchase of
+that interval. Yearly and retired monthly price ids still resolve to `standard`
+/ `pro` entitlements.
 
 Checkout sessions are created server-side for authenticated users via
 `POST /account/billing/checkout.json` (Stripe Checkout Session, JSON body
-`{ plan: "standard" | "pro" }`, `mode=subscription`, with a signed
-`client_reference_id` and `metadata.kody_stable_user_id`). There is no public
-Payment Link path — checkout requires a signed-in session so unauthenticated
-card-testing is not possible. `GET /account/billing/success` verifies
-`client_reference_id` before linking `users.stripe_customer_id`, then refreshes
-`users.stripe_plan`. `GET /account/billing/portal` opens the Stripe customer
-portal for linked customers.
+`{ plan: "standard" | "pro", interval?: "month" | "year" }` defaulting to
+`month`, `mode=subscription`, with a signed `client_reference_id` and
+`metadata.kody_stable_user_id`). There is no public Payment Link path — checkout
+requires a signed-in session so unauthenticated card-testing is not possible.
+`GET /account/billing/success` verifies `client_reference_id` before linking
+`users.stripe_customer_id`, then refreshes `users.stripe_plan`.
+`GET /account/billing/portal` opens the Stripe customer portal for linked
+customers.
 
 ### Webhooks (primary sync)
 
@@ -757,7 +761,8 @@ instead of acknowledging an unrecoverable stale projection. The
 `stripe_plan_refreshed_at` columns ship in the squashed baseline; the alarm DO
 class exists without moving canonical billing data out of D1.
 
-Published prices: Free $0, Standard $5/mo, Pro $20/mo. Env vars and deploy
+Published prices: Free $0, Standard $12/mo or $120/year ($10/mo billed
+annually), Pro $29/mo or $288/year ($24/mo billed annually). Env vars and deploy
 wiring are documented in
 [`../environment-variables.md`](../environment-variables.md).
 

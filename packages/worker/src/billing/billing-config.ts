@@ -9,10 +9,25 @@ import { type StripeSubscription } from './stripe-client.ts'
 type BillingEnv = {
 	STRIPE_SECRET_KEY?: string
 	STRIPE_STANDARD_PRICE_ID?: string
+	STRIPE_STANDARD_YEARLY_PRICE_ID?: string
 	STRIPE_PRO_PRICE_ID?: string
+	STRIPE_PRO_YEARLY_PRICE_ID?: string
 }
 
+export type BillingInterval = 'month' | 'year'
+export type PurchasablePlan = 'standard' | 'pro'
+
 const activeSubscriptionStatuses = new Set(['active', 'trialing'])
+
+/**
+ * Retired production monthly prices that still have live subscribers.
+ * Checkout now uses the $12 / $29 monthly prices; these ids stay in Stripe
+ * and must keep resolving to standard/pro so existing subscriptions do not
+ * drop to free. Standard $5 (`price_1Tv3W2…`) has one customer through
+ * 2026-09-08.
+ */
+const retiredStandardPriceIds = ['price_1Tv3W2LAQpAnsYszSr4PGBkE'] as const
+const retiredProPriceIds = ['price_1U1AISLAQpAnsYszIQvRJNhl'] as const
 
 /** Higher rank = more useful UX signal when no active/trialing sub exists. */
 const subscriptionStatusSignalRank: Record<string, number> = {
@@ -38,28 +53,101 @@ export function getStandardPriceId(env: BillingEnv) {
 	return env.STRIPE_STANDARD_PRICE_ID?.trim() || null
 }
 
+export function getStandardYearlyPriceId(env: BillingEnv) {
+	return env.STRIPE_STANDARD_YEARLY_PRICE_ID?.trim() || null
+}
+
 export function getProPriceId(env: BillingEnv) {
 	return env.STRIPE_PRO_PRICE_ID?.trim() || null
 }
 
-export function getPurchasablePlans(
-	env: BillingEnv,
-): Array<'standard' | 'pro'> {
+export function getProYearlyPriceId(env: BillingEnv) {
+	return env.STRIPE_PRO_YEARLY_PRICE_ID?.trim() || null
+}
+
+export function parseBillingInterval(value: unknown): BillingInterval | null {
+	if (value === undefined || value === null || value === '') return 'month'
+	if (value === 'month' || value === 'year') return value
+	return null
+}
+
+export function getPurchasablePlans(env: BillingEnv): Array<PurchasablePlan> {
 	return [
-		...(getStandardPriceId(env) ? (['standard'] as const) : []),
-		...(getProPriceId(env) ? (['pro'] as const) : []),
+		...(getStandardPriceId(env) || getStandardYearlyPriceId(env)
+			? (['standard'] as const)
+			: []),
+		...(getProPriceId(env) || getProYearlyPriceId(env)
+			? (['pro'] as const)
+			: []),
 	]
 }
 
 export function getPriceIdForPlan(
 	env: BillingEnv,
-	plan: 'standard' | 'pro',
+	plan: PurchasablePlan,
+	interval: BillingInterval = 'month',
 ): string | null {
 	switch (plan) {
 		case 'standard':
-			return getStandardPriceId(env)
+			switch (interval) {
+				case 'month':
+					return getStandardPriceId(env)
+				case 'year':
+					return getStandardYearlyPriceId(env)
+				default: {
+					const exhaustive: never = interval
+					throw new Error(`Unknown billing interval: ${String(exhaustive)}`)
+				}
+			}
 		case 'pro':
-			return getProPriceId(env)
+			switch (interval) {
+				case 'month':
+					return getProPriceId(env)
+				case 'year':
+					return getProYearlyPriceId(env)
+				default: {
+					const exhaustive: never = interval
+					throw new Error(`Unknown billing interval: ${String(exhaustive)}`)
+				}
+			}
+		default: {
+			const exhaustive: never = plan
+			throw new Error(`Unknown purchasable plan: ${String(exhaustive)}`)
+		}
+	}
+}
+
+function collectPriceIds(
+	ids: ReadonlyArray<string | null | undefined>,
+): Array<string> {
+	const seen = new Set<string>()
+	const result: Array<string> = []
+	for (const id of ids) {
+		const trimmed = id?.trim()
+		if (!trimmed || seen.has(trimmed)) continue
+		seen.add(trimmed)
+		result.push(trimmed)
+	}
+	return result
+}
+
+export function getMatchingPriceIdsForPlan(
+	env: BillingEnv,
+	plan: PurchasablePlan,
+): Array<string> {
+	switch (plan) {
+		case 'standard':
+			return collectPriceIds([
+				getStandardPriceId(env),
+				getStandardYearlyPriceId(env),
+				...retiredStandardPriceIds,
+			])
+		case 'pro':
+			return collectPriceIds([
+				getProPriceId(env),
+				getProYearlyPriceId(env),
+				...retiredProPriceIds,
+			])
 		default: {
 			const exhaustive: never = plan
 			throw new Error(`Unknown purchasable plan: ${String(exhaustive)}`)
@@ -105,13 +193,15 @@ function pickHigherPlan(
 
 function planFromSubscription(
 	subscription: StripeSubscription,
-	standardPriceId: string | null,
-	proPriceId: string | null,
+	standardPriceIds: ReadonlyArray<string>,
+	proPriceIds: ReadonlyArray<string>,
 ): PlanName | null {
+	const standardPriceIdSet = new Set(standardPriceIds)
+	const proPriceIdSet = new Set(proPriceIds)
 	let matchedStandardPrice = false
 	for (const item of subscription.items.data) {
-		if (proPriceId && item.price.id === proPriceId) return 'pro'
-		if (standardPriceId && item.price.id === standardPriceId) {
+		if (proPriceIdSet.has(item.price.id)) return 'pro'
+		if (standardPriceIdSet.has(item.price.id)) {
 			matchedStandardPrice = true
 		}
 	}
@@ -165,8 +255,8 @@ export function resolveSubscriptionPlan(
 	subscriptions: ReadonlyArray<StripeSubscription>,
 	env: BillingEnv,
 ): ResolvedSubscriptionPlan {
-	const standardPriceId = getStandardPriceId(env)
-	const proPriceId = getProPriceId(env)
+	const standardPriceIds = getMatchingPriceIdsForPlan(env, 'standard')
+	const proPriceIds = getMatchingPriceIdsForPlan(env, 'pro')
 	let stripePlan: PlanName | null = null
 	let soonestCancelAt: number | null = null
 
@@ -174,7 +264,7 @@ export function resolveSubscriptionPlan(
 		if (!activeSubscriptionStatuses.has(subscription.status)) continue
 		stripePlan = pickHigherPlan(
 			stripePlan,
-			planFromSubscription(subscription, standardPriceId, proPriceId),
+			planFromSubscription(subscription, standardPriceIds, proPriceIds),
 		)
 		if (
 			typeof subscription.cancel_at === 'number' &&

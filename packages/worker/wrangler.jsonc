@@ -477,11 +477,17 @@
 				// same change or subscription plan matching silently degrades
 				// to the kody_plan metadata fallback. Checkout sessions are
 				// created server-side for authenticated users (no public
-				// Payment Link). STRIPE_STANDARD_PRICE_ID is the $5/month
-				// price on the "Kody Standard" product. STRIPE_PRO_PRICE_ID
-				// is the $20/month price on the "Kody Pro" product.
-				"STRIPE_STANDARD_PRICE_ID": "price_1Tv3W2LAQpAnsYszSr4PGBkE",
-				"STRIPE_PRO_PRICE_ID": "price_1U1AISLAQpAnsYszIQvRJNhl",
+				// Payment Link). STRIPE_STANDARD_PRICE_ID is the $12/month
+				// price on the "Kody Standard" product;
+				// STRIPE_STANDARD_YEARLY_PRICE_ID is $120/year (two months
+				// free). STRIPE_PRO_PRICE_ID is the $29/month price on the
+				// "Kody Pro" product; STRIPE_PRO_YEARLY_PRICE_ID is $288/year.
+				// Retired $5/$20 monthly prices stay in Stripe and are still
+				// matched in billing-config for existing subscribers.
+				"STRIPE_STANDARD_PRICE_ID": "price_1U3sg6LAQpAnsYszGeL2nc8O",
+				"STRIPE_STANDARD_YEARLY_PRICE_ID": "price_1U3sg6LAQpAnsYszqq9abwIY",
+				"STRIPE_PRO_PRICE_ID": "price_1U3sg6LAQpAnsYszlVpEIFGx",
+				"STRIPE_PRO_YEARLY_PRICE_ID": "price_1U3sg7LAQpAnsYszpozAEFUi",
 				// Disaster-recovery exporter → locked R2 bucket in the KCD
 				// (DR) account. The companion S3 credentials are Worker
 				// secrets set out-of-band via the Cloudflare API.
@@ -1035,7 +1041,9 @@
 				"X_CLIENT_SECRET": "MOCK_X_CLIENT_SECRET",
 				"STRIPE_SECRET_KEY": "sk_test_local",
 				"STRIPE_STANDARD_PRICE_ID": "price_standard",
+				"STRIPE_STANDARD_YEARLY_PRICE_ID": "price_standard_yearly",
 				"STRIPE_PRO_PRICE_ID": "price_pro",
+				"STRIPE_PRO_YEARLY_PRICE_ID": "price_pro_yearly",
 				"STRIPE_API_BASE_URL": "https://stripe.mock",
 				"DR_EXPORT_ENABLED": "",
 				"DR_BACKUP_ACCOUNT_ID": "",

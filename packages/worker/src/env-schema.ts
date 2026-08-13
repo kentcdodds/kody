@@ -283,7 +283,9 @@ export const EnvSchema = object({
 	// Override for tests/mocks; defaults to https://api.stripe.com.
 	STRIPE_API_BASE_URL: optionalUrlStringSchema,
 	STRIPE_STANDARD_PRICE_ID: optionalNonEmptyStringSchema,
+	STRIPE_STANDARD_YEARLY_PRICE_ID: optionalNonEmptyStringSchema,
 	STRIPE_PRO_PRICE_ID: optionalNonEmptyStringSchema,
+	STRIPE_PRO_YEARLY_PRICE_ID: optionalNonEmptyStringSchema,
 	// Disaster-recovery exporter → DR-account R2 bucket (S3 API). Disabled
 	// unless DR_EXPORT_ENABLED is the literal string "true" and credentials
 	// are present. Secrets are set out-of-band via the Cloudflare API.
