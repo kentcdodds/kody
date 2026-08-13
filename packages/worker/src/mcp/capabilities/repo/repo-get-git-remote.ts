@@ -68,6 +68,7 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const gitAuthor = gitAuthorIdentityFromUser(user)
 			const { userRepo, source } = await resolveOwnedUserRepo({
 				db: ctx.env.APP_DB,
 				userId: user.userId,
@@ -88,7 +89,6 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 			const token = await repo.createToken(args.scope, args.ttl_seconds)
 			const gitExtraHeader = `Authorization: Bearer ${parseArtifactTokenSecret(token.plaintext)}`
 			const cloneDirectory = userRepo.name
-			const gitAuthor = gitAuthorIdentityFromUser(user)
 			return {
 				repo_id: userRepo.id,
 				name: userRepo.name,

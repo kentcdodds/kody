@@ -672,13 +672,12 @@ publish checks run.
 
 2. Clone and edit:
 
+   Run every `setup_commands` entry from the `package_get_git_remote` result, in
+   order, before creating commits. That sequence clones the repo, `cd`s into it,
+   and sets local `user.email` / `user.name` from `git_author`. Then edit,
+   commit, and push:
+
    ```bash
-   git -c http.extraHeader='Authorization: Bearer art_v1_...' clone \
-   	https://<account>.artifacts.cloudflare.net/git/default/<repo>.git \
-   	my-package
-   cd my-package
-   # setup_commands already set local user.email / user.name from git_author
-   # edit files
    git add .
    git commit -m "fix: update package behavior"
    git -c http.extraHeader='Authorization: Bearer art_v1_...' push origin HEAD:<defaultBranch>

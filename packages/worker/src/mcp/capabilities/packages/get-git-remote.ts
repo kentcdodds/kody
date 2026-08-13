@@ -100,6 +100,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const gitAuthor = gitAuthorIdentityFromUser(user)
 			const owner = await resolvePackageOwnerContext(
 				ctx.env,
 				user,
@@ -184,7 +185,6 @@ export const getGitRemoteCapability = defineDomainCapability(
 			}
 			const gitExtraHeader = `Authorization: Bearer ${parseArtifactTokenSecret(token.plaintext)}`
 			const cloneDirectory = source.entity_id
-			const gitAuthor = gitAuthorIdentityFromUser(user)
 			return {
 				package_id: packageId,
 				kody_id: kodyId,
