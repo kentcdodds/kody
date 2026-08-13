@@ -181,9 +181,9 @@ export function HomeRoute(handle: Handle) {
 						Kody makes it <em>permanent</em>.
 					</h1>
 					<p data-rise style={{ '--rise': '1' }} mix={css(heroSubCss)}>
-						A personal software factory for the agent you already use. Packages
-						you own, run with no model in the loop, from Cursor, Claude,
-						ChatGPT, or your phone.
+						A personal <strong>software factory</strong> for the agent you
+						already use. Packages you own, run with no model in the loop, from
+						Cursor, Claude, ChatGPT, or your phone.
 					</p>
 					<div data-rise style={{ '--rise': '2' }} mix={css(heroActionsCss)}>
 						{isSignedIn ? (
@@ -755,6 +755,10 @@ const heroSubCss = {
 	color: colors.textMuted,
 	maxWidth: '56ch',
 	textWrap: 'pretty' as const,
+	'& strong': {
+		fontWeight: 700,
+		color: colors.text,
+	},
 }
 
 const heroActionsCss = {
