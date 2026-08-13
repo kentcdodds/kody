@@ -289,12 +289,18 @@ production-identity, and restore-baseline registries.
 
 ### Status page worker
 
-The public status page (`packages/status/`, served at `status.heykody.dev` via a
-wrangler custom domain on the production zone) is an independently deployed
+The public status page (`packages/status/`, served at `status.kody.codes` via a
+wrangler custom domain on the `kody.codes` zone) is an independently deployed
 Worker with a cron trigger and one `StatusStore` Durable Object (SQLite). It
-probes public endpoints on the main worker and `kody.run` every minute and never
-touches `APP_DB` (see decision record
-[0004](./decisions/0004-status-page-separate-worker.md)).
+probes public endpoints on the main worker and package-runtime liveness on
+`kody.run`, and probes the jobs worker over a service binding — never through
+the main app and never via a public jobs hostname. It never touches `APP_DB`
+(see decision record [0004](./decisions/0004-status-page-separate-worker.md)).
+`status.heykody.dev` remains attached as a legacy custom domain: GET/HEAD other
+than `/health` 308 to `status.kody.codes`. `/health` stays sticky on the legacy
+host so deploys can still probe the worker if the canonical hostname returns
+Cloudflare 1016 until DNS exists. Component probes do not use the status
+hostname.
 
 Code deploys are automated by the production deploy workflow
 (`.github/workflows/deploy.yml` job `deploy-status-worker`) when a `main` push

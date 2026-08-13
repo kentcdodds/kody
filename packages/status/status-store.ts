@@ -11,7 +11,7 @@ import {
 	initialComponentProbeState,
 	type ComponentProbeState,
 } from './incidents.ts'
-import { runAllProbes } from './probes.ts'
+import { jobsProbeOrigin, runAllProbes } from './probes.ts'
 import {
 	fetchRelevantProviderIncidents,
 	parseProviderIncidentCache,
@@ -32,9 +32,14 @@ import {
 
 const providerIncidentsMetaKey = 'provider_incidents_cache'
 const productionCommitMetaKey = 'production_commit_sha'
+const runtimeCommitMetaKey = 'runtime_commit_sha'
+const jobsCommitMetaKey = 'jobs_commit_sha'
 
 export type StatusWorkerEnv = {
 	STATUS_STORE: DurableObjectNamespace<StatusStore>
+	JOBS?: Fetcher
+	/** Non-public fallback origin for jobs probes when JOBS is unset. */
+	JOBS_ORIGIN?: string
 	PRIMARY_ORIGIN: string
 	PACKAGE_APP_ORIGIN: string
 	STATUS_PAGE_URL: string
@@ -386,13 +391,25 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 	}
 
 	async runProbes(): Promise<void> {
-		const { outcomes, productionCommitSha } = await runAllProbes({
-			primaryOrigin: this.env.PRIMARY_ORIGIN,
-			packageAppOrigin: this.env.PACKAGE_APP_ORIGIN,
-		})
+		const jobsFetcher = this.env.JOBS
+			? (this.env.JOBS.fetch.bind(this.env.JOBS) as typeof fetch)
+			: undefined
+		const { outcomes, productionCommitSha, runtimeCommitSha, jobsCommitSha } =
+			await runAllProbes({
+				primaryOrigin: this.env.PRIMARY_ORIGIN,
+				packageAppOrigin: this.env.PACKAGE_APP_ORIGIN,
+				jobsOrigin: this.env.JOBS_ORIGIN ?? jobsProbeOrigin,
+				jobsFetcher,
+			})
 		const now = Date.now()
 		if (productionCommitSha) {
 			this.setMeta(productionCommitMetaKey, productionCommitSha)
+		}
+		if (runtimeCommitSha) {
+			this.setMeta(runtimeCommitMetaKey, runtimeCommitSha)
+		}
+		if (jobsCommitSha) {
+			this.setMeta(jobsCommitMetaKey, jobsCommitSha)
 		}
 		for (const outcome of outcomes) {
 			this.recordOutcome(outcome, now)
@@ -422,6 +439,8 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			recentIncidents: this.listIncidents('resolved'),
 			providerIncidents: this.readProviderIncidents(now),
 			productionCommit: this.getMeta(productionCommitMetaKey),
+			runtimeCommit: this.getMeta(runtimeCommitMetaKey),
+			jobsCommit: this.getMeta(jobsCommitMetaKey),
 		}
 	}
 

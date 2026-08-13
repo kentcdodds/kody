@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { runAllProbes } from './probes.ts'
+import { jobsProbeOrigin, runAllProbes } from './probes.ts'
 import { statusComponentIds } from './status-types.ts'
 
 type FakeRoute = {
@@ -22,8 +22,11 @@ function fakeFetcher(routes: Record<string, FakeRoute>): typeof fetch {
 	}) as typeof fetch
 }
 
-const primaryOrigin = 'https://heykody.dev'
-const packageAppOrigin = 'https://kodyapps.dev'
+const primaryOrigin = 'https://kody.codes'
+const packageAppOrigin = 'https://kody.run'
+const runtimeHealth = `${packageAppOrigin}/__runtime/health`
+const jobsHealth = `${jobsProbeOrigin}/health`
+const jobsComponents = `${jobsProbeOrigin}/health/components`
 
 function healthyRoutes(): Record<string, FakeRoute> {
 	return {
@@ -34,7 +37,23 @@ function healthyRoutes(): Record<string, FakeRoute> {
 			status: 401,
 			headers: { 'WWW-Authenticate': 'Bearer resource_metadata="..."' },
 		},
-		[`${packageAppOrigin}/`]: { status: 302, headers: { Location: '/x' } },
+		[runtimeHealth]: {
+			body: {
+				status: 'ok',
+				commitSha: 'def4567890abcdef1234567890abcdef12345678',
+				cookieSecretConfigured: true,
+			},
+		},
+		[jobsHealth]: {
+			body: { ok: true, commit: '7890abcdef1234567890abcdef1234567890abcd' },
+		},
+		[jobsComponents]: {
+			body: {
+				ok: true,
+				commit: '7890abcdef1234567890abcdef1234567890abcd',
+				components: [{ id: 'jobs_db', ok: true, latencyMs: 3 }],
+			},
+		},
 		[`${primaryOrigin}/health/components`]: {
 			body: {
 				ok: true,
@@ -75,6 +94,82 @@ test('a fully healthy pass reports every component ok', async () => {
 	expect(outcome(result, 'app_db')?.latencyMs).toBe(4)
 	expect(result.productionCommitSha).toBe(
 		'abc123def4567890abcdef1234567890abcdef12',
+	)
+	expect(result.runtimeCommitSha).toBe(
+		'def4567890abcdef1234567890abcdef12345678',
+	)
+	expect(result.jobsCommitSha).toBe('7890abcdef1234567890abcdef1234567890abcd')
+})
+
+test('apex 302 is not package-runtime up; jobs probe failure is not app-down', async () => {
+	const requested: Array<string> = []
+	const apexRedirect = healthyRoutes()
+	apexRedirect[`${packageAppOrigin}/`] = {
+		status: 302,
+		headers: { Location: 'https://kody.codes/' },
+	}
+	const apexFetcher = fakeFetcher(apexRedirect)
+	const trackingFetcher: typeof fetch = (async (input, init) => {
+		requested.push(typeof input === 'string' ? input : input.toString())
+		return apexFetcher(input, init)
+	}) as typeof fetch
+	const apexResult = await runAllProbes({
+		primaryOrigin,
+		packageAppOrigin,
+		fetcher: trackingFetcher,
+	})
+	expect(requested).not.toContain(`${packageAppOrigin}/`)
+	expect(requested).toContain(runtimeHealth)
+	expect(outcome(apexResult, 'package_apps')?.ok).toBe(true)
+
+	const runtimeRedirect = healthyRoutes()
+	runtimeRedirect[runtimeHealth] = {
+		status: 302,
+		headers: { Location: 'https://kody.codes/' },
+	}
+	const runtimeRedirectOutcomes = await probe(runtimeRedirect)
+	expect(outcome(runtimeRedirectOutcomes, 'package_apps')).toMatchObject({
+		ok: false,
+		detail: 'HTTP 302',
+	})
+	expect(runtimeRedirectOutcomes.runtimeCommitSha).toBeNull()
+	expect(outcome(runtimeRedirectOutcomes, 'app')?.ok).toBe(true)
+
+	const runtimeHtml = healthyRoutes()
+	runtimeHtml[runtimeHealth] = { status: 200, body: { ok: true } }
+	expect(outcome(await probe(runtimeHtml), 'package_apps')).toMatchObject({
+		ok: false,
+		detail: 'HTTP 200',
+	})
+
+	const jobsDown = healthyRoutes()
+	jobsDown[jobsHealth] = { error: 'jobs worker unreachable' }
+	jobsDown[jobsComponents] = { error: 'jobs worker unreachable' }
+	const jobsDownOutcomes = await probe(jobsDown)
+	expect(outcome(jobsDownOutcomes, 'jobs')).toMatchObject({
+		ok: false,
+		detail: 'jobs worker unreachable',
+	})
+	expect(outcome(jobsDownOutcomes, 'app')?.ok).toBe(true)
+	expect(outcome(jobsDownOutcomes, 'mcp')?.ok).toBe(true)
+	expect(outcome(jobsDownOutcomes, 'package_apps')?.ok).toBe(true)
+
+	const jobsDbDown = healthyRoutes()
+	jobsDbDown[jobsComponents] = {
+		status: 503,
+		body: {
+			ok: false,
+			components: [{ id: 'jobs_db', ok: false, error: 'timeout' }],
+		},
+	}
+	const jobsDbOutcomes = await probe(jobsDbDown)
+	expect(outcome(jobsDbOutcomes, 'jobs')).toMatchObject({
+		ok: false,
+		detail: 'timeout',
+	})
+	expect(outcome(jobsDbOutcomes, 'app')?.ok).toBe(true)
+	expect(jobsDbOutcomes.jobsCommitSha).toBe(
+		'7890abcdef1234567890abcdef1234567890abcd',
 	)
 })
 
@@ -131,11 +226,12 @@ test('probe failures isolate to the affected component and map error details', a
 		ok: false,
 		detail: 'unreachable',
 	})
+	expect(outcome(unreachableOutcomes, 'jobs')?.ok).toBe(true)
 
 	for (const status of [521, 404]) {
-		const packageApps = healthyRoutes()
-		packageApps[`${packageAppOrigin}/`] = { status }
-		expect(outcome(await probe(packageApps), 'package_apps')).toMatchObject({
+		const packageRuntime = healthyRoutes()
+		packageRuntime[runtimeHealth] = { status }
+		expect(outcome(await probe(packageRuntime), 'package_apps')).toMatchObject({
 			ok: false,
 			detail: `HTTP ${String(status)}`,
 		})

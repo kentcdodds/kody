@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/cloudflare'
 import { type JobsWorkerEnv } from './env.ts'
+import { handleJobsHealthRequest } from './health.ts'
 import { JobManager } from './manager-do.ts'
 import {
 	dispatchScheduledLanes,
@@ -12,13 +13,8 @@ export { JobManager, JobsService }
 
 const handler = {
 	async fetch(request: Request, env: JobsWorkerEnv) {
-		const url = new URL(request.url)
-		if (url.pathname === '/health') {
-			return Response.json(
-				{ ok: true, commit: env.APP_COMMIT_SHA ?? null },
-				{ headers: { 'Cache-Control': 'no-store' } },
-			)
-		}
+		const healthResponse = await handleJobsHealthRequest(request, env)
+		if (healthResponse) return healthResponse
 		return new Response('Not found', { status: 404 })
 	},
 	async scheduled(

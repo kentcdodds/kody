@@ -16,9 +16,10 @@ self-contained need; the repo already had a second-worker precedent in
 ## Decision
 
 The status page is an independently deployed worker (`packages/status/`,
-`status.heykody.dev`) that observes the product strictly from the outside via
-public endpoints, and stores probe history, incidents, and notification state in
-its own Durable Object — never in `APP_DB`. The main worker exposes
+`status.kody.codes`) that observes the product strictly from the outside via
+public endpoints (and a jobs-worker service binding, not a public jobs
+hostname), and stores probe history, incidents, and notification state in its
+own Durable Object — never in `APP_DB`. The main worker exposes
 `GET /health/components` (cheap per-binding checks) so the prober can report
 storage subsystems individually. Operator alert email goes through the
 Cloudflare Email REST API under a strict policy: one email per outage episode,
@@ -38,4 +39,6 @@ top; do not move the status page into the main worker. The status worker
 duplicates a small amount of email-sending code rather than importing from
 `packages/worker` (import boundaries keep it dependency-free). Incident records
 are probe-derived only; manually posted incident narratives are a possible later
-addition, not built now.
+addition, not built now. `status.heykody.dev` stays a worker custom domain for
+legacy links and 308s to `status.kody.codes` except `/health`, which remains
+reachable on the legacy host if the canonical hostname is not attached yet.

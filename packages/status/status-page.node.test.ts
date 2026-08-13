@@ -34,6 +34,8 @@ function snapshot(overrides: Partial<StatusSnapshot> = {}): StatusSnapshot {
 		recentIncidents: [],
 		providerIncidents: null,
 		productionCommit: 'abc123def4567890abcdef1234567890abcdef12',
+		runtimeCommit: 'def4567890abcdef1234567890abcdef12345678',
+		jobsCommit: '7890abcdef1234567890abcdef1234567890abcd',
 		...overrides,
 	}
 }
@@ -43,12 +45,24 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	for (const component of statusComponents) {
 		expect(healthy).toContain(component.name.replaceAll('&', '&amp;'))
 	}
+	expect(healthy).toContain('Package runtime')
+	expect(healthy).toContain('Jobs')
 	expect(healthy).toContain('99.98% uptime')
-	expect(healthy).toContain('Production commit')
+	expect(healthy).toContain('Production app')
+	expect(healthy).toContain('runtime')
+	expect(healthy).toContain('jobs')
 	expect(healthy).toContain(
 		'https://github.com/kentcdodds/kody/commit/abc123def4567890abcdef1234567890abcdef12',
 	)
+	expect(healthy).toContain(
+		'https://github.com/kentcdodds/kody/commit/def4567890abcdef1234567890abcdef12345678',
+	)
+	expect(healthy).toContain(
+		'https://github.com/kentcdodds/kody/commit/7890abcdef1234567890abcdef1234567890abcd',
+	)
 	expect(healthy).toContain('>abc123d<')
+	expect(healthy).toContain('>def4567<')
+	expect(healthy).toContain('>7890abc<')
 	expect(healthy).toContain('http-equiv="refresh"')
 	expect(healthy).toMatch(/operational|All systems/i)
 
@@ -132,8 +146,14 @@ test('status page renders provider incidents separately and omits them when abse
 	expect(withProvider).toContain('R2 Availability Issues')
 	expect(withProvider).toContain('https://stspg.io/r2')
 
-	const withoutCommit = renderStatusPage(snapshot({ productionCommit: null }))
-	expect(withoutCommit).not.toContain('Production commit')
+	const withoutCommit = renderStatusPage(
+		snapshot({
+			productionCommit: null,
+			runtimeCommit: null,
+			jobsCommit: null,
+		}),
+	)
+	expect(withoutCommit).not.toContain('Production app')
 
 	const unsafeLink = renderStatusPage(
 		snapshot({

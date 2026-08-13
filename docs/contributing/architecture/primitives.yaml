@@ -68,7 +68,7 @@ primitives:
     group: surfaces
     name: Public status page
     summary:
-      Independently deployed status worker (status.heykody.dev) probing public
+      Independently deployed status worker (status.kody.codes) probing public
       endpoints every minute, storing history in its own Durable Object, and
       emailing operator alerts under a capped policy.
     code:

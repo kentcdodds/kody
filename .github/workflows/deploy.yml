@@ -686,7 +686,7 @@ jobs:
       needs.sha-guard.outputs.deploy_status_worker == 'true'
     environment:
       name: production
-      url: https://status.heykody.dev
+      url: https://status.kody.codes
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -749,19 +749,26 @@ jobs:
           EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
         run: |
           set -euo pipefail
-          HEALTHCHECK_URL="https://status.heykody.dev/health"
-          echo "Healthcheck URL: $HEALTHCHECK_URL"
+          # Canonical host first. Fall back to the legacy host so a 1016 on
+          # status.kody.codes (DNS not attached yet) does not fail the
+          # deploy. /health is sticky on .dev and is not 308'd. Other
+          # component probes never use these hostnames.
+          CANONICAL_HEALTH="https://status.kody.codes/health"
+          LEGACY_HEALTH="https://status.heykody.dev/health"
 
           attempts=20
           delay_seconds=3
           for i in $(seq 1 "$attempts"); do
             echo "Attempt $i/$attempts"
-            if curl --fail --silent --show-error --location --max-time 10 \
-              --header "Accept: application/json" \
-              "$HEALTHCHECK_URL" > status-health.json && \
-              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('status-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.ok !== true) { console.error('status-healthcheck-unexpected-response', json); process.exit(1); } if (json?.commit !== expected) { console.error('status-healthcheck-unexpected-commit', { expected, actual: json?.commit }); process.exit(1); } console.log('status-healthcheck-ok', json);"; then
-              exit 0
-            fi
+            for HEALTHCHECK_URL in "$CANONICAL_HEALTH" "$LEGACY_HEALTH"; do
+              echo "Healthcheck URL: $HEALTHCHECK_URL"
+              if curl --fail --silent --show-error --max-time 10 \
+                --header "Accept: application/json" \
+                "$HEALTHCHECK_URL" > status-health.json && \
+                node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('status-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.ok !== true) { console.error('status-healthcheck-unexpected-response', json); process.exit(1); } if (json?.commit !== expected) { console.error('status-healthcheck-unexpected-commit', { expected, actual: json?.commit }); process.exit(1); } console.log('status-healthcheck-ok', json);"; then
+                exit 0
+              fi
+            done
             sleep "$delay_seconds"
           done
 

@@ -10,7 +10,8 @@ export type { ProviderIncident }
 export const statusComponents = [
 	{ id: 'app', name: 'App & API' },
 	{ id: 'mcp', name: 'MCP endpoint' },
-	{ id: 'package_apps', name: 'Package apps' },
+	{ id: 'package_apps', name: 'Package runtime' },
+	{ id: 'jobs', name: 'Jobs' },
 	{ id: 'app_db', name: 'Primary database' },
 	{ id: 'audit_db', name: 'Audit database' },
 	{ id: 'kv', name: 'Key-value storage' },
@@ -75,4 +76,8 @@ export type StatusSnapshot = {
 	providerIncidents: Array<ProviderIncident> | null
 	/** Latest `commitSha` reported by production `GET /health` (main worker). */
 	productionCommit: string | null
+	/** Latest `commitSha` from `GET /__runtime/health` on the package origin. */
+	runtimeCommit: string | null
+	/** Latest `commit` from jobs-worker `GET /health`. */
+	jobsCommit: string | null
 }

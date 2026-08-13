@@ -230,9 +230,19 @@ function productionCommitLink(commitSha: string): string {
 	return `<a href="${href}">${escapeHtml(shortSha)}</a>`
 }
 
-function renderProductionCommit(commitSha: string | null): string {
-	if (!commitSha) return ''
-	return `Production commit ${productionCommitLink(commitSha)} · `
+function renderProductionCommits(snapshot: StatusSnapshot): string {
+	const parts: Array<string> = []
+	if (snapshot.productionCommit) {
+		parts.push(`app ${productionCommitLink(snapshot.productionCommit)}`)
+	}
+	if (snapshot.runtimeCommit) {
+		parts.push(`runtime ${productionCommitLink(snapshot.runtimeCommit)}`)
+	}
+	if (snapshot.jobsCommit) {
+		parts.push(`jobs ${productionCommitLink(snapshot.jobsCommit)}`)
+	}
+	if (parts.length === 0) return ''
+	return `Production ${parts.join(' · ')} · `
 }
 
 function renderProviderIncidentsSection(
@@ -281,7 +291,7 @@ export function renderStatusPage(snapshot: StatusSnapshot): string {
 	${providerIncidents}
 	${recentIncidents}
 	<footer>
-		${renderProductionCommit(snapshot.productionCommit)}Probes run every minute from an independently deployed worker.
+		${renderProductionCommits(snapshot)}Probes run every minute from an independently deployed worker.
 		<a href="https://kody.codes">kody.codes</a> ·
 		<a href="/status.json">JSON</a>
 	</footer>

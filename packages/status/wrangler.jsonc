@@ -16,8 +16,22 @@
 	// has its own domain and its own Durable Object storage.
 	"routes": [
 		{
+			"pattern": "status.kody.codes",
+			"custom_domain": true,
+		},
+		{
+			// Legacy host: stays attached so /health still works if
+			// status.kody.codes is 1016 until DNS exists. The worker 308s
+			// other GET/HEAD from this host to status.kody.codes.
 			"pattern": "status.heykody.dev",
 			"custom_domain": true,
+		},
+	],
+	"services": [
+		{
+			// Worker-to-worker only. Not a public jobs hostname.
+			"binding": "JOBS",
+			"service": "kody-jobs",
 		},
 	],
 	"durable_objects": {
@@ -37,7 +51,7 @@
 	"vars": {
 		"PRIMARY_ORIGIN": "https://kody.codes",
 		"PACKAGE_APP_ORIGIN": "https://kody.run",
-		"STATUS_PAGE_URL": "https://status.heykody.dev",
+		"STATUS_PAGE_URL": "https://status.kody.codes",
 		"ALERT_EMAIL_TO": "me@kentcdodds.com",
 		"ALERT_EMAIL_FROM": "kody@kody.codes",
 		"STATUS_ALERT_DAILY_LIMIT": "6",

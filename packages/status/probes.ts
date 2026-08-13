@@ -5,21 +5,31 @@ import {
 } from './status-types.ts'
 
 /**
- * Active probes the status worker runs against public endpoints every
- * scheduled tick. Direct probes cover the worker surfaces (app, MCP, package
- * apps); the `/health/components` endpoint on the main worker reports the
- * storage bindings (D1, KV, R2) it depends on.
+ * Active probes the status worker runs every scheduled tick. Direct probes
+ * cover the worker surfaces (app, MCP, package runtime, jobs); the
+ * `/health/components` endpoint on the main worker reports the storage
+ * bindings (D1, KV, R2) it depends on. Jobs is reached over a service
+ * binding (or an optional non-public origin fallback), never through the
+ * main app and never via a user-facing jobs hostname.
  */
 
 const probeTimeoutMs = 10_000
 
+/** Synthetic origin used with the JOBS service binding. Not a public URL. */
+export const jobsProbeOrigin = 'https://kody-jobs.internal'
+
 type ProbeConfig = {
 	primaryOrigin: string
 	packageAppOrigin: string
+	/** Origin used for jobs `/health` and `/health/components`. */
+	jobsOrigin?: string
 	fetcher?: typeof fetch
+	/** When set, used only for jobs probes (service binding). */
+	jobsFetcher?: typeof fetch
 }
 
 type HealthComponentsBody = {
+	ok?: boolean
 	components?: Array<{
 		id?: string
 		ok?: boolean
@@ -65,15 +75,25 @@ async function timedFetch(
 	}
 }
 
-type AppHealthBody = {
+type CommitBody = {
 	ok?: boolean
+	status?: string
 	commitSha?: string
+	commit?: string
 }
 
-function readProductionCommitSha(body: AppHealthBody | null): string | null {
-	const commitSha = body?.commitSha?.trim()
+function readCommitSha(value: string | null | undefined): string | null {
+	const commitSha = value?.trim()
 	if (!commitSha || !/^[0-9a-f]{7,40}$/i.test(commitSha)) return null
 	return commitSha.toLowerCase()
+}
+
+async function readJsonBody<T>(response: Response): Promise<T | null> {
+	try {
+		return (await response.json()) as T
+	} catch {
+		return null
+	}
 }
 
 async function probeApp(
@@ -92,15 +112,8 @@ async function probeApp(
 			productionCommitSha: null,
 		}
 	}
-	let body: AppHealthBody | null = null
-	let bodyOk = false
-	try {
-		body = (await result.response.json()) as AppHealthBody
-		bodyOk = body.ok === true
-	} catch {
-		body = null
-		bodyOk = false
-	}
+	const body = await readJsonBody<CommitBody>(result.response)
+	const bodyOk = body?.ok === true
 	const ok = result.response.ok && bodyOk
 	return {
 		outcome: {
@@ -109,7 +122,7 @@ async function probeApp(
 			latencyMs: result.latencyMs,
 			detail: ok ? null : `HTTP ${result.response.status}`,
 		},
-		productionCommitSha: readProductionCommitSha(body),
+		productionCommitSha: readCommitSha(body?.commitSha),
 	}
 }
 
@@ -139,25 +152,117 @@ async function probeMcp(
 	}
 }
 
-async function probePackageApps(
+async function probePackageRuntime(
 	fetcher: typeof fetch,
 	packageAppOrigin: string,
-): Promise<ProbeOutcome> {
-	const result = await timedFetch(fetcher, `${packageAppOrigin}/`)
+): Promise<{ outcome: ProbeOutcome; runtimeCommitSha: string | null }> {
+	const result = await timedFetch(
+		fetcher,
+		`${packageAppOrigin}/__runtime/health`,
+	)
 	if (!result.response) {
 		return {
-			component: 'package_apps',
-			ok: false,
-			latencyMs: result.latencyMs,
-			detail: result.error,
+			outcome: {
+				component: 'package_apps',
+				ok: false,
+				latencyMs: result.latencyMs,
+				detail: result.error,
+			},
+			runtimeCommitSha: null,
 		}
 	}
-	const ok = result.response.status >= 200 && result.response.status < 400
+	const body = await readJsonBody<CommitBody>(result.response)
+	const ok = result.response.ok && body?.status === 'ok'
 	return {
-		component: 'package_apps',
-		ok,
-		latencyMs: result.latencyMs,
-		detail: ok ? null : `HTTP ${result.response.status}`,
+		outcome: {
+			component: 'package_apps',
+			ok,
+			latencyMs: result.latencyMs,
+			detail: ok ? null : `HTTP ${result.response.status}`,
+		},
+		runtimeCommitSha: readCommitSha(body?.commitSha),
+	}
+}
+
+async function probeJobs(
+	fetcher: typeof fetch,
+	jobsOrigin: string,
+): Promise<{ outcome: ProbeOutcome; jobsCommitSha: string | null }> {
+	const [health, components] = await Promise.all([
+		timedFetch(fetcher, `${jobsOrigin}/health`),
+		timedFetch(fetcher, `${jobsOrigin}/health/components`),
+	])
+	if (!health.response) {
+		return {
+			outcome: {
+				component: 'jobs',
+				ok: false,
+				latencyMs: health.latencyMs,
+				detail: health.error,
+			},
+			jobsCommitSha: null,
+		}
+	}
+	const healthBody = await readJsonBody<CommitBody>(health.response)
+	const healthOk = health.response.ok && healthBody?.ok === true
+	const jobsCommitSha = readCommitSha(healthBody?.commit)
+	if (!healthOk) {
+		return {
+			outcome: {
+				component: 'jobs',
+				ok: false,
+				latencyMs: health.latencyMs,
+				detail: `HTTP ${health.response.status}`,
+			},
+			jobsCommitSha,
+		}
+	}
+	if (!components.response) {
+		return {
+			outcome: {
+				component: 'jobs',
+				ok: false,
+				latencyMs: components.latencyMs,
+				detail: components.error,
+			},
+			jobsCommitSha,
+		}
+	}
+	const componentsBody = await readJsonBody<HealthComponentsBody>(
+		components.response,
+	)
+	const jobsDb = componentsBody?.components?.find(
+		(entry) => entry.id === 'jobs_db',
+	)
+	const componentsOk =
+		components.response.ok &&
+		(componentsBody?.ok === true || jobsDb?.ok === true)
+	if (!componentsOk) {
+		const detail =
+			jobsDb?.ok === false
+				? (jobsDb.error ?? 'error')
+				: `HTTP ${components.response.status}`
+		return {
+			outcome: {
+				component: 'jobs',
+				ok: false,
+				latencyMs:
+					typeof jobsDb?.latencyMs === 'number'
+						? jobsDb.latencyMs
+						: components.latencyMs,
+				detail,
+			},
+			jobsCommitSha,
+		}
+	}
+	return {
+		outcome: {
+			component: 'jobs',
+			ok: true,
+			latencyMs: health.latencyMs,
+			detail: null,
+		},
+		jobsCommitSha,
 	}
 }
 
@@ -174,12 +279,7 @@ async function probeStorageComponents(
 			detail: 'unreachable',
 		}))
 	}
-	let body: HealthComponentsBody | null = null
-	try {
-		body = (await result.response.json()) as HealthComponentsBody
-	} catch {
-		body = null
-	}
+	const body = await readJsonBody<HealthComponentsBody>(result.response)
 	if (!body || !Array.isArray(body.components)) {
 		return componentEndpointIds.map((component) => ({
 			component,
@@ -206,19 +306,30 @@ async function probeStorageComponents(
 export type ProbeRunResult = {
 	outcomes: Array<ProbeOutcome>
 	productionCommitSha: string | null
+	runtimeCommitSha: string | null
+	jobsCommitSha: string | null
 }
 
 export async function runAllProbes(
 	config: ProbeConfig,
 ): Promise<ProbeRunResult> {
 	const fetcher = config.fetcher ?? fetch
-	const [app, mcp, packageApps, storage] = await Promise.all([
+	const jobsFetcher = config.jobsFetcher ?? fetcher
+	const jobsOrigin = config.jobsOrigin ?? jobsProbeOrigin
+	const [app, mcp, packageRuntime, jobs, storage] = await Promise.all([
 		probeApp(fetcher, config.primaryOrigin),
 		probeMcp(fetcher, config.primaryOrigin),
-		probePackageApps(fetcher, config.packageAppOrigin),
+		probePackageRuntime(fetcher, config.packageAppOrigin),
+		probeJobs(jobsFetcher, jobsOrigin),
 		probeStorageComponents(fetcher, config.primaryOrigin),
 	])
-	const outcomes = [app.outcome, mcp, packageApps, ...storage]
+	const outcomes = [
+		app.outcome,
+		mcp,
+		packageRuntime.outcome,
+		jobs.outcome,
+		...storage,
+	]
 	const covered = new Set(outcomes.map((outcome) => outcome.component))
 	for (const component of statusComponentIds) {
 		if (!covered.has(component)) {
@@ -230,5 +341,10 @@ export async function runAllProbes(
 			})
 		}
 	}
-	return { outcomes, productionCommitSha: app.productionCommitSha }
+	return {
+		outcomes,
+		productionCommitSha: app.productionCommitSha,
+		runtimeCommitSha: packageRuntime.runtimeCommitSha,
+		jobsCommitSha: jobs.jobsCommitSha,
+	}
 }

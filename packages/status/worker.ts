@@ -1,3 +1,4 @@
+import { getLegacyStatusRedirectResponse } from './legacy-redirect.ts'
 import { renderStatusPage } from './status-page.ts'
 import { StatusStore, type StatusWorkerEnv } from './status-store.ts'
 
@@ -19,6 +20,8 @@ export default {
 				{ headers: { 'Cache-Control': 'no-store' } },
 			)
 		}
+		const legacyRedirect = getLegacyStatusRedirectResponse(request)
+		if (legacyRedirect) return legacyRedirect
 		if (url.pathname === '/' || url.pathname === '/status.json') {
 			// The page must degrade gracefully even when its own Durable Object
 			// is unavailable; a controlled 503 beats an uncaught error page.

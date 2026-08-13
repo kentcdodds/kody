@@ -97,18 +97,18 @@ test('composed emails carry component names, status page link, and escape html',
 		const content = composeStatusEmail({
 			kind,
 			openIncidents: [incident],
-			statusPageUrl: 'https://status.heykody.dev',
+			statusPageUrl: 'https://status.kody.codes',
 			now: baseNow,
 		})
 		expect(content.subject).toContain('[kody status]')
-		expect(content.text).toContain('https://status.heykody.dev')
-		expect(content.html).toContain('https://status.heykody.dev')
+		expect(content.text).toContain('https://status.kody.codes')
+		expect(content.html).toContain('https://status.kody.codes')
 		expect(content.html).not.toContain('<script>')
 	}
 	const opened = composeStatusEmail({
 		kind: 'incident_opened',
 		openIncidents: [incident],
-		statusPageUrl: 'https://status.heykody.dev',
+		statusPageUrl: 'https://status.kody.codes',
 		now: baseNow,
 	})
 	expect(opened.subject).toContain('App & API')
@@ -129,7 +129,7 @@ test('outage emails annotate active relevant Cloudflare incidents', () => {
 	const opened = composeStatusEmail({
 		kind: 'incident_opened',
 		openIncidents: [openIncident()],
-		statusPageUrl: 'https://status.heykody.dev',
+		statusPageUrl: 'https://status.kody.codes',
 		now: baseNow,
 		providerIncidents,
 	})
@@ -141,7 +141,7 @@ test('outage emails annotate active relevant Cloudflare incidents', () => {
 	const reminder = composeStatusEmail({
 		kind: 'daily_reminder',
 		openIncidents: [openIncident()],
-		statusPageUrl: 'https://status.heykody.dev',
+		statusPageUrl: 'https://status.kody.codes',
 		now: baseNow,
 		providerIncidents,
 	})
@@ -152,7 +152,7 @@ test('outage emails annotate active relevant Cloudflare incidents', () => {
 	const allClear = composeStatusEmail({
 		kind: 'all_clear',
 		openIncidents: [],
-		statusPageUrl: 'https://status.heykody.dev',
+		statusPageUrl: 'https://status.kody.codes',
 		now: baseNow,
 		providerIncidents,
 	})
