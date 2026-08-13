@@ -76,9 +76,8 @@ lesson for onboarding — not a practice run.
 ## Step 4 — Offer triggers (optional)
 
 Ask whether they want to hang a trigger on it: webhook, Kody app, cron, or skip
-for now. List the options; do **not** recommend one. If they skip, point them at
-`/onboarding` Step 3 to connect real services (GitHub, Google, Slack, Notion,
-and more).
+for now. List the options. If they skip, point them at `/onboarding` Step 3 to
+connect real services (GitHub, Google, Slack, Notion, and more).
 
 ## Troubleshooting
 
