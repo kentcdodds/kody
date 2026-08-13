@@ -21,14 +21,14 @@ export type PublicOgPage = {
 
 export const publicOgPages = {
 	home: {
-		imageTitle: "Your assistant's home",
+		imageTitle: 'Make it permanent',
 		// Complements the title rather than restating it: the card shows both at
 		// once, so repeating the headline wastes the only supporting line.
 		imageSubtitle:
-			'Memory, keys, code, and automations — portable across every MCP host.',
-		ogTitle: "Kody — your assistant's home",
+			'A personal software factory for the agent you already use. Packages you own, no model in the loop.',
+		ogTitle: 'Kody — make it permanent',
 		ogDescription:
-			"Your assistant's home — memory, keys, code, and automations, portable across every MCP host.",
+			'A personal software factory for the agent you already use. Packages you own, run with no model in the loop, from Cursor, Claude, ChatGPT, or your phone.',
 		path: '/',
 	},
 	community: {

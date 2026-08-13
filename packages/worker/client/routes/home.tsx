@@ -36,31 +36,47 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 /**
- * heykody.dev landing page, ported from the redesign prototype
+ * heykody.app landing page, ported from the redesign prototype
  * (`landing/landing.html`). Flat neutral canvas, one vibrant green accent,
  * centered single-column flow, mascot illustrations doing the explanatory
  * work. Motion is enhance-only (`html.js`) and fully off under
  * `prefers-reduced-motion`.
+ *
+ * Positioning: permanence / personal software factory — not "equip your
+ * agent." Factory-loop art reuses the existing 3D set; do not generate a
+ * new koala.
  */
 
-const capabilityItems = [
+const factoryBeats = [
 	{
-		src: '/images/kody-slack-catchup.webp',
-		alt: 'Kody carrying a neat stack of Slack messages while a reminder bell rings overhead',
-		prompt: '“Catch me up on Slack”',
-		copy: 'Your agent reads the right channels and hands you the three things that actually need you. Kody supplies the Slack access.',
+		trigger: 'Cron',
+		title: 'Nightly release notes',
+		copy: 'The nightly-release job. The agent wrote the changelog once; a cron publishes it and skips quiet days.',
 	},
 	{
-		src: '/images/kody-plan-week.webp',
-		alt: 'Kody arranging a fan of calendar pages, emails, and a clock into an orderly arc',
-		prompt: '“Plan my week”',
-		copy: 'Calendar, email, and open issues in one pass: your agent drafts the schedule and books the focus time. Kody holds the keys to all three.',
+		trigger: 'Webhook',
+		title: 'A Sentry issue lands',
+		copy: 'sentry-triage starts a cloud agent. Nobody opened chat.',
 	},
 	{
-		src: '/images/kody-github-triage.webp',
-		alt: 'Kody sorting GitHub issues into labeled trays, holding one card up for review',
-		prompt: '“Triage my GitHub issues”',
-		copy: 'Labels, duplicates, and a morning brief on what changed while you slept. Your agent set it up once; a Kody job runs it every day.',
+		trigger: 'Cron',
+		title: 'Morning briefing',
+		copy: '7am Denver. It runs every morning.',
+	},
+] as const
+
+const permanenceClaims = [
+	{
+		title: 'No model in the loop',
+		copy: 'Saved packages run on cron, webhook, or invoke. No tokens, no prompt drift, nothing waiting on a model.',
+	},
+	{
+		title: 'Keys the agent never sees',
+		copy: "Secrets stay server-side and never enter the prompt or your agent's context.",
+	},
+	{
+		title: 'Every install is a fork you own',
+		copy: 'Community packages land in your git, on your credentials, that you can open, change, and republish.',
 	},
 ] as const
 
@@ -160,14 +176,14 @@ export function HomeRoute(handle: Handle) {
 				{/* ============ hero ============ */}
 				<section data-parallax-scope mix={css(heroCss)}>
 					<h1 data-rise style={{ '--rise': '0' }} mix={css(heroTitleCss)}>
-						Your AI agent,
+						When your agent figures it out,
 						<br />
-						finally <em>useful</em>.
+						Kody makes it <em>permanent</em>.
 					</h1>
 					<p data-rise style={{ '--rise': '1' }} mix={css(heroSubCss)}>
-						Not another agent. Kody equips the one you already use with secure
-						access to your services and jobs that run while your laptop is
-						closed.
+						A personal software factory for the agent you already use. Packages
+						you own, run with no model in the loop, from Cursor, Claude,
+						ChatGPT, or your phone.
 					</p>
 					<div data-rise style={{ '--rise': '2' }} mix={css(heroActionsCss)}>
 						{isSignedIn ? (
@@ -197,19 +213,8 @@ export function HomeRoute(handle: Handle) {
 						)}
 					</div>
 					<p data-rise style={{ '--rise': '3' }} mix={css(heroHintCss)}>
-						Not sure what you&apos;d use it for?{' '}
-						<a href="/guides/what-is-kody" mix={css(inlineLinkCss)}>
-							Read what Kody can do
-						</a>
-						{discoveryPrompt ? (
-							<>
-								{' '}
-								— or copy one prompt and let your agent tell you. No account
-								needed.
-							</>
-						) : (
-							<> — no account needed.</>
-						)}
+						Not sure yet? Ask the agent you already use whether Kody would help.
+						No account.
 					</p>
 					{discoveryPrompt ? (
 						<div data-rise style={{ '--rise': '3.2' }} mix={css(heroHintCss)}>
@@ -269,53 +274,84 @@ export function HomeRoute(handle: Handle) {
 					</div>
 				</section>
 
-				{/* ============ capabilities ============ */}
-				<section aria-labelledby="ask-title" mix={css(askCss)}>
-					<h2 id="ask-title" mix={css(visuallyHiddenCss)}>
-						What you can ask
+				{/* ============ factory loop ============ */}
+				<section aria-labelledby="factory-title" mix={css(factoryCss)}>
+					<h2 id="factory-title" mix={css(sectionHeadingCss)}>
+						Three jobs. Same loop.
 					</h2>
-					<div mix={css(askGridCss)}>
-						{capabilityItems.map((item, index) => (
-							<article
-								key={item.prompt}
-								mix={[css(askItemCss), reveal(index * 90)]}
-							>
-								<img
-									src={item.src}
-									width={627}
-									height={627}
-									loading="lazy"
-									alt={item.alt}
-								/>
-								<h3>{item.prompt}</h3>
-								<p>{item.copy}</p>
-							</article>
-						))}
-					</div>
-				</section>
-
-				{/* ============ reliability ============ */}
-				<section aria-labelledby="reliable-title" mix={css(reliableCss)}>
-					<div>
-						<h2 id="reliable-title" mix={css(sectionHeadingCss)}>
-							Solve it once.
-							<br />
-							Run it forever.
-						</h2>
-						<p mix={css(splitCopyCss)}>
-							Ask a typical agent for a weekly report and it re-does every step
-							from scratch, with more chances to go wrong each time. With Kody,
-							your agent writes the code once, tests it, and saves it as a
-							package. Every run after is the same: fast, cheap, predictable.
-						</p>
-					</div>
+					<p mix={css(factoryLeadCss)}>
+						Ask once, save a package, then a cron, webhook, or invoke runs it
+						with no model in the loop.
+					</p>
 					<img
 						src="/images/kody-compounding-capabilities.webp"
 						width={480}
 						height={480}
 						loading="lazy"
-						alt="Kody saving a solved task as a glowing green seed pod on a branch that keeps producing results"
-						mix={[css(reliableArtCss), reveal()]}
+						alt="Kody tending glowing package pods on a small plant"
+						mix={[css(factoryArtCss), reveal()]}
+					/>
+					<div mix={css(factoryBeatsCss)}>
+						{factoryBeats.map((beat, index) => (
+							<article
+								key={beat.title}
+								mix={[css(factoryBeatCss), reveal(index * 90)]}
+							>
+								<p mix={css(factoryBeatTriggerCss)}>{beat.trigger}</p>
+								<h3>{beat.title}</h3>
+								<p>{beat.copy}</p>
+							</article>
+						))}
+					</div>
+				</section>
+
+				{/* ============ ask once / run forever ============ */}
+				<section aria-labelledby="reliable-title" mix={css(reliableCss)}>
+					<h2 id="reliable-title" mix={css(sectionHeadingCss)}>
+						Ask once.
+						<br />
+						Run it forever.
+					</h2>
+					<p mix={css(reliableLeadCss)}>
+						Ask a typical agent for a weekly report and it re-does every step
+						from scratch, with more chances to go wrong each time. With Kody,
+						your agent writes the code once, tests it, and saves it as a
+						package. Every run after is the same: fast, cheap, predictable. No
+						model in the loop.
+					</p>
+					<ul aria-label="What you cannot get elsewhere" mix={css(claimsCss)}>
+						{permanenceClaims.map((claim, index) => (
+							<li
+								key={claim.title}
+								mix={[css(claimItemCss), reveal(index * 90)]}
+							>
+								<h3>{claim.title}</h3>
+								<p>{claim.copy}</p>
+							</li>
+						))}
+					</ul>
+				</section>
+
+				{/* ============ git + npm ecosystem ============ */}
+				<section aria-labelledby="ecosystem-title" mix={css(ecosystemCss)}>
+					<div>
+						<h2 id="ecosystem-title" mix={css(sectionHeadingCss)}>
+							Your own git and npm.
+						</h2>
+						<p mix={css(splitCopyCss)}>
+							Fork community packages, version them, hang a webhook, a tiny app,
+							or a cron on them. Every install is a fork you own — code in your
+							account, on your credentials, that you can open, change, and
+							republish.
+						</p>
+					</div>
+					<img
+						src="/images/kody-community-packages.webp"
+						width={480}
+						height={480}
+						loading="lazy"
+						alt="Kody handing a wrapped package across a counter of neatly sorted parcels"
+						mix={[css(ecosystemArtCss), reveal()]}
 					/>
 				</section>
 
@@ -334,10 +370,10 @@ export function HomeRoute(handle: Handle) {
 							Bring your own keys
 						</h2>
 						<p mix={css(splitCopyCss)}>
-							Kody never asks a company for access on your behalf. You create
-							the connection yourself, with your agent walking you through it:
-							your app, your scopes, revocable anytime. No shared app sits
-							between you and your accounts.
+							Keys the agent never sees. You create the connection yourself,
+							with your agent walking you through it: your app, your scopes,
+							revocable anytime. Secrets never enter the prompt. No shared app
+							sits between you and your accounts.
 						</p>
 						<p mix={css(splitCopyCss)}>
 							And there&apos;s no fixed list. If the integration doesn&apos;t
@@ -407,8 +443,8 @@ export function HomeRoute(handle: Handle) {
 					</p>
 				</section>
 
-				{/* ============ equip / invite ============ */}
-				<section id="invite" aria-labelledby="equip-title" mix={css(equipCss)}>
+				{/* ============ closing invite ============ */}
+				<section id="invite" aria-labelledby="invite-title" mix={css(equipCss)}>
 					<img
 						src="/images/kody-greeting.webp"
 						width={480}
@@ -417,14 +453,14 @@ export function HomeRoute(handle: Handle) {
 						alt="Kody waving hello with an open hand"
 						mix={css(equipArtCss)}
 					/>
-					<h2 id="equip-title" mix={css(equipTitleCss)}>
-						Equip your agent
+					<h2 id="invite-title" mix={css(equipTitleCss)}>
+						Make it permanent
 					</h2>
 					{isSignedIn ? (
 						<div>
 							<p mix={css(equipLeadCss)}>
-								You&apos;re in. Add Kody to the agent you already use and ask
-								for anything.
+								You&apos;re in. Connect the agent you already use and start
+								saving packages.
 							</p>
 							<p mix={css({ margin: '1.8rem auto 0' })}>
 								<a href={onboardingPath} mix={css(pillButtonCss)}>
@@ -717,7 +753,7 @@ const heroSubCss = {
 	margin: '1.5rem auto 0',
 	fontSize: 'clamp(1.05rem, 1.6vw, 1.2rem)',
 	color: colors.textMuted,
-	maxWidth: '44ch',
+	maxWidth: '56ch',
 	textWrap: 'pretty' as const,
 }
 
@@ -846,67 +882,146 @@ const hostsMoreChipCss = {
 	padding: '0.4rem 0.95rem',
 }
 
-/* ---------- capabilities ---------- */
+/* ---------- factory loop ---------- */
 
-const askCss = {
+const factoryCss = {
 	maxWidth: layoutMaxWidths.extended,
 	marginInline: 'auto',
 	padding: `clamp(2rem, 4vw, 3.5rem) ${sectionGutter}`,
+	textAlign: 'center' as const,
 	'@media (max-width: 800px)': {
 		padding: '1.75rem 1.25rem',
 	},
 }
 
-const askGridCss = {
-	display: 'grid',
-	gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-	gap: 'clamp(2.5rem, 5vw, 3.5rem) clamp(1.5rem, 3vw, 2.5rem)',
+const factoryLeadCss = {
+	margin: '1.1rem auto 0',
+	color: colors.textMuted,
+	fontSize: '1.08rem',
+	maxWidth: '48ch',
+	textWrap: 'pretty' as const,
 }
 
-const askItemCss = {
-	textAlign: 'center' as const,
-	'& img': {
-		width: 'min(92%, 340px)',
-		maxWidth: '100%',
-		height: 'auto',
-		display: 'block',
-		marginInline: 'auto',
-		transition: `transform 200ms ${transitions.easeOut}`,
+const factoryArtCss = {
+	width: 'min(70%, 400px)',
+	maxWidth: '100%',
+	height: 'auto',
+	display: 'block',
+	marginInline: 'auto',
+	marginTop: 'clamp(1.5rem, 3vw, 2.5rem)',
+	'@media (max-width: 800px)': {
+		width: 'min(60%, 300px)',
 	},
-	// Gated: touch taps would otherwise leave the mascot stuck mid-lift.
-	[hoverMq]: {
-		'&:hover img': {
-			transform: 'translateY(-6px) rotate(-0.5deg)',
-		},
+}
+
+const factoryBeatsCss = {
+	display: 'grid',
+	gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+	gap: 'clamp(1.75rem, 4vw, 2.5rem) clamp(1.5rem, 3vw, 2.5rem)',
+	marginTop: 'clamp(2rem, 4vw, 3rem)',
+	textAlign: 'left' as const,
+	'@media (max-width: 800px)': {
+		textAlign: 'center' as const,
 	},
+}
+
+const factoryBeatTriggerCss = {
+	margin: 0,
+	fontSize: '0.78rem',
+	fontWeight: 600,
+	letterSpacing: '0.12em',
+	textTransform: 'uppercase' as const,
+	color: colors.primaryText,
+}
+
+const factoryBeatCss = {
 	'& h3': {
-		margin: '1.4rem 0 0',
-		fontSize: '1.45rem',
+		margin: '0.45rem 0 0',
+		fontSize: '1.35rem',
 		fontWeight: 700,
 		letterSpacing: '-0.015em',
 	},
-	'& p': {
-		margin: '0.8rem auto 0',
+	'& p:last-child': {
+		margin: '0.7rem 0 0',
 		color: colors.textMuted,
 		fontSize: '0.98rem',
 		maxWidth: '38ch',
 		textWrap: 'pretty' as const,
 	},
-	'@media (prefers-reduced-motion: reduce)': {
-		'& img': { transition: 'none' },
-		'&:hover img': { transform: 'none' },
-	},
 	'@media (max-width: 800px)': {
-		'& p': { fontSize: '1rem', maxWidth: '46ch' },
+		'& p:last-child': {
+			fontSize: '1rem',
+			maxWidth: '46ch',
+			marginInline: 'auto',
+		},
 	},
 }
 
-/* ---------- reliability + byok splits ---------- */
+/* ---------- ask once + claims ---------- */
 
 const reliableCss = {
 	maxWidth: layoutMaxWidths.extended,
 	marginInline: 'auto',
 	padding: `clamp(3.5rem, 8vw, 6.5rem) ${sectionGutter} clamp(2rem, 5vw, 4rem)`,
+	textAlign: 'center' as const,
+	'@media (max-width: 800px)': {
+		padding: '3.25rem 1.25rem 1.75rem',
+	},
+}
+
+const reliableLeadCss = {
+	margin: '1.1rem auto 0',
+	color: colors.textMuted,
+	maxWidth: '54ch',
+	textWrap: 'pretty' as const,
+	'@media (max-width: 800px)': {
+		fontSize: '1rem',
+		maxWidth: '46ch',
+	},
+}
+
+const claimsCss = {
+	listStyle: 'none',
+	margin: 'clamp(2rem, 4vw, 3rem) 0 0',
+	padding: 0,
+	display: 'grid',
+	gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+	gap: 'clamp(1.5rem, 3vw, 2.25rem)',
+	textAlign: 'left' as const,
+	'@media (max-width: 800px)': {
+		textAlign: 'center' as const,
+	},
+}
+
+const claimItemCss = {
+	'& h3': {
+		margin: 0,
+		fontSize: '1.12rem',
+		fontWeight: 700,
+		letterSpacing: '-0.015em',
+	},
+	'& p': {
+		margin: '0.65rem 0 0',
+		color: colors.textMuted,
+		fontSize: '0.98rem',
+		maxWidth: '36ch',
+		textWrap: 'pretty' as const,
+	},
+	'@media (max-width: 800px)': {
+		'& p': {
+			fontSize: '1rem',
+			maxWidth: '46ch',
+			marginInline: 'auto',
+		},
+	},
+}
+
+/* ---------- git + npm + byok splits ---------- */
+
+const ecosystemCss = {
+	maxWidth: layoutMaxWidths.extended,
+	marginInline: 'auto',
+	padding: `clamp(2rem, 5vw, 4rem) ${sectionGutter}`,
 	display: 'grid',
 	gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)',
 	gap: 'clamp(2rem, 5vw, 4.5rem)',
@@ -914,11 +1029,11 @@ const reliableCss = {
 	'@media (max-width: 800px)': {
 		gridTemplateColumns: '1fr',
 		textAlign: 'center' as const,
-		padding: '3.25rem 1.25rem 1.75rem',
+		padding: '1.75rem 1.25rem',
 	},
 }
 
-const reliableArtCss = {
+const ecosystemArtCss = {
 	width: 'min(100%, 400px)',
 	maxWidth: '100%',
 	height: 'auto',
@@ -1030,7 +1145,7 @@ const equipCss = {
 	position: 'relative' as const,
 	/* See `pageHeadCss`: the fabric is a backdrop, so it paints under the copy. */
 	isolation: 'isolate' as const,
-	/* Same fabric behind the closing invite: equipping your agent, literally. */
+	/* Same fabric behind the closing invite: make the work permanent. */
 	'&::before': {
 		content: '""',
 		position: 'absolute' as const,

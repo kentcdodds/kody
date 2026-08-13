@@ -19,7 +19,7 @@ const publicRoutes: RouteScenario[] = [
 		ready: async (page) => {
 			await expect(
 				page.getByRole('heading', {
-					name: /Your AI agent,\s*finally useful\./i,
+					name: /When your agent figures it out,\s*Kody makes it permanent\./i,
 				}),
 			).toBeVisible()
 		},

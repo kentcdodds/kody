@@ -26,7 +26,7 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					/>
 					<span>Kody</span>
 				</a>
-				<p mix={css(taglineCss)}>At your agent&apos;s service.</p>
+				<p mix={css(taglineCss)}>Make it permanent.</p>
 				<div mix={css(footerEndCss)}>
 					<nav aria-label="Footer" mix={css(footerNavCss)}>
 						<a href="/community">Community</a>
