@@ -185,6 +185,8 @@ function buildSubscriptionIdempotencyKey(input: {
 			if (input.event.type !== 'cf.artifacts.repo.pushed') {
 				throw new Error('repo.pushed idempotency requires a pushed event')
 			}
+			// Omit source.type so account-level and leftover repo-scoped
+			// publications of the same push collapse to one invocation.
 			return `repo-push:${input.repoId}:${input.event.payload.after}:${input.event.payload.ref}:${input.packageId}`
 		}
 		case repoCreatedTopic:

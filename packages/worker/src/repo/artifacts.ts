@@ -268,7 +268,16 @@ function adaptNativeArtifactsBinding(
 				defaultBranch: created.defaultBranch,
 				remote: created.remote,
 				token: created.token,
-				expiresAt: created.tokenExpiresAt,
+				// Provider create currently omits tokenExpiresAt despite the
+				// generated binding type. Prefer the field when present; else
+				// parse `?expires=` from the token; else leave empty.
+				expiresAt: resolveCreatedTokenExpiry({
+					token: created.token,
+					tokenExpiresAt:
+						typeof created.tokenExpiresAt === 'string'
+							? created.tokenExpiresAt
+							: null,
+				}),
 			}
 		},
 		get: async (name) => {
@@ -566,6 +575,12 @@ function normalizeArtifactRepoInfo(
 }
 
 function parseArtifactTokenExpiry(token: string) {
+	const expiresAt = tryParseArtifactTokenExpiry(token)
+	if (expiresAt) return expiresAt
+	throw new Error('Artifacts token is missing a parseable expires timestamp.')
+}
+
+function tryParseArtifactTokenExpiry(token: string) {
 	const expiresAtSeconds = Number.parseInt(
 		token.split('?expires=')[1] ?? '',
 		10,
@@ -573,7 +588,16 @@ function parseArtifactTokenExpiry(token: string) {
 	if (Number.isFinite(expiresAtSeconds)) {
 		return new Date(expiresAtSeconds * 1000).toISOString()
 	}
-	throw new Error('Artifacts token is missing a parseable expires timestamp.')
+	return null
+}
+
+function resolveCreatedTokenExpiry(input: {
+	token: string
+	tokenExpiresAt?: string | null
+}) {
+	const fromBinding = input.tokenExpiresAt?.trim()
+	if (fromBinding) return fromBinding
+	return tryParseArtifactTokenExpiry(input.token) ?? ''
 }
 
 function normalizeRepoNamePart(value: string) {

@@ -639,6 +639,26 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 	})
 	expect(nativeCreate).toHaveBeenCalledWith('repo-native', { readOnly: false })
 	expect(nativeGet).toHaveBeenCalledTimes(2)
+
+	nativeGet.mockClear()
+	nativeCreate.mockImplementation(async () => ({
+		id: 'repo_native_no_exp',
+		name: 'repo-native-no-exp',
+		description: null,
+		defaultBranch: 'main',
+		remote:
+			'https://acct.artifacts.cloudflare.net/git/production/repo-native-no-exp.git',
+		token: 'art_v2_native?expires=1760000000',
+	}))
+	await expect(
+		ensureArtifactRepoReady(env, 'repo-native-no-exp', binding),
+	).resolves.toMatchObject({
+		recreated: true,
+		bootstrapAccess: {
+			token: 'art_v2_native?expires=1760000000',
+			expiresAt: '2025-10-09T08:53:20.000Z',
+		},
+	})
 })
 
 test('artifacts REST logs redact plaintext tokens on revoke', async () => {
