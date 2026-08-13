@@ -451,11 +451,41 @@ test('unpublishCommunityListing refuses delisted listings without deleting anyth
 			userId: 'owner-1',
 			listingId: 'listing-1',
 		}),
-	).rejects.toThrow()
+	).rejects.toBeInstanceOf(CommunityActionError)
 
 	expect(mockModule.deleteCommunityListing).not.toHaveBeenCalled()
 	expect(mockModule.deleteCommunityRatingsByListingId).not.toHaveBeenCalled()
 	expect(mockModule.deleteCommunitySnapshot).not.toHaveBeenCalled()
+})
+
+test('unpublishCommunityListing treats missing or unowned listings as CommunityActionError', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(null)
+
+	await expect(
+		unpublishCommunityListing({
+			env: createEnv(),
+			userId: 'owner-1',
+			listingId: 'missing-listing',
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityActionError &&
+			error.message === 'Community listing "missing-listing" was not found.',
+	)
+
+	mockModule.getCommunityListingById.mockResolvedValue(
+		sampleListing({ ownerUserId: 'other-owner' }),
+	)
+
+	await expect(
+		unpublishCommunityListing({
+			env: createEnv(),
+			userId: 'owner-1',
+			listingId: 'listing-1',
+		}),
+	).rejects.toBeInstanceOf(CommunityActionError)
+
+	expect(mockModule.deleteCommunityListing).not.toHaveBeenCalled()
 })
 
 test('unpublishCommunityListing deletes active listings and cascades cleanup', async () => {

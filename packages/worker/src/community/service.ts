@@ -670,7 +670,12 @@ export async function unpublishCommunityListing(input: {
 		includeDelisted: true,
 	})
 	if (!listing || listing.ownerUserId !== input.userId) {
-		throw new Error(`Community listing "${input.listingId}" was not found.`)
+		// Missing / not-owned ids are caller-clearable (stale listing_id, typo,
+		// or another owner's listing). CommunityActionError keeps them on
+		// mcp-event lines and out of Sentry (KODY-CLOUDFLARE-4N).
+		throw new CommunityActionError(
+			`Community listing "${input.listingId}" was not found.`,
+		)
 	}
 	if (listing.status === 'delisted') {
 		throw new CommunityActionError(
@@ -683,7 +688,9 @@ export async function unpublishCommunityListing(input: {
 		ownerUserId: input.userId,
 	})
 	if (!deleted) {
-		throw new Error(`Community listing "${input.listingId}" was not found.`)
+		throw new CommunityActionError(
+			`Community listing "${input.listingId}" was not found.`,
+		)
 	}
 
 	await deleteCommunityIconAssetsBestEffort({
@@ -1047,7 +1054,9 @@ export async function prepareCommunityFork(
 		readCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId),
 	])
 	if (!listing) {
-		throw new Error(`Community listing "${input.listingId}" was not found.`)
+		throw new CommunityActionError(
+			`Community listing "${input.listingId}" was not found.`,
+		)
 	}
 	if (!snapshot) {
 		throw new Error(
