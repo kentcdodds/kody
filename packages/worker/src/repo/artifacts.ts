@@ -191,12 +191,32 @@ type ArtifactRestStoredToken = {
 }
 
 function isArtifactsBindingError(error: unknown): error is ArtifactsError {
+	// Binding errors may not pass `instanceof Error` across the JSRPC
+	// boundary. Match the documented `{ name, code }` shape only.
+	if (error === null || typeof error !== 'object') return false
+	const candidate = error as { name?: unknown; code?: unknown }
 	return (
-		error instanceof Error &&
-		error.name === 'ArtifactsError' &&
-		'code' in error &&
-		typeof error.code === 'string'
+		candidate.name === 'ArtifactsError' && typeof candidate.code === 'string'
 	)
+}
+
+function artifactsBindingErrorCode(error: unknown) {
+	if (isArtifactsBindingError(error)) return error.code
+	const message =
+		error instanceof Error
+			? error.message
+			: typeof error === 'object' &&
+				  error !== null &&
+				  'message' in error &&
+				  typeof error.message === 'string'
+				? error.message
+				: ''
+	if (/repository not found/i.test(message)) return 'NOT_FOUND'
+	if (/already[\s_-]*exists/i.test(message)) return 'ALREADY_EXISTS'
+	if (/import[\s_-]*in[\s_-]*progress/i.test(message)) {
+		return 'IMPORT_IN_PROGRESS'
+	}
+	return null
 }
 
 function adaptNativeRepoHandle(repo: ArtifactsRepo): ArtifactRepoHandle {
@@ -288,13 +308,11 @@ function adaptNativeArtifactsBinding(
 					repo: adaptNativeRepoHandle(handle),
 				}
 			} catch (error) {
-				if (isArtifactsBindingError(error) && error.code === 'NOT_FOUND') {
+				const code = artifactsBindingErrorCode(error)
+				if (code === 'NOT_FOUND') {
 					return { status: 'not_found' as const }
 				}
-				if (
-					isArtifactsBindingError(error) &&
-					error.code === 'IMPORT_IN_PROGRESS'
-				) {
+				if (code === 'IMPORT_IN_PROGRESS') {
 					return { status: 'importing' as const, retryAfter: 5 }
 				}
 				throw error
@@ -788,7 +806,7 @@ function isArtifactRepoAlreadyExistsError(error: unknown) {
 			: null
 	return (
 		causeCode === 10201 ||
-		(isArtifactsBindingError(error) && error.code === 'ALREADY_EXISTS') ||
+		artifactsBindingErrorCode(error) === 'ALREADY_EXISTS' ||
 		/already[\s_-]*exists|already_exists/i.test(`${text} ${causeMessage}`)
 	)
 }

@@ -640,6 +640,41 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 	expect(nativeCreate).toHaveBeenCalledWith('repo-native', { readOnly: false })
 	expect(nativeGet).toHaveBeenCalledTimes(2)
 
+	const duckTypedNotFound = {
+		name: 'ArtifactsError',
+		code: 'NOT_FOUND',
+		message: 'Repository not found: repo-native-duck',
+	}
+	nativeGet.mockReset()
+	nativeGet.mockImplementation(async () => {
+		throw duckTypedNotFound
+	})
+	nativeCreate.mockClear()
+	nativeCreate.mockImplementation(async () => ({
+		id: 'repo_native_duck',
+		name: 'repo-native-duck',
+		description: null,
+		defaultBranch: 'main',
+		remote:
+			'https://acct.artifacts.cloudflare.net/git/production/repo-native-duck.git',
+		token: 'art_v2_native?expires=1760000000',
+	}))
+	await expect(binding.get('repo-native-duck')).resolves.toEqual({
+		status: 'not_found',
+	})
+	await expect(
+		ensureArtifactRepoReady(env, 'repo-native-duck', binding),
+	).resolves.toMatchObject({
+		recreated: true,
+		bootstrapAccess: {
+			token: 'art_v2_native?expires=1760000000',
+			expiresAt: '2025-10-09T08:53:20.000Z',
+		},
+	})
+	expect(nativeCreate).toHaveBeenCalledWith('repo-native-duck', {
+		readOnly: false,
+	})
+
 	nativeGet.mockClear()
 	nativeCreate.mockImplementation(async () => ({
 		id: 'repo_native_no_exp',
