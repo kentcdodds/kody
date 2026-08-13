@@ -50,8 +50,7 @@ vi.mock('#worker/community/repo.ts', () => ({
 vi.mock('#worker/community/social-repo.ts', () => ({
 	getCommunityStar: (...args: Array<unknown>) =>
 		mockModule.getCommunityStar(...args),
-	getUserFollow: (...args: Array<unknown>) =>
-		mockModule.getUserFollow(...args),
+	getUserFollow: (...args: Array<unknown>) => mockModule.getUserFollow(...args),
 	getUserSocialRowByUsername: (...args: Array<unknown>) =>
 		mockModule.getUserSocialRowByUsername(...args),
 }))
