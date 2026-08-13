@@ -54,7 +54,7 @@ export function gitAuthorIdentityFromUser(user: {
 /** Local-repo git config commands; run after `cd` into the clone. */
 export function gitAuthorSetupCommands(author: GitAuthorIdentity) {
 	return [
-		`git config --local user.email ${shellQuote(author.email)}`,
-		`git config --local user.name ${shellQuote(author.name)}`,
+		`git config --local user.email -- ${shellQuote(author.email)}`,
+		`git config --local user.name -- ${shellQuote(author.name)}`,
 	]
 }

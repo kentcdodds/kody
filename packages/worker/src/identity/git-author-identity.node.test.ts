@@ -33,9 +33,18 @@ test('git author identity uses the Kody account and quotes setup commands', () =
 		email: "o'brien@example.com",
 	})
 	expect(quoted).toEqual([
-		`git config --local user.email ${shellQuote("o'brien@example.com")}`,
-		`git config --local user.name ${shellQuote("O'Brien")}`,
+		`git config --local user.email -- ${shellQuote("o'brien@example.com")}`,
+		`git config --local user.name -- ${shellQuote("O'Brien")}`,
 	])
 	expect(quoted[0]).toContain(`'"'"'`)
 	expect(quoted[1]).toContain(`'"'"'`)
+
+	const dashed = gitAuthorSetupCommands({
+		name: '-dash-name',
+		email: 'dash@example.com',
+	})
+	expect(dashed).toEqual([
+		`git config --local user.email -- 'dash@example.com'`,
+		`git config --local user.name -- '-dash-name'`,
+	])
 })
