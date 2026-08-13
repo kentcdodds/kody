@@ -11,6 +11,7 @@ import {
 	buildPackageAppNotFoundMessage,
 	buildUnmatchedPackageAppOriginPathMessage,
 } from '#worker/package-runtime/package-app-synthetic.ts'
+import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import {
 	ensurePackageSubscriptionTestSchema,
 	ensureRbacTestSchema,
@@ -107,6 +108,7 @@ function cookieValue(setCookieHeader: string) {
 }
 
 test('hosted package apps move to the owner subdomain behind a single-use handoff', async () => {
+	silenceExpectedConsoleWarns(['Package app handoff rejected.'])
 	configureOrigins({
 		packageAppBaseUrl: packageAppOrigin,
 		runtime: 'production',
@@ -202,15 +204,26 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 	// package-app session. Both terminate here (never a redirect back to the app
 	// origin) so a browser that drops the cookie cannot ping-pong between hosts.
 	// The terminal page links to the app-origin entry path that restarts the
-	// handoff.
-	for (const request of [handoffLocation, cleanLocation]) {
-		const rejected = await workerFetch(request)
-		expect(rejected.status).toBe(403)
-		expect(rejected.headers.get('Location')).toBeNull()
-		await expect(rejected.text()).resolves.toContain(
-			`${appOrigin}/@${ownerUsername}/packages/demo/report`,
-		)
-	}
+	// handoff. A presented-but-rejected token is not a cookie problem.
+	const replayed = await workerFetch(handoffLocation)
+	expect(replayed.status).toBe(403)
+	expect(replayed.headers.get('Location')).toBeNull()
+	expect(replayed.headers.get('X-Kody-Handoff')).toBe('rejected')
+	const replayedBody = await replayed.text()
+	expect(replayedBody).toContain(
+		`${appOrigin}/@${ownerUsername}/packages/demo/report`,
+	)
+	expect(replayedBody).toContain(
+		'the package-app domain did not accept the token',
+	)
+	const missingSession = await workerFetch(cleanLocation)
+	expect(missingSession.status).toBe(403)
+	expect(missingSession.headers.get('X-Kody-Handoff')).toBe('required')
+	const missingSessionBody = await missingSession.text()
+	expect(missingSessionBody).toContain(
+		`${appOrigin}/@${ownerUsername}/packages/demo/report`,
+	)
+	expect(missingSessionBody).toContain('your browser is refusing this site')
 	const rejectedJson = await workerFetch(cleanLocation, {
 		headers: { Accept: 'application/json' },
 	})

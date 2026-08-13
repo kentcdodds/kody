@@ -124,33 +124,53 @@ export async function consumePackageAppHandoffToken(input: {
 }): Promise<PackageAppHandoffClaims | null> {
 	const now = input.now ?? Date.now()
 	const [payload, signature, ...rest] = input.token.split('.')
-	if (!payload || !signature || rest.length > 0) return null
+	if (!payload || !signature || rest.length > 0) {
+		console.warn('Package app handoff rejected.', { reason: 'malformed' })
+		return null
+	}
 
+	// Missing COOKIE_SECRET must fail loudly (500), not look like an invalid
+	// token. Mint and consume run on the runtime Worker in production; if this
+	// isolate cannot import the signing key, the visitor otherwise lands on the
+	// 403 handoff page with `__kody_handoff` still in the URL.
+	const signingKey = await getHandoffSigningKey(input.env)
 	let signatureValid: boolean
 	try {
 		signatureValid = await crypto.subtle.verify(
 			'HMAC',
-			await getHandoffSigningKey(input.env),
+			signingKey,
 			base64UrlToBytes(signature),
 			signedMessage(payload),
 		)
 	} catch {
+		console.warn('Package app handoff rejected.', { reason: 'signature' })
 		return null
 	}
-	if (!signatureValid) return null
+	if (!signatureValid) {
+		console.warn('Package app handoff rejected.', { reason: 'signature' })
+		return null
+	}
 
 	let parsed: unknown
 	try {
 		parsed = JSON.parse(new TextDecoder().decode(base64UrlToBytes(payload)))
 	} catch {
+		console.warn('Package app handoff rejected.', { reason: 'payload' })
 		return null
 	}
-	if (!isStoredHandoffPayload(parsed)) return null
-	if (parsed.exp <= now) return null
+	if (!isStoredHandoffPayload(parsed)) {
+		console.warn('Package app handoff rejected.', { reason: 'payload' })
+		return null
+	}
+	if (parsed.exp <= now) {
+		console.warn('Package app handoff rejected.', { reason: 'expired' })
+		return null
+	}
 	if (
 		parsed.usr !== input.expected.username ||
 		parsed.pkg !== input.expected.kodyId
 	) {
+		console.warn('Package app handoff rejected.', { reason: 'path' })
 		return null
 	}
 
@@ -158,7 +178,10 @@ export async function consumePackageAppHandoffToken(input: {
 	if (replayStore) {
 		const replayKey = `${handoffReplayKeyPrefix}${parsed.jti}`
 		try {
-			if (await replayStore.get(replayKey)) return null
+			if (await replayStore.get(replayKey)) {
+				console.warn('Package app handoff rejected.', { reason: 'replay' })
+				return null
+			}
 			await replayStore.put(replayKey, '1', {
 				expirationTtl: handoffReplayTtlSeconds,
 			})

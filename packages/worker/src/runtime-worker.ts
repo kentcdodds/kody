@@ -54,9 +54,10 @@ const runtimeWorkerHandler = {
 
 		if (url.pathname === runtimeWorkerHealthPath) {
 			return Response.json(
-				buildRuntimeWorkerHealth(
-					(env as { APP_COMMIT_SHA?: string }).APP_COMMIT_SHA,
-				),
+				buildRuntimeWorkerHealth({
+					commitSha: (env as { APP_COMMIT_SHA?: string }).APP_COMMIT_SHA,
+					cookieSecretConfigured: Boolean(env.COOKIE_SECRET?.trim()),
+				}),
 			)
 		}
 

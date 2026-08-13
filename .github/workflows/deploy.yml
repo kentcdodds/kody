@@ -575,7 +575,7 @@ jobs:
             if curl --fail --silent --show-error --location --max-time 10 \
               --header "Accept: application/json" \
               "$HEALTHCHECK_URL" > runtime-health.json && \
-              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('runtime-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.status !== 'ok') { console.error('runtime-healthcheck-unexpected-response', json); process.exit(1); } if (json?.commitSha !== expected) { console.error('runtime-healthcheck-unexpected-commit-sha', { expected, actual: json?.commitSha }); process.exit(1); } console.log('runtime-healthcheck-ok', json);"; then
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('runtime-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.status !== 'ok') { console.error('runtime-healthcheck-unexpected-response', json); process.exit(1); } if (json?.commitSha !== expected) { console.error('runtime-healthcheck-unexpected-commit-sha', { expected, actual: json?.commitSha }); process.exit(1); } if (json?.cookieSecretConfigured !== true) { console.error('runtime-healthcheck-missing-cookie-secret', json); process.exit(1); } console.log('runtime-healthcheck-ok', json);"; then
               exit 0
             fi
             sleep "$delay_seconds"

@@ -159,19 +159,29 @@ function buildAppOriginEntryUrl(input: {
 function createPackageAppSessionRequiredResponse(input: {
 	request: Request
 	appOriginUrl: URL
+	handoffPresented: boolean
 }) {
 	const openUrl = input.appOriginUrl.toString()
+	const headers = {
+		'Cache-Control': 'no-store',
+		'X-Kody-Handoff': input.handoffPresented ? 'rejected' : 'required',
+	}
+	const message = input.handoffPresented
+		? 'Kody could not complete the session handoff. The link may have expired or already been used.'
+		: 'Hosted package apps run on their own domain and need a Kody handoff before they can load.'
 	if (wantsJson(input.request)) {
 		return Response.json(
 			{
 				error: 'Package app session required',
-				message:
-					'Hosted package apps run on their own domain and need a Kody handoff before they can load.',
+				message,
 				next_step: `Open the app from Kody at ${openUrl}.`,
 			},
-			{ status: 403, headers: { 'Cache-Control': 'no-store' } },
+			{ status: 403, headers },
 		)
 	}
+	const troubleshooting = input.handoffPresented
+		? 'If Continue keeps bringing you back here with the handoff parameter still in the address bar, the package-app domain did not accept the token. That is not a cookie setting — try once more, and if it still fails this is a server-side handoff problem.'
+		: "If you keep landing here, your browser is refusing this site's cookie. Allow cookies for this domain and try again."
 	return createHtmlResponse(
 		html`<!doctype html>
 			<html lang="en">
@@ -201,14 +211,11 @@ function createPackageAppSessionRequiredResponse(input: {
 							off your signed-in session before this app can load.
 						</p>
 						<p><a href="${openUrl}">Continue to this app</a></p>
-						<p>
-							If you keep landing here, your browser is refusing this site's
-							cookie. Allow cookies for this domain and try again.
-						</p>
+						<p>${troubleshooting}</p>
 					</main>
 				</body>
 			</html>`,
-		{ status: 403, headers: { 'Cache-Control': 'no-store' } },
+		{ status: 403, headers },
 	)
 }
 
@@ -372,6 +379,7 @@ async function handleUserSubdomainRequest(input: {
 		return createPackageAppSessionRequiredResponse({
 			request,
 			appOriginUrl: buildAppOriginEntryUrl({ appBaseUrl, packagePath, url }),
+			handoffPresented: Boolean(handoffToken),
 		})
 	}
 

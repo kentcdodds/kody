@@ -14,6 +14,10 @@ import {
 	readPackageAppSession,
 	resetPackageAppSessionCookieForTests,
 } from '#app/package-app-session.ts'
+import {
+	consoleWarn,
+	silenceExpectedConsoleWarns,
+} from '#worker/test-support/console-spies.ts'
 
 const cookieSecret = 'PACKAGE_APP_TEST_COOKIE_SECRET_32_CHARS_MINIMUM'
 const ownerStableUserId = '1'.repeat(64)
@@ -41,6 +45,7 @@ const claims = {
 const expected = { username: claims.username, kodyId: claims.kodyId }
 
 test('handoff tokens are single use, short lived, and bound to one user and package', async () => {
+	silenceExpectedConsoleWarns(['Package app handoff rejected.'])
 	const env = createTestEnv()
 
 	const token = await createPackageAppHandoffToken({ env, claims })
@@ -53,6 +58,9 @@ test('handoff tokens are single use, short lived, and bound to one user and pack
 	await expect(
 		consumePackageAppHandoffToken({ env, token, expected }),
 	).resolves.toBeNull()
+	expect(consoleWarn).toHaveBeenCalledWith('Package app handoff rejected.', {
+		reason: 'replay',
+	})
 
 	// Expired tokens fail closed, even unused ones.
 	const staleToken = await createPackageAppHandoffToken({
@@ -136,6 +144,16 @@ test('handoff tokens are single use, short lived, and bound to one user and pack
 			expected,
 		}),
 	).resolves.toStrictEqual(claims)
+
+	// Missing COOKIE_SECRET must throw rather than look like an invalid token,
+	// otherwise the visitor stays on the 403 page with `__kody_handoff` in the URL.
+	await expect(
+		consumePackageAppHandoffToken({
+			env: createTestEnv({ cookieSecret: '' }),
+			token: await createPackageAppHandoffToken({ env, claims }),
+			expected,
+		}),
+	).rejects.toThrow(/COOKIE_SECRET/)
 })
 
 test('the package-app session cookie is not interchangeable with the app session cookie', async () => {

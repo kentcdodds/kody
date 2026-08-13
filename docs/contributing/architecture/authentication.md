@@ -389,6 +389,17 @@ that exposure but cannot eliminate it. The 60-second expiry and the single-use
 burn are what bound the damage when a token does leak. A request that still
 carries the parameter is rewritten without it before package code sees it.
 
+Mint and consume must share `COOKIE_SECRET`. In production the app-origin mint
+(`/@{username}/packages/...`) is forwarded to `kody-runtime`, and the subdomain
+exchange is served by that same script's zone routes. If a leftover main-worker
+route still receives `{username}.kodyapps.dev`, the main Worker must forward it
+too (`isRuntimeWorkerOwnedRequest` matches every package-app host, not only the
+apex). A `COOKIE_SECRET` mismatch, or a missing secret swallowed as "invalid
+token", leaves the visitor on the 403 page with `__kody_handoff` still in the
+URL and no `Set-Cookie`. Missing `COOKIE_SECRET` on consume fails closed with
+500; signature / expiry / path / replay rejects log a reason without the token
+and set `X-Kody-Handoff: rejected`.
+
 **Package-app session cookie**
 (`packages/worker/src/app/package-app-session.ts`). Exchanging a valid token on
 the owner's subdomain sets `__Host-kody_pkg_session` on secure requests (plain
