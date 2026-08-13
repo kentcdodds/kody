@@ -575,15 +575,18 @@ test('ensureArtifactRepoReady uses the create result without a follow-up GET', a
 			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
 		})
 
-	await expect(ensureArtifactRepoReady(env, 'repo-new')).resolves.toMatchObject({
-		recreated: true,
-		bootstrapAccess: {
-			defaultBranch: 'main',
-			remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-new.git',
-			token: 'art_v1_create?expires=1760000000',
+	await expect(ensureArtifactRepoReady(env, 'repo-new')).resolves.toMatchObject(
+		{
+			recreated: true,
+			bootstrapAccess: {
+				defaultBranch: 'main',
+				remote:
+					'https://acct.artifacts.cloudflare.net/git/default/repo-new.git',
+				token: 'art_v1_create?expires=1760000000',
+			},
+			repo: expect.any(Object),
 		},
-		repo: expect.any(Object),
-	})
+	)
 	expect(fetchMock).toHaveBeenCalledTimes(2)
 	fetchMock.mockRestore()
 })
@@ -594,7 +597,8 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 		name: 'repo-native',
 		description: null,
 		defaultBranch: 'main',
-		remote: 'https://acct.artifacts.cloudflare.net/git/production/repo-native.git',
+		remote:
+			'https://acct.artifacts.cloudflare.net/git/production/repo-native.git',
 		token: 'art_v2_native',
 		tokenExpiresAt: '2026-10-09T08:53:20.000Z',
 	}

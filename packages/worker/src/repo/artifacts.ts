@@ -190,9 +190,7 @@ type ArtifactRestStoredToken = {
 	created_at?: string | null
 }
 
-function isArtifactsBindingError(
-	error: unknown,
-): error is ArtifactsError {
+function isArtifactsBindingError(error: unknown): error is ArtifactsError {
 	return (
 		error instanceof Error &&
 		error.name === 'ArtifactsError' &&

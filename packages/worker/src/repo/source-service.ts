@@ -160,7 +160,9 @@ function missingPersistenceRequirements(input: {
 		missing.push('APP_DB')
 	}
 	if (!input.hasArtifactsAccess) {
-		missing.push('ARTIFACTS binding or CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN')
+		missing.push(
+			'ARTIFACTS binding or CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN',
+		)
 	}
 	return missing
 }
