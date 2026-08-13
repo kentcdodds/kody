@@ -87,7 +87,8 @@ async function resolveArtifactsRepoEventsQueueId(
 		const result = readCloudflareResult<Array<CloudflareQueueListItem>>(
 			response.body,
 		)
-		const match = (result ?? []).find(
+		const queues = Array.isArray(result) ? result : []
+		const match = queues.find(
 			(queue) => queue.queue_name === artifactsRepoEventsQueueName,
 		)
 		if (match?.queue_id) {
@@ -132,7 +133,9 @@ async function listEventSubscriptions(env: Env, accountId: string) {
 		const result = readCloudflareResult<Array<CloudflareEventSubscription>>(
 			response.body,
 		)
-		subscriptions.push(...(result ?? []))
+		if (Array.isArray(result)) {
+			subscriptions.push(...result)
+		}
 		const info =
 			response.body &&
 			typeof response.body === 'object' &&

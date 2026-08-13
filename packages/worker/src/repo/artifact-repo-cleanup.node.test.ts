@@ -271,7 +271,7 @@ test('account cleanup deletes stored Artifacts push subscriptions before repos',
 	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith('package-pkg-1')
 })
 
-test('cleanup deletes Cloudflare push subscriptions by repo name when none is stored', async () => {
+test('cleanup skips Cloudflare push subscription delete when none is stored', async () => {
 	mockModule.hasArtifactsAccess.mockReturnValue(true)
 	mockModule.deleteArtifactsRepoPushSubscription.mockClear()
 	mockModule.deleteArtifactRepo.mockResolvedValue({
@@ -292,10 +292,6 @@ test('cleanup deletes Cloudflare push subscriptions by repo name when none is st
 		sourceId: 'source-1',
 	})
 
-	expect(mockModule.deleteArtifactsRepoPushSubscription).toHaveBeenCalledWith({
-		env,
-		subscriptionId: undefined,
-		repoName: 'job-job-1',
-	})
+	expect(mockModule.deleteArtifactsRepoPushSubscription).not.toHaveBeenCalled()
 	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith('job-job-1')
 })
