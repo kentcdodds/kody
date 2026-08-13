@@ -247,9 +247,7 @@ test('preview manual test waits for the GitHub preview comment and head SHA work
 			if (args.join(' ').startsWith('pr view')) prViews += 1
 			const commentReady = prViews >= 2
 			return fakeGh(args, {
-				commentBody: commentReady
-					? sampleCommentWithUrl(server.origin)
-					: null,
+				commentBody: commentReady ? sampleCommentWithUrl(server.origin) : null,
 				headSha: 'headsha',
 				deploymentSha: 'deployedsha',
 				runStatus: commentReady ? 'completed' : 'in_progress',
@@ -338,7 +336,9 @@ test('preview manual test records fetch and cookie-file failures as checks inste
 		),
 	).toBe(true)
 	expect(
-		fetchFailure.result?.smoke?.checks.some((check) => check.name === 'GET /login'),
+		fetchFailure.result?.smoke?.checks.some(
+			(check) => check.name === 'GET /login',
+		),
 	).toBe(true)
 
 	await using server = await createPreviewFixtureServer()

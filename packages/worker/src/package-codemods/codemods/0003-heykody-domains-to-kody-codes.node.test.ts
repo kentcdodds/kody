@@ -44,7 +44,8 @@ test('0003 never rewrites subdomains, emails, bare hostnames, or lookalike hosts
 			'',
 		].join('\n'),
 	}
-	const boundaryResult = heykodyDomainsToKodyCodesCodemod.transform(boundaryFiles)
+	const boundaryResult =
+		heykodyDomainsToKodyCodesCodemod.transform(boundaryFiles)
 	expect(boundaryResult.changed).toBe(false)
 	expect(boundaryResult.files['config.ts']).toBe(boundaryFiles['config.ts'])
 	expect(boundaryResult.needsManual).toEqual([

@@ -63,72 +63,77 @@ function createArtifactsFetchMock(options: {
 	repoName: string
 	getRepoCountRef: { value: number }
 }) {
-	return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-		const url = new URL(String(input))
-		const method = init?.method ?? 'GET'
-		if (method === 'GET' && url.pathname.endsWith(`/repos/${options.repoName}`)) {
-			options.getRepoCountRef.value += 1
-			if (options.getRepoCountRef.value === 1) {
+	return vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
+			const url = new URL(String(input))
+			const method = init?.method ?? 'GET'
+			if (
+				method === 'GET' &&
+				url.pathname.endsWith(`/repos/${options.repoName}`)
+			) {
+				options.getRepoCountRef.value += 1
+				if (options.getRepoCountRef.value === 1) {
+					return new Response(
+						JSON.stringify({
+							success: false,
+							result: null,
+							errors: [{ code: 1000, message: 'Repo not found' }],
+							messages: [],
+						}),
+						{
+							status: 404,
+							headers: { 'content-type': 'application/json' },
+						},
+					)
+				}
 				return new Response(
 					JSON.stringify({
-						success: false,
-						result: null,
-						errors: [{ code: 1000, message: 'Repo not found' }],
+						success: true,
+						result: {
+							id: 'repo-1',
+							name: options.repoName,
+							description: null,
+							default_branch: 'main',
+							created_at: '2026-04-18T00:00:00.000Z',
+							updated_at: '2026-04-18T00:00:00.000Z',
+							last_push_at: null,
+							source: null,
+							read_only: false,
+							remote: `https://acct.artifacts.cloudflare.net/git/default/${options.repoName}.git`,
+						},
+						errors: [],
 						messages: [],
 					}),
 					{
-						status: 404,
+						status: 200,
 						headers: { 'content-type': 'application/json' },
 					},
 				)
 			}
-			return new Response(
-				JSON.stringify({
-					success: true,
-					result: {
-						id: 'repo-1',
-						name: options.repoName,
-						description: null,
-						default_branch: 'main',
-						created_at: '2026-04-18T00:00:00.000Z',
-						updated_at: '2026-04-18T00:00:00.000Z',
-						last_push_at: null,
-						source: null,
-						read_only: false,
-						remote: `https://acct.artifacts.cloudflare.net/git/default/${options.repoName}.git`,
+			if (method === 'POST' && url.pathname.endsWith('/repos')) {
+				return new Response(
+					JSON.stringify({
+						success: true,
+						result: {
+							id: 'repo-1',
+							name: options.repoName,
+							description: null,
+							default_branch: 'main',
+							remote: `https://acct.artifacts.cloudflare.net/git/default/${options.repoName}.git`,
+							token: 'art_v1_create?expires=1760000000',
+						},
+						errors: [],
+						messages: [],
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' },
 					},
-					errors: [],
-					messages: [],
-				}),
-				{
-					status: 200,
-					headers: { 'content-type': 'application/json' },
-				},
-			)
-		}
-		if (method === 'POST' && url.pathname.endsWith('/repos')) {
-			return new Response(
-				JSON.stringify({
-					success: true,
-					result: {
-						id: 'repo-1',
-						name: options.repoName,
-						description: null,
-						default_branch: 'main',
-						remote: `https://acct.artifacts.cloudflare.net/git/default/${options.repoName}.git`,
-						token: 'art_v1_create?expires=1760000000',
-					},
-					errors: [],
-					messages: [],
-				}),
-				{
-					status: 200,
-					headers: { 'content-type': 'application/json' },
-				},
-			)
-		}
-		throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-	})
+				)
+			}
+			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
+		})
 }
 
 test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo, reuse ready repo', async () => {
