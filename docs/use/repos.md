@@ -29,13 +29,15 @@ discovery.
 
 ## Git lane
 
-`repo_get_git_remote` mints a short-lived Artifacts remote (read or write).
-Kody's **10 MiB** per-file gate (10,485,760 stored bytes) binds on session and
-file-level writes and again at `repo_promote_to_package`; a direct `git push` to
-the minted remote has no Kody gate, so the only ceiling on that lane is
-Artifacts itself, which rejects pushes above ~32 MiB of decompressed pack
-content with a raw HTTP 413. Plain repos do not run the package publish
-reconcile cron after push—HEAD is live.
+`repo_get_git_remote` mints a short-lived Artifacts remote (read or write). The
+result includes `git_author` (signed-in Kody account email and display name) and
+setup commands that set local `user.email` / `user.name` to that identity. Use
+those values for commits; do not invent a git email. Kody's **10 MiB** per-file
+gate (10,485,760 stored bytes) binds on session and file-level writes and again
+at `repo_promote_to_package`; a direct `git push` to the minted remote has no
+Kody gate, so the only ceiling on that lane is Artifacts itself, which rejects
+pushes above ~32 MiB of decompressed pack content with a raw HTTP 413. Plain
+repos do not run the package publish reconcile cron after push—HEAD is live.
 
 ## Sessions
 

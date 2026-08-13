@@ -115,7 +115,9 @@ When a normal filesystem and git client are available:
 
 1. Call `package_get_git_remote`. For a new package, pass `create: true` and a
    new `kody_id`; for an existing package, omit `create`.
-2. Run the returned setup commands and clone into a temporary directory.
+2. Run the returned setup commands and clone into a temporary directory. Those
+   commands set local git `user.email` and `user.name` from `git_author` (the
+   signed-in Kody account). Do not invent a git identity.
 3. Edit and test through the normal local development loop.
 4. Commit and push the package repository.
 5. Publish the pushed head with `package_publish_external_push`.

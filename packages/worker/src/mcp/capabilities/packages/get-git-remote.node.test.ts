@@ -238,9 +238,15 @@ test('get_git_remote returns scoped artifact remotes and rejects invalid input',
 	expect(writeResult.git_extra_header).toBe(
 		'Authorization: Bearer art_v1_write_token',
 	)
+	expect(writeResult.git_author).toEqual({
+		name: 'user-1',
+		email: 'user-1@example.com',
+	})
 	expect(writeResult.setup_commands).toEqual([
 		`git -c http.extraHeader='Authorization: Bearer art_v1_write_token' clone '${remote}' 'package-1'`,
 		`cd 'package-1'`,
+		`git config --local user.email 'user-1@example.com'`,
+		`git config --local user.name 'user-1'`,
 		`git remote add kody '${remote}'`,
 		`git config remote.kody.fetch '+refs/heads/*:refs/remotes/kody/*'`,
 		`git config --add remote.kody.fetch '+refs/notes/*:refs/notes/*'`,

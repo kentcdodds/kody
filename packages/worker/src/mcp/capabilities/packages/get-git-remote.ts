@@ -4,6 +4,12 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
+	gitAuthorIdentityFromUser,
+	gitAuthorIdentitySchema,
+	gitAuthorSetupCommands,
+	shellQuote,
+} from '#worker/identity/git-author-identity.ts'
+import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
@@ -61,22 +67,19 @@ const outputSchema = markSecretInputFields(
 			git_extra_header: z.string(),
 			scope: z.enum(['read', 'write']),
 			expires_at: z.string(),
+			git_author: gitAuthorIdentitySchema,
 			setup_commands: z.array(z.string()),
 		}),
 	) as Record<string, unknown>,
 	['authenticated_remote', 'git_extra_header', 'setup_commands'],
 ) as Record<string, unknown>
 
-function shellQuote(value: string) {
-	return `'${value.replaceAll(`'`, `'"'"'`)}'`
-}
-
 export const getGitRemoteCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_get_git_remote',
 		description:
-			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with package_publish_external_push. Pass `create: true` with a new `kody_id` to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of package_save file blobs. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary): publish rejects anything larger with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.',
+			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with package_publish_external_push. Pass `create: true` with a new `kody_id` to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of package_save file blobs. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary): publish rejects anything larger with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.',
 		keywords: [
 			'package',
 			'create',
@@ -181,6 +184,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 			}
 			const gitExtraHeader = `Authorization: Bearer ${parseArtifactTokenSecret(token.plaintext)}`
 			const cloneDirectory = source.entity_id
+			const gitAuthor = gitAuthorIdentityFromUser(user)
 			return {
 				package_id: packageId,
 				kody_id: kodyId,
@@ -193,9 +197,11 @@ export const getGitRemoteCapability = defineDomainCapability(
 				git_extra_header: gitExtraHeader,
 				scope: args.scope,
 				expires_at: token.expiresAt,
+				git_author: gitAuthor,
 				setup_commands: [
 					`git -c http.extraHeader=${shellQuote(gitExtraHeader)} clone ${shellQuote(sourceHead.remote)} ${shellQuote(cloneDirectory)}`,
 					`cd ${shellQuote(cloneDirectory)}`,
+					...gitAuthorSetupCommands(gitAuthor),
 					`git remote add kody ${shellQuote(sourceHead.remote)}`,
 					`git config remote.kody.fetch '+refs/heads/*:refs/remotes/kody/*'`,
 					`git config --add remote.kody.fetch '+refs/notes/*:refs/notes/*'`,

@@ -18,7 +18,7 @@ export const metaGetCurrentUserCapability = defineDomainCapability(
 	{
 		name: 'meta_get_current_user',
 		description:
-			'Get harmless identity fields for the signed-in MCP user: id, email, and display name.',
+			'Get harmless identity fields for the signed-in MCP user: id, email, and display name. Use email and display_name as git user.email / user.name on Kody remotes when a git-remote result is not already in hand.',
 		keywords: [
 			'user',
 			'current user',

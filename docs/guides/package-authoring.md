@@ -22,7 +22,9 @@ local filesystem and git access:
   `create: true` and a new `kody_id` to register a stub saved package and mint a
   short-lived authenticated remote in one call (for existing packages, omit
   `create`). Run the returned `setup_commands` to clone into a temporary
-  directory, edit normally — binary assets, multi-file refactors, and local
+  directory — they set local `git config user.email` / `user.name` from
+  `git_author` (the signed-in Kody account). Do not invent or guess a git
+  identity. Edit normally — binary assets, multi-file refactors, and local
   build/test loops all work — commit, push, then publish with
   `package_publish_external_push`.
 - **Tool-only lane.** Without local filesystem/git access, create with

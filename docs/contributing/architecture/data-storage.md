@@ -1056,8 +1056,10 @@ Operational notes:
 
 Saved package source can also be edited through Artifacts git remotes directly.
 `package_get_git_remote` resolves package identity to `entity_sources`, mints a
-short-lived Artifacts repo token, and returns both a plain remote and setup
-commands that pass the token through `http.extraHeader`.
+short-lived Artifacts repo token, and returns a plain remote, `git_author`
+(signed-in account email and display name), and setup commands that pass the
+token through `http.extraHeader` and set local `user.email` / `user.name` from
+`git_author`.
 
 After an external `git push`, `package_publish_external_push` reconciles the
 current Artifacts default-branch HEAD with `entity_sources.published_commit`.

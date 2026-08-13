@@ -19,8 +19,10 @@ There are two supported ways to edit repo-backed source:
 - **A short-lived authenticated git remote** via `package_get_git_remote` plus
   `package_publish_external_push`. Use this when you have local filesystem and
   git access and want to clone the repo into a temp directory, edit normally,
-  and push the resulting HEAD back. This path is **saved-package-only**; there
-  is no equivalent helper for non-package repo-backed job source.
+  and push the resulting HEAD back. Commits use `git_author` from the remote
+  result (the signed-in Kody account); do not invent a git email. This path is
+  **saved-package-only**; there is no equivalent helper for non-package
+  repo-backed job source.
 
 For one-file edits to a non-package repo-backed scheduled job, the simplest path
 is usually neither of these: pass a replacement `code` string to
