@@ -94,11 +94,10 @@ async function deletePushSubscriptionForSource(input: {
 		input.env.APP_DB,
 		input.source.id,
 	)
-	if (!stored?.subscription_id) return
 	try {
 		await deleteArtifactsRepoPushSubscription({
 			env: input.env,
-			subscriptionId: stored.subscription_id,
+			subscriptionId: stored?.subscription_id,
 			repoName: input.source.repo_id,
 		})
 	} catch (error) {
@@ -111,7 +110,7 @@ async function deletePushSubscriptionForSource(input: {
 				message: 'artifacts push event subscription delete failed',
 				userId: input.userId,
 				repoName: input.source.repo_id,
-				subscriptionId: stored.subscription_id,
+				subscriptionId: stored?.subscription_id ?? null,
 				error: message,
 			}),
 		)

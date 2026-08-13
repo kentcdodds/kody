@@ -305,63 +305,35 @@ async function reuseOrRepairArtifactsPushSubscription(input: {
 	if (isCurrent) {
 		return existing.id
 	}
-	const client = createCloudflareRestClient(input.env)
-	if (sourceIsCurrent) {
-		const response = await client.rawRequest({
-			method: 'PATCH',
-			path: `/client/v4/accounts/${encodeURIComponent(input.accountId)}/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`,
-			body: {
-				name: input.name,
-				enabled: true,
-				destination: { type: 'queues.queue', queue_id: input.queueId },
-				events: [...input.events],
-			},
-		})
-		if (response.status >= 400) {
-			throw new CloudflareApiError(
-				`Failed to update Artifacts push event subscription (${response.status}).`,
-				{ status: response.status },
-			)
-		}
-		const result = readCloudflareResult<CloudflareEventSubscription>(
-			response.body,
+	if (!sourceIsCurrent) {
+		// Truncated subscription names can collide across repos. Never delete a
+		// source-mismatched subscription to make room for this one.
+		throw new CloudflareApiError(
+			`Artifacts push event subscription ${input.name} belongs to a different source.`,
+			{ status: 409 },
 		)
-		return result?.id ?? existing.id
 	}
-	await client.rawRequest({
-		method: 'DELETE',
-		path: `/client/v4/accounts/${encodeURIComponent(input.accountId)}/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`,
-	})
+	const client = createCloudflareRestClient(input.env)
 	const response = await client.rawRequest({
-		method: 'POST',
-		path: `/client/v4/accounts/${encodeURIComponent(input.accountId)}/event_subscriptions/subscriptions`,
+		method: 'PATCH',
+		path: `/client/v4/accounts/${encodeURIComponent(input.accountId)}/event_subscriptions/subscriptions/${encodeURIComponent(existing.id)}`,
 		body: {
 			name: input.name,
 			enabled: true,
-			source: {
-				type: 'artifacts.repo',
-				namespace: input.namespace,
-				repo_name: input.repoName,
-			},
 			destination: { type: 'queues.queue', queue_id: input.queueId },
 			events: [...input.events],
 		},
 	})
 	if (response.status >= 400) {
 		throw new CloudflareApiError(
-			`Failed to create Artifacts push event subscription (${response.status}).`,
+			`Failed to update Artifacts push event subscription (${response.status}).`,
 			{ status: response.status },
 		)
 	}
 	const result = readCloudflareResult<CloudflareEventSubscription>(
 		response.body,
 	)
-	if (!result?.id) {
-		throw new Error(
-			`Cloudflare created Artifacts push event subscription without an id: ${input.name}`,
-		)
-	}
-	return result.id
+	return result?.id ?? existing.id
 }
 
 /**
@@ -436,6 +408,9 @@ async function ensureArtifactsRepoPushSubscriptionUnsafe(input: {
 	if (!queueId) {
 		return { subscriptionId: null, skipped: true }
 	}
+	if (!(await sourceStillOwned(input.env, input.sourceId, input.userId))) {
+		return { subscriptionId: null, skipped: true }
+	}
 
 	const namespace = getArtifactsNamespace(input.env)
 	const name = buildPushSubscriptionName({ namespace, repoName })
@@ -449,6 +424,14 @@ async function ensureArtifactsRepoPushSubscriptionUnsafe(input: {
 		queueId,
 		events,
 	})
+	if (!(await sourceStillOwned(input.env, input.sourceId, input.userId))) {
+		await deleteArtifactsRepoPushSubscription({
+			env: input.env,
+			subscriptionId,
+			repoName,
+		}).catch(() => {})
+		return { subscriptionId: null, skipped: true }
+	}
 
 	const now = new Date().toISOString()
 	await upsertArtifactsPushSubscription(input.env.APP_DB, {
@@ -460,6 +443,11 @@ async function ensureArtifactsRepoPushSubscriptionUnsafe(input: {
 		updated_at: now,
 	})
 	return { subscriptionId, skipped: false }
+}
+
+async function sourceStillOwned(env: Env, sourceId: string, userId: string) {
+	const source = await getEntitySourceById(env.APP_DB, sourceId)
+	return source != null && source.user_id === userId
 }
 
 export async function deleteArtifactsRepoPushSubscription(input: {
