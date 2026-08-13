@@ -12,8 +12,8 @@ description:
 
 Produce a high-altitude, visual review aid directly in the PR description. No
 deployment, no third-party service: GitHub renders the block (including mermaid
-diagrams), and the PR itself is the storage. A future viewer app can ingest the
-same marker-delimited block via the GitHub API, so follow the format exactly.
+diagrams), and the PR itself is the storage. The marker-delimited block is
+machine-readable via the GitHub API, so follow the format exactly.
 
 The recap is informational and non-blocking. It supplements the PR description
 and normal code review; it never replaces reading the diff.

@@ -12,7 +12,7 @@
 		"crons": ["* * * * *"],
 	},
 	// Deliberately independent from the main worker: the status page must stay
-	// up when heykody.dev deploys break or the app D1 database is down, so it
+	// up when main-app deploys break or the app D1 database is down, so it
 	// has its own domain and its own Durable Object storage.
 	"routes": [
 		{

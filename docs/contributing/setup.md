@@ -20,12 +20,14 @@ Quick notes for getting a local kody environment running.
 - **Production and preview deploys**: GitHub Actions do not rely on IDs baked
   into the repo. They run `node tools/ci/production-resources.ts ensure`
   (production) or `node tools/ci/preview-resources.ts ensure` (per-preview
-  worker name), which create or resolve the D1 database and OAuth KV namespace,
-  then write generated Wrangler configs with real `database_id` and KV `id`
-  values: `packages/worker/wrangler-production.generated.json` and
-  `packages/worker/wrangler-preview.generated.json` (gitignored). KV titles
-  follow the worker name: production defaults to `<worker-name>-oauth`; preview
-  uses `<preview-worker-name>-oauth-kv` (see `tools/ci/preview-resources.ts`).
+  worker name), which create or resolve app/audit D1 databases and the OAuth KV
+  namespace, then write generated Wrangler configs with real `database_id` and
+  KV `id` values: `packages/worker/wrangler-production.generated.json` and
+  `packages/worker/wrangler-preview.generated.json` (gitignored). Preview and
+  production also ensure sibling runtime/jobs worker configs and `JOBS_DB`. KV
+  titles follow the worker name: production defaults to `<worker-name>-oauth`;
+  preview uses `<preview-worker-name>-oauth-kv` (see
+  `tools/ci/preview-resources.ts`).
 - **Exporting from an existing remote D1**: export the remote database to a
   local SQLite file with `tools/export-d1-remote-to-sqlite.sh`, then copy only
   the tables you need into the local Kody database.
@@ -213,11 +215,15 @@ For preview environments, we do a full resource reset:
 
 1. Delete preview resources:
    - `node tools/ci/preview-resources.ts cleanup --worker-name <preview-worker-name>`
-2. Recreate preview resources and config:
+2. Recreate preview app resources and config:
    - `node tools/ci/preview-resources.ts ensure --worker-name <preview-worker-name> --out-config packages/worker/wrangler-preview.generated.json`
-3. Re-apply remote migrations:
+3. Recreate preview jobs-worker resources and config:
+   - `node tools/ci/jobs-worker-resources.ts ensure --env preview --worker-name <preview-worker-name>-jobs --host-worker-name <preview-worker-name> --out-config packages/jobs-worker/wrangler-preview.generated.json`
+4. Re-apply remote migrations:
    - `CLOUDFLARE_ENV=preview node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config packages/worker/wrangler-preview.generated.json`
-4. Seed test account:
+   - `CLOUDFLARE_ENV=preview node ./wrangler-env.ts d1 migrations apply AUDIT_DB --remote --config packages/worker/wrangler-preview.generated.json`
+   - `CLOUDFLARE_ENV=preview node ./wrangler-env.ts d1 migrations apply JOBS_DB --remote --config packages/jobs-worker/wrangler-preview.generated.json`
+5. Seed test account:
    - `CLOUDFLARE_ENV=preview node tools/seed-test-data.ts --remote --config packages/worker/wrangler-preview.generated.json`
 
 ## PR preview deployments
@@ -225,11 +231,18 @@ For preview environments, we do a full resource reset:
 The GitHub Actions preview workflow creates per-preview Cloudflare resources so
 each PR preview is isolated:
 
-- D1 database: `<preview-worker-name>-db`
+- App worker: `<preview-worker-name>` (for kody: `kody-pr-<n>`)
+- Runtime worker: `<preview-worker-name>-runtime`
+- Jobs worker: `<preview-worker-name>-jobs`
+- App D1 database: `<preview-worker-name>-db`
+- Audit D1 database: `<preview-worker-name>-audit-db`
+- Jobs D1 database: ensured by `jobs-worker-resources.ts` for
+  `<preview-worker-name>-jobs`
 - KV namespace (OAuth state): `<preview-worker-name>-oauth-kv`
+- Mock workers: `<preview-worker-name>-mock-<service>`
 
-When a PR is closed, the cleanup job deletes the preview Worker(s), mock
-Workers, and these resources as well.
+When a PR is closed, the cleanup job deletes the preview app/runtime/jobs
+Workers, mock Workers, and these resources as well.
 
 Cloudflare Workers supports version `preview_urls`, but those preview URLs are
 not available for Workers that use Durable Objects. The main app Worker binds

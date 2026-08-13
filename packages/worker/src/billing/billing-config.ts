@@ -21,10 +21,9 @@ const activeSubscriptionStatuses = new Set(['active', 'trialing'])
 
 /**
  * Retired production monthly prices that still have live subscribers.
- * Checkout now uses the $12 / $29 monthly prices; these ids stay in Stripe
- * and must keep resolving to standard/pro so existing subscriptions do not
- * drop to free. Standard $5 (`price_1Tv3W2…`) has one customer through
- * 2026-09-08.
+ * Checkout uses the $12 / $29 monthly prices; these ids stay in Stripe and
+ * must resolve to standard/pro so existing subscriptions do not drop to free.
+ * Standard $5 (`price_1Tv3W2…`) has one customer through 2026-09-08.
  */
 const retiredStandardPriceIds = ['price_1Tv3W2LAQpAnsYszSr4PGBkE'] as const
 const retiredProPriceIds = ['price_1U1AISLAQpAnsYszIQvRJNhl'] as const

@@ -445,25 +445,23 @@
 				// preview and tests, which keep serving package apps inline on
 				// the app origin.
 				//
-				// The deploy attaches this host to the Worker as a Workers
-				// custom domain: tools/ci/resource-utils.ts derives a
-				// `custom_domain` route from this var when it generates the
-				// deploy config, which provisions DNS and the edge certificate.
-				// The route deliberately does not live here, because Wrangler
-				// resolves *local dev* request URLs against the first configured
-				// route — every `npm run dev` request would arrive as
-				// https://kodyapps.dev/... and send local logins to the real
+				// Production deploy publishes apex and wildcard zone routes for
+				// this host on the runtime Worker (never a custom domain in the
+				// package-app zone); DNS placeholder records are ensured
+				// separately. The routes deliberately do not live here, because
+				// Wrangler resolves *local dev* request URLs against the first
+				// configured route — every `npm run dev` request would arrive
+				// as https://kodyapps.dev/... and send local logins to the real
 				// domain. See docs/contributing/setup-manifest.md.
 				"PACKAGE_APP_BASE_URL": "https://kodyapps.dev",
 				// Email domains are committed (not just GitHub Actions vars) so
 				// they can never silently rederive from APP_BASE_URL. Canonical
-				// email lives on kody.codes; the LEGACY_* lists keep inbound
-				// mail to the previous heykody.app and heykody.dev addresses
-				// resolving to the same inboxes during the migration window
-				// (through end of August 2026), after which they can be
-				// emptied. Outbound always sends from the canonical domains,
-				// which requires Email Routing + Email Sending verification on
-				// the kody.codes zone before this deploys.
+				// email lives on kody.codes; the LEGACY_* lists also accept
+				// inbound mail for heykody.app / heykody.dev addresses on the
+				// same inboxes. Empty those lists when retiring the old
+				// domains' email DNS. Outbound always sends from the canonical
+				// domains, which requires Email Routing + Email Sending
+				// verification on the kody.codes zone.
 				"USER_EMAIL_DOMAIN": "inbox.kody.codes",
 				"SYSTEM_EMAIL_DOMAIN": "kody.codes",
 				"LEGACY_USER_EMAIL_DOMAINS": "inbox.heykody.app,inbox.heykody.dev",

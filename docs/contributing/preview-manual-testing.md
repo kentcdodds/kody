@@ -53,10 +53,11 @@ the session cookie and drive those APIs yourself. Then do a UI pass.
 
 ## When a preview exists
 
-Ready-for-review PRs on this repository (not forks, not drafts) get a per-PR
-Cloudflare worker (`kody-pr-<n>`), isolated D1/KV, mock workers, and a seeded
-login. The workflow comments the URL on the PR. Details of resource names and
-cleanup live in [`setup.md`](./setup.md#pr-preview-deployments).
+Ready-for-review PRs on this repository (not forks, not drafts) get a per-PR app
+worker (`kody-pr-<n>`), sibling runtime and jobs workers, isolated
+app/audit/jobs D1 resources, KV, mock workers, and a seeded login. The workflow
+comments the URL on the PR. Details of resource names and cleanup live in
+[`setup.md`](./setup.md#pr-preview-deployments).
 
 `/health` `commitSha` is GitHub's `github.sha` for that workflow run. On
 `pull_request` events that is the merge commit, not the branch tip, so it can

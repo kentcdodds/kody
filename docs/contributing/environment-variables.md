@@ -92,13 +92,12 @@ Wrangler `vars` (public and non-secret; see
   deploy). Unset for local dev and set to the ephemeral worker URL for previews.
   The deploy derives a Workers `custom_domain` route from it, and
   `getCanonicalAppBaseUrl` uses it for canonical/OG URLs in SSR HTML.
-- `APP_LEGACY_HOSTS` — optional comma-separated legacy app hostnames (for
-  example `heykody.dev`) kept attached to the Worker during a domain migration.
-  The generated deploy `routes` list **replaces** the Worker's entire
-  custom-domain set, so when `APP_BASE_URL` moves to a new domain the previous
-  host must be listed here — otherwise the first deploy after the flip detaches
-  the old origin and deletes its DNS record. Set as a GitHub Actions repository
-  variable.
+- `APP_LEGACY_HOSTS` — optional comma-separated additional app hostnames (for
+  example `heykody.dev`) that remain attached and dual-served alongside
+  `APP_BASE_URL`. The generated deploy `routes` list **replaces** the Worker's
+  entire custom-domain set, so every dual-served host must be listed here —
+  otherwise the next deploy detaches omitted origins and deletes their DNS
+  records. Set as a GitHub Actions repository variable.
 - `APP_LEGACY_REDIRECT` — exact string `true` enables path-and-query-preserving
   `308` redirects from legacy hosts to the canonical origin for browser GET/HEAD
   navigation only. Protocol surfaces are never redirected: `/mcp` (clients POST
@@ -302,13 +301,12 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   the `APP_BASE_URL` hostname. Production commits
   `SYSTEM_EMAIL_DOMAIN=kody.codes`.
 - `LEGACY_USER_EMAIL_DOMAINS` / `LEGACY_SYSTEM_EMAIL_DOMAINS` — optional
-  comma-separated previous email domains that inbound mail is still accepted on
-  during a domain migration (see
+  comma-separated additional email domains that inbound mail is accepted on
+  alongside the canonical domains (see
   `packages/worker/src/email/platform-address.ts`). Delivery resolves to the
   same inboxes; outbound always sends from the canonical domains. Production
-  commits `inbox.heykody.app,inbox.heykody.dev` / `heykody.app,heykody.dev` for
-  the kody.codes migration window (through end of August 2026), after which the
-  lists can be emptied and the old domains' email DNS retired.
+  commits `inbox.heykody.app,inbox.heykody.dev` / `heykody.app,heykody.dev`.
+  Empty the lists when retiring the old domains' email DNS.
 - `ARTIFACTS_NAMESPACE` — Cloudflare Artifacts namespace for repo REST calls.
   Defaults to `default` when unset (local dev and tests). Wrangler sets
   `production` and `preview` per environment in

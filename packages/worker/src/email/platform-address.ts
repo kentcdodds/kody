@@ -18,10 +18,9 @@ const bareHostnamePattern = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
  * separate from the user subdomain.
  *
  * The override decouples email from the web origin so the two can move
- * independently: production pins the committed value and inbound
- * additionally accepts `LEGACY_SYSTEM_EMAIL_DOMAINS` during a domain
- * migration, so mail addressed to the previous domain keeps arriving while
- * outbound already sends from the canonical one.
+ * independently: production pins the committed value, inbound also accepts
+ * `LEGACY_SYSTEM_EMAIL_DOMAINS`, and outbound always sends from the
+ * canonical domain.
  */
 export function getSystemEmailDomain(env: {
 	APP_BASE_URL?: string | null
@@ -96,9 +95,8 @@ function parseEmailDomainList(configured: string | null | undefined) {
 
 /**
  * Every domain inbound user mail is accepted on: the canonical platform
- * domain first, then `LEGACY_USER_EMAIL_DOMAINS` (comma-separated). During
- * a domain migration mail sent to `{username}@<old domain>` keeps resolving
- * to the same user inbox until the legacy list is emptied.
+ * domain first, then `LEGACY_USER_EMAIL_DOMAINS` (comma-separated). Mail to
+ * any listed domain resolves to the same user inbox.
  */
 export function getAcceptedUserEmailDomains(env: {
 	APP_BASE_URL?: string | null
@@ -115,9 +113,9 @@ export function getAcceptedUserEmailDomains(env: {
 
 /**
  * Every domain inbound system mail is accepted on: the canonical system
- * domain first, then `LEGACY_SYSTEM_EMAIL_DOMAINS` (comma-separated), so
- * operator inboxes (`kody@`, `support@`, ...) keep receiving on the old
- * apex during a domain migration.
+ * domain first, then `LEGACY_SYSTEM_EMAIL_DOMAINS` (comma-separated).
+ * Operator inboxes (`kody@`, `support@`, ...) accept mail on every listed
+ * apex.
  */
 export function getAcceptedSystemEmailDomains(env: {
 	APP_BASE_URL?: string | null

@@ -25,7 +25,7 @@ This file is intentionally brief. Detailed instructions live in focused docs:
 - Code style conventions:
   - [docs/contributing/code-style.md](./docs/contributing/code-style.md)
 - Enforced app / MCP / worker / universal import layering:
-- [docs/contributing/import-boundaries.md](./docs/contributing/import-boundaries.md)
+  [docs/contributing/import-boundaries.md](./docs/contributing/import-boundaries.md)
 - Testing guidance:
   - [docs/contributing/testing-principles.md](./docs/contributing/testing-principles.md)
   - [docs/contributing/end-to-end-testing.md](./docs/contributing/end-to-end-testing.md)

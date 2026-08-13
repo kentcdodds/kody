@@ -141,11 +141,10 @@ This project uses the following resources:
     alongside the package-app apex and wildcard zone route, and fails the deploy
     when `PACKAGE_APP_BASE_URL` is set without `APP_BASE_URL` rather than
     publishing a partial set. Any domain attached out-of-band must be added here
-    before the next deploy, or that deploy will remove it. During a domain
-    migration the previous app host must therefore be listed in the
-    `APP_LEGACY_HOSTS` repository variable (comma-separated bare hostnames, e.g.
-    `heykody.dev`) before `APP_BASE_URL` flips to the new domain, so the old
-    origin stays attached and dual-served.
+    before the next deploy, or that deploy will remove it. List every
+    dual-served legacy app host in the `APP_LEGACY_HOSTS` repository variable
+    (comma-separated bare hostnames, e.g. `heykody.dev`) so generated routes
+    keep those origins attached.
   - Publishing routes also flips `workers_dev` to `false`, which silently drops
     the `<name>.<subdomain>.workers.dev` trigger (Cloudflare then answers that
     hostname with error 1042). The generator sets `workers_dev: true` alongside
@@ -525,16 +524,15 @@ How to get/set each value:
   - Production also commits `USER_EMAIL_DOMAIN=inbox.kody.codes` (and
     `SYSTEM_EMAIL_DOMAIN=kody.codes`) in `packages/worker/wrangler.jsonc` so the
     email domains can never silently rederive from `APP_BASE_URL`; the deploy
-    tooling reads the same committed pin. During the migration window (through
-    end of August 2026) the committed
+    tooling reads the same committed pin. The committed
     `LEGACY_USER_EMAIL_DOMAINS=inbox.heykody.app,inbox.heykody.dev` and
-    `LEGACY_SYSTEM_EMAIL_DOMAINS=heykody.app,heykody.dev` keep inbound mail to
-    the old addresses resolving to the same inboxes; empty the lists (and retire
-    the old domains' email DNS) after the window ends.
+    `LEGACY_SYSTEM_EMAIL_DOMAINS=heykody.app,heykody.dev` accept inbound mail to
+    those addresses on the same inboxes; empty the lists when retiring the old
+    domains' email DNS.
 - `APP_LEGACY_HOSTS` / `APP_LEGACY_REDIRECT` (optional GitHub Actions
-  **variables** for domain migrations; see
+  **variables** for dual-served app hosts; see
   [environment-variables.md](./environment-variables.md#app-origin-and-domain-migration)).
-  - `APP_LEGACY_HOSTS` lists previous app hostnames (comma-separated, e.g.
+  - `APP_LEGACY_HOSTS` lists additional app hostnames (comma-separated, e.g.
     `heykody.dev`) that stay attached to the Worker as custom domains and are
     dual-served.
   - `APP_LEGACY_REDIRECT=true` enables 308 redirects for browser GET/HEAD
@@ -575,7 +573,8 @@ How to get/set each value:
     vectors. Local and preview environments can omit it; CI skips reindex and
     execute-smoke when the secret is unset.
 
-Preview deploys for pull requests create a separate Worker per PR named
-`<app-name>-pr-<number>` (for kody: `kody-pr-123`) plus one Worker per mock
-service named `<app-name>-pr-<number>-mock-<service>`. The same
-`CLOUDFLARE_API_TOKEN` must be able to create/update and delete those Workers.
+Preview deploys for pull requests create an app Worker per PR named
+`<app-name>-pr-<number>` (for kody: `kody-pr-123`), sibling runtime and jobs
+Workers (`…-runtime`, `…-jobs`), plus one Worker per mock service named
+`<app-name>-pr-<number>-mock-<service>`. The same `CLOUDFLARE_API_TOKEN` must be
+able to create/update and delete those Workers.
