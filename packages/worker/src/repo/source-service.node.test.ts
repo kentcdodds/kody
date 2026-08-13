@@ -227,6 +227,17 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 		await mocks.waitUntil.mock.calls[0]?.[0]
 	} finally {
 		newJobFetchMock.mockRestore()
+		// Restore settled defaults before later phases so hanging push-subscription
+		// promises and a no-op waitUntil do not leak across the merged workflow.
+		mocks.ensureArtifactsRepoPushSubscription.mockReset()
+		mocks.ensureArtifactsRepoPushSubscription.mockResolvedValue({
+			subscriptionId: null,
+			skipped: true,
+		})
+		mocks.waitUntil.mockReset()
+		mocks.waitUntil.mockImplementation((promise: Promise<unknown>) => {
+			void promise
+		})
 	}
 
 	const existingRow = createEntitySourceRow()
@@ -367,14 +378,5 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 		expect(mocks.waitUntil).toHaveBeenCalledTimes(1)
 	} finally {
 		reuseFetchMock.mockRestore()
-		mocks.ensureArtifactsRepoPushSubscription.mockReset()
-		mocks.ensureArtifactsRepoPushSubscription.mockResolvedValue({
-			subscriptionId: null,
-			skipped: true,
-		})
-		mocks.waitUntil.mockReset()
-		mocks.waitUntil.mockImplementation((promise: Promise<unknown>) => {
-			void promise
-		})
 	}
 })
