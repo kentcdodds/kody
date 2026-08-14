@@ -66,6 +66,38 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 	expect(detailBody.startsWith('#')).toBe(true)
 	expect(detailBody).not.toContain('\nid: oauth\n')
 
+	const googleOauthMd = await callHandler(
+		createGuideDetailMarkdownHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/google-oauth.md'),
+			params: { slug: 'google-oauth' },
+		},
+	)
+	expect(googleOauthMd.status).toBe(200)
+	const googleOauthBody = await googleOauthMd.text()
+	expect(googleOauthBody).toContain('# Google OAuth interactive guide')
+	expect(googleOauthBody).toContain('gmail.readonly')
+
+	const googleOauthApi = await callHandler(
+		createGuideDetailApiHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/google-oauth.json'),
+			params: { slug: 'google-oauth' },
+		},
+	)
+	expect(googleOauthApi.status).toBe(200)
+	const googleOauthPayload = (await googleOauthApi.json()) as {
+		ok: boolean
+		slug: string
+		id: string
+		title: string
+	}
+	expect(googleOauthPayload).toMatchObject({
+		ok: true,
+		slug: 'google-oauth',
+		id: 'google_oauth',
+	})
+
 	const missing = await callHandler(
 		createGuideDetailMarkdownHandler(env) as never,
 		{
