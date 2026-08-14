@@ -87,10 +87,10 @@ const codingGuideSearchMarkdown = `# Search results
 
 For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
 
-1. **capability** \`coding_guide_get\` (\`coding\`) — Load an official Kody guide (markdown, bundled from the kody repository). Prefer this capability plus \`search\` results over local repo spelunking when Kody auth or integration behavior is already documented. Entity: \`coding_guide_get:capability\`
+1. `capability` \`coding_guide_get\` (\`coding\`) — Load an official Kody guide (markdown, bundled from the kody repository). Prefer this capability plus \`search\` results over local repo spelunking when Kody auth or integration behavior is already documented. Entity: \`coding_guide_get:capability\`
    \`kody.coding_guide_get(args)\` — \`type CodingGuideGetInput = { guide: "integration_bootstrap" | "oauth" | "provider_google" | ... }\`; use entity detail for the full definition
-2. **guide** Connect Google (Gmail, Calendar, Drive) — Built-in Calendar scopes vs bring-your-own OAuth for inbox reading. Entity: \`provider_google:guide\`
-3. **guide** OAuth guide (standard path) — Hosted \`/connect/oauth\`, redirect URI, PKCE vs confidential. Entity: \`oauth:guide\``
+2. `guide` Connect Google (Gmail, Calendar, Drive) — Built-in Calendar scopes vs bring-your-own OAuth for inbox reading. Entity: \`provider_google:guide\`
+3. `guide` OAuth guide (standard path) — Hosted \`/connect/oauth\`, redirect URI, PKCE vs confidential. Entity: \`oauth:guide\``
 
 const codingGuideDetailMarkdown = `# Capability — \`coding_guide_get\`
 
@@ -192,7 +192,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 							value: {
 								bootstrap: {
 									title: 'Integration bootstrap guide',
-									body: '# Integration bootstrap guide\n\n**Read this guide first** when a user wants a package, package app, or workflow that depends on a third-party integration.\n\n## Core rule\n\nDo **not** save or present an auth-dependent package as complete until a minimal authenticated smoke test succeeds.\n\n…',
+									body: '# Integration bootstrap guide\n\nRead this guide first when a user wants a package, package app, or workflow that depends on a third-party integration.\n\n## Core rule\n\nDo not save or present an auth-dependent package as complete until a minimal authenticated smoke test succeeds.\n\n…',
 								},
 								oauth: {
 									title: 'OAuth guide (standard path)',
@@ -200,7 +200,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 								},
 								google: {
 									title: 'Connect Google (Gmail, Calendar, Drive)',
-									body: '# Connect Google (Gmail, Calendar, Drive)\n\nPrefer the **built-in** Google integration when its scope menu covers the task. Bring your own Google OAuth client when you need access outside that menu — especially inbox reading.\n\n## Lane A: built-in Google (default)\n\n…\n\n## Lane B: bring-your-own OAuth client\n\n…',
+									body: '# Connect Google (Gmail, Calendar, Drive)\n\nPrefer the built-in Google integration when its scope menu covers the task. Bring your own Google OAuth client when you need access outside that menu — especially inbox reading.\n\n## Lane A: built-in Google (default)\n\n…\n\n## Lane B: bring-your-own OAuth client\n\n…',
 								},
 							},
 						}),
@@ -214,7 +214,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 			},
 			{
 				role: 'agent',
-				text: 'Reading your Gmail inbox needs a Google Cloud OAuth client you own — the built-in Google connect only covers scopes like Calendar and send-only Gmail, not inbox reading. I will walk you through the console one step at a time. Open [console.cloud.google.com](https://console.cloud.google.com) and create a new project (or select one you already use). Reply when that is done.',
+				text: 'Reading your Gmail inbox needs a Google Cloud OAuth client you own — the built-in Google connect only covers scopes like Calendar and send-only Gmail, not inbox reading. I will walk you through the console one step at a time. Open https://console.cloud.google.com and create a new project (or select one you already use). Reply when that is done.',
 			},
 		],
 	},
@@ -229,7 +229,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 			},
 			{
 				role: 'agent',
-				text: 'In **APIs & Services → Library**, enable **Gmail API** for that project. Skip Calendar and Drive unless you need them for this task. Reply when Gmail API shows as enabled.',
+				text: 'In `APIs & Services → Library`, enable `Gmail API` for that project. Skip Calendar and Drive unless you need them for this task. Reply when Gmail API shows as enabled.',
 			},
 			{
 				role: 'user',
@@ -237,7 +237,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 			},
 			{
 				role: 'agent',
-				text: 'Open **APIs & Services → Google Auth Platform** and click **Get started**. Fill in **Branding** (app name and support email), set **Audience** to **External**, and add your contact email. Reply when the wizard finishes.',
+				text: 'Open `APIs & Services → Google Auth Platform` and click `Get started`. Fill in `Branding` (app name and support email), set `Audience` to `External`, and add your contact email. Reply when the wizard finishes.',
 			},
 			{
 				role: 'user',
@@ -245,7 +245,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 			},
 			{
 				role: 'agent',
-				text: 'On the **Clients** tab, click **Create Client**, choose application type **Web application**, and add this redirect URI exactly: `https://kody.codes/connect/oauth`. Copy the client ID and client secret when Google shows them — you will paste those into Kody later, not here.',
+				text: 'On the `Clients` tab, click `Create Client`, choose application type `Web application`, and add this redirect URI exactly: `https://kody.codes/connect/oauth`. Copy the client ID and client secret when Google shows them — you will paste those into Kody later, not here.',
 			},
 			{
 				role: 'user',
@@ -261,7 +261,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 			},
 			{
 				role: 'agent',
-				text: `On the **Data Access** tab, add this scope: \`${gmailReadonlyScope}\`. That is the inbox-read scope this invoice task needs.`,
+				text: `On the `Data Access` tab, add this scope: \`${gmailReadonlyScope}\`. That is the inbox-read scope this invoice task needs.`,
 			},
 			{
 				role: 'user',
@@ -269,7 +269,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 			},
 			{
 				role: 'agent',
-				text: 'While publishing status is **Testing**, open the **Audience** tab and add your own Google account as a test user. Reply when you are listed.',
+				text: 'While publishing status is `Testing`, open the `Audience` tab and add your own Google account as a test user. Reply when you are listed.',
 			},
 			{
 				role: 'user',
@@ -277,7 +277,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 			},
 			{
 				role: 'agent',
-				text: 'Almost — but stay on **Testing** and refresh tokens expire after seven days. Everything looks fine during setup, then the integration dies a week later with `invalid_grant` on refresh. On the **Audience** page, click **Publish app** to move to **Production**. Google shows an “unverified app” warning on consent; for a personal app that is expected — click Advanced, then continue to your app when you authorize. Reply when status is Production.',
+				text: 'Almost — but stay on `Testing` and refresh tokens expire after seven days. Everything looks fine during setup, then the integration dies a week later with `invalid_grant` on refresh. On the `Audience` page, click `Publish app` to move to `Production`. Google shows an “unverified app” warning on consent; for a personal app that is expected — click Advanced, then continue to your app when you authorize. Reply when status is Production.',
 			},
 			{
 				role: 'user',
