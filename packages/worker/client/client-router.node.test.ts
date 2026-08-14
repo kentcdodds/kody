@@ -141,6 +141,13 @@ test('same-origin hash links are intercepted so scroll restoration can reach the
 				name === 'href' ? 'https://example.com/#invite' : null,
 		} as unknown as HTMLAnchorElement
 		expect(shouldRouterHandleClick(click, externalAnchor)).toBe(false)
+
+		const remixFrameAnchor = {
+			target: '',
+			hasAttribute: (name: string) => name === 'rmx-target',
+			getAttribute: (name: string) => (name === 'href' ? '/community' : null),
+		} as unknown as HTMLAnchorElement
+		expect(shouldRouterHandleClick(click, remixFrameAnchor)).toBe(false)
 	} finally {
 		globalThis.window = previousWindow
 	}

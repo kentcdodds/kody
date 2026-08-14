@@ -91,6 +91,8 @@ export function CommunityRoute(handle: Handle) {
 							role="search"
 							method="get"
 							action={routes.community.href()}
+							rmx-target={COMMUNITY_LISTINGS_TARGET}
+							rmx-history="push"
 							mix={css(searchPillCss)}
 						>
 							<label htmlFor="pkg-q" mix={css(visuallyHiddenCss)}>

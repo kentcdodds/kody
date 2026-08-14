@@ -259,6 +259,19 @@ export function matchRoute(
 }
 
 /**
+ * Remix frame navigation attributes. The client router must not preventDefault
+ * these so the Navigation API can reload a named frame or force a document
+ * submit.
+ */
+export function hasRemixFrameNavigationAttribute(element: Element) {
+	return (
+		element.hasAttribute('rmx-target') ||
+		element.hasAttribute('rmx-src') ||
+		element.hasAttribute('rmx-document')
+	)
+}
+
+/**
  * True when the router will intercept this anchor click and run an SPA
  * navigation (plain left-click on a same-origin, non-download, self-target
  * link). Components that reset local state before an in-page navigation use
@@ -275,6 +288,7 @@ export function shouldRouterHandleClick(
 		return false
 	if (anchor.target && anchor.target !== '_self') return false
 	if (anchor.hasAttribute('download')) return false
+	if (hasRemixFrameNavigationAttribute(anchor)) return false
 
 	const href = anchor.getAttribute('href')
 	if (!href) return false
@@ -822,8 +836,10 @@ function handleDocumentSubmit(event: Event) {
 	if (event.defaultPrevented) return
 	if (!(event.target instanceof HTMLFormElement)) return
 	if (event.target.hasAttribute('data-router-skip')) return
+	if (hasRemixFrameNavigationAttribute(event.target)) return
 
 	const submitter = getFormSubmitter(event)
+	if (submitter && hasRemixFrameNavigationAttribute(submitter)) return
 	const details = resolveFormSubmitDetails(event.target, submitter)
 	if (!details) return
 

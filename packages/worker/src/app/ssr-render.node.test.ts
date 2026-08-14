@@ -274,6 +274,8 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(communityResponse.headers.get('Content-Type')).toContain('text/html')
 	const communityHtml = await readResponseText(communityResponse)
 	expect(communityHtml).toContain('data-testid="community-listings-frame"')
+	expect(communityHtml).toContain('rmx-target="community-listings"')
+	expect(communityHtml).toContain('rmx-history="push"')
 	expect(communityHtml).toContain('<!-- rmx:h:')
 	const communityProps = readAppRootProps(communityHtml)
 	expect(communityProps.loaderData?.community).toBeUndefined()

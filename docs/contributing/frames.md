@@ -73,3 +73,15 @@ Example (`client/routes/community.tsx`):
 
 `COMMUNITY_LISTINGS_TARGET` lives in `community-frame-constants.ts` alongside
 the server-side `registerFrame` call in `frames/community-listings.ts`.
+
+## Progressive enhancement
+
+Ordinary same-origin clicks and submits stay on Kody's client router. Forms and
+anchors that opt into Remix frame navigation use `rmx-target`, `rmx-src`, or
+`rmx-document`. The client router leaves those alone so Remix can reload a named
+frame (or force a full document submit) through `resolveFrame`.
+
+The community search form is the first opted-in surface: it is a GET form to
+`routes.community` with `rmx-target={COMMUNITY_LISTINGS_TARGET}` and
+`rmx-history="push"`. Login, billing, OAuth, and passkey forms stay on the
+client router.
