@@ -1,43 +1,19 @@
-export type TranscriptInput = {
-	name: string
-	kind: 'query' | 'code' | 'memory'
-	lang?: string
-	value: string
-}
+import {
+	conversationIdInput,
+	executeTextReturn,
+	jsonInput,
+	memoryContextInput,
+	searchTextReturn,
+	type TranscriptAct,
+} from './interactive-guide-transcript.ts'
 
-export type TranscriptTool = {
-	name: string
-	summary: string
-	note: string
-	inputs: Array<TranscriptInput>
-	resultLang?: string
-	result: string
-}
-
-export type TranscriptFile = {
-	path: string
-	summary: string
-	lang?: string
-	content: string
-}
-
-export type TranscriptLine =
-	| { role: 'user'; text: string }
-	| { role: 'agent'; text: string; tone?: 'reasoning' }
-	| { role: 'tools'; tools: Array<TranscriptTool> }
-	| {
-			role: 'files'
-			summary: string
-			note: string
-			files: Array<TranscriptFile>
-	  }
-
-export type TranscriptAct = {
-	id: string
-	kicker: string
-	title: string
-	lines: Array<TranscriptLine>
-}
+export type {
+	TranscriptAct,
+	TranscriptFile,
+	TranscriptInput,
+	TranscriptLine,
+	TranscriptTool,
+} from './interactive-guide-transcript.ts'
 
 const whatShippedSource = `import { packageStorage } from 'kody:runtime'
 
@@ -323,9 +299,6 @@ function publishReturn(input: {
 	}
 }
 
-function jsonInput(value: unknown) {
-	return JSON.stringify(value, null, 2)
-}
 
 const askMemoryContext = {
 	task: 'What did my favorite bot ship recently on GitHub?',
@@ -348,16 +321,6 @@ const watchLoginMemory = {
 		"kody-bot is my favorite bot. I'm really interested in what it ships on github",
 }
 
-function memoryContextInput(
-	context: { task: string; entities: Array<string> } = askMemoryContext,
-) {
-	return {
-		name: 'memoryContext',
-		kind: 'memory' as const,
-		lang: 'json',
-		value: jsonInput(context),
-	}
-}
 
 const askConversationId = '3k7n2p9q4r8w'
 const phoneConversationId = '5h8m2q7t1v4x'
@@ -474,59 +437,10 @@ function repoSessionPublishReturn(publishedCommit: string) {
 	}
 }
 
-function conversationIdInput(conversationId: string) {
-	return {
-		name: 'conversationId',
-		kind: 'query' as const,
-		lang: 'json',
-		value: jsonInput(conversationId),
-	}
-}
 
-const conversationIdReturnNote =
-	'Tool conversation id; pass it back on subsequent search/execute calls.'
 
-function conversationIdReturn(conversationId: string) {
-	return `conversationId: ${conversationId}\n${conversationIdReturnNote}`
-}
 
-function relevantMemoriesMarkdown(
-	memories: Array<{ subject: string; summary: string }>,
-) {
-	return [
-		'## Relevant memories',
-		'',
-		...memories.map((memory) => `- **${memory.subject}** — ${memory.summary}`),
-	].join('\n')
-}
 
-function searchTextReturn(input: {
-	conversationId: string
-	body: string
-	memories?: Array<{ subject: string; summary: string }>
-}) {
-	const parts = [conversationIdReturn(input.conversationId), '', input.body]
-	if (input.memories && input.memories.length > 0) {
-		parts.push('', relevantMemoriesMarkdown(input.memories))
-	}
-	return parts.join('\n')
-}
-
-function executeTextReturn(input: {
-	conversationId: string
-	value: unknown
-	memories?: Array<{ subject: string; summary: string }>
-}) {
-	const parts = [
-		conversationIdReturn(input.conversationId),
-		'',
-		jsonInput(input.value),
-	]
-	if (input.memories && input.memories.length > 0) {
-		parts.push('', relevantMemoriesMarkdown(input.memories))
-	}
-	return parts.join('\n')
-}
 
 const githubSearchMarkdown = `# Search results
 
@@ -607,7 +521,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 								lang: 'json',
 								value: jsonInput('github user activity'),
 							},
-							memoryContextInput(),
+							memoryContextInput(askMemoryContext),
 						],
 						resultLang: 'md',
 						result: searchTextReturn({
@@ -639,7 +553,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 								value: fetchShipsCode,
 							},
 							conversationIdInput(askConversationId),
-							memoryContextInput(),
+							memoryContextInput(askMemoryContext),
 						],
 						resultLang: 'md',
 						result: executeTextReturn({
@@ -732,7 +646,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 								value: loadGuidesCode,
 							},
 							conversationIdInput(askConversationId),
-							memoryContextInput(),
+							memoryContextInput(askMemoryContext),
 						],
 						resultLang: 'md',
 						result: executeTextReturn({
@@ -771,7 +685,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 								value: getGitRemoteCreateCode,
 							},
 							conversationIdInput(askConversationId),
-							memoryContextInput(),
+							memoryContextInput(askMemoryContext),
 						],
 						resultLang: 'md',
 						result: executeTextReturn({
@@ -821,7 +735,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 								value: publishExternalPushCode,
 							},
 							conversationIdInput(askConversationId),
-							memoryContextInput(),
+							memoryContextInput(askMemoryContext),
 						],
 						resultLang: 'md',
 						result: executeTextReturn({

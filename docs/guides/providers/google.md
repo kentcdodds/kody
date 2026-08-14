@@ -18,6 +18,9 @@ Prefer the **built-in** Google integration when its scope menu covers the task
 and related allowed scopes). Bring your own Google OAuth client when you need
 access outside that menu — especially inbox reading or Drive-wide access.
 
+For a teaching walkthrough of Lane B (Gmail inbox reading) as an interactive
+agent transcript, see [google-oauth.md](../google-oauth.md).
+
 ## What you get
 
 Once connected, you can ask Kody things like:

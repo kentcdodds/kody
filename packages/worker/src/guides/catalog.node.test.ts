@@ -29,6 +29,8 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(getGuideById('connect_secret')?.slug).toBe('account-secret-setup')
 	expect(getGuideBySlug('how-kody-works')?.id).toBe('how_kody_works')
 	expect(getGuideById('how_kody_works')?.slug).toBe('how-kody-works')
+	expect(getGuideBySlug('google-oauth')?.id).toBe('google_oauth')
+	expect(getGuideById('google_oauth')?.slug).toBe('google-oauth')
 
 	// Web ordering: platform guides first, then provider guides sorted by
 	// provider name.

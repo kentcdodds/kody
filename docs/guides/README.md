@@ -17,6 +17,7 @@ content:
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | [what-is-kody.md](./what-is-kody.md)                                                     | Pre-account capability tour and discovery-interview notes; needs no account or MCP connection                                  |
 | [how-kody-works.md](./how-kody-works.md)                                                 | Factory loop as a conversation: ask what your favorite bot shipped, save an export, daily email only when something shipped    |
+| [google-oauth.md](./google-oauth.md)                                                     | Interactive transcript: agent walks a naive user through Lane B Google OAuth for Gmail inbox reading                           |
 | [quick-example.md](./quick-example.md)                                                   | **Start here** after a host authorizes: fork a zero-auth example, invoke the owned package, offer optional triggers            |
 | [first-win.md](./first-win.md)                                                           | Optional email → reply → memories loop (not the onboarding Step 2 climax)                                                      |
 | [package-authoring.md](./package-authoring.md)                                           | General package-authoring guidance, including the README Intent section                                                        |

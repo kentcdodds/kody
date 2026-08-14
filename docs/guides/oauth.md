@@ -17,6 +17,10 @@ similar providers).
 This guide covers the standard hosted OAuth path. Use it before building a
 package or package app that depends on the resulting integration or tokens.
 
+For a teaching walkthrough of Google Lane B (bring-your-own client for Gmail
+inbox reading) as an interactive agent transcript, see
+[google-oauth.md](./google-oauth.md).
+
 ## Default path: `/connect/oauth`
 
 Send the signed-in user to `https://kody.codes/connect/oauth` with query
