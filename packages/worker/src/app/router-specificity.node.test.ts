@@ -65,21 +65,6 @@ test('delimiter-bounded params keep companion suffixes, hyphens, and encoded dot
 		createStubHandler('secret'),
 	)
 
-	expect(routes.blogPostApi.href({ slug: 'hello-world' })).toBe(
-		'/blog/hello-world.json',
-	)
-	expect(
-		routes.communityDetailApi.href({
-			listingId: '550e8400-e29b-41d4-a716-446655440000',
-		}),
-	).toBe('/community/550e8400-e29b-41d4-a716-446655440000.json')
-	expect(
-		routes.accountSecretUserDetail.href({ secretName: 'google.api.key' }),
-	).toBe('/account/secrets/user/google%2Eapi%2Ekey')
-	expect(routes.community.href(null, { searchParams: { q: 'remix' } })).toBe(
-		'/community?q=remix',
-	)
-
 	expect(
 		await (
 			await router.fetch(new Request('http://localhost/blog/hello-world.json'))

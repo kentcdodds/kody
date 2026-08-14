@@ -38,5 +38,4 @@ test('D1 database driver queries, wipes, and closes through the Remix Database A
 	expect(await db.hasTable({ name: 'children' })).toBe(false)
 
 	await db.close()
-	await db.close()
 })

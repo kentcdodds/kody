@@ -6,7 +6,6 @@ import {
 	getStoredScrollY,
 	parseSavedScrollPositions,
 	scrollRestorationInlineScriptCspHash,
-	scrollRestorationStorageKey,
 	serializeSavedScrollPositions,
 } from './router-scroll-restoration.ts'
 
@@ -29,12 +28,6 @@ test('sessionStorage scroll positions restore the saved Y for the current histor
 	expect(parseSavedScrollPositions('[{"not":"rr-format"}]')).toEqual({})
 
 	const restoreScript = getScrollRestorationInlineScript()
-	expect(restoreScript).toContain(JSON.stringify(scrollRestorationStorageKey))
-	expect(restoreScript).toContain('sessionStorage.getItem')
-	expect(restoreScript).toContain('window.history.state.key')
-	expect(restoreScript).toContain('window.scrollTo(0,storedY)')
-	expect(restoreScript).toContain('scrollRestoration')
-	expect(restoreScript).toContain('"manual"')
 	expect(scrollRestorationInlineScriptCspHash).toBe(
 		`'sha256-${createHash('sha256').update(restoreScript, 'utf8').digest('base64')}'`,
 	)

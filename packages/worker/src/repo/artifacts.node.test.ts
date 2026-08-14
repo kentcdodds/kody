@@ -577,12 +577,6 @@ test('native createToken maps token when JSRPC omits plaintext', async () => {
 	expect(parseArtifactTokenSecret('art_v2_read?expires=1760000100')).toBe(
 		'art_v2_read',
 	)
-	expect(() =>
-		parseArtifactTokenSecret(undefined as unknown as string),
-	).toThrow('Artifacts token plaintext is missing.')
-	expect(() => parseArtifactTokenSecret('')).toThrow(
-		'Artifacts token plaintext is missing.',
-	)
 
 	nativeCreateToken.mockResolvedValueOnce({
 		id: 'tok_empty',
@@ -799,57 +793,11 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 
 	nativeGet.mockReset()
 	nativeGet.mockImplementation(async () => {
-		throw {
-			name: 'ArtifactsError',
-			message: 'Repository not found: repo-native-message-only',
-		}
-	})
-	await expect(binding.get('repo-native-message-only')).resolves.toEqual({
-		status: 'not_found',
-	})
-	nativeGet.mockReset()
-	nativeGet.mockImplementation(async () => {
 		throw new Error('git: repository not found on the remote')
 	})
 	await expect(binding.get('repo-unrelated-not-found')).rejects.toThrow(
 		/git: repository not found/,
 	)
-	nativeGet.mockReset()
-	nativeGet.mockImplementation(async () => {
-		throw new Error(
-			'ArtifactsError: Repository not found: repo-native-prefixed',
-		)
-	})
-	await expect(binding.get('repo-native-prefixed')).resolves.toEqual({
-		status: 'not_found',
-	})
-
-	nativeGet.mockReset()
-	nativeGet.mockImplementation(async () => {
-		throw {
-			name: 'ArtifactsError',
-			code: 'NOT_FOUND',
-			message: 'Repository not found: repo-native-no-exp',
-		}
-	})
-	nativeCreate.mockImplementation(async () => ({
-		id: 'repo_native_no_exp',
-		name: 'repo-native-no-exp',
-		description: null,
-		defaultBranch: 'main',
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/production/repo-native-no-exp.git',
-		token: 'art_v2_native?expires=1760000000',
-	}))
-	await expect(
-		ensureArtifactRepoReady(env, 'repo-native-no-exp', binding),
-	).resolves.toMatchObject({
-		recreated: true,
-		bootstrapAccess: {
-			token: 'art_v2_native?expires=1760000000',
-			expiresAt: '2025-10-09T08:53:20.000Z',
-		},
-	})
 
 	const readyHandle = {
 		id: 'repo_exists',

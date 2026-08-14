@@ -324,7 +324,7 @@ export declare function listEvents(calendarId: string): Promise<string[]>
 	)
 })
 
-test('getPackageCapability leaves export contracts empty when source files are missing', async () => {
+test('getPackageCapability leaves export contracts empty without projectable source', async () => {
 	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
 	mockModule.loadPackageSourceBySourceId.mockReset()
 	mockModule.getSavedPackageWithCommunityProvenanceById.mockResolvedValue({
@@ -365,12 +365,11 @@ test('getPackageCapability leaves export contracts empty when source files are m
 		files: undefined,
 	})
 
-	const result = await getPackageCapability.handler(
+	const missingFiles = await getPackageCapability.handler(
 		{ package_id: 'package-1' },
 		createCallerContext(),
 	)
-
-	expect(result.exports).toEqual([
+	expect(missingFiles.exports).toEqual([
 		expect.objectContaining({
 			subpath: './list-events',
 			runtime_target: 'src/list-events.ts',
@@ -379,11 +378,7 @@ test('getPackageCapability leaves export contracts empty when source files are m
 			type_definition: null,
 		}),
 	])
-})
 
-test('getPackageCapability leaves export contracts empty for untyped sources', async () => {
-	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
-	mockModule.loadPackageSourceBySourceId.mockReset()
 	mockModule.getSavedPackageWithCommunityProvenanceById.mockResolvedValue({
 		id: 'package-1',
 		userId: 'user-1',
@@ -420,12 +415,11 @@ test('getPackageCapability leaves export contracts empty for untyped sources', a
 		},
 	})
 
-	const result = await getPackageCapability.handler(
+	const untyped = await getPackageCapability.handler(
 		{ package_id: 'package-1' },
 		createCallerContext(),
 	)
-
-	expect(result.exports).toEqual([
+	expect(untyped.exports).toEqual([
 		expect.objectContaining({
 			subpath: '.',
 			runtime_target: 'src/index.ts',

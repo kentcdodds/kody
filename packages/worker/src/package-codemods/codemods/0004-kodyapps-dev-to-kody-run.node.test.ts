@@ -33,7 +33,7 @@ test('0004 rewrites apex and per-user subdomain origins and preserves boundaries
 	expect(again.changedPaths).toEqual([])
 })
 
-test('0004 never rewrites kody.codes, heykody hosts, emails, or lookalike hosts', () => {
+test('0004 skips non-rewritable hosts, lookalikes, and binary-ish paths', () => {
 	const boundaryFiles = {
 		'config.ts': [
 			"const site = 'https://kody.codes'",
@@ -47,41 +47,34 @@ test('0004 never rewrites kody.codes, heykody hosts, emails, or lookalike hosts'
 			"const legacyVar = 'PACKAGE_APP_LEGACY_HOSTS=kodyapps.dev'",
 			'',
 		].join('\n'),
-	}
-	const boundaryResult = kodyappsDevToKodyRunCodemod.transform(boundaryFiles)
-	expect(boundaryResult.changed).toBe(false)
-	expect(boundaryResult.files['config.ts']).toBe(boundaryFiles['config.ts'])
-	expect(boundaryResult.needsManual).toEqual([
-		{
-			path: 'config.ts',
-			message: expect.stringContaining('manually'),
-		},
-	])
-
-	const lookalikeFiles = {
 		'phish.ts': "const evil = 'https://kodyapps.dev.evil.example/app'\n",
-	}
-	const lookalikeResult = kodyappsDevToKodyRunCodemod.transform(lookalikeFiles)
-	expect(lookalikeResult.changed).toBe(false)
-	expect(lookalikeResult.files['phish.ts']).toBe(lookalikeFiles['phish.ts'])
-	expect(lookalikeResult.needsManual).toEqual([
-		{ path: 'phish.ts', message: expect.stringContaining('manually') },
-	])
-})
-
-test('0004 detect reports rewritable origins and skips binary-ish paths', () => {
-	const files = {
 		'index.ts': "export const url = 'https://bob.kodyapps.dev/packages/x'\n",
 		'logo.png': 'https://kodyapps.dev pretend-binary',
 	}
-	const findings = kodyappsDevToKodyRunCodemod.detect(files)
+	const boundaryResult = kodyappsDevToKodyRunCodemod.transform(boundaryFiles)
+	expect(boundaryResult.changed).toBe(true)
+	expect(boundaryResult.changedPaths).toEqual(['index.ts'])
+	expect(boundaryResult.files['config.ts']).toBe(boundaryFiles['config.ts'])
+	expect(boundaryResult.files['phish.ts']).toBe(boundaryFiles['phish.ts'])
+	expect(boundaryResult.files['logo.png']).toBe(boundaryFiles['logo.png'])
+	expect(boundaryResult.needsManual).toEqual(
+		expect.arrayContaining([
+			{
+				path: 'config.ts',
+				message: expect.stringContaining('manually'),
+			},
+			{
+				path: 'phish.ts',
+				message: expect.stringContaining('manually'),
+			},
+		]),
+	)
+
+	const findings = kodyappsDevToKodyRunCodemod.detect(boundaryFiles)
 	expect(findings).toEqual([
 		{
 			path: 'index.ts',
 			message: expect.stringContaining('rewrite to https://kody.run'),
 		},
 	])
-	const result = kodyappsDevToKodyRunCodemod.transform(files)
-	expect(result.changedPaths).toEqual(['index.ts'])
-	expect(result.files['logo.png']).toBe(files['logo.png'])
 })

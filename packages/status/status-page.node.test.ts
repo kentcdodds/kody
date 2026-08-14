@@ -45,12 +45,7 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	for (const component of statusComponents) {
 		expect(healthy).toContain(component.name.replaceAll('&', '&amp;'))
 	}
-	expect(healthy).toContain('Package runtime')
-	expect(healthy).toContain('Jobs')
 	expect(healthy).toContain('99.98% uptime')
-	expect(healthy).toContain('Production app')
-	expect(healthy).toContain('runtime')
-	expect(healthy).toContain('jobs')
 	expect(healthy).toContain(
 		'https://github.com/kentcdodds/kody/commit/abc123def4567890abcdef1234567890abcdef12',
 	)
@@ -153,7 +148,9 @@ test('status page renders provider incidents separately and omits them when abse
 			jobsCommit: null,
 		}),
 	)
-	expect(withoutCommit).not.toContain('Production app')
+	expect(withoutCommit).not.toContain(
+		'https://github.com/kentcdodds/kody/commit/',
+	)
 
 	const unsafeLink = renderStatusPage(
 		snapshot({

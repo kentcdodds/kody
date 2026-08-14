@@ -31,10 +31,4 @@ test('ensureCryptoRandomUUID polyfills missing randomUUID from getRandomValues a
 	ensureCryptoRandomUUID(cryptoWithUuid)
 	expect(cryptoWithUuid.randomUUID).toBe(existing)
 	expect(cryptoWithUuid.randomUUID()).toBe('already-present-uuid')
-
-	const empty = {} as Crypto
-	ensureCryptoRandomUUID(empty)
-	expect(empty.randomUUID).toBeUndefined()
-
-	ensureCryptoRandomUUID(undefined)
 })

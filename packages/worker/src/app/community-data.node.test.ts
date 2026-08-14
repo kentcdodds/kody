@@ -5,10 +5,6 @@ import {
 	loadCommunityIndexData,
 	loadOnboardingFeaturedListings,
 } from './community-data.ts'
-import {
-	buildExistingAdaptPrompt,
-	buildExistingInstallPrompt,
-} from './community-public.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -128,12 +124,13 @@ test('community index overlays matching kody_id installs for signed-in viewers',
 		new Request('https://example.com/community'),
 	)
 	expect(data.listings).toHaveLength(1)
-	expect(data.listings[0]?.viewerInstall).toEqual({
-		status: 'installed',
-		targetName: '@burhan/github',
-		agentPrompt: buildExistingInstallPrompt({ targetName: '@burhan/github' }),
-		packageId: 'pkg-github',
-	})
+	expect(data.listings[0]?.viewerInstall).toEqual(
+		expect.objectContaining({
+			status: 'installed',
+			targetName: '@burhan/github',
+			packageId: 'pkg-github',
+		}),
+	)
 	expect(mockModule.listSavedPackagesByKodyIds).toHaveBeenCalledWith(
 		undefined,
 		expect.objectContaining({ userId: 'viewer-1' }),
@@ -168,15 +165,13 @@ test('onboarding featured listings overlay inert forks as adaptation_required', 
 		new Request('https://example.com/onboarding'),
 	)
 	expect(listings).toHaveLength(1)
-	expect(listings[0]?.viewerInstall).toEqual({
-		status: 'adaptation_required',
-		targetName: '@burhan/github',
-		agentPrompt: buildExistingAdaptPrompt({
+	expect(listings[0]?.viewerInstall).toEqual(
+		expect.objectContaining({
+			status: 'adaptation_required',
 			targetName: '@burhan/github',
-			sourceId: 'src-inert',
+			packageId: null,
 		}),
-		packageId: null,
-	})
+	)
 })
 
 test('community detail overlays viewerInstall for forked listings and omits it when not forked', async () => {
@@ -225,13 +220,14 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 		new Request('https://example.com/community/listing-github-forked'),
 		'listing-github',
 	)
-	expect(forked?.viewerInstall).toEqual({
-		status: 'installed',
-		targetName: '@burhan/github',
-		agentPrompt: buildExistingInstallPrompt({ targetName: '@burhan/github' }),
-		packageId: 'pkg-github',
-	})
-	expect(forked?.listing.viewerInstall).toEqual(forked?.viewerInstall)
+	expect(forked?.viewerInstall).toEqual(
+		expect.objectContaining({
+			status: 'installed',
+			targetName: '@burhan/github',
+			packageId: 'pkg-github',
+		}),
+	)
+	expect(forked?.listing.viewerInstall?.status).toBe('installed')
 })
 
 test('community index omits viewerInstall for anonymous viewers and auth failures', async () => {

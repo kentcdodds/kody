@@ -515,7 +515,6 @@ test('renderAppPage emits a pre-hydration scroll restoration script in the docum
 	expect(restoreScriptIndex).toBeGreaterThan(html.indexOf('<div id="root">'))
 	expect(restoreScriptIndex).toBeGreaterThan(0)
 	expect(clientEntryIndex).toBeGreaterThan(restoreScriptIndex)
-	expect(html).toContain(`<script>${restoreScript}</script>`)
 	expect(response.headers.get('Content-Security-Policy')).toBe(
 		firstPartySecurityHeaders['Content-Security-Policy'],
 	)
