@@ -2,7 +2,17 @@
 	"$schema": "../../node_modules/wrangler/config-schema.json",
 	"name": "kody",
 	"compatibility_date": "2026-04-16",
-	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	// `enhanced_error_serialization` is date-default on 2026-04-21. Opt in
+	// explicitly so JSRPC from the Artifacts binding preserves `name`/`code`
+	// instead of flattening to `Error` + `ArtifactsError: …` message. Keep
+	// the structural matcher in `src/repo/artifacts.ts`; this flag does not
+	// restore custom prototype identity. Do not advance the date just to
+	// pick this up — 2026-04-21 also defaults `enable_python_external_sdk`.
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public",
+		"enhanced_error_serialization",
+	],
 	// Paid default is 10_000 subrequests/invocation. The MCP Agent Durable
 	// Object keeps a long-lived session and each mutating storage_query pays
 	// several D1 + StorageRunner RPCs (entitlement baseline, sqlQuery,

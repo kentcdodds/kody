@@ -2,7 +2,11 @@
 	"$schema": "../../../node_modules/wrangler/config-schema.json",
 	"name": "kody-mock-cloudflare",
 	"compatibility_date": "2026-04-16",
-	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public",
+		"enhanced_error_serialization",
+	],
 	"main": "./src/worker.ts",
 	"preview_urls": true,
 	"observability": { "enabled": true },

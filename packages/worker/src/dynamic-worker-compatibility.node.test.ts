@@ -7,6 +7,9 @@ import {
 
 test('dynamic and mock Cloudflare worker compatibility match the main wrangler config', () => {
 	const mainWorker = readMainWorkerWranglerCompatibility()
+	expect(mainWorker.compatibilityFlags).toContain(
+		'enhanced_error_serialization',
+	)
 	expect(createDynamicWorkerCompatibilityOptions()).toEqual({
 		compatibilityDate: mainWorker.compatibilityDate,
 		compatibilityFlags: mainWorker.compatibilityFlags,

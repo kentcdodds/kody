@@ -7,6 +7,7 @@ export const dynamicWorkerCompatibilityDate = '2026-04-16'
 export const dynamicWorkerCompatibilityFlags = [
 	'nodejs_compat',
 	'global_fetch_strictly_public',
+	'enhanced_error_serialization',
 ] as const
 
 export type DynamicWorkerCompatibilityOptions = {
