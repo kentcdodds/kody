@@ -15,7 +15,7 @@ test('frame resolve never attaches a body to GET or HEAD, including lowercase me
 		formData,
 		encType: 'application/x-www-form-urlencoded',
 	})
-	expect(getInit.method).toBeUndefined()
+	expect(getInit.method).toBe('get')
 	expect(getInit.body).toBeUndefined()
 	expect((getInit.headers as Headers).get(REMIX_FRAME_TARGET_HEADER)).toBe(
 		'community-listings',
@@ -25,7 +25,7 @@ test('frame resolve never attaches a body to GET or HEAD, including lowercase me
 		method: 'HEAD',
 		formData,
 	})
-	expect(headInit.method).toBeUndefined()
+	expect(headInit.method).toBe('HEAD')
 	expect(headInit.body).toBeUndefined()
 
 	const postInit = createFrameResolveInit({

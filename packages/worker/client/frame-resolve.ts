@@ -21,12 +21,13 @@ export function createFrameResolveInit(options?: ResolveFrameOptions) {
 	}
 	const init: RequestInit = { headers, signal: options?.signal }
 	const method = options?.method?.trim()
-	const formData = options?.formData
-	if (!method || isSafeFrameMethod(method) || !formData) {
-		return init
+	if (method) {
+		init.method = method
 	}
-	init.method = method
-	init.body = encodeFrameFormBody(formData, options.encType)
+	const formData = options?.formData
+	if (method && !isSafeFrameMethod(method) && formData) {
+		init.body = encodeFrameFormBody(formData, options?.encType)
+	}
 	return init
 }
 

@@ -68,7 +68,9 @@ async function boot() {
 		},
 		async resolveFrame(src, options) {
 			const target = options?.target
-			const cached = consumePrefetchedFrame(src, target)
+			const method = options?.method?.trim().toUpperCase()
+			const cached =
+				method === 'HEAD' ? undefined : consumePrefetchedFrame(src, target)
 			if (cached !== undefined) {
 				return prefetchedFrameResponse(cached)
 			}

@@ -227,10 +227,16 @@ export class D1DatabaseDriver implements DatabaseDriver<'sqlite'> {
 				"select name from sqlite_master where type = 'table' and name not like 'sqlite_%' and name not like '_cf_%'",
 			)
 			.all<{ name?: unknown }>()
-		for (const row of result.results ?? []) {
-			if (typeof row.name !== 'string' || row.name.length === 0) continue
-			await this.#database.exec(`drop table if exists ${quotePath(row.name)}`)
-		}
+		const tableNames = (result.results ?? []).flatMap((row) =>
+			typeof row.name === 'string' && row.name.length > 0 ? [row.name] : [],
+		)
+		if (tableNames.length === 0) return
+		await this.#database.batch([
+			this.#database.prepare('PRAGMA defer_foreign_keys = ON'),
+			...tableNames.map((name) =>
+				this.#database.prepare(`drop table if exists ${quotePath(name)}`),
+			),
+		])
 	}
 
 	close(): void {

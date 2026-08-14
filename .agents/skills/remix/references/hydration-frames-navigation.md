@@ -128,10 +128,15 @@ let app = run({
 	async resolveFrame(src, options) {
 		let headers = new Headers({ accept: 'text/html' })
 		if (options?.target) headers.set('x-remix-target', options.target)
+		let method = options?.method?.trim()
+		let isReader =
+			!method ||
+			method.toUpperCase() === 'GET' ||
+			method.toUpperCase() === 'HEAD'
 		return fetch(src, {
 			headers,
-			method: options?.method,
-			body: options?.formData,
+			method,
+			body: isReader ? undefined : options?.formData,
 			signal: options?.signal,
 		})
 	},
