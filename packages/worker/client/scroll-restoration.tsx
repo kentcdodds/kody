@@ -165,7 +165,10 @@ function applyWindowScroll(
 	}
 }
 
-function restoreWindowScroll(detail: ScrollRestoreRequest, signal: AbortSignal) {
+function restoreWindowScroll(
+	detail: ScrollRestoreRequest,
+	signal: AbortSignal,
+) {
 	const key = getCurrentScrollRestorationKey()
 	const target = getScrollRestorationTarget({
 		historyAction: detail.historyAction,
