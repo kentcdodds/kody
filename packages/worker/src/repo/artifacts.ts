@@ -263,11 +263,16 @@ function adaptNativeRepoHandle(repo: ArtifactsRepo): ArtifactRepoHandle {
 		}),
 		createToken: async (scope = 'write', ttl = 3600) => {
 			const token = await repo.createToken(scope, ttl)
+			const plaintext = readArtifactTokenPlaintext(token)
 			return {
 				id: token.id,
-				plaintext: token.plaintext,
+				plaintext,
 				scope: token.scope,
-				expiresAt: token.expiresAt,
+				expiresAt: resolveCreatedTokenExpiry({
+					token: plaintext,
+					tokenExpiresAt:
+						typeof token.expiresAt === 'string' ? token.expiresAt : null,
+				}),
 			}
 		},
 		listTokens: async () => {
@@ -394,9 +399,10 @@ function createArtifactsRestBinding(env: Env, namespace: string) {
 					},
 				},
 			)
+			const plaintext = readArtifactTokenPlaintext(result)
 			return {
 				id: result.id,
-				plaintext: result.plaintext,
+				plaintext,
 				scope: result.scope,
 				expiresAt: result.expires_at,
 			}
@@ -637,6 +643,23 @@ function tryParseArtifactTokenExpiry(token: string) {
 	return null
 }
 
+function readArtifactTokenPlaintext(token: {
+	plaintext?: unknown
+	token?: unknown
+}) {
+	if (typeof token.plaintext === 'string' && token.plaintext.length > 0) {
+		return token.plaintext
+	}
+	// Native create() uses `token`; createToken is typed as `plaintext`.
+	// JSRPC can drop one or the other the same way it dropped
+	// `tokenExpiresAt`. Accept either so git remotes do not call
+	// `undefined.split`.
+	if (typeof token.token === 'string' && token.token.length > 0) {
+		return token.token
+	}
+	throw new Error('Artifacts createToken result is missing plaintext.')
+}
+
 function resolveCreatedTokenExpiry(input: {
 	token: string
 	tokenExpiresAt?: string | null
@@ -681,6 +704,9 @@ export function buildSessionRepoId(input: {
 }
 
 export function parseArtifactTokenSecret(token: string) {
+	if (typeof token !== 'string' || token.length === 0) {
+		throw new Error('Artifacts token plaintext is missing.')
+	}
 	return token.split('?expires=')[0] ?? token
 }
 
@@ -739,6 +765,9 @@ export async function resolveArtifactDefaultBranchHead(input: {
 	])
 	if (!info?.remote) {
 		throw new Error('Artifact repo remote URL is unavailable.')
+	}
+	if (typeof tokenPlaintext !== 'string' || tokenPlaintext.length === 0) {
+		throw new Error('Artifacts createToken result is missing plaintext.')
 	}
 	const refName = `refs/heads/${info.defaultBranch || 'main'}`
 	const refs = await listArtifactServerRefs({

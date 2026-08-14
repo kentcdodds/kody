@@ -517,6 +517,80 @@ test('resolveArtifactDefaultBranchHead reuses a provided token and still works w
 	expect(createToken).not.toHaveBeenCalled()
 	expect(info).toHaveBeenCalledTimes(1)
 	expect(gitMocks.listServerRefs).toHaveBeenCalledTimes(1)
+
+	createToken.mockReset()
+	createToken.mockResolvedValue({
+		id: 'tok_empty',
+		plaintext: undefined,
+		scope: 'read',
+		expiresAt: '2026-10-09T08:55:00.000Z',
+	})
+	await expect(resolveArtifactDefaultBranchHead({ repo })).rejects.toThrow(
+		'Artifacts createToken result is missing plaintext.',
+	)
+	expect(gitMocks.listServerRefs).toHaveBeenCalledTimes(1)
+})
+
+test('native createToken maps token when JSRPC omits plaintext', async () => {
+	const nativeCreateToken = vi.fn(async () => ({
+		id: 'tok_native',
+		token: 'art_v2_read?expires=1760000100',
+		scope: 'read' as const,
+	}))
+	const env = {
+		ARTIFACTS_NAMESPACE: 'production',
+		ARTIFACTS: {
+			create: vi.fn(),
+			get: vi.fn(async () => ({
+				id: 'repo_1',
+				name: 'repo-1',
+				description: null,
+				defaultBranch: 'main',
+				createdAt: '2026-04-17T00:00:00.000Z',
+				updatedAt: '2026-04-17T00:00:00.000Z',
+				lastPushAt: null,
+				source: null,
+				readOnly: false,
+				remote:
+					'https://acct.artifacts.cloudflare.net/git/production/repo-1.git',
+				createToken: nativeCreateToken,
+				listTokens: vi.fn(async () => ({ tokens: [], total: 0 })),
+				revokeToken: vi.fn(),
+			})),
+			delete: vi.fn(),
+			list: vi.fn(async () => ({ repos: [], total: 0 })),
+		},
+	} as unknown as Env
+
+	const result = await getArtifactsBinding(env).get('repo-1')
+	expect(result.status).toBe('ready')
+	if (result.status !== 'ready') {
+		throw new Error('expected native repo to be ready')
+	}
+	await expect(result.repo.createToken('read', 120)).resolves.toEqual({
+		id: 'tok_native',
+		plaintext: 'art_v2_read?expires=1760000100',
+		scope: 'read',
+		expiresAt: '2025-10-09T08:55:00.000Z',
+	})
+	expect(nativeCreateToken).toHaveBeenCalledWith('read', 120)
+	expect(parseArtifactTokenSecret('art_v2_read?expires=1760000100')).toBe(
+		'art_v2_read',
+	)
+	expect(() =>
+		parseArtifactTokenSecret(undefined as unknown as string),
+	).toThrow('Artifacts token plaintext is missing.')
+	expect(() => parseArtifactTokenSecret('')).toThrow(
+		'Artifacts token plaintext is missing.',
+	)
+
+	nativeCreateToken.mockResolvedValueOnce({
+		id: 'tok_empty',
+		scope: 'read' as const,
+	})
+	await expect(result.repo.createToken('read', 120)).rejects.toThrow(
+		'Artifacts createToken result is missing plaintext.',
+	)
 })
 
 test('ensureArtifactRepoReady uses the create result without a follow-up GET', async () => {
