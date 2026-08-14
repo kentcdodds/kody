@@ -58,8 +58,8 @@ const inputSchema = z.object({
 })
 
 const auditLogEntrySchema = z.object({
-	// SQLite INTEGER PRIMARY KEY allows explicit id=0; AUTOINCREMENT starts at
-	// 1 for app writes, but legacy/manual rows must still parse.
+	// SQLite INTEGER PRIMARY KEY accepts any signed 64-bit integer (including 0
+	// and negatives from legacy/manual rows). AUTOINCREMENT app writes start at 1.
 	id: z.number().int(),
 	category: z.enum(auditEventCategories),
 	action: z.string(),
