@@ -87,10 +87,10 @@ const codingGuideSearchMarkdown = `# Search results
 
 For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{type}"\`.
 
-1. `capability` \`coding_guide_get\` (\`coding\`) — Load an official Kody guide (markdown, bundled from the kody repository). Prefer this capability plus \`search\` results over local repo spelunking when Kody auth or integration behavior is already documented. Entity: \`coding_guide_get:capability\`
+1. **capability** \`coding_guide_get\` (\`coding\`) — Load an official Kody guide (markdown, bundled from the kody repository). Prefer this capability plus \`search\` results over local repo spelunking when Kody auth or integration behavior is already documented. Entity: \`coding_guide_get:capability\`
    \`kody.coding_guide_get(args)\` — \`type CodingGuideGetInput = { guide: "integration_bootstrap" | "oauth" | "provider_google" | ... }\`; use entity detail for the full definition
-2. `guide` Connect Google (Gmail, Calendar, Drive) — Built-in Calendar scopes vs bring-your-own OAuth for inbox reading. Entity: \`provider_google:guide\`
-3. `guide` OAuth guide (standard path) — Hosted \`/connect/oauth\`, redirect URI, PKCE vs confidential. Entity: \`oauth:guide\``
+2. **guide** Connect Google (Gmail, Calendar, Drive) — Built-in Calendar scopes vs bring-your-own OAuth for inbox reading. Entity: \`provider_google:guide\`
+3. **guide** OAuth guide (standard path) — Hosted \`/connect/oauth\`, redirect URI, PKCE vs confidential. Entity: \`oauth:guide\``
 
 const codingGuideDetailMarkdown = `# Capability — \`coding_guide_get\`
 
@@ -261,7 +261,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 			},
 			{
 				role: 'agent',
-				text: `On the `Data Access` tab, add this scope: \`${gmailReadonlyScope}\`. That is the inbox-read scope this invoice task needs.`,
+				text: `On the \`Data Access\` tab, add this scope: \`${gmailReadonlyScope}\`. That is the inbox-read scope this invoice task needs.`,
 			},
 			{
 				role: 'user',
