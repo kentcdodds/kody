@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	CloudflareApiError,
 	createCloudflareRestClient,
@@ -111,7 +112,7 @@ export function getArtifactsBinding(
 	const requestedNamespace = resolveArtifactsNamespace(env, namespace)
 	const native = readNativeArtifactsBinding(env)
 	if (native && requestedNamespace === getArtifactsNamespace(env)) {
-		return adaptNativeArtifactsBinding(native)
+		return adaptNativeArtifactsBinding(native, env)
 	}
 	const restBinding = createArtifactsRestBinding(env, requestedNamespace)
 	if (!restBinding) {
@@ -247,7 +248,10 @@ async function getNativeRepoOrThrow(native: Artifacts, name: string) {
 	}
 }
 
-function adaptNativeRepoHandle(repo: ArtifactsRepo): ArtifactRepoHandle {
+function adaptNativeRepoHandle(
+	repo: ArtifactsRepo,
+	restCreateToken?: ArtifactRepoHandle['createToken'],
+): ArtifactRepoHandle {
 	return {
 		info: async () => ({
 			id: repo.id,
@@ -262,17 +266,30 @@ function adaptNativeRepoHandle(repo: ArtifactsRepo): ArtifactRepoHandle {
 			remote: repo.remote,
 		}),
 		createToken: async (scope = 'write', ttl = 3600) => {
-			const token = await repo.createToken(scope, ttl)
-			const plaintext = readArtifactTokenPlaintext(token)
-			return {
-				id: token.id,
-				plaintext,
-				scope: token.scope,
-				expiresAt: resolveCreatedTokenExpiry({
-					token: plaintext,
-					tokenExpiresAt:
-						typeof token.expiresAt === 'string' ? token.expiresAt : null,
-				}),
+			// Native createToken still throws `undefined.split` across JSRPC
+			// after mapping plaintext/token. Mint via REST when credentials
+			// exist — that path worked before #1437 preferred the binding.
+			if (restCreateToken) {
+				return restCreateToken(scope, ttl)
+			}
+			try {
+				const token = await repo.createToken(scope, ttl)
+				const plaintext = readArtifactTokenPlaintext(token)
+				return {
+					id: token.id,
+					plaintext,
+					scope: token.scope,
+					expiresAt: resolveCreatedTokenExpiry({
+						token: plaintext,
+						tokenExpiresAt:
+							typeof token.expiresAt === 'string' ? token.expiresAt : null,
+					}),
+				}
+			} catch (error) {
+				throw new Error(
+					`Artifacts native createToken failed: ${getErrorMessage(error)}`,
+					{ cause: error },
+				)
 			}
 		},
 		listTokens: async () => {
@@ -292,23 +309,39 @@ function adaptNativeRepoHandle(repo: ArtifactsRepo): ArtifactRepoHandle {
 
 function adaptNativeArtifactsBinding(
 	native: Artifacts,
+	env: Env,
 ): ArtifactNamespaceBinding & Record<string, unknown> {
+	const rest = createArtifactsRestBinding(env, getArtifactsNamespace(env))
+	const restCreateToken = rest
+		? (name: string): ArtifactRepoHandle['createToken'] =>
+				(scope, ttl) =>
+					rest.repo(name).createToken(scope, ttl)
+		: null
 	const repo = (name: string): ArtifactRepoHandle => ({
 		info: async () => {
 			const handle = await getNativeRepoOrThrow(native, name)
-			return adaptNativeRepoHandle(handle).info()
+			return adaptNativeRepoHandle(handle, restCreateToken?.(name)).info()
 		},
 		createToken: async (scope = 'write', ttl = 3600) => {
+			if (rest) {
+				return rest.repo(name).createToken(scope, ttl)
+			}
 			const handle = await getNativeRepoOrThrow(native, name)
 			return adaptNativeRepoHandle(handle).createToken(scope, ttl)
 		},
 		listTokens: async () => {
 			const handle = await getNativeRepoOrThrow(native, name)
-			return adaptNativeRepoHandle(handle).listTokens?.() ?? []
+			return (
+				adaptNativeRepoHandle(handle, restCreateToken?.(name)).listTokens?.() ??
+				[]
+			)
 		},
 		revokeToken: async (idOrPlaintext) => {
 			const handle = await getNativeRepoOrThrow(native, name)
-			await adaptNativeRepoHandle(handle).revokeToken?.(idOrPlaintext)
+			await adaptNativeRepoHandle(
+				handle,
+				restCreateToken?.(name),
+			).revokeToken?.(idOrPlaintext)
 		},
 	})
 	return {
@@ -338,7 +371,7 @@ function adaptNativeArtifactsBinding(
 				const handle = await native.get(name)
 				return {
 					status: 'ready' as const,
-					repo: adaptNativeRepoHandle(handle),
+					repo: adaptNativeRepoHandle(handle, restCreateToken?.(name)),
 				}
 			} catch (error) {
 				const code = artifactsBindingErrorCode(error)
@@ -770,11 +803,19 @@ export async function resolveArtifactDefaultBranchHead(input: {
 		throw new Error('Artifacts createToken result is missing plaintext.')
 	}
 	const refName = `refs/heads/${info.defaultBranch || 'main'}`
-	const refs = await listArtifactServerRefs({
-		remote: info.remote,
-		token: tokenPlaintext,
-		prefix: refName,
-	})
+	let refs: Awaited<ReturnType<typeof listArtifactServerRefs>>
+	try {
+		refs = await listArtifactServerRefs({
+			remote: info.remote,
+			token: tokenPlaintext,
+			prefix: refName,
+		})
+	} catch (error) {
+		throw new Error(
+			`Artifacts listServerRefs failed: ${getErrorMessage(error)}`,
+			{ cause: error },
+		)
+	}
 	const branchRef = refs.find((ref) => ref.ref === refName)
 	if (!branchRef?.oid) {
 		return null

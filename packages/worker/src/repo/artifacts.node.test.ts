@@ -589,8 +589,56 @@ test('native createToken maps token when JSRPC omits plaintext', async () => {
 		scope: 'read' as const,
 	})
 	await expect(result.repo.createToken('read', 120)).rejects.toThrow(
-		'Artifacts createToken result is missing plaintext.',
+		'Artifacts native createToken failed: Artifacts createToken result is missing plaintext.',
 	)
+
+	const restFetch = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
+			const url = new URL(String(input))
+			const method = init?.method ?? 'GET'
+			if (method === 'POST' && url.pathname.endsWith('/tokens')) {
+				return new Response(
+					JSON.stringify({
+						success: true,
+						result: {
+							id: 'tok_rest',
+							plaintext: 'art_v1_rest?expires=1760000100',
+							scope: 'read',
+							expires_at: '2026-10-09T08:55:00.000Z',
+						},
+						errors: [],
+						messages: [],
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' },
+					},
+				)
+			}
+			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
+		})
+	const hybridEnv = {
+		...env,
+		CLOUDFLARE_ACCOUNT_ID: 'acct',
+		CLOUDFLARE_API_TOKEN: 'token-123',
+		CLOUDFLARE_API_BASE_URL: 'https://api.example.com',
+	} as unknown as Env
+	nativeCreateToken.mockClear()
+	const hybrid = await getArtifactsBinding(hybridEnv).get('repo-1')
+	expect(hybrid.status).toBe('ready')
+	if (hybrid.status !== 'ready') {
+		throw new Error('expected hybrid native repo to be ready')
+	}
+	await expect(hybrid.repo.createToken('read', 120)).resolves.toEqual({
+		id: 'tok_rest',
+		plaintext: 'art_v1_rest?expires=1760000100',
+		scope: 'read',
+		expiresAt: '2026-10-09T08:55:00.000Z',
+	})
+	expect(nativeCreateToken).not.toHaveBeenCalled()
+	expect(restFetch).toHaveBeenCalledTimes(1)
+	restFetch.mockRestore()
 })
 
 test('ensureArtifactRepoReady uses the create result without a follow-up GET', async () => {
