@@ -205,18 +205,19 @@ The app shell also mounts **scroll restoration**. Each history entry's
 same `{ [key]: y }` map React Router uses). A blocking inline script in the SSR
 document body restores that Y before first paint on a full document load, so a
 refresh does not flash the top of the page. After hydration the restorer keeps
-applying the same saved Y until the document is tall enough to reach it (images,
-fonts, and async route content). A persist of the current `scrollY` does not
-replace a taller saved Y while that Y is still unreachable, so a clamped early
-`scrollTo` cannot overwrite the intended position. `history.scrollRestoration` is
-`manual` so the browser does not fight the restorer. SPA back/forward still
-restores the saved position, hash targets scroll into view, and new navigations
-go to the top after the destination route commits. Same-document hash links (for
-example the landing page's `#invite` waitlist CTA) are intercepted like other
-same-origin links so restoration can scroll to the target. Preserve the current
-scroll for a specific intercepted link or form with `data-prevent-scroll-reset`,
-or for programmatic navigation with
-`navigate(to, { preventScrollReset: true })`.
+applying the same saved Y until the document is tall enough to reach it, then
+keeps pinning that Y through a short settle window so late layout (images,
+fonts, scroll anchoring) cannot persist a drifted position. User input ends the
+pin early. A persist of the current `scrollY` does not replace a taller saved Y
+while that Y is still unreachable, so a clamped early `scrollTo` cannot
+overwrite the intended position. `history.scrollRestoration` is `manual` so the
+browser does not fight the restorer. SPA back/forward still restores the saved
+position, hash targets scroll into view, and new navigations go to the top after
+the destination route commits. Same-document hash links (for example the landing
+page's `#invite` waitlist CTA) are intercepted like other same-origin links so
+restoration can scroll to the target. Preserve the current scroll for a specific
+intercepted link or form with `data-prevent-scroll-reset`, or for programmatic
+navigation with `navigate(to, { preventScrollReset: true })`.
 
 Full page navigations occur for:
 
