@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { createCookie } from '@remix-run/cookie'
+import { createCookie } from 'remix/cookie'
 import {
 	createAuthCookie,
 	isAuthSessionInvalidatedByPasswordChange,

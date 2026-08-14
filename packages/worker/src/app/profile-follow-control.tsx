@@ -20,7 +20,9 @@ export function renderProfileFollowControl(input: {
 	errorTestId: string
 }) {
 	if (!input.loggedIn) {
-		const loginHref = `${routes.login.href()}?redirectTo=${encodeURIComponent(input.returnTo)}`
+		const loginHref = routes.login.href(null, {
+			searchParams: { redirectTo: input.returnTo },
+		})
 		return (
 			<a
 				href={loginHref}

@@ -1,4 +1,4 @@
-import { createCookie } from '@remix-run/cookie'
+import { createCookie } from 'remix/cookie'
 import { isSecureRequest } from '#app/auth-session.ts'
 import { isStableUserId } from '#worker/user-id.ts'
 

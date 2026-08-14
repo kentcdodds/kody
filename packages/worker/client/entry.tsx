@@ -63,7 +63,8 @@ async function boot() {
 			}
 			return component
 		},
-		async resolveFrame(src, signal, target) {
+		async resolveFrame(src, options) {
+			const target = options?.target
 			const cached = consumePrefetchedFrame(src, target)
 			if (cached !== undefined) {
 				return cached
@@ -72,13 +73,18 @@ async function boot() {
 			if (target) {
 				headers.set(REMIX_FRAME_TARGET_HEADER, target)
 			}
-			const response = await fetch(src, { headers, signal })
+			const init: RequestInit = { headers, signal: options?.signal }
+			if (options?.formData && options.method && options.method !== 'GET') {
+				init.method = options.method
+				init.body = options.formData
+			}
+			const response = await fetch(src, init)
 			if (!response.ok) {
 				throw new Error(
 					`Frame resolve failed (${response.status}) for ${src}${target ? ` target=${target}` : ''}`,
 				)
 			}
-			return response.body ?? (await response.text())
+			return response
 		},
 	})
 

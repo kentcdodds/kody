@@ -1,0 +1,27 @@
+import { DatabaseSync } from 'node:sqlite'
+import { expect, test } from 'vitest'
+import { createDb } from '#worker/db.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+
+test('D1 database driver queries, wipes, and closes through the Remix Database API', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	const db = createDb(createD1FromSqlite(sqlite))
+
+	await db.executeScript(
+		'create table widgets (id integer primary key, name text)',
+	)
+	expect(await db.hasTable({ name: 'widgets' })).toBe(true)
+
+	await db.exec({
+		text: 'insert into widgets (name) values (?)',
+		values: ['alpha'],
+	})
+	const selected = await db.exec('select name from widgets order by id')
+	expect(selected.rows?.map((row) => row.name)).toEqual(['alpha'])
+
+	await db.wipe()
+	expect(await db.hasTable({ name: 'widgets' })).toBe(false)
+
+	await db.close()
+	await db.close()
+})

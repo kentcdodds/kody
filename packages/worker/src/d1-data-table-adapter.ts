@@ -1,11 +1,11 @@
 import {
 	getTableName,
 	getTablePrimaryKey,
-	type AdapterCapabilityOverrides,
 	type DataManipulationRequest,
 	type DataManipulationResult,
 	type DataManipulationOperation,
-	type DatabaseAdapter,
+	type DatabaseCapabilities,
+	type DatabaseDriver,
 	type SqlStatement,
 	type TableRef,
 	type TransactionOptions,
@@ -37,40 +37,55 @@ type D1PreparedQuery = {
 	}>
 }
 
-/**
- * `DatabaseAdapter` implementation for Cloudflare D1.
- *
- * This adapter intentionally mirrors SQLite SQL generation because D1 uses
- * SQLite semantics.
- */
-export class D1DataTableAdapter implements DatabaseAdapter {
-	dialect = 'sqlite'
-	capabilities: {
-		returning: boolean
-		savepoints: boolean
-		upsert: boolean
-		transactionalDdl: boolean
-		migrationLock: boolean
-	}
+const defaultD1Capabilities = Object.freeze({
+	returning: true,
+	savepoints: false,
+	upsert: true,
+	transactionalDdl: false,
+	migrationLock: false,
+})
 
+/**
+ * `DatabaseDriver` implementation for Cloudflare D1.
+ *
+ * This driver intentionally mirrors SQLite SQL generation because D1 uses
+ * SQLite semantics. Remix does not ship a D1 factory, so Kody owns this
+ * integration and passes it to `new Database(driver)`.
+ */
+export class D1DatabaseDriver implements DatabaseDriver<'sqlite'> {
 	#database: D1Database
+	#capabilities: DatabaseCapabilities
 	#transactions = new Set<string>()
 	#transactionCounter = 0
 
 	constructor(
 		database: D1Database,
 		options?: {
-			capabilities?: AdapterCapabilityOverrides
+			capabilities?: Partial<DatabaseCapabilities>
 		},
 	) {
 		this.#database = database
-		this.capabilities = {
-			returning: options?.capabilities?.returning ?? true,
-			savepoints: options?.capabilities?.savepoints ?? false,
-			upsert: options?.capabilities?.upsert ?? true,
-			transactionalDdl: options?.capabilities?.transactionalDdl ?? false,
-			migrationLock: options?.capabilities?.migrationLock ?? false,
-		}
+		this.#capabilities = Object.freeze({
+			returning:
+				options?.capabilities?.returning ?? defaultD1Capabilities.returning,
+			savepoints:
+				options?.capabilities?.savepoints ?? defaultD1Capabilities.savepoints,
+			upsert: options?.capabilities?.upsert ?? defaultD1Capabilities.upsert,
+			transactionalDdl:
+				options?.capabilities?.transactionalDdl ??
+				defaultD1Capabilities.transactionalDdl,
+			migrationLock:
+				options?.capabilities?.migrationLock ??
+				defaultD1Capabilities.migrationLock,
+		})
+	}
+
+	get dialect(): 'sqlite' {
+		return 'sqlite'
+	}
+
+	get capabilities(): DatabaseCapabilities {
+		return this.#capabilities
 	}
 
 	compileSql(operation: DataManipulationOperation): Array<SqlStatement> {
@@ -96,11 +111,7 @@ export class D1DataTableAdapter implements DatabaseAdapter {
 			.prepare(statement.text)
 			.bind(...statement.values) as unknown as D1PreparedQuery
 
-		const shouldReadRows =
-			request.operation.kind === 'select' ||
-			request.operation.kind === 'count' ||
-			request.operation.kind === 'exists' ||
-			hasReturningClause(request.operation)
+		const shouldReadRows = shouldReadOperation(request.operation, statement)
 
 		if (shouldReadRows) {
 			const result = (await prepared.all()) as D1StatementResult
@@ -193,21 +204,37 @@ export class D1DataTableAdapter implements DatabaseAdapter {
 		_token: TransactionToken,
 		_name: string,
 	): Promise<void> {
-		throw new Error('D1DataTableAdapter savepoints are not supported')
+		throw new Error('D1DatabaseDriver savepoints are not supported')
 	}
 
 	async rollbackToSavepoint(
 		_token: TransactionToken,
 		_name: string,
 	): Promise<void> {
-		throw new Error('D1DataTableAdapter savepoints are not supported')
+		throw new Error('D1DatabaseDriver savepoints are not supported')
 	}
 
 	async releaseSavepoint(
 		_token: TransactionToken,
 		_name: string,
 	): Promise<void> {
-		throw new Error('D1DataTableAdapter savepoints are not supported')
+		throw new Error('D1DatabaseDriver savepoints are not supported')
+	}
+
+	async wipe(): Promise<void> {
+		const result = await this.#database
+			.prepare(
+				"select name from sqlite_master where type = 'table' and name not like 'sqlite_%' and name not like '_cf_%'",
+			)
+			.all<{ name?: unknown }>()
+		for (const row of result.results ?? []) {
+			if (typeof row.name !== 'string' || row.name.length === 0) continue
+			await this.#database.exec(`drop table if exists ${quotePath(row.name)}`)
+		}
+	}
+
+	close(): void {
+		// D1 bindings are isolate-owned; there is no client handle to release.
 	}
 
 	#assertTransaction(token: TransactionToken) {
@@ -217,13 +244,13 @@ export class D1DataTableAdapter implements DatabaseAdapter {
 	}
 }
 
-export function createD1DataTableAdapter(
+export function createD1DatabaseDriver(
 	database: D1Database,
 	options?: {
-		capabilities?: AdapterCapabilityOverrides
+		capabilities?: Partial<DatabaseCapabilities>
 	},
 ) {
-	return new D1DataTableAdapter(database, options)
+	return new D1DatabaseDriver(database, options)
 }
 
 function hasReturningClause(statement: DataManipulationOperation) {
@@ -235,6 +262,42 @@ function hasReturningClause(statement: DataManipulationOperation) {
 			statement.kind === 'upsert') &&
 		Boolean(statement.returning)
 	)
+}
+
+function shouldReadOperation(
+	operation: DataManipulationOperation,
+	statement: SqlStatement,
+) {
+	if (
+		operation.kind === 'select' ||
+		operation.kind === 'count' ||
+		operation.kind === 'exists'
+	) {
+		return true
+	}
+	if (operation.kind !== 'raw') {
+		return hasReturningClause(operation)
+	}
+	// D1 prepared statements do not expose column metadata, so raw readers are
+	// detected from SQL text. Official sqlite inspects `columnNames` instead.
+	return isRawReaderSql(statement.text)
+}
+
+function isRawReaderSql(sql: string) {
+	const keyword = sql
+		.trimStart()
+		.match(/^([A-Za-z]+)/)?.[1]
+		?.toLowerCase()
+	if (
+		keyword === 'select' ||
+		keyword === 'with' ||
+		keyword === 'pragma' ||
+		keyword === 'explain' ||
+		keyword === 'values'
+	) {
+		return true
+	}
+	return /\breturning\b/i.test(sql)
 }
 
 function normalizeRows(rows: Array<Record<string, unknown>>) {

@@ -71,18 +71,18 @@ should never reach production — fail fast when the secret is missing.
 
 ```typescript
 // Filesystem storage
-import { createFsSessionStorage } from 'remix/session/fs-storage'
+import { createFsSessionStorage } from 'remix/session-storage/fs'
 export let sessionStorage = createFsSessionStorage('./tmp/sessions')
 
 // Memory storage (for tests)
-import { createMemorySessionStorage } from 'remix/session/memory-storage'
+import { createMemorySessionStorage } from 'remix/session-storage/memory'
 export let sessionStorage = createMemorySessionStorage()
 ```
 
 ### Add session middleware
 
 ```typescript
-import { session } from 'remix/session-middleware'
+import { session } from 'remix/middleware/session'
 
 let router = createRouter({
 	middleware: [
@@ -156,7 +156,7 @@ providers below).
 ### Basic setup
 
 ```typescript
-import { auth, createSessionAuthScheme } from 'remix/auth-middleware'
+import { auth, createSessionAuthScheme } from 'remix/middleware/auth'
 import { Session } from 'remix/session'
 import { Database } from 'remix/data-table'
 
@@ -184,7 +184,7 @@ export function loadAuth() {
 ### Reading auth state
 
 ```typescript
-import { Auth } from 'remix/auth-middleware'
+import { Auth } from 'remix/middleware/auth'
 
 function handler({ get }) {
 	let auth = get(Auth)
@@ -375,7 +375,7 @@ async function refreshGoogleTokens({ get }) {
 Apply `requireAuth()` to an entire controller subtree:
 
 ```typescript
-import { requireAuth } from 'remix/auth-middleware'
+import { requireAuth } from 'remix/middleware/auth'
 
 export default {
 	middleware: [requireAuth()],
@@ -408,7 +408,7 @@ export default {
 Apply middleware to a single route:
 
 ```typescript
-import { Auth, requireAuth } from 'remix/auth-middleware'
+import { Auth, requireAuth } from 'remix/middleware/auth'
 
 router.get(routes.account, {
   middleware: [requireAuth()],
@@ -422,7 +422,7 @@ router.get(routes.account, {
 ### Redirect on auth failure
 
 ```typescript
-import { requireAuth } from 'remix/auth-middleware'
+import { requireAuth } from 'remix/middleware/auth'
 import { redirect } from 'remix/response/redirect'
 
 export function requireAuthRedirect() {

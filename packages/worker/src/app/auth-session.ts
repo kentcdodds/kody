@@ -1,4 +1,4 @@
-import { createCookie } from '@remix-run/cookie'
+import { createCookie } from 'remix/cookie'
 import { isStableUserId } from '#worker/user-id.ts'
 
 const defaultSessionMaxAgeSeconds = 60 * 60 * 24 * 7

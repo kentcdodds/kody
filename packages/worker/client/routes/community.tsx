@@ -33,7 +33,7 @@ function isCommunityIndexPath(href: string) {
 
 function buildCommunityListingsFrameSrc(href: string) {
 	const url = new URL(href, 'http://localhost')
-	return `${routes.community.href()}${url.search}`
+	return routes.community.href(null, { searchParams: url.searchParams })
 }
 
 export async function communityRouteLoader(

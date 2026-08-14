@@ -46,8 +46,10 @@ SSR (fail loud in dev).
 
 - Constant: `REMIX_FRAME_TARGET_HEADER` (`x-remix-target`) in
   `frame-constants.ts`.
-- Client `entry.tsx` `resolveFrame` sets the header to the frame `name` when
-  fetching `src`.
+- Client `entry.tsx` `resolveFrame(src, options)` sets the header to
+  `options.target` (the frame `name`) when fetching `src`. Non-GET frame
+  navigations forward `options.method` and `options.formData`. The resolver
+  returns the `Response` so Remix can read redirects and the body.
 - Server `handleFrameRequest` reads the header and selects the registered frame.
 
 ## Auth scoping

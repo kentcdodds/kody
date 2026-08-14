@@ -33,6 +33,19 @@ test('account secret paths encode route segments and round-trip through the pars
 			name: 'token#value',
 		}),
 	).toBe('/account/secrets/session/session%20id/token%23value')
+
+	const dottedPath = buildAccountSecretPath({
+		scope: 'user',
+		name: 'google.api.key',
+	})
+	expect(dottedPath).toBe('/account/secrets/user/google%2Eapi%2Ekey')
+	expect(parseAccountSecretPath(dottedPath)).toEqual({
+		id: 'user::::google.api.key',
+		scope: 'user',
+		packageId: null,
+		sessionId: null,
+		name: 'google.api.key',
+	})
 })
 
 test('account secret paths fail fast when scope binding ids are missing', () => {

@@ -35,9 +35,21 @@ template:
 - Development uses the esbuild watcher plus `wrangler dev`. Production client
   assets use the same esbuild pipeline with minification enabled.
 - Static files are served through the Workers Assets binding rather than
-  `remix/assets` or `remix/static-middleware`.
+  `remix/assets` or `remix/middleware/static`.
 - Frame resolution is configured in both `packages/worker/client/entry.tsx` and
-  `packages/worker/src/app/ssr-render.tsx`.
+  `packages/worker/src/app/ssr-render.tsx`. The browser resolver is
+  `(src, options)` and returns the `Response`. SSR `resolveFrame` is
+  `(src, target, context)`.
+- The app router uses Remix COP (`remix/middleware/cop`) before the account
+  write lease. MCP, OAuth, package apps, and connectors never see that stack
+  because `index.ts` handles them first. COP bypasses Stripe webhooks, package
+  webhook ingress, and `/sentry-tunnel`.
+- App D1 access goes through `D1DatabaseDriver` (`new Database(driver)`). Remix
+  does not ship a D1 factory.
+- Session and signed cookies import `createCookie` from `remix/cookie`.
+- Usernames are DNS labels for `{username}.` package-app hosts, so they cannot
+  contain dots. Path params that may contain dots (secret names) must go through
+  `href()` so `.` is encoded as `%2E`.
 
 If a Node server entry point is added later, evaluate `trustProxy` only at that
 trusted reverse-proxy boundary. Do not copy it into Worker request handling.

@@ -1,4 +1,4 @@
-import { createCookie } from '@remix-run/cookie'
+import { createCookie } from 'remix/cookie'
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { isStableUserId } from '#worker/user-id.ts'
 

@@ -269,10 +269,10 @@ full examples.
 
 ### Routing, Server, and Responses
 
-- `remix/fetch-router` — the router itself. Use for `createRouter`, controller
-  and middleware types, and registering routes
-- `remix/fetch-router/routes` — declarative route builders. Use for `route`,
-  `get`, `post`, `put`, `del`, `form`, `resources` when defining `app/routes.ts`
+- `remix/router` — the router itself. Use for `createRouter`, controller and
+  middleware types, and registering routes
+- `remix/routes` — declarative route builders. Use for `route`, `get`, `post`,
+  `put`, `del`, `form`, `resources` when defining `app/routes.ts`
 - `remix/node-fetch-server` — adapter from Node's `http` module to a Fetch-style
   router. Use for `createRequestListener` in `server.ts`
 - `remix/assets` — browser asset server. Use for `createAssetServer` when
@@ -309,11 +309,11 @@ full examples.
 - `remix/data-schema/form-data` — `f.object` and `f.field` for parsing
   `FormData` directly. Use in actions that read browser forms
 - `remix/data-table` — typed tables and a `Database` interface. Use for `table`,
-  `column`, `createDatabase` when modeling persisted data
-- `remix/data-table-sqlite`, `remix/data-table-postgres`,
-  `remix/data-table-mysql` — adapters. Use to back `createDatabase` with a real
-  engine. SQLite accepts Node, Bun, and compatible synchronous clients with the
-  shared `prepare`/`exec` surface
+  `column`, and `new Database(driver)` when modeling persisted data
+- `remix/data-table/sqlite`, `remix/data-table/postgres`,
+  `remix/data-table/mysql` — official drivers. Use `createSqliteDatabase(...)`
+  for Node, Bun, and compatible synchronous SQLite clients. Remix does not ship
+  a D1 factory; Kody owns `D1DatabaseDriver` and passes it to `new Database`
 - `remix/data-table/migrations` — migration authoring and runners. Use for
   `createMigration`, `createMigrationRunner`
 - `remix/data-table/migrations/node` — `loadMigrations` from disk. Use in
@@ -326,15 +326,15 @@ full examples.
 - `remix/session` — the `Session` object: `get`, `set`, `flash`, `unset`,
   `regenerateId`. Use for any per-browser state where tampering would be a bug
   (login, "I submitted this form already", cart, flash messages)
-- `remix/session-middleware` — `session(cookie, storage)`. Use to wire a session
+- `remix/middleware/session` — `session(cookie, storage)`. Use to wire a session
   cookie and storage backend into the root middleware stack
-- `remix/session/fs-storage`, `remix/session/memory-storage`,
-  `remix/session/cookie-storage` — storage backends. Use `fs-storage` for
+- `remix/session-storage/fs`, `remix/session-storage/memory`,
+  `remix/session-storage/cookie` — storage backends. Use `fs-storage` for
   single-process apps, `memory-storage` for tests, `cookie-storage` for
   stateless deployments where data fits in a cookie
-- `remix/session-storage-redis` — Redis-backed storage. Use for multi-process or
+- `remix/session-storage/redis` — Redis-backed storage. Use for multi-process or
   multi-host deployments
-- `remix/session-storage-memcache` — Memcache-backed storage. Same multi-host
+- `remix/session-storage/memcache` — Memcache-backed storage. Same multi-host
   use case as Redis
 - `remix/cookie` — `createCookie` for plain signed/unsigned cookies. Use for
   non-sensitive preferences where the client is allowed to control the value
@@ -343,7 +343,7 @@ full examples.
 - `remix/auth` — credentials, OAuth, OIDC, and Atmosphere providers. Use to
   define how identity is verified, start/finish external login, and refresh
   stored OAuth/OIDC token bundles with `refreshExternalAuth(...)`
-- `remix/auth-middleware` — `auth({ schemes })`, `requireAuth`, the `Auth`
+- `remix/middleware/auth` — `auth({ schemes })`, `requireAuth`, the `Auth`
   context key. Use to resolve identity into the request context and to gate
   routes
 
@@ -370,9 +370,9 @@ full examples.
 
 ### Middleware
 
-- `remix/static-middleware` — `staticFiles(dir)`. Use to serve files from
+- `remix/middleware/static` — `staticFiles(dir)`. Use to serve files from
   `public/` exactly as they exist on disk
-- `remix/form-data-middleware` — `formData()`. Use to parse `FormData` once and
+- `remix/middleware/form-data` — `formData()`. Use to parse `FormData` once and
   expose it via `get(FormData)` instead of calling `await request.formData()` in
   each action
 - `remix/form-data-parser` — lower-level `parseFormData`, `FileUpload`. Use when
@@ -381,19 +381,19 @@ full examples.
   multipart stream parsing. `MultipartPart.headers` is a plain object keyed by
   lower-case header name; read values with bracket notation such as
   `part.headers['content-type']`
-- `remix/compression-middleware` — `compression()`. Use globally for text-like
+- `remix/middleware/compression` — `compression()`. Use globally for text-like
   responses
-- `remix/logger-middleware` — `logger()`. Use in development for request logs;
+- `remix/middleware/logger` — `logger()`. Use in development for request logs;
   pass `colors` to force terminal color output on or off
-- `remix/method-override-middleware` — `methodOverride()`. Use when HTML forms
+- `remix/middleware/method-override` — `methodOverride()`. Use when HTML forms
   need `PUT`, `PATCH`, or `DELETE`
-- `remix/async-context-middleware` — `asyncContext()`, `getContext()`. Use when
+- `remix/middleware/async-context` — `asyncContext()`, `getContext()`. Use when
   helpers outside actions need request context without threading it through
   every call
-- `remix/cors-middleware` — `cors(opts?)`. Use for endpoints called cross-origin
-- `remix/csrf-middleware` — `csrf(opts?)`. Use when session-backed forms mutate
+- `remix/middleware/cors` — `cors(opts?)`. Use for endpoints called cross-origin
+- `remix/middleware/csrf` — `csrf(opts?)`. Use when session-backed forms mutate
   state and need synchronizer-token CSRF protection
-- `remix/cop-middleware` — cross-origin protection. Use to reject unsafe
+- `remix/middleware/cop` — cross-origin protection. Use to reject unsafe
   cross-origin browser requests
 
 ### Test
@@ -414,7 +414,7 @@ full examples.
 ### Define routes first
 
 ```typescript
-import { form, get, post, resources, route } from 'remix/fetch-router/routes'
+import { form, get, post, resources, route } from 'remix/routes'
 
 export const routes = route({
 	home: '/',
@@ -437,7 +437,7 @@ export const routes = route({
 ### Type controllers against the route contract
 
 ```typescript
-import type { Controller } from 'remix/fetch-router'
+import type { Controller } from 'remix/router'
 
 import type { AppContext } from '../router.ts'
 import { routes } from '../routes.ts'
@@ -467,7 +467,7 @@ import {
 	type AnyParams,
 	type MiddlewareContext,
 	type WithParams,
-} from 'remix/fetch-router'
+} from 'remix/router'
 
 export type RootMiddleware = [
 	ReturnType<typeof formData>,

@@ -51,3 +51,62 @@ test('router prefers static nested paths over dynamic siblings', async () => {
 	)
 	expect(await userDetail.text()).toBe('user-detail')
 })
+
+test('delimiter-bounded params keep companion suffixes, hyphens, and encoded dots', async () => {
+	const router = createRouter()
+	router.get(routePattern(routes.blogPostApi), createStubHandler('blog-api'))
+	router.get(
+		routePattern(routes.communityDetailApi),
+		createStubHandler('listing-api'),
+	)
+	router.get(routePattern(routes.profile), createStubHandler('profile'))
+	router.get(
+		routePattern(routes.accountSecretUserDetail),
+		createStubHandler('secret'),
+	)
+
+	expect(routes.blogPostApi.href({ slug: 'hello-world' })).toBe(
+		'/blog/hello-world.json',
+	)
+	expect(
+		routes.communityDetailApi.href({
+			listingId: '550e8400-e29b-41d4-a716-446655440000',
+		}),
+	).toBe('/community/550e8400-e29b-41d4-a716-446655440000.json')
+	expect(
+		routes.accountSecretUserDetail.href({ secretName: 'google.api.key' }),
+	).toBe('/account/secrets/user/google%2Eapi%2Ekey')
+	expect(routes.community.href(null, { searchParams: { q: 'remix' } })).toBe(
+		'/community?q=remix',
+	)
+
+	expect(
+		await (
+			await router.fetch(new Request('http://localhost/blog/hello-world.json'))
+		).text(),
+	).toBe('blog-api')
+	expect(
+		await (
+			await router.fetch(
+				new Request(
+					'http://localhost/community/550e8400-e29b-41d4-a716-446655440000.json',
+				),
+			)
+		).text(),
+	).toBe('listing-api')
+	expect(
+		await (
+			await router.fetch(new Request('http://localhost/@some-user'))
+		).text(),
+	).toBe('profile')
+	expect(
+		(await router.fetch(new Request('http://localhost/@john.doe'))).status,
+	).toBe(404)
+	expect(
+		await (
+			await router.fetch(
+				new Request('http://localhost/account/secrets/user/google%2Eapi%2Ekey'),
+			)
+		).text(),
+	).toBe('secret')
+})

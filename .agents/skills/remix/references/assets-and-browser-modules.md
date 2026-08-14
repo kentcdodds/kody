@@ -33,7 +33,7 @@ rewriting, dependency scanning, preloads, sourcemaps, or fingerprinted URLs.
 import * as path from 'node:path'
 
 import { createAssetServer } from 'remix/assets'
-import { createRouter } from 'remix/fetch-router'
+import { createRouter } from 'remix/router'
 
 let assetServer = createAssetServer({
 	rootDir: path.resolve(import.meta.dirname, '..'),

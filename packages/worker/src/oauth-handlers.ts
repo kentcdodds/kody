@@ -4,7 +4,7 @@ import {
 	type ClientInfo,
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
-import { createCookie } from '@remix-run/cookie'
+import { createCookie } from 'remix/cookie'
 import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import {
 	createAuthCookie,

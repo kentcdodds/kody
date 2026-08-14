@@ -59,7 +59,7 @@ the route definition. For form-style POSTs, attach a `FormData` body to the
 `createMemorySessionStorage()` and a test cookie when constructing the router.
 
 ```ts
-import { createMemorySessionStorage } from 'remix/session/memory-storage'
+import { createMemorySessionStorage } from 'remix/session-storage/memory'
 import { createCookie } from 'remix/cookie'
 
 let router = createBookstoreRouter({

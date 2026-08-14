@@ -110,28 +110,30 @@ export const books = table({
 
 ## Database Setup
 
-Create a database with an adapter and expose it via middleware:
+Create a database with a driver and expose it via middleware:
 
 ```typescript
-import BetterSqlite3 from 'better-sqlite3'
-import { createDatabase, Database } from 'remix/data-table'
-import { createSqliteDatabaseAdapter } from 'remix/data-table-sqlite'
+import { createSqliteDatabase } from 'remix/data-table/sqlite'
 
-let sqlite = new BetterSqlite3('./db/app.db')
-sqlite.pragma('foreign_keys = ON')
-let adapter = createSqliteDatabaseAdapter(sqlite)
-export let db = createDatabase(adapter)
+export let db = createSqliteDatabase({
+	filename: './db/app.db',
+	foreignKeys: true,
+})
 ```
 
-`createSqliteDatabaseAdapter` accepts synchronous SQLite clients with a shared
-`prepare`/`exec` surface, including Node's `node:sqlite`, Bun's `bun:sqlite`,
-and compatible clients. Use whichever client fits the runtime instead of
-assuming `better-sqlite3` is required.
+`createSqliteDatabase` accepts a filename config or a synchronous SQLite client
+with a shared `prepare`/`exec` surface, including Node's `node:sqlite`, Bun's
+`bun:sqlite`, and compatible clients. Use whichever client fits the runtime
+instead of assuming `better-sqlite3` is required.
+
+Kody's Worker app database is Cloudflare D1. Remix does not ship a D1 factory,
+so `packages/worker/src/db.ts` constructs
+`new Database(createD1DatabaseDriver(db))`.
 
 ### Database middleware
 
 ```typescript
-import type { Middleware } from 'remix/fetch-router'
+import type { Middleware } from 'remix/router'
 import { Database } from 'remix/data-table'
 
 export function loadDatabase(): Middleware {
@@ -302,7 +304,7 @@ with `get(FormData)`. The body is parsed once per request, and the typed
 `methodOverride()` and CSRF middleware work uniformly.
 
 ```typescript
-import { formData } from 'remix/form-data-middleware'
+import { formData } from 'remix/middleware/form-data'
 
 let router = createRouter({
 	middleware: [, /* ... */ formData() /* ... */],

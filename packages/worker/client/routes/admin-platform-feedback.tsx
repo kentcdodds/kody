@@ -47,8 +47,6 @@ type FeedbackFilterState = {
 	category: string
 }
 
-const adminPlatformFeedbackApiPath = routes.adminPlatformFeedbackApi.href()
-
 const statusOptions = [
 	{ value: '', label: 'All statuses' },
 	{ value: 'open', label: 'Open' },
@@ -96,18 +94,20 @@ function readSelectedFeedbackId(href: string) {
 
 function buildFeedbackHref(currentHref: string, feedbackId: string) {
 	const url = new URL(currentHref, 'http://localhost')
-	url.pathname = routes.adminPlatformFeedback.href()
 	url.searchParams.set('feedbackId', feedbackId)
-	return `${url.pathname}${url.search}`
+	return routes.adminPlatformFeedback.href(null, {
+		searchParams: url.searchParams,
+	})
 }
 
 function buildPageHref(currentHref: string, page: number) {
 	const url = new URL(currentHref, 'http://localhost')
-	url.pathname = routes.adminPlatformFeedback.href()
 	url.searchParams.delete('feedbackId')
 	if (page <= 1) url.searchParams.delete('page')
 	else url.searchParams.set('page', String(page))
-	return `${url.pathname}${url.search}`
+	return routes.adminPlatformFeedback.href(null, {
+		searchParams: url.searchParams,
+	})
 }
 
 function buildHrefWithUpdatedFilters(
@@ -123,7 +123,9 @@ function buildHrefWithUpdatedFilters(
 	// Filter changes re-anchor the list and clear the detail selection.
 	url.searchParams.delete('feedbackId')
 	url.searchParams.delete('page')
-	return `${url.pathname}${url.search}`
+	return routes.adminPlatformFeedback.href(null, {
+		searchParams: url.searchParams,
+	})
 }
 
 function feedbackTitle(feedback: AdminPlatformFeedbackListItem) {
@@ -134,11 +136,16 @@ export async function adminPlatformFeedbackRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(`${adminPlatformFeedbackApiPath}${url.search}`, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
+	const response = await fetch(
+		routes.adminPlatformFeedbackApi.href(null, {
+			searchParams: url.searchParams,
+		}),
+		{
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+			signal,
+		},
+	)
 	if (response.status === 401) {
 		return routeLoaderRedirect(routes.login.href())
 	}
@@ -177,7 +184,9 @@ export function AdminPlatformFeedbackRoute(handle: Handle) {
 		const requestId = ++loadRequestId
 		try {
 			const response = await fetch(
-				`${adminPlatformFeedbackApiPath}${readRouterSearch(handle)}`,
+				routes.adminPlatformFeedbackApi.href(null, {
+					searchParams: new URLSearchParams(readRouterSearch(handle)),
+				}),
 				{
 					headers: { Accept: 'application/json' },
 					credentials: 'include',

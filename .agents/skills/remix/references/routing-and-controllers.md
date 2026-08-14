@@ -17,7 +17,7 @@ and middleware ordering, see `middleware-and-server.md`.
 
 ## Route Builders
 
-Import all route builders from `remix/fetch-router/routes`.
+Import all route builders from `remix/routes`.
 
 ### `route(prefix, map)` — nested route group
 
@@ -27,7 +27,7 @@ a `route('prefix', { ... })` call (when you want a shared URL prefix) or a plain
 object literal (when each leaf already owns its absolute path).
 
 ```typescript
-import { route, get, post } from 'remix/fetch-router/routes'
+import { route, get, post } from 'remix/routes'
 
 export const routes = route({
 	home: '/',
@@ -89,14 +89,20 @@ Route objects expose `.href()` for type-safe URL generation:
 ```typescript
 redirect(routes.home.href())
 redirect(routes.account.orders.show.href({ orderId: '42' }))
+redirect(routes.search.href(null, { searchParams: { q: 'remix' } }))
 ```
+
+`.href()` percent-encodes `.` in param values as `%2E` so delimiter-bounded
+matching can round-trip dotted ids (secret names). Always generate those URLs
+with `.href()`; do not concatenate raw param values into pathnames. Usernames
+are DNS labels and must not contain dots.
 
 ## Actions
 
 An action is a handler for a single leaf route. Type it with `BuildAction`:
 
 ```typescript
-import type { BuildAction } from 'remix/fetch-router'
+import type { BuildAction } from 'remix/router'
 
 export const search: BuildAction<'GET', typeof routes.search> = {
   async handler({ url }) {
@@ -118,7 +124,7 @@ The handler receives a context object with:
 Actions with inline middleware:
 
 ```typescript
-import { requireAuth } from 'remix/auth-middleware'
+import { requireAuth } from 'remix/middleware/auth'
 
 router.get(routes.account, {
 	middleware: [requireAuth()],
@@ -226,7 +232,7 @@ route definition. Pass `AppContext` as the second generic to `Controller` so
 middleware stack.
 
 ```typescript
-import type { Controller } from 'remix/fetch-router'
+import type { Controller } from 'remix/router'
 import type { AppContext } from '../router.ts'
 
 export default {
@@ -310,11 +316,7 @@ Define an `AppContext` type from your middleware stack for use in actions and
 controllers:
 
 ```typescript
-import type {
-	MiddlewareContext,
-	WithParams,
-	AnyParams,
-} from 'remix/fetch-router'
+import type { MiddlewareContext, WithParams, AnyParams } from 'remix/router'
 
 type RootMiddleware = [
 	ReturnType<typeof formData>,

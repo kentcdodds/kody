@@ -92,7 +92,10 @@ function readSelectedOauthAppSlug(href: string): string | null {
 }
 
 function buildOauthAppHref(appSlug: string, search = '') {
-	return `${routes.accountOauthAppDetail.href({ appSlug })}${search}`
+	return routes.accountOauthAppDetail.href(
+		{ appSlug },
+		{ searchParams: new URLSearchParams(search) },
+	)
 }
 
 function oauthAppTitle(app: AccountOauthAppListItem) {

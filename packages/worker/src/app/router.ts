@@ -214,9 +214,13 @@ import { createWaitingListHandler } from '#app/handlers/waiting-list.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { routes } from '#universal/routes.ts'
 import { createAccountWriteLeaseMiddleware } from '#app/account-write-lease-middleware.ts'
+import { remixCrossOriginProtection } from '#app/cross-origin-protection.ts'
 export function createAppRouter(env: Env) {
 	const router = createRouter({
-		middleware: [createAccountWriteLeaseMiddleware(env)],
+		middleware: [
+			remixCrossOriginProtection,
+			createAccountWriteLeaseMiddleware(env),
+		],
 		async defaultHandler({ request }) {
 			return renderAppPage({
 				request,

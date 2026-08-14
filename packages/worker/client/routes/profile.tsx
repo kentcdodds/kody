@@ -69,7 +69,7 @@ export async function profileRouteLoader(
 
 	const frameSrc = buildProfileFrameSrc(`${url.pathname}${url.search}`)
 	const shellPromise = fetch(
-		routes.profileApi.href({ username }) + url.search,
+		routes.profileApi.href({ username }, { searchParams: url.searchParams }),
 		{
 			headers: { Accept: 'application/json' },
 			credentials: 'include',
@@ -125,9 +125,9 @@ export function ProfileRoute(handle: Handle) {
 
 		try {
 			const search = new URL(readCurrentRouterHref(handle), 'http://localhost')
-				.search
+				.searchParams
 			const response = await fetch(
-				routes.profileApi.href({ username }) + search,
+				routes.profileApi.href({ username }, { searchParams: search }),
 				{
 					headers: { Accept: 'application/json' },
 					credentials: 'include',
