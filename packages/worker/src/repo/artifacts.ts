@@ -200,28 +200,51 @@ function isArtifactsBindingError(error: unknown): error is ArtifactsError {
 	)
 }
 
+function readArtifactsErrorMessage(error: unknown) {
+	if (typeof error === 'string') return error
+	if (error instanceof Error) return error.message
+	if (
+		error !== null &&
+		typeof error === 'object' &&
+		'message' in error &&
+		typeof error.message === 'string'
+	) {
+		return error.message
+	}
+	return ''
+}
+
 function artifactsBindingErrorCode(error: unknown) {
 	if (isArtifactsBindingError(error)) return error.code
-	if (error === null || typeof error !== 'object') return null
-	const candidate = error as { name?: unknown; message?: unknown }
-	// Message fallback only for ArtifactsError with known prefixes so a
-	// generic git/HTTP "not found" cannot look like a create-safe miss.
-	if (
-		candidate.name !== 'ArtifactsError' ||
-		typeof candidate.message !== 'string'
-	) {
-		return null
-	}
-	if (/^Repository not found(?::|\b)/.test(candidate.message)) {
-		return 'NOT_FOUND'
-	}
-	if (/^Repository already exists(?::|\b)/.test(candidate.message)) {
+	// JSRPC may flatten the class so `name` is Error and the message is
+	// `ArtifactsError: Repository not found: <repo>`. Strip that prefix,
+	// then require the known create-safe starts.
+	const message = readArtifactsErrorMessage(error).replace(
+		/^ArtifactsError:\s*/,
+		'',
+	)
+	if (/^Repository not found(?::|\b)/.test(message)) return 'NOT_FOUND'
+	if (/^Repository already exists(?::|\b)/.test(message)) {
 		return 'ALREADY_EXISTS'
 	}
-	if (/^Import in progress(?::|\b)/i.test(candidate.message)) {
+	if (/^Import in progress(?::|\b)/i.test(message)) {
 		return 'IMPORT_IN_PROGRESS'
 	}
 	return null
+}
+
+async function getNativeRepoOrThrow(native: Artifacts, name: string) {
+	try {
+		return await native.get(name)
+	} catch (error) {
+		const code = artifactsBindingErrorCode(error)
+		if (code === 'NOT_FOUND') {
+			throw new Error(`Artifacts repo "${name}" was not found.`, {
+				cause: error,
+			})
+		}
+		throw error
+	}
 }
 
 function adaptNativeRepoHandle(repo: ArtifactsRepo): ArtifactRepoHandle {
@@ -267,19 +290,19 @@ function adaptNativeArtifactsBinding(
 ): ArtifactNamespaceBinding & Record<string, unknown> {
 	const repo = (name: string): ArtifactRepoHandle => ({
 		info: async () => {
-			const handle = await native.get(name)
+			const handle = await getNativeRepoOrThrow(native, name)
 			return adaptNativeRepoHandle(handle).info()
 		},
 		createToken: async (scope = 'write', ttl = 3600) => {
-			const handle = await native.get(name)
+			const handle = await getNativeRepoOrThrow(native, name)
 			return adaptNativeRepoHandle(handle).createToken(scope, ttl)
 		},
 		listTokens: async () => {
-			const handle = await native.get(name)
+			const handle = await getNativeRepoOrThrow(native, name)
 			return adaptNativeRepoHandle(handle).listTokens?.() ?? []
 		},
 		revokeToken: async (idOrPlaintext) => {
-			const handle = await native.get(name)
+			const handle = await getNativeRepoOrThrow(native, name)
 			await adaptNativeRepoHandle(handle).revokeToken?.(idOrPlaintext)
 		},
 	})

@@ -692,6 +692,15 @@ test('getArtifactsBinding prefers the native ARTIFACTS binding for the env names
 	await expect(binding.get('repo-unrelated-not-found')).rejects.toThrow(
 		/git: repository not found/,
 	)
+	nativeGet.mockReset()
+	nativeGet.mockImplementation(async () => {
+		throw new Error(
+			'ArtifactsError: Repository not found: repo-native-prefixed',
+		)
+	})
+	await expect(binding.get('repo-native-prefixed')).resolves.toEqual({
+		status: 'not_found',
+	})
 
 	nativeGet.mockReset()
 	nativeGet.mockImplementation(async () => {
