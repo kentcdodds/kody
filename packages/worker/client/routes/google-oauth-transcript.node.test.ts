@@ -53,14 +53,11 @@ test('google oauth transcript covers Lane B, console beats, connect, and smoke t
 					: tool.result.includes('# Search results')
 			}),
 	).toBe(true)
-	expect(
-		tools.every((tool) => !tool.result.includes('"matches"')),
-	).toBe(true)
+	expect(tools.every((tool) => !tool.result.includes('"matches"'))).toBe(true)
 	expect(
 		tools.every(
 			(tool) =>
-				!tool.result.includes('{{secret:') &&
-				!tool.note.includes('{{secret:'),
+				!tool.result.includes('{{secret:') && !tool.note.includes('{{secret:'),
 		),
 	).toBe(true)
 
@@ -70,7 +67,8 @@ test('google oauth transcript covers Lane B, console beats, connect, and smoke t
 	expect(
 		agentLines.every(
 			(text) =>
-				!text.includes('{{secret:') && !/GOCSPX-|ya29\.|Bearer [A-Za-z0-9_-]{20}/.test(text),
+				!text.includes('{{secret:') &&
+				!/GOCSPX-|ya29\.|Bearer [A-Za-z0-9_-]{20}/.test(text),
 		),
 	).toBe(true)
 
@@ -95,8 +93,7 @@ test('google oauth transcript covers Lane B, console beats, connect, and smoke t
 		discoverTools?.some((tool) =>
 			tool.inputs.some(
 				(input) =>
-					input.name === 'query' &&
-					/google|gmail|oauth/i.test(input.value),
+					input.name === 'query' && /google|gmail|oauth/i.test(input.value),
 			),
 		),
 	).toBe(true)
@@ -104,8 +101,7 @@ test('google oauth transcript covers Lane B, console beats, connect, and smoke t
 		discoverTools?.some((tool) =>
 			tool.inputs.some(
 				(input) =>
-					input.name === 'memoryContext' &&
-					input.value.includes('Gmail'),
+					input.name === 'memoryContext' && input.value.includes('Gmail'),
 			),
 		),
 	).toBe(true)
@@ -136,32 +132,37 @@ test('google oauth transcript covers Lane B, console beats, connect, and smoke t
 	).toBe(true)
 
 	expect(
-		agentLines.some((text) => /gmail\.readonly|Lane B|bring-your-own/i.test(text)),
+		agentLines.some((text) =>
+			/gmail\.readonly|Lane B|bring-your-own/i.test(text),
+		),
 	).toBe(true)
 	expect(
 		agentLines.some((text) =>
 			text.includes('https://kody.codes/connect/oauth'),
 		),
 	).toBe(true)
-	expect(agentLines.some((text) => /7-day|seven days|invalid_grant/i.test(text))).toBe(
-		true,
-	)
 	expect(
-		agentLines.some((text) => /never paste|do not paste|client secret/i.test(text)),
+		agentLines.some((text) => /7-day|seven days|invalid_grant/i.test(text)),
 	).toBe(true)
 	expect(
 		agentLines.some((text) =>
-			/redirect URI/i.test(text) &&
-			text.includes('https://kody.codes/connect/oauth'),
+			/never paste|do not paste|client secret/i.test(text),
+		),
+	).toBe(true)
+	expect(
+		agentLines.some(
+			(text) =>
+				/redirect URI/i.test(text) &&
+				text.includes('https://kody.codes/connect/oauth'),
 		),
 	).toBe(true)
 
 	const userLines = googleOauthTranscriptActs.flatMap((act) =>
 		act.lines.flatMap((line) => (line.role === 'user' ? [line.text] : [])),
 	)
-	expect(userLines.some((text) => /done|what.?s next|what is next/i.test(text))).toBe(
-		true,
-	)
+	expect(
+		userLines.some((text) => /done|what.?s next|what is next/i.test(text)),
+	).toBe(true)
 	expect(userLines.some((text) => /created a project/i.test(text))).toBe(true)
 	expect(userLines.some((text) => /redirect URI/i.test(text))).toBe(true)
 	expect(userLines.some((text) => /paste|client secret/i.test(text))).toBe(true)
@@ -170,8 +171,10 @@ test('google oauth transcript covers Lane B, console beats, connect, and smoke t
 	)
 	expect(userLines.some((text) => /authorized/i.test(text))).toBe(true)
 
-	const connectUrlAgent = agentLines.find((text) =>
-		text.includes('authorizeUrl=') && text.includes('/connect/oauth?provider=google'),
+	const connectUrlAgent = agentLines.find(
+		(text) =>
+			text.includes('authorizeUrl=') &&
+			text.includes('/connect/oauth?provider=google'),
 	)
 	expect(connectUrlAgent).toBeTruthy()
 	expect(connectUrlAgent).toContain('gmail.readonly')

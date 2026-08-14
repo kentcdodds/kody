@@ -249,7 +249,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 			},
 			{
 				role: 'user',
-				text: "What is a redirect URI? And is it okay if I paste the client secret here so you can save it?",
+				text: 'What is a redirect URI? And is it okay if I paste the client secret here so you can save it?',
 			},
 			{
 				role: 'agent',
@@ -357,10 +357,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 						result: executeTextReturn({
 							conversationId,
 							value: {
-								subjects: [
-									'Acme Invoice #4412',
-									'Your weekly digest',
-								],
+								subjects: ['Acme Invoice #4412', 'Your weekly digest'],
 							},
 						}),
 					},

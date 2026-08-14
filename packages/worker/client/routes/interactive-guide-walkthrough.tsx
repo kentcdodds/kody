@@ -39,7 +39,11 @@ export function renderInteractiveGuideWalkthrough(input: {
 					mix={css(actCss)}
 					aria-labelledby={`${act.id}-title`}
 				>
-					<p mix={css(act.id === input.acts[0]?.id ? exampleKickerCss : kickerCss)}>
+					<p
+						mix={css(
+							act.id === input.acts[0]?.id ? exampleKickerCss : kickerCss,
+						)}
+					>
 						{act.kicker}
 					</p>
 					<h2 id={`${act.id}-title`}>{act.title}</h2>

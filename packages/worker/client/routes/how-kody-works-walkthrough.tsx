@@ -24,7 +24,10 @@ export function renderHowKodyWorksWalkthrough() {
 		lead: 'A question you would ask again becomes an export you can invoke from any agent, then a daily email that stays quiet until something actually shipped.',
 		acts: howKodyWorksTranscriptActs,
 		afterActs: (
-			<section mix={css(interactiveGuideActCss)} aria-labelledby="package-files-title">
+			<section
+				mix={css(interactiveGuideActCss)}
+				aria-labelledby="package-files-title"
+			>
 				<p mix={css(interactiveGuideKickerCss)}>The package</p>
 				<h2 id="package-files-title">What the agent wrote</h2>
 				<p mix={css(interactiveGuideMutedLeadCss)}>

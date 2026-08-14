@@ -299,7 +299,6 @@ function publishReturn(input: {
 	}
 }
 
-
 const askMemoryContext = {
 	task: 'What did my favorite bot ship recently on GitHub?',
 	entities: ['favorite bot'],
@@ -320,7 +319,6 @@ const watchLoginMemory = {
 	summary:
 		"kody-bot is my favorite bot. I'm really interested in what it ships on github",
 }
-
 
 const askConversationId = '3k7n2p9q4r8w'
 const phoneConversationId = '5h8m2q7t1v4x'
@@ -436,11 +434,6 @@ function repoSessionPublishReturn(publishedCommit: string) {
 		},
 	}
 }
-
-
-
-
-
 
 const githubSearchMarkdown = `# Search results
 

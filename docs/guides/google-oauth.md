@@ -53,11 +53,11 @@ This page is the playbook. The same story is an interactive transcript at
 
 ## The loop
 
-1. **Ask for inbox access.** The user wants Kody to read Gmail for invoices
-   (for example from Acme) and does not know the steps.
+1. **Ask for inbox access.** The user wants Kody to read Gmail for invoices (for
+   example from Acme) and does not know the steps.
 2. **Look up the guides.** Search for Google / Gmail / OAuth, open
-   `coding_guide_get` entity detail, then load `integration_bootstrap`,
-   `oauth`, and `provider_google`.
+   `coding_guide_get` entity detail, then load `integration_bootstrap`, `oauth`,
+   and `provider_google`.
 3. **Choose Lane B.** Built-in Google does not cover inbox reading. Walk Google
    Cloud and Google Auth Platform one step at a time: project, enable Gmail API,
    branding and External audience, Web client with redirect
