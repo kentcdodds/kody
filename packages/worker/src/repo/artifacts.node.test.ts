@@ -492,7 +492,7 @@ test('resolveArtifactDefaultBranchHead reuses a provided token and still works w
 	expect(createToken).toHaveBeenCalledWith('read', 300)
 	expect(gitMocks.listServerRefs).toHaveBeenCalledWith(
 		expect.objectContaining({
-			url: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
+			url: 'https://x:art_v1_throwaway@acct.artifacts.cloudflare.net/git/default/repo-1.git',
 			prefix: 'refs/heads/main',
 		}),
 	)

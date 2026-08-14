@@ -250,27 +250,33 @@ async function getNativeRepoOrThrow(native: Artifacts, name: string) {
 
 function adaptNativeRepoHandle(
 	repo: ArtifactsRepo,
-	restCreateToken?: ArtifactRepoHandle['createToken'],
+	restRepo?: ArtifactRepoHandle,
 ): ArtifactRepoHandle {
 	return {
-		info: async () => ({
-			id: repo.id,
-			name: repo.name,
-			description: repo.description,
-			defaultBranch: repo.defaultBranch,
-			createdAt: repo.createdAt,
-			updatedAt: repo.updatedAt,
-			lastPushAt: repo.lastPushAt,
-			source: repo.source,
-			readOnly: repo.readOnly,
-			remote: repo.remote,
-		}),
+		info: async () => {
+			if (restRepo) {
+				const info = await restRepo.info()
+				if (info?.remote) return info
+			}
+			return {
+				id: repo.id,
+				name: repo.name,
+				description: repo.description,
+				defaultBranch: repo.defaultBranch,
+				createdAt: repo.createdAt,
+				updatedAt: repo.updatedAt,
+				lastPushAt: repo.lastPushAt,
+				source: repo.source,
+				readOnly: repo.readOnly,
+				remote: repo.remote,
+			}
+		},
 		createToken: async (scope = 'write', ttl = 3600) => {
 			// Native createToken still throws `undefined.split` across JSRPC
 			// after mapping plaintext/token. Mint via REST when credentials
 			// exist — that path worked before #1437 preferred the binding.
-			if (restCreateToken) {
-				return restCreateToken(scope, ttl)
+			if (restRepo) {
+				return restRepo.createToken(scope, ttl)
 			}
 			try {
 				const token = await repo.createToken(scope, ttl)
@@ -312,15 +318,10 @@ function adaptNativeArtifactsBinding(
 	env: Env,
 ): ArtifactNamespaceBinding & Record<string, unknown> {
 	const rest = createArtifactsRestBinding(env, getArtifactsNamespace(env))
-	const restCreateToken = rest
-		? (name: string): ArtifactRepoHandle['createToken'] =>
-				(scope, ttl) =>
-					rest.repo(name).createToken(scope, ttl)
-		: null
 	const repo = (name: string): ArtifactRepoHandle => ({
 		info: async () => {
 			const handle = await getNativeRepoOrThrow(native, name)
-			return adaptNativeRepoHandle(handle, restCreateToken?.(name)).info()
+			return adaptNativeRepoHandle(handle, rest?.repo(name)).info()
 		},
 		createToken: async (scope = 'write', ttl = 3600) => {
 			if (rest) {
@@ -332,16 +333,14 @@ function adaptNativeArtifactsBinding(
 		listTokens: async () => {
 			const handle = await getNativeRepoOrThrow(native, name)
 			return (
-				adaptNativeRepoHandle(handle, restCreateToken?.(name)).listTokens?.() ??
-				[]
+				adaptNativeRepoHandle(handle, rest?.repo(name)).listTokens?.() ?? []
 			)
 		},
 		revokeToken: async (idOrPlaintext) => {
 			const handle = await getNativeRepoOrThrow(native, name)
-			await adaptNativeRepoHandle(
-				handle,
-				restCreateToken?.(name),
-			).revokeToken?.(idOrPlaintext)
+			await adaptNativeRepoHandle(handle, rest?.repo(name)).revokeToken?.(
+				idOrPlaintext,
+			)
 		},
 	})
 	return {
@@ -371,7 +370,7 @@ function adaptNativeArtifactsBinding(
 				const handle = await native.get(name)
 				return {
 					status: 'ready' as const,
-					repo: adaptNativeRepoHandle(handle, restCreateToken?.(name)),
+					repo: adaptNativeRepoHandle(handle, rest?.repo(name)),
 				}
 			} catch (error) {
 				const code = artifactsBindingErrorCode(error)
@@ -768,20 +767,33 @@ export function buildAuthenticatedArtifactsRemote(input: {
 	return remoteUrl.toString()
 }
 
+function describeArtifactRemote(remote: string) {
+	try {
+		const url = new URL(remote)
+		url.username = ''
+		url.password = ''
+		return url.toString()
+	} catch {
+		return 'unparseable-remote'
+	}
+}
+
 export async function listArtifactServerRefs(input: {
 	remote: string
 	token: string
 	prefix?: string
 }) {
-	const auth = buildArtifactsGitAuth({ token: input.token })
+	// Embed credentials in the URL so the first info/refs request is
+	// authenticated. onAuth only runs after 401; Artifacts can fail earlier.
+	const url = buildAuthenticatedArtifactsRemote({
+		remote: input.remote,
+		token: input.token,
+	})
 	return git.listServerRefs({
 		http,
-		url: input.remote,
+		url,
 		prefix: input.prefix,
 		symrefs: true,
-		onAuth() {
-			return auth
-		},
 	})
 }
 
@@ -812,7 +824,7 @@ export async function resolveArtifactDefaultBranchHead(input: {
 		})
 	} catch (error) {
 		throw new Error(
-			`Artifacts listServerRefs failed: ${getErrorMessage(error)}`,
+			`Artifacts listServerRefs failed for ${describeArtifactRemote(info.remote)}: ${getErrorMessage(error)}`,
 			{ cause: error },
 		)
 	}
