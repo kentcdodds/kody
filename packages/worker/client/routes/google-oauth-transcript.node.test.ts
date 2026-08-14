@@ -171,7 +171,7 @@ test('google oauth transcript covers Lane B, console beats, connect, and smoke t
 	expect(userLines.some((text) => /authorized/i.test(text))).toBe(true)
 
 	const connectUrlAgent = agentLines.find((text) =>
-		text.includes('/connect/oauth?provider=google'),
+		text.includes('authorizeUrl=') && text.includes('/connect/oauth?provider=google'),
 	)
 	expect(connectUrlAgent).toBeTruthy()
 	expect(connectUrlAgent).toContain('gmail.readonly')

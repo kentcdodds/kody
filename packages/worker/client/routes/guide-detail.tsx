@@ -254,14 +254,9 @@ export function GuideDetailRoute(handle: Handle) {
 							</p>
 						</header>
 
-						{(() => {
-							const renderInteractive = interactiveGuideRenderers[guide.slug]
-							return renderInteractive ? (
-								renderInteractive()
-							) : (
-								<div mix={css(proseCss)}>{renderGuideBody(guide.body)}</div>
-							)
-						})()}
+						{interactiveGuideRenderers[guide.slug]?.() ?? (
+							<div mix={css(proseCss)}>{renderGuideBody(guide.body)}</div>
+						)}
 
 						<footer mix={css(guideFootCss)}>
 							<p>
