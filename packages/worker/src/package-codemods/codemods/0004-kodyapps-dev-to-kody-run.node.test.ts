@@ -71,10 +71,21 @@ test('0004 skips non-rewritable hosts, lookalikes, and binary-ish paths', () => 
 	)
 
 	const findings = kodyappsDevToKodyRunCodemod.detect(boundaryFiles)
-	expect(findings).toEqual([
-		{
-			path: 'index.ts',
-			message: expect.stringContaining('rewrite to https://kody.run'),
-		},
-	])
+	expect(findings).toEqual(
+		expect.arrayContaining([
+			{
+				path: 'index.ts',
+				message: expect.stringContaining('rewrite to https://kody.run'),
+			},
+			{
+				path: 'config.ts',
+				message: expect.stringContaining('manually'),
+			},
+			{
+				path: 'phish.ts',
+				message: expect.stringContaining('manually'),
+			},
+		]),
+	)
+	expect(findings.some((finding) => finding.path === 'logo.png')).toBe(false)
 })
