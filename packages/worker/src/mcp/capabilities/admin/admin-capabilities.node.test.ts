@@ -687,10 +687,7 @@ test('admin_audit_log_query accepts legacy SQLite rowids through output parse', 
 	}
 	const ctx = createAdminCapabilityContext(db)
 
-	const audit = await adminAuditLogQueryCapability.handler(
-		{ limit: 10 },
-		ctx,
-	)
+	const audit = await adminAuditLogQueryCapability.handler({ limit: 10 }, ctx)
 	expect(audit.events).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
