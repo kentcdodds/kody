@@ -5,12 +5,11 @@ The public status page for kody, served at
 Cloudflare Worker with its own storage so it stays up when the main worker's
 deploys, code, or database are broken (see decision record 0004).
 
-`status.heykody.dev` remains a worker custom domain for legacy links. The worker
-308s GET/HEAD from that host to `status.kody.codes`, except `/health`, which
-stays sticky so deploys can still probe the worker if the canonical hostname
-returns Cloudflare 1016 until DNS exists. Component probes never use the status
-hostname, so a 1016 on `status.kody.codes` does not turn App, MCP, runtime, or
-Jobs red.
+`status.heykody.dev` is also a worker custom domain. The worker 308s GET/HEAD
+from that host to `status.kody.codes`, except `/health`, which is sticky so
+deploy healthchecks can probe `status.heykody.dev` when the canonical hostname
+returns Cloudflare 1016. Component probes never use the status hostname, so a
+1016 on `status.kody.codes` does not turn App, MCP, runtime, or Jobs red.
 
 ## How it works
 
@@ -66,8 +65,8 @@ secret (Email Sending permission) is synced at deploy time; without it, alert
 emails are skipped and logged.
 
 Wrangler attaches both `status.kody.codes` and `status.heykody.dev` as custom
-domains. If `status.kody.codes` still returns Cloudflare 1016 after deploy, the
-`kody.codes` zone still needs a `status` DNS record so that custom domain can
-attach. The deploy healthcheck tries the canonical `/health` first and falls
-back to `status.heykody.dev/health`; other component probes do not depend on
-either hostname.
+domains. When `status.kody.codes` returns Cloudflare 1016, the `kody.codes` zone
+still needs a `status` DNS record so that custom domain can attach. The deploy
+healthcheck tries the canonical `/health` first and falls back to
+`status.heykody.dev/health`; other component probes do not depend on either
+hostname.

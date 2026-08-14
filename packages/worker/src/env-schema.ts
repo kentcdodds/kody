@@ -231,32 +231,30 @@ export const EnvSchema = object({
 	// where the same-origin path-based behavior remains available.
 	// See docs/contributing/security.md.
 	PACKAGE_APP_BASE_URL: optionalUrlStringSchema,
-	// Comma-separated previous package-app apex hostnames (for example
-	// `kodyapps.dev`) the runtime Worker keeps serving alongside the
-	// canonical `PACKAGE_APP_BASE_URL` host during a domain migration.
-	// Generated zone routes replace the whole set, so omitting a listed
-	// host would detach it and delete its DNS.
+	// Comma-separated dual-served package-app apex hostnames (for example
+	// `kodyapps.dev`) the runtime Worker serves alongside the canonical
+	// `PACKAGE_APP_BASE_URL` host. Generated zone routes replace the whole
+	// set, so omitting a listed host would detach it and delete its DNS.
 	PACKAGE_APP_LEGACY_HOSTS: optionalNonEmptyStringSchema,
-	// Exact string 'true' enables 308 redirects from legacy package-app
+	// Exact string 'true' enables 308 redirects from dual-served package-app
 	// *user subdomains* to the matching canonical subdomain for safe
-	// browser GET/HEAD. Leave unset to dual-serve (required while
-	// `__Host-kody_pkg_session` cookies and published package URLs still
-	// live on the old host). Apex `/` on a legacy package-app host still
-	// goes to the app origin; it is never redirected onto the canonical
-	// package-app apex.
+	// browser GET/HEAD. Leave unset to dual-serve (`__Host-kody_pkg_session`
+	// cookies and published package URLs are host-only on each zone). Apex
+	// `/` on a dual-served package-app host goes to the app origin; it is
+	// never redirected onto the canonical package-app apex.
 	PACKAGE_APP_LEGACY_REDIRECT: optionalNonEmptyStringSchema,
 	USER_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
 	// Overrides the system email domain derived from APP_BASE_URL. Committed
 	// in production so email and the web origin can move independently.
 	SYSTEM_EMAIL_DOMAIN: optionalNonEmptyStringSchema,
-	// Comma-separated previous user email domains (for example
-	// inbox.heykody.dev) that inbound mail is still accepted on during a
-	// domain migration; delivery resolves to the same user inboxes. Outbound
-	// always sends from the canonical USER_EMAIL_DOMAIN.
+	// Comma-separated dual-served user email domains (for example
+	// inbox.heykody.dev); inbound mail on those addresses resolves to the
+	// same user inboxes. Outbound always sends from the canonical
+	// USER_EMAIL_DOMAIN.
 	LEGACY_USER_EMAIL_DOMAINS: optionalNonEmptyStringSchema,
-	// Comma-separated previous system email domains (for example
-	// heykody.dev) that operator inboxes (kody@, support@, ...) keep
-	// receiving on during a domain migration.
+	// Comma-separated dual-served system email domains (for example
+	// heykody.dev); operator inboxes (kody@, support@, ...) accept mail on
+	// those hosts alongside the canonical SYSTEM_EMAIL_DOMAIN.
 	LEGACY_SYSTEM_EMAIL_DOMAINS: optionalNonEmptyStringSchema,
 	APP_COMMIT_SHA: optionalCommitShaSchema,
 	EMAIL: optionalSendEmailSchema,

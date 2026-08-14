@@ -97,8 +97,8 @@ export type PackageAppOrigin = {
 /**
  * Canonical package-app origin plus any `PACKAGE_APP_LEGACY_HOSTS` entries.
  * Legacy hosts are assumed `https` (production package-app traffic is always
- * TLS); they exist so the previous zone stays classified as package-app
- * traffic after `PACKAGE_APP_BASE_URL` flips.
+ * TLS); they classify dual-served package-app zones the same way as the
+ * canonical origin.
  */
 export function listPackageAppOrigins(input: { env: PackageAppBaseUrlEnv }) {
 	const origins: Array<PackageAppOrigin> = []
@@ -165,10 +165,10 @@ function classifyAgainstPackageAppOrigin(input: {
  * Classify a request URL against the configured package-app origin.
  *
  * Returns `null` when no package-app origin resolves or when the URL is not
- * on the package-app domain at all (ordinary first-party traffic). Legacy
+ * on the package-app domain at all (ordinary first-party traffic). Dual-served
  * package-app hosts listed in `PACKAGE_APP_LEGACY_HOSTS` classify the same
- * way as the canonical origin so dual-serve (and optional later redirects)
- * keep working after a `PACKAGE_APP_BASE_URL` flip.
+ * way as the canonical origin so both zones share host classification (and
+ * optional GET/HEAD subdomain redirects when enabled).
  */
 export function parsePackageAppRequestHost(input: {
 	env: PackageAppBaseUrlEnv
@@ -277,13 +277,13 @@ export function getAppBaseUrl(input: {
  * Resolve the canonical public app origin, preferring the configured
  * `APP_BASE_URL` over the request origin.
  *
- * This is the inverse preference of `getAppBaseUrl`: during a domain
- * migration the Worker dual-serves the canonical host plus legacy hosts
- * (`APP_LEGACY_HOSTS`), and canonical URLs emitted into HTML (`<link
- * rel="canonical">`, OG/Twitter URLs) must point at the configured canonical
- * origin even when the page was served from a legacy host. Request-scoped
- * protocol surfaces (MCP OAuth metadata, app links) keep using
- * `getAppBaseUrl` so they match the host the client actually connected to.
+ * This is the inverse preference of `getAppBaseUrl`: the Worker dual-serves
+ * the canonical host plus any `APP_LEGACY_HOSTS`, and canonical URLs emitted
+ * into HTML (`<link rel="canonical">`, OG/Twitter URLs) must point at the
+ * configured canonical origin even when the page was served from a
+ * dual-served host. Request-scoped protocol surfaces (MCP OAuth metadata,
+ * app links) keep using `getAppBaseUrl` so they match the host the client
+ * actually connected to.
  *
  * Falls back to the request origin (local dev and preview leave
  * `APP_BASE_URL` unset), then the production default.
@@ -328,8 +328,8 @@ export function joinAppUrl(input: {
  * and query preserved.
  *
  * Dual-serve is the default: `__Host-kody_pkg_session` is host-only, so
- * existing sessions, iframe embeds, and published package URLs on the
- * legacy host keep working until `PACKAGE_APP_LEGACY_REDIRECT` is exactly
+ * sessions, iframe embeds, and published package URLs on a dual-served
+ * host stay on that host unless `PACKAGE_APP_LEGACY_REDIRECT` is exactly
  * `'true'`. Apex requests are never redirected onto the canonical
  * package-app apex — `handleApexRequest` already sends `/` to the app
  * origin.

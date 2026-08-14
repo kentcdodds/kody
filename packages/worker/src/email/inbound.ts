@@ -177,10 +177,9 @@ export async function handleInboundEmail(
 		return
 	}
 
-	// Inbound accepts the canonical domains plus any LEGACY_*_EMAIL_DOMAINS:
-	// during a domain migration, mail sent to addresses on the previous
-	// domain keeps resolving to the same inboxes. Outbound (senders, alert
-	// lanes) always uses the canonical domains only.
+	// Inbound accepts the canonical domains plus any LEGACY_*_EMAIL_DOMAINS;
+	// mail on those addresses resolves to the same inboxes. Outbound
+	// (senders, alert lanes) always uses the canonical domains only.
 	const acceptedUserDomains = getAcceptedUserEmailDomains(inputEnv)
 	const acceptedSystemDomains = getAcceptedSystemEmailDomains(inputEnv)
 	const systemDomain = getSystemEmailDomain(inputEnv)

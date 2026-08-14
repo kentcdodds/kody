@@ -515,7 +515,7 @@ export function packageAppWildcardDnsRecordName(packageAppHostname: string) {
  * so both need a proxied placeholder record. Neither may be a Workers custom
  * domain: a custom domain in a zone whose route table the deploy also
  * publishes gets detached (and its DNS record deleted) when the routes are
- * replaced — this took the package-app apex down on 2026-08-11.
+ * replaced.
  */
 export function packageAppDnsRecordNames(packageAppHostname: string) {
 	return [
@@ -527,8 +527,8 @@ export function packageAppDnsRecordNames(packageAppHostname: string) {
 /**
  * Canonical `PACKAGE_APP_BASE_URL` hostname plus any
  * `PACKAGE_APP_LEGACY_HOSTS` entries, de-duplicated. Used by production DNS
- * ensure and runtime zone-route generation so flipping the canonical origin
- * cannot omit (and therefore detach) the previous package-app zone.
+ * ensure and runtime zone-route generation so every dual-served package-app
+ * zone stays in the published set (omitting a listed host detaches it).
  */
 export function listPackageAppHostnames(input: {
 	packageAppBaseUrl?: string | null

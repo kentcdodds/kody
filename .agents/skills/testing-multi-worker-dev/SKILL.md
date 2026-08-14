@@ -44,22 +44,22 @@ rewrites its `script_name: "kody"` refs to the primary's dev name
 process env. If runtime-owned paths 503 with `Worker "kody-runtime" not found`
 or the runtime worker 500s on missing vars, inspect that generated file first.
 
-## Jobs-worker extraction pitfall (boot failure)
+## Jobs-worker Durable Object pitfall (boot failure)
 
-After the jobs-worker extraction (ADR 0016), `npm run dev` may fail with
+With the jobs-worker extraction (ADR 0016), `npm run dev` may fail with
 `service core:user:kody-production: Uncaught TypeError: Class extends value undefined is not a constructor or null`
 (in miniflare's `createDurableObjectWrapper`) and "The Workers runtime failed to
 start". Root cause: local dev (`--env production`) inherits the TOP-LEVEL
 migrations chain in `packages/worker/wrangler.jsonc`, which still nets out
 `JobManager` as a live DO class on the main script (v6 adds
-JobManager+JobRunner, v9 only deletes JobRunner) — but `JobManager` is no longer
-exported from `packages/worker/src/index.ts` (it moved to
+JobManager+JobRunner, v9 only deletes JobRunner) — but `JobManager` is not
+exported from `packages/worker/src/index.ts` (it lives in
 `packages/jobs-worker`, which uses a `transferred_classes` migration from
 `kody-production`). Miniflare replays the full chain fresh and tries to wrap the
 missing class. The fix is a migration chain without the v6/v9 pair (matching
 `preview`/`test`); if the error reappears, check that the top-level chain in
-`packages/worker/wrangler.jsonc` does not create classes the main script no
-longer exports.
+`packages/worker/wrangler.jsonc` does not create classes the main script does
+not export.
 
 ## Verifying forwarding
 

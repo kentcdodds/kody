@@ -1,8 +1,9 @@
 /**
- * Legacy status hostname handling. The canonical public place for status is
- * status.kody.codes. status.heykody.dev stays attached as a worker custom
- * domain so `/health` still works if the canonical host is 1016 until DNS
- * exists; other GET/HEAD requests 308 to the canonical origin.
+ * Dual-served status hostname handling. The canonical public place for status
+ * is status.kody.codes. status.heykody.dev is also a worker custom domain:
+ * `/health` is sticky so deploy healthchecks can probe that host when the
+ * canonical hostname returns Cloudflare 1016; other GET/HEAD requests 308 to
+ * the canonical origin.
  */
 
 export const canonicalStatusHost = 'status.kody.codes'
@@ -18,9 +19,9 @@ function isStickyPath(pathname: string) {
 }
 
 /**
- * Redirect safe GET/HEAD navigation from the legacy status host to
- * status.kody.codes. `/health` stays sticky so deploy healthchecks can probe
- * the worker on .dev when the canonical hostname is not attached yet.
+ * Redirect safe GET/HEAD navigation from the dual-served status host to
+ * status.kody.codes. `/health` is sticky so deploy healthchecks can probe
+ * the worker on .dev when the canonical hostname returns Cloudflare 1016.
  *
  * Returns `null` when the request should be served normally.
  */

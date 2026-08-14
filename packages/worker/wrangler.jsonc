@@ -83,7 +83,7 @@
 			"tag": "v4",
 		},
 		// v6 (JobManager+JobRunner) and v9 (delete JobRunner) are omitted:
-		// JobManager moved to the jobs worker (ADR 0016) and is no longer
+		// JobManager lives on the jobs worker (ADR 0016) and is not
 		// exported here, so a fresh script replaying this chain (local dev,
 		// a new deployment) must not create it. The deployed production
 		// script is already past these tags, so wrangler's migration diff
@@ -470,10 +470,10 @@
 				// as https://kody.run/... and send local logins to the real
 				// domain. See docs/contributing/setup-manifest.md.
 				"PACKAGE_APP_BASE_URL": "https://kody.run",
-				// Previous package-app apex kept attached (and dual-served)
-				// during the kodyapps.dev → kody.run window. Generated runtime
-				// zone routes replace the whole set, so omitting this host
-				// would detach `*.kodyapps.dev` and delete its DNS.
+				// Dual-served package-app apex (`kodyapps.dev`) alongside
+				// PACKAGE_APP_BASE_URL. Generated runtime zone routes replace
+				// the whole set, so omitting this host would detach
+				// `*.kodyapps.dev` and delete its DNS.
 				"PACKAGE_APP_LEGACY_HOSTS": "kodyapps.dev",
 				// Email domains are committed (not just GitHub Actions vars) so
 				// they can never silently rederive from APP_BASE_URL. Canonical

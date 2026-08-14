@@ -173,7 +173,7 @@ export function parsePackageSearchIdentity(input: {
 	baseUrl: string
 	/** Origin hosted package apps are served from, when it is a separate host. */
 	packageAppBaseUrl?: string | null
-	/** Comma-separated previous package-app apex hosts still dual-served. */
+	/** Comma-separated dual-served package-app apex hosts. */
 	packageAppLegacyHosts?: string | null
 	username: string | null
 }): ParsedPackageIdentity {

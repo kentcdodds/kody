@@ -217,20 +217,20 @@ function applyMainWorkerPackageAppOverlayVars(input: {
 /**
  * Attach the package-app apex and the per-user subdomain wildcard as **zone
  * routes** on this Worker (decision 0017). The main Worker's generated config
- * no longer lists the package-app host (see tools/ci/resource-utils.ts), so
+ * does not list the package-app host (see tools/ci/resource-utils.ts), so
  * the runtime Worker owns both routes.
  *
  * Neither may be a Cloudflare custom domain. Wildcards cannot be custom
  * domains at all, and a custom domain must not coexist with published zone
- * routes in the same zone: replacing that zone's route table during deploy
- * detaches the custom domain and deletes its DNS record (this took
- * `kodyapps.dev` down on 2026-08-11). Both hostnames are instead served by
- * proxied placeholder DNS records that production CI ensures separately
- * (zone routes do not create DNS records).
+ * routes in the same zone: replacing a zone's route table during deploy
+ * detaches any Workers custom domain in that zone and deletes its DNS
+ * record. Both hostnames are instead served by proxied placeholder DNS
+ * records that production CI ensures separately (zone routes do not create
+ * DNS records).
  *
  * `PACKAGE_APP_LEGACY_HOSTS` entries get the same apex + wildcard zone
- * routes so flipping `PACKAGE_APP_BASE_URL` cannot omit (and therefore
- * detach) the previous package-app zone.
+ * routes so the dual-served package-app zone stays in the published set
+ * alongside `PACKAGE_APP_BASE_URL` (omitting a listed host detaches it).
  */
 function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 	const vars =

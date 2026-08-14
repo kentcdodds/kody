@@ -20,9 +20,9 @@
 			"custom_domain": true,
 		},
 		{
-			// Legacy host: stays attached so /health still works if
-			// status.kody.codes is 1016 until DNS exists. The worker 308s
-			// other GET/HEAD from this host to status.kody.codes.
+			// Dual-served host: `/health` is sticky here so deploy
+			// healthchecks can probe when status.kody.codes is 1016.
+			// Other GET/HEAD from this host 308 to status.kody.codes.
 			"pattern": "status.heykody.dev",
 			"custom_domain": true,
 		},
