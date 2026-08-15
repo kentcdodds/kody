@@ -47,6 +47,10 @@
 		{
 			"filename": "0011-repo-session-due-owners.sql",
 			"sha256": "bc39444a5f97e424947c80258d28abde6088533baab26c3a6b50d010ff049df9"
+		},
+		{
+			"filename": "0012-repo-session-storage-bucket-cursor.sql",
+			"sha256": "e010fa54c7a236b258a606db7a091fb4e0e4412ae1c23abd85798742372f4a70"
 		}
 	]
 }

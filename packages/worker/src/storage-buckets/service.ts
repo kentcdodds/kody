@@ -1,6 +1,10 @@
 import { listRepoSessionDueOwnersPage } from '#worker/repo/repo-session-due-owners.ts'
 import { repoSessionIndexRpc } from '#worker/repo/repo-session-index-client.ts'
 import { isMissingRepoSessionsTable } from '#worker/repo/repo-session-leftover-d1.ts'
+import {
+	readRepoSessionStorageBucketCursor,
+	writeRepoSessionStorageBucketCursor,
+} from './repo-session-storage-bucket-cursor.ts'
 
 /**
  * Authoritative per-user durable storage bucket ownership.
@@ -180,10 +184,14 @@ export function repoSessionIdFromStorageBucketId(storageId: string): string {
  * errors so metering never blocks the session). Estimate persistence is
  * UPDATE-only and the estimate backfill scans only existing rows, so a
  * missed registration would otherwise stay invisible for the session's
- * lifetime. The single INSERT..SELECT statement filters on
- * `repo_sessions.status = 'active'` inside the same statement, so a session
- * discarded or cleaned up concurrently can never get its inventory row
- * recreated after lifecycle cleanup deleted it.
+ * lifetime.
+ *
+ * Leftover D1 `repo_sessions` still use one INSERT..SELECT filtered on
+ * `status = 'active'` so a concurrently discarded session cannot get its
+ * inventory row recreated. Index-backed owners are paged from
+ * `repo_session_due_owners` with a per-tick owner budget (`limit`) and a
+ * persisted `repo_session_storage_bucket_cursor` so a steady-state tick
+ * cannot walk the whole fleet of index Durable Objects.
  */
 export async function registerMissingRepoSessionStorageBuckets(input: {
 	db: D1Database
@@ -195,7 +203,8 @@ export async function registerMissingRepoSessionStorageBuckets(input: {
 	now?: Date
 }): Promise<number> {
 	const limit = input.limit ?? 24
-	const seenAt = (input.now ?? new Date()).toISOString()
+	const now = input.now ?? new Date()
+	const seenAt = now.toISOString()
 	let inserted = 0
 	try {
 		const leftover = await input.db
@@ -220,41 +229,62 @@ export async function registerMissingRepoSessionStorageBuckets(input: {
 		if (!isMissingRepoSessionsTable(error)) throw error
 	}
 	if (!input.env?.REPO_SESSION_INDEX || inserted >= limit) return inserted
-	let afterUserId = ''
-	while (inserted < limit) {
-		const owners = await listRepoSessionDueOwnersPage({
-			db: input.db,
-			afterUserId,
-			limit: limit - inserted,
-		})
-		if (owners.length === 0) break
-		for (const owner of owners) {
-			afterUserId = owner.userId
-			const sessions = await repoSessionIndexRpc({
-				env: input.env,
-				userId: owner.userId,
-			}).listByUser({ ownerId: owner.userId })
-			for (const session of sessions) {
-				if (session.status !== 'active') continue
-				const result = await input.db
-					.prepare(
-						`INSERT INTO user_storage_buckets (
-							user_id, storage_id, kind, created_at, last_seen_at
-						) VALUES (?, ?, 'repo_session', ?, ?)
-						ON CONFLICT (user_id, storage_id) DO NOTHING`,
-					)
-					.bind(
-						session.user_id,
-						repoSessionStorageBucketId(session.id),
-						seenAt,
-						seenAt,
-					)
-					.run()
-				inserted += result.meta?.changes ?? 0
-				if (inserted >= limit) return inserted
+	const ownerBudget = limit
+	const afterUserId = await readRepoSessionStorageBucketCursor(input.db)
+	const owners = await listRepoSessionDueOwnersPage({
+		db: input.db,
+		afterUserId,
+		limit: ownerBudget,
+	})
+	if (owners.length === 0) {
+		if (afterUserId !== '') {
+			await writeRepoSessionStorageBucketCursor({
+				db: input.db,
+				position: '',
+				now,
+			})
+		}
+		return inserted
+	}
+	let lastCompletedUserId = afterUserId
+	for (const owner of owners) {
+		const sessions = await repoSessionIndexRpc({
+			env: input.env,
+			userId: owner.userId,
+		}).listByUser({ ownerId: owner.userId })
+		for (const session of sessions) {
+			if (session.status !== 'active') continue
+			const result = await input.db
+				.prepare(
+					`INSERT INTO user_storage_buckets (
+						user_id, storage_id, kind, created_at, last_seen_at
+					) VALUES (?, ?, 'repo_session', ?, ?)
+					ON CONFLICT (user_id, storage_id) DO NOTHING`,
+				)
+				.bind(
+					session.user_id,
+					repoSessionStorageBucketId(session.id),
+					seenAt,
+					seenAt,
+				)
+				.run()
+			inserted += result.meta?.changes ?? 0
+			if (inserted >= limit) {
+				await writeRepoSessionStorageBucketCursor({
+					db: input.db,
+					position: lastCompletedUserId,
+					now,
+				})
+				return inserted
 			}
 		}
+		lastCompletedUserId = owner.userId
 	}
+	await writeRepoSessionStorageBucketCursor({
+		db: input.db,
+		position: owners.length < ownerBudget ? '' : lastCompletedUserId,
+		now,
+	})
 	return inserted
 }
 

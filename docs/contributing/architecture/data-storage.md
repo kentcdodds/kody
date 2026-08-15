@@ -561,11 +561,14 @@ Storage split:
 workspaces for the check-only `storage_bytes` baseline. Rows use `kind` to
 dispatch `getEstimatedBytes` to the correct Durable Object, cache the latest
 `databaseSize` in `estimated_bytes`, and feed the same bounded
-`storage_bucket_estimate_backfill` lane. Repo sessions register on open,
-opportunistically refresh after workspace mutations, and remove the inventory
-row on discard, purge, scheduled cleanup, source deletion, or account deletion.
-This estimate component is composed with the authoritative UserMeter D1 payload
-bytes; it is not reserved into UserMeter.
+`storage_bucket_estimate_backfill` lane. Index-backed repo-session
+reconciliation pages `repo_session_due_owners` with a per-tick owner budget and
+a platform-owned `repo_session_storage_bucket_cursor` so a sweep cannot walk the
+whole fleet. Repo sessions register on open, opportunistically refresh after
+workspace mutations, and remove the inventory row on discard, purge, scheduled
+cleanup, source deletion, or account deletion. This estimate component is
+composed with the authoritative UserMeter D1 payload bytes; it is not reserved
+into UserMeter.
 
 ## Durable Objects (`UserMeter`)
 
@@ -918,7 +921,8 @@ via `durableObjectNameFromParts`); domain helpers such as
   untrimmed `userId` (like RunLog / UserMeter / Mailbox). Authority for the
   per-user session catalog: rows, active counts, conversation resume, export,
   and deletion inventory. Each index self-alarms; D1 keeps only the thin
-  `repo_session_due_owners` hint (one row per user with any session).
+  `repo_session_due_owners` hint (one row per user with any session) plus
+  platform-owned hydrate and storage-bucket inventory cursors.
 - `RepoSession` — `repoSessionDurableObjectName(sessionId)` keyed by session id
   only (not user-prefixed). Every RPC validates the catalog row's `user_id`
   before touching the workspace. Account deletion enumerates the user's session

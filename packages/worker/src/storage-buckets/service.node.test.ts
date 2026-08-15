@@ -1,11 +1,21 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { replaceRepoSessionDueOwner } from '#worker/repo/repo-session-due-owners.ts'
+import { type RepoSessionRow } from '#worker/repo/types.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
+import { readRepoSessionStorageBucketCursor } from './repo-session-storage-bucket-cursor.ts'
 import {
 	clearStorageBucketRegistrationDedupeForTests,
 	flushStorageBucketRegistrationsForTests,
 	listPlatformStorageBuckets,
+	listUserStorageBucketEstimates,
 	listUserStorageBucketIds,
+	registerMissingRepoSessionStorageBuckets,
 	registerStorageBucket,
+	repoSessionStorageBucketId,
 	storageBucketKindFromStorageId,
 } from './service.ts'
 
@@ -154,4 +164,144 @@ test('storage bucket registration soft-fails, dedupes, and lists by user', async
 		{ userId: 'user-a', storageId: 'exec:same' },
 		{ userId: 'user-b', storageId: 'bucket-b' },
 	])
+})
+
+function catalogSessionRow(
+	overrides: Partial<RepoSessionRow> & Pick<RepoSessionRow, 'id' | 'user_id'>,
+): RepoSessionRow {
+	return {
+		source_id: 'source-1',
+		source_repo_id: 'repo-1',
+		session_branch: `sessions/${overrides.id}`,
+		source_branch: 'main',
+		base_commit: 'commit',
+		source_root: '/',
+		conversation_id: null,
+		status: 'active',
+		expires_at: null,
+		last_checkpoint_at: null,
+		last_checkpoint_commit: null,
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		created_at: '2026-06-24T19:00:00.000Z',
+		updated_at: '2026-06-24T19:00:00.000Z',
+		...overrides,
+	}
+}
+
+test('index-backed storage-bucket reconcile pages owners with a persisted cursor', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	const indexEnv = createInMemoryRepoSessionIndexEnv(db)
+	const now = new Date('2026-06-24T20:00:00.000Z')
+	const users = ['user-a', 'user-b', 'user-c'] as const
+	for (const userId of users) {
+		await replaceRepoSessionDueOwner({
+			db,
+			userId,
+			dueAt: '2099-01-01T00:00:00.000Z',
+			now,
+		})
+		await indexEnv.REPO_SESSION_INDEX.get(
+			indexEnv.REPO_SESSION_INDEX.idFromName(userId),
+		).insertSession({
+			ownerId: userId,
+			row: catalogSessionRow({
+				id: `${userId}-active`,
+				user_id: userId,
+			}),
+		})
+	}
+	await indexEnv.REPO_SESSION_INDEX.get(
+		indexEnv.REPO_SESSION_INDEX.idFromName('user-a'),
+	).insertSession({
+		ownerId: 'user-a',
+		row: catalogSessionRow({
+			id: 'user-a-discarded',
+			user_id: 'user-a',
+			status: 'discarded',
+		}),
+	})
+
+	const first = await registerMissingRepoSessionStorageBuckets({
+		db,
+		env: indexEnv,
+		limit: 2,
+		now,
+	})
+	expect(first).toBe(2)
+	// Insert limit filled on user-b, so the cursor stays on the last fully
+	// processed owner and the next tick retries user-b instead of skipping
+	// any remaining sessions.
+	expect(await readRepoSessionStorageBucketCursor(db)).toBe('user-a')
+	await expect(
+		listUserStorageBucketEstimates({
+			env: { APP_DB: db } as Env,
+			userId: 'user-a',
+		}),
+	).resolves.toEqual([
+		{
+			storageId: repoSessionStorageBucketId('user-a-active'),
+			kind: 'repo_session',
+			estimatedBytes: null,
+		},
+	])
+	await expect(
+		listUserStorageBucketEstimates({
+			env: { APP_DB: db } as Env,
+			userId: 'user-b',
+		}),
+	).resolves.toEqual([
+		{
+			storageId: repoSessionStorageBucketId('user-b-active'),
+			kind: 'repo_session',
+			estimatedBytes: null,
+		},
+	])
+	await expect(
+		listUserStorageBucketEstimates({
+			env: { APP_DB: db } as Env,
+			userId: 'user-c',
+		}),
+	).resolves.toEqual([])
+
+	const second = await registerMissingRepoSessionStorageBuckets({
+		db,
+		env: indexEnv,
+		limit: 2,
+		now,
+	})
+	expect(second).toBe(1)
+	expect(await readRepoSessionStorageBucketCursor(db)).toBe('user-c')
+	await expect(
+		listUserStorageBucketEstimates({
+			env: { APP_DB: db } as Env,
+			userId: 'user-c',
+		}),
+	).resolves.toEqual([
+		{
+			storageId: repoSessionStorageBucketId('user-c-active'),
+			kind: 'repo_session',
+			estimatedBytes: null,
+		},
+	])
+
+	const wrapped = await registerMissingRepoSessionStorageBuckets({
+		db,
+		env: indexEnv,
+		limit: 2,
+		now,
+	})
+	expect(wrapped).toBe(0)
+	expect(await readRepoSessionStorageBucketCursor(db)).toBe('')
+
+	const steady = await registerMissingRepoSessionStorageBuckets({
+		db,
+		env: indexEnv,
+		limit: 2,
+		now,
+	})
+	expect(steady).toBe(0)
+	expect(await readRepoSessionStorageBucketCursor(db)).toBe('user-b')
 })

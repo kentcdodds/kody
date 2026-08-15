@@ -113,6 +113,12 @@ export const accountOperatorOwnedD1Surfaces = [
 		reason:
 			'Platform-owned leftover D1 catalog hydrate cursor (one singleton row). Not user data; account deletion does not touch it.',
 	},
+	{
+		table: 'repo_session_storage_bucket_cursor',
+		surface: 'repo_session_storage_bucket_cursor',
+		reason:
+			'Platform-owned storage-bucket inventory cursor across RepoSessionIndex owners (one singleton row). Not user data; account deletion does not touch it.',
+	},
 ] as const
 
 /** Targets that account export should skip (deletion still covers them). */
