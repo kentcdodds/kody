@@ -457,8 +457,7 @@ const limitsTableCss = {
 	},
 	/*
 	 * Third column is Standard, the featured plan — the accent has to follow
-	 * the panel above it rather than sit on whichever column happens to be
-	 * last, which is now Pro.
+	 * the panel above it rather than sit on the last column (Pro).
 	 */
 	'& thead th:nth-child(3) [data-limits-plan]': {
 		color: colors.primaryText,

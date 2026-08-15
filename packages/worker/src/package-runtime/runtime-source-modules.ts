@@ -606,7 +606,7 @@ export default __kodyPackageModule.default;
  * valued exports are wrapped in the call-metering Proxy from the runtime
  * module (`__kodyMeterStaticPackageExport`), non-function exports pass
  * through unchanged. The `export * from` passthrough stays first so any
- * export name the bundler could not statically discover keeps working (it
+ * export name the bundler could not statically discover remains available (it
  * is just not metered) — explicitly re-exported wrapped names shadow the
  * star re-export per the ES module ambiguity rules. Only the static import
  * rewrite uses this variant; dynamic package import proxies keep the plain

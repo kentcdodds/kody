@@ -1467,10 +1467,10 @@ function addPackageAppCustomDomainRoute(input: {
 		.map((pattern) => ({ pattern, custom_domain: true }))
 
 	input.targetEnv.routes = [...existingRoutes, ...newRoutes]
-	// Publishing routes flips `workers_dev` to false, which removed the
-	// `<name>.<subdomain>.workers.dev` trigger the deploy previously kept as a
-	// backup access path (and that MCP clients may be pointed at). Ask for it
-	// explicitly so adding a custom domain does not silently take it away.
+	// Publishing routes flips `workers_dev` to false by default. Force it back
+	// on so the `<name>.<subdomain>.workers.dev` trigger stays available as a
+	// backup access path (MCP clients may point at it). Ask for it explicitly
+	// so adding a custom domain does not silently take it away.
 	input.targetEnv.workers_dev = true
 	const legacyNote = legacyHostnames.length
 		? `, ${legacyHostnames.join(', ')} (APP_LEGACY_HOSTS)`

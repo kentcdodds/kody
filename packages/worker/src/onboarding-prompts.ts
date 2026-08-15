@@ -53,8 +53,8 @@ export function buildDiscoveryPrompt(input: {
 }
 
 /**
- * Optional email → reply → memories loop. Onboarding Step 2 no longer uses
- * this as the climax; keep the MCP prompt for people who want that path.
+ * Optional email → reply → memories loop. Onboarding Step 2 uses a different
+ * climax; this MCP prompt remains for people who want that path.
  *
  * Address the connected Kody server rather than "Hey Kody" — some hosts treat
  * that as impersonation / prompt injection and skip MCP tools. The no-polling

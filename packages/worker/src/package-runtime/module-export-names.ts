@@ -8,7 +8,7 @@ import {
  * Best-effort static discovery of a module's runtime export names, used by
  * the metered static-import proxy to know which named exports to wrap.
  * Missing a name is safe: the proxy keeps `export * from` as a passthrough,
- * so an undiscovered export still works — it is just not metered. Because of
+ * so an undiscovered export remains available — it is just not metered. Because of
  * that, this collector prefers precision over completeness: type-only
  * exports are skipped and anything unparseable is simply omitted.
  */

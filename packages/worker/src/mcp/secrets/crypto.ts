@@ -9,9 +9,9 @@ const ivBytes = 12
  * Ciphertext format version. `v2` payloads (`v2.<iv>.<ciphertext>`) bind the
  * AES-GCM ciphertext to an additional-authenticated-data (AAD) string built
  * from the purpose plus an identity context (e.g. the owning user), so a
- * ciphertext copied into another row fails to decrypt. Legacy two-part
- * payloads (`<iv>.<ciphertext>`, no AAD) keep decrypting for compatibility;
- * they upgrade to v2 whenever the value is re-encrypted on write.
+ * ciphertext copied into another row fails to decrypt. Two-part payloads
+ * (`<iv>.<ciphertext>`, no AAD) still decrypt; they upgrade to v2 whenever
+ * the value is re-encrypted on write.
  */
 const ciphertextVersion = 'v2'
 

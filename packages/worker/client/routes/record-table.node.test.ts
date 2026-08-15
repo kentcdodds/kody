@@ -60,7 +60,7 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	)
 
 	// Rows stay real anchors, so the selected record is in the URL and the
-	// scroll-preserving navigation keeps working.
+	// scroll-preserving navigation continues to work.
 	expect(expandHtml).toContain('href="/account/packages/b"')
 	expect(expandHtml).toContain('data-prevent-scroll-reset')
 	expect(expandHtml).toContain('aria-expanded="true"')

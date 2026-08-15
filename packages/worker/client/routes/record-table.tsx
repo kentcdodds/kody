@@ -21,8 +21,8 @@ import {
  * Decision 0010: the record gets the whole content column instead of the
  * 434px right half of a split, and `mode` chooses where it renders rather
  * than which component the screen composes. Rows stay real anchors built
- * from `createListDetailRoute`, so the selected record is still in the URL
- * and the scroll-preserving navigation from #1270 keeps working.
+ * from `createListDetailRoute`, so the selected record stays in the URL and
+ * scroll-preserving navigation continues to work.
  *
  * Sizing is answered by container queries, not viewport breakpoints: these
  * tables live inside a 200px-railed shell, so the viewport says very little

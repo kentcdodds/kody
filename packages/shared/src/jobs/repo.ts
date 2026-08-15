@@ -734,9 +734,8 @@ export async function countJobRowsForUser(
 
 /**
  * Physical text-byte estimate of a user's job rows, mirroring the main
- * worker's `calculateUserD1StorageBytes` per-table formula so jobs data keeps
- * counting toward the D1 storage quota now that it lives in the jobs
- * database.
+ * worker's `calculateUserD1StorageBytes` per-table formula so jobs data in the
+ * jobs database counts toward the D1 storage quota.
  */
 export async function sumJobRowsStorageBytesForUser(
 	db: D1Database,

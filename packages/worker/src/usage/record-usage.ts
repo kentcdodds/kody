@@ -15,8 +15,8 @@
  *   `packages/worker/src/usage/aggregate-rollups.ts` — a per-event D1 upsert
  *   would serialize every metered request on D1's single writer.
  * - When `USAGE_EVENTS` is absent (local dev, tests), the event is upserted
- *   directly into `usage_rollups` so local admin pages and tests keep working
- *   without Analytics Engine access.
+ *   directly into `usage_rollups` so local admin pages and tests work without
+ *   Analytics Engine access.
  *
  * `recordUsage` never throws and never rejects; metering must not break the
  * paths it observes. In local dev and tests where a binding is missing it

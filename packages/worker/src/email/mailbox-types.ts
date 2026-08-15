@@ -104,7 +104,7 @@ export type MailboxAttachmentRecord = {
 
 /**
  * Delivery-event row including promoted inbound idempotency / effect columns.
- * `detailJson` remains for compatibility with fields not yet promoted.
+ * `detailJson` holds fields that have not been promoted to columns.
  */
 export type MailboxDeliveryEventRecord = {
 	id: string
