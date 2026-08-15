@@ -406,11 +406,19 @@ Treat package apps like Worker-style modules:
 - the entry module is declared by `kody.app.entry`
 - durable package data uses `packageStorage()` — the same shared package bucket
   as exports, jobs, and services
-- attached remote connectors from `/account/remote-connectors` are available as
-  `kody.remote["name"]`, the same as execute
 - internal Durable Objects or facets are app-only realtime/coordination details
   layered under the package namespace, not the persistence mechanism and not
   separate saved primitives
+
+## Attached remote connectors
+
+Attached connectors from `/account/remote-connectors` are available as
+`kody.remote["name"]` in execute and in package runtimes that build caller
+context: package apps (when capabilities or nested `packages.invoke` need them),
+package services, subscription handlers, package-owned jobs, workflows, HTTP
+invocation tokens, and webhook delivery. Hosted app serve does not load remotes
+on the warm path; the runtime bridge loads them when user code needs
+capabilities.
 
 ## Package services
 

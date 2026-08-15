@@ -136,8 +136,9 @@ Source: `packages/shared/src/chat.ts`,
    **`connector.jsonrpc`** envelopes.
 4. **Heartbeats** if the service stays connected for a long time.
 5. **Operator config:** save the connector and shared secret from
-   `/account/remote-connectors`; enabled + attached connectors are loaded into
-   normal Kody sessions so the registry merges your domain.
+   `/account/remote-connectors`; enabled + attached connectors load into MCP and
+   chat sessions and into package runtimes that build caller context, so the
+   registry merges your domain.
 
 ## Reference implementation
 
