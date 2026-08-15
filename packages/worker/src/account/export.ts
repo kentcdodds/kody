@@ -1165,6 +1165,7 @@ async function collectManifestInventoryCounts(input: {
 				env: input.env,
 				userId: input.userId,
 			}).exportSessions({
+				ownerId: input.userId,
 				pageSize: maxExportPageSize,
 			})
 			return page.rows.length
@@ -1628,6 +1629,7 @@ async function exportRepoSessionIndexRows(input: {
 			env: input.env,
 			userId: input.userId,
 		}).exportSessions({
+			ownerId: input.userId,
 			pageSize: maxExportPageSize,
 		})
 		if (page.truncated) {
@@ -2269,6 +2271,7 @@ export async function readAccountExportSection(input: {
 			env: input.env,
 			userId: input.mcpUserId,
 		}).exportSessions({
+			ownerId: input.mcpUserId,
 			pageSize,
 			startAfter: input.startAfter ?? null,
 		})

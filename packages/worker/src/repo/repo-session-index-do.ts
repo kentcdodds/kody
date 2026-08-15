@@ -74,7 +74,9 @@ function attachOwner(
 	})
 }
 
-function mapStoredRow(row: Record<string, unknown>): StoredRepoSessionRow {
+function mapStoredRow(
+	row: Record<string, SqlStorageValue>,
+): StoredRepoSessionRow {
 	return {
 		id: String(row['id']),
 		source_id: String(row['source_id']),
@@ -255,7 +257,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 
 	private listStoredRows(): Array<StoredRepoSessionRow> {
 		return this.sql
-			.exec<Record<string, unknown>>(
+			.exec<Record<string, SqlStorageValue>>(
 				`SELECT * FROM repo_sessions ORDER BY updated_at DESC, id DESC`,
 			)
 			.toArray()
@@ -264,7 +266,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 
 	private getStoredRow(sessionId: string): StoredRepoSessionRow | null {
 		const row = this.sql
-			.exec<Record<string, unknown>>(
+			.exec<Record<string, SqlStorageValue>>(
 				`SELECT * FROM repo_sessions WHERE id = ? LIMIT 1`,
 				sessionId,
 			)
@@ -277,7 +279,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		limit: number,
 	): Array<StoredRepoSessionRow> {
 		return this.sql
-			.exec<Record<string, unknown>>(
+			.exec<Record<string, SqlStorageValue>>(
 				`SELECT * FROM repo_sessions
 				WHERE (status IN ('published', 'discarded') AND expires_at IS NOT NULL AND expires_at <= ?)
 					OR (status = 'active' AND last_checkpoint_at IS NULL AND updated_at <= ?)
@@ -447,7 +449,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}): Promise<RepoSessionRow | null> {
 		const ownerId = await this.ensureReady(input.ownerId)
 		const row = this.sql
-			.exec<Record<string, unknown>>(
+			.exec<Record<string, SqlStorageValue>>(
 				`SELECT * FROM repo_sessions
 				WHERE conversation_id = ? AND status = 'active'
 				ORDER BY updated_at DESC, id DESC
@@ -464,7 +466,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}): Promise<Array<RepoSessionRow>> {
 		const ownerId = await this.ensureReady(input.ownerId)
 		return this.sql
-			.exec<Record<string, unknown>>(
+			.exec<Record<string, SqlStorageValue>>(
 				`SELECT * FROM repo_sessions
 				WHERE source_id = ?
 				ORDER BY updated_at DESC, id DESC`,
@@ -482,8 +484,8 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	async updateSession(input: RepoSessionIndexUpdateInput): Promise<boolean> {
 		const ownerId = await this.ensureReady(input.ownerId)
 		const assignments: Array<string> = []
-		const values: Array<unknown> = []
-		const add = (column: string, value: unknown) => {
+		const values: Array<SqlStorageValue> = []
+		const add = (column: string, value: SqlStorageValue) => {
 			assignments.push(`${column} = ?`)
 			values.push(value)
 		}
@@ -631,7 +633,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		const pageSize = Math.min(Math.max(requested, 1), maxExportPageSize)
 		const after = input.startAfter ?? ''
 		const rows = this.sql
-			.exec<Record<string, unknown>>(
+			.exec<Record<string, SqlStorageValue>>(
 				`SELECT * FROM repo_sessions
 				WHERE id > ?
 				ORDER BY id ASC

@@ -43,6 +43,10 @@
 		{
 			"filename": "0010-drop-jobs-tables.sql",
 			"sha256": "11215c35ea70784dd4d85c627eb5990b5a51941d3b51929c390e8c3bf36c0481"
+		},
+		{
+			"filename": "0011-repo-session-due-owners.sql",
+			"sha256": "bc39444a5f97e424947c80258d28abde6088533baab26c3a6b50d010ff049df9"
 		}
 	]
 }

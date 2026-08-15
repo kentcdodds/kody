@@ -65,6 +65,10 @@
 					"new_sqlite_classes": ["StripePlanRefresh"]
 				},
 				{
+					"tag": "v24",
+					"new_sqlite_classes": ["RepoSessionIndex"]
+				},
+				{
 					"tag": "v1",
 					"location": "env.preview.migrations",
 					"new_sqlite_classes": ["MCP"]
@@ -140,6 +144,11 @@
 					"new_sqlite_classes": ["StripePlanRefresh"]
 				},
 				{
+					"tag": "v24",
+					"location": "env.preview.migrations",
+					"new_sqlite_classes": ["RepoSessionIndex"]
+				},
+				{
 					"tag": "v1",
 					"location": "env.test.migrations",
 					"new_sqlite_classes": ["MCP"]
@@ -213,6 +222,11 @@
 					"tag": "v23",
 					"location": "env.test.migrations",
 					"new_sqlite_classes": ["StripePlanRefresh"]
+				},
+				{
+					"tag": "v24",
+					"location": "env.test.migrations",
+					"new_sqlite_classes": ["RepoSessionIndex"]
 				}
 			],
 			"protected_binding_sets": [
@@ -252,6 +266,10 @@
 						{
 							"name": "MAILBOX",
 							"class_name": "Mailbox"
+						},
+						{
+							"name": "REPO_SESSION_INDEX",
+							"class_name": "RepoSessionIndex"
 						},
 						{
 							"name": "STRIPE_PLAN_REFRESH",
@@ -311,6 +329,10 @@
 							"class_name": "Mailbox"
 						},
 						{
+							"name": "REPO_SESSION_INDEX",
+							"class_name": "RepoSessionIndex"
+						},
+						{
 							"name": "STRIPE_PLAN_REFRESH",
 							"class_name": "StripePlanRefresh"
 						},
@@ -364,6 +386,10 @@
 						{
 							"name": "MAILBOX",
 							"class_name": "Mailbox"
+						},
+						{
+							"name": "REPO_SESSION_INDEX",
+							"class_name": "RepoSessionIndex"
 						},
 						{
 							"name": "STRIPE_PLAN_REFRESH",

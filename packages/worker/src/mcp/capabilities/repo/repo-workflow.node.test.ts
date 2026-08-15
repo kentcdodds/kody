@@ -3,6 +3,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getActiveRepoSessionByConversation: vi.fn(),
+	countActiveRepoSessions: vi.fn(async () => 0),
 	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
@@ -12,6 +13,8 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/repo/repo-sessions.ts', () => ({
 	getActiveRepoSessionByConversation: (...args: Array<unknown>) =>
 		mockModule.getActiveRepoSessionByConversation(...args),
+	countActiveRepoSessions: (...args: Array<unknown>) =>
+		mockModule.countActiveRepoSessions(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -46,7 +49,11 @@ function createCapabilityContext() {
 					return {
 						bind() {
 							return {
-								first: async () => ({ username: 'user' }),
+								first: async () => ({
+									username: 'user',
+									plan: 'max',
+									stripe_plan: null,
+								}),
 							}
 						},
 					}
@@ -80,6 +87,8 @@ function createRepoRpc(overrides?: Partial<Record<string, unknown>>) {
 
 function resetMocks() {
 	mockModule.getActiveRepoSessionByConversation.mockReset()
+	mockModule.countActiveRepoSessions.mockReset()
+	mockModule.countActiveRepoSessions.mockResolvedValue(0)
 	mockModule.getEntitySourceByIdForUser.mockReset()
 	mockModule.getSavedPackageById.mockReset()
 	mockModule.getSavedPackageByKodyId.mockReset()
