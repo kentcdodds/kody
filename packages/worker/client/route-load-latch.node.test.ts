@@ -37,6 +37,19 @@ test('isLoading alone does not force a load when the href is already loaded', ()
 	).toBe(false)
 })
 
+test('a stale completion for a previous href does not clear the active pending latch', () => {
+	const latch = createRouteLoadLatch()
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/b' })).toBe(true)
+	// Late success for /a must not clear /b's pending or steal lastLoaded.
+	latch.markLoaded('/a')
+	expect(latch.isLoadedFor('/a')).toBe(false)
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/b' })).toBe(false)
+	latch.markLoaded('/b')
+	expect(latch.isLoadedFor('/b')).toBe(true)
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/b' })).toBe(false)
+})
+
 test('a failed load does not re-queue in a loop but retries after navigation', () => {
 	const latch = createRouteLoadLatch()
 	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)

@@ -33,15 +33,24 @@ export function createRouteLoadLatch() {
 	return {
 		/** Record a successful load (or applied preloaded data) for `href`. */
 		markLoaded(href: string) {
-			lastLoadedHref = toLatchKey(href)
+			const key = toLatchKey(href)
+			// Ignore late completions after navigating away so they cannot
+			// clobber the active location's loaded/pending markers.
+			if (key !== lastSeenHref) return
+			lastLoadedHref = key
 			lastFailedHref = null
-			lastPendingHref = null
+			if (lastPendingHref === key) {
+				lastPendingHref = null
+			}
 		},
 		/** Record a failed load so renders stop re-queuing for this `href`. */
 		markFailed(href: string) {
 			const key = toLatchKey(href)
+			if (key !== lastSeenHref) return
 			lastFailedHref = key
-			lastPendingHref = null
+			if (lastPendingHref === key) {
+				lastPendingHref = null
+			}
 			// A failure supersedes any earlier success for the same location;
 			// otherwise a failed refresh would leave the route latched as
 			// loaded and never refetch after navigating away and back.

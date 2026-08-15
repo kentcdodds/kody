@@ -181,6 +181,11 @@ export function TimelineRoute(handle: Handle) {
 								mix={[
 									css(getPillButtonCss()),
 									on('click', () => {
+										// Click-driven retry may call handle.update() —
+										// unlike queueTask loads, this is not aborted by
+										// the same render cycle.
+										status = 'loading'
+										handle.update()
 										void runLoad(currentHref)
 									}),
 								]}
