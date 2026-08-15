@@ -35,8 +35,10 @@ export function createRouteLoadLatch() {
 		markLoaded(href: string) {
 			const key = toLatchKey(href)
 			// Ignore late completions after navigating away so they cannot
-			// clobber the active location's loaded/pending markers.
-			if (key !== lastSeenHref) return
+			// clobber the active location's loaded/pending markers. Allow
+			// markLoaded before the first needsLoad (applied route data is
+			// often recorded in the same render pass before needsLoad runs).
+			if (lastSeenHref !== '' && key !== lastSeenHref) return
 			lastLoadedHref = key
 			lastFailedHref = null
 			if (lastPendingHref === key) {
@@ -46,7 +48,7 @@ export function createRouteLoadLatch() {
 		/** Record a failed load so renders stop re-queuing for this `href`. */
 		markFailed(href: string) {
 			const key = toLatchKey(href)
-			if (key !== lastSeenHref) return
+			if (lastSeenHref !== '' && key !== lastSeenHref) return
 			lastFailedHref = key
 			if (lastPendingHref === key) {
 				lastPendingHref = null
