@@ -184,14 +184,20 @@ export function GuideDetailRoute(handle: Handle) {
 			handle.queueTask(async (signal) => {
 				try {
 					await loadGuide(slug, signal)
-					if (signal.aborted) return
+					if (signal.aborted) {
+						loadLatch.clearPending(currentHref)
+						return
+					}
 					if (status === 'ready' || status === 'not-found') {
 						loadLatch.markLoaded(currentHref)
 					} else {
 						loadLatch.markFailed(currentHref)
 					}
 				} catch {
-					if (signal.aborted) return
+					if (signal.aborted) {
+						loadLatch.clearPending(currentHref)
+						return
+					}
 					loadLatch.markFailed(currentHref)
 				}
 			})

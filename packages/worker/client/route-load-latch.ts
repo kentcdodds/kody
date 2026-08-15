@@ -65,10 +65,22 @@ export function createRouteLoadLatch() {
 			return lastLoadedHref === toLatchKey(href)
 		},
 		/**
+		 * Drop the in-flight pending marker for `href` after an aborted
+		 * `queueTask` so the next render can re-queue. Remix aborts the task
+		 * signal on unrelated re-renders (e.g. shell session refresh); without
+		 * this, pending would stick and the route would stay on loading UI.
+		 */
+		clearPending(href: string) {
+			const key = toLatchKey(href)
+			if (lastPendingHref === key) {
+				lastPendingHref = null
+			}
+		},
+		/**
 		 * Whether the route must queue a data load this render pass. Call once
 		 * per render with the current router href. A `true` result latches the
-		 * href as pending until `markLoaded` / `markFailed` (or a navigation /
-		 * stale-refresh clears it).
+		 * href as pending until `markLoaded` / `markFailed` / `clearPending`
+		 * (or a navigation / stale-refresh clears it).
 		 *
 		 * `isLoading` is accepted for call-site compatibility but ignored: the
 		 * pending latch is the in-flight guard. Using `isLoading` as a reason
