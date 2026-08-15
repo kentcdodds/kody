@@ -1,10 +1,5 @@
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
-import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
-import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
-import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
-import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
 import {
 	parseStoredPlanName,
 	resolveEffectivePlan,
@@ -12,6 +7,14 @@ import {
 	type EntitlementResource,
 	type PlanName,
 } from '#universal/plans.ts'
+import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
+import { isMissingRepoSessionsTable } from '#worker/repo/repo-session-leftover-d1.ts'
+import { countActiveRepoSessions } from '#worker/repo/repo-sessions.ts'
+import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
+import { normalizeStableUserId } from '#worker/user-id.ts'
+import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
 import {
 	isDailyEntitlementResource,
 	type DailyEntitlementResource,
@@ -21,9 +24,6 @@ import {
 	userMeterRpc,
 	type UserMeterEnv,
 } from './user-meter-client.ts'
-import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
-import { isMissingRepoSessionsTable } from '#worker/repo/repo-session-leftover-d1.ts'
-import { countActiveRepoSessions } from '#worker/repo/repo-sessions.ts'
 
 /** Env surface for authoritative entitlement usage readers. */
 export type EntitlementUsageEnv = UserMeterEnv &

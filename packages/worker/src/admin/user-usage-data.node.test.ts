@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { type RepoSessionRow } from '#worker/repo/types.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { type AdminUsageRollup } from '#universal/loader-data.ts'
 import { loadAdminUserUsageData } from './user-usage-data.ts'
@@ -11,10 +13,46 @@ const resourceCountsByDb = new WeakMap<
 	Record<string, ResourceCount>
 >()
 
+function createUsageRepoSessionRow(
+	userId: string,
+	index: number,
+): RepoSessionRow {
+	const id = `usage-session-${index}`
+	return {
+		id,
+		user_id: userId,
+		source_id: `source-${index}`,
+		source_repo_id: `repo-${index}`,
+		session_branch: `sessions/${id}`,
+		source_branch: 'main',
+		base_commit: 'base',
+		source_root: '/',
+		conversation_id: null,
+		status: 'active',
+		expires_at: null,
+		last_checkpoint_at: null,
+		last_checkpoint_commit: null,
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		created_at: '2026-07-05T00:00:00.000Z',
+		updated_at: '2026-07-05T00:00:00.000Z',
+	}
+}
+
 function withUserMeter(env: { APP_DB: D1Database } & Record<string, unknown>) {
 	const meter = createInMemoryUserMeterEnv()
 	const runLog = createInMemoryRunLogUsageEnv()
+	const repoSessionIndex = createInMemoryRepoSessionIndexEnv(env.APP_DB)
 	const resourceCounts = resourceCountsByDb.get(env.APP_DB) ?? {}
+	for (const [userId, counts] of Object.entries(resourceCounts)) {
+		const rows = repoSessionIndex.indexes.get(userId) ?? new Map()
+		const count = counts.repo_sessions ?? 0
+		for (let index = 0; index < count; index += 1) {
+			const row = createUsageRepoSessionRow(userId, index)
+			rows.set(row.id, row)
+		}
+		repoSessionIndex.indexes.set(userId, rows)
+	}
 	const mailbox = {
 		idFromName(userId: string) {
 			return { userId } as unknown as DurableObjectId
@@ -34,6 +72,7 @@ function withUserMeter(env: { APP_DB: D1Database } & Record<string, unknown>) {
 		...env,
 		...meter.env,
 		...runLog.env,
+		REPO_SESSION_INDEX: repoSessionIndex.REPO_SESSION_INDEX,
 		MAILBOX: mailbox,
 		meter,
 		runLog,

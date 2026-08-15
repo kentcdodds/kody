@@ -62,14 +62,17 @@ export function createInMemoryRepoSessionIndexEnv(
 								row.conversation_id === input.conversationId &&
 								row.status === 'active',
 						)
-						.sort((left, right) => right.updated_at.localeCompare(left.updated_at))[0] ??
-					null
+						.sort((left, right) =>
+							right.updated_at.localeCompare(left.updated_at),
+						)[0] ?? null
 				)
 			},
 			async listBySource(input) {
 				return [...rows.values()]
 					.filter((row) => row.source_id === input.sourceId)
-					.sort((left, right) => right.updated_at.localeCompare(left.updated_at))
+					.sort((left, right) =>
+						right.updated_at.localeCompare(left.updated_at),
+					)
 			},
 			async listByUser() {
 				return [...rows.values()].sort((left, right) =>
@@ -94,7 +97,9 @@ export function createInMemoryRepoSessionIndexEnv(
 							: input.conversationId,
 					status: input.status ?? existing.status,
 					expires_at:
-						input.expiresAt === undefined ? existing.expires_at : input.expiresAt,
+						input.expiresAt === undefined
+							? existing.expires_at
+							: input.expiresAt,
 					last_checkpoint_at:
 						input.lastCheckpointAt === undefined
 							? existing.last_checkpoint_at
@@ -130,7 +135,8 @@ export function createInMemoryRepoSessionIndexEnv(
 				return deleted
 			},
 			async countActive() {
-				return [...rows.values()].filter((row) => row.status === 'active').length
+				return [...rows.values()].filter((row) => row.status === 'active')
+					.length
 			},
 			async hasActiveForSource(input) {
 				return [...rows.values()].some(
@@ -139,7 +145,9 @@ export function createInMemoryRepoSessionIndexEnv(
 			},
 			async runDueCleanup(input): Promise<RepoSessionIndexCleanupResult> {
 				const now = input.now ? new Date(input.now) : new Date()
-				const due = [...rows.values()].filter((row) => isRepoSessionDue(row, now))
+				const due = [...rows.values()].filter((row) =>
+					isRepoSessionDue(row, now),
+				)
 				for (const row of due) rows.delete(row.id)
 				return { checked: due.length, deleted: due.length, errors: 0 }
 			},

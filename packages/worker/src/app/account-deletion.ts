@@ -25,7 +25,7 @@ import {
 import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import { repoSessionIndexRpc } from '#worker/repo/repo-session-index-client.ts'
 import { listRepoSessionsByUser } from '#worker/repo/repo-sessions.ts'
-import { listLeftoverD1RepoSessionsByUser } from '#worker/repo/repo-session-leftover-d1.ts'
+import { listLeftoverD1RepoSessionIdsByUser } from '#worker/repo/repo-session-leftover-d1.ts'
 import {
 	listAccountUserPackageServices,
 	listAccountUserStorageIds,
@@ -275,13 +275,16 @@ async function listUserRepoSessions(env: Env, userId: string) {
 	const fromIndex = env.REPO_SESSION_INDEX
 		? await listRepoSessionsByUser(env, userId)
 		: []
-	const leftover = await listLeftoverD1RepoSessionsByUser({
+	const leftoverIds = await listLeftoverD1RepoSessionIdsByUser({
 		db: env.APP_DB,
 		userId,
 	})
 	const byId = new Map<string, { id: string }>()
-	for (const row of [...fromIndex, ...leftover]) {
+	for (const row of fromIndex) {
 		byId.set(row.id, { id: row.id })
+	}
+	for (const sessionId of leftoverIds) {
+		byId.set(sessionId, { id: sessionId })
 	}
 	return [...byId.values()]
 }
@@ -1191,11 +1194,13 @@ export async function deleteUserAccount(input: {
 		sessions: inventory.repoSessions,
 		warnings,
 	})
-	result.clearedDurableObjects.repoSessionIndexes = await purgeRepoSessionIndex({
-		env: input.env,
-		userId: input.mcpUserId,
-		warnings,
-	})
+	result.clearedDurableObjects.repoSessionIndexes = await purgeRepoSessionIndex(
+		{
+			env: input.env,
+			userId: input.mcpUserId,
+			warnings,
+		},
+	)
 	result.clearedDurableObjects.remoteConnectorSessions =
 		await purgeRemoteConnectorSessions({
 			env: input.env,

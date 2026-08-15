@@ -1,5 +1,7 @@
 import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
 import {
+	deleteLeftoverD1RepoSession,
+	deleteLeftoverD1RepoSessionsBySource,
 	getLeftoverD1RepoSession,
 	listLeftoverD1RepoSessionsBySource,
 	listLeftoverD1RepoSessionsByUser,
@@ -115,13 +117,19 @@ export async function deleteRepoSessionsBySourceForUser(
 			)
 			.run()
 	}
-	return await repoSessionIndexRpc({
+	const deleted = await repoSessionIndexRpc({
 		env,
 		userId: input.userId,
 	}).deleteBySource({
 		ownerId: input.userId,
 		sourceId: input.sourceId,
 	})
+	await deleteLeftoverD1RepoSessionsBySource({
+		db: env.APP_DB,
+		userId: input.userId,
+		sourceId: input.sourceId,
+	})
+	return deleted
 }
 
 export async function listRepoSessionsByUser(
@@ -184,13 +192,19 @@ export async function deleteRepoSession(
 		sessionId: string
 	},
 ): Promise<boolean> {
-	return await repoSessionIndexRpc({
+	const deleted = await repoSessionIndexRpc({
 		env,
 		userId: input.userId,
 	}).deleteSession({
 		ownerId: input.userId,
 		sessionId: input.sessionId,
 	})
+	await deleteLeftoverD1RepoSession({
+		db: env.APP_DB,
+		userId: input.userId,
+		sessionId: input.sessionId,
+	})
+	return deleted
 }
 
 export async function countActiveRepoSessions(

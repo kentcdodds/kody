@@ -11,6 +11,7 @@ import { repoOpenSessionInputSchema } from './repo-shared.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getActiveRepoSessionByConversation: vi.fn(),
+	countActiveRepoSessions: vi.fn(async () => 0),
 	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	repoSessionRpc: vi.fn(),
@@ -19,6 +20,8 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/repo/repo-sessions.ts', () => ({
 	getActiveRepoSessionByConversation: (...args: Array<unknown>) =>
 		mockModule.getActiveRepoSessionByConversation(...args),
+	countActiveRepoSessions: (...args: Array<unknown>) =>
+		mockModule.countActiveRepoSessions(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -143,6 +146,8 @@ function createOpenSessionResult() {
 
 function resetMocks() {
 	mockModule.getActiveRepoSessionByConversation.mockReset()
+	mockModule.countActiveRepoSessions.mockReset()
+	mockModule.countActiveRepoSessions.mockResolvedValue(0)
 	mockModule.getEntitySourceByIdForUser.mockReset()
 	mockModule.getSavedPackageByKodyId.mockReset()
 	mockModule.repoSessionRpc.mockReset()
@@ -252,6 +257,7 @@ test('repo_open_session enforces the repo sessions entitlement for plan users op
 		}),
 	}
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
+	mockModule.countActiveRepoSessions.mockResolvedValue(limit)
 	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
 		createSavedPackageRow(userId),
 	)
@@ -388,6 +394,7 @@ test('repo_open_session allows below-max usage and denies at the max plan ceilin
 	expect(belowMaxRpc.openSession).toHaveBeenCalled()
 
 	resetMocks()
+	mockModule.countActiveRepoSessions.mockResolvedValue(maxLimit)
 	const atCeilingEnv = {
 		APP_DB: createEntitlementsDatabase({
 			users: [{ email, plan: 'max', stable_user_id: userId }],

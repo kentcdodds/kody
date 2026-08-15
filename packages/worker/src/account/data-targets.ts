@@ -107,6 +107,12 @@ export const accountOperatorOwnedD1Surfaces = [
 		reason:
 			'Operator-provisioned built-in OAuth app registrations (global config like feature flags; no user data). Per-user connections and token secrets remain user-scoped and covered by their own targets.',
 	},
+	{
+		table: 'repo_session_index_backfill_cursor',
+		surface: 'repo_session_index_backfill_cursor',
+		reason:
+			'Platform-owned leftover D1 catalog hydrate cursor (one singleton row). Not user data; account deletion does not touch it.',
+	},
 ] as const
 
 /** Targets that account export should skip (deletion still covers them). */

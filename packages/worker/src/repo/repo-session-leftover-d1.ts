@@ -104,3 +104,85 @@ export async function listLeftoverD1RepoSessionsBySource(input: {
 		return results ?? []
 	})
 }
+
+/** Session ids only — used for storage-bucket inventory when leftover rows may be incomplete. */
+export async function listLeftoverD1RepoSessionIdsBySource(input: {
+	db: D1Database
+	userId: string
+	sourceId: string
+}): Promise<Array<string>> {
+	return listLeftoverD1RepoSessionIds({
+		db: input.db,
+		sql: `SELECT id FROM repo_sessions
+			WHERE user_id = ? AND source_id = ?`,
+		params: [input.userId, input.sourceId],
+	})
+}
+
+export async function listLeftoverD1RepoSessionIdsByUser(input: {
+	db: D1Database
+	userId: string
+}): Promise<Array<string>> {
+	return listLeftoverD1RepoSessionIds({
+		db: input.db,
+		sql: `SELECT id FROM repo_sessions WHERE user_id = ?`,
+		params: [input.userId],
+	})
+}
+
+async function listLeftoverD1RepoSessionIds(input: {
+	db: D1Database
+	sql: string
+	params: Array<string>
+}): Promise<Array<string>> {
+	try {
+		const { results } = await input.db
+			.prepare(input.sql)
+			.bind(...input.params)
+			.all<{ id: string }>()
+		return (results ?? []).map((row) => row.id)
+	} catch (error) {
+		if (isMissingRepoSessionsTable(error)) return []
+		throw error
+	}
+}
+
+async function runLeftoverD1Delete(input: {
+	db: D1Database
+	sql: string
+	params: Array<string>
+}): Promise<void> {
+	try {
+		await input.db
+			.prepare(input.sql)
+			.bind(...input.params)
+			.run()
+	} catch (error) {
+		if (isMissingRepoSessionsTable(error)) return
+		throw error
+	}
+}
+
+export async function deleteLeftoverD1RepoSession(input: {
+	db: D1Database
+	userId: string
+	sessionId: string
+}): Promise<void> {
+	await runLeftoverD1Delete({
+		db: input.db,
+		sql: `DELETE FROM repo_sessions WHERE id = ? AND user_id = ?`,
+		params: [input.sessionId, input.userId],
+	})
+}
+
+export async function deleteLeftoverD1RepoSessionsBySource(input: {
+	db: D1Database
+	userId: string
+	sourceId: string
+}): Promise<void> {
+	await runLeftoverD1Delete({
+		db: input.db,
+		sql: `DELETE FROM repo_sessions WHERE user_id = ? AND source_id = ?`,
+		params: [input.userId, input.sourceId],
+	})
+}

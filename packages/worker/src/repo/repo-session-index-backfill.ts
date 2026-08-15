@@ -14,11 +14,11 @@ export type RepoSessionIndexBackfillResult = {
 async function readBackfillCursor(db: D1Database): Promise<string> {
 	const row = await db
 		.prepare(
-			`SELECT after_user_id FROM repo_session_index_backfill_cursor
+			`SELECT position FROM repo_session_index_backfill_cursor
 			WHERE singleton = 1`,
 		)
-		.first<{ after_user_id: string }>()
-	return row?.after_user_id ?? ''
+		.first<{ position: string }>()
+	return row?.position ?? ''
 }
 
 async function writeBackfillCursor(input: {
@@ -29,7 +29,7 @@ async function writeBackfillCursor(input: {
 	await input.db
 		.prepare(
 			`UPDATE repo_session_index_backfill_cursor
-			SET after_user_id = ?, updated_at = ?
+			SET position = ?, updated_at = ?
 			WHERE singleton = 1`,
 		)
 		.bind(input.afterUserId, input.now.toISOString())

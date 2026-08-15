@@ -82,16 +82,15 @@ Deletion must cover these user-owned surfaces:
   `PackageServiceInstance`, `McpClientHub`, `RunLog`, `UserMeter`,
   `StripePlanRefresh`, and `Mailbox` are purged through account-deletion RPCs
   after their identifiers are collected (`RunLog`, `UserMeter`,
-  `StripePlanRefresh`, `Mailbox`, and `RepoSessionIndex` are one object per
-  user and need no D1 id scan). Account deletion first captures the
-  authoritative USER raw-MIME and attachment references through
-  `Mailbox.listBlobReferences`, deletes those owner-safe R2 keys plus defensive
-  owner-prefix sweeps, and only then calls `Mailbox.purge()`. The purge clears
-  DO SQLite only (see [Mailbox](#durable-objects-mailbox)). `MCP` objects remain
-  SDK session-keyed, while `mcp_agent_sessions` indexes each Durable Object id
-  by authenticated stable user id so account deletion can purge stored props,
-  conversation state, raw-fetch state, and transport storage before revoking
-  OAuth grants.
+  `StripePlanRefresh`, `Mailbox`, and `RepoSessionIndex` are one object per user
+  and need no D1 id scan). Account deletion first captures the authoritative
+  USER raw-MIME and attachment references through `Mailbox.listBlobReferences`,
+  deletes those owner-safe R2 keys plus defensive owner-prefix sweeps, and only
+  then calls `Mailbox.purge()`. The purge clears DO SQLite only (see
+  [Mailbox](#durable-objects-mailbox)). `MCP` objects remain SDK session-keyed,
+  while `mcp_agent_sessions` indexes each Durable Object id by authenticated
+  stable user id so account deletion can purge stored props, conversation state,
+  raw-fetch state, and transport storage before revoking OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
 - **R2:** raw USER email MIME and attachment blobs in `EMAIL_BLOBS` are
@@ -920,11 +919,11 @@ via `durableObjectNameFromParts`); domain helpers such as
   per-user session catalog: rows, active counts, conversation resume, export,
   and deletion inventory. Each index self-alarms; D1 keeps only the thin
   `repo_session_due_owners` hint (one row per user with any session).
-- `RepoSession` — `repoSessionDurableObjectName(sessionId)` keyed by session
-  id only (not user-prefixed). Every RPC validates the catalog row's
-  `user_id` before touching the workspace. Account deletion enumerates the
-  user's session ids from `RepoSessionIndex` and purges each workspace DO.
-  Documented exception to user-scoped naming.
+- `RepoSession` — `repoSessionDurableObjectName(sessionId)` keyed by session id
+  only (not user-prefixed). Every RPC validates the catalog row's `user_id`
+  before touching the workspace. Account deletion enumerates the user's session
+  ids from `RepoSessionIndex` and purges each workspace DO. Documented exception
+  to user-scoped naming.
 - The `MCP` Durable Object is addressed by MCP session id rather than user id;
   ownership is enforced at the request boundary by validating the authenticated
   user against the `McpCallerContext` on every request.
@@ -1016,8 +1015,8 @@ repos plus D1 `entity_sources` rows and a per-user `RepoSessionIndex` catalog.
   `(user_id, entity_kind, entity_id)` to the repo identity and last published
   commit.
 - `RepoSessionIndex` stores mutable editing-fork catalog rows for repo session
-  Durable Objects. Leftover D1 `repo_sessions` rows hydrate into the index
-  until the Phase 2 DROP.
+  Durable Objects. Leftover D1 `repo_sessions` rows hydrate into the index until
+  the Phase 2 DROP.
 - Published source snapshots and bundle artifacts are stored in
   `BUNDLE_ARTIFACTS_KV` and keyed by `source_id` plus `published_commit`.
 
@@ -1251,12 +1250,12 @@ to `durableObjectNameFromParts`).
 - `StripePlanRefresh`: `idFromName(userId)` (no trim); one ephemeral billing
   reconciliation alarm DO per user.
 - `Mailbox`: `idFromName(userId)` (no trim); one email-metadata DO per user.
-- `RepoSessionIndex`: `idFromName(userId)` (no trim); one session-catalog DO
-  per user.
+- `RepoSessionIndex`: `idFromName(userId)` (no trim); one session-catalog DO per
+  user.
 - `McpClientHub`: `idFromName(userId.trim())`.
 - `StorageRunner`: `idFromName(JSON.stringify([userId, storageId]))`.
-- `RepoSession`: `idFromName(sessionId)`; the key is not user-prefixed, so
-  every RPC must keep validating the catalog row's `user_id`.
+- `RepoSession`: `idFromName(sessionId)`; the key is not user-prefixed, so every
+  RPC must keep validating the catalog row's `user_id`.
 - `PackageRealtimeSession`: `idFromName(JSON.stringify([userId, packageId]))`.
 - `PackageServiceInstance`:
   `idFromName(JSON.stringify([userId, packageId, serviceName]))`.

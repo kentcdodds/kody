@@ -19,20 +19,22 @@ export type RepoSessionDueFields = Pick<
 >
 
 export function unusedActiveDueBefore(now: Date): string {
-	return new Date(now.valueOf() - unusedAbandonedSessionRetentionMs).toISOString()
+	return new Date(
+		now.valueOf() - unusedAbandonedSessionRetentionMs,
+	).toISOString()
 }
 
 export function editedActiveDueBefore(now: Date): string {
-	return new Date(now.valueOf() - editedAbandonedSessionRetentionMs).toISOString()
+	return new Date(
+		now.valueOf() - editedAbandonedSessionRetentionMs,
+	).toISOString()
 }
 
 function addMs(iso: string, ms: number): string {
 	return new Date(Date.parse(iso) + ms).toISOString()
 }
 
-export function nextRepoSessionDueAt(
-	row: RepoSessionDueFields,
-): string | null {
+export function nextRepoSessionDueAt(row: RepoSessionDueFields): string | null {
 	if (row.status === 'active' && row.last_checkpoint_at == null) {
 		return addMs(row.updated_at, unusedAbandonedSessionRetentionMs)
 	}

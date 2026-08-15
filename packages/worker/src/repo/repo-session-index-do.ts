@@ -1,10 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import {
-	getRecoveryBookmark,
-	restoreToBookmark,
-} from '#worker/dr/do-pitr.ts'
+import { getRecoveryBookmark, restoreToBookmark } from '#worker/dr/do-pitr.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { replaceRepoSessionDueOwner } from './repo-session-due-owners.ts'
 import {
@@ -124,16 +121,18 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}
 
 	private initializeSchema(): void {
+		this.sql.exec(`
+			CREATE TABLE IF NOT EXISTS repo_session_index_meta (
+				key TEXT PRIMARY KEY,
+				value TEXT NOT NULL
+			);
+		`)
 		const version = this.readMetaNumber(schemaVersionKey)
 		if (version >= repoSessionIndexSchemaVersion) return
 		this.sql.exec(`
 			CREATE TABLE IF NOT EXISTS repo_session_index_owner_identity (
 				singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
 				owner_id TEXT NOT NULL
-			);
-			CREATE TABLE IF NOT EXISTS repo_session_index_meta (
-				key TEXT PRIMARY KEY,
-				value TEXT NOT NULL
 			);
 			CREATE TABLE IF NOT EXISTS repo_sessions (
 				id TEXT PRIMARY KEY,
@@ -491,7 +490,8 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		if (input.sessionBranch !== undefined) {
 			add('session_branch', input.sessionBranch)
 		}
-		if (input.sourceBranch !== undefined) add('source_branch', input.sourceBranch)
+		if (input.sourceBranch !== undefined)
+			add('source_branch', input.sourceBranch)
 		if (input.baseCommit !== undefined) add('base_commit', input.baseCommit)
 		if (input.sourceRoot !== undefined) add('source_root', input.sourceRoot)
 		if (input.conversationId !== undefined) {
@@ -544,7 +544,10 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 				input.sourceId,
 			)
 			.toArray()[0]
-		this.sql.exec(`DELETE FROM repo_sessions WHERE source_id = ?`, input.sourceId)
+		this.sql.exec(
+			`DELETE FROM repo_sessions WHERE source_id = ?`,
+			input.sourceId,
+		)
 		await this.scheduleNextDue(ownerId)
 		return Number(before?.count ?? 0)
 	}

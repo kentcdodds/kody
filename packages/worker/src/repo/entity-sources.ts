@@ -1,6 +1,6 @@
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
-import { listLeftoverD1RepoSessionsBySource } from './repo-session-leftover-d1.ts'
+import { listLeftoverD1RepoSessionIdsBySource } from './repo-session-leftover-d1.ts'
 import {
 	repoSessionIndexNamespace,
 	type RepoSessionIndexEnv,
@@ -313,18 +313,21 @@ export async function deleteEntitySource(
 ): Promise<boolean> {
 	const sessionIds = new Set<string>()
 	if (repoSessionIndexNamespace(env as RepoSessionIndexEnv)) {
-		const sessions = await listRepoSessionsBySource(env as RepoSessionIndexEnv, {
-			userId: input.userId,
-			sourceId: input.id,
-		})
+		const sessions = await listRepoSessionsBySource(
+			env as RepoSessionIndexEnv,
+			{
+				userId: input.userId,
+				sourceId: input.id,
+			},
+		)
 		for (const session of sessions) sessionIds.add(session.id)
 	}
-	for (const session of await listLeftoverD1RepoSessionsBySource({
+	for (const sessionId of await listLeftoverD1RepoSessionIdsBySource({
 		db: env.APP_DB,
 		userId: input.userId,
 		sourceId: input.id,
 	})) {
-		sessionIds.add(session.id)
+		sessionIds.add(sessionId)
 	}
 	const statements = [
 		env.APP_DB.prepare(

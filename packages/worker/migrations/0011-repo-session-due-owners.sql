@@ -12,8 +12,8 @@ CREATE INDEX idx_repo_session_due_owners_due_at
 
 CREATE TABLE repo_session_index_backfill_cursor (
 	singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-	after_user_id TEXT NOT NULL DEFAULT '',
+	position TEXT NOT NULL DEFAULT '',
 	updated_at TEXT NOT NULL
 );
-INSERT INTO repo_session_index_backfill_cursor (singleton, after_user_id, updated_at)
+INSERT INTO repo_session_index_backfill_cursor (singleton, position, updated_at)
 VALUES (1, '', datetime('now'));

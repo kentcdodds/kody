@@ -28,9 +28,18 @@ function sessionRow(
 }
 
 test('RepoSessionIndex is the catalog authority for one user', async () => {
+	await env.APP_DB.prepare(
+		`CREATE TABLE IF NOT EXISTS repo_session_due_owners (
+			user_id TEXT PRIMARY KEY NOT NULL,
+			due_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+	).run()
 	const userId = `index-${crypto.randomUUID()}`
 	const stub = env.REPO_SESSION_INDEX.get(
-		env.REPO_SESSION_INDEX.idFromName(repoSessionIndexDurableObjectName(userId)),
+		env.REPO_SESSION_INDEX.idFromName(
+			repoSessionIndexDurableObjectName(userId),
+		),
 	)
 	await runInDurableObject(stub, async (instance: RepoSessionIndex) => {
 		expect(instance).toBeInstanceOf(RepoSessionIndex)
@@ -60,14 +69,16 @@ test('RepoSessionIndex is the catalog authority for one user', async () => {
 			}),
 		).toBe(true)
 		expect(
-			(await instance.getActiveByConversation({
-				ownerId: userId,
-				conversationId: 'convo-1',
-			}))?.id,
+			(
+				await instance.getActiveByConversation({
+					ownerId: userId,
+					conversationId: 'convo-1',
+				})
+			)?.id,
 		).toBe('session-1')
 		expect(
 			(await instance.listByUser({ ownerId: userId })).map((row) => row.id),
-		).toEqual(['session-1', 'session-2'])
+		).toEqual(['session-2', 'session-1'])
 		expect(
 			await instance.deleteSession({
 				ownerId: userId,

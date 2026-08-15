@@ -760,6 +760,9 @@ function createDatabase(
 									) as T[],
 								}
 							}
+							if (query.includes('FROM repo_sessions')) {
+								return { results: [] }
+							}
 							throw new Error(`Unsupported all query: ${query}`)
 						},
 						async run() {

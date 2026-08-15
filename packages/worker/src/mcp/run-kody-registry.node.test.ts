@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import {
 	createInMemoryUserMeterEnv,
 	createPermissiveAccountWriteLeaseDbHooks,
@@ -673,7 +674,9 @@ function createJobMutationDatabase(input: {
 						async all<T = Record<string, unknown>>() {
 							if (
 								normalized ===
-								'SELECT * FROM repo_sessions WHERE user_id = ? AND source_id = ? ORDER BY updated_at DESC'
+									'SELECT * FROM repo_sessions WHERE user_id = ? AND source_id = ? ORDER BY updated_at DESC' ||
+								normalized ===
+									'SELECT id FROM repo_sessions WHERE user_id = ? AND source_id = ?'
 							) {
 								return {
 									results: selectAll(
@@ -876,9 +879,12 @@ function createRunKodyRegistryTestEnv(
 	meter?: ReturnType<typeof createInMemoryUserMeterEnv>,
 ) {
 	const userMeter = meter ?? createInMemoryUserMeterEnv()
+	const appDb = bindings.APP_DB as D1Database | undefined
+	const repoSessionIndex = createInMemoryRepoSessionIndexEnv(appDb)
 	return {
 		...bindings,
 		USER_METER: userMeter.env.USER_METER,
+		REPO_SESSION_INDEX: repoSessionIndex.REPO_SESSION_INDEX,
 	} as Env
 }
 
