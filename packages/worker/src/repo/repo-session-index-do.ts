@@ -11,9 +11,9 @@ import {
 	unusedActiveDueBefore,
 } from './repo-session-due.ts'
 import {
+	countLeftoverD1RepoSessionsByUser,
 	deleteLeftoverD1RepoSessionsByUser,
 	isMissingRepoSessionsTable,
-	listLeftoverD1RepoSessionIdsByUser,
 	listLeftoverD1RepoSessionsByUser,
 } from './repo-session-leftover-d1.ts'
 import { repoSessionRpc } from './repo-session-rpc.ts'
@@ -372,23 +372,31 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		ownerId: string
 	}): Promise<RepoSessionIndexHydrateResult> {
 		const ownerId = this.assertOwner(input.ownerId)
-		const alreadyHydrated = this.isHydrated()
-		let leftover: Array<RepoSessionRow> = []
-		try {
-			leftover = await listLeftoverD1RepoSessionsByUser({
+		if (this.isHydrated()) {
+			await deleteLeftoverD1RepoSessionsByUser({
 				db: this.env.APP_DB,
 				userId: ownerId,
 			})
-		} catch (error) {
-			if (!isMissingRepoSessionsTable(error)) throw error
-			this.markHydrated()
 			await this.scheduleNextDue(ownerId)
-			return { imported: 0, leftoverRemaining: 0 }
+			return {
+				imported: 0,
+				leftoverRemaining: await countLeftoverD1RepoSessionsByUser({
+					db: this.env.APP_DB,
+					userId: ownerId,
+				}),
+			}
 		}
 		let imported = 0
-		if (!alreadyHydrated) {
-			for (let index = 0; index < leftover.length; index += hydrateChunkSize) {
-				const chunk = leftover.slice(index, index + hydrateChunkSize)
+		let afterId = ''
+		try {
+			while (true) {
+				const chunk = await listLeftoverD1RepoSessionsByUser({
+					db: this.env.APP_DB,
+					userId: ownerId,
+					afterId,
+					limit: hydrateChunkSize,
+				})
+				if (chunk.length === 0) break
 				this.ctx.storage.transactionSync(() => {
 					for (const row of chunk) {
 						const before = this.getStoredRow(row.id)
@@ -398,9 +406,13 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 						}
 					}
 				})
+				afterId = chunk.at(-1)?.id ?? afterId
+				if (chunk.length < hydrateChunkSize) break
 			}
-			this.markHydrated()
+		} catch (error) {
+			if (!isMissingRepoSessionsTable(error)) throw error
 		}
+		this.markHydrated()
 		await deleteLeftoverD1RepoSessionsByUser({
 			db: this.env.APP_DB,
 			userId: ownerId,
@@ -408,12 +420,10 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		await this.scheduleNextDue(ownerId)
 		return {
 			imported,
-			leftoverRemaining: (
-				await listLeftoverD1RepoSessionIdsByUser({
-					db: this.env.APP_DB,
-					userId: ownerId,
-				})
-			).length,
+			leftoverRemaining: await countLeftoverD1RepoSessionsByUser({
+				db: this.env.APP_DB,
+				userId: ownerId,
+			}),
 		}
 	}
 

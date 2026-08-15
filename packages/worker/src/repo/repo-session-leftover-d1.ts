@@ -2,7 +2,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { repoSessionRowSchema, type RepoSessionRow } from './types.ts'
 
 export function isMissingRepoSessionsTable(error: unknown): boolean {
-	return /no such table:\s*['"]?repo_sessions['"]?/i.test(
+	return /no such table:\s*['"]?(?:main\.)?repo_sessions['"]?/i.test(
 		getErrorMessage(error),
 	)
 }
@@ -76,18 +76,37 @@ export async function getLeftoverD1RepoSession(input: {
 export async function listLeftoverD1RepoSessionsByUser(input: {
 	db: D1Database
 	userId: string
+	afterId?: string
+	limit?: number
 }): Promise<Array<RepoSessionRow>> {
 	return queryLeftoverD1RepoSessions(async () => {
 		const { results } = await input.db
 			.prepare(
 				`SELECT * FROM repo_sessions
-				WHERE user_id = ?
-				ORDER BY updated_at DESC`,
+				WHERE user_id = ? AND id > ?
+				ORDER BY id ASC
+				LIMIT ?`,
 			)
-			.bind(input.userId)
+			.bind(input.userId, input.afterId ?? '', input.limit ?? 500)
 			.all<Record<string, unknown>>()
 		return results ?? []
 	})
+}
+
+export async function countLeftoverD1RepoSessionsByUser(input: {
+	db: D1Database
+	userId: string
+}): Promise<number> {
+	try {
+		const row = await input.db
+			.prepare(`SELECT COUNT(*) AS count FROM repo_sessions WHERE user_id = ?`)
+			.bind(input.userId)
+			.first<{ count: number }>()
+		return Number(row?.count ?? 0)
+	} catch (error) {
+		if (isMissingRepoSessionsTable(error)) return 0
+		throw error
+	}
 }
 
 export async function listLeftoverD1RepoSessionsBySource(input: {
