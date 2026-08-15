@@ -17,7 +17,9 @@ test('missing leftover table matcher accepts qualified D1 names', () => {
 		false,
 	)
 	expect(
-		isMissingRepoSessionsTable(new Error('no such table: repo_sessions_backup')),
+		isMissingRepoSessionsTable(
+			new Error('no such table: repo_sessions_backup'),
+		),
 	).toBe(false)
 	expect(
 		isMissingRepoSessionsTable(
