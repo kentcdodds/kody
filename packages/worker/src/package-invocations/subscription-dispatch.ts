@@ -3,6 +3,7 @@ import { listJsonSchemaSubsetValueErrors } from '@kody-internal/shared/json-sche
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { type createMcpCallerContext } from '#mcp/context.ts'
+import { listAttachedRemoteConnectorRefsCached } from '#worker/mcp-auth-user-context.ts'
 import {
 	type PackageEventDispatchInput,
 	type PackageEventTools,
@@ -459,12 +460,19 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 	const params = synthetic
 		? input.params
 		: stripUntrustedSubscriptionEnvelopeFields(input.params)
+	const remoteConnectors = [
+		...(await listAttachedRemoteConnectorRefsCached({
+			env: input.env,
+			userId: input.savedPackage.userId,
+		})),
+	]
 	return await invokeSavedPackageModule({
 		env: input.env,
 		baseUrl: input.baseUrl,
 		actor: {
 			tokenId: input.actorTokenId ?? internalEmailSubscriptionTokenId,
 			userId: input.savedPackage.userId,
+			remoteConnectors,
 		},
 		savedPackage: input.savedPackage,
 		invocationName: buildPackageSubscriptionArtifactName(topic),

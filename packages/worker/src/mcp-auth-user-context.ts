@@ -40,7 +40,12 @@ const attachedRemoteConnectorRefsCaches = new WeakMap<
 	PromiseLruCache<ReadonlyArray<RemoteConnectorRef>>
 >()
 
-function listAttachedRemoteConnectorRefsCached(input: {
+/**
+ * Resolve attached remote connector refs for MCP auth and background package
+ * runtimes. Cached 30s per user per D1 binding so app/service/subscription
+ * caller-context builds do not each pay a settings read.
+ */
+export function listAttachedRemoteConnectorRefsCached(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 }) {

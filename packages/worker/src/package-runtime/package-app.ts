@@ -1,5 +1,6 @@
 import { WorkerEntrypoint, exports as workerExports } from 'cloudflare:workers'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { listAttachedRemoteConnectorRefsCached } from '#worker/mcp-auth-user-context.ts'
 import {
 	getPackageAppEntryPath,
 	parseAuthoredPackageJson,
@@ -833,7 +834,13 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	private readonly secretRedactor: ExecutionSecretRedactor =
 		createExecutionSecretRedactor()
 
-	private createCallerContext(storageId: string | null) {
+	private async createCallerContext(storageId: string | null) {
+		const remoteConnectors = [
+			...(await listAttachedRemoteConnectorRefsCached({
+				env: this.env,
+				userId: this.ctx.props.userId,
+			})),
+		]
 		return createMcpCallerContext({
 			baseUrl: this.ctx.props.baseUrl,
 			executionOrigin: 'background',
@@ -843,6 +850,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				username: undefined,
 				displayName: this.ctx.props.displayName,
 			},
+			remoteConnectors,
 			storageContext: {
 				sessionId: null,
 				appId: this.ctx.props.packageId,
@@ -1002,9 +1010,10 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 
 	async callCapability(input: { name: string; args?: unknown }) {
 		const name = input.name.trim()
+		const callerContext = await this.createCallerContext(null)
 		const { capabilityMap } = await getCapabilityRegistryForContext({
 			env: this.env,
-			callerContext: this.createCallerContext(null),
+			callerContext,
 		})
 		const capability = capabilityMap[name]
 		if (!capability) {
@@ -1014,7 +1023,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			(input.args ?? {}) as Record<string, unknown>,
 			{
 				env: this.env,
-				callerContext: this.createCallerContext(null),
+				callerContext,
 			},
 		)
 	}
@@ -1204,7 +1213,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	async refreshAccessToken(providerName: string) {
 		const kody = await buildKodyFns(
 			this.env,
-			this.createCallerContext(this.ctx.props.packageId),
+			await this.createCallerContext(this.ctx.props.packageId),
 		)
 		return await refreshAccessToken(kody, providerName)
 	}
@@ -1220,7 +1229,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}) {
 		const kody = await buildKodyFns(
 			this.env,
-			this.createCallerContext(this.ctx.props.packageId),
+			await this.createCallerContext(this.ctx.props.packageId),
 		)
 		const authenticatedFetch = await createAuthenticatedFetch(
 			kody,
@@ -1234,7 +1243,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async packageSecretGet(input: { alias: string }) {
-		const callerContext = this.createCallerContext(this.ctx.props.packageId)
+		const callerContext = await this.createCallerContext(
+			this.ctx.props.packageId,
+		)
 		const resolved = await resolvePackageMountedSecret({
 			env: this.env,
 			callerContext,
@@ -1248,7 +1259,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async packageSecretHas(input: { alias: string }) {
-		const callerContext = this.createCallerContext(this.ctx.props.packageId)
+		const callerContext = await this.createCallerContext(
+			this.ctx.props.packageId,
+		)
 		try {
 			await resolvePackageMountedSecret({
 				env: this.env,
@@ -1366,7 +1379,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		// startup; apps only need this helper when package code calls it.
 		this.packageRuntimeInvokeTools =
 			import('#worker/package-invocations/service.ts').then(
-				({ createPackageRuntimeInvokeTools }) => {
+				async ({ createPackageRuntimeInvokeTools }) => {
 					const packageContext = {
 						packageId: this.ctx.props.packageId,
 						kodyId: this.ctx.props.kodyId,
@@ -1375,7 +1388,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 					return createPackageRuntimeInvokeTools({
 						env: this.env,
 						baseUrl: this.ctx.props.baseUrl,
-						callerContext: this.createCallerContext(this.ctx.props.packageId),
+						callerContext: await this.createCallerContext(
+							this.ctx.props.packageId,
+						),
 						packageContext,
 						parentRunRecord: null,
 						packageInvokeDepth: 0,
@@ -1392,7 +1407,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		// startup; apps only need this helper when package code calls it.
 		this.packageEventTools =
 			import('#worker/package-invocations/service.ts').then(
-				({ createPackageEventTools }) => {
+				async ({ createPackageEventTools }) => {
 					const packageContext = {
 						packageId: this.ctx.props.packageId,
 						kodyId: this.ctx.props.kodyId,
@@ -1401,7 +1416,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 					return createPackageEventTools({
 						env: this.env,
 						baseUrl: this.ctx.props.baseUrl,
-						callerContext: this.createCallerContext(this.ctx.props.packageId),
+						callerContext: await this.createCallerContext(
+							this.ctx.props.packageId,
+						),
 						packageContext,
 						parentRunRecord: null,
 						packageInvokeDepth: 0,

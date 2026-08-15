@@ -12,6 +12,7 @@ const mockModule = vi.hoisted(() => ({
 	runBundledModuleWithRegistry: vi.fn(),
 	createPackageEventTools: vi.fn(() => ({})),
 	createPackageRuntimeInvokeTools: vi.fn(() => ({})),
+	listAttachedRemoteConnectorRefsCached: vi.fn(async () => []),
 }))
 
 vi.mock('@sentry/cloudflare', () => ({
@@ -72,6 +73,16 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 		displayName: userId,
 	}),
 }))
+
+vi.mock('#worker/mcp-auth-user-context.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/mcp-auth-user-context.ts')>()
+	return {
+		...actual,
+		listAttachedRemoteConnectorRefsCached: (...args: Array<unknown>) =>
+			mockModule.listAttachedRemoteConnectorRefsCached(...args),
+	}
+})
 
 const usageModule = await import('#worker/usage/record-usage.ts')
 const recordUsageSpy = vi.spyOn(usageModule, 'recordUsage')
@@ -225,6 +236,8 @@ function resetMocks() {
 	mockModule.runBundledModuleWithRegistry.mockReset()
 	mockModule.createPackageEventTools.mockReset()
 	mockModule.createPackageRuntimeInvokeTools.mockReset()
+	mockModule.listAttachedRemoteConnectorRefsCached.mockReset()
+	mockModule.listAttachedRemoteConnectorRefsCached.mockResolvedValue([])
 	// The global `mockReset: true` config restores the spy's real
 	// implementation before every test; re-stub so recordUsage does not run
 	// against the stub env and log `usage-rollup-failed`.
@@ -342,6 +355,9 @@ test('package service start and stop project liveness into package_service_state
 
 	try {
 		setupSavedPackage('bounded')
+		mockModule.listAttachedRemoteConnectorRefsCached.mockResolvedValue([
+			{ instanceId: 'home' },
+		])
 		mockModule.runBundledModuleWithRegistry.mockImplementation(async () => {
 			vi.setSystemTime(new Date('2026-07-05T12:00:05.000Z'))
 			return { result: { ok: true }, error: null }
@@ -369,6 +385,11 @@ test('package service start and stop project liveness into package_service_state
 		expect(created.getAlarmAt()).toBe(Date.parse('2026-07-05T13:00:00.000Z'))
 
 		await flushWaitUntilTasks(created.waitUntilTasks)
+		expect(mockModule.runBundledModuleWithRegistry.mock.calls[0]?.[1]).toEqual(
+			expect.objectContaining({
+				remoteConnectors: [{ instanceId: 'home' }],
+			}),
+		)
 		expect(upserts.at(-1)).toEqual([
 			'user-123',
 			'package-1',

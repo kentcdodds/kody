@@ -10,8 +10,10 @@ vi.mock('#worker/identity/permissions-db.ts', () => ({
 		mockModule.getUserRolesAndPermissions(...args),
 }))
 
-const { buildMcpUserContextFromGrantProps } =
-	await import('./mcp-auth-user-context.ts')
+const {
+	buildMcpUserContextFromGrantProps,
+	listAttachedRemoteConnectorRefsCached,
+} = await import('./mcp-auth-user-context.ts')
 
 type GrantUserRow = {
 	id: number
@@ -278,6 +280,12 @@ test('MCP auth reads account gates once, loads roles and connectors in parallel,
 	await buildMcpUserContextFromGrantProps({ APP_DB: account.db } as Env, {
 		userId: 'verified-id',
 	})
+	await expect(
+		listAttachedRemoteConnectorRefsCached({
+			env: { APP_DB: account.db } as Env,
+			userId: 'verified-id',
+		}),
+	).resolves.toEqual([{ instanceId: 'home' }])
 	expect(
 		account.queries.filter(({ sql }) =>
 			sql.toLowerCase().includes('remote_connector_settings'),
