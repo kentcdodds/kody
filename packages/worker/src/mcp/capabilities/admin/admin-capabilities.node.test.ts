@@ -12,6 +12,7 @@ import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
+import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -527,6 +528,7 @@ function createAdminCapabilityContext(
 		env: {
 			...runLog.env,
 			...userMeter.env,
+			...createInMemoryRepoSessionIndexEnv(db),
 			APP_DB: db,
 			AUDIT_DB: db,
 			MAILBOX: {

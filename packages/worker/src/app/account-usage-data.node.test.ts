@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { accountUsageEntitlementResources } from '#worker/entitlements/resource-visibility.ts'
+import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -12,11 +13,13 @@ function withUsageEnv(
 ) {
 	const meter = createInMemoryUserMeterEnv()
 	const runLog = createInMemoryRunLogUsageEnv()
+	const repoSessionIndex = createInMemoryRepoSessionIndexEnv(env.APP_DB)
 	const countMessages = async () => ({ total: mailboxMessageCount })
 	return {
 		...env,
 		...meter.env,
 		...runLog.env,
+		REPO_SESSION_INDEX: repoSessionIndex.REPO_SESSION_INDEX,
 		MAILBOX: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({ countMessages }),
