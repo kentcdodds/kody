@@ -2,7 +2,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { repoSessionRowSchema, type RepoSessionRow } from './types.ts'
 
 export function isMissingRepoSessionsTable(error: unknown): boolean {
-	return /no such table:\s*['"]?(?:main\.)?repo_sessions['"]?/i.test(
+	return /no such table:\s*['"]?(?:main\.)?repo_sessions['"]?(?=$|[\s:])/i.test(
 		getErrorMessage(error),
 	)
 }
