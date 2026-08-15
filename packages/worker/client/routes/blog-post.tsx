@@ -115,8 +115,7 @@ export function BlogPostRoute(handle: Handle) {
 	}
 
 	async function loadPost(slug: string, signal: AbortSignal) {
-		status = 'loading'
-		handle.update()
+		// Do not call handle.update() before the first await — see blog.tsx.
 		try {
 			const response = await fetch(routes.blogPostApi.href({ slug }), {
 				headers: { Accept: 'application/json' },
@@ -171,6 +170,7 @@ export function BlogPostRoute(handle: Handle) {
 			needsStaleRefresh,
 		})
 		if (needsLoad && typeof document !== 'undefined') {
+			status = 'loading'
 			handle.queueTask(async (signal) => {
 				try {
 					await loadPost(slug, signal)

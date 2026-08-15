@@ -69,8 +69,7 @@ export function GuidesRoute(handle: Handle) {
 	const loadLatch = createRouteLoadLatch()
 
 	async function loadGuides(signal: AbortSignal) {
-		status = 'loading'
-		handle.update()
+		// Do not call handle.update() before the first await — see blog.tsx.
 		try {
 			const response = await fetch(guidesApiPath, {
 				headers: { Accept: 'application/json' },
@@ -113,6 +112,7 @@ export function GuidesRoute(handle: Handle) {
 			needsStaleRefresh,
 		})
 		if (needsLoad && typeof document !== 'undefined') {
+			status = 'loading'
 			handle.queueTask(async (signal) => {
 				try {
 					await loadGuides(signal)

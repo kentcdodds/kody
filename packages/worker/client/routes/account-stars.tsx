@@ -62,8 +62,7 @@ export function AccountStarsRoute(handle: Handle) {
 
 	async function loadStars() {
 		const href = readCurrentRouterHref(handle)
-		status = 'loading'
-		handle.update()
+		// Do not call handle.update() before the first await — see blog.tsx.
 		try {
 			const response = await fetch(accountStarsApiPath, {
 				headers: { Accept: 'application/json' },
@@ -153,6 +152,7 @@ export function AccountStarsRoute(handle: Handle) {
 			needsStaleRefresh,
 		})
 		if (needsLoad && typeof document !== 'undefined') {
+			status = 'loading'
 			handle.queueTask(async () => {
 				try {
 					await loadStars()

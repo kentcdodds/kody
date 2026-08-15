@@ -84,8 +84,7 @@ export function TimelineRoute(handle: Handle) {
 	const loadLatch = createRouteLoadLatch()
 
 	async function loadTimeline() {
-		status = 'loading'
-		handle.update()
+		// Do not call handle.update() before the first await — see blog.tsx.
 		try {
 			const response = await fetch(timelineApiPath, {
 				headers: { Accept: 'application/json' },
@@ -140,6 +139,7 @@ export function TimelineRoute(handle: Handle) {
 			needsStaleRefresh,
 		})
 		if (needsLoad && typeof document !== 'undefined') {
+			status = 'loading'
 			handle.queueTask(async () => {
 				await runLoad(currentHref)
 			})

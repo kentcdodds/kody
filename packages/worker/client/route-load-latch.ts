@@ -7,18 +7,27 @@ function toLatchKey(href: string) {
 
 /**
  * Href latch for client routes that fetch their own data. Tracks which
- * location the data was last loaded for, and which location last failed so a
+ * location the data was last loaded for, which location last failed so a
  * failed load does not re-queue in a tight render loop but does retry after
- * navigating away and back (previously a failure latched these routes into a
- * permanent error state because the loaded-href marker was set before the
- * fetch resolved).
+ * navigating away and back, and which location is already pending so an
+ * in-flight `queueTask` is not re-queued on every re-render.
  *
  * Keys are pathname+search only. In-page hashes (`/#invite`, onboarding step
  * hashes) are scroll/UI state, not a new data location.
+ *
+ * Why pending matters: Remix aborts a `queueTask` signal when the component
+ * re-renders. A load that calls `handle.update()` before its first `await`
+ * aborts itself, `needsLoad` stays true, and the next render queues another
+ * load — cascading microtask flushes until the scheduler throws
+ * `handle.update() infinite loop detected`. Marking pending on the first
+ * `needsLoad` decision stops that re-queue. Callers must still avoid
+ * premature `handle.update()` inside the queued load (set loading UI in the
+ * render that decides to load instead).
  */
 export function createRouteLoadLatch() {
 	let lastLoadedHref = ''
 	let lastFailedHref: string | null = null
+	let lastPendingHref: string | null = null
 	let lastSeenHref = ''
 
 	return {
@@ -26,11 +35,13 @@ export function createRouteLoadLatch() {
 		markLoaded(href: string) {
 			lastLoadedHref = toLatchKey(href)
 			lastFailedHref = null
+			lastPendingHref = null
 		},
 		/** Record a failed load so renders stop re-queuing for this `href`. */
 		markFailed(href: string) {
 			const key = toLatchKey(href)
 			lastFailedHref = key
+			lastPendingHref = null
 			// A failure supersedes any earlier success for the same location;
 			// otherwise a failed refresh would leave the route latched as
 			// loaded and never refetch after navigating away and back.
@@ -44,7 +55,13 @@ export function createRouteLoadLatch() {
 		},
 		/**
 		 * Whether the route must queue a data load this render pass. Call once
-		 * per render with the current router href.
+		 * per render with the current router href. A `true` result latches the
+		 * href as pending until `markLoaded` / `markFailed` (or a navigation /
+		 * stale-refresh clears it).
+		 *
+		 * `isLoading` is accepted for call-site compatibility but ignored: the
+		 * pending latch is the in-flight guard. Using `isLoading` as a reason
+		 * *to* load re-queued every render while status stayed `'loading'`.
 		 */
 		needsLoad(input: {
 			currentHref: string
@@ -52,26 +69,34 @@ export function createRouteLoadLatch() {
 			appliedRouteData: boolean
 			needsStaleRefresh: boolean
 		}) {
-			// The failure latch only guards retry loops for the location that
-			// failed; leaving it (or coming back) must allow a fresh attempt.
+			void input.isLoading
+			// The failure/pending latches only guard the location they were set
+			// for; leaving it (or coming back) must allow a fresh attempt.
 			const currentHref = toLatchKey(input.currentHref)
 			if (currentHref !== lastSeenHref) {
 				lastSeenHref = currentHref
 				lastFailedHref = null
+				lastPendingHref = null
 			}
 			// A stale-refresh signal is one-shot (the caller consumes it from
 			// navigation state), so it represents a fresh user-driven reload and
-			// must win over a previous failure for the same location.
+			// must win over a previous failure or abandoned pending for the same
+			// location.
 			if (input.needsStaleRefresh) {
 				lastFailedHref = null
+				lastPendingHref = null
 			}
-			return (
-				!input.appliedRouteData &&
-				(input.isLoading ||
-					currentHref !== lastLoadedHref ||
-					input.needsStaleRefresh) &&
-				currentHref !== lastFailedHref
-			)
+			if (input.appliedRouteData) {
+				return false
+			}
+			const shouldLoad =
+				(currentHref !== lastLoadedHref || input.needsStaleRefresh) &&
+				currentHref !== lastFailedHref &&
+				currentHref !== lastPendingHref
+			if (shouldLoad) {
+				lastPendingHref = currentHref
+			}
+			return shouldLoad
 		},
 	}
 }

@@ -15,6 +15,28 @@ test('loads once and stays idle for the same href after success', () => {
 	expect(latch.isLoadedFor('/a')).toBe(true)
 })
 
+test('a pending load does not re-queue on later renders for the same href', () => {
+	const latch = createRouteLoadLatch()
+	// First decision latches pending so a queueTask that aborts itself via
+	// handle.update() cannot cascade into the Remix infinite-loop guard.
+	expect(
+		latch.needsLoad({ ...baseInput, currentHref: '/a', isLoading: true }),
+	).toBe(true)
+	expect(
+		latch.needsLoad({ ...baseInput, currentHref: '/a', isLoading: true }),
+	).toBe(false)
+	latch.markLoaded('/a')
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(false)
+})
+
+test('isLoading alone does not force a load when the href is already loaded', () => {
+	const latch = createRouteLoadLatch()
+	latch.markLoaded('/a')
+	expect(
+		latch.needsLoad({ ...baseInput, currentHref: '/a', isLoading: true }),
+	).toBe(false)
+})
+
 test('a failed load does not re-queue in a loop but retries after navigation', () => {
 	const latch = createRouteLoadLatch()
 	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
@@ -46,6 +68,19 @@ test('a stale refresh overrides a prior failure for the same href', () => {
 	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(false)
 	// A same-path reload whose loader failed signals staleness once; that
 	// user-driven refresh must not be blocked by the failure latch.
+	expect(
+		latch.needsLoad({
+			...baseInput,
+			currentHref: '/a',
+			needsStaleRefresh: true,
+		}),
+	).toBe(true)
+})
+
+test('a stale refresh clears an abandoned pending latch for the same href', () => {
+	const latch = createRouteLoadLatch()
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(false)
 	expect(
 		latch.needsLoad({
 			...baseInput,

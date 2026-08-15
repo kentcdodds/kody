@@ -121,8 +121,7 @@ export function GuideDetailRoute(handle: Handle) {
 	}
 
 	async function loadGuide(slug: string, signal: AbortSignal) {
-		status = 'loading'
-		handle.update()
+		// Do not call handle.update() before the first await — see blog.tsx.
 		try {
 			const response = await fetch(routes.guideDetailApi.href({ slug }), {
 				headers: { Accept: 'application/json' },
@@ -181,6 +180,7 @@ export function GuideDetailRoute(handle: Handle) {
 			needsStaleRefresh,
 		})
 		if (needsLoad && typeof document !== 'undefined') {
+			status = 'loading'
 			handle.queueTask(async (signal) => {
 				try {
 					await loadGuide(slug, signal)
