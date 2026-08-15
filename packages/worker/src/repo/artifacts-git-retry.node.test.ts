@@ -57,6 +57,16 @@ test('Artifacts git HTTP helpers classify transient statuses, wrap messages, and
 	).toBe(true)
 	expect(
 		isArtifactsGitTransientHttpErrorMessage(
+			'Artifacts listServerRefs failed for https://example.test: HTTP Error: 501 Not Implemented',
+		),
+	).toBe(false)
+	expect(
+		isArtifactsGitTransientHttpErrorMessage(
+			'Artifacts listServerRefs failed for https://example.test: HTTP Error: 505 HTTP Version Not Supported',
+		),
+	).toBe(false)
+	expect(
+		isArtifactsGitTransientHttpErrorMessage(
 			'HTTP Error: 500 Internal Server Error',
 		),
 	).toBe(false)
@@ -65,6 +75,18 @@ test('Artifacts git HTTP helpers classify transient statuses, wrap messages, and
 			'Artifacts listServerRefs failed for https://example.test: HTTP Error: 401 Unauthorized',
 		),
 	).toBe(false)
+
+	const wrappedWithQuery = wrapArtifactsGitHttpError({
+		operation: 'git fetch',
+		remote:
+			'https://x:secret@acct.artifacts.cloudflare.net/git/production/repo-1.git?token=should-not-leak#frag',
+		error: fiveHundred,
+	})
+	expect(wrappedWithQuery.message).toBe(
+		'Artifacts git fetch failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: HTTP Error: 500 Internal Server Error',
+	)
+	expect(wrappedWithQuery.message).not.toContain('token=')
+	expect(wrappedWithQuery.message).not.toContain('secret')
 
 	const operation = vi
 		.fn()

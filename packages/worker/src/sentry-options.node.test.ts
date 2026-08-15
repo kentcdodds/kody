@@ -173,6 +173,19 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			},
 		}),
 	).toBeNull()
+	const artifactsGitNotImplemented = {
+		exception: {
+			values: [
+				{
+					value:
+						'Artifacts listServerRefs failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: HTTP Error: 501 Not Implemented',
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(artifactsGitNotImplemented)).toBe(
+		artifactsGitNotImplemented,
+	)
 	const bareArtifactsGitHttpError = {
 		exception: {
 			values: [{ value: 'HTTP Error: 500 Internal Server Error' }],

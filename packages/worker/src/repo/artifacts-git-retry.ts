@@ -52,12 +52,17 @@ export function isTransientArtifactsGitHttpError(error: unknown) {
 
 /**
  * Stable wrapper phrases used by Artifacts git call sites and the Sentry
- * beforeSend filter. Keep these exact so triage filters stay narrow.
+ * beforeSend filter. Keep these exact so triage filters stay narrow, and keep
+ * the status set aligned with `isTransientArtifactsGitHttpStatus` so we do not
+ * drop un-retried failures (e.g. HTTP 501) from Sentry.
  */
 export function isArtifactsGitTransientHttpErrorMessage(message: string) {
-	return /Artifacts (?:listServerRefs|git fetch) failed for .+: HTTP Error: (?:429|5\d\d)\b/i.test(
-		message.trim(),
-	)
+	const match =
+		/Artifacts (?:listServerRefs|git fetch) failed for .+: HTTP Error: (\d{3})\b/i.exec(
+			message.trim(),
+		)
+	if (!match?.[1]) return false
+	return isTransientArtifactsGitHttpStatus(Number(match[1]))
 }
 
 function describeArtifactRemote(remote: string) {
@@ -65,6 +70,8 @@ function describeArtifactRemote(remote: string) {
 		const url = new URL(remote)
 		url.username = ''
 		url.password = ''
+		url.search = ''
+		url.hash = ''
 		return url.toString()
 	} catch {
 		return 'unparseable-remote'
