@@ -62,7 +62,7 @@ export const repoDeleteCapability = defineDomainCapability(
 				() => 'ok' as const,
 				() => 'failed' as const,
 			)
-			await deleteEntitySource(ctx.env.APP_DB, {
+			await deleteEntitySource(ctx.env, {
 				id: source.id,
 				userId: user.userId,
 			}).catch(() => undefined)

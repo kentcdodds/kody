@@ -10,6 +10,7 @@ import { UserMeter } from './entitlements/user-meter-do.ts'
 import { StripePlanRefresh } from './billing/stripe-plan-refresh-do.ts'
 import { Mailbox } from './email/mailbox-do.ts'
 import { RepoSession } from './repo/repo-session-do.ts'
+import { RepoSessionIndex } from './repo/repo-session-index-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
 import { PackageServiceInstance } from '#worker/package-runtime/package-service.ts'
 import { DynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
@@ -76,6 +77,7 @@ import {
 
 export {
 	RepoSession,
+	RepoSessionIndex,
 	KodyFetchGateway,
 	RemoteConnectorSession,
 	McpClientHub,

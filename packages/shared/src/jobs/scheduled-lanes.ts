@@ -8,6 +8,7 @@
 export const scheduledLaneNames = [
 	'reconcile_artifacts_pushes',
 	'repo_session_cleanup',
+	'repo_session_index_backfill',
 	'reconcile_inbound_deliveries',
 	'system_email_retention',
 	'storage_bucket_estimate_backfill',
@@ -165,6 +166,7 @@ export function getScheduledLaneCadence(
 	const lanes: Array<ScheduledLaneName> = [
 		'reconcile_artifacts_pushes',
 		'repo_session_cleanup',
+		'repo_session_index_backfill',
 		'reconcile_inbound_deliveries',
 		'system_email_retention',
 		'storage_bucket_estimate_backfill',

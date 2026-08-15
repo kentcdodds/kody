@@ -153,6 +153,10 @@
 			"new_sqlite_classes": ["StripePlanRefresh"],
 			"tag": "v23",
 		},
+		{
+			"new_sqlite_classes": ["RepoSessionIndex"],
+			"tag": "v24",
+		},
 	],
 
 	"observability": {
@@ -275,6 +279,10 @@
 					{
 						"class_name": "Mailbox",
 						"name": "MAILBOX",
+					},
+					{
+						"class_name": "RepoSessionIndex",
+						"name": "REPO_SESSION_INDEX",
 					},
 					{
 						"class_name": "StripePlanRefresh",
@@ -606,6 +614,10 @@
 					"new_sqlite_classes": ["StripePlanRefresh"],
 					"tag": "v23",
 				},
+				{
+					"new_sqlite_classes": ["RepoSessionIndex"],
+					"tag": "v24",
+				},
 			],
 			"ratelimits": [
 				{
@@ -690,6 +702,10 @@
 					{
 						"class_name": "Mailbox",
 						"name": "MAILBOX",
+					},
+					{
+						"class_name": "RepoSessionIndex",
+						"name": "REPO_SESSION_INDEX",
 					},
 					{
 						"class_name": "StripePlanRefresh",
@@ -904,6 +920,10 @@
 					"new_sqlite_classes": ["StripePlanRefresh"],
 					"tag": "v23",
 				},
+				{
+					"new_sqlite_classes": ["RepoSessionIndex"],
+					"tag": "v24",
+				},
 			],
 			"worker_loaders": [
 				{
@@ -966,6 +986,10 @@
 					{
 						"class_name": "Mailbox",
 						"name": "MAILBOX",
+					},
+					{
+						"class_name": "RepoSessionIndex",
+						"name": "REPO_SESSION_INDEX",
 					},
 					{
 						"class_name": "StripePlanRefresh",

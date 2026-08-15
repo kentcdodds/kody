@@ -1646,7 +1646,7 @@ test('create, update, and delete jobs sync the job manager alarm', async () => {
 		sourceId: created.sourceId,
 	})
 	expect(repoMockModule.deleteRepoSessionsBySourceForUser).toHaveBeenCalledWith(
-		env.APP_DB,
+		env,
 		{
 			userId: callerContext.user.userId,
 			sourceId: created.sourceId,

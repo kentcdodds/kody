@@ -61,6 +61,7 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	expect(coverage.r2SurfaceIds.has('user_avatar')).toBe(true)
 	expect(coverage.durableObjectIds.has('user_meter')).toBe(true)
 	expect(coverage.durableObjectIds.has('mailbox')).toBe(true)
+	expect(coverage.durableObjectIds.has('repo_session_index')).toBe(true)
 	expect(
 		accountUserOwnedDurableObjectSurfaces.find(
 			(surface) => surface.id === 'user_meter',
@@ -81,6 +82,15 @@ test('account deletion and export consume the out-of-band surface registry', () 
 		notes: expect.stringMatching(
 			/authoritative email metadata.*lists Mailbox blob references.*D1 retains only thin provider/s,
 		),
+	})
+	expect(
+		accountUserOwnedDurableObjectSurfaces.find(
+			(surface) => surface.id === 'repo_session_index',
+		),
+	).toMatchObject({
+		binding: 'REPO_SESSION_INDEX',
+		deletionResultKey: 'repoSessionIndexes',
+		export: 'include',
 	})
 	expect(
 		accountUserOwnedR2Surfaces.find(
@@ -107,10 +117,14 @@ test('account deletion and export consume the out-of-band surface registry', () 
 	expect(accountExportSource).toContain('userMeterRpc')
 	expect(accountExportSource).toContain("'mailbox'")
 	expect(accountExportSource).toContain('exportInternalUserMailbox')
+	expect(accountExportSource).toContain("'repo_session_index'")
+	expect(accountExportSource).toContain('repoSessionIndexRpc')
 	expect(accountDeletionSource).toContain('userMeterRpc')
 	expect(accountDeletionSource).toContain('userMeters')
 	expect(accountDeletionSource).toContain('mailboxRpc')
 	expect(accountDeletionSource).toContain('mailboxes')
+	expect(accountDeletionSource).toContain('repoSessionIndexRpc')
+	expect(accountDeletionSource).toContain('repoSessionIndexes')
 
 	expect(
 		accountUserOwnedDurableObjectSurfaces.find(

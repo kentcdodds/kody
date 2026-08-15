@@ -11,6 +11,7 @@ export type UserOwnedDurableObjectSurface = {
 		| 'user_meter'
 		| 'stripe_plan_refresh'
 		| 'mailbox'
+		| 'repo_session_index'
 		| 'mcp'
 	binding: string
 	/** Result key used in AccountDeletionResult.clearedDurableObjects when purged */
@@ -89,7 +90,7 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			deletionResultKey: 'repoSessions',
 			export: 'exclude',
 			excludeReason:
-				'Ephemeral editing workspace. Canonical repo-backed source is exported as Artifacts repo pointers via entity_sources and repo_sessions metadata.',
+				'Ephemeral editing workspace. Canonical repo-backed source is exported as Artifacts repo pointers via entity_sources; session catalog metadata is exported from RepoSessionIndex.',
 		},
 		{
 			id: 'remote_connector_session',
@@ -152,6 +153,14 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			export: 'include',
 			notes:
 				'Per-user authoritative email metadata and R2-reference inventory (MAILBOX binding; idFromName(userId)). Account export pages the sole USER email graph through exportMailbox. Account deletion lists Mailbox blob references before deleting R2 objects and purging the DO; D1 retains only thin provider, due-work, alert, and configuration rows.',
+		},
+		{
+			id: 'repo_session_index',
+			binding: 'REPO_SESSION_INDEX',
+			deletionResultKey: 'repoSessionIndexes',
+			export: 'include',
+			notes:
+				'Per-user repo session catalog (REPO_SESSION_INDEX binding; idFromName(userId)). Authority for session rows, active counts, conversation resume, export, and deletion inventory. Workspace bytes stay in per-session RepoSession DOs. D1 keeps only the thin repo_session_due_owners hint plus leftover repo_sessions rows until the Phase 2 DROP.',
 		},
 		{
 			id: 'mcp',
@@ -286,7 +295,7 @@ export const accountUserOwnedArtifactSurfaces: ReadonlyArray<UserOwnedArtifactSu
 			sourceTable: 'repo_sessions',
 			repoColumn: 'source_repo_id',
 			notes:
-				'Cloudflare Artifacts repos cleaned by cleanupAllUserArtifactRepos.',
+				'Cloudflare Artifacts repos cleaned by cleanupAllUserArtifactRepos. Catalog rows live in RepoSessionIndex; leftover D1 repo_sessions remain until Phase 2 DROP.',
 		},
 	] as const
 

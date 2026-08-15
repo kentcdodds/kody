@@ -167,8 +167,11 @@ export async function readWithRetry<T>(
 	return null
 }
 
-async function readRepoSessionWithRetry(db: D1Database, sessionId: string) {
-	return readWithRetry(() => getRepoSessionById(db, sessionId))
+async function readRepoSessionWithRetry(
+	env: Env,
+	input: { userId: string; sessionId: string },
+) {
+	return readWithRetry(() => getRepoSessionById(env, input))
 }
 
 async function readEntitySourceWithRetry(db: D1Database, sourceId: string) {
@@ -331,7 +334,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	private async touchRepoSession(sessionRow: RepoSessionRow) {
-		await updateRepoSession(this.env.APP_DB, {
+		await updateRepoSession(this.env, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,
 		})
@@ -345,16 +348,16 @@ class RepoSessionBase extends DurableObject<Env> {
 		} = {},
 	) {
 		const cachedState = await this.readCachedSessionState(sessionId)
-		// Prefer fresh reads from D1 so correctness-sensitive flows like
+		// Prefer fresh catalog reads so correctness-sensitive flows like
 		// rebaseSession and publishSession always observe the latest
 		// base_commit and published_commit. The cache is only a fallback for
-		// when a D1 read genuinely cannot see a row (e.g. brief replica lag
-		// immediately after openSession inserted it); this keeps scheduled
-		// jobs from throwing "Repo session was not found" while still letting
-		// concurrent mutations through updateRepoSession / updateEntitySource
-		// drive rebase and publish decisions.
+		// when a catalog read genuinely cannot see a row immediately after
+		// openSession inserted it; this keeps scheduled jobs from throwing
+		// "Repo session was not found" while still letting concurrent
+		// mutations through updateRepoSession / updateEntitySource drive
+		// rebase and publish decisions.
 		const sessionRow =
-			(await readRepoSessionWithRetry(this.env.APP_DB, sessionId)) ??
+			(await readRepoSessionWithRetry(this.env, { userId, sessionId })) ??
 			cachedState?.sessionRow ??
 			null
 		if (!sessionRow) {
@@ -1065,7 +1068,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		sourceRoot?: string | null
 		defaultBranch?: string | null
 	}) {
-		let sessionRow = await getRepoSessionById(this.env.APP_DB, input.sessionId)
+		let sessionRow = await getRepoSessionById(this.env, {
+			userId: input.userId,
+			sessionId: input.sessionId,
+		})
 		if (!sessionRow) {
 			const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
 			if (!source) {
@@ -1171,7 +1177,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					created_at: now,
 					updated_at: now,
 				}
-				await insertRepoSession(this.env.APP_DB, newSessionRow)
+				await insertRepoSession(this.env, newSessionRow)
 				sessionRow = newSessionRow
 			} catch (error) {
 				await this.deleteRemoteBranch({
@@ -1399,10 +1405,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		sessionId: string
 		userId: string
 	}): Promise<RepoSessionDiscardResult> {
-		const sessionRow = await getRepoSessionById(
-			this.env.APP_DB,
-			input.sessionId,
-		)
+		const sessionRow = await getRepoSessionById(this.env, {
+			userId: input.userId,
+			sessionId: input.sessionId,
+		})
 		if (!sessionRow) {
 			await this.clearCachedSessionState(input.sessionId)
 			await this.resetWorkspace()
@@ -1418,7 +1424,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				`Repo session "${input.sessionId}" was not found for this user.`,
 			)
 		}
-		await updateRepoSession(this.env.APP_DB, {
+		await updateRepoSession(this.env, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,
 			status: 'discarded',
@@ -1436,10 +1442,10 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	async purgeSession(input: { sessionId: string; userId: string }) {
-		const sessionRow = await getRepoSessionById(
-			this.env.APP_DB,
-			input.sessionId,
-		)
+		const sessionRow = await getRepoSessionById(this.env, {
+			userId: input.userId,
+			sessionId: input.sessionId,
+		})
 		if (sessionRow && sessionRow.user_id !== input.userId) {
 			throw new Error(
 				`Repo session "${input.sessionId}" was not found for this user.`,
@@ -1465,10 +1471,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		userId: string
 		reason: 'expired' | 'abandoned' | 'source_deleted'
 	}) {
-		const sessionRow = await getRepoSessionById(
-			this.env.APP_DB,
-			input.sessionId,
-		)
+		const sessionRow = await getRepoSessionById(this.env, {
+			userId: input.userId,
+			sessionId: input.sessionId,
+		})
 		if (!sessionRow) {
 			await this.deleteStorageInventory(input.sessionId, input.userId)
 			return {
@@ -1504,7 +1510,10 @@ class RepoSessionBase extends DurableObject<Env> {
 				}),
 			)
 		}
-		await deleteRepoSession(this.env.APP_DB, input.sessionId)
+		await deleteRepoSession(this.env, {
+			userId: input.userId,
+			sessionId: input.sessionId,
+		})
 		await this.deleteStorageInventory(input.sessionId, sessionRow.user_id)
 		await this.clearCachedSessionState(input.sessionId)
 		await this.resetWorkspace().catch(() => {
@@ -1615,7 +1624,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			resolveRepoWorkspacePath(input.path, repoSessionWorkspacePrefix),
 			input.content,
 		)
-		await updateRepoSession(this.env.APP_DB, {
+		await updateRepoSession(this.env, {
 			id: input.sessionId,
 			userId: sessionRow.user_id,
 			lastCheckpointAt: nowIso(),
@@ -1788,7 +1797,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			dryRun: input.dryRun,
 		})
 		if (!input.dryRun) {
-			await updateRepoSession(this.env.APP_DB, {
+			await updateRepoSession(this.env, {
 				id: input.sessionId,
 				userId: sessionRow.user_id,
 				lastCheckpointAt: nowIso(),
@@ -1841,7 +1850,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			message: input.message,
 			author: sessionCommitAuthor,
 		})
-		await updateRepoSession(this.env.APP_DB, {
+		await updateRepoSession(this.env, {
 			id: input.sessionId,
 			userId: sessionRow.user_id,
 			lastCheckpointAt: nowIso(),
@@ -1905,7 +1914,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		for (const restore of plannedRestores) {
 			await this.workspace.writeFileBytes(restore.workspacePath, restore.bytes)
 		}
-		await updateRepoSession(this.env.APP_DB, {
+		await updateRepoSession(this.env, {
 			id: input.sessionId,
 			userId: sessionRow.user_id,
 			lastCheckpointAt: nowIso(),
@@ -1956,7 +1965,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		)
 		const result = await this.applyWorkspaceEdits(input)
 		if (!input.dryRun) {
-			await updateRepoSession(this.env.APP_DB, {
+			await updateRepoSession(this.env, {
 				id: input.sessionId,
 				userId: sessionRow.user_id,
 				lastCheckpointAt: nowIso(),
@@ -1999,7 +2008,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		const runId = crypto.randomUUID()
 		const treeHash = await this.computeTreeHash()
 		const checkedAt = nowIso()
-		await updateRepoSession(this.env.APP_DB, {
+		await updateRepoSession(this.env, {
 			id: input.sessionId,
 			userId: sessionRow.user_id,
 			lastCheckRunId: runId,
@@ -2359,7 +2368,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			source.entity_kind === 'repo'
 				? ((await resolveLiveSourceHeadCommit(this.env, source)) ?? '')
 				: (source.published_commit ?? '')
-		await updateRepoSession(this.env.APP_DB, {
+		await updateRepoSession(this.env, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,
 			baseCommit: rebasedBaseCommit,
@@ -2443,7 +2452,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			checks: null,
 			scope: 'repo.publishPlainRepoSession.publish-git-note',
 		})
-		await updateRepoSession(this.env.APP_DB, {
+		await updateRepoSession(this.env, {
 			id: input.sessionRow.id,
 			userId: input.sessionRow.user_id,
 			status: 'published',
@@ -2584,7 +2593,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			checks: this.buildPublishGitNoteChecks(checkStatus),
 			scope: 'repo.publishSession.publish-git-note',
 		})
-		await updateRepoSession(this.env.APP_DB, {
+		await updateRepoSession(this.env, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,
 			status: 'published',

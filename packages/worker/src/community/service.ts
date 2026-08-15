@@ -255,7 +255,7 @@ async function cleanupFailedCommunityFork(input: {
 			}),
 		)
 	})
-	await deleteEntitySource(input.env.APP_DB, {
+	await deleteEntitySource(input.env, {
 		id: input.sourceId,
 		userId: input.userId,
 	}).catch((error) => {

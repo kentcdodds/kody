@@ -1,29 +1,36 @@
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
-	listRepoSessionsForBranchCleanup: vi.fn(),
-	cleanupSessionBranch: vi.fn(async () => ({ ok: true })),
+	listDueRepoSessionOwners: vi.fn(),
+	runDueCleanup: vi.fn(),
+	deferRepoSessionDueOwner: vi.fn(async () => undefined),
 }))
 
-vi.mock('./repo-sessions.ts', () => ({
-	listRepoSessionsForBranchCleanup: (...args: Array<unknown>) =>
-		mockModule.listRepoSessionsForBranchCleanup(...args),
+vi.mock('./repo-session-due-owners.ts', () => ({
+	repoSessionDueOwnerBatchSize: 25,
+	listDueRepoSessionOwners: (...args: Array<unknown>) =>
+		mockModule.listDueRepoSessionOwners(...args),
+	deferRepoSessionDueOwner: (...args: Array<unknown>) =>
+		mockModule.deferRepoSessionDueOwner(...args),
 }))
 
-vi.mock('./repo-session-do.ts', () => ({
-	repoSessionRpc: () => ({
-		cleanupSessionBranch: (...args: Array<unknown>) =>
-			mockModule.cleanupSessionBranch(...args),
+vi.mock('./repo-session-index-client.ts', () => ({
+	repoSessionIndexRpc: () => ({
+		runDueCleanup: (...args: Array<unknown>) =>
+			mockModule.runDueCleanup(...args),
 	}),
 }))
 
 const { cleanupRepoSessionBranches } = await import('./repo-session-cleanup.ts')
 
-test('repo session branch cleanup deletes expired and abandoned session branches', async () => {
-	mockModule.listRepoSessionsForBranchCleanup.mockResolvedValue([
-		session({ id: 'published-session', status: 'published' }),
-		session({ id: 'active-session', status: 'active' }),
+test('repo session cleanup pages due owners and runs per-user index cleanup', async () => {
+	mockModule.listDueRepoSessionOwners.mockResolvedValue([
+		{ userId: 'user-1', dueAt: '2026-06-24T19:00:00.000Z' },
+		{ userId: 'user-2', dueAt: '2026-06-24T19:30:00.000Z' },
 	])
+	mockModule.runDueCleanup
+		.mockResolvedValueOnce({ checked: 2, deleted: 2, errors: 0 })
+		.mockResolvedValueOnce({ checked: 1, deleted: 1, errors: 0 })
 
 	const result = await cleanupRepoSessionBranches({
 		env: { APP_DB: {} } as Env,
@@ -31,40 +38,22 @@ test('repo session branch cleanup deletes expired and abandoned session branches
 		batchSize: 10,
 	})
 
-	expect(mockModule.listRepoSessionsForBranchCleanup).toHaveBeenCalledWith(
-		expect.anything(),
-		{
-			now: '2026-06-24T20:00:00.000Z',
-			unusedAbandonedBefore: '2026-06-24T19:30:00.000Z',
-			editedAbandonedBefore: '2026-06-17T20:00:00.000Z',
-			limit: 10,
-		},
-	)
-	expect(mockModule.cleanupSessionBranch).toHaveBeenNthCalledWith(1, {
-		sessionId: 'published-session',
-		userId: 'user-1',
-		reason: 'expired',
+	expect(mockModule.listDueRepoSessionOwners).toHaveBeenCalledWith({
+		db: expect.anything(),
+		now: new Date('2026-06-24T20:00:00.000Z'),
+		limit: 10,
 	})
-	expect(mockModule.cleanupSessionBranch).toHaveBeenNthCalledWith(2, {
-		sessionId: 'active-session',
-		userId: 'user-1',
-		reason: 'abandoned',
+	expect(mockModule.runDueCleanup).toHaveBeenNthCalledWith(1, {
+		ownerId: 'user-1',
+		now: '2026-06-24T20:00:00.000Z',
+	})
+	expect(mockModule.runDueCleanup).toHaveBeenNthCalledWith(2, {
+		ownerId: 'user-2',
+		now: '2026-06-24T20:00:00.000Z',
 	})
 	expect(result).toEqual({
-		checked: 2,
-		deleted: 2,
+		checked: 3,
+		deleted: 3,
 		errors: 0,
 	})
 })
-
-function session(input: { id: string; status: 'active' | 'published' }) {
-	return {
-		id: input.id,
-		user_id: 'user-1',
-		source_id: 'source-1',
-		source_repo_id: 'source-repo',
-		session_branch: `sessions/${input.id}`,
-		source_branch: 'main',
-		status: input.status,
-	}
-}

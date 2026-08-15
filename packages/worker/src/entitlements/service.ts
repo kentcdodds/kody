@@ -21,9 +21,13 @@ import {
 	userMeterRpc,
 	type UserMeterEnv,
 } from './user-meter-client.ts'
+import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
+import { isMissingRepoSessionsTable } from '#worker/repo/repo-session-leftover-d1.ts'
+import { countActiveRepoSessions } from '#worker/repo/repo-sessions.ts'
 
 /** Env surface for authoritative entitlement usage readers. */
 export type EntitlementUsageEnv = UserMeterEnv &
+	RepoSessionIndexEnv &
 	Pick<Env, 'RUN_LOG' | 'MAILBOX' | 'JOBS'>
 
 const stableUserIdPattern = /^[a-f0-9]{64}$/i
@@ -493,7 +497,10 @@ export async function calculateUserD1StorageBytes(input: {
 			FROM repo_sessions
 			WHERE user_id = ?`,
 			[userId],
-		),
+		).catch((error: unknown) => {
+			if (isMissingRepoSessionsTable(error)) return 0
+			throw error
+		}),
 		// Run records and the keyed package-invocation idempotency ledger live
 		// in the per-user RunLog Durable Object (the D1 package_invocations
 		// table was dropped). Both are self-expiring operational state, not
@@ -745,11 +752,8 @@ export async function readEntitlementResourceUsage(input: {
 				'persistent_package_services usage must be read from UserMeter (use readCurrentEntitlementResourceUsage or pass getCurrent with countRunningPackageServices).',
 			)
 		case 'repo_sessions':
-			return await countRows(
-				db,
-				`SELECT COUNT(*) AS count FROM repo_sessions
-				WHERE user_id = ? AND status = 'active'`,
-				[userId],
+			throw new Error(
+				'repo_sessions usage must be read from RepoSessionIndex (use readCurrentEntitlementResourceUsage or pass getCurrent with countActiveRepoSessions).',
 			)
 		case 'email_sends_per_day':
 		case 'email_receives_per_day':
@@ -893,6 +897,9 @@ export async function readCurrentEntitlementResourceUsage(input: {
 			env: input.env,
 			ownerId: input.userId,
 		})
+	}
+	if (input.resource === 'repo_sessions') {
+		return await countActiveRepoSessions(input.env, input.userId)
 	}
 	if (input.resource === 'scheduled_jobs') {
 		return await jobsData({

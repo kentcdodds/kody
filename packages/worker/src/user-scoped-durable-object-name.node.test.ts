@@ -10,6 +10,7 @@ import {
 	packageRealtimeSessionDurableObjectName,
 	packageServiceInstanceDurableObjectName,
 	repoSessionDurableObjectName,
+	repoSessionIndexDurableObjectName,
 	runLogDurableObjectName,
 	storageRunnerDurableObjectName,
 	userMeterDurableObjectName,
@@ -35,6 +36,9 @@ test('user-scoped Durable Object name helpers preserve frozen idFromName contrac
 	expect(mailboxDurableObjectName('user-aaa')).toBe('user-aaa')
 	// Mailbox matches RunLog: untrimmed userId is the frozen idFromName.
 	expect(mailboxDurableObjectName('  user-aaa  ')).toBe('  user-aaa  ')
+
+	expect(repoSessionIndexDurableObjectName('user-aaa')).toBe('user-aaa')
+	expect(repoSessionIndexDurableObjectName('  user-aaa  ')).toBe('  user-aaa  ')
 
 	expect(mcpClientHubDurableObjectName('  user-aaa  ')).toBe('user-aaa')
 

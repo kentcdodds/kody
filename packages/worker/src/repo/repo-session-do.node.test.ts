@@ -786,7 +786,10 @@ test('cleanupSessionBranch removes the D1 session row when remote branch delete 
 		branch: 'sessions/session1',
 		branchDeleted: false,
 	})
-	expect(deleteRepoSession).toHaveBeenCalledWith(expect.anything(), 'session-1')
+	expect(deleteRepoSession).toHaveBeenCalledWith(expect.anything(), {
+		userId: 'user-1',
+		sessionId: 'session-1',
+	})
 	expect(mockModule.deleteStorageBucketInventory).toHaveBeenCalledWith({
 		db: expect.anything(),
 		userId: 'user-1',

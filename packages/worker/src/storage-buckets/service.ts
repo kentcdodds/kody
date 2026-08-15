@@ -1,3 +1,7 @@
+import { listRepoSessionDueOwnersPage } from '#worker/repo/repo-session-due-owners.ts'
+import { repoSessionIndexRpc } from '#worker/repo/repo-session-index-client.ts'
+import { isMissingRepoSessionsTable } from '#worker/repo/repo-session-leftover-d1.ts'
+
 /**
  * Authoritative per-user durable storage bucket ownership.
  *
@@ -183,29 +187,69 @@ export function repoSessionIdFromStorageBucketId(storageId: string): string {
  */
 export async function registerMissingRepoSessionStorageBuckets(input: {
 	db: D1Database
+	env?: {
+		REPO_SESSION_INDEX?: DurableObjectNamespace
+		APP_DB: D1Database
+	}
 	limit?: number
 	now?: Date
 }): Promise<number> {
 	const limit = input.limit ?? 24
 	const seenAt = (input.now ?? new Date()).toISOString()
-	const result = await input.db
-		.prepare(
-			`INSERT INTO user_storage_buckets (
-				user_id, storage_id, kind, created_at, last_seen_at
-			)
-			SELECT rs.user_id, ?1 || rs.id, 'repo_session', ?2, ?2
-			FROM repo_sessions rs
-			WHERE rs.status = 'active'
-				AND NOT EXISTS (
-					SELECT 1 FROM user_storage_buckets b
-					WHERE b.user_id = rs.user_id
-						AND b.storage_id = ?1 || rs.id
+	let inserted = 0
+	try {
+		const leftover = await input.db
+			.prepare(
+				`INSERT INTO user_storage_buckets (
+					user_id, storage_id, kind, created_at, last_seen_at
 				)
-			LIMIT ?3`,
-		)
-		.bind(repoSessionStorageBucketPrefix, seenAt, limit)
-		.run()
-	return result.meta?.changes ?? 0
+				SELECT rs.user_id, ?1 || rs.id, 'repo_session', ?2, ?2
+				FROM repo_sessions rs
+				WHERE rs.status = 'active'
+					AND NOT EXISTS (
+						SELECT 1 FROM user_storage_buckets b
+						WHERE b.user_id = rs.user_id
+							AND b.storage_id = ?1 || rs.id
+					)
+				LIMIT ?3`,
+			)
+			.bind(repoSessionStorageBucketPrefix, seenAt, limit)
+			.run()
+		inserted += leftover.meta?.changes ?? 0
+	} catch (error) {
+		if (!isMissingRepoSessionsTable(error)) throw error
+	}
+	if (!input.env?.REPO_SESSION_INDEX || inserted >= limit) return inserted
+	const owners = await listRepoSessionDueOwnersPage({
+		db: input.db,
+		limit: limit - inserted,
+	})
+	for (const owner of owners) {
+		const sessions = await repoSessionIndexRpc({
+			env: input.env,
+			userId: owner.userId,
+		}).listByUser({ ownerId: owner.userId })
+		for (const session of sessions) {
+			if (session.status !== 'active') continue
+			const result = await input.db
+				.prepare(
+					`INSERT INTO user_storage_buckets (
+						user_id, storage_id, kind, created_at, last_seen_at
+					) VALUES (?, ?, 'repo_session', ?, ?)
+					ON CONFLICT (user_id, storage_id) DO NOTHING`,
+				)
+				.bind(
+					session.user_id,
+					repoSessionStorageBucketId(session.id),
+					seenAt,
+					seenAt,
+				)
+				.run()
+			inserted += result.meta?.changes ?? 0
+			if (inserted >= limit) return inserted
+		}
+	}
+	return inserted
 }
 
 /**

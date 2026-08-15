@@ -75,11 +75,11 @@ export const repoListSessionsCapability = defineDomainCapability(
 		async handler(args, ctx): Promise<RepoListSessionsOutput> {
 			const user = requireMcpUser(ctx.callerContext)
 			const rows = args.source_id
-				? await listRepoSessionsBySource(ctx.env.APP_DB, {
+				? await listRepoSessionsBySource(ctx.env, {
 						userId: user.userId,
 						sourceId: args.source_id,
 					})
-				: await listRepoSessionsByUser(ctx.env.APP_DB, user.userId)
+				: await listRepoSessionsByUser(ctx.env, user.userId)
 			const sessions: RepoListSessionsOutput['sessions'] = []
 			for (const row of rows) {
 				if (

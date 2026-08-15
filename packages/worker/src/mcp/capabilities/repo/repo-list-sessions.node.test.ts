@@ -144,7 +144,10 @@ test('repo_list_sessions defaults to active sessions for the signed-in user', as
 
 	const result = await repoListSessionsCapability.handler({}, createContext())
 
-	expect(mockModule.listRepoSessionsByUser).toHaveBeenCalledWith({}, 'user-1')
+	expect(mockModule.listRepoSessionsByUser).toHaveBeenCalledWith(
+		expect.anything(),
+		'user-1',
+	)
 	expect(result.sessions).toHaveLength(1)
 	expect(result.sessions[0]).toMatchObject({
 		id: 'session-active',
@@ -221,7 +224,7 @@ test('repo_list_sessions supports source_id narrowing and limit', async () => {
 	)
 
 	expect(mockModule.listRepoSessionsBySource).toHaveBeenCalledWith(
-		{},
+		expect.anything(),
 		{ userId: 'user-1', sourceId: 'source-2' },
 	)
 	expect(mockModule.listRepoSessionsByUser).not.toHaveBeenCalled()

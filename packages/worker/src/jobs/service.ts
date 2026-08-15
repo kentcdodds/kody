@@ -523,7 +523,7 @@ async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 						`Artifact repo cleanup failed for source ${source.id}.`,
 					)
 				}
-				await deleteRepoSessionsBySourceForUser(input.env.APP_DB, {
+				await deleteRepoSessionsBySourceForUser(input.env, {
 					userId: artifact.userId,
 					sourceId: source.id,
 				})
@@ -537,7 +537,7 @@ async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 					sourceId: source.id,
 					publishedCommit: source.published_commit,
 				})
-				await deleteEntitySource(input.env.APP_DB, {
+				await deleteEntitySource(input.env, {
 					id: source.id,
 					userId: artifact.userId,
 				})
@@ -600,7 +600,7 @@ async function cleanupAdHocJobSource(input: {
 	) {
 		throw new Error(`Artifact repo cleanup failed for source ${source.id}.`)
 	}
-	await deleteRepoSessionsBySourceForUser(input.env.APP_DB, {
+	await deleteRepoSessionsBySourceForUser(input.env, {
 		userId: input.userId,
 		sourceId: source.id,
 	})
@@ -614,7 +614,7 @@ async function cleanupAdHocJobSource(input: {
 		sourceId: source.id,
 		publishedCommit: source.published_commit,
 	})
-	await deleteEntitySource(input.env.APP_DB, {
+	await deleteEntitySource(input.env, {
 		id: source.id,
 		userId: input.userId,
 	})

@@ -20,6 +20,7 @@ import {
 	consoleWarn,
 } from '#worker/test-support/console-spies.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 
@@ -522,6 +523,7 @@ function createSuccessfulDeletionEnv(
 	const durableObjectId = (name: string) => name as unknown as DurableObjectId
 	const fetchOk = async () => Response.json({ ok: true })
 	const userMeter = createInMemoryUserMeterEnv()
+	const repoSessionIndex = createInMemoryRepoSessionIndexEnv(db)
 	return {
 		APP_DB: db,
 		CAPABILITY_VECTOR_INDEX: {
@@ -559,6 +561,7 @@ function createSuccessfulDeletionEnv(
 			idFromName: durableObjectId,
 			get: () => ({ purgeSession: async () => ({ ok: true as const }) }),
 		},
+		REPO_SESSION_INDEX: repoSessionIndex.REPO_SESSION_INDEX,
 		REMOTE_CONNECTOR_SESSION: {
 			idFromName: durableObjectId,
 			get: () => ({

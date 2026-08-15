@@ -36,6 +36,7 @@ export async function backfillStorageBucketEstimates(input: {
 	// NULL estimates and are picked up by this same sweep.
 	await registerMissingRepoSessionStorageBuckets({
 		db: input.env.APP_DB,
+		env: input.env,
 		limit: batchSize,
 	}).catch((error: unknown) => {
 		console.warn('repo-session-bucket-reconcile-failed', error)

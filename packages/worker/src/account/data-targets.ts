@@ -246,7 +246,22 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	// service binding's purgeUser and export through listArchivedJobArtifacts /
 	// listJobsForUser.
 	{ kind: 'user_id', table: 'published_bundle_artifacts' },
-	{ kind: 'user_id', table: 'repo_sessions' },
+	{
+		kind: 'user_id',
+		table: 'repo_sessions',
+		includeInExport: false,
+		surface: 'repo_sessions',
+		reason:
+			'Leftover D1 catalog omitted from portable export; RepoSessionIndex is the export authority and hydrates leftover rows on first RPC.',
+	},
+	{
+		kind: 'user_id',
+		table: 'repo_session_due_owners',
+		includeInExport: false,
+		surface: 'repo_session_due_owners',
+		reason:
+			'Operational RepoSessionIndex due-work coordination omitted from portable export; account deletion removes the owner hint.',
+	},
 	{ kind: 'user_id', table: 'user_repos' },
 	{ kind: 'user_id', table: 'saved_packages' },
 	{

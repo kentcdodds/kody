@@ -550,7 +550,7 @@ export async function deleteSavedPackageProjection(input: {
 						}),
 					)
 				})
-				await deleteEntitySource(input.env.APP_DB, {
+				await deleteEntitySource(input.env, {
 					id: savedPackage.sourceId,
 					userId: input.userId,
 				}).catch((error) => {

@@ -45,6 +45,11 @@ export function mailboxDurableObjectName(userId: string) {
 	return userId
 }
 
+/** RepoSessionIndex — one catalog DO per user (untrimmed, like RunLog). */
+export function repoSessionIndexDurableObjectName(userId: string) {
+	return userId
+}
+
 /** McpClientHub — one client-hub DO per user (trimmed). */
 export function mcpClientHubDurableObjectName(userId: string) {
 	return userId.trim()
@@ -83,12 +88,12 @@ export function packageServiceInstanceDurableObjectName(input: {
 }
 
 /**
- * RepoSession is keyed by `repo_sessions.id` only (not user-prefixed). Every
- * RPC must validate the D1 session row's `user_id` before touching the
- * workspace. Account deletion enumerates the user's session ids before
- * deleting D1 rows and purges each DO. Documented exception to user-scoped
- * naming — do not "fix" this by prefixing userId without a storage
- * migration plan.
+ * RepoSession is keyed by session id only (not user-prefixed). Every RPC
+ * must validate the catalog row's `user_id` (RepoSessionIndex, one object
+ * per user) before touching the workspace. Account deletion enumerates the
+ * user's session ids from the index before purging each workspace DO.
+ * Documented exception to user-scoped naming — do not "fix" this by
+ * prefixing userId without a storage migration plan.
  */
 export function repoSessionDurableObjectName(sessionId: string) {
 	return sessionId

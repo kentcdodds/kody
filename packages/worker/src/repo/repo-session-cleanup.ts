@@ -1,26 +1,15 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { listRepoSessionsForBranchCleanup } from './repo-sessions.ts'
-import { repoSessionRpc } from './repo-session-do.ts'
-
-const defaultCleanupBatchSize = 100
-/**
- * Read-only leftovers (never checkpointed) are cheap to lose — there is no
- * unpublished work — so they sweep after a short idle window. Edited sessions
- * keep the generous window because unpublished work in a swept session is
- * unrecoverable. Every session operation bumps `updated_at`, so both windows
- * are idle time, not age.
- */
-const unusedAbandonedSessionRetentionMs = 30 * 60 * 1000
-const editedAbandonedSessionRetentionMs = 7 * 24 * 60 * 60 * 1000
+import {
+	deferRepoSessionDueOwner,
+	listDueRepoSessionOwners,
+	repoSessionDueOwnerBatchSize,
+} from './repo-session-due-owners.ts'
+import { repoSessionIndexRpc } from './repo-session-index-client.ts'
 
 export type RepoSessionBranchCleanupResult = {
 	checked: number
 	deleted: number
 	errors: number
-}
-
-function abandonedBeforeIso(now: Date, retentionMs: number) {
-	return new Date(now.valueOf() - retentionMs).toISOString()
 }
 
 export async function cleanupRepoSessionBranches(input: {
@@ -29,42 +18,45 @@ export async function cleanupRepoSessionBranches(input: {
 	batchSize?: number
 }): Promise<RepoSessionBranchCleanupResult> {
 	const now = input.now ?? new Date()
-	const sessions = await listRepoSessionsForBranchCleanup(input.env.APP_DB, {
-		now: now.toISOString(),
-		unusedAbandonedBefore: abandonedBeforeIso(
-			now,
-			unusedAbandonedSessionRetentionMs,
-		),
-		editedAbandonedBefore: abandonedBeforeIso(
-			now,
-			editedAbandonedSessionRetentionMs,
-		),
-		limit: input.batchSize ?? defaultCleanupBatchSize,
+	const owners = await listDueRepoSessionOwners({
+		db: input.env.APP_DB,
+		now,
+		limit: input.batchSize ?? repoSessionDueOwnerBatchSize,
 	})
+	let checked = 0
 	let deleted = 0
 	let errors = 0
-	for (const session of sessions) {
-		const reason = session.status === 'active' ? 'abandoned' : 'expired'
+	for (const owner of owners) {
 		try {
-			await repoSessionRpc(input.env, session.id).cleanupSessionBranch({
-				sessionId: session.id,
-				userId: session.user_id,
-				reason,
+			const result = await repoSessionIndexRpc({
+				env: input.env,
+				userId: owner.userId,
+			}).runDueCleanup({
+				ownerId: owner.userId,
+				now: now.toISOString(),
 			})
-			deleted += 1
+			checked += result.checked
+			deleted += result.deleted
+			errors += result.errors
 		} catch (error) {
 			errors += 1
-			console.warn(
-				JSON.stringify({
-					message: 'repo session branch cleanup failed',
-					reason,
-					error: getErrorMessage(error),
-				}),
-			)
+			await deferRepoSessionDueOwner({
+				db: input.env.APP_DB,
+				userId: owner.userId,
+				error,
+				now,
+			}).catch((deferError: unknown) => {
+				console.warn(
+					JSON.stringify({
+						message: 'repo session due-owner defer failed',
+						error: getErrorMessage(deferError),
+					}),
+				)
+			})
 		}
 	}
 	return {
-		checked: sessions.length,
+		checked,
 		deleted,
 		errors,
 	}

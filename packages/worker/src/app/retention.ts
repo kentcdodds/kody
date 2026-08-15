@@ -4,6 +4,8 @@ import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { hasActiveRepoSessionForSource } from '#worker/repo/repo-sessions.ts'
+import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
 
 type RetentionPolicy = {
 	table: string
@@ -234,15 +236,24 @@ async function deleteByIds(input: {
 }
 
 async function deletePublishedBundleArtifactRowIfStillStale(input: {
-	db: D1Database
+	env: Pick<Env, 'APP_DB'> & RepoSessionIndexEnv
 	id: string
 	kvKey: string
 	cutoff: string
+	userId: string
+	sourceId: string
 }) {
+	if (
+		await hasActiveRepoSessionForSource(input.env, {
+			userId: input.userId,
+			sourceId: input.sourceId,
+		})
+	) {
+		return 0
+	}
 	const result = await runD1WithRetry(() =>
-		input.db
-			.prepare(
-				`DELETE FROM published_bundle_artifacts
+		input.env.APP_DB.prepare(
+			`DELETE FROM published_bundle_artifacts
 			WHERE id = ?
 				AND kv_key = ?
 				AND created_at < ?
@@ -252,15 +263,8 @@ async function deletePublishedBundleArtifactRowIfStillStale(input: {
 					WHERE source.user_id = published_bundle_artifacts.user_id
 						AND source.id = published_bundle_artifacts.source_id
 						AND source.published_commit = published_bundle_artifacts.published_commit
-				)
-				AND NOT EXISTS (
-					SELECT 1
-					FROM repo_sessions AS session
-					WHERE session.user_id = published_bundle_artifacts.user_id
-						AND session.source_id = published_bundle_artifacts.source_id
-						AND session.status = 'active'
 				)`,
-			)
+		)
 			.bind(input.id, input.kvKey, input.cutoff)
 			.run(),
 	)
@@ -333,7 +337,7 @@ export async function prunePlatformFeedbackForRetention(input: {
 }
 
 export async function prunePublishedBundleArtifactsForRetention(input: {
-	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
+	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'> & RepoSessionIndexEnv
 	now?: Date
 	batchSize?: number
 }) {
@@ -344,7 +348,7 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 	const batchSize = input.batchSize ?? publishedBundleArtifactRetentionBatchSize
 	const { results } = await runD1WithRetry(() =>
 		input.env.APP_DB.prepare(
-			`SELECT artifact.id, artifact.kv_key, artifact.source_id, artifact.published_commit
+			`SELECT artifact.id, artifact.kv_key, artifact.source_id, artifact.user_id, artifact.published_commit
 		FROM published_bundle_artifacts AS artifact
 		WHERE artifact.created_at < ?
 			AND NOT EXISTS (
@@ -354,13 +358,6 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 					AND source.id = artifact.source_id
 					AND source.published_commit = artifact.published_commit
 			)
-			AND NOT EXISTS (
-				SELECT 1
-				FROM repo_sessions AS session
-				WHERE session.user_id = artifact.user_id
-					AND session.source_id = artifact.source_id
-					AND session.status = 'active'
-			)
 		ORDER BY artifact.created_at ASC, artifact.id ASC
 		LIMIT ?`,
 		)
@@ -369,6 +366,7 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 				id: string
 				kv_key: string
 				source_id: string
+				user_id: string
 				published_commit: string
 			}>(),
 	)
@@ -383,10 +381,12 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 	>()
 	for (const row of rows) {
 		const rowDeleted = await deletePublishedBundleArtifactRowIfStillStale({
-			db: input.env.APP_DB,
+			env: input.env,
 			id: row.id,
 			kvKey: row.kv_key,
 			cutoff,
+			userId: row.user_id,
+			sourceId: row.source_id,
 		})
 		if (rowDeleted === 0) continue
 		deletedRows += rowDeleted

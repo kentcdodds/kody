@@ -40,7 +40,7 @@ test('source deletion removes only its repo-session storage inventory', async ()
 	const db = createD1FromSqlite(sqlite)
 
 	await expect(
-		deleteEntitySource(db, { id: 'source-a', userId: 'user-a' }),
+		deleteEntitySource({ APP_DB: db }, { id: 'source-a', userId: 'user-a' }),
 	).resolves.toBe(true)
 	expect(
 		sqlite

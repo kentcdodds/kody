@@ -45,6 +45,11 @@ import {
 	exportInternalUserMailbox,
 } from '#worker/email/mailbox-internal-read.ts'
 import { type MailboxExportResult } from '#worker/email/mailbox-types.ts'
+import {
+	repoSessionIndexNamespace,
+	repoSessionIndexRpc,
+} from '#worker/repo/repo-session-index-client.ts'
+import { type RepoSessionIndexExportResult } from '#worker/repo/repo-session-index-do.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import {
 	listAccountUserPackageServices,
@@ -68,6 +73,7 @@ export const accountExportSectionNames = [
 	'run_records',
 	'user_meter',
 	'mailbox',
+	'repo_session_index',
 	'remote_connector_session',
 	'package_service',
 	'oauth_grants',
@@ -141,6 +147,7 @@ type ManifestInventoryCounts = {
 	runRecords: number
 	userMeterCounters: number
 	mailboxRows: number
+	repoSessionIndexRows: number
 	remoteConnectorSessions: number
 	packageServices: number
 	artifactRepos: number
@@ -274,6 +281,7 @@ type AccountExportDurableObjects = {
 	runRecords: RunRecordsExportPayload | null
 	userMeter: UserMeterExportResult | null
 	mailbox: MailboxExportResult | null
+	repoSessionIndex: RepoSessionIndexExportResult | null
 	remoteConnectorSessions: Array<{
 		instanceId: string
 		export: RemoteConnectorSessionExport | null
@@ -1112,6 +1120,7 @@ async function collectManifestInventoryCounts(input: {
 		runRecords,
 		userMeterCounters,
 		mailboxRows,
+		repoSessionIndexRows,
 		remoteConnectorSessions,
 		packageServices,
 		artifactRepos,
@@ -1149,6 +1158,16 @@ async function collectManifestInventoryCounts(input: {
 				counts.attachments +
 				counts.deliveryEvents
 			)
+		}),
+		safeCount('repo session index rows', async () => {
+			if (!repoSessionIndexNamespace(input.env)) return 0
+			const page = await repoSessionIndexRpc({
+				env: input.env,
+				userId: input.userId,
+			}).exportSessions({
+				pageSize: maxExportPageSize,
+			})
+			return page.rows.length
 		}),
 		safeCount('remote connectors', async () =>
 			countScalar(
@@ -1189,6 +1208,7 @@ async function collectManifestInventoryCounts(input: {
 		runRecords,
 		userMeterCounters,
 		mailboxRows,
+		repoSessionIndexRows,
 		remoteConnectorSessions,
 		packageServices,
 		artifactRepos,
@@ -1595,6 +1615,35 @@ async function exportMailboxRows(input: {
 	}
 }
 
+async function exportRepoSessionIndexRows(input: {
+	env: AccountExportEnv
+	userId: string
+	warnings: Array<string>
+}): Promise<RepoSessionIndexExportResult | null> {
+	try {
+		if (!repoSessionIndexNamespace(input.env)) {
+			return null
+		}
+		const page = await repoSessionIndexRpc({
+			env: input.env,
+			userId: input.userId,
+		}).exportSessions({
+			pageSize: maxExportPageSize,
+		})
+		if (page.truncated) {
+			input.warnings.push(
+				`Repo session index rows were truncated in the full export; use account_export_section with section "repo_session_index" to retrieve additional pages.`,
+			)
+		}
+		return page
+	} catch (error) {
+		input.warnings.push(
+			`Repo session index export failed: ${getErrorMessage(error)}`,
+		)
+		return null
+	}
+}
+
 async function exportRemoteConnectorSessions(input: {
 	env: AccountExportEnv
 	userId: string
@@ -1694,6 +1743,7 @@ async function exportDurableObjects(input: {
 		runRecords,
 		userMeter,
 		mailbox,
+		repoSessionIndex,
 	] = await Promise.all([
 		exportStorageRunners({
 			env: input.env,
@@ -1728,6 +1778,11 @@ async function exportDurableObjects(input: {
 			userId: input.userId,
 			warnings: input.warnings,
 		}),
+		exportRepoSessionIndexRows({
+			env: input.env,
+			userId: input.userId,
+			warnings: input.warnings,
+		}),
 	])
 	let jobManager: unknown | null = null
 	try {
@@ -1743,6 +1798,7 @@ async function exportDurableObjects(input: {
 		runRecords,
 		userMeter,
 		mailbox,
+		repoSessionIndex,
 		remoteConnectorSessions,
 		packageServices,
 		storageRunners,
@@ -1828,6 +1884,18 @@ function buildManifest(input: {
 				warning.startsWith('Mailbox ') || warning.startsWith('MAILBOX '),
 		),
 		discovery: { section: 'mailbox' },
+	}
+	sections.repo_session_index = {
+		count:
+			input.durableObjects?.repoSessionIndex == null
+				? (input.inventoryCounts?.repoSessionIndexRows ?? 0)
+				: input.durableObjects.repoSessionIndex.rows.length,
+		warnings: input.warnings.filter(
+			(warning) =>
+				warning.startsWith('Repo session index ') ||
+				warning.startsWith('REPO_SESSION_INDEX '),
+		),
+		discovery: { section: 'repo_session_index' },
 	}
 	sections.remote_connector_sessions = {
 		count:
@@ -2180,6 +2248,27 @@ export async function readAccountExportSection(input: {
 		const page = await exportInternalUserMailbox({
 			env: input.env,
 			ownerId: input.mcpUserId,
+			pageSize,
+			startAfter: input.startAfter ?? null,
+		})
+		return {
+			section: input.section,
+			items: page.rows,
+			truncated: page.truncated,
+			nextStartAfter: page.nextStartAfter,
+			pageSize,
+			warnings,
+		}
+	}
+	if (input.section === 'repo_session_index') {
+		if (!repoSessionIndexNamespace(input.env)) {
+			throw new Error('REPO_SESSION_INDEX binding was unavailable.')
+		}
+		const pageSize = normalizePageSize(input.pageSize)
+		const page = await repoSessionIndexRpc({
+			env: input.env,
+			userId: input.mcpUserId,
+		}).exportSessions({
 			pageSize,
 			startAfter: input.startAfter ?? null,
 		})

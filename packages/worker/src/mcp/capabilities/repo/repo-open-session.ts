@@ -5,7 +5,10 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
-import { getActiveRepoSessionByConversation } from '#worker/repo/repo-sessions.ts'
+import {
+	countActiveRepoSessions,
+	getActiveRepoSessionByConversation,
+} from '#worker/repo/repo-sessions.ts'
 import {
 	buildPublishedCommitHeadMismatchCallerMessage,
 	isPublishedCommitHeadMismatchMessage,
@@ -77,7 +80,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 			const existingSession =
 				args.conversation_id == null
 					? null
-					: await getActiveRepoSessionByConversation(ctx.env.APP_DB, {
+					: await getActiveRepoSessionByConversation(ctx.env, {
 							userId: user.userId,
 							conversationId: args.conversation_id,
 						})
@@ -105,6 +108,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 				userId: user.userId,
 				email: user.email,
 				resource: 'repo_sessions',
+				getCurrent: () => countActiveRepoSessions(ctx.env, user.userId),
 			})
 
 			// Opaque Cloudflare platform internals (KODY-CLOUDFLARE-4H) are brief

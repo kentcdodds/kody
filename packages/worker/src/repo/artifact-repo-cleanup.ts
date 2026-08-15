@@ -149,7 +149,7 @@ async function deleteReposForEntitySource(input: {
 		source: input.source,
 		warnings: input.warnings,
 	})
-	const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
+	const sessions = await listRepoSessionsBySource(input.env, {
 		userId: input.userId,
 		sourceId: input.source.id,
 	})
@@ -191,7 +191,7 @@ export async function cleanupArtifactReposForPackage(input: {
 		return 0
 	}
 	if (!hasArtifactsAccess(input.env)) {
-		const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
+		const sessions = await listRepoSessionsBySource(input.env, {
 			userId: input.userId,
 			sourceId: source.id,
 		})
@@ -235,7 +235,7 @@ export async function cleanupArtifactReposForSource(input: {
 		return { deleted: 0, artifactAccessUnavailable: false }
 	}
 	if (!hasArtifactsAccess(input.env)) {
-		const sessions = await listRepoSessionsBySource(input.env.APP_DB, {
+		const sessions = await listRepoSessionsBySource(input.env, {
 			userId: input.userId,
 			sourceId: source.id,
 		})
@@ -277,7 +277,7 @@ export async function cleanupAllUserArtifactRepos(input: {
 
 	const [sources, sessions] = await Promise.all([
 		listEntitySourcesByUser(input.env.APP_DB, input.userId),
-		listRepoSessionsByUser(input.env.APP_DB, input.userId),
+		listRepoSessionsByUser(input.env, input.userId),
 	])
 	for (const source of sources) {
 		await deletePushSubscriptionForSource({
@@ -310,7 +310,7 @@ export async function cleanupAllUserArtifactRepos(input: {
 async function countUserArtifactRepoReferences(env: Env, userId: string) {
 	const [sources, sessions] = await Promise.all([
 		listEntitySourcesByUser(env.APP_DB, userId),
-		listRepoSessionsByUser(env.APP_DB, userId),
+		listRepoSessionsByUser(env, userId),
 	])
 	return collectUniqueRepoNames([
 		...sources.map((source) => source.repo_id),
