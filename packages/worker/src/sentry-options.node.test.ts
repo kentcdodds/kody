@@ -147,6 +147,54 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	}
 	expect(filterSentryEvent(wrappedOpaqueInternal)).toBe(wrappedOpaqueInternal)
 
+	// Artifacts git protocol HTTP 5xx / 429 wrappers (KODY-CLOUDFLARE-4Y / 4Z /
+	// 50). Bare isomorphic-git HttpError stays visible; non-5xx wrappers too.
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Artifacts listServerRefs failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: HTTP Error: 500 Internal Server Error',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Artifacts git fetch failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: HTTP Error: 503 Service Unavailable',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	const bareArtifactsGitHttpError = {
+		exception: {
+			values: [{ value: 'HTTP Error: 500 Internal Server Error' }],
+		},
+	}
+	expect(filterSentryEvent(bareArtifactsGitHttpError)).toBe(
+		bareArtifactsGitHttpError,
+	)
+	const artifactsGitAuthFailure = {
+		exception: {
+			values: [
+				{
+					value:
+						'Artifacts listServerRefs failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: HTTP Error: 401 Unauthorized',
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(artifactsGitAuthFailure)).toBe(
+		artifactsGitAuthFailure,
+	)
+
 	// Bare Agents MCP session teardown abort (`ctx.abort("destroyed")`) —
 	// KODY-CLOUDFLARE-4K. Wrapped "stream was destroyed" forms stay visible.
 	expect(

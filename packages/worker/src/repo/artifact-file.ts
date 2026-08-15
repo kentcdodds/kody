@@ -7,6 +7,10 @@ import {
 	readMockArtifactSnapshot,
 	resolveExistingArtifactSourceRepo,
 } from './artifacts.ts'
+import {
+	runArtifactsGitWithRetry,
+	wrapArtifactsGitHttpError,
+} from './artifacts-git-retry.ts'
 import { createEphemeralGitWorkspace } from './ephemeral-git-workspace.ts'
 
 export async function readArtifactFileAtCommit(input: {
@@ -76,19 +80,29 @@ export async function readFirstArtifactFileAtCommit(input: {
 		remote: 'origin',
 		url: remote,
 	})
-	await git.fetch({
-		fs: workspace.fs,
-		http,
-		dir: workspace.dir,
-		remote: 'origin',
-		ref: input.commit,
-		depth: 1,
-		singleBranch: true,
-		tags: false,
-		onAuth() {
-			return auth
-		},
-	})
+	try {
+		await runArtifactsGitWithRetry(() =>
+			git.fetch({
+				fs: workspace.fs,
+				http,
+				dir: workspace.dir,
+				remote: 'origin',
+				ref: input.commit,
+				depth: 1,
+				singleBranch: true,
+				tags: false,
+				onAuth() {
+					return auth
+				},
+			}),
+		)
+	} catch (error) {
+		throw wrapArtifactsGitHttpError({
+			operation: 'git fetch',
+			remote: info.remote,
+			error,
+		})
+	}
 
 	for (const filePath of input.filePaths) {
 		try {

@@ -5,6 +5,10 @@ import {
 } from '#mcp/cloudflare/cloudflare-rest-client.ts'
 import git from 'isomorphic-git'
 import http from 'isomorphic-git/http/web'
+import {
+	runArtifactsGitWithRetry,
+	wrapArtifactsGitHttpError,
+} from './artifacts-git-retry.ts'
 import { type EntityKind } from './types.ts'
 
 export type ArtifactToken = {
@@ -767,17 +771,6 @@ export function buildAuthenticatedArtifactsRemote(input: {
 	return remoteUrl.toString()
 }
 
-function describeArtifactRemote(remote: string) {
-	try {
-		const url = new URL(remote)
-		url.username = ''
-		url.password = ''
-		return url.toString()
-	} catch {
-		return 'unparseable-remote'
-	}
-}
-
 export async function listArtifactServerRefs(input: {
 	remote: string
 	token: string
@@ -789,12 +782,14 @@ export async function listArtifactServerRefs(input: {
 		remote: input.remote,
 		token: input.token,
 	})
-	return git.listServerRefs({
-		http,
-		url,
-		prefix: input.prefix,
-		symrefs: true,
-	})
+	return runArtifactsGitWithRetry(() =>
+		git.listServerRefs({
+			http,
+			url,
+			prefix: input.prefix,
+			symrefs: true,
+		}),
+	)
 }
 
 export async function resolveArtifactDefaultBranchHead(input: {
@@ -823,10 +818,11 @@ export async function resolveArtifactDefaultBranchHead(input: {
 			prefix: refName,
 		})
 	} catch (error) {
-		throw new Error(
-			`Artifacts listServerRefs failed for ${describeArtifactRemote(info.remote)}: ${getErrorMessage(error)}`,
-			{ cause: error },
-		)
+		throw wrapArtifactsGitHttpError({
+			operation: 'listServerRefs',
+			remote: info.remote,
+			error,
+		})
 	}
 	const branchRef = refs.find((ref) => ref.ref === refName)
 	if (!branchRef?.oid) {

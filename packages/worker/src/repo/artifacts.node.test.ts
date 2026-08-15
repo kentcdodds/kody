@@ -529,6 +529,43 @@ test('resolveArtifactDefaultBranchHead reuses a provided token and still works w
 		'Artifacts createToken result is missing plaintext.',
 	)
 	expect(gitMocks.listServerRefs).toHaveBeenCalledTimes(1)
+
+	const httpError = Object.assign(
+		new Error('HTTP Error: 500 Internal Server Error'),
+		{
+			code: 'HttpError',
+			name: 'HttpError',
+			data: {
+				statusCode: 500,
+				statusMessage: 'Internal Server Error',
+				response: '',
+			},
+		},
+	)
+	gitMocks.listServerRefs.mockReset()
+	gitMocks.listServerRefs
+		.mockRejectedValueOnce(httpError)
+		.mockResolvedValueOnce([{ ref: 'refs/heads/main', oid: 'retried-oid' }])
+	createToken.mockReset()
+	createToken.mockResolvedValue({
+		id: 'tok_read',
+		plaintext: 'art_v1_throwaway',
+		scope: 'read',
+		expiresAt: '2026-10-09T08:55:00.000Z',
+	})
+	await expect(resolveArtifactDefaultBranchHead({ repo })).resolves.toEqual({
+		remote: 'https://acct.artifacts.cloudflare.net/git/default/repo-1.git',
+		defaultBranch: 'main',
+		commit: 'retried-oid',
+	})
+	expect(gitMocks.listServerRefs).toHaveBeenCalledTimes(2)
+
+	gitMocks.listServerRefs.mockReset()
+	gitMocks.listServerRefs.mockRejectedValue(httpError)
+	await expect(resolveArtifactDefaultBranchHead({ repo })).rejects.toThrow(
+		/Artifacts listServerRefs failed for https:\/\/acct\.artifacts\.cloudflare\.net\/git\/default\/repo-1\.git: HTTP Error: 500 Internal Server Error/,
+	)
+	expect(gitMocks.listServerRefs).toHaveBeenCalledTimes(3)
 })
 
 test('native createToken maps token when JSRPC omits plaintext', async () => {
