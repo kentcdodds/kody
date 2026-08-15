@@ -8,8 +8,13 @@ import {
 	wrapArtifactsGitHttpError,
 } from './artifacts-git-retry.ts'
 
-function httpError(statusCode: number, statusMessage = 'Internal Server Error') {
-	const error = new Error(`HTTP Error: ${statusCode} ${statusMessage}`) as Error & {
+function httpError(
+	statusCode: number,
+	statusMessage = 'Internal Server Error',
+) {
+	const error = new Error(
+		`HTTP Error: ${statusCode} ${statusMessage}`,
+	) as Error & {
 		code: string
 		name: string
 		data: { statusCode: number; statusMessage: string; response: string }
@@ -36,7 +41,8 @@ test('Artifacts git HTTP helpers classify transient statuses, wrap messages, and
 
 	const wrapped = wrapArtifactsGitHttpError({
 		operation: 'listServerRefs',
-		remote: 'https://x:secret@acct.artifacts.cloudflare.net/git/production/repo-1.git',
+		remote:
+			'https://x:secret@acct.artifacts.cloudflare.net/git/production/repo-1.git',
 		error: fiveHundred,
 	})
 	expect(wrapped.message).toBe(
