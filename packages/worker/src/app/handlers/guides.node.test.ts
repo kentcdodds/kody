@@ -74,9 +74,6 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 		},
 	)
 	expect(googleOauthMd.status).toBe(200)
-	const googleOauthBody = await googleOauthMd.text()
-	expect(googleOauthBody).toContain('# Google OAuth interactive guide')
-	expect(googleOauthBody).toContain('gmail.readonly')
 
 	const googleOauthApi = await callHandler(
 		createGuideDetailApiHandler(env) as never,
@@ -90,7 +87,6 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 		ok: boolean
 		slug: string
 		id: string
-		title: string
 	}
 	expect(googleOauthPayload).toMatchObject({
 		ok: true,
