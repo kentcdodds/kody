@@ -353,11 +353,14 @@ export function AccountManagementLinkNav(
 				// The nav fills the shell's absolute left track (full height,
 				// so the sticky inner column has the whole page to stick
 				// through); below 860px it returns to flow as a wrapping row.
+				// Named so a view transition lifts it out of `<main>` / `page`
+				// and the rail stays still even if a transition still runs.
 				position: 'absolute',
 				left: pageGutter,
 				top: 0,
 				bottom: 0,
 				width: '200px',
+				viewTransitionName: 'account-nav',
 				[accountNavMq]: {
 					position: 'static',
 					width: 'auto',

@@ -239,15 +239,22 @@ export function App(handle: Handle<AppProps>) {
 											width: '100%',
 											boxSizing: 'border-box',
 											flex: 1,
+											viewTransitionName: 'page',
 											// The auth canvas stretches to fill the shell column.
 											display: 'grid',
 										}
 									: isRedesignedMarketingPath
-										? { width: '100%', boxSizing: 'border-box', flex: 1 }
+										? {
+												width: '100%',
+												boxSizing: 'border-box',
+												flex: 1,
+												viewTransitionName: 'page',
+											}
 										: {
 												width: '100%',
 												boxSizing: 'border-box',
 												flex: 1,
+												viewTransitionName: 'page',
 												padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
 												[mq.tablet]: {
 													padding: `${spacing.sm} ${spacing.sm} 0`,

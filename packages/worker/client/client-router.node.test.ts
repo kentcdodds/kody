@@ -1,13 +1,16 @@
 import { expect, test, vi } from 'vitest'
 import {
+	documentHasPersistentShell,
 	isSameShellAreaNavigation,
 	matchRoute,
 	matchRouteLoader,
 	navigate,
 	navigationTimeoutMs,
+	persistentShellNavSelector,
 	registerRouteLoaders,
 	Router,
 	shouldRouterHandleClick,
+	shouldUseViewTransition,
 	type RouteLoader,
 } from './client-router.tsx'
 import { communityArea } from './lazy-route.tsx'
@@ -100,6 +103,87 @@ test('view transitions are skipped only when a navigation stays inside one shell
 
 	// A path that merely starts with the area's characters is a different area.
 	expect(isSameShellAreaNavigation('/account', '/accounts-payable')).toBe(false)
+})
+
+test('view transitions stay off for shell tab switches even when from-path was never recorded', () => {
+	const animate = (input: {
+		from: string | null
+		to: string
+		hasPersistentShell?: boolean
+	}) =>
+		shouldUseViewTransition({
+			from: input.from,
+			to: input.to,
+			canStart: true,
+			prefersReducedMotion: false,
+			hasPersistentShell: input.hasPersistentShell,
+		})
+
+	// The production bug: first click after a full load had from=null, so the
+	// path-only skip missed and the whole account shell faded + slid 8px.
+	expect(
+		animate({
+			from: null,
+			to: '/account/activity',
+			hasPersistentShell: true,
+		}),
+	).toBe(false)
+	expect(
+		animate({
+			from: '/account/usage',
+			to: '/account/activity',
+			hasPersistentShell: true,
+		}),
+	).toBe(false)
+	expect(animate({ from: '/account/usage', to: '/account/activity' })).toBe(
+		false,
+	)
+
+	// Leaving, entering, or crossing shells is still a real page change.
+	expect(
+		animate({
+			from: '/account/usage',
+			to: '/pricing',
+			hasPersistentShell: true,
+		}),
+	).toBe(true)
+	expect(
+		animate({
+			from: '/account/usage',
+			to: '/admin/users',
+			hasPersistentShell: true,
+		}),
+	).toBe(true)
+	expect(animate({ from: '/pricing', to: '/account/usage' })).toBe(true)
+	expect(animate({ from: null, to: '/account/usage' })).toBe(true)
+
+	// Same pathname+search (hash-only / same-URL refresh) never animates.
+	expect(animate({ from: '/account/usage', to: '/account/usage' })).toBe(false)
+	expect(
+		shouldUseViewTransition({
+			from: '/pricing',
+			to: '/community',
+			canStart: false,
+			prefersReducedMotion: false,
+		}),
+	).toBe(false)
+	expect(
+		shouldUseViewTransition({
+			from: '/pricing',
+			to: '/community',
+			canStart: true,
+			prefersReducedMotion: true,
+		}),
+	).toBe(false)
+
+	const withRail = {
+		querySelector: (selector: string) =>
+			selector === persistentShellNavSelector ? ({} as Element) : null,
+	}
+	const withoutRail = { querySelector: () => null }
+	expect(documentHasPersistentShell(withRail)).toBe(true)
+	expect(documentHasPersistentShell(withoutRail)).toBe(false)
+	expect(documentHasPersistentShell(null)).toBe(false)
 })
 
 test('same-origin hash links are intercepted so scroll restoration can reach them', () => {

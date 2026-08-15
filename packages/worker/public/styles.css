@@ -468,24 +468,36 @@ html.is-settled {
 	}
 
 	/* SPA route transitions (View Transitions API). The router wraps the
-	   DOM swap in startViewTransition (client/client-router.tsx); chrome
-	   that persists across routes is lifted out of the root snapshot by
-	   view-transition-name and pinned static here. Browsers without the
-	   API never match these pseudos — the swap is simply instant. */
-	::view-transition-old(root) {
+	   DOM swap in startViewTransition (client/client-router.tsx). Motion
+	   lives on `page` (`<main>`), not `root` — otherwise the account rail
+	   (inside main, no name of its own until lifted) fades and slides with
+	   the content. Named chrome is pinned static. Browsers without the API
+	   never match these pseudos — the swap is simply instant. */
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation: none;
+	}
+
+	::view-transition-old(page) {
 		animation: vt-page-out 120ms var(--ease-out) both;
 	}
 
-	::view-transition-new(root) {
+	::view-transition-new(page) {
 		animation: vt-page-in 220ms var(--ease-out) both;
 	}
 
 	::view-transition-old(site-header),
 	::view-transition-new(site-header),
+	::view-transition-group(site-header),
 	::view-transition-old(site-footer),
 	::view-transition-new(site-footer),
+	::view-transition-group(site-footer),
 	::view-transition-old(nav-progress),
-	::view-transition-new(nav-progress) {
+	::view-transition-new(nav-progress),
+	::view-transition-group(nav-progress),
+	::view-transition-old(account-nav),
+	::view-transition-new(account-nav),
+	::view-transition-group(account-nav) {
 		animation: none;
 	}
 
