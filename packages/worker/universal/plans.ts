@@ -237,8 +237,10 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxPackageServices: 1,
 		maxPersistentPackageServices: 0,
 		// Sessions are cheap (D1 row + dormant DO workspace + Artifacts
-		// branch) and the 7-day abandoned-session sweep keeps idle ones from
-		// accumulating; sized for a few agent conversations, not dozens.
+		// branch). Unused (never-checkpointed) leftovers sweep after 30
+		// minutes idle; edited sessions keep the 7-day window so unpublished
+		// work is not lost mid-conversation. Sized for a few agent
+		// conversations, not dozens.
 		maxRepoSessions: 15,
 		// notify-self and reply-to-stored only, so the outreach-abuse surface
 		// is small; a daily digest plus a few alerts should not hit the wall.

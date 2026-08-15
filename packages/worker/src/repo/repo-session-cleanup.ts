@@ -2,15 +2,16 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { listRepoSessionsForBranchCleanup } from './repo-sessions.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 
-const defaultCleanupBatchSize = 50
+const defaultCleanupBatchSize = 100
 /**
- * Active sessions untouched for this long are considered abandoned and hard
- * deleted (branch + D1 row + DO workspace). Every session operation bumps
- * `updated_at`, so this is idle time, not age — but unpublished work in a
- * swept session is unrecoverable, so the window stays generous relative to
- * a working session's natural cadence.
+ * Read-only leftovers (never checkpointed) are cheap to lose — there is no
+ * unpublished work — so they sweep after a short idle window. Edited sessions
+ * keep the generous window because unpublished work in a swept session is
+ * unrecoverable. Every session operation bumps `updated_at`, so both windows
+ * are idle time, not age.
  */
-const abandonedSessionRetentionMs = 7 * 24 * 60 * 60 * 1000
+const unusedAbandonedSessionRetentionMs = 30 * 60 * 1000
+const editedAbandonedSessionRetentionMs = 7 * 24 * 60 * 60 * 1000
 
 export type RepoSessionBranchCleanupResult = {
 	checked: number
@@ -18,8 +19,8 @@ export type RepoSessionBranchCleanupResult = {
 	errors: number
 }
 
-function abandonedBeforeIso(now: Date) {
-	return new Date(now.valueOf() - abandonedSessionRetentionMs).toISOString()
+function abandonedBeforeIso(now: Date, retentionMs: number) {
+	return new Date(now.valueOf() - retentionMs).toISOString()
 }
 
 export async function cleanupRepoSessionBranches(input: {
@@ -30,7 +31,14 @@ export async function cleanupRepoSessionBranches(input: {
 	const now = input.now ?? new Date()
 	const sessions = await listRepoSessionsForBranchCleanup(input.env.APP_DB, {
 		now: now.toISOString(),
-		abandonedBefore: abandonedBeforeIso(now),
+		unusedAbandonedBefore: abandonedBeforeIso(
+			now,
+			unusedAbandonedSessionRetentionMs,
+		),
+		editedAbandonedBefore: abandonedBeforeIso(
+			now,
+			editedAbandonedSessionRetentionMs,
+		),
 		limit: input.batchSize ?? defaultCleanupBatchSize,
 	})
 	let deleted = 0

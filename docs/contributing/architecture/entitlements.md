@@ -512,7 +512,10 @@ Rules:
 
 - **Row-count limits** (saved packages, scheduled jobs, repo sessions, secrets,
   running package services) are counted via built-in counters in `service.ts`.
-  Most are counted directly from their source D1 tables. **Running package
+  Most are counted directly from their source D1 tables. **Repo sessions** count
+  `status = 'active'` rows. Unused (never-checkpointed) leftovers are swept
+  after 30 minutes idle; edited sessions after 7 days idle
+  (`repo_session_cleanup` lane, 100 rows per 5-minute tick). **Running package
   services** are counted from the **per-user UserMeter DO**:
   `countRunningPackageServices` counts `status = 'running'` rows with the 24h
   staleness window from DO `source_updated_at`. D1 `package_service_states`

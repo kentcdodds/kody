@@ -175,7 +175,8 @@ export async function listRepoSessionsForBranchCleanup(
 	db: D1Database,
 	input: {
 		now: string
-		abandonedBefore: string
+		unusedAbandonedBefore: string
+		editedAbandonedBefore: string
 		limit: number
 	},
 ): Promise<Array<RepoSessionRow>> {
@@ -183,11 +184,17 @@ export async function listRepoSessionsForBranchCleanup(
 		.prepare(
 			`SELECT * FROM repo_sessions
 			WHERE (status IN ('published', 'discarded') AND expires_at IS NOT NULL AND expires_at <= ?)
-				OR (status = 'active' AND updated_at <= ?)
+				OR (status = 'active' AND last_checkpoint_at IS NULL AND updated_at <= ?)
+				OR (status = 'active' AND last_checkpoint_at IS NOT NULL AND updated_at <= ?)
 			ORDER BY updated_at ASC
 			LIMIT ?`,
 		)
-		.bind(input.now, input.abandonedBefore, input.limit)
+		.bind(
+			input.now,
+			input.unusedAbandonedBefore,
+			input.editedAbandonedBefore,
+			input.limit,
+		)
 		.all<Record<string, unknown>>()
 	return (results ?? []).map(mapRepoSessionRow)
 }

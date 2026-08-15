@@ -117,7 +117,11 @@ Use the other repo capabilities when you need more control over the session:
 - repair drift with `repo_rebase_session`
 
 If you find an active session you no longer need, pass its `id` as `session_id`
-to `repo_discard_session` to close it.
+to `repo_discard_session` to close it. One-shot package helpers that open a
+session to read or write should discard in a `finally` so leftovers do not
+accumulate against the `repo_sessions` entitlement. Unused (never-edited)
+sessions are swept after 30 minutes idle; sessions with unpublished edits are
+swept after 7 days idle.
 
 ### `repo_write_file` vs patches
 
