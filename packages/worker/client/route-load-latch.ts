@@ -22,12 +22,16 @@ function toLatchKey(href: string) {
  * `handle.update() infinite loop detected`. Marking pending on the first
  * `needsLoad` decision stops that re-queue. Callers must still avoid
  * premature `handle.update()` inside the queued load (set loading UI in the
- * render that decides to load instead).
+ * render that decides to load instead). Aborted tasks must call
+ * `clearPending(href, attempt)` with the attempt from `getPendingAttempt()`
+ * so a late abort cannot clear a newer pending load for the same href.
  */
 export function createRouteLoadLatch() {
 	let lastLoadedHref = ''
 	let lastFailedHref: string | null = null
 	let lastPendingHref: string | null = null
+	/** Monotonic id for the current pending load; abort clear must match it. */
+	let pendingAttempt = 0
 	let lastSeenHref = ''
 
 	return {
@@ -65,22 +69,33 @@ export function createRouteLoadLatch() {
 			return lastLoadedHref === toLatchKey(href)
 		},
 		/**
+		 * Attempt id for the current pending href, captured right after
+		 * `needsLoad` returns true. Pass it to `clearPending` so a late abort
+		 * from an older queueTask cannot clear a newer pending attempt.
+		 */
+		getPendingAttempt() {
+			return pendingAttempt
+		},
+		/**
 		 * Drop the in-flight pending marker for `href` after an aborted
 		 * `queueTask` so the next render can re-queue. Remix aborts the task
 		 * signal on unrelated re-renders (e.g. shell session refresh); without
 		 * this, pending would stick and the route would stay on loading UI.
+		 * When `attempt` is provided, only clears if it still matches the
+		 * active pending attempt.
 		 */
-		clearPending(href: string) {
+		clearPending(href: string, attempt?: number) {
 			const key = toLatchKey(href)
-			if (lastPendingHref === key) {
-				lastPendingHref = null
-			}
+			if (lastPendingHref !== key) return
+			if (attempt !== undefined && attempt !== pendingAttempt) return
+			lastPendingHref = null
 		},
 		/**
 		 * Whether the route must queue a data load this render pass. Call once
 		 * per render with the current router href. A `true` result latches the
 		 * href as pending until `markLoaded` / `markFailed` / `clearPending`
-		 * (or a navigation / stale-refresh clears it).
+		 * (or a navigation / stale-refresh clears it). Read `getPendingAttempt()`
+		 * immediately after a `true` result for abort-safe clearing.
 		 *
 		 * `isLoading` is accepted for call-site compatibility but ignored: the
 		 * pending latch is the in-flight guard. Using `isLoading` as a reason
@@ -118,6 +133,7 @@ export function createRouteLoadLatch() {
 				currentHref !== lastPendingHref
 			if (shouldLoad) {
 				lastPendingHref = currentHref
+				pendingAttempt += 1
 			}
 			return shouldLoad
 		},

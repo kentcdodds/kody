@@ -40,8 +40,24 @@ test('isLoading alone does not force a load when the href is already loaded', ()
 test('clearPending after abort allows the same href to re-queue', () => {
 	const latch = createRouteLoadLatch()
 	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
+	const attempt = latch.getPendingAttempt()
 	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(false)
-	latch.clearPending('/a')
+	latch.clearPending('/a', attempt)
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
+})
+
+test('a stale abort clearPending cannot clear a newer pending attempt', () => {
+	const latch = createRouteLoadLatch()
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
+	const firstAttempt = latch.getPendingAttempt()
+	latch.clearPending('/a', firstAttempt)
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
+	const secondAttempt = latch.getPendingAttempt()
+	expect(secondAttempt).not.toBe(firstAttempt)
+	// Late abort from the first queueTask must leave the second pending intact.
+	latch.clearPending('/a', firstAttempt)
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(false)
+	latch.clearPending('/a', secondAttempt)
 	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
 })
 

@@ -181,11 +181,12 @@ export function GuideDetailRoute(handle: Handle) {
 		})
 		if (needsLoad && typeof document !== 'undefined') {
 			status = 'loading'
+			const loadAttempt = loadLatch.getPendingAttempt()
 			handle.queueTask(async (signal) => {
 				try {
 					await loadGuide(slug, signal)
 					if (signal.aborted) {
-						loadLatch.clearPending(currentHref)
+						loadLatch.clearPending(currentHref, loadAttempt)
 						return
 					}
 					if (status === 'ready' || status === 'not-found') {
@@ -195,7 +196,7 @@ export function GuideDetailRoute(handle: Handle) {
 					}
 				} catch {
 					if (signal.aborted) {
-						loadLatch.clearPending(currentHref)
+						loadLatch.clearPending(currentHref, loadAttempt)
 						return
 					}
 					loadLatch.markFailed(currentHref)
