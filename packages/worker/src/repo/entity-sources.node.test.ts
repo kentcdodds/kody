@@ -60,7 +60,7 @@ test('source deletion removes only its repo-session storage inventory', async ()
 	])
 	expect(
 		sqlite.prepare(`SELECT id FROM repo_sessions ORDER BY id`).all(),
-	).toEqual([{ id: 'session-a' }, { id: 'session-b' }])
+	).toEqual([{ id: 'session-b' }])
 })
 
 test('external reconcile selects token-pending packages and the daily backstop covers the fleet', async () => {

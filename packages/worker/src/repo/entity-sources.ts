@@ -1,11 +1,14 @@
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
-import { listLeftoverD1RepoSessionIdsBySource } from './repo-session-leftover-d1.ts'
+import {
+	deleteLeftoverD1RepoSessionsBySource,
+	listLeftoverD1RepoSessionIdsBySource,
+} from './repo-session-leftover-d1.ts'
 import {
 	repoSessionIndexNamespace,
 	type RepoSessionIndexEnv,
 } from './repo-session-index-client.ts'
-import { listRepoSessionsBySource } from './repo-sessions.ts'
+import { deleteRepoSessionsBySourceForUser } from './repo-sessions.ts'
 import {
 	type EntityKind,
 	type EntitySourceRow,
@@ -311,47 +314,42 @@ export async function deleteEntitySource(
 		userId: string
 	},
 ): Promise<boolean> {
-	const sessionIds = new Set<string>()
 	if (repoSessionIndexNamespace(env as RepoSessionIndexEnv)) {
-		const sessions = await listRepoSessionsBySource(
-			env as RepoSessionIndexEnv,
-			{
-				userId: input.userId,
-				sourceId: input.id,
-			},
-		)
-		for (const session of sessions) sessionIds.add(session.id)
-	}
-	for (const sessionId of await listLeftoverD1RepoSessionIdsBySource({
-		db: env.APP_DB,
-		userId: input.userId,
-		sourceId: input.id,
-	})) {
-		sessionIds.add(sessionId)
-	}
-	const statements = [
-		env.APP_DB.prepare(
-			`DELETE FROM entity_sources WHERE id = ? AND user_id = ?`,
-		).bind(input.id, input.userId),
-	]
-	if (sessionIds.size > 0) {
-		const ids = [...sessionIds]
-		statements.push(
-			env.APP_DB.prepare(
+		await deleteRepoSessionsBySourceForUser(env as RepoSessionIndexEnv, {
+			userId: input.userId,
+			sourceId: input.id,
+		})
+	} else {
+		const leftoverIds = await listLeftoverD1RepoSessionIdsBySource({
+			db: env.APP_DB,
+			userId: input.userId,
+			sourceId: input.id,
+		})
+		if (leftoverIds.length > 0) {
+			await env.APP_DB.prepare(
 				`DELETE FROM user_storage_buckets
 				WHERE user_id = ?
 					AND kind = 'repo_session'
-					AND storage_id IN (${ids.map(() => '?').join(', ')})`,
-			).bind(
-				input.userId,
-				...ids.map((sessionId) => repoSessionStorageBucketId(sessionId)),
-			),
-		)
+					AND storage_id IN (${leftoverIds.map(() => '?').join(', ')})`,
+			)
+				.bind(
+					input.userId,
+					...leftoverIds.map((sessionId) =>
+						repoSessionStorageBucketId(sessionId),
+					),
+				)
+				.run()
+		}
+		await deleteLeftoverD1RepoSessionsBySource({
+			db: env.APP_DB,
+			userId: input.userId,
+			sourceId: input.id,
+		})
 	}
-	const results = await env.APP_DB.batch(statements)
-	const result = results[0]
-	if (!result) {
-		throw new Error('Entity source deletion returned no D1 result.')
-	}
+	const result = await env.APP_DB.prepare(
+		`DELETE FROM entity_sources WHERE id = ? AND user_id = ?`,
+	)
+		.bind(input.id, input.userId)
+		.run()
 	return (result.meta.changes ?? 0) > 0
 }

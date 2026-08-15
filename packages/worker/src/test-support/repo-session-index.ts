@@ -138,6 +138,9 @@ export function createInMemoryRepoSessionIndexEnv(
 				return [...rows.values()].filter((row) => row.status === 'active')
 					.length
 			},
+			async countAll() {
+				return rows.size
+			},
 			async hasActiveForSource(input) {
 				return [...rows.values()].some(
 					(row) => row.source_id === input.sourceId && row.status === 'active',
@@ -161,6 +164,7 @@ export function createInMemoryRepoSessionIndexEnv(
 				const selected = truncated ? sorted.slice(0, pageSize) : sorted
 				return {
 					rows: selected,
+					total: rows.size,
 					truncated,
 					nextStartAfter: truncated ? (selected.at(-1)?.id ?? null) : null,
 				}

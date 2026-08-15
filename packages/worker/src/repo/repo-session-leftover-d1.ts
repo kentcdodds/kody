@@ -7,38 +7,41 @@ export function isMissingRepoSessionsTable(error: unknown): boolean {
 	)
 }
 
+function requiredString(row: Record<string, unknown>, key: string): string {
+	const value = row[key]
+	if (value == null) {
+		throw new Error(`Leftover repo_sessions row is missing ${key}.`)
+	}
+	return String(value)
+}
+
+function optionalString(
+	row: Record<string, unknown>,
+	key: string,
+): string | null {
+	const value = row[key]
+	return value == null ? null : String(value)
+}
+
 function mapRepoSessionRow(row: Record<string, unknown>): RepoSessionRow {
 	return repoSessionRowSchema.parse({
-		id: String(row['id']),
-		user_id: String(row['user_id']),
-		source_id: String(row['source_id']),
-		source_repo_id: String(row['source_repo_id']),
-		session_branch: String(row['session_branch']),
-		source_branch: String(row['source_branch']),
-		base_commit: String(row['base_commit']),
-		source_root: String(row['source_root']),
-		conversation_id:
-			row['conversation_id'] == null ? null : String(row['conversation_id']),
-		status: String(row['status']),
-		expires_at: row['expires_at'] == null ? null : String(row['expires_at']),
-		last_checkpoint_at:
-			row['last_checkpoint_at'] == null
-				? null
-				: String(row['last_checkpoint_at']),
-		last_checkpoint_commit:
-			row['last_checkpoint_commit'] == null
-				? null
-				: String(row['last_checkpoint_commit']),
-		last_check_run_id:
-			row['last_check_run_id'] == null
-				? null
-				: String(row['last_check_run_id']),
-		last_check_tree_hash:
-			row['last_check_tree_hash'] == null
-				? null
-				: String(row['last_check_tree_hash']),
-		created_at: String(row['created_at']),
-		updated_at: String(row['updated_at']),
+		id: requiredString(row, 'id'),
+		user_id: requiredString(row, 'user_id'),
+		source_id: requiredString(row, 'source_id'),
+		source_repo_id: requiredString(row, 'source_repo_id'),
+		session_branch: requiredString(row, 'session_branch'),
+		source_branch: requiredString(row, 'source_branch'),
+		base_commit: requiredString(row, 'base_commit'),
+		source_root: requiredString(row, 'source_root'),
+		conversation_id: optionalString(row, 'conversation_id'),
+		status: requiredString(row, 'status'),
+		expires_at: optionalString(row, 'expires_at'),
+		last_checkpoint_at: optionalString(row, 'last_checkpoint_at'),
+		last_checkpoint_commit: optionalString(row, 'last_checkpoint_commit'),
+		last_check_run_id: optionalString(row, 'last_check_run_id'),
+		last_check_tree_hash: optionalString(row, 'last_check_tree_hash'),
+		created_at: requiredString(row, 'created_at'),
+		updated_at: requiredString(row, 'updated_at'),
 	})
 }
 
@@ -184,5 +187,16 @@ export async function deleteLeftoverD1RepoSessionsBySource(input: {
 		db: input.db,
 		sql: `DELETE FROM repo_sessions WHERE user_id = ? AND source_id = ?`,
 		params: [input.userId, input.sourceId],
+	})
+}
+
+export async function deleteLeftoverD1RepoSessionsByUser(input: {
+	db: D1Database
+	userId: string
+}): Promise<void> {
+	await runLeftoverD1Delete({
+		db: input.db,
+		sql: `DELETE FROM repo_sessions WHERE user_id = ?`,
+		params: [input.userId],
 	})
 }

@@ -25,7 +25,10 @@ import {
 import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import { repoSessionIndexRpc } from '#worker/repo/repo-session-index-client.ts'
 import { listRepoSessionsByUser } from '#worker/repo/repo-sessions.ts'
-import { listLeftoverD1RepoSessionIdsByUser } from '#worker/repo/repo-session-leftover-d1.ts'
+import {
+	deleteLeftoverD1RepoSessionsByUser,
+	listLeftoverD1RepoSessionIdsByUser,
+} from '#worker/repo/repo-session-leftover-d1.ts'
 import {
 	listAccountUserPackageServices,
 	listAccountUserStorageIds,
@@ -728,6 +731,10 @@ async function purgeRepoSessionIndex(input: {
 	warnings: Array<string>
 }): Promise<number> {
 	try {
+		await deleteLeftoverD1RepoSessionsByUser({
+			db: input.env.APP_DB,
+			userId: input.userId,
+		})
 		await repoSessionIndexRpc({
 			env: input.env,
 			userId: input.userId,

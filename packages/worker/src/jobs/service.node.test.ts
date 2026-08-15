@@ -1179,6 +1179,9 @@ function createDatabase(
 									},
 								}
 							}
+							if (query.startsWith('DELETE FROM repo_sessions')) {
+								return { meta: { changes: 0, last_row_id: 0 } }
+							}
 							throw new Error(`Unsupported run query: ${query}`)
 						},
 					}

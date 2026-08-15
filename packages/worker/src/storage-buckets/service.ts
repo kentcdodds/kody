@@ -220,33 +220,39 @@ export async function registerMissingRepoSessionStorageBuckets(input: {
 		if (!isMissingRepoSessionsTable(error)) throw error
 	}
 	if (!input.env?.REPO_SESSION_INDEX || inserted >= limit) return inserted
-	const owners = await listRepoSessionDueOwnersPage({
-		db: input.db,
-		limit: limit - inserted,
-	})
-	for (const owner of owners) {
-		const sessions = await repoSessionIndexRpc({
-			env: input.env,
-			userId: owner.userId,
-		}).listByUser({ ownerId: owner.userId })
-		for (const session of sessions) {
-			if (session.status !== 'active') continue
-			const result = await input.db
-				.prepare(
-					`INSERT INTO user_storage_buckets (
-						user_id, storage_id, kind, created_at, last_seen_at
-					) VALUES (?, ?, 'repo_session', ?, ?)
-					ON CONFLICT (user_id, storage_id) DO NOTHING`,
-				)
-				.bind(
-					session.user_id,
-					repoSessionStorageBucketId(session.id),
-					seenAt,
-					seenAt,
-				)
-				.run()
-			inserted += result.meta?.changes ?? 0
-			if (inserted >= limit) return inserted
+	let afterUserId = ''
+	while (inserted < limit) {
+		const owners = await listRepoSessionDueOwnersPage({
+			db: input.db,
+			afterUserId,
+			limit: limit - inserted,
+		})
+		if (owners.length === 0) break
+		for (const owner of owners) {
+			afterUserId = owner.userId
+			const sessions = await repoSessionIndexRpc({
+				env: input.env,
+				userId: owner.userId,
+			}).listByUser({ ownerId: owner.userId })
+			for (const session of sessions) {
+				if (session.status !== 'active') continue
+				const result = await input.db
+					.prepare(
+						`INSERT INTO user_storage_buckets (
+							user_id, storage_id, kind, created_at, last_seen_at
+						) VALUES (?, ?, 'repo_session', ?, ?)
+						ON CONFLICT (user_id, storage_id) DO NOTHING`,
+					)
+					.bind(
+						session.user_id,
+						repoSessionStorageBucketId(session.id),
+						seenAt,
+						seenAt,
+					)
+					.run()
+				inserted += result.meta?.changes ?? 0
+				if (inserted >= limit) return inserted
+			}
 		}
 	}
 	return inserted

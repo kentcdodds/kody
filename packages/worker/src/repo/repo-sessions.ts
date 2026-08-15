@@ -2,9 +2,6 @@ import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
 import {
 	deleteLeftoverD1RepoSession,
 	deleteLeftoverD1RepoSessionsBySource,
-	getLeftoverD1RepoSession,
-	listLeftoverD1RepoSessionsBySource,
-	listLeftoverD1RepoSessionsByUser,
 } from './repo-session-leftover-d1.ts'
 import {
 	repoSessionIndexRpc,
@@ -13,16 +10,6 @@ import {
 import { type RepoSessionRow } from './types.ts'
 
 export type RepoSessionCatalogEnv = RepoSessionIndexEnv
-
-function uniqueById(
-	rows: ReadonlyArray<RepoSessionRow>,
-): Array<RepoSessionRow> {
-	const byId = new Map<string, RepoSessionRow>()
-	for (const row of rows) {
-		if (!byId.has(row.id)) byId.set(row.id, row)
-	}
-	return [...byId.values()]
-}
 
 export async function insertRepoSession(
 	env: RepoSessionCatalogEnv,
@@ -41,20 +28,13 @@ export async function getRepoSessionById(
 		sessionId: string
 	},
 ): Promise<RepoSessionRow | null> {
-	const index = repoSessionIndexRpc({ env, userId: input.userId })
-	const fromIndex = await index.getSessionById({
+	return await repoSessionIndexRpc({
+		env,
+		userId: input.userId,
+	}).getSessionById({
 		ownerId: input.userId,
 		sessionId: input.sessionId,
 	})
-	if (fromIndex) return fromIndex
-	const leftover = await getLeftoverD1RepoSession({
-		db: env.APP_DB,
-		userId: input.userId,
-		sessionId: input.sessionId,
-	})
-	if (!leftover) return null
-	await index.insertSession({ ownerId: input.userId, row: leftover })
-	return leftover
 }
 
 export async function getActiveRepoSessionByConversation(
@@ -80,19 +60,13 @@ export async function listRepoSessionsBySource(
 		sourceId: string
 	},
 ): Promise<Array<RepoSessionRow>> {
-	const fromIndex = await repoSessionIndexRpc({
+	return await repoSessionIndexRpc({
 		env,
 		userId: input.userId,
 	}).listBySource({
 		ownerId: input.userId,
 		sourceId: input.sourceId,
 	})
-	const leftover = await listLeftoverD1RepoSessionsBySource({
-		db: env.APP_DB,
-		userId: input.userId,
-		sourceId: input.sourceId,
-	})
-	return uniqueById([...fromIndex, ...leftover])
 }
 
 export async function deleteRepoSessionsBySourceForUser(
@@ -117,34 +91,28 @@ export async function deleteRepoSessionsBySourceForUser(
 			)
 			.run()
 	}
-	const deleted = await repoSessionIndexRpc({
+	await deleteLeftoverD1RepoSessionsBySource({
+		db: env.APP_DB,
+		userId: input.userId,
+		sourceId: input.sourceId,
+	})
+	return await repoSessionIndexRpc({
 		env,
 		userId: input.userId,
 	}).deleteBySource({
 		ownerId: input.userId,
 		sourceId: input.sourceId,
 	})
-	await deleteLeftoverD1RepoSessionsBySource({
-		db: env.APP_DB,
-		userId: input.userId,
-		sourceId: input.sourceId,
-	})
-	return deleted
 }
 
 export async function listRepoSessionsByUser(
 	env: RepoSessionCatalogEnv,
 	userId: string,
 ): Promise<Array<RepoSessionRow>> {
-	const fromIndex = await repoSessionIndexRpc({
+	return await repoSessionIndexRpc({
 		env,
 		userId,
 	}).listByUser({ ownerId: userId })
-	const leftover = await listLeftoverD1RepoSessionsByUser({
-		db: env.APP_DB,
-		userId,
-	})
-	return uniqueById([...fromIndex, ...leftover])
 }
 
 export async function updateRepoSession(
@@ -192,19 +160,18 @@ export async function deleteRepoSession(
 		sessionId: string
 	},
 ): Promise<boolean> {
-	const deleted = await repoSessionIndexRpc({
+	await deleteLeftoverD1RepoSession({
+		db: env.APP_DB,
+		userId: input.userId,
+		sessionId: input.sessionId,
+	})
+	return await repoSessionIndexRpc({
 		env,
 		userId: input.userId,
 	}).deleteSession({
 		ownerId: input.userId,
 		sessionId: input.sessionId,
 	})
-	await deleteLeftoverD1RepoSession({
-		db: env.APP_DB,
-		userId: input.userId,
-		sessionId: input.sessionId,
-	})
-	return deleted
 }
 
 export async function countActiveRepoSessions(

@@ -10,7 +10,12 @@ import {
 	repoSessionCleanupReason,
 	unusedActiveDueBefore,
 } from './repo-session-due.ts'
-import { isMissingRepoSessionsTable } from './repo-session-leftover-d1.ts'
+import {
+	deleteLeftoverD1RepoSessionsByUser,
+	isMissingRepoSessionsTable,
+	listLeftoverD1RepoSessionIdsByUser,
+	listLeftoverD1RepoSessionsByUser,
+} from './repo-session-leftover-d1.ts'
 import { repoSessionRpc } from './repo-session-rpc.ts'
 import { repoSessionRowSchema, type RepoSessionRow } from './types.ts'
 
@@ -26,6 +31,7 @@ type StoredRepoSessionRow = Omit<RepoSessionRow, 'user_id'>
 
 export type RepoSessionIndexExportResult = {
 	rows: Array<RepoSessionRow>
+	total: number
 	truncated: boolean
 	nextStartAfter: string | null
 }
@@ -264,6 +270,13 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 			.map(mapStoredRow)
 	}
 
+	private countStoredRows(): number {
+		const row = this.sql
+			.exec<{ count: number }>(`SELECT COUNT(*) AS count FROM repo_sessions`)
+			.toArray()[0]
+		return Number(row?.count ?? 0)
+	}
+
 	private getStoredRow(sessionId: string): StoredRepoSessionRow | null {
 		const row = this.sql
 			.exec<Record<string, SqlStorageValue>>(
@@ -297,11 +310,21 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 
 	private async scheduleNextDue(ownerId: string): Promise<void> {
 		const dueAt = nextOwnerDueAt(this.listStoredRows())
-		await replaceRepoSessionDueOwner({
-			db: this.env.APP_DB,
-			userId: ownerId,
-			dueAt,
-		})
+		try {
+			await replaceRepoSessionDueOwner({
+				db: this.env.APP_DB,
+				userId: ownerId,
+				dueAt,
+			})
+		} catch (error) {
+			console.warn(
+				JSON.stringify({
+					message: 'repo session due-owner hint write failed',
+					userId: ownerId,
+					error: getErrorMessage(error),
+				}),
+			)
+		}
 		if (dueAt == null) {
 			await this.ctx.storage.deleteAlarm().catch(() => undefined)
 			return
@@ -349,50 +372,13 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		ownerId: string
 	}): Promise<RepoSessionIndexHydrateResult> {
 		const ownerId = this.assertOwner(input.ownerId)
+		const alreadyHydrated = this.isHydrated()
 		let leftover: Array<RepoSessionRow> = []
 		try {
-			const { results } = await this.env.APP_DB.prepare(
-				`SELECT * FROM repo_sessions WHERE user_id = ?`,
-			)
-				.bind(ownerId)
-				.all<Record<string, unknown>>()
-			leftover = (results ?? []).map((row) =>
-				repoSessionRowSchema.parse({
-					id: String(row['id']),
-					user_id: String(row['user_id']),
-					source_id: String(row['source_id']),
-					source_repo_id: String(row['source_repo_id']),
-					session_branch: String(row['session_branch']),
-					source_branch: String(row['source_branch']),
-					base_commit: String(row['base_commit']),
-					source_root: String(row['source_root']),
-					conversation_id:
-						row['conversation_id'] == null
-							? null
-							: String(row['conversation_id']),
-					status: String(row['status']),
-					expires_at:
-						row['expires_at'] == null ? null : String(row['expires_at']),
-					last_checkpoint_at:
-						row['last_checkpoint_at'] == null
-							? null
-							: String(row['last_checkpoint_at']),
-					last_checkpoint_commit:
-						row['last_checkpoint_commit'] == null
-							? null
-							: String(row['last_checkpoint_commit']),
-					last_check_run_id:
-						row['last_check_run_id'] == null
-							? null
-							: String(row['last_check_run_id']),
-					last_check_tree_hash:
-						row['last_check_tree_hash'] == null
-							? null
-							: String(row['last_check_tree_hash']),
-					created_at: String(row['created_at']),
-					updated_at: String(row['updated_at']),
-				}),
-			)
+			leftover = await listLeftoverD1RepoSessionsByUser({
+				db: this.env.APP_DB,
+				userId: ownerId,
+			})
 		} catch (error) {
 			if (!isMissingRepoSessionsTable(error)) throw error
 			this.markHydrated()
@@ -400,23 +386,34 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 			return { imported: 0, leftoverRemaining: 0 }
 		}
 		let imported = 0
-		for (let index = 0; index < leftover.length; index += hydrateChunkSize) {
-			const chunk = leftover.slice(index, index + hydrateChunkSize)
-			this.ctx.storage.transactionSync(() => {
-				for (const row of chunk) {
-					const before = this.getStoredRow(row.id)
-					this.insertStoredRow(row)
-					if (before == null && this.getStoredRow(row.id) != null) {
-						imported += 1
+		if (!alreadyHydrated) {
+			for (let index = 0; index < leftover.length; index += hydrateChunkSize) {
+				const chunk = leftover.slice(index, index + hydrateChunkSize)
+				this.ctx.storage.transactionSync(() => {
+					for (const row of chunk) {
+						const before = this.getStoredRow(row.id)
+						this.insertStoredRow(row)
+						if (before == null && this.getStoredRow(row.id) != null) {
+							imported += 1
+						}
 					}
-				}
-			})
+				})
+			}
+			this.markHydrated()
 		}
-		this.markHydrated()
+		await deleteLeftoverD1RepoSessionsByUser({
+			db: this.env.APP_DB,
+			userId: ownerId,
+		})
 		await this.scheduleNextDue(ownerId)
 		return {
 			imported,
-			leftoverRemaining: leftover.length,
+			leftoverRemaining: (
+				await listLeftoverD1RepoSessionIdsByUser({
+					db: this.env.APP_DB,
+					userId: ownerId,
+				})
+			).length,
 		}
 	}
 
@@ -647,18 +644,29 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		const selected = truncated ? rows.slice(0, pageSize) : rows
 		return {
 			rows: selected.map((row) => attachOwner(ownerId, row)),
+			total: this.countStoredRows(),
 			truncated,
 			nextStartAfter: truncated ? (selected.at(-1)?.id ?? null) : null,
 		}
 	}
 
+	async countAll(input: { ownerId: string }): Promise<number> {
+		await this.ensureReady(input.ownerId)
+		return this.countStoredRows()
+	}
+
 	async purge(input: { ownerId: string }): Promise<{ ok: true }> {
 		const ownerId = this.assertOwner(input.ownerId)
+		await deleteLeftoverD1RepoSessionsByUser({
+			db: this.env.APP_DB,
+			userId: ownerId,
+		})
 		await this.ctx.blockConcurrencyWhile(async () => {
 			await this.ctx.storage.deleteAlarm().catch(() => undefined)
 			await this.ctx.storage.deleteAll()
 			this.initializeSchema()
 			this.assertOwner(ownerId)
+			this.markHydrated()
 		})
 		await replaceRepoSessionDueOwner({
 			db: this.env.APP_DB,
@@ -711,6 +719,7 @@ export type RepoSessionIndexRpc = {
 		sourceId: string
 	}) => Promise<number>
 	countActive: (input: { ownerId: string }) => Promise<number>
+	countAll: (input: { ownerId: string }) => Promise<number>
 	hasActiveForSource: (input: {
 		ownerId: string
 		sourceId: string

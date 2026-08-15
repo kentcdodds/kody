@@ -1161,14 +1161,12 @@ async function collectManifestInventoryCounts(input: {
 		}),
 		safeCount('repo session index rows', async () => {
 			if (!repoSessionIndexNamespace(input.env)) return 0
-			const page = await repoSessionIndexRpc({
+			return await repoSessionIndexRpc({
 				env: input.env,
 				userId: input.userId,
-			}).exportSessions({
+			}).countAll({
 				ownerId: input.userId,
-				pageSize: maxExportPageSize,
 			})
-			return page.rows.length
 		}),
 		safeCount('remote connectors', async () =>
 			countScalar(
@@ -1623,6 +1621,9 @@ async function exportRepoSessionIndexRows(input: {
 }): Promise<RepoSessionIndexExportResult | null> {
 	try {
 		if (!repoSessionIndexNamespace(input.env)) {
+			input.warnings.push(
+				'REPO_SESSION_INDEX binding was unavailable; repo session catalog rows were omitted from the export.',
+			)
 			return null
 		}
 		const page = await repoSessionIndexRpc({
