@@ -79,6 +79,16 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 		)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_published_bundle_artifacts_identity
 		ON published_bundle_artifacts(user_id, source_id, artifact_kind, COALESCE(artifact_name, ''), entry_point)`,
+		`CREATE TABLE IF NOT EXISTS remote_connector_settings (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			instance_id TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			attached INTEGER NOT NULL DEFAULT 1,
+			encrypted_shared_secret TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
 	]
 	for (const statement of statements) {
 		await db.prepare(statement).run()
