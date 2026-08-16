@@ -21,9 +21,7 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 	)
 	expect(
 		isRetryableD1LockError(
-			new Error(
-				'D1_ERROR: D1 DB is overloaded. Requests queued for too long.',
-			),
+			new Error('D1_ERROR: D1 DB is overloaded. Requests queued for too long.'),
 		),
 	).toBe(true)
 	expect(
@@ -51,9 +49,7 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 		),
 	).toBe(false)
 	expect(
-		isRetryableD1LockError(
-			new Error('queue is overloaded while uploading...'),
-		),
+		isRetryableD1LockError(new Error('queue is overloaded while uploading...')),
 	).toBe(false)
 	expect(isRetryableD1LockError(new Error('internal error'))).toBe(false)
 	expect(
