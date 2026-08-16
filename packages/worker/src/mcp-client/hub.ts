@@ -273,6 +273,15 @@ class McpClientHubBase extends DurableObject<Env> {
 					callbackUrl: input.callbackUrl,
 				})
 			}
+			const pendingServers = this.manager
+				.listServers()
+				.filter((server) => Boolean(server.auth_url))
+			if (pendingServers.length === 1 && pendingServers[0]) {
+				return await this.restartAfterUnusableCallback({
+					serverId: pendingServers[0].id,
+					callbackUrl: input.callbackUrl,
+				})
+			}
 			return {
 				serverId: null,
 				authSuccess: false,

@@ -334,7 +334,9 @@ test('used and missing callback states recover without exposing an internal stat
 		callbackUrl,
 	})
 	expect(missingState.authorizationNeeded).toBe(true)
+	expect(missingState.serverId).toBe('server-1')
 	expect(missingState.authError).not.toContain('state')
+	expect(manager.rows[0]?.auth_url).toContain('state=fresh-2.server-1')
 })
 
 test('OAuth state recovery recognizes only unusable state failures', () => {
