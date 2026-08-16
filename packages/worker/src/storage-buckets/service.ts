@@ -1,6 +1,5 @@
 import { listRepoSessionDueOwnersPage } from '#worker/repo/repo-session-due-owners.ts'
 import { repoSessionIndexRpc } from '#worker/repo/repo-session-index-client.ts'
-import { isMissingRepoSessionsTable } from '#worker/repo/repo-session-leftover-d1.ts'
 import {
 	readRepoSessionStorageBucketCursor,
 	writeRepoSessionStorageBucketCursor,
@@ -186,12 +185,10 @@ export function repoSessionIdFromStorageBucketId(storageId: string): string {
  * missed registration would otherwise stay invisible for the session's
  * lifetime.
  *
- * Leftover D1 `repo_sessions` still use one INSERT..SELECT filtered on
- * `status = 'active'` so a concurrently discarded session cannot get its
- * inventory row recreated. Index-backed owners are paged from
- * `repo_session_due_owners` with a per-tick owner budget (`limit`) and a
- * persisted `repo_session_storage_bucket_cursor` so a steady-state tick
- * cannot walk the whole fleet of index Durable Objects.
+ * Index-backed owners are paged from `repo_session_due_owners` with a
+ * per-tick owner budget (`limit`) and a persisted
+ * `repo_session_storage_bucket_cursor` so a steady-state tick cannot walk
+ * the whole fleet of index Durable Objects.
  */
 export async function registerMissingRepoSessionStorageBuckets(input: {
 	db: D1Database
@@ -206,28 +203,6 @@ export async function registerMissingRepoSessionStorageBuckets(input: {
 	const now = input.now ?? new Date()
 	const seenAt = now.toISOString()
 	let inserted = 0
-	try {
-		const leftover = await input.db
-			.prepare(
-				`INSERT INTO user_storage_buckets (
-					user_id, storage_id, kind, created_at, last_seen_at
-				)
-				SELECT rs.user_id, ?1 || rs.id, 'repo_session', ?2, ?2
-				FROM repo_sessions rs
-				WHERE rs.status = 'active'
-					AND NOT EXISTS (
-						SELECT 1 FROM user_storage_buckets b
-						WHERE b.user_id = rs.user_id
-							AND b.storage_id = ?1 || rs.id
-					)
-				LIMIT ?3`,
-			)
-			.bind(repoSessionStorageBucketPrefix, seenAt, limit)
-			.run()
-		inserted += leftover.meta?.changes ?? 0
-	} catch (error) {
-		if (!isMissingRepoSessionsTable(error)) throw error
-	}
 	if (!input.env?.REPO_SESSION_INDEX || inserted >= limit) return inserted
 	const ownerBudget = limit
 	const afterUserId = await readRepoSessionStorageBucketCursor(input.db)

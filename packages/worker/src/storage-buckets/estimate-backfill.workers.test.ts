@@ -11,10 +11,7 @@ import {
 	listUserStorageBucketEstimates,
 	registerStorageBucket,
 } from './service.ts'
-import {
-	ensureRepoSessionsTestSchema,
-	ensureUserStorageBucketsTestSchema,
-} from './test-schema.ts'
+import { ensureUserStorageBucketsTestSchema } from './test-schema.ts'
 
 // The first Durable Object RPC in a fresh test isolate lazily loads the whole
 // worker main module (several seconds), which would otherwise trip the
@@ -26,7 +23,6 @@ test(
 	{ timeout: testTimeout },
 	async () => {
 		await ensureUserStorageBucketsTestSchema(env.APP_DB)
-		await ensureRepoSessionsTestSchema(env.APP_DB)
 		clearStorageBucketRegistrationDedupeForTests()
 		const userId = `usb-backfill-${crypto.randomUUID()}`
 		const bucketA = `exec:${crypto.randomUUID()}`

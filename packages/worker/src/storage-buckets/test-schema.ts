@@ -26,34 +26,3 @@ export async function ensureUserStorageBucketsTestSchema(db: D1Database) {
 		)
 		.run()
 }
-
-/**
- * Minimal `repo_sessions` schema (mirrors the squashed baseline) for suites
- * exercising the session-bucket inventory reconciliation, which joins
- * `repo_sessions` against `user_storage_buckets`.
- */
-export async function ensureRepoSessionsTestSchema(db: D1Database) {
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS repo_sessions (
-	id TEXT PRIMARY KEY,
-	user_id TEXT NOT NULL,
-	source_id TEXT NOT NULL,
-	source_repo_id TEXT NOT NULL,
-	session_branch TEXT NOT NULL,
-	source_branch TEXT NOT NULL,
-	base_commit TEXT NOT NULL,
-	source_root TEXT NOT NULL DEFAULT '/',
-	conversation_id TEXT,
-	status TEXT NOT NULL DEFAULT 'active',
-	expires_at TEXT,
-	last_checkpoint_at TEXT,
-	last_checkpoint_commit TEXT,
-	last_check_run_id TEXT,
-	last_check_tree_hash TEXT,
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL
-)`,
-		)
-		.run()
-}

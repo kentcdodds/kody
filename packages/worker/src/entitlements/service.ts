@@ -10,7 +10,6 @@ import {
 import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
-import { isMissingRepoSessionsTable } from '#worker/repo/repo-session-leftover-d1.ts'
 import { countActiveRepoSessions } from '#worker/repo/repo-sessions.ts'
 import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
 import { normalizeStableUserId } from '#worker/user-id.ts'
@@ -478,29 +477,6 @@ export async function calculateUserD1StorageBytes(input: {
 			WHERE user_id = ?`,
 			[userId],
 		),
-		sumStorageBytes(
-			db,
-			`SELECT COALESCE(SUM(
-				${textBytesExpression([
-					'source_id',
-					'source_repo_id',
-					'session_branch',
-					'source_branch',
-					'base_commit',
-					'source_root',
-					'conversation_id',
-					'last_checkpoint_commit',
-					'last_check_run_id',
-					'last_check_tree_hash',
-				])}
-			), 0) AS count
-			FROM repo_sessions
-			WHERE user_id = ?`,
-			[userId],
-		).catch((error: unknown) => {
-			if (isMissingRepoSessionsTable(error)) return 0
-			throw error
-		}),
 		// Run records and the keyed package-invocation idempotency ledger live
 		// in the per-user RunLog Durable Object (the D1 package_invocations
 		// table was dropped). Both are self-expiring operational state, not

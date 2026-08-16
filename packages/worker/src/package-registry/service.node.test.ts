@@ -1257,7 +1257,6 @@ function createEntitlementsDatabase(input: {
 								'saved_packages',
 								'entity_sources',
 								'jobs',
-								'repo_sessions',
 								'published_bundle_artifacts',
 							]
 							if (

@@ -108,12 +108,6 @@ export const accountOperatorOwnedD1Surfaces = [
 			'Operator-provisioned built-in OAuth app registrations (global config like feature flags; no user data). Per-user connections and token secrets remain user-scoped and covered by their own targets.',
 	},
 	{
-		table: 'repo_session_index_backfill_cursor',
-		surface: 'repo_session_index_backfill_cursor',
-		reason:
-			'Platform-owned leftover D1 catalog hydrate cursor (one singleton row). Not user data; account deletion does not touch it.',
-	},
-	{
 		table: 'repo_session_storage_bucket_cursor',
 		surface: 'repo_session_storage_bucket_cursor',
 		reason:
@@ -258,14 +252,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	// service binding's purgeUser and export through listArchivedJobArtifacts /
 	// listJobsForUser.
 	{ kind: 'user_id', table: 'published_bundle_artifacts' },
-	{
-		kind: 'user_id',
-		table: 'repo_sessions',
-		includeInExport: false,
-		surface: 'repo_sessions',
-		reason:
-			'Leftover D1 catalog omitted from portable export; RepoSessionIndex is the export authority and hydrates leftover rows on first RPC.',
-	},
 	{
 		kind: 'user_id',
 		table: 'repo_session_due_owners',

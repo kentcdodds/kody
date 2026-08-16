@@ -26,10 +26,6 @@ import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import { repoSessionIndexRpc } from '#worker/repo/repo-session-index-client.ts'
 import { listRepoSessionsByUser } from '#worker/repo/repo-sessions.ts'
 import {
-	deleteLeftoverD1RepoSessionsByUser,
-	listLeftoverD1RepoSessionIdsByUser,
-} from '#worker/repo/repo-session-leftover-d1.ts'
-import {
 	listAccountUserPackageServices,
 	listAccountUserStorageIds,
 } from '#worker/account/user-inventory.ts'
@@ -275,21 +271,10 @@ async function listUserSavedPackages(env: Env, userId: string) {
 }
 
 async function listUserRepoSessions(env: Env, userId: string) {
-	const fromIndex = env.REPO_SESSION_INDEX
-		? await listRepoSessionsByUser(env, userId)
-		: []
-	const leftoverIds = await listLeftoverD1RepoSessionIdsByUser({
-		db: env.APP_DB,
-		userId,
-	})
-	const byId = new Map<string, { id: string }>()
-	for (const row of fromIndex) {
-		byId.set(row.id, { id: row.id })
-	}
-	for (const sessionId of leftoverIds) {
-		byId.set(sessionId, { id: sessionId })
-	}
-	return [...byId.values()]
+	if (!env.REPO_SESSION_INDEX) return []
+	return (await listRepoSessionsByUser(env, userId)).map((row) => ({
+		id: row.id,
+	}))
 }
 
 async function listUserRemoteConnectors(env: Env, userId: string) {
@@ -731,10 +716,6 @@ async function purgeRepoSessionIndex(input: {
 	warnings: Array<string>
 }): Promise<number> {
 	try {
-		await deleteLeftoverD1RepoSessionsByUser({
-			db: input.env.APP_DB,
-			userId: input.userId,
-		})
 		await repoSessionIndexRpc({
 			env: input.env,
 			userId: input.userId,

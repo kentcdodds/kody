@@ -209,7 +209,6 @@ test('operator-owned tables are explicit deletion/export exclusions', () => {
 	applyMigrations(db)
 	const expectedTables = [
 		'platform_oauth_apps',
-		'repo_session_index_backfill_cursor',
 		'repo_session_storage_bucket_cursor',
 		'system_email_attachments',
 		'system_email_delivery_events',

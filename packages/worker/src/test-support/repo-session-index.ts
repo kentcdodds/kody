@@ -2,7 +2,6 @@ import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client
 import {
 	type RepoSessionIndexCleanupResult,
 	type RepoSessionIndexExportResult,
-	type RepoSessionIndexHydrateResult,
 	type RepoSessionIndexRpc,
 	type RepoSessionIndexUpdateInput,
 } from '#worker/repo/repo-session-index-do.ts'
@@ -41,9 +40,6 @@ export function createInMemoryRepoSessionIndexEnv(
 			},
 			async restoreToBookmark() {
 				return { undoBookmark: 'memory' }
-			},
-			async hydrateFromD1(): Promise<RepoSessionIndexHydrateResult> {
-				return { imported: 0, leftoverRemaining: 0 }
 			},
 			async insertSession(input) {
 				if (input.ownerId !== userId) {

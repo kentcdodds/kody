@@ -85,14 +85,6 @@ function createRetentionDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec('PRAGMA foreign_keys = ON')
 	sqlite.exec(`
-		CREATE TABLE repo_sessions (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			source_id TEXT NOT NULL,
-			status TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		);
 		CREATE TABLE mcp_memory_conversation_suppressions (
 			user_id TEXT NOT NULL,
 			conversation_id TEXT NOT NULL,
@@ -538,13 +530,6 @@ test('published bundle artifact retention deletes stale rows, KV blobs, and sour
 				daysAgo(60),
 			)
 	}
-	sqlite
-		.prepare(
-			`INSERT INTO repo_sessions (
-			id, user_id, source_id, status, created_at, updated_at
-		) VALUES ('session-1', 'user-1', 'source-session', 'active', ?, ?)`,
-		)
-		.run(daysAgo(1), daysAgo(1))
 	for (const [id, sourceId, commit, createdAt] of [
 		[
 			'artifact-delete',

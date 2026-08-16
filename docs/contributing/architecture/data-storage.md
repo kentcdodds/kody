@@ -108,8 +108,8 @@ Deletion must cover these user-owned surfaces:
   in `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed.
   OAuth token/grant KV is owned by the OAuth provider and is handled through
   provider grant revocation rather than app-level key scans.
-- **Cloudflare Artifacts:** source repos referenced by `entity_sources` and
-  `repo_sessions` are deleted through the REST client in
+- **Cloudflare Artifacts:** source repos referenced by `entity_sources` and the
+  per-user `RepoSessionIndex` catalog are deleted through the REST client in
   `packages/worker/src/repo/artifacts.ts`.
 
 ## Account export inventory
@@ -257,12 +257,12 @@ should be rebuilt by reindexing after import.
 
 Cloudflare Artifacts repo contents are not inlined in the JSON export. D1 stores
 metadata/projections, while canonical package, job, and app source lives in the
-Artifacts repos referenced by `entity_sources.repo_id` and
-`repo_sessions.source_repo_id`. For account migration to a new Cloudflare
-account, first run `account_export_manifest`, page through export sections as
-needed, then separately fetch or clone every repo listed in `artifactRepos`
-using Artifacts access and recreate those repos in the destination account
-before importing D1 projections or republishing packages.
+Artifacts repos referenced by `entity_sources.repo_id` and the
+`RepoSessionIndex` catalog `source_repo_id`. For account migration to a new
+Cloudflare account, first run `account_export_manifest`, page through export
+sections as needed, then separately fetch or clone every repo listed in
+`artifactRepos` using Artifacts access and recreate those repos in the
+destination account before importing D1 projections or republishing packages.
 
 ## D1 (`APP_DB`)
 
@@ -305,6 +305,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   [Run records](./run-records.md)).
 - There is no `jobs` or `archived_job_artifacts` table in `APP_DB` — those live
   in the jobs worker's `JOBS_DB` (see [D1 (`JOBS_DB`)](#d1-jobs_db)).
+- There is no `repo_sessions` table in `APP_DB` (dropped in migration `0013`).
+  The catalog lives in the per-user `RepoSessionIndex` Durable Object. D1 keeps
+  only the thin `repo_session_due_owners` hint and the platform-owned
+  `repo_session_storage_bucket_cursor`.
 - `package_service_states` (`0095-package-service-states.sql`): per-service
   liveness projection (`running` / `idle` / `stopped` / `error`) for discovery,
   account export/deletion inventory, and disaster recovery. Upserted and
@@ -921,8 +925,8 @@ via `durableObjectNameFromParts`); domain helpers such as
   untrimmed `userId` (like RunLog / UserMeter / Mailbox). Authority for the
   per-user session catalog: rows, active counts, conversation resume, export,
   and deletion inventory. Each index self-alarms; D1 keeps only the thin
-  `repo_session_due_owners` hint (one row per user with any session) plus
-  platform-owned hydrate and storage-bucket inventory cursors.
+  `repo_session_due_owners` hint (one row per user with any session) plus the
+  platform-owned storage-bucket inventory cursor.
 - `RepoSession` — `repoSessionDurableObjectName(sessionId)` keyed by session id
   only (not user-prefixed). Every RPC validates the catalog row's `user_id`
   before touching the workspace. Account deletion enumerates the user's session
@@ -1019,8 +1023,7 @@ repos plus D1 `entity_sources` rows and a per-user `RepoSessionIndex` catalog.
   `(user_id, entity_kind, entity_id)` to the repo identity and last published
   commit.
 - `RepoSessionIndex` stores mutable editing-fork catalog rows for repo session
-  Durable Objects. Leftover D1 `repo_sessions` rows hydrate into the index until
-  the Phase 2 DROP.
+  Durable Objects. D1 does not hold catalog rows.
 - Published source snapshots and bundle artifacts are stored in
   `BUNDLE_ARTIFACTS_KV` and keyed by `source_id` plus `published_commit`.
 

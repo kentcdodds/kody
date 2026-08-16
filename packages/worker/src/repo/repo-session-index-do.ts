@@ -10,12 +10,6 @@ import {
 	repoSessionCleanupReason,
 	unusedActiveDueBefore,
 } from './repo-session-due.ts'
-import {
-	countLeftoverD1RepoSessionsByUser,
-	deleteLeftoverD1RepoSessionsByUser,
-	isMissingRepoSessionsTable,
-	listLeftoverD1RepoSessionsByUser,
-} from './repo-session-leftover-d1.ts'
 import { repoSessionRpc } from './repo-session-rpc.ts'
 import { repoSessionRowSchema, type RepoSessionRow } from './types.ts'
 
@@ -23,7 +17,6 @@ const schemaVersionKey = 'schema_version'
 const hydratedFromD1Key = 'hydrated_from_d1'
 const repoSessionIndexSchemaVersion = 1
 const defaultCleanupBatchSize = 100
-const hydrateChunkSize = 500
 const defaultExportPageSize = 100
 const maxExportPageSize = 500
 
@@ -40,11 +33,6 @@ export type RepoSessionIndexCleanupResult = {
 	checked: number
 	deleted: number
 	errors: number
-}
-
-export type RepoSessionIndexHydrateResult = {
-	imported: number
-	leftoverRemaining: number
 }
 
 export type RepoSessionIndexUpdateInput = {
@@ -335,9 +323,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 
 	private async ensureReady(ownerId: string): Promise<string> {
 		const id = this.assertOwner(ownerId)
-		if (!this.isHydrated()) {
-			await this.hydrateFromD1({ ownerId: id })
-		}
+		if (!this.isHydrated()) this.markHydrated()
 		return id
 	}
 
@@ -366,65 +352,6 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 			objectKind: 'repo_session_index',
 			environment: this.env,
 		})
-	}
-
-	async hydrateFromD1(input: {
-		ownerId: string
-	}): Promise<RepoSessionIndexHydrateResult> {
-		const ownerId = this.assertOwner(input.ownerId)
-		if (this.isHydrated()) {
-			await deleteLeftoverD1RepoSessionsByUser({
-				db: this.env.APP_DB,
-				userId: ownerId,
-			})
-			await this.scheduleNextDue(ownerId)
-			return {
-				imported: 0,
-				leftoverRemaining: await countLeftoverD1RepoSessionsByUser({
-					db: this.env.APP_DB,
-					userId: ownerId,
-				}),
-			}
-		}
-		let imported = 0
-		let afterId = ''
-		try {
-			while (true) {
-				const chunk = await listLeftoverD1RepoSessionsByUser({
-					db: this.env.APP_DB,
-					userId: ownerId,
-					afterId,
-					limit: hydrateChunkSize,
-				})
-				if (chunk.length === 0) break
-				this.ctx.storage.transactionSync(() => {
-					for (const row of chunk) {
-						const before = this.getStoredRow(row.id)
-						this.insertStoredRow(row)
-						if (before == null && this.getStoredRow(row.id) != null) {
-							imported += 1
-						}
-					}
-				})
-				afterId = chunk.at(-1)?.id ?? afterId
-				if (chunk.length < hydrateChunkSize) break
-			}
-		} catch (error) {
-			if (!isMissingRepoSessionsTable(error)) throw error
-		}
-		this.markHydrated()
-		await deleteLeftoverD1RepoSessionsByUser({
-			db: this.env.APP_DB,
-			userId: ownerId,
-		})
-		await this.scheduleNextDue(ownerId)
-		return {
-			imported,
-			leftoverRemaining: await countLeftoverD1RepoSessionsByUser({
-				db: this.env.APP_DB,
-				userId: ownerId,
-			}),
-		}
 	}
 
 	async insertSession(input: {
@@ -667,10 +594,6 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 
 	async purge(input: { ownerId: string }): Promise<{ ok: true }> {
 		const ownerId = this.assertOwner(input.ownerId)
-		await deleteLeftoverD1RepoSessionsByUser({
-			db: this.env.APP_DB,
-			userId: ownerId,
-		})
 		await this.ctx.blockConcurrencyWhile(async () => {
 			await this.ctx.storage.deleteAlarm().catch(() => undefined)
 			await this.ctx.storage.deleteAll()
@@ -699,9 +622,6 @@ export type RepoSessionIndexRpc = {
 	restoreToBookmark: (input: {
 		bookmark: string
 	}) => Promise<{ undoBookmark: string }>
-	hydrateFromD1: (input: {
-		ownerId: string
-	}) => Promise<RepoSessionIndexHydrateResult>
 	insertSession: (input: {
 		ownerId: string
 		row: RepoSessionRow

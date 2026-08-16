@@ -1,9 +1,4 @@
 import { runD1WithRetry } from '#worker/d1-retry.ts'
-import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
-import {
-	deleteLeftoverD1RepoSessionsBySource,
-	listLeftoverD1RepoSessionIdsBySource,
-} from './repo-session-leftover-d1.ts'
 import {
 	repoSessionIndexNamespace,
 	type RepoSessionIndexEnv,
@@ -316,32 +311,6 @@ export async function deleteEntitySource(
 ): Promise<boolean> {
 	if (repoSessionIndexNamespace(env as RepoSessionIndexEnv)) {
 		await deleteRepoSessionsBySourceForUser(env as RepoSessionIndexEnv, {
-			userId: input.userId,
-			sourceId: input.id,
-		})
-	} else {
-		const leftoverIds = await listLeftoverD1RepoSessionIdsBySource({
-			db: env.APP_DB,
-			userId: input.userId,
-			sourceId: input.id,
-		})
-		if (leftoverIds.length > 0) {
-			await env.APP_DB.prepare(
-				`DELETE FROM user_storage_buckets
-				WHERE user_id = ?
-					AND kind = 'repo_session'
-					AND storage_id IN (${leftoverIds.map(() => '?').join(', ')})`,
-			)
-				.bind(
-					input.userId,
-					...leftoverIds.map((sessionId) =>
-						repoSessionStorageBucketId(sessionId),
-					),
-				)
-				.run()
-		}
-		await deleteLeftoverD1RepoSessionsBySource({
-			db: env.APP_DB,
 			userId: input.userId,
 			sourceId: input.id,
 		})

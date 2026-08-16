@@ -14,7 +14,6 @@ import { reconcileD1StorageBytes } from '#worker/entitlements/d1-storage-reconci
 import { pruneJobRetention } from '#worker/jobs/job-retention-cleanup.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { reconcileArtifactsPushes } from '#worker/jobs/reconcile-artifacts-pushes.ts'
-import { backfillRepoSessionIndexes } from '#worker/repo/repo-session-index-backfill.ts'
 import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts'
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
 import { aggregateUsageRollups } from '#worker/usage/aggregate-rollups.ts'
@@ -63,10 +62,9 @@ export async function runScheduledLane(input: {
 				now: input.scheduledAt,
 			})
 		case 'repo_session_index_backfill':
-			return backfillRepoSessionIndexes({
-				env: input.env,
-				now: input.scheduledAt,
-			})
+			// Retired after leftover D1 DROP. Name stays so in-flight queue
+			// messages from the previous deploy parse and no-op.
+			return
 		case 'reconcile_inbound_deliveries':
 			return sweepStaleInboundDeliveries({
 				env: input.env,

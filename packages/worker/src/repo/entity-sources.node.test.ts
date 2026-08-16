@@ -1,6 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
+import { type RepoSessionRow } from './types.ts'
 import {
 	deleteEntitySource,
 	externalReconcileGraceMs,
@@ -8,17 +10,35 @@ import {
 	markEntitySourcePendingExternalReconcile,
 } from './entity-sources.ts'
 
+function catalogSessionRow(
+	overrides: Partial<RepoSessionRow> & Pick<RepoSessionRow, 'id' | 'user_id'>,
+): RepoSessionRow {
+	return {
+		source_id: 'source-1',
+		source_repo_id: 'repo-1',
+		session_branch: `sessions/${overrides.id}`,
+		source_branch: 'main',
+		base_commit: 'commit',
+		source_root: '/',
+		conversation_id: null,
+		status: 'active',
+		expires_at: null,
+		last_checkpoint_at: null,
+		last_checkpoint_commit: null,
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		created_at: '2026-06-24T19:00:00.000Z',
+		updated_at: '2026-06-24T19:00:00.000Z',
+		...overrides,
+	}
+}
+
 test('source deletion removes only its repo-session storage inventory', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
 		CREATE TABLE entity_sources (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL
-		);
-		CREATE TABLE repo_sessions (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			source_id TEXT NOT NULL
 		);
 		CREATE TABLE user_storage_buckets (
 			user_id TEXT NOT NULL,
@@ -29,18 +49,39 @@ test('source deletion removes only its repo-session storage inventory', async ()
 		INSERT INTO entity_sources VALUES
 			('source-a', 'user-a'),
 			('source-b', 'user-b');
-		INSERT INTO repo_sessions VALUES
-			('session-a', 'user-a', 'source-a'),
-			('session-b', 'user-b', 'source-b');
 		INSERT INTO user_storage_buckets VALUES
 			('user-a', 'repo-session:session-a', 'repo_session'),
 			('user-a', 'exec:keep', 'execute'),
 			('user-b', 'repo-session:session-b', 'repo_session');
 	`)
 	const db = createD1FromSqlite(sqlite)
+	const indexEnv = createInMemoryRepoSessionIndexEnv(db)
+	await indexEnv.REPO_SESSION_INDEX.get(
+		indexEnv.REPO_SESSION_INDEX.idFromName('user-a'),
+	).insertSession({
+		ownerId: 'user-a',
+		row: catalogSessionRow({
+			id: 'session-a',
+			user_id: 'user-a',
+			source_id: 'source-a',
+		}),
+	})
+	await indexEnv.REPO_SESSION_INDEX.get(
+		indexEnv.REPO_SESSION_INDEX.idFromName('user-b'),
+	).insertSession({
+		ownerId: 'user-b',
+		row: catalogSessionRow({
+			id: 'session-b',
+			user_id: 'user-b',
+			source_id: 'source-b',
+		}),
+	})
 
 	await expect(
-		deleteEntitySource({ APP_DB: db }, { id: 'source-a', userId: 'user-a' }),
+		deleteEntitySource(
+			{ APP_DB: db, REPO_SESSION_INDEX: indexEnv.REPO_SESSION_INDEX },
+			{ id: 'source-a', userId: 'user-a' },
+		),
 	).resolves.toBe(true)
 	expect(
 		sqlite
@@ -59,8 +100,17 @@ test('source deletion removes only its repo-session storage inventory', async ()
 		},
 	])
 	expect(
-		sqlite.prepare(`SELECT id FROM repo_sessions ORDER BY id`).all(),
-	).toEqual([{ id: 'session-b' }])
+		await indexEnv.REPO_SESSION_INDEX.get(
+			indexEnv.REPO_SESSION_INDEX.idFromName('user-a'),
+		).listByUser({ ownerId: 'user-a' }),
+	).toEqual([])
+	expect(
+		(
+			await indexEnv.REPO_SESSION_INDEX.get(
+				indexEnv.REPO_SESSION_INDEX.idFromName('user-b'),
+			).listByUser({ ownerId: 'user-b' })
+		).map((row) => row.id),
+	).toEqual(['session-b'])
 })
 
 test('external reconcile selects token-pending packages and the daily backstop covers the fleet', async () => {

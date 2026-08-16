@@ -1,9 +1,5 @@
 import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
 import {
-	deleteLeftoverD1RepoSession,
-	deleteLeftoverD1RepoSessionsBySource,
-} from './repo-session-leftover-d1.ts'
-import {
 	repoSessionIndexRpc,
 	type RepoSessionIndexEnv,
 } from './repo-session-index-client.ts'
@@ -91,11 +87,6 @@ export async function deleteRepoSessionsBySourceForUser(
 			)
 			.run()
 	}
-	await deleteLeftoverD1RepoSessionsBySource({
-		db: env.APP_DB,
-		userId: input.userId,
-		sourceId: input.sourceId,
-	})
 	return await repoSessionIndexRpc({
 		env,
 		userId: input.userId,
@@ -160,11 +151,6 @@ export async function deleteRepoSession(
 		sessionId: string
 	},
 ): Promise<boolean> {
-	await deleteLeftoverD1RepoSession({
-		db: env.APP_DB,
-		userId: input.userId,
-		sessionId: input.sessionId,
-	})
 	return await repoSessionIndexRpc({
 		env,
 		userId: input.userId,

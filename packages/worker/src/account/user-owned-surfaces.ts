@@ -62,7 +62,7 @@ export type UserOwnedR2Surface = {
 }
 
 export type UserOwnedArtifactSurface = {
-	id: 'entity_sources' | 'repo_sessions'
+	id: 'entity_sources'
 	sourceTable: string
 	repoColumn: string
 	notes: string
@@ -160,7 +160,7 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			deletionResultKey: 'repoSessionIndexes',
 			export: 'include',
 			notes:
-				'Per-user repo session catalog (REPO_SESSION_INDEX binding; idFromName(userId)). Authority for session rows, active counts, conversation resume, export, and deletion inventory. Workspace bytes stay in per-session RepoSession DOs. D1 keeps only the thin repo_session_due_owners hint plus leftover repo_sessions rows until the Phase 2 DROP.',
+				'Per-user repo session catalog (REPO_SESSION_INDEX binding; idFromName(userId)). Authority for session rows, active counts, conversation resume, export, and deletion inventory. Workspace bytes stay in per-session RepoSession DOs. D1 keeps only the thin repo_session_due_owners hint plus the storage-bucket inventory cursor.',
 		},
 		{
 			id: 'mcp',
@@ -289,13 +289,6 @@ export const accountUserOwnedArtifactSurfaces: ReadonlyArray<UserOwnedArtifactSu
 			repoColumn: 'repo_id',
 			notes:
 				'Cloudflare Artifacts repos cleaned by cleanupAllUserArtifactRepos.',
-		},
-		{
-			id: 'repo_sessions',
-			sourceTable: 'repo_sessions',
-			repoColumn: 'source_repo_id',
-			notes:
-				'Cloudflare Artifacts repos cleaned by cleanupAllUserArtifactRepos. Catalog rows live in RepoSessionIndex; leftover D1 repo_sessions remain until Phase 2 DROP.',
 		},
 	] as const
 

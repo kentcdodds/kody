@@ -51,6 +51,10 @@
 		{
 			"filename": "0012-repo-session-storage-bucket-cursor.sql",
 			"sha256": "e010fa54c7a236b258a606db7a091fb4e0e4412ae1c23abd85798742372f4a70"
+		},
+		{
+			"filename": "0013-drop-repo-sessions.sql",
+			"sha256": "848ab0ea3e0c1dbf6644e9e2f89088896eed2e388418d723265a36143c202ed5"
 		}
 	]
 }

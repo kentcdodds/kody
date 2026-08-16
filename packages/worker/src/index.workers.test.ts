@@ -12,7 +12,6 @@ const mocks = vi.hoisted(() => ({
 	reconcileArtifactsPushes: vi.fn(async () => ({})),
 	sweepStaleInboundDeliveries: vi.fn(async () => ({})),
 	cleanupRepoSessionBranches: vi.fn(async () => ({})),
-	backfillRepoSessionIndexes: vi.fn(async () => ({})),
 	pruneSystemEmailRetention: vi.fn(async () => ({})),
 	pruneRetention: vi.fn(async () => ({})),
 	pruneJobRetention: vi.fn(async () => ({})),
@@ -39,10 +38,6 @@ vi.mock('./jobs/reconcile-artifacts-pushes.ts', () => ({
 
 vi.mock('./repo/repo-session-cleanup.ts', () => ({
 	cleanupRepoSessionBranches: mocks.cleanupRepoSessionBranches,
-}))
-
-vi.mock('./repo/repo-session-index-backfill.ts', () => ({
-	backfillRepoSessionIndexes: mocks.backfillRepoSessionIndexes,
 }))
 
 vi.mock('#worker/email/system-email.ts', async (importOriginal) => ({
@@ -121,7 +116,6 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 		expect.objectContaining({ now: scheduledAt }),
 	)
 	expect(mocks.cleanupRepoSessionBranches).toHaveBeenCalledTimes(1)
-	expect(mocks.backfillRepoSessionIndexes).toHaveBeenCalledTimes(1)
 	expect(mocks.sweepStaleInboundDeliveries).toHaveBeenCalledWith(
 		expect.objectContaining({ now: scheduledAt }),
 	)

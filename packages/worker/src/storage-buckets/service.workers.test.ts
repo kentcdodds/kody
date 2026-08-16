@@ -1,5 +1,8 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { replaceRepoSessionDueOwner } from '#worker/repo/repo-session-due-owners.ts'
+import { repoSessionIndexRpc } from '#worker/repo/repo-session-index-client.ts'
+import { type RepoSessionRow } from '#worker/repo/types.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	clearStorageBucketRegistrationDedupeForTests,
@@ -12,27 +15,29 @@ import {
 	registerMissingRepoSessionStorageBuckets,
 	registerStorageBucket,
 } from './service.ts'
-import {
-	ensureRepoSessionsTestSchema,
-	ensureUserStorageBucketsTestSchema,
-} from './test-schema.ts'
+import { ensureUserStorageBucketsTestSchema } from './test-schema.ts'
 
-async function seedRepoSessionRow(input: {
-	db: D1Database
-	sessionId: string
-	userId: string
-	status: 'active' | 'published' | 'discarded'
-}) {
-	const now = new Date().toISOString()
-	await input.db
-		.prepare(
-			`INSERT INTO repo_sessions (
-				id, user_id, source_id, source_repo_id, session_branch,
-				source_branch, base_commit, status, created_at, updated_at
-			) VALUES (?, ?, 'source-1', 'repo-1', 'sessions/x', 'main', 'abc', ?, ?, ?)`,
-		)
-		.bind(input.sessionId, input.userId, input.status, now, now)
-		.run()
+function catalogSessionRow(
+	overrides: Partial<RepoSessionRow> & Pick<RepoSessionRow, 'id' | 'user_id'>,
+): RepoSessionRow {
+	return {
+		source_id: 'source-1',
+		source_repo_id: 'repo-1',
+		session_branch: `sessions/${overrides.id}`,
+		source_branch: 'main',
+		base_commit: 'commit',
+		source_root: '/',
+		conversation_id: null,
+		status: 'active',
+		expires_at: null,
+		last_checkpoint_at: null,
+		last_checkpoint_commit: null,
+		last_check_run_id: null,
+		last_check_tree_hash: null,
+		created_at: '2026-06-24T19:00:00.000Z',
+		updated_at: '2026-06-24T19:00:00.000Z',
+		...overrides,
+	}
 }
 
 test('registerStorageBucket upserts and list helpers scope correctly on real D1', async () => {
@@ -105,28 +110,31 @@ test('registerStorageBucket upserts and list helpers scope correctly on real D1'
 
 test('missing repo-session inventory reconciliation registers only active sessions', async () => {
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
-	await ensureRepoSessionsTestSchema(env.APP_DB)
 	const userId = `usb-reconcile-${crypto.randomUUID()}`
 	const activeSession = `rs-active-${crypto.randomUUID()}`
 	const discardedSession = `rs-discarded-${crypto.randomUUID()}`
 	const registeredSession = `rs-registered-${crypto.randomUUID()}`
-	await seedRepoSessionRow({
-		db: env.APP_DB,
-		sessionId: activeSession,
-		userId,
-		status: 'active',
+	const index = repoSessionIndexRpc({ env, userId })
+	await index.insertSession({
+		ownerId: userId,
+		row: catalogSessionRow({ id: activeSession, user_id: userId }),
 	})
-	await seedRepoSessionRow({
-		db: env.APP_DB,
-		sessionId: discardedSession,
-		userId,
-		status: 'discarded',
+	await index.insertSession({
+		ownerId: userId,
+		row: catalogSessionRow({
+			id: discardedSession,
+			user_id: userId,
+			status: 'discarded',
+		}),
 	})
-	await seedRepoSessionRow({
+	await index.insertSession({
+		ownerId: userId,
+		row: catalogSessionRow({ id: registeredSession, user_id: userId }),
+	})
+	await replaceRepoSessionDueOwner({
 		db: env.APP_DB,
-		sessionId: registeredSession,
 		userId,
-		status: 'active',
+		dueAt: '2099-01-01T00:00:00.000Z',
 	})
 	// Pre-existing inventory row: reconciliation must not duplicate or touch it.
 	await env.APP_DB.prepare(
@@ -139,6 +147,7 @@ test('missing repo-session inventory reconciliation registers only active sessio
 
 	const inserted = await registerMissingRepoSessionStorageBuckets({
 		db: env.APP_DB,
+		env,
 	})
 	expect(inserted).toBeGreaterThanOrEqual(1)
 
@@ -146,8 +155,6 @@ test('missing repo-session inventory reconciliation registers only active sessio
 	const ids = estimates.map((row) => row.storageId)
 	expect(ids).toContain(`repo-session:${activeSession}`)
 	expect(ids).not.toContain(`repo-session:${discardedSession}`)
-	// The active session recovered by reconciliation starts unmeasured so the
-	// estimate backfill sweep picks it up; the pre-existing row is untouched.
 	expect(
 		estimates.find((row) => row.storageId === `repo-session:${activeSession}`)
 			?.estimatedBytes,
@@ -158,8 +165,7 @@ test('missing repo-session inventory reconciliation registers only active sessio
 		)?.estimatedBytes,
 	).toBe(42)
 
-	// Second run is idempotent for this user's sessions.
-	await registerMissingRepoSessionStorageBuckets({ db: env.APP_DB })
+	await registerMissingRepoSessionStorageBuckets({ db: env.APP_DB, env })
 	const after = await listUserStorageBucketEstimates({ env, userId })
 	expect(after.length).toBe(estimates.length)
 })

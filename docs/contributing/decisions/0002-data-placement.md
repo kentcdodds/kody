@@ -121,8 +121,8 @@ placements are the decision, independent of any track's merge state):
   defense in depth.
 - **Per-user mailbox DO** for email metadata: planned second wave.
 - **Per-user repo session catalog DO** (`RepoSessionIndex`) plus a thin D1
-  `repo_session_due_owners` reverse index: the shared `repo_sessions` table is
-  not the catalog authority. Workspace DOs stay keyed by session id.
+  `repo_session_due_owners` reverse index. Workspace DOs stay keyed by session
+  id. Shared D1 `repo_sessions` is dropped.
 
 Deliberately stays in D1: users/auth, secrets/values/integrations config,
 publish pointers and package projections, community tables, jobs schedule
