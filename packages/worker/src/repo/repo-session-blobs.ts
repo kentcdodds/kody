@@ -28,18 +28,13 @@ export async function purgeRepoSessionWorkspaceBlobs(input: {
 }): Promise<void> {
 	if (!input.blobs) return
 	const prefix = repoSessionWorkspaceR2ListPrefix(input.durableObjectId)
-	let cursor: string | undefined
 	for (;;) {
 		const page = await input.blobs.list({
 			prefix,
 			limit: r2ListPageSize,
-			...(cursor ? { cursor } : {}),
 		})
-		if (page.objects.length > 0) {
-			await input.blobs.delete(page.objects.map((object) => object.key))
-		}
-		if (!page.truncated) return
-		cursor = page.cursor
+		if (page.objects.length === 0) return
+		await input.blobs.delete(page.objects.map((object) => object.key))
 	}
 }
 
