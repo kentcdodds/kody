@@ -164,10 +164,13 @@ test('does not retry missing artifact files as packfile corruption', async () =>
 	mocks.fetch.mockReset()
 	mocks.fetch.mockResolvedValue(undefined)
 	mocks.init.mockClear()
-	const missing = Object.assign(new Error('Could not find community-icon.png'), {
-		code: 'NotFoundError',
-		name: 'NotFoundError',
-	})
+	const missing = Object.assign(
+		new Error('Could not find community-icon.png'),
+		{
+			code: 'NotFoundError',
+			name: 'NotFoundError',
+		},
+	)
 	mocks.readBlob.mockReset()
 	mocks.readBlob.mockRejectedValue(missing)
 
