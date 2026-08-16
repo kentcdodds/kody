@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as CloudflareWorkers from 'cloudflare:workers'
 
 type FakeServerRow = {
 	id: string
@@ -53,17 +54,21 @@ vi.mock('@sentry/cloudflare', () => ({
 	) => durableObjectClass,
 }))
 
-vi.mock('cloudflare:workers', () => ({
-	DurableObject: class {
-		protected readonly ctx: DurableObjectState
-		protected readonly env: Env
+vi.mock('cloudflare:workers', async (importOriginal) => {
+	const actual = await importOriginal<CloudflareWorkers>()
+	return {
+		...actual,
+		DurableObject: class {
+			protected readonly ctx: DurableObjectState
+			protected readonly env: Env
 
-		constructor(ctx: DurableObjectState, env: Env) {
-			this.ctx = ctx
-			this.env = env
-		}
-	},
-}))
+			constructor(ctx: DurableObjectState, env: Env) {
+				this.ctx = ctx
+				this.env = env
+			}
+		},
+	}
+})
 
 vi.mock('agents/mcp/do-oauth-client-provider', () => ({
 	DurableObjectOAuthClientProvider: class {
@@ -250,8 +255,7 @@ test('reconnect repairs stale callbacks and always replaces pending OAuth state'
 	const manager = mockModule.manager
 	if (!manager) throw new Error('Fake manager was not constructed.')
 
-	const oldCallback =
-		'https://heykody.app/account/mcp-servers/oauth/callback'
+	const oldCallback = 'https://heykody.app/account/mcp-servers/oauth/callback'
 	const currentCallback =
 		'https://kody.codes/account/mcp-servers/oauth/callback'
 	seedServer({
@@ -276,9 +280,9 @@ test('reconnect repairs stale callbacks and always replaces pending OAuth state'
 	expect(repairedRow?.callback_url).toBe(currentCallback)
 	expect(repairedRow?.client_id).toBe('client-1')
 	expect(repairedRow?.client_id).not.toBe('stale-client')
-	expect(
-		manager.mcpConnections['server-1']?.options.transport.headers,
-	).toEqual({ 'X-Test': 'preserved' })
+	expect(manager.mcpConnections['server-1']?.options.transport.headers).toEqual(
+		{ 'X-Test': 'preserved' },
+	)
 	expect(values.size).toBe(0)
 
 	values.set('/Kody/server-1/client-1/client_info/', {
@@ -302,8 +306,7 @@ test('used and missing callback states recover without exposing an internal stat
 	const hub = new McpClientHub(state, {} as Env)
 	const manager = mockModule.manager
 	if (!manager) throw new Error('Fake manager was not constructed.')
-	const callbackUrl =
-		'https://kody.codes/account/mcp-servers/oauth/callback'
+	const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
 	seedServer({
 		manager,
 		callbackUrl,

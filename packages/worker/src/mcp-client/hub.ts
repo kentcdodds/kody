@@ -266,9 +266,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		if (!this.manager.isCallbackRequest(request)) {
 			if (
 				stateServerId &&
-				this.manager
-					.listServers()
-					.some((server) => server.id === stateServerId)
+				this.manager.listServers().some((server) => server.id === stateServerId)
 			) {
 				return await this.restartAfterUnusableCallback({
 					serverId: stateServerId,
@@ -330,9 +328,8 @@ class McpClientHubBase extends DurableObject<Env> {
 		callbackUrl: string
 	}): Promise<McpServerOAuthCallbackOutcome> {
 		const serverName =
-			this.manager
-				.listServers()
-				.find((server) => server.id === input.serverId)?.name ?? null
+			this.manager.listServers().find((server) => server.id === input.serverId)
+				?.name ?? null
 		try {
 			const connection = await this.restartServerAuthorization(input)
 			if (connection.state === 'ready') {
