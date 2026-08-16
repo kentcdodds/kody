@@ -89,6 +89,12 @@ import {
 	publishFromExternalRef as publishExternalRefSource,
 } from './external-publish.ts'
 import {
+	buildWorkspaceSqliteTooBigCallerMessage,
+	cloneExternalPublishWorkspace,
+	externalPublishWorkspaceDir,
+	isWorkspaceSqliteTooBigMessage,
+} from './external-publish-clone.ts'
+import {
 	assertPackagePrivateVisibilityChangeAllowed,
 	assertPackageSourceOverwriteAllowed,
 	assertPublishedPackageSourceRepoHead,
@@ -320,6 +326,13 @@ class RepoSessionBase extends DurableObject<Env> {
 					remote: input.remote,
 					error,
 				})
+			}
+			const message = getErrorMessage(error)
+			if (isWorkspaceSqliteTooBigMessage(message)) {
+				throw new Error(
+					buildWorkspaceSqliteTooBigCallerMessage('Repo session clone'),
+					{ cause: error },
+				)
 			}
 			throw error
 		}
@@ -2674,29 +2687,27 @@ class RepoSessionBase extends DurableObject<Env> {
 			scope: 'read',
 		})
 		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
+		let publishClone: Awaited<ReturnType<typeof cloneExternalPublishWorkspace>>
 		try {
-			await this.cloneArtifactsRepoWithRetry({
+			// In-memory clone: avoids DO SQL SQLITE_TOOBIG on packfiles
+			// (KODY-CLOUDFLARE-57). Do not route this through the SQL Workspace.
+			publishClone = await cloneExternalPublishWorkspace({
 				remote: sourceAccess.remote,
 				token: sourceAccess.token,
 				branch: targetBranch,
-				resetBeforeFirstAttempt: true,
+				checkoutCommit: input.newCommit,
 			})
 			// Race protection without a second Artifacts REST HEAD resolve: the
 			// single-branch clone tip is the remote default-branch HEAD at clone
-			// time. Compare it to the worker-resolved expectedHead before checkout.
+			// time. Compare it to the worker-resolved expectedHead before publish.
 			if (input.expectedHead) {
-				const clonedHead = await this.getHeadCommit()
+				const clonedHead = publishClone.headCommit
 				if (clonedHead !== input.expectedHead) {
 					throw new Error(
 						`Artifacts HEAD changed from "${input.expectedHead}" to "${clonedHead ?? 'unknown'}" before publish.`,
 					)
 				}
 			}
-			await this.git.checkout({
-				dir: repoSessionWorkspacePrefix,
-				ref: input.newCommit,
-				force: true,
-			})
 		} catch (error) {
 			const message = getErrorMessage(error)
 			if (message.includes('Artifacts HEAD changed from')) {
@@ -2706,12 +2717,15 @@ class RepoSessionBase extends DurableObject<Env> {
 				buildSourceRecoveryProblemMessage({
 					source,
 					operation: 'package_publish_external_push',
-					reason: `source clone or commit checkout failed: ${message}`,
+					reason: message.includes('source clone or commit checkout failed:')
+						? message
+						: `source clone or commit checkout failed: ${message}`,
 				}),
 				{ cause: error },
 			)
 		}
 		const runId = crypto.randomUUID()
+		const publishDir = publishClone.dir || externalPublishWorkspaceDir
 		const publishResult = await publishExternalRefSource({
 			env: this.env,
 			sourceId: source.id,
@@ -2719,21 +2733,18 @@ class RepoSessionBase extends DurableObject<Env> {
 			newCommit: input.newCommit,
 			runId,
 			isFastForward: async ({ previousCommit }) =>
-				await this.isAncestorCommit({
+				await publishClone.isAncestorCommit({
 					ancestor: previousCommit,
 					descendant: input.newCommit,
 				}),
 			allowForce: input.allowForce,
 			destructiveOverwriteConfirmed: input.destructiveOverwriteConfirmed,
-			workspace: this.workspace,
+			workspace: publishClone.workspace,
 			baseUrl: input.baseUrl ?? source.source_root,
-			manifestPath: resolveRepoWorkspacePath(
-				source.manifest_path,
-				repoSessionWorkspacePrefix,
-			),
+			manifestPath: resolveRepoWorkspacePath(source.manifest_path, publishDir),
 			sourceRoot: resolveRepoWorkspacePath(
-				source.source_root || repoSessionWorkspacePrefix,
-				repoSessionWorkspacePrefix,
+				source.source_root || publishDir,
+				publishDir,
 			),
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 			expectedPackageScope: input.expectedPackageScope,
@@ -2748,26 +2759,31 @@ class RepoSessionBase extends DurableObject<Env> {
 						source,
 					),
 				})
-				await this.attachSourcePublishGitNote({
-					source,
+				await attachPublishGitNoteBestEffort({
+					filesystem: publishClone.filesystem,
+					dir: publishDir,
 					commitOid: input.newCommit,
 					remote: sourceWriteAccess.remote,
 					token: sourceWriteAccess.token,
 					remoteName: 'origin',
-					publishedBy: 'external_push',
-					sessionId: input.sessionId,
-					previousPublishedCommit: publishResult.previous_commit,
-					checks: {
-						runId,
-						treeHash: null,
-						checkedAt: new Date().toISOString(),
-						ok: true,
-						results: publishResult.checks.map((entry) => ({
-							kind: entry.kind,
-							ok: entry.ok,
-							message: entry.message,
-						})),
-					},
+					note: buildPublishGitNote({
+						publishedBy: 'external_push',
+						source,
+						commit: input.newCommit,
+						sessionId: input.sessionId,
+						previousPublishedCommit: publishResult.previous_commit,
+						checks: {
+							runId,
+							treeHash: null,
+							checkedAt: new Date().toISOString(),
+							ok: true,
+							results: publishResult.checks.map((entry) => ({
+								kind: entry.kind,
+								ok: entry.ok,
+								message: entry.message,
+							})),
+						},
+					}),
 					scope: 'repo.publishFromExternalRef.publish-git-note',
 				})
 			} catch (error) {

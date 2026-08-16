@@ -1,0 +1,207 @@
+import git from 'isomorphic-git'
+import http from 'isomorphic-git/http/web'
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import {
+	buildArtifactsGitAuth,
+	buildAuthenticatedArtifactsRemote,
+} from './artifacts.ts'
+import {
+	runArtifactsGitWithRetry,
+	wrapArtifactsGitHttpError,
+} from './artifacts-git-retry.ts'
+import { createEphemeralGitWorkspace } from './ephemeral-git-workspace.ts'
+import { type RepoPublishWorkspace } from './external-publish.ts'
+import { type PublishGitNoteFileSystem } from './publish-git-notes.ts'
+
+/**
+ * Clone / checkout for `package_publish_external_push` must not use the
+ * RepoSession Durable Object SQL workspace. isomorphic-git writes the whole
+ * packfile as one blob; without an R2 spill `@cloudflare/shell` Workspace
+ * stores that inline and hits Cloudflare DO SQLite's 2 MiB row limit
+ * (`string or blob too big: SQLITE_TOOBIG`). Ephemeral in-memory FS has no
+ * such row ceiling (Artifacts packs are already capped ~32 MiB).
+ */
+export const externalPublishWorkspaceDir = '/repo'
+
+export type ExternalPublishCloneResult = {
+	workspace: RepoPublishWorkspace
+	headCommit: string | null
+	isAncestorCommit: (input: {
+		ancestor: string
+		descendant: string
+	}) => Promise<boolean>
+	filesystem: PublishGitNoteFileSystem
+	dir: string
+}
+
+function normalizePublishPath(path: string) {
+	const trimmed = path.trim()
+	if (trimmed === '' || trimmed === '/') return '/'
+	return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+}
+
+function buildPublishWorkspaceFromCheckout(input: {
+	filesystem: PublishGitNoteFileSystem
+	listFiles: () => Promise<Array<string>>
+	dir: string
+}): RepoPublishWorkspace {
+	const dirPrefix = input.dir.endsWith('/') ? input.dir.slice(0, -1) : input.dir
+	return {
+		async readFile(path) {
+			const absolute = normalizePublishPath(path)
+			try {
+				return await input.filesystem.readFile(absolute)
+			} catch {
+				return null
+			}
+		},
+		async glob(pattern) {
+			const files = await input.listFiles()
+			const normalizedPattern = pattern.replace(/^\.\//, '')
+			const matchAll =
+				normalizedPattern === '**/*' ||
+				normalizedPattern === '*' ||
+				normalizedPattern.endsWith('/**/*')
+			const rootPrefix = matchAll
+				? normalizedPattern === '**/*' || normalizedPattern === '*'
+					? ''
+					: normalizedPattern.slice(0, -'/**/*'.length).replace(/^\/+/, '')
+				: null
+			const entries: Array<{ path: string; type: string }> = []
+			for (const relative of files) {
+				if (relative.split('/').includes('.git')) continue
+				if (rootPrefix != null && rootPrefix !== '') {
+					if (
+						relative !== rootPrefix &&
+						!relative.startsWith(`${rootPrefix}/`)
+					) {
+						continue
+					}
+				}
+				entries.push({
+					path: `${dirPrefix}/${relative}`.replace(/\/+/g, '/'),
+					type: 'file',
+				})
+			}
+			return entries
+		},
+	}
+}
+
+export async function cloneExternalPublishWorkspace(input: {
+	remote: string
+	token: string
+	branch: string
+	checkoutCommit: string
+}): Promise<ExternalPublishCloneResult> {
+	const auth = buildArtifactsGitAuth({ token: input.token })
+	const authenticatedRemote = buildAuthenticatedArtifactsRemote({
+		remote: input.remote,
+		token: input.token,
+	})
+	const dir = externalPublishWorkspaceDir
+
+	let workspace: ReturnType<typeof createEphemeralGitWorkspace>
+	try {
+		workspace = await runArtifactsGitWithRetry(async () => {
+			const next = createEphemeralGitWorkspace()
+			await git.clone({
+				fs: next.fs,
+				http,
+				dir,
+				url: authenticatedRemote,
+				ref: input.branch,
+				singleBranch: true,
+				onAuth() {
+					return auth
+				},
+			})
+			return next
+		})
+	} catch (error) {
+		throw wrapArtifactsGitHttpError({
+			operation: 'git clone',
+			remote: input.remote,
+			error,
+		})
+	}
+
+	let headCommit: string | null = null
+	try {
+		const log = await git.log({
+			fs: workspace.fs,
+			dir,
+			depth: 1,
+		})
+		headCommit = log[0]?.oid ?? null
+	} catch (error) {
+		throw new Error(
+			`Failed to resolve cloned HEAD after Artifacts clone: ${getErrorMessage(error)}`,
+			{ cause: error },
+		)
+	}
+
+	try {
+		await git.checkout({
+			fs: workspace.fs,
+			dir,
+			ref: input.checkoutCommit,
+			force: true,
+		})
+	} catch (error) {
+		throw new Error(
+			`source clone or commit checkout failed: ${getErrorMessage(error)}`,
+			{ cause: error },
+		)
+	}
+
+	const publishWorkspace = buildPublishWorkspaceFromCheckout({
+		dir,
+		filesystem: workspace.filesystem,
+		listFiles: async () =>
+			await git.listFiles({
+				fs: workspace.fs,
+				dir,
+			}),
+	})
+
+	return {
+		workspace: publishWorkspace,
+		headCommit,
+		dir,
+		filesystem: workspace.filesystem,
+		isAncestorCommit: async ({ ancestor, descendant }) => {
+			if (ancestor === descendant) return true
+			const commits = await git.log({
+				fs: workspace.fs,
+				dir,
+				ref: descendant,
+				depth: Number.POSITIVE_INFINITY,
+			})
+			return commits.some((commit) => commit.oid === ancestor)
+		},
+	}
+}
+
+/**
+ * Stable phrase for DO SQL Workspace writes that exceed Cloudflare's 2 MiB
+ * string/BLOB row limit. Used when interactive repo sessions still clone into
+ * the SQL-backed Workspace (no R2 spill yet).
+ */
+export function isWorkspaceSqliteTooBigMessage(message: string) {
+	return (
+		message.includes('SQLITE_TOOBIG') ||
+		/string or blob too big/i.test(message)
+	)
+}
+
+export function buildWorkspaceSqliteTooBigCallerMessage(operation: string) {
+	return (
+		`${operation} failed because a git object exceeded the Durable Object ` +
+		`SQLite 2 MiB row limit while materializing the repo session workspace ` +
+		`(string or blob too big: SQLITE_TOOBIG). Shrink large files or pack ` +
+		`content (host bulky assets externally and commit a pointer), then retry. ` +
+		`package_publish_external_push uses an in-memory clone and is not limited ` +
+		`by this row ceiling.`
+	)
+}

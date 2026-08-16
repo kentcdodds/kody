@@ -164,6 +164,7 @@ export function createEphemeralGitWorkspace() {
 	}
 	return {
 		fs: createIsomorphicGitFs(filesystem),
+		filesystem,
 		dir: '/repo',
 	}
 }

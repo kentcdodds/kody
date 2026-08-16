@@ -86,6 +86,36 @@ const mockModule = vi.hoisted(() => {
 		workspaceMkdir: vi.fn(async () => undefined),
 		workspaceRm: vi.fn(async () => undefined),
 		workspaceGlob: vi.fn(async () => []),
+		cloneExternalPublishWorkspace: vi.fn(async () => ({
+			workspace: {
+				readFile: vi.fn(async () => null),
+				glob: vi.fn(async () => []),
+			},
+			headCommit: 'commit-head',
+			dir: '/repo',
+			filesystem: {
+				readFile: vi.fn(async () => ''),
+				readFileBytes: vi.fn(async () => new Uint8Array()),
+				writeFile: vi.fn(async () => undefined),
+				writeFileBytes: vi.fn(async () => undefined),
+				rm: vi.fn(async () => undefined),
+				mkdir: vi.fn(async () => undefined),
+				readdir: vi.fn(async () => []),
+				stat: vi.fn(async () => ({
+					type: 'file' as const,
+					size: 0,
+					mtime: new Date(),
+				})),
+				lstat: vi.fn(async () => ({
+					type: 'file' as const,
+					size: 0,
+					mtime: new Date(),
+				})),
+				readlink: vi.fn(async () => ''),
+				symlink: vi.fn(async () => undefined),
+			},
+			isAncestorCommit: vi.fn(async () => true),
+		})),
 		storageGet: vi.fn(async () => ({
 			runId: 'run-1',
 			treeHash: '',
@@ -158,6 +188,36 @@ function restoreRepoSessionMockBaseline() {
 	mockModule.workspaceMkdir.mockResolvedValue(undefined)
 	mockModule.workspaceRm.mockResolvedValue(undefined)
 	mockModule.workspaceGlob.mockResolvedValue([])
+	mockModule.cloneExternalPublishWorkspace.mockImplementation(async () => ({
+		workspace: {
+			readFile: vi.fn(async () => null),
+			glob: vi.fn(async () => []),
+		},
+		headCommit: gitState.headCommit,
+		dir: '/repo',
+		filesystem: {
+			readFile: vi.fn(async () => ''),
+			readFileBytes: vi.fn(async () => new Uint8Array()),
+			writeFile: vi.fn(async () => undefined),
+			writeFileBytes: vi.fn(async () => undefined),
+			rm: vi.fn(async () => undefined),
+			mkdir: vi.fn(async () => undefined),
+			readdir: vi.fn(async () => []),
+			stat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			lstat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			readlink: vi.fn(async () => ''),
+			symlink: vi.fn(async () => undefined),
+		},
+		isAncestorCommit: vi.fn(async () => true),
+	}))
 	mockModule.storageGet.mockResolvedValue({
 		runId: 'run-1',
 		treeHash: '',
@@ -416,6 +476,17 @@ vi.mock('./checks.ts', () => ({
 		mockModule.validatePackageBundles(...args),
 	runPackageTypecheckLanguageService: (...args: Array<unknown>) =>
 		mockModule.runPackageTypecheckLanguageService(...args),
+}))
+
+vi.mock('./external-publish-clone.ts', () => ({
+	externalPublishWorkspaceDir: '/repo',
+	isWorkspaceSqliteTooBigMessage: (message: string) =>
+		message.includes('SQLITE_TOOBIG') ||
+		/string or blob too big/i.test(message),
+	buildWorkspaceSqliteTooBigCallerMessage: (operation: string) =>
+		`${operation} failed because a git object exceeded the Durable Object SQLite 2 MiB row limit`,
+	cloneExternalPublishWorkspace: (...args: Array<unknown>) =>
+		mockModule.cloneExternalPublishWorkspace(...args),
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
@@ -1671,9 +1742,38 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 
 test('publishFromExternalRef rejects stale expected HEAD values', async () => {
 	setCommonSessionFixtures()
-	// Clone tip (git.log depth 1) is the remote default-branch HEAD at clone
-	// time; a mismatch with expectedHead means the Artifacts tip moved.
-	mockModule.gitState.headCommit = 'commit-new'
+	// Clone tip is the remote default-branch HEAD at clone time; a mismatch
+	// with expectedHead means the Artifacts tip moved.
+	mockModule.cloneExternalPublishWorkspace.mockResolvedValueOnce({
+		workspace: {
+			readFile: vi.fn(async () => null),
+			glob: vi.fn(async () => []),
+		},
+		headCommit: 'commit-new',
+		dir: '/repo',
+		filesystem: {
+			readFile: vi.fn(async () => ''),
+			readFileBytes: vi.fn(async () => new Uint8Array()),
+			writeFile: vi.fn(async () => undefined),
+			writeFileBytes: vi.fn(async () => undefined),
+			rm: vi.fn(async () => undefined),
+			mkdir: vi.fn(async () => undefined),
+			readdir: vi.fn(async () => []),
+			stat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			lstat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			readlink: vi.fn(async () => ''),
+			symlink: vi.fn(async () => undefined),
+		},
+		isAncestorCommit: vi.fn(async () => true),
+	})
 
 	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
 
@@ -1691,7 +1791,7 @@ test('publishFromExternalRef rejects stale expected HEAD values', async () => {
 	expect(mockModule.resolveArtifactDefaultBranchHead).not.toHaveBeenCalled()
 })
 
-test('publishFromExternalRef checks fast-forward ancestry through shell git adapter', async () => {
+test('publishFromExternalRef checks fast-forward ancestry through ephemeral clone', async () => {
 	// Best-effort publish git-note setup logs an incidental warning.
 	consoleWarn.mockImplementation(() => {})
 	setCommonSessionFixtures()
@@ -1705,10 +1805,39 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 		entity_kind: 'job',
 		entity_id: 'job-1',
 	})
-	mockModule.git.log.mockResolvedValueOnce([
-		{ oid: 'commit-new' },
-		{ oid: 'commit-old' },
-	])
+	const isAncestorCommit = vi.fn(async ({ ancestor, descendant }) => {
+		return ancestor === 'commit-old' && descendant === 'commit-new'
+	})
+	mockModule.cloneExternalPublishWorkspace.mockResolvedValueOnce({
+		workspace: {
+			readFile: vi.fn(async () => null),
+			glob: vi.fn(async () => []),
+		},
+		headCommit: 'commit-new',
+		dir: '/repo',
+		filesystem: {
+			readFile: vi.fn(async () => ''),
+			readFileBytes: vi.fn(async () => new Uint8Array()),
+			writeFile: vi.fn(async () => undefined),
+			writeFileBytes: vi.fn(async () => undefined),
+			rm: vi.fn(async () => undefined),
+			mkdir: vi.fn(async () => undefined),
+			readdir: vi.fn(async () => []),
+			stat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			lstat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			readlink: vi.fn(async () => ''),
+			symlink: vi.fn(async () => undefined),
+		},
+		isAncestorCommit,
+	})
 	mockModule.writePublishedSourceSnapshot.mockClear()
 
 	const repoSession = new RepoSession(createDurableObjectState(), {
@@ -1725,10 +1854,9 @@ test('publishFromExternalRef checks fast-forward ancestry through shell git adap
 
 	expect(result.status).toBe('published')
 	expect(mockModule.workspaceGlob).not.toHaveBeenCalled()
-	expect(mockModule.git.log).toHaveBeenCalledWith({
-		dir: '/session',
-		ref: 'commit-new',
-		depth: Number.POSITIVE_INFINITY,
+	expect(isAncestorCommit).toHaveBeenCalledWith({
+		ancestor: 'commit-old',
+		descendant: 'commit-new',
 	})
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
