@@ -23,6 +23,7 @@ test('OAuth callback outcome requires a ready connection after SDK success', () 
 		authSuccess: true,
 		authError: null,
 		serverName: 'recipe-keeper',
+		authorizationNeeded: false,
 	})
 
 	const stuckAuthenticating = resolveMcpOAuthCallbackOutcome({
@@ -68,6 +69,7 @@ test('OAuth callback outcome requires a ready connection after SDK success', () 
 		authSuccess: false,
 		authError: 'Token exchange failed.',
 		serverName: 'recipe-keeper',
+		authorizationNeeded: false,
 	})
 
 	expect(
@@ -87,6 +89,7 @@ test('OAuth callback outcome requires a ready connection after SDK success', () 
 		authSuccess: false,
 		authError: 'Invalid state',
 		serverName: 'recipe-keeper',
+		authorizationNeeded: false,
 	})
 
 	const waitingForAuth = describeIncompleteMcpOAuthConnection({

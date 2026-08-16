@@ -149,20 +149,25 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 			let authError: string | null = null
 			let serverName: string | null = null
 			let serverId: string | null = null
-			try {
-				const outcome = await hub.handleOAuthCallback({ url: request.url })
-				authSuccess = outcome.authSuccess
-				authError = outcome.authError
-				serverName = outcome.serverName
-				serverId = outcome.serverId
-			} catch (error) {
-				authError = getErrorMessage(error)
-			}
-
+			let authorizationNeeded = false
 			const oauth = resolveMcpServerOAuthClientUrls({
 				env,
 				requestUrl: request.url,
 			})
+			try {
+				const outcome = await hub.handleOAuthCallback({
+					url: request.url,
+					callbackUrl: oauth.callbackUrl,
+				})
+				authSuccess = outcome.authSuccess
+				authError = outcome.authError
+				serverName = outcome.serverName
+				serverId = outcome.serverId
+				authorizationNeeded = outcome.authorizationNeeded
+			} catch (error) {
+				authError = getErrorMessage(error)
+			}
+
 			if (authError) {
 				authError = enrichMcpOAuthProviderError(authError, oauth)
 			}
@@ -173,7 +178,9 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 						request.url,
 					)
 				: new URL('/account/mcp-servers', request.url)
-			if (authSuccess) {
+			if (authorizationNeeded) {
+				target.searchParams.set('auth', 'required')
+			} else if (authSuccess) {
 				target.searchParams.set('auth', 'success')
 				if (serverName) {
 					target.searchParams.set('server', serverName)
@@ -229,7 +236,14 @@ async function handleConnectionAction(input: {
 		userId: input.user.mcpUser.userId,
 	})
 	if (input.kind === 'reconnect') {
-		await hub.reconnectServer({ serverId: setting.id })
+		const oauth = resolveMcpServerOAuthClientUrls({
+			env: input.env,
+			requestUrl: input.request.url,
+		})
+		await hub.reconnectServer({
+			serverId: setting.id,
+			callbackUrl: oauth.callbackUrl,
+		})
 	} else {
 		await hub.refreshServer({ serverId: setting.id })
 	}

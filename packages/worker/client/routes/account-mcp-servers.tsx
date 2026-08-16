@@ -150,7 +150,7 @@ function stateColor(server: Pick<McpServerListItem, 'state' | 'enabled'>) {
 		case 'failed':
 			return colors.error
 		case 'authenticating':
-			return colors.error
+			return colors.textMuted
 		default:
 			return colors.textMuted
 	}
@@ -168,6 +168,13 @@ function readOAuthResultFromHref(href: string): {
 			message: server
 				? `Authorized MCP server "${server}".`
 				: 'Authorized MCP server.',
+			tone: 'info',
+		}
+	}
+	if (auth === 'required') {
+		return {
+			message:
+				'Authorization needed. Open the new authorization link and approve access once more.',
 			tone: 'info',
 		}
 	}
@@ -734,10 +741,10 @@ export function AccountMcpServersRoute(handle: Handle) {
 									) : null}
 
 									{server.state === 'authenticating' && !server.authUrl ? (
-										<AccountManagementMessage tone="error">
-											Authorization is incomplete and no authorization link is
-											available. Click Reconnect to restart OAuth, or remove and
-											add the server again.
+										<AccountManagementMessage tone="info">
+											Authorization needed. Click Reconnect to create a new
+											authorization link. You may need to approve access once
+											more.
 										</AccountManagementMessage>
 									) : null}
 
@@ -753,8 +760,8 @@ export function AccountMcpServersRoute(handle: Handle) {
 											})}
 										>
 											<span mix={css({ color: colors.text })}>
-												This server requires OAuth authorization before its
-												tools become available.
+												Authorization needed. Approve access before this
+												server&apos;s tools become available.
 											</span>
 											<div>
 												<a
@@ -814,7 +821,14 @@ export function AccountMcpServersRoute(handle: Handle) {
 												on('click', () =>
 													postAction({
 														body: { action: 'reconnect', id: server.id },
-														successMessage: () => 'Reconnect requested.',
+														successMessage: (payload) => {
+															const reconnected = payload.servers.find(
+																(item) => item.id === server.id,
+															)
+															return reconnected?.authUrl
+																? 'Authorization needed. Open the new authorization link and approve access once more.'
+																: 'Reconnected MCP server.'
+														},
 														failureMessage: 'Unable to reconnect MCP server.',
 													}),
 												),

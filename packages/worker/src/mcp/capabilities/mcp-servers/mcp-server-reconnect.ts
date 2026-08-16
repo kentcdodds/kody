@@ -48,7 +48,10 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 				env: ctx.env,
 				userId: user.userId,
 			})
-			const result = await hub.reconnectServer({ serverId: setting.id })
+			const result = await hub.reconnectServer({
+				serverId: setting.id,
+				callbackUrl: oauth.callbackUrl,
+			})
 			return {
 				id: setting.id,
 				name: setting.name,

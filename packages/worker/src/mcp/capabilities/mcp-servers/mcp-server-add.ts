@@ -89,7 +89,7 @@ export const mcpServerAddCapability = defineDomainCapability(
 				: null
 			const nextStep =
 				connection.state === 'authenticating' && connection.authUrl
-					? `The server requires OAuth authorization. Ask the user to open ${connection.authUrl} (also available from ${oauth.clientOrigin}/account/mcp-servers) to authorize Kody. If the provider rejects Kody's origin or redirect URI, they must allow ${oauth.clientOrigin} and ${oauth.callbackUrl}, then remove and re-add the server. After authorizing, check mcp_server_list.`
+					? `The server requires OAuth authorization. Ask the user to open ${connection.authUrl} (also available from ${oauth.clientOrigin}/account/mcp-servers) to authorize Kody. If the provider rejects Kody's origin or redirect URI, they must allow ${oauth.clientOrigin} and ${oauth.callbackUrl}, then reconnect the server. After authorizing, check mcp_server_list.`
 					: connection.state === 'ready'
 						? `Connected with ${connection.toolCount} tool(s). Use search or meta_list_capabilities to discover kody.mcp["${setting.name}"] capabilities.`
 						: error

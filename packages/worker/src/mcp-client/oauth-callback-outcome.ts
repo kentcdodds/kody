@@ -32,6 +32,7 @@ export function resolveMcpOAuthCallbackOutcome(input: {
 			authSuccess: false,
 			authError: input.sdkAuthError ?? 'Authorization failed.',
 			serverName,
+			authorizationNeeded: false,
 		}
 	}
 
@@ -42,6 +43,7 @@ export function resolveMcpOAuthCallbackOutcome(input: {
 			authError:
 				'Authorization completed, but Kody lost the MCP server connection. Try reconnecting from /account/mcp-servers.',
 			serverName,
+			authorizationNeeded: false,
 		}
 	}
 
@@ -51,6 +53,7 @@ export function resolveMcpOAuthCallbackOutcome(input: {
 			authSuccess: true,
 			authError: null,
 			serverName,
+			authorizationNeeded: false,
 		}
 	}
 
@@ -61,6 +64,7 @@ export function resolveMcpOAuthCallbackOutcome(input: {
 			input.connection.error ??
 			describeIncompleteMcpOAuthConnection(input.connection),
 		serverName,
+		authorizationNeeded: false,
 	}
 }
 
@@ -72,7 +76,7 @@ export function describeIncompleteMcpOAuthConnection(connection: {
 		return 'Authorization completed at the identity provider, but the MCP server still requires authorization. Open the authorization link again from /account/mcp-servers.'
 	}
 	if (connection.state === 'authenticating') {
-		return 'Authorization completed at the identity provider, but Kody could not finish connecting and has no authorization link to offer. Reconnect the server from /account/mcp-servers, or remove and add it again.'
+		return 'Authorization completed, but Kody could not finish connecting. Reconnect the server from /account/mcp-servers and approve access once more.'
 	}
 	return `Authorization completed at the identity provider, but the MCP server is still "${connection.state}". Reconnect it from /account/mcp-servers.`
 }

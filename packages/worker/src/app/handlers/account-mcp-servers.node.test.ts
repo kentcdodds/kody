@@ -85,6 +85,14 @@ const mockModule = vi.hoisted(() => ({
 		authSuccess: true,
 		authError: null,
 		serverName: 'linear',
+		authorizationNeeded: false,
+	})),
+	reconnectServer: vi.fn(async () => ({
+		serverId: 'server-1',
+		state: 'authenticating',
+		authUrl: 'https://auth.example.com/authorize?state=fresh.server-1',
+		error: null,
+		toolCount: 0,
 	})),
 }))
 
@@ -138,6 +146,8 @@ vi.mock('#worker/mcp-client/hub-client.ts', () => ({
 	createMcpClientHubClient: () => ({
 		handleOAuthCallback: (...args: Array<unknown>) =>
 			mockModule.handleOAuthCallback(...args),
+		reconnectServer: (...args: Array<unknown>) =>
+			mockModule.reconnectServer(...args),
 	}),
 }))
 
@@ -222,6 +232,25 @@ test('MCP servers API add action uses the canonical OAuth callback origin', asyn
 	expect(payload.selectedServerId).toBe('server-2')
 })
 
+test('MCP servers API reconnect uses the current callback and starts fresh authorization', async () => {
+	const handler = createAccountMcpServersApiHandler(createEnv())
+
+	const reconnectResponse = await handler.handler({
+		request: new Request('https://example.com/account/mcp-servers.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ action: 'reconnect', id: 'server-1' }),
+		}),
+		params: {},
+	} as never)
+
+	expect(reconnectResponse.status).toBe(200)
+	expect(mockModule.reconnectServer).toHaveBeenCalledWith({
+		serverId: 'server-1',
+		callbackUrl: 'https://example.com/account/mcp-servers/oauth/callback',
+	})
+})
+
 test('MCP servers API set-enabled and delete actions are user-scoped', async () => {
 	const handler = createAccountMcpServersApiHandler(createEnv())
 
@@ -277,12 +306,17 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	expect(successLocation.pathname).toBe('/account/mcp-servers/server-1')
 	expect(successLocation.searchParams.get('auth')).toBe('success')
 	expect(successLocation.searchParams.get('server')).toBe('linear')
+	expect(mockModule.handleOAuthCallback).toHaveBeenCalledWith({
+		url: 'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=xyz',
+		callbackUrl: 'https://example.com/account/mcp-servers/oauth/callback',
+	})
 
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({
 		serverId: null,
 		authSuccess: false,
 		authError: 'Invalid state.',
 		serverName: null,
+		authorizationNeeded: false,
 	})
 	const failureResponse = await handler.handler({
 		request: new Request(
@@ -301,6 +335,7 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 		authSuccess: false,
 		authError: 'Invalid origin uri https://example.com',
 		serverName: 'linear',
+		authorizationNeeded: false,
 	})
 	const originFailureResponse = await handler.handler({
 		request: new Request(
@@ -325,6 +360,7 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 		authSuccess: false,
 		authError: 'Authorization completed, but no authorization link.',
 		serverName: 'linear',
+		authorizationNeeded: false,
 	})
 	const incompleteResponse = await handler.handler({
 		request: new Request(
@@ -341,4 +377,26 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	expect(incompleteLocation.searchParams.get('reason')).toContain(
 		'no authorization link',
 	)
+
+	mockModule.handleOAuthCallback.mockResolvedValueOnce({
+		serverId: 'server-1',
+		authSuccess: false,
+		authError:
+			'Authorization needed. Reconnect the MCP server and approve access once more.',
+		serverName: 'linear',
+		authorizationNeeded: true,
+	})
+	const recoveryResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=used.server-1',
+		),
+		params: {},
+	} as never)
+	expect(recoveryResponse.status).toBe(303)
+	const recoveryLocation = new URL(
+		recoveryResponse.headers.get('Location') ?? '',
+	)
+	expect(recoveryLocation.pathname).toBe('/account/mcp-servers/server-1')
+	expect(recoveryLocation.searchParams.get('auth')).toBe('required')
+	expect(recoveryLocation.searchParams.has('reason')).toBe(false)
 })

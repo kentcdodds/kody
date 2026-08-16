@@ -28,11 +28,15 @@ export type McpClientHubClient = {
 		callbackUrl: string
 		headers?: Record<string, string>
 	}): Promise<McpServerConnectResult>
-	reconnectServer(input: { serverId: string }): Promise<McpServerConnectResult>
+	reconnectServer(input: {
+		serverId: string
+		callbackUrl: string
+	}): Promise<McpServerConnectResult>
 	refreshServer(input: { serverId: string }): Promise<McpServerConnectResult>
 	removeServer(input: { serverId: string }): Promise<void>
 	handleOAuthCallback(input: {
 		url: string
+		callbackUrl: string
 	}): Promise<McpServerOAuthCallbackOutcome>
 	getSnapshot(): Promise<McpClientHubSnapshot>
 	callTool(input: {

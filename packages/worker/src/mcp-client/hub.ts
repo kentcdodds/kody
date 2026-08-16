@@ -21,6 +21,27 @@ const mcpClientName = 'Kody'
 const mcpClientVersion = '1.0.0'
 const connectionSettleTimeoutMs = 8_000
 const discoverTimeoutMs = 15_000
+const oauthRecoveryMessage =
+	'Authorization needed. Reconnect the MCP server and approve access once more.'
+
+export function extractMcpServerIdFromOAuthState(state: string | null) {
+	if (!state) return null
+	const parts = state.split('.')
+	if (parts.length !== 2) return null
+	return parts[1] || null
+}
+
+export function isRecoverableMcpOAuthStateError(error: string | null) {
+	if (!error) return false
+	const normalized = error.toLowerCase()
+	return (
+		normalized.includes('state not found') ||
+		normalized.includes('already used') ||
+		normalized.includes('state expired') ||
+		normalized.includes('invalid state') ||
+		normalized.includes('no state provided')
+	)
+}
 
 /**
  * Per-user Durable Object that owns the Agents SDK `MCPClientManager` for all
@@ -185,31 +206,23 @@ class McpClientHubBase extends DurableObject<Env> {
 		return this.buildConnectResult(input.serverId)
 	}
 
-	/** Retry connecting to an already registered server. */
+	/**
+	 * Restart a saved server with the deployment's current OAuth callback.
+	 *
+	 * Re-registering the local connection clears pending state and PKCE values,
+	 * so every reconnect gets a fresh authorization URL. A callback change also
+	 * drops the stored dynamic client registration, forcing DCR to advertise the
+	 * current redirect URI while preserving the saved server row in D1.
+	 */
 	async reconnectServer(input: {
 		serverId: string
+		callbackUrl: string
 	}): Promise<McpServerConnectResult> {
 		await this.ensureRestored()
 		await this.manager.waitForConnections({
 			timeout: connectionSettleTimeoutMs,
 		})
-		const state = this.connectionStateFor(input.serverId)
-		if (state === 'disconnected') {
-			throw new Error(`MCP server "${input.serverId}" is not registered.`)
-		}
-		if (state !== 'ready' && state !== 'discovering') {
-			const result = await this.manager.connectToServer(input.serverId)
-			if (result.state === 'connected') {
-				await this.manager.discoverIfConnected(input.serverId, {
-					timeoutMs: discoverTimeoutMs,
-				})
-			}
-		}
-		const connected = this.buildConnectResult(input.serverId)
-		if (isStuckMcpAuthenticatingWithoutAuthUrl(connected)) {
-			return await this.recoverStuckAuthenticating(input.serverId)
-		}
-		return connected
+		return await this.restartServerAuthorization(input)
 	}
 
 	/** Re-discover tools for a connected server. */
@@ -243,15 +256,31 @@ class McpClientHubBase extends DurableObject<Env> {
 	 */
 	async handleOAuthCallback(input: {
 		url: string
+		callbackUrl: string
 	}): Promise<McpServerOAuthCallbackOutcome> {
 		await this.ensureRestored()
 		const request = new Request(input.url, { method: 'GET' })
+		const stateServerId = extractMcpServerIdFromOAuthState(
+			new URL(request.url).searchParams.get('state'),
+		)
 		if (!this.manager.isCallbackRequest(request)) {
+			if (
+				stateServerId &&
+				this.manager
+					.listServers()
+					.some((server) => server.id === stateServerId)
+			) {
+				return await this.restartAfterUnusableCallback({
+					serverId: stateServerId,
+					callbackUrl: input.callbackUrl,
+				})
+			}
 			return {
 				serverId: null,
 				authSuccess: false,
-				authError: 'This URL is not a pending MCP OAuth callback.',
+				authError: oauthRecoveryMessage,
 				serverName: null,
+				authorizationNeeded: true,
 			}
 		}
 		const result = await this.manager.handleCallbackRequest(request)
@@ -260,6 +289,16 @@ class McpClientHubBase extends DurableObject<Env> {
 			? (this.manager.listServers().find((server) => server.id === serverId)
 					?.name ?? null)
 			: null
+		if (
+			serverId &&
+			!result.authSuccess &&
+			isRecoverableMcpOAuthStateError(result.authError ?? null)
+		) {
+			return await this.restartAfterUnusableCallback({
+				serverId,
+				callbackUrl: input.callbackUrl,
+			})
+		}
 		if (result.authSuccess && serverId) {
 			await this.manager.establishConnection(serverId)
 			await this.manager.waitForConnections({
@@ -284,6 +323,103 @@ class McpClientHubBase extends DurableObject<Env> {
 			serverName,
 			connection: serverId ? this.buildConnectResult(serverId) : null,
 		})
+	}
+
+	private async restartAfterUnusableCallback(input: {
+		serverId: string
+		callbackUrl: string
+	}): Promise<McpServerOAuthCallbackOutcome> {
+		const serverName =
+			this.manager
+				.listServers()
+				.find((server) => server.id === input.serverId)?.name ?? null
+		try {
+			const connection = await this.restartServerAuthorization(input)
+			if (connection.state === 'ready') {
+				return {
+					serverId: input.serverId,
+					authSuccess: true,
+					authError: null,
+					serverName,
+					authorizationNeeded: false,
+				}
+			}
+		} catch {
+			// The account page still offers Reconnect if automatic recovery fails.
+		}
+		return {
+			serverId: input.serverId,
+			authSuccess: false,
+			authError: oauthRecoveryMessage,
+			serverName,
+			authorizationNeeded: true,
+		}
+	}
+
+	private async restartServerAuthorization(input: {
+		serverId: string
+		callbackUrl: string
+	}): Promise<McpServerConnectResult> {
+		const row = this.manager
+			.listServers()
+			.find((server) => server.id === input.serverId)
+		if (!row) {
+			throw new Error(`MCP server "${input.serverId}" is not registered.`)
+		}
+
+		const existingConnection = this.manager.mcpConnections[input.serverId]
+		const existingOptions = existingConnection?.options
+		const callbackChanged = row.callback_url !== input.callbackUrl
+		const clientId = callbackChanged ? null : row.client_id
+
+		await this.manager.removeServer(input.serverId)
+		await this.clearOAuthAuthorizationStorage({
+			serverId: input.serverId,
+			clearClientRegistration: callbackChanged,
+		})
+
+		const authProvider = new DurableObjectOAuthClientProvider(
+			this.ctx.storage,
+			mcpClientName,
+			input.callbackUrl,
+		)
+		authProvider.serverId = input.serverId
+		if (clientId) authProvider.clientId = clientId
+
+		await this.manager.registerServer(input.serverId, {
+			url: row.server_url,
+			name: row.name,
+			callbackUrl: input.callbackUrl,
+			...(clientId ? { clientId } : {}),
+			...(existingOptions?.client ? { client: existingOptions.client } : {}),
+			transport: {
+				...existingOptions?.transport,
+				type: existingOptions?.transport.type ?? 'auto',
+				authProvider,
+			},
+		})
+		const result = await this.manager.connectToServer(input.serverId)
+		if (result.state === 'connected') {
+			await this.manager.discoverIfConnected(input.serverId, {
+				timeoutMs: discoverTimeoutMs,
+			})
+		}
+		return this.buildConnectResult(input.serverId)
+	}
+
+	private async clearOAuthAuthorizationStorage(input: {
+		serverId: string
+		clearClientRegistration: boolean
+	}) {
+		const prefix = `/${mcpClientName}/${input.serverId}/`
+		const entries = await this.ctx.storage.list({ prefix })
+		const keys = [...entries.keys()].filter((key) => {
+			if (input.clearClientRegistration) return true
+			return !key.endsWith('/client_info/') && !key.endsWith('/oauth_discovery')
+		})
+		if (keys.length > 0) {
+			await this.ctx.storage.delete(keys)
+		}
 	}
 
 	/**

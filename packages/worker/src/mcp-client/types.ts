@@ -55,4 +55,5 @@ export type McpServerOAuthCallbackOutcome = {
 	authSuccess: boolean
 	authError: string | null
 	serverName: string | null
+	authorizationNeeded: boolean
 }

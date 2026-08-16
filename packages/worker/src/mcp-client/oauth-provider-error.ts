@@ -34,7 +34,7 @@ export function enrichMcpOAuthProviderError(
 		trimmed,
 		`Kody authorizes as an OAuth client from ${input.clientOrigin}.`,
 		`If you operate this MCP server (or its identity provider), allow that origin and register this exact redirect URI: ${input.callbackUrl}.`,
-		'Then remove and re-add the server in Kody (or reconnect) so registration uses the allowlisted values.',
+		'Then reconnect the server in Kody so authorization uses the allowlisted values.',
 	]
 	return parts.join(' ')
 }
