@@ -178,6 +178,13 @@ function readOAuthResultFromHref(href: string): {
 			tone: 'info',
 		}
 	}
+	if (auth === 'retry') {
+		return {
+			message:
+				'That authorization attempt can no longer be used. Choose the server and click Reconnect to try again.',
+			tone: 'info',
+		}
+	}
 	if (auth === 'error') {
 		const reason = url.searchParams.get('reason')
 		return {

@@ -363,6 +363,43 @@ test('failed replacement registration restores the saved server and OAuth state'
 	expect(values.get(stateKey)).toEqual({ serverId: 'server-1' })
 })
 
+test('replayed unusable callbacks leave ready server credentials intact', async () => {
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
+	seedServer({
+		manager,
+		callbackUrl,
+		clientId: 'client-1',
+		authUrl: 'https://auth.example/authorize?state=used.server-1',
+	})
+	manager.callbackMatches = false
+	const connection = manager.mcpConnections['server-1']
+	if (!connection) throw new Error('Fake connection was not seeded.')
+	connection.connectionState = 'ready'
+	manager.rows[0]!.auth_url = null
+	const tokenKey = '/Kody/server-1/client-1/token'
+	values.set(tokenKey, { access_token: 'still-valid' })
+
+	const outcome = await hub.handleOAuthCallback({
+		url: `${callbackUrl}?code=abc&state=used.server-1`,
+		callbackUrl,
+	})
+
+	expect(outcome).toEqual({
+		serverId: 'server-1',
+		authSuccess: true,
+		authError: null,
+		serverName: 'mediarss',
+		authorizationNeeded: false,
+	})
+	expect(manager.connectCount).toBe(0)
+	expect(manager.rows[0]?.client_id).toBe('client-1')
+	expect(values.get(tokenKey)).toEqual({ access_token: 'still-valid' })
+})
+
 test('used and missing callback states recover without exposing an internal state error', async () => {
 	const { state } = createDurableObjectState()
 	const hub = new McpClientHub(state, {} as Env)

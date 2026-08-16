@@ -179,7 +179,7 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 					)
 				: new URL('/account/mcp-servers', request.url)
 			if (authorizationNeeded) {
-				target.searchParams.set('auth', 'required')
+				target.searchParams.set('auth', serverId ? 'required' : 'retry')
 			} else if (authSuccess) {
 				target.searchParams.set('auth', 'success')
 				if (serverName) {

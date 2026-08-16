@@ -399,4 +399,25 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	expect(recoveryLocation.pathname).toBe('/account/mcp-servers/server-1')
 	expect(recoveryLocation.searchParams.get('auth')).toBe('required')
 	expect(recoveryLocation.searchParams.has('reason')).toBe(false)
+
+	mockModule.handleOAuthCallback.mockResolvedValueOnce({
+		serverId: null,
+		authSuccess: false,
+		authError:
+			'Authorization needed. Reconnect the MCP server and approve access once more.',
+		serverName: null,
+		authorizationNeeded: true,
+	})
+	const unknownRecoveryResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/mcp-servers/oauth/callback?error=access_denied',
+		),
+		params: {},
+	} as never)
+	const unknownRecoveryLocation = new URL(
+		unknownRecoveryResponse.headers.get('Location') ?? '',
+	)
+	expect(unknownRecoveryLocation.pathname).toBe('/account/mcp-servers')
+	expect(unknownRecoveryLocation.searchParams.get('auth')).toBe('retry')
+	expect(unknownRecoveryLocation.searchParams.has('reason')).toBe(false)
 })
