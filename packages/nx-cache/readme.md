@@ -29,9 +29,16 @@ runs `nx-cache:smoke-probe` twice with the local `.nx` cache wiped in between,
 and asserts the second run is a `[remote cache]` hit that restores outputs
 without re-running the command.
 
+## Retention
+
+R2 expires `v1/` objects 14 days after they are written and aborts incomplete
+multipart uploads after 1 day. Production deploy reapplies that lifecycle when
+it ensures the bucket. First PUT wins (`409` on overwrite), so expiry is also
+the window after which a poisoned hash can be replaced.
+
 ## Deploy
 
-Production deploy creates the `kody-nx-cache` R2 bucket, uploads the worker, and
-syncs `CACHE_ACCESS_TOKEN` from the `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`
-GitHub Actions secret. The job no-ops when that secret is missing so a first
-merge does not block production.
+Production deploy creates the `kody-nx-cache` R2 bucket, applies the 14-day
+lifecycle, uploads the worker, and syncs `CACHE_ACCESS_TOKEN` from the
+`NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` GitHub Actions secret. The job no-ops
+when that secret is missing so a first merge does not block production.

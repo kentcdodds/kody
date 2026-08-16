@@ -13,6 +13,7 @@ import {
 	ensureCloudflareQueue,
 	ensureEmailSendingEventSubscription,
 	ensurePackageAppDnsRecords,
+	ensureR2BucketLifecycle,
 	isR2BucketAlreadyExistsOutput,
 	isRetryableCloudflareApiError,
 	isWranglerNotFoundOutput,
@@ -365,6 +366,33 @@ test('writeGeneratedWranglerConfig keeps legacy app hosts attached during a doma
 	} finally {
 		await rm(tempDir, { force: true, recursive: true })
 	}
+})
+
+test('ensureR2BucketLifecycle dry-run returns the policy without calling Wrangler', () => {
+	consoleError.mockImplementation(() => {})
+	const policy = {
+		rules: [
+			{
+				id: 'expire-example',
+				enabled: true,
+				conditions: { prefix: 'v1/' },
+			},
+		],
+	}
+
+	expect(
+		ensureR2BucketLifecycle({
+			name: 'kody-nx-cache',
+			policy,
+			dryRun: true,
+		}),
+	).toEqual({
+		name: 'kody-nx-cache',
+		policy,
+	})
+	expect(consoleError).toHaveBeenCalledWith(
+		'[dry-run] set R2 lifecycle for kody-nx-cache',
+	)
 })
 
 test('isR2BucketAlreadyExistsOutput recognizes Wrangler bucket-exists errors', () => {

@@ -899,7 +899,7 @@ jobs:
       - name: 📥 Install Dependencies
         run: npm ci
 
-      - name: 🧱 Ensure Nx cache R2 bucket
+      - name: 🧱 Ensure Nx cache R2 bucket and lifecycle
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { parse as parsePublicSuffix } from 'tldts'
 import { resolveLocalBinary } from '../node-runtime.ts'
@@ -260,6 +262,56 @@ export function ensureR2Bucket({
 		console.error(output)
 	}
 	fail(`Failed to create R2 bucket: ${name}`)
+}
+
+export type R2LifecyclePolicyDocument = {
+	rules: Array<Record<string, unknown>>
+}
+
+export function ensureR2BucketLifecycle({
+	name,
+	policy,
+	dryRun,
+}: {
+	name: string
+	policy: R2LifecyclePolicyDocument
+	dryRun: boolean
+}): { name: string; policy: R2LifecyclePolicyDocument } {
+	if (dryRun) {
+		console.error(`[dry-run] set R2 lifecycle for ${name}`)
+		return { name, policy }
+	}
+
+	const tempDir = mkdtempSync(path.join(os.tmpdir(), 'kody-r2-lifecycle-'))
+	const policyPath = path.join(tempDir, 'lifecycle.json')
+	writeFileSync(policyPath, `${JSON.stringify(policy, null, '\t')}\n`)
+	try {
+		const result = runWrangler(
+			[
+				'r2',
+				'bucket',
+				'lifecycle',
+				'set',
+				name,
+				'--file',
+				policyPath,
+				'--force',
+			],
+			{ quiet: true },
+		)
+		if (result.status === 0) {
+			console.error(`Set R2 lifecycle for ${name}`)
+			return { name, policy }
+		}
+
+		const output = `${result.stdout}${result.stderr}`.trim()
+		if (output) {
+			console.error(output)
+		}
+		fail(`Failed to set R2 lifecycle for ${name}`)
+	} finally {
+		rmSync(tempDir, { recursive: true, force: true })
+	}
 }
 
 export function deleteR2Bucket({
