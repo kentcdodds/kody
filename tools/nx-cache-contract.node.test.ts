@@ -12,16 +12,39 @@ import {
 } from 'nx/src/hasher/task-hasher.js'
 import { expect, test } from 'vitest'
 
+async function getWorkerProjectNode() {
+	const projectGraph = await createProjectGraphAsync()
+	return projectGraph.nodes['worker'] as ProjectGraphProjectNode
+}
+
 async function getWorkerTargetPatterns(target: string): Promise<Array<string>> {
 	// Nx 23 merges `nx.json` targetDefaults onto project targets during graph
 	// construction. `getTargetInputs` no longer re-reads targetDefaults itself,
 	// so the contract must use the graph-merged target config.
-	const [nxJson, projectGraph] = await Promise.all([
+	const [nxJson, projectNode] = await Promise.all([
 		readJsonFile<NxJsonConfiguration>('nx.json'),
-		createProjectGraphAsync(),
+		getWorkerProjectNode(),
 	])
-	const projectNode = projectGraph.nodes['worker'] as ProjectGraphProjectNode
-	return getTargetInputs(nxJson, projectNode, target).selfInputs
+	return getTargetInputs(nxJson, projectNode, target).selfInputs.filter(
+		(input): input is string => typeof input === 'string',
+	)
+}
+
+async function getWorkerDeclaredInputs(target: string) {
+	const projectNode = await getWorkerProjectNode()
+	return projectNode.data.targets?.[target]?.inputs ?? []
+}
+
+function includesCiEnv(inputs: ReadonlyArray<unknown>) {
+	return inputs.some((input) => {
+		if (input === '{env:CI}') return true
+		return (
+			typeof input === 'object' &&
+			input !== null &&
+			'env' in input &&
+			(input as { env?: unknown }).env === 'CI'
+		)
+	})
 }
 
 function hashMatchedInputs(
@@ -83,7 +106,7 @@ test.each([
 test.each(['test', 'test-node', 'test-workers', 'test-mcp', 'test-e2e'])(
 	'%s cache hash includes CI so local validate matches GitHub Actions',
 	async (target) => {
-		const patterns = await getWorkerTargetPatterns(target)
-		expect(patterns).toContain('{env:CI}')
+		const inputs = await getWorkerDeclaredInputs(target)
+		expect(includesCiEnv(inputs)).toBe(true)
 	},
 )

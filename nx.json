@@ -22,7 +22,7 @@
 			"inputs": [
 				"default",
 				"^default",
-				"{env:CI}",
+				{ "env": "CI" },
 				"{workspaceRoot}/vitest*.ts",
 				"{workspaceRoot}/tools/**/*",
 				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*"
@@ -33,7 +33,7 @@
 			"inputs": [
 				"default",
 				"^default",
-				"{env:CI}",
+				{ "env": "CI" },
 				"{workspaceRoot}/vitest*.ts",
 				"{workspaceRoot}/tools/**/*",
 				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*"
@@ -44,7 +44,7 @@
 			"inputs": [
 				"default",
 				"^default",
-				"{env:CI}",
+				{ "env": "CI" },
 				"{workspaceRoot}/vitest*.ts",
 				"{workspaceRoot}/tools/**/*",
 				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*"
@@ -55,7 +55,7 @@
 			"inputs": [
 				"default",
 				"^default",
-				"{env:CI}",
+				{ "env": "CI" },
 				"{workspaceRoot}/vitest*.ts",
 				"{workspaceRoot}/tools/**/*",
 				"{workspaceRoot}/wrangler-env.ts"
@@ -70,7 +70,7 @@
 		"test-e2e": {
 			"cache": true,
 			"inputs": [
-				"{env:CI}",
+				{ "env": "CI" },
 				"{workspaceRoot}/e2e/**/*",
 				"{workspaceRoot}/playwright.config.ts",
 				"default"
