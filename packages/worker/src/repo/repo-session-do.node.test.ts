@@ -1410,6 +1410,67 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 	).rejects.toThrow(/does not match published commit/)
 })
 
+test('openSession wraps packfile corruption but leaves opaque Cloudflare internals bare', async () => {
+	restoreRepoSessionMockBaseline()
+	const { remote } = stubPackageSourceForOpenSession()
+	mockModule.git.clone.mockRejectedValue(
+		new Error(
+			'An internal error caused this command to fail. Packfile payload corrupted: calculated abc but expected def.',
+		),
+	)
+
+	const packfileError = await new RepoSession(
+		createDurableObjectState(),
+		createEnv(),
+	)
+		.openSession({
+			sessionId: 'session-packfile',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			baseUrl: 'https://example.com',
+			sourceRoot: '/',
+		})
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+	expect(packfileError).toBeInstanceOf(Error)
+	expect((packfileError as Error).message).toMatch(
+		new RegExp(
+			`^Artifacts git clone failed for ${remote.replaceAll('.', '\\.')}:`,
+		),
+	)
+	expect((packfileError as Error).message).toContain(
+		'Packfile payload corrupted',
+	)
+	expect(mockModule.git.clone.mock.calls.length).toBeGreaterThanOrEqual(2)
+
+	restoreRepoSessionMockBaseline()
+	stubPackageSourceForOpenSession()
+	mockModule.git.clone.mockClear()
+	mockModule.git.clone.mockRejectedValue(
+		new Error('An internal error occurred.'),
+	)
+	const opaqueError = await new RepoSession(
+		createDurableObjectState(),
+		createEnv(),
+	)
+		.openSession({
+			sessionId: 'session-opaque',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			baseUrl: 'https://example.com',
+			sourceRoot: '/',
+		})
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+	expect(opaqueError).toBeInstanceOf(Error)
+	expect((opaqueError as Error).message).toBe('An internal error occurred.')
+	expect(mockModule.git.clone).toHaveBeenCalledTimes(1)
+})
+
 test('readFile retries D1 reads and falls back to cached sessions when replicas lag', async () => {
 	restoreRepoSessionMockBaseline()
 	const replicaLagSessionRow = {

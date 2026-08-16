@@ -102,6 +102,7 @@ import {
 } from './publish-git-notes.ts'
 import { createIsomorphicGitFs } from './isomorphic-git-fs.ts'
 import {
+	isTransientArtifactsGitError,
 	runArtifactsGitWithRetry,
 	wrapArtifactsGitHttpError,
 } from './artifacts-git-retry.ts'
@@ -309,11 +310,18 @@ class RepoSessionBase extends DurableObject<Env> {
 				})
 			})
 		} catch (error) {
-			throw wrapArtifactsGitHttpError({
-				operation: 'git clone',
-				remote: input.remote,
-				error,
-			})
+			// Only wrap Artifacts-transient signatures (HTTP 5xx / packfile
+			// corruption). Bare Cloudflare opaque internals must stay unwrapped
+			// so repo_open_session can still match and retry with a fresh
+			// session id (KODY-CLOUDFLARE-4H).
+			if (isTransientArtifactsGitError(error)) {
+				throw wrapArtifactsGitHttpError({
+					operation: 'git clone',
+					remote: input.remote,
+					error,
+				})
+			}
+			throw error
 		}
 	}
 
