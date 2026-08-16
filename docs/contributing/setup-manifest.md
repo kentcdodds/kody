@@ -254,9 +254,10 @@ secrets on the control plane remain one-time / out-of-band.
 
 The production Worker also stages non-D1 canonical stores into the same bucket
 when `DR_EXPORT_ENABLED=true` (StorageRunner dumps, `EMAIL_BLOBS` /
-`COMMUNITY_ASSETS` blobs, published `BUNDLE_ARTIFACTS_KV` source snapshots). The
-control plane seals complete days and hosts the Access-protected Admin UI for
-drills and graduated production restore. See
+`COMMUNITY_ASSETS` blobs, published `BUNDLE_ARTIFACTS_KV` source snapshots).
+`REPO_SESSION_BLOBS` is ephemeral RepoSession Workspace scratch and is not
+exported. The control plane seals complete days and hosts the Access-protected
+Admin UI for drills and graduated production restore. See
 [Disaster recovery](./disaster-recovery.md).
 
 Use a separate provisioner token (never a Worker secret) to create the bucket
@@ -268,7 +269,8 @@ node tools/ci/backup-resources-cli.ts plan \
   --destination-account-id "<DR_ACCOUNT_ID>" \
   --source-d1 "<PRODUCTION_D1_UUID>:kody" \
   --deny-production-resource kody-email-blobs \
-  --deny-production-resource kody-community-assets
+  --deny-production-resource kody-community-assets \
+  --deny-production-resource kody-repo-session-blobs
 ```
 
 `apply` is an explicit mutation and must be run only after reviewing the plan.

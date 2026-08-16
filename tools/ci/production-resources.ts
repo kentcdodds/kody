@@ -40,6 +40,7 @@ type ResolvedProductionBindings = {
 	bundleArtifactsKvConfiguredId: string
 	communityAssetsBucketName: string
 	emailBlobsBucketName: string
+	repoSessionBlobsBucketName: string
 	emailDeliveryQueueName: string
 	emailDeliveryDeadLetterQueueName: string
 	artifactsRepoEventsQueueName: string
@@ -266,6 +267,29 @@ function ensureKvNamespace({
 	return { title: created.title, id: created.id }
 }
 
+function readProductionR2BucketName(input: {
+	r2Buckets: Array<unknown>
+	binding: string
+	wranglerConfigPath: string
+}) {
+	const entry = input.r2Buckets.find((item) => {
+		if (!item || typeof item !== 'object') return false
+		return (item as Record<string, unknown>).binding === input.binding
+	}) as Record<string, unknown> | undefined
+	if (!entry) {
+		fail(
+			`wrangler config "${input.wranglerConfigPath}" has no production R2 binding for "${input.binding}".`,
+		)
+	}
+	const bucketName = entry.bucket_name
+	if (typeof bucketName !== 'string' || bucketName.length === 0) {
+		fail(
+			`wrangler config "${input.wranglerConfigPath}" is missing "bucket_name" for production "${input.binding}".`,
+		)
+	}
+	return bucketName
+}
+
 async function resolveProductionBindings({
 	wranglerConfigPath,
 	kvTitleOverride,
@@ -396,44 +420,21 @@ async function resolveProductionBindings({
 		)
 	}
 
-	const emailBlobsEntry = r2Buckets.find((entry) => {
-		if (!entry || typeof entry !== 'object') return false
-		return (entry as Record<string, unknown>).binding === 'EMAIL_BLOBS'
-	}) as Record<string, unknown> | undefined
-	if (!emailBlobsEntry) {
-		fail(
-			`wrangler config "${wranglerConfigPath}" has no production R2 binding for "EMAIL_BLOBS".`,
-		)
-	}
-
-	const emailBlobsBucketName = emailBlobsEntry.bucket_name
-	if (
-		typeof emailBlobsBucketName !== 'string' ||
-		emailBlobsBucketName.length === 0
-	) {
-		fail(
-			`wrangler config "${wranglerConfigPath}" is missing "bucket_name" for production "EMAIL_BLOBS".`,
-		)
-	}
-
-	const communityAssetsEntry = r2Buckets.find((entry) => {
-		if (!entry || typeof entry !== 'object') return false
-		return (entry as Record<string, unknown>).binding === 'COMMUNITY_ASSETS'
-	}) as Record<string, unknown> | undefined
-	if (!communityAssetsEntry) {
-		fail(
-			`wrangler config "${wranglerConfigPath}" has no production R2 binding for "COMMUNITY_ASSETS".`,
-		)
-	}
-	const communityAssetsBucketName = communityAssetsEntry.bucket_name
-	if (
-		typeof communityAssetsBucketName !== 'string' ||
-		communityAssetsBucketName.length === 0
-	) {
-		fail(
-			`wrangler config "${wranglerConfigPath}" is missing "bucket_name" for production "COMMUNITY_ASSETS".`,
-		)
-	}
+	const emailBlobsBucketName = readProductionR2BucketName({
+		r2Buckets,
+		binding: 'EMAIL_BLOBS',
+		wranglerConfigPath,
+	})
+	const communityAssetsBucketName = readProductionR2BucketName({
+		r2Buckets,
+		binding: 'COMMUNITY_ASSETS',
+		wranglerConfigPath,
+	})
+	const repoSessionBlobsBucketName = readProductionR2BucketName({
+		r2Buckets,
+		binding: 'REPO_SESSION_BLOBS',
+		wranglerConfigPath,
+	})
 
 	let queueResources: ReturnType<typeof parseProductionQueueResources>
 	try {
@@ -526,6 +527,7 @@ async function resolveProductionBindings({
 		bundleArtifactsKvConfiguredId,
 		communityAssetsBucketName,
 		emailBlobsBucketName,
+		repoSessionBlobsBucketName,
 		committedUserEmailDomain,
 		packageAppHostname,
 		packageAppLegacyHostnames,
@@ -568,6 +570,10 @@ async function ensureProductionResources(options: CliOptions) {
 	})
 	const emailBlobs = ensureR2Bucket({
 		name: bindings.emailBlobsBucketName,
+		dryRun: options.dryRun,
+	})
+	const repoSessionBlobs = ensureR2Bucket({
+		name: bindings.repoSessionBlobsBucketName,
 		dryRun: options.dryRun,
 	})
 	const communityAssets = ensureR2Bucket({
@@ -702,6 +708,7 @@ async function ensureProductionResources(options: CliOptions) {
 		bundleArtifactsKvId: bundleArtifactsKv.id,
 		communityAssetsBucketName: communityAssets.name,
 		emailBlobsBucketName: emailBlobs.name,
+		repoSessionBlobsBucketName: repoSessionBlobs.name,
 		workerVars: {
 			APP_BASE_URL: process.env.APP_BASE_URL,
 			APP_LEGACY_HOSTS: process.env.APP_LEGACY_HOSTS,
@@ -728,6 +735,7 @@ async function ensureProductionResources(options: CliOptions) {
 	console.log(`bundle_artifacts_kv_id=${bundleArtifactsKv.id}`)
 	console.log(`community_assets_bucket_name=${communityAssets.name}`)
 	console.log(`email_blobs_bucket_name=${emailBlobs.name}`)
+	console.log(`repo_session_blobs_bucket_name=${repoSessionBlobs.name}`)
 	console.log(`email_delivery_queue_name=${emailDeliveryQueue.name}`)
 	console.log(
 		`email_delivery_dead_letter_queue_name=${emailDeliveryDeadLetterQueue.name}`,

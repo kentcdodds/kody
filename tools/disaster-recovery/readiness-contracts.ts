@@ -2,6 +2,8 @@ export const maximumSupportedD1BackupBytes = 4_500_000_000
 
 export type ReadinessLevel = 'd1-only' | 'canonical-data' | 'full-service'
 
+// REPO_SESSION_BLOBS is ephemeral RepoSession Workspace scratch and is
+// intentionally not a canonical store.
 export type CanonicalResourceId =
 	| 'ALARMS'
 	| 'APP_DB'

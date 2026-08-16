@@ -16,10 +16,10 @@ import { type PublishGitNoteFileSystem } from './publish-git-notes.ts'
 /**
  * Clone / checkout for `package_publish_external_push` must not use the
  * RepoSession Durable Object SQL workspace. isomorphic-git writes the whole
- * packfile as one blob; without an R2 spill `@cloudflare/shell` Workspace
- * stores that inline and hits Cloudflare DO SQLite's 2 MiB row limit
- * (`string or blob too big: SQLITE_TOOBIG`). Ephemeral in-memory FS has no
- * such row ceiling (Artifacts packs are already capped ~32 MiB).
+ * packfile as one blob. Interactive RepoSession workspaces spill those
+ * objects to `REPO_SESSION_BLOBS`. External publish stays on an ephemeral
+ * in-memory FS so it never depends on that Durable Object workspace
+ * (Artifacts packs are already capped ~32 MiB).
  */
 export const externalPublishWorkspaceDir = '/repo'
 
@@ -199,8 +199,9 @@ export async function cloneExternalPublishWorkspace(input: {
 
 /**
  * Stable phrase for DO SQL Workspace writes that exceed Cloudflare's 2 MiB
- * string/BLOB row limit. Used when interactive repo sessions still clone into
- * the SQL-backed Workspace (no R2 spill yet).
+ * string/BLOB row limit. Interactive sessions spill objects above the
+ * Workspace inline threshold to `REPO_SESSION_BLOBS`; this still matches
+ * residual inline writes that never reached R2.
  */
 export function isWorkspaceSqliteTooBigMessage(message: string) {
 	return (
@@ -212,8 +213,9 @@ export function buildWorkspaceSqliteTooBigCallerMessage(operation: string) {
 	return (
 		`${operation} failed because a git object exceeded the Durable Object ` +
 		`SQLite 2 MiB row limit while materializing the repo session workspace ` +
-		`(string or blob too big: SQLITE_TOOBIG). Shrink large files or pack ` +
-		`content (host bulky assets externally and commit a pointer), then retry. ` +
+		`(string or blob too big: SQLITE_TOOBIG). Session workspaces spill ` +
+		`objects above the inline threshold to REPO_SESSION_BLOBS; this error ` +
+		`means the write stayed inline. Shrink the object or retry. ` +
 		`package_publish_external_push uses an in-memory clone and is not limited ` +
 		`by this row ceiling.`
 	)

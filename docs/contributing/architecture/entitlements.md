@@ -574,8 +574,9 @@ Rules:
      [UserMeter](#usermeter).
 
   2. **Durable Object bucket estimates (separate):** StorageRunner buckets and
-     RepoSession workspaces expose `estimatedBytes`; inventory rows distinguish
-     them by `kind` and persist the latest measurement on
+     RepoSession workspaces expose `estimatedBytes`. RepoSession sums SQLite
+     `databaseSize` with `REPO_SESSION_BLOBS` prefix bytes. Inventory rows
+     distinguish them by `kind` and persist the latest measurement on
      `user_storage_buckets.estimated_bytes`. Repo sessions register on open,
      refresh after workspace mutations, and remove their rows on
      discard/purge/session or source cleanup. Write chokepoints that pass

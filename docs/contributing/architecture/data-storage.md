@@ -102,7 +102,10 @@ Deletion must cover these user-owned surfaces:
   deletion marker and Mailbox rows for retry. Rows owned by `system:email` keep
   their blobs here (they are not user data); those blobs are removed when
   system-email retention deletes messages through the D1 helper.
-  `Mailbox.purge()` never deletes R2 objects.
+  `Mailbox.purge()` never deletes R2 objects. RepoSession workspace spill in
+  `REPO_SESSION_BLOBS` is ephemeral scratch keyed by Durable Object id
+  (`repo-session:{durableObjectId}/`). Account deletion enumerates session ids
+  and each `purgeSession` prefix-purges that object's keys after `deleteAll`.
 - **KV:** published bundle artifact keys, source/manifest snapshot keys,
   community listing snapshots, and per-user package retriever cache/index keys
   in `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed.
@@ -245,7 +248,8 @@ Durable Object export behavior:
 - `MCP`, `RepoSession`, `PackageRealtimeSession`, and `McpClientHub` remain
   account-export exclusions: MCP objects are SDK session-keyed and not globally
   enumerable; RepoSession is an ephemeral editing workspace (although its SQLite
-  bytes are inventoried for the `storage_bytes` entitlement);
+  plus `REPO_SESSION_BLOBS` spill bytes are inventoried for the `storage_bytes`
+  entitlement);
   PackageRealtimeSession is live websocket state; McpClientHub can hold OAuth
   tokens and SDK registrations that are non-portable. Canonical repo-backed
   source and durable package app state are covered by Artifacts pointers and
@@ -474,7 +478,7 @@ snapshots are stored in `BUNDLE_ARTIFACTS_KV`.
   source ids, published commits, bundle artifact rows, community listing ids,
   and package ids.
 
-## R2 (`COMMUNITY_ASSETS`, `EMAIL_BLOBS`)
+## R2 (`COMMUNITY_ASSETS`, `EMAIL_BLOBS`, `REPO_SESSION_BLOBS`)
 
 Processed public community icons live in the private `COMMUNITY_ASSETS` bucket.
 The public icon route reads the active listing first, then resolves a cachified
@@ -521,6 +525,22 @@ protocol. Sender identities accept only `verified` rows, and
   `{worker}-email-blobs` buckets created and cleaned up by
   `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
   name locally (Wrangler/vitest-pool-workers simulate the bucket).
+
+RepoSession `@cloudflare/shell` Workspace objects above the inline threshold
+(~1.5 MiB) live in `REPO_SESSION_BLOBS`. This is session scratch, not a
+user-visible rewrite of repo files: the 10 MiB per-file policy still rejects
+oversized writes, and Artifacts remains the durable source. Workspace keys use
+`repo-session:{durableObjectId}/` (`{name}/{namespace}{path}`).
+`Workspace.rm` deletes listed keys while SQL metadata exists; `purgeSession`
+prefix-purges after `deleteAll` so a failed `rm` cannot orphan objects.
+Discard and expired-session cleanup also prefix-purge. Isolated check/rebuild
+RepoSession isolates never write this workspace. The bucket is omitted from
+DR canonical exports.
+
+- Bucket names: `kody-repo-session-blobs` (production), per-preview
+  `{worker}-repo-session-blobs` buckets created and cleaned up by
+  `tools/ci/preview-resources.ts`, and the test env reuses the preview-style
+  name locally.
 
 ## Durable Objects (`MCP_OBJECT`)
 
@@ -977,6 +997,8 @@ and are bound cross-script from main — see
 - `OAUTH_KV` (KV)
 - `BUNDLE_ARTIFACTS_KV` (KV)
 - `EMAIL_BLOBS` (R2, raw email MIME blobs)
+- `REPO_SESSION_BLOBS` (R2, ephemeral RepoSession Workspace spill; not a DR
+  canonical store)
 - `MCP_OBJECT` (Durable Objects)
 - `REMOTE_CONNECTOR_SESSION` (Durable Objects)
 - `RUN_LOG` (Durable Objects; per-user run records — see
@@ -1063,7 +1085,10 @@ Operational notes:
   `repo_log`), commit (`repo_commit`), and restore (`repo_restore`). There is no
   git-command parser channel; branch/checkout/remote operations require the
   Artifacts git lane via `package_get_git_remote`. Package runtime bundles are
-  loaded from published artifacts rather than a mounted checkout.
+  loaded from published artifacts rather than a mounted checkout. The session
+  Workspace spills objects above the inline threshold to `REPO_SESSION_BLOBS`
+  so clone and checkout can honor the 10 MiB per-file policy without hitting
+  the Durable Object SQLite 2 MiB row limit.
 - `repo_write_file` exposes the same Durable Object's `applyEdits` write path as
   a first-class MCP capability for whole-file overwrites. Prefer it over
   `repo_apply_patch` when the agent is replacing an entire file (for example, a

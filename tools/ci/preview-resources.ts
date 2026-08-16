@@ -101,6 +101,7 @@ function buildPreviewResourceNames(workerName: string) {
 	const bundleKvSuffix = '-bundle-artifacts-kv'
 	const communityAssetsSuffix = '-community-assets'
 	const emailBlobsSuffix = '-email-blobs'
+	const repoSessionBlobsSuffix = '-repo-session-blobs'
 	const webhookDispatchQueueSuffix = '-webhook-dispatch'
 	const webhookDispatchDeadLetterQueueSuffix = '-webhook-dispatch-dlq'
 
@@ -119,6 +120,11 @@ function buildPreviewResourceNames(workerName: string) {
 	const emailBlobsBucketName = truncateWithSuffix(
 		workerName,
 		emailBlobsSuffix,
+		maxLen,
+	)
+	const repoSessionBlobsBucketName = truncateWithSuffix(
+		workerName,
+		repoSessionBlobsSuffix,
 		maxLen,
 	)
 	const communityAssetsBucketName = truncateWithSuffix(
@@ -144,6 +150,7 @@ function buildPreviewResourceNames(workerName: string) {
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
 		emailBlobsBucketName,
+		repoSessionBlobsBucketName,
 		webhookDispatchQueueName,
 		webhookDispatchDeadLetterQueueName,
 	}
@@ -286,6 +293,7 @@ async function ensurePreviewResources(options: CliOptions) {
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
 		emailBlobsBucketName,
+		repoSessionBlobsBucketName,
 		webhookDispatchQueueName,
 		webhookDispatchDeadLetterQueueName,
 	} = buildPreviewResourceNames(options.workerName)
@@ -309,6 +317,10 @@ async function ensurePreviewResources(options: CliOptions) {
 	})
 	const emailBlobs = ensureR2Bucket({
 		name: emailBlobsBucketName,
+		dryRun: options.dryRun,
+	})
+	const repoSessionBlobs = ensureR2Bucket({
+		name: repoSessionBlobsBucketName,
 		dryRun: options.dryRun,
 	})
 	const communityAssets = ensureR2Bucket({
@@ -354,6 +366,7 @@ async function ensurePreviewResources(options: CliOptions) {
 		bundleArtifactsKvId: bundleArtifactsKv.id,
 		communityAssetsBucketName: communityAssets.name,
 		emailBlobsBucketName: emailBlobs.name,
+		repoSessionBlobsBucketName: repoSessionBlobs.name,
 		workerVars: {
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 		},
@@ -384,6 +397,7 @@ async function ensurePreviewResources(options: CliOptions) {
 	console.log(`bundle_artifacts_kv_id=${bundleArtifactsKv.id}`)
 	console.log(`community_assets_bucket_name=${communityAssets.name}`)
 	console.log(`email_blobs_bucket_name=${emailBlobs.name}`)
+	console.log(`repo_session_blobs_bucket_name=${repoSessionBlobs.name}`)
 	console.log(`webhook_dispatch_queue_name=${webhookDispatchQueueName}`)
 	console.log(
 		`webhook_dispatch_dead_letter_queue_name=${webhookDispatchDeadLetterQueueName}`,
@@ -434,6 +448,7 @@ async function cleanupPreviewResources(options: CliOptions) {
 		bundleArtifactsKvTitle,
 		communityAssetsBucketName,
 		emailBlobsBucketName,
+		repoSessionBlobsBucketName,
 		webhookDispatchQueueName,
 		webhookDispatchDeadLetterQueueName,
 	} = buildPreviewResourceNames(options.workerName)
@@ -472,6 +487,7 @@ async function cleanupPreviewResources(options: CliOptions) {
 	})
 	deleteR2Bucket({ name: communityAssetsBucketName, dryRun: options.dryRun })
 	deleteR2Bucket({ name: emailBlobsBucketName, dryRun: options.dryRun })
+	deleteR2Bucket({ name: repoSessionBlobsBucketName, dryRun: options.dryRun })
 	deleteKvNamespace({ title: bundleArtifactsKvTitle, dryRun: options.dryRun })
 	deleteKvNamespace({ title: oauthKvTitle, dryRun: options.dryRun })
 	deleteD1Database({ name: auditD1DatabaseName, dryRun: options.dryRun })

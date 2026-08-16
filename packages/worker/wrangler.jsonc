@@ -417,6 +417,10 @@
 					"binding": "EMAIL_BLOBS",
 					"bucket_name": "kody-email-blobs",
 				},
+				{
+					"binding": "REPO_SESSION_BLOBS",
+					"bucket_name": "kody-repo-session-blobs",
+				},
 			],
 			"vectorize": [
 				{
@@ -788,6 +792,10 @@
 					"binding": "EMAIL_BLOBS",
 					"bucket_name": "kody-preview-email-blobs",
 				},
+				{
+					"binding": "REPO_SESSION_BLOBS",
+					"bucket_name": "kody-preview-repo-session-blobs",
+				},
 			],
 			"vectorize": [
 				{
@@ -1071,6 +1079,10 @@
 				{
 					"binding": "EMAIL_BLOBS",
 					"bucket_name": "kody-preview-email-blobs",
+				},
+				{
+					"binding": "REPO_SESSION_BLOBS",
+					"bucket_name": "kody-preview-repo-session-blobs",
 				},
 			],
 			"vars": {

@@ -1535,6 +1535,29 @@ function addPackageAppCustomDomainRoute(input: {
 	)
 }
 
+function setGeneratedR2BucketName(input: {
+	r2Buckets: Array<unknown>
+	binding: string
+	bucketName: string
+	baseConfigPath: string
+	envName: WranglerEnvName
+}) {
+	const entryIndex = input.r2Buckets.findIndex((entry) => {
+		if (!entry || typeof entry !== 'object') return false
+		return (entry as Record<string, unknown>).binding === input.binding
+	})
+	if (entryIndex < 0) {
+		fail(
+			`wrangler config "${input.baseConfigPath}" has no ${input.envName} R2 binding for "${input.binding}".`,
+		)
+	}
+	const entry = input.r2Buckets[entryIndex] as Record<string, unknown>
+	input.r2Buckets[entryIndex] = {
+		...entry,
+		bucket_name: input.bucketName,
+	}
+}
+
 export async function writeGeneratedWranglerConfig({
 	baseConfigPath,
 	outConfigPath,
@@ -1548,6 +1571,7 @@ export async function writeGeneratedWranglerConfig({
 	bundleArtifactsKvId,
 	communityAssetsBucketName,
 	emailBlobsBucketName,
+	repoSessionBlobsBucketName,
 	workerVars,
 	queueBindings,
 	serviceBindings,
@@ -1565,6 +1589,7 @@ export async function writeGeneratedWranglerConfig({
 	bundleArtifactsKvId: string
 	communityAssetsBucketName: string
 	emailBlobsBucketName: string
+	repoSessionBlobsBucketName: string
 	workerVars?: Record<string, string | undefined>
 	queueBindings?: Array<{
 		binding: string
@@ -1695,43 +1720,27 @@ export async function writeGeneratedWranglerConfig({
 		)
 	}
 
-	const communityAssetsEntryIndex = r2Buckets.findIndex((entry) => {
-		if (!entry || typeof entry !== 'object') return false
-		return (entry as Record<string, unknown>).binding === 'COMMUNITY_ASSETS'
+	setGeneratedR2BucketName({
+		r2Buckets,
+		binding: 'COMMUNITY_ASSETS',
+		bucketName: communityAssetsBucketName,
+		baseConfigPath,
+		envName,
 	})
-	if (communityAssetsEntryIndex < 0) {
-		fail(
-			`wrangler config "${baseConfigPath}" has no ${envName} R2 binding for "COMMUNITY_ASSETS".`,
-		)
-	}
-
-	const communityAssetsEntry = r2Buckets[communityAssetsEntryIndex] as Record<
-		string,
-		unknown
-	>
-	r2Buckets[communityAssetsEntryIndex] = {
-		...communityAssetsEntry,
-		bucket_name: communityAssetsBucketName,
-	}
-
-	const emailBlobsEntryIndex = r2Buckets.findIndex((entry) => {
-		if (!entry || typeof entry !== 'object') return false
-		return (entry as Record<string, unknown>).binding === 'EMAIL_BLOBS'
+	setGeneratedR2BucketName({
+		r2Buckets,
+		binding: 'EMAIL_BLOBS',
+		bucketName: emailBlobsBucketName,
+		baseConfigPath,
+		envName,
 	})
-	if (emailBlobsEntryIndex < 0) {
-		fail(
-			`wrangler config "${baseConfigPath}" has no ${envName} R2 binding for "EMAIL_BLOBS".`,
-		)
-	}
-
-	const emailBlobsEntry = r2Buckets[emailBlobsEntryIndex] as Record<
-		string,
-		unknown
-	>
-	r2Buckets[emailBlobsEntryIndex] = {
-		...emailBlobsEntry,
-		bucket_name: emailBlobsBucketName,
-	}
+	setGeneratedR2BucketName({
+		r2Buckets,
+		binding: 'REPO_SESSION_BLOBS',
+		bucketName: repoSessionBlobsBucketName,
+		baseConfigPath,
+		envName,
+	})
 
 	const existingVars = (targetEnv as Record<string, unknown>).vars
 	if (

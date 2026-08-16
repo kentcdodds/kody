@@ -95,6 +95,11 @@ import {
 	isWorkspaceSqliteTooBigMessage,
 } from './external-publish-clone.ts'
 import {
+	buildRepoSessionWorkspaceName,
+	measureRepoSessionWorkspaceBlobBytes,
+	purgeRepoSessionWorkspaceBlobs,
+} from './repo-session-blobs.ts'
+import {
 	assertPackagePrivateVisibilityChangeAllowed,
 	assertPackageSourceOverwriteAllowed,
 	assertPublishedPackageSourceRepoHead,
@@ -144,10 +149,6 @@ type CachedRepoSessionState = {
 }
 
 type RawGitPushInput = Parameters<typeof rawGit.push>[0]
-
-function buildRepoSessionWorkspaceName(sessionId: string) {
-	return `repo-session:${sessionId}`
-}
 
 function nowIso() {
 	return new Date().toISOString()
@@ -266,6 +267,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	readonly workspace = new Workspace({
 		sql: this.ctx.storage.sql,
 		name: () => buildRepoSessionWorkspaceName(this.ctx.id.toString()),
+		r2: this.env.REPO_SESSION_BLOBS,
 	})
 
 	readonly fileSystem = new WorkspaceFileSystem(this.workspace)
@@ -348,7 +350,15 @@ class RepoSessionBase extends DurableObject<Env> {
 	>()
 
 	async getEstimatedBytes(): Promise<{ estimatedBytes: number }> {
-		return { estimatedBytes: this.ctx.storage.sql.databaseSize }
+		return { estimatedBytes: await this.readEstimatedWorkspaceBytes() }
+	}
+
+	private async readEstimatedWorkspaceBytes(): Promise<number> {
+		const r2Bytes = await measureRepoSessionWorkspaceBlobBytes({
+			blobs: this.env.REPO_SESSION_BLOBS,
+			durableObjectId: this.ctx.id.toString(),
+		})
+		return this.ctx.storage.sql.databaseSize + r2Bytes
 	}
 
 	private refreshStoredEstimate(sessionId: string, userId: string): void {
@@ -356,8 +366,15 @@ class RepoSessionBase extends DurableObject<Env> {
 			env: this.env,
 			userId,
 			storageId: repoSessionStorageBucketId(sessionId),
-			readEstimatedBytes: async () => this.ctx.storage.sql.databaseSize,
+			readEstimatedBytes: async () => this.readEstimatedWorkspaceBytes(),
 			waitUntil: (promise) => this.ctx.waitUntil(promise),
+		})
+	}
+
+	private async purgeWorkspaceBlobs(): Promise<void> {
+		await purgeRepoSessionWorkspaceBlobs({
+			blobs: this.env.REPO_SESSION_BLOBS,
+			durableObjectId: this.ctx.id.toString(),
 		})
 	}
 
@@ -1469,6 +1486,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		})
 		await this.clearCachedSessionState(input.sessionId)
 		await this.resetWorkspace()
+		await this.purgeWorkspaceBlobs()
 		await this.deleteStorageInventory(input.sessionId, sessionRow.user_id)
 		return {
 			ok: true,
@@ -1495,6 +1513,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		this.inMemorySessionState.delete(input.sessionId)
 		this.initializedSessionId = null
 		await this.ctx.storage.deleteAll()
+		await this.purgeWorkspaceBlobs()
 		await this.deleteStorageInventory(input.sessionId, input.userId)
 		return {
 			ok: true as const,
@@ -1554,6 +1573,16 @@ class RepoSessionBase extends DurableObject<Env> {
 		await this.clearCachedSessionState(input.sessionId)
 		await this.resetWorkspace().catch(() => {
 			// Session row is already gone; workspace wipe is best-effort.
+		})
+		await this.purgeWorkspaceBlobs().catch((error: unknown) => {
+			console.warn(
+				JSON.stringify({
+					message: 'repo session workspace R2 prefix purge failed',
+					reason: input.reason,
+					sessionId: input.sessionId,
+					error: getErrorMessage(error),
+				}),
+			)
 		})
 		console.info(
 			JSON.stringify({
@@ -2672,8 +2701,8 @@ class RepoSessionBase extends DurableObject<Env> {
 		const targetBranch = sourceInfo?.defaultBranch ?? defaultSessionBranch
 		let publishClone: Awaited<ReturnType<typeof cloneExternalPublishWorkspace>>
 		try {
-			// In-memory clone: avoids DO SQL SQLITE_TOOBIG on packfiles
-			// (KODY-CLOUDFLARE-57). Do not route this through the SQL Workspace.
+			// In-memory clone: publish verification does not need the session
+			// Durable Object workspace (KODY-CLOUDFLARE-57).
 			publishClone = await cloneExternalPublishWorkspace({
 				remote: sourceAccess.remote,
 				token: sourceAccess.token,

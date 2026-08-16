@@ -60,6 +60,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
 			communityAssetsBucketName: 'kody-community-assets',
 			emailBlobsBucketName: 'kody-email-blobs',
+			repoSessionBlobsBucketName: 'kody-repo-session-blobs',
 			// CI injects the app origin the same way; the deploy needs it to publish
 			// a complete custom-domain set.
 			workerVars: { APP_BASE_URL: 'https://heykody.dev' },
@@ -129,6 +130,10 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 		expect(productionConfig.env?.production?.r2_buckets).toEqual([
 			{ binding: 'COMMUNITY_ASSETS', bucket_name: 'kody-community-assets' },
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-email-blobs' },
+			{
+				binding: 'REPO_SESSION_BLOBS',
+				bucket_name: 'kody-repo-session-blobs',
+			},
 		])
 		// The routes are generated from the base-URL vars rather than committed,
 		// because a committed route would make `wrangler dev` resolve every local
@@ -159,6 +164,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			bundleArtifactsKvId: 'dry-run-kody-pr-123-bundle-artifacts',
 			communityAssetsBucketName: 'kody-pr-123-community-assets',
 			emailBlobsBucketName: 'kody-pr-123-email-blobs',
+			repoSessionBlobsBucketName: 'kody-pr-123-repo-session-blobs',
 			queueBindings: [
 				{
 					binding: 'WEBHOOK_DISPATCH_QUEUE',
@@ -218,6 +224,10 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 				bucket_name: 'kody-pr-123-community-assets',
 			},
 			{ binding: 'EMAIL_BLOBS', bucket_name: 'kody-pr-123-email-blobs' },
+			{
+				binding: 'REPO_SESSION_BLOBS',
+				bucket_name: 'kody-pr-123-repo-session-blobs',
+			},
 		])
 		expect(previewConfig.env?.preview?.queues).toMatchObject({
 			producers: [
@@ -261,6 +271,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 					bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
 					communityAssetsBucketName: 'kody-community-assets',
 					emailBlobsBucketName: 'kody-email-blobs',
+					repoSessionBlobsBucketName: 'kody-repo-session-blobs',
 				}),
 			).rejects.toThrow('process.exit called')
 			expect(consoleError).toHaveBeenCalledWith(
@@ -292,6 +303,7 @@ test('writeGeneratedWranglerConfig keeps legacy app hosts attached during a doma
 			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
 			communityAssetsBucketName: 'kody-community-assets',
 			emailBlobsBucketName: 'kody-email-blobs',
+			repoSessionBlobsBucketName: 'kody-repo-session-blobs',
 			// The heykody.dev -> heykody.app cutover shape: the canonical origin
 			// moves, and the legacy host must stay in the published route set —
 			// `routes` replaces the Worker's whole custom-domain set, so omitting
@@ -347,6 +359,7 @@ test('writeGeneratedWranglerConfig keeps legacy app hosts attached during a doma
 						bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
 						communityAssetsBucketName: 'kody-community-assets',
 						emailBlobsBucketName: 'kody-email-blobs',
+						repoSessionBlobsBucketName: 'kody-repo-session-blobs',
 						workerVars: {
 							APP_BASE_URL: 'https://heykody.app',
 							APP_LEGACY_HOSTS: legacyHosts,
@@ -1170,6 +1183,7 @@ test('writeGeneratedWranglerConfig rejects invalid environment asset config', as
 				bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
 				communityAssetsBucketName: 'kody-community-assets',
 				emailBlobsBucketName: 'kody-email-blobs',
+				repoSessionBlobsBucketName: 'kody-repo-session-blobs',
 			}),
 		).rejects.toThrow('process.exit')
 		expect(error).toHaveBeenCalledWith(

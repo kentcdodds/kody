@@ -91,6 +91,10 @@ function buildMainGeneratedConfig(envName: string) {
 				binding: 'EMAIL_BLOBS',
 				bucket_name: 'kody-pr-7-email-blobs',
 			},
+			{
+				binding: 'REPO_SESSION_BLOBS',
+				bucket_name: 'kody-pr-7-repo-session-blobs',
+			},
 		],
 		queues: {
 			producers: [

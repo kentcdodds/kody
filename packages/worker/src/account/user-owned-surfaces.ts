@@ -90,7 +90,7 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			deletionResultKey: 'repoSessions',
 			export: 'exclude',
 			excludeReason:
-				'Ephemeral editing workspace. Canonical repo-backed source is exported as Artifacts repo pointers via entity_sources; session catalog metadata is exported from RepoSessionIndex.',
+				'Ephemeral editing workspace, including REPO_SESSION_BLOBS spill purged with the session Durable Object. Canonical repo-backed source is exported as Artifacts repo pointers via entity_sources; session catalog metadata is exported from RepoSessionIndex.',
 		},
 		{
 			id: 'remote_connector_session',
