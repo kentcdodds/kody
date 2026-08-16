@@ -453,11 +453,13 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// application capture paths (for example scheduled_lane_failed) still
 		// forwarded them. The same applies to "Currently processing a
 		// long-running export" while the nightly DR D1 export holds the DB,
-		// "Network connection lost" when the D1 binding drops mid-query, and
-		// opaque D1 "internal error …; reference = …" platform faults
-		// (including storage object-reset). These are transient platform
-		// unavailability errors retried in app code and should not open or
-		// regress Sentry issues.
+		// "Network connection lost" when the D1 binding drops mid-query,
+		// "D1 DB is overloaded. Requests queued for too long" when D1's
+		// request queue times out under platform load, and opaque D1
+		// "internal error …; reference = …" platform faults (including
+		// storage object-reset). These are transient platform unavailability
+		// errors retried in app code and should not open or regress Sentry
+		// issues.
 		//
 		// User-authored failures are dropped primarily via `UserCodeError`
 		// (`filterUserCodeErrorSentryEvent`). Plan-limit denials

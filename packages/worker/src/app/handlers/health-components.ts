@@ -15,8 +15,9 @@ const componentCheckTimeoutMs = 3_000
 const resultCacheTtlMs = 10_000
 
 /**
- * Transient D1 blips (SQLITE_BUSY, "Network connection lost", opaque
- * "internal error; reference = …") are tolerated with retries on every
+ * Transient D1 blips (SQLITE_BUSY, "Network connection lost", "D1 DB is
+ * overloaded…", opaque "internal error; reference = …") are tolerated with
+ * retries on every
  * production D1 path, so a single blip must not register as component
  * downtime on the public status page — the mostly idle audit database was
  * losing uptime to exactly these. Three attempts with the standard backoff

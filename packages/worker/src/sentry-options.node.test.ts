@@ -78,6 +78,27 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 				values: [
 					{
 						value:
+							'D1_ERROR: D1 DB is overloaded. Requests queued for too long.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{ value: 'D1 DB is overloaded. Requests queued for too long' },
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
 							'D1_ERROR: internal error; reference = 0u3odos5iotccpol68ppc0eg',
 					},
 				],
@@ -103,6 +124,13 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		},
 	}
 	expect(filterSentryEvent(unrelatedNetworkLoss)).toBe(unrelatedNetworkLoss)
+
+	const unrelatedOverload = {
+		exception: {
+			values: [{ value: 'queue is overloaded while uploading...' }],
+		},
+	}
+	expect(filterSentryEvent(unrelatedOverload)).toBe(unrelatedOverload)
 
 	const bareInternalError = {
 		exception: { values: [{ value: 'internal error' }] },

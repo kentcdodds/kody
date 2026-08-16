@@ -27,6 +27,17 @@ export const d1LongRunningExportMessage =
 export const d1NetworkConnectionLostMessage = 'Network connection lost'
 
 /**
+ * Cloudflare D1 capacity blip
+ * (`D1_ERROR: D1 DB is overloaded. Requests queued for too long.`).
+ * Not an application defect — D1's request queue timed out under platform
+ * load. Same retry / Sentry-drop class as SQLITE_BUSY and binding transport
+ * blips. Match only the exact D1 forms (optional `Error:` / `D1_ERROR:`
+ * prefixes) so unrelated "… overloaded …" messages stay out.
+ */
+export const d1DbOverloadedMessage =
+	'D1 DB is overloaded. Requests queued for too long'
+
+/**
  * Cloudflare D1 opaque platform failures with a support reference, e.g.
  * `D1_ERROR: internal error; reference = <id>` and
  * `D1_ERROR: Internal error in D1 DB storage caused object to be reset; reference = <id>`.
@@ -46,12 +57,17 @@ function stripD1ErrorPrefixes(message: string) {
 		.replace(/^D1_ERROR:\s*/i, '')
 }
 
-function isD1NetworkConnectionLostMessage(message: string) {
+function isExactD1PlatformMessage(message: string, expected: string) {
 	const normalized = stripD1ErrorPrefixes(message)
-	return (
-		normalized === d1NetworkConnectionLostMessage ||
-		normalized === `${d1NetworkConnectionLostMessage}.`
-	)
+	return normalized === expected || normalized === `${expected}.`
+}
+
+function isD1NetworkConnectionLostMessage(message: string) {
+	return isExactD1PlatformMessage(message, d1NetworkConnectionLostMessage)
+}
+
+function isD1DbOverloadedMessage(message: string) {
+	return isExactD1PlatformMessage(message, d1DbOverloadedMessage)
 }
 
 function isD1InternalErrorMessage(message: string) {
@@ -64,6 +80,7 @@ export function isRetryableD1LockMessage(message: string) {
 		message.includes('database is locked') ||
 		message.includes(d1LongRunningExportMessage) ||
 		isD1NetworkConnectionLostMessage(message) ||
+		isD1DbOverloadedMessage(message) ||
 		isD1InternalErrorMessage(message)
 	)
 }
@@ -76,11 +93,13 @@ export function isRetryableD1LockError(error: unknown) {
  * Retries transient D1 unavailability: SQLITE_BUSY lock contention,
  * Cloudflare's "Currently processing a long-running export" (DR / REST
  * exports block other requests), binding "Network connection lost"
- * transport blips, and opaque D1 "internal error …; reference = …" platform
+ * transport blips, "D1 DB is overloaded. Requests queued for too long"
+ * capacity blips, and opaque D1 "internal error …; reference = …" platform
  * faults (including storage object-reset). D1 does not automatically retry
  * write queries, so cron lanes and long-running retention batches need
  * application-level backoff when they overlap with concurrent writers, an
- * in-flight export, a brief D1 session drop, or a D1 backend blip.
+ * in-flight export, a brief D1 session drop, a D1 capacity spike, or a D1
+ * backend blip.
  */
 export async function runD1WithRetry<T>(
 	operation: () => Promise<T>,
