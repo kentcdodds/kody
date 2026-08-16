@@ -532,9 +532,11 @@ oversized writes, and Artifacts remains the durable source. Workspace keys use
 `repo-session:{durableObjectId}/` (`{name}/{namespace}{path}`). `Workspace.rm`
 deletes listed keys while SQL metadata exists; `purgeSession` prefix-purges
 after `deleteAll` so a failed `rm` cannot orphan objects. Discard and
-expired-session cleanup also prefix-purge. Isolated check/rebuild RepoSession
-isolates never write this workspace. The bucket is omitted from DR canonical
-exports.
+expired-session cleanup prefix-purge this Durable Object's prefix before
+removing the catalog row, so a failed R2 delete keeps the row for cron retry. A
+missing catalog row still purges. Isolated check/rebuild RepoSession isolates
+never write this workspace. The bucket is omitted from DR canonical exports and
+from the `r2_object` account-export section.
 
 - Bucket names: `kody-repo-session-blobs` (production), per-preview
   `{worker}-repo-session-blobs` buckets created and cleaned up by
@@ -1360,10 +1362,17 @@ App-owned R2 keys are:
   `emailAttachmentBlobKey` in `packages/worker/src/email/blob-keys.ts`. Same
   per-user prefix isolation and account-deletion coverage as raw MIME.
 
+- `repo-session:{durableObjectId}/…` — ephemeral RepoSession Workspace spill in
+  `REPO_SESSION_BLOBS`. Account deletion prefix-purges via each session Durable
+  Object. This scratch is excluded from the `r2_object` account-export section;
+  canonical repo bytes stay in Artifacts.
+
 New R2 key prefixes must add corresponding account-deletion coverage or a
-deliberate retention note, same as KV. All currently registered R2 surfaces use
-the bounded `r2_object` account-export section; the inventory is derived from
-the same user-owned D1 rows used by account deletion.
+deliberate retention note, same as KV. Exportable registered R2 surfaces
+(`EMAIL_BLOBS`, `COMMUNITY_ASSETS`) use the bounded `r2_object` account-export
+section; the inventory is derived from the same user-owned D1 rows used by
+account deletion. `REPO_SESSION_BLOBS` is registered R2 but is ephemeral session
+scratch, so it is purged with the session instead of exported.
 
 ### Vectorize metadata contracts
 
