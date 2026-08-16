@@ -113,7 +113,13 @@ test('CLA signers file parser rejects the wrong version and accepts the repo fil
 		'me@kentcdodds.com',
 		'me+github@kentcdodds.com',
 	])
-	expect(parsed.signers).toEqual([])
+	expect(parsed.signers).toEqual([
+		{
+			github: 'vojtaholik',
+			signedAt: '2026-08-16',
+			cla: 'individual',
+		},
+	])
 	expect(
 		checkClaIdentities(
 			[
@@ -126,6 +132,11 @@ test('CLA signers file parser rejects the wrong version and accepts the repo fil
 					githubLogin: 'cursoragent',
 					name: 'Cursor Agent',
 					email: 'cursoragent@cursor.com',
+				},
+				{
+					githubLogin: 'vojtaholik',
+					name: 'Vojta Holik',
+					email: 'vojta@egghead.io',
 				},
 			],
 			parsed,

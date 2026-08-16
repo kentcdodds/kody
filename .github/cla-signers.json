@@ -5,5 +5,11 @@
 		"github": ["kentcdodds", "kody-bot", "cursoragent"],
 		"email": ["me@kentcdodds.com", "me+github@kentcdodds.com"]
 	},
-	"signers": []
+	"signers": [
+		{
+			"github": "vojtaholik",
+			"signedAt": "2026-08-16",
+			"cla": "individual"
+		}
+	]
 }
