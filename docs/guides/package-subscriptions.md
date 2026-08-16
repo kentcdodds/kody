@@ -463,8 +463,9 @@ agent, or otherwise react when something in the user's account fails.
 When Cloudflare Artifacts reports commits pushed to a Kody-managed Artifacts
 repo (plain repo, package, or job source), Kody dispatches `repo.pushed` to
 packages saved by that same user that declare the topic. Delivery is durable via
-the `kody-artifacts-repo-events` Queue (with DLQ). Session fork repos never
-emit. Events for other `ARTIFACTS_NAMESPACE` values are ignored.
+the `kody-artifacts-repo-events` Queue (with DLQ). Session fork repos and
+session workspace branch pushes (`sessions/<id>`) never emit. Events for other
+`ARTIFACTS_NAMESPACE` values are ignored.
 
 Handlers receive a metadata-first payload:
 

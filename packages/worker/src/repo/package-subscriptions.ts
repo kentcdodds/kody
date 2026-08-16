@@ -14,6 +14,7 @@ import {
 	type CloudflareArtifactsRepoEvent,
 	type RepoSubscriptionTopic,
 	isSessionArtifactRepoName,
+	isSessionBranchRef,
 	parseCloudflareArtifactsRepoEvent,
 	repoCreatedTopic,
 	repoDeletedTopic,
@@ -400,6 +401,12 @@ export async function processCloudflareArtifactsRepoEvent(input: {
 		return { outcome: 'ignored', providerEvent }
 	}
 	if (isSessionArtifactRepoName(providerEvent.source.repoName)) {
+		return { outcome: 'ignored', providerEvent }
+	}
+	if (
+		providerEvent.type === 'cf.artifacts.repo.pushed' &&
+		isSessionBranchRef(providerEvent.payload.ref)
+	) {
 		return { outcome: 'ignored', providerEvent }
 	}
 

@@ -135,3 +135,15 @@ export function topicForArtifactsRepoEvent(
 export function isSessionArtifactRepoName(repoName: string) {
 	return /-session-/.test(repoName)
 }
+
+/**
+ * Repo-session workspace branches (`sessions/<id>`). Opening a session
+ * git-pushes that ref on the source repo; those pushes must not fan out as
+ * `repo.pushed` or a subscriber that opens another session will loop.
+ */
+export function isSessionBranchRef(ref: string) {
+	const branch = ref.startsWith('refs/heads/')
+		? ref.slice('refs/heads/'.length)
+		: ref
+	return branch.startsWith('sessions/')
+}

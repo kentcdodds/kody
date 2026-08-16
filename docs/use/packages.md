@@ -509,7 +509,8 @@ needed. See [Activity](./activity.md) and the
 
 Artifacts-backed plain repos, packages, and job sources also emit `repo.pushed`,
 `repo.created`, and `repo.deleted` when Cloudflare Artifacts reports those
-lifecycle events. See [Plain repos](./repos.md) and the
+lifecycle events. Session workspace branch pushes (`sessions/<id>`) do not fan
+out. See [Plain repos](./repos.md) and the
 [package subscriptions guide](../guides/package-subscriptions.md) for payloads
 and the distinction between live HEAD and package publish.
 

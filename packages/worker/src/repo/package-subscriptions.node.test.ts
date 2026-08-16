@@ -195,6 +195,18 @@ test('processCloudflareArtifactsRepoEvent ignores, unmatched, and dispatches by 
 	})
 	expect(session.outcome).toBe('ignored')
 
+	const sessionBranch = await processCloudflareArtifactsRepoEvent({
+		env,
+		body: {
+			...pushedEvent,
+			payload: {
+				...pushedEvent.payload,
+				ref: 'refs/heads/sessions/f3da2ca724024325b290a21318c6b353-14bcbfbb49c94cf782dc0ebc5971a4cd',
+			},
+		},
+	})
+	expect(sessionBranch.outcome).toBe('ignored')
+
 	mocks.getEntitySourceByRepoId.mockResolvedValueOnce(null)
 	const unmatched = await processCloudflareArtifactsRepoEvent({
 		env,

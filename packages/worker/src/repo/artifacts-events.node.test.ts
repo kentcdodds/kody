@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	isSessionArtifactRepoName,
+	isSessionBranchRef,
 	parseCloudflareArtifactsRepoEvent,
 	repoCreatedTopic,
 	repoDeletedTopic,
@@ -124,4 +125,17 @@ test('artifacts event helpers parse envelopes, reject unknowns, and detect sessi
 	expect(
 		isSessionArtifactRepoName('repo-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'),
 	).toBe(false)
+
+	expect(
+		isSessionBranchRef(
+			'refs/heads/sessions/f3da2ca724024325b290a21318c6b353-14bcbfbb49c94cf782dc0ebc5971a4cd',
+		),
+	).toBe(true)
+	expect(
+		isSessionBranchRef(
+			'sessions/f3da2ca724024325b290a21318c6b353-14bcbfbb49c94cf782dc0ebc5971a4cd',
+		),
+	).toBe(true)
+	expect(isSessionBranchRef('refs/heads/main')).toBe(false)
+	expect(isSessionBranchRef('refs/heads/session-notes')).toBe(false)
 })

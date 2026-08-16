@@ -78,7 +78,8 @@ wrappers use the same event type with `source.type === "artifacts.repo"`.
 
 Declare handlers under `package.json#kody.subscriptions`. Delivery is same-user
 only: packages saved by the entity owner that declare the topic receive the
-event. Session fork Artifacts repos never fan out.
+event. Session fork Artifacts repos and session workspace branch pushes
+(`sessions/<id>`) never fan out.
 
 `repo.pushed` is the primary automation hook (for example resyncing a projection
 after a git-lane push to a plain repo). For packages and jobs, a push updates
