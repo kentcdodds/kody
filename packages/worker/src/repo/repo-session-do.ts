@@ -680,23 +680,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			.join('')
 	}
 
-	private async isAncestorCommit(input: {
-		ancestor: string
-		descendant: string
-	}) {
-		if (input.ancestor === input.descendant) {
-			return true
-		}
-		// Repo command parsing rejects negative depths; use a positive infinite
-		// depth here to request the complete ancestry chain from the git adapter.
-		const commits = await this.git.log({
-			dir: repoSessionWorkspacePrefix,
-			ref: input.descendant,
-			depth: Number.POSITIVE_INFINITY,
-		})
-		return commits.some((commit) => commit.oid === input.ancestor)
-	}
-
 	private async writeCheckStatus(status: RepoSessionCheckStatus) {
 		await this.ctx.storage.put(lastCheckStatusStorageKey, status)
 	}
