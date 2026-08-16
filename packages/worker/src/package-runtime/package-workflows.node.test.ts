@@ -680,20 +680,22 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 				{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
 			),
 		).resolves.toEqual({ ok: true, p: { greeting: 'hello' } })
-		expect(invocationMocks.createExecutePackageInvokeTools).toHaveBeenCalledWith(
-			{
-				env: expect.objectContaining({
-					APP_BASE_URL: 'https://app.example.com',
-				}),
-				baseUrl: 'https://app.example.com',
-				callerContext: expect.objectContaining({
-					executionOrigin: 'background',
-					user: expect.objectContaining({ userId: 'user-1' }),
-				}),
-				waitUntil: expect.any(Function),
-			},
-		)
-		expect(invocationMocks.createPackageRuntimeInvokeTools).not.toHaveBeenCalled()
+		expect(
+			invocationMocks.createExecutePackageInvokeTools,
+		).toHaveBeenCalledWith({
+			env: expect.objectContaining({
+				APP_BASE_URL: 'https://app.example.com',
+			}),
+			baseUrl: 'https://app.example.com',
+			callerContext: expect.objectContaining({
+				executionOrigin: 'background',
+				user: expect.objectContaining({ userId: 'user-1' }),
+			}),
+			waitUntil: expect.any(Function),
+		})
+		expect(
+			invocationMocks.createPackageRuntimeInvokeTools,
+		).not.toHaveBeenCalled()
 		expect(invocationMocks.runModuleWithRegistry).toHaveBeenCalledWith(
 			expect.objectContaining({ APP_BASE_URL: 'https://app.example.com' }),
 			expect.objectContaining({
@@ -958,7 +960,9 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for inline
 		undefined,
 		{
 			packageContext: null,
-			packageInvokeTools: expect.objectContaining({ invoke: expect.any(Function) }),
+			packageInvokeTools: expect.objectContaining({
+				invoke: expect.any(Function),
+			}),
 			executorTimeoutMs: workflowExecutorTimeoutMs,
 		},
 	)
