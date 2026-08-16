@@ -377,33 +377,72 @@ class McpClientHubBase extends DurableObject<Env> {
 		const existingOptions = existingConnection?.options
 		const callbackChanged = row.callback_url !== input.callbackUrl
 		const clientId = callbackChanged ? null : row.client_id
-
-		await this.manager.removeServer(input.serverId)
-		await this.clearOAuthAuthorizationStorage({
-			serverId: input.serverId,
-			clearClientRegistration: callbackChanged,
+		const oauthStoragePrefix = `/${mcpClientName}/${input.serverId}/`
+		const oauthStorageSnapshot = await this.ctx.storage.list({
+			prefix: oauthStoragePrefix,
 		})
 
-		const authProvider = new DurableObjectOAuthClientProvider(
-			this.ctx.storage,
-			mcpClientName,
-			input.callbackUrl,
-		)
-		authProvider.serverId = input.serverId
-		if (clientId) authProvider.clientId = clientId
+		try {
+			await this.manager.removeServer(input.serverId)
+			await this.clearOAuthAuthorizationStorage({
+				serverId: input.serverId,
+				clearClientRegistration: callbackChanged,
+			})
 
-		await this.manager.registerServer(input.serverId, {
-			url: row.server_url,
-			name: row.name,
-			callbackUrl: input.callbackUrl,
-			...(clientId ? { clientId } : {}),
-			...(existingOptions?.client ? { client: existingOptions.client } : {}),
-			transport: {
-				...existingOptions?.transport,
-				type: existingOptions?.transport.type ?? 'auto',
-				authProvider,
-			},
-		})
+			const authProvider = new DurableObjectOAuthClientProvider(
+				this.ctx.storage,
+				mcpClientName,
+				input.callbackUrl,
+			)
+			authProvider.serverId = input.serverId
+			if (clientId) authProvider.clientId = clientId
+
+			await this.manager.registerServer(input.serverId, {
+				url: row.server_url,
+				name: row.name,
+				callbackUrl: input.callbackUrl,
+				...(clientId ? { clientId } : {}),
+				...(existingOptions?.client ? { client: existingOptions.client } : {}),
+				transport: {
+					...existingOptions?.transport,
+					type: existingOptions?.transport.type ?? 'auto',
+					authProvider,
+				},
+			})
+		} catch (error) {
+			await this.manager.removeServer(input.serverId).catch(() => {})
+			if (oauthStorageSnapshot.size > 0) {
+				await this.ctx.storage
+					.put(Object.fromEntries(oauthStorageSnapshot))
+					.catch(() => {})
+			}
+
+			const originalAuthProvider = new DurableObjectOAuthClientProvider(
+				this.ctx.storage,
+				mcpClientName,
+				row.callback_url,
+			)
+			originalAuthProvider.serverId = input.serverId
+			if (row.client_id) originalAuthProvider.clientId = row.client_id
+			await this.manager
+				.registerServer(input.serverId, {
+					url: row.server_url,
+					name: row.name,
+					callbackUrl: row.callback_url,
+					...(row.client_id ? { clientId: row.client_id } : {}),
+					...(row.auth_url ? { authUrl: row.auth_url } : {}),
+					...(existingOptions?.client
+						? { client: existingOptions.client }
+						: {}),
+					transport: {
+						...existingOptions?.transport,
+						type: existingOptions?.transport.type ?? 'auto',
+						authProvider: originalAuthProvider,
+					},
+				})
+				.catch(() => {})
+			throw error
+		}
 		const result = await this.manager.connectToServer(input.serverId)
 		if (result.state === 'connected') {
 			await this.manager.discoverIfConnected(input.serverId, {

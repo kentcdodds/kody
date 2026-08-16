@@ -35,6 +35,7 @@ type FakeManager = {
 	rows: Array<FakeServerRow>
 	mcpConnections: Record<string, FakeConnection>
 	connectCount: number
+	registerFailuresRemaining: number
 	callbackMatches: boolean
 	callbackResult: {
 		serverId?: string
@@ -89,6 +90,7 @@ vi.mock('agents/mcp/client', () => ({
 		rows: Array<FakeServerRow> = []
 		mcpConnections: Record<string, FakeConnection> = {}
 		connectCount = 0
+		registerFailuresRemaining = 0
 		callbackMatches = true
 		callbackResult = {
 			serverId: 'server-1',
@@ -120,17 +122,22 @@ vi.mock('agents/mcp/client', () => ({
 				name: string
 				callbackUrl: string
 				clientId?: string
+				authUrl?: string
 				client?: Record<string, unknown>
 				transport: FakeConnection['options']['transport']
 			},
 		) {
+			if (this.registerFailuresRemaining > 0) {
+				this.registerFailuresRemaining -= 1
+				throw new Error('Replacement registration failed.')
+			}
 			this.rows.push({
 				id: serverId,
 				name: options.name,
 				server_url: options.url,
 				callback_url: options.callbackUrl,
 				client_id: options.clientId ?? null,
-				auth_url: null,
+				auth_url: options.authUrl ?? null,
 				server_options: null,
 			})
 			this.mcpConnections[serverId] = {
@@ -188,9 +195,20 @@ function createDurableObjectState() {
 		state: {
 			storage: {
 				sql: { exec: vi.fn(() => []) },
-				put: vi.fn(async (key: string, value: unknown) => {
-					values.set(key, value)
-				}),
+				put: vi.fn(
+					async (
+						keyOrEntries: string | Record<string, unknown>,
+						value?: unknown,
+					) => {
+						if (typeof keyOrEntries === 'string') {
+							values.set(keyOrEntries, value)
+							return
+						}
+						for (const [key, entryValue] of Object.entries(keyOrEntries)) {
+							values.set(key, entryValue)
+						}
+					},
+				),
 				get: vi.fn(async (key: string) => values.get(key)),
 				list: vi.fn(async ({ prefix }: { prefix: string }) => {
 					return new Map(
@@ -299,6 +317,50 @@ test('reconnect repairs stale callbacks and always replaces pending OAuth state'
 	expect(manager.rows[0]?.client_id).toBe('client-1')
 	expect(values.has('/Kody/server-1/client-1/client_info/')).toBe(true)
 	expect(values.has('/Kody/server-1/state/fresh-1')).toBe(false)
+})
+
+test('failed replacement registration restores the saved server and OAuth state', async () => {
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+
+	const oldCallback = 'https://heykody.app/account/mcp-servers/oauth/callback'
+	const currentCallback =
+		'https://kody.codes/account/mcp-servers/oauth/callback'
+	const oldAuthUrl = 'https://auth.example/authorize?state=stale.server-1'
+	seedServer({
+		manager,
+		callbackUrl: oldCallback,
+		clientId: 'stale-client',
+		authUrl: oldAuthUrl,
+	})
+	const clientInfoKey = '/Kody/server-1/stale-client/client_info/'
+	const stateKey = '/Kody/server-1/state/stale'
+	values.set(clientInfoKey, { client_id: 'stale-client' })
+	values.set(stateKey, { serverId: 'server-1' })
+	manager.registerFailuresRemaining = 1
+
+	await expect(
+		hub.reconnectServer({
+			serverId: 'server-1',
+			callbackUrl: currentCallback,
+		}),
+	).rejects.toThrow('Replacement registration failed.')
+
+	expect(manager.rows).toEqual([
+		expect.objectContaining({
+			id: 'server-1',
+			callback_url: oldCallback,
+			client_id: 'stale-client',
+			auth_url: oldAuthUrl,
+		}),
+	])
+	expect(manager.mcpConnections['server-1']?.options.transport.headers).toEqual(
+		{ 'X-Test': 'preserved' },
+	)
+	expect(values.get(clientInfoKey)).toEqual({ client_id: 'stale-client' })
+	expect(values.get(stateKey)).toEqual({ serverId: 'server-1' })
 })
 
 test('used and missing callback states recover without exposing an internal state error', async () => {
