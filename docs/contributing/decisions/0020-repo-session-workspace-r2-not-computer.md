@@ -36,10 +36,11 @@ packing; the 10 MiB gate and Artifacts as the durable home stay.
 ## Consequences
 
 - Sessions can materialize repos that Artifacts already accepted.
-- Shared-bucket isolation is `repo-session:{durableObjectId}/`; discard,
-  `purgeSession`, account deletion, and expired-session cleanup must
-  prefix-purge before dropping the catalog row so a failed R2 delete can retry.
-  A missing catalog row still purges that Durable Object prefix.
+- Shared-bucket isolation is `repo-session:{durableObjectId}/`. Discard marks
+  the catalog row discarded, then prefix-purges. Expired-session cleanup
+  prefix-purges before dropping the row so a failed R2 delete can retry. A
+  missing catalog row is not ownership proof, so discard and cleanup do not
+  wipe. `purgeSession` (account deletion) still prefix-purges after `deleteAll`.
 - Isolated check/rebuild DOs share the class and must not write this workspace.
 - Revisit Computer when its API is production-stable, Artifacts can mount
   without cloning a pack into SQLite, and there is a real need for

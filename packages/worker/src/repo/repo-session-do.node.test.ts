@@ -898,7 +898,7 @@ test('cleanupSessionBranch removes the D1 session row when remote branch delete 
 	)
 })
 
-test('session teardown purges workspace blobs even without a catalog row and keeps the row when R2 purge fails', async () => {
+test('session teardown does not wipe blobs without a catalog row and keeps the row when R2 purge fails', async () => {
 	restoreRepoSessionMockBaseline()
 	const keepKey = 'repo-session:other-do/default/session/pack.pack'
 	const sessionKey = 'repo-session:do-session-1/default/session/pack.pack'
@@ -923,10 +923,10 @@ test('session teardown purges workspace blobs even without a catalog row and kee
 		sessionId: 'session-1',
 		deleted: false,
 	})
-	expect([...blobs.objects.keys()]).toEqual([keepKey])
+	expect([...blobs.objects.keys()].sort()).toEqual([keepKey, sessionKey].sort())
+	expect(blobs.list).not.toHaveBeenCalled()
 	expect(deleteRepoSession).not.toHaveBeenCalled()
 
-	blobs.objects.set(sessionKey, 2_000)
 	await expect(
 		missingRowSession.cleanupSessionBranch({
 			sessionId: 'session-1',
@@ -939,8 +939,37 @@ test('session teardown purges workspace blobs even without a catalog row and kee
 		branch: '',
 		branchDeleted: true,
 	})
-	expect([...blobs.objects.keys()]).toEqual([keepKey])
+	expect([...blobs.objects.keys()].sort()).toEqual([keepKey, sessionKey].sort())
 	expect(deleteRepoSession).not.toHaveBeenCalled()
+
+	setCommonSessionFixtures()
+	const ownedBlobs = createFakeRepoSessionBlobs({
+		[sessionKey]: 2_000,
+		[keepKey]: 9_000,
+	})
+	const ownedSession = new RepoSession(
+		createDurableObjectState(),
+		createEnv(ownedBlobs.bucket),
+	)
+	await expect(
+		ownedSession.discardSession({
+			sessionId: 'session-1',
+			userId: 'user-1',
+		}),
+	).resolves.toEqual({
+		ok: true,
+		sessionId: 'session-1',
+		deleted: true,
+	})
+	expect(mockModule.updateRepoSession).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			id: 'session-1',
+			userId: 'user-1',
+			status: 'discarded',
+		}),
+	)
+	expect([...ownedBlobs.objects.keys()]).toEqual([keepKey])
 
 	setCommonSessionFixtures()
 	const failingBlobs = createFakeRepoSessionBlobs({

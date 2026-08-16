@@ -531,12 +531,13 @@ user-visible rewrite of repo files: the 10 MiB per-file policy still rejects
 oversized writes, and Artifacts remains the durable source. Workspace keys use
 `repo-session:{durableObjectId}/` (`{name}/{namespace}{path}`). `Workspace.rm`
 deletes listed keys while SQL metadata exists; `purgeSession` prefix-purges
-after `deleteAll` so a failed `rm` cannot orphan objects. Discard and
-expired-session cleanup prefix-purge this Durable Object's prefix before
-removing the catalog row, so a failed R2 delete keeps the row for cron retry. A
-missing catalog row still purges. Isolated check/rebuild RepoSession isolates
-never write this workspace. The bucket is omitted from DR canonical exports and
-from the `r2_object` account-export section.
+after `deleteAll` so a failed `rm` cannot orphan objects. Discard marks the
+catalog row discarded, then prefix-purges. Expired-session cleanup prefix-purges
+before dropping the catalog row so a failed R2 delete keeps the row for cron
+retry. A missing catalog row is not ownership proof, so discard and cleanup do
+not wipe. Isolated check/rebuild RepoSession isolates never write this
+workspace. The bucket is omitted from DR canonical exports and from the
+`r2_object` account-export section.
 
 - Bucket names: `kody-repo-session-blobs` (production), per-preview
   `{worker}-repo-session-blobs` buckets created and cleaned up by
