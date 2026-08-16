@@ -49,22 +49,6 @@ export async function getActiveRepoSessionByConversation(
 	})
 }
 
-export async function getActiveUnusedRepoSessionBySource(
-	env: RepoSessionCatalogEnv,
-	input: {
-		userId: string
-		sourceId: string
-	},
-): Promise<RepoSessionRow | null> {
-	return await repoSessionIndexRpc({
-		env,
-		userId: input.userId,
-	}).getActiveUnusedBySource({
-		ownerId: input.userId,
-		sourceId: input.sourceId,
-	})
-}
-
 export async function listRepoSessionsBySource(
 	env: RepoSessionCatalogEnv,
 	input: {

@@ -8,7 +8,6 @@ import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
 import {
 	countActiveRepoSessions,
 	getActiveRepoSessionByConversation,
-	getActiveUnusedRepoSessionBySource,
 } from '#worker/repo/repo-sessions.ts'
 import {
 	buildPublishedCommitHeadMismatchCallerMessage,
@@ -58,7 +57,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 	{
 		name: 'repo_open_session',
 		description:
-			"Open or resume an MCP-native repo-backed editing session for a saved source artifact when editing through Kody tools instead of a local clone. Later repo capabilities can read, search, edit, validate, and publish against a mutable session branch. Pass conversation_id to resume that conversation's active session. When conversation_id is omitted, an unused (never-edited) active session for the same source is reused instead of minting another entitlement slot.",
+			"Open or resume an MCP-native repo-backed editing session for a saved source artifact when editing through Kody tools instead of a local clone. Later repo capabilities can read, search, edit, validate, and publish against a mutable session branch. Pass conversation_id to resume that conversation's active session. Omitting conversation_id always mints a new session so concurrent callers of the same source do not share a workspace that has not checkpointed yet.",
 		keywords: ['repo', 'session', 'open', 'resume', 'artifact', 'source'],
 		readOnly: false,
 		idempotent: false,
@@ -80,10 +79,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 			})
 			const existingSession =
 				args.conversation_id == null
-					? await getActiveUnusedRepoSessionBySource(ctx.env, {
-							userId: user.userId,
-							sourceId: requested.source.id,
-						})
+					? null
 					: await getActiveRepoSessionByConversation(ctx.env, {
 							userId: user.userId,
 							conversationId: args.conversation_id,

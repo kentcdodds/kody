@@ -77,20 +77,6 @@ test('RepoSessionIndex is the catalog authority for one user', async () => {
 			)?.id,
 		).toBe('session-1')
 		expect(
-			(
-				await instance.getActiveUnusedBySource({
-					ownerId: userId,
-					sourceId: 'source-1',
-				})
-			)?.id,
-		).toBe('session-1')
-		expect(
-			await instance.getActiveUnusedBySource({
-				ownerId: userId,
-				sourceId: 'source-2',
-			}),
-		).toBeNull()
-		expect(
 			(await instance.listByUser({ ownerId: userId })).map((row) => row.id),
 		).toEqual(['session-2', 'session-1'])
 		expect(

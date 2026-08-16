@@ -394,25 +394,6 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		return row ? attachOwner(ownerId, mapStoredRow(row)) : null
 	}
 
-	async getActiveUnusedBySource(input: {
-		ownerId: string
-		sourceId: string
-	}): Promise<RepoSessionRow | null> {
-		const ownerId = await this.ensureReady(input.ownerId)
-		const row = this.sql
-			.exec<Record<string, SqlStorageValue>>(
-				`SELECT * FROM repo_sessions
-				WHERE source_id = ?
-					AND status = 'active'
-					AND last_checkpoint_at IS NULL
-				ORDER BY updated_at DESC, id DESC
-				LIMIT 1`,
-				input.sourceId,
-			)
-			.toArray()[0]
-		return row ? attachOwner(ownerId, mapStoredRow(row)) : null
-	}
-
 	async listBySource(input: {
 		ownerId: string
 		sourceId: string
@@ -652,10 +633,6 @@ export type RepoSessionIndexRpc = {
 	getActiveByConversation: (input: {
 		ownerId: string
 		conversationId: string
-	}) => Promise<RepoSessionRow | null>
-	getActiveUnusedBySource: (input: {
-		ownerId: string
-		sourceId: string
 	}) => Promise<RepoSessionRow | null>
 	listBySource: (input: {
 		ownerId: string
