@@ -52,11 +52,15 @@ the `/mcp` endpoint (where Kody is the server) and complements remote connectors
 5. The hub only treats the callback as successful when the connection reaches
    `ready`. If the Agents SDK reports `authSuccess` but the connection stays in
    `authenticating` (including the stuck case with no stored auth URL after the
-   SDK clears it), the route redirects with `auth=error` and a concrete reason.
-   Origin and redirect-URI rejection messages are enriched with Kody's
-   `oauthClientOrigin` and `oauthCallbackUrl`. Reconnect also recovers that
-   stuck state by invalidating unusable tokens and requesting a fresh
-   authorization URL.
+   SDK clears it), the hub retries establish/discover and otherwise redirects
+   with `auth=error` and a concrete reason. Used or missing OAuth `state` on the
+   callback, and connections that are already settling toward `ready`, recover
+   without surfacing an internal state error: the hub restarts authorization
+   when needed, or accepts the in-flight connection. Origin and redirect-URI
+   rejection messages are enriched with Kody's `oauthClientOrigin` and
+   `oauthCallbackUrl`. Reconnect uses the same recovery path (invalidate
+   unusable tokens and request a fresh authorization URL). The account page
+   offers Reconnect when automatic recovery cannot finish.
 6. The route redirects to `/account/mcp-servers/:serverId?auth=success|error`
    when the callback resolves to a server (including failures), or
    `/account/mcp-servers?auth=error` when it does not, for user feedback. Tokens

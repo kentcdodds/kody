@@ -37,10 +37,10 @@ There is no exception for docs-only or one-line patches.
    re-runs the check.
 
 Signing once covers past, present, and future contributions from that GitHub
-identity. People who contributed before this process sign the same way before
-their next merge. The workflow reads signers from `main`, not from the pull
-request branch, so adding your own username on the branch does not pass the
-check. Only the commenter is recorded, and only from the exact phrase.
+identity. Unsigned prior contributors sign the same way before their next merge.
+The workflow reads signers from `main`, not from the pull request branch, so
+adding your own username on the branch does not pass the check. Only the
+commenter is recorded, and only from the exact phrase.
 
 ## How to sign (entity)
 

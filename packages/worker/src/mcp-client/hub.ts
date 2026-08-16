@@ -374,7 +374,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				}
 			}
 		} catch {
-			// The account page still offers Reconnect if automatic recovery fails.
+			// The account page offers Reconnect if automatic recovery fails.
 		}
 		return {
 			serverId: input.serverId,

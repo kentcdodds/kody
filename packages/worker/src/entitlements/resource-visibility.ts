@@ -71,7 +71,7 @@ export const entitlementResourceVisibility: Record<
 		kind: 'counter',
 		whatCounts: 'Active editing sessions opened by agents against your repos.',
 		howToReduce:
-			'Discard finished sessions with repo_discard_session. Unused (never-edited) sessions are swept after 30 minutes idle; sessions with unpublished edits are swept after 7 days idle.',
+			'Discard finished sessions with repo_discard_session. Unused (never-checkpointed) sessions are swept after 30 minutes idle; checkpointed sessions are swept after 7 days idle.',
 	},
 	email_sends_per_day: {
 		group: 'daily',

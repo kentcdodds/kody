@@ -2,9 +2,9 @@ import { type RepoSessionRow } from './types.ts'
 
 /**
  * Read-only leftovers (never checkpointed) are cheap to lose — there is no
- * unpublished work — so they sweep after a short idle window. Edited sessions
- * keep the generous window because unpublished work in a swept session is
- * unrecoverable. Every session operation bumps `updated_at`, so both windows
+ * unpublished work — so they sweep after a short idle window. Checkpointed
+ * sessions use the generous window because unpublished work in a swept session
+ * is unrecoverable. Every session operation bumps `updated_at`, so both windows
  * are idle time, not age.
  */
 export const unusedAbandonedSessionRetentionMs = 30 * 60 * 1000
