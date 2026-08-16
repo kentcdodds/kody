@@ -24,6 +24,11 @@ Leave them unset to run with the local `.nx` cache only. Validate and
 `test:push` use `CI=1` so cache hashes match GitHub Actions (`CI=true` would
 miss).
 
+`npm run nx-cache:smoke` (also part of `test:node`) starts a local HTTP cache,
+runs `nx-cache:smoke-probe` twice with the local `.nx` cache wiped in between,
+and asserts the second run is a `[remote cache]` hit that restores outputs
+without re-running the command.
+
 ## Deploy
 
 Production deploy creates the `kody-nx-cache` R2 bucket, uploads the worker, and
