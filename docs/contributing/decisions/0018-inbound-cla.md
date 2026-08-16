@@ -51,8 +51,8 @@ How it works:
 - **Scope.** This git repository only. User packages, community listings (MIT),
   and unsubmitted forks are out of scope.
 - **Who signs.** Every GitHub identity that authors a commit on the pull
-  request, unless that identity is `kentcdodds`, `kody-bot`, a `*[bot]` or
-  `app/*` account, or an email listed as Licensor-owned in
+  request, unless that identity is `kentcdodds`, `kody-bot`, `cursoragent`, a
+  `*[bot]` or `app/*` account, or an email listed as Licensor-owned in
   [`.github/cla-signers.json`](../../../.github/cla-signers.json).
 - **Which form.** [Individual CLA](../../legal/individual-cla.md) by default.
   [Entity CLA](../../legal/entity-cla.md) when the work is owned by an employer
