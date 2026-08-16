@@ -39,3 +39,4 @@ behavior (see [documentation principles](../documentation.md)).
 - [0017 — Per-user subdomains for hosted package apps](./0017-per-user-package-app-subdomains.md)
 - [0018 — Inbound CLA for external contributions to this repository](./0018-inbound-cla.md)
 - [0019 — Self-hosted Nx remote cache (not Nx Cloud)](./0019-self-hosted-nx-remote-cache.md)
+- [0020 — Repo sessions spill Workspace objects to R2; do not adopt `@cloudflare/computer`](./0020-repo-session-workspace-r2-not-computer.md)
