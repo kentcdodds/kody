@@ -114,9 +114,9 @@ test('Artifacts git packfile corruption is transient, wrapped for git clone, and
 	const corruption = packfileCorruptionError()
 	expect(isIsomorphicGitPackfileCorruptionError(corruption)).toBe(true)
 	expect(isTransientArtifactsGitError(corruption)).toBe(true)
-	expect(isTransientArtifactsGitError(new Error('unrelated InternalError'))).toBe(
-		false,
-	)
+	expect(
+		isTransientArtifactsGitError(new Error('unrelated InternalError')),
+	).toBe(false)
 
 	const wrapped = wrapArtifactsGitHttpError({
 		operation: 'git clone',
@@ -128,9 +128,9 @@ test('Artifacts git packfile corruption is transient, wrapped for git clone, and
 	expect(wrapped.message).toContain('Packfile payload corrupted')
 	expect(wrapped.message).not.toContain('secret')
 	expect(isArtifactsGitTransientErrorMessage(wrapped.message)).toBe(true)
-	expect(isArtifactsGitPackfileCorruptionSentryMessage(corruption.message)).toBe(
-		true,
-	)
+	expect(
+		isArtifactsGitPackfileCorruptionSentryMessage(corruption.message),
+	).toBe(true)
 	expect(
 		isArtifactsGitTransientHttpErrorMessage(
 			'Artifacts git clone failed for https://example.test: HTTP Error: 500',
