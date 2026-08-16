@@ -13,8 +13,12 @@ function signersFile(overrides: Partial<ClaSignersFile> = {}): ClaSignersFile {
 		version: 1,
 		document: 'docs/legal/individual-cla.md',
 		allowlist: {
-			github: ['kentcdodds', 'kody-bot'],
-			email: ['me@kentcdodds.com', 'me+github@kentcdodds.com'],
+			github: ['kentcdodds', 'kody-bot', 'cursoragent'],
+			email: [
+				'me@kentcdodds.com',
+				'me+github@kentcdodds.com',
+				'cursoragent@cursor.com',
+			],
 		},
 		signers: [],
 		...overrides,
@@ -36,6 +40,11 @@ test('CLA check allowlists the Licensor, bots, signed humans, and rejects everyo
 		[
 			{ githubLogin: 'kentcdodds', name: 'Kent', email: null },
 			{ githubLogin: 'kody-bot', name: 'Kody', email: null },
+			{
+				githubLogin: 'cursoragent',
+				name: 'Cursor Agent',
+				email: 'cursoragent@cursor.com',
+			},
 			{
 				githubLogin: 'cursor[bot]',
 				name: 'cursor[bot]',
@@ -99,6 +108,28 @@ test('CLA signers file parser rejects the wrong version and accepts the repo fil
 	const parsed = parseClaSignersFile(
 		readFileSync('.github/cla-signers.json', 'utf8'),
 	)
-	expect(parsed.allowlist.github).toEqual(['kentcdodds', 'kody-bot'])
+	expect(parsed.allowlist.github).toEqual([
+		'kentcdodds',
+		'kody-bot',
+		'cursoragent',
+	])
+	expect(parsed.allowlist.email).toContain('cursoragent@cursor.com')
 	expect(parsed.signers).toEqual([])
+	expect(
+		checkClaIdentities(
+			[
+				{
+					githubLogin: 'kentcdodds',
+					name: 'kentcdodds',
+					email: null,
+				},
+				{
+					githubLogin: 'cursoragent',
+					name: 'Cursor Agent',
+					email: 'cursoragent@cursor.com',
+				},
+			],
+			parsed,
+		),
+	).toEqual({ ok: true })
 })

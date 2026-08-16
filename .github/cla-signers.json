@@ -2,8 +2,12 @@
 	"version": 1,
 	"document": "docs/legal/individual-cla.md",
 	"allowlist": {
-		"github": ["kentcdodds", "kody-bot"],
-		"email": ["me@kentcdodds.com", "me+github@kentcdodds.com"]
+		"github": ["kentcdodds", "kody-bot", "cursoragent"],
+		"email": [
+			"me@kentcdodds.com",
+			"me+github@kentcdodds.com",
+			"cursoragent@cursor.com"
+		]
 	},
 	"signers": []
 }
