@@ -75,7 +75,8 @@ Do not merge a pull request while the `CLA` check is red.
 
 Individual signatures are recorded automatically from the signing comment. After
 an accepted Entity CLA, add each authorized username to
-`.github/cla-signers.json` on `main` with `cla` of `entity`.
+`.github/cla-signers.json` on `main` with `signedAt` as an ISO date
+(`YYYY-MM-DD`) and `cla` of `entity`.
 
 Make the `CLA` check required for `main` in GitHub branch protection so a green
 review cannot skip it.

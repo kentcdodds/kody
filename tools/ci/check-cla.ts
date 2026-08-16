@@ -88,14 +88,23 @@ export function parseClaSignersFile(raw: string): ClaSignersFile {
 export function serializeClaSignersFile(file: ClaSignersFile) {
 	const compactStringArray = (values: ReadonlyArray<string>) =>
 		`[${values.map((value) => JSON.stringify(value)).join(', ')}]`
-	const indented = JSON.stringify(file, null, '\t')
+	const placeholderGithub = '__CLA_ALLOWLIST_GITHUB__'
+	const placeholderEmail = '__CLA_ALLOWLIST_EMAIL__'
+	const indented = JSON.stringify(
+		{
+			...file,
+			allowlist: { github: placeholderGithub, email: placeholderEmail },
+		},
+		null,
+		'\t',
+	)
 		.replace(
-			/"github": \[[\s\S]*?\]/,
-			`"github": ${compactStringArray(file.allowlist.github)}`,
+			JSON.stringify(placeholderGithub),
+			compactStringArray(file.allowlist.github),
 		)
 		.replace(
-			/"email": \[[\s\S]*?\]/,
-			`"email": ${compactStringArray(file.allowlist.email)}`,
+			JSON.stringify(placeholderEmail),
+			compactStringArray(file.allowlist.email),
 		)
 	return `${indented}\n`
 }
@@ -236,7 +245,14 @@ export function formatClaFailure(
 
 function readFlag(args: Array<string>, flag: string) {
 	const index = args.indexOf(flag)
-	return index === -1 ? null : (args[index + 1] ?? null)
+	if (index === -1) {
+		return null
+	}
+	const value = args[index + 1]
+	if (!value || value.startsWith('--')) {
+		return null
+	}
+	return value
 }
 
 async function runRecordCli(args: Array<string>) {

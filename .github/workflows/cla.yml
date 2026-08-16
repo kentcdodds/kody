@@ -15,8 +15,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  actions: write
 
 jobs:
   cla:
@@ -138,7 +136,8 @@ jobs:
   record:
     if: >
       github.event_name == 'issue_comment' && github.event.issue.pull_request &&
-      github.event.comment.user.type == 'User'
+      github.event.comment.user.type == 'User' &&
+      contains(github.event.comment.body, 'I have read the CLA and I hereby sign the CLA')
     runs-on: ubuntu-latest
     name: 📝 Record CLA
     timeout-minutes: 5
@@ -177,15 +176,19 @@ jobs:
             --signers .github/cla-signers.json \
             --record-signer "$CLA_LOGIN" \
             --signed-at "${CLA_SIGNED_AT%%T*}" \
-            --comment-file cla-comment.txt | tee -a "$GITHUB_OUTPUT"
+            --comment-file cla-comment.txt > cla-record-output.txt
+          cat cla-record-output.txt
+          grep -E '^(skipped|added|github)=' cla-record-output.txt >> "$GITHUB_OUTPUT"
 
       - name: 💾 Commit signer on main
         if: steps.record.outputs.added == 'true'
+        env:
+          CLA_GITHUB: ${{ steps.record.outputs.github }}
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/cla-signers.json
-          git commit -m "Record @${{ steps.record.outputs.github }} as an individual CLA signer"
+          git commit -m "Record @${CLA_GITHUB} as an individual CLA signer"
           git pull --rebase origin main
           git push origin HEAD:main
 
@@ -200,16 +203,63 @@ jobs:
             const login = process.env.CLA_GITHUB
             const added = process.env.CLA_ADDED === 'true'
             const marker = '<!-- kody-cla-recorded -->'
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+            const pull = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: context.payload.issue.number,
+            })
+            const headSha = pull.data.head.sha
+
+            async function latestClaRun() {
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: 'cla.yml',
+                event: 'pull_request',
+                head_sha: headSha,
+                per_page: 5,
+              })
+              return runs.data.workflow_runs[0] ?? null
+            }
+
+            const deadline = Date.now() + 180_000
+            let latest = await latestClaRun()
+            while (latest && latest.status !== 'completed' && Date.now() < deadline) {
+              await new Promise((resolve) => setTimeout(resolve, 10_000))
+              latest = await latestClaRun()
+            }
+
+            let reran = false
+            if (latest?.status === 'completed') {
+              try {
+                await github.rest.actions.reRunWorkflow({
+                  owner,
+                  repo,
+                  run_id: latest.id,
+                })
+                reran = true
+              } catch (error) {
+                core.warning(
+                  `Could not re-run CLA: ${error instanceof Error ? error.message : String(error)}`,
+                )
+              }
+            }
+
+            const followUp = reran
+              ? 'The CLA check will re-run.'
+              : 'The next CLA check will read the updated signers file.'
             const body = added
               ? `${marker}
-            Recorded @${login} as an individual CLA signer on \`main\`. The CLA check will re-run.`
+            Recorded @${login} as an individual CLA signer on \`main\`. ${followUp}`
               : `${marker}
-            @${login} is already recorded as an individual CLA signer. The CLA check will re-run.`
+            @${login} is already recorded as an individual CLA signer. ${followUp}`
             const comments = await github.paginate(
               github.rest.issues.listComments,
               {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
+                owner,
+                repo,
                 issue_number: context.payload.issue.number,
                 per_page: 100,
               },
@@ -219,38 +269,16 @@ jobs:
             )
             if (existing) {
               await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
+                owner,
+                repo,
                 comment_id: existing.id,
                 body,
               })
             } else {
               await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
+                owner,
+                repo,
                 issue_number: context.payload.issue.number,
                 body,
-              })
-            }
-
-            const pull = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.payload.issue.number,
-            })
-            const runs = await github.rest.actions.listWorkflowRuns({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'cla.yml',
-              event: 'pull_request',
-              head_sha: pull.data.head.sha,
-              per_page: 5,
-            })
-            const latest = runs.data.workflow_runs[0]
-            if (latest?.status === 'completed') {
-              await github.rest.actions.reRunWorkflow({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                run_id: latest.id,
               })
             }

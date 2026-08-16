@@ -159,7 +159,21 @@ test('CLA signing comment records the commenter once and ignores everything else
 		status: 'already_signed',
 		github: 'examplesigner',
 	})
-	expect(serializeClaSignersFile(recorded.file)).toContain('"ExampleSigner"')
+	const serialized = serializeClaSignersFile(recorded.file)
+	expect(serialized).toContain('"ExampleSigner"')
+	expect(serialized).toContain(
+		'"github": ["kentcdodds", "kody-bot", "cursoragent"]',
+	)
+	expect(serialized.endsWith('\n')).toBe(true)
+	expect(parseClaSignersFile(serialized)).toEqual(recorded.file)
+	expect(
+		applyIndividualClaSigningComment({
+			file: empty,
+			github: '   ',
+			signedAt: '2026-08-16',
+			comment: individualClaSigningPhrase,
+		}),
+	).toEqual({ file: empty, status: 'ignored', reason: 'missing_login' })
 })
 
 test('CLA signers file parser rejects the wrong version and accepts a valid repo file', () => {
