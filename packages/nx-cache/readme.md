@@ -22,7 +22,9 @@ NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN=<same value as the Worker secret>
 
 Leave them unset to run with the local `.nx` cache only. Validate and
 `test:push` use `CI=1` so cache hashes match GitHub Actions (`CI=true` would
-miss).
+miss). GitHub Actions only sets the server URL after `GET /health` succeeds — Nx
+fails the job if the host is configured but unreachable, so the first merge can
+still validate before the worker exists.
 
 `npm run nx-cache:smoke` (also part of `test:node`) starts a local HTTP cache,
 runs `nx-cache:smoke-probe` twice with the local `.nx` cache wiped in between,

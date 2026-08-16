@@ -47,8 +47,14 @@ runs:
       if: env.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN != ''
       shell: bash
       run: |
-        echo "NX_SELF_HOSTED_REMOTE_CACHE_SERVER=https://nx-cache.kody.codes" >> "$GITHUB_ENV"
-        echo "Nx remote cache enabled"
+        server='https://nx-cache.kody.codes'
+        if curl -fsS --max-time 5 "$server/health" >/dev/null; then
+          echo "NX_SELF_HOSTED_REMOTE_CACHE_SERVER=$server" >> "$GITHUB_ENV"
+          echo "Nx remote cache enabled ($server)"
+        else
+          echo "Nx remote cache skipped: $server/health is unreachable."
+          echo "Validate will use local .nx + actions/cache until the worker is deployed."
+        fi
 
     - name: 📥 Install Dependencies
       shell: bash

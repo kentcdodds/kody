@@ -19,7 +19,8 @@ permissions:
 
 # Pin CI=1 (not GitHub's CI=true) so Nx cache hashes match local
 # `validate` / `test:push`. Remote cache is used only when the access
-# token secret is present; setup-validate then sets the server URL.
+# token secret is present and setup-validate can reach /health; Nx
+# treats an unreachable self-hosted cache as a fatal error.
 env:
   CI: '1'
   NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN:
