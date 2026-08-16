@@ -106,6 +106,15 @@ Request → packages/worker/src/index.ts
 | [`docs/use/index.md`](./docs/use/index.md)                                                   | Using Kody over MCP                  |
 | [`docs/contributing/setup.md`](./docs/contributing/setup.md)                                 | Local development and verification   |
 
+## Contributing
+
+Outside pull requests to this repository need a signed inbound
+[Contributor License Agreement](./docs/contributing/inbound-contributions.md).
+Community packages stay MIT and do not use that CLA.
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) and
+[`docs/contributing/index.md`](./docs/contributing/index.md).
+
 ## License
 
 Kody is licensed under the

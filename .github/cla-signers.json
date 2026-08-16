@@ -1,0 +1,9 @@
+{
+	"version": 1,
+	"document": "docs/legal/individual-cla.md",
+	"allowlist": {
+		"github": ["kentcdodds"],
+		"email": ["me@kentcdodds.com", "me+github@kentcdodds.com"]
+	},
+	"signers": []
+}

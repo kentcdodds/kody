@@ -8,6 +8,8 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Getting started](./getting-started.md), [project intent](./project-intent.md)
 - [Decision records](./decisions/index.md) (ADRs, including decisions **not** to
   build something)
+- [Inbound contributions](./inbound-contributions.md) (CLA for patches to this
+  repository)
 - [Setup](./setup.md), [environment variables](./environment-variables.md),
   [setup manifest](./setup-manifest.md)
 - [Manual PR preview testing](./preview-manual-testing.md)

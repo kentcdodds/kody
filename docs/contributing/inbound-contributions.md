@@ -1,0 +1,86 @@
+# Inbound contributions
+
+How outside patches enter [this repository](https://github.com/kentcdodds/kody).
+The decision and the why live in
+[0018 — Inbound CLA](./decisions/0018-inbound-cla.md).
+
+This page is the platform-repo contribution path. Most reusable behavior belongs
+in a [community package](../use/community-packages.md) (MIT, your copyright).
+You do not sign a CLA to publish or fork a community listing.
+
+## What needs a CLA
+
+A pull request needs a signed Contributor License Agreement when any commit on
+it is authored by someone other than Kent C. Dodds or an allowlisted bot.
+
+The contributor keeps copyright. The CLA is an inbound license so the repository
+can stay a single-licensor Fair Source tree under [FSL-1.1-ALv2](../../LICENSE).
+
+Sign the [Individual CLA](../legal/individual-cla.md) unless an employer owns
+the work. If an organization owns the work, an authorized representative
+completes the [Entity CLA](../legal/entity-cla.md) instead.
+
+There is no exception for docs-only or one-line patches.
+
+## How to sign (individual)
+
+1. Open the pull request.
+2. Read the [Individual CLA](../legal/individual-cla.md).
+3. Comment exactly:
+
+   ```
+   I have read the CLA and I hereby sign the CLA
+   ```
+
+4. Wait for a maintainer to record your GitHub username in
+   [`.github/cla-signers.json`](../../.github/cla-signers.json) on `main`.
+5. Re-run the `CLA` check, or push another commit.
+
+Signing once covers past, present, and future contributions from that GitHub
+identity. People who contributed before this process sign the same way before
+their next merge. The `CLA` workflow reads signers from `main`, not from the
+pull request branch, so adding your own username on the branch does not pass the
+check.
+
+## How to sign (entity)
+
+An authorized representative emails
+[me@kentcdodds.com](mailto:me@kentcdodds.com) with:
+
+- subject `Kody Entity CLA`
+- legal name and address of the organization
+- representative name and title
+- GitHub usernames authorized to submit on the organization's behalf
+- a statement that the organization accepts the
+  [Entity CLA](../legal/entity-cla.md)
+
+Licensor records those usernames after accepting the agreement.
+
+## Who does not sign
+
+These identities are allowlisted in `.github/cla-signers.json` and do not sign:
+
+- `kentcdodds` (Licensor)
+- Licensor-owned commit emails listed in that file
+- GitHub accounts whose login ends in `[bot]`
+
+Cursor Cloud Agent pull requests that GitHub authors as `kentcdodds` follow the
+Licensor path.
+
+## Maintainer steps
+
+Do not merge a pull request while the `CLA` check is red.
+
+After a valid individual signing comment, add a `signers` entry on `main`
+(GitHub login, `signedAt` as an ISO date, `cla` of `individual`) and re-run the
+check. After an accepted Entity CLA, add each authorized username with `cla` of
+`entity`.
+
+Make the `CLA` check required for `main` in GitHub branch protection so a green
+review cannot skip it.
+
+## Out of scope
+
+- Publishing or forking community packages
+- Issues, discussions, and security reports that do not include a patch
+- Private vulnerability reports ([Security policy](../../SECURITY.md))
