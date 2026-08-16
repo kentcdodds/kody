@@ -15,9 +15,8 @@ vi.mock('./resource-utils.ts', () => ({
 	ensureR2Bucket: vi.fn<
 		(input: { name: string; dryRun: boolean }) => {
 			name: string
-			dryRun: boolean
 		}
-	>((input) => input),
+	>((input) => ({ name: input.name })),
 	ensureR2BucketLifecycle: vi.fn<
 		(input: {
 			name: string
@@ -33,7 +32,6 @@ vi.mock('./resource-utils.ts', () => ({
 test('ensureNxCacheResources creates the shared R2 bucket and applies 14-day expiry', () => {
 	expect(ensureNxCacheResources({ dryRun: true })).toEqual({
 		name: NX_CACHE_R2_BUCKET_NAME,
-		dryRun: true,
 		lifecycle: nxCacheLifecyclePolicy,
 	})
 	expect(ensureR2Bucket).toHaveBeenCalledWith({

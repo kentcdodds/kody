@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
-import { rm, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { isExecutedDirectly } from './node-runtime.ts'
 import { startLocalNxCacheServer } from '../packages/nx-cache/local-server.ts'
@@ -30,39 +32,39 @@ function runNxSmokeProbe(env: NodeJS.ProcessEnv) {
 	})
 }
 
-async function resetLocalNxCache() {
-	await new Promise<void>((resolve, reject) => {
-		const child = spawn('npx', ['nx', 'reset'], {
-			env: { ...process.env, NX_DAEMON: 'false' },
-			stdio: 'ignore',
-		})
-		child.on('error', reject)
-		child.on('close', () => {
-			resolve()
-		})
-	})
-	await rm('.nx/cache', { recursive: true, force: true })
-	await rm('.nx/workspace-data', { recursive: true, force: true })
+async function wipeIsolatedLocalCache(cacheDirectory: string) {
+	await rm(cacheDirectory, { recursive: true, force: true })
+	await mkdir(cacheDirectory, { recursive: true })
 	await rm(PROBE_OUTPUT, { force: true })
 }
 
 export async function runNxRemoteCacheSmoke() {
+	const isolatedRoot = await mkdtemp(join(tmpdir(), 'nx-cache-smoke-'))
+	const cacheDirectory = join(isolatedRoot, 'cache')
+	const workspaceDataDirectory = join(isolatedRoot, 'workspace-data')
+	await mkdir(cacheDirectory, { recursive: true })
+	await mkdir(workspaceDataDirectory, { recursive: true })
+
 	await using server = {
 		...(await startLocalNxCacheServer()),
 		async [Symbol.asyncDispose]() {
 			await this.close()
+			await rm(isolatedRoot, { recursive: true, force: true })
 		},
 	}
 
 	const env = {
 		...process.env,
 		NX_DAEMON: 'false',
+		NX_CACHE_DIRECTORY: cacheDirectory,
+		NX_WORKSPACE_DATA_DIRECTORY: workspaceDataDirectory,
+		NX_PROJECT_GRAPH_CACHE_DIRECTORY: workspaceDataDirectory,
 		NX_SELF_HOSTED_REMOTE_CACHE_SERVER: server.url,
 		NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: server.token,
 		NX_CACHE_SMOKE_FAIL_IF_RUN: '',
 	}
 
-	await resetLocalNxCache()
+	await wipeIsolatedLocalCache(cacheDirectory)
 	const first = await runNxSmokeProbe(env)
 	if (first.code !== 0) {
 		throw new Error(`First smoke-probe failed:\n${first.output}`)
@@ -76,7 +78,7 @@ export async function runNxRemoteCacheSmoke() {
 		)
 	}
 
-	await resetLocalNxCache()
+	await wipeIsolatedLocalCache(cacheDirectory)
 	const second = await runNxSmokeProbe({
 		...env,
 		NX_CACHE_SMOKE_FAIL_IF_RUN: '1',

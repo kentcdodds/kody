@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 
 import { handleNxCacheRequest, parseCacheHash } from './handle-request.ts'
 import { createMemoryCacheStore } from './memory-store.ts'
+import { type NxCacheEnv } from './nx-cache-types.ts'
 
 const ACCESS_TOKEN = 'test-nx-cache-token'
 const HASH = '0123456789abcdef0123456789abcdef'
@@ -16,7 +17,7 @@ function env(overrides: { token?: string; commit?: string } = {}) {
 async function handle(
 	request: Request,
 	store = createMemoryCacheStore(),
-	environment = env(),
+	environment: Pick<NxCacheEnv, 'CACHE_ACCESS_TOKEN' | 'BUILD_COMMIT'> = env(),
 ) {
 	return handleNxCacheRequest(request, environment, store)
 }
@@ -71,12 +72,19 @@ test('cache reads and writes require a bearer token', async () => {
 })
 
 test('unconfigured access token fails closed', async () => {
-	const response = await handle(
+	const blank = await handle(
 		authorized('GET', `/v1/cache/${HASH}`),
 		createMemoryCacheStore(),
 		env({ token: '   ' }),
 	)
-	expect(response.status).toBe(503)
+	expect(blank.status).toBe(503)
+
+	const missing = await handle(
+		authorized('GET', `/v1/cache/${HASH}`),
+		createMemoryCacheStore(),
+		{ CACHE_ACCESS_TOKEN: undefined, BUILD_COMMIT: 'commit-sha' },
+	)
+	expect(missing.status).toBe(503)
 })
 
 test('PUT then GET round-trips an artifact and PUT is create-only', async () => {

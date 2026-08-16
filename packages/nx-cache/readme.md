@@ -16,8 +16,8 @@ Set both variables in GitHub Actions (validate jobs) and in Cursor Cloud Agent
 environments:
 
 ```bash
-NX_SELF_HOSTED_REMOTE_CACHE_SERVER=https://nx-cache.kody.codes
-NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN=<same value as the Worker secret>
+export NX_SELF_HOSTED_REMOTE_CACHE_SERVER=https://nx-cache.kody.codes
+export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN="$NX_CACHE_TOKEN"
 ```
 
 Leave them unset to run with the local `.nx` cache only. Validate and
@@ -27,7 +27,7 @@ fails the job if the host is configured but unreachable, so the first merge can
 still validate before the worker exists.
 
 `npm run nx-cache:smoke` (also part of `test:node`) starts a local HTTP cache,
-runs `nx-cache:smoke-probe` twice with the local `.nx` cache wiped in between,
+runs `nx-cache:smoke-probe` twice with an isolated local cache wiped in between,
 and asserts the second run is a `[remote cache]` hit that restores outputs
 without re-running the command.
 

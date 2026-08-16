@@ -46,7 +46,7 @@ this VM (same values as the GitHub Actions secret / Worker secret):
 
 ```bash
 export NX_SELF_HOSTED_REMOTE_CACHE_SERVER=https://nx-cache.kody.codes
-export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN=<token>
+export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN="$NX_CACHE_TOKEN"
 ```
 
 Use `CI=1` on cached test commands (the repo scripts already do). Leave the

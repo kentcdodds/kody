@@ -20,6 +20,7 @@ export function createMemoryCacheStore(): NxCacheStore {
 				body instanceof ArrayBuffer
 					? new Uint8Array(body)
 					: new Uint8Array(await new Response(body).arrayBuffer())
+			if (objects.has(hash)) return 'exists'
 			objects.set(hash, bytes)
 			return 'created'
 		},

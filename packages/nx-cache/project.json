@@ -6,7 +6,7 @@
 		"smoke-probe": {
 			"executor": "nx:run-commands",
 			"cache": true,
-			"inputs": ["{projectRoot}/project.json"],
+			"inputs": ["{projectRoot}/project.json", "{projectRoot}/smoke-probe.ts"],
 			"outputs": ["{workspaceRoot}/.tmp/nx-cache-smoke-probe.txt"],
 			"options": {
 				"command": "node packages/nx-cache/smoke-probe.ts"

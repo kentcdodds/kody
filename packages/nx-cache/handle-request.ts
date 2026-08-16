@@ -2,7 +2,7 @@ import { readBearerToken, timingSafeEqualString } from './timing-safe.ts'
 import { type NxCacheEnv, type NxCacheStore } from './nx-cache-types.ts'
 
 const HASH_PATTERN = /^[a-fA-F0-9]{16,128}$/
-const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024
+export const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024
 
 export function parseCacheHash(pathname: string): string | null {
 	const match = /^\/v1\/cache\/([^/]+)$/.exec(pathname)
@@ -13,9 +13,9 @@ export function parseCacheHash(pathname: string): string | null {
 
 export async function authorizeCacheRequest(
 	request: Request,
-	accessToken: string,
+	accessToken: string | undefined,
 ): Promise<Response | null> {
-	const configured = accessToken.trim()
+	const configured = accessToken?.trim() ?? ''
 	if (!configured) {
 		return new Response('Nx cache is not configured', { status: 503 })
 	}
@@ -83,7 +83,9 @@ export async function handleNxCacheRequest(
 		}
 		const result = await store.putIfAbsent(hash, request.body)
 		if (result === 'exists') {
-			return new Response('Cannot override an existing record', { status: 409 })
+			return new Response('Cannot override an existing record', {
+				status: 409,
+			})
 		}
 		return new Response(null, { status: 200 })
 	}

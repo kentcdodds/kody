@@ -1,6 +1,6 @@
 export type NxCacheEnv = {
 	CACHE_BUCKET: R2Bucket
-	CACHE_ACCESS_TOKEN: string
+	CACHE_ACCESS_TOKEN?: string
 	BUILD_COMMIT?: string
 }
 
