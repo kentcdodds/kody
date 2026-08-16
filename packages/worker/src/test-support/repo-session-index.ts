@@ -63,6 +63,20 @@ export function createInMemoryRepoSessionIndexEnv(
 						)[0] ?? null
 				)
 			},
+			async getActiveUnusedBySource(input) {
+				return (
+					[...rows.values()]
+						.filter(
+							(row) =>
+								row.source_id === input.sourceId &&
+								row.status === 'active' &&
+								row.last_checkpoint_at == null,
+						)
+						.sort((left, right) =>
+							right.updated_at.localeCompare(left.updated_at),
+						)[0] ?? null
+				)
+			},
 			async listBySource(input) {
 				return [...rows.values()]
 					.filter((row) => row.source_id === input.sourceId)

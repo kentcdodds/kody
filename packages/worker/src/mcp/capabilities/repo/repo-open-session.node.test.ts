@@ -11,6 +11,7 @@ import { repoOpenSessionInputSchema } from './repo-shared.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getActiveRepoSessionByConversation: vi.fn(),
+	getActiveUnusedRepoSessionBySource: vi.fn(),
 	countActiveRepoSessions: vi.fn(async () => 0),
 	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
@@ -20,6 +21,8 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/repo/repo-sessions.ts', () => ({
 	getActiveRepoSessionByConversation: (...args: Array<unknown>) =>
 		mockModule.getActiveRepoSessionByConversation(...args),
+	getActiveUnusedRepoSessionBySource: (...args: Array<unknown>) =>
+		mockModule.getActiveUnusedRepoSessionBySource(...args),
 	countActiveRepoSessions: (...args: Array<unknown>) =>
 		mockModule.countActiveRepoSessions(...args),
 }))
@@ -139,6 +142,8 @@ function createOpenSessionResult() {
 
 function resetMocks() {
 	mockModule.getActiveRepoSessionByConversation.mockReset()
+	mockModule.getActiveUnusedRepoSessionBySource.mockReset()
+	mockModule.getActiveUnusedRepoSessionBySource.mockResolvedValue(null)
 	mockModule.countActiveRepoSessions.mockReset()
 	mockModule.countActiveRepoSessions.mockResolvedValue(0)
 	mockModule.getEntitySourceByIdForUser.mockReset()
@@ -339,6 +344,68 @@ test('repo_open_session resumes an existing active session without enforcing the
 		userId,
 	})
 	expect(resumeRpc.openSession).not.toHaveBeenCalled()
+})
+
+test('repo_open_session reuses an unused same-source session when conversation_id is omitted', async () => {
+	resetMocks()
+	const email = 'reuse-unused@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const limit = planLimits.pro.maxRepoSessions
+	if (limit === null) {
+		throw new Error('Expected a numeric pro repo session limit.')
+	}
+	const env = {
+		APP_DB: createEntitlementsDatabase({
+			users: [{ email, plan: 'pro', stable_user_id: userId }],
+		}),
+	} as Env
+	const ctx = {
+		env,
+		callerContext: createMcpCallerContext({
+			baseUrl: 'https://heykody.dev',
+			user: {
+				userId,
+				email,
+				displayName: 'Reuse Unused',
+			},
+		}),
+	}
+	mockModule.getActiveUnusedRepoSessionBySource.mockResolvedValueOnce({
+		id: 'session-unused',
+		source_id: 'source-package-1',
+	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
+		createSavedPackageRow(userId),
+	)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
+		createPackageSourceRow(userId),
+	)
+	const reuseRpc = createRepoRpc()
+	reuseRpc.getSessionInfo.mockResolvedValueOnce({
+		...createOpenSessionResult(),
+		id: 'session-unused',
+	})
+	mockModule.repoSessionRpc.mockReturnValue(reuseRpc)
+
+	const reused = await repoOpenSessionCapability.handler(
+		{
+			target: { kind: 'package', kody_id: 'triage-github-pr' },
+		},
+		ctx,
+	)
+
+	expect(reused.id).toBe('session-unused')
+	expect(mockModule.getActiveUnusedRepoSessionBySource).toHaveBeenCalledWith(
+		env,
+		{ userId, sourceId: 'source-package-1' },
+	)
+	expect(mockModule.getActiveRepoSessionByConversation).not.toHaveBeenCalled()
+	expect(reuseRpc.getSessionInfo).toHaveBeenCalledWith({
+		sessionId: 'session-unused',
+		userId,
+	})
+	expect(reuseRpc.openSession).not.toHaveBeenCalled()
+	expect(mockModule.countActiveRepoSessions).not.toHaveBeenCalled()
 })
 
 test('repo_open_session allows below-max usage and denies at the max plan ceiling', async () => {
