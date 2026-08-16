@@ -8,6 +8,11 @@ import {
  * returns 5xx / 429 after REST createToken + repo info already succeeded
  * (KODY-CLOUDFLARE-4Y / 4Z / 50). Short retries paper over the blip without
  * treating it as an application defect.
+ *
+ * Separately, upload-pack sometimes returns HTTP 200 with a truncated or
+ * corrupt pack body; isomorphic-git then throws InternalError containing
+ * "Packfile payload corrupted" (KODY-CLOUDFLARE-55 / 56). Same retry + wrap
+ * treatment — never an app-logic defect we can fix in-repo.
  */
 export const artifactsGitHttpRetryDelaysMs = [50, 150] as const
 
@@ -51,6 +56,34 @@ export function isTransientArtifactsGitHttpError(error: unknown) {
 }
 
 /**
+ * isomorphic-git integrity failure while unpacking a remote pack. The phrase
+ * is unique to that check; match it anywhere in the cause chain so HTTP-200
+ * corrupt packs and 5xx-interrupted uploads both retry.
+ */
+export function isIsomorphicGitPackfileCorruptionMessage(message: string) {
+	return /Packfile payload corrupted/i.test(message)
+}
+
+export function isIsomorphicGitPackfileCorruptionError(error: unknown) {
+	for (const entry of getErrorCauseChain(error)) {
+		if (
+			entry instanceof Error &&
+			isIsomorphicGitPackfileCorruptionMessage(entry.message)
+		) {
+			return true
+		}
+	}
+	return false
+}
+
+export function isTransientArtifactsGitError(error: unknown) {
+	return (
+		isTransientArtifactsGitHttpError(error) ||
+		isIsomorphicGitPackfileCorruptionError(error)
+	)
+}
+
+/**
  * Stable wrapper phrases used by Artifacts git call sites and the Sentry
  * beforeSend filter. Keep these exact so triage filters stay narrow, and keep
  * the status set aligned with `isTransientArtifactsGitHttpStatus` so we do not
@@ -58,11 +91,28 @@ export function isTransientArtifactsGitHttpError(error: unknown) {
  */
 export function isArtifactsGitTransientHttpErrorMessage(message: string) {
 	const match =
-		/Artifacts (?:listServerRefs|git fetch) failed for .+: HTTP Error: (\d{3})\b/i.exec(
+		/Artifacts (?:listServerRefs|git fetch|git clone) failed for .+: HTTP Error: (\d{3})\b/i.exec(
 			message.trim(),
 		)
 	if (!match?.[1]) return false
 	return isTransientArtifactsGitHttpStatus(Number(match[1]))
+}
+
+/**
+ * Drop Sentry events for Artifacts pack corruption whether or not a call site
+ * wrapped them. The phrase is never produced by application logic — only by
+ * isomorphic-git verifying a remote pack — so bare InternalError events from
+ * `git.clone` paths are safe to filter the same way as wrapped ones.
+ */
+export function isArtifactsGitPackfileCorruptionSentryMessage(message: string) {
+	return isIsomorphicGitPackfileCorruptionMessage(message)
+}
+
+export function isArtifactsGitTransientErrorMessage(message: string) {
+	return (
+		isArtifactsGitTransientHttpErrorMessage(message) ||
+		isArtifactsGitPackfileCorruptionSentryMessage(message)
+	)
 }
 
 function describeArtifactRemote(remote: string) {
@@ -79,7 +129,7 @@ function describeArtifactRemote(remote: string) {
 }
 
 export function wrapArtifactsGitHttpError(input: {
-	operation: 'listServerRefs' | 'git fetch'
+	operation: 'listServerRefs' | 'git fetch' | 'git clone'
 	remote: string
 	error: unknown
 }) {
@@ -105,7 +155,7 @@ export async function runArtifactsGitWithRetry<T>(
 		} catch (error) {
 			lastError = error
 			const canRetry =
-				isTransientArtifactsGitHttpError(error) && attempt < maxAttempts - 1
+				isTransientArtifactsGitError(error) && attempt < maxAttempts - 1
 			if (!canRetry) throw error
 			const delayMs = delaysMs[attempt]
 			if (delayMs !== undefined && delayMs > 0) {

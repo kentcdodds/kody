@@ -69,20 +69,23 @@ export async function readFirstArtifactFileAtCommit(input: {
 		token: token.plaintext,
 	})
 	const auth = buildArtifactsGitAuth({ token: token.plaintext })
-	const workspace = createEphemeralGitWorkspace()
-	await git.init({
-		fs: workspace.fs,
-		dir: workspace.dir,
-	})
-	await git.addRemote({
-		fs: workspace.fs,
-		dir: workspace.dir,
-		remote: 'origin',
-		url: remote,
-	})
+	// Fresh ephemeral workspace per attempt: a corrupt pack may leave partial
+	// objects that would poison a retry on the same Map store.
+	let workspace: ReturnType<typeof createEphemeralGitWorkspace> | null = null
 	try {
-		await runArtifactsGitWithRetry(() =>
-			git.fetch({
+		await runArtifactsGitWithRetry(async () => {
+			workspace = createEphemeralGitWorkspace()
+			await git.init({
+				fs: workspace.fs,
+				dir: workspace.dir,
+			})
+			await git.addRemote({
+				fs: workspace.fs,
+				dir: workspace.dir,
+				remote: 'origin',
+				url: remote,
+			})
+			await git.fetch({
 				fs: workspace.fs,
 				http,
 				dir: workspace.dir,
@@ -94,14 +97,17 @@ export async function readFirstArtifactFileAtCommit(input: {
 				onAuth() {
 					return auth
 				},
-			}),
-		)
+			})
+		})
 	} catch (error) {
 		throw wrapArtifactsGitHttpError({
 			operation: 'git fetch',
 			remote: info.remote,
 			error,
 		})
+	}
+	if (!workspace) {
+		throw new Error('Artifacts git fetch completed without a workspace.')
 	}
 
 	for (const filePath of input.filePaths) {

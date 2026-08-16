@@ -5,7 +5,7 @@ import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 import { isEntitlementLimitError } from './entitlements/errors.ts'
 import { isIntegrationTokenRefreshCallerMessage } from './integrations/token-refresh.ts'
 import { isRemoteConnectorUnavailableMessage } from './remote-connector/status.ts'
-import { isArtifactsGitTransientHttpErrorMessage } from './repo/artifacts-git-retry.ts'
+import { isArtifactsGitTransientErrorMessage } from './repo/artifacts-git-retry.ts'
 import { isUserCodeError } from './user-code-error.ts'
 
 function sentryEventMessages(event: ErrorEvent) {
@@ -347,16 +347,18 @@ export function filterCloudflareOpaqueInternalErrorSentryEvent(
 
 /**
  * Cloudflare Artifacts git protocol HTTP 5xx / 429 after REST auth already
- * succeeded (KODY-CLOUDFLARE-4Y / 4Z / 50). Call sites retry briefly; exhausted
- * failures keep the stable `Artifacts listServerRefs|git fetch failed for …:
- * HTTP Error: NNN` wrapper so this beforeSend gate can drop platform blips
- * without swallowing unrelated HTTP errors.
+ * succeeded (KODY-CLOUDFLARE-4Y / 4Z / 50), and isomorphic-git packfile
+ * corruption when upload-pack returns a bad pack body (KODY-CLOUDFLARE-55 /
+ * 56). Call sites retry briefly; exhausted HTTP failures keep the stable
+ * `Artifacts listServerRefs|git fetch|git clone failed for …: HTTP Error: NNN`
+ * wrapper. Packfile corruption is matched by its unique phrase even when bare
+ * (clone paths historically threw unwrapped InternalError).
  */
 export function isArtifactsGitTransientHttpErrorSentryEvent(event: ErrorEvent) {
 	return sentryEventMessages(event).some(
 		(message) =>
 			typeof message === 'string' &&
-			isArtifactsGitTransientHttpErrorMessage(message),
+			isArtifactsGitTransientErrorMessage(message),
 	)
 }
 
@@ -481,8 +483,9 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// INTERNAL_ERROR wording) with no support reference are dropped the
 		// same way — see filterCloudflareOpaqueInternalErrorSentryEvent.
 		// Artifacts git protocol HTTP 5xx / 429 wrappers (listServerRefs /
-		// git fetch) are dropped the same way after brief call-site retries —
-		// see filterArtifactsGitTransientHttpErrorSentryEvent.
+		// git fetch / git clone) and isomorphic-git "Packfile payload
+		// corrupted" events are dropped the same way after brief call-site
+		// retries — see filterArtifactsGitTransientHttpErrorSentryEvent.
 		// Bare Durable Object abort token `destroyed` from Agents MCP session
 		// teardown (`ctx.abort("destroyed")`) is dropped the same way — see
 		// filterMcpAgentSessionDestroyedAbortSentryEvent.

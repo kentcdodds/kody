@@ -175,9 +175,10 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	}
 	expect(filterSentryEvent(wrappedOpaqueInternal)).toBe(wrappedOpaqueInternal)
 
-	// Artifacts git protocol HTTP 5xx wrappers (KODY-CLOUDFLARE-4Y / 4Z / 50).
-	// Classifier edge cases live in artifacts-git-retry; here we only pin the
-	// Sentry drop vs keep contract for wrapper vs bare messages.
+	// Artifacts git protocol HTTP 5xx wrappers (KODY-CLOUDFLARE-4Y / 4Z / 50)
+	// and packfile corruption (KODY-CLOUDFLARE-55 / 56). Classifier edge cases
+	// live in artifacts-git-retry; here we only pin the Sentry drop vs keep
+	// contract for wrapper vs bare HTTP messages, plus bare packfile drops.
 	expect(
 		filterSentryEvent({
 			exception: {
@@ -197,6 +198,43 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	}
 	expect(filterSentryEvent(bareArtifactsGitHttpError)).toBe(
 		bareArtifactsGitHttpError,
+	)
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'Artifacts git clone failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: Packfile payload corrupted: calculated abc but expected def.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value:
+							'An internal error caused this command to fail.\n\nPackfile payload corrupted: calculated abc but expected def. The packfile may have been tampered with.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	const bareInternalWithoutPackfile = {
+		exception: {
+			values: [
+				{
+					value:
+						'An internal error caused this command to fail.\n\nUnrelated isomorphic-git InternalError.',
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(bareInternalWithoutPackfile)).toBe(
+		bareInternalWithoutPackfile,
 	)
 
 	// Bare Agents MCP session teardown abort (`ctx.abort("destroyed")`) —

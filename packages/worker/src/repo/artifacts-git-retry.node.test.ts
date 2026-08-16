@@ -1,7 +1,11 @@
 import { expect, test, vi } from 'vitest'
 import {
 	getArtifactsGitHttpStatus,
+	isArtifactsGitPackfileCorruptionSentryMessage,
+	isArtifactsGitTransientErrorMessage,
 	isArtifactsGitTransientHttpErrorMessage,
+	isIsomorphicGitPackfileCorruptionError,
+	isTransientArtifactsGitError,
 	isTransientArtifactsGitHttpError,
 	isTransientArtifactsGitHttpStatus,
 	runArtifactsGitWithRetry,
@@ -22,6 +26,15 @@ function httpError(
 	error.code = 'HttpError'
 	error.name = 'HttpError'
 	error.data = { statusCode, statusMessage, response: '' }
+	return error
+}
+
+function packfileCorruptionError() {
+	const error = new Error(
+		`An internal error caused this command to fail.\n\nIf you're using an application that depends on isomorphic-git, please report this error to that application's developers.\n\nIf you're a developer and you believe this is a bug in isomorphic-git, please file an issue at https://github.com/isomorphic-git/isomorphic-git/issues with a minimal reproduction, version and environment details, and this error message: Packfile payload corrupted: calculated abc but expected def. The packfile may have been tampered with.`,
+	) as Error & { code: string; name: string }
+	error.code = 'InternalError'
+	error.name = 'InternalError'
 	return error
 }
 
@@ -93,6 +106,49 @@ test('Artifacts git HTTP helpers classify transient statuses, wrap messages, and
 	const persistent = vi.fn().mockRejectedValue(httpError(500))
 	await expect(runArtifactsGitWithRetry(persistent, [0, 0])).rejects.toThrow(
 		/HTTP Error: 500/,
+	)
+	expect(persistent).toHaveBeenCalledTimes(3)
+})
+
+test('Artifacts git packfile corruption is transient, wrapped for git clone, and retried', async () => {
+	const corruption = packfileCorruptionError()
+	expect(isIsomorphicGitPackfileCorruptionError(corruption)).toBe(true)
+	expect(isTransientArtifactsGitError(corruption)).toBe(true)
+	expect(isTransientArtifactsGitError(new Error('unrelated InternalError'))).toBe(
+		false,
+	)
+
+	const wrapped = wrapArtifactsGitHttpError({
+		operation: 'git clone',
+		remote:
+			'https://x:secret@acct.artifacts.cloudflare.net/git/production/repo-1.git',
+		error: corruption,
+	})
+	expect(wrapped.message).toMatch(/^Artifacts git clone failed for /)
+	expect(wrapped.message).toContain('Packfile payload corrupted')
+	expect(wrapped.message).not.toContain('secret')
+	expect(isArtifactsGitTransientErrorMessage(wrapped.message)).toBe(true)
+	expect(isArtifactsGitPackfileCorruptionSentryMessage(corruption.message)).toBe(
+		true,
+	)
+	expect(
+		isArtifactsGitTransientHttpErrorMessage(
+			'Artifacts git clone failed for https://example.test: HTTP Error: 500',
+		),
+	).toBe(true)
+
+	const operation = vi
+		.fn()
+		.mockRejectedValueOnce(corruption)
+		.mockResolvedValueOnce({ cloned: true })
+	await expect(runArtifactsGitWithRetry(operation, [0, 0])).resolves.toEqual({
+		cloned: true,
+	})
+	expect(operation).toHaveBeenCalledTimes(2)
+
+	const persistent = vi.fn().mockRejectedValue(corruption)
+	await expect(runArtifactsGitWithRetry(persistent, [0, 0])).rejects.toThrow(
+		/Packfile payload corrupted/,
 	)
 	expect(persistent).toHaveBeenCalledTimes(3)
 })
