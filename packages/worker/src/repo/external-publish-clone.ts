@@ -46,6 +46,7 @@ function buildPublishWorkspaceFromCheckout(input: {
 	dir: string
 }): RepoPublishWorkspace {
 	const dirPrefix = input.dir.endsWith('/') ? input.dir.slice(0, -1) : input.dir
+	const dirName = dirPrefix.replace(/^\/+/, '')
 	return {
 		async readFile(path) {
 			const absolute = normalizePublishPath(path)
@@ -57,26 +58,39 @@ function buildPublishWorkspaceFromCheckout(input: {
 		},
 		async glob(pattern) {
 			const files = await input.listFiles()
+			// runRepoChecks builds patterns from normalizeRepoWorkspacePath(sourceRoot),
+			// so `/repo` (or `/repo/subdir`) becomes `repo/**/*` / `repo/subdir/**/*`.
+			// git.listFiles paths are relative to the worktree root — strip the
+			// workspace dir segment before filtering or every file is dropped.
 			const normalizedPattern = pattern.replace(/^\.\//, '')
-			const matchAll =
+			let relativeRoot = ''
+			if (
 				normalizedPattern === '**/*' ||
 				normalizedPattern === '*' ||
-				normalizedPattern.endsWith('/**/*')
-			const rootPrefix = matchAll
-				? normalizedPattern === '**/*' || normalizedPattern === '*'
-					? ''
-					: normalizedPattern.slice(0, -'/**/*'.length).replace(/^\/+/, '')
-				: null
+				normalizedPattern === ''
+			) {
+				relativeRoot = ''
+			} else if (normalizedPattern.endsWith('/**/*')) {
+				relativeRoot = normalizedPattern
+					.slice(0, -'/**/*'.length)
+					.replace(/^\/+/, '')
+			} else {
+				relativeRoot = normalizedPattern.replace(/^\/+/, '').replace(/\/+$/, '')
+			}
+			if (relativeRoot === dirName) {
+				relativeRoot = ''
+			} else if (relativeRoot.startsWith(`${dirName}/`)) {
+				relativeRoot = relativeRoot.slice(dirName.length + 1)
+			}
 			const entries: Array<{ path: string; type: string }> = []
 			for (const relative of files) {
 				if (relative.split('/').includes('.git')) continue
-				if (rootPrefix != null && rootPrefix !== '') {
-					if (
-						relative !== rootPrefix &&
-						!relative.startsWith(`${rootPrefix}/`)
-					) {
-						continue
-					}
+				if (
+					relativeRoot !== '' &&
+					relative !== relativeRoot &&
+					!relative.startsWith(`${relativeRoot}/`)
+				) {
+					continue
 				}
 				entries.push({
 					path: `${dirPrefix}/${relative}`.replace(/\/+/g, '/'),

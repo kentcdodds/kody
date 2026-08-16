@@ -108,4 +108,12 @@ test('cloneExternalPublishWorkspace clones into ephemeral FS and exposes publish
 		{ path: '/repo/package.json', type: 'file' },
 		{ path: '/repo/src/index.ts', type: 'file' },
 	])
+	// runRepoChecks passes normalizeRepoWorkspacePath('/repo') + '/**/*' → 'repo/**/*'
+	await expect(cloned.workspace.glob('repo/**/*')).resolves.toEqual([
+		{ path: '/repo/package.json', type: 'file' },
+		{ path: '/repo/src/index.ts', type: 'file' },
+	])
+	await expect(cloned.workspace.glob('repo/src/**/*')).resolves.toEqual([
+		{ path: '/repo/src/index.ts', type: 'file' },
+	])
 })
