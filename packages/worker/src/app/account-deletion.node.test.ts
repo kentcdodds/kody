@@ -1945,6 +1945,31 @@ test('account deletion reports missing Durable Object / blob bindings and remain
 	])
 })
 
+test('deleteUserAccount fails closed when REPO_SESSION_INDEX is missing', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }],
+		mcp_memories: [{ id: 'memory-a', user_id: 'user-aaa' }],
+	})
+	const env = createSuccessfulDeletionEnv(db)
+	const envWithoutIndex = { ...env }
+	delete envWithoutIndex.REPO_SESSION_INDEX
+	await expect(
+		deleteUserAccount({
+			env: envWithoutIndex,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInventoryError)
+	expect(rows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			email: 'a@example.com',
+			deleting_at: expect.any(String),
+		}),
+	])
+	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
+})
+
 test('deleteUserAccount fails closed when preflight inventory cannot be read', async () => {
 	const { db, rows } = createTestDb(
 		{

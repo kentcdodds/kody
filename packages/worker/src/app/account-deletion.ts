@@ -271,7 +271,11 @@ async function listUserSavedPackages(env: Env, userId: string) {
 }
 
 async function listUserRepoSessions(env: Env, userId: string) {
-	if (!env.REPO_SESSION_INDEX) return []
+	if (!env.REPO_SESSION_INDEX) {
+		throw new Error(
+			'REPO_SESSION_INDEX binding is required for account deletion.',
+		)
+	}
 	return (await listRepoSessionsByUser(env, userId)).map((row) => ({
 		id: row.id,
 	}))
