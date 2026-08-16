@@ -18,7 +18,11 @@ import {
 	readPreExecutionPackageInvocationInfrastructureCode,
 	readRetryablePackageInvocationInfrastructureCode,
 } from '#worker/package-invocations/admin-package-subscriptions.ts'
-import { invokePackageExport } from '#worker/package-invocations/service.ts'
+import {
+	createExecutePackageInvokeTools,
+	createPackageRuntimeInvokeTools,
+	invokePackageExport,
+} from '#worker/package-invocations/service.ts'
 import { packageWorkflowInvocationSource } from './package-invocation-sources.ts'
 import {
 	getSavedPackageById,
@@ -1552,6 +1556,42 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 			env: this.env,
 			userId: payload.userId,
 		})
+		const waitUntil = (promise: Promise<unknown>) => {
+			this.ctx.waitUntil(promise)
+		}
+		const callerContext = createMcpCallerContext({
+			baseUrl: getAppBaseUrl({
+				env: this.env,
+			}),
+			executionOrigin: 'background',
+			user: await resolveBackgroundMcpUser(this.env.APP_DB, payload.userId),
+			storageContext: payload.packageContext
+				? {
+						sessionId: null,
+						appId: payload.packageContext.packageId,
+						packageId: payload.packageContext.packageId,
+						storageId: null,
+					}
+				: null,
+			remoteConnectors,
+		})
+		// Inline workflow sandboxes use the same execute module loader, including
+		// packages.invoke. Package-created inline code keeps package-runtime
+		// provenance; execute-created inline code uses the execute invoke path.
+		const packageInvokeTools = payload.packageContext
+			? createPackageRuntimeInvokeTools({
+					env: this.env,
+					baseUrl: callerContext.baseUrl,
+					callerContext,
+					packageContext: payload.packageContext,
+					waitUntil,
+				})
+			: createExecutePackageInvokeTools({
+					env: this.env,
+					baseUrl: callerContext.baseUrl,
+					callerContext,
+					waitUntil,
+				})
 		const runHandle = beginRunRecord({
 			env: this.env,
 			userId: payload.userId,
@@ -1565,34 +1605,18 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					sourceType: 'inline',
 				},
 			},
-			waitUntil: (promise) => {
-				this.ctx.waitUntil(promise)
-			},
+			waitUntil,
 		})
 		let logs: Array<string> | undefined
 		try {
 			const result = await runModuleWithRegistry(
 				this.env,
-				createMcpCallerContext({
-					baseUrl: getAppBaseUrl({
-						env: this.env,
-					}),
-					executionOrigin: 'background',
-					user: await resolveBackgroundMcpUser(this.env.APP_DB, payload.userId),
-					storageContext: payload.packageContext
-						? {
-								sessionId: null,
-								appId: payload.packageContext.packageId,
-								packageId: payload.packageContext.packageId,
-								storageId: null,
-							}
-						: null,
-					remoteConnectors,
-				}),
+				callerContext,
 				payload.code,
 				payload.params,
 				{
 					packageContext: payload.packageContext,
+					packageInvokeTools,
 					executorTimeoutMs: workflowExecutorTimeoutMs,
 				},
 			)

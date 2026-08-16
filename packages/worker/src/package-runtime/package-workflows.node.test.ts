@@ -24,6 +24,8 @@ import {
 const invocationMocks = vi.hoisted(() => ({
 	invokePackageExport: vi.fn(),
 	runModuleWithRegistry: vi.fn(),
+	createExecutePackageInvokeTools: vi.fn(() => ({ invoke: vi.fn() })),
+	createPackageRuntimeInvokeTools: vi.fn(() => ({ invoke: vi.fn() })),
 }))
 
 const remoteConnectorMocks = vi.hoisted(() => ({
@@ -280,6 +282,10 @@ const runRecordMocks = vi.hoisted(() => {
 vi.mock('#worker/package-invocations/service.ts', () => ({
 	invokePackageExport: (...args: Array<unknown>) =>
 		invocationMocks.invokePackageExport(...args),
+	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
+		invocationMocks.createExecutePackageInvokeTools(...args),
+	createPackageRuntimeInvokeTools: (...args: Array<unknown>) =>
+		invocationMocks.createPackageRuntimeInvokeTools(...args),
 }))
 
 vi.mock('#worker/remote-connector/settings-service.ts', () => ({
@@ -649,6 +655,12 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 			result: { ok: true, p: { greeting: 'hello' } },
 			logs: [],
 		})
+		const packageInvokeTools = { invoke: vi.fn() }
+		invocationMocks.createExecutePackageInvokeTools.mockReset()
+		invocationMocks.createExecutePackageInvokeTools.mockReturnValueOnce(
+			packageInvokeTools,
+		)
+		invocationMocks.createPackageRuntimeInvokeTools.mockReset()
 		vi.setSystemTime(new Date('2026-05-03T12:35:00.000Z'))
 		const workflow = new DynamicCallableWorkflowBase(
 			{ waitUntil: vi.fn() } as unknown as ExecutionContext,
@@ -668,6 +680,20 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 				{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
 			),
 		).resolves.toEqual({ ok: true, p: { greeting: 'hello' } })
+		expect(invocationMocks.createExecutePackageInvokeTools).toHaveBeenCalledWith(
+			{
+				env: expect.objectContaining({
+					APP_BASE_URL: 'https://app.example.com',
+				}),
+				baseUrl: 'https://app.example.com',
+				callerContext: expect.objectContaining({
+					executionOrigin: 'background',
+					user: expect.objectContaining({ userId: 'user-1' }),
+				}),
+				waitUntil: expect.any(Function),
+			},
+		)
+		expect(invocationMocks.createPackageRuntimeInvokeTools).not.toHaveBeenCalled()
 		expect(invocationMocks.runModuleWithRegistry).toHaveBeenCalledWith(
 			expect.objectContaining({ APP_BASE_URL: 'https://app.example.com' }),
 			expect.objectContaining({
@@ -678,6 +704,7 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 			{ greeting: 'hello' },
 			{
 				packageContext: null,
+				packageInvokeTools,
 				executorTimeoutMs: workflowExecutorTimeoutMs,
 			},
 		)
@@ -806,6 +833,12 @@ test('package-created inline workflows retain package secret authorization conte
 		result: { ok: true },
 		logs: [],
 	})
+	const packageInvokeTools = { invoke: vi.fn() }
+	invocationMocks.createPackageRuntimeInvokeTools.mockReset()
+	invocationMocks.createPackageRuntimeInvokeTools.mockReturnValueOnce(
+		packageInvokeTools,
+	)
+	invocationMocks.createExecutePackageInvokeTools.mockReset()
 	const stepDo = vi.fn(
 		async (_name: string, _config: unknown, callback: () => unknown) =>
 			await callback(),
@@ -834,6 +867,21 @@ test('package-created inline workflows retain package secret authorization conte
 		{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
 	)
 
+	expect(invocationMocks.createPackageRuntimeInvokeTools).toHaveBeenCalledWith({
+		env: expect.any(Object),
+		baseUrl: 'https://app.example.com',
+		callerContext: expect.objectContaining({
+			storageContext: {
+				sessionId: null,
+				appId: 'package-1',
+				packageId: 'package-1',
+				storageId: null,
+			},
+		}),
+		packageContext,
+		waitUntil: expect.any(Function),
+	})
+	expect(invocationMocks.createExecutePackageInvokeTools).not.toHaveBeenCalled()
 	expect(invocationMocks.runModuleWithRegistry).toHaveBeenCalledWith(
 		expect.any(Object),
 		expect.objectContaining({
@@ -848,6 +896,7 @@ test('package-created inline workflows retain package secret authorization conte
 		undefined,
 		{
 			packageContext,
+			packageInvokeTools,
 			executorTimeoutMs: workflowExecutorTimeoutMs,
 		},
 	)
@@ -909,6 +958,7 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for inline
 		undefined,
 		{
 			packageContext: null,
+			packageInvokeTools: expect.objectContaining({ invoke: expect.any(Function) }),
 			executorTimeoutMs: workflowExecutorTimeoutMs,
 		},
 	)
