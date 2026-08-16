@@ -158,6 +158,14 @@
 						"name": "REPO_SESSION",
 						"script_name": "kody",
 					},
+					// Catalog authority for repo_* capabilities. Package and
+					// workflow execution on this worker open/list/publish
+					// sessions through the main Worker's per-user index.
+					{
+						"class_name": "RepoSessionIndex",
+						"name": "REPO_SESSION_INDEX",
+						"script_name": "kody",
+					},
 				],
 			},
 			// Jobs worker service binding (ADR 0016): package save/delete paths
@@ -327,6 +335,14 @@
 					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
+						"script_name": "kody",
+					},
+					// Catalog authority for repo_* capabilities. Package and
+					// workflow execution on this worker open/list/publish
+					// sessions through the main Worker's per-user index.
+					{
+						"class_name": "RepoSessionIndex",
+						"name": "REPO_SESSION_INDEX",
 						"script_name": "kody",
 					},
 				],

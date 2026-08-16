@@ -990,6 +990,9 @@ and are bound cross-script from main — see
   [Mailbox](#durable-objects-mailbox))
 - `STORAGE_RUNNER` (Durable Objects; class hosted on the runtime worker)
 - `REPO_SESSION` (Durable Objects)
+- `REPO_SESSION_INDEX` (Durable Objects; per-user repo session catalog. The
+  runtime worker binds this class cross-script from `kody` so package and
+  workflow capability calls can open, list, and publish repo sessions.)
 - `PACKAGE_REALTIME_SESSION` (Durable Objects; class hosted on the runtime
   worker)
 - `PACKAGE_SERVICE_INSTANCE` (Durable Objects; class hosted on the runtime

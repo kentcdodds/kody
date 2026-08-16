@@ -9,6 +9,30 @@ import { parseJsonc } from './resource-utils.ts'
 
 const runtimeBaseConfigPath = 'packages/runtime-worker/wrangler.jsonc'
 
+test('runtime worker binds RepoSessionIndex cross-script next to RepoSession', async () => {
+	const config = parseJsonc<{
+		env?: Record<
+			string,
+			{ durable_objects?: { bindings?: Array<Record<string, unknown>> } }
+		>
+	}>(await readFile(runtimeBaseConfigPath, 'utf8'))
+	for (const envName of ['production', 'preview']) {
+		const bindings = config.env?.[envName]?.durable_objects?.bindings ?? []
+		const repoSession = bindings.find((binding) => binding.name === 'REPO_SESSION')
+		const repoSessionIndex = bindings.find(
+			(binding) => binding.name === 'REPO_SESSION_INDEX',
+		)
+		expect(repoSession).toMatchObject({
+			class_name: 'RepoSession',
+			script_name: 'kody',
+		})
+		expect(repoSessionIndex).toMatchObject({
+			class_name: 'RepoSessionIndex',
+			script_name: 'kody',
+		})
+	}
+})
+
 function buildMainGeneratedConfig(envName: string) {
 	const env = {
 		durable_objects: {
@@ -162,6 +186,13 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 			(binding) => binding.name === 'USER_METER',
 		)
 		expect(userMeter?.script_name).toBe('kody-pr-7')
+		const repoSessionIndex = previewEnv?.durable_objects?.bindings?.find(
+			(binding) => binding.name === 'REPO_SESSION_INDEX',
+		)
+		expect(repoSessionIndex).toMatchObject({
+			class_name: 'RepoSessionIndex',
+			script_name: 'kody-pr-7',
+		})
 		// Resource identifiers are copied from the provisioned main config.
 		expect(previewEnv?.d1_databases?.[0]).toMatchObject({
 			binding: 'APP_DB',
