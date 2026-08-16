@@ -4,10 +4,9 @@ kody already binds a broad set of Cloudflare offerings in
 `packages/worker/wrangler.jsonc` (the authoritative inventory): D1 (`APP_DB`),
 KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`), many Durable Object namespaces
 (`MCP_OBJECT` and others), R2 (`COMMUNITY_ASSETS`, `EMAIL_BLOBS`,
-`REPO_SESSION_BLOBS`), Workers AI
-(`AI`, optionally routed through AI Gateway via `AI_GATEWAY_ID`), Vectorize
-(`CAPABILITY_VECTOR_INDEX`), Queues, Analytics Engine (`USAGE_EVENTS`),
-Workflows, and worker loaders. See
+`REPO_SESSION_BLOBS`), Workers AI (`AI`, optionally routed through AI Gateway
+via `AI_GATEWAY_ID`), Vectorize (`CAPABILITY_VECTOR_INDEX`), Queues, Analytics
+Engine (`USAGE_EVENTS`), Workflows, and worker loaders. See
 [architecture/data-storage.md](./architecture/data-storage.md) for what each
 binding stores.
 

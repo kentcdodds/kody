@@ -249,11 +249,10 @@ Durable Object export behavior:
   account-export exclusions: MCP objects are SDK session-keyed and not globally
   enumerable; RepoSession is an ephemeral editing workspace (although its SQLite
   plus `REPO_SESSION_BLOBS` spill bytes are inventoried for the `storage_bytes`
-  entitlement);
-  PackageRealtimeSession is live websocket state; McpClientHub can hold OAuth
-  tokens and SDK registrations that are non-portable. Canonical repo-backed
-  source and durable package app state are covered by Artifacts pointers and
-  StorageRunner buckets instead.
+  entitlement); PackageRealtimeSession is live websocket state; McpClientHub can
+  hold OAuth tokens and SDK registrations that are non-portable. Canonical
+  repo-backed source and durable package app state are covered by Artifacts
+  pointers and StorageRunner buckets instead.
 
 Vectorize entries are intentionally excluded. Memory text and metadata, job
 metadata, and package projections are exported from D1; vectors are derived and
@@ -530,12 +529,12 @@ RepoSession `@cloudflare/shell` Workspace objects above the inline threshold
 (~1.5 MiB) live in `REPO_SESSION_BLOBS`. This is session scratch, not a
 user-visible rewrite of repo files: the 10 MiB per-file policy still rejects
 oversized writes, and Artifacts remains the durable source. Workspace keys use
-`repo-session:{durableObjectId}/` (`{name}/{namespace}{path}`).
-`Workspace.rm` deletes listed keys while SQL metadata exists; `purgeSession`
-prefix-purges after `deleteAll` so a failed `rm` cannot orphan objects.
-Discard and expired-session cleanup also prefix-purge. Isolated check/rebuild
-RepoSession isolates never write this workspace. The bucket is omitted from
-DR canonical exports.
+`repo-session:{durableObjectId}/` (`{name}/{namespace}{path}`). `Workspace.rm`
+deletes listed keys while SQL metadata exists; `purgeSession` prefix-purges
+after `deleteAll` so a failed `rm` cannot orphan objects. Discard and
+expired-session cleanup also prefix-purge. Isolated check/rebuild RepoSession
+isolates never write this workspace. The bucket is omitted from DR canonical
+exports.
 
 - Bucket names: `kody-repo-session-blobs` (production), per-preview
   `{worker}-repo-session-blobs` buckets created and cleaned up by
@@ -1086,9 +1085,9 @@ Operational notes:
   git-command parser channel; branch/checkout/remote operations require the
   Artifacts git lane via `package_get_git_remote`. Package runtime bundles are
   loaded from published artifacts rather than a mounted checkout. The session
-  Workspace spills objects above the inline threshold to `REPO_SESSION_BLOBS`
-  so clone and checkout can honor the 10 MiB per-file policy without hitting
-  the Durable Object SQLite 2 MiB row limit.
+  Workspace spills objects above the inline threshold to `REPO_SESSION_BLOBS` so
+  clone and checkout can honor the 10 MiB per-file policy without hitting the
+  Durable Object SQLite 2 MiB row limit.
 - `repo_write_file` exposes the same Durable Object's `applyEdits` write path as
   a first-class MCP capability for whole-file overwrites. Prefer it over
   `repo_apply_patch` when the agent is replacing an entire file (for example, a

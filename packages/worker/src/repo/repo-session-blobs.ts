@@ -22,11 +22,19 @@ export function repoSessionWorkspaceR2ListPrefix(durableObjectId: string) {
 	return `${buildRepoSessionWorkspaceName(durableObjectId)}/`
 }
 
+function isR2Bucket(value: R2Bucket | null | undefined): value is R2Bucket {
+	return (
+		value != null &&
+		typeof value.list === 'function' &&
+		typeof value.delete === 'function'
+	)
+}
+
 export async function purgeRepoSessionWorkspaceBlobs(input: {
 	blobs?: R2Bucket | null
 	durableObjectId: string
 }): Promise<void> {
-	if (!input.blobs) return
+	if (!isR2Bucket(input.blobs)) return
 	const prefix = repoSessionWorkspaceR2ListPrefix(input.durableObjectId)
 	for (;;) {
 		const page = await input.blobs.list({
@@ -42,7 +50,7 @@ export async function measureRepoSessionWorkspaceBlobBytes(input: {
 	blobs?: R2Bucket | null
 	durableObjectId: string
 }): Promise<number> {
-	if (!input.blobs) return 0
+	if (!isR2Bucket(input.blobs)) return 0
 	const prefix = repoSessionWorkspaceR2ListPrefix(input.durableObjectId)
 	let total = 0
 	let cursor: string | undefined

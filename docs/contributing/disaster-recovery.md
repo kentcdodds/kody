@@ -59,11 +59,11 @@ through its lifecycle.
 
 ## Objectives
 
-| Scope                 | RPO    | Notes                                                                                                                                        |
-| --------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scope                 | RPO    | Notes                                                                                                                                                                                                               |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | All canonical stores  | 24h    | D1, per-user Mailbox graphs, StorageRunner dumps, `EMAIL_BLOBS` / `COMMUNITY_ASSETS` blobs, published package/job source snapshots. `REPO_SESSION_BLOBS` is ephemeral session scratch and is not a canonical store. |
-| Selected RunLog state | 24h    | Never-pruned job observability, package-run success counters, and activation milestones; run history and correctness ledgers remain excluded |
-| D1 freshness          | hourly | Control-plane size/ETag freshness; deep checksum via drill                                                                                   |
+| Selected RunLog state | 24h    | Never-pruned job observability, package-run success counters, and activation milestones; run history and correctness ledgers remain excluded                                                                        |
+| D1 freshness          | hourly | Control-plane size/ETag freshness; deep checksum via drill                                                                                                                                                          |
 
 RTO is whatever the operator can achieve with the UI restore workflow after a
 successful sealed-day drill. There is no provider-level cross-store atomic

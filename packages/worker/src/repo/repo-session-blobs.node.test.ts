@@ -86,4 +86,10 @@ test('purge and measure no-op when the R2 binding is missing', async () => {
 			durableObjectId: 'do-session-1',
 		}),
 	).resolves.toBe(0)
+	await expect(
+		purgeRepoSessionWorkspaceBlobs({
+			blobs: {} as R2Bucket,
+			durableObjectId: 'do-session-1',
+		}),
+	).resolves.toBeUndefined()
 })
