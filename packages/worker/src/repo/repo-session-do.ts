@@ -1462,20 +1462,21 @@ class RepoSessionBase extends DurableObject<Env> {
 			userId: input.userId,
 			sessionId: input.sessionId,
 		})
+		if (sessionRow && sessionRow.user_id !== input.userId) {
+			throw new Error(
+				`Repo session "${input.sessionId}" was not found for this user.`,
+			)
+		}
+		await this.clearCachedSessionState(input.sessionId)
+		await this.resetWorkspace()
+		await this.purgeWorkspaceBlobs()
 		if (!sessionRow) {
-			await this.clearCachedSessionState(input.sessionId)
-			await this.resetWorkspace()
 			await this.deleteStorageInventory(input.sessionId, input.userId)
 			return {
 				ok: true,
 				sessionId: input.sessionId,
 				deleted: false,
 			}
-		}
-		if (sessionRow.user_id !== input.userId) {
-			throw new Error(
-				`Repo session "${input.sessionId}" was not found for this user.`,
-			)
 		}
 		await updateRepoSession(this.env, {
 			id: sessionRow.id,
@@ -1484,9 +1485,6 @@ class RepoSessionBase extends DurableObject<Env> {
 			expiresAt: buildPublishedSessionExpiresAt(),
 			lastCheckpointAt: nowIso(),
 		})
-		await this.clearCachedSessionState(input.sessionId)
-		await this.resetWorkspace()
-		await this.purgeWorkspaceBlobs()
 		await this.deleteStorageInventory(input.sessionId, sessionRow.user_id)
 		return {
 			ok: true,
@@ -1530,60 +1528,48 @@ class RepoSessionBase extends DurableObject<Env> {
 			userId: input.userId,
 			sessionId: input.sessionId,
 		})
-		if (!sessionRow) {
-			await this.deleteStorageInventory(input.sessionId, input.userId)
-			return {
-				ok: true as const,
-				sessionId: input.sessionId,
-				branch: '',
-				branchDeleted: true,
-			}
-		}
-		if (sessionRow.user_id !== input.userId) {
+		if (sessionRow && sessionRow.user_id !== input.userId) {
 			throw new Error(
 				`Repo session "${input.sessionId}" was not found for this user.`,
 			)
 		}
-		const sessionBranch = sessionRow.session_branch
+		const sessionBranch = sessionRow?.session_branch ?? ''
 		// Remote branch delete is best-effort. Cron selects the same expired
-		// rows every tick until the D1 session row is removed; a sticky remote
+		// rows every tick until the catalog row is removed; a sticky remote
 		// failure (for example a broken raw-git fs adapter) must not pin those
 		// rows forever and burn ~50 DO wakes each scheduled run.
-		let branchDeleted = false
-		try {
-			branchDeleted = await this.deleteSessionRemoteBranch({
-				sessionRow,
-			})
-		} catch (error) {
-			console.warn(
-				JSON.stringify({
-					message: 'repo session remote branch delete failed',
-					reason: input.reason,
-					sessionId: input.sessionId,
-					branch: sessionBranch,
-					error: getErrorMessage(error),
-				}),
-			)
+		let branchDeleted = !sessionRow
+		if (sessionRow) {
+			try {
+				branchDeleted = await this.deleteSessionRemoteBranch({
+					sessionRow,
+				})
+			} catch (error) {
+				console.warn(
+					JSON.stringify({
+						message: 'repo session remote branch delete failed',
+						reason: input.reason,
+						sessionId: input.sessionId,
+						branch: sessionBranch,
+						error: getErrorMessage(error),
+					}),
+				)
+			}
 		}
-		await deleteRepoSession(this.env, {
-			userId: input.userId,
-			sessionId: input.sessionId,
-		})
-		await this.deleteStorageInventory(input.sessionId, sessionRow.user_id)
 		await this.clearCachedSessionState(input.sessionId)
 		await this.resetWorkspace().catch(() => {
-			// Session row is already gone; workspace wipe is best-effort.
+			// Workspace wipe is best-effort; prefix purge below is the R2 safety net.
 		})
-		await this.purgeWorkspaceBlobs().catch((error: unknown) => {
-			console.warn(
-				JSON.stringify({
-					message: 'repo session workspace R2 prefix purge failed',
-					reason: input.reason,
-					sessionId: input.sessionId,
-					error: getErrorMessage(error),
-				}),
-			)
-		})
+		// Purge before dropping the catalog row so a failed R2 delete keeps the
+		// row for cron retry. A missing row still purges this Durable Object.
+		await this.purgeWorkspaceBlobs()
+		if (sessionRow) {
+			await deleteRepoSession(this.env, {
+				userId: input.userId,
+				sessionId: input.sessionId,
+			})
+		}
+		await this.deleteStorageInventory(input.sessionId, input.userId)
 		console.info(
 			JSON.stringify({
 				message: branchDeleted

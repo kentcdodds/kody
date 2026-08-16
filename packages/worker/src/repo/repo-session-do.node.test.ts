@@ -552,9 +552,36 @@ function createDurableObjectState() {
 	} as unknown as DurableObjectState
 }
 
-function createEnv() {
+function createFakeRepoSessionBlobs(initial: Record<string, number> = {}) {
+	const objects = new Map(
+		Object.entries(initial).map(([key, size]) => [key, size]),
+	)
+	const list = vi.fn(async (options: { prefix: string }) => {
+		const keys = [...objects.keys()]
+			.filter((key) => key.startsWith(options.prefix))
+			.sort()
+		return {
+			objects: keys.map((key) => ({ key, size: objects.get(key) ?? 0 })),
+			truncated: false,
+		}
+	})
+	const del = vi.fn(async (keys: string | Array<string>) => {
+		for (const key of Array.isArray(keys) ? keys : [keys]) {
+			objects.delete(key)
+		}
+	})
+	return {
+		objects,
+		list,
+		delete: del,
+		bucket: { list, delete: del } as unknown as R2Bucket,
+	}
+}
+
+function createEnv(blobs: R2Bucket = createFakeRepoSessionBlobs().bucket) {
 	return {
 		APP_DB: {},
+		REPO_SESSION_BLOBS: blobs,
 	} as Env
 }
 
@@ -869,6 +896,72 @@ test('cleanupSessionBranch removes the D1 session row when remote branch delete 
 	expect(consoleWarn).toHaveBeenCalledWith(
 		expect.stringContaining('repo session remote branch delete failed'),
 	)
+})
+
+test('session teardown purges workspace blobs even without a catalog row and keeps the row when R2 purge fails', async () => {
+	restoreRepoSessionMockBaseline()
+	const keepKey = 'repo-session:other-do/default/session/pack.pack'
+	const sessionKey = 'repo-session:do-session-1/default/session/pack.pack'
+	const blobs = createFakeRepoSessionBlobs({
+		[sessionKey]: 2_000,
+		[keepKey]: 9_000,
+	})
+	mockModule.getRepoSessionById.mockResolvedValue(null)
+	vi.mocked(deleteRepoSession).mockClear()
+	const missingRowSession = new RepoSession(
+		createDurableObjectState(),
+		createEnv(blobs.bucket),
+	)
+
+	await expect(
+		missingRowSession.discardSession({
+			sessionId: 'session-1',
+			userId: 'user-1',
+		}),
+	).resolves.toEqual({
+		ok: true,
+		sessionId: 'session-1',
+		deleted: false,
+	})
+	expect([...blobs.objects.keys()]).toEqual([keepKey])
+	expect(deleteRepoSession).not.toHaveBeenCalled()
+
+	blobs.objects.set(sessionKey, 2_000)
+	await expect(
+		missingRowSession.cleanupSessionBranch({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			reason: 'expired',
+		}),
+	).resolves.toEqual({
+		ok: true,
+		sessionId: 'session-1',
+		branch: '',
+		branchDeleted: true,
+	})
+	expect([...blobs.objects.keys()]).toEqual([keepKey])
+	expect(deleteRepoSession).not.toHaveBeenCalled()
+
+	setCommonSessionFixtures()
+	const failingBlobs = createFakeRepoSessionBlobs({
+		[sessionKey]: 2_000,
+	})
+	failingBlobs.list.mockRejectedValueOnce(new Error('R2 list failed'))
+	vi.mocked(deleteRepoSession).mockClear()
+	const failingSession = new RepoSession(
+		createDurableObjectState(),
+		createEnv(failingBlobs.bucket),
+	)
+
+	await expect(
+		failingSession.cleanupSessionBranch({
+			sessionId: 'session-1',
+			userId: 'user-1',
+			reason: 'expired',
+		}),
+	).rejects.toThrow('R2 list failed')
+	expect(deleteRepoSession).not.toHaveBeenCalled()
+	expect(mockModule.deleteStorageBucketInventory).not.toHaveBeenCalled()
 })
 
 test('applyPatch applies unified diff patches (modify, delete, and rename)', async () => {
