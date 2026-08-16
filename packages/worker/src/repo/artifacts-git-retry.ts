@@ -11,8 +11,11 @@ import {
  *
  * Separately, upload-pack sometimes returns HTTP 200 with a truncated or
  * corrupt pack body; isomorphic-git then throws InternalError containing
- * "Packfile payload corrupted" (KODY-CLOUDFLARE-55 / 56). Same retry + wrap
- * treatment — never an app-logic defect we can fix in-repo.
+ * "Packfile payload corrupted" when verifying the pack on first
+ * readObjectPacked / readBlob (not during fetch itself)
+ * (KODY-CLOUDFLARE-55 / 56). Same retry + wrap treatment — never an
+ * app-logic defect we can fix in-repo. Call sites that fetch then read
+ * must keep both steps inside `runArtifactsGitWithRetry`.
  */
 export const artifactsGitHttpRetryDelaysMs = [50, 150] as const
 

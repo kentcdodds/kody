@@ -109,3 +109,77 @@ test('reads binary artifact files from an exact pinned commit', async () => {
 	).resolves.toEqual(bytes)
 	expect(mocks.fetch).toHaveBeenCalledTimes(2)
 })
+
+test('retries when packfile corruption surfaces on readBlob after fetch (KODY-CLOUDFLARE-56)', async () => {
+	const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		info: vi.fn(async () => ({
+			remote: 'https://artifacts.example.test/package.git',
+			defaultBranch: 'main',
+		})),
+		createToken: vi.fn(async () => ({
+			plaintext: 'token',
+		})),
+	})
+	mocks.fetch.mockReset()
+	mocks.fetch.mockResolvedValue(undefined)
+	mocks.init.mockClear()
+	mocks.addRemote.mockClear()
+
+	const packCorruption = Object.assign(
+		new Error(
+			`An internal error caused this command to fail.\n\nIf you're using an application that depends on isomorphic-git, please report this error to that application's developers.\n\nIf you're a developer and you believe this is a bug in isomorphic-git, please file an issue at https://github.com/isomorphic-git/isomorphic-git/issues with a minimal reproduction, version and environment details, and this error message: Packfile payload corrupted: calculated abc but expected def. The packfile may have been tampered with.`,
+		),
+		{ code: 'InternalError', name: 'InternalError' },
+	)
+	mocks.readBlob
+		.mockRejectedValueOnce(packCorruption)
+		.mockResolvedValueOnce({ blob: bytes })
+
+	await expect(
+		readArtifactFileAtCommit({
+			env: {} as Env,
+			repoId: 'package-1',
+			commit: 'abc123',
+			filePath: 'community-icon.png',
+		}),
+	).resolves.toEqual(bytes)
+
+	// Fresh workspace + fetch on each attempt (corruption on read must re-fetch).
+	expect(mocks.fetch).toHaveBeenCalledTimes(2)
+	expect(mocks.init).toHaveBeenCalledTimes(2)
+	expect(mocks.readBlob).toHaveBeenCalledTimes(2)
+})
+
+test('does not retry missing artifact files as packfile corruption', async () => {
+	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
+		info: vi.fn(async () => ({
+			remote: 'https://artifacts.example.test/package.git',
+			defaultBranch: 'main',
+		})),
+		createToken: vi.fn(async () => ({
+			plaintext: 'token',
+		})),
+	})
+	mocks.fetch.mockReset()
+	mocks.fetch.mockResolvedValue(undefined)
+	mocks.init.mockClear()
+	const missing = Object.assign(new Error('Could not find community-icon.png'), {
+		code: 'NotFoundError',
+		name: 'NotFoundError',
+	})
+	mocks.readBlob.mockReset()
+	mocks.readBlob.mockRejectedValue(missing)
+
+	await expect(
+		readArtifactFileAtCommit({
+			env: {} as Env,
+			repoId: 'package-1',
+			commit: 'abc123',
+			filePath: 'community-icon.png',
+		}),
+	).resolves.toBeNull()
+
+	expect(mocks.fetch).toHaveBeenCalledTimes(1)
+	expect(mocks.readBlob).toHaveBeenCalledTimes(1)
+})

@@ -8,6 +8,7 @@ import {
 	resolveExistingArtifactSourceRepo,
 } from './artifacts.ts'
 import {
+	isIsomorphicGitPackfileCorruptionError,
 	runArtifactsGitWithRetry,
 	wrapArtifactsGitHttpError,
 } from './artifacts-git-retry.ts'
@@ -69,26 +70,28 @@ export async function readFirstArtifactFileAtCommit(input: {
 		token: token.plaintext,
 	})
 	const auth = buildArtifactsGitAuth({ token: token.plaintext })
+	// isomorphic-git verifies pack checksums on first readObjectPacked (during
+	// readBlob), not during fetch — so fetch+read must share one retry scope.
 	// Fresh ephemeral workspace per attempt: a corrupt pack may leave partial
 	// objects that would poison a retry on the same Map store.
-	let workspace: ReturnType<typeof createEphemeralGitWorkspace>
+	// (KODY-CLOUDFLARE-56: #1475 retried fetch only; corruption still escaped.)
 	try {
-		workspace = await runArtifactsGitWithRetry(async () => {
-			const nextWorkspace = createEphemeralGitWorkspace()
+		return await runArtifactsGitWithRetry(async () => {
+			const workspace = createEphemeralGitWorkspace()
 			await git.init({
-				fs: nextWorkspace.fs,
-				dir: nextWorkspace.dir,
+				fs: workspace.fs,
+				dir: workspace.dir,
 			})
 			await git.addRemote({
-				fs: nextWorkspace.fs,
-				dir: nextWorkspace.dir,
+				fs: workspace.fs,
+				dir: workspace.dir,
 				remote: 'origin',
 				url: remote,
 			})
 			await git.fetch({
-				fs: nextWorkspace.fs,
+				fs: workspace.fs,
 				http,
-				dir: nextWorkspace.dir,
+				dir: workspace.dir,
 				remote: 'origin',
 				ref: input.commit,
 				depth: 1,
@@ -98,7 +101,23 @@ export async function readFirstArtifactFileAtCommit(input: {
 					return auth
 				},
 			})
-			return nextWorkspace
+
+			for (const filePath of input.filePaths) {
+				try {
+					const result = await git.readBlob({
+						fs: workspace.fs,
+						dir: workspace.dir,
+						oid: input.commit,
+						filepath: filePath,
+					})
+					return { path: filePath, bytes: result.blob }
+				} catch (error) {
+					// Pack corruption → bubble so runArtifactsGitWithRetry re-fetches.
+					if (isIsomorphicGitPackfileCorruptionError(error)) throw error
+					if (!isMissingArtifactFileError(error)) throw error
+				}
+			}
+			return null
 		})
 	} catch (error) {
 		throw wrapArtifactsGitHttpError({
@@ -107,21 +126,6 @@ export async function readFirstArtifactFileAtCommit(input: {
 			error,
 		})
 	}
-
-	for (const filePath of input.filePaths) {
-		try {
-			const result = await git.readBlob({
-				fs: workspace.fs,
-				dir: workspace.dir,
-				oid: input.commit,
-				filepath: filePath,
-			})
-			return { path: filePath, bytes: result.blob }
-		} catch (error) {
-			if (!isMissingArtifactFileError(error)) throw error
-		}
-	}
-	return null
 }
 
 function isMissingArtifactFileError(error: unknown) {
