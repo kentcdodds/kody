@@ -32,9 +32,14 @@ function runNxSmokeProbe(env: NodeJS.ProcessEnv) {
 	})
 }
 
-async function wipeIsolatedLocalCache(cacheDirectory: string) {
+async function wipeIsolatedLocalState(
+	cacheDirectory: string,
+	workspaceDataDirectory: string,
+) {
 	await rm(cacheDirectory, { recursive: true, force: true })
 	await mkdir(cacheDirectory, { recursive: true })
+	await rm(workspaceDataDirectory, { recursive: true, force: true })
+	await mkdir(workspaceDataDirectory, { recursive: true })
 	await rm(PROBE_OUTPUT, { force: true })
 }
 
@@ -64,7 +69,7 @@ export async function runNxRemoteCacheSmoke() {
 		NX_CACHE_SMOKE_FAIL_IF_RUN: '',
 	}
 
-	await wipeIsolatedLocalCache(cacheDirectory)
+	await wipeIsolatedLocalState(cacheDirectory, workspaceDataDirectory)
 	const first = await runNxSmokeProbe(env)
 	if (first.code !== 0) {
 		throw new Error(`First smoke-probe failed:\n${first.output}`)
@@ -78,7 +83,7 @@ export async function runNxRemoteCacheSmoke() {
 		)
 	}
 
-	await wipeIsolatedLocalCache(cacheDirectory)
+	await wipeIsolatedLocalState(cacheDirectory, workspaceDataDirectory)
 	const second = await runNxSmokeProbe({
 		...env,
 		NX_CACHE_SMOKE_FAIL_IF_RUN: '1',
