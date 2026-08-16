@@ -18,7 +18,9 @@ test('runtime worker binds RepoSessionIndex cross-script next to RepoSession', a
 	}>(await readFile(runtimeBaseConfigPath, 'utf8'))
 	for (const envName of ['production', 'preview']) {
 		const bindings = config.env?.[envName]?.durable_objects?.bindings ?? []
-		const repoSession = bindings.find((binding) => binding.name === 'REPO_SESSION')
+		const repoSession = bindings.find(
+			(binding) => binding.name === 'REPO_SESSION',
+		)
 		const repoSessionIndex = bindings.find(
 			(binding) => binding.name === 'REPO_SESSION_INDEX',
 		)
