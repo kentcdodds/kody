@@ -926,7 +926,11 @@ via `durableObjectNameFromParts`); domain helpers such as
   per-user session catalog: rows, active counts, conversation resume, export,
   and deletion inventory. Each index self-alarms; D1 keeps only the thin
   `repo_session_due_owners` hint (one row per user with any session) plus the
-  platform-owned storage-bucket inventory cursor.
+  platform-owned storage-bucket inventory cursor. Unused (never-checkpointed)
+  due sessions leave the catalog in one SQL pass so entitlement counts drop
+  immediately; workspace Durable Objects then purge in bounded alarm batches
+  without waiting on remote branch deletes. Edited and expired sessions still
+  take the per-session cleanup path.
 - `RepoSession` — `repoSessionDurableObjectName(sessionId)` keyed by session id
   only (not user-prefixed). Every RPC validates the catalog row's `user_id`
   before touching the workspace. Account deletion enumerates the user's session

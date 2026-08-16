@@ -1,5 +1,6 @@
 import { env, runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
+import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { repoSessionIndexDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { RepoSessionIndex } from './repo-session-index-do.ts'
 import { type RepoSessionRow } from './types.ts'
@@ -93,4 +94,80 @@ test('RepoSessionIndex is the catalog authority for one user', async () => {
 		await instance.purge({ ownerId: userId })
 		expect(await instance.listByUser({ ownerId: userId })).toEqual([])
 	})
+})
+
+test('RepoSessionIndex drops unused due catalog rows in one cleanup pass', async () => {
+	await ensureUserStorageBucketsTestSchema(env.APP_DB)
+	await env.APP_DB.prepare(
+		`CREATE TABLE IF NOT EXISTS repo_session_due_owners (
+			user_id TEXT PRIMARY KEY NOT NULL,
+			due_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+	).run()
+	const userId = `index-drain-${crypto.randomUUID()}`
+	const stub = env.REPO_SESSION_INDEX.get(
+		env.REPO_SESSION_INDEX.idFromName(
+			repoSessionIndexDurableObjectName(userId),
+		),
+	)
+	const now = '2026-08-16T06:00:00.000Z'
+	await runInDurableObject(stub, async (instance: RepoSessionIndex) => {
+		await instance.insertSession({
+			ownerId: userId,
+			row: sessionRow({
+				id: 'unused-due-1',
+				user_id: userId,
+				updated_at: '2026-08-16T05:00:00.000Z',
+			}),
+		})
+		await instance.insertSession({
+			ownerId: userId,
+			row: sessionRow({
+				id: 'unused-due-2',
+				user_id: userId,
+				source_id: 'source-2',
+				updated_at: '2026-08-16T04:00:00.000Z',
+			}),
+		})
+		await instance.insertSession({
+			ownerId: userId,
+			row: sessionRow({
+				id: 'unused-recent',
+				user_id: userId,
+				source_id: 'source-3',
+				updated_at: '2026-08-16T05:50:00.000Z',
+			}),
+		})
+		await instance.insertSession({
+			ownerId: userId,
+			row: sessionRow({
+				id: 'edited-keep',
+				user_id: userId,
+				source_id: 'source-4',
+				last_checkpoint_at: '2026-08-15T12:00:00.000Z',
+				last_checkpoint_commit: 'edited',
+				updated_at: '2026-08-15T12:00:00.000Z',
+			}),
+		})
+		expect(await instance.countActive({ ownerId: userId })).toBe(4)
+		const result = await instance.runDueCleanup({
+			ownerId: userId,
+			now,
+			limit: 10,
+		})
+		expect(result.checked).toBeGreaterThanOrEqual(2)
+		expect(result.errors).toBe(0)
+		const remaining = (await instance.listByUser({ ownerId: userId })).map(
+			(row) => row.id,
+		)
+		expect(remaining.sort()).toEqual(['edited-keep', 'unused-recent'])
+		expect(await instance.countActive({ ownerId: userId })).toBe(2)
+	})
+	const due = await env.APP_DB.prepare(
+		`SELECT due_at FROM repo_session_due_owners WHERE user_id = ?`,
+	)
+		.bind(userId)
+		.first<{ due_at: string }>()
+	expect(due?.due_at).toBe('2026-08-16T06:20:00.000Z')
 })

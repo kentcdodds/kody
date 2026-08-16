@@ -61,6 +61,38 @@ export function nextOwnerDueAt(
 	return dues.reduce((earliest, due) => (due < earliest ? due : earliest))
 }
 
+/**
+ * Same earliest-due rule as {@link nextOwnerDueAt}, from catalog MIN() bounds
+ * plus an optional pending workspace-purge queue. Avoids loading every row.
+ */
+export function nextOwnerDueAtFromBounds(input: {
+	unusedMinUpdatedAt: string | null
+	editedMinUpdatedAt: string | null
+	minExpiresAt: string | null
+	hasRows: boolean
+	pendingPurge: boolean
+	now?: Date
+}): string | null {
+	if (!input.hasRows && !input.pendingPurge) return null
+	const dues: Array<string> = []
+	if (input.unusedMinUpdatedAt != null) {
+		dues.push(
+			addMs(input.unusedMinUpdatedAt, unusedAbandonedSessionRetentionMs),
+		)
+	}
+	if (input.editedMinUpdatedAt != null) {
+		dues.push(
+			addMs(input.editedMinUpdatedAt, editedAbandonedSessionRetentionMs),
+		)
+	}
+	if (input.minExpiresAt != null) dues.push(input.minExpiresAt)
+	if (input.pendingPurge) {
+		dues.push((input.now ?? new Date()).toISOString())
+	}
+	if (dues.length === 0) return repoSessionFarFutureDueAt
+	return dues.reduce((earliest, due) => (due < earliest ? due : earliest))
+}
+
 export function isRepoSessionDue(
 	row: RepoSessionDueFields,
 	now: Date,

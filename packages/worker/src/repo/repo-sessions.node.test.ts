@@ -2,7 +2,9 @@ import { expect, test } from 'vitest'
 import {
 	isRepoSessionDue,
 	nextOwnerDueAt,
+	nextOwnerDueAtFromBounds,
 	nextRepoSessionDueAt,
+	repoSessionFarFutureDueAt,
 } from './repo-session-due.ts'
 
 test('due helpers treat unused leftovers sooner than edited sessions', () => {
@@ -97,4 +99,41 @@ test('due helpers treat unused leftovers sooner than edited sessions', () => {
 			},
 		]),
 	).toBe('2026-06-24T12:00:00.000Z')
+	expect(
+		nextOwnerDueAtFromBounds({
+			unusedMinUpdatedAt: '2026-06-24T19:00:00.000Z',
+			editedMinUpdatedAt: null,
+			minExpiresAt: '2026-06-24T12:00:00.000Z',
+			hasRows: true,
+			pendingPurge: false,
+		}),
+	).toBe('2026-06-24T12:00:00.000Z')
+	expect(
+		nextOwnerDueAtFromBounds({
+			unusedMinUpdatedAt: null,
+			editedMinUpdatedAt: null,
+			minExpiresAt: null,
+			hasRows: false,
+			pendingPurge: false,
+		}),
+	).toBeNull()
+	expect(
+		nextOwnerDueAtFromBounds({
+			unusedMinUpdatedAt: null,
+			editedMinUpdatedAt: null,
+			minExpiresAt: null,
+			hasRows: true,
+			pendingPurge: false,
+		}),
+	).toBe(repoSessionFarFutureDueAt)
+	expect(
+		nextOwnerDueAtFromBounds({
+			unusedMinUpdatedAt: null,
+			editedMinUpdatedAt: null,
+			minExpiresAt: null,
+			hasRows: false,
+			pendingPurge: true,
+			now: new Date('2026-08-16T06:00:00.000Z'),
+		}),
+	).toBe('2026-08-16T06:00:00.000Z')
 })

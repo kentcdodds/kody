@@ -6,7 +6,7 @@ import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { replaceRepoSessionDueOwner } from './repo-session-due-owners.ts'
 import {
 	editedActiveDueBefore,
-	nextOwnerDueAt,
+	nextOwnerDueAtFromBounds,
 	repoSessionCleanupReason,
 	unusedActiveDueBefore,
 } from './repo-session-due.ts'
@@ -14,9 +14,9 @@ import { repoSessionRpc } from './repo-session-rpc.ts'
 import { repoSessionRowSchema, type RepoSessionRow } from './types.ts'
 
 const schemaVersionKey = 'schema_version'
-const hydratedFromD1Key = 'hydrated_from_d1'
-const repoSessionIndexSchemaVersion = 1
+const repoSessionIndexSchemaVersion = 2
 const defaultCleanupBatchSize = 100
+const unusedWorkspacePurgeBatchSize = 200
 const defaultExportPageSize = 100
 const maxExportPageSize = 500
 
@@ -156,6 +156,9 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 				ON repo_sessions(status, last_checkpoint_at, updated_at, expires_at);
 			CREATE INDEX IF NOT EXISTS idx_repo_sessions_status
 				ON repo_sessions(status);
+			CREATE TABLE IF NOT EXISTS repo_session_pending_purge (
+				session_id TEXT PRIMARY KEY NOT NULL
+			);
 		`)
 		this.writeMeta(schemaVersionKey, String(repoSessionIndexSchemaVersion))
 	}
@@ -212,14 +215,6 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 			)
 		}
 		return id
-	}
-
-	private isHydrated(): boolean {
-		return this.readMeta(hydratedFromD1Key) === '1'
-	}
-
-	private markHydrated(): void {
-		this.writeMeta(hydratedFromD1Key, '1')
 	}
 
 	private insertStoredRow(row: StoredRepoSessionRow): void {
@@ -296,8 +291,108 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 			.map(mapStoredRow)
 	}
 
-	private async scheduleNextDue(ownerId: string): Promise<void> {
-		const dueAt = nextOwnerDueAt(this.listStoredRows())
+	private readMinText(query: string): string | null {
+		const row = this.sql.exec<{ value: string | null }>(query).toArray()[0]
+		return row?.value == null ? null : String(row.value)
+	}
+
+	private hasPendingPurge(): boolean {
+		const row = this.sql
+			.exec<{ present: number }>(
+				`SELECT 1 AS present FROM repo_session_pending_purge LIMIT 1`,
+			)
+			.toArray()[0]
+		return row?.present === 1
+	}
+
+	private nextStoredDueAt(now: Date): string | null {
+		return nextOwnerDueAtFromBounds({
+			unusedMinUpdatedAt: this.readMinText(
+				`SELECT MIN(updated_at) AS value FROM repo_sessions
+				WHERE status = 'active' AND last_checkpoint_at IS NULL`,
+			),
+			editedMinUpdatedAt: this.readMinText(
+				`SELECT MIN(updated_at) AS value FROM repo_sessions
+				WHERE status = 'active' AND last_checkpoint_at IS NOT NULL`,
+			),
+			minExpiresAt: this.readMinText(
+				`SELECT MIN(expires_at) AS value FROM repo_sessions
+				WHERE status IN ('published', 'discarded') AND expires_at IS NOT NULL`,
+			),
+			hasRows: this.countStoredRows() > 0,
+			pendingPurge: this.hasPendingPurge(),
+			now,
+		})
+	}
+
+	private enqueueUnusedDueForPurge(now: Date): number {
+		const cutoff = unusedActiveDueBefore(now)
+		const queued = this.sql
+			.exec<{ count: number }>(
+				`SELECT COUNT(*) AS count FROM repo_sessions
+				WHERE status = 'active' AND last_checkpoint_at IS NULL AND updated_at <= ?`,
+				cutoff,
+			)
+			.toArray()[0]
+		this.sql.exec(
+			`INSERT OR IGNORE INTO repo_session_pending_purge (session_id)
+			SELECT id FROM repo_sessions
+			WHERE status = 'active' AND last_checkpoint_at IS NULL AND updated_at <= ?`,
+			cutoff,
+		)
+		this.sql.exec(
+			`DELETE FROM repo_sessions
+			WHERE status = 'active' AND last_checkpoint_at IS NULL AND updated_at <= ?`,
+			cutoff,
+		)
+		return Number(queued?.count ?? 0)
+	}
+
+	private async purgePendingWorkspaces(
+		ownerId: string,
+		limit: number,
+	): Promise<{ deleted: number; errors: number }> {
+		const pending = this.sql
+			.exec<{ session_id: string }>(
+				`SELECT session_id FROM repo_session_pending_purge
+				ORDER BY session_id ASC
+				LIMIT ?`,
+				limit,
+			)
+			.toArray()
+		let deleted = 0
+		let errors = 0
+		for (const row of pending) {
+			try {
+				await repoSessionRpc(this.env, row.session_id).cleanupSessionBranch({
+					sessionId: row.session_id,
+					userId: ownerId,
+					reason: 'abandoned',
+				})
+				this.sql.exec(
+					`DELETE FROM repo_session_pending_purge WHERE session_id = ?`,
+					row.session_id,
+				)
+				deleted += 1
+			} catch (error) {
+				errors += 1
+				console.warn(
+					JSON.stringify({
+						message: 'repo session pending workspace purge failed',
+						sessionId: row.session_id,
+						error: getErrorMessage(error),
+					}),
+				)
+			}
+		}
+		return { deleted, errors }
+	}
+
+	private async scheduleNextDue(
+		ownerId: string,
+		now = new Date(),
+	): Promise<void> {
+		const dueAt = this.nextStoredDueAt(now)
 		try {
 			await replaceRepoSessionDueOwner({
 				db: this.env.APP_DB,
@@ -322,9 +417,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}
 
 	private async ensureReady(ownerId: string): Promise<string> {
-		const id = this.assertOwner(ownerId)
-		if (!this.isHydrated()) this.markHydrated()
-		return id
+		return this.assertOwner(ownerId)
 	}
 
 	async alarm(): Promise<void> {
@@ -521,12 +614,19 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}): Promise<RepoSessionIndexCleanupResult> {
 		const ownerId = await this.ensureReady(input.ownerId)
 		const now = input.now ? new Date(input.now) : new Date()
-		const due = this.listDueStoredRows(
-			now,
-			input.limit ?? defaultCleanupBatchSize,
+		const limit = input.limit ?? defaultCleanupBatchSize
+		const queuedUnused = this.enqueueUnusedDueForPurge(now)
+		const unusedPurge = await this.purgePendingWorkspaces(
+			ownerId,
+			Math.min(limit, unusedWorkspacePurgeBatchSize),
 		)
-		let deleted = 0
-		let errors = 0
+		const remaining = Math.max(
+			limit - unusedPurge.deleted - unusedPurge.errors,
+			0,
+		)
+		const due = remaining > 0 ? this.listDueStoredRows(now, remaining) : []
+		let deleted = unusedPurge.deleted
+		let errors = unusedPurge.errors
 		for (const row of due) {
 			try {
 				await repoSessionRpc(this.env, row.id).cleanupSessionBranch({
@@ -546,9 +646,9 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 				)
 			}
 		}
-		await this.scheduleNextDue(ownerId)
+		await this.scheduleNextDue(ownerId, now)
 		return {
-			checked: due.length,
+			checked: queuedUnused + due.length,
 			deleted,
 			errors,
 		}
@@ -599,7 +699,6 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 			await this.ctx.storage.deleteAll()
 			this.initializeSchema()
 			this.assertOwner(ownerId)
-			this.markHydrated()
 		})
 		await replaceRepoSessionDueOwner({
 			db: this.env.APP_DB,
