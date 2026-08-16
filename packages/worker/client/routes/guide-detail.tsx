@@ -36,7 +36,8 @@ const interactiveGuideRenderers: Readonly<
  * first-party link policy (guides link into `/connect/oauth` and
  * `/account/secrets/new`) and copyable code blocks. Interactive slugs
  * (how-kody-works, google-oauth) swap the prose body for a transcript
- * walkthrough. A quiet foot links the raw markdown twin for agents.
+ * walkthrough. A quiet foot links the raw markdown twin for agents
+ * (`rmx-document` so the SPA does not intercept `/guides/:slug.md`).
  */
 
 export function getGuideSlugFromPathname(pathname: string) {
@@ -268,7 +269,10 @@ export function GuideDetailRoute(handle: Handle) {
 						<footer mix={css(guideFootCss)}>
 							<p>
 								Working with an agent? This guide is also plain markdown at{' '}
-								<a href={routes.guideDetailMarkdown.href({ slug: guide.slug })}>
+								<a
+									href={routes.guideDetailMarkdown.href({ slug: guide.slug })}
+									rmx-document
+								>
 									/guides/{guide.slug}.md
 								</a>
 								, or load it over MCP with{' '}

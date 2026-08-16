@@ -290,6 +290,31 @@ export function registerRouteLoaders(loaders: Record<string, RouteLoader>) {
 	loaderMatchers.delete(loaders)
 }
 
+let registeredClientRoutes: Record<string, JSX.Element> = {}
+let clientRoutesRegistered = false
+
+/**
+ * Page-route registry used to decide whether a same-origin click should stay
+ * in the SPA. Companion documents (`/guides/:slug.md`, `/blog/rss.xml`) are
+ * not registered here — the worker serves those as raw responses.
+ */
+export function registerClientRoutes(routes: Record<string, JSX.Element>) {
+	registeredClientRoutes = routes
+	clientRoutesRegistered = Object.keys(routes).length > 0
+	routeMatchers.delete(routes)
+}
+
+/**
+ * True when this pathname is not a client-rendered page, so the browser
+ * should leave the SPA (markdown twins, JSON companions, RSS, 404s the
+ * worker owns). With no registry yet, assume every path is in-app so unit
+ * tests that never register routes keep the historical intercept behavior.
+ */
+export function shouldLeaveDocumentForPath(pathname: string) {
+	if (!clientRoutesRegistered) return false
+	return matchRoute(pathname, registeredClientRoutes) === null
+}
+
 export function matchRouteLoader(
 	path: string | URL,
 	loaders: Record<string, RouteLoader> = registeredRouteLoaders,
@@ -345,6 +370,7 @@ export function shouldRouterHandleClick(
 
 	const destination = new URL(href, window.location.href)
 	if (destination.origin !== window.location.origin) return false
+	if (shouldLeaveDocumentForPath(destination.pathname)) return false
 	return true
 }
 
@@ -381,6 +407,7 @@ function getPrefetchableLink(
 
 	const destination = new URL(href, window.location.href)
 	if (destination.origin !== window.location.origin) return null
+	if (shouldLeaveDocumentForPath(destination.pathname)) return null
 	if (
 		`${destination.pathname}${destination.search}` ===
 		`${window.location.pathname}${window.location.search}`
@@ -996,6 +1023,10 @@ async function navigateInternal(to: string, options?: NavigationRunOptions) {
 	const destination = new URL(to, window.location.href)
 	if (destination.origin !== window.location.origin) {
 		window.location.assign(destination.toString())
+		return
+	}
+	if (shouldLeaveDocumentForPath(destination.pathname)) {
+		window.location.assign(getPathWithSearchAndHashFromUrl(destination))
 		return
 	}
 

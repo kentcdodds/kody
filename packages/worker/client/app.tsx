@@ -8,6 +8,7 @@ import {
 	listenToRouterNavigation,
 	listenToRouterNavigationEnd,
 	navigate,
+	registerClientRoutes,
 	registerRouteLoaders,
 	Router,
 } from './client-router.tsx'
@@ -34,6 +35,7 @@ import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import { WaitlistBanner } from './waitlist-banner.tsx'
 
 registerRouteLoaders(clientRouteLoaders)
+registerClientRoutes(clientRoutes)
 
 type AppProps = {
 	embeddedSession?: SessionInfo | null

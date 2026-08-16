@@ -7,13 +7,17 @@ import {
 	navigate,
 	navigationTimeoutMs,
 	persistentShellNavSelector,
+	registerClientRoutes,
 	registerRouteLoaders,
 	Router,
+	shouldLeaveDocumentForPath,
 	shouldRouterHandleClick,
 	shouldUseViewTransition,
 	type RouteLoader,
 } from './client-router.tsx'
 import { communityArea } from './lazy-route.tsx'
+import { routePattern } from '#universal/route-pattern.ts'
+import { routes } from '#universal/routes.ts'
 
 test('client route and loader matching prefer specific static routes over dynamic parents', () => {
 	const tokenDetailRoute = 'token-detail-route' as unknown as JSX.Element
@@ -233,6 +237,84 @@ test('same-origin hash links are intercepted so scroll restoration can reach the
 		} as unknown as HTMLAnchorElement
 		expect(shouldRouterHandleClick(click, remixFrameAnchor)).toBe(false)
 	} finally {
+		globalThis.window = previousWindow
+	}
+})
+
+test('guide and blog markdown twins leave the SPA instead of rendering a 404', () => {
+	const guidePage = 'guide-page' as unknown as JSX.Element
+	const blogPage = 'blog-page' as unknown as JSX.Element
+	const pageRoutes = {
+		[routePattern(routes.guideDetail)]: guidePage,
+		[routePattern(routes.blogPost)]: blogPage,
+		[routePattern(routes.guides)]: guidePage,
+		[routePattern(routes.home)]: guidePage,
+	}
+
+	expect(matchRoute('/guides/oauth', pageRoutes)).toBe(guidePage)
+	expect(matchRoute('/guides/oauth.md', pageRoutes)).toBeNull()
+	expect(matchRoute('/guides/oauth.json', pageRoutes)).toBeNull()
+	expect(matchRoute('/blog/your-assistants-home.md', pageRoutes)).toBeNull()
+	expect(routes.guideDetailMarkdown.href({ slug: 'oauth' })).toBe(
+		'/guides/oauth.md',
+	)
+
+	registerClientRoutes(pageRoutes)
+	const previousWindow = globalThis.window
+	const assign = vi.fn<() => void>()
+	globalThis.window = {
+		location: {
+			href: 'https://kody.local/guides/oauth',
+			origin: 'https://kody.local',
+			pathname: '/guides/oauth',
+			search: '',
+			hash: '',
+			assign,
+		},
+	} as unknown as Window & typeof globalThis
+
+	try {
+		expect(shouldLeaveDocumentForPath('/guides/oauth')).toBe(false)
+		expect(shouldLeaveDocumentForPath('/guides/oauth.md')).toBe(true)
+		expect(shouldLeaveDocumentForPath('/guides.md')).toBe(true)
+		expect(shouldLeaveDocumentForPath('/missing-page')).toBe(true)
+
+		const click = {
+			defaultPrevented: false,
+			button: 0,
+			metaKey: false,
+			altKey: false,
+			ctrlKey: false,
+			shiftKey: false,
+		} as MouseEvent
+		const markdownAnchor = {
+			target: '',
+			hasAttribute: () => false,
+			getAttribute: (name: string) =>
+				name === 'href' ? '/guides/oauth.md' : null,
+		} as unknown as HTMLAnchorElement
+		expect(shouldRouterHandleClick(click, markdownAnchor)).toBe(false)
+
+		const documentAnchor = {
+			target: '',
+			hasAttribute: (name: string) => name === 'rmx-document',
+			getAttribute: (name: string) =>
+				name === 'href' ? '/guides/oauth.md' : null,
+		} as unknown as HTMLAnchorElement
+		expect(shouldRouterHandleClick(click, documentAnchor)).toBe(false)
+
+		const pageAnchor = {
+			target: '',
+			hasAttribute: () => false,
+			getAttribute: (name: string) =>
+				name === 'href' ? '/guides/oauth' : null,
+		} as unknown as HTMLAnchorElement
+		expect(shouldRouterHandleClick(click, pageAnchor)).toBe(true)
+
+		navigate('/guides/how-kody-works.md')
+		expect(assign).toHaveBeenCalledWith('/guides/how-kody-works.md')
+	} finally {
+		registerClientRoutes({})
 		globalThis.window = previousWindow
 	}
 })
