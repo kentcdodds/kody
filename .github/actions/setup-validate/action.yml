@@ -33,6 +33,23 @@ runs:
         restore-keys: |
           ${{ runner.os }}-playwright-
 
+    - name: 🧊 Cache Nx
+      uses: actions/cache@v5.0.3
+      with:
+        path: .nx/cache
+        key:
+          ${{ runner.os }}-nx-${{ hashFiles('nx.json', 'package-lock.json')
+          }}-${{ github.sha }}-${{ github.job }}
+        restore-keys: |
+          ${{ runner.os }}-nx-${{ hashFiles('nx.json', 'package-lock.json') }}-
+
+    - name: 🧊 Enable Nx remote cache
+      if: env.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN != ''
+      shell: bash
+      run: |
+        echo "NX_SELF_HOSTED_REMOTE_CACHE_SERVER=https://nx-cache.kody.codes" >> "$GITHUB_ENV"
+        echo "Nx remote cache enabled"
+
     - name: 📥 Install Dependencies
       shell: bash
       run: npm ci

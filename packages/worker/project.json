@@ -107,6 +107,7 @@
 			"executor": "nx:run-commands",
 			"dependsOn": ["build-client", "prepare-e2e-env", "prepare-playwright"],
 			"inputs": [
+				"{env:CI}",
 				"{workspaceRoot}/e2e/**/*",
 				"{workspaceRoot}/playwright.config.ts",
 				"default"

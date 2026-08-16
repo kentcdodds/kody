@@ -50,6 +50,16 @@ test.each([
 		dependencyFile: 'packages/mock-servers/cloudflare/src/index.ts',
 	},
 	{
+		target: 'test-node',
+		requiredInput: '{workspaceRoot}/packages/mock-servers/cloudflare/**/*',
+		dependencyFile: 'packages/mock-servers/cloudflare/src/index.ts',
+	},
+	{
+		target: 'test-workers',
+		requiredInput: '{workspaceRoot}/packages/mock-servers/cloudflare/**/*',
+		dependencyFile: 'packages/mock-servers/cloudflare/src/index.ts',
+	},
+	{
 		target: 'test-mcp',
 		requiredInput: '{workspaceRoot}/wrangler-env.ts',
 		dependencyFile: 'wrangler-env.ts',
@@ -67,5 +77,13 @@ test.each([
 			{ file: dependencyFile, hash: 'after' },
 		])
 		expect(after).not.toBe(before)
+	},
+)
+
+test.each(['test', 'test-node', 'test-workers', 'test-mcp', 'test-e2e'])(
+	'%s cache hash includes CI so local validate matches GitHub Actions',
+	async (target) => {
+		const patterns = await getWorkerTargetPatterns(target)
+		expect(patterns).toContain('{env:CI}')
 	},
 )

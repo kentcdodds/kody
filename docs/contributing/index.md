@@ -15,6 +15,8 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Manual PR preview testing](./preview-manual-testing.md)
 - [Optional Cloudflare offerings](./cloudflare-offerings.md)
 - [Cursor Cloud Agent notes](./cloud-agents.md)
+- [Nx remote cache](../../packages/nx-cache/readme.md) (self-hosted HTTP cache
+  shared by agents and CI)
 - [Harness engineering](./harness-engineering.md) (agent-first loop, promoting
   lessons into enforcement)
 

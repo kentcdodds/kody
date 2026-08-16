@@ -17,6 +17,14 @@ on:
 permissions:
   contents: read
 
+# Pin CI=1 (not GitHub's CI=true) so Nx cache hashes match local
+# `validate` / `test:push`. Remote cache is used only when the access
+# token secret is present; setup-validate then sets the server URL.
+env:
+  CI: '1'
+  NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN:
+    ${{ secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN }}
+
 concurrency:
   group: >-
     validate-${{ github.event_name }}-${{ github.event.pull_request.number ||
@@ -68,6 +76,10 @@ jobs:
       - name: 📟 Status build
         if: ${{ !cancelled() }}
         run: npm run status:build
+
+      - name: 🧊 Nx cache build
+        if: ${{ !cancelled() }}
+        run: npm run nx-cache:build
 
       - name: 🗺️ Primitives
         if: ${{ !cancelled() }}

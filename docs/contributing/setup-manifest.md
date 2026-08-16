@@ -8,6 +8,10 @@ This project uses the following resources:
 
 - D1 database
   - `database_name`: `<app-name>`
+- R2 bucket for the self-hosted Nx remote cache
+  - `bucket_name`: `kody-nx-cache`
+  - Worker: `kody-nx-cache` at `nx-cache.kody.codes` (`packages/nx-cache`)
+  - Production deploy ensures the bucket when the cache worker path changes
 - KV namespace for OAuth/session storage
   - `binding`: `OAUTH_KV`
   - `title`: `<app-name>-oauth`
@@ -511,6 +515,13 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)
+- `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` (optional GitHub **secret**; bearer
+  token for the Nx HTTP cache worker at `https://nx-cache.kody.codes`. Generate
+  with `openssl rand -hex 32`. Validate jobs enable remote cache when this is
+  set; production deploy syncs it to the worker as `CACHE_ACCESS_TOKEN` and
+  creates the `kody-nx-cache` R2 bucket. Use the same value in Cursor Cloud
+  Agent environments so agent `validate` / `test:push` can populate CI hits.
+  Leave unset to run CI with local `.nx` + `actions/cache` only.)
 - **Repository variables** `SENTRY_ORG` and `SENTRY_PROJECT` (optional; Sentry
   organization and project **slugs** for source map upload — same values as in
   the Sentry wizard’s `--org` / `--project` flags)
@@ -594,6 +605,12 @@ How to get/set each value:
   - In Sentry: **Settings → Auth Tokens** (or Organization settings), create a
     token that can upload releases/source maps, and store it as the
     `SENTRY_AUTH_TOKEN` repository secret.
+- `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` (optional)
+  - Generate locally: `openssl rand -hex 32`
+  - Store the exact value as the repository secret
+    `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`, and use the same value in Cursor
+    Cloud Agent environments. Production deploy syncs it to the `kody-nx-cache`
+    Worker as `CACHE_ACCESS_TOKEN`.
 - `SENTRY_ORG` / `SENTRY_PROJECT` (optional)
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from

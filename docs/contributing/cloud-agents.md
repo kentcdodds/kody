@@ -38,6 +38,21 @@ manually with native `unzip`:
    headless via the separate headless-shell binary, so both are required).
 4. `chmod +x` the `chrome` and `chrome-headless-shell` binaries.
 
+## Nx remote cache
+
+Validate and `test:push` write Nx task artifacts. Those stay local unless the
+self-hosted cache is configured. To share hits with GitHub Actions, set both in
+this VM (same values as the GitHub Actions secret / Worker secret):
+
+```bash
+export NX_SELF_HOSTED_REMOTE_CACHE_SERVER=https://nx-cache.kody.codes
+export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN=<token>
+```
+
+Use `CI=1` on cached test commands (the repo scripts already do). Leave the
+variables unset to run without remote cache. See
+[`packages/nx-cache/readme.md`](../packages/nx-cache/readme.md).
+
 ## Quick commands
 
 | Task               | Command                                                         |

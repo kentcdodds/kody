@@ -1,0 +1,27 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "kody-nx-cache",
+	"main": "./worker.ts",
+	"compatibility_date": "2026-07-22",
+	"compatibility_flags": ["nodejs_compat"],
+	"observability": {
+		"enabled": true,
+	},
+	// Contributor CI cache, not a product surface. Custom domain so agents
+	// and GitHub Actions share one URL without a workers.dev account slug.
+	"routes": [
+		{
+			"pattern": "nx-cache.kody.codes",
+			"custom_domain": true,
+		},
+	],
+	"r2_buckets": [
+		{
+			"binding": "CACHE_BUCKET",
+			"bucket_name": "kody-nx-cache",
+		},
+	],
+	"vars": {
+		"BUILD_COMMIT": "REPLACE_AT_DEPLOY_TIME",
+	},
+}
