@@ -33,12 +33,12 @@ that suggest your project is official. Use the Community Project mark instead.
 
 ## How to use the mark
 
-1. **Use the mark** for app icons, README badges, store listings, and
-   marketing where space allows.
-2. **Alter the mark if you need to.** Recolor, restyle, crop, or otherwise
-   adapt it, as long as the community label stays intact and readable. That
-   label — the ring text that names this a community project, or an equally
-   clear community label — is what tells users the project is unofficial.
+1. **Use the mark** for app icons, README badges, store listings, and marketing
+   where space allows.
+2. **Alter the mark if you need to.** Recolor, restyle, crop, or otherwise adapt
+   it, as long as the community label stays intact and readable. That label —
+   the ring text that names this a community project, or an equally clear
+   community label — is what tells users the project is unofficial.
 3. **Name your project clearly.** Prefer names like “Kody Bridge for iOS” or
    “Acme’s Kody Toolkit” rather than plain “Kody.”
 4. **Include attribution** wherever you show the mark or describe the
