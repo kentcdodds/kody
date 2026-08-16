@@ -82,7 +82,10 @@ export function isAllowlistedIdentity(
 	signersFile: ClaSignersFile,
 ) {
 	const login = identity.githubLogin ? normalize(identity.githubLogin) : null
-	if (login && githubBotLoginPattern.test(login)) {
+	if (
+		login &&
+		(githubBotLoginPattern.test(login) || login.startsWith('app/'))
+	) {
 		return true
 	}
 	if (

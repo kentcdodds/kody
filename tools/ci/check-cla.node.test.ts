@@ -13,7 +13,7 @@ function signersFile(overrides: Partial<ClaSignersFile> = {}): ClaSignersFile {
 		version: 1,
 		document: 'docs/legal/individual-cla.md',
 		allowlist: {
-			github: ['kentcdodds'],
+			github: ['kentcdodds', 'kody-bot'],
 			email: ['me@kentcdodds.com', 'me+github@kentcdodds.com'],
 		},
 		signers: [],
@@ -35,9 +35,15 @@ test('CLA check allowlists the Licensor, bots, signed humans, and rejects everyo
 	const passing = checkClaIdentities(
 		[
 			{ githubLogin: 'kentcdodds', name: 'Kent', email: null },
+			{ githubLogin: 'kody-bot', name: 'Kody', email: null },
 			{
 				githubLogin: 'cursor[bot]',
 				name: 'cursor[bot]',
+				email: null,
+			},
+			{
+				githubLogin: 'app/imgbot',
+				name: 'ImgBot',
 				email: null,
 			},
 			{
@@ -93,6 +99,6 @@ test('CLA signers file parser rejects the wrong version and accepts the repo fil
 	const parsed = parseClaSignersFile(
 		readFileSync('.github/cla-signers.json', 'utf8'),
 	)
-	expect(parsed.allowlist.github).toEqual(['kentcdodds'])
+	expect(parsed.allowlist.github).toEqual(['kentcdodds', 'kody-bot'])
 	expect(parsed.signers).toEqual([])
 })

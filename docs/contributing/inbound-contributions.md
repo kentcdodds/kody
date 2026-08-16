@@ -61,8 +61,9 @@ Licensor records those usernames after accepting the agreement.
 These identities are allowlisted in `.github/cla-signers.json` and do not sign:
 
 - `kentcdodds` (Licensor)
+- `kody-bot` and other logins listed in that file
 - Licensor-owned commit emails listed in that file
-- GitHub accounts whose login ends in `[bot]`
+- GitHub accounts whose login ends in `[bot]` or starts with `app/`
 
 Cursor Cloud Agent pull requests that GitHub authors as `kentcdodds` follow the
 Licensor path.
