@@ -14,11 +14,7 @@ function signersFile(overrides: Partial<ClaSignersFile> = {}): ClaSignersFile {
 		document: 'docs/legal/individual-cla.md',
 		allowlist: {
 			github: ['kentcdodds', 'kody-bot', 'cursoragent'],
-			email: [
-				'me@kentcdodds.com',
-				'me+github@kentcdodds.com',
-				'cursoragent@cursor.com',
-			],
+			email: ['me@kentcdodds.com', 'me+github@kentcdodds.com'],
 		},
 		signers: [],
 		...overrides,
@@ -113,7 +109,10 @@ test('CLA signers file parser rejects the wrong version and accepts the repo fil
 		'kody-bot',
 		'cursoragent',
 	])
-	expect(parsed.allowlist.email).toContain('cursoragent@cursor.com')
+	expect(parsed.allowlist.email).toEqual([
+		'me@kentcdodds.com',
+		'me+github@kentcdodds.com',
+	])
 	expect(parsed.signers).toEqual([])
 	expect(
 		checkClaIdentities(
@@ -132,4 +131,42 @@ test('CLA signers file parser rejects the wrong version and accepts the repo fil
 			parsed,
 		),
 	).toEqual({ ok: true })
+	expect(
+		checkClaIdentities(
+			[
+				{
+					githubLogin: null,
+					name: 'Cursor Agent',
+					email: 'cursoragent@cursor.com',
+				},
+				{
+					githubLogin: 'mirkosalvato1-ctrl',
+					name: 'Mirko',
+					email: 'cursoragent@cursor.com',
+				},
+			],
+			parsed,
+		),
+	).toEqual({
+		ok: false,
+		missing: [
+			{
+				identity: {
+					githubLogin: null,
+					name: 'Cursor Agent',
+					email: 'cursoragent@cursor.com',
+				},
+				reason:
+					'cursoragent@cursor.com has no GitHub login and is not a Licensor email',
+			},
+			{
+				identity: {
+					githubLogin: 'mirkosalvato1-ctrl',
+					name: 'Mirko',
+					email: 'cursoragent@cursor.com',
+				},
+				reason: '@mirkosalvato1-ctrl has not signed the CLA',
+			},
+		],
+	})
 })
