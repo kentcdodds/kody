@@ -62,11 +62,12 @@ These identities are allowlisted in `.github/cla-signers.json` and do not sign:
 
 - `kentcdodds` (Licensor)
 - `kody-bot` and other logins listed in that file
+- `cursoragent` (Cursor Cloud Agent commit author)
 - Licensor-owned commit emails listed in that file
 - GitHub accounts whose login ends in `[bot]` or starts with `app/`
 
-Cursor Cloud Agent pull requests that GitHub authors as `kentcdodds` follow the
-Licensor path.
+Cursor Cloud Agent pull requests follow the Licensor path even when GitHub
+authors the pull request as `kentcdodds` and the commits as `cursoragent`.
 
 ## Maintainer steps
 
