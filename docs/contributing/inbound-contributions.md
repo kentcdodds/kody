@@ -32,15 +32,15 @@ There is no exception for docs-only or one-line patches.
    I have read the CLA and I hereby sign the CLA
    ```
 
-4. Wait for a maintainer to record your GitHub username in
-   [`.github/cla-signers.json`](../../.github/cla-signers.json) on `main`.
-5. Re-run the `CLA` check, or push another commit.
+4. The `CLA` workflow records your GitHub username in
+   [`.github/cla-signers.json`](../../.github/cla-signers.json) on `main` and
+   re-runs the check.
 
 Signing once covers past, present, and future contributions from that GitHub
 identity. People who contributed before this process sign the same way before
-their next merge. The `CLA` workflow reads signers from `main`, not from the
-pull request branch, so adding your own username on the branch does not pass the
-check.
+their next merge. The workflow reads signers from `main`, not from the pull
+request branch, so adding your own username on the branch does not pass the
+check. Only the commenter is recorded, and only from the exact phrase.
 
 ## How to sign (entity)
 
@@ -73,10 +73,9 @@ authors the pull request as `kentcdodds` and the commits as `cursoragent`.
 
 Do not merge a pull request while the `CLA` check is red.
 
-After a valid individual signing comment, add a `signers` entry on `main`
-(GitHub login, `signedAt` as an ISO date, `cla` of `individual`) and re-run the
-check. After an accepted Entity CLA, add each authorized username with `cla` of
-`entity`.
+Individual signatures are recorded automatically from the signing comment. After
+an accepted Entity CLA, add each authorized username to
+`.github/cla-signers.json` on `main` with `cla` of `entity`.
 
 Make the `CLA` check required for `main` in GitHub branch protection so a green
 review cannot skip it.

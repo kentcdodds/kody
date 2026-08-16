@@ -2,9 +2,13 @@ import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 
 import {
+	applyIndividualClaSigningComment,
 	checkClaIdentities,
 	formatClaFailure,
+	individualClaSigningPhrase,
+	isIndividualClaSigningComment,
 	parseClaSignersFile,
+	serializeClaSignersFile,
 	type ClaSignersFile,
 } from './check-cla.ts'
 
@@ -25,7 +29,7 @@ test('CLA check allowlists the Licensor, bots, signed humans, and rejects everyo
 	const file = signersFile({
 		signers: [
 			{
-				github: 'VojtaHolik',
+				github: 'ExampleSigner',
 				signedAt: '2026-08-16',
 				cla: 'individual',
 			},
@@ -57,9 +61,9 @@ test('CLA check allowlists the Licensor, bots, signed humans, and rejects everyo
 				email: 'me+github@kentcdodds.com',
 			},
 			{
-				githubLogin: 'vojtaholik',
-				name: 'Vojta Holik',
-				email: 'vojta@egghead.io',
+				githubLogin: 'examplesigner',
+				name: 'Example Signer',
+				email: 'signer@example.com',
 			},
 		],
 		file,
@@ -94,90 +98,78 @@ test('CLA check allowlists the Licensor, bots, signed humans, and rejects everyo
 		'@mirkosalvato1-ctrl has not signed the CLA',
 		'someone@example.com has no GitHub login and is not a Licensor email',
 	])
+	expect(formatClaFailure(failing)).toContain(individualClaSigningPhrase)
 	expect(formatClaFailure(failing)).toContain(
-		'I have read the CLA and I hereby sign the CLA',
+		'The CLA workflow records that GitHub username on main',
 	)
 })
 
-test('CLA signers file parser rejects the wrong version and accepts the repo file', () => {
-	expect(() => parseClaSignersFile('{"version":2}')).toThrow(/version 1/)
-	const parsed = parseClaSignersFile(
-		readFileSync('.github/cla-signers.json', 'utf8'),
-	)
-	expect(parsed.allowlist.github).toEqual([
-		'kentcdodds',
-		'kody-bot',
-		'cursoragent',
-	])
-	expect(parsed.allowlist.email).toEqual([
-		'me@kentcdodds.com',
-		'me+github@kentcdodds.com',
-	])
-	expect(parsed.signers).toEqual([
+test('CLA signing comment records the commenter once and ignores everything else', () => {
+	const empty = signersFile()
+	expect(
+		isIndividualClaSigningComment(`  ${individualClaSigningPhrase}  `),
+	).toBe(true)
+	expect(isIndividualClaSigningComment('I agree')).toBe(false)
+
+	const ignored = applyIndividualClaSigningComment({
+		file: empty,
+		github: 'ExampleSigner',
+		signedAt: '2026-08-16',
+		comment: 'I agree',
+	})
+	expect(ignored).toEqual({
+		file: empty,
+		status: 'ignored',
+		reason: 'not_signing_comment',
+	})
+
+	const recorded = applyIndividualClaSigningComment({
+		file: empty,
+		github: 'ExampleSigner',
+		signedAt: '2026-08-16',
+		comment: individualClaSigningPhrase,
+	})
+	expect(recorded.status).toBe('recorded')
+	if (recorded.status !== 'recorded') {
+		throw new Error('expected a new signature')
+	}
+	expect(recorded.github).toBe('ExampleSigner')
+	expect(recorded.file.signers).toEqual([
 		{
-			github: 'vojtaholik',
+			github: 'ExampleSigner',
 			signedAt: '2026-08-16',
 			cla: 'individual',
 		},
 	])
 	expect(
 		checkClaIdentities(
-			[
-				{
-					githubLogin: 'kentcdodds',
-					name: 'kentcdodds',
-					email: null,
-				},
-				{
-					githubLogin: 'cursoragent',
-					name: 'Cursor Agent',
-					email: 'cursoragent@cursor.com',
-				},
-				{
-					githubLogin: 'vojtaholik',
-					name: 'Vojta Holik',
-					email: 'vojta@egghead.io',
-				},
-			],
-			parsed,
+			[{ githubLogin: 'examplesigner', name: 'Example', email: null }],
+			recorded.file,
 		),
 	).toEqual({ ok: true })
-	expect(
-		checkClaIdentities(
-			[
-				{
-					githubLogin: null,
-					name: 'Cursor Agent',
-					email: 'cursoragent@cursor.com',
-				},
-				{
-					githubLogin: 'mirkosalvato1-ctrl',
-					name: 'Mirko',
-					email: 'cursoragent@cursor.com',
-				},
-			],
-			parsed,
-		),
-	).toEqual({
-		ok: false,
-		missing: [
-			{
-				identity: {
-					githubLogin: null,
-					name: 'Cursor Agent',
-					email: 'cursoragent@cursor.com',
-				},
-				reason:
-					'cursoragent@cursor.com has no GitHub login and is not a Licensor email',
-			},
-			{
-				identity: {
-					githubLogin: 'mirkosalvato1-ctrl',
-					name: 'Mirko',
-					email: 'cursoragent@cursor.com',
-				},
-				reason: '@mirkosalvato1-ctrl has not signed the CLA',
-			},
-		],
+
+	const again = applyIndividualClaSigningComment({
+		file: recorded.file,
+		github: 'examplesigner',
+		signedAt: '2026-08-17',
+		comment: individualClaSigningPhrase,
 	})
+	expect(again).toEqual({
+		file: recorded.file,
+		status: 'already_signed',
+		github: 'examplesigner',
+	})
+	expect(serializeClaSignersFile(recorded.file)).toContain('"ExampleSigner"')
+})
+
+test('CLA signers file parser rejects the wrong version and accepts a valid repo file', () => {
+	expect(() => parseClaSignersFile('{"version":2}')).toThrow(/version 1/)
+	const parsed = parseClaSignersFile(
+		readFileSync('.github/cla-signers.json', 'utf8'),
+	)
+	expect(parsed.version).toBe(1)
+	expect(parsed.document.length).toBeGreaterThan(0)
+	expect(Array.isArray(parsed.allowlist.github)).toBe(true)
+	expect(Array.isArray(parsed.allowlist.email)).toBe(true)
+	expect(Array.isArray(parsed.signers)).toBe(true)
 })

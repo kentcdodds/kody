@@ -8,16 +8,25 @@ on:
       - opened
       - reopened
       - synchronize
+  issue_comment:
+    types:
+      - created
+      - edited
 
 permissions:
   contents: read
   pull-requests: write
+  actions: write
 
 jobs:
   cla:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     name: CLA
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout base
         uses: actions/checkout@v6.0.2
@@ -91,7 +100,7 @@ jobs:
 
             1. Read the [Individual CLA](https://github.com/${{ github.repository }}/blob/main/docs/legal/individual-cla.md) (or the [Entity CLA](https://github.com/${{ github.repository }}/blob/main/docs/legal/entity-cla.md) if an organization owns the work).
             2. Comment exactly: \`I have read the CLA and I hereby sign the CLA\`
-            3. A maintainer records your GitHub username on \`main\`. See [Inbound contributions](https://github.com/${{ github.repository }}/blob/main/docs/contributing/inbound-contributions.md).
+            3. The CLA workflow records your GitHub username on \`main\` and re-runs this check. See [Inbound contributions](https://github.com/${{ github.repository }}/blob/main/docs/contributing/inbound-contributions.md).
 
             Adding your own username on this branch does not pass the check.`
             const comments = await github.paginate(
@@ -125,3 +134,123 @@ jobs:
       - name: Fail when unsigned
         if: steps.check.outputs.exit_code == '1'
         run: exit 1
+
+  record:
+    if: >
+      github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+      github.event.comment.user.type == 'User'
+    runs-on: ubuntu-latest
+    name: Record CLA
+    timeout-minutes: 5
+    concurrency:
+      group: cla-signers-main
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+
+      - name: Record signer
+        id: record
+        env:
+          CLA_COMMENT: ${{ github.event.comment.body }}
+          CLA_LOGIN: ${{ github.event.comment.user.login }}
+          CLA_SIGNED_AT: ${{ github.event.comment.created_at }}
+        run: |
+          if [ ! -f tools/ci/check-cla.ts ] || [ ! -f .github/cla-signers.json ]; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            echo "added=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf '%s' "$CLA_COMMENT" > cla-comment.txt
+          node tools/ci/check-cla.ts \
+            --signers .github/cla-signers.json \
+            --record-signer "$CLA_LOGIN" \
+            --signed-at "${CLA_SIGNED_AT%%T*}" \
+            --comment-file cla-comment.txt | tee -a "$GITHUB_OUTPUT"
+
+      - name: Commit signer on main
+        if: steps.record.outputs.added == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/cla-signers.json
+          git commit -m "Record @${{ steps.record.outputs.github }} as an individual CLA signer"
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Comment and re-run CLA
+        if: steps.record.outputs.skipped == 'false'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          CLA_ADDED: ${{ steps.record.outputs.added }}
+          CLA_GITHUB: ${{ steps.record.outputs.github }}
+        with:
+          script: |
+            const login = process.env.CLA_GITHUB
+            const added = process.env.CLA_ADDED === 'true'
+            const marker = '<!-- kody-cla-recorded -->'
+            const body = added
+              ? `${marker}
+            Recorded @${login} as an individual CLA signer on \`main\`. The CLA check will re-run.`
+              : `${marker}
+            @${login} is already recorded as an individual CLA signer. The CLA check will re-run.`
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                per_page: 100,
+              },
+            )
+            const existing = comments.find((comment) =>
+              comment.body?.includes(marker),
+            )
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              })
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.issue.number,
+                body,
+              })
+            }
+
+            const pull = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.issue.number,
+            })
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'cla.yml',
+              event: 'pull_request',
+              head_sha: pull.data.head.sha,
+              per_page: 5,
+            })
+            const latest = runs.data.workflow_runs[0]
+            if (latest?.status === 'completed') {
+              await github.rest.actions.reRunWorkflow({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: latest.id,
+              })
+            }

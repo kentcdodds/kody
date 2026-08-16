@@ -58,12 +58,15 @@ How it works:
   [Entity CLA](../../legal/entity-cla.md) when the work is owned by an employer
   or the contributor is signing for an organization.
 - **How they sign.** Read the CLA, then comment on the pull request:
-  `I have read the CLA and I hereby sign the CLA`. A maintainer records the
-  GitHub username in `.github/cla-signers.json` on `main`. Signing covers past,
-  present, and future contributions from that identity.
+  `I have read the CLA and I hereby sign the CLA`. The `CLA` workflow, running
+  from `main` on that comment, records the commenter's GitHub username in
+  `.github/cla-signers.json` on `main` and re-runs the check. Signing covers
+  past, present, and future contributions from that identity. Entity CLA
+  recording stays a maintainer step.
 - **Enforcement.** The `CLA` workflow reads signers from `main` (never from the
   pull request head), fails closed on unsigned identities, and comments with the
-  signing steps. Maintainers do not merge a red `CLA` check. There is no
+  signing steps. It never checks out or runs pull request code to record a
+  signature. Maintainers do not merge a red `CLA` check. There is no
   trivial-contribution exception.
 - **Existing commits.** History is not rewritten. People who already contributed
   are asked to sign before the next merge; the CLA text covers prior
@@ -73,10 +76,9 @@ How it works:
 
 - The Licensor stays one party for FSL, the Apache conversion, relicensing, and
   enforcement.
-- Outside pull requests take one extra maintainer step (record the signer on
-  `main`). That matches current volume. If volume grows, replace the manual
-  record with a hosted CLA Assistant gist pointed at the same documents; do not
-  adopt an unmaintained `pull_request_target` signing bot.
+- Individual signatures do not need a maintainer to edit the signers file. The
+  recorder is a first-party `issue_comment` job that writes `main` only. Do not
+  replace it with an unmaintained `pull_request_target` signing bot.
 - Community package authors keep their own MIT copyright; they never sign this
   CLA unless they also patch this repository.
 - Revisit if the Licensor becomes a company (assign the inbound grants to that
