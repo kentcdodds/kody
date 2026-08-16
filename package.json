@@ -40,6 +40,7 @@
     "status:deploy": "wrangler deploy --config packages/status/wrangler.jsonc",
     "nx-cache:build": "wrangler deploy --dry-run --config packages/nx-cache/wrangler.jsonc",
     "nx-cache:deploy": "wrangler deploy --config packages/nx-cache/wrangler.jsonc",
+    "nx-cache:smoke": "node tools/nx-remote-cache-smoke.ts",
     "runtime:build": "node ./wrangler-env.ts deploy --dry-run --outdir .wrangler/runtime-dry-run --config packages/runtime-worker/wrangler.jsonc",
     "jobs:build": "wrangler deploy --dry-run --outdir .tmp/jobs-worker-build --config packages/jobs-worker/wrangler.jsonc --env production",
     "jobs:deploy": "wrangler deploy --config packages/jobs-worker/wrangler.jsonc --env production",

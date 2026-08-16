@@ -1,0 +1,16 @@
+{
+	"$schema": "../../node_modules/nx/schemas/project-schema.json",
+	"name": "nx-cache",
+	"sourceRoot": "packages/nx-cache",
+	"targets": {
+		"smoke-probe": {
+			"executor": "nx:run-commands",
+			"cache": true,
+			"inputs": ["{projectRoot}/project.json"],
+			"outputs": ["{workspaceRoot}/.tmp/nx-cache-smoke-probe.txt"],
+			"options": {
+				"command": "node packages/nx-cache/smoke-probe.ts"
+			}
+		}
+	}
+}
