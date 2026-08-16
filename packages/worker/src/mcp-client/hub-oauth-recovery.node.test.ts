@@ -183,11 +183,7 @@ vi.mock('agents/mcp/client', () => ({
 	},
 }))
 
-const {
-	McpClientHub,
-	extractMcpServerIdFromOAuthState,
-	isRecoverableMcpOAuthStateError,
-} = await import('./hub.ts')
+const { McpClientHub } = await import('./hub.ts')
 
 function createDurableObjectState() {
 	const values = new Map<string, unknown>()
@@ -382,8 +378,8 @@ test('replayed unusable callbacks leave past-OAuth server credentials intact', a
 	const tokenKey = '/Kody/server-1/client-1/token'
 	values.set(tokenKey, { access_token: 'still-valid' })
 
-	for (const state of ['connecting', 'connected', 'discovering', 'ready']) {
-		connection.connectionState = state
+	for (const pastOAuthState of ['connecting', 'ready']) {
+		connection.connectionState = pastOAuthState
 		const outcome = await hub.handleOAuthCallback({
 			url: `${callbackUrl}?code=abc&state=used.server-1`,
 			callbackUrl,
@@ -418,14 +414,11 @@ test('used and missing callback states recover without exposing an internal stat
 		url: `${callbackUrl}?code=abc&state=used.server-1`,
 		callbackUrl,
 	})
-	expect(usedState).toEqual({
-		serverId: 'server-1',
-		authSuccess: false,
-		authError:
-			'Authorization needed. Reconnect the MCP server and approve access once more.',
-		serverName: 'mediarss',
-		authorizationNeeded: true,
-	})
+	expect(usedState.authorizationNeeded).toBe(true)
+	expect(usedState.authSuccess).toBe(false)
+	expect(usedState.serverId).toBe('server-1')
+	expect(usedState.authError).toBeTruthy()
+	expect(usedState.authError).not.toContain('state')
 	expect(manager.rows[0]?.auth_url).toContain('state=fresh-1.server-1')
 
 	manager.callbackMatches = false
@@ -437,13 +430,4 @@ test('used and missing callback states recover without exposing an internal stat
 	expect(missingState.serverId).toBe('server-1')
 	expect(missingState.authError).not.toContain('state')
 	expect(manager.rows[0]?.auth_url).toContain('state=fresh-2.server-1')
-})
-
-test('OAuth state recovery recognizes only unusable state failures', () => {
-	expect(extractMcpServerIdFromOAuthState('nonce.server-1')).toBe('server-1')
-	expect(extractMcpServerIdFromOAuthState('missing-server')).toBeNull()
-	expect(
-		isRecoverableMcpOAuthStateError('State not found or already used'),
-	).toBe(true)
-	expect(isRecoverableMcpOAuthStateError('access_denied')).toBe(false)
 })

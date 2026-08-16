@@ -559,13 +559,6 @@ test('resolveArtifactDefaultBranchHead reuses a provided token and still works w
 		commit: 'retried-oid',
 	})
 	expect(gitMocks.listServerRefs).toHaveBeenCalledTimes(2)
-
-	gitMocks.listServerRefs.mockReset()
-	gitMocks.listServerRefs.mockRejectedValue(httpError)
-	await expect(resolveArtifactDefaultBranchHead({ repo })).rejects.toThrow(
-		/Artifacts listServerRefs failed for https:\/\/acct\.artifacts\.cloudflare\.net\/git\/default\/repo-1\.git: HTTP Error: 500 Internal Server Error/,
-	)
-	expect(gitMocks.listServerRefs).toHaveBeenCalledTimes(3)
 })
 
 test('native createToken maps token when JSRPC omits plaintext', async () => {

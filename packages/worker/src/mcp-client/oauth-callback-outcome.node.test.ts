@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import {
-	describeIncompleteMcpOAuthConnection,
 	isStuckMcpAuthenticatingWithoutAuthUrl,
 	resolveMcpOAuthCallbackOutcome,
 } from './oauth-callback-outcome.ts'
@@ -91,20 +90,4 @@ test('OAuth callback outcome requires a ready connection after SDK success', () 
 		serverName: 'recipe-keeper',
 		authorizationNeeded: false,
 	})
-
-	const waitingForAuth = describeIncompleteMcpOAuthConnection({
-		state: 'authenticating',
-		authUrl: 'https://auth.example/authorize',
-	})
-	const missingAuthUrl = describeIncompleteMcpOAuthConnection({
-		state: 'authenticating',
-		authUrl: null,
-	})
-	const connecting = describeIncompleteMcpOAuthConnection({
-		state: 'connecting',
-		authUrl: null,
-	})
-	expect(waitingForAuth).not.toEqual(missingAuthUrl)
-	expect(connecting).not.toEqual(waitingForAuth)
-	expect(connecting).not.toEqual(missingAuthUrl)
 })

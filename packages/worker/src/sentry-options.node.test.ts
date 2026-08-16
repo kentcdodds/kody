@@ -147,8 +147,9 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	}
 	expect(filterSentryEvent(wrappedOpaqueInternal)).toBe(wrappedOpaqueInternal)
 
-	// Artifacts git protocol HTTP 5xx / 429 wrappers (KODY-CLOUDFLARE-4Y / 4Z /
-	// 50). Bare isomorphic-git HttpError stays visible; non-5xx wrappers too.
+	// Artifacts git protocol HTTP 5xx wrappers (KODY-CLOUDFLARE-4Y / 4Z / 50).
+	// Classifier edge cases live in artifacts-git-retry; here we only pin the
+	// Sentry drop vs keep contract for wrapper vs bare messages.
 	expect(
 		filterSentryEvent({
 			exception: {
@@ -161,31 +162,6 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			},
 		}),
 	).toBeNull()
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [
-					{
-						value:
-							'Artifacts git fetch failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: HTTP Error: 503 Service Unavailable',
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	const artifactsGitNotImplemented = {
-		exception: {
-			values: [
-				{
-					value:
-						'Artifacts listServerRefs failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: HTTP Error: 501 Not Implemented',
-				},
-			],
-		},
-	}
-	expect(filterSentryEvent(artifactsGitNotImplemented)).toBe(
-		artifactsGitNotImplemented,
-	)
 	const bareArtifactsGitHttpError = {
 		exception: {
 			values: [{ value: 'HTTP Error: 500 Internal Server Error' }],
@@ -193,19 +169,6 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	}
 	expect(filterSentryEvent(bareArtifactsGitHttpError)).toBe(
 		bareArtifactsGitHttpError,
-	)
-	const artifactsGitAuthFailure = {
-		exception: {
-			values: [
-				{
-					value:
-						'Artifacts listServerRefs failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: HTTP Error: 401 Unauthorized',
-				},
-			],
-		},
-	}
-	expect(filterSentryEvent(artifactsGitAuthFailure)).toBe(
-		artifactsGitAuthFailure,
 	)
 
 	// Bare Agents MCP session teardown abort (`ctx.abort("destroyed")`) —

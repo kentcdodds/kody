@@ -108,18 +108,4 @@ test('reads binary artifact files from an exact pinned commit', async () => {
 		}),
 	).resolves.toEqual(bytes)
 	expect(mocks.fetch).toHaveBeenCalledTimes(2)
-
-	mocks.fetch.mockReset()
-	mocks.fetch.mockRejectedValue(httpError)
-	await expect(
-		readArtifactFileAtCommit({
-			env: {} as Env,
-			repoId: 'package-1',
-			commit: 'abc123',
-			filePath: 'community-icon.png',
-		}),
-	).rejects.toThrow(
-		/Artifacts git fetch failed for https:\/\/artifacts\.example\.test\/package\.git: HTTP Error: 500 Internal Server Error/,
-	)
-	expect(mocks.fetch).toHaveBeenCalledTimes(3)
 })

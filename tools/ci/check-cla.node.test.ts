@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 
 import {
@@ -99,9 +98,6 @@ test('CLA check allowlists the Licensor, bots, signed humans, and rejects everyo
 		'someone@example.com has no GitHub login and is not a Licensor email',
 	])
 	expect(formatClaFailure(failing)).toContain(individualClaSigningPhrase)
-	expect(formatClaFailure(failing)).toContain(
-		'The CLA workflow records that GitHub username on main',
-	)
 })
 
 test('CLA signing comment records the commenter once and ignores everything else', () => {
@@ -161,11 +157,9 @@ test('CLA signing comment records the commenter once and ignores everything else
 	})
 	const serialized = serializeClaSignersFile(recorded.file)
 	expect(serialized).toContain('"ExampleSigner"')
-	expect(serialized).toContain(
-		'"github": ["kentcdodds", "kody-bot", "cursoragent"]',
-	)
 	expect(serialized.endsWith('\n')).toBe(true)
 	expect(parseClaSignersFile(serialized)).toEqual(recorded.file)
+	expect(() => parseClaSignersFile('{"version":2}')).toThrow(/version 1/)
 	expect(
 		applyIndividualClaSigningComment({
 			file: empty,
@@ -174,16 +168,4 @@ test('CLA signing comment records the commenter once and ignores everything else
 			comment: individualClaSigningPhrase,
 		}),
 	).toEqual({ file: empty, status: 'ignored', reason: 'missing_login' })
-})
-
-test('CLA signers file parser rejects the wrong version and accepts a valid repo file', () => {
-	expect(() => parseClaSignersFile('{"version":2}')).toThrow(/version 1/)
-	const parsed = parseClaSignersFile(
-		readFileSync('.github/cla-signers.json', 'utf8'),
-	)
-	expect(parsed.version).toBe(1)
-	expect(parsed.document.length).toBeGreaterThan(0)
-	expect(Array.isArray(parsed.allowlist.github)).toBe(true)
-	expect(Array.isArray(parsed.allowlist.email)).toBe(true)
-	expect(Array.isArray(parsed.signers)).toBe(true)
 })

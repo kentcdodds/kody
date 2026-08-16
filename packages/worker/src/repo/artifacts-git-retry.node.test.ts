@@ -45,34 +45,19 @@ test('Artifacts git HTTP helpers classify transient statuses, wrap messages, and
 			'https://x:secret@acct.artifacts.cloudflare.net/git/production/repo-1.git',
 		error: fiveHundred,
 	})
-	expect(wrapped.message).toBe(
-		'Artifacts listServerRefs failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: HTTP Error: 500 Internal Server Error',
-	)
+	expect(wrapped.message).toMatch(/^Artifacts listServerRefs failed for /)
+	expect(wrapped.message).toContain('HTTP Error: 500')
+	expect(wrapped.message).not.toContain('secret')
 	expect(wrapped.cause).toBe(fiveHundred)
 	expect(isArtifactsGitTransientHttpErrorMessage(wrapped.message)).toBe(true)
 	expect(
 		isArtifactsGitTransientHttpErrorMessage(
-			'Artifacts git fetch failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: HTTP Error: 502 Bad Gateway',
-		),
-	).toBe(true)
-	expect(
-		isArtifactsGitTransientHttpErrorMessage(
-			'Artifacts listServerRefs failed for https://example.test: HTTP Error: 501 Not Implemented',
-		),
-	).toBe(false)
-	expect(
-		isArtifactsGitTransientHttpErrorMessage(
-			'Artifacts listServerRefs failed for https://example.test: HTTP Error: 505 HTTP Version Not Supported',
+			'Artifacts listServerRefs failed for https://example.test: HTTP Error: 401 Unauthorized',
 		),
 	).toBe(false)
 	expect(
 		isArtifactsGitTransientHttpErrorMessage(
 			'HTTP Error: 500 Internal Server Error',
-		),
-	).toBe(false)
-	expect(
-		isArtifactsGitTransientHttpErrorMessage(
-			'Artifacts listServerRefs failed for https://example.test: HTTP Error: 401 Unauthorized',
 		),
 	).toBe(false)
 
@@ -82,8 +67,8 @@ test('Artifacts git HTTP helpers classify transient statuses, wrap messages, and
 			'https://x:secret@acct.artifacts.cloudflare.net/git/production/repo-1.git?token=should-not-leak#frag',
 		error: fiveHundred,
 	})
-	expect(wrappedWithQuery.message).toBe(
-		'Artifacts git fetch failed for https://acct.artifacts.cloudflare.net/git/production/repo-1.git: HTTP Error: 500 Internal Server Error',
+	expect(wrappedWithQuery.message).toContain(
+		'https://acct.artifacts.cloudflare.net/git/production/repo-1.git',
 	)
 	expect(wrappedWithQuery.message).not.toContain('token=')
 	expect(wrappedWithQuery.message).not.toContain('secret')

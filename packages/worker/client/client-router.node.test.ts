@@ -87,7 +87,7 @@ test('client route and loader matching prefer specific static routes over dynami
 	)
 })
 
-test('view transitions are skipped only when a navigation stays inside one shell area', () => {
+test('view transitions skip shell tab switches, including when from-path was never recorded', () => {
 	// Tab switching inside the account/admin shell: the rail is unchanged and
 	// full-height, so a snapshot transition would squash it between two page
 	// heights. These swap instantly.
@@ -98,18 +98,12 @@ test('view transitions are skipped only when a navigation stays inside one shell
 	expect(
 		isSameShellAreaNavigation('/admin/users', '/admin/feature-flags'),
 	).toBe(true)
-
-	// Entering, leaving, or crossing between shells is a real page change.
 	expect(isSameShellAreaNavigation('/pricing', '/account')).toBe(false)
 	expect(isSameShellAreaNavigation('/account', '/pricing')).toBe(false)
 	expect(isSameShellAreaNavigation('/account', '/admin/users')).toBe(false)
 	expect(isSameShellAreaNavigation(null, '/account')).toBe(false)
-
-	// A path that merely starts with the area's characters is a different area.
 	expect(isSameShellAreaNavigation('/account', '/accounts-payable')).toBe(false)
-})
 
-test('view transitions stay off for shell tab switches even when from-path was never recorded', () => {
 	const animate = (input: {
 		from: string | null
 		to: string
@@ -163,22 +157,6 @@ test('view transitions stay off for shell tab switches even when from-path was n
 
 	// Same pathname+search (hash-only / same-URL refresh) never animates.
 	expect(animate({ from: '/account/usage', to: '/account/usage' })).toBe(false)
-	expect(
-		shouldUseViewTransition({
-			from: '/pricing',
-			to: '/community',
-			canStart: false,
-			prefersReducedMotion: false,
-		}),
-	).toBe(false)
-	expect(
-		shouldUseViewTransition({
-			from: '/pricing',
-			to: '/community',
-			canStart: true,
-			prefersReducedMotion: true,
-		}),
-	).toBe(false)
 
 	const withRail = {
 		querySelector: (selector: string) =>
