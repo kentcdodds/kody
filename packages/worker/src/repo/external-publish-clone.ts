@@ -204,8 +204,7 @@ export async function cloneExternalPublishWorkspace(input: {
  */
 export function isWorkspaceSqliteTooBigMessage(message: string) {
 	return (
-		message.includes('SQLITE_TOOBIG') ||
-		/string or blob too big/i.test(message)
+		message.includes('SQLITE_TOOBIG') || /string or blob too big/i.test(message)
 	)
 }
 

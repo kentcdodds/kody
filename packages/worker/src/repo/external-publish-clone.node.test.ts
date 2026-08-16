@@ -38,15 +38,12 @@ vi.mock('./artifacts-git-retry.ts', () => ({
 	isTransientArtifactsGitError: () => false,
 }))
 
-const { cloneExternalPublishWorkspace } = await import(
-	'./external-publish-clone.ts'
-)
+const { cloneExternalPublishWorkspace } =
+	await import('./external-publish-clone.ts')
 
 test('isWorkspaceSqliteTooBigMessage matches DO SQL row-limit wording', () => {
 	expect(
-		isWorkspaceSqliteTooBigMessage(
-			'string or blob too big: SQLITE_TOOBIG',
-		),
+		isWorkspaceSqliteTooBigMessage('string or blob too big: SQLITE_TOOBIG'),
 	).toBe(true)
 	expect(
 		isWorkspaceSqliteTooBigMessage(
@@ -69,8 +66,7 @@ test('cloneExternalPublishWorkspace clones into ephemeral FS and exposes publish
 		.mockResolvedValueOnce([{ oid: 'commit-new' }, { oid: 'commit-old' }])
 
 	const cloned = await cloneExternalPublishWorkspace({
-		remote:
-			'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
 		token: 'art_token',
 		branch: 'main',
 		checkoutCommit: 'commit-new',
