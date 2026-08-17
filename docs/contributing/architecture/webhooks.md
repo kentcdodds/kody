@@ -83,6 +83,7 @@ consumer's 15-minute wall-clock limit before later messages are acknowledged.
 
 ## Storage
 
-Minted endpoint state is in migration `0090-webhook-endpoints.sql`. Delivery
-history is in the per-user `RunLog` Durable Object (`webhook` surface), not in
-D1. See [Data storage](./data-storage.md) and [Run records](./run-records.md).
+Minted endpoint state lives in the D1 `webhook_endpoints` table defined by
+`packages/worker/migrations/0001-squashed-init.sql`. Delivery history is in the
+per-user `RunLog` Durable Object (`webhook` surface), not in D1. See
+[Data storage](./data-storage.md) and [Run records](./run-records.md).

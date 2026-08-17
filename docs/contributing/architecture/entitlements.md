@@ -758,7 +758,8 @@ Handled event types:
   `subscriptionStatus` such as `past_due` for UX; does not email users)
 - Unknown event types — acknowledge `200` after process+record
 
-Idempotency uses migration `0093-stripe-webhook-events.sql`
+Idempotency uses the `stripe_webhook_events` table from
+`packages/worker/migrations/0001-squashed-init.sql`
 (`stripe_webhook_events.event_id` unique). Events are processed first (handlers
 are idempotent), then recorded. A UNIQUE conflict after a successful process is
 treated as duplicate success (`200`). Process failures return `500` without

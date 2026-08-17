@@ -237,9 +237,10 @@ of replaying.
   passes and alarm as run rows; `in_progress` rows are never pruned. There is no
   D1 ledger or D1 sweep for this state.
 - **The DO is the only store**: the keyed path performs no D1 ledger reads or
-  writes (there is no D1 `package_invocations` table; see migration
-  `0112-drop-package-invocations.sql`). Only keys claimed in this DO ledger can
-  replay; a redelivery for an unknown key executes fresh.
+  writes; the current schema in
+  `packages/worker/migrations/0001-squashed-init.sql` has no D1
+  `package_invocations` table. Only keys claimed in this DO ledger can replay; a
+  redelivery for an unknown key executes fresh.
 - Account export pages ledger rows through the same `run_records` section cursor
   (runs first, then ledger rows, then dedicated unpruned state); account
   deletion purges them with `clearAll` (every DO table, then schema

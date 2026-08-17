@@ -25,8 +25,8 @@ mutations).
 
 ## The registry-owns-existence invariant
 
-The database stores **state**, never **existence**. Migration
-`0064-feature-flags.sql` adds two tables:
+The database stores **state**, never **existence**. The squashed baseline
+(`packages/worker/migrations/0001-squashed-init.sql`) defines two tables:
 
 - `feature_flags` — at most one global row per key: `enabled`, `rollout_percent`
   (nullable), `note`, `updated_by`, `updated_at`. No row means "use the registry
@@ -101,7 +101,8 @@ week, so measured flags record **exposures** at the two evaluation chokepoints
 `(stable user id, flag key, on/off, assignment source, timestamp)`. The write
 path mirrors usage metering — the `FLAG_EXPOSURES` Analytics Engine dataset in
 production/preview, the D1 `feature_flag_exposure_rollups` table (migration
-`0117`, 90-day retention) in local dev and tests — and never throws.
+`0001-squashed-init.sql`, 90-day retention) in local dev and tests — and never
+throws.
 
 The assignment source (`default` / `global` / `rollout` / `override`) is what
 keeps the readout honest: `override` users are hand-picked and excluded from
