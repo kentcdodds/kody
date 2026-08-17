@@ -125,6 +125,11 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 			secret: env.DR_RESTORE_SECRET,
 			notConfiguredMessage: 'Mailbox import is not configured',
 		},
+		{
+			path: '/__maintenance/status-incidents',
+			secret: env.STATUS_INCIDENT_EVENT_SECRET,
+			notConfiguredMessage: 'Status incident events are not configured',
+		},
 	] as const
 
 	for (const route of registeredMaintenanceRoutes) {

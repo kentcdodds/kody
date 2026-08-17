@@ -414,6 +414,17 @@ because both paths share the existing `community_forks` row shape. Consumer-time
 admin role checks, lazy metadata reload, retry behavior, and terminal-handler
 isolation match platform-feedback dispatch.
 
+Status-page incident open/resolve is a separate admin-only, best-effort path.
+The isolated status worker POSTs metadata to
+`POST /__maintenance/status-incidents` when `STATUS_INCIDENT_EVENT_SECRET` is
+set on both workers. The main worker fans out `status.incident.opened` and
+`status.incident.resolved` only to packages whose owners hold the admin role at
+dispatch time. The payload is component id, probe detail, ISO timestamps, and
+the public `status_url`. It omits probe logs and all user content. There is no
+Queue for these topics; sweep polling of `/status.json` remains the backstop
+when the secret is unset or the POST fails. See
+[Package subscriptions](../guides/package-subscriptions.md).
+
 ## Package-owned workflows
 
 Packages declare workflow entrypoints in runtime code, not in

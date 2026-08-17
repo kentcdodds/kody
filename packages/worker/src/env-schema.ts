@@ -319,6 +319,10 @@ export const EnvSchema = object({
 	// Bearer secret for production DR restore and DO PITR maintenance routes.
 	// Both fail closed when unset.
 	DR_RESTORE_SECRET: optionalNonEmptyStringSchema,
+	// Shared bearer with the status worker. When unset, POST
+	// /__maintenance/status-incidents returns not-configured and the status
+	// worker skips emit (sweep polling remains the backstop).
+	STATUS_INCIDENT_EVENT_SECRET: optionalNonEmptyStringSchema,
 })
 
 export type AppEnv = InferOutput<typeof EnvSchema>

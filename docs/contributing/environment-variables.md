@@ -283,6 +283,12 @@ Worker secrets:
   `CAPABILITY_REINDEX_SECRET` drives). When unset, the jobs-only endpoint
   returns not-configured; production deploys rely on the capability reindex path
   for job vectors and do not require this secret.
+- **`STATUS_INCIDENT_EVENT_SECRET`** — optional Worker secret shared with the
+  status worker. Bearer token for `POST /__maintenance/status-incidents`, which
+  fans `status.incident.opened` / `status.incident.resolved` to admin package
+  subscriptions. When unset, the endpoint returns not-configured and the status
+  worker skips emit; packages can still reconcile from public `/status.json`.
+  Synced from the GitHub Actions secret of the same name on production deploy.
 
 ## Cloudflare API (Worker + Email)
 

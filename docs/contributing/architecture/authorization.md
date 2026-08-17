@@ -350,6 +350,17 @@ activity is acknowledged as a permanent cancellation; transient lookup,
 discovery, and package-invocation infrastructure failures retry and can reach
 the dedicated DLQ.
 
+**Admins can subscribe to public status-page incidents.** The isolated status
+worker records component incidents in its own Durable Object, then best-effort
+POSTs metadata to the main worker. Fan-out of `status.incident.opened` and
+`status.incident.resolved` selects only packages whose owners hold the admin
+role at dispatch time. A non-admin may declare the topic but never receives it.
+The event contains the public status URL, component id, probe detail, and ISO
+timestamps. It omits probe logs, health-check bodies, user identities, secrets,
+and unrelated account content. This is operator telemetry about kody itself, not
+a user-data exception. Delivery is best-effort (no Queue); `/status.json`
+polling remains the backstop.
+
 **Admins can see** operator-owned system mail for reserved platform addresses
 (`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin`). That mail
 is stored under `system:email` as platform content, not under Kent's or any
