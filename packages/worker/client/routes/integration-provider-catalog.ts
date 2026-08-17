@@ -38,6 +38,13 @@ export const integrationProviderSuggestions: ReadonlyArray<IntegrationProviderSu
 			guideSlug: 'notion',
 		},
 		{
+			id: 'origin',
+			name: 'Origin',
+			tagline: 'Cursor-hosted repos, pull requests, and checks.',
+			scopeHint: 'reading my Origin repositories and pull requests',
+			guideSlug: 'origin',
+		},
+		{
 			id: 'slack',
 			name: 'Slack',
 			tagline: 'Messages, channels, reminders.',

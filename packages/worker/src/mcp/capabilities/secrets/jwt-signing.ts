@@ -5,7 +5,7 @@ import {
 } from '@kody-internal/shared/base64.ts'
 import { z } from 'zod'
 
-export const jwtAlgorithmSchema = z.enum(['RS256'])
+export const jwtAlgorithmSchema = z.enum(['RS256', 'EdDSA'])
 
 export type JwtAlgorithm = z.infer<typeof jwtAlgorithmSchema>
 
@@ -83,10 +83,14 @@ async function importPrivateKey(
 	}
 }
 
-function getSigningAlgorithm(algorithm: JwtAlgorithm): RsaHashedImportParams {
+function getSigningAlgorithm(
+	algorithm: JwtAlgorithm,
+): AlgorithmIdentifier | RsaHashedImportParams {
 	switch (algorithm) {
 		case 'RS256':
 			return { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }
+		case 'EdDSA':
+			return { name: 'Ed25519' }
 		default: {
 			const exhaustive: never = algorithm
 			throw new Error(`Unsupported JWT algorithm: ${exhaustive}`)

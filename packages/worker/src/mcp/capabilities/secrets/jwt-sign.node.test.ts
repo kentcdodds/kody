@@ -1,4 +1,4 @@
-import { generateKeyPairSync, createVerify } from 'node:crypto'
+import { generateKeyPairSync, createVerify, verify } from 'node:crypto'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
@@ -98,6 +98,59 @@ test('secret_jwt_sign resolves keys, enforces secret approval, and never leaks k
 			),
 		).toBe(true)
 		expect(signed.jwt).not.toContain('PRIVATE KEY')
+
+		const ed25519 = generateKeyPairSync('ed25519', {
+			publicKeyEncoding: {
+				type: 'spki',
+				format: 'pem',
+			},
+			privateKeyEncoding: {
+				type: 'pkcs8',
+				format: 'pem',
+			},
+		})
+		resolveSecretSpy.mockResolvedValue({
+			found: true,
+			value: ed25519.privateKey,
+			scope: 'user',
+			allowedHosts: [],
+			allowedCapabilities: ['secret_jwt_sign'],
+			allowedPackages: [],
+		})
+		const edSigned = await jwtSignCapability.handler(
+			{
+				private_key_secret_name: 'originAppPrivateKey',
+				algorithm: 'EdDSA',
+				header: { kid: 'app_01example' },
+				claims: {
+					iss: 'app_01example',
+					aud: 'origin-apps',
+					iat: 1,
+					exp: 301,
+				},
+			},
+			{ env, callerContext },
+		)
+		const [edHeader, edClaims, edSignature] = edSigned.jwt.split('.')
+		expect(edSigned.algorithm).toBe('EdDSA')
+		expect(decodeJwtPart(edHeader ?? '')).toMatchObject({
+			alg: 'EdDSA',
+			typ: 'JWT',
+			kid: 'app_01example',
+		})
+		expect(decodeJwtPart(edClaims ?? '')).toMatchObject({
+			iss: 'app_01example',
+			aud: 'origin-apps',
+		})
+		expect(
+			verify(
+				null,
+				Buffer.from(`${edHeader}.${edClaims}`),
+				ed25519.publicKey,
+				Buffer.from(edSignature ?? '', 'base64url'),
+			),
+		).toBe(true)
+		expect(edSigned.jwt).not.toContain('PRIVATE KEY')
 
 		resolveSecretSpy.mockResolvedValue({
 			found: true,

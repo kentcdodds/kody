@@ -86,7 +86,8 @@ before it can be used.
 The caller supplies the JWT header and claims, then performs any provider-
 specific token exchange with ordinary **`fetch`**. For service-account JSON
 secrets, pass **`private_key_json_field: "private_key"`** to sign with that
-field.
+field. Supported algorithms are **`RS256`** (default) and **`EdDSA`**
+(Ed25519 PKCS#8 keys, used by Cursor Origin app JWTs).
 
 ## Mentioning placeholders without resolving them
 
