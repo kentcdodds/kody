@@ -148,6 +148,13 @@ test('hosted package apps move to the owner subdomain behind a single-use handof
 	expect(packageSessionCookieHeader).toContain('Secure')
 	expect(packageSessionCookieHeader).toContain('Path=/')
 	expect(packageSessionCookieHeader).not.toContain('Domain=')
+	const packageSessionMaxAge = Number(
+		/Max-Age=(\d+)/.exec(packageSessionCookieHeader)?.[1],
+	)
+	// Fresh non-remember-me `kody_session` is 7 days; the exchanged cookie
+	// inherits that remaining time rather than a fixed 12-hour cap.
+	expect(packageSessionMaxAge).toBeGreaterThan(7 * 24 * 60 * 60 - 30)
+	expect(packageSessionMaxAge).toBeLessThanOrEqual(7 * 24 * 60 * 60)
 	const cleanLocation = new URL(handoffResponse.headers.get('Location') ?? '')
 	expect(cleanLocation.origin).toBe(ownerPackageAppOrigin)
 	expect(cleanLocation.searchParams.has(packageAppHandoffQueryParam)).toBe(

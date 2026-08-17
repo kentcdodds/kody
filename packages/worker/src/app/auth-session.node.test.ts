@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import { createCookie } from 'remix/cookie'
 import {
 	createAuthCookie,
+	getAuthSessionExpiresAtMs,
 	isAuthSessionInvalidatedByPasswordChange,
 	readParsedAuthSession,
 	setAuthSessionSecret,
@@ -28,6 +29,20 @@ test('createAuthCookie stamps issuedAt for password-change invalidation', async 
 	const parsed = await readParsedAuthSession(request, now)
 	expect(parsed?.issuedAt).toBe(now)
 	expect(parsed?.session.rememberMe).toBe(false)
+	expect(
+		getAuthSessionExpiresAtMs({
+			rememberMe: false,
+			issuedAt: parsed?.issuedAt,
+			now,
+		}),
+	).toBe(now + 7 * 24 * 60 * 60 * 1000)
+	expect(
+		getAuthSessionExpiresAtMs({
+			rememberMe: true,
+			issuedAt: now - 24 * 60 * 60 * 1000,
+			now,
+		}),
+	).toBe(now + 29 * 24 * 60 * 60 * 1000)
 })
 
 test('legacy numeric-id session cookies fail closed', async () => {

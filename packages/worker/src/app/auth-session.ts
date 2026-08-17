@@ -83,6 +83,23 @@ function getSessionMaxAgeSeconds(session: Pick<AuthSession, 'rememberMe'>) {
 		: defaultSessionMaxAgeSeconds
 }
 
+/**
+ * Absolute expiry of a `kody_session`. Missing `issuedAt` (legacy cookies)
+ * is treated as issued now, so remaining time is a full TTL rather than
+ * failing closed and stranding a still-valid browser session.
+ */
+export function getAuthSessionExpiresAtMs(input: {
+	rememberMe: boolean
+	issuedAt: number | undefined
+	now?: number
+}) {
+	const now = input.now ?? Date.now()
+	const issuedAt = input.issuedAt ?? now
+	return (
+		issuedAt + getSessionMaxAgeSeconds({ rememberMe: input.rememberMe }) * 1000
+	)
+}
+
 function createStoredAuthSession(
 	session: AuthSession,
 	now: number,

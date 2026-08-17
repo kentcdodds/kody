@@ -24,12 +24,14 @@ import { isStableUserId } from '#worker/user-id.ts'
  *
  * It authorizes hosted package-app access for one user on that user's
  * package-app subdomain and nothing else; serving additionally requires the
- * session's username to match the subdomain being requested.
+ * session's username to match the subdomain being requested. Lifetime matches
+ * the remaining `kody_session` that minted the handoff, not a fixed cap.
  */
 
 const securePackageAppSessionCookieName = '__Host-kody_pkg_session'
 const insecurePackageAppSessionCookieName = 'kody_pkg_session'
-const packageAppSessionMaxAgeSeconds = 60 * 60 * 12
+/** Fallback Max-Age for handoff tokens minted before `sessExp` existed. */
+const legacyPackageAppSessionMaxAgeSeconds = 60 * 60 * 12
 const packageAppSessionSecretPurpose = 'kody-package-app-session:v2'
 
 export type PackageAppSession = {
@@ -42,11 +44,21 @@ type StoredPackageAppSession = {
 	stableUserId: string
 	pkgUsername: string
 	issuedAt: number
+	expiresAt?: number
 }
 
 export type ParsedPackageAppSession = {
 	session: PackageAppSession
 	issuedAt: number
+	expiresAt?: number
+}
+
+export function remainingCookieMaxAgeSeconds(
+	expiresAt: number,
+	now = Date.now(),
+) {
+	const remaining = Math.floor((expiresAt - now) / 1000)
+	return remaining > 0 ? remaining : null
 }
 
 let cachedCookies: {
@@ -69,7 +81,7 @@ async function getPackageAppSessionCookies(env: Env) {
 		httpOnly: true,
 		sameSite: 'Lax' as const,
 		path: '/',
-		maxAge: packageAppSessionMaxAgeSeconds,
+		maxAge: legacyPackageAppSessionMaxAgeSeconds,
 		secrets: [derivedSecret],
 	}
 	cachedCookies = {
@@ -107,7 +119,11 @@ function isStoredPackageAppSession(
 		record.pkgUsername.length > 0 &&
 		typeof record.issuedAt === 'number' &&
 		Number.isFinite(record.issuedAt) &&
-		record.issuedAt > 0
+		record.issuedAt > 0 &&
+		(record.expiresAt === undefined ||
+			(typeof record.expiresAt === 'number' &&
+				Number.isFinite(record.expiresAt) &&
+				record.expiresAt > 0))
 	)
 }
 
@@ -115,17 +131,24 @@ export async function createPackageAppSessionCookie(input: {
 	env: Env
 	session: PackageAppSession
 	secure: boolean
+	expiresAt: number
 	now?: number
 }) {
+	const now = input.now ?? Date.now()
+	const maxAge = remainingCookieMaxAgeSeconds(input.expiresAt, now)
+	if (maxAge == null) {
+		throw new Error('Package app session expiresAt is not in the future.')
+	}
 	const cookie = await getPackageAppSessionCookie(input.env, input.secure)
 	return await cookie.serialize(
 		JSON.stringify({
 			v: 2,
 			stableUserId: input.session.stableUserId,
 			pkgUsername: input.session.username,
-			issuedAt: input.now ?? Date.now(),
+			issuedAt: now,
+			expiresAt: input.expiresAt,
 		} satisfies StoredPackageAppSession),
-		{ secure: input.secure },
+		{ secure: input.secure, maxAge },
 	)
 }
 
@@ -143,17 +166,22 @@ export async function destroyPackageAppSessionCookie(input: {
 
 function parseStoredPackageAppSession(
 	stored: unknown,
+	now: number,
 ): ParsedPackageAppSession | null {
 	if (!stored || typeof stored !== 'string') return null
 	try {
 		const parsed: unknown = JSON.parse(stored)
 		if (!isStoredPackageAppSession(parsed)) return null
+		if (typeof parsed.expiresAt === 'number' && parsed.expiresAt <= now) {
+			return null
+		}
 		return {
 			session: {
 				stableUserId: parsed.stableUserId,
 				username: parsed.pkgUsername,
 			},
 			issuedAt: parsed.issuedAt,
+			expiresAt: parsed.expiresAt,
 		}
 	} catch {
 		return null
@@ -163,16 +191,20 @@ function parseStoredPackageAppSession(
 export async function readPackageAppSession(input: {
 	request: Request
 	env: Env
+	now?: number
 }): Promise<ParsedPackageAppSession | null> {
 	const cookieHeader = input.request.headers.get('Cookie')
 	if (!cookieHeader) return null
 
+	const now = input.now ?? Date.now()
 	const cookies = await getPackageAppSessionCookies(input.env)
 	const secureSession = parseStoredPackageAppSession(
 		await cookies.secureCookie.parse(cookieHeader),
+		now,
 	)
 	if (secureSession) return secureSession
 	return parseStoredPackageAppSession(
 		await cookies.insecureCookie.parse(cookieHeader),
+		now,
 	)
 }

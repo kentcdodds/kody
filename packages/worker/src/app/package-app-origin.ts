@@ -13,7 +13,11 @@ import {
 } from '#worker/app-base-url.ts'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { isSecureRequest } from '#app/auth-session.ts'
+import {
+	getAuthSessionExpiresAtMs,
+	isSecureRequest,
+	readParsedAuthSession,
+} from '#app/auth-session.ts'
 import {
 	consumePackageAppHandoffToken,
 	createPackageAppHandoffToken,
@@ -23,6 +27,7 @@ import { resolvePackageAppOwnerByStableUserId } from '#app/package-app-owner.ts'
 import {
 	createPackageAppSessionCookie,
 	readPackageAppSession,
+	remainingCookieMaxAgeSeconds,
 } from '#app/package-app-session.ts'
 import {
 	type PackageAppPath,
@@ -250,6 +255,11 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 		return new Response('Saved package app not found.', { status: 404 })
 	}
 
+	const parsedSession = await readParsedAuthSession(request)
+	if (!parsedSession) {
+		return await redirectToLoginWhenUnauthenticated(request, env)
+	}
+
 	target.searchParams.set(
 		packageAppHandoffQueryParam,
 		await createPackageAppHandoffToken({
@@ -259,6 +269,10 @@ async function redirectAppOriginToPackageAppOrigin(input: {
 				username: user.username,
 				kodyId: packagePath.kodyId,
 			},
+			sessionExpiresAt: getAuthSessionExpiresAtMs({
+				rememberMe: parsedSession.session.rememberMe,
+				issuedAt: parsedSession.issuedAt,
+			}),
 		}),
 	)
 	return redirectResponse({ location: target.toString(), status: 302 })
@@ -351,7 +365,7 @@ async function handleUserSubdomainRequest(input: {
 				kodyId: packagePath.kodyId,
 			},
 		})
-		if (claims) {
+		if (claims && remainingCookieMaxAgeSeconds(claims.sessionExpiresAt)) {
 			return redirectResponse({
 				location: withoutHandoffToken(url).toString(),
 				status: 302,
@@ -362,6 +376,7 @@ async function handleUserSubdomainRequest(input: {
 						username: claims.username,
 					},
 					secure: isSecureRequest(request),
+					expiresAt: claims.sessionExpiresAt,
 				}),
 			})
 		}

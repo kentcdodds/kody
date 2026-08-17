@@ -43,15 +43,29 @@ const claims = {
 }
 
 const expected = { username: claims.username, kodyId: claims.kodyId }
+const sessionExpiresAt = 1_800_000_000_000
+const consumed = { ...claims, sessionExpiresAt }
+
+function mintToken(
+	env: Env,
+	input: { now?: number; sessionExpiresAt?: number } = {},
+) {
+	return createPackageAppHandoffToken({
+		env,
+		claims,
+		sessionExpiresAt: input.sessionExpiresAt ?? sessionExpiresAt,
+		now: input.now,
+	})
+}
 
 test('handoff tokens are single use, short lived, and bound to one user and package', async () => {
 	silenceExpectedConsoleWarns(['Package app handoff rejected.'])
 	const env = createTestEnv()
 
-	const token = await createPackageAppHandoffToken({ env, claims })
+	const token = await mintToken(env)
 	await expect(
 		consumePackageAppHandoffToken({ env, token, expected }),
-	).resolves.toStrictEqual(claims)
+	).resolves.toStrictEqual(consumed)
 
 	// Burned on first use, so a token captured from browser history or a referrer
 	// cannot be replayed.
@@ -63,18 +77,14 @@ test('handoff tokens are single use, short lived, and bound to one user and pack
 	})
 
 	// Expired tokens fail closed, even unused ones.
-	const staleToken = await createPackageAppHandoffToken({
-		env,
-		claims,
-		now: Date.now() - 61_000,
-	})
+	const staleToken = await mintToken(env, { now: Date.now() - 61_000 })
 	await expect(
 		consumePackageAppHandoffToken({ env, token: staleToken, expected }),
 	).resolves.toBeNull()
 
 	// Tampering with the payload (for example to point at another user's package)
 	// invalidates the signature.
-	const freshToken = await createPackageAppHandoffToken({ env, claims })
+	const freshToken = await mintToken(env)
 	const [payload, signature] = freshToken.split('.')
 	expect(payload).toBeTruthy()
 	expect(signature).toBeTruthy()
@@ -103,10 +113,7 @@ test('handoff tokens are single use, short lived, and bound to one user and pack
 	const otherEnv = createTestEnv({
 		cookieSecret: 'ANOTHER_TEST_COOKIE_SECRET_32_CHARS_MINIMUM_OK',
 	})
-	const foreignToken = await createPackageAppHandoffToken({
-		env: otherEnv,
-		claims,
-	})
+	const foreignToken = await mintToken(otherEnv)
 	await expect(
 		consumePackageAppHandoffToken({ env, token: foreignToken, expected }),
 	).resolves.toBeNull()
@@ -114,7 +121,7 @@ test('handoff tokens are single use, short lived, and bound to one user and pack
 	// A token aimed at another package (or another user) is refused *without*
 	// being burned: it was never meant for this request, so a mistyped URL must
 	// not cost the owner the handoff they still hold.
-	const boundToken = await createPackageAppHandoffToken({ env, claims })
+	const boundToken = await mintToken(env)
 	for (const wrongTarget of [
 		{ username: 'someone-else', kodyId: claims.kodyId },
 		{ username: claims.username, kodyId: 'other-package' },
@@ -129,31 +136,37 @@ test('handoff tokens are single use, short lived, and bound to one user and pack
 	}
 	await expect(
 		consumePackageAppHandoffToken({ env, token: boundToken, expected }),
-	).resolves.toStrictEqual(claims)
+	).resolves.toStrictEqual(consumed)
 
 	// Replay protection needs KV; signature and expiry checks do not.
 	const envWithoutKv = createTestEnv({ kv: false })
-	const tokenWithoutKv = await createPackageAppHandoffToken({
-		env: envWithoutKv,
-		claims,
-	})
+	const tokenWithoutKv = await mintToken(envWithoutKv)
 	await expect(
 		consumePackageAppHandoffToken({
 			env: envWithoutKv,
 			token: tokenWithoutKv,
 			expected,
 		}),
-	).resolves.toStrictEqual(claims)
+	).resolves.toStrictEqual(consumed)
 
 	// Missing COOKIE_SECRET must throw rather than look like an invalid token,
 	// otherwise the visitor stays on the 403 page with `__kody_handoff` in the URL.
 	await expect(
 		consumePackageAppHandoffToken({
 			env: createTestEnv({ cookieSecret: '' }),
-			token: await createPackageAppHandoffToken({ env, claims }),
+			token: await mintToken(env),
 			expected,
 		}),
 	).rejects.toThrow(/COOKIE_SECRET/)
+
+	// A token whose parent session has already expired is refused even if the
+	// one-minute handoff window is still open.
+	const expiredParent = await mintToken(env, {
+		sessionExpiresAt: Date.now() - 1,
+	})
+	await expect(
+		consumePackageAppHandoffToken({ env, token: expiredParent, expected }),
+	).resolves.toBeNull()
 })
 
 test('the package-app session cookie is not interchangeable with the app session cookie', async () => {
@@ -164,17 +177,32 @@ test('the package-app session cookie is not interchangeable with the app session
 	// Secure requests get the `__Host-` prefixed name, which browsers only
 	// accept host-only (`Secure`, no `Domain`, `Path=/`): a sibling package-app
 	// subdomain cannot toss a `Domain`-wide cookie under this name.
+	const now = 1_700_000_000_000
+	const threeHoursMs = 3 * 60 * 60 * 1000
+	const expiresAt = now + threeHoursMs
 	const setCookie = await createPackageAppSessionCookie({
 		env,
 		session: { stableUserId: ownerStableUserId, username: 'owner' },
 		secure: true,
+		now,
+		expiresAt,
 	})
 	expect(setCookie).toContain('__Host-kody_pkg_session=')
 	expect(setCookie).toContain('HttpOnly')
 	expect(setCookie).toContain('SameSite=Lax')
 	expect(setCookie).toContain('Secure')
 	expect(setCookie).toContain('Path=/')
+	expect(setCookie).toContain('Max-Age=10800')
 	expect(setCookie).not.toContain('Domain=')
+
+	const rememberMeSetCookie = await createPackageAppSessionCookie({
+		env,
+		session: { stableUserId: ownerStableUserId, username: 'owner' },
+		secure: true,
+		now,
+		expiresAt: now + 30 * 24 * 60 * 60 * 1000,
+	})
+	expect(rememberMeSetCookie).toContain('Max-Age=2592000')
 
 	// Plain-HTTP local development falls back to an unprefixed name because
 	// browsers refuse `__Host-` cookies on insecure origins.
@@ -182,6 +210,8 @@ test('the package-app session cookie is not interchangeable with the app session
 		env,
 		session: { stableUserId: ownerStableUserId, username: 'owner' },
 		secure: false,
+		now,
+		expiresAt,
 	})
 	expect(insecureSetCookie).toContain('kody_pkg_session=')
 	expect(insecureSetCookie).not.toContain('__Host-')
@@ -191,6 +221,7 @@ test('the package-app session cookie is not interchangeable with the app session
 				headers: { Cookie: insecureSetCookie.split(';')[0] ?? '' },
 			}),
 			env,
+			now,
 		}),
 	).resolves.toMatchObject({
 		session: { stableUserId: ownerStableUserId, username: 'owner' },
@@ -206,10 +237,32 @@ test('the package-app session cookie is not interchangeable with the app session
 				headers: { Cookie: cookiePair },
 			}),
 			env,
+			now,
+		}),
+	).resolves.toMatchObject({
+		session: { stableUserId: ownerStableUserId, username: 'owner' },
+		expiresAt,
+	})
+	await expect(
+		readPackageAppSession({
+			request: new Request('https://owner.kodyapps.dev/packages/x', {
+				headers: { Cookie: cookiePair },
+			}),
+			env,
+			now: expiresAt - 1,
 		}),
 	).resolves.toMatchObject({
 		session: { stableUserId: ownerStableUserId, username: 'owner' },
 	})
+	await expect(
+		readPackageAppSession({
+			request: new Request('https://owner.kodyapps.dev/packages/x', {
+				headers: { Cookie: cookiePair },
+			}),
+			env,
+			now: expiresAt,
+		}),
+	).resolves.toBeNull()
 
 	// Same secret material, different derived signing key: replaying the
 	// package-app cookie value under the app session name does not authenticate.

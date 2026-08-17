@@ -408,12 +408,19 @@ the owner's subdomain sets `__Host-kody_pkg_session` on secure requests (plain
 `kody_pkg_session` on insecure local HTTP only):
 
 - `httpOnly: true`, `sameSite: 'Lax'`, `path: '/'`, `secure` per request
-- 12 hour max age
+- max age is the **remaining** lifetime of the `kody_session` that minted the
+  handoff (7 days, or 30 days with remember-me), snapshotted into the token as
+  `sessExp` and into the cookie as `expiresAt`. Browser `Max-Age` and a
+  server-side `expiresAt` check both use that instant, so the package-app cookie
+  cannot outlive the parent session. Remember-me renewal on the app origin does
+  not extend an already-issued package-app cookie; a later handoff mints a new
+  snapshot. Tokens minted before `sessExp` existed fall back to a 12 hour
+  lifetime for the rolling-deploy overlap
 - signed with a **derived** secret,
   `sha256Base64Url('kody-package-app-session:v2:' + COOKIE_SECRET)`, so a value
   signed for this cookie can never verify as a `kody_session`
-- payload is `{ v, stableUserId, pkgUsername, issuedAt }` — a shape the app
-  session schema rejects, so the two cannot be confused even by name
+- payload is `{ v, stableUserId, pkgUsername, issuedAt, expiresAt }` — a shape
+  the app session schema rejects, so the two cannot be confused even by name
   substitution
 - the `__Host-` prefix on secure requests forbids a `Domain` attribute, so
   sibling subdomains cannot plant a shadow cookie under this name
