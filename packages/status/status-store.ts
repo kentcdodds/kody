@@ -11,6 +11,7 @@ import {
 	initialComponentProbeState,
 	type ComponentProbeState,
 } from './incidents.ts'
+import { notifyStatusIncidentOpened } from './incident-webhook.ts'
 import { jobsProbeOrigin, runAllProbes } from './probes.ts'
 import {
 	fetchRelevantProviderIncidents,
@@ -51,6 +52,11 @@ export type StatusWorkerEnv = {
 	CLOUDFLARE_API_BASE_URL?: string
 	/** Worker secret: Cloudflare API token with Email Sending permission. */
 	CLOUDFLARE_API_TOKEN?: string
+	/**
+	 * Optional minted Kody webhook URL for status-incident-triage ingest.
+	 * Treat as a credential. When unset, sweep polling is the only ingest path.
+	 */
+	STATUS_INCIDENT_WEBHOOK_URL?: string
 }
 
 const sampleRetentionMs = 25 * 60 * 60 * 1000
@@ -223,6 +229,28 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				JSON.stringify({
 					component: outcome.component,
 					detail: outcome.detail,
+				}),
+			)
+			this.ctx.waitUntil(
+				notifyStatusIncidentOpened({
+					webhookUrl: this.env.STATUS_INCIDENT_WEBHOOK_URL,
+					payload: {
+						event: 'incident.opened',
+						component: outcome.component,
+						detail: outcome.detail,
+						startedAt: now,
+						statusUrl: this.env.STATUS_PAGE_URL,
+					},
+				}).then((result) => {
+					if (!result.ok) {
+						console.warn(
+							'status-incident-webhook-failed',
+							JSON.stringify({
+								component: outcome.component,
+								error: result.error,
+							}),
+						)
+					}
 				}),
 			)
 		}

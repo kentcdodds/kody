@@ -318,6 +318,12 @@ through the Cloudflare Email REST API (from `ALERT_EMAIL_FROM` to
 `ALERT_EMAIL_TO`, both non-secret vars in `packages/status/wrangler.jsonc`).
 Without that secret, alert sends are skipped and logged.
 
+An optional Worker secret `STATUS_INCIDENT_WEBHOOK_URL` (synced from the
+same-named GitHub Actions secret when present) POSTs to a minted Kody webhook on
+incident open so `@kentcdodds/status-incident-triage` can enqueue a component
+fingerprint. The URL is a credential; do not commit it. When unset, the package
+still reconciles from the public `/status.json` snapshot.
+
 ## Optional Cloudflare offerings
 
 The default footprint stays intentionally small. If you want to add additional

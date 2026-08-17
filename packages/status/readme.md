@@ -31,6 +31,13 @@ returns Cloudflare 1016. Component probes never use the status hostname, so a
   (`STATUS_ALERT_DAILY_LIMIT`). Alert links use `STATUS_PAGE_URL`
   (`https://status.kody.codes`).
 
+When an incident opens, the worker also POSTs a small JSON payload to
+`STATUS_INCIDENT_WEBHOOK_URL` when that Worker secret is set (a minted Kody
+webhook for `@kentcdodds/status-incident-triage`). The notify is fire-and-forget
+with a short timeout so a down or missing webhook cannot stall probes or email.
+Until the secret exists, the triage package still enqueues from
+`GET /status.json` on its 15m sweep.
+
 ## Provider incidents (Cloudflare)
 
 Each cron tick also fetches Cloudflare's public Statuspage feed

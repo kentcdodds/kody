@@ -757,6 +757,21 @@ jobs:
           printf '%s' "$CLOUDFLARE_API_TOKEN" | npx wrangler secret put \
             CLOUDFLARE_API_TOKEN --config packages/status/wrangler.jsonc
 
+      - name: 🔐 Sync status incident triage webhook secret
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          STATUS_INCIDENT_WEBHOOK_URL:
+            ${{ secrets.STATUS_INCIDENT_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${STATUS_INCIDENT_WEBHOOK_URL:-}" ]; then
+            echo "STATUS_INCIDENT_WEBHOOK_URL unset; status incident ingest stays poll-only."
+            exit 0
+          fi
+          printf '%s' "$STATUS_INCIDENT_WEBHOOK_URL" | npx wrangler secret put \
+            STATUS_INCIDENT_WEBHOOK_URL --config packages/status/wrangler.jsonc
+
       - name: 🩺 Healthcheck (status worker)
         shell: bash
         env:
