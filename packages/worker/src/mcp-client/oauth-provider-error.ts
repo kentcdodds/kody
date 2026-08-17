@@ -10,7 +10,11 @@
  */
 export function enrichMcpOAuthProviderError(
 	message: string,
-	input: { callbackUrl: string; clientOrigin: string },
+	input: {
+		callbackUrl: string
+		clientOrigin: string
+		clientMetadataUrl?: string | null
+	},
 ): string {
 	const trimmed = message.trim()
 	if (!trimmed) return trimmed
@@ -30,10 +34,13 @@ export function enrichMcpOAuthProviderError(
 		return trimmed
 	}
 
+	const allowlist = input.clientMetadataUrl
+		? `If you operate this MCP server (or its identity provider), allow that origin, register this exact redirect URI: ${input.callbackUrl}, and allowlist this CIMD client_id: ${input.clientMetadataUrl}.`
+		: `If you operate this MCP server (or its identity provider), allow that origin and register this exact redirect URI: ${input.callbackUrl}.`
 	const parts = [
 		trimmed,
 		`Kody authorizes as an OAuth client from ${input.clientOrigin}.`,
-		`If you operate this MCP server (or its identity provider), allow that origin and register this exact redirect URI: ${input.callbackUrl}.`,
+		allowlist,
 		'Then reconnect the server in Kody so authorization uses the allowlisted values.',
 	]
 	return parts.join(' ')

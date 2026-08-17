@@ -43,10 +43,12 @@ Requests are handled in this order:
      package code never executes inline.
    - In confirmed local, preview, and test runtimes, an unset package-app origin
      is a no-op and package apps are served inline at step 9 below.
-1. Protected resource metadata (base path only, before `OAuthProvider`):
-   - `/.well-known/oauth-protected-resource` (`GET` / `HEAD` / `OPTIONS`)
-   - `/oauth/client-metadata.json` (`GET` / `HEAD` / `OPTIONS`) — Kody-as-client
-     CIMD. Served from the request origin so `client_id` matches the fetch URL.
+1. Public OAuth metadata (before `OAuthProvider`):
+   - Protected resource metadata (base path only):
+     `/.well-known/oauth-protected-resource` (`GET` / `HEAD` / `OPTIONS`)
+   - Client ID Metadata Document: `/oauth/client-metadata.json` (`GET` / `HEAD`
+     / `OPTIONS`) — Kody-as-client CIMD. Served from the request origin so
+     `client_id` matches the fetch URL.
 2. OAuth authorization endpoints:
    - `/oauth/authorize`
    - `/oauth/authorize-info`

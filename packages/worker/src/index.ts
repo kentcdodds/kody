@@ -470,6 +470,8 @@ function addOAuthDiscoveryCorsHeaders(
 	}
 	const headers = new Headers(response.headers)
 	headers.set('Access-Control-Allow-Origin', origin)
+	const vary = headers.get('Vary')
+	headers.set('Vary', vary ? `${vary}, Origin` : 'Origin')
 	headers.set('Access-Control-Allow-Methods', '*')
 	headers.set('Access-Control-Allow-Headers', 'Authorization, *')
 	headers.set('Access-Control-Max-Age', '86400')

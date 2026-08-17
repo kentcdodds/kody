@@ -32,6 +32,7 @@ export function buildMcpServerStatusView(input: {
 	snapshot: McpServerSnapshot | null
 	oauthCallbackUrl?: string
 	oauthClientOrigin?: string
+	oauthClientMetadataUrl?: string | null
 }): McpServerStatusView {
 	const { setting, snapshot } = input
 	const connected = snapshot?.state === 'ready'
@@ -41,6 +42,7 @@ export function buildMcpServerStatusView(input: {
 			? enrichMcpOAuthProviderError(rawError, {
 					callbackUrl: input.oauthCallbackUrl,
 					clientOrigin: input.oauthClientOrigin,
+					clientMetadataUrl: input.oauthClientMetadataUrl,
 				})
 			: rawError
 	return {

@@ -18,11 +18,13 @@ OAuth request after verifying in another tab, then reconnect or approve again.
 ## Adding a remote MCP server fails with `Invalid origin uri` or redirect URI errors
 
 That message comes from the **remote** authorization server, not from Kody being
-unreachable. Kody identifies as an OAuth client from the deployment origin,
-redirects to `{origin}/account/mcp-servers/oauth/callback`, and on HTTPS
-presents `{origin}/oauth/client-metadata.json` as its CIMD `client_id`. Allow
-those values in the MCP server's identity provider (authorized origins /
-redirect URIs / client metadata URL), then remove and re-add the server. See
+unreachable. Kody identifies as an OAuth client from the deployment origin and
+redirects to `{origin}/account/mcp-servers/oauth/callback`. Allow those values
+in the MCP server's identity provider (authorized origins / redirect URIs). When
+the authorization server advertises `client_id_metadata_document_supported` and
+the callback origin is HTTPS, Kody also presents
+`{origin}/oauth/client-metadata.json` as its CIMD `client_id` — allowlist that
+URL only for CIMD-capable providers. Then remove and re-add the server. See
 [Connect remote MCP servers](./mcp-client-servers.md).
 
 ## Search returns no good matches

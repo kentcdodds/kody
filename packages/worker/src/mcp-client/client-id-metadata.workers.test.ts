@@ -23,3 +23,23 @@ test('worker serves Kody CIMD before the OAuth provider wrapper', async () => {
 		buildMcpClientIdMetadataDocument(origin),
 	)
 })
+
+test('CIMD CORS reflects Origin and varies the cache key', async () => {
+	const documentUrl = `https://kody.codes${mcpClientIdMetadataPath}`
+	const first = await workerFetch(
+		new Request(documentUrl, { headers: { Origin: 'https://as.example' } }),
+	)
+	const second = await workerFetch(
+		new Request(documentUrl, {
+			headers: { Origin: 'https://other-as.example' },
+		}),
+	)
+	expect(first.headers.get('Access-Control-Allow-Origin')).toBe(
+		'https://as.example',
+	)
+	expect(second.headers.get('Access-Control-Allow-Origin')).toBe(
+		'https://other-as.example',
+	)
+	expect(first.headers.get('Vary')?.split(/\s*,\s*/)).toContain('Origin')
+	expect(second.headers.get('Vary')?.split(/\s*,\s*/)).toContain('Origin')
+})

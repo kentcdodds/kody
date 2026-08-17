@@ -43,6 +43,7 @@ export async function loadAccountMcpServersData(input: {
 					null,
 				oauthCallbackUrl: oauth.callbackUrl,
 				oauthClientOrigin: oauth.clientOrigin,
+				oauthClientMetadataUrl: oauth.clientMetadataUrl,
 			}),
 		),
 	}

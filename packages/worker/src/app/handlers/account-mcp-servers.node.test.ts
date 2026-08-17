@@ -352,7 +352,9 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 		originFailureResponse.headers.get('Location') ?? '',
 	)
 	expect(originFailureLocation.searchParams.get('auth')).toBe('error')
-	expect(originFailureLocation.searchParams.get('reason')).toBeTruthy()
+	expect(originFailureLocation.searchParams.get('reason')).toContain(
+		'https://example.com/oauth/client-metadata.json',
+	)
 
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({
 		serverId: 'server-1',

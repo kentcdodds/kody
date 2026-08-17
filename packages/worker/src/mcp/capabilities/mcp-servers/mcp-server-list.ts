@@ -66,6 +66,7 @@ export const mcpServerListCapability = defineDomainCapability(
 							) ?? null,
 						oauthCallbackUrl: oauth.callbackUrl,
 						oauthClientOrigin: oauth.clientOrigin,
+						oauthClientMetadataUrl: oauth.clientMetadataUrl,
 					}),
 				),
 			}
