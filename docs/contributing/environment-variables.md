@@ -270,11 +270,14 @@ Worker secrets:
   directly.
 - **`CAPABILITY_REINDEX_SECRET`** — strongly recommended for production (CI
   skips the post-deploy capability reindex and execute smoke check when it is
-  unset); bearer token for `POST /__maintenance/reindex-capabilities` and other
-  secret-gated maintenance endpoints. Use the reindex endpoint after changing
-  the embedding model, pooling, or Vectorize index dimensions; it rebuilds
-  built-in capability, memory, job, and saved-package vectors with per-user
-  `userId` metadata on user-owned rows. Local dev uses offline search while
+  unset); bearer token for `POST /__maintenance/reindex-capabilities`,
+  `POST /__maintenance/reencrypt-secrets`, and other secret-gated maintenance
+  endpoints. Use the reindex endpoint after changing the embedding model,
+  pooling, or Vectorize index dimensions; it rebuilds built-in capability,
+  memory, job, and saved-package vectors with per-user `userId` metadata on
+  user-owned rows. Use the re-encrypt endpoint to rewrite remaining pre-AAD
+  (2-part) secret ciphertexts to v2 without rotating `SECRET_STORE_KEY` (see
+  [Secret rotation](./secret-rotation.md)). Local dev uses offline search while
   `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
 - **`JOB_REINDEX_SECRET`** — optional Worker secret; bearer token for
   `POST /__maintenance/reindex-jobs` when you want a jobs-only Vectorize rebuild

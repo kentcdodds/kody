@@ -49,8 +49,10 @@ the input) and then smoke-test unsealing offline. See
 1. **Keep the old key available** in a secure migration script so you can
    decrypt existing ciphertext while preparing the re-encryption pass.
 2. **Decrypt all secrets with the old key** and re-encrypt them with the new
-   `SECRET_STORE_KEY`. This can be done via a one-off script against D1 or a
-   future `/__maintenance/reencrypt-secrets` endpoint.
+   `SECRET_STORE_KEY`. This is a key-rotation migration (old KEK plus new KEK),
+   not the same-key format upgrade at `/__maintenance/reencrypt-secrets`. Use a
+   one-off script against D1, or extend that maintenance endpoint to accept a
+   previous key, before deploying the new `SECRET_STORE_KEY`.
 3. **Re-seal escrow** for the new key value with a bumped `ESCROW_KEY_VERSION`
    (see Escrow above — the previous version's object is write-once) and
    smoke-test unsealing offline, so the new key is recoverable before it goes
@@ -63,6 +65,30 @@ the input) and then smoke-test unsealing offline. See
 - Never delete the old key value until re-encryption is verified complete.
 - Monitor error rates after rotation; a spike in "Unable to decrypt secret
   value" errors indicates secrets were not re-encrypted with the new key.
+
+## Upgrading pre-AAD (2-part) ciphertexts
+
+Encrypt helpers write `v2.<iv>.<ciphertext>` bound to an AAD identity context.
+Rows that still store `<iv>.<ciphertext>` have no AAD. `decryptWithKey`
+dual-reads both shapes; user-facing reads never rewrite. The operator pass
+upgrades remaining 2-part rows in place without rotating `SECRET_STORE_KEY`.
+
+`POST /__maintenance/reencrypt-secrets` (bearer `CAPABILITY_REINDEX_SECRET`):
+
+1. Keyset-pages `secret_entries.encrypted_value`,
+   `remote_connector_settings.encrypted_shared_secret`, and
+   `platform_oauth_apps.client_secret_encrypted` where the payload is not
+   `v2.%`.
+2. Decrypts via the existing dual-read, re-encrypts as v2 with
+   `userSecretContext(userId)` or `platformOauthAppContext(slug)`, and writes
+   back with `WHERE … AND <column> = <old>` so a concurrent user rotation wins.
+3. Counts decrypt failures and leaves those rows unchanged. The JSON result is
+   counts plus stable row keys only — never ciphertext or plaintext.
+
+Optional JSON body: `{ "dryRun": true }` to decrypt-verify without writes;
+`{ "maxRows": 50 }` to bound one invocation. Repeat until every table reports
+`remaining: 0`. This is a production mutation; run it only after an explicit
+operator go-ahead.
 
 ## Generating secure key values
 

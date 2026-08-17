@@ -408,7 +408,9 @@ automatically:
   and for previews; bearer auth for `POST /__maintenance/reindex-capabilities`
   to refresh all capability-search vectors in Vectorize: built-in capabilities,
   memories, jobs, and saved packages. Saved package projections also refresh
-  when packages are saved or published.)
+  when packages are saved or published. Same bearer authenticates
+  `POST /__maintenance/reencrypt-secrets`, which rewrites remaining pre-AAD
+  secret ciphertexts to v2.)
 - `JOB_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-jobs` for a jobs-only Vectorize rebuild. Not
   required for production deploys — the capability reindex path already
@@ -630,8 +632,11 @@ How to get/set each value:
     refresh built-in capability, memory, job, and saved-package embeddings. Run
     the same POST manually after changing the embedding model, pooling, or
     Vectorize index dimensions so existing rows are rebuilt with compatible
-    vectors. Local and preview environments can omit it; CI skips reindex and
-    execute-smoke when the secret is unset.
+    vectors. The same bearer authenticates
+    `POST /__maintenance/reencrypt-secrets` for the pre-AAD ciphertext format
+    upgrade (see [Secret rotation](./secret-rotation.md)). Local and preview
+    environments can omit it; CI skips reindex and execute-smoke when the secret
+    is unset.
 - `JOB_REINDEX_SECRET` (optional; jobs-only reindex)
   - Bearer token for `POST /__maintenance/reindex-jobs`. Generate and sync the
     same way as `CAPABILITY_REINDEX_SECRET` only if you want the jobs-only

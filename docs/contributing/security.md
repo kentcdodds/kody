@@ -384,13 +384,16 @@ guarded by a bearer secret comparison.
   to their purpose and owning identity (`user:<userId>` for user secrets,
   `app:<slug>` for platform OAuth client secrets), so a ciphertext copied into
   another user's row fails to decrypt. Legacy unversioned ciphertexts still
-  decrypt and upgrade to `v2` whenever the value is re-encrypted on write. Only
-  `v2` provides owner binding: a legacy ciphertext carries no AAD, so until it
-  is rewritten it would still decrypt if copied into another row (metadata-only
-  writes preserve the legacy ciphertext). Row swaps already require write access
-  to the database, so this is defense-in-depth, not a standing hole; the
-  compatibility branch is deliberately upgrade-on-write (never rewrite-on-read)
-  and gets removed once no legacy ciphertexts remain.
+  decrypt and upgrade to `v2` whenever the value is re-encrypted on write, or
+  via the operator pass at `POST /__maintenance/reencrypt-secrets` (same KEK;
+  optimistic compare so a concurrent user rotation wins; decrypt failures are
+  counted and left unchanged). Only `v2` provides owner binding: a legacy
+  ciphertext carries no AAD, so until it is rewritten it would still decrypt if
+  copied into another row (metadata-only writes preserve the legacy ciphertext).
+  Row swaps already require write access to the database, so this is
+  defense-in-depth, not a standing hole; the compatibility branch is
+  upgrade-on-write (never rewrite-on-read) and is removed once no legacy
+  ciphertexts remain.
 - `SECRET_STORE_KEY` is escrowed for disaster recovery as a passphrase-sealed
   blob in the DR backup bucket (solo operator; see
   [Disaster recovery](./disaster-recovery.md) and
