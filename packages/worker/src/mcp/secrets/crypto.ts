@@ -11,7 +11,8 @@ const ivBytes = 12
  * from the purpose plus an identity context (e.g. the owning user), so a
  * ciphertext copied into another row fails to decrypt. Two-part payloads
  * (`<iv>.<ciphertext>`, no AAD) still decrypt; they upgrade to v2 whenever
- * the value is re-encrypted on write.
+ * the value is re-encrypted on write. Operators rewrite remaining 2-part rows
+ * in place via `POST /__maintenance/reencrypt-secrets`.
  */
 const ciphertextVersion = 'v2'
 
