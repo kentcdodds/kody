@@ -138,9 +138,11 @@ test('secret_jwt_sign resolves keys, enforces secret approval, and never leaks k
 			typ: 'JWT',
 			kid: 'app_01example',
 		})
-		expect(decodeJwtPart(edClaims ?? '')).toMatchObject({
+		expect(decodeJwtPart(edClaims ?? '')).toEqual({
 			iss: 'app_01example',
 			aud: 'origin-apps',
+			iat: 1,
+			exp: 301,
 		})
 		expect(
 			verify(
@@ -150,7 +152,7 @@ test('secret_jwt_sign resolves keys, enforces secret approval, and never leaks k
 				Buffer.from(edSignature ?? '', 'base64url'),
 			),
 		).toBe(true)
-		expect(edSigned.jwt).not.toContain('PRIVATE KEY')
+		expect(edSigned.jwt).not.toContain(ed25519.privateKey)
 
 		resolveSecretSpy.mockResolvedValue({
 			found: true,

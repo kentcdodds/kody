@@ -30,7 +30,7 @@ Once connected, you can ask Kody things like:
 - "What is left on this installation's Origin rate-limit budget?"
 
 GitHub-mirrored-in repos stay outside installations. Native Origin repos and
-repos Origin mirrors *out* to GitHub are in scope.
+repos Origin mirrors _out_ to GitHub are in scope.
 
 ## Before you start
 
@@ -47,7 +47,8 @@ repos Origin mirrors *out* to GitHub are in scope.
 
 ## Lane A: Origin App (durable)
 
-1. Open [cursor.com/codebase/settings/apps](https://cursor.com/codebase/settings/apps)
+1. Open
+   [cursor.com/codebase/settings/apps](https://cursor.com/codebase/settings/apps)
    and create an Origin App. Copy the app id (`app_01…`).
 2. Generate an Ed25519 key pair locally. Register **only the public key** on the
    app. Keep the PKCS#8 private key out of chat and out of git:
@@ -60,7 +61,8 @@ repos Origin mirrors *out* to GitHub are in scope.
 3. Install the app into your codebase. Request only the scopes the task needs.
    `repository:metadata:read` is granted automatically. Typical read-only
    reporting uses `repository:contents:read` and
-   `repository:pull_requests:read`. The install URL shape is documented on the
+   `repository:pull_requests:read`; include `repository:checks:read` when
+   reading check suites or runs. The install URL shape is documented on the
    Origin API page; the workspace admin picks the owner and repos.
 4. After install, store the installation id (`i_01…`) from the installation
    receipt `sub` claim, or list installations later with an app JWT.
@@ -83,8 +85,8 @@ App id and installation id are not secrets. Store them as user values:
 - `originAppId` — the `app_01…` id (JWT `iss` and `kid`)
 - `originInstallationId` — the `i_01…` id used to mint installation tokens
 
-If `originInstallationId` is missing, the helpers package lists installations
-for the app and uses the first one.
+Set `originInstallationId` explicitly. Do not select an installation implicitly
+when more than one installation is available.
 
 ## Smoke test
 
@@ -129,14 +131,13 @@ export default async function main() {
 }
 ```
 
-A `401` that says the request is missing a Bearer token usually means Origin
-did not accept the credential kind — confirm you are signing with the Origin
-App private key, not `cursorApiKey`.
+A `401` that says the request is missing a Bearer token usually means Origin did
+not accept the credential kind — confirm you are signing with the Origin App
+private key, not `cursorApiKey`.
 
 After the smoke test passes, prefer a community helpers package
-(`community_search` for `origin`) over raw `secret_jwt_sign` + `fetch` in
-later work. Integrations are auth; the package is how agents should call
-Origin.
+(`community_search` for `origin`) over raw `secret_jwt_sign` + `fetch` in later
+work. Integrations are auth; the package is how agents should call Origin.
 
 ## Helpers package
 
@@ -149,15 +150,15 @@ The Origin helpers package (community-search `origin`) wraps:
 - `originRequest` for unwrapped Origin paths
 
 Fork or install that listing after the smoke test. Do not treat Origin as a
-second backer for Kody repos — Artifacts stays the durable home for Kody
-package source.
+second backer for Kody repos — Artifacts stays the durable home for Kody package
+source.
 
 ## Lane B: one-off CLI user token (not durable)
 
-After `origin auth login`, `origin api` sends a user Bearer token. That token
-is fine for a short local experiment. Installation tokens and CLI sessions
-expire; do not save them as `originAppPrivateKey`. Prefer Lane A for anything
-Kody should keep calling.
+After `origin auth login`, `origin api` sends a user Bearer token. That token is
+fine for a short local experiment. Installation tokens and CLI sessions expire;
+do not save them as `originAppPrivateKey`. Prefer Lane A for anything Kody
+should keep calling.
 
 ## Related
 

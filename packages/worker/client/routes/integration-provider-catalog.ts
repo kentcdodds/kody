@@ -41,7 +41,7 @@ export const integrationProviderSuggestions: ReadonlyArray<IntegrationProviderSu
 			id: 'origin',
 			name: 'Origin',
 			tagline: 'Cursor-hosted repos, pull requests, and checks.',
-			scopeHint: 'reading my Origin repositories and pull requests',
+			scopeHint: 'reading my Origin repositories, pull requests, and checks',
 			guideSlug: 'origin',
 		},
 		{
