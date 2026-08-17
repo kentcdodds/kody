@@ -666,9 +666,11 @@ package may declare the topic, but it never receives the event. Role revocation
 stops delivery on the next incident.
 
 There is no Queue / DLQ for these topics in v1. A missing secret, a down main
-worker, or a failed invoke is logged and skipped; packages that also reconcile
-`https://status.kody.codes/status.json` still see short flaps. Probe recording
-never waits on fan-out.
+worker, or a failed invoke is logged and skipped. Packages that also reconcile
+`https://status.kody.codes/status.json` can catch an incident that is still
+open, or still listed in recent history, on the next sweep. An incident that
+opens and resolves between polls can be missed. Probe recording never waits on
+fan-out.
 
 Handlers receive operator telemetry only:
 

@@ -769,7 +769,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${STATUS_INCIDENT_EVENT_SECRET:-}" ]; then
-            echo "STATUS_INCIDENT_EVENT_SECRET unset; status incident emit stays skipped."
+            echo "STATUS_INCIDENT_EVENT_SECRET unset; deleting the status-worker secret if present so emit cannot keep using a retired token."
+            npx wrangler secret delete STATUS_INCIDENT_EVENT_SECRET \
+              --config packages/status/wrangler.jsonc || true
             exit 0
           fi
           printf '%s' "$STATUS_INCIDENT_EVENT_SECRET" | npx wrangler secret put \
