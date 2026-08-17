@@ -24,7 +24,7 @@ export const getPackageCapability = defineDomainCapability(
 	{
 		name: 'package_get',
 		description:
-			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, and canonical owner-scoped external invocation URLs for each export.',
+			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, callable export contracts, and canonical owner-scoped external invocation URLs for each export.',
 		keywords: [
 			'package',
 			'get',
@@ -112,6 +112,18 @@ export const getPackageCapability = defineDomainCapability(
 					types_path: exportDetail.typesPath,
 					description: exportDetail.description,
 					type_definition: exportDetail.typeDefinition,
+					functions: (exportDetail.functions ?? []).map((exportedFunction) => ({
+						name: exportedFunction.name,
+						description: exportedFunction.description,
+						type_definition: exportedFunction.typeDefinition,
+					})),
+					referenced_types: (exportDetail.referencedTypes ?? []).map(
+						(referencedType) => ({
+							name: referencedType.name,
+							kind: referencedType.kind,
+							definition: referencedType.definition,
+						}),
+					),
 					external_invocation: username
 						? (() => {
 								const descriptor = buildExternalPackageInvocationDescriptor({

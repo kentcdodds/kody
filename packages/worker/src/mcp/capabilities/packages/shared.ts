@@ -130,7 +130,41 @@ export const packageExportSurfaceSchema = z.object({
 		.string()
 		.nullable()
 		.describe(
-			'Primary export type signature parsed from source when available.',
+			'Primary export type signature parsed from source when available. Null when the export has more than one callable function; use `functions` in that case.',
+		),
+	functions: z
+		.array(
+			z.object({
+				name: z
+					.string()
+					.describe(
+						'Exported function name. Default exports use the name "default".',
+					),
+				description: z
+					.string()
+					.nullable()
+					.describe('Function JSDoc description when available.'),
+				type_definition: z
+					.string()
+					.nullable()
+					.describe('Function type signature parsed from source when available.'),
+			}),
+		)
+		.describe(
+			'Callable functions extracted from this export. Namespace modules that export several helpers list each one here.',
+		),
+	referenced_types: z
+		.array(
+			z.object({
+				name: z.string(),
+				kind: z.enum(['type', 'interface', 'enum']),
+				definition: z
+					.string()
+					.describe('Source text of the referenced type, interface, or enum.'),
+			}),
+		)
+		.describe(
+			'Type, interface, and enum definitions referenced by this export\'s callable functions.',
 		),
 	external_invocation: z
 		.object({

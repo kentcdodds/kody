@@ -314,6 +314,15 @@ export declare function listEvents(calendarId: string): Promise<string[]>
 			description: 'List upcoming calendar events.',
 			type_definition:
 				'export declare function listEvents(calendarId: string): Promise<string[]>',
+			functions: [
+				{
+					name: 'listEvents',
+					description: 'List upcoming calendar events.',
+					type_definition:
+						'export declare function listEvents(calendarId: string): Promise<string[]>',
+				},
+			],
+			referenced_types: [],
 		}),
 	])
 	expect(mockModule.loadPackageSourceBySourceId).toHaveBeenCalledWith(
@@ -376,6 +385,8 @@ test('getPackageCapability leaves export contracts empty without projectable sou
 			types_path: 'src/list-events.d.ts',
 			description: null,
 			type_definition: null,
+			functions: [],
+			referenced_types: [],
 		}),
 	])
 
@@ -425,6 +436,105 @@ test('getPackageCapability leaves export contracts empty without projectable sou
 			runtime_target: 'src/index.ts',
 			description: null,
 			type_definition: null,
+			functions: [],
+			referenced_types: [],
 		}),
 	])
+})
+
+test('getPackageCapability projects functions and referenced_types for multi-function namespace exports', async () => {
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
+	mockModule.loadPackageSourceBySourceId.mockReset()
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockResolvedValue({
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@kentcdodds/google',
+		kodyId: 'google',
+		description: 'Google helpers',
+		tags: ['google', 'calendar'],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		hidden: false,
+		isPrivate: false,
+		sourceListingId: null,
+		listingCurrent: null,
+		listingKodyId: null,
+		createdAt: '2026-04-25T00:00:00.000Z',
+		updatedAt: '2026-04-26T00:00:00.000Z',
+	})
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		source: { id: 'source-1' },
+		manifest: {
+			name: '@kentcdodds/google',
+			exports: {
+				'./calendar': './src/calendar.ts',
+			},
+			kody: {
+				id: 'google',
+				description: 'Google helpers',
+				tags: ['google', 'calendar'],
+			},
+		},
+		files: {
+			'src/calendar.ts': `export type CalendarEventsParams = { account: string; calendarId?: string }
+export type CalendarEventsAcrossCalendarsParams = CalendarEventsParams & { calendarMaxResults?: number }
+
+export async function listEvents(params: CalendarEventsParams): Promise<{ items: Array<unknown> }> {
+	return { items: [] }
+}
+
+export async function listEventsAcrossCalendars(
+	params: CalendarEventsAcrossCalendarsParams,
+): Promise<{ items: Array<unknown>; calendars: Array<unknown>; failures: Array<string> }> {
+	return { items: [], calendars: [], failures: [] }
+}
+
+/**
+ * Return the Google Calendar helper namespace.
+ */
+export default function calendar() {
+	return { listEvents, listEventsAcrossCalendars }
+}
+`,
+		},
+	})
+
+	const result = await getPackageCapability.handler(
+		{ package_id: 'package-1' },
+		createCallerContext(),
+	)
+
+	const [calendarExport] = result.exports
+	expect(calendarExport).toMatchObject({
+		subpath: './calendar',
+		import_specifier: 'kody:@kentcdodds/google/calendar',
+		runtime_target: 'src/calendar.ts',
+		description: null,
+		type_definition: null,
+	})
+	expect(calendarExport?.functions.map((fn) => fn.name)).toEqual([
+		'listEvents',
+		'listEventsAcrossCalendars',
+		'default',
+	])
+	expect(calendarExport?.functions[0]?.type_definition).toContain(
+		'CalendarEventsParams',
+	)
+	expect(calendarExport?.functions[1]?.type_definition).toContain(
+		'CalendarEventsAcrossCalendarsParams',
+	)
+	expect(calendarExport?.functions[2]).toMatchObject({
+		name: 'default',
+		description: 'Return the Google Calendar helper namespace.',
+		type_definition: 'export default function calendar()',
+	})
+	expect(calendarExport?.referenced_types.map((type) => type.name)).toEqual([
+		'CalendarEventsParams',
+		'CalendarEventsAcrossCalendarsParams',
+	])
+	expect(calendarExport?.referenced_types[0]?.kind).toBe('type')
+	expect(calendarExport?.referenced_types[0]?.definition).toContain(
+		'account: string',
+	)
 })

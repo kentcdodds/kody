@@ -185,8 +185,9 @@ exhaustive.
   can use any named exports that the module provides.
 - Packages may also export non-callable helper modules and values for reuse.
 - Add JSDoc to exported functions and, when helpful, point the export at a
-  `types` file. Package search detail surfaces package descriptions, export
-  descriptions, function signatures, JSDoc, and type definitions.
+  `types` file. Package search detail and `package_get` surface package
+  descriptions, export descriptions, function signatures, JSDoc, and type
+  definitions.
 
 ### Dynamic package invocation
 
