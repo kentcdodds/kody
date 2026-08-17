@@ -13,7 +13,12 @@ import {
  * main app and never via a user-facing jobs hostname.
  */
 
-const probeTimeoutMs = 10_000
+/**
+ * Must exceed `/health/components` D1 check budget (8s) plus worker and
+ * network slack. Too tight a probe marks every storage card unreachable
+ * when a single idle D1 check is slow.
+ */
+const probeTimeoutMs = 15_000
 
 /** Synthetic origin used with the JOBS service binding. Not a public URL. */
 export const jobsProbeOrigin = 'https://kody-jobs.internal'

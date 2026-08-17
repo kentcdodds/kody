@@ -1,7 +1,8 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import {
 	collectHealthComponents,
+	componentCheckTimeoutMs,
 	createHealthComponentsHandler,
 	healthComponentIds,
 	type HealthComponentsReport,
@@ -130,6 +131,51 @@ test('D1 checks retry transient blips but fail fast on other errors', async () =
 	expect(
 		persistent.components.find((component) => component.id === 'audit_db'),
 	).toMatchObject({ ok: false, error: 'error' })
+})
+
+test('D1 checks wait out a slow idle query but still time out a hung binding', async () => {
+	vi.useFakeTimers()
+	try {
+		const slowBindings = createHealthyBindings()
+		slowBindings.AUDIT_DB = {
+			prepare: () => ({
+				first: async () => {
+					await new Promise((resolve) => setTimeout(resolve, 3_500))
+					return { 1: 1 }
+				},
+			}),
+		} as unknown as D1Database
+		const slowPromise = collectHealthComponents(slowBindings)
+		await vi.advanceTimersByTimeAsync(3_500)
+		const slow = await slowPromise
+		expect(slow.ok).toBe(true)
+		expect(
+			slow.components.find((component) => component.id === 'audit_db'),
+		).toMatchObject({ ok: true })
+
+		consoleWarn.mockImplementation(() => {})
+		const hungBindings = createHealthyBindings()
+		hungBindings.AUDIT_DB = {
+			prepare: () => ({
+				first: async () => {
+					await new Promise(() => {})
+				},
+			}),
+		} as unknown as D1Database
+		const hungPromise = collectHealthComponents(hungBindings)
+		await vi.advanceTimersByTimeAsync(componentCheckTimeoutMs)
+		const hung = await hungPromise
+		expect(hung.ok).toBe(false)
+		expect(
+			hung.components.find((component) => component.id === 'audit_db'),
+		).toMatchObject({ ok: false, error: 'timeout' })
+		expect(consoleWarn).toHaveBeenCalledWith(
+			'health-component-timeout',
+			expect.any(String),
+		)
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('health components handler memoizes, coalesces in-flight work, and returns 503 on failure', async () => {

@@ -11,7 +11,13 @@ import { type AppEnv } from '#worker/env-schema.ts'
  * the underlying bindings.
  */
 
-const componentCheckTimeoutMs = 3_000
+/**
+ * AUDIT_DB is nearly idle (auth writes + hourly retention). A minutely
+ * `SELECT 1` is often a cold D1 start and can take several seconds without
+ * throwing, so thrown-error retries never run. Keep this under the status
+ * worker probe budget (`probeTimeoutMs` in `packages/status/probes.ts`).
+ */
+export const componentCheckTimeoutMs = 8_000
 const resultCacheTtlMs = 10_000
 
 /**
@@ -21,8 +27,9 @@ const resultCacheTtlMs = 10_000
  * production D1 path, so a single blip must not register as component
  * downtime on the public status page — the mostly idle audit database was
  * losing uptime to exactly these. Three attempts with the standard backoff
- * (worst case ~450ms of sleep) stay well inside the 3s check timeout, so
- * sustained unavailability still fails the check.
+ * (worst case ~450ms of sleep) stay well inside the check timeout, so
+ * sustained unavailability still fails the check. Hung cold starts are
+ * covered by the outer budget, not by aborting the first attempt.
  */
 const d1CheckRetryOptions = { maxAttempts: 3 } as const
 
