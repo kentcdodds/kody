@@ -249,12 +249,16 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				WHERE resolved_at IS NULL ORDER BY started_at ASC`,
 			)
 			.toArray()
-			.filter((row) => isStatusComponentId(row.component))
-			.map((row) => ({
-				component: row.component,
-				startedAt: row.started_at,
-				detail: row.detail,
-			}))
+			.flatMap((row) => {
+				if (!isStatusComponentId(row.component)) return []
+				return [
+					{
+						component: row.component,
+						startedAt: row.started_at,
+						detail: row.detail,
+					},
+				]
+			})
 	}
 
 	private async maybeSendAlert(now: number) {
@@ -520,20 +524,21 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				recentIncidentLimit,
 			)
 			.toArray()
-			.filter((row) => isStatusComponentId(row.component))
-			.map((row) => {
-				const component = row.component
-				return {
-					id: row.id,
-					component,
-					componentName: statusComponentName(component),
-					startedAt: new Date(row.started_at).toISOString(),
-					resolvedAt:
-						row.resolved_at === null
-							? null
-							: new Date(row.resolved_at).toISOString(),
-					detail: row.detail,
-				}
+			.flatMap((row) => {
+				if (!isStatusComponentId(row.component)) return []
+				return [
+					{
+						id: row.id,
+						component: row.component,
+						componentName: statusComponentName(row.component),
+						startedAt: new Date(row.started_at).toISOString(),
+						resolvedAt:
+							row.resolved_at === null
+								? null
+								: new Date(row.resolved_at).toISOString(),
+						detail: row.detail,
+					},
+				]
 			})
 	}
 }
