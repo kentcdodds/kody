@@ -88,8 +88,8 @@ for the app and uses the first one.
 
 ## Smoke test
 
-After the secret and values exist, run this in `execute`. It signs an app JWT,
-mints an installation token, and reads the zero-cost rate-limit endpoint:
+After the secret and values exist, run this in `execute`. It signs an app JWT
+and reads the zero-cost rate-limit endpoint:
 
 ```ts
 import { kody } from 'kody:runtime'
