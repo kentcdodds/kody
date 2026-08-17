@@ -2,10 +2,9 @@
  * Mailbox USER inbound ledger authority CAS primitives.
  *
  * Owner-bound SQLite helpers implementing authoritative USER transitions.
- * The legacy D1 implementation is system-only. Effect lease CAS lives in
+ * D1 remains authoritative only for `system:email`. Effect lease CAS lives in
  * `mailbox-inbound-effect-ledger.ts`. No external usage/subscription side
- * effects. D1 receives synchronous compatibility snapshots after CAS;
- * `system:email` stays on D1.
+ * effects.
  */
 
 import { emailRawMimeKey } from './blob-keys.ts'
@@ -482,7 +481,7 @@ export function claimMailboxInboundDeliveryStorage(
 	const usageStartedAt = current.usageStartedAt ?? input.usageStartedAt ?? null
 	/**
 	 * Storage reclaim invalidates prior finalization + in-flight effect leases.
-	 * D1 `json_set` only patches storage fields (stale lease keys can linger in
+	 * SQLite `json_set` only patches storage fields (stale lease keys can linger in
 	 * `detail_json`); promoted Mailbox columns must clear explicitly so a stale
 	 * effect worker cannot complete against a later re-finalization.
 	 */

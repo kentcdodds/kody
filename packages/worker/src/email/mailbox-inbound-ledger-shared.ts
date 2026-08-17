@@ -24,7 +24,7 @@ export const mailboxEffectRetryMs = 15 * 60 * 1000
 export const mailboxMaxSubscriptionEffectAttempts = 3
 export const mailboxInboundDueWorkDefaultLimit = 20
 
-/** Inbound delivery identity + CAS fields (D1 `InboundDelivery` parity). */
+/** Inbound delivery identity and Mailbox CAS fields. */
 export type MailboxInboundDeliverySnapshot = {
 	fingerprint: string
 	deliveryId: string

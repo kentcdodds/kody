@@ -219,7 +219,7 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 		reason: 'too-late',
 		now: takeoverNow,
 	})
-	// No message row → lease-lost (D1 would throw); with message would be already-received.
+	// No message row yields lease-lost; attaching the message would yield already-received.
 	expect(rejectAfterReceived.status).toBe('lease-lost')
 
 	// Rejected path on a separate delivery.
@@ -472,7 +472,7 @@ test('Mailbox inbound ledger CAS covers USER authority transition matrix', async
 		).toISOString(),
 	)
 
-	// Mirror upsert compatibility still works alongside ledger rows.
+	// Generic delivery-event upserts still work alongside authoritative inbound rows.
 	const mirror = await mailboxA.upsertDeliveryEvent({
 		ownerId: ownerA,
 		event: {
