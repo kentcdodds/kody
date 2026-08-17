@@ -1,6 +1,7 @@
+import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
-import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { runPackageRetrievers } from '#worker/package-retrievers/service.ts'
 import { type RemoteConnectorStatus } from '#worker/remote-connector/status.ts'
 
@@ -35,7 +36,7 @@ export type SearchListExecutionResult = {
 	capabilityGuidance?: string
 }
 
-export async function executeSearchList(input: {
+type ExecuteSearchListInput = {
 	env: Env
 	callerContext: McpCallerContext
 	conversationId: string
@@ -47,7 +48,23 @@ export async function executeSearchList(input: {
 	memoryContext?: SearchToolArgs['memoryContext']
 	/** Optional capability domain id; scopes ranked results to that domain's capabilities. */
 	domain?: string
-}): Promise<SearchListExecutionResult> {
+}
+
+export async function executeSearchList(
+	input: ExecuteSearchListInput,
+): Promise<SearchListExecutionResult> {
+	// Memory enrichment (context-scope retrievers) and search-scope retrievers
+	// each open their own Worker Loader evaluations. Cloudflare caps those at
+	// four per incoming request; a shared budget lets the later wave queue
+	// instead of failing at sandboxMs 0.
+	return await runWithDynamicWorkerEvaluationBudget(
+		async () => await executeSearchListWithinBudget(input),
+	)
+}
+
+async function executeSearchListWithinBudget(
+	input: ExecuteSearchListInput,
+): Promise<SearchListExecutionResult> {
 	const domainFilter = input.domain?.trim() || undefined
 	const username = await resolvePublicUsername({
 		db: input.env.APP_DB,

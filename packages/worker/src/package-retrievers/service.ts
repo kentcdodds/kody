@@ -287,7 +287,9 @@ export async function runPackageRetrievers(input: {
 	).slice(0, input.maxProviders ?? (input.scope === 'context' ? 3 : 10))
 	// Soft-fail per retriever: one stalled/buggy package must not fail MCP
 	// `search` or pre-sandbox execute memory/context enrichment. Callers already
-	// surface `warnings` to agents.
+	// surface `warnings` to agents. This wrap creates a request budget only
+	// when the caller has not already opened one — sibling retriever waves in
+	// the same request (search + memory) must share that outer budget.
 	const settled = await runWithDynamicWorkerEvaluationBudget(
 		async () =>
 			await Promise.allSettled(
