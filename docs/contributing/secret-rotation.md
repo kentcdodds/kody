@@ -86,9 +86,12 @@ upgrades remaining 2-part rows in place without rotating `SECRET_STORE_KEY`.
    counts plus stable row keys only — never ciphertext or plaintext.
 
 Optional JSON body: `{ "dryRun": true }` to decrypt-verify without writes;
-`{ "maxRows": 50 }` to bound one invocation. Repeat until every table reports
-`remaining: 0`. This is a production mutation; run it only after an explicit
-operator go-ahead.
+`{ "maxRows": 50 }` to bound one invocation (default 500). Repeat until every
+table reports `remaining: 0`. `remaining` is the scan-set leftover (including
+rows that failed decryption and stay 2-part). If `remaining` stalls and
+`decryptFailures` is non-empty after a run that did not hit the row budget,
+inspect those keys instead of looping. This is a production mutation; run it
+only after an explicit operator go-ahead.
 
 ## Generating secure key values
 

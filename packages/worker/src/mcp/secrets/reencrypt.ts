@@ -45,6 +45,7 @@ export type ReencryptLegacySecretCiphertextsResult = {
 }
 
 const defaultPageSize = 50
+const defaultMaxRows = 500
 const maxReportedDecryptFailures = 20
 const versionedCiphertextPrefix = 'v2.%'
 
@@ -314,8 +315,7 @@ export async function reencryptLegacySecretCiphertexts(
 ): Promise<ReencryptLegacySecretCiphertextsResult> {
 	const dryRun = input.dryRun === true
 	const pageSize = input.pageSize ?? defaultPageSize
-	let remainingBudget =
-		input.maxRows === undefined ? Number.POSITIVE_INFINITY : input.maxRows
+	let remainingBudget = input.maxRows ?? defaultMaxRows
 	const decryptFailures: Array<SecretReencryptDecryptFailure> = []
 	const secretEntries = emptyTableResult()
 	const remoteConnectorSettings = emptyTableResult()
@@ -374,8 +374,9 @@ export async function reencryptLegacySecretCiphertexts(
 	secretEntries.remaining = await countRemaining({
 		db,
 		sql: `SELECT COUNT(*) AS remaining
-			FROM secret_entries
-			WHERE encrypted_value NOT LIKE ?`,
+			FROM secret_entries e
+			JOIN secret_buckets b ON b.id = e.bucket_id
+			WHERE e.encrypted_value NOT LIKE ?`,
 	})
 
 	let afterRemoteId = ''
