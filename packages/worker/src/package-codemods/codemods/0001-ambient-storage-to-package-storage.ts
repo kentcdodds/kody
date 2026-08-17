@@ -251,10 +251,7 @@ function hasExportReexportOfStorage(body: Array<AstNode>) {
 	return false
 }
 
-function hasStorageBindingSite(
-	parsed: AstNode,
-	storageImportStarts: Set<number>,
-) {
+function hasStorageBindingSite(parsed: AstNode) {
 	let found = false
 	walkAst(parsed, null, (node, parent) => {
 		if (found) return
@@ -285,7 +282,6 @@ function hasStorageBindingSite(
 			found = true
 		}
 	})
-	void storageImportStarts
 	return found
 }
 
@@ -518,12 +514,7 @@ function transformSourceFile(source: string): {
 			needsManual: manualUnusualMessage,
 		}
 	}
-	const importStarts = new Set<number>(
-		typeof target.declaration.start === 'number'
-			? [target.declaration.start]
-			: [],
-	)
-	if (hasStorageBindingSite(parsed, importStarts)) {
+	if (hasStorageBindingSite(parsed)) {
 		return {
 			content: source,
 			changed: false,

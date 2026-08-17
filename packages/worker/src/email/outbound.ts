@@ -757,7 +757,6 @@ export async function sendOutboundEmail(
 			}
 		} catch (error) {
 			await refundDailyEntitlement({
-				db: input.env.APP_DB,
 				env: input.env,
 				userId: input.userId,
 				resource: 'email_sends_per_day',

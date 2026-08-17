@@ -155,7 +155,6 @@ export function HomeRoute(handle: Handle) {
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const needsLoad = loadLatch.needsLoad({
 			currentHref,
-			isLoading: onboardingStatus === 'loading' || onboardingStatus === 'idle',
 			appliedRouteData,
 			needsStaleRefresh,
 		})

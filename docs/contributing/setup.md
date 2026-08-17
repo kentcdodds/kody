@@ -90,14 +90,14 @@ Quick notes for getting a local kody environment running.
 - `npm run validate` is the single authoritative local gate. It is read-only and
   executes `format:check`, `lint`, `typecheck`, `test:node`, `test:workers`,
   Playwright E2E, MCP E2E, `backup:build`, `status:build`, `nx-cache:build`,
-  `primitives:check`, and `migrations:check` in parallel, plus
-  `deploy-guardrails:check` and `docs:check-temporal`, reporting every failure
-  (sibling checks are not aborted on the first failure). The unit-test and
-  Playwright legs set `CI=1` so timeouts, worker limits, and Nx cache hashes
-  match the contended parallel layout used in GitHub Actions. CI runs the same
-  checks as parallel jobs (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP, 🎭 E2E,
-  aggregated by ✅ Validate). If `npm run validate` passes locally, CI will
-  pass. When `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and
+  `jobs:build`, `runtime:build`, `primitives:check`, `migrations:check`,
+  `deploy-guardrails:check`, and `docs:check-temporal` in parallel, reporting
+  every failure (sibling checks are not aborted on the first failure). The
+  unit-test and Playwright legs set `CI=1` so timeouts, worker limits, and Nx
+  cache hashes match the contended parallel layout used in GitHub Actions. CI
+  runs the same checks as parallel jobs (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP,
+  🎭 E2E, aggregated by ✅ Validate). If `npm run validate` passes locally, CI
+  will pass. When `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and
   `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` are set, Nx uploads those task
   artifacts to `https://nx-cache.kody.codes` so CI can reuse them (see
   [decision 0019](./decisions/0019-self-hosted-nx-remote-cache.md) and

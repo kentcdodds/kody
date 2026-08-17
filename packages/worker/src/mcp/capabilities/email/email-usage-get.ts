@@ -54,14 +54,12 @@ export const emailUsageGetCapability = defineDomainCapability(
 					now,
 				}),
 				readDailyEntitlementResourceUsage({
-					db,
 					env: ctx.env,
 					userId: user.userId,
 					resource: 'email_sends_per_day',
 					now,
 				}),
 				readDailyEntitlementResourceUsage({
-					db,
 					env: ctx.env,
 					userId: user.userId,
 					resource: 'email_receives_per_day',

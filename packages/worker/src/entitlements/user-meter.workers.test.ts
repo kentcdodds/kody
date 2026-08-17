@@ -246,7 +246,6 @@ test('warm daily consume/read never prepares entitlement_daily_counters', async 
 	})
 	await expect(
 		readDailyEntitlementResourceUsage({
-			db: env.APP_DB,
 			env,
 			userId: user.userId,
 			resource: 'email_sends_per_day',
@@ -403,7 +402,6 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 	).toMatchObject({ outcome: 'ready', count: sendLimit })
 
 	await refundDailyEntitlement({
-		db: env.APP_DB,
 		env,
 		userId: userA.userId,
 		resource: 'email_sends_per_day',
@@ -418,7 +416,6 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 	).toMatchObject({ outcome: 'ready', count: sendLimit - 1 })
 	for (let index = 0; index < sendLimit; index += 1) {
 		await refundDailyEntitlement({
-			db: env.APP_DB,
 			env,
 			userId: userA.userId,
 			resource: 'email_sends_per_day',

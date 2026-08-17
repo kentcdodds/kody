@@ -47,7 +47,6 @@ function normalizeReferences(value: string | undefined) {
 }
 
 function headersToRecord(
-	_headers: Headers,
 	parsedHeaders: Array<{ name: string; value: string }>,
 ) {
 	const record: Record<string, Array<string>> = {}
@@ -179,7 +178,7 @@ export async function parseForwardableEmailRawMime(
 		messageId: messageIdHeader ?? null,
 		inReplyTo: inReplyToHeader ?? null,
 		references: normalizeReferences(parsed.references),
-		headers: headersToRecord(message.headers, parsedHeaders),
+		headers: headersToRecord(parsedHeaders),
 		authResults:
 			getHeader(message.headers, 'Authentication-Results') ??
 			getHeader(message.headers, 'ARC-Authentication-Results'),

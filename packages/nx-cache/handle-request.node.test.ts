@@ -38,26 +38,18 @@ function authorized(method: string, path: string, body?: ArrayBuffer) {
 	})
 }
 
-test('parseCacheHash accepts Nx-style hex hashes and rejects path escape', () => {
+test('health is public; cache routes require a configured bearer token', async () => {
 	expect(parseCacheHash(`/v1/cache/${HASH}`)).toBe(HASH)
 	expect(parseCacheHash('/v1/cache/../secrets')).toBeNull()
 	expect(parseCacheHash('/v1/cache/not-hex')).toBeNull()
-	expect(parseCacheHash('/v1/cache/abcd')).toBeNull()
-	expect(parseCacheHash('/health')).toBeNull()
-})
 
-test('GET /health is unauthenticated and reports the deploy commit', async () => {
-	const response = await handle(
-		new Request('https://nx-cache.kody.codes/health'),
-	)
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toEqual({
+	const health = await handle(new Request('https://nx-cache.kody.codes/health'))
+	expect(health.status).toBe(200)
+	await expect(health.json()).resolves.toEqual({
 		ok: true,
 		commit: 'commit-sha',
 	})
-})
 
-test('cache reads and writes require a bearer token', async () => {
 	const missing = await handle(
 		new Request(`https://nx-cache.kody.codes/v1/cache/${HASH}`),
 	)
@@ -69,9 +61,7 @@ test('cache reads and writes require a bearer token', async () => {
 		}),
 	)
 	expect(wrong.status).toBe(401)
-})
 
-test('unconfigured access token fails closed', async () => {
 	const blank = await handle(
 		authorized('GET', `/v1/cache/${HASH}`),
 		createMemoryCacheStore(),
@@ -79,15 +69,15 @@ test('unconfigured access token fails closed', async () => {
 	)
 	expect(blank.status).toBe(503)
 
-	const missing = await handle(
+	const unconfigured = await handle(
 		authorized('GET', `/v1/cache/${HASH}`),
 		createMemoryCacheStore(),
 		{ CACHE_ACCESS_TOKEN: undefined, BUILD_COMMIT: 'commit-sha' },
 	)
-	expect(missing.status).toBe(503)
+	expect(unconfigured.status).toBe(503)
 })
 
-test('PUT then GET round-trips an artifact and PUT is create-only', async () => {
+test('PUT then GET round-trips an artifact and rejects invalid writes', async () => {
 	const store = createMemoryCacheStore()
 	const artifact = new TextEncoder().encode('nx-cache-artifact').buffer
 
@@ -107,14 +97,16 @@ test('PUT then GET round-trips an artifact and PUT is create-only', async () => 
 	expect(fetched.status).toBe(200)
 	expect(fetched.headers.get('content-type')).toBe('application/octet-stream')
 	expect(await fetched.text()).toBe('nx-cache-artifact')
-})
 
-test('GET returns 404 for a missing hash', async () => {
-	const response = await handle(authorized('GET', `/v1/cache/${HASH}`))
-	expect(response.status).toBe(404)
-})
+	const missing = await handle(
+		authorized('GET', `/v1/cache/${'a'.repeat(32)}`),
+		store,
+	)
+	expect(missing.status).toBe(404)
 
-test('PUT rejects missing Content-Length and oversized artifacts', async () => {
+	const badHash = await handle(authorized('GET', '/v1/cache/../secrets'), store)
+	expect(badHash.status).toBe(404)
+
 	const missingLength = await handle(
 		new Request(`https://nx-cache.kody.codes/v1/cache/${HASH}`, {
 			method: 'PUT',

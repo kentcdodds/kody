@@ -310,7 +310,8 @@ async function readSystemEmailDailyCounter(input: {
 
 /**
  * Point-read today's user inbound receive count from UserMeter. Cold meters
- * initialize at zero; never touches the retired D1 daily counter table.
+ * initialize at zero. Daily counters live only in UserMeter (no D1
+ * daily-counter table).
  *
  * `db` remains for call-site stability.
  */

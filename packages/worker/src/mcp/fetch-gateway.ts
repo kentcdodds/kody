@@ -135,7 +135,6 @@ export async function executeGatewayFetch(input: {
 				userId: input.props.userId,
 				email,
 				resource: 'outbound_fetches_per_day',
-				waitUntil: input.waitUntil,
 			})
 		}
 		const transformed = await expandSecretPlaceholders({

@@ -598,7 +598,7 @@ export function foldRunLogSnapshots(
 /**
  * Hours from email verification to package activation. Users who activated
  * before verifying (seeded / admin-created) would skew the median negative, so
- * they are excluded rather than clamped — same rule as the retired D1 join.
+ * they are excluded rather than clamped.
  */
 export function hoursFromVerifiedToActivation(
 	emailVerifiedAt: string | null | undefined,

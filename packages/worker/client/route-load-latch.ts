@@ -96,18 +96,12 @@ export function createRouteLoadLatch() {
 		 * href as pending until `markLoaded` / `markFailed` / `clearPending`
 		 * (or a navigation / stale-refresh clears it). Read `getPendingAttempt()`
 		 * immediately after a `true` result for abort-safe clearing.
-		 *
-		 * `isLoading` is accepted for call-site compatibility but ignored: the
-		 * pending latch is the in-flight guard. Using `isLoading` as a reason
-		 * *to* load re-queued every render while status stayed `'loading'`.
 		 */
 		needsLoad(input: {
 			currentHref: string
-			isLoading: boolean
 			appliedRouteData: boolean
 			needsStaleRefresh: boolean
 		}) {
-			void input.isLoading
 			// The failure/pending latches only guard the location they were set
 			// for; leaving it (or coming back) must allow a fresh attempt.
 			const currentHref = toLatchKey(input.currentHref)

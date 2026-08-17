@@ -242,14 +242,12 @@ async function loadUsage(input: {
 			now,
 		}),
 		readDailyEntitlementResourceUsage({
-			db: input.db,
 			env: input.env,
 			userId: input.userId,
 			resource: 'email_sends_per_day',
 			now,
 		}),
 		readDailyEntitlementResourceUsage({
-			db: input.db,
 			env: input.env,
 			userId: input.userId,
 			resource: 'email_receives_per_day',

@@ -92,6 +92,11 @@ Examples:
 Pass `source_id` when you already have it, but most callers should prefer
 `target`.
 
+Pass `conversation_id` to resume that conversation's active session for the same
+source. Omitting `conversation_id` always mints a new session:
+never-checkpointed is not the same as abandoned, and concurrent callers of the
+same source must not share a workspace that has not checkpointed yet.
+
 ## Structured repair detail
 
 Publish-oriented repo flows return structured detail for important failure

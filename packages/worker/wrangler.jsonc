@@ -513,8 +513,8 @@
 				// STRIPE_STANDARD_YEARLY_PRICE_ID is $120/year (two months
 				// free). STRIPE_PRO_PRICE_ID is the $29/month price on the
 				// "Kody Pro" product; STRIPE_PRO_YEARLY_PRICE_ID is $288/year.
-				// Retired $5/$20 monthly prices stay in Stripe and are still
-				// matched in billing-config for existing subscribers.
+				// Historical $5/$20 monthly price ids remain in Stripe and
+				// match in billing-config for existing subscribers.
 				"STRIPE_STANDARD_PRICE_ID": "price_1U3sg6LAQpAnsYszGeL2nc8O",
 				"STRIPE_STANDARD_YEARLY_PRICE_ID": "price_1U3sg6LAQpAnsYszqq9abwIY",
 				"STRIPE_PRO_PRICE_ID": "price_1U3sg6LAQpAnsYszlVpEIFGx",

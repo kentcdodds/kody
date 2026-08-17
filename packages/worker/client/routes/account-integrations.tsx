@@ -397,7 +397,6 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		const latchKey = getDataLatchKey(currentHref)
 		const needsLoad = loadLatch.needsLoad({
 			currentHref: latchKey,
-			isLoading: status === 'loading',
 			appliedRouteData,
 			needsStaleRefresh,
 		})

@@ -239,18 +239,13 @@ async function ensureUserMeterCounterInitializedAtZero(input: {
  * Point-read one daily entitlement counter from UserMeter. Cold meters
  * initialize the `(resource, day)` at zero, then re-read; warm meters return
  * the DO count. Never touches D1 daily counter state.
- *
- * `db` remains on the signature for call-site stability; plan/account lookups
- * on other paths still need APP_DB.
  */
 export async function readDailyEntitlementResourceUsage(input: {
-	db: D1Database
 	env: UserMeterEnv
 	userId: string
 	resource: EntitlementResource
 	now?: Date
 }): Promise<number> {
-	void input.db
 	const resource = assertDailyEntitlementResource(input.resource)
 	const now = input.now ?? new Date()
 	const day = utcDayKey(now)
@@ -707,14 +702,8 @@ export async function readEntitlementResourceUsage(input: {
 				[userId],
 			)
 		case 'scheduled_jobs':
-			// Job rows live in the jobs-worker database (ADR 0016). Production
-			// callers must go through readCurrentEntitlementResourceUsage or pass
-			// getCurrent with a jobsData count; this direct query only works
-			// against test/local fallback databases that still have the table.
-			return await countRows(
-				db,
-				`SELECT COUNT(*) AS count FROM jobs WHERE user_id = ?`,
-				[userId],
+			throw new Error(
+				'scheduled_jobs usage must be read from jobsData (pass getCurrent or use readCurrentEntitlementResourceUsage).',
 			)
 		case 'package_services':
 			// Authoritative running liveness is in UserMeter. Callers must use
@@ -738,7 +727,8 @@ export async function readEntitlementResourceUsage(input: {
 		case 'job_runs_per_day':
 			// Authoritative daily counters live in UserMeter. Callers must use
 			// consumeDailyEntitlement / readDailyEntitlementResourceUsage /
-			// readCurrentEntitlementResourceUsage — the retired D1 mirror is gone.
+			// readCurrentEntitlementResourceUsage. There is no D1 daily-counter
+			// table.
 			throw new Error(
 				`${resource} usage must be read from UserMeter (use readDailyEntitlementResourceUsage or readCurrentEntitlementResourceUsage).`,
 			)
@@ -832,7 +822,6 @@ export async function readCurrentEntitlementResourceUsage(input: {
 }): Promise<number> {
 	if (isDailyEntitlementResource(input.resource)) {
 		return await readDailyEntitlementResourceUsage({
-			db: input.db,
 			env: input.env,
 			userId: input.userId,
 			resource: input.resource,
@@ -1068,23 +1057,17 @@ export type ConsumeDailyEntitlementInput = {
 	email: string | null | undefined
 	resource: EntitlementResource
 	now?: Date
-	/**
-	 * Retained for call-site stability. Daily counters no longer schedule D1
-	 * mirror work; unused after mirror retirement.
-	 */
-	waitUntil?: (promise: Promise<unknown>) => void
 }
 
 /**
  * Atomically consume one daily entitlement unit via UserMeter, throwing
  * EntitlementLimitError when the plan limit would be exceeded. Cold keys
  * initialize at zero (concurrent-safe); warm path awaits only the DO RPC.
- * Never touches the retired D1 daily counter table.
+ * Daily counters live only in UserMeter (no D1 daily-counter table).
  */
 export async function consumeDailyEntitlement(
 	input: ConsumeDailyEntitlementInput,
 ): Promise<void> {
-	void input.waitUntil
 	const resource = assertDailyEntitlementResource(input.resource)
 	const now = input.now ?? new Date()
 	const day = utcDayKey(now)
@@ -1136,28 +1119,20 @@ export async function consumeDailyEntitlement(
 }
 
 export type RefundDailyEntitlementInput = {
-	db: D1Database
 	env: UserMeterEnv
 	userId: string
 	resource: EntitlementResource
 	now?: Date
-	/**
-	 * Retained for call-site stability. Daily counters no longer schedule D1
-	 * mirror work; unused after mirror retirement.
-	 */
-	waitUntil?: (promise: Promise<unknown>) => void
 }
 
 /**
  * Atomically refund one previously consumed daily entitlement unit in
  * UserMeter (floors at zero). Pass the same `now` (day key) as the matching
- * consume. Never touches the retired D1 daily counter table.
+ * consume. Daily counters live only in UserMeter (no D1 daily-counter table).
  */
 export async function refundDailyEntitlement(
 	input: RefundDailyEntitlementInput,
 ): Promise<void> {
-	void input.db
-	void input.waitUntil
 	const resource = assertDailyEntitlementResource(input.resource)
 	const now = input.now ?? new Date()
 	const day = utcDayKey(now)
