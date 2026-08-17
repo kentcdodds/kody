@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -30,7 +31,7 @@ export const emailMessageGetCapability = defineDomainCapability(
 				messageId: args.message_id,
 			})
 			if (!message) {
-				throw new Error(`Email message not found: ${args.message_id}`)
+				throw new McpCallerError(`Email message not found: ${args.message_id}`)
 			}
 			const attachments = await listOwnerEmailAttachmentsForMessage({
 				env: ctx.env,

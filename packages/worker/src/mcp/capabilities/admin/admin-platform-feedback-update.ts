@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -66,8 +67,10 @@ export const adminPlatformFeedbackUpdateCapability = defineDomainCapability(
 							content_warning: platformFeedbackContentWarning,
 						}
 					} catch (error) {
+						// Missing ids, invalid transitions, concurrent updates, and
+						// submission limits are caller-clearable; keep them off Sentry.
 						if (isPlatformFeedbackDomainError(error)) {
-							throw new Error(error.message)
+							throw new McpCallerError(error.message, { cause: error })
 						}
 						throw error
 					}

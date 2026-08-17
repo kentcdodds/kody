@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { setEmailMessageClassification } from '#worker/email/service.ts'
@@ -43,7 +44,7 @@ export const emailMessageClassifyCapability = defineDomainCapability(
 				classificationReason,
 			})
 			if (!updated) {
-				throw new Error(`Email message not found: ${args.message_id}`)
+				throw new McpCallerError(`Email message not found: ${args.message_id}`)
 			}
 			return {
 				message_id: args.message_id,

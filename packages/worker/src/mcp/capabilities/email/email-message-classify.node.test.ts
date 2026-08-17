@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -83,5 +84,9 @@ test('email_message_classify updates classification and reports not-found', asyn
 			{ message_id: 'missing', classification: 'quarantined' },
 			context,
 		),
-	).rejects.toThrow('Email message not found: missing')
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message === 'Email message not found: missing',
+	)
 })

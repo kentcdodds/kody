@@ -1,7 +1,11 @@
 import type * as PlatformFeedbackService from '#worker/platform-feedback/service.ts'
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { PlatformFeedbackInvalidTransitionError } from '#worker/platform-feedback/errors.ts'
+import {
+	PlatformFeedbackInvalidTransitionError,
+	PlatformFeedbackNotFoundError,
+} from '#worker/platform-feedback/errors.ts'
 import {
 	auditEventSummaries,
 	logAuditEventSpy,
@@ -349,14 +353,37 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 			{ id: 'feedback-1', action: 'dismiss' },
 			adminContext,
 		),
-	).rejects.toThrow(
-		'Cannot dismiss platform feedback "feedback-1" from status "resolved".',
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message.includes(
+				'Cannot dismiss platform feedback "feedback-1" from status "resolved".',
+			) &&
+			error.cause instanceof PlatformFeedbackInvalidTransitionError,
+	)
+	mockModule.updatePlatformFeedbackForAdmin.mockRejectedValueOnce(
+		new PlatformFeedbackNotFoundError('missing-feedback'),
+	)
+	await expect(
+		adminPlatformFeedbackUpdateCapability.handler(
+			{
+				id: 'missing-feedback',
+				action: 'triage',
+			},
+			adminContext,
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message === 'Platform feedback "missing-feedback" was not found.' &&
+			error.cause instanceof PlatformFeedbackNotFoundError,
 	)
 	expect(auditEventSummaries()).toEqual([
 		'mcp_capability_denied:failure',
 		'admin_platform_feedback_list:success',
 		'admin_platform_feedback_get:success',
 		'admin_platform_feedback_update:success',
+		'admin_platform_feedback_update:failure',
 		'admin_platform_feedback_update:failure',
 	])
 })
