@@ -74,10 +74,10 @@ dual-reads both shapes; user-facing reads never rewrite. The operator pass
 upgrades remaining 2-part rows in place without rotating `SECRET_STORE_KEY`.
 
 `POST /__maintenance/reencrypt-secrets` (bearer `CAPABILITY_REINDEX_SECRET`).
-Operators with Actions access dispatch
-`.github/workflows/reencrypt-secrets.yml` (`dry_run` defaults to true) so the
-bearer never leaves GitHub Actions. Direct curl against `https://kody.codes`
-is equivalent when the secret is already on the operator machine.
+Operators with Actions access dispatch `.github/workflows/reencrypt-secrets.yml`
+(`dry_run` defaults to true) so the bearer never leaves GitHub Actions. Direct
+curl against `https://kody.codes` is equivalent when the secret is already on
+the operator machine.
 
 The pass:
 
