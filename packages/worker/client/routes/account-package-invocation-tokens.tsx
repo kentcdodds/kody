@@ -970,7 +970,6 @@ export function AccountPackageInvocationTokensRoute(handle: Handle) {
 			status !== 'loading' && !loadLatch.isLoadedFor(latchKey)
 		const needsLoad = loadLatch.needsLoad({
 			currentHref: latchKey,
-			isLoading: status === 'loading',
 			appliedRouteData,
 			needsStaleRefresh,
 		})

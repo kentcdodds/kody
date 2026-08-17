@@ -176,7 +176,6 @@ export function GuideDetailRoute(handle: Handle) {
 		const needsStaleRefresh = consumeStaleNavigationData(currentHref)
 		const needsLoad = loadLatch.needsLoad({
 			currentHref,
-			isLoading: status === 'loading',
 			appliedRouteData,
 			needsStaleRefresh,
 		})

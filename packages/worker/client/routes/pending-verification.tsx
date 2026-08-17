@@ -177,7 +177,6 @@ export function PendingVerificationRoute(handle: Handle) {
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const needsLoad = loadLatch.needsLoad({
 			currentHref,
-			isLoading: status === 'loading',
 			appliedRouteData,
 			needsStaleRefresh,
 		})

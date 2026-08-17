@@ -738,7 +738,6 @@ export function AccountRemoteConnectorsRoute(handle: Handle) {
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const needsLoad = loadLatch.needsLoad({
 			currentHref: dataKey,
-			isLoading: status === 'loading',
 			appliedRouteData,
 			needsStaleRefresh,
 		})

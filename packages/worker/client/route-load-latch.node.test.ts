@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import { createRouteLoadLatch } from './route-load-latch.ts'
 
 const baseInput = {
-	isLoading: false,
 	appliedRouteData: false,
 	needsStaleRefresh: false,
 }
@@ -11,12 +10,8 @@ test('pending latch stops re-queue; abort clearPending is attempt-scoped', () =>
 	const latch = createRouteLoadLatch()
 	// First decision latches pending so a queueTask that aborts itself via
 	// handle.update() cannot cascade into the Remix infinite-loop guard.
-	expect(
-		latch.needsLoad({ ...baseInput, currentHref: '/a', isLoading: true }),
-	).toBe(true)
-	expect(
-		latch.needsLoad({ ...baseInput, currentHref: '/a', isLoading: true }),
-	).toBe(false)
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(false)
 	const firstAttempt = latch.getPendingAttempt()
 	latch.clearPending('/a', firstAttempt)
 	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(true)
@@ -35,9 +30,7 @@ test('load, fail, navigate, and stale-refresh workflows share one latch', () => 
 	latch.markLoaded('/a')
 	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(false)
 	expect(latch.isLoadedFor('/a')).toBe(true)
-	expect(
-		latch.needsLoad({ ...baseInput, currentHref: '/a', isLoading: true }),
-	).toBe(false)
+	expect(latch.needsLoad({ ...baseInput, currentHref: '/a' })).toBe(false)
 
 	expect(latch.needsLoad({ ...baseInput, currentHref: '/b' })).toBe(true)
 	latch.markLoaded('/b')
