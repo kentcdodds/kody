@@ -281,12 +281,12 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `profile_visibility` (default `public`). `account_type` (`'person'` default or
   `'platform'`) distinguishes normal signups from operator-provisioned platform
   accounts that own official package scopes (see
-  [Platform accounts](./platform-accounts.md)). The
-  `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
-  the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
-  `storage_bytes_state` (schema v4) drives storage-byte enforcement; UserMeter
-  `package_service_states` (schema v5) is the authoritative running-count
-  source for `package_services` / `service_start` — see
+  [Platform accounts](./platform-accounts.md)). The `d1_storage_reconciliation`
+  lane sweeps users by `stable_user_id` keyset from the platform-owned
+  `d1_storage_reconcile_cursor` singleton. UserMeter `storage_bytes_state`
+  (schema v4) drives storage-byte enforcement; UserMeter
+  `package_service_states` (schema v5) is the authoritative running-count source
+  for `package_services` / `service_start` — see
   [Entitlements](./entitlements.md#usermeter). Inbound email routing does not
   reverse-resolve stable ids — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). Contextless paths resolve stable ids
@@ -312,13 +312,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   The catalog lives in the per-user `RepoSessionIndex` Durable Object. D1 keeps
   only the thin `repo_session_due_owners` hint and the platform-owned
   `repo_session_storage_bucket_cursor`.
-- `package_service_states` (`0001-squashed-init.sql`): per-service
-  liveness projection (`running` / `idle` / `stopped` / `error`) for discovery,
-  account export/deletion inventory, and disaster recovery. Upserted and
-  heartbeaten (1h) by the `PackageServiceInstance` Durable Object. Running-count
-  enforcement and `service_start` read the per-user `UserMeter` copy (schema v5;
-  24h staleness on DO `source_updated_at`). D1 remains only the enumeration
-  index — see [Entitlements](./entitlements.md#package-service-liveness).
+- `package_service_states` (`0001-squashed-init.sql`): per-service liveness
+  projection (`running` / `idle` / `stopped` / `error`) for discovery, account
+  export/deletion inventory, and disaster recovery. Upserted and heartbeaten
+  (1h) by the `PackageServiceInstance` Durable Object. Running-count enforcement
+  and `service_start` read the per-user `UserMeter` copy (schema v5; 24h
+  staleness on DO `source_updated_at`). D1 remains only the enumeration index —
+  see [Entitlements](./entitlements.md#package-service-liveness).
 - `entity_sources`: durable mapping from user-facing entities (`job`, `package`,
   or `repo`) to Artifacts repos and their latest published commit (packages
   only; plain repos are live-at-HEAD without a publish pointer)
@@ -352,8 +352,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   requires that grant, regardless of fork or adoption state.
 - `user_oauth_apps` (`0001-squashed-init.sql`): per-user OAuth app rows keyed by
   `(user_id, slug)`. Holds shared client id, client-secret secret name, provider
-  endpoints, and flow options. See
-  [OAuth integrations](./integrations.md).
+  endpoints, and flow options. See [OAuth integrations](./integrations.md).
 - `platform_oauth_apps` (`0004-platform-oauth-apps.sql`): operator-provisioned
   built-in OAuth apps users connect to without registering their own provider
   app. Global operator config with **no `user_id`** (like feature flags, not
@@ -379,14 +378,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `required_hosts_json`, and access/refresh token secret names. Secret
   credential values stay in `secret_entries` in both lanes; the non-secret
   `client_id` is stored inline on the owning app row.
-- `user_openapi_bindings` (`0001-squashed-init.sql`): per-user OpenAPI
-  provider binding rows keyed by `(user_id, name)`. Holds `spec_url`,
-  `api_base_url`, `auth_json`, `selection_json`, `include_destructive`, and
-  optional description / spec metadata. See
-  [OpenAPI provider bindings](./openapi-bindings.md).
-- `user_openapi_binding_operations` (`0001-squashed-init.sql`):
-  per-operation child rows keyed by `(user_id, binding_name, slug)`, with
-  composite FK `(user_id, binding_name) → user_openapi_bindings(user_id, name)`
+- `user_openapi_bindings` (`0001-squashed-init.sql`): per-user OpenAPI provider
+  binding rows keyed by `(user_id, name)`. Holds `spec_url`, `api_base_url`,
+  `auth_json`, `selection_json`, `include_destructive`, and optional description
+  / spec metadata. See [OpenAPI provider bindings](./openapi-bindings.md).
+- `user_openapi_binding_operations` (`0001-squashed-init.sql`): per-operation
+  child rows keyed by `(user_id, binding_name, slug)`, with composite FK
+  `(user_id, binding_name) → user_openapi_bindings(user_id, name)`
   (`ON DELETE CASCADE`). Holds `operation_json` for each curated operation
   snapshot entry. Account deletion lists operations before bindings so cleanup
   does not rely on CASCADE.
@@ -1214,9 +1212,8 @@ on write unless a migration backfills existing rows.
 - `saved_packages.tags_json` and `community_listings.tags_json`
   (`packages/worker/migrations/0001-squashed-init.sql`) are `string[]`
   projections.
-- `published_bundle_artifacts.dependencies_json`
-  (`0001-squashed-init.sql`) stores package dependency pointers queried with
-  SQLite JSON functions in
+- `published_bundle_artifacts.dependencies_json` (`0001-squashed-init.sql`)
+  stores package dependency pointers queried with SQLite JSON functions in
   `packages/worker/src/repo/published-bundle-artifacts-repo.ts`.
 - `package_invocation_tokens.package_ids_json`,
   `package_invocation_tokens.package_kody_ids_json`,
@@ -1232,38 +1229,37 @@ on write unless a migration backfills existing rows.
   time). Delivery history is recorded as `webhook` surface run records (see
   [Run records](./run-records.md) and [Inbound webhooks](./webhooks.md)), not as
   D1 rows.
-- `system_email_daily_counters` (`0001-squashed-init.sql`) stores
-  fixed per-local daily receive counters for operator-owned system inboxes.
-  These counters are not user entitlements and are pruned by the system-email
+- `system_email_daily_counters` (`0001-squashed-init.sql`) stores fixed
+  per-local daily receive counters for operator-owned system inboxes. These
+  counters are not user entitlements and are pruned by the system-email
   retention job.
 - `mcp_memories.tags_json` and `mcp_memories.source_uris_json`
   (`0001-squashed-init.sql`) back memory search and provenance.
 - `secret_entries.allowed_hosts`, `secret_entries.allowed_capabilities`, and
   `secret_entries.allowed_packages` are JSON string lists used as security
   policy inputs (`0001-squashed-init.sql`). Tightening parse-error behavior
-  requires explicit compatibility review.
-  `allowed_packages` applies only to user-scoped secrets. Unadopted
-  community-forked packages need it for every package read/use path (provenance
-  via `community_forks.forked_package_id` + `forker_user_id`; index in
-  `0001-squashed-init.sql`). Self-authored packages and adopted forks
-  (`community_forks.adopted_at` / `adoption_note`) skip that grant for read/use
-  only.
-  Mutations from package code (`secret_set` / `secret_delete` / OpenAPI
-  token-refresh writes) always require the grant. Package-scoped secrets are
-  owned exclusively by the package id in their bucket binding.
+  requires explicit compatibility review. `allowed_packages` applies only to
+  user-scoped secrets. Unadopted community-forked packages need it for every
+  package read/use path (provenance via `community_forks.forked_package_id` +
+  `forker_user_id`; index in `0001-squashed-init.sql`). Self-authored packages
+  and adopted forks (`community_forks.adopted_at` / `adoption_note`) skip that
+  grant for read/use only. Mutations from package code (`secret_set` /
+  `secret_delete` / OpenAPI token-refresh writes) always require the grant.
+  Package-scoped secrets are owned exclusively by the package id in their bucket
+  binding.
 - `user_oauth_apps.extra_authorize_params_json`,
   `user_integrations.scopes_json`, and `user_integrations.required_hosts_json`
   (`0001-squashed-init.sql`, `packages/worker/src/integrations/`) store a
-  string→string object, a scope string list, and a host string list respectively.
-  Parsers in the integrations data-access layer own the shapes; credential
-  values are never stored in these columns (only secret names and the inline
-  non-secret `client_id`).
+  string→string object, a scope string list, and a host string list
+  respectively. Parsers in the integrations data-access layer own the shapes;
+  credential values are never stored in these columns (only secret names and the
+  inline non-secret `client_id`).
 - `user_openapi_bindings.auth_json`, `user_openapi_bindings.selection_json`, and
-  `user_openapi_binding_operations.operation_json`
-  (`0001-squashed-init.sql`, `packages/worker/src/openapi/`) store the auth
-  discriminant, selection object, and per-operation snapshot object. Parsers in
-  the OpenAPI binding service own the shapes; credential values are never stored
-  (only secret / integration name references inside `auth_json`).
+  `user_openapi_binding_operations.operation_json` (`0001-squashed-init.sql`,
+  `packages/worker/src/openapi/`) store the auth discriminant, selection object,
+  and per-operation snapshot object. Parsers in the OpenAPI binding service own
+  the shapes; credential values are never stored (only secret / integration name
+  references inside `auth_json`).
 
 ### Durable Object id contracts
 

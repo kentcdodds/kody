@@ -50,9 +50,8 @@ of truth for valid permission strings. Call sites pass literal
 
 ### Baseline roles
 
-The squashed baseline
-(`packages/worker/migrations/0001-squashed-init.sql`) defines the RBAC tables
-and seeds two roles:
+The squashed baseline (`packages/worker/migrations/0001-squashed-init.sql`)
+defines the RBAC tables and seeds two roles:
 
 - **`user`** — default role assigned at signup. Permissions:
   `create|read|update|delete:{entity}:own` for every entity in the registry.
@@ -298,8 +297,8 @@ consumer-time fan-out is the authorization boundary rather than a handler role
 check. This remains a narrow exception only for feedback shown to and explicitly
 approved by the user; it does not grant package runtime general admin roles.
 Username and email are stored submission-time snapshots. Package events never
-resolve mutable live profile data, and persisted feedback rows always carry
-both snapshots.
+resolve mutable live profile data, and persisted feedback rows always carry both
+snapshots.
 
 Submission awaits only Queue enqueue after persistence. An enqueue failure is
 logged without changing the successful response, preventing duplicate feedback

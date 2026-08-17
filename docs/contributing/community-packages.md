@@ -35,9 +35,8 @@ package vector indexes.
 
 ### D1 tables
 
-The squashed baseline
-(`packages/worker/migrations/0001-squashed-init.sql`) defines the community
-tables and social columns.
+The squashed baseline (`packages/worker/migrations/0001-squashed-init.sql`)
+defines the community tables and social columns.
 
 | Table                | Purpose                                                            |
 | -------------------- | ------------------------------------------------------------------ |
@@ -78,12 +77,12 @@ owner unpublish. **Hard delete** (admin report action) removes the listing row,
 KV snapshot, and ratings.
 
 Admin **trust** marks live in `trusted_commit` / `trusted_by_user_id` /
-`trusted_at`. A listing is
-effectively trusted only while `trusted_commit = pinned_commit`, so an owner
-republish (which moves the pinned commit) drops the effective mark without an
-explicit revoke. `setCommunityListingTrusted` in `service.ts` sets or clears the
-mark; delisted listings cannot be trusted. Surfaces: the `Trusted` badge on
-`/community` cards and detail pages, the admin-only toggle on the detail page
+`trusted_at`. A listing is effectively trusted only while
+`trusted_commit = pinned_commit`, so an owner republish (which moves the pinned
+commit) drops the effective mark without an explicit revoke.
+`setCommunityListingTrusted` in `service.ts` sets or clears the mark; delisted
+listings cannot be trusted. Surfaces: the `Trusted` badge on `/community` cards
+and detail pages, the admin-only toggle on the detail page
 (`POST /community/:listingId/trust.json`, audited), and the admin-only
 `community_set_trusted` capability. `community_search` and `community_get`
 expose the effective `trusted` flag.
@@ -200,11 +199,10 @@ stable user ids, and package source. Rating rows use `updated_at`, so the feed
 shows the latest value for each user/listing rating. Since one-click install and
 agent fork both persist through `community_forks`, historical data cannot
 distinguish them and reports both as `fork`. Fork writes snapshot the public
-listing name and kody id, preserving readable fork provenance after a later
-hard delete. Rows without recoverable listing identity use explicit
-deleted/unknown placeholders. Actor usernames resolve through the unique
-`users.stable_user_id` index; neither email nor stable user id enters the feed
-or event.
+listing name and kody id, preserving readable fork provenance after a later hard
+delete. Rows without recoverable listing identity use explicit deleted/unknown
+placeholders. Actor usernames resolve through the unique `users.stable_user_id`
+index; neither email nor stable user id enters the feed or event.
 
 `installCommunityListing` (one-click install) composes `forkCommunityListing`
 with `runRepoChecks` over the fork's rewritten snapshot files and, when checks

@@ -12,8 +12,8 @@ See [Data storage](./data-storage.md) for table inventory and
 
 ## Data model
 
-The squashed baseline
-(`packages/worker/migrations/0001-squashed-init.sql`) defines:
+The squashed baseline (`packages/worker/migrations/0001-squashed-init.sql`)
+defines:
 
 - **`users.account_type`** — `'person'` (default) or `'platform'`. Platform
   accounts are created by operators, not through signup.
