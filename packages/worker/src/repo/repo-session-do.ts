@@ -39,6 +39,10 @@ import {
 	persistPublishedPackageArtifactTarget,
 	type PublishedPackageArtifactBuildTarget,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import {
+	loadPublishedSourceManifestSnapshot,
+	loadPublishedSourceSnapshot,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { searchRepoWorkspace } from './repo-session-search.ts'
 import { repoSessionRpc as createRepoSessionRpc } from './repo-session-rpc.ts'
 import {
@@ -794,13 +798,75 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private async listPackageArtifactTargetsForSource(source: EntitySourceRow) {
 		if (source.entity_kind !== 'package') return []
-		const manifest = await this.readManifestFromWorkspace(
-			source.manifest_path,
-			source.entity_kind,
-		)
+		const manifest = await this.readPackageManifestForPublishedArtifacts(source)
 		return collectPublishedPackageArtifactTargets(
 			manifest as Parameters<typeof collectPublishedPackageArtifactTargets>[0],
 		)
+	}
+
+	/**
+	 * External publish (KODY-CLOUDFLARE-57) clones into ephemeral FS and never
+	 * populates the session Durable Object workspace. Artifact rebuild then
+	 * runs against that empty session, so listing and staging must fall back
+	 * to the published source snapshot written during finalize.
+	 */
+	private async readPackageManifestForPublishedArtifacts(
+		source: EntitySourceRow,
+	) {
+		const workspaceContent = await this.workspace.readFile(
+			resolveRepoWorkspacePath(
+				source.manifest_path,
+				repoSessionWorkspacePrefix,
+			),
+		)
+		if (typeof workspaceContent === 'string') {
+			return parseAuthoredPackageJson({
+				content: workspaceContent,
+				manifestPath: source.manifest_path,
+			})
+		}
+		const manifestSnapshot = await loadPublishedSourceManifestSnapshot({
+			env: this.env,
+			userId: source.user_id,
+			source,
+		})
+		if (typeof manifestSnapshot?.manifestContent === 'string') {
+			return parseAuthoredPackageJson({
+				content: manifestSnapshot.manifestContent,
+				manifestPath: source.manifest_path,
+			})
+		}
+		const snapshot = await loadPublishedSourceSnapshot({
+			env: this.env,
+			userId: source.user_id,
+			source,
+		})
+		const snapshotContent = snapshot?.files[source.manifest_path]
+		if (typeof snapshotContent === 'string') {
+			return parseAuthoredPackageJson({
+				content: snapshotContent,
+				manifestPath: source.manifest_path,
+			})
+		}
+		throw new Error(`Manifest "${source.manifest_path}" was not found.`)
+	}
+
+	private async collectSourceFilesForPublishedArtifactRebuild(
+		source: EntitySourceRow,
+	) {
+		const workspaceFiles = await this.collectWorkspaceFiles()
+		if (typeof workspaceFiles[source.manifest_path] === 'string') {
+			return workspaceFiles
+		}
+		const snapshot = await loadPublishedSourceSnapshot({
+			env: this.env,
+			userId: source.user_id,
+			source,
+		})
+		if (snapshot && typeof snapshot.files[source.manifest_path] === 'string') {
+			return snapshot.files
+		}
+		throw new Error(`Manifest "${source.manifest_path}" was not found.`)
 	}
 
 	async initialize(input: {
@@ -2191,7 +2257,8 @@ class RepoSessionBase extends DurableObject<Env> {
 				'BUNDLE_ARTIFACTS_KV binding is required to stage published package artifact rebuilds.',
 			)
 		}
-		const sourceFiles = await this.collectWorkspaceFiles()
+		const sourceFiles =
+			await this.collectSourceFilesForPublishedArtifactRebuild(source)
 		const stagingKey = isolatedArtifactRebuildStagingKeyForUser(input.userId)
 		await stagingKv.put(stagingKey, JSON.stringify({ sourceFiles }), {
 			expirationTtl: isolatedArtifactRebuildStagingTtlSeconds,
@@ -2324,7 +2391,8 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!savedPackage) {
 			throw new Error(`Saved package "${source.entity_id}" was not found.`)
 		}
-		const sourceFiles = await this.collectWorkspaceFiles()
+		const sourceFiles =
+			await this.collectSourceFilesForPublishedArtifactRebuild(source)
 		const kvKey = await this.persistPublishedPackageArtifactTargetFromFiles({
 			source,
 			savedPackage,

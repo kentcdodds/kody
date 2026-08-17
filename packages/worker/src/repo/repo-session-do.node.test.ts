@@ -152,6 +152,8 @@ const mockModule = vi.hoisted(() => {
 			},
 		})),
 		writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
+		loadPublishedSourceSnapshot: vi.fn(async () => null),
+		loadPublishedSourceManifestSnapshot: vi.fn(async () => null),
 		validatePackageBundles: vi.fn(async () => ({
 			ok: true,
 			message: 'Bundled 2 package target(s) successfully.',
@@ -269,6 +271,8 @@ function restoreRepoSessionMockBaseline() {
 		},
 	})
 	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValue(null)
+	mockModule.loadPublishedSourceManifestSnapshot.mockResolvedValue(null)
 	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(false)
 	mockModule.persistPublishedPackageArtifactTarget.mockResolvedValue(
 		'kv:artifact',
@@ -497,6 +501,10 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', async () => {
 		...actual,
 		writePublishedSourceSnapshot: (...args: Array<unknown>) =>
 			mockModule.writePublishedSourceSnapshot(...args),
+		loadPublishedSourceSnapshot: (...args: Array<unknown>) =>
+			mockModule.loadPublishedSourceSnapshot(...args),
+		loadPublishedSourceManifestSnapshot: (...args: Array<unknown>) =>
+			mockModule.loadPublishedSourceManifestSnapshot(...args),
 	}
 })
 
@@ -2228,4 +2236,116 @@ test('stagePublishedPackageArtifactRebuild collects workspace files once and sta
 		'index.ts': 'export const ready = true\n',
 	})
 	expect(mockModule.workspaceGlob).toHaveBeenCalledTimes(1)
+})
+
+test('listPublishedPackageArtifactTargets falls back to the published snapshot when the session workspace is empty', async () => {
+	restoreRepoSessionMockBaseline()
+	mockModule.workspaceReadFile.mockResolvedValue(null)
+	const packageJson =
+		'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}'
+	mockModule.loadPublishedSourceManifestSnapshot.mockResolvedValue({
+		version: 1,
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+		manifestPath: 'package.json',
+		manifestContent: packageJson,
+		createdAt: '2026-08-17T20:00:00.000Z',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'package-package-1',
+		published_commit: 'commit-1',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+	})
+
+	const session = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+	} as unknown as Env)
+	const targets = await session.listPublishedPackageArtifactTargets({
+		sourceId: 'source-1',
+		userId: 'user-1',
+	})
+	expect(targets).toEqual([
+		{
+			kind: 'module',
+			artifactName: '.',
+			entryPoint: 'index.ts',
+			bundleKind: 'module',
+		},
+		{
+			kind: 'importable-module',
+			artifactName: '.',
+			entryPoint: 'index.ts',
+			bundleKind: 'importable-module',
+		},
+	])
+	expect(mockModule.loadPublishedSourceManifestSnapshot).toHaveBeenCalledTimes(
+		1,
+	)
+})
+
+test('stagePublishedPackageArtifactRebuild falls back to the published snapshot when the session workspace is empty', async () => {
+	restoreRepoSessionMockBaseline()
+	mockModule.workspaceGlob.mockResolvedValue([])
+	mockModule.workspaceReadFile.mockResolvedValue(null)
+	const packageJson =
+		'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}'
+	const snapshotFiles = {
+		'package.json': packageJson,
+		'index.ts': 'export const ready = true\n',
+	}
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValue({
+		version: 1,
+		sourceId: 'source-1',
+		repoId: 'package-package-1',
+		entityKind: 'package',
+		entityId: 'package-1',
+		publishedCommit: 'commit-1',
+		manifestPath: 'package.json',
+		sourceRoot: '/',
+		files: snapshotFiles,
+		createdAt: '2026-08-17T20:00:00.000Z',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'package-package-1',
+		published_commit: 'commit-1',
+		indexed_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+		last_external_check_at: null,
+		external_check_until: null,
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+	})
+
+	const put = vi.fn(async () => undefined)
+	const session = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: { put },
+	} as unknown as Env)
+	const staged = await session.stagePublishedPackageArtifactRebuild({
+		sourceId: 'source-1',
+		userId: 'user-1',
+	})
+	const payload = JSON.parse(put.mock.calls[0]?.[1] as string) as {
+		sourceFiles: Record<string, string>
+	}
+	expect(payload.sourceFiles).toEqual(snapshotFiles)
+	expect(mockModule.loadPublishedSourceSnapshot).toHaveBeenCalledTimes(1)
+	expect(
+		staged.stagingKey.startsWith('repo-artifact-rebuild-staging:v1:user-1:'),
+	).toBe(true)
 })
