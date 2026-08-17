@@ -172,7 +172,10 @@ function parseStoredPackageAppSession(
 	try {
 		const parsed: unknown = JSON.parse(stored)
 		if (!isStoredPackageAppSession(parsed)) return null
-		if (typeof parsed.expiresAt === 'number' && parsed.expiresAt <= now) {
+		const expiresAt =
+			parsed.expiresAt ??
+			parsed.issuedAt + legacyPackageAppSessionMaxAgeSeconds * 1000
+		if (expiresAt <= now) {
 			return null
 		}
 		return {
@@ -181,7 +184,7 @@ function parseStoredPackageAppSession(
 				username: parsed.pkgUsername,
 			},
 			issuedAt: parsed.issuedAt,
-			expiresAt: parsed.expiresAt,
+			expiresAt,
 		}
 	} catch {
 		return null

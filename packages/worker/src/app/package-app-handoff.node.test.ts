@@ -1,4 +1,6 @@
 import { expect, test } from 'vitest'
+import { createCookie } from 'remix/cookie'
+import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import {
 	createAuthCookie,
 	readParsedAuthSession,
@@ -167,6 +169,21 @@ test('handoff tokens are single use, short lived, and bound to one user and pack
 	await expect(
 		consumePackageAppHandoffToken({ env, token: expiredParent, expected }),
 	).resolves.toBeNull()
+
+	// Less than one second of parent TTL cannot become a cookie Max-Age, so
+	// consume refuses before burning the token.
+	const now = Date.now()
+	const subSecondParent = await mintToken(env, {
+		sessionExpiresAt: now + 500,
+	})
+	await expect(
+		consumePackageAppHandoffToken({
+			env,
+			token: subSecondParent,
+			expected,
+			now,
+		}),
+	).resolves.toBeNull()
 })
 
 test('the package-app session cookie is not interchangeable with the app session cookie', async () => {
@@ -291,6 +308,49 @@ test('the package-app session cookie is not interchangeable with the app session
 				headers: { Cookie: `kody_pkg_session=${appCookieValue}` },
 			}),
 			env,
+		}),
+	).resolves.toBeNull()
+
+	// Cookies minted before expiresAt existed keep the old 12 hour bound from
+	// issuedAt, so a copied value cannot be replayed after that window.
+	const legacyIssuedAt = now
+	const legacyExpiresAt = legacyIssuedAt + 12 * 60 * 60 * 1000
+	const legacyCookie = createCookie('kody_pkg_session', {
+		httpOnly: true,
+		sameSite: 'Lax',
+		path: '/',
+		secrets: [
+			await sha256Base64Url(`kody-package-app-session:v2:${cookieSecret}`),
+		],
+	})
+	const legacySetCookie = await legacyCookie.serialize(
+		JSON.stringify({
+			v: 2,
+			stableUserId: ownerStableUserId,
+			pkgUsername: 'owner',
+			issuedAt: legacyIssuedAt,
+		}),
+	)
+	const legacyPair = legacySetCookie.split(';')[0] ?? ''
+	await expect(
+		readPackageAppSession({
+			request: new Request('http://owner.packages.localhost/packages/x', {
+				headers: { Cookie: legacyPair },
+			}),
+			env,
+			now: legacyExpiresAt - 1,
+		}),
+	).resolves.toMatchObject({
+		session: { stableUserId: ownerStableUserId, username: 'owner' },
+		expiresAt: legacyExpiresAt,
+	})
+	await expect(
+		readPackageAppSession({
+			request: new Request('http://owner.packages.localhost/packages/x', {
+				headers: { Cookie: legacyPair },
+			}),
+			env,
+			now: legacyExpiresAt,
 		}),
 	).resolves.toBeNull()
 })

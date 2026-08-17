@@ -27,7 +27,6 @@ import { resolvePackageAppOwnerByStableUserId } from '#app/package-app-owner.ts'
 import {
 	createPackageAppSessionCookie,
 	readPackageAppSession,
-	remainingCookieMaxAgeSeconds,
 } from '#app/package-app-session.ts'
 import {
 	type PackageAppPath,
@@ -357,6 +356,7 @@ async function handleUserSubdomainRequest(input: {
 
 	const handoffToken = url.searchParams.get(packageAppHandoffQueryParam)
 	if (handoffToken) {
+		const now = Date.now()
 		const claims = await consumePackageAppHandoffToken({
 			env,
 			token: handoffToken,
@@ -364,8 +364,9 @@ async function handleUserSubdomainRequest(input: {
 				username: packagePath.username,
 				kodyId: packagePath.kodyId,
 			},
+			now,
 		})
-		if (claims && remainingCookieMaxAgeSeconds(claims.sessionExpiresAt)) {
+		if (claims) {
 			return redirectResponse({
 				location: withoutHandoffToken(url).toString(),
 				status: 302,
@@ -377,6 +378,7 @@ async function handleUserSubdomainRequest(input: {
 					},
 					secure: isSecureRequest(request),
 					expiresAt: claims.sessionExpiresAt,
+					now,
 				}),
 			})
 		}

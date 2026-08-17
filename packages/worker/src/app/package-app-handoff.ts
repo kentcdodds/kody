@@ -3,6 +3,7 @@ import {
 	bytesToBase64Url,
 	utf8ToBase64Url,
 } from '@kody-internal/shared/base64.ts'
+import { remainingCookieMaxAgeSeconds } from '#app/package-app-session.ts'
 import { isStableUserId } from '#worker/user-id.ts'
 
 /**
@@ -182,7 +183,10 @@ export async function consumePackageAppHandoffToken(input: {
 	}
 	const sessionExpiresAt =
 		parsed.sessExp ?? now + missingSessionExpiryFallbackMs
-	if (sessionExpiresAt <= now) {
+	// Cookie Max-Age is whole seconds. Reject before the burn when the parent
+	// session has less than one second left, so a still-usable token is not
+	// consumed without a Set-Cookie.
+	if (remainingCookieMaxAgeSeconds(sessionExpiresAt, now) == null) {
 		console.warn('Package app handoff rejected.', { reason: 'expired' })
 		return null
 	}
