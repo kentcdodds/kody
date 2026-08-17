@@ -669,7 +669,7 @@ export function OnboardingRoute(handle: Handle) {
 							<section
 								id="connect-services"
 								aria-labelledby="connect-services-title"
-								data-testid="onboarding-starter-packages"
+								data-testid="onboarding-connect-services"
 								mix={[css(wizardPanelCss), panelEntrance()]}
 							>
 								<div mix={css(panelHeadCss)}>

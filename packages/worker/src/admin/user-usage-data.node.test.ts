@@ -136,9 +136,6 @@ function createAdminUserUsageTestDb(input: {
 		if (normalizedQuery.includes('from package_service_states')) {
 			return counts.package_services ?? 0
 		}
-		if (normalizedQuery.includes('from repo_sessions')) {
-			return counts.repo_sessions ?? 0
-		}
 		if (normalizedQuery.includes('from secret_entries')) {
 			return counts.secrets ?? 0
 		}
@@ -302,7 +299,6 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 				saved_packages: 85,
 				scheduled_jobs: 8,
 				package_services: 1,
-				repo_sessions: 2,
 				secrets: 7,
 			},
 		},

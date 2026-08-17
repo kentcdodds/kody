@@ -11,7 +11,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { synthesizeMcpServerToolDomain } from '#mcp/capabilities/mcp-server/index.ts'
 import { synthesizeOpenApiProviderDomain } from '#mcp/capabilities/openapi-provider/index.ts'
 import { synthesizeRemoteToolDomain } from '#mcp/capabilities/remote-connector/index.ts'
-import { repoGetCheckStatusCapability } from '#mcp/capabilities/repo/index.ts'
+import { repoGetCheckStatusCapability } from '#mcp/capabilities/repo/repo-get-check-status.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
 import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
