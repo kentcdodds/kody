@@ -4,11 +4,12 @@ import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 
 /**
- * Component-level health used by the public status page prober
- * (`packages/status`). Each check is a cheap read against one storage binding,
- * so a failing component points at that subsystem rather than the worker as a
- * whole. Results are memoized briefly so public traffic cannot amplify load on
- * the underlying bindings.
+ * Component-level health for operators and the public status prober
+ * (`packages/status`). Each check is a cheap read against one storage binding.
+ * The prober maps product-affecting bindings (`app_db`, `kv`, `assets`) onto
+ * public cards; `audit_db` stays on this endpoint for operators and is not a
+ * public status card. Results are memoized briefly so public traffic cannot
+ * amplify load on the underlying bindings.
  */
 
 const componentCheckTimeoutMs = 5_000

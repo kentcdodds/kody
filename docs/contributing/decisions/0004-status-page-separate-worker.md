@@ -32,6 +32,9 @@ no `APP_DB` access.
 
 ## Consequences
 
+Public cards are product-affecting surfaces. Operator-only bindings such as
+`AUDIT_DB` stay on `GET /health/components` and are not public cards.
+
 The status page survives main-worker deploy failures, code regressions, and D1
 outages, but shares Cloudflare as a platform — a full Cloudflare outage takes
 both down. If that residual risk ever matters, add an external ping service on

@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
-import { purgeAuditDbFalseAlarmData } from './audit-false-alarm-purge.ts'
+import { retirePublicAuditDbData } from './retire-public-audit-db.ts'
 
-test('purge removes only audit_db false incidents and failed samples', () => {
+test('retirement deletes leftover public audit_db rows only', () => {
 	const db = new DatabaseSync(':memory:')
 	db.exec(`
 		CREATE TABLE incidents (
@@ -54,7 +54,7 @@ test('purge removes only audit_db false incidents and failed samples', () => {
 			('app_db', 'operational', 0, 4);
 	`)
 
-	purgeAuditDbFalseAlarmData((query, ...bindings) => {
+	retirePublicAuditDbData((query, ...bindings) => {
 		db.prepare(query).run(...bindings)
 	})
 
@@ -66,18 +66,12 @@ test('purge removes only audit_db false incidents and failed samples', () => {
 	).toEqual(['app_db'])
 	expect(
 		db.prepare(`SELECT component, ok FROM samples ORDER BY checked_at`).all(),
-	).toEqual([
-		{ component: 'audit_db', ok: 1 },
-		{ component: 'app_db', ok: 0 },
-	])
+	).toEqual([{ component: 'app_db', ok: 0 }])
 	expect(
 		db
 			.prepare(`SELECT component, failed FROM daily_stats ORDER BY component`)
 			.all(),
-	).toEqual([
-		{ component: 'app_db', failed: 0 },
-		{ component: 'audit_db', failed: 0 },
-	])
+	).toEqual([{ component: 'app_db', failed: 0 }])
 	expect(
 		db
 			.prepare(
@@ -87,6 +81,5 @@ test('purge removes only audit_db false incidents and failed samples', () => {
 			.all(),
 	).toEqual([
 		{ component: 'app_db', status: 'operational', consecutive_failures: 0 },
-		{ component: 'audit_db', status: 'operational', consecutive_failures: 0 },
 	])
 })

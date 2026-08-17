@@ -12,9 +12,9 @@ import {
 	type ComponentProbeState,
 } from './incidents.ts'
 import {
-	auditDbFalseAlarmPurgeMetaKey,
-	purgeAuditDbFalseAlarmData,
-} from './audit-false-alarm-purge.ts'
+	publicAuditDbRetiredMetaKey,
+	retirePublicAuditDbData,
+} from './retire-public-audit-db.ts'
 import { jobsProbeOrigin, runAllProbes } from './probes.ts'
 import {
 	fetchRelevantProviderIncidents,
@@ -132,15 +132,15 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				value TEXT NOT NULL
 			)
 		`)
-		this.maybePurgeAuditDbFalseAlarms()
+		this.maybeRetirePublicAuditDb()
 	}
 
-	private maybePurgeAuditDbFalseAlarms() {
-		if (this.getMeta(auditDbFalseAlarmPurgeMetaKey) === '1') return
-		purgeAuditDbFalseAlarmData((query, ...bindings) => {
+	private maybeRetirePublicAuditDb() {
+		if (this.getMeta(publicAuditDbRetiredMetaKey) === '1') return
+		retirePublicAuditDbData((query, ...bindings) => {
 			this.ctx.storage.sql.exec(query, ...bindings)
 		})
-		this.setMeta(auditDbFalseAlarmPurgeMetaKey, '1')
+		this.setMeta(publicAuditDbRetiredMetaKey, '1')
 		if (this.listOpenIncidents().length === 0) {
 			this.setMeta('last_notified_state', 'ok')
 		}
