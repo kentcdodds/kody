@@ -1503,8 +1503,8 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 			ownerUserId: 'owner',
 			packageId: 'pkg',
 			sourceId: 'src',
-			kodyId: '@owner/canva-extra',
-			name: 'canva-extra',
+			kodyId: 'canva-extra',
+			name: '@owner/canva-extra',
 			description: 'Untrusted canva helpers',
 			tags: [],
 			searchText: null,
@@ -1532,8 +1532,8 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 			ownerUserId: 'owner',
 			packageId: 'pkg-2',
 			sourceId: 'src-2',
-			kodyId: '@owner/canva-helpers',
-			name: 'canva-helpers',
+			kodyId: 'canva-helpers',
+			name: '@owner/canva-helpers',
 			description: 'Trusted canva helpers',
 			tags: ['canva'],
 			searchText: null,
@@ -1612,9 +1612,9 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 	).toEqual(['canva-trusted', 'canva-untrusted'])
 	expect(canvaPayload.nextSteps.suggestions[0]).toMatchObject({
 		listingId: 'canva-trusted',
-		name: 'canva-helpers',
+		name: '@owner/canva-helpers',
 		trusted: true,
-		publicUrl: 'https://example.com/community/canva-trusted',
+		publicUrl: 'https://example.com/@owner/canva-helpers',
 		forkPrompt: expect.stringContaining('canva-helpers'),
 	})
 	expect(mockModule.searchCommunityListings).toHaveBeenCalledWith({

@@ -733,11 +733,11 @@ test('parseConnectOauthNextSteps accepts suggestion payload and drops unsafe URL
 		suggestions: [
 			{
 				listingId: 'listing-1',
-				name: 'google-helpers',
-				kodyId: '@owner/google-helpers',
+				name: '@owner/google-helpers',
+				kodyId: 'google-helpers',
 				description: 'Trusted google helpers',
 				trusted: true,
-				publicUrl: 'https://example.com/community/listing-1',
+				publicUrl: 'https://example.com/@owner/google-helpers',
 				forkPrompt: 'Fork google-helpers',
 			},
 			{
@@ -761,11 +761,11 @@ test('parseConnectOauthNextSteps accepts suggestion payload and drops unsafe URL
 		suggestions: [
 			{
 				listingId: 'listing-1',
-				name: 'google-helpers',
-				kodyId: '@owner/google-helpers',
+				name: '@owner/google-helpers',
+				kodyId: 'google-helpers',
 				description: 'Trusted google helpers',
 				trusted: true,
-				publicUrl: 'https://example.com/community/listing-1',
+				publicUrl: 'https://example.com/@owner/google-helpers',
 				forkPrompt: 'Fork google-helpers',
 			},
 		],

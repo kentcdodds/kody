@@ -248,6 +248,7 @@ test('community package flow works end-to-end through capability handlers', asyn
 		license: 'MIT',
 		status: 'active',
 		pinned_commit: publishedCommit,
+		public_url: `${baseUrl}/@usera/${kodyId}`,
 	})
 	const listingId = publishResult.listing_id
 
@@ -263,6 +264,10 @@ test('community package flow works end-to-end through capability handlers', asyn
 		searchResult.matches.find((match) => match.listing_id === listingId)
 			?.relevance,
 	).toBeGreaterThanOrEqual(0.2)
+	expect(
+		searchResult.matches.find((match) => match.listing_id === listingId)
+			?.public_url,
+	).toBe(`${baseUrl}/@usera/${kodyId}`)
 
 	const getResult = await communityGetCapability.handler(
 		{ listing_id: listingId },
@@ -272,6 +277,7 @@ test('community package flow works end-to-end through capability handlers', asyn
 	expect(getResult.content_warning).toBe(communityContentWarning)
 	expect(getResult.owner_username).toBe('usera')
 	expect(getResult.owner_profile_url).toBe(`${baseUrl}/@usera`)
+	expect(getResult.public_url).toBe(`${baseUrl}/@usera/${kodyId}`)
 
 	await runSql(
 		`UPDATE users SET profile_visibility = 'private' WHERE stable_user_id = ?`,

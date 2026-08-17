@@ -16,6 +16,7 @@ import {
 	communityGetForkInstructions,
 	communityListingAggregatesSchema,
 	communityListingStatusSchema,
+	communityPublicUrlSchema,
 	communityStargazerSchema,
 	communityTrustedFieldSchema,
 	resolveCommunityOwnerUsername,
@@ -59,7 +60,7 @@ export const communityGetCapability = defineDomainCapability(
 			featured: communityFeaturedFieldSchema,
 			owner_username: z.string(),
 			owner_profile_url: z.string().nullable(),
-			public_url: z.string(),
+			public_url: communityPublicUrlSchema,
 			published_at: z.string(),
 			readme_untrusted: z.string().nullable(),
 			content_warning: z.string(),
@@ -109,7 +110,12 @@ export const communityGetCapability = defineDomainCapability(
 				owner_profile_url: ownerProfilePublic
 					? buildCommunityOwnerProfileUrl(baseUrl, ownerUsername)
 					: null,
-				public_url: buildCommunityPublicUrl(baseUrl, listing.id),
+				public_url: buildCommunityPublicUrl(baseUrl, {
+					listingId: listing.id,
+					name: listing.name,
+					kodyId: listing.kodyId,
+					ownerUsername,
+				}),
 				published_at: listing.publishedAt,
 				...toCommunityListingAggregatesOutput(listing),
 				readme_untrusted: listing.readmeContent,

@@ -65,7 +65,11 @@ export const communityPublishCapability = defineDomainCapability(
 				status: listing.status,
 				public_url: buildCommunityPublicUrl(
 					ctx.callerContext.baseUrl,
-					listing.id,
+					{
+						listingId: listing.id,
+						name: listing.name,
+						kodyId: listing.kodyId,
+					},
 				),
 				published_at: listing.publishedAt,
 			}

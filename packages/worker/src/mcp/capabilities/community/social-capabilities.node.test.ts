@@ -389,6 +389,7 @@ test('community star/unstar, starred_list, timeline, and listing stargazers', as
 		star_count: 3,
 		owner_username: 'bob',
 		owner_profile_url: 'https://example.com/@bob',
+		public_url: 'https://example.com/@bob/widget',
 		stargazers: {
 			total_stars: 4,
 			recent_stargazers: [{ username: 'alice' }],
@@ -412,7 +413,7 @@ test('community star/unstar, starred_list, timeline, and listing stargazers', as
 		expect.objectContaining({
 			listing_id: 'listing-1',
 			star_count: 3,
-			public_url: 'https://example.com/community/listing-1',
+			public_url: 'https://example.com/@bob/widget',
 		}),
 	])
 
@@ -428,6 +429,6 @@ test('community star/unstar, starred_list, timeline, and listing stargazers', as
 	expect(timeline.items[0]).toMatchObject({
 		type: 'listing_published',
 		actor_username: 'bob',
-		public_url: 'https://example.com/community/listing-1',
+		public_url: 'https://example.com/@bob/widget',
 	})
 })

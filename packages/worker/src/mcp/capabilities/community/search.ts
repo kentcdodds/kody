@@ -73,7 +73,11 @@ export const communitySearchCapability = defineDomainCapability(
 					...toCommunityListingAggregatesOutput(listing),
 					public_url: buildCommunityPublicUrl(
 						ctx.callerContext.baseUrl,
-						listing.id,
+						{
+							listingId: listing.id,
+							name: listing.name,
+							kodyId: listing.kodyId,
+						},
 					),
 				})),
 			}

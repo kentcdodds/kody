@@ -26,11 +26,15 @@ function listing(
 	overrides: Partial<CommunityListingWithAggregates> &
 		Pick<CommunityListingWithAggregates, 'id' | 'name' | 'trusted'>,
 ): CommunityListingWithAggregates {
+	const kodyId =
+		overrides.kodyId ?? overrides.name.replace(/^@[^/]+\//, '')
+	const name = overrides.name.startsWith('@')
+		? overrides.name
+		: `@owner/${kodyId}`
 	return {
 		ownerUserId: 'owner',
 		packageId: 'pkg',
 		sourceId: 'src',
-		kodyId: overrides.kodyId ?? `@owner/${overrides.name}`,
 		description: overrides.description ?? `${overrides.name} helpers`,
 		tags: [],
 		searchText: null,
@@ -52,6 +56,8 @@ function listing(
 		forkCount: 0,
 		starCount: 0,
 		...overrides,
+		kodyId,
+		name,
 	}
 }
 
@@ -108,9 +114,12 @@ test('buildConnectOauthNextSteps ranks trusted-first, caps suggestions, and vari
 	)
 	expect(nextSteps.suggestions[0]?.forkPrompt).toBe(
 		buildForkPrompt({
-			name: 'google-helpers',
+			name: '@owner/google-helpers',
 			listingId: 'trusted-google',
 		}),
+	)
+	expect(nextSteps.suggestions[0]?.publicUrl).toBe(
+		'https://example.com/@owner/google-helpers',
 	)
 	expect(nextSteps.guidance).toBe(
 		buildConnectOauthNextStepsGuidance({

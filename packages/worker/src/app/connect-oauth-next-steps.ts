@@ -79,7 +79,11 @@ export function buildConnectOauthPackageSuggestion(input: {
 		kodyId: input.listing.kodyId,
 		description: input.listing.description,
 		trusted: input.listing.trusted,
-		publicUrl: buildCommunityPublicUrl(input.baseUrl, input.listing.id),
+		publicUrl: buildCommunityPublicUrl(input.baseUrl, {
+			listingId: input.listing.id,
+			name: input.listing.name,
+			kodyId: input.listing.kodyId,
+		}),
 		forkPrompt: buildForkPrompt({
 			name: input.listing.name,
 			listingId: input.listing.id,

@@ -243,7 +243,7 @@ test('integration package suggestions stay same-provider, user-first, and capped
 			kodyId: 'github',
 			listingId: 'listing-github-trusted',
 			trusted: true,
-			publicUrl: 'https://example.com/community/listing-github-trusted',
+			publicUrl: 'https://example.com/@kody/github',
 		}),
 		expect.objectContaining({
 			source: 'community',

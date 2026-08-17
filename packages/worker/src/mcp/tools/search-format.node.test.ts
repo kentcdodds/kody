@@ -257,7 +257,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 				name: '@kody/github-helpers',
 				description: 'Trusted community GitHub helpers.',
 				listingId: 'listing-1',
-				publicUrl: 'https://example.com/community/listing-1',
+				publicUrl: 'https://example.com/@kody/github-helpers',
 				trusted: true,
 			},
 		],

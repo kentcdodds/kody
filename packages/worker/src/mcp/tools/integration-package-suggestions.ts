@@ -133,7 +133,11 @@ function toCommunitySuggestion(input: {
 		name: input.listing.name,
 		description: input.listing.description,
 		listingId: input.listing.id,
-		publicUrl: buildCommunityPublicUrl(input.baseUrl, input.listing.id),
+		publicUrl: buildCommunityPublicUrl(input.baseUrl, {
+			listingId: input.listing.id,
+			name: input.listing.name,
+			kodyId: input.listing.kodyId,
+		}),
 		trusted: input.listing.trusted,
 	}
 }

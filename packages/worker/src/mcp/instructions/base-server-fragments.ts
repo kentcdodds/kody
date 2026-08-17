@@ -27,6 +27,7 @@ export const conventionInstructions = `Conventions:
 - After \`package_save\` / \`package_publish_external_push\`, read \`pending_secret_package_approvals\` in the tool result when present; follow its guidance before calling the package complete.
 - Git identity on Kody remotes: use \`git_author\` from \`package_get_git_remote\` / \`repo_get_git_remote\` (signed-in account email and display name). Never invent an email. \`meta_get_current_user\` returns the same identity.
 - Package state: source is the repo; config is secrets/values keyed by saved package id; durable data is \`packageStorage()\`; coordination is services; schedules are jobs — package apps/jobs/services are package-owned surfaces, not separate primitives.
+- When sharing a community listing with a human, use its \`public_url\` (\`/@username/kody-id\`); never construct \`/community/{listing_id}\` for people.
 - Discover capabilities with \`search\`; entity detail includes the exact call shape. Memory writes are verify-first: \`meta_memory_verify\` before upsert/delete.
 - Durable user facts and preferences belong in memories. The optional MCP instruction overlay (\`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\`) is only for rare always-on session policy — not package inventory (popular packages are hinted automatically). Overlay updates apply to new MCP sessions.`
 
