@@ -19,6 +19,7 @@ import {
 	type ProviderIncident,
 } from './provider-incidents.ts'
 import {
+	isStatusComponentId,
 	statusComponentName,
 	statusComponents,
 	type ComponentDayStat,
@@ -241,14 +242,16 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 	}
 
 	private listOpenIncidents(): Array<OpenIncidentSummary> {
+		// Rows for retired component ids stay in SQLite; they must not page.
 		return this.ctx.storage.sql
 			.exec<{ component: string; started_at: number; detail: string | null }>(
 				`SELECT component, started_at, detail FROM incidents
 				WHERE resolved_at IS NULL ORDER BY started_at ASC`,
 			)
 			.toArray()
+			.filter((row) => isStatusComponentId(row.component))
 			.map((row) => ({
-				component: row.component as StatusComponentId,
+				component: row.component,
 				startedAt: row.started_at,
 				detail: row.detail,
 			}))
@@ -517,8 +520,9 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				recentIncidentLimit,
 			)
 			.toArray()
+			.filter((row) => isStatusComponentId(row.component))
 			.map((row) => {
-				const component = row.component as StatusComponentId
+				const component = row.component
 				return {
 					id: row.id,
 					component,

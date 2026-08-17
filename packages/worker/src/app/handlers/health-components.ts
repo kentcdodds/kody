@@ -11,20 +11,21 @@ import { type AppEnv } from '#worker/env-schema.ts'
  * the underlying bindings.
  */
 
-const componentCheckTimeoutMs = 3_000
+const componentCheckTimeoutMs = 5_000
 const resultCacheTtlMs = 10_000
 
 /**
  * Transient D1 blips (SQLITE_BUSY, "Network connection lost", "D1 DB is
- * overloaded…", opaque "internal error; reference = …") are tolerated with
- * retries on every
- * production D1 path, so a single blip must not register as component
- * downtime on the public status page — the mostly idle audit database was
- * losing uptime to exactly these. Three attempts with the standard backoff
- * (worst case ~450ms of sleep) stay well inside the 3s check timeout, so
- * sustained unavailability still fails the check.
+ * overloaded…", opaque "internal error; reference = …") and hung attempts
+ * against a cold/idle binding are retried. A 900ms per-attempt deadline
+ * keeps three tries plus backoff inside the 5s check timeout so a single
+ * stall cannot burn the whole budget. Sustained unavailability still fails
+ * the check.
  */
-const d1CheckRetryOptions = { maxAttempts: 3 } as const
+const d1CheckRetryOptions = {
+	maxAttempts: 3,
+	attemptTimeoutMs: 900,
+} as const
 
 export const healthComponentIds = [
 	'app_db',

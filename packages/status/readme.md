@@ -15,7 +15,9 @@ returns Cloudflare 1016. Component probes never use the status hostname, so a
 
 - A cron trigger runs one probe pass per minute:
   - `GET /health` and `GET /health/components` on the primary origin
-    (`kody.codes`)
+    (`kody.codes`). Public cards cover app D1, KV, and R2. The idle audit
+    D1 stays on the operator endpoint and does not open incidents or send
+    alert email.
   - the unauthenticated OAuth challenge on `/mcp`
   - package-runtime liveness `GET /__runtime/health` on `kody.run` (JSON
     `status: "ok"`; an apex 302 is not up)
