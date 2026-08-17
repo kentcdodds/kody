@@ -147,7 +147,9 @@ export const packageExportSurfaceSchema = z.object({
 				type_definition: z
 					.string()
 					.nullable()
-					.describe('Function type signature parsed from source when available.'),
+					.describe(
+						'Function type signature parsed from source when available.',
+					),
 			}),
 		)
 		.describe(
@@ -164,7 +166,7 @@ export const packageExportSurfaceSchema = z.object({
 			}),
 		)
 		.describe(
-			'Type, interface, and enum definitions referenced by this export\'s callable functions.',
+			"Type, interface, and enum definitions referenced by this export's callable functions.",
 		),
 	external_invocation: z
 		.object({
