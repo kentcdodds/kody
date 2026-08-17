@@ -403,16 +403,18 @@ test('findCachedUserAccountByStableUserId caches the account reverse-resolution 
 	expect(await findCachedUserAccountByStableUserId(db, '  ')).toBeNull()
 })
 
-test('scheduled job entitlement checks fail closed without a jobsData usage reader', async () => {
+test('assertWithinEntitlement passes under the limit, throws at it, and enforces finite max ordinary limits', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const { db, queries } = createEntitlementsTestDb({
+	const freeLimit = planLimits.free.maxScheduledJobs
+	const maxLimit = planLimits.max.maxScheduledJobs
+
+	const missingReader = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
 		counts: { jobs: 0 },
 	})
-
 	await expect(
 		assertWithinEntitlement({
-			db,
+			db: missingReader.db,
 			userId,
 			email: plannedEmail,
 			resource: 'scheduled_jobs',
@@ -420,13 +422,9 @@ test('scheduled job entitlement checks fail closed without a jobsData usage read
 	).rejects.toThrow(
 		'scheduled_jobs usage must be read from jobsData (pass getCurrent or use readCurrentEntitlementResourceUsage).',
 	)
-	expect(queries.some((query) => query.sql.includes('FROM jobs'))).toBe(false)
-})
-
-test('assertWithinEntitlement passes under the limit, throws at it, and enforces finite max ordinary limits', async () => {
-	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const freeLimit = planLimits.free.maxScheduledJobs
-	const maxLimit = planLimits.max.maxScheduledJobs
+	expect(
+		missingReader.queries.some((query) => query.sql.includes('FROM jobs')),
+	).toBe(false)
 
 	const maxUnder = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'max', stable_user_id: userId }],

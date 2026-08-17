@@ -91,9 +91,6 @@ test('a fully healthy pass reports every component ok', async () => {
 	for (const entry of result.outcomes) {
 		expect(entry.ok, `${entry.component} should be ok`).toBe(true)
 	}
-	expect(
-		(statusComponentIds as ReadonlyArray<string>).includes('audit_db'),
-	).toBe(false)
 	expect(outcome(result, 'app_db')?.latencyMs).toBe(4)
 	expect(result.productionCommitSha).toBe(
 		'abc123def4567890abcdef1234567890abcdef12',

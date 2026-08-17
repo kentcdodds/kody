@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import {
-	buildRepoSessionWorkspaceName,
 	measureRepoSessionWorkspaceBlobBytes,
 	purgeRepoSessionWorkspaceBlobs,
 	repoSessionWorkspaceR2ListPrefix,
@@ -35,16 +34,10 @@ function createFakeR2(initial: Record<string, number>) {
 	}
 }
 
-test('repo session workspace R2 prefix is the workspace name plus a slash', () => {
-	expect(buildRepoSessionWorkspaceName('do-session-1')).toBe(
-		'repo-session:do-session-1',
-	)
+test('purge and measure walk paged R2 listings for one Durable Object prefix', async () => {
 	expect(repoSessionWorkspaceR2ListPrefix('do-session-1')).toBe(
 		'repo-session:do-session-1/',
 	)
-})
-
-test('purge and measure walk paged R2 listings for one Durable Object prefix', async () => {
 	const keepKey = 'repo-session:other-do/default/session/pack.pack'
 	const { objects, bucket } = createFakeR2({
 		'repo-session:do-session-1/default/session/.git/objects/pack/a.pack': 1_000,

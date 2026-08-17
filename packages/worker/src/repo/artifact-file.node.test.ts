@@ -110,7 +110,7 @@ test('reads binary artifact files from an exact pinned commit', async () => {
 	expect(mocks.fetch).toHaveBeenCalledTimes(2)
 })
 
-test('retries when packfile corruption surfaces on readBlob after fetch (KODY-CLOUDFLARE-56)', async () => {
+test('retries packfile corruption on readBlob after fetch and does not retry missing files (KODY-CLOUDFLARE-56)', async () => {
 	const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
 	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
 		info: vi.fn(async () => ({
@@ -149,20 +149,8 @@ test('retries when packfile corruption surfaces on readBlob after fetch (KODY-CL
 	expect(mocks.fetch).toHaveBeenCalledTimes(2)
 	expect(mocks.init).toHaveBeenCalledTimes(2)
 	expect(mocks.readBlob).toHaveBeenCalledTimes(2)
-})
 
-test('does not retry missing artifact files as packfile corruption', async () => {
-	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue({
-		info: vi.fn(async () => ({
-			remote: 'https://artifacts.example.test/package.git',
-			defaultBranch: 'main',
-		})),
-		createToken: vi.fn(async () => ({
-			plaintext: 'token',
-		})),
-	})
-	mocks.fetch.mockReset()
-	mocks.fetch.mockResolvedValue(undefined)
+	mocks.fetch.mockClear()
 	mocks.init.mockClear()
 	const missing = Object.assign(
 		new Error('Could not find community-icon.png'),

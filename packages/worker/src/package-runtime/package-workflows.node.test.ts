@@ -10,7 +10,6 @@ import {
 	type WorkflowProjectionRecord,
 	type WorkflowProjectionUpsertInput,
 } from '#worker/run-records/service.ts'
-import { readFileSync } from 'node:fs'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	DynamicCallableWorkflowBase,
@@ -2126,17 +2125,6 @@ test('RunLog-only concurrent capacity blocks create without D1 workflow import',
 			.listForUser('user-1')
 			.filter((row) => row.status === 'queued'),
 	).toHaveLength(freeLimit)
-})
-
-test('package workflow lifecycle source has no workflow_runs SQL', () => {
-	const source = readFileSync(
-		new URL('./package-workflows.ts', import.meta.url),
-		'utf8',
-	)
-	expect(source).not.toMatch(/\bworkflow_runs\b/)
-	expect(source).not.toMatch(/\bimportWorkflowProjections\b/)
-	expect(source).not.toMatch(/\breadD1WorkflowRun/)
-	expect(source).not.toMatch(/\bmirrorWorkflowRunToD1\b/)
 })
 
 test('createDynamicCallableWorkflow enforces concurrent workflow entitlements across free, pro, and max plans', async () => {

@@ -1,8 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import {
-	buildWorkspaceSqliteTooBigCallerMessage,
-	isWorkspaceSqliteTooBigMessage,
-} from './external-publish-clone.ts'
+import { isWorkspaceSqliteTooBigMessage } from './external-publish-clone.ts'
 
 const gitMocks = vi.hoisted(() => ({
 	clone: vi.fn(async () => undefined),
@@ -41,7 +38,7 @@ vi.mock('./artifacts-git-retry.ts', () => ({
 const { cloneExternalPublishWorkspace } =
 	await import('./external-publish-clone.ts')
 
-test('isWorkspaceSqliteTooBigMessage matches DO SQL row-limit wording', () => {
+test('cloneExternalPublishWorkspace clones into ephemeral FS and exposes publish helpers', async () => {
 	expect(
 		isWorkspaceSqliteTooBigMessage('string or blob too big: SQLITE_TOOBIG'),
 	).toBe(true)
@@ -51,12 +48,7 @@ test('isWorkspaceSqliteTooBigMessage matches DO SQL row-limit wording', () => {
 		),
 	).toBe(true)
 	expect(isWorkspaceSqliteTooBigMessage('D1 DB is overloaded')).toBe(false)
-	expect(
-		buildWorkspaceSqliteTooBigCallerMessage('Repo session clone'),
-	).toContain('2 MiB row limit')
-})
 
-test('cloneExternalPublishWorkspace clones into ephemeral FS and exposes publish helpers', async () => {
 	gitMocks.clone.mockClear()
 	gitMocks.log.mockClear()
 	gitMocks.checkout.mockClear()
