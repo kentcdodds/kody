@@ -26,8 +26,7 @@ function listing(
 	overrides: Partial<CommunityListingWithAggregates> &
 		Pick<CommunityListingWithAggregates, 'id' | 'name' | 'trusted'>,
 ): CommunityListingWithAggregates {
-	const kodyId =
-		overrides.kodyId ?? overrides.name.replace(/^@[^/]+\//, '')
+	const kodyId = overrides.kodyId ?? overrides.name.replace(/^@[^/]+\//, '')
 	const name = overrides.name.startsWith('@')
 		? overrides.name
 		: `@owner/${kodyId}`

@@ -63,14 +63,11 @@ export const communityPublishCapability = defineDomainCapability(
 				license: listing.license,
 				pinned_commit: listing.pinnedCommit,
 				status: listing.status,
-				public_url: buildCommunityPublicUrl(
-					ctx.callerContext.baseUrl,
-					{
-						listingId: listing.id,
-						name: listing.name,
-						kodyId: listing.kodyId,
-					},
-				),
+				public_url: buildCommunityPublicUrl(ctx.callerContext.baseUrl, {
+					listingId: listing.id,
+					name: listing.name,
+					kodyId: listing.kodyId,
+				}),
 				published_at: listing.publishedAt,
 			}
 		},
