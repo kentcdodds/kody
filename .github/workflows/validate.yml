@@ -82,6 +82,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run nx-cache:build
 
+      - name: 🗓️ Jobs build
+        if: ${{ !cancelled() }}
+        run: npm run jobs:build
+
+      - name: 🏃 Runtime build
+        if: ${{ !cancelled() }}
+        run: npm run runtime:build
+
       - name: 🗺️ Primitives
         if: ${{ !cancelled() }}
         run: npm run primitives:check
@@ -99,6 +107,10 @@ jobs:
       - name: 🛡️ Deploy guardrails
         if: ${{ !cancelled() }}
         run: npm run deploy-guardrails:check
+
+      - name: 📚 Temporal docs
+        if: ${{ !cancelled() }}
+        run: npm run docs:check-temporal
 
   node:
     runs-on: ubuntu-latest
