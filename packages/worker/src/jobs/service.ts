@@ -1244,7 +1244,6 @@ export async function executeJobOnce(input: {
 						userId: input.job.userId,
 						email: backgroundUser.email,
 						resource: 'job_runs_per_day',
-						waitUntil: input.waitUntil,
 					})
 					const result = await runRepoBackedJob({
 						env: input.env,

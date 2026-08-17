@@ -20,10 +20,7 @@ import {
 	refundDailyEntitlement,
 } from './service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
-import {
-	createInMemoryUserMeterEnv,
-	createWaitUntilDrain,
-} from '#worker/test-support/user-meter.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { userMeterRpc } from './user-meter-client.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
@@ -406,6 +403,26 @@ test('findCachedUserAccountByStableUserId caches the account reverse-resolution 
 	expect(await findCachedUserAccountByStableUserId(db, '  ')).toBeNull()
 })
 
+test('scheduled job entitlement checks fail closed without a jobsData usage reader', async () => {
+	const userId = await createStableUserIdFromEmail(plannedEmail)
+	const { db, queries } = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
+		counts: { jobs: 0 },
+	})
+
+	await expect(
+		assertWithinEntitlement({
+			db,
+			userId,
+			email: plannedEmail,
+			resource: 'scheduled_jobs',
+		}),
+	).rejects.toThrow(
+		'scheduled_jobs usage must be read from jobsData (pass getCurrent or use readCurrentEntitlementResourceUsage).',
+	)
+	expect(queries.some((query) => query.sql.includes('FROM jobs'))).toBe(false)
+})
+
 test('assertWithinEntitlement passes under the limit, throws at it, and enforces finite max ordinary limits', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const freeLimit = planLimits.free.maxScheduledJobs
@@ -420,6 +437,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and enforces
 		userId,
 		email: plannedEmail,
 		resource: 'scheduled_jobs',
+		getCurrent: async () => maxLimit - 1,
 	})
 
 	const maxAt = createEntitlementsTestDb({
@@ -431,6 +449,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and enforces
 		userId,
 		email: plannedEmail,
 		resource: 'scheduled_jobs',
+		getCurrent: async () => maxLimit,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -453,6 +472,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and enforces
 		userId,
 		email: plannedEmail,
 		resource: 'scheduled_jobs',
+		getCurrent: async () => freeLimit - 1,
 	})
 
 	const at = createEntitlementsTestDb({
@@ -464,6 +484,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and enforces
 		userId,
 		email: plannedEmail,
 		resource: 'scheduled_jobs',
+		getCurrent: async () => freeLimit,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -490,27 +511,32 @@ test('assertWithinEntitlement reuses cached plan within TTL while still enforcin
 		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
 		counts,
 	})
+	let usageReads = 0
+	const getCurrent = async () => {
+		usageReads += 1
+		return counts.jobs
+	}
 	const planQueries = () =>
 		queries.filter((query) =>
 			query.sql.includes('email = ? AND stable_user_id = ?'),
 		)
-	const usageQueries = () =>
-		queries.filter((query) => query.sql.includes('FROM jobs'))
 
 	await assertWithinEntitlement({
 		db,
 		userId,
 		email: plannedEmail,
 		resource: 'scheduled_jobs',
+		getCurrent,
 	})
 	await assertWithinEntitlement({
 		db,
 		userId,
 		email: plannedEmail,
 		resource: 'scheduled_jobs',
+		getCurrent,
 	})
 	expect(planQueries()).toHaveLength(1)
-	expect(usageQueries()).toHaveLength(2)
+	expect(usageReads).toBe(2)
 
 	counts.jobs = freeLimit
 	const denied = await assertWithinEntitlement({
@@ -518,6 +544,7 @@ test('assertWithinEntitlement reuses cached plan within TTL while still enforcin
 		userId,
 		email: plannedEmail,
 		resource: 'scheduled_jobs',
+		getCurrent,
 	}).then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -531,7 +558,7 @@ test('assertWithinEntitlement reuses cached plan within TTL while still enforcin
 		current: freeLimit,
 	})
 	expect(planQueries()).toHaveLength(1)
-	expect(usageQueries()).toHaveLength(3)
+	expect(usageReads).toBe(3)
 })
 
 test('assertWithinEntitlement enforces concurrent workflow limits for unresolved and max-plan callers', async () => {
@@ -742,7 +769,6 @@ test('refundDailyEntitlement decrements the user/day counter and floors at zero'
 		})
 	}
 	await refundDailyEntitlement({
-		db,
 		env,
 		userId: 'user-1',
 		resource: 'email_receives_per_day',
@@ -766,14 +792,12 @@ test('refundDailyEntitlement decrements the user/day counter and floors at zero'
 	).toBe(3)
 
 	await refundDailyEntitlement({
-		db,
 		env,
 		userId: 'user-1',
 		resource: 'email_receives_per_day',
 		now,
 	})
 	await refundDailyEntitlement({
-		db,
 		env,
 		userId: 'user-1',
 		resource: 'email_receives_per_day',
