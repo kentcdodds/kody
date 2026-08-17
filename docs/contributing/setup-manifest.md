@@ -321,8 +321,10 @@ Without that secret, alert sends are skipped and logged.
 An optional Worker secret `STATUS_INCIDENT_WEBHOOK_URL` (synced from the
 same-named GitHub Actions secret when present) POSTs to a minted Kody webhook on
 incident open so `@kentcdodds/status-incident-triage` can enqueue a component
-fingerprint. The URL is a credential; do not commit it. When unset, the package
-still reconciles from the public `/status.json` snapshot.
+fingerprint. The URL is a credential; do not commit it. When the GitHub secret
+is unset, deploy deletes the Worker secret if it exists so a stale URL cannot
+keep firing; the package still reconciles from the public `/status.json`
+snapshot.
 
 ## Optional Cloudflare offerings
 

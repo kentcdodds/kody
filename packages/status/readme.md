@@ -36,7 +36,8 @@ When an incident opens, the worker also POSTs a small JSON payload to
 webhook for `@kentcdodds/status-incident-triage`). The notify is fire-and-forget
 with a short timeout so a down or missing webhook cannot stall probes or email.
 Until the secret exists, the triage package still enqueues from
-`GET /status.json` on its 15m sweep.
+`GET /status.json` on its 15m sweep. Unsetting the GitHub secret on a later
+deploy deletes the Worker secret so a stale URL cannot keep firing.
 
 ## Provider incidents (Cloudflare)
 

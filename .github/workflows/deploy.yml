@@ -766,8 +766,24 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${STATUS_INCIDENT_WEBHOOK_URL:-}" ]; then
-            echo "STATUS_INCIDENT_WEBHOOK_URL unset; status incident ingest stays poll-only."
-            exit 0
+            echo "STATUS_INCIDENT_WEBHOOK_URL unset; removing Worker secret if present."
+            set +e
+            delete_log="$(
+              CI=true npx wrangler secret delete STATUS_INCIDENT_WEBHOOK_URL \
+                --config packages/status/wrangler.jsonc 2>&1
+            )"
+            delete_status=$?
+            set -e
+            printf '%s\n' "$delete_log"
+            if [ "$delete_status" -eq 0 ]; then
+              exit 0
+            fi
+            if printf '%s' "$delete_log" | grep -qiE 'not found|does not exist|10056'; then
+              echo "Worker secret already absent; status incident ingest stays poll-only."
+              exit 0
+            fi
+            echo "Failed to delete STATUS_INCIDENT_WEBHOOK_URL." >&2
+            exit "$delete_status"
           fi
           printf '%s' "$STATUS_INCIDENT_WEBHOOK_URL" | npx wrangler secret put \
             STATUS_INCIDENT_WEBHOOK_URL --config packages/status/wrangler.jsonc
