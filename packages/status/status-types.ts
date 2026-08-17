@@ -13,7 +13,8 @@ export const statusComponents = [
 	{ id: 'package_apps', name: 'Package runtime' },
 	{ id: 'jobs', name: 'Jobs' },
 	{ id: 'app_db', name: 'Primary database' },
-	// AUDIT_DB is fail-open operator evidence; it stays on /health/components.
+	// AUDIT_DB is fail-open operator evidence on /health/components only;
+	// it is not a public status card.
 	{ id: 'kv', name: 'Key-value storage' },
 	{ id: 'assets', name: 'Asset storage' },
 ] as const

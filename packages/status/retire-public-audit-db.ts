@@ -1,8 +1,8 @@
 /**
  * AUDIT_DB is operator evidence, not product availability. The public status
- * registry has no audit_db card. This one-shot delete removes leftover public
- * history so retired rows cannot crowd the recent-incident LIMIT or linger in
- * uptime rollups.
+ * registry has no audit_db card. This one-shot delete removes any leftover
+ * public `audit_db` history rows so they cannot crowd the recent-incident
+ * LIMIT or linger in uptime rollups.
  */
 
 export const publicAuditDbRetiredMetaKey = 'audit_db_public_card_retired'

@@ -190,9 +190,13 @@ the same cold zero-init path):
   same `readAdminEntitlementConsumption` helper over a bounded sweep of the top
   ~15 active users by current-month event count
 
-Non-daily resources still use `readEntitlementResourceUsage` against D1.
-`readEntitlementResourceUsage` for daily resources and `storage_bytes` throws
-and directs callers to the UserMeter helpers above.
+`readEntitlementResourceUsage` counts only APP_DB-backed row resources (`repos`,
+`saved_packages`, `secrets`). Resources whose authority is elsewhere
+(`scheduled_jobs` via `jobsData`, `repo_sessions` via `RepoSessionIndex`,
+package services and daily counters via UserMeter, `stored_email_messages` via
+Mailbox, `concurrent_workflows` via RunLog, `storage_bytes` via UserMeter,
+`email_message_bytes` via caller `getCurrent`) throw from that helper and must
+use `readCurrentEntitlementResourceUsage` or an explicit `getCurrent` callback.
 
 **Inbound retry idempotency:** inbound receive quota uses
 `UserMeter.consumeInboundDelivery`, which atomically claims `delivery_id` and
@@ -221,8 +225,8 @@ singleton (advanced once per processed page, wrapping at the tail).
    bytes.
 4. On `!reserved`: throw `EntitlementLimitError`.
 5. `env.USER_METER` is required on the DO-reserve path; throws immediately if
-   absent (fail closed). Only the legacy `getCurrent` check-only path (used by
-   StorageRunner bucket totals) omits `env` safely.
+   absent (fail closed). The StorageRunner check-only path (bucket totals via
+   `getCurrent`) omits `env` safely.
 
 **Usage reads (`readCurrentEntitlementResourceUsage(storage_bytes)`):** Reads
 from UserMeter with the same zero-init cold bootstrap path. The generic D1
@@ -511,14 +515,17 @@ Rules:
 ## Counting strategy
 
 - **Row-count limits** (saved packages, scheduled jobs, repo sessions, secrets,
-  running package services) are counted via built-in counters in `service.ts`.
-  Most are counted directly from their source D1 tables. **Repo sessions** count
-  `status = 'active'` rows in the per-user `RepoSessionIndex` catalog. Unused
-  (never-checkpointed) leftovers are swept after 30 minutes idle; checkpointed
-  sessions after 7 days idle (`repo_session_cleanup` lane, 100 rows per 5-minute
-  tick). **Running package services** are counted from the **per-user UserMeter
-  DO**: `countRunningPackageServices` counts `status = 'running'` rows with the
-  24h staleness window from DO `source_updated_at`. D1 `package_service_states`
+  running package services) are counted via helpers in `service.ts`. APP_DB
+  resources (saved packages, secrets) use built-in D1 counters. **Scheduled
+  jobs** count through `jobsData(…).countJobsForUser` on the jobs worker (pass
+  `getCurrent` into `assertWithinEntitlement`; there is no APP_DB built-in
+  counter). **Repo sessions** count `status = 'active'` rows in the per-user
+  `RepoSessionIndex` catalog. Unused (never-checkpointed) leftovers are swept
+  after 30 minutes idle; checkpointed sessions after 7 days idle
+  (`repo_session_cleanup` lane, 100 rows per 5-minute tick). **Running package
+  services** are counted from the **per-user UserMeter DO**:
+  `countRunningPackageServices` counts `status = 'running'` rows with the 24h
+  staleness window from DO `source_updated_at`. D1 `package_service_states`
   remains only the enumeration index (discovery, export, deletion) — see
   [Package service liveness](#package-service-liveness) and
   [Run records](./run-records.md) (`state-vs-history`). **Concurrent workflows**
@@ -659,16 +666,23 @@ The exemplar is job scheduling: `createJob` in
 
 ```ts
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import { jobsData } from '#worker/jobs/jobs-data.ts'
 
 await assertWithinEntitlement({
 	db: env.APP_DB,
 	userId,
 	email: userEmail,
 	resource: 'scheduled_jobs',
+	getCurrent: () =>
+		jobsData(env).countJobsForUser({
+			userId,
+		}),
 })
 ```
 
-Use `getCurrent` only when the built-in D1 counter cannot express the resource.
+Pass `getCurrent` for any resource that is not APP_DB-countable
+(`scheduled_jobs` via `jobsData`, `repo_sessions` via `RepoSessionIndex`,
+package services via UserMeter, workflows via RunLog, and similar).
 
 4. If the resource is a new one, register it in `plans.ts`
    (`entitlementResources`, `PlanLimits`, `planLimits`,
@@ -710,8 +724,8 @@ manual plans only. `STRIPE_STANDARD_PRICE_ID` /
 `STRIPE_STANDARD_YEARLY_PRICE_ID` and `STRIPE_PRO_PRICE_ID` /
 `STRIPE_PRO_YEARLY_PRICE_ID` independently enable checkout for their
 corresponding tier and interval; an unset price id only disables purchase of
-that interval. Yearly and retired monthly price ids still resolve to `standard`
-/ `pro` entitlements.
+that interval. Yearly price ids and historical monthly price ids resolve to
+`standard` / `pro` entitlements.
 
 Checkout sessions are created server-side for authenticated users via
 `POST /account/billing/checkout.json` (Stripe Checkout Session, JSON body

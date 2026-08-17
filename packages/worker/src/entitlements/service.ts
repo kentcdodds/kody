@@ -727,7 +727,8 @@ export async function readEntitlementResourceUsage(input: {
 		case 'job_runs_per_day':
 			// Authoritative daily counters live in UserMeter. Callers must use
 			// consumeDailyEntitlement / readDailyEntitlementResourceUsage /
-			// readCurrentEntitlementResourceUsage — the retired D1 mirror is gone.
+			// readCurrentEntitlementResourceUsage. There is no D1 daily-counter
+			// table.
 			throw new Error(
 				`${resource} usage must be read from UserMeter (use readDailyEntitlementResourceUsage or readCurrentEntitlementResourceUsage).`,
 			)
@@ -1062,7 +1063,7 @@ export type ConsumeDailyEntitlementInput = {
  * Atomically consume one daily entitlement unit via UserMeter, throwing
  * EntitlementLimitError when the plan limit would be exceeded. Cold keys
  * initialize at zero (concurrent-safe); warm path awaits only the DO RPC.
- * Never touches the retired D1 daily counter table.
+ * Daily counters live only in UserMeter (no D1 daily-counter table).
  */
 export async function consumeDailyEntitlement(
 	input: ConsumeDailyEntitlementInput,
@@ -1127,7 +1128,7 @@ export type RefundDailyEntitlementInput = {
 /**
  * Atomically refund one previously consumed daily entitlement unit in
  * UserMeter (floors at zero). Pass the same `now` (day key) as the matching
- * consume. Never touches the retired D1 daily counter table.
+ * consume. Daily counters live only in UserMeter (no D1 daily-counter table).
  */
 export async function refundDailyEntitlement(
 	input: RefundDailyEntitlementInput,

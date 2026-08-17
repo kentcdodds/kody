@@ -742,6 +742,6 @@ test('saveValue awaits the UserMeter atomic reserve and never writes the retired
 	if (meterBytesAfterReserve.outcome !== 'ready')
 		throw new Error('Expected ready')
 	expect(meterBytesAfterReserve.bytes).toBeGreaterThan(7)
-	// The retired D1 mirror column is never written.
+	// There is no D1 storage-bytes mirror column to write.
 	expect(d1StorageWrites).toEqual([])
 })

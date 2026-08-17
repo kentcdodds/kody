@@ -237,12 +237,12 @@ resources from bindings alone, so the deploy workflow runs
 
 ### Disaster-recovery control plane
 
-Production backup **resources** (R2 bucket locks/lifecycle) are still
-provisioned out-of-band with `tools/ci/backup-resources-cli.ts`. The
-control-plane Worker/Workflows under `packages/backup-control-plane/` live in
-the independently administered DR Cloudflare account. Its `BACKUP_BUCKET` R2
-binding is private. Immutable prefixes include `daily/`, `weekly/`,
-`daily/full/`, and content-addressed `blobs/sha256/`.
+Production backup **resources** (R2 bucket locks/lifecycle) are provisioned
+out-of-band with `tools/ci/backup-resources-cli.ts`. The control-plane
+Worker/Workflows under `packages/backup-control-plane/` live in the
+independently administered DR Cloudflare account. Its `BACKUP_BUCKET` R2 binding
+is private. Immutable prefixes include `daily/`, `weekly/`, `daily/full/`, and
+content-addressed `blobs/sha256/`.
 
 Code deploys are automated by the production deploy workflow
 (`.github/workflows/deploy.yml` job `deploy-backup-control-plane`) when a `main`

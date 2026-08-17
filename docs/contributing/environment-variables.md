@@ -231,9 +231,8 @@ Each price id independently enables authenticated Checkout and subscription
 matching for its tier and interval; leaving a monthly or yearly id unset makes
 only that interval unavailable for purchase. Price ids are public (non-secret)
 values committed as production Wrangler vars in
-`packages/worker/wrangler.jsonc`, not Worker secrets. Retired $5/$20 monthly
-prices remain in Stripe and are still matched so existing subscribers keep their
-plan.
+`packages/worker/wrangler.jsonc`, not Worker secrets. Historical $5/$20 monthly
+price ids remain in Stripe and match so existing subscribers keep their plan.
 
 See [`architecture/entitlements.md`](./architecture/entitlements.md) (Billing).
 

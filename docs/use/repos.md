@@ -44,12 +44,12 @@ repos do not run the package publish reconcile cron after push—HEAD is live.
 Open with `repo_open_session` using `target: { kind: "repo", name: "<name>" }`
 or `source_id`. Session base is the current default-branch HEAD (not a publish
 pointer). Pass `conversation_id` to resume that conversation's active session.
-Omitting `conversation_id` always mints a new session: never-edited is not the
-same as abandoned, and two callers of the same source must not share a workspace
-that has not checkpointed yet. `repo_publish_session` on a plain repo runs only
-the source size walk (manifest, bundle, typecheck, and lint checks are skipped).
-When the published tree contains root `package.json`, the result includes
-`package_shaped: true` and a promote notice.
+Omitting `conversation_id` always mints a new session: never-checkpointed is not
+the same as abandoned, and two callers of the same source must not share a
+workspace that has not checkpointed yet. `repo_publish_session` on a plain repo
+runs only the source size walk (manifest, bundle, typecheck, and lint checks are
+skipped). When the published tree contains root `package.json`, the result
+includes `package_shaped: true` and a promote notice.
 
 ## Promote flow
 

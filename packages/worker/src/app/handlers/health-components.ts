@@ -7,7 +7,7 @@ import { type AppEnv } from '#worker/env-schema.ts'
  * Component-level health for operators and the public status prober
  * (`packages/status`). Each check is a cheap read against one storage binding.
  * The prober maps product-affecting bindings (`app_db`, `kv`, `assets`) onto
- * public cards; `audit_db` stays on this endpoint for operators and is not a
+ * public cards; `audit_db` is on this endpoint for operators and is not a
  * public status card. Results are memoized briefly so public traffic cannot
  * amplify load on the underlying bindings.
  */
