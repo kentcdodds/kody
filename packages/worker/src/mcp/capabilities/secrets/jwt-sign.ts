@@ -62,7 +62,6 @@ export const jwtSignCapability = defineDomainCapability(
 			'rs256',
 			'eddsa',
 			'ed25519',
-			'origin',
 		],
 		readOnly: true,
 		idempotent: true,
