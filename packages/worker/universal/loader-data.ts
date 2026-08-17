@@ -948,6 +948,8 @@ export type AccountMcpServersLoaderData = {
 	oauthClientOrigin: string
 	/** Exact redirect URI remote authorization servers must allow. */
 	oauthCallbackUrl: string
+	/** HTTPS CIMD URL Kody presents as client_id, or null on http origins. */
+	oauthClientMetadataUrl: string | null
 	servers: Array<AccountMcpServerListItem>
 }
 

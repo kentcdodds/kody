@@ -19,6 +19,7 @@ const outputSchema = z.object({
 	error: z.string().nullable(),
 	oauthClientOrigin: z.string(),
 	oauthCallbackUrl: z.string(),
+	oauthClientMetadataUrl: z.string().nullable(),
 	nextStep: z.string(),
 })
 
@@ -27,7 +28,7 @@ export const mcpServerAddCapability = defineDomainCapability(
 	{
 		name: 'mcp_server_add',
 		description:
-			'Add a remote MCP server for the signed-in user and connect to it. Servers that require OAuth return an authUrl the user must open to authorize Kody; other servers connect immediately. Pass bearerToken for servers that authenticate with a static Authorization header instead of (or in addition to) OAuth. Connected server tools become kody.mcp["server-name"].tool_name(...) capabilities. When OAuth fails with origin or redirect URI errors, the remote authorization server must allow Kody\'s oauthClientOrigin and oauthCallbackUrl.',
+			'Add a remote MCP server for the signed-in user and connect to it. Servers that require OAuth return an authUrl the user must open to authorize Kody; other servers connect immediately. Pass bearerToken for servers that authenticate with a static Authorization header instead of (or in addition to) OAuth. Connected server tools become kody.mcp["server-name"].tool_name(...) capabilities. When OAuth fails with origin or redirect URI errors, the remote authorization server must allow Kody\'s oauthClientOrigin, oauthCallbackUrl, and oauthClientMetadataUrl (CIMD client_id) when present.',
 		keywords: [
 			'mcp',
 			'server',
@@ -89,7 +90,7 @@ export const mcpServerAddCapability = defineDomainCapability(
 				: null
 			const nextStep =
 				connection.state === 'authenticating' && connection.authUrl
-					? `The server requires OAuth authorization. Ask the user to open ${connection.authUrl} (also available from ${oauth.clientOrigin}/account/mcp-servers) to authorize Kody. If the provider rejects Kody's origin or redirect URI, they must allow ${oauth.clientOrigin} and ${oauth.callbackUrl}, then reconnect the server. After authorizing, check mcp_server_list.`
+					? `The server requires OAuth authorization. Ask the user to open ${connection.authUrl} (also available from ${oauth.clientOrigin}/account/mcp-servers) to authorize Kody. If the provider rejects Kody's origin, redirect URI, or CIMD client_id, they must allow ${oauth.clientOrigin}, ${oauth.callbackUrl}${oauth.clientMetadataUrl ? `, and ${oauth.clientMetadataUrl}` : ''}, then reconnect the server. After authorizing, check mcp_server_list.`
 					: connection.state === 'ready'
 						? `Connected with ${connection.toolCount} tool(s). Use search or meta_list_capabilities to discover kody.mcp["${setting.name}"] capabilities.`
 						: error
@@ -105,6 +106,7 @@ export const mcpServerAddCapability = defineDomainCapability(
 				error,
 				oauthClientOrigin: oauth.clientOrigin,
 				oauthCallbackUrl: oauth.callbackUrl,
+				oauthClientMetadataUrl: oauth.clientMetadataUrl,
 				nextStep,
 			}
 		},

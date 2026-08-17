@@ -24,11 +24,18 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 
 ## OAuth allowlists (common failure)
 
-When Kody connects, it registers as an OAuth client using:
+When Kody connects, it identifies itself as an OAuth client using:
 
 - **Client origin:** the deployment's canonical app origin (for hosted Kody,
   `https://kody.codes`)
 - **Redirect URI:** `{origin}/account/mcp-servers/oauth/callback`
+- **Client ID Metadata Document (HTTPS only):**
+  `{origin}/oauth/client-metadata.json`
+
+On HTTPS deployments, Kody presents that CIMD URL as `client_id` when the remote
+authorization server advertises `client_id_metadata_document_supported`.
+Otherwise it falls back to Dynamic Client Registration. Local `http` origins
+skip CIMD and use DCR only.
 
 Many authorization servers (including FusionAuth "authorized origins" / redirect
 URI settings, and other providers with similar allowlists) reject the authorize

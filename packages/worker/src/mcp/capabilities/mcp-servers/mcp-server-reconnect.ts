@@ -17,6 +17,7 @@ const outputSchema = z.object({
 	error: z.string().nullable(),
 	oauthClientOrigin: z.string(),
 	oauthCallbackUrl: z.string(),
+	oauthClientMetadataUrl: z.string().nullable(),
 })
 
 export const mcpServerReconnectCapability = defineDomainCapability(
@@ -63,6 +64,7 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 					: null,
 				oauthClientOrigin: oauth.clientOrigin,
 				oauthCallbackUrl: oauth.callbackUrl,
+				oauthClientMetadataUrl: oauth.clientMetadataUrl,
 			}
 		},
 	},

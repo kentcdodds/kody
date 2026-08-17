@@ -19,6 +19,7 @@ import {
 const outputSchema = z.object({
 	oauthClientOrigin: z.string(),
 	oauthCallbackUrl: z.string(),
+	oauthClientMetadataUrl: z.string().nullable(),
 	servers: z.array(mcpServerStatusSchema),
 })
 
@@ -55,6 +56,7 @@ export const mcpServerListCapability = defineDomainCapability(
 			return {
 				oauthClientOrigin: oauth.clientOrigin,
 				oauthCallbackUrl: oauth.callbackUrl,
+				oauthClientMetadataUrl: oauth.clientMetadataUrl,
 				servers: settings.map((setting) =>
 					buildMcpServerStatusView({
 						setting,

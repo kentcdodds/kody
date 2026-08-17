@@ -9,6 +9,10 @@ import {
 } from '@kody-internal/shared/mcp-servers.ts'
 import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
+import {
+	mcpServerOAuthCallbackPath,
+	resolveMcpClientMetadataUrl,
+} from './client-id-metadata.ts'
 import { createMcpClientHubClient } from './hub-client.ts'
 import {
 	deleteMcpServerSettingRow,
@@ -25,7 +29,7 @@ import {
 } from './settings-types.ts'
 import { type McpServerConnectResult } from './types.ts'
 
-export const mcpServerOAuthCallbackPath = '/account/mcp-servers/oauth/callback'
+export { mcpServerOAuthCallbackPath } from './client-id-metadata.ts'
 
 export function buildMcpServerOAuthCallbackUrl(baseUrl: string) {
 	const origin = baseUrl.trim().replace(/\/+$/, '')
@@ -36,8 +40,9 @@ export function buildMcpServerOAuthCallbackUrl(baseUrl: string) {
  * Stable OAuth client origin + callback for user-added MCP servers.
  *
  * Prefer the configured canonical `APP_BASE_URL` (not the request host) so
- * dynamic client registration always advertises one allowlistable redirect URI
- * during dual-host domain migrations.
+ * CIMD and DCR always advertise one allowlistable redirect URI during
+ * dual-host domain migrations. `clientMetadataUrl` is set only for HTTPS
+ * origins (MCP CIMD requires https).
  */
 export function resolveMcpServerOAuthClientUrls(input: {
 	env: { APP_BASE_URL?: string | null; PACKAGE_APP_BASE_URL?: string | null }
@@ -47,9 +52,11 @@ export function resolveMcpServerOAuthClientUrls(input: {
 		env: input.env,
 		requestUrl: input.requestUrl,
 	})
+	const callbackUrl = buildMcpServerOAuthCallbackUrl(clientOrigin)
 	return {
 		clientOrigin,
-		callbackUrl: buildMcpServerOAuthCallbackUrl(clientOrigin),
+		callbackUrl,
+		clientMetadataUrl: resolveMcpClientMetadataUrl(callbackUrl) ?? null,
 	}
 }
 

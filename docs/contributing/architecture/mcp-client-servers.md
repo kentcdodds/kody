@@ -38,8 +38,12 @@ the `/mcp` endpoint (where Kody is the server) and complements remote connectors
    `APP_BASE_URL`, not the request host) and starts connecting. Optional static
    Authorization headers from `bearerToken` are registered on the transport at
    the same time.
-2. If the server requires OAuth, the SDK performs dynamic client registration
-   and the connection parks in state `authenticating` with an `authUrl`.
+2. If the server requires OAuth, the MCP SDK uses Client ID Metadata Documents
+   when the authorization server advertises
+   `client_id_metadata_document_supported` and the callback origin is HTTPS:
+   Kody presents `{canonical-app-origin}/oauth/client-metadata.json` as
+   `client_id`. Otherwise it falls back to Dynamic Client Registration. The
+   connection parks in state `authenticating` with an `authUrl`.
 3. The user opens `authUrl` in the browser (surfaced in the account UI and by
    the `mcp_server_add` / `mcp_server_list` capabilities). The authorize link
    uses `rel="noopener noreferrer"` so browser Referer does not send Kody's
@@ -70,7 +74,9 @@ always looked up in the hub belonging to the signed-in user — cross-user
 callback replay finds no matching state.
 
 Providers that allowlist client origins or redirect URIs must permit the
-canonical app origin and the callback path above. See
+canonical app origin and the callback path above. CIMD-capable servers also
+fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
+`client_id` matches its URL and lists the same redirect URI. See
 [Connect remote MCP servers](../../use/mcp-client-servers.md).
 
 ## Capability synthesis and invocation

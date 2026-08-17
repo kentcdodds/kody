@@ -34,6 +34,7 @@ export async function loadAccountMcpServersData(input: {
 		username: input.user.username,
 		oauthClientOrigin: oauth.clientOrigin,
 		oauthCallbackUrl: oauth.callbackUrl,
+		oauthClientMetadataUrl: oauth.clientMetadataUrl,
 		servers: settings.map((setting) =>
 			buildMcpServerStatusView({
 				setting,

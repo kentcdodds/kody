@@ -112,6 +112,7 @@ test('resolveMcpServerOAuthClientUrls prefers APP_BASE_URL over the request host
 	).toEqual({
 		clientOrigin: 'https://heykody.app',
 		callbackUrl: 'https://heykody.app/account/mcp-servers/oauth/callback',
+		clientMetadataUrl: 'https://heykody.app/oauth/client-metadata.json',
 	})
 
 	expect(
@@ -122,6 +123,18 @@ test('resolveMcpServerOAuthClientUrls prefers APP_BASE_URL over the request host
 	).toEqual({
 		clientOrigin: 'https://preview.example',
 		callbackUrl: 'https://preview.example/account/mcp-servers/oauth/callback',
+		clientMetadataUrl: 'https://preview.example/oauth/client-metadata.json',
+	})
+
+	expect(
+		resolveMcpServerOAuthClientUrls({
+			env: {},
+			requestUrl: 'http://localhost:8787/account/mcp-servers',
+		}),
+	).toEqual({
+		clientOrigin: 'http://localhost:8787',
+		callbackUrl: 'http://localhost:8787/account/mcp-servers/oauth/callback',
+		clientMetadataUrl: null,
 	})
 })
 

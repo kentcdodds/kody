@@ -71,6 +71,7 @@ type AccountMcpServersPayload = {
 	username: string
 	oauthClientOrigin: string
 	oauthCallbackUrl: string
+	oauthClientMetadataUrl: string | null
 	servers: Array<McpServerListItem>
 	selectedServerId?: string
 }
@@ -203,6 +204,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 	let servers: Array<McpServerListItem> = []
 	let oauthClientOrigin = ''
 	let oauthCallbackUrl = ''
+	let oauthClientMetadataUrl: string | null = null
 	let addName = ''
 	let addUrl = ''
 	let addBearerToken = ''
@@ -248,6 +250,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 		servers = payload.servers
 		oauthClientOrigin = payload.oauthClientOrigin
 		oauthCallbackUrl = payload.oauthCallbackUrl
+		oauthClientMetadataUrl = payload.oauthClientMetadataUrl
 		deleteServerCheck.reset()
 	}
 
@@ -473,6 +476,9 @@ export function AccountMcpServersRoute(handle: Handle) {
 								client origins or redirect URIs (for example FusionAuth), add
 								{oauthClientOrigin ? ` ${oauthClientOrigin} and` : ''} this
 								exact callback before authorizing.
+								{oauthClientMetadataUrl
+									? " Servers that support Client ID Metadata Documents use the CIMD URL as Kody's client_id."
+									: ''}
 							</p>
 						</div>
 						<code
@@ -497,6 +503,33 @@ export function AccountMcpServersRoute(handle: Handle) {
 								size="sm"
 							/>
 						</div>
+						{oauthClientMetadataUrl ? (
+							<>
+								<span mix={css(fieldLabelCss)}>OAuth client metadata URL</span>
+								<code
+									mix={css({
+										padding: spacing.sm,
+										borderRadius: radius.md,
+										border: `1px solid ${colors.border}`,
+										backgroundColor: colors.background,
+										color: colors.text,
+										fontFamily: 'monospace',
+										fontSize: typography.fontSize.sm,
+										overflowWrap: 'anywhere',
+									})}
+								>
+									{oauthClientMetadataUrl}
+								</code>
+								<div>
+									<CopyTextButton
+										value={oauthClientMetadataUrl}
+										idleLabel="Copy CIMD URL"
+										variant="secondary"
+										size="sm"
+									/>
+								</div>
+							</>
+						) : null}
 					</section>
 				) : null}
 

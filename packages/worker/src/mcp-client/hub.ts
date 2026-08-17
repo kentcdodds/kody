@@ -1,9 +1,12 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { MCPClientManager } from 'agents/mcp/client'
-import { DurableObjectOAuthClientProvider } from 'agents/mcp/do-oauth-client-provider'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import {
+	createMcpClientOAuthProvider,
+	mcpClientName,
+} from './client-id-metadata.ts'
 import {
 	isStuckMcpAuthenticatingWithoutAuthUrl,
 	resolveMcpOAuthCallbackOutcome,
@@ -17,7 +20,6 @@ import {
 	type McpServerToolDescriptor,
 } from './types.ts'
 
-const mcpClientName = 'Kody'
 const mcpClientVersion = '1.0.0'
 const connectionSettleTimeoutMs = 8_000
 const discoverTimeoutMs = 15_000
@@ -75,11 +77,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		this.manager = new MCPClientManager(mcpClientName, mcpClientVersion, {
 			storage: state.storage,
 			createAuthProvider: (callbackUrl) =>
-				new DurableObjectOAuthClientProvider(
-					state.storage,
-					mcpClientName,
-					callbackUrl,
-				),
+				createMcpClientOAuthProvider(state.storage, callbackUrl),
 		})
 	}
 
@@ -181,9 +179,8 @@ class McpClientHubBase extends DurableObject<Env> {
 		// DO-storage-backed provider here or OAuth servers can never surface an
 		// authorization URL. The clientName must match the one passed to
 		// `restoreConnectionsFromStorage` so storage keys line up after restarts.
-		const authProvider = new DurableObjectOAuthClientProvider(
+		const authProvider = createMcpClientOAuthProvider(
 			this.ctx.storage,
-			mcpClientName,
 			input.callbackUrl,
 		)
 		authProvider.serverId = input.serverId
@@ -412,9 +409,8 @@ class McpClientHubBase extends DurableObject<Env> {
 				clearClientRegistration: callbackChanged,
 			})
 
-			const authProvider = new DurableObjectOAuthClientProvider(
+			const authProvider = createMcpClientOAuthProvider(
 				this.ctx.storage,
-				mcpClientName,
 				input.callbackUrl,
 			)
 			authProvider.serverId = input.serverId
@@ -440,9 +436,8 @@ class McpClientHubBase extends DurableObject<Env> {
 					.catch(() => {})
 			}
 
-			const originalAuthProvider = new DurableObjectOAuthClientProvider(
+			const originalAuthProvider = createMcpClientOAuthProvider(
 				this.ctx.storage,
-				mcpClientName,
 				row.callback_url,
 			)
 			originalAuthProvider.serverId = input.serverId

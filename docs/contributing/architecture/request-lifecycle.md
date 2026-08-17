@@ -45,6 +45,8 @@ Requests are handled in this order:
      is a no-op and package apps are served inline at step 9 below.
 1. Protected resource metadata (base path only, before `OAuthProvider`):
    - `/.well-known/oauth-protected-resource` (`GET` / `HEAD` / `OPTIONS`)
+   - `/oauth/client-metadata.json` (`GET` / `HEAD` / `OPTIONS`) — Kody-as-client
+     CIMD. Served from the request origin so `client_id` matches the fetch URL.
 2. OAuth authorization endpoints:
    - `/oauth/authorize`
    - `/oauth/authorize-info`

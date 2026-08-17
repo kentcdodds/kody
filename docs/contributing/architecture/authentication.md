@@ -519,6 +519,13 @@ routed from `packages/worker/src/index.ts`.
   `global_fetch_strictly_public` compatibility flag in
   `packages/worker/wrangler.jsonc` for SSRF safety; the provider only advertises
   `client_id_metadata_document_supported` when both are set.
+- Kody-as-client (user-added remote MCP servers) hosts its own CIMD at
+  `/oauth/client-metadata.json`. The document is origin-exact: `client_id`
+  matches the fetch URL, and `redirect_uris` lists
+  `{origin}/account/mcp-servers/oauth/callback`. The MCP client OAuth provider
+  sets `clientMetadataUrl` to the canonical HTTPS document URL so the SDK
+  prefers CIMD and falls back to DCR. Local `http` origins omit
+  `clientMetadataUrl`.
 - Supported scopes: `profile`, `email`
 - On `/oauth/authorize`, unauthenticated users can log in inline or via top-nav
   auth links; those links preserve the full authorize URL in `redirectTo` so
