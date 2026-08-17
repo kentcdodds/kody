@@ -11,6 +11,10 @@ import {
 	initialComponentProbeState,
 	type ComponentProbeState,
 } from './incidents.ts'
+import {
+	auditDbFalseAlarmPurgeMetaKey,
+	purgeAuditDbFalseAlarmData,
+} from './audit-false-alarm-purge.ts'
 import { jobsProbeOrigin, runAllProbes } from './probes.ts'
 import {
 	fetchRelevantProviderIncidents,
@@ -128,6 +132,18 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				value TEXT NOT NULL
 			)
 		`)
+		this.maybePurgeAuditDbFalseAlarms()
+	}
+
+	private maybePurgeAuditDbFalseAlarms() {
+		if (this.getMeta(auditDbFalseAlarmPurgeMetaKey) === '1') return
+		purgeAuditDbFalseAlarmData((query, ...bindings) => {
+			this.ctx.storage.sql.exec(query, ...bindings)
+		})
+		this.setMeta(auditDbFalseAlarmPurgeMetaKey, '1')
+		if (this.listOpenIncidents().length === 0) {
+			this.setMeta('last_notified_state', 'ok')
+		}
 	}
 
 	private getMeta(key: string): string | null {

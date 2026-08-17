@@ -210,7 +210,7 @@ test('probe failures isolate to the affected component and map error details', a
 		ok: false,
 		detail: 'timeout',
 	})
-	expect(outcome(componentOutcomes, 'audit_db')).toBeUndefined()
+	expect(outcome(componentOutcomes, 'audit_db')?.ok).toBe(true)
 
 	const unreachable = healthyRoutes()
 	unreachable[`${primaryOrigin}/health`] = { error: 'connection refused' }

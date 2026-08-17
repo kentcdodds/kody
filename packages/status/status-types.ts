@@ -13,6 +13,7 @@ export const statusComponents = [
 	{ id: 'package_apps', name: 'Package runtime' },
 	{ id: 'jobs', name: 'Jobs' },
 	{ id: 'app_db', name: 'Primary database' },
+	{ id: 'audit_db', name: 'Audit database' },
 	{ id: 'kv', name: 'Key-value storage' },
 	{ id: 'assets', name: 'Asset storage' },
 ] as const
