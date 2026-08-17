@@ -9,9 +9,11 @@ polling loops, retryable steps, or work that may run longer than execute's
 timeout (~90s). Workflow-invoked package exports and inline workflow code get a
 longer sandbox budget (~4.5 minutes, under the Cloudflare Workflow step timeout)
 and run without the package-invocation idempotency ledger, so a step retry
-re-executes instead of replaying a cached timeout. The initial `execute` call
-should submit one `workflows.create`; inspect that workflow later with
-`workflow_run_list`, or cancel it with `workflow_run_cancel`.
+re-executes instead of replaying a cached timeout. Outbound `fetch` in that
+sandbox is capped ~30s under the same budget (~4 minutes), so a single slow
+upstream can finish without the execute-oriented 60s fetch deadline. The initial
+`execute` call should submit one `workflows.create`; inspect that workflow later
+with `workflow_run_list`, or cancel it with `workflow_run_cancel`.
 
 ```ts
 import { workflows } from 'kody:runtime'

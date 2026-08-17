@@ -14,7 +14,10 @@ import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { type FetchGatewayProps } from '#mcp/fetch-gateway.ts'
+import {
+	outboundFetchTimeoutMsForExecutor,
+	type FetchGatewayProps,
+} from '#mcp/fetch-gateway.ts'
 import {
 	readBaseUrlHostname,
 	type RawFetchHostSink,
@@ -537,15 +540,19 @@ export function createExecuteExecutor(input: {
 		input.timeoutMs === null
 			? maxSupportedExecutorTimeoutMs
 			: (input.timeoutMs ?? 90_000)
+	const gatewayProps = {
+		...input.gatewayProps,
+		outboundFetchTimeoutMs: outboundFetchTimeoutMsForExecutor(timeout),
+	}
 	return createStableDynamicWorkerExecutor({
 		loader: input.env.LOADER,
 		timeout,
 		signal: input.signal,
 		globalOutbound: loopbackExports.KodyFetchGateway({
-			props: input.gatewayProps,
+			props: gatewayProps,
 		}),
 		modules: input.modules,
-		gatewayProps: input.gatewayProps,
+		gatewayProps,
 		appCommitSha: input.env.APP_COMMIT_SHA ?? null,
 		usageEnv: input.env,
 		rawFetchHostSink: input.rawFetchHostSink,

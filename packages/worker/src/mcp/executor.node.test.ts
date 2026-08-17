@@ -412,6 +412,31 @@ test('createExecuteExecutor aligns dynamic worker compatibility with shared opti
 	expect(workerOptions).toMatchObject(createDynamicWorkerCompatibilityOptions())
 })
 
+test('createExecuteExecutor gives the fetch gateway a deadline under the sandbox budget', async () => {
+	const readGatewayProps = async (timeoutMs?: number | null) => {
+		const fakeLoader = createFakeWorkerLoader()
+		await createExecuteExecutor({
+			env: createExecutorTestEnv(fakeLoader.loader),
+			exports: createExecutorTestExports(),
+			gatewayProps: createGatewayProps('user-1'),
+			timeoutMs,
+		}).execute('async () => "ok"', [{ name: 'kody', fns: {} }])
+		const workerOptions = fakeLoader.createdOptions.get(fakeLoader.ids[0]!)
+		return (workerOptions?.globalOutbound as { props?: unknown } | undefined)
+			?.props
+	}
+
+	await expect(readGatewayProps()).resolves.toMatchObject({
+		outboundFetchTimeoutMs: 60_000,
+	})
+	await expect(readGatewayProps(270_000)).resolves.toMatchObject({
+		outboundFetchTimeoutMs: 240_000,
+	})
+	await expect(readGatewayProps(null)).resolves.toMatchObject({
+		outboundFetchTimeoutMs: 240_000,
+	})
+})
+
 test('explicit request budgets cap independent roots at four without blocking separate requests', async () => {
 	type BudgetState = {
 		active: number

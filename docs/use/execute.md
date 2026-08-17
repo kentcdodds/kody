@@ -132,10 +132,12 @@ several capabilities or package exports, branch on results, and return the final
 structured result. Split into multiple **execute** calls only when you need new
 user input, confirmation, or a result that changes the plan.
 
-Plain **execute** has a hard timeout (~90s by default). For multi-step or
-long-running work (>~60s, batch sweeps, migrations, polling loops), use one
-**execute** call to submit `workflows.create({ code, params })`, then inspect
-progress with `workflow_run_list` instead of chaining many MCP tool calls.
+Plain **execute** has a hard timeout (~90s by default). Sandbox outbound
+`fetch` is capped at 60s (30s under that budget) unless the caller passes a
+tighter `AbortSignal`. For multi-step or long-running work (>~60s, batch
+sweeps, migrations, polling loops), use one **execute** call to submit
+`workflows.create({ code, params })`, then inspect progress with
+`workflow_run_list` instead of chaining many MCP tool calls.
 Sandbox timeout errors state the enforced budget (for example
 `Execution timed out after 90s: …`) and carry a structured next step pointing at
 workflows.

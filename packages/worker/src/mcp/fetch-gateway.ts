@@ -39,6 +39,13 @@ type FetchGatewayProps = {
 	 */
 	email: string | null
 	storageContext: StorageContext | null
+	/**
+	 * Per-sandbox outbound fetch deadline. Execute keeps the 60s default
+	 * (30s under the 90s sandbox). Long-lived surfaces such as workflows
+	 * raise this so a single slow upstream can finish under their larger
+	 * budget. `null` disables the gateway timeout (caller signal only).
+	 */
+	outboundFetchTimeoutMs?: number | null
 }
 export type { FetchGatewayProps }
 
@@ -57,10 +64,49 @@ export const secretResolutionHeaderName = 'x-kody-secret-resolution'
 
 /**
  * Default deadline for sandbox outbound `fetch` when the caller did not pass
- * a tighter `AbortSignal`. Kept under the execute sandbox budget (90s) so a
- * hung upstream cannot strand the whole evaluation past the host deadline.
+ * a tighter `AbortSignal`. Kept 30s under the default execute sandbox budget
+ * (90s) so a hung upstream cannot strand the whole evaluation past the host
+ * deadline.
  */
 export const defaultOutboundFetchTimeoutMs = 60_000
+
+/**
+ * Headroom between the executor sandbox budget and the outbound fetch
+ * deadline. Matches the default execute pair (90s sandbox / 60s fetch).
+ */
+export const outboundFetchTimeoutHeadroomMs = 30_000
+
+/**
+ * Hung-fetch cap when the sandbox itself is unbounded (persistent
+ * services). Matches the workflow sandbox (270s) minus
+ * {@link outboundFetchTimeoutHeadroomMs}.
+ */
+export const unboundedOutboundFetchTimeoutMs = 240_000
+
+const unboundedExecutorTimeoutMs = 2_147_483_647
+
+/**
+ * Outbound fetch deadline for a sandbox whose executor budget is
+ * `executorTimeoutMs`. Short execute budgets keep the historic 60s cap;
+ * workflow / service budgets raise it by the same 30s headroom so one slow
+ * HTTP call (for example Cursor `createAgent`) can finish.
+ */
+export function outboundFetchTimeoutMsForExecutor(executorTimeoutMs: number) {
+	if (
+		!Number.isFinite(executorTimeoutMs) ||
+		executorTimeoutMs >= unboundedExecutorTimeoutMs
+	) {
+		return unboundedOutboundFetchTimeoutMs
+	}
+	if (executorTimeoutMs <= 0) {
+		return defaultOutboundFetchTimeoutMs
+	}
+	const derived = executorTimeoutMs - outboundFetchTimeoutHeadroomMs
+	if (derived <= 0) {
+		return Math.min(executorTimeoutMs, defaultOutboundFetchTimeoutMs)
+	}
+	return Math.max(defaultOutboundFetchTimeoutMs, derived)
+}
 
 export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 	async fetch(request: Request) {
@@ -69,8 +115,20 @@ export class KodyFetchGateway extends WorkerEntrypoint<Env, FetchGatewayProps> {
 			props: this.ctx.props,
 			request,
 			waitUntil: (promise) => this.ctx.waitUntil(promise),
+			timeoutMs: this.ctx.props.outboundFetchTimeoutMs,
 		})
 	}
+}
+
+function resolveOutboundFetchTimeoutMs(input: {
+	timeoutMs?: number | null
+	propsTimeoutMs?: number | null
+}): number | null {
+	if (input.timeoutMs === null) return null
+	if (input.timeoutMs !== undefined) return input.timeoutMs
+	if (input.propsTimeoutMs === null) return null
+	if (input.propsTimeoutMs !== undefined) return input.propsTimeoutMs
+	return defaultOutboundFetchTimeoutMs
 }
 
 function applyOutboundFetchTimeout(
@@ -103,10 +161,10 @@ export async function executeGatewayFetch(input: {
 	let outcome: 'success' | 'error' = 'success'
 	let response: Response | undefined
 	let meteredEntityId = readMeteredRequestHostname(input.request.url, null)
-	const timeoutMs =
-		input.timeoutMs === null
-			? null
-			: (input.timeoutMs ?? defaultOutboundFetchTimeoutMs)
+	const timeoutMs = resolveOutboundFetchTimeoutMs({
+		timeoutMs: input.timeoutMs,
+		propsTimeoutMs: input.props.outboundFetchTimeoutMs,
+	})
 
 	try {
 		// Daily outbound-fetch quota: every sandbox fetch leaves through
