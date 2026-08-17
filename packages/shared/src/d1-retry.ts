@@ -90,6 +90,43 @@ export function isRetryableD1LockError(error: unknown) {
 }
 
 /**
+ * Opt-in per-attempt deadline for `runD1WithRetry`. Idle D1 bindings can hang
+ * instead of throwing a retryable platform error; a bounded attempt lets the
+ * next try run before an outer health-check timeout fires.
+ */
+export class D1AttemptTimeoutError extends Error {
+	constructor(timeoutMs: number) {
+		super(`D1 attempt timed out after ${timeoutMs}ms`)
+		this.name = 'D1AttemptTimeoutError'
+	}
+}
+
+function isD1AttemptTimeoutError(error: unknown) {
+	return error instanceof D1AttemptTimeoutError
+}
+
+function withAttemptTimeout<T>(
+	operation: Promise<T>,
+	timeoutMs: number,
+): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const handle = setTimeout(() => {
+			reject(new D1AttemptTimeoutError(timeoutMs))
+		}, timeoutMs)
+		operation.then(
+			(value) => {
+				clearTimeout(handle)
+				resolve(value)
+			},
+			(error: unknown) => {
+				clearTimeout(handle)
+				reject(error)
+			},
+		)
+	})
+}
+
+/**
  * Retries transient D1 unavailability: SQLITE_BUSY lock contention,
  * Cloudflare's "Currently processing a long-running export" (DR / REST
  * exports block other requests), binding "Network connection lost"
@@ -100,23 +137,34 @@ export function isRetryableD1LockError(error: unknown) {
  * application-level backoff when they overlap with concurrent writers, an
  * in-flight export, a brief D1 session drop, a D1 capacity spike, or a D1
  * backend blip.
+ *
+ * When `attemptTimeoutMs` is set, a hung attempt is also retried so a single
+ * idle-database stall cannot consume an outer deadline.
  */
 export async function runD1WithRetry<T>(
 	operation: () => Promise<T>,
 	options?: {
 		maxAttempts?: number
 		baseDelayMs?: number
+		attemptTimeoutMs?: number
 	},
 ): Promise<T> {
 	const maxAttempts = options?.maxAttempts ?? d1LockRetryMaxAttempts
 	const baseDelayMs = options?.baseDelayMs ?? d1LockRetryBaseDelayMs
+	const attemptTimeoutMs = options?.attemptTimeoutMs
 	let lastError: unknown
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		try {
-			return await operation()
+			const result = operation()
+			return attemptTimeoutMs === undefined
+				? await result
+				: await withAttemptTimeout(result, attemptTimeoutMs)
 		} catch (error) {
 			lastError = error
-			if (!isRetryableD1LockError(error) || attempt === maxAttempts) {
+			const retryable =
+				isRetryableD1LockError(error) ||
+				(attemptTimeoutMs !== undefined && isD1AttemptTimeoutError(error))
+			if (!retryable || attempt === maxAttempts) {
 				throw error
 			}
 			await sleep(baseDelayMs * 2 ** (attempt - 1))

@@ -21,13 +21,13 @@ const { dispatchStatusIncidentSubscriptionEvent } =
 
 test('status incident dispatch fans metadata-only events through admin package fan-out', async () => {
 	const opened = buildStatusIncidentOpenedEvent({
-		component: 'audit_db',
+		component: 'app_db',
 		detail: 'timeout',
 		startedAt: '2026-08-17T01:11:00.000Z',
 		statusUrl: 'https://status.kody.codes',
 	})
 	const resolved = buildStatusIncidentResolvedEvent({
-		component: 'audit_db',
+		component: 'app_db',
 		detail: 'timeout',
 		startedAt: '2026-08-17T01:11:00.000Z',
 		resolvedAt: '2026-08-17T01:13:00.000Z',

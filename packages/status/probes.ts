@@ -7,10 +7,11 @@ import {
 /**
  * Active probes the status worker runs every scheduled tick. Direct probes
  * cover the worker surfaces (app, MCP, package runtime, jobs); the
- * `/health/components` endpoint on the main worker reports the storage
- * bindings (D1, KV, R2) it depends on. Jobs is reached over a service
- * binding (or an optional non-public origin fallback), never through the
- * main app and never via a user-facing jobs hostname.
+ * `/health/components` endpoint on the main worker reports storage bindings.
+ * Only product-affecting bindings become public cards (`app_db`, `kv`,
+ * `assets`). Jobs is reached over a service binding (or an optional
+ * non-public origin fallback), never through the main app and never via a
+ * user-facing jobs hostname.
  */
 
 const probeTimeoutMs = 10_000
@@ -40,7 +41,6 @@ type HealthComponentsBody = {
 
 const componentEndpointIds = [
 	'app_db',
-	'audit_db',
 	'kv',
 	'assets',
 ] as const satisfies ReadonlyArray<StatusComponentId>

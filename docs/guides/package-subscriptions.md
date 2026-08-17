@@ -696,7 +696,7 @@ type StatusIncidentResolvedEvent = {
 ```
 
 `status_url` is the public status page (`https://status.kody.codes`).
-`component` is a status-page card id such as `audit_db` or `app`. `detail` is
+`component` is a status-page card id such as `app_db` or `app`. `detail` is
 the probe reason (`timeout`, `error`, …) or `null`. Timestamps are ISO-8601 UTC.
 The event omits probe logs, health-check bodies, user identities, secrets, and
 unrelated account content. Idempotency keys include the topic, component,

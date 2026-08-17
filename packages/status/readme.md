@@ -21,6 +21,10 @@ returns Cloudflare 1016. Component probes never use the status hostname, so a
     `status: "ok"`; an apex 302 is not up)
   - jobs-worker `GET /health` and `GET /health/components` over a service
     binding (no public jobs hostname; JOBS_DB rides on the Jobs component)
+- Public storage cards are the main-worker bindings that take the product down
+  (`app_db`, `kv`, `assets`). `GET /health/components` still reports `audit_db`
+  for operators; it is not a public card and does not open incidents or send
+  alert email.
 - A single `StatusStore` Durable Object (SQLite) stores per-minute samples (24
   h), daily uptime rollups (90 days), incidents, and sent notifications.
 - A component opens an incident after two consecutive probe failures and

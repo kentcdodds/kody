@@ -13,7 +13,7 @@ export const statusComponents = [
 	{ id: 'package_apps', name: 'Package runtime' },
 	{ id: 'jobs', name: 'Jobs' },
 	{ id: 'app_db', name: 'Primary database' },
-	{ id: 'audit_db', name: 'Audit database' },
+	// AUDIT_DB is fail-open operator evidence; it stays on /health/components.
 	{ id: 'kv', name: 'Key-value storage' },
 	{ id: 'assets', name: 'Asset storage' },
 ] as const
@@ -23,6 +23,10 @@ export type StatusComponentId = (typeof statusComponents)[number]['id']
 export const statusComponentIds = statusComponents.map(
 	(component) => component.id,
 )
+
+export function isStatusComponentId(value: string): value is StatusComponentId {
+	return (statusComponentIds as ReadonlyArray<string>).includes(value)
+}
 
 export function statusComponentName(id: StatusComponentId): string {
 	const component = statusComponents.find((entry) => entry.id === id)

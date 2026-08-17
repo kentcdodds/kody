@@ -89,3 +89,35 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 	await expect(runD1WithRetry(failingOperation)).rejects.toThrow('syntax error')
 	expect(failingOperation).toHaveBeenCalledTimes(1)
 })
+
+test('runD1WithRetry retries hung attempts when attemptTimeoutMs is set', async () => {
+	let attempts = 0
+	const hungThenOk = vi.fn(async () => {
+		attempts += 1
+		if (attempts === 1) {
+			await new Promise(() => {})
+		}
+		return 'ok'
+	})
+	await expect(
+		runD1WithRetry(hungThenOk, {
+			maxAttempts: 3,
+			attemptTimeoutMs: 20,
+			baseDelayMs: 1,
+		}),
+	).resolves.toBe('ok')
+	expect(hungThenOk).toHaveBeenCalledTimes(2)
+
+	const alwaysHung = vi.fn(async () => {
+		await new Promise(() => {})
+		return 'ok'
+	})
+	await expect(
+		runD1WithRetry(alwaysHung, {
+			maxAttempts: 2,
+			attemptTimeoutMs: 15,
+			baseDelayMs: 1,
+		}),
+	).rejects.toThrow('D1 attempt timed out after 15ms')
+	expect(alwaysHung).toHaveBeenCalledTimes(2)
+})

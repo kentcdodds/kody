@@ -6,7 +6,7 @@ import {
 } from './subscription-event.ts'
 
 const opened = buildStatusIncidentOpenedEvent({
-	component: 'audit_db',
+	component: 'app_db',
 	detail: 'timeout',
 	startedAt: '2026-08-17T01:11:00.000Z',
 	statusUrl: 'https://status.kody.codes',

@@ -4,27 +4,29 @@ import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { type AppEnv } from '#worker/env-schema.ts'
 
 /**
- * Component-level health used by the public status page prober
- * (`packages/status`). Each check is a cheap read against one storage binding,
- * so a failing component points at that subsystem rather than the worker as a
- * whole. Results are memoized briefly so public traffic cannot amplify load on
- * the underlying bindings.
+ * Component-level health for operators and the public status prober
+ * (`packages/status`). Each check is a cheap read against one storage binding.
+ * The prober maps product-affecting bindings (`app_db`, `kv`, `assets`) onto
+ * public cards; `audit_db` stays on this endpoint for operators and is not a
+ * public status card. Results are memoized briefly so public traffic cannot
+ * amplify load on the underlying bindings.
  */
 
-const componentCheckTimeoutMs = 3_000
+const componentCheckTimeoutMs = 5_000
 const resultCacheTtlMs = 10_000
 
 /**
  * Transient D1 blips (SQLITE_BUSY, "Network connection lost", "D1 DB is
- * overloaded…", opaque "internal error; reference = …") are tolerated with
- * retries on every
- * production D1 path, so a single blip must not register as component
- * downtime on the public status page — the mostly idle audit database was
- * losing uptime to exactly these. Three attempts with the standard backoff
- * (worst case ~450ms of sleep) stay well inside the 3s check timeout, so
- * sustained unavailability still fails the check.
+ * overloaded…", opaque "internal error; reference = …") and hung attempts
+ * against a cold/idle binding are retried. A 900ms per-attempt deadline
+ * keeps three tries plus backoff inside the 5s check timeout so a single
+ * stall cannot burn the whole budget. Sustained unavailability still fails
+ * the check.
  */
-const d1CheckRetryOptions = { maxAttempts: 3 } as const
+const d1CheckRetryOptions = {
+	maxAttempts: 3,
+	attemptTimeoutMs: 900,
+} as const
 
 export const healthComponentIds = [
 	'app_db',

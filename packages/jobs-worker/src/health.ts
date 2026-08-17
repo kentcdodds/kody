@@ -6,8 +6,11 @@ import { runD1WithRetry } from '@kody-internal/shared/d1-retry.ts'
  * rides on the same Jobs component — there is no separate storage card.
  */
 
-const componentCheckTimeoutMs = 3_000
-const d1CheckRetryOptions = { maxAttempts: 3 } as const
+const componentCheckTimeoutMs = 5_000
+const d1CheckRetryOptions = {
+	maxAttempts: 3,
+	attemptTimeoutMs: 900,
+} as const
 const noStoreHeaders = { 'Cache-Control': 'no-store' } as const
 
 export type JobsHealthComponentId = 'jobs_db'

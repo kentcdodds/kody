@@ -130,6 +130,28 @@ test('D1 checks retry transient blips but fail fast on other errors', async () =
 	expect(
 		persistent.components.find((component) => component.id === 'audit_db'),
 	).toMatchObject({ ok: false, error: 'error' })
+
+	let hungAttempts = 0
+	const hungBindings = createHealthyBindings()
+	hungBindings.AUDIT_DB = {
+		prepare: () => ({
+			first: async () => {
+				hungAttempts += 1
+				if (hungAttempts === 1) {
+					await new Promise(() => {})
+				}
+				return { 1: 1 }
+			},
+		}),
+	} as unknown as D1Database
+	const recoveredFromHang = await collectHealthComponents(hungBindings)
+	expect(hungAttempts).toBe(2)
+	expect(recoveredFromHang.ok).toBe(true)
+	expect(
+		recoveredFromHang.components.find(
+			(component) => component.id === 'audit_db',
+		),
+	).toMatchObject({ ok: true })
 })
 
 test('health components handler memoizes, coalesces in-flight work, and returns 503 on failure', async () => {

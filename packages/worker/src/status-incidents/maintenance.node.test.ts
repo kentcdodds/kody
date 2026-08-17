@@ -29,7 +29,7 @@ function createRequest(input: {
 
 test('status incident maintenance route authenticates, validates, and fans out in the background', async () => {
 	const opened = buildStatusIncidentOpenedEvent({
-		component: 'audit_db',
+		component: 'app_db',
 		detail: 'timeout',
 		startedAt: '2026-08-17T01:11:00.000Z',
 		statusUrl: 'https://status.kody.codes',

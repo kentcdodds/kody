@@ -6,7 +6,7 @@ import {
 } from './incident-events.ts'
 
 const opened = buildStatusIncidentOpenedPayload({
-	component: 'audit_db',
+	component: 'app_db',
 	detail: 'timeout',
 	startedAt: 1_755_400_000_000,
 	statusUrl: 'https://status.kody.codes',
@@ -49,7 +49,7 @@ test('rejects non-https origins', async () => {
 test('POSTs opened and resolved payloads to the main-worker maintenance route', async () => {
 	const calls: Array<{ url: string; init: RequestInit }> = []
 	const resolved = buildStatusIncidentResolvedPayload({
-		component: 'audit_db',
+		component: 'app_db',
 		detail: 'timeout',
 		startedAt: 1_755_400_000_000,
 		resolvedAt: 1_755_400_120_000,
