@@ -12,6 +12,12 @@ import {
 	type ComponentProbeState,
 } from './incidents.ts'
 import {
+	buildStatusIncidentOpenedPayload,
+	buildStatusIncidentResolvedPayload,
+	notifyStatusIncidentEvent,
+	type StatusIncidentEventPayload,
+} from './incident-events.ts'
+import {
 	publicAuditDbRetiredMetaKey,
 	retirePublicAuditDbData,
 } from './retire-public-audit-db.ts'
@@ -56,6 +62,12 @@ export type StatusWorkerEnv = {
 	CLOUDFLARE_API_BASE_URL?: string
 	/** Worker secret: Cloudflare API token with Email Sending permission. */
 	CLOUDFLARE_API_TOKEN?: string
+	/**
+	 * Shared bearer with the main worker `STATUS_INCIDENT_EVENT_SECRET`.
+	 * When unset, incident emit is skipped and sweep polling remains the
+	 * ingest backstop.
+	 */
+	STATUS_INCIDENT_EVENT_SECRET?: string
 }
 
 const sampleRetentionMs = 25 * 60 * 60 * 1000
@@ -242,8 +254,17 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 					detail: outcome.detail,
 				}),
 			)
+			this.enqueueIncidentEvent(
+				buildStatusIncidentOpenedPayload({
+					component: outcome.component,
+					detail: outcome.detail,
+					startedAt: now,
+					statusUrl: this.env.STATUS_PAGE_URL,
+				}),
+			)
 		}
 		if (transition === 'resolved') {
+			const open = this.loadOpenIncident(outcome.component)
 			this.ctx.storage.sql.exec(
 				`UPDATE incidents SET resolved_at = ?
 				WHERE component = ? AND resolved_at IS NULL`,
@@ -254,7 +275,51 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				'status-incident-resolved',
 				JSON.stringify({ component: outcome.component }),
 			)
+			if (open) {
+				this.enqueueIncidentEvent(
+					buildStatusIncidentResolvedPayload({
+						component: outcome.component,
+						detail: open.detail,
+						startedAt: open.startedAt,
+						resolvedAt: now,
+						statusUrl: this.env.STATUS_PAGE_URL,
+					}),
+				)
+			}
 		}
+	}
+
+	private loadOpenIncident(component: StatusComponentId) {
+		const row = this.ctx.storage.sql
+			.exec<{ started_at: number; detail: string | null }>(
+				`SELECT started_at, detail FROM incidents
+				WHERE component = ? AND resolved_at IS NULL`,
+				component,
+			)
+			.toArray()[0]
+		if (!row) return null
+		return { startedAt: row.started_at, detail: row.detail }
+	}
+
+	private enqueueIncidentEvent(payload: StatusIncidentEventPayload) {
+		this.ctx.waitUntil(
+			notifyStatusIncidentEvent({
+				primaryOrigin: this.env.PRIMARY_ORIGIN,
+				secret: this.env.STATUS_INCIDENT_EVENT_SECRET,
+				payload,
+			}).then((result) => {
+				if (!result.ok) {
+					console.warn(
+						'status-incident-event-failed',
+						JSON.stringify({
+							event: payload.event,
+							component: payload.incident.component,
+							error: result.error,
+						}),
+					)
+				}
+			}),
+		)
 	}
 
 	private listOpenIncidents(): Array<OpenIncidentSummary> {

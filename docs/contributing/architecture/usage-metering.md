@@ -154,8 +154,8 @@ each chokepoint records exactly one event per metered unit, so sums are safe.
    Analytics Engine is the analysis store (sampling-tolerant, high cardinality).
    Do not build enforcement on it.
 
-2. **D1 `usage_rollups` is a derived aggregate** (migration
-   `packages/worker/migrations/0047-usage-rollups.sql`): per-user, per-metric,
+2. **D1 `usage_rollups` is a derived aggregate** (defined in
+   `packages/worker/migrations/0001-squashed-init.sql`): per-user, per-metric,
    per-month counters:
    - key: `(user_id, metric, month)` where `metric` is the `eventType` and
      `month` is the UTC `YYYY-MM` prefix of the event timestamp
@@ -183,11 +183,11 @@ each chokepoint records exactly one event per metered unit, so sums are safe.
 
 ## Agent package popularity (MCP instructions hint)
 
-Separate from `usage_rollups`, D1 table `agent_package_conversation_uses`
-(migration `0073-agent-package-conversation-uses.sql`) tracks **distinct
-conversations** in which a signed-in user’s agents used a saved package via MCP
-`execute` (`packages.invoke*` with execute provenance, plus static/dynamic
-`kody:@…` deps attributed to that execute call’s `conversationId`).
+Separate from `usage_rollups`, D1 table `agent_package_conversation_uses` (also
+defined in `0001-squashed-init.sql`) tracks **distinct conversations** in which
+a signed-in user’s agents used a saved package via MCP `execute`
+(`packages.invoke*` with execute provenance, plus static/dynamic `kody:@…` deps
+attributed to that execute call’s `conversationId`).
 
 - Key: `(user_id, package_id, conversation_id)` — upsert updates `last_used_at`;
   the same package in the same conversation counts once. Stored

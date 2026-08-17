@@ -50,8 +50,8 @@ of truth for valid permission strings. Call sites pass literal
 
 ### Baseline roles
 
-Migration `packages/worker/migrations/0043-rbac.sql` seeds two roles with
-`INSERT OR IGNORE`:
+The squashed baseline (`packages/worker/migrations/0001-squashed-init.sql`)
+defines the RBAC tables and seeds two roles:
 
 - **`user`** — default role assigned at signup. Permissions:
   `create|read|update|delete:{entity}:own` for every entity in the registry.
@@ -59,10 +59,6 @@ Migration `packages/worker/migrations/0043-rbac.sql` seeds two roles with
   `create|read|update|delete:{entity}:any` for every entity in the registry.
 
 Role names are typed: `roleNames = ['user', 'admin']` in `permissions.ts`.
-
-Migration `packages/worker/migrations/0044-rbac-backfill-user-role.sql`
-backfills the `user` role onto accounts that lack a role assignment, so every
-account has the default role.
 
 There is no runtime path that grants `admin`. The first admin is bootstrapped
 with SQL (see [First admin bootstrap](#first-admin-bootstrap) below).
@@ -301,9 +297,8 @@ consumer-time fan-out is the authorization boundary rather than a handler role
 check. This remains a narrow exception only for feedback shown to and explicitly
 approved by the user; it does not grant package runtime general admin roles.
 Username and email are stored submission-time snapshots. Package events never
-resolve mutable live profile data. Migration 0114 backfills pre-snapshot rows
-from the matching user and removes rows that cannot satisfy this attribution
-contract, so persisted snapshots are always present.
+resolve mutable live profile data, and persisted feedback rows always carry both
+snapshots.
 
 Submission awaits only Queue enqueue after persistence. An enqueue failure is
 logged without changing the successful response, preventing duplicate feedback
@@ -349,6 +344,17 @@ write gets a distinct event id for package-invocation idempotency. Deleted
 activity is acknowledged as a permanent cancellation; transient lookup,
 discovery, and package-invocation infrastructure failures retry and can reach
 the dedicated DLQ.
+
+**Admins can subscribe to public status-page incidents.** The isolated status
+worker records component incidents in its own Durable Object, then best-effort
+POSTs metadata to the main worker. Fan-out of `status.incident.opened` and
+`status.incident.resolved` selects only packages whose owners hold the admin
+role at dispatch time. A non-admin may declare the topic but never receives it.
+The event contains the public status URL, component id, probe detail, and ISO
+timestamps. It omits probe logs, health-check bodies, user identities, secrets,
+and unrelated account content. This is operator telemetry about kody itself, not
+a user-data exception. Delivery is best-effort (no Queue); `/status.json`
+polling remains the backstop.
 
 **Admins can see** operator-owned system mail for reserved platform addresses
 (`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin`). That mail
@@ -433,9 +439,7 @@ assignment happens through the admin UI.
 - `packages/worker/universal/permissions.ts` — typed registry
 - `packages/worker/src/identity/permissions-db.ts` — D1 queries
 - `packages/worker/src/app/permissions-server.ts` — request guards
-- `packages/worker/migrations/0043-rbac.sql` — schema and seed data
-- `packages/worker/migrations/0044-rbac-backfill-user-role.sql` — role backfill
-  for pre-RBAC accounts
+- `packages/worker/migrations/0001-squashed-init.sql` — schema and seed data
 - `packages/worker/src/app/handlers/admin-users.ts` — users admin API
 - `packages/worker/src/app/handlers/admin-roles.ts` — roles admin API
 - `packages/worker/src/mcp-auth-user-context.ts` — MCP role loading

@@ -5,8 +5,9 @@ summary:
   Use package.json#kody.subscriptions for package-owned event handlers; discover
   subscribers with package_subscriptions_list; smoke-test handlers with
   package_subscription_dispatch; follow metadata-first email, run.error.recorded
-  activity notifiers, plus consent-gated admin-only platform.feedback.submitted
-  notification guidance.
+  activity notifiers, consent-gated admin-only platform.feedback.submitted
+  notification guidance, and admin-only status.incident.opened /
+  status.incident.resolved operator telemetry.
 category: platform
 ---
 
@@ -123,9 +124,10 @@ publish result. Failed and non-fast-forward results have no test hints.
   always runs the named package. Put filter-matching fields inside `params` when
   testing filter-dependent code paths.
 - **Admin-only topics** (`email.system-message.received`,
-  `platform.feedback.submitted`, `community.activity.recorded`) gate
-  **production** fan-out on admin role; synthetic dispatch still runs your
-  handler directly for smoke testing.
+  `platform.feedback.submitted`, `community.activity.recorded`,
+  `status.incident.opened`, `status.incident.resolved`) gate **production**
+  fan-out on admin role; synthetic dispatch still runs your handler directly for
+  smoke testing.
 - **Activity.** Synthetic runs appear on the `subscription` surface. Handler
   failures do not emit `run.error.recorded` (recursion guard).
 
@@ -652,3 +654,52 @@ the metadata projection after admin subscriber discovery. Missing activity is a
 permanent cancellation; transient lookup, discovery, and package-invocation
 infrastructure failures retry and can reach the dedicated DLQ. `event_id`
 provides a distinct package-invocation idempotency key for every recorded write.
+
+## `status.incident.opened` / `status.incident.resolved` (admins)
+
+When the isolated status worker opens or resolves a component incident, it
+best-effort POSTs a metadata-only payload to the main worker
+(`POST /__maintenance/status-incidents`, shared bearer
+`STATUS_INCIDENT_EVENT_SECRET`). The main worker fans out immediately to
+packages saved by users who hold the admin role at dispatch time. A non-admin
+package may declare the topic, but it never receives the event. Role revocation
+stops delivery on the next incident.
+
+There is no Queue / DLQ for these topics in v1. A missing secret, a down main
+worker, or a failed invoke is logged and skipped. Packages that also reconcile
+`https://status.kody.codes/status.json` can catch an incident that is still
+open, or still listed in recent history, on the next sweep. An incident that
+opens and resolves between polls can be missed. Probe recording never waits on
+fan-out.
+
+Handlers receive operator telemetry only:
+
+```ts
+type StatusIncidentOpenedEvent = {
+	event: 'status.incident.opened'
+	status_url: string
+	incident: {
+		component: string
+		detail: string | null
+		started_at: string
+	}
+}
+
+type StatusIncidentResolvedEvent = {
+	event: 'status.incident.resolved'
+	status_url: string
+	incident: {
+		component: string
+		detail: string | null
+		started_at: string
+		resolved_at: string
+	}
+}
+```
+
+`status_url` is the public status page (`https://status.kody.codes`).
+`component` is a status-page card id such as `app_db` or `app`. `detail` is the
+probe reason (`timeout`, `error`, …) or `null`. Timestamps are ISO-8601 UTC. The
+event omits probe logs, health-check bodies, user identities, secrets, and
+unrelated account content. Idempotency keys include the topic, component,
+timestamps, and package id so a retried POST does not double-invoke.

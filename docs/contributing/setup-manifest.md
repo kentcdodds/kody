@@ -318,6 +318,15 @@ through the Cloudflare Email REST API (from `ALERT_EMAIL_FROM` to
 `ALERT_EMAIL_TO`, both non-secret vars in `packages/status/wrangler.jsonc`).
 Without that secret, alert sends are skipped and logged.
 
+An optional Worker secret `STATUS_INCIDENT_EVENT_SECRET` (synced from the
+same-named GitHub Actions secret when present) is shared with the main worker.
+On incident open or resolve the status worker POSTs metadata to
+`https://kody.codes/__maintenance/status-incidents` so admin packages can
+subscribe to `status.incident.opened` / `status.incident.resolved`. The notify
+is fire-and-forget with a short timeout so a down or missing secret cannot stall
+probes or email. When the GitHub secret is unset, emit stays skipped; packages
+can still reconcile from the public `/status.json` snapshot.
+
 ## Optional Cloudflare offerings
 
 The default footprint stays intentionally small. If you want to add additional

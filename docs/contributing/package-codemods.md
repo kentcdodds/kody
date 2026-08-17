@@ -271,9 +271,9 @@ Each per-package row in a run records one of:
 
 ## Ledger
 
-Every run and per-package item is stored in D1 (migration
-`0111-package-codemod-ledger.sql`). Pagination cursors live on step responses,
-not in the ledger tables.
+Every run and per-package item is stored in D1 (tables defined in
+`packages/worker/migrations/0001-squashed-init.sql`). Pagination cursors live on
+step responses, not in the ledger tables.
 
 **`package_codemod_runs`:** `id`, `codemod_id`, `mode`, `scope_user_id` (`NULL`
 for fleet runs), `initiated_by_user_id`, `filters_json`, `status` (`running` |

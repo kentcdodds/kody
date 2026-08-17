@@ -12,7 +12,8 @@ See [Data storage](./data-storage.md) for table inventory and
 
 ## Data model
 
-Migration `packages/worker/migrations/0072-package-scope-grants.sql`:
+The squashed baseline (`packages/worker/migrations/0001-squashed-init.sql`)
+defines:
 
 - **`users.account_type`** — `'person'` (default) or `'platform'`. Platform
   accounts are created by operators, not through signup.
@@ -123,5 +124,5 @@ the mechanism.
   platform account lookup
 - `packages/worker/src/package-registry/package-owner.ts` — scope resolution and
   audit
-- `packages/worker/migrations/0072-package-scope-grants.sql` — schema
+- `packages/worker/migrations/0001-squashed-init.sql` — schema
 - `packages/worker/src/identity/reserved-usernames.ts` — username denylist

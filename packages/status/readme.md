@@ -35,6 +35,14 @@ returns Cloudflare 1016. Component probes never use the status hostname, so a
   (`STATUS_ALERT_DAILY_LIMIT`). Alert links use `STATUS_PAGE_URL`
   (`https://status.kody.codes`).
 
+When an incident opens or resolves, the worker also POSTs a small JSON payload
+to the main worker (`POST /__maintenance/status-incidents`) when the shared
+Worker secret `STATUS_INCIDENT_EVENT_SECRET` is set. That path fans
+`status.incident.opened` / `status.incident.resolved` to admin package
+subscriptions. The notify is fire-and-forget with a short timeout so a down or
+missing secret cannot stall probes or email. Until the secret exists, packages
+can still enqueue from `GET /status.json`.
+
 ## Provider incidents (Cloudflare)
 
 Each cron tick also fetches Cloudflare's public Statuspage feed

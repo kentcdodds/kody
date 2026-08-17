@@ -344,8 +344,10 @@ connector-style credential setup capabilities that store write-only values.
 ## Directory layout
 
 Organize capabilities by domain. Each domain folder should include a
-**`domain.ts`** that calls `defineDomain`, an optional **`index.ts`** barrel,
-and one or more capability modules.
+**`domain.ts`** that calls `defineDomain` and one or more capability modules.
+The domain module imports each capability from its defining file; consumers
+import the domain from `domain.ts` and individual capabilities from their own
+modules.
 
 ```text
 packages/worker/src/mcp/capabilities/
@@ -360,7 +362,6 @@ packages/worker/src/mcp/capabilities/
   coding/
     domain.ts
     kody-official-guide.ts
-    index.ts
   values/
     domain.ts
     value-get.ts
@@ -377,7 +378,7 @@ domain when you introduce a new system boundary or ownership area (e.g.
    extends the `BuiltinCapabilityDomain` union; `CapabilityDomain` itself is a
    plain `string` so runtime remote-connector domains stay valid).
 2. Add `packages/worker/src/mcp/capabilities/<name>/domain.ts`, capability
-   files, and `index.ts` if you want a barrel.
+   files, and direct imports from those files in `domain.ts`.
 3. Append the new domain to the `builtinDomains` array in `builtin-domains.ts`.
 
 You do not edit `registry.ts` for routine additions—only `builtin-domains` and
@@ -391,8 +392,9 @@ the domain modules.
 3. Add helpful `tags`/`keywords` when they improve search.
 4. Include the capability in that domain’s **`domain.ts`**:
    `capabilities: [..., yourCapability]`.
-5. If the domain uses `index.ts`, ensure it exports `domain` /
-   `codingCapabilities`-style aliases as needed for local imports.
+5. Import the domain directly from **`<domain>/domain.ts`** in
+   `builtin-domains.ts`; import individual capabilities from their defining
+   files wherever they are used.
 6. Add or update focused `*.node.test.ts` or `*.workers.test.ts` coverage beside
    the implementation for most MCP-visible behavior. Touch
    `packages/worker/src/mcp/*.mcp-e2e.test.ts` only when the behavior truly

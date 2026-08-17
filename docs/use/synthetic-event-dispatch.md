@@ -139,9 +139,9 @@ surface) for run records; the run record includes `synthetic: true` (and
 - Ignores subscription `filters` — synthetic dispatch always targets the named
   package; supply matching fields inside `params` when testing filter-dependent
   logic.
-- Admin-only delivery rules (for example `platform.feedback.submitted`) apply to
-  **production** fan-out only; synthetic dispatch runs your handler directly for
-  smoke testing.
+- Admin-only delivery rules (for example `platform.feedback.submitted` or
+  `status.incident.opened`) apply to **production** fan-out only; synthetic
+  dispatch runs your handler directly for smoke testing.
 - Side effects (`packageStorage()`, outbound APIs, downstream invokes) are real.
   Use a deliberately visible irreversible-side-effect guard when smoke tests
   should stay safe.

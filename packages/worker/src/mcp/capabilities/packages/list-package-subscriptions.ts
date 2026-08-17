@@ -20,7 +20,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 	{
 		name: 'package_subscriptions_list',
 		description:
-			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email receipt, delivery-update, repo.pushed / repo.created / repo.deleted Artifacts lifecycle notifiers, run.error.recorded activity notifiers, admin platform-feedback, or admin community-activity notification subscribers before debugging dispatch or building fan-out. Admin-only topics carry only their documented narrow metadata, and declaring one does not grant delivery; dispatch checks the package owner role fresh at delivery time.',
+			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email receipt, delivery-update, repo.pushed / repo.created / repo.deleted Artifacts lifecycle notifiers, run.error.recorded activity notifiers, admin platform-feedback, admin community-activity, or admin status-incident notification subscribers before debugging dispatch or building fan-out. Admin-only topics carry only their documented narrow metadata, and declaring one does not grant delivery; dispatch checks the package owner role fresh at delivery time.',
 		keywords: [
 			'package',
 			'package.json#kody.subscriptions',
@@ -47,6 +47,10 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 			'platform feedback submitted',
 			'community.activity.recorded',
 			'community activity recorded',
+			'status.incident.opened',
+			'status incident opened',
+			'status.incident.resolved',
+			'status incident resolved',
 			'inbound email',
 			'list',
 			'discover',
@@ -61,7 +65,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(
-					'Optional exact event topic filter such as "email.message.received", "repo.pushed", "run.error.recorded", "platform.feedback.submitted", or "community.activity.recorded".',
+					'Optional exact event topic filter such as "email.message.received", "repo.pushed", "run.error.recorded", "platform.feedback.submitted", "community.activity.recorded", or "status.incident.opened".',
 				),
 		}),
 		outputSchema: z.object({

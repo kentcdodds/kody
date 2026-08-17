@@ -17,10 +17,9 @@ the `/mcp` endpoint (where Kody is the server) and complements remote connectors
   `handleOAuthCallback`, `getSnapshot`, `callTool`, and
   `purgeForAccountDeletion`.
 - **D1 `mcp_server_settings` table**
-  (`packages/worker/migrations/0053-mcp-server-settings.sql`) — user-scoped
-  metadata (id, name, url, enabled). D1 answers "which servers does this user
-  have enabled" without waking the DO; the DO owns live connection state and
-  tokens.
+  (`packages/worker/migrations/0001-squashed-init.sql`) — user-scoped metadata
+  (id, name, url, enabled). D1 answers "which servers does this user have
+  enabled" without waking the DO; the DO owns live connection state and tokens.
 - **Hub client with snapshot cache**
   (`packages/worker/src/mcp-client/hub-client.ts`) — worker-side facade over the
   DO stub. Snapshots are cached per user for 30 seconds and invalidated on every

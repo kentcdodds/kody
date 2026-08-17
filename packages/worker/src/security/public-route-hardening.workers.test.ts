@@ -126,6 +126,11 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 			notConfiguredMessage: 'Mailbox import is not configured',
 		},
 		{
+			path: '/__maintenance/status-incidents',
+			secret: env.STATUS_INCIDENT_EVENT_SECRET,
+			notConfiguredMessage: 'Status incident events are not configured',
+		},
+		{
 			path: '/__maintenance/reencrypt-secrets',
 			secret: env.CAPABILITY_REINDEX_SECRET,
 			notConfiguredMessage: 'Secret re-encryption is not configured',
