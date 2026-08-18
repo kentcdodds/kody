@@ -46,6 +46,13 @@ Keep the module focused and return structured evidence. Do not treat the
 ephemeral module as the durable source for behavior that must be maintained,
 reused, or evolved.
 
+Ad hoc `execute` runs with the signed-in user's ambient authority: it can call
+discovered capabilities through `kody`. A saved package is the
+declared-authority unit. Secret mounts, host approval, integration allowlists,
+and `kody.dependencies` are the request, and agents cannot widen those. Outbound
+emissions (email, paid APIs, third-party writes) are not invertible; use a
+package `dryRun` and fresh user confirmation before a live mutation.
+
 ### Fork a close community package before creating
 
 Community listings are excluded from general `search`. When you need durable

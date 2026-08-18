@@ -40,3 +40,4 @@ behavior (see [documentation principles](../documentation.md)).
 - [0018 — Inbound CLA for external contributions to this repository](./0018-inbound-cla.md)
 - [0019 — Self-hosted Nx remote cache (not Nx Cloud)](./0019-self-hosted-nx-remote-cache.md)
 - [0020 — Repo sessions spill Workspace objects to R2; do not adopt `@cloudflare/computer`](./0020-repo-session-workspace-r2-not-computer.md)
+- [0021 — Publish-gated packages; no in-process composition runtime](./0021-publish-gated-package-composition.md)
