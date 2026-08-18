@@ -165,17 +165,6 @@ function createTestDb(
 							}
 							if (
 								lower ===
-								'select instance_id from remote_connector_settings where user_id = ?'
-							) {
-								results = (rows.remote_connector_settings ?? [])
-									.filter((row) => row['user_id'] === userId)
-									.map((row) => ({
-										instance_id: row['instance_id'],
-									}))
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
-								lower ===
 								'select do_id from mcp_agent_sessions where user_id = ? order by do_id'
 							) {
 								results = (rows.mcp_agent_sessions ?? [])
@@ -761,10 +750,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		secret_entries: [{ bucket_id: 'sb-1', name: 's', user_id: 'unused' }],
 		value_buckets: [{ id: 'vb-1', user_id: userAaa }],
 		value_entries: [{ bucket_id: 'vb-1', name: 'v', user_id: 'unused' }],
-		remote_connector_settings: [
-			{ id: 'rc-1', user_id: userAaa, instance_id: 'home' },
-			{ id: 'rc-2', user_id: userBbb, instance_id: 'other' },
-		],
 		mcp_agent_sessions: [
 			{ do_id: 'do-user-a', user_id: userAaa },
 			{ do_id: 'do-user-b', user_id: userBbb },
@@ -1140,7 +1125,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		jobsBindingStub.purgeUser(input),
 	)
 	const purgeRepoSessionMock = vi.fn(async () => ({ ok: true as const }))
-	const purgeRemoteConnectorMock = vi.fn(async () => ({ ok: true as const }))
 	const purgeMcpClientHubMock = vi.fn(async () => undefined)
 	const purgeMcpAgentSessionMock = vi.fn(async () => undefined)
 	const doFetchMock = vi.fn(async () => Response.json({ ok: true }))
@@ -1250,9 +1234,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			source_id: 'src-2',
 			has_app: 0,
 		},
-	])
-	expect(rows.remote_connector_settings).toEqual([
-		{ id: 'rc-2', user_id: userBbb, instance_id: 'other' },
 	])
 	expect(rows.mcp_agent_sessions).toEqual([
 		{ do_id: 'do-user-b', user_id: userBbb },
@@ -1415,11 +1396,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		sessionId: 'rs-1',
 		userId: userAaa,
 	})
-	expect(purgeRemoteConnectorMock).toHaveBeenCalledWith({
-		userId: userAaa,
-
-		instanceId: 'home',
-	})
 	expect(doFetchMock).toHaveBeenCalledTimes(4)
 
 	// Bundle KV keys for the deleted user were removed; the other user's keys
@@ -1491,7 +1467,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		mailboxes: 1,
 		jobManagers: 1,
 		repoSessions: 1,
-		remoteConnectorSessions: 1,
 		// The MCP client hub is purged even when the user has no
 		// mcp_server_settings rows, since the hub DO can still hold OAuth
 		// tokens from failed or removed registrations.

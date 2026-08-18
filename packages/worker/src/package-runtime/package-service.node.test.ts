@@ -12,7 +12,6 @@ const mockModule = vi.hoisted(() => ({
 	runBundledModuleWithRegistry: vi.fn(),
 	createPackageEventTools: vi.fn(() => ({})),
 	createPackageRuntimeInvokeTools: vi.fn(() => ({})),
-	listAttachedRemoteConnectorRefsCached: vi.fn(async () => []),
 }))
 
 vi.mock('@sentry/cloudflare', () => ({
@@ -79,8 +78,6 @@ vi.mock('#worker/mcp-auth-user-context.ts', async (importOriginal) => {
 		await importOriginal<typeof import('#worker/mcp-auth-user-context.ts')>()
 	return {
 		...actual,
-		listAttachedRemoteConnectorRefsCached: (...args: Array<unknown>) =>
-			mockModule.listAttachedRemoteConnectorRefsCached(...args),
 	}
 })
 
@@ -236,8 +233,6 @@ function resetMocks() {
 	mockModule.runBundledModuleWithRegistry.mockReset()
 	mockModule.createPackageEventTools.mockReset()
 	mockModule.createPackageRuntimeInvokeTools.mockReset()
-	mockModule.listAttachedRemoteConnectorRefsCached.mockReset()
-	mockModule.listAttachedRemoteConnectorRefsCached.mockResolvedValue([])
 	// The global `mockReset: true` config restores the spy's real
 	// implementation before every test; re-stub so recordUsage does not run
 	// against the stub env and log `usage-rollup-failed`.
@@ -355,9 +350,6 @@ test('package service start and stop project liveness into package_service_state
 
 	try {
 		setupSavedPackage('bounded')
-		mockModule.listAttachedRemoteConnectorRefsCached.mockResolvedValue([
-			{ instanceId: 'home' },
-		])
 		mockModule.runBundledModuleWithRegistry.mockImplementation(async () => {
 			vi.setSystemTime(new Date('2026-07-05T12:00:05.000Z'))
 			return { result: { ok: true }, error: null }

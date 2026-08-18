@@ -73,7 +73,7 @@ test('downstream MCP wrap preserves WebP images, structured+content, oversized b
 			structuredContent: { chartId: 'c1', width: 640 },
 			isError: false,
 		},
-		{ kind: 'remote-connector', label: 'home:screenshot' },
+		{ kind: 'mcp-server', label: 'home:screenshot' },
 	)
 	expect(structuredAndImage).toMatchObject({
 		chartId: 'c1',
@@ -161,7 +161,7 @@ test('downstream MCP wrap preserves WebP images, structured+content, oversized b
 			{
 				content: [{ type: 'image', data: '!!!', mimeType: 'image/png' }],
 			},
-			{ kind: 'remote-connector', label: 'cam:snap' },
+			{ kind: 'mcp-server', label: 'cam:snap' },
 		),
 	).toThrow(/cam:snap[\s\S]*malformed MCP content/)
 
@@ -246,7 +246,7 @@ test('reserved structuredContent marker names are isolated on every wrap path', 
 	// Structured-only success.
 	const structuredOnly = wrapDownstreamMcpToolResult(
 		{ structuredContent: collidingStructured },
-		{ kind: 'remote-connector', label: 'collision:structured' },
+		{ kind: 'mcp-server', label: 'collision:structured' },
 	)
 	expect(structuredOnly).toEqual(textAndStructured)
 	expect(extractMcpPassthrough(structuredOnly)).toBeNull()
@@ -330,7 +330,7 @@ test('untrusted content is bounded by block count and payload size before schema
 	)
 	expect(() =>
 		validateDownstreamMcpContentBlocks(hugePayload, {
-			kind: 'remote-connector',
+			kind: 'mcp-server',
 			label: 'flood:bytes',
 		}),
 	).toThrow(/flood:bytes[\s\S]*exceeding content limit/)

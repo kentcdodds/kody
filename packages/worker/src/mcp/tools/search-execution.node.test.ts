@@ -51,7 +51,6 @@ const mockModule = vi.hoisted(() => {
 			warnings: [],
 			registry: { capabilitySpecs: {} },
 		})),
-		loadDownRemoteConnectorStatuses: vi.fn(async () => []),
 		searchUnified: vi.fn(async () => createEmptySearchUnifiedResult()),
 		loadRelevantMemoriesForTool: vi.fn(),
 		runPackageRetrievers: vi.fn(),
@@ -71,9 +70,6 @@ vi.mock('./package-search-identity.ts', () => ({
 vi.mock('./search-loaders.ts', () => ({
 	loadSearchRowsAndRegistry: (...args: Array<unknown>) =>
 		mockModule.loadSearchRowsAndRegistry(...args),
-	loadDownRemoteConnectorStatuses: (...args: Array<unknown>) =>
-		mockModule.loadDownRemoteConnectorStatuses(...args),
-	serializeRemoteConnectorStatus: (status: { connectorId: string }) => status,
 }))
 
 vi.mock('./search-core.ts', () => ({

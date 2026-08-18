@@ -182,7 +182,7 @@ test('package app run-record finish waits for begin inside waitUntil, not on the
 	])
 })
 
-test('package app kody proxy supports remote namespace calls', async () => {
+test('package app kody proxy supports mcp namespace calls', async () => {
 	const calls: Array<{ name: string; args: unknown }> = []
 	const kody = await createKodyProxyForTest({
 		callCapability: async (input: { name: string; args: unknown }) => {
@@ -193,7 +193,7 @@ test('package app kody proxy supports remote namespace calls', async () => {
 
 	await expect(
 		(
-			kody.remote as Record<
+			kody.mcp as Record<
 				string,
 				Record<string, (args: unknown) => Promise<unknown>>
 			>
@@ -201,11 +201,11 @@ test('package app kody proxy supports remote namespace calls', async () => {
 	).resolves.toEqual({ ok: true })
 	expect(calls).toEqual([
 		{
-			name: 'remote:home:set_pin',
+			name: 'mcp:home:set_pin',
 			args: { pin: '1234' },
 		},
 	])
-	expect(() => kody['remote:home:set_pin']).toThrow()
+	expect(() => kody['mcp:home:set_pin']).toThrow()
 })
 
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {
@@ -322,9 +322,6 @@ const packageAppRuntimeMock = vi.hoisted(() => ({
 	resolvePackageMountedSecret: vi.fn(),
 	beginRunRecord: vi.fn(),
 	finishRunRecord: vi.fn(async () => {}),
-	listAttachedRemoteConnectorRefsCached: vi.fn(
-		async () => [] as Array<{ instanceId: string }>,
-	),
 	getCapabilityRegistryForContext: vi.fn(async () => ({
 		capabilityMap: {},
 	})),
@@ -397,8 +394,6 @@ vi.mock('#worker/mcp-auth-user-context.ts', async (importOriginal) => {
 		await importOriginal<typeof import('#worker/mcp-auth-user-context.ts')>()
 	return {
 		...actual,
-		listAttachedRemoteConnectorRefsCached: (...args: Array<unknown>) =>
-			packageAppRuntimeMock.listAttachedRemoteConnectorRefsCached(...args),
 	}
 })
 
@@ -486,15 +481,11 @@ function resetPackageAppRuntimeMocks() {
 	packageAppRuntimeMock.resolvePackageMountedSecret.mockReset()
 	packageAppRuntimeMock.beginRunRecord.mockReset()
 	packageAppRuntimeMock.finishRunRecord.mockReset()
-	packageAppRuntimeMock.listAttachedRemoteConnectorRefsCached.mockReset()
 	packageAppRuntimeMock.getCapabilityRegistryForContext.mockReset()
 	packageAppRuntimeMock.createPackageRuntimeInvokeTools.mockReset()
 	packageAppRuntimeMock.createPackageEventTools.mockReset()
 	packageAppRuntimeMock.packageAppRuntimeBridge.mockClear()
 	packageAppRuntimeMock.finishRunRecord.mockResolvedValue(undefined)
-	packageAppRuntimeMock.listAttachedRemoteConnectorRefsCached.mockResolvedValue(
-		[],
-	)
 	packageAppRuntimeMock.getCapabilityRegistryForContext.mockResolvedValue({
 		capabilityMap: {},
 	})
@@ -1379,93 +1370,3 @@ test('buildPackageAppWorker passes packageStorage grant ids from root, static, a
 	expect(bridgeProps.props.packageStorageGrantIds).toHaveLength(3)
 })
 
-test('package app caller context includes attached remotes for capabilities and nested invoke', async () => {
-	resetPackageAppRuntimeMocks()
-	packageAppRuntimeMock.getCapabilityRegistryForContext.mockImplementation(
-		async ({
-			callerContext,
-		}: {
-			callerContext: {
-				remoteConnectors?: Array<{ instanceId: string }> | null
-			}
-		}) => {
-			const hasHome = (callerContext.remoteConnectors ?? []).some(
-				(ref) => ref.instanceId === 'home',
-			)
-			return {
-				capabilityMap: hasHome
-					? {
-							'remote:home:bond_shade_set_position': {
-								handler: async (
-									args: Record<string, unknown>,
-									context: {
-										callerContext: {
-											remoteConnectors?: Array<{ instanceId: string }> | null
-										}
-									},
-								) => ({
-									ok: true,
-									args,
-								}),
-							},
-						}
-					: {},
-			}
-		},
-	)
-
-	const emptyBridge = createPackageAppRuntimeBridgeForTest().bridge
-	await expect(
-		emptyBridge.callCapability({
-			name: 'remote:home:bond_shade_set_position',
-			args: { position: 50 },
-		}),
-	).rejects.toThrow(
-		'Package app capability "remote:home:bond_shade_set_position" is not available.',
-	)
-	expect(
-		packageAppRuntimeMock.getCapabilityRegistryForContext,
-	).toHaveBeenCalledWith(
-		expect.objectContaining({
-			callerContext: expect.objectContaining({
-			}),
-		}),
-	)
-
-	packageAppRuntimeMock.listAttachedRemoteConnectorRefsCached.mockResolvedValue(
-		[{ instanceId: 'home' }],
-	)
-	const homeBridge = createPackageAppRuntimeBridgeForTest().bridge
-	await expect(
-		homeBridge.callCapability({
-			name: 'remote:home:bond_shade_set_position',
-			args: { position: 50 },
-		}),
-	).resolves.toEqual({
-		ok: true,
-		args: { position: 50 },
-	})
-
-	const invoke = vi.fn(async () => ({ invoked: true }))
-	packageAppRuntimeMock.createPackageRuntimeInvokeTools.mockResolvedValue({
-		invoke,
-	})
-	await expect(
-		homeBridge.packageInvoke({
-			packageIdOrKodyId: 'shade-automation',
-			exportName: 'control',
-		}),
-	).resolves.toEqual({ invoked: true })
-	expect(
-		packageAppRuntimeMock.createPackageRuntimeInvokeTools,
-	).toHaveBeenCalledWith(
-		expect.objectContaining({
-			callerContext: expect.objectContaining({
-			}),
-		}),
-	)
-	expect(invoke).toHaveBeenCalledWith({
-		packageIdOrKodyId: 'shade-automation',
-		exportName: 'control',
-	})
-})

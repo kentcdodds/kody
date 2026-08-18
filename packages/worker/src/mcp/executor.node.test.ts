@@ -100,87 +100,71 @@ function createGatewayProps(userId: string) {
 	}
 }
 
-test('kody remote proxy dispatches and reports connector/capability errors clearly', async () => {
+test('kody namespaced proxy dispatches and reports entry/capability errors clearly', async () => {
 	const calls: Array<{ dispatchName: string; args: unknown }> = []
-	const remote = createKodyRemoteProxy({
+	const mcp = createKodyRemoteProxy({
+		entries: [
 			{
 				name: 'home',
-				instanceId: 'home',
 				status: {
 					state: 'connected',
 					connected: true,
 					toolCount: 1,
-					message: 'The connector "home" is connected.',
-					unavailableMessage: 'The connector "home" is connected.',
+					message: 'The MCP server "home" is connected.',
+					unavailableMessage: 'The MCP server "home" is connected.',
 				},
 				capabilities: [
 					{
 						name: 'set_pin',
-						dispatchName: 'remotehomeset_pin',
+						dispatchName: 'mcphomeset_pin',
 					},
 				],
 			},
 			{
 				name: 'lights',
-				instanceId: 'home',
 				status: {
 					state: 'disconnected',
 					connected: false,
 					toolCount: 0,
-					message: 'The connector "home" is not connected.',
+					message: 'The MCP server "lights" is not connected.',
 					unavailableMessage:
-						'The connector "home" is not connected. Kody cannot use this connector until it reconnects.',
+						'The MCP server "lights" is not connected. Kody cannot use this server until it reconnects.',
 				},
 				capabilities: [],
 			},
 		],
+		entityLabel: 'MCP server',
+		shortEntityLabel: 'MCP server',
+		capabilityLabel: 'MCP tool',
 		async callTool(dispatchName, args) {
 			calls.push({ dispatchName, args })
 			return { ok: true }
 		},
 	}) as Record<string, Record<string, (args: unknown) => Promise<unknown>>>
 
-	await expect(remote['home']?.set_pin({ pin: '1234' })).resolves.toEqual({
+	await expect(mcp['home']?.set_pin({ pin: '1234' })).resolves.toEqual({
 		ok: true,
 	})
 	expect(calls).toEqual([
 		{
-			dispatchName: 'remotehomeset_pin',
+			dispatchName: 'mcphomeset_pin',
 			args: { pin: '1234' },
 		},
 	])
-	expect(() => remote['missing']).toThrow(
-		'Unknown remote connector "missing". Available remote connectors: "home", "lights".',
+	expect(() => mcp['missing']).toThrow(
+		'Unknown MCP server "missing". Available MCP servers: "home", "lights".',
 	)
-	expect(() => remote['home']?.missing_tool).toThrow(
-		'Unknown remote capability "missing_tool" for connector "home". Available capabilities: "set_pin".',
+	expect(() => mcp['home']?.missing_tool).toThrow(
+		'Unknown MCP tool "missing_tool" for MCP server "home". Available capabilities: "set_pin".',
 	)
-	expect(() => remote['lights']?.set_pin).toThrow(
-		'The connector "home" is not connected. Kody cannot use this connector until it reconnects.',
+	expect(() => mcp['lights']?.set_pin).toThrow(
+		'The MCP server "lights" is not connected. Kody cannot use this server until it reconnects.',
 	)
 })
 
-test('generated kody provider source projects remote proxy metadata', () => {
+test('generated kody provider source projects namespaced proxy metadata', () => {
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',
-			{
-				name: 'home',
-				instanceId: 'home-instance',
-				status: {
-					state: 'connected',
-					connected: true,
-					toolCount: 1,
-					message: 'The connector "home" is connected.',
-					unavailableMessage: 'The connector "home" is connected.',
-				},
-				capabilities: [
-					{
-						name: 'set_pin',
-						dispatchName: 'remotehomeset_pin',
-					},
-				],
-			},
-		],
 		mcpServers: [
 			{
 				name: 'docs',
@@ -196,6 +180,23 @@ test('generated kody provider source projects remote proxy metadata', () => {
 					{
 						name: 'search',
 						dispatchName: 'mcpdocssearch',
+					},
+				],
+			},
+			{
+				name: 'home',
+				serverId: 'home-server',
+				status: {
+					state: 'connected',
+					connected: true,
+					toolCount: 1,
+					message: 'The MCP server "home" is connected.',
+					unavailableMessage: 'The MCP server "home" is connected.',
+				},
+				capabilities: [
+					{
+						name: 'set_pin',
+						dispatchName: 'mcphomeset_pin',
 					},
 				],
 			},
@@ -223,41 +224,43 @@ test('generated kody provider source projects remote proxy metadata', () => {
 
 	expect(source).toContain('"unavailableMessage":')
 	expect(source).toContain('"toolCount":')
-	expect(source).toContain('"dispatchName":"remotehomeset_pin"')
+	expect(source).toContain('"dispatchName":"mcphomeset_pin"')
 	expect(source).toContain('"dispatchName":"mcpdocssearch"')
 	expect(source).toContain('"dispatchName":"openapiwidgetslistwidgets"')
 })
 
 test('generated kody provider source ignores volatile metadata fields for script identity', () => {
-	const baseConnectors = [
+	const baseServers = [
 		{
 			name: 'home',
-			instanceId: 'home-a',
+			serverId: 'home-a',
 			status: {
-				state: 'connected',
+				state: 'connected' as const,
 				connected: true,
 				toolCount: 1,
 				message: 'status prose A',
-				unavailableMessage: 'The connector "home" is connected.',
+				unavailableMessage: 'The MCP server "home" is connected.',
 			},
 			capabilities: [
 				{
 					name: 'set_pin',
-					dispatchName: 'remotehomeset_pin',
+					dispatchName: 'mcphomeset_pin',
 				},
 			],
 		},
-	] as const
+	]
 	const first = createKodyProviderProxySource({
 		providerName: 'kody',
+		mcpServers: [...baseServers],
 	})
 	const second = createKodyProviderProxySource({
 		providerName: 'kody',
+		mcpServers: [
 			{
-				...baseConnectors[0],
-				instanceId: 'home-b',
+				...baseServers[0]!,
+				serverId: 'home-b',
 				status: {
-					...baseConnectors[0].status,
+					...baseServers[0]!.status,
 					state: 'degraded',
 					message: 'status prose B — different volatile text',
 				},
@@ -270,6 +273,7 @@ test('generated kody provider source ignores volatile metadata fields for script
 test('generated kody provider and executor module sources stay bundle-safe', () => {
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',
+		mcpServers: [],
 	})
 	assertGeneratedExecutorSourceIsBundleSafe(source)
 
@@ -287,24 +291,25 @@ test('generated kody provider and executor module sources stay bundle-safe', () 
 	assertGeneratedExecutorSourceIsBundleSafe(moduleSource)
 })
 
-test('generated kody provider source wires remote proxy dispatch', async () => {
+test('generated kody provider source wires mcp proxy dispatch', async () => {
 	const calls: Array<{ name: string; argsJson: string }> = []
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',
+		mcpServers: [
 			{
 				name: 'home',
-				instanceId: 'home',
+				serverId: 'home',
 				status: {
 					state: 'connected',
 					connected: true,
 					toolCount: 1,
-					message: 'The connector "home" is connected.',
-					unavailableMessage: 'The connector "home" is connected.',
+					message: 'The MCP server "home" is connected.',
+					unavailableMessage: 'The MCP server "home" is connected.',
 				},
 				capabilities: [
 					{
 						name: 'set_pin',
-						dispatchName: 'remotehomeset_pin',
+						dispatchName: 'mcphomeset_pin',
 					},
 				],
 			},
@@ -318,21 +323,21 @@ test('generated kody provider source wires remote proxy dispatch', async () => {
 			},
 		},
 	}) as {
-		remote: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+		mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
 		[key: string]: unknown
 	}
 
-	await expect(kody.remote['home']?.set_pin({ pin: '1234' })).resolves.toEqual({
+	await expect(kody.mcp['home']?.set_pin({ pin: '1234' })).resolves.toEqual({
 		ok: true,
 	})
 	expect(calls).toEqual([
 		{
-			name: 'remotehomeset_pin',
+			name: 'mcphomeset_pin',
 			argsJson: JSON.stringify({ pin: '1234' }),
 		},
 	])
-	expect(() => kody['remote:home:set_pin']).toThrow(
-		'Remote connector capability "remote:home:set_pin" is not available as a flat kody function.',
+	expect(() => kody['mcp:home:set_pin']).toThrow(
+		'MCP server tool "mcp:home:set_pin" is not available as a flat kody function.',
 	)
 })
 

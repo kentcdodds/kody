@@ -59,18 +59,6 @@ async function createEnv(
 			revoked_at: options.tokenRow?.revoked_at ?? null,
 		},
 	]
-	const remoteConnectorRows = [
-		{
-			id: 'home-default',
-			user_id: tokenUserId,
-			instance_id: 'home',
-			enabled: 1,
-			attached: 1,
-			encrypted_shared_secret: 'encrypted-secret',
-			created_at: '2026-04-27T00:00:00.000Z',
-			updated_at: '2026-04-27T00:00:00.000Z',
-		},
-	]
 	return {
 		APP_DB: {
 			prepare(query: string) {
@@ -109,17 +97,6 @@ async function createEnv(
 								return null
 							},
 							async all<T = Record<string, unknown>>() {
-								if (query.includes('FROM remote_connector_settings')) {
-									const userId = String(params[0] ?? '')
-									return {
-										results: remoteConnectorRows.filter(
-											(row) =>
-												row.user_id === userId &&
-												row.enabled === 1 &&
-												row.attached === 1,
-										),
-									} as { results: Array<T> }
-								}
 								return { results: [] as Array<T> }
 							},
 							async run() {

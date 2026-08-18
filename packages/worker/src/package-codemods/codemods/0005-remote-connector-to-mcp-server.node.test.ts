@@ -17,7 +17,7 @@ test('0005 rewrites kody.remote accessors and capability ids', () => {
 
 	const result = remoteConnectorToMcpServerCodemod.transform(files)
 	expect(result.changed).toBe(true)
-	expect(result.changedPaths).toEqual(['README.md', 'index.ts'])
+	expect(result.changedPaths).toEqual(['index.ts', 'README.md'])
 	expect(result.files['index.ts']).toBe(
 		[
 			'await kody.mcp["home"].turn_on({ device: "lamp" })',

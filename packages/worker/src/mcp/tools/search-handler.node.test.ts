@@ -34,16 +34,6 @@ const mockModule = vi.hoisted(() => ({
 		results: [],
 		warnings: [],
 	})),
-	getRemoteConnectorStatus: vi.fn(async () => ({
-		connectorId: 'home',
-		state: 'connected',
-		connected: true,
-		toolCount: 1,
-		message: 'connected',
-		error: null,
-		connectedAt: null,
-		lastSeenAt: null,
-	})),
 	searchCommunityListings: vi.fn(async () => []),
 }))
 

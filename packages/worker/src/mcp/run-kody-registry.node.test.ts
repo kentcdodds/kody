@@ -1115,76 +1115,94 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs', async () => {
 	silenceIncidentalRuntimeWarnings()
 	let toolArguments: Record<string, unknown> | null = null
-	const connectorEnv = {
-			get() {
-				return {
-					async getSnapshot() {
-						return {
-							connectorId: 'lighting',
-							connectedAt: '2026-03-27T00:00:00.000Z',
-							lastSeenAt: '2026-03-27T00:00:01.000Z',
-							tools: [
-								{
-									name: 'lutron_set_credentials',
-									title: 'Set Lutron Credentials',
-									description: 'Store Lutron credentials.',
-									inputSchema: {
-										type: 'object',
-										properties: {
-											processorId: { type: 'string' },
-											username: {
-												type: 'string',
-												'x-kody-secret': true,
-											},
-											password: {
-												type: 'string',
-												'x-kody-secret': true,
-											},
-										},
-										required: ['processorId', 'username', 'password'],
-									},
-								},
-							],
-						}
-					},
-					async rpcCallTool(_name: string, args: Record<string, unknown>) {
-						toolArguments = args
-						return {
-							structuredContent: {
-								ok: true,
-							},
-						}
-					},
-				}
-			},
-		},
-	} as unknown as Env
 
-	const resolvedKody = await buildKodyFns(
-		connectorEnv,
-		createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: { userId: 'user-123' },
-		}),
-		{
-			resolveSecretValue: async (secret, capabilityName) =>
-				`${secret.name}-${capabilityName}-resolved`,
-		},
-	)
-	expect(resolvedKody.lighting_default_lutron_set_credentials).toBeUndefined()
-	expect(resolvedKody['remote:lighting:lutron_set_credentials']).toEqual(
-		expect.any(Function),
-	)
-	await resolvedKody['remote:lighting:lutron_set_credentials']({
-		processorId: 'lutron-192-168-0-41',
-		username: '{{secret:lutronUsername|scope=user}}',
-		password: '{{secret:lutronPassword|scope=user}}',
-	})
-	expect(toolArguments).toEqual({
-		processorId: 'lutron-192-168-0-41',
-		username: 'lutronUsername-remote:lighting:lutron_set_credentials-resolved',
-		password: 'lutronPassword-remote:lighting:lutron_set_credentials-resolved',
-	})
+	function buildSecretMarkedRegistry() {
+		const capability = {
+			name: 'demo_set_credentials',
+			domain: 'demo',
+			description: 'Store demo credentials.',
+			keywords: [],
+			readOnly: false,
+			idempotent: false,
+			destructive: false,
+			inputSchema: {
+				type: 'object',
+				properties: {
+					processorId: { type: 'string' },
+					username: {
+						type: 'string',
+						'x-kody-secret': true,
+					},
+					password: {
+						type: 'string',
+						'x-kody-secret': true,
+					},
+				},
+				required: ['processorId', 'username', 'password'],
+			},
+			outputSchema: {
+				type: 'object',
+				properties: {
+					ok: { type: 'boolean' },
+				},
+			},
+			async handler(args: Record<string, unknown>) {
+				toolArguments = args
+				return { ok: true }
+			},
+		}
+		return {
+			capabilityDomains: [],
+			capabilityDomainDescriptionsByName: {} as Record<string, string>,
+			capabilityHandlers: {},
+			capabilityList: [capability],
+			capabilityMap: {
+				demo_set_credentials: capability,
+			},
+			capabilitySpecs: {},
+			capabilityToolDescriptors: {
+				demo_set_credentials: {
+					description: capability.description,
+					inputSchema: capability.inputSchema,
+					outputSchema: capability.outputSchema,
+				},
+			},
+		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+	}
+
+	const resolveRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue(buildSecretMarkedRegistry())
+
+	try {
+		const resolvedKody = await buildKodyFns(
+			{} as Env,
+			createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				user: { userId: 'user-123' },
+			}),
+			{
+				resolveSecretValue: async (secret, capabilityName) =>
+					`${secret.name}-${capabilityName}-resolved`,
+			},
+		)
+		expect(resolvedKody.demo_set_credentials).toEqual(expect.any(Function))
+		await resolvedKody.demo_set_credentials({
+			processorId: 'lutron-192-168-0-41',
+			username: '{{secret:lutronUsername|scope=user}}',
+			password: '{{secret:lutronPassword|scope=user}}',
+		})
+		expect(toolArguments).toEqual({
+			processorId: 'lutron-192-168-0-41',
+			username: 'lutronUsername-demo_set_credentials-resolved',
+			password: 'lutronPassword-demo_set_credentials-resolved',
+		})
+	} finally {
+		resolveRegistrySpy.mockRestore()
+	}
 
 	const resolveSecretSpy = vi
 		.spyOn(secretService, 'resolveSecret')
@@ -1195,21 +1213,25 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 			allowedHosts: [],
 			allowedCapabilities: ['some_other_capability'],
 		})
-	const deniedKody = await buildKodyFns(
-		connectorEnv,
-		createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: { userId: 'user-123' },
-		}),
-	)
+	const denyRegistrySpy = vi
+		.spyOn(
+			await import('#mcp/capabilities/registry.ts'),
+			'getCapabilityRegistryForContext',
+		)
+		.mockResolvedValue(buildSecretMarkedRegistry())
 	try {
+		const deniedKody = await buildKodyFns(
+			{} as Env,
+			createMcpCallerContext({
+				baseUrl: 'https://heykody.dev',
+				user: { userId: 'user-123' },
+			}),
+		)
 		await expect(
-			deniedKody['remote:lighting:lutron_set_credentials']({
+			deniedKody.demo_set_credentials({
 				username: '{{secret:lutronUsername|scope=user}}',
 			}),
-		).rejects.toThrow(
-			/not allowed for capability "remote:lighting:lutron_set_credentials"/,
-		)
+		).rejects.toThrow(/not allowed for capability "demo_set_credentials"/)
 		expect(resolveSecretSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
 				name: 'lutronUsername',
@@ -1219,6 +1241,7 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 		)
 	} finally {
 		resolveSecretSpy.mockRestore()
+		denyRegistrySpy.mockRestore()
 	}
 
 	const trackedSecretValues: Array<string> = []
@@ -1335,82 +1358,6 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 	} finally {
 		getRegistrySpy.mockRestore()
 	}
-})
-
-test('remote connector calls round-trip through sanitized ToolDispatcher names', async () => {
-	silenceIncidentalRuntimeWarnings()
-	let toolArguments: Record<string, unknown> | null = null
-	const connectorEnv = {
-			get() {
-				return {
-					async getSnapshot() {
-						return {
-							connectorId: 'lighting',
-							connectedAt: '2026-03-27T00:00:00.000Z',
-							lastSeenAt: '2026-03-27T00:00:01.000Z',
-							tools: [
-								{
-									name: 'lutron_set_credentials',
-									title: 'Set Lutron Credentials',
-									description: 'Store Lutron credentials.',
-									inputSchema: {
-										type: 'object',
-										properties: {
-											processorId: { type: 'string' },
-										},
-										required: ['processorId'],
-									},
-								},
-							],
-						}
-					},
-					async rpcCallTool(name: string, args: Record<string, unknown>) {
-						toolArguments = { name, ...args }
-						return {
-							structuredContent: {
-								ok: true,
-							},
-						}
-					},
-				}
-			},
-		},
-	} as unknown as Env
-	const provider = (await buildKodyProvider(
-		connectorEnv,
-		createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: { userId: 'user-123' },
-		}),
-	)) as KodyResolvedProvider
-	const remoteConnectors = provider.kodyRemoteConnectors ?? []
-	expect(remoteConnectors[0]?.capabilities).toEqual([
-		expect.objectContaining({
-			name: 'lutron_set_credentials',
-			dispatchName: 'remotelightinglutron_set_credentials',
-		}),
-	])
-	const dispatchers = mcpExecutor.createToolDispatchers([provider], {
-		active: true,
-	})
-	const source = createKodyProviderProxySource({
-		providerName: provider.name,
-	})
-	const kody = new Function('__dispatchers', `${source}; return kody;`)(
-		dispatchers,
-	) as {
-		remote: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
-	}
-
-	await expect(
-		kody.remote['lighting']?.lutron_set_credentials({
-			processorId: 'lutron-192-168-0-41',
-		}),
-	).resolves.toEqual({ ok: true })
-	expect(toolArguments).toEqual({
-		name: 'lutron_set_credentials',
-		processorId: 'lutron-192-168-0-41',
-	})
 })
 
 test('buildKodyFns rejects storage kody tools that collide with capabilities', async () => {

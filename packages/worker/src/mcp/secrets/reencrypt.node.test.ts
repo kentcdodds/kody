@@ -84,24 +84,6 @@ async function insertSecretEntry(
 		.run(input.bucketId, input.name, input.encryptedValue)
 }
 
-async function insertRemoteConnector(
-	sqlite: DatabaseSync,
-	input: {
-		id: string
-		userId: string
-		instanceId: string
-		encryptedSharedSecret: string | null
-	},
-) {
-	sqlite
-		.prepare(
-			`INSERT INTO remote_connector_settings (
-				id, user_id, instance_id, enabled, attached,
-				encrypted_shared_secret, created_at, updated_at
-			) VALUES (?, ?, ?, 1, 1, ?, '2026-07-06', '2026-07-06')`,
-		)
-		.run(input.id, input.userId, input.instanceId, input.encryptedSharedSecret)
-}
 
 async function insertPlatformApp(
 	sqlite: DatabaseSync,
@@ -153,10 +135,6 @@ test('legacy secret re-encryption upgrades 2-part payloads, leaves v2 and corrup
 		purpose: 'mcp-secret-store',
 		plaintext: 'user-a-extra-legacy',
 	})
-	const connectorLegacy = await encryptLegacyPayload({
-		purpose: 'mcp-secret-store',
-		plaintext: 'connector-shared-secret',
-	})
 	const platformLegacy = await encryptLegacyPayload({
 		purpose: 'platform-oauth-client-secret',
 		plaintext: 'platform-client-secret',
@@ -199,18 +177,6 @@ test('legacy secret re-encryption upgrades 2-part payloads, leaves v2 and corrup
 		name: 'legacy-ok',
 		encryptedValue: userBLegacy,
 	})
-	insertRemoteConnector(sqlite, {
-		id: 'connector-legacy',
-		userId: 'user-a',
-		instanceId: 'home',
-		encryptedSharedSecret: connectorLegacy,
-	})
-	insertRemoteConnector(sqlite, {
-		id: 'connector-empty',
-		userId: 'user-b',
-		instanceId: 'office',
-		encryptedSharedSecret: null,
-	})
 	insertPlatformApp(sqlite, {
 		slug: 'legacy-app',
 		encryptedSecret: platformLegacy,
@@ -235,13 +201,6 @@ test('legacy secret re-encryption upgrades 2-part payloads, leaves v2 and corrup
 		skippedConcurrent: 0,
 		decryptFailed: 1,
 		remaining: 4,
-	})
-	expect(dryRun.remoteConnectorSettings).toEqual({
-		scanned: 1,
-		rewritten: 1,
-		skippedConcurrent: 0,
-		decryptFailed: 0,
-		remaining: 1,
 	})
 	expect(dryRun.platformOauthApps).toEqual({
 		scanned: 2,
@@ -268,7 +227,6 @@ test('legacy secret re-encryption upgrades 2-part payloads, leaves v2 and corrup
 	expect(bounded.dryRun).toBe(false)
 	expect(bounded.secretEntries.rewritten).toBe(2)
 	expect(bounded.secretEntries.remaining).toBe(2)
-	expect(bounded.remoteConnectorSettings.scanned).toBe(0)
 	expect(bounded.platformOauthApps.scanned).toBe(0)
 
 	const finish = await reencryptLegacySecretCiphertexts({ env, pageSize: 1 })
@@ -278,13 +236,6 @@ test('legacy secret re-encryption upgrades 2-part payloads, leaves v2 and corrup
 		skippedConcurrent: 0,
 		decryptFailed: 1,
 		remaining: 1,
-	})
-	expect(finish.remoteConnectorSettings).toEqual({
-		scanned: 1,
-		rewritten: 1,
-		skippedConcurrent: 0,
-		decryptFailed: 0,
-		remaining: 0,
 	})
 	expect(finish.platformOauthApps).toEqual({
 		scanned: 2,
@@ -310,16 +261,6 @@ test('legacy secret re-encryption upgrades 2-part payloads, leaves v2 and corrup
 	expect(
 		readSecretPayload(sqlite, 'bucket-a', 'z-corrupt').encrypted_value,
 	).toBe('not-a-valid-ciphertext')
-
-	const connectorRow = sqlite
-		.prepare(
-			`SELECT encrypted_shared_secret FROM remote_connector_settings WHERE id = ?`,
-		)
-		.get('connector-legacy') as { encrypted_shared_secret: string }
-	expect(connectorRow.encrypted_shared_secret.startsWith('v2.')).toBe(true)
-	expect(
-		await decryptSecretValue(env, connectorRow.encrypted_shared_secret, userA),
-	).toBe('connector-shared-secret')
 
 	const platformRow = sqlite
 		.prepare(

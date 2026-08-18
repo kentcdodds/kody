@@ -437,7 +437,7 @@ function isDynamicWorkerCapacityErrorMessage(message: string) {
 }
 
 export function createKodyRemoteProxy(input: {
-	remoteConnectors: Array<
+	entries: Array<
 		Pick<KodyMcpServerMetadata, 'name' | 'status' | 'capabilities'>
 	>
 	callTool: (dispatchName: string, args: unknown) => Promise<unknown>
@@ -445,11 +445,11 @@ export function createKodyRemoteProxy(input: {
 	shortEntityLabel?: string
 	capabilityLabel?: string
 }) {
-	const entityLabel = input.entityLabel ?? 'remote connector'
-	const shortEntityLabel = input.shortEntityLabel ?? 'connector'
-	const capabilityLabel = input.capabilityLabel ?? 'remote capability'
+	const entityLabel = input.entityLabel ?? 'MCP server'
+	const shortEntityLabel = input.shortEntityLabel ?? 'MCP server'
+	const capabilityLabel = input.capabilityLabel ?? 'MCP tool'
 	const connectors = Object.fromEntries(
-		input.remoteConnectors.map((connector) => [
+		input.entries.map((connector) => [
 			connector.name,
 			{
 				...connector,

@@ -18,6 +18,6 @@ test('isValidKodyInstanceName rejects invalid shapes', () => {
 	expect(isValidKodyInstanceName('')).toBe(false)
 	expect(isValidKodyInstanceName('-home')).toBe(false)
 	expect(isValidKodyInstanceName('home-')).toBe(false)
-	expect(isValidKodyInstanceName('Home')).toBe(false)
+	expect(isValidKodyInstanceName('home_hub')).toBe(false)
 	expect(isValidKodyInstanceName('a'.repeat(65))).toBe(false)
 })

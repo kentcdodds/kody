@@ -32,17 +32,38 @@ function executeUsageSnippet(usage: string) {
 
 async function executeCapabilityExample(executeExample: string) {
 	const calls: Array<{ name: string; args: unknown }> = []
-	const remote = new Proxy(
+	const namespaced = new Proxy(
 		{} as Record<string, Record<string, (args: unknown) => Promise<unknown>>>,
 		{
-			get(_target, connectorName: string) {
+			get(_target, entryName: string) {
 				return new Proxy(
 					{} as Record<string, (args: unknown) => Promise<unknown>>,
 					{
-						get(_connectorTarget, capabilityName: string) {
+						get(_entryTarget, capabilityName: string) {
 							return async (args: unknown) => {
 								calls.push({
-									name: `remote:${connectorName}:${capabilityName}`,
+									name: `mcp:${entryName}:${capabilityName}`,
+									args,
+								})
+								return { ok: true }
+							}
+						},
+					},
+				)
+			},
+		},
+	)
+	const openapi = new Proxy(
+		{} as Record<string, Record<string, (args: unknown) => Promise<unknown>>>,
+		{
+			get(_target, entryName: string) {
+				return new Proxy(
+					{} as Record<string, (args: unknown) => Promise<unknown>>,
+					{
+						get(_entryTarget, capabilityName: string) {
+							return async (args: unknown) => {
+								calls.push({
+									name: `openapi:${entryName}:${capabilityName}`,
 									args,
 								})
 								return { ok: true }
@@ -57,7 +78,8 @@ async function executeCapabilityExample(executeExample: string) {
 		{} as Record<string, (args: unknown) => Promise<unknown>>,
 		{
 			get(_target, prop: string) {
-				if (prop === 'remote') return remote
+				if (prop === 'mcp') return namespaced
+				if (prop === 'openapi') return openapi
 				return async (args: unknown) => {
 					calls.push({ name: prop, args })
 					return { ok: true }
@@ -438,22 +460,22 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 
 	const remoteDetail = formatEntityDetailMarkdown({
 		type: 'capability',
-		id: 'remote:home:set_pin',
-		title: 'remote:home:set_pin',
+		id: 'mcp:home:set_pin',
+		title: 'mcp:home:set_pin',
 		description: 'Set the island router PIN.',
 		spec: {
-			name: 'remote:home:set_pin',
-			domain: 'remote:home',
+			name: 'mcp:home:set_pin',
+			domain: 'mcp:home',
 			description: 'Set the island router PIN.',
 			keywords: [],
 			readOnly: false,
 			idempotent: true,
 			destructive: false,
-			source: 'remote-connector',
-			remoteConnector: {
-				instanceId: 'home',
-				connectorId: 'home',
-				connectorName: 'home',
+			source: 'mcp-server',
+			mcpServer: {
+				serverId: 'srv-home',
+				serverName: 'home',
+				kodyName: 'home',
 				mcpToolName: 'island.router.api/set-pin',
 				toolName: 'set_pin',
 			},
@@ -471,15 +493,15 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 				'type RemoteHomeDefaultSetPinInput = {\n\tpin: string\n}',
 		},
 	})
-	expect(remoteDetail.markdown).toContain('kody.remote["home"].set_pin(input)')
+	expect(remoteDetail.markdown).toContain('kody.mcp["home"].set_pin(input)')
 	expect(remoteDetail.structured).toMatchObject({
-		source: 'remote-connector',
-		remoteConnector: {
-			connectorName: 'home',
+		source: 'mcp-server',
+		mcpServer: {
+			kodyName: 'home',
 			toolName: 'set_pin',
 		},
 		executeExample: expect.stringContaining(
-			'kody.remote["home"].set_pin(input)',
+			'kody.mcp["home"].set_pin(input)',
 		),
 	})
 	const remoteExecution = await executeCapabilityExample(
@@ -487,7 +509,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 	)
 	expect(remoteExecution.calls).toEqual([
 		{
-			name: 'remote:home:set_pin',
+			name: 'mcp:home:set_pin',
 			args: { owner: 'o', repo: 'r', title: 't' },
 		},
 	])

@@ -17,7 +17,7 @@ async function workerFetch(request: Request): Promise<Response> {
 	return response
 }
 
-test('public route hardening rejects unauthenticated connector and maintenance access, unknown paths, and abusive auth while allowing websocket upgrades', async () => {
+test('public route hardening rejects retired connector paths, unknown paths, and abusive auth', async () => {
 	await env.APP_DB.prepare(`DROP TABLE IF EXISTS users`).run()
 	await env.APP_DB.prepare(
 		`CREATE TABLE users (
@@ -38,7 +38,7 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 			)`,
 	).run()
 
-	const unauthorizedConnectorRequests = [
+	const retiredConnectorRequests = [
 		createRequest('/@connector-user/connectors/home/snapshot'),
 		createRequest('/@connector-user/connectors/home/rpc/tools-list', {
 			method: 'POST',
@@ -55,15 +55,19 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 				message: { jsonrpc: '2.0', method: 'ping', id: 1 },
 			}),
 		}),
+		createRequest('/@connector-user/connectors/home', {
+			headers: { Upgrade: 'websocket' },
+		}),
+		createRequest('/connectors/home'),
 	]
-	for (const request of unauthorizedConnectorRequests) {
+	for (const request of retiredConnectorRequests) {
 		const response = await workerFetch(request)
 		expect(response.status).toBe(404)
 	}
 
 	// Two segments is the public package URL `/@owner/kody-id`, even when the id
-	// spells a machine namespace: it reaches the app and 404s as a page rather
-	// than being swallowed by the connector namespace.
+	// spells a retired machine namespace: it reaches the app and 404s as a page
+	// rather than being swallowed by a special connector route.
 	await ensureCommunityFlowSchema(env.APP_DB)
 	const namespaceLookalikeResponse = await workerFetch(
 		createRequest('/@connector-user/connectors'),
@@ -72,13 +76,6 @@ test('public route hardening rejects unauthenticated connector and maintenance a
 	await expect(namespaceLookalikeResponse.text()).resolves.toContain(
 		'Community package not found',
 	)
-
-	const websocketRequest = createRequest('/@connector-user/connectors/home', {
-		headers: { Upgrade: 'websocket' },
-	})
-	const websocketResponse = await workerFetch(websocketRequest)
-	expect(websocketResponse.status).toBe(101)
-	expect(websocketResponse.webSocket).toBeTruthy()
 
 	// Real maintenance routes from index.ts share handleSecretMaintenanceRequest:
 	// non-POST → 405 (proves registration vs unknown JSON 404); unauthenticated

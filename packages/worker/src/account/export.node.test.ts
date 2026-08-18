@@ -931,58 +931,6 @@ test('R2 export cursor keeps stable row identity when inventory mutates', async 
 	])
 })
 
-test('DO export sections expose bounded job manager and owned connector state', async () => {
-	const db = {
-		prepare(query: string) {
-			return {
-				bind() {
-					return {
-						async first<T>() {
-							if (query.includes('FROM remote_connector_settings')) {
-								return { owned: 1 } as T
-							}
-							return null
-						},
-					}
-				},
-			}
-		},
-	} as unknown as D1Database
-	const env = {
-		APP_DB: db,
-		JOBS: {
-			exportUser: async () => ({
-				userId: 'user-aaa',
-				alarm: null,
-				status: 'idle',
-			}),
-		},
-	} as unknown as Env
-	const jobManager = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'job_manager',
-	})
-	expect(jobManager.items).toEqual([
-		expect.objectContaining({ userId: 'user-aaa' }),
-	])
-	expect(jobManager.truncated).toBe(false)
-
-	const connector = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'remote_connector_session',
-		instanceId: 'home',
-	})
-	expect(connector.items).toEqual([
-		expect.objectContaining({
-			instanceId: 'home',
-			connected: false,
-		}),
-	])
-})
 
 test('durable object discovery pages high-cardinality storage ids without nested arrays', async () => {
 	const ids = Array.from(
@@ -1121,22 +1069,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 		INSERT INTO password_resets (id, user_id, token_hash, expires_at, created_at)
 		VALUES (1, 1, 'reset-token-hash-a', 2000000000, '2026-07-05');
 
-		INSERT INTO remote_connector_settings (
-			id,
-			user_id,
-			instance_id,
-			encrypted_shared_secret,
-			created_at,
-			updated_at
-		)
-		VALUES (
-			'connector-a',
-			'user-aaa',
-			'home',
-			'encrypted-connector-secret',
-			'2026-07-05',
-			'2026-07-05'
-		);
 
 		INSERT INTO mcp_memories (id, user_id, subject, summary, details)
 		VALUES
@@ -1189,15 +1121,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 	expect(accountExport.d1.password_resets.rows[0]).not.toHaveProperty(
 		'token_hash',
 	)
-	expect(accountExport.d1.remote_connector_settings.rows[0]).toEqual(
-		expect.objectContaining({
-			id: 'connector-a',
-			instance_id: 'home',
-		}),
-	)
-	expect(accountExport.d1.remote_connector_settings.rows[0]).not.toHaveProperty(
-		'encrypted_shared_secret',
-	)
 	expect(accountExport.d1.value_entries.rows).toEqual([
 		expect.objectContaining({ value: 'America/Denver' }),
 	])
@@ -1210,10 +1133,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 	expect(
 		accountExport.manifest.sections['d1.secret_entries']?.redactedColumns,
 	).toEqual(['encrypted_value', 'lookup_hash'])
-	expect(
-		accountExport.manifest.sections['d1.remote_connector_settings']
-			?.redactedColumns,
-	).toEqual(['encrypted_shared_secret'])
 })
 
 test('createAccountExport records partial-failure warnings and section pagination works', async () => {

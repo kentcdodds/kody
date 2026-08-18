@@ -71,14 +71,14 @@ export function createKodyProviderProxySource(input: {
       return data.result;
     };
     const __kodyMcp = __kodyCreateRemoteProxy({
-      remoteConnectors: ${mcpMetadataJson},
+      entries: ${mcpMetadataJson},
       entityLabel: "MCP server",
       shortEntityLabel: "MCP server",
       capabilityLabel: "MCP tool",
       callTool: __kodyCallDispatcher,
     });
     const __kodyOpenapi = __kodyCreateRemoteProxy({
-      remoteConnectors: ${openApiMetadataJson},
+      entries: ${openApiMetadataJson},
       entityLabel: "OpenAPI provider",
       shortEntityLabel: "provider",
       capabilityLabel: "operation",
