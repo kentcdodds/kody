@@ -3,9 +3,9 @@ import { spawnSync } from 'node:child_process'
 import { isExecutedDirectly } from '../node-runtime.ts'
 import { type SitePerfReport } from './collect.ts'
 
-const okTitle = 'Weekly site perf: all clear'
-const actionableTitle = 'Weekly site perf: actionable'
-const humanTitle = 'Weekly site perf: human review'
+export const okTitle = 'Weekly site perf: all clear'
+export const actionableTitle = 'Weekly site perf: actionable'
+export const humanTitle = 'Weekly site perf: human review'
 
 function gh(args: Array<string>) {
 	const result = spawnSync('gh', args, { encoding: 'utf8' })
