@@ -3,11 +3,8 @@ import { classifySitePerf, type SitePerfBudget } from './collect.ts'
 
 const budget: SitePerfBudget = {
 	htmlBytes: 1000,
-	htmlBytesHuman: 2000,
 	sameOriginJsBytes: 1000,
-	sameOriginJsBytesHuman: 2000,
 	lcpImageBytes: 1000,
-	lcpImageBytesHuman: 2000,
 }
 
 const healthyHtml = `
@@ -30,7 +27,7 @@ test('classifySitePerf returns ok when budgets and landing signals pass', () => 
 	expect(report.findings).toEqual([])
 })
 
-test('classifySitePerf marks missing LCP preload and no-store as actionable', () => {
+test('classifySitePerf marks missing LCP preload and no-store as needs-fix', () => {
 	const report = classifySitePerf({
 		url: 'https://kody.codes/',
 		html: '<html></html>',
@@ -41,14 +38,14 @@ test('classifySitePerf marks missing LCP preload and no-store as actionable', ()
 		lcpImageBytes: null,
 		budget,
 	})
-	expect(report.verdict).toBe('actionable')
+	expect(report.verdict).toBe('needs-fix')
 	expect(report.findings.map((finding) => finding.id).sort()).toEqual([
 		'home-no-store',
 		'missing-lcp-preload',
 	])
 })
 
-test('classifySitePerf escalates Shiki on / and oversized JS to human', () => {
+test('classifySitePerf treats Shiki on / and oversized JS as needs-fix, not human', () => {
 	const report = classifySitePerf({
 		url: 'https://kody.codes/',
 		html: `${healthyHtml}<link rel="modulepreload" href="/assets/syntax-highlight-core-abc.js" />`,
@@ -59,9 +56,9 @@ test('classifySitePerf escalates Shiki on / and oversized JS to human', () => {
 		lcpImageBytes: 800,
 		budget,
 	})
-	expect(report.verdict).toBe('human')
-	expect(report.findings.map((finding) => finding.id)).toContain(
+	expect(report.verdict).toBe('needs-fix')
+	expect(report.findings.map((finding) => finding.id)).toEqual([
 		'shiki-on-home',
-	)
-	expect(report.findings.map((finding) => finding.id)).toContain('js-too-large')
+		'js-over-budget',
+	])
 })

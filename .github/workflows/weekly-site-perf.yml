@@ -41,8 +41,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node tools/site-perf/upsert-github-issue.ts site-perf-report.json
 
-      - name: 🚀 Launch Cursor cloud agent
+      - name: 🚀 Invoke weekly-site-perf package
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          KODY_PACKAGE_INVOCATION_TOKEN:
+            ${{ secrets.KODY_PACKAGE_INVOCATION_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node tools/site-perf/launch-cloud-agent.ts site-perf-report.json
+        run:
+          node tools/site-perf/invoke-site-perf-package.ts site-perf-report.json

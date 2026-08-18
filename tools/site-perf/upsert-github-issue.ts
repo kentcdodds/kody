@@ -4,8 +4,14 @@ import { isExecutedDirectly } from '../node-runtime.ts'
 import { type SitePerfReport } from './collect.ts'
 
 export const okTitle = 'Weekly site perf: all clear'
-export const actionableTitle = 'Weekly site perf: actionable'
-export const humanTitle = 'Weekly site perf: human review'
+export const needsFixTitle = 'Weekly site perf: needs a fix'
+
+/** Older titles this workflow used to open. Close them on a later `ok`. */
+export const staleNeedsFixTitles = [
+	needsFixTitle,
+	'Weekly site perf: actionable',
+	'Weekly site perf: human review',
+]
 
 function gh(args: Array<string>) {
 	const result = spawnSync('gh', args, { encoding: 'utf8' })
@@ -20,10 +26,7 @@ function issueBody(report: SitePerfReport) {
 		report.findings.length === 0
 			? '- none'
 			: report.findings
-					.map(
-						(finding) =>
-							`- **${finding.severity}** \`${finding.id}\`: ${finding.message}`,
-					)
+					.map((finding) => `- \`${finding.id}\`: ${finding.message}`)
 					.join('\n')
 	return [
 		`Verdict: **${report.verdict}**`,
@@ -59,15 +62,9 @@ function findOpenIssue(title: string) {
 }
 
 export function upsertSitePerfIssue(report: SitePerfReport) {
-	const title =
-		report.verdict === 'ok'
-			? okTitle
-			: report.verdict === 'human'
-				? humanTitle
-				: actionableTitle
 	const body = issueBody(report)
 	if (report.verdict === 'ok') {
-		for (const staleTitle of [actionableTitle, humanTitle]) {
+		for (const staleTitle of staleNeedsFixTitles) {
 			const stale = findOpenIssue(staleTitle)
 			if (!stale) continue
 			gh([
@@ -81,12 +78,19 @@ export function upsertSitePerfIssue(report: SitePerfReport) {
 		}
 		return { action: 'cleared' as const }
 	}
-	const existing = findOpenIssue(title)
+	const existing = findOpenIssue(needsFixTitle)
 	if (existing) {
 		gh(['issue', 'comment', String(existing.number), '--body', body])
 		return { action: 'commented' as const, number: existing.number }
 	}
-	const created = gh(['issue', 'create', '--title', title, '--body', body])
+	const created = gh([
+		'issue',
+		'create',
+		'--title',
+		needsFixTitle,
+		'--body',
+		body,
+	])
 	return { action: 'created' as const, url: created.trim() }
 }
 

@@ -2,20 +2,16 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { isExecutedDirectly } from '../node-runtime.ts'
 
-export type SitePerfVerdict = 'ok' | 'actionable' | 'human'
+export type SitePerfVerdict = 'ok' | 'needs-fix'
 
 export type SitePerfBudget = {
 	htmlBytes: number
-	htmlBytesHuman: number
 	sameOriginJsBytes: number
-	sameOriginJsBytesHuman: number
 	lcpImageBytes: number
-	lcpImageBytesHuman: number
 }
 
 export type SitePerfFinding = {
 	id: string
-	severity: Exclude<SitePerfVerdict, 'ok'>
 	message: string
 }
 
@@ -69,13 +65,11 @@ export function classifySitePerf(input: {
 	if (!/rel=["']preload["'][^>]+as=["']image["']/.test(html)) {
 		findings.push({
 			id: 'missing-lcp-preload',
-			severity: 'actionable',
 			message: 'Homepage HTML is missing an LCP image preload.',
 		})
 	} else if (!html.includes('kody-base-640.webp')) {
 		findings.push({
 			id: 'lcp-preload-not-responsive',
-			severity: 'actionable',
 			message: 'LCP preload does not point at the 640w hero variant.',
 		})
 	}
@@ -86,7 +80,6 @@ export function classifySitePerf(input: {
 	) {
 		findings.push({
 			id: 'shiki-on-home',
-			severity: 'human',
 			message: 'Homepage HTML preloads syntax-highlight-core (Shiki on /).',
 		})
 	}
@@ -94,7 +87,6 @@ export function classifySitePerf(input: {
 	if (/turnstile\/v0\/api\.js/.test(html)) {
 		findings.push({
 			id: 'turnstile-in-ssr',
-			severity: 'actionable',
 			message: 'Turnstile script is present in the first HTML document.',
 		})
 	}
@@ -105,70 +97,36 @@ export function classifySitePerf(input: {
 	) {
 		findings.push({
 			id: 'home-no-store',
-			severity: 'actionable',
 			message: 'Anonymous homepage HTML is Cache-Control: no-store.',
 		})
 	}
 
-	if (input.htmlBytes > budget.htmlBytesHuman) {
-		findings.push({
-			id: 'html-too-large',
-			severity: 'human',
-			message: `HTML is ${input.htmlBytes} bytes (human threshold ${budget.htmlBytesHuman}).`,
-		})
-	} else if (input.htmlBytes > budget.htmlBytes) {
+	if (input.htmlBytes > budget.htmlBytes) {
 		findings.push({
 			id: 'html-over-budget',
-			severity: 'actionable',
 			message: `HTML is ${input.htmlBytes} bytes (budget ${budget.htmlBytes}).`,
 		})
 	}
 
 	if (
 		input.largestSameOriginJsBytes !== null &&
-		input.largestSameOriginJsBytes > budget.sameOriginJsBytesHuman
-	) {
-		findings.push({
-			id: 'js-too-large',
-			severity: 'human',
-			message: `Largest same-origin JS is ${input.largestSameOriginJsBytes} bytes (human threshold ${budget.sameOriginJsBytesHuman}).`,
-		})
-	} else if (
-		input.largestSameOriginJsBytes !== null &&
 		input.largestSameOriginJsBytes > budget.sameOriginJsBytes
 	) {
 		findings.push({
 			id: 'js-over-budget',
-			severity: 'actionable',
 			message: `Largest same-origin JS is ${input.largestSameOriginJsBytes} bytes (budget ${budget.sameOriginJsBytes}).`,
 		})
 	}
 
 	if (
 		input.lcpImageBytes !== null &&
-		input.lcpImageBytes > budget.lcpImageBytesHuman
-	) {
-		findings.push({
-			id: 'lcp-image-too-large',
-			severity: 'human',
-			message: `LCP image is ${input.lcpImageBytes} bytes (human threshold ${budget.lcpImageBytesHuman}).`,
-		})
-	} else if (
-		input.lcpImageBytes !== null &&
 		input.lcpImageBytes > budget.lcpImageBytes
 	) {
 		findings.push({
 			id: 'lcp-image-over-budget',
-			severity: 'actionable',
 			message: `LCP image is ${input.lcpImageBytes} bytes (budget ${budget.lcpImageBytes}).`,
 		})
 	}
-
-	const verdict: SitePerfVerdict = findings.some((f) => f.severity === 'human')
-		? 'human'
-		: findings.some((f) => f.severity === 'actionable')
-			? 'actionable'
-			: 'ok'
 
 	return {
 		url: input.url,
@@ -179,7 +137,7 @@ export function classifySitePerf(input: {
 		largestSameOriginJsBytes: input.largestSameOriginJsBytes,
 		lcpImageBytes: input.lcpImageBytes,
 		findings,
-		verdict,
+		verdict: findings.length > 0 ? 'needs-fix' : 'ok',
 	}
 }
 
@@ -280,12 +238,11 @@ export async function main(argv = process.argv.slice(2)) {
 			`${report.verdict} ${report.url} html=${report.htmlBytes} js=${report.largestSameOriginJsBytes ?? 'n/a'} lcp=${report.lcpImageBytes ?? 'n/a'}\n`,
 		)
 		for (const finding of report.findings) {
-			process.stdout.write(`- [${finding.severity}] ${finding.message}\n`)
+			process.stdout.write(`- ${finding.message}\n`)
 		}
 	}
 	if (exitZero) return
-	if (report.verdict === 'human') process.exitCode = 2
-	else if (report.verdict === 'actionable') process.exitCode = 1
+	if (report.verdict === 'needs-fix') process.exitCode = 1
 }
 
 if (isExecutedDirectly(import.meta.url)) {

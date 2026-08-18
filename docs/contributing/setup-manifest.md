@@ -527,15 +527,14 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `STRIPE_WEBHOOK_SECRET` (optional GitHub / Worker secret; Stripe endpoint
   signing secret (`whsec_...`) for platform billing webhooks at
   `POST /webhooks/stripe`. Production deploy syncs it when set.)
-- `CURSOR_API_KEY` (optional GitHub **secret**; weekly site-perf workflow only.
-  When an `actionable` verdict is recorded,
+- `KODY_PACKAGE_INVOCATION_TOKEN` (optional GitHub **secret**; weekly site-perf
+  workflow only. When a `needs-fix` verdict is recorded,
   [`.github/workflows/weekly-site-perf.yml`](../../.github/workflows/weekly-site-perf.yml)
   uses it to `POST`
-  [https://api.cursor.com/v1/agents](https://cursor.com/docs/cloud-agent/api/endpoints).
-  Create a user or service-account key at
-  [https://cursor.com/dashboard/api](https://cursor.com/dashboard/api). The
-  key's Cursor account must have GitHub access to this repository. Not a Worker
-  secret; the weekly job skips launch when this is unset.)
+  `https://kody.codes/@kentcdodds/api/package-invocations/weekly-site-perf/__root__`.
+  Create a token scoped to `weekly-site-perf` / `.` / source `weekly-site-perf`
+  at `/account/package-invocation-tokens/new`. Not a Worker secret; the weekly
+  job skips invoke when this is unset.)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)
@@ -623,11 +622,13 @@ How to get/set each value:
     ID.
   - Store that value as the preview GitHub Actions secret so preview deploys
     sync a different worker secret than production.
-- `CURSOR_API_KEY` (optional)
-  - In Cursor: **Dashboard → API Keys**, create a user or service-account key,
-    and store it as the repository secret `CURSOR_API_KEY`. The account must
-    have GitHub access to this repository. The weekly site-perf workflow uses it
-    only to launch a cloud agent; it is not synced to the Worker.
+- `KODY_PACKAGE_INVOCATION_TOKEN` (optional)
+  - In Kody: open
+    `/account/package-invocation-tokens/new?name=Weekly%20site%20perf&packageKodyIds=weekly-site-perf&exportNames=.&allowedSources=weekly-site-perf`,
+    generate a raw token in the browser, and store that value as the repository
+    secret `KODY_PACKAGE_INVOCATION_TOKEN`. Scope it to the `weekly-site-perf`
+    package and source `weekly-site-perf`. The weekly workflow uses it only to
+    invoke that package; it is not synced to the Worker.
 - `SENTRY_DSN` (optional)
   - In Sentry: create a project, copy the DSN, and add it as the repository
     secret `SENTRY_DSN`. Production and preview deploy workflows sync it with
