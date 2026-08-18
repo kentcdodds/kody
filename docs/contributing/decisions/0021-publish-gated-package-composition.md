@@ -37,9 +37,9 @@ Keep Kody publish-gated and snapshot-isolated:
   community listings, minted webhooks, and service DO state is cleanup of that
   inverse, not a new lifecycle.
 - Repo checks reject `kody.dependencies` cycles at publish time, including
-  reachable cyclic subgraphs the package under check depends on. A saved
-  sibling whose published manifest cannot load fails the dependency check
-  instead of being treated as a leaf. There is no runtime that leaves cyclic
-  packages "permanently inactive."
+  reachable cyclic subgraphs the package under check depends on. A saved sibling
+  whose published manifest cannot load fails the dependency check instead of
+  being treated as a leaf. There is no runtime that leaves cyclic packages
+  "permanently inactive."
 - Revisit only if a concrete user need requires live in-process composition or a
   package-wide kill switch that is not delete.
