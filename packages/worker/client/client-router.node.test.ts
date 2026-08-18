@@ -255,6 +255,8 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 		expect(shouldLeaveDocumentForPath('/guides/oauth')).toBe(false)
 		expect(shouldLeaveDocumentForPath('/guides/oauth.md')).toBe(true)
 		expect(shouldLeaveDocumentForPath('/guides.md')).toBe(true)
+		expect(shouldLeaveDocumentForPath('/auth.md')).toBe(true)
+		expect(shouldLeaveDocumentForPath('/robots.txt')).toBe(true)
 		expect(shouldLeaveDocumentForPath('/missing-page')).toBe(true)
 
 		const click = {

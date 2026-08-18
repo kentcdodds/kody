@@ -88,6 +88,14 @@ Requests are handled in this order:
    `PACKAGE_APP_BASE_URL` is unset.
 9. App server routes:
    - Everything else is handled by `packages/worker/src/app/handler.ts`
+   - Public agent-discovery documents (Worker-first, origin-aware) include
+     `/robots.txt`, `/sitemap.xml`, `/auth.md`,
+     `/.well-known/mcp/server-card.json`, `/.well-known/api-catalog`,
+     `/.well-known/agent-skills/index.json`, skill markdown under
+     `/.well-known/agent-skills/:skillId/SKILL.md`, and
+     `/.well-known/security.txt`. The homepage adds RFC 8288 `Link` headers to
+     those documents and serves markdown when `Accept` prefers `text/markdown`.
+     DNS-AID (`_mcp._agents.<apex>` SVCB/HTTPS) is zone DNS, not a Worker route.
 
 ## Package service runtime
 

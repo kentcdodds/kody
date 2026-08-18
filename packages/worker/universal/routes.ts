@@ -2,6 +2,14 @@ import { post, route } from 'remix/routes'
 
 export const routes = route({
 	home: '/',
+	robotsTxt: '/robots.txt',
+	sitemap: '/sitemap.xml',
+	authMarkdown: '/auth.md',
+	mcpServerCard: '/.well-known/mcp/server-card.json',
+	apiCatalog: '/.well-known/api-catalog',
+	agentSkillsIndex: '/.well-known/agent-skills/index.json',
+	agentSkillMarkdown: '/.well-known/agent-skills/:skillId/SKILL.md',
+	securityTxt: '/.well-known/security.txt',
 	connectOauth: '/connect/oauth',
 	integrationLogo: '/integrations/logos/:integrationSlug',
 	accountIntegrations: '/account/integrations',

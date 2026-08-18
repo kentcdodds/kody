@@ -5,6 +5,11 @@ Grok, Claude Code, OpenCode, GitHub Copilot (VS Code or CLI), the GitHub Copilot
 app, or any other AI agent that supports MCP — not from a separate Kody chat
 app.
 
+Agents discovering this host can read `/auth.md` for the OAuth registration
+block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.
+People following a host-specific walkthrough can stay on this page or use Get
+started (`/onboarding`).
+
 The in-app Get started page (`/onboarding`) has tabs with client-specific
 instructions and copyable config snippets for the host you are on.
 

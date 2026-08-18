@@ -22,7 +22,8 @@ Read in order for a full tour, or jump to a topic.
 - [How Kody works](../guides/how-kody-works.md) — ask once, save an export,
   daily email only when something shipped
 - [Connect your agent](./connect-your-agent.md) — add `{origin}/mcp`, complete
-  OAuth, and use the setup prompt
+  OAuth, and use the setup prompt. Machine-readable twin:
+  [`/auth.md`](https://kody.codes/auth.md)
 - [Connect remote MCP servers](./mcp-client-servers.md) — add external MCP
   servers so Kody can call their tools (`kody.mcp[...]`)
 - [First steps — what to ask Kody to do](./first-steps.md)
