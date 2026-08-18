@@ -72,6 +72,7 @@ import {
 	createUnboundRuntimeHelperMessage,
 	findUnboundRuntimeHelperAccess,
 } from '#worker/package-runtime/unbound-runtime-helpers.ts'
+import { runWithTransientDurableObjectResetRetry } from '#worker/durable-object-reset-retry.ts'
 import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
 import {
 	type RunRecordContext,
@@ -1053,7 +1054,22 @@ ${runtimeHelperRuntimePropertySource}
 			const sandboxStartedAtMs = Date.now()
 			let result: ExecuteResult
 			try {
-				result = await executor.execute(wrapped, providers)
+				result = await runWithTransientDurableObjectResetRetry({
+					operation: () => executor.execute(wrapped, providers),
+					retryableResultError: (executeResult) => executeResult.error ?? null,
+					signal: options?.signal,
+					onRetry: ({ attempt, nextDelayMs, error }) => {
+						console.warn(
+							JSON.stringify({
+								message:
+									'runBundledModuleWithRegistry transient Durable Object reset',
+								attempt,
+								nextDelayMs,
+								errorMessage: getErrorMessage(error),
+							}),
+						)
+					},
+				})
 			} finally {
 				const sandboxMs = Date.now() - sandboxStartedAtMs
 				runServerTiming.push({

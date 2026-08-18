@@ -2,7 +2,9 @@ import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
 import { getExecutionErrorDetails } from '#mcp/executor.ts'
+import { isTransientDurableObjectResetError } from '#worker/durable-object-reset-retry.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import { durableObjectResetInvocationErrorCode } from './infrastructure-codes.ts'
 import { type PackageInvocationStoredResponse } from './repo.ts'
 
 export function buildExecutionSuccessResponse(input: {
@@ -63,8 +65,9 @@ export function buildExecutionErrorResponse(input: {
 	logs: Array<string>
 }): PackageInvocationStoredResponse {
 	const message = getErrorMessage(input.error)
+	const durableObjectReset = isTransientDurableObjectResetError(input.error)
 	return {
-		status: 500,
+		status: durableObjectReset ? 503 : 500,
 		body: {
 			ok: false,
 			package: {
@@ -83,7 +86,9 @@ export function buildExecutionErrorResponse(input: {
 					}
 				: {}),
 			error: {
-				code: 'execution_failed',
+				code: durableObjectReset
+					? durableObjectResetInvocationErrorCode
+					: 'execution_failed',
 				message,
 				details: toJsonSafeValue(getExecutionErrorDetails(input.error)),
 			},

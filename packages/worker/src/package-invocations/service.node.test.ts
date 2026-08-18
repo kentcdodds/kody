@@ -2388,6 +2388,31 @@ test('invokePackageExport stores terminal failures for execution errors and miss
 		logs: ['before-error'],
 	})
 
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		error: new Error('Durable Object reset because its code was updated.'),
+		logs: [],
+	})
+	const durableObjectReset = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-do-reset',
+			source: 'discord-gateway',
+		},
+	})
+	expect(durableObjectReset.status).toBe(503)
+	expect(durableObjectReset.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'durable_object_reset',
+			message: 'Durable Object reset because its code was updated.',
+		},
+	})
+
 	repoMockModule.runBundledModuleWithRegistry.mockClear()
 	const missingExportFirst = await invokePackageExport({
 		env: createEnv(db),

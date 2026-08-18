@@ -49,6 +49,7 @@ import {
 	isWorkflowBindingName,
 	type WorkflowBindingName,
 } from '#worker/run-records/workflow-projection.ts'
+import { isTransientDurableObjectResetError } from '#worker/durable-object-reset-retry.ts'
 import { UserCodeError } from '#worker/user-code-error.ts'
 import {
 	activeWorkflowStatusValues,
@@ -1611,7 +1612,10 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 			)
 			logs = result.logs
 			if (result.error) {
-				throw new UserCodeError(result.error)
+				if (isTransientDurableObjectResetError(result.error)) {
+					throw new Error(getErrorMessage(result.error))
+				}
+				throw new UserCodeError(getErrorMessage(result.error))
 			}
 			await finishRunRecord({
 				env: this.env,

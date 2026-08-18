@@ -796,6 +796,65 @@ test('inline workflow sandbox failures throw UserCodeError', async () => {
 	)
 })
 
+test('inline workflow Durable Object isolate resets are not UserCodeError', async () => {
+	const { UserCodeError } = await import('#worker/user-code-error.ts')
+	runRecordMocks.resetProjections()
+	runRecordMocks.beginRunRecord.mockClear()
+	runRecordMocks.finishRunRecord.mockClear()
+	const binding = createStatefulWorkflowBinding()
+	const db = createWorkflowRunsDatabase()
+	const env = {
+		APP_DB: db,
+		DYNAMIC_CALLABLE_WORKFLOWS: binding.workflow,
+		APP_BASE_URL: 'https://app.example.com',
+	} as Env
+	const created = await createDynamicCallableWorkflow({
+		env,
+		userId: 'user-1',
+		packageContext: null,
+		body: {
+			code: 'export default async function main(){ return 1 }',
+			runAt: '2026-05-03T12:34:56.000Z',
+			idempotencyKey: 'inline-durable-object-reset',
+		},
+	})
+	const queued = binding.instances.get(created.id)
+	if (!queued?.params) throw new Error('Expected queued workflow payload.')
+	invocationMocks.runModuleWithRegistry.mockReset()
+	invocationMocks.runModuleWithRegistry.mockResolvedValueOnce({
+		result: undefined,
+		error: 'Durable Object reset because its code was updated.',
+		logs: [],
+	})
+	const workflow = new DynamicCallableWorkflowBase(
+		{ waitUntil: vi.fn() } as unknown as ExecutionContext,
+		env,
+	)
+	const stepDo = vi.fn(
+		async (_name: string, _config: unknown, callback: () => unknown) =>
+			await callback(),
+	)
+	await expect(
+		workflow.run(
+			{
+				payload: queued.params as never,
+				timestamp: new Date(),
+				instanceId: created.id,
+			},
+			{ sleepUntil: vi.fn(), do: stepDo } as unknown as WorkflowStep,
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof Error &&
+			!(error instanceof UserCodeError) &&
+			error.message === 'Durable Object reset because its code was updated.',
+	)
+	const finishError =
+		runRecordMocks.finishRunRecord.mock.calls.at(-1)?.[0]?.error
+	expect(finishError).toBeInstanceOf(Error)
+	expect(finishError).not.toBeInstanceOf(UserCodeError)
+})
+
 test('package-created inline workflows retain package secret authorization context', async () => {
 	runRecordMocks.resetProjections()
 	const binding = createStatefulWorkflowBinding()
@@ -1282,6 +1341,20 @@ test('package workflow infrastructure failures are not UserCodeError', async () 
 				},
 			},
 			message: 'Durable Object storage blew up.',
+		},
+		{
+			idempotencyKey: 'package-durable-object-reset-infra',
+			response: {
+				status: 503,
+				body: {
+					ok: false,
+					error: {
+						code: 'durable_object_reset',
+						message: 'Durable Object reset because its code was updated.',
+					},
+				},
+			},
+			message: 'Durable Object reset because its code was updated.',
 		},
 	] as const
 

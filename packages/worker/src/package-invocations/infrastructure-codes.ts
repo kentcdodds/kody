@@ -4,6 +4,8 @@
  * dispatchers like subscription-dispatch can classify responses without
  * creating an import cycle through admin-package-subscriptions → service.
  */
+export const durableObjectResetInvocationErrorCode = 'durable_object_reset'
+
 const retryablePackageInvocationInfrastructureCodes = new Set([
 	'idempotency_lookup_failed',
 	'idempotency_persistence_failed',
@@ -11,6 +13,7 @@ const retryablePackageInvocationInfrastructureCodes = new Set([
 	'invocation_in_progress',
 	'invocation_failed',
 	'idempotency_response_unavailable',
+	durableObjectResetInvocationErrorCode,
 ])
 
 /** Codes raised before user code ran, so Queue redelivery re-executes. */
