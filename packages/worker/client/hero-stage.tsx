@@ -263,6 +263,8 @@ export function HeroStage(handle: Handle<HeroStageProps>) {
 					width={prop.w}
 					height={prop.h}
 					alt=""
+					loading="lazy"
+					decoding="async"
 					data-depth={String(prop.depth)}
 					style={prop.vars}
 					mix={css(prop.tilt ? stagePropTiltCss : stagePropCss)}

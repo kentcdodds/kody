@@ -151,12 +151,18 @@ export function ManagedDocumentHead(
 	}
 }
 
+function isHomeDocumentUrl(url: string | undefined) {
+	if (!url) return false
+	return new URL(url, 'https://kody.local').pathname === '/'
+}
+
 export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 	const clientEntryHref =
 		handle.props.clientEntryHref ?? buildClientEntryHref('dev')
 	const stylesheetHref =
 		handle.props.stylesheetHref ?? buildStylesheetHref('dev')
 	const scrollRestorationInlineScript = getScrollRestorationInlineScript()
+	const preloadHeroImage = isHomeDocumentUrl(handle.props.url)
 
 	return () => (
 		<html lang="en">
@@ -212,6 +218,14 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 					href="/fonts/wix-madefor-text-latin.woff2"
 					crossOrigin="anonymous"
 				/>
+				{preloadHeroImage ? (
+					<link
+						rel="preload"
+						as="image"
+						href="/images/hero/kody-base.webp"
+						fetchPriority="high"
+					/>
+				) : null}
 				<title>
 					{handle.props.documentHead?.title ?? handle.props.title ?? 'kody'}
 				</title>
