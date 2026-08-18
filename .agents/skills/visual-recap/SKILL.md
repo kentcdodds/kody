@@ -81,8 +81,8 @@ to a topology flowchart.
   diagram when topology is the story.
 - **Other mermaid types** when they fit better: `erDiagram` for schema,
   `stateDiagram-v2` for lifecycle, `flowchart TB` for a decision tree. Use them
-  instead of (or alongside) a sequence diagram — do not force a sequence
-  diagram that hides the real change.
+  instead of (or alongside) a sequence diagram — do not force a sequence diagram
+  that hides the real change.
 
 Every diagram is PR-scoped: only the path this diff changes, not the full
 architecture. Open with one sentence naming what the graph shows. **Label every
@@ -133,8 +133,8 @@ sequenceDiagram
 
 ### System map
 
-_Optional: a topology flowchart when a sequence diagram is not enough, or when
-a second view of crossings helps._
+_Optional: a topology flowchart when a sequence diagram is not enough, or when a
+second view of crossings helps._
 
 ### Before / after
 
@@ -166,14 +166,14 @@ Format rules:
   - Open with one sentence naming the main flow (e.g. "Social login flows from
     the login UI through session auth into D1.").
   - Participants are primitives: use the `id` as the alias (e.g.
-    `participant appSessions as app-sessions`). Add an `actor` only when a
-    human or external caller is part of the change.
+    `participant appSessions as app-sessions`). Add an `actor` only when a human
+    or external caller is part of the change.
   - **Label every message** with what this PR does on that hop. Unlabeled
     messages are the sequence-diagram form of unlabeled flowchart arrows.
-  - Include only participants on the changed path — not all ~25 primitives.
-    Add a neighbor only when this PR actually calls through them.
-  - Use `Note over` / `Note right of` for new or changed data, guards, or
-    status — not as a substitute for a labeled message.
+  - Include only participants on the changed path — not all ~25 primitives. Add
+    a neighbor only when this PR actually calls through them.
+  - Use `Note over` / `Note right of` for new or changed data, guards, or status
+    — not as a substitute for a labeled message.
   - Keep the happy path first. Use `alt` / `opt` only for a branch this PR
     introduces or changes.
 - **System map** (optional): a PR-scoped **topology** view — how touched
@@ -195,8 +195,8 @@ Format rules:
   - Skip this section when the sequence diagram already covers the path,
     including storage or cross-cutting hops (DB, RBAC, export).
 - Other mermaid types follow the same labeling and PR-scope rules. Put an
-  `erDiagram` or `stateDiagram-v2` in **Change flow** (or **Before / after**
-  for a compact schema snippet) when that graph is the clearest.
+  `erDiagram` or `stateDiagram-v2` in **Change flow** (or **Before / after** for
+  a compact schema snippet) when that graph is the clearest.
 - Keep the whole block scannable: prefer tables and diagrams over prose, and
   keep it well under ~120 lines.
 
@@ -279,8 +279,8 @@ sequenceDiagram
 	Note over d1AppDb: new table is an export + deletion target
 ```
 
-A topology flowchart is still useful when the change is structural rather than
-a single timed path (several owners, fan-out, or crossings a sequence would
+A topology flowchart is still useful when the change is structural rather than a
+single timed path (several owners, fan-out, or crossings a sequence would
 flatten). Same labeling bar: every edge names what this PR does.
 
 **Weak** (unlabeled topology):
