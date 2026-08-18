@@ -368,8 +368,7 @@ account label, scopes, timestamps, and for failed: reason, optional provider
 error fields, and trusted `reconnect_url` / `account_url`; for succeeded:
 `source` and a trusted `account_url`); they omit token and secret values. Every
 classified attempt emits. Provider HTTP 5xx and missing connections do not emit
-failed. See
-[Package subscriptions](../guides/package-subscriptions.md) and
+failed. See [Package subscriptions](../guides/package-subscriptions.md) and
 [OAuth integrations](./architecture/integrations.md).
 
 For saved outbound MCP servers, `mcp.server.disconnected` and
