@@ -31,6 +31,7 @@ import {
 	refreshPackageJobRowIdentity,
 } from '@kody-internal/shared/jobs/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { buildPackageJobId } from './package-job-id.ts'
 import {
 	type JobCreateInput,
 	type JobRecord,
@@ -2001,6 +2002,121 @@ test('updateJob clears params, updates timezone, and disables a job', async () =
 	expect(emptyCodeError).toMatchObject({
 		message: 'Jobs require non-empty code.',
 	})
+})
+
+test('updateJob updates package-owned job metadata without force-publishing the package source', async () => {
+	const env = createJobServiceTestEnv({
+		APP_DB: createDatabase(),
+	})
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const userId = callerContext.user.userId
+	const packageId = 'pkg-1'
+	const sourceId = 'package-source-1'
+	await insertPublishedEntitySource({
+		db: env.APP_DB as ReturnType<typeof createDatabase>,
+		userId,
+		sourceId,
+		entityKind: 'package',
+		entityId: packageId,
+		publishedCommit: 'package-published-commit',
+		manifestPath: 'package.json',
+	})
+	await syncPackageJobsForPackage({
+		env,
+		userId,
+		baseUrl: callerContext.baseUrl,
+		packageId,
+		sourceId,
+		manifest: parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@owner/personal-history',
+				exports: { '.': './index.ts' },
+				kody: {
+					id: 'personal-history',
+					description: 'Personal history',
+					jobs: {
+						'daily-prompt': {
+							entry: './src/jobs/daily-prompt.ts',
+							schedule: { type: 'cron', expression: '0 7 * * *' },
+							enabled: false,
+						},
+					},
+				},
+			}),
+		}),
+	})
+	const jobId = buildPackageJobId(packageId, 'daily-prompt')
+	repoMockModule.syncArtifactSourceSnapshot.mockClear()
+
+	const updated = await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: jobId,
+			enabled: true,
+			schedule: {
+				type: 'cron',
+				expression: '0 8 * * *',
+			},
+			params: {
+				date: '2026-08-18',
+			},
+		},
+	})
+
+	expect(updated.enabled).toBe(true)
+	expect(updated.schedule).toEqual({
+		type: 'cron',
+		expression: '0 8 * * *',
+	})
+	expect(updated.params).toEqual({
+		date: '2026-08-18',
+	})
+	expect(updated.sourceId).toBe(sourceId)
+	expect(updated.publishedCommit).toBe('package-published-commit')
+	expect(repoMockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+
+	const codeError = await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: jobId,
+			code: 'export default async () => ({ ok: true })',
+		},
+	}).catch((caught: unknown) => caught)
+	expect(codeError).toBeInstanceOf(McpCallerError)
+	expect(codeError).toMatchObject({
+		message:
+			'Package-owned jobs cannot replace source via job_update. Change the job entry in the package repo and publish the package.',
+	})
+	expect(repoMockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+
+	const adHoc = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Ad hoc contrast',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+	repoMockModule.syncArtifactSourceSnapshot.mockClear()
+	await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: adHoc.id,
+			schedule: {
+				type: 'interval',
+				every: '30m',
+			},
+		},
+	})
+	expect(repoMockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
 })
 
 test('createJob and updateJob reject modules without a default export as McpCallerError', async () => {

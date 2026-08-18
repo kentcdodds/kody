@@ -886,6 +886,16 @@ function shouldSyncJobSourceForUpdate(body: JobUpdateInput) {
 	)
 }
 
+function jobUpdateSharesPackageSource(input: {
+	jobId: string
+	source: { entity_kind: string } | null
+}) {
+	return (
+		packageIdFromJobId(input.jobId) != null ||
+		input.source?.entity_kind === 'package'
+	)
+}
+
 export async function createJob(input: {
 	env: Env
 	callerContext: McpCallerContext
@@ -1073,19 +1083,36 @@ export async function updateJob(input: {
 					: existing.nextRunAt,
 			}
 			if (shouldSyncJobSourceForUpdate(input.body)) {
-				const syncedPublishedCommit = await syncArtifactSourceSnapshot({
-					env: input.env,
+				const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
+					id: updated.sourceId,
 					userId: callerContext.user.userId,
-					baseUrl: callerContext.baseUrl,
-					sourceId: updated.sourceId,
-					bootstrapAccess: null,
-					files: buildJobSourceFiles({
-						job: toJobView(updated),
-						moduleSource: shape.moduleSource ?? null,
-					}),
 				})
-				if (syncedPublishedCommit) {
-					updated.publishedCommit = syncedPublishedCommit
+				// Package-owned jobs share the package entity source. Metadata
+				// updates (schedule, name, timezone) must not force-publish that
+				// source: the overwrite safety policy refuses it, and writing
+				// kody.json / src/job.ts into the package repo would be
+				// destructive. Source changes belong in the package repo + publish.
+				if (jobUpdateSharesPackageSource({ jobId: existing.id, source })) {
+					if (input.body.code !== undefined) {
+						throw new McpCallerError(
+							'Package-owned jobs cannot replace source via job_update. Change the job entry in the package repo and publish the package.',
+						)
+					}
+				} else {
+					const syncedPublishedCommit = await syncArtifactSourceSnapshot({
+						env: input.env,
+						userId: callerContext.user.userId,
+						baseUrl: callerContext.baseUrl,
+						sourceId: updated.sourceId,
+						bootstrapAccess: null,
+						files: buildJobSourceFiles({
+							job: toJobView(updated),
+							moduleSource: shape.moduleSource ?? null,
+						}),
+					})
+					if (syncedPublishedCommit) {
+						updated.publishedCommit = syncedPublishedCommit
+					}
 				}
 			}
 			const nextCallerContextJson = serializeCallerContext(callerContext)
