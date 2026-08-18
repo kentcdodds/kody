@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { createRemoteConnectorMcpClient } from '#worker/remote-connector/client.ts'
+import { remoteConnectorRpcTimeoutMs } from '#worker/remote-connector/rpc-timeout.ts'
 import { getRemoteConnectorStatus } from '#worker/remote-connector/status.ts'
 import {
 	clearRemoteConnectorSnapshotCacheForTests,
@@ -242,6 +243,40 @@ test('remote connector status reports a stalled snapshot as an error', async () 
 			toolCount: 0,
 			error: expect.stringContaining('snapshot timed out'),
 		})
+	} finally {
+		clearRemoteConnectorSnapshotCacheForTests()
+		vi.useRealTimers()
+	}
+})
+
+test('remote connector client bounds a hung tools/call so the sandbox does not wait out the workflow observe timeout', async () => {
+	vi.useFakeTimers()
+	clearRemoteConnectorSnapshotCacheForTests()
+	const { env } = buildEnv(
+		async () => ({
+			connectorKind: 'home',
+			connectorId: 'home',
+			connectedAt: '2026-03-25T00:00:00.000Z',
+			lastSeenAt: '2026-03-25T00:00:01.000Z',
+			tools: runtimeTools,
+		}),
+		() => new Promise(() => undefined),
+	)
+
+	try {
+		const callPromise = createRemoteConnectorMcpClient({
+			env,
+			userId: 'user-1',
+			instanceId: 'home',
+		}).callTool('bond_shade_set_position', {
+			deviceId: 'shade-1',
+			position: 20,
+		})
+		const expectedRejection = expect(callPromise).rejects.toThrow(
+			'Timed out waiting for remote connector response to tools/call.',
+		)
+		await vi.advanceTimersByTimeAsync(remoteConnectorRpcTimeoutMs)
+		await expectedRejection
 	} finally {
 		clearRemoteConnectorSnapshotCacheForTests()
 		vi.useRealTimers()

@@ -102,6 +102,7 @@ function createState(
 			},
 			getWebSockets: vi.fn(() => webSockets),
 			acceptWebSocket: vi.fn(),
+			waitUntil: vi.fn(),
 			blockConcurrencyWhile: vi.fn((callback: () => Promise<void>) =>
 				callback(),
 			),
@@ -128,6 +129,7 @@ async function createRemoteConnectorSession(
 			storage: state.storage,
 			getWebSockets: state.getWebSockets,
 			acceptWebSocket: state.acceptWebSocket,
+			waitUntil: state.waitUntil,
 			blockConcurrencyWhile: state.blockConcurrencyWhile,
 		} as unknown as DurableObjectState,
 		{} as Env,
@@ -493,10 +495,11 @@ test('tools/list_changed soft-fails disconnects and reports malformed snapshots'
 		}),
 	)
 	await refresh
-
-	expect(captureMessageMock).toHaveBeenCalledWith(
-		'Remote connector session message handler threw.',
-	)
+	await vi.waitFor(() => {
+		expect(captureMessageMock).toHaveBeenCalledWith(
+			'Remote connector session message handler threw.',
+		)
+	})
 	expect(setLevelMock).toHaveBeenCalledWith('error')
 	expect(setTagMock).toHaveBeenCalledWith(
 		'worker_component',
@@ -518,6 +521,84 @@ test('tools/list_changed soft-fails disconnects and reports malformed snapshots'
 	).toMatchObject({
 		tools: [{ name: 'bond_shade_set_position' }],
 	})
+
+	const staleSent: Array<string> = []
+	const liveSent: Array<string> = []
+	const staleSocket = {
+		send: (payload: string) => {
+			staleSent.push(payload)
+		},
+	} as unknown as WebSocket
+	const liveSocket = {
+		send: (payload: string) => {
+			liveSent.push(payload)
+		},
+	} as unknown as WebSocket
+	const concurrent = await createRemoteConnectorSession({
+		storedState: {
+			persisted: {
+				connectorId: 'home',
+				connectedAt: '2026-04-26T05:00:00.000Z',
+				lastSeenAt: '2026-04-26T05:01:00.000Z',
+			},
+			tools: [{ name: 'bond_shade_set_position' }],
+		},
+		webSockets: [staleSocket, liveSocket],
+	})
+
+	const listChanged = concurrent.session.webSocketMessage(
+		liveSocket,
+		JSON.stringify({
+			type: 'connector.jsonrpc',
+			message: {
+				jsonrpc: '2.0',
+				method: 'notifications/tools/list_changed',
+			},
+		}),
+	)
+	await expect(listChanged).resolves.toBeUndefined()
+	await vi.waitFor(() => {
+		expect(staleSent.length).toBeGreaterThan(0)
+		expect(liveSent.length).toBeGreaterThan(0)
+	})
+	const listRequest = JSON.parse(liveSent[0]!) as {
+		message: { id: string; method: string }
+	}
+	expect(listRequest.message.method).toBe('tools/list')
+	expect(JSON.parse(staleSent[0]!)).toMatchObject({
+		message: { method: 'tools/list', id: listRequest.message.id },
+	})
+
+	const callPromise = concurrent.session.rpcCallTool(
+		'bond_shade_set_position',
+		{ deviceId: 'shade-1', position: 20 },
+	)
+	await vi.waitFor(() => {
+		expect(liveSent.length).toBe(2)
+	})
+	const callRequest = JSON.parse(liveSent[1]!) as {
+		message: { id: string; method: string }
+	}
+	expect(callRequest.message.method).toBe('tools/call')
+	expect(JSON.parse(staleSent[1]!)).toMatchObject({
+		message: { method: 'tools/call', id: callRequest.message.id },
+	})
+
+	await concurrent.session.webSocketMessage(
+		liveSocket,
+		JSON.stringify({
+			type: 'connector.jsonrpc',
+			message: {
+				jsonrpc: '2.0',
+				id: callRequest.message.id,
+				result: { content: [{ type: 'text', text: 'ok' }] },
+			},
+		}),
+	)
+	await expect(callPromise).resolves.toEqual({
+		content: [{ type: 'text', text: 'ok' }],
+	})
+	expect(JSON.parse(liveSent[0]!).message.id).toBe(listRequest.message.id)
 })
 
 test('remote connector hello shared-secret outcomes cover invalid, transient, and hard failures', async () => {

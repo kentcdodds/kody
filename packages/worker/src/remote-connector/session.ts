@@ -23,10 +23,13 @@ import {
 	hasRemoteConnectorSharedSecret,
 	remoteConnectorSharedSecretMatches,
 } from './resolve-remote-connector-secret.ts'
+import {
+	remoteConnectorRpcTimeoutMessage,
+	remoteConnectorRpcTimeoutMs,
+} from './rpc-timeout.ts'
 
 const connectorTag = 'connector'
 const stateStorageKey = 'remote-connector-session-state'
-const rpcTimeoutMs = 15_000
 
 const remoteConnectorToolsListRpcErrorName = 'RemoteConnectorToolsListRpcError'
 
@@ -606,14 +609,11 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 				connectorId: canonicalInstanceId,
 			}),
 		)
-		try {
-			await this.refreshToolsSnapshot()
-		} catch (error) {
-			this.handleToolsSnapshotRefreshFailure({
-				phase: 'after websocket hello',
-				error,
-			})
-		}
+		// Do not await: hibernatable WebSocket handlers are serialized, and
+		// tools/list's response is the next websocket message. Blocking here
+		// deadlocks the refresh and queues later tools/call RPCs until the
+		// caller sandbox observe timeout (270s on workflows).
+		this.scheduleToolsSnapshotRefresh('after websocket hello')
 	}
 
 	private async handleHeartbeat() {
@@ -634,15 +634,35 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			'method' in message &&
 			message.method === 'notifications/tools/list_changed'
 		) {
+			this.scheduleToolsSnapshotRefresh('on tools/list_changed')
+		}
+	}
+
+	private scheduleToolsSnapshotRefresh(
+		phase: 'after websocket hello' | 'on tools/list_changed',
+	) {
+		const refresh = this.refreshToolsSnapshot().catch((error: unknown) => {
 			try {
-				await this.refreshToolsSnapshot()
-			} catch (error) {
 				this.handleToolsSnapshotRefreshFailure({
-					phase: 'on tools/list_changed',
+					phase,
 					error,
 				})
+			} catch (unexpected) {
+				this.captureSessionMessage(
+					'Remote connector session message handler threw.',
+					{
+						level: 'error',
+						extra: {
+							connectorId: this.stateSnapshot.persisted.connectorId,
+							messageType: 'connector.jsonrpc',
+							error: getErrorMessage(unexpected),
+							phase,
+						},
+					},
+				)
 			}
-		}
+		})
+		this.ctx.waitUntil(refresh)
 	}
 
 	private handleToolsSnapshotRefreshFailure(input: {
@@ -697,35 +717,35 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		method: string,
 		params: Record<string, unknown>,
 	): Promise<RemoteConnectorJsonRpcResponse> {
-		const socket = this.ctx.getWebSockets(connectorTag)[0]
-		if (!socket) {
+		const sockets = this.ctx.getWebSockets(connectorTag)
+		if (sockets.length === 0) {
 			throw new Error('No remote connector is connected.')
 		}
 
 		const id = crypto.randomUUID()
 		const request = createJsonRpcRequest(id, method, params)
+		const envelope = stringifyRemoteConnectorMessage({
+			type: 'connector.jsonrpc',
+			message: request,
+		})
 
 		const response = await new Promise<RemoteConnectorJsonRpcResponse>(
 			(resolve, reject) => {
 				const timeout = setTimeout(() => {
 					this.pendingRequests.delete(id)
-					reject(
-						new Error(
-							`Timed out waiting for remote connector response to ${method}.`,
-						),
-					)
-				}, rpcTimeoutMs)
+					reject(new Error(remoteConnectorRpcTimeoutMessage(method)))
+				}, remoteConnectorRpcTimeoutMs)
 				this.pendingRequests.set(id, {
 					resolve,
 					reject,
 					timeout,
 				})
-				socket.send(
-					stringifyRemoteConnectorMessage({
-						type: 'connector.jsonrpc',
-						message: request,
-					}),
-				)
+				// Hibernation / reconnect can leave a stale socket first in the
+				// list. Fan the request to every accepted socket so the live
+				// connector session actually sees tools/list and tools/call.
+				for (const socket of sockets) {
+					socket.send(envelope)
+				}
 			},
 		)
 

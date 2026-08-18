@@ -64,8 +64,12 @@ The Worker sends MCP-style requests over the WebSocket wrapped in
   pass through to the upstream MCP client; see
   [Raw MCP content blocks](../../use/raw-content-blocks.md).
 
-If the Worker forwards **`notifications/tools/list_changed`**, the connector
-should re-list tools when it supports dynamic registration.
+When the connector sends **`notifications/tools/list_changed`**, the Worker
+requests **`tools/list`** again and updates the session snapshot. The
+hibernatable WebSocket handler must return before awaiting that round-trip:
+the `tools/list` response is the next websocket message, and blocking the
+handler queues later **`tools/call`** RPCs until the caller sandbox observe
+timeout.
 
 ## Internal access (DO RPC, not HTTP)
 
