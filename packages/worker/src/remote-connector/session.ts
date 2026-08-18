@@ -407,7 +407,10 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 					await this.handleHeartbeat()
 					return
 				case 'connector.jsonrpc':
-					await this.handleJsonRpcMessage(parsed.message)
+					await this.handleJsonRpcMessage(
+						parsed.message,
+						this.loadIngressUserId(ws),
+					)
 					return
 			}
 		} catch (error) {
@@ -613,7 +616,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		// tools/list's response is the next websocket message. Blocking here
 		// deadlocks the refresh and queues later tools/call RPCs until the
 		// caller sandbox observe timeout (270s on workflows).
-		this.scheduleToolsSnapshotRefresh('after websocket hello')
+		this.scheduleToolsSnapshotRefresh('after websocket hello', ingressUserId)
 	}
 
 	private async handleHeartbeat() {
@@ -621,7 +624,10 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		await this.persistState()
 	}
 
-	private async handleJsonRpcMessage(message: JSONRPCMessage) {
+	private async handleJsonRpcMessage(
+		message: JSONRPCMessage,
+		userId: string | null,
+	) {
 		if ('result' in message || 'error' in message) {
 			const pending = this.pendingRequests.get(String(message.id))
 			if (!pending) return
@@ -634,12 +640,13 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			'method' in message &&
 			message.method === 'notifications/tools/list_changed'
 		) {
-			this.scheduleToolsSnapshotRefresh('on tools/list_changed')
+			this.scheduleToolsSnapshotRefresh('on tools/list_changed', userId)
 		}
 	}
 
 	private scheduleToolsSnapshotRefresh(
 		phase: 'after websocket hello' | 'on tools/list_changed',
+		userId: string | null,
 	) {
 		const refresh = this.refreshToolsSnapshot().catch((error: unknown) => {
 			try {
@@ -652,6 +659,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 					'Remote connector session message handler threw.',
 					{
 						level: 'error',
+						userId,
 						extra: {
 							connectorId: this.stateSnapshot.persisted.connectorId,
 							messageType: 'connector.jsonrpc',
