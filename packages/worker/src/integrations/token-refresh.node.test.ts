@@ -247,6 +247,12 @@ test('provider HTTP status classifies refresh failures as caller errors or Sentr
 				headers: { 'Content-Type': 'application/json' },
 			}),
 		)
+		.mockResolvedValueOnce(
+			new Response(JSON.stringify({ access_token: '' }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+		)
 	vi.stubGlobal('fetch', fetchMock)
 	try {
 		mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
@@ -301,6 +307,27 @@ test('provider HTTP status classifies refresh failures as caller errors or Sentr
 		expect(
 			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
 		).not.toHaveBeenCalled()
+
+		mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
+		await expect(
+			refreshIntegrationTokens({
+				env,
+				userId,
+				name: 'google',
+			}),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof IntegrationTokenRefreshCallerError &&
+				error.reason === 'provider_rejected' &&
+				error.message.includes('did not return an access_token'),
+		)
+		expect(
+			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
+		).toHaveBeenCalledWith(
+			expect.objectContaining({
+				reason: 'provider_rejected',
+			}),
+		)
 	} finally {
 		vi.unstubAllGlobals()
 	}

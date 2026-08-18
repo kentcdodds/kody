@@ -425,7 +425,11 @@ async function refreshIntegrationTokensOrThrow(input: {
 			`Token refresh failed for integration "${connection.name}" with HTTP ${response.status}${detailSuffix}.`,
 		)
 	}
-	if (!payload || typeof payload.access_token !== 'string') {
+	if (
+		!payload ||
+		typeof payload.access_token !== 'string' ||
+		payload.access_token.length === 0
+	) {
 		throw fail(
 			`Token refresh for integration "${connection.name}" did not return an access_token. Reconnect at ${reconnectPath}.`,
 			{ reason: 'provider_rejected' },
