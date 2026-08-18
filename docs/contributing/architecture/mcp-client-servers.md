@@ -87,8 +87,8 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   `mcp:<server-name>` domain with a capability per discovered tool
   (`mcp:<server-name>:<tool>`), marked `source: 'mcp-server'`.
 - Execute: the `kody.mcp` proxy exposes tools as
-  `kody.mcp["<server-name>"].<tool>(input)` and never as flat
-  `kody.*` functions. Search capability detail returns the exact accessor.
+  `kody.mcp["<server-name>"].<tool>(input)` and never as flat `kody.*`
+  functions. Search capability detail returns the exact accessor.
 - Tool calls flow worker → hub DO `callTool` → `MCPClientManager.callTool` →
   remote server. At the synthesized capability boundary, results are wrapped
   with explicit `__mcpContent` / companion markers when protocol content must

@@ -12,16 +12,14 @@ import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { readJson } from '#client/routes/account-approval-shared.ts'
+import { readJson,
+	buildHostApprovalRequestUrl,
+	submitApprovalRequest } from '#client/routes/account-approval-shared.ts'
 import {
 	type RouteLoaderResult,
 	routeLoaderRedirect,
 } from '#client/route-loader.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
-import {
-	buildHostApprovalRequestUrl,
-	submitApprovalRequest,
-} from '#client/routes/account-approval-shared.ts'
 import {
 	colors,
 	radius,

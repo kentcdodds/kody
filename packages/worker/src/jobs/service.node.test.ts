@@ -69,7 +69,6 @@ const identityMockModule = vi.hoisted(() => ({
 	})),
 }))
 
-
 vi.mock('#worker/repo/source-service.ts', () => ({
 	ensureEntitySource: (...args: Array<unknown>) =>
 		repoMockModule.ensureEntitySource(...args),
@@ -112,7 +111,6 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 			...(args as [D1Database, string]),
 		),
 }))
-
 
 vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
 	const actual = (await importOriginal()) as Record<string, unknown>
@@ -2714,8 +2712,7 @@ test('executeJobOnce background execution workflow', async () => {
 			})
 
 			expect(executeSpy).toHaveBeenCalledTimes(1)
-			expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({
-			})
+			expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({})
 		} finally {
 			executeSpy.mockRestore()
 		}

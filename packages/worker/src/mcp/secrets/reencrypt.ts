@@ -54,7 +54,6 @@ type SecretEntryLegacyRow = {
 	encrypted_value: string
 }
 
-
 type PlatformOauthLegacyRow = {
 	slug: string
 	client_secret_encrypted: string
@@ -179,7 +178,6 @@ async function listSecretEntryPage(input: {
 	}))
 }
 
-
 async function listPlatformOauthPage(input: {
 	db: D1Database
 	afterSlug: string
@@ -231,7 +229,6 @@ async function updateSecretEntry(input: {
 	)
 	return Number(result.meta.changes ?? 0)
 }
-
 
 async function updatePlatformOauthApp(input: {
 	db: D1Database

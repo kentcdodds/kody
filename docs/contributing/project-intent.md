@@ -27,8 +27,8 @@ guidance here, treat this document as the project's intent.
 
 Kody is a multi-user personal assistant. Each authenticated user gets a strictly
 isolated assistant: their own packages, jobs, secrets, values, memories, chat
-threads, MCP servers, email inboxes, and durable storage. There is no
-shared state between users.
+threads, MCP servers, email inboxes, and durable storage. There is no shared
+state between users.
 
 - Optimization target: a high-quality personal assistant for each individual
   signed-in user, with hard isolation between users

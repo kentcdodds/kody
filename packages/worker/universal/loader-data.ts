@@ -953,8 +953,6 @@ export type AccountMcpServersLoaderData = {
 	servers: Array<AccountMcpServerListItem>
 }
 
-
-
 export type AccountPackageInvocationTokenListItem = {
 	id: string
 	name: string

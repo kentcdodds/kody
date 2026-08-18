@@ -19,7 +19,6 @@ const maxSearchLimit = 100
 // by default instead of cutting at the ranked default.
 const domainBrowseDefaultLimit = 100
 
-
 const memoryResultSchema = z.object({
 	surfaced: z.array(z.unknown()),
 	suppressedCount: z.number().int().nonnegative(),

@@ -99,7 +99,6 @@ vi.mock('#worker/package-retrievers/service.ts', () => ({
 		mockModule.runPackageRetrievers(...args),
 }))
 
-
 vi.mock('#worker/community/service.ts', () => ({
 	searchCommunityListings: (...args: Array<unknown>) =>
 		mockModule.searchCommunityListings(...args),

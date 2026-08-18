@@ -116,7 +116,6 @@ type UserSavedPackageSnapshot = {
 	hasApp: boolean
 }
 
-
 type UserPackageServiceSnapshot = {
 	packageId: string
 	kodyId: string
@@ -790,7 +789,6 @@ async function listUserSavedPackages(env: Env, userId: string) {
 		hasApp: normalizeBoolean(row.has_app),
 	}))
 }
-
 
 async function listUserPackageServices(
 	env: Env,
@@ -1606,7 +1604,6 @@ async function exportRepoSessionIndexRows(input: {
 	}
 }
 
-
 async function exportPackageServices(input: {
 	env: AccountExportEnv
 	userId: string
@@ -2026,10 +2023,7 @@ export async function readAccountExportSection(input: {
 	storageId?: string
 	packageId?: string
 	serviceName?: string
-	kind?:
-		| 'storage_runner'
-		| 'package_service'
-		| 'job_manager'
+	kind?: 'storage_runner' | 'package_service' | 'job_manager'
 	pageSize?: number
 	startAfter?: string
 }): Promise<AccountExportSectionResult> {

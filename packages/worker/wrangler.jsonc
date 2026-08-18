@@ -621,10 +621,10 @@
 					"new_sqlite_classes": ["RepoSessionIndex"],
 					"tag": "v24",
 				},
-		{
-			"deleted_classes": ["RemoteConnectorSession"],
-			"tag": "v25",
-		},
+				{
+					"deleted_classes": ["RemoteConnectorSession"],
+					"tag": "v25",
+				},
 			],
 			"ratelimits": [
 				{
@@ -930,10 +930,10 @@
 					"new_sqlite_classes": ["RepoSessionIndex"],
 					"tag": "v24",
 				},
-		{
-			"deleted_classes": ["RemoteConnectorSession"],
-			"tag": "v25",
-		},
+				{
+					"deleted_classes": ["RemoteConnectorSession"],
+					"tag": "v25",
+				},
 			],
 			"worker_loaders": [
 				{

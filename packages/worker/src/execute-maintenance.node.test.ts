@@ -41,7 +41,7 @@ test('runExecuteSmokeCheck executes trivial code through the dynamic worker path
 		{
 			name: 'kody',
 			fns: {},
-					kodyMcpServers: [],
+			kodyMcpServers: [],
 		},
 	])
 })

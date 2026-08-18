@@ -512,8 +512,11 @@ export async function buildKodyProvider(
 		waitUntil?: (promise: Promise<unknown>) => void
 	},
 ): Promise<ResolvedProvider> {
-	const { tools, mcpServers, openApiProviders } =
-		await buildKodyToolContext(env, callerContext, options)
+	const { tools, mcpServers, openApiProviders } = await buildKodyToolContext(
+		env,
+		callerContext,
+		options,
+	)
 	const provider: ToolProvider = {
 		name: 'kody',
 		tools: Object.fromEntries(

@@ -414,10 +414,10 @@ Treat package apps like Worker-style modules:
 ## Attached MCP servers
 
 Enabled MCP servers from `/account/mcp-servers` are available as
-`kody.mcp["name"]` in execute and in package runtimes that build caller
-context: package apps (when capabilities or nested `packages.invoke` need them),
-package services, subscription handlers, package-owned jobs, workflows, HTTP
-invocation tokens, and webhook delivery.
+`kody.mcp["name"]` in execute and in package runtimes that build caller context:
+package apps (when capabilities or nested `packages.invoke` need them), package
+services, subscription handlers, package-owned jobs, workflows, HTTP invocation
+tokens, and webhook delivery.
 
 ## Package services
 

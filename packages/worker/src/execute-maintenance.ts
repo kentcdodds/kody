@@ -9,7 +9,7 @@ const executeSmokeProviders = [
 	{
 		name: 'kody',
 		fns: {},
-			kodyMcpServers: [],
+		kodyMcpServers: [],
 	},
 ] as const
 

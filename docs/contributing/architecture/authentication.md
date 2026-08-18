@@ -1,9 +1,9 @@
 # Authentication
 
 `kody` is multi-user. Each signed-in user has a fully isolated assistant: their
-own packages, jobs, secrets, values, memories, MCP servers, email inboxes,
-and durable storage. The auth layer is the boundary that establishes which user
-a request belongs to before any handler reads or writes data.
+own packages, jobs, secrets, values, memories, MCP servers, email inboxes, and
+durable storage. The auth layer is the boundary that establishes which user a
+request belongs to before any handler reads or writes data.
 
 `kody` uses two related authentication models:
 

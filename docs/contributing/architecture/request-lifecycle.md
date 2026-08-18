@@ -75,9 +75,8 @@ Requests are handled in this order:
      token package invocations
    - `POST /@{username}/webhooks/:packageKodyId/:webhookName/:urlSecret` —
      inbound package webhooks (see [Inbound webhooks](./webhooks.md))
-   - Retired `/@{username}/connectors/...` paths return `404`. Use outbound
-     MCP servers (`kody.mcp[...]`) for home automation and similar tools.
-
+   - Retired `/@{username}/connectors/...` paths return `404`. Use outbound MCP
+     servers (`kody.mcp[...]`) for home automation and similar tools.
 
 7. Static assets:
    - Served from `ASSETS` for `GET` and `HEAD` when available
@@ -88,7 +87,7 @@ Requests are handled in this order:
    (`/@{username}/packages/*`), only in confirmed non-production runtimes when
    `PACKAGE_APP_BASE_URL` is unset.
 9. App server routes:
-    - Everything else is handled by `packages/worker/src/app/handler.ts`
+   - Everything else is handled by `packages/worker/src/app/handler.ts`
 
 ## Package service runtime
 

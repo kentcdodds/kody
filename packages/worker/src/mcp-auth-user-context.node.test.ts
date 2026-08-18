@@ -10,9 +10,8 @@ vi.mock('#worker/identity/permissions-db.ts', () => ({
 		mockModule.getUserRolesAndPermissions(...args),
 }))
 
-const { buildMcpUserContextFromGrantProps } = await import(
-	'./mcp-auth-user-context.ts'
-)
+const { buildMcpUserContextFromGrantProps } =
+	await import('./mcp-auth-user-context.ts')
 
 type GrantUserRow = {
 	id: number

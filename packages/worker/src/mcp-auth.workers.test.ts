@@ -585,8 +585,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		},
 	})
 	expect(withConnectorResponse.status).toBe(200)
-	expect(receivedProps).toMatchObject({
-	})
+	expect(receivedProps).toMatchObject({})
 
 	// The failing D1 lookup logs the roles-load failure before the request
 	// rethrows the underlying error.

@@ -359,8 +359,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			capabilitySource: 'mcp-server',
 			failurePhase: 'handler',
 			errorName: 'Error',
-			errorMessage:
-				'MCP tool "home:bond_shade_set_position" failed: timeout',
+			errorMessage: 'MCP tool "home:bond_shade_set_position" failed: timeout',
 			cause: new Error(
 				'MCP tool "home:bond_shade_set_position" failed: timeout',
 			),
@@ -379,8 +378,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 	expect(sentryMock.captureException).toHaveBeenNthCalledWith(
 		3,
 		expect.objectContaining({
-			message:
-				'MCP tool "home:bond_shade_set_position" failed: timeout',
+			message: 'MCP tool "home:bond_shade_set_position" failed: timeout',
 		}),
 	)
 	expect(sentryMock.scope.setLevel).toHaveBeenCalledWith('error')

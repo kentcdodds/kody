@@ -39,10 +39,9 @@ normal structured data, return plain values and let `execute` serialize them.
 ## Downstream MCP servers
 
 When execute code calls a user-added MCP server (`kody.mcp[...]`) and returns
-that capability result directly, Kody
-preserves protocol-valid MCP content blocks from the downstream tool — including
-`image`, `audio`, `resource`, and `resource_link` — and passes them through to
-the upstream MCP client.
+that capability result directly, Kody preserves protocol-valid MCP content
+blocks from the downstream tool — including `image`, `audio`, `resource`, and
+`resource_link` — and passes them through to the upstream MCP client.
 
 If the downstream tool returns both `structuredContent` and non-text `content`,
 structured data stays available for code (and in execute’s

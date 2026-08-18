@@ -31,11 +31,7 @@ export type CapabilityJsonSchema = JsonSchemaToolDescriptor['inputSchema']
 // Capability authors may provide Zod or raw JSON Schema.
 export type CapabilitySchemaDefinition = CapabilityJsonSchema | ZodType
 
-export type CapabilitySource =
-	| 'builtin'
-	| 'mcp-server'
-	| 'openapi'
-
+export type CapabilitySource = 'builtin' | 'mcp-server' | 'openapi'
 
 export type CapabilityMcpServerMetadata = {
 	serverId: string

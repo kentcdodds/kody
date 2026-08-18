@@ -998,8 +998,7 @@ test('invokePackageExport executes a scoped package export successfully', async 
 	const response = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
-		token: createToken({
-		}),
+		token: createToken({}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
 			exportName: 'dispatch-message-created',
@@ -1023,8 +1022,7 @@ test('invokePackageExport executes a scoped package export successfully', async 
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({
-		}),
+		expect.objectContaining({}),
 		expect.anything(),
 		expect.anything(),
 		expect.anything(),

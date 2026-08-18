@@ -4,8 +4,8 @@ Kody can turn a curated slice of an untrusted OpenAPI 3.x document into a
 synthesized capability domain. Agents manage bindings through the builtin
 `openapi` domain and call resolved operations from execute as
 `kody.openapi["<name>"].<operation_slug>(input)`. This complements
-[MCP client servers](./mcp-client-servers.md) (`kody.mcp[...]`) and remote
-MCP servers (`kody.mcp[...]`): OpenAPI bindings dial out over HTTPS to a pinned API
+[MCP client servers](./mcp-client-servers.md) (`kody.mcp[...]`) and remote MCP
+servers (`kody.mcp[...]`): OpenAPI bindings dial out over HTTPS to a pinned API
 base, not over MCP.
 
 Agent-facing workflow (discover → summarize → scaffold or bind) lives in

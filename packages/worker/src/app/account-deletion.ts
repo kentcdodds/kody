@@ -117,7 +117,6 @@ type UserRepoSessionSnapshot = {
 	id: string
 }
 
-
 type UserMcpServerSnapshot = {
 	id: string
 }
@@ -275,7 +274,6 @@ async function listUserRepoSessions(env: Env, userId: string) {
 		id: row.id,
 	}))
 }
-
 
 async function listUserMcpServers(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
@@ -708,7 +706,6 @@ async function purgeRepoSessionIndex(input: {
 		return 0
 	}
 }
-
 
 async function purgeMcpClientHub(input: {
 	env: Env

@@ -1476,7 +1476,7 @@ export function buildPackageSearchDocument(
 			]),
 			...referencedTypes.flatMap((type) => [type.name, type.definition]),
 		]
-		return [...values.filter((value) => value.length > 0)].join(' ')
+		return values.filter((value) => value.length > 0).join(' ')
 	})
 	return [
 		`package ${projection.kodyId}`,

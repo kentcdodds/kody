@@ -130,7 +130,6 @@ const protectedPublicJsonFormPaths = new Set([
 	'/webauthn/authentication',
 ])
 
-
 const appHandler = withCors({
 	getCorsHeaders(request): Record<string, string> | null {
 		const url = new URL(request.url)

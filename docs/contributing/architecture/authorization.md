@@ -314,9 +314,9 @@ execution failures remain isolated from sibling subscribers.
 
 **Platform-feedback review does not expose unrelated account content** such as
 secrets, values, memories, packages, jobs, user inbox email, durable storage,
-MCP servers, or OAuth grants. None of it appears in platform-feedback
-admin payloads. Text a user explicitly approves as part of a feedback submission
-is visible only through the dedicated feedback exception.
+MCP servers, or OAuth grants. None of it appears in platform-feedback admin
+payloads. Text a user explicitly approves as part of a feedback submission is
+visible only through the dedicated feedback exception.
 
 **Admins separately moderate deliberately shared community content.** Public
 community listing snapshots can be reviewed for trust, featuring, delisting, and

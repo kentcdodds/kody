@@ -8,11 +8,10 @@ Kody is multi-user with strict per-user isolation. Every user-owned storage
 layer described below is scoped by `user_id` (D1 columns, Vectorize metadata, KV
 key prefixes, Durable Object names), and every owner read/write path takes a
 `userId` argument. Two users with the same logical identifier (for example the
-same MCP server name, the same package id, or the
-same storage id) land on different durable objects and different rows. Any new
-persistence layer added to the project must follow the same convention;
-user-scoped tests should exercise both the "happy" path and a cross-user denial
-path.
+same MCP server name, the same package id, or the same storage id) land on
+different durable objects and different rows. Any new persistence layer added to
+the project must follow the same convention; user-scoped tests should exercise
+both the "happy" path and a cross-user denial path.
 
 The deliberate storage exception is **operator-owned system email** for reserved
 platform local parts (`kody`, `support`, `abuse`, `postmaster`, `security`, and
@@ -78,19 +77,19 @@ Deletion must cover these user-owned surfaces:
   migrations to SQLite and fails if a user-owned schema column lacks schema
   coverage in the runtime target list or if that list references a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
-  `RepoSessionIndex`, `PackageRealtimeSession`,
-  `PackageServiceInstance`, `McpClientHub`, `RunLog`, `UserMeter`,
-  `StripePlanRefresh`, and `Mailbox` are purged through account-deletion RPCs
-  after their identifiers are collected (`RunLog`, `UserMeter`,
-  `StripePlanRefresh`, `Mailbox`, and `RepoSessionIndex` are one object per user
-  and need no D1 id scan). Account deletion first captures the authoritative
-  USER raw-MIME and attachment references through `Mailbox.listBlobReferences`,
-  deletes those owner-safe R2 keys plus defensive owner-prefix sweeps, and only
-  then calls `Mailbox.purge()`. The purge clears DO SQLite only (see
-  [Mailbox](#durable-objects-mailbox)). `MCP` objects remain SDK session-keyed,
-  while `mcp_agent_sessions` indexes each Durable Object id by authenticated
-  stable user id so account deletion can purge stored props, conversation state,
-  raw-fetch state, and transport storage before revoking OAuth grants.
+  `RepoSessionIndex`, `PackageRealtimeSession`, `PackageServiceInstance`,
+  `McpClientHub`, `RunLog`, `UserMeter`, `StripePlanRefresh`, and `Mailbox` are
+  purged through account-deletion RPCs after their identifiers are collected
+  (`RunLog`, `UserMeter`, `StripePlanRefresh`, `Mailbox`, and `RepoSessionIndex`
+  are one object per user and need no D1 id scan). Account deletion first
+  captures the authoritative USER raw-MIME and attachment references through
+  `Mailbox.listBlobReferences`, deletes those owner-safe R2 keys plus defensive
+  owner-prefix sweeps, and only then calls `Mailbox.purge()`. The purge clears
+  DO SQLite only (see [Mailbox](#durable-objects-mailbox)). `MCP` objects remain
+  SDK session-keyed, while `mcp_agent_sessions` indexes each Durable Object id
+  by authenticated stable user id so account deletion can purge stored props,
+  conversation state, raw-fetch state, and transport storage before revoking
+  OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
   rows and removed with `deleteByIds`.
 - **R2:** raw USER email MIME and attachment blobs in `EMAIL_BLOBS` are
@@ -1255,8 +1254,7 @@ on write unless a migration backfills existing rows.
 or tuple layouts creates new objects and strands existing object storage. All
 builders are centralized in
 `packages/worker/src/user-scoped-durable-object-name.ts` (plus
-`durableObjectNameFromParts` in
-user-scoped Durable Object naming helpers, which
+`durableObjectNameFromParts` in user-scoped Durable Object naming helpers, which
 to `durableObjectNameFromParts`).
 
 - `JobManager`: `idFromName(userId)` (no trim).

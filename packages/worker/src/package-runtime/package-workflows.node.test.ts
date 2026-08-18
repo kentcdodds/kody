@@ -27,7 +27,6 @@ const invocationMocks = vi.hoisted(() => ({
 	createPackageRuntimeInvokeTools: vi.fn(() => ({ invoke: vi.fn() })),
 }))
 
-
 const runRecordMocks = vi.hoisted(() => {
 	const projectionsByUser = new Map<
 		string,
@@ -283,7 +282,6 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 	createPackageRuntimeInvokeTools: (...args: Array<unknown>) =>
 		invocationMocks.createPackageRuntimeInvokeTools(...args),
 }))
-
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
 	runModuleWithRegistry: (...args: Array<unknown>) =>
@@ -896,7 +894,6 @@ test('package-created inline workflows retain package secret authorization conte
 	)
 })
 
-
 test('DynamicCallableWorkflowBase marks package export error responses as workflow errors', async () => {
 	runRecordMocks.resetProjections()
 	const binding = createStatefulWorkflowBinding()
@@ -1163,7 +1160,6 @@ test('inline workflow records exactly one workflow run with workflowId', async (
 		expect.objectContaining({ status: 'success' }),
 	)
 })
-
 
 test('package workflow sandbox and 4xx failures throw UserCodeError', async () => {
 	runRecordMocks.resetProjections()

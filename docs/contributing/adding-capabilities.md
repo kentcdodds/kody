@@ -56,18 +56,18 @@ Authoring flow:
    **`getStaticRegistry()`** on first use per isolate, providing access to
    builtin capabilities, handlers, tool descriptors, and domain metadata. At
    request time, **`getCapabilityRegistryForContext()`** merges MCP client
-   servers and OpenAPI bindings, then applies caller role/permission/feature-flag
-   filtering for search and execute.
+   servers and OpenAPI bindings, then applies caller
+   role/permission/feature-flag filtering for search and execute.
 
 To merge extra domains later (e.g. plugins), the seam is:
 `buildCapabilityRegistry([...builtinDomains, ...extraDomains])` with real
 `Capability` handlers (typical Workers model: snapshot at deploy).
 
-**MCP client servers:** at runtime, `getCapabilityRegistryForContext` synthesizes
-`mcp:<server>` domains from the user's enabled MCP servers (see
+**MCP client servers:** at runtime, `getCapabilityRegistryForContext`
+synthesizes `mcp:<server>` domains from the user's enabled MCP servers (see
 [`architecture/mcp-client-servers.md`](./architecture/mcp-client-servers.md)),
-driven by the `mcp_server_settings` D1 table and per-user hub snapshots.
-Home automation and similar outbound tools are ordinary MCP servers
+driven by the `mcp_server_settings` D1 table and per-user hub snapshots. Home
+automation and similar outbound tools are ordinary MCP servers
 (`kody.mcp["home"]`), not a separate product surface.
 
 **OpenAPI bindings:** the same runtime merge also synthesizes `openapi:<name>`
@@ -533,10 +533,10 @@ Use filename suffixes to choose the Vitest project:
 ## Compatibility and versioning policy
 
 Capability names, input field names, output field names, domain ids, and
-MCP/OpenAPI synthesized names are compatibility contracts once real users
-can reference them. Treat every change as if it might affect saved user code.
-This policy is for the post-cleanup, pre-open-signup line in the sand; do not
-add alias/deprecation machinery for the current Kent-only cleanup.
+MCP/OpenAPI synthesized names are compatibility contracts once real users can
+reference them. Treat every change as if it might affect saved user code. This
+policy is for the post-cleanup, pre-open-signup line in the sand; do not add
+alias/deprecation machinery for the current Kent-only cleanup.
 
 - Inputs are additive-only. Add optional fields first; never make an existing
   optional field required for an existing capability name.
@@ -548,11 +548,11 @@ add alias/deprecation machinery for the current Kent-only cleanup.
 - Raw JSON Schema inputs are an escape hatch. If a capability cannot use Zod,
   the handler must validate the args explicitly before reading them.
 - MCP server capability entity ids use `mcp:<name>:<tool>` (for example
-  `mcp:home:set_pin`). In execute/runtime code, MCP tools are not
-  flat functions. Use `kody.mcp["<name>"].<tool>(input)`, for example
+  `mcp:home:set_pin`). In execute/runtime code, MCP tools are not flat
+  functions. Use `kody.mcp["<name>"].<tool>(input)`, for example
   `kody.mcp["home"].set_pin({ pin })`.
-- MCP server descriptions, keywords, schemas, and annotations cross a
-  trust boundary from the remote server into Kody search and execute. Keep them
+- MCP server descriptions, keywords, schemas, and annotations cross a trust
+  boundary from the remote server into Kody search and execute. Keep them
   concise, non-secret, and stable; Kody records MCP server provenance on
   synthesized capability metadata so hosts and logs can distinguish built-ins
   from server-provided actions.

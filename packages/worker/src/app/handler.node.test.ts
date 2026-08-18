@@ -20,8 +20,7 @@ function createEnv(overrides: Record<string, unknown> = {}) {
 test('account secrets api ignores legacy remote connector env secrets', async () => {
 	const response = await handleRequest(
 		new Request('https://example.com/account/secrets.json'),
-		createEnv({
-		}),
+		createEnv({}),
 	)
 
 	expect(response.status).toBe(401)

@@ -84,7 +84,6 @@ async function insertSecretEntry(
 		.run(input.bucketId, input.name, input.encryptedValue)
 }
 
-
 async function insertPlatformApp(
 	sqlite: DatabaseSync,
 	input: { slug: string; encryptedSecret: string | null },

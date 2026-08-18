@@ -1369,4 +1369,3 @@ test('buildPackageAppWorker passes packageStorage grant ids from root, static, a
 	}
 	expect(bridgeProps.props.packageStorageGrantIds).toHaveLength(3)
 })
-

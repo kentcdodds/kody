@@ -500,9 +500,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 			kodyName: 'home',
 			toolName: 'set_pin',
 		},
-		executeExample: expect.stringContaining(
-			'kody.mcp["home"].set_pin(input)',
-		),
+		executeExample: expect.stringContaining('kody.mcp["home"].set_pin(input)'),
 	})
 	const remoteExecution = await executeCapabilityExample(
 		remoteDetail.structured.executeExample,

@@ -12,7 +12,8 @@ test('0005 rewrites kody.remote accessors and capability ids', () => {
 			'const id = "remote:home:turn_on"',
 			'',
 		].join('\n'),
-		'README.md': 'Call `kody.remote["home"].status({})` or `remote:home:status`.\n',
+		'README.md':
+			'Call `kody.remote["home"].status({})` or `remote:home:status`.\n',
 	}
 
 	const result = remoteConnectorToMcpServerCodemod.transform(files)
