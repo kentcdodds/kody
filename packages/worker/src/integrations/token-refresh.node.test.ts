@@ -504,6 +504,33 @@ test('successful Google refresh persists userinfo email as account_label when mi
 		})
 		expect(joined?.connection.accountLabel).toBe('kent.c.dodds@gmail.com')
 		expect(fetchMock).toHaveBeenCalledTimes(2)
+
+		await upsertPlatformIntegration({
+			env,
+			userId,
+			platformAppSlug: 'google',
+			scopes: ['openid', 'email'],
+			accessTokenSecretName: 'googleAccessToken',
+			refreshTokenSecretName: 'googleRefreshToken',
+			accountLabel: 'Work',
+		})
+		await refreshIntegrationTokens({
+			env,
+			userId,
+			name: 'google',
+		})
+		const labeled = await getJoinedIntegration({
+			env,
+			userId,
+			name: 'google',
+		})
+		expect(labeled?.connection.accountLabel).toBe('Work')
+		expect(fetchMock).toHaveBeenCalledTimes(3)
+		expect(
+			fetchMock.mock.calls.filter(([url]) =>
+				String(url).includes('openidconnect.googleapis.com'),
+			),
+		).toHaveLength(1)
 	} finally {
 		vi.unstubAllGlobals()
 	}

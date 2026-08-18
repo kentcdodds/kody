@@ -139,7 +139,7 @@ async function maybePersistGoogleAccountLabel(input: {
 	requiredHosts: Array<string>
 	accessToken: string
 }) {
-	if (isAccountEmailLabel(input.accountLabel)) return
+	if (input.accountLabel?.trim()) return
 	if (!input.requiredHosts.includes('openidconnect.googleapis.com')) return
 	try {
 		const response = await fetch(
