@@ -23,7 +23,7 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 - `kody.tags` — search tags
 - `kody.searchText` — optional longer search text beyond the short description
 - `kody.dependencies` — direct static saved package dependencies imported via
-  `kody:@...`
+  `kody:@...`. Repo checks reject cycles in this graph at publish time.
 - `kody.secretMounts` — optional package-scoped secret mount declarations
 - `kody.app` — optional hosted package app config
 - `kody.services` — optional package-owned service runtimes

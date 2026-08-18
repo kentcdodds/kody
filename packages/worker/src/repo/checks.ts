@@ -8,6 +8,11 @@ import {
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
 import {
+	findStaticKodyDependencyCycle,
+	formatStaticKodyDependencyCycleMessage,
+	loadReachableStaticKodyDependencyEdges,
+} from '#worker/package-registry/static-dependency-cycles.ts'
+import {
 	assertKodyDescriptionLength,
 	type AuthoredPackageJson,
 } from '#worker/package-registry/types.ts'
@@ -1280,15 +1285,40 @@ export async function runRepoChecks(input: {
 			manifest,
 			sourceFiles,
 		})
+	let staticKodyDependencyMessage = staticKodyDependencyCheck.message
+	let staticKodyDependencyOk = staticKodyDependencyCheck.ok
+	if (
+		staticKodyDependencyOk &&
+		input.env &&
+		input.userId &&
+		getDeclaredStaticKodyPackageDependencies(manifest).length > 0
+	) {
+		const edges = await loadReachableStaticKodyDependencyEdges({
+			env: input.env,
+			baseUrl: input.baseUrl ?? input.sourceRoot,
+			userId: input.userId,
+			rootPackageName: manifest.name,
+			rootDependencies: getDeclaredStaticKodyPackageDependencies(manifest),
+		})
+		const cycle = findStaticKodyDependencyCycle({
+			rootPackageName: manifest.name,
+			edges,
+		})
+		if (cycle) {
+			staticKodyDependencyOk = false
+			staticKodyDependencyMessage =
+				formatStaticKodyDependencyCycleMessage(cycle)
+		}
+	}
 	results.push({
 		kind: 'dependencies',
-		ok: staticKodyDependencyCheck.ok,
+		ok: staticKodyDependencyOk,
 		message: [
 			formatNpmDependencyCheckMessage({
 				packageJsonMissing: packageJson == null,
 				dependencies: declaredNpmDependencies,
 			}),
-			staticKodyDependencyCheck.message,
+			staticKodyDependencyMessage,
 		].join(' '),
 	})
 

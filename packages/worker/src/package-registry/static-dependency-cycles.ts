@@ -1,0 +1,98 @@
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
+import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
+
+/**
+ * Detect cycles in static `kody:@` / `package.json#kody.dependencies` graphs.
+ * Edges are package names (`@scope/leaf`). Missing nodes have no outgoing
+ * edges (an unpublished or platform-live dependency cannot close a user-local
+ * cycle).
+ */
+export function findStaticKodyDependencyCycle(input: {
+	rootPackageName: string
+	edges: ReadonlyMap<string, ReadonlyArray<string>>
+}): Array<string> | null {
+	const root = input.rootPackageName.trim()
+	if (!root) return null
+	const visiting = new Set<string>()
+	const visited = new Set<string>()
+	const path: Array<string> = []
+
+	function walk(packageName: string): Array<string> | null {
+		if (visiting.has(packageName)) {
+			const cycleStart = path.indexOf(packageName)
+			if (cycleStart === -1) return null
+			return [...path.slice(cycleStart), packageName]
+		}
+		if (visited.has(packageName)) return null
+		visiting.add(packageName)
+		path.push(packageName)
+		for (const dependency of input.edges.get(packageName) ?? []) {
+			const next = dependency.trim()
+			if (!next) continue
+			const cycle = walk(next)
+			if (cycle) return cycle
+		}
+		path.pop()
+		visiting.delete(packageName)
+		visited.add(packageName)
+		return null
+	}
+
+	return walk(root)
+}
+
+export function formatStaticKodyDependencyCycleMessage(
+	cycle: ReadonlyArray<string>,
+) {
+	return `package.json#kody.dependencies forms a cycle: ${cycle.join(' -> ')}.`
+}
+
+export async function loadReachableStaticKodyDependencyEdges(input: {
+	env: Env
+	baseUrl: string
+	userId: string
+	rootPackageName: string
+	rootDependencies: ReadonlyArray<string>
+}): Promise<Map<string, Array<string>>> {
+	const edges = new Map<string, Array<string>>()
+	const rootDependencies = uniqueTrimmedNames(input.rootDependencies)
+	edges.set(input.rootPackageName, rootDependencies)
+	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
+		userId: input.userId,
+	})
+	const savedByName = new Map(
+		savedPackages.map((savedPackage) => [savedPackage.name, savedPackage]),
+	)
+	const pending = [...rootDependencies]
+	while (pending.length > 0) {
+		const packageName = pending.pop()
+		if (!packageName || edges.has(packageName)) continue
+		const savedPackage = savedByName.get(packageName)
+		if (!savedPackage) {
+			edges.set(packageName, [])
+			continue
+		}
+		try {
+			const loaded = await loadPackageManifestBySourceId({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				sourceId: savedPackage.sourceId,
+			})
+			const dependencies = uniqueTrimmedNames(
+				loaded.manifest.kody.dependencies ?? [],
+			)
+			edges.set(packageName, dependencies)
+			pending.push(...dependencies)
+		} catch {
+			edges.set(packageName, [])
+		}
+	}
+	return edges
+}
+
+function uniqueTrimmedNames(names: ReadonlyArray<string>) {
+	return Array.from(
+		new Set(names.map((name) => name.trim()).filter((name) => name.length > 0)),
+	)
+}
