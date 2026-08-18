@@ -1293,21 +1293,26 @@ export async function runRepoChecks(input: {
 		input.userId &&
 		getDeclaredStaticKodyPackageDependencies(manifest).length > 0
 	) {
-		const edges = await loadReachableStaticKodyDependencyEdges({
+		const graph = await loadReachableStaticKodyDependencyEdges({
 			env: input.env,
 			baseUrl: input.baseUrl ?? input.sourceRoot,
 			userId: input.userId,
 			rootPackageName: manifest.name,
 			rootDependencies: getDeclaredStaticKodyPackageDependencies(manifest),
 		})
-		const cycle = findStaticKodyDependencyCycle({
-			rootPackageName: manifest.name,
-			edges,
-		})
-		if (cycle) {
+		if (!graph.ok) {
 			staticKodyDependencyOk = false
-			staticKodyDependencyMessage =
-				formatStaticKodyDependencyCycleMessage(cycle)
+			staticKodyDependencyMessage = graph.message
+		} else {
+			const cycle = findStaticKodyDependencyCycle({
+				rootPackageName: manifest.name,
+				edges: graph.edges,
+			})
+			if (cycle) {
+				staticKodyDependencyOk = false
+				staticKodyDependencyMessage =
+					formatStaticKodyDependencyCycleMessage(cycle)
+			}
 		}
 	}
 	results.push({

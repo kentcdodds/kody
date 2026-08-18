@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 
@@ -5,8 +6,13 @@ import { loadPackageManifestBySourceId } from '#worker/package-registry/source.t
  * Detect cycles in static `kody:@` / `package.json#kody.dependencies` graphs.
  * Edges are package names (`@scope/leaf`). Missing nodes have no outgoing
  * edges (an unpublished or platform-live dependency cannot close a user-local
- * cycle).
+ * cycle). A saved package whose published manifest cannot load fails the
+ * graph walk instead of pretending it has no dependencies.
  */
+
+export type LoadedStaticKodyDependencyEdges =
+	| { ok: true; edges: Map<string, Array<string>> }
+	| { ok: false; message: string }
 export function findStaticKodyDependencyCycle(input: {
 	rootPackageName: string
 	edges: ReadonlyMap<string, ReadonlyArray<string>>
@@ -47,13 +53,20 @@ export function formatStaticKodyDependencyCycleMessage(
 	return `package.json#kody.dependencies forms a cycle: ${cycle.join(' -> ')}.`
 }
 
+export function formatStaticKodyDependencyLoadFailureMessage(input: {
+	packageName: string
+	cause: unknown
+}) {
+	return `Could not load the saved package manifest for ${input.packageName} while checking package.json#kody.dependencies: ${getErrorMessage(input.cause)}.`
+}
+
 export async function loadReachableStaticKodyDependencyEdges(input: {
 	env: Env
 	baseUrl: string
 	userId: string
 	rootPackageName: string
 	rootDependencies: ReadonlyArray<string>
-}): Promise<Map<string, Array<string>>> {
+}): Promise<LoadedStaticKodyDependencyEdges> {
 	const edges = new Map<string, Array<string>>()
 	const rootDependencies = uniqueTrimmedNames(input.rootDependencies)
 	edges.set(input.rootPackageName, rootDependencies)
@@ -84,11 +97,17 @@ export async function loadReachableStaticKodyDependencyEdges(input: {
 			)
 			edges.set(packageName, dependencies)
 			pending.push(...dependencies)
-		} catch {
-			edges.set(packageName, [])
+		} catch (cause) {
+			return {
+				ok: false,
+				message: formatStaticKodyDependencyLoadFailureMessage({
+					packageName,
+					cause,
+				}),
+			}
 		}
 	}
-	return edges
+	return { ok: true, edges }
 }
 
 function uniqueTrimmedNames(names: ReadonlyArray<string>) {
