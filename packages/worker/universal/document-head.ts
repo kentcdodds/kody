@@ -293,7 +293,10 @@ const routeDocumentHeads = {
 		const verification = loaderData?.emailVerification
 		return titleOnly(verification?.ok ? 'Email changed' : 'Verify email change')
 	},
-	[routePattern(routes.connectOauth)]: titleOnly('Connect OAuth'),
+	[routePattern(routes.connectOauth)]: ({ loaderData }) => {
+		const provider = loaderData?.connectOauth?.provider?.trim()
+		return titleOnly(provider ? `Connect ${provider}` : 'Connect an account')
+	},
 	[oauthPaths.authorize]: titleOnly('Authorize access'),
 	[oauthPaths.callback]: titleOnly('OAuth callback'),
 } as const satisfies Record<string, DocumentHeadResolver>

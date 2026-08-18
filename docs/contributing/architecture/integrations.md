@@ -218,11 +218,14 @@ When the user has no matching user-lane app, `?provider=<slug>` prefills from an
 enabled platform app (`loadAccountIntegrationByName` in
 `packages/worker/src/app/account-integrations-data.ts`). The client then skips
 the client-credentials setup step entirely — no client ID/secret inputs and no
-redirect-URI card. The `oauth_exchange` / `connect_oauth` JSON actions accept
-`platformAppSlug`; for the platform lane every exchange input (token URL, flow,
-exchange style, client id, client secret) comes from the operator-provisioned
-row, never the request body, so a caller cannot point the decrypted shared
-secret at an arbitrary token URL.
+redirect-URI card. The hosted page leads with the provider mark, credentials or
+a connect button, and a terms note. Endpoints, host allowlists, stored config,
+and the built-in-alternative pitch stay behind an advanced disclosure. The
+`oauth_exchange` / `connect_oauth` JSON actions accept `platformAppSlug`; for
+the platform lane every exchange input (token URL, flow, exchange style, client
+id, client secret) comes from the operator-provisioned row, never the request
+body, so a caller cannot point the decrypted shared secret at an arbitrary token
+URL.
 
 `createAuthenticatedFetch(providerName)` (execute runtime helper) loads the
 named connection joined to its app, refreshes the access token when needed, and

@@ -107,7 +107,6 @@ export function createConnectOauthHandler(env: Env) {
 			return renderAppPage({
 				request,
 				env,
-				title: 'Connect OAuth',
 				loaderData: { connectOauth },
 			})
 		},

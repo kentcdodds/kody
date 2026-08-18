@@ -753,12 +753,16 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 
 	expect(response.status).toBe(200)
 	const html = await readResponseText(response)
-	expect(html).toContain('https://example.com/connect/oauth')
+	expect(html).toContain('Connect google')
+	expect(html).toContain('data-testid="provider-mark"')
+	expect(html).toContain('data-testid="connect-oauth-advanced"')
+	expect(html).toContain('Continue to google')
 	expect(html).toContain('https://accounts.google.com/o/oauth2/v2/auth')
+	expect(html).not.toContain('>Status<')
 
 	// A built-in connect that would replace a user-lane connection under the
 	// same name server-renders the replace confirmation and withholds the
-	// plain Connect button (the client also skips auto-start in this state).
+	// Continue button (the client also skips auto-start in this state).
 	const replaceResponse = await renderAppPage({
 		request: new Request(
 			'https://example.com/connect/oauth?provider=google&platform=1',
@@ -805,7 +809,35 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(replaceResponse.status).toBe(200)
 	const replaceHtml = await readResponseText(replaceResponse)
 	expect(replaceHtml).toContain('data-testid="connect-replace-confirm"')
-	expect(replaceHtml).not.toContain('>Connect google</button>')
+	expect(replaceHtml).toContain('data-testid="provider-mark"')
+	expect(replaceHtml).not.toContain('>Continue to google</button>')
+
+	// First-time bring-your-own setup: credentials form and redirect URL are
+	// visible; endpoints and allowed hosts stay behind the disclosure.
+	const setupResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/connect/oauth?provider=github&authorizeUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Fauthorize&tokenUrl=https%3A%2F%2Fgithub.com%2Flogin%2Foauth%2Faccess_token',
+		),
+		env,
+		loaderData: {
+			connectOauth: {
+				ok: true,
+				provider: 'github',
+				integration: null,
+				builtInAvailable: false,
+				hasStoredClientSecret: false,
+				redirectUri: 'https://example.com/connect/oauth',
+			},
+		},
+	})
+	expect(setupResponse.status).toBe(200)
+	const setupHtml = await readResponseText(setupResponse)
+	expect(setupHtml).toContain('Connect github')
+	expect(setupHtml).toContain('Redirect URL')
+	expect(setupHtml).toContain('https://example.com/connect/oauth')
+	expect(setupHtml).toContain('Save and continue')
+	expect(setupHtml).toContain('data-testid="connect-oauth-advanced"')
+	expect(setupHtml).toContain('https://github.com/login/oauth/authorize')
 })
 
 test('renderAppPage renders the redesigned pricing page', async () => {

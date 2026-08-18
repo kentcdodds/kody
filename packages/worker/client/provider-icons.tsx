@@ -1,4 +1,5 @@
-import { type Handle } from 'remix/ui'
+import { type Handle, css } from 'remix/ui'
+import { getLogoWellCss } from '#universal/styles/style-primitives.ts'
 
 /**
  * Inline brand marks for the social login providers and integration provider
@@ -123,7 +124,22 @@ function renderDiscordIcon(size: string) {
 	)
 }
 
-const providerIconRenderers: Record<string, (size: string) => JSX.Element> = {
+const knownProviderIconIds = [
+	'discord',
+	'github',
+	'google',
+	'notion',
+	'slack',
+	'spotify',
+	'x',
+] as const
+
+export type ProviderIconId = (typeof knownProviderIconIds)[number]
+
+const providerIconRenderers: Record<
+	ProviderIconId,
+	(size: string) => JSX.Element
+> = {
 	github: renderGitHubIcon,
 	google: renderGoogleIcon,
 	x: renderXIcon,
@@ -131,6 +147,55 @@ const providerIconRenderers: Record<string, (size: string) => JSX.Element> = {
 	spotify: renderSpotifyIcon,
 	notion: renderNotionIcon,
 	discord: renderDiscordIcon,
+}
+
+const providerIconHosts: Record<string, ProviderIconId> = {
+	'accounts.google.com': 'google',
+	'accounts.spotify.com': 'spotify',
+	'api.github.com': 'github',
+	'api.notion.com': 'notion',
+	'api.spotify.com': 'spotify',
+	'discord.com': 'discord',
+	'discordapp.com': 'discord',
+	'github.com': 'github',
+	'googleapis.com': 'google',
+	'notion.so': 'notion',
+	'oauth2.googleapis.com': 'google',
+	'slack.com': 'slack',
+	'spotify.com': 'spotify',
+	'twitter.com': 'x',
+	'x.com': 'x',
+}
+
+function isProviderIconId(value: string): value is ProviderIconId {
+	return (knownProviderIconIds as ReadonlyArray<string>).includes(value)
+}
+
+/**
+ * Maps a connect-page provider key (`google-youtube-brand`) or authorize
+ * host (`accounts.google.com`) onto an inline brand mark. `x` only matches
+ * exact / `x-…` / twitter names so short keys like `example` stay unmatched.
+ */
+export function resolveProviderIconId(input: {
+	providerKey?: string | null
+	host?: string | null
+}): ProviderIconId | null {
+	const key = input.providerKey?.trim().toLowerCase() ?? ''
+	if (isProviderIconId(key)) return key
+	if (key === 'twitter' || key.startsWith('x-')) return 'x'
+	if (key) {
+		for (const id of knownProviderIconIds) {
+			if (id === 'x') continue
+			if (key.startsWith(`${id}-`) || key.endsWith(`-${id}`)) return id
+		}
+	}
+	const host = input.host?.trim().toLowerCase() ?? ''
+	if (!host) return null
+	if (providerIconHosts[host]) return providerIconHosts[host]
+	for (const [known, id] of Object.entries(providerIconHosts)) {
+		if (host === known || host.endsWith(`.${known}`)) return id
+	}
+	return null
 }
 
 export function ProviderIcon(
@@ -141,7 +206,60 @@ export function ProviderIcon(
 	}>,
 ) {
 	return () =>
-		providerIconRenderers[handle.props.providerId]?.(
+		providerIconRenderers[handle.props.providerId as ProviderIconId]?.(
 			handle.props.size ?? defaultIconSize,
 		) ?? null
+}
+
+/**
+ * Provider identity for connect / integration headers: uploaded logo, known
+ * brand SVG, or a letter fallback. Always sits on the white logo well so
+ * dark marks stay readable in dark mode.
+ */
+export function ProviderMark(
+	handle: Handle<{
+		providerKey: string
+		label: string
+		logoPath?: string | null
+		host?: string | null
+		size?: string
+	}>,
+) {
+	return () => {
+		const { providerKey, label, logoPath, host } = handle.props
+		const wellSize = handle.props.size ?? '3rem'
+		const iconId = resolveProviderIconId({ providerKey, host })
+		const letter = label.trim().charAt(0).toUpperCase() || '?'
+		return (
+			<span
+				aria-hidden="true"
+				data-testid="provider-mark"
+				mix={css({
+					...getLogoWellCss({ size: wellSize, radius: '12px' }),
+					fontWeight: 700,
+					fontSize: '1.15rem',
+					lineHeight: 1,
+				})}
+			>
+				{logoPath ? (
+					<img
+						src={logoPath}
+						alt=""
+						width={40}
+						height={40}
+						mix={css({
+							display: 'block',
+							width: '70%',
+							height: '70%',
+							objectFit: 'contain' as const,
+						})}
+					/>
+				) : iconId ? (
+					<ProviderIcon providerId={iconId} size="1.65rem" />
+				) : (
+					letter
+				)}
+			</span>
+		)
+	}
 }
