@@ -401,10 +401,10 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 					await this.handleHello(ws, parsed)
 					return
 				case 'connector.heartbeat':
-					await this.handleHeartbeat()
+					await this.handleHeartbeat(ws)
 					return
 				case 'connector.jsonrpc':
-					await this.handleJsonRpcMessage(parsed.message)
+					await this.handleJsonRpcMessage(ws, parsed.message)
 					return
 			}
 		} catch (error) {
@@ -599,6 +599,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			connectedAt: this.stateSnapshot.persisted.connectedAt ?? now,
 			lastSeenAt: now,
 		}
+		this.closeOtherSockets(ws)
 		await this.persistState()
 		ws.send(
 			stringifyRemoteConnectorMessage({
@@ -607,7 +608,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			}),
 		)
 		try {
-			await this.refreshToolsSnapshot()
+			await this.refreshToolsSnapshot(ws)
 		} catch (error) {
 			this.handleToolsSnapshotRefreshFailure({
 				phase: 'after websocket hello',
@@ -616,12 +617,27 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		}
 	}
 
-	private async handleHeartbeat() {
+	private async handleHeartbeat(ws: WebSocket) {
 		this.stateSnapshot.persisted.lastSeenAt = new Date().toISOString()
 		await this.persistState()
+		if (this.stateSnapshot.tools.length > 0 || this.pendingRequests.size > 0) {
+			return
+		}
+		// A hello that never delivered tools/list to this socket leaves the
+		// session connected with an empty snapshot. Keeping last-known tools
+		// after a timeout does not help a session that never listed
+		// successfully. Retry on the heartbeat socket until it does.
+		try {
+			await this.refreshToolsSnapshot(ws)
+		} catch (error) {
+			this.handleToolsSnapshotRefreshFailure({
+				phase: 'on heartbeat',
+				error,
+			})
+		}
 	}
 
-	private async handleJsonRpcMessage(message: JSONRPCMessage) {
+	private async handleJsonRpcMessage(ws: WebSocket, message: JSONRPCMessage) {
 		if ('result' in message || 'error' in message) {
 			const pending = this.pendingRequests.get(String(message.id))
 			if (!pending) return
@@ -635,7 +651,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			message.method === 'notifications/tools/list_changed'
 		) {
 			try {
-				await this.refreshToolsSnapshot()
+				await this.refreshToolsSnapshot(ws)
 			} catch (error) {
 				this.handleToolsSnapshotRefreshFailure({
 					phase: 'on tools/list_changed',
@@ -646,7 +662,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 	}
 
 	private handleToolsSnapshotRefreshFailure(input: {
-		phase: 'after websocket hello' | 'on tools/list_changed'
+		phase: 'after websocket hello' | 'on tools/list_changed' | 'on heartbeat'
 		error: unknown
 	}) {
 		if (!isExpectedToolsSnapshotRefreshFailure(input.error)) {
@@ -667,8 +683,12 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		)
 	}
 
-	private async refreshToolsSnapshot() {
-		const response = await this.sendRpcRequest('tools/list', {})
+	private async refreshToolsSnapshot(preferredSocket?: WebSocket) {
+		const response = await this.sendRpcRequest(
+			'tools/list',
+			{},
+			preferredSocket,
+		)
 		if ('error' in response) {
 			const error = new Error(response.error.message)
 			error.name = remoteConnectorToolsListRpcErrorName
@@ -693,11 +713,34 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		await this.persistState()
 	}
 
+	private closeOtherSockets(keep: WebSocket) {
+		for (const socket of this.ctx.getWebSockets(connectorTag)) {
+			if (socket === keep) continue
+			try {
+				socket.close(1000, 'replaced')
+			} catch {
+				// Ignore sockets that are already closing.
+			}
+		}
+	}
+
+	private resolveRpcSocket(preferredSocket?: WebSocket) {
+		const sockets = this.ctx.getWebSockets(connectorTag)
+		if (preferredSocket && sockets.includes(preferredSocket)) {
+			return preferredSocket
+		}
+		return sockets[0]
+	}
+
 	private async sendRpcRequest(
 		method: string,
 		params: Record<string, unknown>,
+		preferredSocket?: WebSocket,
 	): Promise<RemoteConnectorJsonRpcResponse> {
-		const socket = this.ctx.getWebSockets(connectorTag)[0]
+		// Prefer the socket that just hellod or heartbeated. getWebSockets()[0]
+		// can still be a stale sibling during reconnect, so tools/list never
+		// reaches the live connector and the snapshot stays empty.
+		const socket = this.resolveRpcSocket(preferredSocket)
 		if (!socket) {
 			throw new Error('No remote connector is connected.')
 		}

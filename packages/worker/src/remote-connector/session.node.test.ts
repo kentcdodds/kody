@@ -520,6 +520,130 @@ test('tools/list_changed soft-fails disconnects and reports malformed snapshots'
 	})
 })
 
+function parseToolsListRequest(sent: Array<string>) {
+	for (const payload of sent) {
+		const parsed = JSON.parse(payload) as {
+			type: string
+			message?: { id: string; method: string }
+		}
+		if (
+			parsed.type === 'connector.jsonrpc' &&
+			parsed.message?.method === 'tools/list'
+		) {
+			return parsed.message
+		}
+	}
+	return null
+}
+
+test('hello and empty-tools heartbeat send tools/list on the live socket, not a stale sibling', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const staleSent: Array<string> = []
+	const liveSent: Array<string> = []
+	const staleCloses: Array<{ code: number; reason: string }> = []
+	const liveCloses: Array<{ code: number; reason: string }> = []
+	const staleSocket = createHelloSocket({
+		sent: staleSent,
+		closes: staleCloses,
+	})
+	const liveSocket = createHelloSocket({ sent: liveSent, closes: liveCloses })
+	const { session } = await createRemoteConnectorSession({
+		storedState: {
+			persisted: {
+				connectorId: 'home',
+				connectedAt: '2026-04-26T05:00:00.000Z',
+				lastSeenAt: '2026-04-26T05:01:00.000Z',
+			},
+			tools: [],
+		},
+		webSockets: [staleSocket, liveSocket],
+	})
+	remoteConnectorSharedSecretMatchesMock.mockResolvedValue(true)
+
+	const hello = session.webSocketMessage(
+		liveSocket,
+		JSON.stringify({
+			type: 'connector.hello',
+			connectorId: 'home',
+			sharedSecret: 'home-secret',
+		}),
+	)
+	await vi.waitFor(() => {
+		expect(parseToolsListRequest(liveSent)).not.toBeNull()
+	})
+	expect(parseToolsListRequest(staleSent)).toBeNull()
+	expect(staleCloses).toEqual([{ code: 1000, reason: 'replaced' }])
+	expect(liveCloses).toEqual([])
+	expect(JSON.parse(liveSent[0]!)).toMatchObject({
+		type: 'server.ack',
+		connectorId: 'home',
+	})
+
+	const helloList = parseToolsListRequest(liveSent)!
+	await session.webSocketMessage(
+		liveSocket,
+		JSON.stringify({
+			type: 'connector.jsonrpc',
+			message: {
+				jsonrpc: '2.0',
+				id: helloList.id,
+				result: { tools: [{ name: 'bond_shade_set_position' }] },
+			},
+		}),
+	)
+	await hello
+	await expect(session.getSnapshot()).resolves.toMatchObject({
+		connectorId: 'home',
+		tools: [{ name: 'bond_shade_set_position' }],
+	})
+
+	const heartbeatSent: Array<string> = []
+	const heartbeatSocket = {
+		send: (payload: string) => {
+			heartbeatSent.push(payload)
+		},
+		deserializeAttachment: () => ({
+			ingressSessionKey: '',
+			ingressUserId: 'user-home-1',
+		}),
+	} as unknown as WebSocket
+	const empty = await createRemoteConnectorSession({
+		storedState: {
+			persisted: {
+				connectorId: 'home',
+				connectedAt: '2026-04-26T05:00:00.000Z',
+				lastSeenAt: '2026-04-26T05:01:00.000Z',
+			},
+			tools: [],
+		},
+		webSockets: [heartbeatSocket],
+	})
+	const heartbeat = empty.session.webSocketMessage(
+		heartbeatSocket,
+		JSON.stringify({ type: 'connector.heartbeat' }),
+	)
+	await vi.waitFor(() => {
+		expect(parseToolsListRequest(heartbeatSent)).not.toBeNull()
+	})
+	const retryList = parseToolsListRequest(heartbeatSent)!
+	await empty.session.webSocketMessage(
+		heartbeatSocket,
+		JSON.stringify({
+			type: 'connector.jsonrpc',
+			message: {
+				jsonrpc: '2.0',
+				id: retryList.id,
+				result: { tools: [{ name: 'lutron_get_inventory' }] },
+			},
+		}),
+	)
+	await heartbeat
+	await expect(empty.session.getSnapshot()).resolves.toMatchObject({
+		connectorId: 'home',
+		tools: [{ name: 'lutron_get_inventory' }],
+	})
+})
+
 test('remote connector hello shared-secret outcomes cover invalid, transient, and hard failures', async () => {
 	{
 		const sent: Array<string> = []

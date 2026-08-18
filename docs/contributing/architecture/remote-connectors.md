@@ -36,7 +36,9 @@ All messages are **JSON objects** with a **`type`** field.
 
 2. **`connector.heartbeat`**
    - **`type`:** `"connector.heartbeat"`
-   - Keeps `lastSeenAt` fresh in the session DO.
+   - Keeps `lastSeenAt` fresh in the session DO. If the session is still
+     connected with an empty tool snapshot and no RPC is in flight, the Worker
+     retries `tools/list` on that same heartbeat socket.
 
 3. **`connector.jsonrpc`**
    - **`type`:** `"connector.jsonrpc"`
