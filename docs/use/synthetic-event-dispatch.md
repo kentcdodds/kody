@@ -120,10 +120,14 @@ Example minimal `integration.auth.failed` fixture:
 		"event_id": "00000000-0000-4000-8000-000000000001",
 		"integration": {
 			"name": "google",
-			"lane": "platform",
-			"account_label": null,
+			"lane": "user",
+			"account_label": "kent.c.dodds@gmail.com",
+			"description": null,
 			"provider": "google",
-			"platform_app_slug": "google"
+			"platform_app_slug": null,
+			"scopes": ["openid", "email", "https://www.googleapis.com/auth/calendar"],
+			"connected_at": "2026-01-01T00:00:00.000Z",
+			"token_refreshed_at": "2026-08-01T00:00:00.000Z"
 		},
 		"reason": "provider_rejected",
 		"provider": {
@@ -131,7 +135,8 @@ Example minimal `integration.auth.failed` fixture:
 			"error_description": "Token has been expired or revoked.",
 			"http_status": 400
 		},
-		"reconnect_url": "https://kody.codes/connect/oauth?provider=google",
+		"reconnect_url": "https://kody.codes/connect/oauth?provider=google&loginHint=kent.c.dodds%40gmail.com",
+		"account_url": "https://kody.codes/account/integrations/google",
 		"occurred_at": "2026-08-18T17:00:00.000Z"
 	}
 }

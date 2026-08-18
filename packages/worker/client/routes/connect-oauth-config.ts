@@ -27,6 +27,8 @@ export type ConnectOauthQueryConfig = {
 	providerSetupInstructions: string | null
 	dashboardUrl: string | null
 	allowedHosts: Array<string>
+	/** Prefills Google/OIDC account chooser without replacing stored extra params. */
+	loginHint?: string | null
 }
 
 export type ConnectOauthConfig = {
@@ -391,7 +393,13 @@ export function mergeConnectOauthConfig(input: {
 			: resolveConnectOauthScopes(input).filter((scope) =>
 					platformAllowedScopes.includes(scope),
 				)
-	const extraAuthorizeParams = resolveConnectOauthExtraAuthorizeParams(input)
+	const extraAuthorizeParams = {
+		...resolveConnectOauthExtraAuthorizeParams(input),
+	}
+	const loginHint = input.queryConfig.loginHint?.trim()
+	if (loginHint) {
+		extraAuthorizeParams.login_hint = loginHint
+	}
 	const allowedHosts = normalizeHosts([
 		tokenHost,
 		...input.queryConfig.allowedHosts,

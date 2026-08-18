@@ -508,9 +508,10 @@ needed. See [Activity](./activity.md) and the
 
 When host-side OAuth token refresh fails with reconnectable caller state, Kody
 dispatches `integration.auth.failed` to your packages that declare that topic.
-The payload is metadata-first (connection name, lane, reason, optional provider
-error fields, and a trusted `reconnect_url`). Every classified attempt emits;
-notifier packages decide how often to ping. See the
+The payload is metadata-first (connection name, account label, scopes,
+timestamps, reason, optional provider error fields, and trusted `reconnect_url`
+/ `account_url`). Every classified attempt emits; notifier packages decide how
+often to ping. See the
 [package subscriptions guide](../guides/package-subscriptions.md).
 
 Artifacts-backed plain repos, packages, and job sources also emit `repo.pushed`,

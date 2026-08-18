@@ -9,7 +9,11 @@ import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-su
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { upsertPlatformOauthApp } from './platform-apps.ts'
-import { upsertIntegration, upsertPlatformIntegration } from './service.ts'
+import {
+	getJoinedIntegration,
+	upsertIntegration,
+	upsertPlatformIntegration,
+} from './service.ts'
 
 const mocks = vi.hoisted(() => ({
 	dispatchIntegrationAuthFailedSubscriptionEvents: vi.fn(async () => []),
@@ -436,6 +440,70 @@ test('user-lane refresh resolves the client secret from the user secret store', 
 			storageContext,
 		})
 		expect(access.found && access.value).toBe('fresh-google-token')
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('successful Google refresh persists userinfo email as account_label when missing', async () => {
+	const { env } = createHarness()
+	const userId = 'user-google-label'
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: {
+			slug: 'google',
+			clientId: 'platform-google-client-id',
+			clientSecret: 'platform-google-client-secret-value',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			apiBaseUrl: 'https://www.googleapis.com',
+			flow: 'confidential',
+			requiredHosts: ['oauth2.googleapis.com', 'openidconnect.googleapis.com'],
+			allowedScopes: ['openid', 'email'],
+			defaultScopes: ['openid', 'email'],
+		},
+	})
+	await upsertPlatformIntegration({
+		env,
+		userId,
+		platformAppSlug: 'google',
+		scopes: ['openid', 'email'],
+		accessTokenSecretName: 'googleAccessToken',
+		refreshTokenSecretName: 'googleRefreshToken',
+	})
+	await seedUserTokens(env, userId, 'google')
+
+	const fetchMock = vi.fn(async (url: string | URL | Request) => {
+		const href = String(url)
+		if (href.includes('openidconnect.googleapis.com')) {
+			return new Response(JSON.stringify({ email: 'kent.c.dodds@gmail.com' }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			})
+		}
+		return new Response(
+			JSON.stringify({ access_token: 'fresh-google-token' }),
+			{
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		)
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		await refreshIntegrationTokens({
+			env,
+			userId,
+			name: 'google',
+		})
+		const joined = await getJoinedIntegration({
+			env,
+			userId,
+			name: 'google',
+		})
+		expect(joined?.connection.accountLabel).toBe('kent.c.dodds@gmail.com')
+		expect(fetchMock).toHaveBeenCalledTimes(2)
 	} finally {
 		vi.unstubAllGlobals()
 	}

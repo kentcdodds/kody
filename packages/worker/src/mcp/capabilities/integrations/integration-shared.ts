@@ -91,6 +91,7 @@ export const integrationSaveSchema = z
 		requiredHosts: z.array(z.string()).optional(),
 		tokenExchangeStyle: z.enum(tokenExchangeStyleValues).nullable().optional(),
 		authorization: integrationAuthorizationSchema.nullable().optional(),
+		accountLabel: z.string().min(1).nullable().optional(),
 	})
 	.strict()
 

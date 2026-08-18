@@ -6,6 +6,10 @@ import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import {
+	buildIntegrationAccountUrl,
+	buildIntegrationReconnectUrl,
+} from './account-identity.ts'
 import { type IntegrationAuthFailedReason } from './token-refresh.ts'
 
 export const integrationAuthFailedTopic = 'integration.auth.failed'
@@ -17,8 +21,12 @@ export type IntegrationAuthFailedSubscriptionEnvelope = {
 		name: string
 		lane: 'user' | 'platform'
 		account_label: string | null
+		description: string | null
 		provider: string | null
 		platform_app_slug: string | null
+		scopes: Array<string>
+		connected_at: string | null
+		token_refreshed_at: string | null
 	}
 	reason: IntegrationAuthFailedReason
 	provider: {
@@ -27,6 +35,7 @@ export type IntegrationAuthFailedSubscriptionEnvelope = {
 		http_status: number | null
 	}
 	reconnect_url: string
+	account_url: string
 	occurred_at: string
 }
 
@@ -38,8 +47,13 @@ type LoadedAuthFailedSubscription = {
 export function buildIntegrationAuthFailedReconnectUrl(input: {
 	baseUrl: string
 	integrationName: string
+	accountLabel?: string | null
 }) {
-	return `${input.baseUrl}/connect/oauth?provider=${encodeURIComponent(input.integrationName)}`
+	return buildIntegrationReconnectUrl({
+		baseUrl: input.baseUrl,
+		integrationName: input.integrationName,
+		accountLabel: input.accountLabel,
+	})
 }
 
 function buildSubscriptionIdempotencyKey(input: {
@@ -64,6 +78,11 @@ function buildEventPayload(input: {
 		reason: input.reason,
 		provider: input.provider,
 		reconnect_url: buildIntegrationAuthFailedReconnectUrl({
+			baseUrl: input.baseUrl,
+			integrationName: input.integration.name,
+			accountLabel: input.integration.account_label,
+		}),
+		account_url: buildIntegrationAccountUrl({
 			baseUrl: input.baseUrl,
 			integrationName: input.integration.name,
 		}),

@@ -361,10 +361,11 @@ emit (recursion guard). See
 For reconnectable OAuth refresh failures, `integration.auth.failed` dispatches
 best-effort from host-side `refreshIntegrationTokens`
 (`createAuthenticatedFetch` 401 retry and explicit `integration_token_refresh`).
-The payload is metadata-first (connection name, lane, reason, optional provider
-error fields, and a trusted `reconnect_url`); it omits token and secret values.
-Every classified attempt emits. Provider HTTP 5xx and missing connections do not
-emit. See [Package subscriptions](../guides/package-subscriptions.md) and
+The payload is metadata-first (connection name, account label, scopes,
+timestamps, reason, optional provider error fields, and trusted `reconnect_url`
+/ `account_url`); it omits token and secret values. Every classified attempt
+emits. Provider HTTP 5xx and missing connections do not emit. See
+[Package subscriptions](../guides/package-subscriptions.md) and
 [OAuth integrations](./architecture/integrations.md).
 
 Operator system-inbox mail (`system:email` owner) dispatches the separate

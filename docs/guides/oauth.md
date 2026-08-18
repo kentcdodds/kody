@@ -105,6 +105,7 @@ with `allowedHosts` when needed.
 | `apiBaseUrl`                | Optional API base URL hint.                                                  |
 | `dashboardUrl`              | Provider settings link.                                                      |
 | `extraAuthorizeParams`      | Provider-specific authorize params.                                          |
+| `loginHint`                 | Merges into authorize `login_hint` without replacing stored extra params.    |
 | `providerSetupInstructions` | Free-form setup hints shown in the wizard.                                   |
 
 ## PKCE and client secrets are orthogonal

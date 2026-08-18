@@ -65,6 +65,9 @@ export const integrationSaveCapability = defineDomainCapability(
 				env: ctx.env,
 				userId: user.userId,
 				config,
+				...(args.accountLabel !== undefined
+					? { accountLabel: args.accountLabel }
+					: {}),
 			})
 			return { integration }
 		},

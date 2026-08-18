@@ -15,7 +15,10 @@ import {
 	mergeIntegrationConfig,
 } from './integration-shared.ts'
 import { upsertPlatformOauthApp } from '#worker/integrations/platform-apps.ts'
-import { upsertPlatformIntegration } from '#worker/integrations/service.ts'
+import {
+	getJoinedIntegration,
+	upsertPlatformIntegration,
+} from '#worker/integrations/service.ts'
 
 const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
 
@@ -444,4 +447,22 @@ test('integration_save refuses platform (built-in) connections instead of conver
 		{ env: platformEnv, callerContext: caller('user-123') },
 	)
 	expect(got.integration?.platform).toBe(true)
+})
+
+test('integration_save persists accountLabel on an existing user-lane connection', async () => {
+	const { env } = createEnv()
+	await integrationSaveCapability.handler(spotifyBase, {
+		env,
+		callerContext: caller('user-123'),
+	})
+	await integrationSaveCapability.handler(
+		{ name: 'spotify', accountLabel: 'me@kentcdodds.com' },
+		{ env, callerContext: caller('user-123') },
+	)
+	const joined = await getJoinedIntegration({
+		env,
+		userId: 'user-123',
+		name: 'spotify',
+	})
+	expect(joined?.connection.accountLabel).toBe('me@kentcdodds.com')
 })

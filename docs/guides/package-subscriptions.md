@@ -485,8 +485,12 @@ type IntegrationAuthFailedEvent = {
 		name: string
 		lane: 'user' | 'platform'
 		account_label: string | null
+		description: string | null
 		provider: string | null
 		platform_app_slug: string | null
+		scopes: Array<string>
+		connected_at: string | null
+		token_refreshed_at: string | null
 	}
 	reason:
 		| 'missing_refresh_token'
@@ -500,14 +504,19 @@ type IntegrationAuthFailedEvent = {
 		http_status: number | null
 	}
 	reconnect_url: string
+	account_url: string
 	occurred_at: string
 }
 ```
 
 `reconnect_url` is built from the trusted deployment origin and links to
-`/connect/oauth?provider=<name>`. The event deliberately omits token values,
-secret values, client secrets, and secret names. A short-lived access token that
-refreshes cleanly never emits.
+`/connect/oauth?provider=<name>`. When `account_label` looks like an email it
+also adds `loginHint` so Google/OIDC can preselect that account. `account_url`
+is the connection detail page (`/account/integrations/<name>`). The event
+deliberately omits token values, secret values, client secrets, and secret
+names. A short-lived access token that refreshes cleanly never emits. Successful
+Google refreshes persist `userinfo.email` onto an empty `account_label` so later
+reconnect pings can name the account.
 
 Use this topic for notifier packages that post to Discord, email, or otherwise
 ask the owner to reconnect a dead grant.

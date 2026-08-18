@@ -4,6 +4,7 @@ import {
 	buildOAuthTokenExchangeRequest,
 	resolveTokenExchangeStyle,
 } from './oauth-token-exchange.ts'
+import { isAccountEmailLabel } from './account-identity.ts'
 import { getPlatformOauthAppClientSecret } from './platform-apps.ts'
 import { getJoinedIntegration } from './service.ts'
 import { type JoinedIntegration } from './types.ts'
@@ -32,8 +33,12 @@ export type IntegrationAuthFailedSnapshot = {
 	name: string
 	lane: 'user' | 'platform'
 	accountLabel: string | null
+	description: string | null
 	provider: string | null
 	platformAppSlug: string | null
+	scopes: Array<string>
+	connectedAt: string | null
+	tokenRefreshedAt: string | null
 }
 
 /**
@@ -117,8 +122,50 @@ function snapshotJoinedIntegration(
 		name: joined.connection.name,
 		lane: joined.lane,
 		accountLabel: joined.connection.accountLabel,
+		description: joined.connection.description.trim() || null,
 		provider: joined.app.provider,
 		platformAppSlug: joined.connection.platformAppSlug,
+		scopes: joined.connection.scopes,
+		connectedAt: joined.connection.connectedAt,
+		tokenRefreshedAt: joined.connection.tokenRefreshedAt,
+	}
+}
+
+async function maybePersistGoogleAccountLabel(input: {
+	env: Env
+	userId: string
+	name: string
+	accountLabel: string | null
+	requiredHosts: Array<string>
+	accessToken: string
+}) {
+	if (isAccountEmailLabel(input.accountLabel)) return
+	if (!input.requiredHosts.includes('openidconnect.googleapis.com')) return
+	try {
+		const response = await fetch(
+			'https://openidconnect.googleapis.com/v1/userinfo',
+			{
+				headers: { Authorization: `Bearer ${input.accessToken}` },
+				signal: AbortSignal.timeout(5_000),
+			},
+		)
+		if (!response.ok) return
+		const payload = (await response.json().catch(() => null)) as {
+			email?: unknown
+		} | null
+		const email = typeof payload?.email === 'string' ? payload.email.trim() : ''
+		if (!isAccountEmailLabel(email)) return
+		const now = new Date().toISOString()
+		await input.env.APP_DB.prepare(
+			`UPDATE user_integrations
+			SET account_label = ?, updated_at = ?
+			WHERE user_id = ? AND name = ?
+				AND (account_label IS NULL OR account_label = '')`,
+		)
+			.bind(email, now, input.userId, input.name)
+			.run()
+	} catch {
+		// Identity capture is best-effort and must never fail a successful refresh.
 	}
 }
 
@@ -166,8 +213,12 @@ async function emitIntegrationAuthFailedEvent(input: {
 				name: snapshot.name,
 				lane: snapshot.lane,
 				account_label: snapshot.accountLabel,
+				description: snapshot.description,
 				provider: snapshot.provider,
 				platform_app_slug: snapshot.platformAppSlug,
+				scopes: snapshot.scopes,
+				connected_at: snapshot.connectedAt,
+				token_refreshed_at: snapshot.tokenRefreshedAt,
 			},
 			reason: input.error.reason,
 			provider: {
@@ -473,6 +524,15 @@ async function refreshIntegrationTokensOrThrow(input: {
 	)
 		.bind(refreshedAt, refreshedAt, input.userId, connection.name)
 		.run()
+
+	await maybePersistGoogleAccountLabel({
+		env: input.env,
+		userId: input.userId,
+		name: connection.name,
+		accountLabel: connection.accountLabel,
+		requiredHosts: connection.requiredHosts,
+		accessToken: payload.access_token,
+	})
 
 	return { refreshedAt, refreshTokenRotated }
 }

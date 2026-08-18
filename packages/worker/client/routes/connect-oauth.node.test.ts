@@ -542,6 +542,32 @@ test('shared-app family lookup prefills google-calendar from the google app payl
 		tokenUrl: 'https://oauth2.googleapis.com/token',
 		accessTokenSecretName: 'google-calendarAccessToken',
 	})
+
+	const reconnectWithHint = mergeConnectOauthConfig({
+		queryConfig: {
+			provider: 'google-calendar',
+			providerKey: 'google-calendar',
+			authorizeHost: 'accounts.google.com',
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			apiBaseUrl: 'https://www.googleapis.com',
+			scopes: null,
+			flow: null,
+			usePkce: null,
+			tokenExchangeStyle: null,
+			scopeSeparator: null,
+			extraAuthorizeParams: {},
+			providerSetupInstructions: null,
+			dashboardUrl: null,
+			allowedHosts: [],
+			loginHint: 'kent.c.dodds@gmail.com',
+		},
+		storedIntegration: storedFromFamilyLookup,
+	})
+	expect(reconnectWithHint?.extraAuthorizeParams).toEqual({
+		access_type: 'offline',
+		login_hint: 'kent.c.dodds@gmail.com',
+	})
 })
 
 test('abandoned setup still prefills client id from a connectionless app on a fresh session', () => {

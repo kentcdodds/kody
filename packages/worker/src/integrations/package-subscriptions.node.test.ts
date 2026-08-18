@@ -20,9 +20,35 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 }))
 
 const {
+	buildIntegrationAuthFailedReconnectUrl,
 	dispatchIntegrationAuthFailedSubscriptionEvents,
 	integrationAuthFailedTopic,
 } = await import('./package-subscriptions.ts')
+
+test('reconnect URLs add loginHint only when the account label is an email', () => {
+	expect(
+		buildIntegrationAuthFailedReconnectUrl({
+			baseUrl: 'https://example.com',
+			integrationName: 'google',
+		}),
+	).toBe('https://example.com/connect/oauth?provider=google')
+	expect(
+		buildIntegrationAuthFailedReconnectUrl({
+			baseUrl: 'https://example.com',
+			integrationName: 'google-business',
+			accountLabel: 'Work',
+		}),
+	).toBe('https://example.com/connect/oauth?provider=google-business')
+	expect(
+		buildIntegrationAuthFailedReconnectUrl({
+			baseUrl: 'https://example.com',
+			integrationName: 'google',
+			accountLabel: 'kent.c.dodds@gmail.com',
+		}),
+	).toBe(
+		'https://example.com/connect/oauth?provider=google&loginHint=kent.c.dodds%40gmail.com',
+	)
+})
 
 function createEnv() {
 	return {
@@ -79,8 +105,12 @@ test('integration.auth.failed fans out only to owning-user packages with a lean 
 			name: 'google',
 			lane: 'platform',
 			account_label: 'Work',
+			description: 'Personal Gmail',
 			provider: 'google',
 			platform_app_slug: 'google',
+			scopes: ['openid', 'email', 'https://www.googleapis.com/auth/calendar'],
+			connected_at: '2026-01-01T00:00:00.000Z',
+			token_refreshed_at: '2026-08-01T00:00:00.000Z',
 		},
 		reason: 'provider_rejected',
 		provider: {
@@ -107,8 +137,16 @@ test('integration.auth.failed fans out only to owning-user packages with a lean 
 					name: 'google',
 					lane: 'platform',
 					account_label: 'Work',
+					description: 'Personal Gmail',
 					provider: 'google',
 					platform_app_slug: 'google',
+					scopes: [
+						'openid',
+						'email',
+						'https://www.googleapis.com/auth/calendar',
+					],
+					connected_at: '2026-01-01T00:00:00.000Z',
+					token_refreshed_at: '2026-08-01T00:00:00.000Z',
 				},
 				reason: 'provider_rejected',
 				provider: {
@@ -117,6 +155,7 @@ test('integration.auth.failed fans out only to owning-user packages with a lean 
 					http_status: 400,
 				},
 				reconnect_url: 'https://example.com/connect/oauth?provider=google',
+				account_url: 'https://example.com/account/integrations/google',
 				occurred_at: '2026-08-18T17:00:00.000Z',
 			},
 		}),
@@ -149,8 +188,12 @@ test('integration.auth.failed never throws on discovery or handler failures', as
 				name: 'google',
 				lane: 'user',
 				account_label: null,
+				description: null,
 				provider: 'google',
 				platform_app_slug: null,
+				scopes: [],
+				connected_at: null,
+				token_refreshed_at: null,
 			},
 			reason: 'missing_refresh_token',
 			provider: {
@@ -230,8 +273,12 @@ test('integration.auth.failed never throws on discovery or handler failures', as
 				name: 'google',
 				lane: 'platform',
 				account_label: null,
+				description: null,
 				provider: 'google',
 				platform_app_slug: 'google',
+				scopes: [],
+				connected_at: null,
+				token_refreshed_at: null,
 			},
 			reason: 'provider_rejected',
 			provider: {

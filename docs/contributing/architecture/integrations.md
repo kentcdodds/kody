@@ -115,8 +115,12 @@ host-approval gaps, invalid connection config) best-effort dispatch
 `integration.auth.failed` to the owning user's packages that declare the topic.
 Every classified attempt emits; the platform does not coalesce repeats. Provider
 HTTP 5xx and missing connections do not emit. The payload is metadata-first
-(connection name, lane, reason, optional provider error fields, trusted
-`reconnect_url`) and never includes token or secret values. See
+(connection name, lane, account label, description, scopes, connect/refresh
+timestamps, reason, optional provider error fields, trusted `reconnect_url` and
+`account_url`) and never includes token or secret values. When `account_label`
+is an email, `reconnect_url` includes `loginHint` so the provider account
+chooser can preselect it. A successful Google refresh that still has no
+`account_label` persists `userinfo.email` onto the connection. See
 [Package subscriptions](../../guides/package-subscriptions.md).
 
 On 401, `createAuthenticatedFetch` calls `integration_token_refresh` then

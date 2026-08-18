@@ -363,6 +363,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				? null
 				: parseExtraParams(rawExtraAuthorizeParams)
 		const dashboardUrl = parseOptionalUrl(readOptional('dashboardUrl'))
+		const loginHint = readOptional('loginHint')
 		const providerKey = normalizeProviderKey(provider)
 		if (!providerKey) {
 			return { ok: false, error: 'Provider must contain letters or numbers.' }
@@ -392,6 +393,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				providerSetupInstructions,
 				dashboardUrl,
 				allowedHosts,
+				loginHint,
 			},
 		}
 	}
