@@ -40,7 +40,9 @@ export async function loadSitePerfBudget(
 }
 
 function hrefsMatching(html: string, pattern: RegExp) {
-	return [...html.matchAll(pattern)].map((match) => match[1]).filter(Boolean)
+	return [...html.matchAll(pattern)]
+		.map((match) => match[1])
+		.filter((href): href is string => href !== undefined && href.length > 0)
 }
 
 function resolveUrl(base: string, href: string) {

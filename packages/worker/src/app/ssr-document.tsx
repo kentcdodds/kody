@@ -225,9 +225,11 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 						as="image"
 						type="image/webp"
 						href={heroBaseImage.src}
-						imageSrcSet={heroBaseImage.srcSet}
-						imageSizes={heroBaseImage.sizes}
 						fetchPriority="high"
+						{...{
+							imagesrcset: heroBaseImage.srcSet,
+							imagesizes: heroBaseImage.sizes,
+						}}
 					/>
 				) : null}
 				<title>

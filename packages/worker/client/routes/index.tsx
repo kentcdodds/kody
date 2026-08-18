@@ -13,7 +13,6 @@ import {
 	LazyMarketingRoute,
 	LazyOnboardingRoute,
 	lazyRouteLoader,
-	marketingArea,
 	onboardingArea,
 } from '#client/lazy-route.tsx'
 import { oauthPaths } from '#universal/oauth-paths.ts'
