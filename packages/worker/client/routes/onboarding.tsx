@@ -19,6 +19,7 @@ import {
 	type OnboardingChecklistLoaderData,
 } from '#universal/loader-data.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
+import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	selectOnboardingExampleListings,
@@ -587,10 +588,9 @@ export function OnboardingRoute(handle: Handle) {
 									</div>
 									<img
 										data-panel-art
-										src="/images/kody-community-packages.webp"
+										{...landingArtAttrs('kody-community-packages')}
 										width={627}
 										height={627}
-										loading="lazy"
 										alt="Kody kneeling beside a stack of parcels, one open and glowing with a eucalyptus sprig"
 										style={{ '--tilt': '1.5deg' }}
 										mix={css(panelArtCss)}
@@ -685,10 +685,9 @@ export function OnboardingRoute(handle: Handle) {
 									</div>
 									<img
 										data-panel-art
-										src="/images/kody-greeting.webp"
+										{...landingArtAttrs('kody-greeting')}
 										width={627}
 										height={627}
-										loading="lazy"
 										alt="Kody waving beside a warm envelope"
 										style={{ '--tilt': '-1.5deg' }}
 										mix={css(panelArtCss)}
@@ -950,10 +949,9 @@ function renderByokDetails(hasBuiltIns: boolean) {
 			 */}
 			<section mix={css(byokBodyCss)} aria-labelledby="byok-note-title">
 				<img
-					src="/images/kody-keys.webp"
+					{...landingArtAttrs('kody-keys')}
 					width={627}
 					height={627}
-					loading="lazy"
 					alt="Kody holding a golden key with both paws"
 				/>
 				<div>

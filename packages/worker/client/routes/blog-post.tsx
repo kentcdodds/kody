@@ -5,6 +5,7 @@ import {
 	formatBlogPostDate,
 } from '#universal/blog-display.ts'
 import { type BlogPostLoaderData } from '#universal/loader-data.ts'
+import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -272,7 +273,7 @@ export function BlogPostRoute(handle: Handle) {
 							) : null}
 							<div mix={css(postCtaCss)}>
 								<img
-									src="/images/kody-greeting.webp"
+									{...landingArtAttrs('kody-greeting')}
 									width={480}
 									height={480}
 									alt=""

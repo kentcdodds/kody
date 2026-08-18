@@ -1,4 +1,5 @@
 import { Frame, type Handle, css } from 'remix/ui'
+import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
 import { COMMUNITY_LISTINGS_TARGET } from '#universal/community-frame-constants.ts'
 import { renderCommunityEmptyState } from '#universal/community-empty-state.tsx'
@@ -115,7 +116,7 @@ export function CommunityRoute(handle: Handle) {
 					<img
 						data-rise
 						style={{ '--rise': '2' }}
-						src="/images/kody-community-packages.webp"
+						{...landingArtAttrs('kody-community-packages')}
 						width={480}
 						height={480}
 						alt="Kody handing a wrapped package across a counter of neatly sorted parcels"

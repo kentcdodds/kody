@@ -12,6 +12,7 @@ import {
 	type ResolvedDocumentHead,
 } from '#universal/document-head.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
+import { heroBaseImage } from '#universal/landing-images.ts'
 import {
 	SENTRY_CONFIG_META_NAME,
 	type SentryClientConfig,
@@ -222,7 +223,10 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 					<link
 						rel="preload"
 						as="image"
-						href="/images/hero/kody-base.webp"
+						type="image/webp"
+						href={heroBaseImage.src}
+						imageSrcSet={heroBaseImage.srcSet}
+						imageSizes={heroBaseImage.sizes}
 						fetchPriority="high"
 					/>
 				) : null}

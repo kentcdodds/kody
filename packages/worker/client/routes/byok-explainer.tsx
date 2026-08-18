@@ -11,10 +11,11 @@ import {
 	cardTitleCss,
 	descriptionCss,
 } from '#universal/styles/style-primitives.ts'
+import { landingArtAttrs } from '#universal/landing-images.ts'
 
 const kodyImages = {
 	keys: {
-		src: '/images/kody-keys.webp',
+		...landingArtAttrs('kody-keys'),
 		alt: 'Kody the koala proudly holding a set of golden keys',
 	},
 	handoff: {
@@ -108,6 +109,10 @@ export function renderByokExplainer(options?: {
 			>
 				<img
 					src={image.src}
+					srcSet={'srcSet' in image ? image.srcSet : undefined}
+					sizes={'sizes' in image ? image.sizes : undefined}
+					loading={'loading' in image ? image.loading : 'lazy'}
+					decoding="async"
 					alt={image.alt}
 					width={640}
 					height={640}

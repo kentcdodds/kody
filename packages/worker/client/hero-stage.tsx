@@ -1,4 +1,5 @@
 import { type Handle, css, ref } from 'remix/ui'
+import { heroBaseImage } from '#universal/landing-images.ts'
 
 /**
  * Layered mascot stage from the heykody.dev redesign: Kody stands still
@@ -248,10 +249,13 @@ export function HeroStage(handle: Handle<HeroStageProps>) {
 			]}
 		>
 			<img
-				src="/images/hero/kody-base.webp"
-				width={1254}
-				height={1254}
+				src={heroBaseImage.src}
+				srcSet={heroBaseImage.srcSet}
+				sizes={heroBaseImage.sizes}
+				width={heroBaseImage.width}
+				height={heroBaseImage.height}
 				fetchPriority="high"
+				decoding="async"
 				data-depth="-0.06"
 				alt={handle.props.alt}
 				mix={css({ width: '100%', height: 'auto', display: 'block' })}
