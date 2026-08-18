@@ -16,6 +16,7 @@ import {
 import { getEnv } from '#app/env.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { getRequestDataCacheLookup } from '#app/request-cache.ts'
+import { resolveAppPageCacheControl } from '#app/anonymous-html-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { getClientModulePreloadHrefs } from '#app/client-preload-manifest.ts'
@@ -155,10 +156,21 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		},
 	)
 
+	const responseSetsCookie =
+		Boolean(setCookie) || (extraSetCookies?.length ?? 0) > 0
+	const pageCache = resolveAppPageCacheControl({
+		pathname: requestUrl.pathname,
+		session,
+		request,
+		responseSetsCookie,
+	})
 	const headers = new Headers({
-		'Cache-Control': 'no-store',
+		'Cache-Control': pageCache.cacheControl,
 		'Content-Type': 'text/html; charset=utf-8',
 	})
+	if (pageCache.vary) {
+		headers.set('Vary', pageCache.vary)
+	}
 	if (setCookie) {
 		headers.append('Set-Cookie', setCookie)
 	}

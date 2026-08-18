@@ -128,6 +128,15 @@ router.
 `packages/worker/universal/routes.ts` to handler modules (home, auth, account,
 session, logout, password reset, health).
 
+## Anonymous marketing HTML cache
+
+`renderAppPage` sets
+`Cache-Control: public, max-age=60, stale-while-revalidate=300` and
+`Vary: Cookie` for anonymous `/`, `/pricing`, `/blog`, and `/community`. The
+response stays `no-store` when the request carries a `kody_session` cookie,
+`loadSessionInfo` resolves a session, or the response sets a cookie. Auth,
+OAuth, account, and every other HTML path stay `no-store`.
+
 ## Syntax highlighting
 
 Browser pages that show code — markdown bodies on guides, blog posts, and

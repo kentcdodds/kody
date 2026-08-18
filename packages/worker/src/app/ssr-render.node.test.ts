@@ -536,8 +536,13 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
 	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
-	expect(withoutAssetsHtml).toContain('href="/images/hero/kody-base.webp"')
+	expect(withoutAssetsHtml).toContain('href="/images/hero/kody-base-640.webp"')
+	expect(withoutAssetsHtml).toContain('kody-base-960.webp')
 	expect(withoutAssetsHtml).toContain('as="image"')
+	expect(withoutAssets.headers.get('Cache-Control')).toBe(
+		'public, max-age=60, stale-while-revalidate=300',
+	)
+	expect(withoutAssets.headers.get('Vary')).toBe('Cookie')
 
 	// With ASSETS serving the stylesheet: inline <style>, no stylesheet link.
 	const assets = {
@@ -588,6 +593,51 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	const withUnsafeCssHtml = await readResponseText(withUnsafeCss)
 	expect(withUnsafeCssHtml).toContain('href="/styles.css')
 	expect(withUnsafeCssHtml).not.toContain('.card &gt; p')
+})
+
+test('renderAppPage caches anonymous marketing HTML and keeps session pages private', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	const anonymousHome = await renderAppPage({
+		request: new Request('https://example.com/'),
+		env,
+	})
+	expect(anonymousHome.headers.get('Cache-Control')).toBe(
+		'public, max-age=60, stale-while-revalidate=300',
+	)
+	expect(anonymousHome.headers.get('Vary')).toBe('Cookie')
+
+	const staleCookieHome = await renderAppPage({
+		request: new Request('https://example.com/', {
+			headers: { Cookie: 'kody_session=stale-or-unsigned' },
+		}),
+		env,
+	})
+	expect(staleCookieHome.headers.get('Cache-Control')).toBe('no-store')
+
+	const cookie = await createAuthCookie(
+		{
+			stableUserId: testStableUserIdFromEmail('user@example.com'),
+			email: 'user@example.com',
+			rememberMe: false,
+		} satisfies AuthSession,
+		false,
+	)
+	const signedInHome = await renderAppPage({
+		request: new Request('https://example.com/', {
+			headers: { Cookie: cookie },
+		}),
+		env,
+	})
+	expect(signedInHome.headers.get('Cache-Control')).toBe('no-store')
+
+	const login = await renderAppPage({
+		request: new Request('https://example.com/login'),
+		env,
+	})
+	expect(login.headers.get('Cache-Control')).toBe('no-store')
 })
 
 test('renderAppPage configures session secret and server-renders oauth authorize', async () => {
