@@ -2077,6 +2077,8 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	expect(updated.publishedCommit).toBe('package-published-commit')
 	expect(repoMockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 
+	const identityErrorMessage =
+		'Package-owned jobs cannot change name, code, or published source via job_update. Change the job entry in the package repo and publish the package.'
 	const codeError = await updateJob({
 		env,
 		callerContext,
@@ -2087,8 +2089,31 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	}).catch((caught: unknown) => caught)
 	expect(codeError).toBeInstanceOf(McpCallerError)
 	expect(codeError).toMatchObject({
-		message:
-			'Package-owned jobs cannot replace source via job_update. Change the job entry in the package repo and publish the package.',
+		message: identityErrorMessage,
+	})
+	const nameError = await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: jobId,
+			name: 'renamed-daily-prompt',
+		},
+	}).catch((caught: unknown) => caught)
+	expect(nameError).toBeInstanceOf(McpCallerError)
+	expect(nameError).toMatchObject({
+		message: identityErrorMessage,
+	})
+	const publishedCommitError = await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: jobId,
+			publishedCommit: 'attacker-chosen-commit',
+		},
+	}).catch((caught: unknown) => caught)
+	expect(publishedCommitError).toBeInstanceOf(McpCallerError)
+	expect(publishedCommitError).toMatchObject({
+		message: identityErrorMessage,
 	})
 	expect(repoMockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 

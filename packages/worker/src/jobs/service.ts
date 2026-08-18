@@ -896,6 +896,28 @@ function jobUpdateSharesPackageSource(input: {
 	)
 }
 
+function assertPackageOwnedJobUpdateAllowsIdentityFields(input: {
+	existing: Pick<JobRecord, 'id' | 'name' | 'publishedCommit'>
+	body: JobUpdateInput
+}) {
+	const nameChanges =
+		input.body.name !== undefined &&
+		normalizeJobName(input.body.name) !== input.existing.name
+	const publishedCommitChanges =
+		input.body.publishedCommit !== undefined &&
+		input.body.publishedCommit !== input.existing.publishedCommit
+	if (
+		input.body.code === undefined &&
+		!nameChanges &&
+		!publishedCommitChanges
+	) {
+		return
+	}
+	throw new McpCallerError(
+		'Package-owned jobs cannot change name, code, or published source via job_update. Change the job entry in the package repo and publish the package.',
+	)
+}
+
 export async function createJob(input: {
 	env: Env
 	callerContext: McpCallerContext
@@ -1088,16 +1110,16 @@ export async function updateJob(input: {
 					userId: callerContext.user.userId,
 				})
 				// Package-owned jobs share the package entity source. Metadata
-				// updates (schedule, name, timezone) must not force-publish that
-				// source: the overwrite safety policy refuses it, and writing
-				// kody.json / src/job.ts into the package repo would be
-				// destructive. Source changes belong in the package repo + publish.
+				// updates (schedule, timezone, params, enabled) must not
+				// force-publish that source: the overwrite safety policy refuses
+				// it, and writing kody.json / src/job.ts into the package repo
+				// would be destructive. Name, code, and publishedCommit stay
+				// with the package repo + publish.
 				if (jobUpdateSharesPackageSource({ jobId: existing.id, source })) {
-					if (input.body.code !== undefined) {
-						throw new McpCallerError(
-							'Package-owned jobs cannot replace source via job_update. Change the job entry in the package repo and publish the package.',
-						)
-					}
+					assertPackageOwnedJobUpdateAllowsIdentityFields({
+						existing,
+						body: input.body,
+					})
 				} else {
 					const syncedPublishedCommit = await syncArtifactSourceSnapshot({
 						env: input.env,
