@@ -71,12 +71,14 @@ export async function runWithTransientDurableObjectResetRetry<T>(input: {
 	const delays = durableObjectResetRetryDelaysMs
 	const maxAttempts = delays.length + 1
 	let lastResult: T | undefined
+	let hasLastResult = false
 	let lastError: unknown
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		assertNotAborted(input.signal)
 		try {
 			const result = await input.operation()
 			lastResult = result
+			hasLastResult = true
 			const resultError = input.retryableResultError?.(result) ?? null
 			if (
 				resultError == null ||
@@ -107,8 +109,8 @@ export async function runWithTransientDurableObjectResetRetry<T>(input: {
 		})
 		await delay(nextDelayMs, input.signal)
 	}
-	if (lastResult !== undefined) {
-		return lastResult
+	if (hasLastResult) {
+		return lastResult as T
 	}
 	throw lastError instanceof Error
 		? lastError

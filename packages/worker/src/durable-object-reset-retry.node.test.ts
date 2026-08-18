@@ -122,6 +122,17 @@ test('transient Durable Object reset retry recovers thrown and result errors the
 			}),
 		).rejects.toThrow(durableObjectCodeUpdatedResetMessage)
 		expect(dirtyThrown).toHaveBeenCalledTimes(1)
+
+		const exhaustedUndefined = vi
+			.fn<() => Promise<undefined>>()
+			.mockResolvedValue(undefined)
+		const exhaustedUndefinedPending = runWithTransientDurableObjectResetRetry({
+			operation: exhaustedUndefined,
+			retryableResultError: () => durableObjectCodeUpdatedResetMessage,
+		})
+		await vi.runAllTimersAsync()
+		await expect(exhaustedUndefinedPending).resolves.toBeUndefined()
+		expect(exhaustedUndefined).toHaveBeenCalledTimes(3)
 	} finally {
 		vi.useRealTimers()
 	}
