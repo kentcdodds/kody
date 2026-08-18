@@ -9,8 +9,9 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
  * Regression coverage for sandbox console capture: user modules are loaded via
  * `import("./main.js")`, so a lexical `const console` in `evaluate()` cannot
  * shadow the free `console` binding those modules resolve. Capture must assign
- * onto `globalThis` (same pattern as the fetch shim) and restore in `finally`
- * so reused dynamic workers do not write into a previous run's `__logs`.
+ * onto `globalThis` and restore in `finally` so reused dynamic workers do not
+ * write into a previous run's `__logs`. Fetch uses a once-per-isolate patch
+ * plus AsyncLocalStorage instead of restore-in-finally.
  */
 
 const reuseEnv = {

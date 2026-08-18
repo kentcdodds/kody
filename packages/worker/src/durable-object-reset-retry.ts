@@ -55,6 +55,12 @@ async function delay(ms: number, signal?: AbortSignal) {
 export async function runWithTransientDurableObjectResetRetry<T>(input: {
 	operation: () => Promise<T>
 	retryableResultError?: (result: T) => unknown | null
+	/**
+	 * Extra gate after a reset is recognized. Return false to keep the
+	 * result or rethrow instead of retrying (for example, this evaluate
+	 * already started a host-mediated side effect). Omitted means retry.
+	 */
+	shouldRetry?: (input: { error: unknown; result?: T }) => boolean
 	onRetry?: (input: {
 		attempt: number
 		nextDelayMs: number
@@ -74,7 +80,8 @@ export async function runWithTransientDurableObjectResetRetry<T>(input: {
 			const resultError = input.retryableResultError?.(result) ?? null
 			if (
 				resultError == null ||
-				!isTransientDurableObjectResetError(resultError)
+				!isTransientDurableObjectResetError(resultError) ||
+				input.shouldRetry?.({ error: resultError, result }) === false
 			) {
 				return result
 			}
@@ -83,7 +90,8 @@ export async function runWithTransientDurableObjectResetRetry<T>(input: {
 			lastError = error
 			if (
 				!isTransientDurableObjectResetError(error) ||
-				attempt === maxAttempts
+				attempt === maxAttempts ||
+				input.shouldRetry?.({ error }) === false
 			) {
 				throw error
 			}

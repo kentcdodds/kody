@@ -54,6 +54,15 @@ import {
 	isExecutorSandboxTimeoutMessage,
 } from '#worker/sentry-options.ts'
 import { parseStorageEstimateReadErrorMessage } from '#worker/storage-estimate-error.ts'
+import { isTransientDurableObjectResetError } from '#worker/durable-object-reset-retry.ts'
+import {
+	createEvaluationSideEffectTracker,
+	createHostSideEffectProvider,
+	hostSideEffectProviderName,
+	isPlatformOnlyHostSideEffectProvider,
+	type EvaluationHostSideEffects,
+	type EvaluationSideEffectTracker,
+} from '#mcp/evaluation-side-effects.ts'
 
 type WorkerLoopbackExports = Exclude<typeof workerExports, undefined>
 
@@ -61,7 +70,7 @@ export const defaultExecutionResponseLimitBytes = 102_400
 const maxSupportedExecutorTimeoutMs = 2_147_483_647
 const dynamicWorkerMainModule = 'executor.js'
 const dynamicWorkerIdPrefix = 'kody-'
-const dynamicWorkerCacheKeyVersion = 3
+const dynamicWorkerCacheKeyVersion = 4
 // Cloudflare caps Worker Loader evaluations at four for one incoming request.
 // Async-local state shares that budget with nested evaluations while keeping
 // unrelated requests out of the same queue.
@@ -71,7 +80,11 @@ const dynamicWorkerCapacityErrorMessages = [
 	'Too many concurrent dynamic workers',
 	'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.',
 ] as const
-const reservedProviderNames = new Set(['__dispatchers', '__logs'])
+const reservedProviderNames = new Set([
+	'__dispatchers',
+	'__logs',
+	hostSideEffectProviderName,
+])
 const validProviderNamePattern = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
 const javascriptReservedWords = new Set([
 	'arguments',
@@ -152,6 +165,20 @@ type DynamicWorkerEntrypoint = {
 		logs?: Array<string>
 		rawFetchHosts?: Array<string>
 	}>
+}
+
+export type ExecuteResultWithHostSideEffects = ExecuteResult & {
+	hostMediatedSideEffects: EvaluationHostSideEffects
+}
+
+function attachHostSideEffects(
+	result: ExecuteResult,
+	sideEffects: EvaluationSideEffectTracker,
+): ExecuteResultWithHostSideEffects {
+	return {
+		...result,
+		hostMediatedSideEffects: sideEffects.snapshot(),
+	}
 }
 
 type DynamicWorkerPermitWaiter = {
@@ -565,13 +592,17 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 		async execute(
 			code: string,
 			providers: Array<ResolvedProvider>,
-		): Promise<ExecuteResult> {
+		): Promise<ExecuteResultWithHostSideEffects> {
+			const sideEffects = createEvaluationSideEffectTracker()
 			const validationError = validateProviders(providers)
 			if (validationError) {
-				return {
-					result: undefined,
-					error: validationError,
-				}
+				return attachHostSideEffects(
+					{
+						result: undefined,
+						error: validationError,
+					},
+					sideEffects,
+				)
 			}
 			const excludedHostname = readBaseUrlHostname(input.gatewayProps.baseUrl)
 			const executorModule = createExecutorModule({
@@ -610,9 +641,10 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 							await withDynamicWorkerEvaluationPermit(async () => {
 								throwIfEvaluationDeadlineAborted(signal)
 								const dispatchers = createToolDispatchers(
-									providers,
+									[...providers, createHostSideEffectProvider(sideEffects)],
 									executionState,
 									signal,
+									sideEffects,
 								)
 								return await entrypoint.evaluate(dispatchers)
 							}, signal),
@@ -629,11 +661,25 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 										| Awaited<ReturnType<DynamicWorkerEntrypoint['evaluate']>>
 										| undefined)
 								: undefined
-						return {
-							result: undefined,
-							error: drainedResponse?.error ?? message,
-							logs: drainedResponse?.logs ?? [],
-						}
+						return attachHostSideEffects(
+							{
+								result: undefined,
+								error: drainedResponse?.error ?? message,
+								logs: drainedResponse?.logs ?? [],
+							},
+							sideEffects,
+						)
+					}
+					if (isTransientDurableObjectResetError(error)) {
+						outcome = 'error'
+						return attachHostSideEffects(
+							{
+								result: undefined,
+								error: message,
+								logs: [],
+							},
+							sideEffects,
+						)
 					}
 					throw error
 				}
@@ -644,18 +690,34 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				}
 				if (response.error) {
 					outcome = 'error'
-					return {
-						result: undefined,
-						error: response.error,
+					return attachHostSideEffects(
+						{
+							result: undefined,
+							error: response.error,
+							logs: response.logs,
+						},
+						sideEffects,
+					)
+				}
+				return attachHostSideEffects(
+					{
+						result: response.result,
 						logs: response.logs,
-					}
-				}
-				return {
-					result: response.result,
-					logs: response.logs,
-				}
+					},
+					sideEffects,
+				)
 			} catch (error) {
 				outcome = 'error'
+				if (isTransientDurableObjectResetError(error)) {
+					return attachHostSideEffects(
+						{
+							result: undefined,
+							error: getErrorMessage(error),
+							logs: [],
+						},
+						sideEffects,
+					)
+				}
 				throw error
 			} finally {
 				executionState.active = false
@@ -727,14 +789,31 @@ function createExecutorModule(input: {
 		: ['        (', normalized, ')(),']
 	return [
 		'import { WorkerEntrypoint } from "cloudflare:workers";',
+		'import { AsyncLocalStorage } from "node:async_hooks";',
+		'',
+		'const __kodyEvaluateFetchStorageSymbol = Symbol.for("kody.evaluateFetchStorage");',
+		'const __kodyEvaluateFetchPatchedSymbol = Symbol.for("kody.evaluateFetchPatched");',
+		'const __kodyNativeFetchSymbol = Symbol.for("kody.nativeFetch");',
+		'const __kodyEvaluateFetchStorage =',
+		'  globalThis[__kodyEvaluateFetchStorageSymbol] ??',
+		'  (globalThis[__kodyEvaluateFetchStorageSymbol] = new AsyncLocalStorage());',
+		'if (!globalThis[__kodyEvaluateFetchPatchedSymbol]) {',
+		'  globalThis[__kodyNativeFetchSymbol] = globalThis.fetch.bind(globalThis);',
+		'  const __kodyNativeFetch = globalThis[__kodyNativeFetchSymbol];',
+		'  globalThis.fetch = (input, init) => {',
+		'    const ctx = __kodyEvaluateFetchStorage.getStore();',
+		'    if (ctx) return ctx.fetch(input, init);',
+		'    return __kodyNativeFetch(input, init);',
+		'  };',
+		'  globalThis[__kodyEvaluateFetchPatchedSymbol] = true;',
+		'}',
 		'',
 		'export default class CodeExecutor extends WorkerEntrypoint {',
 		'  async evaluate(__dispatchers = {}) {',
 		'    const __logs = [];',
 		'    const __kodyRawFetchHosts = [];',
 		`    const __kodyExcludedFetchHost = ${excludedHostname};`,
-		'    const __kodyNativeFetch = globalThis.fetch.bind(globalThis);',
-		'    globalThis.fetch = (input, init) => {',
+		'    const __kodyRunFetch = (input, init) => {',
 		'      try {',
 		'        let url = "";',
 		'        if (typeof input === "string") url = input;',
@@ -747,8 +826,16 @@ function createExecutorModule(input: {
 		'      } catch {',
 		'        // Ignore unparseable / relative URLs; only literal hosts count.',
 		'      }',
-		'      return __kodyNativeFetch(input, init);',
+		'      return (async () => {',
+		`        if (__dispatchers.${hostSideEffectProviderName}) {`,
+		`          const resJson = await __dispatchers.${hostSideEffectProviderName}.call("recordFetch", "[]");`,
+		'          const data = JSON.parse(resJson);',
+		'          if (data.error) throw new Error(data.error);',
+		'        }',
+		'        return globalThis[__kodyNativeFetchSymbol](input, init);',
+		'      })();',
 		'    };',
+		'    return __kodyEvaluateFetchStorage.run({ fetch: __kodyRunFetch }, async () => {',
 		'    const __kodyNativeConsole = globalThis.console;',
 		'    globalThis.console = {',
 		'      ...__kodyNativeConsole,',
@@ -780,6 +867,7 @@ function createExecutorModule(input: {
 		'      clearTimeout(__timeoutId);',
 		'      globalThis.console = __kodyNativeConsole;',
 		'    }',
+		'    });',
 		'  }',
 		'}',
 	].join('\n')
@@ -814,6 +902,7 @@ export function createToolDispatchers(
 	providers: Array<ResolvedProvider>,
 	executionState: { active: boolean },
 	signal?: AbortSignal,
+	sideEffects?: EvaluationSideEffectTracker,
 ) {
 	const dispatchers: Record<string, ToolDispatcher> = {}
 	for (const provider of providers) {
@@ -841,6 +930,12 @@ export function createToolDispatchers(
 			sanitizedFns[sanitizedName] = async (...args) => {
 				if (!executionState.active) {
 					throw new Error('Execution has already completed.')
+				}
+				if (
+					sideEffects &&
+					!isPlatformOnlyHostSideEffectProvider(provider.name)
+				) {
+					sideEffects.recordDispatcherAttempt()
 				}
 				return abortSignalToolNames.has(name)
 					? await fn(...args, signal)

@@ -28,6 +28,8 @@ import {
 import { executorSandboxTimeoutMessage } from '#worker/sentry-options.ts'
 import { assertGeneratedExecutorSourceIsBundleSafe } from './kody-remote-proxy-source.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
+import { createEvaluationSideEffectTracker } from '#mcp/evaluation-side-effects.ts'
+import { durableObjectCodeUpdatedResetMessage } from '#worker/sentry-options.ts'
 
 type FakeWorkerOptions = Record<string, unknown>
 
@@ -289,6 +291,9 @@ test('generated kody provider and executor module sources stay bundle-safe', () 
 		timeoutMs: 1_000,
 	})
 	assertGeneratedExecutorSourceIsBundleSafe(moduleSource)
+	expect(moduleSource).toContain('from "node:async_hooks"')
+	expect(moduleSource).toContain('__kodyEvaluateFetchStorage.run')
+	expect(moduleSource).toContain('.call("recordFetch", "[]")')
 })
 
 test('generated kody provider source wires mcp proxy dispatch', async () => {
@@ -576,6 +581,10 @@ test('createExecuteExecutor drains logs from an evaluation that settles just aft
 		result: undefined,
 		error: timeoutMessage,
 		logs: ['started context lookup'],
+		hostMediatedSideEffects: {
+			dispatcherAttempts: 0,
+			fetchAttempts: 0,
+		},
 	})
 	expect(createNamedExecutionError(result.error).name).toBe('TimeoutError')
 })
@@ -1171,9 +1180,56 @@ test('createExecuteExecutor rejects reserved JavaScript provider names before lo
 		expect(result).toEqual({
 			result: undefined,
 			error: `Provider name "${name}" is a JavaScript reserved word`,
+			hostMediatedSideEffects: {
+				dispatcherAttempts: 0,
+				fetchAttempts: 0,
+			},
 		})
 	}
 	expect(fakeLoader.factoryCallCount).toBe(0)
+})
+
+test('createExecuteExecutor keeps host side-effect counts when evaluate throws a Durable Object reset', async () => {
+	const loader = {
+		get(_id: string, factory: () => FakeWorkerOptions) {
+			factory()
+			return {
+				getEntrypoint() {
+					return {
+						async evaluate(
+							dispatchers: Record<string, { call: typeof ToolDispatcherCall }>,
+						) {
+							await dispatchers.kody?.call('search', '{}')
+							throw new Error(durableObjectCodeUpdatedResetMessage)
+						},
+					}
+				},
+			}
+		},
+	} as unknown as Env['LOADER']
+
+	const result = await createExecuteExecutor({
+		env: createExecutorTestEnv(loader),
+		exports: createExecutorTestExports(),
+		gatewayProps: createGatewayProps('reset-user'),
+	}).execute('async () => "ok"', [
+		{
+			name: 'kody',
+			fns: {
+				search: async () => ({ ok: true }),
+			},
+		},
+	])
+
+	expect(result).toEqual({
+		result: undefined,
+		error: durableObjectCodeUpdatedResetMessage,
+		logs: [],
+		hostMediatedSideEffects: {
+			dispatcherAttempts: 1,
+			fetchAttempts: 0,
+		},
+	})
 })
 
 test('createExecuteExecutor disables dispatchers after execution completes', async () => {
@@ -1195,6 +1251,55 @@ test('createExecuteExecutor disables dispatchers after execution completes', asy
 
 	expect(JSON.parse(result ?? '{}')).toEqual({
 		error: 'Execution has already completed.',
+	})
+})
+
+test('createToolDispatchers counts host-mediated attempts before the awaited call', async () => {
+	const sideEffects = createEvaluationSideEffectTracker()
+	let searchCalls = 0
+	const dispatchers = createToolDispatchers(
+		[
+			{
+				name: 'kody',
+				fns: {
+					search: async () => {
+						searchCalls += 1
+						throw new Error('search failed after starting')
+					},
+				},
+			},
+			{
+				name: '__kodyStaticCallMeterRuntimeBridge',
+				fns: {
+					record: async () => ({ ok: true }),
+				},
+			},
+		],
+		{ active: true },
+		undefined,
+		sideEffects,
+	)
+
+	expect(
+		JSON.parse((await dispatchers.kody.call('search', '{}')) ?? '{}'),
+	).toEqual({ error: 'search failed after starting' })
+	expect(searchCalls).toBe(1)
+	expect(sideEffects.snapshot()).toEqual({
+		dispatcherAttempts: 1,
+		fetchAttempts: 0,
+	})
+
+	expect(
+		JSON.parse(
+			(await dispatchers.__kodyStaticCallMeterRuntimeBridge.call(
+				'record',
+				JSON.stringify([{}]),
+			)) ?? '{}',
+		),
+	).toEqual({ result: { ok: true } })
+	expect(sideEffects.snapshot()).toEqual({
+		dispatcherAttempts: 1,
+		fetchAttempts: 0,
 	})
 })
 

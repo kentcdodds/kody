@@ -74,8 +74,9 @@ export function readHostnameFromFetchInput(input: RequestInfo | URL) {
 /**
  * Test/helper wrapper that records literal hostnames from fetch inputs.
  * Do not pass the result to WorkerLoader `globalOutbound` — LOADER requires a
- * real Fetcher binding. Production counting wraps `globalThis.fetch` inside
- * the execute sandbox instead (see `#mcp/executor.ts`).
+ * real Fetcher binding. Production counting routes sandbox `fetch` through
+ * AsyncLocalStorage to this evaluate's host dispatcher before native fetch
+ * (see `#mcp/executor.ts` and `#mcp/evaluation-side-effects.ts`).
  */
 export function wrapOutboundFetcherRecordingHosts(
 	outbound: Fetcher,

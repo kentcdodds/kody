@@ -20,6 +20,7 @@ import {
 	type PackageStaticCallMeterInput,
 	type PackageStaticCallMeterTools,
 } from '#worker/usage/package-static-call-usage.ts'
+import { staticCallMeterRuntimeBridgeProviderName } from '#mcp/evaluation-side-effects.ts'
 
 export type AdditionalKodyTools = Record<
 	string,
@@ -246,9 +247,6 @@ const workflows = {
 const packageInvokeRuntimeBridgeProviderName =
 	'__kodyPackageInvokeRuntimeBridge'
 const packageEventRuntimeBridgeProviderName = '__kodyPackageEventRuntimeBridge'
-
-const staticCallMeterRuntimeBridgeProviderName =
-	'__kodyStaticCallMeterRuntimeBridge'
 
 function createPackagesHelperPrelude() {
 	return `

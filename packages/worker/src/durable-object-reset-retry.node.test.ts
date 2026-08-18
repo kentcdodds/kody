@@ -93,6 +93,35 @@ test('transient Durable Object reset retry recovers thrown and result errors the
 			error: durableObjectCodeUpdatedResetMessage,
 		})
 		expect(exhausted).toHaveBeenCalledTimes(3)
+
+		const dirtyResult = vi
+			.fn<() => Promise<{ error: string; dirty: boolean }>>()
+			.mockResolvedValue({
+				error: durableObjectCodeUpdatedResetMessage,
+				dirty: true,
+			})
+		await expect(
+			runWithTransientDurableObjectResetRetry({
+				operation: dirtyResult,
+				retryableResultError: (value) => value.error,
+				shouldRetry: ({ result }) => result?.dirty !== true,
+			}),
+		).resolves.toEqual({
+			error: durableObjectCodeUpdatedResetMessage,
+			dirty: true,
+		})
+		expect(dirtyResult).toHaveBeenCalledTimes(1)
+
+		const dirtyThrown = vi
+			.fn<() => Promise<never>>()
+			.mockRejectedValue(new Error(durableObjectCodeUpdatedResetMessage))
+		await expect(
+			runWithTransientDurableObjectResetRetry({
+				operation: dirtyThrown,
+				shouldRetry: () => false,
+			}),
+		).rejects.toThrow(durableObjectCodeUpdatedResetMessage)
+		expect(dirtyThrown).toHaveBeenCalledTimes(1)
 	} finally {
 		vi.useRealTimers()
 	}

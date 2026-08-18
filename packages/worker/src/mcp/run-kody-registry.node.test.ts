@@ -2730,16 +2730,22 @@ test('runBundledModuleWithRegistry retries transient Durable Object isolate rese
 	const finishSpy = vi
 		.spyOn(runRecords, 'finishRunRecord')
 		.mockResolvedValue(undefined)
+	const cleanHostSideEffects = {
+		dispatcherAttempts: 0,
+		fetchAttempts: 0,
+	}
 	const execute = vi
 		.fn()
 		.mockResolvedValueOnce({
 			result: undefined,
 			error: 'Durable Object reset because its code was updated.',
 			logs: [],
+			hostMediatedSideEffects: cleanHostSideEffects,
 		})
 		.mockResolvedValueOnce({
 			result: { scanned: 2 },
 			logs: ['recovered'],
+			hostMediatedSideEffects: cleanHostSideEffects,
 		})
 	const createExecuteExecutorSpy = vi
 		.spyOn(mcpExecutor, 'createExecuteExecutor')
@@ -2789,6 +2795,7 @@ test('runBundledModuleWithRegistry retries transient Durable Object isolate rese
 			result: undefined,
 			error: 'Durable Object reset because its code was updated.',
 			logs: [],
+			hostMediatedSideEffects: cleanHostSideEffects,
 		})
 		const exhaustedPending = runBundledModuleWithRegistry(
 			env,
@@ -2816,6 +2823,41 @@ test('runBundledModuleWithRegistry retries transient Durable Object isolate rese
 					message: 'Durable Object reset because its code was updated.',
 				}),
 			}),
+		)
+
+		execute.mockReset()
+		finishSpy.mockClear()
+		consoleWarn.mockClear()
+		execute.mockResolvedValue({
+			result: undefined,
+			error: 'Durable Object reset because its code was updated.',
+			logs: [],
+			hostMediatedSideEffects: {
+				dispatcherAttempts: 1,
+				fetchAttempts: 0,
+			},
+		})
+		const dirty = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				runRecord: {
+					surface: 'export',
+					name: './scan',
+				},
+			},
+		)
+		expect(dirty.error).toBe(
+			'Durable Object reset because its code was updated.',
+		)
+		expect(execute).toHaveBeenCalledTimes(1)
+		expect(consoleWarn).not.toHaveBeenCalledWith(
+			expect.stringContaining(
+				'runBundledModuleWithRegistry transient Durable Object reset',
+			),
 		)
 	} finally {
 		vi.useRealTimers()
