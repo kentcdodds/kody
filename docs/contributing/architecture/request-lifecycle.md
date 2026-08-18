@@ -140,8 +140,8 @@ so untrusted README fences stay inside the markdown safety model. Theme
 switching follows `:root[data-theme]` (and `prefers-color-scheme` when no theme
 is set) via CSS variables in `packages/worker/public/styles.css`. The browser
 loads the grammars through a dynamic `syntax-highlight-core` chunk: SSR,
-hydration, and SPA preload wait for it on those areas, and the marketing
-entry's static closure does not include it.
+hydration, and SPA preload wait for it on those areas, and the marketing entry's
+static closure does not include it.
 
 ## Client-side navigation flow
 
