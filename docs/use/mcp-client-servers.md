@@ -64,7 +64,8 @@ enough for the remote server.
 Household LAN tools (lights, TVs, thermostats, and the rest of the home process)
 are a normal outbound MCP server at `https://kody-home.doddsfamily.us/mcp`
 (Dodds Vault Cloudflare tunnel; Access bypasses `/mcp` and the OAuth machine
-paths). Add it as `home`, authorize with CIMD, then call
+paths). Add it as `home`, pass Cloudflare Access on `/authorize`, and approve.
+The LAN origin is trusted and has no extra login. Then call
 `kody.mcp["home"].tool_name(...)`. Packages that still say `kody.remote` should
 run package codemod `0005-remote-connector-to-mcp-server`.
 
