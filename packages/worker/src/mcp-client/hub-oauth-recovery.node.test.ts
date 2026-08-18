@@ -36,6 +36,7 @@ type FakeManager = {
 	mcpConnections: Record<string, FakeConnection>
 	connectCount: number
 	connectBehavior: 'oauth' | 'ready' | 'disconnected'
+	connectBehaviors: Array<'oauth' | 'ready' | 'disconnected'>
 	registerFailuresRemaining: number
 	callbackMatches: boolean
 	callbackResult: {
@@ -92,6 +93,7 @@ vi.mock('agents/mcp/client', () => ({
 		mcpConnections: Record<string, FakeConnection> = {}
 		connectCount = 0
 		connectBehavior: 'oauth' | 'ready' | 'disconnected' = 'oauth'
+		connectBehaviors: Array<'oauth' | 'ready' | 'disconnected'> = []
 		registerFailuresRemaining = 0
 		callbackMatches = true
 		callbackResult = {
@@ -154,17 +156,21 @@ vi.mock('agents/mcp/client', () => ({
 			}
 		}
 
+		async establishConnection() {}
+
 		async connectToServer(serverId: string) {
 			this.connectCount += 1
 			const connection = this.mcpConnections[serverId]
 			if (!connection) throw new Error('Missing fake connection.')
 			const provider = connection.options.transport.authProvider
-			if (this.connectBehavior === 'ready') {
+			const connectBehavior =
+				this.connectBehaviors.shift() ?? this.connectBehavior
+			if (connectBehavior === 'ready') {
 				connection.connectionState = 'ready'
 				connection.connectionError = null
 				return { state: 'connected' }
 			}
-			if (this.connectBehavior === 'disconnected') {
+			if (connectBehavior === 'disconnected') {
 				connection.connectionState = 'disconnected'
 				connection.connectionError = 'upstream closed'
 				return { state: 'disconnected' }
@@ -273,6 +279,25 @@ function seedServer(input: {
 			},
 		},
 	}
+}
+
+async function seedReadyHomeServer(input: {
+	hub: InstanceType<typeof McpClientHub>
+	manager: FakeManager
+}) {
+	const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
+	seedServer({
+		manager: input.manager,
+		callbackUrl,
+		clientId: 'client-1',
+		authUrl: 'https://auth.example/authorize?state=ok.server-1',
+	})
+	const connection = input.manager.mcpConnections['server-1']
+	if (!connection) throw new Error('Fake connection was not seeded.')
+	connection.connectionState = 'ready'
+	input.manager.rows[0]!.name = 'home'
+	await input.hub.getSnapshot()
+	return { callbackUrl, connection }
 }
 
 test('reconnect repairs stale callbacks and always replaces pending OAuth state', async () => {
@@ -514,4 +539,84 @@ test('snapshot retries a previously ready server before emitting disconnect', as
 			state: 'ready',
 		}),
 	])
+
+	const batchWrites = (
+		state.storage.put as ReturnType<typeof vi.fn>
+	).mock.calls.filter(
+		(call): call is [Record<string, unknown>] =>
+			typeof call[0] === 'object' &&
+			call[0] !== null &&
+			'mcp-connection-events-pending' in call[0],
+	)
+	expect(batchWrites.length).toBeGreaterThan(0)
+	for (const [entries] of batchWrites) {
+		expect(
+			Object.keys(entries).some((key) =>
+				key.startsWith('mcp-connection-episode/'),
+			),
+		).toBe(true)
+	}
+})
+
+test('refreshServer returns the recovered ready connection after a lightweight retry', async () => {
+	const { state } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { connection } = await seedReadyHomeServer({ hub, manager })
+	connection.connectionState = 'disconnected'
+	manager.connectBehavior = 'ready'
+	const result = await hub.refreshServer({ serverId: 'server-1' })
+	expect(result.state).toBe('ready')
+})
+
+test('reconnectServer returns the recovered ready connection after a lightweight retry', async () => {
+	const { state } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { callbackUrl } = await seedReadyHomeServer({ hub, manager })
+	manager.connectBehaviors = ['disconnected', 'ready']
+	const result = await hub.reconnectServer({
+		serverId: 'server-1',
+		callbackUrl,
+	})
+	expect(result.state).toBe('ready')
+})
+
+test('addServer returns the recovered ready connection after a lightweight retry', async () => {
+	const { state } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { callbackUrl } = await seedReadyHomeServer({ hub, manager })
+	manager.connectBehaviors = ['disconnected', 'ready']
+	const result = await hub.addServer({
+		serverId: 'server-1',
+		name: 'home',
+		url: 'https://kody-home.doddsfamily.us/mcp',
+		callbackUrl,
+	})
+	expect(result.state).toBe('ready')
+})
+
+test('handleOAuthCallback reports success after observe recovers a previously ready server', async () => {
+	const { state } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const { callbackUrl, connection } = await seedReadyHomeServer({
+		hub,
+		manager,
+	})
+	connection.connectionState = 'disconnected'
+	manager.connectBehavior = 'ready'
+	manager.callbackMatches = true
+	manager.callbackResult = { serverId: 'server-1', authSuccess: true }
+	const result = await hub.handleOAuthCallback({
+		url: `${callbackUrl}?code=abc&state=ok.server-1`,
+		callbackUrl,
+	})
+	expect(result.authSuccess).toBe(true)
+	expect(result.authorizationNeeded).toBe(false)
 })

@@ -485,8 +485,8 @@ Use the built-in `package_subscriptions_list` capability to discover the
 signed-in user's saved package subscriptions, optionally filtered by exact
 topic. This is the generic discovery step before building fan-out, debugging why
 an event did or did not dispatch, or checking which packages subscribe to
-`email.message.received`, `run.error.recorded`, `integration.auth.failed`, or
-`mcp.server.disconnected`.
+`email.message.received`, `run.error.recorded`, `integration.auth.failed`,
+`mcp.server.disconnected`, or `mcp.server.reconnected`.
 
 For accepted stored inbound email, the topic is `email.message.received`.
 Quarantined inbound email dispatches `email.message.quarantined` instead. Both

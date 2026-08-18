@@ -211,12 +211,11 @@ class McpClientHubBase extends DurableObject<Env> {
 				timeoutMs: discoverTimeoutMs,
 			})
 		}
-		const result = this.buildConnectResult(input.serverId)
 		await this.observeServer({
 			serverId: input.serverId,
 			serverName: input.name,
 		})
-		return result
+		return this.buildConnectResult(input.serverId)
 	}
 
 	/**
@@ -235,7 +234,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		await this.manager.waitForConnections({
 			timeout: connectionSettleTimeoutMs,
 		})
-		const result = await this.restartServerAuthorization(input)
+		await this.restartServerAuthorization(input)
 		const row = this.manager
 			.listServers()
 			.find((server) => server.id === input.serverId)
@@ -245,7 +244,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverName: row.name,
 			})
 		}
-		return result
+		return this.buildConnectResult(input.serverId)
 	}
 
 	/** Re-discover tools for a connected server. */
@@ -259,7 +258,6 @@ class McpClientHubBase extends DurableObject<Env> {
 		await this.manager.discoverIfConnected(input.serverId, {
 			timeoutMs: discoverTimeoutMs,
 		})
-		const result = this.buildConnectResult(input.serverId)
 		const row = this.manager
 			.listServers()
 			.find((server) => server.id === input.serverId)
@@ -269,7 +267,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				serverName: row.name,
 			})
 		}
-		return result
+		return this.buildConnectResult(input.serverId)
 	}
 
 	async removeServer(input: { serverId: string }): Promise<void> {
@@ -362,7 +360,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				sdkAuthError: result.authError ?? null,
 				serverId,
 				serverName,
-				connection,
+				connection: this.buildConnectResult(serverId),
 			})
 		}
 		return resolveMcpOAuthCallbackOutcome({
@@ -633,22 +631,19 @@ class McpClientHubBase extends DurableObject<Env> {
 	private async writeEpisode(
 		serverId: string,
 		episode: McpConnectionEpisodeRecord,
+		event?: McpServerConnectionEvent,
 	) {
-		await this.ctx.storage.put(
-			mcpConnectionEpisodeStorageKey(serverId),
-			episode,
-		)
-	}
-
-	private async appendConnectionEvent(event: McpServerConnectionEvent) {
-		const existing =
-			(await this.ctx.storage.get<Array<McpServerConnectionEvent>>(
-				mcpConnectionEventsPendingStorageKey,
-			)) ?? []
-		await this.ctx.storage.put(mcpConnectionEventsPendingStorageKey, [
-			...existing,
-			event,
-		])
+		const entries: Record<string, unknown> = {
+			[mcpConnectionEpisodeStorageKey(serverId)]: episode,
+		}
+		if (event) {
+			const existing =
+				(await this.ctx.storage.get<Array<McpServerConnectionEvent>>(
+					mcpConnectionEventsPendingStorageKey,
+				)) ?? []
+			entries[mcpConnectionEventsPendingStorageKey] = [...existing, event]
+		}
+		await this.ctx.storage.put(entries)
 	}
 
 	private async lightweightReconnectServer(serverId: string) {
@@ -703,18 +698,22 @@ class McpClientHubBase extends DurableObject<Env> {
 				createEpisodeId: () => crypto.randomUUID(),
 			})
 		}
-		await this.writeEpisode(input.serverId, decision.next)
-		if (!decision.event) return
-		await this.appendConnectionEvent({
-			topic: decision.event.topic,
-			eventId: crypto.randomUUID(),
-			episodeId: decision.event.episodeId,
-			serverId: input.serverId,
-			serverName: input.serverName,
-			state: this.connectionStateFor(input.serverId),
-			previousState: decision.event.previousState,
-			observedAt: new Date().toISOString(),
-		})
+		await this.writeEpisode(
+			input.serverId,
+			decision.next,
+			decision.event
+				? {
+						topic: decision.event.topic,
+						eventId: crypto.randomUUID(),
+						episodeId: decision.event.episodeId,
+						serverId: input.serverId,
+						serverName: input.serverName,
+						state: this.connectionStateFor(input.serverId),
+						previousState: decision.event.previousState,
+						observedAt: new Date().toISOString(),
+					}
+				: undefined,
+		)
 	}
 
 	/** Close all connections and wipe stored servers, tokens, and OAuth state. */
