@@ -1,5 +1,6 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, ref } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
+import { observeNearViewport } from '#client/deferred-turnstile.ts'
 import { on } from '#client/event-mixin.ts'
 import { HeroStage } from '#client/hero-stage.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -22,19 +23,8 @@ import {
 	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
+import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
-import { colors, transitions, typography } from '#universal/styles/tokens.ts'
-import {
-	getBrandChipCss,
-	getLanternGlowCss,
-	getPillButtonCss,
-	getSwapLabelCss,
-	hoverMq,
-	layoutMaxWidths,
-	mergeCss,
-	sectionHeadingCss,
-	visuallyHiddenCss,
-} from '#universal/styles/style-primitives.ts'
 
 /**
  * heykody.app landing page, ported from the redesign prototype
@@ -46,6 +36,9 @@ import {
  * Positioning: permanence / personal software factory — not "equip your
  * agent." Factory-loop art reuses the existing 3D set; do not generate a
  * new koala.
+ *
+ * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
+ * emit a per-node `<style data-rmx>` tag for every marketing block.
  */
 
 const factoryBeats = [
@@ -95,6 +88,10 @@ const worldBrands = [
 
 function isHomePath(href: string) {
 	return new URL(href, 'http://localhost').pathname === '/'
+}
+
+function chipIconStyle(icon: string) {
+	return { '--chip-icon': `url("/images/icons/${icon}.svg")` }
 }
 
 export async function homeRouteLoader(
@@ -170,53 +167,61 @@ export function HomeRoute(handle: Handle) {
 		return (
 			<div>
 				{/* ============ hero ============ */}
-				<section data-parallax-scope mix={css(heroCss)}>
-					<h1 data-rise style={{ '--rise': '0' }} mix={css(heroTitleCss)}>
+				<section data-parallax-scope class="landing-hero">
+					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
 						Kody makes your agent
 						<br />
 						<em>safer, cheaper,</em>{' '}
-						<span mix={css(heroBenefitsRestCss)}>
+						<span class="landing-hero-benefits-rest">
 							and more <em>reliable</em>.
 						</span>
 					</h1>
-					<p data-rise style={{ '--rise': '1' }} mix={css(heroSubCss)}>
+					<p data-rise style={{ '--rise': '1' }} class="landing-hero-sub">
 						A personal <strong>software factory</strong>. Turn the ad hoc agent
 						work into deterministic code you can run on a trigger or save tokens
 						with your agent.
 					</p>
-					<div data-rise style={{ '--rise': '2' }} mix={css(heroActionsCss)}>
+					<div data-rise style={{ '--rise': '2' }} class="landing-hero-actions">
 						{isSignedIn ? (
 							<>
 								{needsEmailVerification ? (
-									<a href={pendingVerificationPath} mix={css(pillButtonCss)}>
+									<a href={pendingVerificationPath} class="landing-pill">
 										Verify your email
 									</a>
 								) : (
-									<a href={onboardingPath} mix={css(pillButtonCss)}>
+									<a href={onboardingPath} class="landing-pill">
 										Connect your agent
 									</a>
 								)}
-								<a href="/account" mix={css(codeLinkCss)}>
+								<a href="/account" class="landing-code-link">
 									Open your account
 								</a>
 							</>
 						) : (
 							<>
-								<a href="#invite" mix={css(pillButtonCss)}>
+								<a href="#invite" class="landing-pill">
 									Join the waiting list
 								</a>
-								<a href="/signup" mix={css(codeLinkCss)}>
+								<a href="/signup" class="landing-code-link">
 									I have a code
 								</a>
 							</>
 						)}
 					</div>
-					<p data-rise style={{ '--rise': '3' }} mix={css(heroHintLeadCss)}>
+					<p
+						data-rise
+						style={{ '--rise': '3' }}
+						class="landing-hero-hint landing-hero-hint-lead"
+					>
 						Not sure yet? Ask the agent you already use whether Kody would help.
 						No account necessary.
 					</p>
 					{discoveryPrompt ? (
-						<div data-rise style={{ '--rise': '3.2' }} mix={css(heroHintCss)}>
+						<div
+							data-rise
+							style={{ '--rise': '3.2' }}
+							class="landing-hero-hint"
+						>
 							<CopyTextButton
 								value={discoveryPrompt}
 								idleLabel="Copy the discovery prompt"
@@ -225,10 +230,10 @@ export function HomeRoute(handle: Handle) {
 							/>
 						</div>
 					) : null}
-					<h2 data-rise style={{ '--rise': '3.4' }} mix={css(heroMeetCss)}>
+					<h2 data-rise style={{ '--rise': '3.4' }} class="landing-hero-meet">
 						Meet Kody
 					</h2>
-					<div data-rise style={{ '--rise': '1.5' }} mix={css(heroArtCss)}>
+					<div data-rise style={{ '--rise': '1.5' }} class="landing-hero-art">
 						<HeroStage
 							size="landing"
 							alt="Kody the koala holding a warmly glowing lantern, surrounded by floating notes, bookmarks, packages, and tool tokens"
@@ -237,35 +242,35 @@ export function HomeRoute(handle: Handle) {
 				</section>
 
 				{/* ============ nothing new to learn ============ */}
-				<section aria-labelledby="pitch-title" mix={css(pitchCss)}>
-					<h2 id="pitch-title" mix={css(pitchTitleCss)}>
+				<section aria-labelledby="pitch-title" class="landing-pitch">
+					<h2 id="pitch-title" class="landing-pitch-title">
 						Nothing new <br />
 						to learn
 					</h2>
 					<div>
-						<p mix={css(pitchLeadCss)}>
+						<p class="landing-pitch-lead">
 							Kody isn&apos;t another assistant to talk to. It plugs into the
 							agent you already use, so the same conversation you&apos;re having
 							today can now reach your real accounts.
 						</p>
-						<p mix={css(pitchBodyCss)}>
+						<p class="landing-pitch-body">
 							Because your agent does the thinking,{' '}
 							<strong>Kody gets better every time your agent does.</strong>
 						</p>
-						<ul aria-label="Agents Kody plugs into" mix={css(pitchHostsCss)}>
+						<ul aria-label="Agents Kody plugs into" class="landing-pitch-hosts">
 							{hostAgents.map((agent, index) => (
 								<li
 									key={agent.label}
-									mix={[
-										css(getHostChipCss(`/images/icons/${agent.icon}.svg`)),
-										revealPop(index * 35),
-									]}
+									class="landing-chip landing-chip-icon landing-host-chip"
+									style={chipIconStyle(agent.icon)}
+									mix={revealPop(index * 35)}
 								>
 									{agent.label}
 								</li>
 							))}
 							<li
-								mix={[css(hostsMoreChipCss), revealPop(hostAgents.length * 35)]}
+								class="landing-chip landing-chip-muted landing-host-chip"
+								mix={revealPop(hostAgents.length * 35)}
 							>
 								anything that speaks MCP
 							</li>
@@ -274,42 +279,45 @@ export function HomeRoute(handle: Handle) {
 				</section>
 
 				{/* ============ factory loop ============ */}
-				<section aria-labelledby="factory-title" mix={css(factoryCss)}>
-					<h2 id="factory-title" mix={css(sectionHeadingCss)}>
+				<section aria-labelledby="factory-title" class="landing-factory">
+					<h2 id="factory-title" class="landing-section-heading">
 						From ad hoc prompts to durable software
 					</h2>
-					<p mix={css(factoryLeadCss)}>
+					<p class="landing-factory-lead">
 						Stop burning your tokens on the same thing over and over again. Turn
 						any process into durable software you can trigger on a schedule,
 						notification, or anything else without expensive inference.
 					</p>
 					<img
-						src="/images/kody-compounding-capabilities.webp"
+						{...landingArtAttrs('kody-compounding-capabilities')}
 						width={480}
 						height={480}
-						loading="lazy"
 						alt="Kody tending glowing package pods on a small plant"
-						mix={[css(factoryArtCss), reveal()]}
+						class="landing-factory-art"
+						mix={reveal()}
 					/>
-					<p mix={css(factoryExamplesKickerCss)}>For example</p>
-					<div mix={css(factoryBeatsCss)}>
+					<p class="landing-factory-beat-trigger landing-factory-kicker">
+						For example
+					</p>
+					<div class="landing-factory-beats">
 						{factoryBeats.map((beat, index) => (
 							<article
 								key={beat.title}
-								mix={[css(factoryBeatCss), reveal(index * 90)]}
+								class="landing-factory-beat"
+								mix={reveal(index * 90)}
 							>
-								<p mix={css(factoryBeatTriggerCss)}>{beat.trigger}</p>
+								<p class="landing-factory-beat-trigger">{beat.trigger}</p>
 								<h3>{beat.title}</h3>
 								<p>{beat.copy}</p>
 							</article>
 						))}
 					</div>
-					<p mix={css(factoryCloseCss)}>
+					<p class="landing-factory-close">
 						Kody has the primitives for your agent to build you{' '}
 						<strong>pretty much anything</strong>. What will{' '}
 						<strong>you</strong> build?
 					</p>
-					<p mix={css(factoryWalkthroughCss)}>
+					<p class="landing-factory-walkthrough">
 						<a href={routes.guideDetail.href({ slug: 'how-kody-works' })}>
 							See the whole loop
 						</a>
@@ -317,55 +325,55 @@ export function HomeRoute(handle: Handle) {
 				</section>
 
 				{/* ============ git + npm ecosystem ============ */}
-				<section aria-labelledby="ecosystem-title" mix={css(ecosystemCss)}>
+				<section aria-labelledby="ecosystem-title" class="landing-ecosystem">
 					<div>
-						<h2 id="ecosystem-title" mix={css(sectionHeadingCss)}>
+						<h2 id="ecosystem-title" class="landing-section-heading">
 							Your own git and npm.
 						</h2>
-						<p mix={css(splitCopyCss)}>
+						<p class="landing-split-copy">
 							Kody gives you a <strong>personal software ecosystem</strong>.
 							Your agent creates repositories and publishes packages, all in
 							your own isolated environment. You can also publish your package
 							to the community to allow others to fork and you can even use
 							public packages on npm as well!
 						</p>
-						<p mix={css(splitCopyCss)}>
+						<p class="landing-split-copy">
 							Then your agents can use your packages to streamline ad hoc work
 							or you can trigger a package to execute in response to a webhook,
 							cron, authenticated HTTP call, or even a Kody-hosted application.
 						</p>
 					</div>
 					<img
-						src="/images/kody-community-packages.webp"
+						{...landingArtAttrs('kody-community-packages')}
 						width={480}
 						height={480}
-						loading="lazy"
 						alt="Kody handing a wrapped package across a counter of neatly sorted parcels"
-						mix={[css(ecosystemArtCss), reveal()]}
+						class="landing-ecosystem-art"
+						mix={reveal()}
 					/>
 				</section>
 
 				{/* ============ byok ============ */}
-				<section aria-labelledby="byok-title" mix={css(byokCss)}>
+				<section aria-labelledby="byok-title" class="landing-byok">
 					<img
-						src="/images/kody-keys.webp"
+						{...landingArtAttrs('kody-keys')}
 						width={480}
 						height={480}
-						loading="lazy"
 						alt="Kody holding up a set of golden keys"
-						mix={[css(byokArtCss), reveal()]}
+						class="landing-byok-art"
+						mix={reveal()}
 					/>
 					<div>
-						<h2 id="byok-title" mix={css(sectionHeadingCss)}>
+						<h2 id="byok-title" class="landing-section-heading">
 							Bring your own keys
 						</h2>
-						<p mix={css(splitCopyCss)}>
+						<p class="landing-split-copy">
 							<strong>Keys the agent never sees.</strong> You create the
 							connection yourself, with your agent walking you through it: your
 							app, your scopes, revocable anytime. Secrets never enter the
 							prompt (as opposed to the .env file your agent happily reads).
 						</p>
-						<p mix={css(splitCopyCss)}>
+						<p class="landing-split-copy">
 							A few built-in integrations are one-click for simple cases. Need
 							your own scopes, or a provider we don&apos;t host? Your agent
 							registers the app with you. No shared app sits between you and
@@ -375,38 +383,31 @@ export function HomeRoute(handle: Handle) {
 				</section>
 
 				{/* ============ works with ============ */}
-				<section aria-labelledby="world-title" mix={css(worldCss)}>
-					<h2 id="world-title" mix={css(sectionHeadingCss)}>
+				<section aria-labelledby="world-title" class="landing-world">
+					<h2 id="world-title" class="landing-section-heading">
 						It already speaks your stack
 					</h2>
-					<p mix={css(worldLeadCss)}>
+					<p class="landing-world-lead">
 						Community packages cover the tools you live in. Browse what other
 						people built, fork it with your agent, and make it yours.
 					</p>
 					<ul
 						aria-label="Services covered by community packages"
-						mix={css(worldCloudCss)}
+						class="landing-world-cloud"
 					>
 						{worldBrands.map((brand, index) => (
 							<li
 								key={brand.label}
-								mix={[
-									css(
-										getBrandChipCss({
-											iconHref: `/images/icons/${brand.icon}.svg`,
-										}),
-									),
-									revealPop(index * 35),
-								]}
+								class="landing-chip landing-chip-icon"
+								style={chipIconStyle(brand.icon)}
+								mix={revealPop(index * 35)}
 							>
 								{brand.label}
 							</li>
 						))}
 						<li
-							mix={[
-								css(getBrandChipCss({ muted: true })),
-								revealPop(worldBrands.length * 35),
-							]}
+							class="landing-chip landing-chip-muted"
+							mix={revealPop(worldBrands.length * 35)}
 						>
 							…and one thermostat
 						</li>
@@ -414,8 +415,8 @@ export function HomeRoute(handle: Handle) {
 				</section>
 
 				{/* ============ trust ============ */}
-				<section aria-labelledby="trust-title" mix={css(trustCss)}>
-					<h2 id="trust-title" mix={css(sectionHeadingCss)}>
+				<section aria-labelledby="trust-title" class="landing-trust">
+					<h2 id="trust-title" class="landing-section-heading">
 						Check out Kody&apos;s Source on GitHub
 					</h2>
 					<p>
@@ -424,7 +425,7 @@ export function HomeRoute(handle: Handle) {
 							href="https://github.com/kentcdodds/kody"
 							target="_blank"
 							rel="noreferrer noopener"
-							mix={css(inlineLinkCss)}
+							class="landing-inline-link"
 						>
 							source is open
 						</a>{' '}
@@ -433,39 +434,45 @@ export function HomeRoute(handle: Handle) {
 				</section>
 
 				{/* ============ closing invite ============ */}
-				<section id="invite" aria-labelledby="invite-title" mix={css(equipCss)}>
+				<section
+					id="invite"
+					aria-labelledby="invite-title"
+					class="landing-invite"
+				>
 					<img
-						src="/images/kody-greeting.webp"
+						{...landingArtAttrs('kody-greeting')}
 						width={480}
 						height={480}
-						loading="lazy"
 						alt="Kody waving hello with an open hand"
-						mix={css(equipArtCss)}
+						class="landing-invite-art"
 					/>
-					<h2 id="invite-title" mix={css(equipTitleCss)}>
+					<h2
+						id="invite-title"
+						class="landing-section-heading landing-invite-title"
+					>
 						Make it permanent
 					</h2>
 					{isSignedIn ? (
 						<div>
-							<p mix={css(equipLeadCss)}>
+							<p class="landing-invite-lead">
 								You&apos;re in. Connect the agent you already use and start
 								saving packages.
 							</p>
-							<p mix={css({ margin: '1.8rem auto 0' })}>
-								<a href={onboardingPath} mix={css(pillButtonCss)}>
+							<p class="landing-invite-cta">
+								<a href={onboardingPath} class="landing-pill">
 									Connect your agent
 								</a>
 							</p>
 						</div>
 					) : (
 						<>
-							<p mix={css(equipLeadCss)}>
+							<p class="landing-invite-lead">
 								Invite-only while we grow the eucalyptus. Join the waiting list,
 								or jump the queue with a code.
 							</p>
 							<WaitlistForm />
-							<p mix={css(equipCodeCss)}>
-								<a href="/signup" mix={css(codeLinkFooterCss)}>
+							<p class="landing-invite-code">
+								<a href="/signup" class="landing-code-link">
 									I have a code
 								</a>
 							</p>
@@ -480,13 +487,16 @@ export function HomeRoute(handle: Handle) {
 /**
  * Connected-pill waitlist form (name · divider · email · button) with an
  * inline success swap. Posts to the real `/waiting-list` endpoint with the
- * same honeypot + Turnstile protection as the signup page.
+ * same honeypot + Turnstile protection as the signup page. The challenge
+ * script stays off first paint: it loads once the form is near the viewport.
  */
 function WaitlistForm(handle: Handle) {
 	type Status = 'idle' | 'submitting' | 'success' | 'error'
 	let status: Status = 'idle'
 	let message: string | null = null
+	let protectionArmed = false
 	let turnstileSiteKey: string | null | undefined
+	let widgetReady = false
 
 	async function loadProtectionConfig(signal: AbortSignal) {
 		if (turnstileSiteKey !== undefined) return
@@ -502,9 +512,16 @@ function WaitlistForm(handle: Handle) {
 		handle.update()
 	}
 
+	function waitingForProtection() {
+		if (!protectionArmed) return true
+		if (turnstileSiteKey === undefined) return true
+		return Boolean(turnstileSiteKey) && !widgetReady
+	}
+
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		if (status === 'submitting') return
+		if (waitingForProtection()) return
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
 		const form = event.currentTarget
 
@@ -567,16 +584,38 @@ function WaitlistForm(handle: Handle) {
 	}
 
 	return () => {
-		if (typeof document !== 'undefined' && turnstileSiteKey === undefined) {
-			handle.queueTask(loadProtectionConfig)
-		}
-		if (typeof document !== 'undefined' && turnstileSiteKey) {
-			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey ?? null))
+		if (typeof document !== 'undefined' && protectionArmed) {
+			if (turnstileSiteKey === undefined) {
+				handle.queueTask(loadProtectionConfig)
+			} else if (turnstileSiteKey) {
+				handle.queueTask(async () => {
+					await renderTurnstileWidgets(turnstileSiteKey ?? null)
+					if (widgetReady) return
+					widgetReady = true
+					handle.update()
+				})
+			}
 		}
 		const isSubmitting = status === 'submitting'
+		const protectionPending = waitingForProtection()
+		const submitDisabled = isSubmitting || protectionPending
 
 		return (
-			<form noValidate mix={[css(waitlistFormCss), on('submit', handleSubmit)]}>
+			<form
+				noValidate
+				class="landing-waitlist"
+				mix={[
+					on('submit', handleSubmit),
+					ref((node, signal) => {
+						const stop = observeNearViewport(node, () => {
+							if (protectionArmed) return
+							protectionArmed = true
+							handle.update()
+						})
+						signal.addEventListener('abort', stop, { once: true })
+					}),
+				]}
+			>
 				{/*
 				 * A live region only announces text that changes while the
 				 * region is already in the accessibility tree, so the announcer
@@ -584,39 +623,37 @@ function WaitlistForm(handle: Handle) {
 				 * that state unmounts the submit button, so focus moves to the
 				 * confirmation instead, which announces it once.
 				 */}
-				<p role="status" mix={css(visuallyHiddenCss)}>
+				<p role="status" class="visually-hidden">
 					{status === 'success' ? '' : (message ?? '')}
 				</p>
 				{status === 'success' ? (
-					<p tabindex={-1} data-waitlist-success mix={css(formSuccessCss)}>
+					<p tabindex={-1} data-waitlist-success class="landing-form-success">
 						{message}{' '}
 						<button
 							type="button"
-							mix={[
-								css(formResetCss),
-								on('click', () => {
-									setState('idle')
-									handle.queueTask(() => {
-										document.getElementById(`${handle.id}-email`)?.focus()
-									})
-								}),
-							]}
+							class="landing-form-reset"
+							mix={on('click', () => {
+								setState('idle')
+								handle.queueTask(() => {
+									document.getElementById(`${handle.id}-email`)?.focus()
+								})
+							})}
 						>
 							Wrong email?
 						</button>
 					</p>
 				) : (
 					<>
-						<div data-focus-container mix={css(waitlistFieldsCss)}>
+						<div data-focus-container class="landing-waitlist-fields">
 							<input
 								type="text"
 								name={honeypotFieldName}
 								tabIndex={-1}
 								autoComplete="off"
 								aria-hidden="true"
-								mix={css(honeypotCss)}
+								class="visually-hidden landing-honeypot"
 							/>
-							<label for={`${handle.id}-name`} mix={css(visuallyHiddenCss)}>
+							<label for={`${handle.id}-name`} class="visually-hidden">
 								First name
 							</label>
 							<input
@@ -627,9 +664,9 @@ function WaitlistForm(handle: Handle) {
 								maxLength={80}
 								placeholder="First name"
 								autoComplete="given-name"
-								mix={css(waitlistInputCss)}
+								class="landing-waitlist-input"
 							/>
-							<label for={`${handle.id}-email`} mix={css(visuallyHiddenCss)}>
+							<label for={`${handle.id}-email`} class="visually-hidden">
 								Email address
 							</label>
 							<input
@@ -639,13 +676,13 @@ function WaitlistForm(handle: Handle) {
 								required
 								placeholder="you@yourdomain.dev"
 								autoComplete="email"
-								mix={css(waitlistEmailInputCss)}
+								class="landing-waitlist-input landing-waitlist-email"
 							/>
 							<button
 								type="submit"
-								aria-disabled={isSubmitting ? 'true' : undefined}
+								aria-disabled={submitDisabled ? 'true' : undefined}
 								aria-busy={isSubmitting ? 'true' : undefined}
-								mix={css(waitlistSubmitCss)}
+								class="landing-pill landing-pill-swap"
 							>
 								<span
 									data-swap-label
@@ -663,12 +700,12 @@ function WaitlistForm(handle: Handle) {
 								</span>
 							</button>
 						</div>
-						{turnstileSiteKey ? (
+						{protectionArmed && turnstileSiteKey ? (
 							<div class={turnstileWidgetClassName}></div>
 						) : null}
 						{status === 'error' && message ? (
 							// Announced by the mounted live region above.
-							<p aria-hidden="true" mix={css(formErrorCss)}>
+							<p aria-hidden="true" class="landing-form-error">
 								{message}
 							</p>
 						) : null}
@@ -677,639 +714,4 @@ function WaitlistForm(handle: Handle) {
 			</form>
 		)
 	}
-}
-
-/* ---------- styles ---------- */
-
-const sectionGutter = 'clamp(1.25rem, 4vw, 2.5rem)'
-const motionOk = '@media (prefers-reduced-motion: no-preference)'
-
-const inlineLinkCss = {
-	color: colors.primaryText,
-	textDecorationThickness: '1.5px',
-	textUnderlineOffset: '3px',
-	'&:hover': { color: colors.text },
-}
-
-const pillButtonCss = getPillButtonCss()
-
-/* The submit pill keeps both labels grid-stacked in one cell, so swapping to
-   "Joining…" never changes the button's size — the swap is a blur crossfade. */
-const waitlistSubmitCss = mergeCss(getPillButtonCss(), getSwapLabelCss(), {
-	'&[aria-disabled="true"]': {
-		cursor: 'progress',
-		opacity: 0.7,
-		transform: 'none',
-	},
-	[hoverMq]: {
-		'&[aria-disabled="true"]:hover, &[aria-disabled="true"]:active': {
-			transform: 'none',
-			boxShadow: 'none',
-		},
-	},
-})
-
-const codeLinkCss = {
-	...inlineLinkCss,
-	fontWeight: 600,
-}
-
-const codeLinkFooterCss = codeLinkCss
-
-/* ---------- hero ---------- */
-
-const heroCss = {
-	maxWidth: layoutMaxWidths.extended,
-	marginInline: 'auto',
-	padding: `clamp(3.5rem, 8vw, 6.5rem) ${sectionGutter} 0`,
-	textAlign: 'center' as const,
-}
-
-const heroTitleCss = {
-	margin: 0,
-	fontSize: 'clamp(2.7rem, 6.5vw, 5rem)',
-	fontWeight: 760,
-	lineHeight: 1.02,
-	letterSpacing: '-0.03em',
-	fontVariationSettings: '"opsz" 96',
-	'& em': {
-		fontStyle: 'normal',
-		color: colors.primaryText,
-	},
-}
-
-const heroBenefitsRestCss = {
-	whiteSpace: 'nowrap' as const,
-}
-
-const heroSubCss = {
-	margin: '1.5rem auto 0',
-	fontSize: 'clamp(1.05rem, 1.6vw, 1.2rem)',
-	color: colors.textMuted,
-	maxWidth: '56ch',
-	textWrap: 'pretty' as const,
-	'& strong': {
-		fontWeight: 700,
-		color: colors.text,
-	},
-}
-
-const heroActionsCss = {
-	marginTop: '2.2rem',
-	display: 'flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	flexWrap: 'wrap' as const,
-	gap: '0.8rem 1.6rem',
-}
-
-const heroHintCss = {
-	margin: '1.1rem auto 0',
-	fontSize: '0.95rem',
-	color: colors.textMuted,
-	maxWidth: '52ch',
-	textWrap: 'pretty' as const,
-}
-
-const heroHintLeadCss = {
-	...heroHintCss,
-	marginTop: '2rem',
-}
-
-const heroMeetCss = {
-	margin: 'clamp(2.5rem, 5vw, 4rem) 0 0',
-	fontSize: 'clamp(2.2rem, 5vw, 4rem)',
-	fontWeight: 740,
-	letterSpacing: '-0.03em',
-	lineHeight: 1.04,
-}
-
-const heroArtCss = {
-	marginTop: '0.85rem',
-	position: 'relative' as const,
-	/* See `pageHeadCss`: the fabric is a backdrop, so it paints under the art. */
-	isolation: 'isolate' as const,
-	/* Kody's shirt fabric, at whisper contrast behind him. The radial gradient
-	   fades it out so it never reads as a tiled wallpaper edge. */
-	'&::before': {
-		content: '""',
-		position: 'absolute' as const,
-		zIndex: -1,
-		inset: '-6% -18%',
-		background: `radial-gradient(closest-side, oklch(from ${colors.text} l c h / 0.07), transparent 74%)`,
-		maskImage: 'var(--kody-pattern)',
-		maskPosition: 'center',
-		maskSize: '340px',
-		maskRepeat: 'repeat',
-		WebkitMaskImage: 'var(--kody-pattern)',
-		WebkitMaskPosition: 'center',
-		WebkitMaskSize: '340px',
-		WebkitMaskRepeat: 'repeat',
-		pointerEvents: 'none' as const,
-	},
-	...getLanternGlowCss({ maxWidth: '230px' }),
-}
-
-/* ---------- pitch ---------- */
-
-const pitchCss = {
-	maxWidth: layoutMaxWidths.extended,
-	marginInline: 'auto',
-	padding: `clamp(4rem, 9vw, 7.5rem) ${sectionGutter} clamp(2rem, 4vw, 3rem)`,
-	display: 'grid',
-	gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)',
-	gap: 'clamp(2rem, 5vw, 4.5rem)',
-	alignItems: 'start',
-	'@media (max-width: 800px)': {
-		gridTemplateColumns: '1fr',
-		textAlign: 'center' as const,
-		padding: '3.25rem 1.25rem 1.75rem',
-	},
-}
-
-const pitchTitleCss = {
-	margin: 0,
-	fontSize: 'clamp(2rem, 4.2vw, 3.2rem)',
-	fontWeight: 740,
-	letterSpacing: '-0.026em',
-	lineHeight: 1.04,
-	'@media (max-width: 800px)': {
-		fontSize: '2rem',
-		'& br': { display: 'none' },
-	},
-}
-
-const pitchLeadCss = {
-	margin: 0,
-	fontSize: 'clamp(1.15rem, 1.8vw, 1.35rem)',
-	lineHeight: 1.5,
-	color: colors.text,
-	maxWidth: '44ch',
-	textWrap: 'pretty' as const,
-	'@media (max-width: 800px)': {
-		fontSize: '1.125rem',
-		marginInline: 'auto',
-		maxWidth: '40ch',
-	},
-}
-
-const pitchBodyCss = {
-	margin: '1.2rem 0 0',
-	color: colors.textMuted,
-	fontSize: '1.05rem',
-	maxWidth: '48ch',
-	textWrap: 'pretty' as const,
-	'& strong': {
-		fontWeight: 700,
-		color: colors.text,
-	},
-	'@media (max-width: 800px)': {
-		fontSize: '1rem',
-		marginInline: 'auto',
-		maxWidth: '46ch',
-	},
-}
-
-const pitchHostsCss = {
-	listStyle: 'none',
-	margin: '1.8rem 0 0',
-	padding: 0,
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	gap: '0.6rem',
-	'@media (max-width: 800px)': {
-		justifyContent: 'center',
-	},
-}
-
-function getHostChipCss(iconHref: string) {
-	return {
-		...getBrandChipCss({ iconHref }),
-		fontSize: '0.92rem',
-		padding: '0.4rem 0.95rem',
-	}
-}
-
-const hostsMoreChipCss = {
-	...getBrandChipCss({ muted: true }),
-	fontSize: '0.92rem',
-	padding: '0.4rem 0.95rem',
-}
-
-/* ---------- factory loop ---------- */
-
-const factoryCss = {
-	maxWidth: layoutMaxWidths.extended,
-	marginInline: 'auto',
-	padding: `clamp(2rem, 4vw, 3.5rem) ${sectionGutter}`,
-	textAlign: 'center' as const,
-	'@media (max-width: 800px)': {
-		padding: '1.75rem 1.25rem',
-	},
-}
-
-const factoryLeadCss = {
-	margin: '1.1rem auto 0',
-	color: colors.textMuted,
-	fontSize: '1.08rem',
-	maxWidth: '48ch',
-	textWrap: 'pretty' as const,
-}
-
-const factoryArtCss = {
-	width: 'min(70%, 400px)',
-	maxWidth: '100%',
-	height: 'auto',
-	display: 'block',
-	marginInline: 'auto',
-	marginTop: 'clamp(1.5rem, 3vw, 2.5rem)',
-	'@media (max-width: 800px)': {
-		width: 'min(60%, 300px)',
-	},
-}
-
-const factoryBeatsCss = {
-	display: 'grid',
-	gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-	gap: 'clamp(1.75rem, 4vw, 2.5rem) clamp(1.5rem, 3vw, 2.5rem)',
-	marginTop: '1.15rem',
-	textAlign: 'left' as const,
-	'@media (max-width: 800px)': {
-		textAlign: 'center' as const,
-	},
-}
-
-const factoryBeatTriggerCss = {
-	margin: 0,
-	fontSize: '0.78rem',
-	fontWeight: 600,
-	letterSpacing: '0.12em',
-	textTransform: 'uppercase' as const,
-	color: colors.primaryText,
-}
-
-const factoryExamplesKickerCss = {
-	...factoryBeatTriggerCss,
-	margin: 'clamp(2rem, 4vw, 3rem) 0 0',
-	fontSize: '1.15rem',
-}
-
-const factoryBeatCss = {
-	'& h3': {
-		margin: '0.45rem 0 0',
-		fontSize: '1.35rem',
-		fontWeight: 700,
-		letterSpacing: '-0.015em',
-	},
-	'& p:last-child': {
-		margin: '0.7rem 0 0',
-		color: colors.textMuted,
-		fontSize: '0.98rem',
-		maxWidth: '38ch',
-		textWrap: 'pretty' as const,
-	},
-	'@media (max-width: 800px)': {
-		'& p:last-child': {
-			fontSize: '1rem',
-			maxWidth: '46ch',
-			marginInline: 'auto',
-		},
-	},
-}
-
-const factoryCloseCss = {
-	margin: 'clamp(2rem, 4vw, 2.75rem) auto 0',
-	color: colors.textMuted,
-	fontSize: '1.02rem',
-	maxWidth: '42ch',
-	textWrap: 'balance' as const,
-	'& strong': {
-		color: colors.text,
-		fontWeight: 650,
-	},
-}
-
-const factoryWalkthroughCss = {
-	margin: '0.85rem 0 0',
-	'& a': {
-		color: colors.primaryText,
-		fontWeight: 600,
-		textDecoration: 'none',
-		'&:hover': {
-			textDecoration: 'underline',
-		},
-	},
-}
-
-/* ---------- git + npm + byok splits ---------- */
-
-const ecosystemCss = {
-	maxWidth: layoutMaxWidths.extended,
-	marginInline: 'auto',
-	padding: `clamp(2rem, 5vw, 4rem) ${sectionGutter}`,
-	display: 'grid',
-	gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)',
-	gap: 'clamp(2rem, 5vw, 4.5rem)',
-	alignItems: 'center',
-	'@media (max-width: 800px)': {
-		gridTemplateColumns: '1fr',
-		textAlign: 'center' as const,
-		padding: '1.75rem 1.25rem',
-	},
-}
-
-const ecosystemArtCss = {
-	width: 'min(100%, 400px)',
-	maxWidth: '100%',
-	height: 'auto',
-	display: 'block',
-	marginInline: 'auto',
-	'@media (max-width: 800px)': {
-		order: -1,
-		width: 'min(60%, 300px)',
-	},
-}
-
-const byokCss = {
-	maxWidth: layoutMaxWidths.extended,
-	marginInline: 'auto',
-	padding: `clamp(2rem, 5vw, 4rem) ${sectionGutter}`,
-	display: 'grid',
-	gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)',
-	gap: 'clamp(2rem, 5vw, 4.5rem)',
-	alignItems: 'center',
-	'@media (max-width: 800px)': {
-		gridTemplateColumns: '1fr',
-		textAlign: 'center' as const,
-		padding: '1.75rem 1.25rem',
-	},
-}
-
-const byokArtCss = {
-	width: 'min(100%, 380px)',
-	maxWidth: '100%',
-	height: 'auto',
-	display: 'block',
-	marginInline: 'auto',
-	'@media (max-width: 800px)': {
-		width: 'min(60%, 300px)',
-	},
-}
-
-const splitCopyCss = {
-	margin: '1.1rem 0 0',
-	color: colors.textMuted,
-	maxWidth: '48ch',
-	textWrap: 'pretty' as const,
-	'& strong': {
-		fontWeight: 700,
-		color: colors.text,
-	},
-	'@media (max-width: 800px)': {
-		fontSize: '1rem',
-		marginInline: 'auto',
-		maxWidth: '46ch',
-	},
-}
-
-/* ---------- world ---------- */
-
-const worldCss = {
-	maxWidth: layoutMaxWidths.extended,
-	marginInline: 'auto',
-	padding: `clamp(3rem, 7vw, 5.5rem) ${sectionGutter} clamp(2rem, 4vw, 3rem)`,
-	textAlign: 'center' as const,
-	'@media (max-width: 800px)': {
-		padding: '3.25rem 1.25rem 1.75rem',
-	},
-}
-
-const worldLeadCss = {
-	margin: '1.1rem auto 0',
-	color: colors.textMuted,
-	fontSize: '1.08rem',
-	maxWidth: '46ch',
-	textWrap: 'balance' as const,
-}
-
-const worldCloudCss = {
-	listStyle: 'none',
-	margin: '2.2rem auto 0',
-	padding: 0,
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	justifyContent: 'center',
-	gap: '0.6rem',
-	maxWidth: '46rem',
-}
-
-/* ---------- trust ---------- */
-
-/* Two quiet receipts before the close: security posture and open source.
-   Muted on purpose — these earn trust by not selling. */
-const trustCss = {
-	maxWidth: layoutMaxWidths.extended,
-	marginInline: 'auto',
-	padding: `clamp(1.5rem, 4vw, 2.5rem) ${sectionGutter}`,
-	textAlign: 'center' as const,
-	display: 'grid',
-	gap: '1.1rem',
-	justifyItems: 'center',
-	'& p': {
-		margin: 0,
-		color: colors.textMuted,
-		fontSize: '0.98rem',
-		maxWidth: '58ch',
-		textWrap: 'balance' as const,
-	},
-}
-
-/* ---------- equip / invite ---------- */
-
-const equipCss = {
-	maxWidth: layoutMaxWidths.extended,
-	marginInline: 'auto',
-	padding: `clamp(2rem, 5vw, 4rem) ${sectionGutter} clamp(4.5rem, 9vw, 7rem)`,
-	textAlign: 'center' as const,
-	position: 'relative' as const,
-	/* See `pageHeadCss`: the fabric is a backdrop, so it paints under the copy. */
-	isolation: 'isolate' as const,
-	/* Same fabric behind the closing invite: make the work permanent. */
-	'&::before': {
-		content: '""',
-		position: 'absolute' as const,
-		zIndex: -1,
-		inset: 0,
-		background: `radial-gradient(ellipse 55% 50% at 50% 42%, oklch(from ${colors.text} l c h / 0.055), transparent 72%)`,
-		maskImage: 'var(--kody-pattern)',
-		maskPosition: 'center',
-		maskSize: '340px',
-		maskRepeat: 'repeat',
-		WebkitMaskImage: 'var(--kody-pattern)',
-		WebkitMaskPosition: 'center',
-		WebkitMaskSize: '340px',
-		WebkitMaskRepeat: 'repeat',
-		pointerEvents: 'none' as const,
-	},
-	'@media (max-width: 800px)': {
-		padding: '1.75rem 1.25rem 4.5rem',
-	},
-}
-
-const equipArtCss = {
-	width: 'min(62%, 330px)',
-	maxWidth: '100%',
-	height: 'auto',
-	display: 'block',
-	marginInline: 'auto',
-}
-
-const equipTitleCss = {
-	...sectionHeadingCss,
-	marginTop: '1.6rem',
-	'@media (max-width: 800px)': {
-		fontSize: '2rem',
-	},
-}
-
-const equipLeadCss = {
-	margin: '1.1rem auto 0',
-	color: colors.textMuted,
-	fontSize: '1.08rem',
-	maxWidth: '44ch',
-	textWrap: 'balance' as const,
-	'@media (max-width: 800px)': {
-		fontSize: '1rem',
-		maxWidth: '46ch',
-	},
-}
-
-const equipCodeCss = {
-	margin: '1.4rem auto 0',
-	fontSize: '1rem',
-}
-
-/* ---------- waitlist form ---------- */
-
-const waitlistFormCss = {
-	position: 'relative' as const,
-	display: 'grid',
-	gap: '0.9rem',
-	width: 'min(100%, 640px)',
-	margin: '2rem auto 0',
-	textAlign: 'left' as const,
-}
-
-/*
- * Pill geometry shared by the container and its segments, so a focused
- * segment's tint nests concentrically inside the container's curve instead of
- * guessing at it.
- */
-const waitlistPillRadius = '999px'
-const waitlistStackRadius = '28px'
-const waitlistPillPadding = '0.3rem'
-
-/* One connected control: name · divider · email · button in a single pill. */
-const waitlistFieldsCss = {
-	display: 'grid',
-	gridTemplateColumns: 'minmax(0, 0.75fr) minmax(0, 1fr) auto',
-	alignItems: 'stretch',
-	backgroundColor: colors.surface,
-	border: `1.5px solid ${colors.border}`,
-	borderRadius: waitlistPillRadius,
-	padding: waitlistPillPadding,
-	transition: `border-color 160ms ${transitions.easeOut}, box-shadow 160ms ${transitions.easeOut}`,
-	'&:focus-within': {
-		borderColor: colors.primary,
-		boxShadow: `0 0 0 3px oklch(from ${colors.primary} l c h / 0.25)`,
-	},
-	'@media (max-width: 640px)': {
-		/* The pill relaxes into a stacked segmented control. */
-		gridTemplateColumns: '1fr',
-		borderRadius: waitlistStackRadius,
-		'& button': { width: '100%', marginTop: waitlistPillPadding },
-	},
-}
-
-const waitlistInputCss = {
-	font: `400 1rem/1.2 ${typography.fontFamilyBody}`,
-	color: colors.text,
-	backgroundColor: 'transparent',
-	border: 'none',
-	/*
-	 * Leading segment of the pill, so it takes the container's inner curve on
-	 * its outer edge and stays square where it meets the next segment. A full
-	 * `999px` capsule here read as a lozenge floating inside the pill once the
-	 * focus tint made the shape visible.
-	 */
-	borderRadius: `calc(${waitlistPillRadius} - ${waitlistPillPadding}) 0 0 calc(${waitlistPillRadius} - ${waitlistPillPadding})`,
-	padding: '0.7rem 1.1rem',
-	minWidth: 0,
-	'&::placeholder': { color: colors.textMuted, opacity: 1 },
-	/*
-	 * No background change on focus. Both segments are text inputs, so the
-	 * caret already shows which one has focus, and the container's
-	 * `:focus-within` ring shows the composite control is focused — together
-	 * that is the visible focus indicator. A tint on top of those read as a
-	 * lighter slab sitting inside the pill, most obviously in dark mode.
-	 */
-	'&:focus': { outline: 'none' },
-	'@media (max-width: 640px)': {
-		paddingBlock: '0.85rem',
-		/* Stacked: the leading segment now rounds along the top instead. */
-		borderRadius: `calc(${waitlistStackRadius} - ${waitlistPillPadding}) calc(${waitlistStackRadius} - ${waitlistPillPadding}) 0 0`,
-	},
-}
-
-const waitlistEmailInputCss = {
-	...waitlistInputCss,
-	borderLeft: `1px solid ${colors.border}`,
-	/* Middle segment: square on both sides, between the name and the button. */
-	borderRadius: 0,
-	'@media (max-width: 640px)': {
-		paddingBlock: '0.85rem',
-		borderLeft: 'none',
-		borderTop: `1px solid ${colors.border}`,
-		borderRadius: 0,
-	},
-}
-
-const formErrorCss = {
-	margin: 0,
-	fontSize: '0.95rem',
-	lineHeight: 1.5,
-	textAlign: 'center' as const,
-	color: colors.error,
-	[motionOk]: {
-		animation: 'success-in 250ms var(--ease-out) both',
-	},
-}
-
-const formSuccessCss = {
-	margin: 0,
-	fontSize: '0.95rem',
-	lineHeight: 1.5,
-	textAlign: 'center' as const,
-	color: colors.textMuted,
-	'& strong': { color: colors.primaryText },
-	[motionOk]: {
-		animation: 'success-in 250ms var(--ease-out) both',
-	},
-}
-
-const formResetCss = {
-	font: 'inherit',
-	background: 'none',
-	border: 'none',
-	padding: 0,
-	color: colors.primaryText,
-	textDecoration: 'underline',
-	textUnderlineOffset: '3px',
-	cursor: 'pointer',
-	'&:hover': { color: colors.text },
-}
-
-const honeypotCss = {
-	...visuallyHiddenCss,
-	left: '-10000px',
 }
