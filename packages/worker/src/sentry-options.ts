@@ -150,14 +150,6 @@ export function filterExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
 }
 
 /**
- * Offline / empty / session-unavailable remote connectors are caller-clearable
- * user state (reconnect the connector). MCP observability already skips them
- * via `isCallerFailure`; this `beforeSend` gate is the backstop for any other
- * capture path that still forwards the plain Error message.
- */
-
-
-/**
  * OAuth token-refresh caller state (no refresh token on the connection,
  * provider HTTP 4xx / invalid_grant, missing secrets). MCP observability
  * already skips them via `isCallerFailure`; this `beforeSend` gate is the

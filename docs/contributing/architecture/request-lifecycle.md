@@ -75,8 +75,8 @@ Requests are handled in this order:
      token package invocations
    - `POST /@{username}/webhooks/:packageKodyId/:webhookName/:urlSecret` —
      inbound package webhooks (see [Inbound webhooks](./webhooks.md))
-   - Retired `/@{username}/connectors/...` paths return `404` (remote connectors
-     were removed; use outbound MCP servers instead)
+   - Retired `/@{username}/connectors/...` paths return `404`. Use outbound
+     MCP servers (`kody.mcp[...]`) for home automation and similar tools.
 
 
 7. Static assets:

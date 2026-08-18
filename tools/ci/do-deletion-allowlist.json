@@ -15,6 +15,11 @@
 			"config": "packages/worker/wrangler.jsonc",
 			"tag": "v17",
 			"classes": ["AgentTurnRunner", "ChatAgent"]
+		},
+		{
+			"config": "packages/worker/wrangler.jsonc",
+			"tag": "v25",
+			"classes": ["RemoteConnectorSession"]
 		}
 	]
 }

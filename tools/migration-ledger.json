@@ -55,6 +55,10 @@
 		{
 			"filename": "0013-drop-repo-sessions.sql",
 			"sha256": "848ab0ea3e0c1dbf6644e9e2f89088896eed2e388418d723265a36143c202ed5"
+		},
+		{
+			"filename": "0014-drop-remote-connector-settings.sql",
+			"sha256": "5a170f05dffc793f94b01bffdbfb62eb11359ed54db768f5a121715317fa5536"
 		}
 	]
 }

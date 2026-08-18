@@ -305,31 +305,6 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		filterSentryEvent({ message: executorSandboxTimeoutMessagePrefix }),
 	).toBeNull()
 
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [
-					{
-						value:
-							'The connector "home" is not connected. Kody cannot use this connector until it reconnects. Ask the user to start or reconnect the connector and then try again.',
-					},
-				],
-			},
-		}),
-	).toBeNull()
-	expect(
-		filterSentryEvent({
-			exception: {
-				values: [
-					{
-						value:
-							'Remote capability "home:bond_shade_set_position" failed: timeout',
-					},
-				],
-			},
-		}),
-	).not.toBeNull()
-
 	// OAuth token-refresh caller state (KODY-CLOUDFLARE-4J): the trailing
 	// marker is the stable beforeSend match. One marked drop + unmarked keeps.
 	expect(

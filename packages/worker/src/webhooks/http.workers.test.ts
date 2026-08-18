@@ -93,10 +93,6 @@ async function ensureSchema(db: D1Database) {
 			)`,
 		)
 		.run()
-	await db
-		.prepare(
-		)
-		.run()
 }
 
 async function seedOwner() {
