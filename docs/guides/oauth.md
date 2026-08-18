@@ -46,11 +46,12 @@ with the operator's credentials. List the available built-in apps with
 retries with a secret placeholder — raw tokens never enter the sandbox.
 Reconnectable refresh failures dispatch `integration.auth.failed` to packages
 that subscribe; successful refreshes and `/connect/oauth` persists dispatch
-`integration.auth.succeeded` (see [package subscriptions](./package-subscriptions.md)). Use
-`refreshAccessToken` only for auth that cannot use an Authorization header
-(WebSockets, SDK constructors, query-param tokens); it still runs in-sandbox for
-user-owned apps and throws for built-ins. The rest of this guide applies to
-providers without a built-in app.
+`integration.auth.succeeded` (see
+[package subscriptions](./package-subscriptions.md)). Use `refreshAccessToken`
+only for auth that cannot use an Authorization header (WebSockets, SDK
+constructors, query-param tokens); it still runs in-sandbox for user-owned apps
+and throws for built-ins. The rest of this guide applies to providers without a
+built-in app.
 
 ## Redirect URI
 

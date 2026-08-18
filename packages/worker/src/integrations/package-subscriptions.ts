@@ -215,12 +215,13 @@ async function dispatchIntegrationAuthSubscriptionEvents(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const baseUrl = getAppBaseUrl({ env: input.env })
-	const { subscriptions, discoveryErrors } = await loadMatchingAuthSubscriptions({
-		env: input.env,
-		baseUrl,
-		userId: input.userId,
-		topic: input.topic,
-	})
+	const { subscriptions, discoveryErrors } =
+		await loadMatchingAuthSubscriptions({
+			env: input.env,
+			baseUrl,
+			userId: input.userId,
+			topic: input.topic,
+		})
 	const settled = await runWithDynamicWorkerEvaluationBudget(
 		async () =>
 			await Promise.allSettled(

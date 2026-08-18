@@ -7,10 +7,9 @@ summary:
   package_subscription_dispatch; follow metadata-first email, run.error.recorded
   activity notifiers, integration.auth.failed / integration.auth.succeeded
   reconnect notifiers, mcp.server.disconnected / mcp.server.reconnected
-  connection episodes,
-  consent-gated admin-only platform.feedback.submitted notification guidance,
-  and admin-only status.incident.opened / status.incident.resolved operator
-  telemetry.
+  connection episodes, consent-gated admin-only platform.feedback.submitted
+  notification guidance, and admin-only status.incident.opened /
+  status.incident.resolved operator telemetry.
 category: platform
 ---
 
@@ -562,8 +561,8 @@ type IntegrationAuthSucceededEvent = {
 }
 ```
 
-`source` is `refresh` for `refreshIntegrationTokens` and `oauth_connect` for
-the `/connect/oauth` persist path. `account_url` is built from the trusted
+`source` is `refresh` for `refreshIntegrationTokens` and `oauth_connect` for the
+`/connect/oauth` persist path. `account_url` is built from the trusted
 deployment origin and links to `/account/integrations/<name>`. The event
 deliberately omits token values, secret values, client secrets, and secret
 names.
