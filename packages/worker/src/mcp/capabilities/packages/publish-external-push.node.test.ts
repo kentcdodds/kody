@@ -742,18 +742,13 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
 		rebuildTarget,
 	])
-	mockModule.publishFromExternalRef
-		.mockResolvedValueOnce({
-			status: 'published',
-			previous_commit: 'commit-old',
-			published_commit: 'commit-new',
-			manifest: {},
-			checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		})
-		.mockResolvedValueOnce({
-			status: 'already_published',
-			published_commit: 'commit-new',
-		})
+	mockModule.publishFromExternalRef.mockResolvedValueOnce({
+		status: 'published',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-new',
+		manifest: {},
+		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+	})
 	mockModule.rebuildPublishedPackageArtifact
 		.mockRejectedValueOnce(
 			new Error('rebuild target failed', {
@@ -774,8 +769,8 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 			createContext(),
 		)
 
-	expect(recoveredAfterRebuildReset.status).toBe('already_published')
-	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(2)
+	expect(recoveredAfterRebuildReset.status).toBe('published')
+	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
 
 	// Deploy-time DO resets use "Durable Object reset because…" (no "was").
@@ -787,18 +782,13 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
 		rebuildTarget,
 	])
-	mockModule.publishFromExternalRef
-		.mockResolvedValueOnce({
-			status: 'published',
-			previous_commit: 'commit-old',
-			published_commit: 'commit-new',
-			manifest: {},
-			checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		})
-		.mockResolvedValueOnce({
-			status: 'already_published',
-			published_commit: 'commit-new',
-		})
+	mockModule.publishFromExternalRef.mockResolvedValueOnce({
+		status: 'published',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-new',
+		manifest: {},
+		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+	})
 	mockModule.rebuildPublishedPackageArtifact
 		.mockRejectedValueOnce(
 			new Error(
@@ -821,8 +811,8 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 			{ package_id: 'package-1' },
 			createContext(),
 		)
-	expect(recoveredAfterCodeUpdatedReset.status).toBe('already_published')
-	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(2)
+	expect(recoveredAfterCodeUpdatedReset.status).toBe('published')
+	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
 })

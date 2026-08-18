@@ -548,6 +548,19 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		exhaustedPublishRecovery,
 	)
 
+	const exhaustedArtifactRebuildRecovery = {
+		exception: {
+			values: [
+				{
+					value: `rebuildPublishedPackageArtifactsViaRepoSession could not recover after 3 transient Durable Object reset attempts: Package source publish succeeded, but bundle artifact rebuild failed for source "source-1" at commit "commit-1". Succeeded: none. Failed: ${durableObjectCodeUpdatedResetMessage} Re-run the publish capability to repair artifacts.`,
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(exhaustedArtifactRebuildRecovery)).toBe(
+		exhaustedArtifactRebuildRecovery,
+	)
+
 	const unreferencedDoStorageReset = {
 		exception: {
 			values: [

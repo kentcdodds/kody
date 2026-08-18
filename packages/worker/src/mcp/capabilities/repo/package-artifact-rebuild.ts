@@ -1,9 +1,14 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
-import { formatErrorCauseChain } from '@kody-internal/shared/error-message.ts'
+import {
+	errorCauseChainIncludes,
+	formatErrorCauseChain,
+	getErrorMessage,
+} from '@kody-internal/shared/error-message.ts'
 import { isPublishedPackageArtifactBuiltForCommit } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
 import { createIsolatedArtifactRebuildRunner } from '#worker/repo/isolated-artifact-rebuild.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { isDurableObjectIsolateResetMessage } from '#worker/sentry-options.ts'
 
 /**
  * Same-session rebuild RPCs hit one Durable Object, which serializes
@@ -13,6 +18,42 @@ import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
  * path uses the same bound so fan-out stays modest.
  */
 export const publishedPackageArtifactRebuildConcurrency = 2
+
+/**
+ * Deploy-time DO code resets (and other platform isolate resets) during
+ * staging or target rebuilds are transient. Rebuilds are idempotent
+ * (already-built targets are skipped), so a short bounded retry recovers
+ * without re-running publish. Matches package_publish_external_push delays.
+ */
+export const publishedPackageArtifactRebuildRetryDelaysMs = [100, 500] as const
+
+function isTransientDurableObjectResetError(error: unknown) {
+	return errorCauseChainIncludes(error, isDurableObjectIsolateResetMessage)
+}
+
+function logArtifactRebuildRetry(input: {
+	sourceId: string
+	publishedCommit: string
+	attempt: number
+	nextDelayMs: number
+	error: unknown
+}) {
+	console.warn(
+		JSON.stringify({
+			message:
+				'rebuildPublishedPackageArtifactsViaRepoSession transient Durable Object reset',
+			sourceId: input.sourceId,
+			publishedCommit: input.publishedCommit,
+			attempt: input.attempt,
+			nextDelayMs: input.nextDelayMs,
+			errorMessage: getErrorMessage(input.error),
+		}),
+	)
+}
+
+async function delay(ms: number) {
+	await new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 function describePackageArtifactTarget(
 	target: PublishedPackageArtifactBuildTarget,
@@ -182,7 +223,7 @@ async function rebuildPublishedPackageArtifactsOnSession(input: {
 	)
 }
 
-export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
+async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 	env: Env
 	rpcSessionId: string
 	repoSessionId?: string
@@ -308,5 +349,51 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 			failed,
 		}),
 		{ cause: failed[0]?.error },
+	)
+}
+
+export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
+	env: Env
+	rpcSessionId: string
+	repoSessionId?: string
+	sourceId: string
+	userId: string
+	publishedCommit: string
+	baseUrl: string
+}) {
+	const maxAttempts = publishedPackageArtifactRebuildRetryDelaysMs.length + 1
+	let lastTransientError: unknown = null
+	for (let attemptIndex = 0; attemptIndex < maxAttempts; attemptIndex += 1) {
+		const attempt = attemptIndex + 1
+		try {
+			await rebuildPublishedPackageArtifactsViaRepoSessionOnce(input)
+			return
+		} catch (error) {
+			if (!isTransientDurableObjectResetError(error)) {
+				throw error
+			}
+			lastTransientError = error
+			const willRetry =
+				attemptIndex < publishedPackageArtifactRebuildRetryDelaysMs.length
+			const nextDelayMs = willRetry
+				? (publishedPackageArtifactRebuildRetryDelaysMs[attemptIndex] ?? 0)
+				: 0
+			logArtifactRebuildRetry({
+				sourceId: input.sourceId,
+				publishedCommit: input.publishedCommit,
+				attempt,
+				nextDelayMs,
+				error,
+			})
+			if (!willRetry) {
+				break
+			}
+			await delay(nextDelayMs)
+		}
+	}
+	throw new Error(
+		`rebuildPublishedPackageArtifactsViaRepoSession could not recover after ${maxAttempts} transient Durable Object reset attempts: ${getErrorMessage(
+			lastTransientError,
+		)}`,
 	)
 }

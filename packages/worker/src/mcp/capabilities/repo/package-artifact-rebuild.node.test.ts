@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { publishedPackageArtifactRebuildConcurrency } from './package-artifact-rebuild.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -358,4 +359,127 @@ test('falls back to per-target session rebuild when isolated runner bindings are
 
 	expect(maxInFlight).toBe(2)
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(3)
+})
+
+test('recovers from transient Durable Object resets during staging', async () => {
+	consoleWarn.mockImplementation(() => {})
+	resetMocks()
+
+	const run = vi.fn(async () => ({
+		ok: true,
+		message: 'rebuilt',
+	}))
+	const touch = vi.fn(async () => undefined)
+	const discard = vi.fn(async () => undefined)
+	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
+		touch,
+		run,
+		discard,
+	})
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
+		sampleTargets[0],
+	])
+	mockModule.stagePublishedPackageArtifactRebuild
+		.mockRejectedValueOnce(
+			new Error('Durable Object reset because its code was updated.'),
+		)
+		.mockResolvedValueOnce({
+			stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-retry',
+		})
+
+	await rebuildPublishedPackageArtifactsViaRepoSession({
+		env: {
+			REPO_SESSION: {},
+			BUNDLE_ARTIFACTS_KV: {},
+		} as unknown as Env,
+		rpcSessionId: 'session-1',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		publishedCommit: 'commit-1',
+		baseUrl: 'https://kody.test',
+	})
+
+	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
+		2,
+	)
+	expect(run).toHaveBeenCalledTimes(1)
+	expect(discard).toHaveBeenCalledWith(
+		'repo-artifact-rebuild-staging:v1:user-1:stage-retry',
+	)
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
+	expect(String(consoleWarn.mock.calls[0]?.[0])).toContain(
+		'rebuildPublishedPackageArtifactsViaRepoSession transient Durable Object reset',
+	)
+})
+
+test('exhausts transient Durable Object reset retries during staging', async () => {
+	consoleWarn.mockImplementation(() => {})
+	resetMocks()
+
+	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
+		touch: vi.fn(),
+		run: vi.fn(),
+		discard: vi.fn(),
+	})
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
+		sampleTargets[0],
+	])
+	mockModule.stagePublishedPackageArtifactRebuild.mockRejectedValue(
+		new Error('Durable Object reset because its code was updated.'),
+	)
+
+	await expect(
+		rebuildPublishedPackageArtifactsViaRepoSession({
+			env: {
+				REPO_SESSION: {},
+				BUNDLE_ARTIFACTS_KV: {},
+			} as unknown as Env,
+			rpcSessionId: 'session-1',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			publishedCommit: 'commit-1',
+			baseUrl: 'https://kody.test',
+		}),
+	).rejects.toThrow(
+		/could not recover after 3 transient Durable Object reset attempts/,
+	)
+
+	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
+		3,
+	)
+	expect(consoleWarn).toHaveBeenCalledTimes(3)
+})
+
+test('does not retry non-transient rebuild failures', async () => {
+	resetMocks()
+
+	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
+		touch: vi.fn(),
+		run: vi.fn(),
+		discard: vi.fn(),
+	})
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
+		sampleTargets[0],
+	])
+	mockModule.stagePublishedPackageArtifactRebuild.mockRejectedValue(
+		new Error('staging kv unavailable'),
+	)
+
+	await expect(
+		rebuildPublishedPackageArtifactsViaRepoSession({
+			env: {
+				REPO_SESSION: {},
+				BUNDLE_ARTIFACTS_KV: {},
+			} as unknown as Env,
+			rpcSessionId: 'session-1',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			publishedCommit: 'commit-1',
+			baseUrl: 'https://kody.test',
+		}),
+	).rejects.toThrow(/bundle artifact rebuild failed/i)
+
+	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
+		1,
+	)
 })
