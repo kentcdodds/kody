@@ -1,0 +1,42 @@
+name: ⏱ Weekly site perf
+
+on:
+  schedule:
+    - cron: '17 14 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    name: ⏱ Measure kody.codes
+    timeout-minutes: 10
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+
+      - name: 📏 Collect
+        run: >
+          node tools/site-perf/collect.ts --url https://kody.codes/ --json
+          --exit-zero > site-perf-report.json
+
+      - name: 📎 Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-perf-report
+          path: site-perf-report.json
+
+      - name: 🎫 Upsert tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tools/site-perf/upsert-github-issue.ts site-perf-report.json

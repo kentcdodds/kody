@@ -61,6 +61,7 @@
     "preview": "nx run worker:build-client && npm run migrate:local && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local",
     "preview:e2e": "node --env-file=packages/worker/.env tools/prepare-e2e-env.ts && nx run worker:build-client && npm run migrate:e2e && node --env-file=packages/worker/.env ./wrangler-env.ts dev --local --persist-to .wrangler/state/e2e",
     "preview:manual-test": "node tools/preview-manual-test.ts",
+    "site-perf": "node tools/site-perf/collect.ts",
     "generate-types": "node --env-file=packages/worker/.env ./wrangler-env.ts types ./packages/worker/worker-configuration.d.ts",
     "typecheck": "nx run worker:typecheck && tsc --noEmit -p packages/backup-control-plane/tsconfig.json && tsc --noEmit -p packages/status/tsconfig.json && tsc --noEmit -p packages/jobs-worker/tsconfig.json && tsc --noEmit -p packages/nx-cache/tsconfig.json",
     "test": "nx run worker:test",
