@@ -138,7 +138,10 @@ regex engine, no Oniguruma WASM) with a fixed language set and GitHub light/dark
 dual themes. Tokens become Remix JSX text and inline styles, never `innerHTML`,
 so untrusted README fences stay inside the markdown safety model. Theme
 switching follows `:root[data-theme]` (and `prefers-color-scheme` when no theme
-is set) via CSS variables in `packages/worker/public/styles.css`.
+is set) via CSS variables in `packages/worker/public/styles.css`. The browser
+loads the grammars through a dynamic `syntax-highlight-core` chunk: SSR,
+hydration, and SPA preload wait for it on those areas, and the marketing
+entry's static closure does not include it.
 
 ## Client-side navigation flow
 

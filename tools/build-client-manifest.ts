@@ -43,6 +43,23 @@ export const lazyAreaNames = [
 	'onboarding-area',
 ]
 
+/**
+ * Lazy areas that render Shiki fences. The highlighter is a dynamic chunk
+ * (`syntax-highlight-core-*.js`); attach it to these areas so code-bearing
+ * routes modulepreload it, and keep it out of the entry closure. Keep in
+ * sync with `syntaxHighlightAreaNames` in
+ * `packages/worker/client/lazy-route.tsx`.
+ */
+export const highlightAreaNames = [
+	'account-area',
+	'blog-area',
+	'community-area',
+	'onboarding-area',
+] as const
+
+const highlightAreaNameSet = new Set<string>(highlightAreaNames)
+const highlightChunkName = 'syntax-highlight-core'
+
 function staticImportClosure(
 	metafile: ClientMetafile,
 	startOutputPath: string,
@@ -95,6 +112,28 @@ export function buildClientPreloadManifest(
 	const entryHrefs = entryClosure.map(toHref)
 	const entrySet = new Set(entryClosure)
 
+	const highlightOutput = outputPaths.find((outputPath) => {
+		const base = path.posix.basename(outputPath.split(path.sep).join('/'))
+		return base.startsWith(`${highlightChunkName}-`) && base.endsWith('.js')
+	})
+	if (!highlightOutput) {
+		throw new Error(
+			`Dynamic highlight chunk "${highlightChunkName}" not found in esbuild metafile outputs`,
+		)
+	}
+	if (entrySet.has(highlightOutput)) {
+		throw new Error(
+			`Highlight chunk "${highlightChunkName}" is in the entry static closure; it must stay a dynamic import`,
+		)
+	}
+	const highlightHrefs = [
+		highlightOutput,
+		...staticImportClosure(metafile, highlightOutput).filter(
+			(outputPath) => !entrySet.has(outputPath),
+		),
+	].map(toHref)
+	const highlightHrefSet = new Set(highlightHrefs)
+
 	const areas: Record<string, Array<string>> = {}
 	for (const areaName of lazyAreaNames) {
 		const areaOutput = outputPaths.find((outputPath) => {
@@ -114,7 +153,12 @@ export function buildClientPreloadManifest(
 				(outputPath) => !entrySet.has(outputPath),
 			),
 		].map(toHref)
-		areas[areaName] = areaHrefs
+		areas[areaName] = highlightAreaNameSet.has(areaName)
+			? [
+					...areaHrefs.filter((href) => !highlightHrefSet.has(href)),
+					...highlightHrefs,
+				]
+			: areaHrefs
 	}
 
 	return { entry: entryHrefs, areas }

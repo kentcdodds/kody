@@ -1,12 +1,17 @@
 import { jsx } from 'remix/ui/jsx-runtime'
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
-import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
+import { renderHighlightedCode as renderHighlightedCodeCore } from '#client/syntax-highlight-core.tsx'
+import {
+	loadSyntaxHighlight,
+	renderHighlightedCode,
+	resetSyntaxHighlightLoadForTests,
+} from '#client/syntax-highlight.tsx'
 
 test('highlights known languages with dual-theme token styles and escapes content', async () => {
 	const tsHtml = await renderToString(
 		jsx('div', {
-			children: renderHighlightedCode('const secret = "<script>"', 'ts'),
+			children: renderHighlightedCodeCore('const secret = "<script>"', 'ts'),
 		}),
 	)
 	expect(tsHtml).toContain('class="shiki')
@@ -17,7 +22,7 @@ test('highlights known languages with dual-theme token styles and escapes conten
 
 	const jsonHtml = await renderToString(
 		jsx('div', {
-			children: renderHighlightedCode('{"ok": true}', 'json'),
+			children: renderHighlightedCodeCore('{"ok": true}', 'json'),
 		}),
 	)
 	expect(jsonHtml).toContain('"ok"')
@@ -25,7 +30,7 @@ test('highlights known languages with dual-theme token styles and escapes conten
 
 	const jsAliasHtml = await renderToString(
 		jsx('div', {
-			children: renderHighlightedCode('const x = 1', 'js'),
+			children: renderHighlightedCodeCore('const x = 1', 'js'),
 		}),
 	)
 	expect(jsAliasHtml).toContain('class="shiki')
@@ -33,10 +38,31 @@ test('highlights known languages with dual-theme token styles and escapes conten
 
 	const unknownHtml = await renderToString(
 		jsx('div', {
-			children: renderHighlightedCode('SELECT 1', 'not-a-real-lang'),
+			children: renderHighlightedCodeCore('SELECT 1', 'not-a-real-lang'),
 		}),
 	)
 	// Unknown langs fall back to plaintext highlighting, still escaped.
 	expect(unknownHtml).toContain('class="shiki')
 	expect(unknownHtml).toContain('SELECT 1')
+})
+
+test('public API falls back to plaintext until the core chunk loads', async () => {
+	resetSyntaxHighlightLoadForTests()
+	const pendingHtml = await renderToString(
+		jsx('div', {
+			children: renderHighlightedCode('const x = 1', 'ts'),
+		}),
+	)
+	expect(pendingHtml).toContain('class="shiki')
+	expect(pendingHtml).toContain('const x = 1')
+	expect(pendingHtml).not.toContain('--shiki-dark:')
+
+	await loadSyntaxHighlight()
+	const loadedHtml = await renderToString(
+		jsx('div', {
+			children: renderHighlightedCode('const x = 1', 'ts'),
+		}),
+	)
+	expect(loadedHtml).toContain('--shiki-dark:')
+	expect(loadedHtml).toContain('const')
 })

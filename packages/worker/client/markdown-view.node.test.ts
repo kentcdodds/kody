@@ -6,8 +6,10 @@ import {
 	getSafeMarkdownLinkHref,
 	renderMarkdownNodes,
 } from '#client/markdown-view.tsx'
+import { loadSyntaxHighlight } from '#client/syntax-highlight.tsx'
 
 async function renderMarkdown(markdown: string) {
+	await loadSyntaxHighlight()
 	return renderToString(jsx(MarkdownView, { markdown }))
 }
 

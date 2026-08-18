@@ -26,6 +26,9 @@ same wrapper.
 
 Highlighting quality matches VS Code grammars and follows the site theme without
 client JS. The Worker and lazy client chunks pay for the bundled grammars;
-adding a language is an explicit import. WASM-based Oniguruma stays out of this
-path. Revisit if bundle size becomes a problem or if a future Shiki Workers
-preset is smaller for the same language set.
+adding a language is an explicit import. The browser loads those grammars only
+through a dynamic `syntax-highlight-core` chunk, preloaded on code-bearing
+route areas (account, blog/guides, community, onboarding) — not on the
+marketing entry. WASM-based Oniguruma stays out of this path. Revisit if
+bundle size becomes a problem or if a future Shiki Workers preset is smaller
+for the same language set.

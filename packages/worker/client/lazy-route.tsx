@@ -6,6 +6,7 @@ import { routes } from '#universal/routes.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
 import { type RouteLoader } from './route-loader.ts'
 import { createSpinDelay } from './spin-delay.ts'
+import { loadSyntaxHighlight } from './syntax-highlight.tsx'
 import type * as accountAreaExports from './routes/account-area.ts'
 import type * as adminAreaExports from './routes/admin-area.ts'
 import type * as blogAreaExports from './routes/blog-area.ts'
@@ -330,12 +331,29 @@ export function listenToLazyRouteLoads(
  * No-op for eager routes. Call before SSR stream, before hydration
  * `app.ready()`, and alongside SPA navigation loaders.
  */
+/**
+ * Lazy areas that statically render Shiki fences. Keep in sync with
+ * `highlightAreaNames` in `tools/build-client-manifest.ts`.
+ */
+export const syntaxHighlightAreaNames = [
+	'account-area',
+	'blog-area',
+	'community-area',
+	'onboarding-area',
+] as const
+
+const syntaxHighlightAreaNameSet = new Set<string>(syntaxHighlightAreaNames)
+
 export async function preloadClientRouteModules(
 	pathnameWithSearch: string,
 ): Promise<void> {
 	const url = new URL(pathnameWithSearch, clientRouteOrigin)
 	const match = preloadMatcher.match(url)
 	if (!match) return
+	if (syntaxHighlightAreaNameSet.has(match.data.name)) {
+		await Promise.all([match.data.load(), loadSyntaxHighlight()])
+		return
+	}
 	await match.data.load()
 }
 
