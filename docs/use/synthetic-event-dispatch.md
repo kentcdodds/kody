@@ -113,7 +113,7 @@ Example minimal `integration.auth.failed` fixture:
 
 ```json
 {
-	"kody_id": "integration-auth-notifier",
+	"kody_id": "event-notifier",
 	"topic": "integration.auth.failed",
 	"params": {
 		"event": "integration.auth.failed",
