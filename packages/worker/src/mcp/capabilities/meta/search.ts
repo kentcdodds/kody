@@ -75,7 +75,7 @@ export const searchCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(
-					'Optional capability domain id (for example "email" or "remote:home"). With "query", ranks only that domain\'s capabilities; without "query", lists the domain\'s capabilities.',
+					'Optional capability domain id (for example "email" or "mcp:linear"). With "query", ranks only that domain\'s capabilities; without "query", lists the domain\'s capabilities.',
 				),
 			limit: z
 				.number()

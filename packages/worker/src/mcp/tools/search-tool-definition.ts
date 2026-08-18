@@ -23,7 +23,7 @@ If nothing useful returns, rephrase or call \`meta_list_capabilities\`; \`entity
 does not fix an empty ranked list.
 
 **domain** — optional capability domain id (e.g. \`email\`, \`jobs\`,
-\`remote:home\`, \`mcp:linear\`). With \`query\`, ranks only that domain's
+\`mcp:linear\`). With \`query\`, ranks only that domain's
 capabilities. Without \`query\`, lists the domain's capabilities in curated
 order. Domain ids appear on every capability hit and in domain summaries.
 
@@ -36,7 +36,7 @@ without competing semantic matches. Hidden exact queries require
 | \`integration\` | \`package\` | \`secret\`), or an array of 1–10 refs to batch
 related lookups in one call. Capability detail includes an exact \`execute\`
 module snippet plus TypeScript call-shape definitions by default. Synthesized
-provider capabilities (OpenAPI, MCP server, remote connector) also list related
+provider capabilities (OpenAPI, MCP server) also list related
 operations from the same provider. Integration detail may include a small set of
 same-provider package suggestions (user packages first, else trusted-first
 community listings). Package ids may be UUIDs or kody ids, and hidden packages
@@ -88,7 +88,7 @@ export const searchToolInputSchema = {
 		.min(1)
 		.optional()
 		.describe(
-			'Optional capability domain id (for example "email" or "remote:home"). With "query", ranks only that domain\'s capabilities; without "query", lists the domain\'s capabilities.',
+			'Optional capability domain id (for example "email" or "mcp:linear"). With "query", ranks only that domain\'s capabilities; without "query", lists the domain\'s capabilities.',
 		),
 	limit: z
 		.number()

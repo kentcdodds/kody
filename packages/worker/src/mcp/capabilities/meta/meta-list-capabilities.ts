@@ -75,7 +75,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 	{
 		name: 'meta_list_capabilities',
 		description:
-			'List the current runtime capability registry, including dynamic capabilities from connected remote connectors. Use this when search seems incomplete and you need exact capability names and TypeScript call shapes.',
+			'List the current runtime capability registry, including dynamic capabilities from connected MCP servers and OpenAPI bindings. Use this when search seems incomplete and you need exact capability names and TypeScript call shapes.',
 		keywords: [
 			'capabilities',
 			'list',

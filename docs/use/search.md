@@ -22,7 +22,7 @@ Pass a **`query`** string that describes what you want to do. Results are
 ranked; order in the response matters. Query responses are intentionally
 compact: the markdown response is a short list of matches with the result type,
 title, one-line summary, and entity reference when applicable. Capability hits
-include their **domain id** (for example `email`, `jobs`, `remote:home`) so a
+include their **domain id** (for example `email`, `jobs`, `mcp:linear`) so a
 follow-up search can scope to that domain. The top few capability hits also
 include a compact inlined call shape (runtime accessor plus a
 whitespace-collapsed input type, truncated when long) so you can often call from
