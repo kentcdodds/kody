@@ -82,7 +82,6 @@ the operator machine.
 The pass:
 
 1. Keyset-pages `secret_entries.encrypted_value`,
-   `remote_connector_settings.encrypted_shared_secret`, and
    `platform_oauth_apps.client_secret_encrypted` where the payload is not
    `v2.%`.
 2. Decrypts via the existing dual-read, re-encrypts as v2 with

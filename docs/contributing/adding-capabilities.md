@@ -55,24 +55,20 @@ Authoring flow:
 4. **`registry.ts`** — memoizes `buildCapabilityRegistry(builtinDomains)` via
    **`getStaticRegistry()`** on first use per isolate, providing access to
    builtin capabilities, handlers, tool descriptors, and domain metadata. At
-   request time, **`getCapabilityRegistryForContext()`** merges remote
-   connectors, MCP client servers, and OpenAPI bindings, then applies caller
-   role/permission/feature-flag filtering for search and execute.
+   request time, **`getCapabilityRegistryForContext()`** merges MCP client
+   servers and OpenAPI bindings, then applies caller role/permission/feature-flag
+   filtering for search and execute.
 
 To merge extra domains later (e.g. plugins), the seam is:
 `buildCapabilityRegistry([...builtinDomains, ...extraDomains])` with real
 `Capability` handlers (typical Workers model: snapshot at deploy).
 
-**Remote connectors:** at runtime, `getCapabilityRegistryForContext` also merges
-domains synthesized from outbound WebSocket connectors (see
-[`architecture/remote-connectors.md`](./architecture/remote-connectors.md)).
-Those domains are driven by MCP **`remoteConnectors`** rather than by editing
-`builtinDomains` in-repo.
-
-**MCP client servers:** the same runtime merge also synthesizes `mcp:<server>`
-domains from the user's enabled MCP servers (see
+**MCP client servers:** at runtime, `getCapabilityRegistryForContext` synthesizes
+`mcp:<server>` domains from the user's enabled MCP servers (see
 [`architecture/mcp-client-servers.md`](./architecture/mcp-client-servers.md)),
 driven by the `mcp_server_settings` D1 table and per-user hub snapshots.
+Home automation and similar outbound tools are ordinary MCP servers
+(`kody.mcp["home"]`), not a separate product surface.
 
 **OpenAPI bindings:** the same runtime merge also synthesizes `openapi:<name>`
 domains from the user's curated OpenAPI provider bindings (see
@@ -376,7 +372,7 @@ domain when you introduce a new system boundary or ownership area (e.g.
 
 1. Add a new key to `capabilityDomainNames` in `domain-metadata.ts` (this
    extends the `BuiltinCapabilityDomain` union; `CapabilityDomain` itself is a
-   plain `string` so runtime remote-connector domains stay valid).
+   plain `string` so runtime MCP/OpenAPI domains stay valid).
 2. Add `packages/worker/src/mcp/capabilities/<name>/domain.ts`, capability
    files, and direct imports from those files in `domain.ts`.
 3. Append the new domain to the `builtinDomains` array in `builtin-domains.ts`.
@@ -537,7 +533,7 @@ Use filename suffixes to choose the Vitest project:
 ## Compatibility and versioning policy
 
 Capability names, input field names, output field names, domain ids, and
-remote-connector synthesized names are compatibility contracts once real users
+MCP/OpenAPI synthesized names are compatibility contracts once real users
 can reference them. Treat every change as if it might affect saved user code.
 This policy is for the post-cleanup, pre-open-signup line in the sand; do not
 add alias/deprecation machinery for the current Kent-only cleanup.
@@ -551,12 +547,12 @@ add alias/deprecation machinery for the current Kent-only cleanup.
   cleanup.
 - Raw JSON Schema inputs are an escape hatch. If a capability cannot use Zod,
   the handler must validate the args explicitly before reading them.
-- Remote connector capability entity ids use `remote:<name>:<tool>` (for example
-  `remote:home:set_pin`). In execute/runtime code, remote capabilities are not
-  flat functions. Use `kody.remote["<name>"].<tool>(input)`, for example
-  `kody.remote["home"].set_pin({ pin })`.
-- Remote connector descriptions, keywords, schemas, and annotations cross a
-  trust boundary from the connector into Kody search and execute. Keep them
-  concise, non-secret, and stable; Kody records connector provenance on
+- MCP server capability entity ids use `mcp:<name>:<tool>` (for example
+  `mcp:home:set_pin`). In execute/runtime code, MCP tools are not
+  flat functions. Use `kody.mcp["<name>"].<tool>(input)`, for example
+  `kody.mcp["home"].set_pin({ pin })`.
+- MCP server descriptions, keywords, schemas, and annotations cross a
+  trust boundary from the remote server into Kody search and execute. Keep them
+  concise, non-secret, and stable; Kody records MCP server provenance on
   synthesized capability metadata so hosts and logs can distinguish built-ins
-  from connector-provided actions.
+  from server-provided actions.

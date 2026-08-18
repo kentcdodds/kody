@@ -426,7 +426,7 @@ import init/ingest etag. Without that prelude, drills fail with errors like
 
 Disable ingress / put the app in maintenance before execute. After restore:
 reindex Vectorize, re-arm jobs/alarms from D1, recreate queues from Wrangler
-config, and expect users to reauthorize OAuth and remote connectors.
+config, and expect users to reauthorize OAuth and reconnect MCP servers.
 
 ### Durable Object point-in-time recovery
 

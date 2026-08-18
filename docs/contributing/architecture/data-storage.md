@@ -8,7 +8,7 @@ Kody is multi-user with strict per-user isolation. Every user-owned storage
 layer described below is scoped by `user_id` (D1 columns, Vectorize metadata, KV
 key prefixes, Durable Object names), and every owner read/write path takes a
 `userId` argument. Two users with the same logical identifier (for example the
-same `kind`/`instanceId` pair on a remote connector, the same package id, or the
+same MCP server name, the same package id, or the
 same storage id) land on different durable objects and different rows. Any new
 persistence layer added to the project must follow the same convention;
 user-scoped tests should exercise both the "happy" path and a cross-user denial
@@ -78,7 +78,7 @@ Deletion must cover these user-owned surfaces:
   migrations to SQLite and fails if a user-owned schema column lacks schema
   coverage in the runtime target list or if that list references a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
-  `RepoSessionIndex`, `RemoteConnectorSession`, `PackageRealtimeSession`,
+  `RepoSessionIndex`, `PackageRealtimeSession`,
   `PackageServiceInstance`, `McpClientHub`, `RunLog`, `UserMeter`,
   `StripePlanRefresh`, and `Mailbox` are purged through account-deletion RPCs
   after their identifiers are collected (`RunLog`, `UserMeter`,
@@ -241,8 +241,6 @@ Durable Object export behavior:
   attempts without blocking other expired messages; they are likewise excluded
   from export/counts and removed with message or mailbox purge. See
   [Mailbox](#durable-objects-mailbox).
-- `RemoteConnectorSession` exposes persisted connector metadata and tool
-  descriptors through an export RPC.
 - `PackageServiceInstance` uses its status RPC as the stable persisted service
   state summary.
 - `MCP`, `RepoSession`, `PackageRealtimeSession`, and `McpClientHub` remain
@@ -902,7 +900,7 @@ The Durable Objects whose state is intrinsically owned by one user are named so
 that two different users always resolve to two different object ids. Builders
 live in `packages/worker/src/user-scoped-durable-object-name.ts` (JSON tuples
 via `durableObjectNameFromParts`); domain helpers such as
-`userScopedConnectorSessionKey` delegate to that module.
+`durableObjectNameFromParts` delegate to that module.
 
 - `JobManager` — `jobManagerDurableObjectName(userId)` → `idFromName(userId)`.
 - `RunLog` — `runLogDurableObjectName(userId)` → `idFromName(userId)`. One
@@ -930,15 +928,6 @@ via `durableObjectNameFromParts`); domain helpers such as
   `packageRealtimeSessionDurableObjectName({ userId, packageId })`.
 - `PackageServiceInstance` —
   `packageServiceInstanceDurableObjectName({ userId, packageId, serviceName })`.
-- `RemoteConnectorSession` —
-  `userScopedConnectorSessionKey({ userId, instanceId })`, where `instanceId` is
-  the explicit user-chosen connector name (globally unique per user). Connectors
-  must connect through the username-scoped ingress URL
-  `/@{username}/connectors/{connectorName}`. Renaming a connector changes this
-  DO id; the old live session snapshot can be orphaned, but reconnecting
-  rebuilds it from settings. The DO carries the ingress user id forward via
-  headers + websocket attachment and verifies the shared secret against that
-  user's row only.
 - `RepoSessionIndex` — `repoSessionIndexDurableObjectName(userId)` keyed by
   untrimmed `userId` (like RunLog / UserMeter / Mailbox). Authority for the
   per-user session catalog: rows, active counts, conversation resume, export,
@@ -998,7 +987,6 @@ and are bound cross-script from main — see
 - `REPO_SESSION_BLOBS` (R2, ephemeral RepoSession Workspace spill; not a DR
   canonical store)
 - `MCP_OBJECT` (Durable Objects)
-- `REMOTE_CONNECTOR_SESSION` (Durable Objects)
 - `RUN_LOG` (Durable Objects; per-user run records — see
   [Run records](./run-records.md); class hosted on the runtime worker)
 - `USER_METER` (Durable Objects; per-user daily entitlement counters — see
@@ -1267,8 +1255,8 @@ on write unless a migration backfills existing rows.
 or tuple layouts creates new objects and strands existing object storage. All
 builders are centralized in
 `packages/worker/src/user-scoped-durable-object-name.ts` (plus
-`userScopedConnectorSessionKey` in
-`packages/worker/src/remote-connector/connector-session-key.ts`, which delegates
+`durableObjectNameFromParts` in
+user-scoped Durable Object naming helpers, which
 to `durableObjectNameFromParts`).
 
 - `JobManager`: `idFromName(userId)` (no trim).
@@ -1288,8 +1276,6 @@ to `durableObjectNameFromParts`).
 - `PackageRealtimeSession`: `idFromName(JSON.stringify([userId, packageId]))`.
 - `PackageServiceInstance`:
   `idFromName(JSON.stringify([userId, packageId, serviceName]))`.
-- `RemoteConnectorSession`:
-  `idFromName(JSON.stringify([userId.trim(), normalizedInstanceId]))`.
 - `MCP`: session-keyed by the MCP SDK rather than by user id; OAuth caller
   context is the request-time ownership boundary and `mcp_agent_sessions`
   provides deletion-only enumeration by stable user id.

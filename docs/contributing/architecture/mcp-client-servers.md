@@ -3,7 +3,7 @@
 Kody can act as an **MCP client** to remote MCP servers a user adds. Tools
 discovered on those servers become synthesized capability domains callable from
 execute via `kody.mcp["<server-name>"].<tool>(input)`. This is the inverse of
-the `/mcp` endpoint (where Kody is the server) and complements remote connectors
+the `/mcp` endpoint (where Kody is the server) and complements MCP servers
 (which dial in to Kody over WebSockets): MCP client servers are **remote-only**
 — Kody dials out over HTTP using the Agents SDK `MCPClientManager`.
 
@@ -86,8 +86,8 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   (`packages/worker/src/mcp/capabilities/mcp-server/index.ts`) creates a
   `mcp:<server-name>` domain with a capability per discovered tool
   (`mcp:<server-name>:<tool>`), marked `source: 'mcp-server'`.
-- Execute: the `kody.mcp` proxy mirrors `kody.remote` — tools are called as
-  `kody.mcp["<server-name>"].<tool>(input)` and are never exposed as flat
+- Execute: the `kody.mcp` proxy exposes tools as
+  `kody.mcp["<server-name>"].<tool>(input)` and never as flat
   `kody.*` functions. Search capability detail returns the exact accessor.
 - Tool calls flow worker → hub DO `callTool` → `MCPClientManager.callTool` →
   remote server. At the synthesized capability boundary, results are wrapped
@@ -117,6 +117,6 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
 
 ## Related docs
 
-- [Remote connectors](./remote-connectors.md) — the inbound-WebSocket
-  counterpart with the same naming pattern (`kody.remote[...]`).
+- [OpenAPI provider bindings](./openapi-bindings.md) — curated HTTP provider
+  counterpart with the same naming pattern (`kody.openapi[...]`).
 - [Data storage](./data-storage.md) — D1 vs Durable Object storage split.

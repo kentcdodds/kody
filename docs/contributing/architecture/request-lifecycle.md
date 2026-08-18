@@ -75,23 +75,19 @@ Requests are handled in this order:
      token package invocations
    - `POST /@{username}/webhooks/:packageKodyId/:webhookName/:urlSecret` —
      inbound package webhooks (see [Inbound webhooks](./webhooks.md))
-7. Remote connector session endpoints (internal-only Worker routes that proxy
-   WebSocket upgrades to the remote connector session Durable Object;
-   non-upgrade requests get a 404 — JSON-RPC helper access uses Durable Object
-   RPC methods, not HTTP routes):
-   - `/@{username}/connectors/:instanceId...` — username + connector name
+   - Retired `/@{username}/connectors/...` paths return `404` (remote connectors
+     were removed; use outbound MCP servers instead)
 
-   See [Remote connectors](./remote-connectors.md).
 
-8. Static assets:
+7. Static assets:
    - Served from `ASSETS` for `GET` and `HEAD` when available
    - Matching files under `packages/worker/public/` are asset-first at the edge
      (they do not enter this Worker list). That includes OpenAI Apps domain
      verification at `/.well-known/openai-apps-challenge`.
-9. Hosted package apps served inline on the app origin
+8. Hosted package apps served inline on the app origin
    (`/@{username}/packages/*`), only in confirmed non-production runtimes when
    `PACKAGE_APP_BASE_URL` is unset.
-10. App server routes:
+9. App server routes:
     - Everything else is handled by `packages/worker/src/app/handler.ts`
 
 ## Package service runtime
@@ -258,16 +254,14 @@ The **MCP** (`MCP` / `MCP_OBJECT`) Durable Object is wrapped with
 `packages/worker/src/mcp/index.ts`) because it runs in a separate isolate from
 the top-level Worker.
 
-The remote connector flow adds one more Durable Object:
+The MCP server flow adds one more Durable Object:
 
-- The remote connector session Durable Object terminates outbound websocket
-  connections from connector processes and proxies JSON-RPC/MCP requests over
-  those sockets.
+- The MCP client hub Durable Object terminates outbound websocket connections to
+  user-configured MCP servers and proxies JSON-RPC/MCP requests over those
+  sockets.
 
-The runtime capability registry **merges** synthesized domains from **remote
-connectors** listed in MCP caller context (`remoteConnectors`), enabled **MCP
-client servers**, and user **OpenAPI provider bindings**. See
-[Remote connectors](./remote-connectors.md),
+The runtime capability registry **merges** synthesized domains from enabled
+**MCP client servers** and user **OpenAPI provider bindings**. See
 [MCP client servers](./mcp-client-servers.md), and
 [OpenAPI provider bindings](./openapi-bindings.md).
 

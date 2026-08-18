@@ -172,11 +172,11 @@ in the Worker `fetch` handler:
   package code. `/` redirects to the app origin. Legacy path-based URLs
   (`/@{username}/packages/*`) redirect (`302`/`307`) to the owning user's
   subdomain. Everything else — including `/account/*`, `/login`, `/mcp`, and the
-  `/@{username}/api/package-invocations/*`, `/connectors/*`, `/webhooks/*`
-  machine APIs — is `404`. Those APIs stay on the app origin on purpose: they
-  are authenticated by their own bearer tokens or URL secrets, they are never
-  called by package browser code, and hosting them on the package-app domain
-  would only widen its surface.
+  `/@{username}/api/package-invocations/*` and `/webhooks/*` machine APIs — is
+  `404`. Those APIs stay on the app origin on purpose: they are authenticated by
+  their own bearer tokens or URL secrets, they are never called by package
+  browser code, and hosting them on the package-app domain would only widen its
+  surface. Retired `/@{username}/connectors/*` paths also 404.
 - **Per-user package-app subdomain** (`{username}.kody.run`, and dual-served
   `{username}.kodyapps.dev`): serves only `/packages/{kodyId}/*` for that
   hostname's username label. `/` redirects to the app origin; every other path
@@ -356,18 +356,12 @@ consequence is that **brute-forcing or replaying tokens against `/mcp` does not
 appear in the audit log**; flood control for anonymous traffic belongs at the
 edge (Cloudflare rate limiting / WAF), not in application writes.
 
-## Public connector routes are WebSocket-only
+## Retired connector routes
 
-The Worker entrypoint (`packages/worker/src/index.ts`) only forwards user-scoped
-connector route requests (`/@{username}/connectors/{kind}/{instanceId}`) when
-the request carries a `WebSocket` upgrade header. Non-upgrade HTTP requests and
-unmatched `/connectors/*` paths are rejected with `404` before reaching static
-assets or the Durable Object.
-
-As a second layer, the remote connector session Durable Object `fetch()` handler
-rejects all non-WebSocket requests with `404`. Worker-internal callers use
-Durable Object RPC methods (`getSnapshot()`, `rpcListTools()`, `rpcCallTool()`)
-directly on the stub, bypassing `fetch()` entirely.
+Former user-scoped connector ingress (`/@{username}/connectors/...` and
+`/connectors/...`) is removed. Those paths return `404` for every method,
+including WebSocket upgrades. Home automation and other outbound tools use
+normal user-added MCP servers (`kody.mcp["name"]`) instead.
 
 ## Maintenance route guard
 

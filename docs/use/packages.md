@@ -411,15 +411,13 @@ Treat package apps like Worker-style modules:
   layered under the package namespace, not the persistence mechanism and not
   separate saved primitives
 
-## Attached remote connectors
+## Attached MCP servers
 
-Attached connectors from `/account/remote-connectors` are available as
-`kody.remote["name"]` in execute and in package runtimes that build caller
+Enabled MCP servers from `/account/mcp-servers` are available as
+`kody.mcp["name"]` in execute and in package runtimes that build caller
 context: package apps (when capabilities or nested `packages.invoke` need them),
 package services, subscription handlers, package-owned jobs, workflows, HTTP
-invocation tokens, and webhook delivery. Hosted app serve does not load remotes
-on the warm path; the runtime bridge loads them when user code needs
-capabilities.
+invocation tokens, and webhook delivery.
 
 ## Package services
 

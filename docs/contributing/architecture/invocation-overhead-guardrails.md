@@ -57,7 +57,7 @@ caches come in two tiers with different correctness arguments (see
   bounds isolate memory.
 - **Registry source lists** — enabled MCP-server refs and OpenAPI bindings,
   per-user TTL **30 s** with eager invalidation on mutation, matching the
-  existing remote-connector and MCP hub snapshot bounds.
+  existing MCP hub snapshot bounds.
 
 Rules for touching these paths: publish and rebuild flows must keep using the
 uncached row/manifest loaders (`loadPackageManifestBySourceId`,

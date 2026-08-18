@@ -61,7 +61,6 @@ to become.
 - [Inbound webhooks](./webhooks.md): user-owned `POST /@:username/webhooks/...`
   ingress that dispatches to a bound saved-package export (HMAC verification,
   ack/sync modes, delivery history via run records).
-- [Remote connectors](./remote-connectors.md): generic outbound WebSocket
   protocol, URLs, secrets, and MCP caller context for any connector
   instance/name (this is how local-network systems are reached through an
   outbound agent connection).

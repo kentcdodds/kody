@@ -32,7 +32,7 @@ URL only for CIMD-capable providers. Then remove and re-add the server. See
 - **Rephrase the query** using domain vocabulary from the search tool’s domain
   hints (for example “GitHub”, “Cloudflare”, “meta capabilities”).
 - Try **`meta_list_capabilities`** for the full live registry, including dynamic
-  entries from remote connectors.
+  entries from MCP servers.
 - **`entity: "id:capability"`** looks up a **known** id. It does **not** turn an
   empty ranked **`query`** into better matches — rephrase or list capabilities
   instead.
@@ -49,11 +49,10 @@ signed in, user-scoped package results are empty.
 - **Capability not allowed for secret:** adjust the secret’s allowed-capability
   policy or use a capability that is on the allowlist.
 
-## Remote connectors
+## MCP servers
 
 If connector-provided tools appear missing, check connector status with
 **`meta_list_remote_connector_status`**. For protocol and URL requirements, see
-[Remote connectors](../contributing/architecture/remote-connectors.md).
 
 ## Job, webhook, or package app failed
 

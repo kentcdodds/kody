@@ -51,7 +51,7 @@ Pass optional **`domain`** with a capability domain id:
   browse flow: broad query → domain overview → domain listing.
 
 Domain ids cover builtin domains (`email`, `jobs`, `packages`, ...) plus
-synthesized ones for remote connectors (`remote:home`), connected MCP servers
+synthesized ones for connected MCP servers (`mcp:home`)
 (`mcp:linear`), and OpenAPI bindings (`openapi:canva`). An unknown id returns an
 error listing the available domains. The `search` meta capability (usable inside
 **execute**) accepts the same `domain` argument alongside `query`.
@@ -110,7 +110,7 @@ applicable, using that same `"{id}:{type}"` format, so you can immediately copy
 the ref into a follow-up `entity` lookup when needed.
 
 For synthesized provider capabilities (OpenAPI bindings, connected MCP servers,
-and remote connectors), capability detail also lists **related operations from
+), capability detail also lists **related operations from
 the same provider** so create/poll pairs and sibling tools are visible without a
 second lookup. Built-in capabilities skip that section to keep common lookups
 lean.
@@ -139,15 +139,15 @@ Use the call shape emitted by capability detail and pass an object matching the
 displayed input type. Built-in capabilities stay flat on `kody`: valid
 JavaScript identifier ids use dot notation such as
 `kody.coding_guide_get(input)`, and non-identifier built-in ids use bracket
-notation such as `kody["capability-id"](input)`. Remote connector capabilities
-are namespaced by connector: `kody.remote["name"].capability_name(input)`. Use
+notation such as `kody["capability-id"](input)`. MCP server tools
+are namespaced by server: `kody.mcp["name"].tool_name(input)`. Use
 `{}` when the capability has no required fields.
 
 ## When results look thin
 
 If ranked search misses what you need, **rephrase the query** or use
 **`meta_list_capabilities`** to read the live capability registry (including
-dynamic entries from remote connectors). **`entity`** does not help when a
+dynamic entries from MCP servers). **`entity`** does not help when a
 **`query`** returned no matches — **`entity`** looks up a known id, not a fix
 for an empty ranked list.
 
