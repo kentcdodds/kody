@@ -12,9 +12,11 @@ import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
-import { readJson,
+import {
 	buildHostApprovalRequestUrl,
-	submitApprovalRequest } from '#client/routes/account-approval-shared.ts'
+	readJson,
+	submitApprovalRequest,
+} from '#client/routes/account-approval-shared.ts'
 import {
 	type RouteLoaderResult,
 	routeLoaderRedirect,
