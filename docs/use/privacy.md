@@ -103,8 +103,7 @@ does not let admins browse:
 - Email inboxes and messages
 - Inbound webhook endpoints and delivery logs
 - Durable storage contents
-- Remote connector configuration
-- OAuth grants
+- Connected MCP server configuration and OAuth grants
 
 None of these stores appears in an admin endpoint, page, or API payload — not
 even in redacted or count form — with one qualified exception: platform

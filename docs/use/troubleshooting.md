@@ -51,8 +51,11 @@ signed in, user-scoped package results are empty.
 
 ## MCP servers
 
-If connector-provided tools appear missing, check connector status with
-**`meta_list_remote_connector_status`**. For protocol and URL requirements, see
+If tools from a connected MCP server appear missing, open
+[`/account/mcp-servers`](./mcp-client-servers.md) (or ask `mcp_server_list`) and
+confirm the server is connected and authorized. Home automation is a normal
+outbound MCP server (`kody.mcp["home"]`). See
+[Connect remote MCP servers](./mcp-client-servers.md).
 
 ## Job, webhook, or package app failed
 
