@@ -6,10 +6,34 @@ import {
 } from './oauth-token-exchange.ts'
 import { getPlatformOauthAppClientSecret } from './platform-apps.ts'
 import { getJoinedIntegration } from './service.ts'
+import { type JoinedIntegration } from './types.ts'
 
 export type IntegrationTokenRefreshResult = {
 	refreshedAt: string
 	refreshTokenRotated: boolean
+}
+
+export const integrationAuthFailedReasons = [
+	'missing_refresh_token',
+	'provider_rejected',
+	'missing_secret',
+	'host_not_approved',
+	'invalid_config',
+] as const
+
+export type IntegrationAuthFailedReason =
+	(typeof integrationAuthFailedReasons)[number]
+
+export type IntegrationTokenRefreshCallerReason =
+	| IntegrationAuthFailedReason
+	| 'not_found'
+
+export type IntegrationAuthFailedSnapshot = {
+	name: string
+	lane: 'user' | 'platform'
+	accountLabel: string | null
+	provider: string | null
+	platformAppSlug: string | null
 }
 
 /**
@@ -19,9 +43,37 @@ export type IntegrationTokenRefreshResult = {
  * `McpCallerError` so agents get a clear next step and Sentry stays quiet.
  */
 export class IntegrationTokenRefreshCallerError extends Error {
-	constructor(message: string, options?: ErrorOptions) {
-		super(message, options)
+	readonly reason: IntegrationTokenRefreshCallerReason
+	readonly providerError: string | null
+	readonly providerErrorDescription: string | null
+	readonly httpStatus: number | null
+	readonly integration: IntegrationAuthFailedSnapshot | null
+
+	constructor(
+		message: string,
+		options: ErrorOptions & {
+			reason: IntegrationTokenRefreshCallerReason
+			providerError?: string | null
+			providerErrorDescription?: string | null
+			httpStatus?: number | null
+			integration?: IntegrationAuthFailedSnapshot | null
+		},
+	) {
+		const {
+			reason,
+			providerError,
+			providerErrorDescription,
+			httpStatus,
+			integration,
+			...errorOptions
+		} = options
+		super(message, errorOptions)
 		this.name = 'IntegrationTokenRefreshCallerError'
+		this.reason = reason
+		this.providerError = providerError ?? null
+		this.providerErrorDescription = providerErrorDescription ?? null
+		this.httpStatus = httpStatus ?? null
+		this.integration = integration ?? null
 	}
 }
 
@@ -38,7 +90,16 @@ export function isIntegrationTokenRefreshCallerMessage(message: string) {
 	return message.includes(integrationTokenRefreshCallerMarker)
 }
 
-function callerRefreshError(message: string, options?: ErrorOptions) {
+function callerRefreshError(
+	message: string,
+	options: ErrorOptions & {
+		reason: IntegrationTokenRefreshCallerReason
+		providerError?: string | null
+		providerErrorDescription?: string | null
+		httpStatus?: number | null
+		integration?: IntegrationAuthFailedSnapshot | null
+	},
+) {
 	return new IntegrationTokenRefreshCallerError(
 		`${message} ${integrationTokenRefreshCallerMarker}`,
 		options,
@@ -49,17 +110,82 @@ function connectOauthPath(integrationName: string) {
 	return `/connect/oauth?provider=${encodeURIComponent(integrationName)}`
 }
 
-function formatProviderTokenError(payload: Record<string, unknown> | null) {
-	if (!payload) return null
+function snapshotJoinedIntegration(
+	joined: JoinedIntegration,
+): IntegrationAuthFailedSnapshot {
+	return {
+		name: joined.connection.name,
+		lane: joined.lane,
+		accountLabel: joined.connection.accountLabel,
+		provider: joined.app.provider,
+		platformAppSlug: joined.connection.platformAppSlug,
+	}
+}
+
+function readProviderTokenError(payload: Record<string, unknown> | null) {
+	if (!payload) {
+		return { error: null, description: null }
+	}
 	const error =
 		typeof payload.error === 'string' ? payload.error.trim().slice(0, 80) : ''
 	const description =
 		typeof payload.error_description === 'string'
 			? payload.error_description.trim().slice(0, 200)
 			: ''
+	return {
+		error: error || null,
+		description: description || null,
+	}
+}
+
+function formatProviderTokenError(payload: Record<string, unknown> | null) {
+	const { error, description } = readProviderTokenError(payload)
 	if (!error && !description) return null
 	if (error && description) return `${error}: ${description}`
 	return error || description
+}
+
+async function emitIntegrationAuthFailedEvent(input: {
+	env: Env
+	userId: string
+	error: IntegrationTokenRefreshCallerError
+	waitUntil?: (promise: Promise<unknown>) => void
+}) {
+	const snapshot = input.error.integration
+	if (!snapshot) return
+	if (input.error.reason === 'not_found') return
+	try {
+		const { dispatchIntegrationAuthFailedSubscriptionEvents } =
+			await import('./package-subscriptions.ts')
+		await dispatchIntegrationAuthFailedSubscriptionEvents({
+			env: input.env,
+			userId: input.userId,
+			eventId: crypto.randomUUID(),
+			occurredAt: new Date().toISOString(),
+			integration: {
+				name: snapshot.name,
+				lane: snapshot.lane,
+				account_label: snapshot.accountLabel,
+				provider: snapshot.provider,
+				platform_app_slug: snapshot.platformAppSlug,
+			},
+			reason: input.error.reason,
+			provider: {
+				error: input.error.providerError,
+				error_description: input.error.providerErrorDescription,
+				http_status: input.error.httpStatus,
+			},
+			waitUntil: input.waitUntil,
+		})
+	} catch (error) {
+		console.warn(
+			'integration.auth.failed package subscription dispatch failed',
+			{
+				integrationName: snapshot.name,
+				error,
+			},
+		)
+	}
 }
 
 /**
@@ -71,8 +197,38 @@ function formatProviderTokenError(payload: Record<string, unknown> | null) {
  * This is the only refresh path for platform-app connections, whose shared
  * client secret has no user-facing secret name by design. User-lane
  * connections may also refresh here (`integration_token_refresh`).
+ *
+ * Reconnectable caller-errors emit `integration.auth.failed` once per attempt.
+ * The platform does not swallow repeats.
  */
 export async function refreshIntegrationTokens(input: {
+	env: Env
+	userId: string
+	userEmail?: string | undefined
+	name: string
+	waitUntil?: (promise: Promise<unknown>) => void
+}): Promise<IntegrationTokenRefreshResult> {
+	try {
+		return await refreshIntegrationTokensOrThrow(input)
+	} catch (error) {
+		if (error instanceof IntegrationTokenRefreshCallerError) {
+			const pending = emitIntegrationAuthFailedEvent({
+				env: input.env,
+				userId: input.userId,
+				error,
+				waitUntil: input.waitUntil,
+			})
+			if (input.waitUntil) {
+				input.waitUntil(pending)
+			} else {
+				await pending
+			}
+		}
+		throw error
+	}
+}
+
+async function refreshIntegrationTokensOrThrow(input: {
 	env: Env
 	userId: string
 	userEmail?: string | undefined
@@ -84,26 +240,45 @@ export async function refreshIntegrationTokens(input: {
 		name: input.name,
 	})
 	if (!joined) {
-		throw callerRefreshError(`Integration "${input.name}" was not found.`)
+		throw callerRefreshError(`Integration "${input.name}" was not found.`, {
+			reason: 'not_found',
+		})
 	}
 	const { app, connection } = joined
+	const integration = snapshotJoinedIntegration(joined)
 	const reconnectPath = connectOauthPath(connection.name)
+	const fail = (
+		message: string,
+		options: {
+			reason: IntegrationAuthFailedReason
+			providerError?: string | null
+			providerErrorDescription?: string | null
+			httpStatus?: number | null
+		},
+	) =>
+		callerRefreshError(message, {
+			...options,
+			integration,
+		})
 	const clientId = app.clientId.trim()
 	if (!clientId) {
-		throw callerRefreshError(
+		throw fail(
 			`Integration "${connection.name}" does not define a client id. Reconnect at ${reconnectPath}.`,
+			{ reason: 'invalid_config' },
 		)
 	}
 	const refreshTokenSecretName = connection.refreshTokenSecretName?.trim() ?? ''
 	if (!refreshTokenSecretName) {
-		throw callerRefreshError(
+		throw fail(
 			`Integration "${connection.name}" does not define a refresh token secret name. This connection cannot refresh; reconnect at ${reconnectPath} if the provider issues a refresh token, or stop calling integration_token_refresh for this integration.`,
+			{ reason: 'missing_refresh_token' },
 		)
 	}
 	const accessTokenSecretName = connection.accessTokenSecretName.trim()
 	if (!accessTokenSecretName) {
-		throw callerRefreshError(
+		throw fail(
 			`Integration "${connection.name}" does not define an access token secret name. Reconnect at ${reconnectPath}.`,
+			{ reason: 'missing_secret' },
 		)
 	}
 
@@ -115,9 +290,9 @@ export async function refreshIntegrationTokens(input: {
 	// rows, so no user-secret allowlist applies.
 	const tokenHost = safeParseHost(app.tokenUrl)
 	if (!tokenHost) {
-		throw callerRefreshError(
-			`Integration "${connection.name}" has an invalid token URL.`,
-		)
+		throw fail(`Integration "${connection.name}" has an invalid token URL.`, {
+			reason: 'invalid_config',
+		})
 	}
 	const assertUserSecretAllowedForTokenHost = (
 		secretName: string,
@@ -125,8 +300,9 @@ export async function refreshIntegrationTokens(input: {
 	) => {
 		if (joined.lane !== 'user') return
 		if (allowedHosts.includes(tokenHost)) return
-		throw callerRefreshError(
+		throw fail(
 			`Secret "${secretName}" is not approved for host "${tokenHost}". Approve the host on /account/secrets before refreshing this integration.`,
+			{ reason: 'host_not_approved' },
 		)
 	}
 
@@ -138,8 +314,9 @@ export async function refreshIntegrationTokens(input: {
 		storageContext,
 	})
 	if (!refreshTokenSecret.found || !refreshTokenSecret.value) {
-		throw callerRefreshError(
+		throw fail(
 			`Refresh token secret "${refreshTokenSecretName}" was not found. Reconnect at ${reconnectPath}.`,
+			{ reason: 'missing_refresh_token' },
 		)
 	}
 	assertUserSecretAllowedForTokenHost(
@@ -162,8 +339,9 @@ export async function refreshIntegrationTokens(input: {
 				const clientSecretSecretName =
 					joined.app.clientSecretSecretName?.trim() ?? ''
 				if (!clientSecretSecretName) {
-					throw callerRefreshError(
+					throw fail(
 						`Integration "${connection.name}" uses confidential flow but does not define a client secret secret name.`,
+						{ reason: 'missing_secret' },
 					)
 				}
 				const resolved = await resolveSecret({
@@ -190,8 +368,9 @@ export async function refreshIntegrationTokens(input: {
 			}
 		}
 		if (!clientSecret) {
-			throw callerRefreshError(
+			throw fail(
 				`Client secret for integration "${connection.name}" was not found.`,
+				{ reason: 'missing_secret' },
 			)
 		}
 	}
@@ -225,14 +404,21 @@ export async function refreshIntegrationTokens(input: {
 		unknown
 	> | null
 	if (!response.ok) {
+		const provider = readProviderTokenError(payload)
 		const providerDetail = formatProviderTokenError(payload)
 		const detailSuffix = providerDetail ? ` (${providerDetail})` : ''
 		// Provider 4xx is almost always revoked/expired grant or bad client
 		// state the user (or operator) clears by reconnecting — not a platform
 		// defect worth a Sentry issue. 5xx stays a plain Error for visibility.
 		if (response.status >= 400 && response.status < 500) {
-			throw callerRefreshError(
+			throw fail(
 				`Token refresh was rejected for integration "${connection.name}" with HTTP ${response.status}${detailSuffix}. Reconnect at ${reconnectPath}.`,
+				{
+					reason: 'provider_rejected',
+					providerError: provider.error,
+					providerErrorDescription: provider.description,
+					httpStatus: response.status,
+				},
 			)
 		}
 		throw new Error(
@@ -240,8 +426,9 @@ export async function refreshIntegrationTokens(input: {
 		)
 	}
 	if (!payload || typeof payload.access_token !== 'string') {
-		throw callerRefreshError(
+		throw fail(
 			`Token refresh for integration "${connection.name}" did not return an access_token. Reconnect at ${reconnectPath}.`,
+			{ reason: 'provider_rejected' },
 		)
 	}
 

@@ -109,6 +109,16 @@ materialized secret's `allowed_hosts` against the token host before the request
 placeholder resolution. Platform-lane destinations are operator-pinned rows, so
 no user-secret allowlist applies.
 
+Reconnectable caller-errors (`IntegrationTokenRefreshCallerError`: missing
+refresh token, provider HTTP 4xx / `invalid_grant`, missing secrets,
+host-approval gaps, invalid connection config) best-effort dispatch
+`integration.auth.failed` to the owning user's packages that declare the topic.
+Every classified attempt emits; the platform does not coalesce repeats. Provider
+HTTP 5xx and missing connections do not emit. The payload is metadata-first
+(connection name, lane, reason, optional provider error fields, trusted
+`reconnect_url`) and never includes token or secret values. See
+[Package subscriptions](../../guides/package-subscriptions.md).
+
 On 401, `createAuthenticatedFetch` calls `integration_token_refresh` then
 retries with a `{{secret:…}}` placeholder `Authorization` header, so raw tokens
 never enter the sandbox heap. Package code that triggers refresh through

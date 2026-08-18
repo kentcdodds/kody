@@ -10,11 +10,22 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { upsertPlatformOauthApp } from './platform-apps.ts'
 import { upsertIntegration, upsertPlatformIntegration } from './service.ts'
-import {
+
+const mocks = vi.hoisted(() => ({
+	dispatchIntegrationAuthFailedSubscriptionEvents: vi.fn(async () => []),
+}))
+
+vi.mock('./package-subscriptions.ts', () => ({
+	dispatchIntegrationAuthFailedSubscriptionEvents:
+		mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
+	integrationAuthFailedTopic: 'integration.auth.failed',
+}))
+
+const {
 	IntegrationTokenRefreshCallerError,
 	integrationTokenRefreshCallerMarker,
 	refreshIntegrationTokens,
-} from './token-refresh.ts'
+} = await import('./token-refresh.ts')
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
@@ -131,9 +142,28 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 			storageContext,
 		})
 		expect(refresh.found && refresh.value).toBe('rotated-refresh-token')
+		expect(
+			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
+		).not.toHaveBeenCalled()
 	} finally {
 		vi.unstubAllGlobals()
 	}
+
+	mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
+	await expect(
+		refreshIntegrationTokens({
+			env,
+			userId,
+			name: 'missing-connection',
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof IntegrationTokenRefreshCallerError &&
+			error.reason === 'not_found',
+	)
+	expect(
+		mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
+	).not.toHaveBeenCalled()
 
 	await upsertPlatformIntegration({
 		env,
@@ -142,6 +172,7 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		scopes: [],
 		accessTokenSecretName: 'githubAccessToken',
 	})
+	mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
 	await expect(
 		refreshIntegrationTokens({
 			env,
@@ -151,9 +182,22 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 	).rejects.toSatisfy(
 		(error: unknown) =>
 			error instanceof IntegrationTokenRefreshCallerError &&
+			error.reason === 'missing_refresh_token' &&
 			error.message.includes('does not define a refresh token secret name') &&
 			error.message.includes('/connect/oauth?provider=github') &&
 			error.message.includes(integrationTokenRefreshCallerMarker),
+	)
+	expect(
+		mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-no-refresh',
+			reason: 'missing_refresh_token',
+			integration: expect.objectContaining({
+				name: 'github',
+				lane: 'platform',
+			}),
+		}),
 	)
 })
 
@@ -205,21 +249,43 @@ test('provider HTTP status classifies refresh failures as caller errors or Sentr
 		)
 	vi.stubGlobal('fetch', fetchMock)
 	try {
+		mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
+		const waitUntil = vi.fn()
 		await expect(
 			refreshIntegrationTokens({
 				env,
 				userId,
 				name: 'google',
+				waitUntil,
 			}),
 		).rejects.toSatisfy(
 			(error: unknown) =>
 				error instanceof IntegrationTokenRefreshCallerError &&
+				error.reason === 'provider_rejected' &&
+				error.providerError === 'invalid_grant' &&
+				error.httpStatus === 400 &&
 				error.message.includes('HTTP 400') &&
 				error.message.includes('invalid_grant') &&
 				error.message.includes('/connect/oauth?provider=google') &&
 				error.message.includes(integrationTokenRefreshCallerMarker),
 		)
+		expect(waitUntil).toHaveBeenCalledTimes(1)
+		await waitUntil.mock.calls[0]?.[0]
+		expect(
+			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
+		).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId,
+				reason: 'provider_rejected',
+				provider: {
+					error: 'invalid_grant',
+					error_description: 'Token has been expired or revoked.',
+					http_status: 400,
+				},
+			}),
+		)
 
+		mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
 		await expect(
 			refreshIntegrationTokens({
 				env,
@@ -232,6 +298,9 @@ test('provider HTTP status classifies refresh failures as caller errors or Sentr
 				!(error instanceof IntegrationTokenRefreshCallerError) &&
 				error.message.includes('HTTP 503'),
 		)
+		expect(
+			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
+		).not.toHaveBeenCalled()
 	} finally {
 		vi.unstubAllGlobals()
 	}
@@ -289,17 +358,30 @@ test('user-lane refresh resolves the client secret from the user secret store', 
 
 	const fetchMock = stubTokenEndpoint({ access_token: 'fresh-google-token' })
 	try {
+		mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
 		await expect(
 			refreshIntegrationTokens({ env, userId, name: 'google' }),
 		).rejects.toSatisfy(
 			(error: unknown) =>
 				error instanceof IntegrationTokenRefreshCallerError &&
+				error.reason === 'host_not_approved' &&
 				error.message.includes(
 					'Secret "googleRefreshToken" is not approved for host "oauth2.googleapis.com"',
 				) &&
 				error.message.includes(integrationTokenRefreshCallerMarker),
 		)
 		expect(fetchMock).not.toHaveBeenCalled()
+		expect(
+			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
+		).toHaveBeenCalledWith(
+			expect.objectContaining({
+				reason: 'host_not_approved',
+				integration: expect.objectContaining({
+					name: 'google',
+					lane: 'user',
+				}),
+			}),
+		)
 
 		await approveSecretHosts(env, userId, 'googleRefreshToken', [
 			'oauth2.googleapis.com',

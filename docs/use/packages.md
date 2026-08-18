@@ -487,7 +487,7 @@ Use the built-in `package_subscriptions_list` capability to discover the
 signed-in user's saved package subscriptions, optionally filtered by exact
 topic. This is the generic discovery step before building fan-out, debugging why
 an event did or did not dispatch, or checking which packages subscribe to
-`email.message.received` or `run.error.recorded`.
+`email.message.received`, `run.error.recorded`, or `integration.auth.failed`.
 
 For accepted stored inbound email, the topic is `email.message.received`.
 Quarantined inbound email dispatches `email.message.quarantined` instead. Both
@@ -506,6 +506,13 @@ When a run in your Activity finishes with an error, Kody dispatches
 metadata-first (run id, surface, identifiers, truncated error fields, and an
 `activity_url` deep link). Fetch logs and full detail with `run_get` when
 needed. See [Activity](./activity.md) and the
+[package subscriptions guide](../guides/package-subscriptions.md).
+
+When host-side OAuth token refresh fails with reconnectable caller state, Kody
+dispatches `integration.auth.failed` to your packages that declare that topic.
+The payload is metadata-first (connection name, lane, reason, optional provider
+error fields, and a trusted `reconnect_url`). Every classified attempt emits;
+notifier packages decide how often to ping. See the
 [package subscriptions guide](../guides/package-subscriptions.md).
 
 Artifacts-backed plain repos, packages, and job sources also emit `repo.pushed`,

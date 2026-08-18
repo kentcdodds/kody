@@ -66,7 +66,8 @@ intended owner-scoped package.
 adds `synthetic: true`). Shape depends on the topic:
 
 - **Platform-owned topics** (`email.message.received`, `run.error.recorded`,
-  `repo.pushed`, …) — use the metadata-first payloads documented in the
+  `integration.auth.failed`, `repo.pushed`, …) — use the metadata-first payloads
+  documented in the
   [package subscriptions guide](../guides/package-subscriptions.md). Include
   only fields your handler reads.
 - **Package-emitted topics** (`@scope/topic.name`) — use the
@@ -104,6 +105,34 @@ Example minimal `run.error.recorded` fixture:
 			"error_message": "Synthetic smoke failure"
 		},
 		"activity_url": "https://kody.codes/account/activity/00000000000000000000000000000001"
+	}
+}
+```
+
+Example minimal `integration.auth.failed` fixture:
+
+```json
+{
+	"kody_id": "integration-auth-notifier",
+	"topic": "integration.auth.failed",
+	"params": {
+		"event": "integration.auth.failed",
+		"event_id": "00000000-0000-4000-8000-000000000001",
+		"integration": {
+			"name": "google",
+			"lane": "platform",
+			"account_label": null,
+			"provider": "google",
+			"platform_app_slug": "google"
+		},
+		"reason": "provider_rejected",
+		"provider": {
+			"error": "invalid_grant",
+			"error_description": "Token has been expired or revoked.",
+			"http_status": 400
+		},
+		"reconnect_url": "https://kody.codes/connect/oauth?provider=google",
+		"occurred_at": "2026-08-18T17:00:00.000Z"
 	}
 }
 ```

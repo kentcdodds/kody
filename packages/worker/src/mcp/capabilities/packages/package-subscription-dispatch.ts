@@ -115,6 +115,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 			'synthetic',
 			'replay',
 			'email.message.received',
+			'integration.auth.failed',
 			'test',
 			'smoke',
 			'simulate',

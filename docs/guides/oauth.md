@@ -43,7 +43,9 @@ client ID / client secret form) is skipped and token exchange runs server-side
 with the operator's credentials. List the available built-in apps with
 `integration_platform_app_list`. All integrations refresh host-side through
 `createAuthenticatedFetch`, which calls `integration_token_refresh` on 401 and
-retries with a secret placeholder — raw tokens never enter the sandbox. Use
+retries with a secret placeholder — raw tokens never enter the sandbox.
+Reconnectable refresh failures dispatch `integration.auth.failed` to packages
+that subscribe (see [package subscriptions](./package-subscriptions.md)). Use
 `refreshAccessToken` only for auth that cannot use an Authorization header
 (WebSockets, SDK constructors, query-param tokens); it still runs in-sandbox for
 user-owned apps and throws for built-ins. The rest of this guide applies to

@@ -53,6 +53,7 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 					userId: user.userId,
 					userEmail: user.email,
 					name: args.name,
+					waitUntil: ctx.waitUntil,
 				})
 				return {
 					ok: true as const,

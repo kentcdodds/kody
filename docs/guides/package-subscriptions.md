@@ -5,9 +5,9 @@ summary:
   Use package.json#kody.subscriptions for package-owned event handlers; discover
   subscribers with package_subscriptions_list; smoke-test handlers with
   package_subscription_dispatch; follow metadata-first email, run.error.recorded
-  activity notifiers, consent-gated admin-only platform.feedback.submitted
-  notification guidance, and admin-only status.incident.opened /
-  status.incident.resolved operator telemetry.
+  activity notifiers, integration.auth.failed reconnect notifiers, consent-gated
+  admin-only platform.feedback.submitted notification guidance, and admin-only
+  status.incident.opened / status.incident.resolved operator telemetry.
 category: platform
 ---
 
@@ -459,6 +459,58 @@ never emit. Failed `execute` calls do persist and do emit.
 
 Use this topic for notifier packages that email, write to Sheets, spawn an
 agent, or otherwise react when something in the user's account fails.
+
+## `integration.auth.failed`
+
+When host-side OAuth token refresh fails with reconnectable caller state —
+missing refresh token, provider HTTP 4xx / `invalid_grant`, missing secrets,
+host-approval gaps, or invalid connection config — Kody dispatches
+`integration.auth.failed` to packages saved by that same user that declare the
+topic. Every classified attempt emits. The platform does not coalesce repeats;
+notifier packages decide how often to ping. Provider HTTP 5xx and missing
+connections do not emit.
+
+Delivery is best-effort after the refresh caller error is classified — there is
+no Queue / DLQ for this topic in v1. Failures during subscriber discovery or
+package-invocation infrastructure are logged and do not change the refresh error
+the caller sees.
+
+Handlers receive a metadata-first payload:
+
+```ts
+type IntegrationAuthFailedEvent = {
+	event: 'integration.auth.failed'
+	event_id: string
+	integration: {
+		name: string
+		lane: 'user' | 'platform'
+		account_label: string | null
+		provider: string | null
+		platform_app_slug: string | null
+	}
+	reason:
+		| 'missing_refresh_token'
+		| 'provider_rejected'
+		| 'missing_secret'
+		| 'host_not_approved'
+		| 'invalid_config'
+	provider: {
+		error: string | null
+		error_description: string | null
+		http_status: number | null
+	}
+	reconnect_url: string
+	occurred_at: string
+}
+```
+
+`reconnect_url` is built from the trusted deployment origin and links to
+`/connect/oauth?provider=<name>`. The event deliberately omits token values,
+secret values, client secrets, and secret names. A short-lived access token that
+refreshes cleanly never emits.
+
+Use this topic for notifier packages that post to Discord, email, or otherwise
+ask the owner to reconnect a dead grant.
 
 ## `repo.pushed`
 
