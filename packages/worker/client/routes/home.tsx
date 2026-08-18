@@ -589,7 +589,13 @@ function WaitlistForm(handle: Handle) {
 				handle.queueTask(loadProtectionConfig)
 			} else if (turnstileSiteKey) {
 				handle.queueTask(async () => {
-					await renderTurnstileWidgets(turnstileSiteKey ?? null)
+					try {
+						await renderTurnstileWidgets(turnstileSiteKey ?? null)
+					} catch {
+						// Load/render failure must not pin the submit button
+						// disabled. A later POST can still surface the server
+						// error the way the immediate-load waitlist did.
+					}
 					if (widgetReady) return
 					widgetReady = true
 					handle.update()

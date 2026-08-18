@@ -12,7 +12,17 @@ test('landing art attrs prefer the 480w file and keep the original as the larges
 	const attrs = landingArtAttrs('kody-greeting')
 	expect(attrs.src).toBe('/images/kody-greeting-480.webp')
 	expect(attrs.srcSet).toContain('kody-greeting-480.webp 480w')
-	expect(attrs.srcSet).toContain('kody-greeting-960.webp 960w')
+	expect(attrs.srcSet).not.toContain('960w')
 	expect(attrs.srcSet).toContain('kody-greeting.webp 700w')
 	expect(attrs.loading).toBe('lazy')
+})
+
+test('landing art only advertises a 960w candidate when the source is at least 960 wide', () => {
+	expect(landingArtAttrs('kody-compounding-capabilities').srcSet).toContain(
+		'kody-compounding-capabilities-960.webp 960w',
+	)
+	expect(landingArtAttrs('kody-community-packages').srcSet).not.toContain(
+		'960w',
+	)
+	expect(landingArtAttrs('kody-keys').srcSet).not.toContain('960w')
 })

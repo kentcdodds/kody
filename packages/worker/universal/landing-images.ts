@@ -34,13 +34,14 @@ const landingArtFullWidth: Record<LandingArtName, number> = {
 
 export function landingArtAttrs(name: LandingArtName) {
 	const fullWidth = landingArtFullWidth[name]
+	const candidates = [`/images/${name}-480.webp 480w`]
+	if (fullWidth >= 960) {
+		candidates.push(`/images/${name}-960.webp 960w`)
+	}
+	candidates.push(`/images/${name}.webp ${fullWidth}w`)
 	return {
 		src: `/images/${name}-480.webp`,
-		srcSet: [
-			`/images/${name}-480.webp 480w`,
-			`/images/${name}-960.webp 960w`,
-			`/images/${name}.webp ${fullWidth}w`,
-		].join(', '),
+		srcSet: candidates.join(', '),
 		sizes: '(max-width: 800px) 60vw, 400px',
 		decoding: 'async' as const,
 		loading: 'lazy' as const,
