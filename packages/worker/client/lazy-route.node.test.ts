@@ -16,10 +16,7 @@ import { routes } from '#universal/routes.ts'
  * either be eager or resolve to a registered lazy area.
  */
 
-const eagerPatterns = new Set([
-	routePattern(routes.home),
-	oauthPaths.callback,
-])
+const eagerPatterns = new Set([routePattern(routes.home), oauthPaths.callback])
 
 function concretePathForPattern(pattern: string) {
 	return pattern
