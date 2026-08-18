@@ -1406,7 +1406,6 @@ test('package app caller context includes attached remotes for capabilities and 
 								) => ({
 									ok: true,
 									args,
-									remoteConnectors: context.callerContext.remoteConnectors,
 								}),
 							},
 						}
@@ -1429,7 +1428,6 @@ test('package app caller context includes attached remotes for capabilities and 
 	).toHaveBeenCalledWith(
 		expect.objectContaining({
 			callerContext: expect.objectContaining({
-				remoteConnectors: [],
 			}),
 		}),
 	)
@@ -1446,7 +1444,6 @@ test('package app caller context includes attached remotes for capabilities and 
 	).resolves.toEqual({
 		ok: true,
 		args: { position: 50 },
-		remoteConnectors: [{ instanceId: 'home' }],
 	})
 
 	const invoke = vi.fn(async () => ({ invoked: true }))
@@ -1464,7 +1461,6 @@ test('package app caller context includes attached remotes for capabilities and 
 	).toHaveBeenCalledWith(
 		expect.objectContaining({
 			callerContext: expect.objectContaining({
-				remoteConnectors: [{ instanceId: 'home' }],
 			}),
 		}),
 	)

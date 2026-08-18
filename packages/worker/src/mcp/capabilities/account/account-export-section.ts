@@ -34,11 +34,6 @@ export const accountExportSectionCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe('Required when section is storage_runner.'),
-			instance_id: z
-				.string()
-				.min(1)
-				.optional()
-				.describe('Required when section is remote_connector_session.'),
 			package_id: z
 				.string()
 				.min(1)
@@ -52,7 +47,6 @@ export const accountExportSectionCapability = defineDomainCapability(
 			kind: z
 				.enum([
 					'storage_runner',
-					'remote_connector_session',
 					'package_service',
 					'job_manager',
 				])

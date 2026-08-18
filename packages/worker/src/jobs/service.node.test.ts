@@ -2741,7 +2741,6 @@ test('executeJobOnce background execution workflow', async () => {
 			})
 			expect(executeSpy).toHaveBeenCalledTimes(1)
 			expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({
-				remoteConnectors: [{ instanceId: 'home' }],
 			})
 		} finally {
 			executeSpy.mockRestore()

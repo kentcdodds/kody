@@ -95,18 +95,6 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountPasskeysRouteLoader,
 	),
-	[routePattern(routes.accountRemoteConnectors)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountRemoteConnectorsRouteLoader,
-	),
-	[routePattern(routes.accountRemoteConnectorNew)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountRemoteConnectorsRouteLoader,
-	),
-	[routePattern(routes.accountRemoteConnectorDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountRemoteConnectorsRouteLoader,
-	),
 	[routePattern(routes.accountSecrets)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountSecretsRouteLoader,
@@ -343,15 +331,6 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountPasskeys)]: (
 		<LazyAccountRoute render={(m) => <m.AccountPasskeysRoute />} />
-	),
-	[routePattern(routes.accountRemoteConnectors)]: (
-		<LazyAccountRoute render={(m) => <m.AccountRemoteConnectorsRoute />} />
-	),
-	[routePattern(routes.accountRemoteConnectorNew)]: (
-		<LazyAccountRoute render={(m) => <m.AccountRemoteConnectorsRoute />} />
-	),
-	[routePattern(routes.accountRemoteConnectorDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountRemoteConnectorsRoute />} />
 	),
 	[routePattern(routes.accountSecrets)]: (
 		<LazyAccountRoute render={(m) => <m.AccountSecretsRoute />} />

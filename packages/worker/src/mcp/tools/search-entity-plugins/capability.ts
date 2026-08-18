@@ -30,21 +30,6 @@ function getSynthesizedProviderIdentity(spec: CapabilitySpec):
 	switch (spec.source) {
 		case 'builtin':
 			return undefined
-		case 'remote-connector':
-			return spec.remoteConnector
-				? {
-						key: `remote-connector:${spec.remoteConnector.instanceId}`,
-						providerFields: [
-							spec.remoteConnector.instanceId,
-							spec.remoteConnector.connectorId,
-							spec.remoteConnector.connectorName,
-						],
-						operationFields: [
-							spec.remoteConnector.mcpToolName,
-							spec.remoteConnector.toolName,
-						],
-					}
-				: undefined
 		case 'mcp-server':
 			return spec.mcpServer
 				? {
@@ -83,7 +68,6 @@ export function toCapabilitySearchMatch(
 		description: spec.description,
 		domain: spec.domain,
 		source: spec.source,
-		...(spec.remoteConnector ? { remoteConnector: spec.remoteConnector } : {}),
 		...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
 		...(spec.openApi ? { openApi: spec.openApi } : {}),
 	}
@@ -182,9 +166,6 @@ export const capabilitySearchEntityPlugin = {
 			domain: match.domain,
 			usage: buildCapabilityUsage(match),
 			...(match.source ? { source: match.source } : {}),
-			...(match.remoteConnector
-				? { remoteConnector: match.remoteConnector }
-				: {}),
 			...(match.mcpServer ? { mcpServer: match.mcpServer } : {}),
 			...(match.openApi ? { openApi: match.openApi } : {}),
 			...(match.inputTypeDefinition
@@ -259,9 +240,6 @@ export const capabilitySearchEntityPlugin = {
 				idempotent: detail.spec.idempotent,
 				destructive: detail.spec.destructive,
 				source: detail.spec.source,
-				...(detail.spec.remoteConnector
-					? { remoteConnector: detail.spec.remoteConnector }
-					: {}),
 				...(detail.spec.mcpServer ? { mcpServer: detail.spec.mcpServer } : {}),
 				...(detail.spec.openApi ? { openApi: detail.spec.openApi } : {}),
 				inputTypeDefinition: detail.spec.inputTypeDefinition,

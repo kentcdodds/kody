@@ -13,7 +13,6 @@ import { savedPackageVectorId } from '#worker/package-registry/repo.ts'
 import { getCapabilityVectorIndex } from '#worker/vectorize/embedding.ts'
 import { cleanupAllUserArtifactRepos } from '#worker/repo/artifact-repo-cleanup.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
-import { userScopedConnectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
 import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { packageServiceRpc } from '#worker/package-runtime/package-service.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
@@ -118,9 +117,6 @@ type UserRepoSessionSnapshot = {
 	id: string
 }
 
-type UserRemoteConnectorSnapshot = {
-	instanceId: string
-}
 
 type UserMcpServerSnapshot = {
 	id: string
@@ -142,7 +138,6 @@ type UserDeletionInventory = {
 	sourceSnapshots: Array<UserSourceSnapshot>
 	savedPackages: Array<UserSavedPackageSnapshot>
 	repoSessions: Array<UserRepoSessionSnapshot>
-	remoteConnectors: Array<UserRemoteConnectorSnapshot>
 	mcpServers: Array<UserMcpServerSnapshot>
 	mcpAgentSessions: Array<McpAgentSession>
 	packageServices: Array<UserPackageServiceSnapshot>
@@ -281,18 +276,6 @@ async function listUserRepoSessions(env: Env, userId: string) {
 	}))
 }
 
-async function listUserRemoteConnectors(env: Env, userId: string) {
-	const rows = await env.APP_DB.prepare(
-		`SELECT instance_id
-		FROM remote_connector_settings
-		WHERE user_id = ?`,
-	)
-		.bind(userId)
-		.all<{ instance_id: string }>()
-	return (rows.results ?? []).map((row) => ({
-		instanceId: row.instance_id,
-	}))
-}
 
 async function listUserMcpServers(env: Env, userId: string) {
 	const rows = await env.APP_DB.prepare(
@@ -391,7 +374,6 @@ async function collectUserDeletionInventory(input: {
 		sourceSnapshots,
 		savedPackages,
 		repoSessions,
-		remoteConnectors,
 		mcpServers,
 		mcpAgentSessions,
 	] = await Promise.all([
@@ -435,10 +417,6 @@ async function collectUserDeletionInventory(input: {
 			recordInventoryError('repo sessions', error)
 			return [] as Array<UserRepoSessionSnapshot>
 		}),
-		listUserRemoteConnectors(input.env, input.userId).catch((error) => {
-			recordInventoryError('remote connectors', error)
-			return [] as Array<UserRemoteConnectorSnapshot>
-		}),
 		listUserMcpServers(input.env, input.userId).catch((error) => {
 			recordInventoryError('MCP servers', error)
 			return [] as Array<UserMcpServerSnapshot>
@@ -471,7 +449,6 @@ async function collectUserDeletionInventory(input: {
 		sourceSnapshots,
 		savedPackages,
 		repoSessions,
-		remoteConnectors,
 		mcpServers,
 		mcpAgentSessions,
 		packageServices,
@@ -732,50 +709,6 @@ async function purgeRepoSessionIndex(input: {
 	}
 }
 
-async function purgeRemoteConnectorSessions(input: {
-	env: Env
-	userId: string
-	connectors: ReadonlyArray<UserRemoteConnectorSnapshot>
-	warnings: Array<string>
-}): Promise<number> {
-	const namespace = input.env.REMOTE_CONNECTOR_SESSION
-	if (!namespace) {
-		if (input.connectors.length > 0) {
-			input.warnings.push(
-				`REMOTE_CONNECTOR_SESSION binding was unavailable; ${input.connectors.length} connector session(s) were not purged.`,
-			)
-		}
-		return 0
-	}
-	let purged = 0
-	for (const connector of input.connectors) {
-		const sessionKey = userScopedConnectorSessionKey({
-			userId: input.userId,
-			instanceId: connector.instanceId,
-		})
-		try {
-			const stub = namespace.get(
-				namespace.idFromName(sessionKey),
-			) as unknown as {
-				rpcPurgeUserSession: (payload: {
-					userId: string
-					instanceId: string
-				}) => Promise<{ ok: true }>
-			}
-			await stub.rpcPurgeUserSession({
-				userId: input.userId,
-				instanceId: connector.instanceId,
-			})
-			purged += 1
-		} catch (error) {
-			const message = getErrorMessage(error)
-			input.warnings.push(
-				`Remote connector session purge failed for ${connector.instanceId}: ${message}`,
-			)
-		}
-	}
-	return purged
-}
 
 async function purgeMcpClientHub(input: {
 	env: Env
@@ -1193,13 +1126,6 @@ export async function deleteUserAccount(input: {
 			warnings,
 		},
 	)
-	result.clearedDurableObjects.remoteConnectorSessions =
-		await purgeRemoteConnectorSessions({
-			env: input.env,
-			userId: input.mcpUserId,
-			connectors: inventory.remoteConnectors,
-			warnings,
-		})
 	result.clearedDurableObjects.mcpClientHubs = await purgeMcpClientHub({
 		env: input.env,
 		userId: input.mcpUserId,

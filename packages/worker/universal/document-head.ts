@@ -154,12 +154,6 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountPackageDetail)]: titleOnly('Packages'),
 	[routePattern(routes.accountStars)]: titleOnly('Starred packages'),
 	[routePattern(routes.accountPasskeys)]: titleOnly('Passkeys'),
-	[routePattern(routes.accountRemoteConnectors)]:
-		titleOnly('Remote connectors'),
-	[routePattern(routes.accountRemoteConnectorNew)]:
-		titleOnly('Remote connectors'),
-	[routePattern(routes.accountRemoteConnectorDetail)]:
-		titleOnly('Remote connectors'),
 	[routePattern(routes.accountSecrets)]: titleOnly('Secrets'),
 	[routePattern(routes.accountSecretNew)]: titleOnly('Secrets'),
 	[routePattern(routes.accountSecretsApprove)]: titleOnly('Secrets'),

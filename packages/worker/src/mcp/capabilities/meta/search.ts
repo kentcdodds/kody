@@ -19,12 +19,6 @@ const maxSearchLimit = 100
 // by default instead of cutting at the ranked default.
 const domainBrowseDefaultLimit = 100
 
-const remoteConnectorStatusSchema = z.object({
-	connectorId: z.string(),
-	state: z.string(),
-	connected: z.boolean(),
-	toolCount: z.number().int().nonnegative(),
-})
 
 const memoryResultSchema = z.object({
 	surfaced: z.array(z.unknown()),
@@ -41,7 +35,6 @@ const searchOutputSchema = z.object({
 	warnings: z.array(z.string()),
 	guidance: z.string().optional(),
 	memories: memoryResultSchema.optional(),
-	remoteConnectorStatuses: z.array(remoteConnectorStatusSchema).optional(),
 })
 
 function normalizeLimit(
@@ -123,7 +116,7 @@ export const searchCapability = defineDomainCapability(
 			const includeHiddenPackages = !!args.includeHiddenPackages
 			// Deliberately dynamic: search-execution loads the capability registry,
 			// which includes this meta capability.
-			const { executeSearchList, serializeRemoteConnectorStatus } =
+			const { executeSearchList } =
 				await import('#mcp/tools/search-execution.ts')
 			const execution = await executeSearchList({
 				env: ctx.env,
@@ -155,13 +148,6 @@ export const searchCapability = defineDomainCapability(
 				...(execution.memorySettlement.memories
 					? {
 							memories: execution.memorySettlement.memories,
-						}
-					: {}),
-				...(execution.remoteConnectorStatuses.length > 0
-					? {
-							remoteConnectorStatuses: execution.remoteConnectorStatuses.map(
-								serializeRemoteConnectorStatus,
-							),
 						}
 					: {}),
 			}

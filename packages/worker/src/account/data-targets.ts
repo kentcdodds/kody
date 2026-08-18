@@ -245,7 +245,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	// OpenAPI binding operations before bindings (composite FK child).
 	{ kind: 'user_id', table: 'user_openapi_binding_operations' },
 	{ kind: 'user_id', table: 'user_openapi_bindings' },
-	{ kind: 'user_id', table: 'remote_connector_settings' },
 	{ kind: 'user_id', table: 'mcp_server_settings' },
 	// Job rows (`jobs`, `archived_job_artifacts`) live in the jobs worker's
 	// database (ADR 0016); account deletion reaches them through the JOBS
@@ -748,7 +747,6 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	password_resets: ['token_hash'],
 	pending_email_changes: ['token_hash'],
 	platform_feedback: ['reviewed_by_user_id', 'reviewed_at', 'admin_note'],
-	remote_connector_settings: ['encrypted_shared_secret'],
 	secret_entries: ['encrypted_value', 'lookup_hash'],
 	users: ['password_hash'],
 	verifications: ['secret'],

@@ -1116,10 +1116,6 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 	silenceIncidentalRuntimeWarnings()
 	let toolArguments: Record<string, unknown> | null = null
 	const connectorEnv = {
-		REMOTE_CONNECTOR_SESSION: {
-			idFromName(name: string) {
-				return name
-			},
 			get() {
 				return {
 					async getSnapshot() {
@@ -1169,7 +1165,6 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: { userId: 'user-123' },
-			remoteConnectors: [{ instanceId: 'lighting' }],
 		}),
 		{
 			resolveSecretValue: async (secret, capabilityName) =>
@@ -1205,7 +1200,6 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: { userId: 'user-123' },
-			remoteConnectors: [{ instanceId: 'lighting' }],
 		}),
 	)
 	try {
@@ -1347,10 +1341,6 @@ test('remote connector calls round-trip through sanitized ToolDispatcher names',
 	silenceIncidentalRuntimeWarnings()
 	let toolArguments: Record<string, unknown> | null = null
 	const connectorEnv = {
-		REMOTE_CONNECTOR_SESSION: {
-			idFromName(name: string) {
-				return name
-			},
 			get() {
 				return {
 					async getSnapshot() {
@@ -1391,7 +1381,6 @@ test('remote connector calls round-trip through sanitized ToolDispatcher names',
 		createMcpCallerContext({
 			baseUrl: 'https://heykody.dev',
 			user: { userId: 'user-123' },
-			remoteConnectors: [{ instanceId: 'lighting' }],
 		}),
 	)) as KodyResolvedProvider
 	const remoteConnectors = provider.kodyRemoteConnectors ?? []
@@ -1406,7 +1395,6 @@ test('remote connector calls round-trip through sanitized ToolDispatcher names',
 	})
 	const source = createKodyProviderProxySource({
 		providerName: provider.name,
-		remoteConnectors,
 	})
 	const kody = new Function('__dispatchers', `${source}; return kody;`)(
 		dispatchers,

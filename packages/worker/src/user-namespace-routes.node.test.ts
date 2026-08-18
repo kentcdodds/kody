@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest'
 import { parsePackageAppPath } from '#worker/package-runtime/package-app-serve.ts'
-import { parseUserScopedConnectorRoutePath } from '#worker/remote-connector/connector-session-key.ts'
 import {
 	isNamespacedAppEndpointPath,
 	isNamespacedPackageInvocationEndpointPath,
@@ -36,6 +35,5 @@ test('machine namespaces claim only their multi-segment paths', () => {
 		expect(isNamespacedAppEndpointPath(pathname)).toBe(false)
 		expect(isNamespacedPackageInvocationEndpointPath(pathname)).toBe(false)
 		expect(parsePackageAppPath(pathname)).toBeNull()
-		expect(parseUserScopedConnectorRoutePath(pathname)).toBeNull()
 	}
 })

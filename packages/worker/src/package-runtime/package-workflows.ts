@@ -28,7 +28,6 @@ import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 } from '#worker/package-registry/repo.ts'
-import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
@@ -1483,10 +1482,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 			},
 		})
 		try {
-			const remoteConnectors = await listAttachedRemoteConnectorRefs({
-				env: this.env,
-				userId: payload.userId,
-			})
 			// Ephemeral + raised timeout: Workflow step.do already caches
 			// successful results. Keyed invoke would replay a sandbox timeout
 			// on retry (~ms) instead of re-executing; the default 90s export
@@ -1503,7 +1498,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					packageKodyIds: [payload.kodyId],
 					exportNames: [payload.exportName],
 					sources: [packageWorkflowInvocationSource],
-					remoteConnectors,
 				},
 				request: {
 					packageIdOrKodyId: payload.packageId,
@@ -1552,10 +1546,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 		// This stays lazy because run-kody-registry imports package-workflows to
 		// expose workflow helpers to executed modules.
 		const { runModuleWithRegistry } = await import('#mcp/run-kody-registry.ts')
-		const remoteConnectors = await listAttachedRemoteConnectorRefs({
-			env: this.env,
-			userId: payload.userId,
-		})
 		const waitUntil = (promise: Promise<unknown>) => {
 			this.ctx.waitUntil(promise)
 		}
@@ -1573,7 +1563,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 						storageId: null,
 					}
 				: null,
-			remoteConnectors,
 		})
 		// Inline workflow sandboxes use the same execute module loader, including
 		// packages.invoke. Package-created inline code keeps package-runtime

@@ -53,7 +53,6 @@ test('memory tool context surfaces retriever results, fails on retriever errors,
 			displayName: 'User',
 		},
 		storageContext: null,
-		remoteConnectors: null,
 		repoContext: null,
 	}
 	const request = {

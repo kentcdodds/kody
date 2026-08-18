@@ -4,9 +4,6 @@ import {
 	getUsernameFormatValidationError,
 } from '#worker/identity/username.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
-import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
-import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
-import { listAttachedRemoteConnectorRefs } from './remote-connector/settings-service.ts'
 
 type McpOAuthGrantProps = {
 	userId?: unknown
@@ -30,38 +27,6 @@ export type McpAuthUserContext = {
 	user: McpUserContext
 	emailVerified: boolean
 	suspended: boolean
-	remoteConnectors: ReadonlyArray<RemoteConnectorRef>
-}
-
-export const attachedRemoteConnectorRefsCacheTtlMs = 30_000
-const attachedRemoteConnectorRefsCacheLimit = 200
-const attachedRemoteConnectorRefsCaches = new WeakMap<
-	D1Database,
-	PromiseLruCache<ReadonlyArray<RemoteConnectorRef>>
->()
-
-/**
- * Resolve attached remote connector refs for MCP auth and background package
- * runtimes. Cached 30s per user per D1 binding so app/service/subscription
- * caller-context builds do not each pay a settings read.
- */
-export function listAttachedRemoteConnectorRefsCached(input: {
-	env: Pick<Env, 'APP_DB'>
-	userId: string
-}) {
-	let cache = attachedRemoteConnectorRefsCaches.get(input.env.APP_DB)
-	if (!cache) {
-		cache = new PromiseLruCache<ReadonlyArray<RemoteConnectorRef>>({
-			ttlMs: attachedRemoteConnectorRefsCacheTtlMs,
-			limit: attachedRemoteConnectorRefsCacheLimit,
-		})
-		attachedRemoteConnectorRefsCaches.set(input.env.APP_DB, cache)
-	}
-	return cache.getOrCreate({
-		cacheKey: input.userId,
-		create: async () =>
-			Object.freeze(await listAttachedRemoteConnectorRefs(input)),
-	})
 }
 
 function buildBaseUserFromGrant(
@@ -130,10 +95,10 @@ export async function buildMcpUserContextFromGrantProps(
 			username ||
 			(email ? displayNameFromEmail(email) : baseUser.displayName)
 
-		const [{ roles, permissions }, remoteConnectors] = await Promise.all([
-			getUserRolesAndPermissions(env.APP_DB, row.id),
-			listAttachedRemoteConnectorRefsCached({ env, userId }),
-		])
+		const { roles, permissions } = await getUserRolesAndPermissions(
+			env.APP_DB,
+			row.id,
+		)
 
 		return {
 			user: {
@@ -146,7 +111,6 @@ export async function buildMcpUserContextFromGrantProps(
 			},
 			emailVerified: Boolean(row.email_verified_at),
 			suspended: Boolean(row.suspended_at),
-			remoteConnectors,
 		}
 	} catch (error) {
 		console.error('Failed to load MCP auth user context:', error)

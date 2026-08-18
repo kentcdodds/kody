@@ -145,7 +145,6 @@ function createContext(
 				username: 'user',
 				displayName: 'User',
 			},
-			remoteConnectors: null,
 			storageContext: null,
 			repoContext: null,
 		},

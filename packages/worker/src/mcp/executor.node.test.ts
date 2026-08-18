@@ -103,7 +103,6 @@ function createGatewayProps(userId: string) {
 test('kody remote proxy dispatches and reports connector/capability errors clearly', async () => {
 	const calls: Array<{ dispatchName: string; args: unknown }> = []
 	const remote = createKodyRemoteProxy({
-		remoteConnectors: [
 			{
 				name: 'home',
 				instanceId: 'home',
@@ -164,7 +163,6 @@ test('kody remote proxy dispatches and reports connector/capability errors clear
 test('generated kody provider source projects remote proxy metadata', () => {
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',
-		remoteConnectors: [
 			{
 				name: 'home',
 				instanceId: 'home-instance',
@@ -252,11 +250,9 @@ test('generated kody provider source ignores volatile metadata fields for script
 	] as const
 	const first = createKodyProviderProxySource({
 		providerName: 'kody',
-		remoteConnectors: [...baseConnectors],
 	})
 	const second = createKodyProviderProxySource({
 		providerName: 'kody',
-		remoteConnectors: [
 			{
 				...baseConnectors[0],
 				instanceId: 'home-b',
@@ -274,7 +270,6 @@ test('generated kody provider source ignores volatile metadata fields for script
 test('generated kody provider and executor module sources stay bundle-safe', () => {
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',
-		remoteConnectors: [],
 	})
 	assertGeneratedExecutorSourceIsBundleSafe(source)
 
@@ -284,7 +279,6 @@ test('generated kody provider and executor module sources stay bundle-safe', () 
 			{
 				name: 'kody',
 				fns: {},
-				kodyRemoteConnectors: [],
 			},
 		],
 		shadowGlobalThis: false,
@@ -297,7 +291,6 @@ test('generated kody provider source wires remote proxy dispatch', async () => {
 	const calls: Array<{ name: string; argsJson: string }> = []
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',
-		remoteConnectors: [
 			{
 				name: 'home',
 				instanceId: 'home',
@@ -347,7 +340,6 @@ test('generated kody provider source wires openapi proxy dispatch', async () => 
 	const calls: Array<{ name: string; argsJson: string }> = []
 	const source = createKodyProviderProxySource({
 		providerName: 'kody',
-		remoteConnectors: [],
 		openApiProviders: [
 			{
 				name: 'widgets',

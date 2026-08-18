@@ -3,7 +3,6 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
-import { isRemoteConnectorUnavailableMessage } from '#worker/remote-connector/status.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
 import {
 	isRepoSearchInvalidRegexMessage,
@@ -121,18 +120,6 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 		getErrorCauseChain(cause).some(
 			(entry) =>
 				entry instanceof Error && isRepoLargeFileMessage(entry.message),
-		)
-	) {
-		return true
-	}
-	// Offline / empty / session-unavailable remote connectors throw a plain
-	// Error with a stable guidance message. Agents reconnect; keep volume on
-	// mcp-event lines.
-	if (
-		getErrorCauseChain(cause).some(
-			(entry) =>
-				entry instanceof Error &&
-				isRemoteConnectorUnavailableMessage(entry.message),
 		)
 	) {
 		return true

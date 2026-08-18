@@ -113,7 +113,6 @@ function createContext(user: { userId: string; username: string } | null) {
 						displayName: 'User',
 					}
 				: null,
-			remoteConnectors: null,
 			storageContext: null,
 			repoContext: null,
 		},

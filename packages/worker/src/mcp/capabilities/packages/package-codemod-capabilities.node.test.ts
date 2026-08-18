@@ -39,7 +39,6 @@ function createCtx(userId = 'user-1') {
 				email: 'user@example.com',
 				displayName: 'User',
 			},
-			remoteConnectors: null,
 			storageContext: null,
 			repoContext: null,
 		},
@@ -219,7 +218,6 @@ test('package codemod capabilities stay self-scoped and reject anonymous callers
 		callerContext: {
 			baseUrl: 'https://heykody.dev',
 			user: null,
-			remoteConnectors: null,
 			storageContext: null,
 			repoContext: null,
 		},

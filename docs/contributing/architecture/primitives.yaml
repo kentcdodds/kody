@@ -55,15 +55,6 @@ primitives:
       - docs/contributing/project-intent.md
       - docs/contributing/adding-capabilities.md
 
-  - id: connector-ingress
-    group: surfaces
-    name: Remote connector ingress
-    summary: Username-scoped WebSocket ingress for outbound connector sockets.
-    code:
-      - packages/worker/src/remote-connector/
-    docs:
-      - docs/contributing/architecture/remote-connectors.md
-
   - id: status-page
     group: surfaces
     name: Public status page
@@ -381,16 +372,6 @@ primitives:
     docs:
       - docs/use/webhooks.md
       - docs/contributing/architecture/webhooks.md
-
-  - id: remote-connectors
-    group: assistant
-    name: Remote connectors
-    summary: Outbound-WebSocket tool servers with account UI and settings.
-    code:
-      - packages/worker/src/remote-connector/
-      - packages/worker/src/app/handlers/account-remote-connectors.ts
-    docs:
-      - docs/contributing/architecture/remote-connectors.md
 
   - id: mcp-client-servers
     group: assistant

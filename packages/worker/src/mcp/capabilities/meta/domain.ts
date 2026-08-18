@@ -7,7 +7,6 @@ import { metaMemoryUpsertCapability } from './meta-memory-upsert.ts'
 import { metaMemoryVerifyCapability } from './meta-memory-verify.ts'
 import { metaPlatformFeedbackSubmitCapability } from './meta-platform-feedback-submit.ts'
 import { metaGetCurrentUserCapability } from './meta-get-current-user.ts'
-import { metaListRemoteConnectorStatusCapability } from './meta-list-remote-connector-status.ts'
 import { metaGetMcpServerInstructionsCapability } from './meta-get-mcp-server-instructions.ts'
 import { executeCapability } from './execute.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
@@ -36,7 +35,6 @@ export const metaDomain = defineDomain({
 		metaGetCurrentUserCapability,
 		metaGetMcpServerInstructionsCapability,
 		metaSetMcpServerInstructionsCapability,
-		metaListRemoteConnectorStatusCapability,
 		metaMemorySearchCapability,
 		metaMemoryGetCapability,
 		metaMemoryVerifyCapability,

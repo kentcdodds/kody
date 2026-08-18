@@ -1,6 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
 import { OAuthProvider } from '@cloudflare/workers-oauth-provider'
-import { RemoteConnectorSession } from './remote-connector/session.ts'
 import { McpClientHub } from './mcp-client/hub.ts'
 import { MCP } from './mcp/index.ts'
 import { JobsHost } from './jobs/jobs-host.ts'
@@ -51,10 +50,6 @@ import { handleJobReindexRequest } from './job-maintenance.ts'
 import { handleMemoryReindexRequest } from './memory-maintenance.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
 import {
-	parseUserScopedConnectorRoutePath,
-	userScopedConnectorSessionKey,
-} from './remote-connector/connector-session-key.ts'
-import {
 	handlePackageAppRequest,
 	isPackageAppRequestPath,
 } from '#app/handlers/package-app.ts'
@@ -82,7 +77,6 @@ export {
 	RepoSession,
 	RepoSessionIndex,
 	KodyFetchGateway,
-	RemoteConnectorSession,
 	McpClientHub,
 	MCP,
 	JobsHost,
@@ -137,36 +131,6 @@ const protectedPublicJsonFormPaths = new Set([
 	'/webauthn/authentication',
 ])
 
-async function handleUserScopedConnectorRequest(request: Request, env: Env) {
-	const url = new URL(request.url)
-	const userScopedConnectorRoute = parseUserScopedConnectorRoutePath(
-		url.pathname,
-	)
-	if (!userScopedConnectorRoute) return null
-	if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
-		return new Response('Not Found', { status: 404 })
-	}
-	const routeUser = await findPublicUserIdentityByUsername({
-		db: env.APP_DB,
-		username: userScopedConnectorRoute.username,
-	})
-	if (!routeUser) {
-		return new Response('Not Found', { status: 404 })
-	}
-	const sessionKey = userScopedConnectorSessionKey({
-		userId: routeUser.mcpUserId,
-		instanceId: userScopedConnectorRoute.instanceId,
-	})
-	const stub = env.REMOTE_CONNECTOR_SESSION.get(
-		env.REMOTE_CONNECTOR_SESSION.idFromName(sessionKey),
-	)
-	const forwardUrl = new URL(request.url)
-	forwardUrl.pathname = userScopedConnectorRoute.rest || '/'
-	const forwardRequest = new Request(forwardUrl.toString(), request)
-	forwardRequest.headers.set('X-Kody-Connector-Session-Key', sessionKey)
-	forwardRequest.headers.set('X-Kody-Connector-User-Id', routeUser.mcpUserId)
-	return stub.fetch(forwardRequest)
-}
 
 const appHandler = withCors({
 	getCorsHeaders(request): Record<string, string> | null {
@@ -564,19 +528,13 @@ const workerHandler = {
 			return handleWebhookIngressRequest(request, env, ctx)
 		}
 
-		const connectorResponse = await handleUserScopedConnectorRequest(
-			request,
-			env,
-		)
-		if (connectorResponse) return connectorResponse
-
 		if (isNamespacedPackageInvocationEndpointPath(url.pathname)) {
 			return new Response('Not Found', { status: 404 })
 		}
 
 		// Domain-migration redirect for safe browser navigation from legacy app
 		// hosts. Runs after the API-shaped surfaces (package apps, invocation
-		// API, webhooks, connectors) so those keep serving on every attached
+		// API, webhooks) so those keep serving on every attached
 		// host, and skips MCP/OAuth/auth/health paths itself. No-op unless
 		// APP_LEGACY_REDIRECT is enabled.
 		const legacyHostRedirect = getLegacyHostRedirectResponse({ request, env })

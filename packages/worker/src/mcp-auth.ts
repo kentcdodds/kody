@@ -232,7 +232,7 @@ export async function handleMcpRequest({
 		await recordRejection('unidentified_grant')
 		return createEmailVerificationRequiredResponse(origin)
 	}
-	const { user: mcpUser, remoteConnectors } = authContext
+	const { user: mcpUser } = authContext
 	if (!authContext.emailVerified) {
 		await recordRejection('email_unverified', mcpUser.email)
 		return createEmailVerificationRequiredResponse(origin)
@@ -251,7 +251,6 @@ export async function handleMcpRequest({
 		baseUrl: origin,
 		executionOrigin: 'interactive',
 		user: mcpUser,
-		remoteConnectors: [...remoteConnectors],
 	})
 	context.props = props
 

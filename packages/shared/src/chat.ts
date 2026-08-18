@@ -1,7 +1,5 @@
 import {
 	array,
-	createSchema,
-	fail,
 	literal,
 	nullable,
 	object,
@@ -10,17 +8,6 @@ import {
 	type InferOutput,
 	union,
 } from 'remix/data-schema'
-
-const remoteConnectorInstanceIdFieldSchema = createSchema<unknown, string>(
-	(value, context) => {
-		if (typeof value !== 'string') return fail('Expected string', context.path)
-		const trimmed = value.trim()
-		if (!trimmed) {
-			return fail('remote connector instanceId must not be empty', context.path)
-		}
-		return { value: trimmed }
-	},
-)
 
 export const mcpUserContextSchema = object({
 	userId: string(),
@@ -50,10 +37,6 @@ export const mcpRepoContextSchema = object({
 	entityId: optional(nullable(string())),
 })
 
-const remoteConnectorRefSchema = object({
-	instanceId: remoteConnectorInstanceIdFieldSchema,
-})
-
 export const mcpExecutionOriginSchema = union([
 	literal('interactive'),
 	literal('background'),
@@ -63,7 +46,6 @@ export const mcpCallerContextSchema = object({
 	baseUrl: string(),
 	executionOrigin: optional(mcpExecutionOriginSchema),
 	user: optional(nullable(mcpUserContextSchema)),
-	remoteConnectors: optional(nullable(array(remoteConnectorRefSchema))),
 	storageContext: optional(nullable(mcpStorageContextSchema)),
 	repoContext: optional(nullable(mcpRepoContextSchema)),
 })

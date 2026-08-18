@@ -4,7 +4,6 @@ import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 import { isEntitlementLimitError } from './entitlements/errors.ts'
 import { isIntegrationTokenRefreshCallerMessage } from './integrations/token-refresh.ts'
-import { isRemoteConnectorUnavailableMessage } from './remote-connector/status.ts'
 import { isArtifactsGitTransientErrorMessage } from './repo/artifacts-git-retry.ts'
 import { isUserCodeError } from './user-code-error.ts'
 
@@ -156,18 +155,7 @@ export function filterExecutorSandboxTimeoutSentryEvent(event: ErrorEvent) {
  * via `isCallerFailure`; this `beforeSend` gate is the backstop for any other
  * capture path that still forwards the plain Error message.
  */
-export function isRemoteConnectorUnavailableSentryEvent(event: ErrorEvent) {
-	return sentryEventMessages(event).some(
-		(message) =>
-			typeof message === 'string' &&
-			isRemoteConnectorUnavailableMessage(message),
-	)
-}
 
-export function filterRemoteConnectorUnavailableSentryEvent(event: ErrorEvent) {
-	if (!isRemoteConnectorUnavailableSentryEvent(event)) return event
-	return null
-}
 
 /**
  * OAuth token-refresh caller state (no refresh token on the connection,
@@ -421,7 +409,6 @@ export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	// String-match backstops for paths that cannot yet be marked.
 	if (filterUserModuleBundlerFailureSentryEvent(event) === null) return null
 	if (filterExecutorSandboxTimeoutSentryEvent(event) === null) return null
-	if (filterRemoteConnectorUnavailableSentryEvent(event) === null) return null
 	if (filterIntegrationTokenRefreshCallerSentryEvent(event) === null)
 		return null
 	if (filterDurableObjectIsolateResetSentryEvent(event) === null) return null
@@ -469,9 +456,7 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// account policy, still visible on structured `mcp-event` logs. Bundler
 		// / sandbox-timeout string matches remain as backstops for unmarked
 		// paths; see filterUserModuleBundlerFailureSentryEvent and
-		// filterExecutorSandboxTimeoutSentryEvent. Offline remote-connector
-		// guidance messages are dropped the same way — see
-		// filterRemoteConnectorUnavailableSentryEvent. OAuth token-refresh
+		// filterExecutorSandboxTimeoutSentryEvent. OAuth token-refresh
 		// caller state (missing refresh token, provider 4xx / invalid_grant)
 		// is dropped the same way — see
 		// filterIntegrationTokenRefreshCallerSentryEvent. Bare Cloudflare Durable

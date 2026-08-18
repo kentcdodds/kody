@@ -28,8 +28,6 @@ import {
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
-import { userScopedConnectorSessionKey } from '#worker/remote-connector/connector-session-key.ts'
-import { type RemoteConnectorSessionExport } from '#worker/remote-connector/types.ts'
 import {
 	exportRunRecords,
 	listRunRecordStorageIds,
@@ -74,7 +72,6 @@ export const accountExportSectionNames = [
 	'user_meter',
 	'mailbox',
 	'repo_session_index',
-	'remote_connector_session',
 	'package_service',
 	'oauth_grants',
 	'artifact_repos',
@@ -119,9 +116,6 @@ type UserSavedPackageSnapshot = {
 	hasApp: boolean
 }
 
-type UserRemoteConnectorSnapshot = {
-	instanceId: string
-}
 
 type UserPackageServiceSnapshot = {
 	packageId: string
@@ -134,7 +128,6 @@ type UserExportInventory = {
 	storageIds: Array<string>
 	sourceSnapshots: Array<UserSourceSnapshot>
 	savedPackages: Array<UserSavedPackageSnapshot>
-	remoteConnectors: Array<UserRemoteConnectorSnapshot>
 	packageServices: Array<UserPackageServiceSnapshot>
 	communityListingIds: Array<string>
 	bundleKvKeys: Array<string>
@@ -148,7 +141,6 @@ type ManifestInventoryCounts = {
 	userMeterCounters: number
 	mailboxRows: number
 	repoSessionIndexRows: number
-	remoteConnectorSessions: number
 	packageServices: number
 	artifactRepos: number
 	kvKeys: number
@@ -282,10 +274,6 @@ type AccountExportDurableObjects = {
 	userMeter: UserMeterExportResult | null
 	mailbox: MailboxExportResult | null
 	repoSessionIndex: RepoSessionIndexExportResult | null
-	remoteConnectorSessions: Array<{
-		instanceId: string
-		export: RemoteConnectorSessionExport | null
-	}>
 	packageServices: Array<{
 		packageId: string
 		serviceName: string
@@ -803,18 +791,6 @@ async function listUserSavedPackages(env: Env, userId: string) {
 	}))
 }
 
-async function listUserRemoteConnectors(env: Env, userId: string) {
-	const rows = await selectRows<{ instance_id: string }>(
-		env,
-		`SELECT instance_id
-		FROM remote_connector_settings
-		WHERE user_id = ?`,
-		[userId],
-	)
-	return rows.map((row) => ({
-		instanceId: row.instance_id,
-	}))
-}
 
 async function listUserPackageServices(
 	env: Env,
@@ -920,7 +896,6 @@ async function collectInventory(input: {
 		storageIds,
 		sourceSnapshots,
 		savedPackages,
-		remoteConnectors,
 		communityListingIds,
 		r2ObjectCount,
 	] = await Promise.all([
@@ -946,12 +921,6 @@ async function collectInventory(input: {
 				`Failed to enumerate saved packages: ${getErrorMessage(error)}`,
 			)
 			return [] as Array<UserSavedPackageSnapshot>
-		}),
-		listUserRemoteConnectors(input.env, input.userId).catch((error) => {
-			input.warnings.push(
-				`Failed to enumerate remote connectors: ${getErrorMessage(error)}`,
-			)
-			return [] as Array<UserRemoteConnectorSnapshot>
 		}),
 		listUserCommunityListingIds(input.env, input.userId).catch((error) => {
 			input.warnings.push(
@@ -995,7 +964,6 @@ async function collectInventory(input: {
 		storageIds,
 		sourceSnapshots,
 		savedPackages,
-		remoteConnectors,
 		packageServices,
 		communityListingIds,
 		bundleKvKeys,
@@ -1121,7 +1089,6 @@ async function collectManifestInventoryCounts(input: {
 		userMeterCounters,
 		mailboxRows,
 		repoSessionIndexRows,
-		remoteConnectorSessions,
 		packageServices,
 		artifactRepos,
 		kvKeys,
@@ -1168,13 +1135,6 @@ async function collectManifestInventoryCounts(input: {
 				ownerId: input.userId,
 			})
 		}),
-		safeCount('remote connectors', async () =>
-			countScalar(
-				input.env,
-				`SELECT COUNT(*) AS count FROM remote_connector_settings WHERE user_id = ?`,
-				[input.userId],
-			),
-		),
 		safeCount('package services', async () =>
 			countScalar(
 				input.env,
@@ -1208,7 +1168,6 @@ async function collectManifestInventoryCounts(input: {
 		userMeterCounters,
 		mailboxRows,
 		repoSessionIndexRows,
-		remoteConnectorSessions,
 		packageServices,
 		artifactRepos,
 		kvKeys,
@@ -1647,55 +1606,6 @@ async function exportRepoSessionIndexRows(input: {
 	}
 }
 
-async function exportRemoteConnectorSessions(input: {
-	env: AccountExportEnv
-	userId: string
-	connectors: ReadonlyArray<UserRemoteConnectorSnapshot>
-	warnings: Array<string>
-}) {
-	const namespace = input.env.REMOTE_CONNECTOR_SESSION
-	if (!namespace) {
-		if (input.connectors.length > 0) {
-			input.warnings.push(
-				`REMOTE_CONNECTOR_SESSION binding was unavailable; ${input.connectors.length} connector session export(s) were skipped.`,
-			)
-		}
-		return [] as AccountExportDurableObjects['remoteConnectorSessions']
-	}
-	const sessions: AccountExportDurableObjects['remoteConnectorSessions'] = []
-	for (const connector of input.connectors) {
-		const sessionKey = userScopedConnectorSessionKey({
-			userId: input.userId,
-			instanceId: connector.instanceId,
-		})
-		try {
-			const stub = namespace.get(
-				namespace.idFromName(sessionKey),
-			) as unknown as {
-				rpcExportUserSession: (payload: {
-					userId: string
-					instanceId: string
-				}) => Promise<RemoteConnectorSessionExport>
-			}
-			sessions.push({
-				instanceId: connector.instanceId,
-				export: await stub.rpcExportUserSession({
-					userId: input.userId,
-					instanceId: connector.instanceId,
-				}),
-			})
-		} catch (error) {
-			input.warnings.push(
-				`Remote connector session export failed for ${connector.instanceId}: ${getErrorMessage(error)}`,
-			)
-			sessions.push({
-				instanceId: connector.instanceId,
-				export: null,
-			})
-		}
-	}
-	return sessions
-}
 
 async function exportPackageServices(input: {
 	env: AccountExportEnv
@@ -1741,7 +1651,6 @@ async function exportDurableObjects(input: {
 }): Promise<AccountExportDurableObjects> {
 	const [
 		storageRunners,
-		remoteConnectorSessions,
 		packageServices,
 		runRecords,
 		userMeter,
@@ -1752,12 +1661,6 @@ async function exportDurableObjects(input: {
 			env: input.env,
 			userId: input.userId,
 			storageIds: input.inventory.storageIds,
-			warnings: input.warnings,
-		}),
-		exportRemoteConnectorSessions({
-			env: input.env,
-			userId: input.userId,
-			connectors: input.inventory.remoteConnectors,
 			warnings: input.warnings,
 		}),
 		exportPackageServices({
@@ -1802,7 +1705,6 @@ async function exportDurableObjects(input: {
 		userMeter,
 		mailbox,
 		repoSessionIndex,
-		remoteConnectorSessions,
 		packageServices,
 		storageRunners,
 	}
@@ -1899,19 +1801,6 @@ function buildManifest(input: {
 				warning.startsWith('REPO_SESSION_INDEX '),
 		),
 		discovery: { section: 'repo_session_index' },
-	}
-	sections.remote_connector_sessions = {
-		count:
-			input.inventoryCounts?.remoteConnectorSessions ??
-			input.inventory?.remoteConnectors.length ??
-			0,
-		warnings: input.warnings.filter((warning) =>
-			warning.startsWith('Remote connector session '),
-		),
-		discovery: {
-			section: 'durable_object_summaries',
-			kind: 'remote_connector_session',
-		},
 	}
 	sections.package_services = {
 		count:
@@ -2140,7 +2029,6 @@ export async function readAccountExportSection(input: {
 	serviceName?: string
 	kind?:
 		| 'storage_runner'
-		| 'remote_connector_session'
 		| 'package_service'
 		| 'job_manager'
 	pageSize?: number
@@ -2285,66 +2173,6 @@ export async function readAccountExportSection(input: {
 			warnings,
 		}
 	}
-	if (input.section === 'remote_connector_session') {
-		if (!input.instanceId) {
-			throw new Error(
-				'instance_id is required when section is remote_connector_session.',
-			)
-		}
-		const owned = await input.env.APP_DB.prepare(
-			`SELECT 1 AS owned FROM remote_connector_settings
-			WHERE user_id = ? AND instance_id = ?`,
-		)
-			.bind(input.mcpUserId, input.instanceId)
-			.first<{ owned: number }>()
-		if (owned?.owned !== 1) {
-			throw new Error('Remote connector session was not found for export.')
-		}
-		const namespace = input.env.REMOTE_CONNECTOR_SESSION
-		if (!namespace) {
-			throw new Error('REMOTE_CONNECTOR_SESSION binding was unavailable.')
-		}
-		const sessionKey = userScopedConnectorSessionKey({
-			userId: input.mcpUserId,
-			instanceId: input.instanceId,
-		})
-		const stub = namespace.get(namespace.idFromName(sessionKey)) as unknown as {
-			rpcExportUserSessionPage: (payload: {
-				userId: string
-				instanceId: string
-				pageSize: number
-				startAfter?: string
-			}) => Promise<{
-				persisted: unknown
-				tools: Array<unknown>
-				connected: boolean
-				truncated: boolean
-				nextStartAfter: string | null
-				pageSize: number
-			}>
-		}
-		const exported = await stub.rpcExportUserSessionPage({
-			userId: input.mcpUserId,
-			instanceId: input.instanceId,
-			pageSize: normalizePageSize(input.pageSize),
-			startAfter: input.startAfter,
-		})
-		return {
-			section: input.section,
-			items: [
-				{
-					instanceId: input.instanceId,
-					persisted: exported.persisted,
-					tools: exported.tools,
-					connected: exported.connected,
-				},
-			],
-			truncated: exported.truncated,
-			nextStartAfter: exported.nextStartAfter,
-			pageSize: exported.pageSize,
-			warnings,
-		}
-	}
 	if (input.section === 'package_service') {
 		if (!input.packageId || !input.serviceName) {
 			throw new Error(
@@ -2446,33 +2274,6 @@ export async function readAccountExportSection(input: {
 					truncated: false,
 					nextStartAfter: null,
 					pageSize: 1,
-					warnings,
-				}
-			}
-			if (input.kind === 'remote_connector_session') {
-				const afterRowid = Number(cursor['afterRowid'] ?? 0)
-				const rows = await input.env.APP_DB.prepare(
-					`SELECT rowid AS cursor, instance_id
-					FROM remote_connector_settings
-					WHERE user_id = ? AND rowid > ?
-					ORDER BY rowid LIMIT ?`,
-				)
-					.bind(input.mcpUserId, afterRowid, pageSize + 1)
-					.all<{ cursor: number; instance_id: string }>()
-				const pageRows = rows.results ?? []
-				const truncated = pageRows.length > pageSize
-				const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
-				return {
-					section: input.section,
-					items: selected.map((row) => ({
-						kind: input.kind,
-						instanceId: row.instance_id,
-					})),
-					truncated,
-					nextStartAfter: truncated
-						? JSON.stringify({ afterRowid: selected.at(-1)!.cursor })
-						: null,
-					pageSize,
 					warnings,
 				}
 			}

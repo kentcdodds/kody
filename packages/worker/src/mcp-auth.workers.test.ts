@@ -547,7 +547,6 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	expect(receivedProps).toMatchObject({
 		baseUrl: 'https://example.com',
 		executionOrigin: 'interactive',
-		remoteConnectors: [],
 		storageContext: null,
 		user: { userId: 'user' },
 	})
@@ -587,7 +586,6 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	})
 	expect(withConnectorResponse.status).toBe(200)
 	expect(receivedProps).toMatchObject({
-		remoteConnectors: [{ instanceId: 'home' }],
 	})
 
 	// The failing D1 lookup logs the roles-load failure before the request

@@ -139,11 +139,6 @@
 						"script_name": "kody",
 					},
 					{
-						"class_name": "RemoteConnectorSession",
-						"name": "REMOTE_CONNECTOR_SESSION",
-						"script_name": "kody",
-					},
-					{
 						"class_name": "McpClientHub",
 						"name": "MCP_CLIENT_HUB",
 						"script_name": "kody",
@@ -315,11 +310,6 @@
 					{
 						"class_name": "MCP",
 						"name": "MCP_OBJECT",
-						"script_name": "kody",
-					},
-					{
-						"class_name": "RemoteConnectorSession",
-						"name": "REMOTE_CONNECTOR_SESSION",
 						"script_name": "kody",
 					},
 					{

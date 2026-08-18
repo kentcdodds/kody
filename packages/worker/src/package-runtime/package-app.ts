@@ -1,6 +1,5 @@
 import { WorkerEntrypoint, exports as workerExports } from 'cloudflare:workers'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { listAttachedRemoteConnectorRefsCached } from '#worker/mcp-auth-user-context.ts'
 import {
 	getPackageAppEntryPath,
 	parseAuthoredPackageJson,
@@ -835,12 +834,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		createExecutionSecretRedactor()
 
 	private async createCallerContext(storageId: string | null) {
-		const remoteConnectors = [
-			...(await listAttachedRemoteConnectorRefsCached({
-				env: this.env,
-				userId: this.ctx.props.userId,
-			})),
-		]
 		return createMcpCallerContext({
 			baseUrl: this.ctx.props.baseUrl,
 			executionOrigin: 'background',
@@ -850,7 +843,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				username: undefined,
 				displayName: this.ctx.props.displayName,
 			},
-			remoteConnectors,
 			storageContext: {
 				sessionId: null,
 				appId: this.ctx.props.packageId,

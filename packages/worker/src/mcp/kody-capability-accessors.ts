@@ -1,6 +1,6 @@
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 
-export type KodyCapabilityNamespace = 'remote' | 'mcp' | 'openapi'
+export type KodyCapabilityNamespace = 'mcp' | 'openapi'
 
 export type KodyCapabilityNamespaceConfig = {
 	namespace: KodyCapabilityNamespace
@@ -11,13 +11,6 @@ export type KodyCapabilityNamespaceConfig = {
 }
 
 export const kodyCapabilityNamespaceConfigs = {
-	remote: {
-		namespace: 'remote',
-		flatNamePrefix: 'remote:',
-		flatNameLabel: 'Remote connector capability',
-		entryNamePlaceholder: 'connectorName',
-		toolNamePlaceholder: 'capabilityName',
-	},
 	mcp: {
 		namespace: 'mcp',
 		flatNamePrefix: 'mcp:',
@@ -60,17 +53,9 @@ export function buildNamespacedKodyAccessor(input: {
 export function buildKodyCapabilityAccessor(spec: {
 	name: string
 	source?: CapabilitySpec['source']
-	remoteConnector?: CapabilitySpec['remoteConnector']
 	mcpServer?: CapabilitySpec['mcpServer']
 	openApi?: CapabilitySpec['openApi']
 }) {
-	if (spec.source === 'remote-connector' && spec.remoteConnector) {
-		return buildNamespacedKodyAccessor({
-			namespace: 'remote',
-			entryName: spec.remoteConnector.connectorName,
-			toolName: spec.remoteConnector.toolName,
-		})
-	}
 	if (spec.source === 'mcp-server' && spec.mcpServer) {
 		return buildNamespacedKodyAccessor({
 			namespace: 'mcp',

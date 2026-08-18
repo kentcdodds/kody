@@ -25,7 +25,6 @@ export function buildEntityRef(id: string, type: SearchEntityType) {
 export function buildCapabilityUsage(spec: {
 	name: string
 	source?: CapabilitySpec['source']
-	remoteConnector?: CapabilitySpec['remoteConnector']
 	mcpServer?: CapabilitySpec['mcpServer']
 	openApi?: CapabilitySpec['openApi']
 }) {

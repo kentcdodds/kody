@@ -387,7 +387,6 @@ test('package service start and stop project liveness into package_service_state
 		await flushWaitUntilTasks(created.waitUntilTasks)
 		expect(mockModule.runBundledModuleWithRegistry.mock.calls[0]?.[1]).toEqual(
 			expect.objectContaining({
-				remoteConnectors: [{ instanceId: 'home' }],
 			}),
 		)
 		expect(upserts.at(-1)).toEqual([

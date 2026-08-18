@@ -71,7 +71,6 @@ export type SearchResultStructuredContent = {
 		queryEmbeddingMs?: number
 		capabilityCandidatesMs?: number
 		packageCandidatesMs?: number
-		remoteConnectorStatusMs?: number
 		memoryEnrichmentMs?: number
 		memoryEnrichmentWaitMs?: number
 		memoryAcknowledgementMs?: number
@@ -96,12 +95,6 @@ export type SearchResultStructuredContent = {
 		retrieverResults?: Array<PackageRetrieverSurfaceResult>
 		retrieverWarnings?: Array<string>
 	}
-	remoteConnectorStatuses?: Array<{
-		connectorId: string
-		state: string
-		connected: boolean
-		toolCount: number
-	}>
 }
 
 export type RelatedCapabilityOperation = {
@@ -150,7 +143,6 @@ export type SlimSearchMatch =
 			domain: string
 			usage: string
 			source?: CapabilitySpec['source']
-			remoteConnector?: CapabilitySpec['remoteConnector']
 			mcpServer?: CapabilitySpec['mcpServer']
 			openApi?: CapabilitySpec['openApi']
 			inputTypeDefinition?: string
@@ -261,7 +253,6 @@ export type SearchEntityDetailStructured =
 			idempotent: boolean
 			destructive: boolean
 			source: CapabilitySpec['source']
-			remoteConnector?: CapabilitySpec['remoteConnector']
 			mcpServer?: CapabilitySpec['mcpServer']
 			openApi?: CapabilitySpec['openApi']
 			inputTypeDefinition: string
@@ -443,7 +434,6 @@ export type SearchMatch =
 			description: string
 			domain: string
 			source?: CapabilitySpec['source']
-			remoteConnector?: CapabilitySpec['remoteConnector']
 			mcpServer?: CapabilitySpec['mcpServer']
 			openApi?: CapabilitySpec['openApi']
 			inputTypeDefinition?: string

@@ -149,7 +149,6 @@ export async function runSavedPackageModuleOnce(
 				packageId: input.savedPackage.id,
 				storageId: buildPackageInvocationStorageId(input.savedPackage.id),
 			},
-			remoteConnectors: input.actor.remoteConnectors ?? null,
 			repoContext: repoSource ? createRepoContext(repoSource) : null,
 		})
 		const runtimeSurface = resolveInvocationRuntimeSurface({

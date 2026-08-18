@@ -69,7 +69,6 @@ test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers
 			source: 'email',
 			actor: expect.objectContaining({
 				userId: 'user-1',
-				remoteConnectors: [{ instanceId: 'home' }],
 			}),
 		}),
 	)

@@ -44,8 +44,7 @@ resolve here regardless of \`includeHiddenPackages\`.
 
 Secret results expose metadata only; credential values never appear.
 
-If results look incomplete: \`meta_list_capabilities\` (full registry) or
-\`meta_list_remote_connector_status\` (remote connectors).
+If results look incomplete: \`meta_list_capabilities\` (full registry).
 
 Optional **limit** (default 15) and **maxResponseSize** trim low-ranked results.
 Example arguments:

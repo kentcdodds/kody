@@ -157,6 +157,10 @@
 			"new_sqlite_classes": ["RepoSessionIndex"],
 			"tag": "v24",
 		},
+		{
+			"deleted_classes": ["RemoteConnectorSession"],
+			"tag": "v25",
+		},
 	],
 
 	"observability": {
@@ -233,7 +237,6 @@
 				"binding": "ASSETS",
 				"run_worker_first": [
 					"/@*/api/package-invocations/*",
-					"/@*/connectors/*",
 					"/@*/packages/*",
 					"/@*/webhooks/*",
 					"/styles.css",
@@ -246,10 +249,6 @@
 					{
 						"class_name": "MCP",
 						"name": "MCP_OBJECT",
-					},
-					{
-						"class_name": "RemoteConnectorSession",
-						"name": "REMOTE_CONNECTOR_SESSION",
 					},
 					{
 						"class_name": "McpClientHub",
@@ -622,6 +621,10 @@
 					"new_sqlite_classes": ["RepoSessionIndex"],
 					"tag": "v24",
 				},
+		{
+			"deleted_classes": ["RemoteConnectorSession"],
+			"tag": "v25",
+		},
 			],
 			"ratelimits": [
 				{
@@ -663,7 +666,6 @@
 				"binding": "ASSETS",
 				"run_worker_first": [
 					"/@*/api/package-invocations/*",
-					"/@*/connectors/*",
 					"/@*/packages/*",
 					"/@*/webhooks/*",
 					"/styles.css",
@@ -676,10 +678,6 @@
 					{
 						"class_name": "MCP",
 						"name": "MCP_OBJECT",
-					},
-					{
-						"class_name": "RemoteConnectorSession",
-						"name": "REMOTE_CONNECTOR_SESSION",
 					},
 					{
 						"class_name": "McpClientHub",
@@ -932,6 +930,10 @@
 					"new_sqlite_classes": ["RepoSessionIndex"],
 					"tag": "v24",
 				},
+		{
+			"deleted_classes": ["RemoteConnectorSession"],
+			"tag": "v25",
+		},
 			],
 			"worker_loaders": [
 				{
@@ -953,7 +955,6 @@
 				"binding": "ASSETS",
 				"run_worker_first": [
 					"/@*/api/package-invocations/*",
-					"/@*/connectors/*",
 					"/@*/packages/*",
 					"/@*/webhooks/*",
 					"/styles.css",
@@ -966,10 +967,6 @@
 					{
 						"class_name": "MCP",
 						"name": "MCP_OBJECT",
-					},
-					{
-						"class_name": "RemoteConnectorSession",
-						"name": "REMOTE_CONNECTOR_SESSION",
 					},
 					{
 						"class_name": "McpClientHub",

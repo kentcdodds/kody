@@ -1,5 +1,4 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
@@ -12,20 +11,12 @@ import {
 	type PlatformPackageForSearch,
 } from '#worker/package-registry/platform-packages.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
-import {
-	getRemoteConnectorStatus,
-	type RemoteConnectorStatus,
-} from '#worker/remote-connector/status.ts'
 
 import { buildSavedPackageSearchRows } from './search-package-rows.ts'
 import {
 	type LoadedPackageRows,
 	type OptionalSearchRowsResult,
 } from './search-types.ts'
-
-function shouldIncludeRemoteConnectorStatus(status: RemoteConnectorStatus) {
-	return status.state !== 'connected' || status.toolCount === 0
-}
 
 function groupPlatformPackagesByScope(
 	platformPackages: Array<PlatformPackageForSearch>,
@@ -43,37 +34,6 @@ function groupPlatformPackagesByScope(
 		platformScope,
 		records,
 	}))
-}
-
-export function serializeRemoteConnectorStatus(status: RemoteConnectorStatus): {
-	connectorId: string
-	state: string
-	connected: boolean
-	toolCount: number
-} {
-	return {
-		connectorId: status.connectorId ?? 'unknown',
-		state: status.state,
-		connected: status.connected,
-		toolCount: status.toolCount,
-	}
-}
-
-export async function loadDownRemoteConnectorStatuses(input: {
-	env: Env
-	callerContext: Pick<McpCallerContext, 'remoteConnectors' | 'user'>
-}): Promise<Array<RemoteConnectorStatus>> {
-	const refs = normalizeRemoteConnectorRefs(input.callerContext)
-	const userId = input.callerContext.user?.userId ?? null
-	if (refs.length === 0 || !userId) {
-		return []
-	}
-	const statuses = await Promise.all(
-		refs.map((ref) =>
-			getRemoteConnectorStatus({ env: input.env, userId, ref }),
-		),
-	)
-	return statuses.filter(shouldIncludeRemoteConnectorStatus)
 }
 
 export async function loadOptionalSearchRows(input: {

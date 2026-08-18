@@ -123,7 +123,6 @@ function createPackageInvokeTools(input: {
 					baseUrl: input.baseUrl,
 					caller: {
 						userId: user.userId,
-						remoteConnectors: input.callerContext.remoteConnectors ?? null,
 						packageContext,
 					},
 					request: {
@@ -145,7 +144,6 @@ function createPackageInvokeTools(input: {
 					baseUrl: input.baseUrl,
 					caller: {
 						userId: user.userId,
-						remoteConnectors: input.callerContext.remoteConnectors ?? null,
 					},
 					request: {
 						packageIdOrKodyId: request.packageIdOrKodyId,

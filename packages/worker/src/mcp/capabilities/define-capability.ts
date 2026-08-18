@@ -83,9 +83,6 @@ export function defineCapability<
 			: {}),
 		...(definition.featureFlag ? { featureFlag: definition.featureFlag } : {}),
 		source,
-		...(definition.remoteConnector
-			? { remoteConnector: definition.remoteConnector }
-			: {}),
 		...(definition.mcpServer ? { mcpServer: definition.mcpServer } : {}),
 		...(definition.openApi ? { openApi: definition.openApi } : {}),
 		get inputSchema() {

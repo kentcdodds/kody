@@ -95,7 +95,6 @@ export type SearchPhaseTimings = {
 	queryEmbeddingMs?: number
 	capabilityCandidatesMs?: number
 	packageCandidatesMs?: number
-	remoteConnectorStatusMs?: number
 	memoryEnrichmentMs?: number
 	memoryEnrichmentWaitMs?: number
 	memoryAcknowledgementMs?: number

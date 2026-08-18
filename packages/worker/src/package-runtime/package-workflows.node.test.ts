@@ -287,10 +287,6 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 		invocationMocks.createPackageRuntimeInvokeTools(...args),
 }))
 
-vi.mock('#worker/remote-connector/settings-service.ts', () => ({
-	listAttachedRemoteConnectorRefs: (...args: Array<unknown>) =>
-		remoteConnectorMocks.listAttachedRemoteConnectorRefs(...args),
-}))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
 	runModuleWithRegistry: (...args: Array<unknown>) =>
@@ -936,8 +932,7 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for inline
 		logs: [],
 	})
 	remoteConnectorMocks.listAttachedRemoteConnectorRefs.mockResolvedValueOnce(
-		remoteConnectors,
-	)
+		)
 	await new DynamicCallableWorkflowBase({} as ExecutionContext, inlineEnv).run(
 		{
 			payload: inlineQueued.params as never,
@@ -993,8 +988,7 @@ test('DynamicCallableWorkflowBase restores attached remote connectors for inline
 		body: { result: { ok: true } },
 	})
 	remoteConnectorMocks.listAttachedRemoteConnectorRefs.mockResolvedValueOnce(
-		remoteConnectors,
-	)
+		)
 	await new DynamicCallableWorkflowBase({} as ExecutionContext, packageEnv).run(
 		{
 			payload: packageQueued.params as never,

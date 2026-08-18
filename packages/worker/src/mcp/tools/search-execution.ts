@@ -3,14 +3,10 @@ import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { runPackageRetrievers } from '#worker/package-retrievers/service.ts'
-import { type RemoteConnectorStatus } from '#worker/remote-connector/status.ts'
 
 import { resolvePackageIdentitySearch } from './package-search-identity.ts'
 import { buildExactPackageSearchResult, searchUnified } from './search-core.ts'
-import {
-	loadDownRemoteConnectorStatuses,
-	loadSearchRowsAndRegistry,
-} from './search-loaders.ts'
+import { loadSearchRowsAndRegistry } from './search-loaders.ts'
 import {
 	launchSearchMemoryEnrichment,
 	resolveSearchMemoryContext,
@@ -24,13 +20,10 @@ import {
 } from './search-types.ts'
 import { type SearchToolArgs } from './search-tool-definition.ts'
 
-export { serializeRemoteConnectorStatus } from './search-loaders.ts'
-
 export type SearchListExecutionResult = {
 	result: SearchUnifiedResult
 	username: string | null
 	warnings: Array<string>
-	remoteConnectorStatuses: Array<RemoteConnectorStatus>
 	memorySettlement: SearchMemoryEnrichmentSettlement
 	phaseTimings: Partial<SearchPhaseTimings>
 	capabilityGuidance?: string
@@ -101,12 +94,6 @@ async function executeSearchListWithinBudget(
 	let capabilityGuidance: string | undefined
 
 	if (identityResolution.recognized) {
-		const remoteConnectorStatusStart = performance.now()
-		const remoteConnectorStatuses = await loadDownRemoteConnectorStatuses({
-			env: input.env,
-			callerContext: input.callerContext,
-		})
-		phaseTimings.remoteConnectorStatusMs = elapsedMs(remoteConnectorStatusStart)
 		result = buildExactPackageSearchResult({
 			env: input.env,
 			query: input.query,
@@ -125,7 +112,6 @@ async function executeSearchListWithinBudget(
 			result,
 			username,
 			warnings,
-			remoteConnectorStatuses,
 			memorySettlement,
 			phaseTimings,
 		}
@@ -165,12 +151,6 @@ async function executeSearchListWithinBudget(
 					return retrieverRun
 				})
 	const [searchRows] = await Promise.all([rowsPromise, retrieverRunPromise])
-	const remoteConnectorStatusStart = performance.now()
-	const remoteConnectorStatuses = await loadDownRemoteConnectorStatuses({
-		env: input.env,
-		callerContext: input.callerContext,
-	})
-	phaseTimings.remoteConnectorStatusMs = elapsedMs(remoteConnectorStatusStart)
 	warnings = searchRows.warnings
 	const retrieverRun = await retrieverRunPromise
 	warnings.push(...retrieverRun.warnings)
@@ -199,7 +179,6 @@ async function executeSearchListWithinBudget(
 		result,
 		username,
 		warnings,
-		remoteConnectorStatuses,
 		memorySettlement,
 		phaseTimings,
 		...(capabilityGuidance ? { capabilityGuidance } : {}),

@@ -28,7 +28,6 @@ function createCallerContext() {
 				email: 'kody@example.com',
 				displayName: 'Kody',
 			},
-			remoteConnectors: null,
 			storageContext: null,
 			repoContext: null,
 		},

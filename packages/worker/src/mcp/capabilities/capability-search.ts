@@ -82,7 +82,6 @@ export type CapabilitySummaryRow = {
 	domain: string
 	description: string
 	source: CapabilitySpec['source']
-	remoteConnector?: CapabilitySpec['remoteConnector']
 	requiredInputFields: Array<string>
 }
 
@@ -114,7 +113,6 @@ function toSummary(spec: CapabilitySpec): CapabilitySummaryRow {
 		domain: spec.domain,
 		description: spec.description,
 		source: spec.source,
-		...(spec.remoteConnector ? { remoteConnector: spec.remoteConnector } : {}),
 		requiredInputFields: spec.requiredInputFields,
 	}
 }

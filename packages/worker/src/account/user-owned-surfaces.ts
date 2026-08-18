@@ -3,7 +3,6 @@ export type UserOwnedDurableObjectSurface = {
 		| 'job_manager'
 		| 'storage_runner'
 		| 'repo_session'
-		| 'remote_connector_session'
 		| 'mcp_client_hub'
 		| 'package_realtime_session'
 		| 'package_service_instance'
@@ -91,12 +90,6 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			export: 'exclude',
 			excludeReason:
 				'Ephemeral editing workspace, including REPO_SESSION_BLOBS spill purged with the session Durable Object. Canonical repo-backed source is exported as Artifacts repo pointers via entity_sources; session catalog metadata is exported from RepoSessionIndex.',
-		},
-		{
-			id: 'remote_connector_session',
-			binding: 'REMOTE_CONNECTOR_SESSION',
-			deletionResultKey: 'remoteConnectorSessions',
-			export: 'include',
 		},
 		{
 			id: 'mcp_client_hub',

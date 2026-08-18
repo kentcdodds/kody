@@ -1,5 +1,4 @@
 import { normalizePackageInvocationExportName } from '@kody-internal/shared/public-urls.ts'
-import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 import {
 	type PackageEventTools,
 	type PackageInvokeTools,
@@ -24,7 +23,6 @@ export type PackageInvocationTokenScope = {
 	packageKodyIds?: Array<string>
 	exportNames?: Array<string>
 	sources?: Array<string>
-	remoteConnectors?: Array<RemoteConnectorRef>
 }
 
 export type PackageInvocationRequest = {
@@ -46,7 +44,6 @@ export type PackageInvocationResponse = PackageInvocationStoredResponse
 export type PackageInvocationActor = {
 	tokenId: string
 	userId: string
-	remoteConnectors?: Array<RemoteConnectorRef> | null
 }
 
 export type PackageModuleSelector =

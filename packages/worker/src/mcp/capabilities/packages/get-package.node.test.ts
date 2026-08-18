@@ -61,7 +61,6 @@ function createCallerContext(input?: {
 		callerContext: {
 			baseUrl: 'https://heykody.dev',
 			user,
-			remoteConnectors: null,
 			storageContext: null,
 			repoContext: null,
 		},

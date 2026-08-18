@@ -114,7 +114,7 @@ let enabledMcpServerRefsCache = createEnabledMcpServerRefsCache()
  * otherwise pay this D1 read on every run). Mutations in this module
  * invalidate eagerly, so the same-isolate staleness after add / enable /
  * delete is zero; other isolates converge within the TTL — the same bound
- * the MCP hub and remote-connector snapshot caches already use. Settings UI
+ * the MCP hub snapshot cache already uses. Settings UI
  * reads should keep using the uncached functions.
  */
 export function listEnabledMcpServerRefsCached(input: {

@@ -566,12 +566,6 @@ function createSuccessfulDeletionEnv(
 			get: () => ({ purgeSession: async () => ({ ok: true as const }) }),
 		},
 		REPO_SESSION_INDEX: repoSessionIndex.REPO_SESSION_INDEX,
-		REMOTE_CONNECTOR_SESSION: {
-			idFromName: durableObjectId,
-			get: () => ({
-				rpcPurgeUserSession: async () => ({ ok: true as const }),
-			}),
-		},
 		MCP_CLIENT_HUB: {
 			idFromName: durableObjectId,
 			get: () => ({ purgeForAccountDeletion: async () => undefined }),
@@ -1194,10 +1188,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		REPO_SESSION: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({ purgeSession: purgeRepoSessionMock }),
-		},
-		REMOTE_CONNECTOR_SESSION: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ rpcPurgeUserSession: purgeRemoteConnectorMock }),
 		},
 		MCP_CLIENT_HUB: {
 			idFromName: (name: string) => name as unknown as DurableObjectId,

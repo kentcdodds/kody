@@ -957,19 +957,6 @@ test('DO export sections expose bounded job manager and owned connector state', 
 				status: 'idle',
 			}),
 		},
-		REMOTE_CONNECTOR_SESSION: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({
-				rpcExportUserSessionPage: async () => ({
-					persisted: { instanceId: 'home' },
-					tools: [],
-					connected: false,
-					truncated: false,
-					nextStartAfter: null,
-					pageSize: 100,
-				}),
-			}),
-		},
 	} as unknown as Env
 	const jobManager = await readAccountExportSection({
 		env,

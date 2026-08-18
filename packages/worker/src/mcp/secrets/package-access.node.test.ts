@@ -235,7 +235,6 @@ test('resolvePackageMountedSecret requires matching package runtime context and 
 				email: 'user@example.com',
 				displayName: 'User',
 			},
-			remoteConnectors: null,
 			repoContext: null,
 		},
 	}
@@ -306,7 +305,6 @@ test('resolvePackageMountedSecret requires matching package runtime context and 
 					email: 'user@example.com',
 					displayName: 'User',
 				},
-				remoteConnectors: null,
 				repoContext: null,
 				storageContext: {
 					sessionId: null,

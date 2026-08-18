@@ -36,10 +36,6 @@ export {
 	accountPasskeysRouteLoader,
 } from './account-passkeys.tsx'
 export {
-	AccountRemoteConnectorsRoute,
-	accountRemoteConnectorsRouteLoader,
-} from './account-remote-connectors.tsx'
-export {
 	AccountSecretsRoute,
 	accountSecretsRouteLoader,
 } from './account-secrets.tsx'

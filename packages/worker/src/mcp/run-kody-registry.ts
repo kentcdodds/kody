@@ -9,7 +9,6 @@ import {
 } from '@cloudflare/codemode'
 import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
-import { normalizeRemoteConnectorRefs } from '@kody-internal/shared/remote-connectors.ts'
 import {
 	createExecuteExecutor,
 	createNamedExecutionError,
@@ -42,7 +41,6 @@ import { type Capability } from '#mcp/capabilities/types.ts'
 import {
 	type KodyMcpServerMetadata,
 	type KodyOpenApiProviderMetadata,
-	type KodyRemoteConnectorMetadata,
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
 import { openApiProviderKodyName } from '#worker/openapi/openapi-domain-id.ts'
@@ -85,11 +83,6 @@ import { recordUsage } from '#worker/usage/record-usage.ts'
 import { createPackageStaticCallMeterTools } from '#worker/usage/package-static-call-usage.ts'
 import { recordAgentPackageConversationUses } from '#worker/usage/agent-package-conversation-uses.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
-import {
-	formatRemoteConnectorUnavailableMessage,
-	getRemoteConnectorStatus,
-} from '#worker/remote-connector/status.ts'
-import { remoteConnectorKodyName } from '#worker/remote-connector/remote-domain-id.ts'
 import {
 	formatMcpServerUnavailableMessage,
 	getMcpServerStatus,
@@ -258,7 +251,6 @@ async function buildKodyToolContext(
 	},
 ): Promise<{
 	tools: AdditionalKodyTools
-	remoteConnectors: Array<KodyRemoteConnectorMetadata>
 	mcpServers: Array<KodyMcpServerMetadata>
 	openApiProviders: Array<KodyOpenApiProviderMetadata>
 }> {
@@ -272,12 +264,7 @@ async function buildKodyToolContext(
 						callerContext,
 					})
 				).capabilityMap
-	const [remoteConnectors, mcpServers, openApiProviders] = await Promise.all([
-		buildKodyRemoteConnectorMetadata({
-			env,
-			callerContext,
-			capabilityMap,
-		}),
+	const [mcpServers, openApiProviders] = await Promise.all([
 		buildKodyMcpServerMetadata({
 			env,
 			callerContext,
@@ -372,7 +359,6 @@ async function buildKodyToolContext(
 			...runtimeHelperKodyTools,
 			...additionalTools,
 		},
-		remoteConnectors,
 		mcpServers,
 		openApiProviders,
 	}
@@ -387,82 +373,6 @@ function assertNoCapabilityCollisions(
 			throw new Error(`Kody helper "${name}" collides with a capability.`)
 		}
 	}
-}
-
-async function buildKodyRemoteConnectorMetadata(input: {
-	env: Env
-	callerContext: McpCallerContext
-	capabilityMap: Record<string, Capability>
-}): Promise<Array<KodyRemoteConnectorMetadata>> {
-	const refs = normalizeRemoteConnectorRefs(input.callerContext)
-	const userId = input.callerContext.user?.userId ?? null
-	const connectors = new Map<string, KodyRemoteConnectorMetadata>()
-
-	for (const ref of refs) {
-		const name = remoteConnectorKodyName(ref)
-		const status = userId
-			? await getRemoteConnectorStatus({
-					env: input.env,
-					userId,
-					ref,
-				})
-			: {
-					state: 'unavailable' as const,
-					connectorId: ref.instanceId,
-					connected: false,
-					connectedAt: null,
-					lastSeenAt: null,
-					toolCount: 0,
-					message: `Remote connector "${name}" requires an authenticated user.`,
-					error: null,
-				}
-		connectors.set(name, {
-			name,
-			instanceId: ref.instanceId,
-			status: {
-				state: status.state,
-				connected: status.connected,
-				toolCount: status.toolCount,
-				message: status.message,
-				unavailableMessage: formatRemoteConnectorUnavailableMessage(status),
-			},
-			capabilities: [],
-		})
-	}
-
-	for (const capability of Object.values(input.capabilityMap)) {
-		if (capability.source !== 'remote-connector') continue
-		const remote = capability.remoteConnector
-		if (!remote) continue
-		const existing =
-			connectors.get(remote.connectorName) ??
-			({
-				name: remote.connectorName,
-				instanceId: remote.instanceId,
-				status: {
-					state: 'connected',
-					connected: true,
-					toolCount: 0,
-					message: `The "${remote.instanceId}" connector is connected.`,
-					unavailableMessage: `The "${remote.instanceId}" connector is connected.`,
-				},
-				capabilities: [],
-			} satisfies KodyRemoteConnectorMetadata)
-		existing.capabilities.push({
-			name: remote.toolName,
-			dispatchName: sanitizeToolName(capability.name),
-		})
-		existing.capabilities.sort((a, b) => a.name.localeCompare(b.name, 'en'))
-		existing.status.toolCount = Math.max(
-			existing.status.toolCount,
-			existing.capabilities.length,
-		)
-		connectors.set(remote.connectorName, existing)
-	}
-
-	return [...connectors.values()].sort((a, b) =>
-		a.name.localeCompare(b.name, 'en'),
-	)
 }
 
 async function buildKodyMcpServerMetadata(input: {
@@ -602,7 +512,7 @@ export async function buildKodyProvider(
 		waitUntil?: (promise: Promise<unknown>) => void
 	},
 ): Promise<ResolvedProvider> {
-	const { tools, remoteConnectors, mcpServers, openApiProviders } =
+	const { tools, mcpServers, openApiProviders } =
 		await buildKodyToolContext(env, callerContext, options)
 	const provider: ToolProvider = {
 		name: 'kody',
@@ -616,7 +526,6 @@ export async function buildKodyProvider(
 		),
 	}
 	return Object.assign(resolveProvider(provider), {
-		kodyRemoteConnectors: remoteConnectors,
 		kodyMcpServers: mcpServers,
 		kodyOpenApiProviders: openApiProviders,
 	}) satisfies KodyResolvedProvider

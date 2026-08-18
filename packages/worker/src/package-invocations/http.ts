@@ -6,7 +6,6 @@ import {
 	AccountDeletionInProgressError,
 	assertAccountWritable,
 } from '#worker/account/deletion-state.ts'
-import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { packageInvocationRootExportRouteSegment } from '@kody-internal/shared/public-urls.ts'
 import { waitUntilFromExecutionContext } from './common.ts'
 import {
@@ -141,10 +140,6 @@ async function resolveTokenScope(input: {
 		id: record.id,
 	})
 	if (!touched) return null
-	const remoteConnectors = await listAttachedRemoteConnectorRefs({
-		env: input.env,
-		userId: record.user_id,
-	})
 	return {
 		tokenId: record.id,
 		userId: record.user_id,
@@ -153,7 +148,6 @@ async function resolveTokenScope(input: {
 		packageKodyIds: record.packageKodyIds,
 		exportNames: record.exportNames,
 		sources: record.sources,
-		remoteConnectors,
 	}
 }
 

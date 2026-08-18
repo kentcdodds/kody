@@ -1,6 +1,5 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { invokePackageExport } from '#worker/package-invocations/service.ts'
-import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { recordRunRecord } from '#worker/run-records/service.ts'
 import {
 	type WebhookDeliveryOutcome,
@@ -72,10 +71,6 @@ export async function dispatchWebhookInvocation(input: {
 	params: WebhookExportParams
 	idempotencyKey: string
 }) {
-	const remoteConnectors = await listAttachedRemoteConnectorRefs({
-		env: input.env,
-		userId: input.endpoint.userId,
-	})
 	return await invokePackageExport({
 		env: input.env,
 		baseUrl: input.baseUrl ?? getAppBaseUrl({ env: input.env }),
@@ -86,7 +81,6 @@ export async function dispatchWebhookInvocation(input: {
 			packageKodyIds: [input.packageKodyId],
 			exportNames: [input.exportName],
 			sources: ['webhook'],
-			remoteConnectors,
 		},
 		request: {
 			packageIdOrKodyId: input.endpoint.packageId,

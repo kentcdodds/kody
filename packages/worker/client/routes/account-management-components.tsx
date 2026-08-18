@@ -409,7 +409,6 @@ const accountNavItems = [
 	{ href: '/account/values', label: 'Values' },
 	{ href: '/account/integrations', label: 'Integrations' },
 	{ href: '/account/package-invocation-tokens', label: 'Package tokens' },
-	{ href: '/account/remote-connectors', label: 'Connectors' },
 	{ href: '/account/mcp-servers', label: 'MCP servers' },
 	{ href: '/account/memories', label: 'Memories' },
 	{ href: '/account/email', label: 'Email' },

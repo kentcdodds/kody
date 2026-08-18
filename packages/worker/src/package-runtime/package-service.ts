@@ -4,7 +4,6 @@ import { DurableObject } from 'cloudflare:workers'
 import { z } from 'zod'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
-import { listAttachedRemoteConnectorRefsCached } from '#worker/mcp-auth-user-context.ts'
 import {
 	userMeterNamespace,
 	userMeterRpc,
@@ -949,18 +948,11 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 					rootPackageId: runtime.packageContext.packageId,
 				})
 			})())
-		const [user, remoteConnectors] = await Promise.all([
-			resolveBackgroundMcpUser(this.env.APP_DB, binding.userId),
-			listAttachedRemoteConnectorRefsCached({
-				env: this.env,
-				userId: binding.userId,
-			}),
-		])
+		const user = await resolveBackgroundMcpUser(this.env.APP_DB, binding.userId)
 		const callerContext = createMcpCallerContext({
 			baseUrl: binding.baseUrl,
 			executionOrigin: 'background',
 			user,
-			remoteConnectors: [...remoteConnectors],
 			storageContext: {
 				sessionId: null,
 				appId: binding.packageId,

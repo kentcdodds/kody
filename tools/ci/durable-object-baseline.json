@@ -6,227 +6,326 @@
 			"protected_migrations": [
 				{
 					"tag": "v1",
-					"new_sqlite_classes": ["MCP"]
+					"new_sqlite_classes": [
+						"MCP"
+					]
 				},
 				{
 					"tag": "v2",
-					"new_sqlite_classes": ["ChatAgent"]
+					"new_sqlite_classes": [
+						"ChatAgent"
+					]
 				},
 				{
 					"tag": "v3",
-					"new_sqlite_classes": ["HomeConnectorSession", "HomeMCP"]
+					"new_sqlite_classes": [
+						"HomeConnectorSession",
+						"HomeMCP"
+					]
 				},
 				{
 					"tag": "v4",
-					"new_sqlite_classes": ["SchedulerDO"]
+					"new_sqlite_classes": [
+						"SchedulerDO"
+					]
 				},
 				{
 					"tag": "v8",
-					"new_sqlite_classes": ["StorageRunner"]
+					"new_sqlite_classes": [
+						"StorageRunner"
+					]
 				},
 				{
 					"tag": "v10",
-					"new_sqlite_classes": ["AgentTurnRunner"]
+					"new_sqlite_classes": [
+						"AgentTurnRunner"
+					]
 				},
 				{
 					"tag": "v11",
-					"new_sqlite_classes": ["RepoSession"]
+					"new_sqlite_classes": [
+						"RepoSession"
+					]
 				},
 				{
 					"tag": "v13",
-					"new_sqlite_classes": ["PackageRealtimeSession"]
+					"new_sqlite_classes": [
+						"PackageRealtimeSession"
+					]
 				},
 				{
 					"tag": "v14",
-					"new_sqlite_classes": ["PackageServiceInstance"]
+					"new_sqlite_classes": [
+						"PackageServiceInstance"
+					]
 				},
 				{
 					"tag": "v18",
-					"new_sqlite_classes": ["McpClientHub"]
+					"new_sqlite_classes": [
+						"McpClientHub"
+					]
 				},
 				{
 					"tag": "v19",
-					"new_sqlite_classes": ["OAuthPurgeCoordinator"]
+					"new_sqlite_classes": [
+						"OAuthPurgeCoordinator"
+					]
 				},
 				{
 					"tag": "v20",
-					"new_sqlite_classes": ["RunLog"]
+					"new_sqlite_classes": [
+						"RunLog"
+					]
 				},
 				{
 					"tag": "v21",
-					"new_sqlite_classes": ["UserMeter"]
+					"new_sqlite_classes": [
+						"UserMeter"
+					]
 				},
 				{
 					"tag": "v22",
-					"new_sqlite_classes": ["Mailbox"]
+					"new_sqlite_classes": [
+						"Mailbox"
+					]
 				},
 				{
 					"tag": "v23",
-					"new_sqlite_classes": ["StripePlanRefresh"]
+					"new_sqlite_classes": [
+						"StripePlanRefresh"
+					]
 				},
 				{
 					"tag": "v24",
-					"new_sqlite_classes": ["RepoSessionIndex"]
+					"new_sqlite_classes": [
+						"RepoSessionIndex"
+					]
 				},
 				{
 					"tag": "v1",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["MCP"]
+					"new_sqlite_classes": [
+						"MCP"
+					]
 				},
 				{
 					"tag": "v2",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["ChatAgent"]
+					"new_sqlite_classes": [
+						"ChatAgent"
+					]
 				},
 				{
 					"tag": "v3",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["HomeConnectorSession", "HomeMCP"]
+					"new_sqlite_classes": [
+						"HomeConnectorSession",
+						"HomeMCP"
+					]
 				},
 				{
 					"tag": "v4",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["SchedulerDO"]
+					"new_sqlite_classes": [
+						"SchedulerDO"
+					]
 				},
 				{
 					"tag": "v8",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["StorageRunner"]
+					"new_sqlite_classes": [
+						"StorageRunner"
+					]
 				},
 				{
 					"tag": "v10",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["AgentTurnRunner"]
+					"new_sqlite_classes": [
+						"AgentTurnRunner"
+					]
 				},
 				{
 					"tag": "v11",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["RepoSession"]
+					"new_sqlite_classes": [
+						"RepoSession"
+					]
 				},
 				{
 					"tag": "v13",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["PackageRealtimeSession"]
+					"new_sqlite_classes": [
+						"PackageRealtimeSession"
+					]
 				},
 				{
 					"tag": "v14",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["PackageServiceInstance"]
+					"new_sqlite_classes": [
+						"PackageServiceInstance"
+					]
 				},
 				{
 					"tag": "v18",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["McpClientHub"]
+					"new_sqlite_classes": [
+						"McpClientHub"
+					]
 				},
 				{
 					"tag": "v19",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["OAuthPurgeCoordinator"]
+					"new_sqlite_classes": [
+						"OAuthPurgeCoordinator"
+					]
 				},
 				{
 					"tag": "v20",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["RunLog"]
+					"new_sqlite_classes": [
+						"RunLog"
+					]
 				},
 				{
 					"tag": "v21",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["UserMeter"]
+					"new_sqlite_classes": [
+						"UserMeter"
+					]
 				},
 				{
 					"tag": "v22",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["Mailbox"]
+					"new_sqlite_classes": [
+						"Mailbox"
+					]
 				},
 				{
 					"tag": "v23",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["StripePlanRefresh"]
+					"new_sqlite_classes": [
+						"StripePlanRefresh"
+					]
 				},
 				{
 					"tag": "v24",
 					"location": "env.preview.migrations",
-					"new_sqlite_classes": ["RepoSessionIndex"]
+					"new_sqlite_classes": [
+						"RepoSessionIndex"
+					]
 				},
 				{
 					"tag": "v1",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["MCP"]
+					"new_sqlite_classes": [
+						"MCP"
+					]
 				},
 				{
 					"tag": "v2",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["ChatAgent"]
+					"new_sqlite_classes": [
+						"ChatAgent"
+					]
 				},
 				{
 					"tag": "v3",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["HomeConnectorSession", "HomeMCP"]
+					"new_sqlite_classes": [
+						"HomeConnectorSession",
+						"HomeMCP"
+					]
 				},
 				{
 					"tag": "v4",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["SchedulerDO"]
+					"new_sqlite_classes": [
+						"SchedulerDO"
+					]
 				},
 				{
 					"tag": "v8",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["StorageRunner"]
+					"new_sqlite_classes": [
+						"StorageRunner"
+					]
 				},
 				{
 					"tag": "v10",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["AgentTurnRunner"]
+					"new_sqlite_classes": [
+						"AgentTurnRunner"
+					]
 				},
 				{
 					"tag": "v11",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["RepoSession"]
+					"new_sqlite_classes": [
+						"RepoSession"
+					]
 				},
 				{
 					"tag": "v13",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["PackageRealtimeSession"]
+					"new_sqlite_classes": [
+						"PackageRealtimeSession"
+					]
 				},
 				{
 					"tag": "v14",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["PackageServiceInstance"]
+					"new_sqlite_classes": [
+						"PackageServiceInstance"
+					]
 				},
 				{
 					"tag": "v18",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["McpClientHub"]
+					"new_sqlite_classes": [
+						"McpClientHub"
+					]
 				},
 				{
 					"tag": "v19",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["OAuthPurgeCoordinator"]
+					"new_sqlite_classes": [
+						"OAuthPurgeCoordinator"
+					]
 				},
 				{
 					"tag": "v20",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["RunLog"]
+					"new_sqlite_classes": [
+						"RunLog"
+					]
 				},
 				{
 					"tag": "v21",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["UserMeter"]
+					"new_sqlite_classes": [
+						"UserMeter"
+					]
 				},
 				{
 					"tag": "v22",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["Mailbox"]
+					"new_sqlite_classes": [
+						"Mailbox"
+					]
 				},
 				{
 					"tag": "v23",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["StripePlanRefresh"]
+					"new_sqlite_classes": [
+						"StripePlanRefresh"
+					]
 				},
 				{
 					"tag": "v24",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["RepoSessionIndex"]
+					"new_sqlite_classes": [
+						"RepoSessionIndex"
+					]
 				}
 			],
 			"protected_binding_sets": [
@@ -236,10 +335,6 @@
 						{
 							"name": "MCP_OBJECT",
 							"class_name": "MCP"
-						},
-						{
-							"name": "REMOTE_CONNECTOR_SESSION",
-							"class_name": "RemoteConnectorSession"
 						},
 						{
 							"name": "MCP_CLIENT_HUB",
@@ -299,10 +394,6 @@
 							"class_name": "MCP"
 						},
 						{
-							"name": "REMOTE_CONNECTOR_SESSION",
-							"class_name": "RemoteConnectorSession"
-						},
-						{
 							"name": "MCP_CLIENT_HUB",
 							"class_name": "McpClientHub"
 						},
@@ -358,10 +449,6 @@
 						{
 							"name": "MCP_OBJECT",
 							"class_name": "MCP"
-						},
-						{
-							"name": "REMOTE_CONNECTOR_SESSION",
-							"class_name": "RemoteConnectorSession"
 						},
 						{
 							"name": "MCP_CLIENT_HUB",
@@ -488,11 +575,6 @@
 							"script_name": "kody"
 						},
 						{
-							"name": "REMOTE_CONNECTOR_SESSION",
-							"class_name": "RemoteConnectorSession",
-							"script_name": "kody"
-						},
-						{
 							"name": "MCP_CLIENT_HUB",
 							"class_name": "McpClientHub",
 							"script_name": "kody"
@@ -544,11 +626,6 @@
 							"script_name": "kody"
 						},
 						{
-							"name": "REMOTE_CONNECTOR_SESSION",
-							"class_name": "RemoteConnectorSession",
-							"script_name": "kody"
-						},
-						{
 							"name": "MCP_CLIENT_HUB",
 							"class_name": "McpClientHub",
 							"script_name": "kody"
@@ -578,7 +655,9 @@
 				{
 					"tag": "v1",
 					"location": "env.test.migrations",
-					"new_sqlite_classes": ["JobManager"]
+					"new_sqlite_classes": [
+						"JobManager"
+					]
 				}
 			],
 			"protected_binding_sets": [

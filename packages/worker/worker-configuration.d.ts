@@ -55,7 +55,6 @@ interface __BaseEnv_Env {
 	X_CLIENT_ID: string;
 	X_CLIENT_SECRET: string;
 	MCP_OBJECT: DurableObjectNamespace<import("./src/index").MCP>;
-	REMOTE_CONNECTOR_SESSION: DurableObjectNamespace<import("./src/index").RemoteConnectorSession>;
 	MCP_CLIENT_HUB: DurableObjectNamespace<import("./src/index").McpClientHub>;
 	OAUTH_PURGE_COORDINATOR: DurableObjectNamespace<import("./src/index").OAuthPurgeCoordinator>;
 	STORAGE_RUNNER: DurableObjectNamespace /* StorageRunner from kody-runtime */;
@@ -73,7 +72,7 @@ interface __BaseEnv_Env {
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./src/index");
-		durableNamespaces: "MCP" | "StorageRunner" | "RepoSession" | "PackageRealtimeSession" | "PackageServiceInstance" | "RemoteConnectorSession" | "McpClientHub" | "OAuthPurgeCoordinator" | "RunLog" | "UserMeter" | "Mailbox" | "StripePlanRefresh" | "RepoSessionIndex";
+		durableNamespaces: "MCP" | "StorageRunner" | "RepoSession" | "PackageRealtimeSession" | "PackageServiceInstance" | "McpClientHub" | "OAuthPurgeCoordinator" | "RunLog" | "UserMeter" | "Mailbox" | "StripePlanRefresh" | "RepoSessionIndex";
 	}
 	interface Env extends __BaseEnv_Env {}
 }

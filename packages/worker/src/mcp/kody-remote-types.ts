@@ -5,19 +5,6 @@ export type KodyRemoteCapabilityMetadata = {
 	dispatchName: string
 }
 
-export type KodyRemoteConnectorMetadata = {
-	name: string
-	instanceId: string
-	status: {
-		state: string
-		connected: boolean
-		toolCount: number
-		message: string
-		unavailableMessage: string
-	}
-	capabilities: Array<KodyRemoteCapabilityMetadata>
-}
-
 export type KodyMcpServerMetadata = {
 	name: string
 	serverId: string
@@ -45,7 +32,6 @@ export type KodyOpenApiProviderMetadata = {
 }
 
 export type KodyResolvedProvider = ResolvedProvider & {
-	kodyRemoteConnectors?: Array<KodyRemoteConnectorMetadata>
 	kodyMcpServers?: Array<KodyMcpServerMetadata>
 	kodyOpenApiProviders?: Array<KodyOpenApiProviderMetadata>
 }

@@ -503,7 +503,6 @@ function createToken(
 		packageKodyIds: Array<string>
 		exportNames: Array<string>
 		sources: Array<string>
-		remoteConnectors: Array<{ instanceId: string }>
 	}> = {},
 ) {
 	return {
@@ -515,7 +514,6 @@ function createToken(
 		packageKodyIds: overrides.packageKodyIds ?? ['discord-gateway'],
 		exportNames: overrides.exportNames ?? ['./dispatch-message-created'],
 		sources: overrides.sources ?? ['discord-gateway'],
-		remoteConnectors: overrides.remoteConnectors,
 	} as const
 }
 
@@ -1001,7 +999,6 @@ test('invokePackageExport executes a scoped package export successfully', async 
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken({
-			remoteConnectors: [{ instanceId: 'home' }],
 		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
@@ -1027,7 +1024,6 @@ test('invokePackageExport executes a scoped package export successfully', async 
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			remoteConnectors: [{ instanceId: 'home' }],
 		}),
 		expect.anything(),
 		expect.anything(),

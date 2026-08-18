@@ -1164,14 +1164,9 @@ test('down remote connector statuses surface only disconnected connectors for si
 			email: 'user-1@example.com',
 			displayName: 'user-1',
 		},
-		remoteConnectors: [{ instanceId: 'home' }],
 	}
 	const disconnected = await loadDownRemoteConnectorStatuses({
 		env: {
-			REMOTE_CONNECTOR_SESSION: {
-				idFromName(name: string) {
-					return name
-				},
 				get() {
 					return {
 						getSnapshot() {
@@ -1194,10 +1189,6 @@ test('down remote connector statuses surface only disconnected connectors for si
 
 	const connected = await loadDownRemoteConnectorStatuses({
 		env: {
-			REMOTE_CONNECTOR_SESSION: {
-				idFromName(name: string) {
-					return name
-				},
 				get() {
 					return {
 						getSnapshot() {
@@ -1219,7 +1210,6 @@ test('down remote connector statuses surface only disconnected connectors for si
 	const anonymous = await loadDownRemoteConnectorStatuses({
 		env: {} as unknown as Env,
 		callerContext: {
-			remoteConnectors: [{ instanceId: 'home' }],
 		},
 	})
 	expect(anonymous).toEqual([])

@@ -103,7 +103,6 @@ function createCtx(
 				email: 'user@example.com',
 				displayName: 'User',
 			},
-			remoteConnectors: null,
 			storageContext: overrides?.storageContext ?? null,
 			repoContext: null,
 		},

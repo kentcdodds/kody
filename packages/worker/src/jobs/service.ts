@@ -45,7 +45,6 @@ import {
 	type JobUpdateInput,
 	type PersistedJobCallerContext,
 } from './types.ts'
-import { listAttachedRemoteConnectorRefs } from '#worker/remote-connector/settings-service.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import {
@@ -632,7 +631,6 @@ async function createPackageJobCallerContext(input: {
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
 		user,
-		remoteConnectors: [],
 		storageContext: {
 			sessionId: null,
 			appId: input.packageId,
@@ -649,17 +647,10 @@ async function resolveJobRuntimeCallerContext(input: {
 	callerContext: PersistedJobCallerContext
 	backgroundUser: NonNullable<PersistedJobCallerContext['user']>
 }): Promise<PersistedJobCallerContext> {
-	const remoteConnectors = await listAttachedRemoteConnectorRefs({
-		env: input.env,
-		userId: input.callerContext.user.userId,
-	}).catch((error: unknown) => {
-		throw markPreExecutionTransientError(error)
-	})
 	return {
 		...input.callerContext,
 		executionOrigin: 'background',
 		user: input.backgroundUser,
-		remoteConnectors,
 		storageContext: {
 			sessionId: input.callerContext.storageContext?.sessionId ?? null,
 			appId: input.callerContext.storageContext?.appId ?? null,

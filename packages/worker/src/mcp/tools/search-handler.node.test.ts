@@ -109,10 +109,6 @@ vi.mock('#worker/package-retrievers/service.ts', () => ({
 		mockModule.runPackageRetrievers(...args),
 }))
 
-vi.mock('#worker/remote-connector/status.ts', () => ({
-	getRemoteConnectorStatus: (...args: Array<unknown>) =>
-		mockModule.getRemoteConnectorStatus(...args),
-}))
 
 vi.mock('#worker/community/service.ts', () => ({
 	searchCommunityListings: (...args: Array<unknown>) =>
@@ -172,7 +168,6 @@ async function getSearchRegistration(input?: {
 		getCallerContext: vi.fn(() => ({
 			baseUrl: 'https://example.com',
 			user: input?.user === undefined ? null : input.user,
-			remoteConnectors: [{ instanceId: 'home' }],
 		})),
 	} as never)
 

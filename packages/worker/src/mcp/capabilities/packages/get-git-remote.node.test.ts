@@ -125,7 +125,6 @@ function createContext(
 				email: `${userId}@example.com`,
 				displayName: userId,
 			},
-			remoteConnectors: null,
 			storageContext: null,
 			repoContext: null,
 		},

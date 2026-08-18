@@ -399,7 +399,6 @@ test('package invocation API validates requests and invokes exports with scoped 
 			packageKodyIds: ['discord-gateway'],
 			exportNames: ['./dispatch-message-created'],
 			sources: ['discord-gateway'],
-			remoteConnectors: [{ instanceId: 'home' }],
 		},
 		request: {
 			packageIdOrKodyId: 'discord-gateway',

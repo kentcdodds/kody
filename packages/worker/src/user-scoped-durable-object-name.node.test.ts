@@ -18,8 +18,6 @@ import {
 
 const identityModuleRelativePath =
 	'packages/worker/src/user-scoped-durable-object-name.ts'
-const connectorSessionKeyRelativePath =
-	'packages/worker/src/remote-connector/connector-session-key.ts'
 
 test('user-scoped Durable Object name helpers preserve frozen idFromName contracts', () => {
 	expect(jobManagerDurableObjectName('user-aaa')).toBe('user-aaa')
@@ -74,7 +72,7 @@ test('private JSON-tuple Durable Object name builders live only in the identity 
 	const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 
 	// Extracted private builders must not return; new DO naming must go through
-	// user-scoped-durable-object-name.ts (or connector-session-key for connectors).
+	// user-scoped-durable-object-name.ts.
 	const bannedPrivateBuilders = [
 		'function buildStorageRunnerName',
 		'function buildPackageServiceName',
@@ -84,15 +82,6 @@ test('private JSON-tuple Durable Object name builders live only in the identity 
 	const inlineIdFromNameTuple = /idFromName\(\s*JSON\.stringify\s*\(/g
 
 	const offenders: Array<string> = []
-	const connectorSource = readFileSync(
-		join(repoRoot, connectorSessionKeyRelativePath),
-		'utf8',
-	)
-	expect(
-		connectorSource.includes('durableObjectNameFromParts'),
-		'connector-session-key.ts must build DO names via durableObjectNameFromParts',
-	).toBe(true)
-	expect(connectorSource).not.toMatch(/JSON\.stringify\(\s*\[/)
 
 	function walk(dir: string) {
 		for (const entry of readdirSync(dir)) {

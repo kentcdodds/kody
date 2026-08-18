@@ -95,16 +95,6 @@ async function ensureSchema(db: D1Database) {
 		.run()
 	await db
 		.prepare(
-			`CREATE TABLE IF NOT EXISTS remote_connector_settings (
-				id TEXT PRIMARY KEY,
-				user_id TEXT NOT NULL,
-				instance_id TEXT NOT NULL,
-				enabled INTEGER NOT NULL DEFAULT 1,
-				attached INTEGER NOT NULL DEFAULT 1,
-				encrypted_shared_secret TEXT,
-				created_at TEXT NOT NULL,
-				updated_at TEXT NOT NULL
-			)`,
 		)
 		.run()
 }

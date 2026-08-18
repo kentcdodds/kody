@@ -8,21 +8,14 @@ import {
 	type CallerFeatureFlags,
 } from './access-control.ts'
 import { builtinDomains } from './builtin-domains.ts'
-import { synthesizeRemoteToolDomain } from './remote-connector/index.ts'
 import { synthesizeMcpServerToolDomain } from './mcp-server/index.ts'
 import { synthesizeOpenApiProviderDomain } from './openapi-provider/index.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
-import {
-	normalizeRemoteConnectorRefs,
-	type RemoteConnectorRef,
-} from '@kody-internal/shared/remote-connectors.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
 import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
-import { getCachedRemoteConnectorSnapshot } from '#worker/remote-connector/snapshot-cache.ts'
-import { type RemoteConnectorSnapshot } from '#worker/remote-connector/types.ts'
 import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
 import { listOpenApiBindingsCached } from '#worker/openapi/binding-service.ts'
 
@@ -53,26 +46,10 @@ let capabilityRegistryCache = createCapabilityRegistryCache()
 
 function createCapabilityRegistryCacheKey(input: {
 	userId: string
-	refs: ReadonlyArray<RemoteConnectorRef>
-	snapshots: ReadonlyArray<RemoteConnectorSnapshot | null>
 	mcpServerRefs: ReadonlyArray<McpServerRef>
 	mcpServerSnapshots: ReadonlyArray<McpServerSnapshot | null>
 	openApiBindings: ReadonlyArray<OpenApiBinding>
 }) {
-	const connectorParts = input.refs
-		.map((ref, index) => {
-			const snapshot = input.snapshots[index] ?? null
-			const refKey = ref.instanceId.trim()
-			if (!snapshot) {
-				return `${refKey}:disconnected`
-			}
-			const toolNames = snapshot.tools
-				.map((tool) => tool.name)
-				.sort()
-				.join(',')
-			return `${refKey}:${snapshot.connectorId}:${snapshot.connectedAt}:${toolNames}`
-		})
-		.sort()
 	const mcpServerParts = input.mcpServerRefs
 		.map((ref, index) => {
 			const snapshot = input.mcpServerSnapshots[index] ?? null
@@ -93,28 +70,14 @@ function createCapabilityRegistryCacheKey(input: {
 				`${binding.name}:${binding.updatedAt}:${binding.operations.length}`,
 		)
 		.sort()
-	return `${input.userId}:${connectorParts.join('|')}:mcp:${mcpServerParts.join('|')}:openapi:${openApiParts.join('|')}`
+	return `${input.userId}:mcp:${mcpServerParts.join('|')}:openapi:${openApiParts.join('|')}`
 }
 
 async function buildCapabilityRegistryForDynamicSources(input: {
-	env: Env
-	userId: string
-	refs: ReadonlyArray<RemoteConnectorRef>
-	snapshots: ReadonlyArray<RemoteConnectorSnapshot | null>
 	mcpServerRefs: ReadonlyArray<McpServerRef>
 	mcpServerSnapshots: ReadonlyArray<McpServerSnapshot | null>
 	openApiBindings: ReadonlyArray<OpenApiBinding>
 }): Promise<BuiltCapabilityRegistry> {
-	const synthesized = await Promise.all(
-		input.refs.map((ref, index) =>
-			synthesizeRemoteToolDomain({
-				env: input.env,
-				userId: input.userId,
-				ref,
-				snapshot: input.snapshots[index] ?? null,
-			}),
-		),
-	)
 	const synthesizedMcpServers = input.mcpServerRefs.map((ref, index) =>
 		synthesizeMcpServerToolDomain({
 			ref,
@@ -125,7 +88,6 @@ async function buildCapabilityRegistryForDynamicSources(input: {
 		synthesizeOpenApiProviderDomain({ binding }),
 	)
 	const synthesizedDomains = [
-		...synthesized,
 		...synthesizedMcpServers,
 		...synthesizedOpenApiProviders,
 	].flatMap((domain) => (domain ? [domain.domain] : []))
@@ -203,28 +165,6 @@ async function loadMcpServerSnapshots(input: {
 	}
 }
 
-async function loadRemoteConnectorSnapshots(input: {
-	env: Env
-	userId: string
-	refs: ReadonlyArray<RemoteConnectorRef>
-}): Promise<Array<RemoteConnectorSnapshot | null>> {
-	return await Promise.all(
-		input.refs.map(async (ref) => {
-			try {
-				return await getCachedRemoteConnectorSnapshot({
-					env: input.env,
-					userId: input.userId,
-					instanceId: ref.instanceId,
-				})
-			} catch {
-				// A stalled or unavailable connector must not prevent builtin or
-				// healthy dynamic capabilities from being discovered.
-				return null
-			}
-		}),
-	)
-}
-
 async function loadOpenApiBindingsForRegistry(input: {
 	env: Env
 	userId: string
@@ -246,7 +186,6 @@ export async function getCapabilityRegistryForContext(input: {
 	env: Env
 	callerContext: McpCallerContext
 }): Promise<BuiltCapabilityRegistry> {
-	const refs = normalizeRemoteConnectorRefs(input.callerContext)
 	const userId = input.callerContext.user?.userId ?? null
 	if (!userId) {
 		const registry = getStaticRegistry()
@@ -270,11 +209,7 @@ export async function getCapabilityRegistryForContext(input: {
 			userId,
 		}),
 	])
-	if (
-		refs.length === 0 &&
-		mcpServerRefs.length === 0 &&
-		openApiBindings.length === 0
-	) {
+	if (mcpServerRefs.length === 0 && openApiBindings.length === 0) {
 		const registry = getStaticRegistry()
 		return filterRegistryForContext({
 			registry,
@@ -286,22 +221,13 @@ export async function getCapabilityRegistryForContext(input: {
 			}),
 		})
 	}
-	const [snapshots, mcpServerSnapshots] = await Promise.all([
-		loadRemoteConnectorSnapshots({
-			env: input.env,
-			userId,
-			refs,
-		}),
-		loadMcpServerSnapshots({
-			env: input.env,
-			userId,
-			refs: mcpServerRefs,
-		}),
-	])
+	const mcpServerSnapshots = await loadMcpServerSnapshots({
+		env: input.env,
+		userId,
+		refs: mcpServerRefs,
+	})
 	const cacheKey = createCapabilityRegistryCacheKey({
 		userId,
-		refs,
-		snapshots,
 		mcpServerRefs,
 		mcpServerSnapshots,
 		openApiBindings,
@@ -310,10 +236,6 @@ export async function getCapabilityRegistryForContext(input: {
 		cacheKey,
 		create: () =>
 			buildCapabilityRegistryForDynamicSources({
-				env: input.env,
-				userId,
-				refs,
-				snapshots,
 				mcpServerRefs,
 				mcpServerSnapshots,
 				openApiBindings,

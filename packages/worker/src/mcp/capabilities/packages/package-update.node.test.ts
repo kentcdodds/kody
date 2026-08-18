@@ -38,7 +38,6 @@ function createCtx(userId = 'user-1') {
 				email: 'user@example.com',
 				displayName: 'User',
 			},
-			remoteConnectors: null,
 			storageContext: null,
 			repoContext: null,
 		},
@@ -161,7 +160,6 @@ test('package_update rejects invalid changes and cross-user or unauthenticated a
 				callerContext: {
 					baseUrl: 'https://heykody.dev',
 					user: null,
-					remoteConnectors: null,
 					storageContext: null,
 					repoContext: null,
 				},

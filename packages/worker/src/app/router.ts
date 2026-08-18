@@ -109,10 +109,6 @@ import {
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import {
-	createAccountRemoteConnectorsApiHandler,
-	createAccountRemoteConnectorsHandler,
-} from '#app/handlers/account-remote-connectors.ts'
-import {
 	createAccountSecretsApiHandler,
 	createAccountSecretsHandler,
 } from '#app/handlers/account-secrets.ts'
@@ -316,12 +312,6 @@ export function createAppRouter(env: Env) {
 			accountUsageApi: createAccountUsageApiHandler(env),
 			accountEmailChange: createAccountEmailChangeHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
-			accountRemoteConnectors: createAccountRemoteConnectorsHandler(env),
-			accountRemoteConnectorNew: createAccountRemoteConnectorsHandler(env),
-			accountRemoteConnectorDetail: createAccountRemoteConnectorsHandler(env),
-			accountRemoteConnectorsApi: createAccountRemoteConnectorsApiHandler(env),
-			accountRemoteConnectorsApiPost:
-				createAccountRemoteConnectorsApiHandler(env),
 			accountSecrets: createAccountSecretsHandler(env),
 			accountSecretNew: createAccountSecretsHandler(env),
 			accountSecretsApprove: createAccountSecretsHandler(env),

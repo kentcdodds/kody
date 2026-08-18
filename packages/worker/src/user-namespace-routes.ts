@@ -1,7 +1,11 @@
 /**
  * The `/@owner/…` namespace is shared by machine surfaces (package apps,
- * connector sessions, webhook ingress, the invocation API) and by the canonical
- * public package URL `/@owner/kody-id`, which the worker hands to Remix.
+ * webhook ingress, the invocation API) and by the canonical public package
+ * URL `/@owner/kody-id`, which the worker hands to Remix.
+ *
+ * `connectors` remains listed only so retired `/@owner/connectors/…` paths
+ * still 404 as machine surfaces instead of falling through to public package
+ * routing.
  *
  * Every machine surface names a target after its namespace segment, so they all
  * live at three segments or deeper. Requiring that depth keeps the two-segment

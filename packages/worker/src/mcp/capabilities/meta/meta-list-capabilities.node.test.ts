@@ -67,10 +67,6 @@ const runtimeRokuTools = [
 
 function buildRemoteConnectorEnv() {
 	return {
-		REMOTE_CONNECTOR_SESSION: {
-			idFromName(name: string) {
-				return name
-			},
 			get() {
 				return {
 					getSnapshot() {
@@ -101,7 +97,6 @@ test('meta_list_capabilities lists runtime remote tools and filters by domain', 
 					email: 'user-1@example.com',
 					displayName: 'user-1',
 				},
-				remoteConnectors: [{ instanceId: 'roku' }],
 			}),
 		},
 	)
@@ -221,7 +216,6 @@ test('meta_list_capabilities lists runtime remote tools and filters by domain', 
 					email: 'user-1@example.com',
 					displayName: 'user-1',
 				},
-				remoteConnectors: [{ instanceId: 'roku' }],
 			}),
 		},
 	)

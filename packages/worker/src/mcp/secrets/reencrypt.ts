@@ -10,7 +10,6 @@ import {
 
 export const secretCiphertextTables = [
 	'secret_entries',
-	'remote_connector_settings',
 	'platform_oauth_apps',
 ] as const
 
@@ -39,7 +38,6 @@ export type ReencryptLegacySecretCiphertextsInput = {
 export type ReencryptLegacySecretCiphertextsResult = {
 	dryRun: boolean
 	secretEntries: SecretReencryptTableResult
-	remoteConnectorSettings: SecretReencryptTableResult
 	platformOauthApps: SecretReencryptTableResult
 	decryptFailures: Array<SecretReencryptDecryptFailure>
 }
@@ -56,11 +54,6 @@ type SecretEntryLegacyRow = {
 	encrypted_value: string
 }
 
-type RemoteConnectorLegacyRow = {
-	id: string
-	user_id: string
-	encrypted_shared_secret: string
-}
 
 type PlatformOauthLegacyRow = {
 	slug: string
@@ -186,31 +179,6 @@ async function listSecretEntryPage(input: {
 	}))
 }
 
-async function listRemoteConnectorPage(input: {
-	db: D1Database
-	afterId: string
-	limit: number
-}): Promise<Array<RemoteConnectorLegacyRow>> {
-	const { results } = await runD1WithRetry(() =>
-		input.db
-			.prepare(
-				`SELECT id, user_id, encrypted_shared_secret
-				FROM remote_connector_settings
-				WHERE encrypted_shared_secret IS NOT NULL
-					AND encrypted_shared_secret NOT LIKE ?
-					AND id > ?
-				ORDER BY id
-				LIMIT ?`,
-			)
-			.bind(versionedCiphertextPrefix, input.afterId, input.limit)
-			.all<Record<string, unknown>>(),
-	)
-	return (results ?? []).map((row) => ({
-		id: String(row['id'] ?? ''),
-		user_id: String(row['user_id'] ?? ''),
-		encrypted_shared_secret: String(row['encrypted_shared_secret'] ?? ''),
-	}))
-}
 
 async function listPlatformOauthPage(input: {
 	db: D1Database
@@ -264,25 +232,6 @@ async function updateSecretEntry(input: {
 	return Number(result.meta.changes ?? 0)
 }
 
-async function updateRemoteConnectorSetting(input: {
-	db: D1Database
-	id: string
-	nextPayload: string
-	previousPayload: string
-}): Promise<number> {
-	const now = new Date().toISOString()
-	const result = await runD1WithRetry(() =>
-		input.db
-			.prepare(
-				`UPDATE remote_connector_settings
-				SET encrypted_shared_secret = ?, updated_at = ?
-				WHERE id = ? AND encrypted_shared_secret = ?`,
-			)
-			.bind(input.nextPayload, now, input.id, input.previousPayload)
-			.run(),
-	)
-	return Number(result.meta.changes ?? 0)
-}
 
 async function updatePlatformOauthApp(input: {
 	db: D1Database
@@ -318,7 +267,6 @@ export async function reencryptLegacySecretCiphertexts(
 	let remainingBudget = input.maxRows ?? defaultMaxRows
 	const decryptFailures: Array<SecretReencryptDecryptFailure> = []
 	const secretEntries = emptyTableResult()
-	const remoteConnectorSettings = emptyTableResult()
 	const platformOauthApps = emptyTableResult()
 	const db = input.env.APP_DB
 
@@ -379,58 +327,6 @@ export async function reencryptLegacySecretCiphertexts(
 			WHERE e.encrypted_value NOT LIKE ?`,
 	})
 
-	let afterRemoteId = ''
-	while (remainingBudget > 0) {
-		const rows = await listRemoteConnectorPage({
-			db,
-			afterId: afterRemoteId,
-			limit: Math.min(pageSize, remainingBudget),
-		})
-		if (rows.length === 0) break
-		for (const row of rows) {
-			const outcome = await rewritePayload({
-				dryRun,
-				previousPayload: row.encrypted_shared_secret,
-				decrypt: () =>
-					decryptSecretValue(
-						input.env,
-						row.encrypted_shared_secret,
-						userSecretContext(row.user_id),
-					),
-				encrypt: (plaintext) =>
-					encryptSecretValue(
-						input.env,
-						plaintext,
-						userSecretContext(row.user_id),
-					),
-				write: (nextPayload, previousPayload) =>
-					updateRemoteConnectorSetting({
-						db,
-						id: row.id,
-						nextPayload,
-						previousPayload,
-					}),
-			})
-			recordOutcome(remoteConnectorSettings, outcome)
-			if (outcome === 'decryptFailed') {
-				recordDecryptFailure(decryptFailures, {
-					table: 'remote_connector_settings',
-					key: row.id,
-				})
-			}
-			remainingBudget -= 1
-		}
-		if (rows.length < pageSize) break
-		afterRemoteId = rows[rows.length - 1]!.id
-	}
-	remoteConnectorSettings.remaining = await countRemaining({
-		db,
-		sql: `SELECT COUNT(*) AS remaining
-			FROM remote_connector_settings
-			WHERE encrypted_shared_secret IS NOT NULL
-				AND encrypted_shared_secret NOT LIKE ?`,
-	})
-
 	let afterSlug = ''
 	while (remainingBudget > 0) {
 		const rows = await listPlatformOauthPage({
@@ -486,7 +382,6 @@ export async function reencryptLegacySecretCiphertexts(
 	return {
 		dryRun,
 		secretEntries,
-		remoteConnectorSettings,
 		platformOauthApps,
 		decryptFailures,
 	}

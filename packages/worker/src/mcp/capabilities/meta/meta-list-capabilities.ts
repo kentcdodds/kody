@@ -11,16 +11,7 @@ const capabilitySummarySchema = z.object({
 	readOnly: z.boolean(),
 	idempotent: z.boolean(),
 	destructive: z.boolean(),
-	source: z.enum(['builtin', 'remote-connector', 'mcp-server', 'openapi']),
-	remoteConnector: z
-		.object({
-			instanceId: z.string(),
-			connectorId: z.string(),
-			connectorName: z.string(),
-			mcpToolName: z.string(),
-			toolName: z.string(),
-		})
-		.optional(),
+	source: z.enum(['builtin', 'mcp-server', 'openapi']),
 	mcpServer: z
 		.object({
 			serverId: z.string(),
@@ -102,7 +93,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(
-					'Optional domain filter when you only need one capability domain. Accepts builtin domain ids such as "packages" and synthesized remote connector domain ids such as "remote:roku".',
+					'Optional domain filter when you only need one capability domain. Accepts builtin domain ids such as "packages" and synthesized MCP server domain ids such as "mcp:home".',
 				),
 			detail: z
 				.boolean()
@@ -135,9 +126,6 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								idempotent: spec.idempotent,
 								destructive: spec.destructive,
 								source: spec.source,
-								...(spec.remoteConnector
-									? { remoteConnector: spec.remoteConnector }
-									: {}),
 								...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
 								...(spec.openApi ? { openApi: spec.openApi } : {}),
 								requiredInputFields: spec.requiredInputFields,
@@ -157,9 +145,6 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 								idempotent: spec.idempotent,
 								destructive: spec.destructive,
 								source: spec.source,
-								...(spec.remoteConnector
-									? { remoteConnector: spec.remoteConnector }
-									: {}),
 								...(spec.mcpServer ? { mcpServer: spec.mcpServer } : {}),
 								...(spec.openApi ? { openApi: spec.openApi } : {}),
 								requiredInputFields: spec.requiredInputFields,

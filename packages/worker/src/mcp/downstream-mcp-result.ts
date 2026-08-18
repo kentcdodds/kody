@@ -5,7 +5,7 @@ import {
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 
 /**
- * Explicit markers used at the synthesized MCP-server / remote-connector
+ * Explicit markers used at the synthesized MCP-server
  * capability boundary (and understood by execute) so protocol content is never
  * inferred from arbitrary application `{ content: [] }` objects.
  */
@@ -35,7 +35,7 @@ export const defaultMcpContentLimitBytes = 524_288
 export const maxMcpContentBlockCount = 32
 
 export type DownstreamMcpResultSource = {
-	kind: 'mcp-server' | 'remote-connector' | 'execute'
+	kind: 'mcp-server' | 'execute'
 	/** Human-readable label for errors, e.g. `linear:screenshot`. */
 	label: string
 }
@@ -74,8 +74,6 @@ function sourcePrefix(source: DownstreamMcpResultSource) {
 	switch (source.kind) {
 		case 'mcp-server':
 			return `MCP server "${source.label}"`
-		case 'remote-connector':
-			return `Remote connector "${source.label}"`
 		case 'execute':
 			return `Execute ${source.label}`
 		default: {

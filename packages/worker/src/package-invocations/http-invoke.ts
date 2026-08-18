@@ -1,4 +1,3 @@
-import { type RemoteConnectorRef } from '@kody-internal/shared/remote-connectors.ts'
 import { recordAgentPackageConversationUse } from '#worker/usage/agent-package-conversation-uses.ts'
 import {
 	buildSavedPackageNotFoundMessage,
@@ -69,7 +68,6 @@ export async function invokePackageExportForExecuteRuntime(input: {
 	baseUrl: string
 	caller: {
 		userId: string
-		remoteConnectors?: Array<RemoteConnectorRef> | null
 	}
 	request: PackageInvocationRequest
 	runtimeInvokeDepth?: number
@@ -117,7 +115,6 @@ export async function invokePackageExportForExecuteRuntime(input: {
 	const actor = {
 		tokenId: internalExecuteRuntimeInvokeTokenId,
 		userId: input.caller.userId,
-		remoteConnectors: input.caller.remoteConnectors ?? null,
 	}
 	const shared = {
 		env: input.env,
@@ -153,7 +150,6 @@ export async function invokePackageExportForPackageRuntime(input: {
 	baseUrl: string
 	caller: {
 		userId: string
-		remoteConnectors?: Array<RemoteConnectorRef> | null
 		packageContext: PackageRuntimeContext
 	}
 	request: PackageInvocationRequest
@@ -195,7 +191,6 @@ export async function invokePackageExportForPackageRuntime(input: {
 		actor: {
 			tokenId: `${internalPackageRuntimeInvokeTokenId}:${input.caller.packageContext.packageId}`,
 			userId: input.caller.userId,
-			remoteConnectors: input.caller.remoteConnectors ?? null,
 		},
 		savedPackage,
 		invocationName: exportName,
@@ -307,7 +302,6 @@ export async function invokePackageExportWithToolFactories(input: {
 		actor: {
 			tokenId: input.token.tokenId,
 			userId: input.token.userId,
-			remoteConnectors: input.token.remoteConnectors ?? null,
 		},
 		savedPackage,
 		invocationName: exportName,

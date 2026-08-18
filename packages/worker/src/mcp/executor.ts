@@ -41,7 +41,7 @@ import {
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
 import {
-	type KodyRemoteConnectorMetadata,
+	type KodyMcpServerMetadata,
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
@@ -438,7 +438,7 @@ function isDynamicWorkerCapacityErrorMessage(message: string) {
 
 export function createKodyRemoteProxy(input: {
 	remoteConnectors: Array<
-		Pick<KodyRemoteConnectorMetadata, 'name' | 'status' | 'capabilities'>
+		Pick<KodyMcpServerMetadata, 'name' | 'status' | 'capabilities'>
 	>
 	callTool: (dispatchName: string, args: unknown) => Promise<unknown>
 	entityLabel?: string
@@ -799,13 +799,10 @@ function createProviderProxySource(provider: ResolvedProvider) {
 	const kodyProvider = provider as KodyResolvedProvider
 	if (
 		provider.name === 'kody' &&
-		(kodyProvider.kodyRemoteConnectors ||
-			kodyProvider.kodyMcpServers ||
-			kodyProvider.kodyOpenApiProviders)
+		(kodyProvider.kodyMcpServers || kodyProvider.kodyOpenApiProviders)
 	) {
 		return createKodyProviderProxySource({
 			providerName: provider.name,
-			remoteConnectors: kodyProvider.kodyRemoteConnectors ?? [],
 			mcpServers: kodyProvider.kodyMcpServers ?? [],
 			openApiProviders: kodyProvider.kodyOpenApiProviders ?? [],
 		})
