@@ -17,12 +17,16 @@ import {
 
 const mocks = vi.hoisted(() => ({
 	dispatchIntegrationAuthFailedSubscriptionEvents: vi.fn(async () => []),
+	dispatchIntegrationAuthSucceededSubscriptionEvents: vi.fn(async () => []),
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
 	dispatchIntegrationAuthFailedSubscriptionEvents:
 		mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
+	dispatchIntegrationAuthSucceededSubscriptionEvents:
+		mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
 	integrationAuthFailedTopic: 'integration.auth.failed',
+	integrationAuthSucceededTopic: 'integration.auth.succeeded',
 }))
 
 const {
@@ -149,11 +153,24 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 		expect(
 			mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
 		).not.toHaveBeenCalled()
+		expect(
+			mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
+		).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId,
+				source: 'refresh',
+				integration: expect.objectContaining({
+					name: 'github',
+					lane: 'platform',
+				}),
+			}),
+		)
 	} finally {
 		vi.unstubAllGlobals()
 	}
 
 	mocks.dispatchIntegrationAuthFailedSubscriptionEvents.mockClear()
+	mocks.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
 	await expect(
 		refreshIntegrationTokens({
 			env,
@@ -167,6 +184,9 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 	)
 	expect(
 		mocks.dispatchIntegrationAuthFailedSubscriptionEvents,
+	).not.toHaveBeenCalled()
+	expect(
+		mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
 	).not.toHaveBeenCalled()
 
 	await upsertPlatformIntegration({
@@ -440,6 +460,18 @@ test('user-lane refresh resolves the client secret from the user secret store', 
 			storageContext,
 		})
 		expect(access.found && access.value).toBe('fresh-google-token')
+		expect(
+			mocks.dispatchIntegrationAuthSucceededSubscriptionEvents,
+		).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId,
+				source: 'refresh',
+				integration: expect.objectContaining({
+					name: 'google',
+					lane: 'user',
+				}),
+			}),
+		)
 	} finally {
 		vi.unstubAllGlobals()
 	}

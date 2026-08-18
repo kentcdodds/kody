@@ -142,6 +142,29 @@ Example minimal `integration.auth.failed` fixture:
 }
 ```
 
+Example minimal `integration.auth.succeeded` fixture:
+
+```json
+{
+	"kody_id": "event-notifier",
+	"topic": "integration.auth.succeeded",
+	"params": {
+		"event": "integration.auth.succeeded",
+		"event_id": "00000000-0000-4000-8000-000000000002",
+		"integration": {
+			"name": "google",
+			"lane": "platform",
+			"account_label": null,
+			"provider": "google",
+			"platform_app_slug": "google"
+		},
+		"source": "oauth_connect",
+		"account_url": "https://kody.codes/account/integrations/google",
+		"occurred_at": "2026-08-18T18:00:00.000Z"
+	}
+}
+```
+
 Example minimal `mcp.server.disconnected` fixture:
 
 ```json

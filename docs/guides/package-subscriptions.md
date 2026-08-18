@@ -5,8 +5,9 @@ summary:
   Use package.json#kody.subscriptions for package-owned event handlers; discover
   subscribers with package_subscriptions_list; smoke-test handlers with
   package_subscription_dispatch; follow metadata-first email, run.error.recorded
-  activity notifiers, integration.auth.failed reconnect notifiers,
-  mcp.server.disconnected / mcp.server.reconnected connection episodes,
+  activity notifiers, integration.auth.failed / integration.auth.succeeded
+  reconnect notifiers, mcp.server.disconnected / mcp.server.reconnected
+  connection episodes,
   consent-gated admin-only platform.feedback.submitted notification guidance,
   and admin-only status.incident.opened / status.incident.resolved operator
   telemetry.
@@ -469,8 +470,9 @@ missing refresh token, provider HTTP 4xx / `invalid_grant`, missing secrets,
 host-approval gaps, or invalid connection config — Kody dispatches
 `integration.auth.failed` to packages saved by that same user that declare the
 topic. Every classified attempt emits. The platform does not coalesce repeats;
-notifier packages decide how often to ping. Provider HTTP 5xx and missing
-connections do not emit.
+notifier packages decide how often to ping, typically by pairing this topic with
+`integration.auth.succeeded` and storing last-known health in package storage.
+Provider HTTP 5xx and missing connections do not emit.
 
 Delivery is best-effort after the refresh caller error is classified — there is
 no Queue / DLQ for this topic in v1. Failures during subscriber discovery or
@@ -522,6 +524,52 @@ reconnect pings can name the account.
 
 Use this topic for notifier packages that post to Discord, email, or otherwise
 ask the owner to reconnect a dead grant.
+
+## `integration.auth.succeeded`
+
+When host-side OAuth token refresh persists a new access token, or
+`/connect/oauth` finishes saving tokens for a connection, Kody dispatches
+`integration.auth.succeeded` to packages saved by that same user that declare
+the topic. Every successful refresh and every successful connect persist emits.
+The platform does not coalesce repeats or track working ↔ failed itself;
+notifier packages store that edge in package storage so a later failure can
+notify only on the working → failed transition.
+
+Delivery is best-effort after the tokens are written. Failures during subscriber
+discovery or package-invocation infrastructure are logged and do not change the
+refresh result or the connect response.
+
+Handlers receive a metadata-first payload:
+
+```ts
+type IntegrationAuthSucceededEvent = {
+	event: 'integration.auth.succeeded'
+	event_id: string
+	integration: {
+		name: string
+		lane: 'user' | 'platform'
+		account_label: string | null
+		description: string | null
+		provider: string | null
+		platform_app_slug: string | null
+		scopes: Array<string>
+		connected_at: string | null
+		token_refreshed_at: string | null
+	}
+	source: 'refresh' | 'oauth_connect'
+	account_url: string
+	occurred_at: string
+}
+```
+
+`source` is `refresh` for `refreshIntegrationTokens` and `oauth_connect` for
+the `/connect/oauth` persist path. `account_url` is built from the trusted
+deployment origin and links to `/account/integrations/<name>`. The event
+deliberately omits token values, secret values, client secrets, and secret
+names.
+
+Use this topic with `integration.auth.failed` to flip stored health back to
+working after a reconnect, or to send an all-clear.
 
 ## `mcp.server.disconnected` / `mcp.server.reconnected`
 

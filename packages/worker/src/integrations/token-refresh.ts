@@ -239,6 +239,56 @@ async function emitIntegrationAuthFailedEvent(input: {
 	}
 }
 
+async function emitIntegrationAuthSucceededEvent(input: {
+	env: Env
+	userId: string
+	integration: IntegrationAuthFailedSnapshot
+	waitUntil?: (promise: Promise<unknown>) => void
+}) {
+	try {
+		const { dispatchIntegrationAuthSucceededSubscriptionEvents } =
+			await import('./package-subscriptions.ts')
+		await dispatchIntegrationAuthSucceededSubscriptionEvents({
+			env: input.env,
+			userId: input.userId,
+			eventId: crypto.randomUUID(),
+			occurredAt: new Date().toISOString(),
+			integration: {
+				name: input.integration.name,
+				lane: input.integration.lane,
+				account_label: input.integration.accountLabel,
+				description: input.integration.description,
+				provider: input.integration.provider,
+				platform_app_slug: input.integration.platformAppSlug,
+				scopes: input.integration.scopes,
+				connected_at: input.integration.connectedAt,
+				token_refreshed_at: input.integration.tokenRefreshedAt,
+			},
+			source: 'refresh',
+			waitUntil: input.waitUntil,
+		})
+	} catch (error) {
+		console.warn(
+			'integration.auth.succeeded package subscription dispatch failed',
+			{
+				integrationName: input.integration.name,
+				error,
+			},
+		)
+	}
+}
+
+function scheduleSubscriptionEmit(
+	waitUntil: ((promise: Promise<unknown>) => void) | undefined,
+	pending: Promise<unknown>,
+) {
+	if (waitUntil) {
+		waitUntil(pending)
+		return
+	}
+	return pending
+}
+
 /**
  * Host-side OAuth token refresh. Runs entirely in the Worker: the refresh
  * token and client secret are materialized here (never in the sandbox), the
@@ -250,7 +300,8 @@ async function emitIntegrationAuthFailedEvent(input: {
  * connections may also refresh here (`integration_token_refresh`).
  *
  * Reconnectable caller-errors emit `integration.auth.failed` once per attempt.
- * The platform does not swallow repeats.
+ * Successful refreshes emit `integration.auth.succeeded`. The platform does
+ * not coalesce repeats; notifier packages edge-detect working ↔ failed.
  */
 export async function refreshIntegrationTokens(input: {
 	env: Env
@@ -269,11 +320,7 @@ export async function refreshIntegrationTokens(input: {
 				error,
 				waitUntil: input.waitUntil,
 			})
-			if (input.waitUntil) {
-				input.waitUntil(pending)
-			} else {
-				await pending
-			}
+			await scheduleSubscriptionEmit(input.waitUntil, pending)
 		}
 		throw error
 	}
@@ -284,6 +331,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 	userId: string
 	userEmail?: string | undefined
 	name: string
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<IntegrationTokenRefreshResult> {
 	const joined = await getJoinedIntegration({
 		env: input.env,
@@ -533,6 +581,14 @@ async function refreshIntegrationTokensOrThrow(input: {
 		requiredHosts: connection.requiredHosts,
 		accessToken: payload.access_token,
 	})
+
+	const pending = emitIntegrationAuthSucceededEvent({
+		env: input.env,
+		userId: input.userId,
+		integration,
+		waitUntil: input.waitUntil,
+	})
+	await scheduleSubscriptionEmit(input.waitUntil, pending)
 
 	return { refreshedAt, refreshTokenRotated }
 }

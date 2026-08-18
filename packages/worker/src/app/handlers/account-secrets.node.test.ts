@@ -88,6 +88,7 @@ const mockModule = vi.hoisted(() => ({
 		}),
 	),
 	getPlatformOauthAppClientSecret: vi.fn(async () => null),
+	dispatchIntegrationAuthSucceededSubscriptionEvents: vi.fn(async () => []),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -177,6 +178,15 @@ vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 	}
 })
 
+vi.mock('#worker/integrations/package-subscriptions.ts', () => ({
+	dispatchIntegrationAuthSucceededSubscriptionEvents: (
+		...args: Array<unknown>
+	) => mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents(...args),
+	dispatchIntegrationAuthFailedSubscriptionEvents: vi.fn(async () => []),
+	integrationAuthFailedTopic: 'integration.auth.failed',
+	integrationAuthSucceededTopic: 'integration.auth.succeeded',
+}))
+
 vi.mock('#worker/integrations/platform-apps.ts', () => ({
 	getPlatformOauthAppClientSecret: (...args: Array<unknown>) =>
 		mockModule.getPlatformOauthAppClientSecret(...args),
@@ -258,6 +268,7 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 	mockModule.saveSecret.mockClear()
 	mockModule.buildSecretHostApprovalUrl.mockClear()
 	mockModule.setSecretAllowedHosts.mockClear()
+	mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
 	const handler = createAccountSecretsApiHandler(createEnv())
 
 	const githubResponse = await handler.handler({
@@ -371,8 +382,21 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 		}),
 	)
 	expect(mockModule.saveValue).not.toHaveBeenCalled()
+	expect(
+		mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			source: 'oauth_connect',
+			integration: expect.objectContaining({
+				name: 'github',
+				lane: 'user',
+			}),
+		}),
+	)
 
 	mockModule.upsertIntegration.mockClear()
+	mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
 	const spotifyResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
 			method: 'POST',
@@ -1745,6 +1769,7 @@ test('platform-lane oauth exchange and connect ignore spoofed body fields and en
 	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(githubPlatformApp)
 	mockModule.saveSecret.mockClear()
 	mockModule.upsertPlatformIntegration.mockClear()
+	mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
 
 	const connectResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
@@ -1781,6 +1806,19 @@ test('platform-lane oauth exchange and connect ignore spoofed body fields and en
 			refreshTokenSecretName: 'githubRefreshToken',
 		}),
 	)
+	expect(
+		mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			source: 'oauth_connect',
+			integration: expect.objectContaining({
+				name: 'github',
+				lane: 'platform',
+				platform_app_slug: 'github',
+			}),
+		}),
+	)
 	expect(mockModule.upsertIntegration).not.toHaveBeenCalledWith(
 		expect.objectContaining({
 			config: expect.objectContaining({ name: 'github' }),
@@ -1797,6 +1835,7 @@ test('platform-lane oauth exchange and connect ignore spoofed body fields and en
 	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(githubPlatformApp)
 	mockModule.saveSecret.mockClear()
 	mockModule.upsertPlatformIntegration.mockClear()
+	mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
 
 	const rejectedScopes = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
@@ -1820,4 +1859,7 @@ test('platform-lane oauth exchange and connect ignore spoofed body fields and en
 	})
 	expect(mockModule.saveSecret).not.toHaveBeenCalled()
 	expect(mockModule.upsertPlatformIntegration).not.toHaveBeenCalled()
+	expect(
+		mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents,
+	).not.toHaveBeenCalled()
 })

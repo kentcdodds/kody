@@ -47,6 +47,7 @@ import {
 	upsertPlatformIntegration,
 } from '#worker/integrations/service.ts'
 import { getPlatformOauthAppClientSecret } from '#worker/integrations/platform-apps.ts'
+import { dispatchIntegrationAuthSucceededSubscriptionEvents } from '#worker/integrations/package-subscriptions.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import {
 	buildOAuthTokenExchangeFailurePayload,
@@ -532,6 +533,22 @@ async function handleConnectOauthAction(input: {
 		}),
 	})
 
+	await emitConnectOauthAuthSucceeded({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		integration: {
+			name: integrationName,
+			lane: platformApp ? 'platform' : 'user',
+			account_label: null,
+			description: null,
+			provider: platformApp?.provider ?? null,
+			platform_app_slug: platformApp?.slug ?? null,
+			scopes,
+			connected_at: null,
+			token_refreshed_at: null,
+		},
+	})
+
 	return jsonResponse({
 		ok: true,
 		accessTokenSaved: Boolean(accessSaved),
@@ -541,6 +558,41 @@ async function handleConnectOauthAction(input: {
 		integrationName,
 		nextSteps,
 	})
+}
+
+async function emitConnectOauthAuthSucceeded(input: {
+	env: Env
+	userId: string
+	integration: {
+		name: string
+		lane: 'user' | 'platform'
+		account_label: string | null
+		description: string | null
+		provider: string | null
+		platform_app_slug: string | null
+		scopes: Array<string>
+		connected_at: string | null
+		token_refreshed_at: string | null
+	}
+}) {
+	try {
+		await dispatchIntegrationAuthSucceededSubscriptionEvents({
+			env: input.env,
+			userId: input.userId,
+			eventId: crypto.randomUUID(),
+			occurredAt: new Date().toISOString(),
+			integration: input.integration,
+			source: 'oauth_connect',
+		})
+	} catch (error) {
+		console.warn(
+			'integration.auth.succeeded package subscription dispatch failed',
+			{
+				integrationName: input.integration.name,
+				error,
+			},
+		)
+	}
 }
 
 async function buildConnectOauthHostApprovalLinks(input: {

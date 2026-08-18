@@ -486,7 +486,8 @@ signed-in user's saved package subscriptions, optionally filtered by exact
 topic. This is the generic discovery step before building fan-out, debugging why
 an event did or did not dispatch, or checking which packages subscribe to
 `email.message.received`, `run.error.recorded`, `integration.auth.failed`,
-`mcp.server.disconnected`, or `mcp.server.reconnected`.
+`integration.auth.succeeded`, `mcp.server.disconnected`, or
+`mcp.server.reconnected`.
 
 For accepted stored inbound email, the topic is `email.message.received`.
 Quarantined inbound email dispatches `email.message.quarantined` instead. Both
@@ -509,10 +510,13 @@ needed. See [Activity](./activity.md) and the
 
 When host-side OAuth token refresh fails with reconnectable caller state, Kody
 dispatches `integration.auth.failed` to your packages that declare that topic.
-The payload is metadata-first (connection name, account label, scopes,
-timestamps, reason, optional provider error fields, and trusted `reconnect_url`
-/ `account_url`). Every classified attempt emits; notifier packages decide how
-often to ping. See the
+Successful refreshes and successful `/connect/oauth` persists dispatch
+`integration.auth.succeeded`. Both payloads are metadata-first (connection name,
+account label, scopes, timestamps, and for failed: reason, optional provider
+error fields, and trusted `reconnect_url` / `account_url`; for succeeded:
+`source` and a trusted `account_url`). Every classified attempt emits; notifier
+packages store working ↔ failed in package storage if they want edge-triggered
+pings. See the
 [package subscriptions guide](../guides/package-subscriptions.md).
 
 When a saved MCP server that was previously ready stays down after a lightweight
