@@ -311,8 +311,8 @@ test('the package-app session cookie is not interchangeable with the app session
 		}),
 	).resolves.toBeNull()
 
-	// Cookies minted before expiresAt existed keep the old 12 hour bound from
-	// issuedAt, so a copied value cannot be replayed after that window.
+	// Cookies that omit expiresAt use a 12 hour bound from issuedAt, so a
+	// copied value cannot be replayed after that window.
 	const legacyIssuedAt = now
 	const legacyExpiresAt = legacyIssuedAt + 12 * 60 * 60 * 1000
 	const legacyCookie = createCookie('kody_pkg_session', {

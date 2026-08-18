@@ -30,7 +30,7 @@ import { isStableUserId } from '#worker/user-id.ts'
 
 const securePackageAppSessionCookieName = '__Host-kody_pkg_session'
 const insecurePackageAppSessionCookieName = 'kody_pkg_session'
-/** Fallback Max-Age for handoff tokens minted before `sessExp` existed. */
+/** Fallback Max-Age for handoff tokens that omit `sessExp`. */
 const legacyPackageAppSessionMaxAgeSeconds = 60 * 60 * 12
 const packageAppSessionSecretPurpose = 'kody-package-app-session:v2'
 

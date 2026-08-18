@@ -163,9 +163,9 @@ export function parsePasswordChangedAtMs(value: string | null | undefined) {
  * Fail-closed behavior is scoped to accounts that have a stored timestamp: a
  * value that exists but cannot be parsed invalidates the session, and so does a
  * missing `issuedAt`. An account that has never changed its password keeps
- * sessions with no `issuedAt` — cookies issued before `issuedAt` existed stay
- * valid until a password change, which is the documented tradeoff in the
- * "Accepted residual risks" section of `docs/contributing/security.md`.
+ * sessions with no `issuedAt` — those cookies stay valid until a password
+ * change, which is the documented tradeoff in the "Accepted residual risks"
+ * section of `docs/contributing/security.md`.
  */
 export function isSessionInvalidatedByStoredPasswordChange(input: {
 	issuedAt: number | undefined

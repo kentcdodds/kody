@@ -29,8 +29,7 @@ const handoffReplayKeyPrefix = 'package-app-handoff:'
 // Cloudflare KV enforces a 60 second minimum expiration TTL, which matches the
 // token lifetime.
 const handoffReplayTtlSeconds = 60
-// Tokens minted before `sessExp` existed fall back to the previous 12 hour
-// package-app cookie lifetime for the rolling-deploy overlap.
+// Tokens that omit `sessExp` use a 12 hour package-app cookie lifetime.
 const missingSessionExpiryFallbackMs = 60 * 60 * 12 * 1000
 
 export type PackageAppHandoffClaims = {
