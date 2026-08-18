@@ -38,8 +38,10 @@ export type ClientPreloadManifest = {
 export const lazyAreaNames = [
 	'account-area',
 	'admin-area',
+	'auth-area',
 	'blog-area',
 	'community-area',
+	'marketing-area',
 	'onboarding-area',
 ]
 

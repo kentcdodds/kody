@@ -2,32 +2,25 @@ import { type RouteLoader } from '#client/client-router.tsx'
 import {
 	accountArea,
 	adminArea,
+	authArea,
 	blogArea,
 	communityArea,
 	LazyAccountRoute,
 	LazyAdminRoute,
+	LazyAuthRoute,
 	LazyBlogRoute,
 	LazyCommunityRoute,
+	LazyMarketingRoute,
 	LazyOnboardingRoute,
 	lazyRouteLoader,
+	marketingArea,
 	onboardingArea,
 } from '#client/lazy-route.tsx'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 import { HomeRoute, homeRouteLoader } from './home.tsx'
-import { LoginRoute, authProvidersRouteLoader } from './login.tsx'
-import {
-	PendingVerificationRoute,
-	pendingVerificationRouteLoader,
-} from './pending-verification.tsx'
-import { PricingRoute } from './pricing.tsx'
-import { PrivacyRoute } from './privacy.tsx'
-import { TermsRoute } from './terms.tsx'
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
-import { ResetPasswordRoute } from './reset-password.tsx'
-import { VerifyEmailRoute } from './verify-email.tsx'
-import { VerifyRoute } from './verify.tsx'
 
 export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.home)]: homeRouteLoader,
@@ -259,8 +252,14 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		communityArea,
 		(m) => m.timelineRouteLoader,
 	),
-	[routePattern(routes.login)]: authProvidersRouteLoader,
-	[routePattern(routes.signup)]: authProvidersRouteLoader,
+	[routePattern(routes.login)]: lazyRouteLoader(
+		authArea,
+		(m) => m.authProvidersRouteLoader,
+	),
+	[routePattern(routes.signup)]: lazyRouteLoader(
+		authArea,
+		(m) => m.authProvidersRouteLoader,
+	),
 	[oauthPaths.authorize]: lazyRouteLoader(
 		onboardingArea,
 		(m) => m.oauthAuthorizeRouteLoader,
@@ -273,7 +272,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		onboardingArea,
 		(m) => m.connectOauthRouteLoader,
 	),
-	[routePattern(routes.pendingVerification)]: pendingVerificationRouteLoader,
+	[routePattern(routes.pendingVerification)]: lazyRouteLoader(
+		authArea,
+		(m) => m.pendingVerificationRouteLoader,
+	),
 }
 
 export const clientRoutes = {
@@ -455,19 +457,39 @@ export const clientRoutes = {
 	[routePattern(routes.timeline)]: (
 		<LazyCommunityRoute render={(m) => <m.TimelineRoute />} />
 	),
-	[routePattern(routes.login)]: <LoginRoute />,
+	[routePattern(routes.login)]: (
+		<LazyAuthRoute render={(m) => <m.LoginRoute />} />
+	),
 	[routePattern(routes.onboarding)]: (
 		<LazyOnboardingRoute render={(m) => <m.OnboardingRoute />} />
 	),
-	[routePattern(routes.pendingVerification)]: <PendingVerificationRoute />,
-	[routePattern(routes.pricing)]: <PricingRoute />,
-	[routePattern(routes.privacy)]: <PrivacyRoute />,
-	[routePattern(routes.terms)]: <TermsRoute />,
-	[routePattern(routes.signup)]: <LoginRoute />,
-	[routePattern(routes.resetPassword)]: <ResetPasswordRoute />,
-	[routePattern(routes.verify)]: <VerifyRoute />,
-	[routePattern(routes.verifyEmail)]: <VerifyEmailRoute />,
-	[routePattern(routes.verifyEmailChange)]: <VerifyEmailRoute />,
+	[routePattern(routes.pendingVerification)]: (
+		<LazyAuthRoute render={(m) => <m.PendingVerificationRoute />} />
+	),
+	[routePattern(routes.pricing)]: (
+		<LazyMarketingRoute render={(m) => <m.PricingRoute />} />
+	),
+	[routePattern(routes.privacy)]: (
+		<LazyMarketingRoute render={(m) => <m.PrivacyRoute />} />
+	),
+	[routePattern(routes.terms)]: (
+		<LazyMarketingRoute render={(m) => <m.TermsRoute />} />
+	),
+	[routePattern(routes.signup)]: (
+		<LazyAuthRoute render={(m) => <m.LoginRoute />} />
+	),
+	[routePattern(routes.resetPassword)]: (
+		<LazyAuthRoute render={(m) => <m.ResetPasswordRoute />} />
+	),
+	[routePattern(routes.verify)]: (
+		<LazyAuthRoute render={(m) => <m.VerifyRoute />} />
+	),
+	[routePattern(routes.verifyEmail)]: (
+		<LazyAuthRoute render={(m) => <m.VerifyEmailRoute />} />
+	),
+	[routePattern(routes.verifyEmailChange)]: (
+		<LazyAuthRoute render={(m) => <m.VerifyEmailRoute />} />
+	),
 	[routePattern(routes.connectOauth)]: (
 		<LazyOnboardingRoute render={(m) => <m.ConnectOauthRoute />} />
 	),

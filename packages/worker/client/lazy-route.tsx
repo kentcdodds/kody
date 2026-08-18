@@ -9,8 +9,10 @@ import { createSpinDelay } from './spin-delay.ts'
 import { loadSyntaxHighlight } from './syntax-highlight.tsx'
 import type * as accountAreaExports from './routes/account-area.ts'
 import type * as adminAreaExports from './routes/admin-area.ts'
+import type * as authAreaExports from './routes/auth-area.ts'
 import type * as blogAreaExports from './routes/blog-area.ts'
 import type * as communityAreaExports from './routes/community-area.ts'
+import type * as marketingAreaExports from './routes/marketing-area.ts'
 import type * as onboardingAreaExports from './routes/onboarding-area.ts'
 
 export type LazyRouteArea<TModule> = {
@@ -53,8 +55,10 @@ export function createLazyRouteArea<TModule>(
 
 export type AccountAreaModule = typeof accountAreaExports
 export type AdminAreaModule = typeof adminAreaExports
+export type AuthAreaModule = typeof authAreaExports
 export type CommunityAreaModule = typeof communityAreaExports
 export type BlogAreaModule = typeof blogAreaExports
+export type MarketingAreaModule = typeof marketingAreaExports
 export type OnboardingAreaModule = typeof onboardingAreaExports
 
 export const accountArea = createLazyRouteArea<AccountAreaModule>(
@@ -90,6 +94,20 @@ export const onboardingArea = createLazyRouteArea<OnboardingAreaModule>(
 		// Dynamic import is intentional for route-level code splitting
 		// (sanctioned exception to the no-inline-imports rule).
 		import('./routes/onboarding-area.ts'),
+)
+
+export const authArea = createLazyRouteArea<AuthAreaModule>(
+	() =>
+		// Dynamic import is intentional for route-level code splitting
+		// (sanctioned exception to the no-inline-imports rule).
+		import('./routes/auth-area.ts'),
+)
+
+export const marketingArea = createLazyRouteArea<MarketingAreaModule>(
+	() =>
+		// Dynamic import is intentional for route-level code splitting
+		// (sanctioned exception to the no-inline-imports rule).
+		import('./routes/marketing-area.ts'),
 )
 
 type LazyRouteRenderProps<TModule> = {
@@ -179,6 +197,10 @@ export const LazyBlogRoute: LazyRouteComponent<BlogAreaModule> =
 	createLazyRoute(blogArea)
 export const LazyOnboardingRoute: LazyRouteComponent<OnboardingAreaModule> =
 	createLazyRoute(onboardingArea)
+export const LazyAuthRoute: LazyRouteComponent<AuthAreaModule> =
+	createLazyRoute(authArea)
+export const LazyMarketingRoute: LazyRouteComponent<MarketingAreaModule> =
+	createLazyRoute(marketingArea)
 
 export function lazyRouteLoader<TModule>(
 	area: LazyRouteArea<TModule>,
@@ -309,6 +331,32 @@ registerPreloadPatterns(
 		name: 'onboarding-area',
 		load: onboardingArea.load,
 		getCached: onboardingArea.getCached,
+	},
+)
+
+registerPreloadPatterns(
+	[
+		routePattern(routes.login),
+		routePattern(routes.signup),
+		routePattern(routes.pendingVerification),
+		routePattern(routes.resetPassword),
+		routePattern(routes.verify),
+		routePattern(routes.verifyEmail),
+		routePattern(routes.verifyEmailChange),
+	],
+	{ name: 'auth-area', load: authArea.load, getCached: authArea.getCached },
+)
+
+registerPreloadPatterns(
+	[
+		routePattern(routes.pricing),
+		routePattern(routes.privacy),
+		routePattern(routes.terms),
+	],
+	{
+		name: 'marketing-area',
+		load: marketingArea.load,
+		getCached: marketingArea.getCached,
 	},
 )
 

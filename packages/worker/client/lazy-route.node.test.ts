@@ -18,16 +18,6 @@ import { routes } from '#universal/routes.ts'
 
 const eagerPatterns = new Set([
 	routePattern(routes.home),
-	routePattern(routes.login),
-	routePattern(routes.signup),
-	routePattern(routes.pricing),
-	routePattern(routes.privacy),
-	routePattern(routes.terms),
-	routePattern(routes.resetPassword),
-	routePattern(routes.verify),
-	routePattern(routes.verifyEmail),
-	routePattern(routes.verifyEmailChange),
-	routePattern(routes.pendingVerification),
 	oauthPaths.callback,
 ])
 
