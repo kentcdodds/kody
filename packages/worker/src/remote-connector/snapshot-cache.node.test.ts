@@ -76,20 +76,16 @@ test('getCachedRemoteConnectorSnapshot reuses DO snapshots within TTL', async ()
 	expect(getSnapshotCalls()).toBe(1)
 })
 
-test('getCachedRemoteConnectorSnapshot does not retain disconnected snapshots', async () => {
+test('getCachedRemoteConnectorSnapshot does not retain disconnected or empty-tool snapshots', async () => {
 	clearRemoteConnectorSnapshotCacheForTests()
-	let connected = false
-	const { env, getSnapshotCalls } = buildEnv(async () =>
-		connected
-			? {
-					connectorKind: 'roku',
-					connectorId: 'home',
-					connectedAt: '2026-03-25T00:00:00.000Z',
-					lastSeenAt: '2026-03-25T00:00:01.000Z',
-					tools: runtimeTools,
-				}
-			: null,
-	)
+	let snapshot: {
+		connectorKind: string
+		connectorId: string
+		connectedAt: string
+		lastSeenAt: string
+		tools: typeof runtimeTools | []
+	} | null = null
+	const { env, getSnapshotCalls } = buildEnv(async () => snapshot)
 	const request = {
 		env,
 		userId: 'user-1',
@@ -97,11 +93,24 @@ test('getCachedRemoteConnectorSnapshot does not retain disconnected snapshots', 
 	}
 
 	await expect(getCachedRemoteConnectorSnapshot(request)).resolves.toBeNull()
-	connected = true
-	await expect(
-		getCachedRemoteConnectorSnapshot(request),
-	).resolves.not.toBeNull()
-	expect(getSnapshotCalls()).toBe(2)
+	snapshot = {
+		connectorKind: 'roku',
+		connectorId: 'home',
+		connectedAt: '2026-03-25T00:00:00.000Z',
+		lastSeenAt: '2026-03-25T00:00:01.000Z',
+		tools: [],
+	}
+	await expect(getCachedRemoteConnectorSnapshot(request)).resolves.toEqual(
+		snapshot,
+	)
+	snapshot = {
+		...snapshot,
+		tools: runtimeTools,
+	}
+	await expect(getCachedRemoteConnectorSnapshot(request)).resolves.toEqual(
+		snapshot,
+	)
+	expect(getSnapshotCalls()).toBe(3)
 })
 
 test('a failed connector RPC evicts the cached snapshot', async () => {

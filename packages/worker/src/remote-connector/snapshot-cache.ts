@@ -70,9 +70,12 @@ export function getCachedRemoteConnectorSnapshot(input: {
 				instanceId: input.instanceId,
 				getSnapshot: () => stub.getSnapshot(),
 			})
-			if (snapshot == null) {
-				// Do not retain disconnected results: a connector that comes online
-				// should be visible on the next lookup instead of after the TTL.
+			if (snapshot == null || snapshot.tools.length === 0) {
+				// Do not retain disconnected or empty-tool results: a connector
+				// that comes online or finishes exposing tools should be visible
+				// on the next lookup instead of after the TTL. Empty-tool
+				// connected snapshots are the host-gate failure mode for
+				// kody.remote[name] ("has not exposed any tools yet").
 				remoteConnectorSnapshotCache.delete(cacheKey)
 			}
 			return snapshot

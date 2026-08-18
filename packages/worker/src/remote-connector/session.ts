@@ -609,7 +609,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		try {
 			await this.refreshToolsSnapshot()
 		} catch (error) {
-			await this.handleToolsSnapshotRefreshFailure({
+			this.handleToolsSnapshotRefreshFailure({
 				phase: 'after websocket hello',
 				error,
 			})
@@ -637,7 +637,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 			try {
 				await this.refreshToolsSnapshot()
 			} catch (error) {
-				await this.handleToolsSnapshotRefreshFailure({
+				this.handleToolsSnapshotRefreshFailure({
 					phase: 'on tools/list_changed',
 					error,
 				})
@@ -645,7 +645,7 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		}
 	}
 
-	private async handleToolsSnapshotRefreshFailure(input: {
+	private handleToolsSnapshotRefreshFailure(input: {
 		phase: 'after websocket hello' | 'on tools/list_changed'
 		error: unknown
 	}) {
@@ -657,20 +657,14 @@ class RemoteConnectorSessionBase extends DurableObject<Env> {
 		}
 		// Timeouts, disconnects mid-RPC, and "not connected" are expected
 		// remote-connector lifecycle noise (same class as websocket closes).
-		// Soft-fail by clearing tools; keep an ops log line and do not open
-		// Sentry issues. Restore the in-memory cache if persistence fails so
-		// later reads are not left empty while Sentry captures the storage bug.
-		const previousTools = this.stateSnapshot.tools
-		this.stateSnapshot.tools = []
+		// Keep last-known-good tools: wiping them while the websocket is
+		// still up makes kody.remote[name] fail the host gate with
+		// "connected, but it has not exposed any tools yet" even though
+		// tools/call would still work. Real disconnects already clear tools
+		// in handleDisconnect. Keep an ops log line and do not open Sentry.
 		console.warn(
 			`Remote connector tools snapshot refresh failed ${input.phase}. connectorId=${this.stateSnapshot.persisted.connectorId ?? 'null'} error=${getErrorMessage(input.error)}`,
 		)
-		try {
-			await this.persistState()
-		} catch (persistError) {
-			this.stateSnapshot.tools = previousTools
-			throw persistError
-		}
 	}
 
 	private async refreshToolsSnapshot() {

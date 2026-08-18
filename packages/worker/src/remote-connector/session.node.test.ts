@@ -420,7 +420,15 @@ test('tools/list_changed soft-fails disconnects and reports malformed snapshots'
 			connectorId: 'home',
 			connectedAt: '2026-04-26T05:00:00.000Z',
 		},
-		tools: [],
+		tools: [{ name: 'bond_shade_set_position' }],
+	})
+	// Same in-memory snapshot the host gate reads after a tools/list
+	// timeout while the websocket is still up.
+	const stillConnected = [{} as WebSocket]
+	softFail.state.getWebSockets.mockReturnValue(stillConnected)
+	await expect(softFail.session.getSnapshot()).resolves.toMatchObject({
+		connectorId: 'home',
+		tools: [{ name: 'bond_shade_set_position' }],
 	})
 
 	captureMessageMock.mockClear()
