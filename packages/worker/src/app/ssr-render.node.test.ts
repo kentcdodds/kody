@@ -536,6 +536,8 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
 	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
+	expect(withoutAssetsHtml).toContain('href="/images/hero/kody-base.webp"')
+	expect(withoutAssetsHtml).toContain('as="image"')
 
 	// With ASSETS serving the stylesheet: inline <style>, no stylesheet link.
 	const assets = {
@@ -553,6 +555,25 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 		'<style>:root { --inline-marker: 1; }</style>',
 	)
 	expect(withAssetsHtml).not.toContain('href="/styles.css')
+
+	// Comments may mention HTML (`<main>`) without blocking inlining.
+	resetInlineStylesheetCache()
+	const commentedAssets = {
+		fetch: async () =>
+			new Response(
+				'/* The router moves focus to <main> */\n:root { --comment-ok: 1; }',
+			),
+	}
+	const withCommentedCss = await renderAppPage({
+		request: new Request('https://example.com/'),
+		env: { ...env, ASSETS: commentedAssets } as Env,
+	})
+	const withCommentedCssHtml = await readResponseText(withCommentedCss)
+	expect(withCommentedCssHtml).toContain(
+		'<style>:root { --comment-ok: 1; }</style>',
+	)
+	expect(withCommentedCssHtml).not.toContain('href="/styles.css')
+	expect(withCommentedCssHtml).not.toContain('<main>')
 
 	// CSS needing HTML escaping must fall back to the <link> (the stream
 	// renderer escapes text children, which would corrupt selectors).
@@ -602,6 +623,7 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 	expect(anonymousResponse.status).toBe(200)
 	const anonymousHtml = await readResponseText(anonymousResponse)
 	expect(anonymousHtml).not.toContain('OAuth authorization failed')
+	expect(anonymousHtml).not.toContain('href="/images/hero/kody-base.webp"')
 
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(
@@ -759,6 +781,7 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 		count.format(planLimits.standard.maxExecuteCallsPerDay),
 	)
 	expect(html).toContain(count.format(planLimits.pro.maxExecuteCallsPerDay))
+	expect(html).not.toContain('href="/images/hero/kody-base.webp"')
 })
 
 test('renderAppPage renders the redesigned blog index', async () => {
