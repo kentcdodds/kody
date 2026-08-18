@@ -61,11 +61,11 @@ enough for the remote server.
 
 ## Home automation
 
-Household LAN tools (lights, TVs, thermostats, and the rest of the home
-process) are a normal outbound MCP server at
-`https://kody-home.doddsfamily.us/mcp`. Add it as `home`, authorize with CIMD,
-then call `kody.mcp["home"].tool_name(...)`. Packages that still say
-`kody.remote` should run package codemod `0005-remote-connector-to-mcp-server`.
+Household LAN tools (lights, TVs, thermostats, and the rest of the home process)
+are a normal outbound MCP server at `https://kody-home.doddsfamily.us/mcp`. Add
+it as `home`, authorize with CIMD, then call `kody.mcp["home"].tool_name(...)`.
+Packages that still say `kody.remote` should run package codemod
+`0005-remote-connector-to-mcp-server`.
 
 ## Related
 
