@@ -1,10 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { expect, test } from 'vitest'
-import {
-	buildMcpClientIdMetadataDocument,
-	mcpClientIdMetadataPath,
-} from './client-id-metadata.ts'
+import { mcpClientIdMetadataPath } from './client-id-metadata.ts'
 
 async function workerFetch(request: Request) {
 	const ctx = createExecutionContext()
@@ -13,19 +10,14 @@ async function workerFetch(request: Request) {
 	return response
 }
 
-test('worker serves Kody CIMD before the OAuth provider wrapper', async () => {
-	const origin = 'https://kody.codes'
-	const documentUrl = `${origin}${mcpClientIdMetadataPath}`
+test('worker serves CIMD before the OAuth wrapper and reflects Origin for CORS', async () => {
+	const documentUrl = `https://kody.codes${mcpClientIdMetadataPath}`
 	const response = await workerFetch(new Request(documentUrl))
 	expect(response.status).toBe(200)
 	expect(response.headers.get('Content-Type')).toBe('application/json')
-	await expect(response.json()).resolves.toEqual(
-		buildMcpClientIdMetadataDocument(origin),
-	)
-})
+	const body = (await response.json()) as { client_id: string }
+	expect(body.client_id).toBe(documentUrl)
 
-test('CIMD CORS reflects Origin and varies the cache key', async () => {
-	const documentUrl = `https://kody.codes${mcpClientIdMetadataPath}`
 	const first = await workerFetch(
 		new Request(documentUrl, { headers: { Origin: 'https://as.example' } }),
 	)

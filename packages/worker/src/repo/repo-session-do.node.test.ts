@@ -2238,20 +2238,15 @@ test('stagePublishedPackageArtifactRebuild collects workspace files once and sta
 	expect(mockModule.workspaceGlob).toHaveBeenCalledTimes(1)
 })
 
-test('listPublishedPackageArtifactTargets falls back to the published snapshot when the session workspace is empty', async () => {
+test('published artifact rebuild falls back to the published snapshot when the session workspace is empty', async () => {
 	restoreRepoSessionMockBaseline()
-	mockModule.workspaceReadFile.mockResolvedValue(null)
 	const packageJson =
 		'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}'
-	mockModule.loadPublishedSourceManifestSnapshot.mockResolvedValue({
-		version: 1,
-		sourceId: 'source-1',
-		publishedCommit: 'commit-1',
-		manifestPath: 'package.json',
-		manifestContent: packageJson,
-		createdAt: '2026-08-17T20:00:00.000Z',
-	})
-	mockModule.getEntitySourceById.mockResolvedValue({
+	const snapshotFiles = {
+		'package.json': packageJson,
+		'index.ts': 'export const ready = true\n',
+	}
+	const packageSource = {
 		id: 'source-1',
 		user_id: 'user-1',
 		entity_kind: 'package',
@@ -2265,16 +2260,28 @@ test('listPublishedPackageArtifactTargets falls back to the published snapshot w
 		external_check_until: null,
 		created_at: '2026-04-18T00:00:00.000Z',
 		updated_at: '2026-04-18T00:00:00.000Z',
-	})
+	}
 
-	const session = new RepoSession(createDurableObjectState(), {
+	mockModule.workspaceReadFile.mockResolvedValue(null)
+	mockModule.loadPublishedSourceManifestSnapshot.mockResolvedValue({
+		version: 1,
+		sourceId: 'source-1',
+		publishedCommit: 'commit-1',
+		manifestPath: 'package.json',
+		manifestContent: packageJson,
+		createdAt: '2026-08-17T20:00:00.000Z',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue(packageSource)
+
+	const listSession = new RepoSession(createDurableObjectState(), {
 		APP_DB: {},
 	} as unknown as Env)
-	const targets = await session.listPublishedPackageArtifactTargets({
-		sourceId: 'source-1',
-		userId: 'user-1',
-	})
-	expect(targets).toEqual([
+	await expect(
+		listSession.listPublishedPackageArtifactTargets({
+			sourceId: 'source-1',
+			userId: 'user-1',
+		}),
+	).resolves.toEqual([
 		{
 			kind: 'module',
 			artifactName: '.',
@@ -2291,18 +2298,10 @@ test('listPublishedPackageArtifactTargets falls back to the published snapshot w
 	expect(mockModule.loadPublishedSourceManifestSnapshot).toHaveBeenCalledTimes(
 		1,
 	)
-})
 
-test('stagePublishedPackageArtifactRebuild falls back to the published snapshot when the session workspace is empty', async () => {
 	restoreRepoSessionMockBaseline()
 	mockModule.workspaceGlob.mockResolvedValue([])
 	mockModule.workspaceReadFile.mockResolvedValue(null)
-	const packageJson =
-		'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}'
-	const snapshotFiles = {
-		'package.json': packageJson,
-		'index.ts': 'export const ready = true\n',
-	}
 	mockModule.loadPublishedSourceSnapshot.mockResolvedValue({
 		version: 1,
 		sourceId: 'source-1',
@@ -2315,28 +2314,14 @@ test('stagePublishedPackageArtifactRebuild falls back to the published snapshot 
 		files: snapshotFiles,
 		createdAt: '2026-08-17T20:00:00.000Z',
 	})
-	mockModule.getEntitySourceById.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		entity_kind: 'package',
-		entity_id: 'package-1',
-		repo_id: 'package-package-1',
-		published_commit: 'commit-1',
-		indexed_commit: null,
-		manifest_path: 'package.json',
-		source_root: '/',
-		last_external_check_at: null,
-		external_check_until: null,
-		created_at: '2026-04-18T00:00:00.000Z',
-		updated_at: '2026-04-18T00:00:00.000Z',
-	})
+	mockModule.getEntitySourceById.mockResolvedValue(packageSource)
 
 	const put = vi.fn(async () => undefined)
-	const session = new RepoSession(createDurableObjectState(), {
+	const stageSession = new RepoSession(createDurableObjectState(), {
 		APP_DB: {},
 		BUNDLE_ARTIFACTS_KV: { put },
 	} as unknown as Env)
-	const staged = await session.stagePublishedPackageArtifactRebuild({
+	const staged = await stageSession.stagePublishedPackageArtifactRebuild({
 		sourceId: 'source-1',
 		userId: 'user-1',
 	})

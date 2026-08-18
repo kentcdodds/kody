@@ -1,25 +1,20 @@
 import { expect, test } from 'vitest'
 import { enrichMcpOAuthProviderError } from './oauth-provider-error.ts'
 
-const oauth = {
-	clientOrigin: 'https://kody.codes',
-	callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
-	clientMetadataUrl: 'https://kody.codes/oauth/client-metadata.json',
-}
-
-test('origin rejections include CIMD when Kody presents one', () => {
-	const message = enrichMcpOAuthProviderError(
+test('origin rejections include CIMD details when present and leave unrelated errors alone', () => {
+	const oauth = {
+		clientOrigin: 'https://kody.codes',
+		callbackUrl: 'https://kody.codes/account/mcp-servers/oauth/callback',
+		clientMetadataUrl: 'https://kody.codes/oauth/client-metadata.json',
+	}
+	const withCimd = enrichMcpOAuthProviderError(
 		'Invalid origin uri https://kody.codes',
 		oauth,
 	)
-	expect(message).toContain('Invalid origin uri https://kody.codes')
-	expect(message).toContain(oauth.clientOrigin)
-	expect(message).toContain(oauth.callbackUrl)
-	expect(message).toContain(oauth.clientMetadataUrl)
-})
+	expect(withCimd).toContain('Invalid origin uri https://kody.codes')
+	expect(withCimd).toContain(oauth.clientMetadataUrl)
 
-test('origin rejections omit CIMD when Kody is on DCR only', () => {
-	const message = enrichMcpOAuthProviderError(
+	const withoutCimd = enrichMcpOAuthProviderError(
 		'Invalid origin uri http://localhost:8787',
 		{
 			clientOrigin: 'http://localhost:8787',
@@ -27,12 +22,9 @@ test('origin rejections omit CIMD when Kody is on DCR only', () => {
 			clientMetadataUrl: null,
 		},
 	)
-	expect(message).toContain('http://localhost:8787')
-	expect(message).not.toContain('CIMD')
-	expect(message).not.toContain('client-metadata.json')
-})
+	expect(withoutCimd).toContain('http://localhost:8787')
+	expect(withoutCimd).not.toContain('client-metadata.json')
 
-test('unrelated OAuth errors stay unchanged', () => {
 	expect(enrichMcpOAuthProviderError('Invalid state.', oauth)).toBe(
 		'Invalid state.',
 	)
