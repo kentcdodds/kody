@@ -62,17 +62,6 @@ function rewriteSource(source: string) {
 	return next
 }
 
-function sourceNeedsRewrite(source: string) {
-	kodyRemoteMemberPattern.lastIndex = 0
-	kodyRemoteComputedPattern.lastIndex = 0
-	remoteCapabilityIdPattern.lastIndex = 0
-	return (
-		kodyRemoteMemberPattern.test(source) ||
-		kodyRemoteComputedPattern.test(source) ||
-		remoteCapabilityIdPattern.test(source)
-	)
-}
-
 function sourceNeedsManual(source: string) {
 	ambiguousRemotePattern.lastIndex = 0
 	return ambiguousRemotePattern.test(source)

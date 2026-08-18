@@ -74,7 +74,6 @@ export const accountExportSectionCapability = defineDomainCapability(
 				section: args.section,
 				table: args.table,
 				storageId: args.storage_id,
-				instanceId: args.instance_id,
 				packageId: args.package_id,
 				serviceName: args.service_name,
 				kind: args.kind,

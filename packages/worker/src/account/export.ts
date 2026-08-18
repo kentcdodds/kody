@@ -2024,7 +2024,6 @@ export async function readAccountExportSection(input: {
 	section: AccountExportSectionName
 	table?: string
 	storageId?: string
-	instanceId?: string
 	packageId?: string
 	serviceName?: string
 	kind?:
