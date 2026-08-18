@@ -485,7 +485,8 @@ Use the built-in `package_subscriptions_list` capability to discover the
 signed-in user's saved package subscriptions, optionally filtered by exact
 topic. This is the generic discovery step before building fan-out, debugging why
 an event did or did not dispatch, or checking which packages subscribe to
-`email.message.received`, `run.error.recorded`, or `integration.auth.failed`.
+`email.message.received`, `run.error.recorded`, `integration.auth.failed`, or
+`mcp.server.disconnected`.
 
 For accepted stored inbound email, the topic is `email.message.received`.
 Quarantined inbound email dispatches `email.message.quarantined` instead. Both
@@ -511,6 +512,12 @@ dispatches `integration.auth.failed` to your packages that declare that topic.
 The payload is metadata-first (connection name, lane, reason, optional provider
 error fields, and a trusted `reconnect_url`). Every classified attempt emits;
 notifier packages decide how often to ping. See the
+[package subscriptions guide](../guides/package-subscriptions.md).
+
+When a saved MCP server that was previously ready stays down after a lightweight
+hub retry, Kody dispatches `mcp.server.disconnected`. Recovery to ready
+dispatches `mcp.server.reconnected` with the same episode id. The payload is
+metadata-first (server id/name/state, `account_url`). See the
 [package subscriptions guide](../guides/package-subscriptions.md).
 
 Artifacts-backed plain repos, packages, and job sources also emit `repo.pushed`,

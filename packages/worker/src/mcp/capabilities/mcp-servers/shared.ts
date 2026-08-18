@@ -64,6 +64,7 @@ export function buildMcpServerStatusView(input: {
 export async function loadMcpClientHubSnapshotOrNull(input: {
 	env: Env
 	userId: string
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	try {
 		return await getCachedMcpClientHubSnapshot(input)

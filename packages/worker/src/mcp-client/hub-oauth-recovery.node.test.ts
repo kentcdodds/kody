@@ -35,6 +35,7 @@ type FakeManager = {
 	rows: Array<FakeServerRow>
 	mcpConnections: Record<string, FakeConnection>
 	connectCount: number
+	connectBehavior: 'oauth' | 'ready' | 'disconnected'
 	registerFailuresRemaining: number
 	callbackMatches: boolean
 	callbackResult: {
@@ -90,6 +91,7 @@ vi.mock('agents/mcp/client', () => ({
 		rows: Array<FakeServerRow> = []
 		mcpConnections: Record<string, FakeConnection> = {}
 		connectCount = 0
+		connectBehavior: 'oauth' | 'ready' | 'disconnected' = 'oauth'
 		registerFailuresRemaining = 0
 		callbackMatches = true
 		callbackResult = {
@@ -157,6 +159,16 @@ vi.mock('agents/mcp/client', () => ({
 			const connection = this.mcpConnections[serverId]
 			if (!connection) throw new Error('Missing fake connection.')
 			const provider = connection.options.transport.authProvider
+			if (this.connectBehavior === 'ready') {
+				connection.connectionState = 'ready'
+				connection.connectionError = null
+				return { state: 'connected' }
+			}
+			if (this.connectBehavior === 'disconnected') {
+				connection.connectionState = 'disconnected'
+				connection.connectionError = 'upstream closed'
+				return { state: 'disconnected' }
+			}
 			provider.clientId ??= `client-${this.connectCount}`
 			provider.authUrl = `https://auth.example/authorize?state=fresh-${this.connectCount}.${serverId}&redirect_uri=${encodeURIComponent(provider.redirectUrl)}`
 			connection.connectionState = 'authenticating'
@@ -297,7 +309,9 @@ test('reconnect repairs stale callbacks and always replaces pending OAuth state'
 	expect(manager.mcpConnections['server-1']?.options.transport.headers).toEqual(
 		{ 'X-Test': 'preserved' },
 	)
-	expect(values.size).toBe(0)
+	expect([...values.keys()].filter((key) => key.startsWith('/Kody/'))).toEqual(
+		[],
+	)
 
 	values.set('/Kody/server-1/client-1/client_info/', {
 		client_id: 'client-1',
@@ -430,4 +444,74 @@ test('used and missing callback states recover without exposing an internal stat
 	expect(missingState.serverId).toBe('server-1')
 	expect(missingState.authError).not.toContain('state')
 	expect(manager.rows[0]?.auth_url).toContain('state=fresh-2.server-1')
+})
+
+test('snapshot retries a previously ready server before emitting disconnect', async () => {
+	const { state, values } = createDurableObjectState()
+	const hub = new McpClientHub(state, {} as Env)
+	const manager = mockModule.manager
+	if (!manager) throw new Error('Fake manager was not constructed.')
+	const callbackUrl = 'https://kody.codes/account/mcp-servers/oauth/callback'
+	seedServer({
+		manager,
+		callbackUrl,
+		clientId: 'client-1',
+		authUrl: 'https://auth.example/authorize?state=ok.server-1',
+	})
+	const connection = manager.mcpConnections['server-1']
+	if (!connection) throw new Error('Fake connection was not seeded.')
+	connection.connectionState = 'ready'
+	manager.rows[0]!.name = 'home'
+
+	const readySnapshot = await hub.getSnapshot()
+	expect(readySnapshot.connectionEvents).toEqual([])
+	expect(values.get('mcp-connection-episode/server-1')).toEqual({
+		lastObservedState: 'ready',
+		wasReady: true,
+		episodeId: null,
+		disconnectedEmitted: false,
+	})
+
+	connection.connectionState = 'disconnected'
+	manager.connectBehavior = 'ready'
+	const recovered = await hub.getSnapshot()
+	expect(manager.connectCount).toBe(1)
+	expect(recovered.servers[0]?.state).toBe('ready')
+	expect(recovered.connectionEvents).toEqual([])
+
+	connection.connectionState = 'disconnected'
+	manager.connectBehavior = 'disconnected'
+	const down = await hub.getSnapshot()
+	expect(manager.connectCount).toBe(3)
+	expect(down.servers[0]?.state).toBe('disconnected')
+	expect(down.connectionEvents).toEqual([
+		expect.objectContaining({
+			topic: 'mcp.server.disconnected',
+			serverId: 'server-1',
+			serverName: 'home',
+			state: 'disconnected',
+			previousState: 'ready',
+		}),
+	])
+	const episode = values.get('mcp-connection-episode/server-1') as {
+		episodeId: string
+		disconnectedEmitted: boolean
+	}
+	expect(episode.disconnectedEmitted).toBe(true)
+	expect(episode.episodeId).toBeTruthy()
+
+	const stillDown = await hub.getSnapshot()
+	expect(manager.connectCount).toBe(3)
+	expect(stillDown.connectionEvents).toEqual([])
+
+	connection.connectionState = 'ready'
+	const back = await hub.getSnapshot()
+	expect(back.connectionEvents).toEqual([
+		expect.objectContaining({
+			topic: 'mcp.server.reconnected',
+			serverId: 'server-1',
+			episodeId: episode.episodeId,
+			state: 'ready',
+		}),
+	])
 })

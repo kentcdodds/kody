@@ -51,7 +51,11 @@ export const mcpServerListCapability = defineDomainCapability(
 			})
 			const [settings, hubSnapshot] = await Promise.all([
 				listMcpServerSettings({ env: ctx.env, userId: user.userId }),
-				loadMcpClientHubSnapshotOrNull({ env: ctx.env, userId: user.userId }),
+				loadMcpClientHubSnapshotOrNull({
+					env: ctx.env,
+					userId: user.userId,
+					waitUntil: ctx.waitUntil,
+				}),
 			])
 			return {
 				oauthClientOrigin: oauth.clientOrigin,

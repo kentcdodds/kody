@@ -116,6 +116,8 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 			'replay',
 			'email.message.received',
 			'integration.auth.failed',
+			'mcp.server.disconnected',
+			'mcp.server.reconnected',
 			'test',
 			'smoke',
 			'simulate',

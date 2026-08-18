@@ -5,9 +5,11 @@ summary:
   Use package.json#kody.subscriptions for package-owned event handlers; discover
   subscribers with package_subscriptions_list; smoke-test handlers with
   package_subscription_dispatch; follow metadata-first email, run.error.recorded
-  activity notifiers, integration.auth.failed reconnect notifiers, consent-gated
-  admin-only platform.feedback.submitted notification guidance, and admin-only
-  status.incident.opened / status.incident.resolved operator telemetry.
+  activity notifiers, integration.auth.failed reconnect notifiers,
+  mcp.server.disconnected / mcp.server.reconnected connection episodes,
+  consent-gated admin-only platform.feedback.submitted notification guidance,
+  and admin-only status.incident.opened / status.incident.resolved operator
+  telemetry.
 category: platform
 ---
 
@@ -511,6 +513,56 @@ refreshes cleanly never emits.
 
 Use this topic for notifier packages that post to Discord, email, or otherwise
 ask the owner to reconnect a dead grant.
+
+## `mcp.server.disconnected` / `mcp.server.reconnected`
+
+When a saved, enabled outbound MCP server that was previously `ready` stays
+unavailable after the hub's lightweight reconnect (two `connectToServer` +
+discover attempts, no OAuth restart), Kody dispatches `mcp.server.disconnected`
+to packages saved by that same user that declare the topic. When that down
+episode later observes `ready` again, Kody dispatches `mcp.server.reconnected`
+with the same `server.episode_id`.
+
+Never-ready servers (still `authenticating` after add), disabled servers, and
+in-flight `connecting` / `connected` / `discovering` states do not emit. Token
+loss that parks in `authenticating` after a prior `ready` emits disconnected
+without the lightweight retry — the user must reopen `/account/mcp-servers`.
+`mcp_server_reconnect` remains the explicit OAuth restart; listener packages
+should not call it on every event.
+
+Delivery is best-effort after the hub observes the transition — there is no
+Queue / DLQ for these topics in v1. Failures during subscriber discovery or
+package-invocation infrastructure are logged and do not fail the MCP tool call
+or snapshot that noticed the change.
+
+Handlers receive a metadata-first payload:
+
+```ts
+type McpServerConnectionEvent = {
+	event: 'mcp.server.disconnected' | 'mcp.server.reconnected'
+	event_id: string
+	server: {
+		id: string
+		name: string
+		state: string
+		previous_state: string
+		episode_id: string
+	}
+	observed_at: string
+	account_url: string
+}
+```
+
+`account_url` is built from the trusted deployment origin and links to
+`/account/mcp-servers/<id>`. The event omits server URLs, OAuth tokens, bearer
+headers, auth URLs, and discovered tool lists. Fetch live status with
+`mcp_server_list` when needed. Idempotency keys include the topic, episode id,
+and subscriber package id, so one disconnected and one reconnected invoke per
+episode.
+
+Use these topics for notifier packages that post to Discord or otherwise tell
+the owner an MCP server (for example `home`) dropped or came back. Do not scrape
+run-error strings for connection health.
 
 ## `repo.pushed`
 

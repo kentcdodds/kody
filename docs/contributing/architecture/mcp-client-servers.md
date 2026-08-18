@@ -114,6 +114,13 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
   synthesis. Account deletion purges the hub DO storage
   (`purgeForAccountDeletion`) and deletes `mcp_server_settings` rows; account
   export includes the settings rows.
+- Connection episodes live in hub DO storage (`mcp-connection-episode/<id>`).
+  After a server has been `ready`, a later `disconnected` / `failed` state gets
+  two lightweight reconnects (`connectToServer` + discover, no OAuth restart)
+  before `mcp.server.disconnected` fans out to the owning user's packages.
+  Recovery emits `mcp.server.reconnected`. `mcp_server_reconnect` remains the
+  explicit authorization restart. See
+  [Package subscriptions](../../guides/package-subscriptions.md).
 
 ## Related docs
 

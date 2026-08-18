@@ -38,6 +38,7 @@ export const mcpServerRefreshCapability = defineDomainCapability(
 			const hub = createMcpClientHubClient({
 				env: ctx.env,
 				userId: user.userId,
+				waitUntil: ctx.waitUntil,
 			})
 			const result = await hub.refreshServer({ serverId: setting.id })
 			return {

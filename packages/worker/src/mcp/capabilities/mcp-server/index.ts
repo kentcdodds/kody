@@ -96,6 +96,7 @@ function createCapabilityFromTool(input: {
 			const hub = createMcpClientHubClient({
 				env: ctx.env,
 				userId,
+				waitUntil: ctx.waitUntil,
 			})
 			let result: Awaited<ReturnType<typeof hub.callTool>>
 			try {

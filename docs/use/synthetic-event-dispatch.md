@@ -137,6 +137,28 @@ Example minimal `integration.auth.failed` fixture:
 }
 ```
 
+Example minimal `mcp.server.disconnected` fixture:
+
+```json
+{
+	"kody_id": "home-watch",
+	"topic": "mcp.server.disconnected",
+	"params": {
+		"event": "mcp.server.disconnected",
+		"event_id": "00000000-0000-4000-8000-000000000001",
+		"server": {
+			"id": "00000000-0000-4000-8000-000000000002",
+			"name": "home",
+			"state": "disconnected",
+			"previous_state": "ready",
+			"episode_id": "00000000-0000-4000-8000-000000000003"
+		},
+		"observed_at": "2026-08-18T17:54:07.000Z",
+		"account_url": "https://kody.codes/account/mcp-servers/00000000-0000-4000-8000-000000000002"
+	}
+}
+```
+
 ### Stored-mail replay (`email_message_id`)
 
 For email topics, pass a stored message id instead of hand-building metadata:

@@ -1,5 +1,6 @@
 import { type JsonSchemaToolDescriptor } from '@cloudflare/codemode'
 import { type Tool } from '@modelcontextprotocol/sdk/types.js'
+import { type McpServerConnectionEvent } from './connection-episodes.ts'
 
 export type McpServerConnectionState =
 	| 'authenticating'
@@ -40,6 +41,7 @@ export type McpServerSnapshot = {
 
 export type McpClientHubSnapshot = {
 	servers: Array<McpServerSnapshot>
+	connectionEvents?: Array<McpServerConnectionEvent>
 }
 
 export type McpServerConnectResult = {

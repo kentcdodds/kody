@@ -48,6 +48,7 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 			const hub = createMcpClientHubClient({
 				env: ctx.env,
 				userId: user.userId,
+				waitUntil: ctx.waitUntil,
 			})
 			const result = await hub.reconnectServer({
 				serverId: setting.id,
