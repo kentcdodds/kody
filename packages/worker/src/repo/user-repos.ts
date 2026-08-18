@@ -1,4 +1,4 @@
-import { isValidRemoteConnectorName } from '@kody-internal/shared/remote-connectors.ts'
+import { isValidKodyInstanceName } from '@kody-internal/shared/stable-name.ts'
 
 export type UserRepoRow = {
 	id: string
@@ -44,7 +44,7 @@ export function assertValidUserRepoName(name: string) {
 	if (!normalized) {
 		throw new Error('Repo name is required.')
 	}
-	if (!isValidRemoteConnectorName(normalized)) {
+	if (!isValidKodyInstanceName(normalized)) {
 		throw new Error(
 			'Repo name must use lowercase letters, numbers, and dashes; start and end with a letter or number; and be at most 64 characters.',
 		)
