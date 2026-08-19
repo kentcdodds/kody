@@ -8,9 +8,7 @@ import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { backfillStorageBucketEstimates } from './estimate-backfill.ts'
 import {
 	clearStorageBucketRegistrationDedupeForTests,
-	flushStorageBucketRegistrationsForTests,
 	listUserStorageBucketEstimates,
-	listUserStorageBucketIds,
 	registerStorageBucket,
 } from './service.ts'
 import { ensureUserStorageBucketsTestSchema } from './test-schema.ts'
@@ -123,76 +121,5 @@ test(
 			updated: 0,
 			failed: 0,
 		})
-	},
-)
-
-test(
-	'backfill clears leftover service StorageRunner objects before dropping inventory',
-	{ timeout: testTimeout },
-	async () => {
-		await ensureUserStorageBucketsTestSchema(env.APP_DB)
-		clearStorageBucketRegistrationDedupeForTests()
-		const userId = `usb-service-purge-${crypto.randomUUID()}`
-		const liveBucket = `package:${crypto.randomUUID()}`
-		const leftoverBucket = `service:${crypto.randomUUID()}`
-		const now = new Date().toISOString()
-		await env.APP_DB.prepare(
-			`INSERT INTO user_storage_buckets (
-				user_id, storage_id, kind, created_at, last_seen_at,
-				estimated_bytes
-			) VALUES (?, ?, 'service', ?, ?, NULL), (?, ?, 'package', ?, ?, ?)`,
-		)
-			.bind(
-				userId,
-				leftoverBucket,
-				now,
-				now,
-				userId,
-				liveBucket,
-				now,
-				now,
-				emptyStorageRunnerEstimatedBytes,
-			)
-			.run()
-		await storageRunnerRpc({
-			env,
-			userId,
-			storageId: leftoverBucket,
-		}).setValue({ key: 'leftover', value: { kept: true } })
-		await flushStorageBucketRegistrationsForTests()
-		await expect(
-			storageRunnerRpc({
-				env,
-				userId,
-				storageId: leftoverBucket,
-			}).getValue({ key: 'leftover' }),
-		).resolves.toEqual({
-			key: 'leftover',
-			value: { kept: true },
-		})
-		await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual(
-			[liveBucket, leftoverBucket].sort(),
-		)
-
-		await backfillStorageBucketEstimates({ env })
-		await expect(listUserStorageBucketIds({ env, userId })).resolves.toEqual([
-			liveBucket,
-		])
-		await expect(
-			storageRunnerRpc({
-				env,
-				userId,
-				storageId: leftoverBucket,
-			}).getValue({ key: 'leftover' }),
-		).resolves.toEqual({ key: 'leftover', value: null })
-		await expect(
-			listUserStorageBucketEstimates({ env, userId }),
-		).resolves.toEqual([
-			{
-				storageId: liveBucket,
-				kind: 'package',
-				estimatedBytes: emptyStorageRunnerEstimatedBytes,
-			},
-		])
 	},
 )

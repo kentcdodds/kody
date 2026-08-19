@@ -334,7 +334,7 @@ export async function listStorageBucketsMissingEstimates(input: {
 		.prepare(
 			`SELECT user_id AS userId, storage_id AS storageId, kind
 			FROM user_storage_buckets
-			WHERE estimated_bytes IS NULL AND kind <> 'service'
+			WHERE estimated_bytes IS NULL
 			ORDER BY last_seen_at DESC, user_id ASC, storage_id ASC
 			LIMIT ?`,
 		)
@@ -525,9 +525,8 @@ export function storageBucketKindFromStorageId(
 
 /**
  * Map an inventoried `kind` onto the live StorageRunner / RepoSession
- * dispatch union. Leftover retired `service` rows stay in D1 until their
- * Durable Objects are cleared; estimate reads treat them as StorageRunner
- * (`unknown`) so entitlement and export probes do not throw.
+ * dispatch union. Unexpected values become StorageRunner (`unknown`) so
+ * entitlement and export probes do not throw.
  */
 function normalizeInventoriedStorageBucketKind(
 	kind: string,

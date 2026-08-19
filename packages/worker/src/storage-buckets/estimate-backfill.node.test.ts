@@ -6,21 +6,11 @@ const mockModule = vi.hoisted(() => ({
 	listStorageBucketsMissingEstimates: vi.fn(),
 	registerMissingRepoSessionStorageBuckets: vi.fn(async () => 0),
 	updateStorageBucketEstimate: vi.fn(async () => true),
-	purgeRetiredServiceStorageBuckets: vi.fn(async () => ({
-		scanned: 0,
-		purged: 0,
-		failed: 0,
-	})),
 }))
 
 vi.mock('#worker/storage-runner.ts', () => ({
 	readInventoriedStorageBucketEstimatedBytes: (...args: Array<unknown>) =>
 		mockModule.readInventoriedStorageBucketEstimatedBytes(...args),
-}))
-
-vi.mock('./purge-retired-service-storage.ts', () => ({
-	purgeRetiredServiceStorageBuckets: (...args: Array<unknown>) =>
-		mockModule.purgeRetiredServiceStorageBuckets(...args),
 }))
 
 vi.mock('./service.ts', () => ({
@@ -61,10 +51,6 @@ test('backfill tolerates per-bucket probe failures and keeps sweeping peers', as
 		updated: 2,
 		failed: 1,
 	})
-	expect(mockModule.purgeRetiredServiceStorageBuckets).toHaveBeenCalledWith({
-		env,
-		limit: 24,
-	})
 
 	// The failing bucket is logged and left NULL for a later sweep; the two
 	// healthy buckets are persisted.
@@ -87,19 +73,5 @@ test('backfill tolerates per-bucket probe failures and keeps sweeping peers', as
 			storageId: 'exec:healthy-b',
 			estimatedBytes: 2048,
 		}),
-	)
-
-	mockModule.purgeRetiredServiceStorageBuckets.mockRejectedValueOnce(
-		new Error('purge boom'),
-	)
-	mockModule.listStorageBucketsMissingEstimates.mockResolvedValue([])
-	await expect(backfillStorageBucketEstimates({ env })).resolves.toEqual({
-		scanned: 0,
-		updated: 0,
-		failed: 0,
-	})
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'retired-service-storage-purge-failed',
-		expect.any(Error),
 	)
 })

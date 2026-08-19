@@ -568,17 +568,14 @@ Storage split:
 workspaces for the check-only `storage_bytes` baseline. Rows use `kind` to
 dispatch `getEstimatedBytes` to the correct Durable Object, cache the latest
 `databaseSize` in `estimated_bytes`, and feed the same bounded
-`storage_bucket_estimate_backfill` lane. Leftover retired `kind = 'service'`
-rows stay inventoried until that lane clears the matching StorageRunner Durable
-Objects and then deletes the rows, so account export, deletion, and DR keep a
-user→storage_id map. Estimate reads treat those leftover rows as StorageRunner
-(`unknown`). Index-backed repo-session reconciliation pages
-`repo_session_due_owners` with a per-tick owner budget and a platform-owned
-`repo_session_storage_bucket_cursor` so a sweep cannot walk the whole fleet.
-Repo sessions register on open, opportunistically refresh after workspace
-mutations, and remove the inventory row on discard, purge, scheduled cleanup,
-source deletion, or account deletion. This estimate component is composed with
-the authoritative UserMeter D1 payload bytes; it is not reserved into UserMeter.
+`storage_bucket_estimate_backfill` lane. Index-backed repo-session
+reconciliation pages `repo_session_due_owners` with a per-tick owner budget and
+a platform-owned `repo_session_storage_bucket_cursor` so a sweep cannot walk the
+whole fleet. Repo sessions register on open, opportunistically refresh after
+workspace mutations, and remove the inventory row on discard, purge, scheduled
+cleanup, source deletion, or account deletion. This estimate component is
+composed with the authoritative UserMeter D1 payload bytes; it is not reserved
+into UserMeter.
 
 ## Durable Objects (`UserMeter`)
 

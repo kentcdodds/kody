@@ -30,18 +30,20 @@ subscriptions, and package-owned storage.
 Integrations that require a continuously connected daemon need an external
 deployment and communicate with Kody through supported integration surfaces.
 
-Leftover `kind = 'service'` `user_storage_buckets` rows stay until the
-`storage_bucket_estimate_backfill` lane clears the matching StorageRunner
-Durable Objects and then deletes the inventory. Account export and deletion keep
-discovering those storage ids until that purge succeeds.
+Leftover `kind = 'service'` `user_storage_buckets` rows stayed until the
+`storage_bucket_estimate_backfill` lane cleared the matching StorageRunner
+Durable Objects and then deleted the inventory. Production `APP_DB` had zero
+leftover rows on 2026-08-19. #1565 removes the purge lane and tightens the live
+CHECK so `'service'` cannot return.
 
-Deleting `PackageServiceInstance` on production `kody-runtime` is two deploys.
-The class arrived through a `transferred_classes` migration, so Cloudflare still
-has a remote binding and existing objects after the source binding is gone. A
-same-deploy `deleted_classes` migration fails with error 10061. Dropping the
-binding without exporting the class fails with error 10064. Export a stub, drop
-the remote binding, then apply runtime-worker tag `v2` `deleted_classes` and
-remove the stub. #1559 completed the stub-and-drop-binding deploy. The
-`tools/ci/do-deletion-allowlist.json` entry for tag `v2` is the contract for the
-class-delete follow-up. Preview `deleted_classes` requires a previous script
-version that exported the class (error 10074).
+Deleting `PackageServiceInstance` on production `kody-runtime` required two
+deploys after #1552. The class arrived through a `transferred_classes`
+migration, so Cloudflare still had a remote binding and existing objects after
+the source binding was gone. A same-deploy `deleted_classes` migration failed
+with error 10061 (#1552 deploy). Dropping the binding without exporting the
+class failed with error 10064 (#1558). #1559 exported a stub and dropped the
+remote binding. #1560 applied runtime-worker tag `v2` `deleted_classes` and
+removed the stub. Preview `deleted_classes` requires a previous script version
+that exported the class (error 10074); a first preview deploy applies `v1`
+`new_sqlite_classes` and `v2` `deleted_classes` together so create and delete
+elide.
