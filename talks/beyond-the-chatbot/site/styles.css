@@ -114,6 +114,9 @@ body::after {
 	font-size: 32px;
 	font-weight: 400;
 	color: var(--color-text);
+	--title-size: 3.25em;
+	--item-size: 1.95em;
+	--item-gap: 1em;
 }
 
 .reveal .slides {
@@ -148,7 +151,8 @@ body::after {
 }
 
 .layout-stack .slide-body {
-	width: min(100%, 56rem);
+	width: 50em;
+	max-width: 100%;
 }
 
 .reveal h1,
@@ -161,7 +165,7 @@ body::after {
 	line-height: 1.04;
 	text-transform: none;
 	color: var(--color-text);
-	margin: 0 0 0.55em;
+	margin: 0 0 0.42em;
 	text-wrap: balance;
 }
 
@@ -170,7 +174,7 @@ body::after {
 }
 
 .reveal h2 {
-	font-size: 2.15em;
+	font-size: var(--title-size);
 }
 
 .reveal p,
@@ -230,7 +234,7 @@ body::after {
 
 .layout-statement h2 {
 	max-width: 18ch;
-	font-size: 2.45em;
+	font-size: var(--title-size);
 }
 
 .layout-statement .punch {
@@ -268,7 +272,7 @@ body::after {
 	font-family: var(--font-display);
 	font-weight: 740;
 	letter-spacing: -0.03em;
-	font-size: 2.8em;
+	font-size: 3.1em;
 	line-height: 1.02;
 	color: var(--color-primary-text);
 }
@@ -276,10 +280,10 @@ body::after {
 .steps,
 .bullets {
 	list-style: none;
-	margin: 0.55em 0 0;
+	margin: 0.45em 0 0;
 	padding: 0;
 	display: grid;
-	gap: 1.4em;
+	gap: var(--item-gap);
 }
 
 .steps {
@@ -288,10 +292,10 @@ body::after {
 
 .steps li {
 	display: grid;
-	grid-template-columns: 3.4rem 1fr;
-	gap: 0.9rem;
+	grid-template-columns: 1.45em 1fr;
+	gap: 0.45em;
 	align-items: baseline;
-	font-size: 1.36em;
+	font-size: var(--item-size);
 	color: oklch(0.32 0.012 260);
 }
 
@@ -306,16 +310,16 @@ body::after {
 
 .bullets li {
 	display: grid;
-	grid-template-columns: 0.7rem 1fr;
-	gap: 0.85rem;
+	grid-template-columns: 0.45em 1fr;
+	gap: 0.45em;
 	align-items: baseline;
-	font-size: 1.36em;
+	font-size: var(--item-size);
 }
 
 .bullets li::before {
 	content: '';
-	width: 0.42rem;
-	height: 0.42rem;
+	width: 0.22em;
+	height: 0.22em;
 	margin-top: 0.55em;
 	border-radius: 999px;
 	background: var(--color-primary);

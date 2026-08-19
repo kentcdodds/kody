@@ -165,11 +165,11 @@ I'm deciding whether Kody (https://kody.codes) would be useful for me. Read http
 				<section class="layout-stack">
 					<div class="slide-body">
 						<h2>Discover, then invoke</h2>
-						<ul class="bullets">
+						<ol class="steps">
 							<li>A registry, not a hardcoded tool list</li>
 							<li>Each capability ships its exact call shape</li>
 							<li>The agent writes the glue</li>
-						</ul>
+						</ol>
 					</div>
 					<aside class="notes">
 						Walk the loop: question → search → pick a hit → get the TypeScript
@@ -203,7 +203,7 @@ I'm deciding whether Kody (https://kody.codes) would be useful for me. Read http
 						<h2>When it's worth keeping, it becomes a package</h2>
 						<ul class="bullets">
 							<li>A real repo, rooted at package.json</li>
-							<li>Exports, jobs, apps, services, subscriptions</li>
+							<li>Exports, jobs, apps, workflows, subscriptions</li>
 							<li>Versioned, reviewable, schedulable</li>
 						</ul>
 					</div>
@@ -273,16 +273,17 @@ I'm deciding whether Kody (https://kody.codes) would be useful for me. Read http
 					<div class="slide-body">
 						<h2>Some work has to stay alive</h2>
 						<ul class="bullets">
-							<li>Long-lived services on Durable Objects</li>
-							<li>Jobs, alarms, inbound email, webhooks</li>
+							<li>Jobs and workflows outlive the chat</li>
+							<li>Subscriptions, inbound email, webhooks</li>
 						</ul>
 					</div>
 					<aside class="notes">
-						Request/response is not enough: MCP connections, schedules, inbound
-						email, webhooks. Durable Object lifecycles, alarms for wakeups,
-						cooperative stop so you can drain. Event subscriptions:
-						package-declared handlers. Email is the easy example. Implementation
-						detail (jobs vs runtime worker) only if someone asks how it runs on
+						Request/response is not enough. Jobs for schedules and retries.
+						Workflows when the work has to be durable and cancellable.
+						Subscriptions: package-declared handlers for events like email
+						received. Inbound email and webhooks arrive on their own — the
+						package reacts. Email is the easy example. Implementation detail
+						(jobs vs runtime worker) only if someone asks how it runs on
 						Cloudflare.
 					</aside>
 				</section>
