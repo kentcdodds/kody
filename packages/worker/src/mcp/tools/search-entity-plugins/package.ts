@@ -528,7 +528,7 @@ export const packageSearchEntityPlugin = {
 		})
 		const maintain = buildPackageMaintainSnippets(detail.record.kodyId)
 		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
-		const followUp = `Use package_get({ kody_id: ${JSON.stringify(detail.record.kodyId)} }) for the full README and source, or coding_guide_get({ guide: "package_authoring" }) for types, external invocation, and maintenance workflows.`
+		const followUp = `Use package_get({ package_id: ${JSON.stringify(detail.record.id)} }) for the full README and source, or coding_guide_get({ guide: "package_authoring" }) for types, external invocation, and maintenance workflows.`
 		const lines = [
 			`# Package — \`${detail.record.kodyId}\``,
 			'',
