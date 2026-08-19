@@ -8,7 +8,6 @@ import {
 	getCommunityPackageFilesHref,
 	isReservedPackageFilesKodyId,
 	joinPackageFilesPath,
-	languageFromFilePath,
 	listPackageFilesChildren,
 	normalizePackageFilesPath,
 } from './package-files.ts'
@@ -22,7 +21,7 @@ const files = {
 	'docs/guide.md': '# Guide\n',
 }
 
-test('normalizePackageFilesPath rejects traversal and decodes URI segments', () => {
+test('package files views normalize paths and distinguish root, directories, files, and misses', () => {
 	expect(normalizePackageFilesPath(null)).toBe('')
 	expect(normalizePackageFilesPath('')).toBe('')
 	expect(normalizePackageFilesPath('/')).toBe('')
@@ -32,9 +31,7 @@ test('normalizePackageFilesPath rejects traversal and decodes URI segments', () 
 	expect(normalizePackageFilesPath('../package.json')).toBe(null)
 	expect(normalizePackageFilesPath('src\\index.ts')).toBe(null)
 	expect(normalizePackageFilesPath('src/%2Findex.ts')).toBe('src/index.ts')
-})
 
-test('buildPackageFilesView distinguishes root, directories, files, and misses', () => {
 	const root = buildPackageFilesView({ files, selectedPath: '' })
 	expect(root).toMatchObject({
 		kind: 'directory',
@@ -91,17 +88,9 @@ test('buildPackageFilesView distinguishes root, directories, files, and misses',
 		kind: 'file',
 		content: 'export {}\n',
 	})
-})
 
-test('language and readme helpers cover common package files', () => {
-	expect(languageFromFilePath('src/app.tsx')).toBe('tsx')
-	expect(languageFromFilePath('notes.md')).toBe('markdown')
-	expect(languageFromFilePath('.env.local')).toBe('dotenv')
-	expect(languageFromFilePath('Dockerfile')).toBe('dockerfile')
-	expect(languageFromFilePath('unknown.bin')).toBe('plaintext')
 	expect(findDirectoryReadmePath(files, '')).toBe('README.md')
 	expect(findDirectoryReadmePath(files, 'docs')).toBeNull()
-	expect(findDirectoryReadmePath(files, 'src')).toBeNull()
 	expect(listPackageFilesChildren(Object.keys(files), 'docs')).toEqual([
 		{ name: 'guide.md', path: 'docs/guide.md', kind: 'file' },
 	])

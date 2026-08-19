@@ -136,9 +136,6 @@ test('logo lifecycle uploads, clears, and survives app upserts without touching 
 		},
 	})
 	expect(updated.logoKey).toMatch(/^platform-oauth-app-logos\/github\//)
-})
-
-test('logo paths encode Remix delimiter dots in slugs', () => {
 	expect(
 		buildPlatformOauthAppLogoPath({
 			slug: 'openai.com',

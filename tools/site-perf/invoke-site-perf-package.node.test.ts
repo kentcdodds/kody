@@ -25,14 +25,11 @@ const needsFixReport: SitePerfReport = {
 	verdict: 'needs-fix',
 }
 
-test('only a needs-fix verdict invokes the Kody package', () => {
+test('invoke gates on needs-fix and a token, and builds an idempotent body', async () => {
 	expect(
 		shouldInvokeSitePerfPackage({ ...needsFixReport, verdict: 'ok' }),
 	).toBe(false)
 	expect(shouldInvokeSitePerfPackage(needsFixReport)).toBe(true)
-})
-
-test('invoke body sends the report and a per-run idempotency key', () => {
 	expect(
 		buildInvokeBody({
 			report: needsFixReport,
@@ -49,9 +46,7 @@ test('invoke body sends the report and a per-run idempotency key', () => {
 		idempotencyKey: 'weekly-site-perf:99',
 		source: defaultInvokeSource,
 	})
-})
 
-test('invoke skips ok and a missing token', async () => {
 	const fetchImpl = async () => {
 		throw new Error('should not fetch')
 	}
@@ -77,7 +72,7 @@ test('invoke skips ok and a missing token', async () => {
 	).toEqual({ skipped: 'missing-token' })
 })
 
-test('invoke posts to the package invocation API and reads the agent URL', async () => {
+test('invoke posts the report, treats replay/in-progress as launched, and surfaces API errors', async () => {
 	const calls: Array<{ url: string; auth: string | null; body: unknown }> = []
 	const fetchImpl: typeof fetch = async (url, init) => {
 		calls.push({
@@ -131,9 +126,7 @@ test('invoke posts to the package invocation API and reads the agent URL', async
 			},
 		},
 	})
-})
 
-test('invoke treats a replayed or in-progress response as already launched', async () => {
 	const replayed = await invokeSitePerfPackage({
 		report: needsFixReport,
 		token: 'kody_test',
@@ -168,11 +161,7 @@ test('invoke treats a replayed or in-progress response as already launched', asy
 			),
 	})
 	expect(inProgress).toMatchObject({ invoked: true, inProgress: true })
-})
 
-test('invoke throws when the package invocation API returns an error', async () => {
-	const fetchImpl: typeof fetch = async () =>
-		new Response('upstream unavailable', { status: 503 })
 	await expect(
 		invokeSitePerfPackage({
 			report: needsFixReport,
@@ -180,7 +169,8 @@ test('invoke throws when the package invocation API returns an error', async () 
 			repository: 'kentcdodds/kody',
 			startingRef: 'main',
 			runId: '88',
-			fetchImpl,
+			fetchImpl: async () =>
+				new Response('upstream unavailable', { status: 503 }),
 		}),
 	).rejects.toThrow(/Kody package invocation 503/)
 })
