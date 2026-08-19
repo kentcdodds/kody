@@ -468,10 +468,10 @@ export function AccountPackageTokens(
 						</div>
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Name</span>
-							<p mix={css(descriptionCss)}>
+							<span mix={css({ ...descriptionCss, display: 'block' })}>
 								Human-readable label for this token. Shown in the list; not sent
 								to callers.
-							</p>
+							</span>
 							<input
 								value={editorState.name}
 								mix={[
@@ -492,11 +492,11 @@ export function AccountPackageTokens(
 							<span mix={css(fieldLabelCss)}>
 								{query.isCreating ? 'Raw token' : 'New raw token (optional)'}
 							</span>
-							<p mix={css(descriptionCss)}>
+							<span mix={css({ ...descriptionCss, display: 'block' })}>
 								{query.isCreating
 									? 'Paste a high-entropy secret or click Generate. Kody stores only the hash and will not show this value again after you save.'
 									: 'Leave blank to keep the current secret. Paste or generate a new value to rotate.'}
-							</p>
+							</span>
 							<div
 								mix={css({
 									display: 'grid',
