@@ -12,7 +12,8 @@ import {
 /**
  * Browser-side Sentry bootstrap: schedules a lazy load of `@sentry/browser`
  * (error capture plus error-only Session Replay) so the SDK stays out of the
- * critical-path entry chunk.
+ * critical-path entry chunk. Keep this on marketing pages too — unused-JS
+ * PSI noise is worth the error/replay coverage.
  *
  * Privacy defaults are strict on purpose — Kody sessions contain personal
  * assistant content (chats, email, secrets pages), so all text is masked and

@@ -167,8 +167,9 @@
 	--transition-fast: 160ms var(--ease-out);
 	--transition-normal: 200ms var(--ease-out);
 
-	/* Kody shirt pattern, used as a mask for background whispers */
-	--kody-pattern: url('/images/kody-pattern.png');
+	/* Kody shirt pattern, used as a mask for background whispers.
+	   Lossless WebP: Fathom visitors are Chrome/Firefox/Safari/Edge/Opera. */
+	--kody-pattern: url('/images/kody-pattern.webp');
 
 	/* Select chevron (see `getSelectCss`). A data-URI background image cannot
 	   read `currentColor`, so the stroke is baked in and the token is themed
@@ -461,7 +462,9 @@ html.is-settled {
 
 	/* Page-open choreography: full document loads only — SPA navigations
 	   set html[data-spa-nav] (client-router) and get the view transition
-	   as their entrance instead. */
+	   as their entrance instead. `both` + opacity 0 delays LCP on the
+	   homepage h1 (PSI lab). Keep the motion anyway — the entrance is
+	   worth that hit. */
 	html.js:not([data-spa-nav]) [data-rise] {
 		animation: rise 700ms var(--ease-out) both;
 		animation-delay: calc(60ms + var(--rise, 0) * 90ms);
@@ -698,7 +701,7 @@ html.is-settled {
 	align-items: center;
 }
 
-.landing-pill-swap > [data-swap-label] {
+.landing-pill-swap [data-swap-label] {
 	grid-area: 1 / 1;
 	white-space: nowrap;
 	transition:
@@ -707,13 +710,13 @@ html.is-settled {
 		scale 90ms var(--ease-out);
 }
 
-.landing-pill-swap > [data-swap-label]:not([data-active]) {
+.landing-pill-swap [data-swap-label]:not([data-active]) {
 	opacity: 0;
 	filter: blur(3px);
 	scale: 0.96;
 }
 
-.landing-pill-swap > [data-swap-label][data-active] {
+.landing-pill-swap [data-swap-label][data-active] {
 	transition:
 		opacity 200ms var(--ease-out) 50ms,
 		filter 200ms var(--ease-out) 50ms,
@@ -721,13 +724,13 @@ html.is-settled {
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.landing-pill-swap > [data-swap-label] {
+	.landing-pill-swap [data-swap-label] {
 		transition: opacity 90ms var(--ease-out);
 		filter: none;
 		scale: none;
 	}
 
-	.landing-pill-swap > [data-swap-label][data-active] {
+	.landing-pill-swap [data-swap-label][data-active] {
 		transition: opacity 200ms var(--ease-out) 50ms;
 	}
 }

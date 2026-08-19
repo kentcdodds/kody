@@ -204,7 +204,9 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 				    motion). CSP disallows inline scripts, hence the file. */}
 				<script src="/theme-init.js"></script>
 				{/* Fonts are self-hosted (CSP allows only 'self' for styles and
-				    fonts); preload the latin faces used on every page. */}
+				    fonts); preload the latin faces used on every page. Do not
+				    drop or delay these to save weight — a flash of the wrong
+				    face is worse than the extra bytes. */}
 				<link
 					rel="preload"
 					as="font"
