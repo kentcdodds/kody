@@ -505,11 +505,74 @@ export function filterTwitterInAppBrowserConfigSentryEvent<
 }
 
 /**
+ * Twitter/X iOS in-app browser chrome (`sendScrollEvent`) reaches for the
+ * WKWebView bridge `window.webkit.messageHandlers` without guarding
+ * `window.webkit`. Outside a native WebView host that exposes the bridge,
+ * WebKit throws and Sentry attributes the frame to the document URL (no
+ * Twitter bundle frames). Signature from production issue 7677729361 /
+ * KODY-CLOUDFLARE-5C (browser tag "Twitter 12.14", iPhone).
+ *
+ * Match is intentionally narrow: WebKit `window.webkit.messageHandlers`
+ * TypeError wording AND a stack frame named `sendScrollEvent`. Never
+ * blanket-drop bare `webkit` TypeErrors from app code.
+ */
+const twitterInAppBrowserWebkitMessageHandlersMessage =
+	/^(?:TypeError:\s*)?undefined is not an object \(evaluating ['"]window\.webkit\.messageHandlers(?:\.[^'"]*)?['"]\)$/i
+
+export function isTwitterInAppBrowserWebkitMessageHandlersMessage(
+	message: string,
+) {
+	return twitterInAppBrowserWebkitMessageHandlersMessage.test(message.trim())
+}
+
+export function isTwitterInAppBrowserWebkitMessageHandlersError(
+	error: unknown,
+) {
+	if (typeof error === 'string') {
+		return isTwitterInAppBrowserWebkitMessageHandlersMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isTwitterInAppBrowserWebkitMessageHandlersMessage(error.message)
+}
+
+export function isTwitterInAppBrowserWebkitMessageHandlersSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	const hasWebkitMessage =
+		isTwitterInAppBrowserWebkitMessageHandlersError(originalException) ||
+		sentryEventMessages(event).some(
+			(message) =>
+				typeof message === 'string' &&
+				isTwitterInAppBrowserWebkitMessageHandlersMessage(message),
+		)
+	if (!hasWebkitMessage) return false
+	return sentryEventStackFrameFunctions(event).some(
+		(name) => name === 'sendScrollEvent',
+	)
+}
+
+export function filterTwitterInAppBrowserWebkitMessageHandlersSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (
+		isTwitterInAppBrowserWebkitMessageHandlersSentryEvent(
+			event,
+			originalException,
+		)
+	) {
+		return null
+	}
+	return event
+}
+
+/**
  * Injected page scripts (Mobile Safari / in-app browsers / content scripts)
  * sometimes probe Open Graph tags with an unguarded
  * `document.querySelector("meta[property='og:type']").content`. When the page
  * has no managed OG tags (guides and many authenticated routes), WebKit throws
- * and attributes the frame to `global code` on the document URL — never a Kody
+ * and Sentry attributes the frame to `global code` on the document URL — never a Kody
  * bundle. Signature from production issue 7660258027 / KODY-CLOUDFLARE-46.
  *
  * Kody only writes `og:type` in document-head / SSR; it never reads it this
@@ -603,6 +666,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	if (
 		filterTwitterInAppBrowserConfigSentryEvent(event, originalException) ===
 		null
+	) {
+		return null
+	}
+	if (
+		filterTwitterInAppBrowserWebkitMessageHandlersSentryEvent(
+			event,
+			originalException,
+		) === null
 	) {
 		return null
 	}
