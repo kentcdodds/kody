@@ -122,13 +122,37 @@ function __kodyIsRuntimeProxyInspectionProperty(property) {
 	);
 }
 
-function __kodyReadRuntimeNestedValue(exportName, parentProperty) {
-	const runtimeExport = __kodyReadRuntimeExport(exportName);
-	return runtimeExport?.[parentProperty];
+function __kodyReadRuntimeNestedValue(exportName, path) {
+	let current = __kodyReadRuntimeExport(exportName);
+	for (const segment of path) {
+		if (current == null) return undefined;
+		current = current[segment];
+	}
+	return current;
 }
 
-function __kodyCreateRuntimeNestedObjectProxy(exportName, parentProperty) {
-	const nestedExportName = exportName + '.' + String(parentProperty);
+function __kodyBindRuntimeNestedValue(exportName, path, property, value) {
+	const nestedExportName = exportName + '.' + [...path, property].map(String).join('.');
+	if (typeof value === 'function') {
+		return function (...args) {
+			const currentParent = __kodyReadRuntimeNestedValue(exportName, path);
+			const currentValue = currentParent?.[property];
+			if (typeof currentValue !== 'function') {
+				throw new Error(
+					\`kody:runtime export "\${nestedExportName}" is not callable in this execution context.\`,
+				);
+			}
+			return currentValue.apply(currentParent, args);
+		};
+	}
+	if (value != null && typeof value === 'object') {
+		return __kodyCreateRuntimeNestedObjectProxy(exportName, [...path, property]);
+	}
+	return value;
+}
+
+function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
+	const nestedExportName = exportName + '.' + path.map(String).join('.');
 	return new Proxy({}, {
 		get(_target, property) {
 			const inspectionValue = __kodyRuntimeProxyInspectionValue(
@@ -138,57 +162,58 @@ function __kodyCreateRuntimeNestedObjectProxy(exportName, parentProperty) {
 			if (inspectionValue !== undefined || __kodyIsRuntimeProxyInspectionProperty(property)) {
 				return inspectionValue;
 			}
-			const parent = __kodyReadRuntimeNestedValue(exportName, parentProperty);
+			const parent = __kodyReadRuntimeNestedValue(exportName, path);
 			if (parent == null) return undefined;
-			const value = parent[property];
-			if (typeof value !== 'function') return value;
-			return function (...args) {
-				const currentParent = __kodyReadRuntimeNestedValue(
-					exportName,
-					parentProperty,
-				);
-				const currentValue = currentParent?.[property];
-				if (typeof currentValue !== 'function') {
-					throw new Error(
-						\`kody:runtime export "\${nestedExportName}.\${String(property)}" is not callable in this execution context.\`,
-					);
-				}
-				return currentValue.apply(currentParent, args);
-			};
+			return __kodyBindRuntimeNestedValue(
+				exportName,
+				path,
+				property,
+				parent[property],
+			);
 		},
 		has(_target, property) {
 			if (__kodyIsRuntimeProxyInspectionProperty(property)) return false;
-			const parent = __kodyRuntimeStorage.getStore()?.[exportName]?.[parentProperty];
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			if (currentRuntime?.[exportName] == null) return false;
+			const parent = __kodyReadRuntimeNestedValue(exportName, path);
 			return parent != null && property in parent;
 		},
 		ownKeys() {
-			const parent = __kodyRuntimeStorage.getStore()?.[exportName]?.[parentProperty];
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			if (currentRuntime?.[exportName] == null) return [];
+			const parent = __kodyReadRuntimeNestedValue(exportName, path);
 			return parent == null ? [] : Reflect.ownKeys(parent);
 		},
 		getOwnPropertyDescriptor(_target, property) {
 			if (__kodyIsRuntimeProxyInspectionProperty(property)) return undefined;
-			const parent = __kodyRuntimeStorage.getStore()?.[exportName]?.[parentProperty];
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			if (currentRuntime?.[exportName] == null) return undefined;
+			const parent = __kodyReadRuntimeNestedValue(exportName, path);
 			if (parent == null) return undefined;
 			const descriptor = Reflect.getOwnPropertyDescriptor(parent, property);
-			if (descriptor !== undefined) {
+			if (descriptor !== undefined && !('value' in descriptor)) {
 				return { ...descriptor, configurable: true };
 			}
-			// Get-only namespace proxies (the pre-fix sandbox kody.mcp shape)
-			// report no own keys. Bundlers still destructure them, so resolve
-			// the value through [[Get]] and surface it as a configurable own
-			// property when it exists.
-			try {
-				const value = parent[property];
+			let value = descriptor?.value;
+			if (descriptor === undefined) {
+				try {
+					value = parent[property];
+				} catch {
+					return undefined;
+				}
 				if (value === undefined) return undefined;
-				return {
-					configurable: true,
-					enumerable: true,
-					writable: true,
-					value,
-				};
-			} catch {
-				return undefined;
 			}
+			return {
+				configurable: true,
+				enumerable: descriptor?.enumerable !== false,
+				writable: true,
+				value: __kodyBindRuntimeNestedValue(
+					exportName,
+					path,
+					property,
+					value,
+				),
+			};
 		},
 	});
 }
@@ -227,7 +252,7 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 			// destructure \`const { home } = kody.mcp\` against a get-only
 			// proxy and bind home to undefined.
 			if (value != null && typeof value === 'object') {
-				return __kodyCreateRuntimeNestedObjectProxy(exportName, property);
+				return __kodyCreateRuntimeNestedObjectProxy(exportName, [property]);
 			}
 			return value;
 		},
@@ -259,7 +284,7 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 				writable: true,
 				value:
 					value != null && typeof value === 'object'
-						? __kodyCreateRuntimeNestedObjectProxy(exportName, property)
+						? __kodyCreateRuntimeNestedObjectProxy(exportName, [property])
 						: value,
 			};
 		},

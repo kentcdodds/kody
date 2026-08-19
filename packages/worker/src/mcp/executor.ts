@@ -476,17 +476,17 @@ export function createKodyRemoteProxy(input: {
 	const shortEntityLabel = input.shortEntityLabel ?? 'MCP server'
 	const capabilityLabel = input.capabilityLabel ?? 'MCP tool'
 	type ConnectorEntry = (typeof input.entries)[number] & {
-		capabilitiesByName: Record<
+		capabilitiesByName: Map<
 			string,
 			(typeof input.entries)[number]['capabilities'][number]
 		>
 	}
-	const connectors: Record<string, ConnectorEntry> = Object.fromEntries(
+	const connectors = new Map<string, ConnectorEntry>(
 		input.entries.map((connector) => [
 			connector.name,
 			{
 				...connector,
-				capabilitiesByName: Object.fromEntries(
+				capabilitiesByName: new Map(
 					connector.capabilities.map((capability) => [
 						capability.name,
 						capability,
@@ -540,25 +540,29 @@ export function createKodyRemoteProxy(input: {
 		createReflectingProxy(
 			connector.capabilities.map((capability) => capability.name),
 			(capabilityName) => {
-				if (!connector.status.connected || connector.status.toolCount === 0) {
-					throw new Error(connector.status.unavailableMessage)
-				}
-				const capability = connector.capabilitiesByName[capabilityName]
+				const capability = connector.capabilitiesByName.get(capabilityName)
 				if (!capability) {
+					if (!connector.status.connected || connector.status.toolCount === 0) {
+						throw new Error(connector.status.unavailableMessage)
+					}
 					throw new Error(
 						`Unknown ${capabilityLabel} "${capabilityName}" for ${shortEntityLabel} "${connectorName}". Available capabilities: ${formatNames(connector.capabilities.map((entry) => entry.name))}.`,
 					)
 				}
-				return async (args: unknown) =>
-					await input.callTool(capability.dispatchName, args)
+				return async (args: unknown) => {
+					if (!connector.status.connected || connector.status.toolCount === 0) {
+						throw new Error(connector.status.unavailableMessage)
+					}
+					return await input.callTool(capability.dispatchName, args)
+				}
 			},
 		)
 
-	return createReflectingProxy(Object.keys(connectors), (connectorName) => {
-		const connector = connectors[connectorName]
+	return createReflectingProxy([...connectors.keys()], (connectorName) => {
+		const connector = connectors.get(connectorName)
 		if (!connector) {
 			throw new Error(
-				`Unknown ${entityLabel} "${connectorName}". Available ${entityLabel}s: ${formatNames(Object.keys(connectors))}.`,
+				`Unknown ${entityLabel} "${connectorName}". Available ${entityLabel}s: ${formatNames([...connectors.keys()])}.`,
 			)
 		}
 		return createCapabilityProxy(connector, connectorName)

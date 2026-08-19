@@ -288,3 +288,60 @@ test('preloaded kody.mcp survives bundler-style destructuring of server names', 
 		expect(result).toEqual({ players: ['Kitchen'] })
 	})
 })
+
+test('destructured kody.mcp tools resolve against the calling run', async () => {
+	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
+		const sharedStorage = new AsyncLocalStorage<unknown>()
+		;(globalThis as unknown as Record<symbol, unknown>)[
+			Symbol.for('kody.runtimeStorage')
+		] = sharedStorage
+		const url = await writeRuntimeFile()
+		const mod = (await import(url)) as RuntimeModule & {
+			kody: {
+				mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+			}
+		}
+
+		const captured = await sharedStorage.run(
+			{
+				kody: {
+					mcp: {
+						home: {
+							async sonos_list_players() {
+								return { run: 'first' }
+							},
+						},
+					},
+				},
+			},
+			async () => {
+				const { home } = mod.kody.mcp
+				const { sonos_list_players } = home
+				return { home, sonos_list_players }
+			},
+		)
+
+		const result = await sharedStorage.run(
+			{
+				kody: {
+					mcp: {
+						home: {
+							async sonos_list_players() {
+								return { run: 'second' }
+							},
+						},
+					},
+				},
+			},
+			async () => ({
+				viaHome: await captured.home.sonos_list_players({}),
+				viaTool: await captured.sonos_list_players({}),
+			}),
+		)
+
+		expect(result).toEqual({
+			viaHome: { run: 'second' },
+			viaTool: { run: 'second' },
+		})
+	})
+})
