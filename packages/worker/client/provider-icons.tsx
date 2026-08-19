@@ -239,9 +239,7 @@ export function ProviderMark(
 				mix={css({
 					...getLogoWellCss({
 						size: wellSize,
-						// 12px on the 1.75rem list well is a disc. Keep a
-						// rounded square at every size.
-						radius: `min(10px, calc(${wellSize} * 0.22))`,
+						radius: '0',
 					}),
 					fontWeight: 700,
 					fontSize: `calc(${wellSize} * 0.42)`,
