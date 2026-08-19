@@ -230,14 +230,21 @@ export function ProviderMark(
 		const wellSize = handle.props.size ?? '3rem'
 		const iconId = resolveProviderIconId({ providerKey, host })
 		const letter = label.trim().charAt(0).toUpperCase() || '?'
+		const iconSize =
+			wellSize === '3rem' ? '1.65rem' : `calc(${wellSize} * 0.62)`
 		return (
 			<span
 				aria-hidden="true"
 				data-testid="provider-mark"
 				mix={css({
-					...getLogoWellCss({ size: wellSize, radius: '12px' }),
+					...getLogoWellCss({
+						size: wellSize,
+						// 12px on the 1.75rem list well is a disc. Keep a
+						// rounded square at every size.
+						radius: `min(10px, calc(${wellSize} * 0.22))`,
+					}),
 					fontWeight: 700,
-					fontSize: '1.15rem',
+					fontSize: `calc(${wellSize} * 0.42)`,
 					lineHeight: 1,
 				})}
 			>
@@ -255,7 +262,7 @@ export function ProviderMark(
 						})}
 					/>
 				) : iconId ? (
-					<ProviderIcon providerId={iconId} size="1.65rem" />
+					<ProviderIcon providerId={iconId} size={iconSize} />
 				) : (
 					letter
 				)}
