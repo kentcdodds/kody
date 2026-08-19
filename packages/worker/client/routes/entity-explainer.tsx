@@ -30,6 +30,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		paragraphs: [
 			'A package is reusable saved code your agent writes and improves over time. Unlike a one-off execute, it lives in a repo with a package.json and can expose exports, scheduled jobs, inbound webhooks, and even a small web app.',
 			'Use a package when work should stay invokable after the conversation ends — a daily digest, a GitHub helper, or a UI your agent hosts for you. Browse metadata here; create and edit packages through your connected agent.',
+			'Trusted clients that cannot use MCP call a package over HTTP with a bearer token created on that package. The raw token is shown once and stored only as a hash.',
 		],
 		learnMore: {
 			href: routes.guideDetail.href({ slug: 'package-lifecycle' }),
@@ -86,21 +87,6 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		learnMore: {
 			href: routes.guideDetail.href({ slug: 'integration-bootstrap' }),
 			label: 'Integration bootstrap guide',
-		},
-	},
-	{
-		id: 'package-tokens',
-		question: 'What is a package token?',
-		match: accountSection(routes.accountPackageInvocationTokens.href()),
-		paragraphs: [
-			'A package invocation token is a bearer credential for trusted clients outside Kody — a CLI, gateway, or other process that cannot use MCP. The raw token is shown once and stored only as a hash.',
-			'Use a token when a non-Kody process must call a package export over HTTP. Code that already runs inside Kody should import the package or use packages.invoke instead.',
-		],
-		learnMore: {
-			href: routes.guideDetail.href({
-				slug: 'account-package-invocation-token-setup',
-			}),
-			label: 'Package token setup guide',
 		},
 	},
 	{

@@ -15,6 +15,11 @@ test('resolves an explainer for entity pages and skips settings-only routes', ()
 	expect(
 		resolveEntityExplainer(
 			routes.accountPackageDetail.href({ packageId: 'pkg_123' }),
+		)?.paragraphs.join(' '),
+	).toContain('bearer token')
+	expect(
+		resolveEntityExplainer(
+			routes.accountPackageDetail.href({ packageId: 'pkg_123' }),
 		)?.id,
 	).toBe('packages')
 	expect(resolveEntityExplainer(routes.accountEmail.href())?.question).toBe(
@@ -29,10 +34,6 @@ test('resolves an explainer for entity pages and skips settings-only routes', ()
 	expect(
 		resolveEntityExplainer(routes.accountIntegrations.href())?.question,
 	).toBe('What is an integration?')
-	expect(
-		resolveEntityExplainer(routes.accountPackageInvocationTokens.href())
-			?.question,
-	).toBe('What is a package token?')
 	expect(
 		resolveEntityExplainer(routes.accountMcpServers.href())?.question,
 	).toBe('What is an MCP server?')
