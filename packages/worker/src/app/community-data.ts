@@ -65,7 +65,28 @@ async function loadWithCommunityCache<T>(
 	return value
 }
 
-export async function loadCommunityIndexData(
+// One SSR request starts the index load in the page handler so it overlaps
+// session/asset work, then the blocking `community-listings` Frame reads the
+// same data during render. Memoize per Request so the second call reuses
+// the first load.
+const requestIndexDataStore = new WeakMap<
+	Request,
+	Promise<CommunityIndexLoaderData>
+>()
+
+export function loadCommunityIndexData(
+	env: Env,
+	request: Request,
+): Promise<CommunityIndexLoaderData> {
+	let pending = requestIndexDataStore.get(request)
+	if (!pending) {
+		pending = loadCommunityIndexDataUncached(env, request)
+		requestIndexDataStore.set(request, pending)
+	}
+	return pending
+}
+
+async function loadCommunityIndexDataUncached(
 	env: Env,
 	request: Request,
 ): Promise<CommunityIndexLoaderData> {

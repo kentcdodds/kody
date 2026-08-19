@@ -2,7 +2,6 @@ import { Frame, type Handle, css } from 'remix/ui'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
 import { COMMUNITY_LISTINGS_TARGET } from '#universal/community-frame-constants.ts'
-import { renderCommunityEmptyState } from '#universal/community-empty-state.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import {
 	listenToRouterNavigation,
@@ -22,9 +21,11 @@ import { readCommunitySearchQueryFromHref } from '#client/routes/community-searc
  * Community index, ported from the redesign prototype
  * (`landing/community.html`). The browse chrome (split head, search pill,
  * publish-back close) renders here; the listings stay server-rendered in the
- * `community-listings` frame exactly as before — this file only restyles the
- * shell around that architecture. Listing card styles live with the frame
- * content in `src/app/community-listings-content.tsx`.
+ * `community-listings` frame. That Frame is blocking (no `fallback`) so SSR
+ * and client navigation wait for listings before painting the page — the
+ * empty-state copy is only for a real empty catalog, not a loading flash.
+ * Listing card styles live with the frame content in
+ * `src/app/community-listings-content.tsx`.
  */
 
 function isCommunityIndexPath(href: string) {
@@ -124,13 +125,7 @@ export function CommunityRoute(handle: Handle) {
 					/>
 				</header>
 
-				<Frame
-					name={COMMUNITY_LISTINGS_TARGET}
-					src={frameSrc}
-					fallback={
-						<div role="status">{renderCommunityEmptyState(searchQuery)}</div>
-					}
-				/>
+				<Frame name={COMMUNITY_LISTINGS_TARGET} src={frameSrc} />
 
 				<div mix={css(communityCloseCss)}>
 					<p>
