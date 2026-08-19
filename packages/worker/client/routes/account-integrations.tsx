@@ -272,6 +272,9 @@ function connectActionLabel(status: 'Connected' | 'Needs setup') {
 
 const addAccountLinkCss = {
 	...primaryLinkCss,
+	justifySelf: 'start',
+	width: 'fit-content',
+	textAlign: 'left' as const,
 	padding: 0,
 	border: 0,
 	background: 'none',
