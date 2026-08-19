@@ -374,10 +374,10 @@ failed. See [Package subscriptions](../guides/package-subscriptions.md) and
 
 For saved outbound MCP servers, `mcp.server.disconnected` and
 `mcp.server.reconnected` dispatch best-effort from the per-user MCP client hub
-after a previously-ready server stays down through two lightweight reconnects
-(or recovers). The payload is metadata-first (server id/name/state, episode id,
-and a trusted `account_url`); it omits URLs, tokens, and tool lists. Never-ready
-and disabled servers do not emit. See
+when a ready server stays down through two lightweight reconnects (or recovers).
+The payload is metadata-first (server id/name/state, episode id, and a trusted
+`account_url`); it omits URLs, tokens, and tool lists. Never-ready and disabled
+servers do not emit. See
 [Package subscriptions](../guides/package-subscriptions.md) and
 [MCP client servers](./architecture/mcp-client-servers.md).
 

@@ -59,7 +59,8 @@ durable home, packages add runtime. Five concepts make up its state:
 When to use which:
 
 - Durable package data → `packageStorage()`
-- Credentials and non-secret config → package secrets and values
+- Credentials → package secrets; non-secret knobs → `packageStorage()` (do not
+  write new values rows — see [Persist outside values](../guides/values.md))
 - Long-lived coordination and alarms → a package service
 - Scheduled work → a package job
 - Per-app realtime internals → app facets (implementation detail, not the
@@ -523,10 +524,10 @@ packages store working ↔ failed in package storage if they want edge-triggered
 pings. See the
 [package subscriptions guide](../guides/package-subscriptions.md).
 
-When a saved MCP server that was previously ready stays down after a lightweight
-hub retry, Kody dispatches `mcp.server.disconnected`. Recovery to ready
-dispatches `mcp.server.reconnected` with the same episode id. The payload is
-metadata-first (server id/name/state, `account_url`). See the
+When a saved MCP server leaves the ready state and stays down after a
+lightweight hub retry, Kody dispatches `mcp.server.disconnected`. Recovery to
+ready dispatches `mcp.server.reconnected` with the same episode id. The payload
+is metadata-first (server id/name/state, `account_url`). See the
 [package subscriptions guide](../guides/package-subscriptions.md).
 
 Artifacts-backed plain repos, packages, and job sources also emit `repo.pushed`,

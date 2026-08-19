@@ -1,4 +1,4 @@
-# 0022: Progressive search disclosure
+# 0023: Progressive search disclosure
 
 - **Status:** accepted
 - **Date:** 2026-08-19
