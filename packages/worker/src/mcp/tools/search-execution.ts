@@ -84,7 +84,12 @@ async function executeSearchListWithinBudget(
 		ReturnType<typeof loadSearchRowsAndRegistry>
 	> | null = null
 	let identityMatchesProvider = false
-	if (identityResolution.recognized) {
+	if (
+		identityResolution.recognized &&
+		identityResolution.match &&
+		input.query.trim().toLowerCase() ===
+			identityResolution.match.kodyId.toLowerCase()
+	) {
 		preloadedSearchRows = await loadSearchRowsAndRegistry({
 			env: input.env,
 			callerContext: input.callerContext,

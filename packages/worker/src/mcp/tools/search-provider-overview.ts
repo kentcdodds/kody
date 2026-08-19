@@ -54,10 +54,7 @@ function getProviderIdentity(spec: CapabilitySpec): SynthesizedProvider | null {
 			title: spec.mcpServer.serverName,
 			domain: spec.domain,
 			source: 'mcp-server',
-			identityFields: [
-				spec.mcpServer.serverName,
-				spec.mcpServer.kodyName,
-			],
+			identityFields: [spec.mcpServer.serverName, spec.mcpServer.kodyName],
 			operationIdentityFields: [
 				spec.name,
 				spec.mcpServer.mcpToolName,
@@ -126,7 +123,10 @@ function isExactOperationQuery(query: string, provider: SynthesizedProvider) {
 	)
 }
 
-function shouldKeepTaskOperations(query: string, provider: SynthesizedProvider) {
+function shouldKeepTaskOperations(
+	query: string,
+	provider: SynthesizedProvider,
+) {
 	const providerTokens = new Set(
 		provider.identityFields.flatMap(extractSearchTokens),
 	)

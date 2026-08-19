@@ -331,18 +331,20 @@ test('search tool returns compact query markdown while preserving structured aux
 	)
 
 	mockPerformanceNow.mockReturnValueOnce(5).mockReturnValueOnce(9)
-	const validationErrorResponse = await handler({
+	const emptyDiscoveryResponse = await handler({
 		conversationId: 'conv-search-error',
 	})
-	expect(validationErrorResponse.isError).toBe(true)
-	expect(validationErrorResponse.structuredContent).toMatchObject({
+	expect(emptyDiscoveryResponse.isError).toBeUndefined()
+	expect(emptyDiscoveryResponse.structuredContent).toMatchObject({
 		conversationId: 'conv-search-error',
 		timing: {
 			startedAt: expect.any(String),
 			endedAt: expect.any(String),
 			durationMs: expect.any(Number),
 		},
-		error: expect.stringMatching(/query.*entity/i),
+		result: {
+			matches: [],
+		},
 	})
 
 	mockModule.getCapabilityRegistryForContext.mockRejectedValueOnce(
@@ -1050,7 +1052,7 @@ test('search tool memory enrichment: timeout, rejection, and ack failure stay of
 		user,
 	})
 	const structuredContextResult = await structuredContextHandler({
-		query: ' ',
+		query: 'search docs',
 		conversationId: 'conv-structured-memory',
 		memoryContext: { task: 'search docs' },
 	})
@@ -1303,16 +1305,13 @@ test('empty discovery returns a counted domain index without memory enrichment',
 			},
 		},
 	})
-	const { handler } = await getSearchRegistration({
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-		},
-	})
+	const { handler } = await getSearchRegistration({ user: null })
 
 	const response = await handler({ conversationId: 'conv-empty-index' })
-	expect(response.isError).toBeUndefined()
+	expect(
+		response.isError,
+		JSON.stringify(response.structuredContent),
+	).toBeUndefined()
 	expect(response.structuredContent.result).toMatchObject({
 		matches: [
 			{

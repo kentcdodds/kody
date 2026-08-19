@@ -583,7 +583,7 @@ test('capability formatting keeps execute contracts for identifier and bracket i
 	})
 })
 
-test('package entity detail includes exports, jobs, and referenced local types', () => {
+test('package entity detail is a slim index with explicit follow-up', () => {
 	const observedPackageDetail = formatEntityDetailMarkdown({
 		type: 'package',
 		id: 'observed-package',
@@ -638,6 +638,8 @@ test('package entity detail includes exports, jobs, and referenced local types',
 			'package.json': '{}',
 			'README.md': `# Observed package
 
+## Intent
+
 Use this package to inspect observed UI state.
 
 ## Usage
@@ -660,58 +662,31 @@ export declare function fetch(request: Request): Promise<Response>
 		hostedUrl: 'http://localhost/@test-user/packages/observed-package',
 		appEntry: './src/app.ts',
 		exports: [
-			expect.objectContaining({
+			{
 				subpath: '.',
-				importSpecifier: 'kody:@kody/observed-package',
-			}),
-			expect.objectContaining({
+				description: null,
+			},
+			{
 				subpath: './app',
-				externalInvocation: expect.objectContaining({
-					method: 'POST',
-					url: 'http://localhost/@test-user/api/package-invocations/observed-package/app',
-					path: '/@test-user/api/package-invocations/observed-package/app',
-					routeExportName: 'app',
-					normalizedExportName: './app',
-					tokenSetupUrl:
-						'http://localhost/account/package-invocation-tokens/new?packageKodyIds=observed-package&exportNames=app',
-				}),
-				referencedTypes: [],
-				functions: [
-					expect.objectContaining({
-						name: 'fetch',
-					}),
-				],
-			}),
+				description: 'Render the observed app.',
+			},
 		],
-		jobs: [
-			expect.objectContaining({
-				name: 'nightly',
-				entry: './src/jobs/nightly.ts',
-				enabled: true,
-			}),
-		],
-		readme: {
+		jobs: [{ name: 'nightly' }],
+		readmeIntent: {
 			path: 'README.md',
+			content: 'Use this package to inspect observed UI state.',
 			truncated: false,
 		},
 	})
-	expect(observedPackageDetail.markdown).toContain('## Import vs invoke')
+	expect(observedPackageDetail.markdown).toContain('## Follow up')
 	expect(observedPackageDetail.markdown).toContain(
-		'`packages.invoke({ kodyId: "observed-package", exportName, params })`',
+		'package_get({ kody_id: "observed-package" })',
 	)
-	expect(observedPackageDetail.markdown).not.toContain('invokeChecked')
-	expect(observedPackageDetail.markdown).toContain(
-		'The `kodyId` is the bare Kody id (`observed-package`), not the npm-scoped package name.',
+	expect(observedPackageDetail.markdown).not.toContain('src/app.d.ts')
+	expect(observedPackageDetail.markdown).not.toContain('Token setup URL')
+	expect(JSON.stringify(observedPackageDetail.structured)).not.toContain(
+		'typeDefinition',
 	)
-	expect(observedPackageDetail.markdown).toContain(
-		'`import entry from "kody:@kody/observed-package"`',
-	)
-	// Static import is the default and must lead the section.
-	expect(
-		observedPackageDetail.markdown.indexOf(
-			'`import entry from "kody:@kody/observed-package"`',
-		),
-	).toBeLessThan(observedPackageDetail.markdown.indexOf('packages.invoke({'))
 })
 
 test('package search formatting keeps runnable actions and hosted URLs in structured output', () => {
@@ -1206,7 +1181,9 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		},
 		relatedOperationCount: 2,
 	})
-	expect(openApiDetail.markdown).toContain('Related operations from this provider: 2')
+	expect(openApiDetail.markdown).toContain(
+		'Related operations from this provider: 2',
+	)
 	expect(openApiDetail.markdown).not.toContain(
 		'openapi:widgets:listwidgets:capability',
 	)

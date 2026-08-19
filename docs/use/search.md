@@ -68,8 +68,8 @@ accepts the same `domain` argument alongside `query`.
 An entire saved-package UUID or `kody.id` is treated as an exact package
 identity when it resolves for the signed-in user, except when that identity also
 names a synthesized provider; that query participates in ranking so the package
-and provider card can appear together. Kody also recognizes
-current-origin `/account/packages/:packageId` URLs, owner-matching
+and provider card can appear together. Kody also recognizes current-origin
+`/account/packages/:packageId` URLs, owner-matching
 `/@username/packages/:kodyId` URLs, and per-user package-app subdomain URLs
 (`https://{username}.<package-app host>/packages/:kodyId`) — so a URL copied
 from an open app resolves too. Exact package identities never compete with
@@ -93,12 +93,11 @@ response must stay small.
 
 ## Entity indexes and detail
 
-To inspect one hit, call **search** again with
-**`entity`** set to `"{id}:{type}"` where **`type`** is `capability`, `value`,
-`integration`, `package`, or `secret`. Capability entities additionally include
-a ready-to-run **execute** snippet plus `inputTypeDefinition` /
-`outputTypeDefinition`. OpenAPI capability titles use `METHOD path`; the
-operation slug stays in the entity ref.
+To inspect one hit, call **search** again with **`entity`** set to
+`"{id}:{type}"` where **`type`** is `capability`, `value`, `integration`,
+`package`, or `secret`. Capability entities additionally include a ready-to-run
+**execute** snippet plus `inputTypeDefinition` / `outputTypeDefinition`. OpenAPI
+capability titles use `METHOD path`; the operation slug stays in the entity ref.
 
 Pass an **array of 1–10 entity refs** when you need several related details at
 once (for example a create/poll OpenAPI pair). Each ref resolves independently:
@@ -171,9 +170,9 @@ behavior work without user-scoped data.
 
 Package and integration query hits stay summary-only. Exact package detail
 (`entity: "my-package:package"`) returns the package index described above.
-Exact integration detail (`entity: "github:integration"`)
-includes operational details such as token URL, API base URL, client id,
-required hosts, and related secret names.
+Exact integration detail (`entity: "github:integration"`) includes operational
+details such as token URL, API base URL, client id, required hosts, and related
+secret names.
 
 Long-term memory retrieval also requires a signed-in MCP user.
 

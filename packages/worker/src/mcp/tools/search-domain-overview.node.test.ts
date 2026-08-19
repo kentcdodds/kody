@@ -53,8 +53,16 @@ test('domain overviews cover named, plural, exploratory, and non-collapse cases'
 			capabilitySpecs: registry.capabilitySpecs,
 		}),
 	).toEqual([
-		expect.objectContaining({ type: 'domain', name: 'email', capabilityCount: 4 }),
-		expect.objectContaining({ type: 'domain', name: 'jobs', capabilityCount: 1 }),
+		expect.objectContaining({
+			type: 'domain',
+			name: 'email',
+			capabilityCount: 4,
+		}),
+		expect.objectContaining({
+			type: 'domain',
+			name: 'jobs',
+			capabilityCount: 1,
+		}),
 	])
 	expect(overviewFor('what can you do with email')).toEqual([
 		{

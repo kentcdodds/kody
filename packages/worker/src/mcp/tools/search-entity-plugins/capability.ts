@@ -194,7 +194,7 @@ export const capabilitySearchEntityPlugin = {
 			'',
 			'## Execute from `execute`',
 			'',
-			...(options?.includeBoilerplate ?? true
+			...((options?.includeBoilerplate ?? true)
 				? [
 						'Capabilities returned by `search` are available inside `execute` on the imported `kody` object.',
 						'',
@@ -203,7 +203,7 @@ export const capabilitySearchEntityPlugin = {
 			'```ts',
 			buildCapabilityExecuteExample(detail.spec),
 			'```',
-			...(options?.includeBoilerplate ?? true
+			...((options?.includeBoilerplate ?? true)
 				? [
 						'',
 						'Pass concrete arguments that satisfy the input type below; use `{}` when there are no required fields.',

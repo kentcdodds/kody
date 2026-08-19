@@ -24,9 +24,9 @@ count rather than expanding up to 20 siblings.
 Empty discovery, over-broad search, and `meta_list_capabilities()` without a
 domain return a domain index: id, capability count, one-line description, and
 two or three samples. `meta_list_capabilities({ domain })` still lists that
-domain. Task-specific zero-hit results may suggest the closest domains.
-Repeated detail calls with the same `conversationId` may omit boilerplate
-already taught earlier in the conversation.
+domain. Task-specific zero-hit results may suggest the closest domains. Repeated
+detail calls with the same `conversationId` may omit boilerplate already taught
+earlier in the conversation.
 
 ## Consequences
 

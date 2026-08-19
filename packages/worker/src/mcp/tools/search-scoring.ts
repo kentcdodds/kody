@@ -522,7 +522,10 @@ function findPackageProviderAffinity(input: {
 		return 0
 	}
 	let affinity = 0
-	for (const [providerKey, strongTerms] of input.strongIdentityTermsByProvider) {
+	for (const [
+		providerKey,
+		strongTerms,
+	] of input.strongIdentityTermsByProvider) {
 		const providerIdentityFields = input.candidates.flatMap((candidate) =>
 			candidate.synthesizedProviderKey === providerKey
 				? (candidate.providerIdentityFields ?? [])
@@ -536,10 +539,9 @@ function findPackageProviderAffinity(input: {
 				input.candidate.packageIdentityFields,
 				providerTerms,
 			) <= 0 ||
-			scoreSemanticMatchedTerms(
-				input.candidate.packageIdentityFields,
-				[...strongTerms],
-			) <= 0
+			scoreSemanticMatchedTerms(input.candidate.packageIdentityFields, [
+				...strongTerms,
+			]) <= 0
 		) {
 			continue
 		}
