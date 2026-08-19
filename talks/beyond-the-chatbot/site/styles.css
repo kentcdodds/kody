@@ -1,0 +1,400 @@
+@font-face {
+	font-family: 'Bricolage Grotesque';
+	font-style: normal;
+	font-weight: 400 800;
+	font-stretch: 100%;
+	font-display: swap;
+	src: url('assets/fonts/bricolage-grotesque-latin.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+		U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+		U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: 'Bricolage Grotesque';
+	font-style: normal;
+	font-weight: 400 800;
+	font-stretch: 100%;
+	font-display: swap;
+	src: url('assets/fonts/bricolage-grotesque-latin-ext.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+		U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+	font-family: 'Wix Madefor Text';
+	font-style: normal;
+	font-weight: 400 800;
+	font-display: swap;
+	src: url('assets/fonts/wix-madefor-text-latin.woff2') format('woff2');
+	unicode-range:
+		U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+		U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+		U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: 'Wix Madefor Text';
+	font-style: normal;
+	font-weight: 400 800;
+	font-display: swap;
+	src: url('assets/fonts/wix-madefor-text-latin-ext.woff2') format('woff2');
+	unicode-range:
+		U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+		U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+		U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+	--font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+	--font-body: 'Wix Madefor Text', system-ui, sans-serif;
+	--color-primary: oklch(0.54 0.18 145);
+	--color-primary-text: oklch(0.455 0.17 145);
+	--color-background: oklch(0.93 0.004 250);
+	--color-surface: oklch(0.975 0.002 250);
+	--color-text: oklch(0.22 0.012 260);
+	--color-text-muted: oklch(0.44 0.014 260);
+	--color-border: oklch(0.84 0.008 250);
+	--color-on-primary: oklch(1 0 0);
+	--footer-h: 4.6rem;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	height: 100%;
+	background: var(--color-background);
+	color: var(--color-text);
+	font-family: var(--font-body);
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+body::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+	background: oklch(from var(--color-text) l c h / 0.045);
+	mask-image: url('assets/images/kody-pattern.webp');
+	mask-size: 340px;
+	mask-repeat: repeat;
+	-webkit-mask-image: url('assets/images/kody-pattern.webp');
+	-webkit-mask-size: 340px;
+	-webkit-mask-repeat: repeat;
+}
+
+body::after {
+	content: '';
+	position: fixed;
+	right: -12%;
+	bottom: -22%;
+	width: min(58vw, 820px);
+	aspect-ratio: 1;
+	z-index: 0;
+	pointer-events: none;
+	background: oklch(from var(--color-text) l c h / 0.08);
+	mask-image:
+		radial-gradient(closest-side, #000 42%, transparent 74%),
+		url('assets/images/kody-pattern.webp');
+	mask-size: 100% 100%, 340px;
+	mask-repeat: no-repeat, repeat;
+	mask-composite: intersect;
+	-webkit-mask-image:
+		radial-gradient(closest-side, #000 42%, transparent 74%),
+		url('assets/images/kody-pattern.webp');
+	-webkit-mask-size: 100% 100%, 340px;
+	-webkit-mask-repeat: no-repeat, repeat;
+	-webkit-mask-composite: source-in;
+}
+
+.reveal {
+	position: relative;
+	z-index: 1;
+	height: 100%;
+	background: transparent;
+	font-family: var(--font-body);
+	font-size: 32px;
+	font-weight: 400;
+	color: var(--color-text);
+}
+
+.reveal .slides {
+	text-align: left;
+}
+
+.reveal .slides section {
+	padding: 0 0 5rem;
+	text-align: left;
+}
+
+.reveal h1,
+.reveal h2,
+.reveal h3 {
+	font-family: var(--font-display);
+	font-optical-sizing: auto;
+	font-weight: 740;
+	letter-spacing: -0.03em;
+	line-height: 1.04;
+	text-transform: none;
+	color: var(--color-text);
+	margin: 0 0 0.55em;
+	text-wrap: balance;
+}
+
+.reveal h1 {
+	font-size: 2.7em;
+}
+
+.reveal h2 {
+	font-size: 1.85em;
+}
+
+.reveal p,
+.reveal li {
+	font-family: var(--font-body);
+	color: oklch(0.32 0.012 260);
+	line-height: 1.42;
+}
+
+.reveal a {
+	color: var(--color-primary-text);
+	text-decoration-thickness: 1.5px;
+	text-underline-offset: 4px;
+}
+
+.kicker {
+	margin: 0 0 0.7rem;
+	font-family: var(--font-body);
+	font-size: 0.72em;
+	font-weight: 600;
+	color: var(--color-primary-text);
+}
+
+.lede {
+	margin: 0;
+	font-size: 0.92em;
+	color: var(--color-text-muted);
+	max-width: 28ch;
+}
+
+.byline {
+	margin: 1.1rem 0 0;
+	font-size: 0.78em;
+	color: var(--color-text);
+}
+
+.punch {
+	margin: 0.15em 0 0;
+	font-family: var(--font-display);
+	font-weight: 740;
+	letter-spacing: -0.03em;
+	line-height: 1.06;
+	font-size: 1.55em;
+	color: var(--color-primary-text);
+	text-wrap: balance;
+}
+
+.tools {
+	display: grid;
+	gap: 0.15em;
+	margin-top: 0.4em;
+}
+
+.tools span {
+	font-family: var(--font-display);
+	font-weight: 740;
+	letter-spacing: -0.03em;
+	font-size: 2.2em;
+	line-height: 1.02;
+	color: var(--color-primary-text);
+}
+
+.steps,
+.bullets {
+	list-style: none;
+	margin: 0.4em 0 0;
+	padding: 0;
+	display: grid;
+	gap: 0.55em;
+}
+
+.steps {
+	counter-reset: step;
+}
+
+.steps li {
+	display: grid;
+	grid-template-columns: 3.2rem 1fr;
+	gap: 0.9rem;
+	align-items: baseline;
+	font-size: 0.95em;
+	color: oklch(0.32 0.012 260);
+}
+
+.steps li::before {
+	counter-increment: step;
+	content: counter(step, decimal-leading-zero);
+	font-family: var(--font-display);
+	font-weight: 700;
+	letter-spacing: -0.02em;
+	color: var(--color-primary-text);
+}
+
+.bullets li {
+	display: grid;
+	grid-template-columns: 0.7rem 1fr;
+	gap: 0.85rem;
+	align-items: baseline;
+	font-size: 0.95em;
+}
+
+.bullets li::before {
+	content: '';
+	width: 0.42rem;
+	height: 0.42rem;
+	margin-top: 0.55em;
+	border-radius: 999px;
+	background: var(--color-primary);
+}
+
+.chip {
+	display: inline-flex;
+	align-items: center;
+	margin-top: 1.4rem;
+	padding: 0.55rem 1.15rem;
+	border: 1.5px solid var(--color-border);
+	border-radius: 999px;
+	background: var(--color-surface);
+	color: var(--color-primary-text);
+	font-size: 0.62em;
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.prompt {
+	margin: 1.1rem 0 0;
+	padding: 1.15rem 1.25rem;
+	border: 1.5px solid var(--color-border);
+	border-radius: 14px;
+	background: var(--color-surface);
+	font-family: var(--font-body);
+	font-size: 0.62em;
+	line-height: 1.5;
+	color: oklch(0.32 0.012 260);
+	white-space: pre-wrap;
+	text-wrap: pretty;
+}
+
+.hero {
+	display: grid;
+	grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.9fr);
+	gap: 2rem;
+	align-items: center;
+	min-height: 78%;
+}
+
+.hero-art {
+	justify-self: end;
+	width: min(100%, 520px);
+}
+
+.hero-art img {
+	width: 100%;
+	height: auto;
+	display: block;
+}
+
+.links .url {
+	margin: 0.15em 0 0.45em;
+	font-family: var(--font-display);
+	font-weight: 740;
+	letter-spacing: -0.03em;
+	font-size: 1.45em;
+	color: var(--color-primary-text);
+}
+
+.links .muted {
+	margin: 0.85em 0 0;
+	color: var(--color-text-muted);
+	font-size: 0.72em;
+}
+
+.deck-footer {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	z-index: 5;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	height: var(--footer-h);
+	padding: 0 clamp(1.25rem, 4vw, 2.5rem);
+	border-top: 1px solid var(--color-border);
+	background: oklch(from var(--color-background) l c h / 0.88);
+	backdrop-filter: blur(14px);
+}
+
+.deck-footer a {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.6rem;
+	color: var(--color-text);
+	text-decoration: none;
+	font-family: var(--font-display);
+	font-weight: 700;
+	letter-spacing: -0.01em;
+	font-size: 1.05rem;
+}
+
+.deck-footer img {
+	width: 28px;
+	height: 28px;
+}
+
+.deck-footer .page {
+	font-family: var(--font-body);
+	font-size: 0.92rem;
+	color: var(--color-text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.reveal .progress {
+	z-index: 6;
+	height: 3px;
+	color: var(--color-primary);
+}
+
+.reveal .controls,
+.reveal .slide-number {
+	display: none !important;
+}
+
+.reveal .overlay {
+	z-index: 20;
+}
+
+@media (max-width: 900px) {
+	.hero {
+		grid-template-columns: 1fr;
+	}
+
+	.hero-art {
+		justify-self: center;
+		width: min(70vw, 360px);
+	}
+
+	.reveal h1 {
+		font-size: 2.1em;
+	}
+}

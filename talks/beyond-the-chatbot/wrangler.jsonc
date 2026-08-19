@@ -1,0 +1,12 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "beyond-the-chatbot",
+	"compatibility_date": "2026-08-19",
+	"workers_dev": true,
+	"preview_urls": true,
+	"assets": {
+		"directory": "./site",
+		"not_found_handling": "single-page-application",
+		"html_handling": "auto-trailing-slash",
+	},
+}
