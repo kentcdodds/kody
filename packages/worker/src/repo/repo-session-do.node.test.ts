@@ -2150,9 +2150,9 @@ test('runIsolatedArtifactRebuild loads staged files, skips built targets, and re
 		kvKey: 'kv:artifact',
 		target,
 	})
-	expect(mockModule.persistPublishedPackageArtifactTarget).toHaveBeenCalledTimes(
-		1,
-	)
+	expect(
+		mockModule.persistPublishedPackageArtifactTarget,
+	).toHaveBeenCalledTimes(1)
 
 	const rebuilt = await session.runIsolatedArtifactRebuild({
 		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:abc',
@@ -2385,7 +2385,8 @@ test('published artifact rebuild prefers the published snapshot over a leftover 
 		if (path === '/session/package.json') {
 			return '{"name":"@kody/stale","exports":{".":"./index.ts"},"kody":{"id":"stale","description":"Stale"}}'
 		}
-		if (path === '/session/index.ts') return 'export const fromWorkspace = true\n'
+		if (path === '/session/index.ts')
+			return 'export const fromWorkspace = true\n'
 		return null
 	})
 	mockModule.loadPublishedSourceManifestSnapshot.mockResolvedValue({

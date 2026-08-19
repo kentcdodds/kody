@@ -2851,7 +2851,8 @@ class RepoSessionBase extends DurableObject<Env> {
 			} catch (error) {
 				Sentry.captureException(error, {
 					tags: {
-						scope: 'repo.publishFromExternalRef.refresh-already-published-snapshot',
+						scope:
+							'repo.publishFromExternalRef.refresh-already-published-snapshot',
 					},
 					extra: {
 						sourceId: source.id,
