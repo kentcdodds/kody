@@ -21,9 +21,8 @@ vi.mock('#worker/storage-runner.ts', () => ({
 	}),
 }))
 
-const { purgeRetiredServiceStorageBuckets } = await import(
-	'./purge-retired-service-storage.ts'
-)
+const { purgeRetiredServiceStorageBuckets } =
+	await import('./purge-retired-service-storage.ts')
 
 function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
