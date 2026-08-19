@@ -441,7 +441,12 @@ export async function publishCommunityListing(input: {
 		packageId: input.packageId,
 	})
 	if (!savedPackage) {
-		throw new Error(`Saved package "${input.packageId}" was not found.`)
+		// Missing / wrong-owner package_id (including delegated package_scope
+		// mismatches) is caller-clearable. CommunityActionError keeps these on
+		// mcp-event lines and out of Sentry (KODY-CLOUDFLARE-5B).
+		throw new CommunityActionError(
+			`Saved package "${input.packageId}" was not found for this package owner. Confirm package_id with search({ domain: "packages" }) and that package_scope matches the account that owns it.`,
+		)
 	}
 
 	const loadedSource = await loadPackageSourceBySourceId({
@@ -1285,7 +1290,11 @@ export async function adoptCommunityFork(input: {
 				})
 	if (!savedPackage) {
 		const missingId = input.packageId ?? input.kodyId
-		throw new Error(`Saved package "${missingId}" was not found.`)
+		// Missing / mistyped package_id or kody_id is caller-clearable.
+		// CommunityActionError keeps these on mcp-event lines and out of Sentry.
+		throw new CommunityActionError(
+			`Saved package "${missingId}" was not found. Confirm the id with search({ domain: "packages" }).`,
+		)
 	}
 
 	const fork = await getCommunityForkByForkedPackageId(input.env.APP_DB, {

@@ -488,6 +488,45 @@ test('unpublishCommunityListing treats missing or unowned listings as CommunityA
 	expect(mockModule.deleteCommunityListing).not.toHaveBeenCalled()
 })
 
+test('publishCommunityListing treats missing packages as CommunityActionError', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+
+	await expect(
+		publishCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'owner-1',
+			packageId: 'missing-package',
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityActionError &&
+			error.message.includes('Saved package "missing-package" was not found'),
+	)
+
+	expect(mockModule.loadPackageSourceBySourceId).not.toHaveBeenCalled()
+})
+
+test('adoptCommunityFork treats missing packages as CommunityActionError', async () => {
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+
+	await expect(
+		adoptCommunityFork({
+			env: createEnv(),
+			userId: 'owner-1',
+			packageId: 'missing-package',
+			reviewSummary: 'Reviewed the fork source and trust the upstream listing.',
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityActionError &&
+			error.message.includes('Saved package "missing-package" was not found'),
+	)
+
+	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
+})
+
 test('unpublishCommunityListing deletes active listings and cascades cleanup', async () => {
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
 	mockModule.deleteCommunityListing.mockResolvedValue(true)
