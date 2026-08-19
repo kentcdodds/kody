@@ -67,6 +67,10 @@
 		{
 			"filename": "0016-drop-package-service-states.sql",
 			"sha256": "9b05cc28701cdbf10a89464958c6709e9c8011a43dd154dc6653a23a6b2e86ed"
+		},
+		{
+			"filename": "0017-package-owned-invocation-tokens.sql",
+			"sha256": "a535c0f5bff7392811c0a730f929017a1bfc99c285f6e552e7d26392f1e4a819"
 		}
 	]
 }

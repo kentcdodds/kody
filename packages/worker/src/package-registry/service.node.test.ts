@@ -1055,6 +1055,9 @@ function createEntitlementsDatabase(input: {
 							if (query.includes('DELETE FROM package_kody_id_redirects')) {
 								return { meta: { changes: 0 } }
 							}
+							if (query.includes('DELETE FROM package_invocation_tokens')) {
+								return { meta: { changes: 0 } }
+							}
 							throw new Error(`Unsupported run query: ${query}`)
 						},
 						async first<T>() {

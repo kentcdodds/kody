@@ -87,13 +87,13 @@ test('package invocation token capabilities return package-scoped metadata witho
 		expect.anything(),
 		{ userId: 'user-1', packageId: 'package-1' },
 	)
-	expect(mockModule.listPackageInvocationTokensByPackageId).toHaveBeenCalledWith(
-		{
-			db: expect.anything(),
-			userId: 'user-1',
-			packageId: 'package-1',
-		},
-	)
+	expect(
+		mockModule.listPackageInvocationTokensByPackageId,
+	).toHaveBeenCalledWith({
+		db: expect.anything(),
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
 	expect(listResult).toEqual({
 		tokens: [
 			{

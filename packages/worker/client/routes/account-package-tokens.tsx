@@ -6,7 +6,7 @@ import {
 	type AccountPackageToken,
 	type AccountPackagesLoaderData,
 } from '#universal/loader-data.ts'
-import { type Handle, css } from 'remix/ui'
+import { css, type Handle } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { createDoubleCheck } from '#client/double-check.ts'
@@ -138,13 +138,15 @@ function hrefWithTokenQuery(
 	return `${url.pathname}${url.search}`
 }
 
-export function AccountPackageTokens(handle: Handle<{
-	packageDetail: AccountPackageDetail
-	currentHref: string
-	username: string
-	invocationUrlOrigin: string
-	onPackagesPayload: (payload: AccountPackagesLoaderData) => void
-}>) {
+export function AccountPackageTokens(
+	handle: Handle<{
+		packageDetail: AccountPackageDetail
+		currentHref: string
+		username: string
+		invocationUrlOrigin: string
+		onPackagesPayload: (payload: AccountPackagesLoaderData) => void
+	}>,
+) {
 	let editorState = createEmptyEditorState()
 	let editMode = false
 	let saveState:
@@ -157,7 +159,7 @@ export function AccountPackageTokens(handle: Handle<{
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
 	let lastCreateHref = ''
-	const deleteTokenCheck = createDoubleCheck(handle)
+	const deleteTokenCheck = createDoubleCheck(handle as unknown as Handle)
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
@@ -200,8 +202,9 @@ export function AccountPackageTokens(handle: Handle<{
 			deleteTokenCheck.reset()
 		}
 		const selectedToken =
-			packageDetail.tokens.find((token) => token.id === query.selectedTokenId) ??
-			null
+			packageDetail.tokens.find(
+				(token) => token.id === query.selectedTokenId,
+			) ?? null
 		const isMutating = saveState !== 'idle'
 		const invocationUrl = username
 			? `${invocationUrlOrigin}/@${username}/api/package-invocations/${packageDetail.kodyId}/<exportName>`
@@ -229,7 +232,7 @@ export function AccountPackageTokens(handle: Handle<{
 						<h3
 							mix={css({
 								margin: 0,
-								fontSize: typography.fontSize.md,
+								fontSize: typography.fontSize.base,
 								fontWeight: typography.fontWeight.semibold,
 							})}
 						>
@@ -330,9 +333,7 @@ export function AccountPackageTokens(handle: Handle<{
 									<span
 										mix={css({
 											fontSize: typography.fontSize.sm,
-											color: token.revokedAt
-												? colors.error
-												: colors.textMuted,
+											color: token.revokedAt ? colors.error : colors.textMuted,
 										})}
 									>
 										{tokenStatus(token)}
@@ -343,9 +344,7 @@ export function AccountPackageTokens(handle: Handle<{
 								</p>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Sources:{' '}
-									{token.sources.length > 0
-										? token.sources.join(', ')
-										: 'Any'}
+									{token.sources.length > 0 ? token.sources.join(', ') : 'Any'}
 								</p>
 								{token.lastUsedAt ? (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
@@ -421,7 +420,7 @@ export function AccountPackageTokens(handle: Handle<{
 							<input
 								value={editorState.name}
 								mix={[
-									accountInputCss,
+									css(accountInputCss),
 									on('input', (event) => {
 										if (event.currentTarget instanceof HTMLInputElement) {
 											editorState = {
@@ -436,9 +435,7 @@ export function AccountPackageTokens(handle: Handle<{
 						</label>
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>
-								{query.isCreating
-									? 'Raw token'
-									: 'New raw token (optional)'}
+								{query.isCreating ? 'Raw token' : 'New raw token (optional)'}
 							</span>
 							<div
 								mix={css({
@@ -452,7 +449,7 @@ export function AccountPackageTokens(handle: Handle<{
 									autocomplete="new-password"
 									value={editorState.rawToken}
 									mix={[
-										accountInputCss,
+										css(accountInputCss),
 										on('input', (event) => {
 											if (event.currentTarget instanceof HTMLInputElement) {
 												editorState = {
@@ -499,7 +496,7 @@ export function AccountPackageTokens(handle: Handle<{
 								value={editorState.exportNamesText}
 								placeholder={'./process-video\n*'}
 								mix={[
-									accountTextareaCss,
+									css(accountTextareaCss),
 									on('input', (event) => {
 										if (event.currentTarget instanceof HTMLTextAreaElement) {
 											editorState = {
@@ -518,7 +515,7 @@ export function AccountPackageTokens(handle: Handle<{
 								value={editorState.sourcesText}
 								placeholder="youtube-websub-proxy"
 								mix={[
-									accountTextareaCss,
+									css(accountTextareaCss),
 									on('input', (event) => {
 										if (event.currentTarget instanceof HTMLTextAreaElement) {
 											editorState = {
@@ -531,7 +528,9 @@ export function AccountPackageTokens(handle: Handle<{
 								]}
 							/>
 						</label>
-						<div mix={css({ display: 'flex', flexWrap: 'wrap', gap: spacing.sm })}>
+						<div
+							mix={css({ display: 'flex', flexWrap: 'wrap', gap: spacing.sm })}
+						>
 							<button
 								type="submit"
 								disabled={isMutating}
@@ -566,7 +565,9 @@ export function AccountPackageTokens(handle: Handle<{
 						<p mix={css(descriptionCss)}>
 							Created <TimestampValue value={selectedToken.createdAt} />
 						</p>
-						<div mix={css({ display: 'flex', flexWrap: 'wrap', gap: spacing.sm })}>
+						<div
+							mix={css({ display: 'flex', flexWrap: 'wrap', gap: spacing.sm })}
+						>
 							<button
 								type="button"
 								disabled={isMutating || Boolean(selectedToken.revokedAt)}
@@ -650,40 +651,41 @@ export function AccountPackageTokens(handle: Handle<{
 								type="button"
 								disabled={isMutating}
 								mix={[
-									on('click', () => {
-										if (!deleteTokenCheck.confirm()) {
-											handle.update()
-											return
-										}
-										void (async () => {
-											saveState = 'deleting'
-											handle.update()
-											try {
-												await submitAction({
-													action: 'delete-token',
-													id: selectedToken.id,
-												})
-												messageTone = 'info'
-												message = 'Token deleted.'
-												replaceLocation(
-													hrefWithTokenQuery(currentHref, {}),
-												)
-											} catch (error) {
-												messageTone = 'error'
-												message =
-													error instanceof Error
-														? error.message
-														: 'Unable to delete the token.'
-											}
-											saveState = 'idle'
-											deleteTokenCheck.reset()
-											handle.update()
-										})()
+									...deleteTokenCheck.getButtonMix({
+										on: {
+											click: () => {
+												void (async () => {
+													saveState = 'deleting'
+													handle.update()
+													try {
+														await submitAction({
+															action: 'delete-token',
+															id: selectedToken.id,
+														})
+														messageTone = 'info'
+														message = 'Token deleted.'
+														replaceLocation(hrefWithTokenQuery(currentHref, {}))
+													} catch (error) {
+														messageTone = 'error'
+														message =
+															error instanceof Error
+																? error.message
+																: 'Unable to delete the token.'
+													}
+													saveState = 'idle'
+													handle.update()
+												})()
+											},
+										},
 									}),
 									css(dangerButtonCss),
 								]}
 							>
-								{deleteTokenCheck.pending ? 'Click again to delete' : 'Delete'}
+								{saveState === 'deleting'
+									? 'Deleting…'
+									: deleteTokenCheck.doubleCheck
+										? 'Confirm delete'
+										: 'Delete'}
 							</button>
 						</div>
 					</div>

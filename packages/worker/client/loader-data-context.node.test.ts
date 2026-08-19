@@ -28,16 +28,10 @@ test('loader href helpers normalize URLs and compare pathname and search', () =>
 	expect(hrefMatchesSsrUrl('/community?q=beta', '/community')).toBe(false)
 	expect(hrefMatchesSsrUrl('/community', '/community?q=beta')).toBe(false)
 	expect(
-		hrefMatchesSsrUrl(
-			'/account/packages/pkg-1',
-			'/account/packages/pkg-1',
-		),
+		hrefMatchesSsrUrl('/account/packages/pkg-1', '/account/packages/pkg-1'),
 	).toBe(true)
 	expect(
-		hrefMatchesSsrUrl(
-			'/account/packages/pkg-2',
-			'/account/packages/pkg-1',
-		),
+		hrefMatchesSsrUrl('/account/packages/pkg-2', '/account/packages/pkg-1'),
 	).toBe(false)
 })
 

@@ -10,8 +10,8 @@ Package invocation tokens let a trusted external client call
 already names the owner and the package. The token table nevertheless stored
 cross-package JSON allowlists (`package_ids_json`, `package_kody_ids_json`,
 including `*`), denormalized user identity, and a global unique `token_hash`
-index. Auth hashed the bearer and looked up across every user, then checked
-that the path matched the grant. A standalone `/account/package-invocation-tokens`
+index. Auth hashed the bearer and looked up across every user, then checked that
+the path matched the grant. A standalone `/account/package-invocation-tokens`
 page existed to edit those grants.
 
 That model treated a token as a personal access token. Webhooks already do the
@@ -25,9 +25,9 @@ reason to keep a grant table.
 An invocation token belongs to exactly one saved package. Auth resolves the
 owner and package from the URL, then looks up
 `(user_id, package_id, token_hash)`. There is no cross-package grant, no
-account-level token page, and no global hash index. Export and source
-allowlists stay as restrictions *within* that package. Tokens are created,
-rotated, and revoked from the package details page.
+account-level token page, and no global hash index. Export and source allowlists
+stay as restrictions _within_ that package. Tokens are created, rotated, and
+revoked from the package details page.
 
 Cross-package HTTP clients call one package (an orchestrator or a discovery
 package) and use `packages.invoke` inside Kody, or they speak MCP. They do not

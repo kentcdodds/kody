@@ -533,8 +533,8 @@ Configure these GitHub Actions secrets and variables for workflows:
   uses it to `POST`
   `https://kody.codes/@kentcdodds/api/package-invocations/weekly-site-perf/__root__`.
   Create a token scoped to `weekly-site-perf` / `.` / source `weekly-site-perf`
-  on that package's details page. Not a Worker secret; the weekly
-  job skips invoke when this is unset.)
+  on that package's details page. Not a Worker secret; the weekly job skips
+  invoke when this is unset.)
 - `SENTRY_AUTH_TOKEN` (optional GitHub **secret**; Sentry auth token with
   `project:releases` / source map upload permissions — used only by CI to run
   `npm run sentry:upload-sourcemaps` after deploy)

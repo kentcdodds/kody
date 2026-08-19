@@ -74,14 +74,14 @@ Repeat params or comma-separate values for list fields. The form also accepts
 common snake_case and kebab-case aliases so agents can construct URLs from API
 field names without extra translation.
 
-| Param                                       | Required | Description                                                                                         |
-| ------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `newToken`                                  | yes      | Set to `1` to open the create form on this package.                                                 |
-| `name`                                      | no       | Human-readable token name.                                                                          |
-| `exportNames` / `exportName`                | no       | Package export names. `dispatch-event` is normalized to `./dispatch-event`; `*` allows all exports. |
-| `allowedSources` / `allowedSource`          | no       | Optional exact source labels the external caller may send in request JSON.                          |
-| `sources` / `source`                        | no       | Alias for `allowedSources`.                                                                         |
-| `export_names`, `export-names`, etc         | no       | Snake_case and kebab-case aliases are accepted for the fields above.                                |
+| Param                               | Required | Description                                                                                         |
+| ----------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `newToken`                          | yes      | Set to `1` to open the create form on this package.                                                 |
+| `name`                              | no       | Human-readable token name.                                                                          |
+| `exportNames` / `exportName`        | no       | Package export names. `dispatch-event` is normalized to `./dispatch-event`; `*` allows all exports. |
+| `allowedSources` / `allowedSource`  | no       | Optional exact source labels the external caller may send in request JSON.                          |
+| `sources` / `source`                | no       | Alias for `allowedSources`.                                                                         |
+| `export_names`, `export-names`, etc | no       | Snake_case and kebab-case aliases are accepted for the fields above.                                |
 
 ## Invocation URL format
 

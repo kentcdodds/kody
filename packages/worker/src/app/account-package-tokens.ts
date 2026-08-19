@@ -97,10 +97,7 @@ async function handleCreateToken(input: {
 		return jsonResponse(
 			{
 				ok: false,
-				error:
-					error instanceof Error
-						? error.message
-						: 'Invalid export scope.',
+				error: error instanceof Error ? error.message : 'Invalid export scope.',
 			},
 			400,
 		)
@@ -185,10 +182,7 @@ async function handleUpdateToken(input: {
 		return jsonResponse(
 			{
 				ok: false,
-				error:
-					error instanceof Error
-						? error.message
-						: 'Invalid export scope.',
+				error: error instanceof Error ? error.message : 'Invalid export scope.',
 			},
 			400,
 		)

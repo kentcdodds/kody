@@ -211,9 +211,7 @@ export const packageInvocationTokenMetadataSchema = z.object({
 			'Package invocation token record id. This is not a bearer token.',
 		),
 	name: z.string().describe('Human-readable token record name.'),
-	package_id: z
-		.string()
-		.describe('Saved package id this token belongs to.'),
+	package_id: z.string().describe('Saved package id this token belongs to.'),
 	export_names: z
 		.array(z.string())
 		.describe(

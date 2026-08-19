@@ -50,7 +50,9 @@ export function createAccountPackagesApiHandler(env: Env) {
 			}
 
 			if (request.method === 'GET') {
-				return jsonResponse(await loadAccountPackagesData({ env, request, user }))
+				return jsonResponse(
+					await loadAccountPackagesData({ env, request, user }),
+				)
 			}
 
 			if (request.method !== 'POST') {
@@ -73,7 +75,6 @@ export function createAccountPackagesApiHandler(env: Env) {
 			return jsonResponse({ ok: false, error: 'Invalid action.' }, 400)
 		},
 	} satisfies Action<
-		| typeof routes.accountPackagesApi
-		| typeof routes.accountPackagesApiPost
+		typeof routes.accountPackagesApi | typeof routes.accountPackagesApiPost
 	>
 }
