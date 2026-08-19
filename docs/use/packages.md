@@ -441,7 +441,7 @@ Subscription handlers run as package runtime modules with the signed-in package
 user, package-owned storage via `packageStorage()`, package context, secrets,
 and `kody:runtime` helpers. Published bundle artifacts are rebuilt for
 subscription handlers during package checks and publish, just like exports,
-services, jobs, and apps.
+jobs, and apps.
 
 Use the built-in `package_subscriptions_list` capability to discover the
 signed-in user's saved package subscriptions, optionally filtered by exact

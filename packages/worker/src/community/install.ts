@@ -76,7 +76,7 @@ function createSnapshotFilesWorkspace(files: Record<string, string>) {
  * One-click install: fork a community listing into the caller's scope and,
  * when the fork passes the same publish checks a repo session would run,
  * immediately publish it as a live saved package (which also schedules any
- * declared jobs and auto-starts services). When checks fail — most commonly
+ * declared jobs). When checks fail — most commonly
  * because of cross-scope `kody:@` imports that cannot resolve in the
  * installer's account — the fork is kept as an inert source so an agent can
  * resume it through `repo_open_session`, and no package is published.

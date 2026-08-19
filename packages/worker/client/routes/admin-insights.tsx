@@ -826,7 +826,7 @@ function renderDashboard(data: AdminInsightsLoaderData) {
 
 				<ChartCard
 					title="Top runtime consumers"
-					sub="Combined execute, job, workflow, and service runtime duration for the current UTC month."
+					sub="Combined execute, job, and workflow runtime duration for the current UTC month."
 					span={6}
 				>
 					{renderDurationConsumers(
@@ -844,7 +844,7 @@ function renderDashboard(data: AdminInsightsLoaderData) {
 
 				<ChartCard
 					title="Runtime leaders by metric"
-					sub="Per-metric duration leaders for execute, jobs, workflows, and services."
+					sub="Per-metric duration leaders for execute, jobs, and workflows."
 					span={6}
 				>
 					{renderDurationByMetric(data.topDurationConsumersByMetric)}

@@ -76,8 +76,8 @@ Create or extend a saved package when behavior is reusable, expected to evolve,
 or needs a named package-owned schedule that evolves with its implementation,
 and no suitable community listing (or existing saved package) covers it. The
 repo rooted at `package.json` is the durable source of truth. Package exports
-form the callable surface, while jobs, subscriptions, services, retrievers, and
-apps remain package-owned behavior.
+form the callable surface, while jobs, subscriptions, retrievers, and apps
+remain package-owned behavior.
 
 Scheduling alone does not require a package. Use `job_schedule` directly for a
 genuinely ad hoc or one-off job, or for a simple self-contained schedule that is

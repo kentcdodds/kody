@@ -88,8 +88,8 @@ supporting cast.
   covered in [Execute and workflows](../use/execute.md) and
   [First steps](../use/first-steps.md).
 - **Packages** — reusable saved code your agent writes and improves over time.
-  Packages can expose exports, own scheduled jobs, run long-lived services, and
-  even serve a small web app UI. See [Packages](../use/packages.md).
+  Packages can expose exports, own scheduled jobs, and even serve a small web
+  app UI. See [Packages](../use/packages.md).
 - **Workflows** — durable multi-step runs that survive restarts and can wait on
   external events. See [Workflows](../use/workflows.md).
 - **A personal email inbox** — every user gets an address; inbound mail can

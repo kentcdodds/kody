@@ -101,20 +101,10 @@ export function parseAuthoredPackageJson(input: {
 			)}`,
 		)
 	}
-	if (
-		parsed &&
-		typeof parsed === 'object' &&
-		!Array.isArray(parsed) &&
-		'kody' in parsed &&
-		(parsed as { kody?: unknown }).kody &&
-		typeof (parsed as { kody?: unknown }).kody === 'object' &&
-		!Array.isArray((parsed as { kody: unknown }).kody) &&
-		'workflows' in ((parsed as { kody: object }).kody as object)
-	) {
-		throw new Error(
-			`Invalid ${input.manifestPath ?? packageManifestPath}:\nkody.workflows is not a supported field; use workflows.create({ packageId, exportName }) from any runtime context.`,
-		)
-	}
+	assertNoRetiredKodyFields({
+		parsed,
+		manifestPath: input.manifestPath ?? packageManifestPath,
+	})
 	const result = authoredPackageJsonSchema.safeParse(parsed)
 	if (!result.success) {
 		const formatted = z.prettifyError(result.error)
@@ -152,6 +142,36 @@ export function parseAuthoredPackageJson(input: {
 	})
 
 	return manifest
+}
+
+const retiredKodyFieldMessages = {
+	workflows:
+		'kody.workflows is not a supported field; use workflows.create({ packageId, exportName }) from any runtime context.',
+	services:
+		'kody.services is not a supported field; long-running daemons run on an external process. Use jobs or workflows for exclusive or cancellable background work.',
+} as const
+
+function assertNoRetiredKodyFields(input: {
+	parsed: unknown
+	manifestPath: string
+}) {
+	if (
+		!input.parsed ||
+		typeof input.parsed !== 'object' ||
+		Array.isArray(input.parsed)
+	) {
+		return
+	}
+	const kody = (input.parsed as { kody?: unknown }).kody
+	if (!kody || typeof kody !== 'object' || Array.isArray(kody)) {
+		return
+	}
+	const record = kody as Record<string, unknown>
+	for (const [field, message] of Object.entries(retiredKodyFieldMessages)) {
+		if (field in record) {
+			throw new Error(`Invalid ${input.manifestPath}:\n${message}`)
+		}
+	}
 }
 
 function assertPackageWebhooks(input: {

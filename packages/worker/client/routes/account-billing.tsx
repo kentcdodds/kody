@@ -70,7 +70,8 @@ const planTiers: Array<{
 		name: 'Standard',
 		price: '$12/month',
 		annualPrice: '$10/mo billed annually',
-		description: 'Higher daily volume, more services, and persistent ones.',
+		description:
+			'Higher daily volume and more room for scheduled jobs and workflows.',
 	},
 	{
 		id: 'pro',

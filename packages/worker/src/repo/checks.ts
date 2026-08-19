@@ -887,7 +887,7 @@ function formatBundleCheckMessage(input: {
 			.join(', ')}.`
 	}
 	if (input.targetCount === 0) {
-		return 'Package defines no app entry, exports, jobs, services, subscriptions, or retrievers to bundle.'
+		return 'Package defines no app entry, exports, jobs, subscriptions, or retrievers to bundle.'
 	}
 	return `Resolved ${input.targetCount} package target(s) for bundling.`
 }

@@ -10,7 +10,7 @@ Saved packages are an **explicit extension**: a package is a repo whose
 `entity_sources` row has `entity_kind = 'package'` and a matching
 `saved_packages` projection. Activation is never inferred from contents—a root
 `package.json` alone does not make a package. Use `repo_promote_to_package` when
-you want runtime surfaces (exports, apps, services, jobs, webhooks).
+you want runtime surfaces (exports, apps, jobs, webhooks).
 
 ## Capabilities
 

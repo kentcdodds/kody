@@ -133,8 +133,8 @@ export function PricingRoute(handle: Handle) {
 						</p>
 						<p mix={css(planPriceNoteCss)}>$10/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
-							Higher daily volume, more running services, and persistent package
-							services.
+							Higher daily volume and more room for scheduled jobs and
+							workflows.
 						</p>
 						{renderPaidPlanCta(isSignedIn)}
 					</section>

@@ -830,7 +830,7 @@ export function CommunityDetailRoute(handle: Handle) {
 											{shownInstall.targetName}.
 											{shownInstall.existing
 												? ''
-												: ' Any jobs or auto-start services the package declares are now active.'}
+												: ' Any jobs the package declares are now scheduled.'}
 										</p>
 										<p>
 											<a
@@ -917,8 +917,8 @@ export function CommunityDetailRoute(handle: Handle) {
 													This package is not trusted: no admin has reviewed its
 													code, and it was written by another user. Installing
 													publishes it into your account and can activate its
-													scheduled jobs and services immediately. Only continue
-													if you accept that risk.
+													scheduled jobs immediately. Only continue if you
+													accept that risk.
 												</p>
 												<div mix={css(buttonRowCss)}>
 													<button

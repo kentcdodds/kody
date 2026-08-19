@@ -142,9 +142,9 @@ package publish checks to `packageStorage()` **at call sites**:
 - Emits `needsManual` for **parse failures** on scannable module files that
   mention `kody:runtime` and `storage`.
 - **Manifest gate:** when `package.json#kody` declares any non-empty `app`,
-  `services`, `jobs`, `subscriptions`, `webhooks`, or `retrievers` surface,
-  every ambient-storage candidate file gets `needsManual` — ambient `storage`
-  and `packageStorage()` use different bucket identities on those execution
+  `jobs`, `subscriptions`, `webhooks`, or `retrievers` surface, every
+  ambient-storage candidate file gets `needsManual` — ambient `storage` and
+  `packageStorage()` use different bucket identities on those execution
   surfaces, so automatic rewrite risks silent data repointing.
 
 ### `0002-static-first-invocation`

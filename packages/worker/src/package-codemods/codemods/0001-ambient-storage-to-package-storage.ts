@@ -419,7 +419,6 @@ function packageDeclaresNonExportExecutionSurface(
 	const record = kody as Record<string, unknown>
 	const surfaceKeys = [
 		'app',
-		'services',
 		'jobs',
 		'subscriptions',
 		'webhooks',

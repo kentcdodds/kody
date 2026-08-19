@@ -77,9 +77,8 @@ export const defaultOutboundFetchTimeoutMs = 60_000
 export const outboundFetchTimeoutHeadroomMs = 30_000
 
 /**
- * Hung-fetch cap when the sandbox itself is unbounded (persistent
- * services). Matches the workflow sandbox (270s) minus
- * {@link outboundFetchTimeoutHeadroomMs}.
+ * Hung-fetch cap when the sandbox itself is unbounded. Matches the
+ * workflow sandbox (270s) minus {@link outboundFetchTimeoutHeadroomMs}.
  */
 export const unboundedOutboundFetchTimeoutMs = 240_000
 
@@ -88,7 +87,7 @@ const unboundedExecutorTimeoutMs = 2_147_483_647
 /**
  * Outbound fetch deadline for a sandbox whose executor budget is
  * `executorTimeoutMs`. Short execute budgets keep the historic 60s cap;
- * workflow / service budgets raise it by the same 30s headroom so one slow
+ * workflow budgets raise it by the same 30s headroom so one slow
  * HTTP call (for example Cursor `createAgent`) can finish.
  */
 export function outboundFetchTimeoutMsForExecutor(executorTimeoutMs: number) {

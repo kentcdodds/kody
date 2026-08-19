@@ -65,7 +65,7 @@ response, and success volume is tracked separately for usage. **Failed**
 `execute` calls do appear, and execute calls that pass an `idempotencyKey` are
 recorded eagerly (including successes) so a client-side timeout can recover via
 `run_get` or a keyed retry. Every other surface (jobs, webhooks, package apps,
-services, workflows, exports, and so on) records both success and error.
+workflows, exports, and so on) records both success and error.
 
 If a successful one-off `execute` without a key is missing from Activity, that
 is expected — check the original tool result instead. See

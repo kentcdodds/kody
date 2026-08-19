@@ -362,6 +362,27 @@ test('parseAuthoredPackageJson rejects unsupported or invalid kody manifest exte
 	expect(() =>
 		parseAuthoredPackageJson({
 			content: JSON.stringify({
+				name: '@kentcdodds/discord',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'discord',
+					description: 'Discord package',
+					services: {
+						gateway: {
+							entry: './src/services/gateway.ts',
+						},
+					},
+				},
+			}),
+			manifestPath: 'package.json',
+		}),
+	).toThrow(/kody\.services is not a supported field/)
+
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
 				name: '@kentcdodds/discord-gateway',
 				exports: {
 					'.': './index.ts',

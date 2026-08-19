@@ -52,7 +52,7 @@ export type UsageEvent = {
 	eventType: UsageEventType
 	/**
 	 * Identifier of the metered entity when one exists (package id, job id,
-	 * workflow run id, service instance name, email message id, fetch host).
+	 * workflow run id, email message id, fetch host).
 	 */
 	entityId?: string | null
 	/** Wall-clock duration of the metered unit, in milliseconds. */

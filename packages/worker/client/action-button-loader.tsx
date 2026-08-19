@@ -9,7 +9,7 @@ import {
  * The stages a one-click community install actually walks through
  * (`installCommunityListing`): fork the snapshot into the viewer's account,
  * run the standard package checks over it, then refresh the saved-package
- * projection that wires up exports, jobs, and services.
+ * projection that wires up exports and jobs.
  */
 export const installProgressWords = [
 	'Forking',

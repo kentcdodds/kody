@@ -209,14 +209,14 @@ index; neither email nor stable user id enters the feed or event.
 `installCommunityListing` (one-click install) composes `forkCommunityListing`
 with `runRepoChecks` over the fork's rewritten snapshot files and, when checks
 pass, `refreshSavedPackageProjection` — the same projection step
-`repo_publish_session` ends with, so declared jobs are scheduled and `autoStart`
-services start immediately. When checks fail (typically cross-scope imports),
-the fork stays inert and the failing checks are returned for agent follow-up.
-The HTTP surface is `POST /community/:listingId/install.json` (authenticated);
-untrusted listings require `acknowledged_untrusted: true` or the handler
-responds `409`. There is intentionally **no** MCP capability for install: agents
-must go through `community_fork` + repo-session review, so a prompt-injected
-agent cannot silently activate community code.
+`repo_publish_session` ends with, so declared jobs are scheduled immediately.
+When checks fail (typically cross-scope imports), the fork stays inert and the
+failing checks are returned for agent follow-up. The HTTP surface is
+`POST /community/:listingId/install.json` (authenticated); untrusted listings
+require `acknowledged_untrusted: true` or the handler responds `409`. There is
+intentionally **no** MCP capability for install: agents must go through
+`community_fork` + repo-session review, so a prompt-injected agent cannot
+silently activate community code.
 
 ## MCP capabilities
 
