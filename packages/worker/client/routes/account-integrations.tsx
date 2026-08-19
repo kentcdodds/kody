@@ -39,6 +39,7 @@ import {
 } from '#client/routes/record-table.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import {
+	buildAddAccountPrompt,
 	buildCustomIntegrationSetupPrompt,
 	buildIntegrationSetupPrompt,
 	integrationProviderSuggestions,
@@ -913,6 +914,38 @@ export function AccountIntegrationsRoute(handle: Handle) {
 															</article>
 														)
 													})}
+													<div
+														data-testid="add-account-prompt"
+														mix={css({
+															display: 'grid',
+															gap: spacing.sm,
+															justifyItems: 'start',
+														})}
+													>
+														<p
+															mix={css({
+																...descriptionCss,
+																margin: 0,
+															})}
+														>
+															Need another account on this integration? Copy a
+															prompt — your agent can connect it without
+															replacing this one.
+														</p>
+														<CopyTextButton
+															value={buildAddAccountPrompt({
+																label: oauthAppTitle(selectedApp),
+																slug: selectedApp.slug,
+																provider: selectedApp.provider,
+																platform: isBuiltInApp(selectedApp),
+																connections: selectedApp.connections,
+															})}
+															idleLabel="Copy add-account prompt"
+															ariaLabel="Copy prompt to add another account"
+															variant="ghost"
+															size="sm"
+														/>
+													</div>
 												</div>
 											)}
 										</section>

@@ -952,6 +952,8 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(connectionResponse.status).toBe(200)
 	const connectionHtml = await readResponseText(connectionResponse)
 	expect(connectionHtml).toContain('1 account connected.')
+	expect(connectionHtml).toContain('data-testid="add-account-prompt"')
+	expect(connectionHtml).toContain('Copy add-account prompt')
 	expect(connectionHtml).toContain('>Reconnect<')
 	expect(connectionHtml).toContain('data-testid="provider-mark"')
 	expect(connectionHtml).toContain('data-testid="integration-advanced"')
@@ -1028,6 +1030,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(builtInHtml).toContain('data-testid="built-in-indicator"')
 	expect(builtInHtml).toContain('Provided by Kody')
 	expect(builtInHtml).toContain('2 accounts connected.')
+	expect(builtInHtml).toContain('data-testid="add-account-prompt"')
 	expect(builtInHtml).toContain('Needs setup')
 	expect(builtInHtml).toContain('>Connect<')
 	expect(builtInHtml).toContain(
