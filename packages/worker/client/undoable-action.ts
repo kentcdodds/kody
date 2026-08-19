@@ -37,7 +37,6 @@ export function createUndoableAction(
 	let timer: ReturnType<typeof setTimeout> | null = null
 	let commitFn: (() => void | Promise<void>) | null = null
 	let undoFn: (() => void | Promise<void>) | null = null
-	let committing = false
 
 	function clearTimer() {
 		if (timer === null) return
@@ -52,21 +51,16 @@ export function createUndoableAction(
 	}
 
 	async function commit(options?: { silent?: boolean }) {
-		if (!pending || committing) return
-		committing = true
+		if (!pending) return
 		clearTimer()
 		const fn = commitFn
 		clearPending()
 		if (!options?.silent) handle.update()
-		try {
-			await fn?.()
-		} finally {
-			committing = false
-		}
+		await fn?.()
 	}
 
 	async function undo() {
-		if (!pending || committing) return
+		if (!pending) return
 		clearTimer()
 		const fn = undoFn
 		clearPending()

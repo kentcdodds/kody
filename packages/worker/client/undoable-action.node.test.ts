@@ -73,6 +73,28 @@ test('undoable action commits after the timeout, undoes before it, and commits a
 		await vi.advanceTimersByTimeAsync(0)
 		expect(abortCommit).toHaveBeenCalledTimes(1)
 		expect(abortable.pending).toBeNull()
+
+		let releaseFirst: () => void = () => {}
+		const firstInFlight = new Promise<void>((resolve) => {
+			releaseFirst = resolve
+		})
+		const inFlightCommit = vi.fn(() => firstInFlight)
+		const nextUndo = vi.fn()
+		await undoable.start({
+			message: 'Disconnected first in-flight.',
+			onCommit: inFlightCommit,
+		})
+		void undoable.commit()
+		await Promise.resolve()
+		expect(inFlightCommit).toHaveBeenCalledTimes(1)
+		await undoable.start({
+			message: 'Disconnected next.',
+			onCommit: vi.fn(),
+			onUndo: nextUndo,
+		})
+		await undoable.undo()
+		expect(nextUndo).toHaveBeenCalledTimes(1)
+		releaseFirst()
 	} finally {
 		vi.useRealTimers()
 	}

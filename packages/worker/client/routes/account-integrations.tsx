@@ -683,11 +683,15 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	}
 
 	function restoreSnapshot(snapshot: IntegrationsSnapshot) {
+		if (handle.signal.aborted) return
 		integrations = snapshot.integrations
 		apps = snapshot.apps
 		message = null
 		handle.update()
-		if (getCurrentHref() !== snapshot.href) {
+		if (
+			integrationsRoute.isRoutePath(getCurrentHref()) &&
+			getCurrentHref() !== snapshot.href
+		) {
 			navigate(snapshot.href)
 		}
 	}
