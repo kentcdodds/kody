@@ -548,9 +548,9 @@ Configure these GitHub Actions secrets and variables for workflows:
   to the worker as `CACHE_ACCESS_TOKEN` and create the `kody-nx-cache` R2 bucket
   with a 14-day object lifecycle. Use the same value in Cursor Cloud Agent
   environments so agent `validate` / `test:push` can populate CI hits. Validate
-  jobs probe `/health` before setting the server URL so an undeployed worker
-  does not fail Nx. Leave unset to run CI with local `.nx` + `actions/cache`
-  only.)
+  jobs probe `/health` and an authorized cache GET before setting the server URL
+  so an undeployed worker or unsynced token does not fail Nx. Leave unset to run
+  CI with local `.nx` + `actions/cache` only.)
 - **Repository variables** `SENTRY_ORG` and `SENTRY_PROJECT` (optional; Sentry
   organization and project **slugs** for source map upload — same values as in
   the Sentry wizard’s `--org` / `--project` flags)

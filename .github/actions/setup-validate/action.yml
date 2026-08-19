@@ -48,14 +48,29 @@ runs:
       if: env.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN != ''
       shell: bash
       run: |
+        set -euo pipefail
         server='https://nx-cache.kody.codes'
-        if curl -fsS --max-time 5 "$server/health" >/dev/null; then
-          echo "NX_SELF_HOSTED_REMOTE_CACHE_SERVER=$server" >> "$GITHUB_ENV"
-          echo "Nx remote cache enabled ($server)"
-        else
+        if ! curl -fsS --max-time 5 "$server/health" >/dev/null; then
           echo "Nx remote cache skipped: $server/health is unreachable."
           echo "Validate will use local .nx + actions/cache until the worker is deployed."
+          exit 0
         fi
+        # Nx treats a configured-but-unauthorized cache as fatal. Probe a
+        # missing hash so a rotated GitHub secret that has not been synced
+        # to the worker falls back to local cache instead of failing validate.
+        probe_status="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+          --header "Authorization: Bearer ${NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN}" \
+          "$server/v1/cache/0000000000000000" || true)"
+        case "$probe_status" in
+          200|404)
+            echo "NX_SELF_HOSTED_REMOTE_CACHE_SERVER=$server" >> "$GITHUB_ENV"
+            echo "Nx remote cache enabled ($server)"
+            ;;
+          *)
+            echo "Nx remote cache skipped: $server rejected cache auth (HTTP ${probe_status:-curl-error})."
+            echo "Validate will use local .nx + actions/cache until the worker secret matches."
+            ;;
+        esac
 
     - name: 📥 Install Dependencies
       shell: bash

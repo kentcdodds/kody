@@ -26,10 +26,11 @@ spec and stores artifacts in R2. Clients set
 
 Remote hits require the access token in GitHub Actions and in Cursor Cloud Agent
 environments; without it, tasks run locally as before. Validate jobs probe
-`GET /health` before setting the server URL because Nx treats an unreachable
-self-hosted cache as a fatal error. First PUT wins (`409` on overwrite) so a
-poisoned key cannot replace a stored artifact. R2 expires `v1/` objects 14 days
-after write (Age, not last access — GET does not refresh mtime) and aborts
-incomplete multipart uploads after 1 day. The cache worker is contributor infra,
-not a product primitive, and holds no user data. Revisit only if Nx Cloud
-becomes mandatory for a feature we need, or if the HTTP spec changes.
+`GET /health` and an authorized `GET /v1/cache/{hash}` before setting the server
+URL because Nx treats an unreachable or unauthorized self-hosted cache as a
+fatal error. First PUT wins (`409` on overwrite) so a poisoned key cannot
+replace a stored artifact. R2 expires `v1/` objects 14 days after write (Age,
+not last access — GET does not refresh mtime) and aborts incomplete multipart
+uploads after 1 day. The cache worker is contributor infra, not a product
+primitive, and holds no user data. Revisit only if Nx Cloud becomes mandatory
+for a feature we need, or if the HTTP spec changes.
