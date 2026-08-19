@@ -110,8 +110,8 @@ curl -X POST \
 	}'
 ```
 
-Request JSON `source` is an optional caller label for logs and idempotency
-metadata. It does not gate authentication. For Kent's YouTube Worker, callers
+Request JSON `source` is an optional caller label for logs. It does not gate
+authentication or determine idempotency. For Kent's YouTube Worker, callers
 typically send `"source": "youtube-websub-proxy"`.
 
 Prefer canonical URL metadata from package discovery over manual string

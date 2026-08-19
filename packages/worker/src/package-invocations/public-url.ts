@@ -18,7 +18,7 @@ export type ExternalPackageInvocationDescriptor = {
 }
 
 const sourceGuidance =
-	'JSON "source" is an optional caller label for logs and idempotency metadata. It does not gate authentication.'
+	'JSON "source" is an optional caller label for logs. It does not gate authentication or determine idempotency.'
 
 function buildPackageInvocationTokenSetupExportName(exportName: string) {
 	const normalized = normalizePackageInvocationExportName(exportName)

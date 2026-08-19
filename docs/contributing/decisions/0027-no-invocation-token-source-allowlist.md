@@ -18,8 +18,8 @@ request for logs. The token column added a second, weaker copy of the same name.
 ## Decision
 
 Invocation tokens do not store or enforce a source allowlist. Request JSON
-`source` remains an optional label for logs and idempotency metadata. Export
-allowlists stay. The 0026 package-ownership decision is unchanged.
+`source` remains an optional label for logs. Export allowlists stay. The 0026
+package-ownership decision is unchanged.
 
 ## Consequences
 

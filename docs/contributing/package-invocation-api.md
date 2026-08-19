@@ -142,8 +142,8 @@ Fields:
 
 - `params` — JSON object passed as the first argument to the package export
 - `idempotencyKey` — required stable key for replay protection
-- `source` — optional caller label for logs and idempotency metadata. It does
-  not gate authentication.
+- `source` — optional caller label for logs. It does not gate authentication or
+  determine idempotency.
 - `topic` — optional event topic label for downstream logic and logs
 
 ## Idempotency
