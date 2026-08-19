@@ -29,3 +29,8 @@ subscriptions, and package-owned storage.
 
 Integrations that require a continuously connected daemon need an external
 deployment and communicate with Kody through supported integration surfaces.
+
+Leftover `kind = 'service'` `user_storage_buckets` rows stay until the
+`storage_bucket_estimate_backfill` lane clears the matching StorageRunner
+Durable Objects and then deletes the inventory. Account export and deletion
+keep discovering those storage ids until that purge succeeds.

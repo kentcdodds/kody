@@ -2,7 +2,8 @@
  * Non-destructive schema for `user_storage_buckets` in workers-unit tests,
  * where the D1 database starts empty and each suite provisions the tables it
  * needs. Mirrors the squashed baseline plus
- * `0003-repo-session-storage-buckets.sql`.
+ * `0003-repo-session-storage-buckets.sql` (CHECK still allows retired
+ * `service` so leftover inventory rows can be seeded and purged).
  */
 export async function ensureUserStorageBucketsTestSchema(db: D1Database) {
 	await db
@@ -10,7 +11,7 @@ export async function ensureUserStorageBucketsTestSchema(db: D1Database) {
 			`CREATE TABLE IF NOT EXISTS user_storage_buckets (
 	user_id TEXT NOT NULL,
 	storage_id TEXT NOT NULL,
-	kind TEXT NOT NULL CHECK (kind IN ('job', 'package', 'execute', 'repo_session', 'unknown')),
+	kind TEXT NOT NULL CHECK (kind IN ('job', 'package', 'service', 'execute', 'repo_session', 'unknown')),
 	created_at TEXT NOT NULL,
 	last_seen_at TEXT NOT NULL,
 	estimated_bytes INTEGER,

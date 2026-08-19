@@ -1,3 +1,4 @@
+import { purgeRetiredServiceStorageBuckets } from './purge-retired-service-storage.ts'
 import {
 	listStorageBucketsMissingEstimates,
 	registerMissingRepoSessionStorageBuckets,
@@ -17,6 +18,10 @@ import { readInventoriedStorageBucketEstimatedBytes } from '#worker/storage-runn
  * retried on a later sweep; it never blocks the rest of the batch. The lane
  * uses a short retry policy (the write path carries the strong one) because
  * sweep retries are free.
+ *
+ * The same tick also clears leftover retired `kind = 'service'` StorageRunner
+ * Durable Objects and then deletes those inventory rows. D1 cannot purge
+ * Durable Objects, so migration 0016 keeps the rows until this succeeds.
  */
 
 export const storageBucketEstimateBackfillBatchSize = 24
@@ -29,6 +34,15 @@ export async function backfillStorageBucketEstimates(input: {
 	batchSize?: number
 }): Promise<{ scanned: number; updated: number; failed: number }> {
 	const batchSize = input.batchSize ?? storageBucketEstimateBackfillBatchSize
+	// Leftover kind='service' inventory is the only map to retired
+	// StorageRunner DOs. Clear those objects, then drop the rows. Failures
+	// stay inventoried so export and account deletion still find them.
+	await purgeRetiredServiceStorageBuckets({
+		env: input.env,
+		limit: batchSize,
+	}).catch((error: unknown) => {
+		console.warn('retired-service-storage-purge-failed', error)
+	})
 	// Recover active repo sessions whose awaited open-time registration lost
 	// its D1 write (registration is deliberately non-blocking for the
 	// session). Race-safe: the statement filters on active status, so it can

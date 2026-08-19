@@ -334,7 +334,7 @@ export async function listStorageBucketsMissingEstimates(input: {
 		.prepare(
 			`SELECT user_id AS userId, storage_id AS storageId, kind
 			FROM user_storage_buckets
-			WHERE estimated_bytes IS NULL
+			WHERE estimated_bytes IS NULL AND kind <> 'service'
 			ORDER BY last_seen_at DESC, user_id ASC, storage_id ASC
 			LIMIT ?`,
 		)
@@ -342,9 +342,13 @@ export async function listStorageBucketsMissingEstimates(input: {
 		.all<{
 			userId: string
 			storageId: string
-			kind: StorageBucketKind
+			kind: string
 		}>()
-	return result.results ?? []
+	return (result.results ?? []).map((row) => ({
+		userId: row.userId,
+		storageId: row.storageId,
+		kind: normalizeInventoriedStorageBucketKind(row.kind),
+	}))
 }
 
 /**
@@ -483,12 +487,12 @@ export async function listUserStorageBucketEstimates(input: {
 		.bind(input.userId)
 		.all<{
 			storageId: string
-			kind: StorageBucketKind
+			kind: string
 			estimatedBytes: number | null
 		}>()
 	return (result.results ?? []).map((row) => ({
 		storageId: row.storageId,
-		kind: row.kind,
+		kind: normalizeInventoriedStorageBucketKind(row.kind),
 		estimatedBytes:
 			typeof row.estimatedBytes === 'number' && row.estimatedBytes >= 0
 				? row.estimatedBytes
@@ -517,6 +521,27 @@ export function storageBucketKindFromStorageId(
 	if (storageId.startsWith('exec:')) return 'execute'
 	if (storageId.startsWith('package:')) return 'package'
 	return 'unknown'
+}
+
+/**
+ * Map an inventoried `kind` onto the live StorageRunner / RepoSession
+ * dispatch union. Leftover retired `service` rows stay in D1 until their
+ * Durable Objects are cleared; estimate reads treat them as StorageRunner
+ * (`unknown`) so entitlement and export probes do not throw.
+ */
+function normalizeInventoriedStorageBucketKind(
+	kind: string,
+): StorageBucketKind {
+	switch (kind) {
+		case 'job':
+		case 'package':
+		case 'execute':
+		case 'repo_session':
+		case 'unknown':
+			return kind
+		default:
+			return 'unknown'
+	}
 }
 
 /**
