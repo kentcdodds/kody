@@ -74,10 +74,11 @@
 				},
 			],
 		},
-		// Do not add deleted_classes for PackageServiceInstance in the same
-		// deploy that drops its remote binding. Production still has the
-		// transferred binding (error 10061). Re-add tag v2 after this
-		// binding-only deploy lands.
+		// Production still has the transferred PackageServiceInstance
+		// binding (error 10061). Do not add deleted_classes here until
+		// after this binding-only deploy lands. Preview keeps tag v2
+		// because a fresh worker applies v1 new_sqlite_classes and
+		// cannot create an unexported class (error 10070).
 	],
 	"observability": {
 		"enabled": true,
@@ -267,8 +268,10 @@
 						"PackageServiceInstance",
 					],
 				},
-				// Keep preview in lockstep with production: no v2
-				// deleted_classes until the production binding is gone.
+				{
+					"tag": "v2",
+					"deleted_classes": ["PackageServiceInstance"],
+				},
 			],
 			"worker_loaders": [
 				{

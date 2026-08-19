@@ -35,8 +35,10 @@ Leftover `kind = 'service'` `user_storage_buckets` rows stay until the
 Durable Objects and then deletes the inventory. Account export and deletion keep
 discovering those storage ids until that purge succeeds.
 
-Deleting `PackageServiceInstance` on `kody-runtime` is two production deploys.
+Deleting `PackageServiceInstance` on production `kody-runtime` is two deploys.
 The class arrived through a `transferred_classes` migration, so Cloudflare still
 has a remote binding after the source binding is gone. A same-deploy
 `deleted_classes` migration fails with error 10061. Drop the remote binding
-first, then apply runtime-worker tag `v2` `deleted_classes`.
+first, then apply top-level runtime-worker tag `v2` `deleted_classes`. Preview
+keeps `v2` because a fresh worker applies `v1` `new_sqlite_classes` and cannot
+create an unexported class (error 10070).

@@ -174,9 +174,10 @@ rejects a same-deploy `deleted_classes` migration while that binding still
 exists (error 10061). Drop the binding first, then add the `deleted_classes`
 migration and its `tools/ci/do-deletion-allowlist.json` entry on a later deploy.
 
-`PackageServiceInstance` is in that window: production still has the transferred
-binding, so runtime-worker tag `v2` is deferred until after the binding-only
-deploy.
+`PackageServiceInstance` is in that window on production: the transferred
+binding is still present, so top-level runtime-worker tag `v2` is deferred until
+after the binding-only deploy. Preview keeps `v2` because a fresh worker applies
+`v1` `new_sqlite_classes` and cannot create an unexported class (error 10070).
 
 ## Rollback
 
