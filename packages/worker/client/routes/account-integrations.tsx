@@ -263,8 +263,11 @@ function buildConnectOauthHref(input: {
 	appSlug?: string
 }) {
 	const params = new URLSearchParams({ provider: input.name })
+	const appSlug = input.appSlug?.trim()
 	if (input.platform) {
-		params.set('platform', input.appSlug?.trim() || '1')
+		params.set('platform', appSlug || '1')
+	} else if (appSlug) {
+		params.set('app', appSlug)
 	}
 	return `/connect/oauth?${params.toString()}`
 }
@@ -289,10 +292,8 @@ function AddAccountForm(
 	}>,
 ) {
 	let nameError: string | null = null
-	let name = nextSuggestedConnectionName(
-		handle.props.slug,
-		handle.props.existingNames,
-	)
+	let editedName: string | null = null
+	let boundSlug = handle.props.slug
 
 	function connectHref(connectionName: string) {
 		return buildConnectOauthHref({
@@ -303,10 +304,16 @@ function AddAccountForm(
 	}
 
 	return () => {
+		if (handle.props.slug !== boundSlug) {
+			boundSlug = handle.props.slug
+			editedName = null
+			nameError = null
+		}
 		const suggested = nextSuggestedConnectionName(
 			handle.props.slug,
 			handle.props.existingNames,
 		)
+		const name = editedName ?? suggested
 		if (!handle.props.open) {
 			return (
 				<a
@@ -360,7 +367,7 @@ function AddAccountForm(
 						{...passwordManagerIgnoreProps}
 						mix={[
 							on('input', (event) => {
-								name = event.currentTarget.value
+								editedName = event.currentTarget.value
 								nameError = null
 								handle.update()
 							}),

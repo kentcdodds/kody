@@ -318,6 +318,19 @@ test('endpoint-incomplete user records defer to an enabled built-in of the same 
 	)
 	expect(noFallback?.clientId).toBe('user-linear-client')
 	expect(noFallback?.platform ?? false).toBe(false)
+
+	const pinnedByo = await loadAccountIntegrationByName(
+		env,
+		fakeUser(userId),
+		'work',
+		{ appSlug: 'github' },
+	)
+	expect(pinnedByo).toMatchObject({
+		name: 'work',
+		appSlug: 'github',
+		clientId: 'user-github-client',
+	})
+	expect(pinnedByo?.platform ?? false).toBe(false)
 })
 
 test('loadAccountIntegrationsData includes OAuth apps with their connections', async () => {

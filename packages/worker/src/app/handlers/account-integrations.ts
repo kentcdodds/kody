@@ -1,14 +1,12 @@
 import { z } from 'zod'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import {
-	normalizeProviderKey,
-	safeParseHost,
-} from '@kody-internal/shared/url-hosts.ts'
+import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import {
 	hasAlternativeBuiltInApp,
 	hasStoredConnectClientSecret,
 	loadAccountIntegrationByName,
+	readConnectOauthLookupOptions,
 	loadAccountIntegrationsData,
 	loadExistingConnectionSummary,
 	loadAccountOauthAppBySlug,
@@ -84,18 +82,12 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 					// `platform=1` forces the built-in of the same name;
 					// `platform=<slug>` connects that built-in under a
 					// different connection name (rename-instead-of-replace).
-					const platformParam = searchParams.get('platform')?.trim()
+					// `app=<slug>` reuses a saved bring-your-own app under `name`.
 					const integration = await loadAccountIntegrationByName(
 						env,
 						user,
 						name,
-						{
-							preferPlatform: platformParam === '1',
-							platformSlug:
-								platformParam && platformParam !== '1'
-									? (normalizeProviderKey(platformParam) ?? undefined)
-									: undefined,
-						},
+						readConnectOauthLookupOptions(searchParams),
 					)
 					const [builtInAvailable, existingConnection, hasStoredClientSecret] =
 						await Promise.all([
