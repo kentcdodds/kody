@@ -65,16 +65,16 @@ test('renderProfileOgImage returns valid PNG bytes with avatar, placeholder, and
 			}
 			throw new Error(`unexpected fetch: ${url}`)
 		})
-	const avatarDataUri = await sampleAvatarDataUri('kentcdodds')
-	const sharedCard = {
-		username: 'kentcdodds',
-		bio: 'Husband, 6x Dad, Latter-day Saint, Dev, Educator.',
-		followerCount: 28,
-		publicPackageCount: 31,
-		listingCount: 26,
-		avatarDataUri,
-	} as const
 	try {
+		const avatarDataUri = await sampleAvatarDataUri('kentcdodds')
+		const sharedCard = {
+			username: 'kentcdodds',
+			bio: 'Husband, 6x Dad, Latter-day Saint, Dev, Educator.',
+			followerCount: 28,
+			publicPackageCount: 31,
+			listingCount: 26,
+			avatarDataUri,
+		} as const
 		const withEmoji = await renderProfileOgImage({
 			...sharedCard,
 			displayName: 'Kent C. Dodds 🐨',
@@ -85,7 +85,10 @@ test('renderProfileOgImage returns valid PNG bytes with avatar, placeholder, and
 		})
 		expectPngBytes(withEmoji)
 		expectPngBytes(withoutEmoji)
-		expect(fetchSpy).toHaveBeenCalledWith(twemojiSvgUrl('1f428'))
+		expect(fetchSpy).toHaveBeenCalledWith(
+			twemojiSvgUrl('1f428'),
+			expect.objectContaining({ signal: expect.any(AbortSignal) }),
+		)
 		expect(Buffer.from(withEmoji).equals(Buffer.from(withoutEmoji))).toBe(false)
 	} finally {
 		fetchSpy.mockRestore()

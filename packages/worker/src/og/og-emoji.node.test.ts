@@ -43,30 +43,35 @@ test('loadTwemojiDataUri fetches Twemoji SVG, caches, retries FE0F names, and ig
 			throw new Error(`unexpected fetch: ${url}`)
 		})
 
-	const koala = await loadTwemojiDataUri('🐨')
-	expect(koala.startsWith('data:image/svg+xml;base64,')).toBe(true)
-	expect(fetchSpy).toHaveBeenCalledTimes(1)
+	try {
+		const koala = await loadTwemojiDataUri('🐨')
+		expect(koala.startsWith('data:image/svg+xml;base64,')).toBe(true)
+		expect(fetchSpy).toHaveBeenCalledTimes(1)
+		expect(fetchSpy.mock.calls[0]?.[1]).toEqual(
+			expect.objectContaining({ signal: expect.any(AbortSignal) }),
+		)
 
-	const koalaAgain = await loadTwemojiDataUri('🐨')
-	expect(koalaAgain).toBe(koala)
-	expect(fetchSpy).toHaveBeenCalledTimes(1)
+		const koalaAgain = await loadTwemojiDataUri('🐨')
+		expect(koalaAgain).toBe(koala)
+		expect(fetchSpy).toHaveBeenCalledTimes(1)
 
-	const heart = await loadTwemojiDataUri('❤️')
-	expect(heart.startsWith('data:image/svg+xml;base64,')).toBe(true)
-	expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual([
-		twemojiSvgUrl('1f428'),
-		twemojiSvgUrl('2764'),
-		twemojiSvgUrl('2764-fe0f'),
-	])
+		const heart = await loadTwemojiDataUri('❤️')
+		expect(heart.startsWith('data:image/svg+xml;base64,')).toBe(true)
+		expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual([
+			twemojiSvgUrl('1f428'),
+			twemojiSvgUrl('2764'),
+			twemojiSvgUrl('2764-fe0f'),
+		])
 
-	expect(await loadAdditionalOgAsset('emoji', '🐨')).toBe(koala)
-	expect(await loadAdditionalOgAsset('unknown', '中')).toBe('')
+		expect(await loadAdditionalOgAsset('emoji', '🐨')).toBe(koala)
+		expect(await loadAdditionalOgAsset('unknown', '中')).toBe('')
 
-	fetchSpy.mockImplementation(async () => {
-		throw new Error('network down')
-	})
-	expect(await loadTwemojiDataUri('🔥')).toBe('')
-
-	fetchSpy.mockRestore()
-	resetTwemojiCache()
+		fetchSpy.mockImplementation(async () => {
+			throw new Error('network down')
+		})
+		expect(await loadTwemojiDataUri('🔥')).toBe('')
+	} finally {
+		fetchSpy.mockRestore()
+		resetTwemojiCache()
+	}
 })

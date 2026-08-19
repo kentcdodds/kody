@@ -7,6 +7,8 @@ import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 
 const TWEMOJI_SVG_BASE =
 	'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/svg'
+/** Bound the CDN hop so a hung jsDelivr request cannot stall OG rendering. */
+const TWEMOJI_FETCH_TIMEOUT_MS = 5_000
 
 const dataUriByEmoji = new Map<string, string>()
 
@@ -41,7 +43,9 @@ function svgToDataUri(svg: string): string {
 }
 
 async function fetchTwemojiSvg(code: string): Promise<string | null> {
-	const response = await fetch(twemojiSvgUrl(code))
+	const response = await fetch(twemojiSvgUrl(code), {
+		signal: AbortSignal.timeout(TWEMOJI_FETCH_TIMEOUT_MS),
+	})
 	if (!response.ok) return null
 	const svg = await response.text()
 	return svg.includes('<svg') ? svg : null
