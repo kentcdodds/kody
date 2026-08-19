@@ -139,9 +139,9 @@ body::after {
 }
 
 body::before {
-	top: -20%;
-	right: 25%;
-	transform: translateX(50%);
+	top: -28%;
+	left: 25%;
+	transform: translateX(-50%);
 }
 
 .reveal {
