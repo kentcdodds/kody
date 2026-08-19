@@ -11,9 +11,11 @@ category: platform
 # Package invocation token setup guide
 
 Use the hosted **package details** page when an external trusted client needs to
-call one Kody package export through the package invocation HTTP API. The agent
-may construct a prefilled setup URL, but the agent must never see, generate for
-chat, or place the raw bearer token in the URL.
+call one Kody package export through the package invocation HTTP API. The create
+form lists **Any export (`*`)** plus each export from the package manifest.
+Setup query params prefill that selection. The agent may construct a prefilled
+setup URL, but the agent must never see, generate for chat, or place the raw
+bearer token in the URL.
 
 For code that runs inside Kody, never use bearer tokens: statically import the
 target package (`kody:@scope/package/export`) when its name is known when the
@@ -73,12 +75,12 @@ Repeat params or comma-separate values for list fields. The form also accepts
 common snake_case and kebab-case aliases so agents can construct URLs from API
 field names without extra translation.
 
-| Param                               | Required | Description                                                                                         |
-| ----------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `newToken`                          | yes      | Set to `1` to open the create form on this package.                                                 |
-| `name`                              | no       | Human-readable token name.                                                                          |
-| `exportNames` / `exportName`        | no       | Package export names. `dispatch-event` is normalized to `./dispatch-event`; `*` allows all exports. |
-| `export_names`, `export-names`, etc | no       | Snake_case and kebab-case aliases are accepted for the fields above.                                |
+| Param                               | Required | Description                                                                                                      |
+| ----------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `newToken`                          | yes      | Set to `1` to open the create form on this package.                                                              |
+| `name`                              | no       | Human-readable token name.                                                                                       |
+| `exportNames` / `exportName`        | no       | Package export names to preselect. `dispatch-event` is normalized to `./dispatch-event`; `*` selects Any export. |
+| `export_names`, `export-names`, etc | no       | Snake_case and kebab-case aliases are accepted for the fields above.                                             |
 
 ## Invocation URL format
 
@@ -136,10 +138,11 @@ they speak MCP.
    metadata out of the browser UI unless the capability response is
    insufficient.
 3. Generate an `/account/packages/<packageId>?newToken=1` URL with `name` and
-   export scope.
-4. Ask the user to open the URL, paste their locally generated raw token into
-   the Raw token field, or click **Generate** and copy/deliver the generated
-   value before creating the token.
+   export scope. Those query params prefill the create form: `exportNames`
+   checks the matching export boxes, and `*` checks **Any export**.
+4. Ask the user to open the URL, confirm the export selection, paste their
+   locally generated raw token into the Raw token field, or click **Generate**
+   and copy/deliver the generated value before creating the token.
    - For rotation, ask the user to open the package details page, select the
      token, and paste or generate the new raw token.
    - The external service or secret store must receive the exact raw value that

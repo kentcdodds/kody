@@ -6,6 +6,7 @@ import {
 	type AccountPackagesLoaderData,
 	type AccountPackagesSort,
 } from '#universal/loader-data.ts'
+import { listPackageManifestExportNames } from '#universal/package-token-export-selection.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
@@ -17,6 +18,7 @@ import {
 	getSavedPackageById,
 	searchSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
+import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -94,19 +96,51 @@ function toToken(token: PackageInvocationTokenRecord): AccountPackageToken {
 	}
 }
 
+async function loadPackageExportNames(input: {
+	env: Env
+	requestUrl: string
+	userId: string
+	sourceId: string
+}): Promise<Array<string> | null> {
+	try {
+		const loaded = await loadPackageManifestBySourceId({
+			env: input.env,
+			baseUrl: getAppBaseUrl({
+				env: input.env,
+				requestUrl: input.requestUrl,
+			}),
+			userId: input.userId,
+			sourceId: input.sourceId,
+		})
+		return listPackageManifestExportNames(loaded.manifest.exports)
+	} catch {
+		return null
+	}
+}
+
 async function toDetail(input: {
-	db: D1Database
+	env: Env
+	requestUrl: string
 	userId: string
 	record: SavedPackageRecord
 }): Promise<AccountPackageDetail> {
-	const tokens = await listPackageInvocationTokensByPackageId({
-		db: input.db,
-		userId: input.userId,
-		packageId: input.record.id,
-	})
+	const [tokens, exports] = await Promise.all([
+		listPackageInvocationTokensByPackageId({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			packageId: input.record.id,
+		}),
+		loadPackageExportNames({
+			env: input.env,
+			requestUrl: input.requestUrl,
+			userId: input.userId,
+			sourceId: input.record.sourceId,
+		}),
+	])
 	return {
 		...toListItem(input.record),
 		searchText: input.record.searchText,
+		exports,
 		tokens: tokens.map(toToken),
 	}
 }
@@ -159,7 +193,8 @@ export async function loadAccountPackagesData(input: {
 		packages: items.map(toListItem),
 		selectedPackage: selectedRecord
 			? await toDetail({
-					db: input.env.APP_DB,
+					env: input.env,
+					requestUrl: input.request.url,
 					userId,
 					record: selectedRecord,
 				})

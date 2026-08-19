@@ -6,6 +6,14 @@ import {
 	type AccountPackageToken,
 	type AccountPackagesLoaderData,
 } from '#universal/loader-data.ts'
+import {
+	applyPackageTokenExportSelection,
+	formatPackageTokenExportChoiceLabel,
+	isPackageTokenWildcardSelected,
+	listPackageTokenExportChoices,
+	packageTokenWildcardExport,
+	parsePackageTokenExportSelection,
+} from '#universal/package-token-export-selection.ts'
 import { css, type Handle } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
@@ -32,17 +40,23 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import {
 	accountInputCss,
-	accountTextareaCss,
 	TimestampValue,
 } from './account-management-components.tsx'
 
 const accountPackagesApiPath = '/account/packages.json'
-const wildcardScope = '*'
+
+const exportChoiceRowCss = {
+	display: 'flex',
+	alignItems: 'flex-start',
+	gap: spacing.sm,
+	color: colors.text,
+	fontSize: typography.fontSize.sm,
+}
 
 type TokenEditorState = {
 	name: string
 	rawToken: string
-	exportNamesText: string
+	exportNames: Array<string>
 }
 
 export function readPackageTokenQuery(href: string) {
@@ -55,17 +69,21 @@ export function readPackageTokenQuery(href: string) {
 
 export function createTokenEditorStateFromHref(href: string): TokenEditorState {
 	const params = new URL(href, 'http://localhost').searchParams
-	return {
-		name: readTrimmedParam(params, 'name') ?? '',
-		rawToken: '',
-		exportNamesText: readCommaListParams(params, [
+	const exportNames = parsePackageTokenExportSelection(
+		readCommaListParams(params, [
 			'exportName',
 			'exportNames',
 			'export_name',
 			'export_names',
 			'export-name',
 			'export-names',
-		]).join('\n'),
+		]),
+	)
+	return {
+		name: readTrimmedParam(params, 'name') ?? '',
+		rawToken: '',
+		exportNames:
+			exportNames.length > 0 ? exportNames : [packageTokenWildcardExport],
 	}
 }
 
@@ -73,7 +91,7 @@ function createEmptyEditorState(): TokenEditorState {
 	return {
 		name: '',
 		rawToken: '',
-		exportNamesText: '',
+		exportNames: [packageTokenWildcardExport],
 	}
 }
 
@@ -83,7 +101,7 @@ function createEditorStateFromToken(
 	return {
 		name: token.name,
 		rawToken: '',
-		exportNamesText: token.exportNames.join('\n'),
+		exportNames: parsePackageTokenExportSelection(token.exportNames),
 	}
 }
 
@@ -97,16 +115,9 @@ function generatePackageInvocationRawToken() {
 	return `kody_${bytesToBase64Url(bytes)}`
 }
 
-function parseListText(value: string) {
-	return value
-		.split(/[\n,]/)
-		.map((entry) => entry.trim())
-		.filter((entry) => entry.length > 0)
-}
-
 function formatScope(values: Array<string>) {
 	if (values.length === 0) return 'None'
-	if (values.includes(wildcardScope)) return 'Any export'
+	if (isPackageTokenWildcardSelected(values)) return 'Any export'
 	return values.join(', ')
 }
 
@@ -198,6 +209,13 @@ export function AccountPackageTokens(
 		const invocationUrl = username
 			? `${invocationUrlOrigin}/@${username}/api/package-invocations/${packageDetail.kodyId}/<exportName>`
 			: ''
+		const exportChoices = listPackageTokenExportChoices({
+			packageExports: packageDetail.exports,
+			selected: editorState.exportNames,
+		})
+		const wildcardSelected = isPackageTokenWildcardSelected(
+			editorState.exportNames,
+		)
 
 		return (
 			<section
@@ -408,7 +426,7 @@ export function AccountPackageTokens(
 											id: selectedToken?.id,
 											name: editorState.name,
 											rawToken: editorState.rawToken,
-											exportNames: parseListText(editorState.exportNamesText),
+											exportNames: editorState.exportNames,
 										})
 										saveState = 'idle'
 										messageTone = 'info'
@@ -451,6 +469,10 @@ export function AccountPackageTokens(
 						</div>
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Name</span>
+							<p mix={css(descriptionCss)}>
+								Human-readable label for this token. Shown in the list; not sent
+								to callers.
+							</p>
 							<input
 								value={editorState.name}
 								mix={[
@@ -471,6 +493,11 @@ export function AccountPackageTokens(
 							<span mix={css(fieldLabelCss)}>
 								{query.isCreating ? 'Raw token' : 'New raw token (optional)'}
 							</span>
+							<p mix={css(descriptionCss)}>
+								{query.isCreating
+									? 'Paste a high-entropy secret or click Generate. Kody stores only the hash and will not show this value again after you save.'
+									: 'Leave blank to keep the current secret. Paste or generate a new value to rotate.'}
+							</p>
 							<div
 								mix={css({
 									display: 'grid',
@@ -532,25 +559,68 @@ export function AccountPackageTokens(
 								</button>
 							</div>
 						</label>
-						<label mix={css(fieldCss)}>
+						<div mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Exports</span>
-							<textarea
-								value={editorState.exportNamesText}
-								placeholder={'./process-video\n*'}
-								mix={[
-									css(accountTextareaCss),
-									on('input', (event) => {
-										if (event.currentTarget instanceof HTMLTextAreaElement) {
+							<p mix={css(descriptionCss)}>
+								Choose which package exports this token may invoke.
+							</p>
+							{packageDetail.exports === null ? (
+								<p mix={css(descriptionCss)}>
+									Package exports could not be loaded. You can still choose Any
+									export, or keep export names already on this token.
+								</p>
+							) : null}
+							<label mix={css(exportChoiceRowCss)}>
+								<input
+									type="checkbox"
+									checked={wildcardSelected}
+									mix={on('change', (event) => {
+										if (!(event.currentTarget instanceof HTMLInputElement)) {
+											return
+										}
+										editorState = {
+											...editorState,
+											exportNames: applyPackageTokenExportSelection({
+												current: editorState.exportNames,
+												exportName: packageTokenWildcardExport,
+												selected: event.currentTarget.checked,
+											}),
+										}
+										handle.update()
+									})}
+								/>
+								<span>Any export (`*`)</span>
+							</label>
+							<p mix={css(descriptionCss)}>
+								All current and future exports on this package.
+							</p>
+							{exportChoices.map((exportName) => (
+								<label key={exportName} mix={css(exportChoiceRowCss)}>
+									<input
+										type="checkbox"
+										checked={
+											!wildcardSelected &&
+											editorState.exportNames.includes(exportName)
+										}
+										mix={on('change', (event) => {
+											if (!(event.currentTarget instanceof HTMLInputElement)) {
+												return
+											}
 											editorState = {
 												...editorState,
-												exportNamesText: event.currentTarget.value,
+												exportNames: applyPackageTokenExportSelection({
+													current: editorState.exportNames,
+													exportName,
+													selected: event.currentTarget.checked,
+												}),
 											}
 											handle.update()
-										}
-									}),
-								]}
-							/>
-						</label>
+										})}
+									/>
+									<span>{formatPackageTokenExportChoiceLabel(exportName)}</span>
+								</label>
+							))}
+						</div>
 						<div
 							mix={css({ display: 'flex', flexWrap: 'wrap', gap: spacing.sm })}
 						>

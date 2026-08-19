@@ -1004,6 +1004,7 @@ export type AccountPackageListItem = {
 
 export type AccountPackageDetail = AccountPackageListItem & {
 	searchText: string | null
+	exports: Array<string> | null
 	tokens: Array<AccountPackageToken>
 }
 

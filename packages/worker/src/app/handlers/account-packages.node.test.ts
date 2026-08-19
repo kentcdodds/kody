@@ -53,6 +53,7 @@ const mockModule = vi.hoisted(() => ({
 	reinstatePackageInvocationToken: vi.fn(async () => true),
 	deletePackageInvocationToken: vi.fn(async () => true),
 	getAppBaseUrl: () => 'https://example.com',
+	loadPackageManifestBySourceId: vi.fn(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -82,6 +83,11 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.searchSavedPackagesByUserId(...args),
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
+}))
+
+vi.mock('#worker/package-registry/source.ts', () => ({
+	loadPackageManifestBySourceId: (...args: Array<unknown>) =>
+		mockModule.loadPackageManifestBySourceId(...args),
 }))
 
 vi.mock('#worker/package-invocations/repo.ts', () => ({
@@ -122,6 +128,14 @@ function resetTokenMocks() {
 	mockModule.listPackageInvocationTokensByPackageId.mockResolvedValue([
 		tokenRecord,
 	])
+	mockModule.loadPackageManifestBySourceId.mockReset()
+	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: {
+			exports: {
+				'./dispatch-message-created': { import: './src/index.ts' },
+			},
+		},
+	})
 }
 
 test('packages API lists with filters, ignores invalid values, and rejects unknown actions', async () => {
@@ -182,6 +196,13 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 	mockModule.listPackageInvocationTokensByPackageId.mockResolvedValue([
 		tokenRecord,
 	])
+	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: {
+			exports: {
+				'./dispatch-message-created': { import: './src/index.ts' },
+			},
+		},
+	})
 
 	const filtered = await handler.handler({
 		request: new Request(
@@ -223,6 +244,7 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 		selectedPackage: {
 			id: 'pkg-1',
 			searchText: 'discord gateway websocket',
+			exports: ['./dispatch-message-created'],
 			tokens: [
 				{
 					id: 'token-1',
@@ -233,6 +255,29 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 		},
 	})
 	expect(JSON.stringify(filteredPayload)).not.toContain('stored-hash')
+	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith({
+		env,
+		baseUrl: 'https://example.com',
+		userId: 'stable-user-1',
+		sourceId: 'source-1',
+	})
+
+	mockModule.loadPackageManifestBySourceId.mockRejectedValueOnce(
+		new Error('Saved package source bindings are not available.'),
+	)
+	const missingManifest = await handler.handler({
+		request: new Request(
+			'https://example.com/account/packages.json?selected=pkg-1',
+		),
+		params: {},
+	} as never)
+	await expect(missingManifest.json()).resolves.toMatchObject({
+		ok: true,
+		selectedPackage: {
+			id: 'pkg-1',
+			exports: null,
+		},
+	})
 
 	mockModule.searchSavedPackagesByUserId.mockClear()
 	mockModule.getSavedPackageById.mockResolvedValue(null)
