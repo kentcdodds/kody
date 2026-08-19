@@ -176,8 +176,10 @@ migration and its `tools/ci/do-deletion-allowlist.json` entry on a later deploy.
 
 `PackageServiceInstance` is in that window on production: the transferred
 binding is still present, so top-level runtime-worker tag `v2` is deferred until
-after the binding-only deploy. Preview keeps `v2` because a fresh worker applies
-`v1` `new_sqlite_classes` and cannot create an unexported class (error 10070).
+after the binding-only deploy. Preview keeps `v2` and the matching
+`tools/ci/do-deletion-allowlist.json` entry because a fresh worker applies `v1`
+`new_sqlite_classes` and cannot create an unexported class (error 10070). The
+follow-up reuses that allowlist entry when it restores top-level `v2`.
 
 ## Rollback
 
