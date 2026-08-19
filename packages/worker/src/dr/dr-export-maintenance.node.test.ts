@@ -115,7 +115,7 @@ function createR2() {
 	} as unknown as R2Bucket
 }
 
-function createEnv(client: DrBackupS3Client) {
+function createEnv(_client: DrBackupS3Client) {
 	return {
 		DR_EXPORT_ENABLED: 'true',
 		DR_BACKUP_ACCOUNT_ID: 'acct',

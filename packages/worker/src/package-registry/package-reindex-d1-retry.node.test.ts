@@ -170,7 +170,12 @@ test('saved package reindex retries transient D1 export errors then reports exha
 		const exhaustedPromise = reindexSavedPackageVectors(env, {
 			baseUrl: 'https://kody.example.com',
 		})
-		const expectation = expect(exhaustedPromise).resolves.toEqual({
+		for (let attempt = 1; attempt < d1LockRetryMaxAttempts; attempt++) {
+			await vi.advanceTimersByTimeAsync(
+				d1LockRetryBaseDelayMs * 2 ** (attempt - 1),
+			)
+		}
+		await expect(exhaustedPromise).resolves.toEqual({
 			upserted: 0,
 			failed: 1,
 			failures: [
@@ -183,12 +188,6 @@ test('saved package reindex retries transient D1 export errors then reports exha
 			failedIds: ['package_pkg-1'],
 			error: '1 saved package vector(s) failed to reindex',
 		})
-		for (let attempt = 1; attempt < d1LockRetryMaxAttempts; attempt++) {
-			await vi.advanceTimersByTimeAsync(
-				d1LockRetryBaseDelayMs * 2 ** (attempt - 1),
-			)
-		}
-		await expectation
 	} finally {
 		vi.useRealTimers()
 	}

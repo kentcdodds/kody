@@ -4,6 +4,7 @@ import {
 	silenceExpectedConsoleWarns,
 } from '#worker/test-support/console-spies.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import type * as McpAuthUserContext from '#worker/mcp-auth-user-context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -74,8 +75,7 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 }))
 
 vi.mock('#worker/mcp-auth-user-context.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/mcp-auth-user-context.ts')>()
+	const actual = await importOriginal<typeof McpAuthUserContext>()
 	return {
 		...actual,
 	}

@@ -686,7 +686,7 @@ async function ensureProductionResources(options: CliOptions) {
 		bindings.packageAppHostname,
 		...bindings.packageAppLegacyHostnames,
 	].filter((hostname): hostname is string => Boolean(hostname))
-	for (const packageAppHostname of [...new Set(packageAppHostnames)]) {
+	for (const packageAppHostname of new Set(packageAppHostnames)) {
 		await ensurePackageAppDnsRecords({
 			accountId: accountId ?? 'dry-run-account',
 			apiToken: apiToken ?? 'dry-run-token',

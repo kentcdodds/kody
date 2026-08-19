@@ -233,7 +233,7 @@ test('admin_mailbox_maintenance routes final status, retention, and delete with 
 			{ action: 'reconcile', batch_size: 101 },
 			ctx,
 		),
-	).rejects.toThrow()
+	).rejects.toThrow('Invalid input for capability "admin_mailbox_maintenance"')
 	await expect(
 		adminMailboxMaintenanceCapability.handler(
 			{
@@ -242,10 +242,10 @@ test('admin_mailbox_maintenance routes final status, retention, and delete with 
 			},
 			ctx,
 		),
-	).rejects.toThrow()
+	).rejects.toThrow('Invalid input for capability "admin_mailbox_maintenance"')
 	await expect(
 		adminMailboxMaintenanceCapability.handler({ action: 'seed' }, ctx),
-	).rejects.toThrow()
+	).rejects.toThrow('Invalid input for capability "admin_mailbox_maintenance"')
 	await expect(
 		adminMailboxMaintenanceCapability.handler(
 			{
@@ -255,7 +255,7 @@ test('admin_mailbox_maintenance routes final status, retention, and delete with 
 			},
 			ctx,
 		),
-	).rejects.toThrow()
+	).rejects.toThrow('Invalid input for capability "admin_mailbox_maintenance"')
 
 	const notFound = new AdminMailboxMessageNotFoundError({
 		stableUserId,

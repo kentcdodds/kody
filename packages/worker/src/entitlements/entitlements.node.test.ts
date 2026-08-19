@@ -22,7 +22,6 @@ import {
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { userMeterRpc } from './user-meter-client.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 function createEntitlementsTestDb(
 	input: {

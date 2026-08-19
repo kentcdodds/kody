@@ -115,6 +115,8 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 			storageId: 'bucket-a',
 			requested: 1,
 		})
+		// Attach before advancing timers so the rejection is not unhandled.
+		// oxlint-disable-next-line vitest/valid-expect
 		const expectation = expect(assertion).rejects.toThrow(
 			`Unable to verify the storage byte entitlement because the bucket estimate for storageId "bucket-a" could not be read after ${maxEstimateReadAttempts} attempts.`,
 		)

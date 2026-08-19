@@ -402,7 +402,7 @@ test('sequential sibling leases each acquire after the previous released', async
 })
 
 test('nested/detached parity for DO-authority leases', async () => {
-	const { sqlite, db } = createLeaseTestDb()
+	const { db } = createLeaseTestDb()
 	const meter = createInMemoryUserMeterEnv()
 	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
 

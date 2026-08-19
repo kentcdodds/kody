@@ -28,6 +28,7 @@ import { firstPartySecurityHeaders } from '#app/security-headers.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { planLimits } from '#universal/plans.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
+import type * as CommunitySocialRepo from '#worker/community/social-repo.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -62,8 +63,7 @@ vi.mock('#app/community-package-route.ts', () => ({
 }))
 
 vi.mock('#worker/community/social-repo.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/community/social-repo.ts')>()
+	const actual = await importOriginal<typeof CommunitySocialRepo>()
 	return {
 		...actual,
 		getCommunityStar: vi.fn().mockResolvedValue(false),

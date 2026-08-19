@@ -80,7 +80,7 @@ test('admin_system_email_send is admin-gated, validates input, and audits a reda
 			},
 			ctx,
 		),
-	).rejects.toThrow()
+	).rejects.toThrow('Invalid input for capability "admin_system_email_send"')
 	expect(mockModule.sendSystemEmail).not.toHaveBeenCalled()
 
 	mockModule.sendSystemEmail.mockResolvedValue({

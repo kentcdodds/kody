@@ -95,7 +95,7 @@ test('upsert lifecycle encrypts secrets, omits retain fields, null clears, and p
 		await getPlatformOauthAppClientSecret({ db, env, slug: 'github' }),
 	).toBe('platform-github-client-secret-value')
 
-	const clearedSecret = await upsertPlatformOauthApp({
+	await upsertPlatformOauthApp({
 		db,
 		env,
 		app: {

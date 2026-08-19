@@ -157,7 +157,7 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 		// Wrong scheme for the configured package-app origin.
 		'http://user.kodyapps.dev/packages/daily-notes',
 	]) {
-		expect(parsePackageSearchIdentity({ ...hosted, query }), query).toEqual({
+		expect(parsePackageSearchIdentity({ ...hosted, query })).toEqual({
 			kind: 'invalid-package-identity',
 		})
 	}
@@ -185,7 +185,7 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 		'https://kodyapps.dev.attacker.example/@user/packages/daily-notes',
 		'https://user:password@kodyapps.dev/@user/packages/daily-notes',
 	]) {
-		expect(parsePackageSearchIdentity({ ...hosted, query }), query).toEqual({
+		expect(parsePackageSearchIdentity({ ...hosted, query })).toEqual({
 			kind: 'invalid-package-identity',
 		})
 	}
@@ -214,7 +214,7 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 		'/@INVALID/packages/daily-notes',
 		'https://user:password@heykody.dev/account/packages/' + packageId,
 	]) {
-		expect(parsePackageSearchIdentity({ ...common, query }), query).toEqual({
+		expect(parsePackageSearchIdentity({ ...common, query })).toEqual({
 			kind: 'invalid-package-identity',
 		})
 	}

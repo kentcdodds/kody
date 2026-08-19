@@ -1,5 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import type * as AllowedCapabilities from '#mcp/secrets/allowed-capabilities.ts'
+import type * as AllowedHosts from '#mcp/secrets/allowed-hosts.ts'
+import type * as IntegrationsService from '#worker/integrations/service.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(async () => ({
@@ -119,8 +121,7 @@ vi.mock('#worker/app-base-url.ts', () => ({
 }))
 
 vi.mock('#mcp/secrets/allowed-hosts.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#mcp/secrets/allowed-hosts.ts')>()
+	const actual = await importOriginal<typeof AllowedHosts>()
 	return {
 		normalizeAllowedHosts: actual.normalizeAllowedHosts,
 		normalizeHost: actual.normalizeHost,
@@ -161,8 +162,7 @@ vi.mock('#mcp/values/service.ts', () => ({
 }))
 
 vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/integrations/service.ts')>()
+	const actual = await importOriginal<typeof IntegrationsService>()
 	return {
 		upsertIntegration: (...args: Array<unknown>) =>
 			mockModule.upsertIntegration(...args),

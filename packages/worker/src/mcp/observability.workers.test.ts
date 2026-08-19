@@ -207,7 +207,7 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 					}),
 				},
 			),
-		).rejects.toThrow()
+		).rejects.toThrow('Invalid input for capability "package_save"')
 	} finally {
 		console.info = originalInfo
 	}

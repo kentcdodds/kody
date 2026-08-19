@@ -168,6 +168,7 @@ export function BlogRoute(handle: Handle) {
 function renderFeaturedPostItem(post: BlogPostSummaryLoaderData) {
 	return (
 		<li key={post.slug} mix={[css(featuredItemCss), revealCard()]}>
+			{/* oxlint-disable-next-line jsx-a11y/control-has-associated-label -- link name comes from the date, title, and description children */}
 			<a
 				href={routes.blogPost.href({ slug: post.slug })}
 				mix={css(featuredLinkCss)}

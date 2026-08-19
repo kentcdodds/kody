@@ -981,7 +981,7 @@ test('admin_user_update rejects unknown users and unknown plan names', async () 
 			{ id: 1, plan: 'enterprise' } as never,
 			ctx,
 		),
-	).rejects.toThrow()
+	).rejects.toThrow('Invalid input for capability "admin_user_update"')
 })
 
 test('admin user lookup does not fall through from an invalid stable id', async () => {

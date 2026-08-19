@@ -109,6 +109,6 @@ test('community_fork_adopt adopts by package_id or kody_id and rejects invalid r
 			},
 			createContext(),
 		),
-	).rejects.toThrow()
+	).rejects.toThrow('Invalid input for capability "community_fork_adopt"')
 	expect(mocks.adoptCommunityFork).not.toHaveBeenCalled()
 })

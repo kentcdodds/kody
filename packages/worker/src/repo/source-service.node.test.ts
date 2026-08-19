@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as CloudflareWorkers from 'cloudflare:workers'
 
 const mocks = vi.hoisted(() => ({
 	waitUntil: vi.fn((promise: Promise<unknown>) => {
@@ -11,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('cloudflare:workers', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('cloudflare:workers')>()
+	const actual = await importOriginal<typeof CloudflareWorkers>()
 	return {
 		...actual,
 		waitUntil: (...args: Array<unknown>) => mocks.waitUntil(...args),
@@ -148,7 +149,9 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 			sourceRoot: '/',
 			requirePersistence: true,
 		}),
-	).rejects.toThrow()
+	).rejects.toThrow(
+		'Repo-backed source persistence requires ARTIFACTS binding or CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN.',
+	)
 
 	const newJobDb = {
 		prepare(query: string) {

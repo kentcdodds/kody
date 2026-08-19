@@ -8,12 +8,8 @@ import {
 } from '#worker/vectorize/embedding.ts'
 import { filterCapabilityRegistryForCaller } from '#mcp/capabilities/access-control.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
-import { synthesizeMcpServerToolDomain } from '#mcp/capabilities/mcp-server/index.ts'
-import { synthesizeOpenApiProviderDomain } from '#mcp/capabilities/openapi-provider/index.ts'
-import { repoGetCheckStatusCapability } from '#mcp/capabilities/repo/repo-get-check-status.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
-import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
 import type * as PackageRegistrySource from '#worker/package-registry/source.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import {

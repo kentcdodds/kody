@@ -2,6 +2,10 @@ import { expect, test, vi } from 'vitest'
 import { consoleInfo } from '#worker/test-support/console-spies.ts'
 import { type JobRecord } from './types.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
+import type * as JobsRepo from '@kody-internal/shared/jobs/repo.ts'
+import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
+import type * as EntitySources from '#worker/repo/entity-sources.ts'
+import type * as PackageRegistryRepo from '#worker/package-registry/repo.ts'
 
 const withAccountWriteLease = vi.fn(
 	async (input: { write: () => Promise<unknown> }) => input.write(),
@@ -22,8 +26,7 @@ vi.mock('#worker/account/deletion-state.ts', () => ({
 }))
 
 vi.mock('@kody-internal/shared/jobs/repo.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('@kody-internal/shared/jobs/repo.ts')>()
+	const actual = await importOriginal<typeof JobsRepo>()
 	return {
 		...actual,
 		disableExpiredJobRowsForUser: (...args: Array<unknown>) =>
@@ -39,8 +42,7 @@ vi.mock('@kody-internal/shared/jobs/repo.ts', async (importOriginal) => {
 })
 
 vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/run-records/service.ts')>()
+	const actual = await importOriginal<typeof RunRecordsServiceModule>()
 	return {
 		...actual,
 		claimRunRecord: (...args: Array<unknown>) =>
@@ -52,8 +54,7 @@ vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
 })
 
 vi.mock('#worker/repo/entity-sources.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/repo/entity-sources.ts')>()
+	const actual = await importOriginal<typeof EntitySources>()
 	return {
 		...actual,
 		getEntitySourceByIdForUser: (...args: Array<unknown>) =>
@@ -62,8 +63,7 @@ vi.mock('#worker/repo/entity-sources.ts', async (importOriginal) => {
 })
 
 vi.mock('#worker/package-registry/repo.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/package-registry/repo.ts')>()
+	const actual = await importOriginal<typeof PackageRegistryRepo>()
 	return {
 		...actual,
 		getSavedPackageById: (...args: Array<unknown>) =>

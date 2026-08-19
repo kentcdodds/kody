@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
+import type * as McpClientStatus from '#worker/mcp-client/status.ts'
 
 const mocks = vi.hoisted(() => ({
 	callTool: vi.fn(),
@@ -15,9 +16,9 @@ vi.mock('#worker/mcp-client/hub-client.ts', () => ({
 }))
 
 vi.mock('#worker/mcp-client/status.ts', async () => {
-	const actual = await vi.importActual<
-		typeof import('#worker/mcp-client/status.ts')
-	>('#worker/mcp-client/status.ts')
+	const actual = await vi.importActual<typeof McpClientStatus>(
+		'#worker/mcp-client/status.ts',
+	)
 	return {
 		...actual,
 		getMcpServerStatus: (...args: Array<unknown>) =>

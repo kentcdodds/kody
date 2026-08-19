@@ -124,7 +124,7 @@ test('package_update rejects invalid changes and cross-user or unauthenticated a
 			{ package_id: 'pkg-1', changes: {} },
 			createCtx(),
 		),
-	).rejects.toThrow()
+	).rejects.toThrow('Provide at least one supported package change.')
 	await expect(
 		packageUpdateCapability.handler(
 			{
@@ -133,7 +133,7 @@ test('package_update rejects invalid changes and cross-user or unauthenticated a
 			},
 			createCtx(),
 		),
-	).rejects.toThrow()
+	).rejects.toThrow('Invalid input for capability "package_update"')
 	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 
 	mockModule.updateSavedPackage.mockResolvedValueOnce(false)

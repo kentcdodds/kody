@@ -34,6 +34,24 @@
 		"kody-custom/enforce-import-boundaries": "error",
 		"kody-custom/no-example-identifier": "error",
 		"kody-custom/no-literal-frame-src": "error",
-		"kody-custom/prefer-loader-data-types": "error"
-	}
+		"kody-custom/prefer-loader-data-types": "error",
+		"vitest/require-mock-type-parameters": "off",
+		"vitest/no-conditional-expect": "off",
+		"epic-web/prefer-dispose-in-tests": "off",
+		"epic-web/no-manual-dispose": "off"
+	},
+	"overrides": [
+		{
+			"files": [
+				"**/tests/**",
+				"**/#tests/**",
+				"**/__tests__/**/*",
+				"**/*.test.*",
+				"**/*.spec.*"
+			],
+			"rules": {
+				"epic-web/prefer-dispose-in-tests": "off"
+			}
+		}
+	]
 }

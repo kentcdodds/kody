@@ -11,6 +11,8 @@ import {
 	type WorkflowProjectionRecord,
 	type WorkflowProjectionUpsertInput,
 } from '#worker/run-records/service.ts'
+import type * as PackageWorkflows from '#worker/package-runtime/package-workflows.ts'
+import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 
 const mockModule = vi.hoisted(() => ({
 	createDynamicCallableWorkflow: vi.fn(),
@@ -118,10 +120,7 @@ const runRecordMocks = vi.hoisted(() => {
 vi.mock(
 	'#worker/package-runtime/package-workflows.ts',
 	async (importOriginal) => {
-		const actual =
-			await importOriginal<
-				typeof import('#worker/package-runtime/package-workflows.ts')
-			>()
+		const actual = await importOriginal<typeof PackageWorkflows>()
 		return {
 			...actual,
 			createDynamicCallableWorkflow: (...args: Array<unknown>) =>
@@ -131,8 +130,7 @@ vi.mock(
 )
 
 vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/run-records/service.ts')>()
+	const actual = await importOriginal<typeof RunRecordsServiceModule>()
 	return {
 		...actual,
 		upsertWorkflowProjection: (...args: Array<unknown>) =>

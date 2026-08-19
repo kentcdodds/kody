@@ -1755,7 +1755,7 @@ export async function writeGeneratedWranglerConfig({
 	}
 
 	const resolvedVars = {
-		...((existingVars as Record<string, unknown> | undefined) ?? {}),
+		...(existingVars as Record<string, unknown> | undefined),
 	}
 	for (const [key, value] of Object.entries(workerVars ?? {})) {
 		if (typeof value === 'string' && value.length > 0) {
