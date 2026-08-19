@@ -77,6 +77,18 @@ test('buildPackageFilesView distinguishes root, directories, files, and misses',
 	expect(buildPackageFilesView({ files: {}, selectedPath: '' })?.kind).toBe(
 		'directory',
 	)
+	expect(buildPackageFilesView({ files, selectedPath: 'constructor' })).toBeNull()
+	expect(buildPackageFilesView({ files, selectedPath: 'toString' })).toBeNull()
+	expect(buildPackageFilesView({ files, selectedPath: '__proto__' })).toBeNull()
+	expect(
+		buildPackageFilesView({
+			files: { constructor: 'export {}\n' },
+			selectedPath: 'constructor',
+		}),
+	).toMatchObject({
+		kind: 'file',
+		content: 'export {}\n',
+	})
 })
 
 test('language and readme helpers cover common package files', () => {

@@ -235,7 +235,8 @@ export function buildPackageFilesView(input: {
 		left.localeCompare(right),
 	)
 	const selectedPath = input.selectedPath
-	const isFile = selectedPath !== '' && selectedPath in input.files
+	const isFile =
+		selectedPath !== '' && Object.hasOwn(input.files, selectedPath)
 	if (!isFile && !directoryExists(paths, selectedPath)) return null
 
 	if (isFile) {
