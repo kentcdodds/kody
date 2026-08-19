@@ -25,6 +25,7 @@ import {
 	descriptionCss,
 	fieldCss,
 	fieldLabelCss,
+	getAccentCalloutCss,
 	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
@@ -149,6 +150,7 @@ export function AccountPackageTokens(
 ) {
 	let editorState = createEmptyEditorState()
 	let editMode = false
+	let revealedRawToken: string | null = null
 	let saveState:
 		| 'idle'
 		| 'creating'
@@ -248,6 +250,7 @@ export function AccountPackageTokens(
 						disabled={isMutating}
 						mix={[
 							on('click', () => {
+								revealedRawToken = null
 								replaceLocation(
 									hrefWithTokenQuery(currentHref, { newToken: true }),
 								)
@@ -269,6 +272,51 @@ export function AccountPackageTokens(
 					>
 						{message}
 					</p>
+				) : null}
+
+				{revealedRawToken ? (
+					<div mix={css(getAccentCalloutCss())}>
+						<p mix={css({ ...descriptionCss, margin: 0 })}>
+							Copy this raw token now. Kody stores only the hash and will not
+							show the value again.
+						</p>
+						<div
+							mix={css({
+								display: 'grid',
+								gridTemplateColumns: '1fr auto auto',
+								gap: spacing.xs,
+							})}
+						>
+							<input
+								readOnly
+								value={revealedRawToken}
+								mix={css(accountInputCss)}
+							/>
+							<button
+								type="button"
+								mix={[
+									on('click', () => {
+										void writeClipboardText(revealedRawToken ?? '')
+									}),
+									css(secondaryButtonCss),
+								]}
+							>
+								Copy
+							</button>
+							<button
+								type="button"
+								mix={[
+									on('click', () => {
+										revealedRawToken = null
+										handle.update()
+									}),
+									css(secondaryButtonCss),
+								]}
+							>
+								Done
+							</button>
+						</div>
+					</div>
 				) : null}
 
 				{packageDetail.tokens.length === 0 && !query.isCreating ? (
@@ -314,6 +362,7 @@ export function AccountPackageTokens(
 										mix={[
 											on('click', () => {
 												editMode = false
+												revealedRawToken = null
 												deleteTokenCheck.reset()
 												replaceLocation(
 													hrefWithTokenQuery(currentHref, {
@@ -384,6 +433,9 @@ export function AccountPackageTokens(
 										message = query.isCreating
 											? 'Token created. Copy the raw value now; Kody will not show it again.'
 											: 'Token updated.'
+										if (query.isCreating) {
+											revealedRawToken = editorState.rawToken
+										}
 										editorState = createEmptyEditorState()
 										editMode = false
 										replaceLocation(
@@ -465,9 +517,17 @@ export function AccountPackageTokens(
 									type="button"
 									mix={[
 										on('click', () => {
-											editorState = {
-												...editorState,
-												rawToken: generatePackageInvocationRawToken(),
+											try {
+												editorState = {
+													...editorState,
+													rawToken: generatePackageInvocationRawToken(),
+												}
+											} catch (error) {
+												messageTone = 'error'
+												message =
+													error instanceof Error
+														? error.message
+														: 'Unable to generate a token.'
 											}
 											handle.update()
 										}),
