@@ -14,6 +14,7 @@ import type * as blogAreaExports from './routes/blog-area.ts'
 import type * as communityAreaExports from './routes/community-area.ts'
 import type * as marketingAreaExports from './routes/marketing-area.ts'
 import type * as onboardingAreaExports from './routes/onboarding-area.ts'
+import type * as packageFilesAreaExports from './routes/package-files-area.ts'
 
 export type LazyRouteArea<TModule> = {
 	load: () => Promise<TModule>
@@ -60,6 +61,7 @@ export type CommunityAreaModule = typeof communityAreaExports
 export type BlogAreaModule = typeof blogAreaExports
 export type MarketingAreaModule = typeof marketingAreaExports
 export type OnboardingAreaModule = typeof onboardingAreaExports
+export type PackageFilesAreaModule = typeof packageFilesAreaExports
 
 export const accountArea = createLazyRouteArea<AccountAreaModule>(
 	() =>
@@ -108,6 +110,13 @@ export const marketingArea = createLazyRouteArea<MarketingAreaModule>(
 		// Dynamic import is intentional for route-level code splitting
 		// (sanctioned exception to the no-inline-imports rule).
 		import('./routes/marketing-area.ts'),
+)
+
+export const packageFilesArea = createLazyRouteArea<PackageFilesAreaModule>(
+	() =>
+		// Dynamic import is intentional for route-level code splitting
+		// (sanctioned exception to the no-inline-imports rule).
+		import('./routes/package-files-area.ts'),
 )
 
 type LazyRouteRenderProps<TModule> = {
@@ -201,6 +210,8 @@ export const LazyAuthRoute: LazyRouteComponent<AuthAreaModule> =
 	createLazyRoute(authArea)
 export const LazyMarketingRoute: LazyRouteComponent<MarketingAreaModule> =
 	createLazyRoute(marketingArea)
+export const LazyPackageFilesRoute: LazyRouteComponent<PackageFilesAreaModule> =
+	createLazyRoute(packageFilesArea)
 
 export function lazyRouteLoader<TModule>(
 	area: LazyRouteArea<TModule>,
@@ -360,6 +371,19 @@ registerPreloadPatterns(
 	},
 )
 
+registerPreloadPatterns(
+	[
+		routePattern(routes.accountPackageFiles),
+		routePattern(routes.communityDetailFiles),
+		routePattern(routes.communityPackageFiles),
+	],
+	{
+		name: 'package-files-area',
+		load: packageFilesArea.load,
+		getCached: packageFilesArea.getCached,
+	},
+)
+
 export function isClientRouteModuleCached(pathnameWithSearch: string) {
 	const url = new URL(pathnameWithSearch, clientRouteOrigin)
 	const match = preloadMatcher.match(url)
@@ -388,6 +412,7 @@ export const syntaxHighlightAreaNames = [
 	'blog-area',
 	'community-area',
 	'onboarding-area',
+	'package-files-area',
 ] as const
 
 const syntaxHighlightAreaNameSet = new Set<string>(syntaxHighlightAreaNames)

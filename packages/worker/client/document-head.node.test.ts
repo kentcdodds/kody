@@ -14,10 +14,11 @@ import {
 
 function concretePathForPattern(pattern: string) {
 	return pattern
+		.replaceAll('(', '')
+		.replaceAll(')', '')
 		.split('/')
 		.map((segment) => {
-			if (segment.startsWith(':')) return 'sample'
-			if (segment === '*') return 'sample'
+			if (segment.startsWith(':') || segment.startsWith('*')) return 'sample'
 			return segment
 		})
 		.join('/')

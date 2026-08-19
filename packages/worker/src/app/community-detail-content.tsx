@@ -17,6 +17,7 @@ import {
 	communityTagPillCss,
 } from '#app/community-listings-content.tsx'
 import { renderProfileFollowControl } from '#app/profile-follow-control.tsx'
+import { getCommunityPackageFilesHref } from '#universal/package-files.ts'
 import { routes } from '#universal/routes.ts'
 import { visuallyHiddenCss } from '#universal/styles/style-primitives.ts'
 import { colors } from '#universal/styles/tokens.ts'
@@ -165,6 +166,19 @@ export function CommunityDetailContent(
 
 			<p data-rise style={{ '--rise': '2' }} mix={css(detailSubCss)}>
 				{listing.description}
+			</p>
+			<p data-rise style={{ '--rise': '2' }} mix={css(filesLinkRowCss)}>
+				<a
+					href={getCommunityPackageFilesHref({
+						listingId: listing.id,
+						ownerUsername: listing.ownerUsername,
+						kodyId: listing.kodyId,
+					})}
+					data-testid="community-browse-files"
+					mix={css(filesLinkCss)}
+				>
+					Browse files
+				</a>
 			</p>
 
 			{listing.tags.length > 0 ? (
@@ -319,6 +333,19 @@ const detailSubCss = {
 	color: colors.textMuted,
 	fontSize: '1.05rem',
 	maxWidth: '58ch',
+}
+
+const filesLinkRowCss = {
+	margin: '0.7rem 0 0',
+}
+
+const filesLinkCss = {
+	color: colors.primaryText,
+	fontWeight: 550,
+	textDecoration: 'none',
+	'&:hover': {
+		color: colors.text,
+	},
 }
 
 const detailTagListCss = {

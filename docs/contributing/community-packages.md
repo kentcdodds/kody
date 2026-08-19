@@ -125,7 +125,9 @@ Pinned file trees live in `BUNDLE_ARTIFACTS_KV` under:
 (`version`, `listingId`, `pinnedCommit`, `files`, optional `communityIconPath`,
 `createdAt`). Publish and re-publish overwrite the snapshot; unpublish and hard
 delete remove it. Binary icon bytes are omitted from the text-backed `files`
-map; the path metadata lets the icon route retrieve bytes from Artifacts.
+map; the path metadata lets the icon route retrieve bytes from Artifacts. The
+public `/@owner/kody-id/files` explorer reads this snapshot (not a live git
+checkout).
 
 ### Community icon cache
 

@@ -12,8 +12,10 @@ import {
 	LazyCommunityRoute,
 	LazyMarketingRoute,
 	LazyOnboardingRoute,
+	LazyPackageFilesRoute,
 	lazyRouteLoader,
 	onboardingArea,
+	packageFilesArea,
 } from '#client/lazy-route.tsx'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
@@ -78,6 +80,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.accountPackageDetail)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountPackagesRouteLoader,
+	),
+	[routePattern(routes.accountPackageFiles)]: lazyRouteLoader(
+		packageFilesArea,
+		(m) => m.packageFilesRouteLoader,
 	),
 	[routePattern(routes.accountStars)]: lazyRouteLoader(
 		accountArea,
@@ -243,6 +249,14 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		communityArea,
 		(m) => m.communityDetailRouteLoader,
 	),
+	[routePattern(routes.communityDetailFiles)]: lazyRouteLoader(
+		packageFilesArea,
+		(m) => m.packageFilesRouteLoader,
+	),
+	[routePattern(routes.communityPackageFiles)]: lazyRouteLoader(
+		packageFilesArea,
+		(m) => m.packageFilesRouteLoader,
+	),
 	[routePattern(routes.profile)]: lazyRouteLoader(
 		communityArea,
 		(m) => m.profileRouteLoader,
@@ -326,6 +340,9 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountPackageDetail)]: (
 		<LazyAccountRoute render={(m) => <m.AccountPackagesRoute />} />
+	),
+	[routePattern(routes.accountPackageFiles)]: (
+		<LazyPackageFilesRoute render={(m) => <m.PackageFilesRoute />} />
 	),
 	[routePattern(routes.accountStars)]: (
 		<LazyAccountRoute render={(m) => <m.AccountStarsRoute />} />
@@ -449,6 +466,12 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.communityPackage)]: (
 		<LazyCommunityRoute render={(m) => <m.CommunityDetailRoute />} />
+	),
+	[routePattern(routes.communityDetailFiles)]: (
+		<LazyPackageFilesRoute render={(m) => <m.PackageFilesRoute />} />
+	),
+	[routePattern(routes.communityPackageFiles)]: (
+		<LazyPackageFilesRoute render={(m) => <m.PackageFilesRoute />} />
 	),
 	[routePattern(routes.profile)]: (
 		<LazyCommunityRoute render={(m) => <m.ProfileRoute />} />

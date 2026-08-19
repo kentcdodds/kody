@@ -36,6 +36,8 @@ export const routes = route({
 	),
 	accountPackages: '/account/packages',
 	accountPackageDetail: '/account/packages/:packageId',
+	accountPackageFiles: '/account/packages/:packageId/files(/*relativePath)',
+	accountPackageFilesApi: '/account/packages/:packageId/files.json',
 	accountPackagesApi: '/account/packages.json',
 	accountSecrets: '/account/secrets',
 	accountSecretNew: '/account/secrets/new',
@@ -134,6 +136,8 @@ export const routes = route({
 	communityApi: '/community.json',
 	communityDetail: '/community/:listingId',
 	communityDetailApi: '/community/:listingId.json',
+	communityDetailFiles: '/community/:listingId/files(/*relativePath)',
+	communityDetailFilesApi: '/community/:listingId/files.json',
 	communityDetailIcon: '/community/:listingId/icon/:iconCommit',
 	communityDetailOgImage: '/community/:listingId/og.png',
 	communityReportApiPost: post('/community/:listingId/report.json'),
@@ -144,14 +148,15 @@ export const routes = route({
 	communityStargazersApi: '/community/:listingId/stargazers.json',
 	profile: '/@:username',
 	// Canonical public URL for a published package, keyed by its owner and
-	// `kody.id` (`/@kentcdodds/devin`) rather than the listing uuid. Kept a leaf
-	// route: the `/@:username/…` namespaces handled before this router
-	// (`packages`, `connectors`, `webhooks`, `api`) all match on the second
-	// segment, so any deeper package route would sit at their depth.
+	// `kody.id` (`/@kentcdodds/devin`) rather than the listing uuid. Deeper
+	// package routes use a third-segment noun (`/files`) so they do not collide
+	// with `/@:username/{packages,connectors,webhooks,api}` ingress.
 	communityPackage: '/@:username/:kodyId',
+	communityPackageFiles: '/@:username/:kodyId/files(/*relativePath)',
 	// JSON companion lives under `/profiles/…` with the other username-keyed
 	// APIs, keeping the `/@…` namespace to human-shareable page URLs.
 	communityPackageApi: '/profiles/:username/packages/:kodyId.json',
+	communityPackageFilesApi: '/profiles/:username/packages/:kodyId/files.json',
 	profileApi: '/profiles/:username.json',
 	// `.` is a Remix route delimiter, so the filename must be `:hash.:ext`
 	// (not a single `:cacheKey`) or `/avatar/abc.jpg` never matches.

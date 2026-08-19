@@ -16,6 +16,7 @@ test('lazy area names match the client router contract', () => {
 		'community-area',
 		'marketing-area',
 		'onboarding-area',
+		'package-files-area',
 	])
 	// Keep in sync with `syntaxHighlightAreaNames` in lazy-route.tsx.
 	expect([...highlightAreaNames].sort()).toEqual([
@@ -23,6 +24,7 @@ test('lazy area names match the client router contract', () => {
 		'blog-area',
 		'community-area',
 		'onboarding-area',
+		'package-files-area',
 	])
 })
 
@@ -61,6 +63,7 @@ test('manifest contains the entry static closure and per-area unique chunks', ()
 			[chunk('onboarding-area-H6.js')]: output([]),
 			[chunk('auth-area-H8.js')]: output([]),
 			[chunk('marketing-area-H9.js')]: output([]),
+			[chunk('package-files-area-H10.js')]: output([]),
 			[chunk('syntax-highlight-core-H7.js')]: output([
 				staticImport('shiki-lang.js'),
 			]),
@@ -117,6 +120,7 @@ test('manifest builder rejects a metafile missing the highlight chunk', () => {
 			[chunk('onboarding-area-H6.js')]: output([]),
 			[chunk('auth-area-H8.js')]: output([]),
 			[chunk('marketing-area-H9.js')]: output([]),
+			[chunk('package-files-area-H10.js')]: output([]),
 		},
 	}
 	expect(() => buildClientPreloadManifest(metafile)).toThrow(
@@ -138,6 +142,7 @@ test('manifest builder rejects a highlight chunk that leaked into the entry', ()
 			[chunk('onboarding-area-H6.js')]: output([]),
 			[chunk('auth-area-H8.js')]: output([]),
 			[chunk('marketing-area-H9.js')]: output([]),
+			[chunk('package-files-area-H10.js')]: output([]),
 		},
 	}
 	expect(() => buildClientPreloadManifest(metafile)).toThrow(

@@ -3,6 +3,10 @@ import {
 	getCommunityPackageHref,
 	resolveCommunityPackageUrl,
 } from '#worker/community/package-url.ts'
+import {
+	getCommunityPackageFilesHref,
+	normalizePackageFilesPath,
+} from '#universal/package-files.ts'
 import { routes } from '#universal/routes.ts'
 
 const communityDetailMatcher = createMatcher(routes.communityDetail.pattern)
@@ -61,4 +65,86 @@ export async function resolveCanonicalListingPath(input: {
 	})
 	if (target?.listingId !== input.listingId) return null
 	return getCommunityPackageHref(target)
+}
+
+const communityDetailFilesMatcher = createMatcher(
+	routes.communityDetailFiles.pattern,
+)
+const communityPackageFilesMatcher = createMatcher(
+	routes.communityPackageFiles.pattern,
+)
+
+export type CommunityFilesRouteTarget =
+	| { kind: 'listing'; listingId: string; selectedPath: string }
+	| { kind: 'redirect'; to: string }
+	| { kind: 'invalid-path' }
+
+function selectedPathFromParams(relativePath: string | undefined) {
+	return normalizePackageFilesPath(relativePath ?? '')
+}
+
+export async function resolveCommunityFilesRoute(input: {
+	env: Env
+	url: URL
+}): Promise<CommunityFilesRouteTarget | null> {
+	const detailMatch = communityDetailFilesMatcher.match(input.url)
+	if (detailMatch) {
+		const selectedPath = selectedPathFromParams(detailMatch.params.relativePath)
+		if (selectedPath == null) return { kind: 'invalid-path' }
+		return {
+			kind: 'listing',
+			listingId: detailMatch.params.listingId,
+			selectedPath,
+		}
+	}
+
+	const packageMatch = communityPackageFilesMatcher.match(input.url)
+	if (!packageMatch) return null
+
+	const selectedPath = selectedPathFromParams(packageMatch.params.relativePath)
+	if (selectedPath == null) return { kind: 'invalid-path' }
+
+	const target = await resolveCommunityPackageUrl({
+		db: input.env.APP_DB,
+		username: packageMatch.params.username,
+		kodyId: packageMatch.params.kodyId,
+	})
+	if (!target) return null
+	if (target.kind === 'redirect') {
+		return {
+			kind: 'redirect',
+			to: getCommunityPackageFilesHref({
+				listingId: target.listingId,
+				ownerUsername: target.username,
+				kodyId: target.kodyId,
+				relativePath: selectedPath,
+			}),
+		}
+	}
+	return {
+		kind: 'listing',
+		listingId: target.listingId,
+		selectedPath,
+	}
+}
+
+export async function resolveCanonicalFilesPath(input: {
+	env: Env
+	listingId: string
+	ownerUsername: string
+	kodyId: string
+	selectedPath: string
+}): Promise<string | null> {
+	const target = await resolveCommunityPackageUrl({
+		db: input.env.APP_DB,
+		username: input.ownerUsername,
+		kodyId: input.kodyId,
+	})
+	if (target?.listingId !== input.listingId) return null
+	return getCommunityPackageFilesHref({
+		listingId: input.listingId,
+		ownerUsername: target.username,
+		kodyId: target.kodyId,
+		relativePath: input.selectedPath,
+	})
 }

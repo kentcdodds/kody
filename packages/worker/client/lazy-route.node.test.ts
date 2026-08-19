@@ -20,10 +20,11 @@ const eagerPatterns = new Set([routePattern(routes.home), oauthPaths.callback])
 
 function concretePathForPattern(pattern: string) {
 	return pattern
+		.replaceAll('(', '')
+		.replaceAll(')', '')
 		.split('/')
 		.map((segment) => {
-			if (segment.startsWith(':')) return 'sample'
-			if (segment === '*') return 'sample'
+			if (segment.startsWith(':') || segment.startsWith('*')) return 'sample'
 			return segment
 		})
 		.join('/')
@@ -35,6 +36,7 @@ test('syntax highlight areas stay a subset of registered lazy areas', () => {
 		'blog-area',
 		'community-area',
 		'onboarding-area',
+		'package-files-area',
 	])
 })
 
