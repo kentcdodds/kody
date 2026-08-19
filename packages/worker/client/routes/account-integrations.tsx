@@ -5,7 +5,7 @@ import {
 	type AccountOauthAppListItem,
 } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -384,7 +384,7 @@ function connectionStatusLabel(integration: AccountIntegrationListItem) {
 	return integration.authorization?.authorizeUrl ? 'Connected' : 'Needs setup'
 }
 
-function renderAdvancedDetails(body: object) {
+function renderAdvancedDetails(body: RemixNode) {
 	return (
 		<details mix={css(advancedDetailsCss)} data-testid="integration-advanced">
 			<summary>Advanced details</summary>
