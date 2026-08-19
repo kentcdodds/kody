@@ -112,7 +112,7 @@ jobs:
           fi
 
           if git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" | grep -E \
-            '^(\.github/workflows/deploy\.yml|tools/ci/nx-cache-resources|packages/nx-cache/)'; then
+            '^(\.github/workflows/deploy\.yml|\.github/workflows/nx-cache-deploy\.yml|tools/ci/nx-cache-resources|packages/nx-cache/)'; then
             echo "deploy_nx_cache_worker=true" >> "$GITHUB_OUTPUT"
             echo "Nx cache worker deploy: path filter matched."
           else
@@ -893,121 +893,11 @@ jobs:
           done
 
   deploy-nx-cache-worker:
-    runs-on: ubuntu-latest
-    name: 🧊 Deploy Nx cache worker
-    timeout-minutes: 8
     needs: sha-guard
     if: >-
       needs.sha-guard.outputs.should_deploy == 'true' &&
       needs.sha-guard.outputs.deploy_nx_cache_worker == 'true'
-    environment:
-      name: production
-      url: https://nx-cache.kody.codes
-    steps:
-      - name: 📦 Checkout
-        uses: actions/checkout@v6.0.2
-        with:
-          ref: ${{ needs.sha-guard.outputs.deploy_sha }}
-          fetch-depth: 0
-
-      - name: 🟢 Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 26
-          cache: npm
-
-      - name: 📥 Install Dependencies
-        run: npm ci
-
-      - name: 🧱 Ensure Nx cache R2 bucket and lifecycle
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: node tools/ci/nx-cache-resources.ts
-
-      - name: ☁️ Deploy Nx cache worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
-          CACHE_ACCESS_TOKEN:
-            ${{ secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CACHE_ACCESS_TOKEN:-}" ]; then
-            echo "Skipping Nx cache worker deploy: repository secret" >&2
-            echo "NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN is not set." >&2
-            echo "Generate one with: openssl rand -hex 32" >&2
-            exit 0
-          fi
-
-          deploy_attempts=3
-          deploy_delay_seconds=10
-          for attempt in $(seq 1 "$deploy_attempts"); do
-            echo "Nx cache worker deploy attempt $attempt/$deploy_attempts"
-            set +e
-            npm run nx-cache:deploy -- \
-              --var "BUILD_COMMIT:${DEPLOY_COMMIT_SHA}" 2>&1 | tee nx-cache-deploy.log
-            deploy_status="${PIPESTATUS[0]}"
-            set -e
-            if [ "$deploy_status" -eq 0 ]; then
-              break
-            fi
-            if [ "$attempt" -eq "$deploy_attempts" ]; then
-              echo "Nx cache worker deploy failed after $deploy_attempts attempts." >&2
-              exit "$deploy_status"
-            fi
-            echo "Retrying in ${deploy_delay_seconds}s."
-            sleep "$deploy_delay_seconds"
-            deploy_delay_seconds=$((deploy_delay_seconds * 2))
-          done
-
-      - name: 🔐 Sync Nx cache access token
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CACHE_ACCESS_TOKEN:
-            ${{ secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CACHE_ACCESS_TOKEN:-}" ]; then
-            echo "Skipping Nx cache secret sync: token is not set."
-            exit 0
-          fi
-          node tools/ci/sync-worker-secrets.ts --env "" --config \
-            packages/nx-cache/wrangler.jsonc --name kody-nx-cache \
-            --set-from-env CACHE_ACCESS_TOKEN
-
-      - name: 🩺 Healthcheck (Nx cache worker)
-        shell: bash
-        env:
-          EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
-          CACHE_ACCESS_TOKEN:
-            ${{ secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CACHE_ACCESS_TOKEN:-}" ]; then
-            echo "Skipping Nx cache healthcheck: token is not set."
-            exit 0
-          fi
-          HEALTHCHECK_URL="https://nx-cache.kody.codes/health"
-          attempts=20
-          delay_seconds=3
-          for i in $(seq 1 "$attempts"); do
-            echo "Attempt $i/$attempts"
-            echo "Healthcheck URL: $HEALTHCHECK_URL"
-            if curl --fail --silent --show-error --max-time 10 \
-              --header "Accept: application/json" \
-              "$HEALTHCHECK_URL" > nx-cache-health.json && \
-              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('nx-cache-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.ok !== true) { console.error('nx-cache-healthcheck-unexpected-response', json); process.exit(1); } if (json?.commit !== expected) { console.error('nx-cache-healthcheck-unexpected-commit', { expected, actual: json?.commit }); process.exit(1); } console.log('nx-cache-healthcheck-ok', json);"; then
-              exit 0
-            fi
-            sleep "$delay_seconds"
-          done
-
-          echo "Nx cache worker healthcheck failed after ${attempts} attempts." >&2
-          if [ -f nx-cache-health.json ]; then
-            echo "Last response body:" >&2
-            cat nx-cache-health.json >&2
-          fi
-          exit 1
+    uses: ./.github/workflows/nx-cache-deploy.yml
+    secrets: inherit
+    with:
+      sha: ${{ needs.sha-guard.outputs.deploy_sha }}

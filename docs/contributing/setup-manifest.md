@@ -12,7 +12,10 @@ This project uses the following resources:
   - `bucket_name`: `kody-nx-cache`
   - Worker: `kody-nx-cache` at `nx-cache.kody.codes` (`packages/nx-cache`)
   - Production deploy ensures the bucket and a 14-day `v1/` lifecycle (1-day
-    incomplete multipart abort) when the cache worker path changes
+    incomplete multipart abort) when the cache worker path changes or that
+    workflow is dispatched on `main`. The dedicated
+    `.github/workflows/nx-cache-deploy.yml` workflow does the same on its own
+    `workflow_dispatch` without a full production deploy.
 - KV namespace for OAuth/session storage
   - `binding`: `OAUTH_KV`
   - `title`: `<app-name>-oauth`
@@ -541,10 +544,11 @@ Configure these GitHub Actions secrets and variables for workflows:
 - `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` (optional GitHub **secret**; bearer
   token for the Nx HTTP cache worker at `https://nx-cache.kody.codes`. Generate
   with `openssl rand -hex 32`. Validate jobs enable remote cache when this is
-  set; production deploy syncs it to the worker as `CACHE_ACCESS_TOKEN` and
-  creates the `kody-nx-cache` R2 bucket with a 14-day object lifecycle. Use the
-  same value in Cursor Cloud Agent environments so agent `validate` /
-  `test:push` can populate CI hits. Validate jobs probe `/health` before setting
+  set; production deploy and the dedicated `🧊 Nx cache worker` workflow sync
+  it to the worker as `CACHE_ACCESS_TOKEN` and create the `kody-nx-cache` R2
+  bucket with a 14-day object lifecycle. Use the same value in Cursor Cloud
+  Agent environments so agent `validate` / `test:push` can populate CI hits.
+  Validate jobs probe `/health` before setting
   the server URL so an undeployed worker does not fail Nx. Leave unset to run CI
   with local `.nx` + `actions/cache` only.)
 - **Repository variables** `SENTRY_ORG` and `SENTRY_PROJECT` (optional; Sentry
@@ -641,8 +645,10 @@ How to get/set each value:
   - Generate locally: `openssl rand -hex 32`
   - Store the exact value as the repository secret
     `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`, and use the same value in Cursor
-    Cloud Agent environments. Production deploy syncs it to the `kody-nx-cache`
-    Worker as `CACHE_ACCESS_TOKEN`.
+    Cloud Agent environments. Production deploy and the dedicated
+    `🧊 Nx cache worker` workflow sync it to the `kody-nx-cache` Worker as
+    `CACHE_ACCESS_TOKEN`. After rotating the GitHub secret, run that workflow
+    on `main` so the worker secret matches.
 - `SENTRY_ORG` / `SENTRY_PROJECT` (optional)
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from

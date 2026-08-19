@@ -40,7 +40,14 @@ the window after which a poisoned hash can be replaced.
 
 ## Deploy
 
-Production deploy creates the `kody-nx-cache` R2 bucket, applies the 14-day
-lifecycle, uploads the worker, and syncs `CACHE_ACCESS_TOKEN` from the
-`NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` GitHub Actions secret. The job no-ops
-when that secret is missing so a first merge does not block production.
+Production deploy (`.github/workflows/deploy.yml`) creates the `kody-nx-cache`
+R2 bucket, applies the 14-day lifecycle, uploads the worker, and syncs
+`CACHE_ACCESS_TOKEN` from the `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` GitHub
+Actions secret when cache-related paths change or when that workflow is
+dispatched on `main`. The job no-ops when that secret is missing so a first
+merge does not block production.
+
+To redeploy only the cache worker (for example after rotating
+`NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`), run **Actions → 🧊 Nx cache worker
+→ Run workflow** on `main` (`.github/workflows/nx-cache-deploy.yml`). That
+reuses the same job and does not cancel an in-progress production deploy.
