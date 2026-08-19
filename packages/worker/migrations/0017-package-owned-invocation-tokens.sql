@@ -17,7 +17,14 @@ SET package_id = (
 		AND json_extract(package_invocation_tokens.package_ids_json, '$[0]') NOT IN ('', '*')
 		AND json_extract(package_invocation_tokens.package_ids_json, '$[0]') = sp.id
 )
-WHERE package_id IS NULL;
+WHERE package_id IS NULL
+	AND (
+		json_array_length(package_kody_ids_json) = 0
+		OR (
+			json_array_length(package_kody_ids_json) = 1
+			AND json_extract(package_kody_ids_json, '$[0]') IN ('', '*')
+		)
+	);
 
 UPDATE package_invocation_tokens
 SET package_id = (
@@ -28,7 +35,14 @@ SET package_id = (
 		AND json_extract(package_invocation_tokens.package_kody_ids_json, '$[0]') NOT IN ('', '*')
 		AND json_extract(package_invocation_tokens.package_kody_ids_json, '$[0]') = sp.kody_id
 )
-WHERE package_id IS NULL;
+WHERE package_id IS NULL
+	AND (
+		json_array_length(package_ids_json) = 0
+		OR (
+			json_array_length(package_ids_json) = 1
+			AND json_extract(package_ids_json, '$[0]') IN ('', '*')
+		)
+	);
 
 CREATE TABLE package_invocation_tokens_owned (
 	id TEXT PRIMARY KEY,

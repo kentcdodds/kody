@@ -58,6 +58,11 @@ test('0017 maps single-package grants, explodes multi-package grants, and drops 
 				'2026-08-19', '2026-08-19'
 			),
 			(
+				'token-mixed', 'user-1', 'Mixed', 'hash-mixed',
+				'a@example.com', 'A', '["pkg-a"]', '["beta"]', '["*"]', '[]',
+				'2026-08-19', '2026-08-19'
+			),
+			(
 				'token-star', 'user-1', 'Star', 'hash-star',
 				'a@example.com', 'A', '[]', '["*"]', '["*"]', '[]',
 				'2026-08-19', '2026-08-19'
@@ -111,9 +116,20 @@ test('0017 maps single-package grants, explodes multi-package grants, and drops 
 				token_hash: 'hash-multi',
 				name: 'Multi',
 			}),
+			expect.objectContaining({
+				package_id: 'pkg-a',
+				token_hash: 'hash-mixed',
+				name: 'Mixed',
+			}),
+			expect.objectContaining({
+				package_id: 'pkg-b',
+				token_hash: 'hash-mixed',
+				name: 'Mixed',
+			}),
 		]),
 	)
-	expect(rows).toHaveLength(4)
+	expect(rows).toHaveLength(6)
 	expect(rows.some((row) => row.token_hash === 'hash-star')).toBe(false)
 	expect(rows.filter((row) => row.token_hash === 'hash-multi')).toHaveLength(2)
+	expect(rows.filter((row) => row.token_hash === 'hash-mixed')).toHaveLength(2)
 })

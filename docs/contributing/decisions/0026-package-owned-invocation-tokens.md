@@ -43,8 +43,9 @@ resolved user, not columns on the token row. MCP lists tokens for one package;
 
 The 0017 migration maps single-package grants, expands concrete multi-package
 grants into one row per owned package (same hash, new ids), and drops `*` and
-other unmapped rows. Rewrite `*` rows to a concrete owned package (typically
-`raycast`) before 0017 runs. Do not apply 0017 on production until the new
-worker is deployed: older workers still read the grant columns. Cross-package
-HTTP launchers call the `raycast` package's `invoke` export, which uses
-`packages.invoke` internally.
+other unmapped rows. A row that lists packages in both legacy arrays is treated
+as multi-package and exploded from the union. Rewrite `*` rows to a concrete
+owned package (typically `raycast`) before 0017 runs. Do not apply 0017 on
+production until the new worker is deployed: older workers still read the grant
+columns. Cross-package HTTP launchers call the `raycast` package's `invoke`
+export, which uses `packages.invoke` internally.
