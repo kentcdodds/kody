@@ -838,6 +838,32 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(setupHtml).toContain('Save and continue')
 	expect(setupHtml).toContain('data-testid="connect-oauth-advanced"')
 	expect(setupHtml).toContain('https://github.com/login/oauth/authorize')
+
+	// Provider without stored or query endpoints: the missing-config error
+	// is a single alert, not also repeated as the header description.
+	const missingResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/connect/oauth?provider=unknown-provider',
+		),
+		env,
+		loaderData: {
+			connectOauth: {
+				ok: true,
+				provider: 'unknown-provider',
+				integration: null,
+				builtInAvailable: false,
+				hasStoredClientSecret: false,
+				redirectUri: 'https://example.com/connect/oauth',
+			},
+		},
+	})
+	expect(missingResponse.status).toBe(200)
+	const missingHtml = await readResponseText(missingResponse)
+	expect(missingHtml).toContain('role="alert"')
+	expect(
+		missingHtml.split('Missing required OAuth configuration parameters.')
+			.length - 1,
+	).toBe(1)
 })
 
 test('renderAppPage renders the redesigned pricing page', async () => {

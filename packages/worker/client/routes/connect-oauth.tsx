@@ -1271,9 +1271,9 @@ export function ConnectOauthRoute(handle: Handle) {
 		config ? `Connect ${config.provider}` : 'Connect an account'
 
 	const headerDescription = () => {
-		if (!config) return statusMessage
 		if (statusTone === 'error') return null
 		if (currentStep === 'callback') return null
+		if (!config) return statusMessage
 		if (currentStep === 'success') return "You're connected."
 		if (config.platformDescription) return config.platformDescription
 		if (config.platformAppSlug) {
@@ -1457,12 +1457,15 @@ export function ConnectOauthRoute(handle: Handle) {
 			handle.queueTask(initializeVisit)
 		}
 		if (!config) {
+			const description = headerDescription()
 			return (
 				<section mix={css(pageCss)}>
 					<header mix={css(headerCss)}>
 						<span mix={css(eyebrowCss)}>Connect an account</span>
 						<h1 mix={css(pageTitleCss)}>{headerTitle()}</h1>
-						<p mix={css(pageDescriptionCss)}>{statusMessage}</p>
+						{description ? (
+							<p mix={css(pageDescriptionCss)}>{description}</p>
+						) : null}
 					</header>
 					{renderStatusCallout()}
 					{renderRedirectUriCard()}
