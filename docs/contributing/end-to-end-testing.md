@@ -66,7 +66,9 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   applies local D1 migrations, and starts Wrangler against
   `.wrangler/state/e2e`.
 - `npm run test:e2e:run` ensures Playwright Chromium is installed before the
-  suite starts.
+  suite starts (`tools/ensure-playwright-browser.ts`). The Validate E2E job
+  restores `~/.cache/ms-playwright` from Actions cache and calls the same ensure
+  script, so a matching Playwright revision does not download or run `apt-get`.
 - `npm run test:e2e:ui` and plain `npx playwright test` assume Playwright
   browsers are already installed.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler loads `packages/worker/.env`

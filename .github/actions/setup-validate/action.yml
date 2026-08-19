@@ -26,6 +26,7 @@ runs:
 
     - name: 🎭 Cache Playwright Browsers
       if: inputs.playwright == 'true'
+      id: playwright-cache
       uses: actions/cache@v5.0.3
       with:
         path: ~/.cache/ms-playwright
@@ -68,7 +69,11 @@ runs:
     - name: 🎭 Install Playwright Browsers
       if: inputs.playwright == 'true'
       shell: bash
-      run: npm run test:e2e:install
+      run: |
+        echo "playwright-cache-hit=${{ steps.playwright-cache.outputs.cache-hit }}"
+        # Cache hit: ensure is a no-op (executable already on disk).
+        # Cache miss: download Chromium only — no apt --with-deps.
+        npm run test:e2e:ensure
 
     - name: 🗄️ Apply D1 Migrations
       if: inputs.migrate-local == 'true'
