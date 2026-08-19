@@ -106,9 +106,7 @@ test('delimiter-bounded params keep companion suffixes, hyphens, and encoded dot
 	).toBe('profile-avatar')
 	expect(
 		await (
-			await router.fetch(
-				new Request('http://localhost/profiles/alice/og.png'),
-			)
+			await router.fetch(new Request('http://localhost/profiles/alice/og.png'))
 		).text(),
 	).toBe('profile-og')
 	expect(
