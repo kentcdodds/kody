@@ -3,11 +3,13 @@ import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { z } from 'zod'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import { isRetryableD1LockError } from '#worker/d1-retry.ts'
+import { isTransientDurableObjectResetError } from '#worker/durable-object-reset-retry.ts'
 import {
 	userMeterNamespace,
 	userMeterRpc,
 } from '#worker/entitlements/user-meter-client.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import {
 	getPackageServiceEntryPath,
 	listPackageServices,
@@ -362,6 +364,45 @@ export function computePackageServiceRetryDelayMs(input: {
 function buildPackageServiceRetryTime(consecutiveFailureCount: number) {
 	return new Date(
 		Date.now() + computePackageServiceRetryDelayMs({ consecutiveFailureCount }),
+	)
+}
+
+/**
+ * Opaque Cloudflare faults that kill a service sandbox without giving package
+ * code a chance to `setAlarm`. Same class as Durable Object eviction: a
+ * platform interrupt, not a package crash-loop.
+ */
+export function isTransientPackageServicePlatformError(error: unknown) {
+	return (
+		isRetryableD1LockError(error) || isTransientDurableObjectResetError(error)
+	)
+}
+
+function shouldResumePersistentServiceAfterError(input: {
+	autoStart: boolean
+	mode: PackageServiceState['mode']
+	nextStatus: PackageServiceState['status']
+	platformInterrupt: boolean
+	nextAlarmAt: string | null
+	nextAlarmSource: PackageServiceState['nextAlarmSource']
+}) {
+	if (
+		input.nextAlarmAt &&
+		input.nextAlarmSource !== 'heartbeat' &&
+		input.nextAlarmSource !== 'keepalive'
+	) {
+		return false
+	}
+	if (
+		input.autoStart &&
+		(input.mode !== 'persistent' || input.nextStatus === 'error')
+	) {
+		return true
+	}
+	return (
+		input.mode === 'persistent' &&
+		input.nextStatus === 'error' &&
+		input.platformInterrupt
 	)
 }
 
@@ -791,12 +832,14 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		nextStatus: PackageServiceState['status']
 		lastResult?: unknown
 		lastError?: string | null
+		platformInterrupt?: boolean
 	}) {
 		if (this.stateSnapshot.currentRunId !== input.runId) return
 		const binding = this.stateSnapshot.binding
 		const startedAt = this.stateSnapshot.lastStartedAt
 		const finishedAtMs = Date.now()
 		const stopRequested = this.stateSnapshot.stopRequested
+		const platformInterrupt = input.platformInterrupt === true && !stopRequested
 		this.stateSnapshot.status = input.nextStatus
 		this.stateSnapshot.currentRunId = null
 		this.stateSnapshot.stopRequested = false
@@ -806,10 +849,11 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		if ('lastError' in input) {
 			this.stateSnapshot.lastError = input.lastError ?? null
 		}
-		this.stateSnapshot.consecutiveFailureCount =
-			input.lastError == null
-				? 0
-				: this.stateSnapshot.consecutiveFailureCount + 1
+		if (input.lastError == null) {
+			this.stateSnapshot.consecutiveFailureCount = 0
+		} else if (!platformInterrupt) {
+			this.stateSnapshot.consecutiveFailureCount += 1
+		}
 		this.stateSnapshot.lastRunFinishedAt = new Date(finishedAtMs).toISOString()
 		this.stateSnapshot.lastStoppedAt = this.stateSnapshot.lastRunFinishedAt
 		await this.persistState()
@@ -817,17 +861,22 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		if (stopRequested) {
 			await this.clearAlarm()
 		} else if (
-			this.stateSnapshot.autoStart &&
-			(this.stateSnapshot.mode !== 'persistent' ||
-				input.nextStatus === 'error') &&
-			(!this.stateSnapshot.nextAlarmAt ||
-				this.stateSnapshot.nextAlarmSource === 'heartbeat' ||
-				this.stateSnapshot.nextAlarmSource === 'keepalive')
+			shouldResumePersistentServiceAfterError({
+				autoStart: this.stateSnapshot.autoStart,
+				mode: this.stateSnapshot.mode,
+				nextStatus: input.nextStatus,
+				platformInterrupt,
+				nextAlarmAt: this.stateSnapshot.nextAlarmAt,
+				nextAlarmSource: this.stateSnapshot.nextAlarmSource,
+			})
 		) {
 			await this.scheduleAlarm({
-				runAt: buildPackageServiceRetryTime(
-					this.stateSnapshot.consecutiveFailureCount,
-				),
+				runAt:
+					platformInterrupt && this.stateSnapshot.mode === 'persistent'
+						? new Date()
+						: buildPackageServiceRetryTime(
+								this.stateSnapshot.consecutiveFailureCount,
+							),
 				source: 'auto-start',
 			})
 		}
@@ -906,6 +955,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				runId: input.runId,
 				nextStatus: this.stateSnapshot.stopRequested ? 'stopped' : 'error',
 				lastError: errorMessage,
+				platformInterrupt: isTransientPackageServicePlatformError(error),
 			})
 		} finally {
 			if (this.activeRunPromise) {
@@ -1375,9 +1425,11 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			await this.persistState()
 			await this.projectServiceStateToD1()
 			if (
-				this.stateSnapshot.autoStart &&
 				!this.stateSnapshot.stopRequested &&
-				!this.stateSnapshot.nextAlarmAt
+				!this.stateSnapshot.nextAlarmAt &&
+				(this.stateSnapshot.autoStart ||
+					(this.stateSnapshot.mode === 'persistent' &&
+						isTransientPackageServicePlatformError(error)))
 			) {
 				await this.scheduleAlarm({
 					runAt: buildPackageServiceRetryTime(

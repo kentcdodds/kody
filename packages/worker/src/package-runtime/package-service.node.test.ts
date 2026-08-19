@@ -89,6 +89,7 @@ const {
 	buildPackageServiceStorageId,
 	buildServiceRuntimeUsageEvent,
 	computePackageServiceRetryDelayMs,
+	isTransientPackageServicePlatformError,
 	packageServiceKeepaliveMs,
 	packageServiceStateHeartbeatMs,
 } = await import('./package-service.ts')
@@ -668,6 +669,150 @@ test('durable object restore immediately resumes an evicted persistent service',
 	}
 })
 
+test('persistent service resumes after a platform internal error but stays down after a package crash', async () => {
+	resetMocks()
+	const usageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	vi.useFakeTimers()
+	try {
+		const startedAt = new Date('2026-08-19T03:42:18.000Z')
+		vi.setSystemTime(startedAt)
+		setupSavedPackage('persistent')
+		mockModule.runBundledModuleWithRegistry.mockResolvedValue({
+			result: null,
+			error: 'internal error; reference = 197apho8c3i03ul6hjbbi2b9',
+		})
+
+		const created = await createPackageServiceInstance({
+			APP_DB: {},
+		} as Env)
+		const start = await created.instance.fetch(
+			new Request('https://package-service.invalid/service/start', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ binding: serviceBinding }),
+			}),
+		)
+		expect(start.status).toBe(200)
+		await flushWaitUntilTasks(created.waitUntilTasks)
+
+		const afterPlatformError = created.persistedEntries.get(
+			'package-service-state',
+		) as {
+			status: string
+			lastError: string | null
+			consecutiveFailureCount: number
+			nextAlarmSource: string | null
+			currentRunId: string | null
+		}
+		expect(afterPlatformError).toMatchObject({
+			status: 'error',
+			lastError: 'internal error; reference = 197apho8c3i03ul6hjbbi2b9',
+			consecutiveFailureCount: 0,
+			nextAlarmSource: 'auto-start',
+			currentRunId: null,
+		})
+		expect(created.getAlarmAt()).toBe(startedAt.valueOf())
+
+		mockModule.runBundledModuleWithRegistry.mockResolvedValue({
+			result: { resumed: true },
+			error: null,
+		})
+		await created.instance.alarm()
+		await flushWaitUntilTasks(created.waitUntilTasks)
+		expect(mockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
+		const afterResume = created.persistedEntries.get(
+			'package-service-state',
+		) as { status: string; lastError: string | null }
+		expect(afterResume).toMatchObject({
+			status: 'stopped',
+			lastError: null,
+		})
+
+		mockModule.runBundledModuleWithRegistry.mockResolvedValue({
+			result: null,
+			error: 'service crashed',
+		})
+		const packageCrashAt = new Date('2026-08-19T03:46:35.000Z')
+		vi.setSystemTime(packageCrashAt)
+		const crashStart = await created.instance.fetch(
+			new Request('https://package-service.invalid/service/start', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ binding: serviceBinding }),
+			}),
+		)
+		expect(crashStart.status).toBe(200)
+		await flushWaitUntilTasks(created.waitUntilTasks)
+
+		const afterPackageCrash = created.persistedEntries.get(
+			'package-service-state',
+		) as {
+			status: string
+			lastError: string | null
+			consecutiveFailureCount: number
+			nextAlarmSource: string | null
+		}
+		expect(afterPackageCrash).toMatchObject({
+			status: 'error',
+			lastError: 'service crashed',
+			consecutiveFailureCount: 1,
+		})
+		expect(afterPackageCrash.nextAlarmSource).not.toBe('auto-start')
+
+		mockModule.runBundledModuleWithRegistry.mockClear()
+		await created.instance.alarm()
+		await drainSettledWaitUntilTasks(created.waitUntilTasks)
+		expect(mockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+	} finally {
+		usageSpy.mockRestore()
+		vi.useRealTimers()
+	}
+})
+
+test('bounded service without autoStart stays down after a platform internal error', async () => {
+	resetMocks()
+	const usageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	vi.useFakeTimers()
+	try {
+		vi.setSystemTime(new Date('2026-08-19T03:42:18.000Z'))
+		setupSavedPackage('bounded')
+		mockModule.runBundledModuleWithRegistry.mockResolvedValue({
+			result: null,
+			error: 'internal error; reference = 197apho8c3i03ul6hjbbi2b9',
+		})
+		const created = await createPackageServiceInstance({
+			APP_DB: {},
+		} as Env)
+		const start = await created.instance.fetch(
+			new Request('https://package-service.invalid/service/start', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ binding: serviceBinding }),
+			}),
+		)
+		expect(start.status).toBe(200)
+		await flushWaitUntilTasks(created.waitUntilTasks)
+		const persisted = created.persistedEntries.get('package-service-state') as {
+			status: string
+			nextAlarmSource: string | null
+		}
+		expect(persisted.status).toBe('error')
+		expect(persisted.nextAlarmSource).not.toBe('auto-start')
+
+		mockModule.runBundledModuleWithRegistry.mockClear()
+		await created.instance.alarm()
+		await drainSettledWaitUntilTasks(created.waitUntilTasks)
+		expect(mockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()
+	} finally {
+		usageSpy.mockRestore()
+		vi.useRealTimers()
+	}
+})
+
 test('running keepalive alarms do not start a second service run', async () => {
 	resetMocks()
 	vi.useFakeTimers()
@@ -708,6 +853,32 @@ test('running keepalive alarms do not start a second service run', async () => {
 	} finally {
 		vi.useRealTimers()
 	}
+})
+
+test('isTransientPackageServicePlatformError matches opaque Cloudflare faults and not package crashes', () => {
+	expect(
+		isTransientPackageServicePlatformError(
+			new Error('internal error; reference = 197apho8c3i03ul6hjbbi2b9'),
+		),
+	).toBe(true)
+	expect(
+		isTransientPackageServicePlatformError(
+			new Error(
+				'D1_ERROR: Internal error in D1 DB storage caused object to be reset; reference = abc123',
+			),
+		),
+	).toBe(true)
+	expect(
+		isTransientPackageServicePlatformError(
+			new Error('Durable Object exceeded its CPU time limit and was reset.'),
+		),
+	).toBe(true)
+	expect(
+		isTransientPackageServicePlatformError(new Error('service crashed')),
+	).toBe(false)
+	expect(
+		isTransientPackageServicePlatformError(new Error('internal error')),
+	).toBe(false)
 })
 
 test('computePackageServiceRetryDelayMs doubles from the base delay to a 15-minute cap with jitter', () => {

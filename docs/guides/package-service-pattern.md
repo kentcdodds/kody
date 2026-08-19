@@ -197,8 +197,11 @@ short incoming alarm; still treat disconnect and eviction as normal:
 
 Use `mode: 'persistent'` for daemon-like supervisors (Discord Gateway, other
 outbound sockets). Persistent services resume immediately after Durable Object
-eviction even when `autoStart` is false. Bounded services still use crash-loop
-backoff when `autoStart` is true.
+eviction and after opaque Cloudflare platform faults (sandbox
+`internal error; reference = …`, isolate resets, retryable D1 blips) even when
+`autoStart` is false. Package-thrown errors still need `autoStart` or
+`service.setAlarm`. Bounded services still use crash-loop backoff when
+`autoStart` is true.
 
 Use `timeoutMs` to give a bounded service enough room to run, but do not rely on
 indefinite execution as the only lifecycle mechanism.

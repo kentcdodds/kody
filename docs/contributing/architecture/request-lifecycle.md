@@ -114,9 +114,12 @@ Saved packages may also declare long-lived package services under
   Background `waitUntil` work does not keep the Durable Object alive by itself;
   without that wake, Cloudflare evicts the isolate and orphans the sandbox,
   including any outbound WebSocket.
-- `mode: 'persistent'` means stay up until stopped. Eviction is treated as a
-  platform interrupt: the host immediately reschedules the same service, even
-  when `autoStart` is false. Persist resume cursors (`session_id`, sequence) in
+- `mode: 'persistent'` means stay up until stopped. Eviction and opaque
+  Cloudflare platform faults (`internal error; reference = …`, Durable Object
+  isolate resets, retryable D1 blips) are treated as platform interrupts: the
+  host immediately reschedules the same service, even when `autoStart` is false.
+  Package-thrown errors still require `autoStart` or `service.setAlarm` to
+  reconnect. Persist resume cursors (`session_id`, sequence) in
   `packageStorage()` so the next run can continue.
 
 ## Workflow runtime
