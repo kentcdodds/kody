@@ -77,7 +77,9 @@ test('buildPackageFilesView distinguishes root, directories, files, and misses',
 	expect(buildPackageFilesView({ files: {}, selectedPath: '' })?.kind).toBe(
 		'directory',
 	)
-	expect(buildPackageFilesView({ files, selectedPath: 'constructor' })).toBeNull()
+	expect(
+		buildPackageFilesView({ files, selectedPath: 'constructor' }),
+	).toBeNull()
 	expect(buildPackageFilesView({ files, selectedPath: 'toString' })).toBeNull()
 	expect(buildPackageFilesView({ files, selectedPath: '__proto__' })).toBeNull()
 	expect(
