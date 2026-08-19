@@ -954,6 +954,10 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(connectionHtml).toContain('1 account connected.')
 	expect(connectionHtml).toContain('data-testid="add-account-open"')
 	expect(connectionHtml).toContain('Add another account')
+	expect(connectionHtml).toContain(
+		'href="/account/integrations/google?add-account=1#add-account"',
+	)
+	expect(connectionHtml).toContain('data-prevent-scroll-reset')
 	expect(connectionHtml).not.toContain('data-testid="add-account-form"')
 	expect(connectionHtml).toContain('>Reconnect<')
 	expect(connectionHtml).toContain('data-testid="provider-mark"')
@@ -1034,6 +1038,30 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(builtInHtml).toContain('data-testid="add-account-open"')
 	expect(builtInHtml).toContain('Add another account')
 	expect(builtInHtml).not.toContain('data-testid="add-account-form"')
+
+	const addAccountResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/account/integrations/google?add-account=1#add-account',
+			{ headers: { Cookie: cookie } },
+		),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [googleConnection],
+				apps: [googleApp],
+			},
+		},
+	})
+	expect(addAccountResponse.status).toBe(200)
+	const addAccountHtml = await readResponseText(addAccountResponse)
+	expect(addAccountHtml).toContain('data-testid="add-account-form"')
+	expect(addAccountHtml).toContain('id="add-account"')
+	expect(addAccountHtml).toContain('Connection name')
+	expect(addAccountHtml).toContain('value="google-2"')
+	expect(addAccountHtml).not.toContain('data-testid="add-account-open"')
 	expect(builtInHtml).toContain('Needs setup')
 	expect(builtInHtml).toContain('>Connect<')
 	expect(builtInHtml).toContain(

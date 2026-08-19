@@ -39,9 +39,12 @@ import {
 } from '#client/routes/record-table.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import {
+	addAccountAnchorId,
+	buildAddAccountHref,
 	buildCustomIntegrationSetupPrompt,
 	buildIntegrationSetupPrompt,
 	integrationProviderSuggestions,
+	isAddAccountFormOpen,
 	nextSuggestedConnectionName,
 	resolveAddAccountConnectionName,
 } from '#client/routes/integration-provider-catalog.ts'
@@ -274,13 +277,6 @@ const addAccountLinkCss = {
 	...primaryLinkCss,
 	justifySelf: 'start',
 	width: 'fit-content',
-	textAlign: 'left' as const,
-	padding: 0,
-	border: 0,
-	background: 'none',
-	font: 'inherit',
-	cursor: 'pointer',
-	appearance: 'none' as const,
 }
 
 function AddAccountForm(
@@ -288,9 +284,10 @@ function AddAccountForm(
 		slug: string
 		platform: boolean
 		existingNames: ReadonlyArray<string>
+		open: boolean
+		openHref: string
 	}>,
 ) {
-	let open = false
 	let nameError: string | null = null
 	let name = nextSuggestedConnectionName(
 		handle.props.slug,
@@ -310,26 +307,21 @@ function AddAccountForm(
 			handle.props.slug,
 			handle.props.existingNames,
 		)
-		if (!open) {
+		if (!handle.props.open) {
 			return (
-				<button
-					type="button"
+				<a
+					href={handle.props.openHref}
 					data-testid="add-account-open"
-					aria-expanded="false"
-					mix={[
-						css(addAccountLinkCss),
-						on('click', () => {
-							open = true
-							handle.update()
-						}),
-					]}
+					data-prevent-scroll-reset
+					mix={css(addAccountLinkCss)}
 				>
 					Add another account
-				</button>
+				</a>
 			)
 		}
 		return (
 			<form
+				id={addAccountAnchorId}
 				data-testid="add-account-form"
 				mix={[
 					on('submit', (event) => {
@@ -351,6 +343,7 @@ function AddAccountForm(
 						display: 'grid',
 						gap: spacing.sm,
 						justifyItems: 'start',
+						scrollMarginTop: '5.5rem',
 					}),
 				]}
 			>
@@ -1054,6 +1047,8 @@ export function AccountIntegrationsRoute(handle: Handle) {
 															...integrations.map((entry) => entry.name),
 															...apps.map((app) => app.slug),
 														]}
+														open={isAddAccountFormOpen(getCurrentHref())}
+														openHref={buildAddAccountHref(getCurrentHref())}
 													/>
 												</div>
 											)}

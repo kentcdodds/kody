@@ -142,3 +142,19 @@ export function nextSuggestedConnectionName(
 	while (taken.has(`${slugKey}-${n}`)) n += 1
 	return `${slugKey}-${n}`
 }
+
+export const addAccountQueryParam = 'add-account'
+export const addAccountAnchorId = 'add-account'
+
+export function isAddAccountFormOpen(href: string) {
+	return new URL(href, 'http://localhost').searchParams.has(
+		addAccountQueryParam,
+	)
+}
+
+export function buildAddAccountHref(href: string) {
+	const url = new URL(href, 'http://localhost')
+	url.searchParams.set(addAccountQueryParam, '1')
+	url.hash = addAccountAnchorId
+	return `${url.pathname}${url.search}${url.hash}`
+}

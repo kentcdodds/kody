@@ -1,8 +1,10 @@
 import { expect, test } from 'vitest'
 import { getGuideBySlug } from '#worker/guides/catalog.ts'
 import {
+	buildAddAccountHref,
 	buildIntegrationSetupPrompt,
 	integrationProviderSuggestions,
+	isAddAccountFormOpen,
 	isTakenConnectionName,
 	nextSuggestedConnectionName,
 	resolveAddAccountConnectionName,
@@ -88,4 +90,17 @@ test('add-account name resolution rejects names already used by any connection o
 			existingNames,
 		}),
 	).toEqual({ ok: true, name: 'google-3' })
+})
+
+test('add-account href keeps the current path and search, then opens the form anchor', () => {
+	expect(isAddAccountFormOpen('/account/integrations/google')).toBe(false)
+	expect(
+		isAddAccountFormOpen('/account/integrations/google?add-account=1'),
+	).toBe(true)
+	expect(buildAddAccountHref('/account/integrations/google?q=goo')).toBe(
+		'/account/integrations/google?q=goo&add-account=1#add-account',
+	)
+	expect(buildAddAccountHref('/account/integrations/apps/google')).toBe(
+		'/account/integrations/apps/google?add-account=1#add-account',
+	)
 })
