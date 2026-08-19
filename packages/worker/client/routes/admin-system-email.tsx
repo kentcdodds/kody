@@ -229,6 +229,7 @@ export function AdminSystemEmailRoute(handle: Handle) {
 								columns={[
 									{ key: 'subject', label: 'Subject', primary: true },
 									{ key: 'inbox', label: 'Inbox' },
+									{ key: 'to', label: 'To', drop: 1 },
 									{ key: 'from', label: 'From', drop: 1 },
 									{ key: 'bytes', label: 'Bytes', align: 'end', drop: 2 },
 									{ key: 'received', label: 'Received' },
@@ -243,6 +244,11 @@ export function AdminSystemEmailRoute(handle: Handle) {
 											</span>
 										),
 										inbox: systemMessage.inbox_local_part,
+										to: (
+											<span mix={clampedCellCss}>
+												{systemMessage.to_addresses.join(', ') || 'None'}
+											</span>
+										),
 										from: (
 											<span mix={clampedCellCss}>
 												{systemMessage.from_address ??

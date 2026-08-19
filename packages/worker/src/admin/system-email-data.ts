@@ -27,6 +27,7 @@ export const adminSystemEmailListItemFieldNames = [
 	'raw_size',
 	'received_at',
 	'created_at',
+	'to_addresses',
 ] as const
 
 type AdminSystemEmailListItemFieldName =
@@ -45,10 +46,10 @@ export type AdminSystemEmailListItem = Record<
 	raw_size: number
 	received_at: string | null
 	created_at: string
+	to_addresses: Array<string>
 }
 
 export type AdminSystemEmailDetail = AdminSystemEmailListItem & {
-	to_addresses: Array<string>
 	cc_addresses: Array<string>
 	reply_to_addresses: Array<string>
 	headers: Record<string, Array<string>>
@@ -97,6 +98,11 @@ function toListItem(row: Record<string, unknown>): AdminSystemEmailListItem {
 		raw_size: Number(row['raw_size'] ?? 0),
 		received_at: row['received_at'] == null ? null : String(row['received_at']),
 		created_at: String(row['created_at']),
+		to_addresses: parseJsonStringArray(
+			row['to_addresses_json'] == null
+				? null
+				: String(row['to_addresses_json']),
+		),
 	}
 }
 

@@ -35,6 +35,7 @@ export const adminSystemEmailListItemSchema = z.object({
 	raw_size: z.number().int().nonnegative(),
 	received_at: z.string().nullable(),
 	created_at: z.string(),
+	to_addresses: z.array(z.string()),
 })
 
 const outputSchema = z.object({

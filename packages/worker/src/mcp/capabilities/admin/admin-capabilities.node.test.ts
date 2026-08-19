@@ -784,6 +784,7 @@ test('admin system email capabilities read only system-owned mail and audit read
 			id: 'system-message-1',
 			inbox_local_part: 'abuse',
 			subject: 'Abuse report',
+			to_addresses: ['abuse@example.com'],
 		}),
 	])
 

@@ -42,6 +42,7 @@ test('admin system email list stays one row when an inbox has several domain add
 			id: messageId,
 			inboxId,
 			fromAddress: 'no-reply@accounts.google.com',
+			toAddresses: ['kody@kody.codes'],
 			subject: 'Security alert',
 			rawSize: 13746,
 			processingStatus: 'stored',
@@ -61,6 +62,7 @@ test('admin system email list stays one row when an inbox has several domain add
 		inbox_local_part: 'kody',
 		subject: 'Security alert',
 		raw_size: 13746,
+		to_addresses_json: '["kody@kody.codes"]',
 	})
 
 	const detail = await getSystemEmailAdminMessageRow({

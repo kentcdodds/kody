@@ -609,10 +609,10 @@ export type AdminSystemEmailListItem = {
 	raw_size: number
 	received_at: string | null
 	created_at: string
+	to_addresses: Array<string>
 }
 
 export type AdminSystemEmailDetail = AdminSystemEmailListItem & {
-	to_addresses: Array<string>
 	cc_addresses: Array<string>
 	reply_to_addresses: Array<string>
 	headers: Record<string, Array<string>>

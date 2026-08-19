@@ -687,7 +687,7 @@ export async function listSystemEmailAdminMessages(input: {
 				`SELECT message.id, inbox.name AS inbox_local_part,
 					message.from_address, message.envelope_from, message.subject,
 					message.processing_status, message.raw_size, message.received_at,
-					message.created_at
+					message.created_at, message.to_addresses_json
 				FROM system_email_messages AS message
 				${adminSystemInboxJoin}
 				WHERE message.direction = 'inbound'
