@@ -176,13 +176,11 @@ the class until `deleted_classes` runs (error 10064). Export a stub, drop the
 binding, then add the `deleted_classes` migration and its
 `tools/ci/do-deletion-allowlist.json` entry on a later deploy.
 
-`PackageServiceInstance` is in that window on production: the transferred
-objects still exist, so the runtime worker exports a stub and top-level tag `v2`
-is deferred until after the binding-only deploy. Preview keeps `v2` and the
-matching `tools/ci/do-deletion-allowlist.json` entry because a fresh worker
-applies `v1` `new_sqlite_classes` and cannot create an unexported class (error
-10070). The follow-up reuses that allowlist entry when it restores top-level
-`v2` and removes the stub.
+`PackageServiceInstance` is in that window: the runtime worker exports a stub
+and omits tag `v2` so production can drop the remote binding. Preview also omits
+`v2` while the stub is exported; `deleted_classes` fails with error 10074 when
+the previous script version did not export the class. The allowlist entry stays
+for the follow-up that restores `v2` and removes the stub.
 
 ## Rollback
 

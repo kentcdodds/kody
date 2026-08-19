@@ -40,8 +40,8 @@ The class arrived through a `transferred_classes` migration, so Cloudflare still
 has a remote binding and existing objects after the source binding is gone. A
 same-deploy `deleted_classes` migration fails with error 10061. Dropping the
 binding without exporting the class fails with error 10064. Export a stub, drop
-the remote binding, then apply top-level runtime-worker tag `v2`
-`deleted_classes` and remove the stub. The `tools/ci/do-deletion-allowlist.json`
-entry for that tag stays for preview `v2` and is the same contract the follow-up
-reuses. Preview keeps `v2` because a fresh worker applies `v1`
-`new_sqlite_classes` and cannot create an unexported class (error 10070).
+the remote binding, then apply runtime-worker tag `v2` `deleted_classes` and
+remove the stub. The `tools/ci/do-deletion-allowlist.json` entry for that tag
+stays for the follow-up. Preview also omits `v2` while the stub is exported:
+`deleted_classes` fails with error 10074 when the previous script version did
+not export the class.
