@@ -95,6 +95,10 @@ import {
 	reportExecutePhaseProgress,
 	type McpReportProgress,
 } from '#mcp/progress.ts'
+import {
+	firstCapabilityDispatchWarnTag,
+	shouldWarnFirstCapabilityDispatch,
+} from './first-capability-dispatch.ts'
 
 type ExecuteServerTimingEntry = {
 	name: string
@@ -140,7 +144,6 @@ export function createAdHocExecuteSourceFiles(code: string) {
 
 /** Once per isolate: sample the first kody.* capability RPC wall time. */
 let firstCapabilityDispatchSampled = false
-const firstCapabilityDispatchWarnMs = 250
 
 function isPackageSecretAvailabilityError(error: unknown) {
 	return (
@@ -326,8 +329,8 @@ async function buildKodyToolContext(
 				} finally {
 					if (shouldSampleFirstDispatch) {
 						const durationMs = Date.now() - dispatchStartedAtMs
-						if (durationMs >= firstCapabilityDispatchWarnMs) {
-							console.warn('kody-first-capability-dispatch-slow', {
+						if (shouldWarnFirstCapabilityDispatch(durationMs)) {
+							console.warn(firstCapabilityDispatchWarnTag, {
 								capabilityName,
 								durationMs,
 							})

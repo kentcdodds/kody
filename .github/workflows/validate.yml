@@ -250,8 +250,12 @@ jobs:
       - workers
       - mcp
       - e2e
+    # always() so a failed sibling still reports; !cancelled() so a
+    # superseded run (cancel-in-progress) does not paint ✅ Validate red.
+    # A sibling job timeout still fails this job: the workflow is not
+    # cancelled, and that child result is cancelled != success.
     if: >-
-      always() && (github.event_name != 'pull_request' ||
+      always() && !cancelled() && (github.event_name != 'pull_request' ||
       github.event.pull_request.draft == false)
     steps:
       - name: ✅ All checks passed
