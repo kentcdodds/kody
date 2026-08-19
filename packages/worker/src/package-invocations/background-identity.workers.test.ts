@@ -4,6 +4,8 @@ import { metaGetCurrentUserCapability } from '#mcp/capabilities/meta/meta-get-cu
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { runSavedPackageModuleOnce } from './module-execution.ts'
+import type * as ModuleArtifacts from './module-artifacts.ts'
+import type * as RunKodyRegistry from '#mcp/run-kody-registry.ts'
 
 const mocks = vi.hoisted(() => ({
 	ensureModuleArtifact: vi.fn(),
@@ -11,12 +13,12 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('./module-artifacts.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('./module-artifacts.ts')>()),
+	...(await importOriginal<typeof ModuleArtifacts>()),
 	ensureModuleArtifact: mocks.ensureModuleArtifact,
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', async (importOriginal) => ({
-	...(await importOriginal<typeof import('#mcp/run-kody-registry.ts')>()),
+	...(await importOriginal<typeof RunKodyRegistry>()),
 	runBundledModuleWithRegistry: mocks.runBundledModuleWithRegistry,
 }))
 

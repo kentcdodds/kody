@@ -72,6 +72,8 @@ test('workspace filesystem adapter supports raw isomorphic-git operations', asyn
 	await workspaceFileSystem.mkdir('/remove-me')
 	await fs.promises.unlink('/remove-me.txt')
 	await fs.promises.rmdir('/remove-me')
-	await expect(workspaceFileSystem.stat('/remove-me.txt')).rejects.toThrow()
-	await expect(workspaceFileSystem.stat('/remove-me')).rejects.toThrow()
+	await expect(workspaceFileSystem.stat('/remove-me.txt')).rejects.toThrow(
+		Error,
+	)
+	await expect(workspaceFileSystem.stat('/remove-me')).rejects.toThrow(Error)
 })

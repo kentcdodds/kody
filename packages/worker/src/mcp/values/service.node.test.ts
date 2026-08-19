@@ -7,10 +7,8 @@ import {
 } from '#mcp/storage-bindings.ts'
 import { deleteAllAppScopedValues } from '#worker/package-config-cleanup.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	createInMemoryUserMeterEnv,
-	createWaitUntilDrain,
 	withPatchedDbPrepare,
 } from '#worker/test-support/user-meter.ts'
 import { deleteValue, getValue, listValues, saveValue } from './service.ts'

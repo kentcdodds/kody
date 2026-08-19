@@ -38,7 +38,9 @@ test('dedicated system graph enforces config ownership and reports health', asyn
 			id: 'cross-owner-thread',
 			inboxId: 'foreign-inbox',
 		}),
-	).rejects.toThrow()
+	).rejects.toThrow(
+		'System email thread insert rejected an invalid operator-owned inbox reference.',
+	)
 	await expect(
 		insertSystemEmailMessage({
 			db: env.APP_DB,
@@ -49,7 +51,9 @@ test('dedicated system graph enforces config ownership and reports health', asyn
 				processingStatus: 'stored',
 			},
 		}),
-	).rejects.toThrow()
+	).rejects.toThrow(
+		'System email message insert rejected an invalid dedicated reference.',
+	)
 	await expect(
 		insertSystemEmailAttachments({
 			db: env.APP_DB,

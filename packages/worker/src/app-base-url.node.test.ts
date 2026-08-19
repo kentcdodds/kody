@@ -175,7 +175,7 @@ test('parsePackageAppRequestHost classifies apex, user subdomains, and rejects e
 		'https://kodyapps.dev./',
 		'https://kentcdodds.kodyapps.dev./',
 	]) {
-		expect(parse(url), url).toEqual({
+		expect(parse(url)).toEqual({
 			kind: 'unrecognized-subdomain',
 			role: 'canonical',
 		})
@@ -188,7 +188,7 @@ test('parsePackageAppRequestHost classifies apex, user subdomains, and rejects e
 		// Same hostname on another scheme/port is another local service.
 		'http://kodyapps.dev/',
 	]) {
-		expect(parse(url), url).toBeNull()
+		expect(parse(url)).toBeNull()
 	}
 	// No configured package-app origin: nothing classifies.
 	expect(

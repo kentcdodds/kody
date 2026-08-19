@@ -5,6 +5,7 @@ import {
 	hasStoredConnectClientSecret,
 	loadAccountIntegrationByName,
 	loadExistingConnectionSummary,
+	readConnectOauthLookupOptions,
 } from '#app/account-integrations-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requirePageSession } from '#app/page-auth.ts'
@@ -57,18 +58,12 @@ async function loadConnectOauthLoaderData(
 	}
 	// `platform=1` forces the built-in of the same name; `platform=<slug>`
 	// connects that built-in under a different connection name.
-	const platformParam = requestUrl.searchParams.get('platform')?.trim()
+	// `app=<slug>` reuses a saved bring-your-own app under `provider`.
 	const integration = await loadAccountIntegrationByName(
 		env,
 		user,
 		providerKey,
-		{
-			preferPlatform: platformParam === '1',
-			platformSlug:
-				platformParam && platformParam !== '1'
-					? (normalizeProviderKey(platformParam) ?? undefined)
-					: undefined,
-		},
+		readConnectOauthLookupOptions(requestUrl.searchParams),
 	)
 	const [builtInAvailable, existingConnection, hasStoredClientSecret] =
 		await Promise.all([

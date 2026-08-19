@@ -25,11 +25,13 @@ import {
 	limitExecutionResultValue,
 	runWithDynamicWorkerEvaluationBudget,
 } from './executor.ts'
-import { executorSandboxTimeoutMessage } from '#worker/sentry-options.ts'
+import {
+	durableObjectCodeUpdatedResetMessage,
+	executorSandboxTimeoutMessage,
+} from '#worker/sentry-options.ts'
 import { assertGeneratedExecutorSourceIsBundleSafe } from './kody-remote-proxy-source.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { createEvaluationSideEffectTracker } from '#mcp/evaluation-side-effects.ts'
-import { durableObjectCodeUpdatedResetMessage } from '#worker/sentry-options.ts'
 
 type FakeWorkerOptions = Record<string, unknown>
 

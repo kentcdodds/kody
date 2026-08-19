@@ -66,5 +66,5 @@ test('provider index rejects the dedicated system owner', async () => {
 			inboxId: null,
 			now: new Date().toISOString(),
 		}),
-	).rejects.toThrow()
+	).rejects.toThrow(/CHECK constraint failed/)
 })

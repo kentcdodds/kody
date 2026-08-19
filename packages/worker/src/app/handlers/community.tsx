@@ -1,4 +1,5 @@
 import { type Action } from 'remix/router'
+import { loadCommunityIndexData } from '#app/community-data.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -15,6 +16,10 @@ export function createCommunityHandler(env: Env) {
 			)
 			if (frameResponse) return frameResponse
 
+			// Start listing load so the blocking Frame overlaps session/asset
+			// work instead of waiting on D1 after streaming setup. resolveFrame
+			// reuses this promise via the per-request memo.
+			void loadCommunityIndexData(env, request)
 			return renderAppPage({
 				request,
 				env,

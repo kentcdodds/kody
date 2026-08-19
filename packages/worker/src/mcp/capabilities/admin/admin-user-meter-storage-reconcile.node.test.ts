@@ -105,9 +105,13 @@ test('admin_user_meter_storage_reconcile routes batch size, audits, and rejects 
 	mockModule.reconcileD1StorageBytes.mockClear()
 	await expect(
 		adminUserMeterStorageReconcileCapability.handler({ batch_size: 0 }, ctx),
-	).rejects.toThrow()
+	).rejects.toThrow(
+		'Invalid input for capability "admin_user_meter_storage_reconcile"',
+	)
 	await expect(
 		adminUserMeterStorageReconcileCapability.handler({ batch_size: 9 }, ctx),
-	).rejects.toThrow()
+	).rejects.toThrow(
+		'Invalid input for capability "admin_user_meter_storage_reconcile"',
+	)
 	expect(mockModule.reconcileD1StorageBytes).not.toHaveBeenCalled()
 })

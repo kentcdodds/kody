@@ -140,6 +140,8 @@ test('memory reindex retries transient D1 export page errors then surfaces exhau
 	vi.useFakeTimers()
 	try {
 		const exhaustedPromise = reindexMemoryVectors({ APP_DB: {} } as Env)
+		// Attach before advancing timers so the rejection is not unhandled.
+		// oxlint-disable-next-line vitest/valid-expect
 		const expectation = expect(exhaustedPromise).rejects.toThrow(
 			'Currently processing a long-running export',
 		)

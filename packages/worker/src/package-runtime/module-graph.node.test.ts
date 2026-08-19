@@ -3,7 +3,6 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { expect, test, vi } from 'vitest'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
 

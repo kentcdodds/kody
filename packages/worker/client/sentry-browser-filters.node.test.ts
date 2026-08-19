@@ -301,6 +301,49 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 					{
 						type: 'TypeError',
 						value:
+							"undefined is not an object (evaluating 'window.webkit.messageHandlers')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'sendScrollEvent',
+									abs_path: 'https://kody.codes/@kentcdodds/origin',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							"undefined is not an object (evaluating 'window.webkit.messageHandlers')",
+						stacktrace: {
+							frames: [
+								{
+									function: 'boot',
+									filename: 'https://kody.codes/assets/entry.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
 							"TypeError: null is not an object (evaluating 'document.querySelector(\"meta[property='og:type']\").content')",
 						stacktrace: {
 							frames: [

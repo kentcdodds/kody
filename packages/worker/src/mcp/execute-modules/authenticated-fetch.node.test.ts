@@ -31,8 +31,15 @@ function createKody(integration = spotifyIntegration) {
 			expect(args.name).toBe('spotify')
 			return { integration }
 		},
-		async secret_set_many() {
-			return { ok: true, assertOnly: false, secrets: [] }
+		async integration_token_refresh() {
+			return {
+				ok: true,
+				refreshedAt: new Date().toISOString(),
+				refreshTokenRotated: false,
+			}
+		},
+		async integration_refresh_access_token() {
+			throw new Error('createAuthenticatedFetch must not materialize tokens')
 		},
 	} satisfies KodyNamespace
 

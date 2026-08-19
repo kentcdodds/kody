@@ -102,6 +102,7 @@ test('compressSchemaForLlm strips redundant metadata across object, array, and c
 				},
 			},
 		},
+		// oxlint-disable-next-line unicorn/no-thenable -- JSON Schema if/then/else keyword, not a thenable
 		then: {
 			type: 'object',
 			properties: {
@@ -210,6 +211,7 @@ test('compressSchemaForLlm strips redundant metadata across object, array, and c
 				},
 			},
 		},
+		// oxlint-disable-next-line unicorn/no-thenable -- JSON Schema if/then/else keyword, not a thenable
 		then: {
 			type: 'object',
 			properties: {

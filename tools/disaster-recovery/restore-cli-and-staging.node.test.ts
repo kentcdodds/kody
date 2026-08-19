@@ -110,7 +110,7 @@ test('staged SQL remains immutable when the operator path is replaced before Wra
 				expect(result.commands[1]?.args).not.toContain(source)
 			},
 		)
-		await expect(stat(stagedPath)).rejects.toThrow()
+		await expect(stat(stagedPath)).rejects.toThrow(/ENOENT/)
 	} finally {
 		await rm(directory, { recursive: true, force: true })
 	}

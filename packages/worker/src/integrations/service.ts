@@ -612,7 +612,9 @@ export async function findOauthAppForProviderSetup(input: {
 	return setupPrefillHasAgreedField(merged) ? merged : null
 }
 
-function oauthAppToSetupPrefill(app: UserOauthApp): OauthAppSetupPrefill {
+export function oauthAppToSetupPrefill(
+	app: UserOauthApp,
+): OauthAppSetupPrefill {
 	return {
 		userId: app.userId,
 		slug: app.slug,

@@ -217,6 +217,8 @@ function createFeatureFlagsTestDb(
 				) {
 					const flagKey = String(params[0])
 					let changes = 0
+					// Snapshot keys so deletes during this loop do not skip entries.
+					// oxlint-disable-next-line unicorn/no-useless-spread
 					for (const mapKey of [...overrides.keys()]) {
 						if (mapKey.startsWith(`${flagKey}:`)) {
 							overrides.delete(mapKey)

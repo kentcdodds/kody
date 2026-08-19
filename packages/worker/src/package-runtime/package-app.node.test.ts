@@ -8,6 +8,8 @@ import {
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as ModuleGraph from './module-graph.ts'
 import type * as PublishedBundleArtifacts from './published-bundle-artifacts.ts'
+import type * as McpAuthUserContext from '#worker/mcp-auth-user-context.ts'
+import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 
 async function extractCreatePackageAppWorkerSource() {
 	const sourceText = await readFile(
@@ -205,7 +207,9 @@ test('package app kody proxy supports mcp namespace calls', async () => {
 			args: { pin: '1234' },
 		},
 	])
-	expect(() => kody['mcp:home:set_pin']).toThrow()
+	expect(() => kody['mcp:home:set_pin']).toThrow(
+		'MCP server tool "mcp:home:set_pin" is not available as a flat kody function.',
+	)
 	expect('mcp' in kody).toBe(true)
 	const { home } = kody.mcp as Record<
 		string,
@@ -396,8 +400,7 @@ vi.mock('#mcp/secrets/package-access.ts', () => ({
 }))
 
 vi.mock('#worker/mcp-auth-user-context.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/mcp-auth-user-context.ts')>()
+	const actual = await importOriginal<typeof McpAuthUserContext>()
 	return {
 		...actual,
 	}
@@ -416,8 +419,7 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 }))
 
 vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/run-records/service.ts')>()
+	const actual = await importOriginal<typeof RunRecordsServiceModule>()
 	return {
 		...actual,
 		beginRunRecord: (...args: Array<unknown>) =>

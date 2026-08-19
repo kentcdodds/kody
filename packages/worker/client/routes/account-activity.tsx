@@ -54,7 +54,6 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getGhostButtonCss,
-	getSelectCss,
 } from '#universal/styles/style-primitives.ts'
 
 const clampedCellCss = css(recordCellClamp(30))

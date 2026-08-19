@@ -13,15 +13,6 @@ import {
 } from './kody-runtime-utils.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 
-type SecretSetManyCall = {
-	secrets: Array<{
-		name: string
-		value?: string
-		scope: string
-	}>
-	assertOnly?: boolean
-}
-
 type SandboxHelpers = {
 	refreshAccessToken: (providerName: string) => Promise<string>
 	createAuthenticatedFetch: (
@@ -65,11 +56,12 @@ const githubConfidentialIntegration = {
 function createKody(
 	integration = spotifyIntegration,
 	options: {
-		onSecretSetMany?: (call: SecretSetManyCall) => void | Promise<void>
+		accessToken?: string
+		onRefreshAccessToken?: (args: CapabilityArgs) => void | Promise<void>
 	} = {},
 ) {
-	const secretSetManyCalls: Array<SecretSetManyCall> = []
 	const tokenRefreshCalls: Array<CapabilityArgs> = []
+	const refreshAccessTokenCalls: Array<CapabilityArgs> = []
 	const storedSecrets = new Map<string, string>()
 	const kody = {
 		async integration_get(args: CapabilityArgs) {
@@ -85,31 +77,25 @@ function createKody(
 				refreshTokenRotated: false,
 			}
 		},
-		async secret_set_many(args: CapabilityArgs) {
-			const call = args as SecretSetManyCall
-			secretSetManyCalls.push(call)
-			await options.onSecretSetMany?.(call)
-			if (!call.assertOnly) {
-				for (const secret of call.secrets) {
-					if (typeof secret.value === 'string') {
-						storedSecrets.set(secret.name, secret.value)
-					}
-				}
-			}
+		async integration_refresh_access_token(args: CapabilityArgs) {
+			refreshAccessTokenCalls.push(args)
+			await options.onRefreshAccessToken?.(args)
+			const accessToken = options.accessToken ?? 'new-access-token'
+			storedSecrets.set(integration.accessTokenSecretName, accessToken)
 			return {
-				ok: true,
-				assertOnly: Boolean(call.assertOnly),
-				secrets: call.assertOnly
-					? []
-					: call.secrets.map((secret) => ({
-							name: secret.name,
-							scope: secret.scope,
-						})),
+				accessToken,
+				refreshedAt: new Date().toISOString(),
+				refreshTokenRotated: false,
 			}
 		},
 	} satisfies KodyNamespace
 
-	return { kody, secretSetManyCalls, tokenRefreshCalls, storedSecrets }
+	return {
+		kody,
+		tokenRefreshCalls,
+		refreshAccessTokenCalls,
+		storedSecrets,
+	}
 }
 
 function createSpotifyHandlers(options: {
@@ -202,17 +188,15 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	const rotatedRefreshFetchCalls: Array<Request> = []
 	const {
 		kody: rotatedKody,
-		secretSetManyCalls: rotatedSecretSetManyCalls,
+		refreshAccessTokenCalls,
 		storedSecrets: rotatedStoredSecrets,
-	} = createKody()
-	rotatedStoredSecrets.set('spotifyRefreshToken', 'old-refresh-token')
-	rotatedStoredSecrets.set('spotifyAccessToken', 'old-access-token')
+	} = createKody(spotifyIntegration, { accessToken: 'new-access-token' })
 	{
 		using _server = createMswNodeServer(
 			createSpotifyHandlers({
 				tokenPayload: {
-					access_token: 'new-access-token',
-					refresh_token: 'new-refresh-token',
+					access_token: 'should-not-be-used-in-sandbox',
+					refresh_token: 'should-not-be-used-in-sandbox',
 				},
 				fetchCalls: rotatedRefreshFetchCalls,
 			}),
@@ -220,47 +204,15 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 		const rotatedAccessToken = await refreshAccessToken(rotatedKody, 'spotify')
 		expect(rotatedAccessToken).toBe('new-access-token')
 	}
-	expect(rotatedSecretSetManyCalls).toEqual([
-		{
-			secrets: [
-				{ name: 'spotifyRefreshToken', scope: 'user' },
-				{ name: 'spotifyAccessToken', scope: 'user' },
-			],
-			assertOnly: true,
-		},
-		{
-			secrets: [
-				{
-					name: 'spotifyRefreshToken',
-					value: 'new-refresh-token',
-					scope: 'user',
-				},
-				{
-					name: 'spotifyAccessToken',
-					value: 'new-access-token',
-					scope: 'user',
-				},
-			],
-		},
-	])
-	expect(rotatedRefreshFetchCalls).toHaveLength(1)
-	expect(rotatedRefreshFetchCalls[0]?.method).toBe('POST')
-	const rotatedRefreshBody = await rotatedRefreshFetchCalls[0]?.text()
-	expect(rotatedRefreshBody).toContain(
-		'refresh_token=%7B%7Bsecret%3AspotifyRefreshToken%7Cscope%3Duser%7D%7D',
-	)
-	expect(rotatedRefreshBody).toContain('client_id=spotify-client-id')
-	expect(rotatedRefreshBody).not.toContain('client_secret=')
+	expect(refreshAccessTokenCalls).toEqual([{ name: 'spotify' }])
+	expect(rotatedRefreshFetchCalls).toEqual([])
 	expect(Object.fromEntries(rotatedStoredSecrets)).toEqual({
-		spotifyRefreshToken: 'new-refresh-token',
 		spotifyAccessToken: 'new-access-token',
 	})
 
 	const storedTokenFetchCalls: Array<Request> = []
-	const {
-		kody: storedTokenKody,
-		secretSetManyCalls: storedSecretSetManyCalls,
-	} = createKody()
+	const { kody: storedTokenKody, tokenRefreshCalls: storedTokenRefreshCalls } =
+		createKody()
 	{
 		using _server = createMswNodeServer(
 			createSpotifyHandlers({
@@ -284,12 +236,11 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	expect(storedTokenFetchCalls[0]?.headers.get('authorization')).toBe(
 		'Bearer {{secret:spotifyAccessToken|scope=user}}',
 	)
-	expect(storedSecretSetManyCalls).toEqual([])
+	expect(storedTokenRefreshCalls).toEqual([])
 
 	const missingTokenFetchCalls: Array<Request> = []
 	const {
 		kody: missingTokenKody,
-		secretSetManyCalls: missingSecretSetManyCalls,
 		tokenRefreshCalls: missingTokenRefreshCalls,
 	} = createKody()
 	{
@@ -305,7 +256,6 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 		const missingTokenResponse = await missingTokenFetch('/me?market=US')
 		expect(await missingTokenResponse.json()).toEqual({ ok: true })
 	}
-	expect(missingSecretSetManyCalls).toEqual([])
 	expect(missingTokenRefreshCalls).toEqual([{ name: 'spotify' }])
 	expect(missingTokenFetchCalls).toHaveLength(2)
 	expect(missingTokenFetchCalls[0]?.headers.get('authorization')).toBe(
@@ -318,7 +268,6 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	const expiredTokenFetchCalls: Array<Request> = []
 	const {
 		kody: expiredTokenKody,
-		secretSetManyCalls: expiredSecretSetManyCalls,
 		tokenRefreshCalls: expiredTokenRefreshCalls,
 	} = createKody()
 	{
@@ -337,7 +286,6 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 		const expiredTokenResponse = await expiredTokenFetch('/me?market=US')
 		expect(await expiredTokenResponse.json()).toEqual({ ok: true })
 	}
-	expect(expiredSecretSetManyCalls).toEqual([])
 	expect(expiredTokenRefreshCalls).toEqual([{ name: 'spotify' }])
 	expect(expiredTokenFetchCalls).toHaveLength(2)
 	expect(expiredTokenFetchCalls[0]?.url).toBe(
@@ -351,17 +299,15 @@ test('kody oauth helpers refresh tokens, retry on missing or expired access toke
 	)
 })
 
-test('token refresh asserts package grants before the provider request and never consumes the token on denial', async () => {
+test('refreshAccessToken forwards host-side use denials and never exchanges tokens in the sandbox', async () => {
 	const fetchCalls: Array<Request> = []
-	const { kody, secretSetManyCalls, storedSecrets } = createKody(
+	const { kody, refreshAccessTokenCalls, storedSecrets } = createKody(
 		spotifyIntegration,
 		{
-			onSecretSetMany(call) {
-				if (call.assertOnly) {
-					throw new Error(
-						'Secret "spotifyRefreshToken" is not allowed for package "@test/spotify".',
-					)
-				}
+			onRefreshAccessToken() {
+				throw new Error(
+					'Secret "spotifyRefreshToken" is not allowed for package "@test/spotify".',
+				)
 			},
 		},
 	)
@@ -380,74 +326,8 @@ test('token refresh asserts package grants before the provider request and never
 		)
 	}
 	expect(fetchCalls).toEqual([])
-	expect(secretSetManyCalls).toEqual([
-		{
-			secrets: [
-				{ name: 'spotifyRefreshToken', scope: 'user' },
-				{ name: 'spotifyAccessToken', scope: 'user' },
-			],
-			assertOnly: true,
-		},
-	])
+	expect(refreshAccessTokenCalls).toEqual([{ name: 'spotify' }])
 	expect(storedSecrets.size).toBe(0)
-})
-
-test('token refresh keeps prior secret state when the atomic persist fails after a rotated provider response', async () => {
-	const fetchCalls: Array<Request> = []
-	const { kody, secretSetManyCalls, storedSecrets } = createKody(
-		spotifyIntegration,
-		{
-			onSecretSetMany(call) {
-				if (call.assertOnly) return
-				throw new Error('simulated second-write failure')
-			},
-		},
-	)
-	storedSecrets.set('spotifyRefreshToken', 'old-refresh-token')
-	storedSecrets.set('spotifyAccessToken', 'old-access-token')
-	{
-		using _server = createMswNodeServer(
-			createSpotifyHandlers({
-				tokenPayload: {
-					access_token: 'new-access-token',
-					refresh_token: 'new-refresh-token',
-				},
-				fetchCalls,
-			}),
-		)
-		await expect(refreshAccessToken(kody, 'spotify')).rejects.toThrow(
-			'simulated second-write failure',
-		)
-	}
-	expect(fetchCalls).toHaveLength(1)
-	expect(secretSetManyCalls).toEqual([
-		{
-			secrets: [
-				{ name: 'spotifyRefreshToken', scope: 'user' },
-				{ name: 'spotifyAccessToken', scope: 'user' },
-			],
-			assertOnly: true,
-		},
-		{
-			secrets: [
-				{
-					name: 'spotifyRefreshToken',
-					value: 'new-refresh-token',
-					scope: 'user',
-				},
-				{
-					name: 'spotifyAccessToken',
-					value: 'new-access-token',
-					scope: 'user',
-				},
-			],
-		},
-	])
-	// Atomic persist failed as one unit: neither rotated secret was committed.
-	expect(Object.fromEntries(storedSecrets)).toEqual({
-		spotifyRefreshToken: 'old-refresh-token',
-		spotifyAccessToken: 'old-access-token',
-	})
 })
 
 test('createExecuteHelperPrelude exposes sandbox oauth and secret helper bindings', async () => {
@@ -523,6 +403,7 @@ const githubPlatformIntegration = {
 
 function createPlatformKody() {
 	const tokenRefreshCalls: Array<CapabilityArgs> = []
+	const refreshAccessTokenCalls: Array<CapabilityArgs> = []
 	const kody = {
 		async integration_get(args: CapabilityArgs) {
 			expect(args.name).toBe(githubPlatformIntegration.name)
@@ -536,21 +417,24 @@ function createPlatformKody() {
 				refreshTokenRotated: false,
 			}
 		},
-		async secret_set_many() {
+		async integration_refresh_access_token(args: CapabilityArgs) {
+			refreshAccessTokenCalls.push(args)
 			throw new Error(
-				'platform refresh must never persist secrets from the sandbox',
+				'platform refresh must never materialize a raw access token',
 			)
 		},
 	} satisfies KodyNamespace
-	return { kody, tokenRefreshCalls }
+	return { kody, tokenRefreshCalls, refreshAccessTokenCalls }
 }
 
 test('refreshAccessToken refuses platform integrations instead of exposing a raw token', async () => {
-	const { kody, tokenRefreshCalls } = createPlatformKody()
+	const { kody, tokenRefreshCalls, refreshAccessTokenCalls } =
+		createPlatformKody()
 	await expect(refreshAccessToken(kody, 'github')).rejects.toThrow(
 		'raw tokens are never exposed to sandboxed code',
 	)
 	expect(tokenRefreshCalls).toEqual([])
+	expect(refreshAccessTokenCalls).toEqual([])
 })
 
 test('createAuthenticatedFetch refreshes platform integrations host-side and retries with a placeholder header', async () => {
@@ -610,45 +494,42 @@ function createGithubPlatformFetchInterceptor(options: {
 	}
 }
 
-test('confidential-flow token refresh includes inline client id and client secret placeholder', async () => {
+test('confidential-flow refreshAccessToken still delegates persist to the host helper', async () => {
 	const fetchCalls: Array<Request> = []
-	const { kody, secretSetManyCalls } = createKody(githubConfidentialIntegration)
+	const { kody, refreshAccessTokenCalls } = createKody(
+		githubConfidentialIntegration,
+		{ accessToken: 'new-github-access' },
+	)
 	{
 		using _server = createMswNodeServer([
 			http.post(githubConfidentialIntegration.tokenUrl, async ({ request }) => {
 				fetchCalls.push(request.clone())
-				return HttpResponse.json({ access_token: 'new-github-access' })
+				return HttpResponse.json({ access_token: 'should-not-be-used' })
 			}),
 		])
 		const accessToken = await refreshAccessToken(kody, 'github')
 		expect(accessToken).toBe('new-github-access')
 	}
-	expect(secretSetManyCalls).toEqual([
-		{
-			secrets: [
-				{ name: 'githubRefreshToken', scope: 'user' },
-				{ name: 'githubAccessToken', scope: 'user' },
-			],
-			assertOnly: true,
-		},
-		{
-			secrets: [
-				{
-					name: 'githubAccessToken',
-					value: 'new-github-access',
-					scope: 'user',
-				},
-			],
-		},
-	])
-	expect(fetchCalls).toHaveLength(1)
-	const body = await fetchCalls[0]?.text()
-	expect(body).toContain('grant_type=refresh_token')
-	expect(body).toContain('client_id=github-client-id')
-	expect(body).toContain(
-		'client_secret=%7B%7Bsecret%3AgithubClientSecret%7Cscope%3Duser%7D%7D',
+	expect(refreshAccessTokenCalls).toEqual([{ name: 'github' }])
+	expect(fetchCalls).toEqual([])
+})
+
+test('refreshAccessToken throws when the host helper capability is missing', async () => {
+	const { kody } = createKody(githubConfidentialIntegration)
+	const namespace = {
+		integration_get: kody.integration_get,
+		integration_token_refresh: kody.integration_token_refresh,
+	}
+	await expect(refreshAccessToken(namespace, 'github')).rejects.toThrow(
+		'kody.integration_refresh_access_token is not available in this sandbox.',
 	)
-	expect(body).toContain(
-		'refresh_token=%7B%7Bsecret%3AgithubRefreshToken%7Cscope%3Duser%7D%7D',
+})
+
+test('refreshAccessToken throws when the host helper returns no access token', async () => {
+	const { kody } = createKody(githubConfidentialIntegration, {
+		accessToken: '',
+	})
+	await expect(refreshAccessToken(kody, 'github')).rejects.toThrow(
+		'Host-side token refresh for integration "github" did not return an access token.',
 	)
 })

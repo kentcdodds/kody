@@ -11,6 +11,7 @@ import {
 	dynamicCallableWorkflowsBindingName,
 	listWorkflowRunsForUser,
 } from './package-workflows.ts'
+import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 
 const runRecordMocks = vi.hoisted(() => {
 	const projectionsByUser = new Map<
@@ -252,8 +253,7 @@ const runRecordMocks = vi.hoisted(() => {
 })
 
 vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/run-records/service.ts')>()
+	const actual = await importOriginal<typeof RunRecordsServiceModule>()
 	return {
 		...actual,
 		beginRunRecord: (...args: Array<unknown>) =>

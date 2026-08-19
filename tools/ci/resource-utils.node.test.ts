@@ -143,7 +143,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 		const packageAppBaseUrl =
 			productionConfig.env?.production?.vars?.PACKAGE_APP_BASE_URL
 		expect(typeof packageAppBaseUrl).toBe('string')
-		const packageAppHostname = new URL(String(packageAppBaseUrl)).hostname
+		const _packageAppHostname = new URL(String(packageAppBaseUrl)).hostname
 		expect(productionConfig.env?.production?.routes).toEqual([
 			{ pattern: 'heykody.dev', custom_domain: true },
 		])

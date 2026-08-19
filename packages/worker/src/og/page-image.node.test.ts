@@ -12,6 +12,7 @@ function expectPngBytes(png: Uint8Array) {
 }
 
 test('renderPageOgImage returns valid PNG bytes for home and community', async () => {
+	expect.hasAssertions()
 	const home = await renderPageOgImage({ page: publicOgPages.home })
 	expectPngBytes(home)
 

@@ -7,7 +7,7 @@ test('reconcileArtifactsPushes skips plain repo entity_sources', async () => {
 		APP_DB: {
 			prepare(query: string) {
 				return {
-					bind(...params: Array<unknown>) {
+					bind(..._params: Array<unknown>) {
 						return {
 							async all<T>() {
 								if (query.includes('FROM entity_sources')) {

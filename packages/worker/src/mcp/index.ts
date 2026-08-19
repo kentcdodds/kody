@@ -83,6 +83,7 @@ class MCPBase extends McpAgent<Env, State, Props> {
 	 * (search preamble dedup, raw-fetch host nudges) on this lane.
 	 */
 	getRegistrationAgent() {
+		// oxlint-disable-next-line typescript/no-this-alias -- object literal methods must close over the McpAgent instance
 		const self = this
 		const agent: McpRegistrationAgent & {
 			state?: State

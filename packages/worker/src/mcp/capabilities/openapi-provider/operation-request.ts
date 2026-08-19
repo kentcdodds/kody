@@ -5,13 +5,15 @@ import {
 	buildBasicAuthSecretPlaceholder,
 	buildSecretPlaceholder,
 } from '#mcp/secrets/placeholders.ts'
-import { assertCanSetSecrets } from '#mcp/secrets/package-access.ts'
-import { setSecretsAtomically } from '#mcp/secrets/service.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
 	getIntegration,
 	type IntegrationConfig,
 } from '#worker/integrations/service.ts'
+import {
+	IntegrationTokenRefreshCallerError,
+	refreshIntegrationTokens,
+} from '#worker/integrations/token-refresh.ts'
 import {
 	normalizeApiBaseUrl,
 	type OpenApiBinding,
@@ -105,11 +107,7 @@ export async function executeOpenApiOperationRequest(input: {
 		const refreshed = await tryRefreshIntegrationAccessToken({
 			env: input.env,
 			userId: input.userId,
-			baseUrl: input.baseUrl,
 			provider: input.binding.auth.provider,
-			integration,
-			storageContext: input.storageContext,
-			globalFetch: input.globalFetch,
 		})
 		if (refreshed.ok) {
 			void response.body?.cancel().catch(() => {})
@@ -342,165 +340,25 @@ function isJsonContentType(contentType: string): boolean {
 async function tryRefreshIntegrationAccessToken(input: {
 	env: Env
 	userId: string
-	baseUrl: string
 	provider: string
-	integration: IntegrationConfig
-	storageContext: StorageContext | null
-	globalFetch?: typeof fetch
 }): Promise<{ ok: boolean; guidance?: string }> {
-	const refreshTokenSecretName =
-		input.integration.refreshTokenSecretName?.trim() ?? ''
-	if (!refreshTokenSecretName) {
-		return {
-			ok: false,
-			guidance: `OpenAPI request returned HTTP 401 and integration "${input.provider}" has no refreshTokenSecretName. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
-		}
-	}
-
-	const clientId = input.integration.clientId.trim()
-	if (!clientId) {
-		return {
-			ok: false,
-			guidance: `OpenAPI request returned HTTP 401; integration "${input.provider}" has no clientId. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
-		}
-	}
-
-	const accessTokenSecretName = input.integration.accessTokenSecretName.trim()
-	if (!accessTokenSecretName) {
-		return {
-			ok: false,
-			guidance: `OpenAPI request returned HTTP 401; integration "${input.provider}" has no accessTokenSecretName. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
-		}
-	}
-
 	try {
-		await assertCanSetSecrets({
+		await refreshIntegrationTokens({
 			env: input.env,
 			userId: input.userId,
-			baseUrl: input.baseUrl,
-			secrets: [
-				{ name: refreshTokenSecretName, scope: 'user' },
-				{ name: accessTokenSecretName, scope: 'user' },
-			],
-			storageContext: input.storageContext,
+			name: input.provider,
 		})
+		return { ok: true }
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const reconnectHint =
+			error instanceof IntegrationTokenRefreshCallerError
+				? ` Reconnect the "${input.provider}" integration at /connect/oauth, or call refreshAccessToken("${input.provider}") from execute, then retry.`
+				: ` Call refreshAccessToken("${input.provider}") from execute, then retry.`
 		return {
 			ok: false,
-			guidance: `OpenAPI request returned HTTP 401; cannot persist refreshed tokens for integration "${input.provider}": ${message}. Call refreshAccessToken("${input.provider}") from execute after approving the package for those secrets, then retry.`,
+			guidance: `OpenAPI request returned HTTP 401; host-side token refresh failed.${reconnectHint}`,
 		}
 	}
-
-	const params = new URLSearchParams()
-	params.set('grant_type', 'refresh_token')
-	params.set(
-		'refresh_token',
-		buildSecretPlaceholder({ name: refreshTokenSecretName, scope: 'user' }),
-	)
-	params.set('client_id', clientId)
-	if (input.integration.flow === 'confidential') {
-		const clientSecretSecretName =
-			input.integration.clientSecretSecretName?.trim() ?? ''
-		if (!clientSecretSecretName) {
-			return {
-				ok: false,
-				guidance: `OpenAPI request returned HTTP 401; integration "${input.provider}" uses confidential flow but has no clientSecretSecretName. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
-			}
-		}
-		params.set(
-			'client_secret',
-			buildSecretPlaceholder({
-				name: clientSecretSecretName,
-				scope: 'user',
-			}),
-		)
-	}
-
-	let refreshResponse: Response
-	try {
-		refreshResponse = await executeGatewayFetch({
-			env: input.env,
-			props: {
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				email: null,
-				storageContext: input.storageContext,
-			},
-			request: new Request(input.integration.tokenUrl, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/x-www-form-urlencoded',
-				},
-				body: params.toString(),
-			}),
-			globalFetch: input.globalFetch,
-		})
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
-		return {
-			ok: false,
-			guidance: `OpenAPI request returned HTTP 401; host-side token refresh failed: ${message}. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
-		}
-	}
-
-	let payload: Record<string, unknown>
-	try {
-		payload = (await refreshResponse.json()) as Record<string, unknown>
-	} catch {
-		return {
-			ok: false,
-			guidance: `OpenAPI request returned HTTP 401; token refresh response was not JSON. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
-		}
-	}
-
-	if (!refreshResponse.ok || typeof payload.access_token !== 'string') {
-		return {
-			ok: false,
-			guidance: `OpenAPI request returned HTTP 401; token refresh failed with HTTP ${refreshResponse.status}. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
-		}
-	}
-
-	const secretsToPersist: Array<{
-		name: string
-		value: string
-		scope: 'user'
-		description: string
-	}> = []
-	if (
-		typeof payload.refresh_token === 'string' &&
-		payload.refresh_token.length > 0
-	) {
-		secretsToPersist.push({
-			name: refreshTokenSecretName,
-			value: payload.refresh_token,
-			scope: 'user',
-			description: `Refresh token for integration ${input.provider}`,
-		})
-	}
-	secretsToPersist.push({
-		name: accessTokenSecretName,
-		value: payload.access_token,
-		scope: 'user',
-		description: `Access token for integration ${input.provider}`,
-	})
-
-	try {
-		await setSecretsAtomically({
-			env: input.env,
-			userId: input.userId,
-			secrets: secretsToPersist,
-			storageContext: input.storageContext,
-		})
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
-		return {
-			ok: false,
-			guidance: `OpenAPI request returned HTTP 401; failed to persist refreshed tokens for integration "${input.provider}": ${message}. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
-		}
-	}
-	return { ok: true }
 }
 
 async function readOperationResponse(

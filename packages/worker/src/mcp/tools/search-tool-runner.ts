@@ -159,7 +159,7 @@ export async function runSearchTool(input: {
 			)
 			return rows
 		})
-		const [searchRows] = await Promise.all([rowsPromise])
+		const searchRows = await rowsPromise
 		warnings = searchRows.warnings
 
 		if (Array.isArray(args.entity)) {

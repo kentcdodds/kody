@@ -18,14 +18,11 @@ import {
 } from '#worker/run-records/service.ts'
 import {
 	buildKodyFns,
-	buildKodyProvider,
 	createWorkflowTools,
 	runBundledModuleWithRegistry,
 	runModuleWithRegistry,
 } from './run-kody-registry.ts'
 import * as mcpExecutor from '#mcp/executor.ts'
-import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
-import { type KodyResolvedProvider } from '#mcp/kody-remote-types.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
 import * as secretService from '#mcp/secrets/service.ts'
@@ -2366,9 +2363,8 @@ test('runBundledModuleWithRegistry injects OAuth helper prelude only when execut
 				additionalTools: {
 					integration_get: async () => ({}),
 					integration_token_refresh: async () => ({}),
+					integration_refresh_access_token: async () => ({}),
 					value_get: async () => ({}),
-					secret_set: async () => ({}),
-					secret_set_many: async () => ({}),
 				},
 			}),
 		).resolves.toMatchObject({ result: 'ok' })

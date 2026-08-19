@@ -277,6 +277,8 @@ test('entitlement run cache drops a rejected baseline so later writes retry', as
 			requested: 1,
 			cache,
 		})
+		// Attach before advancing timers so the rejection is not unhandled.
+		// oxlint-disable-next-line vitest/valid-expect
 		const expectation =
 			expect(firstAssertion).rejects.toThrow(/could not be read/)
 		await vi.advanceTimersByTimeAsync(

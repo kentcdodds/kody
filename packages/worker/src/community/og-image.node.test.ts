@@ -18,6 +18,7 @@ async function sampleIconDataUri(name: string) {
 }
 
 test('renderCommunityOgImage returns valid PNG bytes with and without ratings', async () => {
+	expect.hasAssertions()
 	const withRatings = await renderCommunityOgImage({
 		name: '@kody/github-triage',
 		description:

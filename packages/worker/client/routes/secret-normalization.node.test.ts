@@ -9,7 +9,7 @@ import {
 } from './secret-normalization.ts'
 
 test('client secret allowlist normalizers match server and collapse empties/duplicates', () => {
-	expect(() => new URL('https://exa mple.com/path')).toThrow()
+	expect(() => new URL('https://exa mple.com/path')).toThrow(TypeError)
 
 	const hostFixtures = [
 		'api.example.com',

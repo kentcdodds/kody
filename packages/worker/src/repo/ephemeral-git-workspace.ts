@@ -105,6 +105,8 @@ export function createEphemeralGitWorkspace() {
 		rm: async (path, options) => {
 			const normalized = normalizeFsPath(path)
 			if (options?.recursive) {
+				// Snapshot keys so deletes during this loop do not skip entries.
+				// oxlint-disable-next-line unicorn/no-useless-spread
 				for (const key of [...store.keys()]) {
 					if (key === normalized || key.startsWith(`${normalized}/`)) {
 						store.delete(key)

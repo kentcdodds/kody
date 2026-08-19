@@ -121,7 +121,7 @@ function createContext(
 	return {
 		env: {
 			APP_DB: {
-				prepare(query: string) {
+				prepare(_query: string) {
 					return {
 						bind() {
 							return {

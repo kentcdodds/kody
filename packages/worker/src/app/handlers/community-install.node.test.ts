@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { createCommunityInstallApiPostHandler } from './community-install.ts'
+import type * as CloudflareWorkers from 'cloudflare:workers'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -11,7 +12,7 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('cloudflare:workers', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('cloudflare:workers')>()
+	const actual = await importOriginal<typeof CloudflareWorkers>()
 	return {
 		...actual,
 		waitUntil: (...args: Array<unknown>) => mockModule.waitUntil(...args),

@@ -171,6 +171,8 @@ test('job reindex retries transient D1 export page errors then surfaces exhausti
 	vi.useFakeTimers()
 	try {
 		const exhaustedPromise = reindexJobVectors({ APP_DB: {} } as Env)
+		// Attach before advancing timers so the rejection is not unhandled.
+		// oxlint-disable-next-line vitest/valid-expect
 		const expectation = expect(exhaustedPromise).rejects.toThrow(
 			'Currently processing a long-running export',
 		)

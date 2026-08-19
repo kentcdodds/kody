@@ -18,6 +18,7 @@ async function sampleAvatarDataUri(name: string) {
 }
 
 test('renderProfileOgImage returns valid PNG bytes with and without avatar', async () => {
+	expect.hasAssertions()
 	const withAvatar = await renderProfileOgImage({
 		displayName: 'Jane Doe',
 		username: 'jane',

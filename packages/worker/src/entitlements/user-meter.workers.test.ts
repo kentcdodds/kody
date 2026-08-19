@@ -2,7 +2,6 @@ import { runInDurableObject } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
-import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
@@ -17,10 +16,7 @@ import {
 import { ensureEntitlementTestSchema } from './test-schema.ts'
 import { userMeterRpc } from './user-meter-client.ts'
 import { UserMeter, userMeterMirrorUpdatedAtToken } from './user-meter-do.ts'
-import {
-	createWaitUntilDrain,
-	withPatchedDbPrepare,
-} from '#worker/test-support/user-meter.ts'
+import { withPatchedDbPrepare } from '#worker/test-support/user-meter.ts'
 
 async function seedFreeUser(emailPrefix: string) {
 	await ensureEntitlementTestSchema(env.APP_DB)

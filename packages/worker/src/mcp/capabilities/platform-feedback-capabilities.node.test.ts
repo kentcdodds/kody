@@ -123,13 +123,17 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 			{ ...input, user_confirmed: false } as never,
 			createCapabilityContext({ userId: 'user-1' }),
 		),
-	).rejects.toThrow()
+	).rejects.toThrow(
+		'Invalid input for capability "meta_platform_feedback_submit"',
+	)
 	await expect(
 		metaPlatformFeedbackSubmitCapability.handler(
 			{ ...input, metadata: { conversation: 'private' } } as never,
 			createCapabilityContext({ userId: 'user-1' }),
 		),
-	).rejects.toThrow()
+	).rejects.toThrow(
+		'Invalid input for capability "meta_platform_feedback_submit"',
+	)
 	expect(mockModule.submitPlatformFeedback).not.toHaveBeenCalled()
 	await expect(
 		metaPlatformFeedbackSubmitCapability.handler(

@@ -400,6 +400,39 @@ export function AccountManagementLinkNav(
 	)
 }
 
+/**
+ * In-flow pill row for filters and other secondary link sets. Do not use
+ * `AccountManagementLinkNav` for this — that component is the unique
+ * `[data-account-nav]` rail the shell absolutely positions, so a second
+ * instance stacks on top of the admin/account sections.
+ */
+export function AccountManagementInlineLinkNav(
+	handle: Handle<AccountManagementLinkNavProps>,
+) {
+	return () => (
+		<nav
+			aria-label={handle.props.label}
+			mix={css({
+				display: 'flex',
+				flexWrap: 'wrap',
+				alignItems: 'center',
+				gap: '0.3rem',
+			})}
+		>
+			{handle.props.items.map((item) => (
+				<a
+					key={item.href}
+					href={item.href}
+					aria-current={item.active ? 'page' : undefined}
+					mix={css(accountNavLinkCss)}
+				>
+					{item.label}
+				</a>
+			))}
+		</nav>
+	)
+}
+
 const accountNavItems = [
 	{ href: '/account', label: 'Overview' },
 	{ href: '/account/billing', label: 'Billing' },

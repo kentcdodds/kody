@@ -318,6 +318,8 @@ test('saved package reindex surfaces page listing failures after the retry budge
 		const resultPromise = reindexSavedPackageVectors({ APP_DB: {} } as Env, {
 			baseUrl: 'https://kody.example.com',
 		})
+		// Attach before advancing timers so the rejection is not unhandled.
+		// oxlint-disable-next-line vitest/valid-expect
 		const expectation = expect(resultPromise).rejects.toThrow(
 			'Currently processing a long-running export',
 		)

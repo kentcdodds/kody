@@ -1308,10 +1308,8 @@ test('empty discovery returns a counted domain index without memory enrichment',
 	const { handler } = await getSearchRegistration({ user: null })
 
 	const response = await handler({ conversationId: 'conv-empty-index' })
-	expect(
-		response.isError,
-		JSON.stringify(response.structuredContent),
-	).toBeUndefined()
+	// structuredContent is asserted next; this only checks the success flag.
+	expect(response.isError).toBeUndefined()
 	expect(response.structuredContent.result).toMatchObject({
 		matches: [
 			{

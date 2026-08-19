@@ -120,6 +120,8 @@ export function createPackageCodeRequest(
 	for (const headerName of strippedPackageRequestHeaders) {
 		packageCodeRequest.headers.delete(headerName)
 	}
+	// Snapshot names so deletes during this loop do not skip headers.
+	// oxlint-disable-next-line unicorn/no-useless-spread
 	for (const headerName of [...packageCodeRequest.headers.keys()]) {
 		const normalized = headerName.toLowerCase()
 		if (

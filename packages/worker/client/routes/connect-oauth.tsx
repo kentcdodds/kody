@@ -105,6 +105,18 @@ const emptyConnectOauthLoaderData: ConnectOauthLoaderData = {
 	integration: null,
 }
 
+function buildConnectOauthIntegrationLookupHref(
+	providerKey: string,
+	searchParams: URLSearchParams,
+) {
+	const params = new URLSearchParams({ name: providerKey })
+	const platform = searchParams.get('platform')?.trim()
+	if (platform) params.set('platform', platform)
+	const app = searchParams.get('app')?.trim()
+	if (app) params.set('app', app)
+	return `/account/integrations.json?${params.toString()}`
+}
+
 /**
  * SPA-navigation prefetch mirroring the server handler's SSR embed: the
  * stored or built-in record for `?provider=` visits, resolved before the
@@ -125,9 +137,8 @@ export async function connectOauthRouteLoader(
 	if (!providerKey) {
 		return { connectOauth: emptyConnectOauthLoaderData }
 	}
-	const platformParam = params.get('platform')?.trim()
 	const response = await fetch(
-		`/account/integrations.json?name=${encodeURIComponent(providerKey)}${platformParam ? `&platform=${encodeURIComponent(platformParam)}` : ''}`,
+		buildConnectOauthIntegrationLookupHref(providerKey, params),
 		{
 			headers: { Accept: 'application/json' },
 			credentials: 'include',
@@ -521,14 +532,15 @@ export function ConnectOauthRoute(handle: Handle) {
 	const readExistingIntegrationConfig = async (
 		queryConfig: ConnectOauthQueryConfig,
 	): Promise<StoredIntegrationConfig | null> => {
-		const platformParam =
+		const lookupSearch =
 			typeof window !== 'undefined'
-				? (new URLSearchParams(window.location.search)
-						.get('platform')
-						?.trim() ?? '')
-				: ''
+				? new URLSearchParams(window.location.search)
+				: new URLSearchParams()
 		const response = await fetch(
-			`/account/integrations.json?name=${encodeURIComponent(queryConfig.providerKey)}${platformParam ? `&platform=${encodeURIComponent(platformParam)}` : ''}`,
+			buildConnectOauthIntegrationLookupHref(
+				queryConfig.providerKey,
+				lookupSearch,
+			),
 			{
 				method: 'GET',
 				headers: { Accept: 'application/json' },

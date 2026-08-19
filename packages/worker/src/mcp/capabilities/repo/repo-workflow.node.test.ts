@@ -203,7 +203,7 @@ test('repo open session workflow and conversation conflict guard', async () => {
 			},
 			createCapabilityContext(),
 		),
-	).rejects.toThrow()
+	).rejects.toThrow(Error)
 })
 
 test('repo edit → commit → checks → publish session workflow', async () => {
