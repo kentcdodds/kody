@@ -34,7 +34,9 @@ named-read API.
 2. Pick a row from the table above. Facts go to memories; package state goes to
    that package's `packageStorage()`; files go in a repo; credentials go to
    secrets.
-3. Write the destination, confirm a read-back, then `value_delete`.
+3. Write the destination, then `value_delete`. For secrets, verify only the
+   saved secret reference or metadata — never read the raw secret into chat. For
+   other destinations, confirm a read-back first.
 4. Update callers that used `value_get({ name })`.
 
 Do not copy a value into a memory without `meta_memory_verify`. Do not put

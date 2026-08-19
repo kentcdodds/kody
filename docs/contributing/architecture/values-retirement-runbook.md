@@ -13,16 +13,16 @@ readout fails a gate, reset that phase's clock.
 
 Do not invent a replacement primitive.
 
-| Job                                 | Destination                                                        | Production examples (2026-08-19)                                                              |
-| ----------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Platform UI dismiss                 | `users.onboarding_checklist_dismissed_at`                          | `onboardingChecklistDismissed` (Kent + 6 others)                                              |
-| Durable facts / preferences         | memories (`meta_memory_*`, verify-first)                           | `user/residential_address`, timezone, `user_profile`                                          |
-| Package runtime state / cache       | `packageStorage()`                                                 | `shadeAutomationState` / `Plan`, `hrvAirQualityAutomationState`, Ben's `cJob*` / `sB*` chunks |
-| Versioned calibration               | plain repo (live-at-HEAD)                                          | `shadeAutomationConfig` — already on `home-automation-config`                                 |
-| Package-owned knobs                 | `packageStorage()` or a file in that package repo                  | `flaky_detector_*` (olafsulich)                                                               |
-| Shared ids used by several packages | owning package export, or one small settings package others invoke | Discord channel ids, `devinOrgId`, `originAppId`                                              |
-| OAuth client ids                    | integrations / platform OAuth apps                                 | `googleClientId`, `slack-client-id`, `github-client-id`, …                                    |
-| Credentials                         | secrets                                                            | `skillRunnerTokens` (readable + searchable today — move first)                                |
+| Job                                 | Destination                                                        | Production examples (2026-08-19)                           |
+| ----------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Platform UI dismiss                 | `users.onboarding_checklist_dismissed_at`                          | `onboardingChecklistDismissed` (operator + several others) |
+| Durable facts / preferences         | memories (`meta_memory_*`, verify-first)                           | address, timezone, profile blobs                           |
+| Package runtime state / cache       | `packageStorage()`                                                 | automation state/plan keys, chunked job/blob names         |
+| Versioned calibration               | plain repo (live-at-HEAD)                                          | shade config already on a live-at-HEAD repo                |
+| Package-owned knobs                 | `packageStorage()` or a file in that package repo                  | detector / package setting keys                            |
+| Shared ids used by several packages | owning package export, or one small settings package others invoke | Discord channel ids, org/app ids                           |
+| OAuth client ids                    | integrations / platform OAuth apps                                 | `*ClientId` / `*-client-id` names                          |
+| Credentials                         | secrets                                                            | bearer-token-like rows (readable + searchable today)       |
 
 `app` and `session` scopes have no production rows. Do not migrate them; delete
 the unused buckets with the tables.
@@ -40,8 +40,8 @@ so later retirements reuse the same slot: add a notice plus a coding guide and a
 cheap EXISTS gate, then delete both when the primitive is gone.
 
 This PR ships that per-affected-user notice and guide. Later phase-1 work still
-moves onboarding dismiss, `skillRunnerTokens`, write-result hints, and insights
-counts.
+moves onboarding dismiss, bearer-token-like rows, write-result hints, and
+insights counts.
 
 ## Production inventory (baseline, 2026-08-19)
 
@@ -50,10 +50,10 @@ contents.
 
 - 62 accounts, 19 users with a value bucket, 18 with ≥1 row, **122** rows
 - All rows `scope = 'user'`
-- Kent: 66. Others: 56 across 17 usernames
+- Operator account: 66. Others: 56 across 17 accounts
 - Five users have only `onboardingChecklistDismissed`
-- `infoxicator` has an empty user bucket
-- Heaviest non-Kent store: `bholmesdev` (27 chunked keys)
+- One account has an empty user bucket (0 rows)
+- Heaviest non-operator store: 27 chunked keys
 
 Re-query the same aggregates before each phase gate. Admin MCP never returns
 other users' values; use the Kody Cloudflare account D1 query path (or the
@@ -86,9 +86,10 @@ smell leaves the readable store.
 1. **Move onboarding dismiss off values.** Add
    `users.onboarding_checklist_dismissed_at` (nullable ISO timestamp). Backfill
    from `onboardingChecklistDismissed`, then stop reading/writing that value
-   name. Six non-Kent users plus Kent drop off values without a user action.
-2. **Move `skillRunnerTokens` to a secret** (Kent). Values entity detail prints
-   the stored string; bearer tokens must not live there.
+   name. The operator account plus six others drop off values without a user
+   action.
+2. **Move bearer-token-like rows to a secret** (operator). Values entity detail
+   prints the stored string; bearer tokens must not live there.
 3. **Tell agents in server instructions.** Keep a `retiringPrimitiveNotices`
    registry (`packages/worker/src/mcp/instructions/retiring-primitives.ts`).
    Each notice is one line plus `coding_guide_get({ guide })`, and
@@ -130,16 +131,16 @@ Goal: remaining rows have an owner and a destination. Reads stay live.
 - Token metadata (`epicProductEngineerToken*`): secrets + a memory for the
   policy, or the owning package's storage.
 
-**Other users (names from the baseline; do not read their contents):**
+**Other users (aggregates from the baseline; do not read their contents):**
 
-| Username                                                                                                           | Rows | Suggested dest                                                 |
-| ------------------------------------------------------------------------------------------------------------------ | ---- | -------------------------------------------------------------- |
-| `bholmesdev`                                                                                                       | 27   | `packageStorage()` / a repo — same anti-pattern as `css-fix-*` |
-| `olafsulich`                                                                                                       | 5    | `flaky_detector_*` → that package's storage or repo            |
-| `cameronpak`, `tharshan`, `maciek`, `copyjosh`, `frontendwizard`, `debbieoyster`, `daleal`, `tejas`, `kody-tester` | 1–5  | Client ids → integrations; leftover URLs → owning package      |
-| `burhan`                                                                                                           | 1    | `user_profile` → memory                                        |
-| `adamh`, `bradhave`, `arberbr`, `mrunleaded`, `sergical`                                                           | 1    | Done in phase 1 after onboarding backfill                      |
-| `infoxicator`                                                                                                      | 0    | Empty bucket; dropped with the tables                          |
+| Pattern (anonymized)                | Accounts     | Suggested dest                               |
+| ----------------------------------- | ------------ | -------------------------------------------- |
+| Chunked job/blob keys               | 1 (27 rows)  | `packageStorage()` / a repo                  |
+| Package detector / setting keys     | 1 (5 rows)   | owning package storage or repo               |
+| OAuth client ids and leftover URLs  | 9 (1–5 each) | integrations; leftover URLs → owning package |
+| Profile blob                        | 1            | memory                                       |
+| Only `onboardingChecklistDismissed` | 5            | done in phase 1 after onboarding backfill    |
+| Empty bucket                        | 1            | dropped with the tables                      |
 
 Outreach is a short Discord note plus the account-page banner: values go away;
 here is `value_list` and the destination table. Community listings that still

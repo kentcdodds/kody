@@ -9,15 +9,15 @@ Values were the readable twin of secrets: named non-secret config, scoped `user`
 / `app` / `session`, first-class in `search`, editable at `/account/values`.
 Production D1 (2026-08-19) does not support that job.
 
-All 122 `value_entries` rows are `user` scope (zero `app` / `session`). Kent
-holds 66. Seventeen other users hold 56; five of those users have only
-`onboardingChecklistDismissed` (a platform UI flag). The rest are OAuth client
-ids, chunked blobs, or a handful of package knobs. Power-user packages already
-call user values "legacy" and persist config in repos plus `packageStorage()`.
-Memories already hold the overlapping facts (timezone, address). ADR
-[0003](./0003-repos-as-base-primitive.md) named "documents live chunked in
-values" as the problem repos were meant to end. Admin insights counts memories
-and secrets, not values.
+All 122 `value_entries` rows are `user` scope (zero `app` / `session`). The
+operator account holds 66. Seventeen other users hold 56; five of those users
+have only `onboardingChecklistDismissed` (a platform UI flag). The rest are
+OAuth client ids, chunked blobs, or a handful of package knobs. Power-user
+packages already call user values "legacy" and persist config in repos plus
+`packageStorage()`. Memories already hold the overlapping facts (timezone,
+address). ADR [0003](./0003-repos-as-base-primitive.md) named "documents live
+chunked in values" as the problem repos were meant to end. Admin insights counts
+memories and secrets, not values.
 
 The leftover unique job — deterministic cross-package `value_get({ name })` — is
 a handful of Discord/org ids. That does not justify a four-capability domain, a
