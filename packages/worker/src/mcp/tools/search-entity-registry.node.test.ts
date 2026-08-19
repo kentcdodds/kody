@@ -106,6 +106,7 @@ test('descriptor seam follows registry order and preserves value-backed affinity
 		'secret',
 		'retriever_result',
 		'domain',
+		'provider',
 	])
 
 	const descriptors = buildSearchableEntityDescriptors({
