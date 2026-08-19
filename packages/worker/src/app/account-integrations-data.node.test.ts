@@ -331,6 +331,21 @@ test('endpoint-incomplete user records defer to an enabled built-in of the same 
 		clientId: 'user-github-client',
 	})
 	expect(pinnedByo?.platform ?? false).toBe(false)
+
+	// An incomplete pinned app must not fall back to a built-in that
+	// happens to share the typed connection name.
+	const pinnedIncomplete = await loadAccountIntegrationByName(
+		env,
+		fakeUser(userId),
+		'github-platform',
+		{ appSlug: 'linear' },
+	)
+	expect(pinnedIncomplete).toMatchObject({
+		name: 'github-platform',
+		appSlug: 'linear',
+		clientId: 'user-linear-client',
+	})
+	expect(pinnedIncomplete?.platform ?? false).toBe(false)
 })
 
 test('loadAccountIntegrationsData includes OAuth apps with their connections', async () => {

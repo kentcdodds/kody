@@ -366,12 +366,10 @@ export async function loadAccountIntegrationByName(
 			slug: options.appSlug,
 		})
 		if (app) {
-			const record = toAppOnlyIntegrationRecord(
-				oauthAppToSetupPrefill(app),
-				name,
-			)
-			if (recordCanDriveConnectFlow(record)) return record
-			return (await platformFallback()) ?? record
+			// Keep the pinned app even when it cannot drive authorize yet.
+			// Falling back by the typed connection name can land on a
+			// different built-in (`app=linear&provider=github-platform`).
+			return toAppOnlyIntegrationRecord(oauthAppToSetupPrefill(app), name)
 		}
 	}
 
