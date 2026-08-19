@@ -249,10 +249,7 @@ test('preloaded kody.mcp survives bundler-style destructuring of server names', 
 		const url = await writeRuntimeFile()
 		const mod = (await import(url)) as RuntimeModule & {
 			kody: {
-				mcp: Record<
-					string,
-					Record<string, (args: unknown) => Promise<unknown>>
-				>
+				mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
 			}
 		}
 
