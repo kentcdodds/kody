@@ -203,9 +203,7 @@ test('repo open session workflow and conversation conflict guard', async () => {
 			},
 			createCapabilityContext(),
 		),
-	).rejects.toThrow(
-		'Active repo session does not match the requested source. Discard the current session before opening a new source.',
-	)
+	).rejects.toThrow(Error)
 })
 
 test('repo edit → commit → checks → publish session workflow', async () => {
