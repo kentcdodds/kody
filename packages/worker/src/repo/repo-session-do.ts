@@ -40,8 +40,10 @@ import {
 	type PublishedPackageArtifactBuildTarget,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import {
+	hasPublishedRuntimeArtifacts,
 	loadPublishedSourceManifestSnapshot,
 	loadPublishedSourceSnapshot,
+	writePublishedSourceSnapshot,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { searchRepoWorkspace } from './repo-session-search.ts'
 import { repoSessionRpc as createRepoSessionRpc } from './repo-session-rpc.ts'
@@ -806,25 +808,14 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	/**
 	 * External publish (KODY-CLOUDFLARE-57) clones into ephemeral FS and never
-	 * populates the session Durable Object workspace. Artifact rebuild then
-	 * runs against that empty session, so listing and staging must fall back
-	 * to the published source snapshot written during finalize.
+	 * populates the session Durable Object workspace. The long-lived
+	 * `external-publish-${sourceId}` DO can still hold a leftover workspace
+	 * from an older clone or initialize(), so listing and staging must prefer
+	 * the published source snapshot written from that in-memory clone.
 	 */
 	private async readPackageManifestForPublishedArtifacts(
 		source: EntitySourceRow,
 	) {
-		const workspaceContent = await this.workspace.readFile(
-			resolveRepoWorkspacePath(
-				source.manifest_path,
-				repoSessionWorkspacePrefix,
-			),
-		)
-		if (typeof workspaceContent === 'string') {
-			return parseAuthoredPackageJson({
-				content: workspaceContent,
-				manifestPath: source.manifest_path,
-			})
-		}
 		const manifestSnapshot = await loadPublishedSourceManifestSnapshot({
 			env: this.env,
 			userId: source.user_id,
@@ -848,16 +839,24 @@ class RepoSessionBase extends DurableObject<Env> {
 				manifestPath: source.manifest_path,
 			})
 		}
+		const workspaceContent = await this.workspace.readFile(
+			resolveRepoWorkspacePath(
+				source.manifest_path,
+				repoSessionWorkspacePrefix,
+			),
+		)
+		if (typeof workspaceContent === 'string') {
+			return parseAuthoredPackageJson({
+				content: workspaceContent,
+				manifestPath: source.manifest_path,
+			})
+		}
 		throw new Error(`Manifest "${source.manifest_path}" was not found.`)
 	}
 
 	private async collectSourceFilesForPublishedArtifactRebuild(
 		source: EntitySourceRow,
 	) {
-		const workspaceFiles = await this.collectWorkspaceFiles()
-		if (typeof workspaceFiles[source.manifest_path] === 'string') {
-			return workspaceFiles
-		}
 		const snapshot = await loadPublishedSourceSnapshot({
 			env: this.env,
 			userId: source.user_id,
@@ -865,6 +864,10 @@ class RepoSessionBase extends DurableObject<Env> {
 		})
 		if (snapshot && typeof snapshot.files[source.manifest_path] === 'string') {
 			return snapshot.files
+		}
+		const workspaceFiles = await this.collectWorkspaceFiles()
+		if (typeof workspaceFiles[source.manifest_path] === 'string') {
+			return workspaceFiles
 		}
 		throw new Error(`Manifest "${source.manifest_path}" was not found.`)
 	}
@@ -2290,13 +2293,15 @@ class RepoSessionBase extends DurableObject<Env> {
 				target: input.target,
 			}
 		}
-		const alreadyBuilt = await isPublishedPackageArtifactBuiltForCommit({
-			env: this.env,
-			userId: input.userId,
-			sourceId: input.sourceId,
-			publishedCommit: input.publishedCommit,
-			target: input.target,
-		})
+		const alreadyBuilt =
+			!input.force &&
+			(await isPublishedPackageArtifactBuiltForCommit({
+				env: this.env,
+				userId: input.userId,
+				sourceId: input.sourceId,
+				publishedCommit: input.publishedCommit,
+				target: input.target,
+			}))
 		if (alreadyBuilt) {
 			return {
 				ok: true,
@@ -2821,7 +2826,47 @@ class RepoSessionBase extends DurableObject<Env> {
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 			expectedPackageScope: input.expectedPackageScope,
 		})
-		if (publishResult.status === 'published') {
+		if (publishResult.status === 'already_published') {
+			// D1 stays a no-op (overlapping inline + durable escalation). Still
+			// rewrite the KV snapshot from the just-cloned HEAD so a prior
+			// finalize that tagged the current commit with stale files cannot
+			// keep winning artifact rebuilds.
+			try {
+				if (
+					publishResult.published_commit &&
+					hasPublishedRuntimeArtifacts(this.env)
+				) {
+					const files = await publishClone.collectFiles()
+					if (typeof files[source.manifest_path] === 'string') {
+						await writePublishedSourceSnapshot({
+							env: this.env,
+							source: {
+								...source,
+								published_commit: publishResult.published_commit,
+							},
+							files,
+						})
+					}
+				}
+			} catch (error) {
+				Sentry.captureException(error, {
+					tags: {
+						scope: 'repo.publishFromExternalRef.refresh-already-published-snapshot',
+					},
+					extra: {
+						sourceId: source.id,
+						commit: input.newCommit,
+					},
+				})
+				console.warn('already_published snapshot refresh failed', {
+					scope:
+						'repo.publishFromExternalRef.refresh-already-published-snapshot',
+					sourceId: source.id,
+					commit: input.newCommit,
+					error: getErrorMessage(error),
+				})
+			}
+		} else if (publishResult.status === 'published') {
 			try {
 				const sourceWriteAccess = await ensureArtifactRepoRemote({
 					repo: sourceRepo,

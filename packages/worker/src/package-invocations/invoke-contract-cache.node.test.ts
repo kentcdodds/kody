@@ -460,6 +460,57 @@ test('an artifact rebuild resolves its entry point from the fresh source, not th
 	expect(rebuilt.entryPoint).toBe('src/probe-v2.ts')
 })
 
+test('ensureModuleArtifact rebuilds when the identity artifact is for a different commit', async () => {
+	const fixture = createFixture({
+		userId: 'user-stale-artifact',
+		publishedCommit: 'commit-new',
+		suffix: 'stale-artifact',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue(fixture.source)
+	mockModule.loadPublishedEntityManifest.mockResolvedValue({
+		source: fixture.source,
+		content: fixture.manifestContent,
+	})
+	mockModule.loadPublishedEntitySource.mockResolvedValue({
+		source: fixture.source,
+		files: {
+			'package.json': fixture.manifestContent,
+			'src/get-issue-state.ts':
+				'export default async function main() { return "new" }',
+		},
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity
+		.mockResolvedValueOnce({
+			row: { publishedCommit: 'commit-old' },
+			artifact: { ...fixture.artifact, publishedCommit: 'commit-old' },
+		})
+		.mockResolvedValueOnce({
+			row: { publishedCommit: 'commit-new' },
+			artifact: fixture.artifact,
+		})
+	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockResolvedValue({
+		ok: true,
+	})
+	mockModule.buildKodyModuleBundle.mockResolvedValue({
+		mainModule: 'main.js',
+		modules: { 'main.js': 'export default async () => ({ ok: true })' },
+		dependencies: [],
+		dynamicDependencies: [],
+	})
+	mockModule.persistPublishedBundleArtifact.mockResolvedValue('kv-key')
+
+	const rebuilt = await ensureModuleArtifact({
+		env: createEnv(),
+		baseUrl: 'https://kody.dev',
+		savedPackage: fixture.savedPackage,
+		selector: { kind: 'export', exportName: 'get-issue-state' },
+		userId: fixture.savedPackage.userId,
+	})
+
+	expect(mockModule.persistPublishedBundleArtifact).toHaveBeenCalledTimes(1)
+	expect(rebuilt.artifact.publishedCommit).toBe('commit-new')
+})
+
 test('an artifact from a different commit is served but never retained', async () => {
 	const load = vi.fn(async () => ({
 		artifact: { publishedCommit: 'commit-old' } as never,

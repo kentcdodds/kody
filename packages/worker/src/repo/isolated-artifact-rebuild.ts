@@ -35,6 +35,12 @@ export type IsolatedArtifactRebuildRequest = {
 	publishedCommit: string
 	target: PublishedPackageArtifactBuildTarget
 	baseUrl?: string
+	/**
+	 * Rebuild even when a same-commit artifact already exists. Used by
+	 * `already_published` so a leftover workspace-built bundle cannot keep
+	 * serving after D1 already points at HEAD.
+	 */
+	force?: boolean
 }
 
 /**

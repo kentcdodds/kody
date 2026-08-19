@@ -32,12 +32,34 @@ export type ExternalPublishCloneResult = {
 	}) => Promise<boolean>
 	filesystem: PublishGitNoteFileSystem
 	dir: string
+	collectFiles(): Promise<Record<string, string>>
 }
 
 function normalizePublishPath(path: string) {
 	const trimmed = path.trim()
 	if (trimmed === '' || trimmed === '/') return '/'
 	return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+}
+
+async function collectPublishWorkspaceFiles(input: {
+	workspace: RepoPublishWorkspace
+	dir: string
+	listFiles: () => Promise<Array<string>>
+}) {
+	const dirPrefix = input.dir.endsWith('/') ? input.dir.slice(0, -1) : input.dir
+	const files: Record<string, string> = {}
+	for (const relative of await input.listFiles()) {
+		if (relative.split('/').includes('.git')) continue
+		const absolute = `${dirPrefix}/${relative}`.replace(/\/+/g, '/')
+		const content = await input.workspace.readFile(absolute)
+		if (content == null) {
+			throw new Error(
+				`Failed to read published clone file "${absolute}" while refreshing the source snapshot.`,
+			)
+		}
+		files[relative] = content
+	}
+	return files
 }
 
 function buildPublishWorkspaceFromCheckout(input: {
@@ -169,14 +191,15 @@ export async function cloneExternalPublishWorkspace(input: {
 		)
 	}
 
+	const listFiles = async () =>
+		await git.listFiles({
+			fs: workspace.fs,
+			dir,
+		})
 	const publishWorkspace = buildPublishWorkspaceFromCheckout({
 		dir,
 		filesystem: workspace.filesystem,
-		listFiles: async () =>
-			await git.listFiles({
-				fs: workspace.fs,
-				dir,
-			}),
+		listFiles,
 	})
 
 	return {
@@ -184,6 +207,12 @@ export async function cloneExternalPublishWorkspace(input: {
 		headCommit,
 		dir,
 		filesystem: workspace.filesystem,
+		collectFiles: async () =>
+			await collectPublishWorkspaceFiles({
+				workspace: publishWorkspace,
+				dir,
+				listFiles,
+			}),
 		isAncestorCommit: async ({ ancestor, descendant }) => {
 			if (ancestor === descendant) return true
 			const commits = await git.log({

@@ -218,6 +218,52 @@ test('isolated rebuild skips already-built targets and does not stage when all a
 	expect(discard).not.toHaveBeenCalled()
 })
 
+test('force rebuilds already-built targets so already_published can repair stale same-commit artifacts', async () => {
+	resetMocks()
+	const run = vi.fn(async () => ({ ok: true, message: 'rebuilt' }))
+	const discard = vi.fn(async () => undefined)
+	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
+		touch: vi.fn(),
+		run,
+		discard,
+	})
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
+		sampleTargets,
+	)
+	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
+		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-1',
+	})
+	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(true)
+
+	await rebuildPublishedPackageArtifactsViaRepoSession({
+		env: {
+			REPO_SESSION: {},
+			BUNDLE_ARTIFACTS_KV: {},
+		} as unknown as Env,
+		rpcSessionId: 'session-1',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		publishedCommit: 'commit-1',
+		baseUrl: 'https://kody.test',
+		force: true,
+	})
+
+	expect(
+		mockModule.isPublishedPackageArtifactBuiltForCommit,
+	).not.toHaveBeenCalled()
+	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
+		1,
+	)
+	expect(run).toHaveBeenCalledTimes(3)
+	expect(run).toHaveBeenCalledWith(
+		expect.objectContaining({
+			force: true,
+			target: sampleTargets[0],
+		}),
+	)
+	expect(discard).toHaveBeenCalledTimes(1)
+})
+
 test('rebuild failure stops later chunks and reports succeeded versus failed for isolated and fallback paths', async () => {
 	const targets = [
 		...sampleTargets,

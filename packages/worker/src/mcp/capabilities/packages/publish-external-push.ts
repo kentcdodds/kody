@@ -549,6 +549,7 @@ async function runExternalPublishAttempt(input: {
 					userId: input.ownerUserId,
 					publishedCommit: result.published_commit,
 					baseUrl: input.baseUrl,
+					force: true,
 				})
 				const testHints = await getPublishedPackageTestHints({
 					env: input.env,

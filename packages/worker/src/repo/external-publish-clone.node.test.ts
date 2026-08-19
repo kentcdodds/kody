@@ -88,9 +88,17 @@ test('cloneExternalPublishWorkspace clones into ephemeral FS and exposes publish
 	).resolves.toBe(true)
 
 	await cloned.filesystem.writeFile('/repo/package.json', '{"name":"@kody/x"}')
+	await cloned.filesystem.writeFile(
+		'/repo/src/index.ts',
+		'export const ok = true\n',
+	)
 	await expect(cloned.workspace.readFile('/repo/package.json')).resolves.toBe(
 		'{"name":"@kody/x"}',
 	)
+	await expect(cloned.collectFiles()).resolves.toEqual({
+		'package.json': '{"name":"@kody/x"}',
+		'src/index.ts': 'export const ok = true\n',
+	})
 	const globbed = await cloned.workspace.glob('**/*')
 	expect(globbed).toEqual([
 		{ path: '/repo/package.json', type: 'file' },

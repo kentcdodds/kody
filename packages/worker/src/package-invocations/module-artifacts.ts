@@ -147,7 +147,13 @@ async function ensureModuleArtifactUncached(input: {
 		artifactName: resolution.artifactName,
 		entryPoint: resolution.entryPoint,
 	})
-	if (loaded?.artifact) {
+	const currentPublishedCommit = packageManifest.source.published_commit
+	if (
+		loaded?.artifact &&
+		loaded.artifact.publishedCommit === currentPublishedCommit &&
+		(loaded.row.publishedCommit == null ||
+			loaded.row.publishedCommit === currentPublishedCommit)
+	) {
 		return {
 			artifact: loaded.artifact,
 			source: packageManifest.source,

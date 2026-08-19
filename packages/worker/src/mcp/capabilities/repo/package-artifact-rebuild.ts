@@ -106,7 +106,14 @@ async function filterTargetsNeedingRebuild(input: {
 	sourceId: string
 	publishedCommit: string
 	targets: ReadonlyArray<PublishedPackageArtifactBuildTarget>
+	force?: boolean
 }) {
+	if (input.force) {
+		return {
+			remaining: [...input.targets],
+			alreadyBuilt: [],
+		}
+	}
 	const remaining: Array<PublishedPackageArtifactBuildTarget> = []
 	const alreadyBuilt: Array<PublishedPackageArtifactBuildTarget> = []
 	for (const target of input.targets) {
@@ -162,6 +169,7 @@ async function rebuildPublishedPackageArtifactsOnSession(input: {
 	publishedCommit: string
 	baseUrl: string
 	targets: ReadonlyArray<PublishedPackageArtifactBuildTarget>
+	force?: boolean
 }) {
 	const session = repoSessionRpc(input.env, input.rpcSessionId)
 	const succeeded: Array<PublishedPackageArtifactBuildTarget> = []
@@ -171,6 +179,7 @@ async function rebuildPublishedPackageArtifactsOnSession(input: {
 		sourceId: input.sourceId,
 		publishedCommit: input.publishedCommit,
 		targets: input.targets,
+		force: input.force,
 	})
 	succeeded.push(...alreadyBuilt)
 
@@ -231,6 +240,7 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 	userId: string
 	publishedCommit: string
 	baseUrl: string
+	force?: boolean
 }) {
 	const session = repoSessionRpc(input.env, input.rpcSessionId)
 	const isolatedRunner = createIsolatedArtifactRebuildRunner(input.env)
@@ -266,6 +276,7 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 		sourceId: input.sourceId,
 		publishedCommit: input.publishedCommit,
 		targets,
+		force: input.force,
 	})
 	const succeeded: Array<PublishedPackageArtifactBuildTarget> = [
 		...alreadyBuilt,
@@ -317,6 +328,7 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 						publishedCommit: input.publishedCommit,
 						target,
 						baseUrl: input.baseUrl,
+						force: input.force,
 					})
 					if (!outcome.ok) {
 						throw new Error(outcome.message)
@@ -360,6 +372,7 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 	userId: string
 	publishedCommit: string
 	baseUrl: string
+	force?: boolean
 }) {
 	const maxAttempts = publishedPackageArtifactRebuildRetryDelaysMs.length + 1
 	let lastTransientError: unknown = null
