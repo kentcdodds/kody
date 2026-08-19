@@ -102,9 +102,6 @@ async function handleCreateToken(input: {
 			400,
 		)
 	}
-	const sources = normalizeScopeList(
-		readStringArray(input.body, ['sources', 'source', 'source_names']),
-	)
 	if (exportNames.length === 0) {
 		return jsonResponse(
 			{ ok: false, error: 'Choose at least one export scope.' },
@@ -123,7 +120,6 @@ async function handleCreateToken(input: {
 				name,
 				tokenHash: await hashPackageInvocationBearerToken(rawToken),
 				exportNames,
-				sources,
 			},
 		})
 	} catch (error) {
@@ -187,9 +183,6 @@ async function handleUpdateToken(input: {
 			400,
 		)
 	}
-	const sources = normalizeScopeList(
-		readStringArray(input.body, ['sources', 'source', 'source_names']),
-	)
 	if (exportNames.length === 0) {
 		return jsonResponse(
 			{ ok: false, error: 'Choose at least one export scope.' },
@@ -209,7 +202,6 @@ async function handleUpdateToken(input: {
 				? await hashPackageInvocationBearerToken(rawToken)
 				: undefined,
 			exportNames,
-			sources,
 		})
 	} catch (error) {
 		const message = error instanceof Error ? error.message : ''
@@ -342,14 +334,6 @@ async function handleDeleteToken(input: {
 			user: input.user,
 			pathPackageId: owned.packageId,
 		}),
-	)
-}
-
-function normalizeScopeList(values: Array<string>) {
-	return Array.from(
-		new Set(
-			values.map((value) => value.trim()).filter((value) => value.length > 0),
-		),
 	)
 }
 

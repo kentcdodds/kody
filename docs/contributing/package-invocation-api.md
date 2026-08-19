@@ -48,7 +48,6 @@ Each token row includes:
 - token id and human-readable name
 - owning `user_id` and `package_id`
 - allowed package exports (`export_names_json`)
-- allowed request sources (`sources_json`)
 - `last_used_at`
 - `revoked_at`
 
@@ -57,7 +56,7 @@ The token is not a global backdoor:
 - the path names the owner and package
 - the bearer proves access to that package only
 - export access requires an explicit allowlist (including per-package `*`)
-- `source` metadata is checked against the allowlist when provided
+- request JSON `source` is an optional log label and does not gate auth
 - tokens can be revoked without deploys
 - execution uses normal package runtime machinery
 - `last_used_at` is a best-effort write and does not gate authentication
@@ -78,8 +77,8 @@ The backing same-origin JSON endpoint is:
 - `POST /account/packages.json` with `action: "create-token"` — create a token
   for one owned package
 - `POST /account/packages.json` with `action: "update-token"` — update token
-  name, allowlists, and optionally replace the stored token hash from a new raw
-  token
+  name, export allowlist, and optionally replace the stored token hash from a
+  new raw token
 - `POST /account/packages.json` with `action: "revoke-token"` — revoke a token
   by id
 - `POST /account/packages.json` with `action: "reinstate-token"` — reinstate a
@@ -95,26 +94,23 @@ Create payload shape:
 	"packageId": "<saved-package-id>",
 	"name": "Trusted external client",
 	"rawToken": "<raw-token>",
-	"exportNames": ["*"],
-	"sources": ["trusted-client"]
+	"exportNames": ["*"]
 }
 ```
 
 Export allowlists support the deliberate wildcard value `*` for every export on
-that package. Source values do not use wildcard matching: if a request includes
-`source`, that exact value must be present in the token's `sources` list.
+that package.
 
 Package details support metadata prefill query parameters for setup flows:
 
 - `newToken=1` opens the create form
 - `name`
 - `exportName` / `exportNames`
-- `allowedSource` / `allowedSources` / `source` / `sources`
 
 Snake case and kebab case aliases are accepted for list fields, such as
-`export_names`, `export-names`, `allowed_sources`, and `allowed-sources`. Repeat
-parameters or comma-separate values. Do not put the raw token in the URL; paste
-it into the form or submit it over the authenticated same-origin JSON API.
+`export_names` and `export-names`. Repeat parameters or comma-separate values.
+Do not put the raw token in the URL; paste it into the form or submit it over
+the authenticated same-origin JSON API.
 
 When editing an existing token in the account UI, the raw token field is
 write-only and optional: leave it blank to preserve the current token hash, or
@@ -146,9 +142,8 @@ Fields:
 
 - `params` — JSON object passed as the first argument to the package export
 - `idempotencyKey` — required stable key for replay protection
-- `source` — optional source label for auditing and token scoping; when present,
-  it must match the token's `sources` list. Omit it or send null when that list
-  is empty.
+- `source` — optional caller label for logs and idempotency metadata. It does
+  not gate authentication.
 - `topic` — optional event topic label for downstream logic and logs
 
 ## Idempotency
@@ -282,16 +277,14 @@ Recommended flow for a trusted external client:
 2. copy the raw token to the clipboard or keep it in the client's local secret
    storage
 3. open Kody at
-   `/account/packages/<packageId>?newToken=1&name=Trusted%20External%20Client&exportNames=*&sources=trusted-client`
+   `/account/packages/<packageId>?newToken=1&name=Trusted%20External%20Client&exportNames=*`
 4. paste the raw token into the form and create the token
-5. send invocation requests with `Authorization: Bearer <raw-token>` and
-   `"source": "trusted-client"`
+5. send invocation requests with `Authorization: Bearer <raw-token>` and an
+   optional JSON `source` label for logs
 
-A token with `exportNames: ["*"]` can call any export on that package. When the
-token lists allowed sources, the request must send one of those labels as JSON
-`source`. An empty source list allows unlabeled requests only; a named `source`
-is rejected. Cross-package callers invoke one package (an orchestrator or
-discovery package) and use `packages.invoke` inside Kody, or they speak MCP.
+A token with `exportNames: ["*"]` can call any export on that package.
+Cross-package callers invoke one package (an orchestrator or discovery package)
+and use `packages.invoke` inside Kody, or they speak MCP.
 
 ## Related
 

@@ -1497,7 +1497,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					userId: payload.userId,
 					packageId: payload.packageId,
 					exportNames: [payload.exportName],
-					sources: [packageWorkflowInvocationSource],
 				},
 				request: {
 					packageIdOrKodyId: payload.packageId,

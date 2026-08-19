@@ -37,15 +37,6 @@ function tokenAllowsExport(input: {
 	)
 }
 
-function tokenAllowsSource(input: {
-	token: PackageInvocationTokenScope
-	source: string | null
-}) {
-	if (!input.source) return true
-	const sources = input.token.sources ?? []
-	return sources.includes(input.source)
-}
-
 export async function invokePackageExportForExecuteRuntime(input: {
 	env: Env
 	baseUrl: string
@@ -241,14 +232,6 @@ export async function invokePackageExportWithToolFactories(input: {
 	}
 	const source = normalizeNullableString(input.request.source)
 	const topic = normalizeNullableString(input.request.topic)
-	if (!tokenAllowsSource({ token: input.token, source })) {
-		return buildJsonErrorResponse({
-			status: 403,
-			code: 'source_not_allowed',
-			message: 'This token is not allowed to invoke the requested source.',
-			idempotencyKey: idempotencyKey ?? undefined,
-		})
-	}
 	const savedPackage = await resolveSavedPackage({
 		db: input.env.APP_DB,
 		userId: input.token.userId,

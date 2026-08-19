@@ -501,7 +501,6 @@ function createToken(
 	overrides: Partial<{
 		packageId: string
 		exportNames: Array<string>
-		sources: Array<string>
 	}> = {},
 ) {
 	return {
@@ -510,7 +509,6 @@ function createToken(
 		email: 'me@example.com',
 		packageId: overrides.packageId ?? 'pkg-1',
 		exportNames: overrides.exportNames ?? ['./dispatch-message-created'],
-		sources: overrides.sources ?? ['discord-gateway'],
 	} as const
 }
 
@@ -2119,13 +2117,13 @@ test('completed keyed invocation reports terminal persistence failure instead of
 	const first = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
-		token: createToken({ sources: ['webhook'] }),
+		token: createToken(),
 		request,
 	})
 	const retry = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
-		token: createToken({ sources: ['webhook'] }),
+		token: createToken(),
 		request,
 	})
 
@@ -2243,42 +2241,19 @@ test('a pre-migration-style key misses cleanly: it executes fresh instead of err
 	).toMatchObject({ status: 'completed' })
 })
 
-test('invokePackageExport enforces source scopes for wildcard tokens', async () => {
+test('invokePackageExport records request source without gating auth', async () => {
 	const db = createDatabase()
 	seedPackageResolution()
-
-	const disallowedSource = await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken(),
-		request: {
-			packageIdOrKodyId: 'discord-gateway',
-			exportName: 'dispatch-message-created',
-			params: { content: 'hi' },
-			idempotencyKey: 'evt-bad-source',
-			source: 'other-gateway',
-		},
-	})
-
-	expect(disallowedSource.status).toBe(403)
-	expect(disallowedSource.body).toMatchObject({
-		ok: false,
-		error: {
-			code: 'source_not_allowed',
-		},
-	})
-
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
 		result: { reply: 'hello trusted client' },
 		logs: ['invoked'],
 	})
 
-	const allowed = await invokePackageExport({
+	const namedSource = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken({
 			exportNames: ['*'],
-			sources: ['personal-client'],
 		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
@@ -2289,20 +2264,19 @@ test('invokePackageExport enforces source scopes for wildcard tokens', async () 
 		},
 	})
 
-	expect(allowed.status).toBe(200)
-	expect(allowed.body).toMatchObject({
+	expect(namedSource.status).toBe(200)
+	expect(namedSource.body).toMatchObject({
 		ok: true,
 		exportName: './dispatch-message-created',
 		source: 'personal-client',
 		result: { reply: 'hello trusted client' },
 	})
 
-	const denied = await invokePackageExport({
+	const otherNamedSource = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken({
 			exportNames: ['*'],
-			sources: ['personal-client'],
 		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
@@ -2313,21 +2287,38 @@ test('invokePackageExport enforces source scopes for wildcard tokens', async () 
 		},
 	})
 
-	expect(denied.status).toBe(403)
-	expect(denied.body).toMatchObject({
-		ok: false,
-		error: {
-			code: 'source_not_allowed',
+	expect(otherNamedSource.status).toBe(200)
+	expect(otherNamedSource.body).toMatchObject({
+		ok: true,
+		source: 'shortcuts',
+	})
+
+	const unlabeled = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken({
+			exportNames: ['*'],
+		}),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-unlabeled',
 		},
 	})
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+
+	expect(unlabeled.status).toBe(200)
+	expect(unlabeled.body).toMatchObject({
+		ok: true,
+		result: { reply: 'hello trusted client' },
+	})
+	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(3)
 
 	const scopedDeniedByExport = await invokePackageExport({
 		env: createEnv(db),
 		baseUrl: 'https://kody.dev',
 		token: createToken({
 			exportNames: ['./other-export'],
-			sources: ['discord-gateway'],
 		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
@@ -2352,7 +2343,6 @@ test('invokePackageExport enforces source scopes for wildcard tokens', async () 
 		token: createToken({
 			packageId: 'pkg-other',
 			exportNames: ['*'],
-			sources: ['discord-gateway'],
 		}),
 		request: {
 			packageIdOrKodyId: 'discord-gateway',
@@ -2370,57 +2360,6 @@ test('invokePackageExport enforces source scopes for wildcard tokens', async () 
 			code: 'package_not_allowed',
 		},
 	})
-
-	const emptySourcesNamedDenied = await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken({
-			exportNames: ['*'],
-			sources: [],
-		}),
-		request: {
-			packageIdOrKodyId: 'discord-gateway',
-			exportName: 'dispatch-message-created',
-			params: { content: 'hi' },
-			idempotencyKey: 'evt-empty-sources-named',
-			source: 'personal-client',
-		},
-	})
-
-	expect(emptySourcesNamedDenied.status).toBe(403)
-	expect(emptySourcesNamedDenied.body).toMatchObject({
-		ok: false,
-		error: {
-			code: 'source_not_allowed',
-		},
-	})
-
-	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
-		result: { reply: 'unlabeled' },
-		logs: ['invoked'],
-	})
-
-	const emptySourcesUnlabeled = await invokePackageExport({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		token: createToken({
-			exportNames: ['*'],
-			sources: [],
-		}),
-		request: {
-			packageIdOrKodyId: 'discord-gateway',
-			exportName: 'dispatch-message-created',
-			params: { content: 'hi' },
-			idempotencyKey: 'evt-empty-sources-unlabeled',
-		},
-	})
-
-	expect(emptySourcesUnlabeled.status).toBe(200)
-	expect(emptySourcesUnlabeled.body).toMatchObject({
-		ok: true,
-		result: { reply: 'unlabeled' },
-	})
-	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(2)
 })
 
 test('invokePackageExport stores terminal failures for execution errors and missing exports', async () => {

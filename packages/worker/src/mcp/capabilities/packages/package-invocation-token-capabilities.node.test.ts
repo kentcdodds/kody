@@ -34,13 +34,11 @@ const tokenRecord = {
 	token_hash: 'stored-token-hash',
 	name: 'Discord gateway',
 	export_names_json: '["./dispatch-event"]',
-	sources_json: '["discord-fly-proxy"]',
 	created_at: '2026-07-01T00:00:00.000Z',
 	updated_at: '2026-07-02T00:00:00.000Z',
 	last_used_at: '2026-07-03T00:00:00.000Z',
 	revoked_at: null,
 	exportNames: ['./dispatch-event'],
-	sources: ['discord-fly-proxy'],
 }
 
 function createCapabilityContext() {
@@ -101,7 +99,6 @@ test('package invocation token capabilities return package-scoped metadata witho
 				name: 'Discord gateway',
 				package_id: 'package-1',
 				export_names: ['./dispatch-event'],
-				allowed_sources: ['discord-fly-proxy'],
 				created_at: '2026-07-01T00:00:00.000Z',
 				updated_at: '2026-07-02T00:00:00.000Z',
 				last_used_at: '2026-07-03T00:00:00.000Z',
@@ -126,7 +123,6 @@ test('package invocation token capabilities return package-scoped metadata witho
 			name: 'Revoked client',
 			package_id: 'package-1',
 			export_names: ['./dispatch-event'],
-			allowed_sources: ['discord-fly-proxy'],
 			created_at: '2026-07-01T00:00:00.000Z',
 			updated_at: '2026-07-02T00:00:00.000Z',
 			last_used_at: null,

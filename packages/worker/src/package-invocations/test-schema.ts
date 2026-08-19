@@ -12,7 +12,6 @@ export async function ensurePackageInvocationTokensTestSchema(db: D1Database) {
 				name TEXT NOT NULL,
 				token_hash TEXT NOT NULL,
 				export_names_json TEXT NOT NULL DEFAULT '[]',
-				sources_json TEXT NOT NULL DEFAULT '[]',
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL,
 				last_used_at TEXT,

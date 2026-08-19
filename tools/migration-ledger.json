@@ -75,6 +75,10 @@
 		{
 			"filename": "0018-drop-retired-service-storage-kind.sql",
 			"sha256": "a7036229d5821900c3a45da2e4841d3439ea7d219f874a208462a10a29de26c5"
+		},
+		{
+			"filename": "0019-drop-invocation-token-sources.sql",
+			"sha256": "de2e5badf20b92e69237cd60ef7a9736adefb45e6d6895c0fcf40859ca86552f"
 		}
 	]
 }

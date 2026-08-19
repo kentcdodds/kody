@@ -27,7 +27,6 @@ async function createEnv(
 		tokenRow?: {
 			package_id?: string
 			export_names_json?: string
-			sources_json?: string
 			revoked_at?: string | null
 		}
 		touchChanges?: number
@@ -46,8 +45,6 @@ async function createEnv(
 			export_names_json:
 				options.tokenRow?.export_names_json ??
 				JSON.stringify(['./dispatch-message-created']),
-			sources_json:
-				options.tokenRow?.sources_json ?? JSON.stringify(['discord-gateway']),
 			created_at: '2026-04-27T00:00:00.000Z',
 			updated_at: '2026-04-27T00:00:00.000Z',
 			last_used_at: null,
@@ -392,7 +389,6 @@ test('package invocation API validates requests and invokes exports with scoped 
 			email: 'me@example.com',
 			packageId: 'pkg-discord-gateway',
 			exportNames: ['./dispatch-message-created'],
-			sources: ['discord-gateway'],
 		},
 		request: {
 			packageIdOrKodyId: 'discord-gateway',

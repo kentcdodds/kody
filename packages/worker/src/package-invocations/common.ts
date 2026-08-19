@@ -21,7 +21,6 @@ export type PackageInvocationTokenScope = {
 	email?: string
 	packageId: string
 	exportNames?: Array<string>
-	sources?: Array<string>
 }
 
 export type PackageInvocationRequest = {

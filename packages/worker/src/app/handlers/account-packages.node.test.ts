@@ -21,13 +21,11 @@ const tokenRecord = {
 	token_hash: 'stored-hash',
 	name: 'Personal client',
 	export_names_json: '["*"]',
-	sources_json: '["personal-client"]',
 	created_at: new Date(0).toISOString(),
 	updated_at: new Date(0).toISOString(),
 	last_used_at: null,
 	revoked_at: null,
 	exportNames: ['*'],
-	sources: ['personal-client'],
 }
 
 const mockModule = vi.hoisted(() => ({
@@ -230,7 +228,6 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 					id: 'token-1',
 					name: 'Personal client',
 					exportNames: ['*'],
-					sources: ['personal-client'],
 				},
 			],
 		},
@@ -300,7 +297,6 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 				name: 'Personal automation',
 				rawToken: 'raw-personal-client-token',
 				exportNames: ['*'],
-				sources: ['personal-client'],
 			}),
 		}),
 		params: {},
@@ -318,7 +314,6 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 			name: 'Personal automation',
 			tokenHash: 'hashed-raw-token',
 			exportNames: ['*'],
-			sources: ['personal-client'],
 		}),
 	})
 	const createText = await createResponse.text()
@@ -357,7 +352,6 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 				id: 'token-1',
 				name: 'Updated personal client',
 				exportNames: ['dispatch-message-created'],
-				sources: ['updated-client'],
 				tokenHash: 'should-not-be-read',
 			}),
 		}),
@@ -374,7 +368,6 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 		name: 'Updated personal client',
 		tokenHash: undefined,
 		exportNames: ['./dispatch-message-created'],
-		sources: ['updated-client'],
 	})
 	const updateText = await updateResponse.text()
 	expect(updateText).not.toContain('should-not-be-read')
@@ -395,7 +388,6 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 				name: 'Rotated personal client',
 				rawToken: 'replacement-raw-token',
 				exportNames: ['dispatch-message-created'],
-				sources: ['rotated-client'],
 			}),
 		}),
 		params: {},
@@ -414,7 +406,6 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 		name: 'Rotated personal client',
 		tokenHash: 'hashed-raw-token',
 		exportNames: ['./dispatch-message-created'],
-		sources: ['rotated-client'],
 	})
 
 	const revokeResponse = await handler.handler({

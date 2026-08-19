@@ -46,7 +46,6 @@ const packageInvocationTokenRowSchema = object({
 	token_hash: string(),
 	name: string(),
 	export_names_json: string(),
-	sources_json: string(),
 	created_at: string(),
 	updated_at: string(),
 	last_used_at: nullable(string()),
@@ -62,7 +61,6 @@ export type PackageInvocationTokenRecord = InferOutput<
 	typeof packageInvocationTokenRowSchema
 > & {
 	exportNames: Array<string>
-	sources: Array<string>
 }
 
 export async function hashPackageInvocationBearerToken(token: string) {
@@ -140,10 +138,6 @@ function mapTokenRow(
 		exportNames: parseStringArrayJson({
 			value: parsed.value.export_names_json,
 			field: 'export_names_json',
-		}),
-		sources: parseStringArrayJson({
-			value: parsed.value.sources_json,
-			field: 'sources_json',
 		}),
 	}
 }
@@ -229,7 +223,6 @@ export async function insertPackageInvocationToken(input: {
 		name: string
 		tokenHash: string
 		exportNames: Array<string>
-		sources: Array<string>
 	}
 }) {
 	const now = new Date().toISOString()
@@ -242,10 +235,9 @@ export async function insertPackageInvocationToken(input: {
 				name,
 				token_hash,
 				export_names_json,
-				sources_json,
 				created_at,
 				updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			input.row.id,
@@ -254,7 +246,6 @@ export async function insertPackageInvocationToken(input: {
 			input.row.name,
 			input.row.tokenHash,
 			JSON.stringify(input.row.exportNames),
-			JSON.stringify(input.row.sources),
 			now,
 			now,
 		)
@@ -269,7 +260,6 @@ export async function updatePackageInvocationToken(input: {
 	name: string
 	tokenHash?: string
 	exportNames: Array<string>
-	sources: Array<string>
 }) {
 	const result = await input.db
 		.prepare(
@@ -277,7 +267,6 @@ export async function updatePackageInvocationToken(input: {
 			SET name = ?,
 				token_hash = COALESCE(?, token_hash),
 				export_names_json = ?,
-				sources_json = ?,
 				updated_at = ?
 			WHERE id = ?
 				AND user_id = ?
@@ -288,7 +277,6 @@ export async function updatePackageInvocationToken(input: {
 			input.name,
 			input.tokenHash ?? null,
 			JSON.stringify(input.exportNames),
-			JSON.stringify(input.sources),
 			new Date().toISOString(),
 			input.id,
 			input.userId,

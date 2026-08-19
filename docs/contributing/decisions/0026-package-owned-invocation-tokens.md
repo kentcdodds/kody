@@ -25,9 +25,10 @@ reason to keep a grant table.
 An invocation token belongs to exactly one saved package. Auth resolves the
 owner and package from the URL, then looks up
 `(user_id, package_id, token_hash)`. There is no cross-package grant, no
-account-level token page, and no global hash index. Export and source allowlists
-stay as restrictions _within_ that package. Tokens are created, rotated, and
-revoked from the package details page.
+account-level token page, and no global hash index. Export allowlists stay as
+restrictions _within_ that package. Source allowlists were dropped in
+[0027](./0027-no-invocation-token-source-allowlist.md). Tokens are created,
+rotated, and revoked from the package details page.
 
 Cross-package HTTP clients call one package (an orchestrator or a discovery
 package) and use `packages.invoke` inside Kody, or they speak MCP. They do not

@@ -43,8 +43,8 @@ package. The agent implements an obvious local fix when it can, follows
 leaves the tracking issue open when a human should decide.
 
 Create a scoped invocation token on the `weekly-site-perf` package details page
-(`exportNames=.`, source `weekly-site-perf`) at
-`https://kody.codes/account/packages/<weekly-site-perf-package-id>?newToken=1&name=Weekly%20site%20perf&exportNames=.&allowedSources=weekly-site-perf`
+(`exportNames=.`) at
+`https://kody.codes/account/packages/<weekly-site-perf-package-id>?newToken=1&name=Weekly%20site%20perf&exportNames=.`
 and store the raw value as the repository (or org) secret
 `KODY_PACKAGE_INVOCATION_TOKEN`. Do not put the raw token in the URL. See
 [setup manifest](./setup-manifest.md).

@@ -87,7 +87,6 @@ function toToken(token: PackageInvocationTokenRecord): AccountPackageToken {
 		id: token.id,
 		name: token.name,
 		exportNames: token.exportNames,
-		sources: token.sources,
 		createdAt: token.created_at,
 		updatedAt: token.updated_at,
 		lastUsedAt: token.last_used_at,

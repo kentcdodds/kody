@@ -984,7 +984,6 @@ export type AccountPackageToken = {
 	id: string
 	name: string
 	exportNames: Array<string>
-	sources: Array<string>
 	createdAt: string
 	updatedAt: string
 	lastUsedAt: string | null

@@ -28,8 +28,7 @@ Use it when:
 
 - a non-Kody process must invoke one saved package export
 - the user will store the raw bearer token in that external system
-- export access should be scoped to specific exports and optional source labels
-  on that package
+- export access should be scoped to specific exports on that package
 
 Do **not** ask the user to paste bearer tokens into chat. Do **not** include a
 `rawToken`, `token`, `bearer`, or token hash query parameter.
@@ -42,7 +41,7 @@ existing raw token or token hash.
 Agents can inspect existing token record metadata with
 `package_invocation_token_list` (requires `package_id`),
 `package_invocation_token_get`, and `package_get` (includes `tokens`). These
-capabilities return record ids, names, the owning package, export/source scopes,
+capabilities return record ids, names, the owning package, export scopes,
 timestamps, last-used metadata, and revocation status for the signed-in user's
 own records. They never return raw bearer token values or stored token hashes.
 
@@ -62,11 +61,11 @@ the HTTP API endpoint.
 
 Provide the user a URL like:
 
-`https://<your-kody-origin>/account/packages/<packageId>?newToken=1&name=Webhook%20Dispatcher&exportNames=dispatch-event&allowedSources=webhook-dispatcher`
+`https://<your-kody-origin>/account/packages/<packageId>?newToken=1&name=Webhook%20Dispatcher&exportNames=dispatch-event`
 
 Wildcard export setup for a highly trusted client of one package:
 
-`https://<your-kody-origin>/account/packages/<packageId>?newToken=1&name=Trusted%20External%20Client&exportNames=*&allowedSources=trusted-client`
+`https://<your-kody-origin>/account/packages/<packageId>?newToken=1&name=Trusted%20External%20Client&exportNames=*`
 
 ## Query params
 
@@ -79,8 +78,6 @@ field names without extra translation.
 | `newToken`                          | yes      | Set to `1` to open the create form on this package.                                                 |
 | `name`                              | no       | Human-readable token name.                                                                          |
 | `exportNames` / `exportName`        | no       | Package export names. `dispatch-event` is normalized to `./dispatch-event`; `*` allows all exports. |
-| `allowedSources` / `allowedSource`  | no       | Optional exact source labels the external caller may send in request JSON.                          |
-| `sources` / `source`                | no       | Alias for `allowedSources`.                                                                         |
 | `export_names`, `export-names`, etc | no       | Snake_case and kebab-case aliases are accepted for the fields above.                                |
 
 ## Invocation URL format
@@ -113,10 +110,9 @@ curl -X POST \
 	}'
 ```
 
-When a token lists allowed sources, the request JSON `source` must match one of
-those labels exactly. For Kent's YouTube Worker, use
-`"source": "youtube-websub-proxy"`. When the list is empty, omit `source` or
-send null; a named `source` is rejected.
+Request JSON `source` is an optional caller label for logs and idempotency
+metadata. It does not gate authentication. For Kent's YouTube Worker, callers
+typically send `"source": "youtube-websub-proxy"`.
 
 Prefer canonical URL metadata from package discovery over manual string
 construction. `package_get` and package entity search details include canonical
@@ -136,11 +132,10 @@ they speak MCP.
 2. If debugging an existing setup, call `package_invocation_token_list` with
    that `package_id`, `package_invocation_token_get`, or read `tokens` from
    `package_get` first to confirm which token record exists and whether its
-   export and allowed-source scopes match the external caller. Do not ask the
-   user to read token metadata out of the browser UI unless the capability
-   response is insufficient.
-3. Generate an `/account/packages/<packageId>?newToken=1` URL with `name`,
-   export scope, and optional `allowedSources`.
+   export scopes match the external caller. Do not ask the user to read token
+   metadata out of the browser UI unless the capability response is insufficient.
+3. Generate an `/account/packages/<packageId>?newToken=1` URL with `name` and
+   export scope.
 4. Ask the user to open the URL, paste their locally generated raw token into
    the Raw token field, or click **Generate** and copy/deliver the generated
    value before creating the token.
@@ -152,8 +147,7 @@ they speak MCP.
    - `POST` to the canonical owner-scoped invocation URL from package metadata,
      not to an `/account/packages/...` setup URL
    - `Authorization: Bearer <raw-token>`
-   - JSON `source` matching one of the allowed sources when the token lists
-     sources; omit `source` when the list is empty
+   - optional JSON `source` as a caller label for logs; it does not gate auth
 6. Never display, log, store in docs, or send raw token material through chat or
    query params.
 
@@ -177,8 +171,8 @@ For external invocation smoke tests, check failures in this order:
    Rotate the package invocation token or check that the external secret
    contains the exact active raw bearer value scoped to that package.
 
-Package export names and `source` policy are checked only after bearer-token
-authentication succeeds.
+Package export names are checked only after bearer-token authentication
+succeeds. Request `source` is recorded when present and does not fail the call.
 
 ## Related
 

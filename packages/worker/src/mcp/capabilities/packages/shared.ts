@@ -217,11 +217,6 @@ export const packageInvocationTokenMetadataSchema = z.object({
 		.describe(
 			'Normalized package export scopes allowed by this token record, including * when all exports on this package are allowed.',
 		),
-	allowed_sources: z
-		.array(z.string())
-		.describe(
-			'Exact source labels this token accepts in request JSON. Empty allows unlabeled requests only; a named source must match the list.',
-		),
 	created_at: z.string(),
 	updated_at: z.string(),
 	last_used_at: z
@@ -249,7 +244,6 @@ export function toPackageInvocationTokenMetadata(token: {
 	name: string
 	package_id: string
 	exportNames: Array<string>
-	sources: Array<string>
 	created_at: string
 	updated_at: string
 	last_used_at: string | null
@@ -260,7 +254,6 @@ export function toPackageInvocationTokenMetadata(token: {
 		name: token.name,
 		package_id: token.package_id,
 		export_names: token.exportNames,
-		allowed_sources: token.sources,
 		created_at: token.created_at,
 		updated_at: token.updated_at,
 		last_used_at: token.last_used_at,

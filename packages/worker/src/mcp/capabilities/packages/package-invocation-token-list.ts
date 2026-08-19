@@ -18,7 +18,7 @@ export const packageInvocationTokenListCapability = defineDomainCapability(
 	{
 		name: 'package_invocation_token_list',
 		description:
-			'List invocation token metadata for one saved package owned by the signed-in user, including export/source scopes, timestamps, last-used, and revocation status. Raw bearer token values and stored token hashes are never returned.',
+			'List invocation token metadata for one saved package owned by the signed-in user, including export scopes, timestamps, last-used, and revocation status. Raw bearer token values and stored token hashes are never returned.',
 		keywords: [
 			'package invocation token',
 			'invocation token',

@@ -18,7 +18,7 @@ export type ExternalPackageInvocationDescriptor = {
 }
 
 const sourceGuidance =
-	'If the token lists allowedSources, include JSON "source" with an exact listed label. If the list is empty, omit "source" or send null.'
+	'JSON "source" is an optional caller label for logs and idempotency metadata. It does not gate authentication.'
 
 function buildPackageInvocationTokenSetupExportName(exportName: string) {
 	const normalized = normalizePackageInvocationExportName(exportName)

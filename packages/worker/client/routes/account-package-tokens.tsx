@@ -43,7 +43,6 @@ type TokenEditorState = {
 	name: string
 	rawToken: string
 	exportNamesText: string
-	sourcesText: string
 }
 
 export function readPackageTokenQuery(href: string) {
@@ -67,16 +66,6 @@ export function createTokenEditorStateFromHref(href: string): TokenEditorState {
 			'export-name',
 			'export-names',
 		]).join('\n'),
-		sourcesText: readCommaListParams(params, [
-			'source',
-			'sources',
-			'allowedSource',
-			'allowedSources',
-			'allowed_source',
-			'allowed_sources',
-			'allowed-source',
-			'allowed-sources',
-		]).join('\n'),
 	}
 }
 
@@ -85,7 +74,6 @@ function createEmptyEditorState(): TokenEditorState {
 		name: '',
 		rawToken: '',
 		exportNamesText: '',
-		sourcesText: '',
 	}
 }
 
@@ -96,7 +84,6 @@ function createEditorStateFromToken(
 		name: token.name,
 		rawToken: '',
 		exportNamesText: token.exportNames.join('\n'),
-		sourcesText: token.sources.join('\n'),
 	}
 }
 
@@ -120,11 +107,6 @@ function parseListText(value: string) {
 function formatScope(values: Array<string>) {
 	if (values.length === 0) return 'None'
 	if (values.includes(wildcardScope)) return 'Any export'
-	return values.join(', ')
-}
-
-function formatSources(values: Array<string>) {
-	if (values.length === 0) return 'Unlabeled only'
 	return values.join(', ')
 }
 
@@ -396,9 +378,6 @@ export function AccountPackageTokens(
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Exports: {formatScope(token.exportNames)}
 								</p>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Sources: {formatSources(token.sources)}
-								</p>
 								{token.lastUsedAt ? (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										Last used {formatTimestamp(token.lastUsedAt)}
@@ -430,7 +409,6 @@ export function AccountPackageTokens(
 											name: editorState.name,
 											rawToken: editorState.rawToken,
 											exportNames: parseListText(editorState.exportNamesText),
-											sources: parseListText(editorState.sourcesText),
 										})
 										saveState = 'idle'
 										messageTone = 'info'
@@ -566,25 +544,6 @@ export function AccountPackageTokens(
 											editorState = {
 												...editorState,
 												exportNamesText: event.currentTarget.value,
-											}
-											handle.update()
-										}
-									}),
-								]}
-							/>
-						</label>
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>Allowed sources</span>
-							<textarea
-								value={editorState.sourcesText}
-								placeholder="youtube-websub-proxy"
-								mix={[
-									css(accountTextareaCss),
-									on('input', (event) => {
-										if (event.currentTarget instanceof HTMLTextAreaElement) {
-											editorState = {
-												...editorState,
-												sourcesText: event.currentTarget.value,
 											}
 											handle.update()
 										}
