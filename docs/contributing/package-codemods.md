@@ -350,7 +350,10 @@ sequence (formalizing existing practice):
    publishes cannot use the deprecated pattern.
 
 Skipping dry-run or canary apply risks mass check failures; skipping step 6
-allows new packages to reintroduce debt.
+allows new packages to reintroduce debt. After enforcement lands, drop the
+deprecation shims when no remaining packages need them — or open a GitHub issue
+if that drop must wait. See
+[Cleanup after migrations](./cleanup-after-migrations.md).
 
 ## Revert
 

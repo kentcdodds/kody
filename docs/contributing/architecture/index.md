@@ -54,6 +54,8 @@ to become.
 - [Values retirement runbook](./values-retirement-runbook.md): absorb values
   into memories, package storage, repos, secrets, and integrations
   ([ADR 0022](../decisions/0022-retire-values-primitive.md)).
+- [Cleanup after migrations](../cleanup-after-migrations.md): drop leftovers in
+  the same change when safe; otherwise open a GitHub issue.
 - [Primitives map](./primitives.yaml): stable taxonomy of system primitives and
   invariants for the visual-recap skill
   (`.agents/skills/visual-recap/SKILL.md`). It is not a living feature changelog

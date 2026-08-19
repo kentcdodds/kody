@@ -165,6 +165,10 @@ Quick notes for getting a local kody environment running.
   exactly before touching anything, and no-ops on fresh or already-squashed
   databases. The guard runs only for local applies against pre-squash developer
   state dirs; delete it once those have died out.
+- Leftovers this migration cannot drop yet (old columns, dual-write, a later
+  `deleted_classes` tag, a soak) follow
+  [Cleanup after migrations](./cleanup-after-migrations.md): remove them in this
+  change when safe, otherwise open a GitHub issue.
 
 ## Documentation maintenance
 

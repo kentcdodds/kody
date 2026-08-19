@@ -164,3 +164,6 @@ D1 migration step).
 - After step 6: roll forward. The old `APP_DB` tables still hold the pre-pause
   rows as a cold copy until step 8, so data loss is bounded to the cutover
   window in the worst case.
+
+Leftovers that wait on a later drop follow
+[Cleanup after migrations](../cleanup-after-migrations.md).

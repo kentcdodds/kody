@@ -34,8 +34,10 @@ Do not spawn a one-agent "fleet."
   steps. Production / irreversible: say so and raise the bar.
 - **Expand owns contract.** No `STATUS: done` after expand-only — same kickoff
   or a scheduled wake with an owner.
-- **Stop when the goal is met.** Cleanup/drop is a later ask unless the user
-  says finish it now.
+- **Stop when the goal is met.** Do not expand a fleet into dropping the old
+  system unless that is the assigned work. Leftovers **this** change adds still
+  follow [cleanup-after-migrations](../cleanup-after-migrations/SKILL.md):
+  remove them now when safe, otherwise open a GitHub issue.
 - **Ship autonomously** under the user's shipping policy; hand `ship-pr` when
   agents may merge. High-risk park only when the user requires it — then ask
   once, list PRs, schedule a self-wake (don't sleep-poll).

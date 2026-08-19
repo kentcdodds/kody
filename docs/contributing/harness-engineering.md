@@ -65,7 +65,10 @@ Use a lightweight "doc and quality gardening" pass to prevent drift:
 - Remove stale guidance from `docs/contributing`.
 - Tighten unclear instructions and add cross-links.
 - Identify recurring defects and propose one new mechanical guardrail.
-- Record follow-up tech debt as explicit, trackable work.
+- Record follow-up tech debt as explicit, trackable work. Leftovers from a
+  migration or similar change follow
+  [Cleanup after migrations](./cleanup-after-migrations.md): remove them in the
+  same change when safe, otherwise open a GitHub issue.
 
 Continuous small cleanups are cheaper than periodic large rewrites.
 

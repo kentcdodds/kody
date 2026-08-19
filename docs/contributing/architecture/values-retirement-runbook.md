@@ -216,3 +216,5 @@ day 30 because the calendar said so.
 - [0003 — Repos as the base primitive](../decisions/0003-repos-as-base-primitive.md)
 - [0005 — Metrics-driven lane retirement](../decisions/0005-mcp-dual-lane-stateless-migration.md)
 - [Package state model](../../use/packages.md#package-state-model)
+- [Cleanup after migrations](../cleanup-after-migrations.md) (GitHub issue for
+  leftovers that wait on a soak or later drop)

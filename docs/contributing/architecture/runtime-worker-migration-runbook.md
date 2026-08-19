@@ -192,3 +192,6 @@ applies `v1` `new_sqlite_classes` then `v2` `deleted_classes` on first deploy.
   edits).
 - The main worker can always be rolled back independently as long as its config
   keeps the cross-script bindings.
+
+Leftovers that wait on a later tag or deploy follow
+[Cleanup after migrations](../cleanup-after-migrations.md).

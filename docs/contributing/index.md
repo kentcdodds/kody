@@ -19,6 +19,8 @@ style, tests, MCP capabilities, and runtime architecture.
   shared by agents and CI)
 - [Harness engineering](./harness-engineering.md) (agent-first loop, promoting
   lessons into enforcement)
+- [Cleanup after migrations](./cleanup-after-migrations.md) (drop leftovers in
+  the same change, or open a GitHub issue)
 
 ## Code and tooling
 

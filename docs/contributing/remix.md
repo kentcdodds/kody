@@ -11,6 +11,9 @@ Load that skill before changing Remix routes, controllers, middleware, data
 access, validation, auth, sessions, file uploads, server setup, UI components,
 hydration, navigation, frames, or tests.
 
+Kody D1 leftovers (unused columns, dual-write, a later drop) follow
+[Cleanup after migrations](./cleanup-after-migrations.md), not the Remix skill.
+
 For `<Frame>` partial reloads, see [frames](./frames.md).
 
 `npx remix@next new <app>` copies this skill from the Remix CLI bootstrap
