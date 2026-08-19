@@ -120,6 +120,12 @@ type SearchHandler = (input: {
 	limit?: number
 	maxResponseSize?: number
 	conversationId?: string
+	memoryContext?: {
+		task?: string
+		query?: string
+		entities?: Array<string>
+		constraints?: Array<string>
+	}
 	includeHiddenPackages?: boolean
 }) => Promise<{
 	content: Array<{
@@ -148,6 +154,11 @@ async function getSearchRegistration(input?: {
 	} | null
 }) {
 	const registerTool = vi.fn()
+	const state: {
+		searchConversationIdsWithPreamble?: Array<string>
+		onboardingNoticeConversationIds?: Array<string>
+		onboardingNoticeLastShownAtMs?: number
+	} = {}
 
 	await registerSearchTool({
 		server: {
@@ -158,6 +169,10 @@ async function getSearchRegistration(input?: {
 			baseUrl: 'https://example.com',
 			user: input?.user === undefined ? null : input.user,
 		})),
+		state,
+		setState: vi.fn((nextState: typeof state) => {
+			Object.assign(state, nextState)
+		}),
 	} as never)
 
 	expect(registerTool).toHaveBeenCalledTimes(1)
@@ -606,23 +621,13 @@ test('search tool batches entity detail with per-ref isolation and preserves sin
 			kind: 'entity',
 			type: 'capability',
 			id: 'openapi:widgets:createwidget',
-			relatedOperations: [
-				expect.objectContaining({
-					name: 'openapi:widgets:getwidget',
-					method: 'get',
-					path: '/widgets/{id}',
-				}),
-			],
+			relatedOperationCount: 1,
 		}),
 		expect.objectContaining({
 			kind: 'entity',
 			type: 'capability',
 			id: 'openapi:widgets:getwidget',
-			relatedOperations: [
-				expect.objectContaining({
-					name: 'openapi:widgets:createwidget',
-				}),
-			],
+			relatedOperationCount: 1,
 		}),
 	])
 	mockPerformanceNow.mockReturnValueOnce(300).mockReturnValueOnce(310)
@@ -1269,4 +1274,196 @@ test('search tool domain param: browse, reject unknown, and scope ranked results
 		expect(match).toMatchObject({ type: 'capability', domain: 'meta' })
 	}
 	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
+})
+
+test('empty discovery returns a counted domain index without memory enrichment', async () => {
+	vi.clearAllMocks()
+	mockModule.getCapabilityRegistryForContext.mockResolvedValueOnce({
+		capabilityDomains: [
+			{
+				name: 'meta',
+				description: 'Search and registry metadata.',
+			},
+		],
+		capabilitySpecs: {
+			search_docs: {
+				name: 'search_docs',
+				description: 'Search docs capability',
+				domain: 'meta',
+				keywords: [],
+				inputFields: [],
+				requiredInputFields: [],
+				outputFields: [],
+				readOnly: true,
+				idempotent: true,
+				destructive: false,
+				source: 'builtin',
+				inputSchema: { type: 'object', properties: {} },
+				inputTypeDefinition: 'type Input = {}',
+			},
+		},
+	})
+	const { handler } = await getSearchRegistration({
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+		},
+	})
+
+	const response = await handler({ conversationId: 'conv-empty-index' })
+	expect(response.isError).toBeUndefined()
+	expect(response.structuredContent.result).toMatchObject({
+		matches: [
+			{
+				type: 'domain',
+				id: 'meta',
+				capabilityCount: 1,
+				sampleCapabilities: ['search_docs'],
+			},
+		],
+	})
+	expect(mockModule.loadRelevantMemoriesForTool).not.toHaveBeenCalled()
+	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
+})
+
+test('provider-name search ranks a wrapping package and provider card without an operation flood', async () => {
+	vi.clearAllMocks()
+	const openApiSpec = (
+		name: string,
+		operationSlug: string,
+		method: string,
+		path: string,
+	) => ({
+		name,
+		description: `${method.toUpperCase()} ${path}`,
+		domain: 'openapi:github',
+		keywords: ['github'],
+		inputFields: [],
+		requiredInputFields: [],
+		outputFields: [],
+		readOnly: true,
+		idempotent: true,
+		destructive: false,
+		source: 'openapi' as const,
+		openApi: {
+			bindingName: 'github',
+			kodyName: 'github',
+			operationSlug,
+			method,
+			path,
+		},
+		inputSchema: { type: 'object' as const, properties: {} },
+		inputTypeDefinition: 'type Input = {}',
+	})
+	mockModule.getCapabilityRegistryForContext.mockResolvedValue({
+		capabilityDomains: [
+			{
+				name: 'openapi:github',
+				description: 'GitHub OpenAPI operations.',
+			},
+		],
+		capabilitySpecs: {
+			'openapi:github:listrepositories': openApiSpec(
+				'openapi:github:listrepositories',
+				'listrepositories',
+				'get',
+				'/user/repos',
+			),
+			'openapi:github:createrepository': openApiSpec(
+				'openapi:github:createrepository',
+				'createrepository',
+				'post',
+				'/user/repos',
+			),
+		},
+	})
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([
+		{
+			id: 'pkg-github-wrapper',
+			userId: 'user-1',
+			name: '@user/github',
+			kodyId: 'github',
+			description: 'Safer GitHub workflows',
+			tags: ['github'],
+			searchText: 'github provider wrapper',
+			sourceId: 'source-github-wrapper',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		},
+	])
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
+		manifest: {
+			name: '@user/github',
+			exports: { '.': './index.ts' },
+			kody: {
+				id: 'github',
+				description: 'Safer GitHub workflows',
+			},
+		},
+		files: {
+			'package.json': '{}',
+			'README.md':
+				'# GitHub workflows\n\n## Intent\n\nWrap GitHub operations safely.',
+			'index.ts': 'export default function run() {}',
+		},
+	})
+	const { handler } = await getSearchRegistration({
+		user: {
+			userId: 'user-1',
+			email: 'user@example.com',
+			displayName: 'User',
+			username: 'user',
+		},
+	})
+
+	const response = await handler({
+		query: 'github',
+		conversationId: 'conv-provider',
+	})
+	const result = response.structuredContent.result as {
+		matches: Array<{
+			type: string
+			wrappingPackage?: { kodyId: string } | null
+		}>
+	}
+	expect(result.matches.map((match) => match.type)).toEqual([
+		'package',
+		'provider',
+	])
+	expect(result.matches[1]).toMatchObject({
+		type: 'provider',
+		wrappingPackage: { kodyId: 'github' },
+	})
+	expect(
+		result.matches.filter((match) => match.type === 'capability'),
+	).toHaveLength(0)
+})
+
+test('later entity detail in one conversation omits already-taught boilerplate', async () => {
+	vi.clearAllMocks()
+	const { handler } = await getSearchRegistration()
+
+	await handler({
+		query: 'search docs',
+		conversationId: 'conv-detail-preamble',
+	})
+	const laterDetail = await handler({
+		entity: 'search_docs:capability',
+		conversationId: 'conv-detail-preamble',
+	})
+	expect(laterDetail.content[1]?.text).not.toContain(
+		'Capabilities returned by `search` are available inside `execute`',
+	)
+
+	const firstDetail = await handler({
+		entity: 'search_docs:capability',
+		conversationId: 'conv-first-detail',
+	})
+	expect(firstDetail.content[1]?.text).toContain(
+		'Capabilities returned by `search` are available inside `execute`',
+	)
 })

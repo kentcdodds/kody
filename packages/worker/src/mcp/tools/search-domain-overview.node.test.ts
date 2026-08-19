@@ -1,6 +1,9 @@
 import { expect, test } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
-import { buildDomainOverviewMatches } from './search-domain-overview.ts'
+import {
+	buildDomainIndexMatches,
+	buildDomainOverviewMatches,
+} from './search-domain-overview.ts'
 import { understandSearchQuery } from './understand-search-query.ts'
 
 function capability(name: string, domain: string, description: string) {
@@ -44,6 +47,15 @@ function overviewFor(query: string) {
 }
 
 test('domain overviews cover named, plural, exploratory, and non-collapse cases', () => {
+	expect(
+		buildDomainIndexMatches({
+			capabilityDomains: registry.capabilityDomains,
+			capabilitySpecs: registry.capabilitySpecs,
+		}),
+	).toEqual([
+		expect.objectContaining({ type: 'domain', name: 'email', capabilityCount: 4 }),
+		expect.objectContaining({ type: 'domain', name: 'jobs', capabilityCount: 1 }),
+	])
 	expect(overviewFor('what can you do with email')).toEqual([
 		{
 			type: 'domain',

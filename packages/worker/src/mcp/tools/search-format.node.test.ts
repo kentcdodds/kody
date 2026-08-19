@@ -1075,6 +1075,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			{
 				type: 'capability',
 				name: 'openapi:widgets:createwidget',
+				title: 'POST /widgets',
 				description: 'Create a widget.',
 				domain: 'openapi:widgets',
 				source: 'openapi',
@@ -1090,6 +1091,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			{
 				type: 'capability',
 				name: 'openapi:widgets:listwidgets',
+				title: 'GET /widgets',
 				description: 'List widgets.',
 				domain: 'openapi:widgets',
 				source: 'openapi',
@@ -1113,6 +1115,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		],
 		includePreamble: false,
 	})
+	expect(listMarkdown).toContain('POST /widgets')
 	expect(listMarkdown).toContain('kody.openapi["widgets"].createwidget(args)')
 	expect(listMarkdown).toContain('type CreateWidgetInput = { name: string }')
 	expect(listMarkdown).toContain(compact.definition)
@@ -1201,40 +1204,17 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 			},
 			inputTypeDefinition: 'type CreateWidgetInput = { name: string }',
 		},
-		relatedOperations: [
-			{
-				name: 'openapi:widgets:listwidgets',
-				entityRef: 'openapi:widgets:listwidgets:capability',
-				description: 'List widgets',
-				method: 'get',
-				path: '/widgets',
-			},
-			{
-				name: 'openapi:widgets:getwidget',
-				entityRef: 'openapi:widgets:getwidget:capability',
-				description: 'Get one widget.',
-				method: 'get',
-				path: '/widgets/{id}',
-			},
-		],
+		relatedOperationCount: 2,
 	})
-	expect(openApiDetail.markdown).toContain('GET /widgets')
-	expect(openApiDetail.markdown).toContain(
+	expect(openApiDetail.markdown).toContain('Related operations from this provider: 2')
+	expect(openApiDetail.markdown).not.toContain(
 		'openapi:widgets:listwidgets:capability',
 	)
 	expect(openApiDetail.structured).toMatchObject({
 		type: 'capability',
-		relatedOperations: [
-			expect.objectContaining({
-				name: 'openapi:widgets:listwidgets',
-				method: 'get',
-				path: '/widgets',
-			}),
-			expect.objectContaining({
-				name: 'openapi:widgets:getwidget',
-			}),
-		],
+		relatedOperationCount: 2,
 	})
+	expect(openApiDetail.structured).not.toHaveProperty('relatedOperations')
 
 	const builtinDetail = formatEntityDetailMarkdown({
 		type: 'capability',
@@ -1301,34 +1281,36 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		},
 		files: {
 			'package.json': '{}',
-			'index.ts': 'export default function main() {}',
+			'README.md':
+				'# Notes helper\n\n## Intent\n\nKeep notes workflows safe and reusable.\n\n## Usage\n\nFull usage details.',
+			'index.ts':
+				'/** Save a note. */\nexport default function main(input: { text: string }) { return input.text }',
 			'on-repo-pushed.ts': 'export default function handler() {}',
 		},
 	})
+	expect(packageDetail.markdown).toContain('## Index')
+	expect(packageDetail.markdown).toContain('| Subpath | Purpose |')
+	expect(packageDetail.markdown).toContain('## README Intent')
 	expect(packageDetail.markdown).toContain(
-		'package_get_git_remote({ kody_id: "notes-helper" })',
+		'Keep notes workflows safe and reusable.',
 	)
-	expect(packageDetail.markdown).toContain(
-		'package_publish_external_push({ kody_id: "notes-helper" })',
-	)
-	expect(packageDetail.markdown).toContain('## Test')
-	expect(packageDetail.markdown).toContain(
-		'package_subscription_dispatch({ kody_id: "notes-helper", topic: "repo.pushed", params: {} })',
+	expect(packageDetail.markdown).not.toContain('Full usage details.')
+	expect(packageDetail.markdown).not.toContain('typeDefinition')
+	expect(JSON.stringify(packageDetail.structured)).not.toContain(
+		'referencedTypes',
 	)
 	expect(packageDetail.structured).toMatchObject({
 		type: 'package',
-		maintain: {
-			gitLane: 'package_get_git_remote({ kody_id: "notes-helper" })',
-			publish: 'package_publish_external_push({ kody_id: "notes-helper" })',
-		},
-		test: {
-			subscriptions: [
-				{
-					topic: 'repo.pushed',
-					snippet:
-						'package_subscription_dispatch({ kody_id: "notes-helper", topic: "repo.pushed", params: {} })',
-				},
-			],
+		exports: [
+			{
+				subpath: '.',
+				description: 'Save a note.',
+			},
+		],
+		readmeIntent: {
+			path: 'README.md',
+			content: 'Keep notes workflows safe and reusable.',
+			truncated: false,
 		},
 	})
 })

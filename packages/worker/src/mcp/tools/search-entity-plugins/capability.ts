@@ -1,16 +1,12 @@
 import { searchCapabilities } from '#mcp/capabilities/capability-search.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 
-import {
-	escapeMarkdownText,
-	formatMarkdownInlineCode,
-} from '../markdown-safety.ts'
+import { formatMarkdownInlineCode } from '../markdown-safety.ts'
 import {
 	buildCapabilityExecuteExample,
 	buildCapabilityUsage,
 	buildEntityRef,
 	formatList,
-	formatOneLineSentence,
 } from '../search-format-helpers.ts'
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
 import { type SearchMatch } from '../search-format-types.ts'
@@ -65,6 +61,9 @@ export function toCapabilitySearchMatch(
 	return {
 		type: 'capability',
 		name: spec.name,
+		title: spec.openApi
+			? `${spec.openApi.method.toUpperCase()} ${spec.openApi.path}`
+			: spec.name,
 		description: spec.description,
 		domain: spec.domain,
 		source: spec.source,
@@ -158,7 +157,7 @@ export const capabilitySearchEntityPlugin = {
 			type: 'capability',
 			id: match.name,
 			entityRef: buildEntityRef(match.name, 'capability'),
-			title: match.name,
+			title: match.title ?? match.name,
 			description:
 				'description' in match && typeof match.description === 'string'
 					? match.description
@@ -176,10 +175,10 @@ export const capabilitySearchEntityPlugin = {
 				: {}),
 		}
 	},
-	formatEntityDetail(detail) {
-		const relatedOperations = detail.relatedOperations ?? []
+	formatEntityDetail(detail, options) {
+		const relatedOperationCount = detail.relatedOperationCount ?? 0
 		const lines = [
-			`# Capability — \`${detail.spec.name}\``,
+			`# Capability — \`${detail.title}\``,
 			'',
 			detail.spec.description,
 			'',
@@ -195,13 +194,21 @@ export const capabilitySearchEntityPlugin = {
 			'',
 			'## Execute from `execute`',
 			'',
-			'Built-in capabilities returned by `search` are available inside `execute` as methods on the imported `kody` object.',
-			'',
+			...(options?.includeBoilerplate ?? true
+				? [
+						'Capabilities returned by `search` are available inside `execute` on the imported `kody` object.',
+						'',
+					]
+				: []),
 			'```ts',
 			buildCapabilityExecuteExample(detail.spec),
 			'```',
-			'',
-			'Pass concrete arguments that satisfy the input type below; use `{}` when there are no required fields.',
+			...(options?.includeBoilerplate ?? true
+				? [
+						'',
+						'Pass concrete arguments that satisfy the input type below; use `{}` when there are no required fields.',
+					]
+				: []),
 			'',
 			'## Type definitions',
 			'',
@@ -212,17 +219,11 @@ export const capabilitySearchEntityPlugin = {
 				: []),
 			'```',
 		]
-		if (relatedOperations.length > 0) {
-			lines.push('', '## Related operations (same provider)', '')
-			for (const related of relatedOperations) {
-				const openApiSuffix =
-					related.method && related.path
-						? ` — ${formatMarkdownInlineCode(`${related.method.toUpperCase()} ${related.path}`)}`
-						: ''
-				lines.push(
-					`- ${formatMarkdownInlineCode(related.name)}${openApiSuffix} — ${escapeMarkdownText(formatOneLineSentence(related.description))} Entity: ${formatMarkdownInlineCode(related.entityRef)}`,
-				)
-			}
+		if (relatedOperationCount > 0) {
+			lines.push(
+				'',
+				`- Related operations from this provider: ${String(relatedOperationCount)}. Use ${formatMarkdownInlineCode(`search({ domain: ${JSON.stringify(detail.spec.domain)} })`)} to list them.`,
+			)
 		}
 		return {
 			markdown: lines.join('\n'),
@@ -246,7 +247,7 @@ export const capabilitySearchEntityPlugin = {
 				...(detail.spec.outputTypeDefinition
 					? { outputTypeDefinition: detail.spec.outputTypeDefinition }
 					: {}),
-				...(relatedOperations.length > 0 ? { relatedOperations } : {}),
+				...(relatedOperationCount > 0 ? { relatedOperationCount } : {}),
 			},
 		}
 	},

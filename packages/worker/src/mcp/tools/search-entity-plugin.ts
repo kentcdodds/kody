@@ -74,5 +74,6 @@ export type SearchEntityPlugin<Type extends SearchMatch['type']> = {
 	) => SlimSearchMatch
 	formatEntityDetail?: (
 		detail: Extract<SearchEntityDetail, { type: Type }>,
+		options?: { includeBoilerplate?: boolean },
 	) => SearchEntityDetailFormatResult
 }

@@ -2,6 +2,12 @@ import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getCapabilityRegistryForContext: vi.fn(async () => ({
+		capabilityDomains: [
+			{
+				name: 'meta',
+				description: 'Search and registry metadata.',
+			},
+		],
 		capabilitySpecs: {
 			search_docs: {
 				name: 'search_docs',
@@ -237,7 +243,7 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 	)
 })
 
-test('meta search supports domain-only browsing and requires query or domain', async () => {
+test('meta search supports domain browsing and empty discovery', async () => {
 	const context = createContext({ userId: 'user-1', username: 'user' })
 
 	const browse = await searchCapability.handler(
@@ -252,7 +258,20 @@ test('meta search supports domain-only browsing and requires query or domain', a
 		}),
 	])
 
-	await expect(
-		searchCapability.handler({ conversationId: 'meta-missing-args' }, context),
-	).rejects.toThrow('Provide "query" or "domain".')
+	const memoryCallsBeforeEmpty =
+		mockModule.loadRelevantMemoriesForTool.mock.calls.length
+	const empty = await searchCapability.handler(
+		{ conversationId: 'meta-empty-index' },
+		context,
+	)
+	expect(empty.matches).toEqual([
+		expect.objectContaining({
+			type: 'domain',
+			id: 'meta',
+			capabilityCount: 1,
+		}),
+	])
+	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalledTimes(
+		memoryCallsBeforeEmpty,
+	)
 })

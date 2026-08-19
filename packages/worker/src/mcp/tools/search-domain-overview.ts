@@ -101,6 +101,23 @@ function buildDomainMatch(
 	}
 }
 
+export function buildDomainIndexMatches(input: {
+	capabilityDomains: ReadonlyArray<CapabilityDomainMetadata>
+	capabilitySpecs: Record<string, CapabilitySpec>
+}): Array<SearchMatch> {
+	const specsByDomain = new Map<string, Array<CapabilitySpec>>()
+	for (const spec of Object.values(input.capabilitySpecs)) {
+		const group = specsByDomain.get(spec.domain) ?? []
+		group.push(spec)
+		specsByDomain.set(spec.domain, group)
+	}
+	return input.capabilityDomains
+		.filter((domain) => (specsByDomain.get(domain.name)?.length ?? 0) > 0)
+		.map((domain) =>
+			buildDomainMatch(domain, specsByDomain.get(domain.name) ?? []),
+		)
+}
+
 /**
  * Broad/exploratory queries ("what can you do with email", "what can kody
  * do") return compact domain summaries instead of ranked individual hits, so
@@ -117,14 +134,15 @@ export function buildDomainOverviewMatches(input: {
 	if (meaningfulTokens.length === 0) return null
 	if (input.capabilityDomains.length === 0) return null
 
+	const domainIndex = buildDomainIndexMatches(input)
 	const specsByDomain = new Map<string, Array<CapabilitySpec>>()
 	for (const spec of Object.values(input.capabilitySpecs)) {
 		const group = specsByDomain.get(spec.domain) ?? []
 		group.push(spec)
 		specsByDomain.set(spec.domain, group)
 	}
-	const visibleDomains = input.capabilityDomains.filter(
-		(domain) => (specsByDomain.get(domain.name)?.length ?? 0) > 0,
+	const visibleDomains = input.capabilityDomains.filter((domain) =>
+		domainIndex.some((match) => match.type === 'domain' && match.name === domain.name),
 	)
 	if (visibleDomains.length === 0) return null
 
@@ -134,6 +152,14 @@ export function buildDomainOverviewMatches(input: {
 	const matchedDomains: Array<CapabilityDomainMetadata> = []
 	const domainMatchedTokens = new Set<string>()
 	for (const domain of visibleDomains) {
+		const synthesizedDomain = domain.name.includes(':')
+		if (
+			synthesizedDomain &&
+			input.intent.normalizedQuery !==
+				extractSearchTokens(domain.name).join(' ')
+		) {
+			continue
+		}
 		const nameConcepts = new Set(
 			extractSearchTokens(domain.name).map(singularizeToken),
 		)

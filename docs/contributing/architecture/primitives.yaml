@@ -663,6 +663,23 @@ invariants:
     docs:
       - docs/contributing/project-intent.md
 
+  - id: discovery-progressive-disclosure
+    summary: Default discovery is a bounded index; expensive detail is explicit.
+    docs:
+      - docs/use/search.md
+      - docs/contributing/decisions/0022-progressive-search-disclosure.md
+
+  - id: package-over-synthesized-provider
+    summary: Rank wrapping packages before matching synthesized provider ops.
+    docs:
+      - docs/use/search.md
+      - docs/contributing/decisions/0023-packages-outrank-synthesized-providers.md
+
+  - id: bounded-always-on-mcp-text
+    summary: Keep always-on MCP instructions bounded to durable essentials.
+    docs:
+      - docs/contributing/project-intent.md
+
   - id: community-listing-isolation
     summary:
       Public community reads are deliberate; forks stay inert until publish.

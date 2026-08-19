@@ -1,13 +1,16 @@
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
-	surfaceRelevantMemories: vi.fn(),
+	searchMemoryRecords: vi.fn(),
+	acknowledgeSurfacedMemories: vi.fn(),
 	runPackageRetrievers: vi.fn(),
 }))
 
 vi.mock('#mcp/memory/service.ts', () => ({
-	surfaceRelevantMemories: (...args: Array<unknown>) =>
-		mockModule.surfaceRelevantMemories(...args),
+	searchMemoryRecords: (...args: Array<unknown>) =>
+		mockModule.searchMemoryRecords(...args),
+	acknowledgeSurfacedMemories: (...args: Array<unknown>) =>
+		mockModule.acknowledgeSurfacedMemories(...args),
 }))
 
 vi.mock('#worker/package-retrievers/service.ts', () => ({
@@ -20,13 +23,15 @@ const { formatSurfacedMemoriesMarkdown } =
 	await import('./memory-tool-context.ts')
 
 function setupMemoryContextMocks() {
-	mockModule.surfaceRelevantMemories.mockReset()
+	mockModule.searchMemoryRecords.mockReset()
+	mockModule.acknowledgeSurfacedMemories.mockReset()
 	mockModule.runPackageRetrievers.mockReset()
-	mockModule.surfaceRelevantMemories.mockResolvedValue({
-		memories: [],
+	mockModule.searchMemoryRecords.mockResolvedValue({
+		matches: [],
 		suppressedCount: 0,
-		retrievalQuery: 'sprinkler instructions',
+		query: 'sprinkler instructions',
 	})
+	mockModule.acknowledgeSurfacedMemories.mockResolvedValue(undefined)
 	mockModule.runPackageRetrievers.mockResolvedValue({
 		results: [
 			{
@@ -95,8 +100,8 @@ test('memory tool context surfaces retriever results, fails on retriever errors,
 	expect(retrieverOnlyContent?.text?.length).toBeGreaterThan(0)
 
 	setupMemoryContextMocks()
-	mockModule.surfaceRelevantMemories.mockResolvedValue({
-		memories: [
+	mockModule.searchMemoryRecords.mockResolvedValue({
+		matches: [
 			{
 				id: 'memory-1',
 				category: 'workflow',
@@ -106,11 +111,16 @@ test('memory tool context surfaces retriever results, fails on retriever errors,
 				details: '',
 				tags: ['sprinkler'],
 				sourceUris: [],
+				dedupeKey: null,
+				createdAt: '2026-04-28T00:00:00.000Z',
 				updatedAt: '2026-04-28T00:00:00.000Z',
+				lastAccessedAt: null,
+				deletedAt: null,
+				score: 0.03,
 			},
 		],
 		suppressedCount: 0,
-		retrievalQuery: 'sprinkler instructions',
+		query: 'sprinkler instructions',
 	})
 	mockModule.runPackageRetrievers.mockRejectedValue(
 		new Error('retriever unavailable'),
@@ -119,4 +129,69 @@ test('memory tool context surfaces retriever results, fails on retriever errors,
 	await expect(loadRelevantMemoriesForTool(request)).rejects.toThrow(
 		'retriever unavailable',
 	)
+})
+
+test('automatic memory context drops archived and low-score matches', async () => {
+	setupMemoryContextMocks()
+	const baseMemory = {
+		category: 'workflow',
+		subject: 'Search workflow',
+		summary: 'Use ranked search.',
+		details: '',
+		tags: ['search'],
+		sourceUris: [],
+		dedupeKey: null,
+		createdAt: '2026-04-28T00:00:00.000Z',
+		updatedAt: '2026-04-28T00:00:00.000Z',
+		lastAccessedAt: null,
+		deletedAt: null,
+	}
+	mockModule.searchMemoryRecords.mockResolvedValue({
+		matches: [
+			{
+				...baseMemory,
+				id: 'active-strong',
+				status: 'active',
+				score: 0.03,
+			},
+			{
+				...baseMemory,
+				id: 'active-noise',
+				status: 'active',
+				score: 0.0164,
+			},
+			{
+				...baseMemory,
+				id: 'archived-strong',
+				status: 'archived',
+				score: 0.04,
+			},
+		],
+		suppressedCount: 0,
+		query: 'ranked search',
+	})
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
+
+	const result = await loadRelevantMemoriesForTool({
+		env: { APP_DB: {} } as Env,
+		callerContext: {
+			baseUrl: 'https://heykody.dev',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User',
+			},
+			storageContext: null,
+			repoContext: null,
+		},
+		conversationId: 'conversation-quality',
+		memoryContext: { query: 'ranked search' },
+		acknowledgeSurfaced: false,
+	})
+
+	expect(result?.memories.map((memory) => memory.id)).toEqual(['active-strong'])
+	expect(mockModule.acknowledgeSurfacedMemories).not.toHaveBeenCalled()
 })

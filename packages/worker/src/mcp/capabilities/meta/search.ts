@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -49,7 +48,7 @@ export const searchCapability = defineDomainCapability(
 	{
 		name: 'search',
 		description:
-			'Search Kody capabilities, saved packages, values, integrations, and secret references using natural language or exact user-scoped package identity. Pass "domain" to rank only one capability domain. Use this inside package and execute runtimes when reusable code needs the same discovery surface as the public MCP search tool.',
+			'Search Kody capabilities, saved packages, values, integrations, and secret references using natural language or exact user-scoped package identity. An empty call returns the domain index. Pass "domain" to rank or list one capability domain. Use this inside package and execute runtimes when reusable code needs the same discovery surface as the public MCP search tool.',
 		keywords: [
 			'search',
 			'discover',
@@ -107,9 +106,6 @@ export const searchCapability = defineDomainCapability(
 		) {
 			const query = args.query?.trim() ?? ''
 			const domainFilter = args.domain?.trim() || undefined
-			if (!query && !domainFilter) {
-				throw new McpCallerError('Provide "query" or "domain".')
-			}
 			const conversationId = resolveConversationId(args.conversationId)
 			const userId = ctx.callerContext.user?.userId ?? null
 			const includeHiddenPackages = !!args.includeHiddenPackages

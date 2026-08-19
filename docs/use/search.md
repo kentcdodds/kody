@@ -30,14 +30,23 @@ whitespace-collapsed input type, truncated when long) so you can often call from
 
 ### Broad queries return domain overviews
 
-When a query is broad or exploratory rather than task-specific — "what can you
-do with email", "what can kody do", or a bare domain name like `jobs` — search
-returns a compact **domain overview** instead of ranked individual hits: one
-line per matched domain with its id, description, capability count, and a few
-sample capability names. This keeps browse-style discovery cheap; drill in with
-a scoped follow-up (`search({ query, domain })`) or a domain listing
-(`search({ domain })`). Task-specific queries ("send an email to Kent") keep
-returning ranked capability, package, value, integration, and secret hits.
+An empty search or a broad, exploratory query — "what can you do with email",
+"what can kody do", or a bare built-in domain name like `jobs` — returns a
+compact **domain index** instead of ranked individual hits. Each row has the
+domain id, one-line description, capability count, and two or three sample
+names. Drill in with `search({ query, domain })` or `search({ domain })`.
+Task-specific queries ("send an email to Kent") keep returning ranked results.
+`meta_list_capabilities()` returns the same domain index;
+`meta_list_capabilities({ domain })` lists that domain.
+
+### Packages before synthesized providers
+
+When a saved package's id, name, tags, or README matches an OpenAPI or connected
+MCP provider, the package ranks before the provider's raw operations. General
+provider discovery returns one provider card with its operation count, runtime
+call pattern, and matching wrapper package instead of flooding the result with
+operations. Search an exact operation/tool name or pass the provider's `domain`
+to resolve raw operations directly.
 
 ### Domain scoping
 
@@ -57,7 +66,9 @@ available domains. The `search` meta capability (usable inside **execute**)
 accepts the same `domain` argument alongside `query`.
 
 An entire saved-package UUID or `kody.id` is treated as an exact package
-identity when it resolves for the signed-in user. Kody also recognizes
+identity when it resolves for the signed-in user, except when that identity also
+names a synthesized provider; that query participates in ranking so the package
+and provider card can appear together. Kody also recognizes
 current-origin `/account/packages/:packageId` URLs, owner-matching
 `/@username/packages/:kodyId` URLs, and per-user package-app subdomain URLs
 (`https://{username}.<package-app host>/packages/:kodyId`) — so a URL copied
@@ -66,9 +77,11 @@ semantic capability results. Hidden exact query matches still require
 `includeHiddenPackages: true`; exact `entity` lookup by UUID or `kody.id`
 ignores the hidden discovery preference.
 
-When a tool call also includes **`memoryContext`**, Kody may include relevant
-long-term memory metadata in structured content, but broad query markdown stays
-focused on the ranked matches.
+Ranked `search({ query })` calls may include relevant long-term memory metadata
+in structured content. Entity lookups, domain listings, empty/broad discovery,
+and `search({ domain })` do not attach memories. **execute** retrieves memories
+only when its caller opts in with **`memoryContext`**. Archived or very weak
+memory matches are not surfaced automatically.
 
 Search responses also return top-level **`timing`** metadata with
 **`startedAt`**, **`endedAt`**, and **`durationMs`** so hosts can reason about
@@ -78,13 +91,14 @@ Optional **`limit`** caps how many ranked hits return. Optional
 **`maxResponseSize`** trims low-ranked matches against the compact list when the
 response must stay small.
 
-## Entity detail
+## Entity indexes and detail
 
-To get **full markdown detail for one hit**, call **search** again with
+To inspect one hit, call **search** again with
 **`entity`** set to `"{id}:{type}"` where **`type`** is `capability`, `value`,
 `integration`, `package`, or `secret`. Capability entities additionally include
 a ready-to-run **execute** snippet plus `inputTypeDefinition` /
-`outputTypeDefinition`.
+`outputTypeDefinition`. OpenAPI capability titles use `METHOD path`; the
+operation slug stays in the entity ref.
 
 Pass an **array of 1–10 entity refs** when you need several related details at
 once (for example a create/poll OpenAPI pair). Each ref resolves independently:
@@ -109,20 +123,20 @@ Top-level ranked result cards include an explicit entity ref for each hit when
 applicable, using that same `"{id}:{type}"` format, so you can immediately copy
 the ref into a follow-up `entity` lookup when needed.
 
-For synthesized provider capabilities (OpenAPI bindings, connected MCP servers,
-), capability detail also lists **related operations from the same provider** so
-create/poll pairs and sibling tools are visible without a second lookup.
-Built-in capabilities skip that section to keep common lookups lean.
+For synthesized provider capabilities (OpenAPI bindings and connected MCP
+servers), capability detail reports the **related operation count**. Use
+`search({ domain })` to list siblings.
 
 Integration entity detail may include a small set of **related package
 suggestions** for the same provider (the user's packages first; otherwise
 trusted-first community listings, capped). Ranked query results stay lean and do
 not run community lookup or expand those suggestions.
 
-Package detail includes a short **Maintain** pointer: the git lane
-(`package_get_git_remote` → clone/edit/push → `package_publish_external_push`)
-and the tool-only alternative (`package_save` / repo sessions, with
-`coding_guide_get({ guide: "package_authoring" })` for the full guide).
+Package entity detail is a slim index: summary, export subpaths with one-line
+purposes, job and retriever names, and the README `Intent` section. Structured
+content mirrors that index and does not contain a full export tree. Follow the
+returned `package_get` / `package_authoring` pointer when you need types,
+external token URLs, the full README, source, or maintenance steps.
 
 Capability detail shows the exact runtime pattern for **execute**:
 
@@ -144,11 +158,11 @@ no required fields.
 
 ## When results look thin
 
-If ranked search misses what you need, **rephrase the query** or use
-**`meta_list_capabilities`** to read the live capability registry (including
-dynamic entries from MCP servers). **`entity`** does not help when a **`query`**
-returned no matches — **`entity`** looks up a known id, not a fix for an empty
-ranked list.
+If ranked search misses what you need, **rephrase the query** or call
+**`meta_list_capabilities()`** for the domain index, then
+**`meta_list_capabilities({ domain })`** for one live domain (including dynamic
+MCP/OpenAPI entries). **`entity`** looks up a known id; it does not improve an
+empty ranked list.
 
 ## Authentication
 
@@ -156,8 +170,8 @@ Saved **packages** require a signed-in MCP user. Capabilities and built-in
 behavior work without user-scoped data.
 
 Package and integration query hits stay summary-only. Exact package detail
-(`entity: "my-package:package"`) includes package app, export, job, retriever,
-and README metadata. Exact integration detail (`entity: "github:integration"`)
+(`entity: "my-package:package"`) returns the package index described above.
+Exact integration detail (`entity: "github:integration"`)
 includes operational details such as token URL, API base URL, client id,
 required hosts, and related secret names.
 

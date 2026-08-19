@@ -43,3 +43,5 @@ behavior (see [documentation principles](../documentation.md)).
 - [0021 — Publish-gated packages; no in-process composition runtime](./0021-publish-gated-package-composition.md)
 - [0022 — Retire the values primitive](./0022-retire-values-primitive.md)
   ([runbook](../architecture/values-retirement-runbook.md))
+- [0022 — Progressive search disclosure](./0022-progressive-search-disclosure.md)
+- [0023 — Packages outrank synthesized providers](./0023-packages-outrank-synthesized-providers.md)

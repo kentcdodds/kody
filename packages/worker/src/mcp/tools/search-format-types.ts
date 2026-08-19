@@ -2,7 +2,6 @@ import { type IntegrationConfig } from '#mcp/capabilities/integrations/integrati
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
-import { type PackageReferencedTypeProjection } from '#worker/package-registry/manifest.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 import {
 	type AuthoredPackageJson,
@@ -24,6 +23,7 @@ type SearchMatchType =
 	| 'secret'
 	| 'retriever_result'
 	| 'domain'
+	| 'provider'
 
 export type PackageActionMatch = {
 	subpath: string
@@ -133,6 +133,22 @@ export type SlimSearchMatch =
 			capabilityCount: number
 			sampleCapabilities: Array<string>
 			usage: string
+	  }
+	| {
+			type: 'provider'
+			id: string
+			title: string
+			description: string
+			domain: string
+			source: 'mcp-server' | 'openapi'
+			capabilityCount: number
+			sampleCapabilities: Array<string>
+			usage: string
+			wrappingPackage: {
+				kodyId: string
+				name: string
+				entityRef: string
+			} | null
 	  }
 	| {
 			type: 'capability'
@@ -258,6 +274,7 @@ export type SearchEntityDetailStructured =
 			inputTypeDefinition: string
 			outputTypeDefinition?: string
 			relatedOperations?: Array<RelatedCapabilityOperation>
+			relatedOperationCount?: number
 	  }
 	| {
 			kind: 'entity'
@@ -283,50 +300,21 @@ export type SearchEntityDetailStructured =
 			}
 			exports: Array<{
 				subpath: string
-				importSpecifier: string
-				runtimeTarget: string | null
-				typesPath: string | null
 				description: string | null
-				typeDefinition: string | null
-				functions: Array<{
-					name: string
-					description: string | null
-					typeDefinition: string | null
-					referencedTypes: Array<PackageReferencedTypeProjection>
-				}>
-				referencedTypes: Array<PackageReferencedTypeProjection>
-				externalInvocation: {
-					method: 'POST'
-					url: string
-					path: string
-					ownerUsername: string
-					kodyId: string
-					routeExportName: string
-					normalizedExportName: string
-					tokenSetupUrl: string
-					sourceGuidance: string
-				} | null
 			}>
 			jobs: Array<{
 				name: string
-				entry: string
-				scheduleSummary: string
-				enabled: boolean
 			}>
 			retrievers: Array<{
 				key: string
-				exportName: string
 				name: string
-				description: string
-				scopes: Array<string>
-				timeoutMs: number | null
-				maxResults: number | null
 			}>
-			readme: {
+			readmeIntent: {
 				path: string
 				content: string
 				truncated: boolean
 			} | null
+			followUp: string
 	  }
 	| {
 			kind: 'entity'
@@ -381,6 +369,7 @@ export type SearchEntityDetail =
 			description: string
 			spec: CapabilitySpec
 			relatedOperations?: Array<RelatedCapabilityOperation>
+			relatedOperationCount?: number
 	  }
 	| {
 			type: 'package'
@@ -429,8 +418,25 @@ export type SearchMatch =
 			sampleCapabilities: Array<string>
 	  }
 	| {
+			type: 'provider'
+			id: string
+			title: string
+			description: string
+			domain: string
+			source: 'mcp-server' | 'openapi'
+			capabilityCount: number
+			sampleCapabilities: Array<string>
+			usage: string
+			wrappingPackage: {
+				kodyId: string
+				name: string
+				entityRef: string
+			} | null
+	  }
+	| {
 			type: 'capability'
 			name: string
+			title?: string
 			description: string
 			domain: string
 			source?: CapabilitySpec['source']

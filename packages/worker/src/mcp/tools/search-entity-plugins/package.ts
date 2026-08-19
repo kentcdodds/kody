@@ -11,16 +11,14 @@ import {
 	sortIdsByScore,
 } from '#worker/vectorize/scoring.ts'
 import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
-import { buildExternalPackageInvocationDescriptor } from '#worker/package-invocations/public-url.ts'
 import {
 	buildPackageSearchDocument,
 	buildPackageSearchProjection,
 	type PackageSearchProjection,
 } from '#worker/package-registry/manifest.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
-import { buildPackageReadmeDetail } from '#worker/package-registry/package-readme.ts'
+import { buildPackageReadmeIntent } from '#worker/package-registry/package-readme.ts'
 import { savedPackageVectorId } from '#worker/package-registry/repo.ts'
-import { buildPackageTestHints } from '#worker/package-registry/package-test-hints.ts'
 
 import { maxFusedPackageCandidates } from '../search-constants.ts'
 import { type SearchEntityPlugin } from '../search-entity-plugin.ts'
@@ -34,8 +32,6 @@ import {
 	buildPackageHostedUrl,
 	buildPackageMaintainSnippets,
 	buildPackageRootImportUsage,
-	formatInlineTypeDefinition,
-	formatPackageSchedule,
 	getPrimaryPackageActionFunction,
 } from '../search-format-helpers.ts'
 import { type SearchMatch } from '../search-format-types.ts'
@@ -336,6 +332,12 @@ export const packageSearchEntityPlugin = {
 					type: 'package' as const,
 					id: entry.record.kodyId,
 					title: entry.record.name,
+					packageIdentityFields: [
+						entry.record.kodyId,
+						entry.record.name,
+						...entry.record.tags,
+						readmeSnippet,
+					],
 					searchFields: [
 						entry.record.kodyId,
 						entry.record.name,
@@ -499,172 +501,88 @@ export const packageSearchEntityPlugin = {
 			nextStep,
 		}
 	},
-	formatEntityDetail(detail) {
+	formatEntityDetail(detail, options) {
 		const exportProjection = buildPackageSearchProjection(
 			detail.manifest,
 			detail.files,
 		)
 		const exportDetails = exportProjection.exports.map((exportDetail) => ({
-			...exportDetail,
-			importSpecifier: buildPackageImportSpecifier(
-				detail.record.name,
-				exportDetail.subpath,
-			),
-			externalInvocation: detail.ownerUsername
-				? buildExternalPackageInvocationDescriptor({
-						baseUrl: detail.baseUrl,
-						ownerUsername: detail.ownerUsername,
-						kodyId: detail.record.kodyId,
-						exportName: exportDetail.subpath,
-					})
-				: null,
+			subpath: exportDetail.subpath,
+			description:
+				exportDetail.description ??
+				exportDetail.functions.find((fn) => fn.description)?.description ??
+				null,
 		}))
-		const jobs = Object.entries(detail.manifest.kody.jobs ?? {}).map(
-			([jobName, job]) => ({
-				name: jobName,
-				entry: job.entry,
-				scheduleSummary: formatPackageSchedule(job.schedule, job.timezone),
-				enabled: job.enabled ?? true,
-			}),
-		)
+		const jobs = Object.keys(detail.manifest.kody.jobs ?? {}).map((name) => ({
+			name,
+		}))
 		const retrievers = Object.entries(
 			detail.manifest.kody.retrievers ?? {},
 		).map(([key, retriever]) => ({
 			key,
-			exportName: retriever.export,
 			name: retriever.name,
-			description: retriever.description,
-			scopes: retriever.scopes,
-			timeoutMs: retriever.timeoutMs ?? null,
-			maxResults: retriever.maxResults ?? null,
 		}))
 		const appEntry = detail.manifest.kody.app?.entry ?? null
-		const readme = buildPackageReadmeDetail({
+		const readmeIntent = buildPackageReadmeIntent({
 			files: detail.files,
 		})
 		const maintain = buildPackageMaintainSnippets(detail.record.kodyId)
-		const testHints = buildPackageTestHints({
-			kodyId: detail.record.kodyId,
-			hasApp: Boolean(appEntry),
-			subscriptionTopics: exportProjection.subscriptions.map(
-				(subscription) => subscription.topic,
-			),
-		})
-		const invokeUsage = `packages.invoke({ kodyId: ${JSON.stringify(detail.record.kodyId)}, exportName, params })`
 		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
+		const followUp = `Use package_get({ kody_id: ${JSON.stringify(detail.record.kodyId)} }) for the full README and source, or coding_guide_get({ guide: "package_authoring" }) for types, external invocation, and maintenance workflows.`
 		const lines = [
 			`# Package — \`${detail.record.kodyId}\``,
 			'',
 			detail.description,
 			'',
-			'## Summary',
+			'## Index',
 			'',
 			`- Entity: \`${buildEntityRef(detail.record.kodyId, 'package')}\``,
-			`- Package id: \`${detail.record.id}\``,
 			`- Package name: \`${detail.record.name}\``,
-			`- Kody id: \`${detail.record.kodyId}\``,
 			`- Tags: ${detail.record.tags.length > 0 ? detail.record.tags.map((tag) => `\`${tag}\``).join(', ') : 'none'}`,
 			`- Has app: ${detail.record.hasApp ? 'yes' : 'no'}`,
 			`- Hidden: ${detail.record.hidden ? 'yes' : 'no'}`,
 			...(detail.hostedUrl ? [`- Hosted URL: \`${detail.hostedUrl}\``] : []),
-			'',
-			'## Maintain',
-			'',
-			`- Git lane: \`${maintain.gitLane}\` → clone → edit → push → \`${maintain.publish}\``,
-			'- Tool-only: `package_save` / repo sessions; full guide: `coding_guide_get({ guide: "package_authoring" })`',
-			...(testHints
-				? [
-						'',
-						'## Test',
-						'',
-						...(testHints.app ? [`- App probe: \`${testHints.app}\``] : []),
-						...(testHints.subscriptions ?? []).map(
-							(subscription) =>
-								`- Subscription \`${subscription.topic}\`: \`${subscription.snippet}\``,
-						),
-					]
-				: []),
-			'',
-			'## Import vs invoke',
-			'',
-			`- Default — package name known when the code is written: ${formatMarkdownInlineCode(rootImportUsage)}. Static \`kody:\` imports use the npm-scoped package name (${formatMarkdownInlineCode(detail.record.name)}); typed, publish-verified, zero per-call platform cost.`,
-			`- Dynamic — name is data, the call needs this package's own runtime (secret mounts, \`packageStorage()\`), or exactly-once: ${formatMarkdownInlineCode(invokeUsage)}. Always contract-checked; keyless is lean/ephemeral, pass \`idempotencyKey\` only for exactly-once. The \`kodyId\` is the bare Kody id (${formatMarkdownInlineCode(detail.record.kodyId)}), not the npm-scoped package name.`,
 		]
-		if (appEntry) {
-			lines.push(
-				'',
-				'## App',
-				'',
-				`- Entry: \`${appEntry}\``,
-				...(detail.hostedUrl ? [`- Open: \`${detail.hostedUrl}\``] : []),
-			)
-		}
 		if (exportDetails.length > 0) {
-			lines.push('', '## Exports', '')
+			lines.push('', '## Exports', '', '| Subpath | Purpose |', '| --- | --- |')
 			for (const exportDetail of exportDetails) {
 				lines.push(
-					`- \`${exportDetail.subpath}\` -> \`${exportDetail.importSpecifier}\`${exportDetail.runtimeTarget ? ` (runtime target: \`${exportDetail.runtimeTarget}\`)` : ''}${exportDetail.typesPath ? ` (types: \`${exportDetail.typesPath}\`)` : ''}`,
+					`| ${formatMarkdownInlineCode(exportDetail.subpath)} | ${escapeMarkdownText(exportDetail.description ?? 'Package export.')} |`,
 				)
-				if (exportDetail.externalInvocation) {
-					lines.push(
-						`  - External invocation: \`${exportDetail.externalInvocation.method} ${exportDetail.externalInvocation.url}\``,
-						`  - Route export name: \`${exportDetail.externalInvocation.routeExportName}\`; normalized export name for token scope checks: \`${exportDetail.externalInvocation.normalizedExportName}\``,
-						`  - Token setup URL: \`${exportDetail.externalInvocation.tokenSetupUrl}\` (setup only; not an invocation URL)`,
-						`  - Source: ${escapeMarkdownText(exportDetail.externalInvocation.sourceGuidance)}`,
-					)
-				}
-				for (const exportedFunction of exportDetail.functions) {
-					if (exportedFunction.description) {
-						lines.push(
-							`  - ${escapeMarkdownText(exportedFunction.description)}`,
-						)
-					}
-					if (exportedFunction.typeDefinition) {
-						lines.push(
-							`  - \`${formatInlineTypeDefinition(exportedFunction.typeDefinition)}\``,
-						)
-					}
-				}
-				if (exportDetail.referencedTypes.length > 0) {
-					lines.push('  - Referenced types:', '    ```ts')
-					exportDetail.referencedTypes.forEach((referencedType, index) => {
-						if (index > 0) lines.push('    ')
-						lines.push(
-							...referencedType.definition
-								.split('\n')
-								.map((line) => `    ${line}`),
-						)
-					})
-					lines.push('    ```')
-				}
 			}
 		}
 		if (jobs.length > 0) {
-			lines.push('', '## Jobs', '')
-			for (const job of jobs) {
-				lines.push(
-					`- \`${job.name}\` -> \`${job.entry}\` — ${job.scheduleSummary}${job.enabled ? '' : ' (disabled)'}`,
-				)
-			}
-		}
-		if (retrievers.length > 0) {
-			lines.push('', '## Retrievers', '')
-			for (const retriever of retrievers) {
-				lines.push(
-					`- ${formatMarkdownInlineCode(retriever.key)} -> ${formatMarkdownInlineCode(retriever.exportName)} — ${escapeMarkdownText(retriever.description)} (scopes: ${retriever.scopes.map((scope) => formatMarkdownInlineCode(scope)).join(', ')})`,
-				)
-			}
-		}
-		if (readme) {
 			lines.push(
 				'',
-				`## README (\`${readme.path}\`)`,
+				'## Jobs',
 				'',
-				readme.content,
-				...(readme.truncated
-					? ['', '> README content was truncated for this detail response.']
+				...jobs.map((job) => `- ${formatMarkdownInlineCode(job.name)}`),
+			)
+		}
+		if (retrievers.length > 0) {
+			lines.push(
+				'',
+				'## Retrievers',
+				'',
+				...retrievers.map(
+					(retriever) =>
+						`- ${formatMarkdownInlineCode(retriever.name)} (${formatMarkdownInlineCode(retriever.key)})`,
+				),
+			)
+		}
+		if (readmeIntent) {
+			lines.push(
+				'',
+				`## README Intent (${formatMarkdownInlineCode(readmeIntent.path)})`,
+				'',
+				readmeIntent.content,
+				...(readmeIntent.truncated
+					? ['', '> README Intent was truncated for this index.']
 					: []),
 			)
+		}
+		if (options?.includeBoilerplate ?? true) {
+			lines.push('', '## Follow up', '', followUp)
 		}
 		return {
 			markdown: lines.join('\n'),
@@ -686,11 +604,11 @@ export const packageSearchEntityPlugin = {
 				hostedUrl: detail.hostedUrl,
 				appEntry,
 				maintain,
-				...(testHints ? { test: testHints } : {}),
 				exports: exportDetails,
 				jobs,
 				retrievers,
-				readme,
+				readmeIntent,
+				followUp,
 			},
 		}
 	},

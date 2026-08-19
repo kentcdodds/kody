@@ -21,7 +21,7 @@ import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 
 import { collectIntegrationPackageSuggestions } from './integration-package-suggestions.ts'
 import { parseEntityRef } from './search-format.ts'
-import { collectRelatedCapabilityOperations } from './search-related-capabilities.ts'
+import { countRelatedCapabilityOperations } from './search-related-capabilities.ts'
 import { type SearchRowsAndRegistry } from './search-types.ts'
 
 export async function resolveEntityDetail(input: {
@@ -38,17 +38,19 @@ export async function resolveEntityDetail(input: {
 		if (!spec) {
 			throw new McpCallerError('Capability not found.')
 		}
-		const relatedOperations = collectRelatedCapabilityOperations({
+		const relatedOperationCount = countRelatedCapabilityOperations({
 			spec,
 			registry: input.searchRows.registry,
 		})
 		return {
 			type: 'capability' as const,
 			id: ref.id,
-			title: spec.name,
+			title: spec.openApi
+				? `${spec.openApi.method.toUpperCase()} ${spec.openApi.path}`
+				: spec.name,
 			description: spec.description,
 			spec,
-			...(relatedOperations.length > 0 ? { relatedOperations } : {}),
+			...(relatedOperationCount > 0 ? { relatedOperationCount } : {}),
 		}
 	}
 

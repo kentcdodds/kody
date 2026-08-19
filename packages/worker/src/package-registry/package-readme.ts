@@ -19,6 +19,8 @@ export type PackageReadmeDetail = {
 	truncated: boolean
 }
 
+export type PackageReadmeIntent = PackageReadmeDetail
+
 function normalizeReadmeContent(content: string) {
 	return content.replace(/\r\n/g, '\n').trim()
 }
@@ -128,6 +130,39 @@ export function buildPackageReadmeDetail(input: {
 		return null
 	}
 	const trimmed = trimWithEllipsis(readme.content, input.maxChars ?? 6_000)
+	return {
+		path: readme.path,
+		content: trimmed.text,
+		truncated: trimmed.truncated,
+	}
+}
+
+export function buildPackageReadmeIntent(input: {
+	files: Record<string, string>
+	maxChars?: number
+}): PackageReadmeIntent | null {
+	const readme = findRootReadmeFile(input.files)
+	if (!readme) return null
+	const lines = readme.content.split('\n')
+	const headingIndex = lines.findIndex((line) =>
+		/^#{1,6}\s+intent\s*$/i.test(line.trim()),
+	)
+	if (headingIndex === -1) return null
+	const headingLevel = lines[headingIndex]?.match(/^#+/)?.[0].length ?? 6
+	let endIndex = lines.length
+	for (let index = headingIndex + 1; index < lines.length; index += 1) {
+		const nextHeading = lines[index]?.trim().match(/^(#{1,6})\s+/)
+		if (nextHeading && nextHeading[1]!.length <= headingLevel) {
+			endIndex = index
+			break
+		}
+	}
+	const content = lines
+		.slice(headingIndex + 1, endIndex)
+		.join('\n')
+		.trim()
+	if (!content) return null
+	const trimmed = trimWithEllipsis(content, input.maxChars ?? 1_200)
 	return {
 		path: readme.path,
 		content: trimmed.text,

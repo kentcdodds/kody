@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
 
-test('meta_list_capabilities lists builtin capabilities and filters by domain', async () => {
+test('meta_list_capabilities indexes domains and lists one requested domain', async () => {
 	const allResult = await metaListCapabilitiesCapability.handler(
 		{
 			detail: true,
@@ -20,12 +20,15 @@ test('meta_list_capabilities lists builtin capabilities and filters by domain', 
 		},
 	)
 
-	expect(allResult.capabilities.length).toBeGreaterThan(0)
-	expect(
-		allResult.capabilities.some(
-			(capability) => capability.name === 'meta_list_capabilities',
-		),
-	).toBe(true)
+	expect(allResult.capabilities).toBeUndefined()
+	expect(allResult.domains?.length).toBeGreaterThan(0)
+	expect(allResult.domains).toContainEqual(
+		expect.objectContaining({
+			id: 'meta',
+			capabilityCount: expect.any(Number),
+			sampleCapabilities: expect.any(Array),
+		}),
+	)
 
 	const metaOnly = await metaListCapabilitiesCapability.handler(
 		{
@@ -41,10 +44,10 @@ test('meta_list_capabilities lists builtin capabilities and filters by domain', 
 
 	expect(metaOnly.total).toBeGreaterThan(0)
 	expect(
-		metaOnly.capabilities.every((capability) => capability.domain === 'meta'),
+		metaOnly.capabilities?.every((capability) => capability.domain === 'meta'),
 	).toBe(true)
 	expect(
-		metaOnly.capabilities.some(
+		metaOnly.capabilities?.some(
 			(capability) => capability.name === 'meta_list_capabilities',
 		),
 	).toBe(true)
@@ -63,7 +66,7 @@ test('meta_list_capabilities lists builtin capabilities and filters by domain', 
 
 	expect(packagesOnly.total).toBeGreaterThan(0)
 	expect(
-		packagesOnly.capabilities.every(
+		packagesOnly.capabilities?.every(
 			(capability) => capability.domain === 'packages',
 		),
 	).toBe(true)
@@ -80,7 +83,7 @@ test('meta_list_capabilities lists builtin capabilities and filters by domain', 
 			}),
 		},
 	)
-	const listSessionsCapability = repoOnly.capabilities.find(
+	const listSessionsCapability = repoOnly.capabilities?.find(
 		(capability) => capability.name === 'repo_list_sessions',
 	)
 	expect(listSessionsCapability).toMatchObject({

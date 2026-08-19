@@ -2,7 +2,7 @@ import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	acknowledgeSurfacedMemories,
-	surfaceRelevantMemories,
+	searchMemoryRecords,
 } from '#mcp/memory/service.ts'
 import { type MemoryRecord } from '#mcp/memory/types.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
@@ -27,6 +27,48 @@ export type MemoryToolSummary = {
 	retrieverWarnings: Array<string>
 	suppressedCount: number
 	retrievalQuery: string
+}
+
+/** Automatic context drops one-list RRF noise (~0.016 at k=60). */
+const automaticMemoryScoreFloor = 0.02
+
+async function loadAutomaticMemories(input: {
+	env: Pick<Env, 'APP_DB'> & Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
+	callerContext: McpCallerContext
+	userId: string
+	query: string
+	conversationId: string
+	limit?: number
+	acknowledgeSurfaced?: boolean
+}) {
+	const result = await searchMemoryRecords({
+		env: input.env,
+		userId: input.userId,
+		storageContext: {
+			sessionId: input.callerContext.storageContext?.sessionId ?? null,
+			appId: input.callerContext.storageContext?.appId ?? null,
+		},
+		query: input.query,
+		conversationId: input.conversationId,
+		limit: input.limit,
+	})
+	const memories = result.matches.filter(
+		(match) =>
+			match.status === 'active' && match.score >= automaticMemoryScoreFloor,
+	)
+	if (input.acknowledgeSurfaced !== false && memories.length > 0) {
+		await acknowledgeSurfacedMemories({
+			env: input.env,
+			userId: input.userId,
+			conversationId: input.conversationId,
+			memoryIds: memories.map((memory) => memory.id),
+		})
+	}
+	return {
+		memories,
+		suppressedCount: result.suppressedCount,
+		retrievalQuery: result.query,
+	}
 }
 
 async function runContextPackageRetrievers(input: {
@@ -74,13 +116,10 @@ export async function loadRelevantMemoriesForTool(input: {
 	const retrievalQuery = buildMemoryRetrievalQuery(input.memoryContext)
 	if (!retrievalQuery) return null
 	const [result, retrieverResult] = await Promise.all([
-		surfaceRelevantMemories({
+		loadAutomaticMemories({
 			env: input.env,
+			callerContext: input.callerContext,
 			userId,
-			storageContext: {
-				sessionId: input.callerContext.storageContext?.sessionId ?? null,
-				appId: input.callerContext.storageContext?.appId ?? null,
-			},
 			query: retrievalQuery,
 			conversationId: input.conversationId,
 			limit: input.limit,
@@ -141,13 +180,10 @@ export async function surfaceToolMemories(input: {
 	const retrievalQuery = input.retrievalQuery.trim()
 	if (!retrievalQuery) return null
 	const [result, retrieverResult] = await Promise.all([
-		surfaceRelevantMemories({
+		loadAutomaticMemories({
 			env: input.env,
+			callerContext: input.callerContext,
 			userId,
-			storageContext: {
-				sessionId: input.callerContext.storageContext?.sessionId ?? null,
-				appId: input.callerContext.storageContext?.appId ?? null,
-			},
 			query: retrievalQuery,
 			conversationId: input.conversationId,
 			limit: input.limit,

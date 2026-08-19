@@ -11,7 +11,10 @@ import {
 	buildRecommendedNextStep,
 	buildSearchableEntityDescriptors,
 } from './search-descriptors.ts'
-import { buildDomainOverviewMatches } from './search-domain-overview.ts'
+import {
+	buildDomainIndexMatches,
+	buildDomainOverviewMatches,
+} from './search-domain-overview.ts'
 import { searchEntityPlugins } from './search-entity-registry.ts'
 import { toCapabilitySearchMatch } from './search-entity-plugins/capability.ts'
 import { hydrateTopPackageMatches } from './search-entity-plugins/package.ts'
@@ -22,6 +25,7 @@ import {
 	buildCandidateTelemetry,
 	rerankCandidates,
 } from './search-scoring.ts'
+import { collapseSynthesizedProviderMatches } from './search-provider-overview.ts'
 import { elapsedMs } from './search-timing.ts'
 import {
 	type OptionalSearchRowsResult,
@@ -211,14 +215,18 @@ export async function searchUnified(input: {
 			entities: [],
 		})
 		const queryUnderstandingMs = elapsedMs(queryUnderstandingStart)
+		const matches = buildDomainIndexMatches({
+			capabilityDomains: input.registry.capabilityDomains ?? [],
+			capabilitySpecs: input.registry.capabilitySpecs,
+		})
 		return {
-			matches: [],
+			matches,
 			offline,
 			intent: emptyIntent,
 			telemetry: buildCandidateTelemetry({
 				intent: emptyIntent,
 				candidates: [],
-				matches: [],
+				matches,
 			}),
 			phaseTimings: {
 				queryUnderstandingMs,
@@ -334,7 +342,13 @@ export async function searchUnified(input: {
 		intent,
 		limit,
 	})
-	const matches = reranked.map((candidate) => candidate.match)
+	const matches = domainFilter
+		? reranked.map((candidate) => candidate.match)
+		: collapseSynthesizedProviderMatches({
+				query,
+				candidates: reranked,
+				registry,
+			})
 	attachTopCapabilityCallShapes({
 		matches,
 		registry,

@@ -508,6 +508,54 @@ function findStrongSynthesizedIdentityTerms(input: {
 }
 
 const maxSynthesizedProviderEntityAffinity = 1.1
+const maxPackageProviderEntityAffinity = 1.15
+
+function findPackageProviderAffinity(input: {
+	candidate: SearchCandidate
+	candidates: ReadonlyArray<SearchCandidate>
+	strongIdentityTermsByProvider: ReadonlyMap<string, ReadonlySet<string>>
+}): number {
+	if (
+		input.candidate.type !== 'package' ||
+		!input.candidate.packageIdentityFields?.length
+	) {
+		return 0
+	}
+	let affinity = 0
+	for (const [providerKey, strongTerms] of input.strongIdentityTermsByProvider) {
+		const providerIdentityFields = input.candidates.flatMap((candidate) =>
+			candidate.synthesizedProviderKey === providerKey
+				? (candidate.providerIdentityFields ?? [])
+				: [],
+		)
+		const providerTerms = Array.from(
+			new Set(providerIdentityFields.flatMap(extractSearchTokens)),
+		)
+		if (
+			scoreSemanticMatchedTerms(
+				input.candidate.packageIdentityFields,
+				providerTerms,
+			) <= 0 ||
+			scoreSemanticMatchedTerms(
+				input.candidate.packageIdentityFields,
+				[...strongTerms],
+			) <= 0
+		) {
+			continue
+		}
+		affinity = Math.max(
+			affinity,
+			Math.min(
+				maxPackageProviderEntityAffinity,
+				scoreSemanticMatchedTerms(
+					input.candidate.packageIdentityFields,
+					providerTerms,
+				) * maxPackageProviderEntityAffinity,
+			),
+		)
+	}
+	return affinity
+}
 
 function hasExactNonProviderEntityTarget(input: {
 	candidates: ReadonlyArray<SearchCandidate>
@@ -556,7 +604,7 @@ export function rerankCandidates(input: {
 				],
 				[...strongIdentityTerms],
 			) > 0
-		const providerEntityAffinity =
+		const synthesizedProviderAffinity =
 			matchesStrongSynthesizedIdentity && !exactNonProviderEntityTarget
 				? Math.min(
 						maxSynthesizedProviderEntityAffinity,
@@ -569,6 +617,15 @@ export function rerankCandidates(input: {
 						) * maxSynthesizedProviderEntityAffinity,
 					)
 				: 0
+		const packageProviderAffinity = findPackageProviderAffinity({
+			candidate,
+			candidates: input.candidates,
+			strongIdentityTermsByProvider,
+		})
+		const providerEntityAffinity = Math.max(
+			synthesizedProviderAffinity,
+			packageProviderAffinity,
+		)
 		const taskSignals = scoreTaskAffinity(candidate, input.intent)
 		const final =
 			candidate.scoreComponents.base +

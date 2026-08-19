@@ -77,39 +77,6 @@ export async function runSearchTool(input: {
 	// Whitespace-only queries stay valid (memory enrichment may still run) but
 	// count as "no query" for the domain-browse limit default.
 	const trimmedQuery = args.query?.trim() ?? ''
-	if (!args.query && !args.entity && !domainFilter) {
-		const timing = finishToolTiming(timingStart)
-		logMcpEvent({
-			category: 'mcp',
-			tool: 'search',
-			toolName: 'search',
-			outcome: 'failure',
-			durationMs: timing.durationMs,
-			...mcpCallerFields,
-			sandboxError: false,
-			callerError: true,
-			errorName: 'ValidationError',
-			errorMessage: 'Provide "query", "entity", or "domain".',
-			message: 'Search request missing query, entity, and domain.',
-			context: {
-				failurePhase: 'validation_error',
-			},
-		})
-		return {
-			content: prependToolMetadataContent(conversationId, [
-				{
-					type: 'text',
-					text: 'Error: Provide "query", "entity", or "domain".',
-				},
-			]),
-			structuredContent: {
-				conversationId,
-				timing,
-				error: 'Provide "query", "entity", or "domain".',
-			},
-			isError: true,
-		}
-	}
 	// Domain browsing (domain without query) deliberately lists the whole
 	// domain by default instead of cutting at the ranked default.
 	const limit =
@@ -121,6 +88,36 @@ export async function runSearchTool(input: {
 	let warnings: Array<string> = []
 	let username: string | null = null
 	const endToEndPhaseTimings: Partial<SearchPhaseTimings> = {}
+	const statefulAgent = agent as McpRegistrationAgent & {
+		state?: {
+			searchConversationIdsWithPreamble?: Array<string>
+			onboardingNoticeConversationIds?: Array<string>
+			onboardingNoticeLastShownAtMs?: number
+		}
+		setState?: (state: {
+			searchConversationIdsWithPreamble?: Array<string>
+			onboardingNoticeConversationIds?: Array<string>
+			onboardingNoticeLastShownAtMs?: number
+		}) => void
+	}
+	const searchConversationIdsWithPreamble = Array.isArray(
+		statefulAgent.state?.searchConversationIdsWithPreamble,
+	)
+		? (statefulAgent.state?.searchConversationIdsWithPreamble ?? [])
+		: []
+	const includePreamble =
+		!args.conversationId ||
+		!searchConversationIdsWithPreamble.includes(conversationId)
+	function rememberConversationPreamble() {
+		if (!includePreamble || typeof statefulAgent.setState !== 'function') return
+		statefulAgent.setState({
+			...statefulAgent.state,
+			searchConversationIdsWithPreamble: [
+				...searchConversationIdsWithPreamble,
+				conversationId,
+			].slice(-maxOnboardingNoticeConversationIds),
+		})
+	}
 
 	const searchSpan = async () => {
 		const query = trimmedQuery
@@ -249,7 +246,10 @@ export async function runSearchTool(input: {
 		)
 
 		if (outcome.mode === 'entity') {
-			const entityResult = formatEntityDetailMarkdown(outcome.detail)
+			const entityResult = formatEntityDetailMarkdown(outcome.detail, {
+				includeBoilerplate: includePreamble,
+			})
+			rememberConversationPreamble()
 			const timing = finishToolTiming(timingStart)
 			logMcpEvent({
 				category: 'mcp',
@@ -292,7 +292,9 @@ export async function runSearchTool(input: {
 					)
 					continue
 				}
-				const entityResult = formatEntityDetailMarkdown(entry.detail)
+				const entityResult = formatEntityDetailMarkdown(entry.detail, {
+					includeBoilerplate: includePreamble,
+				})
 				const candidateStructured = [
 					...structuredResults,
 					entityResult.structured,
@@ -320,6 +322,7 @@ export async function runSearchTool(input: {
 				markdownParts.push(entityResult.markdown)
 			}
 			const allFailed = successCount === 0
+			if (!allFailed) rememberConversationPreamble()
 			const failedEntries = outcome.results.filter((entry) => !entry.ok)
 			const allFailuresAreCallerErrors =
 				allFailed && failedEntries.every((entry) => entry.callerError)
@@ -391,35 +394,7 @@ export async function runSearchTool(input: {
 			matches: execution.result.matches,
 			offline: execution.result.offline,
 		}
-		const statefulAgent = agent as McpRegistrationAgent & {
-			state?: {
-				searchConversationIdsWithPreamble?: Array<string>
-				onboardingNoticeConversationIds?: Array<string>
-				onboardingNoticeLastShownAtMs?: number
-			}
-			setState?: (state: {
-				searchConversationIdsWithPreamble?: Array<string>
-				onboardingNoticeConversationIds?: Array<string>
-				onboardingNoticeLastShownAtMs?: number
-			}) => void
-		}
-		const searchConversationIdsWithPreamble = Array.isArray(
-			statefulAgent.state?.searchConversationIdsWithPreamble,
-		)
-			? (statefulAgent.state?.searchConversationIdsWithPreamble ?? [])
-			: []
-		const includePreamble =
-			!args.conversationId ||
-			!searchConversationIdsWithPreamble.includes(conversationId)
-		if (includePreamble && typeof statefulAgent.setState === 'function') {
-			statefulAgent.setState({
-				...statefulAgent.state,
-				searchConversationIdsWithPreamble: [
-					...searchConversationIdsWithPreamble,
-					conversationId,
-				],
-			})
-		}
+		rememberConversationPreamble()
 		// Onboarding reminder: at most once per conversation, only while the
 		// user's derived checklist is incomplete and undismissed. A session
 		// cooldown backstops hosts that never send a conversationId (each of

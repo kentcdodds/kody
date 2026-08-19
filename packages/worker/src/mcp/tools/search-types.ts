@@ -62,6 +62,8 @@ export type SearchCandidate = {
 	searchFields: Array<string>
 	identityFields?: Array<string>
 	providerIdentityFields?: Array<string>
+	/** Saved-package identity used to recognize wrappers for synthesized providers. */
+	packageIdentityFields?: Array<string>
 	synthesizedProviderKey?: string
 	scoreComponents: SearchScoreComponents
 }

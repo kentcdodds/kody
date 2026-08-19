@@ -72,9 +72,15 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 				: ''
 		return `${String(index + 1)}. **domain** ${formatMarkdownInlineCode(match.name)} (${String(match.capabilityCount)} ${match.capabilityCount === 1 ? 'capability' : 'capabilities'}) — ${escapeMarkdownText(formatOneLineSentence(match.description, domainOverviewDescriptionMaxLength))}${sample}`
 	}
+	if (match.type === 'provider') {
+		const packageSuffix = match.wrappingPackage
+			? ` Wrapping package: ${formatMarkdownInlineCode(match.wrappingPackage.name)} (Entity: ${formatMarkdownInlineCode(match.wrappingPackage.entityRef)}).`
+			: ''
+		return `${String(index + 1)}. **provider** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.domain)}, ${String(match.capabilityCount)} operations) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Call via ${formatMarkdownInlineCode(match.usage)}.${packageSuffix}`
+	}
 	if (match.type === 'capability') {
 		const entityRef = buildEntityRef(match.name, 'capability')
-		const mainLine = `${String(index + 1)}. **capability** ${formatMarkdownInlineCode(match.name)} (${formatMarkdownInlineCode(match.domain)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
+		const mainLine = `${String(index + 1)}. **capability** ${formatMarkdownInlineCode(match.title ?? match.name)} (${formatMarkdownInlineCode(match.domain)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
 		if (!match.inputTypeDefinition) {
 			return mainLine
 		}

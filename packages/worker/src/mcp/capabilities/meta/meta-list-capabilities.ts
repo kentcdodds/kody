@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { buildDomainIndexMatches } from '#mcp/tools/search-domain-overview.ts'
 
 const capabilitySummarySchema = z.object({
 	name: z.string(),
@@ -44,9 +45,19 @@ const capabilityDetailSchema = capabilitySummarySchema.extend({
 
 const outputSchema = z.object({
 	total: z.number().int().nonnegative(),
-	capabilities: z.array(
-		z.union([capabilityDetailSchema, capabilitySummarySchema]),
-	),
+	domains: z
+		.array(
+			z.object({
+				id: z.string(),
+				description: z.string(),
+				capabilityCount: z.number().int().nonnegative(),
+				sampleCapabilities: z.array(z.string()),
+			}),
+		)
+		.optional(),
+	capabilities: z
+		.array(z.union([capabilityDetailSchema, capabilitySummarySchema]))
+		.optional(),
 })
 
 type CapabilitySummary = z.infer<typeof capabilitySummarySchema>
@@ -75,7 +86,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 	{
 		name: 'meta_list_capabilities',
 		description:
-			'List the current runtime capability registry, including dynamic capabilities from connected MCP servers and OpenAPI bindings. Use this when search seems incomplete and you need exact capability names and TypeScript call shapes.',
+			'Browse the current runtime capability registry, including dynamic capabilities from connected MCP servers and OpenAPI bindings. Without a domain, returns a compact domain index. Pass a domain for exact capability names and optional TypeScript call shapes.',
 		keywords: [
 			'capabilities',
 			'list',
@@ -114,6 +125,26 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 				env: ctx.env,
 				callerContext: ctx.callerContext,
 			})
+			if (!args.domain) {
+				const domains = buildDomainIndexMatches({
+					capabilityDomains: registry.capabilityDomains ?? [],
+					capabilitySpecs: registry.capabilitySpecs,
+				}).map((domain) => {
+					if (domain.type !== 'domain') {
+						throw new Error('Domain index contained a non-domain match.')
+					}
+					return {
+						id: domain.name,
+						description: domain.description,
+						capabilityCount: domain.capabilityCount,
+						sampleCapabilities: domain.sampleCapabilities,
+					}
+				})
+				return {
+					total: domains.length,
+					domains,
+				}
+			}
 			const allCapabilities = Object.values(registry.capabilitySpecs)
 				.map((spec) =>
 					args.detail

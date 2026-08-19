@@ -19,6 +19,7 @@ import {
 	type SearchUnifiedResult,
 } from './search-types.ts'
 import { type SearchToolArgs } from './search-tool-definition.ts'
+import { queryMatchesSynthesizedProvider } from './search-provider-overview.ts'
 
 export type SearchListExecutionResult = {
 	result: SearchUnifiedResult
@@ -64,15 +65,6 @@ async function executeSearchListWithinBudget(
 		username: input.callerContext.user?.username ?? null,
 		email: input.callerContext.user?.email ?? null,
 	})
-	const memoryLaunch = launchSearchMemoryEnrichment({
-		env: input.env,
-		callerContext: input.callerContext,
-		conversationId: input.conversationId,
-		query: input.memoryQuery,
-		memoryContext: input.memoryContext,
-	})
-	const memoryEnrichmentPromise = memoryLaunch?.promise ?? Promise.resolve(null)
-	const memoryEnrichmentLaunchedAtMs = memoryLaunch?.launchedAtMs
 	// Domain-scoped searches rank capabilities only; exact package identity
 	// resolution does not apply.
 	const identityResolution =
@@ -88,26 +80,53 @@ async function executeSearchListWithinBudget(
 					includeHiddenPackages: input.includeHiddenPackages,
 				})
 			: { recognized: false as const }
+	let preloadedSearchRows: Awaited<
+		ReturnType<typeof loadSearchRowsAndRegistry>
+	> | null = null
+	let identityMatchesProvider = false
+	if (identityResolution.recognized) {
+		preloadedSearchRows = await loadSearchRowsAndRegistry({
+			env: input.env,
+			callerContext: input.callerContext,
+			userId: input.userId,
+			includeHiddenPackages: input.includeHiddenPackages,
+		})
+		identityMatchesProvider = queryMatchesSynthesizedProvider({
+			query: input.query,
+			registry: preloadedSearchRows.registry,
+		})
+	}
+	const rankedQuery =
+		Boolean(input.query) &&
+		!domainFilter &&
+		(!identityResolution.recognized || identityMatchesProvider)
+	const memoryLaunch = rankedQuery
+		? launchSearchMemoryEnrichment({
+				env: input.env,
+				callerContext: input.callerContext,
+				conversationId: input.conversationId,
+				query: input.memoryQuery,
+				memoryContext: input.memoryContext,
+			})
+		: null
+	const memoryEnrichmentPromise = memoryLaunch?.promise ?? Promise.resolve(null)
+	const memoryEnrichmentLaunchedAtMs = memoryLaunch?.launchedAtMs
 	const phaseTimings: Partial<SearchPhaseTimings> = {}
 	let warnings: Array<string> = []
 	let result: SearchUnifiedResult
 	let capabilityGuidance: string | undefined
 
-	if (identityResolution.recognized) {
+	if (identityResolution.recognized && !identityMatchesProvider) {
 		result = buildExactPackageSearchResult({
 			env: input.env,
 			query: input.query,
 			match: identityResolution.match,
 		})
-		const memorySettlement = await settleSearchMemoryEnrichment({
-			env: input.env,
-			callerContext: input.callerContext,
-			conversationId: input.conversationId,
-			promise: memoryEnrichmentPromise,
-			launchedAtMs: memoryEnrichmentLaunchedAtMs,
-		})
-		Object.assign(phaseTimings, memorySettlement.phaseTimings)
-		warnings.push(...memorySettlement.warnings)
+		const memorySettlement: SearchMemoryEnrichmentSettlement = {
+			warnings: [],
+			phaseTimings: {},
+		}
+		warnings.push(...(preloadedSearchRows?.warnings ?? []))
 		return {
 			result,
 			username,
@@ -118,12 +137,16 @@ async function executeSearchListWithinBudget(
 	}
 
 	const rowAndRegistryLoadStart = performance.now()
-	const rowsPromise = loadSearchRowsAndRegistry({
-		env: input.env,
-		callerContext: input.callerContext,
-		userId: input.userId,
-		includeHiddenPackages: input.includeHiddenPackages,
-	}).then((rows) => {
+	const rowsPromise = (
+		preloadedSearchRows
+			? Promise.resolve(preloadedSearchRows)
+			: loadSearchRowsAndRegistry({
+					env: input.env,
+					callerContext: input.callerContext,
+					userId: input.userId,
+					includeHiddenPackages: input.includeHiddenPackages,
+				})
+	).then((rows) => {
 		phaseTimings.rowAndRegistryLoadMs = elapsedMs(rowAndRegistryLoadStart)
 		return rows
 	})
@@ -165,13 +188,22 @@ async function executeSearchListWithinBudget(
 		...(domainFilter ? { domain: domainFilter } : {}),
 	})
 	capabilityGuidance = result.guidance
-	const memorySettlement = await settleSearchMemoryEnrichment({
-		env: input.env,
-		callerContext: input.callerContext,
-		conversationId: input.conversationId,
-		promise: memoryEnrichmentPromise,
-		launchedAtMs: memoryEnrichmentLaunchedAtMs,
-	})
+	const returnsDomainIndex =
+		result.matches.length > 0 &&
+		result.matches.every((match) => match.type === 'domain')
+	const memorySettlement =
+		rankedQuery && !returnsDomainIndex
+			? await settleSearchMemoryEnrichment({
+					env: input.env,
+					callerContext: input.callerContext,
+					conversationId: input.conversationId,
+					promise: memoryEnrichmentPromise,
+					launchedAtMs: memoryEnrichmentLaunchedAtMs,
+				})
+			: ({
+					warnings: [],
+					phaseTimings: {},
+				} satisfies SearchMemoryEnrichmentSettlement)
 	Object.assign(phaseTimings, memorySettlement.phaseTimings)
 	warnings.push(...memorySettlement.warnings)
 

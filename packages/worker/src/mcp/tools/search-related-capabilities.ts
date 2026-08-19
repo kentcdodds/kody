@@ -78,3 +78,19 @@ export function collectRelatedCapabilityOperations(input: {
 				: {}),
 		}))
 }
+
+export function countRelatedCapabilityOperations(input: {
+	spec: Awaited<
+		ReturnType<typeof getCapabilityRegistryForContext>
+	>['capabilitySpecs'][string]
+	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
+}): number {
+	if (input.spec.source !== 'openapi' && input.spec.source !== 'mcp-server') {
+		return 0
+	}
+	return Object.values(input.registry.capabilitySpecs).filter(
+		(other) =>
+			other.name !== input.spec.name &&
+			sameSynthesizedProvider(input.spec, other),
+	).length
+}
