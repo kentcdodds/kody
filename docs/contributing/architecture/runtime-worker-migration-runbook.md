@@ -171,15 +171,18 @@ npm run deploy -- --config packages/worker/wrangler-production.generated.json
 A class that arrived on `kody-runtime` through `transferred_classes` keeps a
 remote binding until a deploy publishes config without that binding. Cloudflare
 rejects a same-deploy `deleted_classes` migration while that binding still
-exists (error 10061). Drop the binding first, then add the `deleted_classes`
-migration and its `tools/ci/do-deletion-allowlist.json` entry on a later deploy.
+exists (error 10061). Existing objects also require the script to keep exporting
+the class until `deleted_classes` runs (error 10064). Export a stub, drop the
+binding, then add the `deleted_classes` migration and its
+`tools/ci/do-deletion-allowlist.json` entry on a later deploy.
 
 `PackageServiceInstance` is in that window on production: the transferred
-binding is still present, so top-level runtime-worker tag `v2` is deferred until
-after the binding-only deploy. Preview keeps `v2` and the matching
-`tools/ci/do-deletion-allowlist.json` entry because a fresh worker applies `v1`
-`new_sqlite_classes` and cannot create an unexported class (error 10070). The
-follow-up reuses that allowlist entry when it restores top-level `v2`.
+objects still exist, so the runtime worker exports a stub and top-level tag `v2`
+is deferred until after the binding-only deploy. Preview keeps `v2` and the
+matching `tools/ci/do-deletion-allowlist.json` entry because a fresh worker
+applies `v1` `new_sqlite_classes` and cannot create an unexported class (error
+10070). The follow-up reuses that allowlist entry when it restores top-level
+`v2` and removes the stub.
 
 ## Rollback
 

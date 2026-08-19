@@ -74,11 +74,13 @@
 				},
 			],
 		},
-		// Production still has the transferred PackageServiceInstance
-		// binding (error 10061). Do not add deleted_classes here until
-		// after this binding-only deploy lands. Preview keeps tag v2
-		// because a fresh worker applies v1 new_sqlite_classes and
-		// cannot create an unexported class (error 10070).
+		// Production still has transferred PackageServiceInstance
+		// objects. deleted_classes while the remote binding exists is
+		// error 10061; dropping the binding without exporting the class
+		// is error 10064. Export the stub, drop the binding here, then
+		// add tag v2 after this deploy. Preview keeps v2 because a
+		// fresh worker applies v1 new_sqlite_classes (error 10070
+		// without the delete).
 	],
 	"observability": {
 		"enabled": true,
