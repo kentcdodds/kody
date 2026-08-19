@@ -77,6 +77,34 @@ body {
 	text-rendering: optimizeLegibility;
 }
 
+body::after {
+	content: '';
+	position: fixed;
+	right: -10%;
+	bottom: -16%;
+	z-index: 0;
+	width: min(40vw, 640px);
+	aspect-ratio: 1;
+	pointer-events: none;
+	background: oklch(from var(--color-text) l c h / 0.11);
+	mask-image:
+		radial-gradient(closest-side, #000 38%, transparent 72%),
+		url('assets/images/kody-pattern.webp');
+	mask-size:
+		100% 100%,
+		320px;
+	mask-repeat: no-repeat, repeat;
+	mask-composite: intersect;
+	-webkit-mask-image:
+		radial-gradient(closest-side, #000 38%, transparent 72%),
+		url('assets/images/kody-pattern.webp');
+	-webkit-mask-size:
+		100% 100%,
+		320px;
+	-webkit-mask-repeat: no-repeat, repeat;
+	-webkit-mask-composite: source-in;
+}
+
 .reveal {
 	position: relative;
 	z-index: 1;
