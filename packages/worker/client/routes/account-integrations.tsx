@@ -1,4 +1,3 @@
-import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import {
 	type AccountIntegrationListItem,
@@ -44,6 +43,7 @@ import {
 	buildIntegrationSetupPrompt,
 	integrationProviderSuggestions,
 	nextSuggestedConnectionName,
+	resolveAddAccountConnectionName,
 } from '#client/routes/integration-provider-catalog.ts'
 import { integrationDisplayName } from '#client/routes/integration-filter.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
@@ -291,6 +291,7 @@ function AddAccountForm(
 	}>,
 ) {
 	let open = false
+	let nameError: string | null = null
 	let name = nextSuggestedConnectionName(
 		handle.props.slug,
 		handle.props.existingNames,
@@ -333,8 +334,18 @@ function AddAccountForm(
 				mix={[
 					on('submit', (event) => {
 						event.preventDefault()
-						const next = normalizeProviderKey(name.trim()) || suggested
-						window.location.assign(connectHref(next))
+						const resolved = resolveAddAccountConnectionName({
+							name,
+							suggested,
+							existingNames: handle.props.existingNames,
+						})
+						if (!resolved.ok) {
+							nameError = resolved.error
+							handle.update()
+							return
+						}
+						nameError = null
+						window.location.assign(connectHref(resolved.name))
 					}),
 					css({
 						display: 'grid',
@@ -351,15 +362,31 @@ function AddAccountForm(
 						data-field-ring
 						required
 						value={name}
+						aria-invalid={nameError ? 'true' : undefined}
+						aria-describedby={nameError ? 'add-account-name-error' : undefined}
 						{...passwordManagerIgnoreProps}
 						mix={[
 							on('input', (event) => {
 								name = event.currentTarget.value
+								nameError = null
 								handle.update()
 							}),
 							css(accountInputCss),
 						]}
 					/>
+					{nameError ? (
+						<p
+							id="add-account-name-error"
+							role="alert"
+							data-testid="add-account-name-error"
+							mix={css({
+								...descriptionCss,
+								color: colors.error,
+							})}
+						>
+							{nameError}
+						</p>
+					) : null}
 				</label>
 				<button
 					type="submit"
@@ -1023,9 +1050,10 @@ export function AccountIntegrationsRoute(handle: Handle) {
 													<AddAccountForm
 														slug={selectedApp.slug}
 														platform={isBuiltInApp(selectedApp)}
-														existingNames={selectedApp.connections.map(
-															(connection) => connection.name,
-														)}
+														existingNames={[
+															...integrations.map((entry) => entry.name),
+															...apps.map((app) => app.slug),
+														]}
 													/>
 												</div>
 											)}

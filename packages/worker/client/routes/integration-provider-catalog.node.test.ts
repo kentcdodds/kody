@@ -3,7 +3,9 @@ import { getGuideBySlug } from '#worker/guides/catalog.ts'
 import {
 	buildIntegrationSetupPrompt,
 	integrationProviderSuggestions,
+	isTakenConnectionName,
 	nextSuggestedConnectionName,
+	resolveAddAccountConnectionName,
 } from './integration-provider-catalog.ts'
 
 test('integration provider suggestions resolve guide-backed prompts and keep a generic fallback', () => {
@@ -46,4 +48,44 @@ test('next suggested connection name skips taken {slug}-{n} keys', () => {
 	expect(nextSuggestedConnectionName('google', ['google', 'google-work'])).toBe(
 		'google-2',
 	)
+	expect(
+		nextSuggestedConnectionName('google', [
+			'google',
+			'linear',
+			'Google-2',
+			'google-personal',
+		]),
+	).toBe('google-3')
+})
+
+test('add-account name resolution rejects names already used by any connection or app', () => {
+	const existingNames = ['google', 'linear', 'google-2', 'Google Work']
+	expect(isTakenConnectionName('google-2', existingNames)).toBe(true)
+	expect(isTakenConnectionName('Google-2', existingNames)).toBe(true)
+	expect(isTakenConnectionName('google-work', existingNames)).toBe(true)
+	expect(isTakenConnectionName('google-3', existingNames)).toBe(false)
+
+	const duplicate = resolveAddAccountConnectionName({
+		name: 'google-2',
+		suggested: 'google-3',
+		existingNames,
+	})
+	expect(duplicate.ok).toBe(false)
+	if (!duplicate.ok) {
+		expect(duplicate.error.length).toBeGreaterThan(0)
+	}
+	expect(
+		resolveAddAccountConnectionName({
+			name: '  Google-3  ',
+			suggested: 'google-3',
+			existingNames,
+		}),
+	).toEqual({ ok: true, name: 'google-3' })
+	expect(
+		resolveAddAccountConnectionName({
+			name: '   ',
+			suggested: 'google-3',
+			existingNames,
+		}),
+	).toEqual({ ok: true, name: 'google-3' })
 })

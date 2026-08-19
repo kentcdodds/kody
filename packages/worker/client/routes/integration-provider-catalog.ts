@@ -1,3 +1,5 @@
+import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
+
 /**
  * Suggested providers for the integrations page. Kody intentionally has no
  * built-in OAuth apps ("bring your own keys"), so each suggestion carries a
@@ -97,13 +99,46 @@ export function buildCustomIntegrationSetupPrompt() {
 	].join(' ')
 }
 
+function takenConnectionNameSet(existingNames: ReadonlyArray<string>) {
+	return new Set(
+		existingNames
+			.map((name) => normalizeProviderKey(name))
+			.filter((name) => name.length > 0),
+	)
+}
+
+export function isTakenConnectionName(
+	name: string,
+	existingNames: ReadonlyArray<string>,
+) {
+	const key = normalizeProviderKey(name)
+	return Boolean(key && takenConnectionNameSet(existingNames).has(key))
+}
+
+export function resolveAddAccountConnectionName(input: {
+	name: string
+	suggested: string
+	existingNames: ReadonlyArray<string>
+}): { ok: true; name: string } | { ok: false; error: string } {
+	const next = normalizeProviderKey(input.name.trim()) || input.suggested
+	if (isTakenConnectionName(next, input.existingNames)) {
+		return {
+			ok: false,
+			error: 'That name is already used by another connection.',
+		}
+	}
+	return { ok: true, name: next }
+}
+
 export function nextSuggestedConnectionName(
 	slug: string,
 	existingNames: ReadonlyArray<string>,
 ) {
-	const taken = new Set(existingNames.map((name) => name.toLowerCase()))
-	if (!taken.has(slug.toLowerCase())) return slug
+	const taken = takenConnectionNameSet(existingNames)
+	const slugKey = normalizeProviderKey(slug)
+	if (!slugKey) return slug
+	if (!taken.has(slugKey)) return slugKey
 	let n = 2
-	while (taken.has(`${slug}-${n}`.toLowerCase())) n += 1
-	return `${slug}-${n}`
+	while (taken.has(`${slugKey}-${n}`)) n += 1
+	return `${slugKey}-${n}`
 }
