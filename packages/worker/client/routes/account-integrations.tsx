@@ -1,3 +1,4 @@
+import { normalizeProviderKey } from '@kody-internal/shared/url-hosts.ts'
 import { formatTimestamp } from '#client/format-timestamp.ts'
 import {
 	type AccountIntegrationListItem,
@@ -39,10 +40,10 @@ import {
 } from '#client/routes/record-table.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import {
-	buildAddAccountPrompt,
 	buildCustomIntegrationSetupPrompt,
 	buildIntegrationSetupPrompt,
 	integrationProviderSuggestions,
+	nextSuggestedConnectionName,
 } from '#client/routes/integration-provider-catalog.ts'
 import { integrationDisplayName } from '#client/routes/integration-filter.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
@@ -267,6 +268,83 @@ function buildConnectOauthHref(input: {
 
 function connectActionLabel(status: 'Connected' | 'Needs setup') {
 	return status === 'Connected' ? 'Reconnect' : 'Connect'
+}
+
+function AddAccountForm(
+	handle: Handle<{
+		slug: string
+		platform: boolean
+		existingNames: ReadonlyArray<string>
+	}>,
+) {
+	let name = nextSuggestedConnectionName(
+		handle.props.slug,
+		handle.props.existingNames,
+	)
+
+	function connectHref(connectionName: string) {
+		return buildConnectOauthHref({
+			name: connectionName,
+			platform: handle.props.platform,
+			appSlug: handle.props.slug,
+		})
+	}
+
+	return () => {
+		const suggested = nextSuggestedConnectionName(
+			handle.props.slug,
+			handle.props.existingNames,
+		)
+		return (
+			<form
+				data-testid="add-account-form"
+				mix={[
+					on('submit', (event) => {
+						event.preventDefault()
+						const next = normalizeProviderKey(name.trim()) || suggested
+						window.location.assign(connectHref(next))
+					}),
+					css({
+						display: 'grid',
+						gap: spacing.sm,
+						justifyItems: 'start',
+					}),
+				]}
+			>
+				<p mix={css({ ...descriptionCss, margin: 0 })}>
+					Add another account on this integration. Existing connections stay
+					put.
+				</p>
+				<label mix={css(fieldCss)}>
+					<span mix={css(fieldLabelCss)}>Connection name</span>
+					<input
+						type="text"
+						name="connectionName"
+						data-field-ring
+						required
+						value={name}
+						{...passwordManagerIgnoreProps}
+						mix={[
+							on('input', (event) => {
+								name = event.currentTarget.value
+								handle.update()
+							}),
+							css(accountInputCss),
+						]}
+					/>
+				</label>
+				<button
+					type="submit"
+					mix={css({
+						...getPillButtonCss({ size: 'sm' }),
+						display: 'inline-flex',
+					})}
+				>
+					Connect
+				</button>
+			</form>
+		)
+	}
 }
 
 function PlugIcon() {
@@ -914,38 +992,13 @@ export function AccountIntegrationsRoute(handle: Handle) {
 															</article>
 														)
 													})}
-													<div
-														data-testid="add-account-prompt"
-														mix={css({
-															display: 'grid',
-															gap: spacing.sm,
-															justifyItems: 'start',
-														})}
-													>
-														<p
-															mix={css({
-																...descriptionCss,
-																margin: 0,
-															})}
-														>
-															Need another account on this integration? Copy a
-															prompt — your agent can connect it without
-															replacing this one.
-														</p>
-														<CopyTextButton
-															value={buildAddAccountPrompt({
-																label: oauthAppTitle(selectedApp),
-																slug: selectedApp.slug,
-																provider: selectedApp.provider,
-																platform: isBuiltInApp(selectedApp),
-																connections: selectedApp.connections,
-															})}
-															idleLabel="Copy add-account prompt"
-															ariaLabel="Copy prompt to add another account"
-															variant="ghost"
-															size="sm"
-														/>
-													</div>
+													<AddAccountForm
+														slug={selectedApp.slug}
+														platform={isBuiltInApp(selectedApp)}
+														existingNames={selectedApp.connections.map(
+															(connection) => connection.name,
+														)}
+													/>
 												</div>
 											)}
 										</section>
