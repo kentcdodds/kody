@@ -513,3 +513,23 @@ test('confidential-flow refreshAccessToken still delegates persist to the host h
 	expect(refreshAccessTokenCalls).toEqual([{ name: 'github' }])
 	expect(fetchCalls).toEqual([])
 })
+
+test('refreshAccessToken throws when the host helper capability is missing', async () => {
+	const { kody } = createKody(githubConfidentialIntegration)
+	const namespace = {
+		integration_get: kody.integration_get,
+		integration_token_refresh: kody.integration_token_refresh,
+	}
+	await expect(refreshAccessToken(namespace, 'github')).rejects.toThrow(
+		'kody.integration_refresh_access_token is not available in this sandbox.',
+	)
+})
+
+test('refreshAccessToken throws when the host helper returns no access token', async () => {
+	const { kody } = createKody(githubConfidentialIntegration, {
+		accessToken: '',
+	})
+	await expect(refreshAccessToken(kody, 'github')).rejects.toThrow(
+		'Host-side token refresh for integration "github" did not return an access token.',
+	)
+})

@@ -588,6 +588,83 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 	}
 })
 
+test('failed host-side refresh guidance omits provider error details', async () => {
+	const usageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const getIntegrationSpy = vi
+		.spyOn(integrationsService, 'getIntegration')
+		.mockResolvedValue(spotifyIntegrationConfig)
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue({
+			found: true,
+			value: 'token-value',
+			scope: 'user',
+			allowedHosts: ['api.spotify.com', 'accounts.spotify.com'],
+			allowedCapabilities: [],
+			allowedPackages: [],
+		})
+	const refreshSpy = vi
+		.spyOn(tokenRefresh, 'refreshIntegrationTokens')
+		.mockRejectedValue(
+			new tokenRefresh.IntegrationTokenRefreshCallerError(
+				'Token refresh was rejected for integration "spotify" with HTTP 400 (invalid_grant: refresh_token=REFRESH-TOKEN-VALUE user_id=user-123). Reconnect at /connect/oauth?provider=spotify. (integration_token_refresh caller state)',
+				{
+					reason: 'provider_rejected',
+					providerError: 'invalid_grant',
+					providerErrorDescription:
+						'refresh_token=REFRESH-TOKEN-VALUE user_id=user-123',
+					httpStatus: 400,
+				},
+			),
+		)
+
+	try {
+		const fetchStub = vi.fn(
+			async () =>
+				new Response(JSON.stringify({ error: 'expired' }), {
+					status: 401,
+					headers: { 'content-type': 'application/json' },
+				}),
+		)
+
+		const result = await executeOpenApiOperationRequest({
+			env: createEnv(),
+			userId: 'user-1',
+			baseUrl: 'https://app.example.com',
+			storageContext: null,
+			binding: {
+				...bindingBase,
+				apiBaseUrl: 'https://api.spotify.com/v1',
+				auth: { kind: 'integration', provider: 'spotify' },
+			},
+			operation: {
+				...getWidget,
+				path: '/me',
+				parameters: [],
+			},
+			args: {},
+			globalFetch: fetchStub as unknown as typeof fetch,
+		})
+
+		expect(result.ok).toBe(false)
+		expect(result.status).toBe(401)
+		expect(result.body).toEqual({
+			error: 'expired',
+			kodyGuidance:
+				'OpenAPI request returned HTTP 401; host-side token refresh failed. Reconnect the "spotify" integration at /connect/oauth, or call refreshAccessToken("spotify") from execute, then retry.',
+		})
+		expect(JSON.stringify(result.body)).not.toContain('REFRESH-TOKEN-VALUE')
+		expect(JSON.stringify(result.body)).not.toContain('user-123')
+	} finally {
+		getIntegrationSpy.mockRestore()
+		resolveSpy.mockRestore()
+		refreshSpy.mockRestore()
+		usageSpy.mockRestore()
+	}
+})
+
 test('integration auth enforces binding host pin and integration allowlist before attaching tokens', async () => {
 	const usageSpy = vi
 		.spyOn(usageModule, 'recordUsage')

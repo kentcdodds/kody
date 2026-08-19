@@ -10,7 +10,10 @@ import {
 	getIntegration,
 	type IntegrationConfig,
 } from '#worker/integrations/service.ts'
-import { refreshIntegrationTokens } from '#worker/integrations/token-refresh.ts'
+import {
+	IntegrationTokenRefreshCallerError,
+	refreshIntegrationTokens,
+} from '#worker/integrations/token-refresh.ts'
 import {
 	normalizeApiBaseUrl,
 	type OpenApiBinding,
@@ -347,10 +350,13 @@ async function tryRefreshIntegrationAccessToken(input: {
 		})
 		return { ok: true }
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
+		const reconnectHint =
+			error instanceof IntegrationTokenRefreshCallerError
+				? ` Reconnect the "${input.provider}" integration at /connect/oauth, or call refreshAccessToken("${input.provider}") from execute, then retry.`
+				: ` Call refreshAccessToken("${input.provider}") from execute, then retry.`
 		return {
 			ok: false,
-			guidance: `OpenAPI request returned HTTP 401; host-side token refresh failed: ${message}. Call refreshAccessToken("${input.provider}") from execute, then retry.`,
+			guidance: `OpenAPI request returned HTTP 401; host-side token refresh failed.${reconnectHint}`,
 		}
 	}
 }

@@ -2,8 +2,12 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 
 vi.mock('#worker/integrations/package-subscriptions.ts', () => ({
-	dispatchIntegrationAuthFailedSubscriptionEvents: vi.fn(async () => []),
-	dispatchIntegrationAuthSucceededSubscriptionEvents: vi.fn(async () => []),
+	dispatchIntegrationAuthFailedSubscriptionEvents: vi.fn<
+		() => Promise<Array<unknown>>
+	>(async () => []),
+	dispatchIntegrationAuthSucceededSubscriptionEvents: vi.fn<
+		() => Promise<Array<unknown>>
+	>(async () => []),
 	integrationAuthFailedTopic: 'integration.auth.failed',
 	integrationAuthSucceededTopic: 'integration.auth.succeeded',
 }))
@@ -12,7 +16,12 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { PackageSecretAccessDeniedError } from '#mcp/secrets/package-access.ts'
 import { saveSecret, setSecretAllowedHosts } from '#mcp/secrets/service.ts'
 import { insertCommunityFork } from '#worker/community/repo.ts'
-import { upsertIntegration } from '#worker/integrations/service.ts'
+import { upsertPlatformOauthApp } from '#worker/integrations/platform-apps.ts'
+import {
+	upsertIntegration,
+	upsertPlatformIntegration,
+} from '#worker/integrations/service.ts'
+import { createPlatformRawTokenRefusedMessage } from '#worker/integrations/token-refresh.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -110,7 +119,7 @@ test('self-authored packages can materialize a refreshed access token without an
 	await seedUserLaneX(env, userId)
 	await insertPackage(env, userId, packageId)
 
-	const fetchMock = vi.fn(
+	const fetchMock = vi.fn<typeof fetch>(
 		async () =>
 			new Response(
 				JSON.stringify({
@@ -191,6 +200,72 @@ test('self-authored packages can materialize a refreshed access token without an
 			expect(error).toBeInstanceOf(McpCallerError)
 			expect((error as Error).message).toContain(
 				'is not allowed for package "x-fork"',
+			)
+			return true
+		})
+		expect(fetchMock).not.toHaveBeenCalled()
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('platform integrations refuse raw-token materialize before contacting the provider', async () => {
+	const { env } = createHarness()
+	const userId = 'user-platform'
+	const packageId = 'pkg-platform-1'
+	await insertPackage(env, userId, packageId)
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: {
+			slug: 'github',
+			clientId: 'platform-github-client-id',
+			clientSecret: 'platform-github-client-secret-value',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+		},
+	})
+	await upsertPlatformIntegration({
+		env,
+		userId,
+		platformAppSlug: 'github',
+		scopes: [],
+		accessTokenSecretName: 'githubAccessToken',
+		refreshTokenSecretName: 'githubRefreshToken',
+	})
+
+	const fetchMock = vi.fn<typeof fetch>(async () => {
+		throw new Error('provider must not be contacted for platform raw tokens')
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		await expect(
+			integrationRefreshAccessTokenCapability.handler(
+				{ name: 'github' },
+				{
+					env,
+					callerContext: createMcpCallerContext({
+						baseUrl: 'https://kody.codes',
+						user: {
+							userId,
+							email: 'me@kentcdodds.com',
+							displayName: 'Kent',
+						},
+						storageContext: {
+							sessionId: null,
+							appId: null,
+							packageId,
+							storageId: null,
+						},
+					}),
+				},
+			),
+		).rejects.toSatisfy((error: unknown) => {
+			expect(error).toBeInstanceOf(McpCallerError)
+			expect((error as Error).message).toBe(
+				createPlatformRawTokenRefusedMessage('github'),
 			)
 			return true
 		})
