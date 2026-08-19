@@ -12,23 +12,21 @@ const healthyHtml = `
 <script type="module" src="/client-entry.js"></script>
 `
 
-test('classifySitePerf returns ok when budgets and landing signals pass', () => {
-	const report = classifySitePerf({
-		url: 'https://kody.codes/',
-		html: healthyHtml,
-		cacheControl: 'public, max-age=60, stale-while-revalidate=300',
-		vary: 'Cookie',
-		htmlBytes: 800,
-		largestSameOriginJsBytes: 800,
-		lcpImageBytes: 800,
-		budget,
-	})
-	expect(report.verdict).toBe('ok')
-	expect(report.findings).toEqual([])
-})
+test('classifySitePerf scores healthy landing signals and flags cache, LCP, Shiki, and JS budget issues', () => {
+	expect(
+		classifySitePerf({
+			url: 'https://kody.codes/',
+			html: healthyHtml,
+			cacheControl: 'public, max-age=60, stale-while-revalidate=300',
+			vary: 'Cookie',
+			htmlBytes: 800,
+			largestSameOriginJsBytes: 800,
+			lcpImageBytes: 800,
+			budget,
+		}),
+	).toMatchObject({ verdict: 'ok', findings: [] })
 
-test('classifySitePerf marks missing LCP preload and no-store as needs-fix', () => {
-	const report = classifySitePerf({
+	const cacheAndLcp = classifySitePerf({
 		url: 'https://kody.codes/',
 		html: '<html></html>',
 		cacheControl: 'no-store',
@@ -38,15 +36,13 @@ test('classifySitePerf marks missing LCP preload and no-store as needs-fix', () 
 		lcpImageBytes: null,
 		budget,
 	})
-	expect(report.verdict).toBe('needs-fix')
-	expect(report.findings.map((finding) => finding.id).sort()).toEqual([
+	expect(cacheAndLcp.verdict).toBe('needs-fix')
+	expect(cacheAndLcp.findings.map((finding) => finding.id).sort()).toEqual([
 		'home-no-store',
 		'missing-lcp-preload',
 	])
-})
 
-test('classifySitePerf treats Shiki on / and oversized JS as needs-fix, not human', () => {
-	const report = classifySitePerf({
+	const shikiAndJs = classifySitePerf({
 		url: 'https://kody.codes/',
 		html: `${healthyHtml}<link rel="modulepreload" href="/assets/syntax-highlight-core-abc.js" />`,
 		cacheControl: 'public, max-age=60',
@@ -56,8 +52,8 @@ test('classifySitePerf treats Shiki on / and oversized JS as needs-fix, not huma
 		lcpImageBytes: 800,
 		budget,
 	})
-	expect(report.verdict).toBe('needs-fix')
-	expect(report.findings.map((finding) => finding.id)).toEqual([
+	expect(shikiAndJs.verdict).toBe('needs-fix')
+	expect(shikiAndJs.findings.map((finding) => finding.id)).toEqual([
 		'shiki-on-home',
 		'js-over-budget',
 	])

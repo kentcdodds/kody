@@ -1,4 +1,4 @@
-# 0024: No package services primitive
+# 0025: No package services primitive
 
 - **Status:** accepted
 - **Date:** 2026-08-19

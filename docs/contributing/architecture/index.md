@@ -64,12 +64,11 @@ to become.
   with `npm run primitives:check`.
 - [Inbound webhooks](./webhooks.md): user-owned `POST /@:username/webhooks/...`
   ingress that dispatches to a bound saved-package export (HMAC verification,
-  ack/sync modes, delivery history via run records). protocol, URLs, secrets,
-  and MCP caller context for any connector instance/name (this is how
-  local-network systems are reached through an outbound agent connection).
+  ack/sync modes, delivery history via run records).
 - [MCP client servers](./mcp-client-servers.md): user-added remote MCP servers
   Kody connects to as a client (per-user hub Durable Object, OAuth flow, and
-  `kody.mcp[...]` capability synthesis).
+  `kody.mcp[...]` capability synthesis). Local-network systems reach Kody the
+  same way (outbound MCP under `kody.mcp[...]`).
 - [OpenAPI provider bindings](./openapi-bindings.md): user-scoped curated
   OpenAPI bindings with runtime-synthesized `openapi:<name>` domains callable
   via `kody.openapi[...]` (host approval never widened by untrusted specs).

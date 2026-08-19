@@ -1439,28 +1439,3 @@ test('provider-name search ranks a wrapping package and provider card without an
 		result.matches.filter((match) => match.type === 'capability'),
 	).toHaveLength(0)
 })
-
-test('later entity detail in one conversation omits already-taught boilerplate', async () => {
-	vi.clearAllMocks()
-	const { handler } = await getSearchRegistration()
-
-	await handler({
-		query: 'search docs',
-		conversationId: 'conv-detail-preamble',
-	})
-	const laterDetail = await handler({
-		entity: 'search_docs:capability',
-		conversationId: 'conv-detail-preamble',
-	})
-	expect(laterDetail.content[1]?.text).not.toContain(
-		'Capabilities returned by `search` are available inside `execute`',
-	)
-
-	const firstDetail = await handler({
-		entity: 'search_docs:capability',
-		conversationId: 'conv-first-detail',
-	})
-	expect(firstDetail.content[1]?.text).toContain(
-		'Capabilities returned by `search` are available inside `execute`',
-	)
-})

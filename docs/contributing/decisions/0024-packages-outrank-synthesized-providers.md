@@ -1,4 +1,4 @@
-# 0023: Packages outrank synthesized providers
+# 0024: Packages outrank synthesized providers
 
 - **Status:** accepted
 - **Date:** 2026-08-19

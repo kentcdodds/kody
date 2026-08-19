@@ -1,19 +1,14 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { observeNearViewport } from '#client/deferred-turnstile.ts'
 
-afterEach(() => {
-	vi.unstubAllGlobals()
-})
-
-test('observeNearViewport arms immediately when IntersectionObserver is missing', () => {
+test('observeNearViewport arms immediately without IntersectionObserver and waits when present', () => {
 	vi.stubGlobal('IntersectionObserver', undefined)
-	const onNear = vi.fn()
-	const stop = observeNearViewport({} as Element, onNear)
-	expect(onNear).toHaveBeenCalledTimes(1)
+	const immediate = vi.fn()
+	const stop = observeNearViewport({} as Element, immediate)
+	expect(immediate).toHaveBeenCalledTimes(1)
 	stop()
-})
+	vi.unstubAllGlobals()
 
-test('observeNearViewport waits for intersection then disconnects', () => {
 	const observe = vi.fn()
 	const disconnect = vi.fn()
 	let callback: IntersectionObserverCallback = () => {}
@@ -45,4 +40,5 @@ test('observeNearViewport waits for intersection then disconnects', () => {
 	)
 	expect(onNear).toHaveBeenCalledTimes(1)
 	expect(disconnect).toHaveBeenCalledTimes(1)
+	vi.unstubAllGlobals()
 })

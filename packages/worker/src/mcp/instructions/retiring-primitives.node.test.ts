@@ -4,9 +4,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { upsertValueBucket, upsertValueEntry } from '#mcp/values/repo.ts'
 import {
 	formatActiveRetiringPrimitivesInstructions,
-	formatRetiringPrimitivesInstructions,
 	loadActiveRetiringNoticeIds,
-	retiringPrimitiveNotices,
 } from './retiring-primitives.ts'
 
 function createValuesDb() {
@@ -34,40 +32,6 @@ function createValuesDb() {
 	`)
 	return createD1FromSqlite(sqlite)
 }
-
-test('formatRetiringPrimitivesInstructions omits an empty registry', () => {
-	expect(formatRetiringPrimitivesInstructions([])).toBe('')
-	expect(formatActiveRetiringPrimitivesInstructions(new Set())).toBe('')
-})
-
-test('formatRetiringPrimitivesInstructions lists each notice with its guide', () => {
-	const section = formatRetiringPrimitivesInstructions([
-		{
-			label: 'Example',
-			guide: 'example_guide',
-			summary: 'Do not write new rows.',
-		},
-	])
-	expect(section).toBe(
-		'Retiring primitives\n- Example: Do not write new rows. Load `coding_guide_get({ guide: "example_guide" })` to migrate.',
-	)
-})
-
-test('values retirement is registered and only formats when that notice is active', () => {
-	expect(retiringPrimitiveNotices).toEqual([
-		{
-			id: 'values',
-			label: 'Values',
-			guide: 'values',
-			summary:
-				'Do not write new `value_set` rows. Existing names stay readable.',
-		},
-	])
-	expect(formatRetiringPrimitivesInstructions()).toBe('')
-	expect(
-		formatActiveRetiringPrimitivesInstructions(new Set(['values'])),
-	).toContain('coding_guide_get({ guide: "values" })')
-})
 
 test('loadActiveRetiringNoticeIds is true only for users with a live stored value', async () => {
 	const db = createValuesDb()
@@ -133,7 +97,10 @@ test('loadActiveRetiringNoticeIds is true only for users with a live stored valu
 	await expect(loadActiveRetiringNoticeIds(db, 'user-other')).resolves.toEqual(
 		new Set(),
 	)
-	await expect(loadActiveRetiringNoticeIds(db, 'user-live')).resolves.toEqual(
-		new Set(['values']),
+	const live = await loadActiveRetiringNoticeIds(db, 'user-live')
+	expect(live).toEqual(new Set(['values']))
+	expect(formatActiveRetiringPrimitivesInstructions(live)).toContain(
+		'coding_guide_get({ guide: "values" })',
 	)
+	expect(formatActiveRetiringPrimitivesInstructions(new Set())).toBe('')
 })

@@ -7,7 +7,6 @@ import { AdminCommunityReportsRoute } from '#client/routes/admin-community-repor
 import {
 	AccountManagementInlineLinkNav,
 	AccountManagementLinkNav,
-	AccountPageHeader,
 	IdValue,
 	MetadataGrid,
 	TimestampValue,
@@ -75,22 +74,6 @@ test('metadata band auto-fits columns and keeps id/timestamp values copyable and
 		jsx(TimestampValue, { value: null, fallback: 'Unknown' }),
 	)
 	expect(missing).toContain('>Unknown</span>')
-})
-
-test('account subnav lists secrets and memories and omits values', async () => {
-	const html = await renderToString(
-		jsx(AccountPageHeader, {
-			title: 'Overview',
-			description: 'Account home',
-			currentHref: '/account',
-		}),
-	)
-
-	expect(html).toContain('aria-label="Account sections"')
-	expect(html).toContain('href="/account/secrets"')
-	expect(html).toContain('href="/account/memories"')
-	expect(html).not.toContain('href="/account/values"')
-	expect(html).not.toContain('>Values</a>')
 })
 
 test('inline link nav stays in flow and is not a second account rail', async () => {

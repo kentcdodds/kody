@@ -12,7 +12,7 @@ function createStubHandler(name: string) {
 	}
 }
 
-test('router prefers static nested paths over dynamic siblings', async () => {
+test('router prefers static nested paths and package files over dynamic siblings', async () => {
 	const router = createRouter()
 	router.get(
 		routePattern(routes.accountMcpServersOauthCallback),
@@ -30,29 +30,91 @@ test('router prefers static nested paths over dynamic siblings', async () => {
 		routePattern(routes.adminUserDetail),
 		createStubHandler('user-detail'),
 	)
-
-	const oauthCallback = await router.fetch(
-		new Request('http://localhost/account/mcp-servers/oauth/callback'),
+	router.get(
+		routePattern(routes.communityPackage),
+		createStubHandler('listing'),
 	)
-	expect(await oauthCallback.text()).toBe('oauth-callback')
-
-	const serverDetail = await router.fetch(
-		new Request('http://localhost/account/mcp-servers/my-server'),
+	router.get(
+		routePattern(routes.communityPackageFiles),
+		createStubHandler('community-files'),
 	)
-	expect(await serverDetail.text()).toBe('server-detail')
-
-	const usageApi = await router.fetch(
-		new Request('http://localhost/admin/users/usage.json'),
+	router.get(
+		routePattern(routes.accountPackageDetail),
+		createStubHandler('package-detail'),
 	)
-	expect(await usageApi.text()).toBe('usage-api')
-
-	const userDetail = await router.fetch(
-		new Request('http://localhost/admin/users/42'),
+	router.get(
+		routePattern(routes.accountPackageFiles),
+		createStubHandler('account-files'),
 	)
-	expect(await userDetail.text()).toBe('user-detail')
+	router.get(
+		routePattern(routes.communityDetail),
+		createStubHandler('listing-uuid'),
+	)
+	router.get(
+		routePattern(routes.communityDetailFiles),
+		createStubHandler('listing-uuid-files'),
+	)
+
+	expect(
+		await (
+			await router.fetch(
+				new Request('http://localhost/account/mcp-servers/oauth/callback'),
+			)
+		).text(),
+	).toBe('oauth-callback')
+	expect(
+		await (
+			await router.fetch(
+				new Request('http://localhost/account/mcp-servers/my-server'),
+			)
+		).text(),
+	).toBe('server-detail')
+	expect(
+		await (
+			await router.fetch(new Request('http://localhost/admin/users/usage.json'))
+		).text(),
+	).toBe('usage-api')
+	expect(
+		await (
+			await router.fetch(new Request('http://localhost/admin/users/42'))
+		).text(),
+	).toBe('user-detail')
+	expect(
+		await (
+			await router.fetch(new Request('http://localhost/@kentcdodds/devin'))
+		).text(),
+	).toBe('listing')
+	expect(
+		await (
+			await router.fetch(
+				new Request('http://localhost/@kentcdodds/devin/files/src/index.ts'),
+			)
+		).text(),
+	).toBe('community-files')
+	expect(
+		await (
+			await router.fetch(new Request('http://localhost/account/packages/pkg-1'))
+		).text(),
+	).toBe('package-detail')
+	expect(
+		await (
+			await router.fetch(
+				new Request('http://localhost/account/packages/pkg-1/files/README.md'),
+			)
+		).text(),
+	).toBe('account-files')
+	expect(
+		await (
+			await router.fetch(
+				new Request(
+					'http://localhost/community/550e8400-e29b-41d4-a716-446655440000/files/src/lib.ts',
+				),
+			)
+		).text(),
+	).toBe('listing-uuid-files')
 })
 
-test('delimiter-bounded params keep companion suffixes, hyphens, and encoded dots', async () => {
+test('delimiter-bounded params keep companion suffixes and encode dotted ids', async () => {
 	const router = createRouter()
 	router.get(routePattern(routes.blogPostApi), createStubHandler('blog-api'))
 	router.get(
@@ -71,6 +133,20 @@ test('delimiter-bounded params keep companion suffixes, hyphens, and encoded dot
 	router.get(
 		routePattern(routes.accountSecretUserDetail),
 		createStubHandler('secret'),
+	)
+	router.get(
+		routePattern(routes.accountIntegrationDetail),
+		createStubHandler('integration'),
+	)
+	router.get(routePattern(routes.integrationLogo), createStubHandler('logo'))
+	router.get(
+		routePattern(routes.adminPlatformIntegrationDetail),
+		createStubHandler('platform-integration'),
+	)
+	router.get(routePattern(routes.accountJobDetail), createStubHandler('job'))
+	router.get(
+		routePattern(routes.accountActivityDetail),
+		createStubHandler('activity'),
 	)
 
 	expect(
@@ -116,93 +192,6 @@ test('delimiter-bounded params keep companion suffixes, hyphens, and encoded dot
 			)
 		).text(),
 	).toBe('secret')
-})
-
-test('package files routes win over listing and package detail siblings', async () => {
-	const router = createRouter()
-	router.get(
-		routePattern(routes.communityPackage),
-		createStubHandler('listing'),
-	)
-	router.get(
-		routePattern(routes.communityPackageFiles),
-		createStubHandler('community-files'),
-	)
-	router.get(
-		routePattern(routes.accountPackageDetail),
-		createStubHandler('package-detail'),
-	)
-	router.get(
-		routePattern(routes.accountPackageFiles),
-		createStubHandler('account-files'),
-	)
-	router.get(
-		routePattern(routes.communityDetail),
-		createStubHandler('listing-uuid'),
-	)
-	router.get(
-		routePattern(routes.communityDetailFiles),
-		createStubHandler('listing-uuid-files'),
-	)
-
-	expect(
-		await (
-			await router.fetch(new Request('http://localhost/@kentcdodds/devin'))
-		).text(),
-	).toBe('listing')
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/@kentcdodds/devin/files'),
-			)
-		).text(),
-	).toBe('community-files')
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/@kentcdodds/devin/files/src/index.ts'),
-			)
-		).text(),
-	).toBe('community-files')
-	expect(
-		await (
-			await router.fetch(new Request('http://localhost/account/packages/pkg-1'))
-		).text(),
-	).toBe('package-detail')
-	expect(
-		await (
-			await router.fetch(
-				new Request('http://localhost/account/packages/pkg-1/files/README.md'),
-			)
-		).text(),
-	).toBe('account-files')
-	expect(
-		await (
-			await router.fetch(
-				new Request(
-					'http://localhost/community/550e8400-e29b-41d4-a716-446655440000/files/src/lib.ts',
-				),
-			)
-		).text(),
-	).toBe('listing-uuid-files')
-})
-
-test('single-segment params 404 on raw dots and match href-encoded dots', async () => {
-	const router = createRouter()
-	router.get(
-		routePattern(routes.accountIntegrationDetail),
-		createStubHandler('integration'),
-	)
-	router.get(routePattern(routes.integrationLogo), createStubHandler('logo'))
-	router.get(
-		routePattern(routes.adminPlatformIntegrationDetail),
-		createStubHandler('platform-integration'),
-	)
-	router.get(routePattern(routes.accountJobDetail), createStubHandler('job'))
-	router.get(
-		routePattern(routes.accountActivityDetail),
-		createStubHandler('activity'),
-	)
 
 	expect(
 		(
@@ -218,7 +207,6 @@ test('single-segment params 404 on raw dots and match href-encoded dots', async 
 			)
 		).text(),
 	).toBe('integration')
-
 	expect(
 		(
 			await router.fetch(
@@ -233,7 +221,6 @@ test('single-segment params 404 on raw dots and match href-encoded dots', async 
 			)
 		).text(),
 	).toBe('logo')
-
 	expect(
 		(
 			await router.fetch(
@@ -250,7 +237,6 @@ test('single-segment params 404 on raw dots and match href-encoded dots', async 
 			)
 		).text(),
 	).toBe('platform-integration')
-
 	expect(
 		(
 			await router.fetch(
@@ -269,7 +255,6 @@ test('single-segment params 404 on raw dots and match href-encoded dots', async 
 			)
 		).text(),
 	).toBe('job')
-
 	expect(
 		await (
 			await router.fetch(new Request('http://localhost/account/activity/run-1'))

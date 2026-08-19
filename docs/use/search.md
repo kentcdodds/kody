@@ -60,7 +60,7 @@ Pass optional **`domain`** with a capability domain id:
   browse flow: broad query → domain overview → domain listing.
 
 Domain ids cover builtin domains (`email`, `jobs`, `packages`, ...) plus
-synthesized ones for connected MCP servers (`mcp:home`) (`mcp:linear`), and
+synthesized ones for connected MCP servers (`mcp:home`, `mcp:linear`) and
 OpenAPI bindings (`openapi:canva`). An unknown id returns an error listing the
 available domains. The `search` meta capability (usable inside **execute**)
 accepts the same `domain` argument alongside `query`.

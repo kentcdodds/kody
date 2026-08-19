@@ -48,7 +48,7 @@ function setupMemoryContextMocks() {
 	})
 }
 
-test('memory tool context surfaces retriever results, fails on retriever errors, and formats retriever-only markdown', async () => {
+test('memory tool context surfaces retrievers, filters weak matches, fails on retriever errors, and formats markdown', async () => {
 	setupMemoryContextMocks()
 	const callerContext = {
 		baseUrl: 'https://heykody.dev',
@@ -129,9 +129,7 @@ test('memory tool context surfaces retriever results, fails on retriever errors,
 	await expect(loadRelevantMemoriesForTool(request)).rejects.toThrow(
 		'retriever unavailable',
 	)
-})
 
-test('automatic memory context drops archived and low-score matches', async () => {
 	setupMemoryContextMocks()
 	const baseMemory = {
 		category: 'workflow',
@@ -175,23 +173,15 @@ test('automatic memory context drops archived and low-score matches', async () =
 		warnings: [],
 	})
 
-	const result = await loadRelevantMemoriesForTool({
+	const filtered = await loadRelevantMemoriesForTool({
 		env: { APP_DB: {} } as Env,
-		callerContext: {
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'User',
-			},
-			storageContext: null,
-			repoContext: null,
-		},
+		callerContext,
 		conversationId: 'conversation-quality',
 		memoryContext: { query: 'ranked search' },
 		acknowledgeSurfaced: false,
 	})
-
-	expect(result?.memories.map((memory) => memory.id)).toEqual(['active-strong'])
+	expect(filtered?.memories.map((memory) => memory.id)).toEqual([
+		'active-strong',
+	])
 	expect(mockModule.acknowledgeSurfacedMemories).not.toHaveBeenCalled()
 })

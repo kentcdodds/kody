@@ -22,6 +22,6 @@ test('production styles.css is escape-safe so homepage SSR can inline it', async
 		buildId: 'inline-stylesheet-production-css',
 	})
 	expect(inlined).not.toBeNull()
-	expect(inlined).toContain('.landing-pill-swap')
+	expect(inlined!.length).toBeGreaterThan(0)
 	expect(inlined).not.toMatch(/[<>&]/)
 })

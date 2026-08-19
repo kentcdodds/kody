@@ -150,5 +150,9 @@ storage bucket via `packageStorage()`. See
 
 ## Values
 
-Use **values** capabilities for readable non-secret configuration that generated
-UI or workflows should store and read later.
+Do not write new named config with `value_set`. Existing rows stay readable so
+you can migrate them to memories, `packageStorage()`, repos, secrets, or
+integrations. Load `coding_guide_get` with `guide: "values"` (or open
+[Persist outside values](../guides/values.md)) before moving a name. The account
+section nav omits Values; open `/account/values` directly while retiring
+leftovers.

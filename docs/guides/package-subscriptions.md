@@ -572,12 +572,12 @@ working after a reconnect, or to send an all-clear.
 
 ## `mcp.server.disconnected` / `mcp.server.reconnected`
 
-When a saved, enabled outbound MCP server that was previously `ready` stays
-unavailable after the hub's lightweight reconnect (two `connectToServer` +
-discover attempts, no OAuth restart), Kody dispatches `mcp.server.disconnected`
-to packages saved by that same user that declare the topic. When that down
-episode later observes `ready` again, Kody dispatches `mcp.server.reconnected`
-with the same `server.episode_id`.
+When a saved, enabled outbound MCP server leaves `ready` and stays unavailable
+after the hub's lightweight reconnect (two `connectToServer` + discover
+attempts, no OAuth restart), Kody dispatches `mcp.server.disconnected` to
+packages saved by that same user that declare the topic. When that down episode
+later observes `ready` again, Kody dispatches `mcp.server.reconnected` with the
+same `server.episode_id`.
 
 Never-ready servers (still `authenticating` after add), disabled servers, and
 in-flight `connecting` / `connected` / `discovering` states do not emit. Token

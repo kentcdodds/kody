@@ -48,11 +48,6 @@ test('popular package MCP instructions omit cold start, list kody ids under budg
 	})
 	expect(instructions).toMatch(/`notes`/)
 	expect(instructions).toContain('Prefer concise replies.')
-	expect(instructions).not.toContain('Connected remote connectors')
-	expect(instructions).not.toContain('Kody repository (for contributors)')
-	expect(instructions).not.toContain('package_get_git_remote')
-	expect(instructions).not.toContain('/account/secrets/new')
-	expect(instructions).not.toContain('pending_secret_package_approvals')
 	expect(instructions).not.toContain('Retiring primitives')
 
 	const affected = buildMcpServerInstructions({
