@@ -61,7 +61,7 @@
 	--color-text-muted: oklch(0.44 0.014 260);
 	--color-border: oklch(0.84 0.008 250);
 	--color-on-primary: oklch(1 0 0);
-	--pattern-fill: oklch(from var(--color-text) l c h / 0.11);
+	--pattern-fill: oklch(from var(--color-text) l c h / 0.16);
 	--color-primary-dark: oklch(0.72 0.205 145);
 	--color-primary-text-dark: oklch(0.75 0.2 145);
 	--color-background-dark: oklch(0.19 0.008 255);
@@ -71,7 +71,7 @@
 	--color-text-muted-dark: oklch(0.72 0.01 255);
 	--color-border-dark: oklch(0.33 0.01 255);
 	--color-on-primary-dark: oklch(0.2 0.05 148);
-	--pattern-fill-dark: oklch(from var(--color-text-dark) l c h / 0.16);
+	--pattern-fill-dark: oklch(from var(--color-text-dark) l c h / 0.22);
 	--footer-h: 4.6rem;
 }
 
@@ -106,13 +106,12 @@ body {
 	text-rendering: optimizeLegibility;
 }
 
+body::before,
 body::after {
 	content: '';
 	position: fixed;
-	right: -10%;
-	bottom: -16%;
 	z-index: 0;
-	width: min(40vw, 640px);
+	width: min(42vw, 680px);
 	aspect-ratio: 1;
 	pointer-events: none;
 	background: var(--pattern-fill);
@@ -134,11 +133,22 @@ body::after {
 	-webkit-mask-composite: source-in;
 }
 
+body::after {
+	right: -10%;
+	bottom: -16%;
+}
+
+body::before {
+	top: -20%;
+	right: 25%;
+	transform: translateX(50%);
+}
+
 .reveal {
 	position: relative;
 	z-index: 1;
 	height: 100%;
-	background: var(--color-background);
+	background: transparent !important;
 	font-family: var(--font-body);
 	font-size: 32px;
 	font-weight: 400;
@@ -152,7 +162,7 @@ body::after {
 .reveal .slides,
 .reveal .backgrounds,
 .reveal .slide-background {
-	background: var(--color-background);
+	background: transparent !important;
 }
 
 .reveal .slides {
