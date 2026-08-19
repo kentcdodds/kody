@@ -176,11 +176,9 @@ the class until `deleted_classes` runs (error 10064). Export a stub, drop the
 binding, then add the `deleted_classes` migration and its
 `tools/ci/do-deletion-allowlist.json` entry on a later deploy.
 
-`PackageServiceInstance` is in that window: the runtime worker exports a stub
-and omits tag `v2` so production can drop the remote binding. Preview also omits
-`v2` while the stub is exported; `deleted_classes` fails with error 10074 when
-the previous script version did not export the class. The allowlist entry stays
-for the follow-up that restores `v2` and removes the stub.
+`PackageServiceInstance` uses that sequence: production `kody-runtime` applies
+tag `v2` after a stub-export deploy dropped the transferred binding. Preview
+applies `v1` `new_sqlite_classes` then `v2` `deleted_classes` on first deploy.
 
 ## Rollback
 

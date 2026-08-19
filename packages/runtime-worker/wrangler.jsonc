@@ -74,13 +74,10 @@
 				},
 			],
 		},
-		// Production still has transferred PackageServiceInstance
-		// objects. deleted_classes while the remote binding exists is
-		// error 10061; dropping the binding without exporting the class
-		// is error 10064. Export the stub and omit the binding here.
-		// Add tag v2 after this deploy. Preview also omits v2: a
-		// delete-class on a script whose previous version did not
-		// export the class is error 10074.
+		{
+			"tag": "v2",
+			"deleted_classes": ["PackageServiceInstance"],
+		},
 	],
 	"observability": {
 		"enabled": true,
@@ -269,6 +266,10 @@
 						"PackageRealtimeSession",
 						"PackageServiceInstance",
 					],
+				},
+				{
+					"tag": "v2",
+					"deleted_classes": ["PackageServiceInstance"],
 				},
 			],
 			"worker_loaders": [

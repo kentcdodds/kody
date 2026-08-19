@@ -41,7 +41,7 @@ has a remote binding and existing objects after the source binding is gone. A
 same-deploy `deleted_classes` migration fails with error 10061. Dropping the
 binding without exporting the class fails with error 10064. Export a stub, drop
 the remote binding, then apply runtime-worker tag `v2` `deleted_classes` and
-remove the stub. The `tools/ci/do-deletion-allowlist.json` entry for that tag
-stays for the follow-up. Preview also omits `v2` while the stub is exported:
-`deleted_classes` fails with error 10074 when the previous script version did
-not export the class.
+remove the stub. #1559 completed the stub-and-drop-binding deploy. The
+`tools/ci/do-deletion-allowlist.json` entry for tag `v2` is the contract for the
+class-delete follow-up. Preview `deleted_classes` requires a previous script
+version that exported the class (error 10074).
