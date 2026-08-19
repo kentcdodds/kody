@@ -133,7 +133,8 @@ they speak MCP.
    that `package_id`, `package_invocation_token_get`, or read `tokens` from
    `package_get` first to confirm which token record exists and whether its
    export scopes match the external caller. Do not ask the user to read token
-   metadata out of the browser UI unless the capability response is insufficient.
+   metadata out of the browser UI unless the capability response is
+   insufficient.
 3. Generate an `/account/packages/<packageId>?newToken=1` URL with `name` and
    export scope.
 4. Ask the user to open the URL, paste their locally generated raw token into

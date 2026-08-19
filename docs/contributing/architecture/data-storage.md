@@ -1168,11 +1168,11 @@ on write unless a migration backfills existing rows.
   stores package dependency pointers queried with SQLite JSON functions in
   `packages/worker/src/repo/published-bundle-artifacts-repo.ts`.
 - `package_invocation_tokens.export_names_json`
-  (`0019-drop-invocation-token-sources.sql`) stores per-package
-  invocation-token export-scope projections. Each token row also has a required
-  `package_id`. Request JSON `source` is an optional log label, not a stored
-  allowlist. Keyed invocation replay lives in the RunLog Durable Object ledger
-  (see [Run records](./run-records.md)); the current D1 schema has no
+  (`0019-drop-invocation-token-sources.sql`) stores per-package invocation-token
+  export-scope projections. Each token row also has a required `package_id`.
+  Request JSON `source` is an optional log label, not a stored allowlist. Keyed
+  invocation replay lives in the RunLog Durable Object ledger (see
+  [Run records](./run-records.md)); the current D1 schema has no
   `package_invocations` table.
 - `webhook_endpoints` (`0001-squashed-init.sql`) stores per-user minted URL
   state for `package.json#kody.webhooks`, keyed by

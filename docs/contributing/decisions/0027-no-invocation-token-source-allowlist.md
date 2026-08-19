@@ -13,8 +13,7 @@ that omits `source` still works — and the form field was hard to explain.
 
 Production tokens all stored one caller label (`youtube-websub-proxy`,
 `discord`, `raycast`, and the rest). Callers already send that string on the
-request for logs. The token column added a second, weaker copy of the same
-name.
+request for logs. The token column added a second, weaker copy of the same name.
 
 ## Decision
 
@@ -25,7 +24,7 @@ allowlists stay. The 0026 package-ownership decision is unchanged.
 ## Consequences
 
 `0019-drop-invocation-token-sources.sql` drops `sources_json`. Token create and
-edit forms, MCP token metadata, and HTTP auth no longer mention allowed
-sources. Agents may still send `source` on invoke; it is not required and does
-not fail the call. Revisit only if a real caller-identity check is added that
-cannot be omitted.
+edit forms, MCP token metadata, and HTTP auth no longer mention allowed sources.
+Agents may still send `source` on invoke; it is not required and does not fail
+the call. Revisit only if a real caller-identity check is added that cannot be
+omitted.
