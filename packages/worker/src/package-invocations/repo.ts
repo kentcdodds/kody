@@ -264,6 +264,7 @@ export async function insertPackageInvocationToken(input: {
 export async function updatePackageInvocationToken(input: {
 	db: D1Database
 	userId: string
+	packageId: string
 	id: string
 	name: string
 	tokenHash?: string
@@ -280,6 +281,7 @@ export async function updatePackageInvocationToken(input: {
 				updated_at = ?
 			WHERE id = ?
 				AND user_id = ?
+				AND package_id = ?
 				AND revoked_at IS NULL`,
 		)
 		.bind(
@@ -290,6 +292,7 @@ export async function updatePackageInvocationToken(input: {
 			new Date().toISOString(),
 			input.id,
 			input.userId,
+			input.packageId,
 		)
 		.run()
 	return (result.meta.changes ?? 0) > 0
@@ -298,6 +301,7 @@ export async function updatePackageInvocationToken(input: {
 export async function revokePackageInvocationToken(input: {
 	db: D1Database
 	userId: string
+	packageId: string
 	id: string
 }) {
 	const now = new Date().toISOString()
@@ -307,9 +311,10 @@ export async function revokePackageInvocationToken(input: {
 			SET revoked_at = ?, updated_at = ?
 			WHERE id = ?
 				AND user_id = ?
+				AND package_id = ?
 				AND revoked_at IS NULL`,
 		)
-		.bind(now, now, input.id, input.userId)
+		.bind(now, now, input.id, input.userId, input.packageId)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }
@@ -317,6 +322,7 @@ export async function revokePackageInvocationToken(input: {
 export async function reinstatePackageInvocationToken(input: {
 	db: D1Database
 	userId: string
+	packageId: string
 	id: string
 }) {
 	const result = await input.db
@@ -325,9 +331,10 @@ export async function reinstatePackageInvocationToken(input: {
 			SET revoked_at = NULL, updated_at = ?
 			WHERE id = ?
 				AND user_id = ?
+				AND package_id = ?
 				AND revoked_at IS NOT NULL`,
 		)
-		.bind(new Date().toISOString(), input.id, input.userId)
+		.bind(new Date().toISOString(), input.id, input.userId, input.packageId)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }
@@ -335,15 +342,17 @@ export async function reinstatePackageInvocationToken(input: {
 export async function deletePackageInvocationToken(input: {
 	db: D1Database
 	userId: string
+	packageId: string
 	id: string
 }) {
 	const result = await input.db
 		.prepare(
 			`DELETE FROM package_invocation_tokens
 			WHERE id = ?
-				AND user_id = ?`,
+				AND user_id = ?
+				AND package_id = ?`,
 		)
-		.bind(input.id, input.userId)
+		.bind(input.id, input.userId, input.packageId)
 		.run()
 	return (result.meta.changes ?? 0) > 0
 }

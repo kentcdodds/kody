@@ -145,7 +145,9 @@ async function resolveTokenScope(input: {
 	const lastUsed = updatePackageInvocationTokenLastUsed({
 		db: input.env.APP_DB,
 		id: record.id,
-	}).then(() => undefined)
+	})
+		.then(() => undefined)
+		.catch(() => undefined)
 	if (input.waitUntil) input.waitUntil(lastUsed)
 	else void lastUsed
 	return {

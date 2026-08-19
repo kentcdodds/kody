@@ -202,6 +202,7 @@ async function handleUpdateToken(input: {
 		updated = await updatePackageInvocationToken({
 			db: input.env.APP_DB,
 			userId: input.user.mcpUser.userId,
+			packageId: owned.packageId,
 			id,
 			name,
 			tokenHash: rawToken
@@ -256,6 +257,7 @@ async function handleRevokeToken(input: {
 	const revoked = await revokePackageInvocationToken({
 		db: input.env.APP_DB,
 		userId: input.user.mcpUser.userId,
+		packageId: owned.packageId,
 		id,
 	})
 	if (!revoked) {
@@ -289,6 +291,7 @@ async function handleReinstateToken(input: {
 	const restored = await reinstatePackageInvocationToken({
 		db: input.env.APP_DB,
 		userId: input.user.mcpUser.userId,
+		packageId: owned.packageId,
 		id,
 	})
 	if (!restored) {
@@ -323,6 +326,7 @@ async function handleDeleteToken(input: {
 	const deleted = await deletePackageInvocationToken({
 		db: input.env.APP_DB,
 		userId: input.user.mcpUser.userId,
+		packageId: owned.packageId,
 		id,
 	})
 	if (!deleted) {

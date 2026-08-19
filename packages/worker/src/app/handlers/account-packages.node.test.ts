@@ -369,6 +369,7 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 	expect(mockModule.updatePackageInvocationToken).toHaveBeenNthCalledWith(1, {
 		db: env.APP_DB,
 		userId: 'stable-user-1',
+		packageId: 'pkg-1',
 		id: 'token-1',
 		name: 'Updated personal client',
 		tokenHash: undefined,
@@ -408,6 +409,7 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 	expect(mockModule.updatePackageInvocationToken).toHaveBeenNthCalledWith(2, {
 		db: env.APP_DB,
 		userId: 'stable-user-1',
+		packageId: 'pkg-1',
 		id: 'token-1',
 		name: 'Rotated personal client',
 		tokenHash: 'hashed-raw-token',
@@ -431,6 +433,7 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 	expect(mockModule.revokePackageInvocationToken).toHaveBeenCalledWith({
 		db: env.APP_DB,
 		userId: 'stable-user-1',
+		packageId: 'pkg-1',
 		id: 'token-1',
 	})
 
@@ -450,6 +453,7 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 	expect(mockModule.reinstatePackageInvocationToken).toHaveBeenCalledWith({
 		db: env.APP_DB,
 		userId: 'stable-user-1',
+		packageId: 'pkg-1',
 		id: 'token-1',
 	})
 	await expect(reinstateResponse.json()).resolves.toMatchObject({
@@ -473,6 +477,7 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 	expect(mockModule.deletePackageInvocationToken).toHaveBeenCalledWith({
 		db: env.APP_DB,
 		userId: 'stable-user-1',
+		packageId: 'pkg-1',
 		id: 'token-1',
 	})
 	const deletePayload = await deleteResponse.json()
