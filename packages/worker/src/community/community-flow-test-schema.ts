@@ -1,5 +1,6 @@
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
+import { ensurePackageInvocationTokensTestSchema } from '#worker/package-invocations/test-schema.ts'
 
 /**
  * Community flow workers-unit schema. Adds the community/social tables and the
@@ -20,6 +21,7 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		],
 	})
 	await ensureUserStorageBucketsTestSchema(db)
+	await ensurePackageInvocationTokensTestSchema(db)
 	const statements = [
 		`CREATE TABLE IF NOT EXISTS saved_packages (
 			id TEXT PRIMARY KEY NOT NULL,
