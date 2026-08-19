@@ -233,9 +233,11 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 	expect(matchRoute('/guides/oauth.md', pageRoutes)).toBeNull()
 	expect(matchRoute('/guides/oauth.json', pageRoutes)).toBeNull()
 	expect(matchRoute('/blog/your-assistants-home.md', pageRoutes)).toBeNull()
+	expect(matchRoute(routes.blogRss.href(), pageRoutes)).toBeNull()
 	expect(routes.guideDetailMarkdown.href({ slug: 'oauth' })).toBe(
 		'/guides/oauth.md',
 	)
+	expect(routes.blogRss.href()).toBe('/blog/rss.xml')
 
 	registerClientRoutes(pageRoutes)
 	const previousWindow = globalThis.window
@@ -258,6 +260,7 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 		expect(shouldLeaveDocumentForPath('/auth.md')).toBe(true)
 		expect(shouldLeaveDocumentForPath('/robots.txt')).toBe(true)
 		expect(shouldLeaveDocumentForPath('/missing-page')).toBe(true)
+		expect(shouldLeaveDocumentForPath(routes.blogRss.href())).toBe(true)
 
 		const click = {
 			defaultPrevented: false,
@@ -283,6 +286,14 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 		} as unknown as HTMLAnchorElement
 		expect(shouldRouterHandleClick(click, documentAnchor)).toBe(false)
 
+		const rssAnchor = {
+			target: '',
+			hasAttribute: (name: string) => name === 'rmx-document',
+			getAttribute: (name: string) =>
+				name === 'href' ? routes.blogRss.href() : null,
+		} as unknown as HTMLAnchorElement
+		expect(shouldRouterHandleClick(click, rssAnchor)).toBe(false)
+
 		const pageAnchor = {
 			target: '',
 			hasAttribute: () => false,
@@ -293,6 +304,8 @@ test('guide and blog markdown twins leave the SPA instead of rendering a 404', (
 
 		navigate('/guides/how-kody-works.md')
 		expect(assign).toHaveBeenCalledWith('/guides/how-kody-works.md')
+		navigate(routes.blogRss.href())
+		expect(assign).toHaveBeenCalledWith(routes.blogRss.href())
 	} finally {
 		registerClientRoutes({})
 		globalThis.window = previousWindow

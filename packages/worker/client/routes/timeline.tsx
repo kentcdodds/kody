@@ -153,10 +153,7 @@ export function TimelineRoute(handle: Handle) {
 						What the people you follow <em>shipped</em>.
 					</h1>
 					<p data-rise style={{ '--rise': '1' }}>
-						Public activity from every account you follow: community publishes
-						and republishes, forks, and stars. Package edits that were never
-						republished do not show up. The {timelineEventLimit} most recent,
-						newest first.
+						Public activity from the accounts you follow.
 					</p>
 				</header>
 
