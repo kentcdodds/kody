@@ -166,6 +166,19 @@ npm run deploy -- --config packages/runtime-worker/wrangler-production.generated
 npm run deploy -- --config packages/worker/wrangler-production.generated.json
 ```
 
+## Deleting a transferred class
+
+A class that arrived on `kody-runtime` through `transferred_classes` keeps a
+remote binding until a deploy publishes config without that binding. Cloudflare
+rejects a same-deploy `deleted_classes` migration while that binding still
+exists (error 10061). Drop the binding first, then add the `deleted_classes`
+migration and its `tools/ci/do-deletion-allowlist.json` entry on a later
+deploy.
+
+`PackageServiceInstance` is in that window: production still has the transferred
+binding, so runtime-worker tag `v2` is deferred until after the binding-only
+deploy.
+
 ## Rollback
 
 - **Runtime deploy failed before the migration applied:** nothing moved; the old

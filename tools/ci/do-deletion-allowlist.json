@@ -25,11 +25,6 @@
 			"config": "packages/worker/wrangler.jsonc",
 			"tag": "v26",
 			"classes": ["PackageServiceInstance"]
-		},
-		{
-			"config": "packages/runtime-worker/wrangler.jsonc",
-			"tag": "v2",
-			"classes": ["PackageServiceInstance"]
 		}
 	]
 }

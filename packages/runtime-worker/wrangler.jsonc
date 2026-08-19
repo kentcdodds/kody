@@ -74,10 +74,10 @@
 				},
 			],
 		},
-		{
-			"tag": "v2",
-			"deleted_classes": ["PackageServiceInstance"],
-		},
+		// Do not add deleted_classes for PackageServiceInstance in the same
+		// deploy that drops its remote binding. Production still has the
+		// transferred binding (error 10061). Re-add tag v2 after this
+		// binding-only deploy lands.
 	],
 	"observability": {
 		"enabled": true,
@@ -267,10 +267,8 @@
 						"PackageServiceInstance",
 					],
 				},
-				{
-					"tag": "v2",
-					"deleted_classes": ["PackageServiceInstance"],
-				},
+				// Keep preview in lockstep with production: no v2
+				// deleted_classes until the production binding is gone.
 			],
 			"worker_loaders": [
 				{
