@@ -619,7 +619,7 @@ test('assertWithinEntitlement enforces concurrent workflow limits for unresolved
 	})
 })
 
-test('persistent package services deny free and allow standard', async () => {
+test('persistent package services deny free and standard and allow pro', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const { db } = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
@@ -645,8 +645,30 @@ test('persistent package services deny free and allow standard', async () => {
 	const standardDb = createEntitlementsTestDb({
 		users: [{ email: plannedEmail, plan: 'standard', stable_user_id: userId }],
 	})
-	await assertWithinEntitlement({
+	const standardDenied = await assertWithinEntitlement({
 		db: standardDb.db,
+		userId,
+		email: plannedEmail,
+		resource: 'persistent_package_services',
+		getCurrent: async () => 0,
+	}).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	if (!(standardDenied instanceof EntitlementLimitError)) {
+		throw new Error('Expected an EntitlementLimitError for standard.')
+	}
+	expect(standardDenied.details).toMatchObject({
+		resource: 'persistent_package_services',
+		plan: 'standard',
+		limit: 0,
+	})
+
+	const proDb = createEntitlementsTestDb({
+		users: [{ email: plannedEmail, plan: 'pro', stable_user_id: userId }],
+	})
+	await assertWithinEntitlement({
+		db: proDb.db,
 		userId,
 		email: plannedEmail,
 		resource: 'persistent_package_services',

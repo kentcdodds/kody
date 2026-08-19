@@ -262,7 +262,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSavedPackages: 100,
 		maxScheduledJobs: 50,
 		maxPackageServices: 10,
-		maxPersistentPackageServices: 1,
+		// Always-on DO duration is too expensive for this tier.
+		maxPersistentPackageServices: 0,
 		maxRepoSessions: 200,
 		maxEmailSendsPerDay: 200,
 		maxEmailReceivesPerDay: 1_000,
@@ -280,7 +281,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSavedPackages: 200,
 		maxScheduledJobs: 150,
 		maxPackageServices: 20,
-		maxPersistentPackageServices: 3,
+		maxPersistentPackageServices: 2,
 		maxRepoSessions: 400,
 		maxEmailSendsPerDay: 500,
 		maxEmailReceivesPerDay: 2_000,

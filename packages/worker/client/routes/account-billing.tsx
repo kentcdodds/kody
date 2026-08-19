@@ -70,7 +70,7 @@ const planTiers: Array<{
 		name: 'Standard',
 		price: '$12/month',
 		annualPrice: '$10/mo billed annually',
-		description: 'Higher daily volume, more services, and persistent ones.',
+		description: 'Higher daily volume and more running services.',
 	},
 	{
 		id: 'pro',
@@ -78,7 +78,7 @@ const planTiers: Array<{
 		price: '$29/month',
 		annualPrice: '$24/mo billed annually',
 		description:
-			'For heavy daily automation — roughly double Standard on every axis.',
+			'For heavy daily automation — roughly double Standard, plus persistent package services.',
 	},
 ]
 

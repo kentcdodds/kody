@@ -557,8 +557,9 @@ Rules:
   across a UTC-day boundary. The retained claim is the idempotency boundary;
   production inbound handling does not call `refundDailyEntitlement`.
 
-- **Boolean allowances** (persistent package services) are modeled as limit `0`
-  (not allowed) vs `1` (allowed) so the numeric contract stays uniform.
+- **Persistent package services** use the same numeric concurrency contract as
+  other counters. Free and Standard are `0` (not allowed). Pro and `max` allow a
+  small number of concurrent persistent runs.
 - **Per-unit size limits** (`email_message_bytes`) compare one candidate value
   against the limit instead of an accumulating count: the enforcement point
   passes the candidate size via `getCurrent` with `requested: 0`. There is no

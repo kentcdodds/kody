@@ -272,13 +272,43 @@ test('service_start entitlement gating covers plan limits, running skips, and st
 		current: 0,
 	})
 
-	const standardPersistentLimit =
-		planLimits.standard.maxPersistentPackageServices
+	const { env: standardMeterEnv } = createInMemoryUserMeterEnv()
+	const standardError = await serviceStartCapability
+		.handler(
+			{ service_name: 'realtime-supervisor' },
+			{
+				env: {
+					APP_DB: createEntitlementsTestDb({
+						users: [{ email, plan: 'standard' }],
+					}),
+					...standardMeterEnv,
+				} as Env,
+				callerContext,
+			},
+		)
+		.then(
+			() => null,
+			(thrown: unknown) => thrown,
+		)
+	if (!isEntitlementLimitError(standardError)) {
+		throw new Error(
+			'Expected an EntitlementLimitError for standard persistent services.',
+		)
+	}
+	expect(standardError.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'persistent_package_services',
+		plan: 'standard',
+		limit: 0,
+		current: 0,
+	})
+
+	const proPersistentLimit = planLimits.pro.maxPersistentPackageServices
 	const { env: persistentMeterEnv } = createInMemoryUserMeterEnv()
 	await seedRunningServicesInMeter(
 		persistentMeterEnv,
 		userId,
-		buildRunningServices(standardPersistentLimit).map((service) => ({
+		buildRunningServices(proPersistentLimit).map((service) => ({
 			...service,
 			mode: 'persistent',
 		})),
@@ -289,7 +319,7 @@ test('service_start entitlement gating covers plan limits, running skips, and st
 			{
 				env: {
 					APP_DB: createEntitlementsTestDb({
-						users: [{ email, plan: 'standard' }],
+						users: [{ email, plan: 'pro' }],
 					}),
 					...persistentMeterEnv,
 				} as Env,
@@ -308,9 +338,9 @@ test('service_start entitlement gating covers plan limits, running skips, and st
 	expect(persistentError.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
 		resource: 'persistent_package_services',
-		plan: 'standard',
-		limit: standardPersistentLimit,
-		current: standardPersistentLimit,
+		plan: 'pro',
+		limit: proPersistentLimit,
+		current: proPersistentLimit,
 	})
 
 	const { env: boundedMeterEnv } = createInMemoryUserMeterEnv()

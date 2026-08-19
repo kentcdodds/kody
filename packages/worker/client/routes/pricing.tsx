@@ -145,8 +145,7 @@ export function PricingRoute(handle: Handle) {
 						</p>
 						<p mix={css(planPriceNoteCss)}>$10/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
-							Higher daily volume, more running services, and persistent package
-							services.
+							Higher daily volume and more running services.
 						</p>
 						{renderPaidPlanCta(isSignedIn)}
 					</section>
@@ -163,8 +162,8 @@ export function PricingRoute(handle: Handle) {
 						</p>
 						<p mix={css(planPriceNoteCss)}>$24/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
-							For heavy daily automation — roughly double Standard on every
-							axis.
+							For heavy daily automation — roughly double Standard, plus
+							persistent package services.
 						</p>
 						{renderPaidPlanCta(isSignedIn)}
 					</section>
