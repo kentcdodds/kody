@@ -82,7 +82,7 @@ passwords into chat.
 const whatIsKodySkillBody = `# What is Kody
 
 Kody is a per-user personal assistant reached over MCP. Each signed-in user
-gets an isolated assistant (packages, jobs, secrets, values, memories, email,
+gets an isolated assistant (packages, jobs, secrets, memories, email,
 storage). The public MCP surface is two tools: \`search\` and \`execute\`.
 
 ## When to use

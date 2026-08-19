@@ -187,14 +187,20 @@ service status through the existing package runtime bridge.
 ## Prefer bounded reconnect loops over one immortal run
 
 Cloudflare Durable Objects can open outbound WebSockets, but outgoing WebSockets
-do **not** hibernate. Favor a design where the service can:
+do **not** hibernate. The host keeps a running service isolate awake with a
+short incoming alarm; still treat disconnect and eviction as normal:
 
 - reconnect intentionally
 - reschedule itself with alarms
-- persist resumable state early
+- persist resumable state early (`session_id`, sequence, cursor)
 - stop cooperatively
 
-Use `timeoutMs` to give the service enough room to run, but do not rely on
+Use `mode: 'persistent'` for daemon-like supervisors (Discord Gateway, other
+outbound sockets). Persistent services resume immediately after Durable Object
+eviction even when `autoStart` is false. Bounded services still use crash-loop
+backoff when `autoStart` is true.
+
+Use `timeoutMs` to give a bounded service enough room to run, but do not rely on
 indefinite execution as the only lifecycle mechanism.
 
 ## What to persist

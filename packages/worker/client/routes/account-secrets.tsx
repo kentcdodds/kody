@@ -62,6 +62,7 @@ import {
 	AccountPageHeader,
 	MetadataGrid,
 	TimestampValue,
+	accountDisclosureCss,
 	accountInputCss,
 } from './account-management-components.tsx'
 import {
@@ -1040,7 +1041,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Secrets"
-					description="Create, update, and delete user secrets and package-owned secrets."
+					description="Passwords and tokens Kody can use for you."
 					currentHref={currentHref}
 					actions={
 						<button
@@ -1079,7 +1080,11 @@ export function AccountSecretsRoute(handle: Handle) {
 									color: colors.text,
 								})}
 							>
-								Approve secret access
+								{approvalCard.requestedHost &&
+								!approvalCard.requestedPackageId &&
+								!isCapabilityApprovalCard
+									? 'Allow access'
+									: 'Approve secret access'}
 							</h2>
 							{approvalCard.requestedPackageId ? (
 								<div mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -1129,9 +1134,11 @@ export function AccountSecretsRoute(handle: Handle) {
 								</p>
 							) : (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Allow <code>{approvalCard.requestedHost}</code> to receive
-									secret <code>{approvalCard.name}</code> from the{' '}
-									{getScopeLabel(approvalCard.scope)} scope.
+									Let Kody use this connection at{' '}
+									<strong mix={css({ color: colors.text })}>
+										{approvalCard.requestedHost}
+									</strong>
+									.
 								</p>
 							)}
 							{approvalCard.requestedCapability && !isCapabilityApprovalCard ? (
@@ -1184,12 +1191,18 @@ export function AccountSecretsRoute(handle: Handle) {
 										: 'none'}
 								</p>
 							) : (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Current allowed hosts:{' '}
-									{approvalCard.currentAllowedHosts.length > 0
-										? approvalCard.currentAllowedHosts.join(', ')
-										: 'none'}
-								</p>
+								<details
+									mix={css(secretApprovalAdvancedCss)}
+									data-testid="secret-approval-advanced"
+								>
+									<summary>Advanced details</summary>
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										Secret <code>{approvalCard.name}</code>
+										{approvalCard.currentAllowedHosts.length > 0
+											? ` · already allowed: ${approvalCard.currentAllowedHosts.join(', ')}`
+											: ''}
+									</p>
+								</details>
 							)}
 						</div>
 						<div
@@ -1206,7 +1219,11 @@ export function AccountSecretsRoute(handle: Handle) {
 								{approvalCard.requestedPackageId &&
 								approvalCard.names.length > 1
 									? `Approve all (${approvalCard.names.length})`
-									: 'Approve'}
+									: approvalCard.requestedHost &&
+										  !approvalCard.requestedPackageId &&
+										  !isCapabilityApprovalCard
+										? 'Allow access'
+										: 'Approve'}
 							</button>
 							<button
 								type="button"
@@ -1691,3 +1708,9 @@ const packageIdentityCss = {
 const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 const dangerButtonCss = getDangerPillCss({ size: 'sm' })
+
+const secretApprovalAdvancedCss = {
+	...accountDisclosureCss,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+}

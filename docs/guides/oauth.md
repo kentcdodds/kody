@@ -170,11 +170,12 @@ or `google-youtube-brand` for a brand identity. Agents should call
 connected, and `integration_platform_app_list` before building a BYO connect
 URL.
 
-Manage user-lane OAuth apps from `/account/integrations/apps/<app-slug>` (also
-linked from the grouped app headers on `/account/integrations`). That page shows
-app metadata, every connection that shares the credentials, and a form to rotate
-the client secret (and optionally the client id) with an explicit confirmation
-step. Agents can call `integration_oauth_app_list` and
+Manage integrations from `/account/integrations`. The list is one row per
+service; the pane shows the connections on that integration. Built-in
+integrations are marked “Provided by Kody.” User-registered integrations also
+resolve at `/account/integrations/apps/<app-slug>`. App metadata and the
+client-secret rotation form live under Advanced details, with an explicit
+confirmation step. Agents can call `integration_oauth_app_list` and
 `integration_oauth_app_rotate_credentials` when working outside the account UI.
 
 ## Not the same as MCP OAuth

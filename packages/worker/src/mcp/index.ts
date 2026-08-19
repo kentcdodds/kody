@@ -6,6 +6,7 @@ import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/sdk/validatio
 import { McpAgent } from 'agents/mcp'
 import { buildSentryOptions } from '../sentry-options.ts'
 import { parseMcpCallerContext, type McpServerProps } from './context.ts'
+import { loadActiveRetiringNoticeIds } from './instructions/retiring-primitives.ts'
 import { buildMcpServerInstructions } from './server-instructions.ts'
 import { registerTools } from './register-tools.ts'
 import {
@@ -50,23 +51,26 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				doId: this.ctx.id.toString(),
 			})
 		}
-		const [overlay, registry, popularPackages] = await Promise.all([
-			userId !== null
-				? getMcpUserServerInstructions(this.env.APP_DB, userId)
-				: Promise.resolve(null),
-			getCapabilityRegistryForContext({
-				env: this.env,
-				callerContext: caller,
-			}),
-			userId !== null
-				? listPopularAgentPackagesForUser(this.env.APP_DB, { userId })
-				: Promise.resolve([]),
-		])
+		const [overlay, registry, popularPackages, retiringNoticeIds] =
+			await Promise.all([
+				userId !== null
+					? getMcpUserServerInstructions(this.env.APP_DB, userId)
+					: Promise.resolve(null),
+				getCapabilityRegistryForContext({
+					env: this.env,
+					callerContext: caller,
+				}),
+				userId !== null
+					? listPopularAgentPackagesForUser(this.env.APP_DB, { userId })
+					: Promise.resolve([]),
+				loadActiveRetiringNoticeIds(this.env.APP_DB, userId),
+			])
 		this.server = createKodyMcpServer({
 			instructions: buildMcpServerInstructions({
 				userOverlay: overlay,
 				domains: registry.capabilityDomains,
 				popularPackages,
+				retiringNoticeIds,
 			}),
 			jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
 		})

@@ -32,7 +32,14 @@ const requiredPackageServiceProjectionAttempts = 3
  * Must stay well below `packageServiceStateStaleMs` in entitlements so live
  * services are never dropped from the concurrency count.
  */
-const packageServiceStateHeartbeatMs = 60 * 60 * 1000
+export const packageServiceStateHeartbeatMs = 60 * 60 * 1000
+/**
+ * Incoming Durable Object alarm while a run is in-flight. Background
+ * `waitUntil` execution does not keep the isolate resident; without a frequent
+ * wake, Cloudflare evicts the object and orphans the sandbox (including any
+ * outbound WebSocket). Keep this well under a minute.
+ */
+export const packageServiceKeepaliveMs = 15_000
 
 export type PackageServiceBindingState = {
 	userId: string
@@ -53,9 +60,10 @@ type PackageServiceState = {
 	stopRequested: boolean
 	currentRunId: string | null
 	nextAlarmAt: string | null
-	nextAlarmSource: 'service' | 'auto-start' | 'heartbeat' | null
+	nextAlarmSource: 'service' | 'auto-start' | 'heartbeat' | 'keepalive' | null
 	lastStartedAt: string | null
 	lastStoppedAt: string | null
+	lastProjectedAt: string | null
 	status: 'idle' | 'running' | 'stopping' | 'stopped' | 'error'
 	lastError: string | null
 	lastResult: unknown
@@ -120,6 +128,7 @@ function createInitialPackageServiceState(): PackageServiceState {
 		nextAlarmSource: null,
 		lastStartedAt: null,
 		lastStoppedAt: null,
+		lastProjectedAt: null,
 		status: 'idle',
 		lastError: null,
 		lastResult: null,
@@ -415,17 +424,22 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			if (orphanedRunUsageEvent) {
 				this.ctx.waitUntil(recordUsage(this.env, orphanedRunUsageEvent))
 			}
-			if (
-				this.stateSnapshot.autoStart &&
-				!this.stateSnapshot.stopRequested &&
-				this.stateSnapshot.binding
-			) {
-				await this.scheduleAlarm({
-					runAt: buildPackageServiceRetryTime(
-						this.stateSnapshot.consecutiveFailureCount,
-					),
-					source: 'auto-start',
-				})
+			if (!this.stateSnapshot.stopRequested && this.stateSnapshot.binding) {
+				if (this.stateSnapshot.mode === 'persistent') {
+					// Persistent means "stay up until stopped". Eviction is a
+					// platform interrupt, not a user stop or a crash-loop.
+					await this.scheduleAlarm({
+						runAt: new Date(),
+						source: 'auto-start',
+					})
+				} else if (this.stateSnapshot.autoStart) {
+					await this.scheduleAlarm({
+						runAt: buildPackageServiceRetryTime(
+							this.stateSnapshot.consecutiveFailureCount,
+						),
+						source: 'auto-start',
+					})
+				}
 			}
 		} else if (this.stateSnapshot.binding) {
 			// Warm-start after upgrades that introduced package_service_states:
@@ -466,6 +480,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				startedAt,
 				updatedAt,
 			})
+			this.stateSnapshot.lastProjectedAt = updatedAt
 		} catch {
 			// Best-effort: D1 outages must not take down package services.
 		}
@@ -639,20 +654,28 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		this.schedulePackageServiceShadowDelete(binding)
 	}
 
-	private async ensureRunningHeartbeat() {
+	private shouldProjectRunningHeartbeat() {
+		const lastProjectedAtMs = Date.parse(
+			this.stateSnapshot.lastProjectedAt ?? '',
+		)
+		if (Number.isNaN(lastProjectedAtMs)) return true
+		return Date.now() - lastProjectedAtMs >= packageServiceStateHeartbeatMs
+	}
+
+	private async ensureRunningKeepalive() {
 		if (!this.stateSnapshot.currentRunId) return
 		if (this.stateSnapshot.nextAlarmAt) {
 			const nextAtMs = Date.parse(this.stateSnapshot.nextAlarmAt)
 			if (
 				!Number.isNaN(nextAtMs) &&
-				nextAtMs - Date.now() <= packageServiceStateHeartbeatMs
+				nextAtMs - Date.now() <= packageServiceKeepaliveMs
 			) {
 				return
 			}
 		}
 		await this.scheduleAlarm({
-			runAt: new Date(Date.now() + packageServiceStateHeartbeatMs),
-			source: 'heartbeat',
+			runAt: new Date(Date.now() + packageServiceKeepaliveMs),
+			source: 'keepalive',
 		})
 	}
 
@@ -694,7 +717,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 
 	private async scheduleAlarm(input: {
 		runAt: Date | string
-		source?: 'service' | 'auto-start' | 'heartbeat'
+		source?: 'service' | 'auto-start' | 'heartbeat' | 'keepalive'
 	}) {
 		const runAtDate =
 			typeof input.runAt === 'string' ? new Date(input.runAt) : input.runAt
@@ -798,7 +821,8 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			(this.stateSnapshot.mode !== 'persistent' ||
 				input.nextStatus === 'error') &&
 			(!this.stateSnapshot.nextAlarmAt ||
-				this.stateSnapshot.nextAlarmSource === 'heartbeat')
+				this.stateSnapshot.nextAlarmSource === 'heartbeat' ||
+				this.stateSnapshot.nextAlarmSource === 'keepalive')
 		) {
 			await this.scheduleAlarm({
 				runAt: buildPackageServiceRetryTime(
@@ -1078,7 +1102,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			const runId = pendingAtEntry.runId
 			await pendingAtEntry.promise
 			this.assertPendingStartIsCurrent(runId)
-			await this.ensureRunningHeartbeat()
+			await this.ensureRunningKeepalive()
 			this.assertPendingStartIsCurrent(runId)
 			return Response.json({
 				ok: true,
@@ -1099,7 +1123,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				await pending.promise
 			}
 			this.assertPendingStartIsCurrent(runId)
-			await this.ensureRunningHeartbeat()
+			await this.ensureRunningKeepalive()
 			this.assertPendingStartIsCurrent(runId)
 			return Response.json({
 				ok: true,
@@ -1122,7 +1146,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		try {
 			await pending.promise
 			this.assertPendingStartIsCurrent(runId)
-			await this.ensureRunningHeartbeat()
+			await this.ensureRunningKeepalive()
 			this.assertPendingStartIsCurrent(runId)
 		} catch (error) {
 			await this.failPendingStart(runId, error)
@@ -1279,11 +1303,13 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 		this.stateSnapshot.nextAlarmSource = null
 		await this.persistState()
 		if (this.stateSnapshot.currentRunId) {
-			await this.projectServiceStateToD1()
-			await this.ensureRunningHeartbeat()
+			if (this.shouldProjectRunningHeartbeat()) {
+				await this.projectServiceStateToD1()
+			}
+			await this.ensureRunningKeepalive()
 			return
 		}
-		if (alarmSource === 'heartbeat') {
+		if (alarmSource === 'heartbeat' || alarmSource === 'keepalive') {
 			return
 		}
 		try {
@@ -1299,7 +1325,9 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 			await this.persistState()
 			if (
 				!this.stateSnapshot.stopRequested &&
-				(alarmSource === 'service' || this.stateSnapshot.autoStart)
+				(alarmSource === 'service' ||
+					alarmSource === 'auto-start' ||
+					this.stateSnapshot.autoStart)
 			) {
 				const startedAt = new Date().toISOString()
 				const runId = crypto.randomUUID()
@@ -1312,7 +1340,7 @@ class PackageServiceInstanceBase extends DurableObject<Env> {
 				const pending = this.getOrCreateRequiredStartProjection(runId)
 				await pending.promise
 				this.assertPendingStartIsCurrent(runId)
-				await this.ensureRunningHeartbeat()
+				await this.ensureRunningKeepalive()
 				this.assertPendingStartIsCurrent(runId)
 				if (this.pendingStartProjection === pending) {
 					this.pendingStartProjection = null

@@ -53,6 +53,16 @@ test('popular package MCP instructions omit cold start, list kody ids under budg
 	expect(instructions).not.toContain('package_get_git_remote')
 	expect(instructions).not.toContain('/account/secrets/new')
 	expect(instructions).not.toContain('pending_secret_package_approvals')
+	expect(instructions).not.toContain('Retiring primitives')
+
+	const affected = buildMcpServerInstructions({
+		popularPackages: [{ kodyId: 'notes', description: 'Scratch notes' }],
+		userOverlay: 'Prefer concise replies.',
+		domains: [],
+		retiringNoticeIds: new Set(['values']),
+	})
+	expect(affected).toContain('Retiring primitives')
+	expect(affected).toContain('coding_guide_get({ guide: "values" })')
 })
 
 test('domain instructions list builtins and summarize connected bindings', () => {

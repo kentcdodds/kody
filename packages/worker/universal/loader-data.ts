@@ -860,6 +860,13 @@ export type AccountOauthAppListItem = {
 	extraAuthorizeParams: Record<string, string>
 	connectionCount: number
 	connections: Array<AccountOauthAppConnectionRef>
+	/**
+	 * True when this row is a platform (built-in) app the user connected to,
+	 * not a user-registered OAuth app.
+	 */
+	platform?: boolean
+	/** Relative serving path of the operator-uploaded provider logo. */
+	platformLogoPath?: string | null
 	createdAt: string
 	updatedAt: string
 }

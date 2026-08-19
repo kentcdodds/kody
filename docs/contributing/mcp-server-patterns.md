@@ -67,6 +67,13 @@ lives in each tool description and schemas; detail that only matters after a
 call returns belongs in the tool response (see
 [Documentation principles](./documentation.md)).
 
+**Retiring a primitive:** add one line to `retiringPrimitiveNotices` in
+`packages/worker/src/mcp/instructions/retiring-primitives.ts` and put the
+destination map in a `coding_guide_get` guide. Do not paste the migration table
+into always-on instructions. Assembly includes a notice only for users who still
+have rows of that primitive (`loadActiveRetiringNoticeIds`). An empty active set
+omits the section.
+
 ---
 
 ## 2. Tool Descriptions

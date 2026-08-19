@@ -89,6 +89,8 @@ const {
 	buildPackageServiceStorageId,
 	buildServiceRuntimeUsageEvent,
 	computePackageServiceRetryDelayMs,
+	packageServiceKeepaliveMs,
+	packageServiceStateHeartbeatMs,
 } = await import('./package-service.ts')
 
 const serviceBinding = {
@@ -374,7 +376,9 @@ test('package service start and stop project liveness into package_service_state
 			'2026-07-05T12:00:00.000Z',
 			'2026-07-05T12:00:00.000Z',
 		])
-		expect(created.getAlarmAt()).toBe(Date.parse('2026-07-05T13:00:00.000Z'))
+		expect(created.getAlarmAt()).toBe(
+			Date.parse('2026-07-05T12:00:00.000Z') + packageServiceKeepaliveMs,
+		)
 
 		await flushWaitUntilTasks(created.waitUntilTasks)
 		expect(mockModule.runBundledModuleWithRegistry.mock.calls[0]?.[1]).toEqual(
@@ -605,6 +609,104 @@ test('durable object restore meters an eviction-orphaned in-flight run without a
 		expect(restoreUsageSpy).not.toHaveBeenCalled()
 	} finally {
 		restoreUsageSpy.mockRestore()
+	}
+})
+
+test('durable object restore immediately resumes an evicted persistent service', async () => {
+	resetMocks()
+	const usageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	vi.useFakeTimers()
+	try {
+		const restoredAt = new Date('2026-07-05T13:00:00.000Z')
+		vi.setSystemTime(restoredAt)
+		setupSavedPackage('persistent')
+		mockModule.runBundledModuleWithRegistry.mockResolvedValue({
+			result: { resumed: true },
+			error: null,
+		})
+		const restored = createPackageServiceState()
+		restored.persistedEntries.set('package-service-state', {
+			binding: serviceBinding,
+			autoStart: false,
+			mode: 'persistent',
+			timeoutMs: null,
+			stopRequested: false,
+			currentRunId: 'run-evicted',
+			nextAlarmAt: null,
+			nextAlarmSource: null,
+			lastStartedAt: '2026-07-05T12:55:00.000Z',
+			lastStoppedAt: null,
+			status: 'running',
+			lastError: null,
+			lastResult: null,
+			lastRunFinishedAt: null,
+			consecutiveFailureCount: 0,
+		})
+		const meter = createInMemoryUserMeterEnv()
+		const instance = new PackageServiceInstance(restored.state, {
+			APP_DB: {},
+			USER_METER: meter.env.USER_METER,
+		} as Env)
+		await waitForRestoreState(restored.state)
+		await flushWaitUntilTasks(restored.waitUntilTasks)
+
+		expect(restored.getAlarmAt()).toBe(restoredAt.valueOf())
+		const persisted = restored.persistedEntries.get(
+			'package-service-state',
+		) as { status: string; currentRunId: string | null }
+		expect(persisted.status).toBe('stopped')
+		expect(persisted.currentRunId).toBeNull()
+
+		await instance.alarm()
+		await flushWaitUntilTasks(restored.waitUntilTasks)
+		expect(mockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+	} finally {
+		usageSpy.mockRestore()
+		vi.useRealTimers()
+	}
+})
+
+test('running keepalive alarms do not start a second service run', async () => {
+	resetMocks()
+	vi.useFakeTimers()
+	vi.setSystemTime(new Date('2026-07-05T12:00:00.000Z'))
+	try {
+		setupSavedPackage('persistent')
+		mockModule.runBundledModuleWithRegistry.mockImplementation(
+			() => new Promise(() => {}),
+		)
+		const created = await createPackageServiceInstance({
+			APP_DB: {},
+		} as Env)
+		const start = await created.instance.fetch(
+			new Request('https://package-service.invalid/service/start', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ binding: serviceBinding }),
+			}),
+		)
+		expect(start.status).toBe(200)
+		await drainSettledWaitUntilTasks(created.waitUntilTasks)
+		expect(mockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+		expect(created.getAlarmAt()).toBe(
+			Date.parse('2026-07-05T12:00:00.000Z') + packageServiceKeepaliveMs,
+		)
+
+		vi.setSystemTime(
+			new Date(
+				Date.parse('2026-07-05T12:00:00.000Z') + packageServiceKeepaliveMs,
+			),
+		)
+		await created.instance.alarm()
+		await drainSettledWaitUntilTasks(created.waitUntilTasks)
+		expect(mockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
+		expect(created.getAlarmAt()).toBe(
+			Date.parse('2026-07-05T12:00:00.000Z') + packageServiceKeepaliveMs * 2,
+		)
+	} finally {
+		vi.useRealTimers()
 	}
 })
 
@@ -951,9 +1053,42 @@ test('package service start/heartbeat/stop/purge shadow UserMeter transitions', 
 			sourceUpdatedAt: '2026-07-05T12:00:00.000Z',
 			revision: 1,
 		})
-		expect(created.getAlarmAt()).toBe(Date.parse('2026-07-05T13:00:00.000Z'))
+		expect(created.getAlarmAt()).toBe(
+			Date.parse('2026-07-05T12:00:00.000Z') + packageServiceKeepaliveMs,
+		)
 
-		vi.setSystemTime(new Date('2026-07-05T13:00:00.000Z'))
+		vi.setSystemTime(
+			new Date(
+				Date.parse('2026-07-05T12:00:00.000Z') + packageServiceKeepaliveMs,
+			),
+		)
+		const afterKeepaliveWaitUntilCount = created.waitUntilTasks.length
+		await created.instance.alarm()
+		await drainSettledWaitUntilTasks(
+			created.waitUntilTasks,
+			afterKeepaliveWaitUntilCount,
+		)
+		expect(
+			packageServiceShadowRow(
+				meter,
+				'user-123',
+				'package-1',
+				'realtime-supervisor',
+			),
+		).toMatchObject({
+			status: 'running',
+			sourceUpdatedAt: '2026-07-05T12:00:00.000Z',
+			revision: 1,
+		})
+		expect(created.getAlarmAt()).toBe(
+			Date.parse('2026-07-05T12:00:00.000Z') + packageServiceKeepaliveMs * 2,
+		)
+
+		vi.setSystemTime(
+			new Date(
+				Date.parse('2026-07-05T12:00:00.000Z') + packageServiceStateHeartbeatMs,
+			),
+		)
 		const afterStartWaitUntilCount = created.waitUntilTasks.length
 		await created.instance.alarm()
 		await drainSettledWaitUntilTasks(
@@ -972,7 +1107,9 @@ test('package service start/heartbeat/stop/purge shadow UserMeter transitions', 
 			sourceUpdatedAt: '2026-07-05T13:00:00.000Z',
 			revision: 2,
 		})
-		expect(created.getAlarmAt()).toBe(Date.parse('2026-07-05T14:00:00.000Z'))
+		expect(created.getAlarmAt()).toBe(
+			Date.parse('2026-07-05T13:00:00.000Z') + packageServiceKeepaliveMs,
+		)
 
 		const afterHeartbeatWaitUntilCount = created.waitUntilTasks.length
 		await postPackageService(created.instance, 'stop')

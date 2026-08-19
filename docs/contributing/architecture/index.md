@@ -51,6 +51,9 @@ to become.
   Object transfer and bounded D1 copy for extracting the jobs/scheduled lane
   into the `kody-jobs` Worker
   ([ADR 0016](../decisions/0016-mono-worker-extraction.md)).
+- [Values retirement runbook](./values-retirement-runbook.md): absorb values
+  into memories, package storage, repos, secrets, and integrations
+  ([ADR 0022](../decisions/0022-retire-values-primitive.md)).
 - [Primitives map](./primitives.yaml): stable taxonomy of system primitives and
   invariants for the visual-recap skill
   (`.agents/skills/visual-recap/SKILL.md`). It is not a living feature changelog

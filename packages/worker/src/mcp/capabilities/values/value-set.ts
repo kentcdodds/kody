@@ -12,7 +12,7 @@ export const valueSetCapability = defineDomainCapability(
 	{
 		name: 'value_set',
 		description:
-			'Create or update a readable persisted value for the signed-in user. Use this for non-sensitive configuration that package apps or workflows may need to read back later.',
+			'Write a readable persisted value. Do not use this for new config or state — load coding_guide_get({ guide: "values" }) and persist in memories, packageStorage(), a repo, secrets, or integrations instead. Existing names stay readable so they can be migrated.',
 		keywords: ['value', 'config', 'persist', 'store', 'non-secret'],
 		readOnly: false,
 		idempotent: false,

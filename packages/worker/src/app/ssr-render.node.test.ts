@@ -866,6 +866,312 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	).toBe(1)
 })
 
+test('renderAppPage server-renders simplified integration and secret-approval pages', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(
+		createUserTestDb([
+			{
+				id: 1,
+				email: 'user@example.com',
+				username: 'account-user',
+				password_hash: 'unused',
+				stable_user_id: testStableUserIdFromEmail('user@example.com'),
+				created_at: new Date(0).toISOString(),
+				updated_at: new Date(0).toISOString(),
+			},
+		]),
+	)
+	const cookie = await createAuthCookie(
+		{
+			stableUserId: testStableUserIdFromEmail('user@example.com'),
+			email: 'user@example.com',
+			rememberMe: false,
+		} satisfies AuthSession,
+		false,
+	)
+	const googleConnection = {
+		name: 'google',
+		appSlug: 'google',
+		provider: 'google',
+		appLabel: 'Google',
+		accountLabel: 'me@example.com',
+		tokenUrl: 'https://oauth2.googleapis.com/token',
+		apiBaseUrl: 'https://www.googleapis.com',
+		flow: 'confidential' as const,
+		usePkce: false,
+		clientId: 'google-client-id-value',
+		clientSecretSecretName: 'googleClientSecret',
+		accessTokenSecretName: 'googleAccessToken',
+		refreshTokenSecretName: 'googleRefreshToken',
+		requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
+		authorization: {
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			scopes: ['openid', 'email', 'profile'],
+			scopeSeparator: null,
+			extraAuthorizeParams: { access_type: 'offline' },
+		},
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+	}
+	const googleApp = {
+		slug: 'google',
+		provider: 'google',
+		label: 'Google',
+		clientId: 'google-client-id-value',
+		clientSecretSecretName: 'googleClientSecret',
+		tokenUrl: 'https://oauth2.googleapis.com/token',
+		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+		apiBaseUrl: 'https://www.googleapis.com',
+		flow: 'confidential' as const,
+		usePkce: false,
+		tokenExchangeStyle: null,
+		scopeSeparator: null,
+		extraAuthorizeParams: {},
+		connectionCount: 1,
+		connections: [{ name: 'google', accountLabel: 'me@example.com' }],
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+	}
+
+	const connectionResponse = await renderAppPage({
+		request: new Request('https://example.com/account/integrations/google', {
+			headers: { Cookie: cookie },
+		}),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [googleConnection],
+				apps: [googleApp],
+			},
+		},
+	})
+	expect(connectionResponse.status).toBe(200)
+	const connectionHtml = await readResponseText(connectionResponse)
+	expect(connectionHtml).toContain('1 account connected.')
+	expect(connectionHtml).toContain('>Reconnect<')
+	expect(connectionHtml).toContain('data-testid="provider-mark"')
+	expect(connectionHtml).toContain('data-testid="integration-advanced"')
+	expect(connectionHtml).toContain('data-testid="integration-connection"')
+	expect(connectionHtml).toContain('data-highlighted="true"')
+	expect(connectionHtml).toContain('Services you connect so Kody can use them.')
+	expect(connectionHtml).toContain('aria-label="Integrations"')
+	expect(connectionHtml).not.toContain('OAuth configured')
+	expect(connectionHtml).not.toContain('aria-label="OAuth apps"')
+	expect(connectionHtml).not.toContain('This account is connected.')
+
+	const appResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/account/integrations/apps/google',
+			{ headers: { Cookie: cookie } },
+		),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [googleConnection],
+				apps: [googleApp],
+			},
+		},
+	})
+	expect(appResponse.status).toBe(200)
+	const appHtml = await readResponseText(appResponse)
+	expect(appHtml).toContain('1 account connected.')
+	expect(appHtml).toContain('data-testid="integration-advanced"')
+	expect(appHtml).toContain('Rotate credentials')
+	expect(appHtml).not.toContain('data-highlighted="true"')
+	expect(appHtml).not.toContain('data-testid="built-in-indicator"')
+
+	const builtInApp = {
+		...googleApp,
+		platform: true,
+		clientSecretSecretName: null,
+		connectionCount: 2,
+		connections: [
+			{ name: 'google', accountLabel: 'me@example.com' },
+			{ name: 'google-work', accountLabel: 'work@example.com' },
+		],
+	}
+	const builtInConnection = {
+		...googleConnection,
+		platform: true,
+		clientSecretSecretName: null,
+	}
+	const needsSetupConnection = {
+		...builtInConnection,
+		name: 'google-work',
+		accountLabel: 'work@example.com',
+		authorization: null,
+		accessTokenSecretName: 'googleWorkAccessToken',
+	}
+	const builtInResponse = await renderAppPage({
+		request: new Request('https://example.com/account/integrations/google', {
+			headers: { Cookie: cookie },
+		}),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [builtInConnection, needsSetupConnection],
+				apps: [builtInApp],
+			},
+		},
+	})
+	const builtInHtml = await readResponseText(builtInResponse)
+	expect(builtInHtml).toContain('data-testid="built-in-indicator"')
+	expect(builtInHtml).toContain('Provided by Kody')
+	expect(builtInHtml).toContain('2 accounts connected.')
+	expect(builtInHtml).toContain('Needs setup')
+	expect(builtInHtml).toContain('>Connect<')
+	expect(builtInHtml).toContain(
+		'/connect/oauth?provider=google-work&amp;platform=google',
+	)
+	expect(builtInHtml).not.toContain('Rotate credentials')
+	expect(builtInHtml).not.toContain('Cursor-hosted repos')
+
+	const missingConnectionResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/account/integrations/missing-connection',
+			{ headers: { Cookie: cookie } },
+		),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [googleConnection],
+				apps: [googleApp],
+			},
+		},
+	})
+	const missingConnectionHtml = await readResponseText(
+		missingConnectionResponse,
+	)
+	expect(missingConnectionHtml).toContain('data-testid="connection-not-found"')
+	expect(missingConnectionHtml).toContain('Connection not found')
+
+	const missingIntegrationResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/account/integrations/apps/missing-app',
+			{ headers: { Cookie: cookie } },
+		),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [googleConnection],
+				apps: [googleApp],
+			},
+		},
+	})
+	const missingIntegrationHtml = await readResponseText(
+		missingIntegrationResponse,
+	)
+	expect(missingIntegrationHtml).toContain(
+		'data-testid="integration-not-found"',
+	)
+	expect(missingIntegrationHtml).toContain('Integration not found')
+
+	const emptyResponse = await renderAppPage({
+		request: new Request('https://example.com/account/integrations', {
+			headers: { Cookie: cookie },
+		}),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [],
+				apps: [],
+			},
+		},
+	})
+	const emptyHtml = await readResponseText(emptyResponse)
+	expect(emptyHtml).toContain(
+		'No integrations yet. Copy a setup prompt below to get started.',
+	)
+	expect(emptyHtml).not.toContain('aria-label="OAuth apps"')
+	expect(emptyHtml).not.toContain('Cursor-hosted repos')
+
+	const approvalResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/account/secrets/user/googleAccessToken?allowed-host=gmail.googleapis.com',
+			{ headers: { Cookie: cookie } },
+		),
+		env,
+		loaderData: {
+			accountSecrets: {
+				ok: true,
+				email: 'user@example.com',
+				packageOptions: [],
+				packages: [],
+				secrets: [
+					{
+						id: 'user:googleAccessToken',
+						name: 'googleAccessToken',
+						scope: 'user',
+						description: '',
+						packageId: null,
+						packageTitle: null,
+						allowedHosts: ['oauth2.googleapis.com'],
+						allowedCapabilities: [],
+						allowedPackages: [],
+						createdAt: '2026-01-01T00:00:00.000Z',
+						updatedAt: '2026-01-01T00:00:00.000Z',
+						ttlMs: null,
+					},
+				],
+				selectedSecret: {
+					id: 'user:googleAccessToken',
+					name: 'googleAccessToken',
+					scope: 'user',
+					description: '',
+					packageId: null,
+					packageTitle: null,
+					allowedHosts: ['oauth2.googleapis.com'],
+					allowedCapabilities: [],
+					allowedPackages: [],
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+					ttlMs: null,
+					value: 'redacted',
+				},
+				approval: {
+					name: 'googleAccessToken',
+					names: ['googleAccessToken'],
+					scope: 'user',
+					requestedHost: 'gmail.googleapis.com',
+					requestedCapability: null,
+					requestedPackageId: null,
+					currentAllowedHosts: ['oauth2.googleapis.com'],
+					currentAllowedCapabilities: [],
+					currentAllowedPackages: [],
+				},
+				approvalError: null,
+			},
+		},
+	})
+	expect(approvalResponse.status).toBe(200)
+	const approvalHtml = await readResponseText(approvalResponse)
+	expect(approvalHtml).toContain('Allow access')
+	expect(approvalHtml).toContain('Let Kody use this connection at')
+	expect(approvalHtml).toContain('gmail.googleapis.com')
+	expect(approvalHtml).toContain('data-testid="secret-approval-advanced"')
+	expect(approvalHtml).not.toContain('Approve secret access')
+	expect(approvalHtml).not.toContain('Current allowed hosts:')
+})
+
 test('renderAppPage renders the redesigned pricing page', async () => {
 	resetDataCacheForTests()
 	setAuthSessionSecret(testCookieSecret)

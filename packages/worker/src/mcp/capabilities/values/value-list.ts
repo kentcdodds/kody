@@ -12,7 +12,7 @@ export const valueListCapability = defineDomainCapability(
 	{
 		name: 'value_list',
 		description:
-			'List readable persisted values for the signed-in user. When scope is omitted, results include every accessible scope in precedence order.',
+			'List existing persisted values so they can be migrated. Do not add new ones; load coding_guide_get({ guide: "values" }). When scope is omitted, results include every accessible scope in precedence order.',
 		keywords: ['value', 'config', 'list', 'metadata', 'non-secret'],
 		readOnly: true,
 		idempotent: true,

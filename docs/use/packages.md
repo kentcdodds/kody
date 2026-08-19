@@ -433,6 +433,9 @@ Use the package service model when the package needs:
 - package-owned daemon-like logic
 - package state that is separate from browser sessions
 - a service that should publish updates into a package app
+- an outbound WebSocket or reconnect loop (`mode: 'persistent'`, persist resume
+  cursors in `packageStorage()`; the host keeps the isolate awake and
+  immediately resumes after eviction)
 
 Treat package services like package-owned runtime modules:
 

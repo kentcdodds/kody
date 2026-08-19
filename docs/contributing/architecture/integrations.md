@@ -150,8 +150,9 @@ active image format is never stored or served. Assets live in the
 `platform-oauth-app-logos/{slug}/` keys (operator-owned, like the app row);
 `platform_oauth_apps.logo_key` / `logo_content_type` point at the current asset.
 Serving is the public `/integrations/logos/:integrationSlug` route with
-immutable caching; projections expose the relative `logoPath` and the connect
-page renders it, falling back to the built-in `ProviderIcon` set.
+immutable caching; projections expose the relative `logoPath`. The connect page
+and account integration views render it, falling back to the built-in
+`ProviderIcon` set.
 
 ### Admin provisioning
 
@@ -240,13 +241,15 @@ callers do not need to join app and connection themselves.
 
 ## Account UI
 
-`/account/integrations` lists connections grouped under the OAuth app they
-share. Each app also has its own page at `/account/integrations/apps/:appSlug`
-(a connection named `apps` resolves at `/account/integrations/apps`). The app
-page shows provider metadata, client id, client-secret secret name (never
-values), endpoints, flow / PKCE / exchange style, timestamps, and the
-connections that would be affected by a credential rotation. The rotate form
-posts to `/account/integrations.json` with
+`/account/integrations` is a list of integrations (the services you connect:
+Google, GitHub). Selecting a row shows that integration and the connections
+(signed-in accounts) on it. Built-in integrations show a small “Provided by
+Kody” indicator. Deep links to a connection (`/account/integrations/:name`) open
+the parent integration and highlight that connection. User-registered
+integrations also have `/account/integrations/apps/:appSlug` (a connection named
+`apps` resolves at `/account/integrations/apps`). Endpoints, secret names, host
+allowlists, flow / PKCE / exchange style, and credential rotation stay behind an
+advanced disclosure. The rotate form posts to `/account/integrations.json` with
 `action: "rotate_oauth_app_credentials"`: it stores a new client-secret value in
 the secret store (when provided), then calls `rotateOauthAppClientCredentials`
 so every sibling connection picks up the new client id / secret name on the next

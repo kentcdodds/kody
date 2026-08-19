@@ -20,6 +20,7 @@ import { invariant } from '@epic-web/invariant'
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/server/validators/cf-worker'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { loadActiveRetiringNoticeIds } from './instructions/retiring-primitives.ts'
 import { buildMcpServerInstructions } from './server-instructions.ts'
 import { registerTools } from './register-tools.ts'
 import {
@@ -52,7 +53,7 @@ export async function handleStatelessMcpRequest(input: {
 	const handler = createMcpHandler(
 		async () => {
 			// `server/discover` is the only modern method that returns server
-			// metadata, so instruction assembly (three D1 reads) stays off the
+			// metadata, so instruction assembly (four D1 reads) stays off the
 			// tools/call hot path. Modern Streamable HTTP requires the
 			// Mcp-Method header, and the SDK rejects header/body mismatches.
 			const instructions =
@@ -89,22 +90,25 @@ async function buildStatelessServerInstructions(input: {
 	callerContext: McpCallerContext
 }) {
 	const userId = input.callerContext.user?.userId ?? null
-	const [overlay, registry, popularPackages] = await Promise.all([
-		userId !== null
-			? getMcpUserServerInstructions(input.env.APP_DB, userId)
-			: Promise.resolve(null),
-		getCapabilityRegistryForContext({
-			env: input.env,
-			callerContext: input.callerContext,
-		}),
-		userId !== null
-			? listPopularAgentPackagesForUser(input.env.APP_DB, { userId })
-			: Promise.resolve([]),
-	])
+	const [overlay, registry, popularPackages, retiringNoticeIds] =
+		await Promise.all([
+			userId !== null
+				? getMcpUserServerInstructions(input.env.APP_DB, userId)
+				: Promise.resolve(null),
+			getCapabilityRegistryForContext({
+				env: input.env,
+				callerContext: input.callerContext,
+			}),
+			userId !== null
+				? listPopularAgentPackagesForUser(input.env.APP_DB, { userId })
+				: Promise.resolve([]),
+			loadActiveRetiringNoticeIds(input.env.APP_DB, userId),
+		])
 	return buildMcpServerInstructions({
 		userOverlay: overlay,
 		domains: registry.capabilityDomains,
 		popularPackages,
+		retiringNoticeIds,
 	})
 }
 

@@ -12,7 +12,7 @@ export const valueGetCapability = defineDomainCapability(
 	{
 		name: 'value_get',
 		description:
-			'Read a persisted non-secret value by name. When scope is omitted, Kody checks the accessible scopes in precedence order.',
+			'Read an existing persisted value by name. Do not add new values; load coding_guide_get({ guide: "values" }) to migrate. When scope is omitted, Kody checks accessible scopes in precedence order.',
 		keywords: ['value', 'config', 'read', 'lookup', 'non-secret'],
 		readOnly: true,
 		idempotent: true,
