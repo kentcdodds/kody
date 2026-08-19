@@ -26,6 +26,7 @@ import providerOrigin from '../../../../docs/guides/providers/origin.md'
 import providerSlack from '../../../../docs/guides/providers/slack.md'
 import providerSpotify from '../../../../docs/guides/providers/spotify.md'
 import secretBackedIntegration from '../../../../docs/guides/secret-backed-integration.md'
+import values from '../../../../docs/guides/values.md'
 import whatIsKody from '../../../../docs/guides/what-is-kody.md'
 
 /**
@@ -59,6 +60,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'package-service-pattern', raw: packageServicePattern },
 	{ slug: 'package-subscriptions', raw: packageSubscriptions },
 	{ slug: 'platform-friction', raw: platformFriction },
+	{ slug: 'values', raw: values },
 	{ slug: 'openapi-integrations', raw: openapiIntegrations },
 	{ slug: 'google', raw: providerGoogle },
 	{ slug: 'github', raw: providerGithub },

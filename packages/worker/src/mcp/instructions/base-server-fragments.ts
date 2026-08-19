@@ -1,4 +1,6 @@
-export const kodyOverviewInstructions = `Kody is a multi-user personal assistant. Each signed-in user gets a fully isolated assistant (packages, jobs, secrets, values, memories, connectors, email, storage) exposed through two MCP tools: \`search\` and \`execute\`.`
+import { formatRetiringPrimitivesInstructions } from './retiring-primitives.ts'
+
+export const kodyOverviewInstructions = `Kody is a multi-user personal assistant. Each signed-in user gets a fully isolated assistant (packages, jobs, secrets, memories, connectors, email, storage) exposed through two MCP tools: \`search\` and \`execute\`.`
 
 export const endUserDocumentationInstructions = `End-user documentation (workflows, secrets, troubleshooting):
 https://github.com/kentcdodds/kody/tree/main/docs/use`
@@ -26,13 +28,16 @@ export const conventionInstructions = `Conventions:
 - Integration-backed work: before building packages/apps that need third-party auth, load \`coding_guide_get({ guide: "integration_bootstrap" })\`, confirm the \`integration\` or \`secret\` via \`search\`, run a cheap authenticated \`execute\` smoke test, then \`community_search\` for a trusted close package. Do not call auth-dependent work complete until that smoke test succeeds.
 - After \`package_save\` / \`package_publish_external_push\`, read \`pending_secret_package_approvals\` in the tool result when present; follow its guidance before calling the package complete.
 - Git identity on Kody remotes: use \`git_author\` from \`package_get_git_remote\` / \`repo_get_git_remote\` (signed-in account email and display name). Never invent an email. \`meta_get_current_user\` returns the same identity.
-- Package state: source is the repo; config is secrets/values keyed by saved package id; durable data is \`packageStorage()\`; coordination is services; schedules are jobs — package apps/jobs/services are package-owned surfaces, not separate primitives.
+- Package state: source is the repo; config is secrets keyed by saved package id; durable data is \`packageStorage()\`; coordination is services; schedules are jobs — package apps/jobs/services are package-owned surfaces, not separate primitives.
 - When sharing a community listing with a human, use its \`public_url\` (\`/@username/kody-id\`); never construct \`/community/{listing_id}\` for people.
 - Discover capabilities with \`search\`; entity detail includes the exact call shape. Memory writes are verify-first: \`meta_memory_verify\` before upsert/delete.
 - Durable user facts and preferences belong in memories. The optional MCP instruction overlay (\`meta_get_mcp_server_instructions\` / \`meta_set_mcp_server_instructions\`) is only for rare always-on session policy — not package inventory (popular packages are hinted automatically). Overlay updates apply to new MCP sessions.`
 
 export const domainHeadingInstructions =
 	'Domains (scope discovery with `search({ query, domain })` or list one with `search({ domain })`)'
+
+export const retiringPrimitivesInstructions =
+	formatRetiringPrimitivesInstructions()
 
 export const baseMcpServerInstructionFragmentsBeforePopular = [
 	kodyOverviewInstructions,
@@ -42,7 +47,8 @@ export const baseMcpServerInstructionFragmentsBeforePopular = [
 	packageEscalationInstructions,
 	packageAuthoringLaneInstructions,
 	conventionInstructions,
-] as const
+	retiringPrimitivesInstructions,
+].filter((fragment) => fragment.length > 0)
 
 export const baseMcpServerInstructionFragmentsAfterPopular = [
 	domainHeadingInstructions,
