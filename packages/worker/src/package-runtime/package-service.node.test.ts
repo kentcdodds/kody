@@ -695,7 +695,9 @@ test('running keepalive alarms do not start a second service run', async () => {
 		)
 
 		vi.setSystemTime(
-			new Date(Date.parse('2026-07-05T12:00:00.000Z') + packageServiceKeepaliveMs),
+			new Date(
+				Date.parse('2026-07-05T12:00:00.000Z') + packageServiceKeepaliveMs,
+			),
 		)
 		await created.instance.alarm()
 		await drainSettledWaitUntilTasks(created.waitUntilTasks)
@@ -1056,7 +1058,9 @@ test('package service start/heartbeat/stop/purge shadow UserMeter transitions', 
 		)
 
 		vi.setSystemTime(
-			new Date(Date.parse('2026-07-05T12:00:00.000Z') + packageServiceKeepaliveMs),
+			new Date(
+				Date.parse('2026-07-05T12:00:00.000Z') + packageServiceKeepaliveMs,
+			),
 		)
 		const afterKeepaliveWaitUntilCount = created.waitUntilTasks.length
 		await created.instance.alarm()

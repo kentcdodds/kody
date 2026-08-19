@@ -200,8 +200,8 @@ outbound sockets). Persistent services resume immediately after Durable Object
 eviction even when `autoStart` is false. Bounded services still use crash-loop
 backoff when `autoStart` is true.
 
-Use `timeoutMs` to give a bounded service enough room to run, but do not rely
-on indefinite execution as the only lifecycle mechanism.
+Use `timeoutMs` to give a bounded service enough room to run, but do not rely on
+indefinite execution as the only lifecycle mechanism.
 
 ## What to persist
 

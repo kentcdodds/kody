@@ -116,8 +116,8 @@ Saved packages may also declare long-lived package services under
   including any outbound WebSocket.
 - `mode: 'persistent'` means stay up until stopped. Eviction is treated as a
   platform interrupt: the host immediately reschedules the same service, even
-  when `autoStart` is false. Persist resume cursors (`session_id`, sequence)
-  in `packageStorage()` so the next run can continue.
+  when `autoStart` is false. Persist resume cursors (`session_id`, sequence) in
+  `packageStorage()` so the next run can continue.
 
 ## Workflow runtime
 
