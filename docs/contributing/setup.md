@@ -204,6 +204,9 @@ Use this script to ensure a known test login exists in any deployed environment:
   - `jane@example.com` — regular account (`user` role only), seeded alongside
     the primary account for testing the non-admin side of RBAC (local seeding
     only; never seeded into remote environments)
+- Each seeded account also gets a sample user-lane Google integration with
+  Personal and Work connections so `/account/integrations` can be exercised
+  without a live OAuth dance.
 - These credentials are a test fixture only and should not be used to describe
   product behavior. Pass `--no-admin` to seed the default account without the
   admin role.
