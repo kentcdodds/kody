@@ -991,11 +991,23 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 		...googleApp,
 		platform: true,
 		clientSecretSecretName: null,
+		connectionCount: 2,
+		connections: [
+			{ name: 'google', accountLabel: 'me@example.com' },
+			{ name: 'google-work', accountLabel: 'work@example.com' },
+		],
 	}
 	const builtInConnection = {
 		...googleConnection,
 		platform: true,
 		clientSecretSecretName: null,
+	}
+	const needsSetupConnection = {
+		...builtInConnection,
+		name: 'google-work',
+		accountLabel: 'work@example.com',
+		authorization: null,
+		accessTokenSecretName: 'googleWorkAccessToken',
 	}
 	const builtInResponse = await renderAppPage({
 		request: new Request('https://example.com/account/integrations/google', {
@@ -1007,7 +1019,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 				ok: true,
 				email: 'user@example.com',
 				username: 'account-user',
-				integrations: [builtInConnection],
+				integrations: [builtInConnection, needsSetupConnection],
 				apps: [builtInApp],
 			},
 		},
@@ -1015,8 +1027,14 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	const builtInHtml = await readResponseText(builtInResponse)
 	expect(builtInHtml).toContain('data-testid="built-in-indicator"')
 	expect(builtInHtml).toContain('Provided by Kody')
-	expect(builtInHtml).toContain('1 account connected.')
+	expect(builtInHtml).toContain('2 accounts connected.')
+	expect(builtInHtml).toContain('Needs setup')
+	expect(builtInHtml).toContain('>Connect<')
+	expect(builtInHtml).toContain(
+		'/connect/oauth?provider=google-work&amp;platform=google',
+	)
 	expect(builtInHtml).not.toContain('Rotate credentials')
+	expect(builtInHtml).not.toContain('Cursor-hosted repos')
 
 	const missingConnectionResponse = await renderAppPage({
 		request: new Request(
@@ -1084,6 +1102,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 		'No integrations yet. Copy a setup prompt below to get started.',
 	)
 	expect(emptyHtml).not.toContain('aria-label="OAuth apps"')
+	expect(emptyHtml).not.toContain('Cursor-hosted repos')
 
 	const approvalResponse = await renderAppPage({
 		request: new Request(

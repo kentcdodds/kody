@@ -252,12 +252,20 @@ function formatOptional(value: string | null | undefined) {
 	return value?.trim() ? value : 'None'
 }
 
-function buildConnectOauthHref(integration: AccountIntegrationListItem) {
-	const authorization = integration.authorization
-	if (!authorization?.authorizeUrl) return null
-
-	const params = new URLSearchParams({ provider: integration.name })
+function buildConnectOauthHref(input: {
+	name: string
+	platform?: boolean
+	appSlug?: string
+}) {
+	const params = new URLSearchParams({ provider: input.name })
+	if (input.platform) {
+		params.set('platform', input.appSlug?.trim() || '1')
+	}
 	return `/connect/oauth?${params.toString()}`
+}
+
+function connectActionLabel(status: 'Connected' | 'Needs setup') {
+	return status === 'Connected' ? 'Reconnect' : 'Connect'
 }
 
 function PlugIcon() {
@@ -308,7 +316,7 @@ function BuiltInIcon() {
 			aria-hidden="true"
 			fill="currentColor"
 		>
-			<path d="M8 1.15 9.4 5.1l4.2.34-3.22 2.66.98 4.1L8 10.12 4.64 12.2l.98-4.1L2.4 5.44 6.6 5.1 8 1.15Z" />
+			<path d="M5.5 2.5a3.5 3.5 0 0 0-1.4 6.7L2.2 11.1v2.4h2.4l.6-.6H6.8v-1.6H8.4v-1.6h1.2L10.8 8.5A3.5 3.5 0 0 0 5.5 2.5Zm0 1.6a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8Z" />
 		</svg>
 	)
 }
@@ -797,10 +805,31 @@ export function AccountIntegrationsRoute(handle: Handle) {
 										<section mix={css({ display: 'grid', gap: spacing.sm })}>
 											<h3 mix={css(sectionTitleCss)}>Connections</h3>
 											{selectedApp.connections.length === 0 ? (
-												<p mix={css(descriptionCss)}>
-													No accounts connected yet. Finish connect setup for
-													this integration.
-												</p>
+												<div
+													mix={css({
+														display: 'grid',
+														gap: spacing.sm,
+														justifyItems: 'start',
+													})}
+												>
+													<p mix={css(descriptionCss)}>
+														No accounts connected yet.
+													</p>
+													<a
+														href={buildConnectOauthHref({
+															name: selectedApp.slug,
+															platform: isBuiltInApp(selectedApp),
+															appSlug: selectedApp.slug,
+														})}
+														mix={css({
+															...getPillButtonCss({ size: 'sm' }),
+															display: 'inline-flex',
+															textDecoration: 'none',
+														})}
+													>
+														Connect
+													</a>
+												</div>
 											) : (
 												<div
 													mix={css({
@@ -814,9 +843,16 @@ export function AccountIntegrationsRoute(handle: Handle) {
 														)
 														const highlighted =
 															connectionRef.name === highlightedConnectionName
-														const connectHref = connection
-															? buildConnectOauthHref(connection)
-															: null
+														const status = connection
+															? connectionStatusLabel(connection)
+															: 'Needs setup'
+														const connectHref = buildConnectOauthHref({
+															name: connectionRef.name,
+															platform:
+																connection?.platform ??
+																isBuiltInApp(selectedApp),
+															appSlug: connection?.appSlug ?? selectedApp.slug,
+														})
 														return (
 															<article
 																key={connectionRef.name}
@@ -857,27 +893,23 @@ export function AccountIntegrationsRoute(handle: Handle) {
 																	>
 																		<code>{connectionRef.name}</code>
 																		{' · '}
-																		{connection
-																			? connectionStatusLabel(connection)
-																			: 'Needs setup'}
+																		{status}
 																	</p>
 																</div>
-																{connectHref ? (
-																	<div>
-																		<a
-																			href={connectHref}
-																			mix={css({
-																				...getPillButtonCss({
-																					size: 'sm',
-																				}),
-																				display: 'inline-flex',
-																				textDecoration: 'none',
-																			})}
-																		>
-																			Reconnect
-																		</a>
-																	</div>
-																) : null}
+																<div>
+																	<a
+																		href={connectHref}
+																		mix={css({
+																			...getPillButtonCss({
+																				size: 'sm',
+																			}),
+																			display: 'inline-flex',
+																			textDecoration: 'none',
+																		})}
+																	>
+																		{connectActionLabel(status)}
+																	</a>
+																</div>
 															</article>
 														)
 													})}
