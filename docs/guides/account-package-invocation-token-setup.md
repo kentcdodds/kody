@@ -113,9 +113,10 @@ curl -X POST \
 	}'
 ```
 
-When a token is scoped to allowed sources, the request JSON `source` must match
-one of those source labels exactly. For Kent's YouTube Worker, use
-`"source": "youtube-websub-proxy"`.
+When a token lists allowed sources, the request JSON `source` must match one of
+those labels exactly. For Kent's YouTube Worker, use
+`"source": "youtube-websub-proxy"`. When the list is empty, omit `source` or
+send null; a named `source` is rejected.
 
 Prefer canonical URL metadata from package discovery over manual string
 construction. `package_get` and package entity search details include canonical
@@ -151,7 +152,8 @@ they speak MCP.
    - `POST` to the canonical owner-scoped invocation URL from package metadata,
      not to an `/account/packages/...` setup URL
    - `Authorization: Bearer <raw-token>`
-   - JSON `source` matching one of the allowed sources when sources are scoped
+   - JSON `source` matching one of the allowed sources when the token lists
+     sources; omit `source` when the list is empty
 6. Never display, log, store in docs, or send raw token material through chat or
    query params.
 

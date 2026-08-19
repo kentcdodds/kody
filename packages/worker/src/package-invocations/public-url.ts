@@ -18,7 +18,7 @@ export type ExternalPackageInvocationDescriptor = {
 }
 
 const sourceGuidance =
-	'If the package invocation token is scoped to allowedSources, include JSON "source" with the exact allowed source label. Otherwise omit "source" or send null.'
+	'If the token lists allowedSources, include JSON "source" with an exact listed label. If the list is empty, omit "source" or send null.'
 
 function buildPackageInvocationTokenSetupExportName(exportName: string) {
 	const normalized = normalizePackageInvocationExportName(exportName)

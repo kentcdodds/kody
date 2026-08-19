@@ -219,7 +219,9 @@ export const packageInvocationTokenMetadataSchema = z.object({
 		),
 	allowed_sources: z
 		.array(z.string())
-		.describe('Optional exact source labels allowed by this token record.'),
+		.describe(
+			'Exact source labels this token accepts in request JSON. Empty allows unlabeled requests only; a named source must match the list.',
+		),
 	created_at: z.string(),
 	updated_at: z.string(),
 	last_used_at: z

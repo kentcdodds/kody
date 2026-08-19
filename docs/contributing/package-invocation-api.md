@@ -147,7 +147,8 @@ Fields:
 - `params` — JSON object passed as the first argument to the package export
 - `idempotencyKey` — required stable key for replay protection
 - `source` — optional source label for auditing and token scoping; when present,
-  it must match the token's `sources_json` allowlist
+  it must match the token's `sources` list. Omit it or send null when that list
+  is empty.
 - `topic` — optional event topic label for downstream logic and logs
 
 ## Idempotency
@@ -286,10 +287,11 @@ Recommended flow for a trusted external client:
 5. send invocation requests with `Authorization: Bearer <raw-token>` and
    `"source": "trusted-client"`
 
-A token with `exportNames: ["*"]` can call any export on that package, but only
-for requests that identify themselves with an allowed source when sources are
-scoped. Cross-package callers invoke one package (an orchestrator or discovery
-package) and use `packages.invoke` inside Kody, or they speak MCP.
+A token with `exportNames: ["*"]` can call any export on that package. When the
+token lists allowed sources, the request must send one of those labels as JSON
+`source`. An empty source list allows unlabeled requests only; a named `source`
+is rejected. Cross-package callers invoke one package (an orchestrator or
+discovery package) and use `packages.invoke` inside Kody, or they speak MCP.
 
 ## Related
 

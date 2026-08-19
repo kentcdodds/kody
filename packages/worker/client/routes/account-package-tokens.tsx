@@ -123,6 +123,11 @@ function formatScope(values: Array<string>) {
 	return values.join(', ')
 }
 
+function formatSources(values: Array<string>) {
+	if (values.length === 0) return 'Unlabeled only'
+	return values.join(', ')
+}
+
 function tokenStatus(token: AccountPackageToken) {
 	return token.revokedAt ? 'Revoked' : 'Active'
 }
@@ -392,8 +397,7 @@ export function AccountPackageTokens(
 									Exports: {formatScope(token.exportNames)}
 								</p>
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Sources:{' '}
-									{token.sources.length > 0 ? token.sources.join(', ') : 'Any'}
+									Sources: {formatSources(token.sources)}
 								</p>
 								{token.lastUsedAt ? (
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
