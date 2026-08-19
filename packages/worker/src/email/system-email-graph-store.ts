@@ -656,6 +656,18 @@ export async function deleteSystemEmailMessageById(input: {
 
 export type SystemEmailAdminListRow = Record<string, unknown>
 
+/**
+ * Resolve the admin "Inbox" label from `email_inboxes.name`.
+ *
+ * Do not join `email_inbox_addresses` here. One operator inbox can have
+ * several address rows — one per accepted system domain (canonical plus
+ * `LEGACY_SYSTEM_EMAIL_DOMAINS`) — all with the same local part. That join
+ * fans the list out (three identical rows per message in production).
+ */
+const adminSystemInboxJoin = `LEFT JOIN email_inboxes AS inbox
+	ON inbox.id = message.inbox_id
+	AND inbox.user_id = ?`
+
 export async function listSystemEmailAdminMessages(input: {
 	db: D1Database
 	pageSize: number
@@ -672,14 +684,12 @@ export async function listSystemEmailAdminMessages(input: {
 			.first<{ total: number }>(),
 		input.db
 			.prepare(
-				`SELECT message.id, address.local_part AS inbox_local_part,
+				`SELECT message.id, inbox.name AS inbox_local_part,
 					message.from_address, message.envelope_from, message.subject,
 					message.processing_status, message.raw_size, message.received_at,
 					message.created_at
 				FROM system_email_messages AS message
-				LEFT JOIN email_inbox_addresses AS address
-					ON address.inbox_id = message.inbox_id
-					AND address.user_id = ?
+				${adminSystemInboxJoin}
 				WHERE message.direction = 'inbound'
 				ORDER BY message.created_at DESC, message.id DESC
 				LIMIT ? OFFSET ?`,
@@ -700,11 +710,9 @@ export async function getSystemEmailAdminMessageRow(input: {
 	await assertSystemEmailGraphAuthority(input.db)
 	return await input.db
 		.prepare(
-			`SELECT message.*, address.local_part AS inbox_local_part
+			`SELECT message.*, inbox.name AS inbox_local_part
 			FROM system_email_messages AS message
-			LEFT JOIN email_inbox_addresses AS address
-				ON address.inbox_id = message.inbox_id
-				AND address.user_id = ?
+			${adminSystemInboxJoin}
 			WHERE message.id = ?
 			LIMIT 1`,
 		)
