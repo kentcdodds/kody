@@ -82,8 +82,7 @@ export function createTokenEditorStateFromHref(href: string): TokenEditorState {
 	return {
 		name: readTrimmedParam(params, 'name') ?? '',
 		rawToken: '',
-		exportNames:
-			exportNames.length > 0 ? exportNames : [packageTokenWildcardExport],
+		exportNames,
 	}
 }
 
@@ -91,7 +90,7 @@ function createEmptyEditorState(): TokenEditorState {
 	return {
 		name: '',
 		rawToken: '',
-		exportNames: [packageTokenWildcardExport],
+		exportNames: [],
 	}
 }
 
