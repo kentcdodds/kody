@@ -5,46 +5,48 @@ Executable plan for retiring the values primitive (ADR
 does **not** change production behavior.
 
 Intended cadence is about thirty days. Removal waits for the gates in
-[Retirement criterion](#retirement-criterion), the same metrics-then-cut
-pattern as [0005](../decisions/0005-mcp-dual-lane-stateless-migration.md). If
-a later readout fails a gate, reset that phase's clock.
+[Retirement criterion](#retirement-criterion), the same metrics-then-cut pattern
+as [0005](../decisions/0005-mcp-dual-lane-stateless-migration.md). If a later
+readout fails a gate, reset that phase's clock.
 
 ## Destination map
 
 Do not invent a replacement primitive.
 
-| Job | Destination | Production examples (2026-08-19) |
-| --- | --- | --- |
-| Platform UI dismiss | `users.onboarding_checklist_dismissed_at` | `onboardingChecklistDismissed` (Kent + 6 others) |
-| Durable facts / preferences | memories (`meta_memory_*`, verify-first) | `user/residential_address`, timezone, `user_profile` |
-| Package runtime state / cache | `packageStorage()` | `shadeAutomationState` / `Plan`, `hrvAirQualityAutomationState`, Ben's `cJob*` / `sB*` chunks |
-| Versioned calibration | plain repo (live-at-HEAD) | `shadeAutomationConfig` — already on `home-automation-config` |
-| Package-owned knobs | `packageStorage()` or a file in that package repo | `flaky_detector_*` (olafsulich) |
-| Shared ids used by several packages | owning package export, or one small settings package others invoke | Discord channel ids, `devinOrgId`, `originAppId` |
-| OAuth client ids | integrations / platform OAuth apps | `googleClientId`, `slack-client-id`, `github-client-id`, … |
-| Credentials | secrets | `skillRunnerTokens` (readable + searchable today — move first) |
+| Job                                 | Destination                                                        | Production examples (2026-08-19)                                                              |
+| ----------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Platform UI dismiss                 | `users.onboarding_checklist_dismissed_at`                          | `onboardingChecklistDismissed` (Kent + 6 others)                                              |
+| Durable facts / preferences         | memories (`meta_memory_*`, verify-first)                           | `user/residential_address`, timezone, `user_profile`                                          |
+| Package runtime state / cache       | `packageStorage()`                                                 | `shadeAutomationState` / `Plan`, `hrvAirQualityAutomationState`, Ben's `cJob*` / `sB*` chunks |
+| Versioned calibration               | plain repo (live-at-HEAD)                                          | `shadeAutomationConfig` — already on `home-automation-config`                                 |
+| Package-owned knobs                 | `packageStorage()` or a file in that package repo                  | `flaky_detector_*` (olafsulich)                                                               |
+| Shared ids used by several packages | owning package export, or one small settings package others invoke | Discord channel ids, `devinOrgId`, `originAppId`                                              |
+| OAuth client ids                    | integrations / platform OAuth apps                                 | `googleClientId`, `slack-client-id`, `github-client-id`, …                                    |
+| Credentials                         | secrets                                                            | `skillRunnerTokens` (readable + searchable today — move first)                                |
 
-`app` and `session` scopes have no production rows. Do not migrate them;
-delete the unused buckets with the tables.
+`app` and `session` scopes have no production rows. Do not migrate them; delete
+the unused buckets with the tables.
 
 ## Agent channel
 
-Do not dump this runbook into always-on MCP instructions. Agents get a
-one-line notice from `retiringPrimitiveNotices`
-(`packages/worker/src/mcp/instructions/retiring-primitives.ts`) that points
-at `coding_guide_get({ guide: "values" })`. The destination map and steps
-live in `docs/guides/values.md`. An empty registry omits the section, so
-later retirements reuse the same slot: add a notice plus a coding guide,
-then delete both when the primitive is gone.
+Do not dump this runbook into always-on MCP instructions. Agents for users who
+still have at least one non-expired stored value get a one-line notice from
+`retiringPrimitiveNotices`
+(`packages/worker/src/mcp/instructions/retiring-primitives.ts`) that points at
+`coding_guide_get({ guide: "values" })`. Users with no value rows (or only an
+empty / expired bucket) do not see the section. The destination map and steps
+live in `docs/guides/values.md`. An empty active-notice set omits the section,
+so later retirements reuse the same slot: add a notice plus a coding guide and a
+cheap EXISTS gate, then delete both when the primitive is gone.
 
-This PR ships that notice and guide. Later phase-1 work still moves
-onboarding dismiss, `skillRunnerTokens`, write-result hints, and insights
+This PR ships that per-affected-user notice and guide. Later phase-1 work still
+moves onboarding dismiss, `skillRunnerTokens`, write-result hints, and insights
 counts.
 
 ## Production inventory (baseline, 2026-08-19)
 
-Read-only D1 counts on `kody` (`value_buckets` ⨝ `users`). Names only; no
-stored contents.
+Read-only D1 counts on `kody` (`value_buckets` ⨝ `users`). Names only; no stored
+contents.
 
 - 62 accounts, 19 users with a value bucket, 18 with ≥1 row, **122** rows
 - All rows `scope = 'user'`
@@ -72,14 +74,14 @@ GROUP BY vb.scope;
 
 ### Phase 0 — Record the decision and tell agents (this change)
 
-Ship ADR 0022, this runbook, the retiring-primitives instruction notice, and
-the `values` coding guide. `value_set` still writes. `primitives.yaml` still
-lists `values` until the removal PR.
+Ship ADR 0022, this runbook, the per-affected-user retiring-primitives
+instruction notice, and the `values` coding guide. `value_set` still writes.
+`primitives.yaml` still lists `values` until the removal PR.
 
 ### Phase 1 — Stop the bleeding (week 1)
 
-Goal: the platform stops *creating* reasons to use values, and the one
-security smell leaves the readable store.
+Goal: the platform stops _creating_ reasons to use values, and the one security
+smell leaves the readable store.
 
 1. **Move onboarding dismiss off values.** Add
    `users.onboarding_checklist_dismissed_at` (nullable ISO timestamp). Backfill
@@ -89,12 +91,14 @@ security smell leaves the readable store.
    the stored string; bearer tokens must not live there.
 3. **Tell agents in server instructions.** Keep a `retiringPrimitiveNotices`
    registry (`packages/worker/src/mcp/instructions/retiring-primitives.ts`).
-   Each notice is one line plus `coding_guide_get({ guide })`. The values
-   destination map lives in `docs/guides/values.md` (id `values`), not in the
-   always-on instruction string. An empty registry omits the section. Future
-   retirements add a notice + guide the same way. Also stop recommending
-   values in execute tool text, capability descriptions, usage docs, and
-   project-intent's isolation list.
+   Each notice is one line plus `coding_guide_get({ guide })`, and
+   `loadActiveRetiringNoticeIds` includes the values notice only when that user
+   still has a live stored value. The destination map lives in
+   `docs/guides/values.md` (id `values`), not in the always-on instruction
+   string. An empty active set omits the section. Future retirements add a
+   notice + guide + EXISTS gate the same way. Also stop recommending values in
+   execute tool text, capability descriptions, usage docs, and project-intent's
+   isolation list.
 4. **Deprecate writes in place.** `value_set` and `POST /account/values.json`
    still succeed. Responses and the account UI include a deprecation notice and
    a destination hint (table above). Do not add a new MCP capability for this —
@@ -104,9 +108,8 @@ security smell leaves the readable store.
    `users_with_value_rows` (counts only, no names or contents). That is the
    phase dashboard; remove the counters with the primitive.
 6. **Retire values as the preview-manual-test example.** Point
-   `docs/contributing/preview-manual-testing.md` and the skill at a surface
-   that will survive (memories, secrets metadata, or the new onboarding
-   column).
+   `docs/contributing/preview-manual-testing.md` and the skill at a surface that
+   will survive (memories, secrets metadata, or the new onboarding column).
 
 Do **not** auto-upsert memories from values (verify-first). Do **not** hide
 `value_get` / `value_list` / search-entity `value` yet — agents need them to
@@ -121,23 +124,22 @@ Goal: remaining rows have an owner and a destination. Reads stay live.
 - Finish shade/HRV/thermostat: runtime state in `packageStorage()`, calibration
   in `home-automation-config` (shade already documents this). Stop writing
   `shadeAutomationPlan` / `State` as user values.
-- Shared Discord / org ids: one export on the owning package (or a tiny
-  settings package) that other packages invoke. Do not leave them as
-  user-global kv.
+- Shared Discord / org ids: one export on the owning package (or a tiny settings
+  package) that other packages invoke. Do not leave them as user-global kv.
 - Chunked documents (`css-fix-*`, invite template, mission word counts): repos.
 - Token metadata (`epicProductEngineerToken*`): secrets + a memory for the
   policy, or the owning package's storage.
 
 **Other users (names from the baseline; do not read their contents):**
 
-| Username | Rows | Suggested dest |
-| --- | --- | --- |
-| `bholmesdev` | 27 | `packageStorage()` / a repo — same anti-pattern as `css-fix-*` |
-| `olafsulich` | 5 | `flaky_detector_*` → that package's storage or repo |
-| `cameronpak`, `tharshan`, `maciek`, `copyjosh`, `frontendwizard`, `debbieoyster`, `daleal`, `tejas`, `kody-tester` | 1–5 | Client ids → integrations; leftover URLs → owning package |
-| `burhan` | 1 | `user_profile` → memory |
-| `adamh`, `bradhave`, `arberbr`, `mrunleaded`, `sergical` | 1 | Done in phase 1 after onboarding backfill |
-| `infoxicator` | 0 | Empty bucket; dropped with the tables |
+| Username                                                                                                           | Rows | Suggested dest                                                 |
+| ------------------------------------------------------------------------------------------------------------------ | ---- | -------------------------------------------------------------- |
+| `bholmesdev`                                                                                                       | 27   | `packageStorage()` / a repo — same anti-pattern as `css-fix-*` |
+| `olafsulich`                                                                                                       | 5    | `flaky_detector_*` → that package's storage or repo            |
+| `cameronpak`, `tharshan`, `maciek`, `copyjosh`, `frontendwizard`, `debbieoyster`, `daleal`, `tejas`, `kody-tester` | 1–5  | Client ids → integrations; leftover URLs → owning package      |
+| `burhan`                                                                                                           | 1    | `user_profile` → memory                                        |
+| `adamh`, `bradhave`, `arberbr`, `mrunleaded`, `sergical`                                                           | 1    | Done in phase 1 after onboarding backfill                      |
+| `infoxicator`                                                                                                      | 0    | Empty bucket; dropped with the tables                          |
 
 Outreach is a short Discord note plus the account-page banner: values go away;
 here is `value_list` and the destination table. Community listings that still
@@ -145,8 +147,8 @@ say `value_get` (for example Bluesky + `blueskyHandle`) update when those
 packages are touched.
 
 Optional helper, only if agents keep stuffing new rows: a **read-only**
-classifier in the `value_list` / account UI result (`suggestedDestination`),
-not a new domain.
+classifier in the `value_list` / account UI result (`suggestedDestination`), not
+a new domain.
 
 ### Phase 3 — Write freeze (week 4)
 
@@ -166,11 +168,11 @@ update. Rollback is re-enabling the flag.
 Only after [Retirement criterion](#retirement-criterion).
 
 Expand/contract: one deploy with capabilities, search plugin, account routes,
-and MCP instructions gone (reads may still 404-with-guidance for one release);
-a follow-up migration drops `value_entries` / `value_buckets` after account
-export has a final snapshot. Same change updates `primitives.yaml` (delete
-`values`), entitlements storage math, export/deletion targets,
-package-app-scoped cleanup, onboarding leftovers, and preview fixtures.
+and MCP instructions gone (reads may still 404-with-guidance for one release); a
+follow-up migration drops `value_entries` / `value_buckets` after account export
+has a final snapshot. Same change updates `primitives.yaml` (delete `values`),
+entitlements storage math, export/deletion targets, package-app-scoped cleanup,
+onboarding leftovers, and preview fixtures.
 
 Do not drop the D1 tables in the same deploy that first disables reads.
 
@@ -182,16 +184,16 @@ Re-run the inventory queries. Remove the primitive when **all** hold for the
 1. Platform code does not read or write `value_entries` except the deprecated
    capability implementations themselves.
 2. `onboardingChecklistDismissed` has **zero** rows (backfill + cutoff done).
-3. Admin insights `value_entries` is **unchanged or falling**, and `value_set`
-   / account-save writes are **near zero** (no new names; leftover updates only
+3. Admin insights `value_entries` is **unchanged or falling**, and `value_set` /
+   account-save writes are **near zero** (no new names; leftover updates only
    from the freeze overrides).
-4. Every remaining row has a recorded destination (migrated, exported, or
-   owner notified). Empty buckets do not block.
+4. Every remaining row has a recorded destination (migrated, exported, or owner
+   notified). Empty buckets do not block.
 5. `values-writes` has been globally off for those seven days without a
    rollback.
 
-If (3) or (5) fails, keep reads and reset the seven-day window. Do not delete
-on day 30 because the calendar said so.
+If (3) or (5) fails, keep reads and reset the seven-day window. Do not delete on
+day 30 because the calendar said so.
 
 ## What not to do
 

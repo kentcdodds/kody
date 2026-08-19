@@ -50,8 +50,16 @@ test('popular package MCP instructions omit cold start, list kody ids under budg
 	expect(instructions).toContain('Prefer concise replies.')
 	expect(instructions).not.toContain('Connected remote connectors')
 	expect(instructions).not.toContain('Kody repository (for contributors)')
-	expect(instructions).toContain('Retiring primitives')
-	expect(instructions).toContain('coding_guide_get({ guide: "values" })')
+	expect(instructions).not.toContain('Retiring primitives')
+
+	const affected = buildMcpServerInstructions({
+		popularPackages: [{ kodyId: 'notes', description: 'Scratch notes' }],
+		userOverlay: 'Prefer concise replies.',
+		domains: [],
+		retiringNoticeIds: new Set(['values']),
+	})
+	expect(affected).toContain('Retiring primitives')
+	expect(affected).toContain('coding_guide_get({ guide: "values" })')
 })
 
 test('domain instruction blurbs truncate long descriptions', () => {

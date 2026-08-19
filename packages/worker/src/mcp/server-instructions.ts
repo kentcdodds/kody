@@ -3,6 +3,10 @@ import {
 	baseMcpServerInstructionFragmentsAfterPopular,
 	baseMcpServerInstructionFragmentsBeforePopular,
 } from '#mcp/instructions/base-server-fragments.ts'
+import {
+	formatActiveRetiringPrimitivesInstructions,
+	type RetiringPrimitiveNoticeId,
+} from '#mcp/instructions/retiring-primitives.ts'
 
 const baseMcpServerInstructionsBeforePopular =
 	baseMcpServerInstructionFragmentsBeforePopular.join('\n\n')
@@ -99,15 +103,23 @@ export function buildBaseMcpServerInstructions(
 	input: {
 		domains?: ReadonlyArray<CapabilityDomainMetadata>
 		popularPackages?: ReadonlyArray<PopularPackageInstructionSummary>
+		retiringNoticeIds?: ReadonlySet<RetiringPrimitiveNoticeId>
 	} = {},
 ): string {
 	const domainInstructions = formatDomainInstructions(input.domains ?? [])
-	return `
-${baseMcpServerInstructionsBeforePopular}
-${formatPopularPackagesInstructions(input.popularPackages)}
-${baseMcpServerInstructionsAfterPopular}
-${domainInstructions}
-	`.trim()
+	const retiringPrimitivesInstructions =
+		formatActiveRetiringPrimitivesInstructions(
+			input.retiringNoticeIds ?? new Set(),
+		)
+	return [
+		baseMcpServerInstructionsBeforePopular,
+		retiringPrimitivesInstructions,
+		formatPopularPackagesInstructions(input.popularPackages).trim(),
+		baseMcpServerInstructionsAfterPopular,
+		domainInstructions,
+	]
+		.filter((section) => section.length > 0)
+		.join('\n\n')
 }
 
 export function buildMcpServerInstructions(
@@ -119,6 +131,7 @@ export function buildMcpServerInstructions(
 				userOverlay?: string | null | undefined
 				domains?: ReadonlyArray<CapabilityDomainMetadata>
 				popularPackages?: ReadonlyArray<PopularPackageInstructionSummary>
+				retiringNoticeIds?: ReadonlySet<RetiringPrimitiveNoticeId>
 		  },
 ): string {
 	const normalizedInput =
@@ -126,6 +139,7 @@ export function buildMcpServerInstructions(
 	const base = buildBaseMcpServerInstructions({
 		domains: normalizedInput.domains,
 		popularPackages: normalizedInput.popularPackages,
+		retiringNoticeIds: normalizedInput.retiringNoticeIds,
 	})
 	const userOverlay = normalizedInput.userOverlay
 	const trimmed = userOverlay?.trim()

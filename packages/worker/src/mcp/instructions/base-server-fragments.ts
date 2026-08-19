@@ -1,5 +1,3 @@
-import { formatRetiringPrimitivesInstructions } from './retiring-primitives.ts'
-
 export const kodyOverviewInstructions = `Kody is a multi-user personal assistant. Each signed-in user gets a fully isolated assistant (packages, jobs, secrets, memories, connectors, email, storage) exposed through two MCP tools: \`search\` and \`execute\`.`
 
 export const endUserDocumentationInstructions = `End-user documentation (workflows, secrets, troubleshooting):
@@ -36,9 +34,6 @@ export const conventionInstructions = `Conventions:
 export const domainHeadingInstructions =
 	'Domains (scope discovery with `search({ query, domain })` or list one with `search({ domain })`)'
 
-export const retiringPrimitivesInstructions =
-	formatRetiringPrimitivesInstructions()
-
 export const baseMcpServerInstructionFragmentsBeforePopular = [
 	kodyOverviewInstructions,
 	endUserDocumentationInstructions,
@@ -47,8 +42,7 @@ export const baseMcpServerInstructionFragmentsBeforePopular = [
 	packageEscalationInstructions,
 	packageAuthoringLaneInstructions,
 	conventionInstructions,
-	retiringPrimitivesInstructions,
-].filter((fragment) => fragment.length > 0)
+] as const
 
 export const baseMcpServerInstructionFragmentsAfterPopular = [
 	domainHeadingInstructions,

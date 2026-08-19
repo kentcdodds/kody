@@ -146,6 +146,30 @@ export async function listValueMetadataForBucket(input: {
 	return (results ?? []).map(mapValueMetadataRow)
 }
 
+/**
+ * True when the user still has at least one non-expired stored value.
+ * Empty buckets do not count. Used to gate the agent-facing retirement notice.
+ */
+export async function userHasPersistedValues(input: {
+	db: D1Database
+	userId: string
+	now?: string
+}): Promise<boolean> {
+	const now = input.now ?? new Date().toISOString()
+	const row = await input.db
+		.prepare(
+			`SELECT 1 AS found
+			FROM value_entries e
+			INNER JOIN value_buckets b ON b.id = e.bucket_id
+			WHERE b.user_id = ?
+				AND (b.expires_at IS NULL OR b.expires_at > ?)
+			LIMIT 1`,
+		)
+		.bind(input.userId, now)
+		.first<{ found: number }>()
+	return row != null
+}
+
 export async function listValueMetadataForBuckets(input: {
 	db: D1Database
 	userId: string
