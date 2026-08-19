@@ -97,7 +97,18 @@ export function createKodyProviderProxySource(input: {
           throw new Error(\`${openApiFlatNameMessage}\`);
         }
         return async (args) => await __kodyCallDispatcher(normalizedToolName, args);
-      }
+      },
+      has: (_, toolName) => toolName === 'mcp' || toolName === 'openapi',
+      ownKeys: () => ['mcp', 'openapi'],
+      getOwnPropertyDescriptor: (_, toolName) => {
+        if (toolName !== 'mcp' && toolName !== 'openapi') return undefined;
+        return {
+          configurable: true,
+          enumerable: true,
+          writable: true,
+          value: toolName === 'mcp' ? __kodyMcp : __kodyOpenapi,
+        };
+      },
     });`
 	assertGeneratedExecutorSourceIsBundleSafe(source)
 	return source

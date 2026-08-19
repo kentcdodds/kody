@@ -162,6 +162,12 @@ test('kody namespaced proxy dispatches and reports entry/capability errors clear
 	expect(() => mcp['lights']?.set_pin).toThrow(
 		'The MCP server "lights" is not connected. Kody cannot use this server until it reconnects.',
 	)
+
+	expect('home' in mcp).toBe(true)
+	expect(Object.keys(mcp).sort()).toEqual(['home', 'lights'])
+	const { home } = mcp
+	await expect(home.set_pin({ pin: '9999' })).resolves.toEqual({ ok: true })
+	expect(Object.keys(home)).toEqual(['set_pin'])
 })
 
 test('generated kody provider source projects namespaced proxy metadata', () => {
@@ -294,6 +300,8 @@ test('generated kody provider and executor module sources stay bundle-safe', () 
 	expect(moduleSource).toContain('from "node:async_hooks"')
 	expect(moduleSource).toContain('__kodyEvaluateFetchStorage.run')
 	expect(moduleSource).toContain('.call("recordFetch", "[]")')
+	expect(moduleSource).toContain('const __kodyMcp =')
+	expect(moduleSource).toContain('getOwnPropertyDescriptor')
 })
 
 test('generated kody provider source wires mcp proxy dispatch', async () => {
@@ -344,6 +352,9 @@ test('generated kody provider source wires mcp proxy dispatch', async () => {
 	expect(() => kody['mcp:home:set_pin']).toThrow(
 		'MCP server tool "mcp:home:set_pin" is not available as a flat kody function.',
 	)
+	expect('mcp' in kody).toBe(true)
+	const { home } = kody.mcp
+	await expect(home.set_pin({ pin: '5678' })).resolves.toEqual({ ok: true })
 })
 
 test('generated kody provider source wires openapi proxy dispatch', async () => {

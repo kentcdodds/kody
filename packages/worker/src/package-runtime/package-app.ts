@@ -126,25 +126,35 @@ function buildFacetClassExportName(rawFacetName) {
 }
 
 function createKodyProxy(runtimeBridge) {
-	const mcp = new Proxy({}, {
-		get(_target, serverName) {
-			if (typeof serverName !== 'string' || serverName === 'then') {
-				return undefined;
-			}
-			return new Proxy({}, {
-				get(_serverTarget, toolName) {
-					if (typeof toolName !== 'string' || toolName === 'then') {
-						return undefined;
-					}
-					return async (args = {}) =>
-						await runtimeBridge.callCapability({
-							name: \`mcp:\${serverName}:\${toolName}\`,
-							args,
-						});
-				},
-			});
-		},
-	});
+	const isProxyLookupKey = (name) =>
+		typeof name !== 'string' || name === 'then';
+	const createOpenNamespaceProxy = (getValue) =>
+		new Proxy({}, {
+			get(_target, name) {
+				if (isProxyLookupKey(name)) return undefined;
+				return getValue(name);
+			},
+			has(_target, name) {
+				return !isProxyLookupKey(name);
+			},
+			getOwnPropertyDescriptor(_target, name) {
+				if (isProxyLookupKey(name)) return undefined;
+				return {
+					configurable: true,
+					enumerable: true,
+					writable: true,
+					value: getValue(name),
+				};
+			},
+		});
+	const mcp = createOpenNamespaceProxy((serverName) =>
+		createOpenNamespaceProxy((toolName) => async (args = {}) =>
+			await runtimeBridge.callCapability({
+				name: \`mcp:\${serverName}:\${toolName}\`,
+				args,
+			}),
+		),
+	);
 	return new Proxy({}, {
 		get(_target, property) {
 			if (typeof property !== 'string' || property === 'then') return undefined;
@@ -159,6 +169,21 @@ function createKodyProxy(runtimeBridge) {
 					name: property,
 					args,
 				});
+		},
+		has(_target, property) {
+			return property === 'mcp';
+		},
+		ownKeys() {
+			return ['mcp'];
+		},
+		getOwnPropertyDescriptor(_target, property) {
+			if (property !== 'mcp') return undefined;
+			return {
+				configurable: true,
+				enumerable: true,
+				writable: true,
+				value: mcp,
+			};
 		},
 	});
 }

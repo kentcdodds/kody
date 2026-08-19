@@ -475,7 +475,13 @@ export function createKodyRemoteProxy(input: {
 	const entityLabel = input.entityLabel ?? 'MCP server'
 	const shortEntityLabel = input.shortEntityLabel ?? 'MCP server'
 	const capabilityLabel = input.capabilityLabel ?? 'MCP tool'
-	const connectors = Object.fromEntries(
+	type ConnectorEntry = (typeof input.entries)[number] & {
+		capabilitiesByName: Record<
+			string,
+			(typeof input.entries)[number]['capabilities'][number]
+		>
+	}
+	const connectors: Record<string, ConnectorEntry> = Object.fromEntries(
 		input.entries.map((connector) => [
 			connector.name,
 			{
@@ -486,60 +492,77 @@ export function createKodyRemoteProxy(input: {
 						capability,
 					]),
 				),
-			},
+			} satisfies ConnectorEntry,
 		]),
 	)
 	const formatNames = (names: Array<string>) =>
 		names.length > 0
 			? names.map((name) => JSON.stringify(name)).join(', ')
 			: 'none'
+	const isProxyLookupKey = (name: string | symbol) =>
+		typeof name === 'symbol' || name === 'then'
+	const createReflectingProxy = (
+		knownKeys: Array<string>,
+		getValue: (name: string) => unknown,
+	) =>
+		new Proxy(
+			{},
+			{
+				get(_target, name) {
+					if (isProxyLookupKey(name)) return undefined
+					return getValue(String(name))
+				},
+				has(_target, name) {
+					if (isProxyLookupKey(name)) return false
+					return knownKeys.includes(String(name))
+				},
+				ownKeys() {
+					return [...knownKeys]
+				},
+				getOwnPropertyDescriptor(_target, name) {
+					if (isProxyLookupKey(name) || !knownKeys.includes(String(name))) {
+						return undefined
+					}
+					return {
+						configurable: true,
+						enumerable: true,
+						writable: true,
+						value: getValue(String(name)),
+					}
+				},
+			},
+		)
 
-	return new Proxy(
-		{},
-		{
-			get(_target, connectorName) {
-				if (typeof connectorName === 'symbol' || connectorName === 'then') {
-					return undefined
+	const createCapabilityProxy = (
+		connector: ConnectorEntry,
+		connectorName: string,
+	) =>
+		createReflectingProxy(
+			connector.capabilities.map((capability) => capability.name),
+			(capabilityName) => {
+				if (!connector.status.connected || connector.status.toolCount === 0) {
+					throw new Error(connector.status.unavailableMessage)
 				}
-				const normalizedConnectorName = String(connectorName)
-				const connector = connectors[normalizedConnectorName]
-				if (!connector) {
+				const capability = connector.capabilitiesByName[capabilityName]
+				if (!capability) {
 					throw new Error(
-						`Unknown ${entityLabel} "${normalizedConnectorName}". Available ${entityLabel}s: ${formatNames(Object.keys(connectors))}.`,
+						`Unknown ${capabilityLabel} "${capabilityName}" for ${shortEntityLabel} "${connectorName}". Available capabilities: ${formatNames(connector.capabilities.map((entry) => entry.name))}.`,
 					)
 				}
-				return new Proxy(
-					{},
-					{
-						get(_connectorTarget, capabilityName) {
-							if (
-								typeof capabilityName === 'symbol' ||
-								capabilityName === 'then'
-							) {
-								return undefined
-							}
-							const normalizedCapabilityName = String(capabilityName)
-							if (
-								!connector.status.connected ||
-								connector.status.toolCount === 0
-							) {
-								throw new Error(connector.status.unavailableMessage)
-							}
-							const capability =
-								connector.capabilitiesByName[normalizedCapabilityName]
-							if (!capability) {
-								throw new Error(
-									`Unknown ${capabilityLabel} "${normalizedCapabilityName}" for ${shortEntityLabel} "${normalizedConnectorName}". Available capabilities: ${formatNames(connector.capabilities.map((entry) => entry.name))}.`,
-								)
-							}
-							return async (args: unknown) =>
-								await input.callTool(capability.dispatchName, args)
-						},
-					},
-				)
+				return async (args: unknown) =>
+					await input.callTool(capability.dispatchName, args)
 			},
-		},
-	)
+		)
+
+	return createReflectingProxy(Object.keys(connectors), (connectorName) => {
+		const connector = connectors[connectorName]
+		if (!connector) {
+			throw new Error(
+				`Unknown ${entityLabel} "${connectorName}". Available ${entityLabel}s: ${formatNames(Object.keys(connectors))}.`,
+			)
+		}
+		return createCapabilityProxy(connector, connectorName)
+	})
 }
 
 export function createExecuteExecutor(input: {
@@ -885,10 +908,7 @@ export function createExecutorModuleSource(input: {
 
 function createProviderProxySource(provider: ResolvedProvider) {
 	const kodyProvider = provider as KodyResolvedProvider
-	if (
-		provider.name === 'kody' &&
-		(kodyProvider.kodyMcpServers || kodyProvider.kodyOpenApiProviders)
-	) {
+	if (provider.name === 'kody') {
 		return createKodyProviderProxySource({
 			providerName: provider.name,
 			mcpServers: kodyProvider.kodyMcpServers ?? [],

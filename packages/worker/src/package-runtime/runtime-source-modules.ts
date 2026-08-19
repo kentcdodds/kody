@@ -122,6 +122,77 @@ function __kodyIsRuntimeProxyInspectionProperty(property) {
 	);
 }
 
+function __kodyReadRuntimeNestedValue(exportName, parentProperty) {
+	const runtimeExport = __kodyReadRuntimeExport(exportName);
+	return runtimeExport?.[parentProperty];
+}
+
+function __kodyCreateRuntimeNestedObjectProxy(exportName, parentProperty) {
+	const nestedExportName = exportName + '.' + String(parentProperty);
+	return new Proxy({}, {
+		get(_target, property) {
+			const inspectionValue = __kodyRuntimeProxyInspectionValue(
+				nestedExportName,
+				property,
+			);
+			if (inspectionValue !== undefined || __kodyIsRuntimeProxyInspectionProperty(property)) {
+				return inspectionValue;
+			}
+			const parent = __kodyReadRuntimeNestedValue(exportName, parentProperty);
+			if (parent == null) return undefined;
+			const value = parent[property];
+			if (typeof value !== 'function') return value;
+			return function (...args) {
+				const currentParent = __kodyReadRuntimeNestedValue(
+					exportName,
+					parentProperty,
+				);
+				const currentValue = currentParent?.[property];
+				if (typeof currentValue !== 'function') {
+					throw new Error(
+						\`kody:runtime export "\${nestedExportName}.\${String(property)}" is not callable in this execution context.\`,
+					);
+				}
+				return currentValue.apply(currentParent, args);
+			};
+		},
+		has(_target, property) {
+			if (__kodyIsRuntimeProxyInspectionProperty(property)) return false;
+			const parent = __kodyRuntimeStorage.getStore()?.[exportName]?.[parentProperty];
+			return parent != null && property in parent;
+		},
+		ownKeys() {
+			const parent = __kodyRuntimeStorage.getStore()?.[exportName]?.[parentProperty];
+			return parent == null ? [] : Reflect.ownKeys(parent);
+		},
+		getOwnPropertyDescriptor(_target, property) {
+			if (__kodyIsRuntimeProxyInspectionProperty(property)) return undefined;
+			const parent = __kodyRuntimeStorage.getStore()?.[exportName]?.[parentProperty];
+			if (parent == null) return undefined;
+			const descriptor = Reflect.getOwnPropertyDescriptor(parent, property);
+			if (descriptor !== undefined) {
+				return { ...descriptor, configurable: true };
+			}
+			// Get-only namespace proxies (the pre-fix sandbox kody.mcp shape)
+			// report no own keys. Bundlers still destructure them, so resolve
+			// the value through [[Get]] and surface it as a configurable own
+			// property when it exists.
+			try {
+				const value = parent[property];
+				if (value === undefined) return undefined;
+				return {
+					configurable: true,
+					enumerable: true,
+					writable: true,
+					value,
+				};
+			} catch {
+				return undefined;
+			}
+		},
+	});
+}
+
 function __kodyCreateRuntimeObjectProxy(exportName) {
 	return new Proxy({}, {
 		get(_target, property) {
@@ -134,22 +205,31 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 			}
 			const runtimeExport = __kodyReadRuntimeExport(exportName);
 			const value = runtimeExport[property];
-			if (typeof value !== 'function') return value;
-			// Late-bind method calls to the runtime of the *calling* run: a
-			// function captured at property-access time (for example a
-			// top-level \`const search = kody.community_search\`) would
-			// otherwise keep pointing at the run that evaluated this module,
-			// whose RPC dispatcher stubs are disposed once that run returns.
-			return function (...args) {
-				const currentExport = __kodyReadRuntimeExport(exportName);
-				const currentValue = currentExport[property];
-				if (typeof currentValue !== 'function') {
-					throw new Error(
-						\`kody:runtime export "\${exportName}.\${String(property)}" is not callable in this execution context.\`,
-					);
-				}
-				return currentValue.apply(currentExport, args);
-			};
+			if (typeof value === 'function') {
+				// Late-bind method calls to the runtime of the *calling* run: a
+				// function captured at property-access time (for example a
+				// top-level \`const search = kody.community_search\`) would
+				// otherwise keep pointing at the run that evaluated this module,
+				// whose RPC dispatcher stubs are disposed once that run returns.
+				return function (...args) {
+					const currentExport = __kodyReadRuntimeExport(exportName);
+					const currentValue = currentExport[property];
+					if (typeof currentValue !== 'function') {
+						throw new Error(
+							\`kody:runtime export "\${exportName}.\${String(property)}" is not callable in this execution context.\`,
+						);
+					}
+					return currentValue.apply(currentExport, args);
+				};
+			}
+			// Nested namespaces such as kody.mcp / kody.openapi must stay
+			// late-bound too. Returning the raw object lets a bundler
+			// destructure \`const { home } = kody.mcp\` against a get-only
+			// proxy and bind home to undefined.
+			if (value != null && typeof value === 'object') {
+				return __kodyCreateRuntimeNestedObjectProxy(exportName, property);
+			}
+			return value;
 		},
 		has(_target, property) {
 			if (__kodyIsRuntimeProxyInspectionProperty(property)) return false;
@@ -163,12 +243,25 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 			return runtimeExport == null ? [] : Reflect.ownKeys(runtimeExport);
 		},
 		getOwnPropertyDescriptor(_target, property) {
+			if (__kodyIsRuntimeProxyInspectionProperty(property)) return undefined;
 			const currentRuntime = __kodyRuntimeStorage.getStore();
 			const runtimeExport = currentRuntime?.[exportName];
 			if (runtimeExport == null) return undefined;
 			const descriptor = Reflect.getOwnPropertyDescriptor(runtimeExport, property);
-			if (descriptor === undefined) return undefined;
-			return { ...descriptor, configurable: true };
+			if (descriptor !== undefined) {
+				return { ...descriptor, configurable: true };
+			}
+			if (!(property in runtimeExport)) return undefined;
+			const value = runtimeExport[property];
+			return {
+				configurable: true,
+				enumerable: true,
+				writable: true,
+				value:
+					value != null && typeof value === 'object'
+						? __kodyCreateRuntimeNestedObjectProxy(exportName, property)
+						: value,
+			};
 		},
 	});
 }
