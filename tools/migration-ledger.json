@@ -69,12 +69,12 @@
 			"sha256": "9b05cc28701cdbf10a89464958c6709e9c8011a43dd154dc6653a23a6b2e86ed"
 		},
 		{
-			"filename": "0017-drop-retired-service-storage-kind.sql",
-			"sha256": "a7036229d5821900c3a45da2e4841d3439ea7d219f874a208462a10a29de26c5"
-		},
-		{
 			"filename": "0017-package-owned-invocation-tokens.sql",
 			"sha256": "772f7ef88f28778f4055ef04e431da1b9ff450cce7c48d94603271fed6d50885"
+		},
+		{
+			"filename": "0018-drop-retired-service-storage-kind.sql",
+			"sha256": "a7036229d5821900c3a45da2e4841d3439ea7d219f874a208462a10a29de26c5"
 		}
 	]
 }
