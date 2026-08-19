@@ -174,11 +174,14 @@ rejects a same-deploy `deleted_classes` migration while that binding still
 exists (error 10061). Existing objects also require the script to keep exporting
 the class until `deleted_classes` runs (error 10064). Export a stub, drop the
 binding, then add the `deleted_classes` migration and its
-`tools/ci/do-deletion-allowlist.json` entry on a later deploy.
+`tools/ci/do-deletion-allowlist.json` entry on a later deploy. Preview
+`deleted_classes` requires a previous script version that exported the class
+(error 10074). A first preview deploy can apply the create and delete tags
+together so they elide.
 
-`PackageServiceInstance` uses that sequence: production `kody-runtime` applies
-tag `v2` after a stub-export deploy dropped the transferred binding. Preview
-applies `v1` `new_sqlite_classes` then `v2` `deleted_classes` on first deploy.
+`PackageServiceInstance` is gone from production `kody-runtime` (tag `v2`; no
+stub export). Preview applies `v1` `new_sqlite_classes` then `v2`
+`deleted_classes` on first deploy so create and delete elide.
 
 ## Rollback
 
