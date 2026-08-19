@@ -81,6 +81,14 @@ import {
 	createAccountPackagesHandler,
 } from '#app/handlers/account-packages.ts'
 import {
+	createAccountPackageFilesApiHandler,
+	createAccountPackageFilesHandler,
+	createCommunityDetailFilesApiHandler,
+	createCommunityDetailFilesHandler,
+	createCommunityPackageFilesApiHandler,
+	createCommunityPackageFilesHandler,
+} from '#app/handlers/package-files.ts'
+import {
 	createAccountPasskeysApiHandler,
 	createAccountPasskeysHandler,
 } from '#app/handlers/account-passkeys.ts'
@@ -307,6 +315,8 @@ export function createAppRouter(env: Env) {
 				createAccountPackageInvocationTokensApiHandler(env),
 			accountPackages: createAccountPackagesHandler(env),
 			accountPackageDetail: createAccountPackagesHandler(env),
+			accountPackageFiles: createAccountPackageFilesHandler(env),
+			accountPackageFilesApi: createAccountPackageFilesApiHandler(env),
 			accountPackagesApi: createAccountPackagesApiHandler(env),
 			accountConnectionsApi: createAccountConnectionsApiHandler(env),
 			accountConnectionsApiPost: createAccountConnectionsApiHandler(env),
@@ -396,8 +406,12 @@ export function createAppRouter(env: Env) {
 			communityApi: createCommunityApiHandler(env),
 			communityDetail: createCommunityDetailHandler(env),
 			communityDetailApi: createCommunityDetailApiHandler(env),
+			communityDetailFiles: createCommunityDetailFilesHandler(env),
+			communityDetailFilesApi: createCommunityDetailFilesApiHandler(env),
 			communityPackage: createCommunityPackageHandler(env),
 			communityPackageApi: createCommunityPackageApiHandler(env),
+			communityPackageFiles: createCommunityPackageFilesHandler(env),
+			communityPackageFilesApi: createCommunityPackageFilesApiHandler(env),
 			communityDetailIcon: createCommunityIconHandler(env),
 			integrationLogo: createIntegrationLogoHandler(env),
 			communityDetailOgImage: createCommunityDetailOgImageHandler(env),

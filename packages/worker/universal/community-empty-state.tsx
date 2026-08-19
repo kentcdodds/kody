@@ -7,8 +7,8 @@ import { getPillButtonCss } from '#universal/styles/style-primitives.ts'
 
 /**
  * Catalog and search-miss empty state for the community listings frame.
- * Shared by the server-rendered frame HTML and the client Frame fallback so
- * first paint and the resolved frame match.
+ * Rendered only when the resolved listings query is actually empty — not as
+ * a loading placeholder, so first paint never flashes "no results."
  */
 export function renderCommunityEmptyState(query: string | null) {
 	const isSearch = Boolean(query)

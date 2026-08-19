@@ -122,6 +122,102 @@ function __kodyIsRuntimeProxyInspectionProperty(property) {
 	);
 }
 
+function __kodyReadRuntimeNestedValue(exportName, path) {
+	let current = __kodyReadRuntimeExport(exportName);
+	for (const segment of path) {
+		if (current == null) return undefined;
+		current = current[segment];
+	}
+	return current;
+}
+
+function __kodyBindRuntimeNestedValue(exportName, path, property, value) {
+	const nestedExportName = exportName + '.' + [...path, property].map(String).join('.');
+	if (typeof value === 'function') {
+		return function (...args) {
+			const currentParent = __kodyReadRuntimeNestedValue(exportName, path);
+			const currentValue = currentParent?.[property];
+			if (typeof currentValue !== 'function') {
+				throw new Error(
+					\`kody:runtime export "\${nestedExportName}" is not callable in this execution context.\`,
+				);
+			}
+			return currentValue.apply(currentParent, args);
+		};
+	}
+	if (value != null && typeof value === 'object') {
+		return __kodyCreateRuntimeNestedObjectProxy(exportName, [...path, property]);
+	}
+	return value;
+}
+
+function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
+	const nestedExportName = exportName + '.' + path.map(String).join('.');
+	return new Proxy({}, {
+		get(_target, property) {
+			const inspectionValue = __kodyRuntimeProxyInspectionValue(
+				nestedExportName,
+				property,
+			);
+			if (inspectionValue !== undefined || __kodyIsRuntimeProxyInspectionProperty(property)) {
+				return inspectionValue;
+			}
+			const parent = __kodyReadRuntimeNestedValue(exportName, path);
+			if (parent == null) return undefined;
+			return __kodyBindRuntimeNestedValue(
+				exportName,
+				path,
+				property,
+				parent[property],
+			);
+		},
+		has(_target, property) {
+			if (__kodyIsRuntimeProxyInspectionProperty(property)) return false;
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			if (currentRuntime?.[exportName] == null) return false;
+			const parent = __kodyReadRuntimeNestedValue(exportName, path);
+			return parent != null && property in parent;
+		},
+		ownKeys() {
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			if (currentRuntime?.[exportName] == null) return [];
+			const parent = __kodyReadRuntimeNestedValue(exportName, path);
+			return parent == null ? [] : Reflect.ownKeys(parent);
+		},
+		getOwnPropertyDescriptor(_target, property) {
+			if (__kodyIsRuntimeProxyInspectionProperty(property)) return undefined;
+			const currentRuntime = __kodyRuntimeStorage.getStore();
+			if (currentRuntime?.[exportName] == null) return undefined;
+			const parent = __kodyReadRuntimeNestedValue(exportName, path);
+			if (parent == null) return undefined;
+			const descriptor = Reflect.getOwnPropertyDescriptor(parent, property);
+			if (descriptor !== undefined && !('value' in descriptor)) {
+				return { ...descriptor, configurable: true };
+			}
+			let value = descriptor?.value;
+			if (descriptor === undefined) {
+				try {
+					value = parent[property];
+				} catch {
+					return undefined;
+				}
+				if (value === undefined) return undefined;
+			}
+			return {
+				configurable: true,
+				enumerable: descriptor?.enumerable !== false,
+				writable: true,
+				value: __kodyBindRuntimeNestedValue(
+					exportName,
+					path,
+					property,
+					value,
+				),
+			};
+		},
+	});
+}
+
 function __kodyCreateRuntimeObjectProxy(exportName) {
 	return new Proxy({}, {
 		get(_target, property) {
@@ -134,22 +230,31 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 			}
 			const runtimeExport = __kodyReadRuntimeExport(exportName);
 			const value = runtimeExport[property];
-			if (typeof value !== 'function') return value;
-			// Late-bind method calls to the runtime of the *calling* run: a
-			// function captured at property-access time (for example a
-			// top-level \`const search = kody.community_search\`) would
-			// otherwise keep pointing at the run that evaluated this module,
-			// whose RPC dispatcher stubs are disposed once that run returns.
-			return function (...args) {
-				const currentExport = __kodyReadRuntimeExport(exportName);
-				const currentValue = currentExport[property];
-				if (typeof currentValue !== 'function') {
-					throw new Error(
-						\`kody:runtime export "\${exportName}.\${String(property)}" is not callable in this execution context.\`,
-					);
-				}
-				return currentValue.apply(currentExport, args);
-			};
+			if (typeof value === 'function') {
+				// Late-bind method calls to the runtime of the *calling* run: a
+				// function captured at property-access time (for example a
+				// top-level \`const search = kody.community_search\`) would
+				// otherwise keep pointing at the run that evaluated this module,
+				// whose RPC dispatcher stubs are disposed once that run returns.
+				return function (...args) {
+					const currentExport = __kodyReadRuntimeExport(exportName);
+					const currentValue = currentExport[property];
+					if (typeof currentValue !== 'function') {
+						throw new Error(
+							\`kody:runtime export "\${exportName}.\${String(property)}" is not callable in this execution context.\`,
+						);
+					}
+					return currentValue.apply(currentExport, args);
+				};
+			}
+			// Nested namespaces such as kody.mcp / kody.openapi must stay
+			// late-bound too. Returning the raw object lets a bundler
+			// destructure \`const { home } = kody.mcp\` against a get-only
+			// proxy and bind home to undefined.
+			if (value != null && typeof value === 'object') {
+				return __kodyCreateRuntimeNestedObjectProxy(exportName, [property]);
+			}
+			return value;
 		},
 		has(_target, property) {
 			if (__kodyIsRuntimeProxyInspectionProperty(property)) return false;
@@ -163,12 +268,25 @@ function __kodyCreateRuntimeObjectProxy(exportName) {
 			return runtimeExport == null ? [] : Reflect.ownKeys(runtimeExport);
 		},
 		getOwnPropertyDescriptor(_target, property) {
+			if (__kodyIsRuntimeProxyInspectionProperty(property)) return undefined;
 			const currentRuntime = __kodyRuntimeStorage.getStore();
 			const runtimeExport = currentRuntime?.[exportName];
 			if (runtimeExport == null) return undefined;
 			const descriptor = Reflect.getOwnPropertyDescriptor(runtimeExport, property);
-			if (descriptor === undefined) return undefined;
-			return { ...descriptor, configurable: true };
+			if (descriptor !== undefined) {
+				return { ...descriptor, configurable: true };
+			}
+			if (!(property in runtimeExport)) return undefined;
+			const value = runtimeExport[property];
+			return {
+				configurable: true,
+				enumerable: true,
+				writable: true,
+				value:
+					value != null && typeof value === 'object'
+						? __kodyCreateRuntimeNestedObjectProxy(exportName, [property])
+						: value,
+			};
 		},
 	});
 }

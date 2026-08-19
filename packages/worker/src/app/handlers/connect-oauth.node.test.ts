@@ -12,6 +12,16 @@ const mockModule = vi.hoisted(() => ({
 	hasAlternativeBuiltInApp: vi.fn<() => Promise<boolean>>(),
 	loadExistingConnectionSummary: vi.fn<() => Promise<unknown>>(),
 	hasStoredConnectClientSecret: vi.fn<() => Promise<boolean>>(),
+	readConnectOauthLookupOptions: (searchParams: URLSearchParams) => {
+		const platformParam = searchParams.get('platform')?.trim()
+		const appParam = searchParams.get('app')?.trim()
+		return {
+			preferPlatform: platformParam === '1',
+			platformSlug:
+				platformParam && platformParam !== '1' ? platformParam : undefined,
+			appSlug: appParam || undefined,
+		}
+	},
 	renderAppPage: vi.fn<(input: unknown) => Promise<Response>>(),
 }))
 
@@ -34,6 +44,8 @@ vi.mock('#app/account-integrations-data.ts', () => ({
 		mockModule.loadExistingConnectionSummary(...args),
 	hasStoredConnectClientSecret: (...args: Array<unknown>) =>
 		mockModule.hasStoredConnectClientSecret(...args),
+	readConnectOauthLookupOptions: (searchParams: URLSearchParams) =>
+		mockModule.readConnectOauthLookupOptions(searchParams),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -94,7 +106,7 @@ test('provider visits embed SSR loader data and honor platform lookup flags', as
 		env,
 		expect.anything(),
 		'github',
-		{ preferPlatform: false, platformSlug: undefined },
+		{ preferPlatform: false, platformSlug: undefined, appSlug: undefined },
 	)
 	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -129,7 +141,7 @@ test('provider visits embed SSR loader data and honor platform lookup flags', as
 		env,
 		expect.anything(),
 		'google',
-		{ preferPlatform: true, platformSlug: undefined },
+		{ preferPlatform: true, platformSlug: undefined, appSlug: undefined },
 	)
 
 	await createConnectOauthHandler(env).handler(
@@ -143,7 +155,19 @@ test('provider visits embed SSR loader data and honor platform lookup flags', as
 		env,
 		expect.anything(),
 		'google-2',
-		{ preferPlatform: false, platformSlug: 'google' },
+		{ preferPlatform: false, platformSlug: 'google', appSlug: undefined },
+	)
+
+	await createConnectOauthHandler(env).handler(
+		new RequestContext(
+			new Request('https://example.com/connect/oauth?provider=work&app=google'),
+		),
+	)
+	expect(mockModule.loadAccountIntegrationByName).toHaveBeenLastCalledWith(
+		env,
+		expect.anything(),
+		'work',
+		{ preferPlatform: false, platformSlug: undefined, appSlug: 'google' },
 	)
 })
 

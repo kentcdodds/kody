@@ -71,6 +71,10 @@ Example (`client/routes/community.tsx`):
 <Frame name={COMMUNITY_LISTINGS_TARGET} src={frameSrc} />
 ```
 
+Leave `fallback` off for this frame so SSR and client navigation wait for
+listings before first paint. A loading fallback that reused the empty-state copy
+flashed "no results" while the query finished.
+
 `COMMUNITY_LISTINGS_TARGET` lives in `community-frame-constants.ts` alongside
 the server-side `registerFrame` call in `frames/community-listings.ts`.
 

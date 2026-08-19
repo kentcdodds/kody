@@ -474,8 +474,13 @@ html.is-settled {
 	   DOM swap in startViewTransition (client/client-router.tsx). Motion
 	   lives on `page` (`<main>`), not `root` — otherwise the account rail
 	   (inside main, no name of its own until lifted) fades and slides with
-	   the content. Named chrome is pinned static. Browsers without the API
-	   never match these pseudos — the swap is simply instant. */
+	   the content. Always-present chrome is pinned static. The rail is
+	   named so it lifts out of `page`, but it is *not* always on screen:
+	   leaving `/account` or `/admin` has an old snapshot and no new one.
+	   Pinning old/new (`animation: none`) froze that leftover rail on top
+	   of the destination. Old/new fade; only the group stays still so
+	   account↔admin (rail on both sides) does not morph/squash. Browsers
+	   without the API never match these pseudos — the swap is instant. */
 	::view-transition-old(root),
 	::view-transition-new(root) {
 		animation: none;
@@ -498,10 +503,16 @@ html.is-settled {
 	::view-transition-old(nav-progress),
 	::view-transition-new(nav-progress),
 	::view-transition-group(nav-progress),
-	::view-transition-old(account-nav),
-	::view-transition-new(account-nav),
 	::view-transition-group(account-nav) {
 		animation: none;
+	}
+
+	::view-transition-old(account-nav) {
+		animation: vt-page-out 120ms var(--ease-out) both;
+	}
+
+	::view-transition-new(account-nav) {
+		animation: vt-account-nav-in 220ms var(--ease-out) both;
 	}
 
 	@keyframes vt-page-out {
@@ -514,6 +525,12 @@ html.is-settled {
 		from {
 			opacity: 0;
 			transform: translateY(8px);
+		}
+	}
+
+	@keyframes vt-account-nav-in {
+		from {
+			opacity: 0;
 		}
 	}
 

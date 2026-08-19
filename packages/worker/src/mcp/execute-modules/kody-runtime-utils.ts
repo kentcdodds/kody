@@ -80,8 +80,7 @@ export const secretHeaders = {
 export const EXECUTE_HELPER_CAPABILITY_NAMES = [
 	'integration_get',
 	'integration_token_refresh',
-	'secret_set',
-	'secret_set_many',
+	'integration_refresh_access_token',
 ] as const
 
 /**
@@ -93,6 +92,11 @@ export const EXECUTE_HELPER_CAPABILITY_NAMES = [
  * `createAuthenticatedFetch` refreshes host-side via
  * `integration_token_refresh` and never materializes tokens in the sandbox —
  * prefer it everywhere a fetch wrapper works.
+ *
+ * Token rotation persists host-side (`integration_refresh_access_token` →
+ * `integration_token_refresh`) and does not need an `allowed_packages` write
+ * grant. The helper still returns a raw access token for user-lane
+ * integrations and throws for platform ones.
  *
  * **Security boundary**: The returned value is a materialized credential. Once
  * in caller hands, the fetch gateway's host-allowlist check is bypassed because
@@ -110,7 +114,24 @@ export async function refreshAccessToken(
 			`Integration "${providerName}" is a platform (built-in) integration: raw tokens are never exposed to sandboxed code. Use createAuthenticatedFetch("${providerName}") — it refreshes host-side via integration_token_refresh automatically.`,
 		)
 	}
-	return refreshAccessTokenWithIntegration(kody, providerName, integration)
+	const refresh = kody.integration_refresh_access_token
+	if (typeof refresh !== 'function') {
+		throw new Error(
+			'kody.integration_refresh_access_token is not available in this sandbox.',
+		)
+	}
+	const result = (await refresh({ name: providerName })) as {
+		accessToken?: unknown
+	} | null
+	if (
+		typeof result?.accessToken !== 'string' ||
+		result.accessToken.length === 0
+	) {
+		throw new Error(
+			`Host-side token refresh for integration "${providerName}" did not return an access token.`,
+		)
+	}
+	return result.accessToken
 }
 
 async function refreshIntegrationTokensHostSide(
@@ -237,172 +258,6 @@ async function readIntegrationConfig(
 		throw new Error(`Integration "${providerName}" was not found.`)
 	}
 	return integration
-}
-
-async function assertSecretsCanBePersisted(
-	kody: KodyNamespace,
-	providerName: string,
-	secrets: Array<{
-		name: string
-		secretKind: 'access token' | 'refresh token'
-	}>,
-) {
-	const secretSetMany = kody.secret_set_many
-	if (typeof secretSetMany !== 'function') {
-		throw new Error('kody.secret_set_many is not available in this sandbox.')
-	}
-	const entries = secrets.map((secret) => {
-		const normalizedSecretName = secret.name.trim()
-		if (!normalizedSecretName) {
-			throw new Error(
-				`Integration "${providerName}" does not define an ${secret.secretKind} secret name.`,
-			)
-		}
-		return {
-			name: normalizedSecretName,
-			scope: 'user' as const,
-		}
-	})
-	await secretSetMany({
-		secrets: entries,
-		assertOnly: true,
-	})
-}
-
-async function persistSecretsAtomically(
-	kody: KodyNamespace,
-	providerName: string,
-	secrets: Array<{
-		name: string
-		secretKind: 'access token' | 'refresh token'
-		value: string
-	}>,
-) {
-	const secretSetMany = kody.secret_set_many
-	if (typeof secretSetMany !== 'function') {
-		throw new Error('kody.secret_set_many is not available in this sandbox.')
-	}
-	const entries = secrets.map((secret) => {
-		const normalizedSecretName = secret.name.trim()
-		if (!normalizedSecretName) {
-			throw new Error(
-				`Integration "${providerName}" does not define an ${secret.secretKind} secret name.`,
-			)
-		}
-		return {
-			name: normalizedSecretName,
-			value: secret.value,
-			scope: 'user' as const,
-		}
-	})
-	await secretSetMany({
-		secrets: entries,
-	})
-}
-
-async function refreshAccessTokenWithIntegration(
-	kody: KodyNamespace,
-	providerName: string,
-	integration: IntegrationConfig,
-) {
-	const clientId = integration.clientId.trim()
-	if (!clientId) {
-		throw new Error(
-			`Integration "${providerName}" does not define a client id.`,
-		)
-	}
-	const refreshTokenSecretName =
-		integration.refreshTokenSecretName?.trim() ?? ''
-	if (!refreshTokenSecretName) {
-		throw new Error(
-			`Integration "${providerName}" does not define a refresh token secret name.`,
-		)
-	}
-	const accessTokenSecretName = integration.accessTokenSecretName.trim()
-	if (!accessTokenSecretName) {
-		throw new Error(
-			`Integration "${providerName}" does not define an access token secret name.`,
-		)
-	}
-
-	// Fail closed before the provider request: rotating providers invalidate
-	// the old refresh token as soon as they issue a replacement. A later
-	// allowed_packages denial would permanently strand the integration.
-	await assertSecretsCanBePersisted(kody, providerName, [
-		{ name: refreshTokenSecretName, secretKind: 'refresh token' },
-		{ name: accessTokenSecretName, secretKind: 'access token' },
-	])
-
-	const params = new URLSearchParams()
-	params.set('grant_type', 'refresh_token')
-	params.set(
-		'refresh_token',
-		buildSecretPlaceholder(refreshTokenSecretName, 'user'),
-	)
-	params.set('client_id', clientId)
-
-	if (integration.flow === 'confidential') {
-		const clientSecretSecretName =
-			integration.clientSecretSecretName?.trim() ?? ''
-		if (!clientSecretSecretName) {
-			throw new Error(
-				`Integration "${providerName}" uses confidential flow but does not define a client secret secret name.`,
-			)
-		}
-		params.set(
-			'client_secret',
-			buildSecretPlaceholder(clientSecretSecretName, 'user'),
-		)
-	}
-
-	const response = await fetch(integration.tokenUrl, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/x-www-form-urlencoded',
-		},
-		body: params.toString(),
-	})
-	const payload = (await response.json()) as Record<string, unknown>
-
-	if (!response.ok) {
-		throw new Error(
-			`Token refresh failed for integration "${providerName}" with HTTP ${response.status}.`,
-		)
-	}
-	if (!payload || typeof payload.access_token !== 'string') {
-		throw new Error(
-			`Token refresh for integration "${providerName}" did not return an access_token.`,
-		)
-	}
-
-	// Refresh-token-before-access-token is load-bearing for rotating providers:
-	// if a process dies mid-write, keeping the new refresh token is preferable
-	// to keeping only the new access token. The atomic batch makes partial
-	// commits impossible; order is still preserved inside the batch.
-	const secretsToPersist: Array<{
-		name: string
-		secretKind: 'access token' | 'refresh token'
-		value: string
-	}> = []
-	if (
-		typeof payload.refresh_token === 'string' &&
-		payload.refresh_token.length > 0
-	) {
-		secretsToPersist.push({
-			name: refreshTokenSecretName,
-			secretKind: 'refresh token',
-			value: payload.refresh_token,
-		})
-	}
-	secretsToPersist.push({
-		name: accessTokenSecretName,
-		secretKind: 'access token',
-		value: payload.access_token,
-	})
-	await persistSecretsAtomically(kody, providerName, secretsToPersist)
-
-	return payload.access_token
 }
 
 function buildSecretPlaceholder(name: string, scope: SecretScope) {
@@ -657,56 +512,6 @@ const __kodyReadIntegrationConfig = async (providerName) => {
   }
   return integration;
 };
-const __kodyAssertSecretsCanBePersisted = async (
-  providerName,
-  secrets,
-) => {
-  const secretSetMany = kody.secret_set_many;
-  if (typeof secretSetMany !== 'function') {
-    throw new Error('kody.secret_set_many is not available in this sandbox.');
-  }
-  const entries = secrets.map((secret) => {
-    const normalizedSecretName = secret.name.trim();
-    if (!normalizedSecretName) {
-      throw new Error(
-        \`Integration "\${providerName}" does not define an \${secret.secretKind} secret name.\`,
-      );
-    }
-    return {
-      name: normalizedSecretName,
-      scope: 'user',
-    };
-  });
-  await secretSetMany({
-    secrets: entries,
-    assertOnly: true,
-  });
-};
-const __kodyPersistSecretsAtomically = async (
-  providerName,
-  secrets,
-) => {
-  const secretSetMany = kody.secret_set_many;
-  if (typeof secretSetMany !== 'function') {
-    throw new Error('kody.secret_set_many is not available in this sandbox.');
-  }
-  const entries = secrets.map((secret) => {
-    const normalizedSecretName = secret.name.trim();
-    if (!normalizedSecretName) {
-      throw new Error(
-        \`Integration "\${providerName}" does not define an \${secret.secretKind} secret name.\`,
-      );
-    }
-    return {
-      name: normalizedSecretName,
-      value: secret.value,
-      scope: 'user',
-    };
-  });
-  await secretSetMany({
-    secrets: entries,
-  });
-};
 const __kodyGetNormalizedApiBaseUrl = (integration) => {
   if (!integration.apiBaseUrl) return null;
   return integration.apiBaseUrl.endsWith('/')
@@ -773,84 +578,19 @@ const __kodyRefreshAccessToken = async (providerName) => {
       \`Integration "\${providerName}" is a platform (built-in) integration: raw tokens are never exposed to sandboxed code. Use createAuthenticatedFetch("\${providerName}") — it refreshes host-side via integration_token_refresh automatically.\`,
     );
   }
-  return __kodyRefreshAccessTokenWithIntegration(providerName, integration);
-};
-const __kodyRefreshAccessTokenWithIntegration = async (providerName, integration) => {
-  const clientId = integration.clientId.trim();
-  if (!clientId) {
+  const refresh = kody.integration_refresh_access_token;
+  if (typeof refresh !== 'function') {
     throw new Error(
-      \`Integration "\${providerName}" does not define a client id.\`,
+      'kody.integration_refresh_access_token is not available in this sandbox.',
     );
   }
-  const refreshTokenSecretName = integration.refreshTokenSecretName?.trim() ?? '';
-  if (!refreshTokenSecretName) {
+  const result = await refresh({ name: providerName });
+  if (typeof result?.accessToken !== 'string' || result.accessToken.length === 0) {
     throw new Error(
-      \`Integration "\${providerName}" does not define a refresh token secret name.\`,
+      \`Host-side token refresh for integration "\${providerName}" did not return an access token.\`,
     );
   }
-  const accessTokenSecretName = integration.accessTokenSecretName.trim();
-  if (!accessTokenSecretName) {
-    throw new Error(
-      \`Integration "\${providerName}" does not define an access token secret name.\`,
-    );
-  }
-  await __kodyAssertSecretsCanBePersisted(providerName, [
-    { name: refreshTokenSecretName, secretKind: 'refresh token' },
-    { name: accessTokenSecretName, secretKind: 'access token' },
-  ]);
-  const params = new URLSearchParams();
-  params.set('grant_type', 'refresh_token');
-  params.set(
-    'refresh_token',
-    __kodyBuildSecretPlaceholder(refreshTokenSecretName, 'user'),
-  );
-  params.set('client_id', clientId);
-  if (integration.flow === 'confidential') {
-    const clientSecretSecretName = integration.clientSecretSecretName?.trim() ?? '';
-    if (!clientSecretSecretName) {
-      throw new Error(
-        \`Integration "\${providerName}" uses confidential flow but does not define a client secret secret name.\`,
-      );
-    }
-    params.set(
-      'client_secret',
-      __kodyBuildSecretPlaceholder(clientSecretSecretName, 'user'),
-    );
-  }
-  const response = await fetch(integration.tokenUrl, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: params.toString(),
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(
-      \`Token refresh failed for integration "\${providerName}" with HTTP \${response.status}.\`,
-    );
-  }
-  if (!payload || typeof payload.access_token !== 'string') {
-    throw new Error(
-      \`Token refresh for integration "\${providerName}" did not return an access_token.\`,
-    );
-  }
-  const secretsToPersist = [];
-  if (typeof payload.refresh_token === 'string' && payload.refresh_token.length > 0) {
-    secretsToPersist.push({
-      name: refreshTokenSecretName,
-      secretKind: 'refresh token',
-      value: payload.refresh_token,
-    });
-  }
-  secretsToPersist.push({
-    name: accessTokenSecretName,
-    secretKind: 'access token',
-    value: payload.access_token,
-  });
-  await __kodyPersistSecretsAtomically(providerName, secretsToPersist);
-  return payload.access_token;
+  return result.accessToken;
 };
 const __kodyCreateAuthenticatedFetch = async (providerName) => {
   const integration = await __kodyReadIntegrationConfig(providerName);

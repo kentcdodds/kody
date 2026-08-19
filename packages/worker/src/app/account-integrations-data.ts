@@ -15,6 +15,7 @@ import {
 	getOauthApp,
 	listJoinedIntegrations,
 	listOauthApps,
+	oauthAppToSetupPrefill,
 	toJoinedIntegrationConfig,
 	type OauthAppSetupPrefill,
 	type PlatformOauthApp,
@@ -286,6 +287,21 @@ export async function loadAccountOauthAppBySlug(
  * (agents typically save tokenUrl and apiBaseUrl but no authorize URL)
  * cannot, and would dead-end the page on "missing configuration".
  */
+export function readConnectOauthLookupOptions(searchParams: URLSearchParams) {
+	const platformParam = searchParams.get('platform')?.trim()
+	const appParam = searchParams.get('app')?.trim()
+	return {
+		preferPlatform: platformParam === '1',
+		platformSlug:
+			platformParam && platformParam !== '1'
+				? (normalizeProviderKey(platformParam) ?? undefined)
+				: undefined,
+		appSlug: appParam
+			? (normalizeProviderKey(appParam) ?? undefined)
+			: undefined,
+	}
+}
+
 function recordCanDriveConnectFlow(record: AccountIntegrationRecord): boolean {
 	return Boolean(
 		record.authorization?.authorizeUrl?.trim() && record.tokenUrl?.trim(),
@@ -310,6 +326,12 @@ export async function loadAccountIntegrationByName(
 		 * google-2 keeps an existing bring-your-own google connection intact.
 		 */
 		platformSlug?: string
+		/**
+		 * Saved bring-your-own app to reuse under a new connection name
+		 * (`app=<slug>`): connecting `work` on the google app must not depend
+		 * on inferring that app from the typed name.
+		 */
+		appSlug?: string
 	},
 ): Promise<AccountIntegrationRecord | null> {
 	// A user-lane record still wins when it can actually drive the flow (the
@@ -335,6 +357,20 @@ export async function loadAccountIntegrationByName(
 		const record = toAccountIntegrationRecord(joined)
 		if (recordCanDriveConnectFlow(record)) return record
 		return (await platformFallback()) ?? record
+	}
+
+	if (options?.appSlug) {
+		const app = await getOauthApp({
+			env,
+			userId: user.mcpUser.userId,
+			slug: options.appSlug,
+		})
+		if (app) {
+			// Keep the pinned app even when it cannot drive authorize yet.
+			// Falling back by the typed connection name can land on a
+			// different built-in (`app=linear&provider=github-platform`).
+			return toAppOnlyIntegrationRecord(oauthAppToSetupPrefill(app), name)
+		}
 	}
 
 	// 2–3. Exact app slug, else field-wise provider-family prefill (shared

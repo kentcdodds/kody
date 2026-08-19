@@ -353,8 +353,11 @@ export function AccountManagementLinkNav(
 				// The nav fills the shell's absolute left track (full height,
 				// so the sticky inner column has the whole page to stick
 				// through); below 860px it returns to flow as a wrapping row.
-				// Named so a view transition lifts it out of `<main>` / `page`
-				// and the rail stays still even if a transition still runs.
+				// Named so a view transition lifts it out of `<main>` / `page`.
+				// Intra-shell tab clicks skip VT. Leaving/entering the shell
+				// fades this name (styles.css) so the old rail is not pinned
+				// as a ghost on the destination. The group stays still so
+				// account↔admin (rail on both sides) does not morph.
 				position: 'absolute',
 				left: pageGutter,
 				top: 0,
@@ -393,6 +396,39 @@ export function AccountManagementLinkNav(
 					</a>
 				))}
 			</div>
+		</nav>
+	)
+}
+
+/**
+ * In-flow pill row for filters and other secondary link sets. Do not use
+ * `AccountManagementLinkNav` for this — that component is the unique
+ * `[data-account-nav]` rail the shell absolutely positions, so a second
+ * instance stacks on top of the admin/account sections.
+ */
+export function AccountManagementInlineLinkNav(
+	handle: Handle<AccountManagementLinkNavProps>,
+) {
+	return () => (
+		<nav
+			aria-label={handle.props.label}
+			mix={css({
+				display: 'flex',
+				flexWrap: 'wrap',
+				alignItems: 'center',
+				gap: '0.3rem',
+			})}
+		>
+			{handle.props.items.map((item) => (
+				<a
+					key={item.href}
+					href={item.href}
+					aria-current={item.active ? 'page' : undefined}
+					mix={css(accountNavLinkCss)}
+				>
+					{item.label}
+				</a>
+			))}
 		</nav>
 	)
 }

@@ -1,7 +1,12 @@
 import { jsx } from 'remix/ui/jsx-runtime'
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
+import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
+import { RouterLocationProvider } from '#client/router-location.tsx'
+import { AdminCommunityReportsRoute } from '#client/routes/admin-community-reports.tsx'
 import {
+	AccountManagementInlineLinkNav,
+	AccountManagementLinkNav,
 	AccountPageHeader,
 	IdValue,
 	MetadataGrid,
@@ -86,4 +91,52 @@ test('account subnav lists secrets and memories and omits values', async () => {
 	expect(html).toContain('href="/account/memories"')
 	expect(html).not.toContain('href="/account/values"')
 	expect(html).not.toContain('>Values</a>')
+})
+
+test('inline link nav stays in flow and is not a second account rail', async () => {
+	const items = [
+		{ href: '/admin/community-reports', label: 'Open', active: true },
+		{
+			href: '/admin/community-reports?status=resolved',
+			label: 'Resolved',
+			active: false,
+		},
+	]
+
+	const railHtml = await renderToString(
+		jsx(AccountManagementLinkNav, {
+			label: 'Admin sections',
+			items,
+		}),
+	)
+	expect(railHtml).toContain('data-account-nav')
+	expect(readRulesFor(railHtml, 'nav')).toContain('position: absolute')
+
+	const inlineHtml = await renderToString(
+		jsx(AccountManagementInlineLinkNav, {
+			label: 'Report status',
+			items,
+		}),
+	)
+	expect(inlineHtml).toContain('aria-label="Report status"')
+	expect(inlineHtml).toContain('>Open</a>')
+	expect(inlineHtml).not.toContain('data-account-nav')
+	expect(readRulesFor(inlineHtml, 'nav')).not.toContain('position: absolute')
+})
+
+test('community reports page keeps one admin rail and an in-flow status filter', async () => {
+	const html = await renderToString(
+		jsx(RouterLocationProvider, {
+			url: '/admin/community-reports',
+			children: jsx(AppLoaderDataProvider, {
+				children: jsx(AdminCommunityReportsRoute, {}),
+			}),
+		}),
+	)
+
+	// The shell CSS mentions `[data-account-nav]`; count the live attribute.
+	expect((html.match(/(?<!\[)data-account-nav/g) ?? []).length).toBe(1)
+	expect(html).toContain('aria-label="Admin sections"')
+	expect(html).toContain('aria-label="Report status"')
+	expect(html).toContain('href="/admin/community-reports?status=resolved"')
 })

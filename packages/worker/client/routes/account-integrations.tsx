@@ -39,9 +39,14 @@ import {
 } from '#client/routes/record-table.tsx'
 import { renderByokExplainer } from '#client/routes/byok-explainer.tsx'
 import {
+	addAccountAnchorId,
+	buildAddAccountHref,
 	buildCustomIntegrationSetupPrompt,
 	buildIntegrationSetupPrompt,
 	integrationProviderSuggestions,
+	isAddAccountFormOpen,
+	nextSuggestedConnectionName,
+	resolveAddAccountConnectionName,
 } from '#client/routes/integration-provider-catalog.ts'
 import { integrationDisplayName } from '#client/routes/integration-filter.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
@@ -258,14 +263,143 @@ function buildConnectOauthHref(input: {
 	appSlug?: string
 }) {
 	const params = new URLSearchParams({ provider: input.name })
+	const appSlug = input.appSlug?.trim()
 	if (input.platform) {
-		params.set('platform', input.appSlug?.trim() || '1')
+		params.set('platform', appSlug || '1')
+	} else if (appSlug) {
+		params.set('app', appSlug)
 	}
 	return `/connect/oauth?${params.toString()}`
 }
 
 function connectActionLabel(status: 'Connected' | 'Needs setup') {
 	return status === 'Connected' ? 'Reconnect' : 'Connect'
+}
+
+const addAccountLinkCss = {
+	...primaryLinkCss,
+	justifySelf: 'start',
+	width: 'fit-content',
+}
+
+function AddAccountForm(
+	handle: Handle<{
+		slug: string
+		platform: boolean
+		existingNames: ReadonlyArray<string>
+		open: boolean
+		openHref: string
+	}>,
+) {
+	let nameError: string | null = null
+	let editedName: string | null = null
+	let boundSlug = handle.props.slug
+
+	function connectHref(connectionName: string) {
+		return buildConnectOauthHref({
+			name: connectionName,
+			platform: handle.props.platform,
+			appSlug: handle.props.slug,
+		})
+	}
+
+	return () => {
+		if (handle.props.slug !== boundSlug) {
+			boundSlug = handle.props.slug
+			editedName = null
+			nameError = null
+		}
+		const suggested = nextSuggestedConnectionName(
+			handle.props.slug,
+			handle.props.existingNames,
+		)
+		const name = editedName ?? suggested
+		if (!handle.props.open) {
+			return (
+				<a
+					href={handle.props.openHref}
+					data-testid="add-account-open"
+					data-prevent-scroll-reset
+					mix={css(addAccountLinkCss)}
+				>
+					Add another account
+				</a>
+			)
+		}
+		return (
+			<form
+				id={addAccountAnchorId}
+				data-testid="add-account-form"
+				mix={[
+					on('submit', (event) => {
+						event.preventDefault()
+						const resolved = resolveAddAccountConnectionName({
+							name,
+							suggested,
+							existingNames: handle.props.existingNames,
+						})
+						if (!resolved.ok) {
+							nameError = resolved.error
+							handle.update()
+							return
+						}
+						nameError = null
+						window.location.assign(connectHref(resolved.name))
+					}),
+					css({
+						display: 'grid',
+						gap: spacing.sm,
+						justifyItems: 'start',
+						scrollMarginTop: '5.5rem',
+					}),
+				]}
+			>
+				<label mix={css(fieldCss)}>
+					<span mix={css(fieldLabelCss)}>Connection name</span>
+					<input
+						type="text"
+						name="connectionName"
+						data-field-ring
+						required
+						value={name}
+						aria-invalid={nameError ? 'true' : undefined}
+						aria-describedby={nameError ? 'add-account-name-error' : undefined}
+						{...passwordManagerIgnoreProps}
+						mix={[
+							on('input', (event) => {
+								editedName = event.currentTarget.value
+								nameError = null
+								handle.update()
+							}),
+							css(accountInputCss),
+						]}
+					/>
+					{nameError ? (
+						<p
+							id="add-account-name-error"
+							role="alert"
+							data-testid="add-account-name-error"
+							mix={css({
+								...descriptionCss,
+								color: colors.error,
+							})}
+						>
+							{nameError}
+						</p>
+					) : null}
+				</label>
+				<button
+					type="submit"
+					mix={css({
+						...getPillButtonCss({ size: 'sm' }),
+						display: 'inline-flex',
+					})}
+				>
+					Connect
+				</button>
+			</form>
+		)
+	}
 }
 
 function PlugIcon() {
@@ -913,6 +1047,16 @@ export function AccountIntegrationsRoute(handle: Handle) {
 															</article>
 														)
 													})}
+													<AddAccountForm
+														slug={selectedApp.slug}
+														platform={isBuiltInApp(selectedApp)}
+														existingNames={[
+															...integrations.map((entry) => entry.name),
+															...apps.map((app) => app.slug),
+														]}
+														open={isAddAccountFormOpen(getCurrentHref())}
+														openHref={buildAddAccountHref(getCurrentHref())}
+													/>
 												</div>
 											)}
 										</section>

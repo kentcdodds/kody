@@ -91,6 +91,29 @@ export type CommunityDetailLoaderData = {
 	viewerInstall: ViewerListingInstall | null
 }
 
+export type PackageFilesChildLoaderData = {
+	name: string
+	path: string
+	kind: 'file' | 'directory'
+}
+
+export type PackageFilesLoaderData = {
+	ok: true
+	title: string
+	backHref: string
+	backLabel: string
+	filesBasePath: string
+	selectedPath: string
+	kind: 'file' | 'directory'
+	paths: Array<string>
+	children: Array<PackageFilesChildLoaderData>
+	ancestors: Array<{ name: string; path: string }>
+	content: string | null
+	contentPath: string | null
+	contentKind: 'markdown' | 'code' | 'text' | null
+	language: string | null
+}
+
 /** SSR-embedded shell data for client-only regions on the detail page. */
 export type CommunityDetailShellLoaderData = {
 	ok: true
@@ -1438,6 +1461,7 @@ export type AppLoaderData = {
 	guides?: GuidesLoaderData
 	guideDetail?: GuideDetailLoaderData
 	communityDetailShell?: CommunityDetailShellLoaderData
+	packageFiles?: PackageFilesLoaderData
 	profileShell?: ProfileShellLoaderData | ProfileUnavailableLoaderData
 	timeline?: TimelineLoaderData
 	accountStars?: AccountStarsLoaderData

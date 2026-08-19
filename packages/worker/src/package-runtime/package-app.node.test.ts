@@ -206,6 +206,12 @@ test('package app kody proxy supports mcp namespace calls', async () => {
 		},
 	])
 	expect(() => kody['mcp:home:set_pin']).toThrow()
+	expect('mcp' in kody).toBe(true)
+	const { home } = kody.mcp as Record<
+		string,
+		Record<string, (args: unknown) => Promise<unknown>>
+	>
+	await expect(home.set_pin({ pin: '9' })).resolves.toEqual({ ok: true })
 })
 
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {

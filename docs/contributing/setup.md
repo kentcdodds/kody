@@ -116,7 +116,10 @@ Quick notes for getting a local kody environment running.
   suite starts, so `npm run validate` and `npm run test:push` self-heal on a
   fresh machine.
 - Use `npm run test:e2e:install` when you want to prefetch Playwright browsers
-  ahead of time instead of waiting for the first E2E run.
+  ahead of time instead of waiting for the first E2E run. CI caches
+  `~/.cache/ms-playwright` and runs `test:e2e:ensure`, so a lockfile-matching
+  cache hit skips the download and never runs `apt-get` (`--with-deps` is
+  local-only; `apt-get update` can hang the E2E job past the 15-minute timeout).
 - `npm run test:e2e:run` runs the Playwright suite through Nx and depends on a
   cached `worker:prepare-e2e-env` target for `.env` bootstrap plus an uncached
   `worker:prepare-playwright` target that checks the local Chromium install.

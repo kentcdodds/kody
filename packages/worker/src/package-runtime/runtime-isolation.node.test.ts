@@ -239,3 +239,109 @@ test('preloaded kody exports resolve from the active runtime store', async () =>
 		})
 	})
 })
+
+test('preloaded kody.mcp survives bundler-style destructuring of server names', async () => {
+	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
+		const sharedStorage = new AsyncLocalStorage<unknown>()
+		;(globalThis as unknown as Record<symbol, unknown>)[
+			Symbol.for('kody.runtimeStorage')
+		] = sharedStorage
+		const url = await writeRuntimeFile()
+		const mod = (await import(url)) as RuntimeModule & {
+			kody: {
+				mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+			}
+		}
+
+		const result = await sharedStorage.run(
+			{
+				// Match the pre-fix sandbox shape: kody.mcp is a get-only proxy
+				// with no has/ownKeys/getOwnPropertyDescriptor traps.
+				kody: new Proxy(
+					{},
+					{
+						get(_target, property) {
+							if (property !== 'mcp') return undefined
+							return new Proxy(
+								{},
+								{
+									get(_mcpTarget, serverName) {
+										if (serverName !== 'home') return undefined
+										return {
+											async sonos_list_players() {
+												return { players: ['Kitchen'] }
+											},
+										}
+									},
+								},
+							)
+						},
+					},
+				),
+			},
+			async () => {
+				const { home } = mod.kody.mcp
+				return await home.sonos_list_players({})
+			},
+		)
+
+		expect(result).toEqual({ players: ['Kitchen'] })
+	})
+})
+
+test('destructured kody.mcp tools resolve against the calling run', async () => {
+	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
+		const sharedStorage = new AsyncLocalStorage<unknown>()
+		;(globalThis as unknown as Record<symbol, unknown>)[
+			Symbol.for('kody.runtimeStorage')
+		] = sharedStorage
+		const url = await writeRuntimeFile()
+		const mod = (await import(url)) as RuntimeModule & {
+			kody: {
+				mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+			}
+		}
+
+		const captured = await sharedStorage.run(
+			{
+				kody: {
+					mcp: {
+						home: {
+							async sonos_list_players() {
+								return { run: 'first' }
+							},
+						},
+					},
+				},
+			},
+			async () => {
+				const { home } = mod.kody.mcp
+				const { sonos_list_players } = home
+				return { home, sonos_list_players }
+			},
+		)
+
+		const result = await sharedStorage.run(
+			{
+				kody: {
+					mcp: {
+						home: {
+							async sonos_list_players() {
+								return { run: 'second' }
+							},
+						},
+					},
+				},
+			},
+			async () => ({
+				viaHome: await captured.home.sonos_list_players({}),
+				viaTool: await captured.sonos_list_players({}),
+			}),
+		)
+
+		expect(result).toEqual({
+			viaHome: { run: 'second' },
+			viaTool: { run: 'second' },
+		})
+	})
+})

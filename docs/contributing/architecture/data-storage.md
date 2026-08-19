@@ -345,8 +345,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   (`community_forks.adopted_at` set via `community_fork_adopt`). Unadopted
   community forks (`community_forks.forked_package_id`, indexed in the squashed
   baseline) still require an explicit `allowed_packages` grant on every package
-  read path. Updating or deleting a user secret from package code always
-  requires that grant, regardless of fork or adoption state.
+  read path. Updating or deleting a user secret from package code (`secret_set`
+  / `secret_delete`) always requires that grant, regardless of fork or adoption
+  state. Official OAuth token rotation persists host-side and does not use that
+  write grant.
 - `user_oauth_apps` (`0001-squashed-init.sql`): per-user OAuth app rows keyed by
   `(user_id, slug)`. Holds shared client id, client-secret secret name, provider
   endpoints, and flow options. See [OAuth integrations](./integrations.md).
@@ -1231,9 +1233,9 @@ on write unless a migration backfills existing rows.
   `forker_user_id`; index in `0001-squashed-init.sql`). Self-authored packages
   and adopted forks (`community_forks.adopted_at` / `adoption_note`) skip that
   grant for read/use only. Mutations from package code (`secret_set` /
-  `secret_delete` / OpenAPI token-refresh writes) always require the grant.
-  Package-scoped secrets are owned exclusively by the package id in their bucket
-  binding.
+  `secret_delete`) always require the grant. Official OAuth token rotation
+  persists host-side and does not use that write grant. Package-scoped secrets
+  are owned exclusively by the package id in their bucket binding.
 - `user_oauth_apps.extra_authorize_params_json`,
   `user_integrations.scopes_json`, and `user_integrations.required_hosts_json`
   (`0001-squashed-init.sql`, `packages/worker/src/integrations/`) store a

@@ -16,7 +16,7 @@ import {
 	getGhostButtonCss,
 } from '#universal/styles/style-primitives.ts'
 import {
-	AccountManagementLinkNav,
+	AccountManagementInlineLinkNav,
 	AccountManagementMessage,
 	AccountManagementShell,
 	AdminPageHeader,
@@ -297,7 +297,7 @@ export function AdminCommunityReportsRoute(handle: Handle) {
 					currentHref={currentHref}
 				/>
 
-				<AccountManagementLinkNav
+				<AccountManagementInlineLinkNav
 					label="Report status"
 					items={statusOptions.map((option) => ({
 						href: buildReportsHref(handle, option.value),

@@ -262,6 +262,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		]),
 	)
 
+	communityMockModule.listCommunityListingsWithAggregates.mockReset()
 	communityMockModule.listCommunityListingsWithAggregates.mockResolvedValue([
 		sampleListing,
 	])
@@ -274,11 +275,16 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(communityResponse.headers.get('Content-Type')).toContain('text/html')
 	const communityHtml = await readResponseText(communityResponse)
 	expect(communityHtml).toContain('data-testid="community-listings-frame"')
+	expect(communityHtml).toContain('@kentcdodds/github-triage')
+	expect(communityHtml).not.toContain('data-testid="community-listings-empty"')
 	expect(communityHtml).toContain('rmx-target="community-listings"')
 	expect(communityHtml).toContain('rmx-history="push"')
 	expect(communityHtml).toContain('<!-- rmx:h:')
 	const communityProps = readAppRootProps(communityHtml)
 	expect(communityProps.loaderData?.community).toBeUndefined()
+	expect(
+		communityMockModule.listCommunityListingsWithAggregates,
+	).toHaveBeenCalledTimes(1)
 
 	const communityFrameResponse = await runHtmlHandler(
 		createCommunityHandler(env),
@@ -952,6 +958,13 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(connectionResponse.status).toBe(200)
 	const connectionHtml = await readResponseText(connectionResponse)
 	expect(connectionHtml).toContain('1 account connected.')
+	expect(connectionHtml).toContain('data-testid="add-account-open"')
+	expect(connectionHtml).toContain('Add another account')
+	expect(connectionHtml).toContain(
+		'href="/account/integrations/google?add-account=1#add-account"',
+	)
+	expect(connectionHtml).toContain('data-prevent-scroll-reset')
+	expect(connectionHtml).not.toContain('data-testid="add-account-form"')
 	expect(connectionHtml).toContain('>Reconnect<')
 	expect(connectionHtml).toContain('data-testid="provider-mark"')
 	expect(connectionHtml).toContain('data-testid="integration-advanced"')
@@ -1028,6 +1041,33 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(builtInHtml).toContain('data-testid="built-in-indicator"')
 	expect(builtInHtml).toContain('Provided by Kody')
 	expect(builtInHtml).toContain('2 accounts connected.')
+	expect(builtInHtml).toContain('data-testid="add-account-open"')
+	expect(builtInHtml).toContain('Add another account')
+	expect(builtInHtml).not.toContain('data-testid="add-account-form"')
+
+	const addAccountResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/account/integrations/google?add-account=1#add-account',
+			{ headers: { Cookie: cookie } },
+		),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [googleConnection],
+				apps: [googleApp],
+			},
+		},
+	})
+	expect(addAccountResponse.status).toBe(200)
+	const addAccountHtml = await readResponseText(addAccountResponse)
+	expect(addAccountHtml).toContain('data-testid="add-account-form"')
+	expect(addAccountHtml).toContain('id="add-account"')
+	expect(addAccountHtml).toContain('Connection name')
+	expect(addAccountHtml).toContain('value="google-2"')
+	expect(addAccountHtml).not.toContain('data-testid="add-account-open"')
 	expect(builtInHtml).toContain('Needs setup')
 	expect(builtInHtml).toContain('>Connect<')
 	expect(builtInHtml).toContain(

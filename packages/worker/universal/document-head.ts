@@ -152,6 +152,10 @@ const routeDocumentHeads = {
 	),
 	[routePattern(routes.accountPackages)]: titleOnly('Packages'),
 	[routePattern(routes.accountPackageDetail)]: titleOnly('Packages'),
+	[routePattern(routes.accountPackageFiles)]: ({ loaderData }) => {
+		const files = loaderData?.packageFiles
+		return titleOnly(files?.ok ? `${files.title} files` : 'Package files')
+	},
 	[routePattern(routes.accountStars)]: titleOnly('Starred packages'),
 	[routePattern(routes.accountPasskeys)]: titleOnly('Passkeys'),
 	[routePattern(routes.accountSecrets)]: titleOnly('Secrets'),
@@ -236,6 +240,22 @@ const routeDocumentHeads = {
 	),
 	[routePattern(routes.communityDetail)]: communityListingHead,
 	[routePattern(routes.communityPackage)]: communityListingHead,
+	[routePattern(routes.communityDetailFiles)]: ({ loaderData, pathname }) => {
+		const files = loaderData?.packageFiles
+		if (!files?.ok) return titleOnly('Package files')
+		return {
+			title: `${files.title} files`,
+			canonicalPath: pathname,
+		}
+	},
+	[routePattern(routes.communityPackageFiles)]: ({ loaderData, pathname }) => {
+		const files = loaderData?.packageFiles
+		if (!files?.ok) return titleOnly('Package files')
+		return {
+			title: `${files.title} files`,
+			canonicalPath: pathname,
+		}
+	},
 	[routePattern(routes.profile)]: ({ loaderData, params, pathname }) => {
 		const shell = loaderData?.profileShell
 		if (shell && !shell.ok) {

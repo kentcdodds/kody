@@ -30,8 +30,10 @@ vi.mock('./package-subscriptions.ts', () => ({
 }))
 
 const {
+	IntegrationRawTokenRefusedError,
 	IntegrationTokenRefreshCallerError,
 	integrationTokenRefreshCallerMarker,
+	refreshAndMaterializeUserLaneAccessToken,
 	refreshIntegrationTokens,
 } = await import('./token-refresh.ts')
 
@@ -566,4 +568,108 @@ test('successful Google refresh persists userinfo email as account_label when mi
 	} finally {
 		vi.unstubAllGlobals()
 	}
+})
+
+test('user-lane refreshAccessToken host path persists without a package write grant and returns the access token', async () => {
+	const { env } = createHarness()
+	const userId = 'user-lane-materialize'
+	await upsertIntegration({
+		env,
+		userId,
+		config: {
+			name: 'x-kodykoala',
+			tokenUrl: 'https://api.x.com/2/oauth2/token',
+			flow: 'pkce',
+			clientId: 'x-client-id',
+			accessTokenSecretName: 'x-kodykoalaAccessToken',
+			refreshTokenSecretName: 'x-kodykoalaRefreshToken',
+			requiredHosts: ['api.x.com'],
+			authorization: {
+				authorizeUrl: 'https://x.com/i/oauth2/authorize',
+				scopes: ['tweet.read'],
+				scopeSeparator: ' ',
+				extraAuthorizeParams: {},
+			},
+		},
+	})
+	await saveSecret({
+		env,
+		userId,
+		name: 'x-kodykoalaAccessToken',
+		value: 'stale-access-token',
+		scope: 'user',
+		description: '',
+		storageContext,
+	})
+	await saveSecret({
+		env,
+		userId,
+		name: 'x-kodykoalaRefreshToken',
+		value: 'current-refresh-token',
+		scope: 'user',
+		description: '',
+		storageContext,
+	})
+	await approveSecretHosts(env, userId, 'x-kodykoalaRefreshToken', [
+		'api.x.com',
+	])
+
+	const fetchMock = stubTokenEndpoint({
+		access_token: 'fresh-x-access-token',
+		refresh_token: 'rotated-x-refresh-token',
+	})
+	try {
+		const result = await refreshAndMaterializeUserLaneAccessToken({
+			env,
+			userId,
+			name: 'x-kodykoala',
+		})
+		expect(result.accessToken).toBe('fresh-x-access-token')
+		expect(result.refreshTokenRotated).toBe(true)
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+
+		const persistedAccess = await resolveSecret({
+			env,
+			userId,
+			name: 'x-kodykoalaAccessToken',
+			scope: 'user',
+			storageContext,
+		})
+		expect(persistedAccess.found && persistedAccess.value).toBe(
+			'fresh-x-access-token',
+		)
+		expect(persistedAccess.found && persistedAccess.allowedPackages).toEqual([])
+	} finally {
+		vi.unstubAllGlobals()
+	}
+
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env,
+		app: {
+			slug: 'github',
+			clientId: 'platform-github-client-id',
+			clientSecret: 'platform-github-client-secret-value',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'confidential',
+		},
+	})
+	await upsertPlatformIntegration({
+		env,
+		userId,
+		platformAppSlug: 'github',
+		scopes: [],
+		accessTokenSecretName: 'githubAccessToken',
+		refreshTokenSecretName: 'githubRefreshToken',
+	})
+	await seedUserTokens(env, userId, 'github')
+	await expect(
+		refreshAndMaterializeUserLaneAccessToken({
+			env,
+			userId,
+			name: 'github',
+		}),
+	).rejects.toBeInstanceOf(IntegrationRawTokenRefusedError)
 })

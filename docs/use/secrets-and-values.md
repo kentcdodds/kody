@@ -123,11 +123,12 @@ User-scoped secrets are available automatically for **reading and using**
 themselves, and to adopted community forks (`community_fork_adopt` after a real
 source review). Unadopted community-forked packages need explicit **package**
 approval (`allowed_packages`) before those read/use paths. Updating or deleting
-a user secret from package code (`secret_set`, `secret_delete`, OpenAPI
-token-refresh writes) always needs the grant, including for self-authored and
-adopted packages. Saving a secret, approving a host, or succeeding in an ad hoc
-execute smoke test does not grant package access. Host and capability approvals
-are unchanged.
+a user secret from package code (`secret_set`, `secret_delete`) always needs the
+grant, including for self-authored and adopted packages. Official OAuth token
+rotation (`createAuthenticatedFetch`, `refreshAccessToken`, OpenAPI integration
+401 retry) persists host-side and does not need that write grant. Saving a
+secret, approving a host, or succeeding in an ad hoc execute smoke test does not
+grant package access. Host and capability approvals are unchanged.
 
 When several secrets need the same package approved, Kody can provide a bulk
 approval URL shaped like

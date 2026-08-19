@@ -38,6 +38,7 @@ import {
 	recordCellClamp,
 	recordStampCss,
 } from './record-table.tsx'
+import { getAccountPackageFilesHref } from '#universal/package-files.ts'
 import {
 	type AccountPackageDetail,
 	type AccountPackageListItem,
@@ -538,6 +539,18 @@ export function AccountPackagesRoute(handle: Handle) {
 										},
 									]}
 								/>
+								<a
+									href={getAccountPackageFilesHref({
+										packageId: selectedPackage.id,
+									})}
+									data-testid="account-browse-files"
+									mix={css({
+										...getGhostButtonCss({ size: 'sm' }),
+										width: 'fit-content',
+									})}
+								>
+									Browse files
+								</a>
 								{selectedPackage.searchText ? (
 									// The search index is a wall of concatenated text with no
 									// reading order. Left in flow it set the height of the whole

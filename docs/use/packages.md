@@ -23,7 +23,8 @@ Think in terms of:
 - package-owned webhooks
 
 Packages are the saved-entity unit across search, execute, repo editing, and UI
-hosting.
+hosting. `/account/packages/:packageId/files` browses the published text
+snapshot of a saved package.
 
 ## Package state model
 

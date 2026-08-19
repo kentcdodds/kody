@@ -100,7 +100,9 @@ arbitrary hosts:
 This invariant must hold for any code path that materializes an integration
 token and then attaches it to an outbound request. Host-side refresh via
 `integration_token_refresh` materializes tokens only server-side and returns
-metadata, so no new sandbox-visible token path is introduced.
+metadata. `refreshAccessToken` is the existing residual raw-token helper; it now
+persists through that same host path, then returns the access token for
+user-lane integrations only.
 
 ## Source of truth in code
 

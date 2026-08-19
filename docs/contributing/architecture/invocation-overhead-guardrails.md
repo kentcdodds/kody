@@ -67,6 +67,15 @@ loaders (`resolveSavedPackage`, `loadInvokeManifestBySourceId`); every cache key
 must start with the owning `userId` (per user isolation is inviolable); and new
 caches on invocation paths need an explicit staleness bound documented here.
 
+## Cold first-dispatch sample
+
+The first `kody.*` capability RPC in an isolate logs
+`kody-first-capability-dispatch-slow` when wall time is at least 250ms. That
+probe is for production isolate logs. Workers-unit keeps per-file isolation
+([decision 0011](../decisions/0011-workers-unit-pool-harness.md)), so the same
+threshold is not a test assertion. Vitest skips the warn so CI load cannot fail
+the console spy.
+
 ## Watch the percentiles
 
 Every invocation surface is metered through `recordUsage()` (see

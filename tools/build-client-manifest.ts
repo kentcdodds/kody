@@ -43,6 +43,7 @@ export const lazyAreaNames = [
 	'community-area',
 	'marketing-area',
 	'onboarding-area',
+	'package-files-area',
 ]
 
 /**
@@ -57,6 +58,7 @@ export const highlightAreaNames = [
 	'blog-area',
 	'community-area',
 	'onboarding-area',
+	'package-files-area',
 ] as const
 
 const highlightAreaNameSet = new Set<string>(highlightAreaNames)

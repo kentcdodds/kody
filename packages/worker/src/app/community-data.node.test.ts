@@ -230,6 +230,25 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 	expect(forked?.listing.viewerInstall?.status).toBe('installed')
 })
 
+test('community index load is memoized per request', async () => {
+	resetDataCacheForTests()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.listCommunityListingsWithAggregates.mockReset()
+	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
+		sampleListing,
+	])
+
+	const request = new Request('https://example.com/community')
+	const first = loadCommunityIndexData({} as Env, request)
+	const second = loadCommunityIndexData({} as Env, request)
+	expect(second).toBe(first)
+	expect((await first).listings).toHaveLength(1)
+	expect(await second).toBe(await first)
+	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledTimes(
+		1,
+	)
+})
+
 test('community index omits viewerInstall for anonymous viewers and auth failures', async () => {
 	resetDataCacheForTests()
 	mockModule.listSavedPackagesByKodyIds.mockReset()
