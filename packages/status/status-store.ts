@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
 import { sendAlertEmail } from './alert-email.ts'
+import { incidentMinutesForDay, type IncidentSpan } from './day-bars.ts'
 import {
 	composeStatusEmail,
 	decideStatusEmail,
@@ -509,8 +510,17 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 
 	async getSnapshot(): Promise<StatusSnapshot> {
 		const now = Date.now()
+		const windowStartMs = Date.parse(
+			`${toDay(now - (uptimeWindowDays - 1) * 24 * 60 * 60 * 1000)}T00:00:00.000Z`,
+		)
+		const incidentSpans = this.loadIncidentSpans(windowStartMs, now)
 		const components = statusComponents.map((component) =>
-			this.buildComponentSnapshot(component.id, component.name, now),
+			this.buildComponentSnapshot(
+				component.id,
+				component.name,
+				now,
+				incidentSpans.get(component.id) ?? [],
+			),
 		)
 		const overallStatus: ComponentStatus = components.some(
 			(component) => component.status === 'down',
@@ -532,10 +542,40 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 		}
 	}
 
+	private loadIncidentSpans(
+		windowStartMs: number,
+		now: number,
+	): Map<StatusComponentId, Array<IncidentSpan>> {
+		const rows = this.ctx.storage.sql
+			.exec<{
+				component: string
+				started_at: number
+				resolved_at: number | null
+			}>(
+				`SELECT component, started_at, resolved_at FROM incidents
+				WHERE started_at < ? AND (resolved_at IS NULL OR resolved_at >= ?)`,
+				now,
+				windowStartMs,
+			)
+			.toArray()
+		const byComponent = new Map<StatusComponentId, Array<IncidentSpan>>()
+		for (const row of rows) {
+			if (!isStatusComponentId(row.component)) continue
+			const spans = byComponent.get(row.component) ?? []
+			spans.push({
+				startedAt: row.started_at,
+				resolvedAt: row.resolved_at,
+			})
+			byComponent.set(row.component, spans)
+		}
+		return byComponent
+	}
+
 	private buildComponentSnapshot(
 		id: StatusComponentId,
 		name: string,
 		now: number,
+		spans: ReadonlyArray<IncidentSpan>,
 	): ComponentSnapshot {
 		const stateRows = this.ctx.storage.sql
 			.exec<{ status: string }>(
@@ -573,6 +613,7 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				day,
 				total: stat?.total ?? 0,
 				failed: stat?.failed ?? 0,
+				incidentMinutes: incidentMinutesForDay(day, spans, now),
 			})
 		}
 		const total = days.reduce((sum, day) => sum + day.total, 0)

@@ -56,6 +56,9 @@ export type ComponentDayStat = {
 	day: string
 	total: number
 	failed: number
+	/** Minutes an opened incident overlapped this UTC day. Isolated probe
+	 * failures below the consecutive-failure threshold stay 0. */
+	incidentMinutes: number
 }
 
 export type ComponentSnapshot = {
