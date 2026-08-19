@@ -142,7 +142,14 @@ function toAppOnlyIntegrationRecord(
 	}
 }
 
-function buildOauthAppRecords(
+function connectionRef(entry: JoinedIntegration) {
+	return {
+		name: entry.connection.name,
+		accountLabel: entry.connection.accountLabel,
+	}
+}
+
+function buildUserOauthAppRecords(
 	apps: Awaited<ReturnType<typeof listOauthApps>>,
 	joined: Awaited<ReturnType<typeof listJoinedIntegrations>>,
 ): Array<AccountOauthAppRecord> {
@@ -153,17 +160,71 @@ function buildOauthAppRecords(
 	for (const entry of joined) {
 		if (entry.lane !== 'user') continue
 		const existing = connectionsByAppSlug.get(entry.app.slug) ?? []
-		existing.push({
-			name: entry.connection.name,
-			accountLabel: entry.connection.accountLabel,
-		})
+		existing.push(connectionRef(entry))
 		connectionsByAppSlug.set(entry.app.slug, existing)
 	}
-	return apps
-		.map((app) =>
-			toOauthAppPublic(app, connectionsByAppSlug.get(app.slug) ?? []),
-		)
-		.sort((left, right) => left.slug.localeCompare(right.slug))
+	return apps.map((app) =>
+		toOauthAppPublic(app, connectionsByAppSlug.get(app.slug) ?? []),
+	)
+}
+
+function buildPlatformOauthAppRecords(
+	joined: Awaited<ReturnType<typeof listJoinedIntegrations>>,
+): Array<AccountOauthAppRecord> {
+	const bySlug = new Map<
+		string,
+		{
+			app: PlatformOauthApp
+			connections: Array<{ name: string; accountLabel: string | null }>
+		}
+	>()
+	for (const entry of joined) {
+		if (entry.lane !== 'platform') continue
+		const existing = bySlug.get(entry.app.slug)
+		if (existing) {
+			existing.connections.push(connectionRef(entry))
+			continue
+		}
+		bySlug.set(entry.app.slug, {
+			app: entry.app,
+			connections: [connectionRef(entry)],
+		})
+	}
+	return Array.from(bySlug.values()).map(({ app, connections }) => ({
+		slug: app.slug,
+		provider: app.provider,
+		label: app.label,
+		clientId: app.clientId,
+		clientSecretSecretName: null,
+		tokenUrl: app.tokenUrl,
+		authorizeUrl: app.authorizeUrl,
+		apiBaseUrl: app.apiBaseUrl,
+		flow: app.flow,
+		usePkce: app.usePkce,
+		tokenExchangeStyle: app.tokenExchangeStyle,
+		scopeSeparator: app.scopeSeparator,
+		extraAuthorizeParams: app.extraAuthorizeParams,
+		connectionCount: connections.length,
+		connections,
+		platform: true,
+		platformLogoPath: buildPlatformOauthAppLogoPath(app),
+		createdAt: app.createdAt,
+		updatedAt: app.updatedAt,
+	}))
+}
+
+function buildOauthAppRecords(
+	apps: Awaited<ReturnType<typeof listOauthApps>>,
+	joined: Awaited<ReturnType<typeof listJoinedIntegrations>>,
+): Array<AccountOauthAppRecord> {
+	return [
+		...buildUserOauthAppRecords(apps, joined),
+		...buildPlatformOauthAppRecords(joined),
+	].sort((left, right) => {
+		const slugCompare = left.slug.localeCompare(right.slug)
+		if (slugCompare !== 0) return slugCompare
+		return Number(Boolean(left.platform)) - Number(Boolean(right.platform))
+	})
 }
 
 export async function loadAccountIntegrationsData(

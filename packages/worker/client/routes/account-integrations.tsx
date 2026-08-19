@@ -43,13 +43,12 @@ import {
 	buildIntegrationSetupPrompt,
 	integrationProviderSuggestions,
 } from '#client/routes/integration-provider-catalog.ts'
-import {
-	filterIntegrations,
-	integrationDisplayName,
-} from '#client/routes/integration-filter.ts'
+import { integrationDisplayName } from '#client/routes/integration-filter.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
 import {
 	colors,
+	radius,
+	shadows,
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
@@ -65,6 +64,7 @@ import {
 	fieldLabelCss,
 	getDangerPillCss,
 	getPillButtonCss,
+	hoverMq,
 	insetCardCss,
 	primaryLinkCss,
 	sectionTitleCss,
@@ -99,6 +99,86 @@ function buildOauthAppHref(appSlug: string, search = '') {
 
 function oauthAppTitle(app: AccountOauthAppListItem) {
 	return app.label?.trim() || app.provider || app.slug
+}
+
+function isBuiltInApp(app: AccountOauthAppListItem) {
+	return app.platform === true
+}
+
+function integrationListId(app: AccountOauthAppListItem) {
+	return isBuiltInApp(app) ? `platform:${app.slug}` : `user:${app.slug}`
+}
+
+function findAppForConnection(
+	apps: ReadonlyArray<AccountOauthAppListItem>,
+	connection: AccountIntegrationListItem,
+) {
+	return (
+		apps.find(
+			(app) =>
+				app.slug === connection.appSlug &&
+				isBuiltInApp(app) === Boolean(connection.platform),
+		) ?? null
+	)
+}
+
+function buildIntegrationHref(app: AccountOauthAppListItem, search = '') {
+	if (isBuiltInApp(app)) {
+		const first = app.connections[0]
+		return first
+			? integrationsRoute.buildDetailHref(first.name, search)
+			: routes.accountIntegrations.href()
+	}
+	return buildOauthAppHref(app.slug, search)
+}
+
+function accountsConnectedCopy(count: number) {
+	if (count === 0) return 'No accounts connected yet.'
+	if (count === 1) return '1 account connected.'
+	return `${count} accounts connected.`
+}
+
+function resolveIntegrationsSelection(input: {
+	href: string
+	apps: ReadonlyArray<AccountOauthAppListItem>
+	integrations: ReadonlyArray<AccountIntegrationListItem>
+}) {
+	const selectedAppSlug = readSelectedOauthAppSlug(input.href)
+	if (selectedAppSlug != null) {
+		const app =
+			input.apps.find(
+				(entry) => entry.slug === selectedAppSlug && !isBuiltInApp(entry),
+			) ?? null
+		return {
+			selectedApp: app,
+			highlightedConnectionName: null as string | null,
+			missingKind: app ? null : ('integration' as const),
+		}
+	}
+	const connectionName = integrationsRoute.getSelection(input.href).selectedId
+	if (connectionName == null) {
+		return {
+			selectedApp: null,
+			highlightedConnectionName: null,
+			missingKind: null,
+		}
+	}
+	const connection = input.integrations.find(
+		(entry) => entry.name === connectionName,
+	)
+	if (!connection) {
+		return {
+			selectedApp: null,
+			highlightedConnectionName: connectionName,
+			missingKind: 'connection' as const,
+		}
+	}
+	const app = findAppForConnection(input.apps, connection)
+	return {
+		selectedApp: app,
+		highlightedConnectionName: connectionName,
+		missingKind: app ? null : ('connection' as const),
+	}
 }
 
 function filterOauthApps(
@@ -219,11 +299,47 @@ function hostFromUrl(url: string | null | undefined) {
 	}
 }
 
-function connectionHost(integration: AccountIntegrationListItem) {
+function BuiltInIcon() {
 	return (
-		hostFromUrl(integration.authorization?.authorizeUrl) ??
-		hostFromUrl(integration.tokenUrl) ??
-		hostFromUrl(integration.apiBaseUrl)
+		<svg
+			viewBox="0 0 16 16"
+			width="0.9em"
+			height="0.9em"
+			aria-hidden="true"
+			fill="currentColor"
+		>
+			<path d="M8 1.15 9.4 5.1l4.2.34-3.22 2.66.98 4.1L8 10.12 4.64 12.2l.98-4.1L2.4 5.44 6.6 5.1 8 1.15Z" />
+		</svg>
+	)
+}
+
+function renderBuiltInIndicator(input?: { tooltipId?: string }) {
+	const tooltipId = input?.tooltipId
+	if (!tooltipId) {
+		return (
+			<span
+				data-testid="built-in-indicator"
+				aria-label="Provided by Kody"
+				title="Provided by Kody"
+				mix={css(builtInBadgeCss)}
+			>
+				{BuiltInIcon()}
+			</span>
+		)
+	}
+	return (
+		<button
+			type="button"
+			data-testid="built-in-indicator"
+			aria-label="Provided by Kody"
+			aria-describedby={tooltipId}
+			mix={css(builtInIndicatorCss)}
+		>
+			{BuiltInIcon()}
+			<span id={tooltipId} role="tooltip">
+				Provided by Kody
+			</span>
+		</button>
 	)
 }
 
@@ -232,6 +348,7 @@ function renderNamedProvider(input: {
 	label: string
 	logoPath?: string | null
 	host?: string | null
+	builtIn?: boolean
 }) {
 	return (
 		<span
@@ -250,22 +367,18 @@ function renderNamedProvider(input: {
 				size="1.75rem"
 			/>
 			<span mix={clampedCellCss}>{input.label}</span>
+			{input.builtIn ? renderBuiltInIndicator() : null}
 		</span>
 	)
 }
 
 function connectionStatusLabel(integration: AccountIntegrationListItem) {
-	return integration.authorization?.authorizeUrl
-		? 'Connected'
-		: 'Needs setup'
+	return integration.authorization?.authorizeUrl ? 'Connected' : 'Needs setup'
 }
 
 function renderAdvancedDetails(body: object) {
 	return (
-		<details
-			mix={css(advancedDetailsCss)}
-			data-testid="integration-advanced"
-		>
+		<details mix={css(advancedDetailsCss)} data-testid="integration-advanced">
 			<summary>Advanced details</summary>
 			<div mix={css({ display: 'grid', gap: spacing.md })}>{body}</div>
 		</details>
@@ -276,6 +389,88 @@ const advancedDetailsCss = {
 	...accountDisclosureCss,
 	color: colors.textMuted,
 	fontSize: typography.fontSize.sm,
+}
+
+const builtInBadgeCss = {
+	display: 'inline-grid',
+	placeContent: 'center',
+	width: '1.35rem',
+	height: '1.35rem',
+	flex: 'none',
+	borderRadius: radius.full,
+	border: `1px solid ${colors.primary}`,
+	backgroundColor: colors.primarySoft,
+	color: colors.primaryText,
+}
+
+const builtInIndicatorCss = {
+	position: 'relative' as const,
+	display: 'inline-grid',
+	placeContent: 'center',
+	width: '1.35rem',
+	height: '1.35rem',
+	padding: 0,
+	appearance: 'none' as const,
+	font: 'inherit',
+	flex: 'none',
+	borderRadius: radius.full,
+	border: `1px solid ${colors.primary}`,
+	backgroundColor: colors.primarySoft,
+	color: colors.primaryText,
+	cursor: 'help',
+	'& [role="tooltip"]': {
+		position: 'absolute' as const,
+		left: '50%',
+		bottom: 'calc(100% + 0.45rem)',
+		transform: 'translateX(-50%)',
+		width: 'max-content',
+		maxWidth: 'min(16rem, calc(100vw - 2rem))',
+		padding: `${spacing.xs} ${spacing.sm}`,
+		borderRadius: radius.md,
+		backgroundColor: colors.surface,
+		color: colors.text,
+		fontSize: typography.fontSize.sm,
+		fontWeight: 400,
+		lineHeight: 1.4,
+		textAlign: 'left' as const,
+		boxShadow: shadows.md,
+		border: `1px solid ${colors.border}`,
+		pointerEvents: 'none' as const,
+		opacity: 0,
+		visibility: 'hidden' as const,
+		zIndex: 3,
+	},
+	'& [role="tooltip"]::after': {
+		content: '""',
+		position: 'absolute' as const,
+		top: '100%',
+		left: '50%',
+		transform: 'translateX(-50%)',
+		border: '6px solid transparent',
+		borderTopColor: colors.surface,
+	},
+	[`${hoverMq} &:hover [role="tooltip"]`]: {
+		opacity: 1,
+		visibility: 'visible' as const,
+	},
+	'&:focus-visible [role="tooltip"]': {
+		opacity: 1,
+		visibility: 'visible' as const,
+	},
+}
+
+const connectionCardCss = {
+	...insetCardCss,
+	display: 'grid',
+	gap: spacing.sm,
+	padding: spacing.md,
+}
+
+const highlightedConnectionCardCss = {
+	...connectionCardCss,
+	borderColor: colors.primary,
+	boxShadow: `inset 3px 0 0 ${colors.primary}`,
+	borderRadius: `0 ${radius.lg} ${radius.lg} 0`,
 }
 
 export function AccountIntegrationsRoute(handle: Handle) {
@@ -314,7 +509,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		rotateStatus = 'idle'
 		rotateMessage = null
 		rotateMessageTone = 'info'
-		lastRotateAppSlug = app?.slug ?? null
+		lastRotateAppSlug = app ? integrationListId(app) : null
 	}
 
 	async function loadIntegrations(signal: AbortSignal) {
@@ -423,10 +618,12 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to rotate credentials.')
 			}
 			apps = apps.map((entry) =>
-				entry.slug === payload.app!.slug ? payload.app! : entry,
+				entry.slug === payload.app!.slug && !entry.platform
+					? payload.app!
+					: entry,
 			)
 			integrations = integrations.map((entry) =>
-				entry.appSlug === payload.app!.slug
+				entry.appSlug === payload.app!.slug && !entry.platform
 					? {
 							...entry,
 							clientId: payload.app!.clientId,
@@ -436,7 +633,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 					: entry,
 			)
 			resetRotateForm(payload.app)
-			rotateMessage = 'Rotated shared OAuth app credentials.'
+			rotateMessage = 'Rotated shared credentials for this integration.'
 			rotateMessageTone = 'info'
 			handle.update()
 		} catch (error) {
@@ -465,44 +662,36 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			handle.queueTask(loadIntegrations)
 		}
 
-		const selection = integrationsRoute.getSelection(currentHref)
-		const selectedAppSlug = readSelectedOauthAppSlug(currentHref)
 		const search = readSearchFilter(currentHref)
 		const setupIntro =
-			integrations.length === 0
+			apps.length === 0
 				? 'No integrations yet. Pick a service and copy its prompt into your agent — setup takes a few minutes.'
 				: 'Add another service: copy a prompt into your agent.'
-		const filteredIntegrations = filterIntegrations(integrations, search)
 		const filteredApps = filterOauthApps(apps, search)
-		const selectedIntegration =
-			selectedAppSlug == null
-				? (integrations.find(
-						(integration) => integration.name === selection.selectedId,
-					) ?? null)
-				: null
-		const selectedApp =
-			selectedAppSlug != null
-				? (apps.find((app) => app.slug === selectedAppSlug) ?? null)
-				: null
-		if (selectedApp && lastRotateAppSlug !== selectedApp.slug) {
+		const { selectedApp, highlightedConnectionName, missingKind } =
+			resolveIntegrationsSelection({
+				href: currentHref,
+				apps,
+				integrations,
+			})
+		if (selectedApp && lastRotateAppSlug !== integrationListId(selectedApp)) {
 			resetRotateForm(selectedApp)
 		}
 		const showIntegrationNotFound =
-			selectedAppSlug == null &&
-			selection.selectedId != null &&
-			!selectedIntegration &&
-			status === 'ready'
-		const showOauthAppNotFound =
-			selectedAppSlug != null && !selectedApp && status === 'ready'
-		const connectHref = selectedIntegration
-			? buildConnectOauthHref(selectedIntegration)
+			missingKind === 'integration' && status === 'ready'
+		const showConnectionNotFound =
+			missingKind === 'connection' && status === 'ready'
+		const highlightedConnection = highlightedConnectionName
+			? (integrations.find(
+					(connection) => connection.name === highlightedConnectionName,
+				) ?? null)
 			: null
 
 		return (
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Integrations"
-					description="Accounts Kody can use for you."
+					description="Services you connect so Kody can use them."
 					currentHref={currentHref}
 				/>
 
@@ -521,26 +710,20 @@ export function AccountIntegrationsRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<>
-						{/*
-						 * The sidebar nested connections under their OAuth app. A table
-						 * has no second level, so the grouping becomes two tables and an
-						 * App column — apps are a short list you pick from, connections
-						 * are the long list you scan, and each keeps its own selection.
-						 */}
 						<RecordTable
 							mode="pane"
-							ariaLabel="OAuth apps"
-							selectedId={selectedAppSlug}
-							countLabel={`${filteredApps.length} of ${apps.length} apps`}
+							ariaLabel="Integrations"
+							selectedId={selectedApp ? integrationListId(selectedApp) : null}
+							countLabel={`${filteredApps.length} of ${apps.length} integrations`}
 							emptyLabel={
 								apps.length === 0
-									? 'No OAuth apps yet. Copy a setup prompt below to get started.'
-									: 'No OAuth apps match the current filters.'
+									? 'No integrations yet. Copy a setup prompt below to get started.'
+									: 'No integrations match the current filters.'
 							}
 							toolbar={
 								<RecordTableSearch
 									label="Search integrations"
-									placeholder="Search names, hosts, scopes, or client IDs"
+									placeholder="Search names, hosts, or accounts"
 									value={search}
 									onInput={(value) => {
 										replaceLocation(buildHrefWithUpdatedSearch(value))
@@ -548,65 +731,27 @@ export function AccountIntegrationsRoute(handle: Handle) {
 								/>
 							}
 							columns={[
-								{ key: 'name', label: 'OAuth app', primary: true },
-								{ key: 'provider', label: 'Provider', drop: 2 },
+								{ key: 'name', label: 'Integration', primary: true },
 								{
-									key: 'connections',
-									label: 'Connections',
+									key: 'accounts',
+									label: 'Accounts',
 									align: 'end',
 								},
 							]}
 							rows={filteredApps.map((app) => ({
-								id: app.slug,
-								href: buildOauthAppHref(app.slug, getCurrentSearch()),
+								id: integrationListId(app),
+								href: buildIntegrationHref(app, getCurrentSearch()),
 								cells: {
 									name: renderNamedProvider({
 										providerKey: app.provider || app.slug,
 										label: oauthAppTitle(app),
+										logoPath: app.platformLogoPath,
 										host: hostFromUrl(app.authorizeUrl ?? app.tokenUrl),
+										builtIn: isBuiltInApp(app),
 									}),
-									provider: app.provider || '—',
-									connections: String(app.connectionCount),
+									accounts: String(app.connectionCount),
 								},
 							}))}
-						/>
-						<RecordTable
-							mode="pane"
-							ariaLabel="Connections"
-							selectedId={selectedAppSlug == null ? selection.selectedId : null}
-							countLabel={`${filteredIntegrations.length} of ${integrations.length} connections`}
-							emptyLabel={
-								integrations.length === 0
-									? 'No connections yet. Copy a setup prompt below to get started.'
-									: 'No connections match the current filters.'
-							}
-							columns={[
-								{ key: 'name', label: 'Connection', primary: true },
-								{ key: 'app', label: 'OAuth app', drop: 2 },
-								{ key: 'status', label: 'Status' },
-							]}
-							rows={filteredIntegrations.map((integration) => {
-								const app = apps.find(
-									(entry) => entry.slug === integration.appSlug,
-								)
-								return {
-									id: integration.name,
-									href: integrationsRoute.buildDetailHref(
-										integration.name,
-										getCurrentSearch(),
-									),
-									cells: {
-										name: renderNamedProvider({
-											providerKey: integration.provider || integration.name,
-											label: integrationDisplayName(integration),
-											logoPath: integration.platformLogoPath,
-											host: connectionHost(integration),
-										}),
-										app: app ? oauthAppTitle(app) : integration.appSlug,
-										status: connectionStatusLabel(integration),
-									},
-								}
-							})}
 							record={
 								selectedApp ? (
 									<section mix={css(recordBodyCss)}>
@@ -618,74 +763,125 @@ export function AccountIntegrationsRoute(handle: Handle) {
 											})}
 										>
 											<ProviderMark
-												providerKey={
-													selectedApp.provider || selectedApp.slug
-												}
+												providerKey={selectedApp.provider || selectedApp.slug}
 												label={oauthAppTitle(selectedApp)}
+												logoPath={selectedApp.platformLogoPath}
 												host={hostFromUrl(
 													selectedApp.authorizeUrl ?? selectedApp.tokenUrl,
 												)}
 											/>
 											<div mix={css({ display: 'grid', gap: spacing.xs })}>
-												<h2 mix={css(cardTitleCss)}>
+												<h2
+													mix={css({
+														...cardTitleCss,
+														display: 'flex',
+														alignItems: 'center',
+														gap: spacing.sm,
+													})}
+												>
 													{oauthAppTitle(selectedApp)}
+													{isBuiltInApp(selectedApp)
+														? renderBuiltInIndicator({
+																tooltipId: 'built-in-tip-detail',
+															})
+														: null}
 												</h2>
 												<p mix={css(descriptionCss)}>
-													{selectedApp.connections.length === 0
-														? 'No accounts use this app yet.'
-														: selectedApp.connections.length === 1
-															? '1 account uses this app.'
-															: `${selectedApp.connections.length} accounts use this app.`}
+													{accountsConnectedCopy(
+														selectedApp.connections.length,
+													)}
 												</p>
 											</div>
 										</header>
 
-										<section mix={css(insetCardCss)}>
-											<h3 mix={css(sectionTitleCss)}>
-												Connections using this app
-											</h3>
+										<section mix={css({ display: 'grid', gap: spacing.sm })}>
+											<h3 mix={css(sectionTitleCss)}>Connections</h3>
 											{selectedApp.connections.length === 0 ? (
 												<p mix={css(descriptionCss)}>
-													No connections yet. Finish connect setup for a
-													provider that uses this app, or reconnect from a
-													connection detail page.
+													No accounts connected yet. Finish connect setup for
+													this integration.
 												</p>
 											) : (
-												<ul
+												<div
 													mix={css({
-														margin: 0,
-														paddingLeft: spacing.lg,
 														display: 'grid',
-														gap: spacing.xs,
+														gap: spacing.sm,
 													})}
 												>
-													{selectedApp.connections.map((connection) => (
-														<li key={connection.name}>
-															<a
-																href={integrationsRoute.buildDetailHref(
-																	connection.name,
-																	getCurrentSearch(),
+													{selectedApp.connections.map((connectionRef) => {
+														const connection = integrations.find(
+															(entry) => entry.name === connectionRef.name,
+														)
+														const highlighted =
+															connectionRef.name === highlightedConnectionName
+														const connectHref = connection
+															? buildConnectOauthHref(connection)
+															: null
+														return (
+															<article
+																key={connectionRef.name}
+																data-testid="integration-connection"
+																data-highlighted={
+																	highlighted ? 'true' : undefined
+																}
+																mix={css(
+																	highlighted
+																		? highlightedConnectionCardCss
+																		: connectionCardCss,
 																)}
-																data-prevent-scroll-reset
-																mix={css(primaryLinkCss)}
 															>
-																{connection.accountLabel?.trim() ||
-																	connection.name}
-															</a>
-															{connection.accountLabel?.trim() ? (
-																<span
+																<div
 																	mix={css({
-																		color: colors.textMuted,
-																		fontSize: typography.fontSize.sm,
+																		display: 'grid',
+																		gap: spacing.xs,
 																	})}
 																>
-																	{' '}
-																	(<code>{connection.name}</code>)
-																</span>
-															) : null}
-														</li>
-													))}
-												</ul>
+																	<a
+																		href={integrationsRoute.buildDetailHref(
+																			connectionRef.name,
+																			getCurrentSearch(),
+																		)}
+																		data-prevent-scroll-reset
+																		mix={css(primaryLinkCss)}
+																	>
+																		{connection
+																			? integrationDisplayName(connection)
+																			: connectionRef.accountLabel?.trim() ||
+																				connectionRef.name}
+																	</a>
+																	<p
+																		mix={css({
+																			...descriptionCss,
+																			margin: 0,
+																		})}
+																	>
+																		<code>{connectionRef.name}</code>
+																		{' · '}
+																		{connection
+																			? connectionStatusLabel(connection)
+																			: 'Needs setup'}
+																	</p>
+																</div>
+																{connectHref ? (
+																	<div>
+																		<a
+																			href={connectHref}
+																			mix={css({
+																				...getPillButtonCss({
+																					size: 'sm',
+																				}),
+																				display: 'inline-flex',
+																				textDecoration: 'none',
+																			})}
+																		>
+																			Reconnect
+																		</a>
+																	</div>
+																) : null}
+															</article>
+														)
+													})}
+												</div>
 											)}
 										</section>
 
@@ -745,274 +941,186 @@ export function AccountIntegrationsRoute(handle: Handle) {
 														formatTimestamp(selectedApp.updatedAt),
 													)}
 												</section>
-												<section mix={css(insetCardCss)}>
-											<h3 mix={css(sectionTitleCss)}>
-												Rotate client credentials
-											</h3>
-											<p mix={css(descriptionCss)}>
-												Rotating credentials updates this shared OAuth app once.
-												Every connection below will use the new client id and
-												client secret on the next authorize or token exchange.
-											</p>
-											{selectedApp.connections.length > 0 ? (
-												<ul
-													mix={css({
-														margin: 0,
-														paddingLeft: spacing.lg,
-														display: 'grid',
-														gap: spacing.xs,
-														color: colors.text,
-													})}
-												>
-													{selectedApp.connections.map((connection) => (
-														<li key={`rotate-${connection.name}`}>
-															{connection.accountLabel?.trim() ||
-																connection.name}{' '}
-															(<code>{connection.name}</code>)
-														</li>
-													))}
-												</ul>
-											) : (
-												<p mix={css(descriptionCss)}>
-													No connections currently share these credentials.
-												</p>
-											)}
-											{rotateMessage ? (
-												<AccountManagementMessage tone={rotateMessageTone}>
-													{rotateMessage}
-												</AccountManagementMessage>
-											) : null}
-											<form
-												mix={[
-													on('submit', (event) => {
-														event.preventDefault()
-														void submitRotateCredentials(selectedApp)
-													}),
-													css({
-														display: 'grid',
-														gap: spacing.md,
-														marginTop: spacing.sm,
-													}),
-												]}
-											>
-												<label mix={css(fieldCss)}>
-													<span mix={css(fieldLabelCss)}>
-														Client ID (optional to keep current)
-													</span>
-													<input
-														type="text"
-														data-field-ring
-														name="oauthAppClientId"
-														value={rotateClientId}
-														{...passwordManagerIgnoreProps}
-														mix={[
-															on('input', (event) => {
-																rotateClientId = event.currentTarget.value
-																handle.update()
-															}),
-															css(accountInputCss),
-														]}
-													/>
-												</label>
-												<label mix={css(fieldCss)}>
-													<span mix={css(fieldLabelCss)}>
-														New client secret
-													</span>
-													<input
-														type="password"
-														data-field-ring
-														name="oauthAppClientSecret"
-														value={rotateClientSecret}
-														{...passwordManagerIgnoreProps}
-														mix={[
-															on('input', (event) => {
-																rotateClientSecret = event.currentTarget.value
-																handle.update()
-															}),
-															css(accountInputCss),
-														]}
-													/>
-												</label>
-												<label
-													mix={css({
-														display: 'flex',
-														alignItems: 'flex-start',
-														gap: spacing.sm,
-														color: colors.text,
-														fontSize: typography.fontSize.sm,
-													})}
-												>
-													<input
-														type="checkbox"
-														checked={rotateConfirmed}
-														mix={on('change', (event) => {
-															rotateConfirmed = event.currentTarget.checked
-															handle.update()
-														})}
-													/>
-													<span>
-														I understand this updates credentials for
-														{selectedApp.connections.length === 0
-															? ' this OAuth app'
-															: selectedApp.connections.length === 1
-																? ' 1 connection that shares this OAuth app'
-																: ` all ${selectedApp.connections.length} connections that share this OAuth app`}
-														.
-													</span>
-												</label>
-												<div>
-													<button
-														type="submit"
-														disabled={
-															rotateStatus === 'saving' || !rotateConfirmed
-														}
-														mix={css(dangerButtonCss)}
-													>
-														{rotateStatus === 'saving'
-															? 'Rotating...'
-															: 'Rotate credentials'}
-													</button>
-												</div>
-											</form>
-										</section>
-											</>,
-										)}
-									</section>
-								) : selectedIntegration ? (
-									<section mix={css(recordBodyCss)}>
-										<header
-											mix={css({
-												display: 'grid',
-												justifyItems: 'start',
-												gap: spacing.sm,
-											})}
-										>
-											<ProviderMark
-												providerKey={
-													selectedIntegration.provider ||
-													selectedIntegration.name
-												}
-												label={integrationDisplayName(selectedIntegration)}
-												logoPath={selectedIntegration.platformLogoPath}
-												host={connectionHost(selectedIntegration)}
-											/>
-											<div mix={css({ display: 'grid', gap: spacing.xs })}>
-												<h2 mix={css(cardTitleCss)}>
-													{integrationDisplayName(selectedIntegration)}
-												</h2>
-												<p mix={css(descriptionCss)}>
-													{selectedIntegration.authorization?.authorizeUrl
-														? 'This account is connected.'
-														: 'This account still needs to be connected.'}
-												</p>
-											</div>
-										</header>
-
-										{connectHref ? (
-											<div>
-												<a
-													href={connectHref}
-													mix={css({
-														...getPillButtonCss({ size: 'sm' }),
-														display: 'inline-flex',
-														textDecoration: 'none',
-													})}
-												>
-													Reconnect
-												</a>
-											</div>
-										) : (
-											<p mix={css(descriptionCss)}>
-												This integration does not include authorization details
-												yet.
-											</p>
-										)}
-
-										{renderAdvancedDetails(
-											<>
-												<section mix={css(detailGridCss)}>
-													{renderIntegrationDetail(
-														'Connection key',
-														selectedIntegration.name,
-													)}
-													{renderIntegrationDetail(
-														'Token URL',
-														selectedIntegration.tokenUrl,
-													)}
-													{renderIntegrationDetail(
-														'API base URL',
-														formatOptional(selectedIntegration.apiBaseUrl),
-													)}
-													{renderIntegrationDetail(
-														'Authorize URL',
-														formatOptional(
-															selectedIntegration.authorization
-																?.authorizeUrl,
-														),
-													)}
-													{renderIntegrationDetail(
-														'Scopes',
-														formatList(
-															selectedIntegration.authorization?.scopes,
-														),
-													)}
-													{renderIntegrationDetail(
-														'Required hosts',
-														formatList(selectedIntegration.requiredHosts),
-													)}
-													{renderIntegrationDetail(
-														'Updated',
-														formatTimestamp(selectedIntegration.updatedAt),
-													)}
-												</section>
-												<section mix={css(insetCardCss)}>
-													<h3 mix={css(sectionTitleCss)}>
-														OAuth app & secrets
-													</h3>
-													<div mix={css(detailGridCss)}>
-														{renderIntegrationDetail(
-															'Client ID',
-															selectedIntegration.clientId,
-														)}
-														{renderIntegrationDetail(
-															'Client secret',
-															formatOptional(
-																selectedIntegration.clientSecretSecretName,
-															),
-														)}
-														{renderIntegrationDetail(
-															'Access token secret',
-															selectedIntegration.accessTokenSecretName,
-														)}
-														{renderIntegrationDetail(
-															'Refresh token secret',
-															formatOptional(
-																selectedIntegration.refreshTokenSecretName,
-															),
-														)}
-													</div>
-													<p
-														mix={css({
-															...descriptionCss,
-															marginTop: spacing.sm,
-														})}
-													>
-														<a
-															href={buildOauthAppHref(
-																selectedIntegration.appSlug,
-																getCurrentSearch(),
+												{highlightedConnection ? (
+													<section mix={css(insetCardCss)}>
+														<h3 mix={css(sectionTitleCss)}>
+															Selected connection
+														</h3>
+														<div mix={css(detailGridCss)}>
+															{renderIntegrationDetail(
+																'Connection key',
+																highlightedConnection.name,
 															)}
-															mix={css(primaryLinkCss)}
+															{renderIntegrationDetail(
+																'Scopes',
+																formatList(
+																	highlightedConnection.authorization?.scopes,
+																),
+															)}
+															{renderIntegrationDetail(
+																'Required hosts',
+																formatList(highlightedConnection.requiredHosts),
+															)}
+															{renderIntegrationDetail(
+																'Access token secret',
+																highlightedConnection.accessTokenSecretName,
+															)}
+															{renderIntegrationDetail(
+																'Refresh token secret',
+																formatOptional(
+																	highlightedConnection.refreshTokenSecretName,
+																),
+															)}
+														</div>
+													</section>
+												) : null}
+												{isBuiltInApp(selectedApp) ? null : (
+													<section mix={css(insetCardCss)}>
+														<h3 mix={css(sectionTitleCss)}>
+															Rotate client credentials
+														</h3>
+														<p mix={css(descriptionCss)}>
+															Rotating credentials updates this shared
+															registration once. Every connection below will use
+															the new client id and client secret on the next
+															authorize or token exchange.
+														</p>
+														{selectedApp.connections.length > 0 ? (
+															<ul
+																mix={css({
+																	margin: 0,
+																	paddingLeft: spacing.lg,
+																	display: 'grid',
+																	gap: spacing.xs,
+																	color: colors.text,
+																})}
+															>
+																{selectedApp.connections.map((connection) => (
+																	<li key={`rotate-${connection.name}`}>
+																		{connection.accountLabel?.trim() ||
+																			connection.name}{' '}
+																		(<code>{connection.name}</code>)
+																	</li>
+																))}
+															</ul>
+														) : (
+															<p mix={css(descriptionCss)}>
+																No connections currently share these
+																credentials.
+															</p>
+														)}
+														{rotateMessage ? (
+															<AccountManagementMessage
+																tone={rotateMessageTone}
+															>
+																{rotateMessage}
+															</AccountManagementMessage>
+														) : null}
+														<form
+															mix={[
+																on('submit', (event) => {
+																	event.preventDefault()
+																	void submitRotateCredentials(selectedApp)
+																}),
+																css({
+																	display: 'grid',
+																	gap: spacing.md,
+																	marginTop: spacing.sm,
+																}),
+															]}
 														>
-															Manage OAuth app
-														</a>
-													</p>
-												</section>
+															<label mix={css(fieldCss)}>
+																<span mix={css(fieldLabelCss)}>
+																	Client ID (optional to keep current)
+																</span>
+																<input
+																	type="text"
+																	data-field-ring
+																	name="oauthAppClientId"
+																	value={rotateClientId}
+																	{...passwordManagerIgnoreProps}
+																	mix={[
+																		on('input', (event) => {
+																			rotateClientId = event.currentTarget.value
+																			handle.update()
+																		}),
+																		css(accountInputCss),
+																	]}
+																/>
+															</label>
+															<label mix={css(fieldCss)}>
+																<span mix={css(fieldLabelCss)}>
+																	New client secret
+																</span>
+																<input
+																	type="password"
+																	data-field-ring
+																	name="oauthAppClientSecret"
+																	value={rotateClientSecret}
+																	{...passwordManagerIgnoreProps}
+																	mix={[
+																		on('input', (event) => {
+																			rotateClientSecret =
+																				event.currentTarget.value
+																			handle.update()
+																		}),
+																		css(accountInputCss),
+																	]}
+																/>
+															</label>
+															<label
+																mix={css({
+																	display: 'flex',
+																	alignItems: 'flex-start',
+																	gap: spacing.sm,
+																	color: colors.text,
+																	fontSize: typography.fontSize.sm,
+																})}
+															>
+																<input
+																	type="checkbox"
+																	checked={rotateConfirmed}
+																	mix={on('change', (event) => {
+																		rotateConfirmed =
+																			event.currentTarget.checked
+																		handle.update()
+																	})}
+																/>
+																<span>
+																	I understand this updates credentials for
+																	{selectedApp.connections.length === 0
+																		? ' this integration'
+																		: selectedApp.connections.length === 1
+																			? ' 1 connection on this integration'
+																			: ` all ${selectedApp.connections.length} connections on this integration`}
+																	.
+																</span>
+															</label>
+															<div>
+																<button
+																	type="submit"
+																	disabled={
+																		rotateStatus === 'saving' ||
+																		!rotateConfirmed
+																	}
+																	mix={css(dangerButtonCss)}
+																>
+																	{rotateStatus === 'saving'
+																		? 'Rotating...'
+																		: 'Rotate credentials'}
+																</button>
+															</div>
+														</form>
+													</section>
+												)}
 											</>,
 										)}
 									</section>
-								) : showOauthAppNotFound ? (
-									<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
+								) : showConnectionNotFound ? (
+									<div
+										mix={css({ ...recordBodyCss, gap: spacing.sm })}
+										data-testid="connection-not-found"
+									>
 										<h2
 											mix={css({
 												margin: 0,
@@ -1021,15 +1129,18 @@ export function AccountIntegrationsRoute(handle: Handle) {
 												color: colors.text,
 											})}
 										>
-											OAuth app not found
+											Connection not found
 										</h2>
 										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											This OAuth app does not exist for this account or is
+											This connection does not exist for this account or is
 											unavailable.
 										</p>
 									</div>
 								) : showIntegrationNotFound ? (
-									<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
+									<div
+										mix={css({ ...recordBodyCss, gap: spacing.sm })}
+										data-testid="integration-not-found"
+									>
 										<h2
 											mix={css({
 												margin: 0,

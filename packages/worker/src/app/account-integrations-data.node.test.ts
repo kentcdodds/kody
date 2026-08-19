@@ -5,6 +5,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import {
 	upsertIntegration,
 	upsertOauthAppWithoutConnection,
+	upsertPlatformIntegration,
 } from '#worker/integrations/service.ts'
 import { upsertPlatformOauthApp } from '#worker/integrations/platform-apps.ts'
 import {
@@ -406,4 +407,82 @@ test('loadAccountIntegrationsData includes OAuth apps with their connections', a
 	expect(
 		await loadAccountOauthAppBySlug(env, fakeUser('other-user'), 'google'),
 	).toBeNull()
+})
+
+test('loadAccountIntegrationsData lists built-in apps next to user-registered apps', async () => {
+	const { env } = createEnv()
+	const userId = 'user-integrations-platform-list'
+	const platformEnv = {
+		...env,
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	} as Env
+
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: {
+			slug: 'google',
+			label: 'Google',
+			clientId: 'platform-google-client',
+			clientSecret: 'platform-google-secret',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+			apiBaseUrl: 'https://www.googleapis.com',
+			flow: 'confidential',
+			defaultScopes: ['openid', 'email'],
+		},
+	})
+	await upsertPlatformIntegration({
+		env,
+		userId,
+		platformAppSlug: 'google',
+		name: 'google',
+		scopes: ['openid', 'email'],
+		accessTokenSecretName: 'googleAccessToken',
+		refreshTokenSecretName: 'googleRefreshToken',
+		accountLabel: 'me@example.com',
+	})
+	await upsertOauthAppWithoutConnection({
+		env,
+		userId,
+		config: {
+			name: 'notion',
+			tokenUrl: 'https://api.notion.com/v1/oauth/token',
+			flow: 'confidential',
+			clientId: 'notion-client-from-setup',
+			clientSecretSecretName: 'notionClientSecret',
+			authorization: {
+				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
+			},
+		},
+	})
+
+	const payload = await loadAccountIntegrationsData(env, fakeUser(userId))
+	expect(payload.apps).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				slug: 'google',
+				platform: true,
+				connectionCount: 1,
+				connections: [
+					expect.objectContaining({
+						name: 'google',
+						accountLabel: 'me@example.com',
+					}),
+				],
+				clientSecretSecretName: null,
+			}),
+			expect.objectContaining({
+				slug: 'notion',
+				connectionCount: 0,
+			}),
+		]),
+	)
+	expect(payload.integrations).toEqual([
+		expect.objectContaining({
+			name: 'google',
+			platform: true,
+			accountLabel: 'me@example.com',
+		}),
+	])
 })

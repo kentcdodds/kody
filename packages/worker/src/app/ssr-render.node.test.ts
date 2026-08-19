@@ -951,12 +951,17 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	})
 	expect(connectionResponse.status).toBe(200)
 	const connectionHtml = await readResponseText(connectionResponse)
-	expect(connectionHtml).toContain('This account is connected.')
+	expect(connectionHtml).toContain('1 account connected.')
 	expect(connectionHtml).toContain('>Reconnect<')
 	expect(connectionHtml).toContain('data-testid="provider-mark"')
 	expect(connectionHtml).toContain('data-testid="integration-advanced"')
-	expect(connectionHtml).toContain('Accounts Kody can use for you.')
+	expect(connectionHtml).toContain('data-testid="integration-connection"')
+	expect(connectionHtml).toContain('data-highlighted="true"')
+	expect(connectionHtml).toContain('Services you connect so Kody can use them.')
+	expect(connectionHtml).toContain('aria-label="Integrations"')
 	expect(connectionHtml).not.toContain('OAuth configured')
+	expect(connectionHtml).not.toContain('aria-label="OAuth apps"')
+	expect(connectionHtml).not.toContain('This account is connected.')
 
 	const appResponse = await renderAppPage({
 		request: new Request(
@@ -976,9 +981,109 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	})
 	expect(appResponse.status).toBe(200)
 	const appHtml = await readResponseText(appResponse)
-	expect(appHtml).toContain('1 account uses this app.')
+	expect(appHtml).toContain('1 account connected.')
 	expect(appHtml).toContain('data-testid="integration-advanced"')
 	expect(appHtml).toContain('Rotate credentials')
+	expect(appHtml).not.toContain('data-highlighted="true"')
+	expect(appHtml).not.toContain('data-testid="built-in-indicator"')
+
+	const builtInApp = {
+		...googleApp,
+		platform: true,
+		clientSecretSecretName: null,
+	}
+	const builtInConnection = {
+		...googleConnection,
+		platform: true,
+		clientSecretSecretName: null,
+	}
+	const builtInResponse = await renderAppPage({
+		request: new Request('https://example.com/account/integrations/google', {
+			headers: { Cookie: cookie },
+		}),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [builtInConnection],
+				apps: [builtInApp],
+			},
+		},
+	})
+	const builtInHtml = await readResponseText(builtInResponse)
+	expect(builtInHtml).toContain('data-testid="built-in-indicator"')
+	expect(builtInHtml).toContain('Provided by Kody')
+	expect(builtInHtml).toContain('1 account connected.')
+	expect(builtInHtml).not.toContain('Rotate credentials')
+
+	const missingConnectionResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/account/integrations/missing-connection',
+			{ headers: { Cookie: cookie } },
+		),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [googleConnection],
+				apps: [googleApp],
+			},
+		},
+	})
+	const missingConnectionHtml = await readResponseText(
+		missingConnectionResponse,
+	)
+	expect(missingConnectionHtml).toContain('data-testid="connection-not-found"')
+	expect(missingConnectionHtml).toContain('Connection not found')
+
+	const missingIntegrationResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/account/integrations/apps/missing-app',
+			{ headers: { Cookie: cookie } },
+		),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [googleConnection],
+				apps: [googleApp],
+			},
+		},
+	})
+	const missingIntegrationHtml = await readResponseText(
+		missingIntegrationResponse,
+	)
+	expect(missingIntegrationHtml).toContain(
+		'data-testid="integration-not-found"',
+	)
+	expect(missingIntegrationHtml).toContain('Integration not found')
+
+	const emptyResponse = await renderAppPage({
+		request: new Request('https://example.com/account/integrations', {
+			headers: { Cookie: cookie },
+		}),
+		env,
+		loaderData: {
+			accountIntegrations: {
+				ok: true,
+				email: 'user@example.com',
+				username: 'account-user',
+				integrations: [],
+				apps: [],
+			},
+		},
+	})
+	const emptyHtml = await readResponseText(emptyResponse)
+	expect(emptyHtml).toContain(
+		'No integrations yet. Copy a setup prompt below to get started.',
+	)
+	expect(emptyHtml).not.toContain('aria-label="OAuth apps"')
 
 	const approvalResponse = await renderAppPage({
 		request: new Request(
