@@ -327,6 +327,7 @@ function renderBuiltInIndicator(input?: { tooltipId?: string }) {
 		return (
 			<span
 				data-testid="built-in-indicator"
+				role="img"
 				aria-label="Provided by Kody"
 				title="Provided by Kody"
 				mix={css(builtInBadgeCss)}
@@ -340,11 +341,10 @@ function renderBuiltInIndicator(input?: { tooltipId?: string }) {
 			type="button"
 			data-testid="built-in-indicator"
 			aria-label="Provided by Kody"
-			aria-describedby={tooltipId}
 			mix={css(builtInIndicatorCss)}
 		>
 			{BuiltInIcon()}
-			<span id={tooltipId} role="tooltip">
+			<span id={tooltipId} role="tooltip" aria-hidden="true">
 				Provided by Kody
 			</span>
 		</button>
