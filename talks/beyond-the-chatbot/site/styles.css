@@ -49,6 +49,7 @@
 }
 
 :root {
+	color-scheme: light dark;
 	--font-display: 'Bricolage Grotesque', system-ui, sans-serif;
 	--font-body: 'Wix Madefor Text', system-ui, sans-serif;
 	--color-primary: oklch(0.54 0.18 145);
@@ -56,10 +57,38 @@
 	--color-background: oklch(0.93 0.004 250);
 	--color-surface: oklch(0.975 0.002 250);
 	--color-text: oklch(0.22 0.012 260);
+	--color-body: oklch(0.32 0.012 260);
 	--color-text-muted: oklch(0.44 0.014 260);
 	--color-border: oklch(0.84 0.008 250);
 	--color-on-primary: oklch(1 0 0);
+	--pattern-fill: oklch(from var(--color-text) l c h / 0.11);
+	--color-primary-dark: oklch(0.72 0.205 145);
+	--color-primary-text-dark: oklch(0.75 0.2 145);
+	--color-background-dark: oklch(0.19 0.008 255);
+	--color-surface-dark: oklch(0.235 0.01 255);
+	--color-text-dark: oklch(0.945 0.005 250);
+	--color-body-dark: oklch(0.86 0.007 250);
+	--color-text-muted-dark: oklch(0.72 0.01 255);
+	--color-border-dark: oklch(0.33 0.01 255);
+	--color-on-primary-dark: oklch(0.2 0.05 148);
+	--pattern-fill-dark: oklch(from var(--color-text-dark) l c h / 0.16);
 	--footer-h: 4.6rem;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		color-scheme: dark;
+		--color-primary: var(--color-primary-dark);
+		--color-primary-text: var(--color-primary-text-dark);
+		--color-background: var(--color-background-dark);
+		--color-surface: var(--color-surface-dark);
+		--color-text: var(--color-text-dark);
+		--color-body: var(--color-body-dark);
+		--color-text-muted: var(--color-text-muted-dark);
+		--color-border: var(--color-border-dark);
+		--color-on-primary: var(--color-on-primary-dark);
+		--pattern-fill: var(--pattern-fill-dark);
+	}
 }
 
 * {
@@ -86,7 +115,7 @@ body::after {
 	width: min(40vw, 640px);
 	aspect-ratio: 1;
 	pointer-events: none;
-	background: oklch(from var(--color-text) l c h / 0.11);
+	background: var(--pattern-fill);
 	mask-image:
 		radial-gradient(closest-side, #000 38%, transparent 72%),
 		url('assets/images/kody-pattern.webp');
@@ -109,7 +138,7 @@ body::after {
 	position: relative;
 	z-index: 1;
 	height: 100%;
-	background: transparent;
+	background: var(--color-background);
 	font-family: var(--font-body);
 	font-size: 32px;
 	font-weight: 400;
@@ -117,6 +146,13 @@ body::after {
 	--title-size: 3.25em;
 	--item-size: 1.95em;
 	--item-gap: 1em;
+}
+
+.reveal-viewport,
+.reveal .slides,
+.reveal .backgrounds,
+.reveal .slide-background {
+	background: var(--color-background);
 }
 
 .reveal .slides {
@@ -180,7 +216,7 @@ body::after {
 .reveal p,
 .reveal li {
 	font-family: var(--font-body);
-	color: oklch(0.32 0.012 260);
+	color: var(--color-body);
 	line-height: 1.42;
 }
 
@@ -238,6 +274,7 @@ body::after {
 }
 
 .layout-statement .punch {
+	max-width: 18ch;
 	font-size: 2.15em;
 }
 
@@ -258,8 +295,13 @@ body::after {
 	letter-spacing: -0.03em;
 	line-height: 1.06;
 	font-size: 1.55em;
-	color: var(--color-primary-text);
+	color: var(--color-text);
 	text-wrap: balance;
+}
+
+.accent {
+	color: var(--color-primary-text);
+	white-space: nowrap;
 }
 
 .tools {
@@ -296,7 +338,7 @@ body::after {
 	gap: 0.45em;
 	align-items: baseline;
 	font-size: var(--item-size);
-	color: oklch(0.32 0.012 260);
+	color: var(--color-body);
 }
 
 .steps li::before {
@@ -334,7 +376,7 @@ body::after {
 	font-family: var(--font-body);
 	font-size: 0.78em;
 	line-height: 1.5;
-	color: oklch(0.32 0.012 260);
+	color: var(--color-body);
 	white-space: pre-wrap;
 	text-wrap: pretty;
 }

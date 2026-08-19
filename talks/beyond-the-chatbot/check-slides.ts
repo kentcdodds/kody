@@ -48,6 +48,7 @@ type CollectedSlide = SlideLayoutMeasurement & {
 export async function checkDeckSlides(
 	input: {
 		screenshotDir?: string
+		colorScheme?: 'light' | 'dark'
 	} = {},
 ) {
 	const server = await listenForSite()
@@ -55,6 +56,7 @@ export async function checkDeckSlides(
 	const page = await browser.newPage({
 		viewport,
 		deviceScaleFactor: 1,
+		colorScheme: input.colorScheme ?? 'light',
 	})
 
 	try {
@@ -302,7 +304,24 @@ async function main() {
 		screenshotDir = screenshotFlag.slice('--screenshots='.length)
 	}
 
-	const result = await checkDeckSlides({ screenshotDir })
+	const colorSchemeFlag = process.argv.find((argument) =>
+		argument.startsWith('--color-scheme'),
+	)
+	let colorScheme: 'light' | 'dark' | undefined
+	if (colorSchemeFlag === '--color-scheme') {
+		const flagIndex = process.argv.indexOf('--color-scheme')
+		const value = process.argv[flagIndex + 1]
+		if (value === 'light' || value === 'dark') {
+			colorScheme = value
+		}
+	} else if (colorSchemeFlag?.startsWith('--color-scheme=')) {
+		const value = colorSchemeFlag.slice('--color-scheme='.length)
+		if (value === 'light' || value === 'dark') {
+			colorScheme = value
+		}
+	}
+
+	const result = await checkDeckSlides({ screenshotDir, colorScheme })
 	printReport(result.slides)
 
 	const failed = result.slides.filter((slide) => slide.failures.length > 0)
