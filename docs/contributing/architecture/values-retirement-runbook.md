@@ -118,7 +118,9 @@ migrate.
 
 ### Phase 2 — Assisted migration (weeks 2–3)
 
-Goal: remaining rows have an owner and a destination. Reads stay live.
+Goal: remaining rows have an owner and a destination. Reads stay live. The
+account section nav omits Values; `/account/values` stays available for leftover
+rows.
 
 **Platform / Kent packages (can parallelize with outreach):**
 

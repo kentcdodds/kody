@@ -488,7 +488,7 @@ export function AccountValuesRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Values"
-					description="Readable non-secret configuration for your account. Values are available to packages and workflows as user-scoped config."
+					description="Leftover readable config while values are retired. This route stays available for migration; it is not listed in account navigation."
 					currentHref={currentHref}
 					actions={
 						<button

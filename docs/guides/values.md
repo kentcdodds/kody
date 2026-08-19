@@ -11,7 +11,8 @@ category: platform
 
 Do not store new named config or state with `value_set`. Existing rows stay
 readable through `value_get` / `value_list` and `/account/values` so you can
-move them. Load this guide before writing or migrating a value.
+move them. The account section nav omits Values; open `/account/values` directly
+during migration. Load this guide before writing or migrating a value.
 
 ## Destination map
 
