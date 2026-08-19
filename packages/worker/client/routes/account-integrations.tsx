@@ -15,7 +15,7 @@ import { replaceLocation } from '#client/replace-location.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
-import { ProviderIcon } from '#client/provider-icons.tsx'
+import { ProviderIcon, ProviderMark } from '#client/provider-icons.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -28,6 +28,7 @@ import {
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountPageHeader,
+	accountDisclosureCss,
 	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
 import {
@@ -49,9 +50,7 @@ import {
 import { matchesSearchQuery } from '#client/search-filter.ts'
 import {
 	colors,
-	radius,
 	spacing,
-	transitions,
 	typography,
 } from '#universal/styles/tokens.ts'
 import {
@@ -211,10 +210,72 @@ function renderIntegrationDetail(label: string, value: string) {
 	)
 }
 
+function hostFromUrl(url: string | null | undefined) {
+	if (!url) return null
+	try {
+		return new URL(url).hostname || null
+	} catch {
+		return null
+	}
+}
+
+function connectionHost(integration: AccountIntegrationListItem) {
+	return (
+		hostFromUrl(integration.authorization?.authorizeUrl) ??
+		hostFromUrl(integration.tokenUrl) ??
+		hostFromUrl(integration.apiBaseUrl)
+	)
+}
+
+function renderNamedProvider(input: {
+	providerKey: string
+	label: string
+	logoPath?: string | null
+	host?: string | null
+}) {
+	return (
+		<span
+			mix={css({
+				display: 'inline-flex',
+				alignItems: 'center',
+				gap: spacing.sm,
+				minWidth: 0,
+			})}
+		>
+			<ProviderMark
+				providerKey={input.providerKey}
+				label={input.label}
+				logoPath={input.logoPath}
+				host={input.host}
+				size="1.75rem"
+			/>
+			<span mix={clampedCellCss}>{input.label}</span>
+		</span>
+	)
+}
+
 function connectionStatusLabel(integration: AccountIntegrationListItem) {
 	return integration.authorization?.authorizeUrl
-		? 'OAuth configured'
-		: 'No authorization'
+		? 'Connected'
+		: 'Needs setup'
+}
+
+function renderAdvancedDetails(body: object) {
+	return (
+		<details
+			mix={css(advancedDetailsCss)}
+			data-testid="integration-advanced"
+		>
+			<summary>Advanced details</summary>
+			<div mix={css({ display: 'grid', gap: spacing.md })}>{body}</div>
+		</details>
+	)
+}
+
+const advancedDetailsCss = {
+	...accountDisclosureCss,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
 }
 
 export function AccountIntegrationsRoute(handle: Handle) {
@@ -426,11 +487,6 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		if (selectedApp && lastRotateAppSlug !== selectedApp.slug) {
 			resetRotateForm(selectedApp)
 		}
-		const selectedAppConnectionCount = selectedIntegration
-			? integrations.filter(
-					(entry) => entry.appSlug === selectedIntegration.appSlug,
-				).length
-			: 0
 		const showIntegrationNotFound =
 			selectedAppSlug == null &&
 			selection.selectedId != null &&
@@ -446,7 +502,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Integrations"
-					description="Services Kody can act on for you — built on OAuth apps you create and own."
+					description="Accounts Kody can use for you."
 					currentHref={currentHref}
 				/>
 
@@ -494,7 +550,6 @@ export function AccountIntegrationsRoute(handle: Handle) {
 							columns={[
 								{ key: 'name', label: 'OAuth app', primary: true },
 								{ key: 'provider', label: 'Provider', drop: 2 },
-								{ key: 'slug', label: 'Slug', drop: 1 },
 								{
 									key: 'connections',
 									label: 'Connections',
@@ -505,9 +560,12 @@ export function AccountIntegrationsRoute(handle: Handle) {
 								id: app.slug,
 								href: buildOauthAppHref(app.slug, getCurrentSearch()),
 								cells: {
-									name: oauthAppTitle(app),
+									name: renderNamedProvider({
+										providerKey: app.provider || app.slug,
+										label: oauthAppTitle(app),
+										host: hostFromUrl(app.authorizeUrl ?? app.tokenUrl),
+									}),
 									provider: app.provider || '—',
-									slug: <span mix={clampedCellCss}>{app.slug}</span>,
 									connections: String(app.connectionCount),
 								},
 							}))}
@@ -526,8 +584,6 @@ export function AccountIntegrationsRoute(handle: Handle) {
 								{ key: 'name', label: 'Connection', primary: true },
 								{ key: 'app', label: 'OAuth app', drop: 2 },
 								{ key: 'status', label: 'Status' },
-								{ key: 'flow', label: 'Flow', drop: 3 },
-								{ key: 'key', label: 'Key', drop: 1 },
 							]}
 							rows={filteredIntegrations.map((integration) => {
 								const app = apps.find(
@@ -540,15 +596,14 @@ export function AccountIntegrationsRoute(handle: Handle) {
 										getCurrentSearch(),
 									),
 									cells: {
-										name: (
-											<span mix={clampedCellCss}>
-												{integrationDisplayName(integration)}
-											</span>
-										),
+										name: renderNamedProvider({
+											providerKey: integration.provider || integration.name,
+											label: integrationDisplayName(integration),
+											logoPath: integration.platformLogoPath,
+											host: connectionHost(integration),
+										}),
 										app: app ? oauthAppTitle(app) : integration.appSlug,
 										status: connectionStatusLabel(integration),
-										flow: integration.flow,
-										key: <span mix={clampedCellCss}>{integration.name}</span>,
 									},
 								}
 							})}
@@ -557,92 +612,33 @@ export function AccountIntegrationsRoute(handle: Handle) {
 									<section mix={css(recordBodyCss)}>
 										<header
 											mix={css({
-												display: 'flex',
-												alignItems: 'flex-start',
-												justifyContent: 'space-between',
-												gap: spacing.md,
+												display: 'grid',
+												justifyItems: 'start',
+												gap: spacing.sm,
 											})}
 										>
+											<ProviderMark
+												providerKey={
+													selectedApp.provider || selectedApp.slug
+												}
+												label={oauthAppTitle(selectedApp)}
+												host={hostFromUrl(
+													selectedApp.authorizeUrl ?? selectedApp.tokenUrl,
+												)}
+											/>
 											<div mix={css({ display: 'grid', gap: spacing.xs })}>
 												<h2 mix={css(cardTitleCss)}>
 													{oauthAppTitle(selectedApp)}
 												</h2>
 												<p mix={css(descriptionCss)}>
-													Shared OAuth app <code>{selectedApp.slug}</code>
-													{selectedApp.connections.length > 0
-														? ` · ${selectedApp.connections.length} connection${selectedApp.connections.length === 1 ? '' : 's'}`
-														: ' · no connections yet'}
+													{selectedApp.connections.length === 0
+														? 'No accounts use this app yet.'
+														: selectedApp.connections.length === 1
+															? '1 account uses this app.'
+															: `${selectedApp.connections.length} accounts use this app.`}
 												</p>
 											</div>
-											<span
-												mix={css({
-													width: 'max-content',
-													padding: `${spacing.xs} ${spacing.sm}`,
-													borderRadius: radius.full,
-													backgroundColor: colors.primarySoftest,
-													color: colors.primaryText,
-													fontSize: typography.fontSize.sm,
-													fontWeight: typography.fontWeight.medium,
-												})}
-											>
-												{selectedApp.flow}
-											</span>
 										</header>
-
-										<section mix={css(detailGridCss)}>
-											{renderIntegrationDetail(
-												'Provider',
-												selectedApp.provider,
-											)}
-											{renderIntegrationDetail('Slug', selectedApp.slug)}
-											{renderIntegrationDetail(
-												'Label',
-												formatOptional(selectedApp.label),
-											)}
-											{renderIntegrationDetail(
-												'Client ID',
-												selectedApp.clientId,
-											)}
-											{renderIntegrationDetail(
-												'Client-secret secret name',
-												formatOptional(selectedApp.clientSecretSecretName),
-											)}
-											{renderIntegrationDetail(
-												'Token URL',
-												selectedApp.tokenUrl,
-											)}
-											{renderIntegrationDetail(
-												'Authorize URL',
-												formatOptional(selectedApp.authorizeUrl),
-											)}
-											{renderIntegrationDetail(
-												'API base URL',
-												formatOptional(selectedApp.apiBaseUrl),
-											)}
-											{renderIntegrationDetail('Flow', selectedApp.flow)}
-											{renderIntegrationDetail(
-												'PKCE',
-												selectedApp.usePkce == null
-													? selectedApp.flow === 'pkce'
-														? 'Default on'
-														: 'Default off'
-													: selectedApp.usePkce
-														? 'Enabled'
-														: 'Disabled',
-											)}
-											{renderIntegrationDetail(
-												'Token exchange style',
-												formatOptional(selectedApp.tokenExchangeStyle),
-											)}
-											{renderIntegrationDetail(
-												'Created',
-												formatTimestamp(selectedApp.createdAt),
-											)}
-											{renderIntegrationDetail(
-												'Updated',
-												formatTimestamp(selectedApp.updatedAt),
-											)}
-										</section>
 
 										<section mix={css(insetCardCss)}>
 											<h3 mix={css(sectionTitleCss)}>
@@ -693,7 +689,63 @@ export function AccountIntegrationsRoute(handle: Handle) {
 											)}
 										</section>
 
-										<section mix={css(insetCardCss)}>
+										{renderAdvancedDetails(
+											<>
+												<section mix={css(detailGridCss)}>
+													{renderIntegrationDetail(
+														'Provider',
+														selectedApp.provider,
+													)}
+													{renderIntegrationDetail('Slug', selectedApp.slug)}
+													{renderIntegrationDetail(
+														'Label',
+														formatOptional(selectedApp.label),
+													)}
+													{renderIntegrationDetail(
+														'Client ID',
+														selectedApp.clientId,
+													)}
+													{renderIntegrationDetail(
+														'Client-secret secret name',
+														formatOptional(selectedApp.clientSecretSecretName),
+													)}
+													{renderIntegrationDetail(
+														'Token URL',
+														selectedApp.tokenUrl,
+													)}
+													{renderIntegrationDetail(
+														'Authorize URL',
+														formatOptional(selectedApp.authorizeUrl),
+													)}
+													{renderIntegrationDetail(
+														'API base URL',
+														formatOptional(selectedApp.apiBaseUrl),
+													)}
+													{renderIntegrationDetail('Flow', selectedApp.flow)}
+													{renderIntegrationDetail(
+														'PKCE',
+														selectedApp.usePkce == null
+															? selectedApp.flow === 'pkce'
+																? 'Default on'
+																: 'Default off'
+															: selectedApp.usePkce
+																? 'Enabled'
+																: 'Disabled',
+													)}
+													{renderIntegrationDetail(
+														'Token exchange style',
+														formatOptional(selectedApp.tokenExchangeStyle),
+													)}
+													{renderIntegrationDetail(
+														'Created',
+														formatTimestamp(selectedApp.createdAt),
+													)}
+													{renderIntegrationDetail(
+														'Updated',
+														formatTimestamp(selectedApp.updatedAt),
+													)}
+												</section>
+												<section mix={css(insetCardCss)}>
 											<h3 mix={css(sectionTitleCss)}>
 												Rotate client credentials
 											</h3>
@@ -823,123 +875,38 @@ export function AccountIntegrationsRoute(handle: Handle) {
 												</div>
 											</form>
 										</section>
+											</>,
+										)}
 									</section>
 								) : selectedIntegration ? (
 									<section mix={css(recordBodyCss)}>
 										<header
 											mix={css({
-												display: 'flex',
-												alignItems: 'flex-start',
-												justifyContent: 'space-between',
-												gap: spacing.md,
+												display: 'grid',
+												justifyItems: 'start',
+												gap: spacing.sm,
 											})}
 										>
+											<ProviderMark
+												providerKey={
+													selectedIntegration.provider ||
+													selectedIntegration.name
+												}
+												label={integrationDisplayName(selectedIntegration)}
+												logoPath={selectedIntegration.platformLogoPath}
+												host={connectionHost(selectedIntegration)}
+											/>
 											<div mix={css({ display: 'grid', gap: spacing.xs })}>
 												<h2 mix={css(cardTitleCss)}>
 													{integrationDisplayName(selectedIntegration)}
 												</h2>
 												<p mix={css(descriptionCss)}>
-													Connection <code>{selectedIntegration.name}</code> on
-													OAuth app{' '}
-													<a
-														href={buildOauthAppHref(
-															selectedIntegration.appSlug,
-															getCurrentSearch(),
-														)}
-														mix={css(primaryLinkCss)}
-													>
-														<code>{selectedIntegration.appSlug}</code>
-													</a>
-													{selectedAppConnectionCount > 1
-														? ` · ${selectedAppConnectionCount} connections share this app`
-														: ''}
+													{selectedIntegration.authorization?.authorizeUrl
+														? 'This account is connected.'
+														: 'This account still needs to be connected.'}
 												</p>
 											</div>
-											<span
-												mix={css({
-													width: 'max-content',
-													padding: `${spacing.xs} ${spacing.sm}`,
-													borderRadius: radius.full,
-													backgroundColor: colors.primarySoftest,
-													color: colors.primaryText,
-													fontSize: typography.fontSize.sm,
-													fontWeight: typography.fontWeight.medium,
-												})}
-											>
-												{selectedIntegration.flow}
-											</span>
 										</header>
-
-										<section mix={css(detailGridCss)}>
-											{renderIntegrationDetail(
-												'Token URL',
-												selectedIntegration.tokenUrl,
-											)}
-											{renderIntegrationDetail(
-												'API base URL',
-												formatOptional(selectedIntegration.apiBaseUrl),
-											)}
-											{renderIntegrationDetail(
-												'Authorize URL',
-												formatOptional(
-													selectedIntegration.authorization?.authorizeUrl,
-												),
-											)}
-											{renderIntegrationDetail(
-												'Scopes',
-												formatList(selectedIntegration.authorization?.scopes),
-											)}
-										</section>
-
-										<section mix={css(insetCardCss)}>
-											<h3 mix={css(sectionTitleCss)}>OAuth app & secrets</h3>
-											<div mix={css(detailGridCss)}>
-												{renderIntegrationDetail(
-													'Client ID',
-													selectedIntegration.clientId,
-												)}
-												{renderIntegrationDetail(
-													'Client secret',
-													formatOptional(
-														selectedIntegration.clientSecretSecretName,
-													),
-												)}
-												{renderIntegrationDetail(
-													'Access token secret',
-													selectedIntegration.accessTokenSecretName,
-												)}
-												{renderIntegrationDetail(
-													'Refresh token secret',
-													formatOptional(
-														selectedIntegration.refreshTokenSecretName,
-													),
-												)}
-											</div>
-											<p
-												mix={css({ ...descriptionCss, marginTop: spacing.sm })}
-											>
-												<a
-													href={buildOauthAppHref(
-														selectedIntegration.appSlug,
-														getCurrentSearch(),
-													)}
-													mix={css(primaryLinkCss)}
-												>
-													Manage OAuth app
-												</a>
-											</p>
-										</section>
-
-										<section mix={css(detailGridCss)}>
-											{renderIntegrationDetail(
-												'Required hosts',
-												formatList(selectedIntegration.requiredHosts),
-											)}
-											{renderIntegrationDetail(
-												'Updated',
-												formatTimestamp(selectedIntegration.updatedAt),
-											)}
-										</section>
 
 										{connectHref ? (
 											<div>
@@ -951,7 +918,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 														textDecoration: 'none',
 													})}
 												>
-													Reconnect OAuth
+													Reconnect
 												</a>
 											</div>
 										) : (
@@ -959,6 +926,89 @@ export function AccountIntegrationsRoute(handle: Handle) {
 												This integration does not include authorization details
 												yet.
 											</p>
+										)}
+
+										{renderAdvancedDetails(
+											<>
+												<section mix={css(detailGridCss)}>
+													{renderIntegrationDetail(
+														'Connection key',
+														selectedIntegration.name,
+													)}
+													{renderIntegrationDetail(
+														'Token URL',
+														selectedIntegration.tokenUrl,
+													)}
+													{renderIntegrationDetail(
+														'API base URL',
+														formatOptional(selectedIntegration.apiBaseUrl),
+													)}
+													{renderIntegrationDetail(
+														'Authorize URL',
+														formatOptional(
+															selectedIntegration.authorization
+																?.authorizeUrl,
+														),
+													)}
+													{renderIntegrationDetail(
+														'Scopes',
+														formatList(
+															selectedIntegration.authorization?.scopes,
+														),
+													)}
+													{renderIntegrationDetail(
+														'Required hosts',
+														formatList(selectedIntegration.requiredHosts),
+													)}
+													{renderIntegrationDetail(
+														'Updated',
+														formatTimestamp(selectedIntegration.updatedAt),
+													)}
+												</section>
+												<section mix={css(insetCardCss)}>
+													<h3 mix={css(sectionTitleCss)}>
+														OAuth app & secrets
+													</h3>
+													<div mix={css(detailGridCss)}>
+														{renderIntegrationDetail(
+															'Client ID',
+															selectedIntegration.clientId,
+														)}
+														{renderIntegrationDetail(
+															'Client secret',
+															formatOptional(
+																selectedIntegration.clientSecretSecretName,
+															),
+														)}
+														{renderIntegrationDetail(
+															'Access token secret',
+															selectedIntegration.accessTokenSecretName,
+														)}
+														{renderIntegrationDetail(
+															'Refresh token secret',
+															formatOptional(
+																selectedIntegration.refreshTokenSecretName,
+															),
+														)}
+													</div>
+													<p
+														mix={css({
+															...descriptionCss,
+															marginTop: spacing.sm,
+														})}
+													>
+														<a
+															href={buildOauthAppHref(
+																selectedIntegration.appSlug,
+																getCurrentSearch(),
+															)}
+															mix={css(primaryLinkCss)}
+														>
+															Manage OAuth app
+														</a>
+													</p>
+												</section>
+											</>,
 										)}
 									</section>
 								) : showOauthAppNotFound ? (
@@ -1003,7 +1053,13 @@ export function AccountIntegrationsRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<>
-						{renderByokExplainer({ image: 'keys' })}
+						<details
+							mix={css(advancedDetailsCss)}
+							data-testid="integrations-how-connections-work"
+						>
+							<summary>How connections work</summary>
+							{renderByokExplainer({ image: 'keys' })}
+						</details>
 
 						<section mix={css({ display: 'grid', gap: spacing.lg })}>
 							<div mix={css({ display: 'grid', gap: spacing.xs })}>

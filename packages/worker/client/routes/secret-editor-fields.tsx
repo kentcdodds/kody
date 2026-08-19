@@ -1,7 +1,8 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
-import { colors, mq, spacing } from '#universal/styles/tokens.ts'
+import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
+import { accountDisclosureCss } from './account-management-components.tsx'
 import {
 	fieldCss,
 	fieldLabelCss,
@@ -131,12 +132,17 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 					</div>
 				</label>
 
+				<details
+					mix={css(advancedDetailsCss)}
+					data-testid="secret-editor-advanced"
+				>
+					<summary>Advanced details</summary>
+					<div mix={css({ display: 'grid', gap: spacing.lg })}>
 				<div mix={css({ display: 'grid', gap: spacing.sm })}>
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
-						<span mix={css(fieldLabelCss)}>Allowed hosts</span>
+						<span mix={css(fieldLabelCss)}>Where this secret can be sent</span>
 						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							Leave this empty to require explicit host approval before a secret
-							can be used.
+							Leave this empty to ask before Kody sends this secret to a site.
 						</p>
 					</div>
 					<div
@@ -192,10 +198,10 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 
 				<div mix={css({ display: 'grid', gap: spacing.sm })}>
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
-						<span mix={css(fieldLabelCss)}>Allowed capabilities</span>
+						<span mix={css(fieldLabelCss)}>Which tools can use this secret</span>
 						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							Only capabilities listed here can resolve this secret when used
-							with an <code>x-kody-secret</code> input.
+							Leave this empty to let any tool use this secret. Add names here
+							to restrict it.
 						</p>
 					</div>
 					<div
@@ -250,12 +256,20 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 						</button>
 					</div>
 				</div>
+					</div>
+				</details>
 			</>
 		)
 	}
 }
 
 const secondaryButtonCss = getSecondaryButtonCss()
+
+const advancedDetailsCss = {
+	...accountDisclosureCss,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+}
 
 const iconButtonCss = {
 	position: 'absolute' as const,
