@@ -18,28 +18,11 @@ import { type PackageInvokeCheckPreloads } from './invoke-check.ts'
 import { resolveSavedPackage } from './module-artifacts.ts'
 import { buildJsonErrorResponse } from './responses.ts'
 
-function scopeAllowsValue(input: { values?: Array<string>; value: string }) {
-	return (
-		input.values?.includes(packageInvocationScopeWildcard) ||
-		input.values?.includes(input.value) ||
-		false
-	)
-}
-
 function tokenAllowsPackage(input: {
 	token: PackageInvocationTokenScope
 	savedPackage: NonNullable<Awaited<ReturnType<typeof resolveSavedPackage>>>
 }) {
-	return (
-		scopeAllowsValue({
-			values: input.token.packageIds,
-			value: input.savedPackage.id,
-		}) ||
-		scopeAllowsValue({
-			values: input.token.packageKodyIds,
-			value: input.savedPackage.kodyId,
-		})
-	)
+	return input.token.packageId === input.savedPackage.id
 }
 
 function tokenAllowsExport(input: {

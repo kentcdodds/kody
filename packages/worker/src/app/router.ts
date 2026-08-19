@@ -73,10 +73,6 @@ import {
 	createAccountMemoriesHandler,
 } from '#app/handlers/account-memories.ts'
 import {
-	createAccountPackageInvocationTokensApiHandler,
-	createAccountPackageInvocationTokensHandler,
-} from '#app/handlers/account-package-invocation-tokens.ts'
-import {
 	createAccountPackagesApiHandler,
 	createAccountPackagesHandler,
 } from '#app/handlers/account-packages.ts'
@@ -303,21 +299,12 @@ export function createAppRouter(env: Env) {
 				createAccountMcpServersOauthCallbackHandler(env),
 			accountMcpServersApi: createAccountMcpServersApiHandler(env),
 			accountMcpServersApiPost: createAccountMcpServersApiHandler(env),
-			accountPackageInvocationTokens:
-				createAccountPackageInvocationTokensHandler(env),
-			accountPackageInvocationTokenNew:
-				createAccountPackageInvocationTokensHandler(env),
-			accountPackageInvocationTokenDetail:
-				createAccountPackageInvocationTokensHandler(env),
-			accountPackageInvocationTokensApi:
-				createAccountPackageInvocationTokensApiHandler(env),
-			accountPackageInvocationTokensApiPost:
-				createAccountPackageInvocationTokensApiHandler(env),
 			accountPackages: createAccountPackagesHandler(env),
 			accountPackageDetail: createAccountPackagesHandler(env),
 			accountPackageFiles: createAccountPackageFilesHandler(env),
 			accountPackageFilesApi: createAccountPackageFilesApiHandler(env),
 			accountPackagesApi: createAccountPackagesApiHandler(env),
+			accountPackagesApiPost: createAccountPackagesApiHandler(env),
 			accountConnectionsApi: createAccountConnectionsApiHandler(env),
 			accountConnectionsApiPost: createAccountConnectionsApiHandler(env),
 			accountPasskeys: createAccountPasskeysHandler(env),

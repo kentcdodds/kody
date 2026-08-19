@@ -1044,20 +1044,18 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 		INSERT INTO package_invocation_tokens (
 			id,
 			user_id,
+			package_id,
 			name,
 			token_hash,
-			email,
-			display_name,
 			created_at,
 			updated_at
 		)
 		VALUES (
 			'token-a',
 			'user-aaa',
+			'pkg-a',
 			'Migration token',
 			'token-hash-a',
-			'a@example.com',
-			'User A',
 			'2026-07-05',
 			'2026-07-05'
 		);

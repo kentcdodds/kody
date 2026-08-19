@@ -61,18 +61,6 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountMcpServersRouteLoader,
 	),
-	[routePattern(routes.accountPackageInvocationTokens)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountPackageInvocationTokensRouteLoader,
-	),
-	[routePattern(routes.accountPackageInvocationTokenNew)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountPackageInvocationTokensRouteLoader,
-	),
-	[routePattern(routes.accountPackageInvocationTokenDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountPackageInvocationTokensRouteLoader,
-	),
 	[routePattern(routes.accountPackages)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountPackagesRouteLoader,
@@ -319,21 +307,6 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountMcpServerDetail)]: (
 		<LazyAccountRoute render={(m) => <m.AccountMcpServersRoute />} />
-	),
-	[routePattern(routes.accountPackageInvocationTokens)]: (
-		<LazyAccountRoute
-			render={(m) => <m.AccountPackageInvocationTokensRoute />}
-		/>
-	),
-	[routePattern(routes.accountPackageInvocationTokenNew)]: (
-		<LazyAccountRoute
-			render={(m) => <m.AccountPackageInvocationTokensRoute />}
-		/>
-	),
-	[routePattern(routes.accountPackageInvocationTokenDetail)]: (
-		<LazyAccountRoute
-			render={(m) => <m.AccountPackageInvocationTokensRoute />}
-		/>
 	),
 	[routePattern(routes.accountPackages)]: (
 		<LazyAccountRoute render={(m) => <m.AccountPackagesRoute />} />

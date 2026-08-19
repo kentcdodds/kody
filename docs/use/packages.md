@@ -250,7 +250,7 @@ to prevent runaway loops.
 External trusted clients that must call package exports over HTTP use package
 invocation tokens instead. Before sending a user to create one, agents should
 load `coding_guide_get` with `guide: "package_invocation_token_setup"` and
-construct a prefilled `/account/package-invocation-tokens/new` URL without raw
+construct a prefilled `/account/packages/:packageId?newToken=1` URL without raw
 token material.
 
 Static package imports from ad hoc MCP `execute` code, such as

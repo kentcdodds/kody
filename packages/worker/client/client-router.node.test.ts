@@ -20,18 +20,16 @@ import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
 
 test('client route and loader matching prefer specific static routes over dynamic parents', () => {
-	const tokenDetailRoute = 'token-detail-route' as unknown as JSX.Element
-	const newTokenRoute = 'new-token-route' as unknown as JSX.Element
+	const serverDetailRoute = 'server-detail-route' as unknown as JSX.Element
+	const newServerRoute = 'new-server-route' as unknown as JSX.Element
 	const routes = {
-		'/account/package-invocation-tokens/:tokenId': tokenDetailRoute,
-		'/account/package-invocation-tokens/new': newTokenRoute,
+		'/account/mcp-servers/:serverId': serverDetailRoute,
+		'/account/mcp-servers/new': newServerRoute,
 	}
 
-	expect(matchRoute('/account/package-invocation-tokens/new', routes)).toBe(
-		newTokenRoute,
-	)
-	expect(matchRoute('/account/package-invocation-tokens/token-1', routes)).toBe(
-		tokenDetailRoute,
+	expect(matchRoute('/account/mcp-servers/new', routes)).toBe(newServerRoute)
+	expect(matchRoute('/account/mcp-servers/server-1', routes)).toBe(
+		serverDetailRoute,
 	)
 
 	const genericSecretRoute = 'generic-secret-route' as unknown as JSX.Element
@@ -51,22 +49,22 @@ test('client route and loader matching prefer specific static routes over dynami
 	const accountLoader = (async () => ({
 		accountProfile: { ok: true },
 	})) as RouteLoader
-	const tokenLoader = (async () => ({
-		accountPackageInvocationTokens: { ok: true },
+	const serverLoader = (async () => ({
+		accountMcpServers: { ok: true },
 	})) as RouteLoader
 	const loaders = {
-		'/account/package-invocation-tokens/:tokenId': tokenLoader,
-		'/account/package-invocation-tokens/new': tokenLoader,
+		'/account/mcp-servers/:serverId': serverLoader,
+		'/account/mcp-servers/new': serverLoader,
 		'/account': accountLoader,
 	}
 
 	expect(matchRouteLoader('/account', loaders)).toBe(accountLoader)
-	expect(
-		matchRouteLoader('/account/package-invocation-tokens/new', loaders),
-	).toBe(tokenLoader)
-	expect(
-		matchRouteLoader('/account/package-invocation-tokens/token-1', loaders),
-	).toBe(tokenLoader)
+	expect(matchRouteLoader('/account/mcp-servers/new', loaders)).toBe(
+		serverLoader,
+	)
+	expect(matchRouteLoader('/account/mcp-servers/server-1', loaders)).toBe(
+		serverLoader,
+	)
 
 	const genericSecretLoader = (async () => ({
 		accountSecrets: { ok: true },

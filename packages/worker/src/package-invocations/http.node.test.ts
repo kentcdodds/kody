@@ -25,8 +25,7 @@ vi.mock('./service.ts', async () => {
 async function createEnv(
 	options: {
 		tokenRow?: {
-			package_ids_json?: string
-			package_kody_ids_json?: string
+			package_id?: string
 			export_names_json?: string
 			sources_json?: string
 			revoked_at?: string | null
@@ -36,18 +35,14 @@ async function createEnv(
 	} = {},
 ) {
 	const tokenUserId = await createStableUserIdFromEmail('me@example.com')
+	const packageId = options.tokenRow?.package_id ?? 'pkg-discord-gateway'
 	const tokenRows = [
 		{
-			id: 'discord-gateway',
+			id: 'token-1',
 			user_id: tokenUserId,
+			package_id: packageId,
 			token_hash: await hashPackageInvocationBearerToken('private-token-123'),
 			name: 'Discord gateway',
-			email: 'me@example.com',
-			display_name: 'me',
-			package_ids_json: options.tokenRow?.package_ids_json ?? '[]',
-			package_kody_ids_json:
-				options.tokenRow?.package_kody_ids_json ??
-				JSON.stringify(['discord-gateway']),
 			export_names_json:
 				options.tokenRow?.export_names_json ??
 				JSON.stringify(['./dispatch-message-created']),
@@ -59,6 +54,21 @@ async function createEnv(
 			revoked_at: options.tokenRow?.revoked_at ?? null,
 		},
 	]
+	const savedPackage = {
+		id: packageId,
+		user_id: tokenUserId,
+		name: '@test/discord-gateway',
+		kody_id: 'discord-gateway',
+		description: 'Dispatch Discord gateway events.',
+		tags_json: '[]',
+		search_text: null,
+		source_id: 'source-1',
+		has_app: 0,
+		hidden: 0,
+		is_private: 0,
+		created_at: '2026-04-27T00:00:00.000Z',
+		updated_at: '2026-04-27T00:00:00.000Z',
+	}
 	return {
 		APP_DB: {
 			prepare(query: string) {
@@ -87,11 +97,26 @@ async function createEnv(
 											: null
 									) as T | null
 								}
+								if (query.includes('FROM saved_packages')) {
+									const kodyId = String(params[0] ?? '')
+									const userId = String(params[1] ?? '')
+									return (
+										kodyId === savedPackage.kody_id &&
+										userId === savedPackage.user_id
+											? savedPackage
+											: null
+									) as T | null
+								}
 								if (query.includes('FROM package_invocation_tokens')) {
-									const tokenHash = String(params[0] ?? '')
+									const userId = String(params[0] ?? '')
+									const rowPackageId = String(params[1] ?? '')
+									const tokenHash = String(params[2] ?? '')
 									return (tokenRows.find(
 										(row) =>
-											row.token_hash === tokenHash && row.revoked_at === null,
+											row.user_id === userId &&
+											row.package_id === rowPackageId &&
+											row.token_hash === tokenHash &&
+											row.revoked_at === null,
 									) ?? null) as T | null
 								}
 								return null
@@ -157,7 +182,7 @@ function createContext() {
 	} as unknown as ExecutionContext
 }
 
-test('package invocation API rejects missing, invalid, and unsafe tokens before invoking exports', async () => {
+test('package invocation API rejects missing, invalid, and malformed tokens before invoking exports', async () => {
 	expect(
 		isPackageInvocationApiRequest(
 			'/@my-user/api/package-invocations/discord-gateway/dispatch-message-created',
@@ -219,8 +244,12 @@ test('package invocation API rejects missing, invalid, and unsafe tokens before 
 	})
 
 	invocationMockModule.invokePackageExport.mockClear()
+	invocationMockModule.invokePackageExport.mockResolvedValue({
+		status: 200,
+		body: { ok: true },
+	})
 
-	const revocationRaceResponse = await handlePackageInvocationApiRequest(
+	const lastUsedWriteMiss = await handlePackageInvocationApiRequest(
 		new Request(route, {
 			method: 'POST',
 			headers: {
@@ -233,15 +262,8 @@ test('package invocation API rejects missing, invalid, and unsafe tokens before 
 		createContext(),
 	)
 
-	expect(revocationRaceResponse.status).toBe(401)
-	await expect(revocationRaceResponse.json()).resolves.toEqual({
-		ok: false,
-		error: {
-			code: 'unauthorized',
-			message: 'Invalid package invocation token.',
-		},
-	})
-	expect(invocationMockModule.invokePackageExport).not.toHaveBeenCalled()
+	expect(lastUsedWriteMiss.status).toBe(200)
+	expect(invocationMockModule.invokePackageExport).toHaveBeenCalled()
 
 	await expect(
 		handlePackageInvocationApiRequest(
@@ -255,15 +277,15 @@ test('package invocation API rejects missing, invalid, and unsafe tokens before 
 			}),
 			await createEnv({
 				tokenRow: {
-					package_kody_ids_json: '{bad json',
+					export_names_json: '{bad json',
 				},
 			}),
 			createContext(),
 		),
 	).rejects.toThrow(
-		'Invalid package invocation token record: package_kody_ids_json must be valid JSON.',
+		'Invalid package invocation token record: export_names_json must be valid JSON.',
 	)
-	expect(invocationMockModule.invokePackageExport).not.toHaveBeenCalled()
+	expect(invocationMockModule.invokePackageExport).toHaveBeenCalledTimes(1)
 })
 
 test('unscoped package invocation route reports missing owner slug instead of token failure', async () => {
@@ -365,11 +387,10 @@ test('package invocation API validates requests and invokes exports with scoped 
 		env: expect.any(Object),
 		baseUrl: 'https://example.com',
 		token: {
-			tokenId: 'discord-gateway',
+			tokenId: 'token-1',
 			userId: expectedUserId,
 			email: 'me@example.com',
-			packageIds: [],
-			packageKodyIds: ['discord-gateway'],
+			packageId: 'pkg-discord-gateway',
 			exportNames: ['./dispatch-message-created'],
 			sources: ['discord-gateway'],
 		},

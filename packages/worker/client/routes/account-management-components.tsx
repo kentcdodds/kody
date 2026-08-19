@@ -444,7 +444,6 @@ const accountNavItems = [
 	{ href: '/account/stars', label: 'Stars' },
 	{ href: '/account/secrets', label: 'Secrets' },
 	{ href: '/account/integrations', label: 'Integrations' },
-	{ href: '/account/package-invocation-tokens', label: 'Package tokens' },
 	{ href: '/account/mcp-servers', label: 'MCP servers' },
 	{ href: '/account/memories', label: 'Memories' },
 	{ href: '/account/email', label: 'Email' },

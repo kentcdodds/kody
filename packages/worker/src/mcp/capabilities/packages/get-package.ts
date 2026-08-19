@@ -11,20 +11,24 @@ import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
+import { listPackageInvocationTokensByPackageId } from '#worker/package-invocations/repo.ts'
 import { getSavedPackageWithCommunityProvenanceById } from '#worker/package-registry/repo.ts'
 import {
 	buildPlainRepoPromotionErrorMessage,
 	findPlainRepoPromotionHint,
 } from '#worker/repo/user-repos.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
-import { packageDetailSchema } from './shared.ts'
+import {
+	packageDetailSchema,
+	toPackageInvocationTokenMetadata,
+} from './shared.ts'
 
 export const getPackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_get',
 		description:
-			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, callable export contracts, and canonical owner-scoped external invocation URLs for each export.',
+			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, ready-to-import export specifiers, callable export contracts, invocation token metadata, and canonical owner-scoped external invocation URLs for each export.',
 		keywords: [
 			'package',
 			'get',
@@ -88,6 +92,11 @@ export const getPackageCapability = defineDomainCapability(
 				loaded.manifest,
 				loaded.files,
 			)
+			const tokens = await listPackageInvocationTokensByPackageId({
+				db: ctx.env.APP_DB,
+				userId: owner.ownerUserId,
+				packageId: saved.id,
+			})
 			return {
 				package_id: saved.id,
 				kody_id: saved.kodyId,
@@ -129,6 +138,7 @@ export const getPackageCapability = defineDomainCapability(
 								const descriptor = buildExternalPackageInvocationDescriptor({
 									baseUrl: ctx.callerContext.baseUrl,
 									ownerUsername: username,
+									packageId: saved.id,
 									kodyId: saved.kodyId,
 									exportName: exportDetail.subpath,
 								})
@@ -146,6 +156,7 @@ export const getPackageCapability = defineDomainCapability(
 							})()
 						: null,
 				})),
+				tokens: tokens.map(toPackageInvocationTokenMetadata),
 			}
 		},
 	},

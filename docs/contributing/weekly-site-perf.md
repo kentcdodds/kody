@@ -42,8 +42,9 @@ package. The agent implements an obvious local fix when it can, follows
 [`.agents/skills/ship-pr/SKILL.md`](../../.agents/skills/ship-pr/SKILL.md), or
 leaves the tracking issue open when a human should decide.
 
-Create a scoped invocation token at
-`https://kody.codes/account/package-invocation-tokens/new?name=Weekly%20site%20perf&packageKodyIds=weekly-site-perf&exportNames=.&allowedSources=weekly-site-perf`
+Create a scoped invocation token on the `weekly-site-perf` package details page
+(`exportNames=.`, source `weekly-site-perf`) at
+`https://kody.codes/account/packages/<weekly-site-perf-package-id>?newToken=1&name=Weekly%20site%20perf&exportNames=.&allowedSources=weekly-site-perf`
 and store the raw value as the repository (or org) secret
 `KODY_PACKAGE_INVOCATION_TOKEN`. Do not put the raw token in the URL. See
 [setup manifest](./setup-manifest.md).

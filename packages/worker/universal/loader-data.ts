@@ -980,31 +980,15 @@ export type AccountMcpServersLoaderData = {
 	servers: Array<AccountMcpServerListItem>
 }
 
-export type AccountPackageInvocationTokenListItem = {
+export type AccountPackageToken = {
 	id: string
 	name: string
-	packageIds: Array<string>
-	packageKodyIds: Array<string>
 	exportNames: Array<string>
 	sources: Array<string>
 	createdAt: string
 	updatedAt: string
 	lastUsedAt: string | null
 	revokedAt: string | null
-}
-
-export type AccountPackageInvocationTokensLoaderData = {
-	ok: true
-	email: string
-	username: string
-	invocationUrlOrigin: string
-	packages: Array<{
-		id: string
-		kodyId: string
-		name: string
-	}>
-	tokens: Array<AccountPackageInvocationTokenListItem>
-	selectedTokenId?: string
 }
 
 export type AccountPackageListItem = {
@@ -1021,6 +1005,7 @@ export type AccountPackageListItem = {
 
 export type AccountPackageDetail = AccountPackageListItem & {
 	searchText: string | null
+	tokens: Array<AccountPackageToken>
 }
 
 export type AccountPackagesSort = 'updated' | 'created' | 'name'
@@ -1030,6 +1015,8 @@ export type AccountPackagesAppFilter = 'all' | 'with' | 'without'
 export type AccountPackagesLoaderData = {
 	ok: true
 	email: string
+	username: string
+	invocationUrlOrigin: string
 	packages: Array<AccountPackageListItem>
 	selectedPackage: AccountPackageDetail | null
 	page: number
@@ -1480,7 +1467,6 @@ export type AppLoaderData = {
 	accountPasskeys?: AccountPasskeysLoaderData
 	accountIntegrations?: AccountIntegrationsLoaderData
 	accountMcpServers?: AccountMcpServersLoaderData
-	accountPackageInvocationTokens?: AccountPackageInvocationTokensLoaderData
 	accountPackages?: AccountPackagesLoaderData
 	accountSecrets?: AccountSecretsLoaderData
 	accountValues?: AccountValuesLoaderData

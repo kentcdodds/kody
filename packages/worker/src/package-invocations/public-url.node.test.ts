@@ -5,6 +5,7 @@ test('buildExternalPackageInvocationDescriptor normalizes subpath and root expor
 	const subpathDescriptor = buildExternalPackageInvocationDescriptor({
 		baseUrl: 'https://heykody.dev',
 		ownerUsername: 'kentcdodds',
+		packageId: 'pkg-youtube',
 		kodyId: 'youtube-livestream-vod-manager',
 		exportName: './process-video',
 	})
@@ -18,13 +19,14 @@ test('buildExternalPackageInvocationDescriptor normalizes subpath and root expor
 		routeExportName: 'process-video',
 		normalizedExportName: './process-video',
 		tokenSetupUrl:
-			'https://heykody.dev/account/package-invocation-tokens/new?packageKodyIds=youtube-livestream-vod-manager&exportNames=process-video',
+			'https://heykody.dev/account/packages/pkg-youtube?newToken=1&exportNames=process-video',
 	})
 	expect(subpathDescriptor.sourceGuidance).toBeTypeOf('string')
 
 	const rootDescriptor = buildExternalPackageInvocationDescriptor({
 		baseUrl: 'https://heykody.dev',
 		ownerUsername: 'kentcdodds',
+		packageId: 'pkg-discord',
 		kodyId: 'discord-gateway',
 		exportName: '.',
 	})
@@ -35,6 +37,6 @@ test('buildExternalPackageInvocationDescriptor normalizes subpath and root expor
 		routeExportName: '__root__',
 		normalizedExportName: '.',
 		tokenSetupUrl:
-			'https://heykody.dev/account/package-invocation-tokens/new?packageKodyIds=discord-gateway&exportNames=.',
+			'https://heykody.dev/account/packages/pkg-discord?newToken=1&exportNames=.',
 	})
 })

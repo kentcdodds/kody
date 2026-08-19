@@ -42,12 +42,9 @@ export function boundedResponseJson(
 const packageInvocationTokenRowSchema = object({
 	id: string(),
 	user_id: string(),
+	package_id: string(),
 	token_hash: string(),
 	name: string(),
-	email: string(),
-	display_name: string(),
-	package_ids_json: string(),
-	package_kody_ids_json: string(),
 	export_names_json: string(),
 	sources_json: string(),
 	created_at: string(),
@@ -64,8 +61,6 @@ export type PackageInvocationStoredResponse = {
 export type PackageInvocationTokenRecord = InferOutput<
 	typeof packageInvocationTokenRowSchema
 > & {
-	packageIds: Array<string>
-	packageKodyIds: Array<string>
 	exportNames: Array<string>
 	sources: Array<string>
 }
@@ -142,14 +137,6 @@ function mapTokenRow(
 	}
 	return {
 		...parsed.value,
-		packageIds: parseStringArrayJson({
-			value: parsed.value.package_ids_json,
-			field: 'package_ids_json',
-		}),
-		packageKodyIds: parseStringArrayJson({
-			value: parsed.value.package_kody_ids_json,
-			field: 'package_kody_ids_json',
-		}),
 		exportNames: parseStringArrayJson({
 			value: parsed.value.export_names_json,
 			field: 'export_names_json',
@@ -161,19 +148,23 @@ function mapTokenRow(
 	}
 }
 
-export async function getActivePackageInvocationTokenByHash(input: {
+export async function getActivePackageInvocationTokenForPackage(input: {
 	db: D1Database
+	userId: string
+	packageId: string
 	tokenHash: string
 }) {
 	const row = await input.db
 		.prepare(
 			`SELECT *
 			FROM package_invocation_tokens
-			WHERE token_hash = ?
+			WHERE user_id = ?
+				AND package_id = ?
+				AND token_hash = ?
 				AND revoked_at IS NULL
 			LIMIT 1`,
 		)
-		.bind(input.tokenHash)
+		.bind(input.userId, input.packageId, input.tokenHash)
 		.first<Record<string, unknown>>()
 	return row ? mapTokenRow(row) : null
 }
@@ -193,18 +184,20 @@ export async function updatePackageInvocationTokenLastUsed(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
-export async function listPackageInvocationTokensByUserId(input: {
+export async function listPackageInvocationTokensByPackageId(input: {
 	db: D1Database
 	userId: string
+	packageId: string
 }) {
 	const rows = await input.db
 		.prepare(
 			`SELECT *
 			FROM package_invocation_tokens
 			WHERE user_id = ?
+				AND package_id = ?
 			ORDER BY created_at DESC, name ASC`,
 		)
-		.bind(input.userId)
+		.bind(input.userId, input.packageId)
 		.all<Record<string, unknown>>()
 	return (rows.results ?? []).map(mapTokenRow)
 }
@@ -232,12 +225,9 @@ export async function insertPackageInvocationToken(input: {
 	row: {
 		id: string
 		userId: string
+		packageId: string
 		name: string
 		tokenHash: string
-		email: string
-		displayName: string
-		packageIds: Array<string>
-		packageKodyIds: Array<string>
 		exportNames: Array<string>
 		sources: Array<string>
 	}
@@ -248,27 +238,21 @@ export async function insertPackageInvocationToken(input: {
 			`INSERT INTO package_invocation_tokens (
 				id,
 				user_id,
+				package_id,
 				name,
 				token_hash,
-				email,
-				display_name,
-				package_ids_json,
-				package_kody_ids_json,
 				export_names_json,
 				sources_json,
 				created_at,
 				updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			input.row.id,
 			input.row.userId,
+			input.row.packageId,
 			input.row.name,
 			input.row.tokenHash,
-			input.row.email,
-			input.row.displayName,
-			JSON.stringify(input.row.packageIds),
-			JSON.stringify(input.row.packageKodyIds),
 			JSON.stringify(input.row.exportNames),
 			JSON.stringify(input.row.sources),
 			now,
@@ -283,8 +267,6 @@ export async function updatePackageInvocationToken(input: {
 	id: string
 	name: string
 	tokenHash?: string
-	packageIds: Array<string>
-	packageKodyIds: Array<string>
 	exportNames: Array<string>
 	sources: Array<string>
 }) {
@@ -293,8 +275,6 @@ export async function updatePackageInvocationToken(input: {
 			`UPDATE package_invocation_tokens
 			SET name = ?,
 				token_hash = COALESCE(?, token_hash),
-				package_ids_json = ?,
-				package_kody_ids_json = ?,
 				export_names_json = ?,
 				sources_json = ?,
 				updated_at = ?
@@ -305,8 +285,6 @@ export async function updatePackageInvocationToken(input: {
 		.bind(
 			input.name,
 			input.tokenHash ?? null,
-			JSON.stringify(input.packageIds),
-			JSON.stringify(input.packageKodyIds),
 			JSON.stringify(input.exportNames),
 			JSON.stringify(input.sources),
 			new Date().toISOString(),
@@ -368,4 +346,20 @@ export async function deletePackageInvocationToken(input: {
 		.bind(input.id, input.userId)
 		.run()
 	return (result.meta.changes ?? 0) > 0
+}
+
+export async function deletePackageInvocationTokensForPackage(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+}) {
+	const result = await input.db
+		.prepare(
+			`DELETE FROM package_invocation_tokens
+			WHERE user_id = ?
+				AND package_id = ?`,
+		)
+		.bind(input.userId, input.packageId)
+		.run()
+	return result.meta.changes ?? 0
 }

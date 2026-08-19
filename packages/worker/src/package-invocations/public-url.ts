@@ -27,11 +27,14 @@ function buildPackageInvocationTokenSetupExportName(exportName: string) {
 
 export function buildPackageInvocationTokenSetupUrl(input: {
 	baseUrl: string
-	kodyId: string
+	packageId: string
 	exportName: string
 }) {
-	const url = new URL('/account/package-invocation-tokens/new', input.baseUrl)
-	url.searchParams.set('packageKodyIds', input.kodyId)
+	const url = new URL(
+		`/account/packages/${encodeURIComponent(input.packageId)}`,
+		input.baseUrl,
+	)
+	url.searchParams.set('newToken', '1')
 	url.searchParams.set(
 		'exportNames',
 		buildPackageInvocationTokenSetupExportName(input.exportName),
@@ -42,6 +45,7 @@ export function buildPackageInvocationTokenSetupUrl(input: {
 export function buildExternalPackageInvocationDescriptor(input: {
 	baseUrl: string
 	ownerUsername: string
+	packageId: string
 	kodyId: string
 	exportName: string
 }): ExternalPackageInvocationDescriptor {
@@ -69,7 +73,7 @@ export function buildExternalPackageInvocationDescriptor(input: {
 		normalizedExportName,
 		tokenSetupUrl: buildPackageInvocationTokenSetupUrl({
 			baseUrl: input.baseUrl,
-			kodyId: input.kodyId,
+			packageId: input.packageId,
 			exportName: normalizedExportName,
 		}),
 		sourceGuidance,

@@ -1170,13 +1170,13 @@ on write unless a migration backfills existing rows.
 - `published_bundle_artifacts.dependencies_json` (`0001-squashed-init.sql`)
   stores package dependency pointers queried with SQLite JSON functions in
   `packages/worker/src/repo/published-bundle-artifacts-repo.ts`.
-- `package_invocation_tokens.package_ids_json`,
-  `package_invocation_tokens.package_kody_ids_json`,
-  `package_invocation_tokens.export_names_json`, and
-  `package_invocation_tokens.sources_json` (`0001-squashed-init.sql`) store
-  invocation-token scope projections. Keyed invocation replay lives in the
-  RunLog Durable Object ledger (see [Run records](./run-records.md)); the
-  current D1 schema has no `package_invocations` table.
+- `package_invocation_tokens.export_names_json` and
+  `package_invocation_tokens.sources_json`
+  (`0017-package-owned-invocation-tokens.sql`) store per-package invocation-token
+  scope projections. Each token row also has a required `package_id`. Keyed
+  invocation replay lives in the RunLog Durable Object ledger (see
+  [Run records](./run-records.md)); the current D1 schema has no
+  `package_invocations` table.
 - `webhook_endpoints` (`0001-squashed-init.sql`) stores per-user minted URL
   state for `package.json#kody.webhooks`, keyed by
   `(user_id, package_id, webhook_name)`. URL secrets are SHA-256 hashed;

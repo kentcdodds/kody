@@ -38,6 +38,7 @@ import {
 	recordCellClamp,
 	recordStampCss,
 } from './record-table.tsx'
+import { AccountPackageTokens } from './account-package-tokens.tsx'
 import { getAccountPackageFilesHref } from '#universal/package-files.ts'
 import {
 	type AccountPackageDetail,
@@ -139,6 +140,8 @@ export function AccountPackagesRoute(handle: Handle) {
 	let packagesSnapshot: InfiniteListSnapshot<AccountPackageListItem> =
 		packageList.getSnapshot()
 	let selectedPackage: AccountPackageDetail | null = null
+	let username = ''
+	let invocationUrlOrigin = ''
 	let message: string | null = null
 	let loadRequestId = 0
 	let lastLoadedDataKey = ''
@@ -188,6 +191,8 @@ export function AccountPackagesRoute(handle: Handle) {
 			lastLoadedListKey = listKey
 		}
 		selectedPackage = payload.selectedPackage
+		username = payload.username
+		invocationUrlOrigin = payload.invocationUrlOrigin
 		message =
 			packagesRoute.getSelection(href).selectedId && !payload.selectedPackage
 				? 'Package not found.'
@@ -551,6 +556,16 @@ export function AccountPackagesRoute(handle: Handle) {
 								>
 									Browse files
 								</a>
+								<AccountPackageTokens
+									packageDetail={selectedPackage}
+									currentHref={currentHref}
+									username={username}
+									invocationUrlOrigin={invocationUrlOrigin}
+									onPackagesPayload={(payload) => {
+										applyPayload(payload, currentHref)
+										handle.update()
+									}}
+								/>
 								{selectedPackage.searchText ? (
 									// The search index is a wall of concatenated text with no
 									// reading order. Left in flow it set the height of the whole

@@ -23,10 +23,6 @@ export {
 	accountMemoriesRouteLoader,
 } from './account-memories.tsx'
 export {
-	AccountPackageInvocationTokensRoute,
-	accountPackageInvocationTokensRouteLoader,
-} from './account-package-invocation-tokens.tsx'
-export {
 	AccountPackagesRoute,
 	accountPackagesRouteLoader,
 } from './account-packages.tsx'

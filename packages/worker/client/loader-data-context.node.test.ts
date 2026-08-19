@@ -29,14 +29,14 @@ test('loader href helpers normalize URLs and compare pathname and search', () =>
 	expect(hrefMatchesSsrUrl('/community', '/community?q=beta')).toBe(false)
 	expect(
 		hrefMatchesSsrUrl(
-			'/account/package-invocation-tokens/token-1',
-			'/account/package-invocation-tokens/token-1',
+			'/account/packages/pkg-1',
+			'/account/packages/pkg-1',
 		),
 	).toBe(true)
 	expect(
 		hrefMatchesSsrUrl(
-			'/account/package-invocation-tokens/token-2',
-			'/account/package-invocation-tokens/token-1',
+			'/account/packages/pkg-2',
+			'/account/packages/pkg-1',
 		),
 	).toBe(false)
 })

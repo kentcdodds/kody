@@ -31,7 +31,7 @@ content:
 | [values.md](./values.md)                                                                 | Do not write new values; map existing rows to memories, package storage, repos, secrets, or integrations                                                                              |
 | [oauth.md](./oauth.md)                                                                   | **Start here** for third-party OAuth (`/connect/oauth`, redirect URI, params)                                                                                                         |
 | [account-secret-setup.md](./account-secret-setup.md)                                     | `/account/secrets/new` URL parameters and policies                                                                                                                                    |
-| [account-package-invocation-token-setup.md](./account-package-invocation-token-setup.md) | `/account/package-invocation-tokens/new` URL parameters and bearer-token safety policy                                                                                                |
+| [account-package-invocation-token-setup.md](./account-package-invocation-token-setup.md) | `/account/packages/:packageId?newToken=1` URL parameters and bearer-token safety policy                                                                                               |
 
 ## Provider guides
 

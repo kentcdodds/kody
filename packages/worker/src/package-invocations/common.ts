@@ -19,8 +19,7 @@ export type PackageInvocationTokenScope = {
 	tokenId: string
 	userId: string
 	email?: string
-	packageIds?: Array<string>
-	packageKodyIds?: Array<string>
+	packageId: string
 	exportNames?: Array<string>
 	sources?: Array<string>
 }

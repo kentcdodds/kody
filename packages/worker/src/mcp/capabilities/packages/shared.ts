@@ -204,11 +204,6 @@ export const packageExportSurfaceSchema = z.object({
 		),
 })
 
-export const packageDetailSchema =
-	packageSummaryWithCommunityProvenanceSchema.extend({
-		exports: z.array(packageExportSurfaceSchema),
-	})
-
 export const packageInvocationTokenMetadataSchema = z.object({
 	token_id: z
 		.string()
@@ -216,20 +211,13 @@ export const packageInvocationTokenMetadataSchema = z.object({
 			'Package invocation token record id. This is not a bearer token.',
 		),
 	name: z.string().describe('Human-readable token record name.'),
-	package_ids: z
-		.array(z.string())
-		.describe(
-			'Saved package ids allowed by this token record, including * when wildcard-scoped.',
-		),
-	package_kody_ids: z
-		.array(z.string())
-		.describe(
-			'Saved package kody.id scopes allowed by this token record, including * when wildcard-scoped.',
-		),
+	package_id: z
+		.string()
+		.describe('Saved package id this token belongs to.'),
 	export_names: z
 		.array(z.string())
 		.describe(
-			'Normalized package export scopes allowed by this token record, including * when wildcard-scoped.',
+			'Normalized package export scopes allowed by this token record, including * when all exports on this package are allowed.',
 		),
 	allowed_sources: z
 		.array(z.string())
@@ -245,3 +233,37 @@ export const packageInvocationTokenMetadataSchema = z.object({
 		.nullable()
 		.describe('Revocation timestamp, or null when the token record is active.'),
 })
+
+export const packageDetailSchema =
+	packageSummaryWithCommunityProvenanceSchema.extend({
+		exports: z.array(packageExportSurfaceSchema),
+		tokens: z
+			.array(packageInvocationTokenMetadataSchema)
+			.describe(
+				'Invocation token metadata for this package. Raw bearer values and stored hashes are never returned.',
+			),
+	})
+
+export function toPackageInvocationTokenMetadata(token: {
+	id: string
+	name: string
+	package_id: string
+	exportNames: Array<string>
+	sources: Array<string>
+	created_at: string
+	updated_at: string
+	last_used_at: string | null
+	revoked_at: string | null
+}) {
+	return {
+		token_id: token.id,
+		name: token.name,
+		package_id: token.package_id,
+		export_names: token.exportNames,
+		allowed_sources: token.sources,
+		created_at: token.created_at,
+		updated_at: token.updated_at,
+		last_used_at: token.last_used_at,
+		revoked_at: token.revoked_at,
+	}
+}

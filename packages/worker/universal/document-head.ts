@@ -141,15 +141,6 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountMcpServers)]: titleOnly('MCP servers'),
 	[routePattern(routes.accountMcpServerNew)]: titleOnly('MCP servers'),
 	[routePattern(routes.accountMcpServerDetail)]: titleOnly('MCP servers'),
-	[routePattern(routes.accountPackageInvocationTokens)]: titleOnly(
-		'Package invocation tokens',
-	),
-	[routePattern(routes.accountPackageInvocationTokenNew)]: titleOnly(
-		'Package invocation tokens',
-	),
-	[routePattern(routes.accountPackageInvocationTokenDetail)]: titleOnly(
-		'Package invocation tokens',
-	),
 	[routePattern(routes.accountPackages)]: titleOnly('Packages'),
 	[routePattern(routes.accountPackageDetail)]: titleOnly('Packages'),
 	[routePattern(routes.accountPackageFiles)]: ({ loaderData }) => {

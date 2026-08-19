@@ -7,9 +7,10 @@ import {
 	assertAccountWritable,
 } from '#worker/account/deletion-state.ts'
 import { packageInvocationRootExportRouteSegment } from '@kody-internal/shared/public-urls.ts'
+import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
 import { waitUntilFromExecutionContext } from './common.ts'
 import {
-	getActivePackageInvocationTokenByHash,
+	getActivePackageInvocationTokenForPackage,
 	hashPackageInvocationBearerToken,
 	updatePackageInvocationTokenLastUsed,
 } from './repo.ts'
@@ -126,26 +127,32 @@ function isUnscopedPackageInvocationPath(pathname: string) {
 
 async function resolveTokenScope(input: {
 	env: Env
+	userId: string
+	email: string
+	packageId: string
 	bearerToken: string
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<PackageInvocationTokenScope | null> {
 	const tokenHash = await hashPackageInvocationBearerToken(input.bearerToken)
-	const record = await getActivePackageInvocationTokenByHash({
+	const record = await getActivePackageInvocationTokenForPackage({
 		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: input.packageId,
 		tokenHash,
 	})
 	if (!record) return null
 	await assertAccountWritable(input.env, record.user_id)
-	const touched = await updatePackageInvocationTokenLastUsed({
+	const lastUsed = updatePackageInvocationTokenLastUsed({
 		db: input.env.APP_DB,
 		id: record.id,
-	})
-	if (!touched) return null
+	}).then(() => undefined)
+	if (input.waitUntil) input.waitUntil(lastUsed)
+	else void lastUsed
 	return {
 		tokenId: record.id,
 		userId: record.user_id,
-		email: record.email,
-		packageIds: record.packageIds,
-		packageKodyIds: record.packageKodyIds,
+		email: input.email,
+		packageId: record.package_id,
 		exportNames: record.exportNames,
 		sources: record.sources,
 	}
@@ -238,11 +245,46 @@ export async function handlePackageInvocationApiRequest(
 		})
 		return unauthorizedResponse()
 	}
+	const routeUser = await findPublicUserIdentityByUsername({
+		db: env.APP_DB,
+		username: route.username,
+	})
+	if (!routeUser) {
+		logPackageInvocationAudit(ctx, {
+			category: 'oauth',
+			action: 'package_invoke',
+			result: 'failure',
+			ip: requestIp,
+			path: new URL(request.url).pathname,
+			reason: 'owner_not_found',
+		})
+		return notFoundResponse()
+	}
+	const savedPackage = await getSavedPackageByKodyId(env.APP_DB, {
+		userId: routeUser.mcpUserId,
+		kodyId: route.kodyId,
+	})
+	if (!savedPackage) {
+		logPackageInvocationAudit(ctx, {
+			category: 'oauth',
+			action: 'package_invoke',
+			result: 'failure',
+			email: routeUser.email,
+			ip: requestIp,
+			path: new URL(request.url).pathname,
+			reason: 'package_not_found',
+		})
+		return notFoundResponse()
+	}
 	let tokenScope: PackageInvocationTokenScope | null
 	try {
 		tokenScope = await resolveTokenScope({
 			env,
+			userId: routeUser.mcpUserId,
+			email: routeUser.email,
+			packageId: savedPackage.id,
 			bearerToken,
+			waitUntil: waitUntilFromExecutionContext(ctx),
 		})
 	} catch (error) {
 		if (!(error instanceof AccountDeletionInProgressError)) throw error
@@ -262,27 +304,12 @@ export async function handlePackageInvocationApiRequest(
 			category: 'oauth',
 			action: 'package_invoke',
 			result: 'failure',
+			email: routeUser.email,
 			ip: requestIp,
 			path: new URL(request.url).pathname,
 			reason: 'invalid_private_token',
 		})
 		return unauthorizedResponse('Invalid package invocation token.')
-	}
-	const routeUser = await findPublicUserIdentityByUsername({
-		db: env.APP_DB,
-		username: route.username,
-	})
-	if (!routeUser || routeUser.mcpUserId !== tokenScope.userId) {
-		logPackageInvocationAudit(ctx, {
-			category: 'oauth',
-			action: 'package_invoke',
-			result: 'failure',
-			email: tokenScope.email,
-			ip: requestIp,
-			path: new URL(request.url).pathname,
-			reason: 'username_token_mismatch',
-		})
-		return notFoundResponse()
 	}
 	const parsedBody = await readRequestBody(request)
 	if (!parsedBody.ok) {

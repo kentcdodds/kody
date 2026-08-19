@@ -77,8 +77,7 @@ export async function dispatchWebhookInvocation(input: {
 		token: {
 			tokenId: `internal:webhook:${input.endpoint.id}`,
 			userId: input.endpoint.userId,
-			packageIds: [input.endpoint.packageId],
-			packageKodyIds: [input.packageKodyId],
+			packageId: input.endpoint.packageId,
 			exportNames: [input.exportName],
 			sources: ['webhook'],
 		},

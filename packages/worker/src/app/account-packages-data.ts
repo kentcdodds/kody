@@ -1,11 +1,17 @@
 import {
 	type AccountPackageDetail,
 	type AccountPackageListItem,
+	type AccountPackageToken,
 	type AccountPackagesAppFilter,
 	type AccountPackagesLoaderData,
 	type AccountPackagesSort,
 } from '#universal/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import {
+	listPackageInvocationTokensByPackageId,
+	type PackageInvocationTokenRecord,
+} from '#worker/package-invocations/repo.ts'
 import { readPagination } from '#worker/query-params.ts'
 import {
 	getSavedPackageById,
@@ -76,10 +82,33 @@ function toListItem(record: SavedPackageRecord): AccountPackageListItem {
 	}
 }
 
-function toDetail(record: SavedPackageRecord): AccountPackageDetail {
+function toToken(token: PackageInvocationTokenRecord): AccountPackageToken {
 	return {
-		...toListItem(record),
-		searchText: record.searchText,
+		id: token.id,
+		name: token.name,
+		exportNames: token.exportNames,
+		sources: token.sources,
+		createdAt: token.created_at,
+		updatedAt: token.updated_at,
+		lastUsedAt: token.last_used_at,
+		revokedAt: token.revoked_at,
+	}
+}
+
+async function toDetail(input: {
+	db: D1Database
+	userId: string
+	record: SavedPackageRecord
+}): Promise<AccountPackageDetail> {
+	const tokens = await listPackageInvocationTokensByPackageId({
+		db: input.db,
+		userId: input.userId,
+		packageId: input.record.id,
+	})
+	return {
+		...toListItem(input.record),
+		searchText: input.record.searchText,
+		tokens: tokens.map(toToken),
 	}
 }
 
@@ -123,8 +152,19 @@ export async function loadAccountPackagesData(input: {
 	return {
 		ok: true,
 		email: input.user.email,
+		username: input.user.username,
+		invocationUrlOrigin: getAppBaseUrl({
+			env: input.env,
+			requestUrl: input.request.url,
+		}),
 		packages: items.map(toListItem),
-		selectedPackage: selectedRecord ? toDetail(selectedRecord) : null,
+		selectedPackage: selectedRecord
+			? await toDetail({
+					db: input.env.APP_DB,
+					userId,
+					record: selectedRecord,
+				})
+			: null,
 		page,
 		pageSize,
 		total,

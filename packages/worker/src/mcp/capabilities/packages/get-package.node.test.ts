@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageWithCommunityProvenanceById: vi.fn(),
+	listPackageInvocationTokensByPackageId: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
 }))
@@ -9,6 +10,11 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageWithCommunityProvenanceById(...args),
+}))
+
+vi.mock('#worker/package-invocations/repo.ts', () => ({
+	listPackageInvocationTokensByPackageId: (...args: Array<unknown>) =>
+		mockModule.listPackageInvocationTokensByPackageId(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -34,6 +40,7 @@ function createCallerContext(input?: {
 	const userId = 'user-1'
 	const ownerUserId = input?.ownerUserId ?? userId
 	const ownerScope = input?.ownerScope ?? input?.username ?? 'kody'
+	mockModule.listPackageInvocationTokensByPackageId.mockResolvedValue([])
 	mockModule.resolvePackageOwnerContext.mockResolvedValue({
 		ownerUserId,
 		ownerScope,
@@ -97,7 +104,9 @@ function stubSavedPackage(input?: {
 
 test('getPackageCapability returns export metadata for owner and delegated package scopes', async () => {
 	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
+	mockModule.listPackageInvocationTokensByPackageId.mockReset()
 	mockModule.loadPackageSourceBySourceId.mockReset()
+	mockModule.listPackageInvocationTokensByPackageId.mockResolvedValue([])
 	stubSavedPackage()
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		source: { id: 'source-1' },
@@ -140,6 +149,7 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		listing_kody_id: 'upstream-discord-gateway',
 		created_at: '2026-04-25T00:00:00.000Z',
 		updated_at: '2026-04-26T00:00:00.000Z',
+		tokens: [],
 		exports: [
 			{
 				subpath: '.',
@@ -154,7 +164,7 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 					route_export_name: '__root__',
 					normalized_export_name: '.',
 					token_setup_url:
-						'https://heykody.dev/account/package-invocation-tokens/new?packageKodyIds=discord-gateway&exportNames=.',
+						'https://heykody.dev/account/packages/package-1?newToken=1&exportNames=.',
 					source_guidance: expect.any(String),
 				},
 			},
@@ -172,7 +182,7 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 					route_export_name: 'post-message',
 					normalized_export_name: './post-message',
 					token_setup_url:
-						'https://heykody.dev/account/package-invocation-tokens/new?packageKodyIds=discord-gateway&exportNames=post-message',
+						'https://heykody.dev/account/packages/package-1?newToken=1&exportNames=post-message',
 					source_guidance: expect.any(String),
 				},
 			},

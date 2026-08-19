@@ -4,14 +4,17 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { getPackageInvocationTokenById } from '#worker/package-invocations/repo.ts'
-import { packageInvocationTokenMetadataSchema } from './shared.ts'
+import {
+	packageInvocationTokenMetadataSchema,
+	toPackageInvocationTokenMetadata,
+} from './shared.ts'
 
 export const packageInvocationTokenGetCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'package_invocation_token_get',
 		description:
-			'Get metadata for one package invocation token record owned by the signed-in user, including package/export/source scopes, timestamps, last-used, and revocation status. Raw bearer token values and stored token hashes are never returned.',
+			'Get metadata for one package invocation token record owned by the signed-in user, including the owning package, export/source scopes, timestamps, last-used, and revocation status. Raw bearer token values and stored token hashes are never returned.',
 		keywords: [
 			'package invocation token',
 			'invocation token',
@@ -45,18 +48,7 @@ export const packageInvocationTokenGetCapability = defineDomainCapability(
 				)
 			}
 			return {
-				token: {
-					token_id: token.id,
-					name: token.name,
-					package_ids: token.packageIds,
-					package_kody_ids: token.packageKodyIds,
-					export_names: token.exportNames,
-					allowed_sources: token.sources,
-					created_at: token.created_at,
-					updated_at: token.updated_at,
-					last_used_at: token.last_used_at,
-					revoked_at: token.revoked_at,
-				},
+				token: toPackageInvocationTokenMetadata(token),
 			}
 		},
 	},
