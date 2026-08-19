@@ -36,10 +36,14 @@ export type RetiringPrimitiveNoticeId =
 
 export async function loadActiveRetiringNoticeIds(
 	db: D1Database,
-	userId: string,
+	userId: string | null,
 ): Promise<ReadonlySet<RetiringPrimitiveNoticeId>> {
 	const ids = new Set<RetiringPrimitiveNoticeId>()
-	if (userId !== '' && (await userHasPersistedValues({ db, userId }))) {
+	if (
+		userId != null &&
+		userId !== '' &&
+		(await userHasPersistedValues({ db, userId }))
+	) {
 		ids.add('values')
 	}
 	return ids

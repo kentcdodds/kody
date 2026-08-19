@@ -63,9 +63,7 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				userId !== null
 					? listPopularAgentPackagesForUser(this.env.APP_DB, { userId })
 					: Promise.resolve([]),
-				userId !== null
-					? loadActiveRetiringNoticeIds(this.env.APP_DB, userId)
-					: Promise.resolve(new Set()),
+				loadActiveRetiringNoticeIds(this.env.APP_DB, userId),
 			])
 		this.server = createKodyMcpServer({
 			instructions: buildMcpServerInstructions({

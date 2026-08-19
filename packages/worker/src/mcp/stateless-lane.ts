@@ -102,9 +102,7 @@ async function buildStatelessServerInstructions(input: {
 			userId !== null
 				? listPopularAgentPackagesForUser(input.env.APP_DB, { userId })
 				: Promise.resolve([]),
-			userId !== null
-				? loadActiveRetiringNoticeIds(input.env.APP_DB, userId)
-				: Promise.resolve(new Set()),
+			loadActiveRetiringNoticeIds(input.env.APP_DB, userId),
 		])
 	return buildMcpServerInstructions({
 		userOverlay: overlay,

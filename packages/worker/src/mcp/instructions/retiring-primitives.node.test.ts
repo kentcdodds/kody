@@ -120,6 +120,9 @@ test('loadActiveRetiringNoticeIds is true only for users with a live stored valu
 		},
 	})
 
+	await expect(loadActiveRetiringNoticeIds(db, null)).resolves.toEqual(
+		new Set(),
+	)
 	await expect(loadActiveRetiringNoticeIds(db, '')).resolves.toEqual(new Set())
 	await expect(loadActiveRetiringNoticeIds(db, 'user-empty')).resolves.toEqual(
 		new Set(),
