@@ -63,7 +63,10 @@ file style first, then run the formatter.
   `createUndoableAction` from `packages/worker/client/undoable-action.ts`.
   Render `UndoToast` while `pending` is set. `onCommit` is the real mutation
   (use `keepalive: true` on `fetch`); `onUndo` restores local state. Leaving the
-  page commits so the action is not lost.
+  page commits so the action is not lost. Do not navigate to a remounting route
+  during the undo window — remount commits immediately and loader data can
+  restore the optimistic removal. Navigate after `onCommit` if the selection is
+  gone.
 
 ## Absence values
 

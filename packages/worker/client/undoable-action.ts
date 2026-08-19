@@ -25,7 +25,8 @@ export type UndoableActionStartInput = {
  * action first.
  *
  * `onCommit` should use `keepalive: true` on `fetch` when the mutation must
- * finish after navigation.
+ * finish after navigation. Do not navigate to a remounting route during the
+ * undo window; remount commits immediately and can restore optimistic UI.
  */
 export function createUndoableAction(
 	handle: Handle,

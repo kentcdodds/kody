@@ -696,6 +696,20 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		return `${routes.accountIntegrations.href()}${getCurrentSearch()}`
 	}
 
+	function currentSelectionMissing() {
+		return Boolean(
+			resolveIntegrationsSelection({
+				href: getCurrentHref(),
+				apps,
+				integrations,
+			}).missingKind,
+		)
+	}
+
+	function navigateIfSelectionGone() {
+		if (currentSelectionMissing()) navigate(listHref())
+	}
+
 	function removeConnectionLocally(name: string) {
 		integrations = integrations.filter((entry) => entry.name !== name)
 		apps = apps.flatMap((app) => {
@@ -750,14 +764,9 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		const snapshot = snapshotList()
 		removeConnectionLocally(connection.name)
 		getDisconnectCheck(connection.name).reset()
-		const stillSelected = resolveIntegrationsSelection({
-			href: getCurrentHref(),
-			apps,
-			integrations,
-		}).selectedApp
-		if (!stillSelected) {
-			navigate(listHref())
-		}
+		// Stay on this route element until commit. List/detail are separate
+		// Remix routes, so navigating away remounts, commits immediately, and
+		// loader data restores the row that was just hidden.
 		await undoable.start({
 			message: `Disconnected ${connectionLabel(connection)}.`,
 			onCommit: async () => {
@@ -766,6 +775,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 						action: 'disconnect_connection',
 						name: connection.name,
 					})
+					navigateIfSelectionGone()
 				} catch (error) {
 					restoreSnapshot(snapshot)
 					message =
@@ -787,7 +797,6 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		const connectionCount = app.connections.length
 		removeAppLocally(app)
 		deleteAppCheck.reset()
-		navigate(listHref())
 		await undoable.start({
 			message: deletedAppCopy(title, connectionCount),
 			onCommit: async () => {
@@ -796,6 +805,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 						action: 'delete_oauth_app',
 						appSlug: app.slug,
 					})
+					navigateIfSelectionGone()
 				} catch (error) {
 					restoreSnapshot(snapshot)
 					message =
@@ -872,6 +882,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	}
 
 	function applyRouteLoaderData(href: string) {
+		if (undoable.pending) return false
 		if (!integrationsRoute.isRoutePath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(
 			handle,
@@ -972,16 +983,21 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	return () => {
 		const currentHref = getCurrentHref()
 		const appliedRouteData = applyRouteLoaderData(currentHref)
-		// A same-path refresh whose loader failed leaves no preload and no
-		// href change; the stale marker forces the fallback refetch.
+		// Hold optimistic list state for the undo window. Do not consume a
+		// stale-refresh or latch a load — both would clobber the removal or
+		// block the next fetch after undo.
 		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
+			!undoable.pending &&
+			consumeStaleNavigationData(currentHref) &&
+			!appliedRouteData
 		const latchKey = getDataLatchKey(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref: latchKey,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
+		const needsLoad =
+			!undoable.pending &&
+			loadLatch.needsLoad({
+				currentHref: latchKey,
+				appliedRouteData,
+				needsStaleRefresh,
+			})
 		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadIntegrations)
 		}
@@ -1002,9 +1018,9 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			resetRotateForm(selectedApp)
 		}
 		const showIntegrationNotFound =
-			missingKind === 'integration' && status === 'ready'
+			missingKind === 'integration' && status === 'ready' && !undoable.pending
 		const showConnectionNotFound =
-			missingKind === 'connection' && status === 'ready'
+			missingKind === 'connection' && status === 'ready' && !undoable.pending
 		const highlightedConnection = highlightedConnectionName
 			? (integrations.find(
 					(connection) => connection.name === highlightedConnectionName,
