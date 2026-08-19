@@ -24,9 +24,10 @@ concurrency:
 
 jobs:
   deploy-nx-cache-worker:
-    if: >-
-      github.event_name == 'workflow_call' || (github.event_name ==
-      'workflow_dispatch' && github.ref_name == 'main')
+    # github is the caller context: event_name stays workflow_run /
+    # workflow_dispatch, never workflow_call. Manual runs are main-only;
+    # production deploy already gates the workflow_call.
+    if: github.event_name != 'workflow_dispatch' || github.ref_name == 'main'
     runs-on: ubuntu-latest
     name: 🧊 Deploy Nx cache worker
     timeout-minutes: 8
@@ -37,9 +38,7 @@ jobs:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
-          ref:
-            ${{ github.event_name == 'workflow_call' && inputs.sha || github.sha
-            }}
+          ref: ${{ inputs.sha || github.sha }}
           fetch-depth: 0
 
       - name: 🟢 Setup Node
@@ -61,9 +60,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          DEPLOY_COMMIT_SHA:
-            ${{ github.event_name == 'workflow_call' && inputs.sha || github.sha
-            }}
+          DEPLOY_COMMIT_SHA: ${{ inputs.sha || github.sha }}
           DISPATCH_REASON: ${{ inputs.reason }}
           CACHE_ACCESS_TOKEN:
             ${{ secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN }}
@@ -119,9 +116,7 @@ jobs:
       - name: 🩺 Healthcheck (Nx cache worker)
         shell: bash
         env:
-          EXPECTED_COMMIT_SHA:
-            ${{ github.event_name == 'workflow_call' && inputs.sha || github.sha
-            }}
+          EXPECTED_COMMIT_SHA: ${{ inputs.sha || github.sha }}
           CACHE_ACCESS_TOKEN:
             ${{ secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN }}
         run: |
