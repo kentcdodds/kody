@@ -117,3 +117,93 @@ test('delimiter-bounded params keep companion suffixes, hyphens, and encoded dot
 		).text(),
 	).toBe('secret')
 })
+
+test('single-segment params 404 on raw dots and match href-encoded dots', async () => {
+	const router = createRouter()
+	router.get(
+		routePattern(routes.accountIntegrationDetail),
+		createStubHandler('integration'),
+	)
+	router.get(routePattern(routes.integrationLogo), createStubHandler('logo'))
+	router.get(
+		routePattern(routes.adminPlatformIntegrationDetail),
+		createStubHandler('platform-integration'),
+	)
+	router.get(routePattern(routes.accountJobDetail), createStubHandler('job'))
+	router.get(
+		routePattern(routes.accountActivityDetail),
+		createStubHandler('activity'),
+	)
+
+	expect(
+		(
+			await router.fetch(
+				new Request('http://localhost/account/integrations/google.personal'),
+			)
+		).status,
+	).toBe(404)
+	expect(
+		await (
+			await router.fetch(
+				new Request('http://localhost/account/integrations/google%2Epersonal'),
+			)
+		).text(),
+	).toBe('integration')
+
+	expect(
+		(
+			await router.fetch(
+				new Request('http://localhost/integrations/logos/openai.com'),
+			)
+		).status,
+	).toBe(404)
+	expect(
+		await (
+			await router.fetch(
+				new Request('http://localhost/integrations/logos/openai%2Ecom'),
+			)
+		).text(),
+	).toBe('logo')
+
+	expect(
+		(
+			await router.fetch(
+				new Request('http://localhost/admin/platform-integrations/openai.com'),
+			)
+		).status,
+	).toBe(404)
+	expect(
+		await (
+			await router.fetch(
+				new Request(
+					'http://localhost/admin/platform-integrations/openai%2Ecom',
+				),
+			)
+		).text(),
+	).toBe('platform-integration')
+
+	expect(
+		(
+			await router.fetch(
+				new Request(
+					'http://localhost/account/jobs/package-job:pkg:daily.backup',
+				),
+			)
+		).status,
+	).toBe(404)
+	expect(
+		await (
+			await router.fetch(
+				new Request(
+					'http://localhost/account/jobs/package-job%3Apkg%3Adaily%2Ebackup',
+				),
+			)
+		).text(),
+	).toBe('job')
+
+	expect(
+		await (
+			await router.fetch(new Request('http://localhost/account/activity/run-1'))
+		).text(),
+	).toBe('activity')
+})

@@ -38,6 +38,7 @@ import {
 	type AdminInsightsRunLogCompleteness,
 	type AdminUsageMetric,
 } from '#universal/loader-data.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -101,7 +102,7 @@ function formatPressurePercent(value: number) {
 }
 
 function adminUserDetailHref(stableUserId: string) {
-	return `/admin/users/${encodeURIComponent(stableUserId)}`
+	return routes.adminUserDetail.href({ stableUserId })
 }
 
 const runtimeDurationMetricLabels: Record<AdminUsageMetric, string> = {

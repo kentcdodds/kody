@@ -1,4 +1,5 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { routes } from '#universal/routes.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
@@ -78,7 +79,9 @@ function buildSubscriptionIdempotencyKey(input: {
 }
 
 function buildActivityUrl(input: { baseUrl: string; runId: string }) {
-	return `${input.baseUrl}/account/activity/${encodeURIComponent(input.runId)}`
+	return `${input.baseUrl}${routes.accountActivityDetail.href({
+		runId: input.runId,
+	})}`
 }
 
 async function loadMatchingRunErrorSubscriptions(input: {

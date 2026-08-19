@@ -138,6 +138,15 @@ test('logo lifecycle uploads, clears, and survives app upserts without touching 
 	expect(updated.logoKey).toMatch(/^platform-oauth-app-logos\/github\//)
 })
 
+test('logo paths encode Remix delimiter dots in slugs', () => {
+	expect(
+		buildPlatformOauthAppLogoPath({
+			slug: 'openai.com',
+			logoKey: 'platform-oauth-app-logos/openai.com/0123456789abcdef.png',
+		}),
+	).toBe('/integrations/logos/openai%2Ecom?v=0123456789abcdef')
+})
+
 test('uploads reject unknown formats and unknown apps', async () => {
 	const harness = createHarness()
 	await provisionApp(harness)

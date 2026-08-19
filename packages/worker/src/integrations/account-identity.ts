@@ -1,3 +1,5 @@
+import { routes } from '#universal/routes.ts'
+
 export function isAccountEmailLabel(value: string | null | undefined) {
 	if (!value) return false
 	const email = value.trim()
@@ -8,7 +10,9 @@ export function buildIntegrationAccountUrl(input: {
 	baseUrl: string
 	integrationName: string
 }) {
-	return `${input.baseUrl}/account/integrations/${encodeURIComponent(input.integrationName)}`
+	return `${input.baseUrl}${routes.accountIntegrationDetail.href({
+		integrationName: input.integrationName,
+	})}`
 }
 
 export function buildIntegrationReconnectUrl(input: {

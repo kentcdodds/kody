@@ -1,4 +1,5 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { routes } from '#universal/routes.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
 import { readPreExecutionPackageInvocationInfrastructureCode } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
@@ -40,7 +41,9 @@ export function buildMcpServerAccountUrl(input: {
 	baseUrl: string
 	serverId: string
 }) {
-	return `${input.baseUrl}/account/mcp-servers/${input.serverId}`
+	return `${input.baseUrl}${routes.accountMcpServerDetail.href({
+		serverId: input.serverId,
+	})}`
 }
 
 function buildSubscriptionIdempotencyKey(input: {

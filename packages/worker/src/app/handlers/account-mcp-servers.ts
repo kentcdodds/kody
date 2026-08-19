@@ -9,7 +9,7 @@ import {
 	readTrimmedStringOrEmpty,
 } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { type routes } from '#universal/routes.ts'
+import { routes } from '#universal/routes.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
 import {
@@ -173,11 +173,8 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 			}
 
 			const target = serverId
-				? new URL(
-						`/account/mcp-servers/${encodeURIComponent(serverId)}`,
-						request.url,
-					)
-				: new URL('/account/mcp-servers', request.url)
+				? new URL(routes.accountMcpServerDetail.href({ serverId }), request.url)
+				: new URL(routes.accountMcpServers.href(), request.url)
 			if (authorizationNeeded) {
 				target.searchParams.set('auth', serverId ? 'required' : 'retry')
 			} else if (authSuccess) {

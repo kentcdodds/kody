@@ -1,4 +1,5 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
+import { routes } from '#universal/routes.ts'
 import { processCommunityIcon } from '#worker/community/community-icon.ts'
 import {
 	getPlatformOauthAppBySlug,
@@ -29,9 +30,10 @@ export function buildPlatformOauthAppLogoPath(app: {
 }): string | null {
 	if (!app.logoKey) return null
 	const contentTag = /\/([0-9a-f]{16})[^/]*$/.exec(app.logoKey)?.[1]
-	return `/integrations/logos/${encodeURIComponent(app.slug)}${
-		contentTag ? `?v=${contentTag}` : ''
-	}`
+	return routes.integrationLogo.href(
+		{ integrationSlug: app.slug },
+		contentTag ? { searchParams: { v: contentTag } } : undefined,
+	)
 }
 
 /**

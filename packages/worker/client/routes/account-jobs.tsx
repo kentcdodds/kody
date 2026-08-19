@@ -47,6 +47,7 @@ import {
 	type AccountJobSchedule,
 	type AccountJobsLoaderData,
 } from '#universal/loader-data.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	colors,
 	radius,
@@ -179,7 +180,9 @@ function ownershipValue(
 	if (job.packageId && job.packageName) {
 		return (
 			<a
-				href={`/account/packages/${encodeURIComponent(job.packageId)}`}
+				href={routes.accountPackageDetail.href({
+					packageId: job.packageId,
+				})}
 				mix={css(primaryLinkCss)}
 			>
 				{job.packageName}
@@ -1182,7 +1185,9 @@ export function AccountJobsRoute(handle: Handle) {
 																	})}
 																>
 																	<a
-																		href={`/account/activity/${encodeURIComponent(run.id)}`}
+																		href={routes.accountActivityDetail.href({
+																			runId: run.id,
+																		})}
 																		mix={css(primaryLinkCss)}
 																	>
 																		Logs

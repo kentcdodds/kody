@@ -65,6 +65,15 @@ test('list-detail route helper supports the URL-backed list/detail workflow', ()
 	expect(mcpServersRoute.buildDetailHref('server 1', '?q=docs')).toBe(
 		'/account/mcp-servers/server%201?q=docs',
 	)
+	expect(mcpServersRoute.buildDetailHref('google.personal')).toBe(
+		'/account/mcp-servers/google%2Epersonal',
+	)
+	expect(
+		mcpServersRoute.getSelection('/account/mcp-servers/google%2Epersonal'),
+	).toEqual({
+		selectedId: 'google.personal',
+		isCreating: false,
+	})
 
 	expect(nestedRoute.getSelection('/account/secrets/new')).toEqual({
 		selectedId: null,
