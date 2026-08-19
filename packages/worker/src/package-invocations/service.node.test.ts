@@ -623,6 +623,7 @@ function seedPackageResolution() {
 	repoMockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
 		row: {
 			id: 'artifact-1',
+			publishedCommit: 'commit-1',
 		},
 		artifact: {
 			version: 1,
@@ -739,6 +740,7 @@ function createModuleArtifact(input: {
 	return {
 		row: {
 			id: `artifact-${input.packageContext.packageId}`,
+			publishedCommit: input.publishedCommit,
 		},
 		artifact: {
 			version: 1,
@@ -2594,6 +2596,7 @@ test('invokePackageSubscription uses the normal capability registry with package
 	repoMockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
 		row: {
 			id: 'artifact-subscription-1',
+			publishedCommit: 'commit-1',
 		},
 		artifact: {
 			version: 1,
