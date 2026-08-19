@@ -1,6 +1,6 @@
 import { Resvg } from '@resvg/resvg-wasm'
 import satori, { init as initSatori } from 'satori/standalone'
-import { ensureResvgWasmReady } from '#worker/og/resvg-wasm-init.ts'
+import { loadAdditionalOgAsset } from '#worker/og/og-emoji.ts'
 import {
 	ensureOgBinaryAssetsReady,
 	getBricolageGrotesqueLatin700FontData,
@@ -10,6 +10,7 @@ import {
 	ogYogaWasm,
 	type OgAssetsFetcher,
 } from '#worker/og/og-image-assets.ts'
+import { ensureResvgWasmReady } from '#worker/og/resvg-wasm-init.ts'
 import {
 	getOgPalette,
 	type OgTheme,
@@ -247,6 +248,10 @@ export async function renderOgImage(
 	const svg = await satori(markup, {
 		width: OG_WIDTH,
 		height: OG_HEIGHT,
+		// Latin fonts have no color-emoji glyphs. Twemoji images fill the gap
+		// the same way epic-camp-tickets does: satori asks for each grapheme
+		// via `loadAdditionalAsset` and we return a data URI.
+		loadAdditionalAsset: loadAdditionalOgAsset,
 		fonts: [
 			{
 				name: 'Wix Madefor Text',

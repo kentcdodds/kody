@@ -268,12 +268,13 @@ Client routes: `packages/worker/client/routes/community*`
   rejects stale commit URLs
 
 Shared OG rendering lives in `packages/worker/src/og/`: a light-mode palette
-mirroring app design tokens, satori layout + resvg rasterization, and the
-`publicOgPages` registry. Static public pages serve generated images from
-`/og/:page.png` (page ids such as `home`, `community`, `login`). Community
-listing cards use `og-image.ts` on that same pipeline and are served at
-`/community/:listingId/og.png` (package identity as the visual hero — community
-icon, package name, and byline — with a truncated muted description as
+mirroring app design tokens, satori layout + resvg rasterization, Twemoji images
+for emoji graphemes (`loadAdditionalAsset` — the Latin OG fonts have no color
+emoji), and the `publicOgPages` registry. Static public pages serve generated
+images from `/og/:page.png` (page ids such as `home`, `community`, `login`).
+Community listing cards use `og-image.ts` on that same pipeline and are served
+at `/community/:listingId/og.png` (package identity as the visual hero —
+community icon, package name, and byline — with a truncated muted description as
 supporting text, then star rating and fork count).
 
 ## Admin moderation
