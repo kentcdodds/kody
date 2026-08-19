@@ -133,8 +133,12 @@ never enter the sandbox heap. Package code that triggers refresh through
 grant — the system persists rotated tokens host-side and the package never sees
 or writes token values. `refreshAccessToken` is the raw-token helper for auth
 patterns that cannot use an Authorization header (WebSockets, SDK constructors,
-query-param tokens); it runs in-sandbox for user-lane integrations and throws
-for platform ones (`integration_get` carries `platform: true`). Token-exchange
+query-param tokens). It also refreshes host-side
+(`integration_refresh_access_token` → `refreshIntegrationTokens`) so token
+rotation does not need an `allowed_packages` write grant, then materializes the
+new access token for user-lane integrations and throws for platform ones
+(`integration_get` carries `platform: true`). Unadopted community forks still
+need a read/use grant before the helper will return a raw token. Token-exchange
 request building is shared:
 `packages/worker/src/integrations/oauth-token-exchange.ts` lives in the
 shared-primitive layer so both the `/connect/oauth` handlers and the MCP refresh
@@ -260,15 +264,16 @@ join.
 Domain: `integrations`
 (`packages/worker/src/mcp/capabilities/integrations/domain.ts`).
 
-| Capability                                             | Role                                                                  |
-| ------------------------------------------------------ | --------------------------------------------------------------------- |
-| `integration_save` / `_get` / `_list` / `_delete`      | Connection CRUD with flat `clientId` output                           |
-| `integration_oauth_app_list`                           | Apps with connection counts and sibling connection names              |
-| `integration_oauth_app_rotate_credentials`             | Rotate shared app `clientId` / client-secret name                     |
-| `integration_platform_app_list`                        | Enabled platform (built-in) apps; public projection, never any secret |
-| `integration_token_refresh`                            | Host-side OAuth refresh; returns metadata only, never token values    |
-| `integration_registry_search` / `integration_discover` | Untrusted integrations.sh research                                    |
-| `openapi_spec_summarize` / `openapi_client_scaffold`   | Spec research helpers (bindings live in the `openapi` domain)         |
+| Capability                                             | Role                                                                           |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `integration_save` / `_get` / `_list` / `_delete`      | Connection CRUD with flat `clientId` output                                    |
+| `integration_oauth_app_list`                           | Apps with connection counts and sibling connection names                       |
+| `integration_oauth_app_rotate_credentials`             | Rotate shared app `clientId` / client-secret name                              |
+| `integration_platform_app_list`                        | Enabled platform (built-in) apps; public projection, never any secret          |
+| `integration_token_refresh`                            | Host-side OAuth refresh; returns metadata only, never token values             |
+| `integration_refresh_access_token`                     | User-lane host refresh plus materialized access token for `refreshAccessToken` |
+| `integration_registry_search` / `integration_discover` | Untrusted integrations.sh research                                             |
+| `openapi_spec_summarize` / `openapi_client_scaffold`   | Spec research helpers (bindings live in the `openapi` domain)                  |
 
 OpenAPI provider bindings (`user_openapi_bindings` /
 `user_openapi_binding_operations`) are a separate primitive; see

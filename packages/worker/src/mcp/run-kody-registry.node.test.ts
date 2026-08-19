@@ -2406,9 +2406,8 @@ test('runBundledModuleWithRegistry injects OAuth helper prelude only when execut
 				additionalTools: {
 					integration_get: async () => ({}),
 					integration_token_refresh: async () => ({}),
+					integration_refresh_access_token: async () => ({}),
 					value_get: async () => ({}),
-					secret_set: async () => ({}),
-					secret_set_many: async () => ({}),
 				},
 			}),
 		).resolves.toMatchObject({ result: 'ok' })

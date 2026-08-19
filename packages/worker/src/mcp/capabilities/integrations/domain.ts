@@ -9,6 +9,7 @@ import { integrationOauthAppRotateCredentialsCapability } from './integration-oa
 import { integrationPlatformAppListCapability } from './integration-platform-app-list.ts'
 import { integrationRegistrySearchCapability } from './integration-registry-search.ts'
 import { integrationSaveCapability } from './integration-save.ts'
+import { integrationRefreshAccessTokenCapability } from './integration-refresh-access-token.ts'
 import { integrationTokenRefreshCapability } from './integration-token-refresh.ts'
 import { openapiClientScaffoldCapability } from './openapi-client-scaffold.ts'
 import { openapiSpecSummarizeCapability } from './openapi-spec-summarize.ts'
@@ -42,6 +43,7 @@ export const integrationsDomain = defineDomain({
 		integrationOauthAppRotateCredentialsCapability,
 		integrationPlatformAppListCapability,
 		integrationTokenRefreshCapability,
+		integrationRefreshAccessTokenCapability,
 		integrationRegistrySearchCapability,
 		integrationDiscoverCapability,
 		openapiSpecSummarizeCapability,

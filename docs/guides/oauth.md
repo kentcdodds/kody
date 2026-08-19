@@ -49,9 +49,10 @@ that subscribe; successful refreshes and `/connect/oauth` persists dispatch
 `integration.auth.succeeded` (see
 [package subscriptions](./package-subscriptions.md)). Use `refreshAccessToken`
 only for auth that cannot use an Authorization header (WebSockets, SDK
-constructors, query-param tokens); it still runs in-sandbox for user-owned apps
-and throws for built-ins. The rest of this guide applies to providers without a
-built-in app.
+constructors, query-param tokens). It refreshes host-side like
+`createAuthenticatedFetch` (no `allowed_packages` write grant for token
+rotation), returns the raw access token for user-owned apps, and throws for
+built-ins. The rest of this guide applies to providers without a built-in app.
 
 ## Redirect URI
 

@@ -4,6 +4,7 @@ import { IntegrationHostNotAllowedError } from '#mcp/execute-modules/integration
 import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
 import * as integrationsService from '#worker/integrations/service.ts'
+import * as tokenRefresh from '#worker/integrations/token-refresh.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 import * as usageModule from '#worker/usage/record-usage.ts'
 import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
@@ -516,51 +517,18 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 			allowedCapabilities: [],
 			allowedPackages: [],
 		})
-	const setSecretsSpy = vi
-		.spyOn(secretService, 'setSecretsAtomically')
-		.mockResolvedValue([
-			{
-				name: 'spotifyRefreshToken',
-				scope: 'user',
-				description: '',
-				packageId: null,
-				createdAt: '2026-03-29T00:00:00.000Z',
-				updatedAt: '2026-03-29T00:00:00.000Z',
-				ttlMs: null,
-				allowedHosts: [],
-				allowedCapabilities: [],
-				allowedPackages: [],
-			},
-			{
-				name: 'spotifyAccessToken',
-				scope: 'user',
-				description: '',
-				packageId: null,
-				createdAt: '2026-03-29T00:00:00.000Z',
-				updatedAt: '2026-03-29T00:00:00.000Z',
-				ttlMs: null,
-				allowedHosts: [],
-				allowedCapabilities: [],
-				allowedPackages: [],
-			},
-		])
+	const refreshSpy = vi
+		.spyOn(tokenRefresh, 'refreshIntegrationTokens')
+		.mockResolvedValue({
+			refreshedAt: '2026-03-29T00:00:00.000Z',
+			refreshTokenRotated: true,
+		})
 
 	try {
 		let apiCalls = 0
 		let firstUnauthorizedResponse: Response | null = null
 		const fetchStub = vi.fn(async (request: Request) => {
-			if (request.url.includes('/api/token')) {
-				const body = await request.text()
-				expect(body).toContain('grant_type=refresh_token')
-				expect(body).toContain('client_id=client-id-value')
-				return new Response(
-					JSON.stringify({
-						access_token: 'new-access',
-						refresh_token: 'new-refresh',
-					}),
-					{ status: 200, headers: { 'content-type': 'application/json' } },
-				)
-			}
+			expect(request.url.includes('/api/token')).toBe(false)
 			apiCalls += 1
 			if (apiCalls === 1) {
 				const response = new Response(JSON.stringify({ error: 'expired' }), {
@@ -599,23 +567,10 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 		expect(result.ok).toBe(true)
 		expect(result.body).toEqual({ ok: true })
 		expect(apiCalls).toBe(2)
-		expect(setSecretsSpy).toHaveBeenCalledWith(
+		expect(refreshSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
 				userId: 'user-1',
-				secrets: [
-					{
-						name: 'spotifyRefreshToken',
-						value: 'new-refresh',
-						scope: 'user',
-						description: 'Refresh token for integration spotify',
-					},
-					{
-						name: 'spotifyAccessToken',
-						value: 'new-access',
-						scope: 'user',
-						description: 'Access token for integration spotify',
-					},
-				],
+				name: 'spotify',
 			}),
 		)
 		expect(firstUnauthorizedResponse).not.toBeNull()
@@ -628,7 +583,7 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 	} finally {
 		getIntegrationSpy.mockRestore()
 		resolveSpy.mockRestore()
-		setSecretsSpy.mockRestore()
+		refreshSpy.mockRestore()
 		usageSpy.mockRestore()
 	}
 })

@@ -361,7 +361,8 @@ emit (recursion guard). See
 
 For reconnectable OAuth refresh failures, `integration.auth.failed` dispatches
 best-effort from host-side `refreshIntegrationTokens`
-(`createAuthenticatedFetch` 401 retry and explicit `integration_token_refresh`).
+(`createAuthenticatedFetch` 401 retry, `refreshAccessToken` /
+`integration_refresh_access_token`, and explicit `integration_token_refresh`).
 Successful refreshes and successful `/connect/oauth` token persists dispatch
 `integration.auth.succeeded`. Both payloads are metadata-first (connection name,
 account label, scopes, timestamps, and for failed: reason, optional provider
