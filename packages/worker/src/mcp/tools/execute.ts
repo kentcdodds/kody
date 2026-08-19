@@ -200,10 +200,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.min(1)
 					.optional()
 					.describe(
-						`Soft cap on the JSON/text value returned from your default export (structured result / serialized output). Defaults to ~100 KB (${defaultExecutionResponseLimitBytes.toLocaleString()} bytes). Oversized JSON is truncated with a note. Protocol content blocks from __mcpContent (images/audio/resources) use a separate ~512 KB content cap and are not truncated into JSON text — oversized protocol content fails explicitly. Project large API payloads before returning. Examples:
-// bad: messages.list().then(j => j) -- returns full Gmail payloads
-// good: messages.list().then(j => j.messages.map(m => ({id: m.id, snippet: m.snippet})))
-// good: aggregate().then(rows => ({count: rows.length, sample: rows.slice(0, 3)}))`,
+						`Soft cap on the default export's JSON/text result. Defaults to ~100 KB (${defaultExecutionResponseLimitBytes.toLocaleString()} bytes); oversized results are truncated. Project large API payloads before returning. Protocol __mcpContent blocks use a separate limit and fail explicitly when oversized.`,
 					),
 				conversationId: conversationIdInputField,
 				memoryContext: memoryContextInputField,
@@ -213,7 +210,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.max(runRecordMaxIdempotencyKeyLength)
 					.optional()
 					.describe(
-						`Optional caller-supplied idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). When set, the run is persisted eagerly (including successes) with a bounded result snapshot so a client-side MCP transport timeout can recover via run_get or by retrying the same key. Retries of a finished key return the retained result with replayed: true; retries while still running return inProgress: true with the runId — neither re-executes. Key-less execute stays on-failure-only (successes are not recorded).`,
+						`Optional idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). Reusing a key returns the retained or in-progress run without re-executing; use its runId with run_get after a transport timeout. Omit for ordinary calls.`,
 					),
 			},
 			annotations: executeTool.annotations,

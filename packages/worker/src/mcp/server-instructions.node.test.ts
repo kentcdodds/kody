@@ -50,15 +50,27 @@ test('popular package MCP instructions omit cold start, list kody ids under budg
 	expect(instructions).toContain('Prefer concise replies.')
 	expect(instructions).not.toContain('Connected remote connectors')
 	expect(instructions).not.toContain('Kody repository (for contributors)')
+	expect(instructions).not.toContain('package_get_git_remote')
+	expect(instructions).not.toContain('/account/secrets/new')
+	expect(instructions).not.toContain('pending_secret_package_approvals')
 })
 
-test('domain instruction blurbs truncate long descriptions', () => {
+test('domain instructions list builtins and summarize connected bindings', () => {
 	const instructions = buildBaseMcpServerInstructions({
 		domains: [
 			{
 				name: 'admin',
 				description:
 					'Admin-only operator capabilities for account metadata, platform accounts, package scope grants, fleet package-codemod scan/dry-run/apply/revert over published package trees, feature flags, and much more detail that should not all appear in always-loaded instructions.',
+			},
+			{
+				name: 'openapi:canva',
+				description:
+					'Canva Connect API — designs, assets, folders, comments, and exports.',
+			},
+			{
+				name: 'mcp:home',
+				description: 'Home MCP server for local-network devices.',
 			},
 		],
 	})
@@ -68,4 +80,11 @@ test('domain instruction blurbs truncate long descriptions', () => {
 	expect(line).toBeTruthy()
 	expect(line!.length).toBeLessThan(130)
 	expect(line).toContain('...')
+	expect(instructions).toContain(
+		'2 connected MCP/OpenAPI bindings; `search({ domain })` to list.',
+	)
+	expect(instructions).not.toContain('`openapi:canva`')
+	expect(instructions).not.toContain('Canva Connect API')
+	expect(instructions).not.toContain('`mcp:home`')
+	expect(instructions).not.toContain('Home MCP server')
 })
