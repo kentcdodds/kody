@@ -310,9 +310,9 @@ function hostFromUrl(url: string | null | undefined) {
 function BuiltInIcon() {
 	return (
 		<svg
-			viewBox="4 4 16 16"
-			width="1em"
-			height="1em"
+			viewBox="0 0 24 24"
+			width="100%"
+			height="100%"
 			aria-hidden="true"
 			fill="none"
 			stroke="currentColor"
@@ -407,8 +407,11 @@ const advancedDetailsCss = {
 const builtInBadgeCss = {
 	display: 'inline-grid',
 	placeContent: 'center',
+	boxSizing: 'border-box' as const,
 	width: '1.35rem',
 	height: '1.35rem',
+	padding: '0.12rem',
+	overflow: 'hidden',
 	flex: 'none',
 	borderRadius: radius.full,
 	border: `1px solid ${colors.primary}`,
@@ -420,9 +423,10 @@ const builtInIndicatorCss = {
 	position: 'relative' as const,
 	display: 'inline-grid',
 	placeContent: 'center',
+	boxSizing: 'border-box' as const,
 	width: '1.35rem',
 	height: '1.35rem',
-	padding: 0,
+	padding: '0.12rem',
 	appearance: 'none' as const,
 	font: 'inherit',
 	flex: 'none',
