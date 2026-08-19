@@ -23,6 +23,8 @@ import {
 	setSecretAllowedHosts,
 } from '#mcp/secrets/service.ts'
 import {
+	deleteIntegration,
+	deleteOauthAppWithConnections,
 	getOauthApp,
 	listJoinedIntegrations,
 	rotateOauthAppClientCredentials,
@@ -41,6 +43,30 @@ const rotateOauthAppCredentialsSchema = z
 	.refine((value) => Boolean(value.clientId || value.clientSecret), {
 		message: 'Provide a new client id and/or client secret.',
 	})
+
+const disconnectConnectionSchema = z
+	.object({
+		action: z.literal('disconnect_connection'),
+		name: z.string().min(1),
+	})
+	.strict()
+
+const deleteOauthAppSchema = z
+	.object({
+		action: z.literal('delete_oauth_app'),
+		appSlug: z.string().min(1),
+	})
+	.strict()
+
+const accountIntegrationsActionSchema = z
+	.object({
+		action: z.enum([
+			'rotate_oauth_app_credentials',
+			'disconnect_connection',
+			'delete_oauth_app',
+		]),
+	})
+	.passthrough()
 
 export function createAccountIntegrationsHandler(env: Env) {
 	return {
@@ -122,21 +148,109 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 			}
 
 			const body = await request.json().catch(() => null)
-			const parsed = rotateOauthAppCredentialsSchema.safeParse(body)
-			if (!parsed.success) {
+			const actionParsed = accountIntegrationsActionSchema.safeParse(body)
+			if (!actionParsed.success) {
 				return jsonResponse({ ok: false, error: 'Invalid request body.' }, 400)
 			}
 
-			return handleRotateOauthAppCredentials({
-				env,
-				user,
-				body: parsed.data,
-			})
+			switch (actionParsed.data.action) {
+				case 'rotate_oauth_app_credentials': {
+					const parsed = rotateOauthAppCredentialsSchema.safeParse(body)
+					if (!parsed.success) {
+						return jsonResponse(
+							{ ok: false, error: 'Invalid request body.' },
+							400,
+						)
+					}
+					return handleRotateOauthAppCredentials({
+						env,
+						user,
+						body: parsed.data,
+					})
+				}
+				case 'disconnect_connection': {
+					const parsed = disconnectConnectionSchema.safeParse(body)
+					if (!parsed.success) {
+						return jsonResponse(
+							{ ok: false, error: 'Invalid request body.' },
+							400,
+						)
+					}
+					return handleDisconnectConnection({
+						env,
+						user,
+						name: parsed.data.name,
+					})
+				}
+				case 'delete_oauth_app': {
+					const parsed = deleteOauthAppSchema.safeParse(body)
+					if (!parsed.success) {
+						return jsonResponse(
+							{ ok: false, error: 'Invalid request body.' },
+							400,
+						)
+					}
+					return handleDeleteOauthApp({
+						env,
+						user,
+						appSlug: parsed.data.appSlug,
+					})
+				}
+				default: {
+					const _exhaustive: never = actionParsed.data.action
+					return _exhaustive
+				}
+			}
 		},
 	} satisfies Action<
 		| typeof routes.accountIntegrationsApi
 		| typeof routes.accountIntegrationsApiPost
 	>
+}
+
+async function handleDisconnectConnection(input: {
+	env: Env
+	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
+	name: string
+}) {
+	const deleted = await deleteIntegration({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		name: input.name,
+	})
+	if (!deleted) {
+		return jsonResponse({ ok: false, error: 'Connection not found.' }, 404)
+	}
+	return jsonResponse({ ok: true, deleted: true })
+}
+
+async function handleDeleteOauthApp(input: {
+	env: Env
+	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
+	appSlug: string
+}) {
+	const userId = input.user.mcpUser.userId
+	const existing = await getOauthApp({
+		env: input.env,
+		userId,
+		slug: input.appSlug,
+	})
+	if (!existing) {
+		return jsonResponse({ ok: false, error: 'OAuth app not found.' }, 404)
+	}
+	const result = await deleteOauthAppWithConnections({
+		env: input.env,
+		userId,
+		slug: existing.slug,
+	})
+	if (!result.deleted) {
+		return jsonResponse({ ok: false, error: 'OAuth app not found.' }, 404)
+	}
+	return jsonResponse({
+		ok: true,
+		deleted: true,
+		connectionNames: result.connectionNames,
+	})
 }
 
 async function handleRotateOauthAppCredentials(input: {

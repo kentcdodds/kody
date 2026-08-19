@@ -257,7 +257,12 @@ advanced disclosure. The rotate form posts to `/account/integrations.json` with
 `action: "rotate_oauth_app_credentials"`: it stores a new client-secret value in
 the secret store (when provided), then calls `rotateOauthAppClientCredentials`
 so every sibling connection picks up the new client id / secret name on the next
-join.
+join. Each connection has a double-checked Disconnect control; user-registered
+integrations also have Delete integration. Both are delayed-commit undoable
+actions (`createUndoableAction`): the UI updates immediately, and
+`/account/integrations.json` receives `disconnect_connection` or
+`delete_oauth_app` only after the undo window (or when the user leaves).
+Built-in apps cannot be deleted; disconnect their connections instead.
 
 ## Capability surface
 
@@ -268,6 +273,7 @@ Domain: `integrations`
 | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
 | `integration_save` / `_get` / `_list` / `_delete`      | Connection CRUD with flat `clientId` output                                    |
 | `integration_oauth_app_list`                           | Apps with connection counts and sibling connection names                       |
+| `integration_oauth_app_delete`                         | Delete a user-lane app and every connection on it                              |
 | `integration_oauth_app_rotate_credentials`             | Rotate shared app `clientId` / client-secret name                              |
 | `integration_platform_app_list`                        | Enabled platform (built-in) apps; public projection, never any secret          |
 | `integration_token_refresh`                            | Host-side OAuth refresh; returns metadata only, never token values             |

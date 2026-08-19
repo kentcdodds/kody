@@ -55,6 +55,16 @@ file style first, then run the formatter.
   `getArticleBreakoutCss()` from the same primitives file into that child's css
   object. It stays a no-op on a phone and grows up to the header measure.
 
+## Destructive actions
+
+- Confirm first with `createDoubleCheck` from
+  `packages/worker/client/double-check.ts` (second click, blur cancels).
+- If the action should be undoable, apply the optimistic result and start
+  `createUndoableAction` from `packages/worker/client/undoable-action.ts`.
+  Render `UndoToast` while `pending` is set. `onCommit` is the real mutation
+  (use `keepalive: true` on `fetch`); `onUndo` restores local state. Leaving the
+  page commits so the action is not lost.
+
 ## Absence values
 
 - Use `null` for explicit "no value" in local state or API responses.

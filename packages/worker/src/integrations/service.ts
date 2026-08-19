@@ -766,6 +766,43 @@ export async function rotateOauthAppClientCredentials(input: {
 	return app
 }
 
+export async function deleteOauthAppWithConnections(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	slug: string
+}): Promise<{ deleted: boolean; connectionNames: Array<string> }> {
+	const slug = canonicalizeOauthAppSlug(input.slug)
+	if (!slug) return { deleted: false, connectionNames: [] }
+	const existing = await getOauthAppBySlug({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		slug,
+	})
+	if (!existing) return { deleted: false, connectionNames: [] }
+
+	const joined = await listJoinedIntegrationsForUser({
+		db: input.env.APP_DB,
+		userId: input.userId,
+	})
+	const connectionNames: Array<string> = []
+	for (const entry of joined) {
+		if (entry.lane !== 'user' || entry.app.slug !== existing.slug) continue
+		const deleted = await deleteIntegrationConnection({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			name: entry.connection.name,
+		})
+		if (deleted) connectionNames.push(entry.connection.name)
+	}
+
+	const deleted = await deleteOauthApp({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		slug: existing.slug,
+	})
+	return { deleted, connectionNames }
+}
+
 export async function deleteOauthAppIfUnused(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
