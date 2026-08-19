@@ -84,10 +84,11 @@ Goal: the platform stops _creating_ reasons to use values, and the one security
 smell leaves the readable store.
 
 1. **Move onboarding dismiss off values.** Add
-   `users.onboarding_checklist_dismissed_at` (nullable ISO timestamp). Backfill
-   from `onboardingChecklistDismissed`, then stop reading/writing that value
-   name. The operator account plus six others drop off values without a user
-   action.
+   `users.onboarding_checklist_dismissed_at` (nullable ISO timestamp). Migration
+   `0015` backfills from `onboardingChecklistDismissed` and deletes those
+   rows. Reads copy any leftover value onto the column; writes go to the
+   column only. The operator account plus six others drop off values without
+   a user action.
 2. **Move bearer-token-like rows to a secret** (operator). Values entity detail
    prints the stored string; bearer tokens must not live there.
 3. **Tell agents in server instructions.** Keep a `retiringPrimitiveNotices`
