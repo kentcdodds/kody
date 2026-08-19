@@ -520,9 +520,7 @@ export function createKodyRemoteProxy(input: {
 					return [...knownKeys]
 				},
 				getOwnPropertyDescriptor(_target, name) {
-					if (isProxyLookupKey(name) || !knownKeys.includes(String(name))) {
-						return undefined
-					}
+					if (isProxyLookupKey(name)) return undefined
 					return {
 						configurable: true,
 						enumerable: true,

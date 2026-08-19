@@ -170,6 +170,18 @@ test('kody namespaced proxy dispatches and reports entry/capability errors clear
 	const { home } = mcp
 	await expect(home.set_pin({ pin: '9999' })).resolves.toEqual({ ok: true })
 	expect(Object.keys(home)).toEqual(['set_pin'])
+	expect(() => {
+		const { missing } = mcp
+		return missing
+	}).toThrow(
+		'Unknown MCP server "missing". Available MCP servers: "home", "lights".',
+	)
+	expect(() => {
+		const { missing_tool } = home
+		return missing_tool
+	}).toThrow(
+		'Unknown MCP tool "missing_tool" for MCP server "home". Available capabilities: "set_pin".',
+	)
 	expect(() => mcp.toString).toThrow(
 		'Unknown MCP server "toString". Available MCP servers: "home", "lights".',
 	)
@@ -402,6 +414,10 @@ test('generated kody provider source wires mcp proxy dispatch', async () => {
 	expect('mcp' in kody).toBe(true)
 	const { home } = kody.mcp
 	await expect(home.set_pin({ pin: '5678' })).resolves.toEqual({ ok: true })
+	expect(() => {
+		const { missing } = kody.mcp
+		return missing
+	}).toThrow('Unknown MCP server "missing". Available MCP servers: "home".')
 })
 
 test('generated kody provider source wires openapi proxy dispatch', async () => {

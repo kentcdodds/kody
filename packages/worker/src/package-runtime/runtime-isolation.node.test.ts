@@ -289,6 +289,73 @@ test('preloaded kody.mcp survives bundler-style destructuring of server names', 
 	})
 })
 
+test('bundler-style destructure of a missing kody.mcp server late-binds to the calling run', async () => {
+	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
+		const sharedStorage = new AsyncLocalStorage<unknown>()
+		;(globalThis as unknown as Record<symbol, unknown>)[
+			Symbol.for('kody.runtimeStorage')
+		] = sharedStorage
+		const url = await writeRuntimeFile()
+		const mod = (await import(url)) as RuntimeModule & {
+			kody: {
+				mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+			}
+		}
+
+		const captured = await sharedStorage.run(
+			{
+				kody: new Proxy(
+					{},
+					{
+						get(_target, property) {
+							if (property !== 'mcp') return undefined
+							return new Proxy(
+								{},
+								{
+									get() {
+										return undefined
+									},
+									getOwnPropertyDescriptor() {
+										return undefined
+									},
+								},
+							)
+						},
+					},
+				),
+			},
+			async () => {
+				const { home } = mod.kody.mcp
+				return home
+			},
+		)
+
+		const result = await sharedStorage.run(
+			{
+				kody: {
+					mcp: {
+						home: {
+							async bond_shade_set_position(args: unknown) {
+								return { ok: true, args }
+							},
+						},
+					},
+				},
+			},
+			async () =>
+				await captured.bond_shade_set_position({
+					deviceId: '8b1242b1616ed0f7',
+					position: 0,
+				}),
+		)
+
+		expect(result).toEqual({
+			ok: true,
+			args: { deviceId: '8b1242b1616ed0f7', position: 0 },
+		})
+	})
+})
+
 test('destructured kody.mcp tools resolve against the calling run', async () => {
 	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
 		const sharedStorage = new AsyncLocalStorage<unknown>()

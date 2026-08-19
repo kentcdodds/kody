@@ -151,6 +151,19 @@ function __kodyBindRuntimeNestedValue(exportName, path, property, value) {
 	return value;
 }
 
+// Bundler \`const { home } = kody.mcp\` uses [[GetOwnProperty]]. If the
+// current run's mcp proxy omits home (or throws on [[Get]]), bind a
+// late-bound nested proxy instead of undefined so a later run can still
+// resolve home.bond_shade_set_position against that run's kody.mcp.
+function __kodyLateBoundNestedPropertyDescriptor(exportName, path, property) {
+	return {
+		configurable: true,
+		enumerable: true,
+		writable: true,
+		value: __kodyCreateRuntimeNestedObjectProxy(exportName, [...path, property]),
+	};
+}
+
 function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
 	const nestedExportName = exportName + '.' + path.map(String).join('.');
 	return new Proxy({}, {
@@ -163,12 +176,32 @@ function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
 				return inspectionValue;
 			}
 			const parent = __kodyReadRuntimeNestedValue(exportName, path);
-			if (parent == null) return undefined;
+			if (parent == null) {
+				return __kodyCreateRuntimeNestedObjectProxy(
+					exportName,
+					[...path, property],
+				);
+			}
+			let value;
+			try {
+				value = parent[property];
+			} catch {
+				return __kodyCreateRuntimeNestedObjectProxy(
+					exportName,
+					[...path, property],
+				);
+			}
+			if (value === undefined) {
+				return __kodyCreateRuntimeNestedObjectProxy(
+					exportName,
+					[...path, property],
+				);
+			}
 			return __kodyBindRuntimeNestedValue(
 				exportName,
 				path,
 				property,
-				parent[property],
+				value,
 			);
 		},
 		has(_target, property) {
@@ -187,10 +220,31 @@ function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
 		getOwnPropertyDescriptor(_target, property) {
 			if (__kodyIsRuntimeProxyInspectionProperty(property)) return undefined;
 			const currentRuntime = __kodyRuntimeStorage.getStore();
-			if (currentRuntime?.[exportName] == null) return undefined;
+			if (currentRuntime?.[exportName] == null) {
+				return __kodyLateBoundNestedPropertyDescriptor(
+					exportName,
+					path,
+					property,
+				);
+			}
 			const parent = __kodyReadRuntimeNestedValue(exportName, path);
-			if (parent == null) return undefined;
-			const descriptor = Reflect.getOwnPropertyDescriptor(parent, property);
+			if (parent == null) {
+				return __kodyLateBoundNestedPropertyDescriptor(
+					exportName,
+					path,
+					property,
+				);
+			}
+			let descriptor;
+			try {
+				descriptor = Reflect.getOwnPropertyDescriptor(parent, property);
+			} catch {
+				return __kodyLateBoundNestedPropertyDescriptor(
+					exportName,
+					path,
+					property,
+				);
+			}
 			if (descriptor !== undefined && !('value' in descriptor)) {
 				return { ...descriptor, configurable: true };
 			}
@@ -199,9 +253,19 @@ function __kodyCreateRuntimeNestedObjectProxy(exportName, path) {
 				try {
 					value = parent[property];
 				} catch {
-					return undefined;
+					return __kodyLateBoundNestedPropertyDescriptor(
+						exportName,
+						path,
+						property,
+					);
 				}
-				if (value === undefined) return undefined;
+				if (value === undefined) {
+					return __kodyLateBoundNestedPropertyDescriptor(
+						exportName,
+						path,
+						property,
+					);
+				}
 			}
 			return {
 				configurable: true,
