@@ -31,6 +31,7 @@ bun.lock
 mock-data
 playwright-report
 test-results
+talks/**/.check-output/
 packages/worker/public/client-entry.js
 packages/worker/public/client-entry.js.map
 packages/worker/public/assets/

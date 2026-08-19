@@ -15,194 +15,216 @@
 	<body>
 		<div class="reveal">
 			<div class="slides">
-				<section>
-					<div class="hero">
-						<div>
-							<p class="kicker">Ai Dev Craft</p>
-							<h1>Beyond the Chatbot</h1>
-							<p class="lede">Building AI agents that actually do things</p>
-							<p class="byline">Kent C. Dodds</p>
-						</div>
-						<div class="hero-art">
-							<img
-								src="assets/images/kody-hero.png"
-								alt="Kody the koala holding a lantern"
-							/>
+				<section class="layout-hero">
+					<div class="slide-body">
+						<div class="hero">
+							<div>
+								<p class="kicker">Ai Dev Craft</p>
+								<h1>Beyond the Chatbot</h1>
+								<p class="lede">Building AI agents that actually do things</p>
+								<p class="byline">Kent C. Dodds</p>
+							</div>
+							<div class="hero-art">
+								<img
+									src="assets/images/kody-hero.png"
+									alt="Kody the koala holding a lantern"
+								/>
+							</div>
 						</div>
 					</div>
 					<aside class="notes">
-						OPEN. Thank Alejandro, Jean, and Joe. One line on Ai Dev Craft
-						(Oct 27–28, Red Rock) without turning this into a conference ad.
-						Promise: we will go under the chatbot and look at the platform an
-						agent needs — using Kody as a worked example, not a product pitch.
-						Early: open kody.codes, invite them to run the discovery prompt,
-						then walk /guides/how-kody-works. That is the context-setting.
-						Architecture comes after. Prep: 12:45 practice, Zoom as
-						me@kentcdodds.com, Q&amp;A at the end, Alejandro on questions.
+						OPEN. Thank Alejandro, Jean, and Joe. One line on Ai Dev Craft (Oct
+						27–28, Red Rock) without turning this into a conference ad. Promise:
+						we will go under the chatbot and look at the platform an agent needs
+						— using Kody as a worked example, not a product pitch. Early: open
+						kody.codes, invite them to run the discovery prompt, then walk
+						/guides/how-kody-works. That is the context-setting. Architecture
+						comes after. Prep: 12:45 practice, Zoom as me@kentcdodds.com,
+						Q&amp;A at the end, Alejandro on questions.
 					</aside>
 				</section>
 
-				<section>
-					<h1>Chatbots answer.</h1>
-					<p class="punch">Agents do.</p>
+				<section class="layout-statement">
+					<div class="slide-body">
+						<h1>Chatbots answer.</h1>
+						<p class="punch">Agents do.</p>
+					</div>
 					<aside class="notes">
-						Landing-page promise, then make it tangible. Chatbots generate
-						text. Agents use tools, take actions, and work through real tasks.
-						Don't spend the hour defining "agent." Bridge straight into
-						kody.codes so they can see one.
+						Landing-page promise, then make it tangible. Chatbots generate text.
+						Agents use tools, take actions, and work through real tasks. Don't
+						spend the hour defining "agent." Bridge straight into kody.codes so
+						they can see one.
 					</aside>
 				</section>
 
-				<section>
-					<h1>kody.codes</h1>
-					<p class="lede">Let's look at the real thing.</p>
-					<a class="chip" href="https://kody.codes/">https://kody.codes/</a>
+				<section class="layout-statement layout-billboard">
+					<div class="slide-body">
+						<h1>kody.codes</h1>
+						<p class="lede">Let's look at the real thing.</p>
+					</div>
 					<aside class="notes">
 						LIVE: switch to https://kody.codes/ and walk the homepage. Leave
 						this slide up only long enough to set the URL. Walk, in order: 1.
 						Hero: "Kody makes your agent safer, cheaper, and more reliable."
 						Personal software factory. 2. "Not sure yet? Ask the agent you
-						already use." Point at Copy the discovery prompt. 3. Nothing new
-						to learn: Cursor, Claude, ChatGPT, Copilot, Grok — anything that
-						speaks MCP. 4. From ad hoc prompts to durable software. 5. Your
-						own git and npm. 6. Bring your own keys. 7. Open source on GitHub.
-						Don't linger on waitlist/signup. Come back after the scroll.
+						already use." Point at Copy the discovery prompt. 3. Nothing new to
+						learn: Cursor, Claude, ChatGPT, Copilot, Grok — anything that speaks
+						MCP. 4. From ad hoc prompts to durable software. 5. Your own git and
+						npm. 6. Bring your own keys. 7. Open source on GitHub. Don't linger
+						on waitlist/signup. Come back after the scroll.
 					</aside>
 				</section>
 
-				<section>
-					<h2>Try this yourself</h2>
-					<p class="lede" style="max-width: 42ch">
-						Copy the discovery prompt from the homepage. No account — paste it
-						into the agent you already use.
-					</p>
-					<pre class="prompt">I'm deciding whether Kody (https://kody.codes) would be useful for me. Read https://kody.codes/guides/what-is-kody and then interview me to find out what Kody could do for me. Don't set anything up yet — this works before I have an account.</pre>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>Try this yourself</h2>
+						<p class="lede">
+							Copy the discovery prompt from the homepage. No account — paste it
+							into the agent you already use.
+						</p>
+						<pre class="prompt">
+I'm deciding whether Kody (https://kody.codes) would be useful for me. Read https://kody.codes/guides/what-is-kody and then interview me to find out what Kody could do for me. Don't set anything up yet — this works before I have an account.</pre>
+					</div>
 					<aside class="notes">
-						Invite them to do it live in another window while you keep
-						talking. The homepage button is "Copy the discovery prompt." It
-						loads /guides/what-is-kody and interviews them — no signup, no MCP
+						Invite them to do it live in another window while you keep talking.
+						The homepage button is "Copy the discovery prompt." It loads
+						/guides/what-is-kody and interviews them — no signup, no MCP
 						connection. Give them 20–30 seconds to paste. They can let it
 						interview in the background.
 					</aside>
 				</section>
 
-				<section>
-					<p class="kicker">kody.codes/guides/how-kody-works</p>
-					<h2>How Kody works</h2>
-					<ol class="steps">
-						<li>Ask once</li>
-						<li>Save the answer shape</li>
-						<li>Ask again from any agent</li>
-						<li>Get notified</li>
-					</ol>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<p class="kicker">kody.codes/guides/how-kody-works</p>
+						<h2>How Kody works</h2>
+						<ol class="steps">
+							<li>Ask once</li>
+							<li>Save the answer shape</li>
+							<li>Ask again from any agent</li>
+							<li>Get notified</li>
+						</ol>
+					</div>
 					<aside class="notes">
 						LIVE: switch to https://kody.codes/guides/how-kody-works. This is
-						the interactive transcript, not a blog post. Walk the factory
-						loop. Ask once: search finds githubAccessToken + a memory, execute
-						fetches public events, then save as a package. Ask again: later,
-						on a phone with a different host, the same question invokes the
-						package. Get notified: package-owned daily cron, email_send only
-						when the list is not empty. Punchline: a question you would ask
-						again becomes an export you can invoke from any agent, then a
-						daily email that stays quiet until something actually shipped.
+						the interactive transcript, not a blog post. Walk the factory loop.
+						Ask once: search finds githubAccessToken + a memory, execute fetches
+						public events, then save as a package. Ask again: later, on a phone
+						with a different host, the same question invokes the package. Get
+						notified: package-owned daily cron, email_send only when the list is
+						not empty. Punchline: a question you would ask again becomes an
+						export you can invoke from any agent, then a daily email that stays
+						quiet until something actually shipped.
 					</aside>
 				</section>
 
-				<section>
-					<h1>Everyone's building agents.</h1>
-					<p class="punch">Almost nobody is building the platform.</p>
+				<section class="layout-statement">
+					<div class="slide-body">
+						<h1>Everyone's building agents.</h1>
+						<p class="punch">Almost nobody is building the platform.</p>
+					</div>
 					<aside class="notes">
-						Thesis of the talk — from the brief you sent Jean. Agents without
-						a platform: hardcoded tools, keys in prompts, snowflake scripts,
-						no schedule, no version history. Kody is the worked example. Steal
-						the ideas even if you never use the product.
+						Thesis of the talk — from the brief you sent Jean. Agents without a
+						platform: hardcoded tools, keys in prompts, snowflake scripts, no
+						schedule, no version history. Kody is the worked example. Steal the
+						ideas even if you never use the product.
 					</aside>
 				</section>
 
-				<section>
-					<h2>Four questions the platform has to answer</h2>
-					<ol class="steps">
-						<li>Where does memory live?</li>
-						<li>How does the agent discover what it can do?</li>
-						<li>How do secrets stay out of the chat?</li>
-						<li>How does a one-off script become software?</li>
-					</ol>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>Four questions the platform has to answer</h2>
+						<ol class="steps">
+							<li>Where does memory live?</li>
+							<li>How does the agent discover what it can do?</li>
+							<li>How do secrets stay out of the chat?</li>
+							<li>How does a one-off script become software?</li>
+						</ol>
+					</div>
 					<aside class="notes">
-						These four are the map for the rest of the hour. We'll walk them
-						in order: discovery (search/execute), durability (packages),
+						These four are the map for the rest of the hour. We'll walk them in
+						order: discovery (search/execute), durability (packages),
 						secrets/auth, then long-lived work and git.
 					</aside>
 				</section>
 
-				<section>
-					<h2>Two tools. That's the whole public API.</h2>
-					<p class="tools"><span>search</span><span>execute</span></p>
+				<section class="layout-statement">
+					<div class="slide-body">
+						<h2>Two tools. That's the whole public API.</h2>
+						<p class="tools"><span>search</span><span>execute</span></p>
+					</div>
 					<aside class="notes">
-						Learning outcome 1. Cloudflare Code Mode: don't dump 400 tools
-						into the host context window. search: discover capabilities,
-						packages, integrations, secrets (metadata only). execute: run a
-						short ESM module that calls what search found. The agent doesn't
-						hardcode gmail.searchMessages. It finds the capability, then
-						writes the call.
+						Learning outcome 1. Cloudflare Code Mode: don't dump 400 tools into
+						the host context window. search: discover capabilities, packages,
+						integrations, secrets (metadata only). execute: run a short ESM
+						module that calls what search found. The agent doesn't hardcode
+						gmail.searchMessages. It finds the capability, then writes the call.
 					</aside>
 				</section>
 
-				<section>
-					<h2>Discover, then invoke</h2>
-					<ul class="bullets">
-						<li>A registry, not a hardcoded tool list</li>
-						<li>Each capability ships its exact call shape</li>
-						<li>The agent writes the glue</li>
-					</ul>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>Discover, then invoke</h2>
+						<ul class="bullets">
+							<li>A registry, not a hardcoded tool list</li>
+							<li>Each capability ships its exact call shape</li>
+							<li>The agent writes the glue</li>
+						</ul>
+					</div>
 					<aside class="notes">
 						Walk the loop: question → search → pick a hit → get the TypeScript
-						input/output → execute. Contrast with MCP servers that expose
-						every tool as a top-level function. Packages show up in the same
-						search path as builtins. Concrete example: this morning, "find the
-						Joe Eames webinar in my email" → google package → Gmail on the
-						business account.
+						input/output → execute. Contrast with MCP servers that expose every
+						tool as a top-level function. Packages show up in the same search
+						path as builtins. Concrete example: this morning, "find the Joe
+						Eames webinar in my email" → google package → Gmail on the business
+						account.
 					</aside>
 				</section>
 
-				<section>
-					<h2>execute is a scratchpad</h2>
-					<ul class="bullets">
-						<li>One-offs, smoke tests, experiments</li>
-						<li>Thrown away on purpose</li>
-					</ul>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>execute is a scratchpad</h2>
+						<ul class="bullets">
+							<li>One-offs, smoke tests, experiments</li>
+							<li>Thrown away on purpose</li>
+						</ul>
+					</div>
 					<aside class="notes">
 						Use execute when the code is disposable: inspect an API, try a
-						composition, run something once. Ambient user authority — great
-						for exploration, dangerous as a permanent home. Signal to stop:
-						you rewrote the same module twice, you want a schedule, you need
-						tests, multiple files, or declared secrets.
+						composition, run something once. Ambient user authority — great for
+						exploration, dangerous as a permanent home. Signal to stop: you
+						rewrote the same module twice, you want a schedule, you need tests,
+						multiple files, or declared secrets.
 					</aside>
 				</section>
 
-				<section>
-					<h2>When it's worth keeping, it becomes a package</h2>
-					<ul class="bullets">
-						<li>A real repo, rooted at package.json</li>
-						<li>Exports, jobs, apps, services, subscriptions</li>
-						<li>Versioned, reviewable, schedulable</li>
-					</ul>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>When it's worth keeping, it becomes a package</h2>
+						<ul class="bullets">
+							<li>A real repo, rooted at package.json</li>
+							<li>Exports, jobs, apps, services, subscriptions</li>
+							<li>Versioned, reviewable, schedulable</li>
+						</ul>
+					</div>
 					<aside class="notes">
-						Learning outcome 2. A package is not a saved prompt. It's
-						software: source, tests, README Intent, declared secrets and
-						hosts. Scheduling alone is not a reason to package — ad hoc jobs
-						exist. Package-owned jobs when the schedule belongs to reusable
-						behavior.
+						Learning outcome 2. A package is not a saved prompt. It's software:
+						source, tests, README Intent, declared secrets and hosts. Scheduling
+						alone is not a reason to package — ad hoc jobs exist. Package-owned
+						jobs when the schedule belongs to reusable behavior.
 					</aside>
 				</section>
 
-				<section>
-					<h2>The package lifecycle</h2>
-					<ol class="steps">
-						<li>Invoke what already exists</li>
-						<li>execute for a one-off</li>
-						<li>Prefer a close community package</li>
-						<li>Then create or evolve a durable package</li>
-					</ol>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>The package lifecycle</h2>
+						<ol class="steps">
+							<li>Invoke what already exists</li>
+							<li>execute for a one-off</li>
+							<li>Prefer a close community package</li>
+							<li>Then create or evolve a durable package</li>
+						</ol>
+					</div>
 					<aside class="notes">
 						Spine of the talk. Slow down. Search first. Don't rewrite Gmail.
 						Community listings are excluded from general search — that's why
@@ -213,92 +235,103 @@
 					</aside>
 				</section>
 
-				<section>
-					<h2>Auth is not the product API</h2>
-					<ul class="bullets">
-						<li>Integrations hold the tokens</li>
-						<li>Packages teach the agent how to call the product</li>
-					</ul>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>Auth is not the product API</h2>
+						<ul class="bullets">
+							<li>Integrations hold the tokens</li>
+							<li>Packages teach the agent how to call the product</li>
+						</ul>
+					</div>
 					<aside class="notes">
-						Learning outcome 3. Google OAuth is credentials.
-						@kentcdodds/google is the maintained Gmail/Calendar/Drive helper —
-						including which account to use. This webinar's thread lived in
-						business Gmail. Personal Gmail didn't have it. Account-aware
-						packages matter. Host allowlists are load-bearing: a real bearer
-						token is attached, so requests can only go to approved hosts.
+						Learning outcome 3. Google OAuth is credentials. @kentcdodds/google
+						is the maintained Gmail/Calendar/Drive helper — including which
+						account to use. This webinar's thread lived in business Gmail.
+						Personal Gmail didn't have it. Account-aware packages matter. Host
+						allowlists are load-bearing: a real bearer token is attached, so
+						requests can only go to approved hosts.
 					</aside>
 				</section>
 
-				<section>
-					<h2>Secrets never belong in the transcript</h2>
-					<ul class="bullets">
-						<li>Stored server-side</li>
-						<li>Referenced in code. Never pasted into chat.</li>
-					</ul>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>Secrets never belong in the transcript</h2>
+						<ul class="bullets">
+							<li>Stored server-side</li>
+							<li>Referenced in code. Never pasted into chat.</li>
+						</ul>
+					</div>
 					<aside class="notes">
-						Gmail scopes, refresh tokens, API keys — none of that should land
-						in the host's context or logs. Packages declare the secrets they
-						need. Users approve. Runtime injects {{secret:name}}. Prefill the
-						save URL so setup is a click. Same idea for OAuth connect links.
+						Gmail scopes, refresh tokens, API keys — none of that should land in
+						the host's context or logs. Packages declare the secrets they need.
+						Users approve. Runtime injects {{secret:name}}. Prefill the save URL
+						so setup is a click. Same idea for OAuth connect links.
 					</aside>
 				</section>
 
-				<section>
-					<h2>Some work has to stay alive</h2>
-					<ul class="bullets">
-						<li>Long-lived services on Durable Objects</li>
-						<li>Jobs, alarms, inbound email, webhooks</li>
-					</ul>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>Some work has to stay alive</h2>
+						<ul class="bullets">
+							<li>Long-lived services on Durable Objects</li>
+							<li>Jobs, alarms, inbound email, webhooks</li>
+						</ul>
+					</div>
 					<aside class="notes">
-						Request/response is not enough: MCP connections, schedules,
-						inbound email, webhooks. Durable Object lifecycles, alarms for
-						wakeups, cooperative stop so you can drain. Event subscriptions:
-						package-declared handlers. Email is the easy example.
-						Implementation detail (jobs vs runtime worker) only if someone
-						asks how it runs on Cloudflare.
+						Request/response is not enough: MCP connections, schedules, inbound
+						email, webhooks. Durable Object lifecycles, alarms for wakeups,
+						cooperative stop so you can drain. Event subscriptions:
+						package-declared handlers. Email is the easy example. Implementation
+						detail (jobs vs runtime worker) only if someone asks how it runs on
+						Cloudflare.
 					</aside>
 				</section>
 
-				<section>
-					<h2>Coding agents get a git lane</h2>
-					<ul class="bullets">
-						<li>clone -&gt; edit -&gt; test -&gt; push -&gt; publish</li>
-						<li>The repo is the source of truth</li>
-					</ul>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>Coding agents get a git lane</h2>
+						<ul class="bullets">
+							<li>clone -&gt; edit -&gt; test -&gt; push -&gt; publish</li>
+							<li>The repo is the source of truth</li>
+						</ul>
+					</div>
 					<aside class="notes">
 						This is how you keep agents from becoming irreproducible prompt
 						soup. Git lane for coding agents. Tool-only lane (repo sessions)
-						when there's no filesystem. Test scheduled wrappers before
-						enabling them. dryRun is a package contract, not platform magic.
-						Confirm live mutations with the user. Don't patch generated
-						runtime state instead of changing source.
+						when there's no filesystem. Test scheduled wrappers before enabling
+						them. dryRun is a package contract, not platform magic. Confirm live
+						mutations with the user. Don't patch generated runtime state instead
+						of changing source.
 					</aside>
 				</section>
 
-				<section>
-					<h2>The same loop, live</h2>
-					<ul class="bullets">
-						<li>search until you find the capability</li>
-						<li>execute a one-off</li>
-						<li>keep it only if it's worth a package</li>
-					</ul>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>The same loop, live</h2>
+						<ul class="bullets">
+							<li>search until you find the capability</li>
+							<li>execute a one-off</li>
+							<li>keep it only if it's worth a package</li>
+						</ul>
+					</div>
 					<aside class="notes">
 						This is the live-demo slide. Leave it up while you switch to the
 						host. 3 beats, ~6–8 minutes: 1. search for a real capability. 2.
 						execute a tiny one-off. 3. Show a saved package export and say:
-						that's promotion. If demo fails: this deck was produced this
-						morning by that loop. Skip this slide's dwell time if you're
-						behind.
+						that's promotion. If demo fails: this deck was produced this morning
+						by that loop. Skip this slide's dwell time if you're behind.
 					</aside>
 				</section>
 
-				<section>
-					<h2>Three things to leave with</h2>
-					<ol class="steps">
-						<li>A registry: search, then execute</li>
-						<li>A lifecycle: one-off, then community, then a package</li>
-						<li>Ops: secrets, auth vs helpers, durability, git</li>
-					</ol>
+				<section class="layout-stack">
+					<div class="slide-body">
+						<h2>Three things to leave with</h2>
+						<ol class="steps">
+							<li>A registry: search, then execute</li>
+							<li>A lifecycle: one-off, then community, then a package</li>
+							<li>Ops: secrets, auth vs helpers, durability, git</li>
+						</ol>
+					</div>
 					<aside class="notes">
 						Restate the three learning outcomes from the July 22 email. This
 						talk is how you give an agent a place to put the things worth
@@ -306,29 +339,33 @@
 					</aside>
 				</section>
 
-				<section class="links">
-					<h2>Open source</h2>
-					<p class="url">kody.codes</p>
-					<p>github.com/kentcdodds/kody</p>
-					<p class="muted">Ai Dev Craft · October 27–28 · Las Vegas</p>
+				<section class="layout-stack links">
+					<div class="slide-body">
+						<h2>Open source</h2>
+						<p class="url">kody.codes</p>
+						<p>github.com/kentcdodds/kody</p>
+						<p class="muted">Ai Dev Craft · October 27–28 · Las Vegas</p>
+					</div>
 					<aside class="notes">
-						Don't hard-sell tickets. One sentence: if they want two days of
-						this kind of shop-talk, that's the conference. Docs: docs/use,
-						how_kody_works, package_lifecycle. Origin is kody.codes
-						(heykody.dev is stale).
+						Don't hard-sell tickets. One sentence: if they want two days of this
+						kind of shop-talk, that's the conference. Docs: docs/use,
+						how_kody_works, package_lifecycle. Origin is kody.codes (heykody.dev
+						is stale).
 					</aside>
 				</section>
 
-				<section>
-					<h1>Questions</h1>
+				<section class="layout-statement">
+					<div class="slide-body">
+						<h1>Questions</h1>
+					</div>
 					<aside class="notes">
 						Alejandro has been collecting questions. Likely: how is this
 						different from OpenAI Agents / LangGraph / Cursor? Those are hosts
-						or orchestrators. Kody is the portable, user-owned runtime an
-						agent can use from any of them. Self-host? Point at the open repo;
-						don't over-promise ops. SaaS? Personal assistant platform,
-						per-user isolation, not a team workspace product. Thank Joe, Jean,
-						Alejandro, Ai Dev Craft.
+						or orchestrators. Kody is the portable, user-owned runtime an agent
+						can use from any of them. Self-host? Point at the open repo; don't
+						over-promise ops. SaaS? Personal assistant platform, per-user
+						isolation, not a team workspace product. Thank Joe, Jean, Alejandro,
+						Ai Dev Craft.
 					</aside>
 				</section>
 			</div>
@@ -347,7 +384,7 @@
 		<script>
 			const page = document.getElementById('page')
 
-			function updatePage(event) {
+			function updatePage() {
 				const total = Reveal.getTotalSlides()
 				const current = Reveal.getSlidePastCount() + 1
 				page.textContent = `${current}  /  ${total}`
@@ -361,10 +398,10 @@
 				center: false,
 				width: 1920,
 				height: 1080,
-				margin: 0.08,
+				margin: 0.06,
 				minScale: 0.3,
 				maxScale: 1.4,
-				transition: 'fade',
+				transition: 'none',
 				transitionSpeed: 'fast',
 				backgroundTransition: 'none',
 				plugins: [RevealNotes],
