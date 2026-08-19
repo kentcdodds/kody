@@ -220,7 +220,6 @@ async function persistPublishedJobBundleArtifact(input: {
 		dependencies: bundle.dependencies,
 		dynamicDependencies: bundle.dynamicDependencies ?? [],
 		packageContext: input.packageContext ?? null,
-		serviceContext: null,
 		createdAt: new Date().toISOString(),
 	}
 	await persistPublishedBundleArtifact({

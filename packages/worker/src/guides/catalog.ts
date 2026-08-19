@@ -15,7 +15,6 @@ import oauth from '../../../../docs/guides/oauth.md'
 import openapiIntegrations from '../../../../docs/guides/openapi-integrations.md'
 import packageAuthoring from '../../../../docs/guides/package-authoring.md'
 import packageLifecycle from '../../../../docs/guides/package-lifecycle.md'
-import packageServicePattern from '../../../../docs/guides/package-service-pattern.md'
 import packageSubscriptions from '../../../../docs/guides/package-subscriptions.md'
 import platformFriction from '../../../../docs/guides/platform-friction.md'
 import providerDiscord from '../../../../docs/guides/providers/discord.md'
@@ -57,7 +56,6 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 		slug: 'account-package-invocation-token-setup',
 		raw: accountPackageInvocationTokenSetup,
 	},
-	{ slug: 'package-service-pattern', raw: packageServicePattern },
 	{ slug: 'package-subscriptions', raw: packageSubscriptions },
 	{ slug: 'platform-friction', raw: platformFriction },
 	{ slug: 'values', raw: values },

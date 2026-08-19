@@ -1,8 +1,8 @@
 /**
  * Run records: the per-user execution history primitive.
  *
- * Every runtime surface (execute, jobs, workflows, services, package exports,
- * apps, retrievers, subscriptions, inbound webhooks) reports what it ran and
+ * Every runtime surface (execute, jobs, workflows, package exports, apps,
+ * retrievers, subscriptions, inbound webhooks) reports what it ran and
  * how it ended through one contract. Records live in a per-user `RunLog`
  * Durable Object, not in the shared D1 writer — see
  * `docs/contributing/architecture/run-records.md`.
@@ -10,8 +10,7 @@
  * Two invariants shape this module:
  *
  * - `state-vs-history`: entity rows own current state, run records own
- *   history. Never derive state (is a service running? how many?) by querying
- *   run records.
+ *   history. Never derive live state by querying run records.
  * - `no-per-event-shared-writes`: per-event writes go to Analytics Engine or
  *   a per-user Durable Object, never `APP_DB`.
  */
@@ -22,7 +21,6 @@ export const runSurfaceValues = [
 	'subscription',
 	'app_fetch',
 	'app_realtime',
-	'service',
 	'job',
 	'workflow',
 	'retriever',
@@ -95,7 +93,6 @@ export function runPersistenceForSurface(surface: RunSurface): RunPersistence {
 		case 'subscription':
 		case 'app_fetch':
 		case 'app_realtime':
-		case 'service':
 		case 'job':
 		case 'workflow':
 		case 'retriever':
@@ -210,8 +207,8 @@ export type RunRecordLog = {
 /**
  * Log input accepted by `finishRunRecord`. Plain strings keep the sandbox
  * executor's existing `logs: Array<string>` shape working unchanged; the
- * object form lets surfaces that know the level (app handlers, services)
- * record it instead of flattening everything to `log`.
+ * object form lets surfaces that know the level record it instead of
+ * flattening everything to `log`.
  */
 export type RunRecordLogInput =
 	| string
@@ -287,7 +284,7 @@ export const runRecordMaxPageSize = 100
 export const runRecordRetentionEveryNFinishes = 32
 
 /**
- * Default / longest stale-`running` TTL (service + workflow). Prefer
+ * Default / longest stale-`running` TTL (workflow). Prefer
  * {@link runRecordStaleRunningTtlMsForSurface} so short-lived surfaces heal
  * in minutes instead of a day.
  */
@@ -305,10 +302,9 @@ export const runRecordStaleRunningTtlMsShortLived = 3 * 60 * 1000
 export const runRecordStaleRunningTtlMsJob = 6 * 60 * 60 * 1000
 
 /**
- * Surface-aware stale-`running` TTL. Persistent services and workflows keep the
- * long default; sandbox-backed surfaces heal after a few minutes.
- *
- * History only — live service/job state lives on entity rows, not here.
+ * Surface-aware stale-`running` TTL. Workflows keep the long default;
+ * sandbox-backed surfaces heal after a few minutes. History only — live job
+ * state lives on entity rows, not here.
  */
 export function runRecordStaleRunningTtlMsForSurface(
 	surface: RunSurface,
@@ -325,7 +321,6 @@ export function runRecordStaleRunningTtlMsForSurface(
 		case 'job':
 			return runRecordStaleRunningTtlMsJob
 		case 'workflow':
-		case 'service':
 			return runRecordStaleRunningTtlMs
 		default: {
 			const exhaustive: never = surface

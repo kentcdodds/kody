@@ -1,8 +1,7 @@
 # Activity
 
-When a job fails, a package app crashes, a webhook delivery rejects, or a
-service wake errors, Kody keeps a short execution history so you (and your
-agent) can see what happened.
+When a job fails, a package app crashes, or a webhook delivery rejects, Kody
+keeps a short execution history so you (and your agent) can see what happened.
 
 ## Where to look
 
@@ -11,7 +10,7 @@ failures first**, with:
 
 - a short summary of recent totals, open errors, and ignored/resolved counts
 - filters by status, triage (open / ignored / resolved / all), and runtime
-  surface (jobs, webhooks, package apps, services, workflows, and others)
+  surface (jobs, webhooks, package apps, workflows, and others)
 - a detail view with captured log lines and any triage note
 - cursor pagination for older pages
 

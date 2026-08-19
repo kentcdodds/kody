@@ -43,13 +43,6 @@ export type PackageStorageToolOptions = {
 	grantedPackageIds: ReadonlySet<string>
 }
 
-export type ServiceToolOptions = {
-	getStatus: () => Promise<unknown>
-	shouldStop: () => Promise<boolean>
-	setAlarm: (runAt: Date) => Promise<{ ok: true; scheduled_at: string }>
-	clearAlarm: () => Promise<{ ok: true }>
-}
-
 export type PackageSecretToolOptions = {
 	get: (alias: string) => Promise<string>
 	has: (alias: string) => Promise<boolean>
@@ -130,7 +123,6 @@ export type RuntimeHelperManifestContext = {
 	provider?: ResolvedProvider | undefined
 	storageTools?: StorageToolOptions | undefined
 	packageStorageTools?: PackageStorageToolOptions | undefined
-	serviceTools?: ServiceToolOptions | undefined
 	packageSecretTools?: PackageSecretToolOptions | undefined
 	emailTools?: EmailToolOptions | undefined
 	workflowTools?: PackageWorkflowTools | undefined
@@ -156,24 +148,6 @@ type RuntimeHelperManifestEntry = {
 export type RuntimeHelperKodyToolSet = {
 	runtimeName: string
 	tools: AdditionalKodyTools
-}
-
-function createServiceHelperPrelude() {
-	return `
-const service = {
-  getStatus: async () => await kody.service_get_status({}),
-  shouldStop: async () => {
-    const result = await kody.service_should_stop({});
-    return result?.shouldStop === true;
-  },
-  setAlarm: async (runAt) => {
-    const normalizedRunAt =
-      runAt instanceof Date ? runAt.toISOString() : String(runAt ?? '');
-    return await kody.service_set_alarm({ runAt: normalizedRunAt });
-  },
-  clearAlarm: async () => await kody.service_clear_alarm({}),
-};
-	`.trim()
 }
 
 function createPackageSecretsHelperPrelude() {
@@ -301,35 +275,6 @@ const __kodyStaticCallMeter = {
   },
 };
 	`.trim()
-}
-
-function createServiceKodyTools(
-	serviceTools: ServiceToolOptions,
-): AdditionalKodyTools {
-	return {
-		service_get_status: async () => await serviceTools.getStatus(),
-		service_should_stop: async () => ({
-			shouldStop: await serviceTools.shouldStop(),
-		}),
-		service_set_alarm: async (args: unknown) => {
-			const payload =
-				typeof args === 'object' && args !== null
-					? (args as { runAt?: unknown })
-					: {}
-			const runAtValue = payload.runAt
-			const runAtString =
-				typeof runAtValue === 'string' ? runAtValue.trim() : ''
-			if (!runAtString) {
-				throw new Error('service.setAlarm requires a runAt ISO string.')
-			}
-			const runAt = new Date(runAtString)
-			if (Number.isNaN(runAt.getTime())) {
-				throw new Error('service.setAlarm requires a valid runAt ISO string.')
-			}
-			return await serviceTools.setAlarm(runAt)
-		},
-		service_clear_alarm: async () => await serviceTools.clearAlarm(),
-	}
 }
 
 function createPackageSecretKodyTools(
@@ -530,15 +475,6 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 		},
 	},
 	{
-		runtimeName: 'service',
-		runtimeBindings: [{ runtimeName: 'service', absentValue: 'null' }],
-		unboundNames: ['service'],
-		isBound: (context) => Boolean(context.serviceTools),
-		createPrelude: () => createServiceHelperPrelude(),
-		createKodyTools: (context) =>
-			context.serviceTools ? createServiceKodyTools(context.serviceTools) : {},
-	},
-	{
 		runtimeName: 'packageSecrets',
 		runtimeBindings: [{ runtimeName: 'packageSecrets', absentValue: 'null' }],
 		unboundNames: ['packageSecrets'],
@@ -616,7 +552,6 @@ const runtimeHelperRuntimeBindingOrder: Array<string> = [
 	'storage',
 	'packageStorage',
 	'execute',
-	'service',
 	'packageSecrets',
 	'email',
 	'workflows',

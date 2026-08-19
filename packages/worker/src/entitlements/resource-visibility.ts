@@ -53,19 +53,6 @@ export const entitlementResourceVisibility: Record<
 		whatCounts: 'Scheduled jobs waiting to run on a schedule.',
 		howToReduce: 'Delete jobs you no longer need.',
 	},
-	package_services: {
-		group: 'counts',
-		kind: 'counter',
-		whatCounts: 'Package services currently running.',
-		howToReduce: 'Stop services you are not using.',
-	},
-	persistent_package_services: {
-		group: 'counts',
-		kind: 'counter',
-		whatCounts: 'Persistent (long-lived) package services currently running.',
-		howToReduce:
-			'Stop persistent services you do not need, or upgrade for more concurrent slots.',
-	},
 	repo_sessions: {
 		group: 'counts',
 		kind: 'counter',
@@ -110,7 +97,7 @@ export const entitlementResourceVisibility: Record<
 		group: 'storage',
 		kind: 'counter',
 		whatCounts:
-			'Durable payload bytes across D1-backed data plus inventoried package, job, execute, service, and repo-session storage buckets.',
+			'Durable payload bytes across D1-backed data plus inventoried package, job, execute, and repo-session storage buckets.',
 		howToReduce: 'Delete stored content you no longer need.',
 	},
 	concurrent_workflows: {
@@ -152,8 +139,6 @@ export const accountUsageEntitlementResources = [
 	'repos',
 	'saved_packages',
 	'scheduled_jobs',
-	'package_services',
-	'persistent_package_services',
 	'repo_sessions',
 	'stored_email_messages',
 	'secrets',

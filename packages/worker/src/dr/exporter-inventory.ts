@@ -1,5 +1,4 @@
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
-import { buildPackageServiceStorageId } from '#worker/package-runtime/package-service.ts'
 import { listPlatformStorageBuckets } from '#worker/storage-buckets/service.ts'
 import { encodeStorageIdentity } from '#worker/dr/storage-identity.ts'
 
@@ -44,25 +43,12 @@ export async function listPlatformStorageInventory(input: {
 	jobs: JobsStore
 }): Promise<Array<StorageInventoryEntry>> {
 	const { db, jobs } = input
-	// Platform-wide DR has only a D1Database (no per-user Env / network), so
-	// service buckets come from projected `package_service_states` rather than
-	// package manifests. Ad-hoc / execute buckets come from the authoritative
-	// `user_storage_buckets` registry via `listPlatformStorageBuckets`. Job
-	// and archived-artifact storage ids come from the jobs worker's database.
-	const [jobStorageOwners, registeredBuckets, serviceRows] = await Promise.all([
+	// Ad-hoc / execute buckets come from the authoritative
+	// `user_storage_buckets` registry. Job and archived-artifact storage ids
+	// come from the jobs worker's database.
+	const [jobStorageOwners, registeredBuckets] = await Promise.all([
 		jobs.listAllJobStorageOwners(),
 		listPlatformStorageBuckets({ db }),
-		db
-			.prepare(
-				`SELECT DISTINCT user_id AS userId, package_id AS packageId,
-						service_name AS serviceName
-					FROM package_service_states`,
-			)
-			.all<{
-				userId: string
-				packageId: string
-				serviceName: string
-			}>(),
 	])
 
 	const seen = new Set<string>()
@@ -75,12 +61,6 @@ export async function listPlatformStorageInventory(input: {
 	}
 	for (const row of jobStorageOwners) push(row.userId, row.storageId)
 	for (const row of registeredBuckets) push(row.userId, row.storageId)
-	for (const row of serviceRows.results ?? []) {
-		push(
-			row.userId,
-			buildPackageServiceStorageId(row.packageId, row.serviceName),
-		)
-	}
 	inventory.sort((left, right) => left.identity.localeCompare(right.identity))
 	return inventory
 }

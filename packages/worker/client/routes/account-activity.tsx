@@ -97,7 +97,6 @@ const surfaceFilterOptions: Array<{
 	{ value: 'subscription', label: 'Subscription' },
 	{ value: 'app_fetch', label: 'App fetch' },
 	{ value: 'app_realtime', label: 'App realtime' },
-	{ value: 'service', label: 'Service' },
 	{ value: 'job', label: 'Job' },
 	{ value: 'workflow', label: 'Workflow' },
 	{ value: 'retriever', label: 'Retriever' },

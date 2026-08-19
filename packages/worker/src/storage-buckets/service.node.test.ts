@@ -94,7 +94,6 @@ test('storage bucket registration soft-fails, dedupes, and lists by user', async
 	expect(storageBucketKindFromStorageId('job:abc')).toBe('job')
 	expect(storageBucketKindFromStorageId('exec:abc')).toBe('execute')
 	expect(storageBucketKindFromStorageId('package:abc')).toBe('package')
-	expect(storageBucketKindFromStorageId('service:abc')).toBe('service')
 	expect(storageBucketKindFromStorageId('adhoc-bucket')).toBe('unknown')
 
 	consoleWarn.mockImplementation(() => {})

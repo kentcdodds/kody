@@ -14,7 +14,6 @@ import { getCapabilityVectorIndex } from '#worker/vectorize/embedding.ts'
 import { cleanupAllUserArtifactRepos } from '#worker/repo/artifact-repo-cleanup.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
-import { packageServiceRpc } from '#worker/package-runtime/package-service.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 import { clearRunRecords } from '#worker/run-records/service.ts'
 import {
@@ -24,10 +23,7 @@ import {
 import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import { repoSessionIndexRpc } from '#worker/repo/repo-session-index-client.ts'
 import { listRepoSessionsByUser } from '#worker/repo/repo-sessions.ts'
-import {
-	listAccountUserPackageServices,
-	listAccountUserStorageIds,
-} from '#worker/account/user-inventory.ts'
+import { listAccountUserStorageIds } from '#worker/account/user-inventory.ts'
 import {
 	accountUserDataTargets,
 	buildUserScopedDeleteOrUpdateSql,
@@ -121,13 +117,6 @@ type UserMcpServerSnapshot = {
 	id: string
 }
 
-type UserPackageServiceSnapshot = {
-	packageId: string
-	kodyId: string
-	sourceId: string
-	serviceName: string
-}
-
 type UserDeletionInventory = {
 	stripeCustomerId: string | null
 	vectorIds: Array<string>
@@ -139,7 +128,6 @@ type UserDeletionInventory = {
 	repoSessions: Array<UserRepoSessionSnapshot>
 	mcpServers: Array<UserMcpServerSnapshot>
 	mcpAgentSessions: Array<McpAgentSession>
-	packageServices: Array<UserPackageServiceSnapshot>
 	communityListings: Array<AccountCommunityListingSnapshot>
 }
 
@@ -214,18 +202,10 @@ async function getUserStripeCustomerId(env: Env, dbUserId: number) {
 	return row?.stripe_customer_id?.trim() || null
 }
 
-async function listUserStorageIds(
-	env: Env,
-	userId: string,
-	warnings?: Array<string>,
-	packageServices?: ReadonlyArray<UserPackageServiceSnapshot>,
-) {
+async function listUserStorageIds(env: Env, userId: string) {
 	return await listAccountUserStorageIds({
 		env,
 		userId,
-		baseUrl: 'https://account-deletion.invalid',
-		warnings,
-		packageServices,
 	})
 }
 
@@ -286,19 +266,6 @@ async function listUserMcpServers(env: Env, userId: string) {
 	return (rows.results ?? []).map((row) => ({ id: row.id }))
 }
 
-async function listUserPackageServices(
-	env: Env,
-	userId: string,
-	warnings?: Array<string>,
-) {
-	return await listAccountUserPackageServices({
-		env,
-		userId,
-		baseUrl: 'https://account-deletion.invalid',
-		warnings,
-	})
-}
-
 async function listUserBundleKvKeys(input: {
 	env: Env
 	userId: string
@@ -354,16 +321,6 @@ async function collectUserDeletionInventory(input: {
 		input.warnings.push(warning)
 		inventoryErrors.push(warning)
 	}
-	// Enumerate services first so storage-id listing can reuse the result and
-	// avoid a second package-manifest pass in the same request.
-	const packageServices = await listUserPackageServices(
-		input.env,
-		input.userId,
-		input.warnings,
-	).catch((error) => {
-		recordInventoryError('package services', error)
-		return [] as Array<UserPackageServiceSnapshot>
-	})
 	const [
 		stripeCustomerId,
 		vectorIds,
@@ -383,12 +340,7 @@ async function collectUserDeletionInventory(input: {
 			recordInventoryError('vector ids', error)
 			return [] as Array<string>
 		}),
-		listUserStorageIds(
-			input.env,
-			input.userId,
-			input.warnings,
-			packageServices,
-		).catch((error) => {
+		listUserStorageIds(input.env, input.userId).catch((error) => {
 			recordInventoryError('storage ids', error)
 			return [] as Array<string>
 		}),
@@ -449,7 +401,6 @@ async function collectUserDeletionInventory(input: {
 		repoSessions,
 		mcpServers,
 		mcpAgentSessions,
-		packageServices,
 		communityListings: r2Inventory.communityListings,
 	}
 }
@@ -799,35 +750,6 @@ async function purgePackageRealtimeSessions(input: {
 	return purged
 }
 
-async function purgePackageServices(input: {
-	env: Env
-	userId: string
-	services: ReadonlyArray<UserPackageServiceSnapshot>
-	warnings: Array<string>
-}): Promise<number> {
-	let purged = 0
-	for (const service of input.services) {
-		try {
-			await packageServiceRpc({
-				env: input.env,
-				userId: input.userId,
-				packageId: service.packageId,
-				kodyId: service.kodyId,
-				sourceId: service.sourceId,
-				baseUrl: 'https://account-deletion.invalid',
-				serviceName: service.serviceName,
-			}).purge()
-			purged += 1
-		} catch (error) {
-			const message = getErrorMessage(error)
-			input.warnings.push(
-				`Package service purge failed for ${service.packageId}/${service.serviceName}: ${message}`,
-			)
-		}
-	}
-	return purged
-}
-
 async function deleteVectorsByIds(input: {
 	env: Env
 	ids: ReadonlyArray<string>
@@ -1139,13 +1061,6 @@ export async function deleteUserAccount(input: {
 			env: input.env,
 			userId: input.mcpUserId,
 			packages: inventory.savedPackages,
-			warnings,
-		})
-	result.clearedDurableObjects.packageServiceInstances =
-		await purgePackageServices({
-			env: input.env,
-			userId: input.mcpUserId,
-			services: inventory.packageServices,
 			warnings,
 		})
 	result.clearedDurableObjects.storageRunners = await clearStorageRunners({

@@ -62,7 +62,6 @@ test('subscription execution exposes the owner account identity to meta_get_curr
 				kodyId: 'article-to-audio',
 				sourceId: 'source-1',
 			},
-			serviceContext: null,
 			createdAt: '2026-08-08T00:00:00.000Z',
 		},
 		source: {

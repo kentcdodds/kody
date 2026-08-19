@@ -115,7 +115,6 @@ export default async function main(input = {}) {
 			kodyId: 'system-email-notifier',
 			sourceId,
 		},
-		serviceContext: null,
 		createdAt: now,
 	}
 	const artifactKey = `bundle-artifact:v1:${sourceId}:commit-1:module:subscription:${systemTopic}:src/on-system-email.ts`

@@ -244,11 +244,9 @@ Restore rebuilds the derived stores below; do not treat them as recovery media:
 - Derived community icons and ordinary KV caches
 - **UserMeter** — daily entitlement counters self-prune and can be
   re-established by traffic; authoritative storage-byte state is corrected by
-  the revision-guarded physical-storage reconciliation lane. Package-service
-  running state is ephemeral and services must be restarted/reconciled after an
-  incident. Losing UserMeter state can temporarily undercount usage or require
-  service restart, but it does not lose stored user content; this is accepted
-  rather than adding a nightly UserMeter dump lane.
+  the revision-guarded physical-storage reconciliation lane. Losing UserMeter
+  state can temporarily undercount usage, but it does not lose stored user
+  content; this is accepted rather than adding a nightly UserMeter dump lane.
 - **RunLog run history** — per-user runs and console lines have ~30-day
   self-enforced retention and remain accepted observability loss. Account
   export/deletion still cover them for user-facing portability and purge.
@@ -301,14 +299,10 @@ Restore rebuilds the derived stores below; do not treat them as recovery media:
 - **StorageRunner inventory** unions authoritative sources: `jobs` and
   `archived_job_artifacts` storage ids from the jobs worker (`JOBS_DB` via the
   `JOBS` / `JobsStore` path), plus `APP_DB` `user_storage_buckets` (including
-  ad-hoc / execute buckets) and `package_service_states` (projected service
-  storage ids). Platform DR does **not** walk package manifests. A service whose
-  Durable Object never projected into `package_service_states` is therefore
-  absent from sealed-day inventory until it heartbeats or transitions; account
-  deletion/export cover those via manifest enumeration. Buckets known only
-  inside a user's `RunLog` (and never registered in `user_storage_buckets` or an
-  entity table) remain outside DR inventory by design; the selective RunLog lane
-  does not export run-associated storage ids.
+  ad-hoc / execute buckets). Buckets known only inside a user's `RunLog` (and
+  never registered in `user_storage_buckets` or an entity table) remain outside
+  DR inventory by design; the selective RunLog lane does not export
+  run-associated storage ids.
 
 ## Credentials and Access
 

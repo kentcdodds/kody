@@ -44,20 +44,6 @@ export type PackageSecretMountDefinition = z.infer<
 	typeof packageSecretMountDefinitionSchema
 >
 
-export const packageServiceModeValues = ['bounded', 'persistent'] as const
-export type PackageServiceMode = (typeof packageServiceModeValues)[number]
-
-export const packageServiceDefinitionSchema = z.object({
-	entry: z.string().min(1),
-	autoStart: z.boolean().optional(),
-	mode: z.enum(packageServiceModeValues).optional(),
-	timeoutMs: z.number().int().positive().max(300_000).optional(),
-})
-
-export type PackageServiceDefinition = z.infer<
-	typeof packageServiceDefinitionSchema
->
-
 export const packageSubscriptionDefinitionSchema = z.object({
 	handler: z.string().min(1),
 	description: z.string().min(1).optional(),
@@ -225,9 +211,6 @@ export const authoredPackageKodySchema = z.object({
 		.record(z.string().min(1), packageEmittedEventDefinitionSchema)
 		.optional(),
 	app: packageAppDefinitionSchema.optional(),
-	services: z
-		.record(z.string().min(1), packageServiceDefinitionSchema)
-		.optional(),
 	jobs: z.record(z.string().min(1), packageJobDefinitionSchema).optional(),
 	retrievers: z
 		.record(

@@ -4,8 +4,7 @@ The package runtime lane extracted from the main `kody` Worker per
 [ADR 0016](../../docs/contributing/decisions/0016-mono-worker-extraction.md):
 the package-app origin (`PACKAGE_APP_BASE_URL`), inline package-app serving, the
 package invocation API, dynamic callable workflows, and the runtime Durable
-Objects (`StorageRunner`, `RunLog`, `PackageRealtimeSession`,
-`PackageServiceInstance`).
+Objects (`StorageRunner`, `RunLog`, and `PackageRealtimeSession`).
 
 The Worker entry module is
 [`packages/worker/src/runtime-worker.ts`](../worker/src/runtime-worker.ts): the

@@ -227,8 +227,6 @@ const wrapperWorkflowPhraseSignals = [
 const packageSurfaceTokenSignals = new Set([
 	'app',
 	'ui',
-	'service',
-	'services',
 	'workflow',
 	'workflows',
 	'subscription',

@@ -190,7 +190,6 @@ export default async function main(input = {}) {
 			kodyId,
 			sourceId,
 		},
-		serviceContext: null,
 		createdAt: now,
 	}
 	const artifactKey = `bundle-artifact:v1:${sourceId}:commit-1:module:subscription:${platformFeedbackSubmittedTopic}:src/on-platform-feedback.ts`

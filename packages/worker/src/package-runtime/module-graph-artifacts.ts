@@ -261,9 +261,6 @@ export function createPublishedBundleArtifact(input: {
 		kodyId: string
 		sourceId: string
 	} | null
-	serviceContext?: {
-		serviceName: string
-	} | null
 }): PublishedBundleArtifact {
 	return {
 		version: 1,
@@ -277,7 +274,6 @@ export function createPublishedBundleArtifact(input: {
 		dependencies: input.dependencies,
 		dynamicDependencies: input.dynamicDependencies ?? [],
 		packageContext: input.packageContext ?? null,
-		serviceContext: input.serviceContext ?? null,
 		createdAt: new Date().toISOString(),
 	}
 }

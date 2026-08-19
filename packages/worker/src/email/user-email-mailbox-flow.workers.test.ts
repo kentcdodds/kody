@@ -164,7 +164,6 @@ export default async function main(input = {}) {
 				kodyId: 'mailbox-flow',
 				sourceId,
 			},
-			serviceContext: null,
 			createdAt: now,
 		}),
 	)

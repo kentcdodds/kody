@@ -1099,14 +1099,13 @@ class RunLogBase extends DurableObject<Env> {
 	 * live "is it running?" state must not be read from these rows anyway.
 	 *
 	 * TTL is surface-aware: sandbox-backed surfaces (execute/export/…) heal in
-	 * minutes; long-lived service/workflow rows keep the day-scale TTL.
+	 * minutes; workflow rows keep the day-scale TTL.
 	 */
 	private reconcileStaleRunning() {
 		const nowMs = Date.now()
 		const finishedAt = new Date(nowMs).toISOString()
-		// Per-surface cutoffs so long-lived job/service rows cannot fill the
-		// batch and starve short-lived execute/export rows that are already
-		// past their 3-minute TTL.
+		// Per-surface cutoffs keep long-lived job/workflow rows from filling the
+		// batch and starving short-lived execute/export rows.
 		const shortLivedCutoff = new Date(
 			nowMs - runRecordStaleRunningTtlMsForSurface('execute'),
 		).toISOString()
@@ -1114,7 +1113,7 @@ class RunLogBase extends DurableObject<Env> {
 			nowMs - runRecordStaleRunningTtlMsForSurface('job'),
 		).toISOString()
 		const longLivedCutoff = new Date(
-			nowMs - runRecordStaleRunningTtlMsForSurface('service'),
+			nowMs - runRecordStaleRunningTtlMsForSurface('workflow'),
 		).toISOString()
 		const candidates = this.ctx.storage.sql
 			.exec<{ id: string; started_at: string; surface: string }>(
@@ -1123,7 +1122,7 @@ class RunLogBase extends DurableObject<Env> {
 					(surface IN ('execute', 'export', 'retriever', 'webhook', 'subscription', 'app_fetch', 'app_realtime')
 						AND started_at < ?)
 					OR (surface = 'job' AND started_at < ?)
-					OR (surface IN ('service', 'workflow') AND started_at < ?)
+					OR (surface = 'workflow' AND started_at < ?)
 				)
 				ORDER BY started_at ASC
 				LIMIT ?`,
@@ -1302,7 +1301,7 @@ class RunLogBase extends DurableObject<Env> {
 		}
 
 		// Soonest stale due-time can belong to a newer short-lived surface
-		// (execute) even when an older long-lived service/job row exists.
+		// (execute) even when an older long-lived workflow/job row exists.
 		// Only the earliest row per surface can produce that due-time.
 		const oldestRunningPerSurface = this.ctx.storage.sql
 			.exec<{ surface: string; started_at: string }>(

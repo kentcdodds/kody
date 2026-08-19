@@ -10,8 +10,6 @@ import { type AdminUsageEntitlementConsumption } from '#universal/loader-data.ts
 export const adminEntitlementResources = [
 	'saved_packages',
 	'scheduled_jobs',
-	'package_services',
-	'persistent_package_services',
 	'repo_sessions',
 	'email_sends_per_day',
 	'email_receives_per_day',

@@ -22,8 +22,7 @@ at `packages/worker/universal/plans.ts`.
   helpers for rate-style limits, `assertWithinStorageBytesEntitlement`
   (UserMeter DO reserve with cold bootstrap), and
   `readCurrentEntitlementResourceUsage` (UserMeter-authoritative for
-  `storage_bytes`, `package_services`, and daily resources).
-  `countRunningPackageServices` is the sole package-service liveness counter.
+  `storage_bytes` and daily resources).
 
 ## Plan model
 
@@ -77,23 +76,21 @@ stays at standard/pro parity because the per-message ceiling is a platform
 bound, not a scalable quota). All other resources use the ordinary
 `planLimits.max` numbers.
 
-| Resource                      | Limit     |
-| ----------------------------- | --------- |
-| `email_sends_per_day`         | 10,000    |
-| `email_receives_per_day`      | 20,000    |
-| `stored_email_messages`       | 100,000   |
-| `email_message_bytes`         | 768 KiB   |
-| `concurrent_workflows`        | 5,000     |
-| `scheduled_jobs`              | 5,000     |
-| `saved_packages`              | 10,000    |
-| `package_services`            | 1,000     |
-| `persistent_package_services` | 10        |
-| `repo_sessions`               | 20,000    |
-| `secrets`                     | 10,000    |
-| `storage_bytes`               | 100 GiB   |
-| `execute_calls_per_day`       | 500,000   |
-| `outbound_fetches_per_day`    | 2,000,000 |
-| `job_runs_per_day`            | 1,000,000 |
+| Resource                   | Limit     |
+| -------------------------- | --------- |
+| `email_sends_per_day`      | 10,000    |
+| `email_receives_per_day`   | 20,000    |
+| `stored_email_messages`    | 100,000   |
+| `email_message_bytes`      | 768 KiB   |
+| `concurrent_workflows`     | 5,000     |
+| `scheduled_jobs`           | 5,000     |
+| `saved_packages`           | 10,000    |
+| `repo_sessions`            | 20,000    |
+| `secrets`                  | 10,000    |
+| `storage_bytes`            | 100 GiB   |
+| `execute_calls_per_day`    | 500,000   |
+| `outbound_fetches_per_day` | 2,000,000 |
+| `job_runs_per_day`         | 1,000,000 |
 
 ## Compute rate limits
 
@@ -141,12 +138,6 @@ singleton (matching the daily counter cold path); the bounded
 corrects drift via revision-guarded CAS, sweeping users by `stable_user_id`
 keyset from the platform-owned `d1_storage_reconcile_cursor` row.
 
-**Package service liveness:** UserMeter is the **sole running-count source** for
-`package_services` enforcement and `service_start`. D1 `package_service_states`
-is only an enumeration index for discovery, account export, and deletion; no D1
-liveness count exists. See
-[Package service liveness](#package-service-liveness).
-
 **Account-deletion write fencing:** D1 `users.deleting_at` remains the permanent
 point gate. All callers (including email paths) supply `env`; UserMeter is
 authoritative for all lease acquire/held/release/count operations. D1
@@ -192,9 +183,9 @@ the same cold zero-init path):
 
 `readEntitlementResourceUsage` counts only APP_DB-backed row resources (`repos`,
 `saved_packages`, `secrets`). Resources whose authority is elsewhere
-(`scheduled_jobs` via `jobsData`, `repo_sessions` via `RepoSessionIndex`,
-package services and daily counters via UserMeter, `stored_email_messages` via
-Mailbox, `concurrent_workflows` via RunLog, `storage_bytes` via UserMeter,
+(`scheduled_jobs` via `jobsData`, `repo_sessions` via `RepoSessionIndex`, daily
+counters via UserMeter, `stored_email_messages` via Mailbox,
+`concurrent_workflows` via RunLog, `storage_bytes` via UserMeter, and
 `email_message_bytes` via caller `getCurrent`) throw from that helper and must
 use `readCurrentEntitlementResourceUsage` or an explicit `getCurrent` callback.
 
@@ -236,35 +227,11 @@ callers must use `readCurrentEntitlementResourceUsage` or
 reads UserMeter via `readStorageBytesFromUserMeter`.
 
 **Account export and purge:** `UserMeter.exportCounters` returns authoritative
-`storageBytesState`, `packageServiceStates`, and sanitized `deletionState` on
-the first page only (`startAfter` absent). Subsequent pages return `null` for
-each so paged consumers never double-count them. `UserMeter.purge()` clears
-counters, inbound delivery claims, storage state, package-service state, and
-write leases via `deleteAll`, then restores an existing deletion tombstone.
-
-### Package service liveness
-
-`countRunningPackageServices` reads the per-user UserMeter DO and is the sole
-running-count source for entitlement enforcement. It counts `status = 'running'`
-rows whose `source_updated_at` is inside the 24-hour staleness window and
-supports `excludeService`. `service_start` supplies `USER_METER`; a missing
-binding fails closed. Generic D1 usage reads for `package_services` throw and
-direct callers to the UserMeter-aware path.
-
-UserMeter schema v5 stores per-service `package_service_states` (`status`,
-`started_at`, monotonic `source_updated_at`, `revision`, `updated_at`). A
-runnable transition must persist the UserMeter `running` state before service
-code starts. Stale or out-of-order updates are rejected.
-
-D1 `package_service_states` is an enumeration index for account export,
-deletion, disaster-recovery inventory, and admin discovery. Lifecycle code may
-project rows there for those inventory uses, but no liveness or entitlement
-decision reads D1. `bootstrapPackageServiceStates` is an explicit repair
-primitive and is not on the enforcement path.
-
-Account export emits authoritative `packageServiceStates` on the first
-`user_meter` page. Account purge clears the UserMeter rows with the rest of the
-object state.
+`storageBytesState` and sanitized `deletionState` on the first page only
+(`startAfter` absent). Subsequent pages return `null` for each so paged
+consumers never double-count them. `UserMeter.purge()` clears counters, inbound
+delivery claims, storage state, and write leases via `deleteAll`, then restores
+an existing deletion tombstone.
 
 ### Account-deletion write fencing
 
@@ -298,9 +265,9 @@ via `deleteAll` then restores any deleting tombstone; D1 `deleting_at` remains
 the gate. Post-write held checks treat pending repair as held until finalize,
 then surface `AccountWriteLeaseLostError`.
 
-**Current UserMeter authority:** all write leases (including email), storage
-bytes, and package-service running counts are authoritative in UserMeter. See
-the storage, package-service, and write-fencing sections above.
+**Current UserMeter authority:** all write leases (including email) and storage
+bytes are authoritative in UserMeter. See the storage and write-fencing sections
+above.
 
 **Daily-counter authority:** UserMeter is the only daily-counter store. Admin
 parity reports meter-only daily counts; Analytics Engine remains the reporting
@@ -311,11 +278,10 @@ store.
 Production verification uses the admin-only read-only capability
 `admin_user_meter_parity` (input: `stable_user_id`). It compares physical D1
 payload bytes and the permanent D1 deletion tombstone with direct UserMeter
-RPCs. It never reads D1 package-service liveness, bootstraps state, or writes
-parity state. The daily section is meter-only. Opening a cold UserMeter stub may
-still run Durable Object constructor schema maintenance and opportunistic stale
-daily-counter pruning. Cold meter rows surface as `needsBootstrap` with
-`meterCount`/`meterBytes` null.
+RPCs. It never writes parity state. The daily section is meter-only. Opening a
+cold UserMeter stub may still run Durable Object constructor schema maintenance
+and opportunistic stale daily-counter pruning. Cold meter rows surface as
+`needsBootstrap` with `meterCount`/`meterBytes` null.
 
 Interpret the structured report as independent gates:
 
@@ -514,23 +480,17 @@ Rules:
 
 ## Counting strategy
 
-- **Row-count limits** (saved packages, scheduled jobs, repo sessions, secrets,
-  running package services) are counted via helpers in `service.ts`. APP_DB
-  resources (saved packages, secrets) use built-in D1 counters. **Scheduled
-  jobs** count through `jobsData(…).countJobsForUser` on the jobs worker (pass
-  `getCurrent` into `assertWithinEntitlement`; there is no APP_DB built-in
-  counter). **Repo sessions** count `status = 'active'` rows in the per-user
-  `RepoSessionIndex` catalog. Unused (never-checkpointed) leftovers are swept
-  after 30 minutes idle; checkpointed sessions after 7 days idle
-  (`repo_session_cleanup` lane, 100 rows per 5-minute tick). **Running package
-  services** are counted from the **per-user UserMeter DO**:
-  `countRunningPackageServices` counts `status = 'running'` rows with the 24h
-  staleness window from DO `source_updated_at`. D1 `package_service_states`
-  remains only the enumeration index (discovery, export, deletion) — see
-  [Package service liveness](#package-service-liveness) and
-  [Run records](./run-records.md) (`state-vs-history`). **Concurrent workflows**
-  are authoritative in per-user RunLog `workflow_projections`: create reserves
-  atomically via `reserveWorkflowProjectionSlot`, and usage readers call
+- **Row-count limits** (saved packages, scheduled jobs, repo sessions, secrets)
+  are counted via helpers in `service.ts`. APP_DB resources (saved packages,
+  secrets) use built-in D1 counters. **Scheduled jobs** count through
+  `jobsData(…).countJobsForUser` on the jobs worker (pass `getCurrent` into
+  `assertWithinEntitlement`; there is no APP_DB built-in counter). **Repo
+  sessions** count `status = 'active'` rows in the per-user `RepoSessionIndex`
+  catalog. Unused (never-checkpointed) leftovers are swept after 30 minutes
+  idle; checkpointed sessions after 7 days idle (`repo_session_cleanup` lane,
+  100 rows per 5-minute tick). **Concurrent workflows** are authoritative in
+  per-user RunLog `workflow_projections`: create reserves atomically via
+  `reserveWorkflowProjectionSlot`, and usage readers call
   `countActiveWorkflowProjections` through
   `readCurrentEntitlementResourceUsage`. D1 has no `workflow_runs` table. See
   [Run records](./run-records.md).
@@ -557,8 +517,6 @@ Rules:
   across a UTC-day boundary. The retained claim is the idempotency boundary;
   production inbound handling does not call `refundDailyEntitlement`.
 
-- **Boolean allowances** (persistent package services) are modeled as limit `0`
-  (not allowed) vs `1` (allowed) so the numeric contract stays uniform.
 - **Per-unit size limits** (`email_message_bytes`) compare one candidate value
   against the limit instead of an accumulating count: the enforcement point
   passes the candidate size via `getCurrent` with `requested: 0`. There is no
@@ -682,7 +640,7 @@ await assertWithinEntitlement({
 
 Pass `getCurrent` for any resource that is not APP_DB-countable
 (`scheduled_jobs` via `jobsData`, `repo_sessions` via `RepoSessionIndex`,
-package services via UserMeter, workflows via RunLog, and similar).
+workflows via RunLog, and similar).
 
 4. If the resource is a new one, register it in `plans.ts`
    (`entitlementResources`, `PlanLimits`, `planLimits`,
@@ -697,23 +655,21 @@ package services via UserMeter, workflows via RunLog, and similar).
 
 ## Enforcement points
 
-| Resource                      | Enforcement point                                                                                                                                                                                                                     |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scheduled_jobs`              | `createJob` and the full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot)         |
-| `saved_packages`              | new-package branch of `package_save` and projection insert                                                                                                                                                                            |
-| `package_services`            | `service_start` capability path (`getCurrent` with authoritative `countRunningPackageServices(env)`; no D1 liveness read)                                                                                                             |
-| `persistent_package_services` | `service_start` for services declared `mode: 'persistent'` (`getCurrent` counts only persistent running rows in the authoritative per-user UserMeter)                                                                                 |
-| `repo_sessions`               | `repo_open_session` before creating a new session                                                                                                                                                                                     |
-| `email_sends_per_day`         | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                   |
-| `email_receives_per_day`      | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                     |
-| `stored_email_messages`       | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                                                                                                                     |
-| `email_message_bytes`         | `handleInboundEmail` before quota/parse (per-message raw size via `resolvePlanLimit`)                                                                                                                                                 |
-| `secrets`                     | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                      |
-| `concurrent_workflows`        | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                               |
-| `execute_calls_per_day`       | MCP `execute` tool handler (`consumeDailyEntitlement` before bundling/sandbox)                                                                                                                                                        |
-| `outbound_fetches_per_day`    | `executeGatewayFetch` (`consumeDailyEntitlement` before secret expansion)                                                                                                                                                             |
-| `job_runs_per_day`            | `executeJobOnce` (`consumeDailyEntitlement` before sandbox work; cron, interval, and run-now)                                                                                                                                         |
-| `storage_bytes`               | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component) |
+| Resource                   | Enforcement point                                                                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scheduled_jobs`           | `createJob` and the full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot)         |
+| `saved_packages`           | new-package branch of `package_save` and projection insert                                                                                                                                                                            |
+| `repo_sessions`            | `repo_open_session` before creating a new session                                                                                                                                                                                     |
+| `email_sends_per_day`      | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                   |
+| `email_receives_per_day`   | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                     |
+| `stored_email_messages`    | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                                                                                                                     |
+| `email_message_bytes`      | `handleInboundEmail` before quota/parse (per-message raw size via `resolvePlanLimit`)                                                                                                                                                 |
+| `secrets`                  | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                      |
+| `concurrent_workflows`     | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                               |
+| `execute_calls_per_day`    | MCP `execute` tool handler (`consumeDailyEntitlement` before bundling/sandbox)                                                                                                                                                        |
+| `outbound_fetches_per_day` | `executeGatewayFetch` (`consumeDailyEntitlement` before secret expansion)                                                                                                                                                             |
+| `job_runs_per_day`         | `executeJobOnce` (`consumeDailyEntitlement` before sandbox work; cron, interval, and run-now)                                                                                                                                         |
+| `storage_bytes`            | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component) |
 
 ## Billing
 

@@ -17,7 +17,6 @@ export const adminUsageMetrics = [
 	'package_static_call',
 	'job_run',
 	'workflow_run',
-	'service_runtime',
 	'outbound_fetch',
 	'email_send',
 	'email_received',

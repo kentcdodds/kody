@@ -134,7 +134,6 @@ test('loadAdminUserMeterParityReport verifies daily, storage, and deletion state
 			activeLeaseCount: 1,
 		},
 	})
-	expect(report).not.toHaveProperty('packageServices')
 	expect(
 		report?.daily.resources.map((row) => [row.resource, row.meterCount]),
 	).toEqual([

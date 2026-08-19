@@ -173,31 +173,6 @@ function createTestDb(
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (
-								lower.includes('from package_service_states as s') &&
-								lower.includes('left join saved_packages as p')
-							) {
-								const seen = new Set<string>()
-								results = []
-								for (const row of rows.package_service_states ?? []) {
-									if (row['user_id'] !== userId) continue
-									const savedPackage = (rows.saved_packages ?? []).find(
-										(pkg) =>
-											pkg['id'] === row['package_id'] &&
-											pkg['user_id'] === row['user_id'],
-									)
-									const key = `${String(row['package_id'])}:${String(row['service_name'])}`
-									if (seen.has(key)) continue
-									seen.add(key)
-									results.push({
-										package_id: row['package_id'],
-										kody_id: savedPackage?.['kody_id'] ?? null,
-										source_id: savedPackage?.['source_id'] ?? null,
-										name: row['service_name'],
-									})
-								}
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
 								lower.includes(
 									'select storage_id as storageid from user_storage_buckets',
 								)
@@ -563,10 +538,6 @@ function createSuccessfulDeletionEnv(
 			idFromName: durableObjectId,
 			get: () => ({ fetch: fetchOk }),
 		},
-		PACKAGE_SERVICE_INSTANCE: {
-			idFromName: durableObjectId,
-			get: () => ({ fetch: fetchOk }),
-		},
 		COMMUNITY_ASSETS: {
 			async list() {
 				return {
@@ -691,40 +662,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: packageJobId, user_id: userAaa, storage_id: null },
 			{ id: 'job-3', user_id: userBbb, storage_id: 'job:job-3' },
 		],
-		package_service_states: [
-			{
-				user_id: userAaa,
-				package_id: 'pkg-1',
-				service_name: 'sync',
-				status: 'running',
-				started_at: '2026-07-05T00:00:00.000Z',
-				updated_at: '2026-07-05T00:00:00.000Z',
-			},
-			{
-				user_id: userAaa,
-				package_id: 'pkg-1',
-				service_name: 'idle-worker',
-				status: 'idle',
-				started_at: null,
-				updated_at: '2026-07-05T00:00:00.000Z',
-			},
-			{
-				user_id: userAaa,
-				package_id: 'pkg-orphan',
-				service_name: 'legacy-sync',
-				status: 'idle',
-				started_at: null,
-				updated_at: '2026-07-05T00:00:00.000Z',
-			},
-			{
-				user_id: userBbb,
-				package_id: 'pkg-2',
-				service_name: 'sync',
-				status: 'running',
-				started_at: '2026-07-05T00:00:00.000Z',
-				updated_at: '2026-07-05T00:00:00.000Z',
-			},
-		],
 		user_storage_buckets: [
 			{
 				user_id: userAaa,
@@ -738,8 +675,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			},
 			{
 				user_id: userBbb,
-				storage_id: 'service:pkg-2:sync',
-				kind: 'service',
+				storage_id: 'package:pkg-2',
+				kind: 'package',
 			},
 		],
 		mcp_memories: [
@@ -1187,10 +1124,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			idFromName: (name: string) => name as unknown as DurableObjectId,
 			get: () => ({ fetch: doFetchMock }),
 		},
-		PACKAGE_SERVICE_INSTANCE: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ fetch: doFetchMock }),
-		},
 	})
 	await insertRepoSession(env, {
 		id: 'rs-1',
@@ -1280,21 +1213,11 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			admin_note: 'Reviewed by B.',
 		},
 	])
-	expect(rows.package_service_states).toEqual([
-		{
-			user_id: userBbb,
-			package_id: 'pkg-2',
-			service_name: 'sync',
-			status: 'running',
-			started_at: '2026-07-05T00:00:00.000Z',
-			updated_at: '2026-07-05T00:00:00.000Z',
-		},
-	])
 	expect(rows.user_storage_buckets).toEqual([
 		{
 			user_id: userBbb,
-			storage_id: 'service:pkg-2:sync',
-			kind: 'service',
+			storage_id: 'package:pkg-2',
+			kind: 'package',
 		},
 	])
 	expect(rows.community_listings).toEqual([
@@ -1390,13 +1313,13 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		jobVectorId(packageJobId),
 		'package_pkg-1',
 	])
-	expect(clearStorageMock).toHaveBeenCalledTimes(6)
+	expect(clearStorageMock).toHaveBeenCalledTimes(3)
 	expect(purgeJobManagerMock).toHaveBeenCalledTimes(1)
 	expect(purgeRepoSessionMock).toHaveBeenCalledWith({
 		sessionId: 'rs-1',
 		userId: userAaa,
 	})
-	expect(doFetchMock).toHaveBeenCalledTimes(4)
+	expect(doFetchMock).toHaveBeenCalledTimes(1)
 
 	// Bundle KV keys for the deleted user were removed; the other user's keys
 	// remain in storage.
@@ -1427,7 +1350,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	// through the JOBS service (ADR 0016), so they are not counted here.
 	expect(result.deletedRowCounts.jobs).toBeUndefined()
 	expect(result.deletedRowCounts.users).toBe(1)
-	expect(result.deletedRowCounts.package_service_states).toBe(3)
 	expect(result.deletedRowCounts.user_storage_buckets).toBe(2)
 	expect(result.deletedRowCounts.community_listings).toBe(1)
 	expect(result.deletedRowCounts.community_forks).toBe(2)
@@ -1460,7 +1382,7 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	)
 	expect(result.deletedVectors).toBe(5)
 	expect(result.clearedDurableObjects).toMatchObject({
-		storageRunners: 6,
+		storageRunners: 3,
 		runLogs: 1,
 		userMeters: 1,
 		stripePlanRefreshes: 1,
@@ -1473,7 +1395,6 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		mcpClientHubs: 1,
 		mcpAgentSessions: 1,
 		packageRealtimeSessions: 1,
-		packageServiceInstances: 3,
 	})
 	expect(clearRunLogMock).toHaveBeenCalledTimes(1)
 	expect(purgeUserMeterMock).toHaveBeenCalledTimes(1)
@@ -2226,277 +2147,4 @@ test('account deletion purges a StorageRunner known only via user_storage_bucket
 	expect(idFromName).toHaveBeenCalledWith(
 		JSON.stringify([userId, 'exec:adhoc-only']),
 	)
-})
-
-test('account deletion purges a PackageServiceInstance known only via package_service_states', async () => {
-	const userId = 'user-states-only'
-	const serviceFetch = vi.fn(async () => Response.json({ ok: true }))
-	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
-	const { db } = createTestDb({
-		users: [{ id: 1, email: 'states@example.com', stable_user_id: userId }],
-		saved_packages: [
-			{
-				id: 'pkg-states',
-				user_id: userId,
-				kody_id: 'states-pkg',
-				source_id: 'src-states',
-				has_app: 0,
-			},
-		],
-		package_service_states: [
-			{
-				user_id: userId,
-				package_id: 'pkg-states',
-				service_name: 'only-in-states',
-				status: 'running',
-				started_at: '2026-07-05T00:00:00.000Z',
-				updated_at: '2026-07-05T00:00:00.000Z',
-			},
-		],
-	})
-
-	const result = await deleteUserAccount({
-		env: createSuccessfulDeletionEnv(db, {
-			BUNDLE_ARTIFACTS_KV: {
-				get: async () => null,
-				async list() {
-					return { keys: [], list_complete: true as const }
-				},
-				delete: async () => undefined,
-			},
-			PACKAGE_SERVICE_INSTANCE: {
-				idFromName,
-				get: () => ({ fetch: serviceFetch }),
-			},
-		}),
-		dbUserId: 1,
-		mcpUserId: userId,
-	})
-
-	expect(result.clearedDurableObjects.packageServiceInstances).toBe(1)
-	expect(serviceFetch).toHaveBeenCalledTimes(1)
-	const request = serviceFetch.mock.calls[0]?.[0] as Request
-	expect(new URL(request.url).pathname).toContain('/purge')
-	const body = (await request.clone().json()) as {
-		binding: { packageId: string; serviceName: string }
-	}
-	expect(body.binding).toMatchObject({
-		packageId: 'pkg-states',
-		serviceName: 'only-in-states',
-	})
-	expect(idFromName).toHaveBeenCalledWith(
-		JSON.stringify([userId, 'pkg-states', 'only-in-states']),
-	)
-})
-
-test('account deletion purges a service declared only in the package manifest', async () => {
-	const userId = 'user-manifest-only'
-	const serviceFetch = vi.fn(async () => Response.json({ ok: true }))
-	const { db } = createTestDb({
-		users: [{ id: 1, email: 'manifest@example.com', stable_user_id: userId }],
-		saved_packages: [
-			{
-				id: 'pkg-manifest',
-				user_id: userId,
-				kody_id: 'manifest-pkg',
-				source_id: 'src-manifest',
-				has_app: 0,
-				name: 'Manifest Package',
-				description: '',
-				tags_json: '[]',
-				search_text: null,
-				hidden: 0,
-				is_private: 1,
-				created_at: '2026-07-05T00:00:00.000Z',
-				updated_at: '2026-07-05T00:00:00.000Z',
-			},
-		],
-	})
-
-	const loadManifest = vi.spyOn(
-		await import('#worker/package-registry/source.ts'),
-		'loadPackageManifestBySourceId',
-	)
-	loadManifest.mockResolvedValue({
-		source: {
-			id: 'src-manifest',
-			userId,
-			entityKind: 'package',
-			entityId: 'pkg-manifest',
-			repoId: 'repo-1',
-			manifestPath: 'package.json',
-			sourceRoot: '.',
-			publishedCommit: null,
-		},
-		manifest: {
-			name: 'manifest-pkg',
-			kody: {
-				services: {
-					'only-in-manifest': {
-						entry: './services/only-in-manifest.ts',
-					},
-				},
-			},
-		},
-	} as never)
-
-	const listSaved = vi.spyOn(
-		await import('#worker/package-registry/repo.ts'),
-		'listSavedPackagesByUserId',
-	)
-	listSaved.mockResolvedValue([
-		{
-			id: 'pkg-manifest',
-			userId,
-			name: 'Manifest Package',
-			kodyId: 'manifest-pkg',
-			description: '',
-			tags: [],
-			searchText: null,
-			sourceId: 'src-manifest',
-			hasApp: false,
-			hidden: false,
-			isPrivate: true,
-			createdAt: '2026-07-05T00:00:00.000Z',
-			updatedAt: '2026-07-05T00:00:00.000Z',
-		},
-	])
-
-	try {
-		const result = await deleteUserAccount({
-			env: createSuccessfulDeletionEnv(db, {
-				BUNDLE_ARTIFACTS_KV: {
-					get: async () => null,
-					async list() {
-						return { keys: [], list_complete: true as const }
-					},
-					delete: async () => undefined,
-				},
-				PACKAGE_SERVICE_INSTANCE: {
-					idFromName: (name: string) => name as unknown as DurableObjectId,
-					get: () => ({ fetch: serviceFetch }),
-				},
-			}),
-			dbUserId: 1,
-			mcpUserId: userId,
-		})
-
-		expect(result.clearedDurableObjects.packageServiceInstances).toBe(1)
-		const request = serviceFetch.mock.calls[0]?.[0] as Request
-		const body = (await request.clone().json()) as {
-			binding: { packageId: string; serviceName: string; kodyId: string }
-		}
-		expect(body.binding).toMatchObject({
-			packageId: 'pkg-manifest',
-			serviceName: 'only-in-manifest',
-			kodyId: 'manifest-pkg',
-		})
-	} finally {
-		loadManifest.mockRestore()
-		listSaved.mockRestore()
-	}
-})
-
-test('account deletion continues when manifest load fails and still purges state-table services', async () => {
-	const userId = 'user-manifest-fail'
-	const serviceFetch = vi.fn(async () => Response.json({ ok: true }))
-	consoleWarn.mockImplementation(() => {})
-	const { db } = createTestDb({
-		users: [{ id: 1, email: 'fail@example.com', stable_user_id: userId }],
-		saved_packages: [
-			{
-				id: 'pkg-fail',
-				user_id: userId,
-				kody_id: 'fail-pkg',
-				source_id: 'src-fail',
-				has_app: 0,
-			},
-		],
-		package_service_states: [
-			{
-				user_id: userId,
-				package_id: 'pkg-fail',
-				service_name: 'known-in-states',
-				status: 'idle',
-				started_at: null,
-				updated_at: '2026-07-05T00:00:00.000Z',
-			},
-		],
-	})
-
-	const listSaved = vi.spyOn(
-		await import('#worker/package-registry/repo.ts'),
-		'listSavedPackagesByUserId',
-	)
-	listSaved.mockResolvedValue([
-		{
-			id: 'pkg-fail',
-			userId,
-			name: 'Fail Package',
-			kodyId: 'fail-pkg',
-			description: '',
-			tags: [],
-			searchText: null,
-			sourceId: 'src-fail',
-			hasApp: false,
-			hidden: false,
-			isPrivate: true,
-			createdAt: '2026-07-05T00:00:00.000Z',
-			updatedAt: '2026-07-05T00:00:00.000Z',
-		},
-	])
-	const loadManifest = vi.spyOn(
-		await import('#worker/package-registry/source.ts'),
-		'loadPackageManifestBySourceId',
-	)
-	loadManifest.mockRejectedValue(new Error('manifest unavailable'))
-
-	try {
-		let result
-		try {
-			result = await deleteUserAccount({
-				env: createSuccessfulDeletionEnv(db, {
-					BUNDLE_ARTIFACTS_KV: {
-						get: async () => null,
-						async list() {
-							return { keys: [], list_complete: true as const }
-						},
-						delete: async () => undefined,
-					},
-					PACKAGE_SERVICE_INSTANCE: {
-						idFromName: (name: string) => name as unknown as DurableObjectId,
-						get: () => ({ fetch: serviceFetch }),
-					},
-				}),
-				dbUserId: 1,
-				mcpUserId: userId,
-			})
-		} catch (error) {
-			expect(error).toBeInstanceOf(AccountDeletionCleanupError)
-			const cleanupError = error as AccountDeletionCleanupError
-			expect(
-				cleanupError.cleanupErrors.some((warning) =>
-					warning.includes('Failed to load package manifest'),
-				),
-			).toBe(true)
-			result = cleanupError.partialResult
-		}
-
-		expect(result.clearedDurableObjects.packageServiceInstances).toBe(1)
-		const request = serviceFetch.mock.calls[0]?.[0] as Request
-		const body = (await request.clone().json()) as {
-			binding: { packageId: string; serviceName: string }
-		}
-		expect(body.binding).toMatchObject({
-			packageId: 'pkg-fail',
-			serviceName: 'known-in-states',
-		})
-		expect(consoleWarn).toHaveBeenCalledWith(
-			expect.stringContaining('Failed to load package manifest'),
-		)
-	} finally {
-		loadManifest.mockRestore()
-		listSaved.mockRestore()
-		consoleWarn.mockReset()
-	}
 })

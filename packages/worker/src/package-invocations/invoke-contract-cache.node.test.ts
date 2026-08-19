@@ -153,7 +153,6 @@ function createFixture(input: {
 			kodyId: savedPackage.kodyId,
 			sourceId,
 		},
-		serviceContext: null,
 		createdAt: '2026-07-01T00:00:00.000Z',
 	}
 	return { savedPackage, source, manifestContent, artifact }

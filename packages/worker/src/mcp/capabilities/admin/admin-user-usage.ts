@@ -16,7 +16,6 @@ const usageMetricSchema = z.enum([
 	'package_static_call',
 	'job_run',
 	'workflow_run',
-	'service_runtime',
 	'outbound_fetch',
 	'email_send',
 	'email_received',
@@ -25,8 +24,6 @@ const usageMetricSchema = z.enum([
 const entitlementResourceSchema = z.enum([
 	'saved_packages',
 	'scheduled_jobs',
-	'package_services',
-	'persistent_package_services',
 	'repo_sessions',
 	'email_sends_per_day',
 	'email_receives_per_day',
@@ -57,7 +54,7 @@ const entitlementConsumptionSchema = z.object({
 	current: z.number().int().nonnegative(),
 	/** Finite plan ceiling; every plan resolves a numeric limit. */
 	limit: z.number().int().nonnegative(),
-	/** Null when limit is the zero gate (for example persistent services). */
+	/** Null when the limit is zero. */
 	percentOfLimit: z.number().nonnegative().nullable(),
 	overEightyPercent: z.boolean(),
 })

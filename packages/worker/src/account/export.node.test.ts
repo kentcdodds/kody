@@ -956,9 +956,6 @@ test('durable object discovery pages high-cardinality storage ids without nested
 								maxRows = Math.max(maxRows, rows.length)
 								return { results: rows as Array<T> }
 							}
-							if (query.includes('FROM package_service_states')) {
-								return { results: [] as Array<T> }
-							}
 							throw new Error(`Unexpected query: ${query}`)
 						},
 						async first<T>() {
@@ -1262,7 +1259,7 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 		INSERT INTO user_storage_buckets (
 			user_id, storage_id, kind, created_at, last_seen_at
 		) VALUES (
-			'user-aaa', 'service:pkg%3A1:svc%20x', 'service',
+			'user-aaa', 'package:pkg%3A1', 'package',
 			'2026-07-05', '2026-07-05'
 		);
 	`)
@@ -1585,18 +1582,6 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		updatedAt: '2026-07-31T03:00:00.000Z',
 		mirrorUpdatedAt: 'r/00000000000000000003',
 	}
-	const packageServiceStates = [
-		{
-			packageId: 'pkg-1',
-			serviceName: 'worker',
-			status: 'running' as const,
-			startedAt: '2026-07-31T03:00:00.000Z',
-			sourceUpdatedAt: '2026-07-31T03:05:00.000Z',
-			revision: 2,
-			updatedAt: '2026-07-31T03:05:00.000Z',
-			mirrorUpdatedAt: 'r/00000000000000000002',
-		},
-	]
 	const deletionState = {
 		deletingAt: '2026-07-31 03:10:00' as string | null,
 		activeWriteLeaseCount: 1,
@@ -1621,7 +1606,6 @@ test('account export includes user_meter counters, pages them, and warns on trun
 			return {
 				counters: page,
 				storageBytesState: isFirstPage ? storageBytesState : null,
-				packageServiceStates: isFirstPage ? packageServiceStates : null,
 				deletionState: isFirstPage ? deletionState : null,
 				nextStartAfter: truncated
 					? `${page.at(-1)!.day}:${page.at(-1)!.resource}`
@@ -1645,12 +1629,11 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		mcpUserId: 'user-aaa',
 	})
 	expect(idFromName).toHaveBeenCalledWith('user-aaa')
-	// 3 counters + storage state + 1 package service + deletingAt + 1 lease
-	expect(accountExport.manifest.sections.user_meter?.count).toBe(7)
+	// 3 counters + storage state + deletingAt + 1 lease
+	expect(accountExport.manifest.sections.user_meter?.count).toBe(6)
 	expect(accountExport.durableObjects.userMeter).toEqual({
 		counters,
 		storageBytesState,
-		packageServiceStates,
 		deletionState,
 		nextStartAfter: null,
 		truncated: false,
@@ -1670,7 +1653,6 @@ test('account export includes user_meter counters, pages them, and warns on trun
 	})
 	expect(first.items).toEqual(counters.slice(0, 2))
 	expect(first.storageBytesState).toEqual(storageBytesState)
-	expect(first.packageServiceStates).toEqual(packageServiceStates)
 	expect(first.deletionState).toEqual(deletionState)
 	expect(first.truncated).toBe(true)
 	expect(first.nextStartAfter).toBe('2026-07-30:execute_calls_per_day')
@@ -1685,7 +1667,6 @@ test('account export includes user_meter counters, pages them, and warns on trun
 	})
 	expect(second.items).toEqual(counters.slice(2))
 	expect(second.storageBytesState).toBeNull()
-	expect(second.packageServiceStates).toBeNull()
 	expect(second.deletionState).toBeNull()
 	expect(second.truncated).toBe(false)
 	expect(second.nextStartAfter).toBeNull()
@@ -1699,7 +1680,6 @@ test('account export includes user_meter counters, pages them, and warns on trun
 	exportCounters.mockImplementation(async () => ({
 		counters: [counters[0]!],
 		storageBytesState: null,
-		packageServiceStates: null,
 		deletionState: null,
 		nextStartAfter: 'cursor-more',
 		truncated: true,
@@ -1996,84 +1976,6 @@ test('run_records section paging preserves exportRuns cursor across dedicated ph
 	)
 })
 
-test('account export includes a package service known only via package_service_states', async () => {
-	consoleWarn.mockImplementation(() => {})
-	try {
-		const { sqlite, db } = createMigratedDb()
-		sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-		INSERT INTO saved_packages (
-			id, user_id, name, kody_id, description, tags_json, source_id,
-			has_app, hidden, is_private, created_at, updated_at
-		) VALUES (
-			'pkg-states', 'user-aaa', 'States Package', 'states-pkg', '', '[]',
-			'src-states', 0, 0, 1, '2026-07-05', '2026-07-05'
-		);
-		INSERT INTO package_service_states (
-			user_id, package_id, service_name, status, started_at, updated_at
-		) VALUES (
-			'user-aaa', 'pkg-states', 'only-in-states', 'running',
-			'2026-07-05T00:00:00.000Z', '2026-07-05T00:00:00.000Z'
-		);
-	`)
-
-		const statusMock = vi.fn(async () =>
-			Response.json({
-				package_id: 'pkg-states',
-				kody_id: 'states-pkg',
-				service_name: 'only-in-states',
-				status: 'running',
-				auto_start: false,
-				mode: 'bounded',
-				timeout_ms: 30_000,
-				stop_requested: false,
-				active_run_id: null,
-				next_alarm_at: null,
-				last_error: null,
-				last_started_at: '2026-07-05T00:00:00.000Z',
-				last_stopped_at: null,
-				last_run_finished_at: null,
-				last_result: null,
-			}),
-		)
-
-		const accountExport = await createAccountExport({
-			env: {
-				APP_DB: db,
-				PACKAGE_SERVICE_INSTANCE: {
-					idFromName: (name: string) => name as unknown as DurableObjectId,
-					get: () => ({ fetch: statusMock }),
-				},
-			} as unknown as Env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-			generatedAt: '2026-07-05T00:00:00.000Z',
-		})
-
-		expect(accountExport.manifest.sections.package_services?.count).toBe(1)
-		expect(accountExport.durableObjects.packageServices).toEqual([
-			expect.objectContaining({
-				packageId: 'pkg-states',
-				serviceName: 'only-in-states',
-				status: expect.objectContaining({
-					service_name: 'only-in-states',
-					status: 'running',
-				}),
-			}),
-		])
-		expect(statusMock).toHaveBeenCalledTimes(1)
-	} finally {
-		consoleWarn.mockReset()
-	}
-})
-
 test('storage_runners count matches ids enumerable by discovery paging', async () => {
 	const { sqlite, db } = createMigratedDb()
 	sqlite.exec(`
@@ -2103,12 +2005,6 @@ test('storage_runners count matches ids enumerable by discovery paging', async (
 		) VALUES (
 			'pkg-1', 'user-aaa', 'Pkg', 'pkg', '', '[]',
 			'src-1', 1, 0, 1, '2026-07-05', '2026-07-05'
-		);
-		INSERT INTO package_service_states (
-			user_id, package_id, service_name, status, started_at, updated_at
-		) VALUES (
-			'user-aaa', 'pkg-1', 'worker', 'idle',
-			null, '2026-07-05T00:00:00.000Z'
 		);
 	`)
 
@@ -2207,7 +2103,7 @@ test('storage_runner section exports a RunLog-only storage id', async () => {
 	expect(exportStorage).toHaveBeenCalledTimes(1)
 })
 
-test('storage_runner and package_service section reads do not load manifests for D1-known rows', async () => {
+test('storage_runner section reads do not load manifests for D1-known rows', async () => {
 	const loadManifest = vi.spyOn(
 		await import('#worker/package-registry/source.ts'),
 		'loadPackageManifestBySourceId',
@@ -2230,19 +2126,6 @@ test('storage_runner and package_service section reads do not load manifests for
 				'user-aaa', 'exec:section-only', 'execute',
 				'2026-07-05', '2026-07-05'
 			);
-			INSERT INTO saved_packages (
-				id, user_id, name, kody_id, description, tags_json, source_id,
-				has_app, hidden, is_private, created_at, updated_at
-			) VALUES (
-				'pkg-1', 'user-aaa', 'Pkg', 'pkg', '', '[]',
-				'src-1', 0, 0, 1, '2026-07-05', '2026-07-05'
-			);
-			INSERT INTO package_service_states (
-				user_id, package_id, service_name, status, started_at, updated_at
-			) VALUES (
-				'user-aaa', 'pkg-1', 'worker', 'idle',
-				null, '2026-07-05T00:00:00.000Z'
-			);
 		`)
 
 		const exportStorage = vi.fn(async () => ({
@@ -2252,23 +2135,11 @@ test('storage_runner and package_service section reads do not load manifests for
 			pageSize: 100,
 			estimatedBytes: 0,
 		}))
-		const statusMock = vi.fn(async () =>
-			Response.json({
-				package_id: 'pkg-1',
-				kody_id: 'pkg',
-				service_name: 'worker',
-				status: 'idle',
-			}),
-		)
 		const env = {
 			APP_DB: db,
 			STORAGE_RUNNER: {
 				idFromName: (name: string) => name as unknown as DurableObjectId,
 				get: () => ({ exportStorage }),
-			},
-			PACKAGE_SERVICE_INSTANCE: {
-				idFromName: (name: string) => name as unknown as DurableObjectId,
-				get: () => ({ fetch: statusMock }),
 			},
 		} as unknown as Env
 
@@ -2279,53 +2150,8 @@ test('storage_runner and package_service section reads do not load manifests for
 			section: 'storage_runner',
 			storageId: 'exec:section-only',
 		})
-		await readAccountExportSection({
-			env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-			section: 'package_service',
-			packageId: 'pkg-1',
-			serviceName: 'worker',
-		})
 		expect(loadManifest).not.toHaveBeenCalled()
 	} finally {
 		loadManifest.mockRestore()
 	}
-})
-
-test('storage_runner section treats malformed service storage ids as not found', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-		INSERT INTO saved_packages (
-			id, user_id, name, kody_id, description, tags_json, source_id,
-			has_app, hidden, is_private, created_at, updated_at
-		) VALUES (
-			'pkg%', 'user-aaa', 'Malformed', 'malformed', '', '[]',
-			'src-malformed', 0, 0, 1, '2026-07-05', '2026-07-05'
-		);
-		INSERT INTO package_service_states (
-			user_id, package_id, service_name, status, started_at, updated_at
-		) VALUES (
-			'user-aaa', 'pkg%', 'worker%', 'idle',
-			null, '2026-07-05T00:00:00.000Z'
-		);
-	`)
-
-	await expect(
-		readAccountExportSection({
-			env: { APP_DB: db } as Env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-			section: 'storage_runner',
-			storageId: 'service:pkg%:worker%',
-		}),
-	).rejects.toThrow('Storage runner was not found for account export.')
 })

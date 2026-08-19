@@ -63,6 +63,10 @@
 		{
 			"filename": "0015-users-onboarding-checklist-dismissed-at.sql",
 			"sha256": "b3e5b3c168bdebe0f900d30e3d781f874b4850b975bf5ea0d2278114cd6d58ca"
+		},
+		{
+			"filename": "0016-drop-package-service-states.sql",
+			"sha256": "4bc61d73e89c2a48293154d655be2a9698051bd22122aecc65649435fc385c49"
 		}
 	]
 }

@@ -267,15 +267,6 @@ primitives:
     docs:
       - docs/use/packages.md
 
-  - id: package-services
-    group: assistant
-    name: Package services
-    summary: Long-lived headless package-owned runtimes.
-    code:
-      - packages/worker/src/package-runtime/package-service.ts
-    docs:
-      - docs/contributing/architecture/request-lifecycle.md
-
   - id: jobs
     group: assistant
     name: Scheduled jobs
@@ -544,9 +535,9 @@ primitives:
     name: User meter
     summary:
       Per-user UserMeter DO SQLite — authoritative for daily entitlement
-      counters, storage bytes, inbound delivery idempotency, package-service
-      running counts, and account-deletion write leases; D1 keeps the deleting
-      point gate and lease-repair audit log.
+      counters, storage bytes, inbound delivery idempotency, and
+      account-deletion write leases; D1 keeps the deleting point gate and
+      lease-repair audit log.
     code:
       - packages/worker/src/entitlements/user-meter-do.ts
       - packages/worker/src/entitlements/user-meter-client.ts

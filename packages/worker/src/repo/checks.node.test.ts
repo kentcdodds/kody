@@ -120,7 +120,6 @@ function createPackageManifest(input: {
 		{ handler: string; description?: string; filters?: Record<string, unknown> }
 	>
 	emits?: Record<string, { description: string }>
-	services?: Record<string, { entry: string }>
 	kodyDependencies?: Array<string>
 	retrievers?: Record<
 		string,
@@ -152,7 +151,6 @@ function createPackageManifest(input: {
 			jobs: input.jobs,
 			subscriptions: input.subscriptions,
 			emits: input.emits,
-			services: input.services,
 			retrievers: input.retrievers,
 		},
 	})
@@ -1338,20 +1336,14 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 				kody: {
 					id: 'npm-deps-package',
 					description: 'Uses npm dependencies',
-					services: {
-						processor: {
-							entry: './src/service.ts',
-						},
-					},
 				},
 				dependencies: {
 					marked: '18.0.2',
 				},
 			}),
 		],
-		['src/index.ts', 'export default async () => "ok"\n'],
 		[
-			'src/service.ts',
+			'src/index.ts',
 			'import { marked } from "marked"\nexport default async () => marked.parse("**ok**")\n',
 		],
 	])
@@ -1399,13 +1391,12 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 			sourceFiles: {
 				'package.json': files.get('package.json'),
 				'src/index.ts': files.get('src/index.ts'),
-				'src/service.ts': files.get('src/service.ts'),
 			},
 		}),
 	)
 	expect(mockModule.buildKodyModuleBundle).toHaveBeenCalledWith(
 		expect.objectContaining({
-			entryPoint: 'src/service.ts',
+			entryPoint: 'src/index.ts',
 		}),
 	)
 })

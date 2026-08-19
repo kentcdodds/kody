@@ -11,7 +11,6 @@ function createEnv(overrides: Record<string, unknown> = {}) {
 		JOB_MANAGER: {},
 		STORAGE_RUNNER: {},
 		PACKAGE_REALTIME_SESSION: {},
-		PACKAGE_SERVICE_INSTANCE: {},
 		MCP_CLIENT_HUB: {},
 		...overrides,
 	} as unknown as Env

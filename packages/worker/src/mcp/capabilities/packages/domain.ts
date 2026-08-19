@@ -21,7 +21,7 @@ import { savePackageCapability } from './save-package.ts'
 export const packagesDomain = defineDomain({
 	name: capabilityDomainNames.packages,
 	description:
-		'Repo-backed saved packages with config, storage, apps, jobs, and services.',
+		'Repo-backed saved packages with config, storage, apps, jobs, and subscriptions.',
 	keywords: [
 		'package',
 		'repo',
@@ -29,7 +29,6 @@ export const packagesDomain = defineDomain({
 		'exports',
 		'jobs',
 		'app',
-		'services',
 		'subscriptions',
 		'event handlers',
 		'codemod',

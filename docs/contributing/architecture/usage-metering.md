@@ -51,7 +51,6 @@ events for the admin on/off cohort readout.
 | `package_static_call` | one call of a statically imported package export (function-valued, incl. default) | sandbox-side wrapper stamped by the bundler; validated and recorded host-side by `packages/worker/src/usage/package-static-call-usage.ts` (wired in `run-kody-registry.ts`) | callee package id              |
 | `job_run`             | one job execution                                                                 | `packages/worker/src/jobs/service.ts` (`executeJobOnce`)                                                                                                                    | job id                         |
 | `workflow_run`        | one Cloudflare Workflow run                                                       | `packages/worker/src/package-runtime/package-workflows.ts` (`DynamicCallableWorkflow.run`)                                                                                  | workflow instance id           |
-| `service_runtime`     | one package service run (bounded or persistent)                                   | `packages/worker/src/package-runtime/package-service.ts` (run finalization)                                                                                                 | `{packageId}:{serviceName}`    |
 | `realtime_session`    | one realtime websocket session                                                    | reserved — not yet instrumented                                                                                                                                             | session id                     |
 | `outbound_fetch`      | one outbound fetch through the gateway                                            | `packages/worker/src/mcp/fetch-gateway.ts` (`KodyFetchGateway.fetch`)                                                                                                       | request host                   |
 | `email_send`          | one outbound email send attempt                                                   | `packages/worker/src/email/outbound.ts` (`sendOutboundEmail`)                                                                                                               | email message id               |
@@ -322,8 +321,8 @@ Guarantees and rules:
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration
-  (execute + job_run + workflow_run + service_runtime), top-10 event counts,
-  per-metric duration leaders, and an entitlement-pressure panel that reuses
+  (execute + job_run + workflow_run), top-10 event counts, per-metric duration
+  leaders, and an entitlement-pressure panel that reuses
   `readAdminEntitlementConsumption` for the top ~15 users by event count.
   Queries are `LIMIT`-bounded; entitlement reads run with modest concurrency.
 - **Proactive alerts** (`usage_entitlement_alert` scheduled lane in
@@ -331,8 +330,8 @@ Guarantees and rules:
   same ~15-user bound. Emails admin-role users when any swept account is above
   80% of a plan-limit resource, or when a non-admin account's combined execute,
   job_run, and workflow_run duration for the month exceeds
-  `fleetRuntimeDurationAlertThresholdMs` (24h). Persistent `service_runtime` and
-  admin-role dogfooding stay on `/admin/insights` rankings but do not page. The
-  KV cooldown key `ops-alert:usage-entitlement-pressure:v1` suppresses repeat
-  pages. Admin email links are built with `joinAppUrl` so a trailing slash on
-  `APP_BASE_URL` cannot produce `https://host//admin/…`.
+  `fleetRuntimeDurationAlertThresholdMs` (24h). Admin-role dogfooding stays on
+  `/admin/insights` rankings but does not page. The KV cooldown key
+  `ops-alert:usage-entitlement-pressure:v1` suppresses repeat pages. Admin email
+  links are built with `joinAppUrl` so a trailing slash on `APP_BASE_URL` cannot
+  produce `https://host//admin/…`.

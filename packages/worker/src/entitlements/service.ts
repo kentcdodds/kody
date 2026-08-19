@@ -645,42 +645,6 @@ export async function advanceD1StorageReconciliationCursor(input: {
 		.run()
 }
 
-/**
- * Staleness threshold for counting a `package_service_states` row as running.
- *
- * UserMeter is the sole liveness authority. Package service Durable Objects
- * upsert and heartbeat the meter's per-service state while a service is alive;
- * this threshold is defense-in-depth for a hard eviction that never restores.
- */
-export const packageServiceStateStaleMs = 24 * 60 * 60 * 1000
-
-/**
- * UserMeter-authoritative running count for a user's package services.
- * Reads directly from the DO; no D1 access. Lifecycle updates populate both
- * this authoritative liveness state and the D1 enumeration inventory. The
- * `excludeService` and 24h staleness semantics are preserved exactly.
- *
- * Requires `env.USER_METER`. Throws immediately when the binding is absent
- * (fail-closed for enforcement).
- */
-export async function countRunningPackageServices(input: {
-	env: UserMeterEnv
-	userId: string
-	excludeService?: { packageId: string; serviceName: string }
-	mode?: 'bounded' | 'persistent'
-	now?: Date
-}): Promise<number> {
-	const now = input.now ?? new Date()
-	const meter = userMeterRpc({ env: input.env, userId: input.userId })
-	const { count } = await meter.countRunningPackageServices({
-		staleAfterMs: packageServiceStateStaleMs,
-		excludeService: input.excludeService,
-		mode: input.mode,
-		now: now.toISOString(),
-	})
-	return count
-}
-
 export async function readEntitlementResourceUsage(input: {
 	db: D1Database
 	userId: string
@@ -704,17 +668,6 @@ export async function readEntitlementResourceUsage(input: {
 		case 'scheduled_jobs':
 			throw new Error(
 				'scheduled_jobs usage must be read from jobsData (pass getCurrent or use readCurrentEntitlementResourceUsage).',
-			)
-		case 'package_services':
-			// Authoritative running liveness is in UserMeter. Callers must use
-			// readCurrentEntitlementResourceUsage or pass getCurrent with
-			// countRunningPackageServices to assertWithinEntitlement.
-			throw new Error(
-				'package_services usage must be read from UserMeter (use readCurrentEntitlementResourceUsage or pass getCurrent with countRunningPackageServices).',
-			)
-		case 'persistent_package_services':
-			throw new Error(
-				'persistent_package_services usage must be read from UserMeter (use readCurrentEntitlementResourceUsage or pass getCurrent with countRunningPackageServices).',
 			)
 		case 'repo_sessions':
 			throw new Error(
@@ -839,21 +792,6 @@ export async function readCurrentEntitlementResourceUsage(input: {
 			db: input.db,
 			env: input.env,
 			userId: input.userId,
-			now: input.now,
-		})
-	}
-	if (input.resource === 'package_services') {
-		return await countRunningPackageServices({
-			env: input.env,
-			userId: input.userId,
-			now: input.now,
-		})
-	}
-	if (input.resource === 'persistent_package_services') {
-		return await countRunningPackageServices({
-			env: input.env,
-			userId: input.userId,
-			mode: 'persistent',
 			now: input.now,
 		})
 	}

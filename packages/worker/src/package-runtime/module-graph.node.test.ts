@@ -227,7 +227,6 @@ throw new Error('unhydrated ${specifier}');
 		dependencies: [],
 		dynamicDependencies: [],
 		packageContext: null,
-		serviceContext: null,
 		createdAt: '2026-05-11T00:00:00.000Z',
 	}
 	mockModule.getSavedPackageByName.mockResolvedValue(createSavedPackageRecord())
@@ -909,7 +908,6 @@ test('buildKodyModuleBundle prefers published importable export artifacts for sa
 								kodyId: 'example-package',
 								sourceId: 'source-1',
 							},
-							serviceContext: null,
 							createdAt: '2026-05-01T00:00:00.000Z',
 						},
 					}
@@ -1072,7 +1070,6 @@ test('buildKodyModuleBundle imports published importable defaults as callable de
 								kodyId: 'example-package',
 								sourceId: 'source-1',
 							},
-							serviceContext: null,
 							createdAt: '2026-05-01T00:00:00.000Z',
 						},
 					}
@@ -1194,7 +1191,7 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 				"import { kody } from './.__kody_virtual__/runtime.js'",
 				'',
 				'export default async function runDependency() {',
-				'\treturn await kody.service_start({ source: "email" })',
+				'\treturn await kody.secret_list({ scope: "user" })',
 				'}',
 			].join('\n'),
 		[nestedRuntimePath]: staleRuntimeSource,
@@ -1207,13 +1204,13 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 		await expect(
 			staleEntry.runWithRuntime({
 				kody: {
-					async service_start() {
+					async secret_list() {
 						return { ok: true }
 					},
 				},
 			}),
 		).rejects.toThrow(
-			"Cannot read properties of undefined (reading 'service_start')",
+			"Cannot read properties of undefined (reading 'secret_list')",
 		)
 	} finally {
 		await staleModuleGraph.cleanup()
@@ -1238,7 +1235,7 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 		}
 		const result = await hydratedEntry.runWithRuntime({
 			kody: {
-				async service_start(args: unknown) {
+				async secret_list(args: unknown) {
 					return { ok: true, args }
 				},
 			},
@@ -1246,7 +1243,7 @@ test('hydrateKodyRuntimeModules fixes stale nested runtime modules from static p
 		expect(result).toEqual({
 			ok: true,
 			args: {
-				source: 'email',
+				scope: 'user',
 			},
 		})
 	} finally {
@@ -1326,7 +1323,6 @@ test('buildKodyModuleBundle refreshes nested artifact runtimes before static imp
 				kodyId: 'ai-chat',
 				sourceId: 'source-ai-chat',
 			},
-			serviceContext: null,
 			createdAt: '2026-05-13T00:00:00.000Z',
 		},
 	})
@@ -1406,7 +1402,6 @@ export default function value() { return ${JSON.stringify(packageVersion)} }`,
 					dependencies: [],
 					dynamicDependencies: [],
 					packageContext: null,
-					serviceContext: null,
 					createdAt: '2026-05-11T00:00:00.000Z',
 				},
 			}
@@ -1614,7 +1609,6 @@ throw new Error('unhydrated ${specifier}');
 			},
 		],
 		packageContext: null,
-		serviceContext: null,
 		createdAt: '2026-05-11T00:00:00.000Z',
 	})
 	const packages = new Map([
@@ -1748,32 +1742,6 @@ test('buildKodyModuleBundle rejects nested dynamic kody package import rewrites 
 })
 
 test.each([
-	{
-		name: 'subscription service start',
-		entryPoint: 'src/handle-email-message-received.ts',
-		source: `import { kody } from 'kody:runtime'
-
-export default async function handleEmailMessageReceived() {
-	return await kody.service_start({
-		package_id: 'pkg-1',
-		service_name: 'email-agent-processor',
-	})
-}
-`,
-		kody: {
-			async service_start(input: unknown) {
-				return { ok: true, tool: 'service_start', input }
-			},
-		},
-		expected: {
-			ok: true,
-			tool: 'service_start',
-			input: {
-				package_id: 'pkg-1',
-				service_name: 'email-agent-processor',
-			},
-		},
-	},
 	{
 		name: 'export secret list',
 		entryPoint: 'src/launch-agent.ts',
@@ -1952,7 +1920,6 @@ test('buildKodyModuleBundle keeps distinct proxy and artifact paths for exports 
 							kodyId: 'example-package',
 							sourceId: 'source-1',
 						},
-						serviceContext: null,
 						createdAt: '2026-05-01T00:00:00.000Z',
 					},
 				}
@@ -1979,7 +1946,6 @@ test('buildKodyModuleBundle keeps distinct proxy and artifact paths for exports 
 							kodyId: 'example-package',
 							sourceId: 'source-1',
 						},
-						serviceContext: null,
 						createdAt: '2026-05-01T00:00:00.000Z',
 					},
 				}

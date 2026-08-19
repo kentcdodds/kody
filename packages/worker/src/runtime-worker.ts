@@ -6,7 +6,6 @@ import {
 import { StorageRunner } from './storage-runner.ts'
 import { RunLog } from './run-records/run-log-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
-import { PackageServiceInstance } from '#worker/package-runtime/package-service.ts'
 import { DynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
@@ -42,7 +41,6 @@ export {
 	StorageRunner,
 	RunLog,
 	PackageRealtimeSession,
-	PackageServiceInstance,
 	DynamicCallableWorkflow,
 	PackageAppRuntimeBridge,
 	KodyFetchGateway,

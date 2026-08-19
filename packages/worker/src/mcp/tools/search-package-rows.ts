@@ -28,7 +28,6 @@ function buildLeanPackageSearchProjection(
 		appEntry: null,
 		exports: [],
 		jobs: [],
-		services: [],
 		subscriptions: [],
 		retrievers: [],
 		webhooks: [],

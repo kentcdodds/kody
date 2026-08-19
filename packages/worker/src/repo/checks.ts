@@ -1,6 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
-	listPackageServices,
 	listPackageRetrievers,
 	listPackageSubscriptions,
 	normalizePackageWorkspacePath,
@@ -399,7 +398,6 @@ declare const packageContext: {
   appBasePath?: string;
   hostedUrl?: string;
 } | null;
-declare const serviceContext: { serviceName: string } | null;
 declare const packages: KodyPackagesRuntime | null;
 declare const email: KodyEmailRuntime;
 declare const workflows: KodyWorkflowsRuntime;
@@ -410,15 +408,6 @@ declare const packageSecrets:
       has(alias: string): Promise<boolean>;
     }
   | null;
-declare const service:
-  | {
-      getStatus(): Promise<unknown>;
-      shouldStop(): Promise<boolean>;
-      setAlarm(runAt: string | Date): Promise<unknown>;
-      clearAlarm(): Promise<unknown>;
-    }
-  | null;
-
 declare module "kody:runtime" {
   export const kody: Record<
     string,
@@ -438,7 +427,6 @@ declare module "kody:runtime" {
     appBasePath?: string;
     hostedUrl?: string;
   } | null;
-  export const serviceContext: { serviceName: string } | null;
   export const packages: KodyPackagesRuntime | null;
   export const storage: ${
 		input?.includeStorage === true
@@ -453,14 +441,6 @@ declare module "kody:runtime" {
     | {
         get(alias: string): Promise<string>;
         has(alias: string): Promise<boolean>;
-      }
-    | null;
-  export const service:
-    | {
-        getStatus(): Promise<unknown>;
-        shouldStop(): Promise<boolean>;
-        setAlarm(runAt: string | Date): Promise<unknown>;
-        clearAlarm(): Promise<unknown>;
       }
     | null;
 }
@@ -558,9 +538,6 @@ function collectPackageCallableTypecheckTargets(manifest: AuthoredPackageJson) {
 	}
 	for (const job of Object.values(manifest.kody.jobs ?? {})) {
 		remember(job.entry, true)
-	}
-	for (const service of listPackageServices(manifest)) {
-		remember(service.entry, true)
 	}
 	for (const subscription of listPackageSubscriptions(manifest)) {
 		remember(subscription.handler, true)

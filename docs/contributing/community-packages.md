@@ -306,7 +306,7 @@ operator notifications such as Discord.
 Forks create an **`entity_sources`** row and Artifacts snapshot but **no**
 `saved_packages` row. Without a saved package row:
 
-- package exports, jobs, services, subscriptions, and apps do not register
+- package exports, jobs, subscriptions, and apps do not register
 - `kody:@…` imports from the fork do not execute
 - search and execute cannot treat the fork as a live saved package
 

@@ -109,10 +109,6 @@ export type PlanLimits = {
 	maxSavedPackages: number
 	/** Maximum scheduled jobs (rows in jobs). */
 	maxScheduledJobs: number
-	/** Maximum concurrently running package services. */
-	maxPackageServices: number
-	/** Maximum concurrently running services declared with mode `persistent`. */
-	maxPersistentPackageServices: number
 	/** Maximum active repo sessions (repo_sessions with status 'active'). */
 	maxRepoSessions: number
 	/** Maximum outbound email send attempts per UTC day. */
@@ -156,8 +152,6 @@ export const entitlementResources = [
 	'repos',
 	'saved_packages',
 	'scheduled_jobs',
-	'package_services',
-	'persistent_package_services',
 	'repo_sessions',
 	'email_sends_per_day',
 	'email_receives_per_day',
@@ -178,8 +172,6 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 	repos: 'repos',
 	saved_packages: 'saved packages',
 	scheduled_jobs: 'scheduled jobs',
-	package_services: 'running package services',
-	persistent_package_services: 'persistent package services',
 	repo_sessions: 'active repo sessions',
 	email_sends_per_day: 'email sends per day',
 	email_receives_per_day: 'email receives per day',
@@ -233,9 +225,6 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxRepos: 20,
 		maxSavedPackages: 15,
 		maxScheduledJobs: 5,
-		// Long-lived compute. Persistent services stay off.
-		maxPackageServices: 1,
-		maxPersistentPackageServices: 0,
 		// Sessions are cheap (catalog row + dormant DO workspace + Artifacts
 		// branch). Unused (never-checkpointed) leftovers sweep after 30
 		// minutes idle; checkpointed sessions use the 7-day window so
@@ -261,8 +250,6 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxRepos: 200,
 		maxSavedPackages: 100,
 		maxScheduledJobs: 50,
-		maxPackageServices: 10,
-		maxPersistentPackageServices: 1,
 		maxRepoSessions: 200,
 		maxEmailSendsPerDay: 200,
 		maxEmailReceivesPerDay: 1_000,
@@ -279,8 +266,6 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxRepos: 400,
 		maxSavedPackages: 200,
 		maxScheduledJobs: 150,
-		maxPackageServices: 20,
-		maxPersistentPackageServices: 3,
 		maxRepoSessions: 400,
 		maxEmailSendsPerDay: 500,
 		maxEmailReceivesPerDay: 2_000,
@@ -300,10 +285,6 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSavedPackages: 10_000,
 		// Product ceiling (about 33× pro).
 		maxScheduledJobs: 5_000,
-		// 50× pro (20) → 1_000.
-		maxPackageServices: 1_000,
-		// Product ceiling for no-duration-cap service runs.
-		maxPersistentPackageServices: 10,
 		// 50× pro (400) → 20_000.
 		maxRepoSessions: 20_000,
 		// Inherited abuse caps (not 100× pro); see maxPlanEmailLimits.
@@ -327,8 +308,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 }
 
 /**
- * Resolve the numeric limit for a resource under a plan. Every plan limit
- * is finite, including persistent-service concurrency counts.
+ * Resolve the numeric limit for a resource under a plan. Every plan limit is
+ * finite.
  */
 export function resolvePlanLimit(
 	plan: PlanName,
@@ -342,10 +323,6 @@ export function resolvePlanLimit(
 			return limits.maxSavedPackages
 		case 'scheduled_jobs':
 			return limits.maxScheduledJobs
-		case 'package_services':
-			return limits.maxPackageServices
-		case 'persistent_package_services':
-			return limits.maxPersistentPackageServices
 		case 'repo_sessions':
 			return limits.maxRepoSessions
 		case 'email_sends_per_day':

@@ -1523,8 +1523,6 @@ const kodyRuntimeExportNames = new Set([
 	'secretHeaders',
 	'oauthClientCredentials',
 	'packageContext',
-	'serviceContext',
-	'service',
 	'packageSecrets',
 	'email',
 	'workflows',
@@ -1548,8 +1546,6 @@ const unboundRuntimeHelperNextSteps: Record<string, string> = {
 		"`events` is only bound in saved-package runtime contexts that can dispatch package events; call the owning package's export with keyless `packages.invoke` so it runs in that context, or guard with `if (events) { ... }`.",
 	packageSecrets:
 		"`packageSecrets` is only bound in saved-package runtime contexts; call the owning package's export with keyless `packages.invoke` so it runs with the package's mounted secrets, or guard with `if (packageSecrets) { ... }`.",
-	service:
-		'`service` is only bound in package service runs; guard with `if (service) { ... }` when the code can also run outside a service context.',
 	email:
 		'`email` is only bound for email-triggered runs; guard with `if (email) { ... }` when the code can also run outside an email context.',
 }

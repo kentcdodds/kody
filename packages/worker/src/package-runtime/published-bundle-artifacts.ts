@@ -153,7 +153,6 @@ export async function persistPublishedBundleArtifact(
 		dependencies: input.dependencies,
 		dynamicDependencies: input.dynamicDependencies ?? [],
 		packageContext: input.packageContext ?? null,
-		serviceContext: null,
 		createdAt: new Date().toISOString(),
 	}
 	const existing = await getPublishedBundleArtifactByIdentity(

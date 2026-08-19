@@ -735,7 +735,6 @@ async function readStorageEstimateChunkWithRetry(input: {
 					).getEstimatedBytes()
 				case 'job':
 				case 'package':
-				case 'service':
 				case 'execute':
 				case 'unknown':
 					return storageRunnerRpc({

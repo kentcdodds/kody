@@ -77,12 +77,12 @@ Deletion must cover these user-owned surfaces:
   migrations to SQLite and fails if a user-owned schema column lacks schema
   coverage in the runtime target list or if that list references a stale column.
 - **Durable Objects:** `JobManager`, `StorageRunner`, `RepoSession`,
-  `RepoSessionIndex`, `PackageRealtimeSession`, `PackageServiceInstance`,
-  `McpClientHub`, `RunLog`, `UserMeter`, `StripePlanRefresh`, and `Mailbox` are
-  purged through account-deletion RPCs after their identifiers are collected
-  (`RunLog`, `UserMeter`, `StripePlanRefresh`, `Mailbox`, and `RepoSessionIndex`
-  are one object per user and need no D1 id scan). Account deletion first
-  captures the authoritative USER raw-MIME and attachment references through
+  `RepoSessionIndex`, `PackageRealtimeSession`, `McpClientHub`, `RunLog`,
+  `UserMeter`, `StripePlanRefresh`, and `Mailbox` are purged through
+  account-deletion RPCs after their identifiers are collected (`RunLog`,
+  `UserMeter`, `StripePlanRefresh`, `Mailbox`, and `RepoSessionIndex` are one
+  object per user and need no D1 id scan). Account deletion first captures the
+  authoritative USER raw-MIME and attachment references through
   `Mailbox.listBlobReferences`, deletes those owner-safe R2 keys plus defensive
   owner-prefix sweeps, and only then calls `Mailbox.purge()`. The purge clears
   DO SQLite only (see [Mailbox](#durable-objects-mailbox)). `MCP` objects remain
@@ -181,15 +181,15 @@ migration-safe chunked interface:
   StorageRunner `exportStorage({ pageSize, startAfter })` RPC as the dedicated
   storage export capability. User meter counters use `section: "user_meter"` and
   the `UserMeter.exportCounters` RPC (daily counters plus authoritative
-  `storageBytesState`, `packageServiceStates`, and sanitized `deletionState` on
-  the first page only when present). Mailbox metadata uses `section: "mailbox"`
-  and the `Mailbox.exportMailbox` RPC. R2 raw MIME, attachment, avatar, and icon
-  objects use `section: "r2_object"`; each response contains at most one 256 KiB
-  base64 chunk and an opaque cursor. Each request uses bounded `LIMIT 1`
-  ownership queries rather than reconstructing inventory. Continuation cursors
-  bind the source row, object key, size, and ETag; ownership/key mutations and
-  object overwrites are reported instead of mixing generations. Missing objects
-  are represented explicitly. R2 cursor version 1 is unsupported by the current
+  `storageBytesState` and sanitized `deletionState` on the first page only when
+  present). Mailbox metadata uses `section: "mailbox"` and the
+  `Mailbox.exportMailbox` RPC. R2 raw MIME, attachment, avatar, and icon objects
+  use `section: "r2_object"`; each response contains at most one 256 KiB base64
+  chunk and an opaque cursor. Each request uses bounded `LIMIT 1` ownership
+  queries rather than reconstructing inventory. Continuation cursors bind the
+  source row, object key, size, and ETag; ownership/key mutations and object
+  overwrites are reported instead of mixing generations. Missing objects are
+  represented explicitly. R2 cursor version 1 is unsupported by the current
   Mailbox-authoritative traversal because translation could duplicate bytes;
   callers must restart the `r2_object` section without `startAfter`.
 
@@ -202,8 +202,8 @@ requested page.
 Durable Object export behavior:
 
 - `StorageRunner` bucket contents are exported with paged entries. These buckets
-  hold application/job/service durable state and are the primary account
-  migration surface for Durable Object storage.
+  hold application and job durable state and are the primary account migration
+  surface for Durable Object storage.
 - `JobManager` exposes scheduler alarm/debug state through an export RPC.
 - `RunLog` exports per-user execution history (runs + log lines), the keyed
   package-invocation idempotency ledger, and dedicated RunLog state (workflow
@@ -220,15 +220,12 @@ Durable Object export behavior:
   [Run records](./run-records.md).
 - `UserMeter` exports daily entitlement counter rows through the `user_meter`
   section (`exportCounters` RPC; keyset pagination by UTC `day` and `resource`).
-  The same RPC returns authoritative `storageBytesState`,
-  `packageServiceStates`, and sanitized `deletionState` on the first page only
-  (`startAfter` absent; `null` on later pages). Section totals count each state
-  inventory once when present. UserMeter `package_service_states` is
-  **authoritative** for running-count enforcement; D1 `package_service_states`
-  remains the enumeration export in the `d1` section. The storage-byte counter
-  lives only in UserMeter. Retention is self-enforced inside the DO (seven UTC
-  days of counter and inbound-delivery-claim rows); storage-byte and
-  package-service liveness rows are not time-pruned. See
+  The same RPC returns authoritative `storageBytesState` and sanitized
+  `deletionState` on the first page only (`startAfter` absent; `null` on later
+  pages). Section totals count each state inventory once when present. The
+  storage-byte counter lives only in UserMeter. Retention is self-enforced
+  inside the DO (seven UTC days of counter and inbound-delivery-claim rows);
+  storage-byte state is not time-pruned. See
   [Entitlements](./entitlements.md#usermeter).
 - `Mailbox` is the sole authoritative USER email graph export. It exports
   threads, messages, attachments, and delivery events through the account-export
@@ -240,8 +237,6 @@ Durable Object export behavior:
   attempts without blocking other expired messages; they are likewise excluded
   from export/counts and removed with message or mailbox purge. See
   [Mailbox](#durable-objects-mailbox).
-- `PackageServiceInstance` uses its status RPC as the stable persisted service
-  state summary.
 - `MCP`, `RepoSession`, `PackageRealtimeSession`, and `McpClientHub` remain
   account-export exclusions: MCP objects are SDK session-keyed and not globally
   enumerable; RepoSession is an ephemeral editing workspace (although its SQLite
@@ -281,9 +276,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   [Platform accounts](./platform-accounts.md)). The `d1_storage_reconciliation`
   lane sweeps users by `stable_user_id` keyset from the platform-owned
   `d1_storage_reconcile_cursor` singleton. UserMeter `storage_bytes_state`
-  (schema v4) drives storage-byte enforcement; UserMeter
-  `package_service_states` (schema v5) is the authoritative running-count source
-  for `package_services` / `service_start` — see
+  (schema v4) drives storage-byte enforcement; see
   [Entitlements](./entitlements.md#usermeter). Inbound email routing does not
   reverse-resolve stable ids — it uses the indexed username lookup
   (`findPublicUserIdentityByUsername`). Contextless paths resolve stable ids
@@ -309,13 +302,6 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   The catalog lives in the per-user `RepoSessionIndex` Durable Object. D1 keeps
   only the thin `repo_session_due_owners` hint and the platform-owned
   `repo_session_storage_bucket_cursor`.
-- `package_service_states` (`0001-squashed-init.sql`): per-service liveness
-  projection (`running` / `idle` / `stopped` / `error`) for discovery, account
-  export/deletion inventory, and disaster recovery. Upserted and heartbeaten
-  (1h) by the `PackageServiceInstance` Durable Object. Running-count enforcement
-  and `service_start` read the per-user `UserMeter` copy (schema v5; 24h
-  staleness on DO `source_updated_at`). D1 remains only the enumeration index —
-  see [Entitlements](./entitlements.md#package-service-liveness).
 - `entity_sources`: durable mapping from user-facing entities (`job`, `package`,
   or `repo`) to Artifacts repos and their latest published commit (packages
   only; plain repos are live-at-HEAD without a publish pointer)
@@ -595,12 +581,9 @@ Daily rate-style entitlement counters and inbound email delivery-id idempotency
 live in a per-user `UserMeter` Durable Object with SQLite
 (`packages/worker/src/entitlements/user-meter-do.ts`). Schema v4
 `storage_bytes_state` is the **authoritative** storage-byte counter (see
-[Entitlements](./entitlements.md#usermeter)). Schema v5 `package_service_states`
-is the **authoritative running-count source** for `package_services` /
-`service_start`; D1 remains only the enumeration index
-([Entitlements](./entitlements.md#package-service-liveness)). The Worker binding
-is `USER_METER` (class `UserMeter`; Wrangler SQLite migration tag `v21` via
-`new_sqlite_classes` in `packages/worker/wrangler.jsonc`).
+[Entitlements](./entitlements.md#usermeter)). The Worker binding is `USER_METER`
+(class `UserMeter`; Wrangler SQLite migration tag `v21` via `new_sqlite_classes`
+in `packages/worker/wrangler.jsonc`).
 
 Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 `userId` via `userMeterDurableObjectName(userId)` → `idFromName(userId)` in
@@ -608,7 +591,7 @@ Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 column inside the DO because the object identity is the user.
 
 SQLite ownership (schema version tracked in `user_meter_meta`; current version
-**8**):
+**10**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
   `email_receives_per_day`, `execute_calls_per_day`, and
@@ -628,15 +611,6 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   `stable_user_id` keyset from `d1_storage_reconcile_cursor`. StorageRunner and
   RepoSession bucket estimates stay outside this row (see
   [Entitlements](./entitlements.md#usermeter)).
-- `package_service_states` — per-service liveness rows (`package_id`,
-  `service_name`, `status`, `started_at`, `source_updated_at`, monotonic
-  `revision`, `updated_at`; primary key `(package_id, service_name)`). Written
-  by `PackageServiceInstance` alongside the D1 enumeration inventory on every
-  lifecycle projection/delete; monotonic on `source_updated_at`. Authoritative
-  for running-count enforcement and `service_start` via
-  `countRunningPackageServices`. D1 remains the enumeration index (discovery,
-  export, deletion) only — see
-  [Entitlements](./entitlements.md#package-service-liveness).
 - `deletion_state` / `account_write_leases` — deletion tombstone plus write
   leases (singleton `deleting_at`; lease rows `token` / `holder` / `acquired_at`
   / `pending_repair_id`). Schema v8 is authoritative for all leases. All callers
@@ -649,8 +623,8 @@ Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter and claim rows older than seven UTC days
 (`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
 the window covers timezone edge cases, recent account exports, and inbound
-retries. Storage-byte and package-service liveness rows are not time-pruned.
-Write-lease rows clear on release/repair/purge.
+retries. Storage-byte state is not time-pruned. Write-lease rows clear on
+release/repair/purge.
 
 **Daily counter authority:** enforcement, point reads, bootstrap, and account
 export/deletion paths use `UserMeter`; D1 has no daily entitlement counter table
@@ -663,12 +637,11 @@ or day index. `admin_user_meter_parity` reports meter-only daily counts. See
 D1 for enforcement.
 
 Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
-`deleteAll` clears counters, claims, storage bytes, package-service state, and
-write leases while preserving an existing deleting tombstone). Account export
-pages `UserMeter.exportCounters` through the `user_meter` manifest section /
-`account_export_section` (daily counters plus authoritative `storageBytesState`,
-`packageServiceStates`, and sanitized `deletionState` on the first page only
-when present).
+`deleteAll` clears counters, claims, storage bytes, and write leases while
+preserving an existing deleting tombstone). Account export pages
+`UserMeter.exportCounters` through the `user_meter` manifest section /
+`account_export_section` (daily counters plus authoritative `storageBytesState`
+and sanitized `deletionState` on the first page only when present).
 
 ## Durable Objects (`Mailbox`)
 
@@ -884,11 +857,6 @@ Package and plain-repo state maps onto storage homes as follows:
 - **Package storage** — StorageRunner bucket
   `package:{encodeURIComponent(packageId)}` via `buildPackageStorageId` /
   `packageStorage()`. Shared durable data for every package surface.
-- **Package coordination** — `PackageServiceInstance` DO holds lifecycle and
-  alarms only; durable data stays in package storage. Each lifecycle projection
-  writes D1 `package_service_states` (enumeration) and UserMeter (authoritative
-  running counts). App facets and package-internal DO namespaces are extra
-  StorageRunner buckets under the package id, not a general actor model.
 - **Package jobs** — schedule metadata in `JOBS_DB` `jobs`; run-local scratch in
   `job:package-job:{packageId}:{encodeURIComponent(jobName)}`; shared durable
   data in package storage.
@@ -909,9 +877,9 @@ via `durableObjectNameFromParts`); domain helpers such as
   job-run observability, package activation counters/milestones). See
   [Run records](./run-records.md).
 - `UserMeter` — `userMeterDurableObjectName(userId)` → `idFromName(userId)`. One
-  daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`),
-  plus authoritative schema-v4 storage-byte and schema-v5 package-service
-  liveness state. See [Entitlements](./entitlements.md#usermeter).
+  daily-entitlement meter DO per user (untrimmed stable id, same as `RunLog`)
+  with authoritative schema-v4 storage-byte state. See
+  [Entitlements](./entitlements.md#usermeter).
 - `StripePlanRefresh` — `stripePlanRefreshDurableObjectName(userId)` →
   `idFromName(userId)`. One ephemeral, one-shot reconciliation alarm per user;
   checkout and subscription webhook activity arm it as a backstop to the
@@ -925,8 +893,6 @@ via `durableObjectNameFromParts`); domain helpers such as
   `idFromName(JSON.stringify([userId, storageId]))`.
 - `PackageRealtimeSession` —
   `packageRealtimeSessionDurableObjectName({ userId, packageId })`.
-- `PackageServiceInstance` —
-  `packageServiceInstanceDurableObjectName({ userId, packageId, serviceName })`.
 - `RepoSessionIndex` — `repoSessionIndexDurableObjectName(userId)` keyed by
   untrimmed `userId` (like RunLog / UserMeter / Mailbox). Authority for the
   per-user session catalog: rows, active counts, conversation resume, export,
@@ -960,10 +926,10 @@ concurrent two-runtime test that pins this invariant.
 package bundle artifacts reserve `.__kody_virtual__/runtime.js` import paths but
 strip the runtime source before persistence. Execution loaders hydrate those
 paths with the deployed host runtime source for every package surface (exports,
-subscriptions, jobs, services, package apps, workflows, and ad hoc execute).
-Static `kody:@...` package imports remain pinned snapshots, while literal
-dynamic `import("kody:@...")` is permanently unsupported. Publish checks reject
-the pattern, and runtime rewriting returns a teaching error that names static
+subscriptions, jobs, package apps, workflows, and ad hoc execute). Static
+`kody:@...` package imports remain pinned snapshots, while literal dynamic
+`import("kody:@...")` is permanently unsupported. Publish checks reject the
+pattern, and runtime rewriting returns a teaching error that names static
 imports and `packages.invoke` as the supported alternatives.
 
 ## Configuration reference
@@ -973,9 +939,8 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 `JobManager` and `JOBS_DB` live on the jobs worker
 (`packages/jobs-worker/wrangler.jsonc`); the main worker reaches them through
 the `JOBS` service binding. Runtime Durable Objects (`StorageRunner`, `RunLog`,
-`PackageRealtimeSession`, `PackageServiceInstance`) live on the runtime worker
-and are bound cross-script from main — see
-[ADR 0016](../decisions/0016-mono-worker-extraction.md).
+`PackageRealtimeSession`) live on the runtime worker and are bound cross-script
+from main — see [ADR 0016](../decisions/0016-mono-worker-extraction.md).
 
 - `APP_DB` (D1)
 - `AUDIT_DB` (D1, global hashed security audit trail)
@@ -1001,8 +966,6 @@ and are bound cross-script from main — see
   runtime worker binds this class cross-script from `kody` so package and
   workflow capability calls can open, list, and publish repo sessions.)
 - `PACKAGE_REALTIME_SESSION` (Durable Objects; class hosted on the runtime
-  worker)
-- `PACKAGE_SERVICE_INSTANCE` (Durable Objects; class hosted on the runtime
   worker)
 - `MCP_CLIENT_HUB` (Durable Objects; user-added remote MCP servers — see
   [MCP client servers](./mcp-client-servers.md))
@@ -1102,7 +1065,7 @@ calls `publishFromExternalRef(...)`.
   `BUNDLE_ARTIFACTS_KV`
 - roll the D1 commit pointer back if KV snapshot persistence fails
 - rebuild saved package projections, bundle artifacts, vector search entries,
-  retriever manifests, package jobs, and services through
+  retriever manifests, and package jobs through
   `refreshSavedPackageProjection(...)`
 
 The same helper is used by the existing repo-session publish path after it has
@@ -1260,8 +1223,7 @@ to `durableObjectNameFromParts`).
 - `JobManager`: `idFromName(userId)` (no trim).
 - `RunLog`: `idFromName(userId)` (no trim); one execution-history DO per user.
 - `UserMeter`: `idFromName(userId)` (no trim); one daily-entitlement meter DO
-  per user, plus authoritative schema-v4 storage-byte and schema-v5
-  package-service liveness state.
+  per user, plus authoritative schema-v4 storage-byte state.
 - `StripePlanRefresh`: `idFromName(userId)` (no trim); one ephemeral billing
   reconciliation alarm DO per user.
 - `Mailbox`: `idFromName(userId)` (no trim); one email-metadata DO per user.
@@ -1272,8 +1234,6 @@ to `durableObjectNameFromParts`).
 - `RepoSession`: `idFromName(sessionId)`; the key is not user-prefixed, so every
   RPC must keep validating the catalog row's `user_id`.
 - `PackageRealtimeSession`: `idFromName(JSON.stringify([userId, packageId]))`.
-- `PackageServiceInstance`:
-  `idFromName(JSON.stringify([userId, packageId, serviceName]))`.
 - `MCP`: session-keyed by the MCP SDK rather than by user id; OAuth caller
   context is the request-time ownership boundary and `mcp_agent_sessions`
   provides deletion-only enumeration by stable user id.
@@ -1289,8 +1249,6 @@ Storage ids are also stable strings. Changing a form strands the old bucket:
 - `{packageId}:facet:{facetName}` — package-app facet StorageRunner buckets.
 - `{packageId}:{exportName}:{name}` — package-app internal Durable Object
   namespace StorageRunner buckets.
-- `service:{encodeURIComponent(packageId)}:{encodeURIComponent(serviceName)}` —
-  package service run scratch (lifecycle lives on `PackageServiceInstance`).
 
 ### KV key contracts
 

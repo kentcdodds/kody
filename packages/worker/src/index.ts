@@ -11,7 +11,6 @@ import { Mailbox } from './email/mailbox-do.ts'
 import { RepoSession } from './repo/repo-session-do.ts'
 import { RepoSessionIndex } from './repo/repo-session-index-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
-import { PackageServiceInstance } from '#worker/package-runtime/package-service.ts'
 import { DynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
 import { getWorkerSentryOptions } from './sentry-options.ts'
 import { handleRequest } from '#app/handler.ts'
@@ -80,7 +79,6 @@ export {
 	MCP,
 	JobsHost,
 	PackageRealtimeSession,
-	PackageServiceInstance,
 	DynamicCallableWorkflow,
 	PackageAppRuntimeBridge,
 	StorageRunner,

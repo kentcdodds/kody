@@ -435,8 +435,6 @@ export const createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport('cre
 export const secretHeaders = __kodyOptionalRuntimeObjectExport('secretHeaders', undefined);
 export const oauthClientCredentials = __kodyOptionalRuntimeFunctionExport('oauthClientCredentials');
 export const packageContext = __kodyInitialRuntime?.packageContext ?? null;
-export const serviceContext = __kodyInitialRuntime?.serviceContext ?? null;
-export const service = __kodyOptionalRuntimeObjectExport('service', null);
 export const packageSecrets = __kodyOptionalRuntimeObjectExport('packageSecrets', null);
 export const email = __kodyOptionalRuntimeObjectExport('email', null);
 export const workflows = __kodyOptionalRuntimeObjectExport('workflows', null);
@@ -452,8 +450,6 @@ const __kodyRuntimeNamedExports = {
 	secretHeaders,
 	oauthClientCredentials,
 	packageContext,
-	serviceContext,
-	service,
 	packageSecrets,
 	email,
 	workflows,

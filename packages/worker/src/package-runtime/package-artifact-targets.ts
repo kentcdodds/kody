@@ -1,6 +1,5 @@
 import {
 	getPackageAppEntryPath,
-	listPackageServices,
 	listPackageSubscriptions,
 	normalizePackageWorkspacePath,
 } from '#worker/package-registry/manifest.ts'
@@ -37,14 +36,6 @@ export function collectPublishedPackageArtifactTargets(
 				bundleKind: 'app',
 			})
 		}
-	}
-	for (const service of listPackageServices(manifest)) {
-		targets.push({
-			kind: 'service',
-			artifactName: service.name,
-			entryPoint: service.entry,
-			bundleKind: 'module',
-		})
 	}
 	for (const [exportName, exportTarget] of Object.entries(manifest.exports)) {
 		const entryPoint = resolvePackageExportRuntimeEntryPoint(exportTarget)

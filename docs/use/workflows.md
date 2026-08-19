@@ -2,7 +2,7 @@
 
 Kody exposes Cloudflare Workflows through `kody:runtime` in every server-side
 runtime context: `execute`, ad hoc scheduled jobs, saved package jobs, package
-subscriptions, package exports, and package services.
+subscriptions, package exports, and package apps.
 
 Use workflows instead of plain `execute` for durable batch sweeps, migrations,
 polling loops, retryable steps, or work that may run longer than execute's

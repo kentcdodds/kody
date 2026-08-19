@@ -193,9 +193,6 @@ function createEnv(
 		PACKAGE_REALTIME_SESSION: mockJobDoNamespace(
 			'package-realtime-session-test-id',
 		),
-		PACKAGE_SERVICE_INSTANCE: mockJobDoNamespace(
-			'package-service-instance-test-id',
-		),
 		MCP_CLIENT_HUB: mockJobDoNamespace('mcp-client-hub-test-id'),
 	} as unknown as Env
 }

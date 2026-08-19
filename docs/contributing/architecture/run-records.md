@@ -38,7 +38,6 @@ via `run_update`). The account UI is `/account/activity`.
 | `subscription` | Package subscription handler dispatch                          |
 | `app_fetch`    | Package app HTTP fetch handler                                 |
 | `app_realtime` | Package app realtime websocket session                         |
-| `service`      | Package service run (bounded or persistent)                    |
 | `job`          | Scheduled or manually triggered job execution                  |
 | `workflow`     | Cloudflare Workflow run (`DynamicCallableWorkflow`)            |
 | `retriever`    | Package retriever evaluation                                   |
@@ -250,18 +249,12 @@ of replaying.
 
 ## Invariant: state vs history
 
-Entity rows hold **current state**. Run records hold **history**. Never derive
-live state (is this service running? how many?) by querying run records.
-
-Entitlement concurrency reads the per-user UserMeter `package_service_states`,
-the sole liveness authority. D1 `package_service_states` is only an enumeration
-index for discovery, account export/deletion, and disaster recovery; run history
-is never a liveness signal. Jobs keep schedule metadata and `last_run_at` /
-`last_run_status` on the D1 `jobs` row for the hourly retention sweeper;
-last-run error, duration, and counters for observability live in RunLog
-`job_run_observability` and survive run-history pruning. Package activation
-counters and milestones live in the same DO (`package_run_successes`,
-`activation_milestones`).
+Entity rows hold **current state**. Run records hold **history**. Jobs keep
+schedule metadata and `last_run_at` / `last_run_status` on the D1 `jobs` row for
+the hourly retention sweeper; last-run error, duration, and counters for
+observability live in RunLog `job_run_observability` and survive run-history
+pruning. Package activation counters and milestones live in the same DO
+(`package_run_successes`, `activation_milestones`).
 
 ## Recipe: instrumenting a new surface
 
@@ -269,8 +262,8 @@ Modelled on the
 [usage-metering chokepoint recipe](./usage-metering.md#recipe-instrumenting-a-new-chokepoint).
 
 1. **Pick the semantic unit.** One run record per user-visible attempt (one job
-   execution, one webhook delivery, one service wake). Nested layers may each
-   record their own surface; do not double-write the same surface for one unit.
+   execution or one webhook delivery). Nested layers may each record their own
+   surface; do not double-write the same surface for one unit.
 2. **Add the `RunSurface` member** to `runSurfaceValues` in
    `packages/worker/src/run-records/types.ts` if it does not exist. Choose
    persistence in `runPersistenceForSurface` (`eager` unless the caller already
@@ -332,13 +325,13 @@ Modelled on the
 
 ## Neighboring systems
 
-| System                          | Answers                                                                 | Store                                                                                          |
-| ------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| **Run records** (this doc)      | What failed, with logs, for one user’s runs                             | Per-user `RunLog` DO SQLite                                                                    |
-| **Usage metering**              | How many / how long / aggregate cost pressure                           | Analytics Engine + D1 `usage_rollups`                                                          |
-| **Sentry**                      | Platform defects operators should fix                                   | Sentry project                                                                                 |
-| **Entity state columns/tables** | Current status (job last-run error/duration/counters, service liveness) | RunLog `job_run_observability`; D1 `jobs` schedule/retention anchors; `package_service_states` |
-| **Package subscriptions**       | Same-user reaction to terminal errors                                   | Best-effort dispatch after `finishRun`                                                         |
+| System                          | Answers                                       | Store                                                                    |
+| ------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------ |
+| **Run records** (this doc)      | What failed, with logs, for one user’s runs   | Per-user `RunLog` DO SQLite                                              |
+| **Usage metering**              | How many / how long / aggregate cost pressure | Analytics Engine + D1 `usage_rollups`                                    |
+| **Sentry**                      | Platform defects operators should fix         | Sentry project                                                           |
+| **Entity state columns/tables** | Current job status and counters               | RunLog `job_run_observability`; D1 `jobs` schedule and retention anchors |
+| **Package subscriptions**       | Same-user reaction to terminal errors         | Best-effort dispatch after `finishRun`                                   |
 
 After a successful terminal `finishRun` with `status: 'error'`,
 `finishRunRecord` best-effort dispatches `run.error.recorded` to the owning
@@ -366,9 +359,8 @@ user.
 **Entity state** stays on the entity (or its dedicated projection table). Job
 last-run error, duration, and counters live in RunLog `job_run_observability`;
 D1 `jobs` keeps schedule fields and `last_run_at` / `last_run_status` as
-retention anchors only. Package services heartbeat `package_service_states`.
-History browsers (`/account/activity`, `run_list` / `run_get` / `run_summary`)
-read `RunLog`.
+retention anchors only. History browsers (`/account/activity`, `run_list` /
+`run_get` / `run_summary`) read `RunLog`.
 
 ## Soft error triage
 

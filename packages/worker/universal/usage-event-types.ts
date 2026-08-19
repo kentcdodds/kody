@@ -13,7 +13,6 @@ export const usageEventTypes = [
 	'package_static_call',
 	'job_run',
 	'workflow_run',
-	'service_runtime',
 	'realtime_session',
 	'outbound_fetch',
 	'email_send',

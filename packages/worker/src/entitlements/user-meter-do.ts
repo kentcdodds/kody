@@ -32,17 +32,14 @@ export const userMeterDailyCounterRetentionDays = 7
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 9
+const userMeterSchemaVersion = 10
 /** Singleton row id for authoritative storage-byte state (schema v4). */
 const storageBytesStateRowId = 1
 /** Singleton row id for deletion fence / write leases (schema v6+). */
 const deletionStateRowId = 1
-/** Staleness window used by the authoritative running-count RPC. */
-export const userMeterPackageServiceStateStaleMs = 24 * 60 * 60 * 1000
 const defaultExportPageSize = 100
 const maxExportPageSize = 500
 const maxInboundDeliveryIdLength = 256
-const maxPackageServiceIdLength = 256
 const maxWriteLeaseTokenLength = 64
 const maxWriteLeaseHolderLength = 256
 const maxWriteLeaseRepairIdLength = 64
@@ -50,21 +47,6 @@ const maxDeletionTimestampLength = 64
 const inboundReceiveResource =
 	'email_receives_per_day' satisfies DailyEntitlementResource
 const utcDayKeyPattern = /^\d{4}-\d{2}-\d{2}$/
-/** Matches `new Date().toISOString()` — required for lexicographic monotonicity. */
-const packageServiceSourceUpdatedAtPattern =
-	/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
-const packageServiceStatuses = ['running', 'idle', 'stopped', 'error'] as const
-export type UserMeterPackageServiceStatus =
-	(typeof packageServiceStatuses)[number]
-const packageServiceModes = ['bounded', 'persistent'] as const
-export type UserMeterPackageServiceMode = (typeof packageServiceModes)[number]
-
-export function isUserMeterPackageServiceStatus(
-	status: string,
-): status is UserMeterPackageServiceStatus {
-	return (packageServiceStatuses as ReadonlyArray<string>).includes(status)
-}
-
 /**
  * D1 enumeration-inventory `updated_at` token. Lexicographic order matches
  * revision order, and `r/` sorts after ISO timestamps.
@@ -147,43 +129,6 @@ export type UserMeterStorageBytesReconcileResult =
 	| UserMeterBootstrapState
 	| (UserMeterStorageBytesReadyState & { applied: boolean })
 
-export type UserMeterPackageServiceState = {
-	packageId: string
-	serviceName: string
-	status: UserMeterPackageServiceStatus
-	mode: UserMeterPackageServiceMode
-	startedAt: string | null
-	sourceUpdatedAt: string
-	revision: number
-	updatedAt: string
-	mirrorUpdatedAt: string
-}
-
-export type UserMeterPackageServiceUpsertResult = {
-	applied: boolean
-	created: boolean
-	state: UserMeterPackageServiceState
-}
-
-export type UserMeterPackageServiceDeleteResult = {
-	deleted: boolean
-}
-
-export type UserMeterPackageServiceListResult = {
-	states: Array<UserMeterPackageServiceState>
-	nextStartAfter: string | null
-	truncated: boolean
-}
-
-export type UserMeterPackageServiceCountResult = {
-	count: number
-}
-
-export type UserMeterPackageServiceBootstrapResult = {
-	applied: number
-	skipped: number
-}
-
 /** Paged write-lease entry returned by {@link UserMeterRpc.listWriteLeases}. */
 export type UserMeterWriteLeaseEntry = {
 	token: string
@@ -253,11 +198,6 @@ export type UserMeterExportResult = {
 	 */
 	storageBytesState: UserMeterStorageBytesState | null
 	/**
-	 * Authoritative package-service liveness rows. Emitted only on the first
-	 * export page (`startAfter` absent); subsequent pages return `null`.
-	 */
-	packageServiceStates: Array<UserMeterPackageServiceState> | null
-	/**
 	 * Sanitized deletion-fence / write-lease inventory. Emitted only on the
 	 * first export page (`startAfter` absent); subsequent pages return `null`
 	 * so paged consumers never double-count. Excludes raw lease token and
@@ -287,25 +227,9 @@ type ExportCursor = {
 	resource: string
 }
 
-type PackageServiceExportCursor = {
-	packageId: string
-	serviceName: string
-}
-
 type WriteLeaseExportCursor = {
 	acquiredAt: string
 	token: string
-}
-
-type PackageServiceSqlRow = {
-	package_id: string
-	service_name: string
-	status: string
-	mode: string
-	started_at: string | null
-	source_updated_at: string
-	revision: number
-	updated_at: string
 }
 
 type WriteLeaseSqlRow = {
@@ -356,61 +280,6 @@ function assertInboundDeliveryId(deliveryId: string): string {
 		)
 	}
 	return deliveryId
-}
-
-function assertPackageServiceId(label: string, value: string): string {
-	if (
-		typeof value !== 'string' ||
-		value.length === 0 ||
-		value.length > maxPackageServiceIdLength
-	) {
-		throw new Error(
-			`UserMeter ${label} must be a non-empty string up to ${maxPackageServiceIdLength} characters.`,
-		)
-	}
-	return value
-}
-
-function assertPackageServiceStatus(
-	status: string,
-): UserMeterPackageServiceStatus {
-	if (!isUserMeterPackageServiceStatus(status)) {
-		throw new Error(
-			`UserMeter package service status must be one of ${packageServiceStatuses.join(', ')}; got ${JSON.stringify(status)}.`,
-		)
-	}
-	return status
-}
-
-function assertPackageServiceMode(mode: string): UserMeterPackageServiceMode {
-	if (!(packageServiceModes as ReadonlyArray<string>).includes(mode)) {
-		throw new Error(
-			`UserMeter package service mode must be one of ${packageServiceModes.join(', ')}; got ${JSON.stringify(mode)}.`,
-		)
-	}
-	return mode as UserMeterPackageServiceMode
-}
-
-function assertSourceUpdatedAt(sourceUpdatedAt: string): string {
-	if (
-		typeof sourceUpdatedAt !== 'string' ||
-		!packageServiceSourceUpdatedAtPattern.test(sourceUpdatedAt)
-	) {
-		throw new Error(
-			'UserMeter package service sourceUpdatedAt must be an ISO-8601 UTC timestamp.',
-		)
-	}
-	// Pattern-first: avoid Invalid Date → RangeError from toISOString().
-	const parsedMs = Date.parse(sourceUpdatedAt)
-	if (
-		!Number.isFinite(parsedMs) ||
-		new Date(parsedMs).toISOString() !== sourceUpdatedAt
-	) {
-		throw new Error(
-			'UserMeter package service sourceUpdatedAt must be an ISO-8601 UTC timestamp.',
-		)
-	}
-	return sourceUpdatedAt
 }
 
 function assertDeletionTimestamp(label: string, value: string): string {
@@ -484,26 +353,6 @@ function decodeExportCursor(startAfter: string): ExportCursor | null {
 		const [day, resource] = parsed
 		if (typeof day !== 'string' || typeof resource !== 'string') return null
 		return { day, resource }
-	} catch {
-		return null
-	}
-}
-
-function encodePackageServiceCursor(cursor: PackageServiceExportCursor) {
-	return JSON.stringify([cursor.packageId, cursor.serviceName])
-}
-
-function decodePackageServiceCursor(
-	startAfter: string,
-): PackageServiceExportCursor | null {
-	try {
-		const parsed = JSON.parse(startAfter) as unknown
-		if (!Array.isArray(parsed) || parsed.length !== 2) return null
-		const [packageId, serviceName] = parsed
-		if (typeof packageId !== 'string' || typeof serviceName !== 'string') {
-			return null
-		}
-		return { packageId, serviceName }
 	} catch {
 		return null
 	}
@@ -639,37 +488,12 @@ class UserMeterBase extends DurableObject<Env> {
 				updated_at TEXT NOT NULL
 			)
 		`)
-		// Authoritative package-service liveness state (schema v5; mode at v9).
-		this.ctx.storage.sql.exec(`
-			CREATE TABLE IF NOT EXISTS package_service_states (
-				package_id TEXT NOT NULL,
-				service_name TEXT NOT NULL,
-				status TEXT NOT NULL,
-				mode TEXT NOT NULL DEFAULT 'persistent',
-				started_at TEXT,
-				source_updated_at TEXT NOT NULL,
-				revision INTEGER NOT NULL,
-				updated_at TEXT NOT NULL,
-				PRIMARY KEY (package_id, service_name)
+		if (version != null && version < 10) {
+			this.ctx.storage.sql.exec(
+				`DROP INDEX IF EXISTS idx_package_service_states_status_source`,
 			)
-		`)
-		if (version != null && version < 9) {
-			try {
-				// Treat warm legacy rows as persistent until the owning service
-				// heartbeat records its exact mode. Temporary over-counting is
-				// fail-closed for the no-duration-cap concurrency limit.
-				this.ctx.storage.sql.exec(
-					`ALTER TABLE package_service_states
-					ADD COLUMN mode TEXT NOT NULL DEFAULT 'persistent'`,
-				)
-			} catch {
-				// Column already present on a partially migrated object.
-			}
+			this.ctx.storage.sql.exec(`DROP TABLE IF EXISTS package_service_states`)
 		}
-		this.ctx.storage.sql.exec(
-			`CREATE INDEX IF NOT EXISTS idx_package_service_states_status_source
-			ON package_service_states (status, source_updated_at)`,
-		)
 		// Deletion fence / write leases (schema v6+; pending_repair_id added at v7).
 		this.ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS deletion_state (
@@ -1246,292 +1070,6 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 	}
 
-	private packageServiceStateFromRow(
-		row: PackageServiceSqlRow,
-	): UserMeterPackageServiceState {
-		const revision = Math.max(0, Number(row.revision ?? 0))
-		const status = assertPackageServiceStatus(String(row.status))
-		const mode = assertPackageServiceMode(String(row.mode))
-		return {
-			packageId: String(row.package_id),
-			serviceName: String(row.service_name),
-			status,
-			mode,
-			startedAt:
-				status === 'running' && row.started_at != null
-					? String(row.started_at)
-					: null,
-			sourceUpdatedAt: String(row.source_updated_at),
-			revision,
-			updatedAt: String(row.updated_at),
-			mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(revision),
-		}
-	}
-
-	private readPackageServiceRow(
-		packageId: string,
-		serviceName: string,
-	): UserMeterPackageServiceState | null {
-		const row = this.ctx.storage.sql
-			.exec<PackageServiceSqlRow>(
-				`SELECT package_id, service_name, status, mode, started_at,
-					source_updated_at, revision, updated_at
-				FROM package_service_states
-				WHERE package_id = ? AND service_name = ?`,
-				packageId,
-				serviceName,
-			)
-			.toArray()[0]
-		if (!row) return null
-		return this.packageServiceStateFromRow(row)
-	}
-
-	private listAllPackageServiceRows(): Array<UserMeterPackageServiceState> {
-		const rows = this.ctx.storage.sql
-			.exec<PackageServiceSqlRow>(
-				`SELECT package_id, service_name, status, mode, started_at,
-					source_updated_at, revision, updated_at
-				FROM package_service_states
-				ORDER BY package_id ASC, service_name ASC`,
-			)
-			.toArray()
-		return rows.map((row) => this.packageServiceStateFromRow(row))
-	}
-
-	/**
-	 * D1-first lifecycle projection into authoritative liveness state,
-	 * monotonic on `sourceUpdatedAt`. Stale writes are rejected.
-	 */
-	async upsertPackageServiceState(input: {
-		packageId: string
-		serviceName: string
-		status: string
-		mode?: string
-		startedAt?: string | null
-		sourceUpdatedAt: string
-		updatedAt?: string
-	}): Promise<UserMeterPackageServiceUpsertResult> {
-		const packageId = assertPackageServiceId('packageId', input.packageId)
-		const serviceName = assertPackageServiceId('serviceName', input.serviceName)
-		const status = assertPackageServiceStatus(input.status)
-		// Repair callers and pre-v9 RPC clients omit mode. Counting them as
-		// persistent is conservative until a lifecycle heartbeat corrects it.
-		const mode = assertPackageServiceMode(input.mode ?? 'persistent')
-		const sourceUpdatedAt = assertSourceUpdatedAt(input.sourceUpdatedAt)
-		const updatedAt =
-			typeof input.updatedAt === 'string' && input.updatedAt.length > 0
-				? input.updatedAt
-				: sourceUpdatedAt
-		const startedAt =
-			status === 'running' &&
-			typeof input.startedAt === 'string' &&
-			input.startedAt.length > 0
-				? input.startedAt
-				: null
-
-		const existing = this.readPackageServiceRow(packageId, serviceName)
-		if (existing && existing.sourceUpdatedAt > sourceUpdatedAt) {
-			return {
-				applied: false,
-				created: false,
-				state: existing,
-			}
-		}
-		if (!existing) {
-			this.ctx.storage.sql.exec(
-				`INSERT INTO package_service_states (
-					package_id, service_name, status, mode, started_at,
-					source_updated_at, revision, updated_at
-				) VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-				packageId,
-				serviceName,
-				status,
-				mode,
-				startedAt,
-				sourceUpdatedAt,
-				updatedAt,
-			)
-			const row = this.readPackageServiceRow(packageId, serviceName)
-			if (!row) {
-				throw new Error(
-					'UserMeter upsertPackageServiceState failed to materialize liveness row.',
-				)
-			}
-			return { applied: true, created: true, state: row }
-		}
-
-		const nextRevision = existing.revision + 1
-		this.ctx.storage.sql.exec(
-			`UPDATE package_service_states
-			SET status = ?,
-				mode = ?,
-				started_at = ?,
-				source_updated_at = ?,
-				revision = ?,
-				updated_at = ?
-			WHERE package_id = ? AND service_name = ? AND revision = ?`,
-			status,
-			mode,
-			startedAt,
-			sourceUpdatedAt,
-			nextRevision,
-			updatedAt,
-			packageId,
-			serviceName,
-			existing.revision,
-		)
-		const row = this.readPackageServiceRow(packageId, serviceName)
-		if (!row) {
-			throw new Error(
-				'UserMeter upsertPackageServiceState lost the liveness row.',
-			)
-		}
-		return { applied: true, created: false, state: row }
-	}
-
-	/** Delete authoritative liveness state; discovery remains in D1. */
-	async deletePackageServiceState(input: {
-		packageId: string
-		serviceName: string
-	}): Promise<UserMeterPackageServiceDeleteResult> {
-		const packageId = assertPackageServiceId('packageId', input.packageId)
-		const serviceName = assertPackageServiceId('serviceName', input.serviceName)
-		const cursor = this.ctx.storage.sql.exec(
-			`DELETE FROM package_service_states
-			WHERE package_id = ? AND service_name = ?`,
-			packageId,
-			serviceName,
-		)
-		return { deleted: cursor.rowsWritten > 0 }
-	}
-
-	/** Paged liveness inventory; discovery and account export remain in D1. */
-	async listPackageServiceStates(input: {
-		pageSize?: number
-		startAfter?: string | null
-	}): Promise<UserMeterPackageServiceListResult> {
-		const pageSize = normalizePageSize(input.pageSize)
-		const cursor =
-			typeof input.startAfter === 'string' && input.startAfter.length > 0
-				? decodePackageServiceCursor(input.startAfter)
-				: null
-		const rows = (
-			cursor
-				? this.ctx.storage.sql.exec<PackageServiceSqlRow>(
-						`SELECT package_id, service_name, status, mode, started_at,
-							source_updated_at, revision, updated_at
-						FROM package_service_states
-						WHERE package_id > ?
-							OR (package_id = ? AND service_name > ?)
-						ORDER BY package_id ASC, service_name ASC
-						LIMIT ?`,
-						cursor.packageId,
-						cursor.packageId,
-						cursor.serviceName,
-						pageSize + 1,
-					)
-				: this.ctx.storage.sql.exec<PackageServiceSqlRow>(
-						`SELECT package_id, service_name, status, mode, started_at,
-							source_updated_at, revision, updated_at
-						FROM package_service_states
-						ORDER BY package_id ASC, service_name ASC
-						LIMIT ?`,
-						pageSize + 1,
-					)
-		).toArray()
-		const truncated = rows.length > pageSize
-		const pageRows = truncated ? rows.slice(0, pageSize) : rows
-		const states = pageRows.map((row) => this.packageServiceStateFromRow(row))
-		const last = pageRows[pageRows.length - 1]
-		return {
-			states,
-			nextStartAfter:
-				truncated && last
-					? encodePackageServiceCursor({
-							packageId: String(last.package_id),
-							serviceName: String(last.service_name),
-						})
-					: null,
-			truncated,
-		}
-	}
-
-	/** Authoritative running count for service-start enforcement. */
-	async countRunningPackageServices(input: {
-		staleAfterMs?: number
-		excludeService?: { packageId: string; serviceName: string }
-		mode?: string
-		now?: string
-	}): Promise<UserMeterPackageServiceCountResult> {
-		const now = input.now ? new Date(input.now) : new Date()
-		const safeNow = Number.isNaN(now.valueOf()) ? new Date() : now
-		const staleAfterMs =
-			typeof input.staleAfterMs === 'number' &&
-			Number.isFinite(input.staleAfterMs) &&
-			input.staleAfterMs >= 0
-				? Math.trunc(input.staleAfterMs)
-				: userMeterPackageServiceStateStaleMs
-		const freshAfter = new Date(safeNow.valueOf() - staleAfterMs).toISOString()
-		const exclusion = input.excludeService
-		const packageId = exclusion
-			? assertPackageServiceId('packageId', exclusion.packageId)
-			: null
-		const serviceName = exclusion
-			? assertPackageServiceId('serviceName', exclusion.serviceName)
-			: null
-		const mode =
-			input.mode === undefined ? null : assertPackageServiceMode(input.mode)
-		const row = (
-			packageId && serviceName
-				? this.ctx.storage.sql.exec<{ count: number }>(
-						`SELECT COUNT(*) AS count
-						FROM package_service_states
-						WHERE status = 'running'
-							AND source_updated_at >= ?
-							AND (? IS NULL OR mode = ?)
-							AND NOT (package_id = ? AND service_name = ?)`,
-						freshAfter,
-						mode,
-						mode,
-						packageId,
-						serviceName,
-					)
-				: this.ctx.storage.sql.exec<{ count: number }>(
-						`SELECT COUNT(*) AS count
-						FROM package_service_states
-						WHERE status = 'running'
-							AND source_updated_at >= ?
-							AND (? IS NULL OR mode = ?)`,
-						freshAfter,
-						mode,
-						mode,
-					)
-		).toArray()[0]
-		return { count: Math.max(0, Number(row?.count ?? 0)) }
-	}
-
-	/** Explicit migration/repair primitive; same monotonic guard as upsert. */
-	async bootstrapPackageServiceStates(input: {
-		states: ReadonlyArray<{
-			packageId: string
-			serviceName: string
-			status: string
-			mode?: string
-			startedAt?: string | null
-			sourceUpdatedAt: string
-			updatedAt?: string
-		}>
-	}): Promise<UserMeterPackageServiceBootstrapResult> {
-		let applied = 0
-		let skipped = 0
-		for (const state of input.states) {
-			const result = await this.upsertPackageServiceState(state)
-			if (result.applied) applied += 1
-			else skipped += 1
-		}
-		return { applied, skipped }
-	}
-
 	private readDeletingAt(): string | null {
 		const row = this.ctx.storage.sql
 			.exec<{
@@ -1941,9 +1479,6 @@ class UserMeterBase extends DurableObject<Env> {
 		// it once on the first page so totals and consumers never double-count.
 		const includeFirstPageState = cursor == null
 		const storageRow = includeFirstPageState ? this.readStorageRow() : null
-		const packageServiceStates = includeFirstPageState
-			? this.listAllPackageServiceRows()
-			: null
 		const deletionState = includeFirstPageState
 			? this.readDeletionStateExport()
 			: null
@@ -1958,7 +1493,6 @@ class UserMeterBase extends DurableObject<Env> {
 						mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(storageRow.revision),
 					}
 				: null,
-			packageServiceStates,
 			deletionState,
 			nextStartAfter:
 				truncated && last
@@ -2035,50 +1569,6 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 		expectedRevision: number
 		updatedAt: string
 	}) => Promise<UserMeterStorageBytesReconcileResult>
-	/** Authoritative liveness upsert; monotonic sourceUpdatedAt guard. */
-	upsertPackageServiceState: (input: {
-		packageId: string
-		serviceName: string
-		status: string
-		mode?: string
-		startedAt?: string | null
-		sourceUpdatedAt: string
-		updatedAt?: string
-	}) => Promise<UserMeterPackageServiceUpsertResult>
-	/** Authoritative liveness delete on service stop or purge. */
-	deletePackageServiceState: (input: {
-		packageId: string
-		serviceName: string
-	}) => Promise<UserMeterPackageServiceDeleteResult>
-	/** Paged inventory list. Discovery and account export still use D1. */
-	listPackageServiceStates: (input: {
-		pageSize?: number
-		startAfter?: string | null
-	}) => Promise<UserMeterPackageServiceListResult>
-	/** Authoritative running count for service-start enforcement. */
-	countRunningPackageServices: (input: {
-		staleAfterMs?: number
-		excludeService?: { packageId: string; serviceName: string }
-		mode?: string
-		now?: string
-	}) => Promise<UserMeterPackageServiceCountResult>
-	/**
-	 * Explicit repair primitive: bulk-seed from the D1 enumeration inventory
-	 * `package_service_states` (all statuses). Uses monotonic `sourceUpdatedAt`
-	 * guard so live authoritative rows are never clobbered. Not on the
-	 * enforcement path — `countRunningPackageServices` reads the DO directly.
-	 */
-	bootstrapPackageServiceStates: (input: {
-		states: ReadonlyArray<{
-			packageId: string
-			serviceName: string
-			status: string
-			mode?: string
-			startedAt?: string | null
-			sourceUpdatedAt: string
-			updatedAt?: string
-		}>
-	}) => Promise<UserMeterPackageServiceBootstrapResult>
 	/** Authoritative deletion mark; preserves tombstone. Returns active write-lease count. */
 	markDeleting: (input: {
 		deletingAt: string

@@ -111,7 +111,6 @@ const runtimeDurationMetricLabels: Record<AdminUsageMetric, string> = {
 	package_static_call: 'Static package calls',
 	job_run: 'Job runs',
 	workflow_run: 'Workflow runs',
-	service_runtime: 'Service runtime',
 	outbound_fetch: 'Fetches',
 	email_send: 'Email sends',
 	email_received: 'Email receives',

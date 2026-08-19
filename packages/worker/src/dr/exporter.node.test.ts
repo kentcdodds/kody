@@ -132,11 +132,6 @@ function createDb(results: {
 	jobs?: Array<{ userId: string; storageId: string }>
 	archived?: Array<{ userId: string; storageId: string }>
 	packages?: Array<{ userId: string; storageId: string }>
-	services?: Array<{
-		userId: string
-		packageId: string
-		serviceName: string
-	}>
 	artifacts?: Array<{
 		sourceId: string
 		userId: string
@@ -157,9 +152,6 @@ function createDb(results: {
 					}
 					if (sql.includes('FROM archived_job_artifacts')) {
 						return { results: results.archived ?? [] }
-					}
-					if (sql.includes('FROM package_service_states')) {
-						return { results: results.services ?? [] }
 					}
 					if (sql.includes('FROM saved_packages')) {
 						return { results: results.packages ?? [] }
@@ -1420,22 +1412,13 @@ test('DR inventory includes registry storage and excludes deleting owners', asyn
 	storageBucketMocks.listPlatformStorageBuckets.mockResolvedValueOnce([
 		{ userId: 'user-a', storageId: 'exec:adhoc-only' },
 	])
-	const inventoryDb = createDb({
-		services: [
-			{
-				userId: 'user-a',
-				packageId: 'pkg-1',
-				serviceName: 'worker',
-			},
-		],
-	})
+	const inventoryDb = createDb({})
 	const inventory = await listPlatformStorageInventory({
 		db: inventoryDb,
 		jobs: createD1JobsStore(inventoryDb),
 	})
 	expect(inventory.map((entry) => entry.storageId).sort()).toEqual([
 		'exec:adhoc-only',
-		'service:pkg-1:worker',
 	])
 	expect(inventory.every((entry) => entry.userId === 'user-a')).toBe(true)
 

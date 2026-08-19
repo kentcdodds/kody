@@ -45,3 +45,4 @@ behavior (see [documentation principles](../documentation.md)).
   ([runbook](../architecture/values-retirement-runbook.md))
 - [0022 — Progressive search disclosure](./0022-progressive-search-disclosure.md)
 - [0023 — Packages outrank synthesized providers](./0023-packages-outrank-synthesized-providers.md)
+- [0024 — No package services primitive](./0024-no-package-services-primitive.md)

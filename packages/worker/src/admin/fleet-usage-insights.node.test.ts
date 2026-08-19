@@ -183,7 +183,7 @@ test('loadFleetUsageInsights returns bounded consumer rankings and pressure pane
 			eventCount: 42,
 		},
 	])
-	expect(data.topDurationConsumersByMetric).toHaveLength(4)
+	expect(data.topDurationConsumersByMetric).toHaveLength(3)
 	expect(data.topDurationConsumersByMetric[0]?.consumers).toEqual([
 		{
 			stableUserId: 'user-a',

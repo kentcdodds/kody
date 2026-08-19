@@ -27,20 +27,10 @@ export const adminFleetRuntimeDurationMetrics = [
 	'execute',
 	'job_run',
 	'workflow_run',
-	'service_runtime',
 ] as const satisfies ReadonlyArray<AdminUsageMetric>
 
-/**
- * Runtime metrics that can page operators. Persistent `service_runtime` is
- * wall-clock time a package service stayed up — one always-on service crosses
- * 24h in a single day — so it stays on the insights rankings but is excluded
- * from the alert total.
- */
-export const adminFleetRuntimeDurationAlertMetrics = [
-	'execute',
-	'job_run',
-	'workflow_run',
-] as const satisfies ReadonlyArray<AdminUsageMetric>
+export const adminFleetRuntimeDurationAlertMetrics =
+	adminFleetRuntimeDurationMetrics
 
 /**
  * Combined current-month execute + job_run + workflow_run duration above which

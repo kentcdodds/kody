@@ -84,11 +84,11 @@ Analytics Engine dataset with per-surface `eventType` values. The mapping that
 matters here: keyless `packages.invoke` target runs are saved-package bundled
 runs, so they land under the `package_export` event type (`entityId` = package
 id), while the calling surface reports its own event type (`execute`, `job_run`,
-`workflow_run`, `service_runtime`). When touching an invocation path, watch the
-`durationMs` percentiles (p50/p95/p99) of the affected event types before and
-after the change rather than reasoning from a single local timing. A regression
-in the `package_export` or `execute` percentiles is a release blocker for the
-change that caused it, not a follow-up.
+`workflow_run`). When touching an invocation path, watch the `durationMs`
+percentiles (p50/p95/p99) of the affected event types before and after the
+change rather than reasoning from a single local timing. A regression in the
+`package_export` or `execute` percentiles is a release blocker for the change
+that caused it, not a follow-up.
 
 ## New awaited D1 writes need a budget justification
 

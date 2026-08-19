@@ -1888,8 +1888,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 		)
 		expect(paramsResult.result).toEqual({ room: 'office' })
 
-		createExecuteExecutorSpy.mockImplementation((input) => {
-			expect(input.timeoutMs).toBe(300_000)
+		createExecuteExecutorSpy.mockImplementation(() => {
 			return {
 				async execute(_source, providers) {
 					providerFns = (
@@ -1903,45 +1902,6 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 					}
 				},
 			} as never
-		})
-
-		const serviceResult = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				serviceContext: {
-					serviceName: 'realtime-supervisor',
-				},
-				serviceTools: {
-					getStatus: async () => ({ status: 'running' }),
-					shouldStop: async () => false,
-					setAlarm: async () => ({
-						ok: true,
-						scheduled_at: '2026-04-25T00:00:00.000Z',
-					}),
-					clearAlarm: async () => ({ ok: true }),
-				},
-				executorTimeoutMs: 300_000,
-			},
-		)
-		expect(serviceResult.result).toBe('ok')
-		expect(providerFns).not.toBeNull()
-		await expect(providerFns?.service_get_status({})).resolves.toEqual({
-			status: 'running',
-		})
-		await expect(providerFns?.service_should_stop({})).resolves.toEqual({
-			shouldStop: false,
-		})
-		await expect(
-			providerFns?.service_set_alarm({ runAt: '2026-04-25T00:00:00.000Z' }),
-		).resolves.toEqual({
-			ok: true,
-			scheduled_at: '2026-04-25T00:00:00.000Z',
-		})
-		await expect(providerFns?.service_clear_alarm({})).resolves.toEqual({
-			ok: true,
 		})
 
 		createExecuteExecutorSpy.mockImplementation(

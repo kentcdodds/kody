@@ -103,7 +103,6 @@ type ResourceCount = Partial<
 	Record<
 		| 'saved_packages'
 		| 'scheduled_jobs'
-		| 'package_services'
 		| 'repo_sessions'
 		| 'stored_email_messages'
 		| 'secrets'
@@ -132,9 +131,6 @@ function createAdminUserUsageTestDb(input: {
 		}
 		if (normalizedQuery.includes('from jobs')) {
 			return counts.scheduled_jobs ?? 0
-		}
-		if (normalizedQuery.includes('from package_service_states')) {
-			return counts.package_services ?? 0
 		}
 		if (normalizedQuery.includes('from secret_entries')) {
 			return counts.secrets ?? 0
@@ -298,7 +294,6 @@ test('loadAdminUserUsageData warns above eighty percent of plan limits', async (
 			[usageUserId]: {
 				saved_packages: 85,
 				scheduled_jobs: 8,
-				package_services: 1,
 				secrets: 7,
 			},
 		},

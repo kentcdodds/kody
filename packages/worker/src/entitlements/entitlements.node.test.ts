@@ -619,41 +619,6 @@ test('assertWithinEntitlement enforces concurrent workflow limits for unresolved
 	})
 })
 
-test('persistent package services deny free and allow standard', async () => {
-	const userId = await createStableUserIdFromEmail(plannedEmail)
-	const { db } = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'free', stable_user_id: userId }],
-	})
-	const denied = await assertWithinEntitlement({
-		db,
-		userId,
-		email: plannedEmail,
-		resource: 'persistent_package_services',
-		getCurrent: async () => 0,
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
-	if (!(denied instanceof EntitlementLimitError)) {
-		throw new Error('Expected an EntitlementLimitError.')
-	}
-	expect(denied.details).toMatchObject({
-		resource: 'persistent_package_services',
-		limit: 0,
-	})
-
-	const standardDb = createEntitlementsTestDb({
-		users: [{ email: plannedEmail, plan: 'standard', stable_user_id: userId }],
-	})
-	await assertWithinEntitlement({
-		db: standardDb.db,
-		userId,
-		email: plannedEmail,
-		resource: 'persistent_package_services',
-		getCurrent: async () => 0,
-	})
-})
-
 test('plan user daily entitlements increment, enforce at limit, and reset on a new UTC day', async () => {
 	const userId = await createStableUserIdFromEmail(plannedEmail)
 	const now = new Date('2026-07-05T15:00:00.000Z')

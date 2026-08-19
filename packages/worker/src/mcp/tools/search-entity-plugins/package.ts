@@ -162,9 +162,6 @@ export const packageSearchEntityPlugin = {
 	candidateTimingKey: 'packageCandidatesMs',
 	buildDescriptors(input) {
 		return input.optionalRows.packageRows.map((entry) => {
-			const services = Array.isArray(entry.projection.services)
-				? entry.projection.services
-				: []
 			const subscriptions = Array.isArray(entry.projection.subscriptions)
 				? entry.projection.subscriptions
 				: []
@@ -195,12 +192,6 @@ export const packageSearchEntityPlugin = {
 						]),
 					]),
 					...entry.projection.jobs.map((job) => job.name),
-					...services.flatMap((service) => [
-						service.name,
-						service.entry,
-						service.mode,
-						service.autoStart ? 'auto-start' : 'manual-start',
-					]),
 					...subscriptions.flatMap((subscription) => [
 						subscription.topic,
 						subscription.handler,
@@ -277,9 +268,6 @@ export const packageSearchEntityPlugin = {
 				const retrievers = Array.isArray(entry.projection.retrievers)
 					? entry.projection.retrievers
 					: []
-				const services = Array.isArray(entry.projection.services)
-					? entry.projection.services
-					: []
 				const subscriptions = Array.isArray(entry.projection.subscriptions)
 					? entry.projection.subscriptions
 					: []
@@ -350,15 +338,6 @@ export const packageSearchEntityPlugin = {
 							job.entry,
 							job.schedule,
 							job.enabled ? 'enabled' : 'disabled',
-						]),
-						...services.flatMap((service) => [
-							service.name,
-							service.entry,
-							service.mode,
-							service.autoStart ? 'auto-start' : 'manual-start',
-							service.timeoutMs != null
-								? `timeout-ms:${service.timeoutMs}`
-								: '',
 						]),
 						...subscriptions.flatMap((subscription) => [
 							subscription.topic,

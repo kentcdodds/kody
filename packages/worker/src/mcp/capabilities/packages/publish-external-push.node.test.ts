@@ -266,9 +266,9 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 test('publishExternalPush handles already_published branches, stale dependents, and rebuild failures', async () => {
 	const targets = [
 		{
-			kind: 'service',
+			kind: 'job',
 			artifactName: 'inbox',
-			entryPoint: 'src/service.ts',
+			entryPoint: 'src/job.ts',
 			bundleKind: 'module',
 		},
 	]

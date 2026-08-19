@@ -72,22 +72,6 @@ export function packageRealtimeSessionDurableObjectName(input: {
 }
 
 /**
- * PackageServiceInstance — long-lived service DO per
- * (userId, packageId, serviceName).
- */
-export function packageServiceInstanceDurableObjectName(input: {
-	userId: string
-	packageId: string
-	serviceName: string
-}) {
-	return durableObjectNameFromParts([
-		input.userId,
-		input.packageId,
-		input.serviceName,
-	])
-}
-
-/**
  * RepoSession is keyed by session id only (not user-prefixed). Every RPC
  * must validate the catalog row's `user_id` (RepoSessionIndex, one object
  * per user) before touching the workspace. Account deletion enumerates the

@@ -228,28 +228,6 @@ export function getPackageAppEntryPath(manifest: AuthoredPackageJson) {
 	return normalizePackageWorkspacePath(appEntry)
 }
 
-export function getPackageServiceEntryPath(input: {
-	manifest: AuthoredPackageJson
-	serviceName: string
-}) {
-	const serviceEntry =
-		input.manifest.kody.services?.[input.serviceName]?.entry?.trim()
-	if (!serviceEntry) return null
-	return normalizePackageWorkspacePath(serviceEntry)
-}
-
-export function listPackageServices(manifest: AuthoredPackageJson) {
-	return Object.entries(manifest.kody.services ?? {})
-		.map(([name, service]) => ({
-			name,
-			entry: normalizePackageWorkspacePath(service.entry),
-			autoStart: service.autoStart ?? false,
-			mode: service.mode ?? 'bounded',
-			timeoutMs: service.timeoutMs ?? null,
-		}))
-		.sort((left, right) => left.name.localeCompare(right.name))
-}
-
 export function listPackageSubscriptions(manifest: AuthoredPackageJson) {
 	return Object.entries(manifest.kody.subscriptions ?? {})
 		.map(([topic, subscription]) => ({
@@ -377,13 +355,6 @@ export type PackageSearchProjection = {
 		entry: string
 		schedule: string
 		enabled: boolean
-	}>
-	services: Array<{
-		name: string
-		entry: string
-		autoStart: boolean
-		mode: 'bounded' | 'persistent'
-		timeoutMs: number | null
 	}>
 	subscriptions: Array<{
 		topic: string
@@ -1383,7 +1354,6 @@ export function buildPackageSearchProjection(
 				enabled: job.enabled ?? true,
 			}))
 			.sort((left, right) => left.name.localeCompare(right.name)),
-		services: listPackageServices(manifest),
 		subscriptions: listPackageSubscriptions(manifest),
 		emits: listPackageEmittedEvents(manifest),
 		retrievers: listPackageRetrievers(manifest),
@@ -1400,17 +1370,6 @@ export function buildPackageSearchDocument(
 				(value): value is string =>
 					typeof value === 'string' && value.length > 0,
 			)
-			.join(' '),
-	)
-	const serviceLines = projection.services.map((service) =>
-		[
-			service.name,
-			service.entry,
-			service.mode,
-			service.autoStart ? 'auto-start' : 'manual-start',
-			service.timeoutMs != null ? `timeout-ms:${service.timeoutMs}` : '',
-		]
-			.filter((value) => value.length > 0)
 			.join(' '),
 	)
 	const subscriptionLines = (projection.subscriptions ?? []).map(
@@ -1486,7 +1445,6 @@ export function buildPackageSearchDocument(
 		projection.searchText ?? '',
 		exportLines.join('\n'),
 		jobLines.join('\n'),
-		serviceLines.join('\n'),
 		subscriptionLines.join('\n'),
 		emitsLines.join('\n'),
 		retrieverLines.join('\n'),

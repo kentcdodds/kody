@@ -183,7 +183,7 @@ search/detail projections so subscribers can discover payload shapes.
 ### Emitting
 
 Emit from any package runtime context (exports, subscription handlers,
-package-owned jobs, services, apps, retrievers) with the `events` helper:
+package-owned jobs, apps, retrievers) with the `events` helper:
 
 ```ts
 import { events } from 'kody:runtime'

@@ -4,8 +4,7 @@
 	// extracted from the main `kody` Worker. Owns the package-app origin
 	// (PACKAGE_APP_BASE_URL), inline package-app serving, the package
 	// invocation API, dynamic callable workflows, and the runtime Durable
-	// Objects (StorageRunner, RunLog, PackageRealtimeSession,
-	// PackageServiceInstance). The entry module lives in
+	// Objects (StorageRunner, RunLog, PackageRealtimeSession). The entry module lives in
 	// packages/worker/src/runtime-worker.ts so the shared source tree,
 	// `#worker`/`#app` import maps, and the pre-bundled `src/generated/`
 	// modules resolve identically to the main Worker.
@@ -75,6 +74,10 @@
 				},
 			],
 		},
+		{
+			"tag": "v2",
+			"deleted_classes": ["PackageServiceInstance"],
+		},
 	],
 	"observability": {
 		"enabled": true,
@@ -120,10 +123,6 @@
 					{
 						"class_name": "PackageRealtimeSession",
 						"name": "PACKAGE_REALTIME_SESSION",
-					},
-					{
-						"class_name": "PackageServiceInstance",
-						"name": "PACKAGE_SERVICE_INSTANCE",
 					},
 					// Main-worker classes reached cross-script. UserMeter stays
 					// in the main Worker per ADR 0016; the rest back capability
@@ -268,6 +267,10 @@
 						"PackageServiceInstance",
 					],
 				},
+				{
+					"tag": "v2",
+					"deleted_classes": ["PackageServiceInstance"],
+				},
 			],
 			"worker_loaders": [
 				{
@@ -297,10 +300,6 @@
 					{
 						"class_name": "PackageRealtimeSession",
 						"name": "PACKAGE_REALTIME_SESSION",
-					},
-					{
-						"class_name": "PackageServiceInstance",
-						"name": "PACKAGE_SERVICE_INSTANCE",
 					},
 					{
 						"class_name": "UserMeter",

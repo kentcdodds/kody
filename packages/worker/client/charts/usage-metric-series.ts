@@ -26,11 +26,6 @@ export const usageMetricSeries: Array<UsageMetricSeries> = [
 	},
 	{ metric: 'job_run', label: 'Job runs', color: chartColor.amber },
 	{ metric: 'workflow_run', label: 'Workflow runs', color: chartColor.violet },
-	{
-		metric: 'service_runtime',
-		label: 'Service runtime',
-		color: chartColor.rose,
-	},
 	{ metric: 'outbound_fetch', label: 'Fetches', color: chartColor.cyan },
 	{ metric: 'email_send', label: 'Email sends', color: chartColor.lime },
 	{

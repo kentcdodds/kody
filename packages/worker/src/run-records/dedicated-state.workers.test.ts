@@ -689,7 +689,7 @@ test('activation counts same-package successes, excludes HTTP surfaces, and is i
 		expect.objectContaining({ packageId: 'pkg-a', successCount: 1 }),
 	])
 
-	await finishSuccess({ packageId: 'pkg-b', surface: 'service' })
+	await finishSuccess({ packageId: 'pkg-b', surface: 'subscription' })
 	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
 		expect.objectContaining({ packageId: 'pkg-a', successCount: 1 }),
 		expect.objectContaining({ packageId: 'pkg-b', successCount: 1 }),

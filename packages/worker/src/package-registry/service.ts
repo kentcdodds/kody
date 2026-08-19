@@ -31,11 +31,6 @@ import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import { rebuildPublishedPackageArtifacts } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import {
-	buildPackageServiceStorageId,
-	listSavedPackageServices,
-	packageServiceRpc,
-} from '#worker/package-runtime/package-service.ts'
-import {
 	refreshPackageRetrieverManifestCache,
 	removePackageRetrieverManifestCacheEntries,
 } from '#worker/package-retrievers/manifest-cache.ts'
@@ -94,11 +89,10 @@ function serializeTags(tags: Array<string>) {
  * collide with reserved storage namespaces (`job:`, `exec:`, …) or carry LIKE
  * metacharacters (`%`, `_`; `encodeURIComponent` can also introduce `%`). A
  * UUID cannot contain `:` or those metacharacters and cannot equal the reserved
- * namespace literals, which makes `{uuid}:…`, `service:{encodeURIComponent(uuid)}:…`,
- * and `job:package-job:{uuid}:…` unambiguous. Non-UUID packages still clear the
- * deterministic set (package bucket, raw id, job/service scratch ids from D1 /
- * listed services); an orphaned facet bucket for a weird id stays inventoriable
- * for account deletion.
+ * namespace literals, which makes `{uuid}:…` and
+ * `job:package-job:{uuid}:…` unambiguous. Non-UUID packages still clear the
+ * deterministic package bucket and raw id; an orphaned facet bucket for a
+ * non-UUID id stays inventoriable for account deletion.
  */
 export function filterPackageOwnedStorageIdsFromInventory(input: {
 	packageId: string
@@ -115,14 +109,9 @@ export function filterPackageOwnedStorageIdsFromInventory(input: {
 		return [...matched]
 	}
 	const facetPrefix = `${input.packageId}:`
-	const servicePrefix = `service:${encodeURIComponent(input.packageId)}:`
 	const jobPrefix = `job:package-job:${input.packageId}:`
 	for (const storageId of input.storageIds) {
-		if (
-			storageId.startsWith(facetPrefix) ||
-			storageId.startsWith(servicePrefix) ||
-			storageId.startsWith(jobPrefix)
-		) {
+		if (storageId.startsWith(facetPrefix) || storageId.startsWith(jobPrefix)) {
 			matched.add(storageId)
 		}
 	}
@@ -434,9 +423,6 @@ export async function refreshSavedPackageProjection(input: {
 			} else {
 				await retrieverCacheTask
 			}
-			// Jobs + auto-start stay on the hot path: a deferred failure would
-			// leave schedules/services silently inactive until the next publish,
-			// and there is no dedicated reconcile for that yet.
 			const { syncPackageJobsForPackage } =
 				await import('#worker/jobs/service.ts')
 			const schedulerStateChanged = await syncPackageJobsForPackage({
@@ -447,25 +433,6 @@ export async function refreshSavedPackageProjection(input: {
 				sourceId: input.sourceId,
 				manifest: loaded.manifest,
 			})
-			for (const service of loaded.manifest.kody.services
-				? Object.keys(loaded.manifest.kody.services)
-				: []) {
-				const definition = loaded.manifest.kody.services?.[service]
-				if (!definition?.autoStart) continue
-				try {
-					await packageServiceRpc({
-						env: input.env,
-						userId: input.userId,
-						packageId: input.packageId,
-						kodyId: row.kody_id,
-						sourceId: row.source_id,
-						baseUrl: input.baseUrl,
-						serviceName: service,
-					}).start()
-				} catch {
-					// Auto-start failures should not block package job sync/alarm refresh.
-				}
-			}
 			if (schedulerStateChanged) {
 				await syncJobManagerAlarm({
 					env: input.env,
@@ -514,27 +481,6 @@ export async function deleteSavedPackageProjection(input: {
 			])
 			let packageJobsRemoved = false
 			if (savedPackage) {
-				const listedServices = await listSavedPackageServices({
-					env: input.env,
-					userId: input.userId,
-					baseUrl: 'https://package-service.invalid',
-					packageId: input.packageId,
-					savedPackage,
-				})
-				for (const service of listedServices.services) {
-					await packageServiceRpc({
-						env: input.env,
-						userId: input.userId,
-						packageId: savedPackage.id,
-						kodyId: savedPackage.kodyId,
-						sourceId: savedPackage.sourceId,
-						baseUrl: 'https://package-service.invalid',
-						serviceName: service.name,
-					}).stop()
-					packageOwnedStorageIds.add(
-						buildPackageServiceStorageId(input.packageId, service.name),
-					)
-				}
 				await cleanupArtifactReposForPackage({
 					env: input.env,
 					userId: input.userId,

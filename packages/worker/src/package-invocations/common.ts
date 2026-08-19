@@ -185,7 +185,6 @@ export function resolveInvocationRuntimeName(input: {
 		case 'execute':
 		case 'app_fetch':
 		case 'app_realtime':
-		case 'service':
 		case 'job':
 		case 'retriever':
 		case 'webhook':

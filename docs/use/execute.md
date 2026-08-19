@@ -35,9 +35,9 @@ helpers are runtime exports:
   [Package storage](./packages.md#package-storage)
 - use **`import { workflows } from 'kody:runtime'`** to queue Cloudflare
   Workflows from execute calls, ad hoc jobs, package jobs, package
-  subscriptions, package services, and package exports. Prefer workflows for
-  durable batch sweeps, migrations, polling loops, retryable steps, or work that
-  may run longer than execute's timeout. See [Workflows](./workflows.md)
+  subscriptions, package apps, and package exports. Prefer workflows for durable
+  batch sweeps, migrations, polling loops, retryable steps, or work that may run
+  longer than execute's timeout. See [Workflows](./workflows.md)
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
 - use **`import { packages } from 'kody:runtime'`** inside saved package runtime
@@ -50,18 +50,6 @@ helpers are runtime exports:
   `package.json.name` (for example, `@kentcdodds/github`). When the target
   package's name is known when the code is written, use a static `kody:@...`
   import instead (see below)
-- use **`import { serviceContext } from 'kody:runtime'`** inside package service
-  code when you need the current service identity; it is **`null`** outside
-  package service runs
-- package service runs also expose **`service`** through **`kody:runtime`** for
-  background lifecycle control:
-  - `await service.getStatus()` — read the current package-service status
-  - `await service.shouldStop()` — cooperatively observe stop requests
-  - `await service.setAlarm(runAt)` — schedule the next service wake-up
-  - `await service.clearAlarm()` — clear a pending service wake-up
-- package service runs may also declare **`kody.services.<name>.timeoutMs`** in
-  `package.json` when they need a longer executor budget than the default
-  package-service timeout
 - use **`import thing from 'kody:@scope/my-package/export-name'`** or
   **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
   saved package export by npm-scoped package name. This is **the default for
@@ -188,8 +176,6 @@ module-oriented runtime model:
 - package-specific metadata lives under `package.json#kody`
 - package jobs are schedules declared under `package.json#kody.jobs`
 - package apps are optional UI surfaces declared under `package.json#kody.app`
-- package services are optional long-lived runtimes declared under
-  `package.json#kody.services`
 - non-package jobs can also be scheduled directly with
   **`kody.job_schedule(...)`** without creating a saved package
 - **`kody.job_schedule_once(...)`** provides a convenience alias for one-off
@@ -263,12 +249,6 @@ package-owned jobs and non-package jobs created with `job_schedule` or
   invocation runs (exports, subscriptions, retrievers) bind no ambient `storage`
   — package code, including package apps, reaches the shared package bucket
   through `packageStorage()`
-- package service runs also get writable service-owned durable state scoped to
-  the declared service name; shared durable data still uses `packageStorage()`
-- package service runs are background-managed by the service Durable Object, so
-  `service_start` returns immediately with a running state while the service
-  code continues in the background until it finishes, errors, or cooperatively
-  stops
 - import **`storage`** from **`kody:runtime`**
 - use **`storage.get(...)`**, **`storage.set(...)`**, **`storage.list(...)`**,
   and **`storage.sql(query, params?)`**

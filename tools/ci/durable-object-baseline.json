@@ -279,11 +279,6 @@
 							"name": "PACKAGE_REALTIME_SESSION",
 							"class_name": "PackageRealtimeSession",
 							"script_name": "kody-runtime"
-						},
-						{
-							"name": "PACKAGE_SERVICE_INSTANCE",
-							"class_name": "PackageServiceInstance",
-							"script_name": "kody-runtime"
 						}
 					]
 				},
@@ -336,11 +331,6 @@
 							"name": "PACKAGE_REALTIME_SESSION",
 							"class_name": "PackageRealtimeSession",
 							"script_name": "kody-runtime"
-						},
-						{
-							"name": "PACKAGE_SERVICE_INSTANCE",
-							"class_name": "PackageServiceInstance",
-							"script_name": "kody-runtime"
 						}
 					]
 				},
@@ -390,10 +380,6 @@
 						{
 							"name": "PACKAGE_REALTIME_SESSION",
 							"class_name": "PackageRealtimeSession"
-						},
-						{
-							"name": "PACKAGE_SERVICE_INSTANCE",
-							"class_name": "PackageServiceInstance"
 						}
 					]
 				}
@@ -462,10 +448,6 @@
 							"class_name": "PackageRealtimeSession"
 						},
 						{
-							"name": "PACKAGE_SERVICE_INSTANCE",
-							"class_name": "PackageServiceInstance"
-						},
-						{
 							"name": "USER_METER",
 							"class_name": "UserMeter",
 							"script_name": "kody"
@@ -511,10 +493,6 @@
 						{
 							"name": "PACKAGE_REALTIME_SESSION",
 							"class_name": "PackageRealtimeSession"
-						},
-						{
-							"name": "PACKAGE_SERVICE_INSTANCE",
-							"class_name": "PackageServiceInstance"
 						},
 						{
 							"name": "USER_METER",

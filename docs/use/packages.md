@@ -16,7 +16,6 @@ Think in terms of:
 - packages
 - package exports
 - package apps
-- package services
 - package subscriptions
 - package-owned jobs
 - package-owned retrievers
@@ -29,7 +28,7 @@ snapshot of a saved package.
 ## Package state model
 
 A saved package is a repo with the package extension activated: repos are the
-durable home, packages add runtime. Five concepts make up its state:
+durable home, packages add runtime. Four concepts make up its state:
 
 1. **Package source** — repo-backed code and manifest rooted at `package.json`
    (Artifacts repos plus D1 `entity_sources` projections). `package.json` is the
@@ -42,16 +41,8 @@ durable home, packages add runtime. Five concepts make up its state:
 3. **Package storage** — the package's durable StorageRunner (SQLite) bucket,
    reached via `packageStorage()` from `kody:runtime`. This is the durable-data
    primitive for every package surface: exports/invocations, subscriptions,
-   retrievers, jobs, services, and package apps.
-4. **Package coordination** — package services (`package.json#kody.services`)
-   are the package-wide named stateful coordination unit: long-lived,
-   background-managed, and alarm-capable (`serviceContext.setAlarm` /
-   `clearAlarm`), with lifecycle status. Durable data still lives in package
-   storage; the service holds lifecycle/liveness only. There is no separate
-   general actor abstraction. App facets and package-internal Durable Object
-   namespaces are app-only implementation details layered on package storage,
-   not separate saved primitives.
-5. **Package jobs** — scheduled execution owned by the package
+   retrievers, jobs, and package apps.
+4. **Package jobs** — scheduled execution owned by the package
    (`package.json#kody.jobs`): schedule/execution metadata lives in D1 job rows;
    each job run binds a job-scoped scratch bucket; package config stays keyed by
    the saved package id; shared durable data goes through `packageStorage()`.
@@ -60,7 +51,6 @@ When to use which:
 
 - Durable package data → `packageStorage()`
 - Credentials and non-secret config → package secrets and values
-- Long-lived coordination and alarms → a package service
 - Scheduled work → a package job
 - Per-app realtime internals → app facets (implementation detail, not the
   persistence mechanism)
@@ -88,7 +78,6 @@ Important fields:
   `kody:@...` imports
 - `kody.secretMounts` — optional package-scoped secret mount declarations
 - `kody.app` — optional hosted package app config
-- `kody.services` — optional package-owned service runtimes
 - `kody.subscriptions` — optional event-topic subscriptions with package-local
   handlers
 - `kody.emits` — optional package-emitted event topic declarations
@@ -116,8 +105,8 @@ Saved packages may declare runtime npm dependencies in `package.json`
 `dependencies` and import them directly when they are compatible with the
 Cloudflare Workers runtime.
 
-- Kody bundles those dependencies for package exports, package apps, package
-  services, package-owned jobs, and package subscription handlers.
+- Kody bundles those dependencies for package exports, package apps,
+  package-owned jobs, and package subscription handlers.
 - Dependency resolution happens during package checks and publish-time artifact
   rebuilds, not by ad hoc package installs during normal execution.
 - If a declared dependency cannot be resolved or bundled, package checks fail
@@ -294,7 +283,7 @@ Every saved package owns one durable storage bucket per user
 
 - **Writing a saved package?** Use `packageStorage()` for the package's own data
   — always, including package apps, exports, subscriptions, retrievers, jobs,
-  and services.
+  and workflows.
 - **Writing ad hoc `execute` code against a caller-owned bucket?** Bind a
   `storageId` on the execute call and use ambient `storage`.
 - **Touching another package's data?** Call that package's exports via keyless
@@ -307,9 +296,9 @@ declaring package's own bucket no matter where the code runs:
 
 - In the package's own export/invocation runtime it is the only way to reach the
   package bucket — those runs bind no ambient `storage`.
-- In package apps, jobs, and services it reaches the same shared package bucket.
-  Jobs and services may also bind separate run-scoped scratch buckets on ambient
-  `storage`; use `packageStorage()` for shared durable data.
+- In package apps and jobs it reaches the same shared package bucket. Jobs may
+  also bind separate run-scoped scratch buckets on ambient `storage`; use
+  `packageStorage()` for shared durable data.
 - When the module is statically imported (`kody:@scope/package/export`) into an
   ad hoc `execute` call or into another package, each module reads and writes
   the bucket of the package it came from, under the calling user's account.
@@ -407,7 +396,7 @@ Treat package apps like Worker-style modules:
 - app code lives in the package repo
 - the entry module is declared by `kody.app.entry`
 - durable package data uses `packageStorage()` — the same shared package bucket
-  as exports, jobs, and services
+  as exports and jobs
 - internal Durable Objects or facets are app-only realtime/coordination details
   layered under the package namespace, not the persistence mechanism and not
   separate saved primitives
@@ -417,39 +406,8 @@ Treat package apps like Worker-style modules:
 Enabled MCP servers from `/account/mcp-servers` are available as
 `kody.mcp["name"]` in execute and in package runtimes that build caller context:
 package apps (when capabilities or nested `packages.invoke` need them), package
-services, subscription handlers, package-owned jobs, workflows, HTTP invocation
-tokens, and webhook delivery.
-
-## Package services
-
-A package service is optional.
-
-When `package.json#kody.services` is present, the package can declare one or
-more named service entrypoints that Kody runs with package caller context and
-`packageStorage()` for the package's shared bucket.
-
-Use the package service model when the package needs:
-
-- long-lived or repeated background work
-- package-owned daemon-like logic
-- package state that is separate from browser sessions
-- a service that should publish updates into a package app
-- an outbound WebSocket or reconnect loop (`mode: 'persistent'`, persist resume
-  cursors in `packageStorage()`; the host keeps the isolate awake and
-  immediately resumes after eviction)
-
-Treat package services like package-owned runtime modules:
-
-- service code lives in the package repo
-- each service entry module is declared by `kody.services.<name>.entry`
-- services may optionally declare `kody.services.<name>.timeoutMs` to raise the
-  executor timeout for long-lived or connector-style runs
-- service lifecycle is controlled through the `services` capability domain
-- service starts return immediately and the service keeps running in the
-  background until it finishes or is stopped
-- service code can inspect its own lifecycle through `serviceContext` and the
-  `service` helper exposed by `kody:runtime`
-- services share the same saved package identity as package apps and jobs
+subscription handlers, package-owned jobs, workflows, HTTP invocation tokens,
+and webhook delivery.
 
 ## Package subscriptions
 

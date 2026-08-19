@@ -3,8 +3,8 @@
  *
  * One event schema covers every metered chokepoint (execute runs, package
  * export invocations, statically imported package export calls, job runs,
- * workflow runs, package service runtime, realtime websocket sessions,
- * gateway fetches, email sends and receives).
+ * workflow runs, realtime websocket sessions, gateway fetches, email sends and
+ * receives).
  *
  * The write path depends on the environment:
  *

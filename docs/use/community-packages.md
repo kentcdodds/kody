@@ -99,7 +99,7 @@ an **inert** source:
 
 - `package.json` `name` and `kody.id` are rewritten to your username scope.
 - **No saved package row is created**, so nothing runs yet — no imports, jobs,
-  services, subscriptions, or package app.
+  subscriptions, or package app.
 
 The fork result lists **cross-scope references** that can never resolve across
 user scopes:

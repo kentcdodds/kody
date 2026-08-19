@@ -85,7 +85,6 @@ test('loadPublishedBundleArtifactByIdentity treats mismatched and malformed KV a
 				kodyId: 'ai-chat',
 				sourceId: 'source-ai-chat',
 			},
-			serviceContext: null,
 			createdAt: '2026-05-13T00:00:00.000Z',
 		})
 		.mockResolvedValueOnce({
@@ -107,7 +106,6 @@ test('loadPublishedBundleArtifactByIdentity treats mismatched and malformed KV a
 				kodyId: 'email-received-subscriber',
 				sourceId: 'source-email-received-subscriber',
 			},
-			serviceContext: null,
 			createdAt: '2026-05-13T00:00:00.000Z',
 		})
 
@@ -225,7 +223,6 @@ test('isPublishedPackageArtifactBuiltForCommit requires matching row and KV arti
 		dependencies: [],
 		dynamicDependencies: [],
 		packageContext: null,
-		serviceContext: null,
 		createdAt: '2026-05-13T00:00:00.000Z',
 	})
 	// Identity mismatch (KV commit differs from row) is treated as a miss.
@@ -264,7 +261,6 @@ test('isPublishedPackageArtifactBuiltForCommit requires matching row and KV arti
 		dependencies: [],
 		dynamicDependencies: [],
 		packageContext: null,
-		serviceContext: null,
 		createdAt: '2026-05-13T00:00:00.000Z',
 	})
 	expect(
@@ -302,7 +298,6 @@ test('isPublishedPackageArtifactBuiltForCommit requires matching row and KV arti
 		dependencies: [],
 		dynamicDependencies: [],
 		packageContext: null,
-		serviceContext: null,
 		createdAt: '2026-05-13T00:00:00.000Z',
 	})
 	expect(

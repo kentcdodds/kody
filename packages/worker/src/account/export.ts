@@ -16,12 +16,6 @@ import {
 } from '#worker/account/r2-export.ts'
 import { exportJobManagerForUser } from '#worker/jobs/manager-client.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
-import { listPackageServices } from '#worker/package-registry/manifest.ts'
-import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
-import {
-	buildPackageServiceStorageId,
-	packageServiceRpc,
-} from '#worker/package-runtime/package-service.ts'
 import {
 	buildPublishedSourceManifestSnapshotKvKey,
 	buildPublishedSourceSnapshotKvKey,
@@ -49,10 +43,7 @@ import {
 } from '#worker/repo/repo-session-index-client.ts'
 import { type RepoSessionIndexExportResult } from '#worker/repo/repo-session-index-do.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
-import {
-	listAccountUserPackageServices,
-	listAccountUserStorageIds,
-} from '#worker/account/user-inventory.ts'
+import { listAccountUserStorageIds } from '#worker/account/user-inventory.ts'
 
 const accountExportSchemaVersion = 1
 const defaultExportPageSize = 100
@@ -72,7 +63,6 @@ export const accountExportSectionNames = [
 	'user_meter',
 	'mailbox',
 	'repo_session_index',
-	'package_service',
 	'oauth_grants',
 	'artifact_repos',
 	'kv_keys',
@@ -116,18 +106,10 @@ type UserSavedPackageSnapshot = {
 	hasApp: boolean
 }
 
-type UserPackageServiceSnapshot = {
-	packageId: string
-	kodyId: string
-	sourceId: string
-	serviceName: string
-}
-
 type UserExportInventory = {
 	storageIds: Array<string>
 	sourceSnapshots: Array<UserSourceSnapshot>
 	savedPackages: Array<UserSavedPackageSnapshot>
-	packageServices: Array<UserPackageServiceSnapshot>
 	communityListingIds: Array<string>
 	bundleKvKeys: Array<string>
 	r2ObjectCount: number
@@ -140,7 +122,6 @@ type ManifestInventoryCounts = {
 	userMeterCounters: number
 	mailboxRows: number
 	repoSessionIndexRows: number
-	packageServices: number
 	artifactRepos: number
 	kvKeys: number
 	r2Objects: number
@@ -222,9 +203,6 @@ function countUserMeterExportEntries(result: UserMeterExportResult): number {
 	return (
 		result.counters.length +
 		(result.storageBytesState == null ? 0 : 1) +
-		(result.packageServiceStates == null
-			? 0
-			: result.packageServiceStates.length) +
 		deletionStateCount
 	)
 }
@@ -273,11 +251,6 @@ type AccountExportDurableObjects = {
 	userMeter: UserMeterExportResult | null
 	mailbox: MailboxExportResult | null
 	repoSessionIndex: RepoSessionIndexExportResult | null
-	packageServices: Array<{
-		packageId: string
-		serviceName: string
-		status: unknown | null
-	}>
 	storageRunners: Array<{
 		storageId: string
 		export: Awaited<
@@ -307,11 +280,6 @@ export type AccountExportSectionResult = {
 	 * `user_meter` page (`startAfter` absent); later pages set it to `null`.
 	 */
 	storageBytesState?: UserMeterExportResult['storageBytesState']
-	/**
-	 * Authoritative UserMeter package-service rows. Present only on the first
-	 * `user_meter` page (`startAfter` absent); later pages set it to `null`.
-	 */
-	packageServiceStates?: UserMeterExportResult['packageServiceStates']
 	/**
 	 * Sanitized UserMeter deletion-fence / write-lease inventory (no raw token
 	 * or holder). Present only on the first `user_meter` page (`startAfter`
@@ -537,18 +505,10 @@ async function collectD1TableRows(input: {
 	return section
 }
 
-async function listUserStorageIds(
-	env: Env,
-	userId: string,
-	warnings?: Array<string>,
-	packageServices?: ReadonlyArray<UserPackageServiceSnapshot>,
-) {
+async function listUserStorageIds(env: Env, userId: string) {
 	return await listAccountUserStorageIds({
 		env,
 		userId,
-		baseUrl: 'https://account-export.invalid',
-		warnings,
-		packageServices,
 	})
 }
 
@@ -607,43 +567,8 @@ async function listExportBaseStorageIdPage(
 	return { ids: sorted.slice(0, pageSize), truncated: sorted.length > pageSize }
 }
 
-function tryDecodeURIComponent(value: string) {
-	try {
-		return decodeURIComponent(value)
-	} catch {
-		return null
-	}
-}
-
-function parseServiceStorageId(storageId: string) {
-	if (!storageId.startsWith('service:')) return null
-	const [packagePart, servicePart] = storageId
-		.slice('service:'.length)
-		.split(':')
-	if (!packagePart || !servicePart) return null
-	const packageId = tryDecodeURIComponent(packagePart)
-	const serviceName = tryDecodeURIComponent(servicePart)
-	if (packageId == null || serviceName == null) return null
-	if (!packageId || !serviceName) return null
-	return { packageId, serviceName }
-}
-
 async function listExportD1DiscoverableStorageIds(env: Env, userId: string) {
-	const [baseIds, serviceRows] = await Promise.all([
-		listExportBaseStorageIds(env, userId),
-		env.APP_DB.prepare(
-			`SELECT package_id, service_name AS name
-			FROM package_service_states
-			WHERE user_id = ?`,
-		)
-			.bind(userId)
-			.all<{ package_id: string; name: string }>(),
-	])
-	const ids = new Set(baseIds)
-	for (const row of serviceRows.results ?? []) {
-		ids.add(buildPackageServiceStorageId(row.package_id, row.name))
-	}
-	return ids
+	return new Set(await listExportBaseStorageIds(env, userId))
 }
 
 async function isExportDiscoverableStorageId(
@@ -659,88 +584,8 @@ async function isExportDiscoverableStorageId(
 		.bind(userId, storageId)
 		.first<{ owned: number }>()
 	if (bucketRow?.owned === 1) return true
-	const parsed = parseServiceStorageId(storageId)
-	if (parsed) {
-		const row = await env.APP_DB.prepare(
-			`SELECT 1 AS owned
-			FROM package_service_states
-			WHERE user_id = ? AND package_id = ? AND service_name = ?`,
-		)
-			.bind(userId, parsed.packageId, parsed.serviceName)
-			.first<{ owned: number }>()
-		if (row?.owned === 1) return true
-	}
 	const runRecordStorageIds = await listRunRecordStorageIds({ env, userId })
 	return runRecordStorageIds.includes(storageId)
-}
-
-async function resolveExportPackageService(input: {
-	env: Env
-	userId: string
-	packageId: string
-	serviceName: string
-	warnings: Array<string>
-}) {
-	const stateRow = await input.env.APP_DB.prepare(
-		`SELECT
-			s.package_id AS package_id,
-			p.kody_id AS kody_id,
-			p.source_id AS source_id,
-			s.service_name AS name
-		FROM package_service_states AS s
-		LEFT JOIN saved_packages AS p
-			ON p.id = s.package_id AND p.user_id = s.user_id
-		WHERE s.user_id = ?
-			AND s.package_id = ?
-			AND s.service_name = ?`,
-	)
-		.bind(input.userId, input.packageId, input.serviceName)
-		.first<{
-			package_id: string
-			kody_id: string | null
-			source_id: string | null
-			name: string
-		}>()
-	if (stateRow) {
-		return {
-			packageId: stateRow.package_id,
-			kodyId: stateRow.kody_id ?? '',
-			sourceId: stateRow.source_id ?? '',
-			serviceName: stateRow.name,
-		}
-	}
-
-	const savedPackage = await input.env.APP_DB.prepare(
-		`SELECT id, kody_id, source_id
-		FROM saved_packages
-		WHERE user_id = ? AND id = ?`,
-	)
-		.bind(input.userId, input.packageId)
-		.first<{ id: string; kody_id: string; source_id: string }>()
-	if (!savedPackage) return null
-	try {
-		const loaded = await loadPackageManifestBySourceId({
-			env: input.env,
-			baseUrl: 'https://account-export.invalid',
-			userId: input.userId,
-			sourceId: savedPackage.source_id,
-		})
-		const declared = listPackageServices(loaded.manifest).some(
-			(service) => service.name === input.serviceName,
-		)
-		if (!declared) return null
-		return {
-			packageId: savedPackage.id,
-			kodyId: savedPackage.kody_id,
-			sourceId: savedPackage.source_id,
-			serviceName: input.serviceName,
-		}
-	} catch (error) {
-		input.warnings.push(
-			`Failed to load package manifest for service export (${input.packageId}/${input.serviceName}): ${getErrorMessage(error)}`,
-		)
-		return null
-	}
 }
 async function listUserSourceSnapshots(env: Env, userId: string) {
 	const rows = await selectRows<{
@@ -788,19 +633,6 @@ async function listUserSavedPackages(env: Env, userId: string) {
 		sourceId: row.source_id,
 		hasApp: normalizeBoolean(row.has_app),
 	}))
-}
-
-async function listUserPackageServices(
-	env: Env,
-	userId: string,
-	warnings?: Array<string>,
-) {
-	return await listAccountUserPackageServices({
-		env,
-		userId,
-		baseUrl: 'https://account-export.invalid',
-		warnings,
-	})
 }
 
 async function listUserBundleKvKeys(input: {
@@ -878,18 +710,6 @@ async function collectInventory(input: {
 	dbUserId: number
 	warnings: Array<string>
 }): Promise<UserExportInventory> {
-	// Enumerate services first so storage-id listing can reuse the result and
-	// avoid a second package-manifest pass in the same request.
-	const packageServices = await listUserPackageServices(
-		input.env,
-		input.userId,
-		input.warnings,
-	).catch((error) => {
-		input.warnings.push(
-			`Failed to enumerate package services: ${getErrorMessage(error)}`,
-		)
-		return [] as Array<UserPackageServiceSnapshot>
-	})
 	const [
 		storageIds,
 		sourceSnapshots,
@@ -897,12 +717,7 @@ async function collectInventory(input: {
 		communityListingIds,
 		r2ObjectCount,
 	] = await Promise.all([
-		listUserStorageIds(
-			input.env,
-			input.userId,
-			input.warnings,
-			packageServices,
-		).catch((error) => {
+		listUserStorageIds(input.env, input.userId).catch((error) => {
 			input.warnings.push(
 				`Failed to enumerate storage ids: ${getErrorMessage(error)}`,
 			)
@@ -962,7 +777,6 @@ async function collectInventory(input: {
 		storageIds,
 		sourceSnapshots,
 		savedPackages,
-		packageServices,
 		communityListingIds,
 		bundleKvKeys,
 		r2ObjectCount,
@@ -982,8 +796,8 @@ async function countScalar(
 }
 
 async function countUserStorageIds(env: Env, userId: string) {
-	// Match durable_object_summaries discovery: D1 base + package_service_states
-	// + RunLog storage ids (one RunLog RPC, not per-package manifests).
+	// Match durable_object_summaries discovery: D1 base plus RunLog storage ids
+	// (one RunLog RPC).
 	const [d1Ids, runRecordStorageIds] = await Promise.all([
 		listExportD1DiscoverableStorageIds(env, userId),
 		listRunRecordStorageIds({ env, userId }),
@@ -1087,7 +901,6 @@ async function collectManifestInventoryCounts(input: {
 		userMeterCounters,
 		mailboxRows,
 		repoSessionIndexRows,
-		packageServices,
 		artifactRepos,
 		kvKeys,
 		r2Objects,
@@ -1133,17 +946,6 @@ async function collectManifestInventoryCounts(input: {
 				ownerId: input.userId,
 			})
 		}),
-		safeCount('package services', async () =>
-			countScalar(
-				input.env,
-				`SELECT COUNT(*) AS count FROM (
-					SELECT DISTINCT package_id, service_name
-					FROM package_service_states
-					WHERE user_id = ?
-				)`,
-				[input.userId],
-			),
-		),
 		safeCount('artifact repos', async () =>
 			countScalar(
 				input.env,
@@ -1166,7 +968,6 @@ async function collectManifestInventoryCounts(input: {
 		userMeterCounters,
 		mailboxRows,
 		repoSessionIndexRows,
-		packageServices,
 		artifactRepos,
 		kvKeys,
 		r2Objects,
@@ -1604,89 +1405,41 @@ async function exportRepoSessionIndexRows(input: {
 	}
 }
 
-async function exportPackageServices(input: {
-	env: AccountExportEnv
-	userId: string
-	services: ReadonlyArray<UserPackageServiceSnapshot>
-	warnings: Array<string>
-}) {
-	const statuses: AccountExportDurableObjects['packageServices'] = []
-	for (const service of input.services) {
-		try {
-			statuses.push({
-				packageId: service.packageId,
-				serviceName: service.serviceName,
-				status: await packageServiceRpc({
-					env: input.env,
-					userId: input.userId,
-					packageId: service.packageId,
-					kodyId: service.kodyId,
-					sourceId: service.sourceId,
-					baseUrl: 'https://account-export.invalid',
-					serviceName: service.serviceName,
-				}).status(),
-			})
-		} catch (error) {
-			input.warnings.push(
-				`Package service status export failed for ${service.packageId}/${service.serviceName}: ${getErrorMessage(error)}`,
-			)
-			statuses.push({
-				packageId: service.packageId,
-				serviceName: service.serviceName,
-				status: null,
-			})
-		}
-	}
-	return statuses
-}
-
 async function exportDurableObjects(input: {
 	env: AccountExportEnv
 	userId: string
 	inventory: UserExportInventory
 	warnings: Array<string>
 }): Promise<AccountExportDurableObjects> {
-	const [
-		storageRunners,
-		packageServices,
-		runRecords,
-		userMeter,
-		mailbox,
-		repoSessionIndex,
-	] = await Promise.all([
-		exportStorageRunners({
-			env: input.env,
-			userId: input.userId,
-			storageIds: input.inventory.storageIds,
-			warnings: input.warnings,
-		}),
-		exportPackageServices({
-			env: input.env,
-			userId: input.userId,
-			services: input.inventory.packageServices,
-			warnings: input.warnings,
-		}),
-		exportUserRunRecords({
-			env: input.env,
-			userId: input.userId,
-			warnings: input.warnings,
-		}),
-		exportUserMeterCounters({
-			env: input.env,
-			userId: input.userId,
-			warnings: input.warnings,
-		}),
-		exportMailboxRows({
-			env: input.env,
-			userId: input.userId,
-			warnings: input.warnings,
-		}),
-		exportRepoSessionIndexRows({
-			env: input.env,
-			userId: input.userId,
-			warnings: input.warnings,
-		}),
-	])
+	const [storageRunners, runRecords, userMeter, mailbox, repoSessionIndex] =
+		await Promise.all([
+			exportStorageRunners({
+				env: input.env,
+				userId: input.userId,
+				storageIds: input.inventory.storageIds,
+				warnings: input.warnings,
+			}),
+			exportUserRunRecords({
+				env: input.env,
+				userId: input.userId,
+				warnings: input.warnings,
+			}),
+			exportUserMeterCounters({
+				env: input.env,
+				userId: input.userId,
+				warnings: input.warnings,
+			}),
+			exportMailboxRows({
+				env: input.env,
+				userId: input.userId,
+				warnings: input.warnings,
+			}),
+			exportRepoSessionIndexRows({
+				env: input.env,
+				userId: input.userId,
+				warnings: input.warnings,
+			}),
+		])
 	let jobManager: unknown | null = null
 	try {
 		jobManager = await exportJobManagerForUser({
@@ -1702,7 +1455,6 @@ async function exportDurableObjects(input: {
 		userMeter,
 		mailbox,
 		repoSessionIndex,
-		packageServices,
 		storageRunners,
 	}
 }
@@ -1798,19 +1550,6 @@ function buildManifest(input: {
 				warning.startsWith('REPO_SESSION_INDEX '),
 		),
 		discovery: { section: 'repo_session_index' },
-	}
-	sections.package_services = {
-		count:
-			input.inventoryCounts?.packageServices ??
-			input.inventory?.packageServices.length ??
-			0,
-		warnings: input.warnings.filter((warning) =>
-			warning.startsWith('Package service '),
-		),
-		discovery: {
-			section: 'durable_object_summaries',
-			kind: 'package_service',
-		},
 	}
 	sections.oauth_grants = {
 		count: input.oauthGrantCount ?? input.oauthGrants?.length ?? 0,
@@ -2021,9 +1760,7 @@ export async function readAccountExportSection(input: {
 	section: AccountExportSectionName
 	table?: string
 	storageId?: string
-	packageId?: string
-	serviceName?: string
-	kind?: 'storage_runner' | 'package_service' | 'job_manager'
+	kind?: 'storage_runner' | 'job_manager'
 	pageSize?: number
 	startAfter?: string
 }): Promise<AccountExportSectionResult> {
@@ -2119,7 +1856,6 @@ export async function readAccountExportSection(input: {
 			section: input.section,
 			items: page.counters,
 			storageBytesState: page.storageBytesState,
-			packageServiceStates: page.packageServiceStates,
 			deletionState: page.deletionState,
 			truncated: page.truncated,
 			nextStartAfter: page.nextStartAfter,
@@ -2163,35 +1899,6 @@ export async function readAccountExportSection(input: {
 			truncated: page.truncated,
 			nextStartAfter: page.nextStartAfter,
 			pageSize,
-			warnings,
-		}
-	}
-	if (input.section === 'package_service') {
-		if (!input.packageId || !input.serviceName) {
-			throw new Error(
-				'package_id and service_name are required when section is package_service.',
-			)
-		}
-		const service = await resolveExportPackageService({
-			env: input.env,
-			userId: input.mcpUserId,
-			packageId: input.packageId,
-			serviceName: input.serviceName,
-			warnings,
-		})
-		if (!service) throw new Error('Package service was not found for export.')
-		const [exported] = await exportPackageServices({
-			env: input.env,
-			userId: input.mcpUserId,
-			services: [service],
-			warnings,
-		})
-		return {
-			section: input.section,
-			items: exported ? [exported] : [],
-			truncated: false,
-			nextStartAfter: null,
-			pageSize: 1,
 			warnings,
 		}
 	}
@@ -2270,57 +1977,8 @@ export async function readAccountExportSection(input: {
 					warnings,
 				}
 			}
-			if (input.kind === 'package_service') {
-				// Discovery pages are D1-only keyset SQL so each page stays cheap
-				// and bounded. Manifest-declared services (never projected into
-				// package_service_states) are included by the one-shot
-				// listAccountUserPackageServices path used for full export
-				// inventory and account deletion — not here.
-				const afterPackageId = String(cursor['packageId'] ?? '')
-				const afterName = String(cursor['name'] ?? '')
-				const rows = await input.env.APP_DB.prepare(
-					`SELECT package_id, service_name AS name
-					FROM package_service_states
-					WHERE user_id = ?
-						AND (package_id > ? OR (package_id = ? AND service_name > ?))
-					ORDER BY package_id, service_name
-					LIMIT ?`,
-				)
-					.bind(
-						input.mcpUserId,
-						afterPackageId,
-						afterPackageId,
-						afterName,
-						pageSize + 1,
-					)
-					.all<{ package_id: string; name: string }>()
-				const pageRows = rows.results ?? []
-				const truncated = pageRows.length > pageSize
-				const selected = truncated ? pageRows.slice(0, pageSize) : pageRows
-				return {
-					section: input.section,
-					items: selected.map((row) => ({
-						kind: input.kind,
-						packageId: row.package_id,
-						serviceName: row.name,
-					})),
-					truncated,
-					nextStartAfter: truncated
-						? JSON.stringify({
-								packageId: selected.at(-1)!.package_id,
-								name: selected.at(-1)!.name,
-							})
-						: null,
-					pageSize,
-					warnings,
-				}
-			}
-			// Discovery pages: D1 keyset SQL (user_storage_buckets + entity
-			// tables + package_service_states) then RunLog-only ids. Do not call
-			// listAccountUserStorageIds / listAccountUserPackageServices here —
-			// those helpers fetch package manifests and are for one-shot full
-			// export inventory and account deletion completeness. RunLog is one
-			// Durable Object RPC per request, not per package.
+			// Discovery pages use D1 keyset SQL for registered storage ids, then
+			// include RunLog-only ids with one Durable Object RPC per request.
 			const stage = String(cursor['stage'] ?? 'base')
 			if (stage === 'base') {
 				const afterId = String(cursor['afterId'] ?? '')
@@ -2340,73 +1998,6 @@ export async function readAccountExportSection(input: {
 					nextStartAfter: JSON.stringify(
 						truncated
 							? { stage: 'base', afterId: selected.at(-1)! }
-							: { stage: 'service', packageId: '', name: '' },
-					),
-					pageSize,
-					warnings,
-				}
-			}
-			if (stage === 'service') {
-				const afterPackageId = String(cursor['packageId'] ?? '')
-				const afterName = String(cursor['name'] ?? '')
-				const rows = await input.env.APP_DB.prepare(
-					`SELECT package_id, service_name AS name
-					FROM package_service_states
-					WHERE user_id = ?
-						AND (package_id > ? OR (package_id = ? AND service_name > ?))
-					ORDER BY package_id, service_name
-					LIMIT ?`,
-				)
-					.bind(
-						input.mcpUserId,
-						afterPackageId,
-						afterPackageId,
-						afterName,
-						pageSize + 1,
-					)
-					.all<{ package_id: string; name: string }>()
-				const pageRows = rows.results ?? []
-				const selected = pageRows.slice(0, pageSize)
-				const resultItems: Array<{ kind: string; storageId: string }> = []
-				const candidateIds = selected.map((row) =>
-					buildPackageServiceStorageId(row.package_id, row.name),
-				)
-				const alreadyInBase = new Set<string>()
-				if (candidateIds.length > 0) {
-					const placeholders = candidateIds.map(() => '?').join(', ')
-					const [bucketMatches, jobStorageIds] = await Promise.all([
-						input.env.APP_DB.prepare(
-							`SELECT id FROM (${exportBucketStorageIdSql}) WHERE id IN (${placeholders})`,
-						)
-							.bind(input.mcpUserId, ...candidateIds)
-							.all<{ id: string }>(),
-						listExportJobStorageIds(input.env, input.mcpUserId),
-					])
-					for (const row of bucketMatches.results ?? []) {
-						alreadyInBase.add(row.id)
-					}
-					const jobIdSet = new Set(jobStorageIds)
-					for (const storageId of candidateIds) {
-						if (jobIdSet.has(storageId)) alreadyInBase.add(storageId)
-					}
-				}
-				for (const storageId of candidateIds) {
-					if (!alreadyInBase.has(storageId)) {
-						resultItems.push({ kind: input.kind, storageId })
-					}
-				}
-				const truncated = pageRows.length > pageSize
-				return {
-					section: input.section,
-					items: resultItems,
-					truncated: true,
-					nextStartAfter: JSON.stringify(
-						truncated
-							? {
-									stage: 'service',
-									packageId: selected.at(-1)!.package_id,
-									name: selected.at(-1)!.name,
-								}
 							: { stage: 'runlog', afterId: '' },
 					),
 					pageSize,

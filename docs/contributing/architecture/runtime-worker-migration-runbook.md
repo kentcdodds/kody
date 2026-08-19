@@ -4,9 +4,9 @@ How to move the package runtime lane from the main `kody` Worker into the
 `kody-runtime` Worker (`packages/runtime-worker/`) in production, per
 [ADR 0016](../decisions/0016-mono-worker-extraction.md). The genuinely risky
 step is the one-time Durable Object **script migration**: the storage of
-`StorageRunner`, `RunLog`, `PackageRealtimeSession`, and
-`PackageServiceInstance` moves from the `kody` script to the `kody-runtime`
-script via a Wrangler `transferred_classes` migration.
+`StorageRunner`, `RunLog`, and `PackageRealtimeSession` moves from the `kody`
+script to the `kody-runtime` script via a Wrangler `transferred_classes`
+migration.
 
 > **Warning:** the implementation session that authored this document must NOT
 > execute these production steps. The runbook is executed by an operator (the
@@ -14,15 +14,15 @@ script via a Wrangler `transferred_classes` migration.
 
 ## Ownership after the split
 
-| Concern                                                                       | Owner                                                                       |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Package-app origin (`PACKAGE_APP_BASE_URL`, `kody.run`) zone routes           | `kody-runtime`                                                              |
-| Inline package-app serving (`/apps/...` on the app origin)                    | `kody-runtime` (forwarded by main via the `RUNTIME_WORKER` service binding) |
-| Package invocation API                                                        | `kody-runtime` (forwarded by main)                                          |
-| `DynamicCallableWorkflow` (Cloudflare Workflow)                               | `kody-runtime` (main binds it cross-script)                                 |
-| `StorageRunner`, `RunLog`, `PackageRealtimeSession`, `PackageServiceInstance` | `kody-runtime` (main binds them cross-script)                               |
-| `UserMeter` and every other Durable Object, app, MCP, OAuth, email, jobs      | `kody` (runtime binds what it needs cross-script)                           |
-| `APP_DB` / `AUDIT_DB` / KV / R2 / queues / Vectorize / AI                     | Shared resources; each worker binds directly (no RPC proxying)              |
+| Concern                                                             | Owner                                                                       |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Package-app origin (`PACKAGE_APP_BASE_URL`, `kody.run`) zone routes | `kody-runtime`                                                              |
+| Inline package-app serving (`/apps/...` on the app origin)          | `kody-runtime` (forwarded by main via the `RUNTIME_WORKER` service binding) |
+| Package invocation API                                              | `kody-runtime` (forwarded by main)                                          |
+| `DynamicCallableWorkflow` (Cloudflare Workflow)                     | `kody-runtime` (main binds it cross-script)                                 |
+| `StorageRunner`, `RunLog`, `PackageRealtimeSession`                 | `kody-runtime` (main binds them cross-script)                               |
+| `UserMeter` and every other Durable Object, app, MCP, OAuth, email  | `kody` (runtime binds what it needs cross-script)                           |
+| `APP_DB` / `AUDIT_DB` / KV / R2 / queues / Vectorize / AI           | Shared resources; each worker binds directly (no RPC proxying)              |
 
 ## Migration configuration
 
@@ -40,8 +40,7 @@ top-level name) at deploy time:
 		"transferred_classes": [
 			{ "from": "StorageRunner", "from_script": "kody", "to": "StorageRunner" },
 			{ "from": "RunLog", "from_script": "kody", "to": "RunLog" },
-			{ "from": "PackageRealtimeSession", "from_script": "kody", "to": "PackageRealtimeSession" },
-			{ "from": "PackageServiceInstance", "from_script": "kody", "to": "PackageServiceInstance" }
+			{ "from": "PackageRealtimeSession", "from_script": "kody", "to": "PackageRealtimeSession" }
 		]
 	}
 ]
@@ -103,7 +102,7 @@ hand.
    2. syncs secrets to both workers;
    3. applies D1 migrations (shared databases, applied once);
    4. **deploys `kody-runtime` first** — this applies the `v1`
-      `transferred_classes` migration, moving the four classes' storage out of
+      `transferred_classes` migration, moving the active classes' storage out of
       `kody`. From this moment the still-running old `kody` deployment serves
       runtime traffic against namespaces that have moved; the window until step
       5 completes must be short and is why the two deploys are consecutive steps
@@ -111,7 +110,7 @@ hand.
       accepted risk (per ADR 0016) is that runtime requests hitting the old
       `kody` deployment during this seconds-long window error and surface as
       failed runs/invocations, which is why the deploy runs at a quiet time;
-   5. **deploys `kody` second** with the config that binds the four classes
+   5. **deploys `kody` second** with the config that binds the three classes
       cross-script (`script_name: "kody-runtime"`) plus the `RUNTIME_WORKER`
       service binding, and stops routing runtime requests in-process;
    6. healthchecks `kody` (`/health`) and `kody-runtime` (`/__runtime/health`),

@@ -147,10 +147,6 @@ async function createEnv(
 			idFromName: () => ({ toString: () => 'package-realtime-id' }),
 			get: () => ({}) as DurableObjectStub,
 		} as DurableObjectNamespace,
-		PACKAGE_SERVICE_INSTANCE: {
-			idFromName: () => ({ toString: () => 'package-service-id' }),
-			get: () => ({}) as DurableObjectStub,
-		} as DurableObjectNamespace,
 	} as unknown as Env
 }
 

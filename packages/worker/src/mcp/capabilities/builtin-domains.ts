@@ -13,7 +13,6 @@ import { packagesDomain } from './packages/domain.ts'
 import { repoDomain } from './repo/domain.ts'
 import { runsDomain } from './runs/domain.ts'
 import { secretsDomain } from './secrets/domain.ts'
-import { servicesDomain } from './services/domain.ts'
 import { storageDomain } from './storage/domain.ts'
 import { valuesDomain } from './values/domain.ts'
 import { webhooksDomain } from './webhooks/domain.ts'
@@ -42,7 +41,6 @@ export const builtinDomains = [
 	repoDomain,
 	runsDomain,
 	secretsDomain,
-	servicesDomain,
 	storageDomain,
 	valuesDomain,
 	webhooksDomain,

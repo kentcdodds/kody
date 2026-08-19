@@ -642,7 +642,6 @@ function seedPackageResolution() {
 				kodyId: 'discord-gateway',
 				sourceId: 'source-1',
 			},
-			serviceContext: null,
 			createdAt: '2026-04-27T00:00:00.000Z',
 		},
 	})
@@ -755,7 +754,6 @@ function createModuleArtifact(input: {
 			},
 			dependencies: [],
 			packageContext: input.packageContext,
-			serviceContext: null,
 			createdAt: '2026-05-10T00:00:00.000Z',
 		},
 	}
@@ -2615,7 +2613,6 @@ test('invokePackageSubscription uses the normal capability registry with package
 				kodyId: 'discord-gateway',
 				sourceId: 'source-1',
 			},
-			serviceContext: null,
 			createdAt: '2026-04-27T00:00:00.000Z',
 		},
 	})

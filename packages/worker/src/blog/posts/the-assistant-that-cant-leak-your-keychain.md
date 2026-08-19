@@ -103,7 +103,7 @@ data.
 
 Kody's answer is to push isolation below the query layer. Every read and write
 path is scoped by userId, and the stateful services (your job scheduler, your
-storage, your package services) run in Cloudflare Durable Objects namespaced by
+storage, your package runtime) run in Cloudflare Durable Objects namespaced by
 your userId. My scheduler is a different object than yours. My storage is a
 different object than yours. Cross-user data sharing isn't a risk to be filtered
 against per-query; it's treated as a bug in the platform, full stop, because the

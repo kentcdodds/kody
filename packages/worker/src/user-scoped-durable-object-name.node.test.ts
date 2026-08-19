@@ -8,7 +8,6 @@ import {
 	mailboxDurableObjectName,
 	mcpClientHubDurableObjectName,
 	packageRealtimeSessionDurableObjectName,
-	packageServiceInstanceDurableObjectName,
 	repoSessionDurableObjectName,
 	repoSessionIndexDurableObjectName,
 	runLogDurableObjectName,
@@ -49,14 +48,6 @@ test('user-scoped Durable Object name helpers preserve frozen idFromName contrac
 			packageId: 'pkg-1',
 		}),
 	).toBe('["user-aaa","pkg-1"]')
-	expect(
-		packageServiceInstanceDurableObjectName({
-			userId: 'user-aaa',
-			packageId: 'pkg-1',
-			serviceName: 'gateway',
-		}),
-	).toBe('["user-aaa","pkg-1","gateway"]')
-
 	expect(repoSessionDurableObjectName('session-1')).toBe('session-1')
 
 	expect(durableObjectNameFromParts(['user-aaa', 'a/b'])).toBe(
@@ -75,7 +66,6 @@ test('private JSON-tuple Durable Object name builders live only in the identity 
 	// user-scoped-durable-object-name.ts.
 	const bannedPrivateBuilders = [
 		'function buildStorageRunnerName',
-		'function buildPackageServiceName',
 		'function buildRealtimeSessionName',
 	]
 	// Production call sites must not invent tuple DO names inline.

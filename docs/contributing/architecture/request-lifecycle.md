@@ -97,28 +97,6 @@ Requests are handled in this order:
      those documents and serves markdown when `Accept` prefers `text/markdown`.
      DNS-AID (`_mcp._agents.<apex>` SVCB/HTTPS) is zone DNS, not a Worker route.
 
-## Package service runtime
-
-Saved packages may also declare long-lived package services under
-`package.json#kody.services`.
-
-- Package services are **not** routed through a public HTTP path the way package
-  apps are.
-- Instead, the Worker hosts them via the `PackageServiceInstance` Durable Object
-  binding and controls them through package runtime bridges and MCP
-  capabilities.
-- Package services share package identity with apps/jobs and can publish into
-  package app realtime sessions, but they own their own durable storage bucket
-  and lifecycle.
-- A running service is kept resident with a short incoming alarm (about 15s).
-  Background `waitUntil` work does not keep the Durable Object alive by itself;
-  without that wake, Cloudflare evicts the isolate and orphans the sandbox,
-  including any outbound WebSocket.
-- `mode: 'persistent'` means stay up until stopped. Eviction is treated as a
-  platform interrupt: the host immediately reschedules the same service, even
-  when `autoStart` is false. Persist resume cursors (`session_id`, sequence) in
-  `packageStorage()` so the next run can continue.
-
 ## Workflow runtime
 
 All server-side Kody runtime contexts expose `workflows` from `kody:runtime`.

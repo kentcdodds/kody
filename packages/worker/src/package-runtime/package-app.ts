@@ -48,11 +48,6 @@ import {
 	type PackageWorkflowCreateInput,
 } from './package-workflows.ts'
 import {
-	listSavedPackageServices,
-	normalizePackageServiceStatus,
-	packageServiceRpc,
-} from './package-service.ts'
-import {
 	isPackageSecretAccessUnavailableError,
 	resolvePackageMountedSecret,
 } from '#mcp/secrets/package-access.ts'
@@ -211,24 +206,6 @@ function createRealtimeProxy(runtimeBridge) {
 				sessionId,
 				code: input.code,
 				reason: input.reason,
-			}),
-	};
-}
-
-function createServicesProxy(runtimeBridge) {
-	return {
-		list: async () => await runtimeBridge.serviceList(),
-		get: async (serviceName) =>
-			await runtimeBridge.serviceGet({
-				serviceName,
-			}),
-		start: async (serviceName) =>
-			await runtimeBridge.serviceStart({
-				serviceName,
-			}),
-		stop: async (serviceName) =>
-			await runtimeBridge.serviceStop({
-				serviceName,
 			}),
 	};
 }
@@ -537,7 +514,6 @@ function createRuntime(runtimeBridge, packageContext) {
 			await runtimeBridge.refreshAccessToken(providerName),
 		createAuthenticatedFetch: createAuthenticatedFetchHelper(runtimeBridge),
 		realtime: createRealtimeProxy(runtimeBridge),
-		services: createServicesProxy(runtimeBridge),
 		packageSecrets,
 		workflows: createWorkflowsProxy(runtimeBridge),
 		packages: createPackagesProxy(runtimeBridge),
@@ -928,18 +904,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 	}
 
-	private getPackageServiceRpc(serviceName: string) {
-		return packageServiceRpc({
-			env: this.env,
-			userId: this.ctx.props.userId,
-			packageId: this.ctx.props.packageId,
-			kodyId: this.ctx.props.kodyId,
-			sourceId: this.ctx.props.sourceId,
-			baseUrl: this.ctx.props.baseUrl,
-			serviceName,
-		})
-	}
-
 	async packageRuntimeRunStart(input: {
 		surface: 'app_fetch' | 'app_realtime'
 		name?: string | null
@@ -1302,51 +1266,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			code: input.code ?? undefined,
 			reason: input.reason ?? undefined,
 		})
-	}
-
-	async serviceList() {
-		const result = await listSavedPackageServices({
-			env: this.env,
-			userId: this.ctx.props.userId,
-			baseUrl: this.ctx.props.baseUrl,
-			packageId: this.ctx.props.packageId,
-		})
-		const services = await Promise.all(
-			result.services.map(async (service) => {
-				let status = 'unknown'
-				try {
-					status = normalizePackageServiceStatus(
-						await this.getPackageServiceRpc(service.name).status(),
-					).status
-				} catch {
-					// Keep the rest of the service list usable if one status lookup fails.
-				}
-				return {
-					name: service.name,
-					entry: service.entry,
-					auto_start: service.autoStart,
-					timeout_ms: service.timeoutMs ?? null,
-					status,
-				}
-			}),
-		)
-		return {
-			package_id: result.savedPackage.id,
-			kody_id: result.savedPackage.kodyId,
-			services,
-		}
-	}
-
-	async serviceGet(input: { serviceName: string }) {
-		return await this.getPackageServiceRpc(input.serviceName).status()
-	}
-
-	async serviceStart(input: { serviceName: string }) {
-		return await this.getPackageServiceRpc(input.serviceName).start()
-	}
-
-	async serviceStop(input: { serviceName: string }) {
-		return await this.getPackageServiceRpc(input.serviceName).stop()
 	}
 
 	async workflowCreate(input: unknown) {

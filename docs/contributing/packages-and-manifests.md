@@ -27,7 +27,6 @@ Use `package.json` as the canonical source of truth for saved package metadata.
   closed if a reachable saved package manifest cannot be loaded.
 - `kody.secretMounts` — optional package-scoped secret mount declarations
 - `kody.app` — optional hosted package app config
-- `kody.services` — optional package-owned service runtimes
 - `kody.subscriptions` — optional package-owned event subscriptions
 - `kody.emits` — optional package-emitted event topic declarations
 - `kody.webhooks` — optional inbound webhook declarations bound to package
@@ -51,8 +50,8 @@ Important behavior:
 
 - Kody resolves and bundles saved-package npm dependencies during repo checks
   and publish-time artifact rebuilds.
-- Published bundle artifacts are what package exports, services, jobs,
-  subscriptions, retrievers, and apps execute at runtime.
+- Published bundle artifacts are what package exports, jobs, subscriptions,
+  retrievers, and apps execute at runtime.
 - If a package declares a dependency that the bundler cannot resolve or bundle,
   repo checks fail with the underlying bundling error instead of allowing a
   publish that will only fail later at runtime.
@@ -74,7 +73,6 @@ Think in terms of:
 - packages
 - package exports
 - package apps
-- package-owned services
 - package-owned jobs
 - package-owned subscriptions
 - package-owned webhooks
@@ -87,7 +85,7 @@ the activated package extension on that repo.
 
 ## Package state model
 
-A saved package is a repo with the package extension activated. Five concepts:
+A saved package is a repo with the package extension activated. Four concepts:
 
 1. **Package source** — Artifacts repo + D1 `entity_sources` projection;
    manifest rooted at `package.json`.
@@ -98,15 +96,8 @@ A saved package is a repo with the package extension activated. Five concepts:
 3. **Package storage** — StorageRunner bucket
    `storageId = buildPackageStorageId(packageId)` →
    `package:{encodeURIComponent(packageId)}`, reached via `packageStorage()`
-   from every package surface (exports, subscriptions, retrievers, jobs,
-   services, apps).
-4. **Package coordination** — `PackageServiceInstance` Durable Objects for
-   `package.json#kody.services`: lifecycle/liveness and alarms only. Durable
-   data stays in package storage. No general actor abstraction. App facets
-   (`{packageId}:facet:{facetName}`) and package-internal DO namespaces
-   (`{packageId}:{exportName}:{name}`) are app-only StorageRunner buckets under
-   the package namespace, not separate saved primitives.
-5. **Package jobs** — `package.json#kody.jobs` with schedule/execution metadata
+   from every package surface (exports, subscriptions, retrievers, jobs, apps).
+4. **Package jobs** — `package.json#kody.jobs` with schedule/execution metadata
    in D1 `jobs` rows; each run binds
    `job:package-job:{packageId}:{encodeURIComponent(jobName)}` scratch storage;
    package config stays keyed by the saved package id; shared durable data uses
@@ -171,13 +162,12 @@ A saved package is a repo with the package extension activated. Five concepts:
   goes through keyless `packages.invoke`. Package-invocation runs (exports,
   subscription handlers, retrievers) bind no ambient `storage`, so guard-less
   ambient access in those contexts fails with the structured
-  `runtime_helper_unbound` hint pointing at `packageStorage()`. Job and service
-  runtimes bind job-/service-scoped scratch buckets. Repo checks fail (the
-  `lint` result) when package sources import ambient `storage` from
-  `kody:runtime` with a value named import; type-only imports and `.d.ts` files
-  are exempt. The rule runs on new session check runs, publishes, and community
-  fork installs — already-published artifacts are not re-validated until one of
-  those events.
+  `runtime_helper_unbound` hint pointing at `packageStorage()`. Job runtimes
+  bind job-scoped scratch buckets. Repo checks fail (the `lint` result) when
+  package sources import ambient `storage` from `kody:runtime` with a value
+  named import; type-only imports and `.d.ts` files are exempt. The rule runs on
+  new session check runs, publishes, and community fork installs —
+  already-published artifacts are not re-validated until one of those events.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.
@@ -468,9 +458,9 @@ await workflows.create({
 })
 ```
 
-In package runtime contexts (package jobs, subscription handlers, services,
-package apps), `packageId` is resolved from `packageContext`. Outside package
-runtime (`execute`, ad hoc jobs), pass `packageId` explicitly. See
+In package runtime contexts (package jobs, subscription handlers, package apps),
+`packageId` is resolved from `packageContext`. Outside package runtime
+(`execute`, ad hoc jobs), pass `packageId` explicitly. See
 [Workflows](../use/workflows.md) for the full runtime reference, including the
 inline `code` shape.
 

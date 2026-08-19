@@ -15,7 +15,6 @@ export const capabilityDomainNames = {
 	repo: 'repo',
 	runs: 'runs',
 	secrets: 'secrets',
-	services: 'services',
 	storage: 'storage',
 	values: 'values',
 	webhooks: 'webhooks',

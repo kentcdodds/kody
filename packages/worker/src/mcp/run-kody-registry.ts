@@ -57,7 +57,6 @@ import {
 	type PackageSecretToolOptions,
 	type PackageStorageToolOptions,
 	type PackageWorkflowTools,
-	type ServiceToolOptions,
 	type StorageToolOptions,
 } from '#mcp/runtime-helper-manifest.ts'
 import {
@@ -222,7 +221,6 @@ export async function buildKodyFns(
 		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
 		packageStorageTools?: PackageStorageToolOptions
-		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
@@ -245,7 +243,6 @@ async function buildKodyToolContext(
 		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
 		packageStorageTools?: PackageStorageToolOptions
-		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
@@ -346,7 +343,6 @@ async function buildKodyToolContext(
 		capabilityMap,
 		storageTools,
 		packageStorageTools: options?.packageStorageTools,
-		serviceTools: options?.serviceTools,
 		packageSecretTools: options?.packageSecretTools,
 		emailTools: options?.emailTools,
 		workflowTools: options?.workflowTools,
@@ -507,7 +503,6 @@ export async function buildKodyProvider(
 		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
 		packageStorageTools?: PackageStorageToolOptions
-		serviceTools?: ServiceToolOptions
 		packageSecretTools?: PackageSecretToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
@@ -599,7 +594,6 @@ export async function runModuleWithRegistry(
 		executorExports?: typeof workerExports
 		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
-		serviceTools?: ServiceToolOptions
 		packageContext?: PackageContextOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
@@ -755,10 +749,6 @@ export async function runBundledModuleWithRegistry(
 		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
 		packageContext?: PackageContextOptions
-		serviceContext?: {
-			serviceName: string
-		} | null
-		serviceTools?: ServiceToolOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
 		packageInvokeTools?: PackageInvokeTools
@@ -963,7 +953,6 @@ export async function runBundledModuleWithRegistry(
 			additionalTools: options?.additionalTools,
 			storageTools: options?.storageTools,
 			packageStorageTools,
-			serviceTools: options?.serviceTools,
 			packageSecretTools,
 			emailTools: options?.emailTools,
 			workflowTools,
@@ -983,7 +972,6 @@ export async function runBundledModuleWithRegistry(
 			provider,
 			storageTools: options?.storageTools,
 			packageStorageTools,
-			serviceTools: options?.serviceTools,
 			packageSecretTools,
 			emailTools: options?.emailTools,
 			workflowTools,
@@ -1019,7 +1007,6 @@ ${runtimeHelperPreludeSource}
     kody,
 ${runtimeHelperRuntimePropertySource}
     packageContext: ${JSON.stringify(options?.packageContext ?? null)},
-    serviceContext: ${JSON.stringify(options?.serviceContext ?? null)},
   };
   try {
     return await __kodyRuntimeStorage.run(__kodyRuntime, async () => {

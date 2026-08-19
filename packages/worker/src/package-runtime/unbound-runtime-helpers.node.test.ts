@@ -11,7 +11,6 @@ const allOptionalHelperNames = new Set([
 	'createAuthenticatedFetch',
 	'secretHeaders',
 	'oauthClientCredentials',
-	'service',
 	'packageSecrets',
 	'email',
 	'workflows',

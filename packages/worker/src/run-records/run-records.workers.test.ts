@@ -264,7 +264,7 @@ test('logs round-trip in sequence order and keep only the newest 200', async () 
 	const handle = beginRunRecord({
 		env,
 		userId,
-		context: baseContext({ surface: 'service' }),
+		context: baseContext({ surface: 'workflow' }),
 	})
 	expect(handle).not.toBeNull()
 	const totalLogs = runRecordMaxLogEntriesPerRun + 50

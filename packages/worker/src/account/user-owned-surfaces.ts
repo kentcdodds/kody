@@ -5,7 +5,6 @@ export type UserOwnedDurableObjectSurface = {
 		| 'repo_session'
 		| 'mcp_client_hub'
 		| 'package_realtime_session'
-		| 'package_service_instance'
 		| 'run_log'
 		| 'user_meter'
 		| 'stripe_plan_refresh'
@@ -108,12 +107,6 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 				'Ephemeral live websocket/session state. Durable app storage is exported through StorageRunner buckets.',
 		},
 		{
-			id: 'package_service_instance',
-			binding: 'PACKAGE_SERVICE_INSTANCE',
-			deletionResultKey: 'packageServiceInstances',
-			export: 'include',
-		},
-		{
 			id: 'run_log',
 			binding: 'RUN_LOG',
 			deletionResultKey: 'runLogs',
@@ -127,7 +120,7 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			deletionResultKey: 'userMeters',
 			export: 'include',
 			notes:
-				'Per-user daily entitlement counters, storage-byte state, package-service liveness, and deletion-fence/write-lease state (one DO per stable userId). Daily counters, storage bytes, and package-service running counts are authoritative in UserMeter; users has no d1_storage_bytes mirror columns, and the reconcile lane sweeps users by stable_user_id keyset from the platform-owned d1_storage_reconcile_cursor row. UserMeter is the sole lease authority: all callers (including email paths) supply USER_METER via env; acquireWriteLease writes to the DO only and countActiveWriteLeases is a direct DO COUNT (no paging). There is no D1 account_write_leases table; D1 users.deleting_at remains the permanent point gate and account_write_lease_repairs remains the admin repair audit log. Self-prunes stale UTC-day rows inside the DO rather than through a retention cron lane; account deletion purge clears counters, storage-byte state, package-service liveness, and write leases while preserving an existing deleting tombstone; account export pages counters through the user_meter section via exportCounters and includes authoritative storageBytesState, packageServiceStates, and sanitized deletionState without raw lease token/holder on the first page only.',
+				'Per-user daily entitlement counters, storage-byte state, and deletion-fence/write-lease state (one DO per stable userId). Daily counters and storage bytes are authoritative in UserMeter; users has no d1_storage_bytes mirror columns, and the reconcile lane sweeps users by stable_user_id keyset from the platform-owned d1_storage_reconcile_cursor row. UserMeter is the sole lease authority: all callers (including email paths) supply USER_METER via env; acquireWriteLease writes to the DO only and countActiveWriteLeases is a direct DO COUNT (no paging). There is no D1 account_write_leases table; D1 users.deleting_at remains the permanent point gate and account_write_lease_repairs remains the admin repair audit log. Self-prunes stale UTC-day rows inside the DO rather than through a retention cron lane; account deletion purge clears counters, storage-byte state, and write leases while preserving an existing deleting tombstone; account export pages counters through the user_meter section via exportCounters and includes authoritative storageBytesState and sanitized deletionState without raw lease token/holder on the first page only.',
 		},
 		{
 			id: 'stripe_plan_refresh',

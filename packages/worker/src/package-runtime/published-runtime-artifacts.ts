@@ -9,12 +9,7 @@ const sourceSnapshotPrefix = 'source-snapshot'
 const sourceManifestSnapshotPrefix = 'source-manifest-snapshot'
 const bundleArtifactPrefix = 'bundle-artifact'
 
-export type BundleArtifactKind =
-	| 'app'
-	| 'importable-module'
-	| 'job'
-	| 'module'
-	| 'service'
+export type BundleArtifactKind = 'app' | 'importable-module' | 'job' | 'module'
 
 export type BundleArtifactDependency = {
 	sourceId: string
@@ -97,18 +92,14 @@ export type PublishedBundleArtifact = {
 		kodyId: string
 		sourceId: string
 	} | null
-	serviceContext: {
-		serviceName: string
-	} | null
 	createdAt: string
 }
 
 type StoredPublishedBundleArtifact = Omit<
 	PublishedBundleArtifact,
-	'modules' | 'serviceContext'
+	'modules'
 > & {
 	modules: Record<string, SerializedWorkerLoaderModule>
-	serviceContext?: PublishedBundleArtifact['serviceContext']
 }
 
 function getBundleArtifactsKv(env: Env) {
@@ -443,16 +434,23 @@ export async function readPublishedBundleArtifact(input: {
 		return null
 	}
 	return {
-		...artifact,
+		version: artifact.version,
+		kind: artifact.kind,
+		artifactName: artifact.artifactName,
+		sourceId: artifact.sourceId,
+		publishedCommit: artifact.publishedCommit,
+		entryPoint: artifact.entryPoint,
+		mainModule: artifact.mainModule,
 		dynamicDependencies: artifact.dynamicDependencies ?? [],
+		dependencies: artifact.dependencies,
 		packageContext: artifact.packageContext
 			? {
 					...artifact.packageContext,
 					sourceId: artifact.packageContext.sourceId ?? artifact.sourceId,
 				}
 			: null,
-		serviceContext: artifact.serviceContext ?? null,
 		modules: deserializeWorkerLoaderModules(artifact.modules),
+		createdAt: artifact.createdAt,
 	} satisfies PublishedBundleArtifact
 }
 

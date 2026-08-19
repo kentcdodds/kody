@@ -38,7 +38,6 @@ function createPackageRow(): PackageSearchRow {
 			appEntry: null,
 			exports: [],
 			jobs: [],
-			services: [],
 			subscriptions: [],
 			retrievers: [],
 			webhooks: [],

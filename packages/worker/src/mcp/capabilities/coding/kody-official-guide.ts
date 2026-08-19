@@ -107,8 +107,6 @@ const allKeywords = [
 		'api key',
 		'personal access token',
 		'connect secret',
-		'package service',
-		'service package',
 		'package subscription',
 		'package subscriptions',
 		'platform friction',

@@ -12,20 +12,6 @@ import {
 	createPermissiveAccountWriteLeaseDbHooks,
 } from '#worker/test-support/user-meter.ts'
 
-function mockPackageServiceNamespace(): DurableObjectNamespace {
-	return {
-		idFromName(name: string) {
-			return { toString: () => name } as DurableObjectId
-		},
-		get(id: DurableObjectId) {
-			return {
-				fetch: vi.fn(async () => new Response(JSON.stringify({ ok: true }))),
-				id,
-			} as unknown as DurableObjectStub
-		},
-	} as DurableObjectNamespace
-}
-
 const mockModule = vi.hoisted(() => ({
 	buildPackageSearchProjection: vi.fn(),
 	buildSavedPackageEmbedText: vi.fn(),
@@ -38,12 +24,10 @@ const mockModule = vi.hoisted(() => ({
 	deleteSavedPackageVector: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	insertSavedPackage: vi.fn(),
-	listSavedPackageServices: vi.fn(),
 	listJobRowsByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	loadPackageSourceFromFiles: vi.fn(),
-	packageServiceRpc: vi.fn(),
 	syncJobManagerAlarm: vi.fn(),
 	syncPackageJobsForPackage: vi.fn(),
 	updateSavedPackage: vi.fn(),
@@ -75,15 +59,6 @@ vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', () => ({
 vi.mock('#worker/package-runtime/module-graph.ts', () => ({
 	buildKodyAppBundle: vi.fn(),
 	buildKodyModuleBundle: vi.fn(),
-}))
-
-vi.mock('#worker/package-runtime/package-service.ts', () => ({
-	listSavedPackageServices: (...args: Array<unknown>) =>
-		mockModule.listSavedPackageServices(...args),
-	packageServiceRpc: (...args: Array<unknown>) =>
-		mockModule.packageServiceRpc(...args),
-	buildPackageServiceStorageId: (packageId: string, serviceName: string) =>
-		`service:${encodeURIComponent(packageId)}:${encodeURIComponent(serviceName)}`,
 }))
 
 vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
@@ -202,7 +177,6 @@ function createEnv(
 			storageBuckets: options?.storageBuckets,
 			savedPackageCount: options?.savedPackageCount,
 		}),
-		PACKAGE_SERVICE_INSTANCE: mockPackageServiceNamespace(),
 		USER_METER: meter.env.USER_METER,
 	} as Env
 }
@@ -239,17 +213,6 @@ function setupDefaultMocks() {
 	mockModule.deleteSavedPackageVector.mockResolvedValue(undefined)
 	mockModule.deleteJobRow.mockResolvedValue(undefined)
 	mockModule.cleanupArtifactReposForPackage.mockResolvedValue(0)
-	mockModule.listSavedPackageServices.mockResolvedValue({
-		savedPackage: {
-			id: 'package-1',
-			kodyId: 'shade-automation',
-		},
-		services: [],
-	})
-	mockModule.packageServiceRpc.mockReturnValue({
-		start: vi.fn().mockResolvedValue({ ok: true }),
-		stop: vi.fn().mockResolvedValue({ ok: true }),
-	})
 	mockModule.deleteAllAppScopedValues.mockResolvedValue(undefined)
 	mockModule.storageRunnerRpc.mockClear()
 	mockModule.clearStorage.mockReset()
@@ -378,12 +341,6 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 			description: 'Shade automation package',
 			tags: ['home', 'shades'],
 			searchText: 'shade automation',
-			services: {
-				'realtime-supervisor': {
-					entry: './src/services/realtime-supervisor.ts',
-					autoStart: true,
-				},
-			},
 			jobs: {
 				'event-runner': {
 					entry: './src/jobs/event-runner.ts',
@@ -564,12 +521,6 @@ test('refreshSavedPackageProjection continues best-effort cleanup when dependent
 			description: 'Shade automation package',
 			tags: ['home', 'shades'],
 			searchText: 'shade automation',
-			services: {
-				'realtime-supervisor': {
-					entry: './src/services/realtime-supervisor.ts',
-					autoStart: true,
-				},
-			},
 		},
 	}
 	const savedPackage = {
@@ -615,35 +566,6 @@ test('refreshSavedPackageProjection continues best-effort cleanup when dependent
 	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
 	// The swallowed retriever-cache failure is still logged for operators.
 	expect(consoleError).toHaveBeenCalledTimes(1)
-
-	setupDefaultMocks()
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		manifest,
-		files: { 'package.json': '{}' },
-	})
-	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
-	mockModule.packageServiceRpc.mockReturnValue({
-		start: vi.fn().mockRejectedValue(new Error('service start failed')),
-	})
-	const envAfterServiceFailure = {
-		...createEnv(),
-		PACKAGE_SERVICE_INSTANCE: {
-			idFromName(name: string) {
-				return name as unknown as DurableObjectId
-			},
-			get() {
-				return {} as DurableObjectStub
-			},
-		},
-	} as Env
-	await refreshSavedPackageProjection({
-		env: envAfterServiceFailure,
-		baseUrl: 'https://heykody.dev',
-		userId: 'user-1',
-		packageId: 'package-1',
-		sourceId: 'source-1',
-	})
-	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
 })
 
 test('deleteSavedPackageProjection resyncs the job manager after removing package jobs', async () => {
@@ -653,21 +575,6 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 		id: 'package-1',
 		kodyId: 'shade-automation',
 		sourceId: 'source-1',
-	})
-	mockModule.listSavedPackageServices.mockResolvedValue({
-		savedPackage: {
-			id: 'package-1',
-			kodyId: 'shade-automation',
-		},
-		services: [
-			{
-				name: 'realtime-supervisor',
-				entry: './src/services/realtime-supervisor.ts',
-				autoStart: true,
-				mode: 'persistent',
-				timeoutMs: null,
-			},
-		],
 	})
 	mockModule.listJobRowsByUserId.mockResolvedValue([
 		{ id: 'job-1', source_id: 'source-1' },
@@ -694,15 +601,6 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	).toBeGreaterThan(
 		mockModule.cleanupArtifactReposForPackage.mock.invocationCallOrder[0],
 	)
-	expect(mockModule.packageServiceRpc).toHaveBeenCalledWith({
-		env,
-		userId: 'user-1',
-		packageId: 'package-1',
-		kodyId: 'shade-automation',
-		sourceId: 'source-1',
-		baseUrl: 'https://package-service.invalid',
-		serviceName: 'realtime-supervisor',
-	})
 	expect(mockModule.deleteJobRow).toHaveBeenCalledTimes(1)
 	expect(mockModule.deleteJobRow).toHaveBeenCalledWith({
 		userId: 'user-1',
@@ -795,48 +693,6 @@ test('deleteSavedPackageProjection continues best-effort cleanup when dependent 
 		'package-1',
 	)
 	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
-
-	setupDefaultMocks()
-	mockModule.getSavedPackageById.mockResolvedValue({
-		id: 'package-1',
-		kodyId: 'shade-automation',
-		sourceId: 'source-1',
-	})
-	mockModule.listSavedPackageServices.mockResolvedValue({
-		savedPackage: {
-			id: 'package-1',
-			kodyId: 'shade-automation',
-		},
-		services: [
-			{
-				name: 'realtime-supervisor',
-				entry: 'services/realtime-supervisor.ts',
-				autoStart: true,
-				mode: 'persistent',
-				timeoutMs: null,
-			},
-		],
-	})
-	mockModule.listJobRowsByUserId.mockResolvedValue([
-		{ id: 'job-1', source_id: 'source-1' },
-	])
-	mockModule.packageServiceRpc.mockImplementation(() => {
-		throw new Error('stub unavailable')
-	})
-	mockModule.deleteSavedPackage.mockClear()
-	mockModule.deleteSavedPackageVector.mockClear()
-	mockModule.syncJobManagerAlarm.mockClear()
-	await expect(
-		deleteSavedPackageProjection({
-			env,
-			userId: 'user-1',
-			packageId: 'package-1',
-		}),
-	).rejects.toThrow('stub unavailable')
-	expect(mockModule.deleteJobRow).not.toHaveBeenCalled()
-	expect(mockModule.deleteSavedPackage).not.toHaveBeenCalled()
-	expect(mockModule.deleteSavedPackageVector).not.toHaveBeenCalled()
-	expect(mockModule.syncJobManagerAlarm).not.toHaveBeenCalled()
 })
 
 test('deleteSavedPackageProjection cleans secrets when package projection is missing', async () => {
@@ -872,7 +728,6 @@ test('deleteSavedPackageProjection clears package-owned storage buckets and inve
 	setupDefaultMocks()
 	const packageId = 'b2fda105-005a-4e2b-9f22-1513b6752da2'
 	const jobStorageId = `job:package-job:${packageId}:event-runner`
-	const serviceStorageId = `service:${encodeURIComponent(packageId)}:${encodeURIComponent('realtime-supervisor')}`
 	const packageStorageId = `package:${encodeURIComponent(packageId)}`
 	const facetStorageId = `${packageId}:facet:main`
 	const otherPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
@@ -888,7 +743,6 @@ test('deleteSavedPackageProjection clears package-owned storage buckets and inve
 		{ userId: 'user-1', storageId: packageStorageId },
 		{ userId: 'user-1', storageId: packageId },
 		{ userId: 'user-1', storageId: jobStorageId },
-		{ userId: 'user-1', storageId: serviceStorageId },
 		{ userId: 'user-1', storageId: facetStorageId },
 		otherUserBucket,
 		otherPackageBucket,
@@ -902,21 +756,6 @@ test('deleteSavedPackageProjection clears package-owned storage buckets and inve
 		id: packageId,
 		kodyId: 'shade-automation',
 		sourceId: 'source-1',
-	})
-	mockModule.listSavedPackageServices.mockResolvedValue({
-		savedPackage: {
-			id: packageId,
-			kodyId: 'shade-automation',
-		},
-		services: [
-			{
-				name: 'realtime-supervisor',
-				entry: './src/services/realtime-supervisor.ts',
-				autoStart: true,
-				mode: 'persistent',
-				timeoutMs: null,
-			},
-		],
 	})
 	mockModule.listJobRowsByUserId.mockResolvedValue([
 		{
@@ -940,7 +779,6 @@ test('deleteSavedPackageProjection clears package-owned storage buckets and inve
 			packageStorageId,
 			packageId,
 			jobStorageId,
-			serviceStorageId,
 			facetStorageId,
 		]),
 	)
@@ -968,7 +806,6 @@ test('deleteSavedPackageProjection clears package-owned storage buckets and inve
 		packageStorageId,
 		packageId,
 		jobStorageId,
-		serviceStorageId,
 		facetStorageId,
 	]) {
 		expect(remainingKeys.has(`user-1:${storageId}`)).toBe(false)
@@ -1074,7 +911,6 @@ test('filterPackageOwnedStorageIdsFromInventory exact-matches non-UUIDs and UUID
 		'job:ad-hoc-1',
 		`job:package-job:${otherPackageId}:nightly`,
 		'job:facet:main',
-		'service:job:realtime',
 		'%',
 		'package:%25',
 		'exec:scratch-1',
@@ -1106,7 +942,6 @@ test('filterPackageOwnedStorageIdsFromInventory exact-matches non-UUIDs and UUID
 	const packageStorageId = `package:${encodeURIComponent(packageId)}`
 	const facetStorageId = `${packageId}:facet:main`
 	const jobStorageId = `job:package-job:${packageId}:event-runner`
-	const serviceStorageId = `service:${encodeURIComponent(packageId)}:realtime-supervisor`
 	expect(
 		filterPackageOwnedStorageIdsFromInventory({
 			packageId,
@@ -1115,22 +950,14 @@ test('filterPackageOwnedStorageIdsFromInventory exact-matches non-UUIDs and UUID
 				packageStorageId,
 				facetStorageId,
 				jobStorageId,
-				serviceStorageId,
 				'job:ad-hoc-1',
 				`job:package-job:${otherPackageId}:nightly`,
 				`${otherPackageId}:facet:main`,
-				`service:${encodeURIComponent(otherPackageId)}:other`,
 				'exec:scratch-1',
 			],
 		}).toSorted(),
 	).toEqual(
-		[
-			packageId,
-			packageStorageId,
-			facetStorageId,
-			jobStorageId,
-			serviceStorageId,
-		].toSorted(),
+		[packageId, packageStorageId, facetStorageId, jobStorageId].toSorted(),
 	)
 })
 

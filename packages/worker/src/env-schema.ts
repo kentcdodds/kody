@@ -200,9 +200,6 @@ export const EnvSchema = object({
 	PACKAGE_REALTIME_SESSION: requiredDurableObjectNamespaceSchema(
 		'Missing PACKAGE_REALTIME_SESSION binding for package realtime websocket sessions.',
 	),
-	PACKAGE_SERVICE_INSTANCE: requiredDurableObjectNamespaceSchema(
-		'Missing PACKAGE_SERVICE_INSTANCE binding for package service runtimes.',
-	),
 	MCP_CLIENT_HUB: requiredDurableObjectNamespaceSchema(
 		'Missing MCP_CLIENT_HUB binding for user-added MCP server connections.',
 	),
