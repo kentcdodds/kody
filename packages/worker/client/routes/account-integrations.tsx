@@ -270,6 +270,16 @@ function connectActionLabel(status: 'Connected' | 'Needs setup') {
 	return status === 'Connected' ? 'Reconnect' : 'Connect'
 }
 
+const addAccountLinkCss = {
+	...primaryLinkCss,
+	padding: 0,
+	border: 0,
+	background: 'none',
+	font: 'inherit',
+	cursor: 'pointer',
+	appearance: 'none' as const,
+}
+
 function AddAccountForm(
 	handle: Handle<{
 		slug: string
@@ -277,6 +287,7 @@ function AddAccountForm(
 		existingNames: ReadonlyArray<string>
 	}>,
 ) {
+	let open = false
 	let name = nextSuggestedConnectionName(
 		handle.props.slug,
 		handle.props.existingNames,
@@ -295,6 +306,24 @@ function AddAccountForm(
 			handle.props.slug,
 			handle.props.existingNames,
 		)
+		if (!open) {
+			return (
+				<button
+					type="button"
+					data-testid="add-account-open"
+					aria-expanded="false"
+					mix={[
+						css(addAccountLinkCss),
+						on('click', () => {
+							open = true
+							handle.update()
+						}),
+					]}
+				>
+					Add another account
+				</button>
+			)
+		}
 		return (
 			<form
 				data-testid="add-account-form"
@@ -311,10 +340,6 @@ function AddAccountForm(
 					}),
 				]}
 			>
-				<p mix={css({ ...descriptionCss, margin: 0 })}>
-					Add another account on this integration. Existing connections stay
-					put.
-				</p>
 				<label mix={css(fieldCss)}>
 					<span mix={css(fieldLabelCss)}>Connection name</span>
 					<input
