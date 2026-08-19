@@ -41,8 +41,15 @@ manually with native `unzip`:
 ## Nx remote cache
 
 Validate and `test:push` write Nx task artifacts. Those stay local unless the
-self-hosted cache is configured. To share hits with GitHub Actions, set both in
-this VM (same values as the GitHub Actions secret / Worker secret):
+self-hosted cache is configured. GitHub Actions already enables
+`https://nx-cache.kody.codes` after `GET /health` succeeds. Agents only populate
+that cache when the same token lives on the Cursor Cloud **environment** (not
+just one shell). A one-off `export` does not persist to later runs, and Cloud
+Agents cannot read the GitHub Actions secret back.
+
+Set the server URL as an environment variable and the token as an environment
+secret (same value as repository secret
+`NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`):
 
 ```bash
 export NX_SELF_HOSTED_REMOTE_CACHE_SERVER=https://nx-cache.kody.codes
