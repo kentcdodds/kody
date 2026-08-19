@@ -138,124 +138,131 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 				>
 					<summary>Advanced details</summary>
 					<div mix={css({ display: 'grid', gap: spacing.lg })}>
-				<div mix={css({ display: 'grid', gap: spacing.sm })}>
-					<div mix={css({ display: 'grid', gap: spacing.xs })}>
-						<span mix={css(fieldLabelCss)}>Where this secret can be sent</span>
-						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							Leave this empty to ask before Kody sends this secret to a site.
-						</p>
-					</div>
-					<div
-						data-repeat-list={props.allowedHostsListName}
-						mix={css({ display: 'grid', gap: spacing.sm })}
-					>
-						{props.allowedHosts.map((host, index) => (
-							<div key={index} mix={css(repeatedRowCss)}>
-								<input
-									type="text"
-									value={typeof host === 'string' ? host : ''}
-									placeholder="api.example.com"
-									mix={[
-										on(
-											'input',
+						<div mix={css({ display: 'grid', gap: spacing.sm })}>
+							<div mix={css({ display: 'grid', gap: spacing.xs })}>
+								<span mix={css(fieldLabelCss)}>
+									Where this secret can be sent
+								</span>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									Leave this empty to ask before Kody sends this secret to a
+									site.
+								</p>
+							</div>
+							<div
+								data-repeat-list={props.allowedHostsListName}
+								mix={css({ display: 'grid', gap: spacing.sm })}
+							>
+								{props.allowedHosts.map((host, index) => (
+									<div key={index} mix={css(repeatedRowCss)}>
+										<input
+											type="text"
+											value={typeof host === 'string' ? host : ''}
+											placeholder="api.example.com"
+											mix={[
+												on(
+													'input',
 
-											(event) => {
-												props.onUpdateAllowedHost(
-													index,
-													event.currentTarget.value,
-												)
-											},
-										),
+													(event) => {
+														props.onUpdateAllowedHost(
+															index,
+															event.currentTarget.value,
+														)
+													},
+												),
 
-										css(inputCss),
-									]}
-								/>
+												css(inputCss),
+											]}
+										/>
 
+										<button
+											type="button"
+											mix={[
+												on('click', () => props.onRemoveAllowedHost(index)),
+												css(secondaryButtonCss),
+											]}
+										>
+											Remove
+										</button>
+									</div>
+								))}
+							</div>
+							<div>
 								<button
 									type="button"
 									mix={[
-										on('click', () => props.onRemoveAllowedHost(index)),
+										on('click', () => props.onAddAllowedHost()),
 										css(secondaryButtonCss),
 									]}
 								>
-									Remove
+									Add host
 								</button>
 							</div>
-						))}
-					</div>
-					<div>
-						<button
-							type="button"
-							mix={[
-								on('click', () => props.onAddAllowedHost()),
-								css(secondaryButtonCss),
-							]}
-						>
-							Add host
-						</button>
-					</div>
-				</div>
+						</div>
 
-				<div mix={css({ display: 'grid', gap: spacing.sm })}>
-					<div mix={css({ display: 'grid', gap: spacing.xs })}>
-						<span mix={css(fieldLabelCss)}>Which tools can use this secret</span>
-						<p mix={css({ margin: 0, color: colors.textMuted })}>
-							Leave this empty to let any tool use this secret. Add names here
-							to restrict it.
-						</p>
-					</div>
-					<div
-						data-repeat-list={props.allowedCapabilitiesListName}
-						mix={css({ display: 'grid', gap: spacing.sm })}
-					>
-						{props.allowedCapabilities.map((capabilityName, index) => (
-							<div key={index} mix={css(repeatedRowCss)}>
-								<input
-									type="text"
-									value={
-										typeof capabilityName === 'string' ? capabilityName : ''
-									}
-									placeholder="home_lutron_set_credentials"
-									mix={[
-										on(
-											'input',
+						<div mix={css({ display: 'grid', gap: spacing.sm })}>
+							<div mix={css({ display: 'grid', gap: spacing.xs })}>
+								<span mix={css(fieldLabelCss)}>
+									Which tools can use this secret
+								</span>
+								<p mix={css({ margin: 0, color: colors.textMuted })}>
+									Leave this empty to let any tool use this secret. Add names
+									here to restrict it.
+								</p>
+							</div>
+							<div
+								data-repeat-list={props.allowedCapabilitiesListName}
+								mix={css({ display: 'grid', gap: spacing.sm })}
+							>
+								{props.allowedCapabilities.map((capabilityName, index) => (
+									<div key={index} mix={css(repeatedRowCss)}>
+										<input
+											type="text"
+											value={
+												typeof capabilityName === 'string' ? capabilityName : ''
+											}
+											placeholder="home_lutron_set_credentials"
+											mix={[
+												on(
+													'input',
 
-											(event) => {
-												props.onUpdateAllowedCapability(
-													index,
-													event.currentTarget.value,
-												)
-											},
-										),
+													(event) => {
+														props.onUpdateAllowedCapability(
+															index,
+															event.currentTarget.value,
+														)
+													},
+												),
 
-										css(inputCss),
-									]}
-								/>
+												css(inputCss),
+											]}
+										/>
 
+										<button
+											type="button"
+											mix={[
+												on('click', () =>
+													props.onRemoveAllowedCapability(index),
+												),
+												css(secondaryButtonCss),
+											]}
+										>
+											Remove
+										</button>
+									</div>
+								))}
+							</div>
+							<div>
 								<button
 									type="button"
 									mix={[
-										on('click', () => props.onRemoveAllowedCapability(index)),
+										on('click', () => props.onAddAllowedCapability()),
 										css(secondaryButtonCss),
 									]}
 								>
-									Remove
+									Add capability
 								</button>
 							</div>
-						))}
-					</div>
-					<div>
-						<button
-							type="button"
-							mix={[
-								on('click', () => props.onAddAllowedCapability()),
-								css(secondaryButtonCss),
-							]}
-						>
-							Add capability
-						</button>
-					</div>
-				</div>
+						</div>
 					</div>
 				</details>
 			</>
