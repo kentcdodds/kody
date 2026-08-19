@@ -1,6 +1,7 @@
 -- Move onboarding checklist dismissal off leftover user values.
--- Backfill from onboardingChecklistDismissed, then delete those rows.
--- The stored value is an ISO timestamp; fall back to the row's updated_at.
+-- Backfill from onboardingChecklistDismissed, then delete those user-scope rows.
+-- Session/app leftover rows stay intact. The stored value is an ISO timestamp;
+-- fall back to the row's updated_at.
 
 ALTER TABLE users ADD COLUMN onboarding_checklist_dismissed_at TEXT;
 
@@ -25,4 +26,9 @@ WHERE onboarding_checklist_dismissed_at IS NULL
 	);
 
 DELETE FROM value_entries
-WHERE name = 'onboardingChecklistDismissed';
+WHERE name = 'onboardingChecklistDismissed'
+	AND bucket_id IN (
+		SELECT id
+		FROM value_buckets
+		WHERE scope = 'user'
+	);
