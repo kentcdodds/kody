@@ -21,7 +21,7 @@ export function createProfileAvatarHandler(env: Env) {
 			}
 
 			const cacheKey = parseUserAvatarCacheKey(row.avatar_key)
-			if (!cacheKey || cacheKey !== params.cacheKey) {
+			if (!cacheKey || cacheKey !== `${params.hash}.${params.ext}`) {
 				return new Response('Not found', { status: 404 })
 			}
 

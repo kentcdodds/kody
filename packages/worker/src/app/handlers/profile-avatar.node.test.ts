@@ -53,7 +53,7 @@ function createEnv() {
 
 async function runHandler(
 	request: Request,
-	params: { username: string; cacheKey: string },
+	params: { username: string; hash: string; ext: string },
 ) {
 	const handler = createProfileAvatarHandler(createEnv())
 	return handler.handler({
@@ -75,7 +75,7 @@ test('profile avatar cache visibility, anon 404, and cacheKey mismatch', async (
 
 	const publicResponse = await runHandler(
 		new Request('https://example.com/profiles/alice/avatar/abcdef.png'),
-		{ username: 'alice', cacheKey: 'abcdef.png' },
+		{ username: 'alice', hash: 'abcdef', ext: 'png' },
 	)
 	expect(publicResponse.status).toBe(200)
 	expect(publicResponse.headers.get('Cache-Control')).toBe(
@@ -100,7 +100,7 @@ test('profile avatar cache visibility, anon 404, and cacheKey mismatch', async (
 	})
 	const privateResponse = await runHandler(
 		new Request('https://example.com/profiles/alice/avatar/abcdef.png'),
-		{ username: 'alice', cacheKey: 'abcdef.png' },
+		{ username: 'alice', hash: 'abcdef', ext: 'png' },
 	)
 	expect(privateResponse.status).toBe(200)
 	expect(privateResponse.headers.get('Cache-Control')).toBe('private, no-store')
@@ -113,7 +113,7 @@ test('profile avatar cache visibility, anon 404, and cacheKey mismatch', async (
 	mocks.getUserAvatarObject.mockClear()
 	const anonPrivate = await runHandler(
 		new Request('https://example.com/profiles/alice/avatar/abcdef.png'),
-		{ username: 'alice', cacheKey: 'abcdef.png' },
+		{ username: 'alice', hash: 'abcdef', ext: 'png' },
 	)
 	expect(anonPrivate.status).toBe(404)
 	expect(mocks.getUserAvatarObject).not.toHaveBeenCalled()
@@ -122,7 +122,7 @@ test('profile avatar cache visibility, anon 404, and cacheKey mismatch', async (
 	mocks.getUserAvatarObject.mockClear()
 	const mismatch = await runHandler(
 		new Request('https://example.com/profiles/alice/avatar/wrong.png'),
-		{ username: 'alice', cacheKey: 'wrong.png' },
+		{ username: 'alice', hash: 'wrong', ext: 'png' },
 	)
 	expect(mismatch.status).toBe(404)
 	expect(mocks.getUserAvatarObject).not.toHaveBeenCalled()

@@ -153,7 +153,9 @@ export const routes = route({
 	// APIs, keeping the `/@…` namespace to human-shareable page URLs.
 	communityPackageApi: '/profiles/:username/packages/:kodyId.json',
 	profileApi: '/profiles/:username.json',
-	profileAvatar: '/profiles/:username/avatar/:cacheKey',
+	// `.` is a Remix route delimiter, so the filename must be `:hash.:ext`
+	// (not a single `:cacheKey`) or `/avatar/abc.jpg` never matches.
+	profileAvatar: '/profiles/:username/avatar/:hash.:ext',
 	profileOgImage: '/profiles/:username/og.png',
 	profileFollowApiPost: post('/profiles/:username/follow.json'),
 	webhookIngress: post(

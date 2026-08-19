@@ -1,10 +1,12 @@
 import { expect, test } from 'vitest'
+import { buildUserAvatarUrl } from './public-urls.ts'
 import {
 	buildUserAvatarR2Key,
 	getUserAvatarObject,
 	parseUserAvatarCacheKey,
 	processUserAvatar,
 	saveUserAvatar,
+	splitUserAvatarCacheKey,
 } from './avatar.ts'
 import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -190,6 +192,23 @@ test('buildUserAvatarR2Key and parseUserAvatarCacheKey round-trip content hash s
 		'abcdef.webp',
 	)
 	expect(parseUserAvatarCacheKey('community-icon:v1/listing/asset')).toBeNull()
+	expect(splitUserAvatarCacheKey('abcdef.webp')).toEqual({
+		hash: 'abcdef',
+		ext: 'webp',
+	})
+	expect(splitUserAvatarCacheKey('abcdef')).toBeNull()
+	expect(
+		buildUserAvatarUrl({
+			username: 'alice',
+			avatarKey: 'user-avatars/stable-1/abcdef.jpg',
+		}),
+	).toBe('/profiles/alice/avatar/abcdef.jpg')
+	expect(
+		buildUserAvatarUrl({
+			username: 'alice',
+			avatarKey: null,
+		}),
+	).toBeNull()
 })
 
 test('getUserAvatarObject refuses keys outside the user-avatars prefix', async () => {

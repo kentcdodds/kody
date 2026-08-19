@@ -71,6 +71,17 @@ export function parseUserAvatarCacheKey(avatarKey: string): string | null {
 	return match?.[1] ?? null
 }
 
+export function splitUserAvatarCacheKey(
+	cacheKey: string,
+): { hash: string; ext: string } | null {
+	const lastDot = cacheKey.lastIndexOf('.')
+	if (lastDot <= 0 || lastDot === cacheKey.length - 1) return null
+	return {
+		hash: cacheKey.slice(0, lastDot),
+		ext: cacheKey.slice(lastDot + 1),
+	}
+}
+
 function assertUserAvatarSourceSize(bytes: Uint8Array) {
 	if (bytes.byteLength === 0 || bytes.byteLength > maxUserAvatarSourceBytes) {
 		throw new Error(

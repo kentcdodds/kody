@@ -61,6 +61,14 @@ test('delimiter-bounded params keep companion suffixes, hyphens, and encoded dot
 	)
 	router.get(routePattern(routes.profile), createStubHandler('profile'))
 	router.get(
+		routePattern(routes.profileAvatar),
+		createStubHandler('profile-avatar'),
+	)
+	router.get(
+		routePattern(routes.profileOgImage),
+		createStubHandler('profile-og'),
+	)
+	router.get(
 		routePattern(routes.accountSecretUserDetail),
 		createStubHandler('secret'),
 	)
@@ -87,6 +95,22 @@ test('delimiter-bounded params keep companion suffixes, hyphens, and encoded dot
 	expect(
 		(await router.fetch(new Request('http://localhost/@john.doe'))).status,
 	).toBe(404)
+	expect(
+		await (
+			await router.fetch(
+				new Request(
+					'http://localhost/profiles/kentcdodds/avatar/00e495130208345dcc438bce0102f73a6e5cef01085a930c9c9ed2651a67b8d9.jpg',
+				),
+			)
+		).text(),
+	).toBe('profile-avatar')
+	expect(
+		await (
+			await router.fetch(
+				new Request('http://localhost/profiles/alice/og.png'),
+			)
+		).text(),
+	).toBe('profile-og')
 	expect(
 		await (
 			await router.fetch(
