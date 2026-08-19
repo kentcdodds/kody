@@ -26,6 +26,10 @@ import {
 } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
+	EntityExplainer,
+	resolveEntityExplainer,
+} from '#client/routes/entity-explainer.tsx'
+import {
 	colors,
 	radius,
 	transitions,
@@ -146,6 +150,10 @@ export function TimelineRoute(handle: Handle) {
 
 		const days = status === 'ready' ? groupTimelineItems(items) : []
 
+		const explainer = resolveEntityExplainer(
+			new URL(currentHref, 'http://localhost').pathname,
+		)
+
 		return (
 			<section mix={css(pageCss)} data-testid="timeline-page">
 				<header mix={css(headCss)}>
@@ -155,6 +163,9 @@ export function TimelineRoute(handle: Handle) {
 					<p data-rise style={{ '--rise': '1' }}>
 						Public activity from the accounts you follow.
 					</p>
+					{explainer ? (
+						<EntityExplainer copy={explainer} marginTop="1.15rem" />
+					) : null}
 				</header>
 
 				{status === 'loading' ? (

@@ -16,6 +16,10 @@ import {
 	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 import { readCommunitySearchQueryFromHref } from '#client/routes/community-search.ts'
+import {
+	EntityExplainer,
+	resolveEntityExplainer,
+} from '#client/routes/entity-explainer.tsx'
 
 /**
  * Community index, ported from the redesign prototype
@@ -73,6 +77,10 @@ export function CommunityRoute(handle: Handle) {
 		const searchQuery = readCommunitySearchQueryFromHref(currentHref)
 		const frameSrc = buildCommunityListingsFrameSrc(currentHref)
 
+		const explainer = resolveEntityExplainer(
+			new URL(currentHref, 'http://localhost').pathname,
+		)
+
 		return (
 			<section mix={css(communityPageCss)}>
 				<header mix={css(communityHeadCss)}>
@@ -86,6 +94,9 @@ export function CommunityRoute(handle: Handle) {
 							Browse packages shared by Kody users. Fork with your agent, adapt
 							them to your goals, and rate your experience.
 						</p>
+						{explainer ? (
+							<EntityExplainer copy={explainer} marginTop="1.15rem" />
+						) : null}
 						<form
 							data-rise
 							data-focus-container

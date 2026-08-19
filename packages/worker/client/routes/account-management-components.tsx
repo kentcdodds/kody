@@ -16,6 +16,7 @@ import {
 	layoutMaxWidths,
 	pageGutter,
 } from '#universal/styles/style-primitives.ts'
+import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
 
 /*
  * Account-area visual language, ported from the redesign prototype
@@ -470,6 +471,7 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 	return () => {
 		const currentPath = new URL(handle.props.currentHref, 'http://localhost')
 			.pathname
+		const explainer = resolveEntityExplainer(currentPath)
 
 		return (
 			<>
@@ -478,6 +480,7 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 					description={handle.props.description}
 					actions={handle.props.actions}
 				/>
+				{explainer ? <EntityExplainer copy={explainer} /> : null}
 				<AccountManagementLinkNav
 					label="Account sections"
 					items={accountNavItems.map((item) => ({
