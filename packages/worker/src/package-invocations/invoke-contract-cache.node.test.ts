@@ -193,7 +193,13 @@ function seedFixtures(fixturesByUserId: Record<string, Fixture>) {
 				(candidate) => candidate.source.id === input.sourceId,
 			)
 			if (!fixture) return null
-			return { row: { kvKey: 'kv-key' }, artifact: fixture.artifact }
+			return {
+				row: {
+					kvKey: 'kv-key',
+					publishedCommit: fixture.artifact.publishedCommit,
+				},
+				artifact: fixture.artifact,
+			}
 		},
 	)
 }
@@ -497,6 +503,58 @@ test('ensureModuleArtifact rebuilds when the identity artifact is for a differen
 		dependencies: [],
 		dynamicDependencies: [],
 	})
+	mockModule.persistPublishedBundleArtifact.mockResolvedValue('kv-key')
+
+	const rebuilt = await ensureModuleArtifact({
+		env: createEnv(),
+		baseUrl: 'https://kody.dev',
+		savedPackage: fixture.savedPackage,
+		selector: { kind: 'export', exportName: 'get-issue-state' },
+		userId: fixture.savedPackage.userId,
+	})
+
+	expect(mockModule.persistPublishedBundleArtifact).toHaveBeenCalledTimes(1)
+	expect(rebuilt.artifact.publishedCommit).toBe('commit-new')
+})
+
+test('ensureModuleArtifact rebuilds when the identity row is missing a published commit', async () => {
+	const fixture = createFixture({
+		userId: 'user-null-row',
+		publishedCommit: 'commit-new',
+		suffix: 'null-row',
+	})
+	mockModule.getEntitySourceById.mockResolvedValue(fixture.source)
+	mockModule.loadPublishedEntityManifest.mockResolvedValue({
+		source: fixture.source,
+		content: fixture.manifestContent,
+	})
+	mockModule.loadPublishedEntitySource.mockResolvedValue({
+		source: fixture.source,
+		files: {
+			'package.json': fixture.manifestContent,
+			'src/get-issue-state.ts':
+				'export default async function main() { return "new" }',
+		},
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity
+		.mockResolvedValueOnce({
+			row: { publishedCommit: null },
+			artifact: fixture.artifact,
+		})
+		.mockResolvedValueOnce({
+			row: { publishedCommit: 'commit-new' },
+			artifact: fixture.artifact,
+		})
+	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockResolvedValue({
+		ok: true,
+	})
+	mockModule.buildKodyModuleBundle.mockResolvedValue({
+		mainModule: 'main.js',
+		modules: { 'main.js': 'export default async () => ({ ok: true })' },
+		dependencies: [],
+		dynamicDependencies: [],
+	})
+	mockModule.persistPublishedBundleArtifact.mockReset()
 	mockModule.persistPublishedBundleArtifact.mockResolvedValue('kv-key')
 
 	const rebuilt = await ensureModuleArtifact({

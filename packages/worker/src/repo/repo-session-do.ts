@@ -2866,6 +2866,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					commit: input.newCommit,
 					error: getErrorMessage(error),
 				})
+				throw error
 			}
 		} else if (publishResult.status === 'published') {
 			try {

@@ -2526,3 +2526,72 @@ test('already_published external publish refreshes the snapshot from the in-memo
 		}),
 	)
 })
+
+test('already_published external publish fails when snapshot refresh fails', async () => {
+	restoreRepoSessionMockBaseline()
+	setCommonSessionFixtures()
+	consoleWarn.mockImplementation(() => {})
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		repo_id: 'source-repo',
+		published_commit: 'commit-new',
+		manifest_path: 'package.json',
+		source_root: '/',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+	})
+	mockModule.cloneExternalPublishWorkspace.mockResolvedValueOnce({
+		workspace: {
+			readFile: vi.fn(async () => null),
+			glob: vi.fn(async () => []),
+		},
+		headCommit: 'commit-new',
+		dir: '/repo',
+		filesystem: {
+			readFile: vi.fn(async () => ''),
+			readFileBytes: vi.fn(async () => new Uint8Array()),
+			writeFile: vi.fn(async () => undefined),
+			writeFileBytes: vi.fn(async () => undefined),
+			rm: vi.fn(async () => undefined),
+			mkdir: vi.fn(async () => undefined),
+			readdir: vi.fn(async () => []),
+			stat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			lstat: vi.fn(async () => ({
+				type: 'file' as const,
+				size: 0,
+				mtime: new Date(),
+			})),
+			readlink: vi.fn(async () => ''),
+			symlink: vi.fn(async () => undefined),
+		},
+		isAncestorCommit: vi.fn(async () => true),
+		collectFiles: vi.fn(async () => {
+			throw new Error('clone files unreadable')
+		}),
+	})
+
+	const repoSession = new RepoSession(createDurableObjectState(), {
+		APP_DB: {},
+		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+	} as Env)
+	await expect(
+		repoSession.publishFromExternalRef({
+			sessionId: 'external-publish-source-1',
+			sourceId: 'source-1',
+			userId: 'user-1',
+			newCommit: 'commit-new',
+		}),
+	).rejects.toThrow('clone files unreadable')
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'already_published snapshot refresh failed',
+		expect.objectContaining({
+			scope: 'repo.publishFromExternalRef.refresh-already-published-snapshot',
+		}),
+	)
+})

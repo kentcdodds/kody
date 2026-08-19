@@ -151,8 +151,7 @@ async function ensureModuleArtifactUncached(input: {
 	if (
 		loaded?.artifact &&
 		loaded.artifact.publishedCommit === currentPublishedCommit &&
-		(loaded.row.publishedCommit == null ||
-			loaded.row.publishedCommit === currentPublishedCommit)
+		loaded.row.publishedCommit === currentPublishedCommit
 	) {
 		return {
 			artifact: loaded.artifact,
