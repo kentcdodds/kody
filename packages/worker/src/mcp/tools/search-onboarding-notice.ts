@@ -1,9 +1,9 @@
 import {
-  deriveOnboardingChecklist,
-  dismissOnboardingChecklist,
-  readOnboardingChecklistDismissed,
-  type OnboardingChecklistItemId,
-} from "#mcp/onboarding-checklist.ts";
+	deriveOnboardingChecklist,
+	dismissOnboardingChecklist,
+	readOnboardingChecklistDismissed,
+	type OnboardingChecklistItemId,
+} from '#mcp/onboarding-checklist.ts'
 
 /**
  * One-line onboarding reminder appended to `search` notices, at most once per
@@ -14,51 +14,51 @@ import {
  */
 
 const itemLabels: Record<OnboardingChecklistItemId, string> = {
-  "verify-email": "verify your email",
-  "connect-agent": "connect your agent",
-  "first-hello": "exchange a first email with Kody",
-  "save-memory": "save a memory",
-  "connect-integration": "connect an integration",
-  "install-starter": "install a starter package",
-};
+	'verify-email': 'verify your email',
+	'connect-agent': 'connect your agent',
+	'first-hello': 'exchange a first email with Kody',
+	'save-memory': 'save a memory',
+	'connect-integration': 'connect an integration',
+	'install-starter': 'install a starter package',
+}
 
 export async function buildOnboardingSearchNotice(input: {
-  env: Env;
-  userId: string;
-  /** Deployment origin for the details link, e.g. https://kody.codes */
-  baseUrl: string;
-  waitUntil?: (promise: Promise<unknown>) => void;
+	env: Env
+	userId: string
+	/** Deployment origin for the details link, e.g. https://kody.codes */
+	baseUrl: string
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<string | null> {
-  try {
-    const dismissed = await readOnboardingChecklistDismissed({
-      env: input.env,
-      userId: input.userId,
-    });
-    if (dismissed) return null;
+	try {
+		const dismissed = await readOnboardingChecklistDismissed({
+			env: input.env,
+			userId: input.userId,
+		})
+		if (dismissed) return null
 
-    // An MCP search call implies a verified account and a connected agent.
-    const checklist = await deriveOnboardingChecklist({
-      env: input.env,
-      userId: input.userId,
-      emailVerified: true,
-      hasMcpClient: true,
-    });
-    if (checklist.complete) {
-      const retire = dismissOnboardingChecklist({
-        env: input.env,
-        userId: input.userId,
-      }).catch(() => {});
-      if (input.waitUntil) input.waitUntil(retire);
-      else await retire;
-      return null;
-    }
+		// An MCP search call implies a verified account and a connected agent.
+		const checklist = await deriveOnboardingChecklist({
+			env: input.env,
+			userId: input.userId,
+			emailVerified: true,
+			hasMcpClient: true,
+		})
+		if (checklist.complete) {
+			const retire = dismissOnboardingChecklist({
+				env: input.env,
+				userId: input.userId,
+			}).catch(() => {})
+			if (input.waitUntil) input.waitUntil(retire)
+			else await retire
+			return null
+		}
 
-    const remaining = checklist.items
-      .filter((item) => !item.done)
-      .map((item) => itemLabels[item.id]);
-    return `Onboarding: ${remaining.length} step${remaining.length === 1 ? "" : "s"} left — ${remaining.join(", ")}. Details and dismissal: ${input.baseUrl}/onboarding`;
-  } catch {
-    // The reminder is a courtesy; never let it break search.
-    return null;
-  }
+		const remaining = checklist.items
+			.filter((item) => !item.done)
+			.map((item) => itemLabels[item.id])
+		return `Onboarding: ${remaining.length} step${remaining.length === 1 ? '' : 's'} left — ${remaining.join(', ')}. Details and dismissal: ${input.baseUrl}/onboarding`
+	} catch {
+		// The reminder is a courtesy; never let it break search.
+		return null
+	}
 }
