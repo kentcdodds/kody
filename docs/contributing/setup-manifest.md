@@ -163,17 +163,17 @@ This project uses the following resources:
     vars are the single source of truth for both the hosts the Workers route on
     and the domains the deploy attaches, so the two cannot drift.
   - **`routes` replaces the Worker's whole route set — it does not add to it.**
-    Omitting a previously attached custom domain detaches that origin and
-    deletes its DNS record. The generator therefore always lists the app origin
-    alongside the package-app apex and wildcard zone route, and fails the deploy
-    when `PACKAGE_APP_BASE_URL` is set without `APP_BASE_URL` rather than
-    publishing a partial set. Any domain attached out-of-band must be added here
-    before the next deploy, or that deploy will remove it. List every
-    dual-served legacy app host in the `APP_LEGACY_HOSTS` repository variable
-    (comma-separated bare hostnames, e.g. `heykody.dev`) so generated routes
-    keep those origins attached. List every dual-served package-app host in
-    committed `PACKAGE_APP_LEGACY_HOSTS` (e.g. `kodyapps.dev`) so the runtime
-    Worker publishes matching `*.kodyapps.dev` zone routes alongside
+    Omitting an attached custom domain detaches that origin and deletes its DNS
+    record. The generator therefore always lists the app origin alongside the
+    package-app apex and wildcard zone route, and fails the deploy when
+    `PACKAGE_APP_BASE_URL` is set without `APP_BASE_URL` rather than publishing
+    a partial set. Any domain attached out-of-band must be added here before the
+    next deploy, or that deploy will remove it. List every dual-served legacy
+    app host in the `APP_LEGACY_HOSTS` repository variable (comma-separated bare
+    hostnames, e.g. `heykody.dev`) so generated routes keep those origins
+    attached. List every dual-served package-app host in committed
+    `PACKAGE_APP_LEGACY_HOSTS` (e.g. `kodyapps.dev`) so the runtime Worker
+    publishes matching `*.kodyapps.dev` zone routes alongside
     `PACKAGE_APP_BASE_URL`.
   - Publishing routes also flips `workers_dev` to `false`, which silently drops
     the `<name>.<subdomain>.workers.dev` trigger (Cloudflare then answers that
@@ -339,7 +339,7 @@ On incident open or resolve the status worker POSTs metadata to
 subscribe to `status.incident.opened` / `status.incident.resolved`. The notify
 is fire-and-forget with a short timeout so a down or missing secret cannot stall
 probes or email. When the GitHub secret is unset, emit stays skipped; packages
-can still reconcile from the public `/status.json` snapshot.
+can reconcile from the public `/status.json` snapshot.
 
 ## Optional Cloudflare offerings
 

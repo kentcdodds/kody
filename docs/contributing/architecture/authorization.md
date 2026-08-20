@@ -347,13 +347,11 @@ the dedicated DLQ.
 
 The first community listing publish enqueues an opaque listing id for durable
 `community.listing.published` package-subscription delivery. Republishes do not
-enqueue this topic. The Queue consumer reloads listing id/name/kody id,
-description, canonical `public_url` (`/@username/kody-id`), publisher username,
-and published_at, then fans out only to packages whose owners hold the admin
-role at processing time. A non-admin may declare the topic but never receives
-it. Missing or inactive listings are acknowledged as a permanent cancellation;
-transient failures retry and can reach the dedicated DLQ. Enqueue failures never
-fail `community_publish`.
+enqueue this topic. Fan-out, payload redaction, and retry semantics match
+[the subscription guide](../../guides/package-subscriptions.md#communitylistingpublished-admins):
+admin owners only, metadata-only listing fields (including canonical
+`public_url`), permanent cancellation for missing or inactive listings, and
+enqueue failures that never fail `community_publish`.
 
 **Admins can subscribe to public status-page incidents.** The isolated status
 worker records component incidents in its own Durable Object, then best-effort

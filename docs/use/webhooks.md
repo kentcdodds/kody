@@ -77,8 +77,10 @@ delivery history also appears under [Activity](./activity.md)
 - Payload > **1 MB** → **413**.
 - About **60 requests/minute** per minted webhook → **429**.
 - `ack`: **202** `{ "ok": true }` after Kody durably queues the delivery; the
-  export runs in the background. A temporary queue failure returns **503** so
-  the provider can retry without Kody claiming acceptance.
+  export runs in the background. Bodies use the same **1 MB** cap as sync;
+  oversized queue messages spill to ephemeral storage until the consumer runs. A
+  temporary queue failure returns **503** so the provider can retry without Kody
+  claiming acceptance.
 - `sync`: waits for the export JSON result (**502** on failure).
 
 Background delivery retries keep the same idempotency key, so a transient
