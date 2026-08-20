@@ -1,3 +1,4 @@
+import { createMultiMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 
 /**
@@ -82,6 +83,56 @@ const extensionLanguages: Record<string, string> = {
 	ini: 'ini',
 	diff: 'diff',
 	patch: 'diff',
+}
+
+// Shiki grammar ids are what the highlighter needs; these are what a reader
+// should see next to a file's line count.
+const languageLabels: Record<string, string> = {
+	ts: 'TypeScript',
+	tsx: 'TypeScript',
+	json: 'JSON',
+	markdown: 'Markdown',
+	yaml: 'YAML',
+	toml: 'TOML',
+	html: 'HTML',
+	css: 'CSS',
+	shellscript: 'Shell',
+	python: 'Python',
+	go: 'Go',
+	rust: 'Rust',
+	sql: 'SQL',
+	graphql: 'GraphQL',
+	xml: 'XML',
+	dockerfile: 'Dockerfile',
+	dotenv: 'dotenv',
+	ini: 'INI',
+	diff: 'Diff',
+	plaintext: 'Plain text',
+}
+
+export function packageFileLanguageLabel(language: string | null | undefined) {
+	if (!language) return ''
+	return languageLabels[language] ?? language
+}
+
+/**
+ * The `/files` explorer routes, in every public shape. The app shell asks
+ * this so it can leave the page unpadded: the explorer owns its gutters (like
+ * the package listing it hangs off), and the shell's generic `main` padding
+ * would stack on top and push the content in past the site header.
+ */
+const packageFilesPathMatcher = (() => {
+	const matcher = createMultiMatcher<true>()
+	matcher.add(routes.communityPackageFiles.pattern, true)
+	matcher.add(routes.communityDetailFiles.pattern, true)
+	matcher.add(routes.accountPackageFiles.pattern, true)
+	return matcher
+})()
+
+export function isPackageFilesPathname(pathname: string) {
+	return (
+		packageFilesPathMatcher.match(new URL(pathname, 'http://localhost')) != null
+	)
 }
 
 export function isReservedPackageFilesKodyId(kodyId: string) {

@@ -29,6 +29,7 @@ import { visuallyHiddenUntilFocusedCss } from '#universal/styles/style-primitive
 import { SiteFooter } from './site-footer.tsx'
 import { SiteHeader } from './site-header.tsx'
 import { type AppLoaderData } from '#universal/loader-data.ts'
+import { isPackageFilesPathname } from '#universal/package-files.ts'
 import { userHasRole } from '#universal/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
@@ -169,6 +170,13 @@ export function App(handle: Handle<AppProps>) {
 		// header/footer stand down entirely there.
 		const isAuthShellPath =
 			currentPathname === '/login' || currentPathname === '/signup'
+		// The files explorer owns its gutters too (it hangs off a listing page
+		// that already does), so `<main>` must not pad it — the generic padding
+		// stacks on the route's own and pushes it in past the site header. Kept
+		// separate from the marketing predicate: only the padding changes, the
+		// waitlist banner still belongs on these pages.
+		const routeOwnsItsGutters =
+			isRedesignedMarketingPath || isPackageFilesPathname(currentPathname)
 		const hideWaitlistBanner =
 			!showAuthLinks ||
 			isRedesignedMarketingPath ||
@@ -245,7 +253,7 @@ export function App(handle: Handle<AppProps>) {
 											// The auth canvas stretches to fill the shell column.
 											display: 'grid',
 										}
-									: isRedesignedMarketingPath
+									: routeOwnsItsGutters
 										? {
 												width: '100%',
 												boxSizing: 'border-box',

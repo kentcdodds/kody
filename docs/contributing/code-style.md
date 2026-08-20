@@ -48,6 +48,24 @@ file style first, then run the formatter.
   `packages/worker/universal/styles/style-primitives.ts` instead of hand-rolling
   the pattern.
 
+## Page containers
+
+- A page-level container uses the same box as the site header:
+  `maxWidth: layoutMaxWidths.extended`, `marginInline: 'auto'`, and `pageGutter`
+  for its horizontal padding — all from
+  `packages/worker/universal/styles/style-primitives.ts`.
+- Do not pick horizontal padding from the spacing tokens (`spacing.lg` and
+  friends) for a page container. Those are fixed, `pageGutter` is
+  `clamp(1.25rem, 4vw, 2.5rem)`, and on a wide viewport the fixed value is the
+  smaller one — so the page's content renders _wider_ than the nav above it and
+  the left edges no longer line up. This is the most common layout mistake in
+  this repo.
+- Do not hand-copy the values either (`'72rem'`,
+  `'clamp(1.25rem, 4vw, 2.5rem)'`). Import the tokens so a change to the measure
+  moves every container at once.
+- Nested panels and cards inside the container keep using the spacing tokens for
+  their own padding; the gutter rule is about the outermost box only.
+
 ## Article breakout
 
 - Articles and guides sit on `articleMeasure` (43rem). To let a block use more
