@@ -1276,9 +1276,15 @@ test('renderAppPage renders the public Discord connect page', async () => {
 	expect(html).not.toContain('Connect to Discord')
 	expect(html).toContain('<title>Discord</title>')
 	expect(html).toContain('max-width: 28rem')
-	expect(
-		html.match(/<button\b[^>]*>\s*Connect Discord\s*<\/button>/g),
-	).toHaveLength(1)
+	const heading = html.match(/<h1\b[^>]*>[\s\S]*?<\/h1>/)?.[0]
+	expect(heading).toContain('fill="#5865F2"')
+	expect(heading).toContain('width="1em"')
+	expect(heading).toContain('Discord')
+	const connectButtons = (
+		html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? []
+	).filter((button) => button.includes('Connect Discord'))
+	expect(connectButtons).toHaveLength(1)
+	expect(connectButtons[0]).not.toContain('<svg')
 })
 
 test('renderAppPage renders the redesigned blog index', async () => {

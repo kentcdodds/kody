@@ -4,6 +4,7 @@ import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
+import { ProviderIcon } from '#client/provider-icons.tsx'
 import { startSocialSignIn } from '#client/social-sign-in.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -264,7 +265,10 @@ export function DiscordRoute(handle: Handle) {
 		return (
 			<section mix={css(pageCss)}>
 				<header mix={css(pageHeaderCss)}>
-					<h1 mix={css(pageTitleCss)}>Discord</h1>
+					<h1 mix={css(titleCss)}>
+						<ProviderIcon providerId="discord" size="1em" />
+						Discord
+					</h1>
 					<p mix={css(pageDescriptionCss)}>
 						Connect Discord to join the official Kody server and get the member
 						role — plus Standard or Pro if you subscribe.
@@ -389,6 +393,13 @@ const pageCss = {
 	...stackedPageCss,
 	maxWidth: '28rem',
 	margin: '0 auto',
+}
+
+const titleCss = {
+	...pageTitleCss,
+	display: 'flex',
+	alignItems: 'center',
+	gap: '0.35em',
 }
 
 const connectButtonCss = {
