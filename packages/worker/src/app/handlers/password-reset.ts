@@ -44,8 +44,12 @@ function getPasswordResetEmailConfig(
 	env: Pick<Env, 'APP_BASE_URL' | 'SYSTEM_EMAIL_DOMAIN'> & {
 		WRANGLER_IS_LOCAL_DEV?: string
 	},
+	requestUrl?: string | URL,
 ) {
-	return resolveTransactionalEmailConfig({ env })
+	return resolveTransactionalEmailConfig({
+		env,
+		requestUrl: env.WRANGLER_IS_LOCAL_DEV === 'true' ? requestUrl : undefined,
+	})
 }
 
 export function createPasswordResetRequestHandler(env: Env) {
@@ -94,7 +98,9 @@ export function createPasswordResetRequestHandler(env: Env) {
 			const userRecord = await db.findOne(usersTable, {
 				where: { email: normalizedEmail },
 			})
-			const emailConfig = userRecord ? getPasswordResetEmailConfig(env) : null
+			const emailConfig = userRecord
+				? getPasswordResetEmailConfig(env, url)
+				: null
 
 			const expiresAt = Date.now() + passwordResetTokenExpiryMs
 			const resetToken = userRecord

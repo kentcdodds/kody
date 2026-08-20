@@ -87,6 +87,30 @@ function createResetRequest() {
 
 const hexTokenPattern = /[0-9a-f]{64}/i
 
+test('password reset keeps local action links on the request origin', async () => {
+	vi.clearAllMocks()
+	const handler = createPasswordResetRequestHandler(
+		createEnv({
+			APP_BASE_URL: 'https://kody.codes',
+			SYSTEM_EMAIL_DOMAIN: 'kody.codes',
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		}),
+	)
+
+	const response = await handler.handler({
+		request: createResetRequest(),
+		url: new URL('http://localhost:3742/password-reset'),
+		params: {},
+	})
+
+	expect(response.status).toBe(200)
+	const [, message] = mockModule.sendCloudflareEmail.mock.calls[0]!
+	expect((message as { from: string }).from).toBe('kody@kody.codes')
+	expect((message as { text: string }).text).toContain(
+		'http://localhost:3742/reset-password?token=',
+	)
+})
+
 test('password reset sends from the sending domain when SYSTEM_EMAIL_DOMAIN overrides a legacy APP_BASE_URL', async () => {
 	vi.clearAllMocks()
 	const handler = createPasswordResetRequestHandler(

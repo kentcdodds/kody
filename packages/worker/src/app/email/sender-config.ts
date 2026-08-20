@@ -37,15 +37,17 @@ export function resolveTransactionalEmailConfig(input: {
 	requestUrl?: string | URL | null
 }): TransactionalEmailConfig | null {
 	const systemDomain = getSystemEmailDomain(input.env)
-	const fallbackOrigin =
-		tryOrigin(input.env.APP_BASE_URL?.trim()) ?? tryOrigin(input.requestUrl)
+	const requestOrigin = tryOrigin(input.requestUrl)
+	const configuredOrigin = tryOrigin(input.env.APP_BASE_URL?.trim())
+	const fallbackOrigin = configuredOrigin ?? requestOrigin
 	const fromHost =
 		systemDomain ?? (fallbackOrigin ? new URL(fallbackOrigin).hostname : null)
 	if (!fromHost) return null
 
 	const fromEmail = `kody@${fromHost}`
-	if (input.env.WRANGLER_IS_LOCAL_DEV === 'true' && fallbackOrigin) {
-		return { appBaseUrl: fallbackOrigin, fromEmail }
+	if (input.env.WRANGLER_IS_LOCAL_DEV === 'true') {
+		const localOrigin = requestOrigin ?? configuredOrigin
+		if (localOrigin) return { appBaseUrl: localOrigin, fromEmail }
 	}
 	if (fallbackOrigin && new URL(fallbackOrigin).hostname === fromHost) {
 		return { appBaseUrl: fallbackOrigin, fromEmail }

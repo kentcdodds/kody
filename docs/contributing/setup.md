@@ -48,11 +48,11 @@ Quick notes for getting a local kody environment running.
   same Cloudflare Email API helper. Both send from `kody@<SYSTEM_EMAIL_DOMAIN>`
   (falling back to the `APP_BASE_URL` hostname) and put that same sending domain
   on action and asset links, so a legacy `APP_BASE_URL` cannot pin `heykody.dev`
-  into the message. Local `npm run dev` keeps verification links on the request
-  origin so signup stays clickable. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the
-  local Cloudflare mock entirely. The main worker streams logs live; the client
-  bundle and background mock workers buffer logs and only print them if that
-  child process exits with an error.
+  into the message. Local `npm run dev` keeps those action and asset links on
+  the request origin so they stay clickable. Set `SKIP_CLOUDFLARE_MOCK=1` to
+  skip the local Cloudflare mock entirely. The main worker streams logs live;
+  the client bundle and background mock workers buffer logs and only print them
+  if that child process exits with an error.
 - MCP **`search`** uses a deterministic offline ranker in tests and when
   `WRANGLER_IS_LOCAL_DEV` is set (no Vectorize / Workers AI embedding calls
   required for `npm run test` or unauthenticated local runs). Production uses
