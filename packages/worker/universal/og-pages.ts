@@ -67,7 +67,7 @@ export const publicOgPages = {
 		imageSubtitle: 'Every plan is the whole factory. You pay for volume.',
 		ogTitle: 'Pricing — Kody',
 		ogDescription:
-			'Every plan is the whole factory. You pay for volume. Free, Standard, and Pro raise the caps.',
+			'Every plan is the whole factory. You pay for volume. Paid plans raise the caps.',
 		path: '/pricing',
 	},
 	privacy: {

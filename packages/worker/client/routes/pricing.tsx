@@ -150,7 +150,8 @@ export function PricingRoute(handle: Handle) {
 						</p>
 						<p mix={css(planPriceNoteCss)}>$24/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
-							Same factory. Roughly double Standard on every axis.
+							Same factory. More room for storage, jobs, workflows, and daily
+							volume.
 						</p>
 						{renderPaidPlanCta(isSignedIn)}
 					</section>
