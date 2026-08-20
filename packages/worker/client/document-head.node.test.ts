@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest'
 import { clientRoutes } from '#client/routes/index.tsx'
 import {
+	absolutizeDocumentHead,
 	NOT_FOUND_DOCUMENT_TITLE,
+	resolveDocumentHead,
 	resolveDocumentTitle,
 } from '#universal/document-head.ts'
 
@@ -34,4 +36,31 @@ test('every client route resolves a document title other than Not found', () => 
 		}
 	}
 	expect(missing, 'client routes missing document-head entries').toEqual([])
+})
+
+test('guide artwork controls the canonical Open Graph image', () => {
+	const descriptor = resolveDocumentHead('/guides/kody-factory', {
+		guideDetail: {
+			ok: true,
+			slug: 'kody-factory',
+			id: 'kody_factory',
+			title: 'The Kody factory map',
+			summary: 'Map the software factory.',
+			category: 'platform',
+			image: '/images/kody-factory-map.webp',
+			imageAlt: 'Kody presenting a map of the software factory',
+			ogImage: '/images/kody-factory-map-og.jpg',
+			provider: null,
+			lastVerified: null,
+			body: '# The Kody factory map',
+		},
+	})
+	const head = absolutizeDocumentHead(descriptor, 'https://kody.codes')
+
+	expect(head.canonicalUrl).toBe('https://kody.codes/guides/kody-factory')
+	expect(head.og).toEqual({
+		title: 'The Kody factory map — Kody guide',
+		description: 'Map the software factory.',
+		imageUrl: 'https://kody.codes/guides/kody-factory/og.png',
+	})
 })

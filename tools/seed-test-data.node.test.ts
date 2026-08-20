@@ -84,6 +84,9 @@ test('buildSeedSql seeds each account with its roles', () => {
 	expect(sql).toContain(
 		`WHERE u.email = 'kody@example.com' AND r.name = 'admin'`,
 	)
+	expect(sql).toContain(`'google-work'`)
+	expect(sql).toContain(stableUserIdFromEmail('kody@example.com'))
+	expect(sql).toContain(stableUserIdFromEmail('jane@example.com'))
 })
 
 test('seeded users carry the same stable id the signup path derives', async () => {

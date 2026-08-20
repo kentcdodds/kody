@@ -28,10 +28,10 @@ invoke it instead of creating another implementation.
   per call, so static imports from execute always see the current published
   version.
 - Use keyless `packages.invoke({ kodyId, exportName, params })` from an
-  authenticated `execute` call or package runtime when the target's name is data
-  or the call must run in the target package's own runtime (package secret
-  mounts, `packageStorage()`, `packageContext`). Pass `idempotencyKey` only when
-  the call needs exactly-once semantics.
+  authenticated `execute` call, a standalone scheduled job, or package runtime
+  when the target's name is data or the call must run in the target package's
+  own runtime (package secret mounts, `packageStorage()`, `packageContext`).
+  Pass `idempotencyKey` only when the call needs exactly-once semantics.
 
 This is the default for an established operation whose behavior should stay
 owned by its existing capability or package.

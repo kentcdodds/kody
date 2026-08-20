@@ -3,7 +3,7 @@ import { basename } from 'node:path'
 import { fail, runWrangler } from './ci/resource-utils.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
-import { buildSeedUserSql } from './seed-sql.ts'
+import { buildSeedIntegrationSql, buildSeedUserSql } from './seed-sql.ts'
 import { usernameFromEmail } from '../packages/worker/src/identity/username.ts'
 import {
 	getDefaultWranglerConfigPath,
@@ -180,7 +180,12 @@ type SeedAccount = {
 }
 
 export function buildSeedSql(accounts: Array<SeedAccount>) {
-	return accounts.map(buildSeedUserSql).join('\n')
+	return accounts
+		.flatMap((account) => [
+			buildSeedUserSql(account),
+			buildSeedIntegrationSql(account.email),
+		])
+		.join('\n')
 }
 
 /**

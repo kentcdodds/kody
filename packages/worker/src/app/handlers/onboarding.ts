@@ -196,6 +196,7 @@ export function createOnboardingHandler(env: Env) {
 				env,
 				requestUrl: request.url,
 				stableUserId: user.mcpUser.userId,
+				username: user.username,
 				emailVerified: user.emailVerified,
 				featuredListings: await loadOnboardingFeaturedListings(env, request),
 				builtInProviders: await loadOnboardingBuiltInProviders(
@@ -248,6 +249,7 @@ export function createOnboardingApiHandler(env: Env) {
 				env,
 				requestUrl: request.url,
 				stableUserId: user.mcpUser.userId,
+				username: user.username,
 				emailVerified: user.emailVerified,
 				featuredListings: user.emailVerified
 					? await loadOnboardingFeaturedListings(env, request)

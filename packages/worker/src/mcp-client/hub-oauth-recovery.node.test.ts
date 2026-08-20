@@ -594,7 +594,7 @@ test('addServer returns the recovered ready connection after a lightweight retry
 	const result = await hub.addServer({
 		serverId: 'server-1',
 		name: 'home',
-		url: 'https://kody-home.doddsfamily.us/mcp',
+		url: 'https://home.example.com/mcp',
 		callbackUrl,
 	})
 	expect(result.state).toBe('ready')

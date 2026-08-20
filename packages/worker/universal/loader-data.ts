@@ -63,6 +63,9 @@ export type GuideDetailLoaderData = {
 	title: string
 	summary: string
 	category: 'platform' | 'provider'
+	image: string | null
+	imageAlt: string | null
+	ogImage: string | null
 	provider: string | null
 	lastVerified: string | null
 	body: string
@@ -743,6 +746,8 @@ export type OnboardingWelcomeEmail = {
 export type OnboardingLoaderData = {
 	ok: true
 	loggedIn: boolean
+	/** Signed-in package scope owner; null for public onboarding payloads. */
+	username: string | null
 	mcpServerUrl: string
 	setupPrompt: string
 	/** Pre-connection "is Kody for me?" prompt; usable in any tool-calling agent. */

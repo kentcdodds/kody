@@ -444,27 +444,37 @@ async function executePublishedJobArtifact(input: {
 				}
 			: {}),
 	}
+	// Avoid a top-level jobs -> package-invocations cycle during capability
+	// registry initialization. Standalone jobs use the execute invoke path
+	// (same as inline workflows without package context); package-owned jobs
+	// keep package-runtime provenance so nested invoke/events stay in-package.
+	const {
+		createExecutePackageInvokeTools,
+		createPackageEventTools,
+		createPackageRuntimeInvokeTools,
+	} = await import('#worker/package-invocations/service.ts')
+	const sharedInvokeInput = {
+		env: input.env,
+		baseUrl: input.callerContext.baseUrl,
+		callerContext,
+		parentRunRecord: runRecord,
+		packageInvokeDepth: 0,
+		waitUntil: input.waitUntil,
+	}
 	const packageRuntimeTools = packageContext
-		? await (async () => {
-				// Avoid a top-level jobs -> package-invocations cycle during capability
-				// registry initialization.
-				const { createPackageEventTools, createPackageRuntimeInvokeTools } =
-					await import('#worker/package-invocations/service.ts')
-				const sharedInput = {
-					env: input.env,
-					baseUrl: input.callerContext.baseUrl,
-					callerContext,
+		? {
+				packageInvokeTools: createPackageRuntimeInvokeTools({
+					...sharedInvokeInput,
 					packageContext,
-					parentRunRecord: runRecord,
-					packageInvokeDepth: 0,
-					waitUntil: input.waitUntil,
-				}
-				return {
-					packageInvokeTools: createPackageRuntimeInvokeTools(sharedInput),
-					packageEventTools: createPackageEventTools(sharedInput),
-				}
-			})()
-		: null
+				}),
+				packageEventTools: createPackageEventTools({
+					...sharedInvokeInput,
+					packageContext,
+				}),
+			}
+		: {
+				packageInvokeTools: createExecutePackageInvokeTools(sharedInvokeInput),
+			}
 	return await runBundledModuleWithRegistry(
 		input.env,
 		callerContext,

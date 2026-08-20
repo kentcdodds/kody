@@ -15,7 +15,7 @@ import { readJson } from '#client/routes/account-approval-shared.ts'
 import { formatLastVerified } from '#client/routes/guides.tsx'
 import { renderHowKodyWorksWalkthrough } from '#client/routes/how-kody-works-walkthrough.tsx'
 import { renderGoogleOauthWalkthrough } from '#client/routes/google-oauth-walkthrough.tsx'
-import { colors } from '#universal/styles/tokens.ts'
+import { colors, radius } from '#universal/styles/tokens.ts'
 import {
 	articleMeasure,
 	pageGutter,
@@ -261,6 +261,20 @@ export function GuideDetailRoute(handle: Handle) {
 							</p>
 						</header>
 
+						{guide.image && guide.imageAlt ? (
+							<img
+								src={guide.image}
+								alt={guide.imageAlt}
+								width={1024}
+								height={1024}
+								loading="eager"
+								decoding="async"
+								data-rise
+								style={{ '--rise': '3' }}
+								mix={css(guideImageCss)}
+							/>
+						) : null}
+
 						{interactiveGuideRenderers[guide.slug]?.() ?? (
 							<div mix={css(proseCss)}>{renderGuideBody(guide.body)}</div>
 						)}
@@ -333,6 +347,15 @@ const guideMetaCss = {
 	margin: 0,
 	color: colors.textMuted,
 	fontSize: '0.88rem',
+}
+
+const guideImageCss = {
+	display: 'block',
+	width: '100%',
+	height: 'auto',
+	margin: 'clamp(1.5rem, 4vw, 2.2rem) 0 clamp(2rem, 5vw, 3rem)',
+	borderRadius: radius.card,
+	border: `1px solid ${colors.border}`,
 }
 
 const guideStatusCss = {

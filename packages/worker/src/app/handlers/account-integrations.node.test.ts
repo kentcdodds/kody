@@ -259,6 +259,11 @@ const mockModule = vi.hoisted(() => ({
 		updatedAt: '1970-01-01T00:00:00.002Z',
 	})),
 	setSecretAllowedHosts: vi.fn(async () => undefined),
+	deleteIntegration: vi.fn(async () => true),
+	deleteOauthAppWithConnections: vi.fn(async () => ({
+		deleted: true,
+		connectionNames: ['google', 'google-calendar'],
+	})),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -301,6 +306,10 @@ vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 		getOauthApp: (...args: Array<unknown>) => mockModule.getOauthApp(...args),
 		rotateOauthAppClientCredentials: (...args: Array<unknown>) =>
 			mockModule.rotateOauthAppClientCredentials(...args),
+		deleteIntegration: (...args: Array<unknown>) =>
+			mockModule.deleteIntegration(...args),
+		deleteOauthAppWithConnections: (...args: Array<unknown>) =>
+			mockModule.deleteOauthAppWithConnections(...args),
 		getAvailablePlatformApp: (...args: Array<unknown>) =>
 			mockModule.getAvailablePlatformApp(...args),
 	}
@@ -879,4 +888,85 @@ test('integrations API scopes rotate actions to the authenticated user', async (
 			userId: 'stable-user-other',
 		}),
 	)
+})
+
+test('integrations API disconnects a connection and deletes a user-lane OAuth app', async () => {
+	const handler = createAccountIntegrationsApiHandler(createEnv())
+	const disconnectResponse = await handler.handler({
+		request: new Request('https://example.com/account/integrations.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'disconnect_connection',
+				name: 'google-calendar',
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(disconnectResponse.status).toBe(200)
+	await expect(disconnectResponse.json()).resolves.toEqual({
+		ok: true,
+		deleted: true,
+	})
+	expect(mockModule.deleteIntegration).toHaveBeenCalledWith({
+		env: expect.any(Object),
+		userId: 'stable-user-1',
+		name: 'google-calendar',
+	})
+
+	mockModule.deleteIntegration.mockResolvedValueOnce(false)
+	const missingDisconnect = await handler.handler({
+		request: new Request('https://example.com/account/integrations.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'disconnect_connection',
+				name: 'missing',
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(missingDisconnect.status).toBe(404)
+
+	const deleteAppResponse = await handler.handler({
+		request: new Request('https://example.com/account/integrations.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'delete_oauth_app',
+				appSlug: 'google',
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(deleteAppResponse.status).toBe(200)
+	await expect(deleteAppResponse.json()).resolves.toEqual({
+		ok: true,
+		deleted: true,
+		connectionNames: ['google', 'google-calendar'],
+	})
+	expect(mockModule.getOauthApp).toHaveBeenCalledWith({
+		env: expect.any(Object),
+		userId: 'stable-user-1',
+		slug: 'google',
+	})
+	expect(mockModule.deleteOauthAppWithConnections).toHaveBeenCalledWith({
+		env: expect.any(Object),
+		userId: 'stable-user-1',
+		slug: 'google',
+	})
+
+	mockModule.getOauthApp.mockResolvedValueOnce(null)
+	const missingApp = await handler.handler({
+		request: new Request('https://example.com/account/integrations.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'delete_oauth_app',
+				appSlug: 'missing',
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(missingApp.status).toBe(404)
 })

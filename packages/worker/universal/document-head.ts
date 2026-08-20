@@ -218,12 +218,28 @@ const routeDocumentHeads = {
 		}
 	},
 	[routePattern(routes.guides)]: titleOnly('Guides'),
-	[routePattern(routes.guideDetail)]: ({ loaderData }) => {
+	[routePattern(routes.guideDetail)]: ({ loaderData, pathname }) => {
 		const guide = loaderData?.guideDetail
 		if (!guide?.ok) {
 			return titleOnly('Guides')
 		}
-		return titleOnly(guide.title)
+		const title = `${guide.title} — Kody guide`
+		return {
+			title,
+			description: guide.summary,
+			canonicalPath: pathname,
+			...(guide.ogImage
+				? {
+						og: {
+							title,
+							description: guide.summary,
+							imagePath: routes.guideDetailOgImage.href({
+								slug: guide.slug,
+							}),
+						},
+					}
+				: {}),
+		}
 	},
 	[routePattern(routes.community)]: publicPageHead(
 		'community',

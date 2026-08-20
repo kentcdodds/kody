@@ -25,6 +25,7 @@ import {
 type OnboardingExampleCardProps = {
 	listing: OnboardingFeaturedListing
 	loggedIn: boolean
+	username: string | null
 	/** Called when install finishes so the parent can refresh checklist state. */
 	onInstalled?: () => void
 }
@@ -151,10 +152,13 @@ export function OnboardingExampleCard(
 		// visible without an extra click (same UI as after "Try this").
 		const showExpandedPrompt =
 			selected || alreadyReady || phase === 'installing' || phase === 'error'
-		const examplePrompt = buildOnboardingExamplePrompt({
-			listingName: listing.name,
-			kodyId: listing.kodyId,
-		})
+		const examplePrompt = handle.props.username
+			? buildOnboardingExamplePrompt({
+					listingName: listing.name,
+					kodyId: listing.kodyId,
+					username: handle.props.username,
+				})
+			: null
 		const readyStatus =
 			phase === 'error'
 				? null
@@ -183,7 +187,7 @@ export function OnboardingExampleCard(
 						{listing.description}
 					</span>
 				</a>
-				{showExpandedPrompt ? (
+				{showExpandedPrompt && examplePrompt ? (
 					<>
 						<figure mix={css(examplePromptBlockCss)}>
 							<blockquote
@@ -252,6 +256,10 @@ export function OnboardingExampleCard(
 							</a>
 						</p>
 					</>
+				) : showExpandedPrompt ? (
+					<p mix={css(exampleHintCss)}>
+						Log in to copy a prompt scoped to your package.
+					</p>
 				) : (
 					<button
 						type="button"

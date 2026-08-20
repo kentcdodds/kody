@@ -6,6 +6,7 @@ import { upsertPlatformOauthApp } from './platform-apps.ts'
 import {
 	deleteIntegration,
 	deleteOauthAppIfUnused,
+	deleteOauthAppWithConnections,
 	findOauthAppForProviderSetup,
 	getAvailablePlatformApp,
 	getIntegration,
@@ -205,6 +206,26 @@ test('rotateOauthAppClientCredentials updates sibling joins, blocks delete while
 
 	const stillThere = await getIntegration({ env, userId, name: 'google' })
 	expect(stillThere?.name).toBe('google')
+
+	expect(
+		await deleteOauthAppWithConnections({
+			env,
+			userId,
+			slug: 'GOOGLE',
+		}),
+	).toEqual({
+		deleted: true,
+		connectionNames: ['google', 'google-mail'],
+	})
+	expect(await listIntegrations({ env, userId })).toEqual([])
+	expect(await getOauthApp({ env, userId, slug: 'google' })).toBeNull()
+	expect(
+		await deleteOauthAppWithConnections({
+			env,
+			userId,
+			slug: 'google',
+		}),
+	).toEqual({ deleted: false, connectionNames: [] })
 })
 
 test('upsertIntegration reuses a confidential app that stored usePkce false as NULL', async () => {

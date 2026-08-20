@@ -1,4 +1,4 @@
-import { css, type Handle } from 'remix/ui'
+import { css, ref, type Handle } from 'remix/ui'
 import { shouldRouterHandleClick } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import {
@@ -14,6 +14,11 @@ import {
 	getSurfaceCardCss,
 	hoverMq,
 } from '#universal/styles/style-primitives.ts'
+import {
+	acknowledgeRecordTableSearchInput,
+	reconcileRecordTableSearchExternalValue,
+	type RecordTableSearchSync,
+} from './record-table-search-sync.ts'
 
 /*
  * The account and admin list/detail screens, as one table.
@@ -315,6 +320,37 @@ const footerCss = {
  * they cost 48px, so the label becomes the control's accessible name.
  */
 
+/**
+ * Live filter fields write the query into the URL on every keystroke. A
+ * Remix-controlled `value` lets the first character schedule a restore of the
+ * previous (empty) query, and WebKit's search cancel control appears on that
+ * same keystroke — either one drops focus and the reader has to click back in.
+ * The field stays uncontrolled. URL/back-button updates apply immediately
+ * when it is not focused, and on blur if they arrived while it was. A
+ * keystroke records the typed string as the last applied value so a later
+ * render that returns `q` to that value (clear, or back to the same query)
+ * cannot leave a stale pending string for blur to write back.
+ */
+const searchCancelHiddenCss = {
+	'&::-webkit-search-decoration': {
+		WebkitAppearance: 'none',
+		appearance: 'none',
+	},
+	'&::-webkit-search-cancel-button': {
+		WebkitAppearance: 'none',
+		appearance: 'none',
+		display: 'none',
+	},
+	'&::-webkit-search-results-button': {
+		WebkitAppearance: 'none',
+		appearance: 'none',
+	},
+	'&::-webkit-search-results-decoration': {
+		WebkitAppearance: 'none',
+		appearance: 'none',
+	},
+} as const
+
 export function RecordTableSearch(
 	handle: Handle<{
 		label: string
@@ -323,26 +359,64 @@ export function RecordTableSearch(
 		onInput: (value: string) => void
 	}>,
 ) {
-	return () => (
-		<input
-			type="search"
-			data-field-ring
-			value={handle.props.value}
-			placeholder={handle.props.placeholder}
-			aria-label={handle.props.label}
-			mix={[
-				on('input', (event) =>
-					handle.props.onInput((event.currentTarget as HTMLInputElement).value),
-				),
-				css({
-					...getAuthInputCss(),
-					flex: '1 1 12rem',
-					minWidth: '7rem',
-					width: 'auto',
-				}),
-			]}
-		/>
-	)
+	let input: HTMLInputElement | null = null
+	const initialValue = handle.props.value
+	let sync: RecordTableSearchSync = {
+		lastExternalValue: initialValue,
+		pendingExternalValue: null,
+	}
+
+	function applyExternalValue(nextValue: string) {
+		if (input) input.value = nextValue
+		sync = acknowledgeRecordTableSearchInput(nextValue)
+	}
+
+	return () => {
+		const nextValue = handle.props.value
+		const focused = Boolean(input && document.activeElement === input)
+		const reconciled = reconcileRecordTableSearchExternalValue(
+			sync,
+			nextValue,
+			focused,
+		)
+		sync = reconciled.state
+		if (reconciled.applyValue !== null)
+			applyExternalValue(reconciled.applyValue)
+		return (
+			<input
+				type="search"
+				data-field-ring
+				defaultValue={initialValue}
+				placeholder={handle.props.placeholder}
+				aria-label={handle.props.label}
+				mix={[
+					ref((node, signal) => {
+						input = node as HTMLInputElement
+						signal.addEventListener('abort', () => {
+							if (input === node) input = null
+						})
+					}),
+					on('input', (event) => {
+						const value = (event.currentTarget as HTMLInputElement).value
+						sync = acknowledgeRecordTableSearchInput(value)
+						handle.props.onInput(value)
+					}),
+					on('blur', () => {
+						if (sync.pendingExternalValue !== null) {
+							applyExternalValue(sync.pendingExternalValue)
+						}
+					}),
+					css({
+						...getAuthInputCss(),
+						flex: '1 1 12rem',
+						minWidth: '7rem',
+						width: 'auto',
+						...searchCancelHiddenCss,
+					}),
+				]}
+			/>
+		)
+	}
 }
 
 export function RecordTableSelect(

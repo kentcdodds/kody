@@ -13,6 +13,7 @@ import {
 	type PackageInvokeTools,
 } from '#mcp/run-kody-registry.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
+import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import {
 	createAuthenticatedFetch,
 	refreshAccessToken,
@@ -120,7 +121,7 @@ function buildFacetClassExportName(rawFacetName) {
 		: \`App_\${sanitizedFacetName}_\${hashSuffix}\`;
 }
 
-function createKodyProxy(runtimeBridge) {
+function createKodyProxy(runtimeBridge, mcpServerNames) {
 	const isProxyLookupKey = (name) =>
 		typeof name !== 'string' || name === 'then';
 	const createOpenNamespaceProxy = (getValue) =>
@@ -142,7 +143,43 @@ function createKodyProxy(runtimeBridge) {
 				};
 			},
 		});
-	const mcp = createOpenNamespaceProxy((serverName) =>
+	// Workerd destructures \`const { home } = kody.mcp\` via ownKeys then
+	// GOPD. Advertise connected server names so home is not undefined.
+	// Empty/missing names stay open (GOPD still returns getValue) so a
+	// listing failure does not hide Get. Only a non-empty list restricts
+	// has/GOPD. Tool namespaces stay fully open.
+	const knownServerNames = Array.isArray(mcpServerNames)
+		? [...new Set(mcpServerNames.filter((name) => typeof name === 'string' && name.length > 0))]
+		: [];
+	const restrictServerKeys = knownServerNames.length > 0;
+	const createMcpServerNamespaceProxy = (getValue) =>
+		new Proxy({}, {
+			get(_target, name) {
+				if (isProxyLookupKey(name)) return undefined;
+				return getValue(name);
+			},
+			has(_target, name) {
+				if (isProxyLookupKey(name)) return false;
+				if (!restrictServerKeys) return true;
+				return knownServerNames.includes(name);
+			},
+			ownKeys() {
+				return [...knownServerNames];
+			},
+			getOwnPropertyDescriptor(_target, name) {
+				if (isProxyLookupKey(name)) return undefined;
+				if (restrictServerKeys && !knownServerNames.includes(name)) {
+					return undefined;
+				}
+				return {
+					configurable: true,
+					enumerable: true,
+					writable: true,
+					value: getValue(name),
+				};
+			},
+		});
+	const mcp = createMcpServerNamespaceProxy((serverName) =>
 		createOpenNamespaceProxy((toolName) => async (args = {}) =>
 			await runtimeBridge.callCapability({
 				name: \`mcp:\${serverName}:\${toolName}\`,
@@ -453,7 +490,7 @@ function createPackageAppEnv(env, userModule) {
 	return runtimeEnv;
 }
 
-function createRuntime(runtimeBridge, packageContext) {
+function createRuntime(runtimeBridge, packageContext, mcpServerNames) {
 	const packageId = packageContext?.packageId ?? '';
 	const packageSecrets =
 		packageId.length > 0
@@ -471,7 +508,7 @@ function createRuntime(runtimeBridge, packageContext) {
 					},
 				}
 	return {
-		kody: createKodyProxy(runtimeBridge),
+		kody: createKodyProxy(runtimeBridge, mcpServerNames),
 		storage: undefined,
 		__kodyPackageStorage: (storagePackageId) => ({
 			id: 'package:' + encodeURIComponent(storagePackageId),
@@ -656,9 +693,11 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			},
 		});
 		const consoleCapture = createConsoleLogCapture();
+		const mcpServerNames = await runtimeBridge.listMcpServerNames().catch(() => []);
 		const runtime = createRuntime(
 			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
+			mcpServerNames,
 		);
 		try {
 			consoleCapture.install();
@@ -711,9 +750,11 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			},
 		});
 		const consoleCapture = createConsoleLogCapture();
+		const mcpServerNames = await runtimeBridge.listMcpServerNames().catch(() => []);
 		const runtime = createRuntime(
 			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
+			mcpServerNames,
 		);
 		try {
 			consoleCapture.install();
@@ -962,6 +1003,18 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 		this.ctx.waitUntil(finishPromise)
 		return { ok: true }
+	}
+
+	async listMcpServerNames(): Promise<Array<string>> {
+		try {
+			const refs = await listEnabledMcpServerRefsCached({
+				env: this.env,
+				userId: this.ctx.props.userId,
+			})
+			return refs.map((ref) => ref.name)
+		} catch {
+			return []
+		}
 	}
 
 	async callCapability(input: { name: string; args?: unknown }) {

@@ -7,6 +7,7 @@ import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-su
 import { integrationDeleteCapability } from './integration-delete.ts'
 import { integrationGetCapability } from './integration-get.ts'
 import { integrationListCapability } from './integration-list.ts'
+import { integrationOauthAppDeleteCapability } from './integration-oauth-app-delete.ts'
 import { integrationOauthAppListCapability } from './integration-oauth-app-list.ts'
 import { integrationOauthAppRotateCredentialsCapability } from './integration-oauth-app-rotate-credentials.ts'
 import { integrationSaveCapability } from './integration-save.ts'
@@ -361,6 +362,34 @@ test('integration_delete and credential rotation return the expected MCP respons
 		{ env, callerContext: caller(userId) },
 	)
 	expect(emptyApps.apps).toEqual([])
+
+	await integrationSaveCapability.handler(googleBase, {
+		env,
+		callerContext: caller(userId),
+	})
+	await integrationSaveCapability.handler(
+		{
+			...googleBase,
+			name: 'google-mail',
+			accessTokenSecretName: 'googleMailAccessToken',
+			refreshTokenSecretName: 'googleMailRefreshToken',
+		},
+		{ env, callerContext: caller(userId) },
+	)
+	const deletedApp = await integrationOauthAppDeleteCapability.handler(
+		{ slug: 'google' },
+		{ env, callerContext: caller(userId) },
+	)
+	expect(deletedApp).toEqual({
+		deleted: true,
+		connectionNames: ['google', 'google-mail'],
+	})
+	expect(
+		await integrationOauthAppListCapability.handler(
+			{},
+			{ env, callerContext: caller(userId) },
+		),
+	).toEqual({ apps: [] })
 })
 
 test('integration capabilities deny cross-user reads and require authentication', async () => {

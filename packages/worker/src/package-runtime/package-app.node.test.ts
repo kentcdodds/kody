@@ -39,7 +39,9 @@ async function extractCreateKodyProxySource() {
 		new URL('./package-app.ts', import.meta.url),
 		'utf8',
 	)
-	const start = sourceText.indexOf('function createKodyProxy(runtimeBridge) {')
+	const start = sourceText.indexOf(
+		'function createKodyProxy(runtimeBridge, mcpServerNames) {',
+	)
 	const end = sourceText.indexOf('\nfunction createRealtimeProxy', start)
 	if (start < 0 || end < 0) {
 		throw new Error('createKodyProxy source was not found.')
@@ -49,13 +51,24 @@ async function extractCreateKodyProxySource() {
 		.replaceAll('\\\\', '\\')
 		.replaceAll('\\`', '`')
 		.replaceAll('\\${', '${')
-	return `${proxySource}; return createKodyProxy(runtimeBridge);`
+	return `${proxySource}; return createKodyProxy(runtimeBridge, mcpServerNames);`
 }
 
-async function createKodyProxyForTest(runtimeBridge: unknown) {
-	return new Function('runtimeBridge', await extractCreateKodyProxySource())(
-		runtimeBridge,
-	) as Record<string, unknown>
+async function createKodyProxyForTest(
+	runtimeBridge: unknown,
+	mcpServerNames: Array<string> = [],
+) {
+	return new Function(
+		'runtimeBridge',
+		'mcpServerNames',
+		await extractCreateKodyProxySource(),
+	)(runtimeBridge, mcpServerNames) as Record<string, unknown>
+}
+
+/** Workerd-style: [[OwnPropertyKeys]] then GOPD.value (not plain Get). */
+function getViaOwnKeysThenGopd(target: object, name: string): unknown {
+	if (!Reflect.ownKeys(target).includes(name)) return undefined
+	return Reflect.getOwnPropertyDescriptor(target, name)?.value
 }
 
 async function createWorkflowsProxyForTest(runtimeBridge: unknown) {
@@ -216,6 +229,65 @@ test('package app kody proxy supports mcp namespace calls', async () => {
 		Record<string, (args: unknown) => Promise<unknown>>
 	>
 	await expect(home.set_pin({ pin: '9' })).resolves.toEqual({ ok: true })
+})
+
+test('package app kody.mcp advertises connected server names for Workerd destructuring', async () => {
+	const calls: Array<{ name: string; args: unknown }> = []
+	const runtimeBridge = {
+		callCapability: async (input: { name: string; args: unknown }) => {
+			calls.push(input)
+			return { ok: true }
+		},
+	}
+
+	const withoutNames = await createKodyProxyForTest(runtimeBridge)
+	expect(Reflect.ownKeys(withoutNames.mcp as object)).toEqual([])
+	expect(getViaOwnKeysThenGopd(withoutNames.mcp as object, 'home')).toBe(
+		undefined,
+	)
+	// Get stays open even when ownKeys is empty (Node destructure uses Get).
+	await expect(
+		(
+			(
+				withoutNames.mcp as Record<
+					string,
+					Record<string, (args: unknown) => Promise<unknown>>
+				>
+			)['home'] as Record<string, (args: unknown) => Promise<unknown>>
+		).set_pin({ pin: '1' }),
+	).resolves.toEqual({ ok: true })
+
+	const withNames = await createKodyProxyForTest(runtimeBridge, [
+		'home',
+		'mediarss',
+	])
+	expect(Reflect.ownKeys(withNames.mcp as object)).toEqual(['home', 'mediarss'])
+	const home = getViaOwnKeysThenGopd(withNames.mcp as object, 'home') as Record<
+		string,
+		(args: unknown) => Promise<unknown>
+	>
+	expect(home).toBeTypeOf('object')
+	await expect(home.set_pin({ pin: '2' })).resolves.toEqual({ ok: true })
+	expect(calls).toEqual([
+		{ name: 'mcp:home:set_pin', args: { pin: '1' } },
+		{ name: 'mcp:home:set_pin', args: { pin: '2' } },
+	])
+})
+
+test('package app kody.mcp ownKeys dedupes duplicate server names', async () => {
+	const kody = await createKodyProxyForTest(
+		{
+			callCapability: async () => ({ ok: true }),
+		},
+		['home', 'home', 'mediarss'],
+	)
+	expect(Reflect.ownKeys(kody.mcp as object)).toEqual(['home', 'mediarss'])
+	const home = getViaOwnKeysThenGopd(kody.mcp as object, 'home') as Record<
+		string,
+		(args: unknown) => Promise<unknown>
+	>
+	expect(home).toBeTypeOf('object')
+	await expect(home.set_pin({ pin: '3' })).resolves.toEqual({ ok: true })
 })
 
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {

@@ -22,6 +22,10 @@ Read in order for a full tour, or jump to a topic.
   prompt for people (and agents) deciding whether Kody fits, before any setup
 - [How Kody works](../guides/how-kody-works.md) — ask once, save an export,
   daily email only when something shipped
+- [The Kody factory map](../guides/kody-factory.md) — the primitives your
+  assistant gets and the boundary around local files and processes
+- [Connect local tools through an MCP tunnel](../guides/local-mcp-tunnels.md) —
+  expose an Obsidian vault, CLI, or home connector through Tunnel and Access
 - [Connect your agent](./connect-your-agent.md) — add `{origin}/mcp`, complete
   OAuth, and use the setup prompt. Machine-readable twin:
   [`/auth.md`](https://kody.codes/auth.md)

@@ -94,6 +94,20 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 		id: 'google_oauth',
 	})
 
+	const factoryApi = await callHandler(
+		createGuideDetailApiHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/kody-factory.json'),
+			params: { slug: 'kody-factory' },
+		},
+	)
+	expect(await factoryApi.json()).toMatchObject({
+		ok: true,
+		image: '/images/kody-factory-map.webp',
+		imageAlt: 'Kody presenting a map of the software factory',
+		ogImage: '/images/kody-factory-map-og.jpg',
+	})
+
 	const missing = await callHandler(
 		createGuideDetailMarkdownHandler(env) as never,
 		{

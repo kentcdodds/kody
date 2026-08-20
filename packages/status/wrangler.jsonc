@@ -48,6 +48,14 @@
 			"new_sqlite_classes": ["StatusStore"],
 		},
 	],
+	// Named favicon PNGs. `/` has no index.html, so the worker still
+	// renders the page. `/favicon.ico` is worker-handled and 302s to the
+	// current overall-status file.
+	"assets": {
+		"directory": "./public",
+		"html_handling": "none",
+		"not_found_handling": "none",
+	},
 	"vars": {
 		"PRIMARY_ORIGIN": "https://kody.codes",
 		"PACKAGE_APP_ORIGIN": "https://kody.run",

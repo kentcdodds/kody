@@ -6,9 +6,12 @@ import {
 } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { type Handle, type RemixNode, css } from 'remix/ui'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { on } from '#client/event-mixin.ts'
+import { createUndoableAction } from '#client/undoable-action.ts'
+import { UndoToast } from '#client/undo-toast.tsx'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
@@ -141,6 +144,25 @@ function accountsConnectedCopy(count: number) {
 	if (count === 0) return 'No accounts connected yet.'
 	if (count === 1) return '1 account connected.'
 	return `${count} accounts connected.`
+}
+
+function connectionLabel(connection: {
+	name: string
+	accountLabel?: string | null
+}) {
+	return connection.accountLabel?.trim() || connection.name
+}
+
+function deletedAppCopy(title: string, connectionCount: number) {
+	if (connectionCount === 0) return `Deleted ${title}.`
+	if (connectionCount === 1) return `Deleted ${title} and 1 account.`
+	return `Deleted ${title} and ${connectionCount} accounts.`
+}
+
+type IntegrationsSnapshot = {
+	integrations: Array<AccountIntegrationListItem>
+	apps: Array<AccountOauthAppListItem>
+	href: string
 }
 
 function resolveIntegrationsSelection(input: {
@@ -637,6 +659,187 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	let rotateMessageTone: 'error' | 'info' = 'info'
 	let lastRotateAppSlug: string | null = null
 	const loadLatch = createRouteLoadLatch()
+	const disconnectChecks = new Map<
+		string,
+		ReturnType<typeof createDoubleCheck>
+	>()
+	const deleteAppCheck = createDoubleCheck(handle)
+	const undoable = createUndoableAction(handle)
+	let holdingOptimisticRemoval = false
+
+	function isHoldingOptimisticRemoval() {
+		return Boolean(undoable.pending) || holdingOptimisticRemoval
+	}
+
+	function getDisconnectCheck(name: string) {
+		const existing = disconnectChecks.get(name)
+		if (existing) return existing
+		const created = createDoubleCheck(handle)
+		disconnectChecks.set(name, created)
+		return created
+	}
+
+	function snapshotList(): IntegrationsSnapshot {
+		return {
+			integrations,
+			apps,
+			href: getCurrentHref(),
+		}
+	}
+
+	function restoreSnapshot(snapshot: IntegrationsSnapshot) {
+		if (handle.signal.aborted) return
+		integrations = snapshot.integrations
+		apps = snapshot.apps
+		message = null
+		handle.update()
+		if (
+			integrationsRoute.isRoutePath(getCurrentHref()) &&
+			getCurrentHref() !== snapshot.href
+		) {
+			navigate(snapshot.href)
+		}
+	}
+
+	function listHref() {
+		return `${routes.accountIntegrations.href()}${getCurrentSearch()}`
+	}
+
+	function currentSelectionMissing() {
+		return Boolean(
+			resolveIntegrationsSelection({
+				href: getCurrentHref(),
+				apps,
+				integrations,
+			}).missingKind,
+		)
+	}
+
+	function finishOptimisticRemoval() {
+		holdingOptimisticRemoval = false
+		if (currentSelectionMissing()) {
+			navigate(listHref())
+			return
+		}
+		handle.update()
+	}
+
+	function removeConnectionLocally(name: string) {
+		integrations = integrations.filter((entry) => entry.name !== name)
+		apps = apps.flatMap((app) => {
+			const connections = app.connections.filter(
+				(connection) => connection.name !== name,
+			)
+			if (connections.length === app.connections.length) return [app]
+			if (connections.length === 0 && !isBuiltInApp(app)) return []
+			return [
+				{
+					...app,
+					connections,
+					connectionCount: connections.length,
+				},
+			]
+		})
+	}
+
+	function removeAppLocally(app: AccountOauthAppListItem) {
+		const names = new Set(app.connections.map((connection) => connection.name))
+		integrations = integrations.filter((entry) => !names.has(entry.name))
+		apps = apps.filter(
+			(entry) => integrationListId(entry) !== integrationListId(app),
+		)
+	}
+
+	async function postIntegrationsMutation(body: Record<string, unknown>) {
+		const response = await fetch(accountIntegrationsApiPath, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			credentials: 'include',
+			keepalive: true,
+			body: JSON.stringify(body),
+		})
+		if (response.status === 401) {
+			window.location.assign('/login')
+			return
+		}
+		const payload = await readJson<{ ok?: boolean; error?: string }>(response)
+		if (!response.ok || !payload?.ok) {
+			throw new Error(payload?.error || 'Unable to complete that action.')
+		}
+	}
+
+	async function startDisconnect(connection: {
+		name: string
+		accountLabel?: string | null
+	}) {
+		const snapshot = snapshotList()
+		removeConnectionLocally(connection.name)
+		getDisconnectCheck(connection.name).reset()
+		holdingOptimisticRemoval = true
+		// Stay on this route element until commit. List/detail are separate
+		// Remix routes, so navigating away remounts, commits immediately, and
+		// loader data restores the row that was just hidden.
+		await undoable.start({
+			message: `Disconnected ${connectionLabel(connection)}.`,
+			onCommit: async () => {
+				try {
+					await postIntegrationsMutation({
+						action: 'disconnect_connection',
+						name: connection.name,
+					})
+					finishOptimisticRemoval()
+				} catch (error) {
+					holdingOptimisticRemoval = false
+					restoreSnapshot(snapshot)
+					message =
+						error instanceof Error
+							? error.message
+							: 'Unable to disconnect that account.'
+					handle.update()
+				}
+			},
+			onUndo: () => {
+				holdingOptimisticRemoval = false
+				restoreSnapshot(snapshot)
+			},
+		})
+	}
+
+	async function startDeleteApp(app: AccountOauthAppListItem) {
+		const snapshot = snapshotList()
+		const title = oauthAppTitle(app)
+		const connectionCount = app.connections.length
+		removeAppLocally(app)
+		deleteAppCheck.reset()
+		holdingOptimisticRemoval = true
+		await undoable.start({
+			message: deletedAppCopy(title, connectionCount),
+			onCommit: async () => {
+				try {
+					await postIntegrationsMutation({
+						action: 'delete_oauth_app',
+						appSlug: app.slug,
+					})
+					finishOptimisticRemoval()
+				} catch (error) {
+					holdingOptimisticRemoval = false
+					restoreSnapshot(snapshot)
+					message =
+						error instanceof Error
+							? error.message
+							: 'Unable to delete that integration.'
+					handle.update()
+				}
+			},
+			onUndo: () => {
+				holdingOptimisticRemoval = false
+				restoreSnapshot(snapshot)
+			},
+		})
+	}
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
@@ -699,6 +902,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	}
 
 	function applyRouteLoaderData(href: string) {
+		if (isHoldingOptimisticRemoval()) return false
 		if (!integrationsRoute.isRoutePath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(
 			handle,
@@ -799,16 +1003,21 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	return () => {
 		const currentHref = getCurrentHref()
 		const appliedRouteData = applyRouteLoaderData(currentHref)
-		// A same-path refresh whose loader failed leaves no preload and no
-		// href change; the stale marker forces the fallback refetch.
+		// Hold optimistic list state for the undo window. Do not consume a
+		// stale-refresh or latch a load — both would clobber the removal or
+		// block the next fetch after undo.
 		const needsStaleRefresh =
-			consumeStaleNavigationData(currentHref) && !appliedRouteData
+			!isHoldingOptimisticRemoval() &&
+			consumeStaleNavigationData(currentHref) &&
+			!appliedRouteData
 		const latchKey = getDataLatchKey(currentHref)
-		const needsLoad = loadLatch.needsLoad({
-			currentHref: latchKey,
-			appliedRouteData,
-			needsStaleRefresh,
-		})
+		const needsLoad =
+			!isHoldingOptimisticRemoval() &&
+			loadLatch.needsLoad({
+				currentHref: latchKey,
+				appliedRouteData,
+				needsStaleRefresh,
+			})
 		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadIntegrations)
 		}
@@ -829,9 +1038,13 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			resetRotateForm(selectedApp)
 		}
 		const showIntegrationNotFound =
-			missingKind === 'integration' && status === 'ready'
+			missingKind === 'integration' &&
+			status === 'ready' &&
+			!isHoldingOptimisticRemoval()
 		const showConnectionNotFound =
-			missingKind === 'connection' && status === 'ready'
+			missingKind === 'connection' &&
+			status === 'ready' &&
+			!isHoldingOptimisticRemoval()
 		const highlightedConnection = highlightedConnectionName
 			? (integrations.find(
 					(connection) => connection.name === highlightedConnectionName,
@@ -942,6 +1155,36 @@ export function AccountIntegrationsRoute(handle: Handle) {
 														selectedApp.connections.length,
 													)}
 												</p>
+												{isBuiltInApp(selectedApp) ? null : (
+													<button
+														type="button"
+														data-testid="delete-integration"
+														aria-label={
+															deleteAppCheck.doubleCheck
+																? `Confirm delete integration "${oauthAppTitle(selectedApp)}"`
+																: `Delete integration "${oauthAppTitle(selectedApp)}"`
+														}
+														title={
+															deleteAppCheck.doubleCheck
+																? `Click again to delete "${oauthAppTitle(selectedApp)}" and every connected account`
+																: `Delete "${oauthAppTitle(selectedApp)}" and every connected account`
+														}
+														mix={[
+															...deleteAppCheck.getButtonMix({
+																on: {
+																	click: () => {
+																		void startDeleteApp(selectedApp)
+																	},
+																},
+															}),
+															css(dangerButtonCss),
+														]}
+													>
+														{deleteAppCheck.doubleCheck
+															? 'Confirm delete'
+															: 'Delete integration'}
+													</button>
+												)}
 											</div>
 										</header>
 
@@ -996,6 +1239,14 @@ export function AccountIntegrationsRoute(handle: Handle) {
 																isBuiltInApp(selectedApp),
 															appSlug: connection?.appSlug ?? selectedApp.slug,
 														})
+														const disconnectCheck = getDisconnectCheck(
+															connectionRef.name,
+														)
+														const confirmingDisconnect =
+															disconnectCheck.doubleCheck
+														const disconnectLabel = connectionLabel(
+															connection ?? connectionRef,
+														)
 														return (
 															<article
 																key={connectionRef.name}
@@ -1039,7 +1290,13 @@ export function AccountIntegrationsRoute(handle: Handle) {
 																		{status}
 																	</p>
 																</div>
-																<div>
+																<div
+																	mix={css({
+																		display: 'flex',
+																		flexWrap: 'wrap',
+																		gap: spacing.xs,
+																	})}
+																>
 																	<a
 																		href={connectHref}
 																		mix={css({
@@ -1052,6 +1309,36 @@ export function AccountIntegrationsRoute(handle: Handle) {
 																	>
 																		{connectActionLabel(status)}
 																	</a>
+																	<button
+																		type="button"
+																		data-testid="disconnect-connection"
+																		aria-label={
+																			confirmingDisconnect
+																				? `Confirm disconnect ${disconnectLabel}`
+																				: `Disconnect ${disconnectLabel}`
+																		}
+																		title={
+																			confirmingDisconnect
+																				? `Click again to disconnect ${disconnectLabel}`
+																				: `Disconnect ${disconnectLabel}`
+																		}
+																		mix={[
+																			...disconnectCheck.getButtonMix({
+																				on: {
+																					click: () => {
+																						void startDisconnect(
+																							connection ?? connectionRef,
+																						)
+																					},
+																				},
+																			}),
+																			css(dangerButtonCss),
+																		]}
+																	>
+																		{confirmingDisconnect
+																			? 'Confirm disconnect'
+																			: 'Disconnect'}
+																	</button>
 																</div>
 															</article>
 														)
@@ -1448,6 +1735,15 @@ export function AccountIntegrationsRoute(handle: Handle) {
 						Back to account
 					</a>
 				</p>
+				{undoable.pending ? (
+					<UndoToast
+						message={undoable.pending.message}
+						undoLabel={undoable.pending.undoLabel}
+						onUndo={() => {
+							void undoable.undo()
+						}}
+					/>
+				) : null}
 			</AccountManagementShell>
 		)
 	}

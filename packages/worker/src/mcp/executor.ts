@@ -1539,7 +1539,7 @@ const unboundRuntimeHelperNextSteps: Record<string, string> = {
 	storage:
 		"If this code belongs to a saved package that owns its data, use `packageStorage()` from 'kody:runtime' inside that package's module instead of ambient `storage`: it always reaches the declaring package's own bucket, in the package's own runtime and when statically imported into another context. Otherwise ambient `storage` is only bound when the call provides durable storage: retry the execute call with a `storageId` to bind a caller-owned bucket. To work with another package's data, call that package's export with keyless `packages.invoke({ kodyId, exportName, params })` so it runs in the package's own runtime context. Code that must also run without storage can guard with `if (storage) { ... }`.",
 	packages:
-		'`packages` is bound for authenticated ad hoc execute calls and saved-package runtime contexts; retry the call as an authenticated user, or guard with `if (packages) { ... }` where dynamic package invocation is optional.',
+		'`packages` is bound for authenticated ad hoc execute calls, standalone scheduled jobs, and saved-package runtime contexts; retry the call as an authenticated user or from a scheduled job, or guard with `if (packages) { ... }` where dynamic package invocation is optional.',
 	events:
 		"`events` is only bound in saved-package runtime contexts that can dispatch package events; call the owning package's export with keyless `packages.invoke` so it runs in that context, or guard with `if (events) { ... }`.",
 	packageSecrets:
