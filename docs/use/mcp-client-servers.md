@@ -59,13 +59,15 @@ Servers that do not use OAuth connect immediately and do not need these steps.
 Bearer-token servers also skip OAuth when the static Authorization header is
 enough for the remote server.
 
-## Home automation
+## Home MCP servers
 
-Household LAN tools (lights, TVs, thermostats, and the rest of the home process)
-are a normal outbound MCP server at `https://kody-home.doddsfamily.us/mcp`
-(Dodds Vault Cloudflare tunnel; Access bypasses `/mcp` and the OAuth machine
-paths). Add it as `home`, pass Cloudflare Access on `/authorize`, and approve.
-The LAN origin is trusted and has no extra login. Then call
+Household LAN tools (notes, lights, TVs, thermostats, local CLIs) belong on a
+process you run at home. Publish that process with Cloudflare Tunnel and
+Access, then add the HTTPS `/mcp` URL here as `home` (or another short name).
+The
+[home MCP guide](../guides/local-mcp-tunnels.md) and
+[home-mcp-starter](https://github.com/kody-bot/home-mcp-starter) cover CIMD
+OAuth, Docker, and the Access path split. After authorize, call
 `kody.mcp["home"].tool_name(...)`.
 
 ## Related

@@ -25,7 +25,10 @@ the authorization server advertises `client_id_metadata_document_supported` and
 the callback origin is HTTPS, Kody also presents
 `{origin}/oauth/client-metadata.json` as its CIMD `client_id` — allowlist that
 URL only for CIMD-capable providers. Then remove and re-add the server. See
-[Connect remote MCP servers](./mcp-client-servers.md).
+[Connect remote MCP servers](./mcp-client-servers.md). For a home process behind
+Cloudflare Tunnel and Access, also see
+[Connect a home MCP server](../guides/local-mcp-tunnels.md) and
+[home-mcp-starter](https://github.com/kody-bot/home-mcp-starter).
 
 ## Search returns no good matches
 

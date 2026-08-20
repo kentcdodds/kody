@@ -24,8 +24,10 @@ Read in order for a full tour, or jump to a topic.
   daily email only when something shipped
 - [The Kody factory map](../guides/kody-factory.md) — the primitives your
   assistant gets and the boundary around local files and processes
-- [Connect local tools through an MCP tunnel](../guides/local-mcp-tunnels.md) —
-  expose an Obsidian vault, CLI, or home connector through Tunnel and Access
+- [Connect a home MCP server](../guides/local-mcp-tunnels.md) — run a local
+  MCP process (vault, CLI, or home devices), publish it with Tunnel and
+  Access, and connect it to Kody. Starter:
+  [home-mcp-starter](https://github.com/kody-bot/home-mcp-starter)
 - [Connect your agent](./connect-your-agent.md) — add `{origin}/mcp`, complete
   OAuth, and use the setup prompt. Machine-readable twin:
   [`/auth.md`](https://kody.codes/auth.md)

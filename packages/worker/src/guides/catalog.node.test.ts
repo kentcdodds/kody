@@ -38,6 +38,11 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 	})
 	expect(getGuideBySlug('local-mcp-tunnels')?.id).toBe('local_mcp_tunnels')
 	expect(getGuideById('local_mcp_tunnels')?.slug).toBe('local-mcp-tunnels')
+	expect(getGuideById('local_mcp_tunnels')).toMatchObject({
+		image: '/images/kody-home-nas.webp',
+		imageAlt: 'Kody in a living room with his hand on a logo-free home NAS',
+		ogImage: '/images/kody-home-nas-og.jpg',
+	})
 	expect(getGuideBySlug('google-oauth')?.id).toBe('google_oauth')
 	expect(getGuideById('google_oauth')?.slug).toBe('google-oauth')
 
