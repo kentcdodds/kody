@@ -65,10 +65,6 @@ test('package files views normalize paths and distinguish root, directories, fil
 		contentKind: 'code',
 		language: 'ts',
 	})
-	expect(file?.ancestors.map((entry) => entry.path)).toEqual([
-		'src',
-		'src/index.ts',
-	])
 
 	expect(buildPackageFilesView({ files, selectedPath: 'missing' })).toBeNull()
 	expect(buildPackageFilesView({ files: {}, selectedPath: '' })?.kind).toBe(

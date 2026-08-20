@@ -38,7 +38,6 @@ export type PackageFilesView = {
 	contentKind: PackageFilesContentKind | null
 	language: string | null
 	children: Array<PackageFilesChild>
-	ancestors: Array<PackageFilesAncestor>
 }
 
 const readmeFileNamePattern = /^readme(?:\.[a-z0-9._-]+)?$/i
@@ -311,7 +310,6 @@ export function buildPackageFilesView(input: {
 			contentKind: contentKindFromLanguage(language),
 			language,
 			children: [],
-			ancestors: buildPackageFilesAncestors(selectedPath),
 		}
 	}
 
@@ -327,7 +325,6 @@ export function buildPackageFilesView(input: {
 		contentKind: language ? contentKindFromLanguage(language) : null,
 		language,
 		children: listPackageFilesChildren(paths, selectedPath),
-		ancestors: buildPackageFilesAncestors(selectedPath),
 	}
 }
 

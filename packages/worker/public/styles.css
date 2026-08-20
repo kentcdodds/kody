@@ -125,6 +125,7 @@
 	--font-display: 'Bricolage Grotesque', system-ui, sans-serif;
 	--font-body: 'Wix Madefor Text', system-ui, sans-serif;
 	--font-family: var(--font-body);
+	--font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
 	--font-size-xs: 0.75rem;
 	--font-size-sm: 0.875rem;
 	--font-size-base: 1rem;

@@ -59,7 +59,6 @@ const filesPayload = {
 	kind: 'file',
 	paths: ['src/index.ts'],
 	children: [],
-	ancestors: [{ name: 'src', path: 'src' }],
 	content: 'export const answer = 42\n',
 	contentPath: 'src/index.ts',
 	contentKind: 'code',

@@ -3,6 +3,7 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
+import { matchesSearchQuery } from '#client/search-filter.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 import {
@@ -26,10 +27,6 @@ import {
 	proseCss,
 } from '#universal/styles/style-primitives.ts'
 
-// The one mono stack in the codebase (`style-primitives`' inline-code rule).
-// Code used to inherit the browser's `monospace` default at body size here.
-const monoFont = "ui-monospace, 'SF Mono', Menlo, monospace"
-
 /** Directories on the way to `path`, which open so the file is in view. */
 function ancestorDirectories(path: string) {
 	return buildPackageFilesAncestors(path)
@@ -40,7 +37,8 @@ function ancestorDirectories(path: string) {
 function formatBytes(value: string) {
 	const bytes = new TextEncoder().encode(value).length
 	if (bytes < 1024) return `${bytes} B`
-	return `${(bytes / 1024).toFixed(1)} KB`
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function countLines(value: string) {
@@ -62,6 +60,7 @@ export function PackageFilesExplorer(
 	function syncExpanded(selectedPath: string, selectionIsDirectory: boolean) {
 		if (openedFor === selectedPath) return
 		openedFor = selectedPath
+		query = ''
 		for (const directory of ancestorDirectories(selectedPath)) {
 			expanded.add(directory)
 		}
@@ -85,10 +84,21 @@ export function PackageFilesExplorer(
 		handle.update()
 	}
 
+	// Filter keystrokes and chevron toggles re-run this whole closure; the
+	// blob is untouched by either, and re-highlighting a large file with
+	// Shiki on every keystroke janks the input. Selection is the only thing
+	// that changes the blob.
+	let contentNode: RemixNode = null
+	let contentFor: string | null = null
+
 	return () => {
 		const { data } = handle.props
 		syncExpanded(data.selectedPath, data.kind === 'directory')
-		const trimmedQuery = query.trim().toLowerCase()
+		const contentKey = `${data.selectedPath}\n${data.contentPath ?? ''}`
+		if (contentFor !== contentKey) {
+			contentFor = contentKey
+			contentNode = renderContent(data)
+		}
 
 		return (
 			<article
@@ -146,8 +156,8 @@ export function PackageFilesExplorer(
 							</div>
 						</div>
 						<div mix={css(treeScrollCss)}>
-							{trimmedQuery
-								? renderMatches(data, trimmedQuery)
+							{query.trim()
+								? renderMatches(data, query)
 								: renderTree(
 										data.paths,
 										'',
@@ -160,7 +170,7 @@ export function PackageFilesExplorer(
 						</div>
 					</nav>
 					<section mix={css(contentCss)} aria-label="Selected file">
-						{renderContent(data)}
+						{contentNode}
 					</section>
 				</div>
 			</article>
@@ -168,16 +178,17 @@ export function PackageFilesExplorer(
 	}
 }
 
+const maxFilterMatches = 100
+
 function renderMatches(data: PackageFilesLoaderData, query: string): RemixNode {
-	const matches = data.paths.filter((path) =>
-		path.toLowerCase().includes(query),
-	)
+	const matches = data.paths.filter((path) => matchesSearchQuery(query, [path]))
 	if (matches.length === 0) {
 		return <p mix={css(emptyCss)}>No file matches that filter.</p>
 	}
+	const overflow = matches.length - maxFilterMatches
 	return (
 		<ul mix={css(treeListCss)}>
-			{matches.map((path) => {
+			{matches.slice(0, maxFilterMatches).map((path) => {
 				const slash = path.lastIndexOf('/')
 				const name = slash === -1 ? path : path.slice(slash + 1)
 				const directory = slash === -1 ? '' : path.slice(0, slash)
@@ -197,6 +208,13 @@ function renderMatches(data: PackageFilesLoaderData, query: string): RemixNode {
 					</li>
 				)
 			})}
+			{overflow > 0 ? (
+				<li>
+					<p mix={css(emptyCss)}>
+						…and {overflow} more. Keep typing to narrow.
+					</p>
+				</li>
+			) : null}
 		</ul>
 	)
 }
@@ -316,7 +334,9 @@ function renderContent(data: PackageFilesLoaderData): RemixNode {
 			<div mix={css(contentToolbarCss)}>
 				<div mix={css(contentHeadingWrapCss)}>
 					<span mix={css(headingIconCss)}>{fileIcon()}</span>
-					<h2 mix={css(contentHeadingCss)}>{heading}</h2>
+					<h2 mix={css(contentHeadingCss)} title={heading}>
+						{heading}
+					</h2>
 					{body ? (
 						<span mix={css(contentMetaCss)}>
 							{countLines(body)} lines · {formatBytes(body)}
@@ -742,12 +762,12 @@ const headingIconCss = {
 }
 
 // `overflow-wrap: anywhere` broke the path one character per line as soon as
-// the toolbar squeezed it; a path truncates from the front instead, and the
-// breadcrumb above still carries the full location.
+// the toolbar squeezed it; the path truncates instead, with the full location
+// in the title tooltip and the tree alongside.
 const contentHeadingCss = {
 	margin: 0,
 	minWidth: 0,
-	fontFamily: monoFont,
+	fontFamily: typography.fontFamilyMono,
 	fontSize: typography.fontSize.sm,
 	fontWeight: typography.fontWeight.semibold,
 	color: colors.text,
@@ -813,17 +833,21 @@ const codeCss = {
 		margin: 0,
 		padding: `${spacing.md} 0`,
 		overflowX: 'auto' as const,
-		fontFamily: monoFont,
+		fontFamily: typography.fontFamilyMono,
 		fontSize: '0.8125rem',
 		lineHeight: 1.55,
 	},
+	// Padding lives on `code`, not the .line spans, so the fallback output
+	// (plaintext before the Shiki chunk resolves, or an oversized file) gets
+	// the same gutters as highlighted lines.
 	'& code': {
+		display: 'block',
+		paddingInline: spacing.md,
 		counterReset: 'package-file-line',
 	},
 	'& .line': {
 		display: 'block',
 		counterIncrement: 'package-file-line',
-		paddingRight: spacing.md,
 	},
 	'& .line:hover': {
 		backgroundColor: colors.primarySoftest,

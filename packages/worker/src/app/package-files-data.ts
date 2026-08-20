@@ -37,7 +37,6 @@ function toLoaderData(input: {
 		kind: input.view.kind,
 		paths: input.view.paths,
 		children: input.view.children,
-		ancestors: input.view.ancestors,
 		content: input.view.content,
 		contentPath: input.view.contentPath,
 		contentKind: input.view.contentKind,

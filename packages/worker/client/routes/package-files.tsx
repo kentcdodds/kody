@@ -269,6 +269,23 @@ export function PackageFilesRoute(handle: Handle) {
 			)
 		}
 
+		// A commit without preloaded data (e.g. the router's loader-failure
+		// path) can land here holding another package's explorer; showing it
+		// under the new URL would render the wrong tree with the wrong links.
+		const currentPathname = new URL(currentHref, 'http://localhost').pathname
+		if (
+			data &&
+			currentPathname !== data.filesBasePath &&
+			!currentPathname.startsWith(`${data.filesBasePath}/`)
+		) {
+			data = null
+			return (
+				<article mix={css(messageCss)}>
+					<p>Loading files…</p>
+				</article>
+			)
+		}
+
 		// Switching files keeps the current one on screen until the next
 		// arrives. Tearing the explorer down to a loading line for the ~6ms
 		// between renders blinked the whole tree out and back, and made the
