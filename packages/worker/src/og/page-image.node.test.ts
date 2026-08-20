@@ -21,6 +21,12 @@ test('renderPageOgImage returns valid PNG bytes for home and community', async (
 
 	const blog = await renderPageOgImage({ page: publicOgPages.blog })
 	expectPngBytes(blog)
+
+	const discord = await renderPageOgImage({ page: publicOgPages.discord })
+	expectPngBytes(discord)
+	// Discord swaps the lantern hero for Kody-with-Clyde, so the encoding
+	// cannot match the generic public-page card.
+	expect(Buffer.from(home).equals(Buffer.from(discord))).toBe(false)
 })
 
 test('renderPageOgImage renders each theme differently', async () => {

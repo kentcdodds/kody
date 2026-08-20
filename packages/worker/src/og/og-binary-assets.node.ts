@@ -14,6 +14,7 @@ type OgBinaryAssetCache = {
 	kodyPatternDarkDataUri: string
 	kodyPatternLightDataUri: string
 	kodyHeroDataUri: string
+	kodyDiscordDataUri: string
 	kodyLogoDataUri: string
 }
 
@@ -52,6 +53,7 @@ function ensureCache(): OgBinaryAssetCache {
 			readAssetFile('kody-pattern-light.png'),
 		),
 		kodyHeroDataUri: bytesToPngDataUri(readAssetFile('kody-hero.png')),
+		kodyDiscordDataUri: bytesToPngDataUri(readAssetFile('kody-discord.png')),
 		kodyLogoDataUri: bytesToPngDataUri(readAssetFile('kody-logo.png')),
 	}
 	return cache
@@ -85,6 +87,10 @@ export function getKodyPatternDataUri(theme: 'light' | 'dark'): string {
 
 export function getKodyHeroDataUri(): string {
 	return ensureCache().kodyHeroDataUri
+}
+
+export function getKodyDiscordDataUri(): string {
+	return ensureCache().kodyDiscordDataUri
 }
 
 export function getKodyLogoDataUri(): string {

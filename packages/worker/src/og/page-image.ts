@@ -1,4 +1,7 @@
-import { getKodyHeroDataUri } from '#worker/og/og-image-assets.ts'
+import {
+	getKodyDiscordDataUri,
+	getKodyHeroDataUri,
+} from '#worker/og/og-image-assets.ts'
 import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
 import { type PublicOgPage } from '#universal/og-pages.ts'
 import {
@@ -13,12 +16,86 @@ import {
 const TITLE_MAX_LENGTH = 60
 const SUBTITLE_MAX_LENGTH = 160
 
+type PageHeroKind = 'lantern' | 'discord'
+
+function getPageHeroKind(page: PublicOgPage): PageHeroKind {
+	return page.path === '/discord' ? 'discord' : 'lantern'
+}
+
+function getPageHeroDataUri(kind: PageHeroKind): string {
+	switch (kind) {
+		case 'discord':
+			return getKodyDiscordDataUri()
+		case 'lantern':
+			return getKodyHeroDataUri()
+		default: {
+			const _exhaustive: never = kind
+			throw new Error(`Unhandled page hero: ${_exhaustive}`)
+		}
+	}
+}
+
+function createHeroHalo(input: {
+	kind: PageHeroKind
+	theme?: OgTheme
+}): SatoriElement {
+	const isLight = input.theme === 'light'
+	switch (input.kind) {
+		case 'discord':
+			return {
+				type: 'div',
+				props: {
+					style: {
+						position: 'absolute',
+						// Clyde sits on the right of the pair, a bit higher than
+						// the lantern, so the blurple wash follows him instead of
+						// the empty middle of the art.
+						right: 28,
+						top: 88,
+						width: 420,
+						height: 420,
+						borderRadius: 210,
+						backgroundImage: isLight
+							? 'radial-gradient(circle at center, rgba(88, 101, 242, 0.16) 0%, rgba(88, 101, 242, 0.06) 38%, rgba(88, 101, 242, 0) 72%)'
+							: 'radial-gradient(circle at center, rgba(88, 101, 242, 0.38) 0%, rgba(88, 101, 242, 0.14) 38%, rgba(88, 101, 242, 0) 72%)',
+					},
+				},
+			}
+		case 'lantern':
+			return {
+				type: 'div',
+				props: {
+					// Warm halo behind the lantern, centred on where it sits
+					// inside the composed art rather than on the art's own
+					// centre — Kody holds it low and right of middle. Much
+					// weaker on the pale ground: light added to light reads as
+					// a dirty smudge rather than a glow.
+					style: {
+						position: 'absolute',
+						right: 52,
+						top: 113,
+						width: 380,
+						height: 380,
+						borderRadius: 190,
+						backgroundImage: isLight
+							? 'radial-gradient(circle at center, rgba(232, 168, 32, 0.16) 0%, rgba(232, 168, 32, 0.06) 38%, rgba(232, 168, 32, 0) 72%)'
+							: 'radial-gradient(circle at center, rgba(245, 198, 90, 0.34) 0%, rgba(245, 198, 90, 0.12) 38%, rgba(245, 198, 90, 0) 72%)',
+					},
+				},
+			}
+		default: {
+			const _exhaustive: never = input.kind
+			throw new Error(`Unhandled page hero halo: ${_exhaustive}`)
+		}
+	}
+}
+
 function createPageOgMarkup(input: {
 	page: PublicOgPage
 	theme?: OgTheme
 }): SatoriElement {
 	const palette = getOgPalette(input.theme)
-	const isLight = input.theme === 'light'
+	const heroKind = getPageHeroKind(input.page)
 	return createOgFrame({
 		theme: input.theme,
 		children: {
@@ -32,27 +109,7 @@ function createPageOgMarkup(input: {
 					position: 'relative',
 				},
 				children: [
-					{
-						type: 'div',
-						props: {
-							// Warm halo behind the lantern, centred on where it sits
-							// inside the composed art rather than on the art's own
-							// centre — Kody holds it low and right of middle. Much
-							// weaker on the pale ground: light added to light reads as
-							// a dirty smudge rather than a glow.
-							style: {
-								position: 'absolute',
-								right: 52,
-								top: 113,
-								width: 380,
-								height: 380,
-								borderRadius: 190,
-								backgroundImage: isLight
-									? 'radial-gradient(circle at center, rgba(232, 168, 32, 0.16) 0%, rgba(232, 168, 32, 0.06) 38%, rgba(232, 168, 32, 0) 72%)'
-									: 'radial-gradient(circle at center, rgba(245, 198, 90, 0.34) 0%, rgba(245, 198, 90, 0.12) 38%, rgba(245, 198, 90, 0) 72%)',
-							},
-						},
-					},
+					createHeroHalo({ kind: heroKind, theme: input.theme }),
 					{
 						type: 'div',
 						props: {
@@ -104,7 +161,7 @@ function createPageOgMarkup(input: {
 					{
 						type: 'img',
 						props: {
-							src: getKodyHeroDataUri(),
+							src: getPageHeroDataUri(heroKind),
 							width: 560,
 							height: 560,
 							style: {

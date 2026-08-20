@@ -13,6 +13,7 @@ const OG_ASSET_URLS = {
 	kodyPatternDark: 'https://assets.local/og/kody-pattern-dark.png',
 	kodyPatternLight: 'https://assets.local/og/kody-pattern-light.png',
 	kodyHero: 'https://assets.local/og/kody-hero.png',
+	kodyDiscord: 'https://assets.local/og/kody-discord.png',
 	kodyLogo: 'https://assets.local/og/kody-logo.png',
 } as const
 
@@ -24,6 +25,7 @@ type OgBinaryAssetCache = {
 	kodyPatternDarkDataUri: string
 	kodyPatternLightDataUri: string
 	kodyHeroDataUri: string
+	kodyDiscordDataUri: string
 	kodyLogoDataUri: string
 }
 
@@ -65,6 +67,7 @@ async function loadOgBinaryAssets(
 		kodyPatternDark,
 		kodyPatternLight,
 		kodyHero,
+		kodyDiscord,
 		kodyLogo,
 	] = await Promise.all([
 		fetchAssetBytes(assets, OG_ASSET_URLS.bricolageGrotesqueLatin700),
@@ -72,6 +75,7 @@ async function loadOgBinaryAssets(
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyPatternDark),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyPatternLight),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyHero),
+		fetchAssetBytes(assets, OG_ASSET_URLS.kodyDiscord),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyLogo),
 	])
 
@@ -81,6 +85,7 @@ async function loadOgBinaryAssets(
 		kodyPatternDarkDataUri: bytesToPngDataUri(kodyPatternDark),
 		kodyPatternLightDataUri: bytesToPngDataUri(kodyPatternLight),
 		kodyHeroDataUri: bytesToPngDataUri(kodyHero),
+		kodyDiscordDataUri: bytesToPngDataUri(kodyDiscord),
 		kodyLogoDataUri: bytesToPngDataUri(kodyLogo),
 	}
 }
@@ -136,6 +141,10 @@ export function getKodyPatternDataUri(theme: 'light' | 'dark'): string {
 
 export function getKodyHeroDataUri(): string {
 	return requireCache().kodyHeroDataUri
+}
+
+export function getKodyDiscordDataUri(): string {
+	return requireCache().kodyDiscordDataUri
 }
 
 export function getKodyLogoDataUri(): string {

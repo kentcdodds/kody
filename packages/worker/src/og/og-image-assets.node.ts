@@ -10,6 +10,7 @@ export {
 	ensureOgBinaryAssetsReady,
 	getBricolageGrotesqueLatin700FontData,
 	getKodyHeroDataUri,
+	getKodyDiscordDataUri,
 	getKodyLogoDataUri,
 	getKodyPatternDataUri,
 	getWixMadeforTextLatin400FontData,
