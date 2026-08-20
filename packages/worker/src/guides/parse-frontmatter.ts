@@ -10,6 +10,10 @@ export type GuideFrontmatter = {
 	 */
 	summary: string
 	category: GuideCategory
+	/** Optional origin-relative artwork shown on the guide and used for OG. */
+	image: string | null
+	/** Accessible description required when `image` is present. */
+	imageAlt: string | null
 	/** Display name of the third-party provider (provider guides only). */
 	provider: string | null
 	/**
@@ -29,6 +33,8 @@ export type Guide = GuideFrontmatter & {
 
 const GUIDE_ID_PATTERN = /^[a-z][a-z0-9_]*$/
 const LAST_VERIFIED_PATTERN = /^\d{4}-(?:0[1-9]|1[0-2])$/
+const GUIDE_IMAGE_PATTERN =
+	/^\/images\/[a-z0-9][a-z0-9/-]*\.(?:avif|jpe?g|png|webp)$/
 
 /**
  * Parse a guide markdown file with the fixed frontmatter contract:
@@ -39,6 +45,8 @@ const LAST_VERIFIED_PATTERN = /^\d{4}-(?:0[1-9]|1[0-2])$/
  * title: <string>
  * summary: <string, may continue on indented lines>
  * category: platform | provider
+ * image: /images/<file> (optional)
+ * imageAlt: <string, required with image>
  * provider: <string, provider guides only>
  * lastVerified: YYYY-MM (required when category is provider)
  * ---
@@ -105,6 +113,8 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 	const title = fields.get('title')
 	const summary = fields.get('summary')
 	const category = fields.get('category')
+	const image = fields.get('image') ?? null
+	const imageAlt = fields.get('imageAlt') ?? null
 	const provider = fields.get('provider') ?? null
 	const lastVerified = fields.get('lastVerified') ?? null
 
@@ -125,6 +135,21 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 	if (category !== 'platform' && category !== 'provider') {
 		throw new Error(
 			`Guide "${slug}" has invalid frontmatter "category" (expected "platform" or "provider").`,
+		)
+	}
+	if (image !== null && !GUIDE_IMAGE_PATTERN.test(image)) {
+		throw new Error(
+			`Guide "${slug}" has invalid frontmatter "image" (expected an origin-relative /images/ asset path).`,
+		)
+	}
+	if (image !== null && !imageAlt) {
+		throw new Error(
+			`Guide "${slug}" is missing frontmatter "imageAlt" (required with "image").`,
+		)
+	}
+	if (image === null && imageAlt !== null) {
+		throw new Error(
+			`Guide "${slug}" has frontmatter "imageAlt" without an "image".`,
 		)
 	}
 	if (category === 'provider' && !provider) {
@@ -149,6 +174,8 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 		title,
 		summary,
 		category,
+		image,
+		imageAlt,
 		provider,
 		lastVerified,
 		body,

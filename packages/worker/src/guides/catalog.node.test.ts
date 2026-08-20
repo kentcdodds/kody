@@ -31,6 +31,10 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(getGuideById('how_kody_works')?.slug).toBe('how-kody-works')
 	expect(getGuideBySlug('kody-factory')?.id).toBe('kody_factory')
 	expect(getGuideById('kody_factory')?.slug).toBe('kody-factory')
+	expect(getGuideById('kody_factory')).toMatchObject({
+		image: '/images/kody-factory-map.webp',
+		imageAlt: 'Kody presenting a map of the software factory',
+	})
 	expect(getGuideBySlug('local-mcp-tunnels')?.id).toBe('local_mcp_tunnels')
 	expect(getGuideById('local_mcp_tunnels')?.slug).toBe('local-mcp-tunnels')
 	expect(getGuideBySlug('google-oauth')?.id).toBe('google_oauth')
