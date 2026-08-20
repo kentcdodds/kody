@@ -423,6 +423,13 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		new Request('https://example.com/onboarding'),
 	)
 	expect(anonymousOnboardingResponse.status).toBe(200)
+	const anonymousOnboardingHtml = await readResponseText(
+		anonymousOnboardingResponse,
+	)
+	expect(anonymousOnboardingHtml).toContain(
+		'data-testid="onboarding-join-discord"',
+	)
+	expect(anonymousOnboardingHtml).toContain('https://kcd.im/kody-discord')
 
 	const anonymousAccountResponse = await runHtmlHandler(
 		createAccountHandler(env),
