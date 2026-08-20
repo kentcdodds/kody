@@ -30,6 +30,9 @@ Executor is the integration gateway that catalogs the tools it can reach. Add
 Executor to Kody as an MCP server with code mode off, and you get the best of
 both worlds.**
 
+I wrote this on August 20, 2026. Both products will keep moving. The comparison
+is accurate as of that date.
+
 ## What Executor is for
 
 Executor solves tool connection, especially the version of that problem that

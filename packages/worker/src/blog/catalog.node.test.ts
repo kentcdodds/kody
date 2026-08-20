@@ -169,6 +169,9 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 	const comparisonBody = (comparison?.body ?? '').replace(/\s+/g, ' ')
 	expect(comparisonBody).toContain('best of both worlds')
 	expect(comparisonBody).toContain('Leave one `execute`')
+	expect(comparisonBody).toContain(
+		'I wrote this on August 20, 2026. Both products will keep moving. The comparison is accurate as of that date.',
+	)
 	expect(getBlogPost('does-not-exist')).toBeNull()
 
 	const placeholderPosts = posts.filter(
