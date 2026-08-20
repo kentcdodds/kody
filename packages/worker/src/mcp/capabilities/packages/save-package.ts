@@ -6,7 +6,10 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
-import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
+import {
+	deleteEntitySource,
+	getEntitySourceByEntity,
+} from '#worker/repo/entity-sources.ts'
 import {
 	buildRepoLargeFileMessage,
 	findOversizedRepoSourceFile,
@@ -388,8 +391,13 @@ export const savePackageCapability = defineDomainCapability(
 					const message = getErrorMessage(error)
 					// Pre-check covers the common path; this catches races where
 					// another create won the (user_id, name) or (user_id, kody_id)
-					// unique index between lookup and insert.
+					// unique index between lookup and insert. Drop only the source
+					// this invocation just created so a retry does not orphan it.
 					if (isSavedPackageUniqueConstraintMessage(message)) {
+						await deleteEntitySource(ctx.env, {
+							id: ensuredSource.id,
+							userId: owner.ownerUserId,
+						})
 						throw new McpCallerError(
 							buildSavedPackageUniqueConstraintCallerMessage({
 								name: manifest.name,

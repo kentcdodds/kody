@@ -10,6 +10,7 @@ const mockModule = vi.hoisted(() => ({
 	refreshSavedPackageProjection: vi.fn(),
 	upsertSavedPackageVector: vi.fn(),
 	getEntitySourceByEntity: vi.fn(),
+	deleteEntitySource: vi.fn(),
 	loadPriorPackageManifestContent: vi.fn(),
 }))
 
@@ -36,6 +37,8 @@ vi.mock('#worker/package-registry/vectorize.ts', () => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceByEntity: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceByEntity(...args),
+	deleteEntitySource: (...args: Array<unknown>) =>
+		mockModule.deleteEntitySource(...args),
 }))
 
 vi.mock('#worker/repo/source-safety-policy.ts', async (importOriginal) => {
@@ -189,6 +192,7 @@ function setupPersistenceMocks() {
 	mockModule.refreshSavedPackageProjection.mockReset()
 	mockModule.upsertSavedPackageVector.mockReset()
 	mockModule.getEntitySourceByEntity.mockReset()
+	mockModule.deleteEntitySource.mockReset()
 	mockModule.loadPriorPackageManifestContent.mockReset()
 
 	mockModule.ensureEntitySource.mockImplementation(
@@ -229,6 +233,7 @@ function setupPersistenceMocks() {
 	)
 	mockModule.upsertSavedPackageVector.mockResolvedValue(undefined)
 	mockModule.getEntitySourceByEntity.mockResolvedValue(null)
+	mockModule.deleteEntitySource.mockResolvedValue(true)
 	mockModule.loadPriorPackageManifestContent.mockResolvedValue(null)
 }
 
@@ -446,4 +451,12 @@ test('package_save maps insert UNIQUE name races to McpCallerError', async () =>
 		return true
 	})
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
+	expect(mockModule.deleteEntitySource).toHaveBeenCalledTimes(1)
+	expect(mockModule.deleteEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			id: expect.stringMatching(/^source-/),
+			userId,
+		},
+	)
 })
