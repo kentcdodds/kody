@@ -62,6 +62,7 @@ test('discord page reports guest, unconnected, and connected states', async () =
 		discordProviderAvailable: true,
 		canSyncDiscordRoles: false,
 		inviteUrl: kodyDiscordInviteUrl,
+		turnstileSiteKey: null,
 	})
 
 	const stableUserId = await seedUser(sqlite, {
@@ -81,6 +82,7 @@ test('discord page reports guest, unconnected, and connected states', async () =
 		discordProviderAvailable: true,
 		canSyncDiscordRoles: false,
 		inviteUrl: kodyDiscordInviteUrl,
+		turnstileSiteKey: null,
 	})
 
 	sqlite
@@ -127,6 +129,18 @@ test('discord page reports guest, unconnected, and connected states', async () =
 		}),
 	).toMatchObject({
 		discordProviderAvailable: false,
+	})
+
+	expect(
+		await loadDiscordPageData({
+			env: createAppEnv(db, {
+				TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+				TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
+			}),
+			userId: 7,
+		}),
+	).toMatchObject({
+		turnstileSiteKey: '1x00000000000000000000AA',
 	})
 
 	const sessionCookie = await createAuthCookie(

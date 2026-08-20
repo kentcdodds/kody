@@ -8,6 +8,13 @@ import { ProviderIcon } from '#client/provider-icons.tsx'
 import { startSocialSignIn } from '#client/social-sign-in.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import {
+	honeypotFieldName,
+	readPublicFormProtection,
+	renderTurnstileWidgets,
+	resetTurnstileWidgets,
+	turnstileWidgetClassName,
+} from '#client/public-form-protection.ts'
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import {
@@ -27,6 +34,7 @@ import {
 	pageHeaderCss,
 	pageTitleCss,
 	stackedPageCss,
+	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
 
@@ -119,10 +127,23 @@ export function DiscordRoute(handle: Handle) {
 		actionMessage = null
 		handle.update()
 		try {
-			const errorMessage = await startSocialSignIn('discord', discordPath)
+			const connectForm = document.querySelector<HTMLFormElement>(
+				'form[data-discord-connect-form]',
+			)
+			const protection =
+				page?.signedIn || !connectForm
+					? { website: '', turnstileToken: '' }
+					: readPublicFormProtection(new FormData(connectForm))
+			const errorMessage = await startSocialSignIn(
+				'discord',
+				discordPath,
+				null,
+				protection,
+			)
 			if (errorMessage) {
 				actionMessage = { text: errorMessage, tone: 'error' }
 				busy = false
+				resetTurnstileWidgets()
 			}
 		} catch {
 			actionMessage = {
@@ -130,6 +151,7 @@ export function DiscordRoute(handle: Handle) {
 				tone: 'error',
 			}
 			busy = false
+			resetTurnstileWidgets()
 		}
 		handle.update()
 	}
@@ -228,6 +250,15 @@ export function DiscordRoute(handle: Handle) {
 		const callbackMessage = readCallbackMessage(currentHref)
 		const message = actionMessage ?? callbackMessage
 		const inviteUrl = page?.inviteUrl ?? kodyDiscordInviteUrl
+		const turnstileSiteKey = page?.turnstileSiteKey ?? null
+		if (
+			typeof document !== 'undefined' &&
+			page &&
+			!page.signedIn &&
+			turnstileSiteKey
+		) {
+			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey))
+		}
 
 		return (
 			<section mix={css(stackedPageCss)}>
@@ -337,14 +368,31 @@ export function DiscordRoute(handle: Handle) {
 								Sign in with Discord to create or match your Kody account, or
 								log in another way and then connect Discord from here.
 							</p>
-							<div
-								mix={css({
-									display: 'flex',
-									flexWrap: 'wrap',
-									gap: spacing.sm,
-									alignItems: 'center',
-								})}
+							<form
+								data-discord-connect-form
+								mix={[
+									css({
+										display: 'flex',
+										flexWrap: 'wrap',
+										gap: spacing.sm,
+										alignItems: 'center',
+									}),
+									on('submit', (event) => {
+										event.preventDefault()
+									}),
+								]}
 							>
+								<input
+									type="text"
+									name={honeypotFieldName}
+									tabIndex={-1}
+									autoComplete="off"
+									aria-hidden="true"
+									mix={css(visuallyHiddenCss)}
+								/>
+								{turnstileSiteKey ? (
+									<div class={turnstileWidgetClassName}></div>
+								) : null}
 								{page.discordProviderAvailable ? (
 									<button
 										type="button"
@@ -368,7 +416,7 @@ export function DiscordRoute(handle: Handle) {
 								>
 									Sign in
 								</a>
-							</div>
+							</form>
 						</>
 					) : null}
 				</section>

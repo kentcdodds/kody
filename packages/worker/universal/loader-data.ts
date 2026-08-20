@@ -1452,6 +1452,7 @@ export type DiscordPageLoaderData = {
 	discordProviderAvailable: boolean
 	canSyncDiscordRoles: boolean
 	inviteUrl: string
+	turnstileSiteKey: string | null
 }
 
 export type AppLoaderData = {
