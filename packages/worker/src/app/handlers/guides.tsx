@@ -116,7 +116,6 @@ export function createGuideDetailHandler(env: Env) {
 				await renderAppPage({
 					request,
 					env,
-					title: guide.title,
 					loaderData: {
 						guideDetail: {
 							ok: true,
