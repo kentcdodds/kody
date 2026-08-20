@@ -62,9 +62,8 @@ enough for the remote server.
 ## Home MCP servers
 
 Household LAN tools (notes, lights, TVs, thermostats, local CLIs) belong on a
-process you run at home. Publish that process with Cloudflare Tunnel and
-Access, then add the HTTPS `/mcp` URL here as `home` (or another short name).
-The
+process you run at home. Publish that process with Cloudflare Tunnel and Access,
+then add the HTTPS `/mcp` URL here as `home` (or another short name). The
 [home MCP guide](../guides/local-mcp-tunnels.md) and
 [home-mcp-starter](https://github.com/kody-bot/home-mcp-starter) cover CIMD
 OAuth, Docker, and the Access path split. After authorize, call
