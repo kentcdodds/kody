@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { type Handle, css } from 'remix/ui'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import {
 	getPillButtonCss,
@@ -11,8 +11,8 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 
-export function OnboardingFactoryCard() {
-	return (
+export function OnboardingFactoryCard(_handle: Handle) {
+	return () => (
 		<a
 			href="/guides/kody-factory"
 			mix={css(factoryCardCss)}
