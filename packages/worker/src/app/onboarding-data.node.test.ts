@@ -39,6 +39,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	).toEqual({
 		ok: true,
 		loggedIn: false,
+		username: null,
 		mcpServerUrl: 'https://heykody.dev/mcp',
 		setupPrompt: buildOnboardingSetupPrompt(),
 		discoveryPrompt: buildDiscoveryPrompt({
@@ -67,11 +68,13 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		},
 		requestUrl: 'https://heykody.dev/onboarding',
 		stableUserId: 'user-1',
+		username: 'u-b',
 		emailVerified: true,
 	})
 	expect(withoutClient).toEqual({
 		ok: true,
 		loggedIn: true,
+		username: 'u-b',
 		mcpServerUrl: 'https://heykody.dev/mcp',
 		setupPrompt: buildOnboardingSetupPrompt(),
 		discoveryPrompt: buildDiscoveryPrompt({
@@ -102,6 +105,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		},
 		requestUrl: 'http://localhost:3742/onboarding',
 		stableUserId: 'user-1',
+		username: 'u-b',
 		emailVerified: true,
 		welcomeEmail: {
 			subject: 'Welcome to Kody — reply to introduce yourself',
@@ -109,6 +113,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		},
 	})
 	expect(withClient).toMatchObject({
+		username: 'u-b',
 		hasMcpClient: true,
 		emailVerified: true,
 		needsOnboarding: false,
@@ -131,6 +136,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		},
 		requestUrl: 'https://heykody.dev/onboarding',
 		stableUserId: 'user-1',
+		username: 'u-b',
 		emailVerified: false,
 	})
 	expect(unverifiedWithGrant).toMatchObject({
@@ -158,6 +164,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		},
 		requestUrl: 'https://heykody.dev/onboarding',
 		stableUserId: 'user-1',
+		username: 'u-b',
 		emailVerified: true,
 	})
 	expect(whenProviderListingFails.hasMcpClient).toBe(false)

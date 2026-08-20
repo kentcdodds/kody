@@ -14,6 +14,7 @@ import { readJson } from '#client/routes/account-approval-shared.ts'
 export type OnboardingPayload = {
 	ok: true
 	loggedIn: boolean
+	username: string | null
 	mcpServerUrl: string
 	setupPrompt: string
 	discoveryPrompt: string

@@ -55,6 +55,7 @@ export function createHomeHandler(env: Env) {
 				env,
 				requestUrl: request.url,
 				stableUserId: user.mcpUser.userId,
+				username: user.username,
 				emailVerified: user.emailVerified,
 			})
 			return withAgentDiscoveryLinkHeaders(

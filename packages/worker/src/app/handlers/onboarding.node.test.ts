@@ -91,6 +91,27 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 	})
 })
 
+test('onboarding API includes the authenticated package-scope username', async () => {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		username: 'u-b',
+		emailVerified: false,
+		mcpUser: { userId: 'user-1' },
+	})
+	setAuthSessionSecret(testCookieSecret)
+	const env = { COOKIE_SECRET: testCookieSecret } as Env
+
+	const response = await createOnboardingApiHandler(env).handler(
+		new RequestContext(new Request('https://example.com/onboarding.json')),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		loggedIn: true,
+		username: 'u-b',
+	})
+})
+
 test('the Reply sub-step names the welcome email, not merely the newest outbound', async () => {
 	const env = {} as Env
 

@@ -55,6 +55,7 @@ export function loadPublicOnboardingData(input: {
 	return {
 		ok: true,
 		loggedIn: false,
+		username: null,
 		mcpServerUrl: buildMcpServerUrl({
 			env: input.env,
 			requestUrl: input.requestUrl,
@@ -83,6 +84,7 @@ export async function loadOnboardingData(input: {
 	env: OnboardingEnv
 	requestUrl: string | URL
 	stableUserId: string
+	username: string
 	emailVerified: boolean
 	/**
 	 * Featured starter packages loaded by the handler (which has the full
@@ -116,6 +118,7 @@ export async function loadOnboardingData(input: {
 	return {
 		ok: true,
 		loggedIn: true,
+		username: input.username,
 		mcpServerUrl,
 		setupPrompt,
 		// The discovery prompt needs no MCP connection or verified email, so it
