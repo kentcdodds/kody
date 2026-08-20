@@ -8,6 +8,7 @@ summary: A guide with artwork.
 category: platform
 image: /images/kody-factory-map.webp
 imageAlt: Kody presenting a map of the software factory
+ogImage: /images/kody-factory-map-og.jpg
 ---
 
 # Illustrated guide
@@ -19,6 +20,7 @@ test('guide image frontmatter carries display and OG artwork', () => {
 	expect(parseGuideMarkdown('illustrated-guide', guideBody)).toMatchObject({
 		image: '/images/kody-factory-map.webp',
 		imageAlt: 'Kody presenting a map of the software factory',
+		ogImage: '/images/kody-factory-map-og.jpg',
 	})
 })
 

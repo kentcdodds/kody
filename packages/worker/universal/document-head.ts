@@ -228,7 +228,7 @@ const routeDocumentHeads = {
 			title,
 			description: guide.summary,
 			canonicalPath: pathname,
-			...(guide.image
+			...(guide.ogImage
 				? {
 						og: {
 							title,

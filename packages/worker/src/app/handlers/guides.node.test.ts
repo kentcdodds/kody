@@ -105,6 +105,7 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 		ok: true,
 		image: '/images/kody-factory-map.webp',
 		imageAlt: 'Kody presenting a map of the software factory',
+		ogImage: '/images/kody-factory-map-og.jpg',
 	})
 
 	const missing = await callHandler(

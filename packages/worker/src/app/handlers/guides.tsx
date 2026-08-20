@@ -128,6 +128,7 @@ export function createGuideDetailHandler(env: Env) {
 							category: guide.category,
 							image: guide.image,
 							imageAlt: guide.imageAlt,
+							ogImage: guide.ogImage,
 							provider: guide.provider,
 							lastVerified: guide.lastVerified,
 							body: guide.body,
@@ -156,6 +157,7 @@ export function createGuideDetailApiHandler(_env: Env) {
 				category: guide.category,
 				image: guide.image,
 				imageAlt: guide.imageAlt,
+				ogImage: guide.ogImage,
 				provider: guide.provider,
 				lastVerified: guide.lastVerified,
 				body: guide.body,
@@ -182,12 +184,13 @@ export function createGuideDetailOgImageHandler(env: Env) {
 		middleware: [],
 		async handler({ request, params }) {
 			const guide = getGuideBySlug(params.slug)
-			if (!guide?.image) {
+			const ogImage = guide?.ogImage ?? guide?.image
+			if (!guide || !ogImage) {
 				return new Response('Not found', { status: 404 })
 			}
 
 			const imageResponse = await env.ASSETS.fetch(
-				new Request(new URL(guide.image, request.url)),
+				new Request(new URL(ogImage, request.url)),
 			)
 			if (!imageResponse.ok) {
 				return new Response('Guide artwork unavailable', { status: 502 })

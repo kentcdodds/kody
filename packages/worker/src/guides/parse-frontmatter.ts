@@ -14,6 +14,8 @@ export type GuideFrontmatter = {
 	image: string | null
 	/** Accessible description required when `image` is present. */
 	imageAlt: string | null
+	/** Optional Satori-compatible artwork composed into the generated OG card. */
+	ogImage: string | null
 	/** Display name of the third-party provider (provider guides only). */
 	provider: string | null
 	/**
@@ -47,6 +49,7 @@ const GUIDE_IMAGE_PATTERN =
  * category: platform | provider
  * image: /images/<file> (optional)
  * imageAlt: <string, required with image>
+ * ogImage: /images/<file> (optional)
  * provider: <string, provider guides only>
  * lastVerified: YYYY-MM (required when category is provider)
  * ---
@@ -115,6 +118,7 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 	const category = fields.get('category')
 	const image = fields.get('image') ?? null
 	const imageAlt = fields.get('imageAlt') ?? null
+	const ogImage = fields.get('ogImage') ?? null
 	const provider = fields.get('provider') ?? null
 	const lastVerified = fields.get('lastVerified') ?? null
 
@@ -152,6 +156,11 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 			`Guide "${slug}" has frontmatter "imageAlt" without an "image".`,
 		)
 	}
+	if (ogImage !== null && !GUIDE_IMAGE_PATTERN.test(ogImage)) {
+		throw new Error(
+			`Guide "${slug}" has invalid frontmatter "ogImage" (expected an origin-relative /images/ asset path).`,
+		)
+	}
 	if (category === 'provider' && !provider) {
 		throw new Error(
 			`Guide "${slug}" is missing frontmatter "provider" (required for provider guides).`,
@@ -176,6 +185,7 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 		category,
 		image,
 		imageAlt,
+		ogImage,
 		provider,
 		lastVerified,
 		body,

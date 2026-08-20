@@ -49,6 +49,7 @@ test('guide artwork controls the canonical Open Graph image', () => {
 			category: 'platform',
 			image: '/images/kody-factory-map.webp',
 			imageAlt: 'Kody presenting a map of the software factory',
+			ogImage: '/images/kody-factory-map-og.jpg',
 			provider: null,
 			lastVerified: null,
 			body: '# The Kody factory map',
