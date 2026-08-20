@@ -21,8 +21,8 @@ the shape readers expect for every list/detail screen.
 
 List/detail screens use `RecordTable` `mode="expand"`, including editors. `pane`
 stays only as the off-window fallback: a loaded record whose row is not in the
-current list (deep link, filter, paging, or a not-found selection) still renders
-below the table rather than disappearing.
+current list (deep link, filter, or paging) still renders below the table. A
+not-found state also renders below the table, even when no row is selected.
 
 Create flows share one `createRow` prop. It prepends a selected placeholder row
 and unfolds the editor under it, including when the collection is empty so the

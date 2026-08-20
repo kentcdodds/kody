@@ -69,6 +69,9 @@ export const recordTableCreateId = '__new__'
 /**
  * A create flow (`/new`) has no real row to expand under. Screens pass this
  * instead of building a one-off placeholder row and selected id.
+ *
+ * When `createRow` is set it always wins over `selectedId`: the synthetic
+ * create row is the selection. Callers pass `createRow` only on `/new`.
  */
 export type RecordTableCreateRow = {
 	href?: string
