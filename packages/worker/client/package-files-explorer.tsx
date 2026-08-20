@@ -320,8 +320,8 @@ function renderContent(data: PackageFilesLoaderData): RemixNode {
 					{body ? (
 						<span mix={css(contentMetaCss)}>
 							{countLines(body)} lines · {formatBytes(body)}
-							{packageFileLanguageLabel(data.language)
-								? ` · ${packageFileLanguageLabel(data.language)}`
+							{packageFileLanguageLabel(data.contentPath)
+								? ` · ${packageFileLanguageLabel(data.contentPath)}`
 								: ''}
 						</span>
 					) : null}

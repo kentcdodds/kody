@@ -104,14 +104,24 @@ const languageLabels: Record<string, string> = {
 	graphql: 'GraphQL',
 	xml: 'XML',
 	dockerfile: 'Dockerfile',
-	dotenv: 'dotenv',
+	dotenv: 'Dotenv',
 	ini: 'INI',
 	diff: 'Diff',
 	plaintext: 'Plain text',
 }
 
-export function packageFileLanguageLabel(language: string | null | undefined) {
-	if (!language) return ''
+// The grammar map aliases the js family to the TypeScript grammar so the
+// client bundles one grammar for both; the label must not leak that, so it
+// derives from the file's own extension instead of the grammar id.
+const javascriptExtensions = new Set(['js', 'jsx', 'mjs', 'cjs'])
+
+export function packageFileLanguageLabel(path: string | null | undefined) {
+	if (!path) return ''
+	const name = path.split('/').pop() ?? ''
+	const separator = name.lastIndexOf('.')
+	const extension = separator > 0 ? name.slice(separator + 1).toLowerCase() : ''
+	if (javascriptExtensions.has(extension)) return 'JavaScript'
+	const language = languageFromFilePath(path)
 	return languageLabels[language] ?? language
 }
 
