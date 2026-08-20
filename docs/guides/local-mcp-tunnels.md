@@ -81,10 +81,10 @@ context, the MCP server authenticates Kody, and Access protects the browser
 approval step. Do not copy route names from another server without checking your
 implementation's OAuth metadata and endpoint paths.
 
-The reference `mcp:home` connector uses `https://kody-home.doddsfamily.us/mcp`
+The reference `mcp:home` connector uses `https://home.example.com/mcp`
 as its resource server. Its protected resource metadata lives at
 `/.well-known/oauth-protected-resource/mcp` and identifies
-`https://kody-home.doddsfamily.us` as the authorization server. That server's
+`https://home.example.com` as the authorization server. That server's
 `/.well-known/oauth-authorization-server` document advertises `/authorize`,
 `/token`, and `/revoke`. Access protects the browser-facing `/authorize` route;
 the metadata routes, `/mcp`, `/token`, and `/revoke` reach the MCP server, which

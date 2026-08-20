@@ -62,11 +62,11 @@ enough for the remote server.
 ## Home automation
 
 Household LAN tools (lights, TVs, thermostats, and the rest of the home process)
-are a normal outbound MCP server at `https://kody-home.doddsfamily.us/mcp`
-(Dodds Vault Cloudflare tunnel; Access bypasses `/mcp` and the OAuth machine
-paths). Add it as `home`, pass Cloudflare Access on `/authorize`, and approve.
-The LAN origin is trusted and has no extra login. Then call
-`kody.mcp["home"].tool_name(...)`.
+are a normal outbound MCP server at a tunneled HTTPS URL such as
+`https://home.example.com/mcp` (Cloudflare tunnel; Access bypasses `/mcp` and
+the OAuth machine paths). Add it as `home`, pass Cloudflare Access on
+`/authorize`, and approve. The LAN origin is trusted and has no extra login.
+Then call `kody.mcp["home"].tool_name(...)`.
 
 ## Related
 
