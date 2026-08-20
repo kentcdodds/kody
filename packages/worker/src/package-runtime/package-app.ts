@@ -149,7 +149,7 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 	// listing failure does not hide Get. Only a non-empty list restricts
 	// has/GOPD. Tool namespaces stay fully open.
 	const knownServerNames = Array.isArray(mcpServerNames)
-		? mcpServerNames.filter((name) => typeof name === 'string')
+		? [...new Set(mcpServerNames.filter((name) => typeof name === 'string' && name.length > 0))]
 		: [];
 	const restrictServerKeys = knownServerNames.length > 0;
 	const createMcpServerNamespaceProxy = (getValue) =>

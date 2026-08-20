@@ -274,6 +274,22 @@ test('package app kody.mcp advertises connected server names for Workerd destruc
 	])
 })
 
+test('package app kody.mcp ownKeys dedupes duplicate server names', async () => {
+	const kody = await createKodyProxyForTest(
+		{
+			callCapability: async () => ({ ok: true }),
+		},
+		['home', 'home', 'mediarss'],
+	)
+	expect(Reflect.ownKeys(kody.mcp as object)).toEqual(['home', 'mediarss'])
+	const home = getViaOwnKeysThenGopd(kody.mcp as object, 'home') as Record<
+		string,
+		(args: unknown) => Promise<unknown>
+	>
+	expect(home).toBeTypeOf('object')
+	await expect(home.set_pin({ pin: '3' })).resolves.toEqual({ ok: true })
+})
+
 test('package app workflows proxy validates input and forwards to the runtime bridge', async () => {
 	const workflows = await createWorkflowsProxyForTest({
 		workflowCreate: async (input: unknown) => input,
