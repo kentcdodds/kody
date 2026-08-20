@@ -3,7 +3,8 @@ import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import {
 	RecordTable,
-	RecordTableSearch,
+	recordTableCreateId,
+	resolveRecordTableSelection,
 	type RecordTableColumn,
 } from '#client/routes/record-table.tsx'
 import {
@@ -125,6 +126,63 @@ test('record table keeps container drops, row links, and expand/pane selection c
 		orphanHtml.indexOf('</table>'),
 	)
 
+	// A not-found record has no selected row. It must still render, not vanish.
+	const missingHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Integrations',
+			columns,
+			rows,
+			selectedId: null,
+			record: jsx('p', { children: 'Connection not found' }),
+		}),
+	)
+	expect(missingHtml).toContain('Connection not found')
+	expect(missingHtml).not.toContain('data-record-row="true"')
+	expect(missingHtml.indexOf('Connection not found')).toBeGreaterThan(
+		missingHtml.indexOf('</table>'),
+	)
+
+	// `/new` has no entity id. The create row is the row the editor unfolds
+	// under, including when the collection is empty (no empty-state copy).
+	const createOnEmpty = resolveRecordTableSelection({
+		columns,
+		rows: [],
+		selectedId: null,
+		createRow: { href: '/account/secrets/new', label: 'New secret' },
+	})
+	expect(createOnEmpty.selectedId).toBe(recordTableCreateId)
+	expect(createOnEmpty.rows).toEqual([
+		{
+			id: recordTableCreateId,
+			href: '/account/secrets/new',
+			cells: { name: 'New secret' },
+		},
+	])
+
+	const createHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Secrets',
+			columns,
+			rows: [],
+			createRow: { href: '/account/secrets/new', label: 'New secret' },
+			record: jsx('p', { children: 'Create editor' }),
+			emptyLabel: 'No secrets yet.',
+		}),
+	)
+	expect(createHtml).toContain('<table')
+	expect(createHtml).not.toContain('No secrets yet.')
+	expect(createHtml).toContain('New secret')
+	expect(createHtml).toContain('Create editor')
+	expect(createHtml).toContain('data-record-row="true"')
+	expect(createHtml.indexOf('Create editor')).toBeGreaterThan(
+		createHtml.indexOf('New secret'),
+	)
+	expect(createHtml.indexOf('Create editor')).toBeLessThan(
+		createHtml.indexOf('</table>'),
+	)
+
 	// Wide rows stay reachable via horizontal overflow.
 	const overflowHtml = await renderToString(
 		jsx(RecordTable, {
@@ -136,26 +194,6 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	)
 	expect(overflowHtml).toContain('overflow-x: auto')
 	expect(overflowHtml).toContain('overflow: clip')
-})
-
-test('record table search stays uncontrolled so the first keystroke cannot remount it', async () => {
-	const html = await renderToString(
-		jsx(RecordTableSearch, {
-			label: 'Search packages',
-			placeholder: 'Search by name, id, description, or tag',
-			value: '',
-			onInput() {},
-		}),
-	)
-
-	expect(html).toContain('type="search"')
-	expect(html).toContain('aria-label="Search packages"')
-	// Passing `value` makes Remix restore the previous query on `input` and
-	// drop focus. `defaultValue` serializes as the HTML value attribute, so
-	// the client contract is "no controlled value prop" — pinned here by the
-	// WebKit cancel-button rules that otherwise appear on the first character.
-	expect(html).toContain('::-webkit-search-cancel-button')
-	expect(html).toContain('display: none')
 })
 
 test('record table search defers focused URL updates and drops a stale pending string', () => {

@@ -20,6 +20,10 @@ import {
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
+import {
+	layoutMaxWidths,
+	pageGutter,
+} from '#universal/styles/style-primitives.ts'
 
 const communityPackageFilesMatcher = createMatcher(
 	routes.communityPackageFiles.pattern,
@@ -136,6 +140,13 @@ export async function packageFilesRouteLoader(
 	return { packageFiles: payload }
 }
 
+const messageCss = {
+	maxWidth: layoutMaxWidths.extended,
+	marginInline: 'auto',
+	padding: `${spacing.xl} ${pageGutter}`,
+	color: colors.textMuted,
+}
+
 export function PackageFilesRoute(handle: Handle) {
 	let status: 'loading' | 'ready' | 'error' | 'not-found' = 'loading'
 	let data: PackageFilesLoaderData | null = null
@@ -234,25 +245,56 @@ export function PackageFilesRoute(handle: Handle) {
 			})
 		}
 
-		if (status !== 'ready' || loadedHref !== currentHref || !data) {
+		// A miss or a failure replaces the explorer — there is nothing to keep
+		// showing, and the visitor has to be told.
+		if (status === 'not-found' || status === 'error') {
 			return (
-				<article
-					mix={css({
-						padding: spacing.xl,
-						color: colors.textMuted,
-					})}
-				>
+				<article mix={css(messageCss)}>
 					<p>
 						{status === 'not-found'
 							? 'Those files were not found.'
-							: status === 'error'
-								? 'Unable to load package files.'
-								: 'Loading files…'}
+							: 'Unable to load package files.'}
 					</p>
 				</article>
 			)
 		}
 
-		return <PackageFilesExplorer data={data} />
+		// Only the very first load has nothing to show; a server-rendered visit
+		// arrives with data already applied, so this is the SPA cold path.
+		if (!data) {
+			return (
+				<article mix={css(messageCss)}>
+					<p>Loading files…</p>
+				</article>
+			)
+		}
+
+		// A commit without preloaded data (e.g. the router's loader-failure
+		// path) can land here holding another package's explorer; showing it
+		// under the new URL would render the wrong tree with the wrong links.
+		const currentPathname = new URL(currentHref, 'http://localhost').pathname
+		if (
+			data &&
+			currentPathname !== data.filesBasePath &&
+			!currentPathname.startsWith(`${data.filesBasePath}/`)
+		) {
+			data = null
+			return (
+				<article mix={css(messageCss)}>
+					<p>Loading files…</p>
+				</article>
+			)
+		}
+
+		// Switching files keeps the current one on screen until the next
+		// arrives. Tearing the explorer down to a loading line for the ~6ms
+		// between renders blinked the whole tree out and back, and made the
+		// page transition run twice per click.
+		return (
+			<PackageFilesExplorer
+				data={data}
+				busy={status === 'loading' || loadedHref !== currentHref}
+			/>
+		)
 	}
 }

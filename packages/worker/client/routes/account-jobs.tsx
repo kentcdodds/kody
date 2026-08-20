@@ -657,7 +657,7 @@ export function AccountJobsRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<RecordTable
-						mode="pane"
+						mode="expand"
 						ariaLabel="Scheduled jobs"
 						selectedId={selection.selectedId}
 						onNavigate={() => {
@@ -737,8 +737,8 @@ export function AccountJobsRoute(handle: Handle) {
 						]}
 						rows={filteredJobs.map((item) => ({
 							id: item.id,
-							// A save, toggle, or delete is in flight; the editor below
-							// owns the selection until it settles.
+							// A save, toggle, or delete is in flight; the expanded
+							// editor owns the selection until it settles.
 							href: isMutating
 								? undefined
 								: jobsRoute.buildDetailHref(item.id, getCurrentSearch()),

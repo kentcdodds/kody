@@ -1,3 +1,4 @@
+import { createMultiMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 
 /**
@@ -37,7 +38,6 @@ export type PackageFilesView = {
 	contentKind: PackageFilesContentKind | null
 	language: string | null
 	children: Array<PackageFilesChild>
-	ancestors: Array<PackageFilesAncestor>
 }
 
 const readmeFileNamePattern = /^readme(?:\.[a-z0-9._-]+)?$/i
@@ -82,6 +82,66 @@ const extensionLanguages: Record<string, string> = {
 	ini: 'ini',
 	diff: 'diff',
 	patch: 'diff',
+}
+
+// Shiki grammar ids are what the highlighter needs; these are what a reader
+// should see next to a file's line count.
+const languageLabels: Record<string, string> = {
+	ts: 'TypeScript',
+	tsx: 'TypeScript',
+	json: 'JSON',
+	markdown: 'Markdown',
+	yaml: 'YAML',
+	toml: 'TOML',
+	html: 'HTML',
+	css: 'CSS',
+	shellscript: 'Shell',
+	python: 'Python',
+	go: 'Go',
+	rust: 'Rust',
+	sql: 'SQL',
+	graphql: 'GraphQL',
+	xml: 'XML',
+	dockerfile: 'Dockerfile',
+	dotenv: 'Dotenv',
+	ini: 'INI',
+	diff: 'Diff',
+	plaintext: 'Plain text',
+}
+
+// The grammar map aliases the js family to the TypeScript grammar so the
+// client bundles one grammar for both; the label must not leak that, so it
+// derives from the file's own extension instead of the grammar id.
+const javascriptExtensions = new Set(['js', 'jsx', 'mjs', 'cjs'])
+
+export function packageFileLanguageLabel(path: string | null | undefined) {
+	if (!path) return ''
+	const name = path.split('/').pop() ?? ''
+	const separator = name.lastIndexOf('.')
+	const extension = separator > 0 ? name.slice(separator + 1).toLowerCase() : ''
+	if (javascriptExtensions.has(extension)) return 'JavaScript'
+	const language = languageFromFilePath(path)
+	return languageLabels[language] ?? language
+}
+
+/**
+ * The `/files` explorer routes, in every public shape. The app shell asks
+ * this so it can leave the page unpadded: the explorer owns its gutters (like
+ * the package listing it hangs off), and the shell's generic `main` padding
+ * would stack on top and push the content in past the site header.
+ */
+const packageFilesPathMatcher = (() => {
+	const matcher = createMultiMatcher<true>()
+	matcher.add(routes.communityPackageFiles.pattern, true)
+	matcher.add(routes.communityDetailFiles.pattern, true)
+	matcher.add(routes.accountPackageFiles.pattern, true)
+	return matcher
+})()
+
+export function isPackageFilesPathname(pathname: string) {
+	return (
+		packageFilesPathMatcher.match(new URL(pathname, 'http://localhost')) != null
+	)
 }
 
 export function isReservedPackageFilesKodyId(kodyId: string) {
@@ -250,7 +310,6 @@ export function buildPackageFilesView(input: {
 			contentKind: contentKindFromLanguage(language),
 			language,
 			children: [],
-			ancestors: buildPackageFilesAncestors(selectedPath),
 		}
 	}
 
@@ -266,7 +325,6 @@ export function buildPackageFilesView(input: {
 		contentKind: language ? contentKindFromLanguage(language) : null,
 		language,
 		children: listPackageFilesChildren(paths, selectedPath),
-		ancestors: buildPackageFilesAncestors(selectedPath),
 	}
 }
 

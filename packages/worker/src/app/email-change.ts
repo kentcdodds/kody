@@ -3,9 +3,9 @@ import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { hashVerificationToken } from '#app/email-verification.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
+import { buildEmailChangeEmail } from '#app/email/messages.ts'
 import { createDb, pendingEmailChangesTable } from '#worker/db.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
-import { escapeHtml } from '@kody-internal/shared/escape-html.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 
 const emailChangeTokenBytes = 32
@@ -24,36 +24,6 @@ function getEmailChangeConfig(input: {
 	const appBaseUrl = new URL(configuredBaseUrl || input.requestUrl).origin
 	const fromEmail = `kody@${new URL(appBaseUrl).hostname}`
 	return { appBaseUrl, fromEmail }
-}
-
-function buildEmailChangeEmail(input: {
-	currentEmail: string
-	newEmail: string
-	verificationUrl: string
-}) {
-	const currentEmail = escapeHtml(input.currentEmail)
-	const newEmail = escapeHtml(input.newEmail)
-	const verificationUrl = escapeHtml(input.verificationUrl)
-	return {
-		subject: 'Verify your new kody email',
-		text: [
-			`We received a request to change your kody account email from ${input.currentEmail} to ${input.newEmail}.`,
-			`Verify the new email address: ${input.verificationUrl}`,
-			'If you did not request this change, you can safely ignore this email.',
-		].join('\n\n'),
-		html: `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Verify your new email</title>
-  </head>
-  <body>
-    <p>We received a request to change your kody account email from ${currentEmail} to ${newEmail}.</p>
-    <p><a href="${verificationUrl}">Verify the new email address</a></p>
-    <p>If you did not request this change, you can safely ignore this email.</p>
-  </body>
-</html>`,
-	}
 }
 
 export async function createEmailChangeVerification(input: {
@@ -100,6 +70,7 @@ export async function createEmailChangeVerification(input: {
 	)
 	verificationUrl.searchParams.set('token', token)
 	const email = buildEmailChangeEmail({
+		appBaseUrl: emailConfig.appBaseUrl,
 		currentEmail: input.currentEmail,
 		newEmail: input.newEmail,
 		verificationUrl: verificationUrl.toString(),

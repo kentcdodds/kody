@@ -125,6 +125,7 @@
 	--font-display: 'Bricolage Grotesque', system-ui, sans-serif;
 	--font-body: 'Wix Madefor Text', system-ui, sans-serif;
 	--font-family: var(--font-body);
+	--font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
 	--font-size-xs: 0.75rem;
 	--font-size-sm: 0.875rem;
 	--font-size-base: 1rem;
@@ -503,15 +504,34 @@ html.is-settled {
 	::view-transition-old(nav-progress),
 	::view-transition-new(nav-progress),
 	::view-transition-group(nav-progress),
-	::view-transition-group(account-nav) {
+	::view-transition-group(account-nav),
+	::view-transition-group(files-back),
+	::view-transition-group(files-head),
+	::view-transition-group(files-tree),
+	::view-transition-group(files-blob) {
 		animation: none;
 	}
 
-	::view-transition-old(account-nav) {
+	/* Same treatment for the whole package files explorer: switching files is
+	   an in-place content swap, so nothing there may lift and slide the way a
+	   route change does. Every part is named (lifted out of `page`) with its
+	   group pinned — the file pane's height changes per file, and an unpinned
+	   group would squash between the two sizes. Old/new cross-fade rather
+	   than being pinned outright: none of these are on screen outside
+	   `/files`, and pinning old/new strands the leftover snapshot. */
+	::view-transition-old(account-nav),
+	::view-transition-old(files-back),
+	::view-transition-old(files-head),
+	::view-transition-old(files-tree),
+	::view-transition-old(files-blob) {
 		animation: vt-page-out 120ms var(--ease-out) both;
 	}
 
-	::view-transition-new(account-nav) {
+	::view-transition-new(account-nav),
+	::view-transition-new(files-back),
+	::view-transition-new(files-head),
+	::view-transition-new(files-tree),
+	::view-transition-new(files-blob) {
 		animation: vt-account-nav-in 220ms var(--ease-out) both;
 	}
 

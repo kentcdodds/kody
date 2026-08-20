@@ -7,7 +7,12 @@ import { readRouterSearch } from '#client/router-location.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import { colors, radius, typography } from '#universal/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import { cardCss } from '#universal/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
@@ -19,6 +24,7 @@ import {
 } from './account-management-components.tsx'
 import {
 	RecordTable,
+	recordBodyCss,
 	recordCellClamp,
 	recordStampCss,
 } from './record-table.tsx'
@@ -216,16 +222,12 @@ export function AdminSystemEmailRoute(handle: Handle) {
 								)}. Retention keeps ${data.limits.retentionDays} days and at most ${data.limits.maxStoredMessages} stored messages.`}
 						>
 							<RecordTable
-								mode="pane"
+								mode="expand"
 								busy={status === 'loading'}
 								ariaLabel="System inbox messages"
 								selectedId={selectedMessage?.id ?? null}
 								countLabel={`${data.total} stored`}
 								emptyLabel="No system mail has been stored."
-								// The message opens in its own panel below rather than in
-								// this table's record slot, so the two panels keep the
-								// titles and audit-log framing they already carry.
-								scrollHeight="32rem"
 								columns={[
 									{ key: 'subject', label: 'Subject', primary: true },
 									{ key: 'inbox', label: 'Inbox' },
@@ -281,112 +283,132 @@ export function AdminSystemEmailRoute(handle: Handle) {
 										</p>
 									) : null
 								}
+								record={
+									selectedMessage ? (
+										<div mix={css(recordBodyCss)}>
+											<div mix={css({ display: 'grid', gap: spacing.xs })}>
+												<h2
+													mix={css({
+														margin: 0,
+														fontSize: typography.fontSize.lg,
+														fontWeight: typography.fontWeight.semibold,
+														color: colors.text,
+													})}
+												>
+													{selectedMessage.subject || '(no subject)'}
+												</h2>
+												<p
+													mix={css({
+														margin: 0,
+														color: colors.textMuted,
+													})}
+												>
+													Admin reads of message content are audit logged.
+												</p>
+											</div>
+											<MetadataGrid
+												items={[
+													{
+														label: 'Inbox',
+														value: selectedMessage.inbox_local_part,
+													},
+													{
+														label: 'From',
+														value:
+															selectedMessage.from_address ??
+															selectedMessage.envelope_from ??
+															'Unknown',
+													},
+													{
+														label: 'Received',
+														value: (
+															<TimestampValue
+																value={
+																	selectedMessage.received_at ??
+																	selectedMessage.created_at
+																}
+																fallback="Unknown"
+															/>
+														),
+													},
+													{
+														label: 'To',
+														value:
+															selectedMessage.to_addresses.join(', ') || 'None',
+													},
+													{
+														label: 'Reply-To',
+														value:
+															selectedMessage.reply_to_addresses.join(', ') ||
+															'None',
+													},
+													{
+														label: 'Attachments',
+														value: String(selectedMessage.attachments.length),
+													},
+												]}
+											/>
+											<section mix={css(cardCss)}>
+												<h3
+													mix={css({
+														margin: 0,
+														fontSize: typography.fontSize.base,
+													})}
+												>
+													Message body
+												</h3>
+												<Tabs defaultActiveTab="html">
+													<TabList aria-label="Email body">
+														<Tab name="html">HTML</Tab>
+														<Tab name="text">Text</Tab>
+														<Tab name="source">HTML Source</Tab>
+													</TabList>
+													<TabPanel name="html">
+														{selectedMessage.html_body ? (
+															<iframe
+																title="Email HTML preview"
+																sandbox=""
+																referrerPolicy="no-referrer"
+																srcdoc={buildAdminEmailHtmlPreviewDocument(
+																	selectedMessage.html_body,
+																)}
+																mix={emailHtmlPreviewIframeCss}
+															/>
+														) : (
+															<p mix={emailBodyEmptyCss}>
+																No HTML body exists for this message.
+															</p>
+														)}
+													</TabPanel>
+													<TabPanel name="text">
+														{selectedMessage.text_body ? (
+															<pre mix={emailBodyPreCss}>
+																{selectedMessage.text_body}
+															</pre>
+														) : (
+															<p mix={emailBodyEmptyCss}>
+																No text exists in this tab content.
+															</p>
+														)}
+													</TabPanel>
+													<TabPanel name="source">
+														{selectedMessage.html_body ? (
+															<pre mix={emailBodyPreCss}>
+																{selectedMessage.html_body}
+															</pre>
+														) : (
+															<p mix={emailBodyEmptyCss}>
+																No HTML body exists for this message.
+															</p>
+														)}
+													</TabPanel>
+												</Tabs>
+											</section>
+										</div>
+									) : null
+								}
 							/>
 						</AccountManagementPanel>
-
-						{selectedMessage ? (
-							<AccountManagementPanel
-								title={`Message: ${selectedMessage.subject || '(no subject)'}`}
-								description="Admin reads of message content are audit logged."
-							>
-								<MetadataGrid
-									items={[
-										{
-											label: 'Inbox',
-											value: selectedMessage.inbox_local_part,
-										},
-										{
-											label: 'From',
-											value:
-												selectedMessage.from_address ??
-												selectedMessage.envelope_from ??
-												'Unknown',
-										},
-										{
-											label: 'Received',
-											value: (
-												<TimestampValue
-													value={
-														selectedMessage.received_at ??
-														selectedMessage.created_at
-													}
-													fallback="Unknown"
-												/>
-											),
-										},
-										{
-											label: 'To',
-											value: selectedMessage.to_addresses.join(', ') || 'None',
-										},
-										{
-											label: 'Reply-To',
-											value:
-												selectedMessage.reply_to_addresses.join(', ') || 'None',
-										},
-										{
-											label: 'Attachments',
-											value: String(selectedMessage.attachments.length),
-										},
-									]}
-								/>
-								<section mix={css(cardCss)}>
-									<h3
-										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.base,
-										})}
-									>
-										Message body
-									</h3>
-									<Tabs defaultActiveTab="html">
-										<TabList aria-label="Email body">
-											<Tab name="html">HTML</Tab>
-											<Tab name="text">Text</Tab>
-											<Tab name="source">HTML Source</Tab>
-										</TabList>
-										<TabPanel name="html">
-											{selectedMessage.html_body ? (
-												<iframe
-													title="Email HTML preview"
-													sandbox=""
-													referrerPolicy="no-referrer"
-													srcdoc={buildAdminEmailHtmlPreviewDocument(
-														selectedMessage.html_body,
-													)}
-													mix={emailHtmlPreviewIframeCss}
-												/>
-											) : (
-												<p mix={emailBodyEmptyCss}>
-													No HTML body exists for this message.
-												</p>
-											)}
-										</TabPanel>
-										<TabPanel name="text">
-											{selectedMessage.text_body ? (
-												<pre mix={emailBodyPreCss}>
-													{selectedMessage.text_body}
-												</pre>
-											) : (
-												<p mix={emailBodyEmptyCss}>
-													No text exists in this tab content.
-												</p>
-											)}
-										</TabPanel>
-										<TabPanel name="source">
-											{selectedMessage.html_body ? (
-												<pre mix={emailBodyPreCss}>
-													{selectedMessage.html_body}
-												</pre>
-											) : (
-												<p mix={emailBodyEmptyCss}>
-													No HTML body exists for this message.
-												</p>
-											)}
-										</TabPanel>
-									</Tabs>
-								</section>
-							</AccountManagementPanel>
-						) : null}
 					</>
 				) : null}
 			</AccountManagementShell>

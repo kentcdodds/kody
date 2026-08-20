@@ -110,7 +110,6 @@ export type PackageFilesLoaderData = {
 	kind: 'file' | 'directory'
 	paths: Array<string>
 	children: Array<PackageFilesChildLoaderData>
-	ancestors: Array<{ name: string; path: string }>
 	content: string | null
 	contentPath: string | null
 	contentKind: 'markdown' | 'code' | 'text' | null

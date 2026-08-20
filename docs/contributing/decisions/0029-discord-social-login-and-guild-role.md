@@ -1,4 +1,4 @@
-# 0028: Discord social login and official guild role
+# 0029: Discord social login and official guild role
 
 - **Status:** accepted
 - **Date:** 2026-08-20

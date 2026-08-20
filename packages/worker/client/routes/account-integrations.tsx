@@ -1075,7 +1075,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				{status === 'ready' ? (
 					<>
 						<RecordTable
-							mode="pane"
+							mode="expand"
 							ariaLabel="Integrations"
 							selectedId={selectedApp ? integrationListId(selectedApp) : null}
 							countLabel={`${filteredApps.length} of ${apps.length} integrations`}

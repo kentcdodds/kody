@@ -36,8 +36,8 @@ something Kody cannot reach:
   network.
 - **Local CLIs.** Wrap explicit commands and validate every argument. Do not
   expose an unrestricted shell merely to make a CLI reachable.
-- **NAS-hosted automations.** Run the server in Docker on a always-on box so
-  scheduled Kody jobs can still call home tools while your laptop is asleep.
+- **NAS-hosted automations.** Run the server in Docker on an always-on box so
+  scheduled Kody jobs can call home tools while your laptop is asleep.
 
 Kody-hosted packages, jobs, and memories stay available when the home machine is
 offline. A job that calls a tunneled home tool still depends on that process and

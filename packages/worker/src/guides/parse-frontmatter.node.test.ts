@@ -16,15 +16,13 @@ ogImage: /images/kody-factory-map-og.jpg
 Body copy.
 `
 
-test('guide image frontmatter carries display and OG artwork', () => {
+test('guide image frontmatter carries display and OG artwork with safe paths', () => {
 	expect(parseGuideMarkdown('illustrated-guide', guideBody)).toMatchObject({
 		image: '/images/kody-factory-map.webp',
 		imageAlt: 'Kody presenting a map of the software factory',
 		ogImage: '/images/kody-factory-map-og.jpg',
 	})
-})
 
-test('guide image frontmatter requires a safe asset path and alt text', () => {
 	expect(() =>
 		parseGuideMarkdown(
 			'illustrated-guide',

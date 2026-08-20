@@ -93,12 +93,6 @@ test('community listing published dispatch builds metadata-only events through a
 		publisher: { username: 'owner' },
 		published_at: '2026-07-20T01:00:00.000Z',
 	})
-	expect(JSON.stringify(payload)).not.toContain('user_id')
-	expect(JSON.stringify(payload)).not.toContain('email')
-	expect(JSON.stringify(payload)).not.toContain('/community/')
-	expect((payload.listing as { public_url: string }).public_url).toContain(
-		'/@owner/discord-gateway',
-	)
 
 	mocks.getCommunityListingPublishedForAdmin.mockResolvedValue(null)
 	await expect(

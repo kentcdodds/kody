@@ -34,6 +34,7 @@ export const typography = {
 	fontFamily: 'var(--font-family)',
 	fontFamilyDisplay: 'var(--font-display)',
 	fontFamilyBody: 'var(--font-body)',
+	fontFamilyMono: 'var(--font-mono)',
 	fontSize: {
 		xs: 'var(--font-size-xs)',
 		sm: 'var(--font-size-sm)',

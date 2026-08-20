@@ -47,8 +47,8 @@ to the main worker (`POST /__maintenance/status-incidents`) when the shared
 Worker secret `STATUS_INCIDENT_EVENT_SECRET` is set. That path fans
 `status.incident.opened` / `status.incident.resolved` to admin package
 subscriptions. The notify is fire-and-forget with a short timeout so a down or
-missing secret cannot stall probes or email. Until the secret exists, packages
-can still enqueue from `GET /status.json`.
+missing secret cannot stall probes or email. When the secret is unset, packages
+can reconcile from `GET /status.json`.
 
 ## Provider incidents (Cloudflare)
 

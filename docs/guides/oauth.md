@@ -172,11 +172,11 @@ connected, and `integration_platform_app_list` before building a BYO connect
 URL.
 
 Manage integrations from `/account/integrations`. The list is one row per
-service; the pane shows the connections on that integration. Built-in
+service; opening a row unfolds its connections in the table. Built-in
 integrations are marked “Provided by Kody.” User-registered integrations also
 resolve at `/account/integrations/apps/<app-slug>`. Disconnect a connected
-account or delete a user-registered integration from that pane — both ask for a
-second click, then offer Undo for a few seconds. App metadata and the
+account or delete a user-registered integration from that expanded row — both
+ask for a second click, then offer Undo for a few seconds. App metadata and the
 client-secret rotation form live under Advanced details, with an explicit
 confirmation step. Agents can call `integration_oauth_app_list`,
 `integration_oauth_app_delete`, and `integration_oauth_app_rotate_credentials`

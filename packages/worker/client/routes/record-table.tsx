@@ -63,12 +63,58 @@ export type RecordTableRow = {
 	cells: Record<string, Slot>
 }
 
+/** Synthetic row id for a `/new` create flow unfolded inside the table. */
+export const recordTableCreateId = '__new__'
+
+/**
+ * A create flow (`/new`) has no real row to expand under. Screens pass this
+ * instead of building a one-off placeholder row and selected id.
+ *
+ * When `createRow` is set it always wins over `selectedId`: the synthetic
+ * create row is the selection. Callers pass `createRow` only on `/new`.
+ */
+export type RecordTableCreateRow = {
+	href?: string
+	label: string
+}
+
+export function resolveRecordTableSelection({
+	columns,
+	rows,
+	selectedId,
+	createRow,
+}: {
+	columns: Array<RecordTableColumn>
+	rows: Array<RecordTableRow>
+	selectedId?: string | null
+	createRow?: RecordTableCreateRow
+}): {
+	rows: Array<RecordTableRow>
+	selectedId?: string | null
+} {
+	if (!createRow) {
+		return { rows, selectedId }
+	}
+	const primary = columns.find((column) => column.primary) ?? columns[0]
+	return {
+		rows: [
+			{
+				id: recordTableCreateId,
+				href: createRow.href,
+				cells: primary ? { [primary.key]: createRow.label } : {},
+			},
+			...rows,
+		],
+		selectedId: recordTableCreateId,
+	}
+}
+
 type RecordTableProps = {
 	/**
 	 * `expand` unfolds the record inside the table under its own row,
 	 * `pane` renders it below the table, `none` is a table with no selection.
-	 * Prefer `pane` for large editors (decision 0010); `expand` may still host
-	 * an editor when the screen deliberately keeps the form under its row.
+	 * List/detail screens use `expand`, including editors (decision 0028).
+	 * `pane` remains for the off-window selection fallback.
 	 */
 	mode: 'expand' | 'pane' | 'none'
 	/**
@@ -81,6 +127,12 @@ type RecordTableProps = {
 	columns: Array<RecordTableColumn>
 	rows: Array<RecordTableRow>
 	selectedId?: string | null
+	/**
+	 * When set, prepends a selected create row and unfolds `record` under it.
+	 * `/new` has no entity id, so without this the editor has nowhere to go
+	 * in `expand` (and an empty collection would hide the table entirely).
+	 */
+	createRow?: RecordTableCreateRow
 	/**
 	 * The already-built record for `selectedId`. It is a prop rather than a
 	 * `renderRecord(row)` callback because every one of these screens loads
@@ -576,7 +628,13 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 	}
 
 	return () => {
-		const { mode, columns, rows, selectedId, onNavigate } = handle.props
+		const { mode, columns, onNavigate } = handle.props
+		const { rows, selectedId } = resolveRecordTableSelection({
+			columns,
+			rows: handle.props.rows,
+			selectedId: handle.props.selectedId,
+			createRow: handle.props.createRow,
+		})
 		const selectable = mode !== 'none'
 		// `expand` must not cap the list: the record renders inside the
 		// scroller, so a max-height traps it in a nested scroll you have to
@@ -584,14 +642,17 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 		// the record below reachable without a long scroll first.
 		const capped = mode !== 'expand'
 		// `expand` puts the record inside the row it belongs to, which only works
-		// while that row is on screen. A deep link, a filter change, or paging
-		// past the selection leaves a loaded record with no row to unfold under —
-		// so it falls back to a pane below the table rather than disappearing.
-		const orphanedRecord = Boolean(
+		// while that row is on screen. A deep link, a filter, paging, or a
+		// not-found selection leaves a loaded record with no row to unfold under
+		// — so it falls back to a pane below the table rather than disappearing.
+		const expandedInTable = Boolean(
 			mode === 'expand' &&
 			handle.props.record &&
 			selectedId != null &&
-			!rows.some((row) => row.id === selectedId),
+			rows.some((row) => row.id === selectedId),
+		)
+		const orphanedRecord = Boolean(
+			mode === 'expand' && handle.props.record && !expandedInTable,
 		)
 
 		const table = (

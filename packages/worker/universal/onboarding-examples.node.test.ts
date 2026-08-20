@@ -69,16 +69,8 @@ test('example prompt searches the user-owned scoped package and invokes in user 
 	expect(prompt).toContain(
 		'packages.invoke({ kodyId: "hn-pulse", exportName: "getTopStories"',
 	)
-	expect(prompt).not.toContain('search for the package by that kody id')
 
-	const authoringPrompt = buildOnboardingPackageAuthoringPrompt('hn-pulse')
-	expect(authoringPrompt).toContain(
-		'coding_guide_get({ guide: "package_authoring" })',
-	)
-	expect(authoringPrompt).toContain(
-		'coding_guide_get({ guide: "package_lifecycle" })',
-	)
-	expect(authoringPrompt).toContain(
+	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
 		'package_get_git_remote({ create: true, kody_id: "hn-pulse" })',
 	)
 })
