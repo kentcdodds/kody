@@ -33,11 +33,13 @@ import {
 /**
  * Blog post, ported from the redesign prototype (`landing/blog-post.html`).
  * A 43rem editorial measure: back link → post head (display title + meta,
- * page-open rise) → AI-placeholder callout → `.prose` body rendered from
- * the server's markdown catalog → quiet foot (read-next pointer + Kody
- * greeting + waitlist button). Nothing here hardcodes post content — body,
- * dates, and the read-next pointer all come from the blog API. The
- * placeholder callout is template chrome until Kent rewrites each post.
+ * page-open rise) → optional headline image → optional AI-placeholder
+ * callout → `.prose` body rendered from the server's markdown catalog →
+ * quiet foot (read-next pointer + Kody greeting + waitlist button). Nothing
+ * here hardcodes post content — body, dates, artwork, and the read-next
+ * pointer all come from the blog API. The placeholder callout is per-post
+ * frontmatter (`placeholder`, default true) until a human review turns it
+ * off.
  */
 
 export function getSlugFromPathname(pathname: string) {
@@ -250,14 +252,30 @@ export function BlogPostRoute(handle: Handle) {
 							</p>
 						</header>
 
-						<aside
-							data-rise
-							style={{ '--rise': '3' }}
-							mix={css(placeholderCalloutCss)}
-							role="note"
-						>
-							<p>{BLOG_PLACEHOLDER_CALLOUT}</p>
-						</aside>
+						{post.image && post.imageAlt ? (
+							<img
+								src={post.image}
+								alt={post.imageAlt}
+								width={1600}
+								height={900}
+								loading="eager"
+								decoding="async"
+								data-rise
+								style={{ '--rise': '3' }}
+								mix={css(postImageCss)}
+							/>
+						) : null}
+
+						{post.placeholder ? (
+							<aside
+								data-rise
+								style={{ '--rise': '4' }}
+								mix={css(placeholderCalloutCss)}
+								role="note"
+							>
+								<p>{BLOG_PLACEHOLDER_CALLOUT}</p>
+							</aside>
+						) : null}
 
 						<div mix={css(proseCss)}>{renderPostBody(post.body)}</div>
 
@@ -352,6 +370,15 @@ const postMetaCss = {
 	margin: 0,
 	color: colors.textMuted,
 	fontSize: '0.88rem',
+}
+
+const postImageCss = {
+	display: 'block',
+	width: '100%',
+	height: 'auto',
+	margin: 'clamp(1.5rem, 4vw, 2.2rem) 0 0',
+	borderRadius: radius.card,
+	border: `1px solid ${colors.border}`,
 }
 
 const postStatusCss = {

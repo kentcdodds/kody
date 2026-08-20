@@ -3,6 +3,22 @@ export type BlogPostFrontmatter = {
 	date: string
 	description: string
 	order: number
+	/**
+	 * When true, the post page shows the AI-placeholder callout. Omit the
+	 * field to keep the callout (existing posts). Set `placeholder: false`
+	 * after a human review.
+	 */
+	placeholder: boolean
+	/** Optional origin-relative artwork shown as the post headline. */
+	image: string | null
+	/** Accessible description required when `image` is present. */
+	imageAlt: string | null
+	/**
+	 * Optional origin-relative social image. When omitted, a post with
+	 * `image` reuses that path; otherwise the generated `/blog/:slug/og.png`
+	 * card stays in place.
+	 */
+	ogImage: string | null
 }
 
 export type BlogPost = BlogPostFrontmatter & {
@@ -11,6 +27,8 @@ export type BlogPost = BlogPostFrontmatter & {
 }
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const BLOG_IMAGE_PATTERN =
+	/^\/images\/[a-z0-9][a-z0-9/-]*\.(?:avif|jpe?g|png|webp)$/
 
 /**
  * Parse a blog markdown file with the fixed YAML-like frontmatter contract:
@@ -21,13 +39,17 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
  * date: YYYY-MM-DD
  * description: <string>
  * order: <number>
+ * placeholder: true | false (optional; default true)
+ * image: /images/<file> (optional)
+ * imageAlt: <string, required with image>
+ * ogImage: /images/<file> (optional; defaults to image)
  * ---
  * <markdown body>
  * ```
  *
  * Values may be inline (`key: value`) or a single-level indented block after
  * `key:` (joined with spaces). Unknown keys and blank lines are ignored.
- * Throws on missing fence, missing required fields, or invalid `date`/`order`.
+ * Throws on missing fence, missing required fields, or invalid values.
  */
 export function parseBlogPostMarkdown(slug: string, raw: string): BlogPost {
 	const normalized = raw.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n')
@@ -85,6 +107,10 @@ export function parseBlogPostMarkdown(slug: string, raw: string): BlogPost {
 	const date = fields.get('date')
 	const description = fields.get('description')
 	const orderRaw = fields.get('order')
+	const placeholderRaw = fields.get('placeholder')
+	const image = fields.get('image') ?? null
+	const imageAlt = fields.get('imageAlt') ?? null
+	const ogImageRaw = fields.get('ogImage') ?? null
 
 	if (!title) {
 		throw new Error(`Blog post "${slug}" is missing frontmatter "title".`)
@@ -109,12 +135,47 @@ export function parseBlogPostMarkdown(slug: string, raw: string): BlogPost {
 		)
 	}
 
+	let placeholder = true
+	if (placeholderRaw !== undefined) {
+		if (placeholderRaw !== 'true' && placeholderRaw !== 'false') {
+			throw new Error(
+				`Blog post "${slug}" has invalid frontmatter "placeholder" (expected true or false).`,
+			)
+		}
+		placeholder = placeholderRaw === 'true'
+	}
+
+	if (image !== null && !BLOG_IMAGE_PATTERN.test(image)) {
+		throw new Error(
+			`Blog post "${slug}" has invalid frontmatter "image" (expected an origin-relative /images/ asset path).`,
+		)
+	}
+	if (image !== null && !imageAlt) {
+		throw new Error(
+			`Blog post "${slug}" is missing frontmatter "imageAlt" (required with "image").`,
+		)
+	}
+	if (image === null && imageAlt !== null) {
+		throw new Error(
+			`Blog post "${slug}" has frontmatter "imageAlt" without an "image".`,
+		)
+	}
+	if (ogImageRaw !== null && !BLOG_IMAGE_PATTERN.test(ogImageRaw)) {
+		throw new Error(
+			`Blog post "${slug}" has invalid frontmatter "ogImage" (expected an origin-relative /images/ asset path).`,
+		)
+	}
+
 	return {
 		slug,
 		title,
 		date,
 		description,
 		order: Number(orderRaw),
+		placeholder,
+		image,
+		imageAlt,
+		ogImage: ogImageRaw ?? image,
 		body,
 	}
 }

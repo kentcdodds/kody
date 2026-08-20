@@ -36,6 +36,11 @@ export type BlogPostLoaderData = {
 	title: string
 	date: string
 	description: string
+	/** When true, the post page shows the AI-placeholder callout. */
+	placeholder: boolean
+	image: string | null
+	imageAlt: string | null
+	ogImage: string | null
 	body: string
 	/** Next post in catalog order for the post foot; null when alone. */
 	readNext: { slug: string; title: string } | null

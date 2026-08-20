@@ -11,6 +11,9 @@ import zeroInferenceCalls from './posts/zero-inference-calls.md'
 /**
  * Static post sources. When adding a post, drop a `.md` file under `posts/`
  * and add one import + entry here. The client never imports this module.
+ * After a human review, set `placeholder: false` in that post's frontmatter
+ * to hide the AI-placeholder callout. Optional `image` / `imageAlt` /
+ * `ogImage` follow the same `/images/...` contract as guides.
  */
 const postSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'your-assistants-home', raw: yourAssistantsHome },

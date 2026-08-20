@@ -6,6 +6,12 @@ description:
   that catalogs the tools it can reach. Add Executor as an MCP server with code
   mode off, and each layer does the job it was built for.
 order: 1
+placeholder: false
+image: /images/kody-vs-executor.webp
+imageAlt:
+  Kody, a 3D koala in a white jacket, and the cream Executor E logo size each
+  other up on a black background.
+ogImage: /images/kody-vs-executor-og.jpg
 ---
 
 People keep asking me to pick a side: Kody or Executor. I get why. From a
