@@ -49,8 +49,8 @@ credentials, saved code, schedules, and execution.
 
 ## The agent reasons. Kody keeps it honest.
 
-Your agent does the thinking. Kody holds the result so it does not have to
-think it again.
+Your agent does the thinking. Kody holds the result so it does not have to think
+it again.
 
 - **Ask again tomorrow** — a saved export. No model in the loop.
 - **A key in chat or a `.env`** — a secret the agent never sees.
