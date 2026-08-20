@@ -287,9 +287,10 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 	const enqueueArgs = mocks.enqueueWebhookDispatch.mock.calls[0]?.[0] as {
 		message: {
 			endpoint: { userId: string }
+			payloadKvKey?: string
 			params: {
 				webhook: { packageKodyId: string; name: string }
-				request: { json: unknown }
+				request: { body: string; json: unknown }
 			}
 		}
 	}
@@ -299,17 +300,50 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 		name: 'sentry',
 		receivedAt: expect.any(String),
 	})
-	expect(enqueueArgs.message.params.request.json).toEqual({ event: 'push' })
+	expect(enqueueArgs.message.params.request.json).toBeNull()
+	expect(enqueueArgs.message.params.request.body).toBe(body)
+	expect(enqueueArgs.message.payloadKvKey).toBeUndefined()
 
 	declareWebhook({ name: 'sentry' })
-	const oversizedAck = await postWebhook({
+	const midSizeAck = await postWebhook({
 		packageKodyId: 'sentry-bridge',
 		webhookName: 'sentry',
 		urlSecret,
 		body: JSON.stringify({ payload: 'x'.repeat(70_000) }),
 	})
-	expect(oversizedAck.status).toBe(413)
-	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(1)
+	expect(midSizeAck.status).toBe(202)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(2)
+	const midSizeArgs = mocks.enqueueWebhookDispatch.mock.calls[1]?.[0] as {
+		message: { payloadKvKey?: string; params: { request: { json: unknown } } }
+	}
+	expect(midSizeArgs.message.payloadKvKey).toBeUndefined()
+	expect(midSizeArgs.message.params.request.json).toBeNull()
+
+	const largeBody = JSON.stringify({ payload: 'y'.repeat(140_000) })
+	const largeAck = await postWebhook({
+		packageKodyId: 'sentry-bridge',
+		webhookName: 'sentry',
+		urlSecret,
+		body: largeBody,
+	})
+	expect(largeAck.status).toBe(202)
+	expect(mocks.enqueueWebhookDispatch).toHaveBeenCalledTimes(3)
+	const largeArgs = mocks.enqueueWebhookDispatch.mock.calls[2]?.[0] as {
+		message: {
+			payloadKvKey?: string
+			deliveryId: string
+			endpoint: { userId: string }
+			params: { request: { body: string; json: unknown } }
+		}
+	}
+	expect(largeArgs.message.params.request.body).toBe('')
+	expect(largeArgs.message.params.request.json).toBeNull()
+	expect(largeArgs.message.payloadKvKey).toBe(
+		`webhook-dispatch-payload:v1:${largeArgs.message.endpoint.userId}:${largeArgs.message.deliveryId}`,
+	)
+	expect(
+		await env.BUNDLE_ARTIFACTS_KV.get(largeArgs.message.payloadKvKey!),
+	).toBe(largeBody)
 
 	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
 	mocks.invokePackageExport.mockClear()

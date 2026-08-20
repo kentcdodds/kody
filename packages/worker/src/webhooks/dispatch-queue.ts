@@ -3,6 +3,10 @@ import {
 	readWebhookInvocationResult,
 	recordWebhookDelivery,
 } from './delivery.ts'
+import {
+	deleteWebhookDispatchPayload,
+	hydrateWebhookDispatchQueueMessage,
+} from './dispatch-payload-store.ts'
 import { webhookDispatchQueueName } from './dispatch-queue-names.ts'
 import {
 	parseWebhookDispatchQueueMessage,
@@ -70,10 +74,55 @@ export async function handleWebhookDispatchQueue(
 			continue
 		}
 		try {
-			const outcome = await processWebhookDispatch(message, env)
+			const hydrated = await hydrateWebhookDispatchQueueMessage({
+				message,
+				kv: env.BUNDLE_ARTIFACTS_KV,
+			})
+			if (!hydrated) {
+				console.error('webhook-dispatch-payload-missing', {
+					queueMessageId: queueMessage.id,
+					endpointId: message.endpoint.id,
+					deliveryId: message.deliveryId,
+				})
+				try {
+					await recordWebhookDelivery({
+						env,
+						endpoint: message.endpoint,
+						kodyId: message.packageKodyId,
+						outcome: 'failed',
+						httpStatus: 502,
+						error: 'ack_queue_payload_missing',
+						payloadBytes: message.payloadBytes,
+						invocationId: message.deliveryId,
+						startedAt: message.receivedAt,
+						requirePersistence: true,
+					})
+				} catch (error) {
+					console.error('webhook-dispatch-payload-missing-record-failed', {
+						queueMessageId: queueMessage.id,
+						endpointId: message.endpoint.id,
+						error,
+					})
+				}
+				queueMessage.ack()
+				continue
+			}
+			const outcome = await processWebhookDispatch(hydrated, env)
 			if (outcome === 'retry') {
 				queueMessage.retry({ delaySeconds: webhookDispatchRetryDelaySeconds })
 			} else {
+				if (message.payloadKvKey) {
+					await deleteWebhookDispatchPayload({
+						kv: env.BUNDLE_ARTIFACTS_KV,
+						key: message.payloadKvKey,
+					}).catch((error) => {
+						console.error('webhook-dispatch-payload-delete-failed', {
+							queueMessageId: queueMessage.id,
+							endpointId: message.endpoint.id,
+							error,
+						})
+					})
+				}
 				queueMessage.ack()
 			}
 		} catch (error) {

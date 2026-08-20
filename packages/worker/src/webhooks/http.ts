@@ -20,15 +20,20 @@ import {
 	recordWebhookDelivery,
 } from './delivery.ts'
 import {
+	createWebhookDispatchQueueMessage,
 	enqueueWebhookDispatch,
 	getWebhookDispatchQueueMessageBytes,
 	webhookDispatchQueueMessageMaxBytes,
-	type WebhookDispatchQueueMessage,
+	withSpilledWebhookDispatchPayload,
 } from './dispatch-queue-producer.ts'
+import {
+	deleteWebhookDispatchPayload,
+	storeWebhookDispatchPayload,
+} from './dispatch-payload-store.ts'
 import { collectSafeWebhookHeaders } from './headers.ts'
+import { buildWebhookExportParams } from './params.ts'
 import { getWebhookEndpointByKey } from './repo.ts'
 import {
-	type WebhookExportParams,
 	webhookMaxPayloadBytes,
 	webhookRateLimitConfig,
 	webhookSyncInvocationTimeoutMs,
@@ -185,40 +190,6 @@ async function readBodyWithCap(
 		}
 	}
 	return { ok: true, bytes: new Uint8Array(buffer) }
-}
-
-function parseJsonBody(text: string): unknown | null {
-	const trimmed = text.trim()
-	if (!trimmed) return null
-	try {
-		return JSON.parse(trimmed) as unknown
-	} catch {
-		return null
-	}
-}
-
-function buildExportParams(input: {
-	packageKodyId: string
-	webhookName: string
-	request: Request
-	bodyText: string
-	receivedAt: string
-	headers: Record<string, string>
-}): WebhookExportParams {
-	return {
-		webhook: {
-			packageKodyId: input.packageKodyId,
-			name: input.webhookName,
-			receivedAt: input.receivedAt,
-		},
-		request: {
-			method: input.request.method,
-			contentType: input.request.headers.get('content-type'),
-			headers: input.headers,
-			body: input.bodyText,
-			json: parseJsonBody(input.bodyText),
-		},
-	}
 }
 
 async function runWithTimeout<T>(
@@ -454,7 +425,7 @@ export async function handleWebhookIngressRequest(
 		request,
 		declared.verification ? [declared.verification.header] : [],
 	)
-	const params = buildExportParams({
+	const params = buildWebhookExportParams({
 		packageKodyId: savedPackage.kodyId,
 		webhookName: route.webhookName,
 		request,
@@ -466,7 +437,7 @@ export async function handleWebhookIngressRequest(
 	const idempotencyKey = `webhook:${endpoint.id}:${deliveryId}`
 
 	if (declared.responseMode === 'ack') {
-		const message: WebhookDispatchQueueMessage = {
+		let message = createWebhookDispatchQueueMessage({
 			endpoint: {
 				id: endpoint.id,
 				userId: endpoint.userId,
@@ -480,11 +451,42 @@ export async function handleWebhookIngressRequest(
 			deliveryId,
 			payloadBytes: bodyBytes.byteLength,
 			receivedAt,
+		})
+		if (
+			getWebhookDispatchQueueMessageBytes(message) >
+			webhookDispatchQueueMessageMaxBytes
+		) {
+			try {
+				const payloadKvKey = await storeWebhookDispatchPayload({
+					kv: env.BUNDLE_ARTIFACTS_KV,
+					userId: endpoint.userId,
+					deliveryId,
+					body: bodyText,
+				})
+				message = withSpilledWebhookDispatchPayload(message, payloadKvKey)
+			} catch (error) {
+				console.error('webhook-dispatch-payload-store-failed', {
+					endpointId: endpoint.id,
+					error,
+				})
+				return dispatchUnavailableResponse()
+			}
 		}
 		if (
 			getWebhookDispatchQueueMessageBytes(message) >
 			webhookDispatchQueueMessageMaxBytes
 		) {
+			if (message.payloadKvKey) {
+				await deleteWebhookDispatchPayload({
+					kv: env.BUNDLE_ARTIFACTS_KV,
+					key: message.payloadKvKey,
+				}).catch((error) => {
+					console.error('webhook-dispatch-payload-delete-failed', {
+						endpointId: endpoint.id,
+						error,
+					})
+				})
+			}
 			await recordWebhookDelivery({
 				env,
 				endpoint,
@@ -505,6 +507,17 @@ export async function handleWebhookIngressRequest(
 				message,
 			})
 		} catch (error) {
+			if (message.payloadKvKey) {
+				await deleteWebhookDispatchPayload({
+					kv: env.BUNDLE_ARTIFACTS_KV,
+					key: message.payloadKvKey,
+				}).catch((error) => {
+					console.error('webhook-dispatch-payload-delete-failed', {
+						endpointId: endpoint.id,
+						error,
+					})
+				})
+			}
 			console.error('webhook-dispatch-enqueue-failed', {
 				endpointId: endpoint.id,
 				error,

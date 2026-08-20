@@ -4,6 +4,11 @@ import { type WebhookExportParams } from './types.ts'
 // enough headroom for transport metadata and structured-clone framing.
 export const webhookDispatchQueueMessageMaxBytes = 120_000
 
+export const webhookDispatchPayloadKvPrefix = 'webhook-dispatch-payload:v1:'
+
+/** Covers queue retries plus sandbox budget, with headroom for backlog. */
+export const webhookDispatchPayloadTtlSeconds = 24 * 60 * 60
+
 export type WebhookDispatchQueueMessage = {
 	endpoint: {
 		id: string
@@ -18,6 +23,60 @@ export type WebhookDispatchQueueMessage = {
 	deliveryId: string
 	payloadBytes: number
 	receivedAt: string
+	payloadKvKey?: string
+}
+
+export function webhookDispatchPayloadKvKey(
+	userId: string,
+	deliveryId: string,
+) {
+	return `${webhookDispatchPayloadKvPrefix}${userId}:${deliveryId}`
+}
+
+export function createWebhookDispatchQueueMessage(input: {
+	endpoint: WebhookDispatchQueueMessage['endpoint']
+	packageKodyId: string
+	exportName: string
+	params: WebhookExportParams
+	idempotencyKey: string
+	deliveryId: string
+	payloadBytes: number
+	receivedAt: string
+}): WebhookDispatchQueueMessage {
+	return {
+		endpoint: input.endpoint,
+		packageKodyId: input.packageKodyId,
+		exportName: input.exportName,
+		params: {
+			webhook: input.params.webhook,
+			request: {
+				...input.params.request,
+				json: null,
+			},
+		},
+		idempotencyKey: input.idempotencyKey,
+		deliveryId: input.deliveryId,
+		payloadBytes: input.payloadBytes,
+		receivedAt: input.receivedAt,
+	}
+}
+
+export function withSpilledWebhookDispatchPayload(
+	message: WebhookDispatchQueueMessage,
+	payloadKvKey: string,
+): WebhookDispatchQueueMessage {
+	return {
+		...message,
+		payloadKvKey,
+		params: {
+			...message.params,
+			request: {
+				...message.params.request,
+				body: '',
+				json: null,
+			},
+		},
+	}
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -68,6 +127,15 @@ export function parseWebhookDispatchQueueMessage(
 	) {
 		return null
 	}
+	const payloadKvKey = message['payloadKvKey']
+	if (payloadKvKey !== undefined) {
+		if (
+			!isNonEmptyString(payloadKvKey) ||
+			payloadKvKey !== webhookDispatchPayloadKvKey(userId, deliveryId)
+		) {
+			return null
+		}
+	}
 	return {
 		endpoint: {
 			id,
@@ -82,6 +150,7 @@ export function parseWebhookDispatchQueueMessage(
 		deliveryId,
 		payloadBytes,
 		receivedAt,
+		...(payloadKvKey ? { payloadKvKey } : {}),
 	}
 }
 

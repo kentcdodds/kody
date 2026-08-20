@@ -1270,6 +1270,11 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `derived-cache:v1:community-icon:v1:{listingId}:...` — derived community
   listing icon cache; registered as a user-owned KV surface and deleted for a
   user's listings during account deletion.
+- `webhook-dispatch-payload:v1:{userId}:{deliveryId}` — ephemeral ack-mode
+  webhook body spill written with KV `expirationTtl` (24 hours) when the
+  serialized queue message would exceed 120 KB. Immediate account-deletion
+  cleanup is not required because KV enforces the TTL; the queue consumer
+  deletes the key after a terminal delivery.
 
 Account deletion derives these keys from D1 rows and package ids before deleting
 D1 projections. New KV prefixes must add corresponding account-deletion coverage

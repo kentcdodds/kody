@@ -7,6 +7,7 @@ import {
 import {
 	getWebhookDispatchQueueMessageBytes,
 	parseWebhookDispatchQueueMessage,
+	webhookDispatchPayloadKvKey,
 	webhookDispatchQueueMessageMaxBytes,
 	type WebhookDispatchQueueMessage,
 } from './dispatch-queue-producer.ts'
@@ -177,5 +178,66 @@ test('webhook queue parser rejects malformed isolation and delivery fields', () 
 	).toBeNull()
 	expect(getWebhookDispatchQueueMessageBytes(message)).toBeLessThan(
 		webhookDispatchQueueMessageMaxBytes,
+	)
+})
+
+test('queue hydrates spilled payloads, deletes them after terminal work, and acks a missing spill', async () => {
+	consoleError.mockImplementation(() => {})
+	mocks.dispatchWebhookInvocation.mockReset()
+	mocks.recordWebhookDelivery.mockReset()
+	mocks.dispatchWebhookInvocation.mockResolvedValue({
+		status: 200,
+		body: { ok: true, result: { handled: true } },
+	})
+	mocks.recordWebhookDelivery.mockResolvedValue(undefined)
+
+	const payloadKvKey = webhookDispatchPayloadKvKey('user-1', 'delivery-1')
+	const values = new Map<string, string>([
+		[payloadKvKey, '{"event":"error","extra":"spill"}'],
+	])
+	const kv = {
+		async get(key: string) {
+			return values.get(key) ?? null
+		},
+		async delete(key: string) {
+			values.delete(key)
+		},
+	}
+	const spilled = createMessage()
+	spilled.params.request.body = ''
+	spilled.params.request.json = null
+	spilled.payloadKvKey = payloadKvKey
+	const queued = createQueueMessage('spilled', spilled)
+	const missing = createQueueMessage('missing', {
+		...spilled,
+		deliveryId: 'delivery-missing',
+		idempotencyKey: 'webhook:endpoint-1:delivery-missing',
+		payloadKvKey: webhookDispatchPayloadKvKey('user-1', 'delivery-missing'),
+	})
+
+	await handleWebhookDispatchQueue(createBatch([queued, missing]), {
+		BUNDLE_ARTIFACTS_KV: kv,
+	} as unknown as Env)
+
+	expect(queued.ack).toHaveBeenCalledTimes(1)
+	expect(missing.ack).toHaveBeenCalledTimes(1)
+	expect(values.has(payloadKvKey)).toBe(false)
+	expect(mocks.dispatchWebhookInvocation).toHaveBeenCalledTimes(1)
+	expect(mocks.dispatchWebhookInvocation).toHaveBeenCalledWith(
+		expect.objectContaining({
+			params: expect.objectContaining({
+				request: expect.objectContaining({
+					body: '{"event":"error","extra":"spill"}',
+					json: { event: 'error', extra: 'spill' },
+				}),
+			}),
+		}),
+	)
+	expect(mocks.recordWebhookDelivery).toHaveBeenCalledWith(
+		expect.objectContaining({
+			outcome: 'failed',
+			error: 'ack_queue_payload_missing',
+			invocationId: 'delivery-missing',
+		}),
 	)
 })

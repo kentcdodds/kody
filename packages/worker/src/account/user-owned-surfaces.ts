@@ -37,6 +37,7 @@ export type UserOwnedKvKeyScheme = {
 		| 'package_retriever_manifest'
 		| 'package_retriever_index_entry'
 		| 'package_retriever_index_prefix'
+		| 'webhook_dispatch_payload'
 	binding: 'BUNDLE_ARTIFACTS_KV'
 	sourceTable?: string
 	sourceColumn?: string
@@ -227,6 +228,15 @@ export const accountUserOwnedKvKeySchemes: ReadonlyArray<UserOwnedKvKeyScheme> =
 			prefixTemplate:
 				'package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:',
 			notes: 'Deleted by deleteAllPackageRetrieverCacheEntriesForUser.',
+		},
+		{
+			id: 'webhook_dispatch_payload',
+			binding: 'BUNDLE_ARTIFACTS_KV',
+			prefixTemplate: 'webhook-dispatch-payload:v1:{userId}:',
+			retention:
+				'Expires through the KV expirationTtl written at store time; retention is 24 hours.',
+			notes:
+				'Short-lived ack-mode webhook body spill so Cloudflare Queue messages stay under 128 KB. Immediate account-deletion cleanup is optional because KV enforces the TTL. The consumer deletes the key after a terminal delivery.',
 		},
 	] as const
 
