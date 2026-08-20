@@ -31,6 +31,7 @@ import {
 	protectedResourceMetadataPath,
 } from './mcp-auth.ts'
 import { handleMcpClientIdMetadataRequest } from './mcp-client/client-id-metadata.ts'
+import { handleCliClientIdMetadataRequest } from './cli-client-metadata.ts'
 import {
 	handlePackageInvocationApiRequest,
 	isPackageInvocationApiRequest,
@@ -541,7 +542,9 @@ const workerHandler = {
 		// MCP clients must use `<origin>/mcp` as the resource (RFC 8707) to match our
 		// token audience; otherwise authorize stores origin but the token request sends
 		// `/mcp` → invalid_target. Serve the same document as the `/mcp` metadata path.
-		const clientIdMetadataResponse = handleMcpClientIdMetadataRequest(request)
+		const clientIdMetadataResponse =
+			handleMcpClientIdMetadataRequest(request) ??
+			handleCliClientIdMetadataRequest(request)
 		if (clientIdMetadataResponse) {
 			return addOAuthDiscoveryCorsHeaders(clientIdMetadataResponse, request)
 		}
