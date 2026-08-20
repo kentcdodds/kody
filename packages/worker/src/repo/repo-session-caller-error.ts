@@ -20,8 +20,7 @@ export function isRepoSessionInactiveMessage(message: string) {
  * RPC (subclass identity lost), MCP observability matches this phrase.
  * KODY-CLOUDFLARE-5M.
  */
-export const gitPushNotFastForwardMessagePhrase =
-	'not a simple fast-forward'
+export const gitPushNotFastForwardMessagePhrase = 'not a simple fast-forward'
 
 export function isGitPushNotFastForwardMessage(message: string) {
 	return message.includes(gitPushNotFastForwardMessagePhrase)
@@ -39,9 +38,7 @@ export function isGitPushNotFastForwardError(error: unknown) {
 				? error.message
 				: ''
 		// tag-exists uses the same error class; only treat non-FF as recoverable.
-		return (
-			message.length === 0 || isGitPushNotFastForwardMessage(message)
-		)
+		return message.length === 0 || isGitPushNotFastForwardMessage(message)
 	}
 	if (!('message' in error) || typeof error.message !== 'string') return false
 	return isGitPushNotFastForwardMessage(error.message)

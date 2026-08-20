@@ -725,9 +725,7 @@ export function isBrowserBlobImportScriptsNetworkSentryEvent(
 export function filterBrowserBlobImportScriptsNetworkSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
-	if (
-		isBrowserBlobImportScriptsNetworkSentryEvent(event, originalException)
-	) {
+	if (isBrowserBlobImportScriptsNetworkSentryEvent(event, originalException)) {
 		return null
 	}
 	return event

@@ -157,8 +157,7 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	if (
 		getErrorCauseChain(cause).some(
 			(entry) =>
-				entry instanceof Error &&
-				isGitPushNotFastForwardMessage(entry.message),
+				entry instanceof Error && isGitPushNotFastForwardMessage(entry.message),
 		)
 	) {
 		return true
