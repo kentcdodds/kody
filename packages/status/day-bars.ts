@@ -38,7 +38,7 @@ export function incidentMinutesForDay(
 		)
 	}
 	if (overlapMs <= 0) return 0
-	return Math.max(1, Math.round(overlapMs / minuteMs))
+	return Math.max(1, Math.floor(overlapMs / minuteMs))
 }
 
 export function dayBarKind(day: ComponentDayStat): DayBarKind {

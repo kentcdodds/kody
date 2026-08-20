@@ -70,4 +70,19 @@ test('day bars follow opened incidents and keep isolated probe failures green', 
 		),
 	).toBe(720)
 	expect(incidentMinutesForDay('not-a-day', [crossing], now)).toBe(0)
+
+	const underHour = incidentMinutesForDay(
+		'2026-08-12',
+		[
+			{
+				startedAt: midnight,
+				resolvedAt: midnight + 59 * 60_000 + 30_000,
+			},
+		],
+		now,
+	)
+	expect(underHour).toBe(59)
+	expect(dayBarKind(day({ failed: 59, incidentMinutes: underHour }))).toBe(
+		'partial',
+	)
 })
