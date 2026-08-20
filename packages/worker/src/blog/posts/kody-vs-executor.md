@@ -11,7 +11,6 @@ image: /images/kody-vs-executor.webp
 imageAlt:
   Kody, a 3D koala in a white jacket, and the cream Executor E logo size each
   other up in a warm living room.
-ogImage: /images/kody-vs-executor-og.jpg
 ---
 
 People keep asking me to pick a side: Kody or Executor. I get why. From a

@@ -14,9 +14,9 @@ export type BlogPostFrontmatter = {
 	/** Accessible description required when `image` is present. */
 	imageAlt: string | null
 	/**
-	 * Optional origin-relative social image. When omitted, a post with
-	 * `image` reuses that path; otherwise the generated `/blog/:slug/og.png`
-	 * card stays in place.
+	 * Optional origin-relative social image. When omitted, the generated
+	 * `/blog/:slug/og.png` Satori card (title + description) stays in place.
+	 * Headline `image` is not reused as the Open Graph image.
 	 */
 	ogImage: string | null
 }
@@ -42,7 +42,7 @@ const BLOG_IMAGE_PATTERN =
  * placeholder: true | false (optional; default true)
  * image: /images/<file> (optional)
  * imageAlt: <string, required with image>
- * ogImage: /images/<file> (optional; defaults to image)
+ * ogImage: /images/<file> (optional; omit to use the generated card)
  * ---
  * <markdown body>
  * ```
@@ -175,7 +175,7 @@ export function parseBlogPostMarkdown(slug: string, raw: string): BlogPost {
 		placeholder,
 		image,
 		imageAlt,
-		ogImage: ogImageRaw ?? image,
+		ogImage: ogImageRaw,
 		body,
 	}
 }

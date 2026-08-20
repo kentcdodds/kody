@@ -1466,7 +1466,7 @@ test('renderAppPage shows reviewed blog artwork and hides the placeholder callou
 	expect(post).toBeDefined()
 	expect(post!.placeholder).toBe(false)
 	expect(post!.image).toBe('/images/kody-vs-executor.webp')
-	expect(post!.ogImage).toBe('/images/kody-vs-executor-og.jpg')
+	expect(post!.ogImage).toBeNull()
 
 	const response = await renderAppPage({
 		request: new Request(`https://example.com/blog/${post!.slug}`),
@@ -1492,7 +1492,7 @@ test('renderAppPage shows reviewed blog artwork and hides the placeholder callou
 	const html = await readResponseText(response)
 	expect(html).toContain('src="/images/kody-vs-executor.webp"')
 	expect(html).toContain(
-		'property="og:image" content="https://example.com/images/kody-vs-executor-og.jpg"',
+		'property="og:image" content="https://example.com/blog/kody-vs-executor/og.png"',
 	)
 	expect(html).not.toContain(BLOG_PLACEHOLDER_CALLOUT)
 })

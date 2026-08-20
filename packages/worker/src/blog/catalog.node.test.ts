@@ -102,8 +102,25 @@ Body
 		placeholder: false,
 		image: '/images/kody-vs-executor.webp',
 		imageAlt: 'Kody and the Executor logo size each other up.',
-		ogImage: '/images/kody-vs-executor.webp',
+		ogImage: null,
 	})
+
+	const customOg = parseBlogPostMarkdown(
+		'custom-og',
+		`---
+title: Custom OG
+date: 2026-08-20
+description: A post with a static social image.
+order: 1
+image: /images/kody-vs-executor.webp
+imageAlt: Headline art.
+ogImage: /images/kody-vs-executor.webp
+---
+
+Body
+`,
+	)
+	expect(customOg.ogImage).toBe('/images/kody-vs-executor.webp')
 
 	expect(() =>
 		parseBlogPostMarkdown(
@@ -165,7 +182,7 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 	expect(comparison?.date).toBe('2026-08-20')
 	expect(comparison?.placeholder).toBe(false)
 	expect(comparison?.image).toBe('/images/kody-vs-executor.webp')
-	expect(comparison?.ogImage).toBe('/images/kody-vs-executor-og.jpg')
+	expect(comparison?.ogImage).toBeNull()
 	const comparisonBody = (comparison?.body ?? '').replace(/\s+/g, ' ')
 	expect(comparisonBody).toContain('best of both worlds')
 	expect(comparisonBody).toContain('Leave one `execute`')
