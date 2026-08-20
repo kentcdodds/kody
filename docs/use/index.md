@@ -59,8 +59,9 @@ Read in order for a full tour, or jump to a topic.
 - [Plans and pricing](https://kody.codes/pricing) — Free, Standard, and Pro
   prices and the finite limits enforced for each plan
 - [Mutating actions and confirmations](./mutating-actions.md)
-- [Privacy](./privacy.md) — what Kody stores and what deployment admins can see
-  (Terms and Acceptable Use are in-app at [`/terms`](https://kody.codes/terms))
+- [Privacy](./privacy.md) — what Kody stores, how connected accounts work, and
+  what deployment admins can see (Terms and Acceptable Use are in-app at
+  [`/terms`](https://kody.codes/terms))
 - [Troubleshooting](./troubleshooting.md)
 - [Memory and conversation context](./memory.md)
 - [Community Project mark](./community-project-mark.md) — logo for unofficial
