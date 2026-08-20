@@ -243,9 +243,9 @@ is accepted as an alias.
 
 Package runtime contexts, authenticated ad hoc MCP `execute` calls, and
 standalone scheduled jobs can call `packages.invoke`, and resolution is scoped
-to packages owned by the current authenticated user. Package code does not need to mint or pass
-package-invocation bearer tokens. Nested package invocations are depth-limited
-to prevent runaway loops.
+to packages owned by the current authenticated user. Package code does not need
+to mint or pass package-invocation bearer tokens. Nested package invocations are
+depth-limited to prevent runaway loops.
 
 External trusted clients that must call package exports over HTTP use package
 invocation tokens instead. Before sending a user to create one, agents should

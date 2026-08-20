@@ -2677,9 +2677,8 @@ test('executeJobOnce background execution workflow', async () => {
 				},
 				logs: ['storage helper executed'],
 			})
-		const packageInvocations = await import(
-			'#worker/package-invocations/service.ts'
-		)
+		const packageInvocations =
+			await import('#worker/package-invocations/service.ts')
 		const executeInvokeSpy = vi.spyOn(
 			packageInvocations,
 			'createExecutePackageInvokeTools',
@@ -4393,9 +4392,8 @@ test('executeJobOnce repo session bundling and check policy workflow', async () 
 			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
-		const packageInvocations = await import(
-			'#worker/package-invocations/service.ts'
-		)
+		const packageInvocations =
+			await import('#worker/package-invocations/service.ts')
 		const executeInvokeSpy = vi.spyOn(
 			packageInvocations,
 			'createExecutePackageInvokeTools',
