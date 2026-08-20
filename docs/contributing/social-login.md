@@ -23,9 +23,9 @@ Routes (see `packages/worker/src/app/handlers/auth-provider.ts` and
   production social signup). With `Accept: application/json` it returns
   `{ authorizeUrl }` for client-side navigation; otherwise it 302s.
 - `GET /auth/:provider/callback` — completes the flow
-- `GET /discord` / `GET /discord.json` — public Discord page (join invite plus
-  Connect to Discord; signed-in visitors see whether `oauth_connections` already
-  has Discord)
+- `GET /discord` / `GET /discord.json` — public Discord page (**Connect
+  Discord** joins the official server and links the account; signed-in visitors
+  see whether `oauth_connections` already has Discord)
 - `GET/POST /account/connections.json` — signed-in connection management (list,
   disconnect)
 
@@ -126,10 +126,11 @@ the token endpoint uses HTTP Basic client authentication). Note that X meters
 3. Copy the **Client ID** and reset/reveal the **Client Secret**.
 4. Save them as `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`.
 
-Scopes requested: `identify email`. Discord's `verified` field on
+Scopes requested: `identify email guilds.join`. Discord's `verified` field on
 `GET /users/@me` gates email-based account matching, the same way Google's
 `email_verified` does. Unverified Discord emails can only be linked from
-`/account` while already signed in.
+`/account` while already signed in. The `guilds.join` token is used once on the
+callback to add the member to the official guild, then discarded.
 
 Do not add `/connect/oauth` to this application. User-owned Discord integrations
 for the assistant stay on a separate app and the `/connect/oauth` flow (see
@@ -150,18 +151,21 @@ official Kody Discord:
   role.
 
 Disconnect and account deletion best-effort remove every configured role. Login
-and billing still succeed when the bot is unset, the member is not in the guild
-yet (HTTP 404), or Discord errors.
+and billing still succeed when the bot is unset, join or role writes fail, or
+Discord errors.
 
-The bot must already be in the guild with **Manage Roles**, and its highest role
-must sit above every role it assigns. Users join through the existing invite
-(`https://kcd.im/kody-discord`); login does not request `guilds.join`.
-`/discord` is the shareable page for that invite plus a **Connect to Discord**
-button. `/account` still shows a Join the Kody Discord link on a connected
-Discord row, plus **Sync Discord roles** when bot config is present.
+The bot must already be in the guild with **Create Instant Invite** (needed to
+add a member via `guilds.join`) and **Manage Roles**, and its highest role must
+sit above every role it assigns. Every successful Discord social-login callback
+best-effort adds the user to the official guild
+(`PUT /guilds/{id}/members/{user}`) with the operator bot plus the ephemeral
+user token, then assigns roles. `/discord` is the shareable **Connect Discord**
+page. `/account` still shows a Join the Kody Discord link on a connected Discord
+row, plus **Sync Discord roles** when bot config is present.
 
-Social-login tokens are still discarded after the profile fetch. Role writes use
-the operator bot token and the stored Discord snowflake only.
+Social-login tokens are discarded after the profile fetch and the one guild-join
+call. Role writes use the operator bot token and the stored Discord snowflake
+only. Mock OAuth (`MOCK_*` client ids) has no user token, so join skips.
 
 ## Environment variables
 
@@ -175,7 +179,8 @@ renders when both of its values are set (see
 - `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`
 - `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` /
   `DISCORD_STANDARD_ROLE_ID` / `DISCORD_PRO_ROLE_ID` (optional; bot token +
-  guild id plus at least one role id enable official Discord guild-role sync)
+  guild id enable official Discord guild join; at least one role id enables role
+  sync. The bot needs Create Instant Invite and Manage Roles.)
 
 For production deploys, store the social-login client credentials as GitHub
 Actions repository secrets named `OAUTH_GITHUB_CLIENT_ID`,

@@ -2,9 +2,11 @@
  * Best-effort Kody Discord guild-role sync.
  *
  * Social login stores the Discord snowflake on `oauth_connections` and then
- * discards the user token. Guild role writes use an operator bot token, so
- * they stay off the login token path and skip entirely when bot config is
- * unset (local, preview, tests).
+ * discards the user token. During that same callback the ephemeral token
+ * (scope `guilds.join`) is used once to add the member, then thrown away.
+ * Guild role writes use an operator bot token, so they stay off the login
+ * token path and skip entirely when bot config is unset (local, preview,
+ * tests).
  *
  * The member role is assigned whenever Discord is connected. Standard and Pro
  * roles follow `users.stripe_plan` (the paid subscription), not the effective
@@ -30,6 +32,18 @@ export type DiscordGuildRoleEnv = {
 export type DiscordMemberRoleEnv = DiscordGuildRoleEnv
 
 export type DiscordMemberRoleSkipReason = 'not-configured' | 'invalid-user-id'
+
+export type DiscordGuildJoinSkipReason =
+	| 'not-configured'
+	| 'invalid-user-id'
+	| 'missing-access-token'
+
+export type DiscordGuildJoinResult =
+	| { status: 'skipped'; reason: DiscordGuildJoinSkipReason }
+	| { status: 'joined' }
+	| { status: 'already-member' }
+	| { status: 'forbidden' }
+	| { status: 'error'; message: string }
 
 export type DiscordMemberRoleSyncResult =
 	| { status: 'skipped'; reason: DiscordMemberRoleSkipReason }
@@ -128,6 +142,72 @@ function desiredDiscordPlanRole(
 
 function memberRoleUrl(guildId: string, discordUserId: string, roleId: string) {
 	return `${discordApiBaseUrl}/guilds/${guildId}/members/${discordUserId}/roles/${roleId}`
+}
+
+function guildMemberUrl(guildId: string, discordUserId: string) {
+	return `${discordApiBaseUrl}/guilds/${guildId}/members/${discordUserId}`
+}
+
+/**
+ * Add the Discord user to the official guild with the operator bot plus the
+ * ephemeral `guilds.join` access token from social login. The token is never
+ * stored. Failures are logged and never thrown.
+ */
+export async function maybeJoinOfficialDiscordGuild(input: {
+	env: DiscordGuildRoleEnv
+	discordUserId: string
+	accessToken: string | null | undefined
+	fetchImpl?: typeof fetch
+	timeoutMs?: number
+}): Promise<DiscordGuildJoinResult> {
+	const accessToken = input.accessToken?.trim()
+	if (!accessToken) {
+		return { status: 'skipped', reason: 'missing-access-token' }
+	}
+	if (!isDiscordSnowflake(input.discordUserId)) {
+		return { status: 'skipped', reason: 'invalid-user-id' }
+	}
+	const config = getDiscordGuildBotConfig(input.env)
+	if (!config) {
+		return { status: 'skipped', reason: 'not-configured' }
+	}
+
+	const fetchImpl = input.fetchImpl ?? fetch
+	const timeoutMs = input.timeoutMs ?? DISCORD_MEMBER_ROLE_REQUEST_TIMEOUT_MS
+	try {
+		const response = await fetchImpl(
+			guildMemberUrl(config.guildId, input.discordUserId),
+			{
+				method: 'PUT',
+				headers: {
+					Authorization: `Bot ${config.botToken}`,
+					'Content-Type': 'application/json',
+					'User-Agent': 'kody',
+				},
+				body: JSON.stringify({ access_token: accessToken }),
+				signal: AbortSignal.timeout(timeoutMs),
+			},
+		)
+		if (response.status === 201) {
+			return { status: 'joined' }
+		}
+		if (response.ok || response.status === 204) {
+			return { status: 'already-member' }
+		}
+		if (response.status === 403) {
+			console.warn(
+				'Failed to join official Kody Discord: bot is forbidden (needs Create Instant Invite).',
+			)
+			return { status: 'forbidden' }
+		}
+		const message = `Discord guild join failed (${response.status}).`
+		console.warn(message)
+		return { status: 'error', message }
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
+		console.warn('Failed to join official Kody Discord:', message)
+		return { status: 'error', message }
+	}
 }
 
 function rollupDiscordRoleResults(

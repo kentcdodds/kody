@@ -177,8 +177,10 @@ Optional Worker secrets (see `packages/worker/src/app/oauth-providers.ts` and
 - `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`
 - `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` /
   `DISCORD_STANDARD_ROLE_ID` / `DISCORD_PRO_ROLE_ID` (optional; official Kody
-  Discord guild-role sync. Bot token + guild id plus at least one role id.
-  Standard/Pro follow `users.stripe_plan`.)
+  Discord guild join and role sync. Bot token + guild id enable Add Guild Member
+  during Discord social login; at least one role id enables role writes. The bot
+  needs Create Instant Invite and Manage Roles. Standard/Pro follow
+  `users.stripe_plan`.)
 
 A provider's login button only renders when both of its values are set. A
 `MOCK_`-prefixed client id activates the in-worker mock provider flow on

@@ -447,9 +447,10 @@ automatically:
   `docs/contributing/social-login.md`.)
 - `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` /
   `DISCORD_STANDARD_ROLE_ID` / `DISCORD_PRO_ROLE_ID` (optional Worker secrets;
-  when bot token, guild id, and at least one role id are set, Discord social
-  login and Stripe plan refresh assign official Kody Discord roles. See
-  `docs/contributing/social-login.md`.)
+  when bot token and guild id are set, Discord social login best-effort joins
+  the official guild. At least one role id enables member/plan role writes on
+  login and Stripe plan refresh. The bot needs Create Instant Invite and Manage
+  Roles. See `docs/contributing/social-login.md`.)
 - `STRIPE_SECRET_KEY` (optional Worker secret; enables Stripe checkout linking,
   billing portal, and `users.stripe_plan` refresh. When unset, billing degrades
   to manual plans.)
@@ -534,7 +535,8 @@ Configure these GitHub Actions secrets and variables for workflows:
   `docs/contributing/social-login.md` for provider app setup.)
 - `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` /
   `DISCORD_STANDARD_ROLE_ID` / `DISCORD_PRO_ROLE_ID` (optional; official Kody
-  Discord guild-role sync. Synced to the Worker under the same names.)
+  Discord guild join and role sync. Synced to the Worker under the same names.
+  The bot needs Create Instant Invite and Manage Roles.)
 - `KIT_API_KEY` (optional GitHub / Worker secret; Kit / kit.com API key for
   `/waiting-list` signup and best-effort `signed_up::kody` tagging on account
   signup when the email already exists in Kit. Production deploy syncs it when

@@ -82,3 +82,7 @@ Do not treat this list as homework. History stays; it is not silently deleted.
 - [0028 — List/detail records expand inside the table](./0028-list-detail-expand.md)
   — UI mode assignment (supersedes 0010)
 - [0029 — Discord social login and official guild role](./0029-discord-social-login-and-guild-role.md)
+  — superseded by 0030; invite-only membership is no longer the product path
+- [0030 — Join the official Discord during social login](./0030-discord-guilds-join-on-social-login.md)
+  — `guilds.join` on Discord social login; token still discarded after the
+  callback

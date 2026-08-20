@@ -1,6 +1,7 @@
 # 0029: Discord social login and official guild role
 
-- **Status:** accepted
+- **Status:** superseded by
+  [0030](./0030-discord-guilds-join-on-social-login.md)
 - **Date:** 2026-08-20
 
 ## Context

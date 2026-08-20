@@ -446,6 +446,9 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 	})
 	const rolePuts: Array<string> = []
 	const roleDeletes: Array<string> = []
+	const guildJoins: Array<{ authorization: string; accessToken: string }> = []
+	const guildMemberUrl =
+		'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333'
 	const guildRoleUrl =
 		'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/:roleId'
 
@@ -470,6 +473,14 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 				verified: true,
 			})
 		}),
+		http.put(guildMemberUrl, async ({ request }) => {
+			const body = (await request.json()) as { access_token?: string }
+			guildJoins.push({
+				authorization: request.headers.get('Authorization') ?? '',
+				accessToken: body.access_token ?? '',
+			})
+			return new HttpResponse(null, { status: 201 })
+		}),
 		http.put(guildRoleUrl, ({ request, params }) => {
 			expect(request.headers.get('Authorization')).toBe('Bot bot-token-test')
 			rolePuts.push(String(params.roleId))
@@ -489,7 +500,7 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 	)
 	expect(start.location).toContain('https://discord.com/oauth2/authorize')
 	expect(start.location).toContain('code_challenge_method=S256')
-	expect(start.location).toContain('scope=identify+email')
+	expect(start.location).toContain('scope=identify+email+guilds.join')
 
 	const callbackResponse = await runHandler(
 		createAuthProviderCallbackHandler(env),
@@ -513,6 +524,12 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 		)
 		.get() as Record<string, unknown>
 	expect(connection.user_id).toBe(user.id)
+	expect(guildJoins).toEqual([
+		{
+			authorization: 'Bot bot-token-test',
+			accessToken: 'discord-access-token',
+		},
+	])
 	expect(rolePuts).toEqual(['222222222222222222'])
 	expect(roleDeletes.sort()).toEqual([
 		'444444444444444444',

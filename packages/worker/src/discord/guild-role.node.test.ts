@@ -10,6 +10,7 @@ import {
 	isDiscordPlanRoleSyncConfigured,
 	isDiscordSnowflake,
 	maybeAssignDiscordMemberRole,
+	maybeJoinOfficialDiscordGuild,
 	maybeRemoveDiscordGuildRoles,
 	maybeRemoveDiscordMemberRole,
 	maybeSyncDiscordGuildRolesForUser,
@@ -40,6 +41,10 @@ function roleUrl(roleId: string) {
 	return `https://discord.com/api/v10/guilds/${configuredEnv.DISCORD_GUILD_ID}/members/${discordUserId}/roles/${roleId}`
 }
 
+function memberUrl() {
+	return `https://discord.com/api/v10/guilds/${configuredEnv.DISCORD_GUILD_ID}/members/${discordUserId}`
+}
+
 test('role sync stays off until bot token, guild id, and at least one role id are set', () => {
 	expect(isDiscordSnowflake('12345')).toBe(true)
 	expect(isDiscordSnowflake('mock-discord-user-1')).toBe(false)
@@ -65,6 +70,107 @@ test('role sync stays off until bot token, guild id, and at least one role id ar
 			DISCORD_PRO_ROLE_ID: configuredEnv.DISCORD_PRO_ROLE_ID,
 		}),
 	).toBe(true)
+})
+
+test('guild join uses the ephemeral access token once and classifies outcomes', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const calls: Array<{
+		url: string
+		method: string
+		authorization: string
+		body: unknown
+	}> = []
+
+	async function fetchImpl(input: RequestInfo | URL, init?: RequestInit) {
+		const url = String(input)
+		calls.push({
+			url,
+			method: init?.method ?? 'GET',
+			authorization: new Headers(init?.headers).get('Authorization') ?? '',
+			body: init?.body ? JSON.parse(String(init.body)) : null,
+		})
+		if (url === memberUrl() && init?.method === 'PUT') {
+			return new Response(null, { status: 201 })
+		}
+		return jsonResponse(500)
+	}
+
+	expect(
+		await maybeJoinOfficialDiscordGuild({
+			env: configuredEnv,
+			discordUserId,
+			accessToken: '  discord-access-token  ',
+			fetchImpl,
+		}),
+	).toEqual({ status: 'joined' })
+	expect(calls).toEqual([
+		{
+			url: memberUrl(),
+			method: 'PUT',
+			authorization: 'Bot bot-token-test',
+			body: { access_token: 'discord-access-token' },
+		},
+	])
+
+	expect(
+		await maybeJoinOfficialDiscordGuild({
+			env: configuredEnv,
+			discordUserId,
+			accessToken: '   ',
+			fetchImpl,
+		}),
+	).toEqual({ status: 'skipped', reason: 'missing-access-token' })
+	expect(
+		await maybeJoinOfficialDiscordGuild({
+			env: configuredEnv,
+			discordUserId,
+			accessToken: null,
+			fetchImpl,
+		}),
+	).toEqual({ status: 'skipped', reason: 'missing-access-token' })
+	expect(
+		await maybeJoinOfficialDiscordGuild({
+			env: {},
+			discordUserId,
+			accessToken: 'discord-access-token',
+			fetchImpl,
+		}),
+	).toEqual({ status: 'skipped', reason: 'not-configured' })
+	expect(
+		await maybeJoinOfficialDiscordGuild({
+			env: configuredEnv,
+			discordUserId: 'mock-discord-user-1',
+			accessToken: 'discord-access-token',
+			fetchImpl,
+		}),
+	).toEqual({ status: 'skipped', reason: 'invalid-user-id' })
+	expect(
+		await maybeJoinOfficialDiscordGuild({
+			env: configuredEnv,
+			discordUserId,
+			accessToken: 'discord-access-token',
+			fetchImpl: async () => new Response(null, { status: 204 }),
+		}),
+	).toEqual({ status: 'already-member' })
+	expect(
+		await maybeJoinOfficialDiscordGuild({
+			env: configuredEnv,
+			discordUserId,
+			accessToken: 'discord-access-token',
+			fetchImpl: async () => jsonResponse(403),
+		}),
+	).toEqual({ status: 'forbidden' })
+	expect(
+		await maybeJoinOfficialDiscordGuild({
+			env: configuredEnv,
+			discordUserId,
+			accessToken: 'discord-access-token',
+			fetchImpl: async () => jsonResponse(500),
+		}),
+	).toEqual({
+		status: 'error',
+		message: 'Discord guild join failed (500).',
+	})
 })
 
 test('assign and remove call the Discord member-role routes and classify outcomes', async () => {

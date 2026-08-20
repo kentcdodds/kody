@@ -1271,9 +1271,9 @@ test('renderAppPage renders the public Discord connect page', async () => {
 
 	expect(response.status).toBe(200)
 	const html = await readResponseText(response)
-	expect(html).toContain('Connect to Discord')
-	expect(html).toContain('Join the Kody Discord')
-	expect(html).toContain('Sign in')
+	expect(html).toContain('Connect Discord')
+	expect(html).not.toContain('Join the Kody Discord')
+	expect(html).not.toContain('Connect to Discord')
 	expect(html).toContain('<title>Discord</title>')
 })
 

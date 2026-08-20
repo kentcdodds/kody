@@ -4,7 +4,6 @@ import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { ProviderIcon } from '#client/provider-icons.tsx'
 import { startSocialSignIn } from '#client/social-sign-in.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -15,7 +14,6 @@ import {
 	resetTurnstileWidgets,
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
-import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import {
 	type AccountConnectionsLoaderData,
@@ -25,10 +23,9 @@ import { routes } from '#universal/routes.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
-	cardTitleCss,
 	descriptionCss,
 	getGhostButtonCss,
-	getPillButtonCss,
+	getPrimaryButtonCss,
 	mutedLinkCss,
 	pageDescriptionCss,
 	pageHeaderCss,
@@ -50,7 +47,7 @@ function readCallbackMessage(href: string) {
 	const linkedProvider = searchParams.get('oauthLinked')
 	if (linkedProvider === 'discord') {
 		return {
-			text: 'Discord connected to your Kody account.',
+			text: 'Discord connected.',
 			tone: 'info' as const,
 		}
 	}
@@ -66,7 +63,7 @@ function discordMemberRoleMessage(status: string) {
 		case 'assigned':
 			return 'Kody Discord roles updated.'
 		case 'not-in-guild':
-			return 'Join the Kody Discord first, then sync your roles.'
+			return 'You are not in the Kody Discord yet.'
 		case 'not-configured':
 		case 'skipped':
 			return 'Discord role sync is not configured.'
@@ -208,7 +205,7 @@ export function DiscordRoute(handle: Handle) {
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		if (!isDiscordPagePath(currentHref)) {
-			return <section mix={css(stackedPageCss)} />
+			return <section mix={css(pageCss)} />
 		}
 
 		const routeData = tryConsumeRouteLoaderData(handle, 'discord', currentHref)
@@ -249,7 +246,6 @@ export function DiscordRoute(handle: Handle) {
 
 		const callbackMessage = readCallbackMessage(currentHref)
 		const message = actionMessage ?? callbackMessage
-		const inviteUrl = page?.inviteUrl ?? kodyDiscordInviteUrl
 		const turnstileSiteKey = page?.turnstileSiteKey ?? null
 		if (
 			typeof document !== 'undefined' &&
@@ -260,15 +256,17 @@ export function DiscordRoute(handle: Handle) {
 			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey))
 		}
 
+		const showConnect =
+			Boolean(page?.discordProviderAvailable) &&
+			(!page.signedIn || !page.discordConnected)
+
 		return (
-			<section mix={css(stackedPageCss)}>
+			<section mix={css(pageCss)}>
 				<header mix={css(pageHeaderCss)}>
 					<h1 mix={css(pageTitleCss)}>Discord</h1>
 					<p mix={css(pageDescriptionCss)}>
-						The official Kody Discord is where people get help, share what they
-						are building, and hear about new capabilities. Connecting your Kody
-						account lets us assign the member role — and Standard or Pro if you
-						subscribe.
+						Connect Discord to join the official Kody server and get the member
+						role — plus Standard or Pro if you subscribe.
 					</p>
 				</header>
 
@@ -292,24 +290,6 @@ export function DiscordRoute(handle: Handle) {
 				) : null}
 
 				<section mix={css(cardCss)}>
-					<h2 mix={css(cardTitleCss)}>Join the server</h2>
-					<p mix={css(descriptionCss)}>
-						Anyone can join with the invite. Connecting your account afterward
-						is what unlocks the Kody member and plan roles.
-					</p>
-					<a
-						href={inviteUrl}
-						target="_blank"
-						rel="noreferrer"
-						mix={css(getGhostButtonCss())}
-					>
-						<ProviderIcon providerId="discord" size="1.1em" />
-						Join the Kody Discord
-					</a>
-				</section>
-
-				<section mix={css(cardCss)}>
-					<h2 mix={css(cardTitleCss)}>Connect your Kody account</h2>
 					{status === 'loading' && !page ? (
 						<p mix={css(descriptionCss)}>Checking your connection…</p>
 					) : null}
@@ -330,97 +310,93 @@ export function DiscordRoute(handle: Handle) {
 								<button
 									type="button"
 									disabled={busy}
-									mix={[css(getGhostButtonCss()), on('click', handleSyncRoles)]}
+									mix={[
+										css({
+											...getGhostButtonCss(),
+											justifySelf: 'start',
+										}),
+										on('click', handleSyncRoles),
+									]}
 								>
 									Sync Discord roles
 								</button>
 							) : null}
 						</>
 					) : null}
-					{page?.signedIn && !page.discordConnected ? (
-						<>
-							<p mix={css(descriptionCss)}>
-								Your Kody account is not connected to Discord yet. Connect it so
-								we can match this Discord user to your assistant.
-							</p>
-							{page.discordProviderAvailable ? (
-								<button
-									type="button"
-									disabled={busy}
-									mix={[
-										css(getPillButtonCss()),
-										on('click', handleConnectDiscord),
-									]}
-								>
-									<ProviderIcon providerId="discord" size="1.1em" />
-									Connect to Discord
-								</button>
-							) : (
-								<p mix={css(descriptionCss)}>
-									Discord login is not configured on this deployment yet.
-								</p>
-							)}
-						</>
+					{page?.signedIn &&
+					!page.discordConnected &&
+					page.discordProviderAvailable ? (
+						<p mix={css(descriptionCss)}>
+							Connect Discord to join the official server and link it to this
+							Kody account.
+						</p>
 					) : null}
-					{page && !page.signedIn ? (
-						<>
-							<p mix={css(descriptionCss)}>
-								Sign in with Discord to create or match your Kody account, or
-								log in another way and then connect Discord from here.
-							</p>
-							<form
-								data-discord-connect-form
-								mix={[
-									css({
-										display: 'flex',
-										flexWrap: 'wrap',
-										gap: spacing.sm,
-										alignItems: 'center',
-									}),
-									on('submit', (event) => {
-										event.preventDefault()
-									}),
-								]}
-							>
-								<input
-									type="text"
-									name={honeypotFieldName}
-									tabIndex={-1}
-									autoComplete="off"
-									aria-hidden="true"
-									mix={css(visuallyHiddenCss)}
-								/>
-								{turnstileSiteKey ? (
-									<div class={turnstileWidgetClassName}></div>
-								) : null}
-								{page.discordProviderAvailable ? (
-									<button
-										type="button"
-										disabled={busy}
-										mix={[
-											css(getPillButtonCss()),
-											on('click', handleConnectDiscord),
-										]}
-									>
-										<ProviderIcon providerId="discord" size="1.1em" />
-										Connect to Discord
-									</button>
-								) : null}
-								<a
-									href={buildAuthLink(routes.login.href(), discordPath)}
-									mix={css(
-										page.discordProviderAvailable
-											? getGhostButtonCss()
-											: getPillButtonCss(),
-									)}
-								>
-									Sign in
-								</a>
-							</form>
-						</>
+					{page && !page.signedIn && page.discordProviderAvailable ? (
+						<p mix={css(descriptionCss)}>
+							Connect Discord to create or match your Kody account and join the
+							official server in one step.
+						</p>
+					) : null}
+					{page && !page.discordProviderAvailable ? (
+						<p mix={css(descriptionCss)}>
+							Discord login is not configured on this deployment yet.
+						</p>
+					) : null}
+					{showConnect && page && !page.signedIn ? (
+						<form
+							data-discord-connect-form
+							mix={[
+								css(connectFormCss),
+								on('submit', (event) => {
+									event.preventDefault()
+									void handleConnectDiscord()
+								}),
+							]}
+						>
+							<input
+								type="text"
+								name={honeypotFieldName}
+								tabIndex={-1}
+								autoComplete="off"
+								aria-hidden="true"
+								mix={css(visuallyHiddenCss)}
+							/>
+							{turnstileSiteKey ? (
+								<div class={turnstileWidgetClassName}></div>
+							) : null}
+							<button type="submit" disabled={busy} mix={css(connectButtonCss)}>
+								Connect Discord
+							</button>
+						</form>
+					) : null}
+					{showConnect && page?.signedIn ? (
+						<button
+							type="button"
+							disabled={busy}
+							mix={[css(connectButtonCss), on('click', handleConnectDiscord)]}
+						>
+							Connect Discord
+						</button>
 					) : null}
 				</section>
 			</section>
 		)
 	}
+}
+
+const pageCss = {
+	...stackedPageCss,
+	maxWidth: '28rem',
+	margin: '0 auto',
+}
+
+const connectButtonCss = {
+	...getPrimaryButtonCss({ size: 'lg', weight: 'semibold' }),
+	justifySelf: 'start' as const,
+}
+
+const connectFormCss = {
+	display: 'grid',
+	gap: spacing.sm,
+	justifyItems: 'start' as const,
 }

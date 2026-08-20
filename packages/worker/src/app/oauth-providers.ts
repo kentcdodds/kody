@@ -87,7 +87,8 @@ export const oauthProviderDefinitions: Record<
 		label: 'Discord',
 		authorizationEndpoint: 'https://discord.com/oauth2/authorize',
 		tokenEndpoint: 'https://discord.com/api/oauth2/token',
-		scope: 'identify email',
+		// guilds.join is used once on the callback to add the member, then discarded.
+		scope: 'identify email guilds.join',
 		usesPkce: true,
 		tokenAuthStyle: 'body',
 	},
@@ -484,22 +485,22 @@ export async function resolveOauthProfile(input: {
 	code: string
 	codeVerifier: string
 	redirectUri: string
-}): Promise<OauthProfile> {
+}): Promise<{ profile: OauthProfile; accessToken: string | null }> {
 	const { env, provider } = input
 	if (isMockOauthProvider(env, provider)) {
-		return getMockOauthProfile(provider)
+		return { profile: getMockOauthProfile(provider), accessToken: null }
 	}
 
 	const accessToken = await exchangeCodeForAccessToken(input)
 	switch (provider) {
 		case 'github':
-			return fetchGithubProfile(accessToken)
+			return { profile: await fetchGithubProfile(accessToken), accessToken }
 		case 'google':
-			return fetchGoogleProfile(accessToken)
+			return { profile: await fetchGoogleProfile(accessToken), accessToken }
 		case 'x':
-			return fetchXProfile(accessToken)
+			return { profile: await fetchXProfile(accessToken), accessToken }
 		case 'discord':
-			return fetchDiscordProfile(accessToken)
+			return { profile: await fetchDiscordProfile(accessToken), accessToken }
 		default: {
 			const exhaustiveCheck: never = provider
 			throw new Error(`Unhandled OAuth provider: ${String(exhaustiveCheck)}`)

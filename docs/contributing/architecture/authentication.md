@@ -480,10 +480,11 @@ Kody can act as an OAuth 2.0 client of GitHub, Google, X, and Discord for
 browser sign-in. Provider identities live in the `oauth_connections` table;
 handlers live in `packages/worker/src/app/handlers/auth-provider.ts` with the
 provider definitions in `packages/worker/src/app/oauth-providers.ts`. Discord
-connections also best-effort assign or remove operator-configured guild roles in
-the official Kody Discord (`packages/worker/src/discord/guild-role.ts`) without
-persisting the login token. The member role is assigned on connect; Standard and
-Pro roles follow `users.stripe_plan`.
+connections also best-effort join the official Kody Discord (`guilds.join` plus
+the operator bot) and assign or remove configured guild roles
+(`packages/worker/src/discord/guild-role.ts`) without persisting the login
+token. The member role is assigned on connect; Standard and Pro roles follow
+`users.stripe_plan`.
 
 - `POST /auth/:provider` starts the flow (CSRF state + PKCE verifier + optional
   invite code in the signed `kody_oauth_login` cookie);
@@ -496,8 +497,8 @@ Pro roles follow `users.stripe_plan`.
 - A signed-in user hitting the callback links the provider identity to their
   account, managed from the `/account` "Connected accounts" card backed by
   `/account/connections.json` (disconnect is refused when the connection is the
-  only sign-in method). `/discord` is the public page for joining the official
-  server and connecting Discord when the account is not linked yet
+  only sign-in method). `/discord` is the public **Connect Discord** page (one
+  action joins the official server and links the account)
 - A provider-verified email matching an existing account auto-links and signs
   in; otherwise account creation follows the signup posture
   (`SIGNUP_MODE !== 'open'` requires a valid invite code carried from the invite

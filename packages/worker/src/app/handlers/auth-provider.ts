@@ -67,7 +67,10 @@ import { defaultPostVerificationRedirect } from '#universal/safe-redirect.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
 import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
-import { maybeSyncDiscordGuildRolesForUser } from '#worker/discord/guild-role.ts'
+import {
+	maybeJoinOfficialDiscordGuild,
+	maybeSyncDiscordGuildRolesForUser,
+} from '#worker/discord/guild-role.ts'
 
 /**
  * Accounts created through social login have no usable password until the
@@ -287,12 +290,18 @@ export function createAuthProviderCallbackHandler(env: Env) {
 		})
 	}
 
-	async function syncDiscordGuildRoles(input: {
+	async function completeDiscordGuildLogin(input: {
 		provider: OauthProviderId
 		userId: number
 		discordUserId: string
+		accessToken: string | null
 	}) {
 		if (input.provider !== 'discord') return
+		await maybeJoinOfficialDiscordGuild({
+			env,
+			discordUserId: input.discordUserId,
+			accessToken: input.accessToken,
+		})
 		await maybeSyncDiscordGuildRolesForUser({
 			env,
 			userId: input.userId,
@@ -358,14 +367,15 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			}
 
 			let profile: OauthProfile
+			let accessToken: string | null = null
 			try {
-				profile = await resolveOauthProfile({
+				;({ profile, accessToken } = await resolveOauthProfile({
 					env,
 					provider,
 					code,
 					codeVerifier: loginState.codeVerifier,
 					redirectUri: getCallbackRedirectUri(env, url, provider),
-				})
+				}))
 			} catch (error) {
 				console.error('OAuth login provider exchange failed:', error)
 				return fail('provider-error', 'provider_exchange_failed')
@@ -452,10 +462,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				}
 				if (connection) {
 					if (connection.user_id === currentUser.id) {
-						await syncDiscordGuildRoles({
+						await completeDiscordGuildLogin({
 							provider,
 							userId: currentUser.id,
 							discordUserId: profile.providerUserId,
+							accessToken,
 						})
 						return redirect(
 							signedInOauthReturnLocation(redirectTo, 'oauthLinked', provider),
@@ -476,10 +487,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					}
 					throw error
 				}
-				await syncDiscordGuildRoles({
+				await completeDiscordGuildLogin({
 					provider,
 					userId: currentUser.id,
 					discordUserId: profile.providerUserId,
+					accessToken,
 				})
 				void logAuditEvent({
 					category: 'auth',
@@ -504,10 +516,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				if (!user) {
 					return fail('account-error', 'connection_user_missing')
 				}
-				await syncDiscordGuildRoles({
+				await completeDiscordGuildLogin({
 					provider,
 					userId: user.id,
 					discordUserId: profile.providerUserId,
+					accessToken,
 				})
 				return issueLogin(user)
 			}
@@ -542,10 +555,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						email_verified_at: new Date().toISOString(),
 					})
 				}
-				await syncDiscordGuildRoles({
+				await completeDiscordGuildLogin({
 					provider,
 					userId: existingUser.id,
 					discordUserId: profile.providerUserId,
+					accessToken,
 				})
 				return issueLogin(existingUser)
 			}
@@ -652,10 +666,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				await rollbackNewUser(newUser.id)
 				return fail('account-error', 'connection_create_failed')
 			}
-			await syncDiscordGuildRoles({
+			await completeDiscordGuildLogin({
 				provider,
 				userId: newUser.id,
 				discordUserId: profile.providerUserId,
+				accessToken,
 			})
 
 			// Best-effort, mirroring password signup: the automatic
