@@ -101,6 +101,9 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 		})
 	}
 
+	expect(getBlogPost('the-runtime-and-the-gateway')?.title).toBe(
+		'The runtime and the gateway',
+	)
 	expect(getBlogPost('does-not-exist')).toBeNull()
 
 	for (let index = 1; index < posts.length; index += 1) {

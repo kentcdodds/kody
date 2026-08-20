@@ -4,6 +4,7 @@ import gatewaysConnectHomesAccumulate from './posts/gateways-connect-homes-accum
 import selfServiceMeansOwnership from './posts/self-service-means-ownership.md'
 import theAssistantThatCantLeakYourKeychain from './posts/the-assistant-that-cant-leak-your-keychain.md'
 import theAutomationsYouNeverBuilt from './posts/the-automations-you-never-built.md'
+import theRuntimeAndTheGateway from './posts/the-runtime-and-the-gateway.md'
 import yourAssistantsHome from './posts/your-assistants-home.md'
 import zeroInferenceCalls from './posts/zero-inference-calls.md'
 
@@ -31,6 +32,7 @@ const postSources: Array<{ slug: string; raw: string }> = [
 		raw: theAutomationsYouNeverBuilt,
 	},
 	{ slug: 'self-service-means-ownership', raw: selfServiceMeansOwnership },
+	{ slug: 'the-runtime-and-the-gateway', raw: theRuntimeAndTheGateway },
 ]
 
 function compareBlogPosts(a: BlogPost, b: BlogPost): number {
