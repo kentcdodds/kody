@@ -652,6 +652,11 @@ html.is-settled {
 	line-height: 1.08;
 }
 
+.landing-section-heading em {
+	font-style: normal;
+	color: var(--color-primary-text);
+}
+
 .landing-inline-link {
 	color: var(--color-primary-text);
 	text-decoration-thickness: 1.5px;
@@ -1092,6 +1097,52 @@ html.is-settled {
 	text-decoration: underline;
 }
 
+.landing-honest {
+	max-width: 44rem;
+	margin-inline: auto;
+	padding: clamp(2.5rem, 6vw, 5rem) clamp(1.25rem, 4vw, 2.5rem);
+	text-align: center;
+}
+
+.landing-honest-lead {
+	margin: 1.1rem auto 0;
+	color: var(--color-text-muted);
+	font-size: 1.08rem;
+	max-width: 42ch;
+	text-wrap: pretty;
+}
+
+.landing-honest-rows {
+	margin: clamp(1.8rem, 4vw, 2.4rem) 0 0;
+	text-align: left;
+}
+
+.landing-honest-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+	gap: 0.75rem 1.5rem;
+	padding: 0.95rem 0;
+	border-top: 1px solid var(--color-border);
+}
+
+.landing-honest-row:last-child {
+	border-bottom: 1px solid var(--color-border);
+}
+
+.landing-honest-row dt {
+	margin: 0;
+	color: var(--color-text-muted);
+	font-size: 0.98rem;
+	text-wrap: pretty;
+}
+
+.landing-honest-row dd {
+	margin: 0;
+	font-size: 0.98rem;
+	font-weight: 550;
+	text-wrap: pretty;
+}
+
 .landing-ecosystem,
 .landing-byok {
 	max-width: 72rem;
@@ -1388,6 +1439,16 @@ html.is-settled {
 		font-size: 1rem;
 		max-width: 46ch;
 		margin-inline: auto;
+	}
+
+	.landing-honest {
+		padding: 1.75rem 1.25rem;
+	}
+
+	.landing-honest-row {
+		grid-template-columns: 1fr;
+		gap: 0.3rem;
+		text-align: center;
 	}
 
 	.landing-ecosystem,

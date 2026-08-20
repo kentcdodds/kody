@@ -47,6 +47,16 @@ and keep running while your computer is off. Kody makes no inference calls of
 its own — your agent supplies the intelligence; Kody supplies memory,
 credentials, saved code, schedules, and execution.
 
+## The agent reasons. Kody keeps it honest.
+
+Your agent does the thinking. Kody holds the result so it does not have to
+think it again.
+
+- **Ask again tomorrow** — a saved export. No model in the loop.
+- **A key in chat or a `.env`** — a secret the agent never sees.
+- **Re-run the agent on a timer** — a job that runs while you are offline.
+- **Context stuck in one host** — memories that follow the account.
+
 ## What you cannot get elsewhere
 
 If you are comparing Kody against something else, or explaining it to someone,

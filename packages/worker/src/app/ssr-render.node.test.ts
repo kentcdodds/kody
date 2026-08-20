@@ -560,6 +560,7 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
 	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
+	expect(withoutAssetsHtml).toContain('Kody keeps it')
 	expect(withoutAssetsHtml).toContain('href="/images/hero/kody-base-640.webp"')
 	expect(withoutAssetsHtml).toContain('kody-base-960.webp')
 	expect(withoutAssetsHtml).toContain('as="image"')
@@ -1242,6 +1243,7 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 
 	expect(response.status).toBe(200)
 	const html = await readResponseText(response)
+	expect(html).toContain('Every plan is the whole factory. You pay for volume.')
 	expect(html).toContain('Standard')
 	expect(html).toContain('Pro')
 	const count = new Intl.NumberFormat('en-US')

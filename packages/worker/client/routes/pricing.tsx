@@ -95,6 +95,7 @@ export function PricingRoute(handle: Handle) {
 						<br />
 						Pay when Kody <em>earns it</em>.
 					</h1>
+					<p>Every plan is the whole factory. You pay for volume.</p>
 				</header>
 
 				<div mix={css(plansCss)}>
@@ -107,8 +108,7 @@ export function PricingRoute(handle: Handle) {
 						</h2>
 						<p mix={css(planPriceCss)}>$0</p>
 						<p mix={css(planCopyCss)}>
-							Enough to build useful automations and find out whether Kody earns
-							a place in your setup.
+							The whole factory. Tight caps so you can see if it earns a place.
 						</p>
 						<a href="/signup" mix={css(planPillButtonCss)}>
 							Create a free account
@@ -133,8 +133,7 @@ export function PricingRoute(handle: Handle) {
 						</p>
 						<p mix={css(planPriceNoteCss)}>$10/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
-							Higher daily volume and more room for scheduled jobs and
-							workflows.
+							Same factory. More room for jobs, workflows, and daily volume.
 						</p>
 						{renderPaidPlanCta(isSignedIn)}
 					</section>
@@ -151,8 +150,7 @@ export function PricingRoute(handle: Handle) {
 						</p>
 						<p mix={css(planPriceNoteCss)}>$24/mo billed annually</p>
 						<p mix={css(planCopyCss)}>
-							For heavy daily automation — roughly double Standard on every
-							axis.
+							Same factory. Roughly double Standard on every axis.
 						</p>
 						{renderPaidPlanCta(isSignedIn)}
 					</section>

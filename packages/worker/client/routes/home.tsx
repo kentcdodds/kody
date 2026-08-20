@@ -59,6 +59,25 @@ const factoryBeats = [
 	},
 ] as const
 
+const honestRows = [
+	{
+		from: 'Ask again tomorrow',
+		to: 'A saved export. No model in the loop.',
+	},
+	{
+		from: 'A key in chat or a .env',
+		to: 'A secret the agent never sees.',
+	},
+	{
+		from: 'Re-run the agent on a timer',
+		to: 'A job that runs while you are offline.',
+	},
+	{
+		from: 'Context stuck in one host',
+		to: 'Memories that follow the account.',
+	},
+] as const
+
 const hostAgents = [
 	{ label: 'Cursor', icon: 'cursor' },
 	{ label: 'Claude Code', icon: 'claudecode' },
@@ -322,6 +341,31 @@ export function HomeRoute(handle: Handle) {
 							See the whole loop
 						</a>
 					</p>
+				</section>
+
+				{/* ============ honest runtime ============ */}
+				<section aria-labelledby="honest-title" class="landing-honest">
+					<h2 id="honest-title" class="landing-section-heading">
+						The agent reasons.
+						<br />
+						Kody keeps it <em>honest</em>.
+					</h2>
+					<p class="landing-honest-lead">
+						Your agent does the thinking. Kody holds the result so it does not
+						have to think it again.
+					</p>
+					<dl class="landing-honest-rows">
+						{honestRows.map((row, index) => (
+							<div
+								key={row.from}
+								class="landing-honest-row"
+								mix={reveal(index * 70)}
+							>
+								<dt>{row.from}</dt>
+								<dd>{row.to}</dd>
+							</div>
+						))}
+					</dl>
 				</section>
 
 				{/* ============ git + npm ecosystem ============ */}

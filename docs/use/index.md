@@ -56,8 +56,8 @@ Read in order for a full tour, or jump to a topic.
   real-surface subscription handler smoke tests
 - [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,
   and other runtimes (`/account/activity` and the `runs` MCP capabilities)
-- [Plans and pricing](https://kody.codes/pricing) — Free, Standard, and Pro
-  prices and the finite limits enforced for each plan
+- [Plans and pricing](https://kody.codes/pricing) — every plan is the whole
+  factory; paid plans raise the caps
 - [Mutating actions and confirmations](./mutating-actions.md)
 - [Privacy](./privacy.md) — what Kody stores and what deployment admins can see
   (Terms and Acceptable Use are in-app at [`/terms`](https://kody.codes/terms))
