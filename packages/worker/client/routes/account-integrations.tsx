@@ -715,9 +715,13 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		)
 	}
 
-	function navigateIfSelectionGone() {
+	function finishOptimisticRemoval() {
 		holdingOptimisticRemoval = false
-		if (currentSelectionMissing()) navigate(listHref())
+		if (currentSelectionMissing()) {
+			navigate(listHref())
+			return
+		}
+		handle.update()
 	}
 
 	function removeConnectionLocally(name: string) {
@@ -774,7 +778,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		const snapshot = snapshotList()
 		removeConnectionLocally(connection.name)
 		getDisconnectCheck(connection.name).reset()
-		holdingOptimisticRemoval = currentSelectionMissing()
+		holdingOptimisticRemoval = true
 		// Stay on this route element until commit. List/detail are separate
 		// Remix routes, so navigating away remounts, commits immediately, and
 		// loader data restores the row that was just hidden.
@@ -786,7 +790,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 						action: 'disconnect_connection',
 						name: connection.name,
 					})
-					navigateIfSelectionGone()
+					finishOptimisticRemoval()
 				} catch (error) {
 					holdingOptimisticRemoval = false
 					restoreSnapshot(snapshot)
@@ -810,7 +814,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		const connectionCount = app.connections.length
 		removeAppLocally(app)
 		deleteAppCheck.reset()
-		holdingOptimisticRemoval = currentSelectionMissing()
+		holdingOptimisticRemoval = true
 		await undoable.start({
 			message: deletedAppCopy(title, connectionCount),
 			onCommit: async () => {
@@ -819,7 +823,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 						action: 'delete_oauth_app',
 						appSlug: app.slug,
 					})
-					navigateIfSelectionGone()
+					finishOptimisticRemoval()
 				} catch (error) {
 					holdingOptimisticRemoval = false
 					restoreSnapshot(snapshot)
