@@ -190,6 +190,8 @@ test('community package flow works end-to-end through capability handlers', asyn
 		{ onUnhandledRequest: 'bypass' },
 	)
 	const queuedActivity: Array<CommunityActivityDispatchQueueMessage> = []
+	const queuedListingPublished: Array<{ eventId: string; listingId: string }> =
+		[]
 	const testEnv = {
 		...env,
 		CLOUDFLARE_ACCOUNT_ID: mockAccountId,
@@ -198,6 +200,11 @@ test('community package flow works end-to-end through capability handlers', asyn
 		COMMUNITY_ACTIVITY_DISPATCH_QUEUE: {
 			async send(message: CommunityActivityDispatchQueueMessage) {
 				queuedActivity.push(message)
+			},
+		},
+		COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE: {
+			async send(message: { eventId: string; listingId: string }) {
+				queuedListingPublished.push(message)
 			},
 		},
 	} as Env
@@ -251,6 +258,13 @@ test('community package flow works end-to-end through capability handlers', asyn
 		public_url: `${baseUrl}/@usera/${kodyId}`,
 	})
 	const listingId = publishResult.listing_id
+	expect(queuedListingPublished).toEqual([
+		expect.objectContaining({
+			listingId,
+			eventId: expect.any(String),
+		}),
+	])
+	queuedListingPublished.length = 0
 
 	const searchResult = await communitySearchCapability.handler(
 		{ query: 'community flow integration', limit: 10 },
@@ -493,6 +507,7 @@ test('community package flow works end-to-end through capability handlers', asyn
 		ownerCtx,
 	)
 	expect(republishResult.pinned_commit).toBe(republishedCommit)
+	expect(queuedListingPublished).toEqual([])
 	const afterRepublish = await communityGetCapability.handler(
 		{ listing_id: listingId },
 		forkerCtx,
@@ -620,6 +635,11 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 		CLOUDFLARE_API_BASE_URL: artifactsApiBaseUrl,
 		COMMUNITY_ACTIVITY_DISPATCH_QUEUE: {
 			async send(_message: CommunityActivityDispatchQueueMessage) {
+				return undefined
+			},
+		},
+		COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE: {
+			async send(_message: { eventId: string; listingId: string }) {
 				return undefined
 			},
 		},

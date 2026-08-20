@@ -4,6 +4,8 @@ import {
 } from '#worker/email/delivery-queue.ts'
 import { handleCommunityActivityDispatchQueue } from '#worker/community/activity-dispatch-queue.ts'
 import { communityActivityDispatchQueueName } from '#worker/community/activity-dispatch-queue-names.ts'
+import { handleCommunityListingPublishedDispatchQueue } from '#worker/community/listing-published-dispatch-queue.ts'
+import { communityListingPublishedDispatchQueueName } from '#worker/community/listing-published-dispatch-queue-names.ts'
 import { handlePlatformFeedbackDispatchQueue } from '#worker/platform-feedback/dispatch-queue.ts'
 import { platformFeedbackDispatchQueueName } from '#worker/platform-feedback/dispatch-queue-names.ts'
 import { handlePackageEventsDispatchQueue } from '#worker/package-events/dispatch-queue.ts'
@@ -36,6 +38,9 @@ export async function handleQueueBatch(
 			return
 		case communityActivityDispatchQueueName:
 			await handleCommunityActivityDispatchQueue(batch, env, ctx)
+			return
+		case communityListingPublishedDispatchQueueName:
+			await handleCommunityListingPublishedDispatchQueue(batch, env, ctx)
 			return
 		case packageEventsDispatchQueueName:
 			await handlePackageEventsDispatchQueue(batch, env, ctx)

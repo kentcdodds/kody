@@ -16,6 +16,10 @@ function createProductionEnv() {
 					queue: 'kody-community-activity-dispatch',
 				},
 				{
+					binding: 'COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE',
+					queue: 'kody-community-listing-published-dispatch',
+				},
+				{
 					binding: 'PACKAGE_EVENTS_DISPATCH_QUEUE',
 					queue: 'kody-package-events-dispatch',
 				},
@@ -52,6 +56,13 @@ function createProductionEnv() {
 					max_batch_timeout: 5,
 					max_retries: 3,
 					dead_letter_queue: 'kody-community-activity-dispatch-dlq',
+				},
+				{
+					queue: 'kody-community-listing-published-dispatch',
+					max_batch_size: 10,
+					max_batch_timeout: 5,
+					max_retries: 3,
+					dead_letter_queue: 'kody-community-listing-published-dispatch-dlq',
 				},
 				{
 					queue: 'kody-package-events-dispatch',
@@ -99,6 +110,10 @@ test('production queue config requires all consumers and consistent producers', 
 		communityActivityDispatchQueueName: 'kody-community-activity-dispatch',
 		communityActivityDispatchDeadLetterQueueName:
 			'kody-community-activity-dispatch-dlq',
+		communityListingPublishedDispatchQueueName:
+			'kody-community-listing-published-dispatch',
+		communityListingPublishedDispatchDeadLetterQueueName:
+			'kody-community-listing-published-dispatch-dlq',
 		packageEventsDispatchQueueName: 'kody-package-events-dispatch',
 		packageEventsDispatchDeadLetterQueueName:
 			'kody-package-events-dispatch-dlq',
@@ -113,7 +128,7 @@ test('production queue config requires all consumers and consistent producers', 
 			productionEnv: missingFeedbackConsumer,
 			configPath: 'wrangler.jsonc',
 		}),
-	).toThrow('exactly 6 production Queue consumers')
+	).toThrow('exactly 7 production Queue consumers')
 
 	const mismatchedProducer = createProductionEnv()
 	mismatchedProducer.queues.producers[0] = {
@@ -141,6 +156,21 @@ test('production queue config requires all consumers and consistent producers', 
 		}),
 	).toThrow(
 		'must bind "COMMUNITY_ACTIVITY_DISPATCH_QUEUE" to "kody-community-activity-dispatch"',
+	)
+
+	const missingListingPublishedProducer = createProductionEnv()
+	missingListingPublishedProducer.queues.producers =
+		missingListingPublishedProducer.queues.producers.filter(
+			(producer) =>
+				producer.binding !== 'COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE',
+		)
+	expect(() =>
+		parseProductionQueueResources({
+			productionEnv: missingListingPublishedProducer,
+			configPath: 'wrangler.jsonc',
+		}),
+	).toThrow(
+		'must bind "COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE" to "kody-community-listing-published-dispatch"',
 	)
 
 	const missingPackageEventsProducer = createProductionEnv()

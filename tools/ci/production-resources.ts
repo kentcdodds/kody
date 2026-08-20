@@ -49,6 +49,8 @@ type ResolvedProductionBindings = {
 	platformFeedbackDispatchDeadLetterQueueName: string
 	communityActivityDispatchQueueName: string
 	communityActivityDispatchDeadLetterQueueName: string
+	communityListingPublishedDispatchQueueName: string
+	communityListingPublishedDispatchDeadLetterQueueName: string
 	packageEventsDispatchQueueName: string
 	packageEventsDispatchDeadLetterQueueName: string
 	webhookDispatchQueueName: string
@@ -543,7 +545,7 @@ async function ensureProductionResources(options: CliOptions) {
 		kvTitleOverride: options.kvTitleOverride,
 	})
 	console.error(
-		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Artifacts Repo Events Queue: ${bindings.artifactsRepoEventsQueueName}, Artifacts Repo Events DLQ: ${bindings.artifactsRepoEventsDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName}, Package Events Queue: ${bindings.packageEventsDispatchQueueName}, Package Events DLQ: ${bindings.packageEventsDispatchDeadLetterQueueName}, Webhook Dispatch Queue: ${bindings.webhookDispatchQueueName}, Webhook Dispatch DLQ: ${bindings.webhookDispatchDeadLetterQueueName})`,
+		`Ensuring production resources for worker: ${bindings.workerName} (D1: ${bindings.d1DatabaseName}, OAuth KV: ${bindings.oauthKvTitle}, Bundle KV: ${bindings.bundleArtifactsKvTitle}, Community R2: ${bindings.communityAssetsBucketName}, Email R2: ${bindings.emailBlobsBucketName}, Email Queue: ${bindings.emailDeliveryQueueName}, Email DLQ: ${bindings.emailDeliveryDeadLetterQueueName}, Artifacts Repo Events Queue: ${bindings.artifactsRepoEventsQueueName}, Artifacts Repo Events DLQ: ${bindings.artifactsRepoEventsDeadLetterQueueName}, Platform Feedback Queue: ${bindings.platformFeedbackDispatchQueueName}, Platform Feedback DLQ: ${bindings.platformFeedbackDispatchDeadLetterQueueName}, Community Activity Queue: ${bindings.communityActivityDispatchQueueName}, Community Activity DLQ: ${bindings.communityActivityDispatchDeadLetterQueueName}, Community Listing Published Queue: ${bindings.communityListingPublishedDispatchQueueName}, Community Listing Published DLQ: ${bindings.communityListingPublishedDispatchDeadLetterQueueName}, Package Events Queue: ${bindings.packageEventsDispatchQueueName}, Package Events DLQ: ${bindings.packageEventsDispatchDeadLetterQueueName}, Webhook Dispatch Queue: ${bindings.webhookDispatchQueueName}, Webhook Dispatch DLQ: ${bindings.webhookDispatchDeadLetterQueueName})`,
 	)
 
 	const d1 = ensureD1Database({
@@ -636,6 +638,17 @@ async function ensureProductionResources(options: CliOptions) {
 		name: bindings.communityActivityDispatchDeadLetterQueueName,
 		existingQueues,
 	})
+	const communityListingPublishedDispatchQueue = await ensureCloudflareQueue({
+		...queueClient,
+		name: bindings.communityListingPublishedDispatchQueueName,
+		existingQueues,
+	})
+	const communityListingPublishedDispatchDeadLetterQueue =
+		await ensureCloudflareQueue({
+			...queueClient,
+			name: bindings.communityListingPublishedDispatchDeadLetterQueueName,
+			existingQueues,
+		})
 	const packageEventsDispatchQueue = await ensureCloudflareQueue({
 		...queueClient,
 		name: bindings.packageEventsDispatchQueueName,
@@ -757,6 +770,12 @@ async function ensureProductionResources(options: CliOptions) {
 	)
 	console.log(
 		`community_activity_dispatch_dead_letter_queue_name=${communityActivityDispatchDeadLetterQueue.name}`,
+	)
+	console.log(
+		`community_listing_published_dispatch_queue_name=${communityListingPublishedDispatchQueue.name}`,
+	)
+	console.log(
+		`community_listing_published_dispatch_dead_letter_queue_name=${communityListingPublishedDispatchDeadLetterQueue.name}`,
 	)
 	console.log(
 		`package_events_dispatch_queue_name=${packageEventsDispatchQueue.name}`,

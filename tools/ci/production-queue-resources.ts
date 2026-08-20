@@ -4,6 +4,11 @@ import {
 	communityActivityDispatchQueueName,
 } from '../../packages/worker/src/community/activity-dispatch-queue-names.ts'
 import {
+	communityListingPublishedDispatchDeadLetterQueueName,
+	communityListingPublishedDispatchQueueBinding,
+	communityListingPublishedDispatchQueueName,
+} from '../../packages/worker/src/community/listing-published-dispatch-queue-names.ts'
+import {
 	packageEventsDispatchDeadLetterQueueName,
 	packageEventsDispatchQueueBinding,
 	packageEventsDispatchQueueName,
@@ -28,7 +33,7 @@ const emailDeliveryDeadLetterQueueName = 'kody-email-delivery-dlq'
 const expectedMaxBatchSize = 10
 const expectedMaxBatchTimeout = 5
 const expectedMaxRetries = 3
-const expectedConsumerCount = 6
+const expectedConsumerCount = 7
 
 function readQueueConsumer(input: {
 	consumers: Array<unknown>
@@ -134,6 +139,12 @@ export function parseProductionQueueResources(input: {
 		deadLetterQueueName: communityActivityDispatchDeadLetterQueueName,
 		configPath: input.configPath,
 	})
+	const communityListingPublishedDispatch = readQueueConsumer({
+		consumers,
+		queueName: communityListingPublishedDispatchQueueName,
+		deadLetterQueueName: communityListingPublishedDispatchDeadLetterQueueName,
+		configPath: input.configPath,
+	})
 	const packageEventsDispatch = readQueueConsumer({
 		consumers,
 		queueName: packageEventsDispatchQueueName,
@@ -170,6 +181,12 @@ export function parseProductionQueueResources(input: {
 	})
 	readQueueProducer({
 		producers,
+		binding: communityListingPublishedDispatchQueueBinding,
+		queueName: communityListingPublishedDispatchQueueName,
+		configPath: input.configPath,
+	})
+	readQueueProducer({
+		producers,
 		binding: packageEventsDispatchQueueBinding,
 		queueName: packageEventsDispatchQueueName,
 		configPath: input.configPath,
@@ -191,6 +208,10 @@ export function parseProductionQueueResources(input: {
 		communityActivityDispatchQueueName: communityActivityDispatch.queue,
 		communityActivityDispatchDeadLetterQueueName:
 			communityActivityDispatch.deadLetterQueue,
+		communityListingPublishedDispatchQueueName:
+			communityListingPublishedDispatch.queue,
+		communityListingPublishedDispatchDeadLetterQueueName:
+			communityListingPublishedDispatch.deadLetterQueue,
 		packageEventsDispatchQueueName: packageEventsDispatch.queue,
 		packageEventsDispatchDeadLetterQueueName:
 			packageEventsDispatch.deadLetterQueue,

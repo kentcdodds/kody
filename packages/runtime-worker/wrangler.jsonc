@@ -214,6 +214,10 @@
 						"queue": "kody-community-activity-dispatch",
 					},
 					{
+						"binding": "COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE",
+						"queue": "kody-community-listing-published-dispatch",
+					},
+					{
 						"binding": "PACKAGE_EVENTS_DISPATCH_QUEUE",
 						"queue": "kody-package-events-dispatch",
 					},

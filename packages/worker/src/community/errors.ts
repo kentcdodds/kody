@@ -18,3 +18,15 @@ export class CommunityActivityDispatchCancelledError extends Error {
 		this.activityId = input.activityId
 	}
 }
+
+export class CommunityListingPublishedDispatchCancelledError extends Error {
+	readonly listingId: string
+
+	constructor(listingId: string) {
+		super(
+			`Community listing "${listingId}" is no longer active for published-event dispatch.`,
+		)
+		this.name = 'CommunityListingPublishedDispatchCancelledError'
+		this.listingId = listingId
+	}
+}

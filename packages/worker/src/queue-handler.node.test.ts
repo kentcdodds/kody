@@ -5,6 +5,7 @@ import { webhookDispatchQueueName } from '#worker/webhooks/dispatch-queue-names.
 
 const mocks = vi.hoisted(() => ({
 	handleCommunityActivityDispatchQueue: vi.fn(),
+	handleCommunityListingPublishedDispatchQueue: vi.fn(),
 	handleEmailDeliveryQueue: vi.fn(),
 	handleArtifactsRepoEventsQueue: vi.fn(),
 	handlePackageEventsDispatchQueue: vi.fn(),
@@ -19,6 +20,16 @@ vi.mock('#worker/community/activity-dispatch-queue.ts', () => ({
 
 vi.mock('#worker/community/activity-dispatch-queue-names.ts', () => ({
 	communityActivityDispatchQueueName: 'kody-community-activity-dispatch',
+}))
+
+vi.mock('#worker/community/listing-published-dispatch-queue.ts', () => ({
+	handleCommunityListingPublishedDispatchQueue:
+		mocks.handleCommunityListingPublishedDispatchQueue,
+}))
+
+vi.mock('#worker/community/listing-published-dispatch-queue-names.ts', () => ({
+	communityListingPublishedDispatchQueueName:
+		'kody-community-listing-published-dispatch',
 }))
 
 vi.mock('#worker/email/delivery-queue.ts', () => ({
@@ -64,6 +75,9 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	const artifactsBatch = createBatch('kody-artifacts-repo-events')
 	const feedbackBatch = createBatch('kody-platform-feedback-dispatch')
 	const communityActivityBatch = createBatch('kody-community-activity-dispatch')
+	const communityListingPublishedBatch = createBatch(
+		'kody-community-listing-published-dispatch',
+	)
 	const packageEventsBatch = createBatch(packageEventsDispatchQueueName)
 	const webhookBatch = createBatch(webhookDispatchQueueName)
 	const unknownBatch = createBatch('unexpected-queue')
@@ -72,6 +86,7 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	await handleQueueBatch(artifactsBatch, env, ctx)
 	await handleQueueBatch(feedbackBatch, env, ctx)
 	await handleQueueBatch(communityActivityBatch, env, ctx)
+	await handleQueueBatch(communityListingPublishedBatch, env, ctx)
 	await handleQueueBatch(packageEventsBatch, env, ctx)
 	await handleQueueBatch(webhookBatch, env, ctx)
 	await handleQueueBatch(unknownBatch, env, ctx)
@@ -99,6 +114,12 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 		env,
 		ctx,
 	)
+	expect(
+		mocks.handleCommunityListingPublishedDispatchQueue,
+	).toHaveBeenCalledTimes(1)
+	expect(
+		mocks.handleCommunityListingPublishedDispatchQueue,
+	).toHaveBeenCalledWith(communityListingPublishedBatch, env, ctx)
 	expect(mocks.handlePackageEventsDispatchQueue).toHaveBeenCalledTimes(1)
 	expect(mocks.handlePackageEventsDispatchQueue).toHaveBeenCalledWith(
 		packageEventsBatch,

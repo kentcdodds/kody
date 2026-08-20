@@ -1,5 +1,6 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
+import { parseListingOwnerUsername } from '#universal/community-links.ts'
 import { deterministicEmbedding } from '#worker/vectorize/embedding.ts'
 import {
 	blendLexicalAndVectorScore,
@@ -26,6 +27,9 @@ import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
 import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
 import { assertNotCommunityBanned } from './assert-not-community-banned.ts'
 import { CommunityActionError } from './errors.ts'
+import { enqueueCommunityListingPublishedDispatch } from './listing-published-dispatch-queue-producer.ts'
+import { type CommunityListingPublishedProjection } from './listing-published-subscription-event.ts'
+import { getCommunityPackageHref } from './package-url.ts'
 import {
 	countCommunityForksByListingIds,
 	deleteCommunityListing,
@@ -33,6 +37,7 @@ import {
 	getCommunityActivityByIdForAdmin,
 	getCommunityForkByForkedPackageId,
 	getCommunityForkByListingAndUser,
+	getActiveCommunityListingWithPublisherUsername,
 	getCommunityListingById,
 	getCommunityListingByOwnerAndKodyId,
 	getCommunityListingByOwnerAndPackage,
@@ -144,6 +149,20 @@ async function enqueueRecordedCommunityActivity(input: {
 		})
 	} catch (error) {
 		console.error('community-activity-dispatch-enqueue-failed', error)
+	}
+}
+
+async function enqueuePublishedCommunityListing(input: {
+	env: Env
+	listingId: string
+}) {
+	try {
+		await enqueueCommunityListingPublishedDispatch({
+			queue: input.env.COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE,
+			listingId: input.listingId,
+		})
+	} catch (error) {
+		console.error('community-listing-published-dispatch-enqueue-failed', error)
 	}
 }
 
@@ -652,6 +671,12 @@ export async function publishCommunityListing(input: {
 			activityError,
 		)
 	}
+	if (!existingListing) {
+		await enqueuePublishedCommunityListing({
+			env: input.env,
+			listingId,
+		})
+	}
 	invalidateCommunityPublicCache()
 	return listing
 }
@@ -984,6 +1009,38 @@ export async function getCommunityActivityForAdmin(input: {
 }) {
 	const activity = await getCommunityActivityByIdForAdmin(input.db, input)
 	return activity
+}
+
+export async function getCommunityListingPublishedForAdmin(input: {
+	db: D1Database
+	baseUrl: string
+	listingId: string
+}): Promise<CommunityListingPublishedProjection | null> {
+	const loaded = await getActiveCommunityListingWithPublisherUsername(
+		input.db,
+		{ listingId: input.listingId },
+	)
+	if (!loaded) return null
+	const publisherUsername =
+		loaded.publisherUsername ?? parseListingOwnerUsername(loaded.listing.name)
+	const kodyId = loaded.listing.kodyId
+	if (!publisherUsername || !kodyId) {
+		// Never fall back to `/community/{listing_id}` for subscription payloads.
+		return null
+	}
+	const description = loaded.listing.description.trim()
+	return {
+		id: loaded.listing.id,
+		name: loaded.listing.name,
+		kodyId,
+		description: description.length > 0 ? description : null,
+		publisherUsername,
+		publishedAt: loaded.listing.publishedAt,
+		publicUrl: `${input.baseUrl}${getCommunityPackageHref({
+			username: publisherUsername,
+			kodyId,
+		})}`,
+	}
 }
 
 export type PrepareCommunityForkInput = {

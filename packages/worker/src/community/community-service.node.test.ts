@@ -1,10 +1,12 @@
 import { expect, test, vi } from 'vitest'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import { CommunityActionError } from './errors.ts'
 import type * as CommunityRepo from './repo.ts'
 import { type CommunityListingRecord } from './types.ts'
 
 const mockModule = vi.hoisted(() => ({
 	enqueueCommunityActivityDispatch: vi.fn(),
+	enqueueCommunityListingPublishedDispatch: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
 	getCommunityBan: vi.fn(),
@@ -47,6 +49,11 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('./activity-dispatch-queue-producer.ts', () => ({
 	enqueueCommunityActivityDispatch: (...args: Array<unknown>) =>
 		mockModule.enqueueCommunityActivityDispatch(...args),
+}))
+
+vi.mock('./listing-published-dispatch-queue-producer.ts', () => ({
+	enqueueCommunityListingPublishedDispatch: (...args: Array<unknown>) =>
+		mockModule.enqueueCommunityListingPublishedDispatch(...args),
 }))
 
 vi.mock('#worker/package-registry/scope-grants.ts', () => ({
@@ -191,6 +198,9 @@ const testCommunityAssets = {
 const testCommunityActivityQueue = {
 	send: vi.fn(),
 } as unknown as Queue
+const testCommunityListingPublishedQueue = {
+	send: vi.fn(),
+} as unknown as Queue
 
 function createEnv() {
 	return {
@@ -198,6 +208,8 @@ function createEnv() {
 		BUNDLE_ARTIFACTS_KV: testBundleArtifactsKv,
 		COMMUNITY_ASSETS: testCommunityAssets,
 		COMMUNITY_ACTIVITY_DISPATCH_QUEUE: testCommunityActivityQueue,
+		COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE:
+			testCommunityListingPublishedQueue,
 	} as Env
 }
 
@@ -715,6 +727,104 @@ test('publishCommunityListing accepts Intent heading beyond storage truncation',
 			}),
 		}),
 	)
+})
+
+test('publishCommunityListing enqueues listing.published only on first publish', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
+	mockModule.insertCommunityListing.mockResolvedValue(undefined)
+	mockModule.writeCommunitySnapshot.mockResolvedValue(undefined)
+	mockModule.getCommunityListingById.mockImplementation(
+		async (_db: unknown, input: { listingId: string }) =>
+			sampleListing({ id: input.listingId }),
+	)
+	mockModule.insertCommunityActivityEvent.mockResolvedValue(undefined)
+
+	await publishCommunityListing({
+		env: createEnv(),
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+
+	const insertedListingId = mockModule.insertCommunityListing.mock.calls[0]?.[1]
+		?.id as string
+	expect(insertedListingId).toEqual(expect.any(String))
+	expect(mockModule.insertCommunityActivityEvent).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			eventType: 'listing_published',
+			listingId: insertedListingId,
+		}),
+	)
+	expect(
+		mockModule.enqueueCommunityListingPublishedDispatch,
+	).toHaveBeenCalledWith({
+		queue: expect.anything(),
+		listingId: insertedListingId,
+	})
+
+	mockModule.enqueueCommunityListingPublishedDispatch.mockClear()
+	mockModule.insertCommunityActivityEvent.mockClear()
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
+		sampleListing({ id: insertedListingId }),
+	)
+	mockModule.updateCommunityListing.mockResolvedValue(true)
+	mockModule.getCommunityListingById.mockResolvedValue(
+		sampleListing({ id: insertedListingId, pinnedCommit: 'commit-2' }),
+	)
+	const republishedSource = validPublishSource()
+	republishedSource.source.published_commit = 'commit-2'
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(republishedSource)
+
+	await publishCommunityListing({
+		env: createEnv(),
+		baseUrl: 'https://heykody.dev',
+		userId: 'user-1',
+		packageId: 'package-1',
+	})
+
+	expect(mockModule.insertCommunityActivityEvent).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			eventType: 'listing_updated',
+			listingId: insertedListingId,
+		}),
+	)
+	expect(
+		mockModule.enqueueCommunityListingPublishedDispatch,
+	).not.toHaveBeenCalled()
+})
+
+test('publishCommunityListing does not fail when listing.published enqueue fails', async () => {
+	consoleError.mockImplementation(() => {})
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
+	mockModule.insertCommunityListing.mockResolvedValue(undefined)
+	mockModule.writeCommunitySnapshot.mockResolvedValue(undefined)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.enqueueCommunityListingPublishedDispatch.mockRejectedValue(
+		new Error('queue unavailable'),
+	)
+
+	await expect(
+		publishCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-1',
+			packageId: 'package-1',
+		}),
+	).resolves.toMatchObject({ id: 'listing-1' })
+	expect(consoleError).toHaveBeenCalledWith(
+		'community-listing-published-dispatch-enqueue-failed',
+		expect.any(Error),
+	)
+
+	mockModule.enqueueCommunityListingPublishedDispatch.mockReset()
 })
 
 test('publishCommunityListing invalidates old and reused icon revisions', async () => {

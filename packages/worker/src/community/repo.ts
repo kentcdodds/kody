@@ -404,6 +404,35 @@ export async function getCommunityListingById(
 	return row ? mapCommunityListingRow(row) : null
 }
 
+export async function getActiveCommunityListingWithPublisherUsername(
+	db: D1Database,
+	input: { listingId: string },
+): Promise<{
+	listing: CommunityListingRecord
+	publisherUsername: string | null
+} | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${communityListingSelectColumns},
+				users.username AS publisher_username
+			FROM community_listings
+			${communityListingSourceJoin}
+			LEFT JOIN users ON users.stable_user_id = community_listings.owner_user_id
+			WHERE community_listings.id = ?
+				AND community_listings.status = 'active'`,
+		)
+		.bind(input.listingId)
+		.first<Record<string, unknown>>()
+	if (!row) return null
+	return {
+		listing: mapCommunityListingRow(row),
+		publisherUsername:
+			row['publisher_username'] == null
+				? null
+				: String(row['publisher_username']).trim() || null,
+	}
+}
+
 export async function getCommunityListingByOwnerAndPackage(
 	db: D1Database,
 	input: {
