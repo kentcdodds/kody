@@ -1,7 +1,8 @@
-# Social login (Sign in with GitHub / Google / X)
+# Social login (Sign in with GitHub / Google / X / Discord)
 
-Kody supports social login as an OAuth 2.0 **client** of GitHub, Google, and X.
-This is a third OAuth subsystem, deliberately separate from the other two:
+Kody supports social login as an OAuth 2.0 **client** of GitHub, Google, X, and
+Discord. This is a third OAuth subsystem, deliberately separate from the other
+two:
 
 - Kody-as-provider MCP OAuth (`/oauth/authorize`, `/oauth/callback`)
 - Outbound integration OAuth for connecting third-party APIs (`/connect/oauth`)
@@ -108,21 +109,67 @@ Scopes requested: `tweet.read users.read users.email` (PKCE S256 is mandatory;
 the token endpoint uses HTTP Basic client authentication). Note that X meters
 `GET /2/users/me` calls under its credit-based API pricing.
 
+### Discord
+
+1. In the [Discord Developer Portal](https://discord.com/developers/applications),
+   create an application named **Kody**.
+2. On the **OAuth2** tab, add
+   `https://<your-domain>/auth/discord/callback` as a redirect
+   (production: `https://kody.codes/auth/discord/callback`). For local testing
+   against the real provider also add
+   `http://localhost:3742/auth/discord/callback`.
+3. Copy the **Client ID** and reset/reveal the **Client Secret**.
+4. Save them as `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`.
+
+Scopes requested: `identify email`. Discord's `verified` field on
+`GET /users/@me` gates email-based account matching, the same way Google's
+`email_verified` does. Unverified Discord emails can only be linked from
+`/account` while already signed in.
+
+Do not add `/connect/oauth` to this application. User-owned Discord integrations
+for the assistant stay on a separate app and the `/connect/oauth` flow (see
+[`docs/guides/providers/discord.md`](../guides/providers/discord.md)).
+
+### Official Kody Discord member role
+
+When `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and `DISCORD_MEMBER_ROLE_ID` are
+all set, connecting or signing in with Discord best-effort assigns that role in
+the official Kody Discord. Disconnect and account deletion best-effort remove
+it. Login still succeeds when the bot is unset, the member is not in the guild
+yet (HTTP 404), or Discord errors.
+
+The bot must already be in the guild with **Manage Roles**, and its highest role
+must sit above the member role it assigns. Users join through the existing
+invite (`https://kcd.im/kody-discord`); login does not request `guilds.join`.
+`/account` shows a Join the Kody Discord link on a connected Discord row, plus
+**Sync member role** when bot config is present.
+
+Social-login tokens are still discarded after the profile fetch. Role writes use
+the operator bot token and the stored Discord snowflake only.
+
 ## Environment variables
 
-All six are optional Worker secrets; a provider's button only renders when both
-of its values are set (see `packages/worker/src/app/oauth-providers.ts`):
+The client id/secret pairs are optional Worker secrets; a provider's button
+only renders when both of its values are set (see
+`packages/worker/src/app/oauth-providers.ts`):
 
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
 - `X_CLIENT_ID` / `X_CLIENT_SECRET`
+- `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`
+- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID`
+  (optional together; enable official Discord member-role sync)
 
-For production deploys, store them as GitHub Actions repository secrets named
-`OAUTH_GITHUB_CLIENT_ID`, `OAUTH_GITHUB_CLIENT_SECRET`,
-`OAUTH_GOOGLE_CLIENT_ID`, `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_X_CLIENT_ID`, and
-`OAUTH_X_CLIENT_SECRET` (the `OAUTH_` prefix avoids colliding with the reserved
-`GITHUB_*` Actions namespace). `.github/workflows/deploy.yml` syncs them to the
-Worker as the unprefixed secret names when present.
+For production deploys, store the social-login client credentials as GitHub
+Actions repository secrets named `OAUTH_GITHUB_CLIENT_ID`,
+`OAUTH_GITHUB_CLIENT_SECRET`, `OAUTH_GOOGLE_CLIENT_ID`,
+`OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_X_CLIENT_ID`, `OAUTH_X_CLIENT_SECRET`,
+`OAUTH_DISCORD_CLIENT_ID`, and `OAUTH_DISCORD_CLIENT_SECRET` (the `OAUTH_`
+prefix avoids colliding with the reserved `GITHUB_*` Actions namespace).
+`.github/workflows/deploy.yml` syncs them to the Worker as the unprefixed
+secret names when present. The Discord bot token and guild/role ids use the
+unprefixed Actions secret names `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and
+`DISCORD_MEMBER_ROLE_ID`.
 
 ## Mocking and tests
 
@@ -141,4 +188,5 @@ Coverage:
 - `packages/worker/src/app/handlers/auth-provider.node.test.ts` — full
   start/callback flows against MSW-mocked GitHub/Google/X HTTP endpoints plus
   the mock-mode flow
-- `e2e/social-login.spec.ts` — browser sign-in through the mock GitHub provider
+- `e2e/social-login.spec.ts` — browser sign-in through the mock GitHub provider,
+  then connecting Google and Discord from `/account`

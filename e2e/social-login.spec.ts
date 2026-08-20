@@ -11,7 +11,7 @@ test('social login signs in via mock GitHub and manages connections', async ({
 	page,
 }) => {
 	executeE2eD1Command(
-		`DELETE FROM oauth_connections WHERE provider_id IN ('mock-github-user-1', 'mock-google-user-1', 'mock-x-user-1'); DELETE FROM users WHERE email IN ('mock-github-user@example.com', 'mock-google-user@example.com');`,
+		`DELETE FROM oauth_connections WHERE provider_id IN ('mock-github-user-1', 'mock-google-user-1', 'mock-x-user-1', 'mock-discord-user-1'); DELETE FROM users WHERE email IN ('mock-github-user@example.com', 'mock-google-user@example.com', 'mock-discord-user@example.com');`,
 	)
 	clearAuthRateLimitsInE2eDatabase()
 	await page.context().clearCookies()
@@ -54,5 +54,20 @@ test('social login signs in via mock GitHub and manages connections', async ({
 	await expect(googleRow).toBeVisible()
 	await expect(
 		googleRow.getByText('Connected as Mock Google User'),
+	).toBeVisible()
+
+	clearAuthRateLimitsInE2eDatabase()
+	await connectionsCard.getByRole('button', { name: 'Connect Discord' }).click()
+	await expect(page).toHaveURL(/\/account\?oauthLinked=discord$/)
+	await expect(page.getByText('Discord connected.')).toBeVisible()
+	const discordRow = connectionsCard
+		.getByRole('listitem')
+		.filter({ hasText: 'Discord' })
+	await expect(discordRow).toBeVisible()
+	await expect(
+		discordRow.getByText('Connected as mock-discord-user'),
+	).toBeVisible()
+	await expect(
+		discordRow.getByRole('link', { name: 'Join the Kody Discord' }),
 	).toBeVisible()
 })

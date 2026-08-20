@@ -330,6 +330,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		connections: [],
 		canDisconnect: false,
 		availableProviders: [],
+		canSyncDiscordMemberRole: false,
 	})
 	expect(accountProps.loaderData?.onboarding).toEqual({
 		ok: true,
@@ -394,6 +395,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		connections: [],
 		canDisconnect: false,
 		availableProviders: [],
+		canSyncDiscordMemberRole: false,
 	})
 
 	const onboardingResponse = await runHtmlHandler(

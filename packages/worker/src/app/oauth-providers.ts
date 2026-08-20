@@ -6,10 +6,10 @@ import { isNonProductionRuntime } from '#app/deployment-env.ts'
  * This is deliberately separate from the other two OAuth subsystems:
  * Kody-as-provider MCP OAuth (`packages/worker/src/oauth-handlers.ts`) and
  * outbound integration OAuth (`/connect/oauth`). Here Kody is a confidential
- * OAuth client of GitHub, Google, and X for user authentication only; no
- * provider access tokens are persisted.
+ * OAuth client of GitHub, Google, X, and Discord for user authentication
+ * only; no provider access tokens are persisted.
  */
-export const oauthProviderIds = ['github', 'google', 'x'] as const
+export const oauthProviderIds = ['github', 'google', 'x', 'discord'] as const
 export type OauthProviderId = (typeof oauthProviderIds)[number]
 
 export function isOauthProviderId(value: string): value is OauthProviderId {
@@ -33,6 +33,8 @@ export type OauthProviderEnv = {
 	GOOGLE_CLIENT_SECRET?: string | undefined
 	X_CLIENT_ID?: string | undefined
 	X_CLIENT_SECRET?: string | undefined
+	DISCORD_CLIENT_ID?: string | undefined
+	DISCORD_CLIENT_SECRET?: string | undefined
 	WRANGLER_IS_LOCAL_DEV?: string | undefined
 	SENTRY_ENVIRONMENT?: string | undefined
 }
@@ -81,6 +83,14 @@ export const oauthProviderDefinitions: Record<
 		usesPkce: true,
 		tokenAuthStyle: 'basic',
 	},
+	discord: {
+		label: 'Discord',
+		authorizationEndpoint: 'https://discord.com/oauth2/authorize',
+		tokenEndpoint: 'https://discord.com/api/oauth2/token',
+		scope: 'identify email',
+		usesPkce: true,
+		tokenAuthStyle: 'body',
+	},
 }
 
 const oauthClientEnvKeys: Record<
@@ -96,6 +106,10 @@ const oauthClientEnvKeys: Record<
 		clientSecret: 'GOOGLE_CLIENT_SECRET',
 	},
 	x: { clientId: 'X_CLIENT_ID', clientSecret: 'X_CLIENT_SECRET' },
+	discord: {
+		clientId: 'DISCORD_CLIENT_ID',
+		clientSecret: 'DISCORD_CLIENT_SECRET',
+	},
 }
 
 function readEnvValue(value: string | undefined) {
@@ -164,6 +178,14 @@ export function getMockOauthProfile(provider: OauthProviderId): OauthProfile {
 				emailVerified: false,
 				username: 'mock-x-user',
 				displayName: 'Mock X User',
+			}
+		case 'discord':
+			return {
+				providerUserId: 'mock-discord-user-1',
+				email: 'mock-discord-user@example.com',
+				emailVerified: true,
+				username: 'mock-discord-user',
+				displayName: 'Mock Discord User',
 			}
 		default: {
 			const exhaustiveCheck: never = provider
@@ -401,6 +423,32 @@ async function fetchGoogleProfile(accessToken: string): Promise<OauthProfile> {
 	}
 }
 
+async function fetchDiscordProfile(accessToken: string): Promise<OauthProfile> {
+	const user = await fetchProviderJson(
+		'https://discord.com/api/v10/users/@me',
+		accessToken,
+	)
+	const providerUserId = readString(user, 'id')
+	if (!providerUserId) {
+		throw new OauthProviderRequestError('Discord profile is missing an id.')
+	}
+	const email = readString(user, 'email')
+	const emailVerified =
+		Boolean(email) &&
+		Boolean(
+			user &&
+			typeof user === 'object' &&
+			(user as Record<string, unknown>).verified === true,
+		)
+	return {
+		providerUserId,
+		email,
+		emailVerified,
+		username: readString(user, 'username'),
+		displayName: readString(user, 'global_name') ?? readString(user, 'username'),
+	}
+}
+
 async function fetchXProfile(accessToken: string): Promise<OauthProfile> {
 	const payload = await fetchProviderJson(
 		'https://api.x.com/2/users/me?user.fields=confirmed_email',
@@ -449,6 +497,8 @@ export async function resolveOauthProfile(input: {
 			return fetchGoogleProfile(accessToken)
 		case 'x':
 			return fetchXProfile(accessToken)
+		case 'discord':
+			return fetchDiscordProfile(accessToken)
 		default: {
 			const exhaustiveCheck: never = provider
 			throw new Error(`Unhandled OAuth provider: ${String(exhaustiveCheck)}`)

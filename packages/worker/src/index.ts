@@ -110,6 +110,7 @@ const socialLoginStartPaths = new Set([
 	'/auth/github',
 	'/auth/google',
 	'/auth/x',
+	'/auth/discord',
 ])
 
 const rateLimitedAuthPaths = new Set([

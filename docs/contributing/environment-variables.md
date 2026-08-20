@@ -166,7 +166,7 @@ URLs and headers where the MCP runtime supports them. Host allowlists and
 capability policies apply per secret. There are no GitHub-specific Worker
 environment variables.
 
-## Social login (GitHub / Google / X)
+## Social login (GitHub / Google / X / Discord)
 
 Optional Worker secrets (see `packages/worker/src/app/oauth-providers.ts` and
 [`social-login.md`](./social-login.md)):
@@ -174,6 +174,9 @@ Optional Worker secrets (see `packages/worker/src/app/oauth-providers.ts` and
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
 - `X_CLIENT_ID` / `X_CLIENT_SECRET`
+- `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`
+- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID`
+  (optional together; official Kody Discord member-role sync)
 
 A provider's login button only renders when both of its values are set. A
 `MOCK_`-prefixed client id activates the in-worker mock provider flow on

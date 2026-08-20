@@ -15,6 +15,7 @@ import {
 	type AccountProfileLoaderData,
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
+import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
@@ -67,6 +68,7 @@ const providerLabels: Record<string, string> = {
 	github: 'GitHub',
 	google: 'Google',
 	x: 'X',
+	discord: 'Discord',
 }
 
 /** One-shot message from the OAuth callback redirect query params. */
@@ -156,6 +158,7 @@ export function AccountRoute(handle: Handle) {
 	let connections: Array<AccountConnectionListItem> = []
 	let canDisconnect = true
 	let availableProviders: Array<{ id: string; label: string }> = []
+	let canSyncDiscordMemberRole = false
 	let connectionsMessage: { text: string; tone: 'error' | 'info' } | null = null
 	let consumedCallbackMessage = false
 	let needsOnboarding = false
@@ -166,6 +169,7 @@ export function AccountRoute(handle: Handle) {
 		connections = payload.connections
 		canDisconnect = payload.canDisconnect
 		availableProviders = payload.availableProviders
+		canSyncDiscordMemberRole = payload.canSyncDiscordMemberRole
 	}
 
 	async function handleConnectProvider(providerId: string) {
@@ -188,6 +192,70 @@ export function AccountRoute(handle: Handle) {
 			connectionsBusy = false
 		}
 		handle.update()
+	}
+
+	function discordMemberRoleMessage(status: string) {
+		switch (status) {
+			case 'assigned':
+				return 'Kody Discord member role assigned.'
+			case 'not-in-guild':
+				return 'Join the Kody Discord first, then sync the member role.'
+			case 'not-configured':
+			case 'skipped':
+				return 'Discord member role sync is not configured.'
+			case 'forbidden':
+				return 'Kody could not update your Discord role. Please try again later.'
+			default:
+				return 'Unable to sync the Discord member role.'
+		}
+	}
+
+	async function handleSyncDiscordMemberRole() {
+		connectionsBusy = true
+		connectionsMessage = null
+		handle.update()
+		try {
+			const response = await fetch(connectionsApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({ intent: 'sync-discord-role' }),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountConnectionsLoaderData & {
+					error?: string
+					discordMemberRole?: { status: string }
+				}
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to sync the Discord role.')
+			}
+			applyConnectionsPayload(payload)
+			const status = payload.discordMemberRole?.status ?? 'error'
+			connectionsMessage = {
+				text: discordMemberRoleMessage(status),
+				tone:
+					status === 'assigned' || status === 'not-in-guild' ? 'info' : 'error',
+			}
+		} catch (error) {
+			connectionsMessage = {
+				text:
+					error instanceof Error
+						? error.message
+						: 'Unable to sync the Discord role.',
+				tone: 'error',
+			}
+		} finally {
+			connectionsBusy = false
+			handle.update()
+		}
 	}
 
 	async function handleDisconnectProvider(providerId: string) {
@@ -968,7 +1036,7 @@ export function AccountRoute(handle: Handle) {
 						</AccountManagementPanel>
 						<AccountManagementPanel
 							title="Connected accounts"
-							description="Sign in with GitHub, Google, or X by connecting them to this account. Connections with the same verified email also link automatically at sign-in."
+							description="Sign in with GitHub, Google, X, or Discord by connecting them to this account. Connections with the same verified email also link automatically at sign-in."
 							ariaLabel="Connected accounts"
 						>
 							{connectionsMessage ? (
@@ -1030,24 +1098,55 @@ export function AccountRoute(handle: Handle) {
 															? `Connected as ${connection.displayName}`
 															: 'Connected'}
 													</span>
+													{connection.provider === 'discord' ? (
+														<a
+															href={kodyDiscordInviteUrl}
+															target="_blank"
+															rel="noreferrer"
+															mix={css(mutedLinkCss)}
+														>
+															Join the Kody Discord
+														</a>
+													) : null}
 												</span>
-												<button
-													type="button"
-													disabled={connectionsBusy || !canDisconnect}
-													title={
-														canDisconnect
-															? undefined
-															: 'This connection is your only way to sign in. Set a password or register a passkey first.'
-													}
-													mix={[
-														css(dangerButtonCss),
-														on('click', () =>
-															handleDisconnectProvider(connection.provider),
-														),
-													]}
+												<span
+													mix={css({
+														display: 'flex',
+														gap: spacing.sm,
+														flexWrap: 'wrap',
+													})}
 												>
-													Disconnect
-												</button>
+													{connection.provider === 'discord' &&
+													canSyncDiscordMemberRole ? (
+														<button
+															type="button"
+															disabled={connectionsBusy}
+															mix={[
+																css(compactGhostButtonCss),
+																on('click', handleSyncDiscordMemberRole),
+															]}
+														>
+															Sync member role
+														</button>
+													) : null}
+													<button
+														type="button"
+														disabled={connectionsBusy || !canDisconnect}
+														title={
+															canDisconnect
+																? undefined
+																: 'This connection is your only way to sign in. Set a password or register a passkey first.'
+														}
+														mix={[
+															css(dangerButtonCss),
+															on('click', () =>
+																handleDisconnectProvider(connection.provider),
+															),
+														]}
+													>
+														Disconnect
+													</button>
+												</span>
 											</li>
 										))}
 									</ul>

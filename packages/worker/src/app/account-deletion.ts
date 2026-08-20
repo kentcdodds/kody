@@ -59,6 +59,7 @@ import { deleteAllPackageRetrieverCacheEntriesForUser } from '#worker/package-re
 import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
 import { buildCommunityIconCacheKey } from '#worker/community/community-icon.ts'
 import { derivedCacheKeyPrefix } from '#worker/kv-cachified.ts'
+import { maybeRemoveDiscordMemberRole } from '#app/discord-guild-role.ts'
 
 // Imported manually instead of via `@cloudflare/workers-oauth-provider` so
 // node-only unit tests can require this module without dragging in
@@ -1143,6 +1144,26 @@ export async function deleteUserAccount(input: {
 		warnings,
 	})
 	result.deletedEmailBlobs = emailCleanup.deletedEmailBlobs
+
+	const discordConnection = await input.env.APP_DB.prepare(
+		`SELECT provider_id FROM oauth_connections
+		 WHERE user_id = ? AND provider_name = 'discord'`,
+	)
+		.bind(input.dbUserId)
+		.first<{ provider_id: string }>()
+		.catch((error) => {
+			console.warn(
+				'Failed to read Discord connection for member-role cleanup:',
+				error,
+			)
+			return null
+		})
+	if (discordConnection?.provider_id) {
+		await maybeRemoveDiscordMemberRole({
+			env: input.env,
+			discordUserId: discordConnection.provider_id,
+		})
+	}
 
 	const helpers = input.env.OAUTH_PROVIDER
 	if (helpers) {

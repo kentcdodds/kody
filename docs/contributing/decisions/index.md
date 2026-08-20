@@ -48,3 +48,4 @@ behavior (see [documentation principles](../documentation.md)).
 - [0025 — No package services primitive](./0025-no-package-services-primitive.md)
 - [0026 — Package-owned invocation tokens](./0026-package-owned-invocation-tokens.md)
 - [0027 — No invocation-token source allowlist](./0027-no-invocation-token-source-allowlist.md)
+- [0028 — Discord social login and official guild role](./0028-discord-social-login-and-guild-role.md)

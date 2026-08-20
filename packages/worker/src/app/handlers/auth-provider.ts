@@ -67,6 +67,7 @@ import { defaultPostVerificationRedirect } from '#universal/safe-redirect.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
 import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
+import { maybeAssignDiscordMemberRole } from '#app/discord-guild-role.ts'
 
 /**
  * Accounts created through social login have no usable password until the
@@ -268,6 +269,17 @@ export function createAuthProviderCallbackHandler(env: Env) {
 		})
 	}
 
+	async function syncDiscordMemberRole(input: {
+		provider: OauthProviderId
+		discordUserId: string
+	}) {
+		if (input.provider !== 'discord') return
+		await maybeAssignDiscordMemberRole({
+			env,
+			discordUserId: input.discordUserId,
+		})
+	}
+
 	return {
 		middleware: [],
 		async handler({ request, url, params }) {
@@ -417,6 +429,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				}
 				if (connection) {
 					if (connection.user_id === currentUser.id) {
+						await syncDiscordMemberRole({
+							provider,
+							discordUserId: profile.providerUserId,
+						})
 						return redirect(`/account?oauthLinked=${provider}`, [
 							clearStateCookie,
 						])
@@ -435,6 +451,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					}
 					throw error
 				}
+				await syncDiscordMemberRole({
+					provider,
+					discordUserId: profile.providerUserId,
+				})
 				void logAuditEvent({
 					category: 'auth',
 					action: 'oauth_connection_linked',
@@ -455,6 +475,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				if (!user) {
 					return fail('account-error', 'connection_user_missing')
 				}
+				await syncDiscordMemberRole({
+					provider,
+					discordUserId: profile.providerUserId,
+				})
 				return issueLogin(user)
 			}
 
@@ -488,6 +512,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						email_verified_at: new Date().toISOString(),
 					})
 				}
+				await syncDiscordMemberRole({
+					provider,
+					discordUserId: profile.providerUserId,
+				})
 				return issueLogin(existingUser)
 			}
 
@@ -593,6 +621,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				await rollbackNewUser(newUser.id)
 				return fail('account-error', 'connection_create_failed')
 			}
+			await syncDiscordMemberRole({
+				provider,
+				discordUserId: profile.providerUserId,
+			})
 
 			// Best-effort, mirroring password signup: the automatic
 			// {username}@<platform domain> inbox is also provisioned on first

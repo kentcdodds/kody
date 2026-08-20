@@ -276,7 +276,8 @@ cannot fan out across parallel paths. Covered paths (`rateLimitedAuthPaths` in
 `packages/worker/src/index.ts`):
 
 - `POST /auth` (password login/signup)
-- `POST /auth/github`, `POST /auth/google`, `POST /auth/x` (social login start)
+- `POST /auth/github`, `POST /auth/google`, `POST /auth/x`, `POST /auth/discord`
+  (social login start)
 - `POST /oauth/authorize` (inline OAuth login)
 - `POST /password-reset` (reset request)
 - `POST /password-reset/confirm` (reset confirmation)
