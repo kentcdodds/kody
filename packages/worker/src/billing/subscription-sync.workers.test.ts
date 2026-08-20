@@ -418,6 +418,9 @@ test('checkout linking assigns the Discord Pro role when Discord is connected', 
 			sessionId: 'cs_discord_pro',
 		})
 		expect(result.stripePlan).toBe('pro')
+		await vi.waitFor(() => {
+			expect(discordCalls).toHaveLength(3)
+		})
 		expect(discordCalls).toEqual(
 			expect.arrayContaining([
 				{

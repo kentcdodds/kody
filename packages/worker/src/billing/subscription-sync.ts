@@ -66,7 +66,7 @@ export async function refreshStripePlanForUser(input: {
 			input.customerId,
 		)
 		.run()
-	await maybeSyncDiscordGuildRolesForUser({
+	void maybeSyncDiscordGuildRolesForUser({
 		env: input.env,
 		userId: input.userId,
 		stripePlan: resolved.stripePlan,
