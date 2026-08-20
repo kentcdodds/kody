@@ -113,6 +113,10 @@ function buildMainGeneratedConfig(envName: string) {
 								queue: 'kody-community-activity-dispatch',
 							},
 							{
+								binding: 'COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE',
+								queue: 'kody-community-listing-published-dispatch',
+							},
+							{
 								binding: 'SCHEDULED_DISPATCH_QUEUE',
 								queue: 'kody-scheduled-dispatch',
 							},
