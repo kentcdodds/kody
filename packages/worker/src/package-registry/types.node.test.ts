@@ -22,6 +22,9 @@ test('kody.dependencies accepts a name-to-* map and a legacy name array, and lis
 	expect(
 		listKodyPackageDependencyNames(['@scope/b', ' @scope/a ', '@scope/b']),
 	).toEqual(['@scope/a', '@scope/b'])
+	expect(listKodyPackageDependencyNames([1, '@scope/a', null])).toEqual([
+		'@scope/a',
+	])
 	expect(
 		listKodyPackageDependencyNames({
 			'@scope/b': '*',
@@ -69,6 +72,19 @@ test('kody.dependencies accepts a name-to-* map and a legacy name array, and lis
 	expect(() =>
 		parseAuthoredPackageJson({
 			content: manifest(['helper']),
+		}),
+	).toThrow(/scoped package names/)
+
+	// Zod 4 still runs transform after non-fatal superRefine issues. A
+	// non-string array entry must stay a schema failure, not a throw from trim.
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: manifest([1, '@scope/helper']),
+		}),
+	).toThrow(/scoped package names/)
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: manifest([null]),
 		}),
 	).toThrow(/scoped package names/)
 })

@@ -176,14 +176,14 @@ export type KodyPackageDependency = z.infer<typeof kodyPackageDependencySchema>
 export function listKodyPackageDependencyNames(
 	dependencies:
 		| KodyPackageDependencies
-		| ReadonlyArray<string>
+		| ReadonlyArray<unknown>
 		| Record<string, string>
 		| null
 		| undefined,
 ): Array<string> {
 	if (dependencies == null) return []
 	const names = Array.isArray(dependencies)
-		? dependencies
+		? dependencies.filter((name): name is string => typeof name === 'string')
 		: Object.keys(dependencies)
 	return Array.from(
 		new Set(names.map((name) => name.trim()).filter((name) => name.length > 0)),
@@ -208,6 +208,7 @@ const kodyPackageDependenciesSchema = z
 						path: [index],
 						message:
 							'Static Kody package dependencies must be scoped package names like "@scope/package".',
+						fatal: true,
 					})
 					continue
 				}
@@ -254,7 +255,7 @@ const kodyPackageDependenciesSchema = z
 		if (value === undefined) return undefined
 		if (Array.isArray(value)) {
 			return Object.fromEntries(
-				listKodyPackageDependencyNames(value as Array<string>).map((name) => [
+				listKodyPackageDependencyNames(value).map((name) => [
 					name,
 					kodyPackageDependencyWildcard,
 				]),
