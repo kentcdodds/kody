@@ -4,6 +4,7 @@ import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { hashVerificationToken } from '#app/email-verification.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { buildEmailChangeEmail } from '#app/email/messages.ts'
+import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { createDb, pendingEmailChangesTable } from '#worker/db.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
@@ -17,13 +18,20 @@ function generateEmailChangeToken() {
 }
 
 function getEmailChangeConfig(input: {
-	env: Pick<Env, 'APP_BASE_URL'>
+	env: Pick<Env, 'APP_BASE_URL' | 'SYSTEM_EMAIL_DOMAIN'> & {
+		WRANGLER_IS_LOCAL_DEV?: string
+	}
 	requestUrl: string | URL
 }) {
-	const configuredBaseUrl = input.env.APP_BASE_URL?.trim()
-	const appBaseUrl = new URL(configuredBaseUrl || input.requestUrl).origin
-	const fromEmail = `kody@${new URL(appBaseUrl).hostname}`
-	return { appBaseUrl, fromEmail }
+	return (
+		resolveTransactionalEmailConfig({
+			env: input.env,
+			requestUrl: input.requestUrl,
+		}) ?? {
+			appBaseUrl: new URL(input.requestUrl).origin,
+			fromEmail: `kody@${new URL(input.requestUrl).hostname}`,
+		}
+	)
 }
 
 export async function createEmailChangeVerification(input: {

@@ -12,6 +12,14 @@ type EmailAction = {
 	url: string
 }
 
+type EmailIllustration = {
+	/** Site-relative path resolved against `appBaseUrl`. */
+	src: string
+	alt: string
+	width: number
+	height: number
+}
+
 export type TransactionalEmailContent = {
 	/** Absolute origin used to load the Kody mark; keeps the image reachable from mail clients. */
 	appBaseUrl: string
@@ -27,6 +35,8 @@ export type TransactionalEmailContent = {
 	action?: EmailAction
 	/** Paragraphs shown below the action button, above the footer. */
 	afterAction?: Array<string>
+	/** Optional decorative image centered at the bottom of the card. */
+	illustration?: EmailIllustration
 	/** Small muted line at the very bottom of the card. */
 	footnote?: string
 }
@@ -82,6 +92,17 @@ export function renderTransactionalEmail(
             </table>
             <p class="kody-muted" style="${mutedStyle}">Button not working? Paste this link into your browser:<br /><a href="${escapeHtml(action.url)}" class="kody-link" style="color: ${colors.accent}; word-break: break-all;">${escapeHtml(action.url)}</a></p>`
 		: ''
+	const illustration = content.illustration
+	const illustrationBlock = illustration
+		? `
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 8px 0 0;">
+              <tr>
+                <td align="center">
+                  <img src="${escapeHtml(new URL(illustration.src, content.appBaseUrl).toString())}" alt="${escapeHtml(illustration.alt)}" width="${illustration.width}" height="${illustration.height}" style="display: block; margin: 0 auto; width: ${illustration.width}px; height: ${illustration.height}px; border: 0;" />
+                </td>
+              </tr>
+            </table>`
+		: ''
 
 	const html = `<!doctype html>
 <html lang="en">
@@ -126,7 +147,7 @@ export function renderTransactionalEmail(
               <td class="kody-card" style="background-color: ${colors.card}; border: 1px solid ${colors.border}; border-radius: 14px; padding: 32px;">
                 <h1 class="kody-text" style="margin: 0 0 16px; font-family: ${displayFontStack}; font-size: 24px; line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; color: ${colors.text};">${escapeHtml(content.heading)}</h1>
                 ${paragraphs(content.body, 'kody-text', bodyStyle)}${actionBlock}
-                ${content.afterAction?.length ? paragraphs(content.afterAction, 'kody-muted', mutedStyle) : ''}
+                ${content.afterAction?.length ? paragraphs(content.afterAction, 'kody-muted', mutedStyle) : ''}${illustrationBlock}
               </td>
             </tr>
             ${

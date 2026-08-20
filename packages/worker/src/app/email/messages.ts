@@ -22,6 +22,12 @@ export function buildVerificationEmail(input: {
 		],
 		action: { label: 'Verify email address', url: input.verificationUrl },
 		afterAction: ['This link expires in 24 hours.'],
+		illustration: {
+			src: '/images/kody-lantern.webp',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
 		footnote:
 			'If you did not create a Kody account, you can safely ignore this email.',
 	})

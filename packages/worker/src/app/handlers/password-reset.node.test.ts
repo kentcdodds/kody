@@ -87,6 +87,40 @@ function createResetRequest() {
 
 const hexTokenPattern = /[0-9a-f]{64}/i
 
+test('password reset sends from the sending domain when SYSTEM_EMAIL_DOMAIN overrides a legacy APP_BASE_URL', async () => {
+	vi.clearAllMocks()
+	const handler = createPasswordResetRequestHandler(
+		createEnv({
+			APP_BASE_URL: 'https://heykody.dev',
+			SYSTEM_EMAIL_DOMAIN: 'kody.codes',
+		}),
+	)
+
+	const response = await handler.handler({
+		request: createResetRequest(),
+		url: new URL('https://heykody.dev/password-reset'),
+		params: {},
+	})
+
+	expect(response.status).toBe(200)
+	expect(mockModule.sendCloudflareEmail).toHaveBeenCalledWith(
+		{
+			accountId: 'account-id',
+			apiBaseUrl: 'https://api.cloudflare.test',
+			apiToken: 'api-token',
+		},
+		expect.objectContaining({
+			from: 'kody@kody.codes',
+			to: 'user@example.com',
+		}),
+	)
+	const [, message] = mockModule.sendCloudflareEmail.mock.calls[0]!
+	expect((message as { text: string }).text).toContain(
+		'https://kody.codes/reset-password?token=',
+	)
+	expect((message as { html: string }).html).not.toContain('heykody.dev')
+})
+
 test('password reset sends from the APP_BASE_URL hostname without logging the token', async () => {
 	vi.clearAllMocks()
 	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})

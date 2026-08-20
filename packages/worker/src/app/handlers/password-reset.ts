@@ -19,6 +19,7 @@ import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { buildPasswordResetEmail } from '#app/email/messages.ts'
+import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 
 const resetRequestSchema = object({
 	email: string(),
@@ -39,13 +40,12 @@ function logMissingEmailConfig(payload: { to: string; subject: string }) {
 	)
 }
 
-function getPasswordResetEmailConfig(env: Pick<Env, 'APP_BASE_URL'>) {
-	const configuredBaseUrl = env.APP_BASE_URL?.trim()
-	if (!configuredBaseUrl) return null
-
-	const appBaseUrl = new URL(configuredBaseUrl).origin
-	const fromEmail = `kody@${new URL(configuredBaseUrl).hostname}`
-	return { appBaseUrl, fromEmail }
+function getPasswordResetEmailConfig(
+	env: Pick<Env, 'APP_BASE_URL' | 'SYSTEM_EMAIL_DOMAIN'> & {
+		WRANGLER_IS_LOCAL_DEV?: string
+	},
+) {
+	return resolveTransactionalEmailConfig({ env })
 }
 
 export function createPasswordResetRequestHandler(env: Env) {

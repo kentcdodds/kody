@@ -1,6 +1,7 @@
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { buildVerificationEmail } from '#app/email/messages.ts'
+import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { createDb, emailVerificationsTable } from '#worker/db.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
@@ -33,13 +34,20 @@ export async function hashVerificationToken(token: string) {
 }
 
 function getVerificationEmailConfig(input: {
-	env: Pick<Env, 'APP_BASE_URL'>
+	env: Pick<Env, 'APP_BASE_URL' | 'SYSTEM_EMAIL_DOMAIN'> & {
+		WRANGLER_IS_LOCAL_DEV?: string
+	}
 	requestUrl: string | URL
 }) {
-	const configuredBaseUrl = input.env.APP_BASE_URL?.trim()
-	const appBaseUrl = new URL(configuredBaseUrl || input.requestUrl).origin
-	const fromEmail = `kody@${new URL(appBaseUrl).hostname}`
-	return { appBaseUrl, fromEmail }
+	return (
+		resolveTransactionalEmailConfig({
+			env: input.env,
+			requestUrl: input.requestUrl,
+		}) ?? {
+			appBaseUrl: new URL(input.requestUrl).origin,
+			fromEmail: `kody@${new URL(input.requestUrl).hostname}`,
+		}
+	)
 }
 
 /** Builds `/verify-email` with token and an optional safe post-verify resume target. */

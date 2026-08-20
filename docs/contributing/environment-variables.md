@@ -330,7 +330,8 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 - `SYSTEM_EMAIL_DOMAIN` — optional override for the system email domain (the
   `kody@<domain>` transactional sender and operator system inboxes). Defaults to
   the `APP_BASE_URL` hostname. Production commits
-  `SYSTEM_EMAIL_DOMAIN=kody.codes`.
+  `SYSTEM_EMAIL_DOMAIN=kody.codes`. Signup, email-change, and password-reset
+  messages also put this host on their action and asset links.
 - `LEGACY_USER_EMAIL_DOMAINS` / `LEGACY_SYSTEM_EMAIL_DOMAINS` — optional
   comma-separated additional email domains that inbound mail is accepted on
   alongside the canonical domains (see
