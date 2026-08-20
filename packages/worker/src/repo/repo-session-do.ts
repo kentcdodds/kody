@@ -2594,10 +2594,14 @@ class RepoSessionBase extends DurableObject<Env> {
 			})
 		} catch (error) {
 			if (isGitPushNotFastForwardError(error)) {
+				const refreshedHead = await resolveLiveSourceHeadCommit(
+					this.env,
+					input.source,
+				)
 				return this.buildPublishBaseMovedResult({
 					sessionId: input.sessionRow.id,
 					sessionBaseCommit: input.sessionRow.base_commit,
-					currentPublishedCommit: liveHead,
+					currentPublishedCommit: refreshedHead ?? liveHead,
 				})
 			}
 			throw error
@@ -2752,10 +2756,14 @@ class RepoSessionBase extends DurableObject<Env> {
 			})
 		} catch (error) {
 			if (!forceSourcePush && isGitPushNotFastForwardError(error)) {
+				const refreshedHead = await resolveLiveSourceHeadCommit(
+					this.env,
+					source,
+				)
 				return this.buildPublishBaseMovedResult({
 					sessionId: input.sessionId,
 					sessionBaseCommit: sessionRow.base_commit,
-					currentPublishedCommit: source.published_commit,
+					currentPublishedCommit: refreshedHead ?? source.published_commit,
 				})
 			}
 			throw error

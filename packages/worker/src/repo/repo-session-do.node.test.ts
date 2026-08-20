@@ -138,6 +138,10 @@ const mockModule = vi.hoisted(() => {
 			remote:
 				'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
 		})),
+		resolveArtifactSourceHead: vi.fn(async () => ({
+			branch: 'main',
+			commit: 'commit-published-new',
+		})),
 		parseRepoManifest: vi.fn(() => ({ sourceRoot: '/' })),
 		runRepoChecks: vi.fn(async () => ({
 			ok: true,
@@ -257,6 +261,10 @@ function restoreRepoSessionMockBaseline() {
 		defaultBranch: 'main',
 		commit: 'commit-published-new',
 		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+	})
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-published-new',
 	})
 	mockModule.parseRepoManifest.mockReturnValue({ sourceRoot: '/' })
 	mockModule.runRepoChecks.mockResolvedValue({
@@ -467,6 +475,8 @@ vi.mock('./artifacts.ts', async () => {
 			mockModule.resolveExistingArtifactSourceRepo(...args),
 		resolveArtifactDefaultBranchHead: (...args: Array<unknown>) =>
 			mockModule.resolveArtifactDefaultBranchHead(...args),
+		resolveArtifactSourceHead: (...args: Array<unknown>) =>
+			mockModule.resolveArtifactSourceHead(...args),
 	}
 })
 
@@ -2631,11 +2641,12 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 		sessionId: 'session-1',
 		publishedCommit: null,
 		sessionBaseCommit: 'commit-base',
-		currentPublishedCommit: 'commit-base',
+		currentPublishedCommit: 'commit-published-new',
 		repairHint: 'repo_rebase_session',
 		message:
 			'The source repo rejected a non-fast-forward publish. Rebase the session before publishing.',
 	})
+	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.git.push).toHaveBeenCalledWith(
 		expect.objectContaining({
