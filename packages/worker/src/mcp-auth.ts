@@ -114,6 +114,28 @@ function isBrowserMcpNavigation(request: Request) {
 	)
 }
 
+/**
+ * Official MCP Streamable HTTP clients open an optional GET SSE after
+ * `notifications/initialized`. That GET holds the sessionful Durable Object
+ * for the life of the stream, so a later POST (`tools/list`, `search`,
+ * `execute`) never runs. The spec treats GET SSE as optional; 405 tells the
+ * SDK to stay on POST.
+ */
+function isStandaloneSseGet(request: Request) {
+	if (request.method !== 'GET') return false
+	const accept = request.headers.get('Accept')?.toLowerCase() ?? ''
+	return accept.includes('text/event-stream')
+}
+
+function createStandaloneSseNotSupportedResponse() {
+	return new Response('Method Not Allowed', {
+		status: 405,
+		headers: {
+			Allow: 'POST, DELETE',
+		},
+	})
+}
+
 function createMcpBrowserLandingResponse(request: Request) {
 	const onboardingUrl = new URL('/onboarding', request.url).toString()
 	return new Response(
@@ -245,6 +267,10 @@ export async function handleMcpRequest({
 	if (authContext.suspended) {
 		await recordRejection('account_suspended', mcpUser.email)
 		return createAccountSuspendedResponse()
+	}
+
+	if (isStandaloneSseGet(request)) {
+		return createStandaloneSseNotSupportedResponse()
 	}
 
 	const props: OAuthContextProps = createMcpCallerContext({
