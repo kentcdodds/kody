@@ -157,7 +157,7 @@ export function DiscordRoute(handle: Handle) {
 					discordMemberRole?: { status: string }
 				}
 			>(response)
-			if (!response.ok || payload?.ok === false) {
+			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to sync Discord roles.')
 			}
 			const syncStatus = payload?.discordMemberRole?.status ?? 'error'
