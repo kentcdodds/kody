@@ -101,9 +101,12 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 		})
 	}
 
-	expect(getBlogPost('the-runtime-and-the-gateway')?.title).toBe(
-		'The runtime and the gateway',
-	)
+	const comparison = getBlogPost('the-runtime-and-the-gateway')
+	expect(comparison?.title).toBe('The runtime and the gateway')
+	expect(comparison?.date).toBe('2026-08-20')
+	const comparisonBody = (comparison?.body ?? '').replace(/\s+/g, ' ')
+	expect(comparisonBody).toContain('best of both worlds')
+	expect(comparisonBody).toContain('Leave one `execute`')
 	expect(getBlogPost('does-not-exist')).toBeNull()
 
 	for (let index = 1; index < posts.length; index += 1) {
