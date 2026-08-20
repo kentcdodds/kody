@@ -19,6 +19,7 @@ export const heroBaseImage = {
 export const landingArtNames = [
 	'kody-compounding-capabilities',
 	'kody-community-packages',
+	'kody-factory-map',
 	'kody-keys',
 	'kody-greeting',
 ] as const
@@ -28,6 +29,7 @@ export type LandingArtName = (typeof landingArtNames)[number]
 const landingArtFullWidth: Record<LandingArtName, number> = {
 	'kody-compounding-capabilities': 1000,
 	'kody-community-packages': 627,
+	'kody-factory-map': 1024,
 	'kody-keys': 700,
 	'kody-greeting': 700,
 }
