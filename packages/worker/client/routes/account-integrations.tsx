@@ -665,6 +665,11 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	>()
 	const deleteAppCheck = createDoubleCheck(handle)
 	const undoable = createUndoableAction(handle)
+	let holdingOptimisticRemoval = false
+
+	function isHoldingOptimisticRemoval() {
+		return Boolean(undoable.pending) || holdingOptimisticRemoval
+	}
 
 	function getDisconnectCheck(name: string) {
 		const existing = disconnectChecks.get(name)
@@ -711,6 +716,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	}
 
 	function navigateIfSelectionGone() {
+		holdingOptimisticRemoval = false
 		if (currentSelectionMissing()) navigate(listHref())
 	}
 
@@ -768,6 +774,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		const snapshot = snapshotList()
 		removeConnectionLocally(connection.name)
 		getDisconnectCheck(connection.name).reset()
+		holdingOptimisticRemoval = currentSelectionMissing()
 		// Stay on this route element until commit. List/detail are separate
 		// Remix routes, so navigating away remounts, commits immediately, and
 		// loader data restores the row that was just hidden.
@@ -781,6 +788,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 					})
 					navigateIfSelectionGone()
 				} catch (error) {
+					holdingOptimisticRemoval = false
 					restoreSnapshot(snapshot)
 					message =
 						error instanceof Error
@@ -790,6 +798,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				}
 			},
 			onUndo: () => {
+				holdingOptimisticRemoval = false
 				restoreSnapshot(snapshot)
 			},
 		})
@@ -801,6 +810,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		const connectionCount = app.connections.length
 		removeAppLocally(app)
 		deleteAppCheck.reset()
+		holdingOptimisticRemoval = currentSelectionMissing()
 		await undoable.start({
 			message: deletedAppCopy(title, connectionCount),
 			onCommit: async () => {
@@ -811,6 +821,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 					})
 					navigateIfSelectionGone()
 				} catch (error) {
+					holdingOptimisticRemoval = false
 					restoreSnapshot(snapshot)
 					message =
 						error instanceof Error
@@ -820,6 +831,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				}
 			},
 			onUndo: () => {
+				holdingOptimisticRemoval = false
 				restoreSnapshot(snapshot)
 			},
 		})
@@ -886,7 +898,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	}
 
 	function applyRouteLoaderData(href: string) {
-		if (undoable.pending) return false
+		if (isHoldingOptimisticRemoval()) return false
 		if (!integrationsRoute.isRoutePath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(
 			handle,
@@ -991,12 +1003,12 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		// stale-refresh or latch a load — both would clobber the removal or
 		// block the next fetch after undo.
 		const needsStaleRefresh =
-			!undoable.pending &&
+			!isHoldingOptimisticRemoval() &&
 			consumeStaleNavigationData(currentHref) &&
 			!appliedRouteData
 		const latchKey = getDataLatchKey(currentHref)
 		const needsLoad =
-			!undoable.pending &&
+			!isHoldingOptimisticRemoval() &&
 			loadLatch.needsLoad({
 				currentHref: latchKey,
 				appliedRouteData,
@@ -1022,9 +1034,13 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			resetRotateForm(selectedApp)
 		}
 		const showIntegrationNotFound =
-			missingKind === 'integration' && status === 'ready' && !undoable.pending
+			missingKind === 'integration' &&
+			status === 'ready' &&
+			!isHoldingOptimisticRemoval()
 		const showConnectionNotFound =
-			missingKind === 'connection' && status === 'ready' && !undoable.pending
+			missingKind === 'connection' &&
+			status === 'ready' &&
+			!isHoldingOptimisticRemoval()
 		const highlightedConnection = highlightedConnectionName
 			? (integrations.find(
 					(connection) => connection.name === highlightedConnectionName,
