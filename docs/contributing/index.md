@@ -6,8 +6,8 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Setup and workflow
 
 - [Getting started](./getting-started.md), [project intent](./project-intent.md)
-- [Decision records](./decisions/index.md) (ADRs, including decisions **not** to
-  build something)
+- [Decision records](./decisions/index.md) (steering veto list: product-shaped
+  nos and durable constraints — not an ADR-per-PR log)
 - [Inbound contributions](./inbound-contributions.md) (CLA for patches to this
   repository)
 - [Setup](./setup.md), [environment variables](./environment-variables.md),
