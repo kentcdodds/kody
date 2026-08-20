@@ -14,6 +14,11 @@ import {
 	getSurfaceCardCss,
 	hoverMq,
 } from '#universal/styles/style-primitives.ts'
+import {
+	acknowledgeRecordTableSearchInput,
+	reconcileRecordTableSearchExternalValue,
+	type RecordTableSearchSync,
+} from './record-table-search-sync.ts'
 
 /*
  * The account and admin list/detail screens, as one table.
@@ -321,7 +326,10 @@ const footerCss = {
  * previous (empty) query, and WebKit's search cancel control appears on that
  * same keystroke — either one drops focus and the reader has to click back in.
  * The field stays uncontrolled. URL/back-button updates apply immediately
- * when it is not focused, and on blur if they arrived while it was.
+ * when it is not focused, and on blur if they arrived while it was. A
+ * keystroke records the typed string as the last applied value so a later
+ * render that returns `q` to that value (clear, or back to the same query)
+ * cannot leave a stale pending string for blur to write back.
  */
 const searchCancelHiddenCss = {
 	'&::-webkit-search-decoration': {
@@ -353,24 +361,26 @@ export function RecordTableSearch(
 ) {
 	let input: HTMLInputElement | null = null
 	const initialValue = handle.props.value
-	let lastExternalValue = initialValue
-	let pendingExternalValue: string | null = null
+	let sync: RecordTableSearchSync = {
+		lastExternalValue: initialValue,
+		pendingExternalValue: null,
+	}
 
 	function applyExternalValue(nextValue: string) {
 		if (input) input.value = nextValue
-		lastExternalValue = nextValue
-		pendingExternalValue = null
+		sync = acknowledgeRecordTableSearchInput(nextValue)
 	}
 
 	return () => {
 		const nextValue = handle.props.value
-		if (nextValue !== lastExternalValue) {
-			if (input && document.activeElement === input) {
-				pendingExternalValue = nextValue
-			} else {
-				applyExternalValue(nextValue)
-			}
-		}
+		const focused = Boolean(input && document.activeElement === input)
+		const reconciled = reconcileRecordTableSearchExternalValue(
+			sync,
+			nextValue,
+			focused,
+		)
+		sync = reconciled.state
+		if (reconciled.applyValue !== null) applyExternalValue(reconciled.applyValue)
 		return (
 			<input
 				type="search"
@@ -385,14 +395,14 @@ export function RecordTableSearch(
 							if (input === node) input = null
 						})
 					}),
-					on('input', (event) =>
-						handle.props.onInput(
-							(event.currentTarget as HTMLInputElement).value,
-						),
-					),
+					on('input', (event) => {
+						const value = (event.currentTarget as HTMLInputElement).value
+						sync = acknowledgeRecordTableSearchInput(value)
+						handle.props.onInput(value)
+					}),
 					on('blur', () => {
-						if (pendingExternalValue !== null) {
-							applyExternalValue(pendingExternalValue)
+						if (sync.pendingExternalValue !== null) {
+							applyExternalValue(sync.pendingExternalValue)
 						}
 					}),
 					css({

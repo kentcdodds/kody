@@ -6,6 +6,10 @@ import {
 	RecordTableSearch,
 	type RecordTableColumn,
 } from '#client/routes/record-table.tsx'
+import {
+	acknowledgeRecordTableSearchInput,
+	reconcileRecordTableSearchExternalValue,
+} from '#client/routes/record-table-search-sync.ts'
 
 const columns: Array<RecordTableColumn> = [
 	{ key: 'name', label: 'Name', primary: true },
@@ -152,6 +156,55 @@ test('record table search stays uncontrolled so the first keystroke cannot remou
 	// WebKit cancel-button rules that otherwise appear on the first character.
 	expect(html).toContain('::-webkit-search-cancel-button')
 	expect(html).toContain('display: none')
+})
+
+test('record table search defers focused URL updates and drops a stale pending string', () => {
+	const empty = { lastExternalValue: '', pendingExternalValue: null }
+
+	// A keystroke is user-driven: the coming URL update must not become
+	// pending, or blur would overwrite whatever the reader typed next.
+	const typed = acknowledgeRecordTableSearchInput('ab')
+	expect(
+		reconcileRecordTableSearchExternalValue(typed, 'ab', true),
+	).toEqual({
+		state: { lastExternalValue: 'ab', pendingExternalValue: null },
+		applyValue: null,
+	})
+
+	// Clearing the field returns `q` to the last applied empty string.
+	// Without acknowledging the keystroke, pending would stay "ab" and
+	// blur would write that stale text back.
+	const cleared = acknowledgeRecordTableSearchInput('')
+	expect(
+		reconcileRecordTableSearchExternalValue(cleared, '', true),
+	).toEqual({
+		state: empty,
+		applyValue: null,
+	})
+	expect(
+		reconcileRecordTableSearchExternalValue(
+			{ lastExternalValue: '', pendingExternalValue: 'ab' },
+			'',
+			true,
+		),
+	).toEqual({
+		state: empty,
+		applyValue: null,
+	})
+
+	// Back-button while focused defers until blur; unfocused applies now.
+	expect(
+		reconcileRecordTableSearchExternalValue(typed, '', true),
+	).toEqual({
+		state: { lastExternalValue: 'ab', pendingExternalValue: '' },
+		applyValue: null,
+	})
+	expect(
+		reconcileRecordTableSearchExternalValue(typed, '', false),
+	).toEqual({
+		state: empty,
+		applyValue: '',
+	})
 })
 
 test('record table empty and busy states keep toolbar layout stable', async () => {
