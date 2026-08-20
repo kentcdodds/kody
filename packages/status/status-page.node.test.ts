@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
-import { renderStatusPage } from './status-page.ts'
+import { faviconIcoRedirectLocation, statusFaviconPath } from './favicon.ts'
+import { renderStatusPage, renderStatusUnavailablePage } from './status-page.ts'
 import {
 	statusComponents,
 	type ComponentSnapshot,
@@ -70,6 +71,7 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	expect(healthy).toContain('>def4567<')
 	expect(healthy).toContain('>7890abc<')
 	expect(healthy).toContain('http-equiv="refresh"')
+	expect(healthy).toContain(`href="${statusFaviconPath('operational')}"`)
 	expect(healthy).toMatch(/operational|All systems/i)
 
 	const down = renderStatusPage(
@@ -89,6 +91,8 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	)
 	expect(down).toContain('Primary database')
 	expect(down).toContain('2026-08-04T11:00:00.000Z')
+	expect(down).toContain(`href="${statusFaviconPath('down')}"`)
+	expect(down).not.toContain(`href="${statusFaviconPath('operational')}"`)
 
 	const escaped = renderStatusPage(
 		snapshot({
@@ -123,6 +127,18 @@ test('status page renders components, incidents, unknown state, and escapes deta
 		}),
 	)
 	expect(unknown).toMatch(/not available|no data/i)
+	expect(unknown).toContain(`href="${statusFaviconPath('unknown')}"`)
+
+	const unavailable = renderStatusUnavailablePage(
+		'Status data is temporarily unavailable.',
+	)
+	expect(unavailable).toContain('Status data is temporarily unavailable.')
+	expect(unavailable).toContain(`href="${statusFaviconPath('unknown')}"`)
+	expect(unavailable).toContain('http-equiv="refresh"')
+
+	expect(
+		faviconIcoRedirectLocation('https://status.kody.codes/favicon.ico', 'down'),
+	).toBe(`https://status.kody.codes${statusFaviconPath('down')}`)
 })
 
 test('status page renders provider incidents separately and omits them when absent', () => {

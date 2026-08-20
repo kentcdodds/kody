@@ -1,6 +1,8 @@
+import { faviconIcoRedirectLocation } from './favicon.ts'
 import { getLegacyStatusRedirectResponse } from './legacy-redirect.ts'
-import { renderStatusPage } from './status-page.ts'
+import { renderStatusPage, renderStatusUnavailablePage } from './status-page.ts'
 import { StatusStore, type StatusWorkerEnv } from './status-store.ts'
+import { type ComponentStatus } from './status-types.ts'
 
 export { StatusStore }
 
@@ -22,6 +24,24 @@ export default {
 		}
 		const legacyRedirect = getLegacyStatusRedirectResponse(request)
 		if (legacyRedirect) return legacyRedirect
+		if (url.pathname === '/favicon.ico') {
+			let status: ComponentStatus = 'unknown'
+			try {
+				status = (await getStore(env).getSnapshot()).overallStatus
+			} catch (error) {
+				console.warn(
+					'status-favicon-snapshot-failed',
+					error instanceof Error ? error.message : String(error),
+				)
+			}
+			return new Response(null, {
+				status: 302,
+				headers: {
+					Location: faviconIcoRedirectLocation(request.url, status),
+					'Cache-Control': 'public, max-age=30',
+				},
+			})
+		}
 		if (url.pathname === '/' || url.pathname === '/status.json') {
 			// The page must degrade gracefully even when its own Durable Object
 			// is unavailable; a controlled 503 beats an uncaught error page.
@@ -40,16 +60,13 @@ export default {
 						headers: { 'Cache-Control': 'no-store' },
 					})
 				}
-				return new Response(
-					`<!doctype html><html lang="en"><head><meta charset="utf-8" /><meta http-equiv="refresh" content="30" /><title>kody status</title></head><body><main><h1>kody status</h1><p>${body.error} This page retries automatically.</p></main></body></html>`,
-					{
-						status: 503,
-						headers: {
-							'Content-Type': 'text/html; charset=utf-8',
-							'Cache-Control': 'no-store',
-						},
+				return new Response(renderStatusUnavailablePage(body.error), {
+					status: 503,
+					headers: {
+						'Content-Type': 'text/html; charset=utf-8',
+						'Cache-Control': 'no-store',
 					},
-				)
+				})
 			}
 			if (url.pathname === '/status.json') {
 				return Response.json(snapshot, {

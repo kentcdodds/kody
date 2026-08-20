@@ -1,4 +1,5 @@
 import { dayBarClassName, dayBarKind, dayBarTitle } from './day-bars.ts'
+import { renderFaviconLinks } from './favicon.ts'
 import {
 	cloudflareStatusPageUrl,
 	sanitizeProviderIncidentShortlink,
@@ -11,7 +12,8 @@ import {
 } from './status-types.ts'
 
 /** Server-rendered public status page. No client JavaScript; the page uses a
- * meta refresh so an open tab keeps tracking an ongoing incident. */
+ * meta refresh so an open tab keeps tracking an ongoing incident, including
+ * swapping the status-specific favicon when an incident opens or resolves. */
 
 function escapeHtml(value: string): string {
 	return value
@@ -251,6 +253,25 @@ function renderProviderIncidentsSection(
 </section>`
 }
 
+/** Controlled 503 HTML when the status Durable Object is unavailable. */
+export function renderStatusUnavailablePage(message: string): string {
+	return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="refresh" content="30" />
+<title>kody status</title>
+${renderFaviconLinks('unknown')}
+</head>
+<body>
+<main>
+	<h1>kody status</h1>
+	<p>${escapeHtml(message)} This page retries automatically.</p>
+</main>
+</body>
+</html>`
+}
+
 export function renderStatusPage(snapshot: StatusSnapshot): string {
 	const banner = bannerFor(snapshot)
 	const components = snapshot.components.map(renderComponent).join('\n')
@@ -272,6 +293,7 @@ export function renderStatusPage(snapshot: StatusSnapshot): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta http-equiv="refresh" content="60" />
 <title>kody status</title>
+${renderFaviconLinks(snapshot.overallStatus)}
 <style>${pageStyles}</style>
 </head>
 <body>

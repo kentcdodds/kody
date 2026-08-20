@@ -68,11 +68,22 @@ suppressed based on provider status.
 
 ## Routes
 
-| Path           | Purpose                               |
-| -------------- | ------------------------------------- |
-| `/`            | Public status page (HTML)             |
-| `/status.json` | Snapshot as JSON                      |
-| `/health`      | Liveness for the status worker itself |
+| Path                       | Purpose                                           |
+| -------------------------- | ------------------------------------------------- |
+| `/`                        | Public status page (HTML)                         |
+| `/status.json`             | Snapshot as JSON                                  |
+| `/health`                  | Liveness for the status worker itself             |
+| `/favicon-operational.png` | Favicon when all measured components are up       |
+| `/favicon-down.png`        | Favicon while a kody incident is open             |
+| `/favicon-unknown.png`     | Favicon when status data is unavailable           |
+| `/favicon.ico`             | 302 to the current overall-status PNG (30s cache) |
+
+The HTML `<link rel="icon">` (and apple-touch icon) is chosen from
+`overallStatus` on each render. The page meta-refreshes every 60 seconds, so an
+open tab picks up a new icon when an incident opens or resolves. `/favicon.ico`
+follows the same snapshot so clients that ignore `<link>` tags stay in sync.
+Provider incidents do not change the favicon — they stay corroborating context
+only.
 
 ## Deploy
 
