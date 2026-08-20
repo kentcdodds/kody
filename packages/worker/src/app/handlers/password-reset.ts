@@ -18,6 +18,7 @@ import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
+import { buildPasswordResetEmail } from '#app/email/messages.ts'
 
 const resetRequestSchema = object({
 	email: string(),
@@ -27,29 +28,6 @@ const resetConfirmSchema = object({
 	token: string(),
 	password: string(),
 })
-
-function buildResetEmail(resetUrl: string) {
-	return {
-		subject: 'Reset your kody password',
-		text: [
-			'We received a request to reset your kody password.',
-			`Reset your password: ${resetUrl}`,
-			'If you did not request a reset, you can safely ignore this email.',
-		].join('\n\n'),
-		html: `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Password reset</title>
-  </head>
-  <body>
-    <p>We received a request to reset your kody password.</p>
-    <p><a href="${resetUrl}">Reset your password</a></p>
-    <p>If you did not request a reset, you can safely ignore this email.</p>
-  </body>
-</html>`,
-	}
-}
 
 function logMissingEmailConfig(payload: { to: string; subject: string }) {
 	console.warn(
@@ -130,12 +108,13 @@ export function createPasswordResetRequestHandler(env: Env) {
 			const token = resetToken?.token ?? ''
 
 			if (userRecord) {
-				const resetUrl = new URL(
-					'/reset-password',
-					emailConfig?.appBaseUrl ?? url,
-				)
+				const appBaseUrl = new URL(emailConfig?.appBaseUrl ?? url).origin
+				const resetUrl = new URL('/reset-password', appBaseUrl)
 				resetUrl.searchParams.set('token', token)
-				const email = buildResetEmail(resetUrl.toString())
+				const email = buildPasswordResetEmail({
+					appBaseUrl,
+					resetUrl: resetUrl.toString(),
+				})
 
 				if (!emailConfig) {
 					logMissingEmailConfig({
