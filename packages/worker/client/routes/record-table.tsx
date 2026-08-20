@@ -320,8 +320,8 @@ const footerCss = {
  * Remix-controlled `value` lets the first character schedule a restore of the
  * previous (empty) query, and WebKit's search cancel control appears on that
  * same keystroke — either one drops focus and the reader has to click back in.
- * The field stays uncontrolled; URL/back-button updates land only while it is
- * not focused.
+ * The field stays uncontrolled. URL/back-button updates apply immediately
+ * when it is not focused, and on blur if they arrived while it was.
  */
 const searchCancelHiddenCss = {
 	'&::-webkit-search-decoration': {
@@ -354,13 +354,21 @@ export function RecordTableSearch(
 	let input: HTMLInputElement | null = null
 	const initialValue = handle.props.value
 	let lastExternalValue = initialValue
+	let pendingExternalValue: string | null = null
+
+	function applyExternalValue(nextValue: string) {
+		if (input) input.value = nextValue
+		lastExternalValue = nextValue
+		pendingExternalValue = null
+	}
 
 	return () => {
 		const nextValue = handle.props.value
 		if (nextValue !== lastExternalValue) {
-			lastExternalValue = nextValue
-			if (input && document.activeElement !== input) {
-				input.value = nextValue
+			if (input && document.activeElement === input) {
+				pendingExternalValue = nextValue
+			} else {
+				applyExternalValue(nextValue)
 			}
 		}
 		return (
@@ -382,6 +390,11 @@ export function RecordTableSearch(
 							(event.currentTarget as HTMLInputElement).value,
 						),
 					),
+					on('blur', () => {
+						if (pendingExternalValue !== null) {
+							applyExternalValue(pendingExternalValue)
+						}
+					}),
 					css({
 						...getAuthInputCss(),
 						flex: '1 1 12rem',
