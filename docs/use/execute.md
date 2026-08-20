@@ -41,15 +41,15 @@ helpers are runtime exports:
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
 - use **`import { packages } from 'kody:runtime'`** inside saved package runtime
-  contexts or authenticated execute calls when a package call must be dynamic:
-  the target's name is data, the call needs the target package's own runtime, or
-  you need exactly-once. `packages.invoke({ kodyId, exportName, params })` (plus
-  an optional `idempotencyKey` field for exactly-once calls) is the only dynamic
-  call and is always contract-checked before invoking. Pass the bare
-  `package.json#kody.id` as `kodyId` (for example, `github`), not the npm-scoped
-  `package.json.name` (for example, `@kentcdodds/github`). When the target
-  package's name is known when the code is written, use a static `kody:@...`
-  import instead (see below)
+  contexts, authenticated execute calls, or standalone scheduled jobs when a
+  package call must be dynamic: the target's name is data, the call needs the
+  target package's own runtime, or you need exactly-once.
+  `packages.invoke({ kodyId, exportName, params })` (plus an optional
+  `idempotencyKey` field for exactly-once calls) is the only dynamic call and is
+  always contract-checked before invoking. Pass the bare `package.json#kody.id`
+  as `kodyId` (for example, `github`), not the npm-scoped `package.json.name`
+  (for example, `@kentcdodds/github`). When the target package's name is known
+  when the code is written, use a static `kody:@...` import instead (see below)
 - use **`import thing from 'kody:@scope/my-package/export-name'`** or
   **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
   saved package export by npm-scoped package name. This is **the default for
@@ -209,11 +209,11 @@ but `packageContext` remains **`null`** because the imported module has not been
 entered as its own package runtime. This is fine for most reuse — packages
 backed by user-scope secrets (for example `github`) work fully through plain
 static imports because `{{secret:...}}` placeholders resolve at the fetch
-gateway under the calling user. When execute must enter a saved package export
-as that package — package-mounted secrets (`kody.secretMounts`),
-`packageContext`, the package's own `packageStorage()` bucket — use keyless
-`packages.invoke` from `kody:runtime`. It resolves the bare `kodyId`, such as
-`my-package`, rather than the npm-scoped package name, such as
+gateway under the calling user. When execute or a standalone scheduled job must
+enter a saved package export as that package — package-mounted secrets
+(`kody.secretMounts`), `packageContext`, the package's own `packageStorage()`
+bucket — use keyless `packages.invoke` from `kody:runtime`. It resolves the bare
+`kodyId`, such as `my-package`, rather than the npm-scoped package name, such as
 `@scope/my-package`.
 
 When you need to edit saved source, prefer the repo-backed workflow in

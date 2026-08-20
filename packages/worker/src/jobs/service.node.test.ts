@@ -2677,6 +2677,16 @@ test('executeJobOnce background execution workflow', async () => {
 				},
 				logs: ['storage helper executed'],
 			})
+		const packageInvocations =
+			await import('#worker/package-invocations/service.ts')
+		const executeInvokeSpy = vi.spyOn(
+			packageInvocations,
+			'createExecutePackageInvokeTools',
+		)
+		const runtimeInvokeSpy = vi.spyOn(
+			packageInvocations,
+			'createPackageRuntimeInvokeTools',
+		)
 
 		try {
 			const sessionClient = {
@@ -2772,11 +2782,24 @@ test('executeJobOnce background execution workflow', async () => {
 				}),
 				expect.any(Object),
 				expect.any(Object),
-				expect.any(Object),
+				expect.objectContaining({
+					storageTools: {
+						userId: callerContext.user.userId,
+						storageId: `job:${jobView.id}`,
+						writable: true,
+					},
+					packageInvokeTools: expect.objectContaining({
+						invoke: expect.any(Function),
+					}),
+				}),
 			)
+			expect(executeInvokeSpy).toHaveBeenCalledTimes(1)
+			expect(runtimeInvokeSpy).not.toHaveBeenCalled()
 			repoSessionRpcSpy.mockRestore()
 		} finally {
 			executeSpy.mockRestore()
+			executeInvokeSpy.mockRestore()
+			runtimeInvokeSpy.mockRestore()
 		}
 	}
 
@@ -4369,6 +4392,16 @@ test('executeJobOnce repo session bundling and check policy workflow', async () 
 			await import('#mcp/run-kody-registry.ts'),
 			'runBundledModuleWithRegistry',
 		)
+		const packageInvocations =
+			await import('#worker/package-invocations/service.ts')
+		const executeInvokeSpy = vi.spyOn(
+			packageInvocations,
+			'createExecutePackageInvokeTools',
+		)
+		const runtimeInvokeSpy = vi.spyOn(
+			packageInvocations,
+			'createPackageRuntimeInvokeTools',
+		)
 		const bundleSpy = vi.spyOn(
 			await import('#worker/package-runtime/module-graph.ts'),
 			'buildKodyModuleBundle',
@@ -4422,10 +4455,17 @@ test('executeJobOnce repo session bundling and check policy workflow', async () 
 					packageId: 'job-repo-module',
 					kodyId: 'repo-module-job',
 				},
+				packageInvokeTools: expect.objectContaining({
+					invoke: expect.any(Function),
+				}),
 			})
+			expect(runtimeInvokeSpy).toHaveBeenCalledTimes(1)
+			expect(executeInvokeSpy).not.toHaveBeenCalled()
 		} finally {
 			repoSessionRpcSpy.mockRestore()
 			executeSpy.mockRestore()
+			executeInvokeSpy.mockRestore()
+			runtimeInvokeSpy.mockRestore()
 			bundleSpy.mockRestore()
 			loadFilesSpy.mockRestore()
 		}

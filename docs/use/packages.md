@@ -241,11 +241,11 @@ The primary identifier is the bare `kodyId`; `kody_id`, `packageId`, and
 `package_id` are accepted aliases. `exportName` is required, and `export_name`
 is accepted as an alias.
 
-Package runtime contexts and authenticated ad hoc MCP `execute` calls can call
-`packages.invoke`, and resolution is scoped to packages owned by the current
-authenticated user. Package code does not need to mint or pass
-package-invocation bearer tokens. Nested package invocations are depth-limited
-to prevent runaway loops.
+Package runtime contexts, authenticated ad hoc MCP `execute` calls, and
+standalone scheduled jobs can call `packages.invoke`, and resolution is scoped
+to packages owned by the current authenticated user. Package code does not need
+to mint or pass package-invocation bearer tokens. Nested package invocations are
+depth-limited to prevent runaway loops.
 
 External trusted clients that must call package exports over HTTP use package
 invocation tokens instead. Before sending a user to create one, agents should
@@ -262,9 +262,10 @@ platform (built-in) dependencies receive no `packageStorage()` grant and the
 call fails closed inside live platform code. `{{secret:...}}` placeholders for
 user-scope secrets still resolve at the fetch gateway under the calling user —
 so secret-backed packages such as `github` work fully via plain static import.
-Use keyless `packages.invoke` from execute when you need to enter a saved
-package as that package so it receives `packageContext`, package-owned storage,
-package-mounted secrets (`kody.secretMounts`), and its own `packages` helper.
+Use keyless `packages.invoke` from execute or a standalone scheduled job when
+you need to enter a saved package as that package so it receives
+`packageContext`, package-owned storage, package-mounted secrets
+(`kody.secretMounts`), and its own `packages` helper.
 
 **Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
 dynamic `import("kody:@...")` are not available. Package publish checks reject
