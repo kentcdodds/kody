@@ -41,7 +41,8 @@ helpers are runtime exports:
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
 - use **`import { packages } from 'kody:runtime'`** inside saved package runtime
-  contexts or authenticated execute calls when a package call must be dynamic:
+  contexts, authenticated execute calls, or standalone scheduled jobs when a
+  package call must be dynamic:
   the target's name is data, the call needs the target package's own runtime, or
   you need exactly-once. `packages.invoke({ kodyId, exportName, params })` (plus
   an optional `idempotencyKey` field for exactly-once calls) is the only dynamic
@@ -209,7 +210,7 @@ but `packageContext` remains **`null`** because the imported module has not been
 entered as its own package runtime. This is fine for most reuse — packages
 backed by user-scope secrets (for example `github`) work fully through plain
 static imports because `{{secret:...}}` placeholders resolve at the fetch
-gateway under the calling user. When execute must enter a saved package export
+gateway under the calling user. When execute or a standalone scheduled job must enter a saved package export
 as that package — package-mounted secrets (`kody.secretMounts`),
 `packageContext`, the package's own `packageStorage()` bucket — use keyless
 `packages.invoke` from `kody:runtime`. It resolves the bare `kodyId`, such as
