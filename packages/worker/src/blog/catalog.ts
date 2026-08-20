@@ -4,12 +4,16 @@ import gatewaysConnectHomesAccumulate from './posts/gateways-connect-homes-accum
 import selfServiceMeansOwnership from './posts/self-service-means-ownership.md'
 import theAssistantThatCantLeakYourKeychain from './posts/the-assistant-that-cant-leak-your-keychain.md'
 import theAutomationsYouNeverBuilt from './posts/the-automations-you-never-built.md'
+import kodyVsExecutor from './posts/kody-vs-executor.md'
 import yourAssistantsHome from './posts/your-assistants-home.md'
 import zeroInferenceCalls from './posts/zero-inference-calls.md'
 
 /**
  * Static post sources. When adding a post, drop a `.md` file under `posts/`
  * and add one import + entry here. The client never imports this module.
+ * After a human review, set `placeholder: false` in that post's frontmatter
+ * to hide the AI-placeholder callout. Optional `image` / `imageAlt` /
+ * `ogImage` follow the same `/images/...` contract as guides.
  */
 const postSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'your-assistants-home', raw: yourAssistantsHome },
@@ -31,6 +35,7 @@ const postSources: Array<{ slug: string; raw: string }> = [
 		raw: theAutomationsYouNeverBuilt,
 	},
 	{ slug: 'self-service-means-ownership', raw: selfServiceMeansOwnership },
+	{ slug: 'kody-vs-executor', raw: kodyVsExecutor },
 ]
 
 function compareBlogPosts(a: BlogPost, b: BlogPost): number {

@@ -60,3 +60,50 @@ test('guide artwork controls the canonical Open Graph image', () => {
 	expect(head.canonicalUrl).toBe('https://kody.codes/guides/kody-factory')
 	expect(head.og.imageUrl).toBe('https://kody.codes/guides/kody-factory/og.png')
 })
+
+test('blog post artwork controls the canonical Open Graph image', () => {
+	const descriptor = resolveDocumentHead('/blog/kody-vs-executor', {
+		blogPost: {
+			ok: true,
+			slug: 'kody-vs-executor',
+			title: 'Kody vs Executor?',
+			date: '2026-08-20',
+			description: 'Kody is the runtime. Executor is the gateway.',
+			placeholder: false,
+			image: '/images/kody-vs-executor.webp',
+			imageAlt: 'Kody and the Executor logo size each other up.',
+			ogImage: '/images/kody-vs-executor-og.jpg',
+			body: 'Body',
+			readNext: null,
+		},
+	})
+	const head = absolutizeDocumentHead(descriptor, 'https://kody.codes')
+
+	expect(head.canonicalUrl).toBe('https://kody.codes/blog/kody-vs-executor')
+	expect(head.og.imageUrl).toBe(
+		'https://kody.codes/images/kody-vs-executor-og.jpg',
+	)
+})
+
+test('blog posts without artwork keep the generated Open Graph card', () => {
+	const descriptor = resolveDocumentHead('/blog/your-assistants-home', {
+		blogPost: {
+			ok: true,
+			slug: 'your-assistants-home',
+			title: "Your assistant's home",
+			date: '2026-07-18',
+			description: 'A home for your assistant.',
+			placeholder: true,
+			image: null,
+			imageAlt: null,
+			ogImage: null,
+			body: 'Body',
+			readNext: null,
+		},
+	})
+	const head = absolutizeDocumentHead(descriptor, 'https://kody.codes')
+
+	expect(head.og.imageUrl).toBe(
+		'https://kody.codes/blog/your-assistants-home/og.png',
+	)
+})

@@ -29,6 +29,10 @@ Body paragraph.
 		date: '2026-07-18',
 		description: 'A short description for meta tags.',
 		order: 3,
+		placeholder: true,
+		image: null,
+		imageAlt: null,
+		ogImage: null,
 		body: '# Hello\n\nBody paragraph.\n',
 	})
 
@@ -78,6 +82,61 @@ Body
 `,
 		),
 	).toThrow(/missing frontmatter "title"/)
+
+	const reviewed = parseBlogPostMarkdown(
+		'reviewed',
+		`---
+title: Reviewed
+date: 2026-08-20
+description: A reviewed post.
+order: 1
+placeholder: false
+image: /images/kody-vs-executor.webp
+imageAlt: Kody and the Executor logo size each other up.
+---
+
+Body
+`,
+	)
+	expect(reviewed).toMatchObject({
+		placeholder: false,
+		image: '/images/kody-vs-executor.webp',
+		imageAlt: 'Kody and the Executor logo size each other up.',
+		ogImage: '/images/kody-vs-executor.webp',
+	})
+
+	expect(() =>
+		parseBlogPostMarkdown(
+			'bad-placeholder',
+			`---
+title: Bad placeholder
+date: 2026-08-20
+description: Nope
+order: 1
+placeholder: maybe
+---
+
+Body
+`,
+		),
+	).toThrow(/invalid frontmatter "placeholder"/)
+
+	expect(() =>
+		parseBlogPostMarkdown(
+			'bad-image',
+			`---
+title: Bad image
+date: 2026-08-20
+description: Nope
+order: 1
+image: https://example.com/image.webp
+imageAlt: Nope
+---
+
+Body
+`,
+		),
+	).toThrow(/invalid frontmatter "image"/)
 })
 
 test('blog catalog enumerates posts with required fields and slug lookup', () => {
@@ -101,7 +160,25 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 		})
 	}
 
+	const comparison = getBlogPost('kody-vs-executor')
+	expect(comparison?.title).toBe('Kody vs Executor?')
+	expect(comparison?.date).toBe('2026-08-20')
+	expect(comparison?.placeholder).toBe(false)
+	expect(comparison?.image).toBe('/images/kody-vs-executor.webp')
+	expect(comparison?.ogImage).toBe('/images/kody-vs-executor-og.jpg')
+	const comparisonBody = (comparison?.body ?? '').replace(/\s+/g, ' ')
+	expect(comparisonBody).toContain('best of both worlds')
+	expect(comparisonBody).toContain('Leave one `execute`')
+	expect(comparisonBody).toContain(
+		'I wrote this on August 20, 2026. Both products will keep moving. The comparison is accurate as of that date.',
+	)
 	expect(getBlogPost('does-not-exist')).toBeNull()
+
+	const placeholderPosts = posts.filter(
+		(post) => post.slug !== 'kody-vs-executor',
+	)
+	expect(placeholderPosts.length).toBeGreaterThan(0)
+	expect(placeholderPosts.every((post) => post.placeholder)).toBe(true)
 
 	for (let index = 1; index < posts.length; index += 1) {
 		const previous = posts[index - 1]!
@@ -161,6 +238,10 @@ test('buildBlogRssXml escapes markup and includes every catalog post', () => {
 				date: '2026-07-20',
 				description: `Say "hi" & 'bye'`,
 				order: 1,
+				placeholder: true,
+				image: null,
+				imageAlt: null,
+				ogImage: null,
 				body: 'unused',
 			},
 		],

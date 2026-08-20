@@ -27,6 +27,7 @@ import {
 import { resetDataCacheForTests } from '#app/data-cache.ts'
 import { firstPartySecurityHeaders } from '#app/security-headers.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { BLOG_PLACEHOLDER_CALLOUT } from '#universal/blog-display.ts'
 import { planLimits } from '#universal/plans.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
 import type * as CommunitySocialRepo from '#worker/community/social-repo.ts'
@@ -1276,9 +1277,15 @@ test('renderAppPage renders the public Discord connect page', async () => {
 	expect(html).not.toContain('Connect to Discord')
 	expect(html).toContain('<title>Discord</title>')
 	expect(html).toContain('max-width: 28rem')
-	expect(
-		html.match(/<button\b[^>]*>\s*Connect Discord\s*<\/button>/g),
-	).toHaveLength(1)
+	const heading = html.match(/<h1\b[^>]*>[\s\S]*?<\/h1>/)?.[0]
+	expect(heading).toContain('fill="#5865F2"')
+	expect(heading).toContain('width="1em"')
+	expect(heading).toContain('Discord')
+	const connectButtons = (
+		html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? []
+	).filter((button) => button.includes('Connect Discord'))
+	expect(connectButtons).toHaveLength(1)
+	expect(connectButtons[0]).not.toContain('<svg')
 })
 
 test('renderAppPage renders the redesigned blog index', async () => {
@@ -1427,6 +1434,10 @@ test('renderAppPage renders the redesigned blog post', async () => {
 				title: post!.title,
 				date: post!.date,
 				description: post!.description,
+				placeholder: post!.placeholder,
+				image: post!.image,
+				imageAlt: post!.imageAlt,
+				ogImage: post!.ogImage,
 				body: post!.body,
 				readNext,
 			},
@@ -1441,4 +1452,47 @@ test('renderAppPage renders the redesigned blog post', async () => {
 	// the README demotion to h4) and first-party links skip the ugc rel.
 	expect(html).toMatch(/<h2[^>]*>/)
 	expect(html).not.toMatch(/<h4[^>]*>/)
+	expect(html).toContain(BLOG_PLACEHOLDER_CALLOUT)
+})
+
+test('renderAppPage shows reviewed blog artwork and hides the placeholder callout', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	const post = listBlogPosts().find(
+		(candidate) => candidate.slug === 'kody-vs-executor',
+	)
+	expect(post).toBeDefined()
+	expect(post!.placeholder).toBe(false)
+	expect(post!.image).toBe('/images/kody-vs-executor.webp')
+	expect(post!.ogImage).toBe('/images/kody-vs-executor-og.jpg')
+
+	const response = await renderAppPage({
+		request: new Request(`https://example.com/blog/${post!.slug}`),
+		env,
+		loaderData: {
+			blogPost: {
+				ok: true,
+				slug: post!.slug,
+				title: post!.title,
+				date: post!.date,
+				description: post!.description,
+				placeholder: post!.placeholder,
+				image: post!.image,
+				imageAlt: post!.imageAlt,
+				ogImage: post!.ogImage,
+				body: post!.body,
+				readNext: getReadNextBlogPost(post!.slug),
+			},
+		},
+	})
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	expect(html).toContain('src="/images/kody-vs-executor.webp"')
+	expect(html).toContain(
+		'property="og:image" content="https://example.com/images/kody-vs-executor-og.jpg"',
+	)
+	expect(html).not.toContain(BLOG_PLACEHOLDER_CALLOUT)
 })

@@ -55,6 +55,10 @@ function toBlogPostLoaderData(post: BlogPost) {
 		title: post.title,
 		date: post.date,
 		description: post.description,
+		placeholder: post.placeholder,
+		image: post.image,
+		imageAlt: post.imageAlt,
+		ogImage: post.ogImage,
 		body: post.body,
 		readNext: getReadNextBlogPost(post.slug),
 	}

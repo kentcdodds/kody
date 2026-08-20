@@ -213,7 +213,7 @@ const routeDocumentHeads = {
 			og: {
 				title,
 				description: post.description,
-				imagePath: `/blog/${post.slug}/og.png`,
+				imagePath: post.ogImage ?? `/blog/${post.slug}/og.png`,
 			},
 		}
 	},
