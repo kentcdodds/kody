@@ -58,14 +58,18 @@ URL does not depend on an open terminal.
 Create a self-hosted Access application by following Cloudflare's
 [Access guide for self-hosted applications](https://developers.cloudflare.com/cloudflare-one/applications/configure-apps/self-hosted-apps/).
 Require the identity and policy appropriate for the people allowed to authorize
-this connector.
+this connector. Give each Kody account its own MCP connection, credential, and
+authorization state. Do not reuse one connector bearer across Kody accounts. If
+several accounts share a public endpoint, the MCP server must isolate tenants
+and bind every authenticated request to exactly one Kody user's local resources.
 
 An OAuth-capable MCP server has both machine-to-machine protocol routes and a
 human authorization route. Match Access path policies to the routes your MCP
 implementation documents:
 
-- Allow the MCP endpoint and required OAuth discovery, registration, and token
-  routes to reach the MCP server so Kody can complete the protocol.
+- Allow only the MCP endpoint and the OAuth discovery, registration (when the
+  server advertises it), token, refresh, and revocation routes documented by the
+  server to bypass Access so Kody can complete the protocol.
 - Require Cloudflare Access on the human authorization route. The person signs
   in to Access before approving Kody.
 - Keep the MCP server's OAuth checks enabled on every MCP request. An Access
@@ -76,6 +80,17 @@ This is the `kody-home-connector` shape: the local origin trusts its own network
 context, the MCP server authenticates Kody, and Access protects the browser
 approval step. Do not copy route names from another server without checking your
 implementation's OAuth metadata and endpoint paths.
+
+The reference `mcp:home` connector uses `https://kody-home.doddsfamily.us/mcp`
+as its resource server. Its protected resource metadata lives at
+`/.well-known/oauth-protected-resource/mcp` and identifies
+`https://kody-home.doddsfamily.us` as the authorization server. That server's
+`/.well-known/oauth-authorization-server` document advertises `/authorize`,
+`/token`, and `/revoke`. Access protects the browser-facing `/authorize` route;
+the metadata routes, `/mcp`, `/token`, and `/revoke` reach the MCP server, which
+still requires and validates its own OAuth credentials. Treat those paths as a
+worked example, not defaults: read both metadata documents on your own hostname
+and build the Access path policies from what they advertise.
 
 If the server uses a static bearer token instead of OAuth, verify that the
 Access policy and the client can exchange the credentials that policy expects.
@@ -89,7 +104,8 @@ Follow [Connect remote MCP servers to Kody](../use/mcp-client-servers.md):
 
 1. Open `/account/mcp-servers`, or ask the agent to call `mcp_server_add`.
 2. Choose a short kebab-case name such as `obsidian` or `home` and enter the
-   public HTTPS MCP URL.
+   public HTTPS MCP URL. Create a separate connection and credential for each
+   Kody account.
 3. Open the returned authorization link, pass Cloudflare Access, and approve the
    MCP server's OAuth request. For a compatible static bearer server, provide
    its bearer credential when adding the connection.
@@ -107,6 +123,9 @@ network.
 
 - Expose an MCP endpoint, not a general-purpose shell or filesystem server.
 - Restrict the local process to the smallest vault, command set, or device set.
+- Never share connector credentials between Kody accounts. On a shared endpoint,
+  enforce tenant isolation for credentials, authorization state, and every
+  local-resource lookup.
 - Keep MCP authentication enabled even where Access allows protocol traffic.
 - Review Access logs, MCP server logs, and Kody activity after a smoke test.
 - Rotate the MCP credential and tunnel credentials if the connector machine is
