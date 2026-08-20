@@ -198,37 +198,11 @@ const kodyPackageDependenciesSchema = z
 	.unknown()
 	.superRefine((value, ctx) => {
 		if (value === undefined) return
-		if (Array.isArray(value)) {
-			const seen = new Set<string>()
-			for (const [index, dependency] of value.entries()) {
-				const parsed = kodyPackageDependencySchema.safeParse(dependency)
-				if (!parsed.success) {
-					ctx.addIssue({
-						code: 'custom',
-						path: [index],
-						message:
-							'Static Kody package dependencies must be scoped package names like "@scope/package".',
-						fatal: true,
-					})
-					continue
-				}
-				const normalized = parsed.data.trim()
-				if (seen.has(normalized)) {
-					ctx.addIssue({
-						code: 'custom',
-						path: [index],
-						message: `Duplicate static Kody package dependency "${normalized}".`,
-					})
-				}
-				seen.add(normalized)
-			}
-			return
-		}
-		if (!isPlainObject(value)) {
+		if (Array.isArray(value) || !isPlainObject(value)) {
 			ctx.addIssue({
 				code: 'custom',
-				message:
-					'kody.dependencies must be a map of "@scope/package": "*" (a legacy array of those names is also accepted).',
+				message: 'kody.dependencies must be a map of "@scope/package": "*".',
+				fatal: true,
 			})
 			return
 		}
@@ -252,16 +226,7 @@ const kodyPackageDependenciesSchema = z
 		}
 	})
 	.transform((value): KodyPackageDependencies | undefined => {
-		if (value === undefined) return undefined
-		if (Array.isArray(value)) {
-			return Object.fromEntries(
-				listKodyPackageDependencyNames(value).map((name) => [
-					name,
-					kodyPackageDependencyWildcard,
-				]),
-			)
-		}
-		if (!isPlainObject(value)) return undefined
+		if (value === undefined || !isPlainObject(value)) return undefined
 		return Object.fromEntries(
 			listKodyPackageDependencyNames(value as Record<string, string>).map(
 				(name) => [name, kodyPackageDependencyWildcard],

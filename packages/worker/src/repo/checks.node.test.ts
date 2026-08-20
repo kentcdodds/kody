@@ -120,7 +120,7 @@ function createPackageManifest(input: {
 		{ handler: string; description?: string; filters?: Record<string, unknown> }
 	>
 	emits?: Record<string, { description: string }>
-	kodyDependencies?: Array<string> | Record<string, string>
+	kodyDependencies?: Record<string, string>
 	retrievers?: Record<
 		string,
 		{
@@ -917,7 +917,7 @@ test('runRepoChecks validates static kody package import declarations across mis
 					packageName: '@kody/declared-static-package',
 					kodyId: 'declared-static-package',
 					description: 'Declares static Kody package imports',
-					kodyDependencies: ['@kentcdodds/helper'],
+					kodyDependencies: { '@kentcdodds/helper': '*' },
 				}),
 			],
 			[
@@ -1066,7 +1066,7 @@ test('runRepoChecks validates static kody package import declarations across mis
 					kody: {
 						id: 'invalid-dependency-declaration',
 						description: 'Declares an invalid Kody dependency',
-						dependencies: ['@kentcdodds/helper/run'],
+						dependencies: { '@kentcdodds/helper/run': '*' },
 					},
 				}),
 			],
@@ -1093,7 +1093,7 @@ test('runRepoChecks validates static kody package import declarations across mis
 					packageName: '@kody/unused-static-package',
 					kodyId: 'unused-static-package',
 					description: 'Declares an unused Kody package dependency',
-					kodyDependencies: ['@kentcdodds/unused'],
+					kodyDependencies: { '@kentcdodds/unused': '*' },
 				}),
 			],
 			['src/index.ts', 'export const ready = true\n'],

@@ -22,8 +22,8 @@ dependency's latest published commit, captured when **this** package publishes.
 Do not accept ranges, tags, or commit SHAs. Do not resolve static imports live
 when a dependency publishes. Do not auto-republish dependents.
 
-A legacy array of those names still publishes until fleet apply of
-`0005-kody-dependencies-to-wildcard-map` and a follow-up enforcement drop.
+Legacy arrays are rejected at parse after fleet apply of
+`0005-kody-dependencies-to-wildcard-map`.
 
 ## Consequences
 

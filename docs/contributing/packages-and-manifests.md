@@ -25,9 +25,8 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 - `kody.dependencies` — map of direct static saved package dependencies imported
   via `kody:@...`, written as `{ "@scope/package": "*" }`. `*` means the
   dependency's latest published commit, captured when this package publishes.
-  Repo checks also accept a legacy array of those names. They reject cycles in
-  this graph at publish time, and fail closed if a reachable saved package
-  manifest cannot be loaded.
+  Arrays are rejected. Repo checks reject cycles in this graph at publish time,
+  and fail closed if a reachable saved package manifest cannot be loaded.
 - `kody.secretMounts` — optional package-scoped secret mount declarations
 - `kody.app` — optional hosted package app config
 - `kody.subscriptions` — optional package-owned event subscriptions

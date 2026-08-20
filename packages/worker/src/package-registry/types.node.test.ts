@@ -17,7 +17,7 @@ function manifest(dependencies: unknown) {
 	})
 }
 
-test('kody.dependencies accepts a name-to-* map and a legacy name array, and lists names from either shape', () => {
+test('kody.dependencies accepts a name-to-* map, rejects arrays, and lists names from either raw shape', () => {
 	expect(listKodyPackageDependencyNames(undefined)).toEqual([])
 	expect(
 		listKodyPackageDependencyNames(['@scope/b', ' @scope/a ', '@scope/b']),
@@ -32,14 +32,6 @@ test('kody.dependencies accepts a name-to-* map and a legacy name array, and lis
 		}),
 	).toEqual(['@scope/a', '@scope/b'])
 
-	const fromArray = parseAuthoredPackageJson({
-		content: manifest(['@scope/helper', '@other/lib']),
-	})
-	expect(fromArray.kody.dependencies).toEqual({
-		'@other/lib': kodyPackageDependencyWildcard,
-		'@scope/helper': kodyPackageDependencyWildcard,
-	})
-
 	const fromMap = parseAuthoredPackageJson({
 		content: manifest({
 			'@scope/helper': '*',
@@ -47,8 +39,8 @@ test('kody.dependencies accepts a name-to-* map and a legacy name array, and lis
 		}),
 	})
 	expect(fromMap.kody.dependencies).toEqual({
-		'@other/lib': '*',
-		'@scope/helper': '*',
+		'@other/lib': kodyPackageDependencyWildcard,
+		'@scope/helper': kodyPackageDependencyWildcard,
 	})
 
 	expect(() =>
@@ -65,26 +57,19 @@ test('kody.dependencies accepts a name-to-* map and a legacy name array, and lis
 
 	expect(() =>
 		parseAuthoredPackageJson({
-			content: manifest(['@scope/helper', '@scope/helper']),
-		}),
-	).toThrow(/Duplicate static Kody package dependency/)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: manifest(['helper']),
+			content: manifest({ helper: '*' }),
 		}),
 	).toThrow(/scoped package names/)
 
-	// Zod 4 still runs transform after non-fatal superRefine issues. A
-	// non-string array entry must stay a schema failure, not a throw from trim.
+	expect(() =>
+		parseAuthoredPackageJson({
+			content: manifest(['@scope/helper', '@other/lib']),
+		}),
+	).toThrow(/must be a map/)
+
 	expect(() =>
 		parseAuthoredPackageJson({
 			content: manifest([1, '@scope/helper']),
 		}),
-	).toThrow(/scoped package names/)
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: manifest([null]),
-		}),
-	).toThrow(/scoped package names/)
+	).toThrow(/must be a map/)
 })

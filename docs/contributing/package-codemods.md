@@ -198,8 +198,9 @@ legacy package-app origin to the canonical hosted-app origin:
 
 ### `0005-kody-dependencies-to-wildcard-map`
 
-This manifest-format codemod rewrites `package.json#kody.dependencies` from the
-legacy array of scoped names to a name-to-`*` map:
+This one-shot manifest-format codemod rewrote `package.json#kody.dependencies`
+from the legacy array of scoped names to a name-to-`*` map. New publishes reject
+arrays; the codemod remains for any leftover published trees:
 
 - Rewrites `["@scope/pkg"]` to `{ "@scope/pkg": "*" }`, including an empty array
   to `{}`.
