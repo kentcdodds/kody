@@ -106,6 +106,7 @@ export function renderTransactionalEmail(
     <table role="presentation" class="kody-canvas" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: ${colors.canvas}; padding: 32px 16px;">
       <tr>
         <td align="center">
+          <!--[if mso]><table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 560px;">
             <tr>
               <td style="padding-bottom: 20px;">
@@ -136,6 +137,7 @@ export function renderTransactionalEmail(
 								: ''
 						}
           </table>
+          <!--[if mso]></td></tr></table><![endif]-->
         </td>
       </tr>
     </table>

@@ -60,7 +60,7 @@ export function buildPasswordResetEmail(input: {
 		heading: 'Reset your password',
 		body: [
 			'We received a request to reset the password on your Kody account.',
-			'Choose a new password using the button below.',
+			'Use the link below to choose a new one.',
 		],
 		action: { label: 'Reset password', url: input.resetUrl },
 		afterAction: ['This link expires in 1 hour and can only be used once.'],
