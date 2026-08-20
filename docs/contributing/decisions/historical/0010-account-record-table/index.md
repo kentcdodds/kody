@@ -1,9 +1,11 @@
 # 0010 supporting material — account RecordTable
 
-Working material behind [decision 0010](../0010-account-record-table.md): the
-measurements that forced it, the alternatives that were rejected, the settled
-component API, and the screen-by-screen inventory. Point-in-time by design, like
-the record it supports.
+Historical working notes behind
+[decision 0010](../../0010-account-record-table.md). Measurements, rejected
+alternatives, and a screen inventory from the week the first RecordTable landed.
+**Not current layout law** and not part of the
+[steering veto list](../../index.md). 0010 is superseded by
+[0028](../../0028-list-detail-expand.md).
 
 - [Screen inventory](./page-inventory.md) — every affected screen, its mode, and
   its `MetadataGrid` call site

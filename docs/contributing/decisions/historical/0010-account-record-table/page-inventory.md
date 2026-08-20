@@ -1,7 +1,8 @@
 # Screen inventory
 
-Supporting material for [decision 0010](../0010-account-record-table.md). Counts
-taken on `main` at `9a4f3fcc`; line numbers drift, the shapes do not.
+Historical screen inventory for
+[decision 0010](../../0010-account-record-table.md). Counts taken on `main` at
+`9a4f3fcc`; line numbers drift. Not current layout law.
 
 Two independent axes: which screens compose `AccountManagementLayout` (so they
 get a `RecordTable` mode), and which render a `MetadataGrid` (so they get the
