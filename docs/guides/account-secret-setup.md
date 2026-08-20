@@ -35,6 +35,9 @@ Provide the user a URL like:
 
 `https://<your-kody-origin>/account/secrets/new?name=exampleApiKey&description=Example%20API%20key&allowedHosts=api.example.com&scope=user&allowedCapabilities=example_capability&allowedPackages=pkg_123`
 
+When `name` is present, the page focuses and scrolls to the secret value input
+so the user can paste immediately.
+
 ## Query params
 
 | Param                 | Required | Description                                                                                                                |

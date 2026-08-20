@@ -50,6 +50,10 @@ import {
 	getPillButtonCss,
 	getSelectCss,
 } from '#universal/styles/style-primitives.ts'
+import {
+	getNewSecretQueryKey,
+	getNewSecretValueAutofocusKey,
+} from './new-secret-query.ts'
 import { SecretEditorFields } from './secret-editor-fields.tsx'
 import {
 	normalizeAllowedCapabilities,
@@ -179,27 +183,6 @@ function createEditorStateFromNewSecretQuery(
 				? allowedPackages
 				: state.allowedPackages,
 	}
-}
-
-function getNewSecretQueryKey(href: string) {
-	const url = new URL(href, 'http://localhost')
-	if (url.pathname !== `${secretsBasePath}/new`) return ''
-	const keys = [
-		'name',
-		'description',
-		'scope',
-		'packageId',
-		'allowedHosts',
-		'allowed-host',
-		'allowedCapabilities',
-		'capability',
-		'allowedPackages',
-		'package_id',
-		'package',
-	]
-	return keys
-		.map((key) => `${key}=${url.searchParams.getAll(key).join('\u0000')}`)
-		.join('&')
 }
 
 function coerceStringRows(list: Array<unknown>): Array<string> {
@@ -1015,6 +998,7 @@ export function AccountSecretsRoute(handle: Handle) {
 		const isMutating = saveState !== 'idle' || submittingApprovalAction != null
 		const canCreatePackageSecrets = packageOptions.length > 0
 		const showEditor = selection.isCreating || selectedSecret != null
+		const secretValueAutofocusKey = getNewSecretValueAutofocusKey(currentHref)
 		const alreadyAddedNotice = getAlreadyAddedNotice({
 			href: currentHref,
 			selectedSecret,
@@ -1507,6 +1491,7 @@ export function AccountSecretsRoute(handle: Handle) {
 								) : null}
 
 								<SecretEditorFields
+									autoFocusKey={secretValueAutofocusKey}
 									description={editorState.description}
 									onDescriptionChange={(description) => {
 										editorState = {

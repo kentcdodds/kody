@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css, ref } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
@@ -12,6 +12,7 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 type SecretEditorFieldsProps = {
+	autoFocusKey?: string
 	description: string
 	onDescriptionChange: (value: string) => void
 	value: string
@@ -31,9 +32,33 @@ type SecretEditorFieldsProps = {
 	allowedCapabilitiesListName?: string
 }
 
+function focusSecretValueInput(root: Element) {
+	const input = root.querySelector('input[data-field="secret-value"]')
+	if (!(input instanceof HTMLInputElement)) return false
+	input.focus({ preventScroll: true })
+	input.scrollIntoView({ block: 'center', inline: 'nearest' })
+	return true
+}
+
 export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
+	let valueField: HTMLElement | null = null
+	let focusedForKey: string | null = null
+
 	return () => {
 		const props = handle.props
+		const autoFocusKey = props.autoFocusKey ?? ''
+		if (!autoFocusKey) {
+			focusedForKey = null
+		} else if (focusedForKey !== autoFocusKey) {
+			handle.queueTask((signal) => {
+				if (signal.aborted || focusedForKey === autoFocusKey || !valueField) {
+					return
+				}
+				if (focusSecretValueInput(valueField)) {
+					focusedForKey = autoFocusKey
+				}
+			})
+		}
 		return (
 			<>
 				<label mix={css(fieldCss)}>
@@ -59,16 +84,33 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 				<label mix={css(fieldCss)}>
 					<span mix={css(fieldLabelCss)}>Secret value</span>
 					<div
-						mix={css({
-							position: 'relative',
-							display: 'flex',
-							alignItems: 'center',
-						})}
+						mix={[
+							css({
+								position: 'relative',
+								display: 'flex',
+								alignItems: 'center',
+							}),
+							ref((node, signal) => {
+								valueField = node as HTMLElement
+								signal.addEventListener('abort', () => {
+									if (valueField === node) valueField = null
+								})
+								if (
+									autoFocusKey &&
+									focusedForKey !== autoFocusKey &&
+									focusSecretValueInput(node)
+								) {
+									focusedForKey = autoFocusKey
+								}
+							}),
+						]}
 					>
 						{props.showSecretValue ? (
 							<input
 								type="text"
 								required
+								autoFocus={Boolean(autoFocusKey)}
+								data-field="secret-value"
 								{...passwordManagerIgnoreProps}
 								value={props.value}
 								placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
@@ -91,6 +133,8 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 							<input
 								type="password"
 								required
+								autoFocus={Boolean(autoFocusKey)}
+								data-field="secret-value"
 								{...passwordManagerIgnoreProps}
 								value={props.value}
 								placeholder={props.valuePlaceholder ?? 'Enter the secret value'}
