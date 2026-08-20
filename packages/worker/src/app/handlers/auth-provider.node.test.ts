@@ -618,6 +618,107 @@ test('discord sign-in without a verified email fails with a helpful error', asyn
 	})
 })
 
+test('signed-in discord connect returns to redirectTo instead of /account', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const env = createAppEnv(db)
+	await seedUser(sqlite, {
+		id: 21,
+		email: 'discord-page@example.com',
+		username: 'discord-page',
+	})
+	const sessionCookiePair = getCookiePair(
+		await createAuthCookie(
+			{
+				stableUserId: await createStableUserIdFromEmail(
+					'discord-page@example.com',
+				),
+				email: 'discord-page@example.com',
+				rememberMe: false,
+			},
+			false,
+		),
+	)
+
+	msw.use(
+		http.post('https://discord.com/api/oauth2/token', () =>
+			HttpResponse.json({ access_token: 'discord-access-token' }),
+		),
+		http.get('https://discord.com/api/v10/users/@me', () =>
+			HttpResponse.json({
+				id: '666666666666666666',
+				username: 'discord-page',
+				global_name: 'Discord Page',
+				email: 'discord-page@example.com',
+				verified: true,
+			}),
+		),
+	)
+
+	const deniedStart = await startProviderFlow(
+		env,
+		'discord',
+		'http://example.com/auth/discord?redirectTo=%2Fdiscord',
+	)
+	const deniedResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/discord/callback?error=access_denied&state=${deniedStart.state}`,
+			{
+				headers: { Cookie: `${deniedStart.stateCookie}; ${sessionCookiePair}` },
+			},
+		),
+		{ provider: 'discord' },
+	)
+	expect(deniedResponse.headers.get('Location')).toBe(
+		'/discord?oauthError=denied',
+	)
+
+	const start = await startProviderFlow(
+		env,
+		'discord',
+		'http://example.com/auth/discord?redirectTo=%2Fdiscord',
+	)
+	const linkResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/discord/callback?code=discord-auth-code&state=${start.state}`,
+			{ headers: { Cookie: `${start.stateCookie}; ${sessionCookiePair}` } },
+		),
+		{ provider: 'discord' },
+	)
+	expect(linkResponse.status).toBe(302)
+	expect(linkResponse.headers.get('Location')).toBe(
+		'/discord?oauthLinked=discord',
+	)
+	const connection = sqlite
+		.prepare(
+			`SELECT user_id FROM oauth_connections WHERE provider_name = 'discord'`,
+		)
+		.get() as { user_id: number }
+	expect(connection.user_id).toBe(21)
+
+	const relinkStart = await startProviderFlow(
+		env,
+		'discord',
+		'http://example.com/auth/discord?redirectTo=%2Fdiscord',
+	)
+	const relinkResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/discord/callback?code=discord-auth-code&state=${relinkStart.state}`,
+			{
+				headers: {
+					Cookie: `${relinkStart.stateCookie}; ${sessionCookiePair}`,
+				},
+			},
+		),
+		{ provider: 'discord' },
+	)
+	expect(relinkResponse.headers.get('Location')).toBe(
+		'/discord?oauthLinked=discord',
+	)
+})
+
 test('x sign-in without a shared email fails with a helpful error', async () => {
 	const { sqlite, db } = createMigratedDb()
 	const env = createAppEnv(db)

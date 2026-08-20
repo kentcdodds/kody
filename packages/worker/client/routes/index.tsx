@@ -14,6 +14,7 @@ import {
 	LazyOnboardingRoute,
 	LazyPackageFilesRoute,
 	lazyRouteLoader,
+	marketingArea,
 	onboardingArea,
 	packageFilesArea,
 } from '#client/lazy-route.tsx'
@@ -277,6 +278,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		authArea,
 		(m) => m.pendingVerificationRouteLoader,
 	),
+	[routePattern(routes.discord)]: lazyRouteLoader(
+		marketingArea,
+		(m) => m.discordRouteLoader,
+	),
 }
 
 export const clientRoutes = {
@@ -469,6 +474,9 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.terms)]: (
 		<LazyMarketingRoute render={(m) => <m.TermsRoute />} />
+	),
+	[routePattern(routes.discord)]: (
+		<LazyMarketingRoute render={(m) => <m.DiscordRoute />} />
 	),
 	[routePattern(routes.signup)]: (
 		<LazyAuthRoute render={(m) => <m.LoginRoute />} />

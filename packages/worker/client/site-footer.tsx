@@ -24,6 +24,7 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 				<div mix={css(footerEndCss)}>
 					<nav aria-label="Footer" mix={css(footerNavCss)}>
 						<a href="/community">Community</a>
+						<a href="/discord">Discord</a>
 						<a href="/guides">Guides</a>
 						<a href="/pricing">Pricing</a>
 						<a href="/blog">Blog</a>
@@ -108,7 +109,7 @@ const footerNavCss = {
 		transition: `color ${transitions.fast}`,
 	},
 	'& a:hover': { color: colors.text },
-	/* Stacked on phones: four links in a row sit close enough to mis-tap, and
+	/* Stacked on phones: the links in a row sit close enough to mis-tap, and
 	   the column gives each one a comfortable target without the 44px minimum
 	   the header menu needs (these are the last thing on the page, not the
 	   primary nav). Centred to match the rest of the stacked footer. */

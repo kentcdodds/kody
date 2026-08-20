@@ -171,6 +171,8 @@ export const routes = route({
 	pricing: '/pricing',
 	privacy: '/privacy',
 	terms: '/terms',
+	discord: '/discord',
+	discordApi: '/discord.json',
 	onboarding: '/onboarding',
 	onboardingApi: '/onboarding.json',
 	onboardingChecklistDismissPost: post('/onboarding/checklist-dismiss.json'),

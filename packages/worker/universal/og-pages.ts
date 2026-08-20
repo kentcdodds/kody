@@ -87,6 +87,15 @@ export const publicOgPages = {
 		ogDescription: 'Terms and acceptable use for this Kody deployment.',
 		path: '/terms',
 	},
+	discord: {
+		imageTitle: 'Kody Discord',
+		imageSubtitle:
+			'Join the official server and connect your Kody account for member and plan roles.',
+		ogTitle: 'Discord — Kody',
+		ogDescription:
+			'Join the official Kody Discord and connect your account so we can assign member and plan roles.',
+		path: '/discord',
+	},
 	onboarding: {
 		imageTitle: 'Get started with Kody',
 		imageSubtitle:

@@ -123,6 +123,24 @@ function redirectToLoginWithError(
 	return redirect(`/login?oauthError=${code}${redirectToSuffix}`, cookies)
 }
 
+function oauthResultLocation(
+	path: string,
+	key: 'oauthLinked' | 'oauthError',
+	value: string,
+) {
+	const url = new URL(path, 'https://kody.local')
+	url.searchParams.set(key, value)
+	return `${url.pathname}${url.search}${url.hash}`
+}
+
+function signedInOauthReturnLocation(
+	redirectTo: string | null,
+	key: 'oauthLinked' | 'oauthError',
+	value: string,
+) {
+	return oauthResultLocation(redirectTo ?? '/account', key, value)
+}
+
 /**
  * The login and connections UIs start flows via fetch (Accept: json) and
  * navigate to the returned authorize URL themselves: the CSP locks
@@ -306,7 +324,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				// page; bouncing them to /login would immediately redirect back
 				// and drop the message.
 				if (session) {
-					return redirect(`/account?oauthError=${code}`, [clearStateCookie])
+					return redirect(
+						signedInOauthReturnLocation(redirectTo, 'oauthError', code),
+						[clearStateCookie],
+					)
 				}
 				return redirectToLoginWithError(code, [clearStateCookie], redirectTo)
 			}
@@ -436,9 +457,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 							userId: currentUser.id,
 							discordUserId: profile.providerUserId,
 						})
-						return redirect(`/account?oauthLinked=${provider}`, [
-							clearStateCookie,
-						])
+						return redirect(
+							signedInOauthReturnLocation(redirectTo, 'oauthLinked', provider),
+							[clearStateCookie],
+						)
 					}
 					return fail('connection-conflict', 'connection_conflict')
 				}
@@ -468,7 +490,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					path: url.pathname,
 					reason: `provider=${provider}`,
 				})
-				return redirect(`/account?oauthLinked=${provider}`, [clearStateCookie])
+				return redirect(
+					signedInOauthReturnLocation(redirectTo, 'oauthLinked', provider),
+					[clearStateCookie],
+				)
 			}
 
 			// 2. A known connection signs its user in directly.

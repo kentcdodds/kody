@@ -14,6 +14,7 @@ import {
 	createCommunityDetailHandler,
 	createCommunityPackageHandler,
 } from '#app/handlers/community-detail.tsx'
+import { createDiscordHandler } from '#app/handlers/discord.ts'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
@@ -1253,6 +1254,27 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	)
 	expect(html).toContain(count.format(planLimits.pro.maxExecuteCallsPerDay))
 	expect(html).not.toContain('href="/images/hero/kody-base.webp"')
+})
+
+test('renderAppPage renders the public Discord connect page', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = {
+		...createTestEnv(createUserTestDb([])),
+		DISCORD_CLIENT_ID: 'discord-client-id-test',
+		DISCORD_CLIENT_SECRET: 'discord-client-secret-test',
+	} as Env
+
+	const response = await createDiscordHandler(env).handler({
+		request: new Request('https://example.com/discord'),
+	} as never)
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	expect(html).toContain('Connect to Discord')
+	expect(html).toContain('Join the Kody Discord')
+	expect(html).toContain('Sign in')
+	expect(html).toContain('<title>Discord</title>')
 })
 
 test('renderAppPage renders the redesigned blog index', async () => {

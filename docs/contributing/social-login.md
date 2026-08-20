@@ -23,6 +23,9 @@ Routes (see `packages/worker/src/app/handlers/auth-provider.ts` and
   production social signup). With `Accept: application/json` it returns
   `{ authorizeUrl }` for client-side navigation; otherwise it 302s.
 - `GET /auth/:provider/callback` — completes the flow
+- `GET /discord` / `GET /discord.json` — public Discord page (join invite plus
+  Connect to Discord; signed-in visitors see whether `oauth_connections` already
+  has Discord)
 - `GET/POST /account/connections.json` — signed-in connection management (list,
   disconnect)
 
@@ -35,10 +38,12 @@ itself.
 Callback resolution order:
 
 1. A **signed-in** user gets the provider identity linked to their account
-   (`/account` has a "Connected accounts" card for this). A provider identity
+   (`/account` has a "Connected accounts" card for this; `/discord` is the
+   public connect page for Discord welcome messages). A provider identity
    already linked to a different user is a conflict error, never an account
    switch; callback errors for signed-in users redirect to
-   `/account?oauthError=<code>`.
+   `/account?oauthError=<code>` unless the start request carried `redirectTo`
+   (for example `/discord?oauthError=<code>`).
 2. A known connection signs in its user (the two-factor gate applies exactly as
    it does for password logins; passkey sign-in skips TOTP).
 3. A **provider-verified** email matching an existing account links the identity
@@ -151,8 +156,9 @@ yet (HTTP 404), or Discord errors.
 The bot must already be in the guild with **Manage Roles**, and its highest role
 must sit above every role it assigns. Users join through the existing invite
 (`https://kcd.im/kody-discord`); login does not request `guilds.join`.
-`/account` shows a Join the Kody Discord link on a connected Discord row, plus
-**Sync Discord roles** when bot config is present.
+`/discord` is the shareable page for that invite plus a **Connect to Discord**
+button. `/account` still shows a Join the Kody Discord link on a connected
+Discord row, plus **Sync Discord roles** when bot config is present.
 
 Social-login tokens are still discarded after the profile fetch. Role writes use
 the operator bot token and the stored Discord snowflake only.

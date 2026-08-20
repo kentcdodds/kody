@@ -496,8 +496,10 @@ Pro roles follow `users.stripe_plan`.
 - A signed-in user hitting the callback links the provider identity to their
   account, managed from the `/account` "Connected accounts" card backed by
   `/account/connections.json` (disconnect is refused when the connection is the
-  only sign-in method); a provider-verified email matching an existing account
-  auto-links and signs in; otherwise account creation follows the signup posture
+  only sign-in method). `/discord` is the public page for joining the official
+  server and connecting Discord when the account is not linked yet
+- A provider-verified email matching an existing account auto-links and signs
+  in; otherwise account creation follows the signup posture
   (`SIGNUP_MODE !== 'open'` requires a valid invite code carried from the invite
   signup panel; the `test` env remains open without one)
 - Buttons only render for providers whose client id/secret env vars are set;

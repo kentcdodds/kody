@@ -22,8 +22,9 @@ Discord snowflake. Do not persist Discord login tokens, do not request
 ## Consequences
 
 Login works without bot secrets (local, preview, tests). Role assignment skips
-when the user has not joined the guild yet; `/account` exposes the existing
-invite plus a sync control. Standard and Pro guild roles follow
-`users.stripe_plan` (checkout, webhooks, and plan-refresh alarms), not the
-effective manual+Stripe plan. A later Linked Roles flow can complement this
-without replacing social login. Revisit if Discord login needs assistant scopes.
+when the user has not joined the guild yet; `/discord` is the public join-and-
+connect page, and `/account` still exposes the invite plus a sync control.
+Standard and Pro guild roles follow `users.stripe_plan` (checkout, webhooks, and
+plan-refresh alarms), not the effective manual+Stripe plan. A later Linked Roles
+flow can complement this without replacing social login. Revisit if Discord
+login needs assistant scopes.

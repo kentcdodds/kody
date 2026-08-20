@@ -21,7 +21,6 @@ import {
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
-import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import {
 	selectOnboardingExampleListings,
 	selectOnboardingServiceStarterListings,
@@ -483,9 +482,7 @@ export function OnboardingRoute(handle: Handle) {
 						mix={css(discordInviteWrapCss)}
 					>
 						<a
-							href={kodyDiscordInviteUrl}
-							target="_blank"
-							rel="noreferrer noopener"
+							href={routes.discord.href()}
 							mix={css(discordInviteLinkCss)}
 							data-testid="onboarding-join-discord"
 						>

@@ -200,6 +200,10 @@ import {
 	createOnboardingChecklistDismissHandler,
 	createOnboardingHandler,
 } from '#app/handlers/onboarding.ts'
+import {
+	createDiscordApiHandler,
+	createDiscordHandler,
+} from '#app/handlers/discord.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createTermsHandler } from '#app/handlers/terms.ts'
@@ -276,6 +280,8 @@ export function createAppRouter(env: Env) {
 			pricing: createPricingHandler(env),
 			privacy: createPrivacyHandler(env),
 			terms: createTermsHandler(env),
+			discord: createDiscordHandler(env),
+			discordApi: createDiscordApiHandler(env),
 			onboarding: createOnboardingHandler(env),
 			onboardingApi: createOnboardingApiHandler(env),
 			onboardingChecklistDismissPost:

@@ -360,6 +360,7 @@ registerPreloadPatterns(
 		routePattern(routes.pricing),
 		routePattern(routes.privacy),
 		routePattern(routes.terms),
+		routePattern(routes.discord),
 	],
 	{
 		name: 'marketing-area',

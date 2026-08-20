@@ -307,6 +307,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.pricing)]: publicPageHead('pricing', 'Pricing'),
 	[routePattern(routes.privacy)]: publicPageHead('privacy', 'Privacy'),
 	[routePattern(routes.terms)]: publicPageHead('terms', 'Terms'),
+	[routePattern(routes.discord)]: publicPageHead('discord', 'Discord'),
 	[routePattern(routes.resetPassword)]: publicPageHead(
 		'reset-password',
 		'Reset password',
