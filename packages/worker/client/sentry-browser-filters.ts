@@ -495,18 +495,13 @@ export function isChromeExtensionClientDestroyedSentryEvent(
 		)
 	if (!hasClientDestroyedMessage) return false
 	const frameUrls = sentryEventStackFrameUrls(event)
-	return (
-		frameUrls.length > 0 &&
-		frameUrls.every(isChromeExtensionStackFrameUrl)
-	)
+	return frameUrls.length > 0 && frameUrls.every(isChromeExtensionStackFrameUrl)
 }
 
 export function filterChromeExtensionClientDestroyedSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
-	if (
-		isChromeExtensionClientDestroyedSentryEvent(event, originalException)
-	) {
+	if (isChromeExtensionClientDestroyedSentryEvent(event, originalException)) {
 		return null
 	}
 	return event
