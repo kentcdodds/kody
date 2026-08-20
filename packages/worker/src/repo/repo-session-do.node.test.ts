@@ -134,13 +134,13 @@ const mockModule = vi.hoisted(() => {
 		resolveExistingArtifactSourceRepo: vi.fn(),
 		resolveArtifactDefaultBranchHead: vi.fn(async () => ({
 			defaultBranch: 'main',
-			commit: 'commit-published-new',
+			commit: 'commit-base',
 			remote:
 				'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
 		})),
 		resolveArtifactSourceHead: vi.fn(async () => ({
 			branch: 'main',
-			commit: 'commit-published-new',
+			commit: 'commit-base',
 		})),
 		parseRepoManifest: vi.fn(() => ({ sourceRoot: '/' })),
 		runRepoChecks: vi.fn(async () => ({
@@ -259,12 +259,12 @@ function restoreRepoSessionMockBaseline() {
 	})
 	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValue({
 		defaultBranch: 'main',
-		commit: 'commit-published-new',
+		commit: 'commit-base',
 		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
 	})
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
-		commit: 'commit-published-new',
+		commit: 'commit-base',
 	})
 	mockModule.parseRepoManifest.mockReturnValue({ sourceRoot: '/' })
 	mockModule.runRepoChecks.mockResolvedValue({
@@ -2632,6 +2632,18 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 	})
 	const repoSession = new RepoSession(state, createEnv())
 
+	// Pre-push live tip matches session base; post-rejection tip has moved.
+	mockModule.resolveArtifactSourceHead.mockClear()
+	mockModule.resolveArtifactSourceHead
+		.mockResolvedValueOnce({
+			branch: 'main',
+			commit: 'commit-base',
+		})
+		.mockResolvedValueOnce({
+			branch: 'main',
+			commit: 'commit-published-new',
+		})
+
 	const result = await repoSession.publishSession({
 		sessionId: 'session-1',
 		userId: 'user-1',
@@ -2646,7 +2658,12 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 		message:
 			'The source repo rejected a non-fast-forward publish. Rebase the session before publishing.',
 	})
-	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalled()
+	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalledTimes(2)
+	expect(mockModule.resolveArtifactSourceHead).toHaveBeenNthCalledWith(
+		2,
+		expect.anything(),
+		'source-repo',
+	)
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.git.push).toHaveBeenCalledWith(
 		expect.objectContaining({

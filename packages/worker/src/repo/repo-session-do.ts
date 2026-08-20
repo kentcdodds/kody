@@ -2517,10 +2517,12 @@ class RepoSessionBase extends DurableObject<Env> {
 		})
 		// Resolve the live head exactly once so the persisted base_commit and
 		// the returned baseCommit cannot diverge when a push lands in between.
+		// Packages use the Artifacts tip too (not only D1 published_commit) so a
+		// non-fast-forward publish's repair path rebases onto the same tip the
+		// push rejected against.
 		const rebasedBaseCommit =
-			source.entity_kind === 'repo'
-				? ((await resolveLiveSourceHeadCommit(this.env, source)) ?? '')
-				: (source.published_commit ?? '')
+			(await resolveLiveSourceHeadCommit(this.env, source)) ??
+			(source.published_commit ?? '')
 		await updateRepoSession(this.env, {
 			id: sessionRow.id,
 			userId: sessionRow.user_id,
@@ -2689,13 +2691,16 @@ class RepoSessionBase extends DurableObject<Env> {
 					'Run repo_run_checks on the current session state before publishing.',
 			}
 		}
-		if ((source.published_commit ?? '') !== sessionRow.base_commit) {
+		const livePublishedCommit =
+			(await resolveLiveSourceHeadCommit(this.env, source)) ??
+			source.published_commit
+		if ((livePublishedCommit ?? '') !== sessionRow.base_commit) {
 			return {
 				status: 'base_moved',
 				sessionId: input.sessionId,
 				publishedCommit: null,
 				sessionBaseCommit: sessionRow.base_commit,
-				currentPublishedCommit: source.published_commit,
+				currentPublishedCommit: livePublishedCommit,
 				repairHint: 'repo_rebase_session',
 				message:
 					'The source repo has moved since this session opened. Rebase the session before publishing.',
@@ -2763,7 +2768,8 @@ class RepoSessionBase extends DurableObject<Env> {
 				return this.buildPublishBaseMovedResult({
 					sessionId: input.sessionId,
 					sessionBaseCommit: sessionRow.base_commit,
-					currentPublishedCommit: refreshedHead ?? source.published_commit,
+					currentPublishedCommit:
+						refreshedHead ?? livePublishedCommit ?? source.published_commit,
 				})
 			}
 			throw error
