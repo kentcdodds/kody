@@ -688,6 +688,51 @@ export function filterOgTypeMetaQuerySelectorContentSentryEvent<
 	return event
 }
 
+/**
+ * Web Worker `importScripts` failing to load a `blob:` URL. Observed when a
+ * page navigates away (or HeadlessChrome tears down) while an editor/worker
+ * blob is still booting — KODY-CLOUDFLARE-5G on `/@…/files`. Not an app defect;
+ * match only this WorkerGlobalScope + blob: signature.
+ */
+const browserBlobImportScriptsNetworkErrorMessage =
+	/Failed to execute 'importScripts' on 'WorkerGlobalScope': The script at 'blob:[^']+' failed to load\.?/i
+
+export function isBrowserBlobImportScriptsNetworkErrorMessage(message: string) {
+	return browserBlobImportScriptsNetworkErrorMessage.test(message.trim())
+}
+
+export function isBrowserBlobImportScriptsNetworkError(error: unknown) {
+	if (typeof error === 'string') {
+		return isBrowserBlobImportScriptsNetworkErrorMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isBrowserBlobImportScriptsNetworkErrorMessage(error.message)
+}
+
+export function isBrowserBlobImportScriptsNetworkSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isBrowserBlobImportScriptsNetworkError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isBrowserBlobImportScriptsNetworkErrorMessage(message),
+	)
+}
+
+export function filterBrowserBlobImportScriptsNetworkSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (
+		isBrowserBlobImportScriptsNetworkSentryEvent(event, originalException)
+	) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -752,6 +797,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	}
 	if (
 		filterOgTypeMetaQuerySelectorContentSentryEvent(
+			event,
+			originalException,
+		) === null
+	) {
+		return null
+	}
+	if (
+		filterBrowserBlobImportScriptsNetworkSentryEvent(
 			event,
 			originalException,
 		) === null

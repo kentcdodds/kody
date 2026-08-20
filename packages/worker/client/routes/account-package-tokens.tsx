@@ -114,8 +114,8 @@ function generatePackageInvocationRawToken() {
 	return `kody_${bytesToBase64Url(bytes)}`
 }
 
-function formatScope(values: Array<string>) {
-	if (values.length === 0) return 'None'
+function formatScope(values: Array<string> | null | undefined) {
+	if (!values || values.length === 0) return 'None'
 	if (isPackageTokenWildcardSelected(values)) return 'Any export'
 	return values.join(', ')
 }
