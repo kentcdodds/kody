@@ -1275,6 +1275,10 @@ test('renderAppPage renders the public Discord connect page', async () => {
 	expect(html).not.toContain('Join the Kody Discord')
 	expect(html).not.toContain('Connect to Discord')
 	expect(html).toContain('<title>Discord</title>')
+	expect(html).toContain('max-width: 28rem')
+	expect(
+		html.match(/<button\b[^>]*>\s*Connect Discord\s*<\/button>/g),
+	).toHaveLength(1)
 })
 
 test('renderAppPage renders the redesigned blog index', async () => {
