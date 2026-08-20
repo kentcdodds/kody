@@ -20,7 +20,8 @@ of broken hex. There are 17 `MetadataGrid` call sites, nine of them at
 `accountManagementTableCss`.
 
 Measurements and the rejected alternatives are in
-[the supporting material](./0010-account-record-table/index.md).
+[historical working notes](./historical/0010-account-record-table/index.md) (not
+current layout law; not part of the steering list).
 
 ## Decision
 

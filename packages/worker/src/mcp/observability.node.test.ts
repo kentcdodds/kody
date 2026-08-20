@@ -273,6 +273,21 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			),
 		})
 
+		// Non-fast-forward publish push (KODY-CLOUDFLARE-5M). Plain Error from DO.
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'repo_publish_session',
+			domain: 'repo',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'PushRejectedError',
+			errorMessage:
+				'Push rejected because it was not a simple fast-forward. Use "force: true" to override.',
+			cause: new Error(
+				'Push rejected because it was not a simple fast-forward. Use "force: true" to override.',
+			),
+		})
+
 		// package_save destructive overwrite confirmation (issue 7661329778).
 		// Plain Error from shared source-safety-policy helpers.
 		logMcpEvent({
@@ -320,7 +335,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		})
 	})
 
-	expect(payloads).toHaveLength(18)
+	expect(payloads).toHaveLength(19)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',

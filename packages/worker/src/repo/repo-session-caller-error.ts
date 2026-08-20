@@ -15,6 +15,36 @@ export function isRepoSessionInactiveMessage(message: string) {
 }
 
 /**
+ * isomorphic-git `PushRejectedError` for non-fast-forward pushes. Publish maps
+ * these to `base_moved` so agents rebase; when a plain Error still escapes DO
+ * RPC (subclass identity lost), MCP observability matches this phrase.
+ * KODY-CLOUDFLARE-5M.
+ */
+export const gitPushNotFastForwardMessagePhrase = 'not a simple fast-forward'
+
+export function isGitPushNotFastForwardMessage(message: string) {
+	return message.includes(gitPushNotFastForwardMessagePhrase)
+}
+
+export function isGitPushNotFastForwardError(error: unknown) {
+	if (typeof error !== 'object' || error === null) return false
+	const name =
+		'name' in error && typeof error.name === 'string' ? error.name : null
+	const code =
+		'code' in error && typeof error.code === 'string' ? error.code : null
+	if (name === 'PushRejectedError' || code === 'PushRejectedError') {
+		const message =
+			'message' in error && typeof error.message === 'string'
+				? error.message
+				: ''
+		// tag-exists uses the same error class; only treat non-FF as recoverable.
+		return message.length === 0 || isGitPushNotFastForwardMessage(message)
+	}
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isGitPushNotFastForwardMessage(error.message)
+}
+
+/**
  * Stable prefix for invalid `mode=regex` patterns from repo session search.
  * Agents often pass Python/PCRE inline flags (`(?s)`, `(?i)`) that JavaScript
  * RegExp rejects; treat those as caller-correctable input, not platform bugs.

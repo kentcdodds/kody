@@ -6,7 +6,10 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
-import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
+import {
+	deleteEntitySource,
+	getEntitySourceByEntity,
+} from '#worker/repo/entity-sources.ts'
 import {
 	buildRepoLargeFileMessage,
 	findOversizedRepoSourceFile,
@@ -26,6 +29,7 @@ import { injectDefaultPrivateField } from '#worker/package-registry/package-priv
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
+	getSavedPackageByName,
 	insertSavedPackage,
 } from '#worker/package-registry/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
@@ -136,6 +140,47 @@ export function buildPackageSaveNextSteps(input: {
 	return steps.join(' ')
 }
 
+/**
+ * Per-user `saved_packages` uniqueness is on (user_id, name) and
+ * (user_id, kody_id). package_save resolves "existing" by package_id when
+ * provided, otherwise by kody_id. A wrong/new package_id must not skip the
+ * kody_id check and fall into INSERT — that surfaces as a raw D1 UNIQUE on
+ * name (KODY-CLOUDFLARE-5J).
+ */
+export function buildSavedPackageNameCollisionMessage(input: {
+	name: string
+	existingKodyId: string
+	existingPackageId: string
+}) {
+	return `A saved package named "${input.name}" already exists (kody_id "${input.existingKodyId}", package_id "${input.existingPackageId}"). Change package.json#name, or call package_save with package_id "${input.existingPackageId}" to update that package (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
+}
+
+export function buildSavedPackageIdMismatchMessage(input: {
+	requestedPackageId: string
+	existingKodyId: string
+	existingPackageId: string
+}) {
+	return `package_id "${input.requestedPackageId}" was not found. A saved package with kody_id "${input.existingKodyId}" already exists as package_id "${input.existingPackageId}". Omit package_id or pass package_id "${input.existingPackageId}" to update it (set confirm_destructive_overwrite: true only after the user explicitly approves overwriting).`
+}
+
+function isSavedPackageUniqueConstraintMessage(message: string) {
+	return (
+		/UNIQUE constraint failed/i.test(message) &&
+		/saved_packages\.(name|kody_id|user_id)/i.test(message)
+	)
+}
+
+function buildSavedPackageUniqueConstraintCallerMessage(input: {
+	name: string
+	kodyId: string
+	message: string
+}) {
+	if (/saved_packages\.kody_id/i.test(input.message)) {
+		return `A saved package with kody id "${input.kodyId}" already exists. Call package_save with that package's package_id to update it, or change package.json#kody.id.`
+	}
+	return `A saved package named "${input.name}" already exists. Change package.json#name, or call package_save with that package's package_id to update it.`
+}
+
 export const savePackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
@@ -178,7 +223,11 @@ export const savePackageCapability = defineDomainCapability(
 				)
 			}
 			const expectedPackageScope = owner.ownerScope
-			const existing =
+			const lookupManifest = parseSavedPackageManifest({
+				content: packageJsonContent,
+				expectedPackageScope,
+			})
+			let existing =
 				args.package_id !== undefined
 					? await getSavedPackageById(ctx.env.APP_DB, {
 							userId: owner.ownerUserId,
@@ -186,11 +235,23 @@ export const savePackageCapability = defineDomainCapability(
 						})
 					: await getSavedPackageByKodyId(ctx.env.APP_DB, {
 							userId: owner.ownerUserId,
-							kodyId: parseSavedPackageManifest({
-								content: packageJsonContent,
-								expectedPackageScope,
-							}).kody.id,
+							kodyId: lookupManifest.kody.id,
 						})
+			if (!existing && args.package_id !== undefined) {
+				const byKodyId = await getSavedPackageByKodyId(ctx.env.APP_DB, {
+					userId: owner.ownerUserId,
+					kodyId: lookupManifest.kody.id,
+				})
+				if (byKodyId) {
+					throw new McpCallerError(
+						buildSavedPackageIdMismatchMessage({
+							requestedPackageId: args.package_id,
+							existingKodyId: byKodyId.kodyId,
+							existingPackageId: byKodyId.id,
+						}),
+					)
+				}
+			}
 			if (!existing) {
 				await assertWithinEntitlement({
 					db: ctx.env.APP_DB,
@@ -212,6 +273,19 @@ export const savePackageCapability = defineDomainCapability(
 				expectedPackageScope,
 			})
 			const packageId = existing?.id ?? args.package_id ?? crypto.randomUUID()
+			const nameOwner = await getSavedPackageByName(ctx.env.APP_DB, {
+				userId: owner.ownerUserId,
+				name: manifest.name,
+			})
+			if (nameOwner && nameOwner.id !== packageId) {
+				throw new McpCallerError(
+					buildSavedPackageNameCollisionMessage({
+						name: manifest.name,
+						existingKodyId: nameOwner.kodyId,
+						existingPackageId: nameOwner.id,
+					}),
+				)
+			}
 			const canonicalExistingSource =
 				existing == null
 					? null
@@ -297,21 +371,44 @@ export const savePackageCapability = defineDomainCapability(
 			})
 			if (!existing) {
 				const now = new Date().toISOString()
-				await insertSavedPackage(ctx.env.APP_DB, {
-					id: packageId,
-					user_id: owner.ownerUserId,
-					name: manifest.name,
-					kody_id: manifest.kody.id,
-					description: manifest.kody.description,
-					tags_json: JSON.stringify(manifest.kody.tags ?? []),
-					search_text: manifest.kody.searchText ?? null,
-					source_id: ensuredSource.id,
-					has_app: manifest.kody.app ? 1 : 0,
-					hidden: 0,
-					is_private: manifest.private === true ? 1 : 0,
-					created_at: now,
-					updated_at: now,
-				})
+				try {
+					await insertSavedPackage(ctx.env.APP_DB, {
+						id: packageId,
+						user_id: owner.ownerUserId,
+						name: manifest.name,
+						kody_id: manifest.kody.id,
+						description: manifest.kody.description,
+						tags_json: JSON.stringify(manifest.kody.tags ?? []),
+						search_text: manifest.kody.searchText ?? null,
+						source_id: ensuredSource.id,
+						has_app: manifest.kody.app ? 1 : 0,
+						hidden: 0,
+						is_private: manifest.private === true ? 1 : 0,
+						created_at: now,
+						updated_at: now,
+					})
+				} catch (error) {
+					const message = getErrorMessage(error)
+					// Pre-check covers the common path; this catches races where
+					// another create won the (user_id, name) or (user_id, kody_id)
+					// unique index between lookup and insert. Drop only the source
+					// this invocation just created so a retry does not orphan it.
+					if (isSavedPackageUniqueConstraintMessage(message)) {
+						await deleteEntitySource(ctx.env, {
+							id: ensuredSource.id,
+							userId: owner.ownerUserId,
+						})
+						throw new McpCallerError(
+							buildSavedPackageUniqueConstraintCallerMessage({
+								name: manifest.name,
+								kodyId: manifest.kody.id,
+								message,
+							}),
+							{ cause: error },
+						)
+					}
+					throw error
+				}
 			}
 			await reportCapabilityProgress(ctx.reportProgress, {
 				progress: 2,

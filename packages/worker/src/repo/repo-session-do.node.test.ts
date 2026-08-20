@@ -134,9 +134,13 @@ const mockModule = vi.hoisted(() => {
 		resolveExistingArtifactSourceRepo: vi.fn(),
 		resolveArtifactDefaultBranchHead: vi.fn(async () => ({
 			defaultBranch: 'main',
-			commit: 'commit-published-new',
+			commit: 'commit-base',
 			remote:
 				'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+		})),
+		resolveArtifactSourceHead: vi.fn(async () => ({
+			branch: 'main',
+			commit: 'commit-base',
 		})),
 		parseRepoManifest: vi.fn(() => ({ sourceRoot: '/' })),
 		runRepoChecks: vi.fn(async () => ({
@@ -255,8 +259,12 @@ function restoreRepoSessionMockBaseline() {
 	})
 	mockModule.resolveArtifactDefaultBranchHead.mockResolvedValue({
 		defaultBranch: 'main',
-		commit: 'commit-published-new',
+		commit: 'commit-base',
 		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+	})
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-base',
 	})
 	mockModule.parseRepoManifest.mockReturnValue({ sourceRoot: '/' })
 	mockModule.runRepoChecks.mockResolvedValue({
@@ -467,6 +475,8 @@ vi.mock('./artifacts.ts', async () => {
 			mockModule.resolveExistingArtifactSourceRepo(...args),
 		resolveArtifactDefaultBranchHead: (...args: Array<unknown>) =>
 			mockModule.resolveArtifactDefaultBranchHead(...args),
+		resolveArtifactSourceHead: (...args: Array<unknown>) =>
+			mockModule.resolveArtifactSourceHead(...args),
 	}
 })
 
@@ -806,6 +816,7 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 		expect.objectContaining({
 			remote: 'origin',
 			ref: 'sessions/session1',
+			force: true,
 			username: 'x',
 			password: 'art_source_secret',
 		}),
@@ -827,6 +838,7 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 		expect.objectContaining({
 			remote: 'origin',
 			ref: 'sessions/session1',
+			force: true,
 			username: 'x',
 			password: 'art_source_secret',
 		}),
@@ -842,6 +854,7 @@ test('rebaseSession and publishSession use Artifacts username/password auth with
 			remote: 'origin',
 			ref: 'sessions/session1',
 			remoteRef: 'main',
+			force: true,
 		}),
 	)
 	for (const call of mockModule.git.push.mock.calls) {
@@ -2593,5 +2606,66 @@ test('already_published external publish fails when snapshot refresh fails', asy
 		expect.objectContaining({
 			scope: 'repo.publishFromExternalRef.refresh-already-published-snapshot',
 		}),
+	)
+})
+
+test('publishSession maps non-fast-forward PushRejectedError to base_moved without force', async () => {
+	consoleWarn.mockImplementation(() => {})
+	setCommonSessionFixtures()
+	mockModule.rawPush.mockRejectedValueOnce(
+		Object.assign(
+			new Error(
+				'Push rejected because it was not a simple fast-forward. Use "force: true" to override.',
+			),
+			{ name: 'PushRejectedError', code: 'PushRejectedError' },
+		),
+	)
+	const state = createDurableObjectState()
+	// Empty workspace → SHA-256 of '' so checks are not stale without force.
+	await state.storage.put('repo-session:last-check-status', {
+		runId: 'run-1',
+		treeHash:
+			'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+		checkedAt: '2026-04-18T00:00:00.000Z',
+		ok: true,
+		results: [],
+	})
+	const repoSession = new RepoSession(state, createEnv())
+
+	// Post-rejection tip refresh (precheck uses D1 published_commit only).
+	mockModule.resolveArtifactSourceHead.mockClear()
+	mockModule.resolveArtifactSourceHead.mockResolvedValueOnce({
+		branch: 'main',
+		commit: 'commit-published-new',
+	})
+
+	const result = await repoSession.publishSession({
+		sessionId: 'session-1',
+		userId: 'user-1',
+	})
+	expect(result).toEqual({
+		status: 'base_moved',
+		sessionId: 'session-1',
+		publishedCommit: null,
+		sessionBaseCommit: 'commit-base',
+		currentPublishedCommit: 'commit-published-new',
+		repairHint: 'repo_rebase_session',
+		message:
+			'The source repo rejected a non-fast-forward publish. Rebase the session before publishing.',
+	})
+	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalledTimes(1)
+	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalledWith(
+		expect.anything(),
+		'source-repo',
+	)
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.git.push).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ref: 'sessions/session1',
+			force: true,
+		}),
+	)
+	expect(mockModule.rawPush).toHaveBeenCalledWith(
+		expect.not.objectContaining({ force: true }),
 	)
 })

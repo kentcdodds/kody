@@ -258,6 +258,72 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			exception: {
 				values: [
 					{
+						type: 'WrappedError',
+						value: 'Client has been destroyed',
+						stacktrace: {
+							frames: [
+								{
+									filename:
+										'chrome-extension://iohjgamcilhbgmhbnllfolmkmmekfmci/injected-scripts/host-additional-hooks.js',
+								},
+								{
+									function: 'a6.send',
+									abs_path:
+										'chrome-extension://iohjgamcilhbgmhbnllfolmkmmekfmci/injected-scripts/host-additional-hooks.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'WrappedError',
+						value: 'Client has been destroyed',
+						stacktrace: {
+							frames: [
+								{
+									filename: 'https://kody.codes/assets/entry.js',
+									function: 'boot',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'Client has been destroyed during hydrate',
+						stacktrace: {
+							frames: [
+								{
+									filename:
+										'chrome-extension://iohjgamcilhbgmhbnllfolmkmmekfmci/injected-scripts/host-additional-hooks.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
 						type: 'ReferenceError',
 						value: 'CONFIG is not defined',
 						stacktrace: {
@@ -374,6 +440,43 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 								},
 							],
 						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+})
+
+test('browser Sentry filters drop WorkerGlobalScope blob importScripts NetworkError (KODY-CLOUDFLARE-5G)', () => {
+	const blobImportScriptsMessage =
+		"Uncaught NetworkError: Failed to execute 'importScripts' on 'WorkerGlobalScope': The script at 'blob:https://kody.codes/746a7af2-37c5-4c0d-953f-661052a239a3' failed to load."
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: blobImportScriptsMessage,
+						stacktrace: {
+							frames: [
+								{
+									filename:
+										'blob:https://kody.codes/da30da39-78fc-444b-abb1-01ebd8bfc126',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'NetworkError',
+						value: 'Failed to fetch',
 					},
 				],
 			},

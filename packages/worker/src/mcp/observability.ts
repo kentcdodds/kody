@@ -5,6 +5,7 @@ import { CommunityActionError } from '#worker/community/errors.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
 import {
+	isGitPushNotFastForwardMessage,
 	isRepoSearchInvalidRegexMessage,
 	isRepoSessionInactiveMessage,
 } from '#worker/repo/repo-session-caller-error.ts'
@@ -146,6 +147,17 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 				entry instanceof Error &&
 				(isRepoSessionInactiveMessage(entry.message) ||
 					isRepoSearchInvalidRegexMessage(entry.message)),
+		)
+	) {
+		return true
+	}
+	// Non-fast-forward publish pushes (isomorphic-git PushRejectedError). The
+	// DO maps these to base_moved; this phrase match covers any plain Error
+	// that still escapes RPC — KODY-CLOUDFLARE-5M.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error && isGitPushNotFastForwardMessage(entry.message),
 		)
 	) {
 		return true

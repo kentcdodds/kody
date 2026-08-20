@@ -105,6 +105,7 @@ import {
 	measureRepoSessionWorkspaceBlobBytes,
 	purgeRepoSessionWorkspaceBlobs,
 } from './repo-session-blobs.ts'
+import { isGitPushNotFastForwardError } from './repo-session-caller-error.ts'
 import {
 	assertPackagePrivateVisibilityChangeAllowed,
 	assertPackageSourceOverwriteAllowed,
@@ -621,6 +622,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		branch: string
 		remoteRef: string
 		token: string
+		force?: boolean
 	}) {
 		const auth = buildArtifactsGitAuth({ token: input.token })
 		return rawGit.push({
@@ -630,10 +632,28 @@ class RepoSessionBase extends DurableObject<Env> {
 			remote: 'origin',
 			ref: input.branch,
 			remoteRef: input.remoteRef,
+			...(input.force === true ? { force: true } : {}),
 			onAuth() {
 				return auth
 			},
 		})
+	}
+
+	private buildPublishBaseMovedResult(input: {
+		sessionId: string
+		sessionBaseCommit: string
+		currentPublishedCommit: string | null
+	}): Extract<RepoSessionPublishResult, { status: 'base_moved' }> {
+		return {
+			status: 'base_moved',
+			sessionId: input.sessionId,
+			publishedCommit: null,
+			sessionBaseCommit: input.sessionBaseCommit,
+			currentPublishedCommit: input.currentPublishedCommit,
+			repairHint: 'repo_rebase_session',
+			message:
+				'The source repo rejected a non-fast-forward publish. Rebase the session before publishing.',
+		}
 	}
 
 	private async deleteRemoteBranch(input: { branch: string; token: string }) {
@@ -2486,14 +2506,19 @@ class RepoSessionBase extends DurableObject<Env> {
 			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
 		const headCommit = await this.getHeadCommit()
+		// Session branches are ephemeral workspace state; pull/merge can rewrite
+		// history, so force-push the session ref (never the source branch).
 		await this.git.push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
 			ref: sessionBranch,
+			force: true,
 			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
 		// Resolve the live head exactly once so the persisted base_commit and
 		// the returned baseCommit cannot diverge when a push lands in between.
+		// Packages stay on D1 published_commit: Artifacts HEAD can include
+		// unpublished git-lane pushes that must not become the session base.
 		const rebasedBaseCommit =
 			source.entity_kind === 'repo'
 				? ((await resolveLiveSourceHeadCommit(this.env, source)) ?? '')
@@ -2560,13 +2585,29 @@ class RepoSessionBase extends DurableObject<Env> {
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
 			ref: sessionBranch,
+			force: true,
 			...buildArtifactsGitAuth({ token: input.sessionAccess.token }),
 		})
-		await this.pushBranchToRemoteRef({
-			branch: sessionBranch,
-			remoteRef: input.sessionRow.source_branch,
-			token: input.sessionAccess.token,
-		})
+		try {
+			await this.pushBranchToRemoteRef({
+				branch: sessionBranch,
+				remoteRef: input.sessionRow.source_branch,
+				token: input.sessionAccess.token,
+			})
+		} catch (error) {
+			if (isGitPushNotFastForwardError(error)) {
+				const refreshedHead = await resolveLiveSourceHeadCommit(
+					this.env,
+					input.source,
+				)
+				return this.buildPublishBaseMovedResult({
+					sessionId: input.sessionRow.id,
+					sessionBaseCommit: input.sessionRow.base_commit,
+					currentPublishedCommit: refreshedHead ?? liveHead,
+				})
+			}
+			throw error
+		}
 		const publishedCommit = sessionHeadCommit ?? input.sessionRow.base_commit
 		await this.attachSourcePublishGitNote({
 			source: input.source,
@@ -2590,6 +2631,18 @@ class RepoSessionBase extends DurableObject<Env> {
 			lastCheckpointCommit: publishedCommit,
 			lastCheckpointAt: nowIso(),
 			expiresAt: buildPublishedSessionExpiresAt(),
+		})
+		await this.writeCachedSessionState({
+			sessionRow: {
+				...input.sessionRow,
+				status: 'published',
+				base_commit: publishedCommit,
+				last_checkpoint_commit: publishedCommit,
+			},
+			source: {
+				...input.source,
+				published_commit: publishedCommit,
+			},
 		})
 		this.refreshStoredEstimate(input.sessionRow.id, input.sessionRow.user_id)
 		return {
@@ -2692,13 +2745,31 @@ class RepoSessionBase extends DurableObject<Env> {
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
 			ref: sessionBranch,
+			force: true,
 			...buildArtifactsGitAuth({ token: sessionAccess.token }),
 		})
-		await this.pushBranchToRemoteRef({
-			branch: sessionBranch,
-			remoteRef: sessionRow.source_branch,
-			token: sessionAccess.token,
-		})
+		const forceSourcePush = input.force === true
+		try {
+			await this.pushBranchToRemoteRef({
+				branch: sessionBranch,
+				remoteRef: sessionRow.source_branch,
+				token: sessionAccess.token,
+				...(forceSourcePush ? { force: true } : {}),
+			})
+		} catch (error) {
+			if (!forceSourcePush && isGitPushNotFastForwardError(error)) {
+				const refreshedHead = await resolveLiveSourceHeadCommit(
+					this.env,
+					source,
+				)
+				return this.buildPublishBaseMovedResult({
+					sessionId: input.sessionId,
+					sessionBaseCommit: sessionRow.base_commit,
+					currentPublishedCommit: refreshedHead ?? source.published_commit,
+				})
+			}
+			throw error
+		}
 		const snapshotFiles = await this.collectWorkspaceFiles()
 		await finalizePublishedEntitySource({
 			env: this.env,
@@ -2731,6 +2802,18 @@ class RepoSessionBase extends DurableObject<Env> {
 			lastCheckpointCommit: sessionHeadCommit,
 			lastCheckpointAt: nowIso(),
 			expiresAt: buildPublishedSessionExpiresAt(),
+		})
+		await this.writeCachedSessionState({
+			sessionRow: {
+				...sessionRow,
+				status: 'published',
+				base_commit: publishedCommit,
+				last_checkpoint_commit: sessionHeadCommit,
+			},
+			source: {
+				...source,
+				published_commit: publishedCommit,
+			},
 		})
 		this.refreshStoredEstimate(sessionRow.id, sessionRow.user_id)
 		return {

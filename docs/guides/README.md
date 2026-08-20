@@ -40,12 +40,13 @@ content:
 Per-provider connect walkthroughs (`category: provider`). Load by MCP id or web
 slug.
 
-| File                                           | MCP id             | Web slug  |
-| ---------------------------------------------- | ------------------ | --------- |
-| [providers/discord.md](./providers/discord.md) | `provider_discord` | `discord` |
-| [providers/github.md](./providers/github.md)   | `provider_github`  | `github`  |
-| [providers/google.md](./providers/google.md)   | `provider_google`  | `google`  |
-| [providers/notion.md](./providers/notion.md)   | `provider_notion`  | `notion`  |
-| [providers/origin.md](./providers/origin.md)   | `provider_origin`  | `origin`  |
-| [providers/slack.md](./providers/slack.md)     | `provider_slack`   | `slack`   |
-| [providers/spotify.md](./providers/spotify.md) | `provider_spotify` | `spotify` |
+| File                                                 | MCP id                | Web slug     |
+| ---------------------------------------------------- | --------------------- | ------------ |
+| [providers/discord.md](./providers/discord.md)       | `provider_discord`    | `discord`    |
+| [providers/github.md](./providers/github.md)         | `provider_github`     | `github`     |
+| [providers/google.md](./providers/google.md)         | `provider_google`     | `google`     |
+| [providers/notion.md](./providers/notion.md)         | `provider_notion`     | `notion`     |
+| [providers/origin.md](./providers/origin.md)         | `provider_origin`     | `origin`     |
+| [providers/salesforce.md](./providers/salesforce.md) | `provider_salesforce` | `salesforce` |
+| [providers/slack.md](./providers/slack.md)           | `provider_slack`      | `slack`      |
+| [providers/spotify.md](./providers/spotify.md)       | `provider_spotify`    | `spotify`    |

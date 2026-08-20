@@ -121,6 +121,8 @@ Concrete examples that combine the blocks:
   keys.
 - A personal API: a package export you can hit from shortcuts or webhooks to log
   a habit, save a link, or kick off a run.
+- An inbound webhook that fingerprints repeated failures and emails one
+  investigation instead of a flood.
 - Home automation routines through a local-network connector — scenes,
   thermostats, speakers — driven by schedule or by asking your agent.
 - Forking a community package (say, a YouTube video manager or an RSS digest)
