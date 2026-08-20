@@ -21,6 +21,7 @@ import {
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
+import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import {
 	selectOnboardingExampleListings,
 	selectOnboardingServiceStarterListings,
@@ -459,6 +460,22 @@ export function OnboardingRoute(handle: Handle) {
 							Read what Kody can do
 						</a>{' '}
 						first.
+					</p>
+					<p
+						data-rise
+						style={{ '--rise': '2' }}
+						mix={css(discordInviteWrapCss)}
+					>
+						<a
+							href={kodyDiscordInviteUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+							mix={css(discordInviteLinkCss)}
+							data-testid="onboarding-join-discord"
+						>
+							<ProviderIcon providerId="discord" size="1.1em" />
+							Join the Discord
+						</a>
 					</p>
 				</header>
 
@@ -1209,6 +1226,18 @@ const headerGuideLinkCss = {
 	color: colors.primaryText,
 	textDecorationThickness: '1.5px',
 	textUnderlineOffset: '3px',
+}
+
+const discordInviteWrapCss = {
+	margin: '1rem 0 0',
+}
+
+const discordInviteLinkCss = {
+	...getGhostButtonCss({ size: 'sm' }),
+	width: 'fit-content',
+	gap: '0.4rem',
+	padding: '0.4rem 0.85rem 0.4rem 0.65rem',
+	font: `600 0.92rem/1 ${typography.fontFamilyBody}`,
 }
 
 const quickExampleDoneCss = {

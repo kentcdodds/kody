@@ -9,7 +9,8 @@ it run durable Worker-native automations while your computer is offline.
 These docs are for people who connect their assistant to Kody over MCP. Setup
 and repository development live elsewhere
 ([contributing docs](../contributing/index.md)). The in-app Get started page
-(`/onboarding`) walks through connecting a host for the first time.
+(`/onboarding`) walks through connecting a host for the first time. People with
+a Kody account can also [join the Discord](https://kcd.im/kody-discord).
 
 Read in order for a full tour, or jump to a topic.
 
