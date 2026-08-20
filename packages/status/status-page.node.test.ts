@@ -47,7 +47,7 @@ test('status page renders components, incidents, unknown state, and escapes deta
 	for (const component of statusComponents) {
 		expect(healthy).toContain(component.name.replaceAll('&', '&amp;'))
 	}
-	expect(healthy).toContain('99.98% uptime')
+	expect(healthy).toContain('99.98% uptime (4 days)')
 	expect(healthy).toContain(
 		'class="bar" title="2026-08-04: 3 isolated probe failures, no incident"',
 	)

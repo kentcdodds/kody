@@ -1,4 +1,5 @@
 import { dayBarClassName, dayBarKind, dayBarTitle } from './day-bars.ts'
+import { uptimeWindowLabel } from './incident-rollups.ts'
 import {
 	cloudflareStatusPageUrl,
 	sanitizeProviderIncidentShortlink,
@@ -174,7 +175,7 @@ function renderComponent(component: ComponentSnapshot): string {
 	const uptime =
 		component.uptimePct === null
 			? 'no data yet'
-			: `${component.uptimePct.toFixed(2)}% uptime (90 days)`
+			: `${component.uptimePct.toFixed(2)}% uptime (${uptimeWindowLabel(component.days)})`
 	const latency =
 		component.status === 'operational' && component.latencyMs !== null
 			? ` · ${component.latencyMs}ms`

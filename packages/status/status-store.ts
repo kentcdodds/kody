@@ -2,6 +2,12 @@ import { DurableObject } from 'cloudflare:workers'
 import { sendAlertEmail } from './alert-email.ts'
 import { incidentMinutesForDay, type IncidentSpan } from './day-bars.ts'
 import {
+	dailyFailedIncrement,
+	daysFromFirstSample,
+	daysToClearNonIncidentFailures,
+	nonIncidentFailuresRetiredMetaKey,
+} from './incident-rollups.ts'
+import {
 	composeStatusEmail,
 	decideStatusEmail,
 	defaultDailyEmailLimit,
@@ -146,6 +152,7 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			)
 		`)
 		this.maybeRetirePublicAuditDb()
+		this.maybeClearNonIncidentFailures()
 	}
 
 	private maybeRetirePublicAuditDb() {
@@ -157,6 +164,29 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 		if (this.listOpenIncidents().length === 0) {
 			this.setMeta('last_notified_state', 'ok')
 		}
+	}
+
+	private maybeClearNonIncidentFailures() {
+		if (this.getMeta(nonIncidentFailuresRetiredMetaKey) === '1') return
+		const now = Date.now()
+		const stats = this.ctx.storage.sql
+			.exec<{ component: string; day: string; failed: number }>(
+				`SELECT component, day, failed FROM daily_stats WHERE failed > 0`,
+			)
+			.toArray()
+		const spansByComponent = this.loadIncidentSpans(0, now)
+		for (const row of daysToClearNonIncidentFailures(
+			stats,
+			spansByComponent,
+			now,
+		)) {
+			this.ctx.storage.sql.exec(
+				`UPDATE daily_stats SET failed = 0 WHERE component = ? AND day = ?`,
+				row.component,
+				row.day,
+			)
+		}
+		this.setMeta(nonIncidentFailuresRetiredMetaKey, '1')
 	}
 
 	private getMeta(key: string): string | null {
@@ -227,6 +257,9 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			outcome.latencyMs,
 			outcome.detail,
 		)
+		const previous = this.loadComponentState(outcome.component)
+		const { state, transition } = applyProbeResult(previous, outcome.ok)
+		this.saveComponentState(outcome.component, state)
 		this.ctx.storage.sql.exec(
 			`INSERT INTO daily_stats (component, day, total, failed)
 			VALUES (?, ?, 1, ?)
@@ -235,11 +268,8 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				failed = failed + excluded.failed`,
 			outcome.component,
 			toDay(now),
-			outcome.ok ? 0 : 1,
+			dailyFailedIncrement(outcome.ok, state.status),
 		)
-		const previous = this.loadComponentState(outcome.component)
-		const { state, transition } = applyProbeResult(previous, outcome.ok)
-		this.saveComponentState(outcome.component, state)
 		if (transition === 'opened') {
 			this.ctx.storage.sql.exec(
 				`INSERT INTO incidents (component, started_at, resolved_at, detail)
@@ -616,8 +646,9 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 				incidentMinutes: incidentMinutesForDay(day, spans, now),
 			})
 		}
-		const total = days.reduce((sum, day) => sum + day.total, 0)
-		const failed = days.reduce((sum, day) => sum + day.failed, 0)
+		const visibleDays = daysFromFirstSample(days)
+		const total = visibleDays.reduce((sum, day) => sum + day.total, 0)
+		const failed = visibleDays.reduce((sum, day) => sum + day.failed, 0)
 		const uptimePct = total === 0 ? null : ((total - failed) / total) * 100
 		return {
 			id,
@@ -625,7 +656,7 @@ export class StatusStore extends DurableObject<StatusWorkerEnv> {
 			status,
 			latencyMs: latestSample?.latency_ms ?? null,
 			uptimePct,
-			days,
+			days: visibleDays,
 		}
 	}
 
