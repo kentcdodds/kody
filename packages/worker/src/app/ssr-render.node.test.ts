@@ -1466,7 +1466,7 @@ test('renderAppPage shows reviewed blog artwork and hides the placeholder callou
 	expect(post).toBeDefined()
 	expect(post!.placeholder).toBe(false)
 	expect(post!.image).toBe('/images/kody-vs-executor.webp')
-	expect(post!.ogImage).toBeNull()
+	expect(post!.ogImage).toBe('/images/kody-vs-executor-og.jpg')
 
 	const response = await renderAppPage({
 		request: new Request(`https://example.com/blog/${post!.slug}`),

@@ -85,7 +85,7 @@ test('blog post headline art keeps the generated Open Graph card', () => {
 	)
 })
 
-test('blog posts can still opt into a static Open Graph image', () => {
+test('blog Satori artwork still uses the generated Open Graph card', () => {
 	const descriptor = resolveDocumentHead('/blog/kody-vs-executor', {
 		blogPost: {
 			ok: true,
@@ -96,7 +96,7 @@ test('blog posts can still opt into a static Open Graph image', () => {
 			placeholder: false,
 			image: '/images/kody-vs-executor.webp',
 			imageAlt: 'Kody and the Executor logo size each other up.',
-			ogImage: '/images/kody-vs-executor.webp',
+			ogImage: '/images/kody-vs-executor-og.jpg',
 			body: 'Body',
 			readNext: null,
 		},
@@ -104,7 +104,7 @@ test('blog posts can still opt into a static Open Graph image', () => {
 	const head = absolutizeDocumentHead(descriptor, 'https://kody.codes')
 
 	expect(head.og.imageUrl).toBe(
-		'https://kody.codes/images/kody-vs-executor.webp',
+		'https://kody.codes/blog/kody-vs-executor/og.png',
 	)
 })
 

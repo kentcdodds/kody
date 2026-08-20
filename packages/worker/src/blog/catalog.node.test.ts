@@ -182,7 +182,7 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 	expect(comparison?.date).toBe('2026-08-20')
 	expect(comparison?.placeholder).toBe(false)
 	expect(comparison?.image).toBe('/images/kody-vs-executor.webp')
-	expect(comparison?.ogImage).toBeNull()
+	expect(comparison?.ogImage).toBe('/images/kody-vs-executor-og.jpg')
 	const comparisonBody = (comparison?.body ?? '').replace(/\s+/g, ' ')
 	expect(comparisonBody).toContain('best of both worlds')
 	expect(comparisonBody).toContain('Leave one `execute`')

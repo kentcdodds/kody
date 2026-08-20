@@ -1,4 +1,5 @@
 import { type Action } from 'remix/router'
+import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -127,6 +128,34 @@ export function createBlogPostMarkdownHandler(_env: Env) {
 	} satisfies Action<typeof routes.blogPostMarkdown>
 }
 
+/**
+ * Resolve a Satori-safe PNG/JPEG data URI for optional blog artwork.
+ * WebP and AVIF are skipped because Satori cannot embed them.
+ */
+async function loadBlogOgArtworkDataUri(input: {
+	env: Env
+	request: Request
+	post: BlogPost
+}): Promise<string | null> {
+	const artworkPath = input.post.ogImage ?? input.post.image
+	const assets = input.env.ASSETS
+	if (!artworkPath || !assets) return null
+
+	const imageResponse = await assets.fetch(
+		new Request(new URL(artworkPath, input.request.url)),
+	)
+	if (!imageResponse.ok) return null
+
+	const contentType = imageResponse.headers.get('content-type') ?? ''
+	if (contentType !== 'image/png' && contentType !== 'image/jpeg') {
+		return null
+	}
+
+	return `data:${contentType};base64,${bytesToBase64(
+		new Uint8Array(await imageResponse.arrayBuffer()),
+	)}`
+}
+
 export function createBlogPostOgImageHandler(env: Env) {
 	return {
 		middleware: [],
@@ -145,12 +174,18 @@ export function createBlogPostOgImageHandler(env: Env) {
 			// binaries, which would otherwise bloat isolate cold starts for a
 			// route that is only hit by social-media crawlers.
 			const { renderBlogPostOgImage } = await import('#worker/blog/og-image.ts')
+			const imageDataUri = await loadBlogOgArtworkDataUri({
+				env,
+				request,
+				post,
+			})
 			const png = await renderBlogPostOgImage({
 				title: post.title,
 				description: post.description,
 				date: post.date,
 				theme,
 				assets: env.ASSETS,
+				...(imageDataUri ? { imageDataUri } : {}),
 			})
 
 			return new Response(png, {

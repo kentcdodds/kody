@@ -13,8 +13,8 @@ import zeroInferenceCalls from './posts/zero-inference-calls.md'
  * and add one import + entry here. The client never imports this module.
  * After a human review, set `placeholder: false` in that post's frontmatter
  * to hide the AI-placeholder callout. Optional `image` / `imageAlt` are
- * headline artwork. Open Graph uses the generated `/blog/:slug/og.png`
- * card unless `ogImage` is set.
+ * headline artwork. Optional `ogImage` is Satori artwork composed into the
+ * generated `/blog/:slug/og.png` card.
  */
 const postSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'your-assistants-home', raw: yourAssistantsHome },
