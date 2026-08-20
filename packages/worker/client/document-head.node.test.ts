@@ -80,7 +80,9 @@ test('blog post headline art keeps the generated Open Graph card', () => {
 	const head = absolutizeDocumentHead(descriptor, 'https://kody.codes')
 
 	expect(head.canonicalUrl).toBe('https://kody.codes/blog/kody-vs-executor')
-	expect(head.og.imageUrl).toBe('https://kody.codes/blog/kody-vs-executor/og.png')
+	expect(head.og.imageUrl).toBe(
+		'https://kody.codes/blog/kody-vs-executor/og.png',
+	)
 })
 
 test('blog posts can still opt into a static Open Graph image', () => {
@@ -101,7 +103,9 @@ test('blog posts can still opt into a static Open Graph image', () => {
 	})
 	const head = absolutizeDocumentHead(descriptor, 'https://kody.codes')
 
-	expect(head.og.imageUrl).toBe('https://kody.codes/images/kody-vs-executor.webp')
+	expect(head.og.imageUrl).toBe(
+		'https://kody.codes/images/kody-vs-executor.webp',
+	)
 })
 
 test('blog posts without artwork keep the generated Open Graph card', () => {
