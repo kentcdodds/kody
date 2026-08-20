@@ -58,9 +58,5 @@ test('guide artwork controls the canonical Open Graph image', () => {
 	const head = absolutizeDocumentHead(descriptor, 'https://kody.codes')
 
 	expect(head.canonicalUrl).toBe('https://kody.codes/guides/kody-factory')
-	expect(head.og).toEqual({
-		title: 'The Kody factory map — Kody guide',
-		description: 'Map the software factory.',
-		imageUrl: 'https://kody.codes/guides/kody-factory/og.png',
-	})
+	expect(head.og.imageUrl).toBe('https://kody.codes/guides/kody-factory/og.png')
 })

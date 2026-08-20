@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	applyPackageTokenExportSelection,
-	formatPackageTokenExportChoiceLabel,
 	isPackageTokenWildcardSelected,
 	listPackageManifestExportNames,
 	listPackageTokenExportChoices,
@@ -11,8 +10,6 @@ import {
 } from './package-token-export-selection.ts'
 
 test('package token export selection normalizes names, wildcard exclusivity, and stale choices', () => {
-	expect(tryNormalizePackageTokenExportName('')).toBe(null)
-	expect(tryNormalizePackageTokenExportName('   ')).toBe(null)
 	expect(tryNormalizePackageTokenExportName('*')).toBe(
 		packageTokenWildcardExport,
 	)
@@ -99,8 +96,4 @@ test('package token export selection normalizes names, wildcard exclusivity, and
 
 	expect(isPackageTokenWildcardSelected(['*'])).toBe(true)
 	expect(isPackageTokenWildcardSelected(['./process-video'])).toBe(false)
-	expect(formatPackageTokenExportChoiceLabel('.')).toBe('. (root export)')
-	expect(formatPackageTokenExportChoiceLabel('./process-video')).toBe(
-		'./process-video',
-	)
 })

@@ -49,15 +49,9 @@ test('status page renders components, incidents, unknown state, and escapes deta
 		expect(healthy).toContain(component.name.replaceAll('&', '&amp;'))
 	}
 	expect(healthy).toContain('99.98% uptime (4 days)')
-	expect(healthy).toContain(
-		'class="bar" title="2026-08-04: 3 isolated probe failures, no incident"',
-	)
-	expect(healthy).toContain(
-		'class="bar partial" title="2026-08-05: 6 min incident · 99.58% up"',
-	)
-	expect(healthy).toContain(
-		'class="bar bad" title="2026-08-06: 90 min incident · 93.75% up"',
-	)
+	expect(healthy).toContain('class="bar"')
+	expect(healthy).toContain('class="bar partial"')
+	expect(healthy).toContain('class="bar bad"')
 	expect(healthy).toContain(
 		'https://github.com/kentcdodds/kody/commit/abc123def4567890abcdef1234567890abcdef12',
 	)

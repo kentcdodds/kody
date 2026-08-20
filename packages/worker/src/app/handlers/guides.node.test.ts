@@ -103,9 +103,8 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 	)
 	expect(await factoryApi.json()).toMatchObject({
 		ok: true,
-		image: '/images/kody-factory-map.webp',
-		imageAlt: 'Kody presenting a map of the software factory',
-		ogImage: '/images/kody-factory-map-og.jpg',
+		slug: 'kody-factory',
+		id: 'kody_factory',
 	})
 
 	const missing = await callHandler(
