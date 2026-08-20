@@ -258,6 +258,72 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			exception: {
 				values: [
 					{
+						type: 'WrappedError',
+						value: 'Client has been destroyed',
+						stacktrace: {
+							frames: [
+								{
+									filename:
+										'chrome-extension://iohjgamcilhbgmhbnllfolmkmmekfmci/injected-scripts/host-additional-hooks.js',
+								},
+								{
+									function: 'a6.send',
+									abs_path:
+										'chrome-extension://iohjgamcilhbgmhbnllfolmkmmekfmci/injected-scripts/host-additional-hooks.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'WrappedError',
+						value: 'Client has been destroyed',
+						stacktrace: {
+							frames: [
+								{
+									filename: 'https://kody.codes/assets/entry.js',
+									function: 'boot',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'Client has been destroyed during hydrate',
+						stacktrace: {
+							frames: [
+								{
+									filename:
+										'chrome-extension://iohjgamcilhbgmhbnllfolmkmmekfmci/injected-scripts/host-additional-hooks.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
 						type: 'ReferenceError',
 						value: 'CONFIG is not defined',
 						stacktrace: {

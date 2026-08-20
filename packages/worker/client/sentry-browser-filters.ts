@@ -443,6 +443,76 @@ export function filterMetaMaskExtensionSentryEvent<
 }
 
 /**
+ * Chrome extension page hooks reject with "Client has been destroyed" when
+ * their background/service-worker client is gone (reload, update, or tab
+ * teardown). The rejected promise surfaces on the host page via
+ * `onunhandledrejection` with a stack that is exclusively chrome-extension
+ * frames — never Kody bundles. Signature from production issue 7682968915 /
+ * KODY-CLOUDFLARE-5K (`WrappedError: Client has been destroyed` from
+ * `chrome-extension://…/injected-scripts/host-additional-hooks.js`).
+ *
+ * Match is intentionally narrow: this exact wording (optional
+ * `WrappedError:` / `Error:` preface) AND every reported stack frame URL is
+ * `chrome-extension:`. Never blanket-drop "destroyed" wording from app code
+ * or mixed stacks that include first-party frames.
+ */
+const chromeExtensionClientDestroyedMessage =
+	/^(?:(?:WrappedError|Error):\s*)?Client has been destroyed\.?$/i
+
+export function isChromeExtensionClientDestroyedMessage(message: string) {
+	return chromeExtensionClientDestroyedMessage.test(message.trim())
+}
+
+export function isChromeExtensionStackFrameUrl(url: string) {
+	try {
+		return (
+			new URL(url, 'https://sentry.invalid').protocol === 'chrome-extension:'
+		)
+	} catch {
+		return false
+	}
+}
+
+export function isChromeExtensionClientDestroyedError(error: unknown) {
+	if (typeof error === 'string') {
+		return isChromeExtensionClientDestroyedMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isChromeExtensionClientDestroyedMessage(error.message)
+}
+
+export function isChromeExtensionClientDestroyedSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	const hasClientDestroyedMessage =
+		isChromeExtensionClientDestroyedError(originalException) ||
+		sentryEventMessages(event).some(
+			(message) =>
+				typeof message === 'string' &&
+				isChromeExtensionClientDestroyedMessage(message),
+		)
+	if (!hasClientDestroyedMessage) return false
+	const frameUrls = sentryEventStackFrameUrls(event)
+	return (
+		frameUrls.length > 0 &&
+		frameUrls.every(isChromeExtensionStackFrameUrl)
+	)
+}
+
+export function filterChromeExtensionClientDestroyedSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (
+		isChromeExtensionClientDestroyedSentryEvent(event, originalException)
+	) {
+		return null
+	}
+	return event
+}
+
+/**
  * Twitter/X iOS in-app browser chrome (`updateFooterPositions` /
  * `updateGapFiller`) references a host-page `CONFIG` global that Kody never
  * defines. WebKit reports it as an unhandled `ReferenceError` attributed to
@@ -661,6 +731,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 		return null
 	}
 	if (filterMetaMaskExtensionSentryEvent(event, originalException) === null) {
+		return null
+	}
+	if (
+		filterChromeExtensionClientDestroyedSentryEvent(
+			event,
+			originalException,
+		) === null
+	) {
 		return null
 	}
 	if (
