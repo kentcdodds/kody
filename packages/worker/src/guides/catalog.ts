@@ -24,6 +24,7 @@ import providerGithub from '../../../../docs/guides/providers/github.md'
 import providerGoogle from '../../../../docs/guides/providers/google.md'
 import providerNotion from '../../../../docs/guides/providers/notion.md'
 import providerOrigin from '../../../../docs/guides/providers/origin.md'
+import providerSalesforce from '../../../../docs/guides/providers/salesforce.md'
 import providerSlack from '../../../../docs/guides/providers/slack.md'
 import providerSpotify from '../../../../docs/guides/providers/spotify.md'
 import secretBackedIntegration from '../../../../docs/guides/secret-backed-integration.md'
@@ -68,6 +69,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'github', raw: providerGithub },
 	{ slug: 'notion', raw: providerNotion },
 	{ slug: 'origin', raw: providerOrigin },
+	{ slug: 'salesforce', raw: providerSalesforce },
 	{ slug: 'slack', raw: providerSlack },
 	{ slug: 'spotify', raw: providerSpotify },
 	{ slug: 'discord', raw: providerDiscord },
