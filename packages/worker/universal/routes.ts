@@ -125,6 +125,7 @@ export const routes = route({
 	guideDetail: '/guides/:slug',
 	guideDetailApi: '/guides/:slug.json',
 	guideDetailMarkdown: '/guides/:slug.md',
+	guideDetailOgImage: '/guides/:slug/og.png',
 	community: '/community',
 	communityApi: '/community.json',
 	communityDetail: '/community/:listingId',

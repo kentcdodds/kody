@@ -1,4 +1,5 @@
 import { type Action } from 'remix/router'
+import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	getGuideBySlug,
@@ -13,6 +14,8 @@ import {
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
+import { parseOgTheme } from '#worker/og/palette.ts'
+import { renderGuideOgImage } from '#worker/guides/og-image.ts'
 
 function buildGuidesIndexMarkdown(baseUrl: string): string {
 	const lines = [
@@ -172,4 +175,45 @@ export function createGuideDetailMarkdownHandler(_env: Env) {
 			return markdownResponse(guide.body)
 		},
 	} satisfies Action<typeof routes.guideDetailMarkdown>
+}
+
+export function createGuideDetailOgImageHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request, params }) {
+			const guide = getGuideBySlug(params.slug)
+			if (!guide?.image) {
+				return new Response('Not found', { status: 404 })
+			}
+
+			const imageResponse = await env.ASSETS.fetch(
+				new Request(new URL(guide.image, request.url)),
+			)
+			if (!imageResponse.ok) {
+				return new Response('Guide artwork unavailable', { status: 502 })
+			}
+			const contentType =
+				imageResponse.headers.get('content-type') ?? 'image/webp'
+			const imageDataUri = `data:${contentType};base64,${bytesToBase64(
+				new Uint8Array(await imageResponse.arrayBuffer()),
+			)}`
+			const theme = parseOgTheme(new URL(request.url).searchParams.get('theme'))
+
+			const png = await renderGuideOgImage({
+				title: guide.title,
+				description: guide.summary,
+				imageDataUri,
+				theme,
+				assets: env.ASSETS,
+			})
+
+			return new Response(png, {
+				status: 200,
+				headers: {
+					'Cache-Control': 'public, max-age=3600',
+					'Content-Type': 'image/png',
+				},
+			})
+		},
+	} satisfies Action<typeof routes.guideDetailOgImage>
 }

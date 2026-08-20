@@ -60,6 +60,6 @@ test('guide artwork controls the canonical Open Graph image', () => {
 	expect(head.og).toEqual({
 		title: 'The Kody factory map — Kody guide',
 		description: 'Map the software factory.',
-		imageUrl: 'https://kody.codes/images/kody-factory-map.webp',
+		imageUrl: 'https://kody.codes/guides/kody-factory/og.png',
 	})
 })

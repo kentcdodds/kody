@@ -233,7 +233,9 @@ const routeDocumentHeads = {
 						og: {
 							title,
 							description: guide.summary,
-							imagePath: guide.image,
+							imagePath: routes.guideDetailOgImage.href({
+								slug: guide.slug,
+							}),
 						},
 					}
 				: {}),
