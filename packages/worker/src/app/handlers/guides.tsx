@@ -15,7 +15,6 @@ import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
-import { renderGuideOgImage } from '#worker/guides/og-image.ts'
 
 function buildGuidesIndexMarkdown(baseUrl: string): string {
 	const lines = [
@@ -202,6 +201,9 @@ export function createGuideDetailOgImageHandler(env: Env) {
 			)}`
 			const theme = parseOgTheme(new URL(request.url).searchParams.get('theme'))
 
+			// Deployment requires this lazy boundary: eagerly importing Satori and
+			// Resvg makes the main Worker exceed Cloudflare's startup CPU limit.
+			const { renderGuideOgImage } = await import('#worker/guides/og-image.ts')
 			const png = await renderGuideOgImage({
 				title: guide.title,
 				description: guide.summary,
