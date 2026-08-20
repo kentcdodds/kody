@@ -13,6 +13,7 @@ import {
 } from '#worker/package-registry/static-dependency-cycles.ts'
 import {
 	assertKodyDescriptionLength,
+	listKodyPackageDependencyNames,
 	type AuthoredPackageJson,
 } from '#worker/package-registry/types.ts'
 import {
@@ -601,11 +602,7 @@ function formatNpmDependencyCheckMessage(input: {
 function getDeclaredStaticKodyPackageDependencies(
 	manifest: AuthoredPackageJson,
 ) {
-	return Array.from(
-		new Set(
-			(manifest.kody.dependencies ?? []).map((dependency) => dependency.trim()),
-		),
-	).sort((left, right) => left.localeCompare(right))
+	return listKodyPackageDependencyNames(manifest.kody.dependencies)
 }
 
 function getImportedStaticKodyPackageDependencies(input: {
@@ -1167,8 +1164,9 @@ export async function runRepoChecks(input: {
 		})
 		assertKodyDescriptionLength(manifest.kody.description)
 	} catch (error) {
-		// Invalid package.json shape (e.g. kody.dependencies as an object) is a
-		// caller fix — keep it on the check result path, not as an exception.
+		// Invalid package.json shape (e.g. kody.dependencies values other than
+		// "*") is a caller fix — keep it on the check result path, not as an
+		// exception.
 		return {
 			ok: false,
 			results: [

@@ -120,7 +120,7 @@ function createPackageManifest(input: {
 		{ handler: string; description?: string; filters?: Record<string, unknown> }
 	>
 	emits?: Record<string, { description: string }>
-	kodyDependencies?: Array<string>
+	kodyDependencies?: Array<string> | Record<string, string>
 	retrievers?: Record<
 		string,
 		{
@@ -845,10 +845,10 @@ test('runRepoChecks injects package tsconfig overlays that allow optional .ts im
 	).toBe(repoTsconfig)
 })
 
-test('runRepoChecks returns a failed manifest check for object-shaped kody.dependencies instead of throwing', async () => {
-	// Agents sometimes confuse npm dependencies (object map) with
-	// kody.dependencies (string array). Publish must return checks_failed, not
-	// throw — otherwise MCP observability opens a Sentry platform-bug issue.
+test('runRepoChecks returns a failed manifest check for unsupported kody.dependencies versions instead of throwing', async () => {
+	// Agents sometimes write npm-style ranges in kody.dependencies. Publish
+	// must return checks_failed, not throw — otherwise MCP observability opens
+	// a Sentry platform-bug issue.
 	const result = await runChecksOnWorkspaceFiles(
 		new Map<string, string>([
 			[
@@ -860,9 +860,9 @@ test('runRepoChecks returns a failed manifest check for object-shaped kody.depen
 					},
 					kody: {
 						id: 'object-deps',
-						description: 'Uses object-shaped kody.dependencies by mistake',
+						description: 'Uses a semver range in kody.dependencies',
 						dependencies: {
-							'@kentcdodds/helper': 'latest',
+							'@kentcdodds/helper': '^1.2.3',
 						},
 					},
 				}),
@@ -876,9 +876,7 @@ test('runRepoChecks returns a failed manifest check for object-shaped kody.depen
 		expect.objectContaining({
 			kind: 'manifest',
 			ok: false,
-			message: expect.stringMatching(
-				/expected array, received object[\s\S]*kody\.dependencies/,
-			),
+			message: expect.stringMatching(/must be "\*"/),
 		}),
 	])
 })
@@ -935,6 +933,34 @@ test('runRepoChecks validates static kody package import declarations across mis
 	)
 	expect(declaredImports.ok).toBe(true)
 	expect(declaredImports.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'dependencies',
+				ok: true,
+			}),
+		]),
+	)
+
+	const declaredMapImports = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kody/declared-static-package-map',
+					kodyId: 'declared-static-package-map',
+					description:
+						'Declares static Kody package imports as a name-to-* map',
+					kodyDependencies: { '@kentcdodds/helper': '*' },
+				}),
+			],
+			[
+				'src/index.ts',
+				'import helper from "kody:@kentcdodds/helper/run"\nexport const ready = helper\n',
+			],
+		]),
+	)
+	expect(declaredMapImports.ok).toBe(true)
+	expect(declaredMapImports.results).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				kind: 'dependencies',

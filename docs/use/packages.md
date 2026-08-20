@@ -75,8 +75,8 @@ Important fields:
   export docs
 - `kody.tags` — package tags
 - `kody.searchText` — optional longer search text beyond the short description
-- `kody.dependencies` — direct saved package names imported through static
-  `kody:@...` imports
+- `kody.dependencies` — map of direct saved package names imported through
+  static `kody:@...` imports (`{ "@scope/package": "*" }`)
 - `kody.secretMounts` — optional package-scoped secret mount declarations
 - `kody.app` — optional hosted package app config
 - `kody.subscriptions` — optional event-topic subscriptions with package-local
@@ -159,9 +159,11 @@ exhaustive.
   [Dynamic package invocation](#dynamic-package-invocation)).
 - Every direct static `kody:@...` import must be declared in
   `package.json#kody.dependencies` using the imported package name, for example
-  `"dependencies": ["@scope/my-package"]` inside the `kody` object. Package
-  checks fail when static imports and declarations differ. Type-only imports do
-  not count, and declaration files such as `.d.ts` are treated as type-only.
+  `"dependencies": { "@scope/my-package": "*" }` inside the `kody` object. `*`
+  means the dependency's latest published commit, captured when this package
+  publishes. Package checks fail when static imports and declarations differ.
+  Type-only imports do not count, and declaration files such as `.d.ts` are
+  treated as type-only.
 - Computed dynamic Kody package imports, including template strings and
   variables such as `import(packageSpecifier)`, are unsupported. When the target
   package is not known until runtime, use `packages.invoke` instead.

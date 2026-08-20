@@ -1,6 +1,7 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
+import { listKodyPackageDependencyNames } from '#worker/package-registry/types.ts'
 
 /**
  * Detect cycles in static `kody:@` / `package.json#kody.dependencies` graphs.
@@ -68,7 +69,9 @@ export async function loadReachableStaticKodyDependencyEdges(input: {
 	rootDependencies: ReadonlyArray<string>
 }): Promise<LoadedStaticKodyDependencyEdges> {
 	const edges = new Map<string, Array<string>>()
-	const rootDependencies = uniqueTrimmedNames(input.rootDependencies)
+	const rootDependencies = listKodyPackageDependencyNames(
+		input.rootDependencies,
+	)
 	edges.set(input.rootPackageName, rootDependencies)
 	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
 		userId: input.userId,
@@ -92,8 +95,8 @@ export async function loadReachableStaticKodyDependencyEdges(input: {
 				userId: input.userId,
 				sourceId: savedPackage.sourceId,
 			})
-			const dependencies = uniqueTrimmedNames(
-				loaded.manifest.kody.dependencies ?? [],
+			const dependencies = listKodyPackageDependencyNames(
+				loaded.manifest.kody.dependencies,
 			)
 			edges.set(packageName, dependencies)
 			pending.push(...dependencies)
@@ -108,10 +111,4 @@ export async function loadReachableStaticKodyDependencyEdges(input: {
 		}
 	}
 	return { ok: true, edges }
-}
-
-function uniqueTrimmedNames(names: ReadonlyArray<string>) {
-	return Array.from(
-		new Set(names.map((name) => name.trim()).filter((name) => name.length > 0)),
-	)
 }

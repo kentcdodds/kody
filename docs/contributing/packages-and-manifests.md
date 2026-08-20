@@ -22,9 +22,12 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 - `kody.description` — short public tagline for search/detail (max 200)
 - `kody.tags` — search tags
 - `kody.searchText` — optional longer search text beyond the short description
-- `kody.dependencies` — direct static saved package dependencies imported via
-  `kody:@...`. Repo checks reject cycles in this graph at publish time, and fail
-  closed if a reachable saved package manifest cannot be loaded.
+- `kody.dependencies` — map of direct static saved package dependencies imported
+  via `kody:@...`, written as `{ "@scope/package": "*" }`. `*` means the
+  dependency's latest published commit, captured when this package publishes.
+  Repo checks also accept a legacy array of those names. They reject cycles in
+  this graph at publish time, and fail closed if a reachable saved package
+  manifest cannot be loaded.
 - `kody.secretMounts` — optional package-scoped secret mount declarations
 - `kody.app` — optional hosted package app config
 - `kody.subscriptions` — optional package-owned event subscriptions
@@ -119,11 +122,13 @@ A saved package is a repo with the package extension activated. Four concepts:
   and the runtime rewrites the call site to a teaching error.
 - Direct static `kody:@...` imports are a breaking manifest contract: they must
   be listed in `package.json#kody.dependencies` by package name, for example
-  `"dependencies": ["@scope/my-package"]` inside the `kody` object. Repo checks
-  fail when a static import is missing from the list or when the list contains a
-  package that is not statically imported. Type-only imports do not count, and
-  declaration files such as `.d.ts` are treated as type-only. Literal dynamic
-  `import("kody:@...")` expressions are not static dependency declarations.
+  `"dependencies": { "@scope/my-package": "*" }` inside the `kody` object. `*`
+  is the only supported version and means latest-at-publish, not a live pin.
+  Repo checks fail when a static import is missing from the map or when the map
+  contains a package that is not statically imported. Type-only imports do not
+  count, and declaration files such as `.d.ts` are treated as type-only. Literal
+  dynamic `import("kody:@...")` expressions are not static dependency
+  declarations.
 - Computed dynamic Kody package imports are intentionally unsupported. The
   bundler rewrites non-literal `import(...)` expressions with a guard that
   throws clearly when the runtime specifier starts with `kody:@`; do not add

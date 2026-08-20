@@ -162,24 +162,111 @@ export const kodyPackageDependencySchema = z
 			'Static Kody package dependencies must be scoped package names like "@scope/package".',
 	})
 
-const kodyPackageDependenciesSchema = z
-	.array(kodyPackageDependencySchema)
-	.superRefine((dependencies, ctx) => {
-		const seen = new Set<string>()
-		for (const [index, dependency] of dependencies.entries()) {
-			const normalized = dependency.trim()
-			if (seen.has(normalized)) {
-				ctx.addIssue({
-					code: 'custom',
-					path: [index],
-					message: `Duplicate static Kody package dependency "${normalized}".`,
-				})
-			}
-			seen.add(normalized)
-		}
-	})
+export const kodyPackageDependencyWildcard = '*' as const
+
+export type KodyPackageDependencyWildcard = typeof kodyPackageDependencyWildcard
+
+export type KodyPackageDependencies = Record<
+	string,
+	KodyPackageDependencyWildcard
+>
 
 export type KodyPackageDependency = z.infer<typeof kodyPackageDependencySchema>
+
+export function listKodyPackageDependencyNames(
+	dependencies:
+		| KodyPackageDependencies
+		| ReadonlyArray<string>
+		| Record<string, string>
+		| null
+		| undefined,
+): Array<string> {
+	if (dependencies == null) return []
+	const names = Array.isArray(dependencies)
+		? dependencies
+		: Object.keys(dependencies)
+	return Array.from(
+		new Set(names.map((name) => name.trim()).filter((name) => name.length > 0)),
+	).sort((left, right) => left.localeCompare(right))
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+const kodyPackageDependenciesSchema = z
+	.unknown()
+	.superRefine((value, ctx) => {
+		if (value === undefined) return
+		if (Array.isArray(value)) {
+			const seen = new Set<string>()
+			for (const [index, dependency] of value.entries()) {
+				const parsed = kodyPackageDependencySchema.safeParse(dependency)
+				if (!parsed.success) {
+					ctx.addIssue({
+						code: 'custom',
+						path: [index],
+						message:
+							'Static Kody package dependencies must be scoped package names like "@scope/package".',
+					})
+					continue
+				}
+				const normalized = parsed.data.trim()
+				if (seen.has(normalized)) {
+					ctx.addIssue({
+						code: 'custom',
+						path: [index],
+						message: `Duplicate static Kody package dependency "${normalized}".`,
+					})
+				}
+				seen.add(normalized)
+			}
+			return
+		}
+		if (!isPlainObject(value)) {
+			ctx.addIssue({
+				code: 'custom',
+				message:
+					'kody.dependencies must be a map of "@scope/package": "*" (a legacy array of those names is also accepted).',
+			})
+			return
+		}
+		for (const [name, version] of Object.entries(value)) {
+			if (!kodyPackageDependencySchema.safeParse(name).success) {
+				ctx.addIssue({
+					code: 'custom',
+					path: [name],
+					message:
+						'Static Kody package dependencies must be scoped package names like "@scope/package".',
+				})
+			}
+			if (version !== kodyPackageDependencyWildcard) {
+				ctx.addIssue({
+					code: 'custom',
+					path: [name],
+					message:
+						'must be "*" (latest published commit, captured when this package publishes).',
+				})
+			}
+		}
+	})
+	.transform((value): KodyPackageDependencies | undefined => {
+		if (value === undefined) return undefined
+		if (Array.isArray(value)) {
+			return Object.fromEntries(
+				listKodyPackageDependencyNames(value as Array<string>).map((name) => [
+					name,
+					kodyPackageDependencyWildcard,
+				]),
+			)
+		}
+		if (!isPlainObject(value)) return undefined
+		return Object.fromEntries(
+			listKodyPackageDependencyNames(value as Record<string, string>).map(
+				(name) => [name, kodyPackageDependencyWildcard],
+			),
+		)
+	})
 
 /** Soft cap for new/updated `kody.description` taglines on write/publish only. */
 export const KODY_DESCRIPTION_MAX_LENGTH = 200

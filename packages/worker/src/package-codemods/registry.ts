@@ -2,6 +2,7 @@ import { ambientStorageToPackageStorageCodemod } from './codemods/0001-ambient-s
 import { staticFirstInvocationCodemod } from './codemods/0002-static-first-invocation.ts'
 import { heykodyDomainsToKodyCodesCodemod } from './codemods/0003-heykody-domains-to-kody-codes.ts'
 import { kodyappsDevToKodyRunCodemod } from './codemods/0004-kodyapps-dev-to-kody-run.ts'
+import { kodyDependenciesToWildcardMapCodemod } from './codemods/0005-kody-dependencies-to-wildcard-map.ts'
 import { type PackageCodemod } from './types.ts'
 
 const packageCodemods: Array<PackageCodemod> = [
@@ -9,6 +10,7 @@ const packageCodemods: Array<PackageCodemod> = [
 	staticFirstInvocationCodemod,
 	heykodyDomainsToKodyCodesCodemod,
 	kodyappsDevToKodyRunCodemod,
+	kodyDependenciesToWildcardMapCodemod,
 ]
 
 const packageCodemodsById = new Map(

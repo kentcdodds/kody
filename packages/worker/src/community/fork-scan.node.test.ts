@@ -108,6 +108,28 @@ import 'kody:@owner/a/y'`,
 	})
 
 	expect(sameScopeOnly).toEqual([])
+
+	const mapShaped = scanCrossScopeReferences({
+		files: {
+			'package.json': `{
+	"name": "@jane/pkg",
+	"kody": {
+		"id": "pkg",
+		"description": "Pkg",
+		"dependencies": {
+			"@owner/shared-utils": "*",
+			"@jane/local-lib": "*"
+		}
+	},
+	"exports": { ".": "./src/index.ts" }
+}
+`,
+		},
+		expectedPackageScope: 'jane',
+	})
+	expect(mapShaped).toEqual([
+		{ file: 'package.json', specifier: '@owner/shared-utils' },
+	])
 })
 
 test('scanCrossScopeReferences allows platform scopes to remain in forked packages', () => {

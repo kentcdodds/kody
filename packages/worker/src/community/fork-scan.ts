@@ -1,3 +1,4 @@
+import { listKodyPackageDependencyNames } from '#worker/package-registry/types.ts'
 import { type CrossScopeReference } from './types.ts'
 
 const kodyImportPattern = /kody:@([a-z0-9][a-z0-9._-]*)\//g
@@ -75,9 +76,11 @@ export function scanCrossScopeReferences(input: {
 		if (file === 'package.json') {
 			try {
 				const parsed = JSON.parse(content) as {
-					kody?: { dependencies?: Array<string> }
+					kody?: { dependencies?: Array<string> | Record<string, string> }
 				}
-				for (const dependency of parsed.kody?.dependencies ?? []) {
+				for (const dependency of listKodyPackageDependencyNames(
+					parsed.kody?.dependencies,
+				)) {
 					const dependencyScope = getScopeFromScopedName(dependency)
 					if (dependencyScope != null && isForeign(dependencyScope)) {
 						addCrossScopeReference(seen, results, {

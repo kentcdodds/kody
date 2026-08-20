@@ -41,6 +41,7 @@ Add new steering records to the steering list, not a catch-all numbered dump.
 Open these before proposing a new primitive, surface, or storage home.
 
 - [0001 — No user-facing package versioning or import pins](./0001-no-package-versioning.md)
+- [0029 — `kody.dependencies` is a name-to-`*` map; still no pins or live resolution](./0029-kody-dependencies-wildcard-map.md)
 - [0002 — Data placement: D1, per-user Durable Objects, Analytics Engine](./0002-data-placement.md)
 - [0003 — Repos are the base primitive; packages are an explicit extension](./0003-repos-as-base-primitive.md)
 - [0004 — Status page stays a separate worker with its own storage](./0004-status-page-separate-worker.md)

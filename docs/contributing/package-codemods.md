@@ -196,6 +196,20 @@ legacy package-app origin to the canonical hosted-app origin:
 - Emits `needsManual` for every remaining `kodyapps.dev` mention after the
   origin rewrite (bare hostnames, nested labels, lookalikes).
 
+### `0005-kody-dependencies-to-wildcard-map`
+
+This manifest-format codemod rewrites `package.json#kody.dependencies` from the
+legacy array of scoped names to a name-to-`*` map:
+
+- Rewrites `["@scope/pkg"]` to `{ "@scope/pkg": "*" }`, including an empty array
+  to `{}`.
+- Rewrites the agent-common `latest` alias to `*`. Already-migrated `*` maps are
+  left unchanged.
+- Emits `needsManual` for unsupported versions (semver ranges, commit SHAs),
+  unscoped names, and missing or invalid `package.json`.
+- Does **not** change resolution: `*` is latest-at-publish, captured when the
+  dependent republishes. It is not a live pin.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in
