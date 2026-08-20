@@ -21,6 +21,7 @@ import {
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
+import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import {
 	selectOnboardingExampleListings,
 	selectOnboardingServiceStarterListings,
@@ -37,6 +38,8 @@ import {
 } from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
 import { OnboardingExampleCard } from '#client/routes/onboarding-example-card.tsx'
+import { createOnboardingNextConfirmation } from '#client/routes/onboarding-next-confirmation.ts'
+import { OnboardingPackageNextSteps } from '#client/routes/onboarding-package-next-steps.tsx'
 import {
 	OnboardingStarterCard,
 	starterCardCss,
@@ -97,6 +100,17 @@ function isOnboardingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === onboardingPath
 }
 
+function readOwnedExampleKodyId(
+	listings: Array<OnboardingFeaturedListing>,
+): string {
+	const owned = listings.find((listing) => listing.viewerInstall != null)
+	if (!owned?.viewerInstall) return 'my-package'
+	const separatorIndex = owned.viewerInstall.targetName.lastIndexOf('/')
+	return separatorIndex >= 0
+		? owned.viewerInstall.targetName.slice(separatorIndex + 1)
+		: owned.kodyId
+}
+
 function readStepFromHref(href: string): OnboardingStep | null {
 	const hash = new URL(href, 'http://localhost').hash.slice(1)
 	return (
@@ -138,6 +152,7 @@ export function OnboardingRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let message: string | null = null
 	let loggedIn = false
+	let username: string | null = null
 	let mcpServerUrl = ''
 	let setupPrompt = ''
 	let hasMcpClient = false
@@ -169,6 +184,7 @@ export function OnboardingRoute(handle: Handle) {
 	function applyPayload(payload: OnboardingPayload) {
 		const wasConnected = hasMcpClient
 		loggedIn = payload.loggedIn
+		username = payload.username
 		mcpServerUrl = payload.mcpServerUrl
 		setupPrompt = payload.setupPrompt
 		hasMcpClient = payload.hasMcpClient
@@ -460,6 +476,22 @@ export function OnboardingRoute(handle: Handle) {
 						</a>{' '}
 						first.
 					</p>
+					<p
+						data-rise
+						style={{ '--rise': '2' }}
+						mix={css(discordInviteWrapCss)}
+					>
+						<a
+							href={kodyDiscordInviteUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+							mix={css(discordInviteLinkCss)}
+							data-testid="onboarding-join-discord"
+						>
+							<ProviderIcon providerId="discord" size="1.1em" />
+							Join the Discord
+						</a>
+					</p>
 				</header>
 
 				{status === 'loading' ? (
@@ -540,14 +572,6 @@ export function OnboardingRoute(handle: Handle) {
 										mix={css(panelArtCss)}
 									/>
 								</div>
-								<div mix={css(authNoteCss)} role="note">
-									<strong>One-time authorization required</strong>
-									<span>
-										After you add the server, your client opens a browser window
-										or shows an <strong>Authenticate</strong> button. Approve
-										the request so your agent can use your Kody factory.
-									</span>
-								</div>
 								<div
 									mix={css(connectStatusCss)}
 									role="status"
@@ -561,9 +585,30 @@ export function OnboardingRoute(handle: Handle) {
 									})}
 								</div>
 								<OnboardingMcpClientTabs mcpServerUrl={mcpServerUrl} />
+								<div
+									mix={css(authNoteCss)}
+									role="note"
+									data-testid="onboarding-authenticate-callout"
+								>
+									<strong>Authenticate Kody before you continue</strong>
+									<span>
+										<strong>Cursor:</strong> after Add to Cursor, open the
+										Cursor MCP list and click <strong>Authenticate</strong>.
+									</span>
+									<span>
+										<strong>Claude Code:</strong> after copying and running the
+										command, enter <code>/mcp</code> → Kody →{' '}
+										<strong>Authenticate</strong>.
+									</span>
+									<span>
+										Approve the <strong>kody.codes</strong> OAuth window. This
+										is the step that connects your agent to your factory.
+									</span>
+								</div>
 								<WizardNavigation
 									activeStep={activeStep}
 									onSelectStep={selectStep}
+									confirmUnconnectedNext={!hasMcpClient}
 								/>
 							</section>
 						) : null}
@@ -597,8 +642,10 @@ export function OnboardingRoute(handle: Handle) {
 									/>
 								</div>
 								<p mix={css(panelLedeCss)}>
-									Fork a ready-made package, run it once, and see how Kody turns
-									agent work into something you own. No accounts to connect yet.
+									Get a first win with a package you own: fork one of these
+									three demos, run your copy once, then change it whenever you
+									want. The weather, HN, or capture result is only the starting
+									point.
 								</p>
 								{exampleListings.length > 0 ? (
 									<ul
@@ -610,6 +657,7 @@ export function OnboardingRoute(handle: Handle) {
 												key={listing.id}
 												listing={listing}
 												loggedIn={loggedIn}
+												username={username}
 												onInstalled={() => {
 													void refreshOnboardingAfterInstall()
 												}}
@@ -635,14 +683,19 @@ export function OnboardingRoute(handle: Handle) {
 									</p>
 								)}
 								{hasQuickExample ? (
-									<p
-										mix={css(quickExampleDoneCss)}
-										data-testid="onboarding-quick-example-done"
-									>
-										Done — you have a package in your account. Paste the prompt
-										into your agent if you have not already, then connect real
-										services next.
-									</p>
+									<>
+										<p
+											mix={css(quickExampleDoneCss)}
+											data-testid="onboarding-quick-example-done"
+										>
+											Done — you have a package in your account. Paste the
+											prompt into your agent if you have not already, then make
+											the fork yours.
+										</p>
+										<OnboardingPackageNextSteps
+											kodyId={readOwnedExampleKodyId(exampleListings)}
+										/>
+									</>
 								) : null}
 								<aside
 									aria-label="How it works"
@@ -887,8 +940,10 @@ function WizardNavigation(
 		/** Optional overrides when a step owns custom Back/Next behavior. */
 		onBack?: () => void
 		onNext?: () => void
+		confirmUnconnectedNext?: boolean
 	}>,
 ) {
+	const nextConfirmation = createOnboardingNextConfirmation(handle)
 	return () => {
 		const previousStep =
 			handle.props.activeStep > 1
@@ -899,6 +954,13 @@ function WizardNavigation(
 				? ((handle.props.activeStep + 1) as OnboardingStep)
 				: null
 		const { onBack, onNext } = handle.props
+		const requiresConnectionConfirmation =
+			handle.props.activeStep === 1 &&
+			handle.props.confirmUnconnectedNext === true
+		const advance = () => {
+			if (onNext) return onNext()
+			if (nextStep) handle.props.onSelectStep(nextStep)
+		}
 
 		return (
 			<footer mix={css(wizardNavCss)}>
@@ -920,13 +982,14 @@ function WizardNavigation(
 					disabled={!onNext && nextStep == null}
 					mix={[
 						css(wizardNextButtonCss),
-						on('click', () => {
-							if (onNext) return onNext()
-							if (nextStep) handle.props.onSelectStep(nextStep)
+						...nextConfirmation.getButtonMix({
+							confirm: requiresConnectionConfirmation,
+							onNext: advance,
 						}),
 					]}
+					data-testid="onboarding-wizard-next"
 				>
-					Next
+					{nextConfirmation.getLabel(requiresConnectionConfirmation)}
 				</button>
 			</footer>
 		)
@@ -1211,6 +1274,18 @@ const headerGuideLinkCss = {
 	textUnderlineOffset: '3px',
 }
 
+const discordInviteWrapCss = {
+	margin: '1rem 0 0',
+}
+
+const discordInviteLinkCss = {
+	...getGhostButtonCss({ size: 'sm' }),
+	width: 'fit-content',
+	gap: '0.4rem',
+	padding: '0.4rem 0.85rem 0.4rem 0.65rem',
+	font: `600 0.92rem/1 ${typography.fontFamilyBody}`,
+}
+
 const quickExampleDoneCss = {
 	margin: 0,
 	color: colors.primaryText,
@@ -1240,18 +1315,25 @@ const howItWorksLabelCss = {
 	color: colors.primaryText,
 }
 
-/* One-time authorization callout: the only hard-edged warning on the page. */
+/* One-time authorization callout follows the install controls because this
+   is the action users must take after copying or adding the MCP config. */
 const authNoteCss = {
-	display: 'grid',
-	gap: '0.3rem',
-	padding: '1rem 1.2rem',
-	border: `2px solid oklch(from ${colors.primary} l c h / 0.45)`,
-	borderRadius: radius.card,
-	backgroundColor: `oklch(from ${colors.primary} l c h / 0.06)`,
-	/* Tinted wells forfeit the muted gray: body text keeps ink weight but
-	   leans toward the well's green so the callout reads as one material. */
+	...getAccentCalloutCss({ accentColor: colors.primary }),
+	gap: '0.55rem',
+	padding: '1.2rem 1.35rem',
+	borderLeftWidth: '6px',
+	backgroundColor: `oklch(from ${colors.primary} l c h / 0.14)`,
+	boxShadow: `0 10px 28px oklch(from ${colors.primary} l c h / 0.12)`,
+	'& > strong': {
+		font: `750 1.2rem/1.15 ${typography.fontFamilyDisplay}`,
+		color: colors.primaryText,
+	},
 	'& > span': {
-		color: `oklch(from ${colors.text} l 0.05 145)`,
+		color: colors.text,
+		lineHeight: 1.5,
+	},
+	'& code': {
+		font: '600 0.9em ui-monospace, "SF Mono", Menlo, monospace',
 	},
 }
 

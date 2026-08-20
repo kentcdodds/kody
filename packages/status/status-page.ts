@@ -1,3 +1,4 @@
+import { dayBarClassName, dayBarKind, dayBarTitle } from './day-bars.ts'
 import {
 	cloudflareStatusPageUrl,
 	sanitizeProviderIncidentShortlink,
@@ -156,14 +157,8 @@ function bannerFor(snapshot: StatusSnapshot): { label: string; kind: string } {
 function renderDayBars(component: ComponentSnapshot): string {
 	const bars = component.days
 		.map((day) => {
-			if (day.total === 0) {
-				return `<div class="bar empty" title="${escapeHtml(day.day)}: no data"></div>`
-			}
-			const failedRatio = day.failed / day.total
-			const kind =
-				failedRatio === 0 ? '' : failedRatio < 0.05 ? ' partial' : ' bad'
-			const pct = (((day.total - day.failed) / day.total) * 100).toFixed(2)
-			return `<div class="bar${kind}" title="${escapeHtml(day.day)}: ${pct}% up"></div>`
+			const kind = dayBarKind(day)
+			return `<div class="${dayBarClassName(kind)}" title="${escapeHtml(dayBarTitle(day))}"></div>`
 		})
 		.join('')
 	return `<div class="bars">${bars}</div>`

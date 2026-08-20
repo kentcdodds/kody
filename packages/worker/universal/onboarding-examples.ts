@@ -53,16 +53,17 @@ export function selectOnboardingServiceStarterListings(
 	)
 }
 
-function exampleInvokeHint(kodyId: string): string {
+function exampleInvokeHint(scopedName: string, kodyId: string): string {
+	const searchHint = `Search with search({ query: ${JSON.stringify(scopedName)} }) and inspect that user-owned package.`
 	switch (kodyId) {
 		case 'local-conditions':
-			return 'Example invoke: packages.invoke({ kodyId: "local-conditions", exportName: "getLocalConditions", params: { place: "Salt Lake City" } }).'
+			return `${searchHint} Example invoke: packages.invoke({ kodyId: "local-conditions", exportName: "getLocalConditions", params: { place: "Salt Lake City" } }).`
 		case 'hn-pulse':
-			return 'Example invoke: packages.invoke({ kodyId: "hn-pulse", exportName: "getTopStories", params: { limit: 5 } }).'
+			return `${searchHint} Example invoke: packages.invoke({ kodyId: "hn-pulse", exportName: "getTopStories", params: { limit: 5 } }).`
 		case 'personal-capture':
-			return 'Example invoke: packages.invoke({ kodyId: "personal-capture", exportName: "capture", params: { text: "Onboarding first build" } }), then packages.invoke({ kodyId: "personal-capture", exportName: "listCaptures", params: { limit: 5 } }).'
+			return `${searchHint} Example invoke: packages.invoke({ kodyId: "personal-capture", exportName: "capture", params: { text: "Onboarding first build" } }), then packages.invoke({ kodyId: "personal-capture", exportName: "listCaptures", params: { limit: 5 } }).`
 		default:
-			return 'Call package_get for the installed package, read its README exports, then packages.invoke once with that kody id.'
+			return `${searchHint} Call package_get for that installed package, read its README exports, then packages.invoke once with its kody id.`
 	}
 }
 
@@ -74,14 +75,25 @@ function exampleInvokeHint(kodyId: string): string {
 export function buildOnboardingExamplePrompt(input: {
 	listingName: string
 	kodyId: string
+	username: string
 }): string {
+	const scopedName = `@${input.username}/${input.kodyId}`
 	return [
 		`I started a one-click install/fork of the onboarding example "${input.listingName}" (kody id: ${input.kodyId}) into my Kody account.`,
-		'Wait until that install is ready: search for the package by that kody id once, and if it is missing, try again once after I say install finished — do not poll in a loop.',
+		`Wait until that install is ready: search for my user-owned package by its scoped name "${scopedName}" once, and if it is missing, try again once after I say install finished — do not poll in a loop.`,
 		`Then invoke MY installed/forked package with packages.invoke using kody id "${input.kodyId}" (not a bare platform @kody/* static import — that fails for packages that need my account's packageStorage until forked).`,
-		exampleInvokeHint(input.kodyId),
+		exampleInvokeHint(scopedName, input.kodyId),
 		'Show the result briefly. Explain that the package is one I own.',
 		'Ask if I want to hang a trigger on it (webhook, Kody app, cron, or skip) — list options without recommending one.',
 		'Keep messages short.',
+	].join(' ')
+}
+
+export function buildOnboardingPackageAuthoringPrompt(kodyId: string): string {
+	return [
+		`Help me change my Kody package "${kodyId}" or create a new package.`,
+		'First load coding_guide_get({ guide: "package_authoring" }) and coding_guide_get({ guide: "package_lifecycle" }).',
+		`Then call package_get_git_remote({ create: true, kody_id: ${JSON.stringify(kodyId)} }) so we can work in the package repository.`,
+		'Ask what I want the package to do, then follow the guides.',
 	].join(' ')
 }

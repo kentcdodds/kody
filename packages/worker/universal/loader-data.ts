@@ -743,6 +743,8 @@ export type OnboardingWelcomeEmail = {
 export type OnboardingLoaderData = {
 	ok: true
 	loggedIn: boolean
+	/** Signed-in package scope owner; null for public onboarding payloads. */
+	username: string | null
 	mcpServerUrl: string
 	setupPrompt: string
 	/** Pre-connection "is Kody for me?" prompt; usable in any tool-calling agent. */

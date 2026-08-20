@@ -334,6 +334,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountProps.loaderData?.onboarding).toEqual({
 		ok: true,
 		loggedIn: true,
+		username: 'account-user',
 		mcpServerUrl: '',
 		setupPrompt: '',
 		discoveryPrompt: expect.stringContaining('what-is-kody'),
@@ -423,6 +424,13 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		new Request('https://example.com/onboarding'),
 	)
 	expect(anonymousOnboardingResponse.status).toBe(200)
+	const anonymousOnboardingHtml = await readResponseText(
+		anonymousOnboardingResponse,
+	)
+	expect(anonymousOnboardingHtml).toContain(
+		'data-testid="onboarding-join-discord"',
+	)
+	expect(anonymousOnboardingHtml).toContain('https://kcd.im/kody-discord')
 
 	const anonymousAccountResponse = await runHtmlHandler(
 		createAccountHandler(env),

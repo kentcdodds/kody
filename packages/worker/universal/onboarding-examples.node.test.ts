@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
 import {
+	buildOnboardingExamplePrompt,
+	buildOnboardingPackageAuthoringPrompt,
 	isOnboardingExampleListing,
 	onboardingExampleListingIds,
 	selectOnboardingExampleListings,
@@ -54,4 +56,29 @@ test('selects zero-auth examples in the known production order', () => {
 			tags: [],
 		}),
 	).toBe(true)
+})
+
+test('example prompt searches the user-owned scoped package and invokes in user scope', () => {
+	const prompt = buildOnboardingExamplePrompt({
+		listingName: '@kody/hn-pulse',
+		kodyId: 'hn-pulse',
+		username: 'u-b',
+	})
+
+	expect(prompt).toContain('search({ query: "@u-b/hn-pulse" })')
+	expect(prompt).toContain(
+		'packages.invoke({ kodyId: "hn-pulse", exportName: "getTopStories"',
+	)
+	expect(prompt).not.toContain('search for the package by that kody id')
+
+	const authoringPrompt = buildOnboardingPackageAuthoringPrompt('hn-pulse')
+	expect(authoringPrompt).toContain(
+		'coding_guide_get({ guide: "package_authoring" })',
+	)
+	expect(authoringPrompt).toContain(
+		'coding_guide_get({ guide: "package_lifecycle" })',
+	)
+	expect(authoringPrompt).toContain(
+		'package_get_git_remote({ create: true, kody_id: "hn-pulse" })',
+	)
 })
