@@ -29,7 +29,8 @@ behavior (see [documentation principles](../documentation.md)).
 - [0008 — Declined ADLC primitives (traces, previews, browser runs, session mining)](./0008-declined-adlc-primitives.md)
 - [0009 — Shiki for in-app syntax highlighting](./0009-shiki-syntax-highlighting.md)
 - [0010 — One RecordTable for account and admin list/detail screens](./0010-account-record-table.md)
-  ([supporting material](./0010-account-record-table/index.md))
+  ([supporting material](./0010-account-record-table/index.md); superseded by
+  [0028](./0028-list-detail-expand.md) for mode assignment)
 - [0011 — Workers-unit keeps per-file isolation; budget cold DO load in timeouts](./0011-workers-unit-pool-harness.md)
 - [0012 — Client-safe shared code lives in `#universal/*`](./0012-universal-layer.md)
 - [0013 — Synthetic package requests for post-publish verification](./0013-synthetic-package-requests.md)
@@ -48,3 +49,4 @@ behavior (see [documentation principles](../documentation.md)).
 - [0025 — No package services primitive](./0025-no-package-services-primitive.md)
 - [0026 — Package-owned invocation tokens](./0026-package-owned-invocation-tokens.md)
 - [0027 — No invocation-token source allowlist](./0027-no-invocation-token-source-allowlist.md)
+- [0028 — List/detail records expand inside the table](./0028-list-detail-expand.md)

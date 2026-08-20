@@ -1279,7 +1279,7 @@ export function AccountSecretsRoute(handle: Handle) {
 				) : null}
 
 				<RecordTable
-					mode="pane"
+					mode="expand"
 					ariaLabel="Saved secrets"
 					selectedId={activeSecretId}
 					countLabel={
@@ -1352,10 +1352,20 @@ export function AccountSecretsRoute(handle: Handle) {
 						{ key: 'description', label: 'Description', drop: 1 },
 						{ key: 'ttl', label: 'Expires' },
 					]}
+					createRow={
+						selection.isCreating
+							? {
+									href: isMutating
+										? undefined
+										: buildNewSecretHref(getCurrentSearch()),
+									label: 'New secret',
+								}
+							: undefined
+					}
 					rows={filteredSecrets.map((secret) => ({
 						id: secret.id,
-						// A save or delete is in flight; the editor below owns the
-						// selection until it settles.
+						// A save or delete is in flight; the expanded editor owns
+						// the selection until it settles.
 						href: isMutating
 							? undefined
 							: buildSecretHref(secret, getCurrentSearch()),

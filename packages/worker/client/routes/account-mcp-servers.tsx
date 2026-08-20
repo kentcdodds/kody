@@ -550,7 +550,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<RecordTable
-						mode="pane"
+						mode="expand"
 						ariaLabel="Connected MCP servers"
 						selectedId={selection.selectedId}
 						onNavigate={() => {
@@ -580,10 +580,20 @@ export function AccountMcpServersRoute(handle: Handle) {
 							{ key: 'url', label: 'URL', drop: 1 },
 							{ key: 'tools', label: 'Tools', align: 'end', drop: 2 },
 						]}
+						createRow={
+							selection.isCreating
+								? {
+										href: isMutating
+											? undefined
+											: mcpServersRoute.buildNewHref(getCurrentSearch()),
+										label: 'New server',
+									}
+								: undefined
+						}
 						rows={filteredServers.map((item) => ({
 							id: item.id,
-							// An add, toggle, or removal is in flight; the editor below
-							// owns the selection until it settles.
+							// An add, toggle, or removal is in flight; the expanded
+							// editor owns the selection until it settles.
 							href: isMutating
 								? undefined
 								: mcpServersRoute.buildDetailHref(item.id, getCurrentSearch()),

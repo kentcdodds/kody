@@ -367,7 +367,7 @@ export function AccountMemoriesRoute(handle: Handle) {
 							through verify and upsert.
 						</p>
 						<RecordTable
-							mode="pane"
+							mode="expand"
 							ariaLabel="Saved memories"
 							selectedId={selection.selectedId}
 							onNavigate={() => {

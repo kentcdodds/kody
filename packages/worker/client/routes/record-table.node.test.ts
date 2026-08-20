@@ -4,6 +4,8 @@ import { expect, test } from 'vitest'
 import {
 	RecordTable,
 	RecordTableSearch,
+	recordTableCreateId,
+	resolveRecordTableSelection,
 	type RecordTableColumn,
 } from '#client/routes/record-table.tsx'
 import {
@@ -123,6 +125,63 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	expect(orphanHtml).not.toContain('data-record-row="true"')
 	expect(orphanHtml.indexOf('Orphan record')).toBeGreaterThan(
 		orphanHtml.indexOf('</table>'),
+	)
+
+	// A not-found record has no selected row. It must still render, not vanish.
+	const missingHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Integrations',
+			columns,
+			rows,
+			selectedId: null,
+			record: jsx('p', { children: 'Connection not found' }),
+		}),
+	)
+	expect(missingHtml).toContain('Connection not found')
+	expect(missingHtml).not.toContain('data-record-row="true"')
+	expect(missingHtml.indexOf('Connection not found')).toBeGreaterThan(
+		missingHtml.indexOf('</table>'),
+	)
+
+	// `/new` has no entity id. The create row is the row the editor unfolds
+	// under, including when the collection is empty (no empty-state copy).
+	const createOnEmpty = resolveRecordTableSelection({
+		columns,
+		rows: [],
+		selectedId: null,
+		createRow: { href: '/account/secrets/new', label: 'New secret' },
+	})
+	expect(createOnEmpty.selectedId).toBe(recordTableCreateId)
+	expect(createOnEmpty.rows).toEqual([
+		{
+			id: recordTableCreateId,
+			href: '/account/secrets/new',
+			cells: { name: 'New secret' },
+		},
+	])
+
+	const createHtml = await renderToString(
+		jsx(RecordTable, {
+			mode: 'expand',
+			ariaLabel: 'Secrets',
+			columns,
+			rows: [],
+			createRow: { href: '/account/secrets/new', label: 'New secret' },
+			record: jsx('p', { children: 'Create editor' }),
+			emptyLabel: 'No secrets yet.',
+		}),
+	)
+	expect(createHtml).toContain('<table')
+	expect(createHtml).not.toContain('No secrets yet.')
+	expect(createHtml).toContain('New secret')
+	expect(createHtml).toContain('Create editor')
+	expect(createHtml).toContain('data-record-row="true"')
+	expect(createHtml.indexOf('Create editor')).toBeGreaterThan(
+		createHtml.indexOf('New secret'),
+	)
+	expect(createHtml.indexOf('Create editor')).toBeLessThan(
+		createHtml.indexOf('</table>'),
 	)
 
 	// Wide rows stay reachable via horizontal overflow.

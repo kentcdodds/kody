@@ -518,7 +518,7 @@ export function AccountValuesRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<RecordTable
-						mode="pane"
+						mode="expand"
 						ariaLabel="Saved values"
 						selectedId={selection.selectedId}
 						onNavigate={resetSelectionState}
@@ -544,10 +544,20 @@ export function AccountValuesRoute(handle: Handle) {
 							{ key: 'preview', label: 'Value', drop: 2 },
 							{ key: 'updated', label: 'Updated' },
 						]}
+						createRow={
+							selection.isCreating
+								? {
+										href: isMutating
+											? undefined
+											: valuesRoute.buildNewHref(getCurrentSearch()),
+										label: 'New value',
+									}
+								: undefined
+						}
 						rows={filteredValues.map((entry) => ({
 							id: entry.id,
-							// A save or delete is in flight; the editor below owns the
-							// selection until it settles.
+							// A save or delete is in flight; the expanded editor owns
+							// the selection until it settles.
 							href: isMutating
 								? undefined
 								: valuesRoute.buildDetailHref(entry.id, getCurrentSearch()),

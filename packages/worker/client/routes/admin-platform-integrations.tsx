@@ -53,8 +53,6 @@ const adminPlatformIntegrationsApiPath = '/admin/platform-integrations.json'
 const platformIntegrationsRoute = createListDetailRoute(
 	'/admin/platform-integrations',
 )
-const createRecordId = '__new__'
-
 type PageStatus = 'loading' | 'ready' | 'error'
 type ActionState = 'idle' | 'saving-form' | 'toggling-enabled' | 'deleting'
 type TokenExchangeStyleOption = 'default' | 'form' | 'basic-json' | 'basic-form'
@@ -965,10 +963,6 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 			!selection.isCreating &&
 			editingApp == null &&
 			status === 'ready'
-		const tableSelectedId = selection.isCreating
-			? createRecordId
-			: selection.selectedId
-
 		return (
 			<AccountManagementShell>
 				<AdminPageHeader
@@ -991,7 +985,19 @@ export function AdminPlatformIntegrationsRoute(handle: Handle) {
 						mode="expand"
 						busy={status === 'loading'}
 						ariaLabel="Platform integrations"
-						selectedId={tableSelectedId}
+						selectedId={selection.selectedId}
+						createRow={
+							selection.isCreating
+								? {
+										href: isMutating
+											? undefined
+											: platformIntegrationsRoute.buildNewHref(
+													getCurrentSearch(currentHref),
+												),
+										label: 'New integration',
+									}
+								: undefined
+						}
 						onNavigate={() => {
 							resetSelectionState()
 						}}

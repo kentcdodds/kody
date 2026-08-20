@@ -1,6 +1,6 @@
 # 0010: One RecordTable for account and admin list/detail screens
 
-- **Status:** accepted
+- **Status:** superseded by [0028](./0028-list-detail-expand.md)
 - **Date:** 2026-08-07
 
 ## Context
