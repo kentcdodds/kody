@@ -31,10 +31,9 @@ returns Cloudflare 1016. Component probes never use the status hostname, so a
   resolves it after two consecutive successes.
 - Day bars follow those opened incidents. Isolated probe failures below the
   threshold stay green (the hover names them as isolated) and still count
-  against the 90-day probe uptime percentage. A day turns amber when an
-  incident covered it for under an hour and under 5% of that day's probes
-  failed; red when the incident lasted an hour or more, or at least 5% of
-  probes failed.
+  against the 90-day probe uptime percentage. A day turns amber when an incident
+  covered it for under an hour and under 5% of that day's probes failed; red
+  when the incident lasted an hour or more, or at least 5% of probes failed.
 - Operator alert emails go to `ALERT_EMAIL_TO` through the Cloudflare Email REST
   API: one email when an outage starts, at most one reminder per day while it
   lasts, one all-clear when everything has recovered, all under a daily cap
