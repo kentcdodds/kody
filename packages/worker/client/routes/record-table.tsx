@@ -380,7 +380,8 @@ export function RecordTableSearch(
 			focused,
 		)
 		sync = reconciled.state
-		if (reconciled.applyValue !== null) applyExternalValue(reconciled.applyValue)
+		if (reconciled.applyValue !== null)
+			applyExternalValue(reconciled.applyValue)
 		return (
 			<input
 				type="search"

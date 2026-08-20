@@ -164,9 +164,7 @@ test('record table search defers focused URL updates and drops a stale pending s
 	// A keystroke is user-driven: the coming URL update must not become
 	// pending, or blur would overwrite whatever the reader typed next.
 	const typed = acknowledgeRecordTableSearchInput('ab')
-	expect(
-		reconcileRecordTableSearchExternalValue(typed, 'ab', true),
-	).toEqual({
+	expect(reconcileRecordTableSearchExternalValue(typed, 'ab', true)).toEqual({
 		state: { lastExternalValue: 'ab', pendingExternalValue: null },
 		applyValue: null,
 	})
@@ -175,9 +173,7 @@ test('record table search defers focused URL updates and drops a stale pending s
 	// Without acknowledging the keystroke, pending would stay "ab" and
 	// blur would write that stale text back.
 	const cleared = acknowledgeRecordTableSearchInput('')
-	expect(
-		reconcileRecordTableSearchExternalValue(cleared, '', true),
-	).toEqual({
+	expect(reconcileRecordTableSearchExternalValue(cleared, '', true)).toEqual({
 		state: empty,
 		applyValue: null,
 	})
@@ -193,15 +189,11 @@ test('record table search defers focused URL updates and drops a stale pending s
 	})
 
 	// Back-button while focused defers until blur; unfocused applies now.
-	expect(
-		reconcileRecordTableSearchExternalValue(typed, '', true),
-	).toEqual({
+	expect(reconcileRecordTableSearchExternalValue(typed, '', true)).toEqual({
 		state: { lastExternalValue: 'ab', pendingExternalValue: '' },
 		applyValue: null,
 	})
-	expect(
-		reconcileRecordTableSearchExternalValue(typed, '', false),
-	).toEqual({
+	expect(reconcileRecordTableSearchExternalValue(typed, '', false)).toEqual({
 		state: empty,
 		applyValue: '',
 	})
