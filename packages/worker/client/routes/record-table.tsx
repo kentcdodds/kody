@@ -1,4 +1,4 @@
-import { css, type Handle } from 'remix/ui'
+import { css, ref, type Handle } from 'remix/ui'
 import { shouldRouterHandleClick } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import {
@@ -315,6 +315,34 @@ const footerCss = {
  * they cost 48px, so the label becomes the control's accessible name.
  */
 
+/**
+ * Live filter fields write the query into the URL on every keystroke. A
+ * Remix-controlled `value` lets the first character schedule a restore of the
+ * previous (empty) query, and WebKit's search cancel control appears on that
+ * same keystroke — either one drops focus and the reader has to click back in.
+ * The field stays uncontrolled; URL/back-button updates land only while it is
+ * not focused.
+ */
+const searchCancelHiddenCss = {
+	'&::-webkit-search-decoration': {
+		WebkitAppearance: 'none',
+		appearance: 'none',
+	},
+	'&::-webkit-search-cancel-button': {
+		WebkitAppearance: 'none',
+		appearance: 'none',
+		display: 'none',
+	},
+	'&::-webkit-search-results-button': {
+		WebkitAppearance: 'none',
+		appearance: 'none',
+	},
+	'&::-webkit-search-results-decoration': {
+		WebkitAppearance: 'none',
+		appearance: 'none',
+	},
+} as const
+
 export function RecordTableSearch(
 	handle: Handle<{
 		label: string
@@ -323,26 +351,48 @@ export function RecordTableSearch(
 		onInput: (value: string) => void
 	}>,
 ) {
-	return () => (
-		<input
-			type="search"
-			data-field-ring
-			value={handle.props.value}
-			placeholder={handle.props.placeholder}
-			aria-label={handle.props.label}
-			mix={[
-				on('input', (event) =>
-					handle.props.onInput((event.currentTarget as HTMLInputElement).value),
-				),
-				css({
-					...getAuthInputCss(),
-					flex: '1 1 12rem',
-					minWidth: '7rem',
-					width: 'auto',
-				}),
-			]}
-		/>
-	)
+	let input: HTMLInputElement | null = null
+	const initialValue = handle.props.value
+	let lastExternalValue = initialValue
+
+	return () => {
+		const nextValue = handle.props.value
+		if (nextValue !== lastExternalValue) {
+			lastExternalValue = nextValue
+			if (input && document.activeElement !== input) {
+				input.value = nextValue
+			}
+		}
+		return (
+			<input
+				type="search"
+				data-field-ring
+				defaultValue={initialValue}
+				placeholder={handle.props.placeholder}
+				aria-label={handle.props.label}
+				mix={[
+					ref((node, signal) => {
+						input = node as HTMLInputElement
+						signal.addEventListener('abort', () => {
+							if (input === node) input = null
+						})
+					}),
+					on('input', (event) =>
+						handle.props.onInput(
+							(event.currentTarget as HTMLInputElement).value,
+						),
+					),
+					css({
+						...getAuthInputCss(),
+						flex: '1 1 12rem',
+						minWidth: '7rem',
+						width: 'auto',
+						...searchCancelHiddenCss,
+					}),
+				]}
+			/>
+		)
+	}
 }
 
 export function RecordTableSelect(

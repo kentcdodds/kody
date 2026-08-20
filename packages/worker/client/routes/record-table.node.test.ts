@@ -3,6 +3,7 @@ import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
 import {
 	RecordTable,
+	RecordTableSearch,
 	type RecordTableColumn,
 } from '#client/routes/record-table.tsx'
 
@@ -131,6 +132,26 @@ test('record table keeps container drops, row links, and expand/pane selection c
 	)
 	expect(overflowHtml).toContain('overflow-x: auto')
 	expect(overflowHtml).toContain('overflow: clip')
+})
+
+test('record table search stays uncontrolled so the first keystroke cannot remount it', async () => {
+	const html = await renderToString(
+		jsx(RecordTableSearch, {
+			label: 'Search packages',
+			placeholder: 'Search by name, id, description, or tag',
+			value: '',
+			onInput() {},
+		}),
+	)
+
+	expect(html).toContain('type="search"')
+	expect(html).toContain('aria-label="Search packages"')
+	// Passing `value` makes Remix restore the previous query on `input` and
+	// drop focus. `defaultValue` serializes as the HTML value attribute, so
+	// the client contract is "no controlled value prop" — pinned here by the
+	// WebKit cancel-button rules that otherwise appear on the first character.
+	expect(html).toContain('::-webkit-search-cancel-button')
+	expect(html).toContain('display: none')
 })
 
 test('record table empty and busy states keep toolbar layout stable', async () => {
