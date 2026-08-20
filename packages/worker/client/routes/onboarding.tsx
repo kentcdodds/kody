@@ -38,6 +38,7 @@ import {
 } from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
 import { OnboardingExampleCard } from '#client/routes/onboarding-example-card.tsx'
+import { OnboardingFactoryCard } from '#client/routes/onboarding-factory-card.tsx'
 import { createOnboardingNextConfirmation } from '#client/routes/onboarding-next-confirmation.ts'
 import { OnboardingPackageNextSteps } from '#client/routes/onboarding-package-next-steps.tsx'
 import {
@@ -505,6 +506,7 @@ export function OnboardingRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<>
+						<OnboardingFactoryCard />
 						<nav
 							id="onboarding-steps-nav"
 							aria-label="Onboarding steps"
@@ -1128,7 +1130,7 @@ const errorMessageCss = {
 /* Stepper: the sequence is the page's spine — each step is a live button,
    with the number in a lantern of its own. */
 const wizardStepsCss = {
-	marginTop: 'clamp(2.2rem, 5vw, 3.2rem)',
+	marginTop: '1rem',
 	display: 'grid',
 	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
 	gap: '0.8rem',

@@ -431,6 +431,13 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'data-testid="onboarding-join-discord"',
 	)
 	expect(anonymousOnboardingHtml).toContain('https://kcd.im/kody-discord')
+	expect(anonymousOnboardingHtml).toContain(
+		'data-testid="onboarding-factory-card"',
+	)
+	expect(anonymousOnboardingHtml).toContain('/images/kody-factory-map-480.webp')
+	expect(
+		anonymousOnboardingHtml.indexOf('onboarding-factory-card'),
+	).toBeLessThan(anonymousOnboardingHtml.indexOf('onboarding-steps-nav'))
 
 	const anonymousAccountResponse = await runHtmlHandler(
 		createAccountHandler(env),
