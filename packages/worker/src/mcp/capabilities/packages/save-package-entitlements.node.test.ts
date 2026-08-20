@@ -151,6 +151,16 @@ function createDatabase(
 										row['user_id'] === params[1],
 								) as T | null
 							}
+							if (
+								query.includes('FROM saved_packages') &&
+								query.includes('WHERE name = ? AND user_id = ?')
+							) {
+								return selectOne(
+									'saved_packages',
+									(row) =>
+										row['name'] === params[0] && row['user_id'] === params[1],
+								) as T | null
+							}
 							throw new Error(`Unsupported first query: ${query}`)
 						},
 						async all<T = Record<string, unknown>>() {
