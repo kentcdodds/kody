@@ -607,9 +607,9 @@ test('discord sign-in without a verified email fails with a helpful error', asyn
 	expect(callbackResponse.headers.get('Location')).toBe(
 		'/login?oauthError=no-verified-email',
 	)
-	expect(
-		sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
-	).toEqual({ count: 0 })
+	expect(sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get()).toEqual({
+		count: 0,
+	})
 })
 
 test('x sign-in without a shared email fails with a helpful error', async () => {

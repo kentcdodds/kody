@@ -445,7 +445,8 @@ async function fetchDiscordProfile(accessToken: string): Promise<OauthProfile> {
 		email,
 		emailVerified,
 		username: readString(user, 'username'),
-		displayName: readString(user, 'global_name') ?? readString(user, 'username'),
+		displayName:
+			readString(user, 'global_name') ?? readString(user, 'username'),
 	}
 }
 

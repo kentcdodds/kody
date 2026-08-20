@@ -362,9 +362,8 @@ jobs:
           --set-from-env-optional DISCORD_CLIENT_SECRET --set-from-env-optional
           DISCORD_BOT_TOKEN --set-from-env-optional DISCORD_GUILD_ID
           --set-from-env-optional DISCORD_MEMBER_ROLE_ID --set-from-env-optional
-          KIT_API_KEY
-          --set-from-env-optional STRIPE_SECRET_KEY --set-from-env-optional
-          STRIPE_WEBHOOK_SECRET --set-from-env-optional
+          KIT_API_KEY --set-from-env-optional STRIPE_SECRET_KEY
+          --set-from-env-optional STRIPE_WEBHOOK_SECRET --set-from-env-optional
           STATUS_INCIDENT_EVENT_SECRET
 
       # Runtime-lane secret allowlist (ADR 0016): only the secrets the

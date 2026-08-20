@@ -480,10 +480,9 @@ Kody can act as an OAuth 2.0 client of GitHub, Google, X, and Discord for
 browser sign-in. Provider identities live in the `oauth_connections` table;
 handlers live in `packages/worker/src/app/handlers/auth-provider.ts` with the
 provider definitions in `packages/worker/src/app/oauth-providers.ts`. Discord
-connections also best-effort assign or remove an operator-configured member
-role in the official Kody Discord
-(`packages/worker/src/app/discord-guild-role.ts`) without persisting the login
-token.
+connections also best-effort assign or remove an operator-configured member role
+in the official Kody Discord (`packages/worker/src/app/discord-guild-role.ts`)
+without persisting the login token.
 
 - `POST /auth/:provider` starts the flow (CSRF state + PKCE verifier + optional
   invite code in the signed `kody_oauth_login` cookie);

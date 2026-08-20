@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	assignDiscordMemberRole,
 	getDiscordMemberRoleConfig,
@@ -123,6 +124,7 @@ test('assign and remove call the Discord member-role routes and classify outcome
 })
 
 test('maybe helpers swallow Discord failures instead of throwing', async () => {
+	consoleWarn.mockImplementation(() => {})
 	const assigned = await maybeAssignDiscordMemberRole({
 		env: configuredEnv,
 		discordUserId,
@@ -131,6 +133,10 @@ test('maybe helpers swallow Discord failures instead of throwing', async () => {
 		},
 	})
 	expect(assigned).toEqual({ status: 'error', message: 'network down' })
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'Failed to assign Kody Discord member role:',
+		'network down',
+	)
 
 	const removed = await maybeRemoveDiscordMemberRole({
 		env: configuredEnv,
@@ -138,4 +144,7 @@ test('maybe helpers swallow Discord failures instead of throwing', async () => {
 		fetchImpl: async () => jsonResponse(403),
 	})
 	expect(removed).toEqual({ status: 'forbidden' })
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'Failed to remove Kody Discord member role: bot lacks permission or role hierarchy.',
+	)
 })

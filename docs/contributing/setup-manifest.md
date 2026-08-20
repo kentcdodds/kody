@@ -440,11 +440,11 @@ automatically:
   refreshes job vectors. Omit locally and for previews unless you need the
   jobs-only endpoint.)
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID` /
-  `GOOGLE_CLIENT_SECRET`, `X_CLIENT_ID` / `X_CLIENT_SECRET`,
-  `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` (optional Worker secrets; enable
-  the "Sign in with GitHub / Google / X / Discord" login buttons. A
-  `MOCK_`-prefixed client id activates the in-worker mock flow on non-production
-  runtimes. See `docs/contributing/social-login.md`.)
+  `GOOGLE_CLIENT_SECRET`, `X_CLIENT_ID` / `X_CLIENT_SECRET`, `DISCORD_CLIENT_ID`
+  / `DISCORD_CLIENT_SECRET` (optional Worker secrets; enable the "Sign in with
+  GitHub / Google / X / Discord" login buttons. A `MOCK_`-prefixed client id
+  activates the in-worker mock flow on non-production runtimes. See
+  `docs/contributing/social-login.md`.)
 - `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` (optional
   Worker secrets; when all three are set, Discord social login assigns the
   official Kody Discord member role. See `docs/contributing/social-login.md`.)

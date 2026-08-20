@@ -111,12 +111,12 @@ the token endpoint uses HTTP Basic client authentication). Note that X meters
 
 ### Discord
 
-1. In the [Discord Developer Portal](https://discord.com/developers/applications),
+1. In the
+   [Discord Developer Portal](https://discord.com/developers/applications),
    create an application named **Kody**.
-2. On the **OAuth2** tab, add
-   `https://<your-domain>/auth/discord/callback` as a redirect
-   (production: `https://kody.codes/auth/discord/callback`). For local testing
-   against the real provider also add
+2. On the **OAuth2** tab, add `https://<your-domain>/auth/discord/callback` as a
+   redirect (production: `https://kody.codes/auth/discord/callback`). For local
+   testing against the real provider also add
    `http://localhost:3742/auth/discord/callback`.
 3. Copy the **Client ID** and reset/reveal the **Client Secret**.
 4. Save them as `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`.
@@ -149,16 +149,16 @@ the operator bot token and the stored Discord snowflake only.
 
 ## Environment variables
 
-The client id/secret pairs are optional Worker secrets; a provider's button
-only renders when both of its values are set (see
+The client id/secret pairs are optional Worker secrets; a provider's button only
+renders when both of its values are set (see
 `packages/worker/src/app/oauth-providers.ts`):
 
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
 - `X_CLIENT_ID` / `X_CLIENT_SECRET`
 - `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`
-- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID`
-  (optional together; enable official Discord member-role sync)
+- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` (optional
+  together; enable official Discord member-role sync)
 
 For production deploys, store the social-login client credentials as GitHub
 Actions repository secrets named `OAUTH_GITHUB_CLIENT_ID`,
@@ -166,9 +166,9 @@ Actions repository secrets named `OAUTH_GITHUB_CLIENT_ID`,
 `OAUTH_GOOGLE_CLIENT_SECRET`, `OAUTH_X_CLIENT_ID`, `OAUTH_X_CLIENT_SECRET`,
 `OAUTH_DISCORD_CLIENT_ID`, and `OAUTH_DISCORD_CLIENT_SECRET` (the `OAUTH_`
 prefix avoids colliding with the reserved `GITHUB_*` Actions namespace).
-`.github/workflows/deploy.yml` syncs them to the Worker as the unprefixed
-secret names when present. The Discord bot token and guild/role ids use the
-unprefixed Actions secret names `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and
+`.github/workflows/deploy.yml` syncs them to the Worker as the unprefixed secret
+names when present. The Discord bot token and guild/role ids use the unprefixed
+Actions secret names `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and
 `DISCORD_MEMBER_ROLE_ID`.
 
 ## Mocking and tests
