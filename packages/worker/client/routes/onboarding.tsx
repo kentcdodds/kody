@@ -506,7 +506,6 @@ export function OnboardingRoute(handle: Handle) {
 
 				{status === 'ready' ? (
 					<>
-						<OnboardingFactoryCard />
 						<nav
 							id="onboarding-steps-nav"
 							aria-label="Onboarding steps"
@@ -913,6 +912,8 @@ export function OnboardingRoute(handle: Handle) {
 							</section>
 						) : null}
 
+						<OnboardingFactoryCard />
+
 						{/* Outside the wizard panels on purpose: the prototype keeps the
 					    BYOK disclosure visible on every step. */}
 						{renderByokDetails(builtInProviders.length > 0)}
@@ -1130,7 +1131,7 @@ const errorMessageCss = {
 /* Stepper: the sequence is the page's spine — each step is a live button,
    with the number in a lantern of its own. */
 const wizardStepsCss = {
-	marginTop: '1rem',
+	marginTop: 'clamp(2.2rem, 5vw, 3.2rem)',
 	display: 'grid',
 	gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
 	gap: '0.8rem',
