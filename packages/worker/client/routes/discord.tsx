@@ -257,7 +257,8 @@ export function DiscordRoute(handle: Handle) {
 		}
 
 		const showConnect =
-			Boolean(page?.discordProviderAvailable) &&
+			page != null &&
+			page.discordProviderAvailable &&
 			(!page.signedIn || !page.discordConnected)
 
 		return (
