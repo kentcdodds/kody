@@ -49,6 +49,9 @@ Requests are handled in this order:
    - Client ID Metadata Document: `/oauth/client-metadata.json` (`GET` / `HEAD`
      / `OPTIONS`) — Kody-as-client CIMD. Served from the request origin so
      `client_id` matches the fetch URL.
+   - Official CLI CIMD: `/oauth/cli-client-metadata.json` (`GET` / `HEAD` /
+     `OPTIONS`) — `@kodycodes/cli` presents this URL as `client_id`. Loopback
+     redirect is `http://127.0.0.1:43742/callback`.
 2. OAuth authorization endpoints:
    - `/oauth/authorize`
    - `/oauth/authorize-info`

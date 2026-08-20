@@ -534,6 +534,11 @@ routed from `packages/worker/src/index.ts`.
   sets `clientMetadataUrl` to the canonical HTTPS document URL so the SDK
   prefers CIMD and falls back to DCR. Local `http` origins omit
   `clientMetadataUrl`.
+- The official CLI (`@kodycodes/cli`) hosts its CIMD at
+  `/oauth/cli-client-metadata.json`. The document is origin-exact: `client_id`
+  matches the fetch URL, and `redirect_uris` lists the fixed loopback
+  `http://127.0.0.1:43742/callback` so the CLI can use SEP-991 instead of
+  deprecated DCR.
 - Supported scopes: `profile`, `email`
 - On `/oauth/authorize`, unauthenticated users can log in inline or via top-nav
   auth links; those links preserve the full authorize URL in `redirectTo` so

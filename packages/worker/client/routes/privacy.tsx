@@ -8,6 +8,7 @@ import {
 	pageDescriptionCss,
 	pageHeaderCss,
 	pageTitleCss,
+	sectionTitleCss,
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
 
@@ -45,6 +46,55 @@ export function PrivacyRoute(_handle: Handle) {
 					submission. All of this remains scoped to your account except for the
 					narrow admin review of approved platform feedback and the community
 					activity metadata described below.
+				</p>
+			</section>
+
+			<section mix={css(cardCss)}>
+				<h2 mix={css(cardTitleCss)}>Connected accounts</h2>
+				<p mix={css(descriptionCss)}>
+					When you connect a third-party service — a built-in integration Kody
+					hosts, or an OAuth app or API key you register yourself — Kody stores
+					that connection in your account only: tokens, the scopes you granted,
+					and host allowlists. Those credentials stay in the encrypted secret
+					store. Your agent and package code refer to them by name; Kody
+					substitutes them at the network boundary and never returns the raw
+					value to chat, search, or capability output.
+				</p>
+				<p mix={css(descriptionCss)}>
+					Kody fetches data from a connected service only to fulfill a request
+					you, or a job you saved, just made. Content a package or job persists
+					(for example a saved summary) stays in your account under the same
+					isolation rules. Kody does not sell that data, use it for advertising,
+					share it with other Kody users, or use it to train a Kody model. Kody
+					makes no inference calls of its own.
+				</p>
+				<p mix={css(descriptionCss)}>
+					<strong>Share, transfer, and disclose.</strong> Provider data leaves
+					your isolated account only to Cloudflare, which hosts the application,
+					database, object storage, and network; the MCP host you connected (for
+					example ChatGPT, Claude, or Cursor), when that host asks Kody to act
+					and receives the result; the provider itself, when Kody calls its API
+					with your token; and disclosure required by law. Kody does not hand
+					connected-account data to other customers or advertisers.
+				</p>
+				<p mix={css(descriptionCss)}>
+					<strong>Protection.</strong> Tokens and OAuth grants are encrypted at
+					rest, isolated per user, and sent only to hosts you approved. The
+					admin role cannot read secret values, secret metadata, or OAuth
+					grants. You can disconnect a connection in Kody and revoke it at the
+					provider.
+				</p>
+				<h3 mix={css(subsectionTitleCss)}>Google user data</h3>
+				<p mix={css(descriptionCss)}>
+					When you connect Google, the rules above apply to Google user data —
+					Calendar, Docs, Sheets, Gmail send, Contacts, Tasks, YouTube, and any
+					other Google scopes you grant. Kody uses Google user data only to
+					fulfill your request or saved job. Kody stores Google OAuth tokens in
+					your encrypted secret store and does not use Google user data for
+					advertising. Kody shares, transfers, or discloses Google user data
+					only with Cloudflare (hosting), the MCP host you connected when it
+					asks Kody to act, Google when Kody calls Google APIs on your behalf,
+					and when required by law.
 				</p>
 			</section>
 
@@ -278,4 +328,9 @@ const listCss = {
 	gap: spacing.xs,
 	fontSize: typography.fontSize.sm,
 	lineHeight: 1.6,
+}
+
+const subsectionTitleCss = {
+	...sectionTitleCss,
+	marginTop: spacing.md,
 }

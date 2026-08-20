@@ -77,6 +77,12 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	await page.goto('/privacy')
 	await expect(page.getByRole('heading', { name: 'Privacy' })).toBeVisible()
 	await expect(
+		page.getByRole('heading', { name: 'Connected accounts' }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('heading', { name: 'Google user data' }),
+	).toBeVisible()
+	await expect(
 		page.getByRole('heading', { name: 'What a deployment admin can see' }),
 	).toBeVisible()
 	await expect(
