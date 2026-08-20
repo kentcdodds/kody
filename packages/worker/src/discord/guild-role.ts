@@ -136,6 +136,11 @@ function rollupDiscordRoleResults(
 	if (results.length === 0) {
 		return { status: 'skipped', reason: 'not-configured' }
 	}
+	const error = results.find((result) => result.status === 'error')
+	if (error) return error
+	if (results.some((result) => result.status === 'forbidden')) {
+		return { status: 'forbidden' }
+	}
 	if (
 		results.some(
 			(result) => result.status === 'assigned' || result.status === 'removed',
@@ -146,11 +151,6 @@ function rollupDiscordRoleResults(
 	if (results.some((result) => result.status === 'not-in-guild')) {
 		return { status: 'not-in-guild' }
 	}
-	if (results.some((result) => result.status === 'forbidden')) {
-		return { status: 'forbidden' }
-	}
-	const error = results.find((result) => result.status === 'error')
-	if (error) return error
 	const skipped = results.find((result) => result.status === 'skipped')
 	return skipped ?? { status: 'skipped', reason: 'not-configured' }
 }

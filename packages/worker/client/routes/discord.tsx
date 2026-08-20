@@ -8,6 +8,7 @@ import { ProviderIcon } from '#client/provider-icons.tsx'
 import { startSocialSignIn } from '#client/social-sign-in.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import {
 	type AccountConnectionsLoaderData,
@@ -226,7 +227,7 @@ export function DiscordRoute(handle: Handle) {
 
 		const callbackMessage = readCallbackMessage(currentHref)
 		const message = actionMessage ?? callbackMessage
-		const inviteUrl = page?.inviteUrl ?? 'https://kcd.im/kody-discord'
+		const inviteUrl = page?.inviteUrl ?? kodyDiscordInviteUrl
 
 		return (
 			<section mix={css(stackedPageCss)}>

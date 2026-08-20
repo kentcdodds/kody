@@ -222,6 +222,22 @@ test('plan role sync assigns the subscribed plan and removes the other', async (
 			fetchImpl,
 		}),
 	).toEqual({ status: 'skipped', reason: 'not-configured' })
+
+	expect(
+		summarizeDiscordGuildRoleSync({
+			member: { status: 'assigned' },
+			plan: { status: 'forbidden' },
+		}),
+	).toEqual({ status: 'forbidden' })
+	expect(
+		summarizeDiscordGuildRoleSync({
+			member: { status: 'assigned' },
+			plan: { status: 'error', message: 'Discord plan-role PUT failed (500).' },
+		}),
+	).toEqual({
+		status: 'error',
+		message: 'Discord plan-role PUT failed (500).',
+	})
 })
 
 test('maybe helpers swallow Discord failures instead of throwing', async () => {

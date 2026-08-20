@@ -41,7 +41,7 @@ function createBillingEnv(
 
 async function seedUser(input: {
 	email: string
-	plan?: 'pro' | 'max'
+	plan?: 'free' | 'pro' | 'max'
 	stripeCustomerId?: string | null
 	stripePlan?: string | null
 	stripePlanRefreshedAt?: string | null
@@ -405,34 +405,36 @@ test('checkout linking assigns the Discord Pro role when Discord is connected', 
 		},
 	)
 	vi.stubGlobal('fetch', fetchStub)
-
-	const result = await linkStripeCustomerFromCheckoutSession({
-		env: createBillingEnv({
-			DISCORD_BOT_TOKEN: 'bot-token-test',
-			DISCORD_GUILD_ID: '111111111111111111',
-			DISCORD_MEMBER_ROLE_ID: '222222222222222222',
-			DISCORD_STANDARD_ROLE_ID: '444444444444444444',
-			DISCORD_PRO_ROLE_ID: '555555555555555555',
-		}),
-		user,
-		sessionId: 'cs_discord_pro',
-	})
-	expect(result.stripePlan).toBe('pro')
-	expect(discordCalls).toEqual(
-		expect.arrayContaining([
-			{
-				url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/222222222222222222',
-				method: 'PUT',
-			},
-			{
-				url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/444444444444444444',
-				method: 'DELETE',
-			},
-			{
-				url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/555555555555555555',
-				method: 'PUT',
-			},
-		]),
-	)
-	vi.unstubAllGlobals()
+	try {
+		const result = await linkStripeCustomerFromCheckoutSession({
+			env: createBillingEnv({
+				DISCORD_BOT_TOKEN: 'bot-token-test',
+				DISCORD_GUILD_ID: '111111111111111111',
+				DISCORD_MEMBER_ROLE_ID: '222222222222222222',
+				DISCORD_STANDARD_ROLE_ID: '444444444444444444',
+				DISCORD_PRO_ROLE_ID: '555555555555555555',
+			}),
+			user,
+			sessionId: 'cs_discord_pro',
+		})
+		expect(result.stripePlan).toBe('pro')
+		expect(discordCalls).toEqual(
+			expect.arrayContaining([
+				{
+					url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/222222222222222222',
+					method: 'PUT',
+				},
+				{
+					url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/444444444444444444',
+					method: 'DELETE',
+				},
+				{
+					url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/555555555555555555',
+					method: 'PUT',
+				},
+			]),
+		)
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })
