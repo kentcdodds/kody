@@ -606,6 +606,21 @@ primitives:
       - docs/contributing/architecture/authorization.md
       - docs/guides/package-subscriptions.md
 
+  - id: community-listing-published-dispatch-queue
+    group: storage
+    name: Community listing published dispatch queue
+    summary:
+      Durable opaque event delivery from first community listing publish to
+      admin packages.
+    code:
+      - packages/worker/src/community/listing-published-dispatch-queue
+      - packages/worker/src/community/listing-published-package-subscriptions
+      - packages/worker/src/community/listing-published-subscription-event
+    docs:
+      - docs/contributing/setup-manifest.md
+      - docs/contributing/architecture/authorization.md
+      - docs/guides/package-subscriptions.md
+
   - id: package-events-dispatch-queue
     group: storage
     name: Package events dispatch queue

@@ -345,6 +345,16 @@ activity is acknowledged as a permanent cancellation; transient lookup,
 discovery, and package-invocation infrastructure failures retry and can reach
 the dedicated DLQ.
 
+The first community listing publish enqueues an opaque listing id for durable
+`community.listing.published` package-subscription delivery. Republishes do not
+enqueue this topic. The Queue consumer reloads listing id/name/kody id,
+description, canonical `public_url` (`/@username/kody-id`), publisher username,
+and published_at, then fans out only to packages whose owners hold the admin
+role at processing time. A non-admin may declare the topic but never receives
+it. Missing or inactive listings are acknowledged as a permanent cancellation;
+transient failures retry and can reach the dedicated DLQ. Enqueue failures never
+fail `community_publish`.
+
 **Admins can subscribe to public status-page incidents.** The isolated status
 worker records component incidents in its own Durable Object, then best-effort
 POSTs metadata to the main worker. Fan-out of `status.incident.opened` and

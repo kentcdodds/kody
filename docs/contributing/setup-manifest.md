@@ -72,6 +72,17 @@ This project uses the following resources:
     reloads the metadata-only activity projection, acknowledges invalid or
     deleted activity, and retries transient lookup, subscription-discovery, or
     package-invocation infrastructure failures.
+- Cloudflare Queue for durable community-listing-published subscription dispatch
+  - Producer binding: `COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE`
+  - Queue: `kody-community-listing-published-dispatch`
+  - Dead-letter queue: `kody-community-listing-published-dispatch-dlq`
+  - The production consumer uses the same batch, retry, and DLQ settings as
+    platform-feedback dispatch. Production CI ensures both resources.
+  - Queue messages contain only `{ eventId, listingId }`. The consumer reloads
+    the metadata-only listing projection, acknowledges invalid or inactive
+    listings, and retries transient lookup, subscription-discovery, or
+    package-invocation infrastructure failures. Only first publish enqueues;
+    republish does not.
 - Cloudflare Queue for durable package-emitted event dispatch
   - Producer binding: `PACKAGE_EVENTS_DISPATCH_QUEUE`
   - Queue: `kody-package-events-dispatch`

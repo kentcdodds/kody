@@ -8,8 +8,9 @@ summary:
   activity notifiers, integration.auth.failed / integration.auth.succeeded
   reconnect notifiers, mcp.server.disconnected / mcp.server.reconnected
   connection episodes, consent-gated admin-only platform.feedback.submitted
-  notification guidance, and admin-only status.incident.opened /
-  status.incident.resolved operator telemetry.
+  notification guidance, admin-only community.activity.recorded /
+  community.listing.published community notifications, and admin-only
+  status.incident.opened / status.incident.resolved operator telemetry.
 category: platform
 ---
 
@@ -127,9 +128,9 @@ publish result. Failed and non-fast-forward results have no test hints.
   testing filter-dependent code paths.
 - **Admin-only topics** (`email.system-message.received`,
   `platform.feedback.submitted`, `community.activity.recorded`,
-  `status.incident.opened`, `status.incident.resolved`) gate **production**
-  fan-out on admin role; synthetic dispatch still runs your handler directly for
-  smoke testing.
+  `community.listing.published`, `status.incident.opened`,
+  `status.incident.resolved`) gate **production** fan-out on admin role;
+  synthetic dispatch still runs your handler directly for smoke testing.
 - **Activity.** Synthetic runs appear on the `subscription` surface. Handler
   failures do not emit `run.error.recorded` (recursion guard).
 
@@ -814,6 +815,47 @@ the metadata projection after admin subscriber discovery. Missing activity is a
 permanent cancellation; transient lookup, discovery, and package-invocation
 infrastructure failures retry and can reach the dedicated DLQ. `event_id`
 provides a distinct package-invocation idempotency key for every recorded write.
+
+## `community.listing.published` (admins)
+
+The first successful community listing publish enqueues a durable
+`community.listing.published` attempt. Republishes record `listing_updated` in
+the activity timeline but do **not** enqueue this subscription topic. The Queue
+consumer dispatches only to packages saved by users who hold the admin role when
+the message is processed. Non-admin declarations are inert, and role revocation
+applies to the next attempt.
+
+Handlers receive listing metadata only:
+
+```ts
+type CommunityListingPublishedEvent = {
+	event: 'community.listing.published'
+	event_id: string
+	listing: {
+		id: string
+		name: string
+		kody_id: string
+		description: string | null
+		public_url: string
+	}
+	publisher: {
+		username: string | null
+	}
+	published_at: string
+}
+```
+
+`public_url` is the canonical shareable URL (`{base}/@{username}/{kody_id}`),
+never `/community/{listing_id}`. The event omits stable user ids, email, package
+source, secrets, and unrelated account content.
+
+Queue messages contain only `{ eventId, listingId }`. Dispatch reloads the
+metadata projection after admin subscriber discovery. Missing, delisted, or
+unpublished listings are a permanent cancellation; transient lookup, discovery,
+and package-invocation infrastructure failures retry and can reach the dedicated
+DLQ. `event_id` provides a distinct package-invocation idempotency key for every
+first-publish enqueue. Enqueue failures are logged and never fail
+`community_publish`.
 
 ## `status.incident.opened` / `status.incident.resolved` (admins)
 

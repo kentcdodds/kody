@@ -302,6 +302,13 @@ fan-out, which resolves admin package owners fresh for every attempt. The event
 therefore reaches only admin-owned subscribed packages and is suitable for
 operator notifications such as Discord.
 
+The first successful listing publish enqueues `{ eventId, listingId }` for
+durable `community.listing.published` delivery. Republishes write
+`listing_updated` for the timeline but do not enqueue this topic. The Queue
+consumer reloads listing metadata (including canonical `public_url`) and uses
+the same admin package-subscription fan-out. Enqueue failures are logged and
+never fail `community_publish`.
+
 ## Inert fork mechanism
 
 Forks create an **`entity_sources`** row and Artifacts snapshot but **no**

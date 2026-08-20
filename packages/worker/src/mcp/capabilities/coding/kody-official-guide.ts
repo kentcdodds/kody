@@ -130,6 +130,8 @@ const allKeywords = [
 		'platform.feedback.submitted',
 		'platform feedback submitted',
 		'feedback notification event',
+		'community.listing.published',
+		'community listing published',
 		'status.incident.opened',
 		'status incident opened',
 		'status.incident.resolved',

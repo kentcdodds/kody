@@ -428,6 +428,16 @@ because both paths share the existing `community_forks` row shape. Consumer-time
 admin role checks, lazy metadata reload, retry behavior, and terminal-handler
 isolation match platform-feedback dispatch.
 
+The first community listing publish similarly enqueues
+`community.listing.published` for admin-only package-subscription delivery.
+Republishes write `listing_updated` for the timeline but do not enqueue this
+topic. The event contains a unique event id, listing id/name/kody id,
+description, canonical `public_url` (`/@username/kody-id`), publisher username,
+and published_at. It omits stable user ids, email, package source, secrets, and
+unrelated account content. Consumer-time admin role checks, lazy metadata
+reload, retry behavior, and terminal-handler isolation match platform-feedback
+dispatch. Enqueue failures are logged and never fail `community_publish`.
+
 Status-page incident open/resolve is a separate admin-only, best-effort path.
 The isolated status worker POSTs metadata to
 `POST /__maintenance/status-incidents` when `STATUS_INCIDENT_EVENT_SECRET` is
