@@ -67,10 +67,7 @@ const factoryCardCss = {
 		},
 	},
 	'@media (max-width: 520px)': {
-		gridTemplateColumns: '5.5rem minmax(0, 1fr)',
-		'& > [aria-hidden]': {
-			display: 'none',
-		},
+		gridTemplateColumns: '5.5rem minmax(0, 1fr) 2.35rem',
 	},
 }
 
