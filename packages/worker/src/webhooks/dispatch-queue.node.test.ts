@@ -189,7 +189,10 @@ test('queue hydrates spilled payloads, deletes them after terminal work, and ack
 		status: 200,
 		body: { ok: true, result: { handled: true } },
 	})
-	mocks.recordWebhookDelivery.mockResolvedValue(undefined)
+	mocks.recordWebhookDelivery
+		.mockResolvedValueOnce(undefined)
+		.mockResolvedValueOnce(undefined)
+		.mockRejectedValueOnce(new Error('RunLog unavailable'))
 
 	const payloadKvKey = webhookDispatchPayloadKvKey('user-1', 'delivery-1')
 	const values = new Map<string, string>([
@@ -214,13 +217,27 @@ test('queue hydrates spilled payloads, deletes them after terminal work, and ack
 		idempotencyKey: 'webhook:endpoint-1:delivery-missing',
 		payloadKvKey: webhookDispatchPayloadKvKey('user-1', 'delivery-missing'),
 	})
+	const missingRecordFailure = createQueueMessage('missing-record-failure', {
+		...spilled,
+		deliveryId: 'delivery-missing-record',
+		idempotencyKey: 'webhook:endpoint-1:delivery-missing-record',
+		payloadKvKey: webhookDispatchPayloadKvKey(
+			'user-1',
+			'delivery-missing-record',
+		),
+	})
 
-	await handleWebhookDispatchQueue(createBatch([queued, missing]), {
-		BUNDLE_ARTIFACTS_KV: kv,
-	} as unknown as Env)
+	await handleWebhookDispatchQueue(
+		createBatch([queued, missing, missingRecordFailure]),
+		{
+			BUNDLE_ARTIFACTS_KV: kv,
+		} as unknown as Env,
+	)
 
 	expect(queued.ack).toHaveBeenCalledTimes(1)
 	expect(missing.ack).toHaveBeenCalledTimes(1)
+	expect(missingRecordFailure.ack).not.toHaveBeenCalled()
+	expect(missingRecordFailure.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
 	expect(values.has(payloadKvKey)).toBe(false)
 	expect(mocks.dispatchWebhookInvocation).toHaveBeenCalledTimes(1)
 	expect(mocks.dispatchWebhookInvocation).toHaveBeenCalledWith(

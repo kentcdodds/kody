@@ -103,6 +103,10 @@ export async function handleWebhookDispatchQueue(
 						endpointId: message.endpoint.id,
 						error,
 					})
+					queueMessage.retry({
+						delaySeconds: webhookDispatchRetryDelaySeconds,
+					})
+					continue
 				}
 				queueMessage.ack()
 				continue
@@ -111,6 +115,7 @@ export async function handleWebhookDispatchQueue(
 			if (outcome === 'retry') {
 				queueMessage.retry({ delaySeconds: webhookDispatchRetryDelaySeconds })
 			} else {
+				queueMessage.ack()
 				if (message.payloadKvKey) {
 					await deleteWebhookDispatchPayload({
 						kv: env.BUNDLE_ARTIFACTS_KV,
@@ -123,7 +128,6 @@ export async function handleWebhookDispatchQueue(
 						})
 					})
 				}
-				queueMessage.ack()
 			}
 		} catch (error) {
 			console.error('webhook-dispatch-queue-processing-failed', {
