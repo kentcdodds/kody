@@ -10,7 +10,8 @@ import {
 const TWEMOJI_KOALA_SVG =
 	'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path fill="#99AAB5" d="M36 13.533C36 8.867 32.866 7 29 7z"/></svg>'
 
-test('emojiToTwemojiCodes maps graphemes, strips FE0F, and keeps ZWJ sequences', () => {
+test('Twemoji OG helpers map codes, fetch/cache SVG data URIs, and ignore non-emoji', async () => {
+	expect.hasAssertions()
 	expect(emojiToTwemojiCodes('🐨')).toEqual(['1f428'])
 	expect(emojiToTwemojiCodes('❤️')).toEqual(['2764', '2764-fe0f'])
 	expect(emojiToTwemojiCodes('👨‍💻')).toEqual(['1f468-200d-1f4bb'])
@@ -18,10 +19,7 @@ test('emojiToTwemojiCodes maps graphemes, strips FE0F, and keeps ZWJ sequences',
 	expect(twemojiSvgUrl('1f428')).toBe(
 		'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/svg/1f428.svg',
 	)
-})
 
-test('loadTwemojiDataUri fetches Twemoji SVG, caches, retries FE0F names, and ignores non-emoji', async () => {
-	expect.hasAssertions()
 	resetTwemojiCache()
 
 	const fetchSpy = vi

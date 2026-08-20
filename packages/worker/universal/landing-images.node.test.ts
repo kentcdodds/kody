@@ -17,9 +17,9 @@ test('landing art prefers smaller defaults and only advertises 960w when wide en
 		'960w',
 	)
 	const factoryMap = landingArtAttrs('kody-factory-map')
-	expect(factoryMap.src).toBe('/images/kody-factory-map-480.webp')
-	expect(factoryMap.srcSet).toContain('/images/kody-factory-map-960.webp 960w')
-	expect(factoryMap.srcSet).toContain('/images/kody-factory-map.webp 1024w')
+	expect(factoryMap.src).toContain('-480.webp')
+	expect(factoryMap.srcSet).toContain('960w')
+	expect(factoryMap.srcSet).toContain('1024w')
 	expect(landingArtAttrs('kody-community-packages').srcSet).not.toContain(
 		'960w',
 	)

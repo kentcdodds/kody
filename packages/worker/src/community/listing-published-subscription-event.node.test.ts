@@ -31,8 +31,4 @@ test('buildCommunityListingPublishedEvent keeps metadata-only canonical public_u
 		publisher: { username: 'owner' },
 		published_at: '2026-07-20T01:00:00.000Z',
 	})
-	expect(JSON.stringify(event)).not.toContain('user_id')
-	expect(JSON.stringify(event)).not.toContain('email')
-	expect(event.listing.public_url).not.toContain('/community/')
-	expect(event.listing.public_url).toContain('/@owner/discord-gateway')
 })

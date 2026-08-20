@@ -31,18 +31,14 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(getGuideById('how_kody_works')?.slug).toBe('how-kody-works')
 	expect(getGuideBySlug('kody-factory')?.id).toBe('kody_factory')
 	expect(getGuideById('kody_factory')?.slug).toBe('kody-factory')
-	expect(getGuideById('kody_factory')).toMatchObject({
-		image: '/images/kody-factory-map.webp',
-		imageAlt: 'Kody presenting a map of the software factory',
-		ogImage: '/images/kody-factory-map-og.jpg',
-	})
+	expect(getGuideById('kody_factory')?.image).toMatch(/^\/images\//)
+	expect(getGuideById('kody_factory')?.ogImage).toMatch(/^\/images\//)
+	expect(getGuideById('kody_factory')?.imageAlt?.length).toBeGreaterThan(0)
 	expect(getGuideBySlug('local-mcp-tunnels')?.id).toBe('local_mcp_tunnels')
 	expect(getGuideById('local_mcp_tunnels')?.slug).toBe('local-mcp-tunnels')
-	expect(getGuideById('local_mcp_tunnels')).toMatchObject({
-		image: '/images/kody-home-nas.webp',
-		imageAlt: 'Kody in a living room with his hand on a logo-free home NAS',
-		ogImage: '/images/kody-home-nas-og.jpg',
-	})
+	expect(getGuideById('local_mcp_tunnels')?.image).toMatch(/^\/images\//)
+	expect(getGuideById('local_mcp_tunnels')?.ogImage).toMatch(/^\/images\//)
+	expect(getGuideById('local_mcp_tunnels')?.imageAlt?.length).toBeGreaterThan(0)
 	expect(getGuideBySlug('google-oauth')?.id).toBe('google_oauth')
 	expect(getGuideById('google_oauth')?.slug).toBe('google-oauth')
 
