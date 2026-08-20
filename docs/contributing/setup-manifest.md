@@ -445,9 +445,11 @@ automatically:
   GitHub / Google / X / Discord" login buttons. A `MOCK_`-prefixed client id
   activates the in-worker mock flow on non-production runtimes. See
   `docs/contributing/social-login.md`.)
-- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` (optional
-  Worker secrets; when all three are set, Discord social login assigns the
-  official Kody Discord member role. See `docs/contributing/social-login.md`.)
+- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` /
+  `DISCORD_STANDARD_ROLE_ID` / `DISCORD_PRO_ROLE_ID` (optional Worker secrets;
+  when bot token, guild id, and at least one role id are set, Discord social
+  login and Stripe plan refresh assign official Kody Discord roles. See
+  `docs/contributing/social-login.md`.)
 - `STRIPE_SECRET_KEY` (optional Worker secret; enables Stripe checkout linking,
   billing portal, and `users.stripe_plan` refresh. When unset, billing degrades
   to manual plans.)
@@ -530,9 +532,9 @@ Configure these GitHub Actions secrets and variables for workflows:
   unprefixed `GITHUB_CLIENT_ID`-style secrets — the `OAUTH_` prefix exists
   because GitHub Actions reserves the `GITHUB_*` secret namespace. See
   `docs/contributing/social-login.md` for provider app setup.)
-- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` (optional;
-  official Kody Discord member-role sync. Synced to the Worker under the same
-  names.)
+- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` /
+  `DISCORD_STANDARD_ROLE_ID` / `DISCORD_PRO_ROLE_ID` (optional; official Kody
+  Discord guild-role sync. Synced to the Worker under the same names.)
 - `KIT_API_KEY` (optional GitHub / Worker secret; Kit / kit.com API key for
   `/waiting-list` signup and best-effort `signed_up::kody` tagging on account
   signup when the email already exists in Kit. Production deploy syncs it when

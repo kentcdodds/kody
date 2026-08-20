@@ -175,8 +175,10 @@ Optional Worker secrets (see `packages/worker/src/app/oauth-providers.ts` and
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
 - `X_CLIENT_ID` / `X_CLIENT_SECRET`
 - `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`
-- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` (optional
-  together; official Kody Discord member-role sync)
+- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` /
+  `DISCORD_STANDARD_ROLE_ID` / `DISCORD_PRO_ROLE_ID` (optional; official Kody
+  Discord guild-role sync. Bot token + guild id plus at least one role id.
+  Standard/Pro follow `users.stripe_plan`.)
 
 A provider's login button only renders when both of its values are set. A
 `MOCK_`-prefixed client id activates the in-worker mock provider flow on

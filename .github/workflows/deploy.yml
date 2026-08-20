@@ -343,6 +343,8 @@ jobs:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
           DISCORD_MEMBER_ROLE_ID: ${{ secrets.DISCORD_MEMBER_ROLE_ID }}
+          DISCORD_STANDARD_ROLE_ID: ${{ secrets.DISCORD_STANDARD_ROLE_ID }}
+          DISCORD_PRO_ROLE_ID: ${{ secrets.DISCORD_PRO_ROLE_ID }}
           KIT_API_KEY: ${{ secrets.KIT_API_KEY }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
@@ -362,9 +364,10 @@ jobs:
           --set-from-env-optional DISCORD_CLIENT_SECRET --set-from-env-optional
           DISCORD_BOT_TOKEN --set-from-env-optional DISCORD_GUILD_ID
           --set-from-env-optional DISCORD_MEMBER_ROLE_ID --set-from-env-optional
-          KIT_API_KEY --set-from-env-optional STRIPE_SECRET_KEY
-          --set-from-env-optional STRIPE_WEBHOOK_SECRET --set-from-env-optional
-          STATUS_INCIDENT_EVENT_SECRET
+          DISCORD_STANDARD_ROLE_ID --set-from-env-optional DISCORD_PRO_ROLE_ID
+          --set-from-env-optional KIT_API_KEY --set-from-env-optional
+          STRIPE_SECRET_KEY --set-from-env-optional STRIPE_WEBHOOK_SECRET
+          --set-from-env-optional STATUS_INCIDENT_EVENT_SECRET
 
       # Runtime-lane secret allowlist (ADR 0016): only the secrets the
       # package runtime lane actually reads. COOKIE_SECRET/SECRET_STORE_KEY

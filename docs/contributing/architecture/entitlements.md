@@ -690,9 +690,11 @@ Checkout sessions are created server-side for authenticated users via
 `metadata.kody_stable_user_id`). There is no public Payment Link path — checkout
 requires a signed-in session so unauthenticated card-testing is not possible.
 `GET /account/billing/success` verifies `client_reference_id` before linking
-`users.stripe_customer_id`, then refreshes `users.stripe_plan`.
-`GET /account/billing/portal` opens the Stripe customer portal for linked
-customers.
+`users.stripe_customer_id`, then refreshes `users.stripe_plan`. A successful
+`stripe_plan` write also best-effort re-syncs official Kody Discord Standard/Pro
+roles when the user has a Discord social-login connection (see
+[`social-login.md`](../social-login.md)). `GET /account/billing/portal` opens
+the Stripe customer portal for linked customers.
 
 ### Webhooks (primary sync)
 

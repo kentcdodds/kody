@@ -158,7 +158,7 @@ export function AccountRoute(handle: Handle) {
 	let connections: Array<AccountConnectionListItem> = []
 	let canDisconnect = true
 	let availableProviders: Array<{ id: string; label: string }> = []
-	let canSyncDiscordMemberRole = false
+	let canSyncDiscordRoles = false
 	let connectionsMessage: { text: string; tone: 'error' | 'info' } | null = null
 	let consumedCallbackMessage = false
 	let needsOnboarding = false
@@ -169,7 +169,7 @@ export function AccountRoute(handle: Handle) {
 		connections = payload.connections
 		canDisconnect = payload.canDisconnect
 		availableProviders = payload.availableProviders
-		canSyncDiscordMemberRole = payload.canSyncDiscordMemberRole
+		canSyncDiscordRoles = payload.canSyncDiscordRoles
 	}
 
 	async function handleConnectProvider(providerId: string) {
@@ -197,16 +197,16 @@ export function AccountRoute(handle: Handle) {
 	function discordMemberRoleMessage(status: string) {
 		switch (status) {
 			case 'assigned':
-				return 'Kody Discord member role assigned.'
+				return 'Kody Discord roles updated.'
 			case 'not-in-guild':
-				return 'Join the Kody Discord first, then sync the member role.'
+				return 'Join the Kody Discord first, then sync your roles.'
 			case 'not-configured':
 			case 'skipped':
-				return 'Discord member role sync is not configured.'
+				return 'Discord role sync is not configured.'
 			case 'forbidden':
-				return 'Kody could not update your Discord role. Please try again later.'
+				return 'Kody could not update your Discord roles. Please try again later.'
 			default:
-				return 'Unable to sync the Discord member role.'
+				return 'Unable to sync Discord roles.'
 		}
 	}
 
@@ -1117,7 +1117,7 @@ export function AccountRoute(handle: Handle) {
 													})}
 												>
 													{connection.provider === 'discord' &&
-													canSyncDiscordMemberRole ? (
+													canSyncDiscordRoles ? (
 														<button
 															type="button"
 															disabled={connectionsBusy}
@@ -1126,7 +1126,7 @@ export function AccountRoute(handle: Handle) {
 																on('click', handleSyncDiscordMemberRole),
 															]}
 														>
-															Sync member role
+															Sync Discord roles
 														</button>
 													) : null}
 													<button

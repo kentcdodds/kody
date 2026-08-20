@@ -130,19 +130,29 @@ Do not add `/connect/oauth` to this application. User-owned Discord integrations
 for the assistant stay on a separate app and the `/connect/oauth` flow (see
 [`docs/guides/providers/discord.md`](../guides/providers/discord.md)).
 
-### Official Kody Discord member role
+### Official Kody Discord guild roles
 
-When `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and `DISCORD_MEMBER_ROLE_ID` are
-all set, connecting or signing in with Discord best-effort assigns that role in
-the official Kody Discord. Disconnect and account deletion best-effort remove
-it. Login still succeeds when the bot is unset, the member is not in the guild
+When `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID` are set with at least one role
+id, connecting or signing in with Discord best-effort assigns those roles in the
+official Kody Discord:
+
+- `DISCORD_MEMBER_ROLE_ID` — assigned to every connected Discord identity
+- `DISCORD_STANDARD_ROLE_ID` / `DISCORD_PRO_ROLE_ID` — follow
+  `users.stripe_plan` (the paid subscription). Checkout, Stripe webhooks, and
+  the plan-refresh alarm re-sync these when the subscription changes. They are
+  exclusive: a Pro subscriber loses Standard, and a cancelled or free
+  `stripe_plan` loses both. Manual grants (including `max`) do not assign a plan
+  role.
+
+Disconnect and account deletion best-effort remove every configured role. Login
+and billing still succeed when the bot is unset, the member is not in the guild
 yet (HTTP 404), or Discord errors.
 
 The bot must already be in the guild with **Manage Roles**, and its highest role
-must sit above the member role it assigns. Users join through the existing
-invite (`https://kcd.im/kody-discord`); login does not request `guilds.join`.
+must sit above every role it assigns. Users join through the existing invite
+(`https://kcd.im/kody-discord`); login does not request `guilds.join`.
 `/account` shows a Join the Kody Discord link on a connected Discord row, plus
-**Sync member role** when bot config is present.
+**Sync Discord roles** when bot config is present.
 
 Social-login tokens are still discarded after the profile fetch. Role writes use
 the operator bot token and the stored Discord snowflake only.
@@ -157,8 +167,9 @@ renders when both of its values are set (see
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
 - `X_CLIENT_ID` / `X_CLIENT_SECRET`
 - `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET`
-- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` (optional
-  together; enable official Discord member-role sync)
+- `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` / `DISCORD_MEMBER_ROLE_ID` /
+  `DISCORD_STANDARD_ROLE_ID` / `DISCORD_PRO_ROLE_ID` (optional; bot token +
+  guild id plus at least one role id enable official Discord guild-role sync)
 
 For production deploys, store the social-login client credentials as GitHub
 Actions repository secrets named `OAUTH_GITHUB_CLIENT_ID`,
@@ -168,8 +179,8 @@ Actions repository secrets named `OAUTH_GITHUB_CLIENT_ID`,
 prefix avoids colliding with the reserved `GITHUB_*` Actions namespace).
 `.github/workflows/deploy.yml` syncs them to the Worker as the unprefixed secret
 names when present. The Discord bot token and guild/role ids use the unprefixed
-Actions secret names `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and
-`DISCORD_MEMBER_ROLE_ID`.
+Actions secret names `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`,
+`DISCORD_MEMBER_ROLE_ID`, `DISCORD_STANDARD_ROLE_ID`, and `DISCORD_PRO_ROLE_ID`.
 
 ## Mocking and tests
 

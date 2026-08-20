@@ -441,9 +441,13 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 		DISCORD_BOT_TOKEN: 'bot-token-test',
 		DISCORD_GUILD_ID: '111111111111111111',
 		DISCORD_MEMBER_ROLE_ID: '222222222222222222',
+		DISCORD_STANDARD_ROLE_ID: '444444444444444444',
+		DISCORD_PRO_ROLE_ID: '555555555555555555',
 	})
 	const rolePuts: Array<string> = []
 	const roleDeletes: Array<string> = []
+	const guildRoleUrl =
+		'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/:roleId'
 
 	msw.use(
 		http.post('https://discord.com/api/oauth2/token', async ({ request }) => {
@@ -466,22 +470,16 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 				verified: true,
 			})
 		}),
-		http.put(
-			'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/222222222222222222',
-			({ request }) => {
-				expect(request.headers.get('Authorization')).toBe('Bot bot-token-test')
-				rolePuts.push(request.url)
-				return new HttpResponse(null, { status: 204 })
-			},
-		),
-		http.delete(
-			'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/222222222222222222',
-			({ request }) => {
-				expect(request.headers.get('Authorization')).toBe('Bot bot-token-test')
-				roleDeletes.push(request.url)
-				return new HttpResponse(null, { status: 204 })
-			},
-		),
+		http.put(guildRoleUrl, ({ request, params }) => {
+			expect(request.headers.get('Authorization')).toBe('Bot bot-token-test')
+			rolePuts.push(String(params.roleId))
+			return new HttpResponse(null, { status: 204 })
+		}),
+		http.delete(guildRoleUrl, ({ request, params }) => {
+			expect(request.headers.get('Authorization')).toBe('Bot bot-token-test')
+			roleDeletes.push(String(params.roleId))
+			return new HttpResponse(null, { status: 204 })
+		}),
 	)
 
 	const start = await startProviderFlow(
@@ -515,7 +513,11 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 		)
 		.get() as Record<string, unknown>
 	expect(connection.user_id).toBe(user.id)
-	expect(rolePuts).toHaveLength(1)
+	expect(rolePuts).toEqual(['222222222222222222'])
+	expect(roleDeletes.sort()).toEqual([
+		'444444444444444444',
+		'555555555555555555',
+	])
 
 	const sessionCookiePair = (callbackResponse.headers.getSetCookie() ?? [])
 		.map(getCookiePair)
@@ -537,13 +539,14 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 	)
 	const syncPayload = (await syncResponse.json()) as {
 		ok: boolean
-		canSyncDiscordMemberRole: boolean
+		canSyncDiscordRoles: boolean
 		discordMemberRole?: { status: string }
 	}
 	expect(syncPayload.ok).toBe(true)
-	expect(syncPayload.canSyncDiscordMemberRole).toBe(true)
+	expect(syncPayload.canSyncDiscordRoles).toBe(true)
 	expect(syncPayload.discordMemberRole?.status).toBe('assigned')
-	expect(rolePuts).toHaveLength(2)
+	expect(rolePuts).toEqual(['222222222222222222', '222222222222222222'])
+	expect(roleDeletes).toHaveLength(4)
 
 	const passwordHash = await createPasswordHash('test-password')
 	sqlite
@@ -564,12 +567,15 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 	const disconnectPayload = (await disconnectResponse.json()) as {
 		ok: boolean
 		connections: Array<unknown>
-		canSyncDiscordMemberRole: boolean
+		canSyncDiscordRoles: boolean
 	}
 	expect(disconnectPayload.ok).toBe(true)
 	expect(disconnectPayload.connections).toHaveLength(0)
-	expect(disconnectPayload.canSyncDiscordMemberRole).toBe(false)
-	expect(roleDeletes).toHaveLength(1)
+	expect(disconnectPayload.canSyncDiscordRoles).toBe(false)
+	expect(roleDeletes).toHaveLength(7)
+	expect(
+		roleDeletes.filter((roleId) => roleId === '222222222222222222'),
+	).toEqual(['222222222222222222'])
 })
 
 test('discord sign-in without a verified email fails with a helpful error', async () => {

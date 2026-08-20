@@ -717,7 +717,7 @@ export type AccountConnectionsLoaderData = {
 	canDisconnect: boolean
 	availableProviders: Array<{ id: string; label: string }>
 	/** True when Discord is connected and operator guild-role sync is configured. */
-	canSyncDiscordMemberRole: boolean
+	canSyncDiscordRoles: boolean
 }
 
 /** One-click built-in integration offered during onboarding. */

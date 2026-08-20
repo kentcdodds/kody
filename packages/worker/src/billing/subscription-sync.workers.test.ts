@@ -23,6 +23,11 @@ function createBillingEnv(
 		STRIPE_PRO_PRICE_ID?: string
 		STRIPE_API_BASE_URL?: string
 		STRIPE_PLAN_REFRESH?: Env['STRIPE_PLAN_REFRESH']
+		DISCORD_BOT_TOKEN?: string
+		DISCORD_GUILD_ID?: string
+		DISCORD_MEMBER_ROLE_ID?: string
+		DISCORD_STANDARD_ROLE_ID?: string
+		DISCORD_PRO_ROLE_ID?: string
 	} = {},
 ): Env {
 	return {
@@ -344,4 +349,90 @@ test('linkStripeCustomerFromCheckoutSession rejects unsafe checkout links withou
 		})
 		vi.unstubAllGlobals()
 	}
+})
+
+test('checkout linking assigns the Discord Pro role when Discord is connected', async () => {
+	const email = `link-discord-pro-${crypto.randomUUID()}@example.com`
+	const user = await seedUser({ email, plan: 'free' })
+	await env.APP_DB.prepare(
+		`CREATE TABLE IF NOT EXISTS oauth_connections (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			provider_name TEXT NOT NULL,
+			provider_id TEXT NOT NULL,
+			user_id INTEGER NOT NULL,
+			provider_display_name TEXT,
+			created_at TEXT,
+			updated_at TEXT
+		)`,
+	).run()
+	await env.APP_DB.prepare(
+		`INSERT INTO oauth_connections (provider_name, provider_id, user_id)
+		 VALUES ('discord', '333333333333333333', ?)`,
+	)
+		.bind(user.id)
+		.run()
+
+	const discordCalls: Array<{ url: string; method: string }> = []
+	const fetchStub = vi.fn(
+		async (request: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(request)
+			const method =
+				init?.method ?? (request instanceof Request ? request.method : 'GET')
+			if (url.includes('discord.com/api/v10/guilds/')) {
+				discordCalls.push({ url, method })
+				return new Response(null, { status: 204 })
+			}
+			if (url.includes('/v1/checkout/sessions/')) {
+				return jsonResponse({
+					id: 'cs_discord_pro',
+					customer: 'cus_discord_pro',
+					client_reference_id: user.linkReference,
+				})
+			}
+			if (url.includes('/v1/subscriptions')) {
+				return jsonResponse({
+					data: [
+						{
+							id: 'sub_discord_pro',
+							status: 'active',
+							cancel_at: null,
+							items: { data: [{ price: { id: 'price_pro' } }] },
+						},
+					],
+				})
+			}
+			return jsonResponse({ error: 'unexpected path' }, 500)
+		},
+	)
+	vi.stubGlobal('fetch', fetchStub)
+
+	const result = await linkStripeCustomerFromCheckoutSession({
+		env: createBillingEnv({
+			DISCORD_BOT_TOKEN: 'bot-token-test',
+			DISCORD_GUILD_ID: '111111111111111111',
+			DISCORD_MEMBER_ROLE_ID: '222222222222222222',
+			DISCORD_STANDARD_ROLE_ID: '444444444444444444',
+			DISCORD_PRO_ROLE_ID: '555555555555555555',
+		}),
+		user,
+		sessionId: 'cs_discord_pro',
+	})
+	expect(result.stripePlan).toBe('pro')
+	expect(discordCalls).toEqual(
+		expect.arrayContaining([
+			{
+				url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/222222222222222222',
+				method: 'PUT',
+			},
+			{
+				url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/444444444444444444',
+				method: 'DELETE',
+			},
+			{
+				url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/555555555555555555',
+				method: 'PUT',
+			},
+		]),
+	)
+	vi.unstubAllGlobals()
 })

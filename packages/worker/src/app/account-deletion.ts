@@ -59,7 +59,7 @@ import { deleteAllPackageRetrieverCacheEntriesForUser } from '#worker/package-re
 import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
 import { buildCommunityIconCacheKey } from '#worker/community/community-icon.ts'
 import { derivedCacheKeyPrefix } from '#worker/kv-cachified.ts'
-import { maybeRemoveDiscordMemberRole } from '#app/discord-guild-role.ts'
+import { maybeRemoveDiscordGuildRoles } from '#worker/discord/guild-role.ts'
 
 // Imported manually instead of via `@cloudflare/workers-oauth-provider` so
 // node-only unit tests can require this module without dragging in
@@ -1159,7 +1159,7 @@ export async function deleteUserAccount(input: {
 			return null
 		})
 	if (discordConnection?.provider_id) {
-		await maybeRemoveDiscordMemberRole({
+		await maybeRemoveDiscordGuildRoles({
 			env: input.env,
 			discordUserId: discordConnection.provider_id,
 		})

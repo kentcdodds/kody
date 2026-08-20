@@ -5,9 +5,10 @@ import { loadAccountConnectionsData } from '#app/account-connections-data.ts'
 import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
-	maybeAssignDiscordMemberRole,
-	maybeRemoveDiscordMemberRole,
-} from '#app/discord-guild-role.ts'
+	maybeRemoveDiscordGuildRoles,
+	maybeSyncDiscordGuildRolesForUser,
+	summarizeDiscordGuildRoleSync,
+} from '#worker/discord/guild-role.ts'
 import { isOauthProviderId } from '#app/oauth-providers.ts'
 import { type routes } from '#universal/routes.ts'
 
@@ -57,10 +58,13 @@ export function createAccountConnectionsApiHandler(env: Env) {
 						404,
 					)
 				}
-				const result = await maybeAssignDiscordMemberRole({
+				const summary = await maybeSyncDiscordGuildRolesForUser({
 					env,
+					userId: user.userId,
 					discordUserId: connection.provider_id,
 				})
+				const result =
+					'status' in summary ? summary : summarizeDiscordGuildRoleSync(summary)
 				void logAuditEvent({
 					category: 'auth',
 					action: 'discord_member_role_sync',
@@ -132,7 +136,7 @@ export function createAccountConnectionsApiHandler(env: Env) {
 			}
 
 			if (provider === 'discord') {
-				await maybeRemoveDiscordMemberRole({
+				await maybeRemoveDiscordGuildRoles({
 					env,
 					discordUserId: existing.provider_id,
 				})
