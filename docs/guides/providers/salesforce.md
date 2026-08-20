@@ -34,8 +34,8 @@ permissions in that org.
 - There is one OAuth app per Salesforce org you want to call. Production and
   sandbox are different login hosts and different connections.
 - The official helpers package is
-  [@kody/salesforce](https://kody.codes/@kody/salesforce). A saved integration is
-  credentials only; that package is the agent-facing surface.
+  [@kody/salesforce](https://kody.codes/@kody/salesforce). A saved integration
+  is credentials only; that package is the agent-facing surface.
 
 See the [OAuth guide](../oauth.md) for query parameters, confidential exchange,
 and reconnect behavior.
@@ -70,9 +70,8 @@ prefilled connect link, with the production callback and connect page on
 https://kody.codes/connect/oauth?provider=salesforce&authorizeUrl=https%3A%2F%2Flogin.salesforce.com%2Fservices%2Foauth2%2Fauthorize&tokenUrl=https%3A%2F%2Flogin.salesforce.com%2Fservices%2Foauth2%2Ftoken&apiBaseUrl=https%3A%2F%2Flogin.salesforce.com&scopes=api%20refresh_token%20offline_access&flow=confidential&allowedHosts=login.salesforce.com%2C*.salesforce.com%2C*.force.com%2C*.my.salesforce.com
 ```
 
-Decoded: authorize URL
-`https://login.salesforce.com/services/oauth2/authorize`, token URL
-`https://login.salesforce.com/services/oauth2/token`, `apiBaseUrl`
+Decoded: authorize URL `https://login.salesforce.com/services/oauth2/authorize`,
+token URL `https://login.salesforce.com/services/oauth2/token`, `apiBaseUrl`
 `https://login.salesforce.com`, `flow=confidential`, scopes
 `api refresh_token offline_access`, and `allowedHosts` covering the login host
 plus `*.salesforce.com`, `*.force.com`, and `*.my.salesforce.com` so REST calls
@@ -126,8 +125,8 @@ refresh.
 ## Troubleshooting
 
 - Redirect URI mismatch: the Connected App / External Client App callback must
-  be exactly `https://kody.codes/connect/oauth`. Do not register
-  `heykody.dev` — production callback and connect URLs are on `kody.codes`.
+  be exactly `https://kody.codes/connect/oauth`. Do not register `heykody.dev` —
+  production callback and connect URLs are on `kody.codes`.
 - Sandbox authorize or token errors: the connect URL still points at
   `login.salesforce.com`. Rebuild it with `test.salesforce.com` and a distinct
   integration name.
