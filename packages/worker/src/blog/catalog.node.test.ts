@@ -101,8 +101,8 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 		})
 	}
 
-	const comparison = getBlogPost('the-runtime-and-the-gateway')
-	expect(comparison?.title).toBe('The runtime and the gateway')
+	const comparison = getBlogPost('kody-vs-executor')
+	expect(comparison?.title).toBe('Kody vs Executor?')
 	expect(comparison?.date).toBe('2026-08-20')
 	const comparisonBody = (comparison?.body ?? '').replace(/\s+/g, ' ')
 	expect(comparisonBody).toContain('best of both worlds')

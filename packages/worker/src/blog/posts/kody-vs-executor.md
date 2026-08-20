@@ -1,5 +1,5 @@
 ---
-title: The runtime and the gateway
+title: Kody vs Executor?
 date: 2026-08-20
 description:
   Kody is your assistant's runtime and home. Executor is the integration gateway
