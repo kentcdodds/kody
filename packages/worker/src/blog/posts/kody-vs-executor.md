@@ -10,7 +10,7 @@ placeholder: false
 image: /images/kody-vs-executor.webp
 imageAlt:
   Kody, a 3D koala in a white jacket, and the cream Executor E logo size each
-  other up on a black background.
+  other up in a warm living room.
 ogImage: /images/kody-vs-executor-og.jpg
 ---
 
