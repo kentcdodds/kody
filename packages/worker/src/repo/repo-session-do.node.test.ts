@@ -2632,17 +2632,12 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 	})
 	const repoSession = new RepoSession(state, createEnv())
 
-	// Pre-push live tip matches session base; post-rejection tip has moved.
+	// Post-rejection tip refresh (precheck uses D1 published_commit only).
 	mockModule.resolveArtifactSourceHead.mockClear()
-	mockModule.resolveArtifactSourceHead
-		.mockResolvedValueOnce({
-			branch: 'main',
-			commit: 'commit-base',
-		})
-		.mockResolvedValueOnce({
-			branch: 'main',
-			commit: 'commit-published-new',
-		})
+	mockModule.resolveArtifactSourceHead.mockResolvedValueOnce({
+		branch: 'main',
+		commit: 'commit-published-new',
+	})
 
 	const result = await repoSession.publishSession({
 		sessionId: 'session-1',
@@ -2658,9 +2653,8 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 		message:
 			'The source repo rejected a non-fast-forward publish. Rebase the session before publishing.',
 	})
-	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalledTimes(2)
-	expect(mockModule.resolveArtifactSourceHead).toHaveBeenNthCalledWith(
-		2,
+	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalledTimes(1)
+	expect(mockModule.resolveArtifactSourceHead).toHaveBeenCalledWith(
 		expect.anything(),
 		'source-repo',
 	)
