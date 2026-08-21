@@ -521,10 +521,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			exception: {
 				values: [
 					{
-						value: durableObjectInstanceInactiveCloseMessage.replace(
-							/\.$/,
-							'',
-						),
+						value: durableObjectInstanceInactiveCloseMessage.replace(/\.$/, ''),
 					},
 				],
 			},
