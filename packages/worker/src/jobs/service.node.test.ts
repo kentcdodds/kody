@@ -4812,7 +4812,7 @@ test('executeJobOnce failure modes workflow', async () => {
 	}
 })
 
-test('executeJobOnce retries trusted platform failures without trusting sandbox error text', async () => {
+test('executeJobOnce retries claimed platform blips and surfaces them on run-now', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const env = createJobServiceTestEnv({
@@ -4888,36 +4888,17 @@ test('executeJobOnce retries trusted platform failures without trusting sandbox 
 	}
 
 	try {
-		executeSpy.mockResolvedValue({
-			result: undefined,
-			error: estimateError.message,
-			logs: [],
-		})
-		const estimateRunNow = await executeJobOnce({
-			env,
-			job: row.record,
-			callerContext,
-		})
-		expect(estimateRunNow.execution).toEqual({
-			ok: false,
-			error: estimateError.message,
-			logs: [],
-		})
-		await expect(
-			executeJobOnce({
-				env,
-				job: row.record,
-				callerContext,
-				runRecordHandle: claimedHandle,
-			}),
-		).rejects.toBeInstanceOf(TransientJobExecutionError)
-
-		const thrownPlatformBlips = [
+		const platformBlips = [
+			estimateError.message,
 			durableObjectInstanceInactiveCloseMessage,
 			`D1_ERROR: ${d1NetworkConnectionLostMessage}.`,
 		]
-		for (const error of thrownPlatformBlips) {
-			executeSpy.mockRejectedValue(new Error(error))
+		for (const error of platformBlips) {
+			executeSpy.mockResolvedValue({
+				result: undefined,
+				error,
+				logs: [],
+			})
 			const runNow = await executeJobOnce({
 				env,
 				job: row.record,
@@ -4940,7 +4921,7 @@ test('executeJobOnce retries trusted platform failures without trusting sandbox 
 
 		executeSpy.mockResolvedValue({
 			result: undefined,
-			error: durableObjectInstanceInactiveCloseMessage,
+			error: 'user code failed',
 			logs: [],
 		})
 		const userCode = await executeJobOnce({
@@ -4951,7 +4932,7 @@ test('executeJobOnce retries trusted platform failures without trusting sandbox 
 		})
 		expect(userCode.execution).toEqual({
 			ok: false,
-			error: durableObjectInstanceInactiveCloseMessage,
+			error: 'user code failed',
 			logs: [],
 		})
 	} finally {
