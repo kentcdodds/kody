@@ -1021,6 +1021,25 @@ class RunLogBase extends DurableObject<Env> {
 		)
 	}
 
+	private clearSystemPlatformInterruptTriageBeforeErrorFinish(
+		run: Pick<RunLogRowInput, 'id' | 'status'>,
+	) {
+		if (run.status !== 'error') return
+		this.ctx.storage.sql.exec(
+			`UPDATE runs
+			SET error_triage = NULL,
+				triage_note = NULL,
+				triaged_at = NULL,
+				triaged_by = NULL
+			WHERE id = ?
+				AND error_name = ?
+				AND triaged_by = ?`,
+			run.id,
+			runRecordPlatformInterruptedErrorName,
+			platformInterruptTriagedBy,
+		)
+	}
+
 	private replaceLogs(runId: string, logs: Array<RunLogEntryInput>) {
 		this.ctx.storage.sql.exec(`DELETE FROM run_logs WHERE run_id = ?`, runId)
 		const kept = logs.slice(-runRecordMaxLogEntriesPerRun)
@@ -1911,6 +1930,7 @@ class RunLogBase extends DurableObject<Env> {
 		// so a mid-unit SQL failure cannot leave a terminal run that suppresses
 		// missing derived side effects. Alarm / async retention stay outside.
 		this.transactionSyncWithMetaCache(() => {
+			this.clearSystemPlatformInterruptTriageBeforeErrorFinish(input.run)
 			this.upsertRun(input.run, 'replace')
 			this.replaceLogs(input.run.id, input.logs)
 			if (!existed) {

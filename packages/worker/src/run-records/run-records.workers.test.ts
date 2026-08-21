@@ -1013,6 +1013,48 @@ test('cap and stale retention journey', async () => {
 				triagedBy: 'system:platform-interrupt',
 			})
 		}
+
+		await finishRunRecord({
+			env,
+			handle: {
+				id: 'stale-scheduled-job',
+				userId,
+				startedAt: staleJobStartedAt,
+				persistence: 'eager',
+				context: baseContext({
+					surface: 'job',
+					idempotencyKey: 'scheduled-job:job-1:2026-08-21T00:00:00.000Z',
+				}),
+			},
+			status: 'error',
+			error: new Error('package failed after the delayed finish arrived'),
+		})
+		const lateError = await getRunRecord({
+			env,
+			userId,
+			runId: 'stale-scheduled-job',
+		})
+		expect(lateError?.run).toMatchObject({
+			status: 'error',
+			errorName: 'Error',
+			errorMessage: 'package failed after the delayed finish arrived',
+			errorTriage: null,
+			triageNote: null,
+			triagedAt: null,
+			triagedBy: null,
+		})
+		expect(
+			(
+				await getRunRecord({
+					env,
+					userId,
+					runId: 'stale-subscription-delivery',
+				})
+			)?.run,
+		).toMatchObject({
+			errorName: runRecordPlatformInterruptedErrorName,
+			errorTriage: 'ignored',
+		})
 	}
 
 	// --- a real late finish replaces reconciled platform interrupt ---
