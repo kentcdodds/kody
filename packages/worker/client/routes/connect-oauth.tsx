@@ -64,6 +64,12 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import { accountDisclosureCss } from './account-management-components.tsx'
 import {
+	connectOauthChooserFilterMinOptions,
+	connectOauthChooserListMaxHeight,
+	connectOauthChooserOptionMarkSize,
+	filterConnectOauthChooserOptions,
+} from './connect-oauth-chooser-list.ts'
+import {
 	type ConnectOauthConfig,
 	type ConnectOauthHostApprovalLink,
 	type ConnectOauthNextSteps,
@@ -236,6 +242,7 @@ export function ConnectOauthRoute(handle: Handle) {
 	let chooserOptions: Array<
 		NonNullable<ConnectOauthLoaderData['chooser']>['options'][number]
 	> = []
+	let chooserFilter = ''
 	let requestedProvider: string | null = null
 	/**
 	 * Scope checkboxes stay on this list while the user unchecks. BYO has no
@@ -299,6 +306,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		replaceConfirmed = false
 		renameInput = ''
 		chooserOptions = []
+		chooserFilter = ''
 		requestedProvider = null
 		offeredScopeMenu = []
 		hostApprovalLinks = []
@@ -1061,51 +1069,84 @@ export function ConnectOauthRoute(handle: Handle) {
 	}
 
 	const renderChooser = () => {
+		const showFilter =
+			chooserOptions.length > connectOauthChooserFilterMinOptions
+		const visibleOptions = showFilter
+			? filterConnectOauthChooserOptions(chooserOptions, chooserFilter)
+			: chooserOptions
 		return (
 			<section mix={css(cardCss)} data-testid="connect-oauth-chooser">
 				<p mix={css({ margin: 0, color: colors.text })}>
 					Pick a service to connect. Built-ins and your saved integrations start
 					from a name alone.
 				</p>
+				{showFilter ? (
+					<input
+						type="search"
+						value={chooserFilter}
+						placeholder="Filter services"
+						aria-label="Filter services"
+						data-testid="connect-oauth-chooser-filter"
+						mix={[
+							css(inputCss),
+							on('input', (event) => {
+								const target = event.currentTarget
+								if (target instanceof HTMLInputElement) {
+									chooserFilter = target.value
+									update()
+								}
+							}),
+						]}
+					/>
+				) : null}
 				{chooserOptions.length > 0 ? (
-					<ul
-						mix={css({
-							...listCss,
-							listStyle: 'none',
-							paddingLeft: 0,
-							display: 'grid',
-							gap: spacing.sm,
-						})}
-					>
-						{chooserOptions.map((option) => (
-							<li key={option.id}>
-								<a
-									href={option.href}
-									mix={css({
-										...insetCardCss,
-										display: 'grid',
-										gridTemplateColumns: 'auto 1fr',
-										gap: spacing.sm,
-										alignItems: 'center',
-										textDecoration: 'none',
-										color: 'inherit',
-									})}
-								>
-									<ProviderMark
-										providerKey={option.providerKey}
-										label={option.label}
-										logoPath={option.logoPath}
-									/>
-									<span mix={css({ display: 'grid', gap: spacing.xs })}>
-										<strong mix={css({ color: colors.text })}>
-											{option.label}
-										</strong>
-										<span mix={css(descriptionCss)}>{option.detail}</span>
-									</span>
-								</a>
-							</li>
-						))}
-					</ul>
+					visibleOptions.length > 0 ? (
+						<ul
+							data-testid="connect-oauth-chooser-list"
+							mix={css({
+								...listCss,
+								listStyle: 'none',
+								paddingLeft: 0,
+								margin: 0,
+								display: 'grid',
+								gap: spacing.sm,
+								maxHeight: connectOauthChooserListMaxHeight,
+								overflowY: 'auto',
+							})}
+						>
+							{visibleOptions.map((option) => (
+								<li key={option.id}>
+									<a
+										href={option.href}
+										mix={css({
+											...insetCardCss,
+											display: 'grid',
+											gridTemplateColumns: 'auto 1fr',
+											gap: spacing.sm,
+											alignItems: 'center',
+											textDecoration: 'none',
+											color: 'inherit',
+										})}
+									>
+										<ProviderMark
+											providerKey={option.providerKey}
+											label={option.label}
+											logoPath={option.logoPath}
+											size={connectOauthChooserOptionMarkSize}
+										/>
+										<span mix={css({ display: 'grid', gap: spacing.xs })}>
+											<strong mix={css({ color: colors.text })}>
+												{option.label}
+											</strong>
+											<span mix={css(descriptionCss)}>{option.detail}</span>
+										</span>
+									</a>
+								</li>
+							))}
+						</ul>
+					) : (
+						<p mix={css(descriptionCss)}>No services match that filter.</p>
+					)
 				) : (
 					<p mix={css(descriptionCss)}>
 						No built-in apps or saved connections are ready yet.

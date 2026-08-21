@@ -1020,9 +1020,53 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(chooserResponse.status).toBe(200)
 	const chooserHtml = await readResponseText(chooserResponse)
 	expect(chooserHtml).toContain('data-testid="connect-oauth-chooser"')
+	expect(chooserHtml).toContain('data-testid="connect-oauth-chooser-list"')
+	expect(chooserHtml).not.toContain(
+		'data-testid="connect-oauth-chooser-filter"',
+	)
 	expect(chooserHtml).toContain('Connect with Kody')
 	expect(chooserHtml).toContain(
 		'/connect/oauth?provider=google&platform=google',
+	)
+
+	const longChooserOptions = [
+		'google',
+		'github',
+		'slack',
+		'discord',
+		'notion',
+		'spotify',
+		'linear',
+	].map((slug) => ({
+		id: `platform:${slug}`,
+		href: `/connect/oauth?provider=${slug}&platform=${slug}`,
+		label: slug,
+		detail: "Connect with Kody's built-in app",
+		providerKey: slug,
+		logoPath: null,
+		kind: 'platform' as const,
+	}))
+	const longChooserResponse = await renderAppPage({
+		request: new Request('https://example.com/connect/oauth'),
+		env,
+		loaderData: {
+			connectOauth: {
+				ok: true,
+				provider: null,
+				integration: null,
+				chooser: { options: longChooserOptions },
+				redirectUri: 'https://example.com/connect/oauth',
+			},
+		},
+	})
+	expect(longChooserResponse.status).toBe(200)
+	const longChooserHtml = await readResponseText(longChooserResponse)
+	expect(longChooserHtml).toContain(
+		'data-testid="connect-oauth-chooser-filter"',
+	)
+	expect(longChooserHtml).toContain('data-testid="connect-oauth-chooser-list"')
+	expect(longChooserHtml).toContain(
+		'/connect/oauth?provider=linear&platform=linear',
 	)
 
 	const callbackResponse = await renderAppPage({
