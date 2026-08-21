@@ -761,12 +761,17 @@ async function readStorageEstimateChunkWithRetry(input: {
 					)
 				}
 			}
-		})().finally(() => {
+		})()
+		// Keep a fulfilled read in the map until this baseline returns so a
+		// timeout-then-success during backoff is reused instead of opening a
+		// second stub call. Only rejected RPCs are dropped so the next
+		// attempt can start a new one.
+		inflightReads.set(bucket.storageId, rpc)
+		void rpc.catch(() => {
 			if (inflightReads.get(bucket.storageId) === rpc) {
 				inflightReads.delete(bucket.storageId)
 			}
 		})
-		inflightReads.set(bucket.storageId, rpc)
 		return rpc
 	}
 	const readOne = (bucket: { storageId: string; kind: StorageBucketKind }) =>

@@ -205,6 +205,9 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 	// A late success after the per-attempt timeout must reuse the in-flight
 	// RPC. Opening a second stub call queues behind the abandoned one on the
 	// single-threaded DO and is how a 2.5s wake becomes four stacked timeouts.
+	// Fulfill during the first backoff (timeout + 50ms < 150ms) is the
+	// CodeRabbit case: dropping a fulfilled promise from the map would start
+	// a second RPC.
 	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
 		{ storageId: 'slow-wake', kind: 'unknown', estimatedBytes: null },
 	])
@@ -214,7 +217,7 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 		return new Promise<{ estimatedBytes: number }>((resolve) => {
 			setTimeout(() => {
 				resolve({ estimatedBytes: 48 })
-			}, storageEstimateReadTimeoutMs + 500)
+			}, storageEstimateReadTimeoutMs + 50)
 		})
 	}
 	vi.useFakeTimers()
@@ -227,7 +230,7 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 			requested: 1,
 		})
 		await vi.advanceTimersByTimeAsync(
-			storageEstimateReadTimeoutMs + storageEstimateReadRetryDelaysMs[0] + 500,
+			storageEstimateReadTimeoutMs + storageEstimateReadRetryDelaysMs[0],
 		)
 		await expect(assertion).resolves.toBeUndefined()
 		expect(slowWakeCalls).toBe(1)
