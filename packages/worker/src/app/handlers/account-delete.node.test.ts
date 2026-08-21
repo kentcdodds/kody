@@ -1,5 +1,6 @@
 import { beforeAll, expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
+import type * as AccountDeletion from '#app/account-deletion.ts'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { accountDeletionConfirmationPhrase } from '#universal/account-deletion-confirmation.ts'
 import { auditEventSummaries } from '#worker/test-support/audit-log-spy.ts'
@@ -18,8 +19,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 }))
 
 vi.mock('#app/account-deletion.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#app/account-deletion.ts')>()
+	const actual = await importOriginal<typeof AccountDeletion>()
 	return {
 		...actual,
 		deleteUserAccount: (...args: Array<unknown>) =>

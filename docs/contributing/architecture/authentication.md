@@ -293,16 +293,16 @@ Both are opt-in and adapted from the Epic Stack.
 `packages/worker/src/app/handlers/account-delete.ts` and orchestrated by
 `packages/worker/src/app/account-deletion.ts`.
 
-- Requires an active `kody_session` cookie and a JSON body with
-  `confirmation` set to `GOODBYE KODY`. Accounts that have a usable password
-  also re-enter `password`. Social-login and admin-created accounts with a
-  sentinel hash confirm with the phrase alone. Failures emit an audit event
-  with `action: 'account_delete'`, `result: 'failure'`.
-- The Account settings page opens a modal for this confirmation before
-  posting `POST /account/delete`.
-- Successful deletion best-effort fans `user.deleted` to admin-owned
-  packages. Successful password signup, social-login signup, and admin person
-  account creation fan `user.created`. See
+- Requires an active `kody_session` cookie and a JSON body with `confirmation`
+  set to `GOODBYE KODY`. Accounts that have a usable password also re-enter
+  `password`. Social-login and admin-created accounts with a sentinel hash
+  confirm with the phrase alone. Failures emit an audit event with
+  `action: 'account_delete'`, `result: 'failure'`.
+- The Account settings page opens a modal for this confirmation before posting
+  `POST /account/delete`.
+- Successful deletion best-effort fans `user.deleted` to admin-owned packages.
+  Successful password signup, social-login signup, and admin person account
+  creation fan `user.created`. See
   [the subscription guide](../../guides/package-subscriptions.md#user-created-and-deleted-admins).
 - On success, runs a full per-user cascade across:
   - all `user_id`-scoped D1 tables (children before parents),
