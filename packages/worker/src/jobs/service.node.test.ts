@@ -39,7 +39,6 @@ import {
 } from './types.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
 import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
-import { hostCaughtDurableObjectReset } from '#mcp/executor.ts'
 import { durableObjectInstanceInactiveCloseMessage } from '#worker/sentry-options.ts'
 import { d1NetworkConnectionLostMessage } from '#worker/d1-retry.ts'
 
@@ -4903,21 +4902,6 @@ test('executeJobOnce retries trusted platform failures without trusting sandbox 
 			ok: false,
 			error: estimateError.message,
 			logs: [],
-		})
-		await expect(
-			executeJobOnce({
-				env,
-				job: row.record,
-				callerContext,
-				runRecordHandle: claimedHandle,
-			}),
-		).rejects.toBeInstanceOf(TransientJobExecutionError)
-
-		executeSpy.mockResolvedValue({
-			result: undefined,
-			error: durableObjectInstanceInactiveCloseMessage,
-			logs: [],
-			[hostCaughtDurableObjectReset]: true,
 		})
 		await expect(
 			executeJobOnce({

@@ -2727,7 +2727,7 @@ test('runBundledModuleWithRegistry leaves claimed job storage-estimate failures 
 	}
 })
 
-test('runBundledModuleWithRegistry carries only host-stamped Durable Object resets', async () => {
+test('runBundledModuleWithRegistry retries transient Durable Object isolate resets', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -2773,7 +2773,6 @@ test('runBundledModuleWithRegistry carries only host-stamped Durable Object rese
 			error: 'Durable Object reset because its code was updated.',
 			logs: [],
 			hostMediatedSideEffects: cleanHostSideEffects,
-			[mcpExecutor.hostCaughtDurableObjectReset]: true,
 		})
 		.mockResolvedValueOnce({
 			result: { scanned: 2 },
@@ -2829,7 +2828,6 @@ test('runBundledModuleWithRegistry carries only host-stamped Durable Object rese
 			error: 'Durable Object reset because its code was updated.',
 			logs: [],
 			hostMediatedSideEffects: cleanHostSideEffects,
-			[mcpExecutor.hostCaughtDurableObjectReset]: true,
 		})
 		const exhaustedPending = runBundledModuleWithRegistry(
 			env,
@@ -2849,7 +2847,6 @@ test('runBundledModuleWithRegistry carries only host-stamped Durable Object rese
 		expect(exhausted.error).toBe(
 			'Durable Object reset because its code was updated.',
 		)
-		expect(mcpExecutor.hasHostCaughtDurableObjectReset(exhausted)).toBe(false)
 		expect(execute).toHaveBeenCalledTimes(3)
 		expect(finishSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -2867,85 +2864,10 @@ test('runBundledModuleWithRegistry carries only host-stamped Durable Object rese
 			result: undefined,
 			error: 'Durable Object reset because its code was updated.',
 			logs: [],
-			hostMediatedSideEffects: cleanHostSideEffects,
-		})
-		const userCode = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				runRecord: {
-					surface: 'export',
-					name: './scan',
-				},
-			},
-		)
-		expect(userCode.error).toBe(
-			'Durable Object reset because its code was updated.',
-		)
-		expect(mcpExecutor.hasHostCaughtDurableObjectReset(userCode)).toBe(false)
-		expect(execute).toHaveBeenCalledTimes(1)
-		expect(consoleWarn).not.toHaveBeenCalled()
-
-		execute.mockReset()
-		finishSpy.mockClear()
-		consoleWarn.mockClear()
-		execute.mockResolvedValue({
-			result: undefined,
-			error: 'Durable Object reset because its code was updated.',
-			logs: [],
-			hostMediatedSideEffects: cleanHostSideEffects,
-			[mcpExecutor.hostCaughtDurableObjectReset]: true,
-		})
-		const claimedHandle = {
-			...handle,
-			id: 'run-do-reset-claimed',
-			persistence: 'eager' as const,
-			context: {
-				surface: 'job' as const,
-				name: 'scan',
-				jobId: 'job-reset',
-				metadata: {},
-			},
-		}
-		const claimedPending = runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				runRecord: {
-					surface: 'job',
-					name: 'scan',
-					jobId: 'job-reset',
-				},
-				runRecordHandle: claimedHandle,
-			},
-		)
-		await vi.runAllTimersAsync()
-		const claimed = await claimedPending
-		expect(claimed.error).toBe(
-			'Durable Object reset because its code was updated.',
-		)
-		expect(mcpExecutor.hasHostCaughtDurableObjectReset(claimed)).toBe(true)
-		expect(execute).toHaveBeenCalledTimes(3)
-		expect(finishSpy).not.toHaveBeenCalled()
-
-		execute.mockReset()
-		finishSpy.mockClear()
-		consoleWarn.mockClear()
-		execute.mockResolvedValue({
-			result: undefined,
-			error: 'Durable Object reset because its code was updated.',
-			logs: [],
 			hostMediatedSideEffects: {
 				dispatcherAttempts: 1,
 				fetchAttempts: 0,
 			},
-			[mcpExecutor.hostCaughtDurableObjectReset]: true,
 		})
 		const dirty = await runBundledModuleWithRegistry(
 			env,

@@ -22,7 +22,6 @@ import {
 	formatExecutionOutput,
 	formatLimitedExecutionOutput,
 	getExecutionErrorDetails,
-	hasHostCaughtDurableObjectReset,
 	limitExecutionResultValue,
 	runWithDynamicWorkerEvaluationBudget,
 } from './executor.ts'
@@ -621,45 +620,6 @@ test('createExecuteExecutor returns sandbox timeout when Loader evaluate hangs',
 	expect(result.error).toContain('Execution timed out after 40ms:')
 	expect(result.result).toBeUndefined()
 	expect(Date.now() - startedAtMs).toBeLessThan(500)
-})
-
-test('createExecuteExecutor stamps only host-caught Durable Object reset errors', async () => {
-	const createLoader = (hostThrows: boolean) =>
-		({
-			get(_id: string, factory: () => FakeWorkerOptions) {
-				factory()
-				return {
-					getEntrypoint() {
-						return {
-							async evaluate() {
-								if (hostThrows) {
-									throw new Error(durableObjectCodeUpdatedResetMessage)
-								}
-								return {
-									result: undefined,
-									error: durableObjectCodeUpdatedResetMessage,
-									logs: [],
-								}
-							},
-						}
-					},
-				}
-			},
-		}) as unknown as Env['LOADER']
-	const execute = async (hostThrows: boolean) =>
-		await createExecuteExecutor({
-			env: createExecutorTestEnv(createLoader(hostThrows)),
-			exports: createExecutorTestExports(),
-			gatewayProps: createGatewayProps('reset-provenance-user'),
-		}).execute('async () => "unused"', [{ name: 'kody', fns: {} }])
-
-	const hostCaught = await execute(true)
-	const userCode = await execute(false)
-
-	expect(hostCaught.error).toBe(durableObjectCodeUpdatedResetMessage)
-	expect(hasHostCaughtDurableObjectReset(hostCaught)).toBe(true)
-	expect(userCode.error).toBe(durableObjectCodeUpdatedResetMessage)
-	expect(hasHostCaughtDurableObjectReset(userCode)).toBe(false)
 })
 
 test('createExecuteExecutor drains logs from an evaluation that settles just after the host timeout', async () => {
