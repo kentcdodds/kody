@@ -520,7 +520,8 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 												>
 													{client.revokedAt ? (
 														<>
-															Revoked <TimestampValue value={client.revokedAt} />
+															Revoked{' '}
+															<TimestampValue value={client.revokedAt} />
 														</>
 													) : (
 														'Active'

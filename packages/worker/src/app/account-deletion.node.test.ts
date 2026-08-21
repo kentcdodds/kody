@@ -1741,9 +1741,7 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 			'OAuth provider does not support client deletion; MCP OAuth clients were not removed.',
 		],
 	})
-	expect(missingDeleteRows.users).toEqual([
-		expect.objectContaining({ id: 1 }),
-	])
+	expect(missingDeleteRows.users).toEqual([expect.objectContaining({ id: 1 })])
 
 	const { db: oauthFailureDb, rows: oauthFailureRows } = createTestDb({
 		users: [{ id: 1, email: 'a@example.com' }],
