@@ -149,6 +149,7 @@ const routeDocumentHeads = {
 	},
 	[routePattern(routes.accountStars)]: titleOnly('Starred packages'),
 	[routePattern(routes.accountPasskeys)]: titleOnly('Passkeys'),
+	[routePattern(routes.accountMcpOauthClients)]: titleOnly('MCP OAuth clients'),
 	[routePattern(routes.accountSecrets)]: titleOnly('Secrets'),
 	[routePattern(routes.accountSecretNew)]: titleOnly('Secrets'),
 	[routePattern(routes.accountSecretsApprove)]: titleOnly('Secrets'),

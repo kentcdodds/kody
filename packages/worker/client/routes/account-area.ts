@@ -32,6 +32,10 @@ export {
 	accountPasskeysRouteLoader,
 } from './account-passkeys.tsx'
 export {
+	AccountMcpOauthClientsRoute,
+	accountMcpOauthClientsRouteLoader,
+} from './account-mcp-oauth-clients.tsx'
+export {
 	AccountSecretsRoute,
 	accountSecretsRouteLoader,
 } from './account-secrets.tsx'

@@ -82,6 +82,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountPasskeysRouteLoader,
 	),
+	[routePattern(routes.accountMcpOauthClients)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountMcpOauthClientsRouteLoader,
+	),
 	[routePattern(routes.accountSecrets)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountSecretsRouteLoader,
@@ -327,6 +331,9 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountPasskeys)]: (
 		<LazyAccountRoute render={(m) => <m.AccountPasskeysRoute />} />
+	),
+	[routePattern(routes.accountMcpOauthClients)]: (
+		<LazyAccountRoute render={(m) => <m.AccountMcpOauthClientsRoute />} />
 	),
 	[routePattern(routes.accountSecrets)]: (
 		<LazyAccountRoute render={(m) => <m.AccountSecretsRoute />} />

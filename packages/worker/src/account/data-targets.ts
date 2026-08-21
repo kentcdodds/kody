@@ -452,6 +452,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'db_user_id', table: 'password_resets' },
 	{ kind: 'db_user_id', table: 'user_roles' },
 	{ kind: 'db_user_id', table: 'passkeys' },
+	{ kind: 'db_user_id', table: 'user_mcp_oauth_clients' },
 	{ kind: 'db_user_id', table: 'oauth_connections' },
 	// Feature-flag overrides use the integer users.id FK (with ON DELETE
 	// CASCADE), but account deletion still issues an explicit DELETE so the

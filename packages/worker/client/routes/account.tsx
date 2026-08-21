@@ -1199,6 +1199,19 @@ export function AccountRoute(handle: Handle) {
 							</div>
 						</AccountManagementPanel>
 						<AccountManagementPanel
+							title="Advanced"
+							description="Optional tools for hosts that cannot finish dynamic OAuth on their own."
+						>
+							<div mix={css(accountActionsCss)}>
+								<a
+									href="/account/mcp-oauth-clients"
+									mix={css(compactGhostButtonCss)}
+								>
+									MCP OAuth clients
+								</a>
+							</div>
+						</AccountManagementPanel>
+						<AccountManagementPanel
 							title="Delete account"
 							description="Permanently delete this Kody account and every isolated store attached to it. This cannot be undone."
 						>

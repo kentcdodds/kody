@@ -65,6 +65,15 @@ MCP URL and setup prompt.
 - **Copilot App** — In the GitHub Copilot app, open settings → **MCP Servers**
   and add a custom remote HTTP server with the MCP URL. Servers from Copilot CLI
   or repository MCP config are also available in the app.
+- **Open WebUI** — Add an MCP Streamable HTTP connection to this deployment’s
+  MCP URL and use **OAuth 2.1** (dynamic registration) first. Enabling the tool
+  in a chat must open the Kody authorize window. If that window never opens on
+  one browser or device, retry from another. Hosts that need a pre-registered
+  confidential client can use **OAuth 2.1 (Static)** with a client minted at
+  Account → Advanced → MCP OAuth clients. Register the exact Open WebUI callback
+  (`{open-webui}/oauth/clients/mcp:{connection-id}/callback`) and set OAuth
+  Server URL to this deployment’s origin when discovery from the MCP URL is not
+  enough.
 
 ### Coding vs non-coding agents
 

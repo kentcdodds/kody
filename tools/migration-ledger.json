@@ -79,6 +79,10 @@
 		{
 			"filename": "0019-drop-invocation-token-sources.sql",
 			"sha256": "de2e5badf20b92e69237cd60ef7a9736adefb45e6d6895c0fcf40859ca86552f"
+		},
+		{
+			"filename": "0020-user-mcp-oauth-clients.sql",
+			"sha256": "6b60b6a0387fac63ac58f584adfab068cf2541d925ebd2734d04dabbe2672112"
 		}
 	]
 }

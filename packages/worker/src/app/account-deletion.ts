@@ -24,6 +24,7 @@ import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import { repoSessionIndexRpc } from '#worker/repo/repo-session-index-client.ts'
 import { listRepoSessionsByUser } from '#worker/repo/repo-sessions.ts'
 import { listAccountUserStorageIds } from '#worker/account/user-inventory.ts'
+import { deleteOwnedMcpOauthClients } from '#app/account-mcp-oauth-clients.ts'
 import {
 	accountUserDataTargets,
 	buildUserScopedDeleteOrUpdateSql,
@@ -78,6 +79,7 @@ type OAuthHelpersShape = {
 		options: { cursor: string | undefined },
 	): Promise<OAuthGrantPage>
 	revokeGrant(grantId: string, userId: string): Promise<unknown>
+	deleteClient?(clientId: string): Promise<unknown>
 }
 
 type AccountDeletionEnv = Env & {
@@ -1180,6 +1182,19 @@ export async function deleteUserAccount(input: {
 
 	const helpers = input.env.OAUTH_PROVIDER
 	if (helpers) {
+		if (helpers.deleteClient) {
+			const deleteClient = helpers.deleteClient
+			await deleteOwnedMcpOauthClients({
+				db: input.env.APP_DB,
+				helpers: {
+					async deleteClient(clientId) {
+						await deleteClient(clientId)
+					},
+				},
+				userId: input.dbUserId,
+				warnings,
+			})
+		}
 		try {
 			result.revokedOAuthGrants = await revokeAllOAuthGrants({
 				helpers,

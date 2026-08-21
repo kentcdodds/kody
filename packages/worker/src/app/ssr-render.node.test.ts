@@ -8,6 +8,7 @@ import {
 } from '#app/auth-session.ts'
 import { createAccountHandler } from '#app/handlers/account.ts'
 import { createAccountPasskeysHandler } from '#app/handlers/account-passkeys.ts'
+import { createAccountMcpOauthClientsHandler } from '#app/handlers/account-mcp-oauth-clients.ts'
 import { createAccountTwoFactorHandler } from '#app/handlers/account-two-factor.ts'
 import { createCommunityHandler } from '#app/handlers/community.tsx'
 import {
@@ -381,6 +382,21 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(readAppRootProps(passkeysHtml).loaderData?.accountPasskeys).toEqual({
 		ok: true,
 		passkeys: [],
+	})
+
+	const mcpOauthClientsResponse = await runHtmlHandler(
+		createAccountMcpOauthClientsHandler(env),
+		new Request('https://example.com/account/mcp-oauth-clients', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(mcpOauthClientsResponse.status).toBe(200)
+	const mcpOauthClientsHtml = await readResponseText(mcpOauthClientsResponse)
+	expect(
+		readAppRootProps(mcpOauthClientsHtml).loaderData?.accountMcpOauthClients,
+	).toEqual({
+		ok: true,
+		clients: [],
 	})
 
 	const accountLinkedResponse = await runHtmlHandler(

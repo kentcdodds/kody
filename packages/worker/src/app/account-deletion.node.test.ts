@@ -100,6 +100,20 @@ function createTestDb(
 							const userId = params[0] as string
 							if (
 								lower ===
+								'select client_id from user_mcp_oauth_clients where user_id = ? and revoked_at is null'
+							) {
+								const numericId = Number(params[0])
+								results = (rows.user_mcp_oauth_clients ?? [])
+									.filter(
+										(row) =>
+											Number(row['user_id']) === numericId &&
+											row['revoked_at'] == null,
+									)
+									.map((row) => ({ client_id: row['client_id'] }))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (
+								lower ===
 								'select deleting_at from users where stable_user_id = ?'
 							) {
 								results = (rows.users ?? [])
@@ -1664,6 +1678,40 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 	expect(revokeGrant).toHaveBeenCalledTimes(2)
 	expect(revokeResult.revokedOAuthGrants).toBe(2)
 	expect(revokeResult.warnings).toEqual([])
+
+	const deleteClient = vi.fn(async () => undefined)
+	const { db: ownedClientDb } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com' }],
+		user_mcp_oauth_clients: [
+			{
+				id: 'row-1',
+				user_id: 1,
+				client_id: 'owned-client',
+				revoked_at: null,
+			},
+			{
+				id: 'row-2',
+				user_id: 1,
+				client_id: 'already-revoked',
+				revoked_at: '2026-08-01T00:00:00.000Z',
+			},
+		],
+	})
+	await deleteUserAccount({
+		env: createSuccessfulDeletionEnv(ownedClientDb, {
+			OAUTH_PROVIDER: {
+				async listUserGrants() {
+					return { items: [], cursor: undefined }
+				},
+				revokeGrant: vi.fn(async () => undefined),
+				deleteClient,
+			},
+		}),
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+	expect(deleteClient).toHaveBeenCalledTimes(1)
+	expect(deleteClient).toHaveBeenCalledWith('owned-client')
 
 	const { db: oauthFailureDb, rows: oauthFailureRows } = createTestDb({
 		users: [{ id: 1, email: 'a@example.com' }],

@@ -804,6 +804,20 @@ export type AccountPasskeysLoaderData = {
 	passkeys: Array<AccountPasskeyListItem>
 }
 
+export type AccountMcpOauthClientListItem = {
+	id: string
+	label: string
+	clientId: string
+	redirectUris: Array<string>
+	createdAt: string
+	revokedAt: string | null
+}
+
+export type AccountMcpOauthClientsLoaderData = {
+	ok: true
+	clients: Array<AccountMcpOauthClientListItem>
+}
+
 export type PendingVerificationLoaderData = {
 	ok: true
 	email: string
@@ -1488,6 +1502,7 @@ export type AppLoaderData = {
 	pendingVerification?: PendingVerificationLoaderData
 	accountTwoFactor?: AccountTwoFactorLoaderData
 	accountPasskeys?: AccountPasskeysLoaderData
+	accountMcpOauthClients?: AccountMcpOauthClientsLoaderData
 	accountIntegrations?: AccountIntegrationsLoaderData
 	accountMcpServers?: AccountMcpServersLoaderData
 	accountPackages?: AccountPackagesLoaderData
