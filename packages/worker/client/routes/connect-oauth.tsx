@@ -1645,7 +1645,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						: null
 				}
 				if (!nextConfig) {
-					hasConfigError = true
+					if (!hrefStillCurrent()) return
 					if (chooserOptions.length === 0) {
 						const response = await fetch(
 							'/account/integrations.json?connectChooser=1',
@@ -1654,16 +1654,19 @@ export function ConnectOauthRoute(handle: Handle) {
 								credentials: 'include',
 							},
 						)
+						if (!hrefStillCurrent()) return
 						if (redirectToLoginOn401(response)) return
 						const payload = (await response.json().catch(() => null)) as {
 							ok?: boolean
 							chooser?: ConnectOauthLoaderData['chooser']
 						} | null
+						if (!hrefStillCurrent()) return
 						chooserOptions =
 							response.ok && payload?.ok === true
 								? (payload.chooser?.options ?? [])
 								: []
 					}
+					hasConfigError = true
 					setStatus('Missing required OAuth configuration parameters.', 'error')
 					return
 				}
