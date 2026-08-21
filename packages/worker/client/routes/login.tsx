@@ -896,14 +896,13 @@ export function LoginRoute(handle: Handle) {
 											key={provider.id}
 											type="button"
 											disabled={isSubmitting}
+											aria-label={`Continue with ${provider.label}`}
 											mix={[
 												css(oauthButtonCss),
 												on('click', () => handleProviderSignIn(provider.id)),
 											]}
 										>
-											<ProviderIcon providerId={provider.id} />
-											<span mix={css(visuallyHiddenCss)}>Continue with </span>
-											{provider.label}
+											<ProviderIcon providerId={provider.id} size="1.4rem" />
 										</button>
 									))}
 								</div>
@@ -1214,22 +1213,22 @@ const authDividerCss = {
 
 const authOauthCss = {
 	display: 'flex',
-	/*
-	 * `authProviders` comes from deployment config, so the count varies. Three
-	 * short labels still fit the 400px card, but each button is `flex: 1 1 0`
-	 * with `minWidth: 0` and no `text-overflow`, so a fourth provider would
-	 * squeeze them past their labels. Wrapping moves the extras to a new row.
-	 */
+	justifyContent: 'center',
 	flexWrap: 'wrap' as const,
 	gap: '0.7rem',
 }
 
 const oauthButtonCss = {
 	...getGhostButtonCss(),
-	flex: '1 1 0',
-	minWidth: 0,
-	fontSize: '0.95rem',
-	paddingInline: '0.6rem',
+	flex: '0 0 auto',
+	width: '3rem',
+	height: '3rem',
+	minWidth: '3rem',
+	padding: 0,
+	'& svg': {
+		display: 'block',
+		flexShrink: 0,
+	},
 }
 
 const authFootCss = {

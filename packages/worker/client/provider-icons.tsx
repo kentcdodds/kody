@@ -111,9 +111,11 @@ function renderNotionIcon(size: string) {
 }
 
 function renderDiscordIcon(size: string) {
+	// Clyde sits with more padding than the other 24×24 marks, so crop the
+	// viewBox so it optically matches GitHub/Google/X at the same size.
 	return (
 		<svg
-			viewBox="0 0 24 24"
+			viewBox="0 2.25 24 19.5"
 			width={size}
 			height={size}
 			aria-hidden="true"
