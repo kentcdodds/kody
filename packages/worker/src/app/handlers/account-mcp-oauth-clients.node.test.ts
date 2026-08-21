@@ -70,7 +70,7 @@ const userOneSession: AuthSession = {
 	rememberMe: false,
 }
 
-test('account MCP OAuth clients API mints once, lists without the secret, and isolates users', async () => {
+test('account MCP OAuth clients API mints, lists without the secret, isolates users, and gates auth', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
@@ -89,6 +89,12 @@ test('account MCP OAuth clients API mints once, lists without the secret, and is
 		createAppEnv(db, helpers),
 	)
 	const cookie = await createAuthCookie(userOneSession, false)
+
+	const anonymous = await runHandler(
+		handler,
+		new Request('http://example.com/account/mcp-oauth-clients.json'),
+	)
+	expect(anonymous.status).toBe(401)
 
 	const created = await runHandler(
 		handler,
@@ -177,31 +183,30 @@ test('account MCP OAuth clients API mints once, lists without the secret, and is
 		clients: Array<{ revokedAt: string | null }>
 	}
 	expect(revokedPayload.clients[0]?.revokedAt).toBeTruthy()
-})
 
-test('account MCP OAuth clients API requires a verified email to mint', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
-	const db = createD1FromSqlite(sqlite)
-	await seedUser(sqlite, {
+	const unverifiedSqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(
+		unverifiedSqlite,
+		new URL('../../../migrations/', import.meta.url),
+	)
+	const unverifiedDb = createD1FromSqlite(unverifiedSqlite)
+	await seedUser(unverifiedSqlite, {
 		id: 1,
 		email: 'one@example.com',
 		username: 'one',
 		verified: false,
 	})
-	const handler = createAccountMcpOauthClientsApiHandler(
-		createAppEnv(db, {
-			createClient: vi.fn(),
-			deleteClient: vi.fn(),
-		}),
-	)
-	const response = await runHandler(
-		handler,
+	const unverified = await runHandler(
+		createAccountMcpOauthClientsApiHandler(
+			createAppEnv(unverifiedDb, {
+				createClient: vi.fn(),
+				deleteClient: vi.fn(),
+			}),
+		),
 		new Request('http://example.com/account/mcp-oauth-clients.json', {
 			method: 'POST',
 			headers: {
-				Cookie: await createAuthCookie(userOneSession, false),
+				Cookie: cookie,
 				'Content-Type': 'application/json',
 			},
 			body: JSON.stringify({
@@ -211,19 +216,5 @@ test('account MCP OAuth clients API requires a verified email to mint', async ()
 			}),
 		}),
 	)
-	expect(response.status).toBe(403)
-})
-
-test('account MCP OAuth clients API rejects unauthenticated requests', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
-	const handler = createAccountMcpOauthClientsApiHandler(
-		createAppEnv(createD1FromSqlite(sqlite)),
-	)
-	const response = await runHandler(
-		handler,
-		new Request('http://example.com/account/mcp-oauth-clients.json'),
-	)
-	expect(response.status).toBe(401)
+	expect(unverified.status).toBe(403)
 })

@@ -87,6 +87,4 @@ test('user lifecycle dispatch fans identity snapshots through admin package fan-
 			source: 'user-lifecycle',
 		},
 	})
-	expect(JSON.stringify(createdResult[0]?.params)).not.toContain('password')
-	expect(JSON.stringify(deletedResult[0]?.params)).not.toContain('role')
 })

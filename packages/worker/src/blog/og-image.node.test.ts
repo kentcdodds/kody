@@ -15,33 +15,31 @@ function assertPng(png: Uint8Array) {
 	}
 }
 
-test('blog OG renderer draws the post title and description', async () => {
-	const post = getBlogPost('your-assistants-home')
-	expect(post).toBeDefined()
+test('blog OG renderer produces PNG for catalog posts with and without JPEG artwork', async () => {
+	const textOnly = getBlogPost('your-assistants-home')
+	expect(textOnly).toBeDefined()
+	assertPng(
+		await renderBlogPostOgImage({
+			title: textOnly!.title,
+			description: textOnly!.description,
+			date: textOnly!.date,
+		}),
+	)
 
-	const png = await renderBlogPostOgImage({
-		title: post!.title,
-		description: post!.description,
-		date: post!.date,
-	})
-	assertPng(png)
-})
-
-test('blog OG renderer composes title, description, and JPEG artwork', async () => {
-	const post = getBlogPost('kody-vs-executor')
-	expect(post).toBeDefined()
+	const withArt = getBlogPost('kody-vs-executor')
+	expect(withArt).toBeDefined()
 	const artwork = readFileSync(
 		join(
 			dirname(fileURLToPath(import.meta.url)),
 			'../../public/images/kody-vs-executor-og.jpg',
 		),
 	)
-
-	const png = await renderBlogPostOgImage({
-		title: post!.title,
-		description: post!.description,
-		date: post!.date,
-		imageDataUri: `data:image/jpeg;base64,${bytesToBase64(artwork)}`,
-	})
-	assertPng(png)
+	assertPng(
+		await renderBlogPostOgImage({
+			title: withArt!.title,
+			description: withArt!.description,
+			date: withArt!.date,
+			imageDataUri: `data:image/jpeg;base64,${bytesToBase64(artwork)}`,
+		}),
+	)
 })

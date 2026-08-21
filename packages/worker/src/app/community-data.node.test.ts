@@ -230,13 +230,15 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 	expect(forked?.listing.viewerInstall?.status).toBe('installed')
 })
 
-test('community index load is memoized per request', async () => {
+test('community index is memoized per request and forwards newest sort to loaders', async () => {
 	resetDataCacheForTests()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.listCommunityListingsWithAggregates.mockReset()
+	mockModule.searchCommunityListings.mockReset()
 	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
 		sampleListing,
 	])
+	mockModule.searchCommunityListings.mockResolvedValue([sampleListing])
 
 	const request = new Request('https://example.com/community')
 	const first = loadCommunityIndexData({} as Env, request)
@@ -248,18 +250,8 @@ test('community index load is memoized per request', async () => {
 		1,
 	)
 	expect((await first).sort).toBe('best')
-})
 
-test('community index newest sort is parsed and passed to listing loaders', async () => {
-	resetDataCacheForTests()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	mockModule.listCommunityListingsWithAggregates.mockReset()
-	mockModule.searchCommunityListings.mockReset()
-	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
-		sampleListing,
-	])
-	mockModule.searchCommunityListings.mockResolvedValue([sampleListing])
-
+	mockModule.listCommunityListingsWithAggregates.mockClear()
 	const newestBrowse = await loadCommunityIndexData(
 		{} as Env,
 		new Request('https://example.com/community?sort=newest'),

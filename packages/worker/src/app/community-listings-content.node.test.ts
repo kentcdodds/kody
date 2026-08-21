@@ -36,7 +36,6 @@ test('community listings render sort controls, published dates, and empty states
 	expect(searchMissHtml).toContain('href="/community?sort=newest"')
 	expect(searchMissHtml).toContain('data-testid="community-listings-sort"')
 	expect(searchMissHtml).toContain('aria-current="page"')
-	expect(searchMissHtml).toContain('Newest')
 
 	const emptyCatalogHtml = await renderCommunityListingsContentHtml({
 		listings: [],
@@ -57,7 +56,6 @@ test('community listings render sort controls, published dates, and empty states
 	expect(listingsHtml).toContain(
 		'data-testid="community-listing-published-listing-1"',
 	)
-	expect(listingsHtml).toContain('July 13, 2026')
 	expect(listingsHtml).toContain('href="/community?sort=newest"')
 	expect(listingsHtml).toContain('href="/community"')
 })

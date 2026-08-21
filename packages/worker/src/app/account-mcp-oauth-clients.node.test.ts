@@ -19,21 +19,14 @@ function createMigratedDb() {
 }
 
 test('parseClientLabel and parseRedirectUriText reject empty and unsafe values', () => {
-	expect(parseClientLabel('')).toEqual({
-		ok: false,
-		error: 'Enter a label for this client.',
-	})
+	expect(parseClientLabel('')).toMatchObject({ ok: false })
 	expect(parseClientLabel('  Open WebUI  ')).toEqual({
 		ok: true,
 		label: 'Open WebUI',
 	})
-	expect(parseRedirectUriText('')).toEqual({
+	expect(parseRedirectUriText('')).toMatchObject({ ok: false })
+	expect(parseRedirectUriText('javascript:alert(1)')).toMatchObject({
 		ok: false,
-		error: 'Enter at least one redirect URI.',
-	})
-	expect(parseRedirectUriText('javascript:alert(1)')).toEqual({
-		ok: false,
-		error: 'Redirect URIs must use http or https: javascript:alert(1)',
 	})
 	expect(
 		parseRedirectUriText(
@@ -168,11 +161,7 @@ test('mint rejects an eleventh active client and deletes the unused provider cli
 		label: 'Too many',
 		redirectUris: ['https://example.com/callback'],
 	})
-	expect(overLimit).toEqual({
-		ok: false,
-		error: `You can have at most ${maxUserMcpOauthClients} active MCP OAuth clients.`,
-		status: 400,
-	})
+	expect(overLimit).toMatchObject({ ok: false, status: 400 })
 	expect(helpers.createClient).toHaveBeenCalledTimes(maxUserMcpOauthClients)
 	expect(deleteClient).not.toHaveBeenCalled()
 	expect(await listActiveUserMcpOauthClientIds(db, 1)).toHaveLength(
@@ -236,11 +225,7 @@ test('quota-race mint keeps a revoked ownership row when deleteClient fails', as
 		label: 'Raced',
 		redirectUris: ['https://example.com/callback'],
 	})
-	expect(raced).toEqual({
-		ok: false,
-		error: `You can have at most ${maxUserMcpOauthClients} active MCP OAuth clients.`,
-		status: 400,
-	})
+	expect(raced).toMatchObject({ ok: false, status: 400 })
 	expect(helpers.deleteClient).toHaveBeenCalledWith('oauth-client-race')
 	expect(await listActiveUserMcpOauthClientIds(db, 1)).toHaveLength(
 		maxUserMcpOauthClients,

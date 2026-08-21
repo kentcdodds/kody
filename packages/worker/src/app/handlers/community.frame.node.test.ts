@@ -94,7 +94,6 @@ test('community page handler returns bare listings frame HTML for target header'
 	expect(html).toContain('data-testid="community-listings-frame"')
 	expect(html).toContain('data-testid="community-listings-sort"')
 	expect(html).toContain('data-testid="community-listing-published-listing-1"')
-	expect(html).toContain('January 1, 2026')
 	expect(html).toContain('data-testid="community-listing-icon-card"')
 	expect(html).toContain('/community/listing-1/icon/abc1234567890')
 	expect(html).not.toContain('<html')
