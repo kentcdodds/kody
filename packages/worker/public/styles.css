@@ -96,7 +96,11 @@
 	--color-text: oklch(0.22 0.012 260);
 	--color-text-muted: oklch(0.44 0.014 260);
 	--color-border: oklch(0.84 0.008 250);
-	--color-danger: oklch(0.55 0.19 25);
+	/* One step darker than the 0.55 this started at, which measured 4.34:1 on
+	   --color-background for 15px danger-pill text (Delete account on
+	   /account) — just under the 4.5:1 AA floor. 0.535 reads 4.64:1 there
+	   and keeps filled danger buttons further above the floor too. */
+	--color-danger: oklch(0.535 0.19 25);
 	--color-danger-hover: oklch(0.5 0.18 25);
 	--color-on-danger: oklch(0.985 0.005 25);
 	/* Warm light cast by the lantern Kody holds (landing + auth heroes) */
