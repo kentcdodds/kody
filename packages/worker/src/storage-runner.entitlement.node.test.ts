@@ -1,7 +1,10 @@
 import { expect, test, vi } from 'vitest'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
-import { storageEstimateReadRetryDelaysMs } from '#worker/storage-runner.ts'
+import {
+	storageEstimateReadRetryDelaysMs,
+	storageEstimateReadTimeoutMs,
+} from '#worker/storage-runner.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
 const totalRetryDelayMs = storageEstimateReadRetryDelaysMs.reduce(
@@ -198,6 +201,68 @@ test('assertStorageRunnerWriteWithinEntitlement retries estimate reads with back
 	expect(callCounts.get('fast-fail')).toBe(2)
 	expect(callCounts.get('slow-ok')).toBe(1)
 	expect(maxInFlight).toBe(chunkStorageIds.length)
+
+	// A late success after the per-attempt timeout must reuse the in-flight
+	// RPC. Opening a second stub call queues behind the abandoned one on the
+	// single-threaded DO and is how a 2.5s wake becomes four stacked timeouts.
+	mockModule.listUserStorageBucketEstimates.mockResolvedValue([
+		{ storageId: 'slow-wake', kind: 'unknown', estimatedBytes: null },
+	])
+	let slowWakeCalls = 0
+	const slowWake = () => {
+		slowWakeCalls += 1
+		return new Promise<{ estimatedBytes: number }>((resolve) => {
+			setTimeout(() => {
+				resolve({ estimatedBytes: 48 })
+			}, storageEstimateReadTimeoutMs + 500)
+		})
+	}
+	vi.useFakeTimers()
+	try {
+		const assertion = assertStorageRunnerWriteWithinEntitlement({
+			env: createEstimateEnv(() => slowWake()),
+			userId: 'user-1',
+			email: null,
+			storageId: 'slow-wake',
+			requested: 1,
+		})
+		await vi.advanceTimersByTimeAsync(
+			storageEstimateReadTimeoutMs + storageEstimateReadRetryDelaysMs[0] + 500,
+		)
+		await expect(assertion).resolves.toBeUndefined()
+		expect(slowWakeCalls).toBe(1)
+	} finally {
+		vi.useRealTimers()
+	}
+
+	const hungRead = () => new Promise<{ estimatedBytes: number }>(() => {})
+	let hungCalls = 0
+	vi.useFakeTimers()
+	try {
+		const assertion = assertStorageRunnerWriteWithinEntitlement({
+			env: createEstimateEnv(() => {
+				hungCalls += 1
+				return hungRead()
+			}),
+			userId: 'user-1',
+			email: null,
+			storageId: 'slow-wake',
+			requested: 1,
+		})
+		// Attach before advancing timers so the rejection is not unhandled.
+		// oxlint-disable-next-line vitest/valid-expect
+		const expectation = expect(assertion).rejects.toThrow(
+			`Unable to verify the storage byte entitlement because the bucket estimate for storageId "slow-wake" could not be read after ${maxEstimateReadAttempts} attempts.`,
+		)
+		await vi.advanceTimersByTimeAsync(
+			totalRetryDelayMs +
+				storageEstimateReadTimeoutMs * maxEstimateReadAttempts,
+		)
+		await expectation
+		expect(hungCalls).toBe(1)
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 // Regression for the 2026-07-30 production incidents: a tiny first write of a
