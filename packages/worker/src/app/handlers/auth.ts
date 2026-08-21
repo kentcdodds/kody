@@ -49,6 +49,7 @@ import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
 import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
+import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
@@ -431,6 +432,15 @@ export function createAuthHandler(env: Env) {
 				await followDefaultWelcomeAccounts({
 					db: env.APP_DB,
 					followerUserId: record.stableUserId,
+				})
+				scheduleUserCreatedEvent({
+					env,
+					user: {
+						id: record.stableUserId,
+						username: normalizedUsername,
+						email: normalizedEmail,
+					},
+					source: 'signup',
 				})
 
 				const cookie = await createAuthCookie(

@@ -106,7 +106,10 @@ export function PrivacyRoute(_handle: Handle) {
 					email, created and updated timestamps, and role assignments. The admin
 					UI lists users and roles; it does not expose account content. Platform
 					feedback you explicitly approve for admin review is a narrow
-					user-content exception.
+					user-content exception. Admin-configured notification packages may
+					also receive a metadata-only notice when a person account is created
+					or deleted: user id, username, email, and the create source or delete
+					timestamp.
 				</p>
 				<p mix={css(descriptionCss)}>
 					Admins also moderate public community listings and attributed
@@ -276,8 +279,10 @@ export function PrivacyRoute(_handle: Handle) {
 				<h2 mix={css(cardTitleCss)}>Your choices and rights</h2>
 				<p mix={css(descriptionCss)}>
 					Use Account settings to export a copy of your Kody data or delete your
-					account. You can also ask to access, correct, delete, restrict, or
-					receive your personal data, or object to its processing, by emailing{' '}
+					account. Deletion asks you to type GOODBYE KODY in a confirmation
+					modal, and to re-enter your password when the account has one. You can
+					also ask to access, correct, delete, restrict, or receive your
+					personal data, or object to its processing, by emailing{' '}
 					<a href="mailto:support@kody.codes" mix={css(mutedLinkCss)}>
 						support@kody.codes
 					</a>

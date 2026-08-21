@@ -31,6 +31,7 @@ import {
 	accountProfileApiPath,
 	readJson,
 } from '#client/routes/account-approval-shared.ts'
+import { AccountDeletePanel } from '#client/routes/account-delete-panel.tsx'
 import {
 	AccountManagementMessage,
 	AccountManagementPanel,
@@ -157,6 +158,7 @@ export function AccountRoute(handle: Handle) {
 	let connectionsBusy = false
 	let connections: Array<AccountConnectionListItem> = []
 	let canDisconnect = true
+	let hasUsablePassword = false
 	let availableProviders: Array<{ id: string; label: string }> = []
 	let canSyncDiscordRoles = false
 	let connectionsMessage: { text: string; tone: 'error' | 'info' } | null = null
@@ -168,6 +170,7 @@ export function AccountRoute(handle: Handle) {
 	function applyConnectionsPayload(payload: AccountConnectionsLoaderData) {
 		connections = payload.connections
 		canDisconnect = payload.canDisconnect
+		hasUsablePassword = payload.hasUsablePassword
 		availableProviders = payload.availableProviders
 		canSyncDiscordRoles = payload.canSyncDiscordRoles
 	}
@@ -703,7 +706,7 @@ export function AccountRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Account"
-					description="Manage your profile, security settings, connected accounts, and data export."
+					description="Manage your profile, security settings, connected accounts, and data."
 					currentHref={currentHref}
 				/>
 
@@ -1194,6 +1197,12 @@ export function AccountRoute(handle: Handle) {
 									Download account export
 								</a>
 							</div>
+						</AccountManagementPanel>
+						<AccountManagementPanel
+							title="Delete account"
+							description="Permanently delete this Kody account and every isolated store attached to it. This cannot be undone."
+						>
+							<AccountDeletePanel hasUsablePassword={hasUsablePassword} />
 						</AccountManagementPanel>
 					</>
 				) : null}

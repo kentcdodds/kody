@@ -1,7 +1,18 @@
 import { afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
-import { createAuthHandler } from '#app/handlers/auth.ts'
+
+const lifecycleMocks = vi.hoisted(() => ({
+	scheduleUserCreatedEvent: vi.fn(),
+}))
+
+vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
+	scheduleUserCreatedEvent: (...args: Array<unknown>) =>
+		lifecycleMocks.scheduleUserCreatedEvent(...args),
+	scheduleUserDeletedEvent: vi.fn(),
+}))
+
+const { createAuthHandler } = await import('#app/handlers/auth.ts')
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import {
 	consoleError,
@@ -593,6 +604,28 @@ test('auth handler login and signup workflow', async () => {
 		'login:success',
 		'login:success',
 	])
+})
+
+test('successful open signup schedules an admin user.created event', async () => {
+	lifecycleMocks.scheduleUserCreatedEvent.mockClear()
+	const context = createAuthTestContext({ signupMode: 'open' })
+	const email = 'newbie@example.com'
+	const response = await context.request({
+		email,
+		username: 'newbie',
+		password: 'password123',
+		mode: 'signup',
+	})
+	expect(response.status).toBe(200)
+	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
+		env: expect.anything(),
+		source: 'signup',
+		user: {
+			id: await createStableUserIdFromEmail(email),
+			username: 'newbie',
+			email,
+		},
+	})
 })
 
 test('signup fails when the default user role cannot be assigned', async () => {

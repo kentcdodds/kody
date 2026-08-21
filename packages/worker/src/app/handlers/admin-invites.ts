@@ -11,6 +11,7 @@ import {
 	adminCreateUserWithPasswordSetup,
 	AdminCreateUserError,
 } from '#worker/identity/admin-user-creation.ts'
+import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 import {
 	createInvite,
 	normalizeInviteCode,
@@ -108,6 +109,15 @@ async function handleCreateUserAction(input: {
 			email,
 			username,
 			setupLinkOrigin: input.url,
+		})
+		scheduleUserCreatedEvent({
+			env: input.env,
+			user: {
+				id: createdUser.stableUserId,
+				username: createdUser.username,
+				email: createdUser.email,
+			},
+			source: 'admin',
 		})
 		const requestIp = getRequestIp(input.request) ?? undefined
 		void logAuditEvent({

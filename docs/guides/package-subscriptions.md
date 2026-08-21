@@ -9,8 +9,9 @@ summary:
   reconnect notifiers, mcp.server.disconnected / mcp.server.reconnected
   connection episodes, consent-gated admin-only platform.feedback.submitted
   notification guidance, admin-only community.activity.recorded /
-  community.listing.published community notifications, and admin-only
-  status.incident.opened / status.incident.resolved operator telemetry.
+  community.listing.published community notifications, admin-only
+  status.incident.opened / status.incident.resolved operator telemetry, and
+  admin-only user.created / user.deleted account lifecycle notifications.
 category: platform
 ---
 
@@ -129,8 +130,9 @@ publish result. Failed and non-fast-forward results have no test hints.
 - **Admin-only topics** (`email.system-message.received`,
   `platform.feedback.submitted`, `community.activity.recorded`,
   `community.listing.published`, `status.incident.opened`,
-  `status.incident.resolved`) gate **production** fan-out on admin role;
-  synthetic dispatch still runs your handler directly for smoke testing.
+  `status.incident.resolved`, `user.created`, `user.deleted`) gate
+  **production** fan-out on admin role; synthetic dispatch still runs your
+  handler directly for smoke testing.
 - **Activity.** Synthetic runs appear on the `subscription` surface. Handler
   failures do not emit `run.error.recorded` (recursion guard).
 
@@ -905,3 +907,50 @@ probe reason (`timeout`, `error`, …) or `null`. Timestamps are ISO-8601 UTC. T
 event omits probe logs, health-check bodies, user identities, secrets, and
 unrelated account content. Idempotency keys include the topic, component,
 timestamps, and package id so a retried POST does not double-invoke.
+
+## User created and deleted (admins)
+
+Password signup, social-login signup, and admin-created person accounts dispatch
+`user.created` after the account row and default `user` role exist. Self-service
+account deletion at `/account` dispatches `user.deleted` after the per-user
+cascade finishes. Platform accounts (reserved official package owners) do not
+emit `user.created`.
+
+Production fan-out selects only packages whose owners hold the admin role at
+dispatch time. A non-admin package may declare the topic, but it never receives
+the event. Role revocation stops delivery on the next create or delete.
+
+There is no Queue / DLQ for these topics in v1. Dispatch is best-effort after
+the account change commits: a failed invoke is logged and does not fail signup,
+admin create, or account deletion.
+
+Handlers receive a metadata-only identity snapshot:
+
+```ts
+type UserCreatedEvent = {
+	event: 'user.created'
+	user: {
+		id: string
+		username: string
+		email: string
+	}
+	source: 'signup' | 'oauth' | 'admin'
+	created_at: string
+}
+
+type UserDeletedEvent = {
+	event: 'user.deleted'
+	user: {
+		id: string
+		username: string
+		email: string
+	}
+	deleted_at: string
+}
+```
+
+`user.id` is the stable account user id. `source` is the create path that
+committed. Timestamps are ISO-8601 UTC. The event omits passwords, roles, plan,
+secrets, packages, and unrelated account content. Notification copies already
+delivered outside Kody cannot be recalled after account deletion. Idempotency
+keys include the topic, user id, timestamp, and package id.

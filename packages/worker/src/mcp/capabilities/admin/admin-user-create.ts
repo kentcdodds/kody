@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { adminCreateUserWithPasswordSetup } from '#worker/identity/admin-user-creation.ts'
+import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -58,6 +59,15 @@ export const adminUserCreateCapability = defineDomainCapability(
 						email: args.email,
 						username: args.username,
 						setupLinkOrigin: ctx.callerContext.baseUrl,
+					})
+					scheduleUserCreatedEvent({
+						env: ctx.env,
+						user: {
+							id: createdUser.stableUserId,
+							username: createdUser.username,
+							email: createdUser.email,
+						},
+						source: 'admin',
 					})
 					const { userId: _userId, ...boundaryUser } = createdUser
 					return { createdUser: boundaryUser }

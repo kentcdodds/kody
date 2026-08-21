@@ -720,6 +720,7 @@ export type AccountConnectionsLoaderData = {
 	ok: true
 	connections: Array<AccountConnectionListItem>
 	canDisconnect: boolean
+	hasUsablePassword: boolean
 	availableProviders: Array<{ id: string; label: string }>
 	/** True when Discord is connected and operator guild-role sync is configured. */
 	canSyncDiscordRoles: boolean

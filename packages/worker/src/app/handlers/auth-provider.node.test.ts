@@ -1,13 +1,24 @@
 import { DatabaseSync } from 'node:sqlite'
 import { HttpResponse, http } from 'msw'
-import { afterAll, afterEach, beforeAll, expect, test } from 'vitest'
+import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAccountConnectionsApiHandler } from '#app/handlers/account-connections.ts'
-import {
+
+const lifecycleMocks = vi.hoisted(() => ({
+	scheduleUserCreatedEvent: vi.fn(),
+}))
+
+vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
+	scheduleUserCreatedEvent: (...args: Array<unknown>) =>
+		lifecycleMocks.scheduleUserCreatedEvent(...args),
+	scheduleUserDeletedEvent: vi.fn(),
+}))
+
+const {
 	createAuthProviderCallbackHandler,
 	createAuthProviderStartHandler,
 	createAuthProvidersApiHandler,
-} from '#app/handlers/auth-provider.ts'
+} = await import('#app/handlers/auth-provider.ts')
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
@@ -320,6 +331,15 @@ test('github sign-in creates a verified account, then signs it back in', async (
 			reason: 'provider=github',
 		}),
 	)
+	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
+		env: expect.anything(),
+		source: 'oauth',
+		user: {
+			id: await createStableUserIdFromEmail('octo@example.com'),
+			username: 'octo-cat',
+			email: 'octo@example.com',
+		},
+	})
 
 	// A second sign-in with the same provider identity reuses the account.
 	const secondStart = await startProviderFlow(

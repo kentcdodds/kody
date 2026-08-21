@@ -364,6 +364,14 @@ and unrelated account content. This is operator telemetry about kody itself, not
 a user-data exception. Delivery is best-effort (no Queue); `/status.json`
 polling remains the backstop.
 
+**Admins can subscribe to person-account create and delete.** Password signup,
+social-login signup, and admin-created person accounts fan `user.created`.
+Self-service account deletion fans `user.deleted`. Fan-out selects only packages
+whose owners hold the admin role at dispatch time. The event contains the stable
+user id, username, email, create source or delete timestamp. It omits passwords,
+roles, plan, secrets, and unrelated account content. Delivery is best-effort (no
+Queue) after the account change commits.
+
 **Admins can see** operator-owned system mail for reserved platform addresses
 (`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin`). That mail
 is stored under `system:email` as platform content, not under Kent's or any

@@ -1,6 +1,16 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
+const lifecycleMocks = vi.hoisted(() => ({
+	scheduleUserCreatedEvent: vi.fn(),
+}))
+
+vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
+	scheduleUserCreatedEvent: (...args: Array<unknown>) =>
+		lifecycleMocks.scheduleUserCreatedEvent(...args),
+	scheduleUserDeletedEvent: vi.fn(),
+}))
+
 // These tests assert real `audit_events` rows written through the actual
 // audit pipeline, so opt out of the shared audit-log-spy setup mock.
 vi.unmock('#worker/audit-log.ts')
@@ -880,6 +890,15 @@ test('admin_user_create records audit metadata and assigns the default role', as
 			reason: `target_stable_user_id=${testStableUserIdFromEmail('person+launch@example.com')};target_email=***@example.com`,
 		}),
 	])
+	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
+		env: expect.anything(),
+		source: 'admin',
+		user: {
+			id: testStableUserIdFromEmail('person+launch@example.com'),
+			username: result.createdUser.username,
+			email: 'person+launch@example.com',
+		},
+	})
 })
 
 test('admin_user_update sets plan and maps null clear to free with audit metadata', async () => {

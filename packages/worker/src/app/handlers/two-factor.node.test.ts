@@ -1,13 +1,19 @@
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { generateTOTP } from '@epic-web/totp'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	createAuthCookie,
 	setAuthSessionSecret,
 	type AuthSession,
 } from '#app/auth-session.ts'
-import { createAuthHandler } from '#app/handlers/auth.ts'
+
+vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
+	scheduleUserCreatedEvent: vi.fn(),
+	scheduleUserDeletedEvent: vi.fn(),
+}))
+
+const { createAuthHandler } = await import('#app/handlers/auth.ts')
 import { confirmTwoFactorSetup } from '#app/two-factor.ts'
 import { createAccountTwoFactorApiHandler } from '#app/handlers/account-two-factor.ts'
 import { createTwoFactorVerifyApiHandler } from '#app/handlers/verify.ts'

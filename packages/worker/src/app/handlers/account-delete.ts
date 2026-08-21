@@ -2,6 +2,7 @@ import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUserForDeletion } from '#app/authenticated-user.ts'
 import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
+import { isAccountDeletionConfirmation } from '#universal/account-deletion-confirmation.ts'
 import { type routes } from '#universal/routes.ts'
 import {
 	AccountDeletionCleanupError,
@@ -10,7 +11,21 @@ import {
 } from '#app/account-deletion.ts'
 import { AccountDeletionWritersActiveError } from '#worker/account/deletion-state.ts'
 import { createDb, usersTable } from '#worker/db.ts'
+import { scheduleUserDeletedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
+import { isUsablePasswordHash } from '#worker/identity/usable-password.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
+
+function readDeleteRequestFields(body: unknown) {
+	if (!body || typeof body !== 'object') {
+		return { confirmation: null, password: null }
+	}
+	const record = body as Record<string, unknown>
+	return {
+		confirmation:
+			typeof record.confirmation === 'string' ? record.confirmation : null,
+		password: typeof record.password === 'string' ? record.password : null,
+	}
+}
 
 export function createAccountDeleteHandler(env: Env) {
 	return {
@@ -35,15 +50,20 @@ export function createAccountDeleteHandler(env: Env) {
 				)
 			}
 
-			const password =
-				body && typeof body === 'object'
-					? (body as Record<string, unknown>).password
-					: undefined
-			if (typeof password !== 'string' || password.length === 0) {
+			const { confirmation, password } = readDeleteRequestFields(body)
+			if (!confirmation || !isAccountDeletionConfirmation(confirmation)) {
+				void logAuditEvent({
+					category: 'auth',
+					action: 'account_delete',
+					result: 'failure',
+					email: user.email,
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'invalid_confirmation',
+				})
 				return Response.json(
 					{
-						error:
-							'Account deletion requires re-entering the current password.',
+						error: 'Account deletion requires typing GOODBYE KODY to confirm.',
 					},
 					{ status: 400 },
 				)
@@ -56,24 +76,36 @@ export function createAccountDeleteHandler(env: Env) {
 			if (!userRow) {
 				return Response.json({ error: 'User not found.' }, { status: 404 })
 			}
-			const passwordValid = await verifyPassword(
-				password,
-				userRow.password_hash,
-			)
-			if (!passwordValid) {
-				void logAuditEvent({
-					category: 'auth',
-					action: 'account_delete',
-					result: 'failure',
-					email: user.email,
-					ip: requestIp,
-					path: url.pathname,
-					reason: 'invalid_password',
-				})
-				return Response.json(
-					{ error: 'Current password did not match.' },
-					{ status: 401 },
+
+			if (isUsablePasswordHash(userRow.password_hash)) {
+				if (!password) {
+					return Response.json(
+						{
+							error:
+								'Account deletion requires re-entering the current password.',
+						},
+						{ status: 400 },
+					)
+				}
+				const passwordValid = await verifyPassword(
+					password,
+					userRow.password_hash,
 				)
+				if (!passwordValid) {
+					void logAuditEvent({
+						category: 'auth',
+						action: 'account_delete',
+						result: 'failure',
+						email: user.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'invalid_password',
+					})
+					return Response.json(
+						{ error: 'Current password did not match.' },
+						{ status: 401 },
+					)
+				}
 			}
 
 			let result: Awaited<ReturnType<typeof deleteUserAccount>>
@@ -115,6 +147,15 @@ export function createAccountDeleteHandler(env: Env) {
 					{ status: 503 },
 				)
 			}
+
+			scheduleUserDeletedEvent({
+				env,
+				user: {
+					id: user.mcpUser.userId,
+					username: user.username,
+					email: user.email,
+				},
+			})
 
 			void logAuditEvent({
 				category: 'auth',

@@ -331,6 +331,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		ok: true,
 		connections: [],
 		canDisconnect: false,
+		hasUsablePassword: false,
 		availableProviders: [],
 		canSyncDiscordRoles: false,
 	})
@@ -396,6 +397,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		ok: true,
 		connections: [],
 		canDisconnect: false,
+		hasUsablePassword: false,
 		availableProviders: [],
 		canSyncDiscordRoles: false,
 	})

@@ -66,6 +66,7 @@ import {
 import { defaultPostVerificationRedirect } from '#universal/safe-redirect.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
 import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
+import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 import {
 	maybeJoinOfficialDiscordGuild,
@@ -702,6 +703,15 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			await followDefaultWelcomeAccounts({
 				db: env.APP_DB,
 				followerUserId: stableUserId,
+			})
+			scheduleUserCreatedEvent({
+				env,
+				user: {
+					id: stableUserId,
+					username,
+					email,
+				},
+				source: 'oauth',
 			})
 
 			void logAuditEvent({

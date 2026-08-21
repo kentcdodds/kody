@@ -27,7 +27,9 @@ Account export includes your profile columns and social rows where you are a
 participant (follows as follower or followee, stars you placed, and activity you
 authored). The browser download is a bounded metadata manifest; use its
 `account_export_section` instructions to retrieve every D1, Durable Object, and
-R2 page for a complete portable export. Account deletion removes those same
+R2 page for a complete portable export. Account settings can delete the account
+after you type `GOODBYE KODY` in a confirmation modal (and re-enter your
+password when the account has one). Account deletion removes those same
 user-owned rows and objects.
 
 ## Connected accounts
@@ -84,6 +86,12 @@ One-click installs appear as forks because both use the same activity record.
 This activity view never includes private package source, rating notes, email,
 stable user ids, private profiles, secrets, or unrelated account content.
 Admin-configured notification packages may receive the same metadata.
+
+Admin-configured notification packages may also receive a metadata-only
+`user.created` or `user.deleted` event when a person account is created or
+self-deleted: stable user id, username, email, and the create source or delete
+timestamp. Those events omit passwords, roles, plan, secrets, and unrelated
+account content.
 
 ## Platform feedback
 

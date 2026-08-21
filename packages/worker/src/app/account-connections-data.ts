@@ -6,6 +6,7 @@ import {
 	oauthProviderDefinitions,
 } from '#app/oauth-providers.ts'
 import { listPasskeysForUser } from '#app/passkeys.ts'
+import { isUsablePasswordHash } from '#worker/identity/usable-password.ts'
 
 type ConnectionRow = {
 	id: number
@@ -34,7 +35,7 @@ async function hasUsablePassword(db: D1Database, userId: number) {
 		.first<{ password_hash: string }>()
 	// Sentinel hashes (admin-created / OAuth-created accounts) never verify,
 	// so only a real PBKDF2 hash counts as a usable password.
-	return row?.password_hash.startsWith('pbkdf2_sha256$') === true
+	return isUsablePasswordHash(row?.password_hash)
 }
 
 export async function loadAccountConnectionsData(input: {
@@ -65,6 +66,7 @@ export async function loadAccountConnectionsData(input: {
 			createdAt: connection.created_at,
 		})),
 		canDisconnect,
+		hasUsablePassword: usablePassword,
 		availableProviders: getEnabledOauthProviders(env)
 			.filter((provider) => !connectedProviders.has(provider))
 			.map((provider) => ({
