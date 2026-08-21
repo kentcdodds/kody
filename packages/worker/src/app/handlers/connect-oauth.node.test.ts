@@ -12,6 +12,7 @@ const mockModule = vi.hoisted(() => ({
 	hasAlternativeBuiltInApp: vi.fn<() => Promise<boolean>>(),
 	loadExistingConnectionSummary: vi.fn<() => Promise<unknown>>(),
 	hasStoredConnectClientSecret: vi.fn<() => Promise<boolean>>(),
+	loadConnectOauthChooser: vi.fn(async () => ({ options: [] })),
 	readConnectOauthLookupOptions: (searchParams: URLSearchParams) => {
 		const platformParam = searchParams.get('platform')?.trim()
 		const appParam = searchParams.get('app')?.trim()
@@ -35,6 +36,11 @@ vi.mock('#app/page-auth.ts', () => ({
 		mockModule.requirePageSession(...args),
 }))
 
+vi.mock('#app/connect-oauth-chooser.ts', () => ({
+	loadConnectOauthChooser: (...args: Array<unknown>) =>
+		mockModule.loadConnectOauthChooser(...args),
+}))
+
 vi.mock('#app/account-integrations-data.ts', () => ({
 	loadAccountIntegrationByName: (...args: Array<unknown>) =>
 		mockModule.loadAccountIntegrationByName(...args),
@@ -52,7 +58,7 @@ vi.mock('#app/ssr-render.tsx', () => ({
 	renderAppPage: (input: unknown) => mockModule.renderAppPage(input),
 }))
 
-test('bare visits redirect to the OAuth guide and provider visits require a session', async () => {
+test('bare and provider visits require a session; signed-in bare visits render the chooser', async () => {
 	const env = {} as Env
 	const bare = (search: string) =>
 		isBareConnectOauthVisit(
@@ -64,17 +70,18 @@ test('bare visits redirect to the OAuth guide and provider visits require a sess
 	expect(bare('?code=auth-code&state=abc')).toBe(false)
 	expect(bare('?error=access_denied&state=abc')).toBe(false)
 
-	const bareResponse = await createConnectOauthHandler(env).handler(
+	mockModule.requirePageSession.mockResolvedValue(
+		Response.redirect(
+			'https://example.com/login?redirectTo=%2Fconnect%2Foauth',
+			302,
+		),
+	)
+	const bareUnauthenticated = await createConnectOauthHandler(env).handler(
 		new RequestContext(new Request('https://example.com/connect/oauth')),
 	)
-	expect(bareResponse.status).toBe(302)
-	expect(bareResponse.headers.get('location')).toBe(
-		'https://example.com/guides/oauth',
-	)
+	expect(bareUnauthenticated.status).toBe(302)
+	expect(bareUnauthenticated.headers.get('location')).toContain('/login')
 
-	mockModule.requirePageSession.mockResolvedValue(
-		Response.redirect('https://example.com/login', 302),
-	)
 	const gatedResponse = await createConnectOauthHandler(env).handler(
 		new RequestContext(
 			new Request('https://example.com/connect/oauth?provider=github'),
@@ -82,6 +89,28 @@ test('bare visits redirect to the OAuth guide and provider visits require a sess
 	)
 	expect(gatedResponse.status).toBe(302)
 	expect(gatedResponse.headers.get('location')).toContain('/login')
+
+	mockModule.requirePageSession.mockResolvedValue(null)
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		mcpUser: { userId: 'user-1' },
+	})
+	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
+
+	await createConnectOauthHandler(env).handler(
+		new RequestContext(new Request('https://example.com/connect/oauth')),
+	)
+	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
+		expect.objectContaining({
+			loaderData: {
+				connectOauth: expect.objectContaining({
+					ok: true,
+					provider: null,
+					integration: null,
+					chooser: { options: [] },
+				}),
+			},
+		}),
+	)
 })
 
 test('provider visits embed SSR loader data and honor platform lookup flags', async () => {

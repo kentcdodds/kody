@@ -248,6 +248,7 @@ const mockModule = vi.hoisted(() => ({
 		updatedAt: '1970-01-01T00:00:00.002Z',
 	})),
 	getAvailablePlatformApp: vi.fn(async () => null),
+	listAvailablePlatformApps: vi.fn(async () => []),
 	listSecrets: vi.fn(async () => []),
 	saveSecret: vi.fn(async () => ({
 		name: 'googleClientSecret',
@@ -312,6 +313,8 @@ vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 			mockModule.deleteOauthAppWithConnections(...args),
 		getAvailablePlatformApp: (...args: Array<unknown>) =>
 			mockModule.getAvailablePlatformApp(...args),
+		listAvailablePlatformApps: (...args: Array<unknown>) =>
+			mockModule.listAvailablePlatformApps(...args),
 	}
 })
 
@@ -327,6 +330,29 @@ function createEnv() {
 
 beforeEach(() => {
 	vi.clearAllMocks()
+})
+
+test('integrations API serves the connect-oauth chooser without token values', async () => {
+	const handler = createAccountIntegrationsApiHandler(createEnv())
+	const response = await handler.handler({
+		request: new Request(
+			'https://example.com/account/integrations.json?connectChooser=1',
+		),
+		params: {},
+	} as never)
+	expect(response.status).toBe(200)
+	const payload = await response.json()
+	expect(payload.ok).toBe(true)
+	expect(payload.chooser.options).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				id: 'connection:google',
+				kind: 'connection',
+				href: '/connect/oauth?provider=google&app=google',
+			}),
+		]),
+	)
+	expect(JSON.stringify(payload)).not.toMatch(/secret-value|token-value/i)
 })
 
 test('integrations API lists connections with app grouping metadata and never exposes token values', async () => {

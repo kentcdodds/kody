@@ -11,6 +11,7 @@ import {
 	loadExistingConnectionSummary,
 	loadAccountOauthAppBySlug,
 } from '#app/account-integrations-data.ts'
+import { loadConnectOauthChooser } from '#app/connect-oauth-chooser.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -103,6 +104,15 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 
 			if (request.method === 'GET') {
 				const searchParams = new URL(request.url).searchParams
+				if (searchParams.get('connectChooser') === '1') {
+					return jsonResponse({
+						ok: true,
+						chooser: await loadConnectOauthChooser({
+							env,
+							userId: user.mcpUser.userId,
+						}),
+					})
+				}
 				const name = searchParams.get('name')?.trim()
 				if (name) {
 					// `platform=1` forces the built-in of the same name;

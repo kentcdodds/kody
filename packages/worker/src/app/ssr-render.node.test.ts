@@ -835,12 +835,14 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(html).toContain('data-testid="provider-mark"')
 	expect(html).toContain('data-testid="connect-oauth-advanced"')
 	expect(html).toContain('Continue to google')
+	expect(html).toContain('data-testid="connect-oauth-scopes"')
+	expect(html).toContain('Change the 3 scopes')
 	expect(html).toContain('https://accounts.google.com/o/oauth2/v2/auth')
 	expect(html).not.toContain('>Status<')
 
 	// A built-in connect that would replace a user-lane connection under the
 	// same name server-renders the replace confirmation and withholds the
-	// Continue button (the client also skips auto-start in this state).
+	// Continue button (and the scope picker) until the user confirms.
 	const replaceResponse = await renderAppPage({
 		request: new Request(
 			'https://example.com/connect/oauth?provider=google&platform=1',
@@ -890,6 +892,52 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(replaceHtml).toContain('data-testid="provider-mark"')
 	expect(replaceHtml).not.toContain('>Continue to google</button>')
 
+	const platformConnectResponse = await renderAppPage({
+		request: new Request('https://example.com/connect/oauth?provider=google'),
+		env,
+		loaderData: {
+			connectOauth: {
+				ok: true,
+				provider: 'google',
+				integration: {
+					name: 'google',
+					appSlug: 'google',
+					provider: 'google',
+					appLabel: 'Google',
+					accountLabel: null,
+					tokenUrl: 'https://oauth2.googleapis.com/token',
+					apiBaseUrl: 'https://www.googleapis.com',
+					flow: 'confidential',
+					usePkce: false,
+					clientId: 'platform-google-client',
+					clientSecretSecretName: null,
+					accessTokenSecretName: 'googleAccessToken',
+					refreshTokenSecretName: 'googleRefreshToken',
+					requiredHosts: ['oauth2.googleapis.com'],
+					authorization: {
+						authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+						scopes: ['openid', 'email'],
+						scopeSeparator: null,
+						extraAuthorizeParams: {},
+					},
+					platform: true,
+					platformAllowedScopes: ['openid', 'email', 'profile'],
+					createdAt: '2026-01-01T00:00:00.000Z',
+					updatedAt: '2026-01-01T00:00:00.000Z',
+				},
+				builtInAvailable: false,
+				hasStoredClientSecret: false,
+				redirectUri: 'https://example.com/connect/oauth',
+			},
+		},
+	})
+	expect(platformConnectResponse.status).toBe(200)
+	const platformConnectHtml = await readResponseText(platformConnectResponse)
+	expect(platformConnectHtml).toContain('Continue to google')
+	expect(platformConnectHtml).toContain('data-testid="connect-oauth-scopes"')
+	expect(platformConnectHtml).toContain('Change scopes (2 of 3)')
+	expect(platformConnectHtml).not.toContain('Redirecting to')
+
 	// First-time bring-your-own setup: credentials form and redirect URL are
 	// visible; endpoints and allowed hosts stay behind the disclosure.
 	const setupResponse = await renderAppPage({
@@ -938,10 +986,44 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(missingResponse.status).toBe(200)
 	const missingHtml = await readResponseText(missingResponse)
 	expect(missingHtml).toContain('role="alert"')
+	expect(missingHtml).toContain('data-testid="connect-oauth-incomplete"')
 	expect(
 		missingHtml.split('Missing required OAuth configuration parameters.')
 			.length - 1,
 	).toBe(1)
+
+	const chooserResponse = await renderAppPage({
+		request: new Request('https://example.com/connect/oauth'),
+		env,
+		loaderData: {
+			connectOauth: {
+				ok: true,
+				provider: null,
+				integration: null,
+				chooser: {
+					options: [
+						{
+							id: 'platform:google',
+							href: '/connect/oauth?provider=google&platform=google',
+							label: 'Google',
+							detail: "Connect with Kody's built-in app",
+							providerKey: 'google',
+							logoPath: null,
+							kind: 'platform',
+						},
+					],
+				},
+				redirectUri: 'https://example.com/connect/oauth',
+			},
+		},
+	})
+	expect(chooserResponse.status).toBe(200)
+	const chooserHtml = await readResponseText(chooserResponse)
+	expect(chooserHtml).toContain('data-testid="connect-oauth-chooser"')
+	expect(chooserHtml).toContain('Connect with Kody')
+	expect(chooserHtml).toContain(
+		'/connect/oauth?provider=google&platform=google',
+	)
 })
 
 test('renderAppPage server-renders simplified integration and secret-approval pages', async () => {

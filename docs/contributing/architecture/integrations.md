@@ -214,18 +214,22 @@ note on the architecture index.
 
 `/connect/oauth` runs authorize → callback → token exchange in the browser
 session, writes access/refresh tokens through the account secrets flow, and
-upserts the app + connection via the integrations service. Reconnect with
-`?provider=<integration-name>` reuses saved authorize metadata (scopes,
-`scopeSeparator`, `extraAuthorizeParams`) and the current app client
-credentials.
+upserts the app + connection via the integrations service. A signed-in visit
+with no `provider` renders a chooser of enabled built-ins and saved connections
+that can start from a name alone. Reconnect with `?provider=<integration-name>`
+reuses saved authorize metadata (scopes, `scopeSeparator`,
+`extraAuthorizeParams`) and the current app client credentials.
 
 When the user has no matching user-lane app, `?provider=<slug>` prefills from an
 enabled platform app (`loadAccountIntegrationByName` in
 `packages/worker/src/app/account-integrations-data.ts`). The client then skips
 the client-credentials setup step entirely — no client ID/secret inputs and no
 redirect-URI card. The hosted page leads with the provider mark, credentials or
-a connect button, and a terms note. Endpoints, host allowlists, stored config,
-and the built-in-alternative pitch stay behind an advanced disclosure. The
+a connect button, a terms note, and a **Change scopes** disclosure (defaults
+checked; the operator-verified `allowed_scopes` menu is the rest of the list).
+Endpoints, host allowlists, stored config, and the built-in-alternative pitch
+stay behind an advanced disclosure. A `?provider=` visit that cannot resolve authorize and token URLs offers a
+copy-prompt for an agent. The
 `oauth_exchange` / `connect_oauth` JSON actions accept `platformAppSlug`; for
 the platform lane every exchange input (token URL, flow, exchange style, client
 id, client secret) comes from the operator-provisioned row, never the request
@@ -247,7 +251,9 @@ callers do not need to join app and connection themselves.
 
 `/account/integrations` is a list of integrations (the services you connect:
 Google, GitHub). Selecting a row shows that integration and the connections
-(signed-in accounts) on it. Built-in integrations show a small “Provided by
+(signed-in accounts) on it. Each connection shows how many scopes it requests
+versus the built-in menu when one exists, and a copy-prompt asks an agent to
+widen the integration's reconnect scopes (then ask the user to reconnect). Built-in integrations show a small “Provided by
 Kody” indicator. Deep links to a connection (`/account/integrations/:name`) open
 the parent integration and highlight that connection. User-registered
 integrations also have `/account/integrations/apps/:appSlug` (a connection named

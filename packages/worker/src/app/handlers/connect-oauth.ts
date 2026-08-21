@@ -7,6 +7,7 @@ import {
 	loadExistingConnectionSummary,
 	readConnectOauthLookupOptions,
 } from '#app/account-integrations-data.ts'
+import { loadConnectOauthChooser } from '#app/connect-oauth-chooser.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requirePageSession } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
@@ -19,9 +20,7 @@ import { type routes } from '#universal/routes.ts'
  * `provider` (agent-built setup URLs and built-in connects), `code` (the
  * provider's success redirect — config is restored from sessionStorage, so
  * the query has no provider), or `error` (the provider's denial redirect).
- * A visit with none of them has no flow to resume — someone typed the URL
- * or followed a bare link — so the OAuth guide is the useful destination.
- * Checked before the session gate: the guide is public.
+ * A visit with none of them is the signed-in provider chooser.
  */
 export function isBareConnectOauthVisit(url: URL): boolean {
 	const params = url.searchParams
@@ -32,8 +31,8 @@ export function isBareConnectOauthVisit(url: URL): boolean {
  * SSR prefill embedded for every rendered visit so the page paints its final
  * layout server-side. `?provider=` visits carry the same record the
  * `/account/integrations.json?name=` endpoint serves (plus whether the
- * client-secret secret already exists), so a direct navigation renders (and
- * auto-starts built-ins) without a client fetch. Callback returns
+ * client-secret secret already exists), so a direct navigation renders the
+ * ready connect card without a client fetch. Callback returns
  * (`code`/`error`) restore config from sessionStorage, so their query
  * carries no provider and only the redirect URI is embedded.
  */
@@ -50,7 +49,22 @@ async function loadConnectOauthLoaderData(
 	const provider = requestUrl.searchParams.get('provider')?.trim()
 	const providerKey = provider ? normalizeProviderKey(provider) : ''
 	if (!providerKey) {
-		return { ok: true, provider: null, integration: null, redirectUri }
+		if (!isBareConnectOauthVisit(requestUrl)) {
+			return { ok: true, provider: null, integration: null, redirectUri }
+		}
+		const user = await readAuthenticatedAppUser(request, env)
+		return {
+			ok: true,
+			provider: null,
+			integration: null,
+			redirectUri,
+			chooser: user
+				? await loadConnectOauthChooser({
+						env,
+						userId: user.mcpUser.userId,
+					})
+				: { options: [] },
+		}
 	}
 	const user = await readAuthenticatedAppUser(request, env)
 	if (!user) {
@@ -87,9 +101,6 @@ export function createConnectOauthHandler(env: Env) {
 		middleware: [],
 		async handler({ request }) {
 			const requestUrl = new URL(request.url)
-			if (isBareConnectOauthVisit(requestUrl)) {
-				return Response.redirect(new URL('/guides/oauth', requestUrl), 302)
-			}
 			const sessionRedirect = await requirePageSession(request)
 			if (sessionRedirect) {
 				return sessionRedirect

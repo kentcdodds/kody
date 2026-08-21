@@ -9,6 +9,13 @@ import {
 } from '#universal/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
+import {
+	buildChangeIntegrationScopesPrompt,
+	buildIncompleteConnectOauthPrompt,
+	formatOauthScopeDisclosureLabel,
+	resolveOauthScopeMenu,
+	uniqueOauthScopes,
+} from '#universal/oauth-scopes.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -103,6 +110,7 @@ const emptyConnectOauthLoaderData: ConnectOauthLoaderData = {
 	ok: true,
 	provider: null,
 	integration: null,
+	chooser: { options: [] },
 }
 
 function buildConnectOauthIntegrationLookupHref(
@@ -130,8 +138,36 @@ export async function connectOauthRouteLoader(
 ): Promise<RouteLoaderResult> {
 	const params = url.searchParams
 	const provider = params.get('provider')?.trim()
-	if (!provider || params.get('code') || params.get('error')) {
+	if (params.get('code') || params.get('error')) {
 		return { connectOauth: emptyConnectOauthLoaderData }
+	}
+	if (!provider) {
+		const response = await fetch(
+			'/account/integrations.json?connectChooser=1',
+			{
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			},
+		)
+		if (response.status === 401) {
+			return routeLoaderRedirect('/login')
+		}
+		const payload = (await response.json().catch(() => null)) as {
+			ok?: boolean
+			chooser?: ConnectOauthLoaderData['chooser']
+		} | null
+		return {
+			connectOauth: {
+				ok: true,
+				provider: null,
+				integration: null,
+				chooser:
+					response.ok && payload?.ok === true && payload.chooser
+						? payload.chooser
+						: { options: [] },
+			},
+		}
 	}
 	const providerKey = normalizeProviderKey(provider)
 	if (!providerKey) {
@@ -174,20 +210,6 @@ export async function connectOauthRouteLoader(
 export function ConnectOauthRoute(handle: Handle) {
 	type StatusTone = 'info' | 'warn' | 'error'
 
-	// Mirrors the server-side bare-visit redirect for SPA-internal
-	// navigations: no provider, no callback code, and no provider error
-	// means there is no flow to set up or resume here.
-	if (typeof window !== 'undefined') {
-		const params = new URLSearchParams(window.location.search)
-		if (
-			!params.get('provider') &&
-			!params.get('code') &&
-			!params.get('error')
-		) {
-			window.location.replace('/guides/oauth')
-		}
-	}
-
 	// The real status arrives once the query config and any stored/built-in
 	// provider config resolve; starting on "Ready to connect." flashed a
 	// misleading state on slow connections. Provider visits resolve during
@@ -210,6 +232,10 @@ export function ConnectOauthRoute(handle: Handle) {
 	/** The user explicitly confirmed replacing a different-app connection. */
 	let replaceConfirmed = false
 	let renameInput = ''
+	let chooserOptions: Array<
+		NonNullable<ConnectOauthLoaderData['chooser']>['options'][number]
+	> = []
+	let requestedProvider: string | null = null
 
 	/**
 	 * True when finishing this flow would overwrite a connection that runs on
@@ -265,6 +291,8 @@ export function ConnectOauthRoute(handle: Handle) {
 		hasConfigError = false
 		replaceConfirmed = false
 		renameInput = ''
+		chooserOptions = []
+		requestedProvider = null
 		hostApprovalLinks = []
 		nextSteps = null
 		accessTokenSaved = false
@@ -866,8 +894,7 @@ export function ConnectOauthRoute(handle: Handle) {
 									on('click', () => {
 										const name = renameInput.trim() || renameSuggestion
 										// Full document load: the renamed connect
-										// auto-starts the provider redirect, which is
-										// simplest from a fresh document.
+										// resolves the built-in on a fresh page.
 										window.location.assign(
 											`/connect/oauth?provider=${encodeURIComponent(name)}&platform=${encodeURIComponent(config!.platformAppSlug!)}`,
 										)
@@ -901,9 +928,8 @@ export function ConnectOauthRoute(handle: Handle) {
 					href={`/connect/oauth?provider=${encodeURIComponent(config.providerKey)}&platform=1`}
 					mix={[
 						css(primaryLinkCss),
-						// Full document load on purpose: switching lanes may
-						// auto-start the provider redirect, and that is
-						// simplest to reason about from a fresh document.
+						// Full document load on purpose: switching lanes
+						// re-resolves config from a fresh page.
 						on('click', (event) => {
 							event.preventDefault()
 							window.location.assign(event.currentTarget.href)
@@ -914,6 +940,186 @@ export function ConnectOauthRoute(handle: Handle) {
 				</a>{' '}
 				— connecting it replaces this connection&apos;s tokens and scopes.
 			</p>
+		)
+	}
+
+	const toggleRequestedScope = (scope: string) => {
+		if (!config) return
+		const menu = resolveOauthScopeMenu({
+			allowedScopes: config.platformAllowedScopes,
+			selectedScopes: config.scopes,
+		})
+		if (!menu.includes(scope)) return
+		const selected = new Set(config.scopes)
+		if (selected.has(scope)) selected.delete(scope)
+		else selected.add(scope)
+		config = {
+			...config,
+			scopes: uniqueOauthScopes(menu.filter((entry) => selected.has(entry))),
+		}
+		persistConfig(config)
+		update()
+	}
+
+	const renderScopePicker = () => {
+		if (!config || currentStep !== 'connect') return null
+		const menu = resolveOauthScopeMenu({
+			allowedScopes: config.platformAllowedScopes,
+			selectedScopes: config.scopes,
+		})
+		if (menu.length === 0) return null
+		const selectedCount = config.scopes.length
+		const canAddFromMenu = menu.some((scope) => !config.scopes.includes(scope))
+		return (
+			<details mix={css(advancedDetailsCss)} data-testid="connect-oauth-scopes">
+				<summary>
+					{formatOauthScopeDisclosureLabel({
+						selectedCount,
+						menuCount: menu.length,
+					})}
+				</summary>
+				<div mix={css({ display: 'grid', gap: spacing.sm })}>
+					<p mix={css(descriptionCss)}>
+						Unchecked scopes are not requested. Defaults stay selected unless
+						you change them.
+					</p>
+					<ul mix={css({ ...listCss, listStyle: 'none', paddingLeft: 0 })}>
+						{menu.map((scope) => (
+							<li key={scope}>
+								<label
+									mix={css({
+										display: 'flex',
+										alignItems: 'flex-start',
+										gap: spacing.sm,
+										color: colors.text,
+										fontSize: typography.fontSize.sm,
+									})}
+								>
+									<input
+										type="checkbox"
+										checked={config.scopes.includes(scope)}
+										mix={on('change', () => toggleRequestedScope(scope))}
+									/>
+									<code mix={css(detailValueCss)}>{scope}</code>
+								</label>
+							</li>
+						))}
+					</ul>
+					{!canAddFromMenu || config.platformAllowedScopes.length === 0 ? (
+						<div mix={css({ display: 'grid', gap: spacing.sm })}>
+							<p mix={css(descriptionCss)}>
+								Need access that is not listed? Copy this prompt for your agent.
+								It updates the integration&apos;s reconnect scopes, then asks
+								whether to reconnect this account.
+							</p>
+							<CopyTextButton
+								value={buildChangeIntegrationScopesPrompt({
+									name: config.providerKey,
+									platform: Boolean(config.platformAppSlug),
+									currentScopes: config.scopes,
+									allowedScopes: config.platformAllowedScopes,
+								})}
+								idleLabel="Copy scope prompt"
+								variant="secondary"
+							/>
+						</div>
+					) : null}
+				</div>
+			</details>
+		)
+	}
+
+	const renderChooser = () => {
+		return (
+			<section mix={css(cardCss)} data-testid="connect-oauth-chooser">
+				<p mix={css({ margin: 0, color: colors.text })}>
+					Pick a service to connect. Built-ins and your saved integrations start
+					from a name alone.
+				</p>
+				{chooserOptions.length > 0 ? (
+					<ul
+						mix={css({
+							...listCss,
+							listStyle: 'none',
+							paddingLeft: 0,
+							display: 'grid',
+							gap: spacing.sm,
+						})}
+					>
+						{chooserOptions.map((option) => (
+							<li key={option.id}>
+								<a
+									href={option.href}
+									mix={css({
+										...insetCardCss,
+										display: 'grid',
+										gridTemplateColumns: 'auto 1fr',
+										gap: spacing.sm,
+										alignItems: 'center',
+										textDecoration: 'none',
+										color: 'inherit',
+									})}
+								>
+									<ProviderMark
+										providerKey={option.providerKey}
+										label={option.label}
+										logoPath={option.logoPath}
+									/>
+									<span mix={css({ display: 'grid', gap: spacing.xs })}>
+										<strong mix={css({ color: colors.text })}>
+											{option.label}
+										</strong>
+										<span mix={css(descriptionCss)}>{option.detail}</span>
+									</span>
+								</a>
+							</li>
+						))}
+					</ul>
+				) : (
+					<p mix={css(descriptionCss)}>
+						No built-in apps or saved connections are ready yet.
+					</p>
+				)}
+				<p mix={css(descriptionCss)}>
+					Need a service that is not listed?{' '}
+					<a href="/guides/oauth" mix={css(primaryLinkCss)}>
+						Bring your own OAuth app
+					</a>
+					.
+				</p>
+			</section>
+		)
+	}
+
+	const renderIncompleteConfig = () => {
+		const provider = requestedProvider || 'this provider'
+		const href =
+			typeof window !== 'undefined'
+				? window.location.href
+				: `/connect/oauth?provider=${encodeURIComponent(provider)}`
+		return (
+			<section mix={css(cardCss)} data-testid="connect-oauth-incomplete">
+				<p mix={css({ margin: 0, color: colors.text })}>
+					Kody does not have enough OAuth configuration to connect {provider}{' '}
+					from this URL.
+				</p>
+				<p mix={css(descriptionCss)}>
+					Copy this prompt for your agent so it can fill in the authorize and
+					token URLs and send you a complete link.
+				</p>
+				<CopyTextButton
+					value={buildIncompleteConnectOauthPrompt({ provider, href })}
+					idleLabel="Copy setup prompt"
+					variant="primary"
+				/>
+				<p mix={css(descriptionCss)}>
+					Or start from a known service on the{' '}
+					<a href="/connect/oauth" mix={css(primaryLinkCss)}>
+						connect page
+					</a>
+					.
+				</p>
+			</section>
 		)
 	}
 
@@ -1280,12 +1486,24 @@ export function ConnectOauthRoute(handle: Handle) {
 	}
 
 	const headerTitle = () =>
-		config ? `Connect ${config.provider}` : 'Connect an account'
+		config
+			? `Connect ${config.provider}`
+			: requestedProvider
+				? `Connect ${requestedProvider}`
+				: 'Connect an account'
 
 	const headerDescription = () => {
 		if (statusTone === 'error') return null
 		if (currentStep === 'callback') return null
-		if (!config) return statusMessage
+		if (!config) {
+			if (requestedProvider && hasConfigError) {
+				return 'This URL is missing the provider endpoints needed to start OAuth.'
+			}
+			if (!requestedProvider) {
+				return 'Choose a built-in service or one of your saved integrations.'
+			}
+			return statusMessage
+		}
 		if (currentStep === 'success') return "You're connected."
 		if (config.platformDescription) return config.platformDescription
 		if (config.platformAppSlug) {
@@ -1319,7 +1537,15 @@ export function ConnectOauthRoute(handle: Handle) {
 		ssrRedirectUri = routeData.redirectUri ?? null
 		builtInAvailable = routeData.builtInAvailable ?? false
 		existingConnection = routeData.existingConnection ?? null
+		chooserOptions = routeData.chooser?.options ?? []
 		if (url.searchParams.get('code') || url.searchParams.get('error')) {
+			return
+		}
+		requestedProvider =
+			url.searchParams.get('provider')?.trim() || routeData.provider
+		if (!requestedProvider) {
+			statusMessage = 'Choose a service to connect.'
+			statusTone = 'info'
 			return
 		}
 		const parsed = readQueryConfig(url)
@@ -1349,8 +1575,8 @@ export function ConnectOauthRoute(handle: Handle) {
 		applySetupState(nextConfig)
 	}
 
-	// Queued from render (once per resolved href): callback handling, the
-	// loader-failure fallback refetch, and the built-in auto-start.
+	// Queued from render (once per resolved href): callback handling and
+	// the loader-failure fallback refetch.
 	const initializeVisit = async () => {
 		if (initialLoadStarted) return
 		initialLoadStarted = true
@@ -1390,12 +1616,37 @@ export function ConnectOauthRoute(handle: Handle) {
 				return
 			}
 			if (!config && !hasConfigError) {
+				const visitUrl = new URL(window.location.href)
+				if (!visitUrl.searchParams.get('provider')?.trim()) {
+					if (chooserOptions.length === 0) {
+						const response = await fetch(
+							'/account/integrations.json?connectChooser=1',
+							{
+								headers: { Accept: 'application/json' },
+								credentials: 'include',
+							},
+						)
+						if (redirectToLoginOn401(response)) return
+						const payload = (await response.json().catch(() => null)) as {
+							ok?: boolean
+							chooser?: ConnectOauthLoaderData['chooser']
+						} | null
+						if (!hrefStillCurrent()) return
+						chooserOptions =
+							response.ok && payload?.ok === true
+								? (payload.chooser?.options ?? [])
+								: []
+						update()
+					}
+					return
+				}
 				// The navigation committed without loader data (loader
 				// failure or an aborted prefetch): fall back to the same
 				// fetch the loader performs.
-				const parsed = readQueryConfig(new URL(window.location.href))
+				const parsed = readQueryConfig(visitUrl)
 				if (!parsed.ok) {
 					hasConfigError = true
+					requestedProvider = visitUrl.searchParams.get('provider')
 					setStatus(parsed.error, 'error')
 					return
 				}
@@ -1410,6 +1661,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				})
 				if (!nextConfig) {
 					hasConfigError = true
+					requestedProvider = parsed.value.provider
 					setStatus('Missing required OAuth configuration parameters.', 'error')
 					return
 				}
@@ -1417,23 +1669,9 @@ export function ConnectOauthRoute(handle: Handle) {
 				applySetupState(nextConfig)
 				update()
 			}
-			// Built-in integrations have nothing for the user to review or
-			// fill in, so a plain ?provider=<slug> visit (the onboarding
-			// cards, docs links) goes straight into the provider's authorize
-			// flow. Callback returns never reach this branch — code and
-			// error visits take the callback path — so a denial cannot
-			// loop back into an auto-start. A flow that would replace a
-			// different-app connection never auto-starts: the user confirms
-			// or renames first.
-			if (
-				hrefStillCurrent() &&
-				config?.platformAppSlug &&
-				currentStep === 'connect' &&
-				!wouldReplaceDifferentApp()
-			) {
-				setStatus(`Redirecting to ${config.provider} to authorize…`)
-				await handleConnect()
-			}
+			// Built-in connects wait on this page so the user can review
+			// (and optionally change) requested scopes before the provider
+			// redirect. Callback returns never reach this branch.
 		} catch (error) {
 			// Initial integration reads use fetch(); a transient network
 			// failure must not escape queueTask as unhandledrejection.
@@ -1480,7 +1718,9 @@ export function ConnectOauthRoute(handle: Handle) {
 						) : null}
 					</header>
 					{renderStatusCallout()}
-					{renderRedirectUriCard()}
+					{requestedProvider && hasConfigError
+						? renderIncompleteConfig()
+						: renderChooser()}
 				</section>
 			)
 		}
@@ -1634,6 +1874,9 @@ export function ConnectOauthRoute(handle: Handle) {
 								Continue to {config.provider}
 							</button>
 						)}
+						{wouldReplaceDifferentApp() && !replaceConfirmed
+							? null
+							: renderScopePicker()}
 					</section>
 				) : null}
 				{currentStep === 'success' ? (

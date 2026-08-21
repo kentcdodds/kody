@@ -23,6 +23,11 @@ inbox reading) as an interactive agent transcript, see
 
 ## Default path: `/connect/oauth`
 
+A signed-in visit to `https://kody.codes/connect/oauth` with no `provider`
+shows a chooser of enabled built-ins and saved connections that can start from
+a name alone. Selecting one updates the URL to `?provider=<name>`. Anonymous
+visits go to login and return here.
+
 Send the signed-in user to `https://kody.codes/connect/oauth` with query
 parameters that describe the provider. The page runs authorize -> callback ->
 token exchange in a full browser context and persists access and refresh tokens
@@ -37,10 +42,12 @@ Example shape:
 ## Built-in (platform) integrations skip provider setup
 
 Some providers ship as built-in integrations registered by the deployment
-operator. For those, `https://kody.codes/connect/oauth?provider=<slug>` is the
-whole flow: the setup step below (developer console, redirect-URI registration,
-client ID / client secret form) is skipped and token exchange runs server-side
-with the operator's credentials. List the available built-in apps with
+operator. For those, `https://kody.codes/connect/oauth?provider=<slug>` skips
+the setup step below (developer console, redirect-URI registration, client ID /
+client secret form). The connect page stays on-screen so the user can review
+the requested scopes — defaults from `default_scopes`, with the rest of the
+operator-verified menu available under **Change scopes** — then continue to
+the provider. Token exchange runs server-side with the operator's credentials. List the available built-in apps with
 `integration_platform_app_list`. All integrations refresh host-side through
 `createAuthenticatedFetch`, which calls `integration_token_refresh` on 401 and
 retries with a secret placeholder — raw tokens never enter the sandbox.
@@ -149,6 +156,18 @@ full authorize URL by hand, open `/connect/oauth?provider=<integration-name>`;
 the page derives the provider authorize URL from the saved integration config
 and the current client credentials.
 
+`integration_save` can widen `authorization.scopes` on a **user-lane**
+connection. That field is reconnect metadata — the list the next
+`/connect/oauth` visit requests — not the current access token. After saving,
+tell the user the token is unchanged until they reconnect, then ask whether to
+reconnect each affected account. Scopes are per connection. Platform (built-in)
+connections refuse `integration_save`; reconnect from the connect-page scope
+menu, or replace the connection with a bring-your-own app.
+
+A `?provider=` visit that has no stored authorize/token URLs and no query
+endpoints shows a copy-prompt so an agent can return a complete connect URL
+instead of a dead-end error.
+
 ## Integration naming convention
 
 Integration identity is the canonical provider key: names are normalized to
@@ -219,7 +238,7 @@ create a thin helpers package.
 2. Call `integration_platform_app_list`. When an enabled built-in matches the
    provider and its scope menu covers the task, send
    `https://kody.codes/connect/oauth?provider=<slug>` and skip provider-console
-   setup.
+   setup. The user reviews scopes on that page before continuing.
 3. Otherwise build the BYO connect URL with the required params:
    `https://kody.codes/connect/oauth?...`.
 4. For BYO only, tell the user the exact redirect URI to register:

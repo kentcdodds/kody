@@ -978,6 +978,22 @@ export type ConnectOauthLoaderData = {
 	 * browser can compute it from `window.location`.
 	 */
 	redirectUri?: string
+	/**
+	 * Signed-in bare `/connect/oauth` visits: built-ins and saved connections
+	 * that can start from `?provider=` alone. Omitted on provider/callback
+	 * visits.
+	 */
+	chooser?: {
+		options: Array<{
+			id: string
+			href: string
+			label: string
+			detail: string
+			providerKey: string
+			logoPath: string | null
+			kind: 'connection' | 'platform'
+		}>
+	}
 }
 
 export type AccountMcpServerListItem = {

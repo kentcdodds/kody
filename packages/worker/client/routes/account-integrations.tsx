@@ -52,6 +52,12 @@ import {
 	resolveAddAccountConnectionName,
 } from '#client/routes/integration-provider-catalog.ts'
 import { integrationDisplayName } from '#client/routes/integration-filter.ts'
+import { buildConnectOauthHref } from '#universal/oauth-connect.ts'
+import {
+	buildChangeIntegrationScopesPrompt,
+	formatOauthScopeSummary,
+	resolveOauthScopeMenu,
+} from '#universal/oauth-scopes.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
 import {
 	colors,
@@ -277,21 +283,6 @@ function formatList(values: Array<string> | null | undefined) {
 
 function formatOptional(value: string | null | undefined) {
 	return value?.trim() ? value : 'None'
-}
-
-function buildConnectOauthHref(input: {
-	name: string
-	platform?: boolean
-	appSlug?: string
-}) {
-	const params = new URLSearchParams({ provider: input.name })
-	const appSlug = input.appSlug?.trim()
-	if (input.platform) {
-		params.set('platform', appSlug || '1')
-	} else if (appSlug) {
-		params.set('app', appSlug)
-	}
-	return `/connect/oauth?${params.toString()}`
 }
 
 function connectActionLabel(status: 'Connected' | 'Needs setup') {
@@ -1288,6 +1279,19 @@ export function AccountIntegrationsRoute(handle: Handle) {
 																		<code>{connectionRef.name}</code>
 																		{' · '}
 																		{status}
+																		{connection
+																			? ` · ${formatOauthScopeSummary({
+																					selectedCount:
+																						connection.authorization?.scopes
+																							.length ?? 0,
+																					menuCount: resolveOauthScopeMenu({
+																						allowedScopes:
+																							connection.platformAllowedScopes,
+																						selectedScopes:
+																							connection.authorization?.scopes,
+																					}).length,
+																				})}`
+																			: ''}
 																	</p>
 																</div>
 																<div
@@ -1424,11 +1428,21 @@ export function AccountIntegrationsRoute(handle: Handle) {
 																highlightedConnection.name,
 															)}
 															{renderIntegrationDetail(
-																'Scopes',
+																'Requested scopes',
 																formatList(
 																	highlightedConnection.authorization?.scopes,
 																),
 															)}
+															{highlightedConnection.platformAllowedScopes &&
+															highlightedConnection.platformAllowedScopes
+																.length > 0
+																? renderIntegrationDetail(
+																		'Available scopes',
+																		formatList(
+																			highlightedConnection.platformAllowedScopes,
+																		),
+																	)
+																: null}
 															{renderIntegrationDetail(
 																'Required hosts',
 																formatList(highlightedConnection.requiredHosts),
@@ -1444,6 +1458,25 @@ export function AccountIntegrationsRoute(handle: Handle) {
 																),
 															)}
 														</div>
+														<p mix={css(descriptionCss)}>
+															Need more access? This prompt asks your agent to
+															add scopes to the integration, then ask you to
+															reconnect so the token matches.
+														</p>
+														<CopyTextButton
+															value={buildChangeIntegrationScopesPrompt({
+																name: highlightedConnection.name,
+																platform:
+																	highlightedConnection.platform === true,
+																currentScopes:
+																	highlightedConnection.authorization?.scopes,
+																allowedScopes:
+																	highlightedConnection.platformAllowedScopes,
+															})}
+															idleLabel="Copy scope prompt"
+															variant="ghost"
+															size="sm"
+														/>
 													</section>
 												) : null}
 												{isBuiltInApp(selectedApp) ? null : (

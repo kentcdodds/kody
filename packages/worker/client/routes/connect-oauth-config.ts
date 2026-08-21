@@ -66,6 +66,11 @@ export type ConnectOauthConfig = {
 	platformLogoPath: string | null
 	/** Operator-authored provider note (limitations, caveats), when present. */
 	platformDescription: string | null
+	/**
+	 * Operator-verified scope menu for platform apps. Empty for bring-your-own
+	 * connections, where the requested list is the whole editable set.
+	 */
+	platformAllowedScopes: Array<string>
 }
 
 export type StoredIntegrationAuthorization = NonNullable<
@@ -415,6 +420,7 @@ export function mergeConnectOauthConfig(input: {
 		platformDescription: platformAppSlug
 			? input.storedIntegration?.platformDescription?.trim() || null
 			: null,
+		platformAllowedScopes: platformAllowedScopes ?? [],
 		provider,
 		providerKey,
 		authorizeHost,
@@ -526,6 +532,12 @@ export function parseSessionConnectOauthConfig(
 			record.platformDescription.trim()
 				? record.platformDescription.trim()
 				: null,
+		platformAllowedScopes: Array.isArray(record.platformAllowedScopes)
+			? record.platformAllowedScopes.filter(
+					(value): value is string =>
+						typeof value === 'string' && Boolean(value.trim()),
+				)
+			: [],
 	}
 }
 

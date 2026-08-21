@@ -216,6 +216,51 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			access_type: 'offline',
 			prompt: 'consent',
 		},
+		platformAllowedScopes: [],
+	})
+
+	const platformGoogle = mergeConnectOauthConfig({
+		queryConfig: {
+			provider: 'google',
+			providerKey: 'google',
+			authorizeHost: null,
+			authorizeUrl: null,
+			tokenUrl: null,
+			apiBaseUrl: null,
+			scopes: null,
+			flow: null,
+			usePkce: null,
+			tokenExchangeStyle: null,
+			scopeSeparator: null,
+			extraAuthorizeParams: null,
+			providerSetupInstructions: null,
+			dashboardUrl: null,
+			allowedHosts: [],
+		},
+		storedIntegration: {
+			name: 'google',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			apiBaseUrl: 'https://www.googleapis.com',
+			flow: 'confidential',
+			clientId: 'platform-google-client',
+			clientSecretSecretName: null,
+			accessTokenSecretName: 'googleAccessToken',
+			refreshTokenSecretName: 'googleRefreshToken',
+			requiredHosts: ['oauth2.googleapis.com'],
+			platformAppSlug: 'google',
+			platformAllowedScopes: ['openid', 'email', 'profile'],
+			authorization: {
+				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+				scopes: ['openid', 'email'],
+				scopeSeparator: null,
+				extraAuthorizeParams: {},
+			},
+		},
+	})
+	expect(platformGoogle).toMatchObject({
+		scopes: ['openid', 'email'],
+		platformAppSlug: 'google',
+		platformAllowedScopes: ['openid', 'email', 'profile'],
 	})
 
 	const spotifyConfig = mergeConnectOauthConfig({
