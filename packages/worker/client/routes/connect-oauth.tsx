@@ -1516,7 +1516,10 @@ export function ConnectOauthRoute(handle: Handle) {
 		if (config) return `Connect ${config.provider}`
 		if (requestedProvider) return `Connect ${requestedProvider}`
 		const href = readCurrentRouterHref(handle)
-		if (isConnectOauthCallbackUrl(new URL(href, 'https://kody.local'))) {
+		if (
+			statusTone !== 'error' &&
+			isConnectOauthCallbackUrl(new URL(href, 'https://kody.local'))
+		) {
 			return 'Completing connection'
 		}
 		return 'Connect an account'
@@ -1642,6 +1645,25 @@ export function ConnectOauthRoute(handle: Handle) {
 						: null
 				}
 				if (!nextConfig) {
+					hasConfigError = true
+					if (chooserOptions.length === 0) {
+						const response = await fetch(
+							'/account/integrations.json?connectChooser=1',
+							{
+								headers: { Accept: 'application/json' },
+								credentials: 'include',
+							},
+						)
+						if (redirectToLoginOn401(response)) return
+						const payload = (await response.json().catch(() => null)) as {
+							ok?: boolean
+							chooser?: ConnectOauthLoaderData['chooser']
+						} | null
+						chooserOptions =
+							response.ok && payload?.ok === true
+								? (payload.chooser?.options ?? [])
+								: []
+					}
 					setStatus('Missing required OAuth configuration parameters.', 'error')
 					return
 				}
@@ -1759,7 +1781,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						? renderIncompleteConfig()
 						: isConnectOauthCallbackUrl(
 									new URL(currentHref, 'https://kody.local'),
-							  )
+							  ) && statusTone !== 'error'
 							? renderCallbackPending()
 							: renderChooser()}
 				</section>
