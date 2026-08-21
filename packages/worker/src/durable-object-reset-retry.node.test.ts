@@ -1,5 +1,8 @@
 import { expect, test, vi } from 'vitest'
-import { durableObjectCodeUpdatedResetMessage } from '#worker/sentry-options.ts'
+import {
+	durableObjectCodeUpdatedResetMessage,
+	durableObjectInstanceInactiveCloseMessage,
+} from '#worker/sentry-options.ts'
 import {
 	isTransientDurableObjectResetError,
 	runWithTransientDurableObjectResetRetry,
@@ -19,6 +22,16 @@ test('transient Durable Object reset retry recovers thrown and result errors the
 			new Error('wrapped', {
 				cause: new Error(durableObjectCodeUpdatedResetMessage),
 			}),
+		),
+	).toBe(true)
+	expect(
+		isTransientDurableObjectResetError(
+			durableObjectInstanceInactiveCloseMessage,
+		),
+	).toBe(true)
+	expect(
+		isTransientDurableObjectResetError(
+			new Error(durableObjectInstanceInactiveCloseMessage),
 		),
 	).toBe(true)
 	expect(

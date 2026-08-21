@@ -177,14 +177,16 @@ export function filterIntegrationTokenRefreshCallerSentryEvent(
  * when `blockConcurrencyWhile` exceeds its ~30s deadlock timeout (for
  * example PartyServer awaiting MCP Agent `onStart` via `getServerByName` →
  * `setName`), when a DO SQLite storage operation exceeds the platform timeout
- * and resets the object, or when DO SQLite storage hits an opaque internal
- * fault and resets the object, the platform surfaces one of these errors to
- * the caller. The next call gets a fresh isolate / storage handle; app-level
- * retry of non-idempotent work is still unsafe, and moving heavy Agent/MCP
- * startup out of `onStart` is an architectural change outside a triage fix.
- * Match only the bare platform strings (plus the storage form that requires
- * a support `reference =` token) so wrapped failures such as exhausted
- * `package_publish_external_push` recovery messages stay visible.
+ * and resets the object, when DO SQLite storage hits an opaque internal
+ * fault and resets the object, or when an in-flight RPC's target instance is
+ * evicted or replaced ("no longer active"), the platform surfaces one of
+ * these errors to the caller. The next call gets a fresh isolate / storage
+ * handle; app-level retry of non-idempotent work is still unsafe, and moving
+ * heavy Agent/MCP startup out of `onStart` is an architectural change
+ * outside a triage fix. Match only the bare platform strings (plus the
+ * storage form that requires a support `reference =` token) so wrapped
+ * failures such as exhausted `package_publish_external_push` recovery
+ * messages stay visible.
  */
 export const durableObjectIsolateMemoryResetMessage =
 	"Durable Object's isolate exceeded its memory limit and was reset."
@@ -205,6 +207,17 @@ export const durableObjectBlockConcurrencyWhileTimeoutResetMessage =
  */
 export const durableObjectStorageOperationTimeoutResetMessage =
 	'Durable Object storage operation exceeded timeout which caused object to be reset.'
+
+/**
+ * Cloudflare closes an in-flight Durable Object RPC when that instance is
+ * evicted, replaced, or otherwise no longer current. The platform string
+ * itself says to reconnect or retry; the next stub call lands on a fresh
+ * instance. Same class as deploy-time "code was updated" resets — not an
+ * application defect. Observed on package workflows as a misclassified
+ * `UserCodeError` (`execution_failed`) when this string was unrecognized.
+ */
+export const durableObjectInstanceInactiveCloseMessage =
+	'Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.'
 
 /**
  * Cloudflare Durable Object SQLite storage opaque platform fault with a
@@ -253,6 +266,7 @@ export function isDurableObjectIsolateResetMessage(message: string) {
 		normalized === durableObjectCodeUpdatedResetMessage ||
 		normalized === durableObjectBlockConcurrencyWhileTimeoutResetMessage ||
 		normalized === durableObjectStorageOperationTimeoutResetMessage ||
+		normalized === durableObjectInstanceInactiveCloseMessage ||
 		isDurableObjectStorageObjectResetMessage(message)
 	)
 }

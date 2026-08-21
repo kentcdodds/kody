@@ -6,6 +6,7 @@ import {
 	cloudflareOpaqueInternalErrorMessage,
 	durableObjectBlockConcurrencyWhileTimeoutResetMessage,
 	durableObjectCodeUpdatedResetMessage,
+	durableObjectInstanceInactiveCloseMessage,
 	durableObjectIsolateCpuResetMessage,
 	durableObjectIsolateMemoryResetMessage,
 	durableObjectStorageOperationTimeoutResetMessage,
@@ -40,6 +41,11 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	expect(
 		isDurableObjectIsolateResourceLimitResetMessage(
 			durableObjectBlockConcurrencyWhileTimeoutResetMessage,
+		),
+	).toBe(false)
+	expect(
+		isDurableObjectIsolateResourceLimitResetMessage(
+			durableObjectInstanceInactiveCloseMessage,
 		),
 	).toBe(false)
 
@@ -462,9 +468,10 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 
 	// Bare Cloudflare DO platform resets (memory / CPU / deploy-time code
 	// update / blockConcurrencyWhile timeout / storage-op timeout / storage
-	// object-reset) are transient — one representative form per family, plus
-	// an `Error:`-prefixed variant and a missing trailing period. Wrapped
-	// recovery failures and unreferenced storage resets must stay visible.
+	// object-reset / instance-inactive RPC close) are transient — one
+	// representative form per family, plus an `Error:`-prefixed variant and
+	// a missing trailing period. Wrapped recovery failures and unreferenced
+	// storage resets must stay visible.
 	expect(
 		filterSentryEvent({
 			exception: {
@@ -504,6 +511,20 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 					{
 						value:
 							'Internal error in Durable Object storage caused object to be reset; reference = 849rqmf61lg3qbmtb3j6moc4',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value: durableObjectInstanceInactiveCloseMessage.replace(
+							/\.$/,
+							'',
+						),
 					},
 				],
 			},

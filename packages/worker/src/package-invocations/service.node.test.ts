@@ -2418,6 +2418,33 @@ test('invokePackageExport stores terminal failures for execution errors and miss
 		},
 	})
 
+	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
+		error:
+			'Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.',
+		logs: [],
+	})
+	const durableObjectInactiveClose = await invokePackageExport({
+		env: createEnv(db),
+		baseUrl: 'https://kody.dev',
+		token: createToken(),
+		request: {
+			packageIdOrKodyId: 'discord-gateway',
+			exportName: 'dispatch-message-created',
+			params: { content: 'hi' },
+			idempotencyKey: 'evt-do-inactive-close',
+			source: 'discord-gateway',
+		},
+	})
+	expect(durableObjectInactiveClose.status).toBe(503)
+	expect(durableObjectInactiveClose.body).toMatchObject({
+		ok: false,
+		error: {
+			code: 'durable_object_reset',
+			message:
+				'Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.',
+		},
+	})
+
 	repoMockModule.runBundledModuleWithRegistry.mockClear()
 	const missingExportFirst = await invokePackageExport({
 		env: createEnv(db),

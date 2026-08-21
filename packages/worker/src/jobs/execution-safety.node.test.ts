@@ -185,6 +185,13 @@ test('transient platform failures back off the same occurrence while permanent o
 			),
 		),
 	).toBe(true)
+	expect(
+		isTransientJobExecutionError(
+			new Error(
+				'Connection closed: this Durable Object instance is no longer active. Reconnect or retry the request.',
+			),
+		),
+	).toBe(true)
 	expect(isTransientJobExecutionError(new Error('user code failed'))).toBe(
 		false,
 	)
