@@ -6,6 +6,7 @@ import {
 	type UserMeterEnv,
 } from '#worker/entitlements/user-meter-client.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { durableObjectResetRetryDelaysMs } from '#worker/durable-object-reset-retry.ts'
 import { durableObjectInstanceInactiveCloseMessage } from '#worker/sentry-options.ts'
 import {
 	AccountDeletionInProgressError,
@@ -433,8 +434,9 @@ test('UserMeter instance-inactive acquire and release retry then fail closed', a
 		expect(recovered.acquireAttempts).toBe(2)
 		expect(recovered.releaseAttempts).toBe(2)
 
+		const failClosedResetCount = durableObjectResetRetryDelaysMs.length + 1
 		const acquireUnavailable = createTrackedLeaseDoEnv({
-			acquireResetCount: 3,
+			acquireResetCount: failClosedResetCount,
 		})
 		let blockedWrites = 0
 		const blockedOperation = withAccountWriteLease({
@@ -455,11 +457,11 @@ test('UserMeter instance-inactive acquire and release retry then fail closed', a
 				message: durableObjectInstanceInactiveCloseMessage,
 			}),
 		)
-		expect(acquireUnavailable.acquireAttempts).toBe(3)
+		expect(acquireUnavailable.acquireAttempts).toBe(failClosedResetCount)
 		expect(blockedWrites).toBe(0)
 
 		const releaseUnavailable = createTrackedLeaseDoEnv({
-			releaseResetCount: 3,
+			releaseResetCount: failClosedResetCount,
 		})
 		let completedWrites = 0
 		const releaseFailedOperation = withAccountWriteLease({
@@ -481,7 +483,7 @@ test('UserMeter instance-inactive acquire and release retry then fail closed', a
 			}),
 		)
 		expect(completedWrites).toBe(1)
-		expect(releaseUnavailable.releaseAttempts).toBe(3)
+		expect(releaseUnavailable.releaseAttempts).toBe(failClosedResetCount)
 		expect(
 			await releaseUnavailable.meterFor('user-a').countActiveWriteLeases(),
 		).toEqual({ count: 1 })
