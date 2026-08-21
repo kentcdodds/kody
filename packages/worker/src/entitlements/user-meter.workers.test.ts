@@ -858,6 +858,23 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	).resolves.toEqual({ acquired: true })
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 2 })
 
+	const markedWithActiveWrites = await meterB.markDeleting({
+		deletingAt: '2026-08-01 09:00:00',
+	})
+	expect(markedWithActiveWrites).toEqual({
+		deletingAt: '2026-08-01 09:00:00',
+		created: true,
+		leaseCount: 2,
+	})
+	await expect(
+		meterB.acquireWriteLease({
+			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+			holder: 'test:blocked-during-deletion',
+			acquiredAt: '2026-08-01 10:06:30',
+		}),
+	).resolves.toEqual({ acquired: false })
+	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 2 })
+
 	// listWriteLeases is paged and returns entries without authority field.
 	const listed = await meterB.listWriteLeases({ pageSize: 1 })
 	expect(listed.leases).toHaveLength(1)
@@ -993,14 +1010,16 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 		}),
 	).resolves.toEqual({ acquired: false })
 
-	expect(await meterB.readDeletionState()).toEqual({ deletingAt: null })
+	expect(await meterB.readDeletionState()).toEqual({
+		deletingAt: '2026-08-01 09:00:00',
+	})
 	await expect(
 		meterB.markDeleting({
 			deletingAt: '2026-08-01 15:00:00',
 		}),
 	).resolves.toEqual({
-		deletingAt: '2026-08-01 15:00:00',
-		created: true,
+		deletingAt: '2026-08-01 09:00:00',
+		created: false,
 		leaseCount: 0,
 	})
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 0 })

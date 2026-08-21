@@ -6,6 +6,7 @@ import {
 	type UserMeterEnv,
 } from '#worker/entitlements/user-meter-client.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { durableObjectInstanceInactiveCloseMessage } from '#worker/sentry-options.ts'
 import {
 	AccountDeletionInProgressError,
 	AccountWriteLeaseLostError,
@@ -111,6 +112,89 @@ function createGatedDoEnv(input: {
 		},
 		meterFor(userId: string) {
 			return userMeterRpc({ env, userId })
+		},
+	}
+}
+
+function createTrackedLeaseDoEnv(input?: {
+	acquireResetCount?: number
+	releaseResetCount?: number
+	rpcTimeoutMs?: number
+}) {
+	const base = createInMemoryUserMeterEnv()
+	const namespace = base.env.USER_METER!
+	const calls: Array<{ stubId: number; method: string }> = []
+	let stubCount = 0
+	let acquireAttempts = 0
+	let releaseAttempts = 0
+	const env = {
+		USER_METER: {
+			idFromName: namespace.idFromName.bind(namespace),
+			get(id: DurableObjectId) {
+				const target = namespace.get(id)
+				const stubId = ++stubCount
+				const createdAt = Date.now()
+				const assertFresh = () => {
+					if (
+						input?.rpcTimeoutMs != null &&
+						Date.now() - createdAt > input.rpcTimeoutMs
+					) {
+						throw new Error('Durable Object RPC stub exceeded its timeout.')
+					}
+				}
+				return new Proxy(target, {
+					get(target, prop, receiver) {
+						const value = Reflect.get(target, prop, receiver)
+						if (prop === 'acquireWriteLease') {
+							return async (args: {
+								token: string
+								holder: string
+								acquiredAt: string
+							}) => {
+								calls.push({ stubId, method: 'acquireWriteLease' })
+								assertFresh()
+								acquireAttempts += 1
+								if (acquireAttempts <= (input?.acquireResetCount ?? 0)) {
+									throw new Error(durableObjectInstanceInactiveCloseMessage)
+								}
+								return target.acquireWriteLease(args)
+							}
+						}
+						if (prop === 'assertWriteLeaseHeld') {
+							return async (args: { token: string }) => {
+								calls.push({ stubId, method: 'assertWriteLeaseHeld' })
+								assertFresh()
+								return target.assertWriteLeaseHeld(args)
+							}
+						}
+						if (prop === 'releaseWriteLease') {
+							return async (args: { token: string }) => {
+								calls.push({ stubId, method: 'releaseWriteLease' })
+								assertFresh()
+								releaseAttempts += 1
+								if (releaseAttempts <= (input?.releaseResetCount ?? 0)) {
+									throw new Error(durableObjectInstanceInactiveCloseMessage)
+								}
+								return target.releaseWriteLease(args)
+							}
+						}
+						return typeof value === 'function' ? value.bind(target) : value
+					},
+				})
+			},
+		},
+	} as unknown as UserMeterEnv
+	return {
+		env,
+		calls,
+		get acquireAttempts() {
+			return acquireAttempts
+		},
+		get releaseAttempts() {
+			return releaseAttempts
+		},
+		meterFor(userId: string) {
+			return userMeterRpc({ env: base.env, userId })
 		},
 	}
 }
@@ -292,6 +376,118 @@ test('nested same-user lease reuses the outer lease instead of re-acquiring', as
 	expect(await listActiveAccountWriteLeases(meter.env, 'user-a')).toHaveLength(
 		0,
 	)
+})
+
+test('long write callback does not retain a UserMeter RPC stub', async () => {
+	vi.useFakeTimers()
+	try {
+		vi.setSystemTime(new Date('2099-01-01T00:00:00.000Z'))
+		const { db } = createLeaseTestDb()
+		const rpcTimeoutMs = 90_000
+		const meter = createTrackedLeaseDoEnv({ rpcTimeoutMs })
+
+		const operation = withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			holder: 'test:long-write',
+			env: meter.env,
+			async write() {
+				await new Promise((resolve) => setTimeout(resolve, rpcTimeoutMs + 1))
+				return 'finished'
+			},
+		})
+		await vi.runAllTimersAsync()
+
+		await expect(operation).resolves.toBe('finished')
+		expect(meter.calls).toEqual([
+			{ stubId: 1, method: 'acquireWriteLease' },
+			{ stubId: 2, method: 'assertWriteLeaseHeld' },
+			{ stubId: 3, method: 'releaseWriteLease' },
+		])
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('UserMeter instance-inactive acquire and release retry then fail closed', async () => {
+	vi.useFakeTimers()
+	try {
+		const { db } = createLeaseTestDb()
+		const recovered = createTrackedLeaseDoEnv({
+			acquireResetCount: 1,
+			releaseResetCount: 1,
+		})
+		let recoveredWrites = 0
+		const recoveredOperation = withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: recovered.env,
+			async write() {
+				recoveredWrites += 1
+				return 'recovered'
+			},
+		})
+		await vi.runAllTimersAsync()
+		await expect(recoveredOperation).resolves.toBe('recovered')
+		expect(recoveredWrites).toBe(1)
+		expect(recovered.acquireAttempts).toBe(2)
+		expect(recovered.releaseAttempts).toBe(2)
+
+		const acquireUnavailable = createTrackedLeaseDoEnv({
+			acquireResetCount: 3,
+		})
+		let blockedWrites = 0
+		const blockedOperation = withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: acquireUnavailable.env,
+			async write() {
+				blockedWrites += 1
+			},
+		})
+		const blockedResult = blockedOperation.then(
+			() => 'resolved' as const,
+			(error: unknown) => error,
+		)
+		await vi.runAllTimersAsync()
+		expect(await blockedResult).toEqual(
+			expect.objectContaining({
+				message: durableObjectInstanceInactiveCloseMessage,
+			}),
+		)
+		expect(acquireUnavailable.acquireAttempts).toBe(3)
+		expect(blockedWrites).toBe(0)
+
+		const releaseUnavailable = createTrackedLeaseDoEnv({
+			releaseResetCount: 3,
+		})
+		let completedWrites = 0
+		const releaseFailedOperation = withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: releaseUnavailable.env,
+			async write() {
+				completedWrites += 1
+			},
+		})
+		const releaseFailedResult = releaseFailedOperation.then(
+			() => 'resolved' as const,
+			(error: unknown) => error,
+		)
+		await vi.runAllTimersAsync()
+		expect(await releaseFailedResult).toEqual(
+			expect.objectContaining({
+				message: durableObjectInstanceInactiveCloseMessage,
+			}),
+		)
+		expect(completedWrites).toBe(1)
+		expect(releaseUnavailable.releaseAttempts).toBe(3)
+		expect(
+			await releaseUnavailable.meterFor('user-a').countActiveWriteLeases(),
+		).toEqual({ count: 1 })
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('nested lease for a different user still acquires its own lease', async () => {
