@@ -228,13 +228,12 @@ redirect-URI card. The hosted page leads with the provider mark, credentials or
 a connect button, a terms note, and a **Change scopes** disclosure (defaults
 checked; the operator-verified `allowed_scopes` menu is the rest of the list).
 Endpoints, host allowlists, stored config, and the built-in-alternative pitch
-stay behind an advanced disclosure. A `?provider=` visit that cannot resolve authorize and token URLs offers a
-copy-prompt for an agent. The
-`oauth_exchange` / `connect_oauth` JSON actions accept `platformAppSlug`; for
-the platform lane every exchange input (token URL, flow, exchange style, client
-id, client secret) comes from the operator-provisioned row, never the request
-body, so a caller cannot point the decrypted shared secret at an arbitrary token
-URL.
+stay behind an advanced disclosure. A `?provider=` visit that cannot resolve
+authorize and token URLs offers a copy-prompt for an agent. The `oauth_exchange`
+/ `connect_oauth` JSON actions accept `platformAppSlug`; for the platform lane
+every exchange input (token URL, flow, exchange style, client id, client secret)
+comes from the operator-provisioned row, never the request body, so a caller
+cannot point the decrypted shared secret at an arbitrary token URL.
 
 `createAuthenticatedFetch(providerName)` (execute runtime helper) loads the
 named connection joined to its app, refreshes the access token when needed, and
@@ -253,13 +252,14 @@ callers do not need to join app and connection themselves.
 Google, GitHub). Selecting a row shows that integration and the connections
 (signed-in accounts) on it. Each connection shows how many scopes it requests
 versus the built-in menu when one exists, and a copy-prompt asks an agent to
-widen the integration's reconnect scopes (then ask the user to reconnect). Built-in integrations show a small “Provided by
-Kody” indicator. Deep links to a connection (`/account/integrations/:name`) open
-the parent integration and highlight that connection. User-registered
-integrations also have `/account/integrations/apps/:appSlug` (a connection named
-`apps` resolves at `/account/integrations/apps`). Endpoints, secret names, host
-allowlists, flow / PKCE / exchange style, and credential rotation stay behind an
-advanced disclosure. The rotate form posts to `/account/integrations.json` with
+widen the integration's reconnect scopes (then ask the user to reconnect).
+Built-in integrations show a small “Provided by Kody” indicator. Deep links to a
+connection (`/account/integrations/:name`) open the parent integration and
+highlight that connection. User-registered integrations also have
+`/account/integrations/apps/:appSlug` (a connection named `apps` resolves at
+`/account/integrations/apps`). Endpoints, secret names, host allowlists, flow /
+PKCE / exchange style, and credential rotation stay behind an advanced
+disclosure. The rotate form posts to `/account/integrations.json` with
 `action: "rotate_oauth_app_credentials"`: it stores a new client-secret value in
 the secret store (when provided), then calls `rotateOauthAppClientCredentials`
 so every sibling connection picks up the new client id / secret name on the next

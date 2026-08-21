@@ -963,13 +963,16 @@ export function ConnectOauthRoute(handle: Handle) {
 
 	const renderScopePicker = () => {
 		if (!config || currentStep !== 'connect') return null
+		const currentConfig = config
 		const menu = resolveOauthScopeMenu({
-			allowedScopes: config.platformAllowedScopes,
-			selectedScopes: config.scopes,
+			allowedScopes: currentConfig.platformAllowedScopes,
+			selectedScopes: currentConfig.scopes,
 		})
 		if (menu.length === 0) return null
-		const selectedCount = config.scopes.length
-		const canAddFromMenu = menu.some((scope) => !config.scopes.includes(scope))
+		const selectedCount = currentConfig.scopes.length
+		const canAddFromMenu = menu.some(
+			(scope) => !currentConfig.scopes.includes(scope),
+		)
 		return (
 			<details mix={css(advancedDetailsCss)} data-testid="connect-oauth-scopes">
 				<summary>
@@ -997,7 +1000,7 @@ export function ConnectOauthRoute(handle: Handle) {
 								>
 									<input
 										type="checkbox"
-										checked={config.scopes.includes(scope)}
+										checked={currentConfig.scopes.includes(scope)}
 										mix={on('change', () => toggleRequestedScope(scope))}
 									/>
 									<code mix={css(detailValueCss)}>{scope}</code>
@@ -1005,7 +1008,8 @@ export function ConnectOauthRoute(handle: Handle) {
 							</li>
 						))}
 					</ul>
-					{!canAddFromMenu || config.platformAllowedScopes.length === 0 ? (
+					{!canAddFromMenu ||
+					currentConfig.platformAllowedScopes.length === 0 ? (
 						<div mix={css({ display: 'grid', gap: spacing.sm })}>
 							<p mix={css(descriptionCss)}>
 								Need access that is not listed? Copy this prompt for your agent.
@@ -1014,10 +1018,10 @@ export function ConnectOauthRoute(handle: Handle) {
 							</p>
 							<CopyTextButton
 								value={buildChangeIntegrationScopesPrompt({
-									name: config.providerKey,
-									platform: Boolean(config.platformAppSlug),
-									currentScopes: config.scopes,
-									allowedScopes: config.platformAllowedScopes,
+									name: currentConfig.providerKey,
+									platform: Boolean(currentConfig.platformAppSlug),
+									currentScopes: currentConfig.scopes,
+									allowedScopes: currentConfig.platformAllowedScopes,
 								})}
 								idleLabel="Copy scope prompt"
 								variant="secondary"

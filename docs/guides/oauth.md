@@ -23,10 +23,10 @@ inbox reading) as an interactive agent transcript, see
 
 ## Default path: `/connect/oauth`
 
-A signed-in visit to `https://kody.codes/connect/oauth` with no `provider`
-shows a chooser of enabled built-ins and saved connections that can start from
-a name alone. Selecting one updates the URL to `?provider=<name>`. Anonymous
-visits go to login and return here.
+A signed-in visit to `https://kody.codes/connect/oauth` with no `provider` shows
+a chooser of enabled built-ins and saved connections that can start from a name
+alone. Selecting one updates the URL to `?provider=<name>`. Anonymous visits go
+to login and return here.
 
 Send the signed-in user to `https://kody.codes/connect/oauth` with query
 parameters that describe the provider. The page runs authorize -> callback ->
@@ -44,16 +44,16 @@ Example shape:
 Some providers ship as built-in integrations registered by the deployment
 operator. For those, `https://kody.codes/connect/oauth?provider=<slug>` skips
 the setup step below (developer console, redirect-URI registration, client ID /
-client secret form). The connect page stays on-screen so the user can review
-the requested scopes — defaults from `default_scopes`, with the rest of the
-operator-verified menu available under **Change scopes** — then continue to
-the provider. Token exchange runs server-side with the operator's credentials. List the available built-in apps with
-`integration_platform_app_list`. All integrations refresh host-side through
-`createAuthenticatedFetch`, which calls `integration_token_refresh` on 401 and
-retries with a secret placeholder — raw tokens never enter the sandbox.
-Reconnectable refresh failures dispatch `integration.auth.failed` to packages
-that subscribe; successful refreshes and `/connect/oauth` persists dispatch
-`integration.auth.succeeded` (see
+client secret form). The connect page stays on-screen so the user can review the
+requested scopes — defaults from `default_scopes`, with the rest of the
+operator-verified menu available under **Change scopes** — then continue to the
+provider. Token exchange runs server-side with the operator's credentials. List
+the available built-in apps with `integration_platform_app_list`. All
+integrations refresh host-side through `createAuthenticatedFetch`, which calls
+`integration_token_refresh` on 401 and retries with a secret placeholder — raw
+tokens never enter the sandbox. Reconnectable refresh failures dispatch
+`integration.auth.failed` to packages that subscribe; successful refreshes and
+`/connect/oauth` persists dispatch `integration.auth.succeeded` (see
 [package subscriptions](./package-subscriptions.md)). Use `refreshAccessToken`
 only for auth that cannot use an Authorization header (WebSockets, SDK
 constructors, query-param tokens). It refreshes host-side like
