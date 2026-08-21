@@ -2108,6 +2108,7 @@ class RunLogBase extends DurableObject<Env> {
 			if (input.run) {
 				const previousStatus = this.getRunStatus(input.run.id)
 				const existed = previousStatus != null
+				this.clearSystemPlatformInterruptTriageBeforeErrorFinish(input.run)
 				this.upsertRun(input.run, 'replace')
 				this.replaceLogs(input.run.id, input.logs)
 				if (!existed) {

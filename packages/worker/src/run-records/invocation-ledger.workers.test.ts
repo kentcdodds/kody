@@ -15,7 +15,9 @@ import {
 } from './service.ts'
 import {
 	packageInvocationLedgerRetentionDays,
+	runRecordPlatformInterruptedErrorName,
 	runRecordRetentionEveryNFinishes,
+	runRecordStaleRunningTtlMsShortLived,
 	type RunRecordContext,
 } from './types.ts'
 
@@ -181,6 +183,77 @@ test('claim + finish journey: one call each, replay record, run row lifecycle', 
 		metadata: expect.objectContaining({ result: { sent: true } }),
 	})
 	expect(terminalRun?.logs.map((log) => log.message)).toEqual(['sent'])
+})
+
+test('late failed subscription finish reopens a system-ignored platform interrupt', async () => {
+	const userId = uniqueUserId('late-subscription-failure')
+	const idempotencyKey = 'delivery-late-failure'
+	const claimed = await claimPackageInvocationRecord({
+		env,
+		userId,
+		context: exportContext({
+			surface: 'subscription',
+			name: 'email.message.received',
+			idempotencyKey,
+		}),
+		invocation: claimInput({ idempotencyKey }),
+		staleBefore: freshStaleBefore(),
+	})
+	if (claimed.outcome !== 'claimed' || !claimed.handle) {
+		throw new Error('Expected a fresh subscription claim.')
+	}
+
+	const staleStartedAt = new Date(
+		Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
+	).toISOString()
+	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	await runInDurableObject(stub, async (instance: RunLog, state) => {
+		expect(instance).toBeInstanceOf(RunLog)
+		state.storage.sql.exec(
+			`UPDATE runs SET started_at = ?, created_at = ?, updated_at = ?
+			WHERE id = ?`,
+			staleStartedAt,
+			staleStartedAt,
+			staleStartedAt,
+			claimed.handle.id,
+		)
+	})
+
+	expect(
+		(await getRunRecord({ env, userId, runId: claimed.handle.id }))?.run,
+	).toMatchObject({
+		status: 'error',
+		errorName: runRecordPlatformInterruptedErrorName,
+		errorTriage: 'ignored',
+		triagedBy: 'system:platform-interrupt',
+	})
+
+	const finished = await finishPackageInvocationRecord({
+		env,
+		userId,
+		handle: { ...claimed.handle, startedAt: staleStartedAt },
+		invocationId: claimed.invocationId,
+		claimUpdatedAt: claimed.claimUpdatedAt,
+		ledgerStatus: 'failed',
+		responseJson: JSON.stringify({
+			status: 500,
+			body: { error: 'known package failure' },
+		}),
+		status: 'error',
+		error: new Error('known package failure'),
+	})
+	expect(finished.ledgerUpdated).toBe(true)
+	expect(
+		(await getRunRecord({ env, userId, runId: claimed.handle.id }))?.run,
+	).toMatchObject({
+		status: 'error',
+		errorName: 'Error',
+		errorMessage: 'known package failure',
+		errorTriage: null,
+		triageNote: null,
+		triagedAt: null,
+		triagedBy: null,
+	})
 })
 
 test('stale in-progress claims are reclaimed atomically; mismatched hashes are not', async () => {
