@@ -1105,7 +1105,7 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 					kody: {
 						id: 'discord-gateway',
 						description: 'Discord helpers',
-						dependencies: ['@owner/shared-utils'],
+						dependencies: { '@owner/shared-utils': '*' },
 					},
 				},
 				null,
@@ -1146,15 +1146,6 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 		}),
 	)
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
-	const syncCall = mockModule.syncArtifactSourceSnapshot.mock.calls[0]?.[0] as
-		| { files?: Record<string, string> }
-		| undefined
-	const forkedManifest = JSON.parse(
-		syncCall?.files?.['package.json'] ?? '{}',
-	) as { kody?: { dependencies?: unknown } }
-	expect(forkedManifest.kody?.dependencies).toEqual({
-		'@owner/shared-utils': '*',
-	})
 	expect(mockModule.insertCommunityFork).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
@@ -1168,6 +1159,53 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 		kind: 'fork',
 		activityId: expect.any(String),
 	})
+})
+
+test('forkCommunityListing rejects stale array-shaped kody.dependencies as CommunityActionError', async () => {
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing())
+	mockModule.readCommunitySnapshot.mockResolvedValue({
+		version: 1,
+		listingId: 'listing-1',
+		pinnedCommit: 'commit-1',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		files: {
+			'package.json': JSON.stringify(
+				{
+					name: '@owner/discord-gateway',
+					license: 'MIT',
+					exports: { '.': './src/index.ts' },
+					kody: {
+						id: 'discord-gateway',
+						description: 'Discord helpers',
+						dependencies: ['@owner/shared-utils'],
+					},
+				},
+				null,
+				'\t',
+			),
+			'src/index.ts': `export const x = 1\n`,
+			'README.md': '# Discord Gateway\n\n## Intent\n\nBridge events.',
+		},
+	})
+	mockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	mockModule.getSavedPackageByName.mockResolvedValue(null)
+	mockModule.listCommunityForksByListingAndUser.mockResolvedValue([])
+
+	await expect(
+		forkCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'user-2',
+			expectedPackageScope: 'jane',
+			listingId: 'listing-1',
+		}),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityActionError &&
+			/kody\.dependencies must be a map/.test(error.message),
+	)
+	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 })
 
 test('forkCommunityListing rejects repeat fork without a new kody_id', async () => {

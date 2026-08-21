@@ -1,7 +1,4 @@
-import {
-	listKodyPackageDependencyNames,
-	normalizeLegacyKodyDependencies,
-} from '#worker/package-registry/types.ts'
+import { listKodyPackageDependencyNames } from '#worker/package-registry/types.ts'
 import { type CrossScopeReference } from './types.ts'
 
 const kodyImportPattern = /kody:@([a-z0-9][a-z0-9._-]*)\//g
@@ -35,32 +32,16 @@ export function rewritePackageManifestForFork(input: {
 	const parsed = JSON.parse(input.manifestContent) as Record<string, unknown>
 	const scope = normalizePackageScope(input.expectedPackageScope)
 	const targetName = `@${scope}/${input.targetKodyId}`
-	const previousKody =
-		typeof parsed['kody'] === 'object' && parsed['kody'] != null
-			? (parsed['kody'] as Record<string, unknown>)
-			: {}
-	const nextKody: Record<string, unknown> = {
-		...previousKody,
-		id: input.targetKodyId,
-	}
-	// Listings published before name-to-"*" maps still carry array-shaped
-	// kody.dependencies. Normalize here so fork bootstrap can parse the
-	// rewritten package.json (schema rejects arrays after #1616).
-	if (Object.hasOwn(previousKody, 'dependencies')) {
-		const normalized = normalizeLegacyKodyDependencies(
-			previousKody['dependencies'],
-		)
-		if (normalized === undefined) {
-			delete nextKody['dependencies']
-		} else {
-			nextKody['dependencies'] = normalized
-		}
-	}
 	const next = {
 		...parsed,
 		name: targetName,
 		private: true,
-		kody: nextKody,
+		kody: {
+			...(typeof parsed['kody'] === 'object' && parsed['kody'] != null
+				? (parsed['kody'] as Record<string, unknown>)
+				: {}),
+			id: input.targetKodyId,
+		},
 	}
 	return {
 		content: `${JSON.stringify(next, null, '\t')}\n`,

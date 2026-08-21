@@ -28,6 +28,7 @@ import {
 } from '#worker/server-timing.ts'
 import { assertPackageNotPrivateForCommunityPublish } from '#worker/package-registry/package-private.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
+import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
 import { assertNotCommunityBanned } from './assert-not-community-banned.ts'
 import { CommunityActionError } from './errors.ts'
@@ -1191,9 +1192,15 @@ export async function prepareCommunityFork(
 			expectedPackageScope: input.expectedPackageScope,
 			targetKodyId,
 		})
+		// Validate the rewritten snapshot before Artifacts bootstrap. Stale
+		// listing pins (e.g. pre-map kody.dependencies) are owner-fixable via
+		// community_publish — keep them on mcp-event, not Sentry.
+		parseAuthoredPackageJson({
+			content: rewrittenManifest.content,
+			manifestPath: 'package.json',
+			expectedPackageScope: input.expectedPackageScope,
+		})
 	} catch (error) {
-		// Bad listing package.json (including un-normalizable legacy
-		// kody.dependencies) is caller-visible, not a platform defect.
 		throw new CommunityActionError(getErrorMessage(error))
 	}
 	const [existingByKody, existingByName, existingForks, platformUsernames] =
