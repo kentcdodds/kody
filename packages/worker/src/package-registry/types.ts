@@ -227,9 +227,7 @@ export function normalizeLegacyKodyDependencies(
 		return toWildcardDependencyMap(names)
 	}
 	if (!isPlainObject(value)) {
-		throw new Error(
-			'kody.dependencies must be a map of "@scope/package": "*".',
-		)
+		throw new Error('kody.dependencies must be a map of "@scope/package": "*".')
 	}
 	for (const [rawName, version] of Object.entries(value)) {
 		const name = rawName.trim()
