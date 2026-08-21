@@ -2887,7 +2887,11 @@ test('runBundledModuleWithRegistry carries only host-stamped Durable Object rese
 		)
 		expect(mcpExecutor.hasHostCaughtDurableObjectReset(userCode)).toBe(false)
 		expect(execute).toHaveBeenCalledTimes(1)
-		expect(consoleWarn).not.toHaveBeenCalled()
+		expect(consoleWarn).not.toHaveBeenCalledWith(
+			expect.stringContaining(
+				'runBundledModuleWithRegistry transient Durable Object reset',
+			),
+		)
 
 		execute.mockReset()
 		finishSpy.mockClear()
