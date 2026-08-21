@@ -216,14 +216,15 @@ export function normalizeLegacyKodyDependencies(
 				'kody.dependencies must be a map of "@scope/package": "*". Legacy array form is only accepted when every entry is a scoped package name.',
 			)
 		}
-		const names = listKodyPackageDependencyNames(value)
-		for (const name of names) {
+		for (const rawName of value) {
+			const name = rawName.trim()
 			if (!kodyPackageDependencySchema.safeParse(name).success) {
 				throw new Error(
 					`kody.dependencies entry "${name}" must be a scoped package name like "@scope/package".`,
 				)
 			}
 		}
+		const names = listKodyPackageDependencyNames(value)
 		return toWildcardDependencyMap(names)
 	}
 	if (!isPlainObject(value)) {

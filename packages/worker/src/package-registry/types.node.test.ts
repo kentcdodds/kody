@@ -95,6 +95,9 @@ test('normalizeLegacyKodyDependencies rewrites arrays and latest aliases to the 
 	expect(() => normalizeLegacyKodyDependencies([1, '@scope/helper'])).toThrow(
 		/Legacy array form/,
 	)
+	expect(() => normalizeLegacyKodyDependencies(['@scope/helper', ' '])).toThrow(
+		/scoped package name/,
+	)
 	expect(() =>
 		normalizeLegacyKodyDependencies({ '@scope/helper': '^1.0.0' }),
 	).toThrow(/must be "\*"/)
