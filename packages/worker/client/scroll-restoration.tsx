@@ -15,6 +15,10 @@ import {
 	type ScrollPosition,
 	type ScrollRestorationTarget,
 } from './router-scroll-state.ts'
+import {
+	getSessionStorageItem,
+	setSessionStorageItem,
+} from './session-storage-access.ts'
 
 const savedScrollPositions = new Map<string, ScrollPosition>()
 let positionsLoaded = false
@@ -22,35 +26,27 @@ let restoreScrollRequestId = 0
 let restoreInProgress = false
 
 function loadSavedScrollPositions() {
-	if (positionsLoaded || typeof sessionStorage === 'undefined') return
+	if (positionsLoaded) return
 	positionsLoaded = true
-	try {
-		const positions = parseSavedScrollPositions(
-			sessionStorage.getItem(scrollRestorationStorageKey),
-		)
-		for (const [key, y] of Object.entries(positions)) {
-			savedScrollPositions.set(key, { x: 0, y })
-		}
-	} catch {
-		// Session storage may be unavailable in private modes; scroll still works
-		// for the current in-memory session.
+	// Firefox can throw SecurityError on sessionStorage *access* (not only
+	// getItem) when storage is blocked — keep the probe inside the helper.
+	const positions = parseSavedScrollPositions(
+		getSessionStorageItem(scrollRestorationStorageKey),
+	)
+	for (const [key, y] of Object.entries(positions)) {
+		savedScrollPositions.set(key, { x: 0, y })
 	}
 }
 
 function persistSavedScrollPositions() {
-	if (typeof sessionStorage === 'undefined') return
-	try {
-		const positions: Record<string, number> = {}
-		for (const [key, position] of savedScrollPositions) {
-			positions[key] = position.y
-		}
-		sessionStorage.setItem(
-			scrollRestorationStorageKey,
-			serializeSavedScrollPositions(positions),
-		)
-	} catch {
-		// Ignore quota and privacy-mode storage failures.
+	const positions: Record<string, number> = {}
+	for (const [key, position] of savedScrollPositions) {
+		positions[key] = position.y
 	}
+	setSessionStorageItem(
+		scrollRestorationStorageKey,
+		serializeSavedScrollPositions(positions),
+	)
 }
 
 function saveWindowScrollPosition() {
