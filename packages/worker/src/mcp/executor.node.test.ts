@@ -23,7 +23,6 @@ import {
 	formatLimitedExecutionOutput,
 	getExecutionErrorDetails,
 	hasHostCaughtDurableObjectReset,
-	hostCaughtDurableObjectReset,
 	limitExecutionResultValue,
 	runWithDynamicWorkerEvaluationBudget,
 } from './executor.ts'
@@ -1344,7 +1343,6 @@ test('createExecuteExecutor keeps host side-effect counts when evaluate throws a
 			dispatcherAttempts: 1,
 			fetchAttempts: 0,
 		},
-		[hostCaughtDurableObjectReset]: true,
 	})
 })
 
