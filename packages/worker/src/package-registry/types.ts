@@ -190,6 +190,68 @@ export function listKodyPackageDependencyNames(
 	).sort((left, right) => left.localeCompare(right))
 }
 
+const kodyPackageDependencyLatestAlias = 'latest'
+
+function toWildcardDependencyMap(
+	names: ReadonlyArray<string>,
+): KodyPackageDependencies {
+	return Object.fromEntries(
+		names.map((name) => [name, kodyPackageDependencyWildcard]),
+	)
+}
+
+/**
+ * Rewrite legacy `kody.dependencies` shapes into the current name-to-"*" map.
+ * Accepts the pre-map array form and the short-lived `"latest"` alias so
+ * community forks (and similar rewrite paths) can persist snapshots that
+ * predate schema rejection of those shapes.
+ */
+export function normalizeLegacyKodyDependencies(
+	value: unknown,
+): KodyPackageDependencies | undefined {
+	if (value === undefined) return undefined
+	if (Array.isArray(value)) {
+		if (!value.every((entry) => typeof entry === 'string')) {
+			throw new Error(
+				'kody.dependencies must be a map of "@scope/package": "*". Legacy array form is only accepted when every entry is a scoped package name.',
+			)
+		}
+		const names = listKodyPackageDependencyNames(value)
+		for (const name of names) {
+			if (!kodyPackageDependencySchema.safeParse(name).success) {
+				throw new Error(
+					`kody.dependencies entry "${name}" must be a scoped package name like "@scope/package".`,
+				)
+			}
+		}
+		return toWildcardDependencyMap(names)
+	}
+	if (!isPlainObject(value)) {
+		throw new Error(
+			'kody.dependencies must be a map of "@scope/package": "*".',
+		)
+	}
+	for (const [rawName, version] of Object.entries(value)) {
+		const name = rawName.trim()
+		if (!kodyPackageDependencySchema.safeParse(name).success) {
+			throw new Error(
+				`kody.dependencies key "${rawName}" must be a scoped package name like "@scope/package".`,
+			)
+		}
+		if (
+			version !== kodyPackageDependencyWildcard &&
+			version !== kodyPackageDependencyLatestAlias
+		) {
+			throw new Error(
+				`kody.dependencies["${name}"] must be "*" (latest published commit, captured when this package publishes).`,
+			)
+		}
+	}
+	return toWildcardDependencyMap(
+		listKodyPackageDependencyNames(value as Record<string, string>),
+	)
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
 	return value != null && typeof value === 'object' && !Array.isArray(value)
 }

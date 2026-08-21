@@ -3,6 +3,7 @@ import { parseAuthoredPackageJson } from './manifest.ts'
 import {
 	kodyPackageDependencyWildcard,
 	listKodyPackageDependencyNames,
+	normalizeLegacyKodyDependencies,
 } from './types.ts'
 
 function manifest(dependencies: unknown) {
@@ -72,4 +73,29 @@ test('kody.dependencies accepts a name-to-* map, rejects arrays, and lists names
 			content: manifest([1, '@scope/helper']),
 		}),
 	).toThrow(/must be a map/)
+})
+
+test('normalizeLegacyKodyDependencies rewrites arrays and latest aliases to the name-to-* map', () => {
+	expect(normalizeLegacyKodyDependencies(undefined)).toBeUndefined()
+	expect(
+		normalizeLegacyKodyDependencies(['@scope/b', ' @scope/a ', '@scope/b']),
+	).toEqual({
+		'@scope/a': kodyPackageDependencyWildcard,
+		'@scope/b': kodyPackageDependencyWildcard,
+	})
+	expect(
+		normalizeLegacyKodyDependencies({
+			'@scope/helper': 'latest',
+			'@other/lib': '*',
+		}),
+	).toEqual({
+		'@other/lib': kodyPackageDependencyWildcard,
+		'@scope/helper': kodyPackageDependencyWildcard,
+	})
+	expect(() => normalizeLegacyKodyDependencies([1, '@scope/helper'])).toThrow(
+		/Legacy array form/,
+	)
+	expect(() =>
+		normalizeLegacyKodyDependencies({ '@scope/helper': '^1.0.0' }),
+	).toThrow(/must be "\*"/)
 })

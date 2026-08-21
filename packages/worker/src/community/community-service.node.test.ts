@@ -1146,6 +1146,15 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 		}),
 	)
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
+	const syncCall = mockModule.syncArtifactSourceSnapshot.mock.calls[0]?.[0] as
+		| { files?: Record<string, string> }
+		| undefined
+	const forkedManifest = JSON.parse(
+		syncCall?.files?.['package.json'] ?? '{}',
+	) as { kody?: { dependencies?: unknown } }
+	expect(forkedManifest.kody?.dependencies).toEqual({
+		'@owner/shared-utils': '*',
+	})
 	expect(mockModule.insertCommunityFork).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({

@@ -1184,11 +1184,18 @@ export async function prepareCommunityFork(
 	}
 
 	const targetKodyId = input.kodyId?.trim() || listing.kodyId
-	const rewrittenManifest = rewritePackageManifestForFork({
-		manifestContent: packageJsonContent,
-		expectedPackageScope: input.expectedPackageScope,
-		targetKodyId,
-	})
+	let rewrittenManifest: ReturnType<typeof rewritePackageManifestForFork>
+	try {
+		rewrittenManifest = rewritePackageManifestForFork({
+			manifestContent: packageJsonContent,
+			expectedPackageScope: input.expectedPackageScope,
+			targetKodyId,
+		})
+	} catch (error) {
+		// Bad listing package.json (including un-normalizable legacy
+		// kody.dependencies) is caller-visible, not a platform defect.
+		throw new CommunityActionError(getErrorMessage(error))
+	}
 	const [existingByKody, existingByName, existingForks, platformUsernames] =
 		await Promise.all([
 			getSavedPackageByKodyId(input.env.APP_DB, {

@@ -39,7 +39,7 @@ test('rewritePackageManifestForFork rewrites scope and kody id while preserving 
 			id: string
 			description: string
 			tags: Array<string>
-			dependencies: Array<string>
+			dependencies: Record<string, string>
 		}
 	}
 
@@ -49,10 +49,12 @@ test('rewritePackageManifestForFork rewrites scope and kody id while preserving 
 	expect(parsed.exports).toEqual({ '.': './src/index.ts' })
 	expect(parsed.kody.id).toBe('my-discord-gateway')
 	expect(parsed.kody.tags).toEqual(['discord'])
-	expect(parsed.kody.dependencies).toEqual([
-		'@owner/shared-utils',
-		'@forker/local-lib',
-	])
+	// Legacy array-shaped kody.dependencies become the current name-to-"*" map
+	// so fork bootstrap can parse the rewritten package.json.
+	expect(parsed.kody.dependencies).toEqual({
+		'@forker/local-lib': '*',
+		'@owner/shared-utils': '*',
+	})
 
 	const override = rewritePackageManifestForFork({
 		manifestContent: sampleManifest,
@@ -65,6 +67,50 @@ test('rewritePackageManifestForFork rewrites scope and kody id while preserving 
 	}
 	expect(overrideParsed.name).toBe('@jane/custom-id')
 	expect(overrideParsed.kody.id).toBe('custom-id')
+})
+
+test('rewritePackageManifestForFork normalizes latest aliases and rejects unfixable dependency shapes', () => {
+	const withLatest = rewritePackageManifestForFork({
+		manifestContent: `{
+	"name": "@owner/pkg",
+	"exports": { ".": "./src/index.ts" },
+	"kody": {
+		"id": "pkg",
+		"description": "Pkg",
+		"dependencies": {
+			"@owner/shared-utils": "latest"
+		}
+	}
+}
+`,
+		expectedPackageScope: 'jane',
+		targetKodyId: 'pkg',
+	})
+	const latestParsed = JSON.parse(withLatest.content) as {
+		kody: { dependencies: Record<string, string> }
+	}
+	expect(latestParsed.kody.dependencies).toEqual({
+		'@owner/shared-utils': '*',
+	})
+
+	expect(() =>
+		rewritePackageManifestForFork({
+			manifestContent: `{
+	"name": "@owner/pkg",
+	"exports": { ".": "./src/index.ts" },
+	"kody": {
+		"id": "pkg",
+		"description": "Pkg",
+		"dependencies": {
+			"@owner/shared-utils": "^1.0.0"
+		}
+	}
+}
+`,
+			expectedPackageScope: 'jane',
+			targetKodyId: 'pkg',
+		}),
+	).toThrow(/must be "\*"/)
 })
 
 test('scanCrossScopeReferences finds foreign scopes and ignores same-scope references', () => {
