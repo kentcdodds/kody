@@ -47,7 +47,6 @@ import {
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
-import { isStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import {
 	assertWithinEntitlement,
 	consumeDailyEntitlement,
@@ -1326,9 +1325,16 @@ export async function executeJobOnce(input: {
 							typeof result.error === 'string'
 								? result.error
 								: formatJobError(result.error)
+						// Claimed scheduled occurrences already retry
+						// TransientJobExecutionError (D1 blips, DO isolate
+						// resets including "instance is no longer active",
+						// storage-estimate misses). Sandbox paths return those
+						// as result.error instead of throwing, so promote them
+						// here. Run-now without a claimed handle still
+						// surfaces the error immediately.
 						if (
 							input.runRecordHandle &&
-							isStorageEstimateReadError(result.error)
+							isTransientJobExecutionError(result.error)
 						) {
 							throw new TransientJobExecutionError(errorMessage, {
 								cause: result.error,
@@ -1356,7 +1362,10 @@ export async function executeJobOnce(input: {
 				if (error instanceof TransientJobExecutionError) {
 					throw error
 				}
-				if (input.runRecordHandle && isStorageEstimateReadError(error)) {
+				if (
+					input.runRecordHandle &&
+					isTransientJobExecutionError(error)
+				) {
 					throw new TransientJobExecutionError(formatJobError(error), {
 						cause: error,
 					})

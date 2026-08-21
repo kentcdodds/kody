@@ -39,6 +39,8 @@ import {
 } from './types.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
 import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
+import { durableObjectInstanceInactiveCloseMessage } from '#worker/sentry-options.ts'
+import { d1NetworkConnectionLostMessage } from '#worker/d1-retry.ts'
 
 const repoMockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
@@ -4810,7 +4812,7 @@ test('executeJobOnce failure modes workflow', async () => {
 	}
 })
 
-test('executeJobOnce retries a claimed storage-estimate failure and surfaces it on run-now', async () => {
+test('executeJobOnce retries claimed platform blips and surfaces them on run-now', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const env = createJobServiceTestEnv({
@@ -4828,7 +4830,7 @@ test('executeJobOnce retries a claimed storage-estimate failure and surfaces it 
 		env,
 		callerContext,
 		body: {
-			name: 'Estimate retry job',
+			name: 'Platform blip retry job',
 			code: 'export default async () => ({ ok: true })',
 			schedule: {
 				type: 'interval',
@@ -4843,14 +4845,14 @@ test('executeJobOnce retries a claimed storage-estimate failure and surfaces it 
 		sourceId: jobView.sourceId,
 		entityKind: 'job',
 		entityId: jobView.id,
-		publishedCommit: 'published-commit-estimate',
+		publishedCommit: 'published-commit-platform-blip',
 		manifestPath: 'kody.json',
 		files: {
 			'kody.json': JSON.stringify({
 				version: 1,
 				kind: 'job',
-				title: 'Estimate retry job',
-				description: 'Retries storage estimate misses',
+				title: 'Platform blip retry job',
+				description: 'Retries claimed platform blips',
 				sourceRoot: '/',
 				entrypoint: 'src/job.ts',
 			}),
@@ -4862,54 +4864,77 @@ test('executeJobOnce retries a claimed storage-estimate failure and surfaces it 
 		attempts: 4,
 		cause: new Error('Storage estimate read timed out after 2000ms.'),
 	})
-	const executeSpy = vi
-		.spyOn(
-			await import('#mcp/run-kody-registry.ts'),
-			'runBundledModuleWithRegistry',
-		)
-		.mockResolvedValue({
-			result: undefined,
-			error: estimateError.message,
-			logs: [],
-		})
+	const executeSpy = vi.spyOn(
+		await import('#mcp/run-kody-registry.ts'),
+		'runBundledModuleWithRegistry',
+	)
 	const row = await (
 		await import('@kody-internal/shared/jobs/repo.ts')
 	).getJobRowById(db, callerContext.user.userId, jobView.id)
 	if (!row) {
 		throw new Error('Expected created job row.')
 	}
+	const claimedHandle = {
+		id: 'run-platform-blip-claimed',
+		userId: callerContext.user.userId,
+		startedAt: '2026-08-21T14:40:00.000Z',
+		persistence: 'eager' as const,
+		context: {
+			surface: 'job' as const,
+			name: row.record.name,
+			jobId: row.record.id,
+			storageId: row.record.storageId,
+		},
+	}
 
 	try {
-		const runNow = await executeJobOnce({
-			env,
-			job: row.record,
-			callerContext,
-		})
-		expect(runNow.execution).toEqual({
-			ok: false,
-			error: estimateError.message,
-			logs: [],
-		})
-
-		await expect(
-			executeJobOnce({
+		const platformBlips = [
+			estimateError.message,
+			durableObjectInstanceInactiveCloseMessage,
+			`D1_ERROR: ${d1NetworkConnectionLostMessage}.`,
+		]
+		for (const error of platformBlips) {
+			executeSpy.mockResolvedValue({
+				result: undefined,
+				error,
+				logs: [],
+			})
+			const runNow = await executeJobOnce({
 				env,
 				job: row.record,
 				callerContext,
-				runRecordHandle: {
-					id: 'run-estimate-claimed',
-					userId: callerContext.user.userId,
-					startedAt: '2026-08-21T14:40:00.000Z',
-					persistence: 'eager',
-					context: {
-						surface: 'job',
-						name: row.record.name,
-						jobId: row.record.id,
-						storageId: row.record.storageId,
-					},
-				},
-			}),
-		).rejects.toBeInstanceOf(TransientJobExecutionError)
+			})
+			expect(runNow.execution).toEqual({
+				ok: false,
+				error,
+				logs: [],
+			})
+			await expect(
+				executeJobOnce({
+					env,
+					job: row.record,
+					callerContext,
+					runRecordHandle: claimedHandle,
+				}),
+			).rejects.toBeInstanceOf(TransientJobExecutionError)
+		}
+
+		executeSpy.mockResolvedValue({
+			result: undefined,
+			error: 'user code failed',
+			logs: [],
+		})
+		const userCode = await executeJobOnce({
+			env,
+			job: row.record,
+			callerContext,
+			runRecordHandle: claimedHandle,
+		})
+		expect(userCode.execution).toEqual({
+			ok: false,
+			error: 'user code failed',
+			logs: [],
+		})
 	} finally {
 		executeSpy.mockRestore()
 	}
