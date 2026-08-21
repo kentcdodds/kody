@@ -434,7 +434,7 @@ test('UserMeter instance-inactive acquire and release retry then fail closed', a
 		expect(recovered.releaseAttempts).toBe(2)
 
 		const acquireUnavailable = createTrackedLeaseDoEnv({
-			acquireResetCount: 3,
+			acquireResetCount: 4,
 		})
 		let blockedWrites = 0
 		const blockedOperation = withAccountWriteLease({
@@ -455,11 +455,11 @@ test('UserMeter instance-inactive acquire and release retry then fail closed', a
 				message: durableObjectInstanceInactiveCloseMessage,
 			}),
 		)
-		expect(acquireUnavailable.acquireAttempts).toBe(3)
+		expect(acquireUnavailable.acquireAttempts).toBe(4)
 		expect(blockedWrites).toBe(0)
 
 		const releaseUnavailable = createTrackedLeaseDoEnv({
-			releaseResetCount: 3,
+			releaseResetCount: 4,
 		})
 		let completedWrites = 0
 		const releaseFailedOperation = withAccountWriteLease({
@@ -481,7 +481,7 @@ test('UserMeter instance-inactive acquire and release retry then fail closed', a
 			}),
 		)
 		expect(completedWrites).toBe(1)
-		expect(releaseUnavailable.releaseAttempts).toBe(3)
+		expect(releaseUnavailable.releaseAttempts).toBe(4)
 		expect(
 			await releaseUnavailable.meterFor('user-a').countActiveWriteLeases(),
 		).toEqual({ count: 1 })
