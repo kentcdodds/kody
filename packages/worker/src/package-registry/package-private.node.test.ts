@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { CommunityActionError } from '#worker/community/errors.ts'
 import {
 	assertPackageNotPrivateForCommunityPublish,
 	injectDefaultPrivateField,
@@ -16,6 +17,9 @@ test('package private parsing gates community publish and visibility confirmatio
 		'must be a boolean',
 	)
 
+	expect(() =>
+		assertPackageNotPrivateForCommunityPublish('{"private":true}'),
+	).toThrow(CommunityActionError)
 	expect(() =>
 		assertPackageNotPrivateForCommunityPublish('{"private":true}'),
 	).toThrow('community listings cannot publish packages')

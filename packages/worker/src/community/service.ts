@@ -27,7 +27,7 @@ import {
 	type ServerTimingEntry,
 } from '#worker/server-timing.ts'
 import { assertPackageNotPrivateForCommunityPublish } from '#worker/package-registry/package-private.ts'
-import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
+import { KODY_DESCRIPTION_MAX_LENGTH } from '#worker/package-registry/types.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
 import { assertNotCommunityBanned } from './assert-not-community-banned.ts'
@@ -321,16 +321,20 @@ function parseRawPackageLicense(packageJsonContent: string) {
 	try {
 		parsed = JSON.parse(packageJsonContent)
 	} catch {
-		throw new Error('Saved package package.json must be valid JSON.')
+		throw new CommunityActionError(
+			'Saved package package.json must be valid JSON.',
+		)
 	}
 	if (typeof parsed !== 'object' || parsed == null || !('license' in parsed)) {
-		throw new Error(
+		// Caller-clearable listing precondition — keep off Sentry
+		// (KODY-CLOUDFLARE-5S).
+		throw new CommunityActionError(
 			'community listings require the MIT license in package.json',
 		)
 	}
 	const license = (parsed as { license?: unknown }).license
 	if (typeof license !== 'string' || license.trim() !== 'MIT') {
-		throw new Error(
+		throw new CommunityActionError(
 			'community listings require the MIT license in package.json',
 		)
 	}
@@ -339,7 +343,7 @@ function parseRawPackageLicense(packageJsonContent: string) {
 
 function assertReadmeIntent(readmeContent: string) {
 	if (!intentHeadingPattern.test(readmeContent)) {
-		throw new Error(
+		throw new CommunityActionError(
 			'Community listings require README.md to include a "## Intent" section.',
 		)
 	}
@@ -502,17 +506,23 @@ export async function publishCommunityListing(input: {
 	})
 	const publishedCommit = loadedSource.source.published_commit
 	if (!publishedCommit) {
-		throw new Error(
+		throw new CommunityActionError(
 			`Saved package "${input.packageId}" does not have a published commit.`,
 		)
 	}
 
 	const packageJsonContent = loadedSource.files['package.json']
 	if (!packageJsonContent) {
-		throw new Error('Saved packages require a root package.json file.')
+		throw new CommunityActionError(
+			'Saved packages require a root package.json file.',
+		)
 	}
 	const description = loadedSource.manifest.kody.description
-	assertKodyDescriptionLength(description)
+	if (description.length > KODY_DESCRIPTION_MAX_LENGTH) {
+		throw new CommunityActionError(
+			'kody.description must be at most 200 characters (short public tagline).',
+		)
+	}
 	const license = parseRawPackageLicense(packageJsonContent)
 	assertPackageNotPrivateForCommunityPublish(packageJsonContent)
 
@@ -521,14 +531,18 @@ export async function publishCommunityListing(input: {
 		maxChars: communityReadmeMaxChars,
 	})
 	if (!readme) {
-		throw new Error('Community listings require a root README file.')
+		throw new CommunityActionError(
+			'Community listings require a root README file.',
+		)
 	}
 	const fullReadme = buildPackageReadmeDetail({
 		files: loadedSource.files,
 		maxChars: Number.MAX_SAFE_INTEGER,
 	})
 	if (!fullReadme) {
-		throw new Error('Community listings require a root README file.')
+		throw new CommunityActionError(
+			'Community listings require a root README file.',
+		)
 	}
 	assertReadmeIntent(fullReadme.content)
 

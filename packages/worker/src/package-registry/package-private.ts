@@ -1,3 +1,5 @@
+import { CommunityActionError } from '#worker/community/errors.ts'
+
 export type PackagePrivateFieldValue = true | false | undefined
 
 function parsePackageJsonRecord(content: string): Record<string, unknown> {
@@ -57,7 +59,9 @@ export function assertPackageNotPrivateForCommunityPublish(
 	packageJsonContent: string,
 ) {
 	if (isPackagePrivate(packageJsonContent)) {
-		throw new Error(
+		// CommunityActionError so mcp observability keeps this caller-clearable
+		// precondition off Sentry (KODY-CLOUDFLARE-5T).
+		throw new CommunityActionError(
 			'community listings cannot publish packages with `"private": true` in package.json; set `"private": false` or remove `private` after the user explicitly approves public community sharing.',
 		)
 	}

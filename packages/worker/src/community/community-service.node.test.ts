@@ -910,7 +910,11 @@ test('publishCommunityListing requires MIT license and Intent heading', async ()
 			userId: 'user-1',
 			packageId: 'package-1',
 		}),
-	).rejects.toThrow(/MIT license/)
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityActionError &&
+			/MIT license/.test(error.message),
+	)
 
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		source: {
@@ -946,7 +950,10 @@ test('publishCommunityListing requires MIT license and Intent heading', async ()
 			userId: 'user-1',
 			packageId: 'package-1',
 		}),
-	).rejects.toThrow(/Intent/)
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityActionError && /Intent/.test(error.message),
+	)
 })
 
 test('publishCommunityListing rejects private packages', async () => {
@@ -988,8 +995,12 @@ test('publishCommunityListing rejects private packages', async () => {
 			userId: 'user-1',
 			packageId: 'package-1',
 		}),
-	).rejects.toThrow(
-		'community listings cannot publish packages with `"private": true`',
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof CommunityActionError &&
+			error.message.includes(
+				'community listings cannot publish packages with `"private": true`',
+			),
 	)
 })
 
