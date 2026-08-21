@@ -1046,6 +1046,26 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 		logoPath: null,
 		kind: 'platform' as const,
 	}))
+	const sixChooserResponse = await renderAppPage({
+		request: new Request('https://example.com/connect/oauth'),
+		env,
+		loaderData: {
+			connectOauth: {
+				ok: true,
+				provider: null,
+				integration: null,
+				chooser: { options: longChooserOptions.slice(0, 6) },
+				redirectUri: 'https://example.com/connect/oauth',
+			},
+		},
+	})
+	expect(sixChooserResponse.status).toBe(200)
+	const sixChooserHtml = await readResponseText(sixChooserResponse)
+	expect(sixChooserHtml).toContain('data-testid="connect-oauth-chooser-list"')
+	expect(sixChooserHtml).not.toContain(
+		'data-testid="connect-oauth-chooser-filter"',
+	)
+
 	const longChooserResponse = await renderAppPage({
 		request: new Request('https://example.com/connect/oauth'),
 		env,
