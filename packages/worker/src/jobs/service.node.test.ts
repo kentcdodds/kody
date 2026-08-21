@@ -4812,7 +4812,7 @@ test('executeJobOnce failure modes workflow', async () => {
 	}
 })
 
-test('executeJobOnce retries claimed platform blips and surfaces them on run-now', async () => {
+test('executeJobOnce retries trusted platform failures without trusting sandbox error text', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const db = createDatabase()
 	const env = createJobServiceTestEnv({
@@ -4888,17 +4888,36 @@ test('executeJobOnce retries claimed platform blips and surfaces them on run-now
 	}
 
 	try {
-		const platformBlips = [
-			estimateError.message,
+		executeSpy.mockResolvedValue({
+			result: undefined,
+			error: estimateError.message,
+			logs: [],
+		})
+		const estimateRunNow = await executeJobOnce({
+			env,
+			job: row.record,
+			callerContext,
+		})
+		expect(estimateRunNow.execution).toEqual({
+			ok: false,
+			error: estimateError.message,
+			logs: [],
+		})
+		await expect(
+			executeJobOnce({
+				env,
+				job: row.record,
+				callerContext,
+				runRecordHandle: claimedHandle,
+			}),
+		).rejects.toBeInstanceOf(TransientJobExecutionError)
+
+		const thrownPlatformBlips = [
 			durableObjectInstanceInactiveCloseMessage,
 			`D1_ERROR: ${d1NetworkConnectionLostMessage}.`,
 		]
-		for (const error of platformBlips) {
-			executeSpy.mockResolvedValue({
-				result: undefined,
-				error,
-				logs: [],
-			})
+		for (const error of thrownPlatformBlips) {
+			executeSpy.mockRejectedValue(new Error(error))
 			const runNow = await executeJobOnce({
 				env,
 				job: row.record,
@@ -4921,7 +4940,7 @@ test('executeJobOnce retries claimed platform blips and surfaces them on run-now
 
 		executeSpy.mockResolvedValue({
 			result: undefined,
-			error: 'user code failed',
+			error: durableObjectInstanceInactiveCloseMessage,
 			logs: [],
 		})
 		const userCode = await executeJobOnce({
@@ -4932,7 +4951,7 @@ test('executeJobOnce retries claimed platform blips and surfaces them on run-now
 		})
 		expect(userCode.execution).toEqual({
 			ok: false,
-			error: 'user code failed',
+			error: durableObjectInstanceInactiveCloseMessage,
 			logs: [],
 		})
 	} finally {
