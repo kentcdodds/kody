@@ -296,6 +296,10 @@ Jobs belong to packages.
 - Each job run binds a job-scoped scratch bucket; shared durable data uses
   `packageStorage()`
 - Package config stays keyed by the saved package id
+- Manifest `enabled` is the create-time default and can turn an existing job
+  on. Republishing with `"enabled": false` does not disable a job that is
+  already running; use `job_update` (or a package pause/resume export) to turn
+  one off.
 
 Jobs are not their own top-level saved primitive.
 

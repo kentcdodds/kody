@@ -1440,6 +1440,78 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 	expect(await listJobRowsByUserId(env.APP_DB, input.userId)).toEqual([])
 })
 
+test('package job sync preserves a runtime-enabled job when the manifest still says disabled', async () => {
+	const env = createJobServiceTestEnv({
+		APP_DB: createDatabase(),
+	})
+	const input = {
+		env,
+		userId: 'user-1',
+		baseUrl: 'https://heykody.dev',
+		packageId: 'package-1',
+		sourceId: 'source-1',
+	}
+	const createManifest = (enabled: boolean) =>
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kentcdodds/cloudflare',
+				exports: {
+					'.': './index.ts',
+				},
+				kody: {
+					id: 'cloudflare',
+					description: 'Cloudflare package',
+					jobs: {
+						sweep: {
+							entry: './src/jobs/sweep.ts',
+							schedule: { type: 'interval', every: '15m' },
+							timezone: 'UTC',
+							enabled,
+						},
+					},
+				},
+			}),
+		})
+	await insertPublishedEntitySource({
+		db: env.APP_DB as ReturnType<typeof createDatabase>,
+		userId: input.userId,
+		sourceId: input.sourceId,
+		entityKind: 'package',
+		entityId: input.packageId,
+		publishedCommit: 'package-published-commit',
+		manifestPath: 'package.json',
+	})
+
+	expect(
+		await syncPackageJobsForPackage({
+			...input,
+			manifest: createManifest(false),
+		}),
+	).toBe(true)
+	const created = (await listJobRowsByUserId(env.APP_DB, input.userId))[0]
+	expect(created?.record.enabled).toBe(false)
+
+	expect(
+		await syncPackageJobsForPackage({
+			...input,
+			manifest: createManifest(true),
+		}),
+	).toBe(true)
+	const turnedOn = (await listJobRowsByUserId(env.APP_DB, input.userId))[0]
+	expect(turnedOn?.record.enabled).toBe(true)
+	const nextRunAtAfterEnable = turnedOn?.record.nextRunAt
+
+	expect(
+		await syncPackageJobsForPackage({
+			...input,
+			manifest: createManifest(false),
+		}),
+	).toBe(false)
+	const preserved = (await listJobRowsByUserId(env.APP_DB, input.userId))[0]
+	expect(preserved?.record.enabled).toBe(true)
+	expect(preserved?.record.nextRunAt).toBe(nextRunAtAfterEnable)
+})
+
 test('package job sync preflights the full addition set without partial inserts', async () => {
 	const email = 'package-sync-free@example.com'
 	const userId = await createStableUserIdFromEmail(email)

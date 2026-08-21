@@ -738,7 +738,10 @@ export async function syncPackageJobsForPackage(input: {
 				const existing = existingByName.get(jobName)
 				const schedule = normalizeJobSchedule(definition.schedule)
 				const timezone = normalizeJobTimezone(definition.timezone)
-				const enabled = definition.enabled ?? true
+				const enabled = resolvePackageJobEnabled({
+					existingEnabled: existing?.record.enabled,
+					manifestEnabled: definition.enabled,
+				})
 				if (existing) {
 					const schedulerStateMatches =
 						JSON.stringify(existing.record.schedule) ===
@@ -832,6 +835,20 @@ export async function syncPackageJobsForPackage(input: {
 			return schedulerStateChanged
 		},
 	})
+}
+
+function resolvePackageJobEnabled(input: {
+	existingEnabled?: boolean
+	manifestEnabled?: boolean
+}) {
+	const manifestEnabled = input.manifestEnabled ?? true
+	if (input.existingEnabled === undefined) return manifestEnabled
+	// Manifest `enabled` is the create-time default and can still turn a job
+	// on. Republishing with `enabled: false` must not stop a job that is
+	// already running — fleet-wide package publishes (codemods) otherwise
+	// silently disable production sweepers that were enabled via job_update
+	// or a package resume export.
+	return input.existingEnabled || manifestEnabled
 }
 
 function resolveCreateShape(input: JobCreateInput) {

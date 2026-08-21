@@ -175,6 +175,12 @@ After package checks and publishing succeed:
 5. Only then change the job to `"enabled": true`, publish again, and verify the
    package/job detail reflects the enabled schedule.
 
+   Republishing a package whose job still says `"enabled": false` does not
+   disable a job that is already running. Manifest `enabled` is the create-time
+   default and can turn a job on; use `job_update` (or a package pause/resume
+   export) to turn one off. This keeps fleet-wide package publishes from
+   silently stopping a sweeper that an operator already enabled.
+
 Example test call:
 
 ```ts
