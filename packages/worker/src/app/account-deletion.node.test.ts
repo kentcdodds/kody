@@ -100,15 +100,11 @@ function createTestDb(
 							const userId = params[0] as string
 							if (
 								lower ===
-								'select client_id from user_mcp_oauth_clients where user_id = ? and revoked_at is null'
+								'select client_id from user_mcp_oauth_clients where user_id = ?'
 							) {
 								const numericId = Number(params[0])
 								results = (rows.user_mcp_oauth_clients ?? [])
-									.filter(
-										(row) =>
-											Number(row['user_id']) === numericId &&
-											row['revoked_at'] == null,
-									)
+									.filter((row) => Number(row['user_id']) === numericId)
 									.map((row) => ({ client_id: row['client_id'] }))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
@@ -1710,8 +1706,9 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 		dbUserId: 1,
 		mcpUserId: 'user-aaa',
 	})
-	expect(deleteClient).toHaveBeenCalledTimes(1)
+	expect(deleteClient).toHaveBeenCalledTimes(2)
 	expect(deleteClient).toHaveBeenCalledWith('owned-client')
+	expect(deleteClient).toHaveBeenCalledWith('already-revoked')
 
 	const { db: missingDeleteDb, rows: missingDeleteRows } = createTestDb({
 		users: [{ id: 1, email: 'a@example.com' }],

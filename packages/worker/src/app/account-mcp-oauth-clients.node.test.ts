@@ -179,3 +179,77 @@ test('mint rejects an eleventh active client and deletes the unused provider cli
 		maxUserMcpOauthClients,
 	)
 })
+
+test('quota-race mint keeps a revoked ownership row when deleteClient fails', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (id, username, email, stable_user_id, password_hash, email_verified_at)
+		VALUES (1, 'one', 'one@example.com', 'user-one', 'hash', CURRENT_TIMESTAMP);
+	`)
+	const helpers = {
+		createClient: vi.fn(async () => ({
+			clientId: 'oauth-client-race',
+			clientSecret: 'secret',
+		})),
+		deleteClient: vi.fn(async () => {
+			throw new Error('provider delete failed')
+		}),
+	}
+
+	for (let index = 0; index < maxUserMcpOauthClients - 1; index += 1) {
+		const minted = await mintUserMcpOauthClient({
+			db,
+			helpers: {
+				createClient: vi.fn(async () => ({
+					clientId: `oauth-client-${index + 1}`,
+					clientSecret: 'secret',
+				})),
+				deleteClient: vi.fn(async () => undefined),
+			},
+			userId: 1,
+			label: `Client ${index + 1}`,
+			redirectUris: ['https://example.com/callback'],
+		})
+		expect(minted.ok).toBe(true)
+	}
+
+	const raced = await mintUserMcpOauthClient({
+		db,
+		helpers: {
+			createClient: async () => {
+				sqlite.exec(`
+					INSERT INTO user_mcp_oauth_clients (
+						id, user_id, client_id, label, redirect_uris_json, created_at
+					) VALUES (
+						'seeded-tenth', 1, 'oauth-client-tenth', 'Tenth',
+						'["https://example.com/callback"]', '2026-08-21T00:00:00.000Z'
+					);
+				`)
+				return {
+					clientId: 'oauth-client-race',
+					clientSecret: 'secret',
+				}
+			},
+			deleteClient: helpers.deleteClient,
+		},
+		userId: 1,
+		label: 'Raced',
+		redirectUris: ['https://example.com/callback'],
+	})
+	expect(raced).toEqual({
+		ok: false,
+		error: `You can have at most ${maxUserMcpOauthClients} active MCP OAuth clients.`,
+		status: 400,
+	})
+	expect(helpers.deleteClient).toHaveBeenCalledWith('oauth-client-race')
+	expect(await listActiveUserMcpOauthClientIds(db, 1)).toHaveLength(
+		maxUserMcpOauthClients,
+	)
+	const listed = await listUserMcpOauthClients(db, 1)
+	expect(listed.some((client) => client.clientId === 'oauth-client-race')).toBe(
+		true,
+	)
+	expect(
+		listed.find((client) => client.clientId === 'oauth-client-race')?.revokedAt,
+	).toBeTruthy()
+})

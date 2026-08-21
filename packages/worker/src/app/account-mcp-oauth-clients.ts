@@ -147,6 +147,48 @@ export async function listActiveUserMcpOauthClientIds(
 	return (result.results ?? []).map((row) => row.client_id)
 }
 
+export async function listOwnedUserMcpOauthClientIds(
+	db: D1Database,
+	userId: number,
+): Promise<Array<string>> {
+	const result = await db
+		.prepare(`SELECT client_id FROM user_mcp_oauth_clients WHERE user_id = ?`)
+		.bind(userId)
+		.all<{ client_id: string }>()
+	return (result.results ?? []).map((row) => row.client_id)
+}
+
+async function discardCreatedProviderClient(input: {
+	db: D1Database
+	helpers: McpOauthClientHelpers
+	userId: number
+	clientId: string
+	label: string
+	redirectUris: Array<string>
+}) {
+	try {
+		await input.helpers.deleteClient(input.clientId)
+	} catch {
+		const now = new Date().toISOString()
+		await input.db
+			.prepare(
+				`INSERT INTO user_mcp_oauth_clients (
+					id, user_id, client_id, label, redirect_uris_json, created_at, revoked_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			)
+			.bind(
+				crypto.randomUUID(),
+				input.userId,
+				input.clientId,
+				input.label,
+				JSON.stringify(input.redirectUris),
+				now,
+				now,
+			)
+			.run()
+	}
+}
+
 export async function mintUserMcpOauthClient(input: {
 	db: D1Database
 	helpers: McpOauthClientHelpers
@@ -184,7 +226,14 @@ export async function mintUserMcpOauthClient(input: {
 		responseTypes: ['code'],
 	})
 	if (!created.clientSecret) {
-		await input.helpers.deleteClient(created.clientId).catch(() => undefined)
+		await discardCreatedProviderClient({
+			db: input.db,
+			helpers: input.helpers,
+			userId: input.userId,
+			clientId: created.clientId,
+			label: input.label,
+			redirectUris: input.redirectUris,
+		})
 		return {
 			ok: false,
 			error: 'The OAuth provider did not return a client secret.',
@@ -219,7 +268,14 @@ export async function mintUserMcpOauthClient(input: {
 			)
 			.run()
 		if ((inserted.meta.changes ?? 0) === 0) {
-			await input.helpers.deleteClient(created.clientId).catch(() => undefined)
+			await discardCreatedProviderClient({
+				db: input.db,
+				helpers: input.helpers,
+				userId: input.userId,
+				clientId: created.clientId,
+				label: input.label,
+				redirectUris: input.redirectUris,
+			})
 			return {
 				ok: false,
 				error: `You can have at most ${maxUserMcpOauthClients} active MCP OAuth clients.`,
@@ -227,7 +283,14 @@ export async function mintUserMcpOauthClient(input: {
 			}
 		}
 	} catch (error) {
-		await input.helpers.deleteClient(created.clientId).catch(() => undefined)
+		await discardCreatedProviderClient({
+			db: input.db,
+			helpers: input.helpers,
+			userId: input.userId,
+			clientId: created.clientId,
+			label: input.label,
+			redirectUris: input.redirectUris,
+		})
 		throw error
 	}
 
@@ -286,7 +349,7 @@ export async function deleteOwnedMcpOauthClients(input: {
 }): Promise<number> {
 	let clientIds: Array<string>
 	try {
-		clientIds = await listActiveUserMcpOauthClientIds(input.db, input.userId)
+		clientIds = await listOwnedUserMcpOauthClientIds(input.db, input.userId)
 	} catch (error) {
 		input.warnings.push(
 			`MCP OAuth client listing failed: ${error instanceof Error ? error.message : String(error)}`,

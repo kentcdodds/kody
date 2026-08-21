@@ -26,7 +26,7 @@ import { listRepoSessionsByUser } from '#worker/repo/repo-sessions.ts'
 import { listAccountUserStorageIds } from '#worker/account/user-inventory.ts'
 import {
 	deleteOwnedMcpOauthClients,
-	listActiveUserMcpOauthClientIds,
+	listOwnedUserMcpOauthClientIds,
 } from '#app/account-mcp-oauth-clients.ts'
 import {
 	accountUserDataTargets,
@@ -1198,7 +1198,7 @@ export async function deleteUserAccount(input: {
 				warnings,
 			})
 		} else {
-			const ownedClientIds = await listActiveUserMcpOauthClientIds(
+			const ownedClientIds = await listOwnedUserMcpOauthClientIds(
 				input.env.APP_DB,
 				input.dbUserId,
 			)
