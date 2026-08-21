@@ -5,6 +5,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext, parseMcpCallerContext } from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
+import { hasHostCaughtDurableObjectReset } from '#mcp/executor.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import {
 	abandonRunRecord,
@@ -1326,14 +1327,15 @@ export async function executeJobOnce(input: {
 							typeof result.error === 'string'
 								? result.error
 								: formatJobError(result.error)
-						// Storage-estimate failures have a producer-owned message
-						// contract and are intentionally returned by the sandbox.
-						// Other platform failures must arrive through the thrown
-						// path below; classifying arbitrary sandbox error text
-						// would let user code impersonate a retryable failure.
+						// Only host-owned provenance can promote a sandbox result
+						// to a claimed-occurrence retry. User code cannot forge the
+						// symbol by returning an identical platform error string.
+						// Storage-estimate errors retain their existing
+						// producer-owned message contract.
 						if (
 							input.runRecordHandle &&
-							isStorageEstimateReadError(result.error)
+							(hasHostCaughtDurableObjectReset(result) ||
+								isStorageEstimateReadError(result.error))
 						) {
 							throw new TransientJobExecutionError(errorMessage, {
 								cause: result.error,

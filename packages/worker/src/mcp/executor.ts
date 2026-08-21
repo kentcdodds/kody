@@ -171,6 +171,48 @@ export type ExecuteResultWithHostSideEffects = ExecuteResult & {
 	hostMediatedSideEffects: EvaluationHostSideEffects
 }
 
+/**
+ * Unforgeable across the sandbox RPC boundary: user code can copy the reset
+ * message, but it cannot attach this host-owned symbol to its evaluate result.
+ */
+export const hostCaughtDurableObjectReset = Symbol(
+	'hostCaughtDurableObjectReset',
+)
+
+type ExecuteResultWithHostResetProvenance = ExecuteResult & {
+	[hostCaughtDurableObjectReset]: true
+}
+
+export function hasHostCaughtDurableObjectReset(
+	result: unknown,
+): result is ExecuteResultWithHostResetProvenance {
+	return (
+		typeof result === 'object' &&
+		result !== null &&
+		(result as Partial<ExecuteResultWithHostResetProvenance>)[
+			hostCaughtDurableObjectReset
+		] === true
+	)
+}
+
+export function stripHostCaughtDurableObjectReset<T extends ExecuteResult>(
+	result: T,
+): T {
+	if (!hasHostCaughtDurableObjectReset(result)) return result
+	const { [hostCaughtDurableObjectReset]: _provenance, ...publicResult } =
+		result
+	return publicResult as T
+}
+
+function stampHostCaughtDurableObjectReset(
+	result: ExecuteResult,
+): ExecuteResultWithHostResetProvenance {
+	return {
+		...result,
+		[hostCaughtDurableObjectReset]: true,
+	}
+}
+
 function attachHostSideEffects(
 	result: ExecuteResult,
 	sideEffects: EvaluationSideEffectTracker,
@@ -698,11 +740,11 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 					if (isTransientDurableObjectResetError(error)) {
 						outcome = 'error'
 						return attachHostSideEffects(
-							{
+							stampHostCaughtDurableObjectReset({
 								result: undefined,
 								error: message,
 								logs: [],
-							},
+							}),
 							sideEffects,
 						)
 					}
@@ -735,11 +777,11 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				outcome = 'error'
 				if (isTransientDurableObjectResetError(error)) {
 					return attachHostSideEffects(
-						{
+						stampHostCaughtDurableObjectReset({
 							result: undefined,
 							error: getErrorMessage(error),
 							logs: [],
-						},
+						}),
 						sideEffects,
 					)
 				}

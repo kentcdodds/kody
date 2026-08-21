@@ -12,6 +12,8 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	createExecuteExecutor,
 	createNamedExecutionError,
+	hasHostCaughtDurableObjectReset,
+	stripHostCaughtDurableObjectReset,
 } from '#mcp/executor.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
 import {
@@ -1048,7 +1050,10 @@ ${runtimeHelperRuntimePropertySource}
 			try {
 				result = await runWithTransientDurableObjectResetRetry({
 					operation: () => executor.execute(wrapped, providers),
-					retryableResultError: (executeResult) => executeResult.error ?? null,
+					retryableResultError: (executeResult) =>
+						hasHostCaughtDurableObjectReset(executeResult)
+							? (executeResult.error ?? null)
+							: null,
 					shouldRetry: ({ result: executeResult }) =>
 						!evaluationHasHostMediatedSideEffects(
 							executeResult?.hostMediatedSideEffects,
@@ -1116,20 +1121,22 @@ ${runtimeHelperRuntimePropertySource}
 					options.runRecordHandle.context.surface === 'job')
 			if (
 				callerOwnsScheduledJobRun &&
-				isStorageEstimateReadError(finalResult.error)
+				(isStorageEstimateReadError(finalResult.error) ||
+					hasHostCaughtDurableObjectReset(finalResult))
 			) {
 				// Leave the claimed run `running` so the job scheduler can
 				// abandon it and retry the same scheduledFor. Finishing as
 				// error would make the idempotency replay permanent.
 				return withRunId(finalResult)
 			}
+			const publicResult = stripHostCaughtDurableObjectReset(finalResult)
 			await finishObservedRun({
 				status: 'error',
-				logs: finalResult.logs ?? [],
-				error: createNamedExecutionError(finalResult.error),
+				logs: publicResult.logs ?? [],
+				error: createNamedExecutionError(publicResult.error),
 			})
 			await recordPackageExportUsage('error')
-			return withRunId(finalResult)
+			return withRunId(publicResult)
 		} catch (error) {
 			if (!runRecordFinished) {
 				await finishObservedRun({
