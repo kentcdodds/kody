@@ -161,6 +161,8 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountValueDetail)]: titleOnly('Values'),
 	[routePattern(routes.accountJobs)]: titleOnly('Jobs'),
 	[routePattern(routes.accountJobDetail)]: titleOnly('Jobs'),
+	[routePattern(routes.accountWorkflows)]: titleOnly('Workflows'),
+	[routePattern(routes.accountWorkflowDetail)]: titleOnly('Workflows'),
 	[routePattern(routes.accountActivity)]: titleOnly('Activity'),
 	[routePattern(routes.accountActivityDetail)]: titleOnly('Activity'),
 	[routePattern(routes.accountMemories)]: titleOnly('Memories'),

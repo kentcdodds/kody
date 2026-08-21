@@ -64,6 +64,10 @@ import {
 	createAccountJobsHandler,
 } from '#app/handlers/account-jobs.ts'
 import {
+	createAccountWorkflowsApiHandler,
+	createAccountWorkflowsHandler,
+} from '#app/handlers/account-workflows.ts'
+import {
 	createAccountMcpServersApiHandler,
 	createAccountMcpServersHandler,
 	createAccountMcpServersOauthCallbackHandler,
@@ -360,6 +364,10 @@ export function createAppRouter(env: Env) {
 			accountJobDetail: createAccountJobsHandler(env),
 			accountJobsApi: createAccountJobsApiHandler(env),
 			accountJobsApiPost: createAccountJobsApiHandler(env),
+			accountWorkflows: createAccountWorkflowsHandler(env),
+			accountWorkflowDetail: createAccountWorkflowsHandler(env),
+			accountWorkflowsApi: createAccountWorkflowsApiHandler(env),
+			accountWorkflowsApiPost: createAccountWorkflowsApiHandler(env),
 			accountActivity: createAccountActivityHandler(env),
 			accountActivityDetail: createAccountActivityHandler(env),
 			accountActivityApi: createAccountActivityApiHandler(env),

@@ -16,13 +16,13 @@ secret reference, then run work through **execute**.
   surface a small set of relevant long-term memories that have not already been
   shown in the same conversation.
 - **Think in packages for reusable saved code.** Packages expose exports,
-  declare package-owned jobs, and can optionally expose an app/UI surface. For
-  scheduled work that should not become a saved package, use the built-in
-  `job_schedule` capability. `job_schedule_once` is the one-off convenience
-  alias, optional `expires_at` auto-disables after a UTC timestamp,
-  `job_run_now` can trigger an existing job immediately for debugging or
-  catch-up runs, and `job_update` / `job_delete` let you correct or remove an
-  existing scheduled job by id.
+  declare package-owned jobs, and can optionally expose an app/UI surface.
+  Recurring schedules belong on a package under `kody.jobs`. Deferred one-shot
+  work uses `workflows.create({ runAt })` from `execute` or package runtime.
+  Optional `expires_at` on package jobs auto-disables after a UTC timestamp,
+  `job_run_now` can trigger an existing package job immediately for debugging or
+  catch-up runs, and `job_update` adjusts metadata (enable, kill switch,
+  schedule, `expires_at`) without rewriting package source.
 - **Prefer a close community package before creating one.** Community listings
   are excluded from general `search`. Use `community_search` (prefer trusted
   matches) and fork or adapt when a listing is close to the goal; create a new

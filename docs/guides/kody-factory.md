@@ -53,10 +53,11 @@ runtime state belongs in `packageStorage()`.
 
 ### Jobs and schedules
 
-**Jobs** run code later or on a schedule while your laptop is closed. An ad hoc
-schedule can invoke a module directly. A reusable package can declare its own
-jobs so the schedule travels with the package behavior. Runs and failures remain
-inspectable in account activity.
+**Jobs** run code later or on a schedule while your laptop is closed. A saved
+package declares recurring schedules under `kody.jobs` so the schedule travels
+with the package behavior. Deferred one-shot work uses
+`workflows.create({ runAt })` from `execute` or package runtime. Runs and
+failures remain inspectable in account activity.
 
 ### Apps and webhooks
 

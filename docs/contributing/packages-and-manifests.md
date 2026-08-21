@@ -188,10 +188,9 @@ The agent-facing package-reuse contract is two rules:
    imports from execute always see the current published version; snapshot
    staleness only affects package-to-package static dependencies.
 2. **Name is data, the call needs the target package's own runtime, or the call
-   needs exactly-once → `packages.invoke`.** Package runtime contexts,
-   authenticated ad hoc execute calls, and standalone scheduled jobs expose it
-   from `kody:runtime`. It is the only dynamic primitive and is always
-   contract-checked before invoking.
+   needs exactly-once → `packages.invoke`.** Package runtime contexts and
+   authenticated ad hoc execute calls expose it from `kody:runtime`. It is the
+   only dynamic primitive and is always contract-checked before invoking.
 
 ```ts
 import { packages } from 'kody:runtime'
@@ -243,10 +242,10 @@ Security and loop safeguards:
 
 - Resolution is same-user only; package code cannot invoke another user's saved
   package.
-- `packages.invoke` requires package runtime context, authenticated execute
-  context, or a standalone scheduled job. Static `kody:@...` imports remain
-  library imports in the caller's runtime; use keyless `packages.invoke` when
-  execute or a standalone job needs to enter a package runtime.
+- `packages.invoke` requires package runtime context or authenticated execute
+  context. Static `kody:@...` imports remain library imports in the caller's
+  runtime; use keyless `packages.invoke` when execute or a package job needs to
+  enter a package runtime.
 - Nested dynamic package invocations are depth-limited to prevent runaway
   package-to-package loops.
 
@@ -476,7 +475,7 @@ await workflows.create({
 
 In package runtime contexts (package jobs, subscription handlers, package apps),
 `packageId` is resolved from `packageContext`. Outside package runtime
-(`execute`, ad hoc jobs), pass `packageId` explicitly. See
+(`execute`, ad hoc execute), pass `packageId` explicitly. See
 [Workflows](../use/workflows.md) for the full runtime reference, including the
 inline `code` shape.
 

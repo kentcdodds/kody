@@ -1238,6 +1238,47 @@ export type AccountJobsLoaderData = {
 	}
 }
 
+export type AccountWorkflowSourceType = 'package' | 'inline'
+
+export type AccountWorkflowRunStatus =
+	| 'queued'
+	| 'running'
+	| 'paused'
+	| 'waiting'
+	| 'waitingForPause'
+	| 'unknown'
+	| 'complete'
+	| 'errored'
+	| 'terminated'
+	| 'cancelled'
+
+export type AccountWorkflowListItem = {
+	id: string
+	sourceType: AccountWorkflowSourceType
+	packageId: string | null
+	kodyId: string | null
+	sourceId: string | null
+	workflowName: string
+	exportName: string | null
+	idempotencyKey: string
+	runAt: string
+	planDate: string | null
+	status: AccountWorkflowRunStatus | null
+	createdAt: string
+	updatedAt: string
+	completedAt: string | null
+	lastError: string | null
+}
+
+export type AccountWorkflowDetail = AccountWorkflowListItem
+
+export type AccountWorkflowsLoaderData = {
+	ok: true
+	workflows: Array<AccountWorkflowListItem>
+	selectedWorkflow: AccountWorkflowDetail | null
+	selectedWorkflowId: string | null
+}
+
 export type AccountActivityStatusFilter = 'error' | 'all' | 'running'
 
 export type AccountActivitySurfaceFilter =
@@ -1527,6 +1568,7 @@ export type AppLoaderData = {
 	accountSecrets?: AccountSecretsLoaderData
 	accountValues?: AccountValuesLoaderData
 	accountJobs?: AccountJobsLoaderData
+	accountWorkflows?: AccountWorkflowsLoaderData
 	accountActivity?: AccountActivityLoaderData
 	accountMemories?: AccountMemoriesLoaderData
 	accountEmail?: AccountEmailLoaderData

@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import {
 	filterAccountJobs,
 	isActiveAccountJob,
-	readJobsOwnershipFilter,
 	readJobsViewFilter,
 	type FilterableAccountJob,
 } from './account-jobs-filter.ts'
@@ -14,7 +13,7 @@ function job(
 ): FilterableAccountJob {
 	return {
 		name: overrides.id,
-		ownership: 'ad-hoc',
+		ownership: 'package',
 		scheduleSummary: 'summary',
 		timezone: 'UTC',
 		enabled: true,
@@ -27,7 +26,7 @@ function job(
 	}
 }
 
-test('account jobs filters cover active/history views and ownership', () => {
+test('account jobs filters cover active/history views and search', () => {
 	expect(
 		isActiveAccountJob(
 			job({ id: 'enabled-cron', enabled: true, scheduleType: 'cron' }),
@@ -73,21 +72,12 @@ test('account jobs filters cover active/history views and ownership', () => {
 	expect(readJobsViewFilter('/account/jobs?view=all')).toBe('all')
 	expect(readJobsViewFilter('/account/jobs?view=nope')).toBe('active')
 
-	expect(readJobsOwnershipFilter('/account/jobs')).toBe('all')
-	expect(readJobsOwnershipFilter('/account/jobs?ownership=package')).toBe(
-		'package',
-	)
-	expect(readJobsOwnershipFilter('/account/jobs?ownership=ad-hoc')).toBe(
-		'ad-hoc',
-	)
-	expect(readJobsOwnershipFilter('/account/jobs?ownership=nope')).toBe('all')
-
 	const jobs = [
 		job({
 			id: 'live-cron',
 			name: 'Live digest',
 			enabled: true,
-			ownership: 'ad-hoc',
+			ownership: 'package',
 		}),
 		job({
 			id: 'live-package',
@@ -123,7 +113,6 @@ test('account jobs filters cover active/history views and ownership', () => {
 	expect(
 		filterAccountJobs(jobs, {
 			view: 'active',
-			ownership: 'all',
 			search: '',
 			nowMs,
 		}).map((item) => item.id),
@@ -132,7 +121,6 @@ test('account jobs filters cover active/history views and ownership', () => {
 	expect(
 		filterAccountJobs(jobs, {
 			view: 'history',
-			ownership: 'all',
 			search: '',
 			nowMs,
 		}).map((item) => item.id),
@@ -141,7 +129,6 @@ test('account jobs filters cover active/history views and ownership', () => {
 	expect(
 		filterAccountJobs(jobs, {
 			view: 'all',
-			ownership: 'all',
 			search: '',
 			nowMs,
 		}).map((item) => item.id),
@@ -155,17 +142,7 @@ test('account jobs filters cover active/history views and ownership', () => {
 
 	expect(
 		filterAccountJobs(jobs, {
-			view: 'active',
-			ownership: 'package',
-			search: '',
-			nowMs,
-		}).map((item) => item.id),
-	).toEqual(['live-package'])
-
-	expect(
-		filterAccountJobs(jobs, {
 			view: 'history',
-			ownership: 'ad-hoc',
 			search: 'failed',
 			nowMs,
 		}).map((item) => item.id),
@@ -183,7 +160,6 @@ test('account jobs filters cover active/history views and ownership', () => {
 			],
 			{
 				view: 'all',
-				ownership: 'all',
 				search: 'state store',
 				nowMs,
 			},

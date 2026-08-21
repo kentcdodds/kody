@@ -55,5 +55,6 @@ gh issue create --title "Cleanup: … after …" --label improvement --body-file
 
 Or `kody:@kentcdodds/github/request` `POST /repos/kentcdodds/kody/issues`.
 
-Soak or calendar gates also get a scheduled wake (`job_schedule` + `createRun`)
-per [ship-pr](../ship-pr/SKILL.md). Close the issue when the cleanup lands.
+Soak or calendar gates also get a scheduled wake (`execute` +
+`workflows.create({ runAt, idempotencyKey })`) per
+[ship-pr](../ship-pr/SKILL.md). Close the issue when the cleanup lands.

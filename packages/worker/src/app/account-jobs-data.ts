@@ -104,7 +104,7 @@ export function jobOwnershipForId(jobId: string): JobOwnership {
 
 /**
  * Package job ids are `package-job:{packageId}:{encodeURIComponent(jobName)}`.
- * Returns null for ad-hoc jobs or malformed package job ids.
+ * Returns null for non-package jobs or malformed package job ids.
  */
 export function packageIdFromJobId(jobId: string): string | null {
 	if (!isPackageOwnedJobId(jobId)) return null

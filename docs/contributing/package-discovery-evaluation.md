@@ -6,10 +6,10 @@ connection. Evaluated sessions receive only a case's natural-language `prompt`.
 The inventory preconditions and `expected` actions remain with the evaluator.
 
 The set has two cases for each scored route: reuse a discovered result, perform
-one ephemeral execution, create a direct ad hoc job, and author durable reusable
-source. It includes both one-time and simple recurring ad hoc schedules, plus a
-scheduled workflow whose reusable interface and cross-host use justify durable
-authoring.
+one ephemeral execution, defer one-shot work through a workflow, and author
+durable reusable source. It includes both a deferred one-shot reminder and a
+simple recurring schedule that belongs in package authoring, plus a scheduled
+workflow whose reusable interface and cross-host use justify durable authoring.
 
 ## Account setup
 
@@ -79,9 +79,8 @@ metadata.
 - Executing the exact discovered result is `invoke-existing`, with the same
   entity id recorded as `targetEntityId`.
 - Ephemeral task code that does not persist source or a schedule is
-  `execute-one-off`.
-- An `execute` call to `job_schedule` or `job_schedule_once` is
-  `schedule-ad-hoc-job`.
+  `execute-one-off`. Deferred one-shot work via `workflows.create({ runAt })`
+  from `execute` is also `execute-one-off`.
 - Reading `coding_guide_get` or existing source before authoring is
   `inspect-authoring-guidance`.
 - Initializing, editing, creating, or publishing reusable saved source is
@@ -102,8 +101,8 @@ Include failed tool attempts; the scorer fails traces containing them.
 
 Every case requires discovery first. Up to three read-only `search` or
 `inspect-authoring-guidance` actions are allowed so an agent can query, inspect
-an entity, and load authoring guidance. Reuse, one-off execution, and ad hoc job
-routes require exactly one terminal action.
+an entity, and load authoring guidance. Reuse, one-off execution, and deferred
+workflow routes require exactly one terminal action.
 
 Authoring may contain up to eight initialization, edit, check, create, and
 publication events. It must include at least one mutation and end with an
@@ -112,8 +111,9 @@ operation. Multiple publications are valid because safe rollout may publish a
 disabled schedule, test it, and publish it enabled. Publication safety and
 rollout correctness are outside this routing scorer's scope.
 
-Repeated successful reuse invocations, one-off executions, or ad hoc schedules
-still fail because those duplicate the terminal work selected by the route.
+Repeated successful reuse invocations, one-off executions, or duplicate deferred
+workflows still fail because those duplicate the terminal work selected by the
+route.
 
 A transcript has this machine-readable shape:
 

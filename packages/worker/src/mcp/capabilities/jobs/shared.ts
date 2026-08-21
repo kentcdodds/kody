@@ -4,7 +4,6 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { type JobManagerDebugState } from '#worker/jobs/manager-client.ts'
 import { logJobSchedulerEvent } from '#worker/jobs/scheduler-logging.ts'
 import {
-	type JobCreateInput,
 	type JobExecutionResult,
 	type JobSchedule,
 	type JobSourceInspection,
@@ -42,43 +41,6 @@ const cronScheduleSchema = z.object({
 			'Standard 5-field cron expression: minute hour day-of-month month day-of-week.',
 		),
 })
-
-export const scheduledJobInputBaseSchema = {
-	name: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Optional human-readable job name. Defaults to "Scheduled job" when omitted.',
-		),
-	code: z
-		.string()
-		.min(1)
-		.describe(
-			'ES module source for the job entrypoint. It must default export the function Kody should run later, preferably as `export default async function main(input = {}) { ... }`; modules without a default export, such as bare async-arrow snippets, are rejected. The default export receives the job `params` object as its first argument at run time; there is no `params` export from `kody:runtime`, so do not import params and instead read them from the function argument.',
-		),
-	params: z
-		.record(z.string(), z.unknown())
-		.optional()
-		.describe(
-			'Optional JSON params passed as the first argument to the job entrypoint when it runs.',
-		),
-	timezone: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(
-			'Optional timezone label for cron display and schedule calculation. Defaults to UTC when omitted.',
-		),
-	expires_at: z
-		.string()
-		.min(1)
-		.nullable()
-		.optional()
-		.describe(
-			'Optional UTC ISO timestamp after which the platform stops scheduling this job and auto-disables it (enabled=false). Separate from preserved (retention). Pass null on update to clear.',
-		),
-}
 
 export const scheduledJobScheduleSchema = z.discriminatedUnion('type', [
 	onceScheduleSchema,
@@ -237,33 +199,6 @@ export const jobGetOutputSchema = z.object({
 		.describe('Published job source details when includeCode is true.'),
 })
 
-export const jobScheduleInputSchema = z.object({
-	...scheduledJobInputBaseSchema,
-	schedule: scheduledJobScheduleSchema,
-})
-
-export const oneOffJobScheduleInputSchema = z.object({
-	...scheduledJobInputBaseSchema,
-	run_at: z
-		.string()
-		.min(1)
-		.describe(
-			'UTC timestamp for the one-off run, for example 2026-04-20T18:30:00Z.',
-		),
-})
-
-export const jobScheduleOutputSchema = z.object({
-	job_id: z.string(),
-	name: z.string(),
-	source_id: z.string(),
-	storage_id: z.string(),
-	schedule: scheduledJobSummarySchema,
-	schedule_summary: z.string(),
-	created_at: z.string(),
-	next_run_at: z.string(),
-	expires_at: z.string().nullable(),
-})
-
 export const jobViewOutputSchema = z.object({
 	job_id: z.string(),
 	name: z.string(),
@@ -328,13 +263,8 @@ export const jobUpdateInputSchema = z
 			.string()
 			.min(1)
 			.optional()
-			.describe('Optional new human-readable name for the job.'),
-		code: z
-			.string()
-			.min(1)
-			.optional()
 			.describe(
-				"Optional replacement ES module source. Providing this publishes a new commit on the job's repo-backed source and replaces the job's existing published module. It must still default export the job entrypoint, preferably as `export default async function main(input = {}) { ... }`; modules without a default export, such as bare async-arrow snippets, are rejected. The default export receives `params` as its first argument; there is no `params` export from `kody:runtime`.",
+				'Optional new human-readable name for the job. Rejected for package-owned jobs.',
 			),
 		params: z
 			.record(z.string(), z.unknown())
@@ -382,7 +312,6 @@ export const jobUpdateInputSchema = z
 	.refine(
 		(input) =>
 			input.name !== undefined ||
-			input.code !== undefined ||
 			input.params !== undefined ||
 			input.schedule !== undefined ||
 			input.timezone !== undefined ||
@@ -405,7 +334,6 @@ export const jobRunNowOutputSchema = z.object({
 		),
 })
 
-export type JobScheduleCapabilityInput = z.infer<typeof jobScheduleInputSchema>
 export type JobGetCapabilityInput = z.infer<typeof jobGetInputSchema>
 export type JobDeleteCapabilityInput = z.infer<typeof jobDeleteInputSchema>
 export type JobRunNowCapabilityInput = z.infer<typeof jobRunNowInputSchema>
@@ -470,34 +398,6 @@ export function toJobSchedule(
 			}
 	}
 	return assertNeverScheduledJobSchedule(schedule)
-}
-
-export function resolveJobCreateBody(
-	input: JobScheduleCapabilityInput,
-	defaultName = 'Scheduled job',
-): JobCreateInput {
-	return {
-		name: input.name?.trim() || defaultName,
-		code: input.code,
-		params: input.params,
-		schedule: toJobSchedule(input.schedule),
-		timezone: input.timezone ?? null,
-		...(input.expires_at !== undefined ? { expiresAt: input.expires_at } : {}),
-	}
-}
-
-export function buildJobScheduleOutput(created: JobView) {
-	return {
-		job_id: created.id,
-		name: created.name,
-		source_id: created.sourceId,
-		storage_id: created.storageId,
-		schedule: buildJobScheduleSummaryOutput(created.schedule),
-		schedule_summary: created.scheduleSummary,
-		created_at: created.createdAt,
-		next_run_at: created.nextRunAt,
-		expires_at: created.expiresAt ?? null,
-	}
 }
 
 export function formatJobRecentRunFromRecord(
@@ -654,7 +554,6 @@ export function resolveJobUpdateBody(
 	return {
 		id: input.id,
 		name: input.name,
-		code: input.code,
 		params: input.params,
 		schedule:
 			input.schedule === undefined ? undefined : toJobSchedule(input.schedule),
@@ -664,31 +563,6 @@ export function resolveJobUpdateBody(
 		preserved: input.preserved,
 		...(input.expires_at !== undefined ? { expiresAt: input.expires_at } : {}),
 	}
-}
-
-export async function createScheduledJobFromArgs(input: {
-	env: Env
-	callerContext: CapabilityContext['callerContext']
-	args: JobScheduleCapabilityInput
-	defaultName?: string
-}) {
-	const user = requireMcpUser(input.callerContext)
-	// Delay job runtime imports so capability registration can load without
-	// recursively pulling the full jobs runtime back through the registry.
-	const { createJob } = await import('#worker/jobs/service.ts')
-	const created = await createJob({
-		env: input.env,
-		callerContext: input.callerContext,
-		body: resolveJobCreateBody(input.args, input.defaultName),
-	})
-	logJobSchedulerEvent({
-		event: 'job_created',
-		userId: user.userId,
-		jobId: created.id,
-		scheduleType: created.schedule.type,
-		nextRunAt: created.nextRunAt,
-	})
-	return buildJobScheduleOutput(created)
 }
 
 export async function runJobNowFromArgs(input: {

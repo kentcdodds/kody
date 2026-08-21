@@ -145,6 +145,10 @@ test('delimiter-bounded params keep companion suffixes and encode dotted ids', a
 	)
 	router.get(routePattern(routes.accountJobDetail), createStubHandler('job'))
 	router.get(
+		routePattern(routes.accountWorkflowDetail),
+		createStubHandler('workflow'),
+	)
+	router.get(
 		routePattern(routes.accountActivityDetail),
 		createStubHandler('activity'),
 	)
@@ -260,4 +264,11 @@ test('delimiter-bounded params keep companion suffixes and encode dotted ids', a
 			await router.fetch(new Request('http://localhost/account/activity/run-1'))
 		).text(),
 	).toBe('activity')
+	expect(
+		await (
+			await router.fetch(
+				new Request('http://localhost/account/workflows/dynwf-example'),
+			)
+		).text(),
+	).toBe('workflow')
 })

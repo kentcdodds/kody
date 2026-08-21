@@ -2055,7 +2055,7 @@ test('updateJob clears params, updates timezone, and disables a job', async () =
 	}).catch((caught: unknown) => caught)
 	expect(emptyCodeError).toBeInstanceOf(McpCallerError)
 	expect(emptyCodeError).toMatchObject({
-		message: 'Jobs require non-empty code.',
+		message: 'Job code cannot be changed via job_update.',
 	})
 })
 
@@ -2133,7 +2133,8 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	expect(repoMockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 
 	const identityErrorMessage =
-		'Package-owned jobs cannot change name, code, or published source via job_update. Change the job entry in the package repo and publish the package.'
+		'Package-owned jobs cannot change name or published source via job_update. Change the job entry in the package repo and publish the package.'
+	const codeErrorMessage = 'Job code cannot be changed via job_update.'
 	const codeError = await updateJob({
 		env,
 		callerContext,
@@ -2144,7 +2145,7 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	}).catch((caught: unknown) => caught)
 	expect(codeError).toBeInstanceOf(McpCallerError)
 	expect(codeError).toMatchObject({
-		message: identityErrorMessage,
+		message: codeErrorMessage,
 	})
 	const nameError = await updateJob({
 		env,
@@ -2172,11 +2173,11 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	})
 	expect(repoMockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 
-	const adHoc = await createJob({
+	const leftover = await createJob({
 		env,
 		callerContext,
 		body: {
-			name: 'Ad hoc contrast',
+			name: 'Leftover job fixture',
 			code: 'export default async () => ({ ok: true })',
 			schedule: {
 				type: 'interval',
@@ -2189,7 +2190,7 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 		env,
 		callerContext,
 		body: {
-			id: adHoc.id,
+			id: leftover.id,
 			schedule: {
 				type: 'interval',
 				every: '30m',
@@ -2197,9 +2198,22 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 		},
 	})
 	expect(repoMockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
+
+	const leftoverCodeError = await updateJob({
+		env,
+		callerContext,
+		body: {
+			id: leftover.id,
+			code: 'export default async () => ({ ok: true, rewritten: true })',
+		},
+	}).catch((caught: unknown) => caught)
+	expect(leftoverCodeError).toBeInstanceOf(McpCallerError)
+	expect(leftoverCodeError).toMatchObject({
+		message: codeErrorMessage,
+	})
 })
 
-test('createJob and updateJob reject modules without a default export as McpCallerError', async () => {
+test('createJob rejects modules without a default export as McpCallerError and updateJob rejects code changes', async () => {
 	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
 	})
@@ -2249,7 +2263,7 @@ test('createJob and updateJob reject modules without a default export as McpCall
 
 	expect(updateError).toBeInstanceOf(McpCallerError)
 	expect(updateError).toMatchObject({
-		message: repoBackedModuleEntrypointExportErrorMessage,
+		message: 'Job code cannot be changed via job_update.',
 	})
 })
 

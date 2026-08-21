@@ -213,13 +213,13 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		})
 		logMcpEvent({
 			...callerFailureBase,
-			capabilityName: 'job_schedule_once',
+			capabilityName: 'job_update',
 			domain: 'jobs',
 			capabilitySource: 'builtin',
 			failurePhase: 'handler',
 			errorName: 'Error',
-			errorMessage: 'Scheduling failed.',
-			cause: new Error('Scheduling failed.', {
+			errorMessage: 'Job update failed.',
+			cause: new Error('Job update failed.', {
 				cause: new EntitlementLimitError({
 					resource: 'scheduled_jobs',
 					plan: 'free',

@@ -4,8 +4,6 @@ import { jobDeleteCapability } from './job-delete.ts'
 import { jobGetCapability } from './job-get.ts'
 import { jobListCapability } from './job-list.ts'
 import { jobRunNowCapability } from './job-run-now.ts'
-import { jobScheduleCapability } from './job-schedule.ts'
-import { jobScheduleOnceCapability } from './job-schedule-once.ts'
 import { jobUpdateCapability } from './job-update.ts'
 import { workflowCancelCapability } from './workflow-cancel.ts'
 import { workflowListCapability } from './workflow-list.ts'
@@ -13,11 +11,10 @@ import { workflowListCapability } from './workflow-list.ts'
 export const jobsDomain = defineDomain({
 	name: capabilityDomainNames.jobs,
 	description:
-		'Inspect, schedule, or trigger repo-backed jobs without a package.',
+		'Inspect, update metadata, or trigger package-owned jobs, and list or cancel workflow runs.',
 	keywords: [
 		'job',
 		'schedule',
-		'one-off',
 		'interval',
 		'cron',
 		'update',
@@ -36,8 +33,6 @@ export const jobsDomain = defineDomain({
 	capabilities: [
 		jobListCapability,
 		jobGetCapability,
-		jobScheduleCapability,
-		jobScheduleOnceCapability,
 		jobUpdateCapability,
 		jobDeleteCapability,
 		jobRunNowCapability,

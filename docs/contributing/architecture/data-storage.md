@@ -397,9 +397,10 @@ Job schedule metadata lives in the dedicated `kody-jobs` D1 database bound as
   pointers, `preserved` (skip platform auto-cleanup), and optional `expires_at`
   (UTC ISO; when reached the scheduler skips the job and auto-disables it with
   `enabled = 0`). Account retention windows live on `APP_DB` `users`
-  (`job_retention_*_days`; NULL = platform defaults 14/60/90). Completed ad-hoc
-  jobs are cleaned by the hourly `job_retention` sweeper on the jobs worker;
-  package-owned and preserved jobs are not. `expires_at` stops scheduling only —
+  (`job_retention_*_days`; NULL = platform defaults 14/60/90). Completed job
+  rows that are not package-owned or preserved are cleaned by the hourly
+  `job_retention` sweeper on the jobs worker; package-owned and preserved jobs
+  are not. `expires_at` stops scheduling only —
   it does not delete rows and is independent of `preserved`. This database keeps
   schedule fields (`next_run_at`, `schedule_json`, …) and `last_run_at` /
   `last_run_status` as retention anchors only; terminal run error, duration, and

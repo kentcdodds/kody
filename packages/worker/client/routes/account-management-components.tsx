@@ -441,6 +441,7 @@ const accountNavItems = [
 	{ href: '/account/activity', label: 'Activity' },
 	{ href: '/account/packages', label: 'Packages' },
 	{ href: '/account/jobs', label: 'Jobs' },
+	{ href: '/account/workflows', label: 'Workflows' },
 	{ href: '/account/stars', label: 'Stars' },
 	{ href: '/account/secrets', label: 'Secrets' },
 	{ href: '/account/integrations', label: 'Integrations' },
