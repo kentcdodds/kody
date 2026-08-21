@@ -419,7 +419,7 @@ subscribers.
 When a user-scoped Activity / run record finishes with `status: 'error'`, Kody
 dispatches `run.error.recorded` to packages saved by that same user that declare
 the topic. Delivery is best-effort after a successful run-record Durable Object
-write — there is no Queue / DLQ for this topic in v1. Failures during subscriber
+write — there is no Queue / DLQ for this topic. Failures during subscriber
 discovery or package-invocation infrastructure are logged and do not fail the
 observed run.
 
@@ -477,7 +477,7 @@ notifier packages decide how often to ping, typically by pairing this topic with
 Provider HTTP 5xx and missing connections do not emit.
 
 Delivery is best-effort after the refresh caller error is classified — there is
-no Queue / DLQ for this topic in v1. Failures during subscriber discovery or
+no Queue / DLQ for this topic. Failures during subscriber discovery or
 package-invocation infrastructure are logged and do not change the refresh error
 the caller sees.
 
@@ -590,7 +590,7 @@ without the lightweight retry — the user must reopen `/account/mcp-servers`.
 should not call it on every event.
 
 Delivery is best-effort after the hub observes the transition — there is no
-Queue / DLQ for these topics in v1. Failures during subscriber discovery or
+Queue / DLQ for these topics. Failures during subscriber discovery or
 package-invocation infrastructure are logged and do not fail the MCP tool call
 or snapshot that noticed the change.
 
@@ -869,8 +869,8 @@ packages saved by users who hold the admin role at dispatch time. A non-admin
 package may declare the topic, but it never receives the event. Role revocation
 stops delivery on the next incident.
 
-There is no Queue / DLQ for these topics in v1. A missing secret, a down main
-worker, or a failed invoke is logged and skipped. Packages that also reconcile
+There is no Queue / DLQ for these topics. A missing secret, a down main worker,
+or a failed invoke is logged and skipped. Packages that also reconcile
 `https://status.kody.codes/status.json` can catch an incident that is still
 open, or still listed in recent history, on the next sweep. An incident that
 opens and resolves between polls can be missed. Probe recording never waits on
@@ -920,8 +920,8 @@ Production fan-out selects only packages whose owners hold the admin role at
 dispatch time. A non-admin package may declare the topic, but it never receives
 the event. Role revocation stops delivery on the next create or delete.
 
-There is no Queue / DLQ for these topics in v1. Dispatch is best-effort after
-the account change commits: a failed invoke is logged and does not fail signup,
+There is no Queue / DLQ for these topics. Dispatch is best-effort after the
+account change commits: a failed invoke is logged and does not fail signup,
 admin create, or account deletion.
 
 Handlers receive a metadata-only identity snapshot:

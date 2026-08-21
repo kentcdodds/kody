@@ -85,13 +85,11 @@ and can see who forked or rated a public listing, when, and the rating scores.
 One-click installs appear as forks because both use the same activity record.
 This activity view never includes private package source, rating notes, email,
 stable user ids, private profiles, secrets, or unrelated account content.
-Admin-configured notification packages may receive the same metadata.
-
-Admin-configured notification packages may also receive a metadata-only
-`user.created` or `user.deleted` event when a person account is created or
-self-deleted: stable user id, username, email, and the create source or delete
-timestamp. Those events omit passwords, roles, plan, secrets, and unrelated
-account content.
+Admin-configured notification packages may receive the same community metadata,
+and a metadata-only `user.created` or `user.deleted` event when a person account
+is created or self-deleted (stable user id, username, email, and the create
+source or delete timestamp). Those lifecycle events omit passwords, roles, plan,
+secrets, and unrelated account content.
 
 ## Platform feedback
 

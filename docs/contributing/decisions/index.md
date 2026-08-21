@@ -24,8 +24,8 @@ to the next unused number (read this index on `main` first) with a kebab-case
 slug. Keep it to roughly half a page.
 
 Do **not** write an ADR on every PR. Number collisions (two 0022s, then two
-0028s the same day) are the failure mode of that habit. If a number collides,
-renumber the later record; do not leave duplicates.
+0028s, then two 0029s the same day) are the failure mode of that habit. If a
+number collides, renumber the later record; do not leave duplicates.
 
 Do **not** record layout or UI tweaks, mode assignments, or "we use library X"
 unless that pick is a no that will otherwise be re-litigated.
@@ -41,7 +41,7 @@ Add new steering records to the steering list, not a catch-all numbered dump.
 Open these before proposing a new primitive, surface, or storage home.
 
 - [0001 — No user-facing package versioning or import pins](./0001-no-package-versioning.md)
-- [0029 — `kody.dependencies` is a name-to-`*` map; still no pins or live resolution](./0029-kody-dependencies-wildcard-map.md)
+- [0031 — `kody.dependencies` is a name-to-`*` map; still no pins or live resolution](./0031-kody-dependencies-wildcard-map.md)
 - [0002 — Data placement: D1, per-user Durable Objects, Analytics Engine](./0002-data-placement.md)
 - [0003 — Repos are the base primitive; packages are an explicit extension](./0003-repos-as-base-primitive.md)
 - [0004 — Status page stays a separate worker with its own storage](./0004-status-page-separate-worker.md)

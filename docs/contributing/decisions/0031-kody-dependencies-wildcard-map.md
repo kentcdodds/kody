@@ -1,4 +1,4 @@
-# 0029: `kody.dependencies` is a name-to-`*` map; still no pins or live resolution
+# 0031: `kody.dependencies` is a name-to-`*` map; still no pins or live resolution
 
 - **Status:** accepted
 - **Date:** 2026-08-20
