@@ -104,6 +104,11 @@ export const communitySearchMatchSchema =
 			.describe(
 				'Blended lexical and vector query relevance from 0 to 1; null when browsing with an empty query.',
 			),
+		published_at: z
+			.string()
+			.describe(
+				'Last community publish time for this listing. Republishing updates this timestamp.',
+			),
 		public_url: communityPublicUrlSchema,
 	})
 

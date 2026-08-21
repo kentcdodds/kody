@@ -15,6 +15,7 @@ import {
 	buildCommunityIndexCacheKey,
 	getOrSetDataCache,
 } from '#app/data-cache.ts'
+import { parseCommunityListingSort } from '#universal/community-search.ts'
 import {
 	type CommunityDetailLoaderData,
 	type CommunityIndexLoaderData,
@@ -92,13 +93,14 @@ async function loadCommunityIndexDataUncached(
 ): Promise<CommunityIndexLoaderData> {
 	const url = new URL(request.url)
 	const query = url.searchParams.get('q')?.trim() ?? ''
+	const sort = parseCommunityListingSort(url.searchParams.get('sort'))
 	const limit = readPositiveInt(
 		url.searchParams.get('limit'),
 		defaultCommunityListLimit,
 		100,
 	)
 
-	const cacheKey = buildCommunityIndexCacheKey({ query, limit })
+	const cacheKey = buildCommunityIndexCacheKey({ query, sort, limit })
 	const listings = await loadWithCommunityCache(
 		env,
 		request,
@@ -109,12 +111,14 @@ async function loadCommunityIndexDataUncached(
 						env,
 						query,
 						limit,
+						sort,
 					})
 				: await listCommunityListingsWithAggregates({
 						env,
 						includeDelisted: false,
 						limit,
 						offset: 0,
+						sort,
 					})
 			return rows.map(toPublicCommunityListing)
 		},
@@ -129,6 +133,7 @@ async function loadCommunityIndexDataUncached(
 			listings,
 		}),
 		query: query || null,
+		sort,
 	}
 }
 

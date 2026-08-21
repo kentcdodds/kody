@@ -34,8 +34,9 @@ export function invalidateCommunityPublicCache() {
 export function buildCommunityIndexCacheKey(input: {
 	query: string
 	limit: number
+	sort: string
 }) {
-	return `community-index:v${communityPublicCacheVersion}:q=${input.query}:limit=${input.limit}`
+	return `community-index:v${communityPublicCacheVersion}:q=${input.query}:sort=${input.sort}:limit=${input.limit}`
 }
 
 export function buildCommunityDetailListingCacheKey(listingId: string) {

@@ -48,7 +48,11 @@ test('setDataCache expires entries after ttl', () => {
 test('invalidateCommunityPublicCache bumps version and clears entries', async () => {
 	resetDataCacheForTests()
 	const load = vi.fn(async () => ['listing'])
-	const keyV0 = buildCommunityIndexCacheKey({ query: '', limit: 50 })
+	const keyV0 = buildCommunityIndexCacheKey({
+		query: '',
+		sort: 'best',
+		limit: 50,
+	})
 
 	await getOrSetDataCache({ key: keyV0, load })
 	expect(getCommunityPublicCacheVersion()).toBe(0)
@@ -59,7 +63,11 @@ test('invalidateCommunityPublicCache bumps version and clears entries', async ()
 	expect(getCommunityPublicCacheVersion()).toBe(1)
 	expect(peekDataCache(keyV0)).toBeUndefined()
 
-	const keyV1 = buildCommunityIndexCacheKey({ query: '', limit: 50 })
+	const keyV1 = buildCommunityIndexCacheKey({
+		query: '',
+		sort: 'best',
+		limit: 50,
+	})
 	expect(keyV1).toContain(':v1:')
 	const next = await getOrSetDataCache({ key: keyV1, load })
 	expect(next.lookup).toBe('miss')

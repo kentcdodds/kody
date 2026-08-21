@@ -3,11 +3,19 @@
 import { type Handle, css } from 'remix/ui'
 import { renderToString } from 'remix/ui/server'
 import { type PublicCommunityListing } from '#app/community-public.ts'
-import { formatCommunityAdaptationEffort } from '#universal/community-display.ts'
+import {
+	formatCommunityAdaptationEffort,
+	formatCommunityPublishedDate,
+} from '#universal/community-display.ts'
 import { renderCommunityEmptyState } from '#universal/community-empty-state.tsx'
 import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
 import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import { getCommunityListingHref } from '#universal/community-links.ts'
+import {
+	buildCommunityIndexHref,
+	defaultCommunityListingSort,
+	type CommunityListingSort,
+} from '#universal/community-search.ts'
 import { colors, transitions } from '#universal/styles/tokens.ts'
 import {
 	getSurfaceCardCss,
@@ -27,21 +35,75 @@ import {
 export type CommunityListingsContentProps = {
 	listings: Array<PublicCommunityListing>
 	query: string | null
+	sort?: CommunityListingSort
 }
 
 function formatCount(count: number, noun: string) {
 	return `${count} ${noun}${count === 1 ? '' : 's'}`
 }
 
+function communitySortHint(sort: CommunityListingSort) {
+	switch (sort) {
+		case 'newest':
+			return 'Newest first — last published, including updates.'
+		case 'best':
+			return 'Best first — ratings, then recency.'
+		default: {
+			const exhaustive: never = sort
+			throw new Error(`Unhandled community listing sort: ${String(exhaustive)}`)
+		}
+	}
+}
+
+function renderCommunitySortToolbar(input: {
+	query: string | null
+	sort: CommunityListingSort
+}) {
+	return (
+		<nav
+			aria-label="Sort community packages"
+			data-testid="community-listings-sort"
+			mix={css(sortToolbarCss)}
+		>
+			<p mix={css(sortHintCss)}>{communitySortHint(input.sort)}</p>
+			<div role="group" aria-label="Sort order" mix={css(sortGroupCss)}>
+				<a
+					href={buildCommunityIndexHref({
+						query: input.query,
+						sort: 'best',
+					})}
+					aria-current={input.sort === 'best' ? 'page' : undefined}
+					mix={css(sortLinkCss)}
+				>
+					Best
+				</a>
+				<a
+					href={buildCommunityIndexHref({
+						query: input.query,
+						sort: 'newest',
+					})}
+					aria-current={input.sort === 'newest' ? 'page' : undefined}
+					title="Last published first, including republished updates"
+					mix={css(sortLinkCss)}
+				>
+					Newest
+				</a>
+			</div>
+		</nav>
+	)
+}
+
 export function CommunityListingsContent(
 	handle: Handle<CommunityListingsContentProps>,
 ) {
 	const { listings, query } = handle.props
+	const sort = handle.props.sort ?? defaultCommunityListingSort
 
 	return () => (
 		<div data-testid="community-listings-frame">
+			{renderCommunitySortToolbar({ query, sort })}
 			{listings.length === 0 ? (
-				renderCommunityEmptyState(query)
+				renderCommunityEmptyState(query, sort)
 			) : (
 				<ul mix={css(listingGridCss)}>
 					{listings.map((listing, index) => (
@@ -145,6 +207,13 @@ export function CommunityListingsContent(
 								<span data-testid={`community-listing-stars-${listing.id}`}>
 									{formatCount(listing.starCount, 'star')}
 								</span>
+								<span
+									data-testid={`community-listing-published-${listing.id}`}
+									title={`Last published ${formatCommunityPublishedDate(listing.publishedAt)}`}
+								>
+									<span mix={css(visuallyHiddenCss)}>Published </span>
+									{formatCommunityPublishedDate(listing.publishedAt)}
+								</span>
 								{listing.averageAdaptationEffort == null ? null : (
 									<span>
 										effort{' '}
@@ -170,9 +239,55 @@ export async function renderCommunityListingsContentHtml(
 
 /* ---------- styles ---------- */
 
+const sortToolbarCss = {
+	margin: 'clamp(2.2rem, 5vw, 3.5rem) 0 0',
+	display: 'flex',
+	alignItems: 'center',
+	justifyContent: 'space-between',
+	gap: '0.8rem 1.2rem',
+	flexWrap: 'wrap' as const,
+}
+
+const sortHintCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.88rem',
+}
+
+const sortGroupCss = {
+	display: 'inline-flex',
+	alignItems: 'stretch',
+	backgroundColor: colors.surface,
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: '999px',
+	padding: '0.2rem',
+}
+
+const sortLinkCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	minHeight: '2rem',
+	padding: '0.3rem 0.95rem',
+	borderRadius: '999px',
+	color: colors.textMuted,
+	fontSize: '0.88rem',
+	fontWeight: 650,
+	lineHeight: 1.2,
+	textDecoration: 'none',
+	transition: `background-color 140ms ${transitions.easeOut}, color 140ms ${transitions.easeOut}`,
+	'&:hover': {
+		color: colors.text,
+	},
+	'&[aria-current="page"]': {
+		backgroundColor: colors.primarySoft,
+		color: colors.primaryText,
+	},
+}
+
 const listingGridCss = {
 	listStyle: 'none',
-	margin: 'clamp(2.2rem, 5vw, 3.5rem) 0 0',
+	margin: '1rem 0 0',
 	padding: 0,
 	display: 'grid',
 	gridTemplateColumns: 'repeat(auto-fill, minmax(min(19rem, 100%), 1fr))',

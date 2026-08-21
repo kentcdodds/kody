@@ -12,6 +12,7 @@ import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 import { type OnboardingChecklistItemId } from '#universal/onboarding-checklist-types.ts'
 import { type SignupMode } from '#universal/signup-mode.ts'
+import { type CommunityListingSort } from '#universal/community-search.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -80,6 +81,7 @@ export type CommunityIndexLoaderData = {
 	ok: true
 	listings: Array<PublicCommunityListing>
 	query: string | null
+	sort: CommunityListingSort
 }
 
 export type CommunityDetailLoaderData = {

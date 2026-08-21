@@ -15,7 +15,7 @@ import {
 	mergeCss,
 	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
-import { readCommunitySearchQueryFromHref } from '#client/routes/community-search.ts'
+import { readCommunitySearchFromHref } from '#universal/community-search.ts'
 import {
 	EntityExplainer,
 	resolveEntityExplainer,
@@ -62,6 +62,8 @@ export function CommunityRoute(handle: Handle) {
 		const href = readCurrentRouterHref(handle)
 		if (!isCommunityIndexPath(href)) return
 
+		handle.update()
+
 		const frame = handle.frames.get(COMMUNITY_LISTINGS_TARGET)
 		if (!frame) return
 
@@ -74,7 +76,8 @@ export function CommunityRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const searchQuery = readCommunitySearchQueryFromHref(currentHref)
+		const { query: searchQuery, sort } =
+			readCommunitySearchFromHref(currentHref)
 		const frameSrc = buildCommunityListingsFrameSrc(currentHref)
 
 		const explainer = resolveEntityExplainer(
@@ -113,13 +116,16 @@ export function CommunityRoute(handle: Handle) {
 							</label>
 							<input
 								id="pkg-q"
-								key={searchQuery}
+								key={`${searchQuery}:${sort}`}
 								type="search"
 								name="q"
 								defaultValue={searchQuery}
 								placeholder="Search by name, description, or tags"
 								mix={css(searchInputCss)}
 							/>
+							{sort === 'newest' ? (
+								<input type="hidden" name="sort" value="newest" />
+							) : null}
 							<button type="submit" mix={css(getPillButtonCss())}>
 								Search
 							</button>

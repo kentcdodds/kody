@@ -1,6 +1,10 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { parseListingOwnerUsername } from '#universal/community-links.ts'
+import {
+	defaultCommunityListingSort,
+	type CommunityListingSort,
+} from '#universal/community-search.ts'
 import { deterministicEmbedding } from '#worker/vectorize/embedding.ts'
 import {
 	blendLexicalAndVectorScore,
@@ -243,6 +247,27 @@ export function compareCommunityListingsByBayesianAndPublishedAt(
 	})
 	if (rightScore !== leftScore) return rightScore - leftScore
 	return right.publishedAt.localeCompare(left.publishedAt)
+}
+
+export function compareCommunityListingsForSort(
+	left: CommunityListingWithAggregates,
+	right: CommunityListingWithAggregates,
+	sort: CommunityListingSort,
+): number {
+	switch (sort) {
+		case 'newest':
+			return right.publishedAt.localeCompare(left.publishedAt)
+		case 'best':
+			return compareCommunityListingsByBayesianAndPublishedAt(left, right)
+		default: {
+			const exhaustive: never = sort
+			throw new Error(`Unhandled community listing sort: ${String(exhaustive)}`)
+		}
+	}
+}
+
+function resolveCommunityListingSort(sort: CommunityListingSort | undefined) {
+	return sort ?? defaultCommunityListingSort
 }
 
 function buildRepeatForkErrorMessage(input: {
@@ -862,6 +887,7 @@ export async function listCommunityListingsWithAggregates(input: {
 	includeDelisted: boolean
 	limit: number
 	offset: number
+	sort?: CommunityListingSort
 }): Promise<Array<CommunityListingWithAggregates>> {
 	const listings = await listCommunityListingCandidates(input.env.APP_DB, {
 		includeDelisted: input.includeDelisted,
@@ -871,8 +897,9 @@ export async function listCommunityListingsWithAggregates(input: {
 		input.env.APP_DB,
 		listings,
 	)
+	const sort = resolveCommunityListingSort(input.sort)
 	return withAggregates
-		.sort(compareCommunityListingsByBayesianAndPublishedAt)
+		.sort((left, right) => compareCommunityListingsForSort(left, right, sort))
 		.slice(input.offset, input.offset + input.limit)
 }
 
@@ -880,10 +907,12 @@ export async function searchCommunityListings(input: {
 	env: Env
 	query: string
 	limit: number
+	sort?: CommunityListingSort
 	trustedFirst?: boolean
 	resultFilter?: (listing: CommunityListingWithAggregates) => boolean
 }): Promise<Array<CommunityListingSearchResult>> {
 	const trimmedQuery = input.query.trim()
+	const sort = resolveCommunityListingSort(input.sort)
 	let listings = await listCommunityListingCandidates(input.env.APP_DB, {
 		includeDelisted: false,
 		limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
@@ -894,8 +923,8 @@ export async function searchCommunityListings(input: {
 			input.env.APP_DB,
 			listings,
 		)
-		const relevanceOrdered = withAggregates.sort(
-			compareCommunityListingsByBayesianAndPublishedAt,
+		const relevanceOrdered = withAggregates.sort((left, right) =>
+			compareCommunityListingsForSort(left, right, sort),
 		)
 		return finalizeCommunitySearchResults(
 			relevanceOrdered.map((listing) => ({ ...listing, relevance: null })),
@@ -949,7 +978,22 @@ export async function searchCommunityListings(input: {
 		.filter(
 			(entry) => entry.listing.relevance >= COMMUNITY_SEARCH_MIN_RELEVANCE,
 		)
-		.sort((left, right) => right.rankScore - left.rankScore)
+		.sort((left, right) => {
+			switch (sort) {
+				case 'newest':
+					return right.listing.publishedAt.localeCompare(
+						left.listing.publishedAt,
+					)
+				case 'best':
+					return right.rankScore - left.rankScore
+				default: {
+					const exhaustive: never = sort
+					throw new Error(
+						`Unhandled community listing sort: ${String(exhaustive)}`,
+					)
+				}
+			}
+		})
 		.map((entry) => entry.listing)
 	return finalizeCommunitySearchResults(relevanceOrdered, input)
 }

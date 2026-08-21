@@ -1,4 +1,8 @@
 import { z } from 'zod'
+import {
+	communityListingSorts,
+	defaultCommunityListingSort,
+} from '#universal/community-search.ts'
 import { searchCommunityListings } from '#worker/community/service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -18,7 +22,7 @@ export const communitySearchCapability = defineDomainCapability(
 	{
 		name: 'community_search',
 		description:
-			'Search public community package listings on this deployment. Results are ranked by relevance and community ratings. Use `community_get` for full detail before forking.',
+			'Search public community package listings on this deployment. Default ranking is relevance and community ratings; pass sort=newest for last published first. Use `community_get` for full detail before forking.',
 		keywords: [
 			'community',
 			'search',
@@ -42,6 +46,13 @@ export const communitySearchCapability = defineDomainCapability(
 				.optional()
 				.default(10)
 				.describe('Maximum number of matches to return (default 10, max 50).'),
+			sort: z
+				.enum(communityListingSorts)
+				.optional()
+				.default(defaultCommunityListingSort)
+				.describe(
+					'best (default) ranks by relevance and ratings. newest orders matching listings by last community publish, including republishes.',
+				),
 		}),
 		outputSchema: z.object({
 			outcome: z.enum(['matches', 'no_matches']),
@@ -54,6 +65,7 @@ export const communitySearchCapability = defineDomainCapability(
 				env: ctx.env,
 				query: args.query,
 				limit: args.limit ?? 10,
+				sort: args.sort ?? defaultCommunityListingSort,
 			})
 			const noMatches = Boolean(args.query.trim()) && listings.length === 0
 			return {
@@ -70,6 +82,7 @@ export const communitySearchCapability = defineDomainCapability(
 					owner_anonymous: true as const,
 					trusted: listing.trusted,
 					relevance: listing.relevance,
+					published_at: listing.publishedAt,
 					...toCommunityListingAggregatesOutput(listing),
 					public_url: buildCommunityPublicUrl(ctx.callerContext.baseUrl, {
 						listingId: listing.id,

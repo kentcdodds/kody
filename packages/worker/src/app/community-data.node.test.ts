@@ -247,6 +247,44 @@ test('community index load is memoized per request', async () => {
 	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledTimes(
 		1,
 	)
+	expect((await first).sort).toBe('best')
+})
+
+test('community index newest sort is parsed and passed to listing loaders', async () => {
+	resetDataCacheForTests()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.listCommunityListingsWithAggregates.mockReset()
+	mockModule.searchCommunityListings.mockReset()
+	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
+		sampleListing,
+	])
+	mockModule.searchCommunityListings.mockResolvedValue([sampleListing])
+
+	const newestBrowse = await loadCommunityIndexData(
+		{} as Env,
+		new Request('https://example.com/community?sort=newest'),
+	)
+	expect(newestBrowse.sort).toBe('newest')
+	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledWith({
+		env: {},
+		includeDelisted: false,
+		limit: 50,
+		offset: 0,
+		sort: 'newest',
+	})
+
+	const newestSearch = await loadCommunityIndexData(
+		{} as Env,
+		new Request('https://example.com/community?q=github&sort=newest'),
+	)
+	expect(newestSearch.sort).toBe('newest')
+	expect(newestSearch.query).toBe('github')
+	expect(mockModule.searchCommunityListings).toHaveBeenCalledWith({
+		env: {},
+		query: 'github',
+		limit: 50,
+		sort: 'newest',
+	})
 })
 
 test('community index omits viewerInstall for anonymous viewers and auth failures', async () => {

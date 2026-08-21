@@ -338,7 +338,10 @@ contain cross-scope static imports or foreign `kody.dependencies` entries
 
    `(5 × 3.25 + count × averageStars) / (5 + count)`
 
-Empty queries sort by Bayesian score, then `publishedAt`.
+Empty queries sort by Bayesian score, then `publishedAt`. Pass `sort: "newest"`
+(or `/community?sort=newest`) to order matching listings by `publishedAt`
+descending instead. `published_at` is last community publish time: republishing
+overwrites it.
 
 Fork counts are live `COUNT(*)` aggregates over `community_forks` grouped by
 listing id. Detail reads always count the selected listing. Browse and search

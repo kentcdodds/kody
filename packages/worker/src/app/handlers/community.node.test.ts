@@ -82,6 +82,7 @@ test('community API lists active listings and searches when q is provided', asyn
 		includeDelisted: false,
 		limit: 50,
 		offset: 0,
+		sort: 'best',
 	})
 
 	const searchResponse = await handler.handler({
@@ -97,5 +98,21 @@ test('community API lists active listings and searches when q is provided', asyn
 		env,
 		query: 'github',
 		limit: 50,
+		sort: 'best',
+	})
+
+	const newestResponse = await handler.handler({
+		request: new Request('https://example.com/community.json?sort=newest'),
+		params: {},
+		url: new URL('https://example.com/community.json?sort=newest'),
+	} as never)
+	const newestBody = await newestResponse.json()
+	expect(newestBody.sort).toBe('newest')
+	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledWith({
+		env,
+		includeDelisted: false,
+		limit: 50,
+		offset: 0,
+		sort: 'newest',
 	})
 })

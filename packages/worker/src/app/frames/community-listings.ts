@@ -11,6 +11,7 @@ registerFrame(COMMUNITY_LISTINGS_TARGET, {
 		return renderCommunityListingsContentHtml({
 			listings: data.listings,
 			query: data.query,
+			sort: data.sort,
 		})
 	},
 })

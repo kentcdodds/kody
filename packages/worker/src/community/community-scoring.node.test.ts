@@ -208,6 +208,63 @@ test('community scoring and search rank listings and filter by query', async () 
 		'meal-planner',
 	])
 	expect(allResults.every((listing) => listing.relevance === null)).toBe(true)
+
+	const newestBrowse = await searchCommunityListings({
+		env: createEnv(),
+		query: '',
+		limit: 10,
+		sort: 'newest',
+	})
+	expect(newestBrowse.map((listing) => listing.kodyId)).toEqual([
+		'meal-planner',
+		'github-triage',
+	])
+
+	const olderGithub = githubListing()
+	const newerGithub = {
+		...githubListing(),
+		id: 'listing-github-newer',
+		kodyId: 'github-newer',
+		name: '@kody/github-newer',
+		publishedAt: '2026-07-20T00:00:00.000Z',
+	}
+	mockListings([olderGithub, newerGithub])
+	mockModule.getCommunityRatingAggregatesByListingIds.mockResolvedValue({
+		'listing-github': {
+			listingId: 'listing-github',
+			ratingCount: 20,
+			averageStars: 5,
+			averageAdaptationEffort: 2,
+		},
+		'listing-github-newer': {
+			listingId: 'listing-github-newer',
+			ratingCount: 0,
+			averageStars: null,
+			averageAdaptationEffort: null,
+		},
+	})
+
+	const bestGithub = await searchCommunityListings({
+		env: createEnv(),
+		query: 'github',
+		limit: 10,
+		sort: 'best',
+	})
+	expect(bestGithub.map((listing) => listing.id)).toEqual([
+		'listing-github',
+		'listing-github-newer',
+	])
+
+	const newestGithub = await searchCommunityListings({
+		env: createEnv(),
+		query: 'github',
+		limit: 10,
+		sort: 'newest',
+	})
+	expect(newestGithub.map((listing) => listing.id)).toEqual([
+		'listing-github-newer',
+		'listing-github',
+	])
 })
 
 test('trusted-first community search promotes a trusted relevance rank 13 before limiting', async () => {

@@ -2,6 +2,10 @@
 /** @jsxRuntime automatic */
 import { css } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
+import {
+	buildCommunityIndexHref,
+	type CommunityListingSort,
+} from '#universal/community-search.ts'
 import { colors } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
@@ -17,7 +21,10 @@ function buildCreatePackagePrompt(query: string) {
  * Rendered only when the resolved listings query is actually empty — not as
  * a loading placeholder, so first paint never flashes "no results."
  */
-export function renderCommunityEmptyState(query: string | null) {
+export function renderCommunityEmptyState(
+	query: string | null,
+	sort?: CommunityListingSort,
+) {
 	if (query) {
 		const createPackagePrompt = buildCreatePackagePrompt(query)
 		return (
@@ -47,7 +54,10 @@ export function renderCommunityEmptyState(query: string | null) {
 					>
 						Read the package authoring guide
 					</a>
-					<a href={routes.community.href()} mix={css(secondaryLinkCss)}>
+					<a
+						href={buildCommunityIndexHref({ sort })}
+						mix={css(secondaryLinkCss)}
+					>
 						Clear search
 					</a>
 				</p>
@@ -74,7 +84,7 @@ export function renderCommunityEmptyState(query: string | null) {
 }
 
 const emptyCss = {
-	margin: 'clamp(2.2rem, 5vw, 3.5rem) 0 0',
+	margin: '1.2rem 0 0',
 	maxWidth: '40rem',
 }
 

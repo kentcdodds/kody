@@ -80,10 +80,13 @@ delete can remove the delisted row.
 Anyone can browse `/community` and open a package at `/@username/kody-id` — for
 example `/@kentcdodds/devin`. `/community/:listingId` redirects to that
 canonical URL; username and `kody.id` redirect tables resolve renamed owners and
-package ids the same way. Detail pages show metadata, aggregate ratings, **star
-count** (stargazers — distinct from 1–5 ratings), fork count, the README, a
-**Browse files** link to the published snapshot at `/@username/kody-id/files`,
-and a dynamically generated Open Graph image (1200×630). When the owner keeps a
+package ids the same way. The catalog defaults to **Best** (ratings, then
+recency). **Newest** (`?sort=newest`) orders by last community publish —
+republishing a listing moves it to the top. Cards show that published date.
+Detail pages show metadata, aggregate ratings, **star count** (stargazers —
+distinct from 1–5 ratings), fork count, the README, a **Browse files** link to
+the published snapshot at `/@username/kody-id/files`, and a dynamically
+generated Open Graph image (1200×630). When the owner keeps a
 [public profile](./community-profiles.md), the listing links to `/@username` and
 shows a follow control next to the username. Private owners show as `@username`
 with a lock that explains the profile is private.
@@ -240,7 +243,8 @@ Use the MCP `community` domain:
 
 - `community_publish` — publish or update a listing from a saved package
 - `community_unpublish` — remove your active listing (not delisted listings)
-- `community_search` — search active listings
+- `community_search` — search active listings (`sort: "newest"` for last
+  published first)
 - `community_get` — fetch one listing's metadata and aggregates (including star
   count, stargazers, and owner profile linkage when the owner is public)
 - `community_fork` — copy a pinned snapshot into your account (inert until
