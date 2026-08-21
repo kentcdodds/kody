@@ -185,6 +185,13 @@ test('transient platform failures back off the same occurrence while permanent o
 			),
 		),
 	).toBe(true)
+	expect(
+		isTransientJobExecutionError(
+			new Error(
+				'Unable to verify the storage byte entitlement because the bucket estimate for storageId "package:1" could not be read after 4 attempts.',
+			),
+		),
+	).toBe(true)
 	expect(isTransientJobExecutionError(new Error('user code failed'))).toBe(
 		false,
 	)

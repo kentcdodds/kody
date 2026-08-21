@@ -2651,6 +2651,82 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 	}
 })
 
+test('runBundledModuleWithRegistry leaves claimed job storage-estimate failures running', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: 'user-job-estimate',
+			email: 'job-estimate@example.com',
+			displayName: 'Job Estimate',
+		},
+	})
+	const bundle = {
+		mainModule: 'entry.js',
+		modules: {
+			'entry.js': 'export default async () => "ok"',
+		},
+	}
+	const handle = {
+		id: 'run-job-estimate-1',
+		userId: 'user-job-estimate',
+		startedAt: '2026-08-21T14:40:00.000Z',
+		persistence: 'eager' as const,
+		context: {
+			surface: 'job' as const,
+			name: 'sweep',
+			jobId: 'package-job:estimate:sweep',
+			metadata: {},
+		},
+	}
+	const runRecords = await import('#worker/run-records/service.ts')
+	const finishSpy = vi
+		.spyOn(runRecords, 'finishRunRecord')
+		.mockResolvedValue(true)
+	const { createStorageEstimateReadError } =
+		await import('#worker/storage-estimate-error.ts')
+	const estimateError = createStorageEstimateReadError({
+		storageId: 'package:estimate-target',
+		attempts: 4,
+		cause: new Error('Storage estimate read timed out after 2000ms.'),
+	})
+	const createExecuteExecutorSpy = vi
+		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
+		.mockReturnValue({
+			async execute() {
+				return {
+					result: undefined,
+					error: estimateError.message,
+					logs: [],
+				}
+			},
+		} as never)
+
+	try {
+		const claimed = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			{
+				skipCapabilityRegistry: true,
+				runRecord: {
+					surface: 'job',
+					name: 'sweep',
+					jobId: 'package-job:estimate:sweep',
+				},
+				runRecordHandle: handle,
+			},
+		)
+		expect(claimed.error).toBe(estimateError.message)
+		expect(finishSpy).not.toHaveBeenCalled()
+	} finally {
+		finishSpy.mockRestore()
+		createExecuteExecutorSpy.mockRestore()
+	}
+})
+
 test('runBundledModuleWithRegistry retries transient Durable Object isolate resets', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env

@@ -74,6 +74,7 @@ import {
 import { runWithTransientDurableObjectResetRetry } from '#worker/durable-object-reset-retry.ts'
 import { evaluationHasHostMediatedSideEffects } from '#mcp/evaluation-side-effects.ts'
 import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
+import { isStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import {
 	type RunRecordContext,
 	type RunRecordHandle,
@@ -1109,6 +1110,19 @@ ${runtimeHelperRuntimePropertySource}
 						error: secretRedactor.redactErrorMessage(rewrittenMessage),
 					}
 				: sanitizedResult
+			const callerOwnsScheduledJobRun =
+				options?.runRecordHandle != null &&
+				(options.runRecord?.surface === 'job' ||
+					options.runRecordHandle.context.surface === 'job')
+			if (
+				callerOwnsScheduledJobRun &&
+				isStorageEstimateReadError(finalResult.error)
+			) {
+				// Leave the claimed run `running` so the job scheduler can
+				// abandon it and retry the same scheduledFor. Finishing as
+				// error would make the idempotency replay permanent.
+				return withRunId(finalResult)
+			}
 			await finishObservedRun({
 				status: 'error',
 				logs: finalResult.logs ?? [],
