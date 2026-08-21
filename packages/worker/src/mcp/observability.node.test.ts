@@ -38,6 +38,8 @@ const { PackageSecretAccessDeniedError } =
 	await import('./secrets/package-access.ts')
 const { CommunityActionError } = await import('#worker/community/errors.ts')
 const { EntitlementLimitError } = await import('#worker/entitlements/errors.ts')
+const { PackageScopeAccessError } =
+	await import('#worker/package-registry/package-owner.ts')
 const { UserCodeError } = await import('#worker/user-code-error.ts')
 
 function captureMcpEvents(run: () => void) {
@@ -173,6 +175,21 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			errorMessage: 'Fork this community listing before rating it.',
 			cause: new CommunityActionError(
 				'Fork this community listing before rating it.',
+			),
+		})
+
+		// Missing package scope grant (KODY-CLOUDFLARE-5N).
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'package_list',
+			domain: 'packages',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'PackageScopeAccessError',
+			errorMessage:
+				'You do not have a package scope grant for "@kody". Omit package_scope to use your personal scope, or ask an admin to grant access to that platform account.',
+			cause: new PackageScopeAccessError(
+				'You do not have a package scope grant for "@kody". Omit package_scope to use your personal scope, or ask an admin to grant access to that platform account.',
 			),
 		})
 
@@ -335,7 +352,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		})
 	})
 
-	expect(payloads).toHaveLength(19)
+	expect(payloads).toHaveLength(20)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',

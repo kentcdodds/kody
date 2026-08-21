@@ -3,6 +3,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { PackageScopeAccessError } from '#worker/package-registry/package-owner.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
 import {
 	isGitPushNotFastForwardMessage,
@@ -109,6 +110,15 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	if (
 		getErrorCauseChain(cause).some(
 			(entry) => entry instanceof CommunityActionError,
+		)
+	) {
+		return true
+	}
+	// Missing / invalid package_scope (no grant, non-platform target, bad
+	// format) — agents must omit the field or obtain a grant. KODY-CLOUDFLARE-5N.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) => entry instanceof PackageScopeAccessError,
 		)
 	) {
 		return true

@@ -2,7 +2,10 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createPlatformAccount } from '#worker/identity/platform-account-creation.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { resolvePackageOwnerContext } from './package-owner.ts'
+import {
+	PackageScopeAccessError,
+	resolvePackageOwnerContext,
+} from './package-owner.ts'
 import { insertPackageScopeGrant } from './scope-grants.ts'
 import { ensurePackageScopeGrantsTestSchema } from './test-schema.ts'
 
@@ -85,12 +88,21 @@ test('resolvePackageOwnerContext returns caller ownership, grant delegation, and
 
 	await expect(
 		resolvePackageOwnerContext(env, actorUser, otherPerson.username),
+	).rejects.toThrow(PackageScopeAccessError)
+	await expect(
+		resolvePackageOwnerContext(env, actorUser, otherPerson.username),
 	).rejects.toThrow(/not a platform account scope/)
 
 	await expect(
 		resolvePackageOwnerContext(env, actorUser, platform.username),
+	).rejects.toThrow(PackageScopeAccessError)
+	await expect(
+		resolvePackageOwnerContext(env, actorUser, platform.username),
 	).rejects.toThrow(/do not have a package scope grant/)
 
+	await expect(
+		resolvePackageOwnerContext(env, actorUser, 'missing-scope-xyz'),
+	).rejects.toThrow(PackageScopeAccessError)
 	await expect(
 		resolvePackageOwnerContext(env, actorUser, 'missing-scope-xyz'),
 	).rejects.toThrow(/not a platform account scope/)
