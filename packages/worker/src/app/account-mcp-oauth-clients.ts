@@ -195,11 +195,17 @@ export async function mintUserMcpOauthClient(input: {
 	const id = crypto.randomUUID()
 	const createdAt = new Date().toISOString()
 	try {
-		await input.db
+		const inserted = await input.db
 			.prepare(
 				`INSERT INTO user_mcp_oauth_clients (
 					id, user_id, client_id, label, redirect_uris_json, created_at
-				) VALUES (?, ?, ?, ?, ?, ?)`,
+				)
+				SELECT ?, ?, ?, ?, ?, ?
+				WHERE (
+					SELECT COUNT(*)
+					FROM user_mcp_oauth_clients
+					WHERE user_id = ? AND revoked_at IS NULL
+				) < ?`,
 			)
 			.bind(
 				id,
@@ -208,8 +214,18 @@ export async function mintUserMcpOauthClient(input: {
 				input.label,
 				JSON.stringify(input.redirectUris),
 				createdAt,
+				input.userId,
+				maxUserMcpOauthClients,
 			)
 			.run()
+		if ((inserted.meta.changes ?? 0) === 0) {
+			await input.helpers.deleteClient(created.clientId).catch(() => undefined)
+			return {
+				ok: false,
+				error: `You can have at most ${maxUserMcpOauthClients} active MCP OAuth clients.`,
+				status: 400,
+			}
+		}
 	} catch (error) {
 		await input.helpers.deleteClient(created.clientId).catch(() => undefined)
 		throw error

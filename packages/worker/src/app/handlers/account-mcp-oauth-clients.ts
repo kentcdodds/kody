@@ -1,7 +1,11 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { enum_, object, optional, parseSafe, string } from 'remix/data-schema'
-import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
+import {
+	auditDatabaseFromEnv,
+	getRequestIp,
+	logAuditEvent,
+} from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import {
@@ -120,6 +124,7 @@ export function createAccountMcpOauthClientsApiHandler(env: Env) {
 					}
 
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'oauth',
 						action: 'mcp_oauth_client_create',
 						result: 'success',
@@ -166,6 +171,7 @@ export function createAccountMcpOauthClientsApiHandler(env: Env) {
 					}
 
 					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
 						category: 'oauth',
 						action: 'mcp_oauth_client_revoke',
 						result: 'success',

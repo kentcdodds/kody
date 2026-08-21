@@ -1,4 +1,3 @@
-import { formatTimestamp } from '#client/format-timestamp.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -78,8 +77,16 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 	let redirectUrisDraft = ''
 	let createdClient: CreatedClient | null = null
 	const loadLatch = createRouteLoadLatch()
-	const revokeCheck = createDoubleCheck(handle)
+	const revokeChecks = new Map<string, ReturnType<typeof createDoubleCheck>>()
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
+
+	function getRevokeCheck(id: string) {
+		const existing = revokeChecks.get(id)
+		if (existing) return existing
+		const created = createDoubleCheck(handle)
+		revokeChecks.set(id, created)
+		return created
+	}
 	const ghostButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
@@ -114,6 +121,7 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 					? error.message
 					: 'Unable to load MCP OAuth clients.'
 			messageTone = 'error'
+			loadLatch.markFailed(href)
 			handle.update()
 		}
 	}
@@ -193,7 +201,7 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 			}
 			clients = payload.clients
 			if (createdClient?.id === id) createdClient = null
-			revokeCheck.reset()
+			revokeChecks.get(id)?.reset()
 			message = 'OAuth client revoked.'
 			messageTone = 'info'
 		} catch (error) {
@@ -510,9 +518,13 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 														fontSize: typography.fontSize.sm,
 													})}
 												>
-													{client.revokedAt
-														? `Revoked ${formatTimestamp(client.revokedAt)}`
-														: 'Active'}
+													{client.revokedAt ? (
+														<>
+															Revoked <TimestampValue value={client.revokedAt} />
+														</>
+													) : (
+														'Active'
+													)}
 													{' · '}
 													Created <TimestampValue value={client.createdAt} />
 												</p>
@@ -523,7 +535,7 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 													disabled={isBusy}
 													mix={[
 														css(dangerButtonCss),
-														...revokeCheck.getButtonMix({
+														...getRevokeCheck(client.id).getButtonMix({
 															on: {
 																click: () => {
 																	void handleRevoke(client.id)
@@ -532,7 +544,9 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 														}),
 													]}
 												>
-													{revokeCheck.doubleCheck ? 'Revoke now' : 'Revoke'}
+													{getRevokeCheck(client.id).doubleCheck
+														? 'Revoke now'
+														: 'Revoke'}
 												</button>
 											)}
 										</li>

@@ -24,7 +24,10 @@ import { mailboxRpc } from '#worker/email/mailbox-client.ts'
 import { repoSessionIndexRpc } from '#worker/repo/repo-session-index-client.ts'
 import { listRepoSessionsByUser } from '#worker/repo/repo-sessions.ts'
 import { listAccountUserStorageIds } from '#worker/account/user-inventory.ts'
-import { deleteOwnedMcpOauthClients } from '#app/account-mcp-oauth-clients.ts'
+import {
+	deleteOwnedMcpOauthClients,
+	listActiveUserMcpOauthClientIds,
+} from '#app/account-mcp-oauth-clients.ts'
 import {
 	accountUserDataTargets,
 	buildUserScopedDeleteOrUpdateSql,
@@ -1194,6 +1197,16 @@ export async function deleteUserAccount(input: {
 				userId: input.dbUserId,
 				warnings,
 			})
+		} else {
+			const ownedClientIds = await listActiveUserMcpOauthClientIds(
+				input.env.APP_DB,
+				input.dbUserId,
+			)
+			if (ownedClientIds.length > 0) {
+				warnings.push(
+					'OAuth provider does not support client deletion; MCP OAuth clients were not removed.',
+				)
+			}
 		}
 		try {
 			result.revokedOAuthGrants = await revokeAllOAuthGrants({

@@ -1713,6 +1713,41 @@ test('deleteUserAccount revokes OAuth grants and fails closed on critical cleanu
 	expect(deleteClient).toHaveBeenCalledTimes(1)
 	expect(deleteClient).toHaveBeenCalledWith('owned-client')
 
+	const { db: missingDeleteDb, rows: missingDeleteRows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com' }],
+		jobs: [{ id: 'job-1', user_id: 'user-aaa', storage_id: null }],
+		user_mcp_oauth_clients: [
+			{
+				id: 'row-1',
+				user_id: 1,
+				client_id: 'owned-client',
+				revoked_at: null,
+			},
+		],
+	})
+	await expect(
+		deleteUserAccount({
+			env: createSuccessfulDeletionEnv(missingDeleteDb, {
+				OAUTH_PROVIDER: {
+					async listUserGrants() {
+						return { items: [], cursor: undefined }
+					},
+					revokeGrant: vi.fn(async () => undefined),
+				},
+			}),
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toMatchObject({
+		name: 'AccountDeletionCleanupError',
+		cleanupErrors: [
+			'OAuth provider does not support client deletion; MCP OAuth clients were not removed.',
+		],
+	})
+	expect(missingDeleteRows.users).toEqual([
+		expect.objectContaining({ id: 1 }),
+	])
+
 	const { db: oauthFailureDb, rows: oauthFailureRows } = createTestDb({
 		users: [{ id: 1, email: 'a@example.com' }],
 		jobs: [{ id: 'job-1', user_id: 'user-aaa', storage_id: null }],

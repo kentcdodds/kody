@@ -5,6 +5,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import {
 	listActiveUserMcpOauthClientIds,
 	listUserMcpOauthClients,
+	maxUserMcpOauthClients,
 	mintUserMcpOauthClient,
 	parseClientLabel,
 	parseRedirectUriText,
@@ -128,4 +129,53 @@ test('mint rolls back the provider client when D1 insert fails', async () => {
 		}),
 	).rejects.toThrow(/FOREIGN KEY|constraint/i)
 	expect(deleteClient).toHaveBeenCalledWith('oauth-client-orphan')
+})
+
+test('mint rejects an eleventh active client and deletes the unused provider client', async () => {
+	const { sqlite, db } = createMigratedDb()
+	sqlite.exec(`
+		INSERT INTO users (id, username, email, stable_user_id, password_hash, email_verified_at)
+		VALUES (1, 'one', 'one@example.com', 'user-one', 'hash', CURRENT_TIMESTAMP);
+	`)
+	const deleteClient = vi.fn(async () => undefined)
+	let created = 0
+	const helpers = {
+		createClient: vi.fn(async () => {
+			created += 1
+			return {
+				clientId: `oauth-client-${created}`,
+				clientSecret: 'secret',
+			}
+		}),
+		deleteClient,
+	}
+
+	for (let index = 0; index < maxUserMcpOauthClients; index += 1) {
+		const minted = await mintUserMcpOauthClient({
+			db,
+			helpers,
+			userId: 1,
+			label: `Client ${index + 1}`,
+			redirectUris: ['https://example.com/callback'],
+		})
+		expect(minted.ok).toBe(true)
+	}
+
+	const overLimit = await mintUserMcpOauthClient({
+		db,
+		helpers,
+		userId: 1,
+		label: 'Too many',
+		redirectUris: ['https://example.com/callback'],
+	})
+	expect(overLimit).toEqual({
+		ok: false,
+		error: `You can have at most ${maxUserMcpOauthClients} active MCP OAuth clients.`,
+		status: 400,
+	})
+	expect(helpers.createClient).toHaveBeenCalledTimes(maxUserMcpOauthClients)
+	expect(deleteClient).not.toHaveBeenCalled()
+	expect(await listActiveUserMcpOauthClientIds(db, 1)).toHaveLength(
+		maxUserMcpOauthClients,
+	)
 })

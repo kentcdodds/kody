@@ -213,3 +213,17 @@ test('account MCP OAuth clients API requires a verified email to mint', async ()
 	)
 	expect(response.status).toBe(403)
 })
+
+test('account MCP OAuth clients API rejects unauthenticated requests', async () => {
+	setAuthSessionSecret(testCookieSecret)
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
+	const handler = createAccountMcpOauthClientsApiHandler(
+		createAppEnv(createD1FromSqlite(sqlite)),
+	)
+	const response = await runHandler(
+		handler,
+		new Request('http://example.com/account/mcp-oauth-clients.json'),
+	)
+	expect(response.status).toBe(401)
+})
