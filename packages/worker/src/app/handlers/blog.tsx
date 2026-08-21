@@ -130,14 +130,15 @@ export function createBlogPostMarkdownHandler(_env: Env) {
 
 /**
  * Resolve a Satori-safe PNG/JPEG data URI for optional blog artwork.
- * WebP and AVIF are skipped because Satori cannot embed them.
+ * Only `ogImage` is composed into the card. Headline `image` stays on
+ * the post. WebP and AVIF are skipped because Satori cannot embed them.
  */
 async function loadBlogOgArtworkDataUri(input: {
 	env: Env
 	request: Request
 	post: BlogPost
 }): Promise<string | null> {
-	const artworkPath = input.post.ogImage ?? input.post.image
+	const artworkPath = input.post.ogImage
 	const assets = input.env.ASSETS
 	if (!artworkPath || !assets) return null
 

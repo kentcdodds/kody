@@ -23,7 +23,7 @@ const tinyPng = Uint8Array.from([
 test('blog post OG image renders PNG for a catalog post and 404s unknown slugs', async () => {
 	mocks.renderBlogPostOgImage.mockResolvedValue(tinyPng)
 	const handler = createBlogPostOgImageHandler({} as Env)
-	const post = listBlogPosts().find((entry) => !entry.ogImage && !entry.image)
+	const post = listBlogPosts().find((entry) => !entry.ogImage)
 	expect(post).toBeDefined()
 
 	const response = await handler.handler({
