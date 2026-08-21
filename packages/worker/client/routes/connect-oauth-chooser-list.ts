@@ -12,10 +12,17 @@ export const connectOauthChooserFilterMinOptions = 6
 export const connectOauthChooserOptionMarkSize = '3rem'
 
 /**
- * `2.5 * (row + gap) - gap`: two full cards, half of a third, and the gaps
- * between them. Row height is the mark plus inset-card padding and borders.
+ * Taller of the mark and the label+detail stack, plus inset-card padding
+ * and borders. Using only the mark left the third card's peek as empty
+ * padding, so overlay-scrollbar users could not tell the list scrolled.
  */
-export const connectOauthChooserListMaxHeight = `calc(2.5 * (${connectOauthChooserOptionMarkSize} + (${spacing.md} * 2) + 2px + ${spacing.sm}) - ${spacing.sm})`
+export const connectOauthChooserOptionRowHeight = `calc(max(${connectOauthChooserOptionMarkSize}, calc((1em * var(--line-height-body) * 2) + ${spacing.xs})) + (${spacing.md} * 2) + 2px)`
+
+/**
+ * `2.5 * (row + gap) - gap`: two full cards, half of a third, and the gaps
+ * between them.
+ */
+export const connectOauthChooserListMaxHeight = `calc(2.5 * (${connectOauthChooserOptionRowHeight} + ${spacing.sm}) - ${spacing.sm})`
 
 export function filterConnectOauthChooserOptions<
 	T extends { label: string; detail: string; providerKey: string },
