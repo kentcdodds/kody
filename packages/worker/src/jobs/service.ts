@@ -1362,10 +1362,7 @@ export async function executeJobOnce(input: {
 				if (error instanceof TransientJobExecutionError) {
 					throw error
 				}
-				if (
-					input.runRecordHandle &&
-					isTransientJobExecutionError(error)
-				) {
+				if (input.runRecordHandle && isTransientJobExecutionError(error)) {
 					throw new TransientJobExecutionError(formatJobError(error), {
 						cause: error,
 					})
