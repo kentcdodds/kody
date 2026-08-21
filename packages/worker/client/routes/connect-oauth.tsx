@@ -874,7 +874,6 @@ export function ConnectOauthRoute(handle: Handle) {
 							on('click', () => {
 								replaceConfirmed = true
 								update()
-								void handleConnect()
 							}),
 							css(getSecondaryButtonCss()),
 						]}
