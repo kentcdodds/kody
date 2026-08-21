@@ -5,11 +5,10 @@ import {
 import { isDurableObjectIsolateResetMessage } from '#worker/sentry-options.ts'
 
 /**
- * Same bounded backoff as package_publish_external_push and published
- * artifact rebuild. Deploy-time isolate resets usually recover on the next
- * call to a fresh isolate.
+ * Bounded backoff for sandbox execution. The final delay gives deploy drains
+ * time to finish before the last attempt reaches a fresh isolate.
  */
-export const durableObjectResetRetryDelaysMs = [100, 500] as const
+export const durableObjectResetRetryDelaysMs = [100, 500, 1_500] as const
 
 export function isTransientDurableObjectResetError(error: unknown) {
 	if (typeof error === 'string') {
