@@ -1,5 +1,5 @@
 import { generateTOTP } from '@epic-web/totp'
-import { expect, test } from './playwright-utils.ts'
+import { expect, test, waitForClientHydration } from './playwright-utils.ts'
 import { clearAuthRateLimitsInE2eDatabase } from './d1-utils.ts'
 
 async function currentCodeFor(secret: string) {
@@ -21,6 +21,7 @@ test('two-factor lifecycle: enable, login with code, disable', async ({
 	await login({ email: user.email, password: user.password, mode: 'login' })
 
 	await page.goto('/account/two-factor')
+	await waitForClientHydration(page)
 	await expect(
 		page.getByRole('heading', {
 			name: 'Two-factor authentication is disabled',
@@ -43,10 +44,12 @@ test('two-factor lifecycle: enable, login with code, disable', async ({
 	await page.context().clearCookies()
 	clearAuthRateLimitsInE2eDatabase()
 	await page.goto('/login')
+	await waitForClientHydration(page)
 	await page.getByLabel('Email').fill(user.email)
 	await page.getByLabel('Password').fill(user.password)
 	await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 	await expect(page).toHaveURL(/\/verify$/)
+	await waitForClientHydration(page)
 
 	clearAuthRateLimitsInE2eDatabase()
 	await page.getByLabel('Verification code').fill(await currentCodeFor(secret))
@@ -55,6 +58,7 @@ test('two-factor lifecycle: enable, login with code, disable', async ({
 	await expect(page.getByText(`Email: ${user.email}`)).toBeVisible()
 
 	await page.goto('/account/two-factor')
+	await waitForClientHydration(page)
 	await expect(
 		page.getByRole('heading', {
 			name: 'Two-factor authentication is enabled',
@@ -69,6 +73,7 @@ test('two-factor lifecycle: enable, login with code, disable', async ({
 	await page.context().clearCookies()
 	clearAuthRateLimitsInE2eDatabase()
 	await page.goto('/login')
+	await waitForClientHydration(page)
 	await page.getByLabel('Email').fill(user.email)
 	await page.getByLabel('Password').fill(user.password)
 	await page.getByRole('button', { name: 'Sign in', exact: true }).click()

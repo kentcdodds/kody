@@ -90,6 +90,10 @@ async function boot() {
 	})
 
 	await app.ready()
+	// Boot preloads the route chunk before `run()`, so SSR headings and
+	// buttons are visible while click handlers are still unbound. Tests wait
+	// on this marker instead of racing that gap.
+	document.documentElement.dataset.hydrated = 'true'
 }
 
 void boot().catch((error: unknown) => {
