@@ -60,6 +60,45 @@ export type RunErrorTriageFilter = (typeof runErrorTriageFilterValues)[number]
 /** Max length for optional triage notes set via `run_update`. */
 export const runErrorTriageMaxNoteLength = 2000
 
+/**
+ * Stable machine-readable name for stale `running` rows reconciled after their
+ * surface TTL. Consumers should treat this as platform weather, not a
+ * user-authored package failure.
+ */
+export const runRecordPlatformInterruptedErrorName = 'platform_interrupted'
+
+export const runRecordPlatformInterruptedErrorMessage =
+	'The platform interrupted this run before completion; outcome unknown.'
+
+/**
+ * Idempotent unattended deliveries are retried by their owning scheduler or
+ * queue, so retain their interrupted attempt as ignored history instead of an
+ * open user-facing failure. Interactive and non-idempotent attempts stay open.
+ */
+export function runErrorTriageForPlatformInterrupt(
+	context: Pick<RunRecordContext, 'surface' | 'idempotencyKey'>,
+): RunErrorTriage | null {
+	const idempotencyKey = context.idempotencyKey?.trim()
+	switch (context.surface) {
+		case 'job':
+			return idempotencyKey?.startsWith('scheduled-job:') ? 'ignored' : null
+		case 'subscription':
+			return idempotencyKey ? 'ignored' : null
+		case 'execute':
+		case 'export':
+		case 'app_fetch':
+		case 'app_realtime':
+		case 'workflow':
+		case 'retriever':
+		case 'webhook':
+			return null
+		default: {
+			const exhaustive: never = context.surface
+			throw new Error(`Unhandled run surface: ${String(exhaustive)}`)
+		}
+	}
+}
+
 export const runLogLevelValues = [
 	'debug',
 	'info',
