@@ -107,9 +107,14 @@ export function CommunityDetailContent(
 							) : null}
 						</span>
 					) : null}
-					<p mix={css(ownerLineCss)} data-testid="community-detail-owner-line">
-						{/* Separate flex items (not nested flex + trailing space) so
-						    "by" / @username / follow glyph stay on one line with gap. */}
+					{/* A div, not a p: the signed-in follow control is a form, and
+					    browsers close a p before a form, which drops the glyph
+					    onto the next line. Separate flex items (not nested flex +
+					    trailing space) so "by" / @username / follow stay inline. */}
+					<div
+						mix={css(ownerLineCss)}
+						data-testid="community-detail-owner-line"
+					>
 						<span>by</span>
 						{ownerProfilePublic ? (
 							<a
@@ -160,7 +165,7 @@ export function CommunityDetailContent(
 									errorTestId: 'community-detail-owner-follow-error',
 								})
 							: null}
-					</p>
+					</div>
 				</div>
 			</header>
 

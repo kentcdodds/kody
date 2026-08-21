@@ -114,7 +114,12 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 						<h1 mix={css(pageTitleCss)} data-testid="profile-display-name">
 							{profile.displayName}
 						</h1>
-						<p mix={css(profileUsernameLineCss)} data-testid="profile-username">
+						{/* A div, not a p: the signed-in follow control is a form,
+						    and browsers close a p before a form. */}
+						<div
+							mix={css(profileUsernameLineCss)}
+							data-testid="profile-username"
+						>
 							<span>@{profile.username}</span>
 							{!isSelf
 								? renderProfileFollowControl({
@@ -127,7 +132,7 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 										errorTestId: 'profile-follow-error',
 									})
 								: null}
-						</p>
+						</div>
 					</div>
 				</div>
 				{profile.bio ? (

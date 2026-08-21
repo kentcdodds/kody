@@ -171,6 +171,12 @@ test('community detail handler returns bare detail frame HTML for target header'
 		url: new URL('https://example.com/community/listing-1'),
 	} as never)
 	const signedInHtml = await signedInResponse.text()
+	expect(signedInHtml).toMatch(
+		/<div[^>]*data-testid="community-detail-owner-line"/,
+	)
+	expect(signedInHtml).not.toMatch(
+		/<p[^>]*data-testid="community-detail-owner-line"/,
+	)
 	expect(signedInHtml).toContain('data-testid="community-detail-owner-follow"')
 	expect(signedInHtml).toContain(
 		'data-testid="community-detail-viewer-install-badge"',
