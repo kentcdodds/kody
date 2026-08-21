@@ -47,6 +47,7 @@ import {
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { isStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import {
 	assertWithinEntitlement,
 	consumeDailyEntitlement,
@@ -1321,6 +1322,18 @@ export async function executeJobOnce(input: {
 						idempotencyKey: input.idempotencyKey,
 					})
 					if (result.error) {
+						const errorMessage =
+							typeof result.error === 'string'
+								? result.error
+								: formatJobError(result.error)
+						if (
+							input.runRecordHandle &&
+							isStorageEstimateReadError(result.error)
+						) {
+							throw new TransientJobExecutionError(errorMessage, {
+								cause: result.error,
+							})
+						}
 						outcome = 'error'
 					}
 					execution = result.error
@@ -1342,6 +1355,11 @@ export async function executeJobOnce(input: {
 			} catch (error) {
 				if (error instanceof TransientJobExecutionError) {
 					throw error
+				}
+				if (input.runRecordHandle && isStorageEstimateReadError(error)) {
+					throw new TransientJobExecutionError(formatJobError(error), {
+						cause: error,
+					})
 				}
 				outcome = 'error'
 				execution = {

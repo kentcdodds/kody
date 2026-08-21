@@ -570,9 +570,15 @@ Rules:
      (bounded staleness, same trade-off as peers). Each live estimate read waits
      at most ~2s via `Promise.race` and is retried with backoff
      (`storageEstimateReadRetryDelaysMs`; a single 150ms retry lost to transient
-     per-bucket DO read failures in production) before failing closed for the
-     caller; the underlying DO RPC is not cancelled if the runtime keeps it
-     running. A cron lane (`storage_bucket_estimate_backfill`,
+     per-bucket DO read _rejections_ in production) before failing closed for
+     the caller. The underlying DO RPC is not cancelled if the runtime keeps it
+     running, so a timeout does **not** open a second stub call to the same
+     `storageId` — retries keep waiting on the in-flight promise. Fast rejects
+     still start a new RPC after backoff. A scheduled job that still fails
+     closed treats this as a transient occurrence error: the claimed run stays
+     `running` so the scheduler can abandon it and retry the same `scheduledFor`
+     instead of finishing a terminal error that idempotency would replay. A cron
+     lane (`storage_bucket_estimate_backfill`,
      `packages/worker/src/storage-buckets/estimate-backfill.ts`) sweeps
      inventory rows without a stored estimate in bounded batches (failed probes
      stay unmeasured and are retried on later sweeps) so freshly migrated

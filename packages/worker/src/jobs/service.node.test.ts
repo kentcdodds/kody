@@ -38,6 +38,7 @@ import {
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
+import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 
 const repoMockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
@@ -4806,6 +4807,111 @@ test('executeJobOnce failure modes workflow', async () => {
 		} finally {
 			executeSpy.mockRestore()
 		}
+	}
+})
+
+test('executeJobOnce retries a claimed storage-estimate failure and surfaces it on run-now', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const db = createDatabase()
+	const env = createJobServiceTestEnv({
+		APP_DB: db,
+		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
+		CLOUDFLARE_API_TOKEN: 'token-test',
+		BUNDLE_ARTIFACTS_KV: createBundleArtifactsKv(),
+		LOADER: {} as WorkerLoader,
+		REPO_SESSION: {} as DurableObjectNamespace,
+		STORAGE_RUNNER: createStorageRunnerBinding(),
+	})
+	mockRepoPersistence()
+	const callerContext = createBaseCallerContext()
+	const jobView = await createJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Estimate retry job',
+			code: 'export default async () => ({ ok: true })',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+	})
+	await insertPublishedEntitySource({
+		db,
+		env,
+		userId: callerContext.user.userId,
+		sourceId: jobView.sourceId,
+		entityKind: 'job',
+		entityId: jobView.id,
+		publishedCommit: 'published-commit-estimate',
+		manifestPath: 'kody.json',
+		files: {
+			'kody.json': JSON.stringify({
+				version: 1,
+				kind: 'job',
+				title: 'Estimate retry job',
+				description: 'Retries storage estimate misses',
+				sourceRoot: '/',
+				entrypoint: 'src/job.ts',
+			}),
+			'src/job.ts': 'export default async () => ({ ok: true })',
+		},
+	})
+	const estimateError = createStorageEstimateReadError({
+		storageId: 'package:estimate-target',
+		attempts: 4,
+		cause: new Error('Storage estimate read timed out after 2000ms.'),
+	})
+	const executeSpy = vi
+		.spyOn(
+			await import('#mcp/run-kody-registry.ts'),
+			'runBundledModuleWithRegistry',
+		)
+		.mockResolvedValue({
+			result: undefined,
+			error: estimateError.message,
+			logs: [],
+		})
+	const row = await (
+		await import('@kody-internal/shared/jobs/repo.ts')
+	).getJobRowById(db, callerContext.user.userId, jobView.id)
+	if (!row) {
+		throw new Error('Expected created job row.')
+	}
+
+	try {
+		const runNow = await executeJobOnce({
+			env,
+			job: row.record,
+			callerContext,
+		})
+		expect(runNow.execution).toEqual({
+			ok: false,
+			error: estimateError.message,
+			logs: [],
+		})
+
+		await expect(
+			executeJobOnce({
+				env,
+				job: row.record,
+				callerContext,
+				runRecordHandle: {
+					id: 'run-estimate-claimed',
+					userId: callerContext.user.userId,
+					startedAt: '2026-08-21T14:40:00.000Z',
+					persistence: 'eager',
+					context: {
+						surface: 'job',
+						name: row.record.name,
+						jobId: row.record.id,
+						storageId: row.record.storageId,
+					},
+				},
+			}),
+		).rejects.toBeInstanceOf(TransientJobExecutionError)
+	} finally {
+		executeSpy.mockRestore()
 	}
 })
 

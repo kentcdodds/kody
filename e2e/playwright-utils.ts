@@ -1,4 +1,9 @@
-import { test as base, type APIRequestContext } from '@playwright/test'
+import {
+	expect,
+	test as base,
+	type APIRequestContext,
+	type Page,
+} from '@playwright/test'
 import * as setCookieParser from 'set-cookie-parser'
 import {
 	assignRoleInE2eDatabase,
@@ -13,6 +18,17 @@ import {
 } from './web-server-liveness.ts'
 
 export * from '@playwright/test'
+
+/**
+ * Wait until Remix client hydration has bound event handlers.
+ *
+ * `entry.tsx` preloads the route chunk before `run()`, so SSR headings and
+ * buttons are visible while `on('click')` / `on('submit')` mixins are still
+ * unbound. Clicking a `type="button"` control in that gap is a silent no-op.
+ */
+export async function waitForClientHydration(page: Page) {
+	await expect(page.locator('html')).toHaveAttribute('data-hydrated', 'true')
+}
 
 const authRetryBudgetMs = 15_000
 const authRetryPauseMs = 250

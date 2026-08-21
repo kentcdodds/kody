@@ -8,6 +8,19 @@ import {
 import { getMcpUserPackageScope } from './user-scope.ts'
 
 /**
+ * Caller-clearable package scope denial (invalid scope, non-platform target,
+ * or missing grant). Lives in the worker layer so MCP capabilities and shared
+ * resolvers can throw it without importing `#mcp/*`; observability treats it
+ * like `CommunityActionError` and keeps it off Sentry (KODY-CLOUDFLARE-5N).
+ */
+export class PackageScopeAccessError extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = 'PackageScopeAccessError'
+	}
+}
+
+/**
  * The acting-user / owning-account pair for a package operation.
  *
  * `ownerUserId` (a stable MCP user id) is the only id that may be used for
@@ -26,7 +39,7 @@ export type PackageOwnerContext = {
 }
 
 export const packageScopeInputDescription =
-	'Optional package scope (without "@") to act in, for example "kody". Requires an explicit package scope grant on that platform account. Omit to act in your own personal scope.'
+	'Optional platform account scope (without "@") only when you already hold an explicit package scope grant for that account. Omit to act in your own personal scope. Do not guess a platform scope you have not been granted.'
 
 function normalizeRequestedScope(scope: string | undefined) {
 	const normalized = scope?.trim().toLowerCase().replace(/^@/, '') ?? ''
@@ -66,12 +79,14 @@ export async function resolvePackageOwnerContext(
 
 	const formatError = getUsernameFormatValidationError(scope)
 	if (formatError) {
-		throw new Error(`Invalid package scope "@${scope}": ${formatError}`)
+		throw new PackageScopeAccessError(
+			`Invalid package scope "@${scope}": ${formatError}`,
+		)
 	}
 	const platformAccount = await getPlatformAccountByUsername(db, scope)
 	if (!platformAccount) {
-		throw new Error(
-			`Package scope "@${scope}" is not a platform account scope you can act in.`,
+		throw new PackageScopeAccessError(
+			`Package scope "@${scope}" is not a platform account scope you can act in. Omit package_scope to use your personal scope.`,
 		)
 	}
 	const granted = await hasPackageScopeGrant(db, {
@@ -79,7 +94,9 @@ export async function resolvePackageOwnerContext(
 		granteeUserId: user.userId,
 	})
 	if (!granted) {
-		throw new Error(`You do not have a package scope grant for "@${scope}".`)
+		throw new PackageScopeAccessError(
+			`You do not have a package scope grant for "@${scope}". Omit package_scope to use your personal scope, or ask an admin to grant access to that platform account.`,
+		)
 	}
 	await logAuditEvent({
 		db: auditDatabaseFromEnv(env),

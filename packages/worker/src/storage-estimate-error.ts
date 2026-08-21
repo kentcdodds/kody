@@ -1,3 +1,5 @@
+import { errorCauseChainIncludes } from '@kody-internal/shared/error-message.ts'
+
 // Deliberately unanchored: transport layers can prefix/wrap this sentence, and
 // execute error taxonomy must still recover the storage id and attempt count.
 const storageEstimateReadErrorPattern =
@@ -41,4 +43,11 @@ export function parseStorageEstimateReadErrorMessage(
 	} catch {
 		return null
 	}
+}
+
+export function isStorageEstimateReadError(error: unknown) {
+	return errorCauseChainIncludes(
+		error,
+		(message) => parseStorageEstimateReadErrorMessage(message) != null,
+	)
 }

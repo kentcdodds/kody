@@ -684,6 +684,40 @@ test('renderAppPage caches anonymous marketing HTML and keeps session pages priv
 	expect(login.headers.get('Cache-Control')).toBe('no-store')
 })
 
+test('signup social buttons are icon-only with accessible names', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+	const response = await renderAppPage({
+		request: new Request('https://example.com/signup'),
+		env,
+		loaderData: {
+			authProviders: {
+				ok: true,
+				signupMode: 'open',
+				turnstileSiteKey: null,
+				providers: [
+					{ id: 'github', label: 'GitHub' },
+					{ id: 'google', label: 'Google' },
+					{ id: 'x', label: 'X' },
+					{ id: 'discord', label: 'Discord' },
+				],
+			},
+		},
+	})
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	expect(html).toContain('aria-label="Continue with GitHub"')
+	expect(html).toContain('aria-label="Continue with Google"')
+	expect(html).toContain('aria-label="Continue with X"')
+	expect(html).toContain('aria-label="Continue with Discord"')
+	expect(html).toContain('or continue with')
+	expect(html).not.toMatch(/>GitHub</)
+	expect(html).not.toMatch(/>Google</)
+	expect(html).not.toMatch(/>X</)
+	expect(html).not.toMatch(/>Discord</)
+})
+
 test('renderAppPage configures session secret and server-renders oauth authorize', async () => {
 	resetDataCacheForTests()
 	resetAuthSessionSecretForTests()

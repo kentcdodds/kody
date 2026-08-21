@@ -29,13 +29,19 @@ const maxConcurrentStorageEstimateReads = 16
  * Entitlement baselines only probe the write-target bucket plus any bucket
  * that has never been measured, so the probe set is small enough to afford
  * several attempts: production showed a single 150ms retry was not enough to
- * ride out transient per-bucket DO estimate-read failures, which used to
- * block tiny writes outright.
+ * ride out transient per-bucket DO estimate-read *rejections*.
+ *
+ * A timeout does not start a second RPC to the same storageId. The underlying
+ * stub call is not cancelled; a new call would queue behind it on the
+ * single-threaded DO and turn a slow wake into four stacked timeouts.
+ * Timed-out attempts keep waiting on the in-flight promise. Fast rejects
+ * still open a new RPC after backoff.
  */
 export const storageEstimateReadRetryDelaysMs = [150, 600, 2400] as const
 /**
- * Bound each StorageRunner `getEstimatedBytes` RPC so one hung DO cannot own
- * the whole sandbox deadline (~90s). Fail closed after this budget.
+ * Bound each StorageRunner `getEstimatedBytes` wait so one hung DO cannot own
+ * the whole sandbox deadline (~90s). Fail closed after this budget per
+ * attempt; retries of a timed-out storageId reuse the same RPC.
  */
 export const storageEstimateReadTimeoutMs = 2_000
 /**
@@ -725,8 +731,14 @@ async function readStorageEstimateChunkWithRetry(input: {
 }): Promise<Array<StorageEstimateResult>> {
 	const retryDelaysMs = input.retryDelaysMs ?? storageEstimateReadRetryDelaysMs
 	const maxAttempts = retryDelaysMs.length + 1
-	const readOne = (bucket: { storageId: string; kind: StorageBucketKind }) =>
-		withStorageEstimateReadTimeout(() => {
+	const inflightReads = new Map<string, Promise<StorageEstimateResult>>()
+	const startOrReuseRead = (bucket: {
+		storageId: string
+		kind: StorageBucketKind
+	}) => {
+		const existing = inflightReads.get(bucket.storageId)
+		if (existing) return existing
+		const rpc = (() => {
 			switch (bucket.kind) {
 				case 'repo_session':
 					return repoSessionRpc(
@@ -749,7 +761,24 @@ async function readStorageEstimateChunkWithRetry(input: {
 					)
 				}
 			}
-		}, bucket.storageId)
+		})()
+		// Keep a fulfilled read in the map until this baseline returns so a
+		// timeout-then-success during backoff is reused instead of opening a
+		// second stub call. Only rejected RPCs are dropped so the next
+		// attempt can start a new one.
+		inflightReads.set(bucket.storageId, rpc)
+		void rpc.catch(() => {
+			if (inflightReads.get(bucket.storageId) === rpc) {
+				inflightReads.delete(bucket.storageId)
+			}
+		})
+		return rpc
+	}
+	const readOne = (bucket: { storageId: string; kind: StorageBucketKind }) =>
+		withStorageEstimateReadTimeout(
+			() => startOrReuseRead(bucket),
+			bucket.storageId,
+		)
 
 	const values: Array<StorageEstimateResult | undefined> = Array.from({
 		length: input.buckets.length,
@@ -794,9 +823,20 @@ async function readStorageEstimateChunkWithRetry(input: {
 			})
 		}
 		pendingIndexes = failedIndexes
-		await new Promise<void>((resolve) => {
-			setTimeout(resolve, retryDelaysMs[attempt - 1] ?? 0)
-		})
+		const pendingReads = failedIndexes
+			.map((index) => {
+				const storageId = input.buckets[index]?.storageId
+				return storageId ? inflightReads.get(storageId) : undefined
+			})
+			.filter((value): value is Promise<StorageEstimateResult> => value != null)
+		await Promise.race([
+			new Promise<void>((resolve) => {
+				setTimeout(resolve, retryDelaysMs[attempt - 1] ?? 0)
+			}),
+			pendingReads.length > 0
+				? Promise.allSettled(pendingReads).then(() => undefined)
+				: new Promise<void>(() => {}),
+		])
 	}
 	return values.map((value, index) => {
 		if (value === undefined) {
