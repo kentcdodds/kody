@@ -32,6 +32,18 @@ test('oauth scope helpers unique, order the menu, and format counts', () => {
 			selectedScopes: ['repo', 'read:user'],
 		}),
 	).toEqual(['repo', 'read:user'])
+	expect(
+		resolveOauthScopeMenu({
+			allowedScopes: ['repo', 'read:user'],
+			selectedScopes: ['repo'],
+		}),
+	).toEqual(['repo', 'read:user'])
+	expect(
+		resolveOauthScopeMenu({
+			allowedScopes: ['repo', 'read:user'],
+			selectedScopes: [],
+		}),
+	).toEqual(['repo', 'read:user'])
 
 	expect(
 		formatOauthScopeDisclosureLabel({ selectedCount: 1, menuCount: 1 }),

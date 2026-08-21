@@ -2,9 +2,29 @@ import { expect, test } from 'vitest'
 import {
 	buildConnectOauthChooserOptions,
 	buildConnectOauthHref,
+	isConnectOauthCallbackUrl,
 } from './oauth-connect.ts'
 
 test('connect chooser lists reconnectable connections and unused built-ins', () => {
+	expect(
+		isConnectOauthCallbackUrl(
+			new URL('https://example.com/connect/oauth?code=abc&state=1'),
+		),
+	).toBe(true)
+	expect(
+		isConnectOauthCallbackUrl(
+			new URL('https://example.com/connect/oauth?error=access_denied'),
+		),
+	).toBe(true)
+	expect(
+		isConnectOauthCallbackUrl(new URL('https://example.com/connect/oauth')),
+	).toBe(false)
+	expect(
+		isConnectOauthCallbackUrl(
+			new URL('https://example.com/connect/oauth?provider=google'),
+		),
+	).toBe(false)
+
 	expect(
 		buildConnectOauthHref({ name: 'google-work', appSlug: 'google' }),
 	).toBe('/connect/oauth?provider=google-work&app=google')

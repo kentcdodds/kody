@@ -1024,6 +1024,27 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(chooserHtml).toContain(
 		'/connect/oauth?provider=google&platform=google',
 	)
+
+	const callbackResponse = await renderAppPage({
+		request: new Request(
+			'https://example.com/connect/oauth?code=auth-code&state=abc',
+		),
+		env,
+		loaderData: {
+			connectOauth: {
+				ok: true,
+				provider: null,
+				integration: null,
+				chooser: { options: [] },
+				redirectUri: 'https://example.com/connect/oauth',
+			},
+		},
+	})
+	expect(callbackResponse.status).toBe(200)
+	const callbackHtml = await readResponseText(callbackResponse)
+	expect(callbackHtml).toContain('data-testid="connect-oauth-callback"')
+	expect(callbackHtml).not.toContain('data-testid="connect-oauth-chooser"')
+	expect(callbackHtml).toContain('Finishing the connection')
 })
 
 test('renderAppPage server-renders simplified integration and secret-approval pages', async () => {

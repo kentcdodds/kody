@@ -16,6 +16,7 @@ import {
 	resolveOauthScopeMenu,
 	uniqueOauthScopes,
 } from '#universal/oauth-scopes.ts'
+import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -236,6 +237,12 @@ export function ConnectOauthRoute(handle: Handle) {
 		NonNullable<ConnectOauthLoaderData['chooser']>['options'][number]
 	> = []
 	let requestedProvider: string | null = null
+	/**
+	 * Scope checkboxes stay on this list while the user unchecks. BYO has no
+	 * operator menu, so using live `config.scopes` as the menu would delete
+	 * unchecked items (and hide the picker if every box is cleared).
+	 */
+	let offeredScopeMenu: Array<string> = []
 
 	/**
 	 * True when finishing this flow would overwrite a connection that runs on
@@ -293,6 +300,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		renameInput = ''
 		chooserOptions = []
 		requestedProvider = null
+		offeredScopeMenu = []
 		hostApprovalLinks = []
 		nextSteps = null
 		accessTokenSaved = false
@@ -604,6 +612,10 @@ export function ConnectOauthRoute(handle: Handle) {
 			clientId: nextConfig.clientId,
 			hasStoredClientSecret,
 			platform: Boolean(nextConfig.platformAppSlug),
+		})
+		offeredScopeMenu = resolveOauthScopeMenu({
+			allowedScopes: nextConfig.platformAllowedScopes,
+			selectedScopes: nextConfig.scopes,
 		})
 		if (setupStatus.isReady) {
 			statusMessage = 'Ready to connect.'
@@ -946,7 +958,10 @@ export function ConnectOauthRoute(handle: Handle) {
 	const toggleRequestedScope = (scope: string) => {
 		if (!config) return
 		const menu = resolveOauthScopeMenu({
-			allowedScopes: config.platformAllowedScopes,
+			allowedScopes:
+				config.platformAllowedScopes.length > 0
+					? config.platformAllowedScopes
+					: offeredScopeMenu,
 			selectedScopes: config.scopes,
 		})
 		if (!menu.includes(scope)) return
@@ -965,7 +980,10 @@ export function ConnectOauthRoute(handle: Handle) {
 		if (!config || currentStep !== 'connect') return null
 		const currentConfig = config
 		const menu = resolveOauthScopeMenu({
-			allowedScopes: currentConfig.platformAllowedScopes,
+			allowedScopes:
+				currentConfig.platformAllowedScopes.length > 0
+					? currentConfig.platformAllowedScopes
+					: offeredScopeMenu,
 			selectedScopes: currentConfig.scopes,
 		})
 		if (menu.length === 0) return null
@@ -1030,6 +1048,16 @@ export function ConnectOauthRoute(handle: Handle) {
 					) : null}
 				</div>
 			</details>
+		)
+	}
+
+	const renderCallbackPending = () => {
+		return (
+			<section mix={css(cardCss)} data-testid="connect-oauth-callback">
+				<p mix={css({ margin: 0, color: colors.text })}>
+					Finishing the connection…
+				</p>
+			</section>
 		)
 	}
 
@@ -1485,16 +1513,26 @@ export function ConnectOauthRoute(handle: Handle) {
 		return null
 	}
 
-	const headerTitle = () =>
-		config
-			? `Connect ${config.provider}`
-			: requestedProvider
-				? `Connect ${requestedProvider}`
-				: 'Connect an account'
+	const headerTitle = () => {
+		if (config) return `Connect ${config.provider}`
+		if (requestedProvider) return `Connect ${requestedProvider}`
+		const href = readCurrentRouterHref(handle)
+		if (isConnectOauthCallbackUrl(new URL(href, 'https://kody.local'))) {
+			return 'Completing connection'
+		}
+		return 'Connect an account'
+	}
 
 	const headerDescription = () => {
 		if (statusTone === 'error') return null
 		if (currentStep === 'callback') return null
+		const href = readCurrentRouterHref(handle)
+		if (
+			!config &&
+			isConnectOauthCallbackUrl(new URL(href, 'https://kody.local'))
+		) {
+			return null
+		}
 		if (!config) {
 			if (requestedProvider && hasConfigError) {
 				return 'This URL is missing the provider endpoints needed to start OAuth.'
@@ -1720,7 +1758,11 @@ export function ConnectOauthRoute(handle: Handle) {
 					{renderStatusCallout()}
 					{requestedProvider && hasConfigError
 						? renderIncompleteConfig()
-						: renderChooser()}
+						: isConnectOauthCallbackUrl(
+									new URL(currentHref, 'https://kody.local'),
+							  )
+							? renderCallbackPending()
+							: renderChooser()}
 				</section>
 			)
 		}

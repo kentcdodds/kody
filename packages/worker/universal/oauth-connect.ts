@@ -12,6 +12,10 @@ export type ConnectOauthChooserOption = {
 	kind: ConnectOauthChooserKind
 }
 
+export function isConnectOauthCallbackUrl(url: URL): boolean {
+	return Boolean(url.searchParams.get('code') || url.searchParams.get('error'))
+}
+
 export function buildConnectOauthHref(input: {
 	name: string
 	platform?: boolean
