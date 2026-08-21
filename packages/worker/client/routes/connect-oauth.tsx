@@ -1097,10 +1097,6 @@ export function ConnectOauthRoute(handle: Handle) {
 
 	const renderIncompleteConfig = () => {
 		const provider = requestedProvider || 'this provider'
-		const href =
-			typeof window !== 'undefined'
-				? window.location.href
-				: `/connect/oauth?provider=${encodeURIComponent(provider)}`
 		return (
 			<section mix={css(cardCss)} data-testid="connect-oauth-incomplete">
 				<p mix={css({ margin: 0, color: colors.text })}>
@@ -1112,7 +1108,7 @@ export function ConnectOauthRoute(handle: Handle) {
 					token URLs and send you a complete link.
 				</p>
 				<CopyTextButton
-					value={buildIncompleteConnectOauthPrompt({ provider, href })}
+					value={buildIncompleteConnectOauthPrompt({ provider })}
 					idleLabel="Copy setup prompt"
 					variant="primary"
 				/>

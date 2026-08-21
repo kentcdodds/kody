@@ -1459,8 +1459,8 @@ export function AccountIntegrationsRoute(handle: Handle) {
 															)}
 														</div>
 														<p mix={css(descriptionCss)}>
-															Need more access? This prompt asks your agent to
-															add scopes to the integration, then ask you to
+															Need more access? Copy this prompt for your agent.
+															It explains how to request more scopes and
 															reconnect so the token matches.
 														</p>
 														<CopyTextButton
