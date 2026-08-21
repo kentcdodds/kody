@@ -24,9 +24,14 @@ test('renderPageOgImage returns valid PNG bytes for home and community', async (
 
 	const discord = await renderPageOgImage({ page: publicOgPages.discord })
 	expectPngBytes(discord)
-	// Discord swaps the lantern hero for Kody-with-Clyde, so the encoding
-	// cannot match the generic public-page card.
-	expect(Buffer.from(home).equals(Buffer.from(discord))).toBe(false)
+
+	// Same copy as home, Discord path only — so a miss on hero/halo selection
+	// cannot hide behind the different title and subtitle.
+	const homeWithDiscordHero = await renderPageOgImage({
+		page: { ...publicOgPages.home, path: '/discord' },
+	})
+	expectPngBytes(homeWithDiscordHero)
+	expect(Buffer.from(home).equals(Buffer.from(homeWithDiscordHero))).toBe(false)
 })
 
 test('renderPageOgImage renders each theme differently', async () => {
