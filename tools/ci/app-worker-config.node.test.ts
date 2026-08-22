@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { expect, test } from 'vitest'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import { generate } from './app-worker-config.ts'
 import { parseJsonc } from './resource-utils.ts'
 
@@ -95,6 +96,7 @@ function buildMainGeneratedConfig() {
 }
 
 test('app-worker config copies resource ids and pins APP_SURFACE on main', async () => {
+	consoleError.mockImplementation(() => {})
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'app-worker-config-'))
 	try {
 		const mainConfigPath = path.join(tempDir, 'main.json')
