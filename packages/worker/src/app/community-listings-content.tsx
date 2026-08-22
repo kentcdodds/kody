@@ -200,6 +200,15 @@ function renderCommunityListingCard(
 										: 'Forked'}
 								</span>
 							) : null}
+							{listing.viewerInstall?.listingAhead ? (
+								<span
+									data-testid={`community-listing-ahead-${listing.id}`}
+									title="This listing has been republished since you forked it."
+									mix={css(communityBadgePillCss)}
+								>
+									Listing updated
+								</span>
+							) : null}
 						</span>
 					) : null}
 				</div>

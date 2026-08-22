@@ -257,6 +257,46 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 		}),
 	)
 	expect(forked?.listing.viewerInstall?.status).toBe('installed')
+	expect(forked?.viewerInstall?.listingAhead).toBe(false)
+
+	resetDataCacheForTests()
+	mockModule.getCommunityListingWithAggregates.mockResolvedValue({
+		...sampleListing,
+		pinnedCommit: 'commit-new',
+	})
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([
+		{
+			listingId: 'listing-github',
+			targetKodyId: 'github',
+			forkedPackageId: 'pkg-github',
+			forkedSourceId: 'src-github',
+			createdAt: '2026-08-01T00:00:00.000Z',
+			originCommit: 'abc1234567890',
+		},
+	])
+	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([
+		{
+			id: 'pkg-github',
+			kodyId: 'github',
+			name: '@burhan/github',
+			sourceId: 'src-github',
+		},
+	])
+	const ahead = await loadCommunityDetailData(
+		{} as Env,
+		new Request('https://example.com/community/listing-github-ahead'),
+		'listing-github',
+	)
+	expect(ahead?.viewerInstall).toEqual(
+		expect.objectContaining({
+			status: 'installed',
+			listingAhead: true,
+		}),
+	)
+	expect(ahead?.viewerInstall?.listingAheadPrompt).toContain(
+		'community_fork_absorb',
+	)
+	expect(ahead?.viewerInstall?.listingAheadPrompt).toContain('commit-new')
 })
 
 test('community index is memoized per request and forwards newest sort to loaders', async () => {

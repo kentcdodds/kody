@@ -97,6 +97,14 @@ function stubSavedPackage(input?: {
 		sourceListingId: input?.sourceListingId ?? 'listing-1',
 		listingCurrent: input?.listingCurrent ?? true,
 		listingKodyId: input?.listingKodyId ?? 'upstream-discord-gateway',
+		listingName:
+			input?.sourceListingId === null ? null : '@kentcdodds/discord-gateway',
+		originCommit: input?.sourceListingId === null ? null : 'commit-origin',
+		listingPinnedCommit:
+			input?.sourceListingId === null ? null : 'commit-origin',
+		listingPublishedAt:
+			input?.sourceListingId === null ? null : '2026-04-20T00:00:00.000Z',
+		listingAhead: input?.sourceListingId === null ? null : false,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -147,6 +155,7 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		source_listing_id: 'listing-1',
 		listing_current: true,
 		listing_kody_id: 'upstream-discord-gateway',
+		listing_ahead: false,
 		created_at: '2026-04-25T00:00:00.000Z',
 		updated_at: '2026-04-26T00:00:00.000Z',
 		tokens: [],
@@ -279,6 +288,11 @@ test('getPackageCapability projects export contracts from source and leaves them
 		sourceListingId: null,
 		listingCurrent: null,
 		listingKodyId: null,
+		listingName: null,
+		originCommit: null,
+		listingPinnedCommit: null,
+		listingPublishedAt: null,
+		listingAhead: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -349,6 +363,11 @@ export declare function listEvents(calendarId: string): Promise<string[]>
 		sourceListingId: null,
 		listingCurrent: null,
 		listingKodyId: null,
+		listingName: null,
+		originCommit: null,
+		listingPinnedCommit: null,
+		listingPublishedAt: null,
+		listingAhead: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -423,6 +442,11 @@ export default function calendar() {
 		sourceListingId: null,
 		listingCurrent: null,
 		listingKodyId: null,
+		listingName: null,
+		originCommit: null,
+		listingPinnedCommit: null,
+		listingPublishedAt: null,
+		listingAhead: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})
@@ -477,6 +501,11 @@ export default function calendar() {
 		sourceListingId: null,
 		listingCurrent: null,
 		listingKodyId: null,
+		listingName: null,
+		originCommit: null,
+		listingPinnedCommit: null,
+		listingPublishedAt: null,
+		listingAhead: null,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})

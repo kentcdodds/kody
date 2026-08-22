@@ -1,5 +1,6 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
+import { communityForkAbsorbCapability } from './absorb.ts'
 import { communityForkAdoptCapability } from './adopt.ts'
 import { communityFollowCapability } from './follow.ts'
 import { communityForkCapability } from './fork.ts'
@@ -29,6 +30,8 @@ export const communityDomain = defineDomain({
 		'listing',
 		'fork',
 		'adopt',
+		'absorb',
+		'upstream',
 		'publish',
 		'rating',
 		'report',
@@ -47,6 +50,7 @@ export const communityDomain = defineDomain({
 		communityGetCapability,
 		communityForkCapability,
 		communityForkAdoptCapability,
+		communityForkAbsorbCapability,
 		communityRateCapability,
 		communityReportCapability,
 		communitySetTrustedCapability,

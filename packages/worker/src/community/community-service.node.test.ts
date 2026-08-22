@@ -30,6 +30,7 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityForkByForkedPackageId: vi.fn(),
 	listCommunityForksByListingAndUser: vi.fn(),
 	markCommunityForkAdopted: vi.fn(),
+	updateCommunityForkOriginCommit: vi.fn(),
 	upsertCommunityRating: vi.fn(),
 	insertCommunityReport: vi.fn(),
 	getCommunityReportById: vi.fn(),
@@ -137,6 +138,8 @@ vi.mock('./repo.ts', async (importOriginal) => {
 			mockModule.listCommunityForksByListingAndUser(...args),
 		markCommunityForkAdopted: (...args: Array<unknown>) =>
 			mockModule.markCommunityForkAdopted(...args),
+		updateCommunityForkOriginCommit: (...args: Array<unknown>) =>
+			mockModule.updateCommunityForkOriginCommit(...args),
 		upsertCommunityRating: (...args: Array<unknown>) =>
 			mockModule.upsertCommunityRating(...args),
 		insertCommunityReport: (...args: Array<unknown>) =>
@@ -187,6 +190,7 @@ const {
 	listCommunityIndexOverview,
 	forkCommunityListing,
 	adoptCommunityFork,
+	absorbCommunityForkUpstream,
 } = await import('./service.ts')
 
 const testBundleArtifactsKv = {
@@ -1820,4 +1824,93 @@ test('adoptCommunityFork is idempotent when already adopted and isolates by user
 		}),
 	).rejects.toThrow(/was not found/)
 	expect(mockModule.markCommunityForkAdopted).not.toHaveBeenCalled()
+})
+
+test('absorbCommunityForkUpstream records the current listing pin and is idempotent', async () => {
+	mockModule.getSavedPackageById.mockResolvedValue({
+		...validSavedPackage(),
+		id: 'package-fork-1',
+		userId: 'user-2',
+		kodyId: 'discord-gateway-fork',
+		name: '@jane/discord-gateway-fork',
+	})
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue({
+		id: 'fork-1',
+		listingId: 'listing-1',
+		forkerUserId: 'user-2',
+		originCommit: 'commit-1',
+		forkedPackageId: 'package-fork-1',
+		forkedSourceId: 'fork-source-1',
+		targetKodyId: 'discord-gateway-fork',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		adoptedAt: null,
+		adoptionNote: null,
+	})
+	mockModule.getCommunityListingById.mockResolvedValue(
+		sampleListing({ pinnedCommit: 'commit-2' }),
+	)
+	mockModule.updateCommunityForkOriginCommit.mockResolvedValue({
+		id: 'fork-1',
+		listingId: 'listing-1',
+		forkerUserId: 'user-2',
+		originCommit: 'commit-2',
+		forkedPackageId: 'package-fork-1',
+		forkedSourceId: 'fork-source-1',
+		targetKodyId: 'discord-gateway-fork',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		adoptedAt: null,
+		adoptionNote: null,
+	})
+
+	const absorbed = await absorbCommunityForkUpstream({
+		env: createEnv(),
+		userId: 'user-2',
+		packageId: 'package-fork-1',
+	})
+	expect(absorbed).toEqual({
+		packageId: 'package-fork-1',
+		kodyId: 'discord-gateway-fork',
+		listingId: 'listing-1',
+		originCommit: 'commit-2',
+		listingPinnedCommit: 'commit-2',
+		alreadyAbsorbed: false,
+	})
+	expect(mockModule.updateCommunityForkOriginCommit).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			forkerUserId: 'user-2',
+			forkedPackageId: 'package-fork-1',
+			originCommit: 'commit-2',
+		},
+	)
+
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue({
+		id: 'fork-1',
+		listingId: 'listing-1',
+		forkerUserId: 'user-2',
+		originCommit: 'commit-2',
+		forkedPackageId: 'package-fork-1',
+		forkedSourceId: 'fork-source-1',
+		targetKodyId: 'discord-gateway-fork',
+		createdAt: '2026-07-01T00:00:00.000Z',
+		adoptedAt: null,
+		adoptionNote: null,
+	})
+	mockModule.updateCommunityForkOriginCommit.mockClear()
+	const already = await absorbCommunityForkUpstream({
+		env: createEnv(),
+		userId: 'user-2',
+		packageId: 'package-fork-1',
+	})
+	expect(already.alreadyAbsorbed).toBe(true)
+	expect(mockModule.updateCommunityForkOriginCommit).not.toHaveBeenCalled()
+
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue(null)
+	await expect(
+		absorbCommunityForkUpstream({
+			env: createEnv(),
+			userId: 'user-2',
+			packageId: 'package-fork-1',
+		}),
+	).rejects.toThrow(/self-authored/)
 })

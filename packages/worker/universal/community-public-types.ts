@@ -13,6 +13,13 @@ export type ViewerListingInstall = {
 	 * Null for inert forks that still need adaptation.
 	 */
 	packageId: string | null
+	/**
+	 * True when this viewer's fork last absorbed an older listing pin than
+	 * the listing currently publishes.
+	 */
+	listingAhead: boolean
+	/** Copyable agent prompt when `listingAhead` is true; otherwise null. */
+	listingAheadPrompt: string | null
 }
 
 /**

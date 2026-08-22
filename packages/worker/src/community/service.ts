@@ -60,6 +60,7 @@ import {
 	getCommunityListingByOwnerAndPackage,
 	listCommunityForksByListingAndUser,
 	markCommunityForkAdopted,
+	updateCommunityForkOriginCommit,
 	listCommunityActivityPageRowsForAdmin,
 	listCommunityActivityRowsForAdmin,
 	getCommunityRatingAggregatesByListingId,
@@ -1633,6 +1634,97 @@ export async function adoptCommunityFork(input: {
 		originCommit: updated.originCommit,
 		adoptedAt: updated.adoptedAt,
 		alreadyAdopted: false,
+	}
+}
+
+export type AbsorbCommunityForkUpstreamResult = {
+	packageId: string
+	kodyId: string
+	listingId: string
+	originCommit: string
+	listingPinnedCommit: string
+	alreadyAbsorbed: boolean
+}
+
+export async function absorbCommunityForkUpstream(input: {
+	env: Env
+	userId: string
+	packageId?: string
+	kodyId?: string
+}): Promise<AbsorbCommunityForkUpstreamResult> {
+	const packageIdCount =
+		(input.packageId !== undefined ? 1 : 0) +
+		(input.kodyId !== undefined ? 1 : 0)
+	if (packageIdCount !== 1) {
+		throw new CommunityActionError(
+			'Provide exactly one of `package_id` or `kody_id`.',
+		)
+	}
+
+	const savedPackage =
+		input.packageId !== undefined
+			? await getSavedPackageById(input.env.APP_DB, {
+					userId: input.userId,
+					packageId: input.packageId,
+				})
+			: await getSavedPackageByKodyId(input.env.APP_DB, {
+					userId: input.userId,
+					kodyId: input.kodyId ?? '',
+				})
+	if (!savedPackage) {
+		const missingId = input.packageId ?? input.kodyId
+		throw new CommunityActionError(
+			`Saved package "${missingId}" was not found. Confirm the id with search({ domain: "packages" }).`,
+		)
+	}
+
+	const fork = await getCommunityForkByForkedPackageId(input.env.APP_DB, {
+		forkerUserId: input.userId,
+		forkedPackageId: savedPackage.id,
+	})
+	if (!fork) {
+		throw new CommunityActionError(
+			`Package "${savedPackage.kodyId}" is self-authored and has no community listing to absorb.`,
+		)
+	}
+
+	const listing = await getCommunityListingById(input.env.APP_DB, {
+		listingId: fork.listingId,
+		includeDelisted: false,
+	})
+	if (!listing) {
+		throw new CommunityActionError(
+			`The source community listing for package "${savedPackage.kodyId}" is no longer active.`,
+		)
+	}
+	if (fork.originCommit === listing.pinnedCommit) {
+		return {
+			packageId: savedPackage.id,
+			kodyId: savedPackage.kodyId,
+			listingId: listing.id,
+			originCommit: fork.originCommit,
+			listingPinnedCommit: listing.pinnedCommit,
+			alreadyAbsorbed: true,
+		}
+	}
+
+	const updated = await updateCommunityForkOriginCommit(input.env.APP_DB, {
+		forkerUserId: input.userId,
+		forkedPackageId: savedPackage.id,
+		originCommit: listing.pinnedCommit,
+	})
+	if (!updated) {
+		throw new CommunityActionError(
+			`Community fork for package "${savedPackage.kodyId}" could not record the listing update.`,
+		)
+	}
+	return {
+		packageId: savedPackage.id,
+		kodyId: savedPackage.kodyId,
+		listingId: listing.id,
+		originCommit: updated.originCommit,
+		listingPinnedCommit: listing.pinnedCommit,
+		alreadyAbsorbed: false,
 	}
 }
 

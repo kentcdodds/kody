@@ -109,6 +109,11 @@ export const getPackageCapability = defineDomainCapability(
 				source_listing_id: saved.sourceListingId,
 				listing_current: saved.listingCurrent,
 				listing_kody_id: saved.listingKodyId,
+				listing_name: saved.listingName,
+				origin_commit: saved.originCommit,
+				listing_pinned_commit: saved.listingPinnedCommit,
+				listing_published_at: saved.listingPublishedAt,
+				listing_ahead: saved.listingAhead,
 				created_at: saved.createdAt,
 				updated_at: saved.updatedAt,
 				exports: (projection.exports ?? []).map((exportDetail) => ({

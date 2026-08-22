@@ -1097,6 +1097,16 @@ export type AccountPackageToken = {
 	revokedAt: string | null
 }
 
+export type AccountPackageListingAhead = {
+	listingId: string
+	listingName: string
+	listingHref: string
+	originCommit: string
+	listingPinnedCommit: string
+	listingPublishedAt: string | null
+	prompt: string
+}
+
 export type AccountPackageListItem = {
 	id: string
 	name: string
@@ -1107,6 +1117,7 @@ export type AccountPackageListItem = {
 	sourceId: string
 	createdAt: string
 	updatedAt: string
+	listingAhead: AccountPackageListingAhead | null
 }
 
 export type AccountPackageDetail = AccountPackageListItem & {

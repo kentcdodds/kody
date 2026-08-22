@@ -1,3 +1,4 @@
+import { buildListingAheadPrompt } from '#universal/community-listing-ahead.ts'
 import {
 	type OnboardingFeaturedListing,
 	type PublicCommunityActivityItem,
@@ -192,7 +193,31 @@ export function toViewerListingInstall(input: {
 	targetName: string
 	sourceId: string
 	packageId: string | null
+	listingAhead?: boolean
+	originCommit?: string | null
+	listingPinnedCommit?: string | null
+	listingId?: string
+	listingName?: string
+	listingKodyId?: string
 }): ViewerListingInstall {
+	const listingAhead = input.listingAhead === true
+	const listingAheadPrompt =
+		listingAhead &&
+		input.listingId &&
+		input.listingName &&
+		input.originCommit &&
+		input.listingPinnedCommit
+			? buildListingAheadPrompt({
+					listingName: input.listingName,
+					listingId: input.listingId,
+					listingKodyId: input.listingKodyId,
+					packageName: input.targetName,
+					packageId: input.packageId,
+					sourceId: input.sourceId,
+					originCommit: input.originCommit,
+					listingPinnedCommit: input.listingPinnedCommit,
+				})
+			: null
 	if (input.status === 'installed') {
 		return {
 			status: input.status,
@@ -201,6 +226,8 @@ export function toViewerListingInstall(input: {
 				targetName: input.targetName,
 			}),
 			packageId: input.packageId,
+			listingAhead,
+			listingAheadPrompt,
 		}
 	}
 	return {
@@ -211,5 +238,7 @@ export function toViewerListingInstall(input: {
 			sourceId: input.sourceId,
 		}),
 		packageId: null,
+		listingAhead,
+		listingAheadPrompt,
 	}
 }

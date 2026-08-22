@@ -1,6 +1,9 @@
+import { buildListingAheadPrompt } from '#universal/community-listing-ahead.ts'
+import { getCommunityListingHref } from '#universal/community-links.ts'
 import {
 	type AccountPackageDetail,
 	type AccountPackageListItem,
+	type AccountPackageListingAhead,
 	type AccountPackageToken,
 	type AccountPackagesAppFilter,
 	type AccountPackagesLoaderData,
@@ -15,11 +18,15 @@ import {
 } from '#worker/package-invocations/repo.ts'
 import { readPagination } from '#worker/query-params.ts'
 import {
-	getSavedPackageById,
+	getSavedPackageWithCommunityProvenanceById,
+	listSavedPackageCommunityProvenanceByIds,
 	searchSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
-import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import {
+	type SavedPackageRecord,
+	type SavedPackageWithCommunityProvenanceRecord,
+} from '#worker/package-registry/types.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -70,7 +77,46 @@ function appFilterToHasApp(appFilter: AccountPackagesAppFilter) {
 	}
 }
 
-function toListItem(record: SavedPackageRecord): AccountPackageListItem {
+function toListingAhead(
+	record: SavedPackageWithCommunityProvenanceRecord,
+): AccountPackageListingAhead | null {
+	if (
+		!record.listingAhead ||
+		record.sourceListingId == null ||
+		record.listingName == null ||
+		record.originCommit == null ||
+		record.listingPinnedCommit == null
+	) {
+		return null
+	}
+	return {
+		listingId: record.sourceListingId,
+		listingName: record.listingName,
+		listingHref: getCommunityListingHref({
+			listingId: record.sourceListingId,
+			listingName: record.listingName,
+			kodyId: record.listingKodyId,
+		}),
+		originCommit: record.originCommit,
+		listingPinnedCommit: record.listingPinnedCommit,
+		listingPublishedAt: record.listingPublishedAt,
+		prompt: buildListingAheadPrompt({
+			listingName: record.listingName,
+			listingId: record.sourceListingId,
+			listingKodyId: record.listingKodyId,
+			packageName: record.name,
+			packageId: record.id,
+			sourceId: record.sourceId,
+			originCommit: record.originCommit,
+			listingPinnedCommit: record.listingPinnedCommit,
+		}),
+	}
+}
+
+function toListItem(
+	record: SavedPackageRecord,
+	listingAhead: AccountPackageListingAhead | null = null,
+): AccountPackageListItem {
 	return {
 		id: record.id,
 		name: record.name,
@@ -81,6 +127,7 @@ function toListItem(record: SavedPackageRecord): AccountPackageListItem {
 		sourceId: record.sourceId,
 		createdAt: record.createdAt,
 		updatedAt: record.updatedAt,
+		listingAhead,
 	}
 }
 
@@ -122,7 +169,7 @@ async function toDetail(input: {
 	env: Env
 	requestUrl: string
 	userId: string
-	record: SavedPackageRecord
+	record: SavedPackageWithCommunityProvenanceRecord
 }): Promise<AccountPackageDetail> {
 	const [tokens, exports] = await Promise.all([
 		listPackageInvocationTokensByPackageId({
@@ -138,7 +185,7 @@ async function toDetail(input: {
 		}),
 	])
 	return {
-		...toListItem(input.record),
+		...toListItem(input.record, toListingAhead(input.record)),
 		searchText: input.record.searchText,
 		exports,
 		tokens: tokens.map(toToken),
@@ -175,12 +222,20 @@ export async function loadAccountPackagesData(input: {
 			offset,
 		}),
 		selectedPackageId
-			? getSavedPackageById(input.env.APP_DB, {
+			? getSavedPackageWithCommunityProvenanceById(input.env.APP_DB, {
 					userId,
 					packageId: selectedPackageId,
 				})
 			: Promise.resolve(null),
 	])
+	const provenanceById = new Map(
+		(
+			await listSavedPackageCommunityProvenanceByIds(input.env.APP_DB, {
+				userId,
+				packageIds: items.map((item) => item.id),
+			})
+		).map((record) => [record.id, record]),
+	)
 
 	return {
 		ok: true,
@@ -190,7 +245,10 @@ export async function loadAccountPackagesData(input: {
 			env: input.env,
 			requestUrl: input.request.url,
 		}),
-		packages: items.map(toListItem),
+		packages: items.map((item) => {
+			const provenance = provenanceById.get(item.id)
+			return toListItem(item, provenance ? toListingAhead(provenance) : null)
+		}),
 		selectedPackage: selectedRecord
 			? await toDetail({
 					env: input.env,

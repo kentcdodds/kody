@@ -142,6 +142,14 @@ Your agent should:
 
 Only after publish does the package become a live saved package in your account.
 
+If the listing owner later republishes, your fork keeps the snapshot you copied.
+`package_get` / `package_list` set `listing_ahead` when the listing's current
+pinned commit differs from the commit your fork last absorbed (`origin_commit`).
+`/account/packages` and the listing page then show **Listing updated** with a
+copyable prompt: compare the current public snapshot with your package, port
+useful changes, keep your customizations, publish, and call
+`community_fork_absorb` so the fork records that listing commit.
+
 ## One-click install
 
 Each listing detail page has an **Install** button for signed-in users. On
@@ -267,6 +275,8 @@ Use the MCP `community` domain:
 - `community_fork_adopt` — mark a reviewed fork as adopted, granting it
   self-authored-like secret read/use access (see
   [Secrets and values](./secrets-and-values.md))
+- `community_fork_absorb` — after porting a newer listing snapshot into a fork,
+  record the listing's current pinned commit so `listing_ahead` clears
 - `community_rate` — rate a listing after forking
 - `community_star` / `community_unstar` — bookmark a listing (see
   [Community profiles](./community-profiles.md))

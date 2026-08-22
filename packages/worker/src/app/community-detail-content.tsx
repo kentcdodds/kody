@@ -107,6 +107,15 @@ export function CommunityDetailContent(
 										: 'Forked'}
 								</span>
 							) : null}
+							{listing.viewerInstall?.listingAhead ? (
+								<span
+									data-testid="community-detail-listing-ahead-badge"
+									title="This listing has been republished since you forked it."
+									mix={css(badgeCss)}
+								>
+									Listing updated
+								</span>
+							) : null}
 						</span>
 					) : null}
 					{/* A div, not a p: the signed-in follow control is a form, and

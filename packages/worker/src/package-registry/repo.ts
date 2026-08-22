@@ -1,7 +1,9 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
+import { isCommunityListingAhead } from '#universal/community-listing-ahead.ts'
 import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 import {
+	type SavedPackageCommunityProvenance,
 	type SavedPackageRecord,
 	type SavedPackageRow,
 	type SavedPackageWithCommunityProvenanceRecord,
@@ -26,7 +28,11 @@ const savedPackageCommunityProvenanceSelectColumns = `${savedPackageSelectColumn
 					WHEN community_listings.id IS NULL THEN 0
 					ELSE 1
 				END AS listing_current,
-				community_forks.listing_kody_id AS listing_kody_id`
+				community_forks.listing_kody_id AS listing_kody_id,
+				community_listings.name AS listing_name,
+				community_forks.origin_commit AS origin_commit,
+				community_listings.pinned_commit AS listing_pinned_commit,
+				community_listings.published_at AS listing_published_at`
 
 const savedPackageCommunityProvenanceJoins = `LEFT JOIN community_forks
 				ON community_forks.forked_package_id = saved_packages.id
@@ -66,21 +72,48 @@ function mapSavedPackageWithCommunityProvenanceRow(
 	if (row['source_listing_id'] == null) {
 		return {
 			...savedPackage,
-			sourceListingId: null,
-			listingCurrent: null,
-			listingKodyId: null,
+			...emptyCommunityProvenance,
 		}
 	}
+	const originCommit =
+		row['origin_commit'] == null ? null : String(row['origin_commit'])
+	const listingPinnedCommit =
+		row['listing_pinned_commit'] == null
+			? null
+			: String(row['listing_pinned_commit'])
+	const listingCurrent =
+		row['listing_current'] === 1 ||
+		row['listing_current'] === '1' ||
+		row['listing_current'] === true
 	return {
 		...savedPackage,
 		sourceListingId: String(row['source_listing_id']),
-		listingCurrent:
-			row['listing_current'] === 1 ||
-			row['listing_current'] === '1' ||
-			row['listing_current'] === true,
+		listingCurrent,
 		listingKodyId:
 			row['listing_kody_id'] == null ? null : String(row['listing_kody_id']),
+		listingName:
+			row['listing_name'] == null ? null : String(row['listing_name']),
+		originCommit,
+		listingPinnedCommit,
+		listingPublishedAt:
+			row['listing_published_at'] == null
+				? null
+				: String(row['listing_published_at']),
+		listingAhead: listingCurrent
+			? isCommunityListingAhead({ originCommit, listingPinnedCommit })
+			: false,
 	}
+}
+
+const emptyCommunityProvenance: SavedPackageCommunityProvenance = {
+	sourceListingId: null,
+	listingCurrent: null,
+	listingKodyId: null,
+	listingName: null,
+	originCommit: null,
+	listingPinnedCommit: null,
+	listingPublishedAt: null,
+	listingAhead: null,
 }
 export async function insertSavedPackage(
 	db: D1Database,
@@ -357,6 +390,37 @@ export async function listSavedPackagesByIds(
 			.all<Record<string, unknown>>()
 		for (const row of rows.results ?? []) {
 			packages.push(mapSavedPackageRow(row))
+		}
+	}
+	return packages
+}
+
+export async function listSavedPackageCommunityProvenanceByIds(
+	db: D1Database,
+	input: {
+		userId: string
+		packageIds: Array<string>
+	},
+): Promise<Array<SavedPackageWithCommunityProvenanceRecord>> {
+	if (input.packageIds.length === 0) return []
+	const uniquePackageIds = [...new Set(input.packageIds)]
+	const packages: Array<SavedPackageWithCommunityProvenanceRecord> = []
+	for (const idChunk of chunkArray(
+		uniquePackageIds,
+		maxSqlBindingsPerChunk - 1,
+	)) {
+		const placeholders = idChunk.map(() => '?').join(', ')
+		const rows = await db
+			.prepare(
+				`SELECT ${savedPackageCommunityProvenanceSelectColumns}
+				FROM saved_packages
+				${savedPackageCommunityProvenanceJoins}
+				WHERE saved_packages.user_id = ? AND saved_packages.id IN (${placeholders})`,
+			)
+			.bind(input.userId, ...idChunk)
+			.all<Record<string, unknown>>()
+		for (const row of rows.results ?? []) {
+			packages.push(mapSavedPackageWithCommunityProvenanceRow(row))
 		}
 	}
 	return packages
