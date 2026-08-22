@@ -129,8 +129,9 @@ servers), capability detail reports the **related operation count**. Use
 
 Integration entity detail may include a small set of **related package
 suggestions** for the same provider (the user's packages first; otherwise
-trusted-first community listings, capped). Ranked query results stay lean and do
-not run community lookup or expand those suggestions.
+trusted-first community listings whose name, kody id, or tags mention that
+provider, capped). Ranked query results stay lean and do not run community
+lookup or expand those suggestions.
 
 Package entity detail is a slim index: summary, export subpaths with one-line
 purposes, job and retriever names, and the README `Intent` section. Structured

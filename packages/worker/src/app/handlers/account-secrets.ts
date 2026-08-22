@@ -526,11 +526,22 @@ async function handleConnectOauthAction(input: {
 	const nextSteps = await loadConnectOauthNextSteps({
 		env: input.env,
 		integrationName,
-		providerQuery: provider,
 		baseUrl: getAppBaseUrl({
 			env: input.env,
 			requestUrl: input.request.url,
 		}),
+		integration: {
+			name: integrationName,
+			tokenUrl,
+			apiBaseUrl: apiBaseUrl ?? null,
+			requiredHosts: allowedHosts,
+			authorization: authorizeUrl
+				? {
+						authorizeUrl,
+						scopes,
+					}
+				: null,
+		},
 	})
 
 	await emitConnectOauthAuthSucceeded({
