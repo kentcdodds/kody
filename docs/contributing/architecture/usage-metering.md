@@ -13,7 +13,15 @@ document covers event capture and rollups only.
 
 Usage metering follows the repo-wide isolation invariant: every event carries a
 required `userId`, the Analytics Engine index is the `userId`, and the D1 rollup
-table is keyed by `user_id`. There is no cross-user read or write path.
+table is keyed by `user_id`. Admin and account reads stay scoped to one user.
+
+The homepage code-runs ticker is a documented exception: an anonymous
+`SUM(event_count)` of `execute` rows (no user ids) is replayed 24 hours delayed.
+The official `{ previous, current, windowStart, windowEnd }` pair lives at the
+platform KV key `public-code-runs:v1` on `BUNDLE_ARTIFACTS_KV`. Homepage GET
+does not write that key; the hourly `usage_aggregation` lane rotates it. The
+public payload never includes per-user rows. See
+[Authorization](./authorization.md).
 
 ## The event schema
 
@@ -318,6 +326,11 @@ Guarantees and rules:
   `derived-cache:v1:`), keyed by user id + current month, falling through to
   direct D1 queries when KV is unavailable. Usage is loaded for one selected
   account at a time, so admin reads stay O(1) per view as the user base grows.
+- **Public homepage ticker** (`GET /code-runs.json`, SSR on `/`): reads the
+  platform KV pair (or a still D1 sum when KV is empty) and interpolates
+  `previous → current` across the 24-hour window. The payload is the window pair
+  only — never per-user rows. Interpolation is deterministic from the timestamps
+  so every visitor at a given second sees the same number.
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration

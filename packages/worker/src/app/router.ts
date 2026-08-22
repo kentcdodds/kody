@@ -200,6 +200,7 @@ import {
 	createSecurityTxtHandler,
 	createSitemapHandler,
 } from '#app/handlers/agent-discovery.ts'
+import { createCodeRunsApiHandler } from '#app/handlers/code-runs.ts'
 import { createHomeHandler } from '#app/handlers/home.ts'
 import { createLoginHandler } from '#app/handlers/login.ts'
 import { createOgPageImageHandler } from '#app/handlers/og-page-image.ts'
@@ -258,6 +259,7 @@ export function createAppRouter(env: Env) {
 	router.map(routes, {
 		actions: {
 			home: createHomeHandler(env),
+			codeRunsApi: createCodeRunsApiHandler(env),
 			robotsTxt: createRobotsTxtHandler(env),
 			sitemap: createSitemapHandler(env),
 			authMarkdown: createAuthMarkdownHandler(env),

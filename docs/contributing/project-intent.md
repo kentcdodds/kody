@@ -44,14 +44,16 @@ between users.
 Optimize for:
 
 - Per-user isolation as a first-class invariant, enforced at the storage,
-  durable-object, vectorize, and runtime layers. Four narrow, documented
+  durable-object, vectorize, and runtime layers. Five narrow, documented
   exceptions exist: RBAC account administration (`access = 'any'`, limited to
   `user` and `role` entities), operator-owned system email for reserved platform
-  addresses stored under `system:email`, and attributed platform feedback that a
-  user explicitly approved for role-gated admin review, plus role-gated metadata
-  about activity on deliberately public community listings. The community
-  exception covers who forked or rated which listing and when, including rating
-  scores, but never package source, rating notes, or unrelated user content. See
+  addresses stored under `system:email`, attributed platform feedback that a
+  user explicitly approved for role-gated admin review, role-gated metadata
+  about activity on deliberately public community listings, and an anonymous
+  public SUM of fleet `execute` counts (no user ids) that drives the homepage
+  code-runs ticker. The community exception covers who forked or rated which
+  listing and when, including rating scores, but never package source, rating
+  notes, or unrelated user content. See
   [Authorization](./architecture/authorization.md).
 - Fast iteration on the personal-assistant experience
 - Interoperability across MCP-capable hosts
@@ -90,9 +92,10 @@ When working in this repo, do not assume:
   (or that shares a Durable Object id across users) as a bug. The intentional
   cross-user boundaries are RBAC account administration (`:any` on `user`/`role`
   only, behind explicit guards), operator-owned system email for reserved
-  platform addresses, and explicitly approved, attributed platform feedback
-  exposed through role-gated admin review capabilities, plus role-gated
-  community activity metadata for public listings — see
+  platform addresses, explicitly approved, attributed platform feedback exposed
+  through role-gated admin review capabilities, role-gated community activity
+  metadata for public listings, and the anonymous public fleet `execute` SUM
+  behind the homepage code-runs ticker — see
   [Authorization](./architecture/authorization.md).
 - One conversation or one agent per signed-in user. Concurrent chats and
   completely separate agents for the same user are expected. Do not key
@@ -126,9 +129,10 @@ If you are an agent working in this repo:
   be scoped by `userId` at the data layer, by user-namespaced Durable Object ids
   at the runtime layer, and by user-aware filters at the search/vector layer.
   Cross-user access requires an explicit guard and one of the documented narrow
-  boundaries: account administration, operator-owned system email, or
-  user-approved platform feedback, or public-listing community activity metadata
-  — see [Authorization](./architecture/authorization.md).
+  boundaries: account administration, operator-owned system email, user-approved
+  platform feedback, public-listing community activity metadata, or the
+  anonymous public fleet `execute` SUM behind the homepage code-runs ticker —
+  see [Authorization](./architecture/authorization.md).
 - Isolation between users is not the same as one conversation per user. The same
   signed-in user can run concurrent chats and completely separate agents at
   once. Do not hide or bind conversation-scoped context (memories, nudges,

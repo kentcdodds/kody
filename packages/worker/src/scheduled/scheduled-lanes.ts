@@ -17,6 +17,7 @@ import { reconcileArtifactsPushes } from '#worker/jobs/reconcile-artifacts-pushe
 import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts'
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
 import { aggregateUsageRollups } from '#worker/usage/aggregate-rollups.ts'
+import { refreshPublicCodeRunsWindow } from '#worker/usage/code-runs-window.ts'
 
 export {
 	isScheduledLaneName,
@@ -97,8 +98,14 @@ export async function runScheduledLane(input: {
 			return pruneRetention({ env: input.env, now: input.scheduledAt })
 		case 'job_retention':
 			return pruneJobRetention({ env: input.env, now: input.scheduledAt })
-		case 'usage_aggregation':
-			return aggregateUsageRollups(input.env, input.scheduledAt)
+		case 'usage_aggregation': {
+			const result = await aggregateUsageRollups(input.env, input.scheduledAt)
+			await refreshPublicCodeRunsWindow({
+				env: input.env,
+				now: input.scheduledAt,
+			})
+			return result
+		}
 		case 'auth_denial_alert':
 			return checkAuthDenialBurstAndNotify({
 				env: input.env,

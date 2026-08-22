@@ -450,7 +450,8 @@ Two D1 reporting projections deliberately remain:
 OAuth provider state is stored in `OAUTH_KV` through the
 `@cloudflare/workers-oauth-provider` integration. Published package/job source
 snapshots, bundle artifacts, package retriever caches, and community listing
-snapshots are stored in `BUNDLE_ARTIFACTS_KV`.
+snapshots are stored in `BUNDLE_ARTIFACTS_KV`. That binding also holds the
+platform-owned `public-code-runs:v1` window for the homepage ticker.
 
 - Bindings are configured in `packages/worker/wrangler.jsonc` (remote KV IDs are
   supplied at deploy time via generated Wrangler configs, not committed in the
@@ -1279,6 +1280,10 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
   serialized queue message would exceed 120 KB. Immediate account-deletion
   cleanup is not required because KV enforces the TTL; the queue consumer
   deletes the key after a terminal delivery.
+- `public-code-runs:v1` — platform-owned 24-hour delayed fleet `execute` window
+  for the homepage ticker (`{ previous, current, windowStart, windowEnd }`). Not
+  scoped by user id; account deletion must not remove it. Homepage GET is
+  read-only; the `usage_aggregation` lane writes it.
 
 Account deletion derives these keys from D1 rows and package ids before deleting
 D1 projections. New KV prefixes must add corresponding account-deletion coverage
@@ -1458,7 +1463,10 @@ Current retention policies:
   (`userMeterDailyCounterRetentionDays`); `admin_user_meter_parity` reports
   meter-only daily counts.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
-  raw Analytics Engine usage events follow platform retention.
+  raw Analytics Engine usage events follow platform retention. The homepage
+  ticker reads an anonymous `SUM(event_count)` of `execute` rows from this
+  table; the official replay pair is the platform KV key `public-code-runs:v1`
+  and is independent of account deletion/export.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90
   days by `day` key, matching Analytics Engine retention for the production
   `FLAG_EXPOSURES` exposure stream; the admin metric readout window is the
