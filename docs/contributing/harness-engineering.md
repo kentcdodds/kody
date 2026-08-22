@@ -8,7 +8,8 @@ each change into a durable improvement, not a one-off fix.
 - Humans steer outcomes; agents execute implementation details.
 - Optimize for `human attention` as the scarce resource.
 - Treat repository-local knowledge as the source of truth.
-- Prefer small, enforceable rules over long, fragile instructions.
+- Prefer small, enforceable rules over long, fragile instructions. A lint rule,
+  type, or `validate` check outranks a contributing should-list.
 
 ## Keep `AGENTS.md` small and navigable
 
@@ -32,12 +33,24 @@ For this repo, the default evaluation step is `npm run validate` (read-only; use
 
 ## Promote learning into enforcement
 
-When a mistake repeats, move "advice" into a stronger guardrail:
+When a mistake repeats, encode it in the strongest cheap guardrail that actually
+works. Prefer a failing check over another paragraph of advice. See
+[documentation principles](./documentation.md).
 
-1. **Docs**: clarify the expected pattern in `docs/contributing`.
-2. **Tests**: add coverage for the failure mode.
-3. **Lint/structure**: add a static rule when possible.
-4. **Scripts/automation**: encode the workflow in commands.
+1. **Lint / types / validate** — when the violation is local and syntactic (or
+   otherwise cheap to reject). Put the why in the checker message. Do not add a
+   contributing should-list instead of a rule the repo can run.
+2. **Tests** — when the failure is behavioral and a checker would be guessy.
+3. **Scripts / automation** — when the workflow is multi-step and a command can
+   own it.
+4. **Docs** — describe how the system works and point at the check or test.
+   Prescriptions that only live in prose are last, and only when a cheap checker
+   is not reasonably possible.
+
+Add a static rule only when a reviewer (or agent) can see the violation in the
+file without guessing later readers, early returns, or other functions. If
+catching it needs that kind of reasoning, skip the rule and describe the failure
+mode.
 
 Rule of thumb: if reviewers repeat the same comment twice, encode it.
 

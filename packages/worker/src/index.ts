@@ -44,6 +44,7 @@ import { withCors } from './utils.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
 import { checkAuthRateLimit } from '#app/rate-limit.ts'
 import { getRequestIp } from '#worker/audit-log.ts'
+import { discardUnreadRequestBody } from '#worker/request-body.ts'
 import { handleCapabilityReindexRequest } from './capability-maintenance.ts'
 import { handleExecuteSmokeRequest } from './execute-maintenance.ts'
 import { handleJobReindexRequest } from './job-maintenance.ts'
@@ -451,17 +452,6 @@ function addOAuthDiscoveryCorsHeaders(
 		statusText: response.statusText,
 		headers,
 	})
-}
-
-/**
- * Finish the unused side of a `request.clone()` tee. workerd treats an
- * unread cloned original as a leaked stream branch and can terminate the
- * isolate; wrangler 4.114+ then exits `wrangler dev` instead of recovering
- * (workers-sdk#14926, "Network connection lost").
- */
-async function discardUnreadRequestBody(request: Request) {
-	if (request.body === null || request.bodyUsed) return
-	await request.arrayBuffer()
 }
 
 function isOAuthProviderOwnedPath(pathname: string) {

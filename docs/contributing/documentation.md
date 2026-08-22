@@ -34,6 +34,15 @@ ones. **Garden** docs when behavior changes: update or delete sections in the
 same change as the code when possible. Remove duplication between pages by
 linking out instead of copying paragraphs.
 
+**Prefer a checker over a should-list.** Constraints that lint, TypeScript, or
+`npm run validate` can reject belong in those tools. Contributing docs describe
+how the system works and point at the check. They do not ask agents or humans to
+remember a rule the repo can enforce. When a pattern needs control-flow or
+interprocedural reasoning a cheap checker cannot do, describe the failure mode
+and stop — do not add a noisy half-rule. See
+[harness engineering](./harness-engineering.md) (promote into enforcement) and
+[oxlint JS plugins](./oxlint-js-plugins.md).
+
 **MCP instructions and tool descriptions stay tight.** Server-level instructions
 and per-tool descriptions should give the model what it needs **before**
 choosing or invoking a tool: workflows, constraints, and **copy-pasteable
@@ -53,6 +62,9 @@ the same tables verbatim; link to usage docs or rely on the tool output.
 
 ## Related
 
+- [Harness engineering](./harness-engineering.md) — promote repeated advice into
+  lint, tests, or commands before adding a should-list
+- [Oxlint JS plugins](./oxlint-js-plugins.md) — where cheap syntactic rules live
 - [MCP server patterns](./mcp-server-patterns.md) — tool descriptions, schemas,
   and server instructions
 - [Usage index](../use/index.md) — end-user table of contents

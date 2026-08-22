@@ -2,6 +2,13 @@
 
 Use this repo's local plugin as the baseline pattern for custom oxlint rules.
 
+When a contributing constraint is local and syntactic, add a rule here instead
+of a should-list in docs. Docs still describe how the system works and can point
+at the rule; they do not replace it. Skip a rule that would need control-flow or
+interprocedural guessing — that stays a short failure-mode note, not a noisy
+half-check. See [documentation principles](./documentation.md) and
+[harness engineering](./harness-engineering.md).
+
 ## Files
 
 - Plugin: `tools/oxlint/local-plugin.js`
