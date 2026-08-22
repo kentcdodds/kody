@@ -284,9 +284,12 @@ Worker secrets:
   saved-package vectors upsert on write. Omit `phases` (or list every kind)
   after changing the embedding model, pooling, or Vectorize index dimensions to
   rebuild those rows too, with per-user `userId` metadata on user-owned rows.
-  Each call is time-budgeted and may return `complete: false` plus a `cursor` to
-  resume. Use the re-encrypt endpoint to rewrite remaining pre-AAD (2-part)
-  secret ciphertexts to v2 without rotating `SECRET_STORE_KEY` (see
+  Unchanged embed text and Vectorize metadata skip embed and Vectorize upsert;
+  after Vectorize data loss or a pooling-only change, POST `{ "force": true }`
+  (and omit `phases` for every kind) so matching fingerprints cannot skip
+  upserts. Each call is time-budgeted and may return `complete: false` plus a
+  `cursor` to resume. Use the re-encrypt endpoint to rewrite remaining pre-AAD
+  (2-part) secret ciphertexts to v2 without rotating `SECRET_STORE_KEY` (see
   [Secret rotation](./secret-rotation.md)). Local dev uses offline search while
   `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
 - **`JOB_REINDEX_SECRET`** — optional Worker secret; bearer token for
@@ -294,7 +297,10 @@ Worker secrets:
   (without a full capability/memory/package reindex). When unset, the jobs-only
   endpoint returns not-configured. Production deploys do not refresh job
   vectors; those upsert on write. Use this secret or a full capability reindex
-  when you need a jobs rebuild.
+  when you need a jobs rebuild. After Vectorize data loss, use
+  `POST /__maintenance/reindex-capabilities` with `{ "force": true }` rather
+  than the jobs-only endpoint so restored D1 fingerprints cannot skip an empty
+  index.
 - **`STATUS_INCIDENT_EVENT_SECRET`** — optional Worker secret shared with the
   status worker. Bearer token for `POST /__maintenance/status-incidents`, which
   fans `status.incident.opened` / `status.incident.resolved` to admin package

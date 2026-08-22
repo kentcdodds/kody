@@ -91,7 +91,9 @@ Deletion must cover these user-owned surfaces:
   conversation state, raw-fetch state, and transport storage before revoking
   OAuth grants.
 - **Vectorize:** memory, job, and saved-package vector ids are derived from D1
-  rows and removed with `deleteByIds`.
+  rows and removed with `deleteByIds`. Matching `vector_embed_fingerprints` rows
+  are deleted by `vector_id` on those writes; account deletion clears remaining
+  rows for that `user_id`.
 - **R2:** raw USER email MIME and attachment blobs in `EMAIL_BLOBS` are
   inventoried by `Mailbox.listBlobReferences`; the Mailbox store derives raw
   keys from owner/message ids and emits only canonical external-attachment keys.
@@ -248,7 +250,8 @@ Durable Object export behavior:
 
 Vectorize entries are intentionally excluded. Memory text and metadata, job
 metadata, and package projections are exported from D1; vectors are derived and
-should be rebuilt by reindexing after import.
+should be rebuilt by reindexing after import. `vector_embed_fingerprints` is the
+same class of derived skip cache and is omitted from portable export.
 
 Cloudflare Artifacts repo contents are not inlined in the JSON export. D1 stores
 metadata/projections, while canonical package, job, and app source lives in the
@@ -1348,7 +1351,18 @@ deterministic so upserts and deletes target the same vector.
 Search paths query only per-account namespaces plus the reserved builtin
 namespace. Vector rows are derived from D1. User-owned memory, job, and
 saved-package vectors upsert on write; saved packages also mark
-`saved_package_search_index_debt` and reconcile after the response. The bounded
+`saved_package_search_index_debt` and reconcile after the response. Each upsert
+(write-time or reindex) records a SHA-256 of embedding model, dimensions,
+`vectorEmbedFingerprintVersion`, truncated embed text, and canonical Vectorize
+metadata in `vector_embed_fingerprints` (`user_id` is the Vectorize namespace:
+the account id, or `__kody_builtin__` for builtins). A later upsert with the
+same hash skips Workers AI and Vectorize. Metadata is part of the hash so a
+memory status or category change still rewrites the vector. `force: true` on the
+maintenance body ignores fingerprints and rewrites Vectorize — required after
+Vectorize data loss, because a D1 restore still has the skip rows, and after a
+pooling-only embedding change (pooling is not in the hash). Bump
+`vectorEmbedFingerprintVersion` when the metadata contract changes so hashes
+invalidate even if embed text is unchanged. The bounded
 `POST /__maintenance/reindex-capabilities` sweep rebuilds requested kinds
 (`phases`; omit the field to rebuild every kind), keyset-pages memory, job, and
 saved-package rows, rebuilds builtins in their reserved namespace, and returns
@@ -1357,7 +1371,8 @@ a `cursor` so the caller can POST again until `complete` is true. Production
 deploy CI loops that endpoint with `{ "phases": ["capabilities"] }` after each
 production ship so only builtin capability vectors refresh. A full sweep
 (embedding-model change, metadata-contract change, or disaster recovery) omits
-`phases` or lists every kind.
+`phases` or lists every kind. Disaster recovery POSTs `{ "force": true }` so
+restored fingerprints cannot skip an empty index.
 
 ### `entity_sources` and package import contracts
 

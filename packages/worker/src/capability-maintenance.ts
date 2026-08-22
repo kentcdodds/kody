@@ -65,6 +65,7 @@ function parseCapabilityReindexBody(body: unknown):
 			cursor: CapabilityReindexCursor | null
 			phases: ReadonlyArray<CapabilityReindexPhase>
 			timeBudgetMs: number
+			force: boolean
 	  }
 	| { ok: false; error: string } {
 	if (body == null) {
@@ -73,6 +74,7 @@ function parseCapabilityReindexBody(body: unknown):
 			cursor: null,
 			phases: capabilityReindexPhases,
 			timeBudgetMs: capabilityReindexTimeBudgetMs,
+			force: false,
 		}
 	}
 	if (typeof body !== 'object' || Array.isArray(body)) {
@@ -82,6 +84,13 @@ function parseCapabilityReindexBody(body: unknown):
 	const phases = resolveCapabilityReindexPhases(record.phases)
 	if (!phases.ok) {
 		return phases
+	}
+	let force = false
+	if (record.force !== undefined) {
+		if (typeof record.force !== 'boolean') {
+			return { ok: false, error: 'force must be a boolean.' }
+		}
+		force = record.force
 	}
 	let timeBudgetMs = capabilityReindexTimeBudgetMs
 	if (record.timeBudgetMs !== undefined) {
@@ -98,7 +107,13 @@ function parseCapabilityReindexBody(body: unknown):
 		timeBudgetMs = record.timeBudgetMs
 	}
 	if (record.cursor === undefined || record.cursor === null) {
-		return { ok: true, cursor: null, phases: phases.phases, timeBudgetMs }
+		return {
+			ok: true,
+			cursor: null,
+			phases: phases.phases,
+			timeBudgetMs,
+			force,
+		}
 	}
 	if (typeof record.cursor !== 'object' || Array.isArray(record.cursor)) {
 		return { ok: false, error: 'cursor must be an object.' }
@@ -124,6 +139,7 @@ function parseCapabilityReindexBody(body: unknown):
 		cursor: { phase: cursor.phase, afterId: cursor.afterId },
 		phases: phases.phases,
 		timeBudgetMs,
+		force,
 	}
 }
 
@@ -134,6 +150,7 @@ async function runReindexPhase(
 		phase: CapabilityReindexPhase
 		afterId: string | null
 		deadlineMs: number
+		force: boolean
 	},
 ): Promise<ReindexStepResult> {
 	switch (input.phase) {
@@ -142,6 +159,7 @@ async function runReindexPhase(
 				reindexCapabilityVectors(env, getStaticRegistry().capabilitySpecs, {
 					afterId: input.afterId,
 					deadlineMs: input.deadlineMs,
+					force: input.force,
 				}),
 			)
 		case 'memories':
@@ -149,6 +167,7 @@ async function runReindexPhase(
 				reindexMemoryVectors(env, {
 					afterId: input.afterId,
 					deadlineMs: input.deadlineMs,
+					force: input.force,
 				}),
 			)
 		case 'jobs':
@@ -156,6 +175,7 @@ async function runReindexPhase(
 				reindexJobVectors(env, {
 					afterId: input.afterId,
 					deadlineMs: input.deadlineMs,
+					force: input.force,
 				}),
 			)
 		case 'packages':
@@ -164,6 +184,7 @@ async function runReindexPhase(
 					baseUrl: input.baseUrl,
 					afterId: input.afterId,
 					deadlineMs: input.deadlineMs,
+					force: input.force,
 				}),
 			)
 		default: {
@@ -180,6 +201,7 @@ async function reindexAllCapabilitySearchVectors(
 		cursor: CapabilityReindexCursor | null
 		phases: ReadonlyArray<CapabilityReindexPhase>
 		deadlineMs: number
+		force: boolean
 	},
 ) {
 	const result: CapabilityReindexKinds = {
@@ -212,6 +234,7 @@ async function reindexAllCapabilitySearchVectors(
 			phase,
 			afterId,
 			deadlineMs: input.deadlineMs,
+			force: input.force,
 		})
 		result[phase] = step
 		if (step.error) continue
@@ -251,6 +274,7 @@ export async function handleCapabilityReindexRequest(
 				cursor: parsed.cursor,
 				phases: parsed.phases,
 				deadlineMs: Date.now() + parsed.timeBudgetMs,
+				force: parsed.force,
 			})
 			const kindResults = (
 				['capabilities', 'memories', 'jobs', 'packages'] as const

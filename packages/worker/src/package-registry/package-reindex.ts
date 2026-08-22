@@ -80,6 +80,7 @@ export async function reindexSavedPackageVectors(
 			index: vectorIndex,
 			kind: 'saved package',
 			candidates: chunk.candidates,
+			force: input.force,
 		})
 		pageResults.push(pageResult)
 		// Prefer uncapped failedIds (failures is a capped sample for messages).

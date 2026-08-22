@@ -400,11 +400,15 @@ the domain modules.
    keywords, or schemas, production deploy refreshes builtin capability vectors
    via the guarded `POST /__maintenance/reindex-capabilities` endpoint with
    `{ "phases": ["capabilities"] }`. User-owned memory, job, and saved-package
-   vectors upsert on write. For a full rebuild (embedding model, pooling,
-   Vectorize index dimensions, or disaster recovery), POST without `phases` (or
-   with every kind). Each POST is time-budgeted; if the JSON response has
-   `complete: false`, POST again with `{ "cursor": <response.cursor> }` (and the
-   same `phases` when you set them) until `complete` is true.
+   vectors upsert on write. Unchanged embed text and Vectorize metadata (same
+   model, dimensions, and fingerprint version) skip embed and Vectorize upsert.
+   For a full rebuild (embedding model, pooling, Vectorize index dimensions, or
+   disaster recovery), POST `{ "force": true }` without `phases` (or with every
+   kind). Pooling-only changes and Vectorize data loss both need `force` so
+   matching fingerprints do not skip upserts. Each POST is time-budgeted; if the
+   JSON response has `complete: false`, POST again with
+   `{ "cursor": <response.cursor> }` (and the same `phases` / `force` when you
+   set them) until `complete` is true.
 
 Example (assuming `example` exists in `capabilityDomainNames`):
 

@@ -37,6 +37,7 @@ export async function reindexJobVectors(
 		pageSize: reindexPageSize,
 		afterId: options?.afterId,
 		deadlineMs: options?.deadlineMs,
+		force: options?.force,
 		listPage: ({ afterId, limit }) =>
 			runD1WithRetry(() =>
 				jobsData(env).listJobsPage({
