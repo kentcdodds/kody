@@ -68,6 +68,24 @@ primitives:
       - docs/contributing/setup-manifest.md
       - docs/contributing/decisions/0004-status-page-separate-worker.md
 
+  - id: platform-worker
+    group: surfaces
+    name: Platform worker
+    summary:
+      Independently deployed platform worker owning the remaining platform
+      Durable Objects (MCP, McpClientHub, OAuthPurgeCoordinator, UserMeter,
+      Mailbox, RepoSession, RepoSessionIndex, StripePlanRefresh) so origin
+      content deploys do not reset those objects.
+    code:
+      - packages/platform-worker/
+      - packages/worker/src/platform-worker.ts
+      - packages/shared/src/platform-worker.ts
+      - tools/ci/platform-worker-config.ts
+      - tools/local-platform-dev-config.ts
+    docs:
+      - docs/contributing/decisions/0034-origin-owns-no-durable-objects.md
+      - docs/contributing/architecture/platform-worker-migration-runbook.md
+
   - id: jobs-worker
     group: surfaces
     name: Jobs worker

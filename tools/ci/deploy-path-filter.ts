@@ -2,13 +2,12 @@ import { isExecutedDirectly } from '../node-runtime.ts'
 
 /**
  * Production deploy path classification: content/UI-only changes deploy the
- * app-surface Worker and skip the Durable Object–owning main/runtime/jobs
+ * origin Worker and skip the Durable Object–owning platform/runtime/jobs
  * scripts.
  */
 
-const appSurfaceOnlyPathPrefixes = [
+const originOnlyPathPrefixes = [
 	'docs/guides/',
-	'packages/app-worker/',
 	'packages/worker/client/',
 	'packages/worker/public/',
 	'packages/worker/src/blog/posts/',
@@ -17,29 +16,29 @@ const appSurfaceOnlyPathPrefixes = [
 	'packages/worker/universal/styles/',
 ] as const
 
-const appSurfaceOnlyExactPaths = new Set([
+const originOnlyExactPaths = new Set([
 	'packages/worker/src/app/layout.ts',
 	'packages/worker/src/app/ssr-render.tsx',
 	'packages/worker/universal/blog-display.ts',
 ])
 
-// Main still handles package-app origin isolation and inline serving before
-// the APP_SURFACE forward (see packages/worker/src/index.ts).
-const appSurfaceOnlyPathExclusions = new Set([
+// Origin still handles package-app origin isolation and inline serving
+// before the runtime forward (see packages/worker/src/index.ts).
+const originOnlyPathExclusions = new Set([
 	'packages/worker/src/app/handlers/package-app.ts',
 ])
 
 export type ProductionDeployTargets = {
-	deployAppSurface: boolean
 	deployMain: boolean
+	deployPlatform: boolean
 	deployRuntime: boolean
 	deployJobs: boolean
 }
 
-export function isAppSurfaceOnlyPath(path: string) {
-	if (appSurfaceOnlyPathExclusions.has(path)) return false
-	if (appSurfaceOnlyExactPaths.has(path)) return true
-	return appSurfaceOnlyPathPrefixes.some((prefix) => path.startsWith(prefix))
+export function isOriginOnlyPath(path: string) {
+	if (originOnlyPathExclusions.has(path)) return false
+	if (originOnlyExactPaths.has(path)) return true
+	return originOnlyPathPrefixes.some((prefix) => path.startsWith(prefix))
 }
 
 export function classifyProductionDeployPaths(
@@ -48,24 +47,24 @@ export function classifyProductionDeployPaths(
 	const changed = paths.filter((path) => path.length > 0)
 	if (changed.length === 0) {
 		return {
-			deployAppSurface: true,
 			deployMain: true,
+			deployPlatform: true,
 			deployRuntime: true,
 			deployJobs: true,
 		}
 	}
-	const appSurfaceOnly = changed.every((path) => isAppSurfaceOnlyPath(path))
-	if (appSurfaceOnly) {
+	const originOnly = changed.every((path) => isOriginOnlyPath(path))
+	if (originOnly) {
 		return {
-			deployAppSurface: true,
-			deployMain: false,
+			deployMain: true,
+			deployPlatform: false,
 			deployRuntime: false,
 			deployJobs: false,
 		}
 	}
 	return {
-		deployAppSurface: true,
 		deployMain: true,
+		deployPlatform: true,
 		deployRuntime: true,
 		deployJobs: true,
 	}
@@ -73,8 +72,8 @@ export function classifyProductionDeployPaths(
 
 export function formatGitHubDeployOutputs(targets: ProductionDeployTargets) {
 	return [
-		`deploy_app_surface=${targets.deployAppSurface}`,
 		`deploy_main=${targets.deployMain}`,
+		`deploy_platform=${targets.deployPlatform}`,
 		`deploy_runtime=${targets.deployRuntime}`,
 		`deploy_jobs=${targets.deployJobs}`,
 	].join('\n')

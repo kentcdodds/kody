@@ -943,7 +943,12 @@ Bindings are configured per environment in `packages/worker/wrangler.jsonc`
 (`packages/jobs-worker/wrangler.jsonc`); the main worker reaches them through
 the `JOBS` service binding. Runtime Durable Objects (`StorageRunner`, `RunLog`,
 `PackageRealtimeSession`) live on the runtime worker and are bound cross-script
-from main — see [ADR 0016](../decisions/0016-mono-worker-extraction.md).
+from origin — see [ADR 0016](../decisions/0016-mono-worker-extraction.md).
+Platform Durable Objects (`MCP`, `McpClientHub`, `OAuthPurgeCoordinator`,
+`UserMeter`, `Mailbox`, `RepoSession`, `RepoSessionIndex`, `StripePlanRefresh`)
+live on the platform worker and are bound cross-script from origin and runtime —
+see [ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md). The origin
+script owns no Durable Object classes.
 
 - `APP_DB` (D1)
 - `AUDIT_DB` (D1, global hashed security audit trail)
@@ -953,26 +958,30 @@ from main — see [ADR 0016](../decisions/0016-mono-worker-extraction.md).
 - `EMAIL_BLOBS` (R2, raw email MIME blobs)
 - `REPO_SESSION_BLOBS` (R2, ephemeral RepoSession Workspace spill; not a DR
   canonical store)
-- `MCP_OBJECT` (Durable Objects)
+- `MCP_OBJECT` (Durable Objects; class hosted on the platform worker)
 - `RUN_LOG` (Durable Objects; per-user run records — see
   [Run records](./run-records.md); class hosted on the runtime worker)
 - `USER_METER` (Durable Objects; per-user daily entitlement counters — see
-  [Entitlements](./entitlements.md#usermeter))
+  [Entitlements](./entitlements.md#usermeter); class hosted on the platform
+  worker)
 - `STRIPE_PLAN_REFRESH` (Durable Objects; per-user, activity-driven Stripe plan
-  reconciliation alarms)
+  reconciliation alarms; class hosted on the platform worker)
 - `MAILBOX` (Durable Objects; sole per-user email graph, inbound-ledger,
   retention, read, export, and mutation authority — see
-  [Mailbox](#durable-objects-mailbox))
+  [Mailbox](#durable-objects-mailbox); class hosted on the platform worker)
 - `STORAGE_RUNNER` (Durable Objects; class hosted on the runtime worker)
-- `REPO_SESSION` (Durable Objects)
-- `REPO_SESSION_INDEX` (Durable Objects; per-user repo session catalog. The
-  runtime worker binds this class cross-script from `kody` so package and
-  workflow capability calls can open, list, and publish repo sessions.)
+- `REPO_SESSION` (Durable Objects; class hosted on the platform worker)
+- `REPO_SESSION_INDEX` (Durable Objects; per-user repo session catalog hosted on
+  the platform worker. The runtime worker binds this class cross-script so
+  package and workflow capability calls can open, list, and publish repo
+  sessions.)
 - `PACKAGE_REALTIME_SESSION` (Durable Objects; class hosted on the runtime
   worker)
 - `MCP_CLIENT_HUB` (Durable Objects; user-added remote MCP servers — see
-  [MCP client servers](./mcp-client-servers.md))
-- `OAUTH_PURGE_COORDINATOR` (Durable Objects)
+  [MCP client servers](./mcp-client-servers.md); class hosted on the platform
+  worker)
+- `OAUTH_PURGE_COORDINATOR` (Durable Objects; class hosted on the platform
+  worker)
 - `COMMUNITY_ASSETS` (R2; community listing assets)
 - `CAPABILITY_VECTOR_INDEX` (Vectorize; capability/memory/job/package vectors)
 - `ASSETS` (static assets bucket)

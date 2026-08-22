@@ -1,31 +1,31 @@
 ---
 name: testing-multi-worker-dev
 description:
-  How to run and test kody's multi-worker local dev (main kody worker +
-  kody-runtime secondary config), including known wrangler multi-config pitfalls
-  (secondary worker env-name suffix, remote AI binding, .env secrets not
-  propagated) and how to verify runtime-worker forwarding.
+  How to run and test kody's multi-worker local dev (origin kody worker +
+  kody-platform + kody-runtime secondary configs), including known wrangler
+  multi-config pitfalls (secondary worker env-name suffix, remote AI binding,
+  .env secrets not propagated) and how to verify runtime-worker forwarding.
 ---
 
-# Testing multi-worker local dev (kody + kody-runtime)
+# Testing multi-worker local dev (kody + kody-platform + kody-runtime)
 
 ## Basics
 
 - Node 26 required: `export PATH="$HOME/.nvm/versions/node/v26.7.0/bin:$PATH"`.
 - Run `npm run dev` in tmux; it starts the client watcher, the mock Cloudflare
-  API worker, and `wrangler dev --local` with TWO `--config`s (main
-  `packages/worker/wrangler.jsonc` + `packages/runtime-worker/wrangler.jsonc`)
-  in one miniflare. Default port 3742; the CLI picks the next free port if taken
-  — stale `workerd` processes commonly hold 3742, so `pkill -9 workerd` before
-  restarting.
+  API worker, and `wrangler dev --local` with the origin config plus generated
+  secondary configs for `kody-runtime` and `kody-platform` in one miniflare.
+  Default port 3742; the CLI picks the next free port if taken — stale `workerd`
+  processes commonly hold 3742, so `pkill -9 workerd` before restarting.
 - Local dev uses `--env production` (CLOUDFLARE_ENV defaults to production in
   `wrangler-env.ts`).
 - Migrate + seed login: `npm run migrate:local` then
   `node tools/seed-test-data.ts --local` → `kody@example.com` / `ilikecode`
   (admin) and `jane@example.com` / `ilikecode`.
-- Healthchecks: main `GET /health` → `{"ok":true,...}`; runtime worker serves
-  `GET /__runtime/health` (only reachable through the service binding locally —
-  hitting it on the main port should 404).
+- Healthchecks: origin `GET /health` → `{"ok":true,...}`; platform worker serves
+  `GET /__platform/health` and runtime worker serves `GET /__runtime/health`
+  (only reachable through those scripts locally — hitting them on the origin
+  port should 404).
 
 ## Known wrangler multi-config pitfalls (handled by a generated dev config)
 
@@ -34,15 +34,17 @@ PRIMARY config, registers each worker under `<name>-<env>`, and treats a
 secondary config's `ai` binding as always-remote (dev fails to boot with "Failed
 to start the remote proxy session"; `"remote": false` is NOT enough).
 
-`wrangler-env.ts` therefore never passes the committed runtime config to
-`wrangler dev` directly: `tools/local-runtime-dev-config.ts` generates
-`packages/runtime-worker/wrangler-local-dev.generated.json` (gitignored) on each
-dev start, which pins the secondary's registered name to `kody-runtime`,
-rewrites its `script_name: "kody"` refs to the primary's dev name
-(`kody-<env>`), drops the `ai` binding, and injects `APP_BASE_URL`,
-`COOKIE_SECRET`, `SECRET_STORE_KEY`, and `WRANGLER_IS_LOCAL_DEV` from the dev
-process env. If runtime-owned paths 503 with `Worker "kody-runtime" not found`
-or the runtime worker 500s on missing vars, inspect that generated file first.
+`wrangler-env.ts` therefore never passes the committed runtime or platform
+configs to `wrangler dev` directly: `tools/local-runtime-dev-config.ts` and
+`tools/local-platform-dev-config.ts` generate
+`wrangler-local-dev.generated.json` next to each committed config (gitignored)
+on each dev start. Those files pin the secondary registered names to
+`kody-runtime` and `kody-platform`, drop each secondary `ai` binding, and inject
+`APP_BASE_URL`, `COOKIE_SECRET`, `SECRET_STORE_KEY`, and `WRANGLER_IS_LOCAL_DEV`
+from the dev process env. Runtime still rewrites any remaining
+`script_name: "kody"` refs to the primary's dev name (`kody-<env>`). If
+runtime-owned paths 503 with `Worker "kody-runtime" not found` or a secondary
+worker 500s on missing vars, inspect those generated files first.
 
 ## Jobs-worker Durable Object pitfall (boot failure)
 

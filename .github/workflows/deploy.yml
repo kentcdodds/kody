@@ -32,6 +32,10 @@ jobs:
     outputs:
       deploy_sha: ${{ steps.sha_guard.outputs.deploy_sha }}
       should_deploy: ${{ steps.sha_guard.outputs.should_deploy }}
+      deploy_main: ${{ steps.sha_guard.outputs.deploy_main }}
+      deploy_platform: ${{ steps.sha_guard.outputs.deploy_platform }}
+      deploy_runtime: ${{ steps.sha_guard.outputs.deploy_runtime }}
+      deploy_jobs: ${{ steps.sha_guard.outputs.deploy_jobs }}
       deploy_backup_control_plane:
         ${{ steps.sha_guard.outputs.deploy_backup_control_plane }}
       deploy_status_worker: ${{ steps.sha_guard.outputs.deploy_status_worker }}
@@ -70,6 +74,10 @@ jobs:
           echo "deploy_sha=$DEPLOY_SHA" >> "$GITHUB_OUTPUT"
           if [ "$HEAD_SHA" != "$DEPLOY_SHA" ]; then
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            echo "deploy_main=false" >> "$GITHUB_OUTPUT"
+            echo "deploy_platform=false" >> "$GITHUB_OUTPUT"
+            echo "deploy_runtime=false" >> "$GITHUB_OUTPUT"
+            echo "deploy_jobs=false" >> "$GITHUB_OUTPUT"
             echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
             echo "deploy_status_worker=false" >> "$GITHUB_OUTPUT"
             echo "deploy_nx_cache_worker=false" >> "$GITHUB_OUTPUT"
@@ -84,6 +92,10 @@ jobs:
           # workflow_dispatch. On push-driven deploys, only when their files
           # changed in the commit being deployed.
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "deploy_main=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_platform=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_runtime=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_jobs=true" >> "$GITHUB_OUTPUT"
             echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
             echo "deploy_status_worker=true" >> "$GITHUB_OUTPUT"
             echo "deploy_nx_cache_worker=true" >> "$GITHUB_OUTPUT"
@@ -92,6 +104,9 @@ jobs:
             echo "Nx cache worker deploy: forced (workflow_dispatch)."
             exit 0
           fi
+
+          git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" |
+            node tools/ci/deploy-path-filter.ts | tee -a "$GITHUB_OUTPUT"
 
           if git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" | grep -E \
             '^(\.github/workflows/deploy\.yml|tools/ci/backup-resources|packages/backup-control-plane/|packages/shared/src/backup-)'; then
@@ -130,7 +145,9 @@ jobs:
     name: ⏰ Deploy jobs worker
     timeout-minutes: 8
     needs: sha-guard
-    if: needs.sha-guard.outputs.should_deploy == 'true'
+    if: >-
+      needs.sha-guard.outputs.should_deploy == 'true' &&
+      needs.sha-guard.outputs.deploy_jobs == 'true'
     environment:
       name: production
     steps:
@@ -265,7 +282,16 @@ jobs:
     needs:
       - sha-guard
       - deploy-jobs-worker
-    if: needs.sha-guard.outputs.should_deploy == 'true'
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.sha-guard.result == 'success' &&
+      needs.sha-guard.outputs.should_deploy == 'true' &&
+      (needs.deploy-jobs-worker.result == 'success' ||
+        needs.deploy-jobs-worker.result == 'skipped') &&
+      (needs.sha-guard.outputs.deploy_main == 'true' ||
+        needs.sha-guard.outputs.deploy_platform == 'true' ||
+        needs.sha-guard.outputs.deploy_runtime == 'true')
     environment:
       name: production
       url: ${{ steps.deploy.outputs.url }}
@@ -314,14 +340,35 @@ jobs:
       # patches the main config's cross-script references in place.
       - name: 🧩 Generate runtime worker config
         id: runtime_config
+        if: >-
+          needs.sha-guard.outputs.deploy_runtime == 'true' ||
+          needs.sha-guard.outputs.deploy_platform == 'true'
         run: |
           set -euo pipefail
           node tools/ci/runtime-worker-config.ts generate \
             --env production \
             --main-config packages/worker/wrangler-production.generated.json \
             --worker-name kody-runtime \
+            --platform-worker-name kody-platform \
             --main-worker-name kody-production \
             --out-config packages/runtime-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
+
+      # Platform Durable Object worker (ADR 0034). Shares the origin worker's
+      # data plane and applies transferred_classes while the still-running
+      # origin script owns those classes. Deploy this script before runtime
+      # and origin retarget their bindings.
+      - name: 🧩 Generate platform worker config
+        id: platform_config
+        if: needs.sha-guard.outputs.deploy_platform == 'true'
+        run: |
+          set -euo pipefail
+          node tools/ci/platform-worker-config.ts generate \
+            --env production \
+            --main-config packages/worker/wrangler-production.generated.json \
+            --worker-name kody-platform \
+            --runtime-worker-name kody-runtime \
+            --main-worker-name kody-production \
+            --out-config packages/platform-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
 
       - name: 🔐 Sync Cloudflare Secrets (bulk)
         env:
@@ -381,6 +428,7 @@ jobs:
       # COOKIE_SECRET to kody-runtime-production while deploy uploads
       # kody-runtime. Preview uses the same empty-env pin.
       - name: 🔐 Sync Cloudflare Secrets to runtime worker (bulk)
+        if: needs.sha-guard.outputs.deploy_runtime == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WRANGLER_CONFIG:
@@ -396,6 +444,57 @@ jobs:
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
           --set-from-env-optional CLOUDFLARE_API_TOKEN
 
+      # Platform worker is trusted (same secret set as origin): MCP Durable
+      # Objects execute capabilities that need OAuth, Stripe, and the rest.
+      # --env "" with --name: same wrangler suffix pitfall as runtime.
+      - name: 🔐 Sync Cloudflare Secrets to platform worker (bulk)
+        if: needs.sha-guard.outputs.deploy_platform == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_CONFIG:
+            ${{ steps.platform_config.outputs.platform_wrangler_config }}
+          COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
+          SECRET_STORE_KEY: ${{ secrets.SECRET_STORE_KEY }}
+          AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          CAPABILITY_REINDEX_SECRET: ${{ secrets.CAPABILITY_REINDEX_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.OAUTH_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.OAUTH_GOOGLE_CLIENT_SECRET }}
+          X_CLIENT_ID: ${{ secrets.OAUTH_X_CLIENT_ID }}
+          X_CLIENT_SECRET: ${{ secrets.OAUTH_X_CLIENT_SECRET }}
+          DISCORD_CLIENT_ID: ${{ secrets.OAUTH_DISCORD_CLIENT_ID }}
+          DISCORD_CLIENT_SECRET: ${{ secrets.OAUTH_DISCORD_CLIENT_SECRET }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+          DISCORD_MEMBER_ROLE_ID: ${{ secrets.DISCORD_MEMBER_ROLE_ID }}
+          DISCORD_STANDARD_ROLE_ID: ${{ secrets.DISCORD_STANDARD_ROLE_ID }}
+          DISCORD_PRO_ROLE_ID: ${{ secrets.DISCORD_PRO_ROLE_ID }}
+          KIT_API_KEY: ${{ secrets.KIT_API_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STATUS_INCIDENT_EVENT_SECRET:
+            ${{ secrets.STATUS_INCIDENT_EVENT_SECRET }}
+        run: >
+          node tools/ci/sync-worker-secrets.ts --env "" --name kody-platform
+          --config "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
+          --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
+          AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
+          --set-from-env-optional CLOUDFLARE_API_TOKEN --set-from-env-optional
+          CAPABILITY_REINDEX_SECRET --set-from-env-optional GITHUB_CLIENT_ID
+          --set-from-env-optional GITHUB_CLIENT_SECRET --set-from-env-optional
+          GOOGLE_CLIENT_ID --set-from-env-optional GOOGLE_CLIENT_SECRET
+          --set-from-env-optional X_CLIENT_ID --set-from-env-optional
+          X_CLIENT_SECRET --set-from-env-optional DISCORD_CLIENT_ID
+          --set-from-env-optional DISCORD_CLIENT_SECRET --set-from-env-optional
+          DISCORD_BOT_TOKEN --set-from-env-optional DISCORD_GUILD_ID
+          --set-from-env-optional DISCORD_MEMBER_ROLE_ID --set-from-env-optional
+          DISCORD_STANDARD_ROLE_ID --set-from-env-optional DISCORD_PRO_ROLE_ID
+          --set-from-env-optional KIT_API_KEY --set-from-env-optional
+          STRIPE_SECRET_KEY --set-from-env-optional STRIPE_WEBHOOK_SECRET
+          --set-from-env-optional STATUS_INCIDENT_EVENT_SECRET
+
       - name: 🗄️ Apply D1 Migrations
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -404,6 +503,68 @@ jobs:
           node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config "$WRANGLER_CONFIG"
           node ./wrangler-env.ts d1 migrations apply AUDIT_DB --remote --config "$WRANGLER_CONFIG"
 
+      # Deploys before runtime and origin: applies transferred_classes while
+      # the still-running origin script owns those classes. See
+      # docs/contributing/architecture/platform-worker-migration-runbook.md.
+      - name: ☁️ Deploy platform worker to Cloudflare Workers
+        id: deploy_platform
+        if: needs.sha-guard.outputs.deploy_platform == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+          WRANGLER_CONFIG:
+            ${{ steps.platform_config.outputs.platform_wrangler_config }}
+        run: |
+          set -euo pipefail
+
+          is_retryable_deploy_failure() {
+            node <<'NODE'
+          const fs = require('node:fs')
+          const text = fs.readFileSync('deploy-platform.log', 'utf8').replace(/\u001b\[[0-9;]*m/g, '')
+          const retryablePatterns = [
+            /workflows\.api\.error\.internal_server/i,
+            /Cloudflare API[\s\S]*\[code:\s*10001\]/i,
+          ]
+          process.exit(retryablePatterns.some((pattern) => pattern.test(text)) ? 0 : 1)
+          NODE
+          }
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "Platform deploy attempt $attempt/$deploy_attempts"
+            set +e
+            # Explicit --name: without it wrangler appends the environment to
+            # the script name (kody-platform-production), which would not
+            # match origin/runtime cross-script bindings.
+            npm run deploy -- --name kody-platform --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-platform.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+
+            if [ "$deploy_status" -eq 0 ]; then
+              break
+            fi
+
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "Platform deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+
+            if ! is_retryable_deploy_failure; then
+              echo "Platform deploy failed with a non-retryable error." >&2
+              exit "$deploy_status"
+            fi
+
+            echo "Retryable Cloudflare deploy failure detected; retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done
+
+          PLATFORM_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-platform.log kody-platform)"
+          if [ -n "$PLATFORM_URL" ]; then
+            echo "url=$PLATFORM_URL" >> "$GITHUB_OUTPUT"
+          fi
+
       # Deploys before the main worker: the main worker's cross-script
       # Durable Object / service bindings require the kody-runtime script to
       # exist. On the first production deploy this also runs the
@@ -411,6 +572,7 @@ jobs:
       # docs/contributing/architecture/runtime-worker-migration-runbook.md.
       - name: ☁️ Deploy runtime worker to Cloudflare Workers
         id: deploy_runtime
+        if: needs.sha-guard.outputs.deploy_runtime == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
@@ -469,6 +631,7 @@ jobs:
 
       - name: ☁️ Deploy to Cloudflare Workers
         id: deploy
+        if: needs.sha-guard.outputs.deploy_main == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
@@ -542,6 +705,7 @@ jobs:
           npm run sentry:upload-sourcemaps
 
       - name: 🩺 Healthcheck (production)
+        if: needs.sha-guard.outputs.deploy_main == 'true'
         shell: bash
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
@@ -583,7 +747,51 @@ jobs:
           fi
           exit 1
 
+      - name: 🩺 Healthcheck platform worker (production)
+        if: needs.sha-guard.outputs.deploy_platform == 'true'
+        shell: bash
+        env:
+          PLATFORM_URL: ${{ steps.deploy_platform.outputs.url }}
+          EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PLATFORM_URL:-}" ]; then
+            echo "Missing platform worker deploy URL output; cannot run healthcheck." >&2
+            exit 1
+          fi
+
+          if [ -z "${EXPECTED_COMMIT_SHA:-}" ]; then
+            echo "Missing expected commit SHA; cannot verify platform deployment version." >&2
+            exit 1
+          fi
+
+          HEALTHCHECK_URL="${PLATFORM_URL%/}/__platform/health"
+          echo "Healthcheck URL: $HEALTHCHECK_URL"
+
+          attempts=20
+          delay_seconds=3
+
+          for i in $(seq 1 "$attempts"); do
+            echo "Attempt $i/$attempts"
+            if curl --fail --silent --show-error --location --max-time 10 \
+              --header "Accept: application/json" \
+              "$HEALTHCHECK_URL" > platform-health.json && \
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('platform-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.status !== 'ok') { console.error('platform-healthcheck-unexpected-response', json); process.exit(1); } if (json?.commitSha !== expected) { console.error('platform-healthcheck-unexpected-commit-sha', { expected, actual: json?.commitSha }); process.exit(1); } if (json?.cookieSecretConfigured !== true) { console.error('platform-healthcheck-missing-cookie-secret', json); process.exit(1); } console.log('platform-healthcheck-ok', json);"; then
+              exit 0
+            fi
+            sleep "$delay_seconds"
+          done
+
+          echo "Platform worker healthcheck failed after ${attempts} attempts: $HEALTHCHECK_URL" >&2
+          if [ -f platform-health.json ]; then
+            echo "Last response body:" >&2
+            cat platform-health.json >&2
+          fi
+          exit 1
+
       - name: 🩺 Healthcheck runtime worker (production)
+        if: needs.sha-guard.outputs.deploy_runtime == 'true'
         shell: bash
         env:
           RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
@@ -626,6 +834,7 @@ jobs:
           exit 1
 
       - name: 🧪 Execute smoke check (production)
+        if: needs.sha-guard.outputs.deploy_main == 'true'
         shell: bash
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}

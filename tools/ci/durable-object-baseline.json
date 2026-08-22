@@ -235,15 +235,18 @@
 					"bindings": [
 						{
 							"name": "MCP_OBJECT",
-							"class_name": "MCP"
+							"class_name": "MCP",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "MCP_CLIENT_HUB",
-							"class_name": "McpClientHub"
+							"class_name": "McpClientHub",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "OAUTH_PURGE_COORDINATOR",
-							"class_name": "OAuthPurgeCoordinator"
+							"class_name": "OAuthPurgeCoordinator",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "STORAGE_RUNNER",
@@ -257,23 +260,28 @@
 						},
 						{
 							"name": "USER_METER",
-							"class_name": "UserMeter"
+							"class_name": "UserMeter",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "MAILBOX",
-							"class_name": "Mailbox"
+							"class_name": "Mailbox",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "REPO_SESSION_INDEX",
-							"class_name": "RepoSessionIndex"
+							"class_name": "RepoSessionIndex",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "STRIPE_PLAN_REFRESH",
-							"class_name": "StripePlanRefresh"
+							"class_name": "StripePlanRefresh",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "REPO_SESSION",
-							"class_name": "RepoSession"
+							"class_name": "RepoSession",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "PACKAGE_REALTIME_SESSION",
@@ -287,15 +295,18 @@
 					"bindings": [
 						{
 							"name": "MCP_OBJECT",
-							"class_name": "MCP"
+							"class_name": "MCP",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "MCP_CLIENT_HUB",
-							"class_name": "McpClientHub"
+							"class_name": "McpClientHub",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "OAUTH_PURGE_COORDINATOR",
-							"class_name": "OAuthPurgeCoordinator"
+							"class_name": "OAuthPurgeCoordinator",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "STORAGE_RUNNER",
@@ -309,23 +320,28 @@
 						},
 						{
 							"name": "USER_METER",
-							"class_name": "UserMeter"
+							"class_name": "UserMeter",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "MAILBOX",
-							"class_name": "Mailbox"
+							"class_name": "Mailbox",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "REPO_SESSION_INDEX",
-							"class_name": "RepoSessionIndex"
+							"class_name": "RepoSessionIndex",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "STRIPE_PLAN_REFRESH",
-							"class_name": "StripePlanRefresh"
+							"class_name": "StripePlanRefresh",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "REPO_SESSION",
-							"class_name": "RepoSession"
+							"class_name": "RepoSession",
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "PACKAGE_REALTIME_SESSION",
@@ -450,32 +466,32 @@
 						{
 							"name": "USER_METER",
 							"class_name": "UserMeter",
-							"script_name": "kody"
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "MCP_OBJECT",
 							"class_name": "MCP",
-							"script_name": "kody"
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "MCP_CLIENT_HUB",
 							"class_name": "McpClientHub",
-							"script_name": "kody"
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "MAILBOX",
 							"class_name": "Mailbox",
-							"script_name": "kody"
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "REPO_SESSION",
 							"class_name": "RepoSession",
-							"script_name": "kody"
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "REPO_SESSION_INDEX",
 							"class_name": "RepoSessionIndex",
-							"script_name": "kody"
+							"script_name": "kody-platform"
 						}
 					]
 				},
@@ -497,32 +513,204 @@
 						{
 							"name": "USER_METER",
 							"class_name": "UserMeter",
-							"script_name": "kody"
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "MCP_OBJECT",
 							"class_name": "MCP",
-							"script_name": "kody"
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "MCP_CLIENT_HUB",
 							"class_name": "McpClientHub",
-							"script_name": "kody"
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "MAILBOX",
 							"class_name": "Mailbox",
-							"script_name": "kody"
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "REPO_SESSION",
 							"class_name": "RepoSession",
-							"script_name": "kody"
+							"script_name": "kody-platform"
 						},
 						{
 							"name": "REPO_SESSION_INDEX",
 							"class_name": "RepoSessionIndex",
-							"script_name": "kody"
+							"script_name": "kody-platform"
+						}
+					]
+				}
+			]
+		},
+		{
+			"path": "packages/platform-worker/wrangler.jsonc",
+			"protected_migrations": [
+				{
+					"tag": "v1",
+					"location": "env.preview.migrations",
+					"new_sqlite_classes": [
+						"MCP",
+						"McpClientHub",
+						"OAuthPurgeCoordinator",
+						"UserMeter",
+						"Mailbox",
+						"RepoSession",
+						"RepoSessionIndex",
+						"StripePlanRefresh"
+					]
+				}
+			],
+			"protected_transfer_migrations": [
+				{
+					"tag": "v1",
+					"transferred_classes": [
+						{
+							"from": "MCP",
+							"from_script": "kody",
+							"to": "MCP"
+						},
+						{
+							"from": "McpClientHub",
+							"from_script": "kody",
+							"to": "McpClientHub"
+						},
+						{
+							"from": "OAuthPurgeCoordinator",
+							"from_script": "kody",
+							"to": "OAuthPurgeCoordinator"
+						},
+						{
+							"from": "UserMeter",
+							"from_script": "kody",
+							"to": "UserMeter"
+						},
+						{
+							"from": "Mailbox",
+							"from_script": "kody",
+							"to": "Mailbox"
+						},
+						{
+							"from": "RepoSession",
+							"from_script": "kody",
+							"to": "RepoSession"
+						},
+						{
+							"from": "RepoSessionIndex",
+							"from_script": "kody",
+							"to": "RepoSessionIndex"
+						},
+						{
+							"from": "StripePlanRefresh",
+							"from_script": "kody",
+							"to": "StripePlanRefresh"
+						}
+					]
+				}
+			],
+			"protected_binding_sets": [
+				{
+					"location": "env.production.durable_objects",
+					"bindings": [
+						{
+							"name": "MCP_OBJECT",
+							"class_name": "MCP"
+						},
+						{
+							"name": "MCP_CLIENT_HUB",
+							"class_name": "McpClientHub"
+						},
+						{
+							"name": "OAUTH_PURGE_COORDINATOR",
+							"class_name": "OAuthPurgeCoordinator"
+						},
+						{
+							"name": "USER_METER",
+							"class_name": "UserMeter"
+						},
+						{
+							"name": "MAILBOX",
+							"class_name": "Mailbox"
+						},
+						{
+							"name": "REPO_SESSION_INDEX",
+							"class_name": "RepoSessionIndex"
+						},
+						{
+							"name": "STRIPE_PLAN_REFRESH",
+							"class_name": "StripePlanRefresh"
+						},
+						{
+							"name": "REPO_SESSION",
+							"class_name": "RepoSession"
+						},
+						{
+							"name": "STORAGE_RUNNER",
+							"class_name": "StorageRunner",
+							"script_name": "kody-runtime"
+						},
+						{
+							"name": "RUN_LOG",
+							"class_name": "RunLog",
+							"script_name": "kody-runtime"
+						},
+						{
+							"name": "PACKAGE_REALTIME_SESSION",
+							"class_name": "PackageRealtimeSession",
+							"script_name": "kody-runtime"
+						}
+					]
+				},
+				{
+					"location": "env.preview.durable_objects",
+					"bindings": [
+						{
+							"name": "MCP_OBJECT",
+							"class_name": "MCP"
+						},
+						{
+							"name": "MCP_CLIENT_HUB",
+							"class_name": "McpClientHub"
+						},
+						{
+							"name": "OAUTH_PURGE_COORDINATOR",
+							"class_name": "OAuthPurgeCoordinator"
+						},
+						{
+							"name": "USER_METER",
+							"class_name": "UserMeter"
+						},
+						{
+							"name": "MAILBOX",
+							"class_name": "Mailbox"
+						},
+						{
+							"name": "REPO_SESSION_INDEX",
+							"class_name": "RepoSessionIndex"
+						},
+						{
+							"name": "STRIPE_PLAN_REFRESH",
+							"class_name": "StripePlanRefresh"
+						},
+						{
+							"name": "REPO_SESSION",
+							"class_name": "RepoSession"
+						},
+						{
+							"name": "STORAGE_RUNNER",
+							"class_name": "StorageRunner",
+							"script_name": "kody-runtime"
+						},
+						{
+							"name": "RUN_LOG",
+							"class_name": "RunLog",
+							"script_name": "kody-runtime"
+						},
+						{
+							"name": "PACKAGE_REALTIME_SESSION",
+							"class_name": "PackageRealtimeSession",
+							"script_name": "kody-runtime"
 						}
 					]
 				}

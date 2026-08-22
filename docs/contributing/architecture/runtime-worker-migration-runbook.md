@@ -21,7 +21,7 @@ migration.
 | Package invocation API                                              | `kody-runtime` (forwarded by main)                                          |
 | `DynamicCallableWorkflow` (Cloudflare Workflow)                     | `kody-runtime` (main binds it cross-script)                                 |
 | `StorageRunner`, `RunLog`, `PackageRealtimeSession`                 | `kody-runtime` (main binds them cross-script)                               |
-| `UserMeter` and every other Durable Object, app, MCP, OAuth, email  | `kody` (runtime binds what it needs cross-script)                           |
+| Remaining platform Durable Objects (`UserMeter`, `MCP`, …)           | `kody-platform` (runtime binds them cross-script)                           |
 | `APP_DB` / `AUDIT_DB` / KV / R2 / queues / Vectorize / AI           | Shared resources; each worker binds directly (no RPC proxying)              |
 
 ## Migration configuration

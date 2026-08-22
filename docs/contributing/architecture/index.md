@@ -47,6 +47,10 @@ to become.
   coordinated deploy order and Durable Object script migration for extracting
   the package runtime lane into the `kody-runtime` Worker
   ([ADR 0016](../decisions/0016-mono-worker-extraction.md)).
+- [Platform worker migration runbook](./platform-worker-migration-runbook.md):
+  Durable Object script migration for extracting the remaining platform classes
+  onto the `kody-platform` Worker so the origin script owns none
+  ([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)).
 - [Jobs worker migration runbook](./jobs-worker-migration-runbook.md): Durable
   Object transfer and bounded D1 copy for extracting the jobs/scheduled lane
   into the `kody-jobs` Worker
