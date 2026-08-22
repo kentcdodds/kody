@@ -1,8 +1,10 @@
 import { expect, test } from 'vitest'
 import {
+	createPublicCodeRunsWindow,
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
 	parsePublicCodeRunsWindow,
+	publicCodeRunsWindowMs,
 } from './code-runs.ts'
 
 const windowStart = '2026-08-21T00:00:00.000Z'
@@ -53,4 +55,19 @@ test('parsePublicCodeRunsWindow accepts a valid pair and rejects junk', () => {
 test('formatCodeRunsCount uses grouping so reserved width stays stable', () => {
 	expect(formatCodeRunsCount(128447)).toBe('128,447')
 	expect(formatCodeRunsCount(0)).toBe('0')
+})
+
+test('createPublicCodeRunsWindow builds an exact 24-hour pair from now', () => {
+	const now = new Date('2026-08-22T15:00:00.000Z')
+	expect(
+		createPublicCodeRunsWindow({ previous: 171540, current: 257940, now }),
+	).toEqual({
+		previous: 171540,
+		current: 257940,
+		windowStart: '2026-08-22T15:00:00.000Z',
+		windowEnd: new Date(now.getTime() + publicCodeRunsWindowMs).toISOString(),
+	})
+	expect(
+		createPublicCodeRunsWindow({ previous: -1, current: 10, now }),
+	).toBeNull()
 })

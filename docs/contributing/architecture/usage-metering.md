@@ -330,7 +330,12 @@ Guarantees and rules:
   platform KV pair (or a still D1 sum when KV is empty) and interpolates
   `previous → current` across the 24-hour window. The payload is the window pair
   only — never per-user rows. Interpolation is deterministic from the timestamps
-  so every visitor at a given second sees the same number.
+  so every visitor at a given second sees the same number. The first official
+  pair is still (`previous === current`) because there is no yesterday to
+  replay. Operators write a moving 24-hour pair with
+  `tools/seed-public-code-runs.ts` or the **Seed homepage code-runs window**
+  workflow; the next hourly rotation keeps
+  `current = max(D1 execute total, previous)` and does not go backwards.
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration

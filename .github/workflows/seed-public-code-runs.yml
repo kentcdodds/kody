@@ -1,0 +1,72 @@
+name: Seed homepage code-runs window
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous:
+        description:
+          Optional previous count. Defaults to the live current so the ticker
+          does not jump down.
+        required: false
+        type: string
+      current:
+        description: Optional current count. Defaults to previous + delta.
+        required: false
+        type: string
+      delta:
+        description:
+          Added to previous when current is omitted. 86400 ticks about once per
+          second.
+        required: false
+        type: string
+        default: '86400'
+      dry_run:
+        description: Print the window without writing KV
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seed-public-code-runs
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    name: Seed public-code-runs:v1
+    timeout-minutes: 5
+    environment:
+      name: production
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+
+      - name: 🌱 Seed public-code-runs:v1
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIOUS: ${{ inputs.previous }}
+          CURRENT: ${{ inputs.current }}
+          DELTA: ${{ inputs.delta }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(--delta "${DELTA:-86400}")
+          if [ -n "${PREVIOUS:-}" ]; then
+            args+=(--previous "${PREVIOUS}")
+          fi
+          if [ -n "${CURRENT:-}" ]; then
+            args+=(--current "${CURRENT}")
+          fi
+          if [ "${DRY_RUN}" = "true" ]; then
+            args+=(--dry-run)
+          fi
+          node --experimental-strip-types tools/seed-public-code-runs.ts "${args[@]}"

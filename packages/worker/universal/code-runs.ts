@@ -5,12 +5,29 @@
  */
 
 export const publicCodeRunsWindowMs = 24 * 60 * 60 * 1000
+export const publicCodeRunsKvKey = 'public-code-runs:v1'
 
 export type PublicCodeRunsWindow = {
 	previous: number
 	current: number
 	windowStart: string
 	windowEnd: string
+}
+
+export function createPublicCodeRunsWindow(input: {
+	previous: number
+	current: number
+	now: Date
+}): PublicCodeRunsWindow | null {
+	const windowStart = input.now.toISOString()
+	return parsePublicCodeRunsWindow({
+		previous: input.previous,
+		current: input.current,
+		windowStart,
+		windowEnd: new Date(
+			input.now.getTime() + publicCodeRunsWindowMs,
+		).toISOString(),
+	})
 }
 
 export function parsePublicCodeRunsWindow(

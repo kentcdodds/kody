@@ -1283,7 +1283,9 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `public-code-runs:v1` — platform-owned 24-hour delayed fleet `execute` window
   for the homepage ticker (`{ previous, current, windowStart, windowEnd }`). Not
   scoped by user id; account deletion must not remove it. Homepage GET is
-  read-only; the `usage_aggregation` lane writes it.
+  read-only; the `usage_aggregation` lane writes it. Operators can also replace
+  the pair with `tools/seed-public-code-runs.ts` (the Seed homepage code-runs
+  window workflow).
 
 Account deletion derives these keys from D1 rows and package ids before deleting
 D1 projections. New KV prefixes must add corresponding account-deletion coverage

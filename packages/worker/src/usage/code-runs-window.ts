@@ -1,10 +1,11 @@
 import {
 	parsePublicCodeRunsWindow,
+	publicCodeRunsKvKey,
 	publicCodeRunsWindowMs,
 	type PublicCodeRunsWindow,
 } from '#universal/code-runs.ts'
 
-export const publicCodeRunsKvKey = 'public-code-runs:v1'
+export { publicCodeRunsKvKey }
 
 type CodeRunsWindowEnv = {
 	APP_DB?: D1Database
