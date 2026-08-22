@@ -227,6 +227,15 @@
 					"script_name": "kody-runtime",
 				},
 			],
+			// Package runtime Worker (ADR 0016): runtime-owned requests are
+			// forwarded wholesale over this service binding (see
+			// packages/worker/src/runtime-worker-routing.ts).
+			"services": [
+				{
+					"binding": "RUNTIME_WORKER",
+					"service": "kody-runtime",
+				},
+			],
 			"assets": {
 				"directory": "./public",
 				"binding": "ASSETS",
@@ -320,17 +329,7 @@
 			// Jobs worker service binding (ADR 0016): account dashboards, MCP
 			// capabilities, and account deletion/export reach jobs data and the
 			// JobManager Durable Object through this coarse-grained contract.
-			// Keep RUNTIME_WORKER and APP_SURFACE in this same array: a second
-			// `services` key would overwrite the earlier one in JSON.parse.
 			"services": [
-				{
-					"binding": "RUNTIME_WORKER",
-					"service": "kody-runtime",
-				},
-				{
-					"binding": "APP_SURFACE",
-					"service": "kody-app",
-				},
 				{
 					"binding": "JOBS",
 					"service": "kody-jobs",
@@ -674,6 +673,15 @@
 					"script_name": "kody-runtime",
 				},
 			],
+			// Preview deploys generate per-PR worker names; the deploy config
+			// generator rewrites "kody-runtime" service/script references to the
+			// PR's runtime worker name (tools/ci/runtime-worker-config.ts).
+			"services": [
+				{
+					"binding": "RUNTIME_WORKER",
+					"service": "kody-runtime",
+				},
+			],
 			"assets": {
 				"directory": "./public",
 				"binding": "ASSETS",
@@ -761,19 +769,9 @@
 					"name": "EMAIL",
 				},
 			],
-			// Rewired per preview by tools/ci/preview-resources.ts and the
-			// sibling-worker config generators. Keep all service bindings in
-			// this same array: a second `services` key would overwrite the
-			// earlier one in JSON.parse.
+			// Rewired per preview by tools/ci/preview-resources.ts to the
+			// per-preview jobs worker name.
 			"services": [
-				{
-					"binding": "RUNTIME_WORKER",
-					"service": "kody-runtime",
-				},
-				{
-					"binding": "APP_SURFACE",
-					"service": "kody-app",
-				},
 				{
 					"binding": "JOBS",
 					"service": "kody-jobs",

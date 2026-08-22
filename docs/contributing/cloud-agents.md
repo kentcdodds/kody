@@ -1,9 +1,8 @@
 # Cursor Cloud Agent notes
 
-Kody runs on Cloudflare Workers: the main MCP/platform worker, the `kody-app`
-Remix/content worker, plus runtime, jobs, and status workers (Remix 3 UI +
-OAuth-protected MCP). See [`setup.md`](./setup.md) for the full local dev guide;
-this document covers Cloud Agent VM gotchas only.
+Kody runs on Cloudflare Workers: the main app/MCP worker plus runtime, jobs, and
+status workers (Remix 3 UI + OAuth-protected MCP). See [`setup.md`](./setup.md)
+for the full local dev guide; this document covers Cloud Agent VM gotchas only.
 
 ## Node 26
 

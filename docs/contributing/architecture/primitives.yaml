@@ -82,21 +82,6 @@ primitives:
       - docs/contributing/decisions/0016-mono-worker-extraction.md
       - docs/contributing/architecture/jobs-worker-migration-runbook.md
 
-  - id: app-worker
-    group: surfaces
-    name: App-surface worker
-    summary:
-      Independently deployed Remix/content worker (kody-app) with no Durable
-      Object classes. Serves browser UI, blog, guides, and static assets so
-      those deploys do not reset Durable Objects on the main MCP worker.
-    code:
-      - packages/app-worker/
-      - packages/worker/src/app-worker.ts
-      - packages/shared/src/app-worker.ts
-    docs:
-      - docs/contributing/decisions/0034-app-worker-content-deploy.md
-      - docs/contributing/architecture/request-lifecycle.md
-
   - id: scheduled-cron
     group: surfaces
     name: Scheduled handler

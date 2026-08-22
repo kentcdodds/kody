@@ -138,13 +138,11 @@ jobs:
           set -euo pipefail
           node tools/ci/preview-resources.ts ensure --worker-name "$APP_WORKER_NAME" --out-config packages/worker/wrangler-preview.generated.json | tee -a "$GITHUB_OUTPUT"
 
-      # Package runtime worker (ADR 0016) and app-surface worker (ADR 0034).
-      # Both share the preview data plane, so their configs derive resource
-      # ids from the main generated config. The bootstrap variant of the main
-      # config breaks the fresh-pair circular reference (main binds runtime
-      # Durable Objects and APP_SURFACE; those scripts bind main's DOs):
-      # deploy order is jobs (bootstrap) → main (bootstrap) → runtime →
-      # app-surface → main (full) → jobs (full).
+      # Package runtime worker (ADR 0016). Shares the preview data plane, so
+      # its config derives resource ids from the main generated config. The
+      # bootstrap variant of the main config breaks the fresh-pair circular
+      # reference (main binds runtime's Durable Objects, runtime binds
+      # main's): deploy order is main (bootstrap) → runtime → main (full).
       - name: 🧩 Generate runtime worker preview config
         id: runtime_config
         env:
@@ -160,24 +158,6 @@ jobs:
             --out-config packages/runtime-worker/wrangler-preview.generated.json \
             --out-main-bootstrap-config packages/worker/wrangler-preview-bootstrap.generated.json | tee -a "$GITHUB_OUTPUT"
           echo "runtime_worker_name=${APP_WORKER_NAME}-runtime" >> "$GITHUB_OUTPUT"
-
-      - name: 🧩 Generate app-surface worker preview config
-        id: app_config
-        env:
-          APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
-          WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
-        run: |
-          set -euo pipefail
-          node tools/ci/app-worker-config.ts generate \
-            --env preview \
-            --main-config "$WRANGLER_CONFIG" \
-            --worker-name "${APP_WORKER_NAME}-app" \
-            --runtime-worker-name "${APP_WORKER_NAME}-runtime" \
-            --main-worker-name "$APP_WORKER_NAME" \
-            --jobs-worker-name "${APP_WORKER_NAME}-jobs" \
-            --out-config packages/app-worker/wrangler-preview.generated.json \
-            --out-main-bootstrap-config packages/worker/wrangler-preview-bootstrap.generated.json | tee -a "$GITHUB_OUTPUT"
-          echo "app_surface_worker_name=${APP_WORKER_NAME}-app" >> "$GITHUB_OUTPUT"
 
       - name: 🗄️ Apply D1 Migrations (preview)
         env:
@@ -316,8 +296,7 @@ jobs:
           # worker's JOBS service binding.
           node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" --name "${APP_WORKER_NAME}-jobs" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
 
-      - name:
-          ☁️ Bootstrap preview app Worker (no runtime or APP_SURFACE references)
+      - name: ☁️ Bootstrap preview app Worker (no runtime references)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -350,30 +329,6 @@ jobs:
           RUNTIME_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-runtime.log "$RUNTIME_WORKER_NAME")"
           if [ -n "$RUNTIME_URL" ]; then
             echo "url=$RUNTIME_URL" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: ☁️ Deploy preview app-surface Worker
-        id: deploy_app_surface
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_ENV: preview
-          APP_SURFACE_WORKER_NAME:
-            ${{ steps.app_config.outputs.app_surface_worker_name }}
-          WRANGLER_CONFIG: ${{ steps.app_config.outputs.app_wrangler_config }}
-          DEPLOY_COMMIT_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          echo "worker_name=$APP_SURFACE_WORKER_NAME" >> "$GITHUB_OUTPUT"
-
-          # Explicit --name: without it wrangler appends the environment to
-          # the script name (…-app-preview), which would not match the main
-          # worker's APP_SURFACE service binding.
-          npm run deploy -- --name "$APP_SURFACE_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-app-surface.log
-
-          APP_SURFACE_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-app-surface.log "$APP_SURFACE_WORKER_NAME")"
-          if [ -n "$APP_SURFACE_URL" ]; then
-            echo "url=$APP_SURFACE_URL" >> "$GITHUB_OUTPUT"
           fi
 
       - name: ☁️ Deploy preview app Worker
@@ -424,10 +379,6 @@ jobs:
             ${{ steps.runtime_config.outputs.runtime_worker_name }}
           RUNTIME_WRANGLER_CONFIG:
             ${{ steps.runtime_config.outputs.runtime_wrangler_config }}
-          APP_SURFACE_WORKER_NAME:
-            ${{ steps.app_config.outputs.app_surface_worker_name }}
-          APP_SURFACE_WRANGLER_CONFIG:
-            ${{ steps.app_config.outputs.app_wrangler_config }}
           PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
           AI_GATEWAY_ID: ${{ secrets.AI_GATEWAY_ID_PREVIEW }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
@@ -465,9 +416,6 @@ jobs:
           # runtime worker needs the mock endpoints, and no production secret
           # is present in either file.
           node tools/ci/sync-worker-secrets.ts --env "" --name "$RUNTIME_WORKER_NAME" --config "$RUNTIME_WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --include-empty "${extra_args[@]}"
-          # The app-surface Worker serves login and account pages, so it
-          # needs the same session-signing key and preview overrides as main.
-          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_SURFACE_WORKER_NAME" --config "$APP_SURFACE_WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --include-empty "${extra_args[@]}"
 
       - name: 📤 Upload Worker source maps to Sentry
         env:
@@ -587,9 +535,6 @@ jobs:
           WORKER_NAME: ${{ steps.deploy_preview.outputs.worker_name }}
           RUNTIME_WORKER_NAME: ${{ steps.deploy_runtime.outputs.worker_name }}
           RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
-          APP_SURFACE_WORKER_NAME:
-            ${{ steps.deploy_app_surface.outputs.worker_name }}
-          APP_SURFACE_URL: ${{ steps.deploy_app_surface.outputs.url }}
           MOCK_SUMMARY: ${{ steps.deploy_mocks.outputs.mock_summary }}
           D1_DATABASE_NAME: ${{ steps.resources.outputs.d1_database_name }}
           OAUTH_KV_TITLE: ${{ steps.resources.outputs.oauth_kv_title }}
@@ -602,9 +547,6 @@ jobs:
             printf 'Worker: `%s`\n' "$WORKER_NAME"
             if [ -n "${RUNTIME_URL:-}" ]; then
               printf 'Runtime worker: `%s` (%s)\n' "$RUNTIME_WORKER_NAME" "$RUNTIME_URL"
-            fi
-            if [ -n "${APP_SURFACE_URL:-}" ]; then
-              printf 'App-surface worker: `%s` (%s)\n' "$APP_SURFACE_WORKER_NAME" "$APP_SURFACE_URL"
             fi
             if [ -n "${PREVIEW_VERSION_URL:-}" ]; then
               printf 'Version preview: %s\n' "$PREVIEW_VERSION_URL"
@@ -634,9 +576,6 @@ jobs:
           WORKER_NAME: ${{ steps.deploy_preview.outputs.worker_name }}
           RUNTIME_WORKER_NAME: ${{ steps.deploy_runtime.outputs.worker_name }}
           RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
-          APP_SURFACE_WORKER_NAME:
-            ${{ steps.deploy_app_surface.outputs.worker_name }}
-          APP_SURFACE_URL: ${{ steps.deploy_app_surface.outputs.url }}
           MOCK_SUMMARY: ${{ steps.deploy_mocks.outputs.mock_comment_summary }}
           D1_DATABASE_NAME: ${{ steps.resources.outputs.d1_database_name }}
           OAUTH_KV_TITLE: ${{ steps.resources.outputs.oauth_kv_title }}
@@ -652,11 +591,6 @@ jobs:
             if (process.env.RUNTIME_URL?.trim()) {
               bodyLines.push(
                 `Runtime worker: \`${process.env.RUNTIME_WORKER_NAME}\` (${process.env.RUNTIME_URL.trim()})`,
-              );
-            }
-            if (process.env.APP_SURFACE_URL?.trim()) {
-              bodyLines.push(
-                `App-surface worker: \`${process.env.APP_SURFACE_WORKER_NAME}\` (${process.env.APP_SURFACE_URL.trim()})`,
               );
             }
             if (process.env.PREVIEW_VERSION_URL?.trim()) {
