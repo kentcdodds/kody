@@ -35,6 +35,9 @@ import {
 	type AdminInsightsEventCountConsumer,
 	type AdminInsightsLoaderData,
 	type AdminInsightsMetricDurationConsumers,
+	type AdminInsightsPackageErrorRate,
+	type AdminInsightsPackageErrorRateCounts,
+	type AdminInsightsPackageErrorRateMetricRow,
 	type AdminInsightsRunLogCompleteness,
 	type AdminUsageMetric,
 } from '#universal/loader-data.ts'
@@ -332,6 +335,178 @@ function renderEntitlementPressure(
 					</ul>
 				</div>
 			))}
+		</div>
+	)
+}
+
+const packageErrorRateMetricLabels: Record<
+	AdminInsightsPackageErrorRateMetricRow['metric'],
+	string
+> = {
+	package_export: 'Package exports',
+	package_static_call: 'Static package calls',
+	job_run: 'Job runs',
+	workflow_run: 'Workflow runs',
+}
+
+function formatErrorRate(counts: AdminInsightsPackageErrorRateCounts) {
+	if (counts.rate == null) return 'n/a'
+	return `${(counts.rate * 100).toFixed(1)}%`
+}
+
+function renderPackageErrorRateSummary(input: {
+	label: string
+	counts: AdminInsightsPackageErrorRateCounts
+}) {
+	return (
+		<div
+			mix={css({
+				display: 'grid',
+				gap: spacing.xs,
+				padding: spacing.sm,
+				borderRadius: '8px',
+				border: `1px solid ${colors.border}`,
+			})}
+		>
+			<span
+				mix={css({
+					color: colors.textMuted,
+					fontSize: typography.fontSize.sm,
+				})}
+			>
+				{input.label}
+			</span>
+			<strong
+				mix={css({
+					fontSize: typography.fontSize.xl,
+					fontVariantNumeric: 'tabular-nums',
+				})}
+			>
+				{formatErrorRate(input.counts)}
+			</strong>
+			<span
+				mix={css({
+					color: colors.textMuted,
+					fontSize: typography.fontSize.sm,
+					fontVariantNumeric: 'tabular-nums',
+				})}
+			>
+				{formatIntegerNumber(input.counts.errors)} /{' '}
+				{formatIntegerNumber(input.counts.events)}
+			</span>
+		</div>
+	)
+}
+
+function renderPackageErrorRate(rate: AdminInsightsPackageErrorRate) {
+	if (!rate.available || !rate.day) {
+		return (
+			<p mix={css({ margin: 0, color: colors.textMuted })}>
+				Fleet package error rates are unavailable until the hourly usage
+				aggregation writes the Analytics Engine snapshot.
+			</p>
+		)
+	}
+	const rows = rate.day.recent.by_metric.map((recent, index) => ({
+		recent,
+		previous: rate.day?.previous.by_metric[index] ?? recent,
+	}))
+	return (
+		<div mix={css({ display: 'grid', gap: spacing.sm })}>
+			<div
+				mix={css({
+					display: 'grid',
+					gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+					gap: spacing.sm,
+					[mq.tablet]: { gridTemplateColumns: 'minmax(0, 1fr)' },
+				})}
+			>
+				{renderPackageErrorRateSummary({
+					label: 'Last 24h',
+					counts: rate.day.recent.combined,
+				})}
+				{renderPackageErrorRateSummary({
+					label: 'Previous 24h',
+					counts: rate.day.previous.combined,
+				})}
+				{rate.hour
+					? renderPackageErrorRateSummary({
+							label: 'Last hour',
+							counts: rate.hour.recent.combined,
+						})
+					: null}
+				{rate.hour
+					? renderPackageErrorRateSummary({
+							label: 'Previous hour',
+							counts: rate.hour.previous.combined,
+						})
+					: null}
+			</div>
+			<table
+				mix={css({
+					width: '100%',
+					borderCollapse: 'collapse',
+					fontSize: typography.fontSize.sm,
+				})}
+			>
+				<caption
+					mix={css({
+						captionSide: 'top',
+						textAlign: 'left',
+						color: colors.textMuted,
+						paddingBottom: spacing.xs,
+					})}
+				>
+					Anonymous combined rates for package_export, package_static_call,
+					job_run, and workflow_run. No user ids or package names.
+				</caption>
+				<thead>
+					<tr>
+						<th mix={css({ textAlign: 'left', padding: spacing.xs })}>
+							Metric
+						</th>
+						<th mix={css({ textAlign: 'right', padding: spacing.xs })}>
+							Last 24h
+						</th>
+						<th mix={css({ textAlign: 'right', padding: spacing.xs })}>
+							Previous 24h
+						</th>
+					</tr>
+				</thead>
+				<tbody>
+					{rows.map(({ recent, previous }) => (
+						<tr key={recent.metric}>
+							<td mix={css({ padding: spacing.xs })}>
+								{packageErrorRateMetricLabels[recent.metric]}
+							</td>
+							<td
+								mix={css({
+									textAlign: 'right',
+									padding: spacing.xs,
+									fontVariantNumeric: 'tabular-nums',
+								})}
+							>
+								{formatErrorRate(recent)}
+							</td>
+							<td
+								mix={css({
+									textAlign: 'right',
+									padding: spacing.xs,
+									fontVariantNumeric: 'tabular-nums',
+									color: colors.textMuted,
+								})}
+							>
+								{formatErrorRate(previous)}
+							</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+			{rate.lastAlertAt ? (
+				<p mix={css({ margin: 0, color: colors.textMuted })}>
+					Last elevation alert {rate.lastAlertAt}.
+				</p>
+			) : null}
 		</div>
 	)
 }
@@ -855,6 +1030,13 @@ function renderDashboard(data: AdminInsightsLoaderData) {
 					span={6}
 				>
 					{renderEntitlementPressure(data.entitlementPressure)}
+				</ChartCard>
+				<ChartCard
+					title="Fleet package error rate"
+					sub="Anonymous Analytics Engine rates for user-package runtime metrics. Rising rates page admin packages and email."
+					span={6}
+				>
+					{renderPackageErrorRate(data.packageErrorRate)}
 				</ChartCard>
 
 				<ChartCard

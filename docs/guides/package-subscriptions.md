@@ -10,7 +10,8 @@ summary:
   connection episodes, consent-gated admin-only platform.feedback.submitted
   notification guidance, admin-only community.activity.recorded /
   community.listing.published community notifications, admin-only
-  status.incident.opened / status.incident.resolved operator telemetry, and
+  status.incident.opened / status.incident.resolved operator telemetry,
+  admin-only fleet.package_error_rate.elevated package-runtime health, and
   admin-only user.created / user.deleted account lifecycle notifications.
 category: platform
 ---
@@ -130,6 +131,7 @@ publish result. Failed and non-fast-forward results have no test hints.
 - **Admin-only topics** (`email.system-message.received`,
   `platform.feedback.submitted`, `community.activity.recorded`,
   `community.listing.published`, `status.incident.opened`,
+  `fleet.package_error_rate.elevated`,
   `status.incident.resolved`, `user.created`, `user.deleted`) gate
   **production** fan-out on admin role; synthetic dispatch still runs your
   handler directly for smoke testing.
@@ -907,6 +909,89 @@ probe reason (`timeout`, `error`, …) or `null`. Timestamps are ISO-8601 UTC. T
 event omits probe logs, health-check bodies, user identities, secrets, and
 unrelated account content. Idempotency keys include the topic, component,
 timestamps, and package id so a retried POST does not double-invoke.
+
+## `fleet.package_error_rate.elevated` (admins)
+
+The hourly `usage_aggregation` lane queries Analytics Engine for anonymous
+fleet totals of `package_export`, `package_static_call`, `job_run`, and
+`workflow_run`. It compares the last completed hour to the hour before it, and
+the last 24 hours to the 24 hours before that. When the combined error rate
+rises past a volume floor, Kody writes a content-free KV snapshot for
+`/admin/insights`, emails admin-role users, and fans
+`fleet.package_error_rate.elevated` to packages saved by users who hold the
+admin role at dispatch time. A non-admin package may declare the topic, but it
+never receives the event. Role revocation stops delivery on the next elevation.
+
+There is no Queue / DLQ for this topic. A missed invoke is logged and does not
+fail usage rollup aggregation. A six-hour cooldown suppresses repeat pages
+during a prolonged incident.
+
+Handlers receive operator telemetry only:
+
+```ts
+type FleetPackageErrorRateElevatedEvent = {
+	event: 'fleet.package_error_rate.elevated'
+	event_id: string
+	status_url: string
+	insights_url: string
+	environment: string
+	observed_at: string
+	trigger: {
+		window: 'hour' | 'day'
+		reason: 'absolute_delta' | 'relative_factor' | 'from_zero'
+		recent: {
+			start: string
+			end: string
+			combined: { events: number; errors: number; rate: number | null }
+			by_metric: Array<{
+				metric:
+					| 'package_export'
+					| 'package_static_call'
+					| 'job_run'
+					| 'workflow_run'
+				events: number
+				errors: number
+				rate: number | null
+			}>
+		}
+		previous: {
+			start: string
+			end: string
+			combined: { events: number; errors: number; rate: number | null }
+			by_metric: Array<{
+				metric:
+					| 'package_export'
+					| 'package_static_call'
+					| 'job_run'
+					| 'workflow_run'
+				events: number
+				errors: number
+				rate: number | null
+			}>
+		}
+	}
+	by_metric: Array<{
+		metric:
+			| 'package_export'
+			| 'package_static_call'
+			| 'job_run'
+			| 'workflow_run'
+		events: number
+		errors: number
+		rate: number | null
+	}>
+}
+```
+
+`status_url` is the public status page. `insights_url` is the operator
+insights dashboard. Counts are fleet-wide and weighted by Analytics Engine
+`_sample_interval`. The event omits user ids, package ids, package names, error
+strings, logs, and unrelated account content. Idempotency keys include the
+topic, event id, and subscriber package id.
+
+Use this topic for notifier packages that spawn a Kody-repo investigation
+agent. Do not treat it as permission to read another user's Activity or
+package source.
 
 ## User created and deleted (admins)
 

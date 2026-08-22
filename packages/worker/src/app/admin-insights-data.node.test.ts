@@ -40,10 +40,16 @@ const fleetUsageMocks = vi.hoisted(() => ({
 		topDurationConsumersByMetric: [],
 		entitlementPressure: [],
 	})),
+	loadFleetPackageErrorRateSnapshot: vi.fn(async () => null),
 }))
 
 vi.mock('#worker/admin/fleet-usage-insights.ts', () => ({
 	loadFleetUsageInsights: fleetUsageMocks.loadFleetUsageInsights,
+}))
+
+vi.mock('#worker/usage/fleet-package-error-rate.ts', () => ({
+	loadFleetPackageErrorRateSnapshot:
+		fleetUsageMocks.loadFleetPackageErrorRateSnapshot,
 }))
 
 vi.mock('#worker/run-records/service.ts', () => ({
@@ -803,6 +809,76 @@ test('admin insights uses content-free getAdminInsightsSnapshot point reads only
 	expect(serialized).not.toContain('opaque-pkg')
 	expect(serialized).not.toMatch(/workflowName|lastError|errorMessage/)
 	expect(data.workflowStatuses).toEqual([{ status: 'complete', count: 1 }])
+	expect(data.packageErrorRate).toEqual({
+		available: false,
+		updatedAt: null,
+		environment: null,
+		day: null,
+		hour: null,
+		lastAlertAt: null,
+	})
+})
+
+test('admin insights surfaces the content-free fleet package error-rate snapshot', async () => {
+	consoleWarn.mockImplementation(() => {})
+	stubSnapshotsByUser({
+		'user-a': emptySnapshot(),
+		'user-b': emptySnapshot(),
+	})
+	fleetUsageMocks.loadFleetPackageErrorRateSnapshot.mockResolvedValueOnce({
+		version: 1,
+		updatedAt: '2026-08-22T19:32:00.000Z',
+		environment: 'production',
+		lastAlertAt: '2026-08-22T19:32:00.000Z',
+		lastAlertEventId: 'day:2026-08-22T19:00:00.000Z',
+		day: {
+			kind: 'day',
+			recent: {
+				start: '2026-08-21T19:00:00.000Z',
+				end: '2026-08-22T19:00:00.000Z',
+				combined: { events: 80, errors: 16, rate: 0.2 },
+				by_metric: [],
+			},
+			previous: {
+				start: '2026-08-20T19:00:00.000Z',
+				end: '2026-08-21T19:00:00.000Z',
+				combined: { events: 80, errors: 2, rate: 0.025 },
+				by_metric: [],
+			},
+		},
+		hour: {
+			kind: 'hour',
+			recent: {
+				start: '2026-08-22T18:00:00.000Z',
+				end: '2026-08-22T19:00:00.000Z',
+				combined: { events: 20, errors: 2, rate: 0.1 },
+				by_metric: [],
+			},
+			previous: {
+				start: '2026-08-22T17:00:00.000Z',
+				end: '2026-08-22T18:00:00.000Z',
+				combined: { events: 20, errors: 1, rate: 0.05 },
+				by_metric: [],
+			},
+		},
+	})
+	const data = await loadAdminInsightsData(
+		{
+			APP_DB: createInsightsTestDb(),
+			AUDIT_DB: createInsightsTestDb(),
+			WRANGLER_IS_LOCAL_DEV: 'true',
+		} as Env,
+		now,
+	)
+	expect(data.packageErrorRate).toEqual({
+		available: true,
+		updatedAt: '2026-08-22T19:32:00.000Z',
+		environment: 'production',
+		lastAlertAt: '2026-08-22T19:32:00.000Z',
+		day: expect.objectContaining({ kind: 'day' }),
+		hour: expect.objectContaining({ kind: 'hour' }),
+	})
+	expect(JSON.stringify(data.packageErrorRate)).not.toContain('user_id')
 })
 
 test('loadAdminInsightsData warns when EMAIL_EVENTS binding is missing', async () => {

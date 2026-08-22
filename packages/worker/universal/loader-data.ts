@@ -587,6 +587,44 @@ export type AdminInsightsEntitlementPressureUser = {
 	pressuredResources: Array<AdminInsightsEntitlementPressureResource>
 }
 
+export type AdminInsightsPackageErrorRateCounts = {
+	events: number
+	errors: number
+	rate: number | null
+}
+
+export type AdminInsightsPackageErrorRateMetricRow =
+	AdminInsightsPackageErrorRateCounts & {
+		metric:
+			| 'package_export'
+			| 'package_static_call'
+			| 'job_run'
+			| 'workflow_run'
+	}
+
+export type AdminInsightsPackageErrorRateWindow = {
+	start: string
+	end: string
+	combined: AdminInsightsPackageErrorRateCounts
+	by_metric: Array<AdminInsightsPackageErrorRateMetricRow>
+}
+
+export type AdminInsightsPackageErrorRateComparison = {
+	kind: 'hour' | 'day'
+	recent: AdminInsightsPackageErrorRateWindow
+	previous: AdminInsightsPackageErrorRateWindow
+}
+
+/** Content-free fleet package-runtime error rates. Missing when AE/KV is empty. */
+export type AdminInsightsPackageErrorRate = {
+	available: boolean
+	updatedAt: string | null
+	environment: string | null
+	day: AdminInsightsPackageErrorRateComparison | null
+	hour: AdminInsightsPackageErrorRateComparison | null
+	lastAlertAt: string | null
+}
+
 export type AdminInsightsLoaderData = {
 	ok: true
 	generatedAt: string
@@ -607,6 +645,7 @@ export type AdminInsightsLoaderData = {
 	topEventCountConsumers: Array<AdminInsightsEventCountConsumer>
 	topDurationConsumersByMetric: Array<AdminInsightsMetricDurationConsumers>
 	entitlementPressure: Array<AdminInsightsEntitlementPressureUser>
+	packageErrorRate: AdminInsightsPackageErrorRate
 }
 
 export type AdminSystemEmailListItem = {
