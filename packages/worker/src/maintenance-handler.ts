@@ -12,6 +12,13 @@ export class MaintenanceFailureError extends Error {
 	}
 }
 
+export class MaintenanceClientError extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = 'MaintenanceClientError'
+	}
+}
+
 type SecretMaintenanceRequestInput = {
 	request: Request
 	secret: string | null | undefined
@@ -84,6 +91,9 @@ export async function handleSecretMaintenanceRequest(
 		const result = await input.run()
 		return Response.json({ ...result, ok: true })
 	} catch (error) {
+		if (error instanceof MaintenanceClientError) {
+			return Response.json({ ok: false, error: error.message }, { status: 400 })
+		}
 		if (error instanceof MaintenanceFailureError) {
 			return Response.json(
 				{ ...error.result, ok: false, error: error.message },

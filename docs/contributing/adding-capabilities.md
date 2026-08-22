@@ -400,7 +400,9 @@ the domain modules.
    keywords, or schemas, run the guarded
    `POST /__maintenance/reindex-capabilities` maintenance endpoint so Vectorize
    has fresh Workers AI embeddings. The endpoint also rebuilds memory, job, and
-   saved-package vectors with user-scoped metadata.
+   saved-package vectors with user-scoped metadata. Each POST is time-budgeted;
+   if the JSON response has `complete: false`, POST again with
+   `{ "cursor": <response.cursor> }` until `complete` is true.
 
 Example (assuming `example` exists in `capabilityDomainNames`):
 

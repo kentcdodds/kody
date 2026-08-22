@@ -282,10 +282,11 @@ Worker secrets:
   endpoints. Use the reindex endpoint after changing the embedding model,
   pooling, or Vectorize index dimensions; it rebuilds built-in capability,
   memory, job, and saved-package vectors with per-user `userId` metadata on
-  user-owned rows. Use the re-encrypt endpoint to rewrite remaining pre-AAD
-  (2-part) secret ciphertexts to v2 without rotating `SECRET_STORE_KEY` (see
-  [Secret rotation](./secret-rotation.md)). Local dev uses offline search while
-  `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
+  user-owned rows. Each call is time-budgeted and may return `complete: false`
+  plus a `cursor` to resume. Use the re-encrypt endpoint to rewrite remaining
+  pre-AAD (2-part) secret ciphertexts to v2 without rotating `SECRET_STORE_KEY`
+  (see [Secret rotation](./secret-rotation.md)). Local dev uses offline search
+  while `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
 - **`JOB_REINDEX_SECRET`** — optional Worker secret; bearer token for
   `POST /__maintenance/reindex-jobs` when you want a jobs-only Vectorize rebuild
   (without the full capability/memory/package reindex that

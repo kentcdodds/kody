@@ -1348,7 +1348,10 @@ deterministic so upserts and deletes target the same vector.
 Search paths query only per-account namespaces plus the reserved builtin
 namespace. Vector rows are derived from D1 and can be rebuilt with the bounded
 `POST /__maintenance/reindex-capabilities` sweep, which keyset-pages memory,
-job, and saved-package rows and rebuilds builtins in their reserved namespace.
+job, and saved-package rows, rebuilds builtins in their reserved namespace, and
+returns before a request-time budget. An incomplete sweep includes
+`complete: false` and a `cursor` so the caller can POST again until `complete`
+is true. Production deploy CI loops that endpoint after each production ship.
 
 ### `entity_sources` and package import contracts
 

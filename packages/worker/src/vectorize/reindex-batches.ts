@@ -27,7 +27,7 @@ export type VectorReindexResult = {
 	failedIds?: Array<string>
 }
 
-const upsertBatchSize = 16
+export const vectorReindexUpsertBatchSize = 16
 const maxReportedFailures = 20
 
 // Combines per-page reindex results from keyset-paged drivers into a single
@@ -143,9 +143,11 @@ export async function reindexVectorCandidates(input: {
 	for (
 		let offset = 0;
 		offset < input.candidates.length;
-		offset += upsertBatchSize
+		offset += vectorReindexUpsertBatchSize
 	) {
-		await processBatch(input.candidates.slice(offset, offset + upsertBatchSize))
+		await processBatch(
+			input.candidates.slice(offset, offset + vectorReindexUpsertBatchSize),
+		)
 	}
 
 	if (failed === 0) return { upserted }

@@ -147,7 +147,11 @@ test('saved package reindex retries transient D1 export errors then reports exha
 			baseUrl: 'https://kody.example.com',
 		})
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
-		await expect(recoverPromise).resolves.toEqual({ upserted: 1 })
+		await expect(recoverPromise).resolves.toEqual({
+			upserted: 1,
+			complete: true,
+			afterId: null,
+		})
 	} finally {
 		vi.useRealTimers()
 	}
@@ -177,6 +181,8 @@ test('saved package reindex retries transient D1 export errors then reports exha
 		}
 		await expect(exhaustedPromise).resolves.toEqual({
 			upserted: 0,
+			complete: true,
+			afterId: null,
 			failed: 1,
 			failures: [
 				{
