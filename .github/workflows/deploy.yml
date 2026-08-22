@@ -283,9 +283,7 @@ jobs:
       - sha-guard
       - deploy-jobs-worker
     if: >-
-      always() &&
-      !cancelled() &&
-      needs.sha-guard.result == 'success' &&
+      always() && !cancelled() && needs.sha-guard.result == 'success' &&
       needs.sha-guard.outputs.should_deploy == 'true' &&
       (needs.deploy-jobs-worker.result == 'success' ||
         needs.deploy-jobs-worker.result == 'skipped') &&

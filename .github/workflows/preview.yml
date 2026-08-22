@@ -316,7 +316,8 @@ jobs:
           # worker's JOBS service binding.
           node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" --name "${APP_WORKER_NAME}-jobs" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
 
-      - name: ☁️ Bootstrap preview app Worker (no runtime or platform references)
+      - name:
+          ☁️ Bootstrap preview app Worker (no runtime or platform references)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -337,7 +338,8 @@ jobs:
           PLATFORM_WORKER_NAME:
             ${{ steps.platform_config.outputs.platform_worker_name }}
           WRANGLER_CONFIG:
-            ${{ steps.platform_config.outputs.platform_bootstrap_wrangler_config }}
+            ${{ steps.platform_config.outputs.platform_bootstrap_wrangler_config
+            }}
           DEPLOY_COMMIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
