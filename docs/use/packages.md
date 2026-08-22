@@ -199,20 +199,35 @@ Package reuse follows two rules:
    is always contract-checked before invoking — checking is not optional and not
    a separate API.
 
-`packages.invoke` takes the bare `package.json#kody.id` value as `kodyId` (for
-example, `github`). Do not pass the npm-scoped `package.json.name` (for example,
-`@kentcdodds/github`). The scoped name belongs in static
-`kody:@scope/package/export` imports instead.
+The preferred first argument is the target's scoped Kody module specifier:
+`kody:@username/kodyid` or `kody:@username/kodyid/export-subpath`. The `kody:`
+prefix is preferred; `@username/kodyid` is also accepted for existing callers. A
+package-only specifier requires `exportName` in the options object. When both
+the specifier and options name an export, the specifier's export subpath wins.
 
 ```ts
 import { packages } from 'kody:runtime'
 
-const result = await packages.invoke({
-	kodyId: 'event-subscriber',
-	exportName: './handle-event',
-	params: { event },
+const result = await packages.invoke(
+	'kody:@kentcdodds/event-subscriber/handle-event',
+	{
+		params: { event },
+	},
+)
+
+const profile = await packages.invoke('kody:@kody/google', {
+	exportName: 'profile',
+	params: {},
 })
 ```
+
+The options object accepts `exportName`, `params`, `idempotencyKey`, and
+`topic`. Unknown keys are rejected.
+
+Scoped resolution is exact: `kody:@kody/google` selects the public package owned
+by the platform account, while `kody:@kentcdodds/google` selects the caller's
+package under that person scope. A person scope never grants access to another
+user's packages.
 
 The optional `idempotencyKey` selects between the two invoke modes:
 
@@ -230,8 +245,8 @@ The optional `idempotencyKey` selects between the two invoke modes:
 This mirrors execute's keyless/keyed convention: keyless is on-failure-only and
 lean, keyed is durable and replayable.
 
-Because invocation resolves the target package at runtime, republishing
-`event-subscriber` changes what a dispatcher observes without republishing the
+Because invocation resolves the target package at runtime, republishing the
+scoped target changes what a dispatcher observes without republishing the
 dispatcher. For an event-dispatch package, subscriber dispatch should use
 `packages.invoke` with the source event id as the explicit `idempotencyKey` when
 available.
@@ -244,14 +259,26 @@ invocation error code in the message. Kody surfaces JSDoc/type metadata but not
 a machine-readable params schema for package exports, so params are only
 validated as a JSON object.
 
-The primary identifier is the bare `kodyId`; `kody_id`, `packageId`, and
-`package_id` are accepted aliases. `exportName` is required, and `export_name`
-is accepted as an alias.
+The old object-only form remains available for compatibility:
+
+```ts
+await packages.invoke({
+	kodyId: 'event-subscriber',
+	exportName: './handle-event',
+	params: { event },
+	idempotencyKey: event.id,
+})
+```
+
+This form is deprecated because bare `kodyId` lookup is scoped to the current
+user and is ambiguous when a person package and a platform package share the
+same id. It keeps today's user-scoped lookup behavior and is not removed.
 
 Package runtime contexts, authenticated ad hoc MCP `execute` calls, and package
-job runtimes can call `packages.invoke`, and resolution is scoped to packages
-owned by the current authenticated user. Package code does not need to mint or
-pass package-invocation bearer tokens. Nested package invocations are
+job runtimes can call `packages.invoke`. Person-scoped targets resolve only from
+packages owned by the current authenticated user; public platform-scoped targets
+resolve live from the named platform account. Package code does not need to mint
+or pass package-invocation bearer tokens. Nested package invocations are
 depth-limited to prevent runaway loops.
 
 External trusted clients that must call package exports over HTTP use package
@@ -296,8 +323,8 @@ Every saved package owns one durable storage bucket per user
 - **Writing ad hoc `execute` code against a caller-owned bucket?** Bind a
   `storageId` on the execute call and use ambient `storage`.
 - **Touching another package's data?** Call that package's exports via keyless
-  `packages.invoke({ kodyId, exportName, params })` so its own runtime does the
-  reading and writing.
+  `packages.invoke("kody:@scope/package/export", { params })` so its own runtime
+  does the reading and writing.
 
 `packageStorage()` returns the same storage interface as ambient `storage`
 (`get`/`set`/`list`/`sql`/`delete`/`clear`/`id`), writable, always bound to the

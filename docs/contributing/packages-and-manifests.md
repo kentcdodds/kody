@@ -197,19 +197,23 @@ The agent-facing package-reuse contract is two rules:
 ```ts
 import { packages } from 'kody:runtime'
 
-await packages.invoke({
-	kodyId: 'event-subscriber',
-	exportName: './handle-event',
+await packages.invoke('kody:@kentcdodds/event-subscriber/handle-event', {
 	params: { event },
 	idempotencyKey: event.id, // only when exactly-once is needed
 })
 ```
 
-The `kodyId` field is the bare `package.json#kody.id` value (for example,
-`github`), not the npm-scoped `package.json.name` (for example,
-`@kentcdodds/github`). Static `kody:@scope/package/export` imports use the
-npm-scoped name; dynamic `packages.invoke` uses the bare Kody id (or the saved
-package's immutable `packageId`).
+The preferred first argument is `kody:@scope/package` or
+`kody:@scope/package/export`. The prefixless `@scope/package` form is also
+accepted for compatibility, but docs and generated examples use `kody:`.
+`exportName` is optional only when the specifier includes the export; if both
+are present, the specifier export wins. The second argument accepts
+`exportName`, `params`, `idempotencyKey`, and `topic`; unknown keys fail.
+
+Exact scoped resolution avoids bare-id collisions. A `kody:@kody/...` target
+resolves the public live package owned by the platform account, while a
+`kody:@person/...` target resolves that caller-owned person package. Foreign
+person accounts remain unresolvable.
 
 This path deliberately does not rewrite to a static `kody:@...` import during
 bundle construction. It resolves the target saved package and export at call
@@ -242,8 +246,9 @@ the underlying bracketed code, for example `[invocation_failed] ...`.
 
 Security and loop safeguards:
 
-- Resolution is same-user only; package code cannot invoke another user's saved
-  package.
+- Person-scope resolution is same-user only; package code cannot invoke another
+  person's saved package. Public platform scopes use the existing live platform
+  package resolution.
 - `packages.invoke` requires package runtime context or authenticated execute
   context. Static `kody:@...` imports remain library imports in the caller's
   runtime; use keyless `packages.invoke` when execute or a package job needs to
@@ -252,10 +257,15 @@ Security and loop safeguards:
   package-to-package loops.
 
 For event dispatcher/subscriber packages, dispatchers should use
-`packages.invoke({ kodyId, exportName, params, idempotencyKey })` rather than
-statically importing subscriber packages. Republish subscribers independently;
-the dispatcher will observe the current published subscriber export on its next
-dispatch without being republished.
+`packages.invoke("kody:@scope/package/export", { params, idempotencyKey })`
+rather than statically importing subscriber packages. Republish subscribers
+independently; the dispatcher will observe the current published subscriber
+export on its next dispatch without being republished.
+
+The object-only
+`packages.invoke({ kodyId, exportName, params, idempotencyKey })` overload is
+deprecated but remains supported. It preserves the old current-user bare-id
+lookup and therefore remains collision-prone.
 
 **Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
 dynamic `import("kody:@...")` are not available. `packages.invoke` subsumes both

@@ -19,10 +19,10 @@ Agent notes — for AI agents driving onboarding Step 2 from this page:
 - Keep messages short — under roughly 120 words.
 - NEVER poll, sleep, or retry on a timer. Search once; if the package is not
   found yet, ask them to say when install finished and try once more.
-- Invoke with packages.invoke({ kodyId, exportName, params }) against the
-  installed/forked package. Do NOT rely on a bare platform @kody/* static
-  import for packages that need packageStorage (for example personal-capture) —
-  that fails until the package is forked into their account.
+- Invoke with packages.invoke("kody:@their-username/package/export", { params })
+  against the installed/forked package. Use the owner from the package found by
+  search. Do NOT guess a platform `@kody/*` target for packages that need
+  packageStorage (for example personal-capture).
 - Do not recommend one trigger over another. Offer webhook, Kody app, cron, or
   skip, and let them choose.
 - Do not create extra packages during this loop unless they ask.
@@ -55,15 +55,16 @@ after they confirm. Do not poll.
 
 ## Step 2 — Invoke their copy
 
-Use keyless `packages.invoke` with that kody id. Example shapes:
+Use keyless `packages.invoke` with the installed package's scoped name. Replace
+`their-username` with the owner returned by search:
 
 - **local-conditions** —
-  `packages.invoke({ kodyId: "local-conditions", exportName: "getLocalConditions", params: { place: "Salt Lake City" } })`
+  `packages.invoke("kody:@their-username/local-conditions/getLocalConditions", { params: { place: "Salt Lake City" } })`
 - **hn-pulse** —
-  `packages.invoke({ kodyId: "hn-pulse", exportName: "getTopStories", params: { limit: 5 } })`
+  `packages.invoke("kody:@their-username/hn-pulse/getTopStories", { params: { limit: 5 } })`
 - **personal-capture** —
-  `packages.invoke({ kodyId: "personal-capture", exportName: "capture", params: { text: "Onboarding first build" } })`,
-  then `listCaptures`
+  `packages.invoke("kody:@their-username/personal-capture/capture", { params: { text: "Onboarding first build" } })`,
+  then invoke `kody:@their-username/personal-capture/listCaptures`
 
 Show a short summary of the result.
 
@@ -85,7 +86,7 @@ connect real services (GitHub, Google, Slack, Notion, and more).
   account than the browser session. Wait for their "finished" message; one
   retry.
 - **`packageStorage` / platform invoke errors** — they invoked the platform
-  `@kody/*` copy instead of their fork. Search again and invoke by kody id from
-  their account.
+  `@kody/*` copy instead of their fork. Search again and invoke the exact scoped
+  name owned by their account.
 - **Adaptation required** — rare for these trusted examples. Open the inert fork
   with a repo session only if install reported adaptation was required.
