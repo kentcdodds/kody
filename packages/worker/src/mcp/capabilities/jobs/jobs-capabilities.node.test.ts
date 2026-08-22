@@ -273,6 +273,31 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 			},
 		),
 	).rejects.toThrow('Provide at least one mutable field to update.')
+	await expect(
+		jobUpdateCapability.handler(
+			{
+				id: 'job-123',
+				code: 'export default async () => ({ ok: true })',
+			},
+			{
+				env,
+				callerContext: signedInContext,
+			},
+		),
+	).rejects.toThrow('Job code cannot be changed via job_update.')
+	await expect(
+		jobUpdateCapability.handler(
+			{
+				id: 'job-123',
+				enabled: false,
+				code: 'export default async () => ({ rewritten: true })',
+			},
+			{
+				env,
+				callerContext: signedInContext,
+			},
+		),
+	).rejects.toThrow('Job code cannot be changed via job_update.')
 	expect(mockModule.updateJob).toHaveBeenCalledTimes(2)
 
 	mockModule.deleteJob.mockResolvedValue({

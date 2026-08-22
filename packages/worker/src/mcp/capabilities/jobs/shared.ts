@@ -313,21 +313,38 @@ export const jobUpdateInputSchema = z
 			.describe(
 				'Optional UTC ISO timestamp after which the platform stops scheduling this job and auto-disables it (enabled=false). Pass null to clear. Separate from preserved (retention).',
 			),
+		code: z
+			.unknown()
+			.optional()
+			.describe(
+				'Rejected. Job source cannot be changed via job_update. Edit a package job in the package repo and publish.',
+			),
 	})
-	.refine(
-		(input) =>
-			input.name !== undefined ||
-			input.params !== undefined ||
-			input.schedule !== undefined ||
-			input.timezone !== undefined ||
-			input.enabled !== undefined ||
-			input.kill_switch_enabled !== undefined ||
-			input.preserved !== undefined ||
-			input.expires_at !== undefined,
-		{
-			message: 'Provide at least one mutable field to update.',
-		},
-	)
+	.superRefine((input, ctx) => {
+		if (input.code !== undefined) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['code'],
+				message: 'Job code cannot be changed via job_update.',
+			})
+			return
+		}
+		if (
+			input.name === undefined &&
+			input.params === undefined &&
+			input.schedule === undefined &&
+			input.timezone === undefined &&
+			input.enabled === undefined &&
+			input.kill_switch_enabled === undefined &&
+			input.preserved === undefined &&
+			input.expires_at === undefined
+		) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: 'Provide at least one mutable field to update.',
+			})
+		}
+	})
 
 export const jobRunNowOutputSchema = z.object({
 	job: jobViewOutputSchema,
