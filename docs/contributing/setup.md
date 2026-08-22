@@ -255,6 +255,7 @@ The GitHub Actions preview workflow creates per-preview Cloudflare resources so
 each PR preview is isolated:
 
 - App worker: `<preview-worker-name>` (for kody: `kody-pr-<n>`)
+- Platform worker: `<preview-worker-name>-platform`
 - Runtime worker: `<preview-worker-name>-runtime`
 - Jobs worker: `<preview-worker-name>-jobs`
 - App D1 database: `<preview-worker-name>-db`
@@ -264,8 +265,8 @@ each PR preview is isolated:
 - KV namespace (OAuth state): `<preview-worker-name>-oauth-kv`
 - Mock workers: `<preview-worker-name>-mock-<service>`
 
-When a PR is closed, the cleanup job deletes the preview app/runtime/jobs
-Workers, mock Workers, and these resources as well.
+When a PR is closed, the cleanup job deletes the preview
+app/platform/runtime/jobs Workers, mock Workers, and these resources as well.
 
 Cloudflare Workers supports version `preview_urls`, but those preview URLs are
 not available for Workers that use Durable Objects. The main app Worker binds
