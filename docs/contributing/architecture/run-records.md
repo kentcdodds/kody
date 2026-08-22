@@ -350,7 +350,7 @@ user’s packages that declare the topic (see
 [Package subscriptions](../../guides/package-subscriptions.md)). Emission skips
 `surface === 'subscription'` so a failing notifier cannot recurse. Discovery and
 invocation infrastructure failures are warned, never thrown into the observed
-run path. There is no Queue for this topic in v1.
+run path. There is no Queue for this topic.
 
 **Usage metering** and run records are the aggregates/records pair: metering is
 sampling-tolerant and quota-oriented; run records are user-facing history.

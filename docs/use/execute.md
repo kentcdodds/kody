@@ -151,9 +151,11 @@ must be recoverable:
 - Retrying while the first attempt is still running returns
   **`inProgress: true`** with the **`runId`** (no duplicate start).
 - If a keyed run is stranded as `running` (for example the Worker isolate reset
-  before the terminal write), Kody reconciles it to an **Interrupted** error
-  after a few minutes. Polling **`run_get`** or retrying the same key then
-  returns that terminal outcome instead of `inProgress` forever.
+  before the terminal write), Kody reconciles it to an error with
+  **`errorName=platform_interrupted`** after a few minutes (platform weather;
+  outcome unknown — not a user-authored package failure). Polling **`run_get`**
+  or retrying the same key then returns that terminal outcome instead of
+  `inProgress` forever.
 
 Omit the key for ordinary short calls; key-less execute stays on-failure-only so
 Activity is not flooded with successful one-offs.
@@ -275,7 +277,8 @@ Kody can surface a small number of relevant long-term memories when you pass a
 short **`memoryContext`** on normal MCP tool calls. `search` also retrieves from
 the query string. Surfaced memories appear in the tool text as subject and
 summary only (id in structured content). Later retrievals can repeat that
-compact block.
+compact block. Full contract (including `dedupe_key` collapse and the verify
+workflow): [Memory and conversation context](./memory.md).
 
 Handled **execute** responses also include top-level **`timing`** metadata with
 `startedAt`, `endedAt`, and `durationMs` alongside `conversationId`. Use it for

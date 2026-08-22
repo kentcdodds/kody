@@ -32,9 +32,9 @@ Keep it brief and factual. Good fields include:
 - important entities
 - important constraints
 
-`search` also retrieves from the query string when `memoryContext` is omitted.
-Domain-scoped search still does this. `execute` retrieves when `memoryContext`
-is present.
+`search` also retrieves from the query string when `memoryContext` is omitted,
+including domain-scoped search. `execute` retrieves when `memoryContext` is
+present.
 
 ## Automatic memory surfacing
 
@@ -42,14 +42,17 @@ When retrieval runs, Kody may return the top one or two relevant active
 memories, including ones surfaced earlier, in the tool text (as
 `## Relevant memories`) and in structured content. Auto-surface is compact:
 **subject**, **summary**, and **id** (structured). Details stay behind
-`meta_memory_get`.
+`meta_memory_get`. Later ranked hits that share a non-empty `dedupe_key` are
+collapsed so two copies of the same fact cannot spend both slots; blank or
+missing keys surface independently.
 
 That retrieval is:
 
-- **conservative** — the top one or two ranked active memories
+- **conservative** — the top one or two ranked active memories after
+  `dedupe_key` collapse
 - **task-based** — driven by `memoryContext` and, for `search`, the query
 - **cheap to repeat** — subject and summary only; the same one-liners may appear
-  again so a compacted context still has the rule
+  again so a compacted context keeps the rule
 
 ## Verify-first rule for memory writes
 
