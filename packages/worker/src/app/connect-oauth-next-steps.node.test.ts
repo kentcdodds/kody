@@ -7,6 +7,7 @@ import {
 	buildConnectOauthNextSteps,
 	buildConnectOauthNextStepsGuidance,
 	buildConnectOauthPackageSuggestion,
+	communityListingUsesProvider,
 	connectOauthCommunitySearchCandidateLimit,
 	connectOauthPackageSuggestionLimit,
 	loadConnectOauthNextSteps,
@@ -57,6 +58,19 @@ function listing(
 		...overrides,
 		kodyId,
 		name,
+	}
+}
+
+function githubIntegration() {
+	return {
+		name: 'github',
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		apiBaseUrl: 'https://api.github.com',
+		requiredHosts: ['api.github.com'],
+		authorization: {
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			scopes: ['repo'],
+		},
 	}
 }
 
@@ -178,6 +192,135 @@ test('buildConnectOauthNextSteps ranks trusted-first, caps suggestions, and vari
 	)
 })
 
+test('post-OAuth suggestions keep only listings that use the connected provider', () => {
+	expect(
+		communityListingUsesProvider(
+			{
+				kodyId: 'github',
+				name: '@kody/github',
+				tags: ['github', 'oauth'],
+			},
+			'github',
+		),
+	).toBe(true)
+	expect(
+		communityListingUsesProvider(
+			{
+				kodyId: 'cursor',
+				name: '@kody/cursor',
+				tags: ['cursor', 'cloud-agents'],
+			},
+			'github',
+		),
+	).toBe(false)
+	expect(
+		communityListingUsesProvider(
+			{
+				kodyId: 'morning-briefing',
+				name: '@kody/morning-briefing',
+				tags: ['morning', 'calendar', 'weather'],
+			},
+			'google',
+		),
+	).toBe(false)
+	expect(
+		communityListingUsesProvider(
+			{
+				kodyId: 'cal-com',
+				name: '@kody/cal-com',
+				tags: ['cal-com', 'calendar', 'oauth'],
+			},
+			'google',
+		),
+	).toBe(false)
+
+	const nextSteps = buildConnectOauthNextSteps({
+		integrationName: 'github',
+		providerName: 'github',
+		baseUrl: 'https://example.com',
+		listings: [
+			listing({
+				id: 'trusted-cursor',
+				name: 'cursor',
+				trusted: true,
+				description: 'Cursor API SDK for cloud agents and repositories.',
+				tags: ['cursor', 'cloud-agents', 'api'],
+			}),
+			listing({
+				id: 'raycast-pouch',
+				name: 'raycast-kodys-pouch',
+				trusted: false,
+				description: 'Your Kody Skills and Tools, one command away.',
+				tags: ['raycast', 'pouch'],
+			}),
+			listing({
+				id: 'morning-briefing',
+				name: 'morning-briefing',
+				trusted: false,
+				description: 'Daily briefing from calendar and weather.',
+				tags: ['morning', 'calendar', 'weather'],
+			}),
+			listing({
+				id: 'github-helpers',
+				name: 'github',
+				trusted: false,
+				description: 'Call GitHub REST through saved GitHub OAuth.',
+				tags: ['github', 'api', 'oauth'],
+			}),
+			listing({
+				id: 'github-untrusted',
+				name: 'github-extra',
+				trusted: false,
+				tags: ['github'],
+			}),
+		],
+	})
+
+	expect(nextSteps.suggestions.map((entry) => entry.listingId)).toEqual([
+		'github-helpers',
+		'github-untrusted',
+	])
+	expect(nextSteps.guidance).toBe(
+		buildConnectOauthNextStepsGuidance({
+			integrationName: 'github',
+			suggestionCount: 2,
+			trustedSuggestionCount: 0,
+		}),
+	)
+
+	const googleNextSteps = buildConnectOauthNextSteps({
+		integrationName: 'google-business',
+		providerName: 'google',
+		baseUrl: 'https://example.com',
+		listings: [
+			listing({
+				id: 'morning-briefing',
+				name: 'morning-briefing',
+				trusted: true,
+				description: 'Composable daily briefing from calendar and weather.',
+				tags: ['morning', 'briefing', 'calendar'],
+			}),
+			listing({
+				id: 'cal-com',
+				name: 'cal-com',
+				trusted: false,
+				description: 'Cal.com booking pages and event types.',
+				tags: ['cal-com', 'calendar', 'oauth'],
+			}),
+			listing({
+				id: 'google-helpers',
+				name: 'google',
+				trusted: false,
+				description: 'Call Gmail and Calendar through saved Google OAuth.',
+				tags: ['google', 'gmail', 'oauth'],
+			}),
+		],
+	})
+	expect(googleNextSteps.suggestions.map((entry) => entry.listingId)).toEqual([
+		'google-helpers',
+	])
+})
+
 test('loadConnectOauthNextSteps searches with bounded limit and fails open', async () => {
 	mockModule.searchCommunityListings.mockResolvedValueOnce([
 		listing({
@@ -198,6 +341,7 @@ test('loadConnectOauthNextSteps searches with bounded limit and fails open', asy
 		integrationName: 'github',
 		providerQuery: 'GitHub',
 		baseUrl: 'https://example.com',
+		integration: githubIntegration(),
 	})
 
 	expect(mockModule.searchCommunityListings).toHaveBeenCalledWith({
@@ -205,6 +349,7 @@ test('loadConnectOauthNextSteps searches with bounded limit and fails open', asy
 		query: 'GitHub',
 		limit: connectOauthCommunitySearchCandidateLimit,
 		trustedFirst: true,
+		resultFilter: expect.any(Function),
 	})
 	expect(nextSteps.suggestions.map((entry) => entry.listingId)).toEqual([
 		'trusted',
@@ -217,6 +362,7 @@ test('loadConnectOauthNextSteps searches with bounded limit and fails open', asy
 		env,
 		integrationName: 'github',
 		baseUrl: 'https://example.com',
+		integration: githubIntegration(),
 	})
 	expect(failedOpen.suggestions).toEqual([])
 	expect(failedOpen.guidance).toBe(
@@ -236,4 +382,82 @@ test('loadConnectOauthNextSteps searches with bounded limit and fails open', asy
 			query: 'github',
 		}),
 	)
+})
+
+test('loadConnectOauthNextSteps resolves the stable provider and drops unrelated listings', async () => {
+	const googleCandidates = [
+		listing({
+			id: 'morning-briefing',
+			name: 'morning-briefing',
+			trusted: true,
+			tags: ['morning', 'calendar'],
+		}),
+		listing({
+			id: 'cal-com',
+			name: 'cal-com',
+			trusted: false,
+			tags: ['cal-com', 'calendar', 'oauth'],
+		}),
+		listing({
+			id: 'google-helpers',
+			name: 'google',
+			trusted: false,
+			tags: ['google', 'gmail', 'oauth'],
+		}),
+	]
+	mockModule.searchCommunityListings.mockImplementationOnce(
+		async (input: {
+			query: string
+			resultFilter?: (entry: ReturnType<typeof listing>) => boolean
+		}) => {
+			expect(input.query).toBe('google')
+			return googleCandidates.filter((entry) =>
+				input.resultFilter ? input.resultFilter(entry) : true,
+			)
+		},
+	)
+
+	const env = { APP_DB: {} } as Env
+	const googleBusiness = await loadConnectOauthNextSteps({
+		env,
+		integrationName: 'google-business',
+		baseUrl: 'https://example.com',
+		integration: {
+			name: 'google-business',
+			tokenUrl: 'https://oauth2.googleapis.com/token',
+			apiBaseUrl: 'https://www.googleapis.com/calendar/v3',
+			requiredHosts: ['www.googleapis.com'],
+			authorization: {
+				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+				scopes: ['https://www.googleapis.com/auth/calendar'],
+			},
+		},
+	})
+	expect(googleBusiness.suggestions.map((entry) => entry.listingId)).toEqual([
+		'google-helpers',
+	])
+
+	mockModule.searchCommunityListings.mockResolvedValueOnce([
+		listing({
+			id: 'trusted-cursor',
+			name: 'cursor',
+			trusted: true,
+			tags: ['cursor'],
+		}),
+		listing({
+			id: 'github-helpers',
+			name: 'github',
+			trusted: false,
+			tags: ['github', 'oauth'],
+		}),
+	])
+	const githubNextSteps = await loadConnectOauthNextSteps({
+		env,
+		integrationName: 'github',
+		baseUrl: 'https://example.com',
+		integration: githubIntegration(),
+	})
+	expect(githubNextSteps.suggestions.map((entry) => entry.listingId)).toEqual([
+		'github-helpers',
+	])
 })

@@ -1523,6 +1523,35 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 	mockModule.searchCommunityListings.mockClear()
 	mockModule.searchCommunityListings.mockResolvedValueOnce([
 		{
+			id: 'unrelated-cursor',
+			ownerUserId: 'owner',
+			packageId: 'pkg-cursor',
+			sourceId: 'src-cursor',
+			kodyId: 'cursor',
+			name: '@kody/cursor',
+			description: 'Cursor API SDK for cloud agents.',
+			tags: ['cursor', 'cloud-agents'],
+			searchText: null,
+			readmeContent: null,
+			license: 'MIT',
+			pinnedCommit: 'aaa',
+			iconCommit: 'aaa',
+			status: 'active',
+			trustedCommit: 'aaa',
+			trustedAt: '2026-01-01T00:00:00.000Z',
+			trusted: true,
+			featuredAt: null,
+			featured: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+			publishedAt: '2026-01-01T00:00:00.000Z',
+			averageStars: 5,
+			ratingCount: 1,
+			averageAdaptationEffort: 1,
+			forkCount: 9,
+			starCount: 2,
+		},
+		{
 			id: 'canva-untrusted',
 			ownerUserId: 'owner',
 			packageId: 'pkg',
@@ -1646,6 +1675,7 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 		query: 'canva',
 		limit: 12,
 		trustedFirst: true,
+		resultFilter: expect.any(Function),
 	})
 	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(
 		expect.objectContaining({

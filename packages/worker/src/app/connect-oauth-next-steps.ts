@@ -2,6 +2,19 @@ import { buildForkPrompt } from '#app/community-public.ts'
 import { searchCommunityListings } from '#worker/community/service.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 import { buildCommunityPublicUrl } from '#mcp/capabilities/community/shared.ts'
+import {
+	packageIdentityMentionsProvider,
+	resolveIntegrationProviderName,
+} from '#mcp/tools/integration-package-suggestions.ts'
+
+type ConnectOauthSuggestionProvider = Parameters<
+	typeof resolveIntegrationProviderName
+>[0]
+
+type CommunityListingProviderIdentity = Pick<
+	CommunityListingWithAggregates,
+	'kodyId' | 'name' | 'tags'
+>
 
 export const connectOauthPackageSuggestionLimit = 3
 export const connectOauthCommunitySearchCandidateLimit = 12
@@ -66,6 +79,26 @@ export function buildConnectOauthNextStepsGuidance(input: {
 	return `${base} Community listings below may help, but none are trusted yet — review carefully before forking, or create a thin helpers package.`
 }
 
+/**
+ * Same-provider gate used by MCP integration detail: a listing is related
+ * only when its kody id, name, or tags mention the connected provider.
+ * Description/README prose is ignored so a trusted Cursor SDK does not
+ * surface after a GitHub connect.
+ */
+export function communityListingUsesProvider(
+	listing: CommunityListingProviderIdentity,
+	providerName: string,
+): boolean {
+	return packageIdentityMentionsProvider(
+		{
+			kodyId: listing.kodyId,
+			name: listing.name,
+			tags: listing.tags,
+		},
+		providerName,
+	)
+}
+
 export function buildConnectOauthPackageSuggestion(input: {
 	listing: Pick<
 		CommunityListingWithAggregates,
@@ -93,10 +126,15 @@ export function buildConnectOauthPackageSuggestion(input: {
 
 export function buildConnectOauthNextSteps(input: {
 	integrationName: string
+	providerName?: string
 	baseUrl: string
 	listings: ReadonlyArray<CommunityListingWithAggregates>
 }): ConnectOauthNextSteps {
-	const ranked = rankTrustedFirstCommunityListings(input.listings).slice(
+	const providerName = input.providerName ?? input.integrationName
+	const related = input.listings.filter((listing) =>
+		communityListingUsesProvider(listing, providerName),
+	)
+	const ranked = rankTrustedFirstCommunityListings(related).slice(
 		0,
 		connectOauthPackageSuggestionLimit,
 	)
@@ -126,14 +164,21 @@ export function buildConnectOauthNextSteps(input: {
 /**
  * Bounded community search for post-connect suggestions. Fails open to an empty
  * suggestion list so OAuth connect never blocks on marketplace availability.
+ * Search is scoped to the resolved provider and filtered to listings that
+ * actually mention that provider in identity fields.
  */
 export async function loadConnectOauthNextSteps(input: {
 	env: Env
 	integrationName: string
 	baseUrl: string
+	integration: ConnectOauthSuggestionProvider
 	providerQuery?: string
 }): Promise<ConnectOauthNextSteps> {
-	const query = (input.providerQuery ?? input.integrationName).trim()
+	const providerName = resolveIntegrationProviderName({
+		...input.integration,
+		name: input.integration.name || input.integrationName,
+	})
+	const query = (input.providerQuery ?? providerName).trim()
 	let listings: Array<CommunityListingWithAggregates> = []
 	if (query) {
 		try {
@@ -142,6 +187,8 @@ export async function loadConnectOauthNextSteps(input: {
 				query,
 				limit: connectOauthCommunitySearchCandidateLimit,
 				trustedFirst: true,
+				resultFilter: (listing) =>
+					communityListingUsesProvider(listing, providerName),
 			})
 		} catch (error) {
 			console.error(
@@ -157,6 +204,7 @@ export async function loadConnectOauthNextSteps(input: {
 	}
 	return buildConnectOauthNextSteps({
 		integrationName: input.integrationName,
+		providerName,
 		baseUrl: input.baseUrl,
 		listings,
 	})
