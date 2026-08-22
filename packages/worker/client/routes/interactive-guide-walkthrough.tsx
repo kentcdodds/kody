@@ -49,7 +49,9 @@ export function renderInteractiveGuideWalkthrough(input: {
 					<h2 id={`${act.id}-title`}>{act.title}</h2>
 					<ol mix={css(threadCss)}>
 						{act.lines.map((line, index) => (
-							<li key={`${act.id}-${index}`}>{renderLine(line)}</li>
+							<li key={`${act.id}-${index}`}>
+								{renderInteractiveGuideLine(line)}
+							</li>
 						))}
 					</ol>
 				</section>
@@ -60,7 +62,7 @@ export function renderInteractiveGuideWalkthrough(input: {
 	)
 }
 
-function renderLine(line: TranscriptLine) {
+export function renderInteractiveGuideLine(line: TranscriptLine) {
 	switch (line.role) {
 		case 'user':
 			return (

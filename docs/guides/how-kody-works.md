@@ -13,8 +13,10 @@ category: platform
 <!--
 Agent notes — for AI agents explaining or recreating this loop:
 
-- The web page at /guides/how-kody-works is an interactive transcript of the
-  same story. This markdown is the playbook.
+- The homepage plays this same transcript in a pause-on-explore player
+  (hover or focus pauses so a person can open tool calls).
+- The web page at /guides/how-kody-works is the full interactive transcript of
+  the same story. This markdown is the playbook.
 - Do not create the example package unless the person asks you to build it
   for them. If they do, follow package_authoring and package_lifecycle.
 - Search for GitHub activity ranks the saved `githubAccessToken` secret —
