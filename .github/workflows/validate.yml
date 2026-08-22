@@ -108,9 +108,9 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run deploy-guardrails:check
 
-      - name: 📚 Temporal docs
+      - name: 📚 Docs
         if: ${{ !cancelled() }}
-        run: npm run docs:check-temporal
+        run: npm run docs:check-temporal && npm run docs:check-decisions
 
   node:
     runs-on: ubuntu-latest

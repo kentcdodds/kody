@@ -26,6 +26,8 @@ slug. Keep it to roughly half a page.
 Do **not** write an ADR on every PR. Number collisions (two 0022s, then two
 0028s, then two 0029s the same day) are the failure mode of that habit. If a
 number collides, renumber the later record; do not leave duplicates.
+`npm run docs:check-decisions` (part of `npm run validate`) rejects duplicate
+primary numbers. A lab note may share a number only as `NNNN-*-lab.md`.
 
 Do **not** record layout or UI tweaks, mode assignments, or "we use library X"
 unless that pick is a no that will otherwise be re-litigated.
