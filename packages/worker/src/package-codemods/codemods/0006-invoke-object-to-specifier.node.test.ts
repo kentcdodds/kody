@@ -126,6 +126,69 @@ test('0006 partially migrates safe files and reports ambiguous calls for review'
 	expect(result.files['broken.ts']).toBe(files['broken.ts'])
 })
 
+test('0006 migrates JavaScript and TypeScript examples in Markdown', () => {
+	const files = {
+		'package.json': manifest('@docs-owner/demo'),
+		'README.md': [
+			'# Usage',
+			'',
+			'```ts',
+			"const result = await packages.invoke({ kodyId: 'github', exportName: './request', params: {} })",
+			'```',
+			'',
+			"For the default export, use `packages.invoke({ exportName: '.', kodyId: 'inbox' })`.",
+			'',
+			'Already migrated: `packages.invoke("kody:@docs-owner/calendar/list", { params: {} })`.',
+			'',
+		].join('\n'),
+	}
+
+	expect(invokeObjectToSpecifierCodemod.detect(files)).toEqual([
+		{
+			path: 'README.md',
+			message: expect.stringContaining('deprecated object-only'),
+		},
+	])
+	const result = invokeObjectToSpecifierCodemod.transform(files)
+	expect(result.changed).toBe(true)
+	expect(result.changedPaths).toEqual(['README.md'])
+	expect(result.needsManual).toEqual([])
+	expect(result.files['README.md']).toContain(
+		'packages.invoke("kody:@docs-owner/github", { exportName:',
+	)
+	expect(result.files['README.md']).toContain(
+		'`packages.invoke("kody:@docs-owner/inbox", { exportName:',
+	)
+	expect(result.files['README.md']).toContain(
+		'packages.invoke("kody:@docs-owner/calendar/list", { params: {} })',
+	)
+
+	const rerun = invokeObjectToSpecifierCodemod.transform(result.files)
+	expect(rerun.changed).toBe(false)
+	expect(rerun.files).toEqual(result.files)
+
+	const ambiguous = {
+		'package.json': manifest(),
+		'README.md': [
+			'# Historical API',
+			'',
+			'```text',
+			"packages.invoke({ kodyId: 'worker', exportName: './run' })",
+			'```',
+			'',
+		].join('\n'),
+	}
+	const ambiguousResult = invokeObjectToSpecifierCodemod.transform(ambiguous)
+	expect(ambiguousResult.changed).toBe(false)
+	expect(ambiguousResult.files).toEqual(ambiguous)
+	expect(ambiguousResult.needsManual).toEqual([
+		{
+			path: 'README.md',
+			message: expect.stringContaining('cannot be migrated safely'),
+		},
+	])
+})
+
 test('0006 requires a scoped manifest and is registered for admin runs', () => {
 	const invalidManifestFiles = {
 		'package.json': manifest('demo'),

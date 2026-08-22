@@ -22,6 +22,19 @@ const parseFailureMessage =
 
 const packageManifestPath = 'package.json'
 const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
+const markdownFilePattern = /\.mdx?$/
+const markdownModuleLanguages = new Set([
+	'cjs',
+	'cts',
+	'javascript',
+	'js',
+	'jsx',
+	'mjs',
+	'mts',
+	'ts',
+	'tsx',
+	'typescript',
+])
 const supportedOptionKeys = new Set([
 	'exportName',
 	'params',
@@ -52,7 +65,15 @@ type SourceRewrite = {
 type FileClassification = {
 	path: string
 	rewrites: Array<SourceRewrite>
-	manual: boolean
+	manualMessage: string | null
+}
+
+type MarkdownCodeFence = {
+	start: number
+	end: number
+	contentStart: number
+	contentEnd: number
+	language: string
 }
 
 function isTypeDeclarationFilePath(path: string) {
@@ -245,20 +266,23 @@ function rewritesOverlap(rewrites: Array<SourceRewrite>) {
 	)
 }
 
-function classifyFile(input: {
+function classifyModuleSource(input: {
 	path: string
 	source: string
 	scope: string
+	offset?: number
 }): FileClassification | null {
-	if (!scannableModuleFilePattern.test(input.path)) return null
-	if (isTypeDeclarationFilePath(input.path)) return null
 	if (!input.source.includes('packages') || !input.source.includes('invoke')) {
 		return null
 	}
 	const program = parseProgram(input.source)
 	if (!program) {
 		return /packages\s*\??\.\s*invoke\b/.test(input.source)
-			? { path: input.path, rewrites: [], manual: true }
+			? {
+					path: input.path,
+					rewrites: [],
+					manualMessage: parseFailureMessage,
+				}
 			: null
 	}
 	const rewrites: Array<SourceRewrite> = []
@@ -302,11 +326,156 @@ function classifyFile(input: {
 
 	visit(program)
 	if (rewrites.length === 0 && !manual) return null
+	const offset = input.offset ?? 0
+	const offsetRewrites = rewrites.map((rewrite) => ({
+		...rewrite,
+		start: rewrite.start + offset,
+		end: rewrite.end + offset,
+	}))
+	return {
+		path: input.path,
+		rewrites: offsetRewrites,
+		manualMessage:
+			manual || rewritesOverlap(rewrites) ? manualRewriteMessage : null,
+	}
+}
+
+function listMarkdownCodeFences(source: string): Array<MarkdownCodeFence> {
+	const fences: Array<MarkdownCodeFence> = []
+	const openerPattern = /^(?: {0,3})(`{3,}|~{3,})([^\n]*)\r?\n/gm
+	let opener: RegExpExecArray | null
+	while ((opener = openerPattern.exec(source))) {
+		const marker = opener[1]
+		if (!marker) continue
+		const markerCharacter = marker[0]
+		if (!markerCharacter) continue
+		const contentStart = opener.index + opener[0].length
+		const closingPattern = new RegExp(
+			`^(?: {0,3})${markerCharacter === '`' ? '`' : '~'}{${marker.length},}[ \\t]*\\r?$`,
+			'gm',
+		)
+		closingPattern.lastIndex = contentStart
+		const closing = closingPattern.exec(source)
+		if (!closing) break
+		const language = (opener[2] ?? '').trim().split(/\s+/, 1)[0]?.toLowerCase()
+		fences.push({
+			start: opener.index,
+			end: closing.index + closing[0].length,
+			contentStart,
+			contentEnd: closing.index,
+			language: language ?? '',
+		})
+		openerPattern.lastIndex = closing.index + closing[0].length
+	}
+	return fences
+}
+
+function rangeOverlaps(
+	range: { start: number; end: number },
+	ranges: ReadonlyArray<{ start: number; end: number }>,
+) {
+	return ranges.some(
+		(candidate) => range.start < candidate.end && candidate.start < range.end,
+	)
+}
+
+function sourceOutsideRangesHasDeprecatedObjectCall(
+	source: string,
+	ranges: ReadonlyArray<{ start: number; end: number }>,
+) {
+	const sorted = [...ranges].sort((left, right) => left.start - right.start)
+	let cursor = 0
+	for (const range of sorted) {
+		if (
+			/packages\s*\??\.\s*invoke\s*\(\s*\{/.test(
+				source.slice(cursor, range.start),
+			)
+		) {
+			return true
+		}
+		cursor = Math.max(cursor, range.end)
+	}
+	return /packages\s*\??\.\s*invoke\s*\(\s*\{/.test(source.slice(cursor))
+}
+
+function classifyMarkdownFile(input: {
+	path: string
+	source: string
+	scope: string
+}): FileClassification | null {
+	if (!input.source.includes('packages') || !input.source.includes('invoke')) {
+		return null
+	}
+	const fences = listMarkdownCodeFences(input.source)
+	const coveredRanges: Array<{ start: number; end: number }> = fences.map(
+		(fence) => ({ start: fence.start, end: fence.end }),
+	)
+	const rewrites: Array<SourceRewrite> = []
+	let manualMessage: string | null = null
+	for (const fence of fences) {
+		const content = input.source.slice(fence.contentStart, fence.contentEnd)
+		if (!markdownModuleLanguages.has(fence.language)) {
+			if (/packages\s*\??\.\s*invoke\s*\(\s*\{/.test(content)) {
+				manualMessage ??= manualRewriteMessage
+			}
+			continue
+		}
+		const classification = classifyModuleSource({
+			path: input.path,
+			source: content,
+			scope: input.scope,
+			offset: fence.contentStart,
+		})
+		if (!classification) continue
+		rewrites.push(...classification.rewrites)
+		manualMessage ??= classification.manualMessage
+	}
+
+	const inlineCodePattern = /`([^`\n]+)`/g
+	let inlineCode: RegExpExecArray | null
+	while ((inlineCode = inlineCodePattern.exec(input.source))) {
+		const fullRange = {
+			start: inlineCode.index,
+			end: inlineCode.index + inlineCode[0].length,
+		}
+		if (rangeOverlaps(fullRange, coveredRanges)) continue
+		coveredRanges.push(fullRange)
+		const content = inlineCode[1] ?? ''
+		const classification = classifyModuleSource({
+			path: input.path,
+			source: content,
+			scope: input.scope,
+			offset: inlineCode.index + 1,
+		})
+		if (!classification) continue
+		rewrites.push(...classification.rewrites)
+		manualMessage ??= classification.manualMessage
+	}
+
+	if (sourceOutsideRangesHasDeprecatedObjectCall(input.source, coveredRanges)) {
+		manualMessage ??= manualRewriteMessage
+	}
+	if (rewrites.length === 0 && manualMessage == null) return null
 	return {
 		path: input.path,
 		rewrites,
-		manual: manual || rewritesOverlap(rewrites),
+		manualMessage:
+			manualMessage ??
+			(rewritesOverlap(rewrites) ? manualRewriteMessage : null),
 	}
+}
+
+function classifyFile(input: {
+	path: string
+	source: string
+	scope: string
+}): FileClassification | null {
+	if (markdownFilePattern.test(input.path)) {
+		return classifyMarkdownFile(input)
+	}
+	if (!scannableModuleFilePattern.test(input.path)) return null
+	if (isTypeDeclarationFilePath(input.path)) return null
+	return classifyModuleSource(input)
 }
 
 function classifyFiles(
@@ -333,9 +502,7 @@ function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
 	}
 	return classifications.map((classification) => ({
 		path: classification.path,
-		message: classification.manual
-			? manualRewriteMessage
-			: rewriteDetectMessage,
+		message: classification.manualMessage ?? rewriteDetectMessage,
 	}))
 }
 
@@ -389,13 +556,10 @@ function transform(
 	const changedPaths: Array<string> = []
 	const needsManual: Array<PackageCodemodFinding> = []
 	for (const classification of classifications) {
-		if (classification.manual) {
+		if (classification.manualMessage) {
 			needsManual.push({
 				path: classification.path,
-				message:
-					parseProgram(files[classification.path] ?? '') == null
-						? parseFailureMessage
-						: manualRewriteMessage,
+				message: classification.manualMessage,
 			})
 			continue
 		}

@@ -224,6 +224,9 @@ API to an explicit owner-scoped specifier:
   preserves the old API's caller-owned lookup.
 - Handles direct and optional `packages?.invoke` calls and preserves option
   expressions and keyless/exactly-once behavior.
+- Rewrites complete examples in JavaScript/TypeScript Markdown fences and inline
+  code spans. Untyped/unsupported fences, partial snippets, and matching prose
+  remain unchanged with `needsManual`.
 - Leaves already string-first calls unchanged and is idempotent.
 - Emits `needsManual` for immutable `packageId` targets, dynamic or indirect
   input objects, computed properties, spreads, comments in the removed field,
