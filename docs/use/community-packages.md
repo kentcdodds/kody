@@ -178,11 +178,14 @@ Admins can mark a listing as **trusted** after reviewing its content. Trusted
 listings show a **Trusted** badge on `/community` cards and detail pages, and
 `community_search` / `community_get` include a `trusted` field.
 
-Trust is pinned to the **exact reviewed commit**. When the owner republishes the
-listing with new content, the badge disappears until an admin reviews the new
-version and re-trusts it. A trusted badge means an admin reviewed that version —
-it is still your responsibility (and your agent's) to review forked code before
-publishing it into your account.
+Trust is pinned to the **exact reviewed commit**. When a person-owned listing is
+republished with new content, the badge disappears until an admin reviews the
+new version and re-trusts it. Official listings under a platform account such as
+`@kody` are trusted automatically on `community_publish`, including republishes,
+so the badge stays on the new commit without a separate admin pass. A trusted
+badge still means the listed version was reviewed or is official platform
+content — it is still your responsibility (and your agent's) to review forked
+code before publishing it into your account.
 
 Admins toggle trust from the listing detail page or with the
 `community_set_trusted` capability.
@@ -195,9 +198,11 @@ one-click install. Official starter packages are published under platform scopes
 such as `@kody` by operators who hold a package scope grant on that account —
 they show up like any other community listing, owned by `@kody/...` rather than
 a personal username. Only trusted listings can be featured, and a listing is
-only _shown_ in onboarding while it remains effectively trusted: when the owner
-republishes, it silently drops out of onboarding until an admin re-trusts the
-new version (the featured mark itself is kept, so re-trusting restores it).
+only _shown_ in onboarding while it remains effectively trusted. A person-owned
+republish silently drops the listing from onboarding until an admin re-trusts
+the new version (the featured mark itself is kept, so re-trusting restores it).
+Platform-owned republishes re-pin trust to the new commit, so featured official
+listings stay in onboarding.
 
 Featured listings show a **Featured** badge on their detail page. Admins toggle
 featuring from the listing detail page or with the `community_set_featured`
