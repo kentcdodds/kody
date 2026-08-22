@@ -58,7 +58,8 @@ auto-surface hide**. Repeat is the compaction tax.
 
 ## Revisit
 
-Calendar check: 2027-02-22 (GitHub issue linked from 0033). Keep 0033 unless one
+Calendar check: 2027-02-22
+([#1648](https://github.com/kentcdodds/kody/issues/1648)). Keep 0033 unless one
 of these is true:
 
 1. MCP or a major host puts a spec-defined conversation or thread id on every
