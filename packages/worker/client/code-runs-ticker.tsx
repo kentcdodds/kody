@@ -1,5 +1,6 @@
 import { type Handle } from 'remix/ui'
 import {
+	codeRunsCatchUpDelayMs,
 	codeRunsCatchUpSnapAfterMs,
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
@@ -59,6 +60,7 @@ export function CodeRunsTicker(
 			const now = Date.now()
 			const official = officialAt(now)
 			if (displayed < official) {
+				const behind = official - displayed
 				const next = nextDisplayedCodeRunsCount({
 					displayed,
 					official,
@@ -66,13 +68,9 @@ export function CodeRunsTicker(
 				})
 				show(next, now)
 				if (next < official) {
-					const behind = official - next
-					timeoutId = setTimeout(
-						() => {
-							scheduleNext()
-						},
-						Math.max(16, Math.floor(1000 / behind)),
-					)
+					timeoutId = setTimeout(() => {
+						scheduleNext()
+					}, codeRunsCatchUpDelayMs(behind))
 					return
 				}
 			}
@@ -90,7 +88,7 @@ export function CodeRunsTicker(
 			if (handle.signal.aborted) return
 			const gap = timestamp - lastFrameAt
 			lastFrameAt = timestamp
-			if (gap >= codeRunsCatchUpSnapAfterMs) {
+			if (gap > codeRunsCatchUpSnapAfterMs) {
 				snapToOfficial()
 				scheduleNext()
 			}
