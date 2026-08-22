@@ -15,6 +15,7 @@ import {
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { loadPublicCodeRunsWindow } from '#worker/usage/code-runs-window.ts'
 import { type routes } from '#universal/routes.ts'
 
 export function createHomeHandler(env: Env) {
@@ -28,6 +29,9 @@ export function createHomeHandler(env: Env) {
 					origin,
 				)
 			}
+
+			const codeRunsWindow = await loadPublicCodeRunsWindow(env)
+			const codeRuns = { ok: true as const, window: codeRunsWindow }
 
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
@@ -44,6 +48,7 @@ export function createHomeHandler(env: Env) {
 									env,
 									requestUrl: request.url,
 								}),
+								codeRuns,
 							},
 						}),
 					),
@@ -63,7 +68,7 @@ export function createHomeHandler(env: Env) {
 					await renderAppPage({
 						request,
 						env,
-						loaderData: { onboarding },
+						loaderData: { onboarding, codeRuns },
 					}),
 				),
 				origin,

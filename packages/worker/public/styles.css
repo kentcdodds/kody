@@ -833,6 +833,39 @@ html.is-settled {
 	color: var(--color-text);
 }
 
+.landing-hero-runs {
+	margin: 0.85rem auto 0;
+	display: flex;
+	align-items: baseline;
+	justify-content: center;
+	column-gap: 0.4em;
+	font-size: 0.95rem;
+	color: var(--color-text-muted);
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums lining-nums;
+	font-feature-settings:
+		'tnum' 1,
+		'lnum' 1;
+}
+
+.landing-hero-runs-count {
+	display: inline-block;
+	box-sizing: content-box;
+	min-width: var(--runs-ch, 1ch);
+	text-align: end;
+	font-family: var(--font-body);
+	font-weight: 650;
+	font-variant-numeric: tabular-nums lining-nums;
+	font-feature-settings:
+		'tnum' 1,
+		'lnum' 1;
+	color: var(--color-text);
+}
+
+.landing-hero-runs-label {
+	font-weight: 500;
+}
+
 .landing-hero-actions {
 	margin-top: 2.2rem;
 	display: flex;

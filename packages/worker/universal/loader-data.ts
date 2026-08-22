@@ -13,6 +13,7 @@ import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 import { type OnboardingChecklistItemId } from '#universal/onboarding-checklist-types.ts'
 import { type SignupMode } from '#universal/signup-mode.ts'
 import { type CommunityListingSort } from '#universal/community-search.ts'
+import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -1578,6 +1579,12 @@ export type AppLoaderData = {
 	accountBilling?: AccountBillingLoaderData
 	accountUsage?: AccountUsageLoaderData
 	discord?: DiscordPageLoaderData
+	codeRuns?: CodeRunsLoaderData
+}
+
+export type CodeRunsLoaderData = {
+	ok: true
+	window: PublicCodeRunsWindow | null
 }
 
 export type AccountBillingLoaderData = {

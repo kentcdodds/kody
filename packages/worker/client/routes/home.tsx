@@ -14,6 +14,9 @@ import {
 import { onboardingPath } from '#client/routes/onboarding-redirect.ts'
 import { pendingVerificationPath } from '#client/routes/pending-verification-path.ts'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
+import { CodeRunsTicker } from '#client/code-runs-ticker.tsx'
+import { fetchCodeRunsPayload } from '#client/routes/code-runs-payload.ts'
+import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 import { reveal, revealPop } from '#client/reveal.ts'
 import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 import {
@@ -117,9 +120,14 @@ export async function homeRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const onboarding = await fetchOnboardingPayload(signal)
-	if (!onboarding) return {}
-	return { onboarding }
+	const [onboarding, codeRuns] = await Promise.all([
+		fetchOnboardingPayload(signal),
+		fetchCodeRunsPayload(signal),
+	])
+	const result: RouteLoaderResult = {}
+	if (onboarding) result.onboarding = onboarding
+	if (codeRuns) result.codeRuns = codeRuns
+	return result
 }
 
 export function HomeRoute(handle: Handle) {
@@ -127,6 +135,7 @@ export function HomeRoute(handle: Handle) {
 	let emailVerified = false
 	let loggedIn = false
 	let discoveryPrompt = ''
+	let codeRunsWindow: PublicCodeRunsWindow | null = null
 	let onboardingStatus: 'idle' | 'loading' | 'ready' = 'idle'
 	const loadLatch = createRouteLoadLatch()
 
@@ -138,12 +147,22 @@ export function HomeRoute(handle: Handle) {
 		onboardingStatus = 'ready'
 	}
 
-	async function loadOnboarding(signal: AbortSignal) {
+	function applyCodeRunsPayload(
+		payload: { window: PublicCodeRunsWindow | null } | null,
+	) {
+		codeRunsWindow = payload?.window ?? null
+	}
+
+	async function loadHomePayload(signal: AbortSignal) {
 		const href = readCurrentRouterHref(handle)
 		try {
-			const payload = await fetchOnboardingPayload(signal)
+			const [payload, codeRuns] = await Promise.all([
+				fetchOnboardingPayload(signal),
+				fetchCodeRunsPayload(signal),
+			])
 			if (signal.aborted) return
 			applyOnboardingPayload(payload)
+			applyCodeRunsPayload(codeRuns)
 			loadLatch.markLoaded(href)
 			handle.update()
 		} catch {
@@ -157,9 +176,11 @@ export function HomeRoute(handle: Handle) {
 
 	function applyRouteLoaderData(href: string) {
 		if (!isHomePath(href)) return false
-		const routeData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
-		if (!routeData) return false
-		applyOnboardingPayload(routeData)
+		const onboardingData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
+		const codeRunsData = tryConsumeRouteLoaderData(handle, 'codeRuns', href)
+		if (codeRunsData) applyCodeRunsPayload(codeRunsData)
+		if (!onboardingData) return false
+		applyOnboardingPayload(onboardingData)
 		loadLatch.markLoaded(href)
 		return true
 	}
@@ -176,7 +197,7 @@ export function HomeRoute(handle: Handle) {
 		})
 		if (needsLoad && typeof document !== 'undefined') {
 			onboardingStatus = 'loading'
-			handle.queueTask(loadOnboarding)
+			handle.queueTask(loadHomePayload)
 		}
 
 		const isSignedIn = onboardingStatus === 'ready' && loggedIn
@@ -200,6 +221,7 @@ export function HomeRoute(handle: Handle) {
 						work into deterministic code you can run on a trigger or save tokens
 						with your agent.
 					</p>
+					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}
 					<div data-rise style={{ '--rise': '2' }} class="landing-hero-actions">
 						{isSignedIn ? (
 							<>
