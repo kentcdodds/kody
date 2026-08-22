@@ -94,7 +94,8 @@ export function LandingLoopPlayer(handle: Handle) {
 		if (reducedMotion || !beats) return
 		playGeneration += 1
 		const generation = playGeneration
-		handle.queueTask(async (signal) => {
+		const signal = handle.signal
+		void (async () => {
 			while (!signal.aborted && generation === playGeneration) {
 				const currentBeats = beats
 				if (!currentBeats || currentBeats.length === 0) return
@@ -115,12 +116,11 @@ export function LandingLoopPlayer(handle: Handle) {
 				}
 				if (player.isPaused()) continue
 				player.advance()
-				handle.update()
-				handle.queueTask(() => {
-					scrollChatToBottom()
-				})
+				await handle.update()
+				if (signal.aborted || generation !== playGeneration) return
+				scrollChatToBottom()
 			}
-		})
+		})()
 	}
 
 	function playFromHere() {
@@ -164,7 +164,7 @@ export function LandingLoopPlayer(handle: Handle) {
 						const stopNear = observeNearViewport(node, () => {
 							if (loadStarted) return
 							loadStarted = true
-							handle.queueTask(loadLoop)
+							void loadLoop(handle.signal)
 						})
 						const visibilityObserver =
 							typeof IntersectionObserver === 'undefined'
