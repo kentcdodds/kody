@@ -315,6 +315,7 @@ const notifyMemoryContext = {
 }
 
 const watchLoginMemory = {
+	id: 'mem_favorite_bot',
 	subject: 'Favorite bot',
 	summary:
 		"kody-bot is my favorite bot. I'm really interested in what it ships on github",

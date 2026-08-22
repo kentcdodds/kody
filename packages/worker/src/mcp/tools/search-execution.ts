@@ -1,5 +1,6 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { runWithDynamicWorkerEvaluationBudget } from '#mcp/executor.ts'
+import { buildMemoryRetrievalQuery } from '#mcp/tools/memory-tool-context.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import { runPackageRetrievers } from '#worker/package-retrievers/service.ts'
@@ -101,8 +102,11 @@ async function executeSearchListWithinBudget(
 			registry: preloadedSearchRows.registry,
 		})
 	}
+	const memoryContextRetrievalQuery = buildMemoryRetrievalQuery(
+		input.memoryContext,
+	)
 	const shouldEnrichMemory =
-		Boolean(input.query) &&
+		(Boolean(input.query) || Boolean(memoryContextRetrievalQuery)) &&
 		(!identityResolution.recognized || identityMatchesProvider)
 	const memoryLaunch = shouldEnrichMemory
 		? launchSearchMemoryEnrichment({
@@ -196,7 +200,8 @@ async function executeSearchListWithinBudget(
 		result.matches.length > 0 &&
 		result.matches.every((match) => match.type === 'domain')
 	const memorySettlement =
-		shouldEnrichMemory && !returnsDomainIndex
+		shouldEnrichMemory &&
+		(!returnsDomainIndex || Boolean(memoryContextRetrievalQuery))
 			? await settleSearchMemoryEnrichment({
 					promise: memoryEnrichmentPromise,
 					launchedAtMs: memoryEnrichmentLaunchedAtMs,

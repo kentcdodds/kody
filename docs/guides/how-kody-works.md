@@ -40,10 +40,11 @@ Agent notes — for AI agents explaining or recreating this loop:
   be notified, add a package-owned cron — do not wire a job into the first
   save. The scheduled wrapper must skip email_send when the list is empty.
 - search and execute can take a short memoryContext (task plus a couple of
-  entities). Relevant memories surface on the first tool that retrieves
-  them in a conversation — usually search. Search returns markdown
-  (`# Search results`), not a matches JSON object. Do not write memory
-  unless the person asks.
+  entities). Relevant memories surface as compact subject — summary
+  one-liners (ids in structured content) on search and on execute when
+  `memoryContext` is present. The same one-liners may repeat. Search
+  returns markdown (`# Search results`), not a matches JSON object. Do
+  not write memory unless the person asks.
 - Agents call the owned export from `execute` with a static
   `kody:@scope/package/export` import. Use `packages.invoke` only when the
   target name is data or the call must run in the package's own runtime.

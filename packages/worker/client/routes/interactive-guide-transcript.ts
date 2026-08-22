@@ -71,9 +71,13 @@ export function conversationIdReturn(conversationId: string) {
 	return `conversationId: ${conversationId}\n${conversationIdReturnNote}`
 }
 
-function relevantMemoriesMarkdown(
-	memories: Array<{ subject: string; summary: string }>,
-) {
+type TranscriptMemory = {
+	id: string
+	subject: string
+	summary: string
+}
+
+function relevantMemoriesMarkdown(memories: Array<TranscriptMemory>) {
 	return [
 		'## Relevant memories',
 		'',
@@ -81,14 +85,31 @@ function relevantMemoriesMarkdown(
 	].join('\n')
 }
 
+function relevantMemoriesStructured(memories: Array<TranscriptMemory>) {
+	return jsonInput({
+		memories: {
+			surfaced: memories.map((memory) => ({
+				id: memory.id,
+				subject: memory.subject,
+				summary: memory.summary,
+			})),
+		},
+	})
+}
+
 export function searchTextReturn(input: {
 	conversationId: string
 	body: string
-	memories?: Array<{ subject: string; summary: string }>
+	memories?: Array<TranscriptMemory>
 }) {
 	const parts = [conversationIdReturn(input.conversationId), '', input.body]
 	if (input.memories && input.memories.length > 0) {
-		parts.push('', relevantMemoriesMarkdown(input.memories))
+		parts.push(
+			'',
+			relevantMemoriesMarkdown(input.memories),
+			'',
+			relevantMemoriesStructured(input.memories),
+		)
 	}
 	return parts.join('\n')
 }
@@ -96,7 +117,7 @@ export function searchTextReturn(input: {
 export function executeTextReturn(input: {
 	conversationId: string
 	value: unknown
-	memories?: Array<{ subject: string; summary: string }>
+	memories?: Array<TranscriptMemory>
 }) {
 	const parts = [
 		conversationIdReturn(input.conversationId),
@@ -104,7 +125,12 @@ export function executeTextReturn(input: {
 		jsonInput(input.value),
 	]
 	if (input.memories && input.memories.length > 0) {
-		parts.push('', relevantMemoriesMarkdown(input.memories))
+		parts.push(
+			'',
+			relevantMemoriesMarkdown(input.memories),
+			'',
+			relevantMemoriesStructured(input.memories),
+		)
 	}
 	return parts.join('\n')
 }

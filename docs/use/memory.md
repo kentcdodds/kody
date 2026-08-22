@@ -38,10 +38,11 @@ is present.
 
 ## Automatic memory surfacing
 
-When retrieval runs, Kody may return a small number of relevant not-yet-surfaced
-memories in the tool text (as `## Relevant memories`) and in structured content.
-Auto-surface is compact: **subject**, **summary**, and **id** (structured).
-Details stay behind `meta_memory_get`.
+When retrieval runs, Kody may return the top one or two relevant active
+memories, including ones surfaced earlier, in the tool text (as
+`## Relevant memories`) and in structured content. Auto-surface is compact:
+**subject**, **summary**, and **id** (structured). Details stay behind
+`meta_memory_get`.
 
 That retrieval is:
 

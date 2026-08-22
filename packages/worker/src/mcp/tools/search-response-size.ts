@@ -14,12 +14,17 @@ export function applyMaxResponseSize<TPayload>(
 	format: (payload: TPayload) => string,
 	trim: (payload: TPayload, count: number) => TPayload,
 	getCount: (payload: TPayload) => number,
+	options?: {
+		reservedChars?: number
+	},
 ): { payload: TPayload; serialized: string } {
 	if (!Number.isFinite(maxResponseSize) || maxResponseSize <= 0) {
 		const serialized = format(payload)
 		return { payload, serialized }
 	}
 
+	const reservedChars = Math.max(0, options?.reservedChars ?? 0)
+	const budget = Math.max(0, maxResponseSize - reservedChars)
 	const total = getCount(payload)
 	let low = 0
 	let high = total
@@ -30,7 +35,7 @@ export function applyMaxResponseSize<TPayload>(
 		const mid = Math.floor((low + high) / 2)
 		const trimmedPayload = trim(payload, mid)
 		const serialized = format(trimmedPayload)
-		if (serialized.length <= maxResponseSize) {
+		if (serialized.length <= budget) {
 			bestPayload = trimmedPayload
 			bestSerialized = serialized
 			low = mid + 1

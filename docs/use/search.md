@@ -89,7 +89,8 @@ how long the ranked lookup or entity lookup took.
 
 Optional **`limit`** caps how many ranked hits return. Optional
 **`maxResponseSize`** trims low-ranked matches against the compact list when the
-response must stay small.
+response must stay small. Auto-surfaced memory one-liners are reserved first so
+a tight size budget does not drop them.
 
 ## Entity indexes and detail
 

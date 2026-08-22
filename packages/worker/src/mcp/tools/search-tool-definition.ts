@@ -48,7 +48,9 @@ Secret results expose metadata only; credential values never appear.
 If results look incomplete: \`meta_list_capabilities()\` for a domain index,
 then \`meta_list_capabilities({ domain })\` for one domain.
 
-Optional **limit** (default 15) and **maxResponseSize** trim low-ranked results.
+Optional **limit** (default 15) and **maxResponseSize** trim low-ranked
+capability hits. Auto-surfaced memory one-liners are reserved first so a
+tight size budget does not drop them.
 Example arguments:
 - \`{ "query": "saved github automation package", "limit": 10 }\`
 - \`{}\`
