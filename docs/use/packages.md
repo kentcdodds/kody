@@ -638,10 +638,11 @@ on each package summary:
 All listing fields are `null` for self-authored packages. When the source
 listing is unpublished, `listing_current` is `false` and `listing_ahead` is
 `false`. Republishing the same source package moves prior forks to the new
-listing id. `/account/packages` and the listing page show a **Listing updated**
-badge plus a copyable agent prompt when `listing_ahead` is true. After the agent
-ports relevant listing changes and publishes, `community_fork_absorb` records
-the current pin as absorbed so the badge clears.
+listing id. `/account/packages` and the listing page replace the Installed /
+Forked pill with a yellow **Fork outdated** button when `listing_ahead` is true.
+Clicking it copies an agent prompt. After the agent ports relevant listing
+changes and publishes, `community_fork_absorb` records the current pin as
+absorbed so the pill clears.
 
 ## Author a saved package via direct git push
 

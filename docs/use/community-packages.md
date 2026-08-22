@@ -145,10 +145,11 @@ Only after publish does the package become a live saved package in your account.
 If the listing owner later republishes, your fork keeps the snapshot you copied.
 `package_get` / `package_list` set `listing_ahead` when the listing's current
 pinned commit differs from the commit your fork last absorbed (`origin_commit`).
-`/account/packages` and the listing page then show **Listing updated** with a
-copyable prompt: compare the current public snapshot with your package, port
-useful changes, keep your customizations, publish, and call
-`community_fork_absorb` so the fork records that listing commit.
+`/account/packages` and the listing page then replace Installed / Forked with a
+yellow **Fork outdated** button. Click it to copy a prompt: compare the current
+public snapshot with your package, port useful changes, keep your
+customizations, publish, and call `community_fork_absorb` so the fork records
+that listing commit.
 
 ## One-click install
 

@@ -775,8 +775,6 @@ export function CommunityDetailRoute(handle: Handle) {
 			? {
 					...installOutcome,
 					existing: false,
-					listingAhead: false,
-					listingAheadPrompt: null as string | null,
 				}
 			: existingInstall
 				? {
@@ -786,8 +784,6 @@ export function CommunityDetailRoute(handle: Handle) {
 						packageId: existingInstall.packageId,
 						failedChecks: [] as Array<{ kind: string; message: string }>,
 						existing: true,
-						listingAhead: existingInstall.listingAhead,
-						listingAheadPrompt: existingInstall.listingAheadPrompt,
 					}
 				: null
 
@@ -870,29 +866,6 @@ export function CommunityDetailRoute(handle: Handle) {
 												variant="pill"
 											/>
 										</div>
-										{shownInstall.listingAhead &&
-										shownInstall.listingAheadPrompt ? (
-											<div
-												data-testid="community-install-listing-ahead"
-												mix={css({ display: 'grid', gap: '0.75rem' })}
-											>
-												<p role="status">
-													This listing has been republished since you forked it.
-													Copy this prompt so your agent can pull in relevant
-													changes without discarding your modifications.
-												</p>
-												<div mix={css(promptGroupCss)}>
-													<blockquote mix={css(promptBlockCss)}>
-														{shownInstall.listingAheadPrompt}
-													</blockquote>
-													<CopyTextButton
-														value={shownInstall.listingAheadPrompt}
-														idleLabel="Copy prompt"
-														variant="pill"
-													/>
-												</div>
-											</div>
-										) : null}
 									</>
 								) : (
 									<>
@@ -925,29 +898,6 @@ export function CommunityDetailRoute(handle: Handle) {
 												variant="pill"
 											/>
 										</div>
-										{shownInstall.listingAhead &&
-										shownInstall.listingAheadPrompt ? (
-											<div
-												data-testid="community-install-listing-ahead"
-												mix={css({ display: 'grid', gap: '0.75rem' })}
-											>
-												<p role="status">
-													This listing has also been republished since you
-													forked it. Include those listing changes while
-													adapting.
-												</p>
-												<div mix={css(promptGroupCss)}>
-													<blockquote mix={css(promptBlockCss)}>
-														{shownInstall.listingAheadPrompt}
-													</blockquote>
-													<CopyTextButton
-														value={shownInstall.listingAheadPrompt}
-														idleLabel="Copy prompt"
-														variant="pill"
-													/>
-												</div>
-											</div>
-										) : null}
 									</>
 								)
 							) : (

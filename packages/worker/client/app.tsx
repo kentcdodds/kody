@@ -1,5 +1,9 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from './event-mixin.ts'
+import {
+	handleForkOutdatedCopyClick,
+	handleForkOutdatedCopyPointerOut,
+} from './fork-outdated-copy.ts'
 import { clientRouteLoaders, clientRoutes } from './routes/index.tsx'
 import { getSlugFromPathname } from './routes/blog-post.tsx'
 import { isCommunityListingPathname } from './routes/community-detail.tsx'
@@ -243,37 +247,43 @@ export function App(handle: Handle<AppProps>) {
 						<main
 							id="main"
 							tabIndex={-1}
-							mix={css(
-								isAuthShellPath
-									? {
-											width: '100%',
-											boxSizing: 'border-box',
-											flex: 1,
-											viewTransitionName: 'page',
-											// The auth canvas stretches to fill the shell column.
-											display: 'grid',
-										}
-									: routeOwnsItsGutters
+							mix={[
+								on('click', (event) => {
+									void handleForkOutdatedCopyClick(event)
+								}),
+								on('pointerout', handleForkOutdatedCopyPointerOut),
+								css(
+									isAuthShellPath
 										? {
 												width: '100%',
 												boxSizing: 'border-box',
 												flex: 1,
 												viewTransitionName: 'page',
+												// The auth canvas stretches to fill the shell column.
+												display: 'grid',
 											}
-										: {
-												width: '100%',
-												boxSizing: 'border-box',
-												flex: 1,
-												viewTransitionName: 'page',
-												padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
-												[mq.tablet]: {
-													padding: `${spacing.sm} ${spacing.sm} 0`,
+										: routeOwnsItsGutters
+											? {
+													width: '100%',
+													boxSizing: 'border-box',
+													flex: 1,
+													viewTransitionName: 'page',
+												}
+											: {
+													width: '100%',
+													boxSizing: 'border-box',
+													flex: 1,
+													viewTransitionName: 'page',
+													padding: `${spacing.lg} ${spacing.xl} ${spacing.sm}`,
+													[mq.tablet]: {
+														padding: `${spacing.sm} ${spacing.sm} 0`,
+													},
+													[mq.mobile]: {
+														padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
+													},
 												},
-												[mq.mobile]: {
-													padding: `${spacing.md} ${spacing.md} ${spacing.sm}`,
-												},
-											},
-							)}
+								),
+							]}
 						>
 							<Router
 								routes={clientRoutes}

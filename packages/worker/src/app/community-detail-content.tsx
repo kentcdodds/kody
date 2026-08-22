@@ -17,6 +17,7 @@ import {
 	communityBadgePillCss,
 	communityTagListCss,
 	communityTagPillCss,
+	renderCommunityViewerInstallBadge,
 } from '#app/community-listings-content.tsx'
 import { renderProfileFollowControl } from '#app/profile-follow-control.tsx'
 import { getCommunityPackageFilesHref } from '#universal/package-files.ts'
@@ -92,30 +93,10 @@ export function CommunityDetailContent(
 									Featured
 								</span>
 							) : null}
-							{listing.viewerInstall ? (
-								<span
-									data-testid="community-detail-viewer-install-badge"
-									title={
-										listing.viewerInstall.status === 'installed'
-											? `Installed in your account as ${listing.viewerInstall.targetName}.`
-											: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
-									}
-									mix={css(badgeCss)}
-								>
-									{listing.viewerInstall.status === 'installed'
-										? 'Installed'
-										: 'Forked'}
-								</span>
-							) : null}
-							{listing.viewerInstall?.listingAhead ? (
-								<span
-									data-testid="community-detail-listing-ahead-badge"
-									title="This listing has been republished since you forked it."
-									mix={css(badgeCss)}
-								>
-									Listing updated
-								</span>
-							) : null}
+							{renderCommunityViewerInstallBadge({
+								listing,
+								variant: 'detail',
+							})}
 						</span>
 					) : null}
 					{/* A div, not a p: the signed-in follow control is a form, and

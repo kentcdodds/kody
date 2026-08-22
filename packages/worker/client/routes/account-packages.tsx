@@ -18,11 +18,8 @@ import {
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
-import { CopyTextButton } from '#client/copy-text-button.tsx'
-import {
-	getAccentCalloutCss,
-	getGhostButtonCss,
-} from '#universal/styles/style-primitives.ts'
+import { ForkOutdatedCopyButton } from '#universal/fork-outdated-copy-button.tsx'
+import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import {
 	accountDisclosureCss,
 	AccountManagementMessage,
@@ -152,9 +149,6 @@ export function AccountPackagesRoute(handle: Handle) {
 	let lastLoadedListKey = ''
 	let loadingDataKey: string | null = null
 	let lastFailedDataKey: string | null = null
-	let absorbState: 'idle' | 'submitting' | 'error' = 'idle'
-	let absorbMessage: string | null = null
-
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
 	}
@@ -178,51 +172,7 @@ export function AccountPackagesRoute(handle: Handle) {
 		return `${url.pathname}${url.search}`
 	}
 
-	async function absorbListingUpdate(packageId: string) {
-		absorbState = 'submitting'
-		absorbMessage = null
-		handle.update()
-		try {
-			const response = await fetch(accountPackagesApiPath, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					action: 'absorb-listing',
-					packageId,
-				}),
-			})
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<
-				AccountPackagesLoaderData & { error?: string }
-			>(response)
-			if (!response.ok || !payload?.ok) {
-				absorbState = 'error'
-				absorbMessage = payload?.error ?? 'Unable to mark this listing current.'
-				handle.update()
-				return
-			}
-			absorbState = 'idle'
-			applyPayload(payload, getCurrentHref())
-			handle.update()
-		} catch {
-			absorbState = 'error'
-			absorbMessage = 'Unable to mark this listing current.'
-			handle.update()
-		}
-	}
-
 	function applyPayload(payload: AccountPackagesLoaderData, href: string) {
-		if (payload.selectedPackage?.listingAhead == null) {
-			absorbState = 'idle'
-			absorbMessage = null
-		}
 		const listKey = getListKey(href)
 		// Selection-only navigations deep in the scroll window keep the
 		// already-loaded pages; anything else reseeds from page one so
@@ -480,12 +430,10 @@ export function AccountPackagesRoute(handle: Handle) {
 								>
 									<span mix={css(recordCellClamp(36))}>{pkg.name}</span>
 									{pkg.listingAhead ? (
-										<span
-											title={`The community listing ${pkg.listingAhead.listingName} has been republished since this fork.`}
-											mix={css(listingAheadChipCss)}
-										>
-											Listing updated
-										</span>
+										<ForkOutdatedCopyButton
+											prompt={pkg.listingAhead.prompt}
+											testId={`account-package-listing-ahead-${pkg.id}`}
+										/>
 									) : null}
 								</span>
 							),
@@ -534,17 +482,33 @@ export function AccountPackagesRoute(handle: Handle) {
 						selectedPackage ? (
 							<div mix={css(recordBodyCss)}>
 								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h2
+									<div
 										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
-											overflowWrap: 'anywhere',
+											display: 'flex',
+											alignItems: 'center',
+											gap: spacing.xs,
+											flexWrap: 'wrap',
+											minWidth: 0,
 										})}
 									>
-										{selectedPackage.name}
-									</h2>
+										<h2
+											mix={css({
+												margin: 0,
+												fontSize: typography.fontSize.lg,
+												fontWeight: typography.fontWeight.semibold,
+												color: colors.text,
+												overflowWrap: 'anywhere',
+											})}
+										>
+											{selectedPackage.name}
+										</h2>
+										{selectedPackage.listingAhead ? (
+											<ForkOutdatedCopyButton
+												prompt={selectedPackage.listingAhead.prompt}
+												testId="account-package-listing-ahead"
+											/>
+										) : null}
+									</div>
 									{selectedPackage.description ? (
 										<p
 											mix={css({
@@ -561,95 +525,6 @@ export function AccountPackagesRoute(handle: Handle) {
 										</p>
 									)}
 								</div>
-								{selectedPackage.listingAhead ? (
-									<div
-										mix={css(getAccentCalloutCss())}
-										data-testid="account-package-listing-ahead"
-									>
-										<p mix={css({ margin: 0 })}>
-											The community listing{' '}
-											<a
-												href={selectedPackage.listingAhead.listingHref}
-												mix={css({ color: colors.primaryText })}
-											>
-												{selectedPackage.listingAhead.listingName}
-											</a>{' '}
-											has been republished since you forked it.
-										</p>
-										<p
-											mix={css({
-												margin: 0,
-												color: colors.textMuted,
-												fontSize: typography.fontSize.sm,
-											})}
-										>
-											Copy this prompt so your agent can pull in relevant
-											upstream changes without discarding your modifications.
-										</p>
-										<div
-											mix={css({
-												display: 'grid',
-												gap: spacing.sm,
-											})}
-										>
-											<blockquote
-												mix={css({
-													margin: 0,
-													padding: spacing.sm,
-													borderRadius: radius.md,
-													border: `1px solid ${colors.border}`,
-													backgroundColor: colors.background,
-													fontSize: typography.fontSize.sm,
-													overflowWrap: 'anywhere',
-												})}
-											>
-												{selectedPackage.listingAhead.prompt}
-											</blockquote>
-											<div
-												mix={css({
-													display: 'flex',
-													flexWrap: 'wrap',
-													gap: spacing.sm,
-												})}
-											>
-												<CopyTextButton
-													value={selectedPackage.listingAhead.prompt}
-													idleLabel="Copy prompt"
-													variant="pill"
-													size="sm"
-												/>
-												<button
-													type="button"
-													disabled={absorbState === 'submitting'}
-													mix={[
-														on('click', () => {
-															const packageId = selectedPackage?.id
-															if (!packageId) return
-															void absorbListingUpdate(packageId)
-														}),
-														css(secondaryButtonCss),
-													]}
-												>
-													{absorbState === 'submitting'
-														? 'Saving…'
-														: 'Mark as up to date'}
-												</button>
-											</div>
-											{absorbMessage ? (
-												<p
-													mix={css({
-														margin: 0,
-														color: colors.error,
-														fontSize: typography.fontSize.sm,
-													})}
-													role="alert"
-												>
-													{absorbMessage}
-												</p>
-											) : null}
-										</div>
-									</div>
-								) : null}
 								{selectedPackage.tags.length > 0 ? (
 									<RecordChips items={selectedPackage.tags} />
 								) : null}
@@ -756,15 +631,4 @@ export function AccountPackagesRoute(handle: Handle) {
 			</AccountManagementShell>
 		)
 	}
-}
-
-const listingAheadChipCss = {
-	flex: 'none',
-	fontSize: '0.72rem',
-	fontWeight: typography.fontWeight.semibold,
-	color: colors.primaryText,
-	backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
-	borderRadius: '999px',
-	padding: '0.1rem 0.5rem',
-	whiteSpace: 'nowrap' as const,
 }

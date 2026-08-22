@@ -74,9 +74,10 @@ privacy flips or a star is removed — see `social-repo.ts` / `social-service.ts
 `community_forks.origin_commit` is the listing pin the fork last absorbed. It
 starts as the pinned snapshot copied at fork time. When an active listing later
 republishes a different pin, `package_get` / `package_list` set `listing_ahead`,
-and `/account/packages` plus the listing page offer a copyable absorb prompt.
-`community_fork_absorb` updates `origin_commit` to the listing's current
-`pinned_commit` after the forker ports those changes; it does not copy files.
+and `/account/packages` plus the listing page replace Installed / Forked with a
+**Fork outdated** button that copies an absorb prompt. `community_fork_absorb`
+updates `origin_commit` to the listing's current `pinned_commit` after the
+forker ports those changes; it does not copy files.
 
 `community_listings` enforces one listing per `(owner_user_id, package_id)`.
 Admin **delist** sets `status = 'delisted'`, blocks owner re-publish, and blocks
