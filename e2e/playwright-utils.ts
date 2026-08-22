@@ -14,6 +14,7 @@ import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
 import { usernameFromEmail } from '../packages/worker/src/identity/username.ts'
 import {
 	assertE2eWebServerAlive,
+	attachUnreadCloneTeeHintIfNeeded,
 	throwIfE2eWebServerDead,
 } from './web-server-liveness.ts'
 
@@ -59,9 +60,10 @@ export const test = base.extend<{
 	}): Promise<{ email: string; username: string; password: string }>
 }>({
 	ensureE2eWebServerAlive: [
-		async ({ baseURL }, use) => {
+		async ({ baseURL }, use, testInfo) => {
 			await assertE2eWebServerAlive(baseURL)
 			await use()
+			attachUnreadCloneTeeHintIfNeeded(testInfo)
 		},
 		{ auto: true },
 	],

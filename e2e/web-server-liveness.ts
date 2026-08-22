@@ -3,10 +3,28 @@
  * mid-suite. Remaining tests would otherwise burn CI retries on
  * ECONNREFUSED / ERR_CONNECTION_REFUSED (see KODY main Validate flake on
  * #1316). Once marked dead, every later check fails immediately with a clear
- * message pointing at the `logs.local/` CI artifact.
+ * message pointing at the `logs.local/` CI artifact and the unread
+ * `request.clone()` tee fix.
  */
 
+export const e2eWebServerDeadCode = 'E2E_WEB_SERVER_DEAD'
+
+/**
+ * Stable pointer for agents: unread `request.clone()` tees are the common
+ * wrangler-dev killer. Named so tests can assert the contract without pinning
+ * the surrounding sentence.
+ */
+export const e2eUnreadRequestCloneTeeRemediation =
+	'If wrangler logs show "Network connection lost" or "Error inside ProxyWorker", ' +
+	'an unread request.clone() body teed the stream and workerd killed the isolate; ' +
+	'wrangler 4.114+ then exits (workers-sdk#14926). Fix: consume the original ' +
+	'Request (request.json() / request.formData()) or drain the unused tee with ' +
+	'discardUnreadRequestBody from #worker/request-body.ts before returning. ' +
+	'Do not restart wrangler as the fix.'
+
 export class E2eWebServerDeadError extends Error {
+	readonly code = e2eWebServerDeadCode
+
 	constructor(message: string) {
 		super(message)
 		this.name = 'E2eWebServerDeadError'
@@ -74,13 +92,40 @@ function webServerDeadMessage(origin: string, detail?: string) {
 		`Playwright webServer (wrangler) is not reachable at ${origin}${suffix}. ` +
 		'The process likely exited mid-suite — remaining tests will fail fast. ' +
 		'On CI, download the e2e-wrangler-logs artifact (logs.local/) from the ' +
-		'failed 🎭 E2E job.'
+		`failed 🎭 E2E job. ${e2eUnreadRequestCloneTeeRemediation}`
 	)
 }
 
 export function markE2eWebServerDead(origin: string, detail?: string): never {
 	webServerDead = true
 	throw new E2eWebServerDeadError(webServerDeadMessage(origin, detail))
+}
+
+type E2eWebServerHintSink = {
+	status?: string
+	errors: Array<{ message?: string }>
+	annotations: Array<{ type: string; description?: string }>
+}
+
+/**
+ * Attach the unread-clone tee fix to the Playwright test that actually saw
+ * the connection drop, not only the next test that hits the dead latch.
+ */
+export function attachUnreadCloneTeeHintIfNeeded(
+	testInfo: E2eWebServerHintSink,
+) {
+	if (testInfo.status === 'passed' || testInfo.status === 'skipped') return
+	const blob = testInfo.errors.map((error) => error.message ?? '').join('\n')
+	if (
+		!isE2eWebServerConnectionError(blob) &&
+		!blob.includes('E2eWebServerDeadError')
+	) {
+		return
+	}
+	testInfo.annotations.push({
+		type: 'warning',
+		description: e2eUnreadRequestCloneTeeRemediation,
+	})
 }
 
 /**

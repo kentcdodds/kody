@@ -75,13 +75,11 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   values for local secrets.
 - Specs import `test` from `e2e/playwright-utils.ts`, which probes `/health`
   before each test and fails fast with `E2eWebServerDeadError` if Wrangler has
-  exited mid-suite (avoids burning retries on `ECONNREFUSED`). On CI, the
-  `🎭 E2E` job uploads `logs.local/` as the `e2e-wrangler-logs` artifact when
-  the suite fails. A common local-dev killer is an unread `request.clone()`
-  body: workerd can drop the isolate (`Network connection lost`) and wrangler
-  4.114+ treats that ProxyWorker error as a fatal `wrangler dev` exit
-  ([workers-sdk#14926](https://github.com/cloudflare/workers-sdk/issues/14926)).
-  Consume the request (or drain the unused tee) before responding.
+  exited mid-suite (avoids burning retries on `ECONNREFUSED`). That error names
+  the unread `request.clone()` tee fix (`discardUnreadRequestBody` in
+  `#worker/request-body.ts`) when logs show `Network connection lost` /
+  `Error inside ProxyWorker`. On CI, the `🎭 E2E` job uploads `logs.local/` as
+  the `e2e-wrangler-logs` artifact when the suite fails.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
   assets, KV, and durable objects since these are not inherited from top-level
   Wrangler config.
