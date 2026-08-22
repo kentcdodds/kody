@@ -197,29 +197,29 @@ function busySecondFireMs(
 	seed: number,
 	secondIndex: number,
 ): Array<number> {
-	const weights = Array.from({ length: gain }, (_, index) =>
+	const unique = Math.min(gain, 1000)
+	const minGap =
+		unique <= 1 ? 1 : Math.max(1, Math.min(16, Math.floor(999 / (unique - 1))))
+	const weights = Array.from({ length: unique }, (_, index) =>
 		busySecondGapWeight(seed, secondIndex, index),
 	)
 	let total = 0
 	for (const weight of weights) total += weight
-	const maxLead = Math.min(180, Math.max(0, Math.floor(1000 / gain / 2)))
+	const maxLead = Math.min(180, Math.max(0, 999 - (unique - 1) * minGap))
 	const lead = Math.floor(hashUnit(seed, secondIndex + 41) * (maxLead + 1))
-	const span = 1000 - lead
-	const fires = Array.from({ length: gain }, () => 0)
+	const span = Math.max(0, 999 - lead)
+	const fires = Array.from({ length: unique }, () => 0)
 	let prefix = 0
-	for (let index = 0; index < gain; index += 1) {
-		fires[index] = Math.min(999, lead + Math.floor((prefix / total) * span))
+	for (let index = 0; index < unique; index += 1) {
+		const desired = lead + Math.floor((prefix / total) * span)
+		const earliest = index === 0 ? 0 : (fires[index - 1] ?? 0) + minGap
+		const latest = 999 - (unique - 1 - index) * minGap
+		fires[index] = Math.min(latest, Math.max(earliest, desired))
 		prefix += weights[index] ?? 0
 	}
-	// A second cannot hold more than 1000 distinct millisecond fires; extras
-	// share the last millisecond and the client rolls through them.
-	const minGap = Math.max(1, Math.min(16, Math.floor(1000 / gain) - 1))
-	for (let index = 1; index < gain; index += 1) {
-		const floorAt = (fires[index - 1] ?? 0) + minGap
-		if ((fires[index] ?? 0) < floorAt) {
-			fires[index] = Math.min(999, floorAt)
-		}
-	}
+	// More than 1000 ticks cannot get unique milliseconds; extras share 999
+	// and the client rolls through them.
+	while (fires.length < gain) fires.push(999)
 	return fires
 }
 

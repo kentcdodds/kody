@@ -111,6 +111,16 @@ test('interpolateCodeRunsCount rolls every extra integer inside a second', () =>
 	expect(new Set(gaps).size).toBeGreaterThan(1)
 	const even = 1000 / offsets.length
 	expect(gaps.some((gap) => Math.abs(gap - even) > 30)).toBe(true)
+
+	const dense = { ...window, previous: 0, current: 86_400 * 50 }
+	const denseStart = startMs + 6 * hourMs
+	let densePrevious = interpolateCodeRunsCount(dense, denseStart - 1)
+	for (let offset = 0; offset < 30_000; offset += 1) {
+		const count = interpolateCodeRunsCount(dense, denseStart + offset)
+		expect(count - densePrevious).toBeGreaterThanOrEqual(0)
+		expect(count - densePrevious).toBeLessThanOrEqual(1)
+		densePrevious = count
+	}
 })
 
 test('msUntilNextCodeRunsCount lands on the next integer and then is still', () => {
