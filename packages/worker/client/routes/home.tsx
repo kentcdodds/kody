@@ -150,7 +150,8 @@ export function HomeRoute(handle: Handle) {
 	function applyCodeRunsPayload(
 		payload: { window: PublicCodeRunsWindow | null } | null,
 	) {
-		codeRunsWindow = payload?.window ?? null
+		if (!payload) return
+		codeRunsWindow = payload.window
 	}
 
 	async function loadHomePayload(signal: AbortSignal) {
