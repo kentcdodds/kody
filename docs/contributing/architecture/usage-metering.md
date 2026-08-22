@@ -331,7 +331,8 @@ Guarantees and rules:
   `previous → current` across the 24-hour window. The payload is the window pair
   only — never per-user rows. Interpolation is deterministic from the window so
   every visitor at a given second sees the same number (`nowMs` is floored to
-  whole seconds before progress is computed). Elapsed time is warped
+  whole seconds before endpoint checks and progress). Official `current` appears
+  at the first whole second on or after `windowEnd`. Elapsed time is warped
   through hashed bursty weights (quiet stretches and rapid spikes) and stays
   monotonic; it never passes `current`.
 - **Fleet visibility** (`/admin/insights`, loader in

@@ -60,7 +60,7 @@ test('interpolateCodeRunsCount is stable across milliseconds in the same second'
 	)
 })
 
-test('interpolateCodeRunsCount hits current at a non-aligned window end', () => {
+test('interpolateCodeRunsCount stays one integer through a non-aligned window end', () => {
 	const offset = {
 		...window,
 		previous: 171540,
@@ -69,9 +69,15 @@ test('interpolateCodeRunsCount hits current at a non-aligned window end', () => 
 		windowEnd: '2026-08-23T15:47:07.637Z',
 	}
 	const endMs = Date.parse(offset.windowEnd)
-	expect(interpolateCodeRunsCount(offset, endMs)).toBe(257940)
-	expect(interpolateCodeRunsCount(offset, endMs + 1)).toBe(257940)
-	expect(interpolateCodeRunsCount(offset, endMs - 1)).toBeLessThan(257940)
+	const endSecondMs = Math.floor(endMs / 1000) * 1000
+	expect(interpolateCodeRunsCount(offset, endSecondMs + 100)).toBe(
+		interpolateCodeRunsCount(offset, endSecondMs + 900),
+	)
+	expect(interpolateCodeRunsCount(offset, endSecondMs + 100)).toBeLessThan(
+		257940,
+	)
+	expect(interpolateCodeRunsCount(offset, endSecondMs + 1000)).toBe(257940)
+	expect(interpolateCodeRunsCount(offset, endMs + 1000)).toBe(257940)
 })
 
 test('interpolateCodeRunsCount sits still when the pair has not moved', () => {

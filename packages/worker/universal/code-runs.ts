@@ -52,10 +52,9 @@ export function interpolateCodeRunsCount(
 	) {
 		return current
 	}
-	if (nowMs <= startMs) return previous
-	if (nowMs >= endMs) return current
 	const secondMs = Math.floor(nowMs / 1000) * 1000
 	if (secondMs <= startMs) return previous
+	if (secondMs >= endMs) return current
 	const progress = (secondMs - startMs) / (endMs - startMs)
 	const warped = warpCodeRunsProgress(progress, windowSeed(window))
 	return previous + Math.floor((current - previous) * warped)
