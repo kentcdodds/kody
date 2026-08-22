@@ -10,6 +10,11 @@
 			"github": "vojtaholik",
 			"signedAt": "2026-08-16",
 			"cla": "individual"
+		},
+		{
+			"github": "gravitinos",
+			"signedAt": "2026-08-22",
+			"cla": "individual"
 		}
 	]
 }
