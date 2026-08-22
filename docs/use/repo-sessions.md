@@ -33,8 +33,8 @@ repo session just to read the job module.
 Repo sessions expose a **file-level API**. There is no git-command channel:
 branch, checkout, fetch, pull, push, and remote operations are not available
 inside sessions. For saved packages, use `package_get_git_remote` when you need
-full git; non-package job sources have no git-remote lane, so the file-level
-session API is their only edit surface.
+full git. Leftover non-package job rows are inspectable with `job_get` and can
+be disabled or deleted; their source is not an edit surface.
 
 Merge drift from the published default branch is handled separately by
 **`repo_rebase_session`**.

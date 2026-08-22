@@ -94,7 +94,7 @@ function emptyWorkflowsMessage(input: {
 		return 'No workflows match the current filters.'
 	}
 	if (input.view === 'history') {
-		return 'No completed or cancelled workflow runs.'
+		return 'No finished workflow runs.'
 	}
 	return 'No active workflow runs. Switch to History or All to see other runs.'
 }

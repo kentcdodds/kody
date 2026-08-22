@@ -315,6 +315,18 @@ function scoreCompletedResult(
 		if (event.action === 'execute-one-off' && hasAuthorOperation) {
 			errors.push('execute-one-off evidence contains a persistent operation')
 		}
+		if (/\b(?:job_schedule|job_schedule_once)\b/.test(code)) {
+			errors.push(`${event.callId} uses a removed scheduling primitive`)
+		}
+		if (
+			evalCase.id === 'schedule-single-reminder' &&
+			event.action === 'execute-one-off' &&
+			!code.includes('workflows.create')
+		) {
+			errors.push(
+				'schedule-single-reminder must use workflows.create for the deferred run',
+			)
+		}
 		if (
 			event.action === 'invoke-existing' &&
 			!code.includes(event.targetEntityId)

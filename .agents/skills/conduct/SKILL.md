@@ -77,13 +77,16 @@ another channel you check) as primary.
 import { workflows } from 'kody:runtime'
 await workflows.create({
 	runAt: '<ISO datetime>',
-	idempotencyKey: 'wake-<track>-after-<gate>',
+	idempotencyKey: 'wake-<track>-after-<gate>-<attempt-id>',
 	code: "import { createRun } from 'kody:@kentcdodds/cursor/runs'\nexport default async function main() { return await createRun({ agentId: '<AGENT_ID>', prompt: '<gate> elapsed; verify evidence, then proceed.' }) }",
 })
 ```
 
-Schedule the same against your own agent id so the program survives session end.
-Cancel superseded workflows with `workflow_run_cancel`.
+Reuse the same idempotency key only when retrying the same scheduling request. A
+later attempt after `complete` or `cancelled` needs a new key, or
+`workflows.create` returns the old run. Schedule the same against your own agent
+id so the program survives session end. Cancel superseded workflows with
+`workflow_run_cancel`.
 
 ## Loop
 

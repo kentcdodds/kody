@@ -56,8 +56,9 @@ runtime state belongs in `packageStorage()`.
 **Jobs** run code later or on a schedule while your laptop is closed. A saved
 package declares recurring schedules under `kody.jobs` so the schedule travels
 with the package behavior. Deferred one-shot work uses
-`workflows.create({ runAt })` from `execute` or package runtime. Runs and
-failures remain inspectable in account activity.
+`workflows.create({ runAt })` from `execute` or package runtime. Package-job
+runs stay on `/account/jobs`. Deferred workflow runs stay on
+`/account/workflows`.
 
 ### Apps and webhooks
 

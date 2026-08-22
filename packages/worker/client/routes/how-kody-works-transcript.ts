@@ -483,7 +483,7 @@ For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{typ
 
 1. **capability** \`coding_guide_get\` (\`coding\`) — Load an official Kody guide (markdown, bundled from the kody repository). Use \`guide: "package_lifecycle"\` before enabling a package-owned schedule. Entity: \`coding_guide_get:capability\`
 2. **capability** \`webhook_url_mint\` (\`webhooks\`) — Mint an inbound webhook URL for a package-declared webhook. Entity: \`webhook_url_mint:capability\`
-3. **capability** \`workflows.create\` (\`workflows\`) — Queue deferred work from execute or package runtime. Entity: \`workflows.create:capability\``
+3. **capability** \`job_list\` (\`jobs\`) — List scheduled jobs for the signed-in user. Entity: \`job_list:capability\``
 
 export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 	{

@@ -56,7 +56,7 @@ const createPassingTranscript = (): unknown => {
 									terminalAction === 'author-package'
 										? 'await kody.package_save({})'
 										: evalCase.id === 'schedule-single-reminder'
-											? "await workflows.create({ runAt: '2026-08-22T16:00:00.000Z', code: 'export default async function main() {}' })"
+											? "await workflows.create({ runAt: '2026-07-15T16:00:00.000Z', code: 'export default async function main() {}' })"
 											: 'return await kody.value_list({})',
 							},
 							output: { result: 'captured execution output' },
@@ -547,4 +547,62 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 		ok: true,
 		totals: expectedTotals,
 	})
+})
+
+test('scorer rejects removed scheduling primitives and requires workflows.create for a deferred reminder', () => {
+	const evalSet = loadPackageDiscoveryEval()
+	const removedPrimitiveTranscript = structuredClone(
+		transcriptSchema.parse(createPassingTranscript()),
+	)
+	const reminder = requireCompletedResult(
+		removedPrimitiveTranscript,
+		'schedule-single-reminder',
+	)
+	const executeEvent = reminder.events.find(
+		(event) => event.action === 'execute-one-off',
+	)
+	if (!executeEvent) {
+		throw new Error('Expected an execute-one-off fixture.')
+	}
+	executeEvent.input = {
+		code: "await kody.job_schedule_once({ runAt: '2026-07-15T16:00:00.000Z' })",
+	}
+	const removedReport = scorePackageDiscoveryTranscript(
+		evalSet,
+		removedPrimitiveTranscript,
+	)
+	expect(removedReport.ok).toBe(false)
+	expect(
+		getByCaseId(removedReport.cases, 'schedule-single-reminder').errors,
+	).toEqual(
+		expect.arrayContaining([
+			`${executeEvent.callId} uses a removed scheduling primitive`,
+			'schedule-single-reminder must use workflows.create for the deferred run',
+		]),
+	)
+
+	const missingWorkflowTranscript = structuredClone(
+		transcriptSchema.parse(createPassingTranscript()),
+	)
+	const missingReminder = requireCompletedResult(
+		missingWorkflowTranscript,
+		'schedule-single-reminder',
+	)
+	const missingEvent = missingReminder.events.find(
+		(event) => event.action === 'execute-one-off',
+	)
+	if (!missingEvent) {
+		throw new Error('Expected an execute-one-off fixture.')
+	}
+	missingEvent.input = { code: 'return await kody.value_list({})' }
+	const missingReport = scorePackageDiscoveryTranscript(
+		evalSet,
+		missingWorkflowTranscript,
+	)
+	expect(missingReport.ok).toBe(false)
+	expect(
+		getByCaseId(missingReport.cases, 'schedule-single-reminder').errors,
+	).toContain(
+		'schedule-single-reminder must use workflows.create for the deferred run',
+	)
 })

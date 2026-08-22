@@ -55,11 +55,11 @@ This is a big part of why I built [Kody](https://kody.codes): a durable home
 your agent connects to over MCP, whichever agent you already use. Here's how the
 death-by-a-thousand-questions list looks with one:
 
-**Where does it run?** On Cloudflare's infrastructure. Jobs in Kody are
-Worker-native: each user gets a Durable Object with alarms, and cron, interval,
-and one-shot schedules fire there whether your laptop is open, asleep, or in a
-bag at the airport. There is no server for you to keep alive because you don't
-have one.
+**Where does it run?** On Cloudflare's infrastructure. Recurring package jobs in
+Kody are Worker-native: each user gets a Durable Object with alarms, and cron or
+interval schedules fire there whether your laptop is open, asleep, or in a bag
+at the airport. Deferred one-shots use workflows. There is no server for you to
+keep alive because you don't have one.
 
 **Where do the credentials live?** In a server-side secret store, encrypted,
 referenced by placeholder. The plaintext never enters a prompt and never sits in
