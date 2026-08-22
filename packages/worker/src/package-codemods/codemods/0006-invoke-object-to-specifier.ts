@@ -1,0 +1,430 @@
+import { isReservedUsername } from '#worker/identity/reserved-usernames.ts'
+import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
+import {
+	type PackageCodemod,
+	type PackageCodemodFinding,
+	type PackageCodemodTransformResult,
+} from '../types.ts'
+
+export const invokeObjectToSpecifierCodemodId =
+	'0006-invoke-object-to-specifier'
+
+const rewriteDetectMessage =
+	'Uses the deprecated object-only `packages.invoke({ kodyId, exportName, ... })` API; rewrite to the scoped string-first specifier API.'
+const manualRewriteMessage =
+	'Uses the deprecated object-only `packages.invoke` API in a shape that cannot be migrated safely; pass the scoped `kody:@owner/package` specifier manually.'
+const manifestScopeMessage =
+	'Package scope could not be read from package.json; migrate deprecated object-only `packages.invoke` calls manually.'
+const platformScopeMessage =
+	'Package is owned by a platform scope; deprecated object-only `packages.invoke` resolves against the runtime caller, so its target owner must be migrated manually.'
+const parseFailureMessage =
+	'File references `packages.invoke` but could not be parsed; migrate any deprecated object-only calls manually.'
+
+const packageManifestPath = 'package.json'
+const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
+const supportedOptionKeys = new Set([
+	'exportName',
+	'params',
+	'idempotencyKey',
+	'topic',
+])
+
+type AstNode = ModuleAstNode & {
+	start?: number
+	end?: number
+	computed?: boolean
+	name?: unknown
+	value?: unknown
+	callee?: AstNode
+	object?: AstNode
+	property?: AstNode
+	arguments?: Array<AstNode>
+	properties?: Array<AstNode>
+	key?: AstNode
+}
+
+type SourceRewrite = {
+	start: number
+	end: number
+	replacement: string
+}
+
+type FileClassification = {
+	path: string
+	rewrites: Array<SourceRewrite>
+	manual: boolean
+}
+
+function isTypeDeclarationFilePath(path: string) {
+	return (
+		path.endsWith('.d.ts') || path.endsWith('.d.mts') || path.endsWith('.d.cts')
+	)
+}
+
+function parseProgram(source: string): AstNode | null {
+	try {
+		return parseModuleSource(source) as unknown as AstNode
+	} catch {
+		return null
+	}
+}
+
+function readPackageScope(files: Record<string, string>): string | null {
+	const source = files[packageManifestPath]
+	if (typeof source !== 'string') return null
+	try {
+		const parsed: unknown = JSON.parse(source)
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+			return null
+		}
+		const name = (parsed as Record<string, unknown>)['name']
+		if (typeof name !== 'string') return null
+		const match = /^@([^/\s]+)\/[^/\s]+$/.exec(name.trim())
+		return match?.[1] ? `@${match[1]}` : null
+	} catch {
+		return null
+	}
+}
+
+function isPlatformPackageScope(scope: string) {
+	return isReservedUsername(scope.replace(/^@/, '').toLowerCase())
+}
+
+function isPackagesInvokeCall(node: AstNode) {
+	if (
+		node.type !== 'CallExpression' &&
+		node.type !== 'OptionalCallExpression'
+	) {
+		return false
+	}
+	const callee = node.callee
+	return (
+		(callee?.type === 'MemberExpression' ||
+			callee?.type === 'OptionalMemberExpression') &&
+		callee.computed !== true &&
+		callee.object?.type === 'Identifier' &&
+		callee.object.name === 'packages' &&
+		callee.property?.type === 'Identifier' &&
+		callee.property.name === 'invoke'
+	)
+}
+
+function readStaticPropertyName(property: AstNode): string | null {
+	if (
+		(property.type !== 'ObjectProperty' && property.type !== 'Property') ||
+		property.computed === true
+	) {
+		return null
+	}
+	const key = property.key
+	if (key?.type === 'Identifier' && typeof key.name === 'string') {
+		return key.name
+	}
+	if (
+		(key?.type === 'StringLiteral' || key?.type === 'Literal') &&
+		typeof key.value === 'string'
+	) {
+		return key.value
+	}
+	return null
+}
+
+function readStringLiteral(node: AstNode | undefined): string | null {
+	if (
+		(node?.type === 'StringLiteral' || node?.type === 'Literal') &&
+		typeof node.value === 'string'
+	) {
+		return node.value
+	}
+	return null
+}
+
+function buildOptionsSource(input: {
+	source: string
+	objectNode: AstNode
+	properties: Array<AstNode>
+	kodyIdProperty: AstNode
+}): string | null {
+	const { objectNode, properties, kodyIdProperty, source } = input
+	if (
+		typeof objectNode.start !== 'number' ||
+		typeof objectNode.end !== 'number' ||
+		typeof kodyIdProperty.start !== 'number' ||
+		typeof kodyIdProperty.end !== 'number'
+	) {
+		return null
+	}
+	const propertyIndex = properties.indexOf(kodyIdProperty)
+	if (propertyIndex === -1 || properties.length < 2) return null
+	let removalStart: number
+	let removalEnd: number
+	if (propertyIndex < properties.length - 1) {
+		const nextProperty = properties[propertyIndex + 1]
+		if (typeof nextProperty?.start !== 'number') return null
+		removalStart = kodyIdProperty.start
+		removalEnd = nextProperty.start
+	} else {
+		const previousProperty = properties[propertyIndex - 1]
+		if (typeof previousProperty?.end !== 'number') return null
+		removalStart = previousProperty.end
+		removalEnd = kodyIdProperty.end
+	}
+	const removedSource = source.slice(removalStart, removalEnd)
+	if (removedSource.includes('//') || removedSource.includes('/*')) {
+		return null
+	}
+	return (
+		source.slice(objectNode.start, removalStart) +
+		source.slice(removalEnd, objectNode.end)
+	)
+}
+
+function classifyObjectCall(input: {
+	source: string
+	scope: string
+	objectNode: AstNode
+}): SourceRewrite | null {
+	const properties = input.objectNode.properties
+	if (!properties || properties.length === 0) return null
+	const namedProperties = properties.map((property) => ({
+		property,
+		name: readStaticPropertyName(property),
+	}))
+	if (namedProperties.some((entry) => entry.name == null)) return null
+	const kodyIdEntries = namedProperties.filter(
+		(entry) => entry.name === 'kodyId',
+	)
+	if (kodyIdEntries.length !== 1) return null
+	if (namedProperties.some((entry) => entry.name === 'packageId')) return null
+	if (
+		namedProperties.some(
+			(entry) =>
+				entry.name !== 'kodyId' && !supportedOptionKeys.has(entry.name ?? ''),
+		)
+	) {
+		return null
+	}
+	if (!namedProperties.some((entry) => entry.name === 'exportName')) return null
+	const kodyIdProperty = kodyIdEntries[0]?.property
+	if (!kodyIdProperty) return null
+	const kodyId = readStringLiteral(
+		(kodyIdProperty as { value?: AstNode }).value,
+	)?.trim()
+	if (
+		!kodyId ||
+		kodyId.includes('/') ||
+		Array.from(kodyId).some((character) => /\s/.test(character))
+	) {
+		return null
+	}
+	const optionsSource = buildOptionsSource({
+		source: input.source,
+		objectNode: input.objectNode,
+		properties,
+		kodyIdProperty,
+	})
+	if (
+		optionsSource == null ||
+		typeof input.objectNode.start !== 'number' ||
+		typeof input.objectNode.end !== 'number'
+	) {
+		return null
+	}
+	return {
+		start: input.objectNode.start,
+		end: input.objectNode.end,
+		replacement: `${JSON.stringify(`kody:${input.scope}/${kodyId}`)}, ${optionsSource}`,
+	}
+}
+
+function rewritesOverlap(rewrites: Array<SourceRewrite>) {
+	const sorted = [...rewrites].sort((left, right) => left.start - right.start)
+	return sorted.some(
+		(rewrite, index) =>
+			index > 0 && (sorted[index - 1]?.end ?? 0) > rewrite.start,
+	)
+}
+
+function classifyFile(input: {
+	path: string
+	source: string
+	scope: string
+}): FileClassification | null {
+	if (!scannableModuleFilePattern.test(input.path)) return null
+	if (isTypeDeclarationFilePath(input.path)) return null
+	if (!input.source.includes('packages') || !input.source.includes('invoke')) {
+		return null
+	}
+	const program = parseProgram(input.source)
+	if (!program) {
+		return /packages\s*\??\.\s*invoke\b/.test(input.source)
+			? { path: input.path, rewrites: [], manual: true }
+			: null
+	}
+	const rewrites: Array<SourceRewrite> = []
+	let manual = false
+
+	function visit(node: unknown): void {
+		if (node == null || typeof node !== 'object') return
+		if (Array.isArray(node)) {
+			for (const item of node) visit(item)
+			return
+		}
+		if (!('type' in node)) return
+		const typedNode = node as AstNode
+		if (isPackagesInvokeCall(typedNode)) {
+			const args = typedNode.arguments ?? []
+			const firstArg = args[0]
+			if (args.length >= 2) {
+				// String-first calls have an options argument and are already migrated.
+			} else if (
+				firstArg?.type === 'StringLiteral' ||
+				firstArg?.type === 'TemplateLiteral' ||
+				(firstArg?.type === 'Literal' && typeof firstArg.value === 'string')
+			) {
+				// A one-argument specifier call is already migrated.
+			} else if (firstArg?.type === 'ObjectExpression') {
+				const rewrite = classifyObjectCall({
+					source: input.source,
+					scope: input.scope,
+					objectNode: firstArg,
+				})
+				if (rewrite) rewrites.push(rewrite)
+				else manual = true
+			} else if (firstArg) {
+				manual = true
+			}
+		}
+		for (const value of Object.values(node as Record<string, unknown>)) {
+			if (value != null && typeof value === 'object') visit(value)
+		}
+	}
+
+	visit(program)
+	if (rewrites.length === 0 && !manual) return null
+	return {
+		path: input.path,
+		rewrites,
+		manual: manual || rewritesOverlap(rewrites),
+	}
+}
+
+function classifyFiles(
+	files: Record<string, string>,
+): Array<FileClassification> {
+	const scope = readPackageScope(files) ?? '@invalid'
+	return Object.entries(files)
+		.flatMap(([path, source]) => {
+			const classification = classifyFile({ path, source, scope })
+			return classification ? [classification] : []
+		})
+		.sort((left, right) => left.path.localeCompare(right.path))
+}
+
+function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
+	const classifications = classifyFiles(files)
+	if (classifications.length === 0) return []
+	if (!readPackageScope(files)) {
+		return [{ path: packageManifestPath, message: manifestScopeMessage }]
+	}
+	const scope = readPackageScope(files)
+	if (scope && isPlatformPackageScope(scope)) {
+		return [{ path: packageManifestPath, message: platformScopeMessage }]
+	}
+	return classifications.map((classification) => ({
+		path: classification.path,
+		message: classification.manual
+			? manualRewriteMessage
+			: rewriteDetectMessage,
+	}))
+}
+
+function applyRewrites(source: string, rewrites: Array<SourceRewrite>) {
+	let nextSource = source
+	for (const rewrite of [...rewrites].sort(
+		(left, right) => right.start - left.start,
+	)) {
+		nextSource =
+			nextSource.slice(0, rewrite.start) +
+			rewrite.replacement +
+			nextSource.slice(rewrite.end)
+	}
+	return nextSource
+}
+
+function transform(
+	files: Record<string, string>,
+): PackageCodemodTransformResult {
+	const classifications = classifyFiles(files)
+	if (classifications.length === 0) {
+		return {
+			files: { ...files },
+			changed: false,
+			changedPaths: [],
+			needsManual: [],
+		}
+	}
+	if (!readPackageScope(files)) {
+		return {
+			files: { ...files },
+			changed: false,
+			changedPaths: [],
+			needsManual: [
+				{ path: packageManifestPath, message: manifestScopeMessage },
+			],
+		}
+	}
+	const scope = readPackageScope(files)
+	if (scope && isPlatformPackageScope(scope)) {
+		return {
+			files: { ...files },
+			changed: false,
+			changedPaths: [],
+			needsManual: [
+				{ path: packageManifestPath, message: platformScopeMessage },
+			],
+		}
+	}
+	const nextFiles = { ...files }
+	const changedPaths: Array<string> = []
+	const needsManual: Array<PackageCodemodFinding> = []
+	for (const classification of classifications) {
+		if (classification.manual) {
+			needsManual.push({
+				path: classification.path,
+				message:
+					parseProgram(files[classification.path] ?? '') == null
+						? parseFailureMessage
+						: manualRewriteMessage,
+			})
+			continue
+		}
+		const source = files[classification.path]
+		if (typeof source !== 'string') continue
+		const nextSource = applyRewrites(source, classification.rewrites)
+		if (nextSource !== source) {
+			nextFiles[classification.path] = nextSource
+			changedPaths.push(classification.path)
+		}
+	}
+	return {
+		files: nextFiles,
+		changed: changedPaths.length > 0,
+		changedPaths,
+		needsManual,
+	}
+}
+
+/**
+ * Migrate the deprecated object-only package invocation API to the preferred
+ * scoped string-first form. Bare kody ids resolve in the invoking package
+ * owner's account, so the package manifest scope is the equivalent explicit
+ * owner. Ambiguous expressions remain unchanged for operator review.
+ */
+export const invokeObjectToSpecifierCodemod = {
+	id: invokeObjectToSpecifierCodemodId,
+	description:
+		'Rewrite deprecated packages.invoke({ kodyId, exportName, ... }) calls to packages.invoke("kody:@owner/kodyId", { exportName, ... }); flag ambiguous calls for manual review.',
+	detect,
+	transform,
+} satisfies PackageCodemod
