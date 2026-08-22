@@ -1265,7 +1265,7 @@ html.is-settled {
 	text-wrap: pretty;
 }
 
-.landing-loop-line > * {
+.landing-loop-line * {
 	min-width: 0;
 }
 
