@@ -223,7 +223,13 @@ const appHandler = withCors({
 				request,
 				body: typeof body === 'object' && body !== null ? body : {},
 			})
-			if (!protection.ok) return protection.response
+			if (!protection.ok) {
+				// The clone was the only branch we read. Drain the original
+				// before returning so workerd does not keep a teed body
+				// alive (isolate kill → wrangler ProxyWorker fatal exit).
+				await discardUnreadRequestBody(request)
+				return protection.response
+			}
 		}
 
 		if (url.pathname === '/__maintenance/reindex-capabilities') {
@@ -291,7 +297,10 @@ const appHandler = withCors({
 							request,
 							body: Object.fromEntries(formData),
 						})
-						if (!protection.ok) return protection.response
+						if (!protection.ok) {
+							await discardUnreadRequestBody(request)
+							return protection.response
+						}
 					}
 				}
 				return await handleAuthorizeRequest(request, env)
@@ -442,6 +451,17 @@ function addOAuthDiscoveryCorsHeaders(
 		statusText: response.statusText,
 		headers,
 	})
+}
+
+/**
+ * Finish the unused side of a `request.clone()` tee. workerd treats an
+ * unread cloned original as a leaked stream branch and can terminate the
+ * isolate; wrangler 4.114+ then exits `wrangler dev` instead of recovering
+ * (workers-sdk#14926, "Network connection lost").
+ */
+async function discardUnreadRequestBody(request: Request) {
+	if (request.body === null || request.bodyUsed) return
+	await request.arrayBuffer()
 }
 
 function isOAuthProviderOwnedPath(pathname: string) {

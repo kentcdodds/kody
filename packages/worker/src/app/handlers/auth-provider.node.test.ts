@@ -861,6 +861,28 @@ test('JSON start mode returns the authorize URL for client-side navigation', asy
 	})
 })
 
+test('signed-out JSON start consumes the request body instead of abandoning a clone', async () => {
+	const { db } = createMigratedDb()
+	const env = createAppEnv(db)
+	const request = new Request('http://example.com/auth/github', {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({ website: '', turnstileToken: '' }),
+	})
+
+	expect(request.bodyUsed).toBe(false)
+	const response = await runHandler(
+		createAuthProviderStartHandler(env),
+		request,
+		{ provider: 'github' },
+	)
+	expect(response.status).toBe(200)
+	expect(request.bodyUsed).toBe(true)
+})
+
 test('signed-in users link and disconnect providers from their account', async () => {
 	const { sqlite, db } = createMigratedDb()
 	const env = createAppEnv(db, {

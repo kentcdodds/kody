@@ -209,10 +209,15 @@ export function createAuthProviderStartHandler(env: Env) {
 			const { session } = await readAuthSessionResult(request)
 
 			if (!session) {
-				const body = (await request
-					.clone()
-					.json()
-					.catch(() => ({}))) as Record<string, unknown>
+				// Read this request once. `request.clone().json()` tees the
+				// body and leaves the original unread; workerd can then
+				// terminate the isolate ("Network connection lost"), and
+				// wrangler's ProxyController treats that as a fatal
+				// `wrangler dev` exit (workers-sdk#14926).
+				const body = (await request.json().catch(() => ({}))) as Record<
+					string,
+					unknown
+				>
 				const protection = await verifyPublicFormProtection({
 					env,
 					request,
