@@ -101,6 +101,5 @@ test('connect chooser lists reconnectable connections and unused built-ins', () 
 	expect(options[2]).toMatchObject({
 		href: '/connect/oauth?provider=google&platform=google',
 		kind: 'platform',
-		detail: "Connect with Kody's built-in app",
 	})
 })

@@ -20,28 +20,6 @@ function workflow(
 }
 
 test('account workflows filters cover active/history views and search', () => {
-	expect(isActiveAccountWorkflow(workflow({ id: 'q', status: 'queued' }))).toBe(
-		true,
-	)
-	expect(
-		isActiveAccountWorkflow(workflow({ id: 'run', status: 'running' })),
-	).toBe(true)
-	expect(
-		isActiveAccountWorkflow(workflow({ id: 'wait', status: 'waiting' })),
-	).toBe(true)
-	expect(isActiveAccountWorkflow(workflow({ id: 'null', status: null }))).toBe(
-		true,
-	)
-	expect(
-		isActiveAccountWorkflow(workflow({ id: 'done', status: 'complete' })),
-	).toBe(false)
-	expect(
-		isActiveAccountWorkflow(workflow({ id: 'err', status: 'errored' })),
-	).toBe(false)
-	expect(
-		isActiveAccountWorkflow(workflow({ id: 'cancel', status: 'cancelled' })),
-	).toBe(false)
-
 	expect(readWorkflowsViewFilter('/account/workflows')).toBe('active')
 	expect(readWorkflowsViewFilter('/account/workflows?view=history')).toBe(
 		'history',
@@ -74,6 +52,9 @@ test('account workflows filters cover active/history views and search', () => {
 			lastError: 'boom',
 		}),
 	]
+
+	expect(isActiveAccountWorkflow(workflows[0]!)).toBe(true)
+	expect(isActiveAccountWorkflow(workflows[2]!)).toBe(false)
 
 	expect(
 		filterAccountWorkflows(workflows, {

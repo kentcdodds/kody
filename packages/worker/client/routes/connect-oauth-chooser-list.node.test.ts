@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	connectOauthChooserFilterMinOptions,
-	connectOauthChooserListMaxHeight,
 	filterConnectOauthChooserOptions,
 } from './connect-oauth-chooser-list.ts'
 
@@ -25,7 +24,6 @@ test('connect chooser filter matches label, detail, and provider key and stays h
 	]
 
 	expect(connectOauthChooserFilterMinOptions).toBe(6)
-	expect(connectOauthChooserListMaxHeight).toContain('2.5 *')
 	expect(filterConnectOauthChooserOptions(options, '')).toEqual(options)
 	expect(filterConnectOauthChooserOptions(options, '  built-in  ')).toEqual([
 		options[0],

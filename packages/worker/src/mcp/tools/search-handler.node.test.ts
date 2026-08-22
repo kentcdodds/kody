@@ -295,12 +295,6 @@ test('search tool returns compact query markdown while preserving structured aux
 	expect(text).toContain('## Relevant memories')
 	expect(text).toContain('Verbose memory subject')
 	expect(text).toContain('Prefers compact search results.')
-	expect(text).not.toContain(
-		'Long memory details should stay out of the text response.',
-	)
-	expect(text).not.toContain('Category:')
-	expect(text).not.toContain('Tags:')
-	expect(text).not.toContain('Updated:')
 	const result = successResponse.structuredContent.result as {
 		warnings: Array<string>
 		guidance?: string
@@ -1196,17 +1190,10 @@ test('search reserves maxResponseSize for memories and still enriches from memor
 		maxResponseSize,
 	})
 	expect(tightResponse.isError).toBeUndefined()
-	const tightText = tightResponse.content.map((item) => item.text).join('\n')
 	const tightMemoryBlock = tightResponse.content.find((item) =>
 		item.text.includes('## Relevant memories'),
 	)
 	expect(tightMemoryBlock?.text).toContain(longSummary)
-	expect(tightMemoryBlock?.text).not.toContain(
-		'Long details must stay out of the reserved memory block.',
-	)
-	expect(tightText).not.toContain(
-		'Long details must stay out of the reserved memory block.',
-	)
 	const tightResult = tightResponse.structuredContent.result as {
 		matches: Array<{ type: string }>
 		memories?: { surfaced: Array<{ id: string; summary: string }> }

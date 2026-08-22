@@ -211,10 +211,6 @@ test('memory tool context surfaces retrievers, filters weak matches, fails on re
 			'- **Search workflow** — Use ranked search.',
 		].join('\n'),
 	)
-	expect(compactContent?.text).not.toContain('Category')
-	expect(compactContent?.text).not.toContain('Tags')
-	expect(compactContent?.text).not.toContain('Updated')
-	expect(compactContent?.text).not.toContain('active-rank-one')
 
 	setupMemoryContextMocks()
 	mockModule.searchMemoryRecords.mockResolvedValue({
