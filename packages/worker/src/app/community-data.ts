@@ -15,6 +15,7 @@ import {
 	buildCommunityIndexCacheKey,
 	getOrSetDataCache,
 } from '#app/data-cache.ts'
+import { parseCommunityListingCategory } from '#universal/community-categories.ts'
 import { parseCommunityListingSort } from '#universal/community-search.ts'
 import {
 	type CommunityDetailLoaderData,
@@ -24,10 +25,12 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { setRequestDataCacheLookup } from '#app/request-cache.ts'
 import { listCommunityForksByListingIdsAndUser } from '#worker/community/repo.ts'
 import {
+	getCommunityCategoryCounts,
+	getCommunityListingWithAggregates,
+	listCommunityIndexOverview,
 	listCommunityListingsWithAggregates,
 	listFeaturedCommunityListingsWithAggregates,
 	searchCommunityListings,
-	getCommunityListingWithAggregates,
 } from '#worker/community/service.ts'
 import {
 	getCommunityStar,
@@ -94,46 +97,96 @@ async function loadCommunityIndexDataUncached(
 	const url = new URL(request.url)
 	const query = url.searchParams.get('q')?.trim() ?? ''
 	const sort = parseCommunityListingSort(url.searchParams.get('sort'))
+	const category = parseCommunityListingCategory(
+		url.searchParams.get('category'),
+	)
+	const overview = query.length === 0 && category == null
 	const limit = readPositiveInt(
 		url.searchParams.get('limit'),
 		defaultCommunityListLimit,
 		100,
 	)
 
-	const cacheKey = buildCommunityIndexCacheKey({ query, sort, limit })
-	const listings = await loadWithCommunityCache(
+	const cacheKey = buildCommunityIndexCacheKey({
+		query,
+		sort,
+		limit,
+		category,
+		overview,
+	})
+	const cached = await loadWithCommunityCache(
 		env,
 		request,
 		cacheKey,
 		async () => {
-			const rows = query
-				? await searchCommunityListings({
-						env,
-						query,
-						limit,
-						sort,
-					})
-				: await listCommunityListingsWithAggregates({
-						env,
-						includeDelisted: false,
-						limit,
-						offset: 0,
-						sort,
-					})
-			return rows.map(toPublicCommunityListing)
+			if (overview) {
+				const overviewResult = await listCommunityIndexOverview({
+					env,
+					sort,
+				})
+				return {
+					listings: overviewResult.listings.map(toPublicCommunityListing),
+					groups: overviewResult.groups.map((group) => ({
+						category: group.category,
+						listings: group.listings.map(toPublicCommunityListing),
+						total: group.total,
+					})),
+					categoryCounts: overviewResult.categoryCounts,
+				}
+			}
+			const [rows, categoryCounts] = await Promise.all([
+				query
+					? searchCommunityListings({
+							env,
+							query,
+							limit,
+							sort,
+							category,
+						})
+					: listCommunityListingsWithAggregates({
+							env,
+							includeDelisted: false,
+							limit,
+							offset: 0,
+							sort,
+							category,
+						}),
+				getCommunityCategoryCounts({ env }),
+			])
+			return {
+				listings: rows.map(toPublicCommunityListing),
+				groups: null,
+				categoryCounts,
+			}
 		},
 	)
 
 	const user = await readOptionalAuthenticatedViewer(request, env)
+	const visibleListings = overview
+		? (cached.groups ?? []).flatMap((group) => group.listings)
+		: cached.listings
+	const listings = await overlayViewerInstallsOnListings({
+		env,
+		user,
+		listings: visibleListings,
+	})
+	const listingById = new Map(listings.map((listing) => [listing.id, listing]))
 	return {
 		ok: true,
-		listings: await overlayViewerInstallsOnListings({
-			env,
-			user,
-			listings,
-		}),
+		listings,
+		groups:
+			cached.groups == null
+				? null
+				: cached.groups.map((group) => ({
+						...group,
+						listings: group.listings
+							.map((listing) => listingById.get(listing.id))
+							.filter((listing) => listing != null),
+					})),
+		categoryCounts: cached.categoryCounts,
 		query: query || null,
 		sort,
+		category,
 	}
 }
 

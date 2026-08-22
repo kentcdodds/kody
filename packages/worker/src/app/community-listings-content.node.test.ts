@@ -9,6 +9,7 @@ const sampleListing = {
 	description: 'Triage GitHub issues.',
 	iconUrl: '/community/listing-1/icon/abc1234567890',
 	tags: ['github'],
+	category: 'integrations',
 	readmeContent: '# README',
 	license: 'MIT',
 	pinnedCommit: 'abc1234567890',
@@ -46,7 +47,13 @@ test('community listings render sort controls, published dates, and empty states
 		'data-testid="community-create-prompt"',
 	)
 	expect(emptyCatalogHtml).toContain('href="/onboarding"')
-	expect(emptyCatalogHtml).toContain('data-testid="community-listings-sort"')
+	expect(emptyCatalogHtml).toContain('The shelf is')
+	expect(emptyCatalogHtml).not.toContain(
+		'data-testid="community-listings-categories"',
+	)
+	expect(emptyCatalogHtml).not.toContain(
+		'data-testid="community-listings-sort"',
+	)
 
 	const listingsHtml = await renderCommunityListingsContentHtml({
 		listings: [sampleListing],
@@ -58,4 +65,75 @@ test('community listings render sort controls, published dates, and empty states
 	)
 	expect(listingsHtml).toContain('href="/community?sort=newest"')
 	expect(listingsHtml).toContain('href="/community"')
+	expect(listingsHtml).toContain('data-testid="community-listings-categories"')
+	expect(listingsHtml).toContain(
+		'href="/community?sort=newest&amp;category=integrations"',
+	)
+	expect(listingsHtml).not.toContain('category=utilities')
+	expect(listingsHtml).not.toContain('category=other')
+
+	const overviewHtml = await renderCommunityListingsContentHtml({
+		listings: [sampleListing],
+		groups: [
+			{
+				category: 'integrations',
+				listings: [sampleListing],
+				total: 4,
+			},
+		],
+		query: null,
+		sort: 'best',
+	})
+	expect(overviewHtml).toContain('data-testid="community-listings-overview"')
+	expect(overviewHtml).toContain('See all Integrations')
+	expect(overviewHtml).not.toContain('See all 4 packages')
+	expect(overviewHtml).toContain('href="/community?category=integrations"')
+	expect(overviewHtml).not.toContain('category=apps')
+
+	const categoryEmptyHtml = await renderCommunityListingsContentHtml({
+		listings: [],
+		query: null,
+		category: 'apps',
+	})
+	expect(categoryEmptyHtml).toContain('Nothing in')
+	expect(categoryEmptyHtml).toContain('Apps')
+	expect(categoryEmptyHtml).toContain('href="/community"')
+	expect(categoryEmptyHtml).toContain(
+		'data-testid="community-listings-categories"',
+	)
+	expect(categoryEmptyHtml).toContain('href="/community?category=apps"')
+	expect(categoryEmptyHtml).not.toContain('category=utilities')
+
+	const fullGroupHtml = await renderCommunityListingsContentHtml({
+		listings: [sampleListing],
+		groups: [
+			{
+				category: 'integrations',
+				listings: [sampleListing],
+				total: 1,
+			},
+		],
+		query: null,
+		sort: 'best',
+	})
+	expect(fullGroupHtml).toContain('data-testid="community-listings-overview"')
+	expect(fullGroupHtml).not.toContain('See all Integrations')
+
+	const catalogWideChipsHtml = await renderCommunityListingsContentHtml({
+		listings: [sampleListing],
+		query: null,
+		category: 'integrations',
+		categoryCounts: {
+			integrations: 1200,
+			examples: 40,
+			productivity: 0,
+			apps: 0,
+			utilities: 0,
+			other: 0,
+		},
+	})
+	expect(catalogWideChipsHtml).toContain('category=integrations')
+	expect(catalogWideChipsHtml).toContain('category=examples')
+	expect(catalogWideChipsHtml).not.toContain('category=utilities')
+	expect(catalogWideChipsHtml).not.toContain('category=other')
 })

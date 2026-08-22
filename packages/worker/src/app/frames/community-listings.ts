@@ -10,8 +10,11 @@ registerFrame(COMMUNITY_LISTINGS_TARGET, {
 		const data = await loadCommunityIndexData(env, request)
 		return renderCommunityListingsContentHtml({
 			listings: data.listings,
+			groups: data.groups,
+			categoryCounts: data.categoryCounts,
 			query: data.query,
 			sort: data.sort,
+			category: data.category,
 		})
 	},
 })

@@ -3,12 +3,18 @@ import { createCommunityApiHandler } from './community.tsx'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
 const mockModule = vi.hoisted(() => ({
+	listCommunityIndexOverview: vi.fn(),
+	getCommunityCategoryCounts: vi.fn(),
 	listCommunityListingsWithAggregates: vi.fn(),
 	searchCommunityListings: vi.fn(),
 	readAuthenticatedAppUser: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
+	listCommunityIndexOverview: (...args: Array<unknown>) =>
+		mockModule.listCommunityIndexOverview(...args),
+	getCommunityCategoryCounts: (...args: Array<unknown>) =>
+		mockModule.getCommunityCategoryCounts(...args),
 	listCommunityListingsWithAggregates: (...args: Array<unknown>) =>
 		mockModule.listCommunityListingsWithAggregates(...args),
 	searchCommunityListings: (...args: Array<unknown>) =>
@@ -29,6 +35,7 @@ const sampleListing = {
 	name: '@kentcdodds/github-triage',
 	description: 'Triage GitHub issues.',
 	tags: ['github'],
+	category: 'integrations',
 	searchText: null,
 	readmeContent: '# README',
 	license: 'MIT',
@@ -54,6 +61,32 @@ const env = {} as Env
 
 test('community API lists active listings and searches when q is provided', async () => {
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.listCommunityIndexOverview.mockResolvedValue({
+		listings: [sampleListing],
+		groups: [
+			{
+				category: 'integrations',
+				listings: [sampleListing],
+				total: 1,
+			},
+		],
+		categoryCounts: {
+			integrations: 1,
+			examples: 0,
+			productivity: 0,
+			apps: 0,
+			utilities: 0,
+			other: 0,
+		},
+	})
+	mockModule.getCommunityCategoryCounts.mockResolvedValue({
+		integrations: 1,
+		examples: 0,
+		productivity: 0,
+		apps: 0,
+		utilities: 0,
+		other: 0,
+	})
 	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
 		sampleListing,
 	])
@@ -77,11 +110,8 @@ test('community API lists active listings and searches when q is provided', asyn
 	})
 	expect(listBody.listings[0]).not.toHaveProperty('ownerUserId')
 	expect(listBody.listings[0]).not.toHaveProperty('status')
-	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledWith({
+	expect(mockModule.listCommunityIndexOverview).toHaveBeenCalledWith({
 		env,
-		includeDelisted: false,
-		limit: 50,
-		offset: 0,
 		sort: 'best',
 	})
 
@@ -99,6 +129,7 @@ test('community API lists active listings and searches when q is provided', asyn
 		query: 'github',
 		limit: 50,
 		sort: 'best',
+		category: null,
 	})
 
 	const newestResponse = await handler.handler({
@@ -108,11 +139,8 @@ test('community API lists active listings and searches when q is provided', asyn
 	} as never)
 	const newestBody = await newestResponse.json()
 	expect(newestBody.sort).toBe('newest')
-	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledWith({
+	expect(mockModule.listCommunityIndexOverview).toHaveBeenCalledWith({
 		env,
-		includeDelisted: false,
-		limit: 50,
-		offset: 0,
 		sort: 'newest',
 	})
 })

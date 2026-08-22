@@ -29,6 +29,23 @@ test('community search hrefs omit default sort and keep newest with the query', 
 	).toEqual({
 		query: 'obsidian',
 		sort: 'newest',
+		category: null,
+	})
+	expect(
+		buildCommunityIndexHref({
+			query: 'github',
+			sort: 'newest',
+			category: 'integrations',
+		}),
+	).toBe('/community?q=github&sort=newest&category=integrations')
+	expect(
+		readCommunitySearchFromHref(
+			'/community?q=github&sort=newest&category=integrations',
+		),
+	).toEqual({
+		query: 'github',
+		sort: 'newest',
+		category: 'integrations',
 	})
 	expect(readCommunitySearchQueryFromHref('/community?q=obsidian')).toBe(
 		'obsidian',

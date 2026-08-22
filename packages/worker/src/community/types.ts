@@ -1,3 +1,5 @@
+import { type CommunityListingCategory } from '#universal/community-categories.ts'
+
 export type CommunityListingStatus = 'active' | 'delisted'
 
 export type CommunityReportStatus = 'open' | 'resolved' | 'dismissed'
@@ -11,6 +13,7 @@ export type CommunityListingRow = {
 	name: string
 	description: string
 	tags_json: string
+	category: CommunityListingCategory
 	search_text: string | null
 	readme_content: string | null
 	license: string
@@ -34,6 +37,11 @@ export type CommunityListingRecord = {
 	name: string
 	description: string
 	tags: Array<string>
+	/**
+	 * Stored browse category. Publish writes `kody.category` or a tag
+	 * inference; reads use the column as-is so SQL filters and chips agree.
+	 */
+	category: CommunityListingCategory
 	searchText: string | null
 	readmeContent: string | null
 	license: string

@@ -76,8 +76,11 @@ export function CommunityRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
-		const { query: searchQuery, sort } =
-			readCommunitySearchFromHref(currentHref)
+		const {
+			query: searchQuery,
+			sort,
+			category,
+		} = readCommunitySearchFromHref(currentHref)
 		const frameSrc = buildCommunityListingsFrameSrc(currentHref)
 
 		const explainer = resolveEntityExplainer(
@@ -116,7 +119,7 @@ export function CommunityRoute(handle: Handle) {
 							</label>
 							<input
 								id="pkg-q"
-								key={`${searchQuery}:${sort}`}
+								key={`${searchQuery}:${sort}:${category ?? ''}`}
 								type="search"
 								name="q"
 								defaultValue={searchQuery}
@@ -125,6 +128,9 @@ export function CommunityRoute(handle: Handle) {
 							/>
 							{sort === 'newest' ? (
 								<input type="hidden" name="sort" value="newest" />
+							) : null}
+							{category ? (
+								<input type="hidden" name="category" value={category} />
 							) : null}
 							<button type="submit" mix={css(getPillButtonCss())}>
 								Search

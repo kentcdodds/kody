@@ -36,6 +36,7 @@ const listing = {
 	name: '@kody/github-triage',
 	description: 'triage GitHub issues',
 	tags: [],
+	category: 'integrations',
 	searchText: null,
 	readmeContent: null,
 	license: 'MIT',

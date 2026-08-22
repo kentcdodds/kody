@@ -3,6 +3,8 @@
 import { type Handle, css } from 'remix/ui'
 import { renderToString } from 'remix/ui/server'
 import { type PublicCommunityListing } from '#app/community-public.ts'
+import { communityPackageCategoryCopy } from '#universal/community-categories.ts'
+import { buildCommunityIndexHref } from '#universal/community-search.ts'
 import {
 	formatCommunityAdaptationEffort,
 	formatCommunityPublishedDate,
@@ -186,20 +188,27 @@ export function CommunityDetailContent(
 				</a>
 			</p>
 
-			{listing.tags.length > 0 ? (
-				<ul
-					data-rise
-					style={{ '--rise': '3' }}
-					aria-label="Tags"
-					mix={css(detailTagListCss)}
-				>
-					{listing.tags.map((tag) => (
-						<li key={tag} mix={css(communityTagPillCss)}>
-							{tag}
-						</li>
-					))}
-				</ul>
-			) : null}
+			<ul
+				data-rise
+				style={{ '--rise': '3' }}
+				aria-label="Category and tags"
+				mix={css(detailTagListCss)}
+			>
+				<li mix={css(communityTagPillCss)}>
+					<a
+						href={buildCommunityIndexHref({ category: listing.category })}
+						data-testid="community-listing-category"
+						mix={css(detailCategoryLinkCss)}
+					>
+						{communityPackageCategoryCopy[listing.category].label}
+					</a>
+				</li>
+				{listing.tags.map((tag) => (
+					<li key={tag} mix={css(communityTagPillCss)}>
+						{tag}
+					</li>
+				))}
+			</ul>
 
 			{/* Facts as a quiet definition row, not a stat billboard. */}
 			<dl data-rise style={{ '--rise': '4' }} mix={css(metaCss)}>
@@ -356,6 +365,16 @@ const filesLinkCss = {
 const detailTagListCss = {
 	...communityTagListCss,
 	marginTop: '1rem',
+}
+
+const detailCategoryLinkCss = {
+	color: colors.primaryText,
+	fontWeight: 550,
+	textDecoration: 'underline',
+	textUnderlineOffset: '0.18em',
+	'&:hover': {
+		color: colors.text,
+	},
 }
 
 const metaCss = {

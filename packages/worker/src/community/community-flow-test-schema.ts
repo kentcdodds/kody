@@ -83,6 +83,16 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			name TEXT NOT NULL,
 			description TEXT NOT NULL,
 			tags_json TEXT NOT NULL DEFAULT '[]',
+			category TEXT NOT NULL DEFAULT 'other' CHECK (
+				category IN (
+					'integrations',
+					'examples',
+					'productivity',
+					'apps',
+					'utilities',
+					'other'
+				)
+			),
 			search_text TEXT,
 			readme_content TEXT,
 			license TEXT NOT NULL,
@@ -236,6 +246,15 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 		await db
 			.prepare(
 				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
+			)
+			.run()
+	} catch {
+		// Column already present.
+	}
+	try {
+		await db
+			.prepare(
+				`ALTER TABLE community_listings ADD COLUMN category TEXT NOT NULL DEFAULT 'other'`,
 			)
 			.run()
 	} catch {

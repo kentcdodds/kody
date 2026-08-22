@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { communityListingCategories } from '#universal/community-categories.ts'
 import { buildUserAvatarUrl } from '#worker/community/public-urls.ts'
 import { getCommunityListingWithAggregates } from '#worker/community/service.ts'
 import { getUserSocialRowByUsername } from '#worker/community/social-repo.ts'
@@ -53,6 +54,7 @@ export const communityGetCapability = defineDomainCapability(
 			kody_id: z.string(),
 			description: z.string(),
 			tags: z.array(z.string()),
+			category: z.enum(communityListingCategories),
 			license: z.string(),
 			pinned_commit: z.string(),
 			status: communityListingStatusSchema,
@@ -101,6 +103,7 @@ export const communityGetCapability = defineDomainCapability(
 				kody_id: listing.kodyId,
 				description: listing.description,
 				tags: listing.tags,
+				category: listing.category,
 				license: listing.license,
 				pinned_commit: listing.pinnedCommit,
 				status: listing.status,

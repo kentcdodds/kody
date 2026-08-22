@@ -129,6 +129,7 @@ export function toPublicCommunityListing(
 			iconCommit: listing.iconCommit,
 		}),
 		tags: listing.tags,
+		category: listing.category,
 		readmeContent: listing.readmeContent,
 		license: listing.license,
 		pinnedCommit: listing.pinnedCommit,

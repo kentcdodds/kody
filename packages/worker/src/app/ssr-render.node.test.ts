@@ -40,6 +40,8 @@ import type * as CommunitySocialRepo from '#worker/community/social-repo.ts'
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
 const communityMockModule = vi.hoisted(() => ({
+	listCommunityIndexOverview: vi.fn(),
+	getCommunityCategoryCounts: vi.fn(),
 	listCommunityListingsWithAggregates: vi.fn(),
 	searchCommunityListings: vi.fn(),
 	getCommunityListingWithAggregates: vi.fn(),
@@ -49,6 +51,10 @@ const communityMockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
+	listCommunityIndexOverview: (...args: Array<unknown>) =>
+		communityMockModule.listCommunityIndexOverview(...args),
+	getCommunityCategoryCounts: (...args: Array<unknown>) =>
+		communityMockModule.getCommunityCategoryCounts(...args),
 	listCommunityListingsWithAggregates: (...args: Array<unknown>) =>
 		communityMockModule.listCommunityListingsWithAggregates(...args),
 	searchCommunityListings: (...args: Array<unknown>) =>
@@ -89,6 +95,7 @@ const sampleListing = {
 	name: '@kentcdodds/github-triage',
 	description: 'Triage GitHub issues.',
 	tags: ['github'],
+	category: 'integrations',
 	searchText: null,
 	readmeContent: '# README',
 	license: 'MIT',
@@ -268,10 +275,25 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		]),
 	)
 
-	communityMockModule.listCommunityListingsWithAggregates.mockReset()
-	communityMockModule.listCommunityListingsWithAggregates.mockResolvedValue([
-		sampleListing,
-	])
+	communityMockModule.listCommunityIndexOverview.mockReset()
+	communityMockModule.listCommunityIndexOverview.mockResolvedValue({
+		listings: [sampleListing],
+		groups: [
+			{
+				category: 'integrations',
+				listings: [sampleListing],
+				total: 1,
+			},
+		],
+		categoryCounts: {
+			integrations: 1,
+			examples: 0,
+			productivity: 0,
+			apps: 0,
+			utilities: 0,
+			other: 0,
+		},
+	})
 
 	const communityResponse = await runHtmlHandler(
 		createCommunityHandler(env),
@@ -288,9 +310,9 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(communityHtml).toContain('<!-- rmx:h:')
 	const communityProps = readAppRootProps(communityHtml)
 	expect(communityProps.loaderData?.community).toBeUndefined()
-	expect(
-		communityMockModule.listCommunityListingsWithAggregates,
-	).toHaveBeenCalledTimes(1)
+	expect(communityMockModule.listCommunityIndexOverview).toHaveBeenCalledTimes(
+		1,
+	)
 
 	const communityFrameResponse = await runHtmlHandler(
 		createCommunityHandler(env),

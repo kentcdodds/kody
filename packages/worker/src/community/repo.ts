@@ -1,6 +1,13 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import {
+	emptyCommunityCategoryCounts,
+	parseCommunityListingCategory,
+	readStoredCommunityListingCategory,
+	type CommunityCategoryCounts,
+	type CommunityListingCategory,
+} from '#universal/community-categories.ts'
+import {
 	type CommunityActivityKind,
 	type CommunityActivityRecord,
 	type CommunityBanRecord,
@@ -37,6 +44,9 @@ export function mapCommunityListingRow(
 		name: String(row['name']),
 		description: String(row['description']),
 		tags: parseTagsJson(row['tags_json']),
+		category: readStoredCommunityListingCategory(
+			row['category'] == null ? null : String(row['category']),
+		),
 		searchText:
 			row['search_text'] == null ? null : String(row['search_text']).trim(),
 		readmeContent:
@@ -168,6 +178,7 @@ function listingStatusFilter(includeDelisted: boolean) {
 export const communityListingSelectColumns = `community_listings.id, community_listings.owner_user_id,
 	community_listings.package_id, community_listings.source_id, community_listings.kody_id,
 	community_listings.name, community_listings.description, community_listings.tags_json,
+	community_listings.category,
 	community_listings.search_text, community_listings.readme_content, community_listings.license,
 	community_listings.pinned_commit, community_listings.status, community_listings.created_at,
 	community_listings.updated_at, community_listings.published_at,
@@ -291,9 +302,9 @@ export async function insertCommunityListing(
 		.prepare(
 			`INSERT INTO community_listings (
 				id, owner_user_id, package_id, source_id, kody_id, name, description,
-				tags_json, search_text, readme_content, license, pinned_commit, status,
+				tags_json, category, search_text, readme_content, license, pinned_commit, status,
 				created_at, updated_at, published_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -304,6 +315,7 @@ export async function insertCommunityListing(
 			row.name,
 			row.description,
 			row.tags_json,
+			row.category,
 			row.search_text ?? null,
 			row.readme_content ?? null,
 			row.license,
@@ -326,6 +338,7 @@ export async function updateCommunityListing(
 		name?: string
 		description?: string
 		tagsJson?: string
+		category?: CommunityListingRecord['category']
 		searchText?: string | null
 		readmeContent?: string | null
 		license?: string
@@ -350,6 +363,7 @@ export async function updateCommunityListing(
 		addAssignment('description', input.description)
 	}
 	if (input.tagsJson !== undefined) addAssignment('tags_json', input.tagsJson)
+	if (input.category !== undefined) addAssignment('category', input.category)
 	if (input.searchText !== undefined) {
 		addAssignment('search_text', input.searchText ?? null)
 	}
@@ -500,11 +514,33 @@ export async function listCommunityListings(
 	return (rows.results ?? []).map(mapCommunityListingRow)
 }
 
+export async function countActiveCommunityListingsByCategory(
+	db: D1Database,
+): Promise<CommunityCategoryCounts> {
+	const rows = await db
+		.prepare(
+			`SELECT category, COUNT(*) AS listing_count
+			FROM community_listings
+			WHERE status = 'active'
+			GROUP BY category`,
+		)
+		.all<{ category: string; listing_count: number }>()
+	const counts = emptyCommunityCategoryCounts()
+	for (const row of rows.results ?? []) {
+		const category = parseCommunityListingCategory(row.category)
+		if (category == null) continue
+		counts[category] = Number(row.listing_count)
+	}
+	return counts
+}
+
 /**
  * Bounded candidate query for community search/browse. Applies SQL-level text
  * pre-filtering (LIKE across name/kody_id/description/search_text/tags_json/
  * readme_content) when a query is provided, orders by recency, and never
  * returns more than `limit` rows so scoring stays off the full table.
+ * Stored `category` is applied in SQL so a filtered browse is not capped by
+ * the global newest-N window.
  */
 export async function listCommunityListingCandidates(
 	db: D1Database,
@@ -512,12 +548,17 @@ export async function listCommunityListingCandidates(
 		includeDelisted: boolean
 		limit: number
 		query?: string | null
+		category?: CommunityListingCategory | null
 	},
 ): Promise<Array<CommunityListingRecord>> {
 	const conditions: Array<string> = []
 	const bindings: Array<unknown> = []
 	if (!input.includeDelisted) {
 		conditions.push(`community_listings.status = 'active'`)
+	}
+	if (input.category != null) {
+		conditions.push(`community_listings.category = ?`)
+		bindings.push(input.category)
 	}
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {

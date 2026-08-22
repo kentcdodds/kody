@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { communityListingCategories } from '#universal/community-categories.ts'
 import {
 	buildUserAvatarUrl,
 	getOwnerUsernameFromListingName,
@@ -60,6 +61,7 @@ export const communityListingSummarySchema = z.object({
 	name: z.string(),
 	kody_id: z.string(),
 	description: z.string(),
+	category: z.enum(communityListingCategories),
 	license: z.string(),
 	pinned_commit: z.string(),
 	status: communityListingStatusSchema,
@@ -94,6 +96,7 @@ export const communitySearchMatchSchema =
 		kody_id: z.string(),
 		description: z.string(),
 		tags: z.array(z.string()),
+		category: z.enum(communityListingCategories),
 		owner_anonymous: z.literal(true),
 		trusted: communityTrustedFieldSchema,
 		relevance: z
@@ -118,6 +121,7 @@ export const communityStarredListingSchema = communityListingSummarySchema
 		trusted: communityTrustedFieldSchema,
 		featured: communityFeaturedFieldSchema,
 		tags: z.array(z.string()),
+		category: z.enum(communityListingCategories),
 	})
 
 export const communityActivityTypeSchema = z.enum([
@@ -172,6 +176,7 @@ export function toCommunityListingSummaryOutput(
 		name: listing.name,
 		kody_id: listing.kodyId,
 		description: listing.description,
+		category: listing.category,
 		license: listing.license,
 		pinned_commit: listing.pinnedCommit,
 		status: listing.status,
@@ -194,6 +199,7 @@ export function toCommunityStarredListingOutput(
 		trusted: listing.trusted,
 		featured: listing.featured,
 		tags: listing.tags,
+		category: listing.category,
 	}
 }
 

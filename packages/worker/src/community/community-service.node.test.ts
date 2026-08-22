@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { communityIndexOverviewCandidateLimitPerCategory } from '#universal/community-categories.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { CommunityActionError } from './errors.ts'
 import type * as CommunityRepo from './repo.ts'
@@ -14,6 +15,7 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityListingByOwnerAndKodyId: vi.fn(),
 	getCommunityListingById: vi.fn(),
 	listCommunityListingCandidates: vi.fn(),
+	countActiveCommunityListingsByCategory: vi.fn(),
 	getCommunityRatingAggregatesByListingIds: vi.fn(),
 	countCommunityForksByListingIds: vi.fn(),
 	countCommunityStarsByListingIds: vi.fn(),
@@ -111,6 +113,8 @@ vi.mock('./repo.ts', async (importOriginal) => {
 			mockModule.getCommunityListingById(...args),
 		listCommunityListingCandidates: (...args: Array<unknown>) =>
 			mockModule.listCommunityListingCandidates(...args),
+		countActiveCommunityListingsByCategory: (...args: Array<unknown>) =>
+			mockModule.countActiveCommunityListingsByCategory(...args),
 		getCommunityRatingAggregatesByListingIds: (...args: Array<unknown>) =>
 			mockModule.getCommunityRatingAggregatesByListingIds(...args),
 		countCommunityForksByListingIds: (...args: Array<unknown>) =>
@@ -174,6 +178,7 @@ const {
 	rateCommunityListing,
 	reportCommunityListing,
 	searchCommunityListings,
+	listCommunityIndexOverview,
 	forkCommunityListing,
 	adoptCommunityFork,
 } = await import('./service.ts')
@@ -225,6 +230,7 @@ function sampleListing(
 		name: '@owner/discord-gateway',
 		description: 'Discord gateway helpers',
 		tags: ['discord', 'gateway'],
+		category: 'integrations',
 		searchText: 'websocket bot',
 		readmeContent: '# Discord Gateway\n\n## Intent\n\nBridge Discord events.',
 		license: 'MIT',
@@ -234,6 +240,8 @@ function sampleListing(
 		trustedCommit: null,
 		trustedAt: null,
 		trusted: false,
+		featuredAt: null,
+		featured: false,
 		createdAt: '2026-07-01T00:00:00.000Z',
 		updatedAt: '2026-07-01T00:00:00.000Z',
 		publishedAt: '2026-07-01T00:00:00.000Z',
@@ -686,6 +694,75 @@ test('searchCommunityListings falls back to unfiltered candidates when LIKE pref
 	)
 })
 
+test('listCommunityIndexOverview queries only populated categories and uses SQL totals', async () => {
+	const integrationListings = Array.from({ length: 8 }, (_, index) =>
+		sampleListing({
+			id: `listing-integration-${index}`,
+			kodyId: `integration-${index}`,
+			name: `@owner/integration-${index}`,
+			publishedAt: `2026-07-0${index + 1}T00:00:00.000Z`,
+		}),
+	)
+	const utilityListing = sampleListing({
+		id: 'listing-utility',
+		kodyId: 'utility-one',
+		name: '@owner/utility-one',
+		category: 'utilities',
+		tags: ['helper'],
+	})
+	mockModule.countActiveCommunityListingsByCategory.mockResolvedValue({
+		integrations: 40,
+		examples: 0,
+		productivity: 0,
+		apps: 0,
+		utilities: 2,
+		other: 0,
+	})
+	mockModule.listCommunityListingCandidates.mockImplementation(
+		async (_db: unknown, input: { category?: string | null }) => {
+			if (input.category === 'integrations') return integrationListings
+			if (input.category === 'utilities') return [utilityListing]
+			throw new Error(`unexpected category ${String(input.category)}`)
+		},
+	)
+	mockModule.getCommunityRatingAggregatesByListingIds.mockResolvedValue({})
+	mockModule.countCommunityForksByListingIds.mockResolvedValue({})
+	mockModule.countCommunityStarsByListingIds.mockResolvedValue({})
+
+	const overview = await listCommunityIndexOverview({
+		env: createEnv(),
+		sort: 'newest',
+	})
+
+	expect(mockModule.listCommunityListingCandidates).toHaveBeenCalledTimes(2)
+	expect(mockModule.listCommunityListingCandidates).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			includeDelisted: false,
+			limit: communityIndexOverviewCandidateLimitPerCategory,
+			category: 'integrations',
+		},
+	)
+	expect(mockModule.listCommunityListingCandidates).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			includeDelisted: false,
+			limit: communityIndexOverviewCandidateLimitPerCategory,
+			category: 'utilities',
+		},
+	)
+	expect(overview.groups.map((group) => [group.category, group.total])).toEqual(
+		[
+			['integrations', 40],
+			['utilities', 2],
+		],
+	)
+	expect(overview.groups[0]?.listings).toHaveLength(6)
+	expect(overview.listings).toHaveLength(7)
+	expect(overview.categoryCounts.integrations).toBe(40)
+	expect(overview.categoryCounts.examples).toBe(0)
+})
+
 test('publishCommunityListing accepts Intent heading beyond storage truncation', async () => {
 	const padding = 'x'.repeat(20_000)
 	mockModule.getCommunityBan.mockResolvedValue(null)
@@ -715,6 +792,7 @@ test('publishCommunityListing accepts Intent heading beyond storage truncation',
 		expect.anything(),
 		expect.objectContaining({
 			readme_content: expect.stringMatching(/…$/),
+			category: 'integrations',
 		}),
 	)
 	expect(mockModule.writeCommunitySnapshot).toHaveBeenCalledWith(

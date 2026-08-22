@@ -37,6 +37,7 @@ function listing(
 		sourceId: 'src',
 		description: overrides.description ?? `${overrides.name} helpers`,
 		tags: [],
+		category: 'integrations',
 		searchText: null,
 		readmeContent: null,
 		license: 'MIT',

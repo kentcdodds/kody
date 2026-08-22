@@ -2,6 +2,14 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { parseListingOwnerUsername } from '#universal/community-links.ts'
 import {
+	communityIndexOverviewCandidateLimitPerCategory,
+	communityIndexOverviewLimitPerCategory,
+	communityListingCategories,
+	resolveCommunityListingCategory,
+	type CommunityCategoryCounts,
+	type CommunityListingCategory,
+} from '#universal/community-categories.ts'
+import {
 	defaultCommunityListingSort,
 	type CommunityListingSort,
 } from '#universal/community-search.ts'
@@ -57,6 +65,7 @@ import {
 	insertCommunityListing,
 	insertCommunityBan,
 	insertCommunityReport,
+	countActiveCommunityListingsByCategory,
 	extractCommunityListingLikeTokens,
 	listCommunityListingCandidates,
 	listCommunityReports as listCommunityReportsFromDb,
@@ -122,11 +131,11 @@ export const COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD = 0.12
 export const COMMUNITY_SEARCH_MIN_RELEVANCE = 0.2
 
 // Community search/browse never scores more than this many listings in
-// memory; candidates are pre-filtered and recency-ordered in SQL. This is
-// a deliberate bound: browse ranks within the newest candidates, so
-// listings older than the newest 500 are reachable through search (LIKE
-// pre-filter) but not through unfiltered browse pagination. Revisit with
-// a materialized score column if the catalog ever approaches this size.
+// memory; candidates are pre-filtered (including stored category) and
+// recency-ordered in SQL. Unfiltered All uses per-category overview
+// queries instead of this global window. Filtered browse ranks within
+// the newest 500 of that category. Revisit with a materialized score
+// column if a single category approaches this size.
 export const COMMUNITY_SEARCH_CANDIDATE_LIMIT = 500
 
 function normalizeCommunityActivityPage(value: number | undefined) {
@@ -569,6 +578,10 @@ export async function publishCommunityListing(input: {
 	const now = new Date().toISOString()
 	const listingId = existingListing?.id ?? crypto.randomUUID()
 	const tagsJson = JSON.stringify(savedPackage.tags)
+	const category = resolveCommunityListingCategory({
+		category: loadedSource.manifest.kody.category,
+		tags: savedPackage.tags,
+	})
 	const communityIconPath = findCommunityIconPath(loadedSource.files)
 	const snapshotFiles = { ...loadedSource.files }
 	for (const iconPath of communityIconPaths) {
@@ -599,6 +612,7 @@ export async function publishCommunityListing(input: {
 				name: savedPackage.name,
 				description,
 				tagsJson,
+				category,
 				searchText: savedPackage.searchText,
 				readmeContent: readme.content,
 				license,
@@ -621,6 +635,7 @@ export async function publishCommunityListing(input: {
 				name: savedPackage.name,
 				description,
 				tags_json: tagsJson,
+				category,
 				search_text: savedPackage.searchText,
 				readme_content: readme.content,
 				license,
@@ -653,6 +668,7 @@ export async function publishCommunityListing(input: {
 						name: existingListing.name,
 						description: existingListing.description,
 						tagsJson: JSON.stringify(existingListing.tags),
+						category: existingListing.category,
 						searchText: existingListing.searchText,
 						readmeContent: existingListing.readmeContent,
 						license: existingListing.license,
@@ -903,19 +919,85 @@ export async function listCommunityListingsWithAggregates(input: {
 	limit: number
 	offset: number
 	sort?: CommunityListingSort
+	category?: CommunityListingCategory | null
 }): Promise<Array<CommunityListingWithAggregates>> {
 	const listings = await listCommunityListingCandidates(input.env.APP_DB, {
 		includeDelisted: input.includeDelisted,
 		limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
+		category: input.category ?? null,
 	})
 	const withAggregates = await attachListingAggregatesBatch(
 		input.env.APP_DB,
 		listings,
 	)
 	const sort = resolveCommunityListingSort(input.sort)
-	return withAggregates
+	const filtered = filterCommunityListingsByCategory(
+		withAggregates,
+		input.category,
+	)
+	return filtered
 		.sort((left, right) => compareCommunityListingsForSort(left, right, sort))
 		.slice(input.offset, input.offset + input.limit)
+}
+
+export async function getCommunityCategoryCounts(input: {
+	env: Env
+}): Promise<CommunityCategoryCounts> {
+	return countActiveCommunityListingsByCategory(input.env.APP_DB)
+}
+
+export type CommunityIndexOverviewGroup = {
+	category: CommunityListingCategory
+	listings: Array<CommunityListingWithAggregates>
+	total: number
+}
+
+/**
+ * Unfiltered `/community` shelf: a few cards per populated category, with
+ * SQL totals so "See all" and chips stay honest past the global candidate
+ * window. Empty categories are omitted so a zero catalog stays quiet.
+ */
+export async function listCommunityIndexOverview(input: {
+	env: Env
+	sort?: CommunityListingSort
+}): Promise<{
+	listings: Array<CommunityListingWithAggregates>
+	groups: Array<CommunityIndexOverviewGroup>
+	categoryCounts: CommunityCategoryCounts
+}> {
+	const sort = resolveCommunityListingSort(input.sort)
+	const categoryCounts = await getCommunityCategoryCounts({ env: input.env })
+	const populated = communityListingCategories.filter(
+		(category) => categoryCounts[category] > 0,
+	)
+	const groups = await Promise.all(
+		populated.map(async (category) => {
+			const rows = await listCommunityListingCandidates(input.env.APP_DB, {
+				includeDelisted: false,
+				limit: communityIndexOverviewCandidateLimitPerCategory,
+				category,
+			})
+			const withAggregates = await attachListingAggregatesBatch(
+				input.env.APP_DB,
+				rows,
+			)
+			const visible = withAggregates
+				.sort((left, right) =>
+					compareCommunityListingsForSort(left, right, sort),
+				)
+				.slice(0, communityIndexOverviewLimitPerCategory)
+			return {
+				category,
+				listings: visible,
+				total: categoryCounts[category],
+			}
+		}),
+	)
+	return {
+		listings: groups.flatMap((group) => group.listings),
+		groups,
+		categoryCounts,
+	}
 }
 
 export async function searchCommunityListings(input: {
@@ -923,6 +1005,7 @@ export async function searchCommunityListings(input: {
 	query: string
 	limit: number
 	sort?: CommunityListingSort
+	category?: CommunityListingCategory | null
 	trustedFirst?: boolean
 	resultFilter?: (listing: CommunityListingWithAggregates) => boolean
 }): Promise<Array<CommunityListingSearchResult>> {
@@ -932,6 +1015,7 @@ export async function searchCommunityListings(input: {
 		includeDelisted: false,
 		limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
 		query: trimmedQuery || null,
+		category: input.category ?? null,
 	})
 	if (!trimmedQuery) {
 		const withAggregates = await attachListingAggregatesBatch(
@@ -963,6 +1047,7 @@ export async function searchCommunityListings(input: {
 		listings = await listCommunityListingCandidates(input.env.APP_DB, {
 			includeDelisted: false,
 			limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
+			category: input.category ?? null,
 		})
 		matched = listings.filter(matchesQuery)
 	}
@@ -1013,17 +1098,29 @@ export async function searchCommunityListings(input: {
 	return finalizeCommunitySearchResults(relevanceOrdered, input)
 }
 
+function filterCommunityListingsByCategory<
+	T extends { category: CommunityListingCategory },
+>(listings: Array<T>, category?: CommunityListingCategory | null): Array<T> {
+	if (category == null) return listings
+	return listings.filter((listing) => listing.category === category)
+}
+
 function finalizeCommunitySearchResults(
 	relevanceOrdered: Array<CommunityListingSearchResult>,
 	input: {
 		limit: number
+		category?: CommunityListingCategory | null
 		trustedFirst?: boolean
 		resultFilter?: (listing: CommunityListingWithAggregates) => boolean
 	},
 ): Array<CommunityListingSearchResult> {
+	const categoryFiltered = filterCommunityListingsByCategory(
+		relevanceOrdered,
+		input.category,
+	)
 	const filtered = input.resultFilter
-		? relevanceOrdered.filter(input.resultFilter)
-		: relevanceOrdered
+		? categoryFiltered.filter(input.resultFilter)
+		: categoryFiltered
 	if (input.trustedFirst) {
 		filtered.sort((left, right) => Number(right.trusted) - Number(left.trusted))
 	}

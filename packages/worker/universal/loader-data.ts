@@ -12,6 +12,10 @@ import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 import { type OnboardingChecklistItemId } from '#universal/onboarding-checklist-types.ts'
 import { type SignupMode } from '#universal/signup-mode.ts'
+import {
+	type CommunityCategoryCounts,
+	type CommunityListingCategory,
+} from '#universal/community-categories.ts'
 import { type CommunityListingSort } from '#universal/community-search.ts'
 import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 
@@ -78,11 +82,30 @@ export type GuideDetailLoaderData = {
 	body: string
 }
 
+export type CommunityIndexGroup = {
+	category: CommunityListingCategory
+	listings: Array<PublicCommunityListing>
+	total: number
+}
+
 export type CommunityIndexLoaderData = {
 	ok: true
 	listings: Array<PublicCommunityListing>
+	/**
+	 * Present on the unfiltered browse page so the catalog can open as a few
+	 * cards per category instead of one long shelf. Search and category
+	 * filters keep a flat `listings` grid and leave this null.
+	 */
+	groups: Array<CommunityIndexGroup> | null
+	/**
+	 * Catalog-wide active listing counts by stored category. Chips hide
+	 * empty buckets from this map so an empty shelf stays quiet and a
+	 * large catalog only shows categories that actually have packages.
+	 */
+	categoryCounts: CommunityCategoryCounts
 	query: string | null
 	sort: CommunityListingSort
+	category: CommunityListingCategory | null
 }
 
 export type CommunityDetailLoaderData = {

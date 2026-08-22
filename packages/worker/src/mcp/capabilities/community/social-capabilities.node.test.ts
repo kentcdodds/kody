@@ -155,6 +155,7 @@ function makeListing(
 		name: '@bob/widget',
 		description: 'A widget',
 		tags: ['widget'],
+		category: 'utilities',
 		searchText: null,
 		readmeContent: '# Widget',
 		license: 'MIT',

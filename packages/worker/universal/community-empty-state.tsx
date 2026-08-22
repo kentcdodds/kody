@@ -1,6 +1,10 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
 import { css } from 'remix/ui'
+import {
+	communityPackageCategoryCopy,
+	type CommunityListingCategory,
+} from '#universal/community-categories.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	buildCommunityIndexHref,
@@ -24,6 +28,7 @@ function buildCreatePackagePrompt(query: string) {
 export function renderCommunityEmptyState(
 	query: string | null,
 	sort?: CommunityListingSort,
+	category?: CommunityListingCategory | null,
 ) {
 	if (query) {
 		const createPackagePrompt = buildCreatePackagePrompt(query)
@@ -55,10 +60,30 @@ export function renderCommunityEmptyState(
 						Read the package authoring guide
 					</a>
 					<a
-						href={buildCommunityIndexHref({ sort })}
+						href={buildCommunityIndexHref({ sort, category })}
 						mix={css(secondaryLinkCss)}
 					>
 						Clear search
+					</a>
+				</p>
+			</div>
+		)
+	}
+
+	if (category) {
+		const copy = communityPackageCategoryCopy[category]
+		return (
+			<div mix={css(emptyCss)} data-testid="community-listings-empty">
+				<h2 mix={css(emptyTitleCss)}>
+					Nothing in <em>{copy.label}</em> yet.
+				</h2>
+				<p mix={css(emptyTextCss)}>{copy.description}</p>
+				<p mix={css(emptyCtaCss)}>
+					<a
+						href={buildCommunityIndexHref({ sort })}
+						mix={css(getGhostButtonCss())}
+					>
+						Browse all packages
 					</a>
 				</p>
 			</div>

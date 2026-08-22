@@ -1177,7 +1177,15 @@ on write unless a migration backfills existing rows.
   scope and `storageContext.packageId` for package-owned secret scope.
 - `saved_packages.tags_json` and `community_listings.tags_json`
   (`packages/worker/migrations/0001-squashed-init.sql`) are `string[]`
-  projections.
+  projections. `community_listings.category`
+  (`0022-community-listing-category.sql`) is a closed browse category
+  (`integrations`, `examples`, `productivity`, `apps`, `utilities`, or `other`).
+  Publish copies `package.json#kody.category` when it is an author category.
+  Missing or `other` falls back to well-known tag inference (examples, then
+  integrations, productivity, apps) and otherwise stores `other`. The same
+  inference backfills existing `other` rows in
+  `0022-community-listing-category.sql`. Reads use the stored column so browse
+  filters and chip counts stay aligned.
 - `published_bundle_artifacts.dependencies_json` (`0001-squashed-init.sql`)
   stores package dependency pointers queried with SQLite JSON functions in
   `packages/worker/src/repo/published-bundle-artifacts-repo.ts`.
