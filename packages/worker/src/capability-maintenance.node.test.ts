@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -87,6 +88,7 @@ test('capability reindex maintenance route rebuilds every vector kind and resume
 	await expect(response.json()).resolves.toEqual({
 		ok: true,
 		complete: true,
+		phases: ['capabilities', 'memories', 'jobs', 'packages'],
 		capabilities: completeStep(3),
 		memories: completeStep(2),
 		jobs: completeStep(1),
@@ -133,6 +135,7 @@ test('capability reindex maintenance route rebuilds every vector kind and resume
 	await expect(incompleteResponse.json()).resolves.toEqual({
 		ok: true,
 		complete: false,
+		phases: ['capabilities', 'memories', 'jobs', 'packages'],
 		cursor: { phase: 'memories', afterId: 'memory-8' },
 		capabilities: completeStep(3),
 		memories: { upserted: 8, complete: false, afterId: 'memory-8' },
@@ -156,6 +159,7 @@ test('capability reindex maintenance route rebuilds every vector kind and resume
 	await expect(resumeResponse.json()).resolves.toEqual({
 		ok: true,
 		complete: true,
+		phases: ['capabilities', 'memories', 'jobs', 'packages'],
 		capabilities: completeStep(0),
 		memories: completeStep(2),
 		jobs: completeStep(1),
@@ -203,6 +207,7 @@ test('capability reindex maintenance route attempts every vector kind before rep
 	await expect(response.json()).resolves.toEqual({
 		ok: false,
 		complete: true,
+		phases: ['capabilities', 'memories', 'jobs', 'packages'],
 		capabilities: completeStep(3),
 		memories: {
 			upserted: 0,
@@ -239,4 +244,83 @@ test('capability reindex maintenance route attempts every vector kind before rep
 	expect(mockModule.reindexMemoryVectors).toHaveBeenCalledTimes(1)
 	expect(mockModule.reindexJobVectors).toHaveBeenCalledTimes(1)
 	expect(mockModule.reindexSavedPackageVectors).toHaveBeenCalledTimes(1)
+})
+
+test('capability reindex can limit work to builtin capabilities for production deploy', async () => {
+	resetMocks()
+	mockModule.reindexCapabilityVectors.mockResolvedValue(completeStep(3))
+	const env = {
+		CAPABILITY_REINDEX_SECRET: 'secret',
+	} as Env
+
+	const response = await handleCapabilityReindexRequest(
+		createReindexRequest({ phases: ['capabilities'] }),
+		env,
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({
+		ok: true,
+		complete: true,
+		phases: ['capabilities'],
+		capabilities: completeStep(3),
+		memories: completeStep(0),
+		jobs: completeStep(0),
+		packages: completeStep(0),
+	})
+	expect(mockModule.reindexCapabilityVectors).toHaveBeenCalledTimes(1)
+	expect(mockModule.reindexMemoryVectors).not.toHaveBeenCalled()
+	expect(mockModule.reindexJobVectors).not.toHaveBeenCalled()
+	expect(mockModule.reindexSavedPackageVectors).not.toHaveBeenCalled()
+
+	const emptyPhases = await handleCapabilityReindexRequest(
+		createReindexRequest({ phases: [] }),
+		env,
+	)
+	expect(emptyPhases.status).toBe(400)
+	await expect(emptyPhases.json()).resolves.toEqual({
+		ok: false,
+		error: 'phases must be a non-empty array.',
+	})
+
+	const duplicatePhases = await handleCapabilityReindexRequest(
+		createReindexRequest({ phases: ['capabilities', 'capabilities'] }),
+		env,
+	)
+	expect(duplicatePhases.status).toBe(400)
+	await expect(duplicatePhases.json()).resolves.toEqual({
+		ok: false,
+		error: 'phases must not contain duplicates.',
+	})
+
+	const invalidPhase = await handleCapabilityReindexRequest(
+		createReindexRequest({ phases: ['capabilities', 'nope'] }),
+		env,
+	)
+	expect(invalidPhase.status).toBe(400)
+	await expect(invalidPhase.json()).resolves.toEqual({
+		ok: false,
+		error:
+			'phases must contain only capabilities, memories, jobs, or packages.',
+	})
+
+	const cursorOutsidePhases = await handleCapabilityReindexRequest(
+		createReindexRequest({
+			phases: ['capabilities'],
+			cursor: { phase: 'packages', afterId: null },
+		}),
+		env,
+	)
+	expect(cursorOutsidePhases.status).toBe(400)
+	await expect(cursorOutsidePhases.json()).resolves.toEqual({
+		ok: false,
+		error: 'cursor.phase must be one of the requested phases.',
+	})
+
+	const workflow = readFileSync(
+		new URL('../../../.github/workflows/deploy.yml', import.meta.url),
+		'utf8',
+	)
+	expect(workflow).toContain('payload=\'{"phases":["capabilities"]}\'')
+	expect(workflow).toContain('{phases:["capabilities"],cursor:$cursor}')
 })

@@ -397,12 +397,14 @@ the domain modules.
    depends on the real MCP transport, OAuth handshake, or hosted package app
    session wiring.
 7. After deployed changes materially alter capability names, descriptions,
-   keywords, or schemas, run the guarded
-   `POST /__maintenance/reindex-capabilities` maintenance endpoint so Vectorize
-   has fresh Workers AI embeddings. The endpoint also rebuilds memory, job, and
-   saved-package vectors with user-scoped metadata. Each POST is time-budgeted;
-   if the JSON response has `complete: false`, POST again with
-   `{ "cursor": <response.cursor> }` until `complete` is true.
+   keywords, or schemas, production deploy refreshes builtin capability vectors
+   via the guarded `POST /__maintenance/reindex-capabilities` endpoint with
+   `{ "phases": ["capabilities"] }`. User-owned memory, job, and saved-package
+   vectors upsert on write. For a full rebuild (embedding model, pooling,
+   Vectorize index dimensions, or disaster recovery), POST without `phases` (or
+   with every kind). Each POST is time-budgeted; if the JSON response has
+   `complete: false`, POST again with `{ "cursor": <response.cursor> }` (and the
+   same `phases` when you set them) until `complete` is true.
 
 Example (assuming `example` exists in `capabilityDomainNames`):
 

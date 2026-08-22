@@ -1346,12 +1346,18 @@ deterministic so upserts and deletes target the same vector.
   `__kody_builtin__`, with metadata `{ kind: 'builtin', domain }`.
 
 Search paths query only per-account namespaces plus the reserved builtin
-namespace. Vector rows are derived from D1 and can be rebuilt with the bounded
-`POST /__maintenance/reindex-capabilities` sweep, which keyset-pages memory,
-job, and saved-package rows, rebuilds builtins in their reserved namespace, and
-returns before a request-time budget. An incomplete sweep includes
-`complete: false` and a `cursor` so the caller can POST again until `complete`
-is true. Production deploy CI loops that endpoint after each production ship.
+namespace. Vector rows are derived from D1. User-owned memory, job, and
+saved-package vectors upsert on write; saved packages also mark
+`saved_package_search_index_debt` and reconcile after the response. The bounded
+`POST /__maintenance/reindex-capabilities` sweep rebuilds requested kinds
+(`phases`; omit the field to rebuild every kind), keyset-pages memory, job, and
+saved-package rows, rebuilds builtins in their reserved namespace, and returns
+before a request-time budget. An incomplete sweep includes `complete: false` and
+a `cursor` so the caller can POST again until `complete` is true. Production
+deploy CI loops that endpoint with `{ "phases": ["capabilities"] }` after each
+production ship so only builtin capability vectors refresh. A full sweep
+(embedding-model change, metadata-contract change, or disaster recovery) omits
+`phases` or lists every kind.
 
 ### `entity_sources` and package import contracts
 

@@ -7,7 +7,8 @@ import { upsertSavedPackageVector } from './vectorize.ts'
  * scheduling work on `waitUntil`, mark debt; clear it on success; keep it
  * (with the error) on failure and report to Sentry. Capability reindex also
  * clears debt after a successful upsert so search converges even if the
- * original waitUntil never ran.
+ * original waitUntil never ran. A full capability reindex that includes the
+ * packages phase also clears matching debt after a successful upsert.
  *
  * Each schedule bumps a per-package `generation` and stores the latest
  * `embed_text`. An in-flight reconcile (coalesced per isolate) re-reads the

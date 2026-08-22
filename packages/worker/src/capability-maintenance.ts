@@ -10,9 +10,11 @@ import { reindexMemoryVectors } from './mcp/memory/memory-reindex.ts'
 import { reindexSavedPackageVectors } from './package-registry/package-reindex.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
+	capabilityReindexPhases,
 	capabilityReindexTimeBudgetMs,
 	hasReachedReindexDeadline,
 	isCapabilityReindexPhase,
+	resolveCapabilityReindexPhases,
 	type CapabilityReindexCursor,
 	type CapabilityReindexPhase,
 	type VectorReindexSweepResult,
@@ -61,6 +63,7 @@ function parseCapabilityReindexBody(body: unknown):
 	| {
 			ok: true
 			cursor: CapabilityReindexCursor | null
+			phases: ReadonlyArray<CapabilityReindexPhase>
 			timeBudgetMs: number
 	  }
 	| { ok: false; error: string } {
@@ -68,6 +71,7 @@ function parseCapabilityReindexBody(body: unknown):
 		return {
 			ok: true,
 			cursor: null,
+			phases: capabilityReindexPhases,
 			timeBudgetMs: capabilityReindexTimeBudgetMs,
 		}
 	}
@@ -75,6 +79,10 @@ function parseCapabilityReindexBody(body: unknown):
 		return { ok: false, error: 'Reindex body must be a JSON object.' }
 	}
 	const record = body as Record<string, unknown>
+	const phases = resolveCapabilityReindexPhases(record.phases)
+	if (!phases.ok) {
+		return phases
+	}
 	let timeBudgetMs = capabilityReindexTimeBudgetMs
 	if (record.timeBudgetMs !== undefined) {
 		if (
@@ -82,12 +90,15 @@ function parseCapabilityReindexBody(body: unknown):
 			!Number.isFinite(record.timeBudgetMs) ||
 			record.timeBudgetMs < 0
 		) {
-			return { ok: false, error: 'timeBudgetMs must be a non-negative number.' }
+			return {
+				ok: false,
+				error: 'timeBudgetMs must be a non-negative number.',
+			}
 		}
 		timeBudgetMs = record.timeBudgetMs
 	}
 	if (record.cursor === undefined || record.cursor === null) {
-		return { ok: true, cursor: null, timeBudgetMs }
+		return { ok: true, cursor: null, phases: phases.phases, timeBudgetMs }
 	}
 	if (typeof record.cursor !== 'object' || Array.isArray(record.cursor)) {
 		return { ok: false, error: 'cursor must be an object.' }
@@ -99,12 +110,19 @@ function parseCapabilityReindexBody(body: unknown):
 			error: 'cursor.phase must be capabilities, memories, jobs, or packages.',
 		}
 	}
+	if (!phases.phases.includes(cursor.phase)) {
+		return {
+			ok: false,
+			error: 'cursor.phase must be one of the requested phases.',
+		}
+	}
 	if (cursor.afterId !== null && typeof cursor.afterId !== 'string') {
 		return { ok: false, error: 'cursor.afterId must be a string or null.' }
 	}
 	return {
 		ok: true,
 		cursor: { phase: cursor.phase, afterId: cursor.afterId },
+		phases: phases.phases,
 		timeBudgetMs,
 	}
 }
@@ -160,6 +178,7 @@ async function reindexAllCapabilitySearchVectors(
 	input: {
 		baseUrl: string
 		cursor: CapabilityReindexCursor | null
+		phases: ReadonlyArray<CapabilityReindexPhase>
 		deadlineMs: number
 	},
 ) {
@@ -169,22 +188,18 @@ async function reindexAllCapabilitySearchVectors(
 		jobs: skippedReindexStep,
 		packages: skippedReindexStep,
 	}
-	const startPhase = input.cursor?.phase ?? 'capabilities'
+	const startPhase = input.cursor?.phase ?? input.phases[0]
 	let afterId = input.cursor?.afterId ?? null
 	let started = false
 
-	for (const phase of [
-		'capabilities',
-		'memories',
-		'jobs',
-		'packages',
-	] as const) {
+	for (const phase of input.phases) {
 		if (!started) {
 			if (phase !== startPhase) continue
 			started = true
 		} else if (hasReachedReindexDeadline(input.deadlineMs)) {
 			return {
 				...result,
+				phases: input.phases,
 				complete: false as const,
 				cursor: { phase, afterId: null },
 			}
@@ -203,6 +218,7 @@ async function reindexAllCapabilitySearchVectors(
 		if (!step.complete) {
 			return {
 				...result,
+				phases: input.phases,
 				complete: false as const,
 				cursor: { phase, afterId: step.afterId },
 			}
@@ -211,6 +227,7 @@ async function reindexAllCapabilitySearchVectors(
 
 	return {
 		...result,
+		phases: input.phases,
 		complete: true as const,
 	}
 }
@@ -232,6 +249,7 @@ export async function handleCapabilityReindexRequest(
 			const result = await reindexAllCapabilitySearchVectors(env, {
 				baseUrl: new URL(request.url).origin,
 				cursor: parsed.cursor,
+				phases: parsed.phases,
 				deadlineMs: Date.now() + parsed.timeBudgetMs,
 			})
 			const kindResults = (

@@ -683,10 +683,13 @@ jobs:
             echo "Skipping capability reindex (no deploy URL)."
             exit 0
           fi
+          # Builtins only. User-owned memory/job/package vectors upsert on write.
+          # A full sweep (omit phases) is a DR / embedding-model rebuild, not a
+          # ship gate.
           base="${DEPLOY_URL%/}"
           max_sweeps=8
           sweep=1
-          payload='{}'
+          payload='{"phases":["capabilities"]}'
           while true; do
             echo "POST ${base}/__maintenance/reindex-capabilities (sweep ${sweep})"
             status="$(curl --silent --show-error --location --max-time 120 \
@@ -718,7 +721,7 @@ jobs:
               echo "Capability reindex is incomplete but returned no cursor." >&2
               exit 1
             fi
-            payload="$(jq -nc --argjson cursor "$cursor" '{cursor: $cursor}')"
+            payload="$(jq -nc --argjson cursor "$cursor" '{phases:["capabilities"],cursor:$cursor}')"
             sweep=$((sweep + 1))
           done
 

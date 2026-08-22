@@ -279,20 +279,22 @@ Worker secrets:
   skips the post-deploy capability reindex and execute smoke check when it is
   unset); bearer token for `POST /__maintenance/reindex-capabilities`,
   `POST /__maintenance/reencrypt-secrets`, and other secret-gated maintenance
-  endpoints. Use the reindex endpoint after changing the embedding model,
-  pooling, or Vectorize index dimensions; it rebuilds built-in capability,
-  memory, job, and saved-package vectors with per-user `userId` metadata on
-  user-owned rows. Each call is time-budgeted and may return `complete: false`
-  plus a `cursor` to resume. Use the re-encrypt endpoint to rewrite remaining
-  pre-AAD (2-part) secret ciphertexts to v2 without rotating `SECRET_STORE_KEY`
-  (see [Secret rotation](./secret-rotation.md)). Local dev uses offline search
-  while `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
+  endpoints. Production deploy POSTs `{ "phases": ["capabilities"] }` so only
+  builtin capability vectors refresh after a ship. User-owned memory, job, and
+  saved-package vectors upsert on write. Omit `phases` (or list every kind)
+  after changing the embedding model, pooling, or Vectorize index dimensions to
+  rebuild those rows too, with per-user `userId` metadata on user-owned rows.
+  Each call is time-budgeted and may return `complete: false` plus a `cursor` to
+  resume. Use the re-encrypt endpoint to rewrite remaining pre-AAD (2-part)
+  secret ciphertexts to v2 without rotating `SECRET_STORE_KEY` (see
+  [Secret rotation](./secret-rotation.md)). Local dev uses offline search while
+  `WRANGLER_IS_LOCAL_DEV` is set or the binding is missing.
 - **`JOB_REINDEX_SECRET`** — optional Worker secret; bearer token for
   `POST /__maintenance/reindex-jobs` when you want a jobs-only Vectorize rebuild
-  (without the full capability/memory/package reindex that
-  `CAPABILITY_REINDEX_SECRET` drives). When unset, the jobs-only endpoint
-  returns not-configured; production deploys rely on the capability reindex path
-  for job vectors and do not require this secret.
+  (without a full capability/memory/package reindex). When unset, the jobs-only
+  endpoint returns not-configured. Production deploys do not refresh job
+  vectors; those upsert on write. Use this secret or a full capability reindex
+  when you need a jobs rebuild.
 - **`STATUS_INCIDENT_EVENT_SECRET`** — optional Worker secret shared with the
   status worker. Bearer token for `POST /__maintenance/status-incidents`, which
   fans `status.incident.opened` / `status.incident.resolved` to admin package

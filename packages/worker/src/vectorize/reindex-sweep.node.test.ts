@@ -3,6 +3,7 @@ import { vectorReindexUpsertBatchSize } from './reindex-batches.ts'
 import {
 	reindexPagedVectorRows,
 	reindexVectorCandidateList,
+	resolveCapabilityReindexPhases,
 } from './reindex-sweep.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -104,5 +105,20 @@ test('reindex sweep helpers stop at the deadline and resume from afterId', async
 		upserted: 1,
 		complete: true,
 		afterId: null,
+	})
+})
+
+test('resolveCapabilityReindexPhases omits every kind or canonicalizes a subset', () => {
+	expect(resolveCapabilityReindexPhases(undefined)).toEqual({
+		ok: true,
+		phases: ['capabilities', 'memories', 'jobs', 'packages'],
+	})
+	expect(resolveCapabilityReindexPhases(['packages', 'capabilities'])).toEqual({
+		ok: true,
+		phases: ['capabilities', 'packages'],
+	})
+	expect(resolveCapabilityReindexPhases([])).toEqual({
+		ok: false,
+		error: 'phases must be a non-empty array.',
 	})
 })
