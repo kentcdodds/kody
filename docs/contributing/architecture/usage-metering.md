@@ -331,12 +331,15 @@ Guarantees and rules:
   platform KV pair (or a still D1 sum when KV is empty) and interpolates
   `previous → current` across the 24-hour window. The payload is the window pair
   only — never per-user rows. Interpolation is deterministic from the window so
-  every visitor at a given second sees the same number (`nowMs` is floored to
-  whole seconds before endpoint checks and progress). Official `current` appears
-  at the first whole second on or after `windowEnd`. When the pair has at least
-  one tick per three seconds, a backbone tick lands every three seconds and
-  leftover count is warped into larger steps so the cadence stays frequent with
-  varying amounts; it never passes `current`.
+  every visitor at a given clock time sees the same integer. Official `current`
+  appears at `windowEnd`. Each displayed step is +1: when the pair has at least
+  one tick per second, that tick lands at a hashed time inside the second so the
+  cadence wobbles instead of marching on the clock. Leftover count (more than
+  one tick in a second) rolls through from the start of that second without
+  skipping. It never passes `current`. The client schedules the next integer
+  (`msUntilNextCodeRunsCount`) rather than polling once a second;
+  `prefers-reduced-motion` snaps and does not animate. A tab that wakes more
+  than sixty integers behind snaps instead of replaying every missed tick.
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration
