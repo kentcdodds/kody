@@ -50,6 +50,42 @@ export function isCapabilityReindexPhase(
 	)
 }
 
+/**
+ * Resolve the optional `phases` body field. Omitted `phases` means every
+ * kind (disaster recovery / embedding-model rebuild). Requested phases are
+ * returned in canonical order.
+ */
+export function resolveCapabilityReindexPhases(
+	value: unknown,
+):
+	| { ok: true; phases: ReadonlyArray<CapabilityReindexPhase> }
+	| { ok: false; error: string } {
+	if (value === undefined) {
+		return { ok: true, phases: capabilityReindexPhases }
+	}
+	if (!Array.isArray(value) || value.length === 0) {
+		return { ok: false, error: 'phases must be a non-empty array.' }
+	}
+	const seen = new Set<CapabilityReindexPhase>()
+	for (const item of value) {
+		if (!isCapabilityReindexPhase(item)) {
+			return {
+				ok: false,
+				error:
+					'phases must contain only capabilities, memories, jobs, or packages.',
+			}
+		}
+		if (seen.has(item)) {
+			return { ok: false, error: 'phases must not contain duplicates.' }
+		}
+		seen.add(item)
+	}
+	return {
+		ok: true,
+		phases: capabilityReindexPhases.filter((phase) => seen.has(phase)),
+	}
+}
+
 export function toVectorReindexSweepResult(
 	result: VectorReindexResult,
 	input: { complete: boolean; afterId: string | null },

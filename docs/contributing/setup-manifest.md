@@ -428,17 +428,17 @@ automatically:
   through the configured Cloudflare AI Gateway when set)
 - `CAPABILITY_REINDEX_SECRET` (strongly recommended for production — CI skips
   the post-deploy reindex and execute smoke check when unset; optional locally
-  and for previews; bearer auth for `POST /__maintenance/reindex-capabilities`
-  to refresh all capability-search vectors in Vectorize: built-in capabilities,
-  memories, jobs, and saved packages. Saved package projections also refresh
-  when packages are saved or published. Same bearer authenticates
+  and for previews; bearer auth for `POST /__maintenance/reindex-capabilities`.
+  Production deploy refreshes builtin capability vectors only
+  (`{ "phases": ["capabilities"] }`). Omit `phases` to rebuild memories, jobs,
+  and saved packages too. Saved package projections also refresh when packages
+  are saved or published. Same bearer authenticates
   `POST /__maintenance/reencrypt-secrets` — see
   [Secret rotation](./secret-rotation.md).)
 - `JOB_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-jobs` for a jobs-only Vectorize rebuild. Not
-  required for production deploys — the capability reindex path already
-  refreshes job vectors. Omit locally and for previews unless you need the
-  jobs-only endpoint.)
+  required for production deploys — job vectors upsert on write. Omit locally
+  and for previews unless you need the jobs-only endpoint.)
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`, `GOOGLE_CLIENT_ID` /
   `GOOGLE_CLIENT_SECRET`, `X_CLIENT_ID` / `X_CLIENT_SECRET`, `DISCORD_CLIENT_ID`
   / `DISCORD_CLIENT_SECRET` (optional Worker secrets; enable the "Sign in with
@@ -508,8 +508,7 @@ Configure these GitHub Actions secrets and variables for workflows:
   capability reindex — CI skips those calls when it is unset)
 - `JOB_REINDEX_SECRET` (optional; authenticates
   `POST /__maintenance/reindex-jobs` for a jobs-only Vectorize rebuild.
-  Production deploys do not require it — capability reindex already refreshes
-  job vectors.)
+  Production deploys do not require it — job vectors upsert on write.)
 - `DR_BACKUP_ACCOUNT_ID` / `DR_BACKUP_BUCKET_NAME` / `DR_BACKUP_ACCESS_KEY_ID` /
   `DR_BACKUP_SECRET_ACCESS_KEY` (production DR staging into the DR bucket; also
   used by `.github/workflows/dr-escrow.yml`. `DR_BACKUP_ACCOUNT_ID` is also the
@@ -680,22 +679,23 @@ How to get/set each value:
   locally and for previews)
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
-    workflow sync it to the Worker. After each production deploy, CI POSTs to
-    `/__maintenance/reindex-capabilities` with `Authorization: Bearer …` and
-    loops on the returned `cursor` until `complete` is true (each POST is
-    bounded to about 70 seconds; CI follows the cursor for up to 8 sweeps),
-    refreshing built-in capability, memory, job, and saved-package embeddings.
-    Run the same POST loop manually after changing the embedding model, pooling,
-    or Vectorize index dimensions so existing rows are rebuilt with compatible
-    vectors. The same bearer authenticates
-    `POST /__maintenance/reencrypt-secrets` (see
+    workflow sync it to the Worker. After each production deploy, CI POSTs
+    `{ "phases": ["capabilities"] }` to `/__maintenance/reindex-capabilities`
+    with `Authorization: Bearer …` and loops on the returned `cursor` until
+    `complete` is true (each POST is bounded to about 70 seconds; CI follows the
+    cursor for up to 8 sweeps), refreshing builtin capability embeddings.
+    User-owned memory, job, and saved-package vectors upsert on write. For a
+    full rebuild after changing the embedding model, pooling, or Vectorize index
+    dimensions, POST without `phases` and follow the same cursor loop so
+    existing rows are rebuilt with compatible vectors. The same bearer
+    authenticates `POST /__maintenance/reencrypt-secrets` (see
     [Secret rotation](./secret-rotation.md)). Local and preview environments can
     omit it; CI skips reindex and execute-smoke when the secret is unset.
 - `JOB_REINDEX_SECRET` (optional; jobs-only reindex)
   - Bearer token for `POST /__maintenance/reindex-jobs`. Generate and sync the
     same way as `CAPABILITY_REINDEX_SECRET` only if you want the jobs-only
-    maintenance endpoint. Production deploys do not require it; the capability
-    reindex path already refreshes job vectors. Local and preview can omit it.
+    maintenance endpoint. Production deploys do not require it; job vectors
+    upsert on write. Local and preview can omit it.
 
 Preview deploys for pull requests create an app Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`), sibling runtime and jobs
