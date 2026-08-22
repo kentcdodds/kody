@@ -10,7 +10,8 @@ The Worker entry module is
 the platform lane shares the origin Worker's source tree, import maps, and
 pre-bundled `src/generated/` modules, so this package holds only the deploy
 configuration. The entry module is typechecked and tested through the `worker`
-Nx project.
+Nx project. It also exports `KodyFetchGateway` so MCP `execute` can loopback
+outbound fetch from the platform-owned `MCP` Durable Object.
 
 - `wrangler.jsonc` — the committed base config (script name `kody-platform`).
   Deployable configs are generated from it plus the origin Worker's generated
