@@ -10,7 +10,8 @@ import {
  * 24-hour delayed fleet execute count. SSR paints the interpolated value;
  * the client advances one integer at a time, scheduled to the next hashed
  * fire so the cadence wobbles. If the tab sleeps and the official count
- * jumps, leftover integers roll through one second. Mono digits plus a
+ * jumps, leftover integers roll through one second unless more than
+ * sixty are owed, in which case the display snaps. Mono digits plus a
  * reserved width from `current` keep the label from shifting as digits
  * change. The line is sized larger than the hero subtitle.
  */
@@ -25,9 +26,16 @@ export function CodeRunsTicker(
 	if (typeof document !== 'undefined' && !prefersReducedMotion) {
 		let timeoutId: ReturnType<typeof setTimeout> | undefined
 		function scheduleNext() {
+			if (handle.signal.aborted) return
 			const official = interpolateCodeRunsCount(handle.props.window, Date.now())
 			if (displayed < official) {
 				const behind = official - displayed
+				if (behind > 60) {
+					displayed = official
+					handle.update()
+					scheduleNext()
+					return
+				}
 				const slotMs = Math.max(16, Math.floor(1000 / behind))
 				timeoutId = setTimeout(() => {
 					displayed += 1

@@ -333,11 +333,13 @@ Guarantees and rules:
   only — never per-user rows. Interpolation is deterministic from the window so
   every visitor at a given clock time sees the same integer. Official `current`
   appears at `windowEnd`. Each displayed step is +1: when the pair has at least
-  one tick per second, a tick lands every second at a hashed time so the cadence
-  wobbles instead of marching on the clock, and leftover count rolls through
-  that second without skipping. It never passes `current`. The client schedules
-  the next integer (`msUntilNextCodeRunsCount`) rather than polling once a
-  second; `prefers-reduced-motion` snaps and does not animate.
+  one tick per second, that tick lands at a hashed time inside the second so the
+  cadence wobbles instead of marching on the clock. Leftover count (more than
+  one tick in a second) rolls through from the start of that second without
+  skipping. It never passes `current`. The client schedules the next integer
+  (`msUntilNextCodeRunsCount`) rather than polling once a second;
+  `prefers-reduced-motion` snaps and does not animate. A tab that wakes more
+  than sixty integers behind snaps instead of replaying every missed tick.
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration
