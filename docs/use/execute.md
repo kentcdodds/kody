@@ -272,8 +272,8 @@ For dedicated inspection, use:
 ## Long-term memory
 
 Kody can surface a small number of relevant long-term memories when you pass a
-short **`memoryContext`** on normal MCP tool calls. `search` also retrieves
-from the query string. Surfaced memories appear in the tool text as subject and
+short **`memoryContext`** on normal MCP tool calls. `search` also retrieves from
+the query string. Surfaced memories appear in the tool text as subject and
 summary only (id in structured content). Later retrievals can repeat that
 compact block.
 

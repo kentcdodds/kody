@@ -96,10 +96,10 @@ When working in this repo, do not assume:
   [Authorization](./architecture/authorization.md).
 - One conversation or one agent per signed-in user. Concurrent chats and
   completely separate agents for the same user are expected. Do not key
-  conversation-scoped behavior on the user alone, or on an MCP transport
-  session or open connection. State that spans requests needs an explicit
-  identifier the client actually passed — see MCP 2026-07-28 Statelessness
-  and [0033](./decisions/0033-no-user-as-conversation.md).
+  conversation-scoped behavior on the user alone, or on an MCP transport session
+  or open connection. State that spans requests needs an explicit identifier the
+  client actually passed — see MCP 2026-07-28 Statelessness and
+  [0033](./decisions/0033-no-user-as-conversation.md).
 - The main goal is enterprise-grade least-privilege design for many users.
 
 Also do not document capabilities as if they already exist. Keep design notes
@@ -129,9 +129,9 @@ If you are an agent working in this repo:
   boundaries: account administration, operator-owned system email, or
   user-approved platform feedback, or public-listing community activity metadata
   — see [Authorization](./architecture/authorization.md).
-- Isolation between users is not the same as one conversation per user. The
-  same signed-in user can run concurrent chats and completely separate agents
-  at once. Do not hide or bind conversation-scoped context (memories, nudges,
+- Isolation between users is not the same as one conversation per user. The same
+  signed-in user can run concurrent chats and completely separate agents at
+  once. Do not hide or bind conversation-scoped context (memories, nudges,
   progressive disclosure) to the user id alone or to an MCP session.
 - Avoid proposing a large static MCP tool catalog as the default direction.
 - Keep interoperability with MCP hosts in mind, especially around compact tool
