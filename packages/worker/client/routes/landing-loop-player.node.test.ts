@@ -6,7 +6,7 @@ import {
 	landingLoopHoldMs,
 	landingLoopTeaser,
 	waitLandingLoopHold,
-} from './landing-loop-player.ts'
+} from './landing-loop-state.ts'
 
 test('homepage loop player pauses for hover and explore, then play resumes and loops', async () => {
 	const beats = flattenTranscriptActs(howKodyWorksTranscriptActs)
@@ -51,7 +51,9 @@ test('homepage loop player pauses for hover and explore, then play resumes and l
 	expect(player.advance()).toEqual({ didAdvance: true, looped: false })
 	expect(player.revealedCount).toBe(2)
 
+	player.setHover(true)
 	player.play()
+	expect(player.isPaused()).toBe(false)
 	player.setHover(true)
 	expect(player.isPaused()).toBe(false)
 	player.setHover(false)
@@ -103,7 +105,7 @@ test('homepage loop player pauses for hover and explore, then play resumes and l
 		})
 		await vi.advanceTimersByTimeAsync(400)
 		paused = false
-		for (const listener of [...listeners]) listener()
+		for (const listener of listeners) listener()
 		await vi.advanceTimersByTimeAsync(400)
 		await expect(hold).resolves.toBe(true)
 

@@ -1211,11 +1211,6 @@ html.is-settled {
 	padding: 1rem 1.05rem;
 }
 
-.landing-loop-chat:focus-visible {
-	outline: 2px solid var(--color-primary-text);
-	outline-offset: -2px;
-}
-
 .landing-loop-act {
 	display: grid;
 	gap: 0.2rem;

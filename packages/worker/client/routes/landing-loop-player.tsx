@@ -11,7 +11,7 @@ import {
 	landingLoopTeaser,
 	waitLandingLoopHold,
 	type LandingLoopBeat,
-} from './landing-loop-player.ts'
+} from './landing-loop-state.ts'
 
 type LoopLineRenderer = (line: TranscriptLine) => RemixNode
 
@@ -133,7 +133,8 @@ export function LandingLoopPlayer(handle: Handle) {
 
 	return () => {
 		const visibleBeats = beats?.slice(0, player.revealedCount) ?? null
-		const loaded = visibleBeats != null && renderLine != null
+		const lineRenderer = renderLine
+		const loaded = visibleBeats != null && lineRenderer != null
 		const userPaused =
 			loaded && player.pauseReasons().some((reason) => reason !== 'offscreen')
 		const paused = userPaused && !reducedMotion
@@ -224,7 +225,6 @@ export function LandingLoopPlayer(handle: Handle) {
 				</div>
 				<div
 					class="landing-loop-chat"
-					tabIndex={0}
 					mix={[
 						on('focusin', () => {
 							player.setFocus(true)
@@ -274,11 +274,11 @@ export function LandingLoopPlayer(handle: Handle) {
 						}),
 					]}
 				>
-					{loaded
+					{visibleBeats && lineRenderer
 						? visibleBeats.map((beat, index) =>
 								renderBeat(
 									beat,
-									renderLine,
+									lineRenderer,
 									`${beatKey(beat)}-${index}`,
 									index === visibleBeats.length - 1,
 								),

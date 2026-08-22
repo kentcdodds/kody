@@ -81,7 +81,7 @@ export function createLandingLoopPlayer(input: {
 	let ignorePointerPause = false
 
 	function emit() {
-		for (const listener of [...listeners]) listener()
+		for (const listener of Array.from(listeners)) listener()
 	}
 
 	function isPaused() {
@@ -121,6 +121,7 @@ export function createLandingLoopPlayer(input: {
 		},
 		setFocus(on: boolean) {
 			if (!on) {
+				ignorePointerPause = false
 				setReason('focus', false)
 				return
 			}
