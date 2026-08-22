@@ -215,4 +215,110 @@ test('memory tool context surfaces retrievers, filters weak matches, fails on re
 	expect(compactContent?.text).not.toContain('Tags')
 	expect(compactContent?.text).not.toContain('Updated')
 	expect(compactContent?.text).not.toContain('active-rank-one')
+
+	setupMemoryContextMocks()
+	mockModule.searchMemoryRecords.mockResolvedValue({
+		matches: [
+			{
+				...baseMemory,
+				id: 'dup-first',
+				status: 'active',
+				dedupeKey: 'openai-apps-domain-challenge',
+				subject: 'OpenAI Apps domain verification',
+				summary: 'Challenge token is a static public asset.',
+				score: automaticMemorySingleListRankOneScore,
+			},
+			{
+				...baseMemory,
+				id: 'dup-second',
+				status: 'active',
+				dedupeKey: '  openai-apps-domain-challenge  ',
+				subject: 'OpenAI Apps domain verification',
+				summary: 'Challenge token is a static public asset.',
+				score: 1 / 62,
+			},
+			{
+				...baseMemory,
+				id: 'next-distinct',
+				status: 'active',
+				dedupeKey: 'prefilled-setup-urls',
+				subject: 'Always prefill hosted setup URLs',
+				summary: 'Give a prefilled secrets URL.',
+				score: 1 / 63,
+			},
+			{
+				...baseMemory,
+				id: 'null-key-one',
+				status: 'active',
+				dedupeKey: null,
+				subject: 'Null key one',
+				summary: 'No shared key.',
+				score: 1 / 64,
+			},
+		],
+		suppressedCount: 0,
+		query: 'openai apps challenge',
+	})
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
+	const collapsed = await loadRelevantMemoriesForTool({
+		env: { APP_DB: {} } as Env,
+		callerContext,
+		conversationId: 'conversation-dedupe',
+		memoryContext: { query: 'openai apps challenge' },
+	})
+	expect(collapsed?.memories).toEqual([
+		{
+			id: 'dup-first',
+			subject: 'OpenAI Apps domain verification',
+			summary: 'Challenge token is a static public asset.',
+		},
+		{
+			id: 'next-distinct',
+			subject: 'Always prefill hosted setup URLs',
+			summary: 'Give a prefilled secrets URL.',
+		},
+	])
+
+	setupMemoryContextMocks()
+	mockModule.searchMemoryRecords.mockResolvedValue({
+		matches: [
+			{
+				...baseMemory,
+				id: 'null-a',
+				status: 'active',
+				dedupeKey: null,
+				subject: 'Untitled habit A',
+				summary: 'First untitled fact.',
+				score: automaticMemorySingleListRankOneScore,
+			},
+			{
+				...baseMemory,
+				id: 'null-b',
+				status: 'active',
+				dedupeKey: '   ',
+				subject: 'Untitled habit B',
+				summary: 'Second untitled fact.',
+				score: 1 / 62,
+			},
+		],
+		suppressedCount: 0,
+		query: 'untitled habits',
+	})
+	mockModule.runPackageRetrievers.mockResolvedValue({
+		results: [],
+		warnings: [],
+	})
+	const untitled = await loadRelevantMemoriesForTool({
+		env: { APP_DB: {} } as Env,
+		callerContext,
+		conversationId: 'conversation-null-keys',
+		memoryContext: { query: 'untitled habits' },
+	})
+	expect(untitled?.memories.map((memory) => memory.id)).toEqual([
+		'null-a',
+		'null-b',
+	])
 })

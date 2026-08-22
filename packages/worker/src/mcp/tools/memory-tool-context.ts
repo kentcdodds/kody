@@ -28,14 +28,30 @@ export const automaticMemorySingleListRankOneScore = 1 / 61
 /** Auto-surface keeps the top ranked active hits, not an absolute score cut. */
 const automaticMemorySurfaceLimit = 2
 
+function memoryDedupeKey(match: { dedupeKey?: string | null }) {
+	const key = match.dedupeKey?.trim() ?? ''
+	return key.length > 0 ? key : null
+}
+
 function selectAutomaticMemories<
 	T extends {
 		status: string
+		dedupeKey?: string | null
 	},
 >(matches: Array<T>) {
-	return matches
-		.filter((match) => match.status === 'active')
-		.slice(0, automaticMemorySurfaceLimit)
+	const selected: Array<T> = []
+	const seenKeys = new Set<string>()
+	for (const match of matches) {
+		if (match.status !== 'active') continue
+		const key = memoryDedupeKey(match)
+		if (key !== null) {
+			if (seenKeys.has(key)) continue
+			seenKeys.add(key)
+		}
+		selected.push(match)
+		if (selected.length >= automaticMemorySurfaceLimit) break
+	}
+	return selected
 }
 
 async function loadAutomaticMemories(input: {
@@ -56,7 +72,9 @@ async function loadAutomaticMemories(input: {
 		},
 		query: input.query,
 		conversationId: input.conversationId,
-		limit: input.limit,
+		// Default search already returns 5; keep at least n=2 plus overscan so a
+		// collapsed `dedupe_key` pair can still fill the second slot.
+		limit: Math.max(input.limit ?? 5, automaticMemorySurfaceLimit * 2 + 1),
 		includeSuppressedInConversation: true,
 	})
 	const memories = selectAutomaticMemories(result.matches)
