@@ -36,12 +36,18 @@ export function CodeRunsTicker(
 					scheduleNext()
 					return
 				}
-				const slotMs = Math.max(16, Math.floor(1000 / behind))
-				timeoutId = setTimeout(() => {
-					displayed += 1
-					handle.update()
+				displayed += 1
+				handle.update()
+				if (behind === 1) {
 					scheduleNext()
-				}, slotMs)
+					return
+				}
+				timeoutId = setTimeout(
+					() => {
+						scheduleNext()
+					},
+					Math.max(16, Math.floor(1000 / behind)),
+				)
 				return
 			}
 			const delay = msUntilNextCodeRunsCount(handle.props.window, Date.now())
