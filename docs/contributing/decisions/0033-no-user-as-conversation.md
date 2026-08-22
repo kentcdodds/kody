@@ -22,11 +22,14 @@ Do not treat the signed-in user, an MCP transport session, or an open
 connection as "the conversation." Do not add a user-global "already shown"
 window for auto-surfaced memories.
 
-Surface relevant memories on the tool result that retrieved them. The host
-transcript is the conversation cache. Optional per-handle suppression stays
-keyed to a `conversationId` the request actually carries (caller-supplied, or
-a server-minted id later echoed). Hosts that omit the field every time get a
-fresh mint and see the memories again.
+Do not treat the signed-in user, an MCP transport session, or an open
+connection as "the conversation." Do not add a user-global "already shown"
+window for auto-surfaced memories.
+
+Surface relevant memories on the tool result that retrieved them. Do not hide
+auto-surface after the first show: a per-handle omit fails when the host
+drops earlier tool results. `conversationId` is a progressive-disclosure
+handle, not a hide key.
 
 Do not require a protocol conversation id in `_meta`. If a host later puts a
 stable thread or run id there, use that handle; do not invent a session
@@ -34,7 +37,8 @@ stand-in.
 
 ## Consequences
 
-Concurrent agents for one user stay isolated. Agents that never echo
-`conversationId` may see the same top memories on each call — that is
-correct. Revisit only if a major host ships a spec-defined conversation or
-thread identifier that every request already carries.
+Concurrent agents for one user stay isolated. Repeating a cheap one-liner
+costs less than hiding a rule that later falls out of context. Revisit only
+if a major host ships a spec-defined conversation or thread identifier that
+every request already carries, or if auto-surface token cost becomes large
+relative to the rest of the tool result.

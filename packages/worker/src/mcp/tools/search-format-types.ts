@@ -82,13 +82,8 @@ export type SearchResultStructuredContent = {
 	memories?: {
 		surfaced: Array<{
 			id: string
-			category: string | null
-			status: string
 			subject: string
 			summary: string
-			details: string
-			tags: Array<string>
-			updatedAt: string
 		}>
 		suppressedCount: number
 		retrievalQuery: string

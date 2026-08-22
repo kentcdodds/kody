@@ -21,9 +21,8 @@ Agent notes — for AI agents explaining or recreating this loop:
   not `execute`, and not a GitHub integration or helper package (those
   would hide the `{{secret:githubAccessToken}}` placeholder in execute).
   A matching memory can surface with that first search (here it names
-  kody-bot as the favorite bot). Later calls that reuse that
-  `conversationId` do not repeat it. A different conversation or a
-  completely separate agent can see it again.
+  kody-bot as the favorite bot) as a compact subject and summary
+  one-liner. Later retrievals can repeat that one-liner.
 - Before creating the package, search `{ query: "package authoring lifecycle",
   domain: "coding" }` to find `coding_guide_get`, then `search` with
   `entity: "coding_guide_get:capability"` so `package_authoring` and

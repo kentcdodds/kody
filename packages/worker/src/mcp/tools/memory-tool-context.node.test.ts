@@ -188,9 +188,31 @@ test('memory tool context surfaces retrievers, filters weak matches, fails on re
 		memoryContext: { query: 'ranked search' },
 		acknowledgeSurfaced: false,
 	})
-	expect(filtered?.memories.map((memory) => memory.id)).toEqual([
-		'active-rank-one',
-		'active-rank-two',
+	expect(filtered?.memories).toEqual([
+		{
+			id: 'active-rank-one',
+			subject: 'Search workflow',
+			summary: 'Use ranked search.',
+		},
+		{
+			id: 'active-rank-two',
+			subject: 'Search workflow',
+			summary: 'Use ranked search.',
+		},
 	])
 	expect(mockModule.acknowledgeSurfacedMemories).not.toHaveBeenCalled()
+
+	const [compactContent] = formatSurfacedMemoriesMarkdown(filtered)
+	expect(compactContent?.text).toBe(
+		[
+			'## Relevant memories',
+			'',
+			'- **Search workflow** — Use ranked search.',
+			'- **Search workflow** — Use ranked search.',
+		].join('\n'),
+	)
+	expect(compactContent?.text).not.toContain('Category')
+	expect(compactContent?.text).not.toContain('Tags')
+	expect(compactContent?.text).not.toContain('Updated')
+	expect(compactContent?.text).not.toContain('active-rank-one')
 })

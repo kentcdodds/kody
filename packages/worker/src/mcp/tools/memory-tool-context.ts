@@ -14,14 +14,8 @@ import {
 export type MemoryToolSummary = {
 	memories: Array<{
 		id: string
-		category: string | null
-		status: string
 		subject: string
 		summary: string
-		details: string
-		tags: Array<string>
-		sourceUris: Array<string>
-		updatedAt: string
 	}>
 	retrieverResults: Array<PackageRetrieverSurfaceResult>
 	retrieverWarnings: Array<string>
@@ -63,16 +57,9 @@ async function loadAutomaticMemories(input: {
 		query: input.query,
 		conversationId: input.conversationId,
 		limit: input.limit,
+		includeSuppressedInConversation: true,
 	})
 	const memories = selectAutomaticMemories(result.matches)
-	if (input.acknowledgeSurfaced !== false && memories.length > 0) {
-		await acknowledgeSurfacedMemories({
-			env: input.env,
-			userId: input.userId,
-			conversationId: input.conversationId,
-			memoryIds: memories.map((memory) => memory.id),
-		})
-	}
 	return {
 		memories,
 		suppressedCount: result.suppressedCount,
@@ -274,20 +261,6 @@ function formatRelevantMemoriesMarkdown(memorySummary: MemoryToolSummary) {
 		lines.push('## Relevant memories', '')
 		for (const memory of memorySummary.memories) {
 			lines.push(`- **${memory.subject}** — ${memory.summary}`)
-			if (memory.category) {
-				lines.push(`  - Category: \`${memory.category}\``)
-			}
-			if (memory.tags.length > 0) {
-				lines.push(
-					`  - Tags: ${memory.tags.map((tag) => `\`${tag}\``).join(', ')}`,
-				)
-			}
-			if (memory.sourceUris.length > 0) {
-				lines.push(
-					`  - Sources: ${memory.sourceUris.map((sourceUri) => `\`${sourceUri}\``).join(', ')}`,
-				)
-			}
-			lines.push(`  - Updated: \`${memory.updatedAt}\``)
 		}
 	}
 	if (memorySummary.retrieverResults.length > 0) {
@@ -323,13 +296,7 @@ function formatRelevantMemoriesMarkdown(memorySummary: MemoryToolSummary) {
 function toMemoryToolSummaryItem(memory: MemoryRecord) {
 	return {
 		id: memory.id,
-		category: memory.category,
-		status: memory.status,
 		subject: memory.subject,
 		summary: memory.summary,
-		details: memory.details,
-		tags: memory.tags,
-		sourceUris: memory.sourceUris,
-		updatedAt: memory.updatedAt,
 	}
 }

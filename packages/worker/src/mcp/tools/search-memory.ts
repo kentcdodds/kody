@@ -1,16 +1,13 @@
 import { type z } from 'zod'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
-	acknowledgeToolMemories,
 	buildMemoryRetrievalQuery,
 	loadRelevantMemoriesForTool,
 	type MemoryToolSummary,
 } from '#mcp/tools/memory-tool-context.ts'
 
 import {
-	SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS,
 	SEARCH_MEMORY_ENRICHMENT_BUDGET_MS,
-	memoryAcknowledgementWarning,
 	memoryEnrichmentSkippedWarning,
 } from './search-constants.ts'
 import { elapsedMs, settleWithBudget } from './search-timing.ts'
@@ -58,13 +55,9 @@ export function launchSearchMemoryEnrichment(input: {
 }
 
 export async function settleSearchMemoryEnrichment(input: {
-	env: Env
-	callerContext: McpCallerContext
-	conversationId: string
 	promise: Promise<MemoryToolSummary | null>
 	launchedAtMs?: number
 	budgetMs?: number
-	acknowledgementBudgetMs?: number
 }): Promise<SearchMemoryEnrichmentSettlement> {
 	const waitStartedAt = performance.now()
 	const launchedAtMs = input.launchedAtMs ?? waitStartedAt
@@ -131,93 +124,20 @@ export async function settleSearchMemoryEnrichment(input: {
 		}
 	}
 
-	const memories = {
-		surfaced: memoryToolContext.memories,
-		suppressedCount: memoryToolContext.suppressedCount,
-		retrievalQuery: memoryToolContext.retrievalQuery,
-		retrieverResults: memoryToolContext.retrieverResults,
-		retrieverWarnings: memoryToolContext.retrieverWarnings,
-	}
-	const acknowledgementBudgetMs =
-		input.acknowledgementBudgetMs ?? SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS
-	const acknowledgementStartedAt = performance.now()
-	const acknowledgementPromise = acknowledgeToolMemories({
-		env: input.env,
-		callerContext: input.callerContext,
-		conversationId: input.conversationId,
-		memoryIds: memoryToolContext.memories.map((memory) => memory.id),
-	})
-	const acknowledgement = await settleWithBudget(
-		acknowledgementPromise,
-		acknowledgementBudgetMs,
-		acknowledgementStartedAt,
-	)
-	const memoryAcknowledgementMs = elapsedMs(acknowledgementStartedAt)
-
-	if (acknowledgement.ok) {
-		return {
-			memories,
-			warnings,
-			phaseTimings: {
-				memoryEnrichmentMs,
-				memoryEnrichmentWaitMs,
-				memoryAcknowledgementMs,
-				memoryEnrichmentTimedOut: false,
-				memoryEnrichmentFailed: false,
-			},
-		}
-	}
-
-	if (acknowledgement.timedOut) {
-		void acknowledgementPromise.catch((error) => {
-			console.warn(
-				JSON.stringify({
-					message: 'search memory acknowledgement failed after timeout',
-					error: error instanceof Error ? error.message : String(error),
-				}),
-			)
-		})
-		console.warn(
-			JSON.stringify({
-				message: 'search memory acknowledgement timed out',
-				budgetMs: acknowledgementBudgetMs,
-				acknowledgementMs: memoryAcknowledgementMs,
-			}),
-		)
-		return {
-			memories,
-			warnings: [...warnings, memoryAcknowledgementWarning],
-			phaseTimings: {
-				memoryEnrichmentMs,
-				memoryEnrichmentWaitMs,
-				memoryAcknowledgementMs,
-				memoryEnrichmentTimedOut: false,
-				memoryAcknowledgementTimedOut: true,
-				memoryEnrichmentFailed: false,
-			},
-		}
-	}
-
-	console.warn(
-		JSON.stringify({
-			message: 'search memory acknowledgement failed',
-			error:
-				acknowledgement.error instanceof Error
-					? acknowledgement.error.message
-					: String(acknowledgement.error),
-			acknowledgementMs: memoryAcknowledgementMs,
-		}),
-	)
 	return {
-		memories,
-		warnings: [...warnings, memoryAcknowledgementWarning],
+		memories: {
+			surfaced: memoryToolContext.memories,
+			suppressedCount: memoryToolContext.suppressedCount,
+			retrievalQuery: memoryToolContext.retrievalQuery,
+			retrieverResults: memoryToolContext.retrieverResults,
+			retrieverWarnings: memoryToolContext.retrieverWarnings,
+		},
+		warnings,
 		phaseTimings: {
 			memoryEnrichmentMs,
 			memoryEnrichmentWaitMs,
-			memoryAcknowledgementMs,
 			memoryEnrichmentTimedOut: false,
 			memoryEnrichmentFailed: false,
-			memoryAcknowledgementFailed: true,
 		},
 	}
 }

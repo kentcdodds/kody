@@ -198,9 +198,6 @@ async function executeSearchListWithinBudget(
 	const memorySettlement =
 		shouldEnrichMemory && !returnsDomainIndex
 			? await settleSearchMemoryEnrichment({
-					env: input.env,
-					callerContext: input.callerContext,
-					conversationId: input.conversationId,
 					promise: memoryEnrichmentPromise,
 					launchedAtMs: memoryEnrichmentLaunchedAtMs,
 				})

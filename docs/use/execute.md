@@ -273,9 +273,9 @@ For dedicated inspection, use:
 
 Kody can surface a small number of relevant long-term memories when you pass a
 short **`memoryContext`** on normal MCP tool calls. `search` also retrieves
-from the query string. Surfaced memories appear in the tool text. Later calls
-that reuse the same `conversationId` skip memories already shown in that
-conversation.
+from the query string. Surfaced memories appear in the tool text as subject and
+summary only (id in structured content). Later retrievals can repeat that
+compact block.
 
 Handled **execute** responses also include top-level **`timing`** metadata with
 `startedAt`, `endedAt`, and `durationMs` alongside `conversationId`. Use it for

@@ -2,8 +2,8 @@
 
 Kody supports two related memory features:
 
-- **per-conversation suppression** after a memory is surfaced on a reused
-  `conversationId`
+- **compact auto-surface** on `search` and on `execute` when `memoryContext`
+  is present
 - **long-term memory retrieval and persistence** via **`memoryContext`** and
   memory capabilities
 
@@ -14,10 +14,10 @@ and other per-thread optimizations. If you already have one from an earlier
 tool response, pass it back unchanged. Otherwise omit the field so Kody can
 return a server-generated id. Do not make one up yourself.
 
-Memory auto-surface does not require this id. When the caller omits it, Kody
-mints one for the response and still returns relevant memories. Suppression is
-keyed to that handle only. A different conversation, or a completely separate
-agent for the same user, does not inherit it.
+Memory auto-surface does not require this id and does not hide a memory after
+showing it. The compact one-liner can repeat on later retrievals so it stays
+in context if earlier tool results were dropped. A different conversation, or
+a completely separate agent for the same user, sees the same compact block.
 
 ## `memoryContext`
 
@@ -40,15 +40,15 @@ is present.
 
 When retrieval runs, Kody may return a small number of relevant not-yet-surfaced
 memories in the tool text (as `## Relevant memories`) and in structured
-content.
+content. Auto-surface is compact: **subject**, **summary**, and **id**
+(structured). Details stay behind `meta_memory_get`.
 
 That retrieval is:
 
 - **conservative** — the top one or two ranked active memories
 - **task-based** — driven by `memoryContext` and, for `search`, the query
-- **per-conversation** — a memory already shown on this `conversationId` stays
-  down for later calls that reuse it; a new conversation or a separate agent
-  can see it again
+- **cheap to repeat** — subject and summary only; the same one-liners may
+  appear again so a compacted context still has the rule
 
 ## Verify-first rule for memory writes
 

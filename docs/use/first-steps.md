@@ -13,9 +13,8 @@ secret reference, then run work through **execute**.
   timing metadata with `startedAt`, `endedAt`, and `durationMs` in structured
   responses.
 - **Pass `memoryContext`** when durable user memory may matter. Kody uses it to
-  surface a small set of relevant long-term memories. Later calls that reuse
-  the same `conversationId` skip memories already shown in that conversation.
-  `search` also retrieves from the query string.
+  surface a small set of relevant long-term memories as compact subject and
+  summary one-liners. `search` also retrieves from the query string.
 - **Think in packages for reusable saved code.** Packages expose exports,
   declare package-owned jobs, and can optionally expose an app/UI surface.
   Recurring schedules belong on a package under `kody.jobs`. Deferred one-shot
