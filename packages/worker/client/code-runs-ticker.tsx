@@ -25,10 +25,7 @@ export function CodeRunsTicker(
 	if (typeof document !== 'undefined' && !prefersReducedMotion) {
 		let timeoutId: ReturnType<typeof setTimeout> | undefined
 		function scheduleNext() {
-			const official = interpolateCodeRunsCount(
-				handle.props.window,
-				Date.now(),
-			)
+			const official = interpolateCodeRunsCount(handle.props.window, Date.now())
 			if (displayed < official) {
 				const behind = official - displayed
 				const slotMs = Math.max(16, Math.floor(1000 / behind))
@@ -41,15 +38,18 @@ export function CodeRunsTicker(
 			}
 			const delay = msUntilNextCodeRunsCount(handle.props.window, Date.now())
 			if (delay === null) return
-			timeoutId = setTimeout(() => {
-				const nextOfficial = interpolateCodeRunsCount(
-					handle.props.window,
-					Date.now(),
-				)
-				if (displayed < nextOfficial) displayed += 1
-				handle.update()
-				scheduleNext()
-			}, Math.max(16, delay))
+			timeoutId = setTimeout(
+				() => {
+					const nextOfficial = interpolateCodeRunsCount(
+						handle.props.window,
+						Date.now(),
+					)
+					if (displayed < nextOfficial) displayed += 1
+					handle.update()
+					scheduleNext()
+				},
+				Math.max(16, delay),
+			)
 		}
 		scheduleNext()
 		handle.signal.addEventListener(
