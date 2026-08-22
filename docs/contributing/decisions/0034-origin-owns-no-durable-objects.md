@@ -53,5 +53,8 @@ Remix/blog/UI-only production deploys no longer reset platform or runtime
 Durable Objects. Official guide deploys reset platform objects because MCP
 bundles that markdown, and still skip runtime and jobs. Cost: another wrangler
 config, preview bootstrap ordering, and a one-shot production transfer with a
-short in-flight RPC error window. See the
+short in-flight RPC error window. The platform script must also export
+`KodyFetchGateway` (a WorkerEntrypoint, not a Durable Object) so MCP `execute`
+can loopback outbound fetch from `ctx.exports` on the script that owns `MCP`.
+See the
 [platform worker migration runbook](../architecture/platform-worker-migration-runbook.md).
