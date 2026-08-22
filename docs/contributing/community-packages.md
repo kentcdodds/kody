@@ -293,5 +293,95 @@ Queue shows reporter, reason, and listing metadata. Actions use double-confirm:
 | --------------------------- | ---------------------------------------------------------------- |
 | Dismiss                     | Close report, listing unchanged                                  |
 | Delist                      | `status = delisted`, blocks owner re-publish and unpublish       |
-| Hard delete                 | Remove listing, KV snapshot, and ratings  stats                    |
-| Ban reporter / ban reported | `community_bans` row; user cannot publish, fork, rate, or report |
+| Hard delete                 | Remove listing, KV snapshot, and ratings                         |
+| Ban reporter / ban reportee | `community_bans` row; user cannot publish, fork, rate, or report |
+
+`resolveCommunityReport` in `service.ts` implements dismiss, delist, and delete.
+`banCommunityUser` / `unbanCommunityUser` manage community-wide bans.
+
+Successful fork and rating writes enqueue `{ eventId, kind, activityId }` for
+durable `community.activity.recorded` delivery. The Queue consumer reloads the
+same metadata-only projection and uses the shared admin package-subscription
+fan-out, which resolves admin package owners fresh for every attempt. The event
+therefore reaches only admin-owned subscribed packages and is suitable for
+operator notifications such as Discord.
+
+The first successful listing publish enqueues `{ eventId, listingId }` for
+durable `community.listing.published` delivery (same admin fan-out as activity
+events). Republishes write `listing_updated` for the timeline but do not enqueue
+this topic. Enqueue failures are logged and never fail `community_publish`. See
+[the subscription guide](../guides/package-subscriptions.md#communitylistingpublished-admins)
+for the handler payload.
+
+## Inert fork mechanism
+
+Forks create an **`entity_sources`** row and Artifacts snapshot but **no**
+`saved_packages` row. Without a saved package row:
+
+- package exports, jobs, subscriptions, and apps do not register
+- `kody:@…` imports from the fork do not execute
+- search and execute cannot treat the fork as a live saved package
+
+Activation happens through two paths: the forker runs `repo_publish_session`, or
+a one-click `installCommunityListing` whose publish checks pass — both end in
+the same saved-package projection. Repo checks reject publishes that still
+contain cross-scope static imports or foreign `kody.dependencies` entries
+(`fork-scan.ts` surfaces these at fork time).
+
+## Search ranking
+
+`searchCommunityListings` ranks **active** listings only:
+
+1. Build a search document from name, kody id, description, tags, search text,
+   and a README snippet.
+2. Score with the same lexical + deterministic-embedding blend used for
+   capability search (`blendLexicalAndVectorScore`, `deterministicEmbedding`).
+3. Multiply by a **Bayesian average** of star ratings:
+
+   prior mean **3.25**, prior weight **5**
+
+   `(5 × 3.25 + count × averageStars) / (5 + count)`
+
+Empty queries sort by Bayesian score, then `publishedAt`. Pass `sort: "newest"`
+(or `/community?sort=newest`) to order matching listings by `publishedAt`
+descending instead. `published_at` is last community publish time: republishing
+overwrites it.
+
+Fork counts are live `COUNT(*)` aggregates over `community_forks` grouped by
+listing id. Detail reads always count the selected listing. Browse and search
+counts are also correct for every materialized result, although unfiltered
+browse intentionally ranks only the newest 500 candidates. The reported
+production mismatch for `@kentcdodds/github` was therefore consistent with a
+data snapshot/cache artifact rather than a defect in the aggregate SQL; the
+worker integration test pins that a successful fork increments the surfaced
+count.
+
+`computeCommunityBayesianScore` in `service.ts` implements the prior so a few
+5-star ratings do not beat many good ratings.
+
+## Isolation invariants
+
+- Forks are copies; **no cross-user `kody:@…` import ever resolves**.
+- Deliberate cross-user data flows are public listing snapshots, aggregate
+  ratings, star counts/stargazers, and public profile / timeline surfaces.
+- Private profiles and private packages (`profile_visibility = private`,
+  `saved_packages.is_private = 1`) must not appear on public social reads.
+- Package name scope and public profiles reveal the owner's username by design;
+  browsing does not require exposing a stable owner user id on every search hit.
+- Community results stay out of general MCP `search` and per-user package vector
+  indexes.
+
+Account deletion and export cover social tables through `accountUserDataTargets`
+(`user_follows` on both follower and followee columns, `community_stars` by user
+and by owned listing, `community_activity_events` by actor and by owned
+listing), matching the multi-column pattern used for `community_reports`.
+
+## Related docs
+
+- [Community profiles (usage)](../use/community-profiles.md) — agent-facing
+  profiles, follows, timelines, and stars
+- [Packages and manifests](./packages-and-manifests.md) — saved package model
+- [Repo-backed editing sessions](../use/repo-sessions.md) — fork activation path
+- [Adding capabilities](./adding-capabilities.md) — domain registration
+- [Primitives map](./architecture/primitives.yaml) — `community-listings` and
+  `community-social` primitive entries
