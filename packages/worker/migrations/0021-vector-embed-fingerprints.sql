@@ -1,6 +1,7 @@
 -- Derived skip cache for Vectorize embeddings. A row means this vector id in
 -- this owner namespace was last upserted from embed text that hashes to
--- content_hash (model + dimensions + fingerprint version + truncated text).
+-- content_hash (model + dimensions + fingerprint version + truncated text +
+-- canonical Vectorize metadata).
 -- User-owned rows use the account stable user id; builtin capability vectors
 -- use the reserved __kody_builtin__ namespace as user_id. Account deletion
 -- removes user-owned rows. A force reindex ignores these hashes.

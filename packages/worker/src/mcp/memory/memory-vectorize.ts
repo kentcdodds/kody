@@ -30,12 +30,19 @@ export async function upsertMemoryVector(
 	if (!index || isCapabilitySearchOffline(env)) return
 	const vectorId = memoryVectorId(input.memoryId)
 	const namespace = userVectorNamespace(input.userId)
+	const metadata = {
+		kind: 'memory',
+		userId: input.userId,
+		status: input.status,
+		...(input.category ? { category: input.category } : {}),
+	}
 	if (
 		await shouldSkipVectorEmbed({
 			env,
 			userId: namespace,
 			vectorId,
 			text: input.embedText,
+			metadata,
 		})
 	) {
 		return
@@ -46,12 +53,7 @@ export async function upsertMemoryVector(
 			id: vectorId,
 			values,
 			namespace,
-			metadata: {
-				kind: 'memory',
-				userId: input.userId,
-				status: input.status,
-				...(input.category ? { category: input.category } : {}),
-			},
+			metadata,
 		},
 	])
 	await recordVectorEmbedFingerprint({
@@ -59,6 +61,7 @@ export async function upsertMemoryVector(
 		userId: namespace,
 		vectorId,
 		text: input.embedText,
+		metadata,
 	})
 }
 

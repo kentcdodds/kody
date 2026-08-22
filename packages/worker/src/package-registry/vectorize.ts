@@ -23,12 +23,17 @@ export async function upsertSavedPackageVector(
 	if (!index || isCapabilitySearchOffline(env)) return
 	const vectorId = savedPackageVectorId(input.packageId)
 	const namespace = userVectorNamespace(input.userId)
+	const metadata = {
+		kind: 'package',
+		userId: input.userId,
+	}
 	if (
 		await shouldSkipVectorEmbed({
 			env,
 			userId: namespace,
 			vectorId,
 			text: input.embedText,
+			metadata,
 		})
 	) {
 		return
@@ -39,10 +44,7 @@ export async function upsertSavedPackageVector(
 			id: vectorId,
 			values,
 			namespace,
-			metadata: {
-				kind: 'package',
-				userId: input.userId,
-			},
+			metadata,
 		},
 	])
 	await recordVectorEmbedFingerprint({
@@ -50,6 +52,7 @@ export async function upsertSavedPackageVector(
 		userId: namespace,
 		vectorId,
 		text: input.embedText,
+		metadata,
 	})
 }
 

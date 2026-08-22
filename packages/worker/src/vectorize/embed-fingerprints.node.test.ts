@@ -4,6 +4,7 @@ import { expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
+	canonicalizeVectorEmbedMetadata,
 	recordVectorEmbedFingerprint,
 	shouldSkipVectorEmbed,
 	tryDeleteVectorEmbedFingerprint,
@@ -47,7 +48,10 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 			},
 		]
 
-		const hash = await vectorEmbedContentHash(candidates[0]!.text)
+		const hash = await vectorEmbedContentHash({
+			text: candidates[0]!.text,
+			metadata: candidates[0]!.metadata,
+		})
 		await expect(
 			sha256Hex(
 				[
@@ -55,6 +59,7 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 					String(embedding.CAPABILITY_EMBEDDING_DIMENSIONS),
 					String(vectorEmbedFingerprintVersion),
 					candidates[0]!.text,
+					canonicalizeVectorEmbedMetadata(candidates[0]!.metadata),
 				].join('\0'),
 			),
 		).resolves.toBe(hash)
@@ -62,8 +67,10 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 		const longPrefix = 'x'.repeat(
 			embedding.CAPABILITY_EMBEDDING_MAX_INPUT_CHARS,
 		)
-		await expect(vectorEmbedContentHash(`${longPrefix}tail-a`)).resolves.toBe(
-			await vectorEmbedContentHash(`${longPrefix}tail-b`),
+		await expect(
+			vectorEmbedContentHash({ text: `${longPrefix}tail-a` }),
+		).resolves.toBe(
+			await vectorEmbedContentHash({ text: `${longPrefix}tail-b` }),
 		)
 
 		const first = await reindexVectorCandidates({
@@ -94,14 +101,25 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 				userId: 'user-me',
 				vectorId: 'memory-1',
 				text: 'remember the preview locale',
+				metadata: { kind: 'memory' },
 			}),
 		).resolves.toBe(true)
+		await expect(
+			shouldSkipVectorEmbed({
+				env,
+				userId: 'user-me',
+				vectorId: 'memory-1',
+				text: 'remember the preview locale',
+				metadata: { kind: 'memory', status: 'deleted' },
+			}),
+		).resolves.toBe(false)
 		await expect(
 			shouldSkipVectorEmbed({
 				env: {} as Env,
 				userId: 'user-me',
 				vectorId: 'memory-1',
 				text: 'remember the preview locale',
+				metadata: { kind: 'memory' },
 			}),
 		).resolves.toBe(false)
 
@@ -133,6 +151,30 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 			expect.objectContaining({
 				id: 'memory-1',
 				namespace: 'user-me',
+			}),
+		])
+
+		embedSpy.mockClear()
+		upsert.mockClear()
+		const metadataChanged = await reindexVectorCandidates({
+			env,
+			index: { upsert } as unknown as VectorizeIndex,
+			kind: 'test',
+			candidates: [
+				candidates[0]!,
+				{
+					...candidates[1]!,
+					text: 'remember a different locale',
+					metadata: { kind: 'memory', status: 'deleted' },
+				},
+			],
+		})
+		expect(metadataChanged).toEqual({ upserted: 1, skipped: 1 })
+		expect(embedSpy).toHaveBeenCalledTimes(1)
+		expect(upsert).toHaveBeenCalledWith([
+			expect.objectContaining({
+				id: 'memory-1',
+				metadata: { kind: 'memory', status: 'deleted' },
 			}),
 		])
 

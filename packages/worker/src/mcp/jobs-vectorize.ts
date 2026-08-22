@@ -27,12 +27,14 @@ export async function upsertJobVector(
 	if (!index || isCapabilitySearchOffline(env)) return
 	const vectorId = jobVectorId(input.jobId)
 	const namespace = userVectorNamespace(input.userId)
+	const metadata = { kind: 'job', userId: input.userId }
 	if (
 		await shouldSkipVectorEmbed({
 			env,
 			userId: namespace,
 			vectorId,
 			text: input.embedText,
+			metadata,
 		})
 	) {
 		return
@@ -43,7 +45,7 @@ export async function upsertJobVector(
 			id: vectorId,
 			values,
 			namespace,
-			metadata: { kind: 'job', userId: input.userId },
+			metadata,
 		},
 	])
 	await recordVectorEmbedFingerprint({
@@ -51,6 +53,7 @@ export async function upsertJobVector(
 		userId: namespace,
 		vectorId,
 		text: input.embedText,
+		metadata,
 	})
 }
 

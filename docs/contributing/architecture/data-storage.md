@@ -1353,12 +1353,14 @@ namespace. Vector rows are derived from D1. User-owned memory, job, and
 saved-package vectors upsert on write; saved packages also mark
 `saved_package_search_index_debt` and reconcile after the response. Each upsert
 (write-time or reindex) records a SHA-256 of embedding model, dimensions,
-`vectorEmbedFingerprintVersion`, and truncated embed text in
-`vector_embed_fingerprints` (`user_id` is the Vectorize namespace: the account
-id, or `__kody_builtin__` for builtins). A later upsert with the same hash skips
-Workers AI and Vectorize. `force: true` on the maintenance body ignores
-fingerprints and rewrites Vectorize — required after Vectorize data loss,
-because a D1 restore still has the skip rows. Bump
+`vectorEmbedFingerprintVersion`, truncated embed text, and canonical Vectorize
+metadata in `vector_embed_fingerprints` (`user_id` is the Vectorize namespace:
+the account id, or `__kody_builtin__` for builtins). A later upsert with the
+same hash skips Workers AI and Vectorize. Metadata is part of the hash so a
+memory status or category change still rewrites the vector. `force: true` on the
+maintenance body ignores fingerprints and rewrites Vectorize — required after
+Vectorize data loss, because a D1 restore still has the skip rows, and after a
+pooling-only embedding change (pooling is not in the hash). Bump
 `vectorEmbedFingerprintVersion` when the metadata contract changes so hashes
 invalidate even if embed text is unchanged. The bounded
 `POST /__maintenance/reindex-capabilities` sweep rebuilds requested kinds

@@ -21,12 +21,29 @@ export function vectorEmbedFingerprintKey(userId: string, vectorId: string) {
 	return `${userId}\0${vectorId}`
 }
 
-export async function vectorEmbedContentHash(text: string) {
+export function canonicalizeVectorEmbedMetadata(
+	metadata: Record<string, VectorizeVectorMetadata> | undefined,
+) {
+	if (!metadata) return ''
+	return JSON.stringify(
+		Object.fromEntries(
+			Object.keys(metadata)
+				.sort()
+				.map((key) => [key, metadata[key]]),
+		),
+	)
+}
+
+export async function vectorEmbedContentHash(input: {
+	text: string
+	metadata?: Record<string, VectorizeVectorMetadata>
+}) {
 	const material = [
 		CAPABILITY_EMBEDDING_MODEL,
 		String(CAPABILITY_EMBEDDING_DIMENSIONS),
 		String(vectorEmbedFingerprintVersion),
-		truncateEmbeddingInput(text),
+		truncateEmbeddingInput(input.text),
+		canonicalizeVectorEmbedMetadata(input.metadata),
 	].join('\0')
 	return sha256Hex(material)
 }
@@ -151,13 +168,17 @@ export async function shouldSkipVectorEmbed(input: {
 	userId: string
 	vectorId: string
 	text: string
+	metadata?: Record<string, VectorizeVectorMetadata>
 }): Promise<boolean> {
 	const existing = await tryReadVectorEmbedFingerprints({
 		env: input.env,
 		keys: [{ userId: input.userId, vectorId: input.vectorId }],
 	})
 	if (!existing) return false
-	const hash = await vectorEmbedContentHash(input.text)
+	const hash = await vectorEmbedContentHash({
+		text: input.text,
+		metadata: input.metadata,
+	})
 	return (
 		existing.get(vectorEmbedFingerprintKey(input.userId, input.vectorId)) ===
 		hash
@@ -169,6 +190,7 @@ export async function recordVectorEmbedFingerprint(input: {
 	userId: string
 	vectorId: string
 	text: string
+	metadata?: Record<string, VectorizeVectorMetadata>
 }) {
 	if (!hasVectorEmbedFingerprintDb(input.env)) return
 	await tryWriteVectorEmbedFingerprints({
@@ -177,7 +199,10 @@ export async function recordVectorEmbedFingerprint(input: {
 			{
 				userId: input.userId,
 				vectorId: input.vectorId,
-				contentHash: await vectorEmbedContentHash(input.text),
+				contentHash: await vectorEmbedContentHash({
+					text: input.text,
+					metadata: input.metadata,
+				}),
 			},
 		],
 	})

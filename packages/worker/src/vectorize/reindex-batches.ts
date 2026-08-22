@@ -135,7 +135,10 @@ export async function reindexVectorCandidates(input: {
 			const hashed = await Promise.all(
 				batch.map(async (candidate) => ({
 					candidate,
-					contentHash: await vectorEmbedContentHash(candidate.text),
+					contentHash: await vectorEmbedContentHash({
+						text: candidate.text,
+						metadata: candidate.metadata,
+					}),
 				})),
 			)
 			const existing = await tryReadVectorEmbedFingerprints({
@@ -191,7 +194,12 @@ export async function reindexVectorCandidates(input: {
 				const hashes =
 					pendingHashes ??
 					(await Promise.all(
-						pending.map((candidate) => vectorEmbedContentHash(candidate.text)),
+						pending.map((candidate) =>
+							vectorEmbedContentHash({
+								text: candidate.text,
+								metadata: candidate.metadata,
+							}),
+						),
 					))
 				await tryWriteVectorEmbedFingerprints({
 					env: input.env,
