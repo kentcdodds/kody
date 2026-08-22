@@ -78,11 +78,14 @@ KV snapshot, and ratings.
 
 Admin **trust** marks live in `trusted_commit` / `trusted_by_user_id` /
 `trusted_at`. A listing is effectively trusted only while
-`trusted_commit = pinned_commit`, so an owner republish (which moves the pinned
-commit) drops the effective mark without an explicit revoke.
-`setCommunityListingTrusted` in `service.ts` sets or clears the mark; delisted
-listings cannot be trusted. Surfaces: the `Trusted` badge on `/community` cards
-and detail pages, the admin-only toggle on the detail page
+`trusted_commit = pinned_commit`. Person-owned republish (which moves the pinned
+commit) drops the effective mark without an explicit revoke. Platform-owned
+publish and republish (`users.account_type = 'platform'`, for example `@kody`)
+call `setCommunityListingTrustedCommit` in `publishCommunityListing` so official
+listings stay trusted at the newly pinned commit. `setCommunityListingTrusted`
+in `service.ts` still sets or clears the mark manually; delisted listings cannot
+be trusted. Surfaces: the `Trusted` badge on `/community` cards and detail
+pages, the admin-only toggle on the detail page
 (`POST /community/:listingId/trust.json`, audited), and the admin-only
 `community_set_trusted` capability. `community_search` and `community_get`
 expose the effective `trusted` flag.
@@ -94,11 +97,12 @@ a package scope grant; see
 [Platform accounts](./architecture/platform-accounts.md).
 `setCommunityListingFeatured` in `service.ts` requires the listing to be
 effectively trusted before featuring; the effective `featured` flag
-(`featured_at IS NOT NULL AND trusted`) is computed in `repo.ts`, so an owner
-republish that drops trust also pulls the listing from onboarding while keeping
-the stored mark. `listFeaturedCommunityListings` feeds the onboarding page (slim
-`OnboardingFeaturedListing` shapes, capped at 12). Surfaces: the `Featured`
-badge on the detail page, the admin-only toggle
+(`featured_at IS NOT NULL AND trusted`) is computed in `repo.ts`, so a
+person-owned republish that drops trust also pulls the listing from onboarding
+while keeping the stored mark. Platform-owned republish re-pins trust, so
+featured official listings stay in onboarding. `listFeaturedCommunityListings`
+feeds the onboarding page (slim `OnboardingFeaturedListing` shapes, capped at
+12). Surfaces: the `Featured` badge on the detail page, the admin-only toggle
 (`POST /community/:listingId/feature.json`, audited), the admin-only
 `community_set_featured` capability, and onboarding Steps 2–3: Step 2 shows
 featured zero-auth example listings (tag `zero-auth`) as Try this cards that
@@ -289,95 +293,5 @@ Queue shows reporter, reason, and listing metadata. Actions use double-confirm:
 | --------------------------- | ---------------------------------------------------------------- |
 | Dismiss                     | Close report, listing unchanged                                  |
 | Delist                      | `status = delisted`, blocks owner re-publish and unpublish       |
-| Hard delete                 | Remove listing, KV snapshot, and ratings                         |
-| Ban reporter / ban reportee | `community_bans` row; user cannot publish, fork, rate, or report |
-
-`resolveCommunityReport` in `service.ts` implements dismiss, delist, and delete.
-`banCommunityUser` / `unbanCommunityUser` manage community-wide bans.
-
-Successful fork and rating writes enqueue `{ eventId, kind, activityId }` for
-durable `community.activity.recorded` delivery. The Queue consumer reloads the
-same metadata-only projection and uses the shared admin package-subscription
-fan-out, which resolves admin package owners fresh for every attempt. The event
-therefore reaches only admin-owned subscribed packages and is suitable for
-operator notifications such as Discord.
-
-The first successful listing publish enqueues `{ eventId, listingId }` for
-durable `community.listing.published` delivery (same admin fan-out as activity
-events). Republishes write `listing_updated` for the timeline but do not enqueue
-this topic. Enqueue failures are logged and never fail `community_publish`. See
-[the subscription guide](../guides/package-subscriptions.md#communitylistingpublished-admins)
-for the handler payload.
-
-## Inert fork mechanism
-
-Forks create an **`entity_sources`** row and Artifacts snapshot but **no**
-`saved_packages` row. Without a saved package row:
-
-- package exports, jobs, subscriptions, and apps do not register
-- `kody:@…` imports from the fork do not execute
-- search and execute cannot treat the fork as a live saved package
-
-Activation happens through two paths: the forker runs `repo_publish_session`, or
-a one-click `installCommunityListing` whose publish checks pass — both end in
-the same saved-package projection. Repo checks reject publishes that still
-contain cross-scope static imports or foreign `kody.dependencies` entries
-(`fork-scan.ts` surfaces these at fork time).
-
-## Search ranking
-
-`searchCommunityListings` ranks **active** listings only:
-
-1. Build a search document from name, kody id, description, tags, search text,
-   and a README snippet.
-2. Score with the same lexical + deterministic-embedding blend used for
-   capability search (`blendLexicalAndVectorScore`, `deterministicEmbedding`).
-3. Multiply by a **Bayesian average** of star ratings:
-
-   prior mean **3.25**, prior weight **5**
-
-   `(5 × 3.25 + count × averageStars) / (5 + count)`
-
-Empty queries sort by Bayesian score, then `publishedAt`. Pass `sort: "newest"`
-(or `/community?sort=newest`) to order matching listings by `publishedAt`
-descending instead. `published_at` is last community publish time: republishing
-overwrites it.
-
-Fork counts are live `COUNT(*)` aggregates over `community_forks` grouped by
-listing id. Detail reads always count the selected listing. Browse and search
-counts are also correct for every materialized result, although unfiltered
-browse intentionally ranks only the newest 500 candidates. The reported
-production mismatch for `@kentcdodds/github` was therefore consistent with a
-data snapshot/cache artifact rather than a defect in the aggregate SQL; the
-worker integration test pins that a successful fork increments the surfaced
-count.
-
-`computeCommunityBayesianScore` in `service.ts` implements the prior so a few
-5-star ratings do not beat many good ratings.
-
-## Isolation invariants
-
-- Forks are copies; **no cross-user `kody:@…` import ever resolves**.
-- Deliberate cross-user data flows are public listing snapshots, aggregate
-  ratings, star counts/stargazers, and public profile / timeline surfaces.
-- Private profiles and private packages (`profile_visibility = private`,
-  `saved_packages.is_private = 1`) must not appear on public social reads.
-- Package name scope and public profiles reveal the owner's username by design;
-  browsing does not require exposing a stable owner user id on every search hit.
-- Community results stay out of general MCP `search` and per-user package vector
-  indexes.
-
-Account deletion and export cover social tables through `accountUserDataTargets`
-(`user_follows` on both follower and followee columns, `community_stars` by user
-and by owned listing, `community_activity_events` by actor and by owned
-listing), matching the multi-column pattern used for `community_reports`.
-
-## Related docs
-
-- [Community profiles (usage)](../use/community-profiles.md) — agent-facing
-  profiles, follows, timelines, and stars
-- [Packages and manifests](./packages-and-manifests.md) — saved package model
-- [Repo-backed editing sessions](../use/repo-sessions.md) — fork activation path
-- [Adding capabilities](./adding-capabilities.md) — domain registration
-- [Primitives map](./architecture/primitives.yaml) — `community-listings` and
-  `community-social` primitive entries
+| Hard delete                 | Remove listing, KV snapshot, and ratings  stats                    |
+| Ban reporter / ban reported | `community_bans` row; user cannot publish, fork, rate, or report |
