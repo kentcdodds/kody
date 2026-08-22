@@ -72,7 +72,7 @@ function resetList(workflows = [listedWorkflow]) {
 	mockModule.cancelWorkflowRunForUser.mockReset()
 }
 
-test('workflows API lists runs and selected detail', async () => {
+test('workflows API lists, cancels, and rejects unauthenticated or invalid requests', async () => {
 	resetList()
 	const handler = createAccountWorkflowsApiHandler(createEnv())
 
@@ -110,30 +110,26 @@ test('workflows API lists runs and selected detail', async () => {
 			status: 'queued',
 		}),
 	})
-})
 
-test('workflows API cancels a non-terminal run', async () => {
 	resetList()
 	mockModule.cancelWorkflowRunForUser.mockResolvedValueOnce({
 		outcome: 'cancelled',
 		run: { ...listedWorkflow, status: 'cancelled' },
 	})
-	const handler = createAccountWorkflowsApiHandler(createEnv())
-
-	const response = await handler.handler({
+	const cancelResponse = await handler.handler({
 		request: new Request('https://example.com/account/workflows.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ action: 'cancel', id: 'dynwf-1' }),
 		}),
 	})
-	expect(response.status).toBe(200)
+	expect(cancelResponse.status).toBe(200)
 	expect(mockModule.cancelWorkflowRunForUser).toHaveBeenCalledWith({
 		env: expect.anything(),
 		userId: 'stable-user-1',
 		workflowRunId: 'dynwf-1',
 	})
-	await expect(response.json()).resolves.toMatchObject({
+	await expect(cancelResponse.json()).resolves.toMatchObject({
 		ok: true,
 		cancel: {
 			cancelled: true,
@@ -141,12 +137,8 @@ test('workflows API cancels a non-terminal run', async () => {
 			status: 'cancelled',
 		},
 	})
-})
 
-test('workflows API rejects unauthenticated and invalid requests', async () => {
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(null)
-	const handler = createAccountWorkflowsApiHandler(createEnv())
-
 	const unauthorized = await handler.handler({
 		request: new Request('https://example.com/account/workflows.json'),
 	})

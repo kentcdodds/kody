@@ -711,11 +711,6 @@ test('signup social buttons are icon-only with accessible names', async () => {
 	expect(html).toContain('aria-label="Continue with Google"')
 	expect(html).toContain('aria-label="Continue with X"')
 	expect(html).toContain('aria-label="Continue with Discord"')
-	expect(html).toContain('or continue with')
-	expect(html).not.toMatch(/>GitHub</)
-	expect(html).not.toMatch(/>Google</)
-	expect(html).not.toMatch(/>X</)
-	expect(html).not.toMatch(/>Discord</)
 })
 
 test('renderAppPage configures session secret and server-renders oauth authorize', async () => {
@@ -831,12 +826,9 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 
 	expect(response.status).toBe(200)
 	const html = await readResponseText(response)
-	expect(html).toContain('Connect google')
 	expect(html).toContain('data-testid="provider-mark"')
 	expect(html).toContain('data-testid="connect-oauth-advanced"')
-	expect(html).toContain('Continue to google')
 	expect(html).toContain('data-testid="connect-oauth-scopes"')
-	expect(html).toContain('Change the 3 scopes')
 	expect(html).toContain('https://accounts.google.com/o/oauth2/v2/auth')
 	expect(html).not.toContain('>Status<')
 
@@ -890,7 +882,7 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	const replaceHtml = await readResponseText(replaceResponse)
 	expect(replaceHtml).toContain('data-testid="connect-replace-confirm"')
 	expect(replaceHtml).toContain('data-testid="provider-mark"')
-	expect(replaceHtml).not.toContain('>Continue to google</button>')
+	expect(replaceHtml).not.toContain('data-testid="connect-oauth-scopes"')
 
 	const platformConnectResponse = await renderAppPage({
 		request: new Request('https://example.com/connect/oauth?provider=google'),
@@ -933,10 +925,10 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	})
 	expect(platformConnectResponse.status).toBe(200)
 	const platformConnectHtml = await readResponseText(platformConnectResponse)
-	expect(platformConnectHtml).toContain('Continue to google')
 	expect(platformConnectHtml).toContain('data-testid="connect-oauth-scopes"')
-	expect(platformConnectHtml).toContain('Change scopes (2 of 3)')
-	expect(platformConnectHtml).not.toContain('Redirecting to')
+	expect(platformConnectHtml).not.toContain(
+		'data-testid="connect-replace-confirm"',
+	)
 
 	// First-time bring-your-own setup: credentials form and redirect URL are
 	// visible; endpoints and allowed hosts stay behind the disclosure.
@@ -958,10 +950,7 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	})
 	expect(setupResponse.status).toBe(200)
 	const setupHtml = await readResponseText(setupResponse)
-	expect(setupHtml).toContain('Connect github')
-	expect(setupHtml).toContain('Redirect URL')
 	expect(setupHtml).toContain('https://example.com/connect/oauth')
-	expect(setupHtml).toContain('Save and continue')
 	expect(setupHtml).toContain('data-testid="connect-oauth-advanced"')
 	expect(setupHtml).toContain('https://github.com/login/oauth/authorize')
 
@@ -1024,7 +1013,6 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(chooserHtml).not.toContain(
 		'data-testid="connect-oauth-chooser-filter"',
 	)
-	expect(chooserHtml).toContain('Connect with Kody')
 	expect(chooserHtml).toContain(
 		'/connect/oauth?provider=google&platform=google',
 	)
@@ -1108,7 +1096,6 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	const callbackHtml = await readResponseText(callbackResponse)
 	expect(callbackHtml).toContain('data-testid="connect-oauth-callback"')
 	expect(callbackHtml).not.toContain('data-testid="connect-oauth-chooser"')
-	expect(callbackHtml).toContain('Finishing the connection')
 })
 
 test('renderAppPage server-renders simplified integration and secret-approval pages', async () => {

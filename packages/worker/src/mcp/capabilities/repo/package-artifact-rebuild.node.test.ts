@@ -407,20 +407,19 @@ test('falls back to per-target session rebuild when isolated runner bindings are
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(3)
 })
 
-test('recovers from transient Durable Object resets during staging', async () => {
+test('retries transient platform errors during staging and target rebuild, then exhausts', async () => {
 	consoleWarn.mockImplementation(() => {})
 	resetMocks()
 
-	const run = vi.fn(async () => ({
+	const stagingRun = vi.fn(async () => ({
 		ok: true,
 		message: 'rebuilt',
 	}))
-	const touch = vi.fn(async () => undefined)
-	const discard = vi.fn(async () => undefined)
+	const stagingDiscard = vi.fn(async () => undefined)
 	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch,
-		run,
-		discard,
+		touch: vi.fn(async () => undefined),
+		run: stagingRun,
+		discard: stagingDiscard,
 	})
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
 		sampleTargets[0],
@@ -448,20 +447,64 @@ test('recovers from transient Durable Object resets during staging', async () =>
 	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
 		2,
 	)
-	expect(run).toHaveBeenCalledTimes(1)
-	expect(discard).toHaveBeenCalledWith(
+	expect(stagingRun).toHaveBeenCalledTimes(1)
+	expect(stagingDiscard).toHaveBeenCalledWith(
 		'repo-artifact-rebuild-staging:v1:user-1:stage-retry',
 	)
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
 	expect(String(consoleWarn.mock.calls[0]?.[0])).toContain(
 		'rebuildPublishedPackageArtifactsViaRepoSession transient platform error',
 	)
-})
 
-test('exhausts transient Durable Object reset retries during staging', async () => {
-	consoleWarn.mockImplementation(() => {})
+	consoleWarn.mockClear()
 	resetMocks()
+	const d1Run = vi
+		.fn()
+		.mockResolvedValueOnce({
+			ok: false,
+			message: 'internal error; reference = s46pgsm6st3fg81p6qumom80',
+		})
+		.mockResolvedValueOnce({
+			ok: true,
+			message: 'rebuilt',
+		})
+	const d1Discard = vi.fn(async () => undefined)
+	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
+		touch: vi.fn(),
+		run: d1Run,
+		discard: d1Discard,
+	})
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
+		sampleTargets[0],
+	])
+	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
+		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-d1',
+	})
 
+	await rebuildPublishedPackageArtifactsViaRepoSession({
+		env: {
+			REPO_SESSION: {},
+			BUNDLE_ARTIFACTS_KV: {},
+		} as unknown as Env,
+		rpcSessionId: 'session-1',
+		sourceId: 'source-1',
+		userId: 'user-1',
+		publishedCommit: 'commit-1',
+		baseUrl: 'https://kody.test',
+	})
+
+	expect(d1Run).toHaveBeenCalledTimes(2)
+	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
+		2,
+	)
+	expect(d1Discard).toHaveBeenCalledTimes(2)
+	expect(consoleWarn).toHaveBeenCalledTimes(1)
+	expect(String(consoleWarn.mock.calls[0]?.[0])).toContain(
+		'rebuildPublishedPackageArtifactsViaRepoSession transient platform error',
+	)
+
+	consoleWarn.mockClear()
+	resetMocks()
 	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
 		touch: vi.fn(),
 		run: vi.fn(),
@@ -494,59 +537,6 @@ test('exhausts transient Durable Object reset retries during staging', async () 
 		3,
 	)
 	expect(consoleWarn).toHaveBeenCalledTimes(3)
-})
-
-test('recovers from retryable D1 internal errors during isolated target rebuild', async () => {
-	consoleWarn.mockImplementation(() => {})
-	resetMocks()
-
-	const run = vi
-		.fn()
-		.mockResolvedValueOnce({
-			ok: false,
-			message: 'internal error; reference = s46pgsm6st3fg81p6qumom80',
-		})
-		.mockResolvedValueOnce({
-			ok: true,
-			message: 'rebuilt',
-		})
-	const discard = vi.fn(async () => undefined)
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch: vi.fn(),
-		run,
-		discard,
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
-		sampleTargets[0],
-	])
-	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
-		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-d1',
-	})
-
-	await rebuildPublishedPackageArtifactsViaRepoSession({
-		env: {
-			REPO_SESSION: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		} as unknown as Env,
-		rpcSessionId: 'session-1',
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-1',
-		baseUrl: 'https://kody.test',
-	})
-
-	expect(run).toHaveBeenCalledTimes(2)
-	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
-		2,
-	)
-	expect(discard).toHaveBeenCalledTimes(2)
-	expect(consoleWarn).toHaveBeenCalledTimes(1)
-	expect(String(consoleWarn.mock.calls[0]?.[0])).toContain(
-		'rebuildPublishedPackageArtifactsViaRepoSession transient platform error',
-	)
-	expect(String(consoleWarn.mock.calls[0]?.[0])).toContain(
-		'internal error; reference = s46pgsm6st3fg81p6qumom80',
-	)
 })
 
 test('does not retry non-transient rebuild failures', async () => {

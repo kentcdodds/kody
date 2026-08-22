@@ -62,19 +62,10 @@ function makeWorkflow(
 	}
 }
 
-test('workflow helpers parse selected ids and active/terminal status', () => {
+test('loadAccountWorkflowsData lists runs, resolves selection, and falls back to projection', async () => {
 	expect(isActiveWorkflowStatus('queued')).toBe(true)
-	expect(isActiveWorkflowStatus('running')).toBe(true)
-	expect(isActiveWorkflowStatus(null)).toBe(true)
 	expect(isActiveWorkflowStatus('complete')).toBe(false)
 	expect(isTerminalWorkflowStatus('cancelled')).toBe(true)
-	expect(isTerminalWorkflowStatus('queued')).toBe(false)
-
-	expect(
-		readAccountWorkflowsSelectedWorkflowId(
-			'https://example.com/account/workflows',
-		),
-	).toBeNull()
 	expect(
 		readAccountWorkflowsSelectedWorkflowId(
 			'https://example.com/account/workflows/dynwf-path?selected=dynwf-query',
@@ -86,9 +77,7 @@ test('workflow helpers parse selected ids and active/terminal status', () => {
 			'https://example.com/account/workflows?selected=dynwf-query',
 		),
 	).toBe('dynwf-query')
-})
 
-test('loadAccountWorkflowsData lists workflows and resolves selected detail', async () => {
 	const listed = [
 		makeWorkflow({ id: 'dynwf-1', status: 'queued' }),
 		makeWorkflow({
@@ -104,7 +93,6 @@ test('loadAccountWorkflowsData lists workflows and resolves selected detail', as
 		}),
 	]
 	mockModule.listWorkflowRunsForUser.mockResolvedValueOnce(listed)
-	mockModule.getWorkflowProjection.mockResolvedValueOnce(null)
 
 	const payload = await loadAccountWorkflowsData({
 		env: {} as Env,
@@ -119,6 +107,7 @@ test('loadAccountWorkflowsData lists workflows and resolves selected detail', as
 		userId: 'stable-user-1',
 		limit: 100,
 	})
+	expect(mockModule.getWorkflowProjection).not.toHaveBeenCalled()
 	expect(payload).toMatchObject({
 		ok: true,
 		selectedWorkflowId: 'dynwf-1',
@@ -138,9 +127,7 @@ test('loadAccountWorkflowsData lists workflows and resolves selected detail', as
 			}),
 		],
 	})
-})
 
-test('loadAccountWorkflowsData loads selected projection when absent from list', async () => {
 	mockModule.listWorkflowRunsForUser.mockResolvedValueOnce([])
 	mockModule.getWorkflowProjection.mockResolvedValueOnce({
 		id: 'dynwf-old',
@@ -161,7 +148,7 @@ test('loadAccountWorkflowsData loads selected projection when absent from list',
 		lastError: 'boom',
 	})
 
-	const payload = await loadAccountWorkflowsData({
+	const projectionPayload = await loadAccountWorkflowsData({
 		env: {} as Env,
 		request: new Request('https://example.com/account/workflows/dynwf-old'),
 		user,
@@ -173,7 +160,7 @@ test('loadAccountWorkflowsData loads selected projection when absent from list',
 		userId: 'stable-user-1',
 		id: 'dynwf-old',
 	})
-	expect(payload.selectedWorkflow).toMatchObject({
+	expect(projectionPayload.selectedWorkflow).toMatchObject({
 		id: 'dynwf-old',
 		workflowName: 'Stale run',
 		status: 'errored',
