@@ -41,6 +41,12 @@ test('parsePublicCodeRunsWindow accepts a valid pair and rejects junk', () => {
 	expect(parsePublicCodeRunsWindow({ ...window, windowEnd: windowStart })).toBe(
 		null,
 	)
+	expect(
+		parsePublicCodeRunsWindow({
+			...window,
+			windowEnd: '2026-08-21T12:00:00.000Z',
+		}),
+	).toBeNull()
 	expect(parsePublicCodeRunsWindow(null)).toBeNull()
 })
 

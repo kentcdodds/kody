@@ -698,14 +698,22 @@ test('renderAppPage embeds a tabular homepage code-runs ticker', async () => {
 		windowStart: '2026-08-22T00:00:00.000Z',
 		windowEnd: '2026-08-23T00:00:00.000Z',
 	}
-	const response = await renderAppPage({
-		request: new Request('https://example.com/'),
-		env,
-		loaderData: { codeRuns: { ok: true, window } },
-	})
-	expect(response.status).toBe(200)
-	const html = await readResponseText(response)
-	const count = interpolateCodeRunsCount(window, Date.now())
+	const nowMs = Date.parse('2026-08-22T12:00:00.000Z')
+	vi.useFakeTimers()
+	vi.setSystemTime(nowMs)
+	let html: string
+	try {
+		const response = await renderAppPage({
+			request: new Request('https://example.com/'),
+			env,
+			loaderData: { codeRuns: { ok: true, window } },
+		})
+		expect(response.status).toBe(200)
+		html = await readResponseText(response)
+	} finally {
+		vi.useRealTimers()
+	}
+	const count = interpolateCodeRunsCount(window, nowMs)
 	const ticker = html.match(
 		/<p[^>]*class="landing-hero-runs"[\s\S]*?<\/p>/,
 	)?.[0]

@@ -16,7 +16,8 @@ export async function loadPublicCodeRunsWindow(
 	now: Date = new Date(),
 ): Promise<PublicCodeRunsWindow | null> {
 	const stored = await readStoredWindow(env)
-	if (stored) return stored
+	if (stored.status === 'failed') return null
+	if (stored.status === 'found') return stored.window
 	const total = await sumExecuteEventCount(env)
 	if (total === null || total <= 0) return null
 	return stillWindow(total, now)
@@ -27,7 +28,10 @@ export async function refreshPublicCodeRunsWindow(input: {
 	now?: Date
 }): Promise<
 	| { status: 'initialized' | 'rotated' | 'held' }
-	| { status: 'skipped'; reason: 'no_kv' | 'no_runs' | 'query_failed' }
+	| {
+			status: 'skipped'
+			reason: 'no_kv' | 'no_runs' | 'query_failed' | 'kv_read_failed'
+	  }
 > {
 	const kv = input.env.BUNDLE_ARTIFACTS_KV
 	if (!kv) return { status: 'skipped', reason: 'no_kv' }
@@ -38,17 +42,21 @@ export async function refreshPublicCodeRunsWindow(input: {
 		if (total <= 0) return { status: 'skipped', reason: 'no_runs' }
 
 		const existing = await readStoredWindow(input.env)
-		if (!existing) {
+		if (existing.status === 'failed') {
+			return { status: 'skipped', reason: 'kv_read_failed' }
+		}
+		if (existing.status === 'missing') {
 			await writeStoredWindow(kv, stillWindow(total, now))
 			return { status: 'initialized' }
 		}
+		const existingWindow = existing.window
 
-		const windowEndMs = Date.parse(existing.windowEnd)
+		const windowEndMs = Date.parse(existingWindow.windowEnd)
 		if (Number.isFinite(windowEndMs) && now.getTime() < windowEndMs) {
 			return { status: 'held' }
 		}
 
-		const previous = existing.current
+		const previous = existingWindow.current
 		const current = Math.max(total, previous)
 		await writeStoredWindow(kv, {
 			previous,
@@ -65,14 +73,21 @@ export async function refreshPublicCodeRunsWindow(input: {
 
 async function readStoredWindow(
 	env: CodeRunsWindowEnv,
-): Promise<PublicCodeRunsWindow | null> {
+): Promise<
+	| { status: 'found'; window: PublicCodeRunsWindow }
+	| { status: 'missing' }
+	| { status: 'failed' }
+> {
 	const kv = env.BUNDLE_ARTIFACTS_KV
-	if (!kv) return null
+	if (!kv) return { status: 'missing' }
 	try {
-		return parsePublicCodeRunsWindow(await kv.get(publicCodeRunsKvKey, 'json'))
+		const window = parsePublicCodeRunsWindow(
+			await kv.get(publicCodeRunsKvKey, 'json'),
+		)
+		return window ? { status: 'found', window } : { status: 'missing' }
 	} catch (error) {
 		console.debug('public-code-runs-window-read-failed', error)
-		return null
+		return { status: 'failed' }
 	}
 }
 

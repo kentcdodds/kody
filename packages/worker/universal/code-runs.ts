@@ -26,7 +26,7 @@ export function parsePublicCodeRunsWindow(
 	const startMs = Date.parse(record.windowStart)
 	const endMs = Date.parse(record.windowEnd)
 	if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null
-	if (endMs <= startMs) return null
+	if (endMs - startMs !== publicCodeRunsWindowMs) return null
 	return {
 		previous,
 		current: Math.max(current, previous),
