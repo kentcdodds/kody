@@ -56,10 +56,12 @@ export type CommunityListingRecord = {
 	iconCommit: string
 	status: CommunityListingStatus
 	/**
-	 * Commit an admin reviewed when marking this listing trusted, or null when
-	 * never trusted (or trust was revoked). Trust follows the reviewed
-	 * content: `trusted` is true only while this matches `pinnedCommit`, so an
-	 * owner republish drops the effective mark until an admin re-reviews.
+	 * Commit trusted for this listing, or null when never trusted (or trust was
+	 * revoked). Admin trust records the reviewed commit. Platform-owned
+	 * listings automatically trust each successfully published commit. Trust
+	 * follows the pinned content: `trusted` is true only while this matches
+	 * `pinnedCommit`, so a person-owned republish drops the effective mark
+	 * until an admin re-reviews.
 	 */
 	trustedCommit: string | null
 	trustedAt: string | null

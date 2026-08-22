@@ -25,6 +25,10 @@ import {
 	getSavedPackageByKodyId,
 	getSavedPackageByName,
 } from '#worker/package-registry/repo.ts'
+import {
+	isPlatformAccountStableUserId,
+	listPlatformAccountUsernames,
+} from '#worker/package-registry/scope-grants.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
 import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
@@ -85,7 +89,6 @@ import {
 	deleteCommunityStarsByListingId,
 	insertCommunityActivityEvent,
 } from './social-repo.ts'
-import { listPlatformAccountUsernames } from '#worker/package-registry/scope-grants.ts'
 import {
 	rewritePackageManifestForFork,
 	scanCrossScopeReferences,
@@ -696,6 +699,13 @@ export async function publishCommunityListing(input: {
 			listingId: releasedListingId,
 		})
 		throw publishError
+	}
+	if (await isPlatformAccountStableUserId(input.env.APP_DB, input.userId)) {
+		await setCommunityListingTrustedCommit(input.env.APP_DB, {
+			listingId,
+			trustedCommit: publishedCommit,
+			trustedByUserId: input.actorUserId ?? input.userId,
+		})
 	}
 	if (existingListing) {
 		// Drop all cached icon revisions (including a reused commit id) so the

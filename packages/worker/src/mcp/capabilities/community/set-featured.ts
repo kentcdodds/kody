@@ -11,7 +11,7 @@ export const communitySetFeaturedCapability = defineDomainCapability(
 	{
 		name: 'community_set_featured',
 		description:
-			'Admin-only curation: mark a trusted community listing as an onboarding starter package, or remove the mark. Featured listings are offered for one-click install during onboarding, so featuring requires the listing to be trusted at its current commit; an owner republish drops the listing from onboarding until an admin re-trusts it.',
+			'Admin-only curation: mark a trusted community listing as an onboarding starter package, or remove the mark. Featured listings are offered for one-click install during onboarding, so featuring requires the listing to be trusted at its current commit. A person-owned republish drops the listing from onboarding until an admin re-trusts it; a platform-owned republish re-pins trust automatically so the listing stays featured.',
 		keywords: [
 			'community',
 			'featured',

@@ -78,11 +78,15 @@ KV snapshot, and ratings.
 
 Admin **trust** marks live in `trusted_commit` / `trusted_by_user_id` /
 `trusted_at`. A listing is effectively trusted only while
-`trusted_commit = pinned_commit`, so an owner republish (which moves the pinned
-commit) drops the effective mark without an explicit revoke.
-`setCommunityListingTrusted` in `service.ts` sets or clears the mark; delisted
-listings cannot be trusted. Surfaces: the `Trusted` badge on `/community` cards
-and detail pages, the admin-only toggle on the detail page
+`trusted_commit = pinned_commit`. `publishCommunityListing` automatically pins
+trust after a successful snapshot write when `owner_user_id` belongs to a
+platform account (`users.account_type = 'platform'`), including republishes.
+Person-owned listings are never auto-trusted, regardless of username, so their
+republishes move `pinned_commit` and drop the effective mark without an explicit
+revoke. `setCommunityListingTrusted` in `service.ts` sets or clears the mark;
+delisted listings cannot be trusted, and admins can revoke trust from
+platform-owned listings between publishes. Surfaces: the `Trusted` badge on
+`/community` cards and detail pages, the admin-only toggle on the detail page
 (`POST /community/:listingId/trust.json`, audited), and the admin-only
 `community_set_trusted` capability. `community_search` and `community_get`
 expose the effective `trusted` flag.
@@ -94,8 +98,9 @@ a package scope grant; see
 [Platform accounts](./architecture/platform-accounts.md).
 `setCommunityListingFeatured` in `service.ts` requires the listing to be
 effectively trusted before featuring; the effective `featured` flag
-(`featured_at IS NOT NULL AND trusted`) is computed in `repo.ts`, so an owner
-republish that drops trust also pulls the listing from onboarding while keeping
+(`featured_at IS NOT NULL AND trusted`) is computed in `repo.ts`. A platform
+republish re-pins trust and leaves an official listing effectively featured. A
+person republish drops trust and pulls the listing from onboarding while keeping
 the stored mark. `listFeaturedCommunityListings` feeds the onboarding page (slim
 `OnboardingFeaturedListing` shapes, capped at 12). Surfaces: the `Featured`
 badge on the detail page, the admin-only toggle

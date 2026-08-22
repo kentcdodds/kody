@@ -45,7 +45,9 @@ const mockModule = vi.hoisted(() => ({
 	deleteCommunityRatingsByListingId: vi.fn(),
 	deleteCommunitySnapshot: vi.fn(),
 	setCommunityListingStatus: vi.fn(),
+	setCommunityListingTrustedCommit: vi.fn(),
 	resolveCommunityReportRow: vi.fn(),
+	isPlatformAccountStableUserId: vi.fn(),
 }))
 
 vi.mock('./activity-dispatch-queue-producer.ts', () => ({
@@ -60,6 +62,8 @@ vi.mock('./listing-published-dispatch-queue-producer.ts', () => ({
 
 vi.mock('#worker/package-registry/scope-grants.ts', () => ({
 	getPlatformAccountByUsername: async () => null,
+	isPlatformAccountStableUserId: (...args: Array<unknown>) =>
+		mockModule.isPlatformAccountStableUserId(...args),
 	listPlatformAccountUsernames: async () => [],
 }))
 
@@ -149,6 +153,8 @@ vi.mock('./repo.ts', async (importOriginal) => {
 			mockModule.resolveCommunityReportRow(...args),
 		setCommunityListingStatus: (...args: Array<unknown>) =>
 			mockModule.setCommunityListingStatus(...args),
+		setCommunityListingTrustedCommit: (...args: Array<unknown>) =>
+			mockModule.setCommunityListingTrustedCommit(...args),
 	}
 })
 
@@ -355,6 +361,127 @@ function validSavedPackage() {
 		updatedAt: '2026-07-01T00:00:00.000Z',
 	}
 }
+
+test('publishCommunityListing pins platform trust on publish and republish but not for people', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
+	const firstSource = validPublishSource()
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(firstSource)
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
+	mockModule.insertCommunityListing.mockResolvedValue(undefined)
+	mockModule.writeCommunitySnapshot.mockResolvedValue(undefined)
+	mockModule.isPlatformAccountStableUserId.mockImplementation(
+		async (_db: unknown, userId: string) => userId === 'platform-owner-1',
+	)
+	mockModule.setCommunityListingTrustedCommit.mockResolvedValue(true)
+	mockModule.getCommunityListingById.mockImplementation(
+		async (_db: unknown, input: { listingId: string }) =>
+			sampleListing({
+				id: input.listingId,
+				ownerUserId: 'platform-owner-1',
+				trustedCommit: firstSource.source.published_commit,
+				trusted: true,
+			}),
+	)
+	mockModule.insertCommunityActivityEvent.mockResolvedValue(undefined)
+
+	await publishCommunityListing({
+		env: createEnv(),
+		baseUrl: 'https://heykody.dev',
+		userId: 'platform-owner-1',
+		packageId: 'package-1',
+	})
+
+	const listingId = mockModule.insertCommunityListing.mock.calls[0]?.[1]
+		?.id as string
+	expect(mockModule.setCommunityListingTrustedCommit).toHaveBeenNthCalledWith(
+		1,
+		expect.anything(),
+		{
+			listingId,
+			trustedCommit: 'commit-1',
+			trustedByUserId: 'platform-owner-1',
+		},
+	)
+	expect(
+		mockModule.writeCommunitySnapshot.mock.invocationCallOrder[0],
+	).toBeLessThan(
+		mockModule.setCommunityListingTrustedCommit.mock.invocationCallOrder[0] ??
+			0,
+	)
+	expect(
+		mockModule.setCommunityListingTrustedCommit.mock.invocationCallOrder[0],
+	).toBeLessThan(
+		mockModule.insertCommunityActivityEvent.mock.invocationCallOrder[0] ?? 0,
+	)
+
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
+		sampleListing({
+			id: listingId,
+			ownerUserId: 'platform-owner-1',
+			trustedCommit: 'commit-1',
+			trusted: true,
+		}),
+	)
+	mockModule.updateCommunityListing.mockResolvedValue(true)
+	const republishedSource = validPublishSource()
+	republishedSource.source.published_commit = 'commit-2'
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(republishedSource)
+	mockModule.getCommunityListingById.mockResolvedValue(
+		sampleListing({
+			id: listingId,
+			ownerUserId: 'platform-owner-1',
+			pinnedCommit: 'commit-2',
+			trustedCommit: 'commit-2',
+			trusted: true,
+		}),
+	)
+
+	await publishCommunityListing({
+		env: createEnv(),
+		baseUrl: 'https://heykody.dev',
+		userId: 'platform-owner-1',
+		actorUserId: 'operator-1',
+		packageId: 'package-1',
+	})
+
+	expect(mockModule.setCommunityListingTrustedCommit).toHaveBeenNthCalledWith(
+		2,
+		expect.anything(),
+		{
+			listingId,
+			trustedCommit: 'commit-2',
+			trustedByUserId: 'operator-1',
+		},
+	)
+	expect(
+		mockModule.writeCommunitySnapshot.mock.invocationCallOrder[1],
+	).toBeLessThan(
+		mockModule.setCommunityListingTrustedCommit.mock.invocationCallOrder[1] ??
+			0,
+	)
+	expect(
+		mockModule.setCommunityListingTrustedCommit.mock.invocationCallOrder[1],
+	).toBeLessThan(
+		mockModule.insertCommunityActivityEvent.mock.invocationCallOrder[1] ?? 0,
+	)
+
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
+	mockModule.getCommunityListingById.mockImplementation(
+		async (_db: unknown, input: { listingId: string }) =>
+			sampleListing({ id: input.listingId, ownerUserId: 'person-1' }),
+	)
+
+	await publishCommunityListing({
+		env: createEnv(),
+		baseUrl: 'https://heykody.dev',
+		userId: 'person-1',
+		packageId: 'package-1',
+	})
+
+	expect(mockModule.setCommunityListingTrustedCommit).toHaveBeenCalledTimes(2)
+})
 
 test('publishCommunityListing rolls back D1 when KV snapshot write fails', async () => {
 	mockModule.getCommunityBan.mockResolvedValue(null)

@@ -75,7 +75,7 @@ export async function getPlatformAccountByUsername(
 	}
 }
 
-async function isPlatformAccountStableUserId(
+export async function isPlatformAccountStableUserId(
 	db: D1Database,
 	stableUserId: string,
 ) {

@@ -80,7 +80,7 @@ export const communityListingAggregatesSchema = z.object({
 export const communityTrustedFieldSchema = z
 	.boolean()
 	.describe(
-		'True when an admin reviewed and trusted the exact pinned commit of this listing.',
+		'True when the exact pinned commit is trusted, either by admin review or automatic platform-account trust.',
 	)
 
 export const communityFeaturedFieldSchema = z
