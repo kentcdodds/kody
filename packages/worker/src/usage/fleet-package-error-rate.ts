@@ -64,9 +64,7 @@ export type FleetPackageErrorRateElevation = {
 export function isFleetPackageErrorRateMetric(
 	value: string,
 ): value is FleetPackageErrorRateMetric {
-	return (fleetPackageErrorRateMetrics as ReadonlyArray<string>).includes(
-		value,
-	)
+	return (fleetPackageErrorRateMetrics as ReadonlyArray<string>).includes(value)
 }
 
 export function alignToUtcHour(now: Date) {
@@ -80,7 +78,10 @@ export function alignToUtcHour(now: Date) {
 	)
 }
 
-export function countsOf(events: number, errors: number): FleetPackageErrorRateCounts {
+export function countsOf(
+	events: number,
+	errors: number,
+): FleetPackageErrorRateCounts {
 	const safeEvents = Math.max(0, Math.round(events))
 	const safeErrors = Math.max(0, Math.min(safeEvents, Math.round(errors)))
 	return {
@@ -382,7 +383,9 @@ export async function refreshFleetPackageErrorRateSnapshot(input: {
 	const hourRecentEnd = asOf
 	const hourRecentStart = new Date(asOf.getTime() - hourMs)
 	const hourPreviousStart = new Date(asOf.getTime() - 2 * hourMs)
-	const dayRecentStart = new Date(asOf.getTime() - fleetPackageErrorRateDayWindowMs)
+	const dayRecentStart = new Date(
+		asOf.getTime() - fleetPackageErrorRateDayWindowMs,
+	)
 	const dayPreviousStart = new Date(
 		asOf.getTime() - 2 * fleetPackageErrorRateDayWindowMs,
 	)

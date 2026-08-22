@@ -452,13 +452,13 @@ Queue for these topics; sweep polling of `/status.json` remains the backstop
 when the secret is unset or the POST fails. See
 [Package subscriptions](../guides/package-subscriptions.md).
 
-Fleet package-runtime error-rate elevation is a separate admin-only,
-best-effort path. The hourly `usage_aggregation` lane writes a content-free
-Analytics Engine snapshot and fans `fleet.package_error_rate.elevated` only to
-packages whose owners hold the admin role at dispatch time. The payload is
-window bounds, per-metric counts and rates, `status_url`, and `insights_url`.
-It omits user ids, package ids, error strings, and all user content. There is
-no Queue for this topic. See
+Fleet package-runtime error-rate elevation is a separate admin-only, best-effort
+path. The hourly `usage_aggregation` lane writes a content-free Analytics Engine
+snapshot and fans `fleet.package_error_rate.elevated` only to packages whose
+owners hold the admin role at dispatch time. The payload is window bounds,
+per-metric counts and rates, `status_url`, and `insights_url`. It omits user
+ids, package ids, error strings, and all user content. There is no Queue for
+this topic. See
 [Package subscriptions](../guides/package-subscriptions.md#fleetpackageerrorrateelevated-admins).
 
 ## Package-owned workflows

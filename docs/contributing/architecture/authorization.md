@@ -373,14 +373,14 @@ polling remains the backstop.
 
 **Admins can subscribe to fleet package-runtime error-rate elevations.** The
 hourly usage-aggregation lane compares anonymous Analytics Engine totals for
-`package_export`, `package_static_call`, `job_run`, and `workflow_run`. When
-the combined error rate rises, Kody emails admins and fans
-`fleet.package_error_rate.elevated` only to packages whose owners hold the
-admin role at dispatch time. The event contains window bounds, per-metric
-counts and rates, the public status URL, and the insights URL. It omits user
-ids, package ids, error strings, logs, and unrelated account content. This is
-operator telemetry about kody itself, not a user-data exception. Delivery is
-best-effort (no Queue). A six-hour cooldown suppresses repeat pages.
+`package_export`, `package_static_call`, `job_run`, and `workflow_run`. When the
+combined error rate rises, Kody emails admins and fans
+`fleet.package_error_rate.elevated` only to packages whose owners hold the admin
+role at dispatch time. The event contains window bounds, per-metric counts and
+rates, the public status URL, and the insights URL. It omits user ids, package
+ids, error strings, logs, and unrelated account content. This is operator
+telemetry about kody itself, not a user-data exception. Delivery is best-effort
+(no Queue). A six-hour cooldown suppresses repeat pages.
 
 **Admins can subscribe to person-account create and delete.** Password signup,
 social-login signup, and admin-created person accounts fan `user.created`.

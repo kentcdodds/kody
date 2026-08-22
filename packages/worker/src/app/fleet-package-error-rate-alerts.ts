@@ -247,7 +247,11 @@ export function formatFleetPackageErrorRateAlertText(
 	].join('\n\n')
 }
 
-function formatCounts(counts: { events: number; errors: number; rate: number | null }) {
+function formatCounts(counts: {
+	events: number
+	errors: number
+	rate: number | null
+}) {
 	const percent =
 		counts.rate == null ? 'n/a' : `${(counts.rate * 100).toFixed(1)}%`
 	return `${counts.errors}/${counts.events} (${percent})`

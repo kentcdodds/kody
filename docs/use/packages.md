@@ -453,8 +453,8 @@ topic. This is the generic discovery step before building fan-out, debugging why
 an event did or did not dispatch, or checking which packages subscribe to
 `email.message.received`, `run.error.recorded`, `integration.auth.failed`,
 `integration.auth.succeeded`, `mcp.server.disconnected`,
-`mcp.server.reconnected`, or admin-only topics such as
-`status.incident.opened` and `fleet.package_error_rate.elevated`.
+`mcp.server.reconnected`, or admin-only topics such as `status.incident.opened`
+and `fleet.package_error_rate.elevated`.
 
 For accepted stored inbound email, the topic is `email.message.received`.
 Quarantined inbound email dispatches `email.message.quarantined` instead. Both

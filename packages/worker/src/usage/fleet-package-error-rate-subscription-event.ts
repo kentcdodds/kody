@@ -64,9 +64,9 @@ export type FleetPackageErrorRateElevatedEvent = {
 export function isFleetPackageErrorRateEventTopic(
 	value: string,
 ): value is FleetPackageErrorRateElevatedTopic {
-	return (
-		fleetPackageErrorRateEventTopics as ReadonlyArray<string>
-	).includes(value)
+	return (fleetPackageErrorRateEventTopics as ReadonlyArray<string>).includes(
+		value,
+	)
 }
 
 export function buildFleetPackageErrorRateElevatedEvent(input: {

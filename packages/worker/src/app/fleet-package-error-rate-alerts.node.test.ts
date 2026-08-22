@@ -11,8 +11,7 @@ const sendCloudflareEmail = vi.fn(async () => ({ ok: true }))
 const dispatchFleetPackageErrorRateSubscriptionEvent = vi.fn(async () => [])
 
 vi.mock('#worker/usage/aggregate-rollups.ts', async (importOriginal) => {
-	const original =
-		await importOriginal<typeof import('#worker/usage/aggregate-rollups.ts')>()
+	const original = (await importOriginal()) as Record<string, unknown>
 	return {
 		...original,
 		queryAnalyticsEngineSql: (...args: Array<unknown>) =>
@@ -21,13 +20,13 @@ vi.mock('#worker/usage/aggregate-rollups.ts', async (importOriginal) => {
 })
 
 vi.mock('#app/email/cloudflare-email.ts', () => ({
-	sendCloudflareEmail: (...args: Array<unknown>) => sendCloudflareEmail(...args),
+	sendCloudflareEmail: (...args: Array<unknown>) =>
+		sendCloudflareEmail(...args),
 }))
 
 vi.mock('#worker/usage/fleet-package-error-rate-subscriptions.ts', () => ({
-	dispatchFleetPackageErrorRateSubscriptionEvent: (
-		...args: Array<unknown>
-	) => dispatchFleetPackageErrorRateSubscriptionEvent(...args),
+	dispatchFleetPackageErrorRateSubscriptionEvent: (...args: Array<unknown>) =>
+		dispatchFleetPackageErrorRateSubscriptionEvent(...args),
 }))
 
 const {
@@ -113,38 +112,40 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 	const { stored, kv } = createKv()
 	const db = createDb()
 
-	queryAnalyticsEngineSql.mockImplementation(async (input: { query: string }) => {
-		if (input.query.includes("toDateTime('2026-08-21 19:00:00')")) {
+	queryAnalyticsEngineSql.mockImplementation(
+		async (input: { query: string }) => {
+			if (input.query.includes("toDateTime('2026-08-21 19:00:00')")) {
+				return [
+					{
+						window: 'recent',
+						metric: 'package_export',
+						event_count: 80,
+						error_count: 16,
+					},
+					{
+						window: 'previous',
+						metric: 'package_export',
+						event_count: 80,
+						error_count: 2,
+					},
+				]
+			}
 			return [
 				{
 					window: 'recent',
 					metric: 'package_export',
-					event_count: 80,
-					error_count: 16,
+					event_count: 40,
+					error_count: 2,
 				},
 				{
 					window: 'previous',
 					metric: 'package_export',
-					event_count: 80,
-					error_count: 2,
+					event_count: 40,
+					error_count: 1,
 				},
 			]
-		}
-		return [
-			{
-				window: 'recent',
-				metric: 'package_export',
-				event_count: 40,
-				error_count: 2,
-			},
-			{
-				window: 'previous',
-				metric: 'package_export',
-				event_count: 40,
-				error_count: 1,
-			},
-		]
-	})
+		},
+	)
 
 	const now = new Date('2026-08-22T19:32:00.000Z')
 	const env = {
@@ -165,7 +166,9 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 		elevated: true,
 		alert: { status: 'notified', recipients: 1 },
 	})
-	expect(dispatchFleetPackageErrorRateSubscriptionEvent).toHaveBeenCalledTimes(1)
+	expect(dispatchFleetPackageErrorRateSubscriptionEvent).toHaveBeenCalledTimes(
+		1,
+	)
 	const dispatched = dispatchFleetPackageErrorRateSubscriptionEvent.mock
 		.calls[0]?.[0] as { event: Record<string, unknown> }
 	const payload = JSON.stringify(dispatched.event)
@@ -189,8 +192,12 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 		elevated: true,
 		alert: { status: 'cooldown' },
 	})
-	expect(dispatchFleetPackageErrorRateSubscriptionEvent).toHaveBeenCalledTimes(1)
-	expect(stored.get(fleetPackageErrorRateAlertKvKey)).toBe(String(now.getTime()))
+	expect(dispatchFleetPackageErrorRateSubscriptionEvent).toHaveBeenCalledTimes(
+		1,
+	)
+	expect(stored.get(fleetPackageErrorRateAlertKvKey)).toBe(
+		String(now.getTime()),
+	)
 })
 
 test('refreshFleetPackageErrorRateAndMaybeAlert skips without Analytics Engine config', async () => {
