@@ -332,9 +332,10 @@ Guarantees and rules:
   only — never per-user rows. Interpolation is deterministic from the window so
   every visitor at a given second sees the same number (`nowMs` is floored to
   whole seconds before endpoint checks and progress). Official `current` appears
-  at the first whole second on or after `windowEnd`. Elapsed time is warped
-  through hashed bursty weights (quiet stretches and rapid spikes) and stays
-  monotonic; it never passes `current`.
+  at the first whole second on or after `windowEnd`. When the pair has at least
+  one tick per three seconds, a backbone tick lands every three seconds and
+  leftover count is warped into larger steps so the cadence stays frequent with
+  varying amounts; it never passes `current`.
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration
