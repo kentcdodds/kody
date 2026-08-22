@@ -11,7 +11,6 @@ import {
 	acknowledgeSurfacedMemories,
 	deleteMemory,
 	getMemory,
-	recentMemorySuppressionScopeId,
 	searchMemoryRecords,
 	surfaceRelevantMemories,
 	upsertMemory,
@@ -500,17 +499,27 @@ test('memory surfacing suppresses repeated memories per conversation', async () 
 		env: runtimeEnv,
 		userId: 'user-123',
 		query: 'deployment preference after 4pm',
-		conversationId: 'conv-fresh-id',
+		conversationId: 'conv-123',
 	})
 
 	expect(second.memories).toHaveLength(0)
 	expect(second.suppressedCount).toBeGreaterThanOrEqual(1)
 
+	const otherConversation = await surfaceRelevantMemories({
+		env: runtimeEnv,
+		userId: 'user-123',
+		query: 'deployment preference after 4pm',
+		conversationId: 'conv-other-agent',
+	})
+
+	expect(otherConversation.memories).toHaveLength(1)
+	expect(otherConversation.suppressedCount).toBe(0)
+
 	const search = await searchMemoryRecords({
 		env: runtimeEnv,
 		userId: 'user-123',
 		query: 'deployment preference after 4pm',
-		conversationId: 'conv-another-id',
+		conversationId: 'conv-123',
 	})
 
 	expect(search.matches).toHaveLength(0)
@@ -542,12 +551,10 @@ test('acknowledgeSurfacedMemories writes suppressions and last_accessed in one b
 	expect(testDb.batches).toHaveLength(1)
 	expect(testDb.batches[0]).toHaveLength(2)
 	expect(
-		testDb.suppressions.get(
-			`user-123:${recentMemorySuppressionScopeId}:${created.memory.id}`,
-		),
+		testDb.suppressions.get(`user-123:conv-ack-batch:${created.memory.id}`),
 	).toMatchObject({
 		memory_id: created.memory.id,
-		conversation_id: recentMemorySuppressionScopeId,
+		conversation_id: 'conv-ack-batch',
 	})
 	expect(testDb.memories.get(created.memory.id)?.last_accessed_at).toEqual(
 		expect.any(String),

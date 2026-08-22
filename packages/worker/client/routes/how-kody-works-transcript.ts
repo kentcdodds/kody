@@ -769,7 +769,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 					{
 						name: 'search',
 						summary: 'Find the owned package, not a new GitHub walk',
-						note: 'A new conversationId and a new wording. Search still finds the owned package instead of walking GitHub again. The kody-bot memory stays down for a short window, so it is not repeated.',
+						note: 'A new conversationId and a new wording. Search still finds the owned package instead of walking GitHub again. This is a separate agent, so the kody-bot memory can surface again.',
 						inputs: [
 							{
 								name: 'query',
@@ -783,12 +783,13 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 						result: searchTextReturn({
 							conversationId: phoneConversationId,
 							body: packageSearchMarkdown,
+							memories: [watchLoginMemory],
 						}),
 					},
 					{
 						name: 'execute',
 						summary: 'Invoke the export — no model rewriting the filter',
-						note: 'A static `kody:@` import calls the export as written. No model rewrites the filter. The kody-bot memory already surfaced earlier, so this call does not repeat it.',
+						note: 'A static `kody:@` import calls the export as written. No model rewrites the filter. The kody-bot memory already surfaced on this phone search, so execute does not repeat it.',
 						inputs: [
 							{
 								name: 'code',

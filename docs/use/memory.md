@@ -2,7 +2,8 @@
 
 Kody supports two related memory features:
 
-- **recent-window suppression** after a memory is surfaced
+- **per-conversation suppression** after a memory is surfaced on a reused
+  `conversationId`
 - **long-term memory retrieval and persistence** via **`memoryContext`** and
   memory capabilities
 
@@ -13,9 +14,10 @@ and other per-thread optimizations. If you already have one from an earlier
 tool response, pass it back unchanged. Otherwise omit the field so Kody can
 return a server-generated id. Do not make one up yourself.
 
-Memory auto-surface does not depend on reusing this id. A surfaced memory stays
-down for that user for a short window even when later calls mint a new
-`conversationId`.
+Memory auto-surface does not require this id. When the caller omits it, Kody
+mints one for the response and still returns relevant memories. Suppression is
+keyed to that handle only. A different conversation, or a completely separate
+agent for the same user, does not inherit it.
 
 ## `memoryContext`
 
@@ -44,8 +46,9 @@ That retrieval is:
 
 - **conservative** — the top one or two ranked active memories
 - **task-based** — driven by `memoryContext` and, for `search`, the query
-- **recent-window** — a memory already shown to this user stays suppressed for
-  a few hours
+- **per-conversation** — a memory already shown on this `conversationId` stays
+  down for later calls that reuse it; a new conversation or a separate agent
+  can see it again
 
 ## Verify-first rule for memory writes
 
