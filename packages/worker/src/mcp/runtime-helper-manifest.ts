@@ -56,6 +56,7 @@ export type EmailToolOptions = {
 export type PackageInvokeInput = Record<string, unknown>
 
 export type PackageInvokeNormalizedInput = {
+	specifier?: string
 	kodyId?: string
 	packageId?: string
 	exportName: string
@@ -225,7 +226,19 @@ const packageEventRuntimeBridgeProviderName = '__kodyPackageEventRuntimeBridge'
 function createPackagesHelperPrelude() {
 	return `
 const packages = {
-  invoke: async (input) => await ${packageInvokeRuntimeBridgeProviderName}.invoke(input ?? {}),
+  /**
+   * Invoke by scoped Kody module specifier. The legacy object-only
+   * packages.invoke({ kodyId, exportName, params }) form is deprecated.
+   */
+  invoke: async (specifierOrInput, options) => {
+    if (typeof specifierOrInput === 'string') {
+      return await ${packageInvokeRuntimeBridgeProviderName}.invoke({
+        specifier: specifierOrInput,
+        options: options ?? {},
+      });
+    }
+    return await ${packageInvokeRuntimeBridgeProviderName}.invoke(specifierOrInput ?? {});
+  },
 };
 	`.trim()
 }

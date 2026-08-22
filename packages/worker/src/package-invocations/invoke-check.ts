@@ -23,6 +23,7 @@ import {
 	resolvePackageModuleResolution,
 	resolveSavedPackage,
 } from './module-artifacts.ts'
+import { resolvePackageInvokeTarget } from './target-resolution.ts'
 
 function createPackageInvokeCheckFailure(input: {
 	message: string
@@ -98,19 +99,24 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	}
 	const exportName = normalizeExportName(request.exportName)
 	const invoke = buildNormalizedPackageInvokeInput({ request, exportName })
-	const savedPackage = await resolveSavedPackage({
-		db: input.env.APP_DB,
+	const resolvedTarget = await resolvePackageInvokeTarget({
+		env: input.env,
 		userId: input.userId,
-		packageIdOrKodyId: request.packageIdOrKodyId,
+		packageIdentifier: request.packageIdentifier,
 	})
-	if (!savedPackage) {
-		const plainRepo = await findPlainRepoPromotionHint(input.env.APP_DB, {
-			userId: input.userId,
-			packageIdOrKodyId: request.packageIdOrKodyId,
-		})
+	if (!resolvedTarget) {
+		const plainRepo =
+			request.packageIdentifier.kind === 'specifier'
+				? null
+				: await findPlainRepoPromotionHint(input.env.APP_DB, {
+						userId: input.userId,
+						packageIdOrKodyId: request.packageIdOrKodyId,
+					})
 		const message = plainRepo
 			? buildPlainRepoPromotionErrorMessage(request.packageIdOrKodyId)
-			: buildSavedPackageNotFoundMessage(request.packageIdOrKodyId)
+			: request.packageIdentifier.kind === 'specifier'
+				? `Kody package specifier ${JSON.stringify(request.packageIdentifier.value)} could not be resolved for this caller.`
+				: buildSavedPackageNotFoundMessage(request.packageIdOrKodyId)
 		return {
 			result: createPackageInvokeCheckFailure({
 				message,
@@ -120,6 +126,7 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 			preloads: null,
 		}
 	}
+	const { savedPackage, sourceOwnerUserId } = resolvedTarget
 	const packageContract = {
 		packageId: savedPackage.id,
 		kodyId: savedPackage.kodyId,
@@ -131,7 +138,7 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	try {
 		manifestResult = await loadInvokeManifestBySourceId({
 			env: input.env,
-			userId: input.userId,
+			userId: sourceOwnerUserId,
 			sourceId: savedPackage.sourceId,
 		})
 	} catch (error) {
@@ -180,7 +187,7 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 				kind: 'export',
 				exportName,
 			},
-			userId: input.userId,
+			userId: sourceOwnerUserId,
 		})
 	} catch (error) {
 		const problem = `Export "${exportName}" could not be prepared for invocation: ${getErrorMessage(error)}`

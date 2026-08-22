@@ -349,13 +349,23 @@ function createPackagesProxy(runtimeBridge) {
 	return {
 		check: () => {
 			throw new Error(
-				'packages.check was removed: packages.invoke always contract-checks before invoking, so call packages.invoke({ kodyId, exportName, params }) directly. A failing contract rejects with "packages.invoke contract check failed: ..." before any execution.',
+				'packages.check was removed: packages.invoke always contract-checks before invoking, so call packages.invoke("kody:@scope/package/export", { params }) directly. A failing contract rejects with "packages.invoke contract check failed: ..." before any execution.',
 			);
 		},
-		invoke: async (input) => await runtimeBridge.packageInvoke(input ?? {}),
+		/**
+		 * Invoke by scoped Kody module specifier. The legacy object-only
+		 * packages.invoke({ kodyId, exportName, params }) form is deprecated.
+		 */
+		invoke: async (specifierOrInput, options) =>
+			typeof specifierOrInput === 'string'
+				? await runtimeBridge.packageInvoke({
+						specifier: specifierOrInput,
+						options: options ?? {},
+					})
+				: await runtimeBridge.packageInvoke(specifierOrInput ?? {}),
 		invokeChecked: () => {
 			throw new Error(
-				'packages.invokeChecked was removed: call packages.invoke({ kodyId, exportName, params }) instead — it is always contract-checked (add idempotencyKey only when you need exactly-once) — or use a static import (import fn from "kody:@scope/pkg/export") when the target package is known at write time.',
+				'packages.invokeChecked was removed: call packages.invoke("kody:@scope/package/export", { params }) instead — it is always contract-checked (add idempotencyKey only when you need exactly-once) — or use a static import (import fn from "kody:@scope/pkg/export") when the target package is known at write time.',
 			);
 		},
 	};
