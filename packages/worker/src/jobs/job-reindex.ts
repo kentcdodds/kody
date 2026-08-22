@@ -3,10 +3,10 @@ import {
 	isCapabilitySearchOffline,
 } from '#worker/vectorize/embedding.ts'
 import {
-	mergeVectorReindexResults,
-	reindexVectorCandidates,
-	type VectorReindexResult,
-} from '#worker/vectorize/reindex-batches.ts'
+	reindexPagedVectorRows,
+	type VectorReindexSweepOptions,
+	type VectorReindexSweepResult,
+} from '#worker/vectorize/reindex-sweep.ts'
 import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { jobVectorId } from '#mcp/jobs-vectorize.ts'
@@ -20,53 +20,45 @@ const reindexPageSize = 200
 
 export async function reindexJobVectors(
 	env: Env,
-): Promise<VectorReindexResult> {
+	options?: VectorReindexSweepOptions,
+): Promise<VectorReindexSweepResult> {
 	const index = getCapabilityVectorIndex(env)
 	if (!index) {
 		throw new Error('CAPABILITY_VECTOR_INDEX binding is not configured')
 	}
 	if (isCapabilitySearchOffline(env)) {
-		return { upserted: 0 }
+		return { upserted: 0, complete: true, afterId: null }
 	}
 
-	const pageResults: Array<VectorReindexResult> = []
-	let afterId: string | null = null
-	while (true) {
-		const rows = await runD1WithRetry(() =>
-			jobsData(env).listJobsPage({
-				afterId,
-				limit: reindexPageSize,
-			}),
-		)
-		if (rows.length === 0) break
-		const candidates = rows
-			.filter((row) => row.user_id)
-			.map((row) => {
-				const view = toJobView(row.record)
-				return {
-					id: jobVectorId(row.id),
-					text: buildJobEmbedText({
-						name: view.name,
-						scheduleSummary: view.scheduleSummary,
-						sourceId: view.sourceId,
-						publishedCommit: view.publishedCommit,
-					}),
-					namespace: userVectorNamespace(row.user_id),
-					metadata: { kind: 'job', userId: row.user_id },
-				}
-			})
-		if (candidates.length > 0) {
-			pageResults.push(
-				await reindexVectorCandidates({
-					env,
-					index,
-					kind: 'job',
-					candidates,
+	return reindexPagedVectorRows({
+		env,
+		index,
+		kind: 'job',
+		pageSize: reindexPageSize,
+		afterId: options?.afterId,
+		deadlineMs: options?.deadlineMs,
+		listPage: ({ afterId, limit }) =>
+			runD1WithRetry(() =>
+				jobsData(env).listJobsPage({
+					afterId,
+					limit,
 				}),
-			)
-		}
-		if (rows.length < reindexPageSize) break
-		afterId = rows[rows.length - 1]!.id
-	}
-	return mergeVectorReindexResults('job', pageResults)
+			),
+		rowId: (row) => row.id,
+		toCandidate: (row) => {
+			if (!row.user_id) return null
+			const view = toJobView(row.record)
+			return {
+				id: jobVectorId(row.id),
+				text: buildJobEmbedText({
+					name: view.name,
+					scheduleSummary: view.scheduleSummary,
+					sourceId: view.sourceId,
+					publishedCommit: view.publishedCommit,
+				}),
+				namespace: userVectorNamespace(row.user_id),
+				metadata: { kind: 'job', userId: row.user_id },
+			}
+		},
+	})
 }

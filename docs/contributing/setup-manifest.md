@@ -681,12 +681,12 @@ How to get/set each value:
   - Generate a long random secret (for example `openssl rand -hex 32`), store it
     as the repository secret `CAPABILITY_REINDEX_SECRET`, and let the deploy
     workflow sync it to the Worker. After each production deploy, CI POSTs to
-    `/__maintenance/reindex-capabilities` with `Authorization: Bearer …` to
-    refresh built-in capability, memory, job, and saved-package embeddings. Run
-    the same POST manually after changing the embedding model, pooling, or
-    Vectorize index dimensions so existing rows are rebuilt with compatible
-    vectors. The same bearer authenticates
-    `POST /__maintenance/reencrypt-secrets` (see
+    `/__maintenance/reindex-capabilities` with `Authorization: Bearer …` and
+    loops on the returned `cursor` until `complete` is true, refreshing built-in
+    capability, memory, job, and saved-package embeddings. Run the same POST
+    loop manually after changing the embedding model, pooling, or Vectorize
+    index dimensions so existing rows are rebuilt with compatible vectors. The
+    same bearer authenticates `POST /__maintenance/reencrypt-secrets` (see
     [Secret rotation](./secret-rotation.md)). Local and preview environments can
     omit it; CI skips reindex and execute-smoke when the secret is unset.
 - `JOB_REINDEX_SECRET` (optional; jobs-only reindex)

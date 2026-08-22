@@ -1,5 +1,6 @@
 import {
 	handleSecretMaintenanceRequest,
+	MaintenanceClientError,
 	MaintenanceFailureError,
 } from './maintenance-handler.ts'
 import { getStaticRegistry } from './mcp/capabilities/registry.ts'
@@ -8,17 +9,17 @@ import { reindexJobVectors } from './jobs/job-reindex.ts'
 import { reindexMemoryVectors } from './mcp/memory/memory-reindex.ts'
 import { reindexSavedPackageVectors } from './package-registry/package-reindex.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import {
+	capabilityReindexTimeBudgetMs,
+	hasReachedReindexDeadline,
+	isCapabilityReindexPhase,
+	type CapabilityReindexCursor,
+	type CapabilityReindexPhase,
+	type VectorReindexSweepResult,
+} from '#worker/vectorize/reindex-sweep.ts'
 
-type ReindexStepResult = {
-	upserted: number
+type ReindexStepResult = VectorReindexSweepResult & {
 	error?: string
-	failed?: number
-	warning?: string
-	failures?: Array<{
-		id: string
-		phase: string
-		error: string
-	}>
 }
 
 type ReindexFailureSummary = {
@@ -28,36 +29,189 @@ type ReindexFailureSummary = {
 	failures?: ReindexStepResult['failures']
 }
 
+type CapabilityReindexKinds = {
+	capabilities: ReindexStepResult
+	memories: ReindexStepResult
+	jobs: ReindexStepResult
+	packages: ReindexStepResult
+}
+
+const skippedReindexStep: ReindexStepResult = {
+	upserted: 0,
+	complete: true,
+	afterId: null,
+}
+
 async function runReindexStep(
-	run: () => Promise<ReindexStepResult>,
+	run: () => Promise<VectorReindexSweepResult>,
 ): Promise<ReindexStepResult> {
 	try {
 		return await run()
 	} catch (error) {
 		return {
 			upserted: 0,
+			complete: false,
+			afterId: null,
 			error: getErrorMessage(error),
+		}
+	}
+}
+
+function parseCapabilityReindexBody(body: unknown):
+	| {
+			ok: true
+			cursor: CapabilityReindexCursor | null
+			timeBudgetMs: number
+	  }
+	| { ok: false; error: string } {
+	if (body == null) {
+		return {
+			ok: true,
+			cursor: null,
+			timeBudgetMs: capabilityReindexTimeBudgetMs,
+		}
+	}
+	if (typeof body !== 'object' || Array.isArray(body)) {
+		return { ok: false, error: 'Reindex body must be a JSON object.' }
+	}
+	const record = body as Record<string, unknown>
+	let timeBudgetMs = capabilityReindexTimeBudgetMs
+	if (record.timeBudgetMs !== undefined) {
+		if (
+			typeof record.timeBudgetMs !== 'number' ||
+			!Number.isFinite(record.timeBudgetMs) ||
+			record.timeBudgetMs < 0
+		) {
+			return { ok: false, error: 'timeBudgetMs must be a non-negative number.' }
+		}
+		timeBudgetMs = record.timeBudgetMs
+	}
+	if (record.cursor === undefined || record.cursor === null) {
+		return { ok: true, cursor: null, timeBudgetMs }
+	}
+	if (typeof record.cursor !== 'object' || Array.isArray(record.cursor)) {
+		return { ok: false, error: 'cursor must be an object.' }
+	}
+	const cursor = record.cursor as Record<string, unknown>
+	if (!isCapabilityReindexPhase(cursor.phase)) {
+		return {
+			ok: false,
+			error: 'cursor.phase must be capabilities, memories, jobs, or packages.',
+		}
+	}
+	if (cursor.afterId !== null && typeof cursor.afterId !== 'string') {
+		return { ok: false, error: 'cursor.afterId must be a string or null.' }
+	}
+	return {
+		ok: true,
+		cursor: { phase: cursor.phase, afterId: cursor.afterId },
+		timeBudgetMs,
+	}
+}
+
+async function runReindexPhase(
+	env: Env,
+	input: {
+		baseUrl: string
+		phase: CapabilityReindexPhase
+		afterId: string | null
+		deadlineMs: number
+	},
+): Promise<ReindexStepResult> {
+	switch (input.phase) {
+		case 'capabilities':
+			return runReindexStep(() =>
+				reindexCapabilityVectors(env, getStaticRegistry().capabilitySpecs, {
+					afterId: input.afterId,
+					deadlineMs: input.deadlineMs,
+				}),
+			)
+		case 'memories':
+			return runReindexStep(() =>
+				reindexMemoryVectors(env, {
+					afterId: input.afterId,
+					deadlineMs: input.deadlineMs,
+				}),
+			)
+		case 'jobs':
+			return runReindexStep(() =>
+				reindexJobVectors(env, {
+					afterId: input.afterId,
+					deadlineMs: input.deadlineMs,
+				}),
+			)
+		case 'packages':
+			return runReindexStep(() =>
+				reindexSavedPackageVectors(env, {
+					baseUrl: input.baseUrl,
+					afterId: input.afterId,
+					deadlineMs: input.deadlineMs,
+				}),
+			)
+		default: {
+			const exhaustive: never = input.phase
+			throw new Error(`Unexpected reindex phase: ${exhaustive}`)
 		}
 	}
 }
 
 async function reindexAllCapabilitySearchVectors(
 	env: Env,
-	input: { baseUrl: string },
+	input: {
+		baseUrl: string
+		cursor: CapabilityReindexCursor | null
+		deadlineMs: number
+	},
 ) {
-	const capabilities = await runReindexStep(() =>
-		reindexCapabilityVectors(env, getStaticRegistry().capabilitySpecs),
-	)
-	const memories = await runReindexStep(() => reindexMemoryVectors(env))
-	const jobs = await runReindexStep(() => reindexJobVectors(env))
-	const packages = await runReindexStep(() =>
-		reindexSavedPackageVectors(env, { baseUrl: input.baseUrl }),
-	)
+	const result: CapabilityReindexKinds = {
+		capabilities: skippedReindexStep,
+		memories: skippedReindexStep,
+		jobs: skippedReindexStep,
+		packages: skippedReindexStep,
+	}
+	const startPhase = input.cursor?.phase ?? 'capabilities'
+	let afterId = input.cursor?.afterId ?? null
+	let started = false
+
+	for (const phase of [
+		'capabilities',
+		'memories',
+		'jobs',
+		'packages',
+	] as const) {
+		if (!started) {
+			if (phase !== startPhase) continue
+			started = true
+		} else if (hasReachedReindexDeadline(input.deadlineMs)) {
+			return {
+				...result,
+				complete: false as const,
+				cursor: { phase, afterId: null },
+			}
+		} else {
+			afterId = null
+		}
+
+		const step = await runReindexPhase(env, {
+			baseUrl: input.baseUrl,
+			phase,
+			afterId,
+			deadlineMs: input.deadlineMs,
+		})
+		result[phase] = step
+		if (step.error) continue
+		if (!step.complete) {
+			return {
+				...result,
+				complete: false as const,
+				cursor: { phase, afterId: step.afterId },
+			}
+		}
+	}
+
 	return {
-		capabilities,
-		memories,
-		jobs,
-		packages,
+		...result,
+		complete: true as const,
 	}
 }
 
@@ -70,12 +224,26 @@ export async function handleCapabilityReindexRequest(
 		secret: env.CAPABILITY_REINDEX_SECRET,
 		notConfiguredMessage: 'Capability reindex is not configured',
 		run: async () => {
+			const body = await request.json().catch(() => null)
+			const parsed = parseCapabilityReindexBody(body)
+			if (!parsed.ok) {
+				throw new MaintenanceClientError(parsed.error)
+			}
 			const result = await reindexAllCapabilitySearchVectors(env, {
 				baseUrl: new URL(request.url).origin,
+				cursor: parsed.cursor,
+				deadlineMs: Date.now() + parsed.timeBudgetMs,
 			})
-			const failed = Object.entries(result).filter(
-				(entry): entry is [string, ReindexStepResult & { error: string }] =>
-					typeof entry[1].error === 'string',
+			const kindResults = (
+				['capabilities', 'memories', 'jobs', 'packages'] as const
+			).map((phase) => [phase, result[phase]] as const)
+			const failed = kindResults.filter(
+				(
+					entry,
+				): entry is [
+					CapabilityReindexPhase,
+					ReindexStepResult & { error: string },
+				] => typeof entry[1].error === 'string',
 			)
 			if (failed.length > 0) {
 				const failedPhases: Array<ReindexFailureSummary> = failed.map(

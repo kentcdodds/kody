@@ -261,7 +261,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: 🚀 Deploy to production
-    timeout-minutes: 12
+    timeout-minutes: 20
     needs:
       - sha-guard
       - deploy-jobs-worker
@@ -684,20 +684,43 @@ jobs:
             exit 0
           fi
           base="${DEPLOY_URL%/}"
-          echo "POST ${base}/__maintenance/reindex-capabilities"
-          status="$(curl --silent --show-error --location --max-time 120 \
-            -X POST \
-            -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
-            -H "Accept: application/json" \
-            --output reindex-response.json \
-            --write-out "%{http_code}" \
-            "${base}/__maintenance/reindex-capabilities")"
-          cat reindex-response.json
-          echo
-          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-            echo "Capability reindex failed with HTTP ${status}." >&2
-            exit 1
-          fi
+          max_sweeps=8
+          sweep=1
+          payload='{}'
+          while true; do
+            echo "POST ${base}/__maintenance/reindex-capabilities (sweep ${sweep})"
+            status="$(curl --silent --show-error --location --max-time 120 \
+              -X POST \
+              -H "Authorization: Bearer ${CAPABILITY_REINDEX_SECRET}" \
+              -H "Accept: application/json" \
+              -H "Content-Type: application/json" \
+              --data "${payload}" \
+              --output reindex-response.json \
+              --write-out "%{http_code}" \
+              "${base}/__maintenance/reindex-capabilities")"
+            cat reindex-response.json
+            echo
+            if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+              echo "Capability reindex failed with HTTP ${status}." >&2
+              exit 1
+            fi
+            complete="$(jq -r '.complete // false' reindex-response.json)"
+            if [ "$complete" = "true" ]; then
+              echo "Capability reindex complete after ${sweep} sweep(s)."
+              break
+            fi
+            if [ "$sweep" -ge "$max_sweeps" ]; then
+              echo "Capability reindex did not finish after ${max_sweeps} sweeps." >&2
+              exit 1
+            fi
+            cursor="$(jq -c '.cursor // empty' reindex-response.json)"
+            if [ -z "$cursor" ] || [ "$cursor" = "null" ]; then
+              echo "Capability reindex is incomplete but returned no cursor." >&2
+              exit 1
+            fi
+            payload="$(jq -nc --argjson cursor "$cursor" '{cursor: $cursor}')"
+            sweep=$((sweep + 1))
+          done
 
   deploy-status-worker:
     runs-on: ubuntu-latest

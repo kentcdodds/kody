@@ -83,6 +83,8 @@ test('job reindex keeps package job vector ids under the Vectorize limit', async
 
 	await expect(reindexJobVectors({ APP_DB: {} } as Env)).resolves.toEqual({
 		upserted: 1,
+		complete: true,
+		afterId: null,
 	})
 
 	expect(byteLength(`job_${rawJobId}`)).toBeGreaterThan(64)
@@ -118,6 +120,8 @@ test('job reindex walks keyset pages and merges the page results', async () => {
 
 	await expect(reindexJobVectors({ APP_DB: {} } as Env)).resolves.toEqual({
 		upserted: 201,
+		complete: true,
+		afterId: null,
 	})
 
 	expect(mockModule.listJobRowsPage).toHaveBeenCalledTimes(2)
@@ -154,7 +158,11 @@ test('job reindex retries transient D1 export page errors then surfaces exhausti
 	try {
 		const recoverPromise = reindexJobVectors({ APP_DB: {} } as Env)
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
-		await expect(recoverPromise).resolves.toEqual({ upserted: 1 })
+		await expect(recoverPromise).resolves.toEqual({
+			upserted: 1,
+			complete: true,
+			afterId: null,
+		})
 	} finally {
 		vi.useRealTimers()
 	}

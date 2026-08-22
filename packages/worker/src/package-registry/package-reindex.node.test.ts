@@ -124,7 +124,7 @@ test('saved package reindex embeds full manifests with user-scoped metadata', as
 		reindexSavedPackageVectors(env, {
 			baseUrl: 'https://kody.example.com',
 		}),
-	).resolves.toEqual({ upserted: 1 })
+	).resolves.toEqual({ upserted: 1, complete: true, afterId: null })
 
 	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith({
 		env,
@@ -217,6 +217,8 @@ test('saved package reindex skips failed manifest loads and continues the batch'
 		}),
 	).resolves.toEqual({
 		upserted: 1,
+		complete: true,
+		afterId: null,
 		failed: 1,
 		failures: [
 			{
@@ -296,7 +298,11 @@ test('saved package reindex retries a transient D1 export error on page listing'
 			baseUrl: 'https://kody.example.com',
 		})
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
-		await expect(resultPromise).resolves.toEqual({ upserted: 1 })
+		await expect(resultPromise).resolves.toEqual({
+			upserted: 1,
+			complete: true,
+			afterId: null,
+		})
 	} finally {
 		vi.useRealTimers()
 	}
@@ -366,7 +372,7 @@ test('saved package reindex walks keyset pages and merges the page results', asy
 		reindexSavedPackageVectors({ APP_DB: {} } as Env, {
 			baseUrl: 'https://kody.example.com',
 		}),
-	).resolves.toEqual({ upserted: 201 })
+	).resolves.toEqual({ upserted: 201, complete: true, afterId: null })
 
 	expect(mockModule.listSavedPackagesPage).toHaveBeenCalledTimes(2)
 	expect(mockModule.listSavedPackagesPage).toHaveBeenNthCalledWith(
@@ -384,4 +390,56 @@ test('saved package reindex walks keyset pages and merges the page results', asy
 	)
 	expect(upsertedIds).toHaveLength(201)
 	expect(new Set(upsertedIds).size).toBe(201)
+})
+
+test('saved package reindex stops mid-page at the deadline and resumes', async () => {
+	resetMocks()
+	const upsert = vi.fn(async (_vectors: Array<{ id: string }>) => {})
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: { name: '@user/pkg' },
+	})
+	mockModule.buildSavedPackageEmbedText.mockReturnValue('manifest embed')
+	mockModule.embedTextsForVectorize.mockImplementation(
+		async (_env: unknown, texts: Array<string>) => texts.map(() => [0.1]),
+	)
+	const firstPage = [
+		buildSavedPackage('pkg-a'),
+		buildSavedPackage('pkg-b'),
+		buildSavedPackage('pkg-c'),
+	]
+	mockModule.listSavedPackagesPage.mockResolvedValueOnce(firstPage)
+
+	await expect(
+		reindexSavedPackageVectors({ APP_DB: {} } as Env, {
+			baseUrl: 'https://kody.example.com',
+			deadlineMs: 0,
+		}),
+	).resolves.toEqual({
+		upserted: 1,
+		complete: false,
+		afterId: 'pkg-a',
+	})
+	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledTimes(1)
+	expect(upsert).toHaveBeenCalledTimes(1)
+
+	mockModule.listSavedPackagesPage.mockResolvedValueOnce([
+		buildSavedPackage('pkg-b'),
+		buildSavedPackage('pkg-c'),
+	])
+	await expect(
+		reindexSavedPackageVectors({ APP_DB: {} } as Env, {
+			baseUrl: 'https://kody.example.com',
+			afterId: 'pkg-a',
+		}),
+	).resolves.toEqual({
+		upserted: 2,
+		complete: true,
+		afterId: null,
+	})
+	expect(mockModule.listSavedPackagesPage).toHaveBeenLastCalledWith(
+		expect.anything(),
+		{ afterId: 'pkg-a', limit: 200 },
+	)
 })

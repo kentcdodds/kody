@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	handleSecretMaintenanceRequest,
+	MaintenanceClientError,
 	timingSafeEqualString,
 } from './maintenance-handler.ts'
 
@@ -84,6 +85,21 @@ test('handleSecretMaintenanceRequest enforces auth and reports maintenance resul
 	await expect(errorResponse.json()).resolves.toEqual({
 		ok: false,
 		error: 'boom',
+	})
+
+	const clientErrorResponse = await handleSecretMaintenanceRequest({
+		request: createRequest({ authorization: 'Bearer secret' }),
+		secret: 'secret',
+		notConfiguredMessage: 'Not configured',
+		run: async () => {
+			throw new MaintenanceClientError('bad cursor')
+		},
+	})
+
+	expect(clientErrorResponse.status).toBe(400)
+	await expect(clientErrorResponse.json()).resolves.toEqual({
+		ok: false,
+		error: 'bad cursor',
 	})
 })
 

@@ -9,6 +9,12 @@ import {
 	type VectorReindexFailure,
 	type VectorReindexResult,
 } from '#worker/vectorize/reindex-batches.ts'
+import {
+	hasReachedReindexDeadline,
+	toVectorReindexSweepResult,
+	type VectorReindexSweepOptions,
+	type VectorReindexSweepResult,
+} from '#worker/vectorize/reindex-sweep.ts'
 import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
@@ -26,29 +32,50 @@ const reindexPageSize = 200
 
 export async function reindexSavedPackageVectors(
 	env: Env,
-	input: { baseUrl: string },
-): Promise<VectorReindexResult> {
+	input: { baseUrl: string } & VectorReindexSweepOptions,
+): Promise<VectorReindexSweepResult> {
 	const index = getCapabilityVectorIndex(env)
 	if (!index) {
 		throw new Error('CAPABILITY_VECTOR_INDEX binding is not configured')
 	}
 	if (isCapabilitySearchOffline(env)) {
-		return { upserted: 0 }
+		return { upserted: 0, complete: true, afterId: null }
 	}
 
 	const pageResults: Array<VectorReindexResult> = []
-	let afterId: string | null = null
+	let afterId: string | null = input.afterId ?? null
 	while (true) {
+		if (hasReachedReindexDeadline(input.deadlineMs) && pageResults.length > 0) {
+			return toVectorReindexSweepResult(
+				mergeVectorReindexResults('saved package', pageResults),
+				{ complete: false, afterId },
+			)
+		}
 		const rows = await runD1WithRetry(() =>
 			listSavedPackagesPage(env.APP_DB, {
 				afterId,
 				limit: reindexPageSize,
 			}),
 		)
-		if (rows.length === 0) break
+		if (rows.length === 0) {
+			return toVectorReindexSweepResult(
+				mergeVectorReindexResults('saved package', pageResults),
+				{ complete: true, afterId: null },
+			)
+		}
 		const loadFailures: Array<VectorReindexFailure> = []
 		const candidates: Array<VectorReindexCandidate> = []
+		const processedRows: typeof rows = []
+		let stoppedEarly = false
 		for (const row of rows) {
+			if (
+				hasReachedReindexDeadline(input.deadlineMs) &&
+				processedRows.length > 0
+			) {
+				stoppedEarly = true
+				break
+			}
+			processedRows.push(row)
 			try {
 				const { manifest } = await loadPackageManifestBySourceId({
 					env,
@@ -94,7 +121,7 @@ export async function reindexSavedPackageVectors(
 			// Snapshot debt generations before upsert so a concurrent publish
 			// that bumps generation is not wiped by post-page cleanup.
 			const debtGenerations = new Map<string, number>()
-			for (const row of rows) {
+			for (const row of processedRows) {
 				const generation = await getSavedPackageSearchIndexDebtGeneration({
 					db: env.APP_DB,
 					packageId: row.id,
@@ -116,7 +143,7 @@ export async function reindexSavedPackageVectors(
 					(pageResult.failures ?? []).map((failure) => failure.id),
 			)
 			// Self-heal deferred upsert debt observed before this page upsert.
-			for (const row of rows) {
+			for (const row of processedRows) {
 				const vectorId = savedPackageVectorId(row.id)
 				if (failedIds.has(vectorId)) continue
 				if (loadFailures.some((failure) => failure.id === vectorId)) continue
@@ -129,8 +156,18 @@ export async function reindexSavedPackageVectors(
 				})
 			}
 		}
-		if (rows.length < reindexPageSize) break
-		afterId = rows[rows.length - 1]!.id
+		afterId = processedRows[processedRows.length - 1]?.id ?? afterId
+		if (stoppedEarly) {
+			return toVectorReindexSweepResult(
+				mergeVectorReindexResults('saved package', pageResults),
+				{ complete: false, afterId },
+			)
+		}
+		if (rows.length < reindexPageSize) {
+			return toVectorReindexSweepResult(
+				mergeVectorReindexResults('saved package', pageResults),
+				{ complete: true, afterId: null },
+			)
+		}
 	}
-	return mergeVectorReindexResults('saved package', pageResults)
 }

@@ -78,6 +78,8 @@ test('memory reindex walks keyset pages and merges the page results', async () =
 
 	await expect(reindexMemoryVectors({ APP_DB: {} } as Env)).resolves.toEqual({
 		upserted: 201,
+		complete: true,
+		afterId: null,
 	})
 
 	expect(mockModule.listMemoriesPage).toHaveBeenCalledTimes(2)
@@ -107,6 +109,8 @@ test('memory reindex retries transient D1 export page errors then surfaces exhau
 	mockModule.listMemoriesPage.mockResolvedValueOnce([])
 	await expect(reindexMemoryVectors({ APP_DB: {} } as Env)).resolves.toEqual({
 		upserted: 0,
+		complete: true,
+		afterId: null,
 	})
 
 	resetMocks()
@@ -123,7 +127,11 @@ test('memory reindex retries transient D1 export page errors then surfaces exhau
 	try {
 		const recoverPromise = reindexMemoryVectors({ APP_DB: {} } as Env)
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
-		await expect(recoverPromise).resolves.toEqual({ upserted: 1 })
+		await expect(recoverPromise).resolves.toEqual({
+			upserted: 1,
+			complete: true,
+			afterId: null,
+		})
 	} finally {
 		vi.useRealTimers()
 	}
