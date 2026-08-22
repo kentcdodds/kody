@@ -2,6 +2,10 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { parseListingOwnerUsername } from '#universal/community-links.ts'
 import {
+	resolveCommunityListingCategory,
+	type CommunityListingCategory,
+} from '#universal/community-categories.ts'
+import {
 	defaultCommunityListingSort,
 	type CommunityListingSort,
 } from '#universal/community-search.ts'
@@ -569,6 +573,10 @@ export async function publishCommunityListing(input: {
 	const now = new Date().toISOString()
 	const listingId = existingListing?.id ?? crypto.randomUUID()
 	const tagsJson = JSON.stringify(savedPackage.tags)
+	const category = resolveCommunityListingCategory({
+		category: loadedSource.manifest.kody.category,
+		tags: savedPackage.tags,
+	})
 	const communityIconPath = findCommunityIconPath(loadedSource.files)
 	const snapshotFiles = { ...loadedSource.files }
 	for (const iconPath of communityIconPaths) {
@@ -599,6 +607,7 @@ export async function publishCommunityListing(input: {
 				name: savedPackage.name,
 				description,
 				tagsJson,
+				category,
 				searchText: savedPackage.searchText,
 				readmeContent: readme.content,
 				license,
@@ -621,6 +630,7 @@ export async function publishCommunityListing(input: {
 				name: savedPackage.name,
 				description,
 				tags_json: tagsJson,
+				category,
 				search_text: savedPackage.searchText,
 				readme_content: readme.content,
 				license,
@@ -653,6 +663,7 @@ export async function publishCommunityListing(input: {
 						name: existingListing.name,
 						description: existingListing.description,
 						tagsJson: JSON.stringify(existingListing.tags),
+						category: existingListing.category,
 						searchText: existingListing.searchText,
 						readmeContent: existingListing.readmeContent,
 						license: existingListing.license,
@@ -903,6 +914,7 @@ export async function listCommunityListingsWithAggregates(input: {
 	limit: number
 	offset: number
 	sort?: CommunityListingSort
+	category?: CommunityListingCategory | null
 }): Promise<Array<CommunityListingWithAggregates>> {
 	const listings = await listCommunityListingCandidates(input.env.APP_DB, {
 		includeDelisted: input.includeDelisted,
@@ -913,7 +925,11 @@ export async function listCommunityListingsWithAggregates(input: {
 		listings,
 	)
 	const sort = resolveCommunityListingSort(input.sort)
-	return withAggregates
+	const filtered = filterCommunityListingsByCategory(
+		withAggregates,
+		input.category,
+	)
+	return filtered
 		.sort((left, right) => compareCommunityListingsForSort(left, right, sort))
 		.slice(input.offset, input.offset + input.limit)
 }
@@ -923,6 +939,7 @@ export async function searchCommunityListings(input: {
 	query: string
 	limit: number
 	sort?: CommunityListingSort
+	category?: CommunityListingCategory | null
 	trustedFirst?: boolean
 	resultFilter?: (listing: CommunityListingWithAggregates) => boolean
 }): Promise<Array<CommunityListingSearchResult>> {
@@ -1013,17 +1030,29 @@ export async function searchCommunityListings(input: {
 	return finalizeCommunitySearchResults(relevanceOrdered, input)
 }
 
+function filterCommunityListingsByCategory<
+	T extends { category: CommunityListingCategory },
+>(listings: Array<T>, category?: CommunityListingCategory | null): Array<T> {
+	if (category == null) return listings
+	return listings.filter((listing) => listing.category === category)
+}
+
 function finalizeCommunitySearchResults(
 	relevanceOrdered: Array<CommunityListingSearchResult>,
 	input: {
 		limit: number
+		category?: CommunityListingCategory | null
 		trustedFirst?: boolean
 		resultFilter?: (listing: CommunityListingWithAggregates) => boolean
 	},
 ): Array<CommunityListingSearchResult> {
+	const categoryFiltered = filterCommunityListingsByCategory(
+		relevanceOrdered,
+		input.category,
+	)
 	const filtered = input.resultFilter
-		? relevanceOrdered.filter(input.resultFilter)
-		: relevanceOrdered
+		? categoryFiltered.filter(input.resultFilter)
+		: categoryFiltered
 	if (input.trustedFirst) {
 		filtered.sort((left, right) => Number(right.trusted) - Number(left.trusted))
 	}

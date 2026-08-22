@@ -72,6 +72,7 @@ const sampleListing = {
 	name: '@kody/github',
 	description: 'GitHub helpers.',
 	tags: ['github'],
+	category: 'integrations',
 	searchText: null,
 	readmeContent: '# README',
 	license: 'MIT',
@@ -245,6 +246,8 @@ test('community index is memoized per request and forwards newest sort to loader
 	const second = loadCommunityIndexData({} as Env, request)
 	expect(second).toBe(first)
 	expect((await first).listings).toHaveLength(1)
+	expect((await first).category).toBeNull()
+	expect((await first).groups?.[0]?.category).toBe('integrations')
 	expect(await second).toBe(await first)
 	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledTimes(
 		1,
@@ -260,9 +263,10 @@ test('community index is memoized per request and forwards newest sort to loader
 	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledWith({
 		env: {},
 		includeDelisted: false,
-		limit: 50,
+		limit: 200,
 		offset: 0,
 		sort: 'newest',
+		category: null,
 	})
 
 	const newestSearch = await loadCommunityIndexData(
@@ -271,11 +275,30 @@ test('community index is memoized per request and forwards newest sort to loader
 	)
 	expect(newestSearch.sort).toBe('newest')
 	expect(newestSearch.query).toBe('github')
+	expect(newestSearch.category).toBeNull()
+	expect(newestSearch.groups).toBeNull()
 	expect(mockModule.searchCommunityListings).toHaveBeenCalledWith({
 		env: {},
 		query: 'github',
 		limit: 50,
 		sort: 'newest',
+		category: null,
+	})
+
+	mockModule.listCommunityListingsWithAggregates.mockClear()
+	const integrationsBrowse = await loadCommunityIndexData(
+		{} as Env,
+		new Request('https://example.com/community?category=integrations'),
+	)
+	expect(integrationsBrowse.category).toBe('integrations')
+	expect(integrationsBrowse.groups).toBeNull()
+	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledWith({
+		env: {},
+		includeDelisted: false,
+		limit: 50,
+		offset: 0,
+		sort: 'best',
+		category: 'integrations',
 	})
 })
 

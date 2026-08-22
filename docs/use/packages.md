@@ -74,6 +74,11 @@ Important fields:
   surface, auth notes, and longer detail in README / Intent / `searchText` /
   export docs
 - `kody.tags` — package tags
+- `kody.category` — optional community browse category (`integrations`,
+  `examples`, `productivity`, `apps`, or `utilities`). Community publish stores
+  this on the listing; when it is omitted, Kody infers a category from
+  well-known tags such as `github` or `zero-auth`, or files the listing under
+  Other
 - `kody.searchText` — optional longer search text beyond the short description
 - `kody.dependencies` — map of direct saved package names imported through
   static `kody:@...` imports (`{ "@scope/package": "*" }`)

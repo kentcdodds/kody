@@ -1,5 +1,6 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
+import { resolveCommunityListingCategory } from '#universal/community-categories.ts'
 import {
 	type CommunityActivityKind,
 	type CommunityActivityRecord,
@@ -37,6 +38,10 @@ export function mapCommunityListingRow(
 		name: String(row['name']),
 		description: String(row['description']),
 		tags: parseTagsJson(row['tags_json']),
+		category: resolveCommunityListingCategory({
+			category: row['category'] == null ? null : String(row['category']),
+			tags: parseTagsJson(row['tags_json']),
+		}),
 		searchText:
 			row['search_text'] == null ? null : String(row['search_text']).trim(),
 		readmeContent:
@@ -168,6 +173,7 @@ function listingStatusFilter(includeDelisted: boolean) {
 export const communityListingSelectColumns = `community_listings.id, community_listings.owner_user_id,
 	community_listings.package_id, community_listings.source_id, community_listings.kody_id,
 	community_listings.name, community_listings.description, community_listings.tags_json,
+	community_listings.category,
 	community_listings.search_text, community_listings.readme_content, community_listings.license,
 	community_listings.pinned_commit, community_listings.status, community_listings.created_at,
 	community_listings.updated_at, community_listings.published_at,
@@ -291,9 +297,9 @@ export async function insertCommunityListing(
 		.prepare(
 			`INSERT INTO community_listings (
 				id, owner_user_id, package_id, source_id, kody_id, name, description,
-				tags_json, search_text, readme_content, license, pinned_commit, status,
+				tags_json, category, search_text, readme_content, license, pinned_commit, status,
 				created_at, updated_at, published_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
@@ -304,6 +310,7 @@ export async function insertCommunityListing(
 			row.name,
 			row.description,
 			row.tags_json,
+			row.category,
 			row.search_text ?? null,
 			row.readme_content ?? null,
 			row.license,
@@ -326,6 +333,7 @@ export async function updateCommunityListing(
 		name?: string
 		description?: string
 		tagsJson?: string
+		category?: CommunityListingRecord['category']
 		searchText?: string | null
 		readmeContent?: string | null
 		license?: string
@@ -350,6 +358,7 @@ export async function updateCommunityListing(
 		addAssignment('description', input.description)
 	}
 	if (input.tagsJson !== undefined) addAssignment('tags_json', input.tagsJson)
+	if (input.category !== undefined) addAssignment('category', input.category)
 	if (input.searchText !== undefined) {
 		addAssignment('search_text', input.searchText ?? null)
 	}

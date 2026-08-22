@@ -114,6 +114,15 @@ Put feature lists, API surface, auth notes, and longer guidance in `README.md`
 `kody.description`. Community listings and Open Graph share cards reuse this
 field, so keep it concise.
 
+## `kody.category` (community browse)
+
+Public community listings browse by a closed category. Set
+`package.json#kody.category` to one of `integrations`, `examples`,
+`productivity`, `apps`, or `utilities` before `community_publish`. When the
+field is omitted, Kody infers a category from well-known tags such as `github`
+or `zero-auth`, or files the listing under Other. Tags stay freeform search
+keywords; do not use `kody.tags` as a second category vocabulary.
+
 ## Package visibility (`private`)
 
 Default new saved packages to `"private": true` in `package.json` unless the

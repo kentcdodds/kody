@@ -50,6 +50,7 @@ const sampleListing = {
 	name: '@kentcdodds/github-triage',
 	description: 'Triage GitHub issues.',
 	tags: ['github'],
+	category: 'integrations',
 	searchText: null,
 	readmeContent: '# README',
 	license: 'MIT',

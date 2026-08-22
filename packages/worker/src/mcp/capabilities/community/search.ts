@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { communityListingCategories } from '#universal/community-categories.ts'
 import {
 	communityListingSorts,
 	defaultCommunityListingSort,
@@ -22,7 +23,7 @@ export const communitySearchCapability = defineDomainCapability(
 	{
 		name: 'community_search',
 		description:
-			'Search public community package listings on this deployment. Default ranking is relevance and community ratings; pass sort=newest for last published first. Use `community_get` for full detail before forking.',
+			'Search public community package listings on this deployment. Default ranking is relevance and community ratings; pass sort=newest for last published first. Pass category to browse one closed listing category. Use `community_get` for full detail before forking.',
 		keywords: [
 			'community',
 			'search',
@@ -53,6 +54,12 @@ export const communitySearchCapability = defineDomainCapability(
 				.describe(
 					'best (default) ranks by relevance and ratings. newest orders matching listings by last community publish, including republishes.',
 				),
+			category: z
+				.enum(communityListingCategories)
+				.optional()
+				.describe(
+					'Optional browse category. integrations, examples, productivity, apps, and utilities come from package.json#kody.category (or tag inference). other is the uncategorized remainder.',
+				),
 		}),
 		outputSchema: z.object({
 			outcome: z.enum(['matches', 'no_matches']),
@@ -66,6 +73,7 @@ export const communitySearchCapability = defineDomainCapability(
 				query: args.query,
 				limit: args.limit ?? 10,
 				sort: args.sort ?? defaultCommunityListingSort,
+				category: args.category,
 			})
 			const noMatches = Boolean(args.query.trim()) && listings.length === 0
 			return {
@@ -79,6 +87,7 @@ export const communitySearchCapability = defineDomainCapability(
 					kody_id: listing.kodyId,
 					description: listing.description,
 					tags: listing.tags,
+					category: listing.category,
 					owner_anonymous: true as const,
 					trusted: listing.trusted,
 					relevance: listing.relevance,

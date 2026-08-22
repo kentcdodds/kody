@@ -21,6 +21,8 @@ Use `package.json` as the canonical source of truth for saved package metadata.
 - `kody.id` — user-scoped Kody package id
 - `kody.description` — short public tagline for search/detail (max 200)
 - `kody.tags` — search tags
+- `kody.category` — optional community browse category (`integrations`,
+  `examples`, `productivity`, `apps`, or `utilities`)
 - `kody.searchText` — optional longer search text beyond the short description
 - `kody.dependencies` — map of direct static saved package dependencies imported
   via `kody:@...`, written as `{ "@scope/package": "*" }`. `*` means the

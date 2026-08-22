@@ -66,6 +66,7 @@ CREATE TABLE community_listings (
 	name TEXT NOT NULL,
 	description TEXT NOT NULL,
 	tags_json TEXT NOT NULL DEFAULT '[]',
+	category TEXT NOT NULL DEFAULT 'other',
 	search_text TEXT,
 	readme_content TEXT,
 	license TEXT NOT NULL,

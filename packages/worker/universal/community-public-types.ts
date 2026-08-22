@@ -1,3 +1,5 @@
+import { type CommunityListingCategory } from '#universal/community-categories.ts'
+
 /**
  * Signed-in viewer's existing fork/install of a community listing. Present
  * only on viewer-specific payloads (never cached with public listing rows).
@@ -24,6 +26,7 @@ export type PublicCommunityListing = {
 	description: string
 	iconUrl: string
 	tags: Array<string>
+	category: CommunityListingCategory
 	readmeContent: string | null
 	license: string
 	pinnedCommit: string

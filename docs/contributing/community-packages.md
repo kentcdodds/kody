@@ -38,13 +38,13 @@ package vector indexes.
 The squashed baseline (`packages/worker/migrations/0001-squashed-init.sql`)
 defines the community tables and social columns.
 
-| Table                | Purpose                                                            |
-| -------------------- | ------------------------------------------------------------------ |
-| `community_listings` | Listing metadata, pinned commit, status (`active` / `delisted`)    |
-| `community_forks`    | Fork records linking listing, forker, and inert `source_id`        |
-| `community_ratings`  | Per-user ratings (upsert on `listing_id` + `user_id`)              |
-| `community_reports`  | Reports with denormalized `listing_name` / `listing_owner_user_id` |
-| `community_bans`     | Community-wide bans (publish, fork, rate, report)                  |
+| Table                | Purpose                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `community_listings` | Listing metadata, pinned commit, browse `category`, status (`active` / `delisted`) |
+| `community_forks`    | Fork records linking listing, forker, and inert `source_id`                        |
+| `community_ratings`  | Per-user ratings (upsert on `listing_id` + `user_id`)                              |
+| `community_reports`  | Reports with denormalized `listing_name` / `listing_owner_user_id`                 |
+| `community_bans`     | Community-wide bans (publish, fork, rate, report)                                  |
 
 | Table / column                    | Purpose                                                           |
 | --------------------------------- | ----------------------------------------------------------------- |
@@ -175,7 +175,8 @@ Core logic: `packages/worker/src/community/`
 
 `publishCommunityListing` validates MIT license, non-private
 `package.json#private`, README `## Intent`, published commit, and ban status;
-copies published source into KV; upserts D1 metadata.
+copies published source into KV; upserts D1 metadata including the resolved
+browse `category` from `package.json#kody.category` or well-known tags.
 
 `forkCommunityListing` reads the KV snapshot, rewrites `package.json` name/kody
 id to the forker's scope, scans cross-scope references, calls
@@ -253,7 +254,8 @@ og:image).
 
 Client routes: `packages/worker/client/routes/community*`
 
-- `/community` — searchable index of active listings
+- `/community` — searchable index of active listings, grouped by category on the
+  unfiltered browse page (`?category=` filters to one category)
 - `/@:username/:kodyId` — the canonical package page, resolved from the owner
   plus the active listing's `kody_id` (JSON companion:
   `/profiles/:username/packages/:kodyId.json`). `username_redirects` and
@@ -329,7 +331,7 @@ contain cross-scope static imports or foreign `kody.dependencies` entries
 `searchCommunityListings` ranks **active** listings only:
 
 1. Build a search document from name, kody id, description, tags, search text,
-   and a README snippet.
+   and a README snippet. Category filters apply after scoring.
 2. Score with the same lexical + deterministic-embedding blend used for
    capability search (`blendLexicalAndVectorScore`, `deterministicEmbedding`).
 3. Multiply by a **Bayesian average** of star ratings:
@@ -341,7 +343,9 @@ contain cross-scope static imports or foreign `kody.dependencies` entries
 Empty queries sort by Bayesian score, then `publishedAt`. Pass `sort: "newest"`
 (or `/community?sort=newest`) to order matching listings by `publishedAt`
 descending instead. `published_at` is last community publish time: republishing
-overwrites it.
+overwrites it. Pass `category` (or `/community?category=integrations`) to keep
+only that browse category. Unfiltered `/community` browse groups the newest
+candidates by category and shows a few cards in each section.
 
 Fork counts are live `COUNT(*)` aggregates over `community_forks` grouped by
 listing id. Detail reads always count the selected listing. Browse and search

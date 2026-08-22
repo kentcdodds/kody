@@ -225,6 +225,7 @@ function sampleListing(
 		name: '@owner/discord-gateway',
 		description: 'Discord gateway helpers',
 		tags: ['discord', 'gateway'],
+		category: 'integrations',
 		searchText: 'websocket bot',
 		readmeContent: '# Discord Gateway\n\n## Intent\n\nBridge Discord events.',
 		license: 'MIT',
@@ -234,6 +235,8 @@ function sampleListing(
 		trustedCommit: null,
 		trustedAt: null,
 		trusted: false,
+		featuredAt: null,
+		featured: false,
 		createdAt: '2026-07-01T00:00:00.000Z',
 		updatedAt: '2026-07-01T00:00:00.000Z',
 		publishedAt: '2026-07-01T00:00:00.000Z',
@@ -715,6 +718,7 @@ test('publishCommunityListing accepts Intent heading beyond storage truncation',
 		expect.anything(),
 		expect.objectContaining({
 			readme_content: expect.stringMatching(/…$/),
+			category: 'integrations',
 		}),
 	)
 	expect(mockModule.writeCommunitySnapshot).toHaveBeenCalledWith(

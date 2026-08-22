@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { communityPackageCategories } from '#universal/community-categories.ts'
 
 export const kodyPackageIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -252,6 +253,7 @@ export const authoredPackageKodySchema = z.object({
 	// assertKodyDescriptionLength so existing longer descriptions still load.
 	description: z.string().min(1),
 	tags: z.array(z.string().min(1)).optional(),
+	category: z.enum(communityPackageCategories).optional(),
 	searchText: z.string().min(1).optional(),
 	dependencies: kodyPackageDependenciesSchema.optional(),
 	secretMounts: z

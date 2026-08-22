@@ -4,6 +4,11 @@ import { type Handle, css } from 'remix/ui'
 import { renderToString } from 'remix/ui/server'
 import { type PublicCommunityListing } from '#app/community-public.ts'
 import {
+	communityListingCategories,
+	communityPackageCategoryCopy,
+	type CommunityListingCategory,
+} from '#universal/community-categories.ts'
+import {
 	formatCommunityAdaptationEffort,
 	formatCommunityPublishedDate,
 } from '#universal/community-display.ts'
@@ -16,6 +21,7 @@ import {
 	defaultCommunityListingSort,
 	type CommunityListingSort,
 } from '#universal/community-search.ts'
+import { type CommunityIndexGroup } from '#universal/loader-data.ts'
 import { colors, transitions } from '#universal/styles/tokens.ts'
 import {
 	getSurfaceCardCss,
@@ -34,8 +40,10 @@ import {
 
 export type CommunityListingsContentProps = {
 	listings: Array<PublicCommunityListing>
+	groups?: Array<CommunityIndexGroup> | null
 	query: string | null
 	sort?: CommunityListingSort
+	category?: CommunityListingCategory | null
 }
 
 function formatCount(count: number, noun: string) {
@@ -55,41 +63,222 @@ function communitySortHint(sort: CommunityListingSort) {
 	}
 }
 
-function renderCommunitySortToolbar(input: {
+function renderCommunityBrowseToolbar(input: {
 	query: string | null
 	sort: CommunityListingSort
+	category: CommunityListingCategory | null
 }) {
 	return (
-		<nav
-			aria-label="Sort community packages"
-			data-testid="community-listings-sort"
-			mix={css(sortToolbarCss)}
+		<div mix={css(browseToolbarCss)}>
+			<nav
+				aria-label="Filter community packages by category"
+				data-testid="community-listings-categories"
+				mix={css(categoryNavCss)}
+			>
+				<a
+					href={buildCommunityIndexHref({
+						query: input.query,
+						sort: input.sort,
+					})}
+					aria-current={input.category == null ? 'page' : undefined}
+					mix={css(sortLinkCss)}
+				>
+					All
+				</a>
+				{communityListingCategories.map((category) => (
+					<a
+						key={category}
+						href={buildCommunityIndexHref({
+							query: input.query,
+							sort: input.sort,
+							category,
+						})}
+						aria-current={input.category === category ? 'page' : undefined}
+						title={communityPackageCategoryCopy[category].description}
+						mix={css(sortLinkCss)}
+					>
+						{communityPackageCategoryCopy[category].label}
+					</a>
+				))}
+			</nav>
+			<nav
+				aria-label="Sort community packages"
+				data-testid="community-listings-sort"
+				mix={css(sortToolbarCss)}
+			>
+				<p mix={css(sortHintCss)}>{communitySortHint(input.sort)}</p>
+				<div role="group" aria-label="Sort order" mix={css(sortGroupCss)}>
+					<a
+						href={buildCommunityIndexHref({
+							query: input.query,
+							sort: 'best',
+							category: input.category,
+						})}
+						aria-current={input.sort === 'best' ? 'page' : undefined}
+						mix={css(sortLinkCss)}
+					>
+						Best
+					</a>
+					<a
+						href={buildCommunityIndexHref({
+							query: input.query,
+							sort: 'newest',
+							category: input.category,
+						})}
+						aria-current={input.sort === 'newest' ? 'page' : undefined}
+						title="Last published first, including republished updates"
+						mix={css(sortLinkCss)}
+					>
+						Newest
+					</a>
+				</div>
+			</nav>
+		</div>
+	)
+}
+
+function renderCommunityListingCard(
+	listing: PublicCommunityListing,
+	index: number,
+	options?: { showCategory?: boolean },
+) {
+	return (
+		<li
+			key={listing.id}
+			style={{ '--reveal-delay': `${Math.min(index, 5) * 60}ms` }}
+			mix={css(listingCardCss)}
 		>
-			<p mix={css(sortHintCss)}>{communitySortHint(input.sort)}</p>
-			<div role="group" aria-label="Sort order" mix={css(sortGroupCss)}>
-				<a
-					href={buildCommunityIndexHref({
-						query: input.query,
-						sort: 'best',
-					})}
-					aria-current={input.sort === 'best' ? 'page' : undefined}
-					mix={css(sortLinkCss)}
-				>
-					Best
-				</a>
-				<a
-					href={buildCommunityIndexHref({
-						query: input.query,
-						sort: 'newest',
-					})}
-					aria-current={input.sort === 'newest' ? 'page' : undefined}
-					title="Last published first, including republished updates"
-					mix={css(sortLinkCss)}
-				>
-					Newest
-				</a>
+			<div mix={css(listingHeadCss)}>
+				<CommunityListingIcon listing={listing} size="card" />
+				<div mix={css(listingTitleBlockCss)}>
+					<h2 mix={css(listingNameCss)}>
+						<a
+							href={getCommunityListingHref({
+								listingId: listing.id,
+								listingName: listing.name,
+								kodyId: listing.kodyId,
+							})}
+							mix={css(listingLinkCss)}
+						>
+							{renderCommunityListingName(listing.name)}
+						</a>
+					</h2>
+					{listing.trusted || listing.viewerInstall ? (
+						<span mix={css(listingBadgeGroupCss)}>
+							{listing.trusted ? (
+								<span
+									data-testid={`community-listing-trusted-${listing.id}`}
+									title="An admin reviewed this exact version and marked it trusted."
+									mix={css(communityBadgePillCss)}
+								>
+									Trusted
+								</span>
+							) : null}
+							{listing.viewerInstall ? (
+								<span
+									data-testid={`community-listing-viewer-install-${listing.id}`}
+									title={
+										listing.viewerInstall.status === 'installed'
+											? `Installed in your account as ${listing.viewerInstall.targetName}.`
+											: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
+									}
+									mix={css(communityBadgePillCss)}
+								>
+									{listing.viewerInstall.status === 'installed'
+										? 'Installed'
+										: 'Forked'}
+								</span>
+							) : null}
+						</span>
+					) : null}
+				</div>
 			</div>
-		</nav>
+			<p
+				mix={css(listingDescriptionCss)}
+				data-testid={`community-listing-description-${listing.id}`}
+			>
+				{listing.description}
+			</p>
+			{listing.tags.length > 0 || options?.showCategory ? (
+				<ul aria-label="Tags" mix={css(communityTagListCss)}>
+					{options?.showCategory ? (
+						<li
+							data-testid={`community-listing-category-${listing.id}`}
+							mix={css(communityTagPillCss)}
+						>
+							{communityPackageCategoryCopy[listing.category].label}
+						</li>
+					) : null}
+					{listing.tags.map((tag) => (
+						<li key={tag} mix={css(communityTagPillCss)}>
+							{tag}
+						</li>
+					))}
+				</ul>
+			) : null}
+			<p mix={css(statsCss)}>
+				{listing.ratingCount > 0 ? (
+					/*
+					 * Every other stat in this row says what it is
+					 * ("12 forks", "5 stars", "effort …"), but the
+					 * rating is a glyph and two bare numbers, which
+					 * announced as "black star 4.5 (12)". The glyph is
+					 * decorative and the numbers get a spoken label.
+					 */
+					<span mix={css(ratingCss)}>
+						<span aria-hidden="true" mix={css(ratingStarCss)}>
+							★
+						</span>
+						<span mix={css(visuallyHiddenCss)}>
+							{listing.averageStars == null
+								? `not yet rated, ${formatCount(listing.ratingCount, 'rating')}`
+								: `rated ${listing.averageStars.toFixed(1)} out of 5 from ${formatCount(listing.ratingCount, 'rating')}`}
+						</span>
+						<span aria-hidden="true">
+							{' '}
+							{listing.averageStars == null
+								? '—'
+								: listing.averageStars.toFixed(1)}{' '}
+							({listing.ratingCount})
+						</span>
+					</span>
+				) : (
+					<span>No ratings yet</span>
+				)}
+				<span data-testid={`community-listing-forks-${listing.id}`}>
+					{formatCount(listing.forkCount, 'fork')}
+				</span>
+				<span data-testid={`community-listing-stars-${listing.id}`}>
+					{formatCount(listing.starCount, 'star')}
+				</span>
+				<span
+					data-testid={`community-listing-published-${listing.id}`}
+					title={`Last published ${formatCommunityPublishedDate(listing.publishedAt)}`}
+				>
+					<span mix={css(visuallyHiddenCss)}>Published </span>
+					{formatCommunityPublishedDate(listing.publishedAt)}
+				</span>
+				{listing.averageAdaptationEffort == null ? null : (
+					<span>
+						effort{' '}
+						{formatCommunityAdaptationEffort(listing.averageAdaptationEffort)}
+					</span>
+				)}
+			</p>
+		</li>
+	)
+}
+
+function renderCommunityListingGrid(
+	listings: Array<PublicCommunityListing>,
+	options?: { showCategory?: boolean },
+) {
+	return (
+		<ul mix={css(listingGridCss)}>
+			{listings.map((listing, index) =>
+				renderCommunityListingCard(listing, index, options),
+			)}
+		</ul>
 	)
 }
 
@@ -98,134 +287,51 @@ export function CommunityListingsContent(
 ) {
 	const { listings, query } = handle.props
 	const sort = handle.props.sort ?? defaultCommunityListingSort
+	const category = handle.props.category ?? null
+	const groups = handle.props.groups ?? null
 
 	return () => (
 		<div data-testid="community-listings-frame">
-			{renderCommunitySortToolbar({ query, sort })}
+			{renderCommunityBrowseToolbar({ query, sort, category })}
 			{listings.length === 0 ? (
-				renderCommunityEmptyState(query, sort)
-			) : (
-				<ul mix={css(listingGridCss)}>
-					{listings.map((listing, index) => (
-						<li
-							key={listing.id}
-							style={{ '--reveal-delay': `${Math.min(index, 5) * 60}ms` }}
-							mix={css(listingCardCss)}
+				renderCommunityEmptyState(query, sort, category)
+			) : groups != null && groups.length > 0 ? (
+				<div data-testid="community-listings-overview" mix={css(overviewCss)}>
+					{groups.map((group) => (
+						<section
+							key={group.category}
+							aria-labelledby={`community-category-${group.category}`}
+							mix={css(overviewSectionCss)}
 						>
-							<div mix={css(listingHeadCss)}>
-								<CommunityListingIcon listing={listing} size="card" />
-								<div mix={css(listingTitleBlockCss)}>
-									<h2 mix={css(listingNameCss)}>
-										<a
-											href={getCommunityListingHref({
-												listingId: listing.id,
-												listingName: listing.name,
-												kodyId: listing.kodyId,
-											})}
-											mix={css(listingLinkCss)}
-										>
-											{renderCommunityListingName(listing.name)}
-										</a>
+							<header mix={css(overviewHeadCss)}>
+								<div>
+									<h2
+										id={`community-category-${group.category}`}
+										mix={css(overviewTitleCss)}
+									>
+										{communityPackageCategoryCopy[group.category].label}
 									</h2>
-									{listing.trusted || listing.viewerInstall ? (
-										<span mix={css(listingBadgeGroupCss)}>
-											{listing.trusted ? (
-												<span
-													data-testid={`community-listing-trusted-${listing.id}`}
-													title="An admin reviewed this exact version and marked it trusted."
-													mix={css(communityBadgePillCss)}
-												>
-													Trusted
-												</span>
-											) : null}
-											{listing.viewerInstall ? (
-												<span
-													data-testid={`community-listing-viewer-install-${listing.id}`}
-													title={
-														listing.viewerInstall.status === 'installed'
-															? `Installed in your account as ${listing.viewerInstall.targetName}.`
-															: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
-													}
-													mix={css(communityBadgePillCss)}
-												>
-													{listing.viewerInstall.status === 'installed'
-														? 'Installed'
-														: 'Forked'}
-												</span>
-											) : null}
-										</span>
-									) : null}
+									<p mix={css(overviewHintCss)}>
+										{communityPackageCategoryCopy[group.category].description}
+									</p>
 								</div>
-							</div>
-							<p
-								mix={css(listingDescriptionCss)}
-								data-testid={`community-listing-description-${listing.id}`}
-							>
-								{listing.description}
-							</p>
-							{listing.tags.length > 0 ? (
-								<ul aria-label="Tags" mix={css(communityTagListCss)}>
-									{listing.tags.map((tag) => (
-										<li key={tag} mix={css(communityTagPillCss)}>
-											{tag}
-										</li>
-									))}
-								</ul>
-							) : null}
-							<p mix={css(statsCss)}>
-								{listing.ratingCount > 0 ? (
-									/*
-									 * Every other stat in this row says what it is
-									 * ("12 forks", "5 stars", "effort …"), but the
-									 * rating is a glyph and two bare numbers, which
-									 * announced as "black star 4.5 (12)". The glyph is
-									 * decorative and the numbers get a spoken label.
-									 */
-									<span mix={css(ratingCss)}>
-										<span aria-hidden="true" mix={css(ratingStarCss)}>
-											★
-										</span>
-										<span mix={css(visuallyHiddenCss)}>
-											{listing.averageStars == null
-												? `not yet rated, ${formatCount(listing.ratingCount, 'rating')}`
-												: `rated ${listing.averageStars.toFixed(1)} out of 5 from ${formatCount(listing.ratingCount, 'rating')}`}
-										</span>
-										<span aria-hidden="true">
-											{' '}
-											{listing.averageStars == null
-												? '—'
-												: listing.averageStars.toFixed(1)}{' '}
-											({listing.ratingCount})
-										</span>
-									</span>
-								) : (
-									<span>No ratings yet</span>
-								)}
-								<span data-testid={`community-listing-forks-${listing.id}`}>
-									{formatCount(listing.forkCount, 'fork')}
-								</span>
-								<span data-testid={`community-listing-stars-${listing.id}`}>
-									{formatCount(listing.starCount, 'star')}
-								</span>
-								<span
-									data-testid={`community-listing-published-${listing.id}`}
-									title={`Last published ${formatCommunityPublishedDate(listing.publishedAt)}`}
+								<a
+									href={buildCommunityIndexHref({
+										query,
+										sort,
+										category: group.category,
+									})}
+									mix={css(overviewSeeAllCss)}
 								>
-									<span mix={css(visuallyHiddenCss)}>Published </span>
-									{formatCommunityPublishedDate(listing.publishedAt)}
-								</span>
-								{listing.averageAdaptationEffort == null ? null : (
-									<span>
-										effort{' '}
-										{formatCommunityAdaptationEffort(
-											listing.averageAdaptationEffort,
-										)}
-									</span>
-								)}
-							</p>
-						</li>
+									See all {formatCount(group.total, 'package')}
+								</a>
+							</header>
+							{renderCommunityListingGrid(group.listings)}
+						</section>
 					))}
-				</ul>
+				</div>
+			) : (
+				renderCommunityListingGrid(listings, { showCategory: query != null })
 			)}
 		</div>
 	)
@@ -239,13 +345,73 @@ export async function renderCommunityListingsContentHtml(
 
 /* ---------- styles ---------- */
 
-const sortToolbarCss = {
+const browseToolbarCss = {
 	margin: 'clamp(2.2rem, 5vw, 3.5rem) 0 0',
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: '0.9rem',
+}
+
+const categoryNavCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	gap: '0.4rem',
+	'& a': {
+		backgroundColor: colors.surface,
+		border: `1.5px solid ${colors.border}`,
+		borderRadius: '999px',
+		padding: '0.35rem 0.85rem',
+	},
+}
+
+const sortToolbarCss = {
 	display: 'flex',
 	alignItems: 'center',
 	justifyContent: 'space-between',
 	gap: '0.8rem 1.2rem',
 	flexWrap: 'wrap' as const,
+}
+
+const overviewCss = {
+	display: 'flex',
+	flexDirection: 'column' as const,
+	gap: 'clamp(1.8rem, 4vw, 2.6rem)',
+	marginTop: '1rem',
+}
+
+const overviewSectionCss = {
+	minWidth: 0,
+}
+
+const overviewHeadCss = {
+	display: 'flex',
+	alignItems: 'flex-end',
+	justifyContent: 'space-between',
+	gap: '0.8rem 1.2rem',
+	flexWrap: 'wrap' as const,
+	marginBottom: '0.85rem',
+}
+
+const overviewTitleCss = {
+	margin: 0,
+	fontSize: '1.15rem',
+	fontWeight: 720,
+	letterSpacing: '-0.014em',
+}
+
+const overviewHintCss = {
+	margin: '0.25rem 0 0',
+	color: colors.textMuted,
+	fontSize: '0.88rem',
+}
+
+const overviewSeeAllCss = {
+	color: colors.primaryText,
+	fontSize: '0.9rem',
+	fontWeight: 650,
+	textUnderlineOffset: '0.18em',
+	whiteSpace: 'nowrap' as const,
 }
 
 const sortHintCss = {

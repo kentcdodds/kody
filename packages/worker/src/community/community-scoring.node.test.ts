@@ -54,14 +54,18 @@ function githubListing(): CommunityListingRecord {
 		name: '@kody/github-triage',
 		description: 'Triage GitHub issues automatically',
 		tags: ['github', 'issues', 'triage'],
+		category: 'integrations',
 		searchText: 'github issues triage',
 		readmeContent: '# GitHub Triage\n\n## Intent\n\nTriage github issues.',
 		license: 'MIT',
 		pinnedCommit: 'commit-github',
+		iconCommit: 'commit-github',
 		status: 'active',
 		trustedCommit: null,
 		trustedAt: null,
 		trusted: false,
+		featuredAt: null,
+		featured: false,
 		createdAt: '2026-07-01T00:00:00.000Z',
 		updatedAt: '2026-07-01T00:00:00.000Z',
 		publishedAt: '2026-07-01T00:00:00.000Z',
@@ -78,14 +82,18 @@ function mealListing(): CommunityListingRecord {
 		name: '@jane/meal-planner',
 		description: 'Plan weekly meals and grocery lists',
 		tags: ['meal', 'grocery', 'planning'],
+		category: 'productivity',
 		searchText: 'meal plan grocery shopping',
 		readmeContent: '# Meal Planner\n\n## Intent\n\nPlan meals.',
 		license: 'MIT',
 		pinnedCommit: 'commit-meal',
+		iconCommit: 'commit-meal',
 		status: 'active',
 		trustedCommit: null,
 		trustedAt: null,
 		trusted: false,
+		featuredAt: null,
+		featured: false,
 		createdAt: '2026-07-02T00:00:00.000Z',
 		updatedAt: '2026-07-02T00:00:00.000Z',
 		publishedAt: '2026-07-02T00:00:00.000Z',
@@ -265,6 +273,24 @@ test('community scoring and search rank listings and filter by query', async () 
 		'listing-github-newer',
 		'listing-github',
 	])
+
+	const integrationsOnly = await searchCommunityListings({
+		env: createEnv(),
+		query: '',
+		limit: 10,
+		category: 'integrations',
+	})
+	expect(integrationsOnly.map((listing) => listing.kodyId)).toEqual([
+		'github-triage',
+		'github-newer',
+	])
+	const productivityOnly = await searchCommunityListings({
+		env: createEnv(),
+		query: '',
+		limit: 10,
+		category: 'productivity',
+	})
+	expect(productivityOnly).toEqual([])
 })
 
 test('trusted-first community search promotes a trusted relevance rank 13 before limiting', async () => {

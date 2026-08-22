@@ -35,8 +35,10 @@ export function buildCommunityIndexCacheKey(input: {
 	query: string
 	limit: number
 	sort: string
+	category: string | null
+	overview: boolean
 }) {
-	return `community-index:v${communityPublicCacheVersion}:q=${input.query}:sort=${input.sort}:limit=${input.limit}`
+	return `community-index:v${communityPublicCacheVersion}:q=${input.query}:sort=${input.sort}:category=${input.category ?? ''}:overview=${String(input.overview)}:limit=${input.limit}`
 }
 
 export function buildCommunityDetailListingCacheKey(listingId: string) {

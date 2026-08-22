@@ -8,8 +8,8 @@ import {
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
 import {
-	buildCommunityPublicUrl,
 	communityListingSummarySchema,
+	toCommunityListingSummaryOutput,
 } from './shared.ts'
 
 export const communityPublishCapability = defineDomainCapability(
@@ -17,7 +17,7 @@ export const communityPublishCapability = defineDomainCapability(
 	{
 		name: 'community_publish',
 		description:
-			'Publish a saved package as a public community listing on this deployment. Requires MIT license in package.json `license`, `"private"` not set to true, a root README with a `## Intent` section, and a published commit. Publishing shares the pinned snapshot publicly with all users on this deployment. Re-publishing the same package updates the listing to the current published commit.',
+			'Publish a saved package as a public community listing on this deployment. Requires MIT license in package.json `license`, `"private"` not set to true, a root README with a `## Intent` section, and a published commit. Set `package.json#kody.category` to integrations, examples, productivity, apps, or utilities so `/community` can group the listing; omitted categories infer from well-known tags. Publishing shares the pinned snapshot publicly with all users on this deployment. Re-publishing the same package updates the listing to the current published commit.',
 		keywords: [
 			'community',
 			'publish',
@@ -55,21 +55,7 @@ export const communityPublishCapability = defineDomainCapability(
 				actorUserId: owner.actorUserId,
 				packageId: args.package_id,
 			})
-			return {
-				listing_id: listing.id,
-				name: listing.name,
-				kody_id: listing.kodyId,
-				description: listing.description,
-				license: listing.license,
-				pinned_commit: listing.pinnedCommit,
-				status: listing.status,
-				public_url: buildCommunityPublicUrl(ctx.callerContext.baseUrl, {
-					listingId: listing.id,
-					name: listing.name,
-					kodyId: listing.kodyId,
-				}),
-				published_at: listing.publishedAt,
-			}
+			return toCommunityListingSummaryOutput(listing, ctx.callerContext.baseUrl)
 		},
 	},
 )

@@ -29,6 +29,7 @@ const sampleListing = {
 	name: '@kentcdodds/github-triage',
 	description: 'Triage GitHub issues.',
 	tags: ['github'],
+	category: 'integrations',
 	searchText: null,
 	readmeContent: '# README',
 	license: 'MIT',
@@ -80,9 +81,10 @@ test('community API lists active listings and searches when q is provided', asyn
 	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledWith({
 		env,
 		includeDelisted: false,
-		limit: 50,
+		limit: 200,
 		offset: 0,
 		sort: 'best',
+		category: null,
 	})
 
 	const searchResponse = await handler.handler({
@@ -99,6 +101,7 @@ test('community API lists active listings and searches when q is provided', asyn
 		query: 'github',
 		limit: 50,
 		sort: 'best',
+		category: null,
 	})
 
 	const newestResponse = await handler.handler({
@@ -111,8 +114,9 @@ test('community API lists active listings and searches when q is provided', asyn
 	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledWith({
 		env,
 		includeDelisted: false,
-		limit: 50,
+		limit: 200,
 		offset: 0,
 		sort: 'newest',
+		category: null,
 	})
 })

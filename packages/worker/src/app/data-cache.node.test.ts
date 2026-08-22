@@ -52,6 +52,8 @@ test('invalidateCommunityPublicCache bumps version and clears entries', async ()
 		query: '',
 		sort: 'best',
 		limit: 50,
+		category: null,
+		overview: true,
 	})
 
 	await getOrSetDataCache({ key: keyV0, load })
@@ -67,6 +69,8 @@ test('invalidateCommunityPublicCache bumps version and clears entries', async ()
 		query: '',
 		sort: 'best',
 		limit: 50,
+		category: null,
+		overview: true,
 	})
 	expect(keyV1).toContain(':v1:')
 	const next = await getOrSetDataCache({ key: keyV1, load })

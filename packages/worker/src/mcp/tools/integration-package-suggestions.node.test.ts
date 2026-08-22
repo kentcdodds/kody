@@ -66,6 +66,7 @@ function createCommunityListing(input: {
 		name: input.name,
 		description: input.description ?? `${input.kodyId} listing`,
 		tags: input.tags ?? [input.kodyId],
+		category: 'integrations' as const,
 		searchText: null,
 		readmeContent: null,
 		license: 'MIT',
