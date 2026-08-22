@@ -329,8 +329,12 @@ Guarantees and rules:
 - **Public homepage ticker** (`GET /code-runs.json`, SSR on `/`): reads the
   platform KV pair (or a still D1 sum when KV is empty) and interpolates
   `previous → current` across the 24-hour window. The payload is the window pair
-  only — never per-user rows. Interpolation is deterministic from the timestamps
-  so every visitor at a given second sees the same number.
+  only — never per-user rows. Interpolation is deterministic from the window so
+  every visitor at a given second sees the same number (`nowMs` is floored to
+  whole seconds before endpoint checks and progress). Official `current` appears
+  at the first whole second on or after `windowEnd`. Elapsed time is warped
+  through hashed bursty weights (quiet stretches and rapid spikes) and stays
+  monotonic; it never passes `current`.
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration
