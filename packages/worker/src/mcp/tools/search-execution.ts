@@ -101,11 +101,10 @@ async function executeSearchListWithinBudget(
 			registry: preloadedSearchRows.registry,
 		})
 	}
-	const rankedQuery =
+	const shouldEnrichMemory =
 		Boolean(input.query) &&
-		!domainFilter &&
 		(!identityResolution.recognized || identityMatchesProvider)
-	const memoryLaunch = rankedQuery
+	const memoryLaunch = shouldEnrichMemory
 		? launchSearchMemoryEnrichment({
 				env: input.env,
 				callerContext: input.callerContext,
@@ -197,7 +196,7 @@ async function executeSearchListWithinBudget(
 		result.matches.length > 0 &&
 		result.matches.every((match) => match.type === 'domain')
 	const memorySettlement =
-		rankedQuery && !returnsDomainIndex
+		shouldEnrichMemory && !returnsDomainIndex
 			? await settleSearchMemoryEnrichment({
 					env: input.env,
 					callerContext: input.callerContext,

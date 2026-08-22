@@ -37,7 +37,10 @@ const maxTagLength = 80
 const maxTagCount = 16
 const maxSourceUriLength = 2_048
 const maxSourceUriCount = 12
-const defaultSuppressionTtlMs = 30 * 24 * 60 * 60 * 1_000
+/** Shared recent-window key so a new conversationId does not reset suppression. */
+export const recentMemorySuppressionScopeId = 'user-recent'
+/** Hours, not a month: user-wide so omitted conversation ids still dedupe. */
+export const recentMemorySuppressionTtlMs = 4 * 60 * 60 * 1_000
 /** Offline (no Vectorize): lexical + deterministic ranking over recent rows. */
 const memoryOfflineCandidateLimit = 200
 /** Online: bounded recent-row set fused with Vectorize top hits via RRF. */
@@ -137,7 +140,9 @@ type SurfaceRelevantMemoriesInput = MemoryOwnerContext & {
 }
 
 /**
- * Marks memories as surfaced for a conversation so later enrichment does not repeat them.
+ * Marks memories as surfaced for this user so later enrichment does not
+ * repeat them during the recent window. `conversationId` is accepted for
+ * call-site compatibility and is not the suppression key.
  */
 export async function acknowledgeSurfacedMemories(input: {
 	env: MemoryEnv
@@ -155,12 +160,12 @@ export async function acknowledgeSurfacedMemories(input: {
 			)
 			if (memoryIds.length === 0) return
 			const expiresAt = new Date(
-				Date.now() + defaultSuppressionTtlMs,
+				Date.now() + recentMemorySuppressionTtlMs,
 			).toISOString()
 			await acknowledgeSurfacedMemoryWrites({
 				db: input.env.APP_DB,
 				userId: input.userId,
-				conversationId: input.conversationId,
+				conversationId: recentMemorySuppressionScopeId,
 				memoryIds,
 				expiresAt,
 			})
@@ -713,17 +718,13 @@ async function filterSuppressedMatches(input: {
 	includeSuppressedInConversation: boolean
 	matches: Array<MemorySearchMatch>
 }) {
-	if (
-		!input.conversationId ||
-		input.includeSuppressedInConversation ||
-		input.matches.length === 0
-	) {
+	if (input.includeSuppressedInConversation || input.matches.length === 0) {
 		return { matches: input.matches, suppressedCount: 0 }
 	}
 	const suppressions = await getConversationSuppressions({
 		db: input.db,
 		userId: input.userId,
-		conversationId: input.conversationId,
+		conversationId: recentMemorySuppressionScopeId,
 	})
 	const suppressedIds = new Set(suppressions.map((entry) => entry.memory_id))
 	const visible = input.matches.filter((match) => !suppressedIds.has(match.id))

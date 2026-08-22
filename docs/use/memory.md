@@ -2,19 +2,20 @@
 
 Kody supports two related memory features:
 
-- **conversation-scoped suppression** via **`conversationId`**
+- **recent-window suppression** after a memory is surfaced
 - **long-term memory retrieval and persistence** via **`memoryContext`** and
   memory capabilities
 
 ## `conversationId`
 
-**`conversationId`** ties related tool calls together. If you already have one
-from an earlier tool response in the same conversation, pass it back unchanged.
-Otherwise omit the field so Kody can return a server-generated id, then reuse
-that returned id on follow-up calls. Do not make one up yourself.
+**`conversationId`** ties related tool calls together for progressive disclosure
+and other per-thread optimizations. If you already have one from an earlier
+tool response, pass it back unchanged. Otherwise omit the field so Kody can
+return a server-generated id. Do not make one up yourself.
 
-Kody uses this id to avoid surfacing the same long-term memory repeatedly in one
-conversation.
+Memory auto-surface does not depend on reusing this id. A surfaced memory stays
+down for that user for a short window even when later calls mint a new
+`conversationId`.
 
 ## `memoryContext`
 
@@ -29,17 +30,22 @@ Keep it brief and factual. Good fields include:
 - important entities
 - important constraints
 
+`search` also retrieves from the query string when `memoryContext` is omitted.
+Domain-scoped search still does this. `execute` retrieves when `memoryContext`
+is present.
+
 ## Automatic memory surfacing
 
-When a signed-in agent includes **`memoryContext`**, Kody may return a small
-number of relevant not-yet-surfaced memories alongside the normal tool result.
+When retrieval runs, Kody may return a small number of relevant not-yet-surfaced
+memories in the tool text (as `## Relevant memories`) and in structured
+content.
 
 That retrieval is:
 
-- **conservative** — only a few memories
-- **task-based** — driven by `memoryContext`
-- **conversation-aware** — repeated memories are suppressed within the same
-  `conversationId`
+- **conservative** — the top one or two ranked active memories
+- **task-based** — driven by `memoryContext` and, for `search`, the query
+- **recent-window** — a memory already shown to this user stays suppressed for
+  a few hours
 
 ## Verify-first rule for memory writes
 

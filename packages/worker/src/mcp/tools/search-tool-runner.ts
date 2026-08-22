@@ -13,6 +13,7 @@ import {
 	escapeMarkdownText,
 	formatMarkdownInlineCode,
 } from './markdown-safety.ts'
+import { formatSurfacedMemoriesMarkdown } from './memory-tool-context.ts'
 import {
 	defaultMaxResponseSize,
 	defaultSearchLimit,
@@ -522,6 +523,17 @@ export async function runSearchTool(input: {
 					type: 'text',
 					text: truncateSearchText(serialized),
 				},
+				...formatSurfacedMemoriesMarkdown(
+					searchMemories
+						? {
+								memories: searchMemories.surfaced,
+								retrieverResults: searchMemories.retrieverResults,
+								retrieverWarnings: searchMemories.retrieverWarnings ?? [],
+								suppressedCount: searchMemories.suppressedCount,
+								retrievalQuery: searchMemories.retrievalQuery,
+							}
+						: null,
+				),
 			]),
 			structuredContent: {
 				conversationId,

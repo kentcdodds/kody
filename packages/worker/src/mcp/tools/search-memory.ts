@@ -117,6 +117,7 @@ export async function settleSearchMemoryEnrichment(input: {
 							suppressedCount: memoryToolContext.suppressedCount,
 							retrievalQuery: memoryToolContext.retrievalQuery,
 							retrieverResults: memoryToolContext.retrieverResults,
+							retrieverWarnings: memoryToolContext.retrieverWarnings,
 						},
 					}
 				: {}),
@@ -135,6 +136,7 @@ export async function settleSearchMemoryEnrichment(input: {
 		suppressedCount: memoryToolContext.suppressedCount,
 		retrievalQuery: memoryToolContext.retrievalQuery,
 		retrieverResults: memoryToolContext.retrieverResults,
+		retrieverWarnings: memoryToolContext.retrieverWarnings,
 	}
 	const acknowledgementBudgetMs =
 		input.acknowledgementBudgetMs ?? SEARCH_MEMORY_ACKNOWLEDGEMENT_BUDGET_MS

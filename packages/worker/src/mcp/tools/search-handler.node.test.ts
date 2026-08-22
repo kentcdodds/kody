@@ -249,10 +249,10 @@ test('search tool returns compact query markdown while preserving structured aux
 				category: 'preference',
 				status: 'active',
 				subject: 'Verbose memory subject',
-				summary:
-					'This memory summary is intentionally long and should not be rendered into broad search markdown.',
+				summary: 'Prefers compact search results.',
 				details: 'Long memory details should stay out of the text response.',
 				tags: ['search'],
+				sourceUris: [],
 				updatedAt: '2026-04-20T00:00:00.000Z',
 			},
 		],
@@ -293,6 +293,12 @@ test('search tool returns compact query markdown while preserving structured aux
 
 	const text = successResponse.content.map((item) => item.text).join('\n')
 	expect(text.length).toBeGreaterThan(0)
+	expect(text).toContain('## Relevant memories')
+	expect(text).toContain('Verbose memory subject')
+	expect(text).toContain('Prefers compact search results.')
+	expect(text).not.toContain(
+		'Long memory details should stay out of the text response.',
+	)
 	const result = successResponse.structuredContent.result as {
 		warnings: Array<string>
 		guidance?: string
@@ -1033,6 +1039,7 @@ test('search tool memory enrichment: timeout, rejection, and ack failure stay of
 				summary: 'Prefers compact search results',
 				details: '',
 				tags: ['search'],
+				sourceUris: [],
 				updatedAt: '2026-04-20T00:00:00.000Z',
 			},
 		],
@@ -1275,6 +1282,7 @@ test('search tool domain param: browse, reject unknown, and scope ranked results
 	for (const match of scopedResult.matches) {
 		expect(match).toMatchObject({ type: 'capability', domain: 'meta' })
 	}
+	expect(mockModule.loadRelevantMemoriesForTool).toHaveBeenCalled()
 	expect(mockModule.runPackageRetrievers).not.toHaveBeenCalled()
 })
 

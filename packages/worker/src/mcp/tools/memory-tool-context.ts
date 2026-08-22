@@ -29,8 +29,20 @@ export type MemoryToolSummary = {
 	retrievalQuery: string
 }
 
-/** Automatic context drops one-list RRF noise (~0.016 at k=60). */
-const automaticMemoryScoreFloor = 0.02
+/** Single-list RRF rank-1 at k=60 is 1/61. Used by tests as the inject floor. */
+export const automaticMemorySingleListRankOneScore = 1 / 61
+/** Auto-surface keeps the top ranked active hits, not an absolute score cut. */
+const automaticMemorySurfaceLimit = 2
+
+function selectAutomaticMemories<
+	T extends {
+		status: string
+	},
+>(matches: Array<T>) {
+	return matches
+		.filter((match) => match.status === 'active')
+		.slice(0, automaticMemorySurfaceLimit)
+}
 
 async function loadAutomaticMemories(input: {
 	env: Pick<Env, 'APP_DB'> & Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
@@ -52,10 +64,7 @@ async function loadAutomaticMemories(input: {
 		conversationId: input.conversationId,
 		limit: input.limit,
 	})
-	const memories = result.matches.filter(
-		(match) =>
-			match.status === 'active' && match.score >= automaticMemoryScoreFloor,
-	)
+	const memories = selectAutomaticMemories(result.matches)
 	if (input.acknowledgeSurfaced !== false && memories.length > 0) {
 		await acknowledgeSurfacedMemories({
 			env: input.env,

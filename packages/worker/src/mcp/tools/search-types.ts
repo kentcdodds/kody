@@ -136,6 +136,7 @@ export type SearchMemoryEnrichmentSettlement = {
 		suppressedCount: number
 		retrievalQuery: string
 		retrieverResults: MemoryToolSummary['retrieverResults']
+		retrieverWarnings: MemoryToolSummary['retrieverWarnings']
 	}
 	warnings: Array<string>
 	phaseTimings: Pick<
