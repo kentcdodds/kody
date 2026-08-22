@@ -478,7 +478,7 @@ export function packageStorage() {
 			'packageStorage() requires package provenance: this module was not bundled from a saved package and the run has no package context. ' +
 				'For ad hoc execute code, bind a storageId to the execute call and use the ambient storage helper, ' +
 				"statically import the owning package's export (kody:@scope/package/export) when the package name is known, " +
-				'or call the owning package\'s export via keyless packages.invoke("kody:@scope/package/export", { params }).',
+				"or call the owning package's export via keyless packages.invoke('kody:@scope/package/export', { params }).",
 		);
 	}
 	return __kodyResolvePackageStorage(declaringPackageId);

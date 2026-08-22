@@ -92,17 +92,17 @@ test('resolveSavedPackageImport resolves platform scopes, prefers caller copies,
 	).resolves.toBeNull()
 
 	const ownCopyId = await seedPackage(db, {
-		userId: 'caller-user',
+		userId: 'copy-user',
 		name: '@kody/github',
 		kodyId: 'github',
 	})
 	const callerResolved = await resolveSavedPackageImport({
 		db,
-		userId: 'caller-user',
+		userId: 'copy-user',
 		specifier: 'kody:@kody/github',
 	})
 	expect(callerResolved).toMatchObject({
-		sourceOwnerUserId: 'caller-user',
+		sourceOwnerUserId: 'copy-user',
 		platformScope: null,
 	})
 	expect(callerResolved?.row.id).toBe(ownCopyId)

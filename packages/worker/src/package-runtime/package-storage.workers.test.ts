@@ -568,7 +568,7 @@ test(
 			'packageStorage() requires package provenance',
 		)
 		expect(result.error).toContain(
-			'keyless packages.invoke("kody:@scope/package/export", { params })',
+			"keyless packages.invoke('kody:@scope/package/export', { params })",
 		)
 		expect(result.error).not.toContain('packages.invokeChecked')
 	},
