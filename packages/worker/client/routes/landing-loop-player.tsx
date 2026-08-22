@@ -5,6 +5,7 @@ import {
 } from '#client/deferred-turnstile.ts'
 import { on } from '#client/event-mixin.ts'
 import { loadSyntaxHighlight } from '#client/syntax-highlight.tsx'
+import { whenWindowLoaded } from '#client/when-window-loaded.ts'
 import { routes } from '#universal/routes.ts'
 import { type TranscriptLine } from './interactive-guide-transcript.ts'
 import {
@@ -21,10 +22,10 @@ type LoopLineRenderer = (line: TranscriptLine) => RemixNode
 /**
  * Homepage factory-loop player. SSR paints the first user turn; the
  * transcript chunk loads once the card is near the viewport so it stays
- * out of the marketing entry. Shiki waits until a tool or file beat is
- * on screen. Hover/focus (fine pointers) and explore (scroll up or open
- * a tool) pause the autoplay; Play scrolls to the latest beat and
- * continues.
+ * out of the marketing entry. Shiki prefetches after window `load` so
+ * it does not block first paint or the first beats. Hover/focus (fine
+ * pointers) and explore (scroll up or open a tool) pause the autoplay;
+ * Play scrolls to the latest beat and continues.
  */
 export function LandingLoopPlayer(handle: Handle) {
 	let beats: Array<LandingLoopBeat> | null = null
@@ -67,20 +68,6 @@ export function LandingLoopPlayer(handle: Handle) {
 		if (wasPaused && !player.isPaused()) startPlayLoop()
 	}
 
-	function needsHighlight(visible: ReadonlyArray<LandingLoopBeat>) {
-		return visible.some(
-			(beat) =>
-				beat.kind === 'line' &&
-				(beat.line.role === 'tools' || beat.line.role === 'files'),
-		)
-	}
-
-	function prefetchHighlight() {
-		void loadSyntaxHighlight().then(() => {
-			if (!handle.signal.aborted) handle.update()
-		})
-	}
-
 	async function loadLoop() {
 		try {
 			const [transcript, walkthrough] = await Promise.all([
@@ -100,9 +87,6 @@ export function LandingLoopPlayer(handle: Handle) {
 				reducedMotion,
 			})
 			syncVisibility()
-			if (needsHighlight(beats.slice(0, player.revealedCount))) {
-				prefetchHighlight()
-			}
 			if (!reducedMotion && !player.isPaused()) startPlayLoop()
 			handle.update()
 		} catch {
@@ -151,9 +135,6 @@ export function LandingLoopPlayer(handle: Handle) {
 				}
 				if (player.isPaused()) continue
 				player.advance()
-				if (beats && needsHighlight(beats.slice(0, player.revealedCount))) {
-					prefetchHighlight()
-				}
 				await handle.update()
 				if (signal.aborted || generation !== playGeneration) return
 				scrollChatToBottom()
@@ -168,6 +149,12 @@ export function LandingLoopPlayer(handle: Handle) {
 			scrollChatToBottom()
 		})
 	}
+
+	whenWindowLoaded(() => {
+		void loadSyntaxHighlight().then(() => {
+			if (!handle.signal.aborted) handle.update()
+		})
+	}, handle.signal)
 
 	return () => {
 		const visibleBeats = beats?.slice(0, player.revealedCount) ?? null
