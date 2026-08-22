@@ -700,6 +700,5 @@ How to get/set each value:
 Preview deploys for pull requests create an app Worker per PR named
 `<app-name>-pr-<number>` (for kody: `kody-pr-123`), sibling platform, runtime,
 and jobs Workers (`…-platform`, `…-runtime`, `…-jobs`), plus one Worker per mock
-service named
-`<app-name>-pr-<number>-mock-<service>`. The same `CLOUDFLARE_API_TOKEN` must be
-able to create/update and delete those Workers.
+service named `<app-name>-pr-<number>-mock-<service>`. The same
+`CLOUDFLARE_API_TOKEN` must be able to create/update and delete those Workers.
