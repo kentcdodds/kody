@@ -1,3 +1,4 @@
+import { colors } from '#universal/styles/tokens.ts'
 import {
 	getOgPalette,
 	OG_DEFAULT_THEME,
@@ -24,6 +25,8 @@ const DESCRIPTION_MAX_HEIGHT = Math.round(
 const PACKAGE_ICON_SIZE = 96
 /** Matches `--radius-lg` (0.75rem) at OG canvas scale (~1.5× UI). */
 const PACKAGE_ICON_RADIUS = 18
+/** Matches `getLogoWellCss` border at OG canvas scale (~1.5× UI). */
+const PACKAGE_ICON_WELL_BORDER = 2
 
 /**
  * Amber for filled star icons, per theme. The dark value is 2.6:1 on the pale
@@ -129,17 +132,36 @@ function createPackageIdentityRow(input: CommunityOgImageInput): SatoriElement {
 			},
 			children: [
 				{
-					type: 'img',
+					type: 'div',
 					props: {
-						src: input.iconDataUri,
-						width: PACKAGE_ICON_SIZE,
-						height: PACKAGE_ICON_SIZE,
+						// Same white plate as `CommunityListingIcon` / `getLogoWellCss`
+						// so transparent third-party marks stay readable on the dark card.
 						style: {
+							display: 'flex',
+							alignItems: 'center',
+							justifyContent: 'center',
 							width: PACKAGE_ICON_SIZE,
 							height: PACKAGE_ICON_SIZE,
 							borderRadius: PACKAGE_ICON_RADIUS,
 							marginRight: 24,
-							objectFit: 'contain',
+							backgroundColor: colors.logoWell,
+							borderWidth: PACKAGE_ICON_WELL_BORDER,
+							borderStyle: 'solid',
+							borderColor: palette.border,
+							overflow: 'hidden',
+						},
+						children: {
+							type: 'img',
+							props: {
+								src: input.iconDataUri,
+								width: PACKAGE_ICON_SIZE,
+								height: PACKAGE_ICON_SIZE,
+								style: {
+									width: PACKAGE_ICON_SIZE,
+									height: PACKAGE_ICON_SIZE,
+									objectFit: 'contain',
+								},
+							},
 						},
 					},
 				},
@@ -184,7 +206,9 @@ function createPackageIdentityRow(input: CommunityOgImageInput): SatoriElement {
 	}
 }
 
-function createOgMarkup(input: CommunityOgImageInput): SatoriElement {
+export function createCommunityOgMarkup(
+	input: CommunityOgImageInput,
+): SatoriElement {
 	const palette = getOgPalette(input.theme)
 	const description = truncateOgText(input.description, DESCRIPTION_MAX_LENGTH)
 	const starRow = createStarRow(input)
@@ -279,5 +303,7 @@ export async function renderCommunityOgImage(
 	input: CommunityOgImageInput & { assets?: OgAssetsFetcher },
 ): Promise<Uint8Array<ArrayBuffer>> {
 	await ensureRenderPipelineReady({ assets: input.assets })
-	return renderOgImage(createOgMarkup(input), { assets: input.assets })
+	return renderOgImage(createCommunityOgMarkup(input), {
+		assets: input.assets,
+	})
 }
