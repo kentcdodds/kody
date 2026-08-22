@@ -11,6 +11,7 @@ import {
 	isStuckMcpAuthenticatingWithoutAuthUrl,
 	resolveMcpOAuthCallbackOutcome,
 } from './oauth-callback-outcome.ts'
+import { withStaticTransportHeaders } from './transport-headers.ts'
 import {
 	createInitialMcpConnectionEpisode,
 	mcpConnectionEpisodeStorageKey,
@@ -199,11 +200,11 @@ class McpClientHubBase extends DurableObject<Env> {
 			url: input.url,
 			name: input.name,
 			callbackUrl: input.callbackUrl,
-			transport: {
-				type: 'auto',
+			transport: withStaticTransportHeaders({
+				type: 'auto' as const,
 				authProvider,
 				...(input.headers ? { headers: input.headers } : {}),
-			},
+			}),
 		})
 		const connected = await this.manager.connectToServer(input.serverId)
 		if (connected.state === 'connected') {
@@ -465,11 +466,11 @@ class McpClientHubBase extends DurableObject<Env> {
 				callbackUrl: input.callbackUrl,
 				...(clientId ? { clientId } : {}),
 				...(existingOptions?.client ? { client: existingOptions.client } : {}),
-				transport: {
+				transport: withStaticTransportHeaders({
 					...existingOptions?.transport,
 					type: existingOptions?.transport.type ?? 'auto',
 					authProvider,
-				},
+				}),
 			})
 		} catch (error) {
 			await this.manager.removeServer(input.serverId).catch(() => {})
@@ -495,11 +496,11 @@ class McpClientHubBase extends DurableObject<Env> {
 					...(existingOptions?.client
 						? { client: existingOptions.client }
 						: {}),
-					transport: {
+					transport: withStaticTransportHeaders({
 						...existingOptions?.transport,
 						type: existingOptions?.transport.type ?? 'auto',
 						authProvider: originalAuthProvider,
-					},
+					}),
 				})
 				.catch(() => {})
 			throw error
