@@ -342,7 +342,7 @@ Guarantees and rules:
   `prefers-reduced-motion` snaps and does not animate. A frozen tab (rAF gap,
   hidden, or a late timeout) snaps to the official count instead of rolling
   through every missed integer. Live leftover ticks in a busy second still step
-  +1.
+  +1; leftover catch-up delays stay under that freeze window.
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration

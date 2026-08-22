@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest'
 import {
+	codeRunsCatchUpDelayMs,
 	codeRunsCatchUpSnapAfterMs,
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
@@ -211,6 +212,13 @@ test('nextDisplayedCodeRunsCount snaps after a freeze and steps while live', () 
 			official: 108,
 			elapsedMsSinceDisplay: codeRunsCatchUpSnapAfterMs,
 		}),
+	).toBe(101)
+	expect(
+		nextDisplayedCodeRunsCount({
+			displayed: 100,
+			official: 108,
+			elapsedMsSinceDisplay: codeRunsCatchUpSnapAfterMs + 1,
+		}),
 	).toBe(108)
 	expect(
 		nextDisplayedCodeRunsCount({
@@ -226,4 +234,14 @@ test('nextDisplayedCodeRunsCount snaps after a freeze and steps while live', () 
 			elapsedMsSinceDisplay: 16,
 		}),
 	).toBe(161)
+})
+
+test('codeRunsCatchUpDelayMs stays under the freeze snap for live leftover rolls', () => {
+	expect(codeRunsCatchUpDelayMs(1)).toBe(16)
+	expect(codeRunsCatchUpDelayMs(2)).toBe(500)
+	for (let behind = 1; behind <= 60; behind += 1) {
+		expect(codeRunsCatchUpDelayMs(behind)).toBeLessThan(
+			codeRunsCatchUpSnapAfterMs,
+		)
+	}
 })

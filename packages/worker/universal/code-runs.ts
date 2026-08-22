@@ -95,12 +95,22 @@ export function nextDisplayedCodeRunsCount(input: {
 	if (input.official <= input.displayed) return input.displayed
 	const behind = input.official - input.displayed
 	if (
-		input.elapsedMsSinceDisplay >= codeRunsCatchUpSnapAfterMs ||
+		input.elapsedMsSinceDisplay > codeRunsCatchUpSnapAfterMs ||
 		behind > codeRunsCatchUpSnapBehind
 	) {
 		return input.official
 	}
 	return input.displayed + 1
+}
+
+/**
+ * Delay before the next live leftover +1. Uses the owed count from
+ * before the step so a single remaining integer cannot wait a full
+ * second and trip the freeze snap.
+ */
+export function codeRunsCatchUpDelayMs(behindBeforeStep: number): number {
+	if (behindBeforeStep <= 1) return 16
+	return Math.max(16, Math.floor(1000 / behindBeforeStep))
 }
 
 const coarseSegmentCount = 72
