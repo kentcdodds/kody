@@ -268,6 +268,14 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		reason:
 			'Operational search-index reconcile debt omitted from portable export; account deletion removes outstanding debt rows.',
 	},
+	{
+		kind: 'user_id',
+		table: 'vector_embed_fingerprints',
+		includeInExport: false,
+		surface: 'vector_embed_fingerprints',
+		reason:
+			'Derived Vectorize embed-text skip cache omitted from portable export; account deletion removes user-owned fingerprint rows. Builtin rows use the reserved __kody_builtin__ owner id.',
+	},
 	{ kind: 'user_id', table: 'entity_source_artifacts_push_subscriptions' },
 	{ kind: 'user_id', table: 'entity_sources' },
 	{

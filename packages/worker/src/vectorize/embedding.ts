@@ -36,7 +36,7 @@ export const CAPABILITY_EMBEDDING_MODEL = '@cf/baai/bge-small-en-v1.5'
 export const CAPABILITY_EMBEDDING_BATCH_SIZE = 8
 export const CAPABILITY_EMBEDDING_MAX_INPUT_CHARS = 2_000
 
-function truncateEmbeddingInput(text: string) {
+export function truncateEmbeddingInput(text: string) {
 	if (text.length <= CAPABILITY_EMBEDDING_MAX_INPUT_CHARS) return text
 	return text.slice(0, CAPABILITY_EMBEDDING_MAX_INPUT_CHARS)
 }

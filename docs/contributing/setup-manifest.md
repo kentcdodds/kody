@@ -684,11 +684,14 @@ How to get/set each value:
     with `Authorization: Bearer …` and loops on the returned `cursor` until
     `complete` is true (each POST is bounded to about 70 seconds; CI follows the
     cursor for up to 8 sweeps), refreshing builtin capability embeddings.
-    User-owned memory, job, and saved-package vectors upsert on write. For a
-    full rebuild after changing the embedding model, pooling, or Vectorize index
-    dimensions, POST without `phases` and follow the same cursor loop so
-    existing rows are rebuilt with compatible vectors. The same bearer
-    authenticates `POST /__maintenance/reencrypt-secrets` (see
+    User-owned memory, job, and saved-package vectors upsert on write. Unchanged
+    embed text (same model, dimensions, and fingerprint version) skips embed and
+    Vectorize upsert. For a full rebuild after changing the embedding model,
+    pooling, or Vectorize index dimensions, POST without `phases` and follow the
+    same cursor loop so existing rows are rebuilt with compatible vectors. After
+    Vectorize data loss, include `{ "force": true }` so restored D1 fingerprints
+    cannot skip an empty index. The same bearer authenticates
+    `POST /__maintenance/reencrypt-secrets` (see
     [Secret rotation](./secret-rotation.md)). Local and preview environments can
     omit it; CI skips reindex and execute-smoke when the secret is unset.
 - `JOB_REINDEX_SECRET` (optional; jobs-only reindex)

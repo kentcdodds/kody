@@ -35,5 +35,6 @@ export async function reindexCapabilityVectors(
 		candidates,
 		afterId: options?.afterId,
 		deadlineMs: options?.deadlineMs,
+		force: options?.force,
 	})
 }

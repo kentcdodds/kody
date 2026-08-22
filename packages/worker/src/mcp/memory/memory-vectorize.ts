@@ -3,6 +3,11 @@ import {
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 } from '#worker/vectorize/embedding.ts'
+import {
+	recordVectorEmbedFingerprint,
+	shouldSkipVectorEmbed,
+	tryDeleteVectorEmbedFingerprint,
+} from '#worker/vectorize/embed-fingerprints.ts'
 import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 import { type MemoryStatus } from './types.ts'
@@ -23,12 +28,24 @@ export async function upsertMemoryVector(
 ): Promise<void> {
 	const index = getCapabilityVectorIndex(env)
 	if (!index || isCapabilitySearchOffline(env)) return
+	const vectorId = memoryVectorId(input.memoryId)
+	const namespace = userVectorNamespace(input.userId)
+	if (
+		await shouldSkipVectorEmbed({
+			env,
+			userId: namespace,
+			vectorId,
+			text: input.embedText,
+		})
+	) {
+		return
+	}
 	const values = await embedTextForVectorize(env, input.embedText)
 	await index.upsert([
 		{
-			id: memoryVectorId(input.memoryId),
+			id: vectorId,
 			values,
-			namespace: userVectorNamespace(input.userId),
+			namespace,
 			metadata: {
 				kind: 'memory',
 				userId: input.userId,
@@ -37,13 +54,21 @@ export async function upsertMemoryVector(
 			},
 		},
 	])
+	await recordVectorEmbedFingerprint({
+		env,
+		userId: namespace,
+		vectorId,
+		text: input.embedText,
+	})
 }
 
 export async function deleteMemoryVector(
 	env: Env,
 	memoryId: string,
 ): Promise<void> {
+	const vectorId = memoryVectorId(memoryId)
+	await tryDeleteVectorEmbedFingerprint({ env, vectorId })
 	const index = getCapabilityVectorIndex(env)
 	if (!index || isCapabilitySearchOffline(env)) return
-	await index.deleteByIds([memoryVectorId(memoryId)])
+	await index.deleteByIds([vectorId])
 }

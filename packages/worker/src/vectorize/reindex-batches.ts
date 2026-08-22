@@ -1,5 +1,12 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { embedTextsForVectorize } from './embedding.ts'
+import {
+	hasVectorEmbedFingerprintDb,
+	tryReadVectorEmbedFingerprints,
+	tryWriteVectorEmbedFingerprints,
+	vectorEmbedContentHash,
+	vectorEmbedFingerprintKey,
+} from './embed-fingerprints.ts'
 
 export type VectorReindexFailurePhase = 'load' | 'embed' | 'upsert'
 
@@ -18,6 +25,7 @@ export type VectorReindexCandidate = {
 
 export type VectorReindexResult = {
 	upserted: number
+	skipped?: number
 	failed?: number
 	warning?: string
 	error?: string
@@ -37,12 +45,14 @@ export function mergeVectorReindexResults(
 	results: ReadonlyArray<VectorReindexResult>,
 ): VectorReindexResult {
 	let upserted = 0
+	let skipped = 0
 	let failed = 0
 	const failures: Array<VectorReindexFailure> = []
 	const failedIds: Array<string> = []
 	const seenFailedIds = new Set<string>()
 	for (const result of results) {
 		upserted += result.upserted
+		skipped += result.skipped ?? 0
 		failed += result.failed ?? 0
 		for (const failure of result.failures ?? []) {
 			if (failures.length < maxReportedFailures) failures.push(failure)
@@ -53,10 +63,13 @@ export function mergeVectorReindexResults(
 			failedIds.push(failedId)
 		}
 	}
-	if (failed === 0) return { upserted }
+	if (failed === 0) {
+		return skipped > 0 ? { upserted, skipped } : { upserted }
+	}
 	const message = `${failed} ${kind} vector(s) failed to reindex`
 	return {
 		upserted,
+		...(skipped > 0 ? { skipped } : {}),
 		failed,
 		failures,
 		...(failedIds.length > 0 ? { failedIds } : {}),
@@ -69,8 +82,10 @@ export async function reindexVectorCandidates(input: {
 	index: VectorizeIndex
 	kind: string
 	candidates: ReadonlyArray<VectorReindexCandidate>
+	force?: boolean
 }): Promise<VectorReindexResult> {
 	let upserted = 0
+	let skipped = 0
 	let failed = 0
 	const failures: Array<VectorReindexFailure> = []
 	const failedIds: Array<string> = []
@@ -114,29 +129,81 @@ export async function reindexVectorCandidates(input: {
 	}
 
 	async function processBatch(batch: ReadonlyArray<VectorReindexCandidate>) {
+		let pending = batch
+		let pendingHashes: Array<string> | null = null
+		if (!input.force && hasVectorEmbedFingerprintDb(input.env)) {
+			const hashed = await Promise.all(
+				batch.map(async (candidate) => ({
+					candidate,
+					contentHash: await vectorEmbedContentHash(candidate.text),
+				})),
+			)
+			const existing = await tryReadVectorEmbedFingerprints({
+				env: input.env,
+				keys: hashed.map((item) => ({
+					userId: item.candidate.namespace,
+					vectorId: item.candidate.id,
+				})),
+			})
+			if (existing) {
+				const changed: typeof hashed = []
+				for (const item of hashed) {
+					const key = vectorEmbedFingerprintKey(
+						item.candidate.namespace,
+						item.candidate.id,
+					)
+					if (existing.get(key) === item.contentHash) {
+						skipped += 1
+						continue
+					}
+					changed.push(item)
+				}
+				pending = changed.map((item) => item.candidate)
+				pendingHashes = changed.map((item) => item.contentHash)
+			} else {
+				pendingHashes = hashed.map((item) => item.contentHash)
+			}
+		}
+		if (pending.length === 0) return
+
 		let embeddings: Array<Array<number>>
 		try {
 			embeddings = await embedTextsForVectorize(
 				input.env,
-				batch.map((candidate) => candidate.text),
+				pending.map((candidate) => candidate.text),
 			)
 		} catch (error) {
-			await splitOrRecord(batch, 'embed', error)
+			await splitOrRecord(pending, 'embed', error)
 			return
 		}
 
 		try {
 			await input.index.upsert(
-				batch.map((candidate, index_) => ({
+				pending.map((candidate, index_) => ({
 					id: candidate.id,
 					values: embeddings[index_]!,
 					namespace: candidate.namespace,
 					metadata: candidate.metadata,
 				})),
 			)
-			upserted += batch.length
+			upserted += pending.length
+			if (hasVectorEmbedFingerprintDb(input.env)) {
+				const hashes =
+					pendingHashes ??
+					(await Promise.all(
+						pending.map((candidate) => vectorEmbedContentHash(candidate.text)),
+					))
+				await tryWriteVectorEmbedFingerprints({
+					env: input.env,
+					rows: pending.map((candidate, index_) => ({
+						userId: candidate.namespace,
+						vectorId: candidate.id,
+						contentHash: hashes[index_]!,
+					})),
+				})
+			}
 		} catch (error) {
-			await splitOrRecord(batch, 'upsert', error)
+			await splitOrRecord(pending, 'upsert', error)
 		}
 	}
 
@@ -150,10 +217,13 @@ export async function reindexVectorCandidates(input: {
 		)
 	}
 
-	if (failed === 0) return { upserted }
+	if (failed === 0) {
+		return skipped > 0 ? { upserted, skipped } : { upserted }
+	}
 
 	const result: VectorReindexResult = {
 		upserted,
+		...(skipped > 0 ? { skipped } : {}),
 		failed,
 		failures,
 		failedIds,

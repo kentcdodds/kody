@@ -238,7 +238,11 @@ node -e "const fs=require('node:fs'),{createHash}=require('node:crypto');console
 
 Restore rebuilds the derived stores below; do not treat them as recovery media:
 
-- Vectorize (`CAPABILITY_VECTOR_INDEX`) — reindex
+- Vectorize (`CAPABILITY_VECTOR_INDEX`) — reindex with
+  `POST /__maintenance/reindex-capabilities` `{ "force": true }` (omit `phases`
+  so every kind rebuilds; follow `cursor` until `complete`). D1 restore includes
+  `vector_embed_fingerprints`; without `force`, matching hashes skip Vectorize
+  upserts.
 - OAuth KV / browser sessions / provider tokens — users reconnect
 - Queues, Workflow instances, Durable Object alarms — recreate from config + D1
 - Derived community icons and ordinary KV caches
@@ -419,8 +423,10 @@ import init/ingest etag. Without that prelude, drills fail with errors like
    unless its final response has both `"done": true` and `"verified": true`.
 
 Disable ingress / put the app in maintenance before execute. After restore:
-reindex Vectorize, re-arm jobs/alarms from D1, recreate queues from Wrangler
-config, and expect users to reauthorize OAuth and reconnect MCP servers.
+reindex Vectorize (`POST /__maintenance/reindex-capabilities` with
+`{ "force": true }`, omit `phases`, follow `cursor` until `complete`), re-arm
+jobs/alarms from D1, recreate queues from Wrangler config, and expect users to
+reauthorize OAuth and reconnect MCP servers.
 
 ### Durable Object point-in-time recovery
 

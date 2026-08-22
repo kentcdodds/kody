@@ -104,20 +104,24 @@ test('capability reindex maintenance route rebuilds every vector kind and resume
 		{
 			afterId: null,
 			deadlineMs: expect.any(Number),
+			force: false,
 		},
 	)
 	expect(mockModule.reindexMemoryVectors).toHaveBeenCalledWith(env, {
 		afterId: null,
 		deadlineMs: expect.any(Number),
+		force: false,
 	})
 	expect(mockModule.reindexJobVectors).toHaveBeenCalledWith(env, {
 		afterId: null,
 		deadlineMs: expect.any(Number),
+		force: false,
 	})
 	expect(mockModule.reindexSavedPackageVectors).toHaveBeenCalledWith(env, {
 		baseUrl: 'https://kody.example.com',
 		afterId: null,
 		deadlineMs: expect.any(Number),
+		force: false,
 	})
 
 	resetMocks()
@@ -169,6 +173,7 @@ test('capability reindex maintenance route rebuilds every vector kind and resume
 	expect(mockModule.reindexMemoryVectors).toHaveBeenCalledWith(env, {
 		afterId: 'memory-8',
 		deadlineMs: expect.any(Number),
+		force: false,
 	})
 
 	const invalidCursorResponse = await handleCapabilityReindexRequest(
@@ -323,4 +328,65 @@ test('capability reindex can limit work to builtin capabilities for production d
 	)
 	expect(workflow).toContain('payload=\'{"phases":["capabilities"]}\'')
 	expect(workflow).toContain('{phases:["capabilities"],cursor:$cursor}')
+})
+
+test('capability reindex force ignores fingerprints and rejects a non-boolean force', async () => {
+	resetMocks()
+	mockModule.reindexCapabilityVectors.mockResolvedValue(completeStep(3))
+	mockModule.reindexMemoryVectors.mockResolvedValue(completeStep(2))
+	mockModule.reindexJobVectors.mockResolvedValue(completeStep(1))
+	mockModule.reindexSavedPackageVectors.mockResolvedValue(completeStep(4))
+	const env = {
+		CAPABILITY_REINDEX_SECRET: 'secret',
+	} as Env
+
+	const response = await handleCapabilityReindexRequest(
+		createReindexRequest({ force: true }),
+		env,
+	)
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({
+		ok: true,
+		complete: true,
+		phases: ['capabilities', 'memories', 'jobs', 'packages'],
+		capabilities: completeStep(3),
+		memories: completeStep(2),
+		jobs: completeStep(1),
+		packages: completeStep(4),
+	})
+	expect(mockModule.reindexCapabilityVectors).toHaveBeenCalledWith(
+		env,
+		expect.any(Object),
+		{
+			afterId: null,
+			deadlineMs: expect.any(Number),
+			force: true,
+		},
+	)
+	expect(mockModule.reindexMemoryVectors).toHaveBeenCalledWith(env, {
+		afterId: null,
+		deadlineMs: expect.any(Number),
+		force: true,
+	})
+	expect(mockModule.reindexJobVectors).toHaveBeenCalledWith(env, {
+		afterId: null,
+		deadlineMs: expect.any(Number),
+		force: true,
+	})
+	expect(mockModule.reindexSavedPackageVectors).toHaveBeenCalledWith(env, {
+		baseUrl: 'https://kody.example.com',
+		afterId: null,
+		deadlineMs: expect.any(Number),
+		force: true,
+	})
+
+	const invalidForce = await handleCapabilityReindexRequest(
+		createReindexRequest({ force: 'yes' }),
+		env,
+	)
+	expect(invalidForce.status).toBe(400)
+	await expect(invalidForce.json()).resolves.toEqual({
+		ok: false,
+		error: 'force must be a boolean.',
+	})
 })

@@ -83,6 +83,10 @@
 		{
 			"filename": "0020-user-mcp-oauth-clients.sql",
 			"sha256": "6b60b6a0387fac63ac58f584adfab068cf2541d925ebd2734d04dabbe2672112"
+		},
+		{
+			"filename": "0021-vector-embed-fingerprints.sql",
+			"sha256": "3ddb28704d61caeba6a28b669c4636a9aec2954e66997e1df67d60c68c0ef4e0"
 		}
 	]
 }

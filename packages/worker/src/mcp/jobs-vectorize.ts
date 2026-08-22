@@ -3,6 +3,11 @@ import {
 	getCapabilityVectorIndex,
 	isCapabilitySearchOffline,
 } from '#worker/vectorize/embedding.ts'
+import {
+	recordVectorEmbedFingerprint,
+	shouldSkipVectorEmbed,
+	tryDeleteVectorEmbedFingerprint,
+} from '#worker/vectorize/embed-fingerprints.ts'
 import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
 
@@ -20,19 +25,39 @@ export async function upsertJobVector(
 ): Promise<void> {
 	const index = getCapabilityVectorIndex(env)
 	if (!index || isCapabilitySearchOffline(env)) return
+	const vectorId = jobVectorId(input.jobId)
+	const namespace = userVectorNamespace(input.userId)
+	if (
+		await shouldSkipVectorEmbed({
+			env,
+			userId: namespace,
+			vectorId,
+			text: input.embedText,
+		})
+	) {
+		return
+	}
 	const values = await embedTextForVectorize(env, input.embedText)
 	await index.upsert([
 		{
-			id: jobVectorId(input.jobId),
+			id: vectorId,
 			values,
-			namespace: userVectorNamespace(input.userId),
+			namespace,
 			metadata: { kind: 'job', userId: input.userId },
 		},
 	])
+	await recordVectorEmbedFingerprint({
+		env,
+		userId: namespace,
+		vectorId,
+		text: input.embedText,
+	})
 }
 
 export async function deleteJobVector(env: Env, jobId: string): Promise<void> {
+	const vectorId = jobVectorId(jobId)
+	await tryDeleteVectorEmbedFingerprint({ env, vectorId })
 	const index = getCapabilityVectorIndex(env)
 	if (!index || isCapabilitySearchOffline(env)) return
-	await index.deleteByIds([jobVectorId(jobId)])
+	await index.deleteByIds([vectorId])
 }

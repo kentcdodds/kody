@@ -23,6 +23,7 @@ export type CapabilityReindexCursor = {
 export type VectorReindexSweepOptions = {
 	afterId?: string | null
 	deadlineMs?: number
+	force?: boolean
 }
 
 export type VectorReindexSweepResult = VectorReindexResult & {
@@ -104,6 +105,7 @@ export async function reindexVectorCandidateList(input: {
 	candidates: ReadonlyArray<VectorReindexCandidate>
 	afterId?: string | null
 	deadlineMs?: number
+	force?: boolean
 }): Promise<VectorReindexSweepResult> {
 	const startIndex = findResumeIndex(input.candidates, input.afterId)
 	const pageResults: Array<VectorReindexResult> = []
@@ -130,6 +132,7 @@ export async function reindexVectorCandidateList(input: {
 				index: input.index,
 				kind: input.kind,
 				candidates: batch,
+				force: input.force,
 			}),
 		)
 		afterId = batch[batch.length - 1]!.id
@@ -148,6 +151,7 @@ export async function reindexPagedVectorRows<Row>(input: {
 	pageSize: number
 	afterId?: string | null
 	deadlineMs?: number
+	force?: boolean
 	listPage: (input: {
 		afterId: string | null
 		limit: number
@@ -203,6 +207,7 @@ export async function reindexPagedVectorRows<Row>(input: {
 						index: input.index,
 						kind: input.kind,
 						candidates,
+						force: input.force,
 					}),
 				)
 			} else {
