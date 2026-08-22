@@ -24,7 +24,8 @@ Quick notes for getting a local kody environment running.
   namespace, then write generated Wrangler configs with real `database_id` and
   KV `id` values: `packages/worker/wrangler-production.generated.json` and
   `packages/worker/wrangler-preview.generated.json` (gitignored). Preview and
-  production also ensure sibling runtime/jobs worker configs and `JOBS_DB`. KV
+  production also ensure sibling runtime/jobs/app-surface worker configs and
+  `JOBS_DB`. KV
   titles follow the worker name: production defaults to `<worker-name>-oauth`;
   preview uses `<preview-worker-name>-oauth-kv` (see
   `tools/ci/preview-resources.ts`).
@@ -92,7 +93,7 @@ Quick notes for getting a local kody environment running.
 - `npm run validate` is the single authoritative local gate. It is read-only and
   executes `format:check`, `lint`, `typecheck`, `test:node`, `test:workers`,
   Playwright E2E, MCP E2E, `backup:build`, `status:build`, `nx-cache:build`,
-  `jobs:build`, `runtime:build`, `primitives:check`, `migrations:check`,
+  `jobs:build`, `runtime:build`, `app:build`, `primitives:check`, `migrations:check`,
   `deploy-guardrails:check`, `docs:check-temporal`, and `docs:check-decisions`
   in parallel, reporting every failure (sibling checks are not aborted on the
   first failure, including when one of the two docs checks fails). The unit-test
@@ -255,6 +256,8 @@ The GitHub Actions preview workflow creates per-preview Cloudflare resources so
 each PR preview is isolated:
 
 - App worker: `<preview-worker-name>` (for kody: `kody-pr-<n>`)
+- App-surface worker: `<preview-worker-name>-app` (Remix/content; no Durable
+  Object classes)
 - Runtime worker: `<preview-worker-name>-runtime`
 - Jobs worker: `<preview-worker-name>-jobs`
 - App D1 database: `<preview-worker-name>-db`
@@ -264,8 +267,8 @@ each PR preview is isolated:
 - KV namespace (OAuth state): `<preview-worker-name>-oauth-kv`
 - Mock workers: `<preview-worker-name>-mock-<service>`
 
-When a PR is closed, the cleanup job deletes the preview app/runtime/jobs
-Workers, mock Workers, and these resources as well.
+When a PR is closed, the cleanup job deletes the preview
+app/app-surface/runtime/jobs Workers, mock Workers, and these resources as well.
 
 Cloudflare Workers supports version `preview_urls`, but those preview URLs are
 not available for Workers that use Durable Objects. The main app Worker binds

@@ -4,7 +4,12 @@ This document explains how an incoming request moves through the system.
 
 ## Entry point
 
-All traffic enters the Worker at `packages/worker/src/index.ts`.
+Public hostname traffic enters the main Worker at
+`packages/worker/src/index.ts`. Remix pages, blog, official guides, and static
+assets are served by the `kody-app` Worker (`packages/app-worker/`) when the
+`APP_SURFACE` service binding is present; the main script keeps MCP, OAuth,
+email, queues, and Durable Object classes
+([decision 0034](../decisions/0034-app-worker-content-deploy.md)).
 
 The default `fetch` handler delegates to `OAuthProvider` from
 `@cloudflare/workers-oauth-provider`, which means OAuth endpoints and token
@@ -81,15 +86,24 @@ Requests are handled in this order:
    - Retired `/@{username}/connectors/...` paths return `404`. Use outbound MCP
      servers (`kody.mcp[...]`) for home automation and similar tools.
 
-7. Static assets:
+7. Remix/content lane: when `APP_SURFACE` is bound, every remaining request is
+   forwarded to the `kody-app` Worker. That Worker serves static assets, the
+   Remix app, blog, and official guides, plus `GET /__app/health` and
+   `GET /__app/guides/:id` (JSON bodies for `coding_guide_get`). Tests and
+   single-worker local/bootstrap omit the binding and continue in-process
+   below. Adding a guide **id** still ships on main (`#worker/guides/catalog.ts`);
+   editing a guide body only needs a `kody-app` deploy.
+
+8. Static assets:
    - Served from `ASSETS` for `GET` and `HEAD` when available
    - Matching files under `packages/worker/public/` are asset-first at the edge
      (they do not enter this Worker list). That includes OpenAI Apps domain
      verification at `/.well-known/openai-apps-challenge`.
-8. Hosted package apps served inline on the app origin
+9. Hosted package apps served inline on the app origin
    (`/@{username}/packages/*`), only in confirmed non-production runtimes when
-   `PACKAGE_APP_BASE_URL` is unset.
-9. App server routes:
+   `PACKAGE_APP_BASE_URL` is unset. The main Worker handles this path **before**
+   the `APP_SURFACE` forward.
+10. App server routes:
    - Everything else is handled by `packages/worker/src/app/handler.ts`
    - Public agent-discovery documents (Worker-first, origin-aware) include
      `/robots.txt`, `/sitemap.xml`, `/auth.md`,

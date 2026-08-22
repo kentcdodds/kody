@@ -36,6 +36,10 @@ packages/worker/public/client-entry.js.map
 packages/worker/public/assets/
 packages/worker/public/client-manifest.json
 packages/worker/wrangler-preview.generated.json
+packages/worker/wrangler-preview-bootstrap.generated.json
 packages/worker/wrangler-production.generated.json
 packages/worker/src/generated/
 packages/runtime-worker/wrangler-local-dev.generated.json
+packages/app-worker/wrangler-local-dev.generated.json
+packages/app-worker/wrangler-preview.generated.json
+packages/app-worker/wrangler-production.generated.json

@@ -37,6 +37,10 @@ jobs:
       deploy_status_worker: ${{ steps.sha_guard.outputs.deploy_status_worker }}
       deploy_nx_cache_worker:
         ${{ steps.sha_guard.outputs.deploy_nx_cache_worker }}
+      deploy_main: ${{ steps.sha_guard.outputs.deploy_main }}
+      deploy_app_surface: ${{ steps.sha_guard.outputs.deploy_app_surface }}
+      deploy_runtime: ${{ steps.sha_guard.outputs.deploy_runtime }}
+      deploy_jobs: ${{ steps.sha_guard.outputs.deploy_jobs }}
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
@@ -73,6 +77,10 @@ jobs:
             echo "deploy_backup_control_plane=false" >> "$GITHUB_OUTPUT"
             echo "deploy_status_worker=false" >> "$GITHUB_OUTPUT"
             echo "deploy_nx_cache_worker=false" >> "$GITHUB_OUTPUT"
+            echo "deploy_main=false" >> "$GITHUB_OUTPUT"
+            echo "deploy_app_surface=false" >> "$GITHUB_OUTPUT"
+            echo "deploy_runtime=false" >> "$GITHUB_OUTPUT"
+            echo "deploy_jobs=false" >> "$GITHUB_OUTPUT"
             echo "Skipping deploy: target SHA is not current main HEAD."
             echo "target=$DEPLOY_SHA"
             echo "head=$HEAD_SHA"
@@ -87,11 +95,22 @@ jobs:
             echo "deploy_backup_control_plane=true" >> "$GITHUB_OUTPUT"
             echo "deploy_status_worker=true" >> "$GITHUB_OUTPUT"
             echo "deploy_nx_cache_worker=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_main=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_app_surface=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_runtime=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_jobs=true" >> "$GITHUB_OUTPUT"
             echo "Backup control plane deploy: forced (workflow_dispatch)."
             echo "Status worker deploy: forced (workflow_dispatch)."
             echo "Nx cache worker deploy: forced (workflow_dispatch)."
+            echo "Main/runtime/jobs/app-surface deploy: forced (workflow_dispatch)."
             exit 0
           fi
+
+          git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" \
+            | node tools/ci/deploy-path-filter.ts >> "$GITHUB_OUTPUT"
+          echo "Production path filter:"
+          git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" \
+            | node tools/ci/deploy-path-filter.ts
 
           if git diff --name-only "${DEPLOY_SHA}^" "${DEPLOY_SHA}" | grep -E \
             '^(\.github/workflows/deploy\.yml|tools/ci/backup-resources|packages/backup-control-plane/|packages/shared/src/backup-)'; then
@@ -130,7 +149,9 @@ jobs:
     name: ⏰ Deploy jobs worker
     timeout-minutes: 8
     needs: sha-guard
-    if: needs.sha-guard.outputs.should_deploy == 'true'
+    if: >-
+      needs.sha-guard.outputs.should_deploy == 'true' &&
+      needs.sha-guard.outputs.deploy_jobs == 'true'
     environment:
       name: production
     steps:
@@ -265,7 +286,9 @@ jobs:
     needs:
       - sha-guard
       - deploy-jobs-worker
-    if: needs.sha-guard.outputs.should_deploy == 'true'
+    if: >-
+      needs.sha-guard.outputs.should_deploy == 'true' &&
+      needs.sha-guard.outputs.deploy_main == 'true'
     environment:
       name: production
       url: ${{ steps.deploy.outputs.url }}
@@ -322,6 +345,19 @@ jobs:
             --worker-name kody-runtime \
             --main-worker-name kody-production \
             --out-config packages/runtime-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
+
+      - name: 🧩 Generate app-surface worker config
+        id: app_config
+        run: |
+          set -euo pipefail
+          node tools/ci/app-worker-config.ts generate \
+            --env production \
+            --main-config packages/worker/wrangler-production.generated.json \
+            --worker-name kody-app \
+            --runtime-worker-name kody-runtime \
+            --main-worker-name kody-production \
+            --jobs-worker-name kody-jobs \
+            --out-config packages/app-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
 
       - name: 🔐 Sync Cloudflare Secrets (bulk)
         env:
@@ -396,6 +432,45 @@ jobs:
           AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN
           --set-from-env-optional CLOUDFLARE_API_TOKEN
 
+      - name: 🔐 Sync Cloudflare Secrets to app-surface worker (bulk)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_CONFIG: ${{ steps.app_config.outputs.app_wrangler_config }}
+          COOKIE_SECRET: ${{ secrets.COOKIE_SECRET }}
+          SECRET_STORE_KEY: ${{ secrets.SECRET_STORE_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.OAUTH_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.OAUTH_GOOGLE_CLIENT_SECRET }}
+          X_CLIENT_ID: ${{ secrets.OAUTH_X_CLIENT_ID }}
+          X_CLIENT_SECRET: ${{ secrets.OAUTH_X_CLIENT_SECRET }}
+          DISCORD_CLIENT_ID: ${{ secrets.OAUTH_DISCORD_CLIENT_ID }}
+          DISCORD_CLIENT_SECRET: ${{ secrets.OAUTH_DISCORD_CLIENT_SECRET }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+          DISCORD_MEMBER_ROLE_ID: ${{ secrets.DISCORD_MEMBER_ROLE_ID }}
+          DISCORD_STANDARD_ROLE_ID: ${{ secrets.DISCORD_STANDARD_ROLE_ID }}
+          DISCORD_PRO_ROLE_ID: ${{ secrets.DISCORD_PRO_ROLE_ID }}
+          KIT_API_KEY: ${{ secrets.KIT_API_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+        run: >
+          node tools/ci/sync-worker-secrets.ts --env "" --name kody-app --config
+          "$WRANGLER_CONFIG" --set-from-env COOKIE_SECRET
+          --set-from-env-optional SECRET_STORE_KEY --set-from-env-optional
+          SENTRY_DSN --set-from-env-optional GITHUB_CLIENT_ID
+          --set-from-env-optional GITHUB_CLIENT_SECRET --set-from-env-optional
+          GOOGLE_CLIENT_ID --set-from-env-optional GOOGLE_CLIENT_SECRET
+          --set-from-env-optional X_CLIENT_ID --set-from-env-optional
+          X_CLIENT_SECRET --set-from-env-optional DISCORD_CLIENT_ID
+          --set-from-env-optional DISCORD_CLIENT_SECRET --set-from-env-optional
+          DISCORD_BOT_TOKEN --set-from-env-optional DISCORD_GUILD_ID
+          --set-from-env-optional DISCORD_MEMBER_ROLE_ID --set-from-env-optional
+          DISCORD_STANDARD_ROLE_ID --set-from-env-optional DISCORD_PRO_ROLE_ID
+          --set-from-env-optional KIT_API_KEY --set-from-env-optional
+          STRIPE_SECRET_KEY --set-from-env-optional STRIPE_WEBHOOK_SECRET
+
       - name: 🗄️ Apply D1 Migrations
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -465,6 +540,20 @@ jobs:
           RUNTIME_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-runtime.log kody-runtime)"
           if [ -n "$RUNTIME_URL" ]; then
             echo "url=$RUNTIME_URL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: ☁️ Deploy app-surface worker to Cloudflare Workers
+        id: deploy_app
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+          WRANGLER_CONFIG: ${{ steps.app_config.outputs.app_wrangler_config }}
+        run: |
+          set -euo pipefail
+          npm run deploy -- --name kody-app --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-app.log
+          APP_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-app.log kody-app)"
+          if [ -n "$APP_URL" ]; then
+            echo "url=$APP_URL" >> "$GITHUB_OUTPUT"
           fi
 
       - name: ☁️ Deploy to Cloudflare Workers
@@ -625,6 +714,43 @@ jobs:
           fi
           exit 1
 
+      - name: 🩺 Healthcheck app-surface worker (production)
+        shell: bash
+        env:
+          APP_URL: ${{ steps.deploy_app.outputs.url }}
+          EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${APP_URL:-}" ]; then
+            echo "Missing app-surface worker deploy URL output; cannot run healthcheck." >&2
+            exit 1
+          fi
+
+          HEALTHCHECK_URL="${APP_URL%/}/__app/health"
+          echo "Healthcheck URL: $HEALTHCHECK_URL"
+
+          attempts=20
+          delay_seconds=3
+
+          for i in $(seq 1 "$attempts"); do
+            echo "Attempt $i/$attempts"
+            if curl --fail --silent --show-error --location --max-time 10 \
+              --header "Accept: application/json" \
+              "$HEALTHCHECK_URL" > app-health.json && \
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('app-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.status !== 'ok') { console.error('app-healthcheck-unexpected-response', json); process.exit(1); } if (json?.commitSha !== expected) { console.error('app-healthcheck-unexpected-commit-sha', { expected, actual: json?.commitSha }); process.exit(1); } if (json?.cookieSecretConfigured !== true) { console.error('app-healthcheck-missing-cookie-secret', json); process.exit(1); } console.log('app-healthcheck-ok', json);"; then
+              exit 0
+            fi
+            sleep "$delay_seconds"
+          done
+
+          echo "App-surface worker healthcheck failed after ${attempts} attempts: $HEALTHCHECK_URL" >&2
+          if [ -f app-health.json ]; then
+            echo "Last response body:" >&2
+            cat app-health.json >&2
+          fi
+          exit 1
+
       - name: 🧪 Execute smoke check (production)
         shell: bash
         env:
@@ -724,6 +850,108 @@ jobs:
             payload="$(jq -nc --argjson cursor "$cursor" '{phases:["capabilities"],cursor:$cursor}')"
             sweep=$((sweep + 1))
           done
+
+  # Content/UI-only production deploys: update kody-app without uploading a
+  # new main/runtime/jobs script, so Durable Objects on those scripts are
+  # not reset.
+  deploy-app-surface:
+    runs-on: ubuntu-latest
+    name: 🖼️ Deploy app-surface worker
+    timeout-minutes: 12
+    needs:
+      - sha-guard
+    if: >-
+      needs.sha-guard.outputs.should_deploy == 'true' &&
+      needs.sha-guard.outputs.deploy_app_surface == 'true' &&
+      needs.sha-guard.outputs.deploy_main != 'true'
+    environment:
+      name: production
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.sha-guard.outputs.deploy_sha }}
+          fetch-depth: 0
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: 📥 Install Dependencies
+        run: npm ci
+
+      - name: 📝 Prepare worker env
+        run: cp packages/worker/.env.example packages/worker/.env
+
+      - name: 🧱 Ensure production resources
+        id: resources
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          APP_LEGACY_HOSTS: ${{ vars.APP_LEGACY_HOSTS }}
+          APP_LEGACY_REDIRECT: ${{ vars.APP_LEGACY_REDIRECT }}
+          PACKAGE_APP_LEGACY_HOSTS: ${{ vars.PACKAGE_APP_LEGACY_HOSTS }}
+          PACKAGE_APP_LEGACY_REDIRECT: ${{ vars.PACKAGE_APP_LEGACY_REDIRECT }}
+          USER_EMAIL_DOMAIN: ${{ vars.USER_EMAIL_DOMAIN }}
+          SYSTEM_EMAIL_DOMAIN: ${{ vars.SYSTEM_EMAIL_DOMAIN }}
+          LEGACY_USER_EMAIL_DOMAINS: ${{ vars.LEGACY_USER_EMAIL_DOMAINS }}
+          LEGACY_SYSTEM_EMAIL_DOMAINS: ${{ vars.LEGACY_SYSTEM_EMAIL_DOMAINS }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+        run: |
+          set -euo pipefail
+          node tools/ci/production-resources.ts ensure --out-config packages/worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
+
+      - name: 🧩 Generate app-surface worker config
+        id: app_config
+        run: |
+          set -euo pipefail
+          node tools/ci/app-worker-config.ts generate \
+            --env production \
+            --main-config packages/worker/wrangler-production.generated.json \
+            --worker-name kody-app \
+            --runtime-worker-name kody-runtime \
+            --main-worker-name kody-production \
+            --jobs-worker-name kody-jobs \
+            --out-config packages/app-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
+
+      - name: ☁️ Deploy app-surface worker to Cloudflare Workers
+        id: deploy_app
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+          WRANGLER_CONFIG: ${{ steps.app_config.outputs.app_wrangler_config }}
+        run: |
+          set -euo pipefail
+          npm run deploy -- --name kody-app --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-app.log
+          APP_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-app.log kody-app)"
+          if [ -n "$APP_URL" ]; then
+            echo "url=$APP_URL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 🩺 Healthcheck app-surface worker (production)
+        shell: bash
+        env:
+          APP_URL: ${{ steps.deploy_app.outputs.url }}
+          EXPECTED_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          HEALTHCHECK_URL="${APP_URL%/}/__app/health"
+          attempts=20
+          delay_seconds=3
+          for i in $(seq 1 "$attempts"); do
+            if curl --fail --silent --show-error --location --max-time 10 \
+              --header "Accept: application/json" \
+              "$HEALTHCHECK_URL" > app-health.json && \
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('app-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.status !== 'ok' || json?.commitSha !== expected || json?.cookieSecretConfigured !== true) { console.error(json); process.exit(1); }"; then
+              exit 0
+            fi
+            sleep "$delay_seconds"
+          done
+          echo "App-surface worker healthcheck failed: $HEALTHCHECK_URL" >&2
+          exit 1
 
   deploy-status-worker:
     runs-on: ubuntu-latest

@@ -17,6 +17,7 @@ import {
 	resolveWranglerConfigPath,
 } from './tools/wrangler-env-config.ts'
 import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
+import { writeLocalAppDevConfig } from './tools/local-app-dev-config.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
@@ -35,6 +36,7 @@ const hasInspectorPortFlag = args.some(
 
 const commandArgs = [...args]
 let shouldAddRuntimeDevConfig = false
+let shouldAddAppDevConfig = false
 
 if (
 	!hasConfigFlag &&
@@ -74,6 +76,14 @@ if (
 	) {
 		shouldAddRuntimeDevConfig = true
 	}
+	const appWorkerConfigPath = 'packages/app-worker/wrangler.jsonc'
+	if (
+		args[0] === 'dev' &&
+		envName !== 'test' &&
+		existsSync(resolveWranglerConfigPath(appWorkerConfigPath, process.cwd()))
+	) {
+		shouldAddAppDevConfig = true
+	}
 }
 
 // The main worker config references pre-bundled modules in `src/generated/`
@@ -89,7 +99,11 @@ const configArgValue = getArgValue(args, '--config')
 const isRuntimeWorkerConfig = Boolean(
 	configArgValue?.includes('runtime-worker'),
 )
-if (isWorkerBuildCommand && (!hasConfigFlag || isRuntimeWorkerConfig)) {
+const isAppWorkerConfig = Boolean(configArgValue?.includes('app-worker'))
+if (
+	isWorkerBuildCommand &&
+	(!hasConfigFlag || isRuntimeWorkerConfig || isAppWorkerConfig)
+) {
 	await ensureWorkerBundlerModules()
 }
 
@@ -157,6 +171,17 @@ if (shouldAddRuntimeDevConfig) {
 		port: resolvedPort,
 	})
 	commandArgs.push('--config', runtimeDevConfigPath)
+}
+
+if (shouldAddAppDevConfig) {
+	const appDevConfigPath = await writeLocalAppDevConfig({
+		appConfigPath: 'packages/app-worker/wrangler.jsonc',
+		envName,
+		mainWorkerDevName: `kody-${envName}`,
+		runtimeWorkerDevName: 'kody-runtime',
+		port: resolvedPort,
+	})
+	commandArgs.push('--config', appDevConfigPath)
 }
 
 const processEnv = {

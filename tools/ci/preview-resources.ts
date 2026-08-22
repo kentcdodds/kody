@@ -382,6 +382,10 @@ async function ensurePreviewResources(options: CliOptions) {
 				binding: 'JOBS',
 				service: `${options.workerName}-jobs`,
 			},
+			{
+				binding: 'APP_SURFACE',
+				service: `${options.workerName}-app`,
+			},
 		],
 	})
 
@@ -430,6 +434,7 @@ function deletePreviewWorkers(workerName: string, dryRun: boolean) {
 	// The runtime worker binds the app worker's Durable Object classes, so
 	// delete it first to avoid dangling cross-script references.
 	deleteWorkerScript({ name: `${workerName}-runtime`, dryRun })
+	deleteWorkerScript({ name: `${workerName}-app`, dryRun })
 	deleteWorkerScript({ name: workerName, dryRun })
 	deleteWorkerScript({ name: `${workerName}-jobs`, dryRun })
 	for (const service of listMockServerNames()) {

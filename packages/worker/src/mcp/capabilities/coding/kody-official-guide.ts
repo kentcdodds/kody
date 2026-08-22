@@ -1,4 +1,8 @@
 import { z } from 'zod'
+import {
+	appWorkerGuidePath,
+	type AppWorkerGuideBody,
+} from '@kody-internal/shared/app-worker.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -6,10 +10,38 @@ import { getGuideById, guides } from '#worker/guides/catalog.ts'
 
 /**
  * Guide markdown is bundled from `docs/guides/` at build time (see
- * `#worker/guides/catalog.ts`), so this capability, the `/guides` web pages,
- * and the raw `text/markdown` responses always serve the same deployed
- * content with no request-time GitHub dependency.
+ * `#worker/guides/catalog.ts`). When `APP_SURFACE` is bound, the body is
+ * loaded from the app-surface Worker so a guide deploy does not require
+ * redeploying this MCP script. Tests and single-worker local dev read the
+ * in-process catalog.
  */
+
+export async function loadOfficialGuide(input: {
+	guideId: string
+	env: Pick<Env, 'APP_SURFACE'>
+}): Promise<AppWorkerGuideBody> {
+	const surface = input.env.APP_SURFACE
+	if (surface) {
+		const response = await surface.fetch(
+			new Request(`https://kody-app.internal${appWorkerGuidePath(input.guideId)}`),
+		)
+		if (response.status === 404) {
+			throw new Error(`Unknown Kody guide "${input.guideId}".`)
+		}
+		if (!response.ok) {
+			throw new Error(`Failed to load Kody guide "${input.guideId}".`)
+		}
+		return (await response.json()) as AppWorkerGuideBody
+	}
+	const guide = getGuideById(input.guideId)
+	if (!guide) {
+		throw new Error(`Unknown Kody guide "${input.guideId}".`)
+	}
+	return {
+		title: guide.title,
+		body: guide.body,
+	}
+}
 
 const guideIds = guides.map((guide) => guide.id)
 
@@ -191,15 +223,11 @@ export const kodyOfficialGuideCapability = defineDomainCapability(
 		destructive: false,
 		inputSchema,
 		outputSchema,
-		async handler(args, _ctx: CapabilityContext) {
-			const guide = getGuideById(args.guide)
-			if (!guide) {
-				throw new Error(`Unknown Kody guide "${args.guide}".`)
-			}
-			return {
-				title: guide.title,
-				body: guide.body,
-			}
+		async handler(args, ctx: CapabilityContext) {
+			return loadOfficialGuide({
+				guideId: args.guide,
+				env: ctx.env,
+			})
 		},
 	},
 )

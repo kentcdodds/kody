@@ -295,14 +295,15 @@ function removeRuntimeReferencesFromMainEnv(
 	mainWorkerName: string,
 ) {
 	if (Array.isArray(mainEnv.services)) {
-		mainEnv.services = mainEnv.services.filter(
-			(entry) =>
-				!(
-					entry &&
-					typeof entry === 'object' &&
-					(entry as JsonRecord).service === runtimeWorkerName
-				),
-		)
+		mainEnv.services = mainEnv.services.filter((entry) => {
+			if (!entry || typeof entry !== 'object') return true
+			const record = entry as JsonRecord
+			if (record.service === runtimeWorkerName) return false
+			// Fresh preview pairs cannot bind APP_SURFACE until that script
+			// exists; the app-worker generator also strips this binding.
+			if (record.binding === 'APP_SURFACE') return false
+			return true
+		})
 	}
 	const durableObjects = mainEnv.durable_objects
 	if (durableObjects && typeof durableObjects === 'object') {

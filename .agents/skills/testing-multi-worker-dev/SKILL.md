@@ -2,30 +2,35 @@
 name: testing-multi-worker-dev
 description:
   How to run and test kody's multi-worker local dev (main kody worker +
-  kody-runtime secondary config), including known wrangler multi-config pitfalls
-  (secondary worker env-name suffix, remote AI binding, .env secrets not
-  propagated) and how to verify runtime-worker forwarding.
+  kody-runtime + kody-app secondary configs), including known wrangler
+  multi-config pitfalls (secondary worker env-name suffix, remote AI binding,
+  .env secrets not propagated) and how to verify runtime-worker and
+  app-surface forwarding.
 ---
 
-# Testing multi-worker local dev (kody + kody-runtime)
+# Testing multi-worker local dev (kody + kody-runtime + kody-app)
 
 ## Basics
 
 - Node 26 required: `export PATH="$HOME/.nvm/versions/node/v26.7.0/bin:$PATH"`.
 - Run `npm run dev` in tmux; it starts the client watcher, the mock Cloudflare
-  API worker, and `wrangler dev --local` with TWO `--config`s (main
-  `packages/worker/wrangler.jsonc` + `packages/runtime-worker/wrangler.jsonc`)
-  in one miniflare. Default port 3742; the CLI picks the next free port if taken
-  — stale `workerd` processes commonly hold 3742, so `pkill -9 workerd` before
+  API worker, and `wrangler dev --local` with THREE `--config`s (main
+  `packages/worker/wrangler.jsonc` plus generated
+  `packages/runtime-worker/wrangler-local-dev.generated.json` and
+  `packages/app-worker/wrangler-local-dev.generated.json`) in one miniflare.
+  Default port 3742; the CLI picks the next free port if taken — stale
+  `workerd` processes commonly hold 3742, so `pkill -9 workerd` before
   restarting.
 - Local dev uses `--env production` (CLOUDFLARE_ENV defaults to production in
   `wrangler-env.ts`).
 - Migrate + seed login: `npm run migrate:local` then
   `node tools/seed-test-data.ts --local` → `kody@example.com` / `ilikecode`
   (admin) and `jane@example.com` / `ilikecode`.
-- Healthchecks: main `GET /health` → `{"ok":true,...}`; runtime worker serves
-  `GET /__runtime/health` (only reachable through the service binding locally —
-  hitting it on the main port should 404).
+- Healthchecks: main `GET /health` → `{"ok":true,...}` (forwarded to `kody-app`
+  when `APP_SURFACE` is bound); app-surface worker serves `GET /__app/health`;
+  runtime worker serves `GET /__runtime/health` (runtime and app-surface
+  health paths are only reachable through their service bindings locally —
+  hitting them on the main port should 404 unless forwarded).
 
 ## Known wrangler multi-config pitfalls (handled by a generated dev config)
 

@@ -90,6 +90,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run runtime:build
 
+      - name: 🖼️ App-surface build
+        if: ${{ !cancelled() }}
+        run: npm run app:build
+
       - name: 🗺️ Primitives
         if: ${{ !cancelled() }}
         run: npm run primitives:check

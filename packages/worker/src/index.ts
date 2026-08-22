@@ -369,6 +369,15 @@ const appHandler = withCors({
 			return new Response('Not Found', { status: 404 })
 		}
 
+		// Remix/content lane (ADR 0034): when the app-surface Worker service
+		// binding is configured, remaining requests (pages, blog, guides,
+		// static assets) are forwarded wholesale so those deploys do not
+		// reset Durable Objects on this script. Without the binding (tests,
+		// single-worker local dev) the in-process handlers below keep serving.
+		if (env.APP_SURFACE) {
+			return env.APP_SURFACE.fetch(request)
+		}
+
 		// Try to serve static assets for safe methods only. Any non-404 status
 		// (including 304 Not Modified for conditional requests) must be passed
 		// through; treating 304 as a miss would fall through to the app router

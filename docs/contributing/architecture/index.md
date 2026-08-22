@@ -12,8 +12,9 @@ to become.
 - [Project Intent](../project-intent.md): current scope, goals, and non-goals
   for the project.
 - [Request Lifecycle](./request-lifecycle.md): how requests are routed in the
-  Worker, including syntax highlighting on code-bearing pages and the short CDN
-  cache for anonymous marketing HTML.
+  Worker, including the `APP_SURFACE` forward to `kody-app` for Remix/content,
+  syntax highlighting on code-bearing pages, and the short CDN cache for
+  anonymous marketing HTML.
 - [Authentication](./authentication.md): app session auth and OAuth-protected
   MCP auth.
 - [Platform accounts](./platform-accounts.md): operator-provisioned platform

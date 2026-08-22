@@ -204,6 +204,10 @@ export const EnvSchema = object({
 		'Missing MCP_CLIENT_HUB binding for user-added MCP server connections.',
 	),
 	RUNTIME_WORKER: optionalFetcherSchema,
+	// Remix/content Worker (ADR 0034). Present in production/preview and
+	// multi-worker local dev; absent in tests and single-worker dev, where
+	// the main Worker serves the app surface itself.
+	APP_SURFACE: optionalFetcherSchema,
 	APP_BASE_URL: optionalUrlStringSchema,
 	// Comma-separated legacy app hostnames (for example `heykody.dev`) the
 	// Worker keeps serving alongside the canonical `APP_BASE_URL` host during
