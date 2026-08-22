@@ -24,7 +24,7 @@ you want runtime surfaces (exports, apps, jobs, webhooks).
 | `repo_promote_to_package`          | Full publish checks + saved-package projection when root `package.json` exists at HEAD.                                                                                                                                |
 | `repo_open_session` + session lane | File-level editing (`repo_edit_files`, `repo_apply_patch`, `repo_commit`, `repo_status`, `repo_diff`, `repo_log`, `repo_restore`, `repo_run_checks`, `repo_publish_session`, …) with `target: { kind: "repo", name }`. |
 
-Vectorize/search integration for plain repos is not in v1—use `repo_list` for
+Plain repos do not have Vectorize/search integration—use `repo_list` for
 discovery.
 
 ## Git lane

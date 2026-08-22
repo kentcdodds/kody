@@ -516,8 +516,8 @@ Recurring schedules belong on a saved package:
 - Each job run binds a job-scoped scratch bucket
   (`job:package-job:{packageId}:{encodeURIComponent(jobName)}`); that bucket is
   run-local
-- Package config (secrets, values, manifest mounts) stays keyed by the saved
-  package id
+- Package config (secrets and manifest mounts) stays keyed by the saved package
+  id
 - Shared durable data goes through `packageStorage()`
 
 Jobs are part of the package definition. Deferred one-shot work uses
