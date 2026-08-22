@@ -118,6 +118,19 @@ test('heading detection ignores fenced # lines', () => {
 			].join('\n'),
 		}),
 	).toEqual([])
+	expect(
+		findFirstMarkdownHeading(
+			[
+				'````md',
+				'```',
+				'# 0023: Inside a longer fence',
+				'```',
+				'````',
+				'',
+				'# 0022: Real heading',
+			].join('\n'),
+		),
+	).toBe('# 0022: Real heading')
 })
 
 test('index collisions ignore lab companion links', () => {

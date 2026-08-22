@@ -85,17 +85,43 @@ export function findOrphanLabCompanions(
 		)
 }
 
-const fenceLinePattern = /^ {0,3}(?:```|~~~)/
+const openingFencePattern = /^[ \t]{0,3}(?<fence>`{3,}|~{3,})/
+const closingFencePattern = /^[ \t]{0,3}(?<fence>`{3,}|~{3,})[ \t]*$/
 const atxHeadingLinePattern = /^ {0,3}# /
 
+type MarkdownFence = {
+	character: string
+	length: number
+}
+
+function parseFenceMarker(line: string, pattern: RegExp): MarkdownFence | null {
+	const fence = pattern.exec(line)?.groups?.fence
+	if (!fence) return null
+	return {
+		character: fence[0] ?? '',
+		length: fence.length,
+	}
+}
+
 export function findFirstMarkdownHeading(content: string): string | undefined {
-	let inFencedCodeBlock = false
+	let openFence: MarkdownFence | null = null
 	for (const line of content.split('\n')) {
-		if (fenceLinePattern.test(line)) {
-			inFencedCodeBlock = !inFencedCodeBlock
+		if (openFence) {
+			const closingFence = parseFenceMarker(line, closingFencePattern)
+			if (
+				closingFence?.character === openFence.character &&
+				closingFence.length >= openFence.length
+			) {
+				openFence = null
+			}
 			continue
 		}
-		if (!inFencedCodeBlock && atxHeadingLinePattern.test(line)) {
+		const openingFence = parseFenceMarker(line, openingFencePattern)
+		if (openingFence) {
+			openFence = openingFence
+			continue
+		}
+		if (atxHeadingLinePattern.test(line)) {
 			return line.trim()
 		}
 	}
