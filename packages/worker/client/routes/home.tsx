@@ -27,7 +27,7 @@ import {
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
-import { routes } from '#universal/routes.ts'
+import { LandingLoopPlayer } from './landing-loop-player.tsx'
 
 /**
  * heykody.app landing page, ported from the redesign prototype
@@ -359,11 +359,7 @@ export function HomeRoute(handle: Handle) {
 						<strong>pretty much anything</strong>. What will{' '}
 						<strong>you</strong> build?
 					</p>
-					<p class="landing-factory-walkthrough">
-						<a href={routes.guideDetail.href({ slug: 'how-kody-works' })}>
-							See the whole loop
-						</a>
-					</p>
+					<LandingLoopPlayer />
 				</section>
 
 				{/* ============ honest runtime ============ */}

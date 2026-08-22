@@ -725,6 +725,24 @@ test('renderAppPage embeds a tabular homepage code-runs ticker', async () => {
 	expect(html).not.toContain('aria-live')
 })
 
+test('renderAppPage embeds the homepage factory-loop conversation teaser', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+	const response = await renderAppPage({
+		request: new Request('https://example.com/'),
+		env,
+	})
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	expect(html).toContain('class="landing-loop"')
+	expect(html).toContain('Factory loop conversation')
+	expect(html).toContain('What did my favorite bot ship recently on GitHub?')
+	expect(html).toContain('/guides/how-kody-works')
+	expect(html).toContain('Read the walkthrough')
+	expect(html).not.toContain('See the whole loop')
+})
+
 test('signup social buttons are icon-only with accessible names', async () => {
 	resetDataCacheForTests()
 	setAuthSessionSecret(testCookieSecret)

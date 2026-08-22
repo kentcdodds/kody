@@ -1,0 +1,125 @@
+import { expect, test, vi } from 'vitest'
+import { howKodyWorksTranscriptActs } from './how-kody-works-transcript.ts'
+import {
+	createLandingLoopPlayer,
+	flattenTranscriptActs,
+	landingLoopHoldMs,
+	landingLoopTeaser,
+	landingLoopTeaserBeatCount,
+	waitLandingLoopHold,
+} from './landing-loop-state.ts'
+
+test('homepage loop player pauses for hover and explore, then play resumes and loops', async () => {
+	const beats = flattenTranscriptActs(howKodyWorksTranscriptActs)
+	expect(beats[0]).toMatchObject({
+		kind: 'act',
+		id: 'ask',
+		kicker: landingLoopTeaser.kicker,
+		title: landingLoopTeaser.title,
+	})
+	expect(beats[1]).toMatchObject({
+		kind: 'line',
+		actId: 'ask',
+		line: { role: 'user', text: landingLoopTeaser.user },
+	})
+	expect(
+		beats.some((beat) => beat.kind === 'act' && beat.id === 'invoke'),
+	).toBe(true)
+	expect(
+		beats.some((beat) => beat.kind === 'line' && beat.line.role === 'tools'),
+	).toBe(true)
+
+	const player = createLandingLoopPlayer({
+		beatCount: beats.length,
+		reducedMotion: false,
+	})
+	expect(player.revealedCount).toBe(landingLoopTeaserBeatCount)
+	expect(player.isPaused()).toBe(false)
+	expect(landingLoopHoldMs(beats[0]!)).toBe(1100)
+	expect(landingLoopHoldMs('loop')).toBe(4000)
+
+	player.setHover(true)
+	expect(player.isPaused()).toBe(true)
+	expect(player.advance()).toEqual({ didAdvance: false, looped: false })
+
+	player.setExplore(true)
+	player.setHover(false)
+	expect(player.isPaused()).toBe(true)
+	expect(player.pauseReasons()).toEqual(['explore'])
+
+	player.play()
+	expect(player.isPaused()).toBe(false)
+	expect(player.advance()).toEqual({ didAdvance: true, looped: false })
+	expect(player.revealedCount).toBe(landingLoopTeaserBeatCount + 1)
+
+	player.setHover(true)
+	player.play()
+	expect(player.isPaused()).toBe(false)
+	player.setHover(true)
+	expect(player.isPaused()).toBe(false)
+	player.setHover(false)
+	player.setHover(true)
+	expect(player.isPaused()).toBe(true)
+
+	player.setFocus(true)
+	player.setHover(false)
+	expect(player.isPaused()).toBe(true)
+	player.play()
+	expect(player.isPaused()).toBe(false)
+	player.setFocus(false)
+	player.setFocus(true)
+	expect(player.isPaused()).toBe(true)
+	player.play()
+
+	const still = createLandingLoopPlayer({
+		beatCount: beats.length,
+		reducedMotion: true,
+	})
+	expect(still.revealedCount).toBe(beats.length)
+	expect(still.isPaused()).toBe(true)
+	expect(still.advance()).toEqual({ didAdvance: false, looped: false })
+
+	const looper = createLandingLoopPlayer({
+		beatCount: 3,
+		reducedMotion: false,
+	})
+	expect(looper.revealedCount).toBe(landingLoopTeaserBeatCount)
+	expect(looper.advance()).toEqual({ didAdvance: true, looped: false })
+	expect(looper.revealedCount).toBe(3)
+	expect(looper.advance()).toEqual({ didAdvance: true, looped: true })
+	expect(looper.revealedCount).toBe(landingLoopTeaserBeatCount)
+
+	vi.useFakeTimers()
+	try {
+		const controller = new AbortController()
+		let paused = true
+		const listeners = new Set<() => void>()
+		const hold = waitLandingLoopHold({
+			ms: 400,
+			isPaused: () => paused,
+			subscribe: (listener) => {
+				listeners.add(listener)
+				return () => {
+					listeners.delete(listener)
+				}
+			},
+			signal: controller.signal,
+		})
+		await vi.advanceTimersByTimeAsync(400)
+		paused = false
+		for (const listener of listeners) listener()
+		await vi.advanceTimersByTimeAsync(400)
+		await expect(hold).resolves.toBe(true)
+
+		const aborted = waitLandingLoopHold({
+			ms: 800,
+			isPaused: () => false,
+			subscribe: () => () => {},
+			signal: controller.signal,
+		})
+		controller.abort()
+		await expect(aborted).resolves.toBe(false)
+	} finally {
+		vi.useRealTimers()
+	}
+})
