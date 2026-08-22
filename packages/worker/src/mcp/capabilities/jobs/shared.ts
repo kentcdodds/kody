@@ -1,6 +1,11 @@
 import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import {
+	isPackageOwnedJobId,
+	packageOwnedJobDeleteErrorMessage,
+} from '#worker/jobs/job-retention.ts'
 import { type JobManagerDebugState } from '#worker/jobs/manager-client.ts'
 import { logJobSchedulerEvent } from '#worker/jobs/scheduler-logging.ts'
 import {
@@ -609,6 +614,9 @@ export async function deleteJobFromArgs(input: {
 	args: JobDeleteCapabilityInput
 }) {
 	const user = requireMcpUser(input.callerContext)
+	if (isPackageOwnedJobId(input.args.id)) {
+		throw new McpCallerError(packageOwnedJobDeleteErrorMessage)
+	}
 	const { deleteJob } = await import('#worker/jobs/service.ts')
 	const result = await deleteJob({
 		env: input.env,

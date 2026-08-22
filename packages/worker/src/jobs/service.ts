@@ -94,6 +94,10 @@ import {
 	schedulerErrorFields,
 	type SchedulerJobOutcomeLog,
 } from './scheduler-logging.ts'
+import {
+	isPackageOwnedJobId,
+	packageOwnedJobDeleteErrorMessage,
+} from './job-retention.ts'
 import { buildPackageJobId, packageIdFromJobId } from './package-job-id.ts'
 
 export { getJob, getJobInspection, inspectJobsForUser, listJobs }
@@ -933,6 +937,12 @@ function assertPackageOwnedJobUpdateAllowsIdentityFields(input: {
 	)
 }
 
+export function assertJobDeleteAllowsJobId(jobId: string) {
+	if (isPackageOwnedJobId(jobId)) {
+		throw new McpCallerError(packageOwnedJobDeleteErrorMessage)
+	}
+}
+
 export async function createJob(input: {
 	env: Env
 	callerContext: McpCallerContext
@@ -1186,6 +1196,7 @@ export async function deleteJob(input: {
 	userId: string
 	jobId: string
 }) {
+	assertJobDeleteAllowsJobId(input.jobId)
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,

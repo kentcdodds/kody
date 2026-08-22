@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { packageOwnedJobDeleteErrorMessage } from '#worker/jobs/job-retention.ts'
 
 const mockModule = vi.hoisted(() => ({
 	deleteJob: vi.fn(),
@@ -296,6 +297,19 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 		job_id: 'job-123',
 		deleted: true,
 	})
+
+	await expect(
+		jobDeleteCapability.handler(
+			{
+				id: 'package-job:pkg-1:nightly',
+			},
+			{
+				env,
+				callerContext: signedInContext,
+			},
+		),
+	).rejects.toThrow(packageOwnedJobDeleteErrorMessage)
+	expect(mockModule.deleteJob).toHaveBeenCalledTimes(1)
 })
 
 test('job_update accepts interval and cron schedule replacements', async () => {

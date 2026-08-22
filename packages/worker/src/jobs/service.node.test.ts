@@ -31,6 +31,7 @@ import {
 	refreshPackageJobRowIdentity,
 } from '@kody-internal/shared/jobs/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import { packageOwnedJobDeleteErrorMessage } from './job-retention.ts'
 import { buildPackageJobId } from './package-job-id.ts'
 import {
 	type JobCreateInput,
@@ -2210,6 +2211,25 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	expect(leftoverCodeError).toBeInstanceOf(McpCallerError)
 	expect(leftoverCodeError).toMatchObject({
 		message: codeErrorMessage,
+	})
+
+	const packageDeleteError = await deleteJob({
+		env,
+		userId,
+		jobId,
+	}).catch((caught: unknown) => caught)
+	expect(packageDeleteError).toBeInstanceOf(McpCallerError)
+	expect(packageDeleteError).toMatchObject({
+		message: packageOwnedJobDeleteErrorMessage,
+	})
+	expect(
+		await getJobInspection({
+			env,
+			userId,
+			jobId,
+		}),
+	).toMatchObject({
+		job: { id: jobId },
 	})
 })
 
