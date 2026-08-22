@@ -88,7 +88,7 @@ export function CodeRunsTicker(
 			if (handle.signal.aborted) return
 			const gap = timestamp - lastFrameAt
 			lastFrameAt = timestamp
-			if (gap >= codeRunsCatchUpSnapAfterMs) {
+			if (gap > codeRunsCatchUpSnapAfterMs) {
 				snapToOfficial()
 				scheduleNext()
 			}

@@ -238,7 +238,8 @@ test('nextDisplayedCodeRunsCount snaps after a freeze and steps while live', () 
 
 test('codeRunsCatchUpDelayMs stays under the freeze snap for live leftover rolls', () => {
 	expect(codeRunsCatchUpDelayMs(1)).toBe(16)
-	expect(codeRunsCatchUpDelayMs(2)).toBe(500)
+	expect(codeRunsCatchUpDelayMs(102 - 100)).toBe(500)
+	expect(codeRunsCatchUpDelayMs(102 - 101)).toBe(16)
 	for (let behind = 1; behind <= 60; behind += 1) {
 		expect(codeRunsCatchUpDelayMs(behind)).toBeLessThan(
 			codeRunsCatchUpSnapAfterMs,
