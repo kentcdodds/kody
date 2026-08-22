@@ -6,6 +6,7 @@ import {
 	checkDecisionRecordNumbers,
 	classifyDecisionRecordFilename,
 	findDuplicatePrimaryPrefixes,
+	findFirstMarkdownHeading,
 	findHeadingPrefixMismatches,
 	findIndexPrimaryNumberCollisions,
 	findOrphanLabCompanions,
@@ -89,6 +90,32 @@ test('heading prefix must match the filename number', () => {
 			filename: 'docs/contributing/decisions/0033-memory-auto-surface-lab.md',
 			prefix: '0033',
 			content: '# 0033 lab: memory auto-surface\n',
+		}),
+	).toEqual([])
+})
+
+test('heading detection ignores fenced # lines', () => {
+	expect(
+		findFirstMarkdownHeading(`
+\`\`\`md
+# 0023: Example in a fence
+\`\`\`
+
+# 0022: Real heading
+`),
+	).toBe('# 0022: Real heading')
+	expect(
+		findHeadingPrefixMismatches({
+			filename: 'docs/contributing/decisions/0022-retire-values-primitive.md',
+			prefix: '0022',
+			content: [
+				'```md',
+				'# 0023: Example in a fence',
+				'```',
+				'',
+				'# 0022: Retire the values primitive',
+				'',
+			].join('\n'),
 		}),
 	).toEqual([])
 })

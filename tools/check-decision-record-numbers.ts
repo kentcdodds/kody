@@ -85,15 +85,29 @@ export function findOrphanLabCompanions(
 		)
 }
 
+const fenceLinePattern = /^ {0,3}(?:```|~~~)/
+const atxHeadingLinePattern = /^ {0,3}# /
+
+export function findFirstMarkdownHeading(content: string): string | undefined {
+	let inFencedCodeBlock = false
+	for (const line of content.split('\n')) {
+		if (fenceLinePattern.test(line)) {
+			inFencedCodeBlock = !inFencedCodeBlock
+			continue
+		}
+		if (!inFencedCodeBlock && atxHeadingLinePattern.test(line)) {
+			return line.trim()
+		}
+	}
+	return undefined
+}
+
 export function findHeadingPrefixMismatches(input: {
 	filename: string
 	prefix: string
 	content: string
 }): Array<string> {
-	const firstHeading = input.content
-		.split('\n')
-		.map((line) => line.trim())
-		.find((line) => line.startsWith('# '))
+	const firstHeading = findFirstMarkdownHeading(input.content)
 	if (!firstHeading) {
 		return [`${input.filename} is missing a top-level heading.`]
 	}
