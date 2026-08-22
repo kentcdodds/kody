@@ -51,7 +51,9 @@ test('app worker serves official guide JSON for coding_guide_get', async () => {
 
 test('app worker 404s unknown official guides', async () => {
 	const response = await appWorker.fetch(
-		new Request(`https://kody-app.internal${appWorkerGuidePath('not-a-guide')}`),
+		new Request(
+			`https://kody-app.internal${appWorkerGuidePath('not-a-guide')}`,
+		),
 		env(),
 		{} as ExecutionContext,
 	)

@@ -3,8 +3,8 @@
 The Remix/content lane extracted from the main `kody` Worker per
 [ADR 0034](../../docs/contributing/decisions/0034-app-worker-content-deploy.md):
 browser UI, blog posts, official guides, and static assets. This script owns
-**no Durable Object classes**, so a guide, blog, or UI deploy does not reset
-MCP or other Durable Objects on the main Worker.
+**no Durable Object classes**, so a guide, blog, or UI deploy does not reset MCP
+or other Durable Objects on the main Worker.
 
 The Worker entry module is
 [`packages/worker/src/app-worker.ts`](../worker/src/app-worker.ts): the app

@@ -4,8 +4,8 @@ description:
   How to run and test kody's multi-worker local dev (main kody worker +
   kody-runtime + kody-app secondary configs), including known wrangler
   multi-config pitfalls (secondary worker env-name suffix, remote AI binding,
-  .env secrets not propagated) and how to verify runtime-worker and
-  app-surface forwarding.
+  .env secrets not propagated) and how to verify runtime-worker and app-surface
+  forwarding.
 ---
 
 # Testing multi-worker local dev (kody + kody-runtime + kody-app)
@@ -18,9 +18,8 @@ description:
   `packages/worker/wrangler.jsonc` plus generated
   `packages/runtime-worker/wrangler-local-dev.generated.json` and
   `packages/app-worker/wrangler-local-dev.generated.json`) in one miniflare.
-  Default port 3742; the CLI picks the next free port if taken — stale
-  `workerd` processes commonly hold 3742, so `pkill -9 workerd` before
-  restarting.
+  Default port 3742; the CLI picks the next free port if taken — stale `workerd`
+  processes commonly hold 3742, so `pkill -9 workerd` before restarting.
 - Local dev uses `--env production` (CLOUDFLARE_ENV defaults to production in
   `wrangler-env.ts`).
 - Migrate + seed login: `npm run migrate:local` then
@@ -28,9 +27,9 @@ description:
   (admin) and `jane@example.com` / `ilikecode`.
 - Healthchecks: main `GET /health` → `{"ok":true,...}` (forwarded to `kody-app`
   when `APP_SURFACE` is bound); app-surface worker serves `GET /__app/health`;
-  runtime worker serves `GET /__runtime/health` (runtime and app-surface
-  health paths are only reachable through their service bindings locally —
-  hitting them on the main port should 404 unless forwarded).
+  runtime worker serves `GET /__runtime/health` (runtime and app-surface health
+  paths are only reachable through their service bindings locally — hitting them
+  on the main port should 404 unless forwarded).
 
 ## Known wrangler multi-config pitfalls (handled by a generated dev config)
 

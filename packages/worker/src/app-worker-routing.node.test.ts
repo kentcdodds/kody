@@ -29,7 +29,10 @@ test('app-surface owns Remix, blog, guides, and asset paths', () => {
 		isAppSurfaceOwnedRequest(request('https://kody.codes/styles.css'), env),
 	).toBe(true)
 	expect(
-		isAppSurfaceOwnedRequest(request('https://kody.codes/client-entry.js'), env),
+		isAppSurfaceOwnedRequest(
+			request('https://kody.codes/client-entry.js'),
+			env,
+		),
 	).toBe(true)
 	expect(
 		isAppSurfaceOwnedRequest(request('https://kody.codes/health'), env),
@@ -40,9 +43,9 @@ test('app-surface does not own MCP, OAuth, or maintenance paths', () => {
 	expect(isMainWorkerPlatformPath('/mcp')).toBe(true)
 	expect(isMainWorkerPlatformPath('/mcp/')).toBe(true)
 	expect(isMainWorkerPlatformPath('/oauth/authorize')).toBe(true)
-	expect(isMainWorkerPlatformPath('/.well-known/oauth-protected-resource')).toBe(
-		true,
-	)
+	expect(
+		isMainWorkerPlatformPath('/.well-known/oauth-protected-resource'),
+	).toBe(true)
 	expect(isMainWorkerPlatformPath('/__maintenance/reindex-capabilities')).toBe(
 		true,
 	)

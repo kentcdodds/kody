@@ -90,8 +90,8 @@ Requests are handled in this order:
    forwarded to the `kody-app` Worker. That Worker serves static assets, the
    Remix app, blog, and official guides, plus `GET /__app/health` and
    `GET /__app/guides/:id` (JSON bodies for `coding_guide_get`). Tests and
-   single-worker local/bootstrap omit the binding and continue in-process
-   below. Adding a guide **id** still ships on main (`#worker/guides/catalog.ts`);
+   single-worker local/bootstrap omit the binding and continue in-process below.
+   Adding a guide **id** still ships on main (`#worker/guides/catalog.ts`);
    editing a guide body only needs a `kody-app` deploy.
 
 8. Static assets:
@@ -104,15 +104,16 @@ Requests are handled in this order:
    `PACKAGE_APP_BASE_URL` is unset. The main Worker handles this path **before**
    the `APP_SURFACE` forward.
 10. App server routes:
-   - Everything else is handled by `packages/worker/src/app/handler.ts`
-   - Public agent-discovery documents (Worker-first, origin-aware) include
-     `/robots.txt`, `/sitemap.xml`, `/auth.md`,
-     `/.well-known/mcp/server-card.json`, `/.well-known/api-catalog`,
-     `/.well-known/agent-skills/index.json`, skill markdown under
-     `/.well-known/agent-skills/:skillId/SKILL.md`, and
-     `/.well-known/security.txt`. The homepage adds RFC 8288 `Link` headers to
-     those documents and serves markdown when `Accept` prefers `text/markdown`.
-     DNS-AID (`_mcp._agents.<apex>` SVCB/HTTPS) is zone DNS, not a Worker route.
+
+- Everything else is handled by `packages/worker/src/app/handler.ts`
+- Public agent-discovery documents (Worker-first, origin-aware) include
+  `/robots.txt`, `/sitemap.xml`, `/auth.md`,
+  `/.well-known/mcp/server-card.json`, `/.well-known/api-catalog`,
+  `/.well-known/agent-skills/index.json`, skill markdown under
+  `/.well-known/agent-skills/:skillId/SKILL.md`, and
+  `/.well-known/security.txt`. The homepage adds RFC 8288 `Link` headers to
+  those documents and serves markdown when `Accept` prefers `text/markdown`.
+  DNS-AID (`_mcp._agents.<apex>` SVCB/HTTPS) is zone DNS, not a Worker route.
 
 ## Workflow runtime
 

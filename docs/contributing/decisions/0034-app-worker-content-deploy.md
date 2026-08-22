@@ -9,18 +9,18 @@
 lanes and left Remix, blog, official guides, MCP, OAuth, and the remaining
 Durable Object classes on the main `kody` script. Cloudflare assigns Durable
 Object instances a Worker version: any `wrangler deploy` of the script that
-**owns** those classes resets them (`Durable Object reset because its code was
-updated`), including uploads that only change static assets or markdown imported
-into the bundle.
+**owns** those classes resets them
+(`Durable Object reset because its code was updated`), including uploads that
+only change static assets or markdown imported into the bundle.
 
 Blog posts, official guides (`docs/guides/`), and Remix UI change more often
-than MCP or Durable Object code. Shipping those from the DO-owning script
-resets live MCP sessions, mailboxes, repo sessions, and other main-script
-objects for a content edit.
+than MCP or Durable Object code. Shipping those from the DO-owning script resets
+live MCP sessions, mailboxes, repo sessions, and other main-script objects for a
+content edit.
 
-Moving the remaining Durable Object classes off main would be a script
-migration (the risky 0016 step). Assets-on-the-same-worker does not help: a new
-version of that script still resets its objects.
+Moving the remaining Durable Object classes off main would be a script migration
+(the risky 0016 step). Assets-on-the-same-worker does not help: a new version of
+that script still resets its objects.
 
 ## Decision
 
@@ -41,8 +41,8 @@ local/bootstrap omit `APP_SURFACE` and serve the app surface in-process.
 Content/UI-only production deploys upload only `kody-app`; main, runtime, and
 jobs versions stay put, so those Durable Objects are not reset. Cost: another
 wrangler config, preview bootstrap ordering (`kody-app` must exist before main
-binds `APP_SURFACE`), and a path filter that still deploys main when
-package-app handlers or the guide catalog change.
+binds `APP_SURFACE`), and a path filter that still deploys main when package-app
+handlers or the guide catalog change.
 
 Revisit-if Cloudflare can version a DO-owning script without resetting its
 objects, or if a later split needs MCP off the Remix-adjacent host for a

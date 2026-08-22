@@ -46,9 +46,7 @@ test('coding_guide_get loads the body from APP_SURFACE when bound', async () => 
 		},
 	} as unknown as Env
 
-	await expect(
-		loadOfficialGuide({ guideId: guide.id, env }),
-	).resolves.toEqual({
+	await expect(loadOfficialGuide({ guideId: guide.id, env })).resolves.toEqual({
 		title: 'Surface title',
 		body: '# Surface body',
 	})

@@ -23,7 +23,9 @@ export async function loadOfficialGuide(input: {
 	const surface = input.env.APP_SURFACE
 	if (surface) {
 		const response = await surface.fetch(
-			new Request(`https://kody-app.internal${appWorkerGuidePath(input.guideId)}`),
+			new Request(
+				`https://kody-app.internal${appWorkerGuidePath(input.guideId)}`,
+			),
 		)
 		if (response.status === 404) {
 			throw new Error(`Unknown Kody guide "${input.guideId}".`)
