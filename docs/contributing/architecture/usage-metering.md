@@ -335,8 +335,9 @@ Guarantees and rules:
   appears at `windowEnd`. Each displayed step is +1: when the pair has at least
   one tick per second, that tick lands at a hashed time inside the second so the
   cadence wobbles instead of marching on the clock. Leftover count (more than
-  one tick in a second) rolls through from the start of that second without
-  skipping. It never passes `current`. The client schedules the next integer
+  one tick in a second) rolls through that second without skipping, with hashed
+  gaps between those ticks so a busy second does not march on even slots. It
+  never passes `current`. The client schedules the next integer
   (`msUntilNextCodeRunsCount`) rather than polling once a second;
   `prefers-reduced-motion` snaps and does not animate. A tab that wakes more
   than sixty integers behind snaps instead of replaying every missed tick.

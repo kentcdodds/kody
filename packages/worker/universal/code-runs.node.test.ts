@@ -91,14 +91,28 @@ test('interpolateCodeRunsCount rolls every extra integer inside a second', () =>
 	const packed = { ...window, previous: 0, current: 86_400 * 5 }
 	const midSecond = startMs + 6 * hourMs
 	const seen = new Set<number>()
+	const gaps: Array<number> = []
+	let previous = interpolateCodeRunsCount(packed, midSecond)
+	let lastAt = 0
 	for (let offset = 0; offset < 1000; offset += 1) {
-		seen.add(interpolateCodeRunsCount(packed, midSecond + offset))
+		const count = interpolateCodeRunsCount(packed, midSecond + offset)
+		seen.add(count)
+		if (count > previous) {
+			expect(count).toBe(previous + 1)
+			gaps.push(offset - lastAt)
+			lastAt = offset
+			previous = count
+		}
 	}
 	const values = [...seen].sort((left, right) => left - right)
 	expect(values.length).toBeGreaterThan(1)
 	for (let index = 1; index < values.length; index += 1) {
 		expect(values[index]).toBe(values[index - 1]! + 1)
 	}
+	expect(gaps.length).toBeGreaterThan(1)
+	expect(new Set(gaps).size).toBeGreaterThan(1)
+	const even = 1000 / (gaps.length + 1)
+	expect(gaps.some((gap) => Math.abs(gap - even) > 30)).toBe(true)
 })
 
 test('msUntilNextCodeRunsCount lands on the next integer and then is still', () => {

@@ -4,7 +4,8 @@
  * every visitor at a given clock time sees the same integer. Each displayed
  * step is +1. When the pair has at least one tick per second, a tick lands
  * every second at a hashed time so the cadence wobbles instead of marching
- * on the clock. Extra count rolls through the second without skipping.
+ * on the clock. Extra count rolls through the second without skipping, with
+ * hashed gaps between those leftover ticks so a busy second does not march.
  * The count stays monotonic between `previous` and `current`.
  */
 
@@ -182,8 +183,51 @@ function ticksFiredInSecond(
 	if (gain === 1) {
 		return fracMs >= singleTickFireMs(seed, secondIndex) ? 1 : 0
 	}
-	const slot = 1000 / gain
-	return Math.min(gain, Math.floor(fracMs / slot) + 1)
+	const fires = busySecondFireMs(gain, seed, secondIndex)
+	let fired = 0
+	for (const fireAt of fires) {
+		if (fracMs < fireAt) break
+		fired += 1
+	}
+	return fired
+}
+
+function busySecondFireMs(
+	gain: number,
+	seed: number,
+	secondIndex: number,
+): Array<number> {
+	const weights = Array.from({ length: gain }, (_, index) =>
+		busySecondGapWeight(seed, secondIndex, index),
+	)
+	let total = 0
+	for (const weight of weights) total += weight
+	const maxLead = Math.min(180, Math.max(0, Math.floor(1000 / gain / 2)))
+	const lead = Math.floor(hashUnit(seed, secondIndex + 41) * (maxLead + 1))
+	const span = 1000 - lead
+	const fires = Array.from({ length: gain }, () => 0)
+	let prefix = 0
+	for (let index = 0; index < gain; index += 1) {
+		fires[index] = Math.min(999, lead + Math.floor((prefix / total) * span))
+		prefix += weights[index] ?? 0
+	}
+	const minGap = Math.max(1, Math.min(16, Math.floor(1000 / gain) - 1))
+	for (let index = 1; index < gain; index += 1) {
+		const floorAt = (fires[index - 1] ?? 0) + minGap
+		if ((fires[index] ?? 0) < floorAt) {
+			fires[index] = Math.min(999, floorAt)
+		}
+	}
+	return fires
+}
+
+function busySecondGapWeight(
+	seed: number,
+	secondIndex: number,
+	index: number,
+): number {
+	const unit = hashUnit(seed, Math.imul(secondIndex + 1, 31) + index + 19)
+	return 0.2 + unit * unit * 2.3
 }
 
 function singleTickFireMs(seed: number, secondIndex: number): number {
