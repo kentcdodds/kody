@@ -51,7 +51,8 @@ export type CommunityListingRecord = {
 	 * Commit an admin reviewed when marking this listing trusted, or null when
 	 * never trusted (or trust was revoked). Trust follows the reviewed
 	 * content: `trusted` is true only while this matches `pinnedCommit`, so an
-	 * owner republish drops the effective mark until an admin re-reviews.
+	 * owner republish drops the effective mark until an admin re-reviews,
+	 * except platform-owned listings which re-pin trust to the new commit.
 	 */
 	trustedCommit: string | null
 	trustedAt: string | null
