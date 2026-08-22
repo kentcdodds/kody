@@ -664,9 +664,7 @@ export function AccountJobsRoute(handle: Handle) {
 								schedule: (
 									<span mix={clampedCellCss}>{item.scheduleSummary}</span>
 								),
-								package: (
-									<span mix={clampedCellCss}>{packageLabel(item)}</span>
-								),
+								package: <span mix={clampedCellCss}>{packageLabel(item)}</span>,
 								flags: (
 									<RecordChips
 										items={[

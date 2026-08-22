@@ -57,9 +57,8 @@ vi.mock('#worker/run-records/service.ts', () => ({
 		mockModule.getWorkflowProjection(...args),
 }))
 
-const { createAccountWorkflowsApiHandler } = await import(
-	'#app/handlers/account-workflows.ts'
-)
+const { createAccountWorkflowsApiHandler } =
+	await import('#app/handlers/account-workflows.ts')
 
 function createEnv() {
 	return {} as Env

@@ -1646,7 +1646,8 @@ function buildDomainScopedRegistry() {
 	})
 	const jobUpdate = defineDomainCapability('jobs', {
 		name: 'job_update',
-		description: 'Update metadata on a durable job that can send email reminders',
+		description:
+			'Update metadata on a durable job that can send email reminders',
 		keywords: ['email', 'schedule', 'job', 'update'],
 		readOnly: false,
 		idempotent: false,

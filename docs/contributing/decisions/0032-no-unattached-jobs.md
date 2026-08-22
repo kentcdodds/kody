@@ -32,5 +32,5 @@ are gone. The runner does not care how a row was created.
 MCP, `/account/jobs`, usage docs, and discovery evals describe package jobs and
 workflows only. `/account/workflows` is a view over existing
 `workflow_projections`, not a new primitive. Revisit only if a recurring
-schedule must exist without a package *and* without a workflow — that has not
+schedule must exist without a package _and_ without a workflow — that has not
 shown up in the fleet.

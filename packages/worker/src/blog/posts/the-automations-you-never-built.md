@@ -70,10 +70,11 @@ cover how that works.
 **Is it worth an afternoon?** It's not an afternoon anymore. You describe the
 recurring thing to your agent in one conversation, the agent writes the code and
 schedules it on a saved package, and you're done before the annoyance would have
-recurred once. Deferred one-shot reminders use
-`workflows.create({ runAt })` from `execute`. The
+recurred once. Deferred one-shot reminders use `workflows.create({ runAt })`
+from `execute`. The
 [execute docs](https://github.com/kentcdodds/kody/blob/main/docs/use/execute.md)
-and [workflows docs](https://github.com/kentcdodds/kody/blob/main/docs/use/workflows.md)
+and
+[workflows docs](https://github.com/kentcdodds/kody/blob/main/docs/use/workflows.md)
 show those flows.
 
 And when a quick job turns out to matter, it graduates. Behavior worth keeping

@@ -45,11 +45,7 @@ import {
 	type AccountWorkflowsLoaderData,
 } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
-import {
-	colors,
-	spacing,
-	typography,
-} from '#universal/styles/tokens.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardTitleCss,
 	descriptionCss,
@@ -132,9 +128,7 @@ export async function accountWorkflowsRouteLoader(
 	return { accountWorkflows: payload }
 }
 
-function sourceLabel(
-	workflow: Pick<AccountWorkflowListItem, 'sourceType'>,
-) {
+function sourceLabel(workflow: Pick<AccountWorkflowListItem, 'sourceType'>) {
 	switch (workflow.sourceType) {
 		case 'inline':
 			return 'Inline'
@@ -605,10 +599,7 @@ export function AccountWorkflowsRoute(handle: Handle) {
 											{
 												label: 'Source id',
 												value: detail.sourceId ? (
-													<IdValue
-														value={detail.sourceId}
-														label="source id"
-													/>
+													<IdValue value={detail.sourceId} label="source id" />
 												) : (
 													'—'
 												),

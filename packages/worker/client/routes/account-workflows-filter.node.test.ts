@@ -94,12 +94,7 @@ test('account workflows filters cover active/history views and search', () => {
 			view: 'all',
 			search: '',
 		}).map((item) => item.id),
-	).toEqual([
-		'live-queued',
-		'live-running',
-		'done-complete',
-		'done-errored',
-	])
+	).toEqual(['live-queued', 'live-running', 'done-complete', 'done-errored'])
 
 	expect(
 		filterAccountWorkflows(workflows, {

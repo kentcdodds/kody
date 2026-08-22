@@ -400,12 +400,12 @@ Job schedule metadata lives in the dedicated `kody-jobs` D1 database bound as
   (`job_retention_*_days`; NULL = platform defaults 14/60/90). Completed job
   rows that are not package-owned or preserved are cleaned by the hourly
   `job_retention` sweeper on the jobs worker; package-owned and preserved jobs
-  are not. `expires_at` stops scheduling only —
-  it does not delete rows and is independent of `preserved`. This database keeps
-  schedule fields (`next_run_at`, `schedule_json`, …) and `last_run_at` /
-  `last_run_status` as retention anchors only; terminal run error, duration, and
-  counters for observability live in the per-user `RunLog`
-  `job_run_observability` table (see [Run records](./run-records.md)).
+  are not. `expires_at` stops scheduling only — it does not delete rows and is
+  independent of `preserved`. This database keeps schedule fields
+  (`next_run_at`, `schedule_json`, …) and `last_run_at` / `last_run_status` as
+  retention anchors only; terminal run error, duration, and counters for
+  observability live in the per-user `RunLog` `job_run_observability` table (see
+  [Run records](./run-records.md)).
 - `archived_job_artifacts`: retained job artifact rows with per-row
   `retain_until` cleanup (exempt from the global age prunes on `APP_DB`).
 

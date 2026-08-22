@@ -3,8 +3,8 @@ id: package_lifecycle
 title: Durable package lifecycle guide
 summary:
   Choose between invoking existing behavior, temporary execute exploration,
-  forking a close trusted community package, deferred workflows, and creating
-  a durable repo-backed package; test package-owned job wrappers safely.
+  forking a close trusted community package, deferred workflows, and creating a
+  durable repo-backed package; test package-owned job wrappers safely.
 category: platform
 ---
 
