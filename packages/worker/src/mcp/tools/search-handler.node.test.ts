@@ -1152,7 +1152,6 @@ test('search tool memory enrichment: timeout, rejection, and ack failure stay of
 	} finally {
 		process.off('unhandledRejection', onUnhandled)
 	}
-
 }, 10_000)
 
 test('search tool domain param: browse, reject unknown, and scope ranked results', async () => {
