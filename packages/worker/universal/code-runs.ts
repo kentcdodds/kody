@@ -211,6 +211,8 @@ function busySecondFireMs(
 		fires[index] = Math.min(999, lead + Math.floor((prefix / total) * span))
 		prefix += weights[index] ?? 0
 	}
+	// A second cannot hold more than 1000 distinct millisecond fires; extras
+	// share the last millisecond and the client rolls through them.
 	const minGap = Math.max(1, Math.min(16, Math.floor(1000 / gain) - 1))
 	for (let index = 1; index < gain; index += 1) {
 		const floorAt = (fires[index - 1] ?? 0) + minGap
