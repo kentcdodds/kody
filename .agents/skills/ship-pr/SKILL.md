@@ -34,9 +34,9 @@ Self-assess; user policy overrides.
 ## Gates ≠ CI
 
 Blocked on soak / parity CHECK / calendar gate → **end the run** and schedule a
-wake (Kody `job_schedule` + `createRun`). Don't sleep-poll or code-thrash an
-intentional time window. Leftovers that wait on that gate need a GitHub issue
-(`Cleanup:` title); see
+wake (`execute` + `workflows.create({ runAt, idempotencyKey })` calling
+`createRun`). Don't sleep-poll or code-thrash an intentional time window.
+Leftovers that wait on that gate need a GitHub issue (`Cleanup:` title); see
 [cleanup-after-migrations](../cleanup-after-migrations/SKILL.md).
 
 Batch related expand steps into fewer PRs when risk posture allows.

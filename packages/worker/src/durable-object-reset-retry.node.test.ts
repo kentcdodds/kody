@@ -4,11 +4,13 @@ import {
 	durableObjectInstanceInactiveCloseMessage,
 } from '#worker/sentry-options.ts'
 import {
+	durableObjectResetRetryDelaysMs,
 	isTransientDurableObjectResetError,
 	runWithTransientDurableObjectResetRetry,
 } from './durable-object-reset-retry.ts'
 
 test('transient Durable Object reset retry recovers thrown and result errors then exhausts', async () => {
+	expect(durableObjectResetRetryDelaysMs).toEqual([100, 500, 1_500])
 	expect(
 		isTransientDurableObjectResetError(
 			new Error(durableObjectCodeUpdatedResetMessage),
@@ -105,7 +107,7 @@ test('transient Durable Object reset retry recovers thrown and result errors the
 		await expect(exhaustedPending).resolves.toEqual({
 			error: durableObjectCodeUpdatedResetMessage,
 		})
-		expect(exhausted).toHaveBeenCalledTimes(3)
+		expect(exhausted).toHaveBeenCalledTimes(4)
 
 		const dirtyResult = vi
 			.fn<() => Promise<{ error: string; dirty: boolean }>>()
@@ -145,7 +147,7 @@ test('transient Durable Object reset retry recovers thrown and result errors the
 		})
 		await vi.runAllTimersAsync()
 		await expect(exhaustedUndefinedPending).resolves.toBeUndefined()
-		expect(exhaustedUndefined).toHaveBeenCalledTimes(3)
+		expect(exhaustedUndefined).toHaveBeenCalledTimes(4)
 	} finally {
 		vi.useRealTimers()
 	}

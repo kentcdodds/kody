@@ -4,7 +4,9 @@ import {
 	userMeterNamespace,
 	userMeterRpc,
 	type UserMeterEnv,
+	type UserMeterRpc,
 } from '#worker/entitlements/user-meter-client.ts'
+import { runWithTransientDurableObjectResetRetry } from '#worker/durable-object-reset-retry.ts'
 
 export class AccountDeletionInProgressError extends Error {
 	constructor() {
@@ -50,6 +52,22 @@ function requireUserMeterEnv(env: UserMeterEnv) {
 		throw new Error('USER_METER Durable Object binding is not configured.')
 	}
 	return env
+}
+
+async function runUserMeterRpc<T>(input: {
+	env: UserMeterEnv
+	stableUserId: string
+	operation: (meter: UserMeterRpc) => Promise<T>
+}) {
+	return await runWithTransientDurableObjectResetRetry({
+		operation: async () =>
+			await input.operation(
+				userMeterRpc({
+					env: input.env,
+					userId: input.stableUserId,
+				}),
+			),
+	})
 }
 
 async function insertOrVerifyDoRepairAudit(input: {
@@ -177,10 +195,11 @@ export async function markAccountDeleting(input: {
 		throw new Error('Account could not be marked for deletion.')
 	}
 	const env = requireUserMeterEnv(input.env)
-	const marked = await userMeterRpc({
+	const marked = await runUserMeterRpc({
 		env,
-		userId: stableUserId,
-	}).markDeleting({ deletingAt })
+		stableUserId,
+		operation: async (meter) => await meter.markDeleting({ deletingAt }),
+	})
 	return marked.leaseCount
 }
 
@@ -265,26 +284,37 @@ async function acquireDoAccountWriteLeaseAndWrite<T>(input: {
 		holder: input.holder ?? 'unspecified',
 		acquiredAt: utcSqliteTimestamp(),
 	}
-	const meter = userMeterRpc({
+	const acquired = await runUserMeterRpc({
 		env: input.env,
-		userId: lease.stableUserId,
-	})
-	const acquired = await meter.acquireWriteLease({
-		token: lease.token,
-		holder: lease.holder,
-		acquiredAt: lease.acquiredAt,
+		stableUserId: lease.stableUserId,
+		operation: async (meter) =>
+			await meter.acquireWriteLease({
+				token: lease.token,
+				holder: lease.holder,
+				acquiredAt: lease.acquiredAt,
+			}),
 	})
 	if (!acquired.acquired) {
 		throw new AccountDeletionInProgressError()
 	}
 	try {
 		const result = await input.write()
-		const held = await meter.assertWriteLeaseHeld({ token: lease.token })
+		const held = await runUserMeterRpc({
+			env: input.env,
+			stableUserId: lease.stableUserId,
+			operation: async (meter) =>
+				await meter.assertWriteLeaseHeld({ token: lease.token }),
+		})
 		if (!held.held) throw new AccountWriteLeaseLostError()
 		return result
 	} finally {
 		input.frame.active = false
-		await meter.releaseWriteLease({ token: lease.token })
+		await runUserMeterRpc({
+			env: input.env,
+			stableUserId: lease.stableUserId,
+			operation: async (meter) =>
+				await meter.releaseWriteLease({ token: lease.token }),
+		})
 	}
 }
 
@@ -293,13 +323,17 @@ export async function listActiveAccountWriteLeases(
 	stableUserId: string,
 ): Promise<Array<ListedAccountWriteLease>> {
 	const requiredEnv = requireUserMeterEnv(env)
-	const meter = userMeterRpc({ env: requiredEnv, userId: stableUserId })
 	const leases: Array<ListedAccountWriteLease> = []
 	let startAfter: string | null = null
 	for (;;) {
-		const page = await meter.listWriteLeases({
-			pageSize: 500,
-			startAfter,
+		const page = await runUserMeterRpc({
+			env: requiredEnv,
+			stableUserId,
+			operation: async (meter) =>
+				await meter.listWriteLeases({
+					pageSize: 500,
+					startAfter,
+				}),
 		})
 		for (const lease of page.leases) {
 			leases.push({
@@ -328,10 +362,14 @@ export async function repairAccountWriteLease(input: {
 	}
 	const reason = input.reason.trim()
 	const env = requireUserMeterEnv(input.env)
-	const meter = userMeterRpc({ env, userId: input.stableUserId })
-	const prepared = await meter.prepareWriteLeaseRepair({
-		token: input.token,
-		expectedAcquiredAt: input.expectedAcquiredAt,
+	const prepared = await runUserMeterRpc({
+		env,
+		stableUserId: input.stableUserId,
+		operation: async (meter) =>
+			await meter.prepareWriteLeaseRepair({
+				token: input.token,
+				expectedAcquiredAt: input.expectedAcquiredAt,
+			}),
 	})
 	if (prepared.prepared) {
 		const now = utcSqliteTimestamp()
@@ -347,10 +385,15 @@ export async function repairAccountWriteLease(input: {
 			now,
 		})
 		// Finalize DO lease; fail closed on transport errors (audit row persists for retry).
-		await meter.finalizeWriteLeaseRepair({
-			token: prepared.token,
-			repairId: prepared.repairId,
-			expectedAcquiredAt: prepared.acquiredAt,
+		await runUserMeterRpc({
+			env,
+			stableUserId: input.stableUserId,
+			operation: async (meter) =>
+				await meter.finalizeWriteLeaseRepair({
+					token: prepared.token,
+					repairId: prepared.repairId,
+					expectedAcquiredAt: prepared.acquiredAt,
+				}),
 		})
 		return { repaired: true as const, repairId: prepared.repairId }
 	}
@@ -364,8 +407,13 @@ export async function repairAccountWriteLease(input: {
 		reason,
 	})
 	if (existingAudit) {
-		const stillHeld = await meter.assertWriteLeaseHeld({
-			token: input.token,
+		const stillHeld = await runUserMeterRpc({
+			env,
+			stableUserId: input.stableUserId,
+			operation: async (meter) =>
+				await meter.assertWriteLeaseHeld({
+					token: input.token,
+				}),
 		})
 		if (!stillHeld.held) {
 			return { repaired: true as const, repairId: existingAudit.id }

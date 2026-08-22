@@ -81,8 +81,8 @@ both ways. When the cleanup later lands, close the issue.
 Create with `gh issue create` from a repo checkout, or
 `kody:@kentcdodds/github/request` `POST /repos/kentcdodds/kody/issues`.
 
-When the gate is a soak or calendar window, also schedule a wake
-(`job_schedule` + `createRun`) as in the
+When the gate is a soak or calendar window, also schedule a wake (`execute` +
+`workflows.create({ runAt, idempotencyKey })`) as in the
 [ship-pr skill](../../.agents/skills/ship-pr/SKILL.md). The issue remains the
 durable tracker after the session ends.
 

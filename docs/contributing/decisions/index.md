@@ -60,6 +60,7 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0023 — Progressive search disclosure; no full-SDK dumps or unbounded listings](./0023-progressive-search-disclosure.md)
 - [0024 — Packages outrank synthesized providers; no auto-delete or ranking toggle](./0024-packages-outrank-synthesized-providers.md)
 - [0025 — No package services primitive](./0025-no-package-services-primitive.md)
+- [0032 — No unattached jobs; schedules belong to packages or workflows](./0032-no-unattached-jobs.md)
 - [0026 — Invocation tokens belong to one package; no account-level wildcard bearer](./0026-package-owned-invocation-tokens.md)
 - [0027 — No invocation-token source allowlist](./0027-no-invocation-token-source-allowlist.md)
 

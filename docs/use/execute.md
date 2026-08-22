@@ -34,22 +34,22 @@ helpers are runtime exports:
   code for the package's own bucket — always, in every package surface; see
   [Package storage](./packages.md#package-storage)
 - use **`import { workflows } from 'kody:runtime'`** to queue Cloudflare
-  Workflows from execute calls, ad hoc jobs, package jobs, package
-  subscriptions, package apps, and package exports. Prefer workflows for durable
-  batch sweeps, migrations, polling loops, retryable steps, or work that may run
-  longer than execute's timeout. See [Workflows](./workflows.md)
+  Workflows from execute calls, package jobs, package subscriptions, package
+  apps, and package exports. Prefer workflows for durable batch sweeps,
+  migrations, polling loops, retryable steps, deferred one-shot work, or work
+  that may run longer than execute's timeout. See [Workflows](./workflows.md)
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
 - use **`import { packages } from 'kody:runtime'`** inside saved package runtime
-  contexts, authenticated execute calls, or standalone scheduled jobs when a
-  package call must be dynamic: the target's name is data, the call needs the
-  target package's own runtime, or you need exactly-once.
-  `packages.invoke({ kodyId, exportName, params })` (plus an optional
-  `idempotencyKey` field for exactly-once calls) is the only dynamic call and is
-  always contract-checked before invoking. Pass the bare `package.json#kody.id`
-  as `kodyId` (for example, `github`), not the npm-scoped `package.json.name`
-  (for example, `@kentcdodds/github`). When the target package's name is known
-  when the code is written, use a static `kody:@...` import instead (see below)
+  contexts or authenticated execute calls when a package call must be dynamic:
+  the target's name is data, the call needs the target package's own runtime, or
+  you need exactly-once. `packages.invoke({ kodyId, exportName, params })` (plus
+  an optional `idempotencyKey` field for exactly-once calls) is the only dynamic
+  call and is always contract-checked before invoking. Pass the bare
+  `package.json#kody.id` as `kodyId` (for example, `github`), not the npm-scoped
+  `package.json.name` (for example, `@kentcdodds/github`). When the target
+  package's name is known when the code is written, use a static `kody:@...`
+  import instead (see below)
 - use **`import thing from 'kody:@scope/my-package/export-name'`** or
   **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
   saved package export by npm-scoped package name. This is **the default for
@@ -166,7 +166,7 @@ call itself is always through the imported `kody` object.
 
 ## Saved packages
 
-Saved packages, scheduled jobs, and one-off **execute** code share the same
+Saved packages, package jobs, and one-off **execute** code share the same
 module-oriented runtime model:
 
 - saved packages persist repo-backed source rooted at `package.json`
@@ -176,29 +176,20 @@ module-oriented runtime model:
 - package-specific metadata lives under `package.json#kody`
 - package jobs are schedules declared under `package.json#kody.jobs`
 - package apps are optional UI surfaces declared under `package.json#kody.app`
-- non-package jobs can also be scheduled directly with
-  **`kody.job_schedule(...)`** without creating a saved package
-- **`kody.job_schedule_once(...)`** provides a convenience alias for one-off
-  schedules
-- **`kody.job_update(...)`** updates an existing scheduled job by id for safe
-  mutable fields such as name, ES module code with a default-exported function,
-  params, schedule, timezone, enabled/disabled state, kill switch state,
-  preserved, or `expires_at` (UTC ISO; null clears). Providing `code`
-  republishes the job's repo-backed source so subsequent runs execute the
-  updated module; the replacement must default export a function that receives
-  `params` from its first argument (there is no `params` export from
-  `kody:runtime`)
-- Optional **`expires_at`** on `job_schedule` / `job_schedule_once` /
-  `job_update` stops the platform from scheduling the job after that UTC time.
-  When expiry is reached, Kody auto-disables the job (`enabled=false`) so it
-  shows as disabled in `job_list` / `job_get` (with `expired: true`) and can age
-  out via normal retention. This is separate from **`preserved`**, which only
-  skips auto-deletion.
+- deferred one-shot work uses **`workflows.create({ runAt, ... })`** from
+  `execute` or package runtime — see [Workflows](./workflows.md)
+- **`kody.job_update(...)`** updates metadata on an existing job (schedule,
+  timezone, enabled, kill switch, preserved, `expires_at`). Package job name and
+  source stay in the package repo.
+- Optional **`expires_at`** on `job_update` stops the platform from scheduling
+  the job after that UTC time. When expiry is reached, Kody auto-disables the
+  job (`enabled=false`) so it shows as disabled in `job_list` / `job_get` (with
+  `expired: true`) and can age out via normal retention. This is separate from
+  **`preserved`**, which only skips auto-deletion.
 - **`kody.job_get({ id, includeCode: true })`** returns the scheduled job
-  inspection details plus the stored repo-backed entrypoint path and source code
-  when you need to inspect the current module before changing it
-- **`kody.job_delete(...)`** removes an existing scheduled job by id for the
-  signed-in user
+  inspection details plus the stored entrypoint path and source code
+- Package-owned jobs are removed by editing the package and publishing, not by
+  `job_delete`.
 - **`kody.job_run_now(...)`** runs an existing scheduled job immediately and
   returns both the updated job state and the execution result for debugging.
   Expired jobs are rejected.
@@ -209,11 +200,11 @@ but `packageContext` remains **`null`** because the imported module has not been
 entered as its own package runtime. This is fine for most reuse — packages
 backed by user-scope secrets (for example `github`) work fully through plain
 static imports because `{{secret:...}}` placeholders resolve at the fetch
-gateway under the calling user. When execute or a standalone scheduled job must
-enter a saved package export as that package — package-mounted secrets
-(`kody.secretMounts`), `packageContext`, the package's own `packageStorage()`
-bucket — use keyless `packages.invoke` from `kody:runtime`. It resolves the bare
-`kodyId`, such as `my-package`, rather than the npm-scoped package name, such as
+gateway under the calling user. When execute must enter a saved package export
+as that package — package-mounted secrets (`kody.secretMounts`),
+`packageContext`, the package's own `packageStorage()` bucket — use keyless
+`packages.invoke` from `kody:runtime`. It resolves the bare `kodyId`, such as
+`my-package`, rather than the npm-scoped package name, such as
 `@scope/my-package`.
 
 When you need to edit saved source, prefer the repo-backed workflow in
@@ -241,9 +232,7 @@ the package's own data; another package's data goes through keyless
 `packages.invoke` so its own runtime does the reading and writing. See
 [Package storage](./packages.md#package-storage).
 
-Kody supports durable storage binding for execute and scheduled jobs, including
-package-owned jobs and non-package jobs created with `job_schedule` or
-`job_schedule_once`.
+Kody supports durable storage binding for execute and package-owned jobs:
 
 - bound storage is execute-, app-, or job-owned durable state; saved-package
   invocation runs (exports, subscriptions, retrievers) bind no ambient `storage`

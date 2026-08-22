@@ -11,6 +11,10 @@ export {
 } from './account-integrations.tsx'
 export { AccountJobsRoute, accountJobsRouteLoader } from './account-jobs.tsx'
 export {
+	AccountWorkflowsRoute,
+	accountWorkflowsRouteLoader,
+} from './account-workflows.tsx'
+export {
 	AccountActivityRoute,
 	accountActivityRouteLoader,
 } from './account-activity.tsx'

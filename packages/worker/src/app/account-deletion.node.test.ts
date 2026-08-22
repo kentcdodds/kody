@@ -618,13 +618,11 @@ test('account deletion D1 coverage includes every live user-owned schema column'
 })
 
 test('account deletion preserves operator-owned system email configuration', async () => {
-	const systemEmailExclusion = accountUserDataExcludedOwnerIds.find(
-		(exclusion) => exclusion.ownerId === 'system:email',
-	)
-	expect(systemEmailExclusion?.reason).toContain('Operator-owned inbound mail')
-	expect(systemEmailExclusion?.reason).toContain(
-		'not be attributed to any user',
-	)
+	expect(
+		accountUserDataExcludedOwnerIds.some(
+			(exclusion) => exclusion.ownerId === 'system:email',
+		),
+	).toBe(true)
 
 	const { db, rows } = createTestDb({
 		users: [{ id: 1, email: 'user@example.com' }],

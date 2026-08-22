@@ -258,51 +258,12 @@ function buildPackageFiles(input: { name: string; kodyId: string }) {
 	]
 }
 
-test('package_save rejects unknown package_id when kody_id already owns a package', async () => {
+test('package_save maps id mismatch, legacy name collision, and UNIQUE insert races to caller errors', async () => {
 	setupPersistenceMocks()
-	const email = 'mismatch@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const mismatchEmail = 'mismatch@example.com'
+	const mismatchUserId = await createStableUserIdFromEmail(mismatchEmail)
 	const existingPackageId = 'existing-package-id'
 	const requestedPackageId = 'fabricated-package-id'
-	const db = createDatabase({
-		users: [
-			{
-				email,
-				plan: 'pro',
-				username: 'collision',
-				stable_user_id: userId,
-			},
-		],
-		saved_packages: [
-			{
-				id: existingPackageId,
-				user_id: userId,
-				name: '@collision/pkg',
-				kody_id: 'pkg',
-				description: 'Existing package',
-				tags_json: '[]',
-				search_text: null,
-				source_id: 'source-existing',
-				has_app: 0,
-				hidden: 0,
-				is_private: 1,
-				created_at: '2026-08-19T00:00:00.000Z',
-				updated_at: '2026-08-19T00:00:00.000Z',
-			},
-		],
-	})
-	const ctx = {
-		env: { APP_DB: db } as Env,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://example.com',
-			user: {
-				userId,
-				email,
-				displayName: 'Collision User',
-			},
-		}),
-	}
-
 	await expect(
 		savePackageCapability.handler(
 			{
@@ -314,7 +275,45 @@ test('package_save rejects unknown package_id when kody_id already owns a packag
 				confirm_destructive_overwrite: false,
 				confirm_private_visibility_change: false,
 			},
-			ctx as never,
+			{
+				env: {
+					APP_DB: createDatabase({
+						users: [
+							{
+								email: mismatchEmail,
+								plan: 'pro',
+								username: 'collision',
+								stable_user_id: mismatchUserId,
+							},
+						],
+						saved_packages: [
+							{
+								id: existingPackageId,
+								user_id: mismatchUserId,
+								name: '@collision/pkg',
+								kody_id: 'pkg',
+								description: 'Existing package',
+								tags_json: '[]',
+								search_text: null,
+								source_id: 'source-existing',
+								has_app: 0,
+								hidden: 0,
+								is_private: 1,
+								created_at: '2026-08-19T00:00:00.000Z',
+								updated_at: '2026-08-19T00:00:00.000Z',
+							},
+						],
+					}),
+				} as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+					user: {
+						userId: mismatchUserId,
+						email: mismatchEmail,
+						displayName: 'Collision User',
+					},
+				}),
+			} as never,
 		),
 	).rejects.toSatisfy((error: unknown) => {
 		expect(error).toBeInstanceOf(McpCallerError)
@@ -329,55 +328,12 @@ test('package_save rejects unknown package_id when kody_id already owns a packag
 	})
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
-})
 
-test('package_save rejects create when package.json#name collides with a legacy row', async () => {
 	setupPersistenceMocks()
-	const email = 'legacy@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const existingPackageId = 'legacy-package-id'
+	const legacyEmail = 'legacy@example.com'
+	const legacyUserId = await createStableUserIdFromEmail(legacyEmail)
+	const legacyPackageId = 'legacy-package-id'
 	const sharedName = '@collision/new-kody'
-	const db = createDatabase({
-		users: [
-			{
-				email,
-				plan: 'pro',
-				username: 'collision',
-				stable_user_id: userId,
-			},
-		],
-		saved_packages: [
-			{
-				id: existingPackageId,
-				user_id: userId,
-				// Legacy row: name leaf no longer matches kody_id, so kody_id
-				// lookup misses while (user_id, name) still conflicts.
-				name: sharedName,
-				kody_id: 'legacy-other',
-				description: 'Legacy package',
-				tags_json: '[]',
-				search_text: null,
-				source_id: 'source-legacy',
-				has_app: 0,
-				hidden: 0,
-				is_private: 1,
-				created_at: '2026-08-19T00:00:00.000Z',
-				updated_at: '2026-08-19T00:00:00.000Z',
-			},
-		],
-	})
-	const ctx = {
-		env: { APP_DB: db } as Env,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://example.com',
-			user: {
-				userId,
-				email,
-				displayName: 'Legacy User',
-			},
-		}),
-	}
-
 	await expect(
 		savePackageCapability.handler(
 			{
@@ -385,7 +341,47 @@ test('package_save rejects create when package.json#name collides with a legacy 
 				confirm_destructive_overwrite: false,
 				confirm_private_visibility_change: false,
 			},
-			ctx as never,
+			{
+				env: {
+					APP_DB: createDatabase({
+						users: [
+							{
+								email: legacyEmail,
+								plan: 'pro',
+								username: 'collision',
+								stable_user_id: legacyUserId,
+							},
+						],
+						saved_packages: [
+							{
+								id: legacyPackageId,
+								user_id: legacyUserId,
+								// Legacy row: name leaf no longer matches kody_id, so kody_id
+								// lookup misses while (user_id, name) still conflicts.
+								name: sharedName,
+								kody_id: 'legacy-other',
+								description: 'Legacy package',
+								tags_json: '[]',
+								search_text: null,
+								source_id: 'source-legacy',
+								has_app: 0,
+								hidden: 0,
+								is_private: 1,
+								created_at: '2026-08-19T00:00:00.000Z',
+								updated_at: '2026-08-19T00:00:00.000Z',
+							},
+						],
+					}),
+				} as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+					user: {
+						userId: legacyUserId,
+						email: legacyEmail,
+						displayName: 'Legacy User',
+					},
+				}),
+			} as never,
 		),
 	).rejects.toSatisfy((error: unknown) => {
 		expect(error).toBeInstanceOf(McpCallerError)
@@ -393,44 +389,17 @@ test('package_save rejects create when package.json#name collides with a legacy 
 			buildSavedPackageNameCollisionMessage({
 				name: sharedName,
 				existingKodyId: 'legacy-other',
-				existingPackageId,
+				existingPackageId: legacyPackageId,
 			}),
 		)
 		return true
 	})
 	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
 	expect(mockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
-})
 
-test('package_save maps insert UNIQUE name races to McpCallerError', async () => {
 	setupPersistenceMocks()
-	const email = 'race@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const db = createDatabase(
-		{
-			users: [
-				{
-					email,
-					plan: 'pro',
-					username: 'race',
-					stable_user_id: userId,
-				},
-			],
-		},
-		{ failInsertWithUniqueName: true },
-	)
-	const ctx = {
-		env: { APP_DB: db } as Env,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://example.com',
-			user: {
-				userId,
-				email,
-				displayName: 'Race User',
-			},
-		}),
-	}
-
+	const raceEmail = 'race@example.com'
+	const raceUserId = await createStableUserIdFromEmail(raceEmail)
 	await expect(
 		savePackageCapability.handler(
 			{
@@ -441,7 +410,31 @@ test('package_save maps insert UNIQUE name races to McpCallerError', async () =>
 				confirm_destructive_overwrite: false,
 				confirm_private_visibility_change: false,
 			},
-			ctx as never,
+			{
+				env: {
+					APP_DB: createDatabase(
+						{
+							users: [
+								{
+									email: raceEmail,
+									plan: 'pro',
+									username: 'race',
+									stable_user_id: raceUserId,
+								},
+							],
+						},
+						{ failInsertWithUniqueName: true },
+					),
+				} as Env,
+				callerContext: createMcpCallerContext({
+					baseUrl: 'https://example.com',
+					user: {
+						userId: raceUserId,
+						email: raceEmail,
+						displayName: 'Race User',
+					},
+				}),
+			} as never,
 		),
 	).rejects.toSatisfy((error: unknown) => {
 		expect(error).toBeInstanceOf(McpCallerError)
@@ -456,7 +449,7 @@ test('package_save maps insert UNIQUE name races to McpCallerError', async () =>
 		expect.anything(),
 		{
 			id: expect.stringMatching(/^source-/),
-			userId,
+			userId: raceUserId,
 		},
 	)
 })

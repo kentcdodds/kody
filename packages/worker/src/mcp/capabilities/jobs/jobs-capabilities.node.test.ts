@@ -1,8 +1,8 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { packageOwnedJobDeleteErrorMessage } from '#worker/jobs/job-retention.ts'
 
 const mockModule = vi.hoisted(() => ({
-	createJob: vi.fn(),
 	deleteJob: vi.fn(),
 	getJobInspection: vi.fn(),
 	inspectJobsForUser: vi.fn(),
@@ -13,7 +13,6 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/jobs/service.ts', () => ({
-	createJob: (...args: Array<unknown>) => mockModule.createJob(...args),
 	deleteJob: (...args: Array<unknown>) => mockModule.deleteJob(...args),
 	updateJob: (...args: Array<unknown>) => mockModule.updateJob(...args),
 }))
@@ -40,8 +39,6 @@ vi.mock('#worker/run-records/service.ts', () => ({
 		mockModule.listRunRecords(...args),
 }))
 
-const { jobScheduleCapability } = await import('./job-schedule.ts')
-const { jobScheduleOnceCapability } = await import('./job-schedule-once.ts')
 const { jobDeleteCapability } = await import('./job-delete.ts')
 const { jobGetCapability } = await import('./job-get.ts')
 const { jobListCapability } = await import('./job-list.ts')
@@ -50,7 +47,6 @@ const { jobUpdateCapability } = await import('./job-update.ts')
 const { workflowListCapability } = await import('./workflow-list.ts')
 
 function resetMocks() {
-	mockModule.createJob.mockReset()
 	mockModule.deleteJob.mockReset()
 	mockModule.getJobInspection.mockReset()
 	mockModule.inspectJobsForUser.mockReset()
@@ -154,7 +150,6 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 		{
 			id: 'job-123',
 			name: 'Nightly cleanup v2',
-			code: 'export default async () => ({ ok: true, updated: true })',
 			params: {
 				room: 'office',
 			},
@@ -178,7 +173,6 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 		body: {
 			id: 'job-123',
 			name: 'Nightly cleanup v2',
-			code: 'export default async () => ({ ok: true, updated: true })',
 			params: {
 				room: 'office',
 			},
@@ -279,6 +273,31 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 			},
 		),
 	).rejects.toThrow('Provide at least one mutable field to update.')
+	await expect(
+		jobUpdateCapability.handler(
+			{
+				id: 'job-123',
+				code: 'export default async () => ({ ok: true })',
+			},
+			{
+				env,
+				callerContext: signedInContext,
+			},
+		),
+	).rejects.toThrow('Job code cannot be changed via job_update.')
+	await expect(
+		jobUpdateCapability.handler(
+			{
+				id: 'job-123',
+				enabled: false,
+				code: 'export default async () => ({ rewritten: true })',
+			},
+			{
+				env,
+				callerContext: signedInContext,
+			},
+		),
+	).rejects.toThrow('Job code cannot be changed via job_update.')
 	expect(mockModule.updateJob).toHaveBeenCalledTimes(2)
 
 	mockModule.deleteJob.mockResolvedValue({
@@ -302,6 +321,163 @@ test('job_update and job_delete require authentication and mutate existing jobs 
 	expect(deleteResult).toEqual({
 		job_id: 'job-123',
 		deleted: true,
+	})
+
+	await expect(
+		jobDeleteCapability.handler(
+			{
+				id: 'package-job:pkg-1:nightly',
+			},
+			{
+				env,
+				callerContext: signedInContext,
+			},
+		),
+	).rejects.toThrow(packageOwnedJobDeleteErrorMessage)
+	expect(mockModule.deleteJob).toHaveBeenCalledTimes(1)
+})
+
+test('job_update accepts interval and cron schedule replacements', async () => {
+	resetMocks()
+	const env = {} as Env
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-123',
+			email: 'user@example.com',
+			displayName: 'User Example',
+		},
+	})
+
+	mockModule.updateJob
+		.mockResolvedValueOnce({
+			id: 'job-interval',
+			name: 'Nightly cleanup',
+			sourceId: 'source-interval',
+			publishedCommit: null,
+			storageId: 'job:job-interval',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+			scheduleSummary: 'Runs every 15m',
+			timezone: 'UTC',
+			enabled: true,
+			killSwitchEnabled: false,
+			preserved: false,
+			expiresAt: null,
+			createdAt: '2026-04-20T10:00:00.000Z',
+			updatedAt: '2026-04-20T10:01:00.000Z',
+			nextRunAt: '2026-04-20T10:15:00.000Z',
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
+			runHistory: [],
+		})
+		.mockResolvedValueOnce({
+			id: 'job-cron',
+			name: 'Weekly digest',
+			sourceId: 'source-cron',
+			publishedCommit: null,
+			storageId: 'job:job-cron',
+			schedule: {
+				type: 'cron',
+				expression: '0 9 * * 1',
+			},
+			scheduleSummary: 'Runs on cron "0 9 * * 1" in America/Denver',
+			timezone: 'America/Denver',
+			enabled: true,
+			killSwitchEnabled: false,
+			preserved: false,
+			expiresAt: null,
+			createdAt: '2026-04-20T10:00:00.000Z',
+			updatedAt: '2026-04-20T10:02:00.000Z',
+			nextRunAt: '2026-04-27T15:00:00.000Z',
+			runCount: 0,
+			successCount: 0,
+			errorCount: 0,
+			runHistory: [],
+		})
+
+	const intervalResult = await jobUpdateCapability.handler(
+		{
+			id: 'job-interval',
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+		},
+		{
+			env,
+			callerContext,
+		},
+	)
+	const cronResult = await jobUpdateCapability.handler(
+		{
+			id: 'job-cron',
+			name: 'Weekly digest',
+			schedule: {
+				type: 'cron',
+				expression: '0 9 * * 1',
+			},
+			timezone: 'America/Denver',
+		},
+		{
+			env,
+			callerContext,
+		},
+	)
+
+	expect(mockModule.updateJob).toHaveBeenNthCalledWith(1, {
+		env,
+		callerContext,
+		body: {
+			id: 'job-interval',
+			name: undefined,
+			params: undefined,
+			schedule: {
+				type: 'interval',
+				every: '15m',
+			},
+			timezone: undefined,
+			enabled: undefined,
+			killSwitchEnabled: undefined,
+			preserved: undefined,
+		},
+	})
+	expect(intervalResult).toMatchObject({
+		job_id: 'job-interval',
+		schedule: {
+			type: 'interval',
+			every: '15m',
+		},
+		next_run_at: '2026-04-20T10:15:00.000Z',
+	})
+
+	expect(mockModule.updateJob).toHaveBeenNthCalledWith(2, {
+		env,
+		callerContext,
+		body: {
+			id: 'job-cron',
+			name: 'Weekly digest',
+			params: undefined,
+			schedule: {
+				type: 'cron',
+				expression: '0 9 * * 1',
+			},
+			timezone: 'America/Denver',
+			enabled: undefined,
+			killSwitchEnabled: undefined,
+			preserved: undefined,
+		},
+	})
+	expect(cronResult).toMatchObject({
+		job_id: 'job-cron',
+		schedule: {
+			type: 'cron',
+			expression: '0 9 * * 1',
+		},
+		next_run_at: '2026-04-27T15:00:00.000Z',
 	})
 })
 
@@ -480,199 +656,6 @@ test('job_run_now executes jobs immediately and preserves failed one-off jobs fo
 		logs: ['ran job'],
 	})
 	expect(failedOneOffResult.job.last_run_error).toBe('boom')
-})
-
-test('job_schedule covers recurring schedules, requires auth, and supports the one-off helper flow', async () => {
-	resetMocks()
-	const env = {} as Env
-	const unauthenticatedContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-	})
-
-	await expect(
-		jobScheduleCapability.handler(
-			{
-				code: 'export default async () => ({ ok: true })',
-				schedule: {
-					type: 'interval',
-					every: '15m',
-				},
-			},
-			{
-				env,
-				callerContext: unauthenticatedContext,
-			},
-		),
-	).rejects.toThrow('Authenticated MCP user is required for this capability.')
-	await expect(
-		jobScheduleOnceCapability.handler(
-			{
-				code: 'export default async () => ({ ok: true })',
-				run_at: '2026-04-20T18:30:00Z',
-			},
-			{
-				env,
-				callerContext: unauthenticatedContext,
-			},
-		),
-	).rejects.toThrow('Authenticated MCP user is required for this capability.')
-	expect(mockModule.createJob).not.toHaveBeenCalled()
-
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-	})
-	mockModule.createJob
-		.mockResolvedValueOnce({
-			id: 'job-interval',
-			name: 'Nightly cleanup',
-			sourceId: 'source-interval',
-			storageId: 'job:job-interval',
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-			scheduleSummary: 'Runs every 15m',
-			createdAt: '2026-04-20T10:00:00.000Z',
-			nextRunAt: '2026-04-20T10:15:00.000Z',
-		} as const)
-		.mockResolvedValueOnce({
-			id: 'job-cron',
-			name: 'Weekly digest',
-			sourceId: 'source-cron',
-			storageId: 'job:job-cron',
-			schedule: {
-				type: 'cron',
-				expression: '0 9 * * 1',
-			},
-			scheduleSummary: 'Runs on cron "0 9 * * 1" in America/Denver',
-			createdAt: '2026-04-20T10:00:00.000Z',
-			nextRunAt: '2026-04-27T15:00:00.000Z',
-		} as const)
-		.mockResolvedValueOnce({
-			id: 'job-once',
-			name: 'One-off job',
-			sourceId: 'source-once',
-			storageId: 'job:job-once',
-			schedule: {
-				type: 'once',
-				runAt: '2026-04-20T18:30:00.000Z',
-			},
-			scheduleSummary: 'Runs once at 2026-04-20T18:30:00.000Z',
-			createdAt: '2026-04-20T10:00:00.000Z',
-			nextRunAt: '2026-04-20T18:30:00.000Z',
-		} as const)
-
-	const intervalResult = await jobScheduleCapability.handler(
-		{
-			code: 'export default async () => ({ ok: true })',
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-		},
-		{
-			env,
-			callerContext,
-		},
-	)
-	const cronResult = await jobScheduleCapability.handler(
-		{
-			name: 'Weekly digest',
-			code: 'export default async () => ({ ok: true })',
-			schedule: {
-				type: 'cron',
-				expression: '0 9 * * 1',
-			},
-			timezone: 'America/Denver',
-		},
-		{
-			env,
-			callerContext,
-		},
-	)
-	const oneOffResult = await jobScheduleOnceCapability.handler(
-		{
-			code: 'export default async () => ({ ok: true })',
-			run_at: '2026-04-20T18:30:00Z',
-		},
-		{
-			env,
-			callerContext,
-		},
-	)
-
-	expect(mockModule.createJob).toHaveBeenNthCalledWith(1, {
-		env,
-		callerContext,
-		body: {
-			name: 'Scheduled job',
-			code: 'export default async () => ({ ok: true })',
-			params: undefined,
-			schedule: {
-				type: 'interval',
-				every: '15m',
-			},
-			timezone: null,
-		},
-	})
-	expect(intervalResult).toMatchObject({
-		job_id: 'job-interval',
-		schedule: {
-			type: 'interval',
-			every: '15m',
-		},
-		next_run_at: '2026-04-20T10:15:00.000Z',
-	})
-
-	expect(mockModule.createJob).toHaveBeenNthCalledWith(2, {
-		env,
-		callerContext,
-		body: {
-			name: 'Weekly digest',
-			code: 'export default async () => ({ ok: true })',
-			params: undefined,
-			schedule: {
-				type: 'cron',
-				expression: '0 9 * * 1',
-			},
-			timezone: 'America/Denver',
-		},
-	})
-	expect(cronResult).toMatchObject({
-		job_id: 'job-cron',
-		schedule: {
-			type: 'cron',
-			expression: '0 9 * * 1',
-		},
-		next_run_at: '2026-04-27T15:00:00.000Z',
-	})
-
-	expect(mockModule.createJob).toHaveBeenNthCalledWith(3, {
-		env,
-		callerContext,
-		body: {
-			name: 'One-off job',
-			code: 'export default async () => ({ ok: true })',
-			params: undefined,
-			schedule: {
-				type: 'once',
-				runAt: '2026-04-20T18:30:00Z',
-			},
-			timezone: null,
-		},
-	})
-	expect(oneOffResult).toMatchObject({
-		job_id: 'job-once',
-		schedule: {
-			type: 'once',
-			run_at: '2026-04-20T18:30:00.000Z',
-		},
-	})
 })
 
 test('job inspection capabilities expose due-now state, history, alarm status, optional source code, and workflow runs', async () => {
@@ -999,7 +982,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 	}
 })
 
-test('job schedule/update/list/get round-trip expires_at and surface expired state', async () => {
+test('job_update and job_list round-trip expires_at and surface expired state', async () => {
 	resetMocks()
 	vi.useFakeTimers()
 	vi.setSystemTime(new Date('2026-04-20T18:30:00.000Z'))
@@ -1011,55 +994,6 @@ test('job schedule/update/list/get round-trip expires_at and surface expired sta
 			email: 'user@example.com',
 			displayName: 'User Example',
 		},
-	})
-	mockModule.createJob.mockResolvedValue({
-		id: 'job-expiring',
-		name: 'Expiring digest',
-		sourceId: 'source-expiring',
-		publishedCommit: null,
-		storageId: 'job:job-expiring',
-		schedule: {
-			type: 'interval',
-			every: '1h',
-		},
-		scheduleSummary: 'Runs every 1h',
-		timezone: 'UTC',
-		enabled: true,
-		killSwitchEnabled: false,
-		preserved: false,
-		expiresAt: '2026-04-21T00:00:00.000Z',
-		createdAt: '2026-04-20T18:30:00.000Z',
-		updatedAt: '2026-04-20T18:30:00.000Z',
-		nextRunAt: '2026-04-20T19:30:00.000Z',
-		runCount: 0,
-		successCount: 0,
-		errorCount: 0,
-	})
-
-	const scheduled = await jobScheduleCapability.handler(
-		{
-			name: 'Expiring digest',
-			code: 'export default async () => ({ ok: true })',
-			schedule: { type: 'interval', every: '1h' },
-			expires_at: '2026-04-21T00:00:00Z',
-		},
-		{ env, callerContext },
-	)
-	expect(mockModule.createJob).toHaveBeenCalledWith({
-		env,
-		callerContext,
-		body: {
-			name: 'Expiring digest',
-			code: 'export default async () => ({ ok: true })',
-			params: undefined,
-			schedule: { type: 'interval', every: '1h' },
-			timezone: null,
-			expiresAt: '2026-04-21T00:00:00Z',
-		},
-	})
-	expect(scheduled).toMatchObject({
-		job_id: 'job-expiring',
-		expires_at: '2026-04-21T00:00:00.000Z',
 	})
 
 	mockModule.updateJob.mockResolvedValue({
@@ -1092,7 +1026,6 @@ test('job schedule/update/list/get round-trip expires_at and surface expired sta
 		body: {
 			id: 'job-expiring',
 			name: undefined,
-			code: undefined,
 			params: undefined,
 			schedule: undefined,
 			timezone: undefined,
@@ -1105,6 +1038,36 @@ test('job schedule/update/list/get round-trip expires_at and surface expired sta
 	expect(cleared).toMatchObject({
 		job_id: 'job-expiring',
 		expires_at: null,
+		expired: false,
+	})
+
+	mockModule.updateJob.mockResolvedValueOnce({
+		id: 'job-expiring',
+		name: 'Expiring digest',
+		sourceId: 'source-expiring',
+		publishedCommit: null,
+		storageId: 'job:job-expiring',
+		schedule: { type: 'interval', every: '1h' },
+		scheduleSummary: 'Runs every 1h',
+		timezone: 'UTC',
+		enabled: true,
+		killSwitchEnabled: false,
+		preserved: false,
+		expiresAt: '2026-04-21T00:00:00.000Z',
+		createdAt: '2026-04-20T18:30:00.000Z',
+		updatedAt: '2026-04-20T18:32:00.000Z',
+		nextRunAt: '2026-04-20T19:30:00.000Z',
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+	})
+	const setExpiry = await jobUpdateCapability.handler(
+		{ id: 'job-expiring', expires_at: '2026-04-21T00:00:00Z' },
+		{ env, callerContext },
+	)
+	expect(setExpiry).toMatchObject({
+		job_id: 'job-expiring',
+		expires_at: '2026-04-21T00:00:00.000Z',
 		expired: false,
 	})
 

@@ -37,7 +37,7 @@ export function renderProfileFollowControl(input: {
 	}
 
 	return (
-		<span mix={css(followControlCss)}>
+		<div mix={css(followControlCss)}>
 			<form
 				method="post"
 				action={routes.profileFollowApiPost.href({ username: input.username })}
@@ -69,7 +69,7 @@ export function renderProfileFollowControl(input: {
 					{input.followError}
 				</span>
 			) : null}
-		</span>
+		</div>
 	)
 }
 

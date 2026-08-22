@@ -94,6 +94,10 @@ import {
 	schedulerErrorFields,
 	type SchedulerJobOutcomeLog,
 } from './scheduler-logging.ts'
+import {
+	isPackageOwnedJobId,
+	packageOwnedJobDeleteErrorMessage,
+} from './job-retention.ts'
 import { buildPackageJobId, packageIdFromJobId } from './package-job-id.ts'
 
 export { getJob, getJobInspection, inspectJobsForUser, listJobs }
@@ -882,10 +886,6 @@ function resolveUpdatedShape(input: {
 		throw new Error('Jobs require a repo-backed source.')
 	}
 	return {
-		moduleSource:
-			input.body.code === undefined
-				? undefined
-				: normalizeJobCode(input.body.code),
 		sourceId: nextSourceId,
 		publishedCommit: nextPublishedCommit ?? null,
 		repoCheckPolicy: nextRepoCheckPolicy,
@@ -894,7 +894,6 @@ function resolveUpdatedShape(input: {
 
 function shouldSyncJobSourceForUpdate(body: JobUpdateInput) {
 	return (
-		body.code !== undefined ||
 		body.name !== undefined ||
 		body.schedule !== undefined ||
 		body.timezone !== undefined ||
@@ -913,6 +912,13 @@ function jobUpdateSharesPackageSource(input: {
 	)
 }
 
+function assertJobUpdateRejectsCode(body: JobUpdateInput) {
+	if (body.code === undefined) {
+		return
+	}
+	throw new McpCallerError('Job code cannot be changed via job_update.')
+}
+
 function assertPackageOwnedJobUpdateAllowsIdentityFields(input: {
 	existing: Pick<JobRecord, 'id' | 'name' | 'publishedCommit'>
 	body: JobUpdateInput
@@ -923,16 +929,18 @@ function assertPackageOwnedJobUpdateAllowsIdentityFields(input: {
 	const publishedCommitChanges =
 		input.body.publishedCommit !== undefined &&
 		input.body.publishedCommit !== input.existing.publishedCommit
-	if (
-		input.body.code === undefined &&
-		!nameChanges &&
-		!publishedCommitChanges
-	) {
+	if (!nameChanges && !publishedCommitChanges) {
 		return
 	}
 	throw new McpCallerError(
-		'Package-owned jobs cannot change name, code, or published source via job_update. Change the job entry in the package repo and publish the package.',
+		'Package-owned jobs cannot change name or published source via job_update. Change the job entry in the package repo and publish the package.',
 	)
+}
+
+export function assertJobDeleteAllowsJobId(jobId: string) {
+	if (isPackageOwnedJobId(jobId)) {
+		throw new McpCallerError(packageOwnedJobDeleteErrorMessage)
+	}
 }
 
 export async function createJob(input: {
@@ -1058,6 +1066,7 @@ export async function updateJob(input: {
 				throw new McpCallerError(`Job "${input.body.id}" was not found.`)
 			}
 			const existing = existingRow.record
+			assertJobUpdateRejectsCode(input.body)
 			const nextSchedule =
 				input.body.schedule !== undefined
 					? normalizeJobSchedule(input.body.schedule)
@@ -1130,8 +1139,8 @@ export async function updateJob(input: {
 				// updates (schedule, timezone, params, enabled) must not
 				// force-publish that source: the overwrite safety policy refuses
 				// it, and writing kody.json / src/job.ts into the package repo
-				// would be destructive. Name, code, and publishedCommit stay
-				// with the package repo + publish.
+				// would be destructive. Name and publishedCommit stay with the
+				// package repo + publish. Code is rejected for every job above.
 				if (jobUpdateSharesPackageSource({ jobId: existing.id, source })) {
 					assertPackageOwnedJobUpdateAllowsIdentityFields({
 						existing,
@@ -1146,7 +1155,7 @@ export async function updateJob(input: {
 						bootstrapAccess: null,
 						files: buildJobSourceFiles({
 							job: toJobView(updated),
-							moduleSource: shape.moduleSource ?? null,
+							moduleSource: null,
 						}),
 					})
 					if (syncedPublishedCommit) {
@@ -1187,6 +1196,7 @@ export async function deleteJob(input: {
 	userId: string
 	jobId: string
 }) {
+	assertJobDeleteAllowsJobId(input.jobId)
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: input.userId,

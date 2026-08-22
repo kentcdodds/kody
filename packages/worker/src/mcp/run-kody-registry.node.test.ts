@@ -2847,7 +2847,7 @@ test('runBundledModuleWithRegistry retries transient Durable Object isolate rese
 		expect(exhausted.error).toBe(
 			'Durable Object reset because its code was updated.',
 		)
-		expect(execute).toHaveBeenCalledTimes(3)
+		expect(execute).toHaveBeenCalledTimes(4)
 		expect(finishSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
 				status: 'error',

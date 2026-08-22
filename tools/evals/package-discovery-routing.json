@@ -71,10 +71,10 @@
 				"precondition": "The evaluation account has no exact reusable result for this reminder."
 			},
 			"expected": {
-				"route": "ad-hoc-job",
-				"requiredActions": ["search", "schedule-ad-hoc-job"],
-				"allowedActions": ["search", "schedule-ad-hoc-job"],
-				"terminalAction": "schedule-ad-hoc-job"
+				"route": "execute-one-off",
+				"requiredActions": ["search", "execute-one-off"],
+				"allowedActions": ["search", "execute-one-off"],
+				"terminalAction": "execute-one-off"
 			}
 		},
 		{
@@ -85,10 +85,14 @@
 				"precondition": "The evaluation account has no exact reusable result for this reminder."
 			},
 			"expected": {
-				"route": "ad-hoc-job",
-				"requiredActions": ["search", "schedule-ad-hoc-job"],
-				"allowedActions": ["search", "schedule-ad-hoc-job"],
-				"terminalAction": "schedule-ad-hoc-job"
+				"route": "package-authoring",
+				"requiredActions": ["search", "author-package"],
+				"allowedActions": [
+					"search",
+					"inspect-authoring-guidance",
+					"author-package"
+				],
+				"terminalAction": "author-package"
 			}
 		},
 		{

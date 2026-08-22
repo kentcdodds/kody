@@ -483,7 +483,7 @@ For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{typ
 
 1. **capability** \`coding_guide_get\` (\`coding\`) — Load an official Kody guide (markdown, bundled from the kody repository). Use \`guide: "package_lifecycle"\` before enabling a package-owned schedule. Entity: \`coding_guide_get:capability\`
 2. **capability** \`webhook_url_mint\` (\`webhooks\`) — Mint an inbound webhook URL for a package-declared webhook. Entity: \`webhook_url_mint:capability\`
-3. **capability** \`job_schedule\` (\`jobs\`) — Schedule a repo-backed job without creating a saved package first. Entity: \`job_schedule:capability\``
+3. **capability** \`job_list\` (\`jobs\`) — List scheduled jobs for the signed-in user. Entity: \`job_list:capability\``
 
 export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 	{
@@ -830,7 +830,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 					{
 						name: 'search',
 						summary: 'Find how to notify when the export has news',
-						note: 'Same phone conversation, new task. Search ranks the lifecycle guide, inbound webhooks, and ad hoc `job_schedule`. The kody-bot memory already surfaced earlier in this chat.',
+						note: 'Same phone conversation, new task. Search ranks the lifecycle guide, inbound webhooks, and package-owned jobs. The kody-bot memory already surfaced earlier in this chat.',
 						inputs: [
 							{
 								name: 'query',
@@ -875,7 +875,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 			{
 				role: 'agent',
 				tone: 'reasoning',
-				text: 'Inbound webhooks are URLs I host, not a GitHub feed of one person’s public activity. `job_schedule` is for jobs without a package. I will open a repo session, patch in a daily cron wrapper, test it, then enable the job.',
+				text: 'Inbound webhooks are URLs I host, not a GitHub feed of one person’s public activity. Recurring schedules belong on a package under `kody.jobs`. I will open a repo session, patch in a daily cron wrapper, test it, then enable the job.',
 			},
 			{
 				role: 'tools',

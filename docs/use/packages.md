@@ -243,10 +243,10 @@ The primary identifier is the bare `kodyId`; `kody_id`, `packageId`, and
 `package_id` are accepted aliases. `exportName` is required, and `export_name`
 is accepted as an alias.
 
-Package runtime contexts, authenticated ad hoc MCP `execute` calls, and
-standalone scheduled jobs can call `packages.invoke`, and resolution is scoped
-to packages owned by the current authenticated user. Package code does not need
-to mint or pass package-invocation bearer tokens. Nested package invocations are
+Package runtime contexts, authenticated ad hoc MCP `execute` calls, and package
+job runtimes can call `packages.invoke`, and resolution is scoped to packages
+owned by the current authenticated user. Package code does not need to mint or
+pass package-invocation bearer tokens. Nested package invocations are
 depth-limited to prevent runaway loops.
 
 External trusted clients that must call package exports over HTTP use package
@@ -264,10 +264,10 @@ platform (built-in) dependencies receive no `packageStorage()` grant and the
 call fails closed inside live platform code. `{{secret:...}}` placeholders for
 user-scope secrets still resolve at the fetch gateway under the calling user —
 so secret-backed packages such as `github` work fully via plain static import.
-Use keyless `packages.invoke` from execute or a standalone scheduled job when
-you need to enter a saved package as that package so it receives
-`packageContext`, package-owned storage, package-mounted secrets
-(`kody.secretMounts`), and its own `packages` helper.
+Use keyless `packages.invoke` from execute or a package job runtime when you
+need to enter a saved package as that package so it receives `packageContext`,
+package-owned storage, package-mounted secrets (`kody.secretMounts`), and its
+own `packages` helper.
 
 **Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
 dynamic `import("kody:@...")` are not available. Package publish checks reject
@@ -507,8 +507,7 @@ to a package export. Declaring a webhook does not open ingress — mint a URL wi
 
 ## Package-owned jobs
 
-Packages can own jobs, and Kody also supports schedules that are not owned by a
-package.
+Recurring schedules belong on a saved package:
 
 - Define them under `package.json#kody.jobs`
 - Reference package-local entry modules
@@ -521,27 +520,18 @@ package.
   package id
 - Shared durable data goes through `packageStorage()`
 
-Jobs are part of the package definition.
+Jobs are part of the package definition. Deferred one-shot work uses
+`workflows.create({ runAt })` from `execute` or package runtime — see
+[Workflows](./workflows.md).
 
-For repo-backed jobs that are not part of a saved package, use `job_schedule`
-instead. `job_schedule_once` is the one-off shortcut, `job_update` can rename a
-job and adjust safe mutable fields such as schedule, timezone, enabled state,
-kill-switch state, params, `expires_at` (UTC ISO auto-disable; null clears), or
-ES module code with a default-exported function, `job_delete` removes an
-existing scheduled job by id, and `job_run_now` can trigger an existing
-scheduled job immediately for debugging or ad hoc runs. When `expires_at` is
-reached the platform stops scheduling and auto-disables the job; that is
-separate from `preserved`, which only skips retention deletion.
-
-When `job_update` receives a replacement `code` string, Kody publishes a new
-commit on the job's repo-backed source, and subsequent runs execute the updated
-module. That is usually the easiest way to change the source of a non-package
-job, since there is no `package_get_git_remote` equivalent for non-package job
-sources. For multi-file edits, open a session on the job's `source_id` with
-`repo_open_session` first, then use `repo_edit_files`, `repo_apply_patch`, and
-related file-level session capabilities against that `session_id`. Job code must
-default export a function that receives the job `params` as its first argument;
-`kody:runtime` does not export `params`.
+`job_update` adjusts metadata on an existing job: schedule, timezone, enabled
+state, kill-switch state, params, `expires_at` (UTC ISO auto-disable; null
+clears), and `preserved`. Package-owned jobs keep name and source in the package
+repo — change the job entry there and publish. `job_delete` is rejected for
+package-owned jobs for the same reason. `job_run_now` triggers an existing
+package job immediately for debugging. When `expires_at` is reached the platform
+stops scheduling and auto-disables the job; that is separate from `preserved`,
+which only skips retention deletion.
 
 ## Save and edit packages
 

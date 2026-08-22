@@ -16,7 +16,6 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { runJobNowViaManager } from '#worker/jobs/manager-client.ts'
 import { updateJobRetentionPreferencesForUser } from '#worker/jobs/job-retention-cleanup.ts'
 import { deleteJob, updateJob } from '#worker/jobs/service.ts'
-import { type JobSchedule, type JobUpdateInput } from '#worker/jobs/types.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -120,9 +119,6 @@ export function createAccountJobsApiHandler(env: Env) {
 				if (action === 'delete') {
 					return await handleDeleteAction({ env, user, body, request })
 				}
-				if (action === 'update') {
-					return await handleUpdateAction({ env, user, body, request })
-				}
 			} catch (error) {
 				return jsonResponse(
 					{
@@ -172,7 +168,7 @@ function requireJobId(body: object) {
 	return id
 }
 
-function assertAdHocJob(jobId: string, mutation: string) {
+function assertNotPackageOwnedJob(jobId: string, mutation: string) {
 	if (isPackageOwnedJobId(jobId)) {
 		throw new Error(
 			`Package-owned jobs cannot ${mutation} from the account UI. Change the package job declaration and republish the package.`,
@@ -202,7 +198,7 @@ async function handleSetEnabledAction(input: {
 	request: Request
 }) {
 	const id = requireJobId(input.body)
-	assertAdHocJob(id, 'change enabled state')
+	assertNotPackageOwnedJob(id, 'change enabled state')
 	const enabled = readBoolean(input.body, 'enabled')
 	if (enabled === null) {
 		throw new Error('enabled must be a boolean.')
@@ -251,7 +247,7 @@ async function handleSetPreservedAction(input: {
 	request: Request
 }) {
 	const id = requireJobId(input.body)
-	assertAdHocJob(id, 'change preserve state')
+	assertNotPackageOwnedJob(id, 'change preserve state')
 	const preserved = readBoolean(input.body, 'preserved')
 	if (preserved === null) {
 		throw new Error('preserved must be a boolean.')
@@ -341,7 +337,7 @@ async function handleDeleteAction(input: {
 	request: Request
 }) {
 	const id = requireJobId(input.body)
-	assertAdHocJob(id, 'be deleted')
+	assertNotPackageOwnedJob(id, 'be deleted')
 	await deleteJob({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
@@ -355,50 +351,6 @@ async function handleDeleteAction(input: {
 	)
 }
 
-async function handleUpdateAction(input: {
-	env: Env
-	user: AuthenticatedUser
-	body: object
-	request: Request
-}) {
-	const id = requireJobId(input.body)
-	assertAdHocJob(id, 'edit name, schedule, or timezone')
-
-	const updateBody: JobUpdateInput = { id }
-	const name = readOptionalTrimmedString(input.body, 'name')
-	if (name !== undefined) {
-		updateBody.name = name
-	}
-	const timezone = readOptionalNullableString(input.body, 'timezone')
-	if (timezone !== undefined) {
-		updateBody.timezone = timezone
-	}
-	const schedule = readOptionalSchedule(input.body)
-	if (schedule !== undefined) {
-		updateBody.schedule = schedule
-	}
-
-	if (
-		updateBody.name === undefined &&
-		updateBody.timezone === undefined &&
-		updateBody.schedule === undefined
-	) {
-		throw new Error('Provide name, schedule, and/or timezone to update.')
-	}
-
-	await updateJob({
-		env: input.env,
-		callerContext: buildCallerContext(input),
-		body: updateBody,
-	})
-	return jsonResponse(
-		await reloadJobsPayload({
-			...input,
-			selectedJobId: id,
-		}),
-	)
-}
-
 function readBoolean(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
 	return typeof value === 'boolean' ? value : null
@@ -407,68 +359,4 @@ function readBoolean(body: object, key: string) {
 function readNumber(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
 	return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
-function readOptionalTrimmedString(body: object, key: string) {
-	if (!(key in (body as Record<string, unknown>))) {
-		return undefined
-	}
-	const value = readTrimmedStringOrEmpty(body, key)
-	if (!value) {
-		throw new Error(`${key} must be a non-empty string.`)
-	}
-	return value
-}
-
-function readOptionalNullableString(body: object, key: string) {
-	if (!(key in (body as Record<string, unknown>))) {
-		return undefined
-	}
-	const value = (body as Record<string, unknown>)[key]
-	if (value === null) {
-		return null
-	}
-	if (typeof value !== 'string') {
-		throw new Error(`${key} must be a string or null.`)
-	}
-	const trimmed = value.trim()
-	return trimmed || null
-}
-
-function readOptionalSchedule(body: object): JobSchedule | undefined {
-	if (!('schedule' in (body as Record<string, unknown>))) {
-		return undefined
-	}
-	const schedule = (body as Record<string, unknown>).schedule
-	if (!schedule || typeof schedule !== 'object') {
-		throw new Error('schedule must be an object.')
-	}
-	const type = readTrimmedStringOrEmpty(schedule, 'type')
-	switch (type) {
-		case 'once': {
-			const runAt =
-				readTrimmedStringOrEmpty(schedule, 'runAt') ||
-				readTrimmedStringOrEmpty(schedule, 'run_at')
-			if (!runAt) {
-				throw new Error('once schedules require runAt.')
-			}
-			return { type: 'once', runAt }
-		}
-		case 'interval': {
-			const every = readTrimmedStringOrEmpty(schedule, 'every')
-			if (!every) {
-				throw new Error('interval schedules require every.')
-			}
-			return { type: 'interval', every }
-		}
-		case 'cron': {
-			const expression = readTrimmedStringOrEmpty(schedule, 'expression')
-			if (!expression) {
-				throw new Error('cron schedules require expression.')
-			}
-			return { type: 'cron', expression }
-		}
-		default:
-			throw new Error('schedule.type must be once, interval, or cron.')
-	}
 }

@@ -71,20 +71,22 @@ Topology: `createRun` wake-ups work only if the conductor is an API-created
 cloud agent. An interactive chat conductor rejects them (400) — use Discord (or
 another channel you check) as primary.
 
-**Time gates → one-shot jobs**, not `sleep`:
+**Time gates → deferred workflows**, not `sleep`:
 
 ```javascript
-import { kody } from 'kody:runtime'
-await kody.job_schedule({
-	name: 'wake-<track>-after-<gate>',
-	description: 'Resume <track> when <gate> elapses.',
-	schedule: { type: 'once', run_at: '<ISO datetime>' },
+import { workflows } from 'kody:runtime'
+await workflows.create({
+	runAt: '<ISO datetime>',
+	idempotencyKey: 'wake-<track>-after-<gate>-<attempt-id>',
 	code: "import { createRun } from 'kody:@kentcdodds/cursor/runs'\nexport default async function main() { return await createRun({ agentId: '<AGENT_ID>', prompt: '<gate> elapsed; verify evidence, then proceed.' }) }",
 })
 ```
 
-Schedule the same against your own agent id so the program survives session end.
-Cancel superseded jobs with `job_delete`.
+Reuse the same idempotency key only when retrying the same scheduling request. A
+later attempt after `complete` or `cancelled` needs a new key, or
+`workflows.create` returns the old run. Schedule the same against your own agent
+id so the program survives session end. Cancel superseded workflows with
+`workflow_run_cancel`.
 
 ## Loop
 
@@ -95,8 +97,8 @@ Cancel superseded jobs with `job_delete`.
 4. Size agents: implementer by default; `orchestrate` only when fan-out pays.
 5. State shipping policy + risk posture + PR invariant + report-back (with your
    real agent id) + falsifiable done-definition in every kickoff.
-6. Dispatch, then **end your turn**. Wake-ups/jobs drive the loop. Poll only for
-   silent agents. Verify claims against main before acting.
+6. Dispatch, then **end your turn**. Wake-ups and deferred workflows drive the
+   loop. Poll only for silent agents. Verify claims against main before acting.
 7. Nudge idle agents with `createRun` (409 while mid-run — retry or schedule).
    New scope → nearest idle owner; spawn only for new territory.
 8. Final QA is yours — grep main, check deploys. Never report done from claims.

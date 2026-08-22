@@ -271,7 +271,7 @@ primitives:
   - id: jobs
     group: assistant
     name: Scheduled jobs
-    summary: Repo-backed one-off, interval, and cron jobs.
+    summary: Package-owned interval and cron jobs.
     code:
       - packages/worker/src/jobs/
     docs:

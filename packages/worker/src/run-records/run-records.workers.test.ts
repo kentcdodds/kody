@@ -28,6 +28,7 @@ import {
 	runRecordMaxLogEntriesPerRun,
 	runRecordMaxResultSnapshotBytes,
 	runRecordMaxRunsPerUser,
+	runRecordPlatformInterruptedErrorName,
 	runRecordRetentionDays,
 	runRecordRetentionEveryNFinishes,
 	runRecordStaleRunningTtlMsJob,
@@ -78,6 +79,7 @@ function insertRunRow(
 		errorName?: string | null
 		errorMessage?: string | null
 		errorTriage?: 'ignored' | 'resolved' | null
+		idempotencyKey?: string | null
 	},
 ) {
 	const finishedAt = input.finishedAt ?? null
@@ -89,11 +91,12 @@ function insertRunRow(
 			duration_ms, error_name, error_message, metadata_json, created_at,
 			updated_at
 		) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL,
-			NULL, NULL, NULL, NULL, NULL, ?, ?, ?, NULL, NULL, '{}', ?, ?)`,
+			NULL, NULL, NULL, ?, NULL, ?, ?, ?, NULL, NULL, '{}', ?, ?)`,
 		input.id,
 		input.surface ?? 'job',
 		input.status,
 		input.name ?? null,
+		input.idempotencyKey ?? null,
 		input.startedAt,
 		finishedAt,
 		finishedAt == null ? null : 1,
@@ -920,8 +923,11 @@ test('cap and stale retention journey', async () => {
 		})
 		const stale = await getRunRecord({ env, userId, runId: 'stale-running' })
 		expect(stale?.run.status).toBe('error')
-		expect(stale?.run.errorName).toBe('Interrupted')
-		expect(stale?.run.errorMessage).toMatch(/outcome unknown/i)
+		expect(stale?.run.errorName).toBe(runRecordPlatformInterruptedErrorName)
+		expect(stale?.run.errorMessage).toBe(
+			'The platform interrupted this run before completion; outcome unknown.',
+		)
+		expect(stale?.run.errorTriage).toBeNull()
 		expect(stale?.run.finishedAt).toBeTruthy()
 		const fresh = await getRunRecord({ env, userId, runId: 'fresh-running' })
 		expect(fresh?.run.status).toBe('running')
@@ -951,11 +957,107 @@ test('cap and stale retention journey', async () => {
 			runId: 'stale-execute',
 		})
 		expect(healed?.run.status).toBe('error')
-		expect(healed?.run.errorName).toBe('Interrupted')
+		expect(healed?.run.errorName).toBe(runRecordPlatformInterruptedErrorName)
 		expect(healed?.run.surface).toBe('execute')
 	}
 
-	// --- a real late finish replaces reconciled Interrupted (outcome is known) ---
+	// --- idempotent scheduled/queued runs retain auto-ignored interrupt history ---
+	{
+		const userId = uniqueUserId('idempotent-platform-interrupt')
+		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+		const staleJobStartedAt = new Date(
+			Date.now() - runRecordStaleRunningTtlMsJob - 1_000,
+		).toISOString()
+		const staleSubscriptionStartedAt = new Date(
+			Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
+		).toISOString()
+		await runInDurableObject(stub, async (instance: RunLog, state) => {
+			expect(instance).toBeInstanceOf(RunLog)
+			insertRunRow(state, {
+				id: 'stale-scheduled-job',
+				status: 'running',
+				startedAt: staleJobStartedAt,
+				surface: 'job',
+				idempotencyKey: 'scheduled-job:job-1:2026-08-21T00:00:00.000Z',
+			})
+			insertRunRow(state, {
+				id: 'stale-subscription-delivery',
+				status: 'running',
+				startedAt: staleSubscriptionStartedAt,
+				surface: 'subscription',
+				idempotencyKey: 'delivery-123',
+			})
+		})
+
+		const summary = await summarizeRunRecords({
+			env,
+			userId,
+			since: new Date(0).toISOString(),
+		})
+		expect(summary).toMatchObject({
+			errors: 0,
+			ignored: 2,
+			running: 0,
+		})
+		const page = await listRunRecords({
+			env,
+			userId,
+			filter: { errorTriage: 'ignored' },
+		})
+		expect(page.runs).toHaveLength(2)
+		for (const run of page.runs) {
+			expect(run).toMatchObject({
+				status: 'error',
+				errorName: runRecordPlatformInterruptedErrorName,
+				errorTriage: 'ignored',
+				triagedBy: 'system:platform-interrupt',
+			})
+		}
+
+		await finishRunRecord({
+			env,
+			handle: {
+				id: 'stale-scheduled-job',
+				userId,
+				startedAt: staleJobStartedAt,
+				persistence: 'eager',
+				context: baseContext({
+					surface: 'job',
+					idempotencyKey: 'scheduled-job:job-1:2026-08-21T00:00:00.000Z',
+				}),
+			},
+			status: 'error',
+			error: new Error('package failed after the delayed finish arrived'),
+		})
+		const lateError = await getRunRecord({
+			env,
+			userId,
+			runId: 'stale-scheduled-job',
+		})
+		expect(lateError?.run).toMatchObject({
+			status: 'error',
+			errorName: 'Error',
+			errorMessage: 'package failed after the delayed finish arrived',
+			errorTriage: null,
+			triageNote: null,
+			triagedAt: null,
+			triagedBy: null,
+		})
+		expect(
+			(
+				await getRunRecord({
+					env,
+					userId,
+					runId: 'stale-subscription-delivery',
+				})
+			)?.run,
+		).toMatchObject({
+			errorName: runRecordPlatformInterruptedErrorName,
+			errorTriage: 'ignored',
+		})
+	}
+
+	// --- a real late finish replaces reconciled platform interrupt ---
 	{
 		const userId = uniqueUserId('late-finish-after-interrupted')
 		const staleStartedAt = new Date(
@@ -984,7 +1086,9 @@ test('cap and stale retention journey', async () => {
 			userId,
 			runId: handle.id,
 		})
-		expect(interrupted?.run.errorName).toBe('Interrupted')
+		expect(interrupted?.run.errorName).toBe(
+			runRecordPlatformInterruptedErrorName,
+		)
 
 		await finishRunRecord({
 			env,

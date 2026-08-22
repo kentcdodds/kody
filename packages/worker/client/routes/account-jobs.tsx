@@ -14,10 +14,8 @@ import {
 } from '#client/routes/account-approval-shared.ts'
 import {
 	filterAccountJobs,
-	readJobsOwnershipFilter,
 	readJobsSearchFilter,
 	readJobsViewFilter,
-	type AccountJobsOwnershipFilter,
 	type AccountJobsViewFilter,
 } from '#client/routes/account-jobs-filter.ts'
 import {
@@ -44,7 +42,6 @@ import {
 import {
 	type AccountJobDetail,
 	type AccountJobListItem,
-	type AccountJobSchedule,
 	type AccountJobsLoaderData,
 } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
@@ -64,24 +61,12 @@ import {
 	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
-	getSelectCss,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
 
 const clampedCellCss = css(recordCellClamp(28))
 
-const selectCss = getSelectCss()
-
 type MessageTone = 'info' | 'error'
-
-type EditState = {
-	name: string
-	timezone: string
-	scheduleType: AccountJobSchedule['type']
-	runAt: string
-	every: string
-	expression: string
-}
 
 const accountJobsApiPath = '/account/jobs.json'
 const jobsRoute = createListDetailRoute('/account/jobs')
@@ -95,20 +80,10 @@ const viewFilterOptions: Array<{
 	{ value: 'all', label: 'All' },
 ]
 
-const ownershipFilterOptions: Array<{
-	value: AccountJobsOwnershipFilter
-	label: string
-}> = [
-	{ value: 'all', label: 'All ownership' },
-	{ value: 'ad-hoc', label: 'Ad-hoc' },
-	{ value: 'package', label: 'Package' },
-]
-
 /**
  * Latch key includes the selected job id because detail fields (recent runs,
- * params, errors) are loaded with `?selected=`. The client-side `q` / `view` /
- * `ownership` filters are omitted so search typing and filter toggles do not
- * refetch.
+ * params, errors) are loaded with `?selected=`. The client-side `q` / `view`
+ * filters are omitted so search typing and filter toggles do not refetch.
  */
 function getDataLatchKey(href: string) {
 	const selectedId = jobsRoute.getSelection(href).selectedId
@@ -121,12 +96,11 @@ function emptyJobsMessage(input: {
 	totalCount: number
 	filteredCount: number
 	view: AccountJobsViewFilter
-	ownership: AccountJobsOwnershipFilter
 	search: string
 }) {
 	if (input.totalCount === 0) return 'No scheduled jobs yet.'
 	if (input.filteredCount > 0) return null
-	if (input.search || input.ownership !== 'all' || input.view === 'all') {
+	if (input.search || input.view === 'all') {
 		return 'No jobs match the current filters.'
 	}
 	if (input.view === 'history') {
@@ -164,19 +138,19 @@ export async function accountJobsRouteLoader(
 	return { accountJobs: payload }
 }
 
-function ownershipLabel(
+function packageLabel(
 	job: Pick<AccountJobListItem, 'ownership' | 'packageName'>,
 ) {
 	if (job.ownership === 'package') {
 		return job.packageName ?? 'Package'
 	}
-	return 'Ad-hoc'
+	return '—'
 }
 
-function ownershipValue(
+function packageValue(
 	job: Pick<AccountJobListItem, 'ownership' | 'packageId' | 'packageName'>,
 ) {
-	if (job.ownership !== 'package') return 'Ad-hoc'
+	if (job.ownership !== 'package') return '—'
 	if (job.packageId && job.packageName) {
 		return (
 			<a
@@ -222,32 +196,6 @@ function statusColor(
 	return colors.textMuted
 }
 
-function createEditState(job: AccountJobDetail): EditState {
-	return {
-		name: job.name,
-		timezone: job.timezone,
-		scheduleType: job.schedule.type,
-		runAt: job.schedule.type === 'once' ? job.schedule.runAt : '',
-		every: job.schedule.type === 'interval' ? job.schedule.every : '',
-		expression: job.schedule.type === 'cron' ? job.schedule.expression : '',
-	}
-}
-
-function buildScheduleFromEdit(edit: EditState): AccountJobSchedule {
-	switch (edit.scheduleType) {
-		case 'once':
-			return { type: 'once', runAt: edit.runAt.trim() }
-		case 'interval':
-			return { type: 'interval', every: edit.every.trim() }
-		case 'cron':
-			return { type: 'cron', expression: edit.expression.trim() }
-		default: {
-			const _exhaustive: never = edit.scheduleType
-			return _exhaustive
-		}
-	}
-}
-
 function formatDurationMs(durationMs: number | null) {
 	if (durationMs == null) return '—'
 	if (durationMs < 1000) return `${durationMs} ms`
@@ -282,8 +230,6 @@ export function AccountJobsRoute(handle: Handle) {
 	let messageTone: MessageTone = 'info'
 	const loadLatch = createRouteLoadLatch()
 	const deleteJobCheck = createDoubleCheck(handle)
-	let editState: EditState | null = null
-	let editing = false
 
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
 	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
@@ -300,18 +246,14 @@ export function AccountJobsRoute(handle: Handle) {
 	function buildHrefWithUpdatedFilters(next: {
 		search?: string
 		view?: AccountJobsViewFilter
-		ownership?: AccountJobsOwnershipFilter
 	}) {
 		const nextUrl = new URL(getCurrentHref(), 'http://localhost')
 		const search = next.search ?? nextUrl.searchParams.get('q')?.trim() ?? ''
 		const view = next.view ?? readJobsViewFilter(nextUrl.href)
-		const ownership = next.ownership ?? readJobsOwnershipFilter(nextUrl.href)
 		if (search) nextUrl.searchParams.set('q', search)
 		else nextUrl.searchParams.delete('q')
 		if (view === 'active') nextUrl.searchParams.delete('view')
 		else nextUrl.searchParams.set('view', view)
-		if (ownership === 'all') nextUrl.searchParams.delete('ownership')
-		else nextUrl.searchParams.set('ownership', ownership)
 		return `${nextUrl.pathname}${nextUrl.search}`
 	}
 
@@ -334,10 +276,6 @@ export function AccountJobsRoute(handle: Handle) {
 		selectedJob = payload.selectedJob
 		applyRetention(payload.retention)
 		deleteJobCheck.reset()
-		editing = false
-		editState = payload.selectedJob
-			? createEditState(payload.selectedJob)
-			: null
 	}
 
 	async function loadJobs(signal: AbortSignal) {
@@ -467,17 +405,14 @@ export function AccountJobsRoute(handle: Handle) {
 		const selection = jobsRoute.getSelection(currentHref)
 		const search = readJobsSearchFilter(currentHref)
 		const view = readJobsViewFilter(currentHref)
-		const ownership = readJobsOwnershipFilter(currentHref)
 		const filteredJobs = filterAccountJobs(jobs, {
 			view,
-			ownership,
 			search,
 		})
 		const listEmptyMessage = emptyJobsMessage({
 			totalCount: jobs.length,
 			filteredCount: filteredJobs.length,
 			view,
-			ownership,
 			search,
 		})
 		const detail =
@@ -495,14 +430,14 @@ export function AccountJobsRoute(handle: Handle) {
 			!detail &&
 			!waitingForDetail &&
 			status === 'ready'
-		const isAdHoc = detail?.ownership === 'ad-hoc'
-		const isPackage = detail?.ownership === 'package'
+		const isPackageOwned = detail?.ownership === 'package'
+		const isNotPackageOwned = detail != null && !isPackageOwned
 
 		return (
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Jobs"
-					description="Inspect scheduled jobs, toggle kill switch or Preserve, run jobs now, and edit ad-hoc schedules. Completed ad-hoc jobs are cleaned up automatically after your retention windows; longer retention uses more scheduled job slots and storage."
+					description="Inspect scheduled package jobs, toggle kill switch or Preserve, and run jobs now. Completed one-off jobs are cleaned up automatically after your retention windows; longer retention uses more scheduled job slots and storage."
 					currentHref={currentHref}
 				/>
 
@@ -536,7 +471,7 @@ export function AccountJobsRoute(handle: Handle) {
 								Platform defaults clean up successful one-off jobs after{' '}
 								{retention.defaults.successOnce} days, failed or never-ran
 								one-offs after {retention.defaults.failedOrNeverRanOnce} days,
-								and disabled recurring ad-hoc jobs after{' '}
+								and disabled recurring jobs after{' '}
 								{retention.defaults.disabledRecurring} days. Longer windows keep
 								more jobs counting toward scheduled job slots and storage bytes.
 								Keep forever only with Preserve on a job — retention cannot be
@@ -662,7 +597,6 @@ export function AccountJobsRoute(handle: Handle) {
 						selectedId={selection.selectedId}
 						onNavigate={() => {
 							deleteJobCheck.reset()
-							editing = false
 							setMessage(null)
 						}}
 						countLabel={`${filteredJobs.length} of ${jobs.length} shown`}
@@ -703,35 +637,13 @@ export function AccountJobsRoute(handle: Handle) {
 										</option>
 									))}
 								</RecordTableSelect>
-								<RecordTableSelect
-									label="Jobs ownership filter"
-									value={ownership}
-									onChange={(value) => {
-										if (
-											value !== 'all' &&
-											value !== 'ad-hoc' &&
-											value !== 'package'
-										) {
-											return
-										}
-										replaceLocation(
-											buildHrefWithUpdatedFilters({ ownership: value }),
-										)
-									}}
-								>
-									{ownershipFilterOptions.map((option) => (
-										<option key={option.value} value={option.value}>
-											{option.label}
-										</option>
-									))}
-								</RecordTableSelect>
 							</>
 						}
 						columns={[
 							{ key: 'name', label: 'Job', primary: true },
 							{ key: 'status', label: 'Status' },
 							{ key: 'schedule', label: 'Schedule', drop: 1 },
-							{ key: 'ownership', label: 'Ownership', drop: 2 },
+							{ key: 'package', label: 'Package', drop: 2 },
 							{ key: 'flags', label: 'Flags', drop: 3 },
 							{ key: 'runs', label: 'Runs', align: 'end' },
 						]}
@@ -752,12 +664,7 @@ export function AccountJobsRoute(handle: Handle) {
 								schedule: (
 									<span mix={clampedCellCss}>{item.scheduleSummary}</span>
 								),
-								ownership: (
-									<RecordChips
-										items={[ownershipLabel(item)]}
-										active={item.ownership === 'package'}
-									/>
-								),
+								package: <span mix={clampedCellCss}>{packageLabel(item)}</span>,
 								flags: (
 									<RecordChips
 										items={[
@@ -776,17 +683,17 @@ export function AccountJobsRoute(handle: Handle) {
 									<div mix={css({ display: 'grid', gap: spacing.xs })}>
 										<h2 mix={css(cardTitleCss)}>{detail.name}</h2>
 										<p mix={css(descriptionCss)}>
-											{isPackage
+											{isPackageOwned
 												? 'Package-owned job. Schedule and name are owned by package publish; kill switch and run-now are available here. Use the kill switch to stop it.'
-												: 'Ad-hoc scheduled job. You can enable or disable it, edit its schedule, Preserve it from auto-cleanup, or delete it.'}
+												: 'Scheduled job. You can enable or disable it, Preserve it from auto-cleanup, or delete it.'}
 										</p>
 									</div>
 
 									<MetadataGrid
 										items={[
 											{
-												label: 'Ownership',
-												value: ownershipValue(detail),
+												label: 'Package',
+												value: packageValue(detail),
 											},
 											{
 												label: 'Preserve',
@@ -876,208 +783,11 @@ export function AccountJobsRoute(handle: Handle) {
 										</AccountManagementMessage>
 									) : null}
 
-									{isPackage ? (
+									{isPackageOwned ? (
 										<p mix={css(descriptionCss)}>
 											To change this job&apos;s schedule or name, update the
 											package job declaration and publish the package again.
 										</p>
-									) : null}
-
-									{isAdHoc && editing && editState ? (
-										<div
-											mix={css({
-												display: 'grid',
-												gap: spacing.md,
-												paddingTop: spacing.sm,
-											})}
-										>
-											<label mix={css(fieldCss)}>
-												<span mix={css(fieldLabelCss)}>Name</span>
-												<input
-													data-field-ring
-													type="text"
-													value={editState.name}
-													disabled={isMutating}
-													mix={[
-														on('input', (event) => {
-															if (!editState) return
-															editState = {
-																...editState,
-																name: event.currentTarget.value,
-															}
-															handle.update()
-														}),
-														css(accountInputCss),
-													]}
-												/>
-											</label>
-											<label mix={css(fieldCss)}>
-												<span mix={css(fieldLabelCss)}>Timezone</span>
-												<input
-													data-field-ring
-													type="text"
-													value={editState.timezone}
-													disabled={isMutating}
-													placeholder="UTC"
-													mix={[
-														on('input', (event) => {
-															if (!editState) return
-															editState = {
-																...editState,
-																timezone: event.currentTarget.value,
-															}
-															handle.update()
-														}),
-														css(accountInputCss),
-													]}
-												/>
-											</label>
-											<label mix={css(fieldCss)}>
-												<span mix={css(fieldLabelCss)}>Schedule type</span>
-												<select
-													data-field-ring
-													value={editState.scheduleType}
-													disabled={isMutating}
-													mix={[
-														on('change', (event) => {
-															if (!editState) return
-															const value = event.currentTarget.value
-															if (
-																value !== 'once' &&
-																value !== 'interval' &&
-																value !== 'cron'
-															) {
-																return
-															}
-															editState = {
-																...editState,
-																scheduleType: value,
-															}
-															handle.update()
-														}),
-														css(selectCss),
-													]}
-												>
-													<option value="once">Once</option>
-													<option value="interval">Interval</option>
-													<option value="cron">Cron</option>
-												</select>
-											</label>
-											{editState.scheduleType === 'once' ? (
-												<label mix={css(fieldCss)}>
-													<span mix={css(fieldLabelCss)}>Run at (UTC)</span>
-													<input
-														data-field-ring
-														type="text"
-														value={editState.runAt}
-														disabled={isMutating}
-														placeholder="2026-04-20T18:30:00Z"
-														mix={[
-															on('input', (event) => {
-																if (!editState) return
-																editState = {
-																	...editState,
-																	runAt: event.currentTarget.value,
-																}
-																handle.update()
-															}),
-															css(accountInputCss),
-														]}
-													/>
-												</label>
-											) : null}
-											{editState.scheduleType === 'interval' ? (
-												<label mix={css(fieldCss)}>
-													<span mix={css(fieldLabelCss)}>Every</span>
-													<input
-														data-field-ring
-														type="text"
-														value={editState.every}
-														disabled={isMutating}
-														placeholder="15m"
-														mix={[
-															on('input', (event) => {
-																if (!editState) return
-																editState = {
-																	...editState,
-																	every: event.currentTarget.value,
-																}
-																handle.update()
-															}),
-															css(accountInputCss),
-														]}
-													/>
-												</label>
-											) : null}
-											{editState.scheduleType === 'cron' ? (
-												<label mix={css(fieldCss)}>
-													<span mix={css(fieldLabelCss)}>Cron expression</span>
-													<input
-														data-field-ring
-														type="text"
-														value={editState.expression}
-														disabled={isMutating}
-														placeholder="0 * * * *"
-														mix={[
-															on('input', (event) => {
-																if (!editState) return
-																editState = {
-																	...editState,
-																	expression: event.currentTarget.value,
-																}
-																handle.update()
-															}),
-															css(accountInputCss),
-														]}
-													/>
-												</label>
-											) : null}
-											<div
-												mix={css({
-													display: 'flex',
-													gap: spacing.sm,
-													flexWrap: 'wrap',
-												})}
-											>
-												<button
-													type="button"
-													disabled={isMutating}
-													mix={[
-														on('click', () => {
-															if (!editState) return
-															void postAction({
-																body: {
-																	action: 'update',
-																	id: detail.id,
-																	name: editState.name.trim(),
-																	timezone: editState.timezone.trim() || null,
-																	schedule: buildScheduleFromEdit(editState),
-																},
-																successMessage: () => 'Updated job.',
-																failureMessage: 'Unable to update job.',
-															})
-														}),
-														css(primaryButtonCss),
-													]}
-												>
-													Save changes
-												</button>
-												<button
-													type="button"
-													disabled={isMutating}
-													mix={[
-														on('click', () => {
-															editing = false
-															editState = createEditState(detail)
-															handle.update()
-														}),
-														css(secondaryButtonCss),
-													]}
-												>
-													Cancel
-												</button>
-											</div>
-										</div>
 									) : null}
 
 									<div mix={css(fieldCss)}>
@@ -1307,7 +1017,7 @@ export function AccountJobsRoute(handle: Handle) {
 												? 'Clear kill switch'
 												: 'Enable kill switch'}
 										</button>
-										{isAdHoc ? (
+										{isNotPackageOwned ? (
 											<button
 												type="button"
 												disabled={isMutating}
@@ -1332,7 +1042,7 @@ export function AccountJobsRoute(handle: Handle) {
 												{detail.preserved ? 'Clear Preserve' : 'Preserve'}
 											</button>
 										) : null}
-										{isAdHoc ? (
+										{isNotPackageOwned ? (
 											<button
 												type="button"
 												disabled={isMutating}
@@ -1357,23 +1067,7 @@ export function AccountJobsRoute(handle: Handle) {
 												{detail.enabled ? 'Disable' : 'Enable'}
 											</button>
 										) : null}
-										{isAdHoc && !editing ? (
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													on('click', () => {
-														editing = true
-														editState = createEditState(detail)
-														handle.update()
-													}),
-													css(secondaryButtonCss),
-												]}
-											>
-												Edit schedule
-											</button>
-										) : null}
-										{isAdHoc ? (
+										{isNotPackageOwned ? (
 											<button
 												type="button"
 												disabled={isMutating}

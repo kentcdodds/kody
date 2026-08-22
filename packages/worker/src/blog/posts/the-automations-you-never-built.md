@@ -55,11 +55,11 @@ This is a big part of why I built [Kody](https://kody.codes): a durable home
 your agent connects to over MCP, whichever agent you already use. Here's how the
 death-by-a-thousand-questions list looks with one:
 
-**Where does it run?** On Cloudflare's infrastructure. Jobs in Kody are
-Worker-native: each user gets a Durable Object with alarms, and cron, interval,
-and one-shot schedules fire there whether your laptop is open, asleep, or in a
-bag at the airport. There is no server for you to keep alive because you don't
-have one.
+**Where does it run?** On Cloudflare's infrastructure. Recurring package jobs in
+Kody are Worker-native: each user gets a Durable Object with alarms, and cron or
+interval schedules fire there whether your laptop is open, asleep, or in a bag
+at the airport. Deferred one-shots use workflows. There is no server for you to
+keep alive because you don't have one.
 
 **Where do the credentials live?** In a server-side secret store, encrypted,
 referenced by placeholder. The plaintext never enters a prompt and never sits in
@@ -69,11 +69,13 @@ cover how that works.
 
 **Is it worth an afternoon?** It's not an afternoon anymore. You describe the
 recurring thing to your agent in one conversation, the agent writes the code and
-schedules it, and you're done before the annoyance would have recurred once. You
-don't even need to create a package first: an ad hoc `job_schedule` in chat is
-enough for a one-off. The
+schedules it on a saved package, and you're done before the annoyance would have
+recurred once. Deferred one-shot reminders use `workflows.create({ runAt })`
+from `execute`. The
 [execute docs](https://github.com/kentcdodds/kody/blob/main/docs/use/execute.md)
-show that flow.
+and
+[workflows docs](https://github.com/kentcdodds/kody/blob/main/docs/use/workflows.md)
+show those flows.
 
 And when a quick job turns out to matter, it graduates. Behavior worth keeping
 becomes a

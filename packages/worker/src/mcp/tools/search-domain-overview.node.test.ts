@@ -34,7 +34,7 @@ const registry = buildCapabilityRegistry([
 	{
 		name: 'jobs',
 		description: 'Schedule durable work.',
-		capabilities: [capability('job_schedule', 'jobs', 'Schedule a job.')],
+		capabilities: [capability('job_list', 'jobs', 'List scheduled jobs.')],
 	},
 ])
 

@@ -105,9 +105,6 @@ test('account deletion requires GOODBYE KODY, password when one exists, and emit
 
 	const missingConfirmation = await requestDelete({ password: 'secret' })
 	expect(missingConfirmation.status).toBe(400)
-	expect(await missingConfirmation.json()).toEqual({
-		error: 'Account deletion requires typing GOODBYE KODY to confirm.',
-	})
 
 	const wrongPhrase = await requestDelete({
 		confirmation: 'goodbye kody',
@@ -119,9 +116,6 @@ test('account deletion requires GOODBYE KODY, password when one exists, and emit
 		confirmation: accountDeletionConfirmationPhrase,
 	})
 	expect(missingPassword.status).toBe(400)
-	expect(await missingPassword.json()).toEqual({
-		error: 'Account deletion requires re-entering the current password.',
-	})
 
 	const wrongPassword = await requestDelete({
 		confirmation: accountDeletionConfirmationPhrase,

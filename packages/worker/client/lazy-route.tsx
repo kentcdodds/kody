@@ -270,6 +270,8 @@ registerPreloadPatterns(
 		routePattern(routes.accountValueDetail),
 		routePattern(routes.accountJobs),
 		routePattern(routes.accountJobDetail),
+		routePattern(routes.accountWorkflows),
+		routePattern(routes.accountWorkflowDetail),
 		routePattern(routes.accountActivity),
 		routePattern(routes.accountActivityDetail),
 		routePattern(routes.accountMemories),

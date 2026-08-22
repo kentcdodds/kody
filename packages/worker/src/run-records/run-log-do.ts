@@ -47,12 +47,15 @@ import {
 	packageInvocationLedgerRetentionDays,
 	runErrorTriageMaxNoteLength,
 	runErrorTriageValues,
+	runErrorTriageForPlatformInterrupt,
 	runRecordMaxJsonBytes,
 	runRecordMaxLogEntriesPerRun,
 	runRecordMaxRunsPerUser,
 	runRecordMaxTextBytes,
 	runRecordDefaultPageSize,
 	runRecordMaxPageSize,
+	runRecordPlatformInterruptedErrorMessage,
+	runRecordPlatformInterruptedErrorName,
 	runRecordRetentionAlarmMs,
 	runRecordRetentionDays,
 	runRecordRetentionEveryNFinishes,
@@ -86,9 +89,9 @@ const exportJobRunObservabilityCursorPrefix = 'job-run-observability:'
 const exportPackageRunSuccessesCursorPrefix = 'package-run-successes:'
 const exportActivationMilestonesCursorPrefix = 'activation-milestones:'
 
-const staleRunningErrorName = 'Interrupted'
-const staleRunningErrorMessage =
-	'Run did not finish; outcome unknown (reconciled after stale running TTL).'
+const platformInterruptTriageNote =
+	'auto-ignored: idempotent scheduler or delivery queue will retry'
+const platformInterruptTriagedBy = 'system:platform-interrupt'
 
 const retentionMs = runRecordRetentionDays * 24 * 60 * 60 * 1000
 const ledgerRetentionMs =
@@ -1018,6 +1021,25 @@ class RunLogBase extends DurableObject<Env> {
 		)
 	}
 
+	private clearSystemPlatformInterruptTriageBeforeErrorFinish(
+		run: Pick<RunLogRowInput, 'id' | 'status'>,
+	) {
+		if (run.status !== 'error') return
+		this.ctx.storage.sql.exec(
+			`UPDATE runs
+			SET error_triage = NULL,
+				triage_note = NULL,
+				triaged_at = NULL,
+				triaged_by = NULL
+			WHERE id = ?
+				AND error_name = ?
+				AND triaged_by = ?`,
+			run.id,
+			runRecordPlatformInterruptedErrorName,
+			platformInterruptTriagedBy,
+		)
+	}
+
 	private replaceLogs(runId: string, logs: Array<RunLogEntryInput>) {
 		this.ctx.storage.sql.exec(`DELETE FROM run_logs WHERE run_id = ?`, runId)
 		const kept = logs.slice(-runRecordMaxLogEntriesPerRun)
@@ -1061,6 +1083,8 @@ class RunLogBase extends DurableObject<Env> {
 
 	private markRunningInterrupted(input: {
 		id: string
+		surface: RunSurface
+		idempotencyKey: string | null
 		startedAt: string
 		finishedAt?: string
 	}) {
@@ -1071,6 +1095,10 @@ class RunLogBase extends DurableObject<Env> {
 			Number.isFinite(startedMs) && Number.isFinite(finishedMs)
 				? Math.max(0, finishedMs - startedMs)
 				: null
+		const errorTriage = runErrorTriageForPlatformInterrupt({
+			surface: input.surface,
+			idempotencyKey: input.idempotencyKey,
+		})
 		this.ctx.storage.sql.exec(
 			`UPDATE runs
 			SET status = 'error',
@@ -1078,12 +1106,20 @@ class RunLogBase extends DurableObject<Env> {
 				duration_ms = ?,
 				error_name = ?,
 				error_message = ?,
+				error_triage = ?,
+				triage_note = ?,
+				triaged_at = ?,
+				triaged_by = ?,
 				updated_at = ?
 			WHERE id = ? AND status = 'running'`,
 			finishedAt,
 			durationMs,
-			staleRunningErrorName,
-			staleRunningErrorMessage,
+			runRecordPlatformInterruptedErrorName,
+			runRecordPlatformInterruptedErrorMessage,
+			errorTriage,
+			errorTriage ? platformInterruptTriageNote : null,
+			errorTriage ? finishedAt : null,
+			errorTriage ? platformInterruptTriagedBy : null,
 			finishedAt,
 			input.id,
 		)
@@ -1094,9 +1130,11 @@ class RunLogBase extends DurableObject<Env> {
 
 	/**
 	 * Prefer marking stranded `running` rows terminal over deleting them: an
-	 * interrupted attempt is useful history. `error` + Interrupted is used
-	 * because the public status union has no dedicated unknown-outcome value;
-	 * live "is it running?" state must not be read from these rows anyway.
+	 * interrupted attempt is useful history. `error` +
+	 * `platform_interrupted` is used because the public status union has no
+	 * dedicated unknown-outcome value; live "is it running?" state must not be
+	 * read from these rows anyway. Idempotent scheduler/queue attempts are
+	 * retained as ignored history because their owners will retry.
 	 *
 	 * TTL is surface-aware: sandbox-backed surfaces (execute/export/…) heal in
 	 * minutes; workflow rows keep the day-scale TTL.
@@ -1116,8 +1154,13 @@ class RunLogBase extends DurableObject<Env> {
 			nowMs - runRecordStaleRunningTtlMsForSurface('workflow'),
 		).toISOString()
 		const candidates = this.ctx.storage.sql
-			.exec<{ id: string; started_at: string; surface: string }>(
-				`SELECT id, started_at, surface FROM runs
+			.exec<{
+				id: string
+				started_at: string
+				surface: RunSurface
+				idempotency_key: string | null
+			}>(
+				`SELECT id, started_at, surface, idempotency_key FROM runs
 				WHERE status = 'running' AND (
 					(surface IN ('execute', 'export', 'retriever', 'webhook', 'subscription', 'app_fetch', 'app_realtime')
 						AND started_at < ?)
@@ -1145,6 +1188,8 @@ class RunLogBase extends DurableObject<Env> {
 			}
 			this.markRunningInterrupted({
 				id: row.id,
+				surface: row.surface,
+				idempotencyKey: row.idempotency_key,
 				startedAt: row.started_at,
 				finishedAt,
 			})
@@ -1170,6 +1215,8 @@ class RunLogBase extends DurableObject<Env> {
 		}
 		this.markRunningInterrupted({
 			id: run.id,
+			surface: run.surface,
+			idempotencyKey: run.idempotencyKey,
 			startedAt: run.startedAt,
 		})
 		const healed = this.ctx.storage.sql
@@ -1542,8 +1589,8 @@ class RunLogBase extends DurableObject<Env> {
 			if (existing) {
 				// Heal stranded `running` owners before refusing the claim so a
 				// keyed retry after an isolate death is not stuck on inProgress
-				// forever. Terminal rows (including reconciled Interrupted)
-				// still own the key for replay.
+				// forever. Terminal rows (including reconciled platform
+				// interrupts) still own the key for replay.
 				return {
 					claimed: false,
 					run: this.healStaleRunningRecord(existing),
@@ -1883,6 +1930,7 @@ class RunLogBase extends DurableObject<Env> {
 		// so a mid-unit SQL failure cannot leave a terminal run that suppresses
 		// missing derived side effects. Alarm / async retention stay outside.
 		this.transactionSyncWithMetaCache(() => {
+			this.clearSystemPlatformInterruptTriageBeforeErrorFinish(input.run)
 			this.upsertRun(input.run, 'replace')
 			this.replaceLogs(input.run.id, input.logs)
 			if (!existed) {
@@ -2060,6 +2108,7 @@ class RunLogBase extends DurableObject<Env> {
 			if (input.run) {
 				const previousStatus = this.getRunStatus(input.run.id)
 				const existed = previousStatus != null
+				this.clearSystemPlatformInterruptTriageBeforeErrorFinish(input.run)
 				this.upsertRun(input.run, 'replace')
 				this.replaceLogs(input.run.id, input.logs)
 				if (!existed) {

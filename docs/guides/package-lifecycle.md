@@ -3,8 +3,8 @@ id: package_lifecycle
 title: Durable package lifecycle guide
 summary:
   Choose between invoking existing behavior, temporary execute exploration,
-  forking a close trusted community package, direct job schedules, and creating
-  a durable repo-backed package; test package-owned job wrappers safely.
+  forking a close trusted community package, deferred workflows, and creating a
+  durable repo-backed package; test package-owned job wrappers safely.
 category: platform
 ---
 
@@ -28,7 +28,7 @@ invoke it instead of creating another implementation.
   per call, so static imports from execute always see the current published
   version.
 - Use keyless `packages.invoke({ kodyId, exportName, params })` from an
-  authenticated `execute` call, a standalone scheduled job, or package runtime
+  authenticated `execute` call, a package job runtime, or other package runtime
   when the target's name is data or the call must run in the target package's
   own runtime (package secret mounts, `packageStorage()`, `packageContext`).
   Pass `idempotencyKey` only when the call needs exactly-once semantics.
@@ -79,11 +79,9 @@ repo rooted at `package.json` is the durable source of truth. Package exports
 form the callable surface, while jobs, subscriptions, retrievers, and apps
 remain package-owned behavior.
 
-Scheduling alone does not require a package. Use `job_schedule` directly for a
-genuinely ad hoc or one-off job, or for a simple self-contained schedule that is
-not tied to reusable package behavior. `job_schedule_once` is the one-off
-convenience form. Optional `expires_at` (UTC ISO) stops scheduling and
-auto-disables the job after that time without requiring the job to self-disable.
+Recurring schedules belong on a saved package under `package.json#kody.jobs`.
+Deferred one-shot work uses `workflows.create({ runAt })` from `execute` or
+package runtime. See [Workflows](../use/workflows.md).
 
 Use `guide: "package_authoring"` for package shape, README `## Intent`,
 visibility guidance, and the secret-using package approval checklist
@@ -111,8 +109,8 @@ Move the behavior into a package when one or more of these become true:
   package
 
 Do not create a package merely to wrap one clear call to an existing capability
-or package export, or merely because a simple self-contained job needs a
-schedule.
+or package export. One-shot reminders and deferred work belong in workflows, not
+a new package.
 
 ## Choose an authoring lane
 

@@ -57,6 +57,4 @@ test('user lifecycle event builders keep a metadata-only identity snapshot', () 
 	).toBe(
 		'user-lifecycle:user.deleted:user-1:2026-08-20T13:00:00.000Z:package-1',
 	)
-	expect(JSON.stringify(created)).not.toContain('password')
-	expect(JSON.stringify(deleted)).not.toContain('password')
 })

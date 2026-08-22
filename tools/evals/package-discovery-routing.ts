@@ -6,7 +6,6 @@ import { z } from 'zod'
 export const routeSchema = z.enum([
 	'existing',
 	'execute-one-off',
-	'ad-hoc-job',
 	'package-authoring',
 ])
 
@@ -14,7 +13,6 @@ export const actionSchema = z.enum([
 	'search',
 	'invoke-existing',
 	'execute-one-off',
-	'schedule-ad-hoc-job',
 	'inspect-authoring-guidance',
 	'author-package',
 	'other-execute',
@@ -99,7 +97,6 @@ const executeCallSchema = traceBaseSchema
 	.extend({
 		action: z.enum([
 			'execute-one-off',
-			'schedule-ad-hoc-job',
 			'inspect-authoring-guidance',
 			'author-package',
 			'other-execute',
@@ -283,7 +280,6 @@ function scoreCompletedResult(
 			errors.push(`${event.action} event is missing execute input.code`)
 			continue
 		}
-		const hasScheduleOperation = /\bjob_schedule(?:_once)?\b/.test(code)
 		const authoringOperationCount = countMatches(
 			code,
 			/\b(?:package_save|package_get_git_remote|package_publish_external_push|repo_open_session|repo_write_file|repo_edit_files|repo_apply_patch|repo_run_checks|repo_publish_session)\b/g,
@@ -302,18 +298,10 @@ function scoreCompletedResult(
 				.filter(({ callId }) => callId === event.callId)
 				.map(({ action }) => action),
 		)
-		if (hasScheduleOperation && !sameCallActions.has('schedule-ad-hoc-job')) {
-			errors.push(
-				`${event.callId} contains an unrecorded schedule-ad-hoc-job action`,
-			)
-		}
 		if (hasAuthorOperation && !sameCallActions.has('author-package')) {
 			errors.push(
 				`${event.callId} contains an unrecorded author-package action`,
 			)
-		}
-		if (event.action === 'schedule-ad-hoc-job' && !hasScheduleOperation) {
-			errors.push('schedule-ad-hoc-job evidence has no scheduling operation')
 		}
 		if (event.action === 'author-package' && !hasAuthorOperation) {
 			errors.push('author-package evidence has no authoring operation')
@@ -324,11 +312,20 @@ function scoreCompletedResult(
 		) {
 			errors.push('inspect-authoring-guidance evidence has no guidance read')
 		}
-		if (
-			event.action === 'execute-one-off' &&
-			(hasScheduleOperation || hasAuthorOperation)
-		) {
+		if (event.action === 'execute-one-off' && hasAuthorOperation) {
 			errors.push('execute-one-off evidence contains a persistent operation')
+		}
+		if (/\b(?:job_schedule|job_schedule_once)\b/.test(code)) {
+			errors.push(`${event.callId} uses a removed scheduling primitive`)
+		}
+		if (
+			evalCase.id === 'schedule-single-reminder' &&
+			event.action === 'execute-one-off' &&
+			!code.includes('workflows.create')
+		) {
+			errors.push(
+				'schedule-single-reminder must use workflows.create for the deferred run',
+			)
 		}
 		if (
 			event.action === 'invoke-existing' &&
@@ -439,7 +436,6 @@ export function scorePackageDiscoveryTranscript(
 	const byRoute: ScoreReport['byRoute'] = {
 		existing: emptyRouteScore(),
 		'execute-one-off': emptyRouteScore(),
-		'ad-hoc-job': emptyRouteScore(),
 		'package-authoring': emptyRouteScore(),
 	}
 	for (const caseScore of cases) {

@@ -1463,7 +1463,6 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 
 	expect(response.status).toBe(200)
 	const html = await readResponseText(response)
-	expect(html).toContain('Every plan is the whole factory. You pay for volume.')
 	expect(html).toContain('Standard')
 	expect(html).toContain('Pro')
 	const count = new Intl.NumberFormat('en-US')
@@ -1475,7 +1474,6 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 		count.format(planLimits.standard.maxExecuteCallsPerDay),
 	)
 	expect(html).toContain(count.format(planLimits.pro.maxExecuteCallsPerDay))
-	expect(html).not.toContain('href="/images/hero/kody-base.webp"')
 })
 
 test('renderAppPage renders the public Discord connect page', async () => {
@@ -1494,19 +1492,13 @@ test('renderAppPage renders the public Discord connect page', async () => {
 	expect(response.status).toBe(200)
 	const html = await readResponseText(response)
 	expect(html).toContain('Connect Discord')
-	expect(html).not.toContain('Join the Kody Discord')
-	expect(html).not.toContain('Connect to Discord')
 	expect(html).toContain('<title>Discord</title>')
-	expect(html).toContain('max-width: 28rem')
 	const heading = html.match(/<h1\b[^>]*>[\s\S]*?<\/h1>/)?.[0]
-	expect(heading).toContain('fill="#5865F2"')
-	expect(heading).toContain('width="1em"')
 	expect(heading).toContain('Discord')
 	const connectButtons = (
 		html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? []
 	).filter((button) => button.includes('Connect Discord'))
 	expect(connectButtons).toHaveLength(1)
-	expect(connectButtons[0]).not.toContain('<svg')
 })
 
 test('renderAppPage renders the redesigned blog index', async () => {

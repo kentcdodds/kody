@@ -60,6 +60,9 @@ export function isPackageOwnedJobId(jobId: string) {
 	return jobId.startsWith(packageJobIdPrefix)
 }
 
+export const packageOwnedJobDeleteErrorMessage =
+	'Package-owned jobs cannot be deleted via job_delete. Remove the job from the package and publish.'
+
 export function resolveJobRetentionPreferences(input: {
 	successOnceDays?: number | null
 	failedOrNeverRanOnceDays?: number | null

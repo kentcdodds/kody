@@ -203,11 +203,21 @@ cleaned in the same pass. Caps are applied in small batches per finish so a
 single RPC stays bounded.
 
 Stranded `running` rows (isolate reset, lost `waitUntil` finish, hung Worker
-Loader `evaluate`) are reconciled to `status=error` with `errorName=Interrupted`
-(Interrupted means the execution outcome is unknown) using the surface-aware
-TTLs above. Reconciliation runs on the DO alarm, on retention passes, and **on
-read** (`getRun`, keyed lookup, `listRuns`, `summarize`) so Activity and
-keyed-execute recovery do not wait for an alarm.
+Loader `evaluate`) are reconciled to `status=error` with the stable
+`errorName=platform_interrupted`. This name means platform weather ended the
+host execution and its outcome is unknown; Activity, `run_list`, and triage
+automation must not classify it as a user-authored package failure.
+Reconciliation uses the surface-aware TTLs above and runs on the DO alarm, on
+retention passes, and **on read** (`getRun`, keyed lookup, `listRuns`,
+`summarize`) so Activity and keyed-execute recovery do not wait for an alarm.
+
+Interrupted scheduled-job occurrences (`idempotency_key` beginning
+`scheduled-job:`) and keyed subscription deliveries are retained with
+`error_triage=ignored` because their scheduler or delivery queue retries the
+same idempotent unit. Manual jobs, keyed execute calls, and other surfaces stay
+open: their caller may need to recover or act on the unknown outcome. A later
+terminal finish still replaces the reconciled row when the outcome becomes
+known.
 
 ## Keyed package-invocation idempotency ledger
 

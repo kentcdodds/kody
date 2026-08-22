@@ -1644,10 +1644,11 @@ function buildDomainScopedRegistry() {
 		inputSchema: { type: 'object', properties: {} },
 		handler: async () => null,
 	})
-	const jobSchedule = defineDomainCapability('jobs', {
-		name: 'job_schedule',
-		description: 'Schedule a durable job that can send email reminders',
-		keywords: ['email', 'schedule', 'job'],
+	const jobUpdate = defineDomainCapability('jobs', {
+		name: 'job_update',
+		description:
+			'Update metadata on a durable job that can send email reminders',
+		keywords: ['email', 'schedule', 'job', 'update'],
 		readOnly: false,
 		idempotent: false,
 		inputSchema: { type: 'object', properties: {} },
@@ -1662,7 +1663,7 @@ function buildDomainScopedRegistry() {
 		{
 			name: 'jobs',
 			description: 'Schedule durable work.',
-			capabilities: [jobSchedule],
+			capabilities: [jobUpdate],
 		},
 	])
 }
@@ -1701,7 +1702,7 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 		match.type === 'capability' ? [match.name] : [],
 	)
 	expect(names).toContain('email_send')
-	expect(names).not.toContain('job_schedule')
+	expect(names).not.toContain('job_update')
 
 	const unknownDomain = await searchUnified({
 		env: {} as Env,

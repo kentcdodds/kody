@@ -337,9 +337,9 @@ test('jobs API set_enabled, update, and delete reject package-owned jobs', async
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
-				action: 'update',
+				action: 'set_preserved',
 				id: packageJob.id,
-				name: 'Nope',
+				preserved: true,
 			}),
 		}),
 	})
@@ -368,7 +368,7 @@ test('jobs API set_enabled, update, and delete reject package-owned jobs', async
 	expect(mockModule.deleteJob).not.toHaveBeenCalled()
 })
 
-test('jobs API mutations are user-scoped for ad-hoc jobs and kill switch', async () => {
+test('jobs API mutations are user-scoped for non-package jobs and kill switch', async () => {
 	resetInspection()
 	mockModule.updateJob.mockResolvedValue({ ...adHocJob, enabled: false })
 	mockModule.deleteJob.mockResolvedValue({ id: adHocJob.id, deleted: true })
@@ -437,31 +437,25 @@ test('jobs API mutations are user-scoped for ad-hoc jobs and kill switch', async
 	resetInspection()
 	mockModule.updateJob.mockResolvedValue({
 		...adHocJob,
-		name: 'Renamed',
-		timezone: 'America/Denver',
-		schedule: { type: 'interval', every: '30m' },
+		preserved: true,
 	})
-	const updateResponse = await handler.handler({
+	const preserveResponse = await handler.handler({
 		request: new Request('https://example.com/account/jobs.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
-				action: 'update',
+				action: 'set_preserved',
 				id: adHocJob.id,
-				name: 'Renamed',
-				timezone: 'America/Denver',
-				schedule: { type: 'interval', every: '30m' },
+				preserved: true,
 			}),
 		}),
 	})
-	expect(updateResponse.status).toBe(200)
+	expect(preserveResponse.status).toBe(200)
 	expect(mockModule.updateJob).toHaveBeenCalledWith(
 		expect.objectContaining({
 			body: {
 				id: adHocJob.id,
-				name: 'Renamed',
-				timezone: 'America/Denver',
-				schedule: { type: 'interval', every: '30m' },
+				preserved: true,
 			},
 		}),
 	)

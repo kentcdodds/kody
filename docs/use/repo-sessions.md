@@ -14,20 +14,14 @@ There are two supported ways to edit repo-backed source:
 - **Repo sessions** (`repo_open_session` and the file-level `repo_*` session
   capabilities). Use these when you are a tool-only agent without a real
   filesystem, or when you only need structured file edits inside an isolated
-  workspace. Repo sessions also work for repo-backed scheduled jobs (open by
-  `source_id`), not just saved packages.
+  workspace. Package-owned jobs live in the same package repo — open the
+  package, not a separate job source.
 - **A short-lived authenticated git remote** via `package_get_git_remote` plus
   `package_publish_external_push`. Use this when you have local filesystem and
   git access and want to clone the repo into a temp directory, edit normally,
   and push the resulting HEAD back. Commits use `git_author` from the remote
   result (the signed-in Kody account); do not invent a git email. This path is
-  **saved-package-only**; there is no equivalent helper for non-package
-  repo-backed job source.
-
-For one-file edits to a non-package repo-backed scheduled job, the simplest path
-is usually neither of these: pass a replacement `code` string to
-**`job_update`**, which republishes the job module on its repo-backed source
-without opening a session.
+  **saved-package-only**.
 
 When you only need to inspect the current scheduled job source, call
 **`job_get`** with `includeCode: true`. The response includes the published
@@ -39,8 +33,8 @@ repo session just to read the job module.
 Repo sessions expose a **file-level API**. There is no git-command channel:
 branch, checkout, fetch, pull, push, and remote operations are not available
 inside sessions. For saved packages, use `package_get_git_remote` when you need
-full git; non-package job sources have no git-remote lane, so the file-level
-session API is their only edit surface.
+full git. Leftover non-package job rows are inspectable with `job_get` and can
+be disabled or deleted; their source is not an edit surface.
 
 Merge drift from the published default branch is handled separately by
 **`repo_rebase_session`**.

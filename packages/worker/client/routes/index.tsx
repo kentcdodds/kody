@@ -130,6 +130,14 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountJobsRouteLoader,
 	),
+	[routePattern(routes.accountWorkflows)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountWorkflowsRouteLoader,
+	),
+	[routePattern(routes.accountWorkflowDetail)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountWorkflowsRouteLoader,
+	),
 	[routePattern(routes.accountActivity)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountActivityRouteLoader,
@@ -367,6 +375,12 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountJobDetail)]: (
 		<LazyAccountRoute render={(m) => <m.AccountJobsRoute />} />
+	),
+	[routePattern(routes.accountWorkflows)]: (
+		<LazyAccountRoute render={(m) => <m.AccountWorkflowsRoute />} />
+	),
+	[routePattern(routes.accountWorkflowDetail)]: (
+		<LazyAccountRoute render={(m) => <m.AccountWorkflowsRoute />} />
 	),
 	[routePattern(routes.accountActivity)]: (
 		<LazyAccountRoute render={(m) => <m.AccountActivityRoute />} />

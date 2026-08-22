@@ -55,8 +55,21 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is a job?',
 		match: accountSection(routes.accountJobs.href()),
 		paragraphs: [
-			'A job is scheduled work that runs in the cloud on Cloudflare Workers, whether or not your computer is on. Ad-hoc jobs are one-off or recurring schedules that are not tied to a package; package-owned jobs live with the saved package that declares them.',
-			'Use a job for anything that should happen later or on a cadence — a morning briefing, a weekly cleanup, or a catch-up run. From here you can inspect schedules, run a job now, and toggle kill switch or Preserve.',
+			'A job is scheduled work that runs in the cloud on Cloudflare Workers, whether or not your computer is on. Package-owned jobs live with the saved package that declares them.',
+			'Use a job for recurring or interval work that belongs to a package. From here you can inspect schedules, run a job now, and toggle kill switch or Preserve. Deferred one-shots belong on Workflows.',
+		],
+		learnMore: {
+			href: routes.guideDetail.href({ slug: 'how-kody-works' }),
+			label: 'How Kody works',
+		},
+	},
+	{
+		id: 'workflows',
+		question: 'What is a workflow?',
+		match: accountSection(routes.accountWorkflows.href()),
+		paragraphs: [
+			'A workflow is a deferred or long-running run created through kody:runtime workflows.create. Inline workflows carry their code; package workflows call a published export. Unlike jobs, workflows are one-shot durable work rather than recurring schedules.',
+			'Use this page to inspect status, run time, and errors, and to cancel a run that has not finished yet.',
 		],
 		learnMore: {
 			href: routes.guideDetail.href({ slug: 'how-kody-works' }),

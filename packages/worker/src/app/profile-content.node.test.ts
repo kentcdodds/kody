@@ -103,7 +103,8 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 		followError: 'Unable to follow.',
 	})
 
-	expect(followingHtml).toContain('data-testid="profile-username"')
+	expect(followingHtml).toMatch(/<div[^>]*data-testid="profile-username"/)
+	expect(followingHtml).not.toMatch(/<p[^>]*data-testid="profile-username"/)
 	expect(followingHtml).toContain('data-testid="profile-follow"')
 	expect(followingHtml).toContain('data-following="true"')
 	expect(followingHtml).toContain('/profiles/kody/follow.json')

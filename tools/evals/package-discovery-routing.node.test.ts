@@ -53,10 +53,10 @@ const createPassingTranscript = (): unknown => {
 							status: 'succeeded' as const,
 							input: {
 								code:
-									terminalAction === 'schedule-ad-hoc-job'
-										? 'await kody.job_schedule_once({})'
-										: terminalAction === 'author-package'
-											? 'await kody.package_save({})'
+									terminalAction === 'author-package'
+										? 'await kody.package_save({})'
+										: evalCase.id === 'schedule-single-reminder'
+											? "await workflows.create({ runAt: '2026-07-15T16:00:00.000Z', code: 'export default async function main() {}' })"
 											: 'return await kody.value_list({})',
 							},
 							output: { result: 'captured execution output' },
@@ -134,9 +134,8 @@ test('routing cases are natural, balanced, and have internally consistent hidden
 	}
 	expect(routeCounts).toEqual({
 		existing: 2,
-		'execute-one-off': 2,
-		'ad-hoc-job': 2,
-		'package-authoring': 2,
+		'execute-one-off': 3,
+		'package-authoring': 3,
 	})
 	expect(evalSet.actionCardinality).toEqual({
 		searchMinimum: 1,
@@ -162,12 +161,13 @@ test('scorer accepts exact traces and reports two passes per route', () => {
 		skipped: 0,
 		total: 8,
 	})
-	for (const routeScore of Object.values(report.byRoute)) {
+	for (const [route, routeScore] of Object.entries(report.byRoute)) {
+		const expectedPassCount = route === 'existing' ? 2 : 3
 		expect(routeScore).toEqual({
-			passed: 2,
+			passed: expectedPassCount,
 			failed: 0,
 			skipped: 0,
-			total: 2,
+			total: expectedPassCount,
 		})
 	}
 })
@@ -239,7 +239,7 @@ test('scorer rejects wrong targets, duplicates, payload drift, skips, and cardin
 	).toEqual(
 		expect.arrayContaining([
 			'first action must be search',
-			'missing required action schedule-ad-hoc-job',
+			'missing required action author-package',
 		]),
 	)
 	expect(actionSchema.safeParse('explain-only').success).toBe(false)
@@ -252,8 +252,8 @@ test('scorer rejects wrong targets, duplicates, payload drift, skips, and cardin
 		'schedule-single-reminder',
 	)
 	const scheduleEvent = scheduleResult.events[1]
-	if (!scheduleEvent || scheduleEvent.action !== 'schedule-ad-hoc-job') {
-		throw new Error('Expected a scheduling event fixture.')
+	if (!scheduleEvent || scheduleEvent.action !== 'execute-one-off') {
+		throw new Error('Expected a deferred workflow event fixture.')
 	}
 	scheduleResult.events.push({
 		...scheduleEvent,
@@ -267,12 +267,12 @@ test('scorer rejects wrong targets, duplicates, payload drift, skips, and cardin
 	expect(duplicateReport.totals.failed).toBe(1)
 	expect(
 		getByCaseId(duplicateReport.cases, 'schedule-single-reminder').errors,
-	).toContain('expected exactly 1 schedule-ad-hoc-job action, received 2')
-	expect(duplicateReport.byRoute['ad-hoc-job']).toEqual({
-		passed: 1,
+	).toContain('expected exactly 1 execute-one-off action, received 2')
+	expect(duplicateReport.byRoute['execute-one-off']).toEqual({
+		passed: 2,
 		failed: 1,
 		skipped: 0,
-		total: 2,
+		total: 3,
 	})
 
 	const consistentTranscript = structuredClone(
@@ -547,4 +547,62 @@ test('scorer accepts git-lane, two-publish, and tool-only authoring variants', (
 		ok: true,
 		totals: expectedTotals,
 	})
+})
+
+test('scorer rejects removed scheduling primitives and requires workflows.create for a deferred reminder', () => {
+	const evalSet = loadPackageDiscoveryEval()
+	const removedPrimitiveTranscript = structuredClone(
+		transcriptSchema.parse(createPassingTranscript()),
+	)
+	const reminder = requireCompletedResult(
+		removedPrimitiveTranscript,
+		'schedule-single-reminder',
+	)
+	const executeEvent = reminder.events.find(
+		(event) => event.action === 'execute-one-off',
+	)
+	if (!executeEvent) {
+		throw new Error('Expected an execute-one-off fixture.')
+	}
+	executeEvent.input = {
+		code: "await kody.job_schedule_once({ runAt: '2026-07-15T16:00:00.000Z' })",
+	}
+	const removedReport = scorePackageDiscoveryTranscript(
+		evalSet,
+		removedPrimitiveTranscript,
+	)
+	expect(removedReport.ok).toBe(false)
+	expect(
+		getByCaseId(removedReport.cases, 'schedule-single-reminder').errors,
+	).toEqual(
+		expect.arrayContaining([
+			`${executeEvent.callId} uses a removed scheduling primitive`,
+			'schedule-single-reminder must use workflows.create for the deferred run',
+		]),
+	)
+
+	const missingWorkflowTranscript = structuredClone(
+		transcriptSchema.parse(createPassingTranscript()),
+	)
+	const missingReminder = requireCompletedResult(
+		missingWorkflowTranscript,
+		'schedule-single-reminder',
+	)
+	const missingEvent = missingReminder.events.find(
+		(event) => event.action === 'execute-one-off',
+	)
+	if (!missingEvent) {
+		throw new Error('Expected an execute-one-off fixture.')
+	}
+	missingEvent.input = { code: 'return await kody.value_list({})' }
+	const missingReport = scorePackageDiscoveryTranscript(
+		evalSet,
+		missingWorkflowTranscript,
+	)
+	expect(missingReport.ok).toBe(false)
+	expect(
+		getByCaseId(missingReport.cases, 'schedule-single-reminder').errors,
+	).toContain(
+		'schedule-single-reminder must use workflows.create for the deferred run',
+	)
 })
