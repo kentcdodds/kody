@@ -38,8 +38,8 @@ export type CommunityListingRecord = {
 	description: string
 	tags: Array<string>
 	/**
-	 * Resolved browse category. Publish stores `kody.category` or a tag
-	 * inference; reads still infer from tags when the stored value is `other`.
+	 * Stored browse category. Publish writes `kody.category` or a tag
+	 * inference; reads use the column as-is so SQL filters and chips agree.
 	 */
 	category: CommunityListingCategory
 	searchText: string | null

@@ -3,7 +3,7 @@ import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import {
 	emptyCommunityCategoryCounts,
 	parseCommunityListingCategory,
-	resolveCommunityListingCategory,
+	readStoredCommunityListingCategory,
 	type CommunityCategoryCounts,
 	type CommunityListingCategory,
 } from '#universal/community-categories.ts'
@@ -44,10 +44,9 @@ export function mapCommunityListingRow(
 		name: String(row['name']),
 		description: String(row['description']),
 		tags: parseTagsJson(row['tags_json']),
-		category: resolveCommunityListingCategory({
-			category: row['category'] == null ? null : String(row['category']),
-			tags: parseTagsJson(row['tags_json']),
-		}),
+		category: readStoredCommunityListingCategory(
+			row['category'] == null ? null : String(row['category']),
+		),
 		searchText:
 			row['search_text'] == null ? null : String(row['search_text']).trim(),
 		readmeContent:

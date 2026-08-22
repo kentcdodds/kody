@@ -83,18 +83,18 @@ canonical URL; username and `kody.id` redirect tables resolve renamed owners and
 package ids the same way. The unfiltered catalog opens as a few cards per
 **category** (Integrations, Examples, Productivity, Apps, Utilities, and Other)
 instead of one long shelf. Category chips filter to that set
-(`?category=integrations`) and only appear for categories that have listings in
-the current result set — an empty shelf hides the facet entirely. **All**
-returns to the grouped overview. When a category has more cards than the
-overview shows, **See all {category}** opens the filtered grid. The catalog
-defaults to **Best** (ratings, then recency). **Newest** (`?sort=newest`) orders
-by last community publish — republishing a listing moves it to the top. Cards
-show that published date. Authors set `package.json#kody.category`; when it is
-omitted, Kody infers a category from well-known tags such as `github` or
-`zero-auth`. Detail pages show metadata, aggregate ratings, **star count**
-(stargazers — distinct from 1–5 ratings), fork count, the README, a **Browse
-files** link to the published snapshot at `/@username/kody-id/files`, and a
-dynamically generated Open Graph image (1200×630). When the owner keeps a
+(`?category=integrations`) and only appear for categories that have listings —
+an empty shelf hides the facet entirely. **All** returns to the grouped
+overview. When a category has more cards than the overview shows, **See all
+{category}** opens the filtered grid. The catalog defaults to **Best** (ratings,
+then recency). **Newest** (`?sort=newest`) orders by last community publish —
+republishing a listing moves it to the top. Cards show that published date.
+Authors set `package.json#kody.category`; when it is omitted, Kody infers a
+category from well-known tags such as `github` or `zero-auth`. Detail pages show
+metadata, aggregate ratings, **star count** (stargazers — distinct from 1–5
+ratings), fork count, the README, a **Browse files** link to the published
+snapshot at `/@username/kody-id/files`, and a dynamically generated Open Graph
+image (1200×630). When the owner keeps a
 [public profile](./community-profiles.md), the listing links to `/@username` and
 shows a follow control next to the username. Private owners show as `@username`
 with a lock that explains the profile is private.
