@@ -6,7 +6,8 @@
  * every second at a hashed time so the cadence wobbles instead of marching
  * on the clock. Extra count rolls through the second without skipping, with
  * hashed gaps between those leftover ticks so a busy second does not march.
- * The count stays monotonic between `previous` and `current`.
+ * The count stays monotonic between `previous` and `current`. A frozen
+ * client snaps to the official integer instead of replaying missed steps.
  */
 
 export const publicCodeRunsWindowMs = 24 * 60 * 60 * 1000
@@ -76,6 +77,30 @@ export function msUntilNextCodeRunsCount(
 		else lo = mid + 1
 	}
 	return lo - nowMs
+}
+
+export const codeRunsCatchUpSnapAfterMs = 1000
+export const codeRunsCatchUpSnapBehind = 60
+
+/**
+ * Advance the on-screen ticker by one integer while the tab is live.
+ * After a freeze (or when more than sixty integers are already owed),
+ * jump to the official count instead of replaying the missed steps.
+ */
+export function nextDisplayedCodeRunsCount(input: {
+	displayed: number
+	official: number
+	elapsedMsSinceDisplay: number
+}): number {
+	if (input.official <= input.displayed) return input.displayed
+	const behind = input.official - input.displayed
+	if (
+		input.elapsedMsSinceDisplay >= codeRunsCatchUpSnapAfterMs ||
+		behind > codeRunsCatchUpSnapBehind
+	) {
+		return input.official
+	}
+	return input.displayed + 1
 }
 
 const coarseSegmentCount = 72
@@ -218,7 +243,7 @@ function busySecondFireMs(
 		prefix += weights[index] ?? 0
 	}
 	// More than 1000 ticks cannot get unique milliseconds; extras share 999
-	// and the client rolls through them.
+	// and a visible client rolls through them. A tab that froze snaps.
 	while (fires.length < gain) fires.push(999)
 	return fires
 }

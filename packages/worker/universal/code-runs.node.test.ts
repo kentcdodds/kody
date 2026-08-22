@@ -1,8 +1,10 @@
 import { expect, test } from 'vitest'
 import {
+	codeRunsCatchUpSnapAfterMs,
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
 	msUntilNextCodeRunsCount,
+	nextDisplayedCodeRunsCount,
 	parsePublicCodeRunsWindow,
 } from './code-runs.ts'
 
@@ -179,4 +181,49 @@ test('parsePublicCodeRunsWindow accepts a valid pair and rejects junk', () => {
 test('formatCodeRunsCount uses grouping so reserved width stays stable', () => {
 	expect(formatCodeRunsCount(128447)).toBe('128,447')
 	expect(formatCodeRunsCount(0)).toBe('0')
+})
+
+test('nextDisplayedCodeRunsCount snaps after a freeze and steps while live', () => {
+	expect(
+		nextDisplayedCodeRunsCount({
+			displayed: 100,
+			official: 100,
+			elapsedMsSinceDisplay: 16,
+		}),
+	).toBe(100)
+	expect(
+		nextDisplayedCodeRunsCount({
+			displayed: 100,
+			official: 101,
+			elapsedMsSinceDisplay: 16,
+		}),
+	).toBe(101)
+	expect(
+		nextDisplayedCodeRunsCount({
+			displayed: 100,
+			official: 108,
+			elapsedMsSinceDisplay: 40,
+		}),
+	).toBe(101)
+	expect(
+		nextDisplayedCodeRunsCount({
+			displayed: 100,
+			official: 108,
+			elapsedMsSinceDisplay: codeRunsCatchUpSnapAfterMs,
+		}),
+	).toBe(108)
+	expect(
+		nextDisplayedCodeRunsCount({
+			displayed: 100,
+			official: 102,
+			elapsedMsSinceDisplay: 8_000,
+		}),
+	).toBe(102)
+	expect(
+		nextDisplayedCodeRunsCount({
+			displayed: 100,
+			official: 161,
+			elapsedMsSinceDisplay: 16,
+		}),
+	).toBe(161)
 })
