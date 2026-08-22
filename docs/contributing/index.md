@@ -20,7 +20,7 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Nx remote cache](../../packages/nx-cache/readme.md) (self-hosted HTTP cache
   shared by agents and CI)
 - [Harness engineering](./harness-engineering.md) (agent-first loop, promoting
-  lessons into enforcement)
+  lessons into checkers before should-lists)
 - [Cleanup after migrations](./cleanup-after-migrations.md) (drop leftovers in
   the same change, or open a GitHub issue)
 
@@ -71,4 +71,5 @@ style, tests, MCP capabilities, and runtime architecture.
 
 Documentation for **using** Kody as an MCP server (not building the repo) lives
 under [`docs/use/`](../use/index.md). How we write and maintain those pages (and
-contributing docs) is covered in [Documentation principles](./documentation.md).
+contributing docs) is covered in [Documentation principles](./documentation.md)
+(prefer a checker over a should-list).

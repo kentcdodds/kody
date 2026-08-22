@@ -21,7 +21,8 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   - [docs/contributing/preview-manual-testing.md](./docs/contributing/preview-manual-testing.md)
     and the
     [preview-manual-test skill](./.agents/skills/preview-manual-test/SKILL.md)
-- Documentation principles (usage vs contributing, MCP text, gardening):
+- Documentation principles (usage vs contributing, MCP text, gardening, prefer
+  checkers over should-lists):
   - [docs/contributing/documentation.md](./docs/contributing/documentation.md)
 - Code style conventions:
   - [docs/contributing/code-style.md](./docs/contributing/code-style.md)
