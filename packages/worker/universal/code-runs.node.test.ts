@@ -24,7 +24,7 @@ test('interpolateCodeRunsCount stays monotonic, bursty, and inside the pair', ()
 	expect(interpolateCodeRunsCount(window, startMs + 30 * hourMs)).toBe(1240)
 	expect(
 		interpolateCodeRunsCount(window, startMs + 24 * hourMs - 1),
-	).toBeLessThanOrEqual(1240)
+	).toBeLessThan(1240)
 
 	const hourly = Array.from({ length: 25 }, (_, hour) =>
 		interpolateCodeRunsCount(window, startMs + hour * hourMs),
@@ -64,7 +64,7 @@ test('interpolateCodeRunsCount advances at least every 3s with mixed step sizes'
 		const count = interpolateCodeRunsCount(busy, startMs + second * 1000)
 		const step = count - previous
 		expect(step).toBeGreaterThanOrEqual(0)
-		expect(count).toBeLessThanOrEqual(86_400)
+		expect(count).toBeLessThan(86_400)
 		if (step === 0) skippedSeconds += 1
 		if (step > 1) multiStepSeconds += 1
 		if (step > 0) {
@@ -74,7 +74,7 @@ test('interpolateCodeRunsCount advances at least every 3s with mixed step sizes'
 		}
 		previous = count
 	}
-	expect(previous).toBeLessThanOrEqual(86_400)
+	expect(previous).toBeLessThan(86_400)
 	expect(interpolateCodeRunsCount(busy, startMs + 86_400 * 1000)).toBe(86_400)
 	expect(maxGap).toBeLessThanOrEqual(3)
 	expect(skippedSeconds).toBeGreaterThan(0)
@@ -103,9 +103,9 @@ test('interpolateCodeRunsCount stays one integer through a non-aligned window en
 	expect(interpolateCodeRunsCount(offset, endSecondMs + 100)).toBe(
 		interpolateCodeRunsCount(offset, endSecondMs + 900),
 	)
-	expect(
-		interpolateCodeRunsCount(offset, endSecondMs + 100),
-	).toBeLessThanOrEqual(257940)
+	expect(interpolateCodeRunsCount(offset, endSecondMs + 100)).toBeLessThan(
+		257940,
+	)
 	expect(interpolateCodeRunsCount(offset, endSecondMs + 1000)).toBe(257940)
 	expect(interpolateCodeRunsCount(offset, endMs + 1000)).toBe(257940)
 })

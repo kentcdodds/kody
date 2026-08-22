@@ -58,15 +58,14 @@ export function interpolateCodeRunsCount(
 	if (secondMs >= endMs) return current
 	const delta = current - previous
 	if (delta === 0) return previous
-	return (
-		previous +
-		ticksAfterElapsed({
-			elapsedMs: secondMs - startMs,
-			totalMs: endMs - startMs,
-			delta,
-			seed: windowSeed(window),
-		})
-	)
+	const ticks = ticksAfterElapsed({
+		elapsedMs: secondMs - startMs,
+		totalMs: endMs - startMs,
+		delta,
+		seed: windowSeed(window),
+	})
+	if (ticks >= delta) return current - 1
+	return previous + ticks
 }
 
 const maxIdleSeconds = 3
