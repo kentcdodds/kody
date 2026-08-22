@@ -29,6 +29,7 @@ import { isExecutedDirectly } from '../node-runtime.ts'
 
 const defaultBaseConfigPath = 'packages/runtime-worker/wrangler.jsonc'
 const committedRuntimeName = 'kody-runtime'
+const committedPlatformName = 'kody-platform'
 const committedMainName = 'kody'
 
 type JsonRecord = Record<string, unknown>
@@ -56,7 +57,11 @@ function getEnvSection(config: JsonRecord, envName: string, label: string) {
  */
 function rewriteWorkerNameReferences(
 	value: unknown,
-	names: { runtimeWorkerName: string; mainWorkerName: string },
+	names: {
+		runtimeWorkerName: string
+		platformWorkerName: string
+		mainWorkerName: string
+	},
 ): void {
 	if (Array.isArray(value)) {
 		for (const entry of value) rewriteWorkerNameReferences(entry, names)
@@ -67,6 +72,8 @@ function rewriteWorkerNameReferences(
 	for (const key of ['script_name', 'from_script', 'service']) {
 		if (record[key] === committedRuntimeName) {
 			record[key] = names.runtimeWorkerName
+		} else if (record[key] === committedPlatformName) {
+			record[key] = names.platformWorkerName
 		} else if (record[key] === committedMainName) {
 			record[key] = names.mainWorkerName
 		}
@@ -292,6 +299,7 @@ function addPackageAppRoute(runtimeEnv: JsonRecord, envName: string) {
 function removeRuntimeReferencesFromMainEnv(
 	mainEnv: JsonRecord,
 	runtimeWorkerName: string,
+	platformWorkerName: string,
 	mainWorkerName: string,
 ) {
 	if (Array.isArray(mainEnv.services)) {
@@ -312,7 +320,8 @@ function removeRuntimeReferencesFromMainEnv(
 				if (
 					entry &&
 					typeof entry === 'object' &&
-					(entry as JsonRecord).script_name === runtimeWorkerName
+					((entry as JsonRecord).script_name === runtimeWorkerName ||
+						(entry as JsonRecord).script_name === platformWorkerName)
 				) {
 					// Bind locally during bootstrap; the main Worker still exports
 					// these classes and its migration history still creates them.
@@ -342,6 +351,7 @@ export type CliOptions = {
 	envName: string
 	mainConfigPath: string
 	runtimeWorkerName: string
+	platformWorkerName: string
 	mainWorkerName: string
 	baseConfigPath: string
 	outConfigPath: string
@@ -371,13 +381,15 @@ function parseArgs(argv: Array<string>): CliOptions {
 		!outConfigPath
 	) {
 		fail(
-			'Usage: node tools/ci/runtime-worker-config.ts generate --env <production|preview> --main-config <path> --worker-name <runtime worker name> --main-worker-name <main worker name> --out-config <path> [--base-config <path>] [--out-main-bootstrap-config <path>]',
+			'Usage: node tools/ci/runtime-worker-config.ts generate --env <production|preview> --main-config <path> --worker-name <runtime worker name> --main-worker-name <main worker name> --out-config <path> [--base-config <path>] [--platform-worker-name <platform worker name>] [--out-main-bootstrap-config <path>]',
 		)
 	}
 	return {
 		envName,
 		mainConfigPath,
 		runtimeWorkerName,
+		platformWorkerName:
+			options['platform-worker-name'] ?? committedPlatformName,
 		mainWorkerName,
 		baseConfigPath: options['base-config'] ?? defaultBaseConfigPath,
 		outConfigPath,
@@ -388,6 +400,7 @@ function parseArgs(argv: Array<string>): CliOptions {
 export async function generate(options: CliOptions) {
 	const names = {
 		runtimeWorkerName: options.runtimeWorkerName,
+		platformWorkerName: options.platformWorkerName,
 		mainWorkerName: options.mainWorkerName,
 	}
 
@@ -482,6 +495,7 @@ export async function generate(options: CliOptions) {
 		removeRuntimeReferencesFromMainEnv(
 			bootstrapEnv,
 			options.runtimeWorkerName,
+			options.platformWorkerName,
 			options.mainWorkerName,
 		)
 		await writeFile(

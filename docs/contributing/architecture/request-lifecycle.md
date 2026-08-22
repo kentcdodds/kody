@@ -64,13 +64,16 @@ Requests are handled in this order:
 5. MCP endpoint:
    - `/mcp` (requires OAuth bearer token). After authentication,
      `packages/worker/src/mcp-auth.ts` routes by protocol era: 2025-era requests
-     go to the sessionful `MCP` Durable Object (`McpAgent`, MCP SDK v1), and
+     go to the sessionful `MCP` Durable Object (`McpAgent`, MCP SDK v1) hosted
+     on `kody-platform` and reached through the `MCP_OBJECT` binding, and
      `2026-07-28` envelope requests are served statelessly per request by
      `packages/worker/src/mcp/stateless-lane.ts` (MCP SDK v2, no Durable
      Object). Both lanes share one tool registration; every authenticated
      request records a lane data point to the `MCP_PROTOCOL_EVENTS` Analytics
      Engine dataset for dual-lane traffic measurement (see
      [decision 0005](../decisions/0005-mcp-dual-lane-stateless-migration.md)).
+     The origin script owns no Durable Object classes
+     ([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)).
 6. Public `@username` ingress handled in `packages/worker/src/index.ts` before
    the OAuth provider / app router (needs `ExecutionContext` for background
    work):

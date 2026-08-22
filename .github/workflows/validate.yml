@@ -90,6 +90,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run runtime:build
 
+      - name: 🧱 Platform build
+        if: ${{ !cancelled() }}
+        run: npm run platform:build
+
       - name: 🗺️ Primitives
         if: ${{ !cancelled() }}
         run: npm run primitives:check

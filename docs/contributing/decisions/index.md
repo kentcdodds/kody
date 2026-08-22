@@ -67,6 +67,9 @@ Open these before proposing a new primitive, surface, or storage home.
   ([lab](./0033-memory-auto-surface-lab.md))
 - [0026 — Invocation tokens belong to one package; no account-level wildcard bearer](./0026-package-owned-invocation-tokens.md)
 - [0027 — No invocation-token source allowlist](./0027-no-invocation-token-source-allowlist.md)
+- [0034 — Origin owns no Durable Object classes](./0034-origin-owns-no-durable-objects.md)
+  — platform classes live on `kody-platform`; do not put them on origin,
+  runtime, or jobs, and do not add a second origin-facing content worker
 
 ## Historical / UI / implementation
 

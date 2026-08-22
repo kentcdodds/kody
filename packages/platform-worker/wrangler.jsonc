@@ -1,22 +1,22 @@
 {
 	"$schema": "../../node_modules/wrangler/config-schema.json",
-	// Package runtime Worker (ADR 0016): the untrusted-code execution lane
-	// extracted from the main `kody` Worker. Owns the package-app origin
-	// (PACKAGE_APP_BASE_URL), inline package-app serving, the package
-	// invocation API, dynamic callable workflows, and the runtime Durable
-	// Objects (StorageRunner, RunLog, PackageRealtimeSession). The entry module lives in
-	// packages/worker/src/runtime-worker.ts so the shared source tree,
-	// `#worker`/`#app` import maps, and the pre-bundled `src/generated/`
-	// modules resolve identically to the main Worker.
-	"name": "kody-runtime",
+	// Platform Durable Object Worker (ADR 0034): owns the remaining
+	// platform classes extracted from the origin `kody` Worker so
+	// content/UI deploys of the origin script do not reset those objects.
+	// The entry module lives in packages/worker/src/platform-worker.ts so
+	// the shared source tree, `#worker`/`#app` import maps, and the
+	// pre-bundled `src/generated/` modules resolve identically to the
+	// origin Worker.
+	"name": "kody-platform",
 	"compatibility_date": "2026-04-16",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-	// Same rationale as the main worker: package runtime lanes fan out into
-	// many D1 + Durable Object subrequests per invocation.
+	// Same rationale as the origin worker: the MCP Agent Durable Object
+	// keeps a long-lived session and fans out into many D1 + Durable
+	// Object subrequests per invocation.
 	"limits": {
 		"subrequests": 100000,
 	},
-	"main": "../worker/src/runtime-worker.ts",
+	"main": "../worker/src/platform-worker.ts",
 	"minify": true,
 	"upload_source_maps": true,
 	// Mirrors packages/worker/wrangler.jsonc: the module-graph builders
@@ -41,42 +41,58 @@
 			"fallthrough": true,
 		},
 	],
-	// Production Durable Object storage moves with the classes from the main
-	// `kody` script via a transfer migration; this applies on the first
-	// production deploy of this Worker. See
-	// docs/contributing/architecture/runtime-worker-migration-runbook.md for
-	// the coordinated deploy order. The preview environment overrides this
-	// with `new_sqlite_classes` because preview worker pairs are created
-	// fresh per PR with no storage to preserve.
+	// Production Durable Object storage moves with the classes from the
+	// origin `kody` script via a transfer migration; this applies on the
+	// first production deploy of this Worker. See
+	// docs/contributing/architecture/platform-worker-migration-runbook.md
+	// for the coordinated deploy order. The preview environment overrides
+	// this with `new_sqlite_classes` because preview worker sets are
+	// created fresh per PR with no storage to preserve.
 	"migrations": [
 		{
 			"tag": "v1",
 			"transferred_classes": [
 				{
-					"from": "StorageRunner",
+					"from": "MCP",
 					"from_script": "kody",
-					"to": "StorageRunner",
+					"to": "MCP",
 				},
 				{
-					"from": "RunLog",
+					"from": "McpClientHub",
 					"from_script": "kody",
-					"to": "RunLog",
+					"to": "McpClientHub",
 				},
 				{
-					"from": "PackageRealtimeSession",
+					"from": "OAuthPurgeCoordinator",
 					"from_script": "kody",
-					"to": "PackageRealtimeSession",
+					"to": "OAuthPurgeCoordinator",
 				},
 				{
-					"from": "PackageServiceInstance",
+					"from": "UserMeter",
 					"from_script": "kody",
-					"to": "PackageServiceInstance",
+					"to": "UserMeter",
+				},
+				{
+					"from": "Mailbox",
+					"from_script": "kody",
+					"to": "Mailbox",
+				},
+				{
+					"from": "RepoSession",
+					"from_script": "kody",
+					"to": "RepoSession",
+				},
+				{
+					"from": "RepoSessionIndex",
+					"from_script": "kody",
+					"to": "RepoSessionIndex",
+				},
+				{
+					"from": "StripePlanRefresh",
+					"from_script": "kody",
+					"to": "StripePlanRefresh",
 				},
 			],
-		},
-		{
-			"tag": "v2",
-			"deleted_classes": ["PackageServiceInstance"],
 		},
 	],
 	"observability": {
@@ -107,61 +123,62 @@
 					"binding": "DYNAMIC_CALLABLE_WORKFLOWS",
 					"name": "kody-runtime-dynamic-callable-workflows",
 					"class_name": "DynamicCallableWorkflow",
+					"script_name": "kody-runtime",
 				},
 			],
 			"durable_objects": {
 				"bindings": [
-					// Runtime-owned classes, local to this script.
-					{
-						"class_name": "StorageRunner",
-						"name": "STORAGE_RUNNER",
-					},
-					{
-						"class_name": "RunLog",
-						"name": "RUN_LOG",
-					},
-					{
-						"class_name": "PackageRealtimeSession",
-						"name": "PACKAGE_REALTIME_SESSION",
-					},
-					// Platform-worker classes reached cross-script (ADR 0034).
-					{
-						"class_name": "UserMeter",
-						"name": "USER_METER",
-						"script_name": "kody-platform",
-					},
+					// Platform-owned classes, local to this script.
 					{
 						"class_name": "MCP",
 						"name": "MCP_OBJECT",
-						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "McpClientHub",
 						"name": "MCP_CLIENT_HUB",
-						"script_name": "kody-platform",
+					},
+					{
+						"class_name": "OAuthPurgeCoordinator",
+						"name": "OAUTH_PURGE_COORDINATOR",
+					},
+					{
+						"class_name": "UserMeter",
+						"name": "USER_METER",
 					},
 					{
 						"class_name": "Mailbox",
 						"name": "MAILBOX",
-						"script_name": "kody-platform",
+					},
+					{
+						"class_name": "RepoSessionIndex",
+						"name": "REPO_SESSION_INDEX",
+					},
+					{
+						"class_name": "StripePlanRefresh",
+						"name": "STRIPE_PLAN_REFRESH",
 					},
 					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
-						"script_name": "kody-platform",
 					},
-					// Catalog authority for repo_* capabilities. Package and
-					// workflow execution on this worker open/list/publish
-					// sessions through the platform Worker's per-user index.
+					// Runtime-owned classes reached cross-script (ADR 0016).
 					{
-						"class_name": "RepoSessionIndex",
-						"name": "REPO_SESSION_INDEX",
-						"script_name": "kody-platform",
+						"class_name": "StorageRunner",
+						"name": "STORAGE_RUNNER",
+						"script_name": "kody-runtime",
+					},
+					{
+						"class_name": "RunLog",
+						"name": "RUN_LOG",
+						"script_name": "kody-runtime",
+					},
+					{
+						"class_name": "PackageRealtimeSession",
+						"name": "PACKAGE_REALTIME_SESSION",
+						"script_name": "kody-runtime",
 					},
 				],
 			},
-			// Jobs worker service binding (ADR 0016): package save/delete paths
-			// sync the JobManager alarm through this coarse-grained contract.
 			"services": [
 				{
 					"binding": "JOBS",
@@ -194,11 +211,13 @@
 					"binding": "COMMUNITY_ASSETS",
 					"bucket_name": "kody-community-assets",
 				},
-				// Capability execution on the runtime lane reads email
-				// attachments (email-attachment-get) from the shared blob store.
 				{
 					"binding": "EMAIL_BLOBS",
 					"bucket_name": "kody-email-blobs",
+				},
+				{
+					"binding": "REPO_SESSION_BLOBS",
+					"bucket_name": "kody-repo-session-blobs",
 				},
 			],
 			"queues": {
@@ -241,6 +260,10 @@
 					"dataset": "kody_flag_exposures",
 				},
 				{
+					"binding": "EMAIL_EVENTS",
+					"dataset": "kody_email_events",
+				},
+				{
 					"binding": "MCP_PROTOCOL_EVENTS",
 					"dataset": "kody_mcp_protocol_events",
 				},
@@ -248,30 +271,39 @@
 			"ai": {
 				"binding": "AI",
 			},
+			"send_email": [
+				{
+					"name": "EMAIL",
+				},
+			],
+			"artifacts": [
+				{
+					"binding": "ARTIFACTS",
+					"namespace": "production",
+				},
+			],
 			"vars": {
 				"SENTRY_ENVIRONMENT": "production",
 				"SENTRY_TRACES_SAMPLE_RATE": 0,
 				"ARTIFACTS_NAMESPACE": "production",
-				"PACKAGE_APP_BASE_URL": "https://kody.run",
-				"PACKAGE_APP_LEGACY_HOSTS": "kodyapps.dev",
 			},
 		},
 		"preview": {
-			// Preview worker pairs are created fresh per PR: the runtime-owned
-			// classes are new namespaces here, not a transfer.
+			// Preview worker sets are created fresh per PR: the
+			// platform-owned classes are new namespaces here, not a transfer.
 			"migrations": [
 				{
 					"tag": "v1",
 					"new_sqlite_classes": [
-						"StorageRunner",
-						"RunLog",
-						"PackageRealtimeSession",
-						"PackageServiceInstance",
+						"MCP",
+						"McpClientHub",
+						"OAuthPurgeCoordinator",
+						"UserMeter",
+						"Mailbox",
+						"RepoSession",
+						"RepoSessionIndex",
+						"StripePlanRefresh",
 					],
-				},
-				{
-					"tag": "v2",
-					"deleted_classes": ["PackageServiceInstance"],
 				},
 			],
 			"worker_loaders": [
@@ -287,60 +319,60 @@
 					"binding": "DYNAMIC_CALLABLE_WORKFLOWS",
 					"name": "kody-runtime-preview-dynamic-callable-workflows",
 					"class_name": "DynamicCallableWorkflow",
+					"script_name": "kody-runtime",
 				},
 			],
 			"durable_objects": {
 				"bindings": [
 					{
-						"class_name": "StorageRunner",
-						"name": "STORAGE_RUNNER",
-					},
-					{
-						"class_name": "RunLog",
-						"name": "RUN_LOG",
-					},
-					{
-						"class_name": "PackageRealtimeSession",
-						"name": "PACKAGE_REALTIME_SESSION",
-					},
-					{
-						"class_name": "UserMeter",
-						"name": "USER_METER",
-						"script_name": "kody-platform",
-					},
-					{
 						"class_name": "MCP",
 						"name": "MCP_OBJECT",
-						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "McpClientHub",
 						"name": "MCP_CLIENT_HUB",
-						"script_name": "kody-platform",
+					},
+					{
+						"class_name": "OAuthPurgeCoordinator",
+						"name": "OAUTH_PURGE_COORDINATOR",
+					},
+					{
+						"class_name": "UserMeter",
+						"name": "USER_METER",
 					},
 					{
 						"class_name": "Mailbox",
 						"name": "MAILBOX",
-						"script_name": "kody-platform",
+					},
+					{
+						"class_name": "RepoSessionIndex",
+						"name": "REPO_SESSION_INDEX",
+					},
+					{
+						"class_name": "StripePlanRefresh",
+						"name": "STRIPE_PLAN_REFRESH",
 					},
 					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
-						"script_name": "kody-platform",
 					},
-					// Catalog authority for repo_* capabilities. Package and
-					// workflow execution on this worker open/list/publish
-					// sessions through the platform Worker's per-user index.
 					{
-						"class_name": "RepoSessionIndex",
-						"name": "REPO_SESSION_INDEX",
-						"script_name": "kody-platform",
+						"class_name": "StorageRunner",
+						"name": "STORAGE_RUNNER",
+						"script_name": "kody-runtime",
+					},
+					{
+						"class_name": "RunLog",
+						"name": "RUN_LOG",
+						"script_name": "kody-runtime",
+					},
+					{
+						"class_name": "PackageRealtimeSession",
+						"name": "PACKAGE_REALTIME_SESSION",
+						"script_name": "kody-runtime",
 					},
 				],
 			},
-			// Jobs worker service binding (ADR 0016): the preview config
-			// generator rewrites the service to the per-preview jobs worker
-			// name, same as the main worker's JOBS binding.
 			"services": [
 				{
 					"binding": "JOBS",
@@ -377,6 +409,10 @@
 					"binding": "EMAIL_BLOBS",
 					"bucket_name": "kody-preview-email-blobs",
 				},
+				{
+					"binding": "REPO_SESSION_BLOBS",
+					"bucket_name": "kody-preview-repo-session-blobs",
+				},
 			],
 			"queues": {
 				"producers": [
@@ -402,6 +438,10 @@
 					"dataset": "kody_flag_exposures_preview",
 				},
 				{
+					"binding": "EMAIL_EVENTS",
+					"dataset": "kody_email_events_preview",
+				},
+				{
 					"binding": "MCP_PROTOCOL_EVENTS",
 					"dataset": "kody_mcp_protocol_events_preview",
 				},
@@ -409,6 +449,17 @@
 			"ai": {
 				"binding": "AI",
 			},
+			"send_email": [
+				{
+					"name": "EMAIL",
+				},
+			],
+			"artifacts": [
+				{
+					"binding": "ARTIFACTS",
+					"namespace": "preview",
+				},
+			],
 			"vars": {
 				"SENTRY_ENVIRONMENT": "preview",
 				"ARTIFACTS_NAMESPACE": "preview",

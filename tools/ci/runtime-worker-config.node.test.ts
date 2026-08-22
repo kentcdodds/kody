@@ -26,11 +26,11 @@ test('runtime worker binds RepoSessionIndex cross-script next to RepoSession', a
 		)
 		expect(repoSession).toMatchObject({
 			class_name: 'RepoSession',
-			script_name: 'kody',
+			script_name: 'kody-platform',
 		})
 		expect(repoSessionIndex).toMatchObject({
 			class_name: 'RepoSessionIndex',
-			script_name: 'kody',
+			script_name: 'kody-platform',
 		})
 	}
 })
@@ -39,7 +39,16 @@ function buildMainGeneratedConfig(envName: string) {
 	const env = {
 		durable_objects: {
 			bindings: [
-				{ name: 'USER_METER', class_name: 'UserMeter' },
+				{
+					name: 'USER_METER',
+					class_name: 'UserMeter',
+					script_name: 'kody-platform',
+				},
+				{
+					name: 'MCP_OBJECT',
+					class_name: 'MCP',
+					script_name: 'kody-platform',
+				},
 				{
 					name: 'STORAGE_RUNNER',
 					class_name: 'StorageRunner',
@@ -167,6 +176,7 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 			envName: 'preview',
 			mainConfigPath,
 			runtimeWorkerName: 'kody-pr-7-runtime',
+			platformWorkerName: 'kody-pr-7-platform',
 			mainWorkerName: 'kody-pr-7',
 			baseConfigPath: runtimeBaseConfigPath,
 			outConfigPath,
@@ -191,17 +201,17 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 		expect(runtimeConfig.name).toBe('kody-pr-7-runtime')
 		expect(runtimeConfig.env?.preview?.name).toBe('kody-pr-7-runtime')
 		const previewEnv = runtimeConfig.env?.preview
-		// Cross-script references point at the resolved main worker name.
+		// Cross-script references point at the resolved platform worker name.
 		const userMeter = previewEnv?.durable_objects?.bindings?.find(
 			(binding) => binding.name === 'USER_METER',
 		)
-		expect(userMeter?.script_name).toBe('kody-pr-7')
+		expect(userMeter?.script_name).toBe('kody-pr-7-platform')
 		const repoSessionIndex = previewEnv?.durable_objects?.bindings?.find(
 			(binding) => binding.name === 'REPO_SESSION_INDEX',
 		)
 		expect(repoSessionIndex).toMatchObject({
 			class_name: 'RepoSessionIndex',
-			script_name: 'kody-pr-7',
+			script_name: 'kody-pr-7-platform',
 		})
 		// Resource identifiers are copied from the provisioned main config.
 		expect(previewEnv?.d1_databases?.[0]).toMatchObject({
@@ -257,6 +267,11 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 				(binding) => binding.name === 'STORAGE_RUNNER',
 			)
 		expect(bootstrapStorageRunner?.script_name).toBeUndefined()
+		const bootstrapUserMeter =
+			bootstrap.env?.preview?.durable_objects?.bindings?.find(
+				(binding) => binding.name === 'USER_METER',
+			)
+		expect(bootstrapUserMeter?.script_name).toBeUndefined()
 		expect(bootstrap.env?.preview?.workflows?.[0]).toMatchObject({
 			name: 'kody-pr-7-bootstrap-dynamic-callable-workflows',
 		})
@@ -281,6 +296,7 @@ test('generate publishes the package-app custom domain for production', async ()
 			envName: 'production',
 			mainConfigPath,
 			runtimeWorkerName: 'kody-runtime',
+			platformWorkerName: 'kody-platform',
 			mainWorkerName: 'kody',
 			baseConfigPath: runtimeBaseConfigPath,
 			outConfigPath,
@@ -349,6 +365,7 @@ test('generate keeps a GitHub PACKAGE_APP_LEGACY_HOSTS overlay on runtime zone r
 			envName: 'production',
 			mainConfigPath,
 			runtimeWorkerName: 'kody-runtime',
+			platformWorkerName: 'kody-platform',
 			mainWorkerName: 'kody',
 			baseConfigPath: runtimeBaseConfigPath,
 			outConfigPath,

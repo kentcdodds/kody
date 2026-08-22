@@ -9,6 +9,7 @@ import {
 	deriveSiblingWorkerUrl,
 	displayTitleMentionsPr,
 	evaluateAppHealth,
+	evaluatePlatformHealth,
 	evaluateRuntimeHealth,
 	flattenGhJsonPages,
 	parseArgs,
@@ -28,6 +29,7 @@ const sampleComment = [
 	'',
 	'Worker: `kody-pr-42`',
 	'Runtime worker: `kody-pr-42-runtime` (https://kody-pr-42-runtime.kody.workers.dev)',
+	'Platform worker: `kody-pr-42-platform` (https://kody-pr-42-platform.kody.workers.dev)',
 	'D1: `kody-pr-42-db`',
 	'KV: `kody-pr-42-oauth-kv`',
 	'',
@@ -106,6 +108,8 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		workerName: 'kody-pr-42',
 		runtimeWorkerName: 'kody-pr-42-runtime',
 		runtimeUrl: 'https://kody-pr-42-runtime.kody.workers.dev',
+		platformWorkerName: 'kody-pr-42-platform',
+		platformUrl: 'https://kody-pr-42-platform.kody.workers.dev',
 		d1DatabaseName: 'kody-pr-42-db',
 		oauthKvTitle: 'kody-pr-42-oauth-kv',
 		mocks: [
@@ -119,6 +123,8 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		workerName: 'kody-pr-42',
 		runtimeWorkerName: null,
 		runtimeUrl: null,
+		platformWorkerName: null,
+		platformUrl: null,
 		d1DatabaseName: null,
 		oauthKvTitle: null,
 		mocks: [],
@@ -166,6 +172,18 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 	).toBe(true)
 	expect(
 		evaluateRuntimeHealth(
+			{ status: 'ok', commitSha: 'abc', cookieSecretConfigured: false },
+			null,
+		).ok,
+	).toBe(false)
+	expect(
+		evaluatePlatformHealth(
+			{ status: 'ok', commitSha: 'abc', cookieSecretConfigured: true },
+			null,
+		).ok,
+	).toBe(true)
+	expect(
+		evaluatePlatformHealth(
 			{ status: 'ok', commitSha: 'abc', cookieSecretConfigured: false },
 			null,
 		).ok,

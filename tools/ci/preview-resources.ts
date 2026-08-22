@@ -427,9 +427,10 @@ function listMockServerNames() {
 }
 
 function deletePreviewWorkers(workerName: string, dryRun: boolean) {
-	// The runtime worker binds the app worker's Durable Object classes, so
-	// delete it first to avoid dangling cross-script references.
+	// Runtime and platform bind each other's Durable Object classes, so
+	// delete those scripts before the origin worker.
 	deleteWorkerScript({ name: `${workerName}-runtime`, dryRun })
+	deleteWorkerScript({ name: `${workerName}-platform`, dryRun })
 	deleteWorkerScript({ name: workerName, dryRun })
 	deleteWorkerScript({ name: `${workerName}-jobs`, dryRun })
 	for (const service of listMockServerNames()) {

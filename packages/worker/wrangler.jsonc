@@ -257,17 +257,23 @@
 			},
 			"durable_objects": {
 				"bindings": [
+					// Platform-owned Durable Objects live in the kody-platform
+					// script (ADR 0034); storage transferred there via that
+					// script's `transferred_classes` migration.
 					{
 						"class_name": "MCP",
 						"name": "MCP_OBJECT",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "McpClientHub",
 						"name": "MCP_CLIENT_HUB",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "OAuthPurgeCoordinator",
 						"name": "OAUTH_PURGE_COORDINATOR",
+						"script_name": "kody-platform",
 					},
 					// Runtime-owned Durable Objects live in the kody-runtime script
 					// (ADR 0016); storage transferred there via that script's
@@ -285,22 +291,27 @@
 					{
 						"class_name": "UserMeter",
 						"name": "USER_METER",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "Mailbox",
 						"name": "MAILBOX",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "RepoSessionIndex",
 						"name": "REPO_SESSION_INDEX",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "StripePlanRefresh",
 						"name": "STRIPE_PLAN_REFRESH",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "PackageRealtimeSession",
@@ -706,14 +717,17 @@
 					{
 						"class_name": "MCP",
 						"name": "MCP_OBJECT",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "McpClientHub",
 						"name": "MCP_CLIENT_HUB",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "OAuthPurgeCoordinator",
 						"name": "OAUTH_PURGE_COORDINATOR",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "StorageRunner",
@@ -728,22 +742,27 @@
 					{
 						"class_name": "UserMeter",
 						"name": "USER_METER",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "Mailbox",
 						"name": "MAILBOX",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "RepoSessionIndex",
 						"name": "REPO_SESSION_INDEX",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "StripePlanRefresh",
 						"name": "STRIPE_PLAN_REFRESH",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "RepoSession",
 						"name": "REPO_SESSION",
+						"script_name": "kody-platform",
 					},
 					{
 						"class_name": "PackageRealtimeSession",

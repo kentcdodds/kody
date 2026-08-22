@@ -24,9 +24,9 @@ Quick notes for getting a local kody environment running.
   namespace, then write generated Wrangler configs with real `database_id` and
   KV `id` values: `packages/worker/wrangler-production.generated.json` and
   `packages/worker/wrangler-preview.generated.json` (gitignored). Preview and
-  production also ensure sibling runtime/jobs worker configs and `JOBS_DB`. KV
-  titles follow the worker name: production defaults to `<worker-name>-oauth`;
-  preview uses `<preview-worker-name>-oauth-kv` (see
+  production also ensure sibling platform/runtime/jobs worker configs and
+  `JOBS_DB`. KV titles follow the worker name: production defaults to
+  `<worker-name>-oauth`; preview uses `<preview-worker-name>-oauth-kv` (see
   `tools/ci/preview-resources.ts`).
 - **Exporting from an existing remote D1**: export the remote database to a
   local SQLite file with `tools/export-d1-remote-to-sqlite.sh`, then copy only
@@ -255,6 +255,7 @@ The GitHub Actions preview workflow creates per-preview Cloudflare resources so
 each PR preview is isolated:
 
 - App worker: `<preview-worker-name>` (for kody: `kody-pr-<n>`)
+- Platform worker: `<preview-worker-name>-platform`
 - Runtime worker: `<preview-worker-name>-runtime`
 - Jobs worker: `<preview-worker-name>-jobs`
 - App D1 database: `<preview-worker-name>-db`
@@ -264,8 +265,8 @@ each PR preview is isolated:
 - KV namespace (OAuth state): `<preview-worker-name>-oauth-kv`
 - Mock workers: `<preview-worker-name>-mock-<service>`
 
-When a PR is closed, the cleanup job deletes the preview app/runtime/jobs
-Workers, mock Workers, and these resources as well.
+When a PR is closed, the cleanup job deletes the preview
+app/platform/runtime/jobs Workers, mock Workers, and these resources as well.
 
 Cloudflare Workers supports version `preview_urls`, but those preview URLs are
 not available for Workers that use Durable Objects. The main app Worker binds

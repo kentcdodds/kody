@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { promisify } from 'node:util'
 import { usernameFromEmail } from '../packages/worker/src/identity/username.ts'
 import { runtimeWorkerHealthPath } from '../packages/shared/src/runtime-worker.ts'
+import { platformWorkerHealthPath } from '../packages/shared/src/platform-worker.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 
 const execFileAsync = promisify(execFile)
@@ -74,6 +75,8 @@ export type ParsedPreviewComment = {
 	workerName: string | null
 	runtimeWorkerName: string | null
 	runtimeUrl: string | null
+	platformWorkerName: string | null
+	platformUrl: string | null
 	d1DatabaseName: string | null
 	oauthKvTitle: string | null
 	mocks: Array<string>
@@ -88,6 +91,8 @@ export type PreviewSnapshot = {
 	workerName: string | null
 	runtimeWorkerName: string | null
 	runtimeUrl: string | null
+	platformWorkerName: string | null
+	platformUrl: string | null
 	d1DatabaseName: string | null
 	oauthKvTitle: string | null
 	mocks: Array<string>
@@ -111,6 +116,7 @@ export type SmokeReport = {
 	sessionEmail: string | null
 	commitSha: string | null
 	runtimeCommitSha: string | null
+	platformCommitSha: string | null
 	cookieHeader: string | null
 }
 
@@ -371,6 +377,9 @@ export function parsePreviewComment(body: string): ParsedPreviewComment | null {
 	const runtimeLine = body.match(
 		/Runtime worker:\s*`([^`]+)`\s*(?:\((https?:\/\/[^)\s]+)\))?/i,
 	)
+	const platformLine = body.match(
+		/Platform worker:\s*`([^`]+)`\s*(?:\((https?:\/\/[^)\s]+)\))?/i,
+	)
 	const d1DatabaseName = matchFirst(body, /D1:\s*`([^`]+)`/)
 	const oauthKvTitle = matchFirst(body, /KV:\s*`([^`]+)`/)
 	const mocks: Array<string> = []
@@ -387,6 +396,8 @@ export function parsePreviewComment(body: string): ParsedPreviewComment | null {
 		workerName,
 		runtimeWorkerName: runtimeLine?.[1] ?? null,
 		runtimeUrl: runtimeLine?.[2] ?? null,
+		platformWorkerName: platformLine?.[1] ?? null,
+		platformUrl: platformLine?.[2] ?? null,
 		d1DatabaseName,
 		oauthKvTitle,
 		mocks,
@@ -542,6 +553,51 @@ export function evaluateRuntimeHealth(
 	}
 }
 
+export function evaluatePlatformHealth(
+	body: unknown,
+	expectedSha: string | null,
+	commitParents: ReadonlyArray<string> = [],
+): { ok: boolean; commitSha: string | null; detail: string } {
+	if (!body || typeof body !== 'object') {
+		return {
+			ok: false,
+			commitSha: null,
+			detail: 'platform health response was not JSON',
+		}
+	}
+	const record = body as Record<string, unknown>
+	const commitSha =
+		typeof record.commitSha === 'string' && record.commitSha.length > 0
+			? record.commitSha
+			: null
+	if (record.status !== 'ok') {
+		return {
+			ok: false,
+			commitSha,
+			detail: `platform status is not ok (${JSON.stringify(body)})`,
+		}
+	}
+	if (record.cookieSecretConfigured !== true) {
+		return {
+			ok: false,
+			commitSha,
+			detail: 'platform cookieSecretConfigured is not true',
+		}
+	}
+	if (!commitShaMatchesExpected(commitSha, expectedSha, commitParents)) {
+		return {
+			ok: false,
+			commitSha,
+			detail: `platform commitSha ${commitSha ?? '(missing)'} does not match expected ${expectedSha}`,
+		}
+	}
+	return {
+		ok: true,
+		commitSha,
+		detail: healthMatchDetail(commitSha, expectedSha, commitParents),
+	}
+}
+
 function healthMatchDetail(
 	commitSha: string | null,
 	expectedSha: string | null,
@@ -573,6 +629,9 @@ export function formatBriefing(result: PreviewManualTestResult): string {
 			: null,
 		result.snapshot.runtimeUrl
 			? `Runtime: ${result.snapshot.runtimeUrl}${result.snapshot.runtimeWorkerName ? ` (\`${result.snapshot.runtimeWorkerName}\`)` : ''}`
+			: null,
+		result.snapshot.platformUrl
+			? `Platform: ${result.snapshot.platformUrl}${result.snapshot.platformWorkerName ? ` (\`${result.snapshot.platformWorkerName}\`)` : ''}`
 			: null,
 		result.smoke?.commitSha
 			? `Deployed commit: ${result.smoke.commitSha}`
@@ -860,6 +919,7 @@ async function loadSnapshot(
 	if (options.previewUrl && options.prNumber === null) {
 		const workerName = workerNameFromPreviewUrl(options.previewUrl)
 		const runtimeWorkerName = workerName ? `${workerName}-runtime` : null
+		const platformWorkerName = workerName ? `${workerName}-platform` : null
 		return {
 			prNumber: null,
 			prUrl: null,
@@ -874,6 +934,15 @@ async function loadSnapshot(
 							options.previewUrl,
 							workerName,
 							runtimeWorkerName,
+						)
+					: null,
+			platformWorkerName,
+			platformUrl:
+				workerName && platformWorkerName
+					? deriveSiblingWorkerUrl(
+							options.previewUrl,
+							workerName,
+							platformWorkerName,
 						)
 					: null,
 			d1DatabaseName: null,
@@ -904,6 +973,13 @@ async function loadSnapshot(
 		(previewUrl && workerName && runtimeWorkerName
 			? deriveSiblingWorkerUrl(previewUrl, workerName, runtimeWorkerName)
 			: null)
+	const platformWorkerName =
+		parsed?.platformWorkerName ?? (workerName ? `${workerName}-platform` : null)
+	const platformUrl =
+		parsed?.platformUrl ??
+		(previewUrl && workerName && platformWorkerName
+			? deriveSiblingWorkerUrl(previewUrl, workerName, platformWorkerName)
+			: null)
 
 	return {
 		prNumber: pr.number,
@@ -914,6 +990,8 @@ async function loadSnapshot(
 		workerName,
 		runtimeWorkerName,
 		runtimeUrl,
+		platformWorkerName,
+		platformUrl,
 		d1DatabaseName: parsed?.d1DatabaseName ?? null,
 		oauthKvTitle: parsed?.oauthKvTitle ?? null,
 		mocks: parsed?.mocks ?? [],
@@ -1085,6 +1163,7 @@ async function runSmokeChecks(
 			sessionEmail: null,
 			commitSha: null,
 			runtimeCommitSha: null,
+			platformCommitSha: null,
 			cookieHeader: null,
 		}
 	}
@@ -1094,6 +1173,7 @@ async function runSmokeChecks(
 	let sessionEmail: string | null = null
 	let commitSha: string | null = null
 	let runtimeCommitSha: string | null = null
+	let platformCommitSha: string | null = null
 	let cookieHeader = ''
 
 	const health = await fetchJson(deps, `${origin}/health`)
@@ -1189,6 +1269,36 @@ async function runSmokeChecks(
 					runtimeHealth.status === 200
 						? runtimeEval.detail
 						: `HTTP ${runtimeHealth.status}: ${runtimeEval.detail}`,
+			})
+		}
+	}
+
+	if (snapshot.platformUrl) {
+		const platformHealth = await fetchJson(
+			deps,
+			`${snapshot.platformUrl.replace(/\/$/, '')}${platformWorkerHealthPath}`,
+		)
+		if (platformHealth.error) {
+			checks.push({
+				name: `GET ${platformWorkerHealthPath}`,
+				ok: false,
+				detail: platformHealth.error,
+			})
+		} else {
+			const platformEval = await evaluateFetchedHealth(
+				deps,
+				evaluatePlatformHealth,
+				platformHealth.body,
+				snapshot.expectedSha,
+			)
+			platformCommitSha = platformEval.commitSha
+			checks.push({
+				name: `GET ${platformWorkerHealthPath}`,
+				ok: platformHealth.status === 200 && platformEval.ok,
+				detail:
+					platformHealth.status === 200
+						? platformEval.detail
+						: `HTTP ${platformHealth.status}: ${platformEval.detail}`,
 			})
 		}
 	}
@@ -1335,6 +1445,7 @@ async function runSmokeChecks(
 		sessionEmail,
 		commitSha,
 		runtimeCommitSha,
+		platformCommitSha,
 		cookieHeader: cookieHeader || null,
 	}
 }
