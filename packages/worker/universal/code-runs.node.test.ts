@@ -17,13 +17,37 @@ const window = {
 	windowEnd,
 }
 
-test('interpolateCodeRunsCount spreads yesterday’s delta across 24 hours and never overshoots', () => {
+test('interpolateCodeRunsCount stays monotonic, bursty, and inside the pair', () => {
 	expect(interpolateCodeRunsCount(window, startMs - 1)).toBe(1000)
 	expect(interpolateCodeRunsCount(window, startMs)).toBe(1000)
-	expect(interpolateCodeRunsCount(window, startMs + 12 * hourMs)).toBe(1120)
-	expect(interpolateCodeRunsCount(window, startMs + 24 * hourMs - 1)).toBe(1239)
 	expect(interpolateCodeRunsCount(window, startMs + 24 * hourMs)).toBe(1240)
 	expect(interpolateCodeRunsCount(window, startMs + 30 * hourMs)).toBe(1240)
+	expect(
+		interpolateCodeRunsCount(window, startMs + 24 * hourMs - 1),
+	).toBeLessThan(1240)
+
+	const hourly = Array.from({ length: 25 }, (_, hour) =>
+		interpolateCodeRunsCount(window, startMs + hour * hourMs),
+	)
+	for (let index = 1; index < hourly.length; index += 1) {
+		expect(hourly[index]!).toBeGreaterThanOrEqual(hourly[index - 1]!)
+	}
+	expect(hourly[0]).toBe(1000)
+	expect(hourly[24]).toBe(1240)
+
+	const hourlyDeltas = hourly
+		.slice(1)
+		.map((count, index) => count - hourly[index]!)
+	const quietest = Math.min(...hourlyDeltas)
+	const busiest = Math.max(...hourlyDeltas)
+	expect(busiest).toBeGreaterThan(quietest * 3)
+	expect(interpolateCodeRunsCount(window, startMs + 12 * hourMs)).not.toBe(1120)
+	expect(interpolateCodeRunsCount(window, startMs + 6 * hourMs)).not.toBe(
+		interpolateCodeRunsCount(
+			{ ...window, previous: 900, current: 1140 },
+			startMs + 6 * hourMs,
+		),
+	)
 })
 
 test('interpolateCodeRunsCount sits still when the pair has not moved', () => {
