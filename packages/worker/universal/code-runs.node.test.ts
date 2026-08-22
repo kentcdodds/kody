@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
+	msUntilNextCodeRunsCount,
 	parsePublicCodeRunsWindow,
 } from './code-runs.ts'
 
@@ -17,7 +18,7 @@ const window = {
 	windowEnd,
 }
 
-test('interpolateCodeRunsCount stays monotonic, bursty, and inside the pair', () => {
+test('interpolateCodeRunsCount stays monotonic, warped, and inside the pair', () => {
 	expect(interpolateCodeRunsCount(window, startMs - 1)).toBe(1000)
 	expect(interpolateCodeRunsCount(window, startMs)).toBe(1000)
 	expect(interpolateCodeRunsCount(window, startMs + 24 * hourMs)).toBe(1240)
@@ -52,45 +53,69 @@ test('interpolateCodeRunsCount stays monotonic, bursty, and inside the pair', ()
 	)
 })
 
-test('interpolateCodeRunsCount advances at least every 3s with mixed step sizes', () => {
+test('interpolateCodeRunsCount wobbles +1 ticks without long idle when the pair is dense', () => {
 	const busy = { ...window, previous: 0, current: 86_400 }
+	const gaps: Array<number> = []
 	let previous = interpolateCodeRunsCount(busy, startMs)
-	let lastAdvanceAt = 0
-	let maxGap = 0
-	let skippedSeconds = 0
-	let multiStepSeconds = 0
-	const stepSizes = new Set<number>()
-	for (let second = 1; second < 86_400; second += 1) {
-		const count = interpolateCodeRunsCount(busy, startMs + second * 1000)
-		const step = count - previous
-		expect(step).toBeGreaterThanOrEqual(0)
+	let at = startMs
+	for (let step = 0; step < 2_400; step += 1) {
+		const wait = msUntilNextCodeRunsCount(busy, at)
+		expect(wait).not.toBeNull()
+		expect(wait!).toBeGreaterThan(0)
+		at += wait!
+		const count = interpolateCodeRunsCount(busy, at)
+		expect(count).toBe(previous + 1)
 		expect(count).toBeLessThan(86_400)
-		if (step === 0) skippedSeconds += 1
-		if (step > 1) multiStepSeconds += 1
-		if (step > 0) {
-			stepSizes.add(step)
-			maxGap = Math.max(maxGap, second - lastAdvanceAt)
-			lastAdvanceAt = second
-		}
+		gaps.push(wait!)
 		previous = count
 	}
-	expect(previous).toBeLessThan(86_400)
 	expect(interpolateCodeRunsCount(busy, startMs + 86_400 * 1000)).toBe(86_400)
-	expect(maxGap).toBeLessThanOrEqual(3)
-	expect(skippedSeconds).toBeGreaterThan(0)
-	expect(multiStepSeconds).toBeGreaterThan(0)
-	expect(stepSizes.size).toBeGreaterThan(1)
+
+	const minGap = Math.min(...gaps)
+	const maxGap = Math.max(...gaps)
+	expect(maxGap).toBeLessThanOrEqual(2_000)
+	expect(minGap).toBeLessThan(800)
+	expect(maxGap).toBeGreaterThan(1_100)
+	expect(new Set(gaps).size).toBeGreaterThan(10)
+
+	let densePrevious = interpolateCodeRunsCount(busy, startMs + 6 * hourMs)
+	for (let offset = 10; offset <= 120_000; offset += 10) {
+		const count = interpolateCodeRunsCount(busy, startMs + 6 * hourMs + offset)
+		expect(count - densePrevious).toBeGreaterThanOrEqual(0)
+		expect(count - densePrevious).toBeLessThanOrEqual(1)
+		densePrevious = count
+	}
 })
 
-test('interpolateCodeRunsCount is stable across milliseconds in the same second', () => {
-	const wide = { ...window, previous: 0, current: 1_000_000_000 }
-	const midSecond = startMs + 6 * hourMs + 100
-	expect(interpolateCodeRunsCount(wide, midSecond)).toBe(
-		interpolateCodeRunsCount(wide, midSecond + 800),
-	)
+test('interpolateCodeRunsCount rolls every extra integer inside a second', () => {
+	const packed = { ...window, previous: 0, current: 86_400 * 5 }
+	const midSecond = startMs + 6 * hourMs
+	const seen = new Set<number>()
+	for (let offset = 0; offset < 1000; offset += 1) {
+		seen.add(interpolateCodeRunsCount(packed, midSecond + offset))
+	}
+	const values = [...seen].sort((left, right) => left - right)
+	expect(values.length).toBeGreaterThan(1)
+	for (let index = 1; index < values.length; index += 1) {
+		expect(values[index]).toBe(values[index - 1]! + 1)
+	}
 })
 
-test('interpolateCodeRunsCount stays one integer through a non-aligned window end', () => {
+test('msUntilNextCodeRunsCount lands on the next integer and then is still', () => {
+	const busy = { ...window, previous: 0, current: 86_400 }
+	const nowMs = startMs + 3 * hourMs + 250
+	const here = interpolateCodeRunsCount(busy, nowMs)
+	const wait = msUntilNextCodeRunsCount(busy, nowMs)
+	expect(wait).not.toBeNull()
+	expect(interpolateCodeRunsCount(busy, nowMs + wait! - 1)).toBe(here)
+	expect(interpolateCodeRunsCount(busy, nowMs + wait!)).toBe(here + 1)
+	expect(msUntilNextCodeRunsCount(busy, startMs + 24 * hourMs)).toBeNull()
+	expect(
+		msUntilNextCodeRunsCount({ ...window, previous: 80, current: 80 }, nowMs),
+	).toBeNull()
+})
+
+test('interpolateCodeRunsCount holds current from the exact window end', () => {
 	const offset = {
 		...window,
 		previous: 171540,
@@ -99,14 +124,8 @@ test('interpolateCodeRunsCount stays one integer through a non-aligned window en
 		windowEnd: '2026-08-23T15:47:07.637Z',
 	}
 	const endMs = Date.parse(offset.windowEnd)
-	const endSecondMs = Math.floor(endMs / 1000) * 1000
-	expect(interpolateCodeRunsCount(offset, endSecondMs + 100)).toBe(
-		interpolateCodeRunsCount(offset, endSecondMs + 900),
-	)
-	expect(interpolateCodeRunsCount(offset, endSecondMs + 100)).toBeLessThan(
-		257940,
-	)
-	expect(interpolateCodeRunsCount(offset, endSecondMs + 1000)).toBe(257940)
+	expect(interpolateCodeRunsCount(offset, endMs - 1)).toBeLessThan(257940)
+	expect(interpolateCodeRunsCount(offset, endMs)).toBe(257940)
 	expect(interpolateCodeRunsCount(offset, endMs + 1000)).toBe(257940)
 })
 
