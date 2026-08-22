@@ -330,7 +330,8 @@ Guarantees and rules:
   platform KV pair (or a still D1 sum when KV is empty) and interpolates
   `previous → current` across the 24-hour window. The payload is the window pair
   only — never per-user rows. Interpolation is deterministic from the window so
-  every visitor at a given second sees the same number. Elapsed time is warped
+  every visitor at a given second sees the same number (`nowMs` is floored to
+  whole seconds before progress is computed). Elapsed time is warped
   through hashed bursty weights (quiet stretches and rapid spikes) and stays
   monotonic; it never passes `current`.
 - **Fleet visibility** (`/admin/insights`, loader in

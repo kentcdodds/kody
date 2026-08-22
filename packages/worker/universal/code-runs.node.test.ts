@@ -42,11 +42,21 @@ test('interpolateCodeRunsCount stays monotonic, bursty, and inside the pair', ()
 	const busiest = Math.max(...hourlyDeltas)
 	expect(busiest).toBeGreaterThan(quietest * 3)
 	expect(interpolateCodeRunsCount(window, startMs + 12 * hourMs)).not.toBe(1120)
-	expect(interpolateCodeRunsCount(window, startMs + 6 * hourMs)).not.toBe(
-		interpolateCodeRunsCount(
-			{ ...window, previous: 900, current: 1140 },
-			startMs + 6 * hourMs,
-		),
+	const firstPair = { ...window, previous: 0, current: 1_000_000 }
+	const secondPair = { ...firstPair, previous: 100, current: 1_000_100 }
+	const sampleMs = startMs + 6 * hourMs
+	expect(
+		interpolateCodeRunsCount(firstPair, sampleMs) - firstPair.previous,
+	).not.toBe(
+		interpolateCodeRunsCount(secondPair, sampleMs) - secondPair.previous,
+	)
+})
+
+test('interpolateCodeRunsCount is stable across milliseconds in the same second', () => {
+	const wide = { ...window, previous: 0, current: 1_000_000_000 }
+	const midSecond = startMs + 6 * hourMs + 100
+	expect(interpolateCodeRunsCount(wide, midSecond)).toBe(
+		interpolateCodeRunsCount(wide, midSecond + 800),
 	)
 })
 
