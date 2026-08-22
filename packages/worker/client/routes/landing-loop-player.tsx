@@ -1,5 +1,8 @@
 import { type Handle, type RemixNode, ref } from 'remix/ui'
-import { observeNearViewport } from '#client/deferred-turnstile.ts'
+import {
+	isElementNearViewport,
+	observeNearViewport,
+} from '#client/deferred-turnstile.ts'
 import { on } from '#client/event-mixin.ts'
 import { loadSyntaxHighlight } from '#client/syntax-highlight.tsx'
 import { routes } from '#universal/routes.ts'
@@ -17,10 +20,11 @@ type LoopLineRenderer = (line: TranscriptLine) => RemixNode
 
 /**
  * Homepage factory-loop player. SSR paints the first user turn; the
- * transcript chunk and syntax highlighter load once the card is near the
- * viewport so they stay out of the marketing entry. Hover/focus (fine
- * pointers) and explore (scroll up or open a tool) pause the autoplay;
- * Play scrolls to the latest beat and continues.
+ * transcript chunk loads once the card is near the viewport so it stays
+ * out of the marketing entry. Shiki waits until a tool or file beat is
+ * on screen. Hover/focus (fine pointers) and explore (scroll up or open
+ * a tool) pause the autoplay; Play scrolls to the latest beat and
+ * continues.
  */
 export function LandingLoopPlayer(handle: Handle) {
 	let beats: Array<LandingLoopBeat> | null = null
@@ -32,7 +36,8 @@ export function LandingLoopPlayer(handle: Handle) {
 	let autoScrolling = false
 	let playGeneration = 0
 	let loadStarted = false
-	let visibleInViewport = false
+	let loopEl: HTMLElement | null = null
+	let visibleInViewport = true
 
 	function prefersReducedMotion() {
 		return (
@@ -48,16 +53,44 @@ export function LandingLoopPlayer(handle: Handle) {
 		)
 	}
 
-	async function loadLoop(signal: AbortSignal) {
+	function armLoad() {
+		if (loadStarted || handle.signal.aborted) return
+		loadStarted = true
+		void loadLoop()
+	}
+
+	function syncVisibility() {
+		visibleInViewport = loopEl ? isElementNearViewport(loopEl, '0px') : true
+		if (!beats || reducedMotion) return
+		const wasPaused = player.isPaused()
+		player.setOffscreen(!visibleInViewport)
+		if (wasPaused && !player.isPaused()) startPlayLoop()
+	}
+
+	function needsHighlight(visible: ReadonlyArray<LandingLoopBeat>) {
+		return visible.some(
+			(beat) =>
+				beat.kind === 'line' &&
+				(beat.line.role === 'tools' || beat.line.role === 'files'),
+		)
+	}
+
+	function prefetchHighlight() {
+		void loadSyntaxHighlight().then(() => {
+			if (!handle.signal.aborted) handle.update()
+		})
+	}
+
+	async function loadLoop() {
 		try {
 			const [transcript, walkthrough] = await Promise.all([
 				// Dynamic import is intentional so the factory transcript and
-				// tool-call renderer stay out of the homepage chunk.
+				// tool-call renderer stay out of the homepage chunk. Shiki
+				// stays off this path — plaintext fences are enough to start.
 				import('./how-kody-works-transcript.ts'),
 				import('./interactive-guide-walkthrough.tsx'),
-				loadSyntaxHighlight(),
 			])
-			if (signal.aborted) return
+			if (handle.signal.aborted) return
 			beats = flattenTranscriptActs(transcript.howKodyWorksTranscriptActs)
 			renderLine = walkthrough.renderInteractiveGuideLine
 			reducedMotion = prefersReducedMotion()
@@ -66,13 +99,15 @@ export function LandingLoopPlayer(handle: Handle) {
 				beatCount: beats.length,
 				reducedMotion,
 			})
-			if (!reducedMotion) {
-				player.setOffscreen(!visibleInViewport)
-				if (visibleInViewport) startPlayLoop()
+			syncVisibility()
+			if (needsHighlight(beats.slice(0, player.revealedCount))) {
+				prefetchHighlight()
 			}
+			if (!reducedMotion && !player.isPaused()) startPlayLoop()
 			handle.update()
 		} catch {
-			// Leave the SSR teaser in place if the transcript chunk fails.
+			// Leave the SSR teaser in place and let a later arm retry.
+			loadStarted = false
 		}
 	}
 
@@ -116,6 +151,9 @@ export function LandingLoopPlayer(handle: Handle) {
 				}
 				if (player.isPaused()) continue
 				player.advance()
+				if (beats && needsHighlight(beats.slice(0, player.revealedCount))) {
+					prefetchHighlight()
+				}
 				await handle.update()
 				if (signal.aborted || generation !== playGeneration) return
 				scrollChatToBottom()
@@ -158,36 +196,34 @@ export function LandingLoopPlayer(handle: Handle) {
 						handle.update()
 					}),
 					ref((node, signal) => {
-						if (typeof IntersectionObserver === 'undefined') {
-							visibleInViewport = true
+						loopEl = node
+						const stopNear = observeNearViewport(node, armLoad)
+						const onVisibility = () => {
+							if (isElementNearViewport(node)) armLoad()
+							syncVisibility()
+							if (beats) handle.update()
 						}
-						const stopNear = observeNearViewport(node, () => {
-							if (loadStarted) return
-							loadStarted = true
-							void loadLoop(handle.signal)
-						})
 						const visibilityObserver =
 							typeof IntersectionObserver === 'undefined'
 								? null
-								: new IntersectionObserver(
-										(entries) => {
-											visibleInViewport = entries.some(
-												(entry) => entry.isIntersecting,
-											)
-											if (!beats) return
-											const wasPaused = player.isPaused()
-											player.setOffscreen(!visibleInViewport)
-											if (!reducedMotion && wasPaused && !player.isPaused()) {
-												startPlayLoop()
-											}
-											handle.update()
-										},
-										{ threshold: 0.35 },
-									)
+								: new IntersectionObserver(onVisibility, { threshold: 0 })
 						visibilityObserver?.observe(node)
+						window.addEventListener('scroll', onVisibility, {
+							passive: true,
+							signal,
+						})
+						window.addEventListener('resize', onVisibility, {
+							passive: true,
+							signal,
+						})
+						const raf = requestAnimationFrame(() => {
+							if (isElementNearViewport(node)) armLoad()
+						})
 						signal.addEventListener(
 							'abort',
 							() => {
+								if (loopEl === node) loopEl = null
+								cancelAnimationFrame(raf)
 								stopNear()
 								visibilityObserver?.disconnect()
 							},

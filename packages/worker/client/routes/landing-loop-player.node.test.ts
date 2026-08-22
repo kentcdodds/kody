@@ -5,6 +5,7 @@ import {
 	flattenTranscriptActs,
 	landingLoopHoldMs,
 	landingLoopTeaser,
+	landingLoopTeaserBeatCount,
 	waitLandingLoopHold,
 } from './landing-loop-state.ts'
 
@@ -32,7 +33,7 @@ test('homepage loop player pauses for hover and explore, then play resumes and l
 		beatCount: beats.length,
 		reducedMotion: false,
 	})
-	expect(player.revealedCount).toBe(1)
+	expect(player.revealedCount).toBe(landingLoopTeaserBeatCount)
 	expect(player.isPaused()).toBe(false)
 	expect(landingLoopHoldMs(beats[0]!)).toBe(1100)
 	expect(landingLoopHoldMs('loop')).toBe(4000)
@@ -49,7 +50,7 @@ test('homepage loop player pauses for hover and explore, then play resumes and l
 	player.play()
 	expect(player.isPaused()).toBe(false)
 	expect(player.advance()).toEqual({ didAdvance: true, looped: false })
-	expect(player.revealedCount).toBe(2)
+	expect(player.revealedCount).toBe(landingLoopTeaserBeatCount + 1)
 
 	player.setHover(true)
 	player.play()
@@ -79,13 +80,14 @@ test('homepage loop player pauses for hover and explore, then play resumes and l
 	expect(still.advance()).toEqual({ didAdvance: false, looped: false })
 
 	const looper = createLandingLoopPlayer({
-		beatCount: 2,
+		beatCount: 3,
 		reducedMotion: false,
 	})
+	expect(looper.revealedCount).toBe(landingLoopTeaserBeatCount)
 	expect(looper.advance()).toEqual({ didAdvance: true, looped: false })
-	expect(looper.revealedCount).toBe(2)
+	expect(looper.revealedCount).toBe(3)
 	expect(looper.advance()).toEqual({ didAdvance: true, looped: true })
-	expect(looper.revealedCount).toBe(1)
+	expect(looper.revealedCount).toBe(landingLoopTeaserBeatCount)
 
 	vi.useFakeTimers()
 	try {

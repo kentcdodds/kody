@@ -9,6 +9,9 @@ export const landingLoopTeaser = {
 	user: 'What did my favorite bot ship recently on GitHub?',
 } as const
 
+/** Act header plus the first user turn — matches the SSR teaser. */
+export const landingLoopTeaserBeatCount = 2
+
 export type LandingLoopPauseReason =
 	| 'hover'
 	| 'focus'
@@ -77,7 +80,7 @@ export function createLandingLoopPlayer(input: {
 	const reasons = new Set<LandingLoopPauseReason>()
 	let revealedCount = input.reducedMotion
 		? input.beatCount
-		: Math.min(1, input.beatCount)
+		: Math.min(landingLoopTeaserBeatCount, input.beatCount)
 	let ignorePointerPause = false
 
 	function emit() {
@@ -152,7 +155,7 @@ export function createLandingLoopPlayer(input: {
 				return { didAdvance: false, looped: false }
 			}
 			if (revealedCount >= input.beatCount) {
-				revealedCount = Math.min(1, input.beatCount)
+				revealedCount = Math.min(landingLoopTeaserBeatCount, input.beatCount)
 				emit()
 				return { didAdvance: true, looped: true }
 			}
