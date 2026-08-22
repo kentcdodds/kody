@@ -7,6 +7,8 @@ import {
 	recordVectorEmbedFingerprint,
 	shouldSkipVectorEmbed,
 	tryDeleteVectorEmbedFingerprint,
+	tryReadVectorEmbedFingerprints,
+	tryWriteVectorEmbedFingerprints,
 	vectorEmbedContentHash,
 	vectorEmbedFingerprintVersion,
 } from './embed-fingerprints.ts'
@@ -157,6 +159,30 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 				text: 'remember a different locale',
 			}),
 		).resolves.toBe(false)
+
+		const unmigratedEnv = {
+			APP_DB: createD1FromSqlite(new DatabaseSync(':memory:')),
+		} as Env
+		await expect(
+			tryReadVectorEmbedFingerprints({
+				env: unmigratedEnv,
+				keys: [{ userId: 'user-me', vectorId: 'memory-1' }],
+			}),
+		).resolves.toBeNull()
+		await tryWriteVectorEmbedFingerprints({
+			env: unmigratedEnv,
+			rows: [
+				{
+					userId: 'user-me',
+					vectorId: 'memory-1',
+					contentHash: 'abc',
+				},
+			],
+		})
+		await tryDeleteVectorEmbedFingerprint({
+			env: unmigratedEnv,
+			vectorId: 'memory-1',
+		})
 	} finally {
 		embedSpy.mockRestore()
 	}

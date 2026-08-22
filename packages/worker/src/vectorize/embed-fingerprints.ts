@@ -1,5 +1,4 @@
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
-import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
 	CAPABILITY_EMBEDDING_MODEL,
@@ -108,13 +107,7 @@ export async function tryReadVectorEmbedFingerprints(input: {
 			db: input.env.APP_DB,
 			keys: input.keys,
 		})
-	} catch (error) {
-		console.error(
-			JSON.stringify({
-				message: 'vector embed fingerprint read failed',
-				error: getErrorMessage(error),
-			}),
-		)
+	} catch {
 		return null
 	}
 }
@@ -133,13 +126,8 @@ export async function tryWriteVectorEmbedFingerprints(input: {
 			db: input.env.APP_DB,
 			rows: input.rows,
 		})
-	} catch (error) {
-		console.error(
-			JSON.stringify({
-				message: 'vector embed fingerprint write failed',
-				error: getErrorMessage(error),
-			}),
-		)
+	} catch {
+		// Fail-open: a derived skip cache must not break upsert or delete.
 	}
 }
 
@@ -153,13 +141,8 @@ export async function tryDeleteVectorEmbedFingerprint(input: {
 			db: input.env.APP_DB,
 			vectorId: input.vectorId,
 		})
-	} catch (error) {
-		console.error(
-			JSON.stringify({
-				message: 'vector embed fingerprint delete failed',
-				error: getErrorMessage(error),
-			}),
-		)
+	} catch {
+		// Fail-open: a derived skip cache must not break upsert or delete.
 	}
 }
 
