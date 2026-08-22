@@ -96,6 +96,7 @@ test('interpolateCodeRunsCount rolls every extra integer inside a second', () =>
 	for (let offset = 0; offset < 1000; offset += 1) {
 		const count = interpolateCodeRunsCount(packed, midSecond + offset)
 		seen.add(count)
+		expect(count).toBeGreaterThanOrEqual(previous)
 		if (count > previous) {
 			expect(count).toBe(previous + 1)
 			offsets.push(offset)
