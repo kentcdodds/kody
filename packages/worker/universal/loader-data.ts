@@ -12,7 +12,10 @@ import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 import { type OnboardingChecklistItemId } from '#universal/onboarding-checklist-types.ts'
 import { type SignupMode } from '#universal/signup-mode.ts'
-import { type CommunityListingCategory } from '#universal/community-categories.ts'
+import {
+	type CommunityCategoryCounts,
+	type CommunityListingCategory,
+} from '#universal/community-categories.ts'
 import { type CommunityListingSort } from '#universal/community-search.ts'
 import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 
@@ -94,6 +97,12 @@ export type CommunityIndexLoaderData = {
 	 * filters keep a flat `listings` grid and leave this null.
 	 */
 	groups: Array<CommunityIndexGroup> | null
+	/**
+	 * Resolved-category counts for the current result set (the browse
+	 * candidate window, or the current search hits). Chips hide empty
+	 * buckets from this map.
+	 */
+	categoryCounts: CommunityCategoryCounts
 	query: string | null
 	sort: CommunityListingSort
 	category: CommunityListingCategory | null

@@ -4,8 +4,10 @@ import { type Handle, css } from 'remix/ui'
 import { renderToString } from 'remix/ui/server'
 import { type PublicCommunityListing } from '#app/community-public.ts'
 import {
-	communityListingCategories,
 	communityPackageCategoryCopy,
+	countCommunityListingsByCategory,
+	visibleCommunityBrowseCategories,
+	type CommunityCategoryCounts,
 	type CommunityListingCategory,
 } from '#universal/community-categories.ts'
 import {
@@ -41,6 +43,7 @@ import {
 export type CommunityListingsContentProps = {
 	listings: Array<PublicCommunityListing>
 	groups?: Array<CommunityIndexGroup> | null
+	categoryCounts?: CommunityCategoryCounts | null
 	query: string | null
 	sort?: CommunityListingSort
 	category?: CommunityListingCategory | null
@@ -67,72 +70,80 @@ function renderCommunityBrowseToolbar(input: {
 	query: string | null
 	sort: CommunityListingSort
 	category: CommunityListingCategory | null
+	visibleCategories: Array<CommunityListingCategory>
+	showCategoryNav: boolean
+	showSort: boolean
 }) {
+	if (!input.showCategoryNav && !input.showSort) return null
 	return (
 		<div mix={css(browseToolbarCss)}>
-			<nav
-				aria-label="Filter community packages by category"
-				data-testid="community-listings-categories"
-				mix={css(categoryNavCss)}
-			>
-				<a
-					href={buildCommunityIndexHref({
-						query: input.query,
-						sort: input.sort,
-					})}
-					aria-current={input.category == null ? 'page' : undefined}
-					mix={css(sortLinkCss)}
+			{input.showCategoryNav ? (
+				<nav
+					aria-label="Filter community packages by category"
+					data-testid="community-listings-categories"
+					mix={css(categoryNavCss)}
 				>
-					All
-				</a>
-				{communityListingCategories.map((category) => (
 					<a
-						key={category}
 						href={buildCommunityIndexHref({
 							query: input.query,
 							sort: input.sort,
-							category,
 						})}
-						aria-current={input.category === category ? 'page' : undefined}
-						title={communityPackageCategoryCopy[category].description}
+						aria-current={input.category == null ? 'page' : undefined}
 						mix={css(sortLinkCss)}
 					>
-						{communityPackageCategoryCopy[category].label}
+						All
 					</a>
-				))}
-			</nav>
-			<nav
-				aria-label="Sort community packages"
-				data-testid="community-listings-sort"
-				mix={css(sortToolbarCss)}
-			>
-				<p mix={css(sortHintCss)}>{communitySortHint(input.sort)}</p>
-				<div role="group" aria-label="Sort order" mix={css(sortGroupCss)}>
-					<a
-						href={buildCommunityIndexHref({
-							query: input.query,
-							sort: 'best',
-							category: input.category,
-						})}
-						aria-current={input.sort === 'best' ? 'page' : undefined}
-						mix={css(sortLinkCss)}
-					>
-						Best
-					</a>
-					<a
-						href={buildCommunityIndexHref({
-							query: input.query,
-							sort: 'newest',
-							category: input.category,
-						})}
-						aria-current={input.sort === 'newest' ? 'page' : undefined}
-						title="Last published first, including republished updates"
-						mix={css(sortLinkCss)}
-					>
-						Newest
-					</a>
-				</div>
-			</nav>
+					{input.visibleCategories.map((category) => (
+						<a
+							key={category}
+							href={buildCommunityIndexHref({
+								query: input.query,
+								sort: input.sort,
+								category,
+							})}
+							aria-current={input.category === category ? 'page' : undefined}
+							title={communityPackageCategoryCopy[category].description}
+							mix={css(sortLinkCss)}
+						>
+							{communityPackageCategoryCopy[category].label}
+						</a>
+					))}
+				</nav>
+			) : null}
+			{input.showSort ? (
+				<nav
+					aria-label="Sort community packages"
+					data-testid="community-listings-sort"
+					mix={css(sortToolbarCss)}
+				>
+					<p mix={css(sortHintCss)}>{communitySortHint(input.sort)}</p>
+					<div role="group" aria-label="Sort order" mix={css(sortGroupCss)}>
+						<a
+							href={buildCommunityIndexHref({
+								query: input.query,
+								sort: 'best',
+								category: input.category,
+							})}
+							aria-current={input.sort === 'best' ? 'page' : undefined}
+							mix={css(sortLinkCss)}
+						>
+							Best
+						</a>
+						<a
+							href={buildCommunityIndexHref({
+								query: input.query,
+								sort: 'newest',
+								category: input.category,
+							})}
+							aria-current={input.sort === 'newest' ? 'page' : undefined}
+							title="Last published first, including republished updates"
+							mix={css(sortLinkCss)}
+						>
+							Newest
+						</a>
+					</div>
+				</nav>
+			) : null}
 		</div>
 	)
 }
@@ -289,46 +300,69 @@ export function CommunityListingsContent(
 	const sort = handle.props.sort ?? defaultCommunityListingSort
 	const category = handle.props.category ?? null
 	const groups = handle.props.groups ?? null
+	const categoryCounts =
+		handle.props.categoryCounts ?? countCommunityListingsByCategory(listings)
+	const visibleCategories = visibleCommunityBrowseCategories({
+		counts: categoryCounts,
+		selected: category,
+	})
+	const emptyCatalog =
+		listings.length === 0 && query == null && category == null
+	const showCategoryNav = visibleCategories.length > 0 || category != null
+	const showSort = !emptyCatalog
 
 	return () => (
 		<div data-testid="community-listings-frame">
-			{renderCommunityBrowseToolbar({ query, sort, category })}
+			{renderCommunityBrowseToolbar({
+				query,
+				sort,
+				category,
+				visibleCategories,
+				showCategoryNav,
+				showSort,
+			})}
 			{listings.length === 0 ? (
 				renderCommunityEmptyState(query, sort, category)
 			) : groups != null && groups.length > 0 ? (
 				<div data-testid="community-listings-overview" mix={css(overviewCss)}>
-					{groups.map((group) => (
-						<section
-							key={group.category}
-							aria-labelledby={`community-category-${group.category}`}
-							mix={css(overviewSectionCss)}
-						>
-							<header mix={css(overviewHeadCss)}>
-								<div>
-									<h2
-										id={`community-category-${group.category}`}
-										mix={css(overviewTitleCss)}
-									>
-										{communityPackageCategoryCopy[group.category].label}
-									</h2>
-									<p mix={css(overviewHintCss)}>
-										{communityPackageCategoryCopy[group.category].description}
-									</p>
-								</div>
-								<a
-									href={buildCommunityIndexHref({
-										query,
-										sort,
-										category: group.category,
-									})}
-									mix={css(overviewSeeAllCss)}
-								>
-									See all {formatCount(group.total, 'package')}
-								</a>
-							</header>
-							{renderCommunityListingGrid(group.listings)}
-						</section>
-					))}
+					{groups.map((group) => {
+						const label = communityPackageCategoryCopy[group.category].label
+						const hasMore = group.total > group.listings.length
+						return (
+							<section
+								key={group.category}
+								aria-labelledby={`community-category-${group.category}`}
+								mix={css(overviewSectionCss)}
+							>
+								<header mix={css(overviewHeadCss)}>
+									<div>
+										<h2
+											id={`community-category-${group.category}`}
+											mix={css(overviewTitleCss)}
+										>
+											{label}
+										</h2>
+										<p mix={css(overviewHintCss)}>
+											{communityPackageCategoryCopy[group.category].description}
+										</p>
+									</div>
+									{hasMore ? (
+										<a
+											href={buildCommunityIndexHref({
+												query,
+												sort,
+												category: group.category,
+											})}
+											mix={css(overviewSeeAllCss)}
+										>
+											See all {label}
+										</a>
+									) : null}
+								</header>
+								{renderCommunityListingGrid(group.listings)}
+							</section>
+						)
+					})}
 				</div>
 			) : (
 				renderCommunityListingGrid(listings, { showCategory: query != null })

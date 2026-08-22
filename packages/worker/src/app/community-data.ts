@@ -17,6 +17,7 @@ import {
 } from '#app/data-cache.ts'
 import {
 	communityIndexOverviewLimitPerCategory,
+	countCommunityListingsByCategory,
 	groupCommunityListingsByCategory,
 	parseCommunityListingCategory,
 } from '#universal/community-categories.ts'
@@ -145,7 +146,11 @@ async function loadCommunityIndexDataUncached(
 						communityIndexOverviewLimitPerCategory,
 					)
 				: null
-			return { listings, groups }
+			return {
+				listings,
+				groups,
+				categoryCounts: countCommunityListingsByCategory(listings),
+			}
 		},
 	)
 
@@ -171,6 +176,7 @@ async function loadCommunityIndexDataUncached(
 							.map((listing) => listingById.get(listing.id))
 							.filter((listing) => listing != null),
 					})),
+		categoryCounts: cached.categoryCounts,
 		query: query || null,
 		sort,
 		category,

@@ -143,6 +143,44 @@ export function resolveCommunityListingCategory(input: {
 	)
 }
 
+export type CommunityCategoryCounts = Record<CommunityListingCategory, number>
+
+export function emptyCommunityCategoryCounts(): CommunityCategoryCounts {
+	return {
+		integrations: 0,
+		examples: 0,
+		productivity: 0,
+		apps: 0,
+		utilities: 0,
+		other: 0,
+	}
+}
+
+export function countCommunityListingsByCategory<
+	T extends { category: CommunityListingCategory },
+>(listings: ReadonlyArray<T>): CommunityCategoryCounts {
+	const counts = emptyCommunityCategoryCounts()
+	for (const listing of listings) {
+		counts[listing.category] += 1
+	}
+	return counts
+}
+
+/**
+ * Category chips for the current result set. Empty categories stay off the
+ * row so a huge catalog does not grow a chip for every unused bucket, and an
+ * empty shelf does not offer filters to nowhere. The selected category stays
+ * visible so a deep link can still show where you are.
+ */
+export function visibleCommunityBrowseCategories(input: {
+	counts: CommunityCategoryCounts
+	selected?: CommunityListingCategory | null
+}): Array<CommunityListingCategory> {
+	return communityListingCategories.filter((category) => {
+		return category === input.selected || input.counts[category] > 0
+	})
+}
+
 export function groupCommunityListingsByCategory<
 	T extends { category: CommunityListingCategory },
 >(

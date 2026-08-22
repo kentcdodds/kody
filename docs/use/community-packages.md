@@ -83,7 +83,10 @@ canonical URL; username and `kody.id` redirect tables resolve renamed owners and
 package ids the same way. The unfiltered catalog opens as a few cards per
 **category** (Integrations, Examples, Productivity, Apps, Utilities, and Other)
 instead of one long shelf. Category chips filter to that set
-(`?category=integrations`); **All** returns to the grouped overview. The catalog
+(`?category=integrations`) and only appear for categories that have listings in
+the current result set — an empty shelf hides the facet entirely. **All**
+returns to the grouped overview. When a category has more cards than the
+overview shows, **See all {category}** opens the filtered grid. The catalog
 defaults to **Best** (ratings, then recency). **Newest** (`?sort=newest`) orders
 by last community publish — republishing a listing moves it to the top. Cards
 show that published date. Authors set `package.json#kody.category`; when it is

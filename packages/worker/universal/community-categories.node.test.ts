@@ -1,10 +1,12 @@
 import { expect, test } from 'vitest'
 import {
+	countCommunityListingsByCategory,
 	groupCommunityListingsByCategory,
 	inferCommunityListingCategoryFromTags,
 	parseCommunityListingCategory,
 	parseCommunityPackageCategory,
 	resolveCommunityListingCategory,
+	visibleCommunityBrowseCategories,
 } from './community-categories.ts'
 
 test('community categories parse a closed set and resolve from tags when unset', () => {
@@ -55,4 +57,34 @@ test('community categories parse a closed set and resolve from tags when unset',
 		['examples', 1, [{ id: '3', category: 'examples' }]],
 		['other', 1, [{ id: '4', category: 'other' }]],
 	])
+
+	const counts = countCommunityListingsByCategory([
+		{ category: 'integrations' as const },
+		{ category: 'integrations' as const },
+		{ category: 'examples' as const },
+	])
+	expect(counts).toEqual({
+		integrations: 2,
+		examples: 1,
+		productivity: 0,
+		apps: 0,
+		utilities: 0,
+		other: 0,
+	})
+	expect(visibleCommunityBrowseCategories({ counts, selected: null })).toEqual([
+		'integrations',
+		'examples',
+	])
+	expect(
+		visibleCommunityBrowseCategories({
+			counts: countCommunityListingsByCategory([]),
+			selected: 'apps',
+		}),
+	).toEqual(['apps'])
+	expect(
+		visibleCommunityBrowseCategories({
+			counts: countCommunityListingsByCategory([]),
+			selected: null,
+		}),
+	).toEqual([])
 })

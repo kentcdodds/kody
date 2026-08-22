@@ -248,6 +248,8 @@ test('community index is memoized per request and forwards newest sort to loader
 	expect((await first).listings).toHaveLength(1)
 	expect((await first).category).toBeNull()
 	expect((await first).groups?.[0]?.category).toBe('integrations')
+	expect((await first).categoryCounts.integrations).toBe(1)
+	expect((await first).categoryCounts.utilities).toBe(0)
 	expect(await second).toBe(await first)
 	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledTimes(
 		1,

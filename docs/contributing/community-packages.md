@@ -255,7 +255,8 @@ og:image).
 Client routes: `packages/worker/client/routes/community*`
 
 - `/community` — searchable index of active listings, grouped by category on the
-  unfiltered browse page (`?category=` filters to one category)
+  unfiltered browse page (`?category=` filters to one category). Empty
+  categories omit their chip; an empty catalog hides the facet and sort row.
 - `/@:username/:kodyId` — the canonical package page, resolved from the owner
   plus the active listing's `kody_id` (JSON companion:
   `/profiles/:username/packages/:kodyId.json`). `username_redirects` and
