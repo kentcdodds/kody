@@ -680,7 +680,7 @@ export declare function fetch(request: Request): Promise<Response>
 	})
 	expect(observedPackageDetail.markdown).toContain('## Follow up')
 	expect(observedPackageDetail.markdown).toContain(
-		'package_get({ package_id: "package-123" })',
+		'If you plan to invoke an export, call package_get({ package_id: "package-123" }) first',
 	)
 	expect(observedPackageDetail.markdown).not.toContain('src/app.d.ts')
 	expect(observedPackageDetail.markdown).not.toContain('Token setup URL')
