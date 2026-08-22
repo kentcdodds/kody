@@ -13,8 +13,9 @@ The installed version is pinned in `packages/worker/package.json`.
 
 ## Quick pointers for this repo
 
-- MCP server uses `McpAgent` in `packages/worker/src/mcp/index.ts` and is served
-  via `MCP.serve(...)` in `packages/worker/src/index.ts`.
+- MCP HTTP `/mcp` is served by origin (`packages/worker/src/index.ts` via
+  `MCP.serve(...)`). The `MCP` Durable Object class (`McpAgent` in
+  `packages/worker/src/mcp/index.ts`) is owned by `kody-platform`.
 - Capabilities exposed through the compact `search` / `execute` tools are
   registered per-domain (`packages/worker/src/mcp/capabilities/*/domain.ts`) and
   merged in `packages/worker/src/mcp/capabilities/builtin-domains.ts`; see

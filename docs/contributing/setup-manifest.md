@@ -312,10 +312,12 @@ production-identity, and restore-baseline registries.
 The public status page (`packages/status/`, served at `status.kody.codes` via a
 wrangler custom domain on the `kody.codes` zone) is an independently deployed
 Worker with a cron trigger and one `StatusStore` Durable Object (SQLite). It
-probes public endpoints on the main worker and package-runtime liveness on
-`kody.run`, and probes the jobs worker over a service binding — never through
-the main app and never via a public jobs hostname. It never touches `APP_DB`
-(see decision record [0004](./decisions/0004-status-page-separate-worker.md)).
+probes public endpoints on the origin worker (`/health`, `/health/components`)
+and package-runtime liveness on `kody.run` (`/__runtime/health`), and probes the
+jobs worker over a service binding — never through the origin app and never via
+a public jobs hostname. It does not probe `kody-platform` HTTP (`kody-platform`
+is health-only and not a public product surface). It never touches `APP_DB` (see
+decision record [0004](./decisions/0004-status-page-separate-worker.md)).
 `status.heykody.dev` is also attached as a custom domain: GET/HEAD other than
 `/health` 308 to `status.kody.codes`. `/health` is sticky on
 `status.heykody.dev` so deploy healthchecks can probe that host when the

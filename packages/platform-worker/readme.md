@@ -17,7 +17,10 @@ outbound fetch from the platform-owned `MCP` Durable Object.
   Deployable configs are generated from it plus the origin Worker's generated
   config by
   [`tools/ci/platform-worker-config.ts`](../../tools/ci/platform-worker-config.ts).
+- HTTP is health-only: `GET /__platform/health`.
 - Build check: `npm run platform:build` (part of `npm run validate`).
 - Deploys/previews: see `.github/workflows/deploy.yml` and `preview.yml`.
-- Production Durable Object storage transfer: see the
+- Official guide markdown deploys upload this script with origin so MCP
+  `coding_guide_get` matches web `/guides`.
+- Production Durable Object ownership: see the
   [migration runbook](../../docs/contributing/architecture/platform-worker-migration-runbook.md).

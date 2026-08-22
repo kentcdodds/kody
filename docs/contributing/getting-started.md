@@ -107,11 +107,12 @@ alone, so the workflow runs that ensure step before migrations/deploy.
 - See `docs/contributing/setup-manifest.md` (`GitHub Actions configuration`) for
   full optional secrets/variables and where to get each value.
 
-2. Deploy:
-
-```bash
-npm run deploy
-```
+2. Deploy production through GitHub Actions (`.github/workflows/deploy.yml`).
+   That workflow uploads `kody-platform`, `kody-runtime`, `kody-jobs`, and
+   origin in the order documented in
+   [architecture](architecture/index.md#production-worker-fleet).
+   `npm run deploy` from a laptop uploads the **origin** script only
+   (`packages/worker`); it is not a full production ship.
 
 ## Agent/CI setup
 
@@ -126,9 +127,9 @@ npm run validate
 ```
 
 `npm run validate` is the single authoritative local gate. It runs format, lint,
-typecheck, unit tests, Playwright E2E, MCP E2E, backup build, and structure
-checks in parallel. CI runs the same checks as parallel jobs (node and workers
-unit suites on separate runners).
+typecheck, unit tests, Playwright E2E, MCP E2E, backup/status/nx-cache/jobs/
+runtime/platform dry-run builds, and structure checks in parallel. CI runs the
+same checks as parallel jobs (node and workers unit suites on separate runners).
 
 To seed a deterministic test login after migrations:
 
@@ -168,7 +169,8 @@ Build the project:
 npm run build
 ```
 
-Deploy to Cloudflare:
+Deploy the origin script to Cloudflare (not the full four-script production
+fleet — see [architecture](architecture/index.md#production-worker-fleet)):
 
 ```bash
 npm run deploy

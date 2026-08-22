@@ -5,11 +5,12 @@ doc is the authoritative record of what is protected, what is intentionally out
 of scope, and the invariants future changes must not regress. See the 2026-05-01
 and 2026-07-01 internal security audits for the underlying findings.
 
-Kody is a single Cloudflare Workers app: a Remix 3 browser UI plus an
-OAuth-protected MCP server. It is multi-user, so the overarching invariant is
-that **every read/write path is scoped by `userId`** (see
+Kody is a multi-worker Cloudflare app: a Remix 3 browser UI and OAuth-protected
+MCP HTTP on origin, platform Durable Objects on `kody-platform`, package apps on
+`kody-runtime`, and cron on `kody-jobs`. It is multi-user, so the overarching
+invariant is that **every read/write path is scoped by `userId`** (see
 [`AGENTS.md`](../../AGENTS.md)). Cross-user data sharing is a bug, not a
-feature.
+feature. See [architecture](architecture/index.md#production-worker-fleet).
 
 ## Invariants for future agents (do not regress)
 
@@ -331,7 +332,7 @@ charts on `/admin/insights`. Two sites record:
   This is the single choke point every capability call passes through, so it
   covers the whole authorization surface.
 
-An hourly cron lane (`auth_denial_alert` in `packages/worker/src/index.ts`,
+An hourly cron lane (`auth_denial_alert` in `packages/worker/src/scheduled/`,
 implemented by `checkAuthDenialBurstAndNotify` in
 `packages/worker/src/app/auth-denial-alerts.ts`) emails every admin account when
 MCP auth denials in the last 60 minutes cross a threshold (default 50). A KV

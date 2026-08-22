@@ -1,17 +1,20 @@
 # Platform worker migration runbook
 
-How to move the remaining platform Durable Objects from the origin `kody` Worker
-into the `kody-platform` Worker (`packages/platform-worker/`) in production, per
-[ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md). The genuinely
-risky step is the one-time Durable Object **script migration**: the storage of
-`MCP`, `McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`, `Mailbox`,
-`RepoSession`, `RepoSessionIndex`, and `StripePlanRefresh` moves from the `kody`
-script to the `kody-platform` script via a Wrangler `transferred_classes`
-migration.
+Production already owns the platform Durable Object classes on `kody-platform`.
+`transferred_classes` is a one-shot cutover; do not invent a second transfer or
+add `deleted_classes` for those names. This page records ownership, the cutover
+order that landed, and rollback constraints.
 
-> **Warning:** the implementation session that authored this document must NOT
-> execute these production steps. The runbook is executed by
-> `.github/workflows/deploy.yml` after preview verification and PR merge.
+How the remaining platform Durable Objects moved from the origin `kody` Worker
+into the `kody-platform` Worker (`packages/platform-worker/`), per
+[ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md). The risky step
+was the Durable Object **script migration**: the storage of `MCP`,
+`McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`, `Mailbox`, `RepoSession`,
+`RepoSessionIndex`, and `StripePlanRefresh` moved from the `kody` script to the
+`kody-platform` script via a Wrangler `transferred_classes` migration.
+
+Later deploys follow `.github/workflows/deploy.yml`. Remix/blog/UI-only uploads
+skip platform. Official guide markdown uploads origin and platform.
 
 ## Ownership after the split
 
@@ -60,9 +63,9 @@ hand.
    - sign-in works and account/mailbox/session surfaces that hit transferred
      Durable Objects load;
    - `GET /mcp` still challenges unauthenticated clients (401). Preview cannot
-     rehearse the `transferred_classes` migration itself (preview sets are
-     created fresh with `new_sqlite_classes`); the transfer is exercised for the
-     first time in production, which is why the deploy order below matters.
+     rehearse a `transferred_classes` migration (preview sets are created fresh
+     with `new_sqlite_classes`). The production transfer already landed; later
+     deploys must not invent a second transfer.
 2. **Merge the PR.** The production deploy workflow then:
    1. generates the runtime and platform configs from the provisioned origin
       config;

@@ -3,8 +3,9 @@
 Official markdown guides for agent and contributor workflows. Each guide carries
 YAML frontmatter (`id`, `title`, `summary`, `category`, and for provider guides
 `provider` and `lastVerified`). Sources live under `docs/guides/` and are
-bundled into the worker at build time so every surface serves the same deployed
-content:
+bundled into origin and `kody-platform` at build time so web `/guides` and MCP
+`coding_guide_get` serve the same deployed content. Official guide deploys
+upload those two scripts and skip runtime and jobs:
 
 - **`coding_guide_get`** over MCP — pass the stable `id` from frontmatter
 - **`/guides`** on the web — browsable index and detail pages

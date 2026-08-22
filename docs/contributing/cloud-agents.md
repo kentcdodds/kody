@@ -68,12 +68,14 @@ variables unset to run without remote cache. See
 ## Dev server
 
 - `npm run dev` starts the client esbuild watcher, optional Cloudflare API mock
-  worker, and the main worker with local D1/KV/DO persistence.
+  worker, and Wrangler with origin plus generated platform, runtime, and jobs
+  siblings in one Miniflare (local D1/KV/DO persistence).
 - Default worker port is **3742** (`cli.ts`); the CLI picks a free port when
   3742 is taken and prints `App running at http://localhost:<port>`.
 - Run long-lived dev in tmux so the session survives tool timeouts.
 - Health check (no auth): `curl http://localhost:<port>/health` →
-  `{"ok":true,"commitSha":...}`.
+  `{"ok":true,"commitSha":...}`. Platform and runtime health paths
+  (`/__platform/health`, `/__runtime/health`) 404 on the origin port.
 
 ## Environment file
 

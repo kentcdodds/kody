@@ -7,6 +7,35 @@ Before making product-level assumptions, read
 how the system works, while the intent doc explains what the project is trying
 to become.
 
+## Production worker fleet
+
+Production is four product scripts plus independent ops workers. Origin owns
+**zero** Durable Object classes
+([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)).
+
+| Script                       | Public surface                                      | Owns                                                                                                                                               | Binds                                                           |
+| ---------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `kody-production` (origin)   | `kody.codes` (legacy `heykody.app` / `heykody.dev`) | Remix, MCP HTTP, OAuth, inbound email, queue consumers, `JobsHost`                                                                                 | Platform DOs, runtime DOs / workflows, `RUNTIME_WORKER`, `JOBS` |
+| `kody-platform`              | `/__platform/health` only                           | `MCP`, `McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`, `Mailbox`, `RepoSession`, `RepoSessionIndex`, `StripePlanRefresh`, `KodyFetchGateway` | Shared D1/KV/R2/AI; runtime DOs for package work                |
+| `kody-runtime`               | `kody.run` / `kodyapps.dev`; `/__runtime/health`    | `StorageRunner`, `RunLog`, `PackageRealtimeSession`, `DynamicCallableWorkflow`, `KodyFetchGateway`, `PackageAppRuntimeBridge`                      | Platform DOs, `JOBS`                                            |
+| `kody-jobs`                  | no public hostname                                  | `JobManager`, `JOBS_DB`, `kody-scheduled-dispatch`                                                                                                 | `HOST` → origin `JobsHost`                                      |
+| `kody-status`                | `status.kody.codes`                                 | `StatusStore`                                                                                                                                      | HTTP probes + `JOBS` service                                    |
+| `kody-nx-cache`              | `nx-cache.kody.codes`                               | R2 `kody-nx-cache`                                                                                                                                 | —                                                               |
+| `kody-production-d1-backups` | operator-only                                       | D1 backup / DR workflows                                                                                                                           | R2 `kody-production-backups`                                    |
+
+Local `npm run dev` attaches origin, platform, runtime, and jobs in one
+Miniflare. Playwright `CLOUDFLARE_ENV=test` is the exception: Durable Object
+classes run on the single `kody-test` script with no `script_name`.
+
+Remix/blog/UI-only deploys upload origin and skip platform, runtime, and jobs.
+Official guide markdown (`docs/guides/`, `packages/worker/src/guides/`) uploads
+origin and platform because MCP `coding_guide_get` bundles those files.
+
+MCP `execute` resolves `KodyFetchGateway` from `ctx.exports` on the script that
+owns the `MCP` Durable Object (`kody-platform`). Origin
+`/__maintenance/execute-smoke` uses origin `ctx.exports` and can pass while MCP
+execute is broken.
+
 ## Core docs
 
 - [Project Intent](../project-intent.md): current scope, goals, and non-goals
@@ -111,7 +140,10 @@ user-lane integrations only.
 
 ## Source of truth in code
 
-- Worker entrypoint: `packages/worker/src/index.ts`
+- Origin entrypoint: `packages/worker/src/index.ts`
+- Platform entrypoint: `packages/worker/src/platform-worker.ts`
+- Runtime entrypoint: `packages/worker/src/runtime-worker.ts`
+- Jobs entrypoint: `packages/jobs-worker/src/index.ts`
 - App request handler: `packages/worker/src/app/handler.ts`
 - Router and HTTP route mapping: `packages/worker/src/app/router.ts` and
   `packages/worker/universal/routes.ts`

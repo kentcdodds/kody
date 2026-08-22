@@ -1091,19 +1091,19 @@ pushed the session commit to the source Artifacts repo.
 
 `packages/worker/src/jobs/reconcile-artifacts-pushes.ts` is a safety net for
 external pushes that were not followed by an explicit
-`package_publish_external_push` call. In production, the Worker cron dispatcher
-runs every five minutes (`wrangler.jsonc` `*/5 * * * *`) and sends each due
-maintenance lane to `kody-scheduled-dispatch`. The consumer is configured for
-one message per invocation with independent concurrency, so a slow reconcile
-cannot consume the runtime budget of retention, OAuth purge, or another sibling
-lane. Preview and local runtimes execute the same registry inline when the
-production-only queue binding is unavailable. A write-token mint sets the
-source's `external_check_until` to the token expiry plus a one-hour grace
-period. The normal pass only scans these pending sources, using
-`last_external_check_at` for the five-minute cadence and keyset paging until the
-pending queue is drained or a wall-clock time budget (`reconcileTimeBudgetMs`,
-~60 seconds) is exhausted. Dormant package sources do not incur an Artifacts
-HEAD lookup on every tick.
+`package_publish_external_push` call. In production, the `kody-jobs` cron
+trigger (`packages/jobs-worker/wrangler.jsonc` `*/5 * * * *`) runs every five
+minutes and sends each due maintenance lane to `kody-scheduled-dispatch`. Origin
+itself has no cron trigger. The consumer is configured for one message per
+invocation with independent concurrency, so a slow reconcile cannot consume the
+runtime budget of retention, OAuth purge, or another sibling lane. Preview and
+local runtimes execute the same registry inline when the production-only queue
+binding is unavailable. A write-token mint sets the source's
+`external_check_until` to the token expiry plus a one-hour grace period. The
+normal pass only scans these pending sources, using `last_external_check_at` for
+the five-minute cadence and keyset paging until the pending queue is drained or
+a wall-clock time budget (`reconcileTimeBudgetMs`, ~60 seconds) is exhausted.
+Dormant package sources do not incur an Artifacts HEAD lookup on every tick.
 
 For each pending source, reconcile resolves the Artifacts default-branch HEAD.
 When HEAD matches `published_commit`, it advances `last_external_check_at`

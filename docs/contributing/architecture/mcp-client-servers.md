@@ -10,8 +10,9 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
 ## Components
 
 - **`McpClientHub` Durable Object** (`packages/worker/src/mcp-client/hub.ts`) —
-  one per user, id derived from the stable MCP `userId`. Owns the Agents SDK
-  `MCPClientManager`, which persists registered servers, OAuth client
+  class owned by `kody-platform`; origin and runtime bind `MCP_CLIENT_HUB` with
+  `script_name`. One per user, id derived from the stable MCP `userId`. Owns the
+  Agents SDK `MCPClientManager`, which persists registered servers, OAuth client
   registrations, and tokens in the DO's SQLite storage. Exposes RPC methods:
   `addServer`, `reconnectServer`, `refreshServer`, `removeServer`,
   `handleOAuthCallback`, `getSnapshot`, `callTool`, and

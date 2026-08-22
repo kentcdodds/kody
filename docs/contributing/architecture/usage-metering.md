@@ -171,10 +171,11 @@ each chokepoint records exactly one event per metered unit, so sums are safe.
 
    In production/preview the rows are recomputed hourly by
    `aggregateUsageRollups` in `packages/worker/src/usage/aggregate-rollups.ts`
-   (gated by `shouldRunUsageAggregationCron` in the scheduled handler): it
-   queries the Analytics Engine SQL API for the current UTC month grouped by
-   user and metric (weighting by `_sample_interval`, since Analytics Engine
-   samples under load) and batch-upserts absolute values — an idempotent
+   (gated by `shouldRunUsageAggregationCron` in the scheduled handler).
+   `kody-jobs` fires cron and forwards to origin `JobsHost`, which runs this
+   lane: it queries the Analytics Engine SQL API for the current UTC month
+   grouped by user and metric (weighting by `_sample_interval`, since Analytics
+   Engine samples under load) and batch-upserts absolute values — an idempotent
    recompute, not increments. Analytics Engine retention (~90 days) always
    covers a full month, so month-to-date recompute is complete; prior months
    already in D1 stay untouched. The aggregation needs `CLOUDFLARE_ACCOUNT_ID`

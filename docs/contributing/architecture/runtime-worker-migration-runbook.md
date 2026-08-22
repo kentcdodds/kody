@@ -1,16 +1,20 @@
 # Runtime worker migration runbook
 
-How to move the package runtime lane from the main `kody` Worker into the
-`kody-runtime` Worker (`packages/runtime-worker/`) in production, per
-[ADR 0016](../decisions/0016-mono-worker-extraction.md). The genuinely risky
-step is the one-time Durable Object **script migration**: the storage of
-`StorageRunner`, `RunLog`, and `PackageRealtimeSession` moves from the `kody`
-script to the `kody-runtime` script via a Wrangler `transferred_classes`
-migration.
+Production already owns the package-runtime Durable Object classes and
+package-app zone routes on `kody-runtime`. `transferred_classes` is a one-shot
+cutover; do not invent a second transfer or add `deleted_classes` for those
+names. This page records ownership, the cutover order that landed, and rollback
+constraints.
 
-> **Warning:** the implementation session that authored this document must NOT
-> execute these production steps. The runbook is executed by an operator (the
-> parent session) after preview verification and PR merge.
+How the package runtime lane moved from the origin `kody` Worker into the
+`kody-runtime` Worker (`packages/runtime-worker/`), per
+[ADR 0016](../decisions/0016-mono-worker-extraction.md). The risky step was the
+Durable Object **script migration**: the storage of `StorageRunner`, `RunLog`,
+and `PackageRealtimeSession` moved from the `kody` script to the `kody-runtime`
+script via a Wrangler `transferred_classes` migration.
+
+Later deploys follow `.github/workflows/deploy.yml`. Remix/blog/UI-only uploads
+skip runtime.
 
 ## Ownership after the split
 
@@ -75,15 +79,15 @@ this order; the operator's job is to merge and watch, not to run wrangler by
 hand.
 
 1. **Preview verification (before merging).** The PR's preview deploy creates a
-   fresh worker pair (`kody-pr-<n>` and `kody-pr-<n>-runtime`). Verify:
-   - both healthchecks passed in the preview workflow (`/health` on main,
-     `/__runtime/health` on runtime);
+   fresh worker set (`kody-pr-<n>`, `kody-pr-<n>-platform`,
+   `kody-pr-<n>-runtime`, `kody-pr-<n>-jobs`). Verify:
+   - healthchecks passed in the preview workflow (`/health` on origin,
+     `/__platform/health` on platform, `/__runtime/health` on runtime);
    - a package app loads on the preview origin (`/apps/<user>/<package>`);
    - a package invocation runs end to end (create a run, watch its RunLog stream
-     complete). Preview cannot rehearse the `transferred_classes` migration
-     itself (preview pairs are created fresh with `new_sqlite_classes`); the
-     transfer is exercised for the first time in production, which is why the
-     deploy order below matters.
+     complete). Preview cannot rehearse a `transferred_classes` migration
+     (preview sets are created fresh with `new_sqlite_classes`). The production
+     transfer already landed; later deploys must not invent a second transfer.
 2. **Ensure the package-app zone is free for `kody-runtime` (one-time, just
    before merging).** Production serves `kody.run` (and dual-served
    `kodyapps.dev`) via **zone routes** on the runtime Worker (apex +
