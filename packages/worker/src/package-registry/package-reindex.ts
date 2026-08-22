@@ -5,6 +5,7 @@ import {
 import {
 	mergeVectorReindexResults,
 	reindexVectorCandidates,
+	vectorReindexUpsertBatchSize,
 	type VectorReindexCandidate,
 	type VectorReindexFailure,
 	type VectorReindexResult,
@@ -30,6 +31,8 @@ import { loadPackageManifestBySourceId } from './source.ts'
 // bounded regardless of table size (each row also loads its manifest).
 const reindexPageSize = 200
 
+type SavedPackageRow = Awaited<ReturnType<typeof listSavedPackagesPage>>[number]
+
 export async function reindexSavedPackageVectors(
 	env: Env,
 	input: { baseUrl: string } & VectorReindexSweepOptions,
@@ -38,12 +41,69 @@ export async function reindexSavedPackageVectors(
 	if (!index) {
 		throw new Error('CAPABILITY_VECTOR_INDEX binding is not configured')
 	}
+	const vectorIndex = index
 	if (isCapabilitySearchOffline(env)) {
 		return { upserted: 0, complete: true, afterId: null }
 	}
 
 	const pageResults: Array<VectorReindexResult> = []
 	let afterId: string | null = input.afterId ?? null
+
+	async function flushChunk(chunk: {
+		rows: Array<SavedPackageRow>
+		candidates: Array<VectorReindexCandidate>
+		loadFailures: Array<VectorReindexFailure>
+	}) {
+		if (chunk.loadFailures.length > 0) {
+			pageResults.push({
+				upserted: 0,
+				failed: chunk.loadFailures.length,
+				failures: chunk.loadFailures,
+				failedIds: chunk.loadFailures.map((failure) => failure.id),
+			})
+		}
+		if (chunk.candidates.length === 0) return
+		// Snapshot debt generations before upsert so a concurrent publish
+		// that bumps generation is not wiped by post-page cleanup.
+		const debtGenerations = new Map<string, number>()
+		for (const row of chunk.rows) {
+			const generation = await getSavedPackageSearchIndexDebtGeneration({
+				db: env.APP_DB,
+				packageId: row.id,
+			})
+			if (generation !== null) {
+				debtGenerations.set(row.id, generation)
+			}
+		}
+		const pageResult = await reindexVectorCandidates({
+			env,
+			index: vectorIndex,
+			kind: 'saved package',
+			candidates: chunk.candidates,
+		})
+		pageResults.push(pageResult)
+		// Prefer uncapped failedIds (failures is a capped sample for messages).
+		const failedIds = new Set(
+			pageResult.failedIds ??
+				(pageResult.failures ?? []).map((failure) => failure.id),
+		)
+		// Self-heal deferred upsert debt observed before this chunk upsert.
+		for (const row of chunk.rows) {
+			const vectorId = savedPackageVectorId(row.id)
+			if (failedIds.has(vectorId)) continue
+			if (chunk.loadFailures.some((failure) => failure.id === vectorId)) {
+				continue
+			}
+			const generation = debtGenerations.get(row.id)
+			if (generation === undefined) continue
+			await clearSavedPackageSearchIndexDebt({
+				db: env.APP_DB,
+				packageId: row.id,
+				generation,
+			})
+		}
+	}
+
 	while (true) {
 		if (hasReachedReindexDeadline(input.deadlineMs) && pageResults.length > 0) {
 			return toVectorReindexSweepResult(
@@ -65,12 +125,12 @@ export async function reindexSavedPackageVectors(
 		}
 		const loadFailures: Array<VectorReindexFailure> = []
 		const candidates: Array<VectorReindexCandidate> = []
-		const processedRows: typeof rows = []
+		const processedRows: Array<SavedPackageRow> = []
 		let stoppedEarly = false
 		for (const row of rows) {
 			if (
 				hasReachedReindexDeadline(input.deadlineMs) &&
-				processedRows.length > 0
+				(processedRows.length > 0 || pageResults.length > 0)
 			) {
 				stoppedEarly = true
 				break
@@ -108,55 +168,28 @@ export async function reindexSavedPackageVectors(
 					}),
 				)
 			}
-		}
-		if (loadFailures.length > 0) {
-			pageResults.push({
-				upserted: 0,
-				failed: loadFailures.length,
-				failures: loadFailures,
-				failedIds: loadFailures.map((failure) => failure.id),
-			})
-		}
-		if (candidates.length > 0) {
-			// Snapshot debt generations before upsert so a concurrent publish
-			// that bumps generation is not wiped by post-page cleanup.
-			const debtGenerations = new Map<string, number>()
-			for (const row of processedRows) {
-				const generation = await getSavedPackageSearchIndexDebtGeneration({
-					db: env.APP_DB,
-					packageId: row.id,
+			if (processedRows.length >= vectorReindexUpsertBatchSize) {
+				await flushChunk({
+					rows: processedRows.splice(0),
+					candidates: candidates.splice(0),
+					loadFailures: loadFailures.splice(0),
 				})
-				if (generation !== null) {
-					debtGenerations.set(row.id, generation)
+				afterId = row.id
+				if (hasReachedReindexDeadline(input.deadlineMs)) {
+					stoppedEarly = true
+					break
 				}
 			}
-			const pageResult = await reindexVectorCandidates({
-				env,
-				index,
-				kind: 'saved package',
-				candidates,
-			})
-			pageResults.push(pageResult)
-			// Prefer uncapped failedIds (failures is a capped sample for messages).
-			const failedIds = new Set(
-				pageResult.failedIds ??
-					(pageResult.failures ?? []).map((failure) => failure.id),
-			)
-			// Self-heal deferred upsert debt observed before this page upsert.
-			for (const row of processedRows) {
-				const vectorId = savedPackageVectorId(row.id)
-				if (failedIds.has(vectorId)) continue
-				if (loadFailures.some((failure) => failure.id === vectorId)) continue
-				const generation = debtGenerations.get(row.id)
-				if (generation === undefined) continue
-				await clearSavedPackageSearchIndexDebt({
-					db: env.APP_DB,
-					packageId: row.id,
-					generation,
-				})
-			}
 		}
-		afterId = processedRows[processedRows.length - 1]?.id ?? afterId
+		if (processedRows.length > 0 || loadFailures.length > 0) {
+			const lastProcessed = processedRows[processedRows.length - 1]
+			await flushChunk({
+				rows: processedRows,
+				candidates,
+				loadFailures,
+			})
+			if (lastProcessed) afterId = lastProcessed.id
+		}
 		if (stoppedEarly) {
 			return toVectorReindexSweepResult(
 				mergeVectorReindexResults('saved package', pageResults),

@@ -443,3 +443,45 @@ test('saved package reindex stops mid-page at the deadline and resumes', async (
 		{ afterId: 'pkg-a', limit: 200 },
 	)
 })
+
+test('saved package reindex flushes upsert chunks and honors the deadline after a flush', async () => {
+	resetMocks()
+	const upsert = vi.fn(async (_vectors: Array<{ id: string }>) => {})
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
+		manifest: { name: '@user/pkg' },
+	})
+	mockModule.buildSavedPackageEmbedText.mockReturnValue('manifest embed')
+	const packages = Array.from({ length: 20 }, (_, index) =>
+		buildSavedPackage(`pkg-${String(index).padStart(2, '0')}`),
+	)
+	mockModule.listSavedPackagesPage.mockResolvedValueOnce(packages)
+	let now = 1_000
+	const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => now)
+	mockModule.embedTextsForVectorize.mockImplementation(
+		async (_env: unknown, texts: Array<string>) => {
+			now = 3_000
+			return texts.map(() => [0.1])
+		},
+	)
+
+	try {
+		await expect(
+			reindexSavedPackageVectors({ APP_DB: {} } as Env, {
+				baseUrl: 'https://kody.example.com',
+				deadlineMs: 2_000,
+			}),
+		).resolves.toEqual({
+			upserted: 16,
+			complete: false,
+			afterId: 'pkg-15',
+		})
+	} finally {
+		nowSpy.mockRestore()
+	}
+
+	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledTimes(16)
+	expect(upsert).toHaveBeenCalledTimes(1)
+	expect(upsert.mock.calls[0]?.[0]).toHaveLength(16)
+})
