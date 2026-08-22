@@ -17,7 +17,7 @@ export const communityPublishCapability = defineDomainCapability(
 	{
 		name: 'community_publish',
 		description:
-			'Publish a saved package as a public community listing on this deployment. Requires MIT license in package.json `license`, `"private"` not set to true, a root README with a `## Intent` section, and a published commit. Publishing shares the pinned snapshot publicly with all users on this deployment. Re-publishing the same package updates the listing to the current published commit.',
+			'Publish a saved package as a public community listing on this deployment. Requires MIT license in package.json `license`, `"private"` not set to true, a root README with a `## Intent` section, and a published commit. Publishing shares the pinned snapshot publicly with all users on this deployment. Re-publishing the same package updates the listing to the current published commit. Platform-owned listings (`@kody/…`) are trusted automaticallly on publish and republish; person-owned republishes drop the trusted mark until an admin re-reviews.',
 		keywords: [
 			'community',
 			'publish',
@@ -48,7 +48,7 @@ export const communityPublishCapability = defineDomainCapability(
 				user,
 				args.package_scope,
 			)
-			const listing = await publishCommunityListing({
+			const listing = await publishCommunityListing(
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: owner.ownerUserId,

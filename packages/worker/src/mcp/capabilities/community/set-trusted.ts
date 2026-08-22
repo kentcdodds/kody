@@ -11,7 +11,7 @@ export const communitySetTrustedCapability = defineDomainCapability(
 	{
 		name: 'community_set_trusted',
 		description:
-			'Admin-only curation: mark a community listing as trusted at its current pinned commit, or revoke the mark. Trust is pinned to the reviewed commit, so an owner republish automatically drops the effective trusted state until an admin re-reviews.',
+			'Admin-only curation: mark a community listing as trusted at its current pinned commit, or revoke the mark. Trust is pinned to the reviewed commit. A person-owned republish drops the effective trusted state until an admin re-reviews. Platform-owned listings (`@kody/…`) are trusted automatically on community_publish, including republishes.',
 		keywords: ['community', 'trusted', 'curate', 'admin', 'review', 'listing'],
 		readOnly: false,
 		idempotent: true,
