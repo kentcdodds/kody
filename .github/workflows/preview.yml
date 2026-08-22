@@ -684,6 +684,8 @@ jobs:
           PREVIEW_VERSION_URL:
             '${{ steps.deploy_preview.outputs.version_preview_url }}'
           WORKER_NAME: ${{ steps.deploy_preview.outputs.worker_name }}
+          PLATFORM_WORKER_NAME: ${{ steps.deploy_platform.outputs.worker_name }}
+          PLATFORM_URL: ${{ steps.deploy_platform.outputs.url }}
           RUNTIME_WORKER_NAME: ${{ steps.deploy_runtime.outputs.worker_name }}
           RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
           MOCK_SUMMARY: ${{ steps.deploy_mocks.outputs.mock_comment_summary }}
@@ -698,6 +700,11 @@ jobs:
               "",
               `Worker: \`${process.env.WORKER_NAME}\``,
             ];
+            if (process.env.PLATFORM_URL?.trim()) {
+              bodyLines.push(
+                `Platform worker: \`${process.env.PLATFORM_WORKER_NAME}\` (${process.env.PLATFORM_URL.trim()})`,
+              );
+            }
             if (process.env.RUNTIME_URL?.trim()) {
               bodyLines.push(
                 `Runtime worker: \`${process.env.RUNTIME_WORKER_NAME}\` (${process.env.RUNTIME_URL.trim()})`,
