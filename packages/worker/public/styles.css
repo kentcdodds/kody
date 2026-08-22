@@ -1203,8 +1203,7 @@ html.is-settled {
 	display: flex;
 	flex-direction: column;
 	gap: 0.9rem;
-	min-height: 14rem;
-	max-height: min(32rem, 70vh);
+	height: min(32rem, 70vh);
 	overflow-x: hidden;
 	overflow-y: auto;
 	overflow-anchor: none;
@@ -1627,8 +1626,7 @@ html.is-settled {
 	}
 
 	.landing-loop-chat {
-		min-height: 12rem;
-		max-height: min(26rem, 65vh);
+		height: min(26rem, 65vh);
 	}
 
 	.landing-factory-beats {
