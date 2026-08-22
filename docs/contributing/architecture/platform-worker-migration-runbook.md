@@ -87,5 +87,6 @@ hand.
      resumes.
    - Check Sentry for origin, platform, and runtime.
 
-Content/UI-only later deploys upload origin only and skip platform, runtime, and
-jobs, so those Durable Objects are not reset.
+Remix/blog/UI-only later deploys upload origin only and skip platform, runtime,
+and jobs. Official guide markdown deploys origin and platform (MCP bundles those
+files) and still skips runtime and jobs, so those Durable Objects are not reset.

@@ -13,10 +13,14 @@ script that **owns** those classes resets them
 (`Durable Object reset because its code was updated`), including uploads that
 only change static assets or markdown imported into the bundle.
 
-Blog posts, official guides (`docs/guides/`), and Remix UI change more often
-than MCP or Durable Object code. Shipping those from the DO-owning script resets
-live MCP sessions, mailboxes, repo sessions, and other platform objects for a
-content edit.
+Blog posts and Remix UI change more often than Durable Object code. Shipping
+those from a DO-owning script resets live MCP sessions, mailboxes, repo
+sessions, and other platform objects for a content edit.
+
+Official guide markdown (`docs/guides/`) is also statically imported into the
+MCP Durable Object (`coding_guide_get`). Those edits must upload `kody-platform`
+as well as origin so web `/guides` and MCP stay on the same bundle; they still
+skip `kody-runtime` and `kody-jobs`.
 
 A second origin-facing content worker (`kody-app`) that forwards every page
 would pay a second ~27MB bundle and a hop on every request, then still need this
@@ -40,11 +44,14 @@ runtime (untrusted package code) or jobs (different data seam).
 origin still exports the classes, then origin deploys with
 `script_name: "kody-platform"`. Never `deleted_classes` for transferred classes.
 
-Content/UI-only production deploys upload origin only.
+Remix/blog/UI-only production deploys upload origin only. Official guide deploys
+upload origin and platform.
 
 ## Consequences
 
-Content/UI-only production deploys no longer reset platform or runtime Durable
-Objects. Cost: another wrangler config, preview bootstrap ordering, and a
-one-shot production transfer with a short in-flight RPC error window. See the
+Remix/blog/UI-only production deploys no longer reset platform or runtime
+Durable Objects. Official guide deploys reset platform objects because MCP
+bundles that markdown, and still skip runtime and jobs. Cost: another wrangler
+config, preview bootstrap ordering, and a one-shot production transfer with a
+short in-flight RPC error window. See the
 [platform worker migration runbook](../architecture/platform-worker-migration-runbook.md).

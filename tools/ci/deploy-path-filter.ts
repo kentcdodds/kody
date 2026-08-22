@@ -1,19 +1,25 @@
 import { isExecutedDirectly } from '../node-runtime.ts'
 
 /**
- * Production deploy path classification: content/UI-only changes deploy the
- * origin Worker and skip the Durable Object–owning platform/runtime/jobs
- * scripts.
+ * Production deploy path classification:
+ * - Remix/blog/UI-only → origin; skip platform/runtime/jobs
+ * - Official guide markdown (also bundled into the MCP Durable Object) →
+ *   origin + platform; skip runtime/jobs
+ * - Anything else → all four scripts
  */
 
 const originOnlyPathPrefixes = [
-	'docs/guides/',
 	'packages/worker/client/',
 	'packages/worker/public/',
 	'packages/worker/src/blog/posts/',
 	'packages/worker/src/app/handlers/',
 	'packages/worker/src/app/ssr-stubs/',
 	'packages/worker/universal/styles/',
+] as const
+
+const originAndPlatformPathPrefixes = [
+	'docs/guides/',
+	'packages/worker/src/guides/',
 ] as const
 
 const originOnlyExactPaths = new Set([
@@ -41,6 +47,10 @@ export function isOriginOnlyPath(path: string) {
 	return originOnlyPathPrefixes.some((prefix) => path.startsWith(prefix))
 }
 
+export function isOriginAndPlatformPath(path: string) {
+	return originAndPlatformPathPrefixes.some((prefix) => path.startsWith(prefix))
+}
+
 export function classifyProductionDeployPaths(
 	paths: ReadonlyArray<string>,
 ): ProductionDeployTargets {
@@ -53,11 +63,22 @@ export function classifyProductionDeployPaths(
 			deployJobs: true,
 		}
 	}
-	const originOnly = changed.every((path) => isOriginOnlyPath(path))
-	if (originOnly) {
+	if (changed.every((path) => isOriginOnlyPath(path))) {
 		return {
 			deployMain: true,
 			deployPlatform: false,
+			deployRuntime: false,
+			deployJobs: false,
+		}
+	}
+	if (
+		changed.every(
+			(path) => isOriginOnlyPath(path) || isOriginAndPlatformPath(path),
+		)
+	) {
+		return {
+			deployMain: true,
+			deployPlatform: true,
 			deployRuntime: false,
 			deployJobs: false,
 		}

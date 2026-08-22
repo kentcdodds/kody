@@ -1,10 +1,9 @@
 import { expect, test } from 'vitest'
 import { classifyProductionDeployPaths } from './deploy-path-filter.ts'
 
-test('guide body, blog post, and client UI changes skip Durable Object scripts', () => {
+test('blog post and client UI changes skip Durable Object scripts', () => {
 	expect(
 		classifyProductionDeployPaths([
-			'docs/guides/what-is-kody.md',
 			'packages/worker/src/blog/posts/your-assistants-home.md',
 			'packages/worker/client/routes/blog.tsx',
 			'packages/worker/public/styles.css',
@@ -12,6 +11,29 @@ test('guide body, blog post, and client UI changes skip Durable Object scripts',
 	).toEqual({
 		deployMain: true,
 		deployPlatform: false,
+		deployRuntime: false,
+		deployJobs: false,
+	})
+})
+
+test('official guide bodies deploy origin and platform, not runtime or jobs', () => {
+	expect(
+		classifyProductionDeployPaths(['docs/guides/what-is-kody.md']),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: true,
+		deployRuntime: false,
+		deployJobs: false,
+	})
+	expect(
+		classifyProductionDeployPaths([
+			'docs/guides/what-is-kody.md',
+			'packages/worker/src/blog/posts/your-assistants-home.md',
+			'packages/worker/client/routes/blog.tsx',
+		]),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: true,
 		deployRuntime: false,
 		deployJobs: false,
 	})
@@ -55,7 +77,7 @@ test('MCP or shared worker changes still deploy the Durable Object scripts', () 
 	).toEqual({
 		deployMain: true,
 		deployPlatform: true,
-		deployRuntime: true,
-		deployJobs: true,
+		deployRuntime: false,
+		deployJobs: false,
 	})
 })
