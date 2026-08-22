@@ -39,7 +39,7 @@ export type FleetPackageErrorRateRefreshResult =
 				| { status: 'cooldown'; eventId: string }
 				| {
 						status: 'skipped'
-						reason: 'no_system_domain' | 'no_admins'
+						reason: 'no_system_domain' | 'no_admins' | 'notify_failed'
 				  }
 	  }
 
@@ -80,23 +80,32 @@ export async function refreshFleetPackageErrorRateAndMaybeAlert(input: {
 		}
 	}
 
-	const alert = await notifyFleetPackageErrorRateElevation({
-		env: input.env,
-		event,
-		now,
-	})
-	if (alert.status === 'notified') {
-		const snapshot: FleetPackageErrorRateSnapshot = {
-			...refreshed.snapshot,
-			lastAlertAt: now.toISOString(),
-			lastAlertEventId: event.event_id,
-		}
-		await writeFleetPackageErrorRateSnapshot(kv, snapshot)
-		await kv.put(fleetPackageErrorRateAlertKvKey, String(now.getTime()), {
-			expirationTtl: (cooldownMinutes + 60) * 60,
+	try {
+		const alert = await notifyFleetPackageErrorRateElevation({
+			env: input.env,
+			event,
+			now,
 		})
+		if (alert.status === 'notified') {
+			const snapshot: FleetPackageErrorRateSnapshot = {
+				...refreshed.snapshot,
+				lastAlertAt: now.toISOString(),
+				lastAlertEventId: event.event_id,
+			}
+			await writeFleetPackageErrorRateSnapshot(kv, snapshot)
+			await kv.put(fleetPackageErrorRateAlertKvKey, String(now.getTime()), {
+				expirationTtl: (cooldownMinutes + 60) * 60,
+			})
+		}
+		return { status: 'refreshed', elevated: true, alert }
+	} catch (error) {
+		console.warn('fleet-package-error-rate-alert-failed', error)
+		return {
+			status: 'refreshed',
+			elevated: true,
+			alert: { status: 'skipped', reason: 'notify_failed' },
+		}
 	}
-	return { status: 'refreshed', elevated: true, alert }
 }
 
 function buildElevatedEvent(input: {
@@ -145,7 +154,10 @@ async function notifyFleetPackageErrorRateElevation(input: {
 	now: Date
 }): Promise<
 	| { status: 'notified'; eventId: string; recipients: number }
-	| { status: 'skipped'; reason: 'no_system_domain' | 'no_admins' }
+	| {
+			status: 'skipped'
+			reason: 'no_system_domain' | 'no_admins' | 'notify_failed'
+	  }
 > {
 	if (!input.env.APP_DB) {
 		return { status: 'skipped', reason: 'no_admins' }
@@ -165,11 +177,7 @@ async function notifyFleetPackageErrorRateElevation(input: {
 
 	const systemDomain = getSystemEmailDomain(input.env)
 	if (!systemDomain) {
-		return {
-			status: 'notified',
-			eventId: input.event.event_id,
-			recipients: 0,
-		}
+		return { status: 'skipped', reason: 'no_system_domain' }
 	}
 
 	const admins = await input.env.APP_DB.prepare(
@@ -181,11 +189,7 @@ async function notifyFleetPackageErrorRateElevation(input: {
 	).all<{ email: string }>()
 	const recipients = (admins.results ?? []).map((row) => row.email)
 	if (recipients.length === 0) {
-		return {
-			status: 'notified',
-			eventId: input.event.event_id,
-			recipients: 0,
-		}
+		return { status: 'skipped', reason: 'no_admins' }
 	}
 
 	const text = formatFleetPackageErrorRateAlertText(input.event)
@@ -209,7 +213,7 @@ async function notifyFleetPackageErrorRateElevation(input: {
 		)
 	} catch (error) {
 		console.warn('fleet-package-error-rate-email-failed', error)
-		throw error
+		return { status: 'skipped', reason: 'notify_failed' }
 	}
 
 	console.warn('fleet-package-error-rate-alerted', {

@@ -979,8 +979,10 @@ dashboard. Counts are fleet-wide and weighted by Analytics Engine
 strings, logs, and unrelated account content. Idempotency keys include the
 topic, event id, and subscriber package id.
 
-Use this topic for notifier packages that spawn a Kody-repo investigation agent.
-Do not treat it as permission to read another user's Activity or package source.
+Use this topic for notifier packages that enqueue a Kody-repo investigation
+request. Agent spawning stays on the scheduled sweep, not in the subscription
+handler. Do not treat this topic as permission to read another user's Activity
+or package source.
 
 ## User created and deleted (admins)
 

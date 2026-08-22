@@ -105,11 +105,23 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
-			const fleetPackageErrorRate =
-				await refreshFleetPackageErrorRateAndMaybeAlert({
-					env: input.env,
-					now: input.scheduledAt,
-				})
+			let fleetPackageErrorRate: Awaited<
+				ReturnType<typeof refreshFleetPackageErrorRateAndMaybeAlert>
+			>
+			try {
+				fleetPackageErrorRate = await refreshFleetPackageErrorRateAndMaybeAlert(
+					{
+						env: input.env,
+						now: input.scheduledAt,
+					},
+				)
+			} catch (error) {
+				console.warn('fleet-package-error-rate-lane-failed', error)
+				fleetPackageErrorRate = {
+					status: 'skipped',
+					reason: 'query_failed',
+				}
+			}
 			return { ...result, fleetPackageErrorRate }
 		}
 		case 'auth_denial_alert':

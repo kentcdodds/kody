@@ -211,6 +211,53 @@ test('refreshFleetPackageErrorRateAndMaybeAlert skips without Analytics Engine c
 	})
 })
 
+test('refreshFleetPackageErrorRateAndMaybeAlert does not cool down when no admin can be emailed', async () => {
+	consoleWarn.mockImplementation(() => {})
+	sendCloudflareEmail.mockClear()
+	dispatchFleetPackageErrorRateSubscriptionEvent.mockClear()
+	const { stored, kv } = createKv()
+	queryAnalyticsEngineSql.mockResolvedValue([
+		{
+			window: 'recent',
+			metric: 'package_export',
+			event_count: 80,
+			error_count: 16,
+		},
+		{
+			window: 'previous',
+			metric: 'package_export',
+			event_count: 80,
+			error_count: 2,
+		},
+	])
+	const result = await refreshFleetPackageErrorRateAndMaybeAlert({
+		env: {
+			USAGE_EVENTS: {} as AnalyticsEngineDataset,
+			APP_DB: {
+				prepare() {
+					return {
+						async all() {
+							return { results: [] }
+						},
+					}
+				},
+			} as unknown as D1Database,
+			BUNDLE_ARTIFACTS_KV: kv,
+			CLOUDFLARE_ACCOUNT_ID: 'account',
+			CLOUDFLARE_API_TOKEN: 'token',
+			SENTRY_ENVIRONMENT: 'production',
+		},
+		now: new Date('2026-08-22T19:32:00.000Z'),
+	})
+	expect(result).toMatchObject({
+		status: 'refreshed',
+		elevated: true,
+		alert: { status: 'skipped', reason: 'no_system_domain' },
+	})
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+	expect(stored.get(fleetPackageErrorRateAlertKvKey)).toBeUndefined()
+})
+
 test('formatFleetPackageErrorRateAlertText stays content-free', () => {
 	const text = formatFleetPackageErrorRateAlertText({
 		event: 'fleet.package_error_rate.elevated',
