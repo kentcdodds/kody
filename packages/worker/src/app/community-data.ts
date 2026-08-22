@@ -15,12 +15,7 @@ import {
 	buildCommunityIndexCacheKey,
 	getOrSetDataCache,
 } from '#app/data-cache.ts'
-import {
-	communityIndexOverviewLimitPerCategory,
-	countCommunityListingsByCategory,
-	groupCommunityListingsByCategory,
-	parseCommunityListingCategory,
-} from '#universal/community-categories.ts'
+import { parseCommunityListingCategory } from '#universal/community-categories.ts'
 import { parseCommunityListingSort } from '#universal/community-search.ts'
 import {
 	type CommunityDetailLoaderData,
@@ -30,10 +25,12 @@ import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { setRequestDataCacheLookup } from '#app/request-cache.ts'
 import { listCommunityForksByListingIdsAndUser } from '#worker/community/repo.ts'
 import {
+	getCommunityCategoryCounts,
+	getCommunityListingWithAggregates,
+	listCommunityIndexOverview,
 	listCommunityListingsWithAggregates,
 	listFeaturedCommunityListingsWithAggregates,
 	searchCommunityListings,
-	getCommunityListingWithAggregates,
 } from '#worker/community/service.ts'
 import {
 	getCommunityStar,
@@ -49,7 +46,6 @@ import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 
 const defaultCommunityListLimit = 50
-const communityIndexOverviewCandidateLimit = 200
 const onboardingFeaturedListingLimit = 12
 
 function isCommunityDataCacheEnabled(env: Env) {
@@ -107,8 +103,8 @@ async function loadCommunityIndexDataUncached(
 	const overview = query.length === 0 && category == null
 	const limit = readPositiveInt(
 		url.searchParams.get('limit'),
-		overview ? communityIndexOverviewCandidateLimit : defaultCommunityListLimit,
-		overview ? communityIndexOverviewCandidateLimit : 100,
+		defaultCommunityListLimit,
+		100,
 	)
 
 	const cacheKey = buildCommunityIndexCacheKey({
@@ -123,33 +119,44 @@ async function loadCommunityIndexDataUncached(
 		request,
 		cacheKey,
 		async () => {
-			const rows = query
-				? await searchCommunityListings({
-						env,
-						query,
-						limit,
-						sort,
-						category,
-					})
-				: await listCommunityListingsWithAggregates({
-						env,
-						includeDelisted: false,
-						limit,
-						offset: 0,
-						sort,
-						category,
-					})
-			const listings = rows.map(toPublicCommunityListing)
-			const groups = overview
-				? groupCommunityListingsByCategory(
-						listings,
-						communityIndexOverviewLimitPerCategory,
-					)
-				: null
+			if (overview) {
+				const overviewResult = await listCommunityIndexOverview({
+					env,
+					sort,
+				})
+				return {
+					listings: overviewResult.listings.map(toPublicCommunityListing),
+					groups: overviewResult.groups.map((group) => ({
+						category: group.category,
+						listings: group.listings.map(toPublicCommunityListing),
+						total: group.total,
+					})),
+					categoryCounts: overviewResult.categoryCounts,
+				}
+			}
+			const [rows, categoryCounts] = await Promise.all([
+				query
+					? searchCommunityListings({
+							env,
+							query,
+							limit,
+							sort,
+							category,
+						})
+					: listCommunityListingsWithAggregates({
+							env,
+							includeDelisted: false,
+							limit,
+							offset: 0,
+							sort,
+							category,
+						}),
+				getCommunityCategoryCounts({ env }),
+			])
 			return {
-				listings,
-				groups,
-				categoryCounts: countCommunityListingsByCategory(listings),
+				listings: rows.map(toPublicCommunityListing),
+				groups: null,
+				categoryCounts,
 			}
 		},
 	)

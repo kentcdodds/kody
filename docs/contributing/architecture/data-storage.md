@@ -1179,8 +1179,11 @@ on write unless a migration backfills existing rows.
   (`packages/worker/migrations/0001-squashed-init.sql`) are `string[]`
   projections. `community_listings.category`
   (`0022-community-listing-category.sql`) is a closed browse category
-  (`integrations`, `examples`, `productivity`, `apps`, `utilities`, or `other`)
-  copied from `package.json#kody.category` on publish.
+  (`integrations`, `examples`, `productivity`, `apps`, `utilities`, or `other`).
+  Publish copies `package.json#kody.category` when it is an author category.
+  Missing or `other` falls back to well-known tag inference (examples, then
+  integrations, productivity, apps) and otherwise stores `other`. Reads
+  re-resolve the same way so pre-migration rows stay classified.
 - `published_bundle_artifacts.dependencies_json` (`0001-squashed-init.sql`)
   stores package dependency pointers queried with SQLite JSON functions in
   `packages/worker/src/repo/published-bundle-artifacts-repo.ts`.

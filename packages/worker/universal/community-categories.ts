@@ -22,6 +22,9 @@ export const defaultCommunityListingCategory =
 
 export const communityIndexOverviewLimitPerCategory = 6
 
+/** Newest listings fetched per category before Best/Newest ranking. */
+export const communityIndexOverviewCandidateLimitPerCategory = 50
+
 export const communityPackageCategoryCopy: Record<
 	CommunityListingCategory,
 	{ label: string; description: string }

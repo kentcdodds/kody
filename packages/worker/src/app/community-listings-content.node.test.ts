@@ -118,4 +118,22 @@ test('community listings render sort controls, published dates, and empty states
 	})
 	expect(fullGroupHtml).toContain('data-testid="community-listings-overview"')
 	expect(fullGroupHtml).not.toContain('See all Integrations')
+
+	const catalogWideChipsHtml = await renderCommunityListingsContentHtml({
+		listings: [sampleListing],
+		query: null,
+		category: 'integrations',
+		categoryCounts: {
+			integrations: 1200,
+			examples: 40,
+			productivity: 0,
+			apps: 0,
+			utilities: 0,
+			other: 0,
+		},
+	})
+	expect(catalogWideChipsHtml).toContain('category=integrations')
+	expect(catalogWideChipsHtml).toContain('category=examples')
+	expect(catalogWideChipsHtml).not.toContain('category=utilities')
+	expect(catalogWideChipsHtml).not.toContain('category=other')
 })

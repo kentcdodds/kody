@@ -3,6 +3,8 @@ import { createCommunityHandler } from './community.tsx'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
 const mockModule = vi.hoisted(() => ({
+	listCommunityIndexOverview: vi.fn(),
+	getCommunityCategoryCounts: vi.fn(),
 	listCommunityListingsWithAggregates: vi.fn(),
 	searchCommunityListings: vi.fn(),
 	readAuthenticatedAppUser: vi.fn(),
@@ -13,6 +15,10 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
+	listCommunityIndexOverview: (...args: Array<unknown>) =>
+		mockModule.listCommunityIndexOverview(...args),
+	getCommunityCategoryCounts: (...args: Array<unknown>) =>
+		mockModule.getCommunityCategoryCounts(...args),
 	listCommunityListingsWithAggregates: (...args: Array<unknown>) =>
 		mockModule.listCommunityListingsWithAggregates(...args),
 	searchCommunityListings: (...args: Array<unknown>) =>
@@ -76,9 +82,24 @@ const env = {} as Env
 
 test('community page handler returns bare listings frame HTML for target header', async () => {
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
-		sampleListing,
-	])
+	mockModule.listCommunityIndexOverview.mockResolvedValue({
+		listings: [sampleListing],
+		groups: [
+			{
+				category: 'integrations',
+				listings: [sampleListing],
+				total: 1,
+			},
+		],
+		categoryCounts: {
+			integrations: 1,
+			examples: 0,
+			productivity: 0,
+			apps: 0,
+			utilities: 0,
+			other: 0,
+		},
+	})
 
 	const handler = createCommunityHandler(env)
 	const response = await handler.handler({

@@ -1,14 +1,20 @@
 import { expect, test, vi } from 'vitest'
+import {
+	emptyCommunityCategoryCounts,
+	type CommunityCategoryCounts,
+} from '#universal/community-categories.ts'
+import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 import { resetDataCacheForTests } from './data-cache.ts'
 import {
 	loadCommunityDetailData,
 	loadCommunityIndexData,
 	loadOnboardingFeaturedListings,
 } from './community-data.ts'
-import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
+	listCommunityIndexOverview: vi.fn(),
+	getCommunityCategoryCounts: vi.fn(),
 	listCommunityListingsWithAggregates: vi.fn(),
 	searchCommunityListings: vi.fn(),
 	listFeaturedCommunityListingsWithAggregates: vi.fn(),
@@ -28,6 +34,10 @@ vi.mock('#app/authenticated-user.ts', () => ({
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
+	listCommunityIndexOverview: (...args: Array<unknown>) =>
+		mockModule.listCommunityIndexOverview(...args),
+	getCommunityCategoryCounts: (...args: Array<unknown>) =>
+		mockModule.getCommunityCategoryCounts(...args),
 	listCommunityListingsWithAggregates: (...args: Array<unknown>) =>
 		mockModule.listCommunityListingsWithAggregates(...args),
 	searchCommunityListings: (...args: Array<unknown>) =>
@@ -94,6 +104,26 @@ const sampleListing = {
 	starCount: 0,
 } satisfies CommunityListingWithAggregates
 
+function categoryCounts(
+	overrides: Partial<CommunityCategoryCounts> = {},
+): CommunityCategoryCounts {
+	return { ...emptyCommunityCategoryCounts(), ...overrides }
+}
+
+function sampleOverview(listing = sampleListing) {
+	return {
+		listings: [listing],
+		groups: [
+			{
+				category: listing.category,
+				listings: [listing],
+				total: 1,
+			},
+		],
+		categoryCounts: categoryCounts({ [listing.category]: 1 }),
+	}
+}
+
 function signedInUser() {
 	return {
 		mcpUser: { userId: 'viewer-1', username: 'burhan' },
@@ -105,9 +135,7 @@ test('community index overlays matching kody_id installs for signed-in viewers',
 	resetDataCacheForTests()
 	mockModule.listSavedPackagesByKodyIds.mockReset()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(signedInUser())
-	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
-		sampleListing,
-	])
+	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
 	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
 	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([
@@ -234,12 +262,18 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 test('community index is memoized per request and forwards newest sort to loaders', async () => {
 	resetDataCacheForTests()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.listCommunityIndexOverview.mockReset()
 	mockModule.listCommunityListingsWithAggregates.mockReset()
 	mockModule.searchCommunityListings.mockReset()
+	mockModule.getCommunityCategoryCounts.mockReset()
+	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
 	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
 		sampleListing,
 	])
 	mockModule.searchCommunityListings.mockResolvedValue([sampleListing])
+	mockModule.getCommunityCategoryCounts.mockResolvedValue(
+		categoryCounts({ integrations: 12, examples: 3 }),
+	)
 
 	const request = new Request('https://example.com/community')
 	const first = loadCommunityIndexData({} as Env, request)
@@ -251,24 +285,18 @@ test('community index is memoized per request and forwards newest sort to loader
 	expect((await first).categoryCounts.integrations).toBe(1)
 	expect((await first).categoryCounts.utilities).toBe(0)
 	expect(await second).toBe(await first)
-	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledTimes(
-		1,
-	)
+	expect(mockModule.listCommunityIndexOverview).toHaveBeenCalledTimes(1)
 	expect((await first).sort).toBe('best')
 
-	mockModule.listCommunityListingsWithAggregates.mockClear()
+	mockModule.listCommunityIndexOverview.mockClear()
 	const newestBrowse = await loadCommunityIndexData(
 		{} as Env,
 		new Request('https://example.com/community?sort=newest'),
 	)
 	expect(newestBrowse.sort).toBe('newest')
-	expect(mockModule.listCommunityListingsWithAggregates).toHaveBeenCalledWith({
+	expect(mockModule.listCommunityIndexOverview).toHaveBeenCalledWith({
 		env: {},
-		includeDelisted: false,
-		limit: 200,
-		offset: 0,
 		sort: 'newest',
-		category: null,
 	})
 
 	const newestSearch = await loadCommunityIndexData(
@@ -279,12 +307,16 @@ test('community index is memoized per request and forwards newest sort to loader
 	expect(newestSearch.query).toBe('github')
 	expect(newestSearch.category).toBeNull()
 	expect(newestSearch.groups).toBeNull()
+	expect(newestSearch.categoryCounts.examples).toBe(3)
 	expect(mockModule.searchCommunityListings).toHaveBeenCalledWith({
 		env: {},
 		query: 'github',
 		limit: 50,
 		sort: 'newest',
 		category: null,
+	})
+	expect(mockModule.getCommunityCategoryCounts).toHaveBeenCalledWith({
+		env: {},
 	})
 
 	mockModule.listCommunityListingsWithAggregates.mockClear()
@@ -308,9 +340,7 @@ test('community index omits viewerInstall for anonymous viewers and auth failure
 	resetDataCacheForTests()
 	mockModule.listSavedPackagesByKodyIds.mockReset()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
-		sampleListing,
-	])
+	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
 
 	const anonymous = await loadCommunityIndexData(
 		{} as Env,

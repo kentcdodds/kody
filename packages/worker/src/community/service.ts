@@ -2,7 +2,11 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { parseListingOwnerUsername } from '#universal/community-links.ts'
 import {
+	communityIndexOverviewCandidateLimitPerCategory,
+	communityIndexOverviewLimitPerCategory,
+	communityListingCategories,
 	resolveCommunityListingCategory,
+	type CommunityCategoryCounts,
 	type CommunityListingCategory,
 } from '#universal/community-categories.ts'
 import {
@@ -61,6 +65,7 @@ import {
 	insertCommunityListing,
 	insertCommunityBan,
 	insertCommunityReport,
+	countActiveCommunityListingsByCategory,
 	extractCommunityListingLikeTokens,
 	listCommunityListingCandidates,
 	listCommunityReports as listCommunityReportsFromDb,
@@ -126,11 +131,11 @@ export const COMMUNITY_SEARCH_VECTOR_MATCH_THRESHOLD = 0.12
 export const COMMUNITY_SEARCH_MIN_RELEVANCE = 0.2
 
 // Community search/browse never scores more than this many listings in
-// memory; candidates are pre-filtered and recency-ordered in SQL. This is
-// a deliberate bound: browse ranks within the newest candidates, so
-// listings older than the newest 500 are reachable through search (LIKE
-// pre-filter) but not through unfiltered browse pagination. Revisit with
-// a materialized score column if the catalog ever approaches this size.
+// memory; candidates are pre-filtered (including stored category) and
+// recency-ordered in SQL. Unfiltered All uses per-category overview
+// queries instead of this global window. Filtered browse ranks within
+// the newest 500 of that category. Revisit with a materialized score
+// column if a single category approaches this size.
 export const COMMUNITY_SEARCH_CANDIDATE_LIMIT = 500
 
 function normalizeCommunityActivityPage(value: number | undefined) {
@@ -919,6 +924,7 @@ export async function listCommunityListingsWithAggregates(input: {
 	const listings = await listCommunityListingCandidates(input.env.APP_DB, {
 		includeDelisted: input.includeDelisted,
 		limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
+		category: input.category ?? null,
 	})
 	const withAggregates = await attachListingAggregatesBatch(
 		input.env.APP_DB,
@@ -932,6 +938,66 @@ export async function listCommunityListingsWithAggregates(input: {
 	return filtered
 		.sort((left, right) => compareCommunityListingsForSort(left, right, sort))
 		.slice(input.offset, input.offset + input.limit)
+}
+
+export async function getCommunityCategoryCounts(input: {
+	env: Env
+}): Promise<CommunityCategoryCounts> {
+	return countActiveCommunityListingsByCategory(input.env.APP_DB)
+}
+
+export type CommunityIndexOverviewGroup = {
+	category: CommunityListingCategory
+	listings: Array<CommunityListingWithAggregates>
+	total: number
+}
+
+/**
+ * Unfiltered `/community` shelf: a few cards per populated category, with
+ * SQL totals so "See all" and chips stay honest past the global candidate
+ * window. Empty categories are omitted so a zero catalog stays quiet.
+ */
+export async function listCommunityIndexOverview(input: {
+	env: Env
+	sort?: CommunityListingSort
+}): Promise<{
+	listings: Array<CommunityListingWithAggregates>
+	groups: Array<CommunityIndexOverviewGroup>
+	categoryCounts: CommunityCategoryCounts
+}> {
+	const sort = resolveCommunityListingSort(input.sort)
+	const categoryCounts = await getCommunityCategoryCounts({ env: input.env })
+	const populated = communityListingCategories.filter(
+		(category) => categoryCounts[category] > 0,
+	)
+	const groups = await Promise.all(
+		populated.map(async (category) => {
+			const rows = await listCommunityListingCandidates(input.env.APP_DB, {
+				includeDelisted: false,
+				limit: communityIndexOverviewCandidateLimitPerCategory,
+				category,
+			})
+			const withAggregates = await attachListingAggregatesBatch(
+				input.env.APP_DB,
+				rows,
+			)
+			const visible = withAggregates
+				.sort((left, right) =>
+					compareCommunityListingsForSort(left, right, sort),
+				)
+				.slice(0, communityIndexOverviewLimitPerCategory)
+			return {
+				category,
+				listings: visible,
+				total: categoryCounts[category],
+			}
+		}),
+	)
+	return {
+		listings: groups.flatMap((group) => group.listings),
+		groups,
+		categoryCounts,
+	}
 }
 
 export async function searchCommunityListings(input: {
@@ -949,6 +1015,7 @@ export async function searchCommunityListings(input: {
 		includeDelisted: false,
 		limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
 		query: trimmedQuery || null,
+		category: input.category ?? null,
 	})
 	if (!trimmedQuery) {
 		const withAggregates = await attachListingAggregatesBatch(
@@ -980,6 +1047,7 @@ export async function searchCommunityListings(input: {
 		listings = await listCommunityListingCandidates(input.env.APP_DB, {
 			includeDelisted: false,
 			limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
+			category: input.category ?? null,
 		})
 		matched = listings.filter(matchesQuery)
 	}

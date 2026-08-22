@@ -368,10 +368,12 @@ const detailTagListCss = {
 }
 
 const detailCategoryLinkCss = {
-	color: 'inherit',
-	textDecoration: 'none',
+	color: colors.primaryText,
+	fontWeight: 550,
+	textDecoration: 'underline',
+	textUnderlineOffset: '0.18em',
 	'&:hover': {
-		color: colors.primaryText,
+		color: colors.text,
 	},
 }
 

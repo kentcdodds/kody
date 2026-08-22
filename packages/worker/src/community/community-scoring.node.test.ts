@@ -181,6 +181,7 @@ test('community scoring and search rank listings and filter by query', async () 
 			includeDelisted: false,
 			limit: COMMUNITY_SEARCH_CANDIDATE_LIMIT,
 			query: 'github',
+			category: null,
 		},
 	)
 

@@ -98,9 +98,9 @@ export type CommunityIndexLoaderData = {
 	 */
 	groups: Array<CommunityIndexGroup> | null
 	/**
-	 * Resolved-category counts for the current result set (the browse
-	 * candidate window, or the current search hits). Chips hide empty
-	 * buckets from this map.
+	 * Catalog-wide active listing counts by stored category. Chips hide
+	 * empty buckets from this map so an empty shelf stays quiet and a
+	 * large catalog only shows categories that actually have packages.
 	 */
 	categoryCounts: CommunityCategoryCounts
 	query: string | null

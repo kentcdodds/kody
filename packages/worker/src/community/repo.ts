@@ -1,6 +1,12 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
-import { resolveCommunityListingCategory } from '#universal/community-categories.ts'
+import {
+	emptyCommunityCategoryCounts,
+	parseCommunityListingCategory,
+	resolveCommunityListingCategory,
+	type CommunityCategoryCounts,
+	type CommunityListingCategory,
+} from '#universal/community-categories.ts'
 import {
 	type CommunityActivityKind,
 	type CommunityActivityRecord,
@@ -509,11 +515,33 @@ export async function listCommunityListings(
 	return (rows.results ?? []).map(mapCommunityListingRow)
 }
 
+export async function countActiveCommunityListingsByCategory(
+	db: D1Database,
+): Promise<CommunityCategoryCounts> {
+	const rows = await db
+		.prepare(
+			`SELECT category, COUNT(*) AS listing_count
+			FROM community_listings
+			WHERE status = 'active'
+			GROUP BY category`,
+		)
+		.all<{ category: string; listing_count: number }>()
+	const counts = emptyCommunityCategoryCounts()
+	for (const row of rows.results ?? []) {
+		const category = parseCommunityListingCategory(row.category)
+		if (category == null) continue
+		counts[category] = Number(row.listing_count)
+	}
+	return counts
+}
+
 /**
  * Bounded candidate query for community search/browse. Applies SQL-level text
  * pre-filtering (LIKE across name/kody_id/description/search_text/tags_json/
  * readme_content) when a query is provided, orders by recency, and never
  * returns more than `limit` rows so scoring stays off the full table.
+ * Stored `category` is applied in SQL so a filtered browse is not capped by
+ * the global newest-N window.
  */
 export async function listCommunityListingCandidates(
 	db: D1Database,
@@ -521,12 +549,17 @@ export async function listCommunityListingCandidates(
 		includeDelisted: boolean
 		limit: number
 		query?: string | null
+		category?: CommunityListingCategory | null
 	},
 ): Promise<Array<CommunityListingRecord>> {
 	const conditions: Array<string> = []
 	const bindings: Array<unknown> = []
 	if (!input.includeDelisted) {
 		conditions.push(`community_listings.status = 'active'`)
+	}
+	if (input.category != null) {
+		conditions.push(`community_listings.category = ?`)
+		bindings.push(input.category)
 	}
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {
