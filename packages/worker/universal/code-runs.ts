@@ -4,7 +4,8 @@
  * every visitor at a given clock time sees the same integer. Each displayed
  * step is +1. When the pair has at least one tick per second, a tick lands
  * every second at a hashed time so the cadence wobbles instead of marching
- * on the clock. Extra count rolls through the second without skipping.
+ * on the clock. Extra count rolls through the second without skipping, with
+ * hashed gaps between those leftover ticks so a busy second does not march.
  * The count stays monotonic between `previous` and `current`.
  */
 
@@ -182,8 +183,53 @@ function ticksFiredInSecond(
 	if (gain === 1) {
 		return fracMs >= singleTickFireMs(seed, secondIndex) ? 1 : 0
 	}
-	const slot = 1000 / gain
-	return Math.min(gain, Math.floor(fracMs / slot) + 1)
+	const fires = busySecondFireMs(gain, seed, secondIndex)
+	let fired = 0
+	for (const fireAt of fires) {
+		if (fracMs < fireAt) break
+		fired += 1
+	}
+	return fired
+}
+
+function busySecondFireMs(
+	gain: number,
+	seed: number,
+	secondIndex: number,
+): Array<number> {
+	const unique = Math.min(gain, 1000)
+	const minGap =
+		unique <= 1 ? 1 : Math.max(1, Math.min(16, Math.floor(999 / (unique - 1))))
+	const weights = Array.from({ length: unique }, (_, index) =>
+		busySecondGapWeight(seed, secondIndex, index),
+	)
+	let total = 0
+	for (const weight of weights) total += weight
+	const maxLead = Math.min(180, Math.max(0, 999 - (unique - 1) * minGap))
+	const lead = Math.floor(hashUnit(seed, secondIndex + 41) * (maxLead + 1))
+	const span = Math.max(0, 999 - lead)
+	const fires = Array.from({ length: unique }, () => 0)
+	let prefix = 0
+	for (let index = 0; index < unique; index += 1) {
+		const desired = lead + Math.floor((prefix / total) * span)
+		const earliest = index === 0 ? 0 : (fires[index - 1] ?? 0) + minGap
+		const latest = 999 - (unique - 1 - index) * minGap
+		fires[index] = Math.min(latest, Math.max(earliest, desired))
+		prefix += weights[index] ?? 0
+	}
+	// More than 1000 ticks cannot get unique milliseconds; extras share 999
+	// and the client rolls through them.
+	while (fires.length < gain) fires.push(999)
+	return fires
+}
+
+function busySecondGapWeight(
+	seed: number,
+	secondIndex: number,
+	index: number,
+): number {
+	const unit = hashUnit(seed, Math.imul(secondIndex + 1, 31) + index + 19)
+	return 0.2 + unit * unit * 2.3
 }
 
 function singleTickFireMs(seed: number, secondIndex: number): number {
