@@ -7,6 +7,7 @@ import { loadFleetUsageInsights } from '#worker/admin/fleet-usage-insights.ts'
 import { type RunLogAdminInsightsSnapshot } from '#worker/run-records/admin-insights-snapshot.ts'
 import { getAdminInsightsSnapshot } from '#worker/run-records/service.ts'
 import { queryAnalyticsEngineSql } from '#worker/usage/aggregate-rollups.ts'
+import { loadFleetPackageErrorRateSnapshot } from '#worker/usage/fleet-package-error-rate.ts'
 import {
 	type AdminInsightsActivation,
 	type AdminInsightsActivationStep,
@@ -17,6 +18,7 @@ import {
 	type AdminInsightsHeatmapCell,
 	type AdminInsightsJobHealth,
 	type AdminInsightsLoaderData,
+	type AdminInsightsPackageErrorRate,
 	type AdminInsightsPlanSlice,
 	type AdminInsightsRunLogCompleteness,
 	type AdminInsightsSignupWeek,
@@ -99,7 +101,7 @@ export async function loadAdminInsightsData(
 		: null
 	if (!cache) return await queryAdminInsights(env, now)
 	return await cachified({
-		key: 'admin-insights:v7',
+		key: 'admin-insights:v8',
 		cache,
 		ttl: insightsCacheTtlMs,
 		getFreshValue: () => queryAdminInsights(env, now),
@@ -215,7 +217,10 @@ async function queryAdminInsights(
 		users: insightsUsers,
 	})
 
-	const fleetUsage = await loadFleetUsageInsights({ db, env, now })
+	const [fleetUsage, packageErrorRateSnapshot] = await Promise.all([
+		loadFleetUsageInsights({ db, env, now }),
+		loadFleetPackageErrorRateSnapshot(env),
+	])
 
 	const jobHealth: AdminInsightsJobHealth = {
 		totalJobs: jobStats.total,
@@ -282,6 +287,30 @@ async function queryAdminInsights(
 		topEventCountConsumers: fleetUsage.topEventCountConsumers,
 		topDurationConsumersByMetric: fleetUsage.topDurationConsumersByMetric,
 		entitlementPressure: fleetUsage.entitlementPressure,
+		packageErrorRate: toInsightsPackageErrorRate(packageErrorRateSnapshot),
+	}
+}
+
+function toInsightsPackageErrorRate(
+	snapshot: Awaited<ReturnType<typeof loadFleetPackageErrorRateSnapshot>>,
+): AdminInsightsPackageErrorRate {
+	if (!snapshot) {
+		return {
+			available: false,
+			updatedAt: null,
+			environment: null,
+			day: null,
+			hour: null,
+			lastAlertAt: null,
+		}
+	}
+	return {
+		available: true,
+		updatedAt: snapshot.updatedAt,
+		environment: snapshot.environment,
+		day: snapshot.day,
+		hour: snapshot.hour,
+		lastAlertAt: snapshot.lastAlertAt,
 	}
 }
 

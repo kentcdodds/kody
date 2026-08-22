@@ -357,3 +357,14 @@ Guarantees and rules:
   `ops-alert:usage-entitlement-pressure:v1` suppresses repeat pages. Admin email
   links are built with `joinAppUrl` so a trailing slash on `APP_BASE_URL` cannot
   produce `https://host//admin/…`.
+- **Fleet package error rate** (same `usage_aggregation` hour): a second
+  Analytics Engine SQL, not grouped by user, totals `package_export`,
+  `package_static_call`, `job_run`, and `workflow_run` for the last completed
+  hour vs the hour before and the last 24 hours vs the 24 hours before. The
+  content-free snapshot lives at the platform KV key
+  `fleet-package-error-rate:v1` and feeds `/admin/insights`. When the combined
+  rate rises past a volume floor, Kody emails admins and fans
+  `fleet.package_error_rate.elevated` to admin-owned packages. The KV cooldown
+  key `ops-alert:fleet-package-error-rate:v1` suppresses repeat pages for six
+  hours. The payload has no user ids, package ids, or error strings. See
+  [Package subscriptions](../../guides/package-subscriptions.md#fleetpackageerrorrateelevated-admins).

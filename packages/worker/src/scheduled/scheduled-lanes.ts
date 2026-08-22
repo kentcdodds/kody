@@ -1,8 +1,9 @@
 import * as Sentry from '@sentry/cloudflare'
-import { checkUsageEntitlementPressureAndNotify } from '#app/usage-entitlement-alerts.ts'
 import { checkAuthDenialBurstAndNotify } from '#app/auth-denial-alerts.ts'
 import { checkEmailDeliveryBurstAndNotify } from '#app/email-delivery-alerts.ts'
+import { refreshFleetPackageErrorRateAndMaybeAlert } from '#app/fleet-package-error-rate-alerts.ts'
 import { pruneRetention } from '#app/retention.ts'
+import { checkUsageEntitlementPressureAndNotify } from '#app/usage-entitlement-alerts.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
 	runDrExportTick,
@@ -104,7 +105,24 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
-			return result
+			let fleetPackageErrorRate: Awaited<
+				ReturnType<typeof refreshFleetPackageErrorRateAndMaybeAlert>
+			>
+			try {
+				fleetPackageErrorRate = await refreshFleetPackageErrorRateAndMaybeAlert(
+					{
+						env: input.env,
+						now: input.scheduledAt,
+					},
+				)
+			} catch (error) {
+				console.warn('fleet-package-error-rate-lane-failed', error)
+				fleetPackageErrorRate = {
+					status: 'skipped',
+					reason: 'query_failed',
+				}
+			}
+			return { ...result, fleetPackageErrorRate }
 		}
 		case 'auth_denial_alert':
 			return checkAuthDenialBurstAndNotify({
