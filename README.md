@@ -31,8 +31,11 @@ is privileged at runtime. The repo follows several
 [epicflare](https://github.com/epicweb-dev/epicflare) starter conventions.
 
 The repo is organized as an Nx monorepo, with shared modules in
-`packages/shared` (`@kody-internal/shared`), the main app worker under
-`packages/worker`, and mock Workers under `packages/mock-servers/*`.
+`packages/shared` (`@kody-internal/shared`), the origin app worker under
+`packages/worker`, sibling workers under `packages/platform-worker`,
+`packages/runtime-worker`, and `packages/jobs-worker`, and mock Workers under
+`packages/mock-servers/*`. Production topology lives in
+[`docs/contributing/architecture/index.md`](./docs/contributing/architecture/index.md).
 
 ## Quick Start
 
@@ -58,17 +61,17 @@ If you are trying to understand what this repository is for, start with
 
 ## Tech Stack
 
-| Layer           | Technology                                                            |
-| --------------- | --------------------------------------------------------------------- |
-| Runtime         | [Cloudflare Workers](https://workers.cloudflare.com/)                 |
-| UI Framework    | [Remix 3](https://remix.run/) (beta)                                  |
-| Package Manager | [npm](https://www.npmjs.com/)                                         |
-| Workspace       | [Nx](https://nx.dev/) + npm workspaces                                |
-| Database        | [Cloudflare D1](https://developers.cloudflare.com/d1/)                |
-| Session/OAuth   | [Cloudflare KV](https://developers.cloudflare.com/kv/)                |
-| MCP State       | [Durable Objects](https://developers.cloudflare.com/durable-objects/) |
-| E2E Testing     | [Playwright](https://playwright.dev/)                                 |
-| Bundler         | [esbuild](https://esbuild.github.io/)                                 |
+| Layer           | Technology                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| Runtime         | [Cloudflare Workers](https://workers.cloudflare.com/)                                    |
+| UI Framework    | [Remix 3](https://remix.run/) (beta)                                                     |
+| Package Manager | [npm](https://www.npmjs.com/)                                                            |
+| Workspace       | [Nx](https://nx.dev/) + npm workspaces                                                   |
+| Database        | [Cloudflare D1](https://developers.cloudflare.com/d1/)                                   |
+| Session/OAuth   | [Cloudflare KV](https://developers.cloudflare.com/kv/)                                   |
+| MCP State       | [Durable Objects](https://developers.cloudflare.com/durable-objects/) on `kody-platform` |
+| E2E Testing     | [Playwright](https://playwright.dev/)                                                    |
+| Bundler         | [esbuild](https://esbuild.github.io/)                                                    |
 
 ## Scope
 
@@ -81,15 +84,17 @@ If you are trying to understand what this repository is for, start with
 ## How It Works
 
 ```
-Request → packages/worker/src/index.ts
-              │
-              ├─→ OAuth handlers
-              ├─→ MCP endpoints
-              ├─→ Static assets (`packages/worker/public/`)
-              └─→ Server router → Remix components
+kody.codes  → kody-production (origin: Remix, /mcp HTTP, OAuth, email, queues)
+                 ├─→ kody-platform  (MCP / mailbox / meter / repo-session DOs)
+                 ├─→ kody-runtime   (package apps, invoke API, StorageRunner)
+                 └─→ kody-jobs      (cron + JobManager; calls back via JobsHost)
+
+kody.run    → kody-runtime (package-app zone routes)
 ```
 
-- `packages/worker/src/index.ts` is the entrypoint for Cloudflare Workers
+- `packages/worker/src/index.ts` is the origin entrypoint; platform, runtime,
+  and jobs have sibling entrypoints (see
+  [architecture](./docs/contributing/architecture/index.md#production-worker-fleet))
 - OAuth requests are handled first, then MCP requests, then static assets
 - Non-asset requests fall through to the server handler and router
 - Client assets are bundled into `packages/worker/public/` and served via the

@@ -66,8 +66,8 @@ style, tests, MCP capabilities, and runtime architecture.
 
 ## Architecture
 
-- [Architecture](./architecture/index.md) — includes
-  [authorization](./architecture/authorization.md) (RBAC)
+- [Architecture](./architecture/index.md) — production worker fleet, request
+  lifecycle, [authorization](./architecture/authorization.md) (RBAC)
 
 Documentation for **using** Kody as an MCP server (not building the repo) lives
 under [`docs/use/`](../use/index.md). How we write and maintain those pages (and

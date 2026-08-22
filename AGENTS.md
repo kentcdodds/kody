@@ -45,8 +45,8 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   - [docs/contributing/setup-manifest.md](./docs/contributing/setup-manifest.md)
 - Architecture references:
   - [docs/contributing/architecture/index.md](./docs/contributing/architecture/index.md)
-    (request lifecycle, authentication, data storage, and the rest of the
-    architecture leaves)
+    (production worker fleet, request lifecycle, authentication, data storage,
+    and the rest of the architecture leaves)
   - [docs/contributing/architecture/primitives.yaml](./docs/contributing/architecture/primitives.yaml)
     (stable taxonomy, not a feature changelog — see the architecture index for
     the classify/check workflow)

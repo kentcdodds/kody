@@ -2,9 +2,11 @@
 
 The package runtime lane extracted from the main `kody` Worker per
 [ADR 0016](../../docs/contributing/decisions/0016-mono-worker-extraction.md):
-the package-app origin (`PACKAGE_APP_BASE_URL`), inline package-app serving, the
-package invocation API, dynamic callable workflows, and the runtime Durable
-Objects (`StorageRunner`, `RunLog`, and `PackageRealtimeSession`).
+the package-app origin (`kody.run` / `kodyapps.dev`), inline package-app serving
+forwarded from origin, the package invocation API, dynamic callable workflows
+(`DynamicCallableWorkflow`), `PackageAppRuntimeBridge`, `KodyFetchGateway`, and
+the runtime Durable Objects (`StorageRunner`, `RunLog`, and
+`PackageRealtimeSession`).
 
 The Worker entry module is
 [`packages/worker/src/runtime-worker.ts`](../worker/src/runtime-worker.ts): the
@@ -16,7 +18,8 @@ The entry module is typechecked and tested through the `worker` Nx project.
   Deployable configs are generated from it plus the main Worker's generated
   config by
   [`tools/ci/runtime-worker-config.ts`](../../tools/ci/runtime-worker-config.ts).
+- HTTP health: `GET /__runtime/health`.
 - Build check: `npm run runtime:build` (part of `npm run validate`).
 - Deploys/previews: see `.github/workflows/deploy.yml` and `preview.yml`.
-- Production Durable Object storage transfer: see the
+- Production Durable Object ownership: see the
   [migration runbook](../../docs/contributing/architecture/runtime-worker-migration-runbook.md).

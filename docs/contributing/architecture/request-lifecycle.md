@@ -2,9 +2,20 @@
 
 This document explains how an incoming request moves through the system.
 
-## Entry point
+## Entry points
 
-All traffic enters the Worker at `packages/worker/src/index.ts`.
+Production has two public HTTP entrypoints:
+
+- **App origin** (`kody.codes` and legacy hosts) —
+  `packages/worker/src/index.ts`. Remix, MCP HTTP (`/mcp`), OAuth, inbound
+  email, and queue consumers. Runtime-owned paths (`/@{username}/packages/…`,
+  package-invocation API, inline `/apps`) forward over the `RUNTIME_WORKER`
+  service binding to `kody-runtime`.
+- **Package-app origin** (`kody.run` / `kodyapps.dev`) —
+  `packages/worker/src/runtime-worker.ts`. Zone routes on that script; the
+  origin handler does not see this host in production.
+
+The routing order below is the **app-origin** handler.
 
 The default `fetch` handler delegates to `OAuthProvider` from
 `@cloudflare/workers-oauth-provider`, which means OAuth endpoints and token
@@ -73,10 +84,15 @@ Requests are handled in this order:
      Engine dataset for dual-lane traffic measurement (see
      [decision 0005](../decisions/0005-mcp-dual-lane-stateless-migration.md)).
      The origin script owns no Durable Object classes
-     ([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)).
+     ([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)). MCP
+     `execute` looks up `KodyFetchGateway` on `ctx.exports` of the script that
+     **owns** `MCP` — that is `kody-platform`. Origin
+     `/__maintenance/execute-smoke` uses origin `ctx.exports` and can pass while
+     MCP execute is broken if platform does not export the gateway.
 6. Public `@username` ingress handled in `packages/worker/src/index.ts` before
    the OAuth provider / app router (needs `ExecutionContext` for background
-   work):
+   work). Production forwards package-invocation and package-app paths to
+   `kody-runtime` via `RUNTIME_WORKER`; webhook ingress stays on origin:
    - `POST /@{username}/api/package-invocations/:kodyId/:exportName` — bearer
      token package invocations
    - `POST /@{username}/webhooks/:packageKodyId/:webhookName/:urlSecret` —
@@ -347,10 +363,11 @@ the replay compression Web Worker.
 
 `packages/worker/wrangler.jsonc` sets
 [`upload_source_maps`](https://developers.cloudflare.com/workers/wrangler/configuration/#source-maps),
-and `npm run deploy` passes
+and production deploys pass
 `--outdir .wrangler/sentry-bundle --upload-source-maps` so the bundle + maps are
-generated consistently. To symbolicate stack traces in **Sentry** (not only in
-Cloudflare), configure
+generated consistently. `npm run deploy` from a laptop is origin-only.
+
+To symbolicate stack traces in **Sentry** (not only in Cloudflare), configure
 [Cloudflare source maps in Sentry](https://docs.sentry.io/platforms/javascript/guides/cloudflare/sourcemaps/):
 add GitHub **repository variables** `SENTRY_ORG` and `SENTRY_PROJECT`, a
 `SENTRY_AUTH_TOKEN` **secret** with release upload scopes, then CI runs

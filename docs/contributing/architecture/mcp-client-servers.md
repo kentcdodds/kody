@@ -10,8 +10,9 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
 ## Components
 
 - **`McpClientHub` Durable Object** (`packages/worker/src/mcp-client/hub.ts`) —
-  one per user, id derived from the stable MCP `userId`. Owns the Agents SDK
-  `MCPClientManager`, which persists registered servers, OAuth client
+  class owned by `kody-platform`; origin and runtime bind `MCP_CLIENT_HUB` with
+  `script_name`. One per user, id derived from the stable MCP `userId`. Owns the
+  Agents SDK `MCPClientManager`, which persists registered servers, OAuth client
   registrations, and tokens in the DO's SQLite storage. Exposes RPC methods:
   `addServer`, `reconnectServer`, `refreshServer`, `removeServer`,
   `handleOAuthCallback`, `getSnapshot`, `callTool`, and
@@ -29,7 +30,11 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
   required; plain http allowed only for loopback hosts), and keeps D1 and the
   hub DO in sync. Optional `bearerToken` values are normalized into an
   `Authorization` header and stored only in the hub DO's Agents SDK
-  `server_options` (never in D1 or list/detail API responses).
+  `server_options` (never in D1 or list/detail API responses). At
+  `registerServer`, the hub copies those static `transport.headers` into
+  `transport.requestInit.headers` so outbound fetches send them
+  (`packages/worker/src/mcp-client/transport-headers.ts`); explicit
+  `requestInit.headers` still win.
 
 ## OAuth flow
 
@@ -37,7 +42,8 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    `<canonical-app-origin>/account/mcp-servers/oauth/callback` (from
    `APP_BASE_URL`, not the request host) and starts connecting. Optional static
    Authorization headers from `bearerToken` are registered on the transport at
-   the same time.
+   the same time, including the `requestInit` copy so the header is not dropped
+   on the wire.
 2. If the server requires OAuth, the MCP SDK uses Client ID Metadata Documents
    when the authorization server advertises
    `client_id_metadata_document_supported` and the callback origin is HTTPS:

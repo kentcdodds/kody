@@ -2,6 +2,9 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-11
+- **Superseded in part by** [0034](./0034-origin-owns-no-durable-objects.md) for
+  remaining platform Durable Objects. `UserMeter` (and the other origin-owned
+  classes listed in 0034) live on `kody-platform`, not origin.
 
 ## Context
 
@@ -50,17 +53,22 @@ independently:
    rollback path until verification passes; only a later migration drops them.
    Background write churn then leaves `APP_DB` entirely.
 
-Everything else — Remix app, MCP, OAuth, account surfaces, email, connectors —
-stays in the main worker for now; they share auth/session/D1 state too tightly
-for a split to pay. Untangling MCP from the Remix app is a desired future
-investigation, deliberately not part of this change.
+Everything else — Remix app, MCP HTTP, OAuth, account surfaces, email,
+connectors — stayed on origin in this decision; they share auth/session/D1 state
+too tightly for a split to pay. Untangling MCP HTTP from the Remix app is a
+desired future investigation, deliberately not part of this change.
+[0034](./0034-origin-owns-no-durable-objects.md) later moved the remaining
+platform Durable Object **classes** (including `UserMeter`) onto `kody-platform`
+while MCP HTTP stayed on origin.
 
 Cross-worker calls go over Cloudflare service bindings with small,
 coarse-grained, explicitly typed contracts in `packages/shared` — no chatty
 per-row RPC. Table ownership is documented: post-split, `jobs` and
 `archived_job_artifacts` belong to the jobs worker; a cross-worker write to
-another worker's tables is a review smell. `UserMeter` stays in main and is
-reachable from the extracted workers as a DO binding.
+another worker's tables is a review smell. `UserMeter` was left on origin in
+this decision and reachable from the extracted workers as a DO binding;
+[0034](./0034-origin-owns-no-durable-objects.md) moved that class to
+`kody-platform`.
 
 The split moves code between trust-equivalent hosts; it does not change any
 isolation guarantee. Every moved surface keeps its existing authenticated user

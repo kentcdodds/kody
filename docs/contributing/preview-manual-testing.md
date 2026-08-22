@@ -53,8 +53,9 @@ the session cookie and drive those APIs yourself. Then do a UI pass.
 
 ## When a preview exists
 
-Ready-for-review PRs on this repository (not forks, not drafts) get a per-PR app
-worker (`kody-pr-<n>`), sibling runtime and jobs workers, isolated
+Ready-for-review PRs on this repository (not forks, not drafts) get a per-PR
+origin worker (`kody-pr-<n>`), sibling platform, runtime, and jobs workers
+(`kody-pr-<n>-platform`, `kody-pr-<n>-runtime`, `kody-pr-<n>-jobs`), isolated
 app/audit/jobs D1 resources, KV, mock workers, and a seeded login. The workflow
 comments the URL on the PR. Details of resource names and cleanup live in
 [`setup.md`](./setup.md#pr-preview-deployments).

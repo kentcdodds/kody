@@ -2,30 +2,31 @@
 name: testing-multi-worker-dev
 description:
   How to run and test kody's multi-worker local dev (origin kody worker +
-  kody-platform + kody-runtime secondary configs), including known wrangler
-  multi-config pitfalls (secondary worker env-name suffix, remote AI binding,
-  .env secrets not propagated) and how to verify runtime-worker forwarding.
+  kody-platform + kody-runtime + kody-jobs secondary configs), including known
+  wrangler multi-config pitfalls (secondary worker env-name suffix, remote AI
+  binding, .env secrets not propagated) and how to verify runtime-worker
+  forwarding.
 ---
 
-# Testing multi-worker local dev (kody + kody-platform + kody-runtime)
+# Testing multi-worker local dev (kody + kody-platform + kody-runtime + kody-jobs)
 
 ## Basics
 
 - Node 26 required: `export PATH="$HOME/.nvm/versions/node/v26.7.0/bin:$PATH"`.
 - Run `npm run dev` in tmux; it starts the client watcher, the mock Cloudflare
-  API worker, and `wrangler dev --local` with the origin config plus generated
-  secondary configs for `kody-runtime` and `kody-platform` in one miniflare.
-  Default port 3742; the CLI picks the next free port if taken — stale `workerd`
-  processes commonly hold 3742, so `pkill -9 workerd` before restarting.
+  API worker, and `wrangler dev --local` with the origin config, the committed
+  `kody-jobs` config, and generated secondary configs for `kody-runtime` and
+  `kody-platform` in one miniflare. Default port 3742; the CLI picks the next
+  free port if taken — stale `workerd` processes commonly hold 3742, so
+  `pkill -9 workerd` before restarting.
 - Local dev uses `--env production` (CLOUDFLARE_ENV defaults to production in
   `wrangler-env.ts`).
 - Migrate + seed login: `npm run migrate:local` then
   `node tools/seed-test-data.ts --local` → `kody@example.com` / `ilikecode`
   (admin) and `jane@example.com` / `ilikecode`.
 - Healthchecks: origin `GET /health` → `{"ok":true,...}`; platform worker serves
-  `GET /__platform/health` and runtime worker serves `GET /__runtime/health`
-  (only reachable through those scripts locally — hitting them on the origin
-  port should 404).
+  `GET /__platform/health`, runtime worker serves `GET /__runtime/health`, and
+  jobs worker serves `GET /health`. Those sibling paths 404 on the origin port.
 
 ## Known wrangler multi-config pitfalls (handled by a generated dev config)
 

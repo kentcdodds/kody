@@ -72,7 +72,9 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 - `npm run test:e2e:ui` and plain `npx playwright test` assume Playwright
   browsers are already installed.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler loads `packages/worker/.env`
-  values for local secrets.
+  values for local secrets. That test env is a **single script**: Durable Object
+  classes run on `kody-test` with no `script_name`. Production and `npm run dev`
+  attach origin, platform, runtime, and jobs as siblings.
 - Specs import `test` from `e2e/playwright-utils.ts`, which probes `/health`
   before each test and fails fast with `E2eWebServerDeadError` if Wrangler has
   exited mid-suite (avoids burning retries on `ECONNREFUSED`). That error names

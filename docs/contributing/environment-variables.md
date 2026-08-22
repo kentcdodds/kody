@@ -44,6 +44,10 @@ keeps types, runtime validation, and documentation in sync.
      to Wrangler as a Worker var or secret, depending on sensitivity:
      - `.github/workflows/deploy.yml` (production deploys)
      - `.github/workflows/preview.yml` (preview deploys)
+   - Secrets that platform, runtime, or jobs workers read must be synced onto
+     those sibling scripts as well as origin. A secret only on `kody-production`
+     is invisible to `kody-platform` / `kody-runtime` / `kody-jobs`. See
+     [architecture](architecture/index.md#production-worker-fleet).
 
 ## Sentry
 

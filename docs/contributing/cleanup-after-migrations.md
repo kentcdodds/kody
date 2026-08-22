@@ -93,4 +93,5 @@ durable tracker after the session ends.
 - [Harness engineering](./harness-engineering.md)
 - [Values retirement runbook](./architecture/values-retirement-runbook.md)
 - [Runtime worker migration runbook](./architecture/runtime-worker-migration-runbook.md)
+- [Platform worker migration runbook](./architecture/platform-worker-migration-runbook.md)
 - [Jobs worker migration runbook](./architecture/jobs-worker-migration-runbook.md)

@@ -106,6 +106,8 @@ primitives:
     summary:
       Worker cron dispatcher with queue-isolated maintenance lane invocations.
     code:
+      - packages/jobs-worker/src/index.ts
+      - packages/jobs-worker/src/scheduled.ts
       - packages/worker/src/index.ts
       - packages/worker/src/scheduled/
       - packages/worker/src/jobs/reconcile-artifacts-pushes.ts

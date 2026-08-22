@@ -1,9 +1,13 @@
 # Jobs worker migration runbook
 
-Operational runbook for cutting production over to the dedicated jobs worker
-(`packages/jobs-worker`, ADR
+Production already owns `JobManager`, `JOBS_DB`, and the five-minute cron on
+`kody-jobs`. `transferred_classes` is a one-shot cutover; do not invent a second
+transfer or add `deleted_classes` for `JobManager`. This page records ownership,
+the cutover order that landed, and rollback constraints.
+
+Operational runbook for the dedicated jobs worker (`packages/jobs-worker`, ADR
 [0016 — Mono-worker extraction](../decisions/0016-mono-worker-extraction.md)).
-It covers two coordinated moves:
+It covers two coordinated moves that already landed:
 
 1. **Durable Object transfer** — the `JobManager` class moves from the deployed
    `kody-production` script to the `kody-jobs` script via a Wrangler
@@ -12,10 +16,9 @@ It covers two coordinated moves:
 2. **Bounded D1 data migration** — the `jobs` and `archived_job_artifacts` rows
    move from `APP_DB` (`kody-db`) into the dedicated `kody-jobs` D1 database.
 
-This document is the executable plan. Writing this PR does **not** execute any
-production step: no production Durable Object migration is applied and no
-production data is exported or imported as part of landing the code. A human
-operator (or the coordinating parent session) runs the steps below in order.
+The cutover already landed. Later deploys follow `.github/workflows/deploy.yml`.
+Keep the invariants below when changing jobs bindings or `JOBS_DB`. Do not
+re-run the transfer or the bounded D1 copy against live production.
 
 ## Invariants
 
