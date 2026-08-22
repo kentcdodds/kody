@@ -7,9 +7,9 @@ import {
 
 /**
  * 24-hour delayed fleet execute count. SSR paints the interpolated value;
- * the client advances it only when the displayed integer changes. Tabular
- * numerals plus a reserved width from `current` keep the label from shifting
- * as digits change.
+ * the client advances it only when the displayed integer changes. Mono
+ * digits plus a reserved width from `current` keep the label from shifting
+ * as digits change. The line is sized larger than the hero subtitle.
  */
 export function CodeRunsTicker(
 	handle: Handle<{ window: PublicCodeRunsWindow }>,

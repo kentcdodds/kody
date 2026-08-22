@@ -838,14 +838,10 @@ html.is-settled {
 	display: flex;
 	align-items: baseline;
 	justify-content: center;
-	column-gap: 0.4em;
-	font-size: 0.95rem;
+	column-gap: 0.45em;
+	font-size: clamp(1.3rem, 2.2vw, 1.65rem);
 	color: var(--color-text-muted);
 	white-space: nowrap;
-	font-variant-numeric: tabular-nums lining-nums;
-	font-feature-settings:
-		'tnum' 1,
-		'lnum' 1;
 }
 
 .landing-hero-runs-count {
@@ -853,8 +849,8 @@ html.is-settled {
 	box-sizing: content-box;
 	min-width: var(--runs-ch, 1ch);
 	text-align: end;
-	font-family: var(--font-body);
-	font-weight: 650;
+	font-family: var(--font-mono);
+	font-weight: 600;
 	font-variant-numeric: tabular-nums lining-nums;
 	font-feature-settings:
 		'tnum' 1,
