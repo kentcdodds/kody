@@ -54,7 +54,25 @@ pick.
 
 Compact **subject — summary** one-liners (id in structured content), top two
 active memories, retrieve on search query and on execute `memoryContext`, **no
-auto-surface hide**. Repeat is the compaction tax.
+auto-surface hide**. Repeat is the compaction tax. Auto-surface collapses later
+ranked hits that share a non-empty `dedupe_key` so two copies of the same fact
+cannot spend both slots.
+
+## Live probe (2026-08-22)
+
+Production `search` / `execute` as Kent: 48 ranked task queries and 54 live
+probes across email, Discord, social, Cursor/GitHub, packages, home, journal,
+content, OAuth, and account/meta/secrets, plus empty browse, entity detail,
+whitespace / `memoryContext`-only, tight `maxResponseSize`, and execute with and
+without `memoryContext`.
+
+n=2 still holds. n=1 loses dual-constraint tasks (draft+support, BWK
+kit+defaults, repo bounds+ManagePullRequest). n=3 buys a few rank-3 edges and
+does not fix misses that never enter the top ranks. Contract checks held: empty
+browse and entity detail do not dump memories; execute surfaces only with
+`memoryContext`; reserved memory budget survives a tight size cap. Misses were
+ranking and a duplicate `dedupe_key` pair, not width. Do not widen auto-surface
+from this probe.
 
 ## Revisit
 
