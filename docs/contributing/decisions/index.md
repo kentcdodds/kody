@@ -67,6 +67,9 @@ Open these before proposing a new primitive, surface, or storage home.
   ([lab](./0033-memory-auto-surface-lab.md))
 - [0026 — Invocation tokens belong to one package; no account-level wildcard bearer](./0026-package-owned-invocation-tokens.md)
 - [0027 — No invocation-token source allowlist](./0027-no-invocation-token-source-allowlist.md)
+- [0034 — Origin owns no Durable Object classes](./0034-origin-owns-no-durable-objects.md)
+  — platform classes live on `kody-platform`; do not put them on origin,
+  runtime, or jobs, and do not add a second origin-facing content worker
 
 ## Historical / UI / implementation
 
@@ -81,9 +84,6 @@ Do not treat this list as homework. History stays; it is not silently deleted.
   — encoded by [import boundaries](../import-boundaries.md) and lint
 - [0016 — Extract the package runtime and jobs lanes into separate workers](./0016-mono-worker-extraction.md)
   — landed; see the architecture runbooks
-- [0034 — Origin owns no Durable Object classes](./0034-origin-owns-no-durable-objects.md)
-  — landed; platform classes live on `kody-platform` so content deploys of
-  origin do not reset them
 - [0018 — Inbound CLA for external contributions to this repository](./0018-inbound-cla.md)
   — legal/process; see [CONTRIBUTING.md](../../../CONTRIBUTING.md)
 - [0019 — Self-hosted Nx remote cache (not Nx Cloud)](./0019-self-hosted-nx-remote-cache.md)

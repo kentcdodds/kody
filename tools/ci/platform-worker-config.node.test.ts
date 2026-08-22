@@ -14,7 +14,11 @@ test('platform worker owns remaining classes and binds runtime DOs cross-script'
 		migrations?: Array<{ transferred_classes?: Array<Record<string, unknown>> }>
 		env?: Record<
 			string,
-			{ durable_objects?: { bindings?: Array<Record<string, unknown>> } }
+			{
+				durable_objects?: { bindings?: Array<Record<string, unknown>> }
+				send_email?: Array<Record<string, unknown>>
+				artifacts?: Array<Record<string, unknown>>
+			}
 		>
 	}>(await readFile(platformBaseConfigPath, 'utf8'))
 	expect(config.migrations?.[0]?.transferred_classes).toEqual(
@@ -26,7 +30,8 @@ test('platform worker owns remaining classes and binds runtime DOs cross-script'
 		]),
 	)
 	for (const envName of ['production', 'preview']) {
-		const bindings = config.env?.[envName]?.durable_objects?.bindings ?? []
+		const env = config.env?.[envName]
+		const bindings = env?.durable_objects?.bindings ?? []
 		const mcp = bindings.find((binding) => binding.name === 'MCP_OBJECT')
 		const storageRunner = bindings.find(
 			(binding) => binding.name === 'STORAGE_RUNNER',
@@ -36,6 +41,11 @@ test('platform worker owns remaining classes and binds runtime DOs cross-script'
 		expect(storageRunner).toMatchObject({
 			class_name: 'StorageRunner',
 			script_name: 'kody-runtime',
+		})
+		expect(env?.send_email).toEqual([{ name: 'EMAIL' }])
+		expect(env?.artifacts?.[0]).toMatchObject({
+			binding: 'ARTIFACTS',
+			namespace: envName === 'production' ? 'production' : 'preview',
 		})
 	}
 })

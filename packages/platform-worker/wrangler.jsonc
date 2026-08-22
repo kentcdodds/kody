@@ -271,6 +271,17 @@
 			"ai": {
 				"binding": "AI",
 			},
+			"send_email": [
+				{
+					"name": "EMAIL",
+				},
+			],
+			"artifacts": [
+				{
+					"binding": "ARTIFACTS",
+					"namespace": "production",
+				},
+			],
 			"vars": {
 				"SENTRY_ENVIRONMENT": "production",
 				"SENTRY_TRACES_SAMPLE_RATE": 0,
@@ -438,6 +449,17 @@
 			"ai": {
 				"binding": "AI",
 			},
+			"send_email": [
+				{
+					"name": "EMAIL",
+				},
+			],
+			"artifacts": [
+				{
+					"binding": "ARTIFACTS",
+					"namespace": "preview",
+				},
+			],
 			"vars": {
 				"SENTRY_ENVIRONMENT": "preview",
 				"ARTIFACTS_NAMESPACE": "preview",
