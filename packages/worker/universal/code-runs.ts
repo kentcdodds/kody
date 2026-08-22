@@ -116,9 +116,7 @@ function extraBeforeCell(
 ): number {
 	if (extra <= 0 || cellIndex <= 0) return 0
 	if (cellIndex >= totalCells) return extra
-	return Math.floor(
-		extra * warpCodeRunsProgress(cellIndex / totalCells, seed),
-	)
+	return Math.floor(extra * warpCodeRunsProgress(cellIndex / totalCells, seed))
 }
 
 function splitCellTicks(
