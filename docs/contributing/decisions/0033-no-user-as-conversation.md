@@ -22,10 +22,6 @@ Do not treat the signed-in user, an MCP transport session, or an open connection
 as "the conversation." Do not add a user-global "already shown" window for
 auto-surfaced memories.
 
-Do not treat the signed-in user, an MCP transport session, or an open connection
-as "the conversation." Do not add a user-global "already shown" window for
-auto-surfaced memories.
-
 Surface relevant memories on the tool result that retrieved them. Do not hide
 auto-surface after the first show: a per-handle omit fails when the host drops
 earlier tool results. `conversationId` is a progressive-disclosure handle, not a
@@ -38,7 +34,11 @@ stand-in.
 ## Consequences
 
 Concurrent agents for one user stay isolated. Repeating a cheap one-liner costs
-less than hiding a rule that later falls out of context. Revisit only if a major
-host ships a spec-defined conversation or thread identifier that every request
-already carries, or if auto-surface token cost becomes large relative to the
-rest of the tool result.
+less than hiding a rule that later falls out of context.
+
+Evidence from the 2026-08-22 policy grid lives in
+[0033-memory-auto-surface-lab.md](./0033-memory-auto-surface-lab.md). Re-run
+`node tools/memory-auto-surface-lab/run.mjs` on the calendar check (2027-02-22)
+or sooner if a major host ships a spec-defined conversation or thread identifier
+that every request already carries, or if auto-surface token cost becomes large
+relative to the rest of the tool result.

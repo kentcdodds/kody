@@ -8,6 +8,8 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Getting started](./getting-started.md), [project intent](./project-intent.md)
 - [Decision records](./decisions/index.md) (steering veto list: product-shaped
   nos and durable constraints — not an ADR-per-PR log)
+- [0033 memory auto-surface lab](./decisions/0033-memory-auto-surface-lab.md)
+  (policy-grid evidence; re-run `node tools/memory-auto-surface-lab/run.mjs`)
 - [Inbound contributions](./inbound-contributions.md) (CLA for patches to this
   repository)
 - [Setup](./setup.md), [environment variables](./environment-variables.md),
