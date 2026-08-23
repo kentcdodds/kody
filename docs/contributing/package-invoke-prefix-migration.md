@@ -6,9 +6,12 @@ phase. The parser canonicalizes the latter to `kody:`. Object-only invocation
 remains removed, and publishing does not reject prefixless string-first calls.
 
 Use permanent codemod `0007-prefix-packages-invoke-specifiers` to migrate
-literal calls. It is intentionally separate from
-`0006-invoke-object-to-specifier`, which retains responsibility for the removed
-object-only API.
+literal calls and parseable dynamic first arguments. Dynamic calls receive an
+inline once-only normalizer that prefixes trimmed `@...` values and passes other
+values to the existing runtime parser unchanged. Unparseable and
+binding-ambiguous calls remain manual; there is no binding-blind textual
+fallback. 0007 is intentionally separate from `0006-invoke-object-to-specifier`,
+which retains responsibility for the removed object-only API.
 
 ## Privacy-safe telemetry
 

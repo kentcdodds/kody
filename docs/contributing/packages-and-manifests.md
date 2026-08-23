@@ -269,8 +269,14 @@ call sites in JavaScript and TypeScript. The permanent
 `0006-invoke-object-to-specifier` codemod repairs safe calls and flags ambiguous
 ones for manual migration. The separate permanent
 `0007-prefix-packages-invoke-specifiers` codemod then prefixes literal
-string-first calls while preserving their entire options argument. It
-deliberately does not take over 0006's object-only migration.
+string-first calls while preserving their entire options argument. For parseable
+dynamic first arguments it generates a marked inline normalizer: the source
+expression is evaluated exactly once, a string is trimmed only when detecting
+and prefixing a leading `@`, and already-prefixed strings, other strings, and
+non-string values pass through to the existing runtime canonicalization or
+rejection path. Unparseable or binding-ambiguous calls remain manual; there is
+no textual rewrite fallback because it cannot prove binding and argument
+boundaries. 0007 deliberately does not take over 0006's object-only migration.
 
 **Unsupported helpers:** object-only `packages.invoke`,
 `packages.invokeChecked`, `packages.check`, and literal dynamic
