@@ -49,7 +49,8 @@ export function OnboardingMcpChooserCard(
 	handle: Handle<OnboardingMcpChooserCardProps>,
 ) {
 	let actionState: 'idle' | 'busy' = 'idle'
-	let installState: 'idle' | 'busy' = 'idle'
+	let installState: 'idle' | 'busy' | 'ready' = 'idle'
+	let installedAgentPrompt: string | null = null
 	let error: string | null = null
 	let installError: string | null = null
 	let copiedPrompt = false
@@ -141,15 +142,15 @@ export function OnboardingMcpChooserCard(
 
 	async function installPackage() {
 		const listing = handle.props.server.packageListing
-		if (!listing || installState !== 'idle') return
+		if (!listing || installState === 'busy') return
 		if (!handle.props.loggedIn) {
 			requireLogin()
 			return
 		}
-		if (listing.viewerInstall) {
-			if (listing.viewerInstall.agentPrompt) {
-				await copyPrompt(listing.viewerInstall.agentPrompt)
-			}
+		const existingPrompt =
+			listing.viewerInstall?.agentPrompt ?? installedAgentPrompt
+		if (listing.viewerInstall || installState === 'ready') {
+			if (existingPrompt) await copyPrompt(existingPrompt)
 			return
 		}
 
@@ -179,15 +180,19 @@ export function OnboardingMcpChooserCard(
 					payload?.error ?? 'Unable to install this community package.',
 				)
 			}
-			if (payload.agentPrompt) await copyPrompt(payload.agentPrompt)
+			if (payload.agentPrompt) {
+				installedAgentPrompt = payload.agentPrompt
+				await copyPrompt(payload.agentPrompt)
+			}
+			installState = 'ready'
 			handle.props.onChanged()
 		} catch (caught) {
+			installState = 'idle'
 			installError =
 				caught instanceof Error
 					? caught.message
 					: 'Unable to install this community package.'
 		} finally {
-			installState = 'idle'
 			handle.update()
 		}
 	}
@@ -221,14 +226,17 @@ export function OnboardingMcpChooserCard(
 				: server.serverId
 					? `Reconnect ${server.label}`
 					: `Connect ${server.label}`
+		const locallyInstalled = installState === 'ready'
 		const packageLabel = existingInstall
 			? copiedPrompt
 				? 'Copied prompt'
 				: 'Copy package prompt'
 			: installState === 'busy'
 				? 'Installing…'
-				: copiedPrompt
-					? 'Installed — prompt copied'
+				: locallyInstalled
+					? copiedPrompt
+						? 'Installed — prompt copied'
+						: 'Installed'
 					: `Install @kody/${server.packageKodyId}`
 
 		return (
@@ -269,7 +277,10 @@ export function OnboardingMcpChooserCard(
 						</a>
 						<button
 							type="button"
-							disabled={installState === 'busy'}
+							disabled={
+								installState === 'busy' ||
+								(installState === 'ready' && !existingInstall)
+							}
 							mix={[
 								css(packageButtonCss),
 								on('click', () => void installPackage()),
