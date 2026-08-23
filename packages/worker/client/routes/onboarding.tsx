@@ -27,6 +27,7 @@ import {
 	selectOnboardingServiceStarterListings,
 } from '#universal/onboarding-examples.ts'
 import {
+	featuredOnboardingMcpFingerprint,
 	formatOnboardingFeaturedMcpChoice,
 	hasConnectedOnboardingFeaturedMcpServer,
 	hasPendingOnboardingFeaturedMcpAuth,
@@ -362,15 +363,6 @@ export function OnboardingRoute(handle: Handle) {
 	let pollIntervalId: ReturnType<typeof setInterval> | undefined
 	let pollInFlight = false
 
-	function featuredMcpFingerprint(servers: Array<OnboardingFeaturedMcpServer>) {
-		return servers
-			.map(
-				(server) =>
-					`${server.id}:${server.serverId ?? ''}:${server.state ?? ''}:${server.connected ? '1' : '0'}:${server.packageListing?.viewerInstall?.status ?? ''}`,
-			)
-			.join('|')
-	}
-
 	async function pollOnboardingProgress() {
 		if (pollInFlight || status !== 'ready' || !loggedIn) return
 		// Stop only when the agent is connected, featured MCP auth is idle,
@@ -398,8 +390,8 @@ export function OnboardingRoute(handle: Handle) {
 			)
 			if (
 				payload.hasMcpClient === hasMcpClient &&
-				featuredMcpFingerprint(nextServers) ===
-					featuredMcpFingerprint(featuredMcpServers) &&
+				featuredOnboardingMcpFingerprint(nextServers) ===
+					featuredOnboardingMcpFingerprint(featuredMcpServers) &&
 				nextHasPersistedPackage === hasPersistedPackage &&
 				payload.persistedPackageKodyId === persistedPackageKodyId
 			) {

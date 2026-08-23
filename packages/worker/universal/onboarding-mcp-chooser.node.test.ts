@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	attachOnboardingMcpPackageListings,
+	featuredOnboardingMcpFingerprint,
 	formatOnboardingFeaturedMcpAddHint,
 	formatOnboardingFeaturedMcpChoice,
 	hasConnectedOnboardingFeaturedMcpServer,
@@ -147,4 +148,44 @@ test('featured MCP chooser ships six official OAuth servers with packages', () =
 	])
 	expect(attached[0]?.packageListing?.name).toBe('@kody/notion-mcp')
 	expect(attached[1]?.packageListing).toBeNull()
+})
+
+test('featured MCP poll fingerprint changes when a listing appears after a miss', () => {
+	const withoutListing = listDisconnectedOnboardingFeaturedMcpServers()
+	const notionListing = {
+		id: onboardingFeaturedMcpServers[0].listingId,
+		kodyId: 'notion-mcp',
+		name: '@kody/notion-mcp',
+		description: 'Notion MCP helpers',
+		iconUrl: '/icon.png',
+		tags: ['notion', 'mcp'],
+	}
+	const withListing = attachOnboardingMcpPackageListings(withoutListing, [
+		notionListing,
+	])
+	const withInstall = attachOnboardingMcpPackageListings(withoutListing, [
+		{
+			...notionListing,
+			viewerInstall: {
+				status: 'installed',
+				targetName: '@me/notion-mcp',
+				agentPrompt: 'Use @me/notion-mcp',
+				packageId: 'pkg-notion-mcp',
+				listingAhead: false,
+				listingAheadPrompt: null,
+			},
+		},
+	])
+
+	expect(featuredOnboardingMcpFingerprint(withoutListing)).not.toBe(
+		featuredOnboardingMcpFingerprint(withListing),
+	)
+	expect(featuredOnboardingMcpFingerprint(withListing)).not.toBe(
+		featuredOnboardingMcpFingerprint(withInstall),
+	)
+	expect(featuredOnboardingMcpFingerprint(withListing)).toBe(
+		featuredOnboardingMcpFingerprint(
+			attachOnboardingMcpPackageListings(withoutListing, [notionListing]),
+		),
+	)
 })

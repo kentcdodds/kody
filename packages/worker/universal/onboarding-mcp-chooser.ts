@@ -205,6 +205,29 @@ export function overlayOnboardingFeaturedMcpServers(input: {
 	})
 }
 
+/**
+ * Poll skip key for Step 2. Must change when a listing appears after a
+ * transient miss (Install is hidden until `packageListing` is set) or when
+ * viewer-install status flips. Listing id is the presence signal.
+ */
+export function featuredOnboardingMcpFingerprint(
+	servers: Array<OnboardingFeaturedMcpServer>,
+): string {
+	return servers
+		.map((server) => {
+			const listing = server.packageListing
+			return [
+				server.id,
+				server.serverId ?? '',
+				server.state ?? '',
+				server.connected ? '1' : '0',
+				listing?.id ?? '',
+				listing?.viewerInstall?.status ?? '',
+			].join(':')
+		})
+		.join('|')
+}
+
 export function attachOnboardingMcpPackageListings(
 	servers: Array<OnboardingFeaturedMcpServer>,
 	listings: Array<OnboardingFeaturedListing>,
