@@ -22,15 +22,15 @@ export const onboardingChecklistItemLabels: Record<
 	'connect-agent': 'Connect your agent',
 	'first-hello': 'Exchange a first email with Kody',
 	'save-memory': 'Save a memory',
-	'connect-integration': 'Connect an integration',
-	'install-starter': 'Try a quick example package',
+	'connect-integration': 'Connect Notion or Linear',
+	'install-starter': 'Persist your first package',
 }
 
 const integrationGuideProviders = [
+	{ id: 'notion', label: 'Notion MCP', href: `${onboardingPath}#connect-mcp` },
+	{ id: 'linear', label: 'Linear MCP', href: `${onboardingPath}#connect-mcp` },
 	{ id: 'google', label: 'Google', href: '/guides/google' },
 	{ id: 'github', label: 'GitHub', href: '/guides/github' },
-	{ id: 'spotify', label: 'Spotify', href: '/guides/spotify' },
-	{ id: 'notion', label: 'Notion', href: '/guides/notion' },
 ] as const
 
 function readChecklistItemHref(id: OnboardingChecklistItemId): string | null {
@@ -41,12 +41,12 @@ function readChecklistItemHref(id: OnboardingChecklistItemId): string | null {
 			return `${onboardingPath}#connect-agent`
 		case 'first-hello':
 		case 'save-memory':
-			// Optional deeper loop (email → memories); not the Step 2 climax.
+			// Optional deeper loop (email → memories); not the Step 3 climax.
 			return '/guides/first-win'
 		case 'connect-integration':
-			return `${onboardingPath}#connect-services`
+			return `${onboardingPath}#connect-mcp`
 		case 'install-starter':
-			return `${onboardingPath}#quick-example`
+			return `${onboardingPath}#first-build`
 		default: {
 			const neverId: never = id
 			return neverId
@@ -196,8 +196,16 @@ export function OnboardingChecklistCard(
 												<span key={provider.id} mix={css(providerEntryCss)}>
 													<a
 														href={provider.href}
-														target="_blank"
-														rel="noreferrer noopener"
+														target={
+															provider.href.startsWith(onboardingPath)
+																? undefined
+																: '_blank'
+														}
+														rel={
+															provider.href.startsWith(onboardingPath)
+																? undefined
+																: 'noreferrer noopener'
+														}
 														mix={css(integrationProviderLinkCss)}
 													>
 														<ProviderIcon providerId={provider.id} size="1em" />

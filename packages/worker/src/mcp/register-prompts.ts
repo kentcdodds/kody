@@ -2,7 +2,7 @@ import {
 	buildDiscoveryPrompt,
 	buildFirstWinPrompt,
 	buildOnboardingSetupPrompt,
-	buildQuickExamplePrompt,
+	buildPersistFirstPackagePrompt,
 } from '#worker/onboarding-prompts.ts'
 import { type McpRegistrationAgent } from './mcp-registration-agent.ts'
 
@@ -63,15 +63,15 @@ export async function registerPrompts(agent: McpRegistrationAgent) {
 	agent.server.registerPrompt(
 		'onboarding_quick_example',
 		{
-			title: 'Quick example',
+			title: 'First build',
 			description:
-				'Onboarding Step 2: wait for a one-click example install/fork, invoke the owned package, explain ownership, offer optional triggers. No polling.',
+				'Onboarding Step 3: run one ad hoc execute against a connected MCP server, persist that working code as a package, explain ownership, offer optional triggers. No polling.',
 		},
 		() => {
 			const requestUrl = agent.requireDomain()
 			return textPromptResult({
-				description: 'Kody quick-example prompt',
-				text: buildQuickExamplePrompt({
+				description: 'Kody first-build persist prompt',
+				text: buildPersistFirstPackagePrompt({
 					env: agent.getEnv(),
 					requestUrl,
 				}),

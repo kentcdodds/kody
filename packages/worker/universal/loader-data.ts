@@ -11,6 +11,10 @@ import {
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 import { type OnboardingChecklistItemId } from '#universal/onboarding-checklist-types.ts'
+import {
+	type OnboardingFeaturedMcpServer,
+	type OnboardingFeaturedMcpServerId,
+} from '#universal/onboarding-mcp-chooser.ts'
 import { type SignupMode } from '#universal/signup-mode.ts'
 import {
 	type CommunityCategoryCounts,
@@ -22,6 +26,7 @@ import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
 export type { OnboardingChecklistItemId }
+export type { OnboardingFeaturedMcpServer, OnboardingFeaturedMcpServerId }
 
 export type BlogPostSummaryLoaderData = {
 	slug: string
@@ -826,6 +831,8 @@ export type OnboardingLoaderData = {
 	discoveryPrompt: string
 	/** Single first-win paste: routes the agent through the first-win guide. */
 	firstWinPrompt: string
+	/** Step 3 paste: ad hoc execute, then persist as a package. */
+	persistPrompt: string
 	/** True when a successful email_send or stored outbound mail exists (Send done). */
 	hasSentWelcomeEmail: boolean
 	/** The stored welcome email's subject and sender; null before the send. */
@@ -837,6 +844,14 @@ export type OnboardingLoaderData = {
 	featuredListings: Array<OnboardingFeaturedListing>
 	/** Top enabled platform (built-in) integrations by use, for one-click connect. */
 	builtInProviders: Array<OnboardingBuiltInProvider>
+	/** Notion and Linear MCP chooser cards, with viewer connection overlay. */
+	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
+	/**
+	 * Most recently updated saved-package kody id for this account, used by
+	 * Step 3 next-steps after persist. Null when logged out, unverified, or
+	 * the listing fails open.
+	 */
+	persistedPackageKodyId: string | null
 	/** Derived progress checklist; null when logged out. */
 	checklist: OnboardingChecklistLoaderData | null
 }

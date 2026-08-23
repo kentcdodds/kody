@@ -13,6 +13,9 @@ test('resolveProviderIconId matches exact keys, families, and authorize hosts', 
 	expect(resolveProviderIconId({ host: 'accounts.google.com' })).toBe('google')
 	expect(resolveProviderIconId({ host: 'www.googleapis.com' })).toBe('google')
 	expect(resolveProviderIconId({ host: 'github.com' })).toBe('github')
+	expect(resolveProviderIconId({ providerKey: 'linear' })).toBe('linear')
+	expect(resolveProviderIconId({ host: 'mcp.linear.app' })).toBe('linear')
+	expect(resolveProviderIconId({ host: 'mcp.notion.com' })).toBe('notion')
 	expect(
 		resolveProviderIconId({
 			providerKey: 'custom-crm',

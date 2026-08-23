@@ -370,6 +370,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		setupPrompt: '',
 		discoveryPrompt: expect.stringContaining('what-is-kody'),
 		firstWinPrompt: '',
+		persistPrompt: '',
 		hasSentWelcomeEmail: false,
 		welcomeEmail: null,
 		hasMcpClient: false,
@@ -377,6 +378,8 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		needsOnboarding: true,
 		featuredListings: [],
 		builtInProviders: [],
+		featuredMcpServers: [],
+		persistedPackageKodyId: null,
 		checklist: null,
 	})
 	expect(accountHtml).toContain('/pending-verification')

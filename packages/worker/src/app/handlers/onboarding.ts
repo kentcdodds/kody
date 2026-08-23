@@ -13,12 +13,23 @@ import {
 	listOwnerEmailMessages,
 	searchOwnerEmailMessages,
 } from '#worker/email/owner-email-reader.ts'
+import {
+	buildMcpServerStatusView,
+	loadMcpClientHubSnapshotOrNull,
+} from '#mcp/capabilities/mcp-servers/shared.ts'
 import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
 import { listTopPlatformAppsByUse } from '#worker/integrations/platform-apps.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
+import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
+import {
+	listDisconnectedOnboardingFeaturedMcpServers,
+	overlayOnboardingFeaturedMcpServers,
+} from '#universal/onboarding-mcp-chooser.ts'
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingFeaturedMcpServer,
 	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
 import {
@@ -76,6 +87,24 @@ const welcomeEmailSubjectMatch = 'Welcome to Kody'
  * null: the sub-step reads fine without it, and a Mailbox blip must not break
  * the payload.
  */
+/**
+ * Most recently updated saved-package kody id for Step 3 next-steps after
+ * persist. The listing is `ORDER BY updated_at DESC`, so the first row is
+ * the package the user just saved. Fails open to null so a D1 blip never
+ * breaks the onboarding payload.
+ */
+export async function loadPersistedPackageKodyId(
+	env: Pick<Env, 'APP_DB'>,
+	userId: string,
+): Promise<string | null> {
+	try {
+		const packages = await listSavedPackagesByUserId(env.APP_DB, { userId })
+		return packages[0]?.kodyId ?? null
+	} catch {
+		return null
+	}
+}
+
 export async function loadWelcomeEmail(
 	env: Env,
 	userId: string,
@@ -155,6 +184,51 @@ export async function loadOnboardingBuiltInProviders(
 	}
 }
 
+/**
+ * Notion and Linear chooser cards for the wizard. When `userId` is set,
+ * overlays saved MCP servers and hub connection state. Fails open to the
+ * disconnected catalog so a hub or D1 blip never breaks the payload.
+ */
+export async function loadOnboardingFeaturedMcpServers(
+	env: Env,
+	userId?: string | null,
+): Promise<Array<OnboardingFeaturedMcpServer>> {
+	if (!userId) return listDisconnectedOnboardingFeaturedMcpServers()
+	try {
+		const settings = await listMcpServerSettings({ env, userId })
+		if (settings.length === 0) {
+			return listDisconnectedOnboardingFeaturedMcpServers()
+		}
+		const snapshot = await loadMcpClientHubSnapshotOrNull({ env, userId })
+		const statusByServerId = new Map(
+			settings.map((setting) => {
+				const view = buildMcpServerStatusView({
+					setting,
+					snapshot:
+						snapshot?.servers.find(
+							(server) => server.serverId === setting.id,
+						) ?? null,
+				})
+				return [
+					setting.id,
+					{
+						connected: view.connected,
+						authUrl: view.authUrl,
+						state: view.state,
+						error: view.error,
+					},
+				] as const
+			}),
+		)
+		return overlayOnboardingFeaturedMcpServers({
+			settings,
+			statusByServerId,
+		})
+	} catch {
+		return listDisconnectedOnboardingFeaturedMcpServers()
+	}
+}
+
 function redirectUnverifiedToPending(request: Request) {
 	const requestUrl = new URL(request.url)
 	const redirectTo = normalizeRedirectTo(
@@ -180,6 +254,7 @@ export function createOnboardingHandler(env: Env) {
 					}),
 					featuredListings: await loadOnboardingFeaturedListings(env, request),
 					builtInProviders: await loadOnboardingBuiltInProviders(env),
+					featuredMcpServers: await loadOnboardingFeaturedMcpServers(env),
 				}
 				return renderAppPage({
 					request,
@@ -203,15 +278,21 @@ export function createOnboardingHandler(env: Env) {
 					env,
 					user.mcpUser.userId,
 				),
+				featuredMcpServers: await loadOnboardingFeaturedMcpServers(
+					env,
+					user.mcpUser.userId,
+				),
 			})
 			;[
 				onboarding.checklist,
 				onboarding.hasSentWelcomeEmail,
 				onboarding.welcomeEmail,
+				onboarding.persistedPackageKodyId,
 			] = await Promise.all([
 				loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
 				loadHasSentWelcomeEmail(env, user.mcpUser.userId),
 				loadWelcomeEmail(env, user.mcpUser.userId),
+				loadPersistedPackageKodyId(env, user.mcpUser.userId),
 			])
 			return renderAppPage({
 				request,
@@ -239,6 +320,7 @@ export function createOnboardingApiHandler(env: Env) {
 					}),
 					featuredListings: await loadOnboardingFeaturedListings(env, request),
 					builtInProviders: await loadOnboardingBuiltInProviders(env),
+					featuredMcpServers: await loadOnboardingFeaturedMcpServers(env),
 				})
 			}
 
@@ -257,16 +339,21 @@ export function createOnboardingApiHandler(env: Env) {
 				builtInProviders: user.emailVerified
 					? await loadOnboardingBuiltInProviders(env, user.mcpUser.userId)
 					: [],
+				featuredMcpServers: user.emailVerified
+					? await loadOnboardingFeaturedMcpServers(env, user.mcpUser.userId)
+					: [],
 			})
 			if (user.emailVerified) {
 				;[
 					onboarding.checklist,
 					onboarding.hasSentWelcomeEmail,
 					onboarding.welcomeEmail,
+					onboarding.persistedPackageKodyId,
 				] = await Promise.all([
 					loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
 					loadHasSentWelcomeEmail(env, user.mcpUser.userId),
 					loadWelcomeEmail(env, user.mcpUser.userId),
+					loadPersistedPackageKodyId(env, user.mcpUser.userId),
 				])
 			}
 			return jsonResponse(onboarding)

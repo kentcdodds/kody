@@ -1,9 +1,11 @@
 import { expect, test, vi } from 'vitest'
+import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 import {
 	buildDiscoveryPrompt,
 	buildFirstWinPrompt,
 	buildMcpServerUrl,
 	buildOnboardingSetupPrompt,
+	buildPersistFirstPackagePrompt,
 	loadOnboardingData,
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
@@ -30,6 +32,12 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			requestUrl: 'https://preview.example/onboarding',
 		}),
 	).toContain('https://preview.example/guides/first-win')
+	expect(
+		buildPersistFirstPackagePrompt({
+			env: {},
+			requestUrl: 'https://preview.example/onboarding',
+		}),
+	).toContain('https://preview.example/guides/quick-example')
 
 	expect(
 		loadPublicOnboardingData({
@@ -50,6 +58,10 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: { APP_BASE_URL: 'https://heykody.dev' },
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
+		persistPrompt: buildPersistFirstPackagePrompt({
+			env: { APP_BASE_URL: 'https://heykody.dev' },
+			requestUrl: 'https://heykody.dev/onboarding',
+		}),
 		hasSentWelcomeEmail: false,
 		welcomeEmail: null,
 		hasMcpClient: false,
@@ -57,6 +69,8 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		needsOnboarding: true,
 		featuredListings: [],
 		builtInProviders: [],
+		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+		persistedPackageKodyId: null,
 		checklist: null,
 	})
 
@@ -85,6 +99,10 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: {},
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
+		persistPrompt: buildPersistFirstPackagePrompt({
+			env: {},
+			requestUrl: 'https://heykody.dev/onboarding',
+		}),
 		hasSentWelcomeEmail: false,
 		welcomeEmail: null,
 		hasMcpClient: false,
@@ -92,6 +110,8 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		needsOnboarding: true,
 		featuredListings: [],
 		builtInProviders: [],
+		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+		persistedPackageKodyId: null,
 		checklist: null,
 	})
 
@@ -111,6 +131,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			subject: 'Welcome to Kody — reply to introduce yourself',
 			fromAddress: 'kody@heykody.app',
 		},
+		persistedPackageKodyId: 'morning-digest',
 	})
 	expect(withClient).toMatchObject({
 		username: 'u-b',
@@ -124,6 +145,8 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			subject: 'Welcome to Kody — reply to introduce yourself',
 			fromAddress: 'kody@heykody.app',
 		},
+		// Handler-loaded persist target is passed through for Step 3 next-steps.
+		persistedPackageKodyId: 'morning-digest',
 	})
 
 	const unverifiedWithGrant = await loadOnboardingData({
@@ -138,6 +161,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		stableUserId: 'user-1',
 		username: 'u-b',
 		emailVerified: false,
+		persistedPackageKodyId: 'morning-digest',
 	})
 	expect(unverifiedWithGrant).toMatchObject({
 		hasMcpClient: true,
@@ -147,11 +171,14 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		setupPrompt: '',
 		// The first-win prompt needs a verified email (it sends real mail).
 		firstWinPrompt: '',
+		persistPrompt: '',
 		// Discovery needs no verified email or MCP host, so it is never gated.
 		discoveryPrompt: buildDiscoveryPrompt({
 			env: {},
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
+		// Persist next-steps stay empty until verification.
+		persistedPackageKodyId: null,
 	})
 
 	const whenProviderListingFails = await loadOnboardingData({

@@ -18,8 +18,8 @@ const itemLabels: Record<OnboardingChecklistItemId, string> = {
 	'connect-agent': 'connect your agent',
 	'first-hello': 'exchange a first email with Kody',
 	'save-memory': 'save a memory',
-	'connect-integration': 'connect an integration',
-	'install-starter': 'install a starter package',
+	'connect-integration': 'connect Notion or Linear',
+	'install-starter': 'persist your first package',
 }
 
 export async function buildOnboardingSearchNotice(input: {

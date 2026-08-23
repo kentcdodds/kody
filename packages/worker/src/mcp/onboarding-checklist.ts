@@ -4,6 +4,7 @@ import {
 	type EntitlementUsageEnv,
 } from '#worker/entitlements/service.ts'
 import { listIntegrations } from '#worker/integrations/service.ts'
+import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
 import { listMemoriesByUserId } from '#mcp/memory/repo.ts'
 import { getValue } from '#mcp/values/service.ts'
 import {
@@ -70,9 +71,9 @@ export async function userHasSentWelcomeEmail(input: {
  * Compute the checklist from existing signals: one Mailbox DO count (stored
  * INBOUND mail — the welcome email alone is outbound, so "exchange a first
  * email" only completes once the user's reply lands), and three cheap D1
- * reads (active memories, saved integrations, saved packages). Individual
- * probe failures fail open to "not done" so a storage blip never breaks
- * onboarding surfaces.
+ * reads (active memories, saved integrations or MCP servers, saved
+ * packages). Individual probe failures fail open to "not done" so a
+ * storage blip never breaks onboarding surfaces.
  */
 export async function deriveOnboardingChecklist(input: {
 	env: OnboardingChecklistEnv
@@ -83,7 +84,7 @@ export async function deriveOnboardingChecklist(input: {
 }): Promise<OnboardingChecklist> {
 	const { env, userId } = input
 	const now = input.now ?? new Date()
-	const [inboundMail, memories, integrations, savedPackages] =
+	const [inboundMail, memories, integrations, mcpServers, savedPackages] =
 		await Promise.all([
 			countInternalUserEmailMessages({
 				env,
@@ -95,6 +96,7 @@ export async function deriveOnboardingChecklist(input: {
 				statuses: ['active'],
 			}).catch(() => []),
 			listIntegrations({ env, userId }).catch(() => [] as Array<unknown>),
+			listMcpServerSettings({ env, userId }).catch(() => [] as Array<unknown>),
 			readCurrentEntitlementResourceUsage({
 				db: env.APP_DB,
 				env,
@@ -109,7 +111,10 @@ export async function deriveOnboardingChecklist(input: {
 		{ id: 'connect-agent', done: input.hasMcpClient },
 		{ id: 'first-hello', done: inboundMail > 0 },
 		{ id: 'save-memory', done: memories.length > 0 },
-		{ id: 'connect-integration', done: integrations.length > 0 },
+		{
+			id: 'connect-integration',
+			done: integrations.length > 0 || mcpServers.length > 0,
+		},
 		{ id: 'install-starter', done: savedPackages > 0 },
 	]
 	return {

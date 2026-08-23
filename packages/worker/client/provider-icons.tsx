@@ -110,6 +110,20 @@ function renderNotionIcon(size: string) {
 	)
 }
 
+function renderLinearIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#5E6AD2"
+		>
+			<path d="M2.6 11.37 12.63 21.4A9.96 9.96 0 0 0 21.4 12.63L11.37 2.6A9.96 9.96 0 0 0 2.6 11.37zm1.84-4.2 12.39 12.39a8 8 0 0 0 1.77-3.33L7.77 3.4A8 8 0 0 0 4.44 7.17z" />
+		</svg>
+	)
+}
+
 function renderDiscordIcon(size: string) {
 	// Clyde sits with more padding than the other 24×24 marks, so crop the
 	// viewBox so it optically matches GitHub/Google/X at the same size.
@@ -130,6 +144,7 @@ const knownProviderIconIds = [
 	'discord',
 	'github',
 	'google',
+	'linear',
 	'notion',
 	'slack',
 	'spotify',
@@ -144,6 +159,7 @@ const providerIconRenderers: Record<
 > = {
 	github: renderGitHubIcon,
 	google: renderGoogleIcon,
+	linear: renderLinearIcon,
 	x: renderXIcon,
 	slack: renderSlackIcon,
 	spotify: renderSpotifyIcon,
@@ -155,7 +171,11 @@ const providerIconHosts: Record<string, ProviderIconId> = {
 	'accounts.google.com': 'google',
 	'accounts.spotify.com': 'spotify',
 	'api.github.com': 'github',
+	'api.linear.app': 'linear',
 	'api.notion.com': 'notion',
+	'linear.app': 'linear',
+	'mcp.linear.app': 'linear',
+	'mcp.notion.com': 'notion',
 	'api.spotify.com': 'spotify',
 	'discord.com': 'discord',
 	'discordapp.com': 'discord',
