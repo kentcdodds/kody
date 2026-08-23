@@ -629,10 +629,22 @@ on each package summary:
 - **`source_listing_id`** — listing the package was forked from
 - **`listing_current`** — whether that listing id is an active listing
 - **`listing_kody_id`** — the source listing's recorded `kody.id`
+- **`listing_name`** — current listing package name when the listing is active
+- **`origin_commit`** — listing pinned commit this fork last absorbed
+- **`listing_pinned_commit`** — the listing's current pinned commit
+- **`listing_published_at`** — last community publish time of the listing
+- **`listing_ahead`** — `true` when the listing pin moved past `origin_commit`
 
-All three are `null` for self-authored packages. When the source listing is
-unpublished, `listing_current` is `false`. Republishing the same source package
-moves prior forks to the new listing id.
+All listing fields are `null` for self-authored packages. When the source
+listing is unpublished, `listing_current` is `false` and `listing_ahead` is
+`false`. Republishing the same source package moves prior forks to the new
+listing id. `/account/packages` and the listing page replace the Installed /
+Forked pill with a yellow **Fork outdated** button when `listing_ahead` is true.
+Clicking it copies an agent prompt. Package **search** hits and
+`{kodyId}:package` entity detail also surface `listingAhead` (with a one-line
+`community_get` / `community_fork_absorb` next step) when that flag is true.
+After the agent ports relevant listing changes and publishes,
+`community_fork_absorb` records the current pin as absorbed so the pill clears.
 
 ## Author a saved package via direct git push
 

@@ -61,6 +61,11 @@ export type RecordTableRow = {
 	href?: string
 	/** Keyed by column key; a missing key renders an empty cell. */
 	cells: Record<string, Slot>
+	/**
+	 * Interactive control after the primary name link. RecordTable wraps
+	 * the primary cell in `<a>`; keep buttons out of that link.
+	 */
+	primaryAccessory?: Slot
 }
 
 /** Synthetic row id for a `/new` create flow unfolded inside the table. */
@@ -334,6 +339,13 @@ const rowLinkCss = {
 	color: colors.text,
 	textDecoration: 'none',
 	'&:hover': { textDecoration: 'underline' },
+}
+
+const primaryCellContentCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: spacing.xs,
+	minWidth: 0,
 }
 
 const recordRowCss = {
@@ -689,6 +701,43 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 							>
 								{columns.map((column) => {
 									const content = row.cells[column.key] ?? null
+									const rowHref = row.href
+									const primaryLink =
+										column.primary && rowHref ? (
+											<a
+												href={rowHref}
+												data-prevent-scroll-reset
+												aria-current={selected ? 'true' : undefined}
+												aria-expanded={
+													mode === 'expand'
+														? expanded
+															? 'true'
+															: 'false'
+														: undefined
+												}
+												aria-controls={expanded ? recordRowId : undefined}
+												mix={[
+													css(rowLinkCss),
+													on('click', (event: MouseEvent) => {
+														if (!onNavigate) return
+														if (
+															!(
+																event.currentTarget instanceof HTMLAnchorElement
+															) ||
+															!shouldRouterHandleClick(
+																event,
+																event.currentTarget,
+															)
+														) {
+															return
+														}
+														onNavigate(row.id)
+													}),
+												]}
+											>
+												{content}
+											</a>
+										) : null
 									return (
 										<td
 											key={column.key}
@@ -699,43 +748,13 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 												...columnCss(column),
 											]}
 										>
-											{column.primary && row.href ? (
-												<a
-													href={row.href}
-													data-prevent-scroll-reset
-													aria-current={selected ? 'true' : undefined}
-													aria-expanded={
-														mode === 'expand'
-															? expanded
-																? 'true'
-																: 'false'
-															: undefined
-													}
-													aria-controls={expanded ? recordRowId : undefined}
-													mix={[
-														css(rowLinkCss),
-														on('click', (event: MouseEvent) => {
-															if (!onNavigate) return
-															if (
-																!(
-																	event.currentTarget instanceof
-																	HTMLAnchorElement
-																) ||
-																!shouldRouterHandleClick(
-																	event,
-																	event.currentTarget,
-																)
-															) {
-																return
-															}
-															onNavigate(row.id)
-														}),
-													]}
-												>
-													{content}
-												</a>
+											{primaryLink && row.primaryAccessory ? (
+												<span mix={css(primaryCellContentCss)}>
+													{primaryLink}
+													{row.primaryAccessory}
+												</span>
 											) : (
-												content
+												(primaryLink ?? content)
 											)}
 										</td>
 									)

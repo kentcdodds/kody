@@ -71,6 +71,16 @@ drops the star item immediately. Ratings are never projected into timelines.
 Storing only publish/update events avoids orphaned fork/star timeline rows when
 privacy flips or a star is removed — see `social-repo.ts` / `social-service.ts`.
 
+`community_forks.origin_commit` is the listing pin the fork last absorbed. It
+starts as the pinned snapshot copied at fork time. When an active listing later
+republishes a different pin, `package_get` / `package_list` set `listing_ahead`,
+and `/account/packages` plus the listing page replace Installed / Forked with a
+**Fork outdated** button that copies an absorb prompt. Package search hits and
+`{kodyId}:package` entity detail also set `listingAhead` with a one-line
+`community_get` / `community_fork_absorb` next step. `community_fork_absorb`
+updates `origin_commit` to the listing's current `pinned_commit` after the
+forker ports those changes; it does not copy files.
+
 `community_listings` enforces one listing per `(owner_user_id, package_id)`.
 Admin **delist** sets `status = 'delisted'`, blocks owner re-publish, and blocks
 owner unpublish. **Hard delete** (admin report action) removes the listing row,
@@ -236,6 +246,7 @@ Capabilities:
 - `community_get`
 - `community_fork`
 - `community_fork_adopt`
+- `community_fork_absorb`
 - `community_rate`
 - `community_star` / `community_unstar` / `community_starred_list`
 - `community_profile_get` / `community_profile_update`

@@ -51,6 +51,36 @@ export const packageSummaryWithCommunityProvenanceSchema =
 			.describe(
 				'Original community listing kody.id recorded when this package was forked, or null for a self-authored package.',
 			),
+		listing_name: z
+			.string()
+			.nullable()
+			.describe(
+				'Current source listing package name when the listing is active, or null when this package is self-authored or the listing is gone.',
+			),
+		origin_commit: z
+			.string()
+			.nullable()
+			.describe(
+				'Listing pinned commit this fork last absorbed. Starts as the fork-time snapshot and moves when community_fork_absorb records a later listing publish.',
+			),
+		listing_pinned_commit: z
+			.string()
+			.nullable()
+			.describe(
+				'Current pinned commit of the source listing, or null when this package is self-authored or the listing is gone.',
+			),
+		listing_published_at: z
+			.string()
+			.nullable()
+			.describe(
+				'Last community publish time of the source listing, or null when this package is self-authored or the listing is gone.',
+			),
+		listing_ahead: z
+			.boolean()
+			.nullable()
+			.describe(
+				'True when the source listing has a newer pinned commit than this fork last absorbed. Null for a self-authored package. False when the listing is unpublished or the fork is current.',
+			),
 	})
 
 export const pendingPackageSecretApprovalsSchema = z
@@ -102,6 +132,11 @@ export function toPackageSummaryWithCommunityProvenance(
 		source_listing_id: savedPackage.sourceListingId,
 		listing_current: savedPackage.listingCurrent,
 		listing_kody_id: savedPackage.listingKodyId,
+		listing_name: savedPackage.listingName,
+		origin_commit: savedPackage.originCommit,
+		listing_pinned_commit: savedPackage.listingPinnedCommit,
+		listing_published_at: savedPackage.listingPublishedAt,
+		listing_ahead: savedPackage.listingAhead,
 	}
 }
 

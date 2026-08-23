@@ -5,9 +5,10 @@ import {
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import { type SearchMatch } from '#mcp/tools/search-format.ts'
+import { readListingAheadFlag } from '#universal/community-listing-ahead.ts'
 import {
-	getSavedPackageById,
-	getSavedPackageByKodyId,
+	getSavedPackageWithCommunityProvenanceById,
+	getSavedPackageWithCommunityProvenanceByKodyId,
 } from '#worker/package-registry/repo.ts'
 import {
 	kodyPackageIdPattern,
@@ -211,6 +212,9 @@ function toPackageSearchMatch(
 		hidden: record.hidden,
 		readmeSnippet: null,
 		actionMatches: [],
+		...(readListingAheadFlag(record) === true
+			? { listingAhead: true as const }
+			: {}),
 	}
 }
 
@@ -232,11 +236,11 @@ export async function resolvePackageIdentitySearch(input: {
 
 	const record =
 		identity.kind === 'package-id'
-			? await getSavedPackageById(input.db, {
+			? await getSavedPackageWithCommunityProvenanceById(input.db, {
 					userId: input.userId,
 					packageId: identity.value,
 				})
-			: await getSavedPackageByKodyId(input.db, {
+			: await getSavedPackageWithCommunityProvenanceByKodyId(input.db, {
 					userId: input.userId,
 					kodyId: identity.value,
 				})

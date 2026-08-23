@@ -24,6 +24,10 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageById(...args),
 	getSavedPackageByKodyId: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByKodyId(...args),
+	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageById(...args),
+	getSavedPackageWithCommunityProvenanceByKodyId: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageByKodyId(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -280,5 +284,6 @@ test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', 
 		type: 'package',
 		hostedUrl: 'https://kentcdodds.kody.run/packages/demo',
 		baseUrl: 'https://heykody.dev',
+		listingAhead: null,
 	})
 })

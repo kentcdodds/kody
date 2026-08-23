@@ -804,6 +804,29 @@ export async function getCommunityForkByForkedPackageId(
 	return row ? mapCommunityForkRow(row) : null
 }
 
+export async function updateCommunityForkOriginCommit(
+	db: D1Database,
+	input: {
+		forkerUserId: string
+		forkedPackageId: string
+		originCommit: string
+	},
+): Promise<CommunityForkRecord | null> {
+	const result = await db
+		.prepare(
+			`UPDATE community_forks
+			SET origin_commit = ?
+			WHERE forked_package_id = ? AND forker_user_id = ?`,
+		)
+		.bind(input.originCommit, input.forkedPackageId, input.forkerUserId)
+		.run()
+	if ((result.meta.changes ?? 0) === 0) return null
+	return getCommunityForkByForkedPackageId(db, {
+		forkerUserId: input.forkerUserId,
+		forkedPackageId: input.forkedPackageId,
+	})
+}
+
 export async function markCommunityForkAdopted(
 	db: D1Database,
 	input: {

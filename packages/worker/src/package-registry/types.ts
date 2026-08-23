@@ -323,6 +323,11 @@ export type SavedPackageCommunityProvenance = {
 	sourceListingId: string | null
 	listingCurrent: boolean | null
 	listingKodyId: string | null
+	listingName: string | null
+	originCommit: string | null
+	listingPinnedCommit: string | null
+	listingPublishedAt: string | null
+	listingAhead: boolean | null
 }
 
 export type SavedPackageWithCommunityProvenanceRecord = SavedPackageRecord &

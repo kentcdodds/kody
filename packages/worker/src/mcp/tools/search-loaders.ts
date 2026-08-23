@@ -10,7 +10,7 @@ import {
 	listPlatformPackagesForSearch,
 	type PlatformPackageForSearch,
 } from '#worker/package-registry/platform-packages.ts'
-import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
+import { listSavedPackagesWithCommunityProvenanceByUserId } from '#worker/package-registry/repo.ts'
 
 import { buildSavedPackageSearchRows } from './search-package-rows.ts'
 import {
@@ -92,7 +92,7 @@ export async function loadSearchRowsAndRegistry(input: {
 			userId: input.userId,
 			loadPackages: async () => {
 				const [savedPackages, platformPackages] = await Promise.all([
-					listSavedPackagesByUserId(input.env.APP_DB, {
+					listSavedPackagesWithCommunityProvenanceByUserId(input.env.APP_DB, {
 						userId: input.userId!,
 					}),
 					listPlatformPackagesForSearch(input.env.APP_DB),

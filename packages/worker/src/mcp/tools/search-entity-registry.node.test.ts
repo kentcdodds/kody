@@ -26,6 +26,7 @@ function createPackageRow(): PackageSearchRow {
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
+		listingAhead: null,
 		projection: {
 			name: '@user/weather',
 			kodyId: 'weather',

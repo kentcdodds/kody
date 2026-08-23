@@ -10,6 +10,10 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageById(...args),
 	getSavedPackageByKodyId: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByKodyId(...args),
+	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageById(...args),
+	getSavedPackageWithCommunityProvenanceByKodyId: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageByKodyId(...args),
 }))
 
 const { parsePackageSearchIdentity, resolvePackageIdentitySearch } =
@@ -333,4 +337,33 @@ test('package identity resolution is user-scoped, gates hidden matches, and skip
 	}
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(4)
 	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(2)
+})
+
+test('package identity match includes listingAhead only when the fork is behind', async () => {
+	mockModule.getSavedPackageById.mockReset()
+	mockModule.getSavedPackageById
+		.mockResolvedValueOnce({
+			...createSavedPackage(),
+			listingAhead: true,
+		})
+		.mockResolvedValueOnce({
+			...createSavedPackage(),
+			listingAhead: false,
+		})
+
+	const common = {
+		db: {} as D1Database,
+		userId: 'user-1',
+		query: packageId,
+		baseUrl: 'https://heykody.dev',
+		username: 'user',
+		includeHiddenPackages: false,
+	}
+	await expect(resolvePackageIdentitySearch(common)).resolves.toMatchObject({
+		recognized: true,
+		match: { listingAhead: true },
+	})
+	const current = await resolvePackageIdentitySearch(common)
+	expect(current).toMatchObject({ recognized: true })
+	expect(current.match).not.toHaveProperty('listingAhead')
 })

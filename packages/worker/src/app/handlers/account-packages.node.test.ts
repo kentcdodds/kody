@@ -14,6 +14,18 @@ const savedPackage = {
 	updatedAt: new Date(0).toISOString(),
 }
 
+const savedPackageWithProvenance = {
+	...savedPackage,
+	sourceListingId: null,
+	listingCurrent: null,
+	listingKodyId: null,
+	listingName: null,
+	originCommit: null,
+	listingPinnedCommit: null,
+	listingPublishedAt: null,
+	listingAhead: null,
+}
+
 const tokenRecord = {
 	id: 'token-1',
 	user_id: 'stable-user-1',
@@ -45,6 +57,8 @@ const mockModule = vi.hoisted(() => ({
 	})),
 	searchSavedPackagesByUserId: vi.fn(),
 	getSavedPackageById: vi.fn(),
+	getSavedPackageWithCommunityProvenanceById: vi.fn(),
+	listSavedPackageCommunityProvenanceByIds: vi.fn(),
 	listPackageInvocationTokensByPackageId: vi.fn(async () => [tokenRecord]),
 	hashPackageInvocationBearerToken: vi.fn(async () => 'hashed-raw-token'),
 	insertPackageInvocationToken: vi.fn(async () => undefined),
@@ -83,6 +97,10 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.searchSavedPackagesByUserId(...args),
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
+	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageWithCommunityProvenanceById(...args),
+	listSavedPackageCommunityProvenanceByIds: (...args: Array<unknown>) =>
+		mockModule.listSavedPackageCommunityProvenanceByIds(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -128,6 +146,12 @@ function resetTokenMocks() {
 	mockModule.listPackageInvocationTokensByPackageId.mockResolvedValue([
 		tokenRecord,
 	])
+	mockModule.listSavedPackageCommunityProvenanceByIds.mockReset()
+	mockModule.listSavedPackageCommunityProvenanceByIds.mockResolvedValue([])
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockReset()
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockResolvedValue(
+		savedPackageWithProvenance,
+	)
 	mockModule.loadPackageManifestBySourceId.mockReset()
 	mockModule.loadPackageManifestBySourceId.mockResolvedValue({
 		manifest: {
@@ -143,7 +167,10 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 		items: [savedPackage],
 		total: 1,
 	})
-	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
+	mockModule.listSavedPackageCommunityProvenanceByIds.mockResolvedValue([])
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockResolvedValue(
+		savedPackageWithProvenance,
+	)
 	const env = createEnv()
 	const handler = createAccountPackagesApiHandler(env)
 
@@ -187,12 +214,14 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 	})
 
 	mockModule.searchSavedPackagesByUserId.mockClear()
-	mockModule.getSavedPackageById.mockClear()
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockClear()
 	mockModule.searchSavedPackagesByUserId.mockResolvedValue({
 		items: [savedPackage],
 		total: 1,
 	})
-	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockResolvedValue(
+		savedPackageWithProvenance,
+	)
 	mockModule.listPackageInvocationTokensByPackageId.mockResolvedValue([
 		tokenRecord,
 	])
@@ -222,7 +251,9 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 			offset: 20,
 		},
 	)
-	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(env.APP_DB, {
+	expect(
+		mockModule.getSavedPackageWithCommunityProvenanceById,
+	).toHaveBeenCalledWith(env.APP_DB, {
 		userId: 'stable-user-1',
 		packageId: 'pkg-1',
 	})
@@ -280,7 +311,7 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 	})
 
 	mockModule.searchSavedPackagesByUserId.mockClear()
-	mockModule.getSavedPackageById.mockResolvedValue(null)
+	mockModule.getSavedPackageWithCommunityProvenanceById.mockResolvedValue(null)
 	mockModule.searchSavedPackagesByUserId.mockResolvedValue({
 		items: [savedPackage],
 		total: 1,

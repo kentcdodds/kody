@@ -52,7 +52,13 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageById(...args),
 	getSavedPackageByKodyId: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByKodyId(...args),
+	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageById(...args),
+	getSavedPackageWithCommunityProvenanceByKodyId: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageByKodyId(...args),
 	listSavedPackagesByUserId: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesByUserId(...args),
+	listSavedPackagesWithCommunityProvenanceByUserId: (...args: Array<unknown>) =>
 		mockModule.listSavedPackagesByUserId(...args),
 }))
 

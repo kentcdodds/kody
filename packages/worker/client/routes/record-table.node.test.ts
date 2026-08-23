@@ -273,3 +273,32 @@ test('record table empty and busy states keep toolbar layout stable', async () =
 	expect(busyHtml).toContain('aria-live="polite"')
 	expect(busyHtml).toContain('<table')
 })
+
+test('record table keeps primary accessories outside the row link', async () => {
+	const html = await renderToString(
+		jsx(RecordTable, {
+			mode: 'none',
+			ariaLabel: 'Packages',
+			columns,
+			rows: [
+				{
+					id: 'a',
+					href: '/account/packages/a',
+					cells: { name: 'Alpha' },
+					primaryAccessory: jsx('button', {
+						type: 'button',
+						'data-testid': 'listing-ahead',
+						children: 'Fork outdated',
+					}),
+				},
+			],
+		}),
+	)
+
+	expect(html).toContain('href="/account/packages/a"')
+	expect(html).toContain('data-testid="listing-ahead"')
+	expect(html).toMatch(/<\/a>[\s\S]*data-testid="listing-ahead"/)
+	expect(html).not.toMatch(
+		/<a[^>]*href="\/account\/packages\/a"[^>]*>[\s\S]*data-testid="listing-ahead"[\s\S]*<\/a>/,
+	)
+})

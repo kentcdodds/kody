@@ -306,7 +306,14 @@ async function loadCommunityDetailDataUncached(
 			loadViewerListingInstalls({
 				env,
 				user: user?.mcpUser ?? null,
-				listings: [{ id: listing.id, kodyId: listing.kodyId }],
+				listings: [
+					{
+						id: listing.id,
+						kodyId: listing.kodyId,
+						name: listing.name,
+						pinnedCommit: listing.pinnedCommit,
+					},
+				],
 			}),
 		])
 	const viewerInstall = viewerInstalls.get(listing.id) ?? null
@@ -396,7 +403,12 @@ async function overlayViewerInstallsOnListings<
 async function loadViewerListingInstalls(input: {
 	env: Env
 	user: McpUserContext | null
-	listings: Array<{ id: string; kodyId: string }>
+	listings: Array<{
+		id: string
+		kodyId: string
+		name?: string
+		pinnedCommit?: string
+	}>
 }): Promise<Map<string, ViewerListingInstall>> {
 	if (input.user == null || input.listings.length === 0) {
 		return new Map()
@@ -440,9 +452,21 @@ async function loadViewerListingInstalls(input: {
 			savedPackages: [...savedByKody, ...savedByForkId],
 			forks,
 		})
+		const listingById = new Map(
+			input.listings.map((listing) => [listing.id, listing]),
+		)
 		const viewerInstalls = new Map<string, ViewerListingInstall>()
 		for (const [listingId, install] of resolved) {
-			viewerInstalls.set(listingId, toViewerListingInstall(install))
+			const listing = listingById.get(listingId)
+			viewerInstalls.set(
+				listingId,
+				toViewerListingInstall({
+					...install,
+					listingId,
+					listingName: listing?.name,
+					listingKodyId: listing?.kodyId,
+				}),
+			)
 		}
 		return viewerInstalls
 	} catch (error) {

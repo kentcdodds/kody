@@ -772,7 +772,10 @@ export function CommunityDetailRoute(handle: Handle) {
 				? ''
 				: 'Loading community package details…'
 		const shownInstall = installOutcome
-			? { ...installOutcome, existing: false }
+			? {
+					...installOutcome,
+					existing: false,
+				}
 			: existingInstall
 				? {
 						status: existingInstall.status,

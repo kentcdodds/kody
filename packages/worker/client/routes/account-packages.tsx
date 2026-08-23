@@ -18,6 +18,7 @@ import {
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
+import { ForkOutdatedCopyButton } from '#universal/fork-outdated-copy-button.tsx'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import {
 	accountDisclosureCss,
@@ -148,7 +149,6 @@ export function AccountPackagesRoute(handle: Handle) {
 	let lastLoadedListKey = ''
 	let loadingDataKey: string | null = null
 	let lastFailedDataKey: string | null = null
-
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
 	}
@@ -418,6 +418,16 @@ export function AccountPackagesRoute(handle: Handle) {
 					rows={packages.map((pkg) => ({
 						id: pkg.id,
 						href: packagesRoute.buildDetailHref(pkg.id, getCurrentSearch()),
+						...(pkg.listingAhead
+							? {
+									primaryAccessory: (
+										<ForkOutdatedCopyButton
+											prompt={pkg.listingAhead.prompt}
+											testId={`account-package-listing-ahead-${pkg.id}`}
+										/>
+									),
+								}
+							: {}),
 						cells: {
 							name: <span mix={css(recordCellClamp(36))}>{pkg.name}</span>,
 							kodyId: (
@@ -465,17 +475,33 @@ export function AccountPackagesRoute(handle: Handle) {
 						selectedPackage ? (
 							<div mix={css(recordBodyCss)}>
 								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h2
+									<div
 										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
-											overflowWrap: 'anywhere',
+											display: 'flex',
+											alignItems: 'center',
+											gap: spacing.xs,
+											flexWrap: 'wrap',
+											minWidth: 0,
 										})}
 									>
-										{selectedPackage.name}
-									</h2>
+										<h2
+											mix={css({
+												margin: 0,
+												fontSize: typography.fontSize.lg,
+												fontWeight: typography.fontWeight.semibold,
+												color: colors.text,
+												overflowWrap: 'anywhere',
+											})}
+										>
+											{selectedPackage.name}
+										</h2>
+										{selectedPackage.listingAhead ? (
+											<ForkOutdatedCopyButton
+												prompt={selectedPackage.listingAhead.prompt}
+												testId="account-package-listing-ahead"
+											/>
+										) : null}
+									</div>
 									{selectedPackage.description ? (
 										<p
 											mix={css({

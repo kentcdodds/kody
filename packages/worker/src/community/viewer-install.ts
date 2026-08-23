@@ -1,6 +1,9 @@
+import { isCommunityListingAhead } from '#universal/community-listing-ahead.ts'
+
 export type ViewerInstallListingRef = {
 	id: string
 	kodyId: string
+	pinnedCommit?: string
 }
 
 export type ViewerInstallSavedPackage = {
@@ -16,6 +19,7 @@ export type ViewerInstallFork = {
 	forkedPackageId: string
 	forkedSourceId: string
 	createdAt: string
+	originCommit?: string
 }
 
 export type ResolvedViewerListingInstall = {
@@ -24,6 +28,25 @@ export type ResolvedViewerListingInstall = {
 	sourceId: string
 	/** Live saved package id when status is `installed`; otherwise null. */
 	packageId: string | null
+	listingAhead: boolean
+	originCommit: string | null
+	listingPinnedCommit: string | null
+}
+
+function listingAheadState(input: {
+	originCommit?: string
+	pinnedCommit?: string
+}) {
+	const originCommit = input.originCommit ?? null
+	const listingPinnedCommit = input.pinnedCommit ?? null
+	return {
+		listingAhead: isCommunityListingAhead({
+			originCommit,
+			listingPinnedCommit,
+		}),
+		originCommit,
+		listingPinnedCommit,
+	}
 }
 
 function compareCreatedAtDesc(left: string, right: string) {
@@ -70,24 +93,37 @@ export function resolveViewerListingInstalls(input: {
 
 	const resolved = new Map<string, ResolvedViewerListingInstall>()
 	for (const listing of input.listings) {
+		const listingForks = forksByListingId.get(listing.id)
+		const matchingKodyFork = listingForks?.find(
+			(fork) => fork.targetKodyId === listing.kodyId,
+		)
+		const newestFork = listingForks?.[0]
+
 		const savedByKody = savedByKodyId.get(listing.kodyId)
 		if (savedByKody) {
+			const forkForSaved = listingForks?.find(
+				(fork) => fork.forkedPackageId === savedByKody.id,
+			)
 			resolved.set(listing.id, {
 				status: 'installed',
 				targetName: savedByKody.name,
 				sourceId: savedByKody.sourceId,
 				packageId: savedByKody.id,
+				...listingAheadState({
+					originCommit: forkForSaved?.originCommit,
+					pinnedCommit: listing.pinnedCommit,
+				}),
 			})
 			continue
 		}
 
-		const listingForks = forksByListingId.get(listing.id)
 		if (!listingForks || listingForks.length === 0) continue
-		const matchingKodyFork = listingForks.find(
-			(fork) => fork.targetKodyId === listing.kodyId,
-		)
-		const fork = matchingKodyFork ?? listingForks[0]
+		const fork = matchingKodyFork ?? newestFork
 		if (!fork) continue
+		const ahead = listingAheadState({
+			originCommit: fork.originCommit,
+			pinnedCommit: listing.pinnedCommit,
+		})
 		const forkedSaved = savedById.get(fork.forkedPackageId)
 		if (forkedSaved) {
 			resolved.set(listing.id, {
@@ -95,6 +131,7 @@ export function resolveViewerListingInstalls(input: {
 				targetName: forkedSaved.name,
 				sourceId: forkedSaved.sourceId,
 				packageId: forkedSaved.id,
+				...ahead,
 			})
 			continue
 		}
@@ -103,6 +140,7 @@ export function resolveViewerListingInstalls(input: {
 			targetName: scopedPackageName(input.packageScope, fork.targetKodyId),
 			sourceId: fork.forkedSourceId,
 			packageId: null,
+			...ahead,
 		})
 	}
 	return resolved

@@ -16,6 +16,7 @@ import {
 } from '#universal/community-display.ts'
 import { renderCommunityEmptyState } from '#universal/community-empty-state.tsx'
 import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
+import { ForkOutdatedCopyButton } from '#universal/fork-outdated-copy-button.tsx'
 import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import { getCommunityListingHref } from '#universal/community-links.ts'
 import {
@@ -185,21 +186,10 @@ function renderCommunityListingCard(
 									Trusted
 								</span>
 							) : null}
-							{listing.viewerInstall ? (
-								<span
-									data-testid={`community-listing-viewer-install-${listing.id}`}
-									title={
-										listing.viewerInstall.status === 'installed'
-											? `Installed in your account as ${listing.viewerInstall.targetName}.`
-											: `Forked in your account as ${listing.viewerInstall.targetName}; still needs adaptation.`
-									}
-									mix={css(communityBadgePillCss)}
-								>
-									{listing.viewerInstall.status === 'installed'
-										? 'Installed'
-										: 'Forked'}
-								</span>
-							) : null}
+							{renderCommunityViewerInstallBadge({
+								listing,
+								variant: 'card',
+							})}
 						</span>
 					) : null}
 				</div>
@@ -290,6 +280,43 @@ function renderCommunityListingGrid(
 				renderCommunityListingCard(listing, index, options),
 			)}
 		</ul>
+	)
+}
+
+export function renderCommunityViewerInstallBadge(input: {
+	listing: PublicCommunityListing
+	variant: 'card' | 'detail'
+}) {
+	const install = input.listing.viewerInstall
+	if (!install) return null
+	if (install.listingAhead && install.listingAheadPrompt) {
+		return (
+			<ForkOutdatedCopyButton
+				prompt={install.listingAheadPrompt}
+				testId={
+					input.variant === 'card'
+						? `community-listing-ahead-${input.listing.id}`
+						: 'community-detail-listing-ahead-badge'
+				}
+			/>
+		)
+	}
+	return (
+		<span
+			data-testid={
+				input.variant === 'card'
+					? `community-listing-viewer-install-${input.listing.id}`
+					: 'community-detail-viewer-install-badge'
+			}
+			title={
+				install.status === 'installed'
+					? `Installed in your account as ${install.targetName}.`
+					: `Forked in your account as ${install.targetName}; still needs adaptation.`
+			}
+			mix={css(communityBadgePillCss)}
+		>
+			{install.status === 'installed' ? 'Installed' : 'Forked'}
+		</span>
 	)
 }
 

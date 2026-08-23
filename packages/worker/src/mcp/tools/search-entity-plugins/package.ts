@@ -1,3 +1,4 @@
+import { listingAheadSearchNotice } from '#universal/community-listing-ahead.ts'
 import {
 	deterministicEmbedding,
 	embedTextForVectorize,
@@ -316,6 +317,9 @@ export const packageSearchEntityPlugin = {
 						platformScope: entry.platformScope ?? null,
 						readmeSnippet: entry.readmeSnippet ?? null,
 						actionMatches,
+						...(entry.listingAhead === true
+							? { listingAhead: true as const }
+							: {}),
 					},
 					type: 'package' as const,
 					id: entry.record.kodyId,
@@ -436,12 +440,14 @@ export const packageSearchEntityPlugin = {
 		const platformSuffix = match.platformScope
 			? ` This is a platform (built-in) package: the import resolves live from @${match.platformScope} — no fork needed, and it runs in your runtime against your secrets.`
 			: ''
+		const listingAheadSuffix =
+			match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''
 		const nextStep =
 			primaryAction && primaryActionFunction
-				? `Use ${primaryActionFunction.usage}; inspect search({ entity: "${match.kodyId}:package" }) only if you need more exports.${platformSuffix}`
+				? `Use ${primaryActionFunction.usage}; inspect search({ entity: "${match.kodyId}:package" }) only if you need more exports.${platformSuffix}${listingAheadSuffix}`
 				: match.hasApp
-					? `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, jobs, and the hosted app URL.${platformSuffix}`
-					: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${platformSuffix}`
+					? `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, jobs, and the hosted app URL.${platformSuffix}${listingAheadSuffix}`
+					: `Inspect package detail with search({ entity: "${match.kodyId}:package" }) to review exports, then import the needed entry from "${buildPackageImportSpecifier(match.name, '.')}".${platformSuffix}${listingAheadSuffix}`
 		return {
 			type: 'package',
 			id: match.kodyId,
@@ -456,6 +462,7 @@ export const packageSearchEntityPlugin = {
 			hasApp: match.hasApp,
 			hidden: match.hidden,
 			platformScope: match.platformScope ?? null,
+			...(match.listingAhead === true ? { listingAhead: true as const } : {}),
 			// Platform package apps are hosted under the platform account's
 			// username, not the caller's.
 			hostedUrl: (() => {
@@ -507,7 +514,10 @@ export const packageSearchEntityPlugin = {
 		})
 		const maintain = buildPackageMaintainSnippets(detail.record.kodyId)
 		const rootImportUsage = buildPackageRootImportUsage(detail.record.name)
-		const followUp = `If you plan to invoke an export, call package_get({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or coding_guide_get({ guide: "package_authoring" }) for types, external invocation, and maintenance workflows.`
+		const listingAhead = detail.listingAhead === true
+		const followUp = listingAhead
+			? `${listingAheadSearchNotice} If you plan to invoke an export, call package_get({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or coding_guide_get({ guide: "package_authoring" }) for types, external invocation, and maintenance workflows.`
+			: `If you plan to invoke an export, call package_get({ package_id: ${JSON.stringify(detail.record.id)} }) first for the exact call shape. Use that same call for the full README and source, or coding_guide_get({ guide: "package_authoring" }) for types, external invocation, and maintenance workflows.`
 		const lines = [
 			`# Package — \`${detail.record.kodyId}\``,
 			'',
@@ -521,6 +531,9 @@ export const packageSearchEntityPlugin = {
 			`- Has app: ${detail.record.hasApp ? 'yes' : 'no'}`,
 			`- Hidden: ${detail.record.hidden ? 'yes' : 'no'}`,
 			...(detail.hostedUrl ? [`- Hosted URL: \`${detail.hostedUrl}\``] : []),
+			...(listingAhead
+				? [`- Listing ahead: yes — ${listingAheadSearchNotice}`]
+				: []),
 		]
 		if (exportDetails.length > 0) {
 			lines.push('', '## Exports', '', '| Subpath | Purpose |', '| --- | --- |')
@@ -588,6 +601,7 @@ export const packageSearchEntityPlugin = {
 				retrievers,
 				readmeIntent,
 				followUp,
+				listingAhead: detail.listingAhead,
 			},
 		}
 	},

@@ -592,6 +592,7 @@ test('package entity detail is a slim index with explicit follow-up', () => {
 		baseUrl: 'http://localhost',
 		ownerUsername: 'test-user',
 		hostedUrl: 'http://localhost/@test-user/packages/observed-package',
+		listingAhead: null,
 		record: {
 			id: 'package-123',
 			userId: 'user-123',
@@ -682,11 +683,124 @@ export declare function fetch(request: Request): Promise<Response>
 	expect(observedPackageDetail.markdown).toContain(
 		'If you plan to invoke an export, call package_get({ package_id: "package-123" }) first',
 	)
+	expect(observedPackageDetail.structured).toMatchObject({
+		listingAhead: null,
+	})
+	expect(observedPackageDetail.markdown).not.toContain('Listing ahead')
 	expect(observedPackageDetail.markdown).not.toContain('src/app.d.ts')
 	expect(observedPackageDetail.markdown).not.toContain('Token setup URL')
 	expect(JSON.stringify(observedPackageDetail.structured)).not.toContain(
 		'typeDefinition',
 	)
+})
+
+test('package search surfaces listing ahead only when the fork is behind', () => {
+	const [currentMatch] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		username: 'test-user',
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-current',
+				kodyId: 'github-triage',
+				name: '@me/github-triage',
+				title: '@me/github-triage',
+				description: 'Triage GitHub issues.',
+				tags: ['github'],
+				hasApp: false,
+				hidden: false,
+			},
+		],
+	})
+	expect(currentMatch).not.toHaveProperty('listingAhead')
+	expect(
+		currentMatch && 'nextStep' in currentMatch ? currentMatch.nextStep : '',
+	).not.toContain('community_fork_absorb')
+
+	const [aheadMatch] = toSlimStructuredMatches({
+		baseUrl: 'http://localhost',
+		username: 'test-user',
+		matches: [
+			{
+				type: 'package',
+				packageId: 'package-ahead',
+				kodyId: 'github-triage',
+				name: '@me/github-triage',
+				title: '@me/github-triage',
+				description: 'Triage GitHub issues.',
+				tags: ['github'],
+				hasApp: false,
+				hidden: false,
+				listingAhead: true,
+			},
+		],
+	})
+	expect(aheadMatch).toMatchObject({
+		type: 'package',
+		listingAhead: true,
+	})
+	expect(
+		aheadMatch && 'nextStep' in aheadMatch ? aheadMatch.nextStep : '',
+	).toContain('community_fork_absorb')
+	expect(
+		formatSearchMarkdown({
+			matches: [
+				{
+					type: 'package',
+					packageId: 'package-ahead',
+					kodyId: 'github-triage',
+					name: '@me/github-triage',
+					title: '@me/github-triage',
+					description: 'Triage GitHub issues.',
+					tags: ['github'],
+					hasApp: false,
+					hidden: false,
+					listingAhead: true,
+				},
+			],
+		}),
+	).toContain('Listing ahead')
+
+	const aheadDetail = formatEntityDetailMarkdown({
+		type: 'package',
+		id: 'github-triage',
+		title: '@me/github-triage',
+		description: 'Triage GitHub issues.',
+		baseUrl: 'http://localhost',
+		ownerUsername: 'test-user',
+		hostedUrl: null,
+		listingAhead: true,
+		record: {
+			id: 'package-ahead',
+			userId: 'user-1',
+			name: '@me/github-triage',
+			kodyId: 'github-triage',
+			description: 'Triage GitHub issues.',
+			tags: ['github'],
+			searchText: null,
+			sourceId: 'source-ahead',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-03-20T00:00:00.000Z',
+			updatedAt: '2026-03-20T00:00:00.000Z',
+		},
+		manifest: {
+			name: '@me/github-triage',
+			exports: { '.': './index.ts' },
+			kody: {
+				id: 'github-triage',
+				description: 'Triage GitHub issues.',
+			},
+		},
+		files: {
+			'package.json': '{}',
+			'README.md': '# GitHub triage\n\n## Intent\n\nTriage issues.\n',
+		},
+	})
+	expect(aheadDetail.structured).toMatchObject({ listingAhead: true })
+	expect(aheadDetail.markdown).toContain('Listing ahead: yes')
+	expect(aheadDetail.markdown).toContain('community_fork_absorb')
 })
 
 test('package search formatting keeps runnable actions and hosted URLs in structured output', () => {
@@ -1228,6 +1342,7 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		baseUrl: 'http://localhost',
 		ownerUsername: 'user',
 		hostedUrl: null,
+		listingAhead: null,
 		record: {
 			id: 'package-notes',
 			userId: 'user-1',

@@ -137,3 +137,50 @@ test('community listings render sort controls, published dates, and empty states
 	expect(catalogWideChipsHtml).not.toContain('category=utilities')
 	expect(catalogWideChipsHtml).not.toContain('category=other')
 })
+
+test('fork outdated replaces the installed pill with a copy-prompt button', async () => {
+	const installedListing = {
+		...sampleListing,
+		viewerInstall: {
+			status: 'installed' as const,
+			targetName: '@me/github-triage',
+			agentPrompt: 'Finish setup for @me/github-triage.',
+			packageId: 'pkg-1',
+			listingAhead: false,
+			listingAheadPrompt: null,
+		},
+	}
+	const installedHtml = await renderCommunityListingsContentHtml({
+		listings: [installedListing],
+		query: null,
+	})
+	expect(installedHtml).toContain(
+		'data-testid="community-listing-viewer-install-listing-1"',
+	)
+	expect(installedHtml).toContain('Installed')
+	expect(installedHtml).not.toContain('Fork outdated')
+
+	const aheadPrompt =
+		'Compare the current listing snapshot, keep local customizations, then call community_fork_absorb.'
+	const aheadListing = {
+		...installedListing,
+		viewerInstall: {
+			...installedListing.viewerInstall,
+			listingAhead: true,
+			listingAheadPrompt: aheadPrompt,
+		},
+	}
+	const aheadHtml = await renderCommunityListingsContentHtml({
+		listings: [aheadListing],
+		query: null,
+	})
+	expect(aheadHtml).toContain('data-testid="community-listing-ahead-listing-1"')
+	expect(aheadHtml).toContain('Fork outdated')
+	expect(aheadHtml).toContain('data-fork-outdated-copy')
+	expect(aheadHtml).toContain('Click to copy an update prompt')
+	expect(aheadHtml).toContain(aheadPrompt)
+	expect(aheadHtml).not.toContain('Listing updated')
+	expect(aheadHtml).not.toContain(
+		'data-testid="community-listing-viewer-install-listing-1"',
+	)
+})
