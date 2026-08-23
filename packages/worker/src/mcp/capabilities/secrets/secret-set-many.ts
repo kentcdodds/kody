@@ -7,7 +7,7 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { assertCanSetSecrets } from '#mcp/secrets/package-access.ts'
 import { setSecretsAtomically } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
-import { secretMetadataSchema } from './shared.ts'
+import { secretMetadataSchema, toSecretCapabilityOutput } from './shared.ts'
 
 const secretSetManyEntrySchema = z.object({
 	name: z.string().min(1).describe('Secret name to create or update.'),
@@ -22,6 +22,13 @@ const secretSetManyEntrySchema = z.object({
 		.string()
 		.optional()
 		.describe('Optional human-readable description of the secret.'),
+	expires_at: z
+		.string()
+		.nullable()
+		.optional()
+		.describe(
+			'Optional UTC ISO expiry (or YYYY-MM-DD). Null or empty clears expiry. Omit on update to leave the existing expiry unchanged.',
+		),
 	scope: z
 		.enum(secretScopeValues)
 		.describe('Storage scope that owns the secret.'),
@@ -183,24 +190,14 @@ export const secretSetManyCapability = defineDomainCapability(
 					value: secret.value as string,
 					scope: secret.scope,
 					description: secret.description,
+					expiresAt: secret.expires_at,
 				})),
 				storageContext,
 			})
 			return {
 				ok: true as const,
 				assertOnly: false,
-				secrets: saved.map((entry) => ({
-					name: entry.name,
-					scope: entry.scope,
-					description: entry.description,
-					package_id: entry.packageId,
-					allowed_hosts: entry.allowedHosts,
-					allowed_capabilities: entry.allowedCapabilities,
-					allowed_packages: entry.allowedPackages,
-					created_at: entry.createdAt,
-					updated_at: entry.updatedAt,
-					ttl_ms: entry.ttlMs,
-				})),
+				secrets: saved.map((entry) => toSecretCapabilityOutput(entry)),
 			}
 		},
 	},

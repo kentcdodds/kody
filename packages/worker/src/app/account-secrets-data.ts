@@ -48,6 +48,7 @@ type AccountSecretListItem = {
 	allowedPackages: Array<string>
 	createdAt: string
 	updatedAt: string
+	expiresAt: string | null
 	ttlMs: number | null
 }
 
@@ -453,6 +454,7 @@ async function resolveAccountSecretDetail(input: {
 		userId: input.userId,
 		name: parsed.name,
 		scope: parsed.scope,
+		includeExpired: true,
 		storageContext: getSecretContextForAccountSecret(parsed),
 	})
 	return {
@@ -472,6 +474,7 @@ function toAccountSecretListItem(
 		allowedPackages: Array<string>
 		createdAt: string
 		updatedAt: string
+		expiresAt: string | null
 		ttlMs: number | null
 	},
 	packageTitles: Map<string, string>,
@@ -499,6 +502,7 @@ function toAccountSecretListItem(
 		allowedPackages: secret.allowedPackages,
 		createdAt: secret.createdAt,
 		updatedAt: secret.updatedAt,
+		expiresAt: secret.expiresAt,
 		ttlMs: secret.ttlMs,
 	} satisfies AccountSecretListItem
 }
