@@ -13,12 +13,22 @@ import {
 	listOwnerEmailMessages,
 	searchOwnerEmailMessages,
 } from '#worker/email/owner-email-reader.ts'
+import {
+	buildMcpServerStatusView,
+	loadMcpClientHubSnapshotOrNull,
+} from '#mcp/capabilities/mcp-servers/shared.ts'
 import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
 import { listTopPlatformAppsByUse } from '#worker/integrations/platform-apps.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
+import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
+import {
+	listDisconnectedOnboardingFeaturedMcpServers,
+	overlayOnboardingFeaturedMcpServers,
+} from '#universal/onboarding-mcp-chooser.ts'
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingFeaturedMcpServer,
 	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
 import {
@@ -155,6 +165,51 @@ export async function loadOnboardingBuiltInProviders(
 	}
 }
 
+/**
+ * Notion and Linear chooser cards for the wizard. When `userId` is set,
+ * overlays saved MCP servers and hub connection state. Fails open to the
+ * disconnected catalog so a hub or D1 blip never breaks the payload.
+ */
+export async function loadOnboardingFeaturedMcpServers(
+	env: Env,
+	userId?: string | null,
+): Promise<Array<OnboardingFeaturedMcpServer>> {
+	if (!userId) return listDisconnectedOnboardingFeaturedMcpServers()
+	try {
+		const settings = await listMcpServerSettings({ env, userId })
+		if (settings.length === 0) {
+			return listDisconnectedOnboardingFeaturedMcpServers()
+		}
+		const snapshot = await loadMcpClientHubSnapshotOrNull({ env, userId })
+		const statusByServerId = new Map(
+			settings.map((setting) => {
+				const view = buildMcpServerStatusView({
+					setting,
+					snapshot:
+						snapshot?.servers.find(
+							(server) => server.serverId === setting.id,
+						) ?? null,
+				})
+				return [
+					setting.id,
+					{
+						connected: view.connected,
+						authUrl: view.authUrl,
+						state: view.state,
+						error: view.error,
+					},
+				] as const
+			}),
+		)
+		return overlayOnboardingFeaturedMcpServers({
+			settings,
+			statusByServerId,
+		})
+	} catch {
+		return listDisconnectedOnboardingFeaturedMcpServers()
+	}
+}
+
 function redirectUnverifiedToPending(request: Request) {
 	const requestUrl = new URL(request.url)
 	const redirectTo = normalizeRedirectTo(
@@ -180,6 +235,7 @@ export function createOnboardingHandler(env: Env) {
 					}),
 					featuredListings: await loadOnboardingFeaturedListings(env, request),
 					builtInProviders: await loadOnboardingBuiltInProviders(env),
+					featuredMcpServers: await loadOnboardingFeaturedMcpServers(env),
 				}
 				return renderAppPage({
 					request,
@@ -200,6 +256,10 @@ export function createOnboardingHandler(env: Env) {
 				emailVerified: user.emailVerified,
 				featuredListings: await loadOnboardingFeaturedListings(env, request),
 				builtInProviders: await loadOnboardingBuiltInProviders(
+					env,
+					user.mcpUser.userId,
+				),
+				featuredMcpServers: await loadOnboardingFeaturedMcpServers(
 					env,
 					user.mcpUser.userId,
 				),
@@ -239,6 +299,7 @@ export function createOnboardingApiHandler(env: Env) {
 					}),
 					featuredListings: await loadOnboardingFeaturedListings(env, request),
 					builtInProviders: await loadOnboardingBuiltInProviders(env),
+					featuredMcpServers: await loadOnboardingFeaturedMcpServers(env),
 				})
 			}
 
@@ -256,6 +317,9 @@ export function createOnboardingApiHandler(env: Env) {
 					: [],
 				builtInProviders: user.emailVerified
 					? await loadOnboardingBuiltInProviders(env, user.mcpUser.userId)
+					: [],
+				featuredMcpServers: user.emailVerified
+					? await loadOnboardingFeaturedMcpServers(env, user.mcpUser.userId)
 					: [],
 			})
 			if (user.emailVerified) {

@@ -1,9 +1,11 @@
 import { expect, test, vi } from 'vitest'
+import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 import {
 	buildDiscoveryPrompt,
 	buildFirstWinPrompt,
 	buildMcpServerUrl,
 	buildOnboardingSetupPrompt,
+	buildPersistFirstPackagePrompt,
 	loadOnboardingData,
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
@@ -30,6 +32,12 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			requestUrl: 'https://preview.example/onboarding',
 		}),
 	).toContain('https://preview.example/guides/first-win')
+	expect(
+		buildPersistFirstPackagePrompt({
+			env: {},
+			requestUrl: 'https://preview.example/onboarding',
+		}),
+	).toContain('https://preview.example/guides/quick-example')
 
 	expect(
 		loadPublicOnboardingData({
@@ -50,6 +58,10 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: { APP_BASE_URL: 'https://heykody.dev' },
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
+		persistPrompt: buildPersistFirstPackagePrompt({
+			env: { APP_BASE_URL: 'https://heykody.dev' },
+			requestUrl: 'https://heykody.dev/onboarding',
+		}),
 		hasSentWelcomeEmail: false,
 		welcomeEmail: null,
 		hasMcpClient: false,
@@ -57,6 +69,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		needsOnboarding: true,
 		featuredListings: [],
 		builtInProviders: [],
+		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
 		checklist: null,
 	})
 
@@ -85,6 +98,10 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: {},
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
+		persistPrompt: buildPersistFirstPackagePrompt({
+			env: {},
+			requestUrl: 'https://heykody.dev/onboarding',
+		}),
 		hasSentWelcomeEmail: false,
 		welcomeEmail: null,
 		hasMcpClient: false,
@@ -92,6 +109,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		needsOnboarding: true,
 		featuredListings: [],
 		builtInProviders: [],
+		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
 		checklist: null,
 	})
 
@@ -147,6 +165,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		setupPrompt: '',
 		// The first-win prompt needs a verified email (it sends real mail).
 		firstWinPrompt: '',
+		persistPrompt: '',
 		// Discovery needs no verified email or MCP host, so it is never gated.
 		discoveryPrompt: buildDiscoveryPrompt({
 			env: {},

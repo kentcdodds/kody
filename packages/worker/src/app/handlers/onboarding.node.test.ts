@@ -5,13 +5,16 @@ import {
 	createOnboardingApiHandler,
 	createOnboardingHandler,
 	loadOnboardingBuiltInProviders,
+	loadOnboardingFeaturedMcpServers,
 	loadWelcomeEmail,
 } from '#app/handlers/onboarding.ts'
 import {
 	buildDiscoveryPrompt,
 	buildFirstWinPrompt,
 	buildOnboardingSetupPrompt,
+	buildPersistFirstPackagePrompt,
 } from '#app/onboarding-data.ts'
+import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -22,6 +25,8 @@ const mockModule = vi.hoisted(() => ({
 	listTopPlatformAppsByUse: vi.fn(),
 	listJoinedIntegrations: vi.fn(),
 	buildPlatformOauthAppLogoPath: vi.fn(),
+	listMcpServerSettings: vi.fn(),
+	loadMcpClientHubSnapshotOrNull: vi.fn(),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -59,6 +64,23 @@ vi.mock('#worker/integrations/platform-app-logo.ts', () => ({
 		mockModule.buildPlatformOauthAppLogoPath(...args),
 }))
 
+vi.mock('#worker/mcp-client/settings-service.ts', () => ({
+	listMcpServerSettings: (...args: Array<unknown>) =>
+		mockModule.listMcpServerSettings(...args),
+}))
+
+vi.mock('#mcp/capabilities/mcp-servers/shared.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import('#mcp/capabilities/mcp-servers/shared.ts')
+		>()
+	return {
+		...actual,
+		loadMcpClientHubSnapshotOrNull: (...args: Array<unknown>) =>
+			mockModule.loadMcpClientHubSnapshotOrNull(...args),
+	}
+})
+
 test('onboarding serves public setup content to anonymous visitors', async () => {
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	setAuthSessionSecret(testCookieSecret)
@@ -88,6 +110,11 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 			env,
 			requestUrl: 'https://example.com/onboarding.json',
 		}),
+		persistPrompt: buildPersistFirstPackagePrompt({
+			env,
+			requestUrl: 'https://example.com/onboarding.json',
+		}),
+		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
 	})
 })
 
@@ -239,4 +266,55 @@ test('onboarding built-in providers mark connected vs not from viewer integratio
 	)
 	expect(consoleError).toHaveBeenCalled()
 	consoleError.mockRestore()
+})
+
+test('onboarding featured MCP servers overlay Notion and Linear connection state', async () => {
+	const env = {} as Env
+	mockModule.listMcpServerSettings.mockResolvedValue([
+		{
+			id: 'srv-linear',
+			name: 'linear',
+			url: 'https://mcp.linear.app/mcp',
+			enabled: true,
+			createdAt: '2026-08-01T00:00:00.000Z',
+			updatedAt: '2026-08-01T00:00:00.000Z',
+		},
+	])
+	mockModule.loadMcpClientHubSnapshotOrNull.mockResolvedValue({
+		servers: [
+			{
+				serverId: 'srv-linear',
+				state: 'ready',
+				authUrl: null,
+				error: null,
+				tools: [{ name: 'list_issues' }],
+			},
+		],
+	})
+
+	const anonymous = await loadOnboardingFeaturedMcpServers(env)
+	expect(anonymous).toEqual(listDisconnectedOnboardingFeaturedMcpServers())
+	expect(mockModule.listMcpServerSettings).not.toHaveBeenCalled()
+
+	const signedIn = await loadOnboardingFeaturedMcpServers(env, 'viewer-1')
+	expect(signedIn[0]).toMatchObject({
+		id: 'notion',
+		connected: false,
+		serverId: null,
+	})
+	expect(signedIn[1]).toMatchObject({
+		id: 'linear',
+		connected: true,
+		serverId: 'srv-linear',
+		state: 'ready',
+	})
+	expect(mockModule.listMcpServerSettings).toHaveBeenCalledWith({
+		env,
+		userId: 'viewer-1',
+	})
+
+	mockModule.listMcpServerSettings.mockRejectedValue(new Error('d1 blip'))
+	await expect(
+		loadOnboardingFeaturedMcpServers(env, 'viewer-1'),
+	).resolves.toEqual(listDisconnectedOnboardingFeaturedMcpServers())
 })

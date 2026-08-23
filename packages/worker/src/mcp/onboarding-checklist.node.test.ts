@@ -133,6 +133,34 @@ test('checklist derives from stored signals, fails open on missing bindings, and
 	expect(await readDismissedAt(env.APP_DB)).toMatch(/^\d{4}-\d{2}-\d{2}T/)
 })
 
+test('checklist connect-integration completes from a saved MCP server without OAuth', async () => {
+	const { env } = createEnv()
+	await seedUser(env.APP_DB)
+	await env.APP_DB.prepare(
+		`INSERT INTO mcp_server_settings (id, user_id, name, url, enabled, created_at, updated_at)
+		 VALUES (?, ?, 'notion', 'https://mcp.notion.com/mcp', 1, ?, ?)`,
+	)
+		.bind(
+			'srv-notion',
+			userId,
+			'2026-08-01T00:00:00.000Z',
+			'2026-08-01T00:00:00.000Z',
+		)
+		.run()
+
+	const checklist = await deriveOnboardingChecklist({
+		env,
+		userId,
+		emailVerified: true,
+		hasMcpClient: true,
+	})
+	const doneById = Object.fromEntries(
+		checklist.items.map((i) => [i.id, i.done]),
+	)
+	expect(doneById['connect-integration']).toBe(true)
+	expect(doneById['install-starter']).toBe(false)
+})
+
 test('search onboarding notice points at /onboarding and goes quiet after dismissal', async () => {
 	const { env } = createEnv()
 	await seedUser(env.APP_DB)

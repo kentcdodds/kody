@@ -24,9 +24,10 @@ export function buildOnboardingSetupPrompt() {
 	return [
 		'Help me get started with Kody.',
 		'First, briefly explain what Kody can do for me in plain language.',
-		'Then help me connect one integration I care about: check coding_guide_get for a matching provider guide (for example provider_github or provider_google) and follow it; otherwise use search and the official guides to find the right setup steps, walk me through the connect or secrets flow, and verify the connection with a small ad hoc execute smoke test.',
-		'Do not create any packages until the integration works — start with ad hoc execute calls.',
-		'Once the integration works, check community_search for a trusted community package that is close to what I want, fork or adapt it (community_fork, or point me at one-click install on /onboarding or the listing detail), and only create a new package if nothing suitable exists.',
+		'Then help me connect Notion or Linear as a remote MCP server: call mcp_server_add with name "notion" and url https://mcp.notion.com/mcp, or name "linear" and url https://mcp.linear.app/mcp. If I already connected one on /onboarding, skip add and use mcp_server_list. When the result includes an authUrl, ask me to open it and authorize Kody, then check mcp_server_list.',
+		'Do not offer GitHub official MCP as the first option — it does not return an authorization URL.',
+		'Do not create any packages until one connected server works — start with a small ad hoc execute smoke test against its tools (for example search Notion or list Linear issues).',
+		'Once that ad hoc call works, persist the working code as a package I own with package_save, or community_fork a trusted listing if one is closer. Only create a new package if nothing suitable exists.',
 	].join(' ')
 }
 
@@ -53,8 +54,8 @@ export function buildDiscoveryPrompt(input: {
 }
 
 /**
- * Optional email → reply → memories loop. Onboarding Step 2 uses a different
- * climax; this MCP prompt remains for people who want that path.
+ * Optional email → reply → memories loop. Onboarding Step 3 uses the persist
+ * playbook instead; this MCP prompt remains for people who want that path.
  *
  * Address the connected Kody server rather than "Hey Kody" — some hosts treat
  * that as impersonation / prompt injection and skip MCP tools. The no-polling
@@ -77,12 +78,11 @@ export function buildFirstWinPrompt(input: {
 }
 
 /**
- * Onboarding Step 2 climax: fork/install a zero-auth example, invoke the
- * user's owned copy, explain permanence, offer triggers without ranking them.
- * Per-package paste prompts live in `#universal/onboarding-examples.ts`; this
- * MCP prompt points at the shared guide when no card was picked yet.
+ * Onboarding Step 3 climax: one ad hoc execute against a connected MCP server
+ * (or whatever the person asks for if they skipped Step 2), then persist that
+ * working code as a package they own.
  */
-export function buildQuickExamplePrompt(input: {
+export function buildPersistFirstPackagePrompt(input: {
 	env: OnboardingPromptEnv
 	requestUrl: string | URL
 }) {
@@ -92,8 +92,9 @@ export function buildQuickExamplePrompt(input: {
 	})
 	return [
 		`Ask the connected Kody server to read ${origin}/guides/quick-example and help me with my first build on Kody.`,
-		'I am forking a zero-auth example package from /onboarding Step 2.',
-		'Wait until my install/fork is ready (search once; retry once if missing — do not poll), invoke MY installed package with packages.invoke, show the result, explain that I own it, and ask if I want a trigger (webhook, Kody app, cron, or skip) without recommending one.',
-		'Keep messages short.',
+		'I connected Notion or Linear as a remote MCP server from /onboarding Step 2, or skipped so I could try an ad hoc request first.',
+		'Use execute for one useful ad hoc call (search Notion, list Linear issues, or ask me what I want if I skipped). Show the result, then persist that working code as a package I own with package_save — or community_fork a trusted listing if one is closer.',
+		'Explain that I own the package. Ask if I want a trigger (webhook, Kody app, cron, or skip) without recommending one.',
+		'Keep messages short. Do not poll.',
 	].join(' ')
 }
