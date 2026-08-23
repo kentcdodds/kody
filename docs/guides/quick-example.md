@@ -3,7 +3,7 @@ id: quick_example
 title: First build — ad hoc execute, then persist
 summary:
   Agent playbook for onboarding Step 3: run one useful ad hoc execute against a
-  connected Notion or Linear MCP server (or whatever the person asks for if they
+  connected workspace MCP server (or whatever the person asks for if they
   skipped), show the result, persist that working code as a package they own,
   and offer optional triggers without recommending one.
 category: platform
@@ -14,8 +14,9 @@ category: platform
 <!--
 Agent notes — for AI agents driving onboarding Step 3 from this page:
 
-- The person already connected Notion or Linear as a remote MCP server on
-  /onboarding Step 2, or skipped so they could try an ad hoc request first.
+- The person already connected a workspace MCP server on /onboarding Step 2
+  (Notion, Linear, Atlassian, Stripe, Sentry, or Canva), or skipped so they could
+  try an ad hoc request first.
 - Your job is one useful execute call, a short result, then persist that
   working code as a package they own. That owned package is the point of Kody.
 - Keep messages short — under roughly 120 words.
@@ -23,9 +24,13 @@ Agent notes — for AI agents driving onboarding Step 3 from this page:
   authorizing, ask them to say when /onboarding shows Connected and try once
   more.
 - Discover tools with search or mcp_server_list. Call them from execute as
-  kody.mcp["notion"].tool_name(...) or kody.mcp["linear"].tool_name(...).
-- Persist with package_save after the ad hoc call works. community_fork a
-  trusted listing only when one is closer than writing a new package.
+  kody.mcp["notion"].tool_name(...), kody.mcp["linear"].tool_name(...),
+  kody.mcp["atlassian"].tool_name(...), kody.mcp["stripe"].tool_name(...), or the
+  matching connected server name.
+- Persist with package_save after the ad hoc call works. community_fork the
+  matching official @kody/*-mcp listing when that is closer than writing a new
+  package. Do not convert official API packages (@kody/notion, @kody/linear,
+  @kody/jira, @kody/stripe, @kody/sentry, @kody/canva) to MCP-first.
 - Do not recommend one trigger over another. Offer webhook, Kody app, cron, or
   skip, and let them choose.
 - Do not create extra packages during this loop unless they ask.
@@ -34,8 +39,7 @@ Agent notes — for AI agents driving onboarding Step 3 from this page:
 
 This guide is the playbook for a Kody account's first build: run one useful ad
 hoc request, then save that working code as a package the person owns — after
-connecting Notion or Linear as a remote MCP server, or after they skip that
-step.
+connecting a workspace MCP server, or after they skip that step.
 
 The person may have arrived from `/onboarding` Step 3 ("Try it, then persist")
 on the same origin this guide was fetched from. They can paste a prompt into
@@ -44,14 +48,15 @@ their agent as soon as they reach that step.
 ## Before you start
 
 The account needs a verified email and an authorized MCP host. If they connected
-Notion or Linear on `/onboarding` Step 2, confirm the server is ready with
+a workspace MCP server on `/onboarding` Step 2, confirm the server is ready with
 `mcp_server_list` before calling its tools. If they skipped, ask what they want
 to try and use whatever tools are already available.
 
 ## Step 1 — Confirm the connection
 
-If they named Notion or Linear, look it up once with `mcp_server_list` (or
-`search` for the `mcp:notion` / `mcp:linear` domain).
+If they named a workspace MCP server, look it up once with `mcp_server_list` (or
+`search` for `mcp:notion`, `mcp:linear`, `mcp:atlassian`, `mcp:stripe`,
+`mcp:sentry`, or `mcp:canva`).
 
 If the server is still authorizing, tell them to finish the provider window and
 say when `/onboarding` shows Connected. Try the list **once** more after they
@@ -66,6 +71,10 @@ Use `execute` for a single useful call. Prefer the connected MCP tools:
 
 - **Notion** — search a page they mention, or list recent pages they can access.
 - **Linear** — list a few issues, or summarize what is in progress.
+- **Atlassian** — list Jira issues or Confluence pages they can already see.
+- **Stripe** — list recent customers, invoices, or payments they can access.
+- **Sentry** — list recent issues, or summarize one they name.
+- **Canva** — list recent designs or folders they can access.
 
 Show a short summary of the result. Do not create a package until this call
 works.
@@ -95,8 +104,8 @@ for now. List the options. If they skip, they are done with Get started.
 - **Server not connected** — the authorize window is still open, or they are on
   a different account than the browser session. Wait for their "Connected"
   message; one retry.
-- **No Notion or Linear tools** — they skipped Step 2, or the server name is not
-  `notion` / `linear`. Ask what they want, or send them back to
+- **No workspace MCP tools** — they skipped Step 2, or the server name is not
+  one of the Step 2 cards. Ask what they want, or send them back to
   `/onboarding#connect-mcp`.
 - **`package_save` rejected** — the ad hoc module is incomplete. Keep the
   execute evidence, fix the package files, and save again. Do not invent extra

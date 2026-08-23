@@ -140,14 +140,83 @@ function renderDiscordIcon(size: string) {
 	)
 }
 
+function renderAsanaIcon(size: string) {
+	return (
+		<svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+			<circle cx="12" cy="6.4" r="3.15" fill="#F06A6A" />
+			<circle cx="7.15" cy="16.35" r="3.15" fill="#F06A6A" />
+			<circle cx="16.85" cy="16.35" r="3.15" fill="#F06A6A" />
+		</svg>
+	)
+}
+
+function renderSentryIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#362D59"
+		>
+			<path d="M13.83 2.245a1.97 1.97 0 0 0-1.8-1.237h-.007a1.972 1.972 0 0 0-1.799 1.237L.113 19.797a1.978 1.978 0 0 0 .017 1.974c.347.607.993.97 1.703.97h20.334c.71 0 1.356-.363 1.703-.97a1.978 1.978 0 0 0 .017-1.974L13.83 2.245zm-.547 1.017 9.516 17.388H1.2L13.283 3.262z" />
+		</svg>
+	)
+}
+
+function renderCanvaIcon(size: string) {
+	return (
+		<svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+			<circle cx="12" cy="12" r="10" fill="#00C4CC" />
+			<path
+				fill="#fff"
+				d="M14.7 7.35c-1.02-.7-2.28-.7-3.18.08-1.38 1.2-1.5 3.42-.28 5.02.86 1.12 2.22 1.68 3.42 1.42.62-.14 1.18.3 1.18.94 0 .44-.3.82-.72.94-1.86.52-3.98-.28-5.22-1.9-1.86-2.44-1.68-5.86.42-7.68 1.62-1.4 3.92-1.4 5.58-.26.5.34.6 1.04.24 1.52-.36.48-1.04.58-1.54.24-.3-.2-.62-.3-.9-.32z"
+			/>
+		</svg>
+	)
+}
+
+function renderAtlassianIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#1868DB"
+		>
+			<path d="M19.31 7.547c-.426-.643-1.108-.643-1.534 0L12 15.53 6.224 7.547c-.426-.643-1.108-.643-1.534 0C3.037 10.268.76 14.05.76 14.05c-.425.642-.132 1.166.65 1.166h5.622c.425 0 .85-.212 1.108-.642L12 9.39l3.86 5.184c.258.43.683.642 1.108.642h5.622c.782 0 1.075-.524.65-1.166 0 0-2.277-3.782-3.93-6.503z" />
+		</svg>
+	)
+}
+
+function renderStripeIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#635BFF"
+		>
+			<path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.664-1.305 2.525-3.236 2.525-5.732 0-4.128-2.524-5.851-6.594-7.305h.003z" />
+		</svg>
+	)
+}
+
 const knownProviderIconIds = [
+	'asana',
+	'atlassian',
+	'canva',
 	'discord',
 	'github',
 	'google',
 	'linear',
 	'notion',
+	'sentry',
 	'slack',
 	'spotify',
+	'stripe',
 	'x',
 ] as const
 
@@ -157,12 +226,17 @@ const providerIconRenderers: Record<
 	ProviderIconId,
 	(size: string) => JSX.Element
 > = {
+	asana: renderAsanaIcon,
+	atlassian: renderAtlassianIcon,
+	canva: renderCanvaIcon,
 	github: renderGitHubIcon,
 	google: renderGoogleIcon,
 	linear: renderLinearIcon,
 	x: renderXIcon,
+	sentry: renderSentryIcon,
 	slack: renderSlackIcon,
 	spotify: renderSpotifyIcon,
+	stripe: renderStripeIcon,
 	notion: renderNotionIcon,
 	discord: renderDiscordIcon,
 }
@@ -174,8 +248,22 @@ const providerIconHosts: Record<string, ProviderIconId> = {
 	'api.linear.app': 'linear',
 	'api.notion.com': 'notion',
 	'linear.app': 'linear',
+	'mcp.asana.com': 'asana',
+	'mcp.atlassian.com': 'atlassian',
+	'mcp.canva.com': 'canva',
 	'mcp.linear.app': 'linear',
 	'mcp.notion.com': 'notion',
+	'mcp.sentry.dev': 'sentry',
+	'mcp.slack.com': 'slack',
+	'mcp.stripe.com': 'stripe',
+	'app.asana.com': 'asana',
+	'asana.com': 'asana',
+	'atlassian.com': 'atlassian',
+	'auth.atlassian.com': 'atlassian',
+	'canva.com': 'canva',
+	'sentry.io': 'sentry',
+	'api.stripe.com': 'stripe',
+	'stripe.com': 'stripe',
 	'api.spotify.com': 'spotify',
 	'discord.com': 'discord',
 	'discordapp.com': 'discord',

@@ -107,11 +107,14 @@ a coding agent (Cursor, Claude Code, Codex, Grok CLI, Copilot, OpenCode, and
 similar) is usually smoother because those hosts can edit files and iterate on
 code more easily.
 
-## Connect Notion or Linear, then persist a first build
+## Connect a workspace MCP, then persist a first build
 
-After the connection works, Get started Step 2 offers Notion and Linear as
-remote MCP servers (`https://mcp.notion.com/mcp` and
-`https://mcp.linear.app/mcp`). Connect one and authorize it, or skip.
+After the connection works, Get started Step 2 offers official remote MCP
+servers for Notion, Linear, Atlassian, Stripe, Sentry, and Canva, plus the
+matching `@kody/*-mcp` helper. Connect one and authorize it, install the
+package, or skip. MCP is the quicker first-value path. The official non-MCP
+packages (`@kody/notion`, `@kody/linear`, `@kody/jira`, `@kody/stripe`,
+`@kody/sentry`, `@kody/canva`) stay the long-term API helpers.
 
 Step 3 copies a prompt that asks your agent to run one ad hoc request, then
 persist that working code as a package you own. Built-in platform OAuth and

@@ -22,15 +22,21 @@ export const onboardingChecklistItemLabels: Record<
 	'connect-agent': 'Connect your agent',
 	'first-hello': 'Exchange a first email with Kody',
 	'save-memory': 'Save a memory',
-	'connect-integration': 'Connect Notion or Linear',
+	'connect-integration': 'Connect a workspace MCP',
 	'install-starter': 'Persist your first package',
 }
 
 const integrationGuideProviders = [
-	{ id: 'notion', label: 'Notion MCP', href: `${onboardingPath}#connect-mcp` },
-	{ id: 'linear', label: 'Linear MCP', href: `${onboardingPath}#connect-mcp` },
-	{ id: 'google', label: 'Google', href: '/guides/google' },
-	{ id: 'github', label: 'GitHub', href: '/guides/github' },
+	{ id: 'notion', label: 'Notion', href: `${onboardingPath}#connect-mcp` },
+	{ id: 'linear', label: 'Linear', href: `${onboardingPath}#connect-mcp` },
+	{
+		id: 'atlassian',
+		label: 'Atlassian',
+		href: `${onboardingPath}#connect-mcp`,
+	},
+	{ id: 'stripe', label: 'Stripe', href: `${onboardingPath}#connect-mcp` },
+	{ id: 'sentry', label: 'Sentry', href: `${onboardingPath}#connect-mcp` },
+	{ id: 'canva', label: 'Canva', href: `${onboardingPath}#connect-mcp` },
 ] as const
 
 function readChecklistItemHref(id: OnboardingChecklistItemId): string | null {
