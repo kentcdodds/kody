@@ -929,15 +929,6 @@ test('runRepoChecks validates static kody package import declarations across mis
 					'export const ready: HelperConfig | unknown = helper',
 				].join('\n'),
 			],
-			[
-				'src/asserted.ts',
-				[
-					"import { packages } from 'kody:runtime'",
-					'export async function run() {',
-					"\treturn packages.invoke(({ kodyId: 'github', exportName: './request' }) as unknown as string)",
-					'}',
-				].join('\n'),
-			],
 		]),
 	)
 	expect(declaredImports.ok).toBe(true)
@@ -1453,6 +1444,15 @@ test('runRepoChecks rejects object-only packages.invoke with the permanent repai
 					"import { packages } from 'kody:runtime'",
 					'export default async function run() {',
 					"\treturn packages.invoke({ kodyId: 'github', exportName: './request' })",
+					'}',
+				].join('\n'),
+			],
+			[
+				'src/asserted.ts',
+				[
+					"import { packages } from 'kody:runtime'",
+					'export async function run() {',
+					"\treturn packages.invoke(({ kodyId: 'github', exportName: './request' }) as unknown as string)",
 					'}',
 				].join('\n'),
 			],
