@@ -18,6 +18,7 @@ export type LandingLoopPauseReason =
 	| 'explore'
 	| 'offscreen'
 	| 'manual'
+	| 'ended'
 
 export type LandingLoopBeat =
 	| {
@@ -34,7 +35,7 @@ export type LandingLoopBeat =
 
 export type LandingLoopAdvance = {
 	didAdvance: boolean
-	looped: boolean
+	ended: boolean
 }
 
 export function flattenTranscriptActs(
@@ -55,8 +56,15 @@ export function flattenTranscriptActs(
 	return beats
 }
 
-export function landingLoopHoldMs(beat: LandingLoopBeat | 'loop'): number {
-	if (beat === 'loop') return 4000
+export function landingLoopChatScrollShouldExplore(input: {
+	autoScrolling: boolean
+	userDriven: boolean
+	atBottom: boolean
+}) {
+	return !input.autoScrolling && input.userDriven && !input.atBottom
+}
+
+export function landingLoopHoldMs(beat: LandingLoopBeat): number {
 	if (beat.kind === 'act') return 1100
 	switch (beat.line.role) {
 		case 'user':
@@ -97,6 +105,14 @@ export function createLandingLoopPlayer(input: {
 		else reasons.delete(reason)
 		if (had === on) return
 		emit()
+	}
+
+	function clearPlayableReasons() {
+		ignorePointerPause = true
+		reasons.delete('explore')
+		reasons.delete('manual')
+		reasons.delete('hover')
+		reasons.delete('focus')
 	}
 
 	return {
@@ -141,27 +157,37 @@ export function createLandingLoopPlayer(input: {
 			ignorePointerPause = false
 			setReason('manual', true)
 		},
+		end() {
+			setReason('ended', true)
+		},
+		isEnded() {
+			return reasons.has('ended')
+		},
 		play() {
-			const wasPointerPaused = reasons.has('hover') || reasons.has('focus')
-			if (wasPointerPaused) ignorePointerPause = true
-			reasons.delete('explore')
-			reasons.delete('manual')
-			reasons.delete('hover')
-			reasons.delete('focus')
+			// Always ignore the hover/focus that follows a Play tap. Mobile
+			// often focuses the scrollable chat right after that click.
+			clearPlayableReasons()
+			emit()
+		},
+		restart() {
+			revealedCount = input.reducedMotion
+				? input.beatCount
+				: Math.min(landingLoopTeaserBeatCount, input.beatCount)
+			clearPlayableReasons()
+			reasons.delete('ended')
 			emit()
 		},
 		advance(): LandingLoopAdvance {
 			if (isPaused() || input.beatCount === 0) {
-				return { didAdvance: false, looped: false }
+				return { didAdvance: false, ended: reasons.has('ended') }
 			}
 			if (revealedCount >= input.beatCount) {
-				revealedCount = Math.min(landingLoopTeaserBeatCount, input.beatCount)
-				emit()
-				return { didAdvance: true, looped: true }
+				setReason('ended', true)
+				return { didAdvance: false, ended: true }
 			}
 			revealedCount += 1
 			emit()
-			return { didAdvance: true, looped: false }
+			return { didAdvance: true, ended: false }
 		},
 	}
 }

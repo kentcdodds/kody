@@ -3,13 +3,14 @@ import { howKodyWorksTranscriptActs } from './how-kody-works-transcript.ts'
 import {
 	createLandingLoopPlayer,
 	flattenTranscriptActs,
+	landingLoopChatScrollShouldExplore,
 	landingLoopHoldMs,
 	landingLoopTeaser,
 	landingLoopTeaserBeatCount,
 	waitLandingLoopHold,
 } from './landing-loop-state.ts'
 
-test('homepage loop player pauses for hover and explore, then play resumes and loops', async () => {
+test('homepage loop player pauses for hover and explore, then play resumes and restarts at the end', async () => {
 	const beats = flattenTranscriptActs(howKodyWorksTranscriptActs)
 	expect(beats[0]).toMatchObject({
 		kind: 'act',
@@ -29,6 +30,35 @@ test('homepage loop player pauses for hover and explore, then play resumes and l
 		beats.some((beat) => beat.kind === 'line' && beat.line.role === 'tools'),
 	).toBe(true)
 
+	expect(
+		landingLoopChatScrollShouldExplore({
+			autoScrolling: true,
+			userDriven: true,
+			atBottom: false,
+		}),
+	).toBe(false)
+	expect(
+		landingLoopChatScrollShouldExplore({
+			autoScrolling: false,
+			userDriven: false,
+			atBottom: false,
+		}),
+	).toBe(false)
+	expect(
+		landingLoopChatScrollShouldExplore({
+			autoScrolling: false,
+			userDriven: true,
+			atBottom: true,
+		}),
+	).toBe(false)
+	expect(
+		landingLoopChatScrollShouldExplore({
+			autoScrolling: false,
+			userDriven: true,
+			atBottom: false,
+		}),
+	).toBe(true)
+
 	const player = createLandingLoopPlayer({
 		beatCount: beats.length,
 		reducedMotion: false,
@@ -36,11 +66,10 @@ test('homepage loop player pauses for hover and explore, then play resumes and l
 	expect(player.revealedCount).toBe(landingLoopTeaserBeatCount)
 	expect(player.isPaused()).toBe(false)
 	expect(landingLoopHoldMs(beats[0]!)).toBe(1100)
-	expect(landingLoopHoldMs('loop')).toBe(4000)
 
 	player.setHover(true)
 	expect(player.isPaused()).toBe(true)
-	expect(player.advance()).toEqual({ didAdvance: false, looped: false })
+	expect(player.advance()).toEqual({ didAdvance: false, ended: false })
 
 	player.setExplore(true)
 	player.setHover(false)
@@ -49,7 +78,7 @@ test('homepage loop player pauses for hover and explore, then play resumes and l
 
 	player.play()
 	expect(player.isPaused()).toBe(false)
-	expect(player.advance()).toEqual({ didAdvance: true, looped: false })
+	expect(player.advance()).toEqual({ didAdvance: true, ended: false })
 	expect(player.revealedCount).toBe(landingLoopTeaserBeatCount + 1)
 
 	player.setHover(true)
@@ -71,23 +100,43 @@ test('homepage loop player pauses for hover and explore, then play resumes and l
 	expect(player.isPaused()).toBe(true)
 	player.play()
 
+	player.pause()
+	expect(player.isPaused()).toBe(true)
+	player.play()
+	player.setFocus(true)
+	expect(player.isPaused()).toBe(false)
+	player.setExplore(true)
+	expect(player.pauseReasons()).toEqual(['explore'])
+	player.play()
+	expect(player.isPaused()).toBe(false)
+
 	const still = createLandingLoopPlayer({
 		beatCount: beats.length,
 		reducedMotion: true,
 	})
 	expect(still.revealedCount).toBe(beats.length)
 	expect(still.isPaused()).toBe(true)
-	expect(still.advance()).toEqual({ didAdvance: false, looped: false })
+	expect(still.advance()).toEqual({ didAdvance: false, ended: false })
 
-	const looper = createLandingLoopPlayer({
+	const finisher = createLandingLoopPlayer({
 		beatCount: 3,
 		reducedMotion: false,
 	})
-	expect(looper.revealedCount).toBe(landingLoopTeaserBeatCount)
-	expect(looper.advance()).toEqual({ didAdvance: true, looped: false })
-	expect(looper.revealedCount).toBe(3)
-	expect(looper.advance()).toEqual({ didAdvance: true, looped: true })
-	expect(looper.revealedCount).toBe(landingLoopTeaserBeatCount)
+	expect(finisher.revealedCount).toBe(landingLoopTeaserBeatCount)
+	expect(finisher.advance()).toEqual({ didAdvance: true, ended: false })
+	expect(finisher.revealedCount).toBe(3)
+	expect(finisher.advance()).toEqual({ didAdvance: false, ended: true })
+	expect(finisher.revealedCount).toBe(3)
+	expect(finisher.isEnded()).toBe(true)
+	expect(finisher.isPaused()).toBe(true)
+	finisher.play()
+	expect(finisher.isEnded()).toBe(true)
+	expect(finisher.isPaused()).toBe(true)
+	finisher.restart()
+	expect(finisher.isEnded()).toBe(false)
+	expect(finisher.isPaused()).toBe(false)
+	expect(finisher.revealedCount).toBe(landingLoopTeaserBeatCount)
+	expect(finisher.advance()).toEqual({ didAdvance: true, ended: false })
 
 	vi.useFakeTimers()
 	try {
