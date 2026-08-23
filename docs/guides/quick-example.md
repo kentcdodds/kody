@@ -1,93 +1,103 @@
 ---
 id: quick_example
-title: Quick example — fork, invoke, own
+title: First build — ad hoc execute, then persist
 summary:
-  Agent playbook for onboarding Step 2: wait for a one-click install/fork of a
-  zero-auth example package, invoke the user's installed copy, show the result,
-  explain ownership, and offer optional triggers without recommending one.
+  Agent playbook for onboarding Step 3: run one useful ad hoc execute against a
+  connected Notion or Linear MCP server (or whatever the person asks for if they
+  skipped), show the result, persist that working code as a package they own,
+  and offer optional triggers without recommending one.
 category: platform
 ---
 
-# Quick example — fork, invoke, own
+# First build — ad hoc execute, then persist
 
 <!--
-Agent notes — for AI agents driving onboarding Step 2 from this page:
+Agent notes — for AI agents driving onboarding Step 3 from this page:
 
-- The person already started a one-click install/fork on /onboarding. Your job
-  is to wait until that package is in their account, invoke THEIR copy, show
-  the result, and teach that Kody turns agent work into owned packages.
+- The person already connected Notion or Linear as a remote MCP server on
+  /onboarding Step 2, or skipped so they could try an ad hoc request first.
+- Your job is one useful execute call, a short result, then persist that
+  working code as a package they own. That owned package is the point of Kody.
 - Keep messages short — under roughly 120 words.
-- NEVER poll, sleep, or retry on a timer. Search once; if the package is not
-  found yet, ask them to say when install finished and try once more.
-- Invoke with packages.invoke("kody:@their-username/package/export", { params })
-  against the installed/forked package. Use the owner from the package found by
-  search. Do NOT guess a platform `@kody/*` target for packages that need
-  packageStorage (for example personal-capture).
+- NEVER poll, sleep, or retry on a timer. If a connected MCP server is still
+  authorizing, ask them to say when /onboarding shows Connected and try once
+  more.
+- Discover tools with search or mcp_server_list. Call them from execute as
+  kody.mcp["notion"].tool_name(...) or kody.mcp["linear"].tool_name(...).
+- Persist with package_save after the ad hoc call works. community_fork a
+  trusted listing only when one is closer than writing a new package.
 - Do not recommend one trigger over another. Offer webhook, Kody app, cron, or
   skip, and let them choose.
 - Do not create extra packages during this loop unless they ask.
 - Paths like /onboarding are relative to the origin you fetched this guide from.
 -->
 
-This guide is the playbook for a Kody account's first build: fork a ready-made
-zero-auth example, run it once, and see that the result is a package the person
-owns — before connecting GitHub, Google, or other OAuth services.
+This guide is the playbook for a Kody account's first build: run one useful ad
+hoc request, then save that working code as a package the person owns — after
+connecting Notion or Linear as a remote MCP server, or after they skip that
+step.
 
-The person may have arrived from `/onboarding` Step 2 ("Try a quick example") on
-the same origin this guide was fetched from. After they pick a card, install
-starts in the browser; they can paste a prompt into their agent while install is
-still finishing.
+The person may have arrived from `/onboarding` Step 3 ("Try it, then persist")
+on the same origin this guide was fetched from. They can paste a prompt into
+their agent as soon as they reach that step.
 
 ## Before you start
 
-The account needs a verified email and an authorized MCP host. The one-click
-install on `/onboarding` forks the listing into their account; wait for that
-package to be searchable before invoking.
+The account needs a verified email and an authorized MCP host. If they connected
+Notion or Linear on `/onboarding` Step 2, confirm the server is ready with
+`mcp_server_list` before calling its tools. If they skipped, ask what they want
+to try and use whatever tools are already available.
 
-## Step 1 — Confirm the install
+## Step 1 — Confirm the connection
 
-Search for the package by the kody id from the prompt (for example
-`local-conditions`, `hn-pulse`, or `personal-capture`).
+If they named Notion or Linear, look it up once with `mcp_server_list` (or
+`search` for the `mcp:notion` / `mcp:linear` domain).
 
-If it is missing, tell them install may still be finishing (~tens of seconds)
-and ask them to say when the page shows installed. Try the search **once** more
-after they confirm. Do not poll.
+If the server is still authorizing, tell them to finish the provider window and
+say when `/onboarding` shows Connected. Try the list **once** more after they
+confirm. Do not poll.
 
-## Step 2 — Invoke their copy
+If they skipped Step 2, ask one short question about what they want to try
+instead of adding a server yourself.
 
-Use keyless `packages.invoke` with the installed package's scoped name. Replace
-`their-username` with the owner returned by search:
+## Step 2 — Run one ad hoc execute
 
-- **local-conditions** —
-  `packages.invoke("kody:@their-username/local-conditions/getLocalConditions", { params: { place: "Salt Lake City" } })`
-- **hn-pulse** —
-  `packages.invoke("kody:@their-username/hn-pulse/getTopStories", { params: { limit: 5 } })`
-- **personal-capture** —
-  `packages.invoke("kody:@their-username/personal-capture/capture", { params: { text: "Onboarding first build" } })`,
-  then invoke
-  `packages.invoke("kody:@their-username/personal-capture/listCaptures", { params: { limit: 5 } })`
+Use `execute` for a single useful call. Prefer the connected MCP tools:
 
-Show a short summary of the result.
+- **Notion** — search a page they mention, or list recent pages they can access.
+- **Linear** — list a few issues, or summarize what is in progress.
 
-## Step 3 — Name the ownership lesson
+Show a short summary of the result. Do not create a package until this call
+works.
+
+## Step 3 — Persist the working code
+
+Save that working module as a package they own:
+
+- `package_save` when you are writing the first version, or
+- `community_fork` when a trusted listing is already close.
+
+Name the package after the job it does. Then confirm it is searchable as theirs.
+
+## Step 4 — Name the ownership lesson
 
 In one short message, explain that the package lives in **their** account: they
-can edit it, hang triggers on it, or fork something else. This is the permanence
+can edit it, hang triggers on it, or write another. This is the permanence
 lesson for onboarding — not a practice run.
 
-## Step 4 — Offer triggers (optional)
+## Step 5 — Offer triggers (optional)
 
 Ask whether they want to hang a trigger on it: webhook, Kody app, cron, or skip
-for now. List the options. If they skip, point them at `/onboarding` Step 3 to
-connect real services (GitHub, Google, Slack, Notion, and more).
+for now. List the options. If they skip, they are done with Get started.
 
 ## Troubleshooting
 
-- **Package not found** — install still in flight, or they are on a different
-  account than the browser session. Wait for their "finished" message; one
-  retry.
-- **`packageStorage` / platform invoke errors** — they invoked the platform
-  `@kody/*` copy instead of their fork. Search again and invoke the exact scoped
-  name owned by their account.
-- **Adaptation required** — rare for these trusted examples. Open the inert fork
-  with a repo session only if install reported adaptation was required.
+- **Server not connected** — the authorize window is still open, or they are on
+  a different account than the browser session. Wait for their "Connected"
+  message; one retry.
+- **No Notion or Linear tools** — they skipped Step 2, or the server name is not
+  `notion` / `linear`. Ask what they want, or send them back to
+  `/onboarding#connect-mcp`.
+- **`package_save` rejected** — the ad hoc module is incomplete. Keep the
+  execute evidence, fix the package files, and save again. Do not invent extra
+  packages.
