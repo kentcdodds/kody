@@ -1198,7 +1198,7 @@ export function createPackageStorageAccessDeniedMessage(packageId: string) {
 		'Package storage access is granted only from bundler-recorded provenance: the running package itself and ' +
 		'the saved packages this bundle statically imported (kody:@scope/package/export). If the target package is ' +
 		'known when the code is written, statically import one of its exports so the bundler records the dependency; ' +
-		"otherwise call one of its exports via keyless packages.invoke({ kodyId, exportName, params }) so the package's " +
+		'otherwise call one of its exports via keyless packages.invoke("kody:@scope/package/export", { params }) so the package\'s ' +
 		'own runtime does the reading and writing.'
 	)
 }

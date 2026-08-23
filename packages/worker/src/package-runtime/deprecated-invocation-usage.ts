@@ -112,7 +112,7 @@ const removedUsageReplacements: Record<DeprecatedInvocationUsageKind, string> =
 		'packages.check':
 			'packages.check was removed: packages.invoke always contract-checks before invoking, so call it directly',
 		'packages.invokeChecked':
-			'packages.invokeChecked was removed: use a static kody:@scope/pkg/export import when the target package is known at write time, or packages.invoke({ kodyId, exportName, params }) for dynamic targets',
+			'packages.invokeChecked was removed: use a static kody:@scope/pkg/export import when the target package is known at write time, or packages.invoke("kody:@scope/pkg/export", { params }) for dynamic targets',
 		'dynamic-kody-import':
 			'literal dynamic import("kody:@...") was removed: use a static import and declare it in package.json#kody.dependencies, or packages.invoke when the target is data',
 	}

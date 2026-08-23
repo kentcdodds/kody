@@ -27,11 +27,12 @@ invoke it instead of creating another implementation.
   package reuse from `execute` and from other packages. Ad hoc execute bundles
   per call, so static imports from execute always see the current published
   version.
-- Use keyless `packages.invoke({ kodyId, exportName, params })` from an
-  authenticated `execute` call, a package job runtime, or other package runtime
-  when the target's name is data or the call must run in the target package's
-  own runtime (package secret mounts, `packageStorage()`, `packageContext`).
-  Pass `idempotencyKey` only when the call needs exactly-once semantics.
+- Use keyless `packages.invoke("kody:@scope/package/export", { params })` from
+  an authenticated `execute` call, a package job runtime, or other package
+  runtime when the target's name is data or the call must run in the target
+  package's own runtime (package secret mounts, `packageStorage()`,
+  `packageContext`). Pass `idempotencyKey` only when the call needs exactly-once
+  semantics.
 
 This is the default for an established operation whose behavior should stay
 owned by its existing capability or package.
@@ -185,10 +186,7 @@ Example test call:
 import { packages } from 'kody:runtime'
 
 export default async function main() {
-	return await packages.invoke({
-		kodyId: 'daily-report',
-		exportName: './scheduled-report',
-	})
+	return await packages.invoke('kody:@kentcdodds/daily-report/scheduled-report')
 }
 ```
 

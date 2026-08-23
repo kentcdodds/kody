@@ -321,6 +321,23 @@ type KodyPackagesInvokeTarget =
 type KodyPackagesInvokeExport =
   | { exportName: string; export_name?: never }
   | { exportName?: never; export_name: string };
+type KodyPackageSpecifier =
+  | \`kody:@\${string}/\${string}\`
+  | \`@\${string}/\${string}\`;
+type KodyPackagesInvokeOptions = {
+  /**
+   * Required when the specifier has no export subpath. When both are present,
+   * the export subpath in the specifier wins.
+   */
+  exportName?: string;
+  params?: Record<string, unknown>;
+  idempotencyKey?: string;
+  topic?: string | null;
+};
+/**
+ * @deprecated Use packages.invoke("kody:@scope/package/export", options).
+ * Bare kodyId lookup is user-scoped and can collide with a platform package.
+ */
 type KodyPackagesInvokeInput = KodyPackagesInvokeTarget &
   KodyPackagesInvokeExport & {
   params?: Record<string, unknown>;
@@ -333,7 +350,16 @@ type KodyPackagesRuntime = {
    * The only dynamic invocation primitive. Always contract-checks the current
    * published package export before invoking; a failing contract rejects with
    * "packages.invoke contract check failed: ...". Key-less calls are
-   * lean/ephemeral; pass idempotencyKey only for exactly-once semantics.
+   * lean/ephemeral; pass idempotencyKey only for exactly-once semantics. Prefer
+   * the kody:@scope/package form; an @scope/package specifier is also accepted.
+   */
+  invoke(
+    specifier: KodyPackageSpecifier,
+    options?: KodyPackagesInvokeOptions,
+  ): Promise<unknown>;
+  /**
+   * @deprecated Use the string-first Kody module specifier overload. Bare
+   * kodyId lookup is collision-prone and remains only for compatibility.
    */
   invoke(input: KodyPackagesInvokeInput): Promise<unknown>;
 };

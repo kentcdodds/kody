@@ -67,8 +67,9 @@ test('example prompt searches the user-owned scoped package and invokes in user 
 
 	expect(prompt).toContain('search({ query: "@u-b/hn-pulse" })')
 	expect(prompt).toContain(
-		'packages.invoke({ kodyId: "hn-pulse", exportName: "getTopStories"',
+		'packages.invoke("kody:@u-b/hn-pulse/getTopStories", { params:',
 	)
+	expect(prompt).not.toContain('packages.invoke("kody:@kody/hn-pulse')
 
 	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
 		'package_get_git_remote({ create: true, kody_id: "hn-pulse" })',
