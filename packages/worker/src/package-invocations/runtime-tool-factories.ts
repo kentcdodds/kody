@@ -17,6 +17,10 @@ import {
 } from './http-invoke.ts'
 import { parsePackageInvokeInput } from './input-parsing.ts'
 import { checkPackageInvokeForRuntimeWithPreloads } from './invoke-check.ts'
+import {
+	recordPackageInvokeSpecifierForm,
+	resolvePackageInvokeTelemetrySurface,
+} from './specifier-form-telemetry.ts'
 
 function throwIfPackageInvokeAborted(signal?: AbortSignal) {
 	if (!signal?.aborted) return
@@ -32,6 +36,7 @@ export function createPackageRuntimeInvokeToolsWithToolFactories(input: {
 	packageContext: PackageRuntimeContext | null
 	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
+	runtimeSurface?: 'app'
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
 }): PackageInvokeTools {
@@ -67,6 +72,7 @@ function createPackageInvokeTools(input: {
 	packageContext: PackageRuntimeContext | null
 	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
+	runtimeSurface?: 'app'
 	callerKind: 'package' | 'execute'
 	conversationId?: string | null
 	toolFactories: PackageRuntimeToolFactories
@@ -107,6 +113,10 @@ function createPackageInvokeTools(input: {
 				`packages.invoke exceeded the maximum nested invocation depth (${maxPackageRuntimeInvokeDepth}).`,
 			)
 		}
+		recordPackageInvokeSpecifierForm(input.env, {
+			rawSpecifier: rawInput.specifier,
+			surface: resolvePackageInvokeTelemetrySurface(input),
+		})
 		const request = parsePackageInvokeInput(rawInput)
 		const check = await checkPackageInvokeForRuntimeWithPreloads({
 			env: input.env,

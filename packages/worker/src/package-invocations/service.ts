@@ -57,6 +57,8 @@ export function createPackageRuntimeInvokeTools(input: {
 	packageContext: PackageRuntimeContext | null
 	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
+	/** Coarse telemetry attribution for package-app bridge calls. */
+	runtimeSurface?: 'app'
 	waitUntil?: (promise: Promise<unknown>) => void
 }): PackageInvokeTools {
 	return createPackageRuntimeInvokeToolsWithToolFactories({

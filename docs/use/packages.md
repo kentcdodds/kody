@@ -204,12 +204,13 @@ Package reuse follows two rules:
    is always contract-checked before invoking — checking is not optional and not
    a separate API.
 
-The preferred first argument is the target's scoped Kody module specifier:
+The first argument should be the target's scoped Kody module specifier:
 `kody:@username/package-name` or `kody:@username/package-name/export-subpath`.
-The prefixless `@username/package-name[/export-subpath]` form is also accepted
-and canonicalized to `kody:`. A package-only specifier requires `exportName` in
-the options object. When both the specifier and options name an export, the
-specifier's export subpath wins.
+The prefixless `@username/package-name[/export-subpath]` form is deprecated
+during the migration phase. It remains accepted and is canonicalized to `kody:`,
+but new and updated code should not use it. A package-only specifier requires
+`exportName` in the options object. When both the specifier and options name an
+export, the specifier's export subpath wins.
 
 ```ts
 import { packages } from 'kody:runtime'
@@ -268,7 +269,10 @@ validated as a JSON object.
 The removed object-only form is rejected locally before any package request is
 forwarded. Use the scoped string-first call shown above. Publish checks reject
 object-only JavaScript and TypeScript call sites; the permanent
-`0006-invoke-object-to-specifier` package codemod repairs safe cases.
+`0006-invoke-object-to-specifier` package codemod repairs safe cases. After that
+repair, the permanent `0007-prefix-packages-invoke-specifiers` codemod adds
+`kody:` to literal prefixless calls without changing the options argument or
+export precedence. Dynamic specifiers are left for manual review.
 
 Package runtime contexts, authenticated ad hoc MCP `execute` calls, and package
 job runtimes can call `packages.invoke`. Person-scoped targets resolve only from

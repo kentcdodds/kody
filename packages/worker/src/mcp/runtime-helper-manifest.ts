@@ -60,8 +60,17 @@ export type PackageInvokeOptions = {
 	topic?: string
 }
 
+export type KodyPrefixedPackageInvokeSpecifier = `kody:@${string}/${string}`
+/**
+ * @deprecated Add the `kody:` prefix. Use
+ * `kody:@owner/package[/export]` for new and migrated calls.
+ */
+export type PrefixlessPackageInvokeSpecifier = `@${string}/${string}`
+
 export type PackageInvokeInput = {
-	specifier: string
+	specifier:
+		| KodyPrefixedPackageInvokeSpecifier
+		| PrefixlessPackageInvokeSpecifier
 	options?: PackageInvokeOptions
 }
 

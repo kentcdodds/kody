@@ -318,9 +318,15 @@ function createExecuteTypecheckPrelude(input?: {
 
 type KodyCapabilityArgs = Record<string, unknown>;
 type KodyCapabilityResult = unknown;
+type KodyPrefixedPackageSpecifier = \`kody:@\${string}/\${string}\`;
+/**
+ * @deprecated Add the kody: prefix. Use
+ * \`kody:@owner/package[/export]\` for all new and migrated calls.
+ */
+type KodyPrefixlessPackageSpecifier = \`@\${string}/\${string}\`;
 type KodyPackageSpecifier =
-  | \`kody:@\${string}/\${string}\`
-  | \`@\${string}/\${string}\`;
+  | KodyPrefixedPackageSpecifier
+  | KodyPrefixlessPackageSpecifier;
 type KodyPackagesInvokeOptions = {
   /**
    * Required when the specifier has no export subpath. When both are present,
@@ -337,11 +343,19 @@ type KodyPackagesRuntime = {
    * published package export before invoking; a failing contract rejects with
    * "packages.invoke contract check failed: ...". Key-less calls are
    * lean/ephemeral; pass idempotencyKey only for exactly-once semantics.
-   * Prefer kody:@scope/package[/export]; @scope/package[/export] is also
-   * accepted and canonicalized to the kody: form.
+   * Use kody:@scope/package[/export]. The prefixless form remains accepted
+   * temporarily but is deprecated and canonicalized to the kody: form.
    */
   invoke(
-    specifier: KodyPackageSpecifier,
+    specifier: KodyPrefixedPackageSpecifier,
+    options?: KodyPackagesInvokeOptions,
+  ): Promise<unknown>;
+  /**
+   * @deprecated Add the kody: prefix. Use
+   * \`kody:@owner/package[/export]\` for new and migrated calls.
+   */
+  invoke(
+    specifier: KodyPrefixlessPackageSpecifier,
     options?: KodyPackagesInvokeOptions,
   ): Promise<unknown>;
 };

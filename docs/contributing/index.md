@@ -46,6 +46,7 @@ style, tests, MCP capabilities, and runtime architecture.
 
 - [Packages and manifests](./packages-and-manifests.md)
 - [Package codemods](./package-codemods.md)
+- [`packages.invoke` prefix migration](./package-invoke-prefix-migration.md)
 - [Community packages](./community-packages.md)
 - [External package invocation API](./package-invocation-api.md)
 - [Adding capabilities](./adding-capabilities.md)
