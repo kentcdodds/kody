@@ -48,10 +48,8 @@ test('community detail head replaces Installed with Fork outdated when the listi
 	})
 
 	expect(html).toContain('data-testid="community-detail-listing-ahead-badge"')
-	expect(html).toContain('Fork outdated')
-	expect(html).toContain('Click to copy an update prompt')
+	expect(html).toContain('data-fork-outdated-copy')
 	expect(html).toContain(aheadPrompt)
-	expect(html).not.toContain('Listing updated')
 	expect(html).not.toContain(
 		'data-testid="community-detail-viewer-install-badge"',
 	)

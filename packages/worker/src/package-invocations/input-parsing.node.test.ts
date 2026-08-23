@@ -4,7 +4,7 @@ import {
 	parsePackageInvokeInput,
 } from './input-parsing.ts'
 
-test('parses preferred package specifiers, export subpaths, and the deprecated object form', () => {
+test('parses preferred package specifiers, export subpaths, legacy objects, and validation', () => {
 	const packageOnly = parsePackageInvokeInput({
 		specifier: 'kody:@kody/google',
 		options: {
@@ -68,9 +68,7 @@ test('parses preferred package specifiers, export subpaths, and the deprecated o
 		value: 'github',
 	})
 	expect(legacy.exportName).toBe('profile')
-})
 
-test('validates specifier options and requires an export for package-only specifiers', () => {
 	expect(() =>
 		parsePackageInvokeInput({
 			specifier: 'kody:@kody/google',

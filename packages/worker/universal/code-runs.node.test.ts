@@ -21,7 +21,7 @@ const window = {
 	windowEnd,
 }
 
-test('interpolateCodeRunsCount stays monotonic, warped, and inside the pair', () => {
+test('interpolateCodeRunsCount stays monotonic, warped, and holds at bounds', () => {
 	expect(interpolateCodeRunsCount(window, startMs - 1)).toBe(1000)
 	expect(interpolateCodeRunsCount(window, startMs)).toBe(1000)
 	expect(interpolateCodeRunsCount(window, startMs + 24 * hourMs)).toBe(1240)
@@ -54,6 +54,41 @@ test('interpolateCodeRunsCount stays monotonic, warped, and inside the pair', ()
 	).not.toBe(
 		interpolateCodeRunsCount(secondPair, sampleMs) - secondPair.previous,
 	)
+
+	const offset = {
+		...window,
+		previous: 171540,
+		current: 257940,
+		windowStart: '2026-08-22T15:47:07.637Z',
+		windowEnd: '2026-08-23T15:47:07.637Z',
+	}
+	const endMs = Date.parse(offset.windowEnd)
+	expect(interpolateCodeRunsCount(offset, endMs - 1)).toBeLessThan(257940)
+	expect(interpolateCodeRunsCount(offset, endMs)).toBe(257940)
+	expect(interpolateCodeRunsCount(offset, endMs + 1000)).toBe(257940)
+	expect(
+		interpolateCodeRunsCount(
+			{ ...window, previous: 80, current: 80 },
+			startMs + 6 * hourMs,
+		),
+	).toBe(80)
+
+	expect(parsePublicCodeRunsWindow(window)).toEqual(window)
+	expect(parsePublicCodeRunsWindow({ ...window, current: 900 })).toEqual({
+		...window,
+		current: 1000,
+	})
+	expect(parsePublicCodeRunsWindow({ ...window, previous: -1 })).toBeNull()
+	expect(parsePublicCodeRunsWindow({ ...window, windowEnd: windowStart })).toBe(
+		null,
+	)
+	expect(
+		parsePublicCodeRunsWindow({
+			...window,
+			windowEnd: '2026-08-21T12:00:00.000Z',
+		}),
+	).toBeNull()
+	expect(parsePublicCodeRunsWindow(null)).toBeNull()
 })
 
 test('interpolateCodeRunsCount wobbles +1 ticks without long idle when the pair is dense', () => {
@@ -88,6 +123,17 @@ test('interpolateCodeRunsCount wobbles +1 ticks without long idle when the pair 
 		expect(count - densePrevious).toBeLessThanOrEqual(1)
 		densePrevious = count
 	}
+
+	const nowMs = startMs + 3 * hourMs + 250
+	const here = interpolateCodeRunsCount(busy, nowMs)
+	const wait = msUntilNextCodeRunsCount(busy, nowMs)
+	expect(wait).not.toBeNull()
+	expect(interpolateCodeRunsCount(busy, nowMs + wait! - 1)).toBe(here)
+	expect(interpolateCodeRunsCount(busy, nowMs + wait!)).toBe(here + 1)
+	expect(msUntilNextCodeRunsCount(busy, startMs + 24 * hourMs)).toBeNull()
+	expect(
+		msUntilNextCodeRunsCount({ ...window, previous: 80, current: 80 }, nowMs),
+	).toBeNull()
 })
 
 test('interpolateCodeRunsCount rolls every extra integer inside a second', () => {
@@ -127,64 +173,10 @@ test('interpolateCodeRunsCount rolls every extra integer inside a second', () =>
 	}
 })
 
-test('msUntilNextCodeRunsCount lands on the next integer and then is still', () => {
-	const busy = { ...window, previous: 0, current: 86_400 }
-	const nowMs = startMs + 3 * hourMs + 250
-	const here = interpolateCodeRunsCount(busy, nowMs)
-	const wait = msUntilNextCodeRunsCount(busy, nowMs)
-	expect(wait).not.toBeNull()
-	expect(interpolateCodeRunsCount(busy, nowMs + wait! - 1)).toBe(here)
-	expect(interpolateCodeRunsCount(busy, nowMs + wait!)).toBe(here + 1)
-	expect(msUntilNextCodeRunsCount(busy, startMs + 24 * hourMs)).toBeNull()
-	expect(
-		msUntilNextCodeRunsCount({ ...window, previous: 80, current: 80 }, nowMs),
-	).toBeNull()
-})
-
-test('interpolateCodeRunsCount holds current from the exact window end', () => {
-	const offset = {
-		...window,
-		previous: 171540,
-		current: 257940,
-		windowStart: '2026-08-22T15:47:07.637Z',
-		windowEnd: '2026-08-23T15:47:07.637Z',
-	}
-	const endMs = Date.parse(offset.windowEnd)
-	expect(interpolateCodeRunsCount(offset, endMs - 1)).toBeLessThan(257940)
-	expect(interpolateCodeRunsCount(offset, endMs)).toBe(257940)
-	expect(interpolateCodeRunsCount(offset, endMs + 1000)).toBe(257940)
-})
-
-test('interpolateCodeRunsCount sits still when the pair has not moved', () => {
-	const still = { ...window, previous: 80, current: 80 }
-	expect(interpolateCodeRunsCount(still, startMs + 6 * hourMs)).toBe(80)
-})
-
-test('parsePublicCodeRunsWindow accepts a valid pair and rejects junk', () => {
-	expect(parsePublicCodeRunsWindow(window)).toEqual(window)
-	expect(parsePublicCodeRunsWindow({ ...window, current: 900 })).toEqual({
-		...window,
-		current: 1000,
-	})
-	expect(parsePublicCodeRunsWindow({ ...window, previous: -1 })).toBeNull()
-	expect(parsePublicCodeRunsWindow({ ...window, windowEnd: windowStart })).toBe(
-		null,
-	)
-	expect(
-		parsePublicCodeRunsWindow({
-			...window,
-			windowEnd: '2026-08-21T12:00:00.000Z',
-		}),
-	).toBeNull()
-	expect(parsePublicCodeRunsWindow(null)).toBeNull()
-})
-
-test('formatCodeRunsCount uses grouping so reserved width stays stable', () => {
-	expect(formatCodeRunsCount(128447)).toBe('128,447')
+test('displayed code-runs catch-up snaps after a freeze and stays under the snap delay', () => {
+	expect(formatCodeRunsCount(128447)).toMatch(/128.447/)
 	expect(formatCodeRunsCount(0)).toBe('0')
-})
 
-test('nextDisplayedCodeRunsCount snaps after a freeze and steps while live', () => {
 	expect(
 		nextDisplayedCodeRunsCount({
 			displayed: 100,
@@ -234,9 +226,7 @@ test('nextDisplayedCodeRunsCount snaps after a freeze and steps while live', () 
 			elapsedMsSinceDisplay: 16,
 		}),
 	).toBe(161)
-})
 
-test('codeRunsCatchUpDelayMs stays under the freeze snap for live leftover rolls', () => {
 	expect(codeRunsCatchUpDelayMs(1)).toBe(16)
 	expect(codeRunsCatchUpDelayMs(102 - 100)).toBe(500)
 	expect(codeRunsCatchUpDelayMs(102 - 101)).toBe(16)

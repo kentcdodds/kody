@@ -1,10 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import {
-	countsOf,
-	fleetPackageErrorRateKvKey,
-	toWindowSnapshot,
-} from '#worker/usage/fleet-package-error-rate.ts'
+import { fleetPackageErrorRateKvKey } from '#worker/usage/fleet-package-error-rate.ts'
 
 const queryAnalyticsEngineSql = vi.fn()
 const sendCloudflareEmail = vi.fn(async () => ({ ok: true }))
@@ -31,44 +27,8 @@ vi.mock('#worker/usage/fleet-package-error-rate-subscriptions.ts', () => ({
 
 const {
 	fleetPackageErrorRateAlertKvKey,
-	formatFleetPackageErrorRateAlertText,
 	refreshFleetPackageErrorRateAndMaybeAlert,
 } = await import('./fleet-package-error-rate-alerts.ts')
-
-function windowOf(input: {
-	kind: 'hour' | 'day'
-	recentEvents: number
-	recentErrors: number
-	previousEvents: number
-	previousErrors: number
-}) {
-	const recentStart = new Date('2026-08-22T18:00:00.000Z')
-	const recentEnd = new Date('2026-08-22T19:00:00.000Z')
-	const previousStart = new Date('2026-08-22T17:00:00.000Z')
-	return {
-		kind: input.kind,
-		recent: toWindowSnapshot({
-			start: recentStart,
-			end: recentEnd,
-			byMetric: {
-				package_export: countsOf(input.recentEvents, input.recentErrors),
-				package_static_call: countsOf(0, 0),
-				job_run: countsOf(0, 0),
-				workflow_run: countsOf(0, 0),
-			},
-		}),
-		previous: toWindowSnapshot({
-			start: previousStart,
-			end: recentStart,
-			byMetric: {
-				package_export: countsOf(input.previousEvents, input.previousErrors),
-				package_static_call: countsOf(0, 0),
-				job_run: countsOf(0, 0),
-				workflow_run: countsOf(0, 0),
-			},
-		}),
-	}
-}
 
 function createKv(stored = new Map<string, string>()) {
 	return {
@@ -177,6 +137,14 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 	expect(payload).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
 	expect(dispatched.event.event).toBe('fleet.package_error_rate.elevated')
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
+	const emailText = String(
+		(sendCloudflareEmail.mock.calls[0]?.[1] as { text?: string } | undefined)
+			?.text ?? '',
+	)
+	expect(emailText).toContain('16/80')
+	expect(emailText).toContain('user-package')
+	expect(emailText).not.toContain('user_id')
+	expect(emailText).not.toContain('admin@')
 
 	const snapshot = JSON.parse(stored.get(fleetPackageErrorRateKvKey) ?? 'null')
 	expect(snapshot?.environment).toBe('production')
@@ -198,9 +166,7 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 	expect(stored.get(fleetPackageErrorRateAlertKvKey)).toBe(
 		String(now.getTime()),
 	)
-})
 
-test('refreshFleetPackageErrorRateAndMaybeAlert skips without Analytics Engine config', async () => {
 	await expect(
 		refreshFleetPackageErrorRateAndMaybeAlert({
 			env: { BUNDLE_ARTIFACTS_KV: {} as KVNamespace },
@@ -209,13 +175,10 @@ test('refreshFleetPackageErrorRateAndMaybeAlert skips without Analytics Engine c
 		status: 'skipped',
 		reason: 'missing-analytics-config',
 	})
-})
 
-test('refreshFleetPackageErrorRateAndMaybeAlert does not cool down when no admin can be emailed', async () => {
-	consoleWarn.mockImplementation(() => {})
 	sendCloudflareEmail.mockClear()
 	dispatchFleetPackageErrorRateSubscriptionEvent.mockClear()
-	const { stored, kv } = createKv()
+	const noAdmin = createKv()
 	queryAnalyticsEngineSql.mockResolvedValue([
 		{
 			window: 'recent',
@@ -230,7 +193,7 @@ test('refreshFleetPackageErrorRateAndMaybeAlert does not cool down when no admin
 			error_count: 2,
 		},
 	])
-	const result = await refreshFleetPackageErrorRateAndMaybeAlert({
+	const skipped = await refreshFleetPackageErrorRateAndMaybeAlert({
 		env: {
 			USAGE_EVENTS: {} as AnalyticsEngineDataset,
 			APP_DB: {
@@ -242,58 +205,18 @@ test('refreshFleetPackageErrorRateAndMaybeAlert does not cool down when no admin
 					}
 				},
 			} as unknown as D1Database,
-			BUNDLE_ARTIFACTS_KV: kv,
+			BUNDLE_ARTIFACTS_KV: noAdmin.kv,
 			CLOUDFLARE_ACCOUNT_ID: 'account',
 			CLOUDFLARE_API_TOKEN: 'token',
 			SENTRY_ENVIRONMENT: 'production',
 		},
 		now: new Date('2026-08-22T19:32:00.000Z'),
 	})
-	expect(result).toMatchObject({
+	expect(skipped).toMatchObject({
 		status: 'refreshed',
 		elevated: true,
 		alert: { status: 'skipped', reason: 'no_system_domain' },
 	})
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
-	expect(stored.get(fleetPackageErrorRateAlertKvKey)).toBeUndefined()
-})
-
-test('formatFleetPackageErrorRateAlertText stays content-free', () => {
-	const text = formatFleetPackageErrorRateAlertText({
-		event: 'fleet.package_error_rate.elevated',
-		event_id: 'day:2026-08-22T19:00:00.000Z',
-		status_url: 'https://status.kody.codes',
-		insights_url: 'https://kody.codes/admin/insights',
-		environment: 'production',
-		observed_at: '2026-08-22T19:32:00.000Z',
-		trigger: {
-			window: 'day',
-			reason: 'absolute_delta',
-			recent: windowOf({
-				kind: 'day',
-				recentEvents: 80,
-				recentErrors: 16,
-				previousEvents: 80,
-				previousErrors: 2,
-			}).recent,
-			previous: windowOf({
-				kind: 'day',
-				recentEvents: 80,
-				recentErrors: 16,
-				previousEvents: 80,
-				previousErrors: 2,
-			}).previous,
-		},
-		by_metric: windowOf({
-			kind: 'day',
-			recentEvents: 80,
-			recentErrors: 16,
-			previousEvents: 80,
-			previousErrors: 2,
-		}).recent.by_metric,
-	})
-	expect(text).toContain('16/80')
-	expect(text).toContain('user-package')
-	expect(text).not.toContain('user_id')
-	expect(text).not.toContain('admin@')
+	expect(noAdmin.stored.get(fleetPackageErrorRateAlertKvKey)).toBeUndefined()
 })
