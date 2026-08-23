@@ -861,10 +861,10 @@ test('JSON start mode returns the authorize URL for client-side navigation', asy
 	})
 })
 
-test('signed-out JSON start consumes the request body instead of abandoning a clone', async () => {
-	const { db } = createMigratedDb()
+test('JSON start consumes the request body for signed-out and signed-in requests', async () => {
+	const { sqlite, db } = createMigratedDb()
 	const env = createAppEnv(db)
-	const request = new Request('http://example.com/auth/github', {
+	const signedOutRequest = new Request('http://example.com/auth/github', {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -873,14 +873,52 @@ test('signed-out JSON start consumes the request body instead of abandoning a cl
 		body: JSON.stringify({ website: '', turnstileToken: '' }),
 	})
 
-	expect(request.bodyUsed).toBe(false)
-	const response = await runHandler(
+	expect(signedOutRequest.bodyUsed).toBe(false)
+	const signedOutResponse = await runHandler(
 		createAuthProviderStartHandler(env),
-		request,
+		signedOutRequest,
 		{ provider: 'github' },
 	)
-	expect(response.status).toBe(200)
-	expect(request.bodyUsed).toBe(true)
+	expect(signedOutResponse.status).toBe(200)
+	expect(signedOutRequest.bodyUsed).toBe(true)
+
+	// Connect Google / Discord from /account posts the same JSON body while
+	// already signed in. Skipping the read left workerd with an unread body
+	// and killed wrangler mid social-login e2e (workers-sdk#14926).
+	await seedUser(sqlite, {
+		id: 21,
+		email: 'connector@example.com',
+		username: 'connector',
+	})
+	const sessionCookiePair = getCookiePair(
+		await createAuthCookie(
+			{
+				stableUserId: await createStableUserIdFromEmail(
+					'connector@example.com',
+				),
+				email: 'connector@example.com',
+				rememberMe: false,
+			},
+			false,
+		),
+	)
+	const signedInRequest = new Request('http://example.com/auth/google', {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			Cookie: sessionCookiePair,
+		},
+		body: JSON.stringify({ website: '', turnstileToken: '' }),
+	})
+	expect(signedInRequest.bodyUsed).toBe(false)
+	const signedInResponse = await runHandler(
+		createAuthProviderStartHandler(env),
+		signedInRequest,
+		{ provider: 'google' },
+	)
+	expect(signedInResponse.status).toBe(200)
+	expect(signedInRequest.bodyUsed).toBe(true)
 })
 
 test('signed-in users link and disconnect providers from their account', async () => {
