@@ -1273,7 +1273,9 @@ test('runtime invoke tools record privacy-safe call shape by coarse surface', as
 			callerContext,
 			packageContext,
 		}).invoke({ specifier: '' }),
-	).rejects.toThrow('packages.invoke requires a kody:@username/kodyid specifier.')
+	).rejects.toThrow(
+		'packages.invoke requires a kody:@username/kodyid specifier.',
+	)
 	await expect(
 		createExecutePackageInvokeTools({
 			env,
@@ -1290,7 +1292,9 @@ test('runtime invoke tools record privacy-safe call shape by coarse surface', as
 			packageContext,
 			runtimeSurface: 'app',
 		}).invoke({ specifier: '' }),
-	).rejects.toThrow('packages.invoke requires a kody:@username/kodyid specifier.')
+	).rejects.toThrow(
+		'packages.invoke requires a kody:@username/kodyid specifier.',
+	)
 
 	expect(writeDataPoint.mock.calls).toEqual([
 		[
