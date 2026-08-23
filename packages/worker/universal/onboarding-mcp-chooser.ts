@@ -69,7 +69,7 @@ export const onboardingFeaturedMcpServers = [
 		url: 'https://mcp.atlassian.com/v1/mcp/authv2',
 		description: 'Search Jira issues and Confluence pages you can already see.',
 		packageKodyId: 'atlassian',
-		listingId: 'e70783f0-b879-4ba3-8562-309a1110ff7b',
+		listingId: '5cc3cf6f-ed5e-4ca3-9e36-eabdcb740970',
 	},
 	{
 		id: 'stripe',
