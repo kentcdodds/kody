@@ -85,6 +85,7 @@ export function loadPublicOnboardingData(input: {
 		featuredListings: [],
 		builtInProviders: [],
 		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+		persistedPackageKodyId: null,
 		checklist: null,
 	}
 }
@@ -104,6 +105,8 @@ export async function loadOnboardingData(input: {
 	builtInProviders?: Array<OnboardingBuiltInProvider>
 	/** Notion and Linear MCP chooser cards, loaded by the handler. */
 	featuredMcpServers?: Array<OnboardingFeaturedMcpServer>
+	/** Most recently updated saved-package kody id, loaded by the handler. */
+	persistedPackageKodyId?: string | null
 	/** Derived progress checklist, computed by the handler. */
 	checklist?: OnboardingChecklistLoaderData | null
 	/** Stored welcome email metadata, loaded by the handler. */
@@ -162,6 +165,9 @@ export async function loadOnboardingData(input: {
 		// Computed by the handler alongside the checklist probes.
 		hasSentWelcomeEmail: false,
 		welcomeEmail: input.welcomeEmail ?? null,
+		persistedPackageKodyId: input.emailVerified
+			? (input.persistedPackageKodyId ?? null)
+			: null,
 		checklist: input.checklist ?? null,
 	}
 }

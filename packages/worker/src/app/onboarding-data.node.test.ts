@@ -70,6 +70,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		featuredListings: [],
 		builtInProviders: [],
 		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+		persistedPackageKodyId: null,
 		checklist: null,
 	})
 
@@ -110,6 +111,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		featuredListings: [],
 		builtInProviders: [],
 		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+		persistedPackageKodyId: null,
 		checklist: null,
 	})
 
@@ -129,6 +131,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			subject: 'Welcome to Kody — reply to introduce yourself',
 			fromAddress: 'kody@heykody.app',
 		},
+		persistedPackageKodyId: 'morning-digest',
 	})
 	expect(withClient).toMatchObject({
 		username: 'u-b',
@@ -142,6 +145,8 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			subject: 'Welcome to Kody — reply to introduce yourself',
 			fromAddress: 'kody@heykody.app',
 		},
+		// Handler-loaded persist target is passed through for Step 3 next-steps.
+		persistedPackageKodyId: 'morning-digest',
 	})
 
 	const unverifiedWithGrant = await loadOnboardingData({
@@ -156,6 +161,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		stableUserId: 'user-1',
 		username: 'u-b',
 		emailVerified: false,
+		persistedPackageKodyId: 'morning-digest',
 	})
 	expect(unverifiedWithGrant).toMatchObject({
 		hasMcpClient: true,
@@ -171,6 +177,8 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: {},
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
+		// Persist next-steps stay empty until verification.
+		persistedPackageKodyId: null,
 	})
 
 	const whenProviderListingFails = await loadOnboardingData({

@@ -379,6 +379,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		featuredListings: [],
 		builtInProviders: [],
 		featuredMcpServers: [],
+		persistedPackageKodyId: null,
 		checklist: null,
 	})
 	expect(accountHtml).toContain('/pending-verification')

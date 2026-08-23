@@ -6,6 +6,7 @@ import {
 	createOnboardingHandler,
 	loadOnboardingBuiltInProviders,
 	loadOnboardingFeaturedMcpServers,
+	loadPersistedPackageKodyId,
 	loadWelcomeEmail,
 } from '#app/handlers/onboarding.ts'
 import {
@@ -27,6 +28,7 @@ const mockModule = vi.hoisted(() => ({
 	buildPlatformOauthAppLogoPath: vi.fn(),
 	listMcpServerSettings: vi.fn(),
 	loadMcpClientHubSnapshotOrNull: vi.fn(),
+	listSavedPackagesByUserId: vi.fn(),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -67,6 +69,11 @@ vi.mock('#worker/integrations/platform-app-logo.ts', () => ({
 vi.mock('#worker/mcp-client/settings-service.ts', () => ({
 	listMcpServerSettings: (...args: Array<unknown>) =>
 		mockModule.listMcpServerSettings(...args),
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	listSavedPackagesByUserId: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesByUserId(...args),
 }))
 
 vi.mock('#mcp/capabilities/mcp-servers/shared.ts', async (importOriginal) => {
@@ -115,6 +122,7 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 			requestUrl: 'https://example.com/onboarding.json',
 		}),
 		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+		persistedPackageKodyId: null,
 	})
 })
 
@@ -317,4 +325,50 @@ test('onboarding featured MCP servers overlay Notion and Linear connection state
 	await expect(
 		loadOnboardingFeaturedMcpServers(env, 'viewer-1'),
 	).resolves.toEqual(listDisconnectedOnboardingFeaturedMcpServers())
+})
+
+test('onboarding persist next-steps use the newest saved-package kody id', async () => {
+	const env = { APP_DB: {} } as Env
+
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([
+		{ kodyId: 'morning-digest' },
+		{ kodyId: 'older-package' },
+	])
+	await expect(loadPersistedPackageKodyId(env, 'user-1')).resolves.toBe(
+		'morning-digest',
+	)
+	expect(mockModule.listSavedPackagesByUserId).toHaveBeenCalledWith(
+		env.APP_DB,
+		{ userId: 'user-1' },
+	)
+
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	await expect(loadPersistedPackageKodyId(env, 'user-1')).resolves.toBeNull()
+
+	mockModule.listSavedPackagesByUserId.mockRejectedValue(new Error('d1 blip'))
+	await expect(loadPersistedPackageKodyId(env, 'user-1')).resolves.toBeNull()
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		username: 'u-b',
+		emailVerified: true,
+		mcpUser: { userId: 'user-1' },
+	})
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([
+		{ kodyId: 'morning-digest' },
+	])
+	mockModule.listTopPlatformAppsByUse.mockResolvedValue([])
+	mockModule.listMcpServerSettings.mockResolvedValue([])
+	mockModule.listOwnerEmailMessages.mockResolvedValue([])
+	mockModule.searchOwnerEmailMessages.mockResolvedValue([])
+
+	const response = await createOnboardingApiHandler(env).handler(
+		new RequestContext(new Request('https://example.com/onboarding.json')),
+	)
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		loggedIn: true,
+		username: 'u-b',
+		persistedPackageKodyId: 'morning-digest',
+	})
 })

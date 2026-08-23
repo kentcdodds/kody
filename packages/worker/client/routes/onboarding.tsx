@@ -169,6 +169,7 @@ export function OnboardingRoute(handle: Handle) {
 	let hasMcpClient = false
 	let hasFeaturedMcp = false
 	let hasPersistedPackage = false
+	let persistedPackageKodyId: string | null = null
 	let featuredListings: Array<OnboardingFeaturedListing> = []
 	let exampleListings: Array<OnboardingFeaturedListing> = []
 	let serviceStarterListings: Array<OnboardingFeaturedListing> = []
@@ -204,6 +205,7 @@ export function OnboardingRoute(handle: Handle) {
 			payload.checklist,
 			'install-starter',
 		)
+		persistedPackageKodyId = payload.persistedPackageKodyId ?? null
 		if (payload.checklist?.dismissed) checklistHidden = true
 		status = 'ready'
 		message = null
@@ -342,10 +344,10 @@ export function OnboardingRoute(handle: Handle) {
 		}
 	}
 
-	// Users typically keep this page open while their MCP client runs OAuth
-	// and while a Step 2 Notion/Linear authorize finishes, so poll the same
-	// JSON endpoint until those signals land and collapse completed steps
-	// without a manual refresh.
+	// Users typically keep this page open while their MCP client runs OAuth,
+	// a Step 2 Notion/Linear authorize finishes, or Step 3 persist completes,
+	// so poll the same JSON endpoint until those signals land and collapse
+	// completed steps without a manual refresh.
 	//
 	// The interval must stay clear of 5000ms: workerd's HTTP server closes
 	// idle keep-alive connections after exactly 5s (kj pipeline timeout), so
@@ -368,9 +370,13 @@ export function OnboardingRoute(handle: Handle) {
 
 	async function pollOnboardingProgress() {
 		if (pollInFlight || status !== 'ready' || !loggedIn) return
+		// Stop only when the agent is connected, featured MCP auth is idle,
+		// and persist has landed. Staying on Step 3 still needs the poll so
+		// install-starter / hasPersistedPackage can flip without a reload.
 		if (
 			hasMcpClient &&
-			!hasPendingOnboardingFeaturedMcpAuth(featuredMcpServers)
+			!hasPendingOnboardingFeaturedMcpAuth(featuredMcpServers) &&
+			hasPersistedPackage
 		) {
 			return
 		}
@@ -381,10 +387,15 @@ export function OnboardingRoute(handle: Handle) {
 			const payload = await fetchOnboardingPayload(handle.signal)
 			if (handle.signal.aborted || !payload) return
 			const nextServers = payload.featuredMcpServers ?? []
+			const nextHasPersistedPackage = isOnboardingChecklistItemDone(
+				payload.checklist,
+				'install-starter',
+			)
 			if (
 				payload.hasMcpClient === hasMcpClient &&
 				featuredMcpFingerprint(nextServers) ===
-					featuredMcpFingerprint(featuredMcpServers)
+					featuredMcpFingerprint(featuredMcpServers) &&
+				nextHasPersistedPackage === hasPersistedPackage
 			) {
 				return
 			}
@@ -749,7 +760,11 @@ export function OnboardingRoute(handle: Handle) {
 											it, or start another.
 										</p>
 										<OnboardingPackageNextSteps
-											kodyId={readOwnedExampleKodyId(exampleListings)}
+											kodyId={
+												persistedPackageKodyId ??
+												readOwnedExampleKodyId(exampleListings)
+											}
+											source={persistedPackageKodyId ? 'persist' : 'fork'}
 										/>
 									</>
 								) : null}

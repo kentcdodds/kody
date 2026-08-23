@@ -846,6 +846,12 @@ export type OnboardingLoaderData = {
 	builtInProviders: Array<OnboardingBuiltInProvider>
 	/** Notion and Linear MCP chooser cards, with viewer connection overlay. */
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
+	/**
+	 * Most recently updated saved-package kody id for this account, used by
+	 * Step 3 next-steps after persist. Null when logged out, unverified, or
+	 * the listing fails open.
+	 */
+	persistedPackageKodyId: string | null
 	/** Derived progress checklist; null when logged out. */
 	checklist: OnboardingChecklistLoaderData | null
 }

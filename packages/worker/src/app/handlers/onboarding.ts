@@ -21,6 +21,7 @@ import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app
 import { listTopPlatformAppsByUse } from '#worker/integrations/platform-apps.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import {
 	listDisconnectedOnboardingFeaturedMcpServers,
 	overlayOnboardingFeaturedMcpServers,
@@ -86,6 +87,24 @@ const welcomeEmailSubjectMatch = 'Welcome to Kody'
  * null: the sub-step reads fine without it, and a Mailbox blip must not break
  * the payload.
  */
+/**
+ * Most recently updated saved-package kody id for Step 3 next-steps after
+ * persist. The listing is `ORDER BY updated_at DESC`, so the first row is
+ * the package the user just saved. Fails open to null so a D1 blip never
+ * breaks the onboarding payload.
+ */
+export async function loadPersistedPackageKodyId(
+	env: Pick<Env, 'APP_DB'>,
+	userId: string,
+): Promise<string | null> {
+	try {
+		const packages = await listSavedPackagesByUserId(env.APP_DB, { userId })
+		return packages[0]?.kodyId ?? null
+	} catch {
+		return null
+	}
+}
+
 export async function loadWelcomeEmail(
 	env: Env,
 	userId: string,
@@ -268,10 +287,12 @@ export function createOnboardingHandler(env: Env) {
 				onboarding.checklist,
 				onboarding.hasSentWelcomeEmail,
 				onboarding.welcomeEmail,
+				onboarding.persistedPackageKodyId,
 			] = await Promise.all([
 				loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
 				loadHasSentWelcomeEmail(env, user.mcpUser.userId),
 				loadWelcomeEmail(env, user.mcpUser.userId),
+				loadPersistedPackageKodyId(env, user.mcpUser.userId),
 			])
 			return renderAppPage({
 				request,
@@ -327,10 +348,12 @@ export function createOnboardingApiHandler(env: Env) {
 					onboarding.checklist,
 					onboarding.hasSentWelcomeEmail,
 					onboarding.welcomeEmail,
+					onboarding.persistedPackageKodyId,
 				] = await Promise.all([
 					loadChecklist(env, user.mcpUser.userId, onboarding.hasMcpClient),
 					loadHasSentWelcomeEmail(env, user.mcpUser.userId),
 					loadWelcomeEmail(env, user.mcpUser.userId),
+					loadPersistedPackageKodyId(env, user.mcpUser.userId),
 				])
 			}
 			return jsonResponse(onboarding)

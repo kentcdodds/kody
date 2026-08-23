@@ -29,6 +29,11 @@ export type OnboardingPayload = {
 	featuredListings: Array<OnboardingFeaturedListing>
 	builtInProviders: Array<OnboardingBuiltInProvider>
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
+	/**
+	 * Most recently updated saved-package kody id after persist. Null when
+	 * logged out, unverified, or the listing fails open.
+	 */
+	persistedPackageKodyId: string | null
 	checklist: OnboardingChecklistLoaderData | null
 }
 
