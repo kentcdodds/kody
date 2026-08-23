@@ -182,14 +182,20 @@ between community content and live code.
 
 ## Trusted listings
 
-Admins can mark a listing as **trusted** after reviewing its content. Trusted
-listings show a **Trusted** badge on `/community` cards and detail pages, and
-`community_search` / `community_get` include a `trusted` field.
+Admins can mark a person-owned listing as **trusted** after reviewing its
+content. Listings owned by an official platform account such as `@kody` are
+trusted automatically whenever they are published successfully. A username alone
+does not grant this behavior: person accounts, including `@kentcdodds`, still
+require review. Trusted listings show a **Trusted** badge on `/community` cards
+and detail pages, and `community_search` / `community_get` include a `trusted`
+field.
 
-Trust is pinned to the **exact reviewed commit**. When the owner republishes the
-listing with new content, the badge disappears until an admin reviews the new
-version and re-trusts it. A trusted badge means an admin reviewed that version —
-it is still your responsibility (and your agent's) to review forked code before
+Trust is pinned to the **exact trusted commit**. For person-owned listings, that
+is the commit an admin reviewed. When the owner republishes with new content,
+the badge disappears until an admin reviews the new version and re-trusts it. A
+platform-owned listing instead re-pins trust to the newly published commit
+automatically. Admins can still revoke trust from either kind of listing. It is
+still your responsibility (and your agent's) to review forked code before
 publishing it into your account.
 
 Admins toggle trust from the listing detail page or with the
@@ -203,9 +209,10 @@ one-click install. Official starter packages are published under platform scopes
 such as `@kody` by operators who hold a package scope grant on that account —
 they show up like any other community listing, owned by `@kody/...` rather than
 a personal username. Only trusted listings can be featured, and a listing is
-only _shown_ in onboarding while it remains effectively trusted: when the owner
-republishes, it silently drops out of onboarding until an admin re-trusts the
-new version (the featured mark itself is kept, so re-trusting restores it).
+only _shown_ in onboarding while it remains effectively trusted. Platform-owned
+listings re-pin trust on republish, so official featured listings stay in
+onboarding. A person-owned listing silently drops out until an admin re-trusts
+the new version (the featured mark itself is kept, so re-trusting restores it).
 
 Featured listings show a **Featured** badge on their detail page. Admins toggle
 featuring from the listing detail page or with the `community_set_featured`

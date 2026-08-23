@@ -59,17 +59,20 @@ async function ensureUsersTable() {
 async function insertTestUser(input: {
 	email: string
 	username: string
+	accountType?: 'person' | 'platform'
 }): Promise<TestUser> {
 	await ensureUsersTable()
 	const userId = await createStableUserIdFromEmail(input.email)
 	await runSql(
-		`INSERT INTO users (username, email, stable_user_id, password_hash, plan)
-			VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO users
+			(username, email, stable_user_id, password_hash, plan, account_type)
+			VALUES (?, ?, ?, ?, ?, ?)`,
 		input.username,
 		input.email,
 		userId,
 		'test-password-hash',
 		'max',
+		input.accountType ?? 'person',
 	)
 	return {
 		userId,
@@ -615,6 +618,112 @@ test('community package flow works end-to-end through capability handlers', asyn
 			reporterCtx,
 		),
 	).rejects.toThrow('banned from community participation')
+}, 120_000)
+
+test('platform-owned listing stays trusted and featured through republish', async () => {
+	silenceIncidentalRuntimeWarnings()
+	using _artifactsMock = createMswNodeServer(
+		createArtifactsMswHandlers({
+			accountId: mockAccountId,
+			apiBaseUrl: artifactsApiBaseUrl,
+		}),
+		{ onUnhandledRequest: 'bypass' },
+	)
+	const testEnv = {
+		...env,
+		CLOUDFLARE_ACCOUNT_ID: mockAccountId,
+		CLOUDFLARE_API_TOKEN: 'artifacts-test-token',
+		CLOUDFLARE_API_BASE_URL: artifactsApiBaseUrl,
+		COMMUNITY_ACTIVITY_DISPATCH_QUEUE: {
+			async send() {},
+		},
+		COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE: {
+			async send() {},
+		},
+	} as Env
+	const unique = crypto.randomUUID()
+	const owner = await insertTestUser({
+		email: `platform-owner-${unique}@example.com`,
+		username: `kody-${unique.slice(0, 8)}`,
+		accountType: 'platform',
+	})
+	const packageId = `platform-package-${unique}`
+	const sourceId = `platform-source-${unique}`
+	const kodyId = `platform-listing-${unique}`
+	const publishedCommit = `platform-commit-${unique}`
+	const seeded = await seedOwnerPackage({
+		testEnv,
+		owner,
+		packageId,
+		sourceId,
+		kodyId,
+		publishedCommit,
+	})
+	const ownerCtx = createCapabilityContext(testEnv, owner)
+
+	const published = await communityPublishCapability.handler(
+		{ package_id: packageId },
+		ownerCtx,
+	)
+	const publishedDetail = await communityGetCapability.handler(
+		{ listing_id: published.listing_id },
+		ownerCtx,
+	)
+	expect(publishedDetail).toMatchObject({
+		pinned_commit: publishedCommit,
+		trusted: true,
+	})
+
+	await setCommunityListingFeatured({
+		env: testEnv,
+		listingId: published.listing_id,
+		featured: true,
+	})
+	const republishedCommit = `platform-republished-${unique}`
+	await writePublishedSourceSnapshot({
+		env: testEnv,
+		source: { ...seeded.entitySource, published_commit: republishedCommit },
+		files: seeded.files,
+	})
+	await runSql(
+		`UPDATE entity_sources SET published_commit = ? WHERE id = ?`,
+		republishedCommit,
+		sourceId,
+	)
+
+	await communityPublishCapability.handler({ package_id: packageId }, ownerCtx)
+
+	const republishedDetail = await communityGetCapability.handler(
+		{ listing_id: published.listing_id },
+		ownerCtx,
+	)
+	expect(republishedDetail).toMatchObject({
+		pinned_commit: republishedCommit,
+		trusted: true,
+		featured: true,
+	})
+	const featuredListings = await listFeaturedCommunityListingsWithAggregates({
+		env: testEnv,
+		limit: 10,
+	})
+	expect(
+		featuredListings.some((listing) => listing.id === published.listing_id),
+	).toBe(true)
+
+	const trustRow = await env.APP_DB.prepare(
+		`SELECT trusted_commit, trusted_by_user_id
+			FROM community_listings
+			WHERE id = ?`,
+	)
+		.bind(published.listing_id)
+		.first<{
+			trusted_commit: string | null
+			trusted_by_user_id: string | null
+		}>()
+	expect(trustRow).toEqual({
+		trusted_commit: republishedCommit,
+		trusted_by_user_id: owner.userId,
+	})
 }, 120_000)
 
 test('one-click install publishes clean listings and keeps unresolvable forks inert', async () => {
