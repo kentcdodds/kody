@@ -146,8 +146,8 @@ exhaustive.
   example `import gh from 'kody:@kody/github/issues'`. A static import runs in
   **your** execute runtime against your secrets and grants. `packages.invoke`
   enters the target package runtime (still your secrets). **Saved person-owned
-  packages must not depend on a platform scope.** Official `@kody` packages
-  may still compose with each other. Publish checks reject `kody:@kody/…` static
+  packages must not depend on a platform scope.** Official `@kody` packages may
+  still compose with each other. Publish checks reject `kody:@kody/…` static
   imports, `kody.dependencies` entries, and `packages.invoke('kody:@kody/…')` in
   person-owned package source. Fork the official package into your scope
   (`community_fork`) and depend on that copy. Platform package code cannot use

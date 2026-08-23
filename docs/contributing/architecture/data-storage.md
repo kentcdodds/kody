@@ -332,9 +332,8 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   auto-granted for read/use to self-authored packages (no `community_forks` row
   for that `saved_packages.id` + `userId`), live official platform packages
   (caller-owned `saved_packages` miss falls back to `findPlatformPackageByRef`;
-  execute-live half of
-  [0014](../decisions/0014-platform-live-packages.md); saved person packages
-  must fork per
+  execute-live half of [0014](../decisions/0014-platform-live-packages.md);
+  saved person packages must fork per
   [0035](../decisions/0035-platform-packages-execute-only.md)), and adopted
   forks (`community_forks.adopted_at` set via `community_fork_adopt`). Unadopted
   community forks (`community_forks.forked_package_id`, indexed in the squashed

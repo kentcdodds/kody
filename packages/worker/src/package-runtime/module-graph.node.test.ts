@@ -2672,9 +2672,8 @@ test('buildKodyModuleBundle rejects person-package imports of platform scopes', 
 
 	try {
 		const { buildKodyModuleBundle } = await import('./module-graph.ts')
-		const { personPackagePlatformDependencyMessage } = await import(
-			'#worker/package-registry/platform-package-policy.ts'
-		)
+		const { personPackagePlatformDependencyMessage } =
+			await import('#worker/package-registry/platform-package-policy.ts')
 
 		await expect(
 			buildKodyModuleBundle({
