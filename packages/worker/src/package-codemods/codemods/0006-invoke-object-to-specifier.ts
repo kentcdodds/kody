@@ -16,7 +16,7 @@ const manualRewriteMessage =
 const manifestScopeMessage =
 	'Package scope could not be read from package.json; migrate deprecated object-only `packages.invoke` calls manually.'
 const platformScopeMessage =
-	'Package is owned by a platform scope; deprecated object-only `packages.invoke` resolves against the runtime caller, so its target owner must be migrated manually.'
+	'Platform-owned runtime source uses deprecated object-only `packages.invoke`, whose target resolves against the runtime caller; migrate this call manually.'
 const parseFailureMessage =
 	'File references `packages.invoke` but could not be parsed; migrate any deprecated object-only calls manually.'
 
@@ -225,7 +225,6 @@ function classifyObjectCall(input: {
 	) {
 		return null
 	}
-	if (!namedProperties.some((entry) => entry.name === 'exportName')) return null
 	const kodyIdProperty = kodyIdEntries[0]?.property
 	if (!kodyIdProperty) return null
 	const kodyId = readStringLiteral(
@@ -237,6 +236,24 @@ function classifyObjectCall(input: {
 		Array.from(kodyId).some((character) => /\s/.test(character))
 	) {
 		return null
+	}
+	if (properties.length === 1) {
+		if (
+			typeof input.objectNode.start !== 'number' ||
+			typeof input.objectNode.end !== 'number'
+		) {
+			return null
+		}
+		const objectSource = input.source.slice(
+			input.objectNode.start,
+			input.objectNode.end,
+		)
+		if (objectSource.includes('//') || objectSource.includes('/*')) return null
+		return {
+			start: input.objectNode.start,
+			end: input.objectNode.end,
+			replacement: JSON.stringify(`kody:${input.scope}/${kodyId}`),
+		}
 	}
 	const optionsSource = buildOptionsSource({
 		source: input.source,
@@ -498,7 +515,12 @@ function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
 	}
 	const scope = readPackageScope(files)
 	if (scope && isPlatformPackageScope(scope)) {
-		return [{ path: packageManifestPath, message: platformScopeMessage }]
+		return classifications.map((classification) => ({
+			path: classification.path,
+			message: markdownFilePattern.test(classification.path)
+				? (classification.manualMessage ?? rewriteDetectMessage)
+				: platformScopeMessage,
+		}))
 	}
 	return classifications.map((classification) => ({
 		path: classification.path,
@@ -542,20 +564,21 @@ function transform(
 		}
 	}
 	const scope = readPackageScope(files)
-	if (scope && isPlatformPackageScope(scope)) {
-		return {
-			files: { ...files },
-			changed: false,
-			changedPaths: [],
-			needsManual: [
-				{ path: packageManifestPath, message: platformScopeMessage },
-			],
-		}
-	}
+	const platformScope = scope != null && isPlatformPackageScope(scope)
 	const nextFiles = { ...files }
 	const changedPaths: Array<string> = []
 	const needsManual: Array<PackageCodemodFinding> = []
 	for (const classification of classifications) {
+		if (
+			platformScope &&
+			!markdownFilePattern.test(classification.path)
+		) {
+			needsManual.push({
+				path: classification.path,
+				message: platformScopeMessage,
+			})
+			continue
+		}
 		if (classification.manualMessage) {
 			needsManual.push({
 				path: classification.path,

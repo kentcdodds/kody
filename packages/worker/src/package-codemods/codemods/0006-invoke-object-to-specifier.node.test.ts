@@ -29,7 +29,9 @@ test('0006 rewrites safe object-only invokes to owner-scoped string-first calls'
 			'export default async function run(event) {',
 			"\tconst direct = await packages.invoke({ kodyId: 'github', exportName: './request', params: { event } })",
 			"\tconst optional = await packages?.invoke({ exportName: '.', idempotencyKey: event.id, kodyId: 'inbox' })",
-			'\treturn { direct, optional }',
+			"\tconst defaultExport = await packages.invoke({ kodyId: 'calendar' })",
+			"\tconst paramsOnly = await packages.invoke({ params: { event }, kodyId: 'notify' })",
+			'\treturn { direct, optional, defaultExport, paramsOnly }',
 			'}',
 			'',
 		].join('\n'),
@@ -57,6 +59,12 @@ test('0006 rewrites safe object-only invokes to owner-scoped string-first calls'
 	)
 	expect(result.files['index.ts']).toContain(
 		'packages?.invoke("kody:@kentcdodds/inbox", { exportName:',
+	)
+	expect(result.files['index.ts']).toContain(
+		'packages.invoke("kody:@kentcdodds/calendar")',
+	)
+	expect(result.files['index.ts']).toContain(
+		'packages.invoke("kody:@kentcdodds/notify", { params:',
 	)
 	expect(result.files['index.ts']).not.toContain("kodyId: '")
 	expect(result.files['already-migrated.ts']).toBe(files['already-migrated.ts'])
@@ -216,13 +224,35 @@ test('0006 requires a scoped manifest and is registered for admin runs', () => {
 		'package.json': manifest('@kody/demo'),
 		'index.ts':
 			"await packages.invoke({ kodyId: 'worker', exportName: './run' })\n",
+		'README.md': [
+			'# Usage',
+			'',
+			'```ts',
+			"await packages.invoke({ kodyId: 'github', params: {} })",
+			'```',
+			'',
+		].join('\n'),
 	}
+	expect(invokeObjectToSpecifierCodemod.detect(platformFiles)).toEqual([
+		{
+			path: 'index.ts',
+			message: expect.stringContaining('runtime caller'),
+		},
+		{
+			path: 'README.md',
+			message: expect.stringContaining('deprecated object-only'),
+		},
+	])
 	const platformResult = invokeObjectToSpecifierCodemod.transform(platformFiles)
-	expect(platformResult.changed).toBe(false)
-	expect(platformResult.files).toEqual(platformFiles)
+	expect(platformResult.changed).toBe(true)
+	expect(platformResult.changedPaths).toEqual(['README.md'])
+	expect(platformResult.files['index.ts']).toBe(platformFiles['index.ts'])
+	expect(platformResult.files['README.md']).toContain(
+		'packages.invoke("kody:@kody/github", { params: {} })',
+	)
 	expect(platformResult.needsManual).toEqual([
 		{
-			path: 'package.json',
+			path: 'index.ts',
 			message: expect.stringContaining('runtime caller'),
 		},
 	])

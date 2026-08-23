@@ -223,17 +223,21 @@ API to an explicit owner-scoped specifier:
   The owner scope comes from the invoking package's `package.json.name`, which
   preserves the old API's caller-owned lookup.
 - Handles direct and optional `packages?.invoke` calls and preserves option
-  expressions and keyless/exactly-once behavior.
+  expressions and keyless/exactly-once behavior. Calls with only `kodyId`
+  become one-argument specifier calls; calls may omit `exportName` while
+  retaining any supported options.
 - Rewrites complete examples in JavaScript/TypeScript Markdown fences and inline
   code spans. Untyped/unsupported fences, partial snippets, and matching prose
   remain unchanged with `needsManual`.
+- Applies those safe Markdown rewrites to platform-owned package documentation,
+  using the package's explicit platform scope.
 - Leaves already string-first calls unchanged and is idempotent.
 - Emits `needsManual` for immutable `packageId` targets, dynamic or indirect
   input objects, computed properties, spreads, comments in the removed field,
   parse failures, and manifests without a valid scoped package name.
-- Emits `needsManual` for platform-owned package source: its old bare-id lookup
-  follows the runtime caller, which cannot be replaced by the source package's
-  platform scope without changing behavior.
+- Emits file-level `needsManual` findings for platform-owned runtime source: its
+  old bare-id lookup follows the runtime caller, which cannot be replaced by the
+  source package's platform scope without changing behavior.
 - Does not enforce removal of the object overload; that API remains supported
   for compatibility after fleet migration.
 
