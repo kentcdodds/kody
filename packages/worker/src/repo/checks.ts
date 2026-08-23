@@ -324,9 +324,6 @@ type KodyPrefixedPackageSpecifier = \`kody:@\${string}/\${string}\`;
  * \`kody:@owner/package[/export]\` for all new and migrated calls.
  */
 type KodyPrefixlessPackageSpecifier = \`@\${string}/\${string}\`;
-type KodyPackageSpecifier =
-  | KodyPrefixedPackageSpecifier
-  | KodyPrefixlessPackageSpecifier;
 type KodyPackagesInvokeOptions = {
   /**
    * Required when the specifier has no export subpath. When both are present,

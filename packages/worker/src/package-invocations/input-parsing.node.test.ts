@@ -69,7 +69,17 @@ test('parses and canonicalizes scoped package specifiers and export subpaths', (
 		options: {},
 	})
 	expect(spacedPrefixless).toMatchObject({
-		specifier: 'kody:@kentcdodds / github/request',
+		specifier: 'kody:@kentcdodds/github/request',
+		packageName: '@kentcdodds/github',
+		exportName: 'request',
+	})
+
+	const spacedPrefixedPackage = parsePackageInvokeInput({
+		specifier: 'kody:@kentcdodds / github',
+		options: { exportName: 'request' },
+	})
+	expect(spacedPrefixedPackage).toMatchObject({
+		specifier: 'kody:@kentcdodds/github',
 		packageName: '@kentcdodds/github',
 		exportName: 'request',
 	})

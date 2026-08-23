@@ -1,5 +1,9 @@
 import { parseModuleSource, type ModuleAstNode } from '#worker/module-source.ts'
 import {
+	packageSpecifierPrefix,
+	parseKodyPackageSpecifier,
+} from '#worker/package-runtime/package-import-resolution.ts'
+import {
 	type PackageCodemod,
 	type PackageCodemodFinding,
 	type PackageCodemodTransformResult,
@@ -17,6 +21,7 @@ const parseFailureMessage =
 
 const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 const markdownFilePattern = /\.mdx?$/
+const packagesInvokeDetectorPattern = /packages\s*\??\.\s*invoke\b/
 const markdownModuleLanguages = new Set([
 	'cjs',
 	'cts',
@@ -29,7 +34,6 @@ const markdownModuleLanguages = new Set([
 	'tsx',
 	'typescript',
 ])
-const prefixlessSpecifierPattern = /^@[^/\s]+\/[^/\s]+(?:\/[^\s/]+)*$/
 
 type AstNode = ModuleAstNode & {
 	start?: number
@@ -234,12 +238,32 @@ function classifyLiteralSpecifier(
 				? rawValue
 				: null
 	if (value == null) return 'manual'
-	if (value.startsWith('kody:')) return 'unchanged'
-	if (!prefixlessSpecifierPattern.test(value)) return 'manual'
+	if (rawValue.includes('\\') || (quote !== '`' && rawValue !== value)) {
+		return 'manual'
+	}
+	const trimmedValue = value.trim()
+	if (trimmedValue.startsWith(packageSpecifierPrefix)) return 'unchanged'
+	if (!trimmedValue.startsWith('@')) return 'manual'
+	let canonicalValue: string
+	try {
+		const prefixedSpecifier = `kody:${trimmedValue}`
+		const parsed = parseKodyPackageSpecifier(prefixedSpecifier)
+		const pathSegments = prefixedSpecifier
+			.slice(packageSpecifierPrefix.length)
+			.split('/')
+		const hasExplicitExport = pathSegments
+			.slice(2)
+			.some((segment) => segment.trim())
+		canonicalValue = `${packageSpecifierPrefix}${parsed.packageName.slice(1)}${
+			hasExplicitExport ? `/${parsed.exportName}` : ''
+		}`
+	} catch {
+		return 'manual'
+	}
 	return {
 		start: node.start,
 		end: node.end,
-		replacement: `${quote}kody:${rawValue}${quote}`,
+		replacement: `${quote}${canonicalValue}${quote}`,
 	}
 }
 
@@ -248,7 +272,7 @@ function classifyModuleSource(input: {
 	source: string
 	offset?: number
 }): FileClassification | null {
-	if (!/packages\s*\??\.\s*invoke\b/.test(input.source)) return null
+	if (!packagesInvokeDetectorPattern.test(input.source)) return null
 	const program = parseProgram(input.source)
 	if (!program) {
 		return {
@@ -369,19 +393,19 @@ function sourceOutsideRangesHasPackagesInvoke(
 	const sorted = [...ranges].sort((left, right) => left.start - right.start)
 	let cursor = 0
 	for (const range of sorted) {
-		if (/packages\s*\??\.\s*invoke\b/.test(source.slice(cursor, range.start))) {
+		if (packagesInvokeDetectorPattern.test(source.slice(cursor, range.start))) {
 			return true
 		}
 		cursor = Math.max(cursor, range.end)
 	}
-	return /packages\s*\??\.\s*invoke\b/.test(source.slice(cursor))
+	return packagesInvokeDetectorPattern.test(source.slice(cursor))
 }
 
 function classifyMarkdownFile(input: {
 	path: string
 	source: string
 }): FileClassification | null {
-	if (!/packages\s*\??\.\s*invoke\b/.test(input.source)) return null
+	if (!packagesInvokeDetectorPattern.test(input.source)) return null
 	const fences = listMarkdownCodeFences(input.source)
 	const htmlRanges = listMarkdownHtmlRanges(input.source)
 	const coveredRanges: Array<{ start: number; end: number }> = [
@@ -392,7 +416,7 @@ function classifyMarkdownFile(input: {
 	let needsManual: string | null = null
 	if (
 		htmlRanges.some((range) =>
-			/packages\s*\??\.\s*invoke\b/.test(
+			packagesInvokeDetectorPattern.test(
 				input.source.slice(range.start, range.end),
 			),
 		)
@@ -403,7 +427,7 @@ function classifyMarkdownFile(input: {
 		if (rangeOverlaps(fence, htmlRanges)) continue
 		const content = input.source.slice(fence.contentStart, fence.contentEnd)
 		if (!markdownModuleLanguages.has(fence.language)) {
-			if (/packages\s*\??\.\s*invoke\b/.test(content)) {
+			if (packagesInvokeDetectorPattern.test(content)) {
 				needsManual ??= manualMessage
 			}
 			continue

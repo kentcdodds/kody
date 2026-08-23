@@ -17,13 +17,15 @@ const result = await packages.invoke('@owner/pkg/specifier-export', {
 await packages?.invoke("@owner/other", options)
 await packages.invoke('kody:@owner/already/export', { params: {} })
 `,
+		'spaced.ts':
+			"await packages.invoke('@owner / package / export-name', { exportName: fallback, params: buildParams() })\n",
 		'worker.js': 'await packages.invoke(`@owner/template/export`, options)\n',
 	}
 	const result = prefixPackagesInvokeSpecifiersCodemod.transform(files)
 
 	expect(result).toMatchObject({
 		changed: true,
-		changedPaths: ['index.ts', 'worker.js'],
+		changedPaths: ['index.ts', 'spaced.ts', 'worker.js'],
 		needsManual: [],
 	})
 	expect(result.files['index.ts']).toContain(
@@ -37,6 +39,9 @@ await packages.invoke('kody:@owner/already/export', { params: {} })
 	)
 	expect(result.files['worker.js']).toBe(
 		'await packages.invoke(`kody:@owner/template/export`, options)\n',
+	)
+	expect(result.files['spaced.ts']).toBe(
+		"await packages.invoke('kody:@owner/package/export-name', { exportName: fallback, params: buildParams() })\n",
 	)
 
 	const repeated = prefixPackagesInvokeSpecifiersCodemod.transform(result.files)
@@ -284,6 +289,38 @@ await packages.invoke(\`@\${owner}/pkg/export\`, options)
 	])
 	expect(JSON.stringify(result.needsManual)).not.toContain('private-owner')
 	expect(JSON.stringify(result.needsManual)).not.toContain('private-package')
+})
+
+test('0007 detect orders rewritable and manual findings and omits prefixed calls', () => {
+	const findings = prefixPackagesInvokeSpecifiersCodemod.detect({
+		'a-rewrite.ts':
+			"packages.invoke('@private-owner/private-package/export')\n",
+		'b-manual.ts': 'packages.invoke(privateSpecifier)\n',
+		'c-prefixed.ts':
+			"packages.invoke('kody:@private-owner/private-package/export')\n",
+		'd-parse.ts': "packages.invoke('@private-owner/private-package/export'\n",
+	})
+
+	expect(findings).toEqual([
+		{
+			path: 'a-rewrite.ts',
+			message:
+				'Uses a deprecated prefixless packages.invoke specifier; add the kody: prefix.',
+		},
+		{
+			path: 'b-manual.ts',
+			message:
+				'A packages.invoke specifier is dynamic or ambiguous; add the kody: prefix manually.',
+		},
+		{
+			path: 'd-parse.ts',
+			message:
+				'File references packages.invoke but could not be parsed; add kody: prefixes manually.',
+		},
+	])
+	expect(findings.map((finding) => finding.path)).not.toContain('c-prefixed.ts')
+	expect(JSON.stringify(findings)).not.toContain('private-owner')
+	expect(JSON.stringify(findings)).not.toContain('private-package')
 })
 
 test('0007 is permanent and registered after the object-only migration', () => {

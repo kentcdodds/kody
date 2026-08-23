@@ -37,9 +37,9 @@ remaining calls select `package`.
 ## Exact retirement query
 
 Run this query against `kody_package_invoke_specifier_events`. Replace only the
-two ISO-8601 timestamp literals with the exact start and end of the evidence
-window. The start must be after the telemetry deploy completed; the end must be
-after the observation window closed.
+two UTC timestamp literals, using Analytics Engine's accepted
+`YYYY-MM-DD HH:MM:SS` format. The start must be after the telemetry deploy
+completed; the end must be after the observation window closed.
 
 ```sql
 SELECT
@@ -52,8 +52,8 @@ SELECT
     CASE WHEN blob1 = 'kody_prefixed' THEN _sample_interval ELSE 0 END
   ) AS weighted_kody_prefixed_calls
 FROM kody_package_invoke_specifier_events
-WHERE timestamp >= 'START_ISO_8601'
-  AND timestamp < 'END_ISO_8601'
+WHERE timestamp >= toDateTime('2026-08-01 00:00:00')
+  AND timestamp < toDateTime('2026-08-08 00:00:00')
   AND blob1 IN ('prefixless', 'kody_prefixed')
   AND blob2 IN ('execute', 'package', 'job', 'app')
 GROUP BY blob2
@@ -90,7 +90,10 @@ Attach the following evidence to the final cutover:
 
 1. The exact query text used, unchanged except for its timestamp literals.
 2. Dataset name `kody_package_invoke_specifier_events`.
-3. Exact start and end timestamps.
+3. Exact start and end UTC timestamps in ISO 8601 form alongside the executed
+   query. The evidence timestamps correspond exactly to the UTC values passed to
+   `toDateTime(...)`; ISO formatting is for the evidence record, not the SQL
+   literal.
 4. Every result row, including app when present.
 5. The telemetry deploy link and deployed commit SHA.
 
