@@ -13,6 +13,11 @@ import {
 	rewriteForkedPackageSelfReferences,
 	throwIfPersonPackagePlatformReference,
 } from './platform-package-policy.ts'
+import {
+	getPlatformAccountByUsername,
+	isPlatformAccountStableUserId,
+	listPlatformAccountUsernames,
+} from './scope-grants.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
@@ -184,4 +189,27 @@ test('already-published person artifacts with platformOwned deps fail closed; pl
 			dependencies: platformOwned,
 		}),
 	).resolves.toBeUndefined()
+})
+
+test('platform-account lookups treat query-allowlist D1 mocks as person accounts', async () => {
+	const db = {
+		prepare(query: string) {
+			const statement = {
+				bind() {
+					return statement
+				},
+				async first() {
+					throw new Error(`Unsupported first query: ${query}`)
+				},
+				async all() {
+					throw new Error(`Unsupported first query: ${query}`)
+				},
+			}
+			return statement
+		},
+	} as unknown as D1Database
+
+	await expect(isPlatformAccountStableUserId(db, 'user-1')).resolves.toBe(false)
+	await expect(getPlatformAccountByUsername(db, 'kody')).resolves.toBeNull()
+	await expect(listPlatformAccountUsernames(db)).resolves.toEqual([])
 })

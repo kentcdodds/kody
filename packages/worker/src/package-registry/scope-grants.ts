@@ -5,7 +5,10 @@ function isUsersPlatformSchemaUnavailable(error: unknown) {
 	const message = getErrorMessage(error)
 	return (
 		message.includes('no such column: account_type') ||
-		message.includes('no such table: users')
+		message.includes('no such table: users') ||
+		// Node-unit D1 allowlist mocks reject unknown SQL instead of applying
+		// migrations. Same fail-closed outcome as an unmigrated `users` table.
+		message.includes('Unsupported first query')
 	)
 }
 
