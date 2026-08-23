@@ -15,6 +15,32 @@ export function isRepoSessionInactiveMessage(message: string) {
 }
 
 /**
+ * Stable phrases from RepoSession DO `getSessionState` when the catalog has no
+ * row for the given id (or the row belongs to another user). Agents often pass
+ * placeholders (`none`, `null`) or stale ids; treat those as caller-correctable
+ * so they stay on `mcp-event` and out of Sentry. KODY-CLOUDFLARE-5V.
+ *
+ * Match allows an optional trailing guidance sentence after the period.
+ */
+export function isRepoSessionNotFoundMessage(message: string) {
+	return (
+		message.startsWith('Repo session "') &&
+		/" was not found(\.| for this user\.)/.test(message)
+	)
+}
+
+export const repoSessionNotFoundGuidance =
+	'Use repo_list_sessions or repo_open_session to obtain a valid session_id.'
+
+export function buildRepoSessionNotFoundMessage(sessionId: string) {
+	return `Repo session "${sessionId}" was not found. ${repoSessionNotFoundGuidance}`
+}
+
+export function buildRepoSessionNotFoundForUserMessage(sessionId: string) {
+	return `Repo session "${sessionId}" was not found for this user. ${repoSessionNotFoundGuidance}`
+}
+
+/**
  * isomorphic-git `PushRejectedError` for non-fast-forward pushes. Publish maps
  * these to `base_moved` so agents rebase; when a plain Error still escapes DO
  * RPC (subclass identity lost), MCP observability matches this phrase.

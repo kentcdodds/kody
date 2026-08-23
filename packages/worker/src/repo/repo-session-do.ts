@@ -105,7 +105,11 @@ import {
 	measureRepoSessionWorkspaceBlobBytes,
 	purgeRepoSessionWorkspaceBlobs,
 } from './repo-session-blobs.ts'
-import { isGitPushNotFastForwardError } from './repo-session-caller-error.ts'
+import {
+	buildRepoSessionNotFoundForUserMessage,
+	buildRepoSessionNotFoundMessage,
+	isGitPushNotFastForwardError,
+} from './repo-session-caller-error.ts'
 import {
 	assertPackagePrivateVisibilityChangeAllowed,
 	assertPackageSourceOverwriteAllowed,
@@ -456,12 +460,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			cachedState?.sessionRow ??
 			null
 		if (!sessionRow) {
-			throw new Error(`Repo session "${sessionId}" was not found.`)
+			throw new Error(buildRepoSessionNotFoundMessage(sessionId))
 		}
 		if (sessionRow.user_id !== userId) {
-			throw new Error(
-				`Repo session "${sessionId}" was not found for this user.`,
-			)
+			throw new Error(buildRepoSessionNotFoundForUserMessage(sessionId))
 		}
 		const allowedStatuses = options.allowedStatuses ?? ['active']
 		if (!allowedStatuses.includes(sessionRow.status)) {
@@ -1330,9 +1332,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 		} else {
 			if (sessionRow.user_id !== input.userId) {
-				throw new Error(
-					`Repo session "${input.sessionId}" was not found for this user.`,
-				)
+				throw new Error(buildRepoSessionNotFoundForUserMessage(input.sessionId))
 			}
 			if (sessionRow.status !== 'active') {
 				throw new Error(
@@ -1561,9 +1561,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 		}
 		if (sessionRow.user_id !== input.userId) {
-			throw new Error(
-				`Repo session "${input.sessionId}" was not found for this user.`,
-			)
+			throw new Error(buildRepoSessionNotFoundForUserMessage(input.sessionId))
 		}
 		await updateRepoSession(this.env, {
 			id: sessionRow.id,
@@ -1589,9 +1587,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			sessionId: input.sessionId,
 		})
 		if (sessionRow && sessionRow.user_id !== input.userId) {
-			throw new Error(
-				`Repo session "${input.sessionId}" was not found for this user.`,
-			)
+			throw new Error(buildRepoSessionNotFoundForUserMessage(input.sessionId))
 		}
 		await this.clearCachedSessionState(input.sessionId)
 		await this.resetWorkspace().catch(() => {
@@ -1628,9 +1624,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 		}
 		if (sessionRow.user_id !== input.userId) {
-			throw new Error(
-				`Repo session "${input.sessionId}" was not found for this user.`,
-			)
+			throw new Error(buildRepoSessionNotFoundForUserMessage(input.sessionId))
 		}
 		const sessionBranch = sessionRow.session_branch
 		// Remote branch delete is best-effort. Cron selects the same expired

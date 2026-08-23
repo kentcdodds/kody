@@ -275,6 +275,18 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 			),
 		})
 
+		// Missing / placeholder repo session id (KODY-CLOUDFLARE-5V).
+		logMcpEvent({
+			...callerFailureBase,
+			capabilityName: 'repo_read_file',
+			domain: 'repo',
+			capabilitySource: 'builtin',
+			failurePhase: 'handler',
+			errorName: 'Error',
+			errorMessage: 'Repo session "none" was not found.',
+			cause: new Error('Repo session "none" was not found.'),
+		})
+
 		// Invalid repo_search regex (KODY-CLOUDFLARE-49). Plain Error from DO RPC.
 		logMcpEvent({
 			...callerFailureBase,
@@ -352,7 +364,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 		})
 	})
 
-	expect(payloads).toHaveLength(20)
+	expect(payloads).toHaveLength(21)
 	expect(JSON.parse(payloads[0]!)).toMatchObject({
 		tool: 'execute',
 		outcome: 'failure',
