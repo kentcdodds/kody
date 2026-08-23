@@ -158,20 +158,20 @@ internal connection, edit the page's **Connections** menu.
 - Installation scope wrong on a public connection: it cannot be edited after
   creation; create a new public connection instead.
 
-## Use the official package and verify
+## Use the official package and verify (Lane B / OAuth)
 
-A saved integration is auth credentials only. Finish by calling the live
-official helpers so day-to-day work goes through maintained search, read, query,
-and confirmed-write helpers. Official `@kody/*` packages resolve in the caller
-runtime against the caller's secrets — do **not** fork them just to use them.
-Fork only when you need to customize the source.
+Lane A stays on the raw `notionToken` fetch above. The live official package is
+the Lane B finish: it uses the saved `notion` OAuth integration and does not
+read `notionToken`. Official `@kody/*` packages resolve in the caller runtime
+against the caller's secrets — do **not** fork them just to use them. Fork only
+when you need to customize the source.
 
 1. Search for `@kody/notion` (or import `kody:@kody/notion` directly). It wraps
    pages, databases, and a generic request escape hatch.
 2. Check its README **Required setup**: it expects an OAuth integration named
-   `notion` — the default name this guide's connect link uses, so no adaptation
-   is needed.
-3. Verify the live package against your integration from `execute`:
+   `notion` — the default name this guide's Lane B connect link uses, so no
+   adaptation is needed.
+3. Verify the live package against the OAuth integration from `execute`:
 
 ```ts
 import smokeTest from 'kody:@kody/notion/smoke-test'
