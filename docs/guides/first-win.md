@@ -135,7 +135,10 @@ The first win is done. Offer one concrete next step and let them choose:
   `https://mcp.atlassian.com/v1/mcp/authv2`, `https://mcp.stripe.com`,
   `https://mcp.sentry.dev/mcp`, or `https://mcp.canva.com/mcp`, then verify with
   a small ad hoc `execute` call. Prefer the matching official `@kody/*-mcp`
-  listing when they want a reusable package.
+  listing when they want a reusable first package. Official non-MCP API
+  packages (`@kody/notion`, `@kody/linear`, `@kody/jira`, `@kody/stripe`,
+  `@kody/sentry`, `@kody/canva`) stay the long-term helpers — do not convert
+  them to MCP-first.
 - **Bring their own OAuth app or API key** when they need scopes or rate limits
   a hosted app does not offer — load `coding_guide_get` with `guide: "oauth"`,
   or the matching `provider_*` guide.

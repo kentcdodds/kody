@@ -229,9 +229,10 @@ export async function loadOnboardingFeaturedListings(
 }
 
 /**
- * Official `@kody/*-mcp` listings paired with the Step 2 MCP chooser. Loaded by
- * pinned listing id so they appear even when an admin has not featured them.
- * Fails open to an empty list.
+ * Official `@kody/*-mcp` listings paired with the Step 2 MCP chooser (quicker
+ * first-value path). Loaded by pinned listing id so they appear even when an
+ * admin has not featured them. Fails open to an empty list. Do not load the
+ * official non-MCP API packages here.
  */
 export async function loadOnboardingMcpChooserListings(
 	env: Env,

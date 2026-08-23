@@ -28,7 +28,9 @@ Agent notes — for AI agents driving onboarding Step 3 from this page:
   kody.mcp["atlassian"].tool_name(...), kody.mcp["stripe"].tool_name(...), or the
   matching connected server name.
 - Persist with package_save after the ad hoc call works. community_fork the
-  matching official @kody/*-mcp listing when that is closer than writing a new package.
+  matching official @kody/*-mcp listing when that is closer than writing a new
+  package. Do not convert official API packages (@kody/notion, @kody/linear,
+  @kody/jira, @kody/stripe, @kody/sentry, @kody/canva) to MCP-first.
 - Do not recommend one trigger over another. Offer webhook, Kody app, cron, or
   skip, and let them choose.
 - Do not create extra packages during this loop unless they ask.

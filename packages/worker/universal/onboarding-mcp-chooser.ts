@@ -8,8 +8,11 @@
  * Each card already knows name + url. Connect POSTs the account MCP-servers
  * add/reconnect API with that hardcoded url. Each card also pairs with the
  * official `@kody/<id>-mcp` listing so Step 2 can install the MCP helper.
- * Existing OAuth/API packages (`@kody/notion`, `@kody/linear`, and so on)
- * stay separate. MCP *server* names stay the short official names.
+ * MCP here is the quicker first-value path. The long-term preferred path is
+ * regular APIs via the official non-MCP packages (`@kody/notion`,
+ * `@kody/linear`, `@kody/jira`, `@kody/stripe`, `@kody/sentry`,
+ * `@kody/canva`). Do not convert those API packages to MCP-first.
+ * MCP *server* names stay the short official names.
  */
 
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'

@@ -81,10 +81,12 @@ import {
  * behind a disclosure. Server state (prompts, MCP URL, featured MCP
  * servers, hasMcpClient / OAuth polling) stays in the route state.
  *
- * Step 2 adds an official workspace MCP server (or skip). Step 3 is
- * the permanence lesson: copy a prompt that runs one ad hoc execute, then
- * persist that working code as a package. Built-in platform OAuth and
- * featured starters stay available under Advanced.
+ * Step 2 adds an official workspace MCP server (or skip) — the quicker
+ * first-value path, paired with `@kody/*-mcp` helpers. Official non-MCP
+ * API packages stay the long-term preferred path. Step 3 is the permanence
+ * lesson: copy a prompt that runs one ad hoc execute, then persist that
+ * working code as a package. Built-in platform OAuth and featured starters
+ * stay available under Advanced.
  */
 
 type OnboardingStep = 1 | 2 | 3
@@ -706,12 +708,13 @@ export function OnboardingRoute(handle: Handle) {
 								>
 									<p mix={css(howItWorksLabelCss)}>How it works</p>
 									<p>
-										Connect adds the official MCP URL and opens the provider
-										authorize page. Approve access, then your agent can call
-										those tools as <em>kody.mcp</em> capabilities. Each card
-										also offers the official <em>@kody/*-mcp</em> helper for
-										that server. GitHub's official MCP is not on this list — it
-										does not return an authorization link.
+										Connect is the quicker first win: it adds the official MCP
+										URL and opens the provider authorize page. Approve access,
+										then your agent can call those tools as <em>kody.mcp</em>.
+										Each card also offers the matching <em>@kody/*-mcp</em>{' '}
+										helper. Day-to-day work later prefers the official{' '}
+										<em>@kody</em> API packages. GitHub's official MCP is not on
+										this list — it does not return an authorization link.
 									</p>
 								</aside>
 								<WizardNavigation
