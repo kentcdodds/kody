@@ -26,7 +26,7 @@ export function isOnboardingExampleListing(listing: {
 }
 
 /**
- * Featured zero-auth examples shown under onboarding Step 3 Advanced.
+ * Featured zero-auth examples shown under onboarding Step 2 "Just try Kody".
  * Ordered like the known production set when present. Returns whatever the
  * featured payload includes; callers should tolerate an empty list when
  * curation has not landed yet.
@@ -43,6 +43,33 @@ export function selectOnboardingExampleListings(
 		const rightRank = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex
 		return leftRank - rightRank
 	})
+}
+
+export function hasInstalledOnboardingExample(
+	listings: Array<OnboardingFeaturedListing>,
+): boolean {
+	return selectOnboardingExampleListings(listings).some(
+		(listing) => listing.viewerInstall != null,
+	)
+}
+
+export function firstInstalledOnboardingExampleName(
+	listings: Array<OnboardingFeaturedListing>,
+): string | null {
+	return (
+		selectOnboardingExampleListings(listings).find(
+			(listing) => listing.viewerInstall != null,
+		)?.name ?? null
+	)
+}
+
+/** Poll skip key for Just-try-Kody installs. */
+export function onboardingExampleInstallFingerprint(
+	listings: Array<OnboardingFeaturedListing>,
+): string {
+	return selectOnboardingExampleListings(listings)
+		.map((listing) => `${listing.id}:${listing.viewerInstall?.status ?? ''}`)
+		.join('|')
 }
 
 /** Featured starters under Step 3 Advanced: everything that is not a zero-auth example. */
@@ -70,7 +97,7 @@ function exampleInvokeHint(scopedName: string, kodyId: string): string {
 }
 
 /**
- * Agent paste after the user picks an Advanced example. Safe to show while
+ * Agent paste after the user picks a Just-try-Kody example. Safe to show while
  * one-click install is still in flight — the agent is told to wait/retry once
  * if the fork is not searchable yet.
  */

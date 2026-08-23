@@ -17,19 +17,26 @@ import {
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
 } from '#universal/loader-data.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
 import {
+	firstInstalledOnboardingExampleName,
+	hasInstalledOnboardingExample,
+	onboardingExampleInstallFingerprint,
 	selectOnboardingExampleListings,
 	selectOnboardingServiceStarterListings,
 } from '#universal/onboarding-examples.ts'
 import {
+	customOnboardingMcpFingerprint,
 	featuredOnboardingMcpFingerprint,
+	firstConnectedOnboardingWorkspaceLabel,
 	formatOnboardingFeaturedMcpChoice,
-	hasConnectedOnboardingFeaturedMcpServer,
+	hasConnectedOnboardingWorkspaceMcp,
+	hasPendingOnboardingCustomMcpAuth,
 	hasPendingOnboardingFeaturedMcpAuth,
 } from '#universal/onboarding-mcp-chooser.ts'
 import {
@@ -44,6 +51,7 @@ import {
 	shouldShowOnboardingChecklist,
 } from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
+import { OnboardingCustomMcpCard } from '#client/routes/onboarding-custom-mcp-card.tsx'
 import { OnboardingMcpChooserCard } from '#client/routes/onboarding-mcp-chooser-card.tsx'
 import { OnboardingExampleCard } from '#client/routes/onboarding-example-card.tsx'
 import { OnboardingPersistCard } from '#client/routes/onboarding-persist-card.tsx'
@@ -82,12 +90,12 @@ import {
  * behind a disclosure. Server state (prompts, MCP URL, featured MCP
  * servers, hasMcpClient / OAuth polling) stays in the route state.
  *
- * Step 2 adds an official workspace MCP server (or skip) — the quicker
- * first-value path, paired with `@kody/*-mcp` helpers. Official non-MCP
- * API packages stay the long-term preferred path. Step 3 is the permanence
- * lesson: copy a prompt that runs one ad hoc execute, then persist that
- * working code as a package. Built-in platform OAuth and featured starters
- * stay available under Advanced.
+ * Step 2 ranks exits: featured official MCP, custom MCP, BYOK explanation
+ * (not a connect step), then Just-try-Kody zero-auth examples, then skip.
+ * Official non-MCP API packages stay the long-term preferred path. Step 3
+ * is the permanence lesson: copy a prompt that runs one ad hoc execute,
+ * then persist that working code as a package. Built-in platform OAuth and
+ * featured starters stay available under Advanced.
  */
 
 type OnboardingStep = 1 | 2 | 3
@@ -171,7 +179,7 @@ export function OnboardingRoute(handle: Handle) {
 	let setupPrompt = ''
 	let persistPrompt = ''
 	let hasMcpClient = false
-	let hasFeaturedMcp = false
+	let hasStep2Win = false
 	let hasPersistedPackage = false
 	let persistedPackageKodyId: string | null = null
 	let featuredListings: Array<OnboardingFeaturedListing> = []
@@ -179,6 +187,7 @@ export function OnboardingRoute(handle: Handle) {
 	let serviceStarterListings: Array<OnboardingFeaturedListing> = []
 	let builtInProviders: Array<OnboardingBuiltInProvider> = []
 	let featuredMcpServers: Array<OnboardingFeaturedMcpServer> = []
+	let customMcpServers: Array<OnboardingCustomMcpServer> = []
 	let checklist: OnboardingChecklistLoaderData | null = null
 	let checklistHidden = false
 	let activeStep: OnboardingStep = 1
@@ -202,7 +211,12 @@ export function OnboardingRoute(handle: Handle) {
 		serviceStarterListings =
 			selectOnboardingServiceStarterListings(featuredListings)
 		featuredMcpServers = payload.featuredMcpServers ?? []
-		hasFeaturedMcp = hasConnectedOnboardingFeaturedMcpServer(featuredMcpServers)
+		customMcpServers = payload.customMcpServers ?? []
+		hasStep2Win =
+			hasConnectedOnboardingWorkspaceMcp({
+				featuredMcpServers,
+				customMcpServers,
+			}) || hasInstalledOnboardingExample(exampleListings)
 		builtInProviders = payload.builtInProviders ?? []
 		checklist = payload.checklist
 		hasPersistedPackage = isOnboardingChecklistItemDone(
@@ -214,16 +228,16 @@ export function OnboardingRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
-			activeStep = hasFeaturedMcp ? 3 : payload.hasMcpClient ? 2 : 1
+			activeStep = hasStep2Win ? 3 : payload.hasMcpClient ? 2 : 1
 			initializedStep = true
-		} else if (!wasConnected && payload.hasMcpClient && !hasFeaturedMcp) {
+		} else if (!wasConnected && payload.hasMcpClient && !hasStep2Win) {
 			panelAnimationArmed = true
 			activeStep = 2
 			updateStepHash(2)
 			scrollToNav('onboarding-steps-nav')
 		}
-		// Stay on Step 2 when a featured MCP finishes so the Connected
-		// state is visible; wizard nav advances to the persist prompt.
+		// Stay on Step 2 when a workspace MCP or example finishes so the
+		// Connected/Installed state is visible; wizard nav advances.
 	}
 
 	/**
@@ -372,6 +386,7 @@ export function OnboardingRoute(handle: Handle) {
 		if (
 			hasMcpClient &&
 			!hasPendingOnboardingFeaturedMcpAuth(featuredMcpServers) &&
+			!hasPendingOnboardingCustomMcpAuth(customMcpServers) &&
 			hasPersistedPackage &&
 			persistedPackageKodyId != null
 		) {
@@ -384,6 +399,8 @@ export function OnboardingRoute(handle: Handle) {
 			const payload = await fetchOnboardingPayload(handle.signal)
 			if (handle.signal.aborted || !payload) return
 			const nextServers = payload.featuredMcpServers ?? []
+			const nextCustomServers = payload.customMcpServers ?? []
+			const nextListings = payload.featuredListings ?? []
 			const nextHasPersistedPackage = isOnboardingChecklistItemDone(
 				payload.checklist,
 				'install-starter',
@@ -392,6 +409,10 @@ export function OnboardingRoute(handle: Handle) {
 				payload.hasMcpClient === hasMcpClient &&
 				featuredOnboardingMcpFingerprint(nextServers) ===
 					featuredOnboardingMcpFingerprint(featuredMcpServers) &&
+				customOnboardingMcpFingerprint(nextCustomServers) ===
+					customOnboardingMcpFingerprint(customMcpServers) &&
+				onboardingExampleInstallFingerprint(nextListings) ===
+					onboardingExampleInstallFingerprint(featuredListings) &&
 				nextHasPersistedPackage === hasPersistedPackage &&
 				payload.persistedPackageKodyId === persistedPackageKodyId
 			) {
@@ -470,6 +491,13 @@ export function OnboardingRoute(handle: Handle) {
 			})
 		}
 
+		const workspaceLabel = firstConnectedOnboardingWorkspaceLabel({
+			featuredMcpServers,
+			customMcpServers,
+		})
+		const exampleName = firstInstalledOnboardingExampleName(exampleListings)
+		const persistTargetLabel = workspaceLabel ?? exampleName
+
 		return (
 			<section mix={css(onboardCss)}>
 				<header mix={css(onboardHeadCss)}>
@@ -526,7 +554,7 @@ export function OnboardingRoute(handle: Handle) {
 								const isActive = activeStep === step.number
 								const isComplete =
 									(step.number === 1 && hasMcpClient) ||
-									(step.number === 2 && hasFeaturedMcp)
+									(step.number === 2 && hasStep2Win)
 								return (
 									<button
 										key={step.number}
@@ -663,11 +691,11 @@ export function OnboardingRoute(handle: Handle) {
 									/>
 								</div>
 								<p mix={css(panelLedeCss)}>
-									Give your agent a live workspace: add{' '}
-									{formatOnboardingFeaturedMcpChoice()} as a remote MCP server,
+									Give your agent a live workspace. Official MCP is the easy
+									login path: add {formatOnboardingFeaturedMcpChoice()},
 									authorize it, and install the matching official{' '}
-									<em>@kody/*-mcp</em> helper — or skip if you would rather try
-									an ad hoc request first.
+									<em>@kody/*-mcp</em> helper. None of these? Add a custom
+									server, or just try Kody without a third-party login.
 								</p>
 								<ul
 									mix={css(starterGridCss)}
@@ -684,13 +712,24 @@ export function OnboardingRoute(handle: Handle) {
 										/>
 									))}
 								</ul>
-								{hasFeaturedMcp ? (
+								{hasConnectedOnboardingWorkspaceMcp({
+									featuredMcpServers,
+									customMcpServers,
+								}) ? (
 									<p
 										mix={css(quickExampleDoneCss)}
 										data-testid="onboarding-mcp-chooser-done"
 									>
 										Connected — continue to run one useful request and persist
 										it as a package you own.
+									</p>
+								) : hasInstalledOnboardingExample(exampleListings) ? (
+									<p
+										mix={css(quickExampleDoneCss)}
+										data-testid="onboarding-example-done"
+									>
+										Installed — continue to try it and persist a package you
+										own.
 									</p>
 								) : null}
 								<aside
@@ -709,10 +748,71 @@ export function OnboardingRoute(handle: Handle) {
 										this list — it does not return an authorization link.
 									</p>
 								</aside>
+								<div
+									mix={css(step2ExitCss)}
+									data-testid="onboarding-none-of-these"
+								>
+									<p mix={css(step2ExitLabelCss)}>None of these?</p>
+									<p mix={css(step2ExitLedeCss)}>
+										Add any remote MCP server. Same easy authorize path — just
+										not a vendor we featured.
+									</p>
+									<OnboardingCustomMcpCard
+										servers={customMcpServers}
+										loggedIn={loggedIn}
+										onChanged={() => {
+											void refreshOnboardingAfterInstall()
+										}}
+									/>
+								</div>
+								<div mix={css(step2ExitCss)} data-testid="onboarding-no-mcp">
+									<p mix={css(step2ExitLabelCss)}>No MCP for that service?</p>
+									<p mix={css(step2ExitLedeCss)}>
+										Bring-your-own-key is the durable path when a tool has no
+										remote MCP — you create the app, your agent walks you
+										through it. That is harder. Finish this first build first,
+										then connect from Advanced or{' '}
+										<a href="/account/secrets/new" mix={css(primaryLinkCss)}>
+											Account → Secrets
+										</a>
+										.{' '}
+										<a href="#byok" mix={css(primaryLinkCss)}>
+											Why bring your own keys?
+										</a>
+									</p>
+								</div>
+								{exampleListings.length > 0 ? (
+									<div
+										mix={css(step2ExitCss)}
+										data-testid="onboarding-just-try"
+									>
+										<p mix={css(step2ExitLabelCss)}>Just try Kody</p>
+										<p mix={css(step2ExitLedeCss)}>
+											No third-party login. Install an example, then persist it
+											as a package you own.
+										</p>
+										<ul
+											mix={css(starterGridCss)}
+											data-testid="onboarding-example-packages"
+										>
+											{exampleListings.map((listing) => (
+												<OnboardingExampleCard
+													key={listing.id}
+													listing={listing}
+													loggedIn={loggedIn}
+													username={username}
+													onInstalled={() => {
+														void refreshOnboardingAfterInstall()
+													}}
+												/>
+											))}
+										</ul>
+									</div>
+								) : null}
 								<WizardNavigation
 									activeStep={activeStep}
 									onSelectStep={selectStep}
-									confirmUnconnectedNext={!hasFeaturedMcp}
+									confirmUnconnectedNext={!hasStep2Win}
 									skipLabel="Skip for now"
 									onSkip={() => selectStep(3)}
 								/>
@@ -749,17 +849,13 @@ export function OnboardingRoute(handle: Handle) {
 								</div>
 								<p mix={css(panelLedeCss)}>
 									This is the permanence lesson: run one useful ad hoc request
-									{featuredMcpServers.find((server) => server.connected)
-										? ` against ${featuredMcpServers.find((server) => server.connected)?.label}`
-										: ''}
-									, then save that working code as a package you own.
+									{persistTargetLabel ? ` against ${persistTargetLabel}` : ''},
+									then save that working code as a package you own.
 								</p>
 								<OnboardingPersistCard
 									persistPrompt={persistPrompt}
-									connectedServerLabel={
-										featuredMcpServers.find((server) => server.connected)
-											?.label ?? null
-									}
+									connectedServerLabel={workspaceLabel}
+									installedExampleName={exampleName}
 								/>
 								{hasPersistedPackage ? (
 									<>
@@ -858,24 +954,6 @@ export function OnboardingRoute(handle: Handle) {
 													</li>
 												)
 											})}
-										</ul>
-									) : null}
-									{exampleListings.length > 0 ? (
-										<ul
-											mix={css(starterGridCss)}
-											data-testid="onboarding-example-packages"
-										>
-											{exampleListings.map((listing) => (
-												<OnboardingExampleCard
-													key={listing.id}
-													listing={listing}
-													loggedIn={loggedIn}
-													username={username}
-													onInstalled={() => {
-														void refreshOnboardingAfterInstall()
-													}}
-												/>
-											))}
 										</ul>
 									) : null}
 									<ul mix={css(starterListCss)}>
@@ -1486,6 +1564,30 @@ const providerConnectedPillCss = {
 	borderColor: `oklch(from ${colors.primary} l c h / 0.45)`,
 	backgroundColor: `oklch(from ${colors.primary} l c h / 0.08)`,
 	cursor: 'pointer',
+}
+
+const step2ExitCss = {
+	display: 'grid',
+	gap: '0.45rem',
+	marginTop: '0.35rem',
+	paddingTop: '1rem',
+	borderTop: `1px solid ${colors.border}`,
+}
+
+const step2ExitLabelCss = {
+	margin: 0,
+	font: `700 0.78rem/1 ${typography.fontFamilyBody}`,
+	letterSpacing: '0.06em',
+	textTransform: 'uppercase' as const,
+	color: colors.textMuted,
+}
+
+const step2ExitLedeCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.92rem',
+	lineHeight: 1.55,
+	maxWidth: '68ch',
 }
 
 /* Built-in OAuth and featured starters demote to Advanced under the persist lead. */

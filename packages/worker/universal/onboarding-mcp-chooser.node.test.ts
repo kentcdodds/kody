@@ -4,8 +4,14 @@ import {
 	featuredOnboardingMcpFingerprint,
 	formatOnboardingFeaturedMcpAddHint,
 	formatOnboardingFeaturedMcpChoice,
+	customOnboardingMcpFingerprint,
+	hasConnectedOnboardingCustomMcpServer,
 	hasConnectedOnboardingFeaturedMcpServer,
+	firstConnectedOnboardingWorkspaceLabel,
+	hasConnectedOnboardingWorkspaceMcp,
+	hasPendingOnboardingCustomMcpAuth,
 	hasPendingOnboardingFeaturedMcpAuth,
+	listOnboardingCustomMcpServers,
 	listDisconnectedOnboardingFeaturedMcpServers,
 	listOnboardingFeaturedMcpListingIds,
 	matchOnboardingFeaturedMcpServer,
@@ -188,4 +194,64 @@ test('featured MCP poll fingerprint changes when a listing appears after a miss'
 			attachOnboardingMcpPackageListings(withoutListing, [notionListing]),
 		),
 	)
+})
+
+test('custom MCP servers exclude featured remotes and count as a workspace connect', () => {
+	const custom = listOnboardingCustomMcpServers({
+		settings: [
+			{
+				id: 'srv-linear',
+				name: 'linear',
+				url: 'https://mcp.linear.app/mcp',
+			},
+			{
+				id: 'srv-acme',
+				name: 'acme',
+				url: 'https://mcp.acme.example/mcp',
+			},
+		],
+		statusByServerId: new Map([
+			[
+				'srv-acme',
+				{
+					connected: true,
+					authUrl: null,
+					state: 'ready',
+					error: null,
+				},
+			],
+		]),
+	})
+	expect(custom).toEqual([
+		{
+			id: 'srv-acme',
+			name: 'acme',
+			url: 'https://mcp.acme.example/mcp',
+			connected: true,
+			authUrl: null,
+			state: 'ready',
+			error: null,
+		},
+	])
+	expect(hasConnectedOnboardingCustomMcpServer(custom)).toBe(true)
+	expect(hasPendingOnboardingCustomMcpAuth(custom)).toBe(false)
+	expect(
+		hasConnectedOnboardingWorkspaceMcp({
+			featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+			customMcpServers: custom,
+		}),
+	).toBe(true)
+	expect(
+		firstConnectedOnboardingWorkspaceLabel({
+			featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+			customMcpServers: custom,
+		}),
+	).toBe('acme')
+	expect(customOnboardingMcpFingerprint(custom)).toBe('srv-acme:ready:1')
+	expect(
+		hasConnectedOnboardingWorkspaceMcp({
+			featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+			customMcpServers: [],
+		}),
+	).toBe(false)
 })

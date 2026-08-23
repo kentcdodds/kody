@@ -15,8 +15,8 @@ category: platform
 Agent notes — for AI agents driving onboarding Step 3 from this page:
 
 - The person already connected a workspace MCP server on /onboarding Step 2
-  (Notion, Linear, Atlassian, Stripe, Sentry, or Canva), or skipped so they could
-  try an ad hoc request first.
+  (featured official remotes, or a custom MCP URL), installed a Just-try-Kody
+  zero-auth example, or skipped so they could try an ad hoc request first.
 - Your job is one useful execute call, a short result, then persist that
   working code as a package they own. That owned package is the point of Kody.
 - Keep messages short — under roughly 120 words.
@@ -48,9 +48,10 @@ their agent as soon as they reach that step.
 ## Before you start
 
 The account needs a verified email and an authorized MCP host. If they connected
-a workspace MCP server on `/onboarding` Step 2, confirm the server is ready with
-`mcp_server_list` before calling its tools. If they skipped, ask what they want
-to try and use whatever tools are already available.
+a workspace MCP server on `/onboarding` Step 2 (featured or custom), confirm the
+server is ready with `mcp_server_list` before calling its tools. If they
+installed a Just-try-Kody example, invoke that owned package. If they skipped,
+ask what they want to try and use whatever tools are already available.
 
 ## Step 1 — Confirm the connection
 
