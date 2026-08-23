@@ -25,6 +25,7 @@ const mockModule = vi.hoisted(() => ({
 	searchOwnerEmailMessages: vi.fn(),
 	listTopPlatformAppsByUse: vi.fn(),
 	listJoinedIntegrations: vi.fn(),
+	listIntegrations: vi.fn(),
 	buildPlatformOauthAppLogoPath: vi.fn(),
 	listMcpServerSettings: vi.fn(),
 	loadMcpClientHubSnapshotOrNull: vi.fn(),
@@ -59,6 +60,8 @@ vi.mock('#worker/integrations/platform-apps.ts', () => ({
 vi.mock('#worker/integrations/service.ts', () => ({
 	listJoinedIntegrations: (...args: Array<unknown>) =>
 		mockModule.listJoinedIntegrations(...args),
+	listIntegrations: (...args: Array<unknown>) =>
+		mockModule.listIntegrations(...args),
 }))
 
 vi.mock('#worker/integrations/platform-app-logo.ts', () => ({
@@ -144,6 +147,7 @@ test('onboarding API includes the authenticated package-scope username', async (
 		ok: true,
 		loggedIn: true,
 		username: 'u-b',
+		persistedPackageKodyId: null,
 	})
 })
 
@@ -357,6 +361,8 @@ test('onboarding persist next-steps use the newest saved-package kody id', async
 		{ kodyId: 'morning-digest' },
 	])
 	mockModule.listTopPlatformAppsByUse.mockResolvedValue([])
+	mockModule.listJoinedIntegrations.mockResolvedValue([])
+	mockModule.listIntegrations.mockResolvedValue([])
 	mockModule.listMcpServerSettings.mockResolvedValue([])
 	mockModule.listOwnerEmailMessages.mockResolvedValue([])
 	mockModule.searchOwnerEmailMessages.mockResolvedValue([])
