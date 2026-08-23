@@ -240,8 +240,8 @@ API to an explicit owner-scoped specifier:
 - Emits file-level `needsManual` findings for platform-owned runtime source: its
   old bare-id lookup follows the runtime caller, which cannot be replaced by the
   source package's platform scope without changing behavior.
-- Does not enforce removal of the object overload; that API remains supported
-  for compatibility after fleet migration.
+- Does not drop the object overload; removal waits on the
+  [overload telemetry soak gate](./architecture/invocation-overhead-guardrails.md#packagesinvoke-overload-telemetry).
 
 ## Engine
 
