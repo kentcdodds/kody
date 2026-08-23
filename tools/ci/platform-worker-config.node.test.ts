@@ -149,6 +149,10 @@ function buildMainGeneratedConfig(envName: string) {
 				binding: 'MCP_PROTOCOL_EVENTS',
 				dataset: 'kody_mcp_protocol_events_pr',
 			},
+			{
+				binding: 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
+				dataset: 'kody_package_invoke_specifier_events_pr',
+			},
 		],
 		vars: {
 			APP_BASE_URL: 'https://kody-pr-7.example.workers.dev',
@@ -197,6 +201,7 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 					workers_dev?: boolean
 					durable_objects?: { bindings?: Array<Record<string, unknown>> }
 					d1_databases?: Array<Record<string, unknown>>
+					analytics_engine_datasets?: Array<Record<string, unknown>>
 					queues?: { producers?: Array<Record<string, unknown>> }
 					vars?: Record<string, unknown>
 					workflows?: Array<Record<string, unknown>>
@@ -217,6 +222,14 @@ test('generate rewrites worker names, copies resource ids, and writes a bootstra
 			binding: 'APP_DB',
 			database_name: 'kody-pr-7-db',
 			database_id: 'd1-app-id',
+		})
+		expect(
+			previewEnv?.analytics_engine_datasets?.find(
+				(entry) => entry.binding === 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
+			),
+		).toEqual({
+			binding: 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
+			dataset: 'kody_package_invoke_specifier_events_pr',
 		})
 		expect(previewEnv?.queues?.producers?.[0]).toMatchObject({
 			binding: 'WEBHOOK_DISPATCH_QUEUE',

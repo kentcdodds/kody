@@ -202,12 +202,12 @@ await packages.invoke('kody:@kentcdodds/event-subscriber/handle-event', {
 })
 ```
 
-The preferred first argument is `kody:@scope/package` or
-`kody:@scope/package/export`. Prefixless `@scope/package[/export]` is also
-accepted and canonicalized to `kody:`. `exportName` is optional only when the
-specifier includes the export; if both are present, the specifier export wins.
-The second argument accepts `exportName`, `params`, `idempotencyKey`, and
-`topic`; unknown keys fail.
+The first argument should be `kody:@scope/package` or
+`kody:@scope/package/export`. Prefixless `@scope/package[/export]` is deprecated
+during migration, though it remains accepted and canonicalized to `kody:`.
+`exportName` is optional only when the specifier includes the export; if both
+are present, the specifier export wins. The second argument accepts
+`exportName`, `params`, `idempotencyKey`, and `topic`; unknown keys fail.
 
 Exact scoped resolution avoids bare-id collisions. A `kody:@kody/...` target
 resolves the public live package owned by the platform account, while a
@@ -267,7 +267,10 @@ The removed object-only
 rejected locally with replacement guidance. Publish checks reject object-only
 call sites in JavaScript and TypeScript. The permanent
 `0006-invoke-object-to-specifier` codemod repairs safe calls and flags ambiguous
-ones for manual migration.
+ones for manual migration. The separate permanent
+`0007-prefix-packages-invoke-specifiers` codemod then prefixes literal
+string-first calls while preserving their entire options argument. It
+deliberately does not take over 0006's object-only migration.
 
 **Unsupported helpers:** object-only `packages.invoke`,
 `packages.invokeChecked`, `packages.check`, and literal dynamic

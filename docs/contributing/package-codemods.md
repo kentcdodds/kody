@@ -250,6 +250,28 @@ package API to an explicit owner-scoped specifier:
   this codemod as the mechanical repair path for source that predates or
   bypasses those checks.
 
+### `0007-prefix-packages-invoke-specifiers`
+
+This permanent migration codemod moves string-first dynamic invocation to the
+preferred explicit scheme:
+
+- Rewrites literal `packages.invoke("@owner/package[/export]", options)` calls
+  to `packages.invoke("kody:@owner/package[/export]", options)`.
+- Preserves the complete options argument byte-for-byte, including `exportName`,
+  so an export subpath keeps its existing precedence.
+- Handles JavaScript and TypeScript modules plus parseable JS/TS fenced and
+  inline examples in Markdown and MDX.
+- Leaves already-prefixed calls unchanged and is deterministic and idempotent.
+- Emits fixed, privacy-safe `needsManual` messages for dynamic or ambiguous
+  specifiers, examples outside parseable JS/TS Markdown ranges, and parse
+  failures. Messages never interpolate a specifier, package, export, parameter,
+  or source value.
+- Leaves object-only calls unchanged. Their migration remains the permanent
+  `0006-invoke-object-to-specifier` codemod's responsibility.
+
+Prefixless calls remain publishable during this measurement phase; 0007 is a
+migration aid, not a publish-rejection rule.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in

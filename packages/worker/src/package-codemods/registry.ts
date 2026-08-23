@@ -4,6 +4,7 @@ import { heykodyDomainsToKodyCodesCodemod } from './codemods/0003-heykody-domain
 import { kodyappsDevToKodyRunCodemod } from './codemods/0004-kodyapps-dev-to-kody-run.ts'
 import { kodyDependenciesToWildcardMapCodemod } from './codemods/0005-kody-dependencies-to-wildcard-map.ts'
 import { invokeObjectToSpecifierCodemod } from './codemods/0006-invoke-object-to-specifier.ts'
+import { prefixPackagesInvokeSpecifiersCodemod } from './codemods/0007-prefix-packages-invoke-specifiers.ts'
 import { type PackageCodemod } from './types.ts'
 
 const packageCodemods: Array<PackageCodemod> = [
@@ -13,6 +14,7 @@ const packageCodemods: Array<PackageCodemod> = [
 	kodyappsDevToKodyRunCodemod,
 	kodyDependenciesToWildcardMapCodemod,
 	invokeObjectToSpecifierCodemod,
+	prefixPackagesInvokeSpecifiersCodemod,
 ]
 
 const packageCodemodsById = new Map(

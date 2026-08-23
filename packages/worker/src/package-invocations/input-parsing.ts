@@ -82,8 +82,11 @@ function parsePackageInvokeSpecifier(
 		.some((segment) => segment.trim())
 		? parsed.exportName
 		: null
+	const canonicalSpecifier = `${packageSpecifierPrefix}${parsed.packageName.slice(1)}${
+		specifierExportName ? `/${specifierExportName}` : ''
+	}`
 	return {
-		specifier,
+		specifier: canonicalSpecifier,
 		packageName: parsed.packageName,
 		specifierExportName,
 	}
