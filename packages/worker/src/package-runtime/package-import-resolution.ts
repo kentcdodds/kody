@@ -21,10 +21,10 @@ export type KodyPackageSpecifier = {
  * `platformScope` carries the scope username.
  *
  * Isolation invariant: platform resolution only widens *which published
- * source the bundler may read*. The resolved modules always execute in the
- * calling user's runtime against the caller's secrets, storage, and
- * entitlements — exactly like a fork would — and the caller's own copy
- * always wins, so forking a platform package to customize it keeps working.
+ * source the bundler may read*, and only for ad hoc execute (decision 0035).
+ * Saved person-account packages must not resolve platform scopes; they fork
+ * into the caller's scope instead. Platform-account packages may still
+ * compose with each other. The caller's own copy always wins.
  */
 export type ResolvedPackageImport = {
 	row: SavedPackageRecord

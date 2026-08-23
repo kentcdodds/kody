@@ -160,11 +160,13 @@ internal connection, edit the page's **Connections** menu.
 
 ## Use the official package and verify (Lane B / OAuth)
 
-Lane A stays on the raw `notionToken` fetch above. The live official package is
-the Lane B finish: it uses the saved `notion` OAuth integration and does not
-read `notionToken`. Official `@kody/*` packages resolve in the caller runtime
-against the caller's secrets — do **not** fork them just to use them. Fork only
-when you need to customize the source.
+Lane A stays on the raw `notionToken` fetch above. Ad hoc `execute` may import
+or `packages.invoke` `kody:@kody/notion` live. The live official package is the
+Lane B finish: it uses the saved `notion` OAuth integration and does not read
+`notionToken`. Official `@kody/*` packages resolve in the execute caller
+runtime against the caller's secrets. Saved person-account packages cannot
+import or invoke a platform scope — `community_fork` into the caller's scope
+first, or fork when you need to customize the source.
 
 1. Search for `@kody/notion` (or import `kody:@kody/notion` directly). It wraps
    pages, databases, and a generic request escape hatch.

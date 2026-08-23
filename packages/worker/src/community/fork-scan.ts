@@ -53,9 +53,9 @@ export function scanCrossScopeReferences(input: {
 	files: Record<string, string>
 	expectedPackageScope: string
 	/**
-	 * Scopes that remain valid in any account — platform (built-in) scopes
-	 * such as `@kody`, whose packages resolve live for every caller — so
-	 * forks keep referencing them instead of being told to rewrite.
+	 * Extra scopes treated as same-account. Unused for official platform
+	 * scopes: person-owned forks must not keep `kody:@kody/…` references
+	 * (decision 0035).
 	 */
 	allowedForeignScopes?: ReadonlyArray<string>
 }): Array<CrossScopeReference> {

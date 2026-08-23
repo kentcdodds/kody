@@ -245,8 +245,9 @@ the underlying bracketed code, for example `[invocation_failed] ...`.
 Security and loop safeguards:
 
 - Person-scope resolution is same-user only; package code cannot invoke another
-  person's saved package. Public platform scopes use the existing live platform
-  package resolution.
+  person's saved package. Public platform scopes resolve live from **ad hoc
+  execute** only. Person-owned packages must fork an official package into the
+  caller's scope before importing or invoking it (decision 0035).
 - `packages.invoke` requires package runtime context or authenticated execute
   context. Static `kody:@...` imports remain library imports in the caller's
   runtime; use keyless `packages.invoke` when execute or a package job needs to

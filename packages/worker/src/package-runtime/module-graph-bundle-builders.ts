@@ -1,5 +1,6 @@
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { normalizePackageWorkspacePath } from '#worker/package-registry/manifest.ts'
+import { isPlatformAccountStableUserId } from '#worker/package-registry/scope-grants.ts'
 import {
 	createPublishedPackageCacheKey,
 	createPublishedPackagePromiseCache,
@@ -71,6 +72,15 @@ async function createModuleBundleCacheKey(input: {
 	])
 }
 
+async function resolveAllowPlatformScopes(input: {
+	env: Env
+	userId: string
+	bundleContext?: 'ad-hoc-execute' | 'saved-package-module'
+}) {
+	if (input.bundleContext === 'ad-hoc-execute') return true
+	return await isPlatformAccountStableUserId(input.env.APP_DB, input.userId)
+}
+
 function cloneRuntimeBundle(bundle: RuntimeBundle): RuntimeBundle {
 	return {
 		mainModule: bundle.mainModule,
@@ -95,6 +105,7 @@ export async function buildKodyModuleBundle(input: {
 	reuseCachedBundle?: boolean
 	bundleContext?: 'ad-hoc-execute' | 'saved-package-module'
 }) {
+	const allowPlatformScopes = await resolveAllowPlatformScopes(input)
 	const { files, packages } = await prepareKodyGraphFiles({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -102,6 +113,7 @@ export async function buildKodyModuleBundle(input: {
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
 		rootPackageId: input.rootPackageId,
+		allowPlatformScopes,
 	})
 	const entryPoint =
 		resolveWorkspaceSourceFilePath({
@@ -147,6 +159,7 @@ export async function buildKodyModuleBundle(input: {
 			dependencies: await resolveDirectKodyDependenciesForEntryPoint({
 				...input,
 				loadedPackages: packages,
+				allowPlatformScopes,
 			}),
 			...includeDynamicDependenciesWhenPresent(modules),
 		}
@@ -178,6 +191,7 @@ export async function buildKodyImportableModuleBundle(input: {
 	// stamps root modules with package provenance (see RewriteState).
 	rootPackageId?: string | null
 }) {
+	const allowPlatformScopes = await resolveAllowPlatformScopes(input)
 	const { files, packages } = await prepareKodyGraphFiles({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -185,6 +199,7 @@ export async function buildKodyImportableModuleBundle(input: {
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
 		rootPackageId: input.rootPackageId,
+		allowPlatformScopes,
 	})
 	const entryPoint =
 		resolveWorkspaceSourceFilePath({
@@ -220,6 +235,7 @@ export async function buildKodyImportableModuleBundle(input: {
 		dependencies: await resolveDirectKodyDependenciesForEntryPoint({
 			...input,
 			loadedPackages: packages,
+			allowPlatformScopes,
 		}),
 		...includeDynamicDependenciesWhenPresent(modules),
 	}
@@ -237,6 +253,7 @@ export async function buildKodyAppBundle(input: {
 	cacheKey?: string | null
 }) {
 	const buildBundle = async () => {
+		const allowPlatformScopes = await resolveAllowPlatformScopes(input)
 		const { files, packages } = await prepareKodyGraphFiles({
 			env: input.env,
 			baseUrl: input.baseUrl,
@@ -244,6 +261,7 @@ export async function buildKodyAppBundle(input: {
 			sourceFiles: input.sourceFiles,
 			entryPoint: input.entryPoint,
 			rootPackageId: input.rootPackageId,
+			allowPlatformScopes,
 		})
 		const entryPoint =
 			resolveWorkspaceSourceFilePath({
@@ -279,6 +297,7 @@ export async function buildKodyAppBundle(input: {
 			dependencies: await resolveDirectKodyDependenciesForEntryPoint({
 				...input,
 				loadedPackages: packages,
+				allowPlatformScopes,
 			}),
 			...includeDynamicDependenciesWhenPresent(modules),
 		}

@@ -332,7 +332,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   auto-granted for read/use to self-authored packages (no `community_forks` row
   for that `saved_packages.id` + `userId`), live official platform packages
   (caller-owned `saved_packages` miss falls back to `findPlatformPackageByRef`;
-  decision [0014](../decisions/0014-platform-live-packages.md)), and adopted
+  execute-live half of
+  [0014](../decisions/0014-platform-live-packages.md); saved person packages
+  must fork per
+  [0035](../decisions/0035-platform-packages-execute-only.md)), and adopted
   forks (`community_forks.adopted_at` set via `community_fork_adopt`). Unadopted
   community forks (`community_forks.forked_package_id`, indexed in the squashed
   baseline) still require an explicit `allowed_packages` grant on every package
@@ -1414,13 +1417,18 @@ Saved package imports in user code use `kody:@scope/name/export` specifiers:
 1. `packages/worker/src/package-runtime/package-import-resolution.ts` parses the
    `kody:@` prefix, the `@scope/name` package name, and an optional export
    subpath (default `.`).
-2. Resolution is scoped to the caller's `userId`, with one structural exception:
-   scopes whose username belongs to a **platform account**
-   (`users.account_type = 'platform'`, e.g. `@kody`) resolve live from the
-   platform account's current published version when the caller has no copy of
-   their own (see decision record
-   [0014 — Platform scopes resolve live](../decisions/0014-platform-live-packages.md)).
-   Person-account and community package scopes never grant cross-user imports.
+2. Resolution is scoped to the caller's `userId`, with one structural exception
+   for **ad hoc execute**: scopes whose username belongs to a **platform
+   account** (`users.account_type = 'platform'`, e.g. `@kody`) resolve live from
+   the platform account's current published version when the caller has no copy
+   of their own. Saved person-account packages must `community_fork` that
+   official package into the caller's scope before importing or invoking it
+   (decision
+   [0035 — Platform packages are execute-only](../decisions/0035-platform-packages-execute-only.md);
+   supersedes the package-import half of
+   [0014](../decisions/0014-platform-live-packages.md)). Person-account and
+   community package scopes never grant cross-user imports. Platform-account
+   packages may still compose with each other.
 3. `packages/worker/src/package-registry/manifest.ts` normalizes export keys and
    resolves them through `package.json#exports`.
 4. Static imports are pinned into bundle dependencies at publish time. Literal

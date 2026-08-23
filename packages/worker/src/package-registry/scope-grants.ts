@@ -32,9 +32,8 @@ export type PlatformAccountRow = {
 }
 
 /**
- * Usernames of every platform account. Platform scopes resolve live in
- * `kody:@scope/...` imports for all callers, so cross-scope policy checks
- * treat them as always-valid references.
+ * Usernames of every platform account. Ad hoc execute may resolve those
+ * scopes live; saved person-account packages must not (decision 0035).
  */
 export async function listPlatformAccountUsernames(
 	db: D1Database,

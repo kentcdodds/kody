@@ -15,6 +15,7 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageByKodyId: vi.fn(),
 	getSavedPackageByName: vi.fn(),
 	getPlatformAccountByUsername: vi.fn(),
+	isPlatformAccountStableUserId: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	loadPublishedEntityManifest: vi.fn(),
 	loadPublishedEntitySource: vi.fn(),
@@ -36,6 +37,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 vi.mock('#worker/package-registry/scope-grants.ts', () => ({
 	getPlatformAccountByUsername: (...args: Array<unknown>) =>
 		mockModule.getPlatformAccountByUsername(...args),
+	isPlatformAccountStableUserId: (...args: Array<unknown>) =>
+		mockModule.isPlatformAccountStableUserId(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -207,6 +210,10 @@ function seedFixtures(fixturesByUserId: Record<string, Fixture>) {
 					}
 				: null,
 	)
+	mockModule.isPlatformAccountStableUserId.mockImplementation(
+		async (_db: unknown, stableUserId: string) =>
+			stableUserId === 'platform-owner',
+	)
 	mockModule.getEntitySourceById.mockImplementation(
 		async (_db: unknown, sourceId: string) =>
 			Object.values(fixturesByUserId).find(
@@ -259,6 +266,58 @@ async function runContractCheck(input: { userId: string; specifier?: string }) {
 		},
 	})
 }
+
+test('person package runtimes cannot invoke official platform packages', async () => {
+	seedFixtures({
+		'user-1': createFixture({ userId: 'user-1', publishedCommit: 'commit-1' }),
+		'platform-owner': createFixture({
+			userId: 'platform-owner',
+			publishedCommit: 'commit-1',
+			packageName: '@kody/github',
+			kodyId: 'github',
+		}),
+	})
+	mockModule.getSavedPackageById.mockImplementation(
+		async (_db: unknown, input: { userId: string; packageId: string }) =>
+			input.userId === 'user-1' && input.packageId === 'pkg-user-1'
+				? {
+						id: 'pkg-user-1',
+						userId: 'user-1',
+						name: '@kentcdodds/sentry-triage',
+						kodyId: 'sentry-triage',
+					}
+				: null,
+	)
+
+	const denied = await checkPackageInvokeForRuntimeWithPreloads({
+		env: createEnv(),
+		baseUrl: 'https://kody.dev',
+		operationName: 'packages.invoke',
+		userId: 'user-1',
+		rawInput: {
+			specifier: 'kody:@kody/github/get-issue-state',
+			options: { params: {} },
+		},
+		callerKind: 'package',
+		callingPackageId: 'pkg-user-1',
+	})
+	expect(denied.result.ok).toBe(false)
+	expect(denied.result.message).toContain('execute-only')
+	expect(denied.preloads).toBeNull()
+
+	const fromExecute = await checkPackageInvokeForRuntimeWithPreloads({
+		env: createEnv(),
+		baseUrl: 'https://kody.dev',
+		operationName: 'packages.invoke',
+		userId: 'user-1',
+		rawInput: {
+			specifier: 'kody:@kody/github/get-issue-state',
+			options: { params: {} },
+		},
+		callerKind: 'execute',
+	})
+	expect(fromExecute.result.ok).toBe(true)
+})
 
 test('a warm keyless invoke contract check performs zero D1/KV loads', async () => {
 	seedFixtures({

@@ -43,6 +43,8 @@ import {
 	type KodyOpenApiProviderMetadata,
 	type KodyResolvedProvider,
 } from '#mcp/kody-remote-types.ts'
+import { personPackagePlatformDependencyMessage } from '#worker/package-registry/platform-package-policy.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { openApiProviderKodyName } from '#worker/openapi/openapi-domain-id.ts'
 import {
 	createRuntimeHelperExtraProviders,
@@ -889,6 +891,23 @@ export async function runBundledModuleWithRegistry(
 		}
 		await reportExecutePhaseProgress(reportProgress, 'provider-assembly')
 		const providerAssemblyStartedAtMs = Date.now()
+		const runningPackageId = options?.packageContext?.packageId?.trim()
+		const runningUserId = callerContext.user?.userId
+		if (
+			runningPackageId &&
+			runningUserId &&
+			(bundle.dependencies ?? []).some(
+				(dependency) => dependency.platformOwned === true,
+			)
+		) {
+			const callerOwned = await getSavedPackageById(env.APP_DB, {
+				userId: runningUserId,
+				packageId: runningPackageId,
+			})
+			if (callerOwned) {
+				throw new Error(personPackagePlatformDependencyMessage)
+			}
+		}
 		const grantedPackageStorageIds = collectPackageStorageGrantIds({
 			packageContext: options?.packageContext ?? null,
 			dependencies: bundle.dependencies ?? [],

@@ -4,6 +4,9 @@ import {
 	type PackageInvokeContract,
 	type PackageInvokeInput,
 } from '#mcp/run-kody-registry.ts'
+import { formatPersonPackagePlatformDependencyMessage } from '#worker/package-registry/platform-package-policy.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { isPlatformAccountStableUserId } from '#worker/package-registry/scope-grants.ts'
 import { type PackageExportProjection } from '#worker/package-registry/manifest.ts'
 import { normalizeExportName } from './common.ts'
 import {
@@ -77,6 +80,8 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	operationName: PackageInvokeCheckOperationName
 	userId: string
 	rawInput: PackageInvokeInput
+	callerKind?: 'package' | 'execute'
+	callingPackageId?: string | null
 }): Promise<PackageInvokeCheckOutcome> {
 	let request: ReturnType<typeof parsePackageInvokeInput>
 	try {
@@ -107,6 +112,31 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 				contract: { exportName },
 			}),
 			preloads: null,
+		}
+	}
+	if (input.callerKind === 'package' && input.callingPackageId) {
+		const callingOwned = await getSavedPackageById(input.env.APP_DB, {
+			userId: input.userId,
+			packageId: input.callingPackageId,
+		})
+		if (
+			callingOwned &&
+			(await isPlatformAccountStableUserId(
+				input.env.APP_DB,
+				savedPackage.userId,
+			))
+		) {
+			const message = formatPersonPackagePlatformDependencyMessage(
+				savedPackage.name,
+			)
+			return {
+				result: createPackageInvokeCheckFailure({
+					message,
+					problems: [message],
+					contract: { exportName },
+				}),
+				preloads: null,
+			}
 		}
 	}
 	const sourceOwnerUserId = savedPackage.userId

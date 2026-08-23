@@ -7,6 +7,7 @@ import {
 	parseAuthoredPackageJson,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
+import { formatPersonPackagePlatformDependencyMessage } from '#worker/package-registry/platform-package-policy.ts'
 import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
@@ -161,6 +162,7 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 			platformScope: string | null
 		}
 	>
+	allowPlatformScopes?: boolean
 }) {
 	const rootPackage = readRootPackage(input.sourceFiles)
 	const entryPoint =
@@ -202,8 +204,14 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 						db: input.env.APP_DB,
 						userId: input.userId,
 						specifier: parsed,
+						allowPlatformScopes: input.allowPlatformScopes,
 					})
 			if (!resolution) {
+				if (input.allowPlatformScopes === false) {
+					throw new Error(
+						formatPersonPackagePlatformDependencyMessage(parsed.packageName),
+					)
+				}
 				const plainRepo = await findPlainRepoPromotionHint(input.env.APP_DB, {
 					userId: input.userId,
 					packageIdOrKodyId: parsed.packageName,
