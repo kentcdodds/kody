@@ -18,6 +18,7 @@ optimized for cheap/fast execution.
 
 ## Defaults (override only if the user says so)
 
+- **Model.** Use the latest Grok model unless the user requests another.
 - **Prefer implement.** Fan out only when non-conflicting workstreams clearly
   beat one implementer. Sequential slices → implement (or one implementer).
 - **No orchestration theater.** Ban review → recheck → final → CI-watch chains
@@ -29,8 +30,8 @@ optimized for cheap/fast execution.
 ## Role
 
 1. Plan, delegate, integrate, ship. Bulk-code only when fan-out costs more.
-2. Frontier model orchestrates; cheap/fast models implement (prefer Grok 4.5 /
-   `composer-2.5-fast` for mechanical work).
+2. Frontier model orchestrates; cheap/fast models implement (prefer the latest
+   Grok model for mechanical work).
 3. Critical path first; parallelize non-conflicting files; serialize shared
    ones.
 4. **You do final QA.** Never declare done from sub-agent claims.
