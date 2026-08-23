@@ -11,6 +11,7 @@ import {
 	buildAccountSecretPath,
 	parseAccountSecretPath,
 } from '@kody-internal/shared/account-secret-route.ts'
+import { normalizeSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import {
 	createListDetailRoute,
@@ -90,6 +91,7 @@ type EditorState = {
 	scope: SecretScope
 	packageId: string
 	description: string
+	expiresAt: string
 	value: string
 	allowedHosts: Array<string>
 	allowedCapabilities: Array<string>
@@ -113,6 +115,7 @@ const secretsRoute = createListDetailRoute(secretsBasePath, {
 
 function formatRelativeTtl(ttlMs: number | null) {
 	if (ttlMs == null) return 'No expiry'
+	if (ttlMs <= 0) return 'Expired'
 	const totalMinutes = Math.max(1, Math.round(ttlMs / 60_000))
 	if (totalMinutes < 60) return `Expires in ${totalMinutes} min`
 	const totalHours = Math.round(totalMinutes / 60)
@@ -130,6 +133,7 @@ function createEmptyEditorState(
 		scope: 'user',
 		packageId: packageOptions[0]?.id ?? '',
 		description: '',
+		expiresAt: '',
 		value: '',
 		allowedHosts: [''],
 		allowedCapabilities: [''],
@@ -139,6 +143,16 @@ function createEmptyEditorState(
 
 function readNewSecretScope(value: string | null): SecretScope | null {
 	return value === 'package' || value === 'user' ? value : null
+}
+
+function readNewSecretExpiresAt(params: URLSearchParams) {
+	const value = readTrimmedParam(params, 'expiresAt')
+	if (!value) return null
+	try {
+		return normalizeSecretExpiresAt(value) ?? ''
+	} catch {
+		return null
+	}
 }
 
 function createEditorStateFromNewSecretQuery(
@@ -173,6 +187,7 @@ function createEditorStateFromNewSecretQuery(
 		scope,
 		packageId: scope === 'package' ? packageId : '',
 		description: readTrimmedParam(params, 'description') ?? state.description,
+		expiresAt: readNewSecretExpiresAt(params) ?? state.expiresAt,
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : state.allowedHosts,
 		allowedCapabilities:
 			allowedCapabilities.length > 0
@@ -214,6 +229,7 @@ function createEditorStateFromSecret(secret: AccountSecretDetail): EditorState {
 		scope: secret.scope,
 		packageId: secret.packageId ?? '',
 		description: secret.description,
+		expiresAt: secret.expiresAt ?? '',
 		value: secret.value,
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
 		allowedCapabilities:
@@ -760,6 +776,7 @@ export function AccountSecretsRoute(handle: Handle) {
 							? submittedEditorState.packageId
 							: null,
 					description: submittedEditorState.description,
+					expiresAt: submittedEditorState.expiresAt || null,
 					value: submittedEditorState.value,
 					allowedHosts,
 					allowedCapabilities,
@@ -1507,6 +1524,14 @@ export function AccountSecretsRoute(handle: Handle) {
 										editorState = {
 											...editorState,
 											description,
+										}
+										handle.update()
+									}}
+									expiresAt={editorState.expiresAt}
+									onExpiresAtChange={(expiresAt) => {
+										editorState = {
+											...editorState,
+											expiresAt,
 										}
 										handle.update()
 									}}

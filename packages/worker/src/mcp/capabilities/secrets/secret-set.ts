@@ -9,27 +9,51 @@ import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-acces
 import {
 	resolveSecret,
 	saveSecret,
+	updateSecret,
 	updateUserSecretForPackage,
 } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
-import { secretMetadataSchema } from './shared.ts'
+import { secretMetadataSchema, toSecretCapabilityOutput } from './shared.ts'
 
-const secretSetInputSchema = z.object({
-	name: z.string().min(1).describe('Secret name to create or update.'),
-	value: z
-		.string()
-		.min(1)
-		.describe(
-			'Secret value to persist. This field is write-only and must never be returned to the caller.',
-		),
-	description: z
-		.string()
-		.optional()
-		.describe('Optional human-readable description of the secret.'),
-	scope: z
-		.enum(secretScopeValues)
-		.describe('Storage scope that owns the secret.'),
-})
+const secretSetInputSchema = z
+	.object({
+		name: z.string().min(1).describe('Secret name to create or update.'),
+		value: z
+			.string()
+			.min(1)
+			.optional()
+			.describe(
+				'Secret value to persist. Required when creating a secret. Optional on updates that only change description or expires_at. Write-only and must never be returned to the caller.',
+			),
+		description: z
+			.string()
+			.optional()
+			.describe('Optional human-readable description of the secret.'),
+		expires_at: z
+			.string()
+			.nullable()
+			.optional()
+			.describe(
+				'Optional UTC ISO expiry (or YYYY-MM-DD). Null or empty clears expiry. Omit on update to leave the existing expiry unchanged.',
+			),
+		scope: z
+			.enum(secretScopeValues)
+			.describe('Storage scope that owns the secret.'),
+	})
+	.superRefine((value, ctx) => {
+		if (
+			(typeof value.value !== 'string' || value.value.length === 0) &&
+			value.description === undefined &&
+			value.expires_at === undefined
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				message:
+					'Provide a secret value, or a description / expires_at update for an existing secret.',
+				path: ['value'],
+			})
+		}
+	})
 
 const secretSetCapabilityInputJsonSchema = markSecretInputFields(
 	z.toJSONSchema(secretSetInputSchema) as Record<string, unknown>,
@@ -41,8 +65,17 @@ export const secretSetCapability = defineDomainCapability(
 	{
 		name: 'secret_set',
 		description:
-			'Create or update a stored secret reference for the signed-in user. Use this for server-side persistence of secret values that are already available inside trusted execution, such as refreshed OAuth tokens. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation. Host use and direct capability access are authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
-		keywords: ['secret', 'persist', 'store', 'oauth', 'token', 'credential'],
+			'Create or update a stored secret reference for the signed-in user. Use this for server-side persistence of secret values that are already available inside trusted execution, such as refreshed OAuth tokens. Optional expires_at is a UTC ISO timestamp or YYYY-MM-DD; null clears expiry. Updates that only change description or expiry may omit value. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation. Host use and direct capability access are authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
+		keywords: [
+			'secret',
+			'persist',
+			'store',
+			'oauth',
+			'token',
+			'credential',
+			'expires',
+			'expiry',
+		],
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
@@ -59,6 +92,16 @@ export const secretSetCapability = defineDomainCapability(
 			}
 			let saved
 			if (parsed.scope === 'user' && storageContext.packageId) {
+				if (parsed.expires_at !== undefined) {
+					throw new McpCallerError(
+						'Package runtimes cannot change user secret expiry. Set expires_at from the account page or secret_set outside a package.',
+					)
+				}
+				if (typeof parsed.value !== 'string' || parsed.value.length === 0) {
+					throw new McpCallerError(
+						'Package runtimes must supply a secret value when updating a user secret.',
+					)
+				}
 				const existing = await resolveSecret({
 					env: ctx.env,
 					userId: user.userId,
@@ -89,7 +132,7 @@ export const secretSetCapability = defineDomainCapability(
 					value: parsed.value,
 					description: parsed.description,
 				})
-			} else {
+			} else if (typeof parsed.value === 'string' && parsed.value.length > 0) {
 				saved = await saveSecret({
 					env: ctx.env,
 					userId: user.userId,
@@ -98,21 +141,21 @@ export const secretSetCapability = defineDomainCapability(
 					name: parsed.name,
 					value: parsed.value,
 					description: parsed.description ?? '',
+					expiresAt: parsed.expires_at,
+					storageContext,
+				})
+			} else {
+				saved = await updateSecret({
+					env: ctx.env,
+					userId: user.userId,
+					scope: parsed.scope,
+					name: parsed.name,
+					description: parsed.description,
+					expiresAt: parsed.expires_at,
 					storageContext,
 				})
 			}
-			return {
-				name: saved.name,
-				scope: saved.scope,
-				description: saved.description,
-				package_id: saved.packageId,
-				allowed_hosts: saved.allowedHosts,
-				allowed_capabilities: saved.allowedCapabilities,
-				allowed_packages: saved.allowedPackages,
-				created_at: saved.createdAt,
-				updated_at: saved.updatedAt,
-				ttl_ms: saved.ttlMs,
-			}
+			return toSecretCapabilityOutput(saved)
 		},
 	},
 )

@@ -1,3 +1,7 @@
+import {
+	fromDatetimeLocalValue,
+	toDatetimeLocalValue,
+} from '@kody-internal/shared/secret-expires-at.ts'
 import { type Handle, css, ref } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
@@ -15,6 +19,8 @@ type SecretEditorFieldsProps = {
 	autoFocusKey?: string
 	description: string
 	onDescriptionChange: (value: string) => void
+	expiresAt: string
+	onExpiresAtChange: (value: string) => void
 	value: string
 	onValueChange: (value: string) => void
 	showSecretValue: boolean
@@ -79,6 +85,29 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 							css(textareaCss),
 						]}
 					/>
+				</label>
+
+				<label mix={css(fieldCss)}>
+					<span mix={css(fieldLabelCss)}>Expires</span>
+					<input
+						type="datetime-local"
+						value={toDatetimeLocalValue(props.expiresAt || null)}
+						mix={[
+							on('input', (event) => {
+								try {
+									props.onExpiresAtChange(
+										fromDatetimeLocalValue(event.currentTarget.value),
+									)
+								} catch {
+									props.onExpiresAtChange('')
+								}
+							}),
+							css(inputCss),
+						]}
+					/>
+					<p mix={css({ margin: 0, color: colors.textMuted })}>
+						Leave empty for no expiry. Stored as a UTC timestamp.
+					</p>
 				</label>
 
 				<label mix={css(fieldCss)}>

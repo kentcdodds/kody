@@ -6,10 +6,12 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import {
 	listPackageSecretsByPackageIds,
+	listSecrets,
 	resolveSecret,
 	saveSecret,
 	setSecretAllowedPackages,
 	setSecretsAtomically,
+	updateSecret,
 	updateUserSecretForPackage,
 	updateUserSecretsForPackageAtomically,
 } from './service.ts'
@@ -32,6 +34,7 @@ type SecretEntryRow = {
 	allowed_hosts: string
 	allowed_capabilities: string
 	allowed_packages: string
+	expires_at: string | null
 	created_at: string
 	updated_at: string
 }
@@ -82,6 +85,7 @@ function createSecretTestDb(
 				allowed_hosts: '[]',
 				allowed_capabilities: '[]',
 				allowed_packages: '[]',
+				expires_at: null,
 				created_at: now,
 				updated_at: now,
 			})
@@ -186,7 +190,8 @@ function createSecretTestDb(
 												allowed_packages: entry.allowed_packages,
 												created_at: entry.created_at,
 												updated_at: entry.updated_at,
-												expires_at: bucket.expires_at,
+												entry_expires_at: entry.expires_at,
+												bucket_expires_at: bucket.expires_at,
 											},
 										]
 									})
@@ -195,7 +200,7 @@ function createSecretTestDb(
 							}
 							if (
 								normalizedQuery.startsWith(
-									'select ? as scope, ? as binding_key, name, description, allowed_hosts, allowed_capabilities, allowed_packages, created_at, updated_at, ? as expires_at from secret_entries',
+									'select ? as scope, ? as binding_key, name, description, allowed_hosts, allowed_capabilities, allowed_packages, created_at, updated_at, expires_at as entry_expires_at, ? as bucket_expires_at from secret_entries',
 								)
 							) {
 								const [scope, bindingKey, expiresAt, bucketId] =
@@ -213,7 +218,8 @@ function createSecretTestDb(
 										allowed_packages: entry.allowed_packages,
 										created_at: entry.created_at,
 										updated_at: entry.updated_at,
-										expires_at: expiresAt,
+										entry_expires_at: entry.expires_at,
+										bucket_expires_at: expiresAt,
 									}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
@@ -339,21 +345,23 @@ function createSecretTestDb(
 									allowedHosts,
 									allowedCapabilities,
 									allowedPackages,
+									expiresAt,
 									createdAt,
 									updatedAt,
-								] = params as Array<string>
-								const key = getEntryKey(bucketId, name)
+								] = params as Array<string | null>
+								const key = getEntryKey(String(bucketId), String(name))
 								const existing = entries.get(key)
 								entries.set(key, {
-									bucket_id: bucketId,
-									name,
-									description,
-									encrypted_value: encryptedValue,
-									allowed_hosts: allowedHosts,
-									allowed_capabilities: allowedCapabilities,
-									allowed_packages: allowedPackages,
-									created_at: existing?.created_at ?? createdAt,
-									updated_at: updatedAt,
+									bucket_id: String(bucketId),
+									name: String(name),
+									description: String(description),
+									encrypted_value: String(encryptedValue),
+									allowed_hosts: String(allowedHosts),
+									allowed_capabilities: String(allowedCapabilities),
+									allowed_packages: String(allowedPackages),
+									expires_at: expiresAt == null ? null : String(expiresAt),
+									created_at: existing?.created_at ?? String(createdAt),
+									updated_at: String(updatedAt),
 								})
 								return { meta: { changes: 1 } }
 							}
@@ -913,4 +921,80 @@ test('saveSecret enforces plan secret quotas including updates and max ceiling',
 		limit: maxLimit,
 		current: maxLimit,
 	})
+})
+
+test('user secrets persist per-entry expiry, stay listed after expiry, and fail closed on resolve', async () => {
+	const testDb = createSecretTestDb()
+	const env = {
+		APP_DB: testDb.db,
+		COOKIE_SECRET: 'test-cookie-secret',
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
+	}
+	const userId = 'user-123'
+
+	const saved = await saveSecret({
+		env,
+		userId,
+		scope: 'user',
+		name: 'githubPat',
+		value: 'ghp_old',
+		expiresAt: '2026-12-01',
+	})
+	expect(saved.expiresAt).toBe('2026-12-01T00:00:00.000Z')
+	expect(saved.ttlMs).toBeGreaterThan(0)
+
+	await expect(
+		resolveSecret({ env, userId, name: 'githubPat', scope: 'user' }),
+	).resolves.toMatchObject({ found: true, value: 'ghp_old' })
+
+	const listed = await listSecrets({ env, userId, scope: 'user' })
+	expect(listed).toEqual([
+		expect.objectContaining({
+			name: 'githubPat',
+			expiresAt: '2026-12-01T00:00:00.000Z',
+		}),
+	])
+
+	const past = await saveSecret({
+		env,
+		userId,
+		scope: 'user',
+		name: 'githubPat',
+		value: 'ghp_old',
+		expiresAt: '2020-01-01T00:00:00.000Z',
+	})
+	expect(past.ttlMs).toBe(0)
+	await expect(
+		resolveSecret({ env, userId, name: 'githubPat', scope: 'user' }),
+	).resolves.toMatchObject({ found: false, value: null })
+	await expect(
+		resolveSecret({
+			env,
+			userId,
+			name: 'githubPat',
+			scope: 'user',
+			includeExpired: true,
+		}),
+	).resolves.toMatchObject({ found: true, value: 'ghp_old' })
+	await expect(listSecrets({ env, userId, scope: 'user' })).resolves.toEqual([
+		expect.objectContaining({
+			name: 'githubPat',
+			expiresAt: '2020-01-01T00:00:00.000Z',
+			ttlMs: 0,
+		}),
+	])
+
+	const cleared = await updateSecret({
+		env,
+		userId,
+		scope: 'user',
+		name: 'githubPat',
+		expiresAt: null,
+	})
+	expect(cleared.expiresAt).toBeNull()
+	expect(cleared.ttlMs).toBeNull()
+	await expect(
+		resolveSecret({ env, userId, name: 'githubPat', scope: 'user' }),
+	).resolves.toMatchObject({ found: true, value: 'ghp_old' })
 })

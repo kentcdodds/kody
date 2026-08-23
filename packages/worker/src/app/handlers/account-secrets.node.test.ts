@@ -27,6 +27,7 @@ const mockModule = vi.hoisted(() => ({
 		allowedCapabilities: [],
 		createdAt: new Date(0).toISOString(),
 		updatedAt: new Date(0).toISOString(),
+		expiresAt: null,
 		ttlMs: null,
 	})),
 	setSecretAllowedHosts: vi.fn(async () => undefined),
@@ -451,6 +452,7 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 			allowedCapabilities: [],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 		{
@@ -462,6 +464,7 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 			allowedCapabilities: [],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 	])
@@ -513,6 +516,7 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 			allowedCapabilities: [],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 		{
@@ -528,6 +532,7 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 			allowedCapabilities: [],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 	])
@@ -621,6 +626,7 @@ test('host approval view and approve persist normalized hosts for the selected s
 			allowedPackages: [],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 	])
@@ -635,6 +641,7 @@ test('host approval view and approve persist normalized hosts for the selected s
 			allowedPackages: [],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 	])
@@ -671,6 +678,7 @@ test('host approval view and approve persist normalized hosts for the selected s
 			allowedPackages: [],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 	])
@@ -753,6 +761,7 @@ test('approval requests reject invalid targets and enforce host precedence over 
 			allowedPackages: [],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 	])
@@ -877,6 +886,7 @@ test('account secrets payload includes all packages and package titles and allow
 			allowedPackages: ['pkg-allowed'],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 	])
@@ -895,6 +905,7 @@ test('account secrets payload includes all packages and package titles and allow
 						allowedPackages: [],
 						createdAt: new Date(0).toISOString(),
 						updatedAt: new Date(0).toISOString(),
+						expiresAt: null,
 						ttlMs: null,
 					},
 				],
@@ -943,6 +954,7 @@ test('capability approval view, reject, approve, and dedupe mirror host/package 
 		allowedPackages: [],
 		createdAt: new Date(0).toISOString(),
 		updatedAt: new Date(0).toISOString(),
+		expiresAt: null,
 		ttlMs: null,
 	}
 
@@ -1112,6 +1124,7 @@ test('package approval reject and approve handle missing secrets and deduplicate
 			allowedPackages: ['pkg-allowed', 'pkg-allowed'],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 	])
@@ -1163,6 +1176,7 @@ test('bulk package approval view and approve grant the package on every listed s
 			allowedPackages: [],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 		{
@@ -1175,6 +1189,7 @@ test('bulk package approval view and approve grant the package on every listed s
 			allowedPackages: [],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 		{
@@ -1187,6 +1202,7 @@ test('bulk package approval view and approve grant the package on every listed s
 			allowedPackages: ['pkg-release'],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 	]
@@ -1267,6 +1283,7 @@ test('account secrets API loads selected secret values and deletes the selected 
 			allowedPackages: [],
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
 			ttlMs: null,
 		},
 	])
@@ -1334,6 +1351,69 @@ test('account secrets API loads selected secret values and deletes the selected 
 			storageContext: { sessionId: null, appId: null, packageId: null },
 		}),
 	)
+})
+
+test('account secrets API saves optional expiresAt on a new user secret', async () => {
+	const savedSecret = {
+		name: 'githubPat',
+		scope: 'user' as const,
+		description: 'GitHub PAT',
+		packageId: null,
+		allowedHosts: ['api.github.com'],
+		allowedCapabilities: [],
+		allowedPackages: [],
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		expiresAt: '2026-12-01T00:00:00.000Z',
+		ttlMs: 60_000,
+	}
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockModule.listSecrets
+		.mockResolvedValueOnce([])
+		.mockResolvedValueOnce([savedSecret])
+	mockModule.saveSecret.mockResolvedValueOnce(savedSecret)
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'ghp_test',
+	})
+
+	const handler = createAccountSecretsApiHandler(createEnv())
+	const response = await handler.handler({
+		request: new Request('https://example.com/account/secrets.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'save',
+				name: 'githubPat',
+				scope: 'user',
+				description: 'GitHub PAT',
+				value: 'ghp_test',
+				expiresAt: '2026-12-01',
+				allowedHosts: ['api.github.com'],
+				allowedCapabilities: [],
+				allowedPackages: [],
+			}),
+		}),
+		params: {},
+	} as never)
+
+	expect(response.status).toBe(200)
+	expect(mockModule.saveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'githubPat',
+			value: 'ghp_test',
+			scope: 'user',
+			expiresAt: '2026-12-01T00:00:00.000Z',
+		}),
+	)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		selectedSecret: expect.objectContaining({
+			name: 'githubPat',
+			expiresAt: '2026-12-01T00:00:00.000Z',
+		}),
+	})
 })
 
 test('oauth_exchange resolves secrets, maps provider failures, and forwards exchange styles', async () => {

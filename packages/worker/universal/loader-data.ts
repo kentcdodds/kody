@@ -1172,6 +1172,7 @@ export type AccountSecretListItem = {
 	allowedPackages: Array<string>
 	createdAt: string
 	updatedAt: string
+	expiresAt: string | null
 	ttlMs: number | null
 }
 

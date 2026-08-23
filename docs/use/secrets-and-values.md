@@ -11,7 +11,10 @@ switching to **execute**.
 
 During **execute**, **`await kody.secret_list({})`** (or a narrowed **`scope`**
 such as **`package`**) returns **metadata only**: names, descriptions, allowed
-hosts, allowed capabilities — not plaintext values.
+hosts, allowed capabilities, **`expires_at`**, and remaining **`ttl_ms`** — not
+plaintext values. Expired secrets stay in the list with **`ttl_ms: 0`**. Fetch
+placeholders and **`resolve`** treat them as missing so Kody stops sending the
+value.
 
 Package-scoped secrets belong to one saved package and are available only while
 that package runs. Access rules for user-scoped secrets from package code are
@@ -19,7 +22,15 @@ covered in [Package approval](#package-approval).
 
 **`kody.secret_set(...)`** persists a value that is already available inside
 execution (for example a refreshed OAuth token). It does not return secret
-values.
+values. Optional **`expires_at`** is a UTC ISO timestamp (or `YYYY-MM-DD` at
+midnight UTC). Omit it to leave an existing expiry unchanged; pass `null` to
+clear. Updates that only change description or expiry may omit **`value`**.
+Package runtimes cannot change expiry on a user secret.
+
+The account create/edit form has the same optional expiry field. Agents
+prefilling **`/account/secrets/new`** can set **`expiresAt`** as a query
+parameter so the human pastes the token without typing the date. See
+[Account secret setup](../guides/account-secret-setup.md).
 
 ## Built-in integrations
 

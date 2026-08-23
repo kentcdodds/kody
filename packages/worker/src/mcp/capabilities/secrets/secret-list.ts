@@ -5,7 +5,7 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { listSecrets } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
-import { secretMetadataSchema } from './shared.ts'
+import { secretMetadataSchema, toSecretCapabilityOutput } from './shared.ts'
 
 export const secretListCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
@@ -51,18 +51,9 @@ export const secretListCapability = defineDomainCapability(
 					)
 				: secrets
 			return {
-				secrets: accessibleSecrets.map((secret) => ({
-					name: secret.name,
-					scope: secret.scope,
-					description: secret.description,
-					package_id: secret.packageId,
-					allowed_hosts: secret.allowedHosts,
-					allowed_capabilities: secret.allowedCapabilities,
-					allowed_packages: secret.allowedPackages,
-					created_at: secret.createdAt,
-					updated_at: secret.updatedAt,
-					ttl_ms: secret.ttlMs,
-				})),
+				secrets: accessibleSecrets.map((secret) =>
+					toSecretCapabilityOutput(secret),
+				),
 			}
 		},
 	},
