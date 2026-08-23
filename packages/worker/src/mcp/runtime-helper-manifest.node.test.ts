@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { createRuntimeHelperPreludes } from './runtime-helper-manifest.ts'
 
-test('packages helper prefers string-first invoke and preserves the legacy object form', async () => {
+test('packages helper forwards string-first invoke and rejects the removed object form locally', async () => {
 	const invoke = vi.fn(async (input: unknown) => input)
 	const [prelude] = createRuntimeHelperPreludes({
 		env: {} as Env,
@@ -15,7 +15,7 @@ test('packages helper prefers string-first invoke and preserves the legacy objec
 		`${prelude}; return packages;`,
 	) as (bridge: { invoke(input: unknown): Promise<unknown> }) => {
 		invoke(
-			specifierOrInput: string | Record<string, unknown>,
+			specifier: string,
 			options?: Record<string, unknown>,
 		): Promise<unknown>
 	}
@@ -28,14 +28,10 @@ test('packages helper prefers string-first invoke and preserves the legacy objec
 		options: { params: {} },
 	})
 	await expect(
-		packages.invoke({
+		(packages.invoke as (input: unknown) => Promise<unknown>)({
 			kodyId: 'google',
 			exportName: 'profile',
-			params: {},
 		}),
-	).resolves.toEqual({
-		kodyId: 'google',
-		exportName: 'profile',
-		params: {},
-	})
+	).rejects.toThrow('Object-only packages.invoke was removed')
+	expect(invoke).toHaveBeenCalledTimes(1)
 })

@@ -7,14 +7,6 @@ import {
 	parseKodyPackageSpecifier,
 } from '#worker/package-runtime/package-import-resolution.ts'
 
-const legacyPackageInvokeInputKeys = [
-	'kodyId',
-	'packageId',
-	'exportName',
-	'params',
-	'idempotencyKey',
-	'topic',
-] as const
 const packageInvokeOptionKeys = [
 	'exportName',
 	'params',
@@ -53,38 +45,6 @@ function readOptionalString(input: Record<string, unknown>, fieldName: string) {
 	return null
 }
 
-function readLegacyPackageIdentifier(
-	input: Record<string, unknown>,
-	operationName = 'packages.invoke',
-) {
-	const candidates = [
-		{
-			kind: 'kodyId' as const,
-			value: readOptionalString(input, 'kodyId'),
-		},
-		{
-			kind: 'packageId' as const,
-			value: readOptionalString(input, 'packageId'),
-		},
-	].filter(
-		(candidate): candidate is { kind: 'kodyId' | 'packageId'; value: string } =>
-			candidate.value !== null,
-	)
-	const unique = Array.from(
-		new Set(candidates.map((candidate) => candidate.value)),
-	)
-	if (unique.length > 1) {
-		throw new Error(
-			`${operationName} accepts one package identifier. Use kodyId unless you need the saved package id.`,
-		)
-	}
-	const [identifier] = candidates
-	if (!identifier) {
-		throw new Error(`${operationName} requires kodyId or packageId.`)
-	}
-	return identifier
-}
-
 function readPackageInvokeParams(
 	input: Record<string, unknown>,
 	operationName = 'packages.invoke',
@@ -105,20 +65,24 @@ function parsePackageInvokeSpecifier(
 ) {
 	if (typeof specifierValue !== 'string' || !specifierValue.trim()) {
 		throw new Error(
-			`${operationName} requires a kody:@username/kodyid specifier.`,
+			`${operationName} requires a kody:@owner/package[/export] specifier.`,
 		)
 	}
 	const trimmed = specifierValue.trim()
-	const specifier = trimmed.startsWith('@') ? `kody:${trimmed}` : trimmed
-	const parsed = parseKodyPackageSpecifier(specifier)
-	const pathSegments = specifier.slice(packageSpecifierPrefix.length).split('/')
+	if (!trimmed.startsWith(packageSpecifierPrefix)) {
+		throw new Error(
+			`${operationName} requires a kody:@owner/package[/export] specifier.`,
+		)
+	}
+	const parsed = parseKodyPackageSpecifier(trimmed)
+	const pathSegments = trimmed.slice(packageSpecifierPrefix.length).split('/')
 	const specifierExportName = pathSegments
 		.slice(2)
 		.some((segment) => segment.trim())
 		? parsed.exportName
 		: null
 	return {
-		specifier,
+		specifier: trimmed,
 		packageName: parsed.packageName,
 		specifierExportName,
 	}
@@ -128,57 +92,39 @@ export function parsePackageInvokeInput(
 	input: PackageInvokeInput,
 	operationName = 'packages.invoke',
 ) {
-	assertRecord(input, `${operationName} requires an input object.`)
-	if ('specifier' in input || 'options' in input) {
-		assertKnownKeys(input, packageInvokeEnvelopeKeys, operationName)
-		const parsedSpecifier = parsePackageInvokeSpecifier(
-			input['specifier'],
-			operationName,
+	assertRecord(
+		input,
+		`Object-only ${operationName} was removed. Use ${operationName}("kody:@owner/package/export", { params }) instead.`,
+	)
+	assertKnownKeys(input, packageInvokeEnvelopeKeys, operationName)
+	const parsedSpecifier = parsePackageInvokeSpecifier(
+		input['specifier'],
+		operationName,
+	)
+	const rawOptions = input['options']
+	if (rawOptions !== undefined && rawOptions !== null) {
+		assertRecord(
+			rawOptions,
+			`${operationName} options must be an object when provided.`,
 		)
-		const rawOptions = input['options']
-		if (rawOptions !== undefined && rawOptions !== null) {
-			assertRecord(
-				rawOptions,
-				`${operationName} options must be an object when provided.`,
-			)
-		}
-		const options = rawOptions ?? {}
-		assertKnownKeys(options, packageInvokeOptionKeys, operationName)
-		const exportName =
-			parsedSpecifier.specifierExportName ??
-			readOptionalString(options, 'exportName')
-		if (!exportName) {
-			throw new Error(
-				`${operationName} requires exportName when the package specifier has no export subpath.`,
-			)
-		}
-		return {
-			packageIdentifier: {
-				kind: 'specifier' as const,
-				value: parsedSpecifier.specifier,
-				packageName: parsedSpecifier.packageName,
-			},
-			packageIdOrKodyId: parsedSpecifier.packageName,
-			exportName,
-			params: readPackageInvokeParams(options, operationName),
-			idempotencyKey: readOptionalString(options, 'idempotencyKey'),
-			topic: readOptionalString(options, 'topic'),
-		}
 	}
-
-	assertKnownKeys(input, legacyPackageInvokeInputKeys, operationName)
-	const packageIdentifier = readLegacyPackageIdentifier(input, operationName)
-	const exportName = readOptionalString(input, 'exportName')
+	const options = rawOptions ?? {}
+	assertKnownKeys(options, packageInvokeOptionKeys, operationName)
+	const exportName =
+		parsedSpecifier.specifierExportName ??
+		readOptionalString(options, 'exportName')
 	if (!exportName) {
-		throw new Error(`${operationName} requires exportName.`)
+		throw new Error(
+			`${operationName} requires exportName when the package specifier has no export subpath.`,
+		)
 	}
 	return {
-		packageIdentifier,
-		packageIdOrKodyId: packageIdentifier.value,
+		specifier: parsedSpecifier.specifier,
+		packageName: parsedSpecifier.packageName,
 		exportName,
-		params: readPackageInvokeParams(input, operationName),
-		idempotencyKey: readOptionalString(input, 'idempotencyKey'),
-		topic: readOptionalString(input, 'topic'),
+		params: readPackageInvokeParams(options, operationName),
+		idempotencyKey: readOptionalString(options, 'idempotencyKey'),
+		topic: readOptionalString(options, 'topic'),
 	}
 }
 
@@ -191,11 +137,7 @@ export function buildNormalizedPackageInvokeInput(input: {
 	exportName: string
 }): PackageInvokeNormalizedInput {
 	return {
-		...(input.request.packageIdentifier.kind === 'specifier'
-			? { specifier: input.request.packageIdentifier.value }
-			: input.request.packageIdentifier.kind === 'kodyId'
-				? { kodyId: input.request.packageIdentifier.value }
-				: { packageId: input.request.packageIdentifier.value }),
+		specifier: input.request.specifier,
 		exportName: input.exportName,
 		...(input.request.params === undefined
 			? {}

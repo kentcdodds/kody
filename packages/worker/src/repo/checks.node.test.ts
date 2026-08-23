@@ -1427,6 +1427,46 @@ test('runRepoChecks validates package runtime bundles with npm dependencies', as
 	)
 })
 
+test('runRepoChecks rejects object-only packages.invoke with the permanent repair path', async () => {
+	const result = await runChecksOnWorkspaceFiles(
+		new Map<string, string>([
+			[
+				'package.json',
+				createPackageManifest({
+					packageName: '@kentcdodds/object-invoke',
+					kodyId: 'object-invoke',
+					description: 'Uses a removed package invocation form',
+				}),
+			],
+			[
+				'src/index.ts',
+				[
+					"import { packages } from 'kody:runtime'",
+					'export default async function run() {',
+					"\treturn packages.invoke({ kodyId: 'github', exportName: './request' })",
+					'}',
+				].join('\n'),
+			],
+		]),
+	)
+
+	expect(result.ok).toBe(false)
+	expect(result.results).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				kind: 'lint',
+				ok: false,
+				message: expect.stringContaining(
+					'object-only packages.invoke was removed',
+				),
+			}),
+		]),
+	)
+	expect(
+		result.results.find((check) => check.kind === 'lint')?.message,
+	).toContain('0006-invoke-object-to-specifier')
+})
+
 test('runRepoChecks fails ambient storage imports in package code with the packageStorage() remedy', async () => {
 	// A runtime module importing the ambient `storage` helper fails the lint
 	// check with an actionable message (stage two of the ambient-storage

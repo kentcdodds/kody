@@ -271,14 +271,21 @@ test('ad hoc execute runtime exposes only packages.invoke', async () => {
 				'\t} catch (error) {',
 				'\t\tdirectKodyInvokeChecked = String(error?.message ?? error);',
 				'\t}',
+				'\tlet removedObjectInvoke;',
+				'\ttry {',
+				'\t\tawait packages?.invoke({ kodyId: "target-package", exportName: "./run" });',
+				"\t\tremovedObjectInvoke = 'resolved';",
+				'\t} catch (error) {',
+				'\t\tremovedObjectInvoke = String(error?.message ?? error);',
+				'\t}',
 				'\treturn {',
 				'\t\tpackageContextIsNull: packageContext === null,',
 				'\t\tdirectKodyInvokeChecked,',
-				'\t\tinvoked: await packages?.invoke({',
-				"\t\t\tkodyId: 'target-package',",
-				"\t\t\texportName: './run',",
-				'\t\t\tparams: input,',
-				'\t\t}),',
+				'\t\tremovedObjectInvoke,',
+				'\t\tinvoked: await packages?.invoke(',
+				'\t\t\t"kody:@owner/target-package/run",',
+				'\t\t\t{ params: input },',
+				'\t\t),',
 				'\t}',
 				'}',
 			].join('\n'),
@@ -317,12 +324,14 @@ test('ad hoc execute runtime exposes only packages.invoke', async () => {
 	expect(result.result).toEqual({
 		packageContextIsNull: true,
 		directKodyInvokeChecked: expect.stringContaining('package_invoke_checked'),
+		removedObjectInvoke: expect.stringContaining(
+			'Object-only packages.invoke was removed',
+		),
 		invoked: {
 			ok: true,
 			input: {
-				kodyId: 'target-package',
-				exportName: './run',
-				params: { eventId: 'event-1' },
+				specifier: 'kody:@owner/target-package/run',
+				options: { params: { eventId: 'event-1' } },
 			},
 		},
 	})
@@ -332,9 +341,8 @@ test('ad hoc execute runtime exposes only packages.invoke', async () => {
 	).not.toBe('resolved')
 	expect(invokedInputs).toEqual([
 		{
-			kodyId: 'target-package',
-			exportName: './run',
-			params: { eventId: 'event-1' },
+			specifier: 'kody:@owner/target-package/run',
+			options: { params: { eventId: 'event-1' } },
 		},
 	])
 })

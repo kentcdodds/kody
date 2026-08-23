@@ -4,7 +4,7 @@ import {
 	parsePackageInvokeInput,
 } from './input-parsing.ts'
 
-test('parses preferred package specifiers, export subpaths, and the deprecated object form', () => {
+test('parses scoped package specifiers and export subpaths', () => {
 	const packageOnly = parsePackageInvokeInput({
 		specifier: 'kody:@kody/google',
 		options: {
@@ -15,12 +15,8 @@ test('parses preferred package specifiers, export subpaths, and the deprecated o
 		},
 	})
 	expect(packageOnly).toEqual({
-		packageIdentifier: {
-			kind: 'specifier',
-			value: 'kody:@kody/google',
-			packageName: '@kody/google',
-		},
-		packageIdOrKodyId: '@kody/google',
+		specifier: 'kody:@kody/google',
+		packageName: '@kody/google',
 		exportName: 'profile',
 		params: {},
 		idempotencyKey: 'profile-1',
@@ -46,28 +42,12 @@ test('parses preferred package specifiers, export subpaths, and the deprecated o
 		params: { includePhoto: true },
 	})
 
-	const prefixless = parsePackageInvokeInput({
-		specifier: '@kentcdodds/github',
-		options: { exportName: '.' },
-	})
-	expect(prefixless.packageIdentifier).toEqual({
-		kind: 'specifier',
-		value: 'kody:@kentcdodds/github',
-		packageName: '@kentcdodds/github',
-	})
-	expect(prefixless.exportName).toBe('.')
-
-	const legacy = parsePackageInvokeInput({
-		kodyId: 'github',
-		exportName: 'profile',
-		params: {},
-		idempotencyKey: 'legacy-1',
-	})
-	expect(legacy.packageIdentifier).toEqual({
-		kind: 'kodyId',
-		value: 'github',
-	})
-	expect(legacy.exportName).toBe('profile')
+	expect(() =>
+		parsePackageInvokeInput({
+			specifier: '@kentcdodds/github',
+			options: { exportName: '.' },
+		}),
+	).toThrow('requires a kody:@owner/package[/export] specifier')
 })
 
 test('validates specifier options and requires an export for package-only specifiers', () => {
@@ -90,5 +70,5 @@ test('validates specifier options and requires an export for package-only specif
 			specifier: 'google',
 			options: { exportName: 'profile' },
 		}),
-	).toThrow('Unsupported Kody package specifier "google".')
+	).toThrow('requires a kody:@owner/package[/export] specifier')
 })

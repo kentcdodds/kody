@@ -17,6 +17,7 @@ const repoMockModule = vi.hoisted(() => {
 	return {
 		getSavedPackageById: vi.fn(),
 		getSavedPackageByKodyId: vi.fn(),
+		getSavedPackageByName: vi.fn(),
 		listSavedPackagesByUserId: vi.fn(),
 		loadPackageManifestBySourceId,
 		// The invoke path loads the source row and manifest separately (see
@@ -49,6 +50,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		repoMockModule.getSavedPackageById(...args),
 	getSavedPackageByKodyId: (...args: Array<unknown>) =>
 		repoMockModule.getSavedPackageByKodyId(...args),
+	getSavedPackageByName: (...args: Array<unknown>) =>
+		repoMockModule.getSavedPackageByName(...args),
 	listSavedPackagesByUserId: (...args: Array<unknown>) =>
 		repoMockModule.listSavedPackagesByUserId(...args),
 }))
@@ -853,6 +856,14 @@ export default async function handleDiscordMessageCreated(input: { event: { id: 
 			return null
 		},
 	)
+	repoMockModule.getSavedPackageByName.mockImplementation(
+		async (_db: unknown, input: { userId: string; name: string }) => {
+			expect(input.userId).toBe('user-123')
+			if (input.name === gateway.name) return gateway
+			if (input.name === subscriber.name) return subscriber
+			return null
+		},
+	)
 	repoMockModule.listSavedPackagesByUserId.mockImplementation(
 		async (_db: unknown, input: { userId: string }) => {
 			expect(input.userId).toBe('user-123')
@@ -1060,9 +1071,11 @@ test('package runtime can dynamically invoke the current published export from a
 			if (bundle.mainModule === 'dist/gateway.js') {
 				return {
 					result: await options.packageInvokeTools?.invoke({
-						kodyId: 'discord-general-chat',
-						exportName: './handle-discord-message-created',
-						params: { event: params?.event },
+						specifier: 'kody:@kentcdodds/discord-general-chat',
+						options: {
+							exportName: './handle-discord-message-created',
+							params: { event: params?.event },
+						},
 					}),
 					logs: [],
 				}
@@ -1160,9 +1173,11 @@ test('key-less packages.invoke takes the lean path: re-executes on repeat and wr
 	const tools = createRuntimeDispatchTools(db)
 
 	const request = {
-		kodyId: 'discord-general-chat',
-		exportName: './handle-discord-message-created',
-		params: { event: { id: 'message-1' } },
+		specifier: 'kody:@kentcdodds/discord-general-chat',
+		options: {
+			exportName: './handle-discord-message-created',
+			params: { event: { id: 'message-1' } },
+		},
 	}
 	const first = await tools.invoke(request)
 	const second = await tools.invoke(request)
@@ -1196,10 +1211,12 @@ test('keyed packages.invoke keeps exactly-once semantics: repeat calls replay th
 	const tools = createRuntimeDispatchTools(db)
 
 	const request = {
-		kodyId: 'discord-general-chat',
-		exportName: './handle-discord-message-created',
-		params: { event: { id: 'message-1' } },
-		idempotencyKey: 'evt-keyed-1',
+		specifier: 'kody:@kentcdodds/discord-general-chat',
+		options: {
+			exportName: './handle-discord-message-created',
+			params: { event: { id: 'message-1' } },
+			idempotencyKey: 'evt-keyed-1',
+		},
 	}
 	const first = await tools.invoke(request)
 	const second = await tools.invoke(request)
@@ -1239,12 +1256,9 @@ test('runtime invoke tools expose only the supported invoke helper', () => {
 	expect(tools.invokeChecked).toBeUndefined()
 })
 
-test('runtime invoke tools record privacy-safe call shape by coarse surface', async () => {
+test('runtime invoke tools reject the removed object API before resolving a target', async () => {
 	const db = createDatabase()
-	const writeDataPoint = vi.fn()
-	const env = createEnv(db, {
-		PACKAGE_INVOKE_EVENTS: { writeDataPoint },
-	})
+	const env = createEnv(db)
 	const callerContext = createMcpCallerContext({
 		baseUrl: 'https://kody.dev',
 		user: {
@@ -1253,82 +1267,21 @@ test('runtime invoke tools record privacy-safe call shape by coarse surface', as
 			displayName: 'Private User',
 		},
 	})
-	const packageContext = {
-		packageId: 'private-package-id',
-		kodyId: 'private-kody-id',
-		sourceId: 'private-source-id',
-	}
-
 	await expect(
 		createExecutePackageInvokeTools({
 			env,
 			baseUrl: 'https://kody.dev',
 			callerContext,
-		}).invoke({}),
-	).rejects.toThrow('packages.invoke requires kodyId or packageId.')
-	await expect(
-		createPackageRuntimeInvokeTools({
-			env,
-			baseUrl: 'https://kody.dev',
-			callerContext,
-			packageContext,
-		}).invoke({ specifier: '' }),
+		}).invoke({
+			kodyId: 'private-kody-id',
+			exportName: './private-export',
+		} as never),
 	).rejects.toThrow(
-		'packages.invoke requires a kody:@username/kodyid specifier.',
+		'Object-only packages.invoke was removed. Use packages.invoke("kody:@owner/package/export", { params }) instead.',
 	)
-	await expect(
-		createExecutePackageInvokeTools({
-			env,
-			baseUrl: 'https://kody.dev',
-			callerContext,
-			parentRunRecord: { surface: 'job' },
-		}).invoke({}),
-	).rejects.toThrow('packages.invoke requires kodyId or packageId.')
-	await expect(
-		createPackageRuntimeInvokeTools({
-			env,
-			baseUrl: 'https://kody.dev',
-			callerContext,
-			packageContext,
-			runtimeSurface: 'app',
-		}).invoke({ specifier: '' }),
-	).rejects.toThrow(
-		'packages.invoke requires a kody:@username/kodyid specifier.',
-	)
-
-	expect(writeDataPoint.mock.calls).toEqual([
-		[
-			{
-				indexes: ['legacy_object'],
-				blobs: ['legacy_object', 'execute'],
-				doubles: [1],
-			},
-		],
-		[
-			{
-				indexes: ['string_first'],
-				blobs: ['string_first', 'package'],
-				doubles: [1],
-			},
-		],
-		[
-			{
-				indexes: ['legacy_object'],
-				blobs: ['legacy_object', 'job'],
-				doubles: [1],
-			},
-		],
-		[
-			{
-				indexes: ['string_first'],
-				blobs: ['string_first', 'app'],
-				doubles: [1],
-			},
-		],
-	])
-	expect(JSON.stringify(writeDataPoint.mock.calls)).not.toMatch(
-		/private-user-id|private@example|private-package-id|private-kody-id|private-source-id/,
-	)
+	expect(repoMockModule.getSavedPackageById).not.toHaveBeenCalled()
+	expect(repoMockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+	expect(repoMockModule.getSavedPackageByName).not.toHaveBeenCalled()
 })
 
 test('package runtime dispatch enqueues declared events and validates payloadSchema', async () => {
@@ -1730,11 +1683,13 @@ test('package runtime invoke contract-checks once and executes the target', asyn
 	const tools = createRuntimeDispatchTools(db)
 
 	const result = await tools.invoke({
-		kodyId: 'discord-general-chat',
-		exportName: 'handle-discord-message-created',
-		params: { event: { id: 'message-1' }, dryRun: true },
-		idempotencyKey: 'message-1',
-		topic: 'discord.message.created',
+		specifier: 'kody:@kentcdodds/discord-general-chat',
+		options: {
+			exportName: 'handle-discord-message-created',
+			params: { event: { id: 'message-1' }, dryRun: true },
+			idempotencyKey: 'message-1',
+			topic: 'discord.message.created',
+		},
 	})
 
 	expect(result).toEqual({ handled: true, eventId: 'message-1' })
@@ -1769,9 +1724,9 @@ test('execute runtime invoke invokes target package with execute provenance', as
 	})
 
 	const result = await tools.invoke({
-		kodyId: 'discord-general-chat',
-		exportName: './handle-discord-message-created',
-		params: { event: { id: 'message-1' } },
+		specifier:
+			'kody:@kentcdodds/discord-general-chat/handle-discord-message-created',
+		options: { params: { event: { id: 'message-1' } } },
 	})
 
 	expect(result).toEqual({ handled: true, eventId: 'message-1' })
@@ -1827,37 +1782,31 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 	repoMockModule.runBundledModuleWithRegistry.mockClear()
 	await expect(
 		tools.invoke({
-			kodyId: 'missing-package',
-			exportName: './handle-discord-message-created',
-			params: {},
+			specifier: 'kody:@kentcdodds/missing-package',
+			options: {
+				exportName: './handle-discord-message-created',
+				params: {},
+			},
 		}),
 	).rejects.toThrow(
-		'packages.invoke contract check failed: Saved package "missing-package" was not found for this user.',
+		'packages.invoke contract check failed: Kody package specifier "kody:@kentcdodds/missing-package" could not be resolved for this caller.',
 	)
 	await expect(
 		tools.invoke({
-			kodyId: '@kentcdodds/discord-general-chat',
-			exportName: './handle-discord-message-created',
-			params: {},
-		}),
-	).rejects.toThrow(
-		'packages.invoke contract check failed: Saved package "@kentcdodds/discord-general-chat" was not found for this user. Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").',
-	)
-	await expect(
-		tools.invoke({
-			kodyId: 'discord-general-chat',
-			exportName: './missing-export',
-			params: {},
+			specifier: 'kody:@kentcdodds/discord-general-chat',
+			options: { exportName: './missing-export', params: {} },
 		}),
 	).rejects.toThrow(
 		'packages.invoke contract check failed: Package "discord-general-chat" does not define export "./missing-export".',
 	)
 	await expect(
 		tools.invoke({
-			kodyId: 'discord-general-chat',
-			exportName: './handle-discord-message-created',
-			params: 'not-an-object',
-		}),
+			specifier: 'kody:@kentcdodds/discord-general-chat',
+			options: {
+				exportName: './handle-discord-message-created',
+				params: 'not-an-object',
+			},
+		} as never),
 	).rejects.toThrow(
 		'packages.invoke params must be a JSON object when provided.',
 	)
@@ -1891,23 +1840,24 @@ test('package runtime dispatch rejects invalid targets before and during invocat
 			packageInvokeDepth: 0,
 		})
 
-	repoMockModule.getSavedPackageByKodyId.mockResolvedValue(null)
+	repoMockModule.getSavedPackageByName.mockResolvedValueOnce(null)
 	await expect(
 		createTools().invoke({
-			kodyId: 'missing-package',
-			exportName: './handle-discord-message-created',
+			specifier: 'kody:@kentcdodds/missing-package',
+			options: { exportName: './handle-discord-message-created' },
 		}),
 	).rejects.toThrow(
-		'packages.invoke contract check failed: Saved package "missing-package" was not found for this user.',
+		'packages.invoke contract check failed: Kody package specifier "kody:@kentcdodds/missing-package" could not be resolved for this caller.',
 	)
 
-	repoMockModule.getSavedPackageByKodyId.mockReset()
 	seedRuntimeDispatchPackages()
 	await expect(
 		createTools().invoke({
-			kodyId: 'discord-general-chat',
-			exportName: './missing-export',
-			params: { event: { id: 'message-1' } },
+			specifier: 'kody:@kentcdodds/discord-general-chat',
+			options: {
+				exportName: './missing-export',
+				params: { event: { id: 'message-1' } },
+			},
 		}),
 	).rejects.toThrow(
 		'packages.invoke contract check failed: Package "discord-general-chat" does not define export "./missing-export".',
@@ -1968,14 +1918,18 @@ test('key-less nested invokes re-execute for every parent run', async () => {
 		})
 
 	const first = await createToolsForParent('./first-parent').invoke({
-		kodyId: 'discord-general-chat',
-		exportName: './handle-discord-message-created',
-		params: { marker: 'same-child-call', value: 1 },
+		specifier: 'kody:@kentcdodds/discord-general-chat',
+		options: {
+			exportName: './handle-discord-message-created',
+			params: { marker: 'same-child-call', value: 1 },
+		},
 	})
 	const second = await createToolsForParent('./second-parent').invoke({
-		kodyId: 'discord-general-chat',
-		exportName: './handle-discord-message-created',
-		params: { marker: 'same-child-call', value: 1 },
+		specifier: 'kody:@kentcdodds/discord-general-chat',
+		options: {
+			exportName: './handle-discord-message-created',
+			params: { marker: 'same-child-call', value: 1 },
+		},
 	})
 
 	expect(first).toEqual({ marker: 'same-child-call', value: 1 })
@@ -2004,8 +1958,8 @@ test('package runtime invocation requires package context and enforces loop dept
 
 	await expect(
 		withoutPackageContext.invoke({
-			kodyId: 'discord-general-chat',
-			exportName: './handle-discord-message-created',
+			specifier: 'kody:@kentcdodds/discord-general-chat',
+			options: { exportName: './handle-discord-message-created' },
 		}),
 	).rejects.toThrow('packages.invoke requires a package runtime context.')
 
@@ -2022,8 +1976,8 @@ test('package runtime invocation requires package context and enforces loop dept
 	})
 	await expect(
 		tooDeep.invoke({
-			kodyId: 'discord-general-chat',
-			exportName: './handle-discord-message-created',
+			specifier: 'kody:@kentcdodds/discord-general-chat',
+			options: { exportName: './handle-discord-message-created' },
 		}),
 	).rejects.toThrow(
 		'packages.invoke exceeded the maximum nested invocation depth (8).',

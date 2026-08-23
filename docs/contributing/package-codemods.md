@@ -213,8 +213,8 @@ arrays; the codemod remains for any leftover published trees:
 
 ### `0006-invoke-object-to-specifier`
 
-This compatibility codemod migrates the deprecated object-only dynamic package
-API to an explicit owner-scoped specifier:
+This permanent repair codemod converts the publish-blocked object-only dynamic
+package API to an explicit owner-scoped specifier:
 
 - Rewrites
   `packages.invoke({ kodyId: "target", exportName, params, idempotencyKey, topic })`
@@ -240,8 +240,10 @@ API to an explicit owner-scoped specifier:
 - Emits file-level `needsManual` findings for platform-owned runtime source: its
   old bare-id lookup follows the runtime caller, which cannot be replaced by the
   source package's platform scope without changing behavior.
-- Does not enforce removal of the object overload; that API remains supported
-  for compatibility after fleet migration.
+- Remains registered because publish checks permanently reject object-only
+  `packages.invoke` in JavaScript and TypeScript. Authors and operators can use
+  this codemod as the mechanical repair path for source that predates or
+  bypasses those checks.
 
 ## Engine
 

@@ -44,7 +44,7 @@ test('0006 rewrites safe object-only invokes to owner-scoped string-first calls'
 	expect(invokeObjectToSpecifierCodemod.detect(files)).toEqual([
 		{
 			path: 'index.ts',
-			message: expect.stringContaining('deprecated object-only'),
+			message: expect.stringContaining('removed object-only'),
 		},
 	])
 
@@ -161,7 +161,7 @@ test('0006 migrates JavaScript and TypeScript examples in Markdown', () => {
 	expect(invokeObjectToSpecifierCodemod.detect(files)).toEqual([
 		{
 			path: 'README.md',
-			message: expect.stringContaining('deprecated object-only'),
+			message: expect.stringContaining('removed object-only'),
 		},
 	])
 	const result = invokeObjectToSpecifierCodemod.transform(files)
@@ -247,7 +247,7 @@ test('0006 requires a scoped manifest and is registered for admin runs', () => {
 		},
 		{
 			path: 'README.md',
-			message: expect.stringContaining('deprecated object-only'),
+			message: expect.stringContaining('removed object-only'),
 		},
 	])
 	const platformResult = invokeObjectToSpecifierCodemod.transform(platformFiles)

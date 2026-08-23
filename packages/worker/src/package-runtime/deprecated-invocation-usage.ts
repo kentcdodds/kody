@@ -5,15 +5,14 @@ import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
 
 /**
  * Permanent publish-time guard for unsupported invocation forms:
- * `packages.check`, `packages.invokeChecked`, and literal dynamic
- * `import("kody:@...")`. Publish checks fail on these (the runtime throws
- * teaching errors), and the repair codemod reuses this collector so parsed
- * findings stay in lockstep with the publish contract. Unparseable files are
- * handled separately as codemod-only manual findings.
+ * `packages.check`, `packages.invokeChecked`, object-only `packages.invoke`,
+ * and literal dynamic `import("kody:@...")`. Publish checks fail on these and
+ * permanent repair codemods remain available for mechanical migrations.
  */
 export type DeprecatedInvocationUsageKind =
 	| 'packages.check'
 	| 'packages.invokeChecked'
+	| 'packages.invoke-object'
 	| 'dynamic-kody-import'
 
 export type DeprecatedInvocationUsage = {
@@ -44,8 +43,29 @@ function collectDeprecatedPackagesMemberKinds(
 		const typedNode = node as {
 			type?: string
 			computed?: boolean
+			callee?: {
+				type?: string
+				computed?: boolean
+				object?: { type?: string; name?: unknown }
+				property?: { type?: string; name?: unknown }
+			}
+			arguments?: Array<{ type?: string }>
 			object?: { type?: string; name?: unknown }
 			property?: { type?: string; name?: unknown }
+		}
+		if (
+			(typedNode.type === 'CallExpression' ||
+				typedNode.type === 'OptionalCallExpression') &&
+			(typedNode.callee?.type === 'MemberExpression' ||
+				typedNode.callee?.type === 'OptionalMemberExpression') &&
+			typedNode.callee.computed !== true &&
+			typedNode.callee.object?.type === 'Identifier' &&
+			typedNode.callee.object.name === 'packages' &&
+			typedNode.callee.property?.type === 'Identifier' &&
+			typedNode.callee.property.name === 'invoke' &&
+			typedNode.arguments?.[0]?.type === 'ObjectExpression'
+		) {
+			kinds.add('packages.invoke-object')
 		}
 		if (
 			// Babel emits OptionalMemberExpression for `packages?.check`.
@@ -113,6 +133,8 @@ const removedUsageReplacements: Record<DeprecatedInvocationUsageKind, string> =
 			'packages.check was removed: packages.invoke always contract-checks before invoking, so call it directly',
 		'packages.invokeChecked':
 			'packages.invokeChecked was removed: use a static kody:@scope/pkg/export import when the target package is known at write time, or packages.invoke("kody:@scope/pkg/export", { params }) for dynamic targets',
+		'packages.invoke-object':
+			'object-only packages.invoke was removed: use packages.invoke("kody:@owner/package/export", { params })',
 		'dynamic-kody-import':
 			'literal dynamic import("kody:@...") was removed: use a static import and declare it in package.json#kody.dependencies, or packages.invoke when the target is data',
 	}
@@ -132,5 +154,5 @@ export function formatRemovedInvocationUsageFailure(
 		.join('; ')
 	return `Package code uses the removed dynamic invocation surface: ${details}${
 		hiddenCount > 0 ? ` (and ${hiddenCount} more)` : ''
-	}. The 0002-static-first-invocation package codemod migrates invokeChecked call sites mechanically.`
+	}. Use the permanent 0002-static-first-invocation or 0006-invoke-object-to-specifier package codemod for mechanical repairs.`
 }

@@ -53,12 +53,20 @@ export type EmailToolOptions = {
 	getAttachment: (attachmentId: string) => Promise<unknown>
 }
 
-export type PackageInvokeInput = Record<string, unknown>
+export type PackageInvokeOptions = {
+	exportName?: string
+	params?: Record<string, unknown>
+	idempotencyKey?: string
+	topic?: string
+}
+
+export type PackageInvokeInput = {
+	specifier: string
+	options?: PackageInvokeOptions
+}
 
 export type PackageInvokeNormalizedInput = {
-	specifier?: string
-	kodyId?: string
-	packageId?: string
+	specifier: string
 	exportName: string
 	params?: Record<string, unknown>
 	idempotencyKey?: string
@@ -226,18 +234,16 @@ const packageEventRuntimeBridgeProviderName = '__kodyPackageEventRuntimeBridge'
 function createPackagesHelperPrelude() {
 	return `
 const packages = {
-  /**
-   * Invoke by scoped Kody module specifier. The legacy object-only
-   * packages.invoke({ kodyId, exportName, params }) form is deprecated.
-   */
-  invoke: async (specifierOrInput, options) => {
-    if (typeof specifierOrInput === 'string') {
-      return await ${packageInvokeRuntimeBridgeProviderName}.invoke({
-        specifier: specifierOrInput,
-        options: options ?? {},
-      });
+  invoke: async (specifier, options) => {
+    if (typeof specifier !== 'string') {
+      throw new Error(
+        'Object-only packages.invoke was removed. Use packages.invoke("kody:@owner/package/export", { params }) instead.',
+      );
     }
-    return await ${packageInvokeRuntimeBridgeProviderName}.invoke(specifierOrInput ?? {});
+    return await ${packageInvokeRuntimeBridgeProviderName}.invoke({
+      specifier,
+      options: options ?? {},
+    });
   },
 };
 	`.trim()

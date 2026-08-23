@@ -57,7 +57,6 @@ export function createPackageRuntimeInvokeTools(input: {
 	packageContext: PackageRuntimeContext | null
 	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
-	runtimeSurface?: 'app'
 	waitUntil?: (promise: Promise<unknown>) => void
 }): PackageInvokeTools {
 	return createPackageRuntimeInvokeToolsWithToolFactories({

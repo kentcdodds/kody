@@ -10,6 +10,7 @@ import {
 	buildKodyFns,
 	collectPackageStorageGrantIds,
 	type PackageEventTools,
+	type PackageInvokeInput,
 	type PackageInvokeTools,
 } from '#mcp/run-kody-registry.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
@@ -352,17 +353,17 @@ function createPackagesProxy(runtimeBridge) {
 				'packages.check was removed: packages.invoke always contract-checks before invoking, so call packages.invoke("kody:@scope/package/export", { params }) directly. A failing contract rejects with "packages.invoke contract check failed: ..." before any execution.',
 			);
 		},
-		/**
-		 * Invoke by scoped Kody module specifier. The legacy object-only
-		 * packages.invoke({ kodyId, exportName, params }) form is deprecated.
-		 */
-		invoke: async (specifierOrInput, options) =>
-			typeof specifierOrInput === 'string'
-				? await runtimeBridge.packageInvoke({
-						specifier: specifierOrInput,
-						options: options ?? {},
-					})
-				: await runtimeBridge.packageInvoke(specifierOrInput ?? {}),
+		invoke: async (specifier, options) => {
+			if (typeof specifier !== 'string') {
+				throw new Error(
+					'Object-only packages.invoke was removed. Use packages.invoke("kody:@owner/package/export", { params }) instead.',
+				)
+			}
+			return await runtimeBridge.packageInvoke({
+				specifier,
+				options: options ?? {},
+			})
+		},
 		invokeChecked: () => {
 			throw new Error(
 				'packages.invokeChecked was removed: call packages.invoke("kody:@scope/package/export", { params }) instead — it is always contract-checked (add idempotencyKey only when you need exactly-once) — or use a static import (import fn from "kody:@scope/pkg/export") when the target package is known at write time.',
@@ -1368,7 +1369,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 						packageContext,
 						parentRunRecord: null,
 						packageInvokeDepth: 0,
-						runtimeSurface: 'app',
 					})
 				},
 			)
@@ -1403,7 +1403,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		return await this.packageEventTools
 	}
 
-	async packageInvoke(input: Record<string, unknown>) {
+	async packageInvoke(input: PackageInvokeInput) {
 		const tools = await this.createPackageRuntimeInvokeTools()
 		return await tools.invoke(input)
 	}

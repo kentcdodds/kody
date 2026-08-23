@@ -658,6 +658,19 @@ test('buildPackageAppWorker loads published app artifacts with artifactName null
 	expect(
 		packageAppRuntimeMock.persistPublishedBundleArtifact,
 	).not.toHaveBeenCalled()
+	const loader = env.APP_LOADER as unknown as {
+		get: ReturnType<typeof vi.fn>
+	}
+	const factory = loader.get.mock.calls[0]?.[1] as
+		| (() => { modules: Record<string, string> })
+		| undefined
+	const packageAppHostSource = factory?.().modules['package-app-entry.js']
+	expect(packageAppHostSource).toContain(
+		'Object-only packages.invoke was removed.',
+	)
+	expect(packageAppHostSource).toContain(
+		"if (typeof specifier !== 'string')",
+	)
 })
 
 test('buildPackageAppWorker acquires a fresh stub per request while reusing the built worker options', async () => {

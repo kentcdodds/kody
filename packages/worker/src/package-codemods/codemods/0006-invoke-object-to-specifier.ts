@@ -10,17 +10,17 @@ export const invokeObjectToSpecifierCodemodId =
 	'0006-invoke-object-to-specifier'
 
 const rewriteDetectMessage =
-	'Uses the deprecated object-only `packages.invoke({ kodyId, exportName, ... })` API; rewrite to the scoped string-first specifier API.'
+	'Uses the removed object-only `packages.invoke({ kodyId, exportName, ... })` API; rewrite to the scoped string-first specifier API required by publish checks.'
 const manualRewriteMessage =
-	'Uses the deprecated object-only `packages.invoke` API in a shape that cannot be migrated safely; pass the scoped `kody:@owner/package` specifier manually.'
+	'Uses the removed object-only `packages.invoke` API in a shape that cannot be migrated safely; pass the scoped `kody:@owner/package` specifier manually.'
 const manifestScopeMessage =
-	'Package scope could not be read from package.json; migrate deprecated object-only `packages.invoke` calls manually.'
+	'Package scope could not be read from package.json; migrate removed object-only `packages.invoke` calls manually.'
 const platformScopeMessage =
-	'Platform-owned runtime source uses deprecated object-only `packages.invoke`, whose target resolves against the runtime caller; migrate this call manually.'
+	'Platform-owned runtime source uses removed object-only `packages.invoke`, whose target resolved against the runtime caller; migrate this call manually.'
 const platformForkDocsMessage =
 	'Platform-owned package documentation requires the installed user-fork owner to preserve packageStorage semantics; migrate this example manually.'
 const parseFailureMessage =
-	'File references `packages.invoke` but could not be parsed; migrate any deprecated object-only calls manually.'
+	'File references `packages.invoke` but could not be parsed; migrate any removed object-only calls manually.'
 
 const packageManifestPath = 'package.json'
 const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
@@ -616,7 +616,7 @@ function transform(
 }
 
 /**
- * Migrate the deprecated object-only package invocation API to the preferred
+ * Repair the removed object-only package invocation API to the required
  * scoped string-first form. Bare kody ids resolve in the invoking package
  * owner's account, so the package manifest scope is the equivalent explicit
  * owner. Ambiguous expressions remain unchanged for operator review.
@@ -624,7 +624,7 @@ function transform(
 export const invokeObjectToSpecifierCodemod = {
 	id: invokeObjectToSpecifierCodemodId,
 	description:
-		'Rewrite deprecated packages.invoke({ kodyId, exportName, ... }) calls to packages.invoke("kody:@owner/kodyId", { exportName, ... }); flag ambiguous calls for manual review.',
+		'Repair publish-blocked packages.invoke({ kodyId, exportName, ... }) calls as packages.invoke("kody:@owner/kodyId", { exportName, ... }); flag ambiguous calls for manual review.',
 	detect,
 	transform,
 } satisfies PackageCodemod

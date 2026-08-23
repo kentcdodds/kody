@@ -46,12 +46,11 @@ helpers are runtime exports:
   you need exactly-once.
   `packages.invoke("kody:@scope/package/export", { params })` (plus an optional
   `idempotencyKey` field for exactly-once calls) is the only dynamic call and is
-  always contract-checked before invoking. The scoped specifier avoids
-  collisions between platform and person packages. The legacy object-only
-  `packages.invoke({ kodyId, exportName, params })` form remains supported but
-  is deprecated because its bare id lookup is user-scoped and collision-prone.
-  When the target package's name is known when the code is written, use a static
-  `kody:@...` import instead (see below)
+  always contract-checked before invoking. The required scoped specifier avoids
+  collisions between platform and person packages. Object-only calls are
+  rejected locally with string-first replacement guidance. When the target
+  package's name is known when the code is written, use a static `kody:@...`
+  import instead (see below)
 - use **`import thing from 'kody:@scope/my-package/export-name'`** or
   **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
   saved package export by npm-scoped package name. This is **the default for

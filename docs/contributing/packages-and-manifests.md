@@ -203,12 +203,11 @@ await packages.invoke('kody:@kentcdodds/event-subscriber/handle-event', {
 })
 ```
 
-The preferred first argument is `kody:@scope/package` or
-`kody:@scope/package/export`. The prefixless `@scope/package` form is also
-accepted for compatibility, but docs and generated examples use `kody:`.
-`exportName` is optional only when the specifier includes the export; if both
-are present, the specifier export wins. The second argument accepts
-`exportName`, `params`, `idempotencyKey`, and `topic`; unknown keys fail.
+The first argument must be `kody:@scope/package` or
+`kody:@scope/package/export`. `exportName` is optional only when the specifier
+includes the export; if both are present, the specifier export wins. The second
+argument accepts `exportName`, `params`, `idempotencyKey`, and `topic`; unknown
+keys fail.
 
 Exact scoped resolution avoids bare-id collisions. A `kody:@kody/...` target
 resolves the public live package owned by the platform account, while a
@@ -231,8 +230,7 @@ keyless/keyed convention):
   of milliseconds.
 - **Keyed — durable/exactly-once.** Claims a ledger row, records the run
   eagerly, and replays a bounded response snapshot on retry with the same key.
-  For domain events (webhook event ids) and retried dispatch. `idempotency_key`
-  is an accepted alias.
+  For domain events (webhook event ids) and retried dispatch.
 
 The pre-invoke contract check is built in: `packages.invoke` rejects before
 invoking when the package or export does not exist or params are not a JSON
@@ -262,66 +260,24 @@ rather than statically importing subscriber packages. Republish subscribers
 independently; the dispatcher will observe the current published subscriber
 export on its next dispatch without being republished.
 
-The object-only
-`packages.invoke({ kodyId, exportName, params, idempotencyKey })` overload is
-deprecated but remains supported. It preserves the old current-user bare-id
-lookup and therefore remains collision-prone.
+The removed object-only
+`packages.invoke({ kodyId, exportName, params, idempotencyKey })` API is
+rejected locally with replacement guidance. Publish checks reject object-only
+call sites in JavaScript and TypeScript. The permanent
+`0006-invoke-object-to-specifier` codemod repairs safe calls and flags ambiguous
+ones for manual migration.
 
-Production and preview record privacy-safe overload telemetry in the
-`kody_package_invoke_events` and `kody_package_invoke_events_preview` Analytics
-Engine datasets. Pull-request previews inherit the preview dataset; the
-`kody_package_invoke_events_pr` name exists only in config-generator test
-fixtures and is not a deployed dataset. Each data point contains only:
-
-- `blob1` / `index1`: `legacy_object` or `string_first`
-- `blob2`: the coarse runtime surface (`execute`, `package`, `app`, or `job`)
-- `double1`: `1`
-
-No source, user id, package id, export name, specifier, parameters, or other raw
-identifier is recorded. Operators can inspect adoption by surface through the
-Cloudflare Analytics Engine SQL API/dashboard. Use exact RFC 3339 timestamps
-captured after production deploy; the end must be exactly one hour after the
-start:
-
-```sql
-SELECT
-	blob1 AS call_shape,
-	blob2 AS runtime_surface,
-	SUM(_sample_interval) AS calls
-FROM kody_package_invoke_events
-WHERE timestamp >= '<soak-start>'
-	AND timestamp < '<soak-end>'
-GROUP BY call_shape, runtime_surface
-ORDER BY call_shape, runtime_surface
-```
-
-The shim-removal gate uses the same exact one-hour window. `string_first_calls`
-must be greater than zero, proving telemetry is live, and `legacy_calls` must be
-zero:
-
-```sql
-SELECT
-	SUM(
-		CASE WHEN blob1 = 'string_first' THEN _sample_interval ELSE 0 END
-	) AS string_first_calls,
-	SUM(
-		CASE WHEN blob1 = 'legacy_object' THEN _sample_interval ELSE 0 END
-	) AS legacy_calls
-FROM kody_package_invoke_events
-WHERE timestamp >= '<soak-start>'
-	AND timestamp < '<soak-end>'
-```
-
-**Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
-dynamic `import("kody:@...")` are not available. `packages.invoke` subsumes both
-helpers because checking is not optional or separate. Publish checks fail on all
-three unsupported forms with the replacement named
-(`deprecated-invocation-usage.ts`), and the bundler rewrites literal dynamic
-kody imports to a teaching error. In the execute sandbox the `packages` helper
-exposes only `invoke`, so accessing `check` or `invokeChecked` throws a normal
-`TypeError`. Package-app runtimes reject those helpers with an error that names
-the supported replacement. The permanent `0002-static-first-invocation` repair
-codemod remains available. See
+**Unsupported helpers:** object-only `packages.invoke`,
+`packages.invokeChecked`, `packages.check`, and literal dynamic
+`import("kody:@...")` are not available. `packages.invoke` subsumes both helpers
+because checking is not optional or separate. Publish checks fail on all four
+unsupported forms with the replacement named (`deprecated-invocation-usage.ts`),
+and the bundler rewrites literal dynamic kody imports to a teaching error. In
+the execute sandbox the `packages` helper exposes only `invoke`, so accessing
+`check` or `invokeChecked` throws a normal `TypeError`. Package-app runtimes
+reject those helpers with an error that names the supported replacement. The
+permanent `0002-static-first-invocation` and `0006-invoke-object-to-specifier`
+repair codemods remain available. See
 [Invocation overhead guardrails](./architecture/invocation-overhead-guardrails.md)
 for the performance budget that keeps the keyless path honest.
 
