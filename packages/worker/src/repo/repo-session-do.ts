@@ -1332,9 +1332,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 		} else {
 			if (sessionRow.user_id !== input.userId) {
-				throw new Error(
-					buildRepoSessionNotFoundForUserMessage(input.sessionId),
-				)
+				throw new Error(buildRepoSessionNotFoundForUserMessage(input.sessionId))
 			}
 			if (sessionRow.status !== 'active') {
 				throw new Error(
@@ -1563,9 +1561,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 		}
 		if (sessionRow.user_id !== input.userId) {
-			throw new Error(
-				buildRepoSessionNotFoundForUserMessage(input.sessionId),
-			)
+			throw new Error(buildRepoSessionNotFoundForUserMessage(input.sessionId))
 		}
 		await updateRepoSession(this.env, {
 			id: sessionRow.id,
@@ -1591,9 +1587,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			sessionId: input.sessionId,
 		})
 		if (sessionRow && sessionRow.user_id !== input.userId) {
-			throw new Error(
-				buildRepoSessionNotFoundForUserMessage(input.sessionId),
-			)
+			throw new Error(buildRepoSessionNotFoundForUserMessage(input.sessionId))
 		}
 		await this.clearCachedSessionState(input.sessionId)
 		await this.resetWorkspace().catch(() => {
@@ -1630,9 +1624,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 		}
 		if (sessionRow.user_id !== input.userId) {
-			throw new Error(
-				buildRepoSessionNotFoundForUserMessage(input.sessionId),
-			)
+			throw new Error(buildRepoSessionNotFoundForUserMessage(input.sessionId))
 		}
 		const sessionBranch = sessionRow.session_branch
 		// Remote branch delete is best-effort. Cron selects the same expired
