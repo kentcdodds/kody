@@ -7,7 +7,9 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import { colors, typography } from '#universal/styles/tokens.ts'
 
-export function OnboardingPackageNextSteps(handle: Handle<{ kodyId: string }>) {
+export function OnboardingPackageNextSteps(
+	handle: Handle<{ kodyId: string; source?: 'persist' | 'fork' }>,
+) {
 	return () => {
 		const authoringPrompt = buildOnboardingPackageAuthoringPrompt(
 			handle.props.kodyId,
@@ -15,7 +17,11 @@ export function OnboardingPackageNextSteps(handle: Handle<{ kodyId: string }>) {
 		return (
 			<div data-testid="onboarding-package-next-steps">
 				<section mix={css(authoringCardCss)}>
-					<p mix={css(kickerCss)}>This fork is yours</p>
+					<p mix={css(kickerCss)}>
+						{handle.props.source === 'persist'
+							? 'This package is yours'
+							: 'This fork is yours'}
+					</p>
 					<h3>Make it your own — or create a new package</h3>
 					<p>
 						Your agent can edit this package, publish its next version, or help

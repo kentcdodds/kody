@@ -5,13 +5,17 @@ import {
 	createOnboardingApiHandler,
 	createOnboardingHandler,
 	loadOnboardingBuiltInProviders,
+	loadOnboardingFeaturedMcpServers,
+	loadPersistedPackageKodyId,
 	loadWelcomeEmail,
 } from '#app/handlers/onboarding.ts'
 import {
 	buildDiscoveryPrompt,
 	buildFirstWinPrompt,
 	buildOnboardingSetupPrompt,
+	buildPersistFirstPackagePrompt,
 } from '#app/onboarding-data.ts'
+import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -21,7 +25,11 @@ const mockModule = vi.hoisted(() => ({
 	searchOwnerEmailMessages: vi.fn(),
 	listTopPlatformAppsByUse: vi.fn(),
 	listJoinedIntegrations: vi.fn(),
+	listIntegrations: vi.fn(),
 	buildPlatformOauthAppLogoPath: vi.fn(),
+	listMcpServerSettings: vi.fn(),
+	loadMcpClientHubSnapshotOrNull: vi.fn(),
+	listSavedPackagesByUserId: vi.fn(),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -52,12 +60,36 @@ vi.mock('#worker/integrations/platform-apps.ts', () => ({
 vi.mock('#worker/integrations/service.ts', () => ({
 	listJoinedIntegrations: (...args: Array<unknown>) =>
 		mockModule.listJoinedIntegrations(...args),
+	listIntegrations: (...args: Array<unknown>) =>
+		mockModule.listIntegrations(...args),
 }))
 
 vi.mock('#worker/integrations/platform-app-logo.ts', () => ({
 	buildPlatformOauthAppLogoPath: (...args: Array<unknown>) =>
 		mockModule.buildPlatformOauthAppLogoPath(...args),
 }))
+
+vi.mock('#worker/mcp-client/settings-service.ts', () => ({
+	listMcpServerSettings: (...args: Array<unknown>) =>
+		mockModule.listMcpServerSettings(...args),
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	listSavedPackagesByUserId: (...args: Array<unknown>) =>
+		mockModule.listSavedPackagesByUserId(...args),
+}))
+
+vi.mock('#mcp/capabilities/mcp-servers/shared.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import('#mcp/capabilities/mcp-servers/shared.ts')
+		>()
+	return {
+		...actual,
+		loadMcpClientHubSnapshotOrNull: (...args: Array<unknown>) =>
+			mockModule.loadMcpClientHubSnapshotOrNull(...args),
+	}
+})
 
 test('onboarding serves public setup content to anonymous visitors', async () => {
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
@@ -88,6 +120,12 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 			env,
 			requestUrl: 'https://example.com/onboarding.json',
 		}),
+		persistPrompt: buildPersistFirstPackagePrompt({
+			env,
+			requestUrl: 'https://example.com/onboarding.json',
+		}),
+		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+		persistedPackageKodyId: null,
 	})
 })
 
@@ -109,6 +147,7 @@ test('onboarding API includes the authenticated package-scope username', async (
 		ok: true,
 		loggedIn: true,
 		username: 'u-b',
+		persistedPackageKodyId: null,
 	})
 })
 
@@ -239,4 +278,103 @@ test('onboarding built-in providers mark connected vs not from viewer integratio
 	)
 	expect(consoleError).toHaveBeenCalled()
 	consoleError.mockRestore()
+})
+
+test('onboarding featured MCP servers overlay Notion and Linear connection state', async () => {
+	const env = {} as Env
+	mockModule.listMcpServerSettings.mockResolvedValue([
+		{
+			id: 'srv-linear',
+			name: 'linear',
+			url: 'https://mcp.linear.app/mcp',
+			enabled: true,
+			createdAt: '2026-08-01T00:00:00.000Z',
+			updatedAt: '2026-08-01T00:00:00.000Z',
+		},
+	])
+	mockModule.loadMcpClientHubSnapshotOrNull.mockResolvedValue({
+		servers: [
+			{
+				serverId: 'srv-linear',
+				state: 'ready',
+				authUrl: null,
+				error: null,
+				tools: [{ name: 'list_issues' }],
+			},
+		],
+	})
+
+	const anonymous = await loadOnboardingFeaturedMcpServers(env)
+	expect(anonymous).toEqual(listDisconnectedOnboardingFeaturedMcpServers())
+	expect(mockModule.listMcpServerSettings).not.toHaveBeenCalled()
+
+	const signedIn = await loadOnboardingFeaturedMcpServers(env, 'viewer-1')
+	expect(signedIn[0]).toMatchObject({
+		id: 'notion',
+		connected: false,
+		serverId: null,
+	})
+	expect(signedIn[1]).toMatchObject({
+		id: 'linear',
+		connected: true,
+		serverId: 'srv-linear',
+		state: 'ready',
+	})
+	expect(mockModule.listMcpServerSettings).toHaveBeenCalledWith({
+		env,
+		userId: 'viewer-1',
+	})
+
+	mockModule.listMcpServerSettings.mockRejectedValue(new Error('d1 blip'))
+	await expect(
+		loadOnboardingFeaturedMcpServers(env, 'viewer-1'),
+	).resolves.toEqual(listDisconnectedOnboardingFeaturedMcpServers())
+})
+
+test('onboarding persist next-steps use the newest saved-package kody id', async () => {
+	const env = { APP_DB: {} } as Env
+
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([
+		{ kodyId: 'morning-digest' },
+		{ kodyId: 'older-package' },
+	])
+	await expect(loadPersistedPackageKodyId(env, 'user-1')).resolves.toBe(
+		'morning-digest',
+	)
+	expect(mockModule.listSavedPackagesByUserId).toHaveBeenCalledWith(
+		env.APP_DB,
+		{ userId: 'user-1' },
+	)
+
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	await expect(loadPersistedPackageKodyId(env, 'user-1')).resolves.toBeNull()
+
+	mockModule.listSavedPackagesByUserId.mockRejectedValue(new Error('d1 blip'))
+	await expect(loadPersistedPackageKodyId(env, 'user-1')).resolves.toBeNull()
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		username: 'u-b',
+		emailVerified: true,
+		mcpUser: { userId: 'user-1' },
+	})
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([
+		{ kodyId: 'morning-digest' },
+	])
+	mockModule.listTopPlatformAppsByUse.mockResolvedValue([])
+	mockModule.listJoinedIntegrations.mockResolvedValue([])
+	mockModule.listIntegrations.mockResolvedValue([])
+	mockModule.listMcpServerSettings.mockResolvedValue([])
+	mockModule.listOwnerEmailMessages.mockResolvedValue([])
+	mockModule.searchOwnerEmailMessages.mockResolvedValue([])
+
+	const response = await createOnboardingApiHandler(env).handler(
+		new RequestContext(new Request('https://example.com/onboarding.json')),
+	)
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		loggedIn: true,
+		username: 'u-b',
+		persistedPackageKodyId: 'morning-digest',
+	})
 })

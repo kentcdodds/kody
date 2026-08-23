@@ -24,7 +24,20 @@ function candidate(id: string) {
 	}
 }
 
-test('reindex sweep helpers stop at the deadline and resume from afterId', async () => {
+test('reindex sweep helpers page to a deadline and canonicalize capability phases', async () => {
+	expect(resolveCapabilityReindexPhases(undefined)).toEqual({
+		ok: true,
+		phases: ['capabilities', 'memories', 'jobs', 'packages'],
+	})
+	expect(resolveCapabilityReindexPhases(['packages', 'capabilities'])).toEqual({
+		ok: true,
+		phases: ['capabilities', 'packages'],
+	})
+	expect(resolveCapabilityReindexPhases([])).toEqual({
+		ok: false,
+		error: 'phases must be a non-empty array.',
+	})
+
 	mockModule.embedTextsForVectorize.mockReset()
 	mockModule.embedTextsForVectorize.mockImplementation(
 		async (_env: unknown, texts: Array<string>) => texts.map(() => [0.1]),
@@ -105,20 +118,5 @@ test('reindex sweep helpers stop at the deadline and resume from afterId', async
 		upserted: 1,
 		complete: true,
 		afterId: null,
-	})
-})
-
-test('resolveCapabilityReindexPhases omits every kind or canonicalizes a subset', () => {
-	expect(resolveCapabilityReindexPhases(undefined)).toEqual({
-		ok: true,
-		phases: ['capabilities', 'memories', 'jobs', 'packages'],
-	})
-	expect(resolveCapabilityReindexPhases(['packages', 'capabilities'])).toEqual({
-		ok: true,
-		phases: ['capabilities', 'packages'],
-	})
-	expect(resolveCapabilityReindexPhases([])).toEqual({
-		ok: false,
-		error: 'phases must be a non-empty array.',
 	})
 })

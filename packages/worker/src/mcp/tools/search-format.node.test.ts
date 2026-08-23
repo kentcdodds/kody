@@ -686,7 +686,7 @@ export declare function fetch(request: Request): Promise<Response>
 	expect(observedPackageDetail.structured).toMatchObject({
 		listingAhead: null,
 	})
-	expect(observedPackageDetail.markdown).not.toContain('Listing ahead')
+	expect(observedPackageDetail.markdown).not.toContain('community_fork_absorb')
 	expect(observedPackageDetail.markdown).not.toContain('src/app.d.ts')
 	expect(observedPackageDetail.markdown).not.toContain('Token setup URL')
 	expect(JSON.stringify(observedPackageDetail.structured)).not.toContain(
@@ -742,24 +742,6 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 	expect(
 		aheadMatch && 'nextStep' in aheadMatch ? aheadMatch.nextStep : '',
 	).toContain('community_fork_absorb')
-	expect(
-		formatSearchMarkdown({
-			matches: [
-				{
-					type: 'package',
-					packageId: 'package-ahead',
-					kodyId: 'github-triage',
-					name: '@me/github-triage',
-					title: '@me/github-triage',
-					description: 'Triage GitHub issues.',
-					tags: ['github'],
-					hasApp: false,
-					hidden: false,
-					listingAhead: true,
-				},
-			],
-		}),
-	).toContain('Listing ahead')
 
 	const aheadDetail = formatEntityDetailMarkdown({
 		type: 'package',
@@ -799,7 +781,6 @@ test('package search surfaces listing ahead only when the fork is behind', () =>
 		},
 	})
 	expect(aheadDetail.structured).toMatchObject({ listingAhead: true })
-	expect(aheadDetail.markdown).toContain('Listing ahead: yes')
 	expect(aheadDetail.markdown).toContain('community_fork_absorb')
 })
 

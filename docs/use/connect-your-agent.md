@@ -83,16 +83,16 @@ coding agent (Cursor, Claude Code, Codex, Copilot, OpenCode, and similar) is
 usually smoother because those hosts can edit files and iterate on code more
 easily.
 
-## Try a quick example, then connect services
+## Connect Notion or Linear, then persist a first build
 
-After the connection works, Get started Step 2 offers zero-auth example packages
-for one-click fork/install. Copy the agent prompt while install finishes — your
-agent waits for the fork, runs your copy, and can offer optional triggers.
+After the connection works, Get started Step 2 offers Notion and Linear as
+remote MCP servers (`https://mcp.notion.com/mcp` and
+`https://mcp.linear.app/mcp`). Connect one and authorize it, or skip.
 
-Step 3 is for real services (built-in connects plus starters that usually need
-an account). If nothing fits, use **Choose your own adventure** to copy a prompt
-that asks your agent what Kody can do and helps you connect an integration and
-build something custom.
+Step 3 copies a prompt that asks your agent to run one ad hoc request, then
+persist that working code as a package you own. Built-in platform OAuth and
+featured starters stay under Advanced. If nothing fits, use **Choose your own
+adventure** to copy an open-ended setup prompt.
 
 ## Where to go next
 

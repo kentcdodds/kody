@@ -62,9 +62,9 @@ helpers are runtime exports:
   staleness only affects package-to-package static dependencies, which keep the
   bundled snapshot until the dependent republishes.
 
-`kody:runtime` is always supplied by the Kody host at execution time. Saved
-package artifacts do not contain a copy of the host runtime implementation, so
-old package artifacts automatically observe current host runtime behavior.
+`kody:runtime` is always supplied by the Kody host at execution time. Published
+package artifacts do not bundle the host runtime; execution always hydrates the
+deployed `kody:runtime` module.
 
 Literal dynamic imports (`await import('kody:@scope/my-package/export-name')`)
 are unsupported. The call site throws a teaching error naming the replacement:

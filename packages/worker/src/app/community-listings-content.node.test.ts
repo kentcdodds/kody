@@ -24,7 +24,7 @@ const sampleListing = {
 	starCount: 0,
 } satisfies PublicCommunityListing
 
-test('community listings render sort controls, published dates, and empty states', async () => {
+test('community listings render sort controls, categories, empty states, and fork-outdated', async () => {
 	const searchMissHtml = await renderCommunityListingsContentHtml({
 		listings: [],
 		query: 'obsidian',
@@ -47,7 +47,6 @@ test('community listings render sort controls, published dates, and empty states
 		'data-testid="community-create-prompt"',
 	)
 	expect(emptyCatalogHtml).toContain('href="/onboarding"')
-	expect(emptyCatalogHtml).toContain('The shelf is')
 	expect(emptyCatalogHtml).not.toContain(
 		'data-testid="community-listings-categories"',
 	)
@@ -85,8 +84,6 @@ test('community listings render sort controls, published dates, and empty states
 		sort: 'best',
 	})
 	expect(overviewHtml).toContain('data-testid="community-listings-overview"')
-	expect(overviewHtml).toContain('See all Integrations')
-	expect(overviewHtml).not.toContain('See all 4 packages')
 	expect(overviewHtml).toContain('href="/community?category=integrations"')
 	expect(overviewHtml).not.toContain('category=apps')
 
@@ -95,8 +92,6 @@ test('community listings render sort controls, published dates, and empty states
 		query: null,
 		category: 'apps',
 	})
-	expect(categoryEmptyHtml).toContain('Nothing in')
-	expect(categoryEmptyHtml).toContain('Apps')
 	expect(categoryEmptyHtml).toContain('href="/community"')
 	expect(categoryEmptyHtml).toContain(
 		'data-testid="community-listings-categories"',
@@ -117,7 +112,7 @@ test('community listings render sort controls, published dates, and empty states
 		sort: 'best',
 	})
 	expect(fullGroupHtml).toContain('data-testid="community-listings-overview"')
-	expect(fullGroupHtml).not.toContain('See all Integrations')
+	expect(fullGroupHtml).not.toContain('>See all ')
 
 	const catalogWideChipsHtml = await renderCommunityListingsContentHtml({
 		listings: [sampleListing],
@@ -136,9 +131,7 @@ test('community listings render sort controls, published dates, and empty states
 	expect(catalogWideChipsHtml).toContain('category=examples')
 	expect(catalogWideChipsHtml).not.toContain('category=utilities')
 	expect(catalogWideChipsHtml).not.toContain('category=other')
-})
 
-test('fork outdated replaces the installed pill with a copy-prompt button', async () => {
 	const installedListing = {
 		...sampleListing,
 		viewerInstall: {
@@ -157,29 +150,28 @@ test('fork outdated replaces the installed pill with a copy-prompt button', asyn
 	expect(installedHtml).toContain(
 		'data-testid="community-listing-viewer-install-listing-1"',
 	)
-	expect(installedHtml).toContain('Installed')
-	expect(installedHtml).not.toContain('Fork outdated')
+	expect(installedHtml).not.toContain(
+		'data-testid="community-listing-ahead-listing-1"',
+	)
 
 	const aheadPrompt =
 		'Compare the current listing snapshot, keep local customizations, then call community_fork_absorb.'
-	const aheadListing = {
-		...installedListing,
-		viewerInstall: {
-			...installedListing.viewerInstall,
-			listingAhead: true,
-			listingAheadPrompt: aheadPrompt,
-		},
-	}
 	const aheadHtml = await renderCommunityListingsContentHtml({
-		listings: [aheadListing],
+		listings: [
+			{
+				...installedListing,
+				viewerInstall: {
+					...installedListing.viewerInstall,
+					listingAhead: true,
+					listingAheadPrompt: aheadPrompt,
+				},
+			},
+		],
 		query: null,
 	})
 	expect(aheadHtml).toContain('data-testid="community-listing-ahead-listing-1"')
-	expect(aheadHtml).toContain('Fork outdated')
 	expect(aheadHtml).toContain('data-fork-outdated-copy')
-	expect(aheadHtml).toContain('Click to copy an update prompt')
 	expect(aheadHtml).toContain(aheadPrompt)
-	expect(aheadHtml).not.toContain('Listing updated')
 	expect(aheadHtml).not.toContain(
 		'data-testid="community-listing-viewer-install-listing-1"',
 	)

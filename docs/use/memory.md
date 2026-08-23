@@ -1,8 +1,9 @@
 # Memory and conversation context
 
-Kody memory is the memory of record for the signed-in user. Facts saved only in
-the host (Claude memory, Codex notes, Cursor rules that are not also Kody
-memories) are invisible to the user's other agents.
+Kody is the system of record for the signed-in user's durable assistant state.
+Long-term memories are the primary store for facts and preferences. Facts saved
+only in the host (Claude memory, Codex notes, Cursor rules that are not also
+Kody memories) are invisible to the user's other agents.
 
 Kody supports two related memory features:
 

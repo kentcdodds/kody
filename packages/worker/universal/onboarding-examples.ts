@@ -26,9 +26,10 @@ export function isOnboardingExampleListing(listing: {
 }
 
 /**
- * Featured listings for Step 2: zero-auth examples, ordered like the known
- * production set when present. Returns whatever the featured payload includes;
- * callers should tolerate an empty list when curation has not landed yet.
+ * Featured zero-auth examples shown under onboarding Step 3 Advanced.
+ * Ordered like the known production set when present. Returns whatever the
+ * featured payload includes; callers should tolerate an empty list when
+ * curation has not landed yet.
  */
 export function selectOnboardingExampleListings(
 	featuredListings: Array<OnboardingFeaturedListing>,
@@ -44,7 +45,7 @@ export function selectOnboardingExampleListings(
 	})
 }
 
-/** Featured starters for Step 3: everything that is not a zero-auth example. */
+/** Featured starters under Step 3 Advanced: everything that is not a zero-auth example. */
 export function selectOnboardingServiceStarterListings(
 	featuredListings: Array<OnboardingFeaturedListing>,
 ): Array<OnboardingFeaturedListing> {
@@ -69,7 +70,7 @@ function exampleInvokeHint(scopedName: string, kodyId: string): string {
 }
 
 /**
- * Agent paste for Step 2 after the user picks an example. Safe to show while
+ * Agent paste after the user picks an Advanced example. Safe to show while
  * one-click install is still in flight — the agent is told to wait/retry once
  * if the fork is not searchable yet.
  */

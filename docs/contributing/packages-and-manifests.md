@@ -81,7 +81,6 @@ Think in terms of:
 - package-owned subscriptions
 - package-owned webhooks
 - package-owned retrievers
-- package-owned webhooks
 - package-owned workflows (declared in runtime code, not the manifest)
 
 The repo is the top-level persisted source; a saved package is the identity of

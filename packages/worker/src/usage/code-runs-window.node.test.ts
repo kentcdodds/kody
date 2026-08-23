@@ -114,40 +114,39 @@ test('refreshPublicCodeRunsWindow initializes a still pair, holds it for 24h, th
 	})
 })
 
-test('loadPublicCodeRunsWindow falls back to a still D1 sum when KV is empty', async () => {
-	const env = await createEnv({
+test('public code-runs load falls back to D1 and hides when KV fails or there are no runs', async () => {
+	const fallback = await createEnv({
 		rows: [{ userId: 'a', month: '2026-08', eventCount: 12 }],
 	})
-	env.BUNDLE_ARTIFACTS_KV.store.clear()
+	fallback.BUNDLE_ARTIFACTS_KV.store.clear()
 	expect(
-		await loadPublicCodeRunsWindow(env, new Date('2026-08-22T12:00:00.000Z')),
+		await loadPublicCodeRunsWindow(
+			fallback,
+			new Date('2026-08-22T12:00:00.000Z'),
+		),
 	).toMatchObject({ previous: 12, current: 12 })
-})
 
-test('refreshPublicCodeRunsWindow skips and load hides when KV get fails', async () => {
-	const env = await createEnv({
+	const kvDown = await createEnv({
 		rows: [{ userId: 'a', month: '2026-08', eventCount: 12 }],
 	})
-	env.BUNDLE_ARTIFACTS_KV.get = async () => {
+	kvDown.BUNDLE_ARTIFACTS_KV.get = async () => {
 		throw new Error('kv down')
 	}
 	await expect(
 		refreshPublicCodeRunsWindow({
-			env,
+			env: kvDown,
 			now: new Date('2026-08-22T00:00:00.000Z'),
 		}),
 	).resolves.toEqual({ status: 'skipped', reason: 'kv_read_failed' })
-	expect(env.BUNDLE_ARTIFACTS_KV.store.size).toBe(0)
-	expect(await loadPublicCodeRunsWindow(env)).toBeNull()
-})
+	expect(kvDown.BUNDLE_ARTIFACTS_KV.store.size).toBe(0)
+	expect(await loadPublicCodeRunsWindow(kvDown)).toBeNull()
 
-test('refreshPublicCodeRunsWindow skips when there are no execute events', async () => {
-	const env = await createEnv()
+	const empty = await createEnv()
 	await expect(
 		refreshPublicCodeRunsWindow({
-			env,
+			env: empty,
 			now: new Date('2026-08-22T00:00:00.000Z'),
 		}),
 	).resolves.toEqual({ status: 'skipped', reason: 'no_runs' })
-	expect(await loadPublicCodeRunsWindow(env)).toBeNull()
+	expect(await loadPublicCodeRunsWindow(empty)).toBeNull()
 })

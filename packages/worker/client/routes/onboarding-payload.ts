@@ -2,6 +2,7 @@ import { type OnboardingFeaturedListing } from '#universal/community-public-type
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingFeaturedMcpServer,
 	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -19,6 +20,7 @@ export type OnboardingPayload = {
 	setupPrompt: string
 	discoveryPrompt: string
 	firstWinPrompt: string
+	persistPrompt: string
 	hasSentWelcomeEmail: boolean
 	welcomeEmail: OnboardingWelcomeEmail | null
 	hasMcpClient: boolean
@@ -26,6 +28,12 @@ export type OnboardingPayload = {
 	needsOnboarding: boolean
 	featuredListings: Array<OnboardingFeaturedListing>
 	builtInProviders: Array<OnboardingBuiltInProvider>
+	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
+	/**
+	 * Most recently updated saved-package kody id after persist. Null when
+	 * logged out, unverified, or the listing fails open.
+	 */
+	persistedPackageKodyId: string | null
 	checklist: OnboardingChecklistLoaderData | null
 }
 

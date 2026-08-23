@@ -3,11 +3,14 @@ import {
 	buildFirstWinPrompt,
 	buildMcpServerUrl,
 	buildOnboardingSetupPrompt,
+	buildPersistFirstPackagePrompt,
 } from '#worker/onboarding-prompts.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
+import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingFeaturedMcpServer,
 	type OnboardingLoaderData,
 	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
@@ -17,6 +20,7 @@ export {
 	buildFirstWinPrompt,
 	buildMcpServerUrl,
 	buildOnboardingSetupPrompt,
+	buildPersistFirstPackagePrompt,
 }
 
 type OnboardingEnv = {
@@ -69,6 +73,10 @@ export function loadPublicOnboardingData(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 		}),
+		persistPrompt: buildPersistFirstPackagePrompt({
+			env: input.env,
+			requestUrl: input.requestUrl,
+		}),
 		hasSentWelcomeEmail: false,
 		welcomeEmail: null,
 		hasMcpClient: false,
@@ -76,6 +84,8 @@ export function loadPublicOnboardingData(input: {
 		needsOnboarding: true,
 		featuredListings: [],
 		builtInProviders: [],
+		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+		persistedPackageKodyId: null,
 		checklist: null,
 	}
 }
@@ -93,6 +103,10 @@ export async function loadOnboardingData(input: {
 	featuredListings?: Array<OnboardingFeaturedListing>
 	/** Top enabled built-in integrations, loaded by the handler. */
 	builtInProviders?: Array<OnboardingBuiltInProvider>
+	/** Notion and Linear MCP chooser cards, loaded by the handler. */
+	featuredMcpServers?: Array<OnboardingFeaturedMcpServer>
+	/** Most recently updated saved-package kody id, loaded by the handler. */
+	persistedPackageKodyId?: string | null
 	/** Derived progress checklist, computed by the handler. */
 	checklist?: OnboardingChecklistLoaderData | null
 	/** Stored welcome email metadata, loaded by the handler. */
@@ -133,14 +147,27 @@ export async function loadOnboardingData(input: {
 					requestUrl: input.requestUrl,
 				})
 			: '',
+		persistPrompt: input.emailVerified
+			? buildPersistFirstPackagePrompt({
+					env: input.env,
+					requestUrl: input.requestUrl,
+				})
+			: '',
 		hasMcpClient,
 		emailVerified: input.emailVerified,
 		needsOnboarding,
 		featuredListings: input.emailVerified ? (input.featuredListings ?? []) : [],
 		builtInProviders: input.emailVerified ? (input.builtInProviders ?? []) : [],
+		featuredMcpServers: input.emailVerified
+			? (input.featuredMcpServers ??
+				listDisconnectedOnboardingFeaturedMcpServers())
+			: [],
 		// Computed by the handler alongside the checklist probes.
 		hasSentWelcomeEmail: false,
 		welcomeEmail: input.welcomeEmail ?? null,
+		persistedPackageKodyId: input.emailVerified
+			? (input.persistedPackageKodyId ?? null)
+			: null,
 		checklist: input.checklist ?? null,
 	}
 }

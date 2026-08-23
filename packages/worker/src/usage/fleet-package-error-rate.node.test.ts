@@ -46,7 +46,7 @@ function windowOf(input: {
 	}
 }
 
-test('detectFleetPackageErrorRateElevation requires volume, a floor, and a rise', () => {
+test('fleet package error-rate detection stays anonymous and prefers day rises', () => {
 	expect(
 		detectFleetPackageErrorRateElevation({
 			comparison: windowOf({
@@ -59,7 +59,6 @@ test('detectFleetPackageErrorRateElevation requires volume, a floor, and a rise'
 			minEvents: fleetPackageErrorRateMinDayEvents,
 		}),
 	).toBeNull()
-
 	expect(
 		detectFleetPackageErrorRateElevation({
 			comparison: windowOf({
@@ -72,7 +71,6 @@ test('detectFleetPackageErrorRateElevation requires volume, a floor, and a rise'
 			minEvents: fleetPackageErrorRateMinDayEvents,
 		}),
 	).toBeNull()
-
 	expect(
 		detectFleetPackageErrorRateElevation({
 			comparison: windowOf({
@@ -85,7 +83,6 @@ test('detectFleetPackageErrorRateElevation requires volume, a floor, and a rise'
 			minEvents: fleetPackageErrorRateMinDayEvents,
 		}),
 	).toMatchObject({ reason: 'absolute_delta', kind: 'day' })
-
 	expect(
 		detectFleetPackageErrorRateElevation({
 			comparison: windowOf({
@@ -98,7 +95,6 @@ test('detectFleetPackageErrorRateElevation requires volume, a floor, and a rise'
 			minEvents: fleetPackageErrorRateMinDayEvents,
 		}),
 	).toMatchObject({ reason: 'relative_factor' })
-
 	expect(
 		detectFleetPackageErrorRateElevation({
 			comparison: windowOf({
@@ -111,29 +107,26 @@ test('detectFleetPackageErrorRateElevation requires volume, a floor, and a rise'
 			minEvents: fleetPackageErrorRateMinDayEvents,
 		}),
 	).toMatchObject({ reason: 'from_zero' })
-})
 
-test('chooseFleetPackageErrorRateElevation prefers the day window when both rise', () => {
-	const chosen = chooseFleetPackageErrorRateElevation({
-		day: windowOf({
-			kind: 'day',
-			recentEvents: 80,
-			recentErrors: 16,
-			previousEvents: 80,
-			previousErrors: 2,
-		}),
-		hour: windowOf({
-			kind: 'hour',
-			recentEvents: 40,
-			recentErrors: 20,
-			previousEvents: 40,
-			previousErrors: 1,
-		}),
-	})
-	expect(chosen?.kind).toBe('day')
-})
+	expect(
+		chooseFleetPackageErrorRateElevation({
+			day: windowOf({
+				kind: 'day',
+				recentEvents: 80,
+				recentErrors: 16,
+				previousEvents: 80,
+				previousErrors: 2,
+			}),
+			hour: windowOf({
+				kind: 'hour',
+				recentEvents: 40,
+				recentErrors: 20,
+				previousEvents: 40,
+				previousErrors: 1,
+			}),
+		})?.kind,
+	).toBe('day')
 
-test('Analytics Engine SQL is anonymous and scoped to package-runtime metrics', () => {
 	const query = buildFleetPackageErrorRateAnalyticsQuery({
 		dataset: 'kody_usage_events',
 		previousStart: new Date('2026-08-21T19:00:00.000Z'),
@@ -147,9 +140,7 @@ test('Analytics Engine SQL is anonymous and scoped to package-runtime metrics', 
 	expect(query).not.toContain('blob1')
 	expect(query).not.toContain('user_id')
 	expect(query).not.toContain('GROUP BY blob1')
-})
 
-test('foldAnalyticsWindowRows fills missing metrics with zeros', () => {
 	const start = new Date('2026-08-22T18:00:00.000Z')
 	const end = new Date('2026-08-22T19:00:00.000Z')
 	const snapshot = foldAnalyticsWindowRows(
@@ -176,9 +167,7 @@ test('foldAnalyticsWindowRows fills missing metrics with zeros', () => {
 		errors: 0,
 		rate: null,
 	})
-})
 
-test('parseFleetPackageErrorRateSnapshot rejects user-bearing or versionless payloads', () => {
 	expect(parseFleetPackageErrorRateSnapshot({ version: 2 })).toBeNull()
 	expect(
 		parseFleetPackageErrorRateSnapshot({
@@ -188,9 +177,6 @@ test('parseFleetPackageErrorRateSnapshot rejects user-bearing or versionless pay
 			user_id: 'should-not-matter',
 		}),
 	).toBeNull()
-})
-
-test('alignToUtcHour drops intra-hour remainder', () => {
 	expect(
 		alignToUtcHour(new Date('2026-08-22T19:32:11.123Z')).toISOString(),
 	).toBe('2026-08-22T19:00:00.000Z')

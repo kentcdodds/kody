@@ -4,8 +4,8 @@ title: Email and memories — welcome email, reply, memories
 summary:
   Optional agent playbook: send a welcome email, point the person at their own
   inbox to reply, look the reply up when they say it is sent, save what matters
-  as memories, then offer a one-click integration. Onboarding Step 2 uses the
-  quick-example fork→invoke flow instead; load this when someone wants the
+  as memories, then offer a next step. Onboarding Step 3 uses the
+  quick-example ad hoc→persist flow instead; load this when someone wants the
   email loop. Includes the no-polling rule and troubleshooting for missing mail
   and unbound tools.
 category: platform
@@ -16,8 +16,9 @@ category: platform
 <!--
 Agent notes — for AI agents driving the optional email loop from this page:
 
-- Onboarding Step 2 climax is /guides/quick-example (fork → invoke → own).
-  Use this guide only when the person wants the email-and-memories loop.
+- Onboarding Step 2 connects Notion or Linear as a remote MCP server. Step 3
+  climax is /guides/quick-example (ad hoc execute → persist → own). Use this
+  guide only when the person wants the email-and-memories loop.
 - You drive the whole loop. The person stays in this chat; they should not need
   to go back to the Kody web page for anything except the optional integration
   connect at the end.
@@ -41,8 +42,8 @@ Agent notes — for AI agents driving the optional email loop from this page:
 This guide is an optional playbook for exercising stored mail and durable
 memory: the assistant introduces itself over email, the person replies from
 their normal email client, and the answers become memories that follow them into
-every agent they connect later. For the default post-connect climax (fork a
-zero-auth example and invoke a package you own), use
+every agent they connect later. For the default post-connect climax (run one ad
+hoc request, then persist a package you own), use
 [`quick-example`](./quick-example.md) instead.
 
 Paths below are relative to the same deployment origin this guide was fetched
@@ -128,14 +129,13 @@ moment the whole loop pays off, so make it visible rather than silent.
 
 The first win is done. Offer one concrete next step and let them choose:
 
-- **Connect a built-in integration in one click.** Kody hosts the provider app,
-  so there is nothing to register. Send them to `/connect/oauth?provider=<slug>`
-  on the same origin this guide came from (for example `provider=github` or
-  `provider=google`), then verify the connection with a small ad hoc `execute`
-  call.
+- **Connect Notion or Linear as a remote MCP server.** Send them to
+  `/onboarding#connect-mcp` on the same origin this guide came from, or call
+  `mcp_server_add` with `https://mcp.notion.com/mcp` or
+  `https://mcp.linear.app/mcp`, then verify with a small ad hoc `execute` call.
 - **Bring their own OAuth app or API key** when they need scopes or rate limits
-  the built-in app does not offer — load `coding_guide_get` with
-  `guide: "oauth"`, or the matching `provider_*` guide.
+  a hosted app does not offer — load `coding_guide_get` with `guide: "oauth"`,
+  or the matching `provider_*` guide.
 - **Ask what they want automated** and use `coding_guide_get` with
   `guide: "package_lifecycle"` to pick between a one-off `execute`, a community
   fork, and a new package.

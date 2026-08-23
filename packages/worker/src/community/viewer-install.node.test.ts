@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { resolveViewerListingInstalls } from './viewer-install.ts'
 
-test('resolveViewerListingInstalls prefers matching kody_id, then listing forks', () => {
+test('resolveViewerListingInstalls prefers kody matches, then forks, and marks listing-ahead only for fork pins', () => {
 	const listings = [
 		{ id: 'listing-github', kodyId: 'github' },
 		{ id: 'listing-cloudflare', kodyId: 'cloudflare' },
@@ -103,10 +103,8 @@ test('resolveViewerListingInstalls prefers matching kody_id, then listing forks'
 		originCommit: null,
 		listingPinnedCommit: null,
 	})
-})
 
-test('resolveViewerListingInstalls marks a fork listing-ahead when the pin moved', () => {
-	const resolved = resolveViewerListingInstalls({
+	const ahead = resolveViewerListingInstalls({
 		listings: [
 			{
 				id: 'listing-github',
@@ -134,8 +132,7 @@ test('resolveViewerListingInstalls marks a fork listing-ahead when the pin moved
 			},
 		],
 	})
-
-	expect(resolved.get('listing-github')).toEqual({
+	expect(ahead.get('listing-github')).toEqual({
 		status: 'installed',
 		targetName: '@burhan/github',
 		sourceId: 'src-github',
@@ -144,10 +141,8 @@ test('resolveViewerListingInstalls marks a fork listing-ahead when the pin moved
 		originCommit: 'commit-old',
 		listingPinnedCommit: 'commit-new',
 	})
-})
 
-test('resolveViewerListingInstalls does not mark a self-authored kody match ahead from another fork', () => {
-	const resolved = resolveViewerListingInstalls({
+	const selfAuthored = resolveViewerListingInstalls({
 		listings: [
 			{
 				id: 'listing-github',
@@ -175,8 +170,7 @@ test('resolveViewerListingInstalls does not mark a self-authored kody match ahea
 			},
 		],
 	})
-
-	expect(resolved.get('listing-github')).toEqual({
+	expect(selfAuthored.get('listing-github')).toEqual({
 		status: 'installed',
 		targetName: '@burhan/github',
 		sourceId: 'src-github',
