@@ -77,6 +77,9 @@ test('0006 partially migrates safe files and reports ambiguous calls for review'
 			"await packages.invoke({ packageId: 'pkg-123', exportName: './run' })\n",
 		'dynamic.ts':
 			'await packages.invoke({ kodyId: targetId, exportName: exportName })\n',
+		'missing-export.ts': "await packages.invoke({ kodyId: 'worker' })\n",
+		'missing-export-options.ts':
+			"await packages.invoke({ kodyId: 'worker', params: {} })\n",
 		'variable.ts': 'await packages.invoke(input)\n',
 		'spread.ts':
 			"await packages.invoke({ kodyId: 'worker', exportName: './run', ...options })\n",
@@ -106,6 +109,14 @@ test('0006 partially migrates safe files and reports ambiguous calls for review'
 			message: expect.stringContaining('cannot be migrated safely'),
 		},
 		{
+			path: 'missing-export-options.ts',
+			message: expect.stringContaining('cannot be migrated safely'),
+		},
+		{
+			path: 'missing-export.ts',
+			message: expect.stringContaining('cannot be migrated safely'),
+		},
+		{
 			path: 'package-id.ts',
 			message: expect.stringContaining('cannot be migrated safely'),
 		},
@@ -120,6 +131,10 @@ test('0006 partially migrates safe files and reports ambiguous calls for review'
 	])
 	expect(result.files['package-id.ts']).toBe(files['package-id.ts'])
 	expect(result.files['dynamic.ts']).toBe(files['dynamic.ts'])
+	expect(result.files['missing-export.ts']).toBe(files['missing-export.ts'])
+	expect(result.files['missing-export-options.ts']).toBe(
+		files['missing-export-options.ts'],
+	)
 	expect(result.files['variable.ts']).toBe(files['variable.ts'])
 	expect(result.files['spread.ts']).toBe(files['spread.ts'])
 	expect(result.files['commented.ts']).toBe(files['commented.ts'])
@@ -216,16 +231,72 @@ test('0006 requires a scoped manifest and is registered for admin runs', () => {
 		'package.json': manifest('@kody/demo'),
 		'index.ts':
 			"await packages.invoke({ kodyId: 'worker', exportName: './run' })\n",
+		'README.md': [
+			'# Usage',
+			'',
+			'```ts',
+			"await packages.invoke({ kodyId: 'github', exportName: './request', params: {} })",
+			'```',
+			'',
+		].join('\n'),
 	}
+	expect(invokeObjectToSpecifierCodemod.detect(platformFiles)).toEqual([
+		{
+			path: 'index.ts',
+			message: expect.stringContaining('runtime caller'),
+		},
+		{
+			path: 'README.md',
+			message: expect.stringContaining('deprecated object-only'),
+		},
+	])
 	const platformResult = invokeObjectToSpecifierCodemod.transform(platformFiles)
-	expect(platformResult.changed).toBe(false)
-	expect(platformResult.files).toEqual(platformFiles)
+	expect(platformResult.changed).toBe(true)
+	expect(platformResult.changedPaths).toEqual(['README.md'])
+	expect(platformResult.files['index.ts']).toBe(platformFiles['index.ts'])
+	expect(platformResult.files['README.md']).toContain(
+		'packages.invoke("kody:@kody/github", { exportName:',
+	)
 	expect(platformResult.needsManual).toEqual([
 		{
-			path: 'package.json',
+			path: 'index.ts',
 			message: expect.stringContaining('runtime caller'),
 		},
 	])
+
+	for (const packageName of [
+		'@kody/notify',
+		'@kody/personal-capture',
+		'@kody/stash',
+	]) {
+		const forkOwnedDocs = {
+			'package.json': manifest(packageName),
+			'README.md': [
+				'# Usage',
+				'',
+				'```ts',
+				"await packages.invoke({ kodyId: 'helper', exportName: './run', params: {} })",
+				'```',
+				'',
+			].join('\n'),
+		}
+		expect(invokeObjectToSpecifierCodemod.detect(forkOwnedDocs)).toEqual([
+			{
+				path: 'README.md',
+				message: expect.stringContaining('user-fork owner'),
+			},
+		])
+		const forkOwnedDocsResult =
+			invokeObjectToSpecifierCodemod.transform(forkOwnedDocs)
+		expect(forkOwnedDocsResult.changed).toBe(false)
+		expect(forkOwnedDocsResult.files).toEqual(forkOwnedDocs)
+		expect(forkOwnedDocsResult.needsManual).toEqual([
+			{
+				path: 'README.md',
+				message: expect.stringContaining('user-fork owner'),
+			},
+		])
+	}
 
 	const unrelated = {
 		'package.json': manifest(),

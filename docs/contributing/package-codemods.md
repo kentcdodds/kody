@@ -227,13 +227,19 @@ API to an explicit owner-scoped specifier:
 - Rewrites complete examples in JavaScript/TypeScript Markdown fences and inline
   code spans. Untyped/unsupported fences, partial snippets, and matching prose
   remain unchanged with `needsManual`.
+- Applies those safe Markdown rewrites to platform-owned package documentation,
+  using the package's explicit platform scope. Documentation for `@kody/notify`,
+  `@kody/stash`, and `@kody/personal-capture` remains manual because examples
+  must use the installed user-fork owner to preserve `packageStorage()`
+  semantics.
 - Leaves already string-first calls unchanged and is idempotent.
 - Emits `needsManual` for immutable `packageId` targets, dynamic or indirect
-  input objects, computed properties, spreads, comments in the removed field,
-  parse failures, and manifests without a valid scoped package name.
-- Emits `needsManual` for platform-owned package source: its old bare-id lookup
-  follows the runtime caller, which cannot be replaced by the source package's
-  platform scope without changing behavior.
+  input objects, calls without `exportName`, computed properties, spreads,
+  comments in the removed field, parse failures, and manifests without a valid
+  scoped package name.
+- Emits file-level `needsManual` findings for platform-owned runtime source: its
+  old bare-id lookup follows the runtime caller, which cannot be replaced by the
+  source package's platform scope without changing behavior.
 - Does not enforce removal of the object overload; that API remains supported
   for compatibility after fleet migration.
 
