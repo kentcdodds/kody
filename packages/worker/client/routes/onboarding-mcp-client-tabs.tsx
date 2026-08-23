@@ -10,8 +10,8 @@ import {
 	buildCopilotCliMcpJson,
 	buildCursorInstallUrl,
 	buildCursorMcpJson,
-	buildCursorMcpMergeCommand,
 	buildKodyAppIconUrl,
+	buildKodyCliInstallCommand,
 	buildOpenCodeMcpAddCommand,
 	buildOpenCodeMcpJson,
 	buildVsCodeInstallUrl,
@@ -129,49 +129,32 @@ function ManualPath(handle: Handle<{ children?: RemixNode }>) {
 function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 	switch (kind) {
 		case 'cursor': {
-			const cursorCommand = buildCursorMcpMergeCommand(mcpServerUrl)
 			const cursorJson = buildCursorMcpJson(mcpServerUrl)
 			const installUrl = buildCursorInstallUrl(mcpServerUrl)
 			return (
 				<>
 					<p>
-						Copy and run this to add Kody to your user-global{' '}
-						<code>~/.cursor/mcp.json</code> without replacing other servers.
-						Then Authenticate in Cursor&apos;s MCP list.
+						Install with the deeplink, open <strong>Customize</strong> and add a
+						remote MCP server with the URL, or merge the JSON into{' '}
+						<code>~/.cursor/mcp.json</code> (global) or{' '}
+						<code>.cursor/mcp.json</code> (project).
 					</p>
-					<AutomaticPath>
-						<CopyCard
-							label="Install command"
-							value={cursorCommand}
-							copyLabel="Copy command"
-							variant="pill"
-							lang="sh"
-						/>
-					</AutomaticPath>
-					<ManualPath>
-						<p>
-							Install with the deeplink, open <strong>Customize</strong> and add
-							a remote MCP server with the URL, or merge the JSON into{' '}
-							<code>~/.cursor/mcp.json</code> (global) or{' '}
-							<code>.cursor/mcp.json</code> (project).
-						</p>
-						<InstallDeepLink href={installUrl} label="Add to Cursor" />
-						<CopyCard
-							label="MCP URL"
-							value={mcpServerUrl}
-							copyLabel="Copy MCP URL"
-						/>
-						<p>
-							JSON config (merge under your existing <code>mcpServers</code> if
-							you already have one):
-						</p>
-						<CopyCard
-							label="mcp.json"
-							value={cursorJson}
-							copyLabel="Copy JSON"
-							lang="json"
-						/>
-					</ManualPath>
+					<InstallDeepLink href={installUrl} label="Add to Cursor" />
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+					<p>
+						JSON config (merge under your existing <code>mcpServers</code> if
+						you already have one):
+					</p>
+					<CopyCard
+						label="mcp.json"
+						value={cursorJson}
+						copyLabel="Copy JSON"
+						lang="json"
+					/>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
@@ -197,26 +180,21 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						and paste the MCP URL as the server URL. Complete OAuth when
 						prompted.
 					</p>
-					<AutomaticPath>
-						<CopyCard
-							label="MCP URL"
-							value={mcpServerUrl}
-							copyLabel="Copy MCP URL"
-							variant="pill"
-						/>
-					</AutomaticPath>
-					<ManualPath>
-						<p>
-							For the app icon, download Kody&apos;s favicon from the URL below.
-							Owners can edit a developer-mode app&apos;s name and logo later
-							from its <strong>Manage</strong> menu in Apps settings.
-						</p>
-						<CopyCard
-							label="App icon (favicon)"
-							value={appIconUrl}
-							copyLabel="Copy icon URL"
-						/>
-					</ManualPath>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+					<p>
+						For the app icon, download Kody&apos;s favicon from the URL below.
+						Owners can edit a developer-mode app&apos;s name and logo later from
+						its <strong>Manage</strong> menu in Apps settings.
+					</p>
+					<CopyCard
+						label="App icon (favicon)"
+						value={appIconUrl}
+						copyLabel="Copy icon URL"
+					/>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
@@ -228,28 +206,22 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 				<>
 					<p>
 						Codex (ChatGPT desktop, Codex CLI, and the IDE extension) shares{' '}
-						<code>~/.codex/config.toml</code>. Copy and run this, then{' '}
+						<code>~/.codex/config.toml</code>. Run the Codex CLI, then{' '}
 						<code>{codexMcpLoginCommand}</code> if OAuth does not start
-						automatically:
+						automatically, or add the streamable HTTP entry yourself:
 					</p>
-					<AutomaticPath>
-						<CopyCard
-							label="codex CLI"
-							value={codexCommand}
-							copyLabel="Copy command"
-							variant="pill"
-							lang="sh"
-						/>
-					</AutomaticPath>
-					<ManualPath>
-						<p>Or add this streamable HTTP entry yourself:</p>
-						<CopyCard
-							label="config.toml"
-							value={codexToml}
-							copyLabel="Copy TOML"
-							lang="toml"
-						/>
-					</ManualPath>
+					<CopyCard
+						label="codex CLI"
+						value={codexCommand}
+						copyLabel="Copy command"
+						lang="sh"
+					/>
+					<CopyCard
+						label="config.toml"
+						value={codexToml}
+						copyLabel="Copy TOML"
+						lang="toml"
+					/>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
@@ -262,21 +234,16 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						Customize → Connectors), add a custom connector, and paste this MCP
 						URL. Claude Desktop handles remote OAuth through that UI.
 					</p>
-					<AutomaticPath>
-						<CopyCard
-							label="MCP URL"
-							value={mcpServerUrl}
-							copyLabel="Copy MCP URL"
-							variant="pill"
-						/>
-					</AutomaticPath>
-					<ManualPath>
-						<p>
-							Do not put the remote URL into{' '}
-							<code>claude_desktop_config.json</code>. After connecting, start a
-							new chat and ask Claude to list Kody tools before the first task.
-						</p>
-					</ManualPath>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+					<p>
+						Do not put the remote URL into{' '}
+						<code>claude_desktop_config.json</code>. After connecting, start a
+						new chat and ask Claude to list Kody tools before the first task.
+					</p>
 					<ClientNote>{claudeDesktopToolHint}</ClientNote>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
@@ -297,29 +264,24 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						<strong>Custom</strong>, and paste this MCP URL. Complete OAuth when
 						Grok prompts you.
 					</p>
-					<AutomaticPath>
-						<CopyCard
-							label="MCP URL"
-							value={mcpServerUrl}
-							copyLabel="Copy MCP URL"
-							variant="pill"
-						/>
-					</AutomaticPath>
-					<ManualPath>
-						<p>
-							For Grok Business and Enterprise, a team admin must first add this
-							custom MCP server in the cloud console. Members can then connect
-							it from the Grok connectors page. See xAI&apos;s{' '}
-							<a
-								href={grokCustomMcpGuideUrl}
-								target="_blank"
-								rel="noreferrer noopener"
-							>
-								custom MCP connector docs
-							</a>{' '}
-							for details.
-						</p>
-					</ManualPath>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+					<p>
+						For Grok Business and Enterprise, a team admin must first add this
+						custom MCP server in the cloud console. Members can then connect it
+						from the Grok connectors page. See xAI&apos;s{' '}
+						<a
+							href={grokCustomMcpGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							custom MCP connector docs
+						</a>{' '}
+						for details.
+					</p>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
@@ -328,29 +290,24 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 			const claudeCodeJson = buildClaudeCodeMcpJson(mcpServerUrl)
 			return (
 				<>
-					<p>Copy and run this (user scope, all projects):</p>
-					<AutomaticPath>
-						<CopyCard
-							label="claude CLI"
-							value={claudeCodeCommand}
-							copyLabel="Copy command"
-							variant="pill"
-							lang="sh"
-						/>
-					</AutomaticPath>
-					<ManualPath>
-						<p>
-							Or merge this into a project <code>.mcp.json</code> (or the
-							user-scoped <code>mcpServers</code> block). Claude Code requires{' '}
-							<code>type: &quot;http&quot;</code> for remote servers:
-						</p>
-						<CopyCard
-							label=".mcp.json"
-							value={claudeCodeJson}
-							copyLabel="Copy JSON"
-							lang="json"
-						/>
-					</ManualPath>
+					<p>
+						Run this (user scope, all projects), or merge the JSON into a
+						project <code>.mcp.json</code> (or the user-scoped{' '}
+						<code>mcpServers</code> block). Claude Code requires{' '}
+						<code>type: &quot;http&quot;</code> for remote servers:
+					</p>
+					<CopyCard
+						label="claude CLI"
+						value={claudeCodeCommand}
+						copyLabel="Copy command"
+						lang="sh"
+					/>
+					<CopyCard
+						label=".mcp.json"
+						value={claudeCodeJson}
+						copyLabel="Copy JSON"
+						lang="json"
+					/>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
@@ -361,31 +318,24 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 			return (
 				<>
 					<p>
-						Copy and run this to add Kody as a remote MCP server. Then{' '}
-						<code>{openCodeMcpAuthCommand}</code> if prompted:
+						Run this to add Kody as a remote MCP server, then{' '}
+						<code>{openCodeMcpAuthCommand}</code> if prompted. Or add the remote
+						entry to your OpenCode config (<code>opencode.json</code> in the
+						project, or your global OpenCode config). OpenCode uses{' '}
+						<code>type: &quot;remote&quot;</code>:
 					</p>
-					<AutomaticPath>
-						<CopyCard
-							label="opencode CLI"
-							value={openCodeCommand}
-							copyLabel="Copy command"
-							variant="pill"
-							lang="sh"
-						/>
-					</AutomaticPath>
-					<ManualPath>
-						<p>
-							Or add this to your OpenCode config (<code>opencode.json</code> in
-							the project, or your global OpenCode config). OpenCode uses{' '}
-							<code>type: &quot;remote&quot;</code>:
-						</p>
-						<CopyCard
-							label="opencode.json"
-							value={openCodeJson}
-							copyLabel="Copy JSON"
-							lang="json"
-						/>
-					</ManualPath>
+					<CopyCard
+						label="opencode CLI"
+						value={openCodeCommand}
+						copyLabel="Copy command"
+						lang="sh"
+					/>
+					<CopyCard
+						label="opencode.json"
+						value={openCodeJson}
+						copyLabel="Copy JSON"
+						lang="json"
+					/>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
@@ -398,59 +348,54 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 			return (
 				<>
 					<p>
-						Copy and run this to add a remote HTTP server for Copilot CLI
-						(writes <code>~/.copilot/mcp-config.json</code>). Copilot CLI does
-						not read <code>.vscode/mcp.json</code>:
+						Run this to add a remote HTTP server for Copilot CLI (writes{' '}
+						<code>~/.copilot/mcp-config.json</code>). Copilot CLI does not read{' '}
+						<code>.vscode/mcp.json</code>:
 					</p>
-					<AutomaticPath>
-						<CopyCard
-							label="copilot CLI"
-							value={copilotCliCommand}
-							copyLabel="Copy command"
-							variant="pill"
-							lang="sh"
-						/>
-					</AutomaticPath>
-					<ManualPath>
-						<p>
-							<strong>In VS Code (Copilot Chat):</strong> install Kody directly,
-							create or edit <code>.vscode/mcp.json</code> in your workspace, or
-							open user MCP config via the{' '}
-							<strong>MCP: Open User Configuration</strong> command. VS Code
-							uses the root key <code>servers</code>, not{' '}
-							<code>mcpServers</code>. Use Agent mode in Copilot Chat so MCP
-							tools are available, then complete OAuth when VS Code opens it.
-						</p>
-						<InstallDeepLink href={installUrl} label="Add to VS Code" />
-						<CopyCard
-							label=".vscode/mcp.json"
-							value={vsCodeJson}
-							copyLabel="Copy JSON"
-							lang="json"
-						/>
-						<p>
-							Or merge this into <code>~/.copilot/mcp-config.json</code> (root
-							key <code>mcpServers</code>):
-						</p>
-						<CopyCard
-							label="~/.copilot/mcp-config.json"
-							value={copilotCliJson}
-							copyLabel="Copy JSON"
-							lang="json"
-						/>
-						<p>
-							See GitHub&apos;s{' '}
-							<a
-								href={copilotCliMcpGuideUrl}
-								target="_blank"
-								rel="noreferrer noopener"
-							>
-								Copilot CLI MCP docs
-							</a>{' '}
-							for details. For the desktop GitHub Copilot app, use the{' '}
-							<strong>Copilot App</strong> tab.
-						</p>
-					</ManualPath>
+					<CopyCard
+						label="copilot CLI"
+						value={copilotCliCommand}
+						copyLabel="Copy command"
+						lang="sh"
+					/>
+					<p>
+						<strong>In VS Code (Copilot Chat):</strong> install Kody directly,
+						create or edit <code>.vscode/mcp.json</code> in your workspace, or
+						open user MCP config via the{' '}
+						<strong>MCP: Open User Configuration</strong> command. VS Code uses
+						the root key <code>servers</code>, not <code>mcpServers</code>. Use
+						Agent mode in Copilot Chat so MCP tools are available, then complete
+						OAuth when VS Code opens it.
+					</p>
+					<InstallDeepLink href={installUrl} label="Add to VS Code" />
+					<CopyCard
+						label=".vscode/mcp.json"
+						value={vsCodeJson}
+						copyLabel="Copy JSON"
+						lang="json"
+					/>
+					<p>
+						Or merge this into <code>~/.copilot/mcp-config.json</code> (root key{' '}
+						<code>mcpServers</code>):
+					</p>
+					<CopyCard
+						label="~/.copilot/mcp-config.json"
+						value={copilotCliJson}
+						copyLabel="Copy JSON"
+						lang="json"
+					/>
+					<p>
+						See GitHub&apos;s{' '}
+						<a
+							href={copilotCliMcpGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Copilot CLI MCP docs
+						</a>{' '}
+						for details. For the desktop GitHub Copilot app, use the{' '}
+						<strong>Copilot App</strong> tab.
+					</p>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
@@ -464,38 +409,33 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						<strong>MCP Servers</strong>. Add a custom remote HTTP server with
 						this MCP URL, then complete OAuth when the app opens it:
 					</p>
-					<AutomaticPath>
-						<CopyCard
-							label="MCP URL"
-							value={mcpServerUrl}
-							copyLabel="Copy MCP URL"
-							variant="pill"
-						/>
-					</AutomaticPath>
-					<ManualPath>
-						<p>
-							Servers you already configured for Copilot CLI (or in a
-							repository) are also available in the app. You can merge this into{' '}
-							<code>~/.copilot/mcp-config.json</code> instead:
-						</p>
-						<CopyCard
-							label="~/.copilot/mcp-config.json"
-							value={copilotCliJson}
-							copyLabel="Copy JSON"
-							lang="json"
-						/>
-						<p>
-							See GitHub&apos;s{' '}
-							<a
-								href={copilotAppCustomizeGuideUrl}
-								target="_blank"
-								rel="noreferrer noopener"
-							>
-								Copilot app customization docs
-							</a>{' '}
-							for MCP Servers, skills, and plugins.
-						</p>
-					</ManualPath>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+					<p>
+						Servers you already configured for Copilot CLI (or in a repository)
+						are also available in the app. You can merge this into{' '}
+						<code>~/.copilot/mcp-config.json</code> instead:
+					</p>
+					<CopyCard
+						label="~/.copilot/mcp-config.json"
+						value={copilotCliJson}
+						copyLabel="Copy JSON"
+						lang="json"
+					/>
+					<p>
+						See GitHub&apos;s{' '}
+						<a
+							href={copilotAppCustomizeGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Copilot app customization docs
+						</a>{' '}
+						for MCP Servers, skills, and plugins.
+					</p>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
@@ -508,23 +448,18 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						can connect to Kody. Add a remote MCP server pointed at this URL and
 						complete the OAuth flow when the host opens it:
 					</p>
-					<AutomaticPath>
-						<CopyCard
-							label="MCP URL"
-							value={mcpServerUrl}
-							copyLabel="Copy MCP URL"
-							variant="pill"
-						/>
-					</AutomaticPath>
-					<ManualPath>
-						<p>
-							Config file shapes differ by host. If your client expects a JSON{' '}
-							<code>mcpServers</code> map with a <code>url</code> field, start
-							from the Cursor or Copilot CLI snippet; if it uses{' '}
-							<code>servers</code> with <code>type: &quot;http&quot;</code>, use
-							the Copilot (VS Code) snippet.
-						</p>
-					</ManualPath>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+					<p>
+						Config file shapes differ by host. If your client expects a JSON{' '}
+						<code>mcpServers</code> map with a <code>url</code> field, start
+						from the Cursor or Copilot CLI snippet; if it uses{' '}
+						<code>servers</code> with <code>type: &quot;http&quot;</code>, use
+						the Copilot (VS Code) snippet.
+					</p>
 				</>
 			)
 		default: {
@@ -535,38 +470,69 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 }
 
 /**
- * Client picker (step 2): host chips in the same grammar as the landing host
- * cloud, one panel of setup instructions per host. Roving tabindex and arrow
- * keys come from `remix/ui/tabs`.
+ * Step 1 install: one Automatic `@kodycodes/cli` command for every client,
+ * then a collapsed Manual section with host chips and deeplink / vendor CLI
+ * / JSON-TOML fallbacks. Roving tabindex and arrow keys come from
+ * `remix/ui/tabs`.
  */
 export function OnboardingMcpClientTabs(
 	handle: Handle<OnboardingMcpClientTabsProps>,
 ) {
-	return () => (
-		<Tabs defaultActiveTab="cursor" mix={css(tabsRootCss)}>
-			<div mix={css(tabPickerCss)}>
-				<p mix={css(tabKickerCss)} id="onboarding-client-label">
-					Choose your client
-				</p>
-				<TabList
-					aria-labelledby="onboarding-client-label"
-					mix={css(tabListCss)}
-				>
-					{mcpClientTabs.map((tab) => (
-						<Tab key={tab.id} name={tab.id} mix={css(tabPillCss)}>
-							{tab.label}
-						</Tab>
-					))}
-				</TabList>
-			</div>
+	return () => {
+		const installCommand = buildKodyCliInstallCommand(handle.props.mcpServerUrl)
+		return (
+			<div mix={css(installLayoutCss)}>
+				<AutomaticPath>
+					<p>
+						Run this to add Kody to the local agents the CLI finds (Cursor,
+						Claude Desktop, VS Code, Claude Code, Codex, and others). Then
+						Authenticate in that client. Web hosts such as ChatGPT, Claude.ai,
+						and Grok stay under Manual.
+					</p>
+					<CopyCard
+						label="Install command"
+						value={installCommand}
+						copyLabel="Copy command"
+						variant="pill"
+						lang="sh"
+					/>
+				</AutomaticPath>
+				<ManualPath>
+					<p>
+						Use a host-specific deeplink, vendor CLI, or config snippet instead.
+					</p>
+					<Tabs defaultActiveTab="cursor" mix={css(tabsRootCss)}>
+						<div mix={css(tabPickerCss)}>
+							<p mix={css(tabKickerCss)} id="onboarding-client-label">
+								Choose your client
+							</p>
+							<TabList
+								aria-labelledby="onboarding-client-label"
+								mix={css(tabListCss)}
+							>
+								{mcpClientTabs.map((tab) => (
+									<Tab key={tab.id} name={tab.id} mix={css(tabPillCss)}>
+										{tab.label}
+									</Tab>
+								))}
+							</TabList>
+						</div>
 
-			{mcpClientTabs.map((tab) => (
-				<TabPanel key={tab.id} name={tab.id} mix={css(tabPanelCss)}>
-					{renderPanelContent(tab.id, handle.props.mcpServerUrl)}
-				</TabPanel>
-			))}
-		</Tabs>
-	)
+						{mcpClientTabs.map((tab) => (
+							<TabPanel key={tab.id} name={tab.id} mix={css(tabPanelCss)}>
+								{renderPanelContent(tab.id, handle.props.mcpServerUrl)}
+							</TabPanel>
+						))}
+					</Tabs>
+				</ManualPath>
+			</div>
+		)
+	}
+}
+
+const installLayoutCss = {
+	display: 'grid',
+	gap: '1.15rem',
 }
 
 const tabsRootCss = {
@@ -681,6 +647,11 @@ const tabPanelCss = {
 const installPathCss = {
 	display: 'grid',
 	gap: '0.75rem',
+	'& > p': {
+		margin: 0,
+		color: colors.textMuted,
+		maxWidth: '72ch',
+	},
 }
 
 const pathLabelCss = {

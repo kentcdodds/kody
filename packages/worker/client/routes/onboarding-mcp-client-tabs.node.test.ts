@@ -6,14 +6,14 @@ import {
 	buildClaudeCodeAddCommand,
 	buildCodexMcpAddCommand,
 	buildCopilotCliAddCommand,
+	buildKodyCliInstallCommand,
 	buildOpenCodeMcpAddCommand,
+	defaultKodyMcpUrl,
 } from './onboarding-mcp-clients.ts'
 
-const mcpServerUrl = 'https://heykody.dev/mcp'
-
-test('onboarding MCP tabs show Automatic first and collapse Manual', async () => {
+test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async () => {
 	const html = await renderToString(
-		jsx(OnboardingMcpClientTabs, { mcpServerUrl }),
+		jsx(OnboardingMcpClientTabs, { mcpServerUrl: defaultKodyMcpUrl }),
 	)
 
 	expect(html).toContain('data-testid="onboarding-mcp-automatic"')
@@ -22,14 +22,40 @@ test('onboarding MCP tabs show Automatic first and collapse Manual', async () =>
 	)
 	expect(html).toContain('>Automatic<')
 	expect(html).toContain('>Manual<')
+	expect(html).toContain('npx @kodycodes/cli install')
+	expect(html).not.toContain('--mcp-url')
+	expect(html).not.toMatch(/heykody\.(?:app|dev)/)
 	expect(html).toMatch(/aria-selected="true"[^>]*>Cursor</)
 
-	expect(html).toContain(mcpServerUrl)
-	expect(html).toContain('~/.cursor/mcp.json')
-	expect(html).toContain(buildClaudeCodeAddCommand(mcpServerUrl))
-	expect(html).toContain(buildCodexMcpAddCommand(mcpServerUrl))
-	expect(html).toContain(buildOpenCodeMcpAddCommand(mcpServerUrl))
-	expect(html).toContain(buildCopilotCliAddCommand(mcpServerUrl))
-	expect(html).toContain('Add to Cursor')
-	expect(html).toContain('Add to VS Code')
+	const automaticBlock = html.slice(
+		html.indexOf('data-testid="onboarding-mcp-automatic"'),
+		html.indexOf('data-testid="onboarding-mcp-manual"'),
+	)
+	expect(automaticBlock).toContain(
+		buildKodyCliInstallCommand(defaultKodyMcpUrl),
+	)
+	expect(automaticBlock).not.toContain('Add to Cursor')
+	expect(automaticBlock).not.toContain('Choose your client')
+
+	const manualBlock = html.slice(
+		html.indexOf('data-testid="onboarding-mcp-manual"'),
+	)
+	expect(manualBlock).toContain('Choose your client')
+	expect(manualBlock).toContain(defaultKodyMcpUrl)
+	expect(manualBlock).toContain('~/.cursor/mcp.json')
+	expect(manualBlock).toContain(buildClaudeCodeAddCommand(defaultKodyMcpUrl))
+	expect(manualBlock).toContain(buildCodexMcpAddCommand(defaultKodyMcpUrl))
+	expect(manualBlock).toContain(buildOpenCodeMcpAddCommand(defaultKodyMcpUrl))
+	expect(manualBlock).toContain(buildCopilotCliAddCommand(defaultKodyMcpUrl))
+	expect(manualBlock).toContain('Add to Cursor')
+	expect(manualBlock).toContain('Add to VS Code')
+
+	const previewHtml = await renderToString(
+		jsx(OnboardingMcpClientTabs, {
+			mcpServerUrl: 'http://localhost:3742/mcp',
+		}),
+	)
+	expect(previewHtml).toContain(
+		'npx @kodycodes/cli install --mcp-url http://localhost:3742/mcp',
+	)
 })

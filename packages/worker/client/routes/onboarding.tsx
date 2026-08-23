@@ -613,9 +613,8 @@ export function OnboardingRoute(handle: Handle) {
 										list and click <strong>Authenticate</strong>.
 									</span>
 									<span>
-										<strong>Claude Code:</strong> after copying and running the
-										command, enter <code>/mcp</code> → Kody →{' '}
-										<strong>Authenticate</strong>.
+										<strong>Claude Code:</strong> after install, enter{' '}
+										<code>/mcp</code> → Kody → <strong>Authenticate</strong>.
 									</span>
 									<span>
 										Approve the <strong>kody.codes</strong> OAuth window. This

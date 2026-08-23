@@ -66,6 +66,25 @@ export const claudeDesktopToolHint =
 export const codingAgentPackageHint =
 	'Coding agents are the best fit when you want to create or edit Kody packages. Once a package exists, non-coding agents can use it just fine.'
 
+/** Production MCP URL. `@kodycodes/cli install` uses this when `--mcp-url` is omitted. */
+export const defaultKodyMcpUrl = 'https://kody.codes/mcp'
+
+/**
+ * Copyable Automatic command for every client. Production uses the CLI
+ * default; preview and local origins pass `--mcp-url` so install writes
+ * this deployment's MCP endpoint.
+ */
+export function buildKodyCliInstallCommand(mcpServerUrl: string) {
+	if (normalizeMcpUrl(mcpServerUrl) === defaultKodyMcpUrl) {
+		return 'npx @kodycodes/cli install'
+	}
+	return `npx @kodycodes/cli install --mcp-url ${mcpServerUrl}`
+}
+
+function normalizeMcpUrl(mcpServerUrl: string) {
+	return mcpServerUrl.replace(/\/+$/u, '')
+}
+
 function prettyJson(value: unknown) {
 	return `${JSON.stringify(value, null, 2)}\n`
 }
@@ -138,74 +157,6 @@ export function buildOpenCodeMcpAddCommand(mcpServerUrl: string) {
 }
 
 export const openCodeMcpAuthCommand = 'opencode mcp auth kody'
-
-/**
- * Merge `mcpServers.kody.url` into a Cursor user-global `mcp.json` object
- * without replacing other top-level keys or other servers.
- */
-export function mergeCursorUserMcpConfig(
-	existing: unknown,
-	mcpServerUrl: string,
-) {
-	if (
-		existing != null &&
-		(typeof existing !== 'object' || Array.isArray(existing))
-	) {
-		throw new Error('Cursor mcp.json must be a JSON object')
-	}
-	const config =
-		existing == null ? {} : { ...(existing as Record<string, unknown>) }
-	const existingServers = config.mcpServers
-	if (
-		existingServers != null &&
-		(typeof existingServers !== 'object' || Array.isArray(existingServers))
-	) {
-		throw new Error('Cursor mcp.json mcpServers must be an object')
-	}
-	const servers =
-		existingServers == null
-			? {}
-			: { ...(existingServers as Record<string, unknown>) }
-	config.mcpServers = {
-		...servers,
-		kody: { url: mcpServerUrl },
-	}
-	return config
-}
-
-/**
- * Copyable Node heredoc that writes `~/.cursor/mcp.json`. Cursor has no
- * official `mcp add` CLI (agent mcp only lists, enables, and logs in).
- */
-export function buildCursorMcpMergeCommand(mcpServerUrl: string) {
-	const urlLiteral = JSON.stringify(mcpServerUrl)
-	return [
-		'# Adds Kody to ~/.cursor/mcp.json without replacing other servers',
-		"node <<'EOF'",
-		"const fs = require('node:fs')",
-		"const path = require('node:path')",
-		"const os = require('node:os')",
-		"const file = path.join(os.homedir(), '.cursor', 'mcp.json')",
-		`const url = ${urlLiteral}`,
-		'let config = {}',
-		'try {',
-		"  config = JSON.parse(fs.readFileSync(file, 'utf8'))",
-		'} catch (error) {',
-		"  if (error.code !== 'ENOENT') throw error",
-		'}',
-		'if (!config || typeof config !== "object" || Array.isArray(config)) {',
-		"  throw new Error('~/.cursor/mcp.json must be a JSON object')",
-		'}',
-		'const servers = config.mcpServers',
-		'if (servers != null && (typeof servers !== "object" || Array.isArray(servers))) {',
-		"  throw new Error('~/.cursor/mcp.json mcpServers must be an object')",
-		'}',
-		'config.mcpServers = { ...servers, kody: { url } }',
-		'fs.mkdirSync(path.dirname(file), { recursive: true })',
-		"fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\\n')",
-		'EOF',
-	].join('\n')
-}
 
 /** VS Code Copilot `.vscode/mcp.json` (root key is `servers`, not `mcpServers`). */
 export function buildVsCodeMcpJson(mcpServerUrl: string) {
