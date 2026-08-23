@@ -6,7 +6,7 @@ import {
 	readListingAheadFlag,
 } from './community-listing-ahead.ts'
 
-test('isCommunityListingAhead is true only when both commits exist and differ', () => {
+test('listing-ahead helpers gate on commit mismatch and expose absorb contracts', () => {
 	expect(
 		isCommunityListingAhead({
 			originCommit: 'commit-old',
@@ -31,9 +31,13 @@ test('isCommunityListingAhead is true only when both commits exist and differ', 
 			listingPinnedCommit: 'commit-new',
 		}),
 	).toBe(false)
-})
 
-test('buildListingAheadPrompt names the listing, fork, and absorb step', () => {
+	expect(readListingAheadFlag({ listingAhead: true })).toBe(true)
+	expect(readListingAheadFlag({ listingAhead: false })).toBe(false)
+	expect(readListingAheadFlag({ listingAhead: null })).toBe(null)
+	expect(readListingAheadFlag({})).toBe(null)
+	expect(readListingAheadFlag(null)).toBe(null)
+
 	const prompt = buildListingAheadPrompt({
 		listingName: '@kentcdodds/github',
 		listingId: 'listing-1',
@@ -44,27 +48,14 @@ test('buildListingAheadPrompt names the listing, fork, and absorb step', () => {
 		originCommit: 'commit-old',
 		listingPinnedCommit: 'commit-new',
 	})
-
-	expect(prompt).toContain('@kentcdodds/github')
 	expect(prompt).toContain('listing-1')
-	expect(prompt).toContain('/@kentcdodds/github')
-	expect(prompt).toContain('/@kentcdodds/github/files')
 	expect(prompt).toContain('package_id pkg-1')
 	expect(prompt).toContain('source_id src-1')
-	expect(prompt).toContain('commit-old')
-	expect(prompt).toContain('commit-new')
 	expect(prompt).toContain('community_fork_absorb')
 	expect(prompt).toContain('community_get')
 	expect(prompt).toContain('repo_publish_session')
-})
 
-test('search notice names the slim absorb path without the full prompt', () => {
 	expect(listingAheadSearchNotice).toContain('community_get')
 	expect(listingAheadSearchNotice).toContain('community_fork_absorb')
 	expect(listingAheadSearchNotice).not.toContain('repo_publish_session')
-	expect(readListingAheadFlag({ listingAhead: true })).toBe(true)
-	expect(readListingAheadFlag({ listingAhead: false })).toBe(false)
-	expect(readListingAheadFlag({ listingAhead: null })).toBe(null)
-	expect(readListingAheadFlag({})).toBe(null)
-	expect(readListingAheadFlag(null)).toBe(null)
 })

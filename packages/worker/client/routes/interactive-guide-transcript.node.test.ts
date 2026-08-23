@@ -11,7 +11,7 @@ const sampleMemory = {
 	summary: 'kody-bot is the favorite bot to watch.',
 }
 
-test('search and execute text returns memories as one-liners, not structured JSON', () => {
+test('homepage search/execute returns keep memories as one-liners, not structured JSON', () => {
 	const search = searchTextReturn({
 		conversationId: 'conv-1',
 		body: '# Search results\n\n1. **secret** `githubAccessToken`',
@@ -35,9 +35,7 @@ test('search and execute text returns memories as one-liners, not structured JSO
 	)
 	expect(execute).not.toContain('"surfaced"')
 	expect(execute).not.toContain(sampleMemory.id)
-})
 
-test('homepage factory-loop tool results do not dump memory structured content', () => {
 	const toolResults = howKodyWorksTranscriptActs.flatMap((act) =>
 		act.lines.flatMap((line) =>
 			line.role === 'tools' ? line.tools.map((tool) => tool.result) : [],
