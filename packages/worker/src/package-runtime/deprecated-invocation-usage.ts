@@ -22,6 +22,11 @@ export type DeprecatedInvocationUsage = {
 
 const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 
+type InvocationExpressionNode = {
+	type?: string
+	expression?: InvocationExpressionNode
+}
+
 function collectDeprecatedPackagesMemberKinds(
 	source: string,
 ): Set<DeprecatedInvocationUsageKind> {
@@ -49,9 +54,23 @@ function collectDeprecatedPackagesMemberKinds(
 				object?: { type?: string; name?: unknown }
 				property?: { type?: string; name?: unknown }
 			}
-			arguments?: Array<{ type?: string }>
+			arguments?: Array<InvocationExpressionNode>
 			object?: { type?: string; name?: unknown }
 			property?: { type?: string; name?: unknown }
+		}
+		let unwrappedFirstArgument = typedNode.arguments?.[0]
+		while (
+			unwrappedFirstArgument &&
+			[
+				'ParenthesizedExpression',
+				'TSAsExpression',
+				'TSNonNullExpression',
+				'TSSatisfiesExpression',
+				'TSTypeAssertion',
+				'TypeCastExpression',
+			].includes(unwrappedFirstArgument.type ?? '')
+		) {
+			unwrappedFirstArgument = unwrappedFirstArgument.expression
 		}
 		if (
 			(typedNode.type === 'CallExpression' ||
@@ -63,7 +82,7 @@ function collectDeprecatedPackagesMemberKinds(
 			typedNode.callee.object.name === 'packages' &&
 			typedNode.callee.property?.type === 'Identifier' &&
 			typedNode.callee.property.name === 'invoke' &&
-			typedNode.arguments?.[0]?.type === 'ObjectExpression'
+			unwrappedFirstArgument?.type === 'ObjectExpression'
 		) {
 			kinds.add('packages.invoke-object')
 		}

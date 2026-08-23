@@ -929,6 +929,15 @@ test('runRepoChecks validates static kody package import declarations across mis
 					'export const ready: HelperConfig | unknown = helper',
 				].join('\n'),
 			],
+			[
+				'src/asserted.ts',
+				[
+					"import { packages } from 'kody:runtime'",
+					'export async function run() {',
+					"\treturn packages.invoke(({ kodyId: 'github', exportName: './request' }) as unknown as string)",
+					'}',
+				].join('\n'),
+			],
 		]),
 	)
 	expect(declaredImports.ok).toBe(true)
@@ -1465,6 +1474,9 @@ test('runRepoChecks rejects object-only packages.invoke with the permanent repai
 	expect(
 		result.results.find((check) => check.kind === 'lint')?.message,
 	).toContain('0006-invoke-object-to-specifier')
+	expect(
+		result.results.find((check) => check.kind === 'lint')?.message,
+	).toContain('src/asserted.ts')
 })
 
 test('runRepoChecks fails ambient storage imports in package code with the packageStorage() remedy', async () => {

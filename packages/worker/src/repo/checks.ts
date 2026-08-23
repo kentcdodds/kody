@@ -329,8 +329,8 @@ type KodyPackagesRuntime = {
    * The only dynamic invocation primitive. Always contract-checks the current
    * published package export before invoking; a failing contract rejects with
    * "packages.invoke contract check failed: ...". Key-less calls are
-   * lean/ephemeral; pass idempotencyKey only for exactly-once semantics. Prefer
-   * a kody:@scope/package[/export] specifier is required.
+   * lean/ephemeral; pass idempotencyKey only for exactly-once semantics.
+   * A kody:@scope/package[/export] specifier is required.
    */
   invoke(
     specifier: KodyPackageSpecifier,

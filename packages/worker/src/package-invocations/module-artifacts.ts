@@ -1,6 +1,7 @@
 import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
+	getSavedPackageByName,
 } from '#worker/package-registry/repo.ts'
 import {
 	loadPackageManifestForSource,
@@ -25,7 +26,7 @@ import {
 } from '#worker/package-runtime/subscription-artifacts.ts'
 import {
 	parseKodyPackageSpecifier,
-	resolveSavedPackageImport,
+	resolvePlatformScopedPackageImport,
 } from '#worker/package-runtime/package-import-resolution.ts'
 import { buildPackageSubscriptionNotFoundMessage } from './subscription-envelope.ts'
 import {
@@ -67,15 +68,31 @@ export async function resolveSavedPackageBySpecifier(input: {
 	specifier: string
 }): Promise<SavedPackageRecord | null> {
 	const parsed = parseKodyPackageSpecifier(input.specifier)
-	return await resolveSavedPackageWithFreshnessCache({
+	const cacheKey = `kody:${parsed.packageName}`
+	const ownPackage = await resolveSavedPackageWithFreshnessCache({
 		userId: input.userId,
-		packageIdOrKodyId: `kody:${parsed.packageName}`,
+		packageIdOrKodyId: cacheKey,
+		load: async () =>
+			await getSavedPackageByName(input.db, {
+				userId: input.userId,
+				name: parsed.packageName,
+			}),
+	})
+	if (ownPackage) return ownPackage
+
+	const platformPackage = await resolvePlatformScopedPackageImport({
+		db: input.db,
+		packageName: parsed.packageName,
+	})
+	if (!platformPackage) return null
+	return await resolveSavedPackageWithFreshnessCache({
+		userId: platformPackage.sourceOwnerUserId,
+		packageIdOrKodyId: cacheKey,
 		load: async () =>
 			(
-				await resolveSavedPackageImport({
+				await resolvePlatformScopedPackageImport({
 					db: input.db,
-					userId: input.userId,
-					specifier: parsed,
+					packageName: parsed.packageName,
 				})
 			)?.row ?? null,
 	})

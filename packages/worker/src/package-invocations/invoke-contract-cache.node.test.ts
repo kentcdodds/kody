@@ -14,6 +14,7 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	getSavedPackageByName: vi.fn(),
+	getPlatformAccountByUsername: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	loadPublishedEntityManifest: vi.fn(),
 	loadPublishedEntitySource: vi.fn(),
@@ -30,6 +31,11 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageByKodyId(...args),
 	getSavedPackageByName: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByName(...args),
+}))
+
+vi.mock('#worker/package-registry/scope-grants.ts', () => ({
+	getPlatformAccountByUsername: (...args: Array<unknown>) =>
+		mockModule.getPlatformAccountByUsername(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -98,14 +104,16 @@ function createFixture(input: {
 	userId: string
 	publishedCommit: string
 	suffix?: string
+	packageName?: string
+	kodyId?: string
 }) {
 	const suffix = input.suffix ?? input.userId
 	const sourceId = `source-${suffix}`
 	const savedPackage = {
 		id: `pkg-${suffix}`,
 		userId: input.userId,
-		name: '@kentcdodds/sentry-triage',
-		kodyId: 'sentry-triage',
+		name: input.packageName ?? '@kentcdodds/sentry-triage',
+		kodyId: input.kodyId ?? 'sentry-triage',
 		description: 'Sentry triage helpers',
 		tags: [],
 		searchText: null,
@@ -132,12 +140,12 @@ function createFixture(input: {
 		updated_at: '2026-07-01T00:00:00.000Z',
 	}
 	const manifestContent = JSON.stringify({
-		name: '@kentcdodds/sentry-triage',
+		name: savedPackage.name,
 		exports: {
 			'./get-issue-state': './src/get-issue-state.ts',
 		},
 		kody: {
-			id: 'sentry-triage',
+			id: savedPackage.kodyId,
 			description: 'Sentry triage helpers',
 		},
 	})
@@ -184,6 +192,17 @@ function seedFixtures(fixturesByUserId: Record<string, Fixture>) {
 				: null
 		},
 	)
+	mockModule.getPlatformAccountByUsername.mockImplementation(
+		async (_db: unknown, username: string) =>
+			username === 'kody'
+				? {
+						id: 1,
+						username: 'kody',
+						email: 'kody@example.com',
+						stableUserId: 'platform-owner',
+					}
+				: null,
+	)
 	mockModule.getEntitySourceById.mockImplementation(
 		async (_db: unknown, sourceId: string) =>
 			Object.values(fixturesByUserId).find(
@@ -223,14 +242,15 @@ function createEnv() {
 	} as Env
 }
 
-async function runContractCheck(input: { userId: string }) {
+async function runContractCheck(input: { userId: string; specifier?: string }) {
 	return await checkPackageInvokeForRuntimeWithPreloads({
 		env: createEnv(),
 		baseUrl: 'https://kody.dev',
 		operationName: 'packages.invoke',
 		userId: input.userId,
 		rawInput: {
-			specifier: 'kody:@kentcdodds/sentry-triage/get-issue-state',
+			specifier:
+				input.specifier ?? 'kody:@kentcdodds/sentry-triage/get-issue-state',
 			options: { params: { issueId: 'issue-1' } },
 		},
 	})
@@ -380,6 +400,42 @@ test('contract-check caches never serve entries across users', async () => {
 	// The second user's check must load its own rows, not reuse user-1's.
 	expect(mockModule.getSavedPackageByName).toHaveBeenCalledTimes(1)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
+})
+
+test('platform package invalidation clears the owner-keyed specifier cache for callers', async () => {
+	const platformFixture = createFixture({
+		userId: 'platform-owner',
+		publishedCommit: 'commit-platform',
+		packageName: '@kody/sentry-triage',
+	})
+	seedFixtures({ 'platform-owner': platformFixture })
+
+	const beforeDelete = await runContractCheck({
+		userId: 'person-caller',
+		specifier: 'kody:@kody/sentry-triage/get-issue-state',
+	})
+	expect(beforeDelete.result.ok).toBe(true)
+	expect(beforeDelete.preloads?.savedPackage.id).toBe(
+		platformFixture.savedPackage.id,
+	)
+
+	seedFixtures({})
+	invalidateInvokeContractFreshness({
+		userId: 'platform-owner',
+		packageIdOrKodyIds: [
+			platformFixture.savedPackage.id,
+			platformFixture.savedPackage.kodyId,
+			`kody:${platformFixture.savedPackage.name}`,
+		],
+		sourceId: platformFixture.source.id,
+	})
+
+	const afterDelete = await runContractCheck({
+		userId: 'person-caller',
+		specifier: 'kody:@kody/sentry-triage/get-issue-state',
+	})
+	expect(afterDelete.result.ok).toBe(false)
+	expect(afterDelete.result.message).toContain('could not be resolved')
 })
 
 test('an artifact rebuild resolves its entry point from the fresh source, not the cached manifest', async () => {
