@@ -4,7 +4,7 @@ import {
 	parsePackageInvokeInput,
 } from './input-parsing.ts'
 
-test('parses scoped package specifiers and export subpaths', () => {
+test('parses and canonicalizes scoped package specifiers and export subpaths', () => {
 	const packageOnly = parsePackageInvokeInput({
 		specifier: 'kody:@kody/google',
 		options: {
@@ -42,12 +42,27 @@ test('parses scoped package specifiers and export subpaths', () => {
 		params: { includePhoto: true },
 	})
 
-	expect(() =>
-		parsePackageInvokeInput({
-			specifier: '@kentcdodds/github',
-			options: { exportName: '.' },
-		}),
-	).toThrow('requires a kody:@owner/package[/export] specifier')
+	const prefixlessPackage = parsePackageInvokeInput({
+		specifier: '@kentcdodds/github',
+		options: { exportName: '.', params: { owner: 'kentcdodds' } },
+	})
+	expect(prefixlessPackage).toMatchObject({
+		specifier: 'kody:@kentcdodds/github',
+		packageName: '@kentcdodds/github',
+		exportName: '.',
+		params: { owner: 'kentcdodds' },
+	})
+
+	const prefixlessExport = parsePackageInvokeInput({
+		specifier: '@kentcdodds/github/request',
+		options: { exportName: 'ignored', params: { path: '/user' } },
+	})
+	expect(prefixlessExport).toMatchObject({
+		specifier: 'kody:@kentcdodds/github/request',
+		packageName: '@kentcdodds/github',
+		exportName: 'request',
+		params: { path: '/user' },
+	})
 })
 
 test('validates specifier options and requires an export for package-only specifiers', () => {
@@ -70,5 +85,7 @@ test('validates specifier options and requires an export for package-only specif
 			specifier: 'google',
 			options: { exportName: 'profile' },
 		}),
-	).toThrow('requires a kody:@owner/package[/export] specifier')
+	).toThrow(
+		'requires a kody:@owner/package[/export] or @owner/package[/export] specifier',
+	)
 })
