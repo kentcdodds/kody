@@ -208,16 +208,19 @@ export function createAuthProviderStartHandler(env: Env) {
 			const inviteCode = normalizeInviteCode(url.searchParams.get('inviteCode'))
 			const { session } = await readAuthSessionResult(request)
 
+			// Always consume the JSON start body. `request.clone().json()` tees
+			// it and leaves the original unread; workerd can then terminate
+			// the isolate ("Network connection lost"), and wrangler's
+			// ProxyController treats that as a fatal `wrangler dev` exit
+			// (workers-sdk#14926). Signed-in Connect-* from /account posts
+			// the same honeypot payload as signed-out Continue-with-*, so
+			// skipping the read here still leaked the unread body after
+			// oauth_connection_linked.
+			const body = (await request.json().catch(() => ({}))) as Record<
+				string,
+				unknown
+			>
 			if (!session) {
-				// Read this request once. `request.clone().json()` tees the
-				// body and leaves the original unread; workerd can then
-				// terminate the isolate ("Network connection lost"), and
-				// wrangler's ProxyController treats that as a fatal
-				// `wrangler dev` exit (workers-sdk#14926).
-				const body = (await request.json().catch(() => ({}))) as Record<
-					string,
-					unknown
-				>
 				const protection = await verifyPublicFormProtection({
 					env,
 					request,
