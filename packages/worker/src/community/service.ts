@@ -481,6 +481,43 @@ async function restoreReleasedCommunityPackageUrl(input: {
 	}
 }
 
+async function restoreCommunityListingAfterPublishFailure(input: {
+	env: Env
+	ownerUserId: string
+	listingId: string
+	existingListing: CommunityListingRecord | null
+}) {
+	try {
+		if (input.existingListing) {
+			await updateCommunityListing(input.env.APP_DB, {
+				listingId: input.listingId,
+				ownerUserId: input.ownerUserId,
+				sourceId: input.existingListing.sourceId,
+				kodyId: input.existingListing.kodyId,
+				name: input.existingListing.name,
+				description: input.existingListing.description,
+				tagsJson: JSON.stringify(input.existingListing.tags),
+				category: input.existingListing.category,
+				searchText: input.existingListing.searchText,
+				readmeContent: input.existingListing.readmeContent,
+				license: input.existingListing.license,
+				pinnedCommit: input.existingListing.pinnedCommit,
+				publishedAt: input.existingListing.publishedAt,
+			})
+		} else {
+			await deleteCommunityListing(input.env.APP_DB, {
+				listingId: input.listingId,
+				ownerUserId: input.ownerUserId,
+			})
+		}
+	} catch (revertError) {
+		console.error(
+			'Failed to revert community listing after publish failure:',
+			revertError,
+		)
+	}
+}
+
 export async function publishCommunityListing(input: {
 	env: Env
 	baseUrl: string
@@ -571,6 +608,18 @@ export async function publishCommunityListing(input: {
 		)
 	}
 
+	const platformOwner = await isPlatformAccountStableUserId(
+		input.env.APP_DB,
+		input.userId,
+	)
+	const listingId = existingListing?.id ?? crypto.randomUUID()
+	const previousSnapshot =
+		platformOwner && existingListing
+			? await readCommunitySnapshot(
+					input.env.BUNDLE_ARTIFACTS_KV,
+					existingListing.id,
+				)
+			: null
 	const releasedListingId = await releaseContestedCommunityPackageUrl({
 		env: input.env,
 		ownerUserId: input.userId,
@@ -579,7 +628,6 @@ export async function publishCommunityListing(input: {
 	})
 
 	const now = new Date().toISOString()
-	const listingId = existingListing?.id ?? crypto.randomUUID()
 	const tagsJson = JSON.stringify(savedPackage.tags)
 	const category = resolveCommunityListingCategory({
 		category: loadedSource.manifest.kody.category,
@@ -661,36 +709,56 @@ export async function publishCommunityListing(input: {
 		try {
 			await writeCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, snapshot)
 		} catch (snapshotError) {
-			try {
-				if (existingListing) {
-					await updateCommunityListing(input.env.APP_DB, {
-						listingId,
-						ownerUserId: input.userId,
-						sourceId: existingListing.sourceId,
-						kodyId: existingListing.kodyId,
-						name: existingListing.name,
-						description: existingListing.description,
-						tagsJson: JSON.stringify(existingListing.tags),
-						category: existingListing.category,
-						searchText: existingListing.searchText,
-						readmeContent: existingListing.readmeContent,
-						license: existingListing.license,
-						pinnedCommit: existingListing.pinnedCommit,
-						publishedAt: existingListing.publishedAt,
-					})
-				} else {
-					await deleteCommunityListing(input.env.APP_DB, {
-						listingId,
-						ownerUserId: input.userId,
-					})
-				}
-			} catch (revertError) {
-				console.error(
-					'Failed to revert community listing after snapshot failure:',
-					revertError,
-				)
-			}
+			await restoreCommunityListingAfterPublishFailure({
+				env: input.env,
+				ownerUserId: input.userId,
+				listingId,
+				existingListing,
+			})
 			throw snapshotError
+		}
+		if (platformOwner) {
+			try {
+				const trusted = await setCommunityListingTrustedCommit(
+					input.env.APP_DB,
+					{
+						listingId,
+						trustedCommit: publishedCommit,
+						trustedByUserId: input.actorUserId ?? input.userId,
+					},
+				)
+				if (!trusted) {
+					throw new Error(
+						`Community listing "${listingId}" could not be marked trusted.`,
+					)
+				}
+			} catch (trustError) {
+				await restoreCommunityListingAfterPublishFailure({
+					env: input.env,
+					ownerUserId: input.userId,
+					listingId,
+					existingListing,
+				})
+				try {
+					if (previousSnapshot) {
+						await writeCommunitySnapshot(
+							input.env.BUNDLE_ARTIFACTS_KV,
+							previousSnapshot,
+						)
+					} else {
+						await deleteCommunitySnapshot(
+							input.env.BUNDLE_ARTIFACTS_KV,
+							listingId,
+						)
+					}
+				} catch (revertError) {
+					console.error(
+						'Failed to revert community snapshot after trust failure:',
+						revertError,
+					)
+				}
+				throw trustError
+			}
 		}
 	} catch (publishError) {
 		await restoreReleasedCommunityPackageUrl({
@@ -699,13 +767,6 @@ export async function publishCommunityListing(input: {
 			listingId: releasedListingId,
 		})
 		throw publishError
-	}
-	if (await isPlatformAccountStableUserId(input.env.APP_DB, input.userId)) {
-		await setCommunityListingTrustedCommit(input.env.APP_DB, {
-			listingId,
-			trustedCommit: publishedCommit,
-			trustedByUserId: input.actorUserId ?? input.userId,
-		})
 	}
 	if (existingListing) {
 		// Drop all cached icon revisions (including a reused commit id) so the

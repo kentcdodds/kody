@@ -483,6 +483,106 @@ test('publishCommunityListing pins platform trust on publish and republish but n
 	expect(mockModule.setCommunityListingTrustedCommit).toHaveBeenCalledTimes(2)
 })
 
+test('publishCommunityListing restores listing snapshots when platform trust pinning fails', async () => {
+	mockModule.getCommunityBan.mockResolvedValue(null)
+	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
+	mockModule.insertCommunityListing.mockResolvedValue(undefined)
+	mockModule.writeCommunitySnapshot.mockResolvedValue(undefined)
+	mockModule.isPlatformAccountStableUserId.mockResolvedValue(true)
+	mockModule.setCommunityListingTrustedCommit.mockRejectedValue(
+		new Error('trust unavailable'),
+	)
+	mockModule.deleteCommunityListing.mockResolvedValue(true)
+	mockModule.deleteCommunitySnapshot.mockResolvedValue(undefined)
+
+	await expect(
+		publishCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'platform-owner-1',
+			packageId: 'package-1',
+		}),
+	).rejects.toThrow('trust unavailable')
+
+	const firstListingId = mockModule.insertCommunityListing.mock.calls[0]?.[1]
+		?.id as string
+	expect(mockModule.deleteCommunityListing).toHaveBeenCalledWith(
+		expect.anything(),
+		{
+			listingId: firstListingId,
+			ownerUserId: 'platform-owner-1',
+		},
+	)
+	expect(mockModule.deleteCommunitySnapshot).toHaveBeenCalledWith(
+		expect.anything(),
+		firstListingId,
+	)
+	expect(mockModule.insertCommunityActivityEvent).not.toHaveBeenCalled()
+
+	mockModule.updateCommunityListing.mockClear()
+	mockModule.writeCommunitySnapshot.mockClear()
+	mockModule.deleteCommunityListing.mockClear()
+	mockModule.deleteCommunitySnapshot.mockClear()
+	const existingListing = sampleListing({
+		ownerUserId: 'platform-owner-1',
+		trustedCommit: 'commit-1',
+		trusted: true,
+		featuredAt: '2026-07-02T00:00:00.000Z',
+		featured: true,
+	})
+	const previousSnapshot = {
+		version: 1 as const,
+		listingId: existingListing.id,
+		pinnedCommit: existingListing.pinnedCommit,
+		files: {
+			'package.json': '{"name":"@owner/discord-gateway"}',
+			'README.md': existingListing.readmeContent ?? '',
+		},
+		createdAt: existingListing.publishedAt,
+	}
+	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
+		existingListing,
+	)
+	mockModule.readCommunitySnapshot.mockResolvedValue(previousSnapshot)
+	mockModule.updateCommunityListing.mockResolvedValue(true)
+	const republishedSource = validPublishSource()
+	republishedSource.source.published_commit = 'commit-2'
+	mockModule.loadPackageSourceBySourceId.mockResolvedValue(republishedSource)
+
+	await expect(
+		publishCommunityListing({
+			env: createEnv(),
+			baseUrl: 'https://heykody.dev',
+			userId: 'platform-owner-1',
+			actorUserId: 'operator-1',
+			packageId: 'package-1',
+		}),
+	).rejects.toThrow('trust unavailable')
+
+	expect(mockModule.readCommunitySnapshot).toHaveBeenCalledWith(
+		expect.anything(),
+		existingListing.id,
+	)
+	expect(mockModule.updateCommunityListing).toHaveBeenLastCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			listingId: existingListing.id,
+			ownerUserId: 'platform-owner-1',
+			pinnedCommit: 'commit-1',
+			publishedAt: existingListing.publishedAt,
+		}),
+	)
+	expect(mockModule.writeCommunitySnapshot).toHaveBeenLastCalledWith(
+		expect.anything(),
+		previousSnapshot,
+	)
+	expect(mockModule.deleteCommunityListing).not.toHaveBeenCalled()
+	expect(mockModule.deleteCommunitySnapshot).not.toHaveBeenCalled()
+	expect(mockModule.insertCommunityActivityEvent).not.toHaveBeenCalled()
+})
+
 test('publishCommunityListing rolls back D1 when KV snapshot write fails', async () => {
 	mockModule.getCommunityBan.mockResolvedValue(null)
 	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
