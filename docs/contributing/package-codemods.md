@@ -223,9 +223,9 @@ API to an explicit owner-scoped specifier:
   The owner scope comes from the invoking package's `package.json.name`, which
   preserves the old API's caller-owned lookup.
 - Handles direct and optional `packages?.invoke` calls and preserves option
-  expressions and keyless/exactly-once behavior. Calls with only `kodyId`
-  become one-argument specifier calls; calls may omit `exportName` while
-  retaining any supported options.
+  expressions and keyless/exactly-once behavior. Calls with only `kodyId` become
+  one-argument specifier calls; calls may omit `exportName` while retaining any
+  supported options.
 - Rewrites complete examples in JavaScript/TypeScript Markdown fences and inline
   code spans. Untyped/unsupported fences, partial snippets, and matching prose
   remain unchanged with `needsManual`.

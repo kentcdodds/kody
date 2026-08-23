@@ -569,10 +569,7 @@ function transform(
 	const changedPaths: Array<string> = []
 	const needsManual: Array<PackageCodemodFinding> = []
 	for (const classification of classifications) {
-		if (
-			platformScope &&
-			!markdownFilePattern.test(classification.path)
-		) {
+		if (platformScope && !markdownFilePattern.test(classification.path)) {
 			needsManual.push({
 				path: classification.path,
 				message: platformScopeMessage,
