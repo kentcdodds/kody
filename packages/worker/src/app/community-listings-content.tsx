@@ -398,43 +398,6 @@ export function CommunityListingsContent(
 	)
 }
 
-export function renderCommunityViewerInstallBadge(input: {
-	listing: PublicCommunityListing
-	variant: 'card' | 'detail'
-}) {
-	const install = input.listing.viewerInstall
-	if (!install) return null
-	if (install.listingAhead && install.listingAheadPrompt) {
-		return (
-			<ForkOutdatedCopyButton
-				prompt={install.listingAheadPrompt}
-				testId={
-					input.variant === 'card'
-						? `community-listing-ahead-${input.listing.id}`
-						: 'community-detail-listing-ahead-badge'
-				}
-			/>
-		)
-	}
-	return (
-		<span
-			data-testid={
-				input.variant === 'card'
-					? `community-listing-viewer-install-${input.listing.id}`
-					: 'community-detail-viewer-install-badge'
-			}
-			title={
-				install.status === 'installed'
-					? `Installed in your account as ${install.targetName}.`
-					: `Forked in your account as ${install.targetName}; still needs adaptation.`
-			}
-			mix={css(communityBadgePillCss)}
-		>
-			{install.status === 'installed' ? 'Installed' : 'Forked'}
-		</span>
-	)
-}
-
 export async function renderCommunityListingsContentHtml(
 	props: CommunityListingsContentProps,
 ) {

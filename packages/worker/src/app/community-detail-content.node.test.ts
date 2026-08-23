@@ -9,6 +9,7 @@ const sampleListing = {
 	description: 'Triage GitHub issues.',
 	iconUrl: '/community/listing-1/icon/abc1234567890',
 	tags: ['github'],
+	category: 'integrations',
 	readmeContent: '# README',
 	license: 'MIT',
 	pinnedCommit: 'abc1234567890',
