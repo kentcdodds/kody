@@ -89,7 +89,7 @@ test('selects zero-auth examples in the known production order', () => {
 				},
 			},
 		]),
-	).toBe('@kody/local-conditions')
+	).toBe('@me/local-conditions')
 	expect(
 		onboardingExampleInstallFingerprint([
 			{

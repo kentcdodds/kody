@@ -137,14 +137,29 @@ export function normalizeOnboardingMcpServerUrl(url: string): string {
 	}
 }
 
+function onboardingMcpServerHostsMatch(left: string, right: string): boolean {
+	try {
+		return new URL(left).hostname === new URL(right).hostname
+	} catch {
+		return false
+	}
+}
+
 export function matchOnboardingFeaturedMcpServer(
 	setting: { name: string; url: string },
 	option: Pick<OnboardingFeaturedMcpServerOption, 'name' | 'url'>,
 ): boolean {
-	return (
-		setting.name === option.name ||
+	if (
 		normalizeOnboardingMcpServerUrl(setting.url) ===
-			normalizeOnboardingMcpServerUrl(option.url)
+		normalizeOnboardingMcpServerUrl(option.url)
+	) {
+		return true
+	}
+	// Name alone is not enough: a custom server named "linear" with some
+	// other host must stay on the custom list, not overlay the official card.
+	return (
+		setting.name === option.name &&
+		onboardingMcpServerHostsMatch(setting.url, option.url)
 	)
 }
 
@@ -333,7 +348,19 @@ export function hasConnectedOnboardingCustomMcpServer(
 export function hasPendingOnboardingCustomMcpAuth(
 	servers: Array<OnboardingCustomMcpServer>,
 ): boolean {
-	return servers.some((server) => !server.connected)
+	return servers.some((server) => {
+		if (server.connected) return false
+		if (server.authUrl != null) return true
+		switch (server.state) {
+			case 'authenticating':
+			case 'connecting':
+			case 'connected':
+			case 'discovering':
+				return true
+			default:
+				return false
+		}
+	})
 }
 
 export function hasConnectedOnboardingWorkspaceMcp(input: {

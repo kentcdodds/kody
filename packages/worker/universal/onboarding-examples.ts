@@ -56,11 +56,10 @@ export function hasInstalledOnboardingExample(
 export function firstInstalledOnboardingExampleName(
 	listings: Array<OnboardingFeaturedListing>,
 ): string | null {
-	return (
-		selectOnboardingExampleListings(listings).find(
-			(listing) => listing.viewerInstall != null,
-		)?.name ?? null
+	const installed = selectOnboardingExampleListings(listings).find(
+		(listing) => listing.viewerInstall != null,
 	)
+	return installed?.viewerInstall?.targetName ?? installed?.name ?? null
 }
 
 /** Poll skip key for Just-try-Kody installs. */
