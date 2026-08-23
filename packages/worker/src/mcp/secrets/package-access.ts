@@ -63,7 +63,8 @@ export function isPackageSecretAccessUnavailableError(error: unknown) {
  * Resolve the package whose runtime is asking for a user secret.
  *
  * The caller's own copy always wins. Live official platform packages
- * (decision 0014) are not owned by the caller, so a miss falls back to
+ * (execute-live half of decision 0014; execute-only for saved person
+ * packages in 0035) are not owned by the caller, so a miss falls back to
  * {@link findPlatformPackageByRef} — the same widening search already uses
  * for entity detail. Hidden and private platform packages stay unresolvable.
  */
