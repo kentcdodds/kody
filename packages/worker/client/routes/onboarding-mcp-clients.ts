@@ -201,7 +201,7 @@ export function buildCursorMcpMergeCommand(mcpServerUrl: string) {
 		"  throw new Error('~/.cursor/mcp.json mcpServers must be an object')",
 		'}',
 		'config.mcpServers = { ...servers, kody: { url } }',
-		"fs.mkdirSync(path.dirname(file), { recursive: true })",
+		'fs.mkdirSync(path.dirname(file), { recursive: true })',
 		"fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\\n')",
 		'EOF',
 	].join('\n')

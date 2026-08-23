@@ -11,8 +11,8 @@ People following a host-specific walkthrough can stay on this page or use Get
 started (`/onboarding`).
 
 The in-app Get started page (`/onboarding`) has tabs with client-specific
-instructions. Step 1 shows a copyable Automatic install command first. Deeplinks,
-the MCP URL, and JSON/TOML merge stay under Manual.
+instructions. Step 1 shows a copyable Automatic install command first.
+Deeplinks, the MCP URL, and JSON/TOML merge stay under Manual.
 
 ## Add the MCP server
 

@@ -193,8 +193,9 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						</a>
 						. In a managed workspace, ask an admin to enable access if the
 						setting or Plugins UI is missing. Then open{' '}
-						<strong>Settings → Plugins → Browse plugins → Create app</strong> and
-						paste the MCP URL as the server URL. Complete OAuth when prompted.
+						<strong>Settings → Plugins → Browse plugins → Create app</strong>{' '}
+						and paste the MCP URL as the server URL. Complete OAuth when
+						prompted.
 					</p>
 					<AutomaticPath>
 						<CopyCard
@@ -474,8 +475,8 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 					<ManualPath>
 						<p>
 							Servers you already configured for Copilot CLI (or in a
-							repository) are also available in the app. You can merge this
-							into <code>~/.copilot/mcp-config.json</code> instead:
+							repository) are also available in the app. You can merge this into{' '}
+							<code>~/.copilot/mcp-config.json</code> instead:
 						</p>
 						<CopyCard
 							label="~/.copilot/mcp-config.json"
