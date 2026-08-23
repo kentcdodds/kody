@@ -277,7 +277,9 @@ Engine datasets. Each data point contains only:
 
 No source, user id, package id, export name, specifier, parameters, or other raw
 identifier is recorded. Operators can inspect adoption by surface through the
-Cloudflare Analytics Engine SQL API/dashboard:
+Cloudflare Analytics Engine SQL API/dashboard. Use exact RFC 3339 timestamps
+captured after production deploy; the end must be exactly one hour after the
+start:
 
 ```sql
 SELECT
@@ -285,19 +287,27 @@ SELECT
 	blob2 AS runtime_surface,
 	SUM(_sample_interval) AS calls
 FROM kody_package_invoke_events
-WHERE timestamp >= NOW() - INTERVAL '30' DAY
+WHERE timestamp >= '<soak-start>'
+	AND timestamp < '<soak-end>'
 GROUP BY call_shape, runtime_surface
 ORDER BY call_shape, runtime_surface
 ```
 
-The shim-removal gate uses this zero-legacy query across the full agreed soak;
-`legacy_calls` must be `0` (or `NULL` when the dataset has no rows):
+The shim-removal gate uses the same exact one-hour window. `string_first_calls`
+must be greater than zero, proving telemetry is live, and `legacy_calls` must be
+zero:
 
 ```sql
-SELECT SUM(_sample_interval) AS legacy_calls
+SELECT
+	SUM(
+		CASE WHEN blob1 = 'string_first' THEN _sample_interval ELSE 0 END
+	) AS string_first_calls,
+	SUM(
+		CASE WHEN blob1 = 'legacy_object' THEN _sample_interval ELSE 0 END
+	) AS legacy_calls
 FROM kody_package_invoke_events
-WHERE timestamp >= NOW() - INTERVAL '30' DAY
-	AND blob1 = 'legacy_object'
+WHERE timestamp >= '<soak-start>'
+	AND timestamp < '<soak-end>'
 ```
 
 **Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
