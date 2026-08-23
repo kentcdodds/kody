@@ -12,6 +12,11 @@ import {
 	loadReachableStaticKodyDependencyEdges,
 } from '#worker/package-registry/static-dependency-cycles.ts'
 import {
+	findPersonPackagePlatformReference,
+	formatPersonPackagePlatformDependencyMessage,
+} from '#worker/package-registry/platform-package-policy.ts'
+import { isPlatformAccountStableUserId } from '#worker/package-registry/scope-grants.ts'
+import {
 	assertKodyDescriptionLength,
 	listKodyPackageDependencyNames,
 	type AuthoredPackageJson,
@@ -1258,6 +1263,32 @@ export async function runRepoChecks(input: {
 
 	const packageJson = snapshot.read('package.json')
 	const declaredNpmDependencies = parseDeclaredNpmDependencies(packageJson)
+	if (input.env?.APP_DB && input.userId) {
+		const publisherIsPlatform = await isPlatformAccountStableUserId(
+			input.env.APP_DB,
+			input.userId,
+		)
+		if (!publisherIsPlatform) {
+			const platformReference = await findPersonPackagePlatformReference({
+				db: input.env.APP_DB,
+				manifestDependencies: manifest.kody.dependencies,
+				sourceFiles,
+			})
+			if (platformReference) {
+				results.push({
+					kind: 'dependencies',
+					ok: false,
+					message:
+						formatPersonPackagePlatformDependencyMessage(platformReference),
+				})
+				return toRepoCheckRunResult({
+					results,
+					manifest,
+					sourceFiles,
+				})
+			}
+		}
+	}
 	const staticKodyDependencyCheck =
 		validateStaticKodyPackageDependencyDeclarations({
 			manifest,

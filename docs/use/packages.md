@@ -140,16 +140,21 @@ exhaustive.
   package's name is known when the code is written. Static imports are typed,
   publish-verified, dependency-graph-visible, and add zero per-call platform
   cost.
-- **Platform (built-in) scopes resolve live without forking.** When a scope's
-  username belongs to a platform account (for example `@kody`), a static import
-  such as `import gh from 'kody:@kody/github/issues'` resolves the platform
-  account's current published version even though you do not own a copy. The
-  code runs in **your** runtime against your secrets and grants; your own copy
-  of the same name always wins when you fork to customize. Platform package code
-  cannot use `packageStorage()` in your account, and dynamic
-  `import("kody:@kody/…")` is unsupported — use the static form. Platform
-  packages appear in `search` results alongside your own (marked with their
-  platform scope), so agents discover them without knowing the name in advance.
+- **Platform (built-in) scopes are execute-only.** When a scope's username
+  belongs to a platform account (for example `@kody`), ad hoc `execute` may
+  statically import or `packages.invoke` the current published version — for
+  example `import gh from 'kody:@kody/github/issues'`. A static import runs in
+  **your** execute runtime against your secrets and grants. `packages.invoke`
+  enters the target package runtime (still your secrets). **Saved person-owned
+  packages must not depend on a platform scope.** Official `@kody` packages may
+  still compose with each other. Publish checks reject `kody:@kody/…` static
+  imports, `kody.dependencies` entries, and `packages.invoke('kody:@kody/…')` in
+  person-owned package source. Fork the official package into your scope
+  (`community_fork`) and depend on that copy. Platform package code cannot use
+  `packageStorage()` in your account, and dynamic `import("kody:@kody/…")` is
+  unsupported. Platform packages appear in `search` results (marked with their
+  platform scope) so agents discover them for execute; the detail text says to
+  fork before using them in a saved person-account package.
 - Static `kody:@...` imports in saved package code are bundled into published
   runtime artifacts as snapshots of the imported package's published bundle.
   Republishing the imported package does not change already-published
@@ -267,10 +272,12 @@ object-only JavaScript and TypeScript call sites; the permanent
 
 Package runtime contexts, authenticated ad hoc MCP `execute` calls, and package
 job runtimes can call `packages.invoke`. Person-scoped targets resolve only from
-packages owned by the current authenticated user; public platform-scoped targets
-resolve live from the named platform account. Package code does not need to mint
-or pass package-invocation bearer tokens. Nested package invocations are
-depth-limited to prevent runaway loops.
+packages owned by the current authenticated user. Public platform-scoped targets
+resolve live only from **ad hoc execute** (and from official platform packages
+composing with each other). A person-owned package, job, or app that invokes
+`kody:@kody/…` fails closed: fork the official package into your scope first.
+Package code does not need to mint or pass package-invocation bearer tokens.
+Nested package invocations are depth-limited to prevent runaway loops.
 
 External trusted clients that must call package exports over HTTP use package
 invocation tokens instead. Before sending a user to create one, agents should
@@ -286,11 +293,11 @@ reaches the declaring package's own storage bucket (see
 platform (built-in) dependencies receive no `packageStorage()` grant and the
 call fails closed inside live platform code. `{{secret:...}}` placeholders for
 user-scope secrets still resolve at the fetch gateway under the calling user —
-so secret-backed packages such as `github` work fully via plain static import.
-Use keyless `packages.invoke` from execute or a package job runtime when you
-need to enter a saved package as that package so it receives `packageContext`,
-package-owned storage, package-mounted secrets (`kody.secretMounts`), and its
-own `packages` helper.
+so official helpers such as `@kody/github` work from execute via plain static
+import. Saved person-owned packages cannot take that shortcut; they must fork
+first. Use keyless `packages.invoke` from execute when you need to enter an
+official package as that package so it receives `packageContext`. Use
+`packages.invoke` from a package job runtime only for **your** packages.
 
 **Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
 dynamic `import("kody:@...")` are not available. Package publish checks reject

@@ -25,10 +25,8 @@ import {
 	getSavedPackageByKodyId,
 	getSavedPackageByName,
 } from '#worker/package-registry/repo.ts'
-import {
-	isPlatformAccountStableUserId,
-	listPlatformAccountUsernames,
-} from '#worker/package-registry/scope-grants.ts'
+import { rewriteForkedPackageSelfReferences } from '#worker/package-registry/platform-package-policy.ts'
+import { isPlatformAccountStableUserId } from '#worker/package-registry/scope-grants.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
 import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
@@ -1386,22 +1384,20 @@ export async function prepareCommunityFork(
 	} catch (error) {
 		throw new CommunityActionError(getErrorMessage(error))
 	}
-	const [existingByKody, existingByName, existingForks, platformUsernames] =
-		await Promise.all([
-			getSavedPackageByKodyId(input.env.APP_DB, {
-				userId: input.userId,
-				kodyId: targetKodyId,
-			}),
-			getSavedPackageByName(input.env.APP_DB, {
-				userId: input.userId,
-				name: rewrittenManifest.targetName,
-			}),
-			listCommunityForksByListingAndUser(input.env.APP_DB, {
-				listingId: input.listingId,
-				userId: input.userId,
-			}),
-			listPlatformAccountUsernames(input.env.APP_DB),
-		])
+	const [existingByKody, existingByName, existingForks] = await Promise.all([
+		getSavedPackageByKodyId(input.env.APP_DB, {
+			userId: input.userId,
+			kodyId: targetKodyId,
+		}),
+		getSavedPackageByName(input.env.APP_DB, {
+			userId: input.userId,
+			name: rewrittenManifest.targetName,
+		}),
+		listCommunityForksByListingAndUser(input.env.APP_DB, {
+			listingId: input.listingId,
+			userId: input.userId,
+		}),
+	])
 	if (existingByKody || existingByName) {
 		throw new CommunityActionError(
 			`You already have a saved package with kody id "${targetKodyId}". Pass a different kody_id to fork this listing.`,
@@ -1421,16 +1417,17 @@ export async function prepareCommunityFork(
 		)
 	}
 
-	const rewrittenFiles = {
-		...snapshot.files,
-		'package.json': rewrittenManifest.content,
-	}
+	const rewrittenFiles = rewriteForkedPackageSelfReferences({
+		files: {
+			...snapshot.files,
+			'package.json': rewrittenManifest.content,
+		},
+		originPackageName: listing.name,
+		nextPackageName: rewrittenManifest.targetName,
+	})
 	const crossScopeReferences = scanCrossScopeReferences({
 		files: rewrittenFiles,
 		expectedPackageScope: input.expectedPackageScope,
-		// Platform scopes (e.g. @kody) resolve live for every caller; forks
-		// keep those references instead of rewriting them.
-		allowedForeignScopes: platformUsernames,
 	})
 
 	return {

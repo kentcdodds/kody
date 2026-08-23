@@ -1,4 +1,16 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { normalizeStableUserId, resolveUserStableId } from '#worker/user-id.ts'
+
+function isUsersPlatformSchemaUnavailable(error: unknown) {
+	const message = getErrorMessage(error)
+	return (
+		message.includes('no such column: account_type') ||
+		message.includes('no such table: users') ||
+		// Node-unit D1 allowlist mocks reject unknown SQL instead of applying
+		// migrations. Same fail-closed outcome as an unmigrated `users` table.
+		message.includes('Unsupported first query')
+	)
+}
 
 /**
  * Package scope grants: explicit rows that let a person account act inside a
@@ -32,46 +44,57 @@ export type PlatformAccountRow = {
 }
 
 /**
- * Usernames of every platform account. Platform scopes resolve live in
- * `kody:@scope/...` imports for all callers, so cross-scope policy checks
- * treat them as always-valid references.
+ * Usernames of every platform account. Ad hoc execute may resolve those
+ * scopes live; saved person-account packages must not (decision 0035).
  */
 export async function listPlatformAccountUsernames(
 	db: D1Database,
 ): Promise<Array<string>> {
-	const result = await db
-		.prepare(
-			`SELECT username FROM users WHERE account_type = 'platform' ORDER BY username ASC`,
-		)
-		.all<{ username: string }>()
-	return (result.results ?? []).map((row) => row.username)
+	try {
+		const result = await db
+			.prepare(
+				`SELECT username FROM users WHERE account_type = 'platform' ORDER BY username ASC`,
+			)
+			.all<{ username: string }>()
+		return (result.results ?? []).map((row) => row.username)
+	} catch (error) {
+		// Workers-unit suites often share a `users` table provisioned before
+		// migration 0072. Treat that as "no platform accounts".
+		if (isUsersPlatformSchemaUnavailable(error)) return []
+		throw error
+	}
 }
 
 export async function getPlatformAccountByUsername(
 	db: D1Database,
 	username: string,
 ): Promise<PlatformAccountRow | null> {
-	const row = await db
-		.prepare(
-			`SELECT id, username, email, account_type, stable_user_id
+	try {
+		const row = await db
+			.prepare(
+				`SELECT id, username, email, account_type, stable_user_id
 			FROM users
 			WHERE username = ?
 			LIMIT 1`,
-		)
-		.bind(username)
-		.first<{
-			id: number
-			username: string
-			email: string
-			account_type: string
-			stable_user_id: string
-		}>()
-	if (!row || row.account_type !== 'platform') return null
-	return {
-		id: row.id,
-		username: row.username,
-		email: row.email,
-		stableUserId: resolveUserStableId(row),
+			)
+			.bind(username)
+			.first<{
+				id: number
+				username: string
+				email: string
+				account_type: string
+				stable_user_id: string
+			}>()
+		if (!row || row.account_type !== 'platform') return null
+		return {
+			id: row.id,
+			username: row.username,
+			email: row.email,
+			stableUserId: resolveUserStableId(row),
+		}
+	} catch (error) {
+		if (isUsersPlatformSchemaUnavailable(error)) return null
+		throw error
 	}
 }
 
@@ -81,11 +104,16 @@ export async function isPlatformAccountStableUserId(
 ) {
 	const trimmed = normalizeStableUserId(stableUserId)
 	if (!trimmed) return false
-	const row = await db
-		.prepare(`SELECT account_type FROM users WHERE stable_user_id = ?`)
-		.bind(trimmed)
-		.first<{ account_type: string }>()
-	return row?.account_type === 'platform'
+	try {
+		const row = await db
+			.prepare(`SELECT account_type FROM users WHERE stable_user_id = ?`)
+			.bind(trimmed)
+			.first<{ account_type: string }>()
+		return row?.account_type === 'platform'
+	} catch (error) {
+		if (isUsersPlatformSchemaUnavailable(error)) return false
+		throw error
+	}
 }
 
 export async function hasPackageScopeGrant(

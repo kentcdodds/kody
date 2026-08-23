@@ -132,7 +132,7 @@ import 'kody:@owner/a/y'`,
 	])
 })
 
-test('scanCrossScopeReferences allows platform scopes to remain in forked packages', () => {
+test('scanCrossScopeReferences treats platform scopes as foreign without an allowlist', () => {
 	const files = {
 		'package.json': `{
 	"name": "@jane/pkg",

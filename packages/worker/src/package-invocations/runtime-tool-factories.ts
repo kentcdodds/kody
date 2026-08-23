@@ -114,6 +114,8 @@ function createPackageInvokeTools(input: {
 			operationName: 'packages.invoke',
 			userId: user.userId,
 			rawInput,
+			callerKind: input.callerKind,
+			callingPackageId: packageContext?.packageId ?? null,
 		})
 		throwIfPackageInvokeAborted(signal)
 		if (!check.result.ok || !check.preloads) {

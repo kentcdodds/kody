@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Superseded by [0035](./0035-platform-packages-execute-only.md) for saved
+person-account packages. Ad hoc execute may still resolve platform scopes live
+as described here.
 
 ## Context
 

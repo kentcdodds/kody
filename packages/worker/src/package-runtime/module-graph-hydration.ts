@@ -56,7 +56,7 @@ async function resolveCurrentDynamicPackageArtifact(input: {
 		})
 		throw new Error(
 			platformResolution?.platformScope
-				? `Dynamic import of platform package "${parsed.packageName}" is unsupported. Use a static import (import x from "${input.specifier}") — it resolves live from the platform scope.`
+				? `Dynamic import of platform package "${parsed.packageName}" is unsupported. From ad hoc execute, use a static import (import x from "${input.specifier}"). Saved person-account packages must community_fork the official package into your scope.`
 				: `Dynamic Kody package import "${input.specifier}" could not find saved package "${parsed.packageName}" for this user.`,
 		)
 	}

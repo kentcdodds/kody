@@ -12,9 +12,9 @@ type PlatformAccountRef = {
 
 /**
  * Platform (built-in) packages: packages owned by platform accounts
- * (`users.account_type = 'platform'`), which resolve live in `kody:@scope/…`
- * imports for every caller (decision record 0014). These helpers surface them
- * for discovery; hidden and private packages stay owner-only.
+ * (`users.account_type = 'platform'`). Ad hoc execute may resolve them live;
+ * saved person-account packages must fork (decision 0035). These helpers
+ * surface them for discovery; hidden and private packages stay owner-only.
  */
 async function listPlatformAccounts(
 	db: D1Database,

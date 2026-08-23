@@ -4,6 +4,7 @@ import {
 	getPackageAppEntryPath,
 	parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
+import { assertPersonOwnedPackageMayNotRunPlatformDependencies } from '#worker/package-registry/platform-package-policy.ts'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
@@ -1769,6 +1770,12 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		savedPackage: input.savedPackage,
 		loadSourceFiles: input.loadSourceFiles,
 		sourceFiles: input.sourceFiles,
+	})
+	await assertPersonOwnedPackageMayNotRunPlatformDependencies({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: input.savedPackage.id,
+		dependencies: bundled.dependencies ?? [],
 	})
 	const mainModule = 'package-app-entry.js'
 	const { modules: hydratedModules, dynamicDependencyPackageIds } =

@@ -219,8 +219,7 @@ export const packageSearchEntityPlugin = {
 		const vectorEligibleRows = rows.filter((row) => !row.platformScope)
 		// Fail closed in every mode: no userId, and foreign rows never enter
 		// ranking unless the loader explicitly marked them as platform
-		// (built-in) scope rows — the one lane that resolves live for every
-		// caller (decision record 0014).
+		// (built-in) scope rows — execute-only live resolution (decision 0035).
 		if (!input.userId) return []
 		if (
 			rows.some(
@@ -438,7 +437,7 @@ export const packageSearchEntityPlugin = {
 			? getPrimaryPackageActionFunction(primaryAction)
 			: null
 		const platformSuffix = match.platformScope
-			? ` This is a platform (built-in) package: the import resolves live from @${match.platformScope} — no fork needed, and it runs in your runtime against your secrets.`
+			? ` This is a platform (built-in) package: ad hoc execute may import or packages.invoke it live from @${match.platformScope}. Saved person-account packages must community_fork it into your scope before depending on it.`
 			: ''
 		const listingAheadSuffix =
 			match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''

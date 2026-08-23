@@ -172,7 +172,7 @@ export type SlimSearchMatch =
 			tags: Array<string>
 			hasApp: boolean
 			hidden: boolean
-			/** Platform (built-in) scope username; import without forking. */
+			/** Platform (built-in) scope username; live for execute and platform-account packages. Person-account saved packages must fork. */
 			platformScope?: string | null
 			hostedUrl: string | null
 			readmeSnippet: {
@@ -286,7 +286,7 @@ export type SearchEntityDetailStructured =
 			tags: Array<string>
 			hasApp: boolean
 			hidden: boolean
-			/** Platform (built-in) scope username; import without forking. */
+			/** Platform (built-in) scope username; live for execute and platform-account packages. Person-account saved packages must fork. */
 			platformScope?: string | null
 			hostedUrl: string | null
 			appEntry: string | null

@@ -7,6 +7,7 @@ import {
 	normalizePackageWorkspacePath,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
+import { throwIfPersonPackagePlatformReference } from '#worker/package-registry/platform-package-policy.ts'
 import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
@@ -97,6 +98,11 @@ type RewriteState = {
 	 * artifacts that later get composed into foreign bundles.
 	 */
 	rootPackageId: string | null
+	/**
+	 * Ad hoc execute and platform-owned package graphs may resolve live
+	 * `@kody/*` imports. Person-owned saved package graphs must not.
+	 */
+	allowPlatformScopes: boolean
 	proxies: Map<string, string>
 	dynamicPackageImports: Map<string, string>
 	packages: LoadedKodyGraphPackages
@@ -186,8 +192,15 @@ async function ensurePackageLoaded(
 		db: state.env.APP_DB,
 		userId: state.userId,
 		specifier: parsed,
+		allowPlatformScopes: state.allowPlatformScopes,
 	})
 	if (!resolution) {
+		if (!state.allowPlatformScopes) {
+			await throwIfPersonPackagePlatformReference({
+				db: state.env.APP_DB,
+				packageName: parsed.packageName,
+			})
+		}
 		throw new Error(
 			`Saved package "${parsed.packageName}" was not found for this user.`,
 		)
@@ -470,6 +483,7 @@ export async function prepareKodyGraphFiles(input: {
 	sourceFiles: Record<string, string>
 	entryPoint: string
 	rootPackageId?: string | null
+	allowPlatformScopes?: boolean
 }) {
 	const files: Record<string, string> = {
 		[runtimeModulePath]: createRuntimeModuleSource(),
@@ -493,6 +507,7 @@ export async function prepareKodyGraphFiles(input: {
 		sourceFiles: input.sourceFiles,
 		rootPackage,
 		rootPackageId: input.rootPackageId?.trim() || null,
+		allowPlatformScopes: input.allowPlatformScopes !== false,
 		proxies: new Map(),
 		dynamicPackageImports: new Map(),
 		packages: new Map(),
