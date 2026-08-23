@@ -195,6 +195,7 @@ export type SlimSearchMatch =
 				matchedTerms: Array<string>
 			}>
 			nextStep?: string
+			listingAhead?: true
 	  }
 	| {
 			type: 'secret'
@@ -310,6 +311,7 @@ export type SearchEntityDetailStructured =
 				truncated: boolean
 			} | null
 			followUp: string
+			listingAhead: boolean | null
 	  }
 	| {
 			kind: 'entity'
@@ -379,6 +381,7 @@ export type SearchEntityDetail =
 			ownerUsername?: string | null
 			/** Platform (built-in) scope username when owned by a platform account. */
 			platformScope?: string | null
+			listingAhead: boolean | null
 	  }
 	| {
 			type: 'secret'
@@ -458,6 +461,8 @@ export type SearchMatch =
 				truncated: boolean
 			} | null
 			actionMatches?: Array<PackageActionMatch>
+			/** Present only when the source community listing pin moved past this fork. */
+			listingAhead?: true
 	  }
 	| {
 			type: 'value'

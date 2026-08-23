@@ -265,6 +265,25 @@ export async function getSavedPackageWithCommunityProvenanceById(
 	return row ? mapSavedPackageWithCommunityProvenanceRow(row) : null
 }
 
+export async function getSavedPackageWithCommunityProvenanceByKodyId(
+	db: D1Database,
+	input: {
+		userId: string
+		kodyId: string
+	},
+): Promise<SavedPackageWithCommunityProvenanceRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${savedPackageCommunityProvenanceSelectColumns}
+			FROM saved_packages
+			${savedPackageCommunityProvenanceJoins}
+			WHERE saved_packages.kody_id = ? AND saved_packages.user_id = ?`,
+		)
+		.bind(input.kodyId, input.userId)
+		.first<Record<string, unknown>>()
+	return row ? mapSavedPackageWithCommunityProvenanceRow(row) : null
+}
+
 export async function getSavedPackageByKodyId(
 	db: D1Database,
 	input: {

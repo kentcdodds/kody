@@ -1,3 +1,4 @@
+import { readListingAheadFlag } from '#universal/community-listing-ahead.ts'
 import {
 	buildPackageSearchProjection,
 	type PackageSearchProjection,
@@ -49,6 +50,7 @@ export async function buildSavedPackageSearchRows(input: {
 		}> | null = null
 		return {
 			record,
+			listingAhead: readListingAheadFlag(record),
 			projection: buildLeanPackageSearchProjection(record),
 			readmeSnippet: null,
 			...(input.platformScope ? { platformScope: input.platformScope } : {}),

@@ -13,6 +13,7 @@ import { type SearchIntent } from './understand-search-query.ts'
 
 export type PackageSearchRow = {
 	record: Awaited<ReturnType<typeof listSavedPackagesByUserId>>[number]
+	listingAhead: boolean | null
 	projection: PackageSearchProjection
 	readmeSnippet?: PackageReadmeSnippet | null
 	/**

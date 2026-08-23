@@ -180,6 +180,7 @@ function leanPackage(
 			createdAt: '2026-04-20T00:00:00.000Z',
 			updatedAt: '2026-04-20T00:00:00.000Z',
 		},
+		listingAhead: null,
 		projection: {
 			name,
 			kodyId: name,
@@ -758,6 +759,7 @@ test('optional search rows load packages and values without partial fallbacks', 
 					createdAt: '2026-03-24T00:00:00.000Z',
 					updatedAt: '2026-03-24T00:00:00.000Z',
 				},
+				listingAhead: null,
 				projection: {
 					name: '@kody/roku-remote',
 					kodyId: 'roku-remote',
@@ -836,6 +838,7 @@ test('searchUnified annotates high-confidence package action matches', async () 
 			createdAt: '2026-04-20T00:00:00.000Z',
 			updatedAt: '2026-04-20T00:00:00.000Z',
 		},
+		listingAhead: null,
 		projection: {
 			name: '@kody/pkg-alpha',
 			kodyId: 'pkg-alpha',

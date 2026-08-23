@@ -149,7 +149,9 @@ pinned commit differs from the commit your fork last absorbed (`origin_commit`).
 yellow **Fork outdated** button. Click it to copy a prompt: compare the current
 public snapshot with your package, port useful changes, keep your
 customizations, publish, and call `community_fork_absorb` so the fork records
-that listing commit.
+that listing commit. Package **search** and `{kodyId}:package` entity detail
+surface the same `listingAhead` flag with a one-line next step when the listing
+is ahead.
 
 ## One-click install
 

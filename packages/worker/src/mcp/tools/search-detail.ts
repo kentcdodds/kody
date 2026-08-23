@@ -13,8 +13,8 @@ import {
 	toJoinedIntegrationConfig,
 } from '#worker/integrations/service.ts'
 import {
-	getSavedPackageById,
-	getSavedPackageByKodyId,
+	getSavedPackageWithCommunityProvenanceById,
+	getSavedPackageWithCommunityProvenanceByKodyId,
 } from '#worker/package-registry/repo.ts'
 import { findPlatformPackageByRef } from '#worker/package-registry/platform-packages.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
@@ -63,11 +63,11 @@ export async function resolveEntityDetail(input: {
 	if (ref.type === 'package') {
 		const env = input.agent.getEnv()
 		const ownRecord =
-			(await getSavedPackageById(env.APP_DB, {
+			(await getSavedPackageWithCommunityProvenanceById(env.APP_DB, {
 				userId: input.userId,
 				packageId: ref.id,
 			})) ??
-			(await getSavedPackageByKodyId(env.APP_DB, {
+			(await getSavedPackageWithCommunityProvenanceByKodyId(env.APP_DB, {
 				userId: input.userId,
 				kodyId: ref.id,
 			}))
@@ -100,6 +100,7 @@ export async function resolveEntityDetail(input: {
 			baseUrl: input.callerContext.baseUrl,
 			ownerUsername,
 			platformScope: platformFallback?.platformScope ?? null,
+			listingAhead: ownRecord?.listingAhead ?? null,
 			hostedUrl:
 				record.hasApp && ownerUsername
 					? resolveHostedPackageAppUrl({

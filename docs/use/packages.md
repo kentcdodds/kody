@@ -640,9 +640,11 @@ listing is unpublished, `listing_current` is `false` and `listing_ahead` is
 `false`. Republishing the same source package moves prior forks to the new
 listing id. `/account/packages` and the listing page replace the Installed /
 Forked pill with a yellow **Fork outdated** button when `listing_ahead` is true.
-Clicking it copies an agent prompt. After the agent ports relevant listing
-changes and publishes, `community_fork_absorb` records the current pin as
-absorbed so the pill clears.
+Clicking it copies an agent prompt. Package **search** hits and
+`{kodyId}:package` entity detail also surface `listingAhead` (with a one-line
+`community_get` / `community_fork_absorb` next step) when that flag is true.
+After the agent ports relevant listing changes and publishes,
+`community_fork_absorb` records the current pin as absorbed so the pill clears.
 
 ## Author a saved package via direct git push
 

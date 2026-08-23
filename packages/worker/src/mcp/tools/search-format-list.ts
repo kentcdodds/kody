@@ -100,7 +100,11 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 			actionMatch && actionFunction
 				? ` Best action: ${formatMarkdownInlineCode(actionFunction.name)} via ${formatMarkdownInlineCode(buildPackageActionImportUsage({ packageName: match.name, subpath: actionMatch.subpath, functionName: actionFunction.name }))}${actionFunction.description ? ` — ${escapeMarkdownText(formatOneLineSentence(actionFunction.description))}` : ''}`
 				: ''
-		return `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${actionSummary}`
+		const listingAheadNote =
+			match.listingAhead === true
+				? ' Listing ahead — community listing republished since this fork; community_get then community_fork_absorb.'
+				: ''
+		return `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${actionSummary}${listingAheadNote}`
 	}
 	if (match.type === 'value') {
 		const entityRef = buildEntityRef(match.valueId, 'value')

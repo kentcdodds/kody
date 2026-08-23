@@ -2,6 +2,8 @@ import { expect, test } from 'vitest'
 import {
 	buildListingAheadPrompt,
 	isCommunityListingAhead,
+	listingAheadSearchNotice,
+	readListingAheadFlag,
 } from './community-listing-ahead.ts'
 
 test('isCommunityListingAhead is true only when both commits exist and differ', () => {
@@ -54,4 +56,15 @@ test('buildListingAheadPrompt names the listing, fork, and absorb step', () => {
 	expect(prompt).toContain('community_fork_absorb')
 	expect(prompt).toContain('community_get')
 	expect(prompt).toContain('repo_publish_session')
+})
+
+test('search notice names the slim absorb path without the full prompt', () => {
+	expect(listingAheadSearchNotice).toContain('community_get')
+	expect(listingAheadSearchNotice).toContain('community_fork_absorb')
+	expect(listingAheadSearchNotice).not.toContain('repo_publish_session')
+	expect(readListingAheadFlag({ listingAhead: true })).toBe(true)
+	expect(readListingAheadFlag({ listingAhead: false })).toBe(false)
+	expect(readListingAheadFlag({ listingAhead: null })).toBe(null)
+	expect(readListingAheadFlag({})).toBe(null)
+	expect(readListingAheadFlag(null)).toBe(null)
 })
