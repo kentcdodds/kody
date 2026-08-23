@@ -437,7 +437,7 @@ export const packageSearchEntityPlugin = {
 			? getPrimaryPackageActionFunction(primaryAction)
 			: null
 		const platformSuffix = match.platformScope
-			? ` This is a platform (built-in) package: ad hoc execute may import or packages.invoke it live from @${match.platformScope}. Saved packages must community_fork it into your scope before depending on it.`
+			? ` This is a platform (built-in) package: ad hoc execute may import or packages.invoke it live from @${match.platformScope}. Saved person-account packages must community_fork it into your scope before depending on it.`
 			: ''
 		const listingAheadSuffix =
 			match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''

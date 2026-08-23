@@ -143,16 +143,18 @@ exhaustive.
 - **Platform (built-in) scopes are execute-only.** When a scope's username
   belongs to a platform account (for example `@kody`), ad hoc `execute` may
   statically import or `packages.invoke` the current published version — for
-  example `import gh from 'kody:@kody/github/issues'`. That code runs in
-  **your** runtime against your secrets and grants. **Saved packages must not
-  depend on a platform scope.** Publish checks reject `kody:@kody/…` static
+  example `import gh from 'kody:@kody/github/issues'`. A static import runs in
+  **your** execute runtime against your secrets and grants. `packages.invoke`
+  enters the target package runtime (still your secrets). **Saved person-owned
+  packages must not depend on a platform scope.** Official `@kody` packages
+  may still compose with each other. Publish checks reject `kody:@kody/…` static
   imports, `kody.dependencies` entries, and `packages.invoke('kody:@kody/…')` in
   person-owned package source. Fork the official package into your scope
   (`community_fork`) and depend on that copy. Platform package code cannot use
   `packageStorage()` in your account, and dynamic `import("kody:@kody/…")` is
   unsupported. Platform packages appear in `search` results (marked with their
   platform scope) so agents discover them for execute; the detail text says to
-  fork before using them in a saved package.
+  fork before using them in a saved person-account package.
 - Static `kody:@...` imports in saved package code are bundled into published
   runtime artifacts as snapshots of the imported package's published bundle.
   Republishing the imported package does not change already-published

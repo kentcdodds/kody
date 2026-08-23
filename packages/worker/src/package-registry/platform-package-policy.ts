@@ -9,7 +9,7 @@ import { listKodyPackageDependencyNames } from './types.ts'
  * 0035; this supersedes the package-import half of 0014.
  */
 export const personPackagePlatformDependencyMessage =
-	'Official platform packages are execute-only. Ad hoc execute may import or packages.invoke them live. Saved packages must community_fork the official package into your scope and depend on that copy — platform APIs are not a stable package dependency.'
+	'Official platform packages are execute-only. Ad hoc execute may import or packages.invoke them live. Saved person-account packages must community_fork the official package into your scope and depend on that copy — platform APIs are not a stable package dependency.'
 
 export function formatPersonPackagePlatformDependencyMessage(
 	packageName: string,
@@ -105,7 +105,7 @@ export function rewriteForkedPackageSelfReferences(input: {
 		return { ...input.files }
 	}
 	const escaped = origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-	const pattern = new RegExp(`${escaped}(?=/|["'\\s,]|$)`, 'g')
+	const pattern = new RegExp(`${escaped}(?=/|["'\`\\s,]|$)`, 'g')
 	const files: Record<string, string> = {}
 	for (const [path, content] of Object.entries(input.files)) {
 		files[path] = content.includes(origin)

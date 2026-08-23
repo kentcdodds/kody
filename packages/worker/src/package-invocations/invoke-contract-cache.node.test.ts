@@ -317,6 +317,31 @@ test('person package runtimes cannot invoke official platform packages', async (
 		callerKind: 'execute',
 	})
 	expect(fromExecute.result.ok).toBe(true)
+
+	mockModule.getSavedPackageById.mockImplementation(
+		async (_db: unknown, input: { userId: string; packageId: string }) =>
+			input.userId === 'platform-owner' && input.packageId === 'pkg-kody-github'
+				? {
+						id: 'pkg-kody-github',
+						userId: 'platform-owner',
+						name: '@kody/github',
+						kodyId: 'github',
+					}
+				: null,
+	)
+	const fromPlatformPackage = await checkPackageInvokeForRuntimeWithPreloads({
+		env: createEnv(),
+		baseUrl: 'https://kody.dev',
+		operationName: 'packages.invoke',
+		userId: 'platform-owner',
+		rawInput: {
+			specifier: 'kody:@kody/github/get-issue-state',
+			options: { params: {} },
+		},
+		callerKind: 'package',
+		callingPackageId: 'pkg-kody-github',
+	})
+	expect(fromPlatformPackage.result.ok).toBe(true)
 })
 
 test('a warm keyless invoke contract check performs zero D1/KV loads', async () => {

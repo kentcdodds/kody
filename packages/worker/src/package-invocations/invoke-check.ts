@@ -121,6 +121,10 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 		})
 		if (
 			callingOwned &&
+			!(await isPlatformAccountStableUserId(
+				input.env.APP_DB,
+				callingOwned.userId,
+			)) &&
 			(await isPlatformAccountStableUserId(
 				input.env.APP_DB,
 				savedPackage.userId,

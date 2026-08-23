@@ -97,4 +97,13 @@ import shared from 'kody:@kody/shared/util'
 	expect(files['index.ts']).toContain('kody:@kody/shared/util')
 	expect(files['package.json']).toContain('"@alice/github"')
 	expect(files['package.json']).toContain('"@kody/shared"')
+
+	const templateLiteral = rewriteForkedPackageSelfReferences({
+		files: {
+			'job.ts': 'await packages.invoke(`kody:@kody/github/issues`)\n',
+		},
+		originPackageName: '@kody/github',
+		nextPackageName: '@alice/github',
+	})
+	expect(templateLiteral['job.ts']).toContain('kody:@alice/github/issues')
 })
