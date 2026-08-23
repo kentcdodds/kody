@@ -235,7 +235,7 @@ test('0006 requires a scoped manifest and is registered for admin runs', () => {
 			'# Usage',
 			'',
 			'```ts',
-			"await packages.invoke({ kodyId: 'github', params: {} })",
+			"await packages.invoke({ kodyId: 'github', exportName: './request', params: {} })",
 			'```',
 			'',
 		].join('\n'),
@@ -255,7 +255,7 @@ test('0006 requires a scoped manifest and is registered for admin runs', () => {
 	expect(platformResult.changedPaths).toEqual(['README.md'])
 	expect(platformResult.files['index.ts']).toBe(platformFiles['index.ts'])
 	expect(platformResult.files['README.md']).toContain(
-		'packages.invoke("kody:@kody/github", { params: {} })',
+		'packages.invoke("kody:@kody/github", { exportName:',
 	)
 	expect(platformResult.needsManual).toEqual([
 		{
