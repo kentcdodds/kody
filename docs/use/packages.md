@@ -200,10 +200,10 @@ Package reuse follows two rules:
    a separate API.
 
 The preferred first argument is the target's scoped Kody module specifier:
-`kody:@username/kodyid` or `kody:@username/kodyid/export-subpath`. The
-prefixless `@username/kodyid[/export-subpath]` form is also accepted and
-canonicalized to `kody:`. A package-only specifier requires `exportName` in the
-options object. When both the specifier and options name an export, the
+`kody:@username/package-name` or `kody:@username/package-name/export-subpath`.
+The prefixless `@username/package-name[/export-subpath]` form is also accepted
+and canonicalized to `kody:`. A package-only specifier requires `exportName` in
+the options object. When both the specifier and options name an export, the
 specifier's export subpath wins.
 
 ```ts
