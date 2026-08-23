@@ -1173,7 +1173,7 @@ async function handleSaveAction(input: {
 			{
 				ok: false,
 				error:
-					'Expiry must be a UTC ISO timestamp (for example 2026-12-01T00:00:00Z) or empty.',
+					'Expiry must be a UTC ISO timestamp (for example 2026-12-01T00:00:00Z), a YYYY-MM-DD date, or empty.',
 			},
 			400,
 		)
