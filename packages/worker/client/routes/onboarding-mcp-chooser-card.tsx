@@ -43,7 +43,7 @@ type InstallApiPayload = {
 /**
  * Step 2 chooser card: add an official workspace MCP server, open the
  * provider authorization URL when the hub returns one, and install the
- * matching official `@kody` package when that listing is available.
+ * matching official `@kody/<id>-mcp` helper when that listing is available.
  */
 export function OnboardingMcpChooserCard(
 	handle: Handle<OnboardingMcpChooserCardProps>,

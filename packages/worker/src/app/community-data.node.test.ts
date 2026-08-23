@@ -183,8 +183,8 @@ test('onboarding MCP chooser listings load official packages by pinned id', asyn
 			return {
 				...sampleListing,
 				id: input.listingId,
-				kodyId: 'notion',
-				name: '@kody/notion',
+				kodyId: 'notion-mcp',
+				name: '@kody/notion-mcp',
 			}
 		},
 	)
@@ -196,8 +196,8 @@ test('onboarding MCP chooser listings load official packages by pinned id', asyn
 	expect(listings).toEqual([
 		expect.objectContaining({
 			id: onboardingFeaturedMcpServers[0].listingId,
-			kodyId: 'notion',
-			name: '@kody/notion',
+			kodyId: 'notion-mcp',
+			name: '@kody/notion-mcp',
 		}),
 	])
 	expect(mockModule.getCommunityListingWithAggregates).toHaveBeenCalledTimes(6)

@@ -110,8 +110,9 @@ code more easily.
 ## Connect a workspace MCP, then persist a first build
 
 After the connection works, Get started Step 2 offers official remote MCP
-servers for Notion, Linear, Atlassian, Stripe, Sentry, and Canva, plus the matching
-`@kody` package. Connect one and authorize it, install the package, or skip.
+servers for Notion, Linear, Atlassian, Stripe, Sentry, and Canva, plus the
+matching `@kody/*-mcp` helper. Connect one and authorize it, install the
+package, or skip.
 
 Step 3 copies a prompt that asks your agent to run one ad hoc request, then
 persist that working code as a package you own. Built-in platform OAuth and

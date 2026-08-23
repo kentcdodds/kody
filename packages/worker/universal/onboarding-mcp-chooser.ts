@@ -7,7 +7,9 @@
  *
  * Each card already knows name + url. Connect POSTs the account MCP-servers
  * add/reconnect API with that hardcoded url. Each card also pairs with the
- * official `@kody/<id>` listing so Step 2 can install the matching package.
+ * official `@kody/<id>-mcp` listing so Step 2 can install the MCP helper.
+ * Existing OAuth/API packages (`@kody/notion`, `@kody/linear`, and so on)
+ * stay separate. MCP *server* names stay the short official names.
  */
 
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
@@ -50,8 +52,8 @@ export const onboardingFeaturedMcpServers = [
 		label: 'Notion',
 		url: 'https://mcp.notion.com/mcp',
 		description: 'Search pages, add notes, and update databases you share.',
-		packageKodyId: 'notion',
-		listingId: '601490f4-98dd-417c-9300-75ce489f8a6d',
+		packageKodyId: 'notion-mcp',
+		listingId: '83ef912a-377f-42ea-a8de-036dea410ac7',
 	},
 	{
 		id: 'linear',
@@ -59,8 +61,8 @@ export const onboardingFeaturedMcpServers = [
 		label: 'Linear',
 		url: 'https://mcp.linear.app/mcp',
 		description: 'List issues, create tickets, and catch up on the backlog.',
-		packageKodyId: 'linear',
-		listingId: '41431740-2189-43f6-8db4-a9c10ed6def4',
+		packageKodyId: 'linear-mcp',
+		listingId: 'e63c248f-18cb-489e-afe8-395c051b5cfb',
 	},
 	{
 		id: 'atlassian',
@@ -68,17 +70,18 @@ export const onboardingFeaturedMcpServers = [
 		label: 'Atlassian',
 		url: 'https://mcp.atlassian.com/v1/mcp/authv2',
 		description: 'Search Jira issues and Confluence pages you can already see.',
-		packageKodyId: 'atlassian',
-		listingId: '5cc3cf6f-ed5e-4ca3-9e36-eabdcb740970',
+		packageKodyId: 'atlassian-mcp',
+		listingId: '5db964f9-df0d-4193-81cb-e561fb869e2a',
 	},
 	{
 		id: 'stripe',
 		name: 'stripe',
 		label: 'Stripe',
 		url: 'https://mcp.stripe.com',
-		description: 'Inspect customers, invoices, and recent payments you can access.',
-		packageKodyId: 'stripe',
-		listingId: 'e62a890e-d8df-41c1-8449-a5c093dcce02',
+		description:
+			'Inspect customers, invoices, and recent payments you can access.',
+		packageKodyId: 'stripe-mcp',
+		listingId: '8935ae40-1d30-410c-bc3e-17a782c3c33b',
 	},
 	{
 		id: 'sentry',
@@ -86,8 +89,8 @@ export const onboardingFeaturedMcpServers = [
 		label: 'Sentry',
 		url: 'https://mcp.sentry.dev/mcp',
 		description: 'Inspect organizations, projects, and recent issues.',
-		packageKodyId: 'sentry',
-		listingId: 'bb2ab3d0-2654-4045-9102-c20b6b0b8328',
+		packageKodyId: 'sentry-mcp',
+		listingId: '1724144b-2a25-4bcb-adf0-cba0e0f3ed6f',
 	},
 	{
 		id: 'canva',
@@ -95,8 +98,8 @@ export const onboardingFeaturedMcpServers = [
 		label: 'Canva',
 		url: 'https://mcp.canva.com/mcp',
 		description: 'Find designs, folders, and export jobs you can access.',
-		packageKodyId: 'canva',
-		listingId: 'c5c8bc47-4a26-4641-b038-789e9691fe8d',
+		packageKodyId: 'canva-mcp',
+		listingId: '71b33b8a-7eae-4be1-80b9-56a7057bb466',
 	},
 ] as const satisfies ReadonlyArray<OnboardingFeaturedMcpServerOption>
 

@@ -229,7 +229,7 @@ export async function loadOnboardingFeaturedListings(
 }
 
 /**
- * Official `@kody` listings paired with the Step 2 MCP chooser. Loaded by
+ * Official `@kody/*-mcp` listings paired with the Step 2 MCP chooser. Loaded by
  * pinned listing id so they appear even when an admin has not featured them.
  * Fails open to an empty list.
  */

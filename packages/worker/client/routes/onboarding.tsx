@@ -671,8 +671,9 @@ export function OnboardingRoute(handle: Handle) {
 								<p mix={css(panelLedeCss)}>
 									Give your agent a live workspace: add{' '}
 									{formatOnboardingFeaturedMcpChoice()} as a remote MCP server,
-									authorize it, and install the matching official package — or
-									skip if you would rather try an ad hoc request first.
+									authorize it, and install the matching official{' '}
+									<em>@kody/*-mcp</em> helper — or skip if you would rather try
+									an ad hoc request first.
 								</p>
 								<ul
 									mix={css(starterGridCss)}
@@ -708,9 +709,9 @@ export function OnboardingRoute(handle: Handle) {
 										Connect adds the official MCP URL and opens the provider
 										authorize page. Approve access, then your agent can call
 										those tools as <em>kody.mcp</em> capabilities. Each card
-										also offers the official <em>@kody</em> package for that
-										server. GitHub's official MCP is not on this list — it does
-										not return an authorization link.
+										also offers the official <em>@kody/*-mcp</em> helper for
+										that server. GitHub's official MCP is not on this list — it
+										does not return an authorization link.
 									</p>
 								</aside>
 								<WizardNavigation

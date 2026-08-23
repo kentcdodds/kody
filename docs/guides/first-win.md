@@ -134,8 +134,8 @@ The first win is done. Offer one concrete next step and let them choose:
   `https://mcp.notion.com/mcp`, `https://mcp.linear.app/mcp`,
   `https://mcp.atlassian.com/v1/mcp/authv2`, `https://mcp.stripe.com`,
   `https://mcp.sentry.dev/mcp`, or `https://mcp.canva.com/mcp`, then verify with
-  a small ad hoc `execute` call. Prefer the matching official `@kody` listing
-  when they want a reusable package.
+  a small ad hoc `execute` call. Prefer the matching official `@kody/*-mcp`
+  listing when they want a reusable package.
 - **Bring their own OAuth app or API key** when they need scopes or rate limits
   a hosted app does not offer — load `coding_guide_get` with `guide: "oauth"`,
   or the matching `provider_*` guide.

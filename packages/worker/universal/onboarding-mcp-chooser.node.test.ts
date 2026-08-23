@@ -33,7 +33,8 @@ test('featured MCP chooser ships six official OAuth servers with packages', () =
 	expect(
 		onboardingFeaturedMcpServers.every(
 			(server) =>
-				server.packageKodyId === server.id && server.listingId.length > 0,
+				server.packageKodyId === `${server.id}-mcp` &&
+				server.listingId.length > 0,
 		),
 	).toBe(true)
 	expect(
@@ -42,9 +43,7 @@ test('featured MCP chooser ships six official OAuth servers with packages', () =
 	expect(
 		onboardingFeaturedMcpServers.some(
 			(server) =>
-				server.id === 'slack' ||
-				server.id === 'asana' ||
-				server.id === 'figma',
+				server.id === 'slack' || server.id === 'asana' || server.id === 'figma',
 		),
 	).toBe(false)
 	expect(listOnboardingFeaturedMcpListingIds()).toHaveLength(6)
@@ -139,13 +138,13 @@ test('featured MCP chooser ships six official OAuth servers with packages', () =
 	const attached = attachOnboardingMcpPackageListings(connected, [
 		{
 			id: onboardingFeaturedMcpServers[0].listingId,
-			kodyId: 'notion',
-			name: '@kody/notion',
-			description: 'Notion helpers',
+			kodyId: 'notion-mcp',
+			name: '@kody/notion-mcp',
+			description: 'Notion MCP helpers',
 			iconUrl: '/icon.png',
 			tags: ['notion', 'mcp'],
 		},
 	])
-	expect(attached[0]?.packageListing?.name).toBe('@kody/notion')
+	expect(attached[0]?.packageListing?.name).toBe('@kody/notion-mcp')
 	expect(attached[1]?.packageListing).toBeNull()
 })
