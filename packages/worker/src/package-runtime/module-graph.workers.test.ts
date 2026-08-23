@@ -255,6 +255,7 @@ test('ad hoc execute runtime exposes only packages.invoke', async () => {
 		env,
 		baseUrl: 'https://kody.dev',
 		userId: 'user-workers-test',
+		bundleContext: 'ad-hoc-execute',
 		sourceFiles: {
 			'entry.ts': [
 				"import { kody, packageContext, packages } from 'kody:runtime'",
@@ -439,6 +440,7 @@ test(
 			env,
 			baseUrl: 'https://kody.dev',
 			userId,
+			bundleContext: 'ad-hoc-execute',
 			sourceFiles: {
 				'entry.ts': [
 					"import { packages } from 'kody:runtime'",
