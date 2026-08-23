@@ -262,10 +262,16 @@ function classifyMarkdownFile(input: {
 	const rewrites: Array<SourceRewrite> = []
 	let needsManual: string | null = null
 	for (const fence of fences) {
-		if (!markdownModuleLanguages.has(fence.language)) continue
+		const content = input.source.slice(fence.contentStart, fence.contentEnd)
+		if (!markdownModuleLanguages.has(fence.language)) {
+			if (/packages\s*\??\.\s*invoke\b/.test(content)) {
+				needsManual ??= manualMessage
+			}
+			continue
+		}
 		const classification = classifyModuleSource({
 			path: input.path,
-			source: input.source.slice(fence.contentStart, fence.contentEnd),
+			source: content,
 			offset: fence.contentStart,
 		})
 		if (!classification) continue
