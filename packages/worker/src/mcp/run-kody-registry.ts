@@ -112,6 +112,7 @@ export type {
 	PackageInvokeContract,
 	PackageInvokeInput,
 	PackageInvokeNormalizedInput,
+	PackageInvokeOptions,
 	PackageInvokeTools,
 	PackageWorkflowTools,
 } from '#mcp/runtime-helper-manifest.ts'

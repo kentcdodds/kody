@@ -202,12 +202,11 @@ await packages.invoke('kody:@kentcdodds/event-subscriber/handle-event', {
 })
 ```
 
-The preferred first argument is `kody:@scope/package` or
-`kody:@scope/package/export`. The prefixless `@scope/package` form is also
-accepted; docs and generated examples use the `kody:` prefix. `exportName` is
-optional only when the specifier includes the export; if both are present, the
-specifier export wins. The second argument accepts `exportName`, `params`,
-`idempotencyKey`, and `topic`; unknown keys fail.
+The first argument must be `kody:@scope/package` or
+`kody:@scope/package/export`. `exportName` is optional only when the specifier
+includes the export; if both are present, the specifier export wins. The second
+argument accepts `exportName`, `params`, `idempotencyKey`, and `topic`; unknown
+keys fail.
 
 Exact scoped resolution avoids bare-id collisions. A `kody:@kody/...` target
 resolves the public live package owned by the platform account, while a
@@ -230,8 +229,7 @@ keyless/keyed convention):
   of milliseconds.
 - **Keyed — durable/exactly-once.** Claims a ledger row, records the run
   eagerly, and replays a bounded response snapshot on retry with the same key.
-  For domain events (webhook event ids) and retried dispatch. `idempotency_key`
-  is an accepted alias.
+  For domain events (webhook event ids) and retried dispatch.
 
 The pre-invoke contract check is built in: `packages.invoke` rejects before
 invoking when the package or export does not exist or params are not a JSON
@@ -261,24 +259,24 @@ rather than statically importing subscriber packages. Republish subscribers
 independently; the dispatcher will observe the current published subscriber
 export on its next dispatch without being republished.
 
-**Deprecated overload:**
-`packages.invoke({ kodyId, exportName, params, idempotencyKey })` resolves bare
-`kodyId` in the current user's scope only, so it is collision-prone when a
-person package and a platform package share the same id. Prefer the scoped
-specifier form above. Overload-adoption telemetry and the shim-removal soak gate
-live in
-[Invocation overhead guardrails](./architecture/invocation-overhead-guardrails.md#packagesinvoke-overload-telemetry).
+The removed object-only
+`packages.invoke({ kodyId, exportName, params, idempotencyKey })` API is
+rejected locally with replacement guidance. Publish checks reject object-only
+call sites in JavaScript and TypeScript. The permanent
+`0006-invoke-object-to-specifier` codemod repairs safe calls and flags ambiguous
+ones for manual migration.
 
-**Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
-dynamic `import("kody:@...")` are not available. `packages.invoke` subsumes both
-helpers because checking is not optional or separate. Publish checks fail on all
-three unsupported forms with the replacement named
-(`deprecated-invocation-usage.ts`), and the bundler rewrites literal dynamic
-kody imports to a teaching error. In the execute sandbox the `packages` helper
-exposes only `invoke`, so accessing `check` or `invokeChecked` throws a normal
-`TypeError`. Package-app runtimes reject those helpers with an error that names
-the supported replacement. The `0002-static-first-invocation` repair codemod
-rewrites `invokeChecked` call sites mechanically. See
+**Unsupported helpers:** object-only `packages.invoke`,
+`packages.invokeChecked`, `packages.check`, and literal dynamic
+`import("kody:@...")` are not available. `packages.invoke` subsumes both helpers
+because checking is not optional or separate. Publish checks fail on all four
+unsupported forms with the replacement named (`deprecated-invocation-usage.ts`),
+and the bundler rewrites literal dynamic kody imports to a teaching error. In
+the execute sandbox the `packages` helper exposes only `invoke`, so accessing
+`check` or `invokeChecked` throws a normal `TypeError`. Package-app runtimes
+reject those helpers with an error that names the supported replacement. The
+permanent `0002-static-first-invocation` and `0006-invoke-object-to-specifier`
+repair codemods remain available. See
 [Invocation overhead guardrails](./architecture/invocation-overhead-guardrails.md)
 for the performance budget that keeps the keyless path honest.
 

@@ -227,11 +227,9 @@ async function runContractCheck(input: {
 		operationName: 'packages.invoke',
 		userId: input.userId,
 		rawInput: {
-			kodyId: input.kodyId,
-			exportName: './probe',
-			params: {},
+			specifier: `kody:@kentcdodds/${input.kodyId}/probe`,
+			options: { params: {} },
 		},
-		includeExportProjection: false,
 	})
 }
 
@@ -323,7 +321,7 @@ test(
 		// node suite with fake timers).
 		invalidateInvokeContractFreshness({
 			userId,
-			packageIdOrKodyIds: [packageId, kodyId],
+			packageIdOrKodyIds: [packageId, kodyId, `kody:@kentcdodds/${kodyId}`],
 			sourceId,
 		})
 

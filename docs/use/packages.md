@@ -199,9 +199,8 @@ Package reuse follows two rules:
    is always contract-checked before invoking — checking is not optional and not
    a separate API.
 
-The preferred first argument is the target's scoped Kody module specifier:
-`kody:@username/kodyid` or `kody:@username/kodyid/export-subpath`. The `kody:`
-prefix is preferred; the prefixless `@username/kodyid` form is also accepted. A
+The first argument must be the target's scoped Kody module specifier:
+`kody:@username/kodyid` or `kody:@username/kodyid/export-subpath`. A
 package-only specifier requires `exportName` in the options object. When both
 the specifier and options name an export, the specifier's export subpath wins.
 
@@ -259,18 +258,10 @@ invocation error code in the message. Kody surfaces JSDoc/type metadata but not
 a machine-readable params schema for package exports, so params are only
 validated as a JSON object.
 
-**Deprecated overload:** bare `kodyId` lookup is scoped to the current user and
-collides when a person package and a platform package share the same id. Prefer
-the scoped specifier form above.
-
-```ts
-await packages.invoke({
-	kodyId: 'event-subscriber',
-	exportName: './handle-event',
-	params: { event },
-	idempotencyKey: event.id,
-})
-```
+The removed object-only form is rejected locally before any package request is
+forwarded. Use the scoped string-first call shown above. Publish checks reject
+object-only JavaScript and TypeScript call sites; the permanent
+`0006-invoke-object-to-specifier` package codemod repairs safe cases.
 
 Package runtime contexts, authenticated ad hoc MCP `execute` calls, and package
 job runtimes can call `packages.invoke`. Person-scoped targets resolve only from

@@ -472,10 +472,6 @@
 					"binding": "MCP_PROTOCOL_EVENTS",
 					"dataset": "kody_mcp_protocol_events",
 				},
-				{
-					"binding": "PACKAGE_INVOKE_EVENTS",
-					"dataset": "kody_package_invoke_events",
-				},
 			],
 			"ai": {
 				"binding": "AI",
@@ -863,10 +859,6 @@
 				{
 					"binding": "MCP_PROTOCOL_EVENTS",
 					"dataset": "kody_mcp_protocol_events_preview",
-				},
-				{
-					"binding": "PACKAGE_INVOKE_EVENTS",
-					"dataset": "kody_package_invoke_events_preview",
 				},
 			],
 			"ai": {

@@ -4,7 +4,7 @@ import {
 	parsePackageInvokeInput,
 } from './input-parsing.ts'
 
-test('parses preferred package specifiers, export subpaths, legacy objects, and validation', () => {
+test('parses scoped package specifiers and export subpaths', () => {
 	const packageOnly = parsePackageInvokeInput({
 		specifier: 'kody:@kody/google',
 		options: {
@@ -15,12 +15,8 @@ test('parses preferred package specifiers, export subpaths, legacy objects, and 
 		},
 	})
 	expect(packageOnly).toEqual({
-		packageIdentifier: {
-			kind: 'specifier',
-			value: 'kody:@kody/google',
-			packageName: '@kody/google',
-		},
-		packageIdOrKodyId: '@kody/google',
+		specifier: 'kody:@kody/google',
+		packageName: '@kody/google',
 		exportName: 'profile',
 		params: {},
 		idempotencyKey: 'profile-1',
@@ -46,29 +42,15 @@ test('parses preferred package specifiers, export subpaths, legacy objects, and 
 		params: { includePhoto: true },
 	})
 
-	const prefixless = parsePackageInvokeInput({
-		specifier: '@kentcdodds/github',
-		options: { exportName: '.' },
-	})
-	expect(prefixless.packageIdentifier).toEqual({
-		kind: 'specifier',
-		value: 'kody:@kentcdodds/github',
-		packageName: '@kentcdodds/github',
-	})
-	expect(prefixless.exportName).toBe('.')
+	expect(() =>
+		parsePackageInvokeInput({
+			specifier: '@kentcdodds/github',
+			options: { exportName: '.' },
+		}),
+	).toThrow('requires a kody:@owner/package[/export] specifier')
+})
 
-	const legacy = parsePackageInvokeInput({
-		kodyId: 'github',
-		exportName: 'profile',
-		params: {},
-		idempotencyKey: 'legacy-1',
-	})
-	expect(legacy.packageIdentifier).toEqual({
-		kind: 'kodyId',
-		value: 'github',
-	})
-	expect(legacy.exportName).toBe('profile')
-
+test('validates specifier options and requires an export for package-only specifiers', () => {
 	expect(() =>
 		parsePackageInvokeInput({
 			specifier: 'kody:@kody/google',
@@ -88,5 +70,5 @@ test('parses preferred package specifiers, export subpaths, legacy objects, and 
 			specifier: 'google',
 			options: { exportName: 'profile' },
 		}),
-	).toThrow('Unsupported Kody package specifier "google".')
+	).toThrow('requires a kody:@owner/package[/export] specifier')
 })

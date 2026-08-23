@@ -91,6 +91,22 @@ function savedPackageCacheKey(input: {
 	])
 }
 
+function savedPackageCacheKeyMatchesLookup(
+	cacheKey: string,
+	packageIdOrKodyId: string,
+) {
+	try {
+		const parsed: unknown = JSON.parse(cacheKey)
+		return (
+			Array.isArray(parsed) &&
+			parsed[0] === 'saved-package' &&
+			parsed[2] === packageIdOrKodyId
+		)
+	} catch {
+		return false
+	}
+}
+
 function sourceRowCacheKey(input: { userId: string; sourceId: string }) {
 	return JSON.stringify(['source-row', input.userId, input.sourceId])
 }
@@ -179,9 +195,18 @@ export function invalidateInvokeContractFreshness(input: {
 	sourceId?: string | null
 }) {
 	for (const packageIdOrKodyId of input.packageIdOrKodyIds) {
-		savedPackageCache.delete(
-			savedPackageCacheKey({ userId: input.userId, packageIdOrKodyId }),
-		)
+		if (packageIdOrKodyId.startsWith('kody:@')) {
+			// Public platform packages resolve under every caller's cache
+			// namespace. Publish/delete is rare and this cache is capped at 200,
+			// so scan it to evict every caller alias immediately in this isolate.
+			savedPackageCache.deleteWhere((cacheKey) =>
+				savedPackageCacheKeyMatchesLookup(cacheKey, packageIdOrKodyId),
+			)
+		} else {
+			savedPackageCache.delete(
+				savedPackageCacheKey({ userId: input.userId, packageIdOrKodyId }),
+			)
+		}
 	}
 	if (input.sourceId) {
 		sourceRowCache.delete(

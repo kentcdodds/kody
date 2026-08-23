@@ -2040,14 +2040,16 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 		expect(packageBridgeFns?.invokeChecked).toBeUndefined()
 		await expect(
 			packageBridgeFns?.invoke({
-				kodyId: 'discord-general-chat',
-				exportName: './handle-discord-message-created',
+				specifier:
+					'kody:@kentcdodds/discord-general-chat/handle-discord-message-created',
+				options: {},
 			}),
 		).resolves.toEqual({
 			ok: true,
 			input: {
-				kodyId: 'discord-general-chat',
-				exportName: './handle-discord-message-created',
+				specifier:
+					'kody:@kentcdodds/discord-general-chat/handle-discord-message-created',
+				options: {},
 			},
 		})
 

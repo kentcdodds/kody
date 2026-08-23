@@ -5,14 +5,7 @@ import {
 	type PackageInvokeInput,
 } from '#mcp/run-kody-registry.ts'
 import { type PackageExportProjection } from '#worker/package-registry/manifest.ts'
-import {
-	buildPlainRepoPromotionErrorMessage,
-	findPlainRepoPromotionHint,
-} from '#worker/repo/user-repos.ts'
-import {
-	buildSavedPackageNotFoundMessage,
-	normalizeExportName,
-} from './common.ts'
+import { normalizeExportName } from './common.ts'
 import {
 	buildNormalizedPackageInvokeInput,
 	parsePackageInvokeInput,
@@ -21,9 +14,8 @@ import {
 	ensureModuleArtifact,
 	loadInvokeManifestBySourceId,
 	resolvePackageModuleResolution,
-	resolveSavedPackage,
+	resolveSavedPackageBySpecifier,
 } from './module-artifacts.ts'
-import { resolvePackageInvokeTarget } from './target-resolution.ts'
 
 function createPackageInvokeCheckFailure(input: {
 	message: string
@@ -66,7 +58,9 @@ function buildPackageInvokeCheckWarnings(input: {
  * call resolves its package exactly once.
  */
 export type PackageInvokeCheckPreloads = {
-	savedPackage: NonNullable<Awaited<ReturnType<typeof resolveSavedPackage>>>
+	savedPackage: NonNullable<
+		Awaited<ReturnType<typeof resolveSavedPackageBySpecifier>>
+	>
 	moduleArtifact: Awaited<ReturnType<typeof ensureModuleArtifact>>
 }
 
@@ -99,24 +93,13 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	}
 	const exportName = normalizeExportName(request.exportName)
 	const invoke = buildNormalizedPackageInvokeInput({ request, exportName })
-	const resolvedTarget = await resolvePackageInvokeTarget({
-		env: input.env,
+	const savedPackage = await resolveSavedPackageBySpecifier({
+		db: input.env.APP_DB,
 		userId: input.userId,
-		packageIdentifier: request.packageIdentifier,
+		specifier: request.specifier,
 	})
-	if (!resolvedTarget) {
-		const plainRepo =
-			request.packageIdentifier.kind === 'specifier'
-				? null
-				: await findPlainRepoPromotionHint(input.env.APP_DB, {
-						userId: input.userId,
-						packageIdOrKodyId: request.packageIdOrKodyId,
-					})
-		const message = plainRepo
-			? buildPlainRepoPromotionErrorMessage(request.packageIdOrKodyId)
-			: request.packageIdentifier.kind === 'specifier'
-				? `Kody package specifier ${JSON.stringify(request.packageIdentifier.value)} could not be resolved for this caller.`
-				: buildSavedPackageNotFoundMessage(request.packageIdOrKodyId)
+	if (!savedPackage) {
+		const message = `Kody package specifier ${JSON.stringify(request.specifier)} could not be resolved for this caller.`
 		return {
 			result: createPackageInvokeCheckFailure({
 				message,
@@ -126,7 +109,7 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 			preloads: null,
 		}
 	}
-	const { savedPackage, sourceOwnerUserId } = resolvedTarget
+	const sourceOwnerUserId = savedPackage.userId
 	const packageContract = {
 		packageId: savedPackage.id,
 		kodyId: savedPackage.kodyId,

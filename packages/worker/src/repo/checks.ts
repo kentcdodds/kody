@@ -313,17 +313,7 @@ function createExecuteTypecheckPrelude(input?: {
 
 type KodyCapabilityArgs = Record<string, unknown>;
 type KodyCapabilityResult = unknown;
-type KodyPackagesInvokeTarget =
-  | { kodyId: string; kody_id?: never; packageId?: never; package_id?: never }
-  | { kodyId?: never; kody_id: string; packageId?: never; package_id?: never }
-  | { kodyId?: never; kody_id?: never; packageId: string; package_id?: never }
-  | { kodyId?: never; kody_id?: never; packageId?: never; package_id: string };
-type KodyPackagesInvokeExport =
-  | { exportName: string; export_name?: never }
-  | { exportName?: never; export_name: string };
-type KodyPackageSpecifier =
-  | \`kody:@\${string}/\${string}\`
-  | \`@\${string}/\${string}\`;
+type KodyPackageSpecifier = \`kody:@\${string}/\${string}\`;
 type KodyPackagesInvokeOptions = {
   /**
    * Required when the specifier has no export subpath. When both are present,
@@ -334,34 +324,18 @@ type KodyPackagesInvokeOptions = {
   idempotencyKey?: string;
   topic?: string | null;
 };
-/**
- * @deprecated Use packages.invoke("kody:@scope/package/export", options).
- * Bare kodyId lookup is user-scoped and can collide with a platform package.
- */
-type KodyPackagesInvokeInput = KodyPackagesInvokeTarget &
-  KodyPackagesInvokeExport & {
-  params?: Record<string, unknown>;
-  idempotencyKey?: string;
-  idempotency_key?: string;
-  topic?: string | null;
-};
 type KodyPackagesRuntime = {
   /**
    * The only dynamic invocation primitive. Always contract-checks the current
    * published package export before invoking; a failing contract rejects with
    * "packages.invoke contract check failed: ...". Key-less calls are
-   * lean/ephemeral; pass idempotencyKey only for exactly-once semantics. Prefer
-   * the kody:@scope/package form; an @scope/package specifier is also accepted.
+   * lean/ephemeral; pass idempotencyKey only for exactly-once semantics.
+   * A kody:@scope/package[/export] specifier is required.
    */
   invoke(
     specifier: KodyPackageSpecifier,
     options?: KodyPackagesInvokeOptions,
   ): Promise<unknown>;
-  /**
-   * @deprecated Use the string-first Kody module specifier overload. Bare
-   * kodyId lookup is collision-prone and remains only for compatibility.
-   */
-  invoke(input: KodyPackagesInvokeInput): Promise<unknown>;
 };
 type KodyStorageRuntime = {
   id: string;

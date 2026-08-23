@@ -8,11 +8,12 @@ import {
 	type PackageCodemodFinding,
 	type PackageCodemodTransformResult,
 } from '../types.ts'
+import { invokeObjectToSpecifierCodemod } from './0006-invoke-object-to-specifier.ts'
 
 export const staticFirstInvocationCodemodId = '0002-static-first-invocation'
 
 const invokeCheckedDetectMessage =
-	'Calls unsupported `packages.invokeChecked`; rewrites mechanically to `packages.invoke` with the same input shape and contract-checking behavior. A static `kody:@scope/pkg/export` import is preferable when the target package is known at write time.'
+	'Calls unsupported `packages.invokeChecked`; rewrites mechanically to scoped string-first `packages.invoke` when the target is safe to derive, otherwise flags the call for manual migration. A static `kody:@scope/pkg/export` import is preferable when the target package is known at write time.'
 
 const checkDetectMessage =
 	'Calls unsupported `packages.check`; `packages.invoke` already contract-checks before invoking, so restructure the call site manually (no mechanical rewrite preserves the contract return value).'
@@ -138,7 +139,22 @@ function rewriteInvokeChecked(source: string): string | null {
 	return rewritten
 }
 
-function findingMessageForUsage(usage: DeprecatedInvocationUsage): string {
+type StaticFirstDeprecatedInvocationUsage = DeprecatedInvocationUsage & {
+	kind: Exclude<DeprecatedInvocationUsage['kind'], 'packages.invoke-object'>
+}
+
+function collectStaticFirstDeprecatedInvocationUsage(
+	files: Record<string, string>,
+): Array<StaticFirstDeprecatedInvocationUsage> {
+	return collectDeprecatedInvocationUsage(files).filter(
+		(usage): usage is StaticFirstDeprecatedInvocationUsage =>
+			usage.kind !== 'packages.invoke-object',
+	)
+}
+
+function findingMessageForUsage(
+	usage: StaticFirstDeprecatedInvocationUsage,
+): string {
 	switch (usage.kind) {
 		case 'packages.invokeChecked':
 			return invokeCheckedDetectMessage
@@ -156,7 +172,7 @@ function findingMessageForUsage(usage: DeprecatedInvocationUsage): string {
 
 function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
 	const findings: Array<PackageCodemodFinding> =
-		collectDeprecatedInvocationUsage(files).map((usage) => ({
+		collectStaticFirstDeprecatedInvocationUsage(files).map((usage) => ({
 			path: usage.filePath,
 			message: findingMessageForUsage(usage),
 		}))
@@ -171,7 +187,7 @@ function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
 function transform(
 	files: Record<string, string>,
 ): PackageCodemodTransformResult {
-	const usages = collectDeprecatedInvocationUsage(files)
+	const usages = collectStaticFirstDeprecatedInvocationUsage(files)
 	const nextFiles: Record<string, string> = { ...files }
 	const changedPaths: Array<string> = []
 	const needsManual: Array<PackageCodemodFinding> = []
@@ -235,10 +251,43 @@ function transform(
 		}
 	}
 
+	if (invokeCheckedPaths.size > 0) {
+		const objectRepairFiles: Record<string, string> = {}
+		const packageManifest = nextFiles['package.json']
+		if (typeof packageManifest === 'string') {
+			objectRepairFiles['package.json'] = packageManifest
+		}
+		for (const path of invokeCheckedPaths) {
+			const source = nextFiles[path]
+			if (typeof source === 'string') {
+				objectRepairFiles[path] = source
+			}
+		}
+		const objectRepair =
+			invokeObjectToSpecifierCodemod.transform(objectRepairFiles)
+		if (objectRepair.needsManual.length > 0) {
+			return {
+				files: { ...files },
+				changed: false,
+				changedPaths: [],
+				needsManual: [...needsManual, ...objectRepair.needsManual],
+			}
+		}
+		for (const path of objectRepair.changedPaths) {
+			const source = objectRepair.files[path]
+			if (typeof source !== 'string') continue
+			nextFiles[path] = source
+			if (!changedPaths.includes(path)) {
+				changedPaths.push(path)
+			}
+		}
+		needsManual.push(...objectRepair.needsManual)
+	}
+
 	return {
 		files: nextFiles,
 		changed: changedPaths.length > 0,
-		changedPaths,
+		changedPaths: changedPaths.sort((left, right) => left.localeCompare(right)),
 		needsManual,
 	}
 }
@@ -246,9 +295,9 @@ function transform(
 /**
  * Permanent repair path for the static-first invocation guard:
  *
- * - `packages.invokeChecked(...)` is rewritten mechanically to
- *   `packages.invoke(...)` — identical input shape; invoke is always
- *   contract-checked, and key-less calls take the lean/ephemeral path.
+ * - `packages.invokeChecked(...)` is renamed mechanically, then codemod 0006
+ *   converts safe object inputs to scoped string-first `packages.invoke(...)`.
+ *   Ambiguous targets remain `needsManual` instead of producing removed API.
  * - `packages.check(...)` and literal dynamic `import("kody:@...")` have no
  *   safe mechanical rewrite (return values / namespace semantics differ), so
  *   they surface as `needsManual` findings naming the replacement.
@@ -256,7 +305,7 @@ function transform(
 export const staticFirstInvocationCodemod: PackageCodemod = {
 	id: staticFirstInvocationCodemodId,
 	description:
-		'Repair unsupported packages.invokeChecked calls with packages.invoke and flag packages.check / literal dynamic import("kody:@...") usage for manual replacement.',
+		'Repair unsupported packages.invokeChecked calls as scoped string-first packages.invoke and flag ambiguous targets, packages.check, and literal dynamic import("kody:@...") for manual replacement.',
 	detect,
 	transform,
 }

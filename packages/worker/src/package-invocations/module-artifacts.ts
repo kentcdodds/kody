@@ -23,6 +23,10 @@ import {
 	buildPackageSubscriptionArtifactName,
 	normalizePackageSubscriptionTopic,
 } from '#worker/package-runtime/subscription-artifacts.ts'
+import {
+	parseKodyPackageSpecifier,
+	resolveSavedPackageImport,
+} from '#worker/package-runtime/package-import-resolution.ts'
 import { buildPackageSubscriptionNotFoundMessage } from './subscription-envelope.ts'
 import {
 	normalizeExportName,
@@ -54,6 +58,27 @@ export async function resolveSavedPackage(input: {
 				userId: input.userId,
 				kodyId: input.packageIdOrKodyId,
 			})),
+	})
+}
+
+export async function resolveSavedPackageBySpecifier(input: {
+	db: D1Database
+	userId: string
+	specifier: string
+}): Promise<SavedPackageRecord | null> {
+	const parsed = parseKodyPackageSpecifier(input.specifier)
+	const cacheKey = `kody:${parsed.packageName}`
+	return await resolveSavedPackageWithFreshnessCache({
+		userId: input.userId,
+		packageIdOrKodyId: cacheKey,
+		load: async () =>
+			(
+				await resolveSavedPackageImport({
+					db: input.db,
+					userId: input.userId,
+					specifier: parsed,
+				})
+			)?.row ?? null,
 	})
 }
 

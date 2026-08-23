@@ -44,12 +44,13 @@ test('0002 rewrites invokeChecked member calls and leaves non-targets alone', ()
 	expect(result.changedPaths).toEqual(['index.ts'])
 	expect(result.needsManual).toEqual([])
 	expect(result.files['index.ts']).toContain(
-		"await packages.invoke({ kodyId: 'github'",
+		'await packages.invoke("kody:@user/github", { exportName:',
 	)
 	expect(result.files['index.ts']).toContain(
-		"await packages?.invoke({ kodyId: 'github'",
+		'await packages?.invoke("kody:@user/github", { exportName:',
 	)
 	expect(result.files['index.ts']).not.toContain('invokeChecked')
+	expect(result.files['index.ts']).not.toContain("kodyId: 'github'")
 
 	const rerun = staticFirstInvocationCodemod.transform(result.files)
 	expect(rerun.changed).toBe(false)
@@ -71,6 +72,30 @@ test('0002 rewrites invokeChecked member calls and leaves non-targets alone', ()
 	const untouchedResult = staticFirstInvocationCodemod.transform(untouched)
 	expect(untouchedResult.changed).toBe(false)
 	expect(untouchedResult.files).toEqual(untouched)
+})
+
+test('0002 leaves the original tree unchanged when 0006 needs manual repair', () => {
+	const files = {
+		'package.json': manifest(),
+		'index.ts': [
+			"import { packages } from 'kody:runtime'",
+			'export default async function run(input) {',
+			'\treturn packages.invokeChecked(input)',
+			'}',
+			'',
+		].join('\n'),
+	}
+
+	const result = staticFirstInvocationCodemod.transform(files)
+	expect(result.changed).toBe(false)
+	expect(result.changedPaths).toEqual([])
+	expect(result.files).toEqual(files)
+	expect(result.needsManual).toEqual([
+		{
+			path: 'index.ts',
+			message: expect.stringContaining('cannot be migrated safely'),
+		},
+	])
 })
 
 test('0002 reports needsManual for check/dynamic imports, parse failures, and mixed packages', () => {
@@ -139,7 +164,9 @@ test('0002 reports needsManual for check/dynamic imports, parse failures, and mi
 	const mixedResult = staticFirstInvocationCodemod.transform(mixedFiles)
 	expect(mixedResult.changed).toBe(true)
 	expect(mixedResult.changedPaths).toEqual(['auto.ts'])
-	expect(mixedResult.files['auto.ts']).toContain('packages.invoke({')
+	expect(mixedResult.files['auto.ts']).toContain(
+		'packages.invoke("kody:@user/skills", { exportName:',
+	)
 	expect(mixedResult.files['auto.ts']).not.toContain('invokeChecked')
 	expect(mixedResult.files['manual.ts']).toBe(mixedFiles['manual.ts'])
 	expect(mixedResult.needsManual).toEqual([

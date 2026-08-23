@@ -154,9 +154,14 @@ two-rule contract enforced at publish time (see
 [`architecture/invocation-overhead-guardrails.md`](./architecture/invocation-overhead-guardrails.md)):
 
 - Rewrites `packages.invokeChecked(...)` member calls (including
-  `packages?.invokeChecked`) to `packages.invoke(...)` via AST range replacement
-  — identical input shape; `packages.invoke` is always contract-checked and
-  key-less calls take the lean/ephemeral path.
+  `packages?.invokeChecked`) to `packages.invoke(...)` via AST range
+  replacement, then composes the `0006-invoke-object-to-specifier` repair over
+  those files so safe object inputs become scoped string-first calls in the same
+  run.
+- Emits `needsManual` when that second-stage object repair cannot safely derive
+  the owner/target. That second stage is all-or-nothing: any manual finding
+  restores the original tree and returns `changed: false`, forcing the engine's
+  `needs_manual` stop instead of applying a partial rewrite to removed API.
 - Emits `needsManual` for `packages.check(...)` (its contract return value has
   no mechanical equivalent — `invoke` checks internally) and for literal dynamic
   `import("kody:@...")` (namespace semantics and `kody.dependencies` manifest
@@ -213,8 +218,8 @@ arrays; the codemod remains for any leftover published trees:
 
 ### `0006-invoke-object-to-specifier`
 
-This compatibility codemod migrates the deprecated object-only dynamic package
-API to an explicit owner-scoped specifier:
+This permanent repair codemod converts the publish-blocked object-only dynamic
+package API to an explicit owner-scoped specifier:
 
 - Rewrites
   `packages.invoke({ kodyId: "target", exportName, params, idempotencyKey, topic })`
@@ -240,8 +245,10 @@ API to an explicit owner-scoped specifier:
 - Emits file-level `needsManual` findings for platform-owned runtime source: its
   old bare-id lookup follows the runtime caller, which cannot be replaced by the
   source package's platform scope without changing behavior.
-- Does not drop the object overload; removal waits on the
-  [overload telemetry soak gate](./architecture/invocation-overhead-guardrails.md#packagesinvoke-overload-telemetry).
+- Remains registered because publish checks permanently reject object-only
+  `packages.invoke` in JavaScript and TypeScript. Authors and operators can use
+  this codemod as the mechanical repair path for source that predates or
+  bypasses those checks.
 
 ## Engine
 

@@ -87,6 +87,14 @@ export class PromiseLruCache<T> {
 		this.cache.delete(key)
 	}
 
+	deleteWhere(predicate: (key: string) => boolean) {
+		for (const key of this.cache.keys()) {
+			if (predicate(key)) {
+				this.cache.delete(key)
+			}
+		}
+	}
+
 	private enforceLimit() {
 		while (this.cache.size > this.limit) {
 			const oldestKey = this.cache.keys().next().value
