@@ -48,6 +48,114 @@ await packages.invoke('kody:@owner/already/export', { params: {} })
 	})
 })
 
+test('0007 rewrites only proven Kody packages bindings', () => {
+	const files = {
+		'global.ts': "await packages.invoke('@owner/global/export')\n",
+		'kody-import.ts': `
+import { packages } from 'kody:runtime'
+await packages.invoke('@owner/imported/export')
+`,
+		'shadowed.ts': `
+await packages.invoke('@owner/file-level/export')
+function nested(packages) {
+  return packages.invoke('@owner/shadowed/export')
+}
+`,
+		'unrelated-import.ts': `
+import { packages } from 'other-library'
+await packages.invoke('@owner/unrelated/export')
+`,
+		'local.ts': `
+const packages = { invoke: (value) => value }
+packages.invoke('@owner/local/export')
+`,
+		'ambiguous-alias.ts': `
+const packages = runtimePackages
+packages.invoke('@private-owner/private-package/export')
+`,
+		'for-of.ts': `
+for (const packages of providers) {
+  packages.invoke('@owner/for-of/export')
+}
+`,
+		'switch.ts': `
+switch (kind) {
+  case 'local': {
+    const packages = createPackages()
+    packages.invoke('@owner/switch/export')
+  }
+}
+`,
+		'class-private.ts': `
+class Runner {
+  #run(packages) {
+    return packages.invoke('@owner/private-method/export')
+  }
+}
+`,
+		'ts-namespace.ts': `
+namespace packages {
+  export const value = true
+}
+packages.invoke('@owner/namespace/export')
+`,
+	}
+	const result = prefixPackagesInvokeSpecifiersCodemod.transform(files)
+
+	expect(result.changedPaths).toEqual(['global.ts', 'kody-import.ts'])
+	expect(result.files['global.ts']).toContain(
+		"packages.invoke('kody:@owner/global/export')",
+	)
+	expect(result.files['shadowed.ts']).toContain(
+		"packages.invoke('@owner/file-level/export')",
+	)
+	expect(result.files['shadowed.ts']).toContain(
+		"packages.invoke('@owner/shadowed/export')",
+	)
+	expect(result.files['kody-import.ts']).toContain(
+		"packages.invoke('kody:@owner/imported/export')",
+	)
+	expect(result.files['unrelated-import.ts']).toBe(files['unrelated-import.ts'])
+	expect(result.files['local.ts']).toBe(files['local.ts'])
+	expect(result.files['ambiguous-alias.ts']).toBe(files['ambiguous-alias.ts'])
+	for (const path of [
+		'for-of.ts',
+		'switch.ts',
+		'class-private.ts',
+		'ts-namespace.ts',
+	]) {
+		expect(result.files[path]).toBe(files[path])
+	}
+	const expectedManualPaths = [
+		'ambiguous-alias.ts',
+		'class-private.ts',
+		'for-of.ts',
+		'local.ts',
+		'shadowed.ts',
+		'switch.ts',
+		'ts-namespace.ts',
+		'unrelated-import.ts',
+	].sort((left, right) => left.localeCompare(right))
+	expect(result.needsManual.map((finding) => finding.path)).toEqual(
+		expectedManualPaths,
+	)
+	expect(
+		result.needsManual.every(
+			(finding) =>
+				finding.message ===
+				'A packages.invoke specifier is dynamic or ambiguous; add the kody: prefix manually.',
+		),
+	).toBe(true)
+	expect(
+		JSON.stringify(result.needsManual.map((finding) => finding.message)),
+	).not.toContain('private-owner')
+
+	const repeated = prefixPackagesInvokeSpecifiersCodemod.transform(result.files)
+	expect(repeated.files).toEqual(result.files)
+	expect(repeated.changed).toBe(false)
+	expect(repeated.needsManual).toEqual(result.needsManual)
+})
+
 test('0007 rewrites parseable Markdown and MDX examples', () => {
 	const files = {
 		'README.md': `
@@ -91,6 +199,57 @@ await packages?.invoke('@owner/mdx/export', options)
 	expect(result.files['guide.mdx']).toContain(
 		"packages?.invoke('kody:@owner/mdx/export', options)",
 	)
+})
+
+test('0007 leaves escaped and multi-backtick Markdown inline forms manual', () => {
+	const files = {
+		'escaping.md':
+			"Escaped delimiters: \\`packages.invoke('@owner/escaped/export')\\`.\n\n" +
+			"Multi-backtick span: ``packages.invoke('@owner/multiple/export')``.\n",
+	}
+	const result = prefixPackagesInvokeSpecifiersCodemod.transform(files)
+
+	expect(result).toEqual({
+		files,
+		changed: false,
+		changedPaths: [],
+		needsManual: [
+			{
+				path: 'escaping.md',
+				message:
+					'A packages.invoke specifier is dynamic or ambiguous; add the kody: prefix manually.',
+			},
+		],
+	})
+})
+
+test('0007 never rewrites packages.invoke inside Markdown HTML comments', () => {
+	const files = {
+		'comment.md': `
+<!--
+\`packages.invoke('@private-owner/private-package/export')\`
+-->
+
+\`packages.invoke('@owner/visible/export')\`
+`,
+	}
+	const result = prefixPackagesInvokeSpecifiersCodemod.transform(files)
+
+	expect(result.changedPaths).toEqual(['comment.md'])
+	expect(result.files['comment.md']).toContain(
+		"packages.invoke('@private-owner/private-package/export')",
+	)
+	expect(result.files['comment.md']).toContain(
+		"packages.invoke('kody:@owner/visible/export')",
+	)
+	expect(result.needsManual).toEqual([
+		{
+			path: 'comment.md',
+			message:
+				'A packages.invoke specifier is dynamic or ambiguous; add the kody: prefix manually.',
+		},
+	])
+	expect(result.needsManual[0]?.message).not.toContain('private-owner')
 })
 
 test('0007 partially rewrites safe calls and emits fixed privacy-safe manual findings', () => {

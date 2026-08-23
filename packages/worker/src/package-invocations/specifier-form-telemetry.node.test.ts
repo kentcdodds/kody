@@ -19,6 +19,18 @@ test('classifies raw forms before canonicalization and attributes every runtime 
 	)
 	expect(classifyPackageInvokeSpecifierForm('owner/package')).toBeNull()
 	expect(classifyPackageInvokeSpecifierForm('kody:not-a-package')).toBeNull()
+	expect(classifyPackageInvokeSpecifierForm('@owner / package/export')).toBe(
+		'prefixless',
+	)
+	expect(
+		classifyPackageInvokeSpecifierForm('kody:@owner / package/export'),
+	).toBe('kody_prefixed')
+	expect(classifyPackageInvokeSpecifierForm('@malformed attempt')).toBe(
+		'prefixless',
+	)
+	expect(classifyPackageInvokeSpecifierForm('kody:@malformed attempt')).toBe(
+		'kody_prefixed',
+	)
 
 	expect(resolvePackageInvokeTelemetrySurface({ callerKind: 'execute' })).toBe(
 		'execute',

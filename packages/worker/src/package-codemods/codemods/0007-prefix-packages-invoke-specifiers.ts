@@ -64,6 +64,114 @@ type MarkdownCodeFence = {
 	language: string
 }
 
+function patternBindsPackages(pattern: unknown): boolean {
+	if (!pattern || typeof pattern !== 'object') return false
+	const node = pattern as Record<string, unknown>
+	switch (node['type']) {
+		case 'Identifier':
+			return node['name'] === 'packages'
+		case 'AssignmentPattern':
+			return patternBindsPackages(node['left'])
+		case 'RestElement':
+			return patternBindsPackages(node['argument'])
+		case 'ArrayPattern':
+			return (
+				Array.isArray(node['elements']) &&
+				node['elements'].some(patternBindsPackages)
+			)
+		case 'ObjectPattern':
+			return (
+				Array.isArray(node['properties']) &&
+				node['properties'].some((property) => {
+					if (!property || typeof property !== 'object') return false
+					const propertyNode = property as Record<string, unknown>
+					return propertyNode['type'] === 'RestElement'
+						? patternBindsPackages(propertyNode['argument'])
+						: patternBindsPackages(propertyNode['value'])
+				})
+			)
+		case 'TSParameterProperty':
+			return patternBindsPackages(node['parameter'])
+		default:
+			return false
+	}
+}
+
+function classifyPackagesBindings(program: AstNode) {
+	let canonicalImportCount = 0
+	let hasOtherBinding = false
+
+	function visit(value: unknown): void {
+		if (!value || typeof value !== 'object') return
+		if (Array.isArray(value)) {
+			for (const item of value) visit(item)
+			return
+		}
+		if (!('type' in value)) return
+		const node = value as Record<string, unknown>
+		const type = node['type']
+
+		if (type === 'ImportDeclaration') {
+			const source = node['source']
+			const sourceValue =
+				source && typeof source === 'object'
+					? (source as Record<string, unknown>)['value']
+					: null
+			const specifiers = node['specifiers']
+			if (Array.isArray(specifiers)) {
+				for (const specifier of specifiers) {
+					if (!specifier || typeof specifier !== 'object') continue
+					const specifierNode = specifier as Record<string, unknown>
+					if (!patternBindsPackages(specifierNode['local'])) continue
+					const imported = specifierNode['imported']
+					const importedName =
+						imported && typeof imported === 'object'
+							? ((imported as Record<string, unknown>)['name'] ??
+								(imported as Record<string, unknown>)['value'])
+							: null
+					if (
+						sourceValue === 'kody:runtime' &&
+						specifierNode['type'] === 'ImportSpecifier' &&
+						importedName === 'packages'
+					) {
+						canonicalImportCount += 1
+					} else {
+						hasOtherBinding = true
+					}
+				}
+			}
+		} else {
+			const params = node['params']
+			if (Array.isArray(params) && params.some(patternBindsPackages)) {
+				hasOtherBinding = true
+			}
+			if (
+				(type === 'VariableDeclarator' ||
+					type === 'CatchClause' ||
+					type === 'FunctionExpression' ||
+					type === 'ClassExpression' ||
+					(typeof type === 'string' &&
+						(type.endsWith('Declaration') || type.startsWith('TS')))) &&
+				(patternBindsPackages(node['id']) ||
+					patternBindsPackages(node['param']))
+			) {
+				hasOtherBinding = true
+			}
+		}
+
+		for (const child of Object.values(node)) {
+			if (child != null && typeof child === 'object') visit(child)
+		}
+	}
+
+	visit(program)
+	return {
+		canRewrite:
+			!hasOtherBinding &&
+			(canonicalImportCount === 0 || canonicalImportCount === 1),
+	}
+}
+
 function isTypeDeclarationFilePath(path: string) {
 	return (
 		path.endsWith('.d.ts') || path.endsWith('.d.mts') || path.endsWith('.d.cts')
@@ -151,6 +259,7 @@ function classifyModuleSource(input: {
 	}
 	const rewrites: Array<SourceRewrite> = []
 	let hasManual = false
+	const bindingClassification = classifyPackagesBindings(program)
 
 	function visit(node: unknown): void {
 		if (node == null || typeof node !== 'object') return
@@ -162,20 +271,23 @@ function classifyModuleSource(input: {
 		const typedNode = node as AstNode
 		if (isPackagesInvokeCall(typedNode)) {
 			const firstArg = typedNode.arguments?.[0]
-			if (!firstArg) {
-				hasManual = true
-			} else if (firstArg.type === 'ObjectExpression') {
-				// Object-only migration remains owned by permanent codemod 0006.
-			} else if (
-				firstArg.type === 'StringLiteral' ||
-				firstArg.type === 'Literal' ||
-				firstArg.type === 'TemplateLiteral'
-			) {
-				const result = classifyLiteralSpecifier(input.source, firstArg)
-				if (result === 'manual') hasManual = true
-				else if (result !== 'unchanged') rewrites.push(result)
-			} else {
-				hasManual = true
+			if (firstArg?.type !== 'ObjectExpression') {
+				if (
+					firstArg?.type === 'StringLiteral' ||
+					firstArg?.type === 'Literal' ||
+					firstArg?.type === 'TemplateLiteral'
+				) {
+					const result = classifyLiteralSpecifier(input.source, firstArg)
+					if (result !== 'unchanged') {
+						if (!bindingClassification.canRewrite || result === 'manual') {
+							hasManual = true
+						} else {
+							rewrites.push(result)
+						}
+					}
+				} else {
+					hasManual = true
+				}
 			}
 		}
 		for (const value of Object.values(node as Record<string, unknown>)) {
@@ -226,6 +338,21 @@ function listMarkdownCodeFences(source: string): Array<MarkdownCodeFence> {
 	return fences
 }
 
+function listMarkdownHtmlRanges(
+	source: string,
+): Array<{ start: number; end: number }> {
+	const ranges: Array<{ start: number; end: number }> = []
+	const commentPattern = /<!--[\s\S]*?(?:-->|$)/g
+	for (const match of source.matchAll(commentPattern)) {
+		ranges.push({ start: match.index, end: match.index + match[0].length })
+	}
+	const blockPattern = /<([A-Za-z][\w-]*)\b[^>]*>[\s\S]*?<\/\1\s*>/gi
+	for (const match of source.matchAll(blockPattern)) {
+		ranges.push({ start: match.index, end: match.index + match[0].length })
+	}
+	return ranges
+}
+
 function rangeOverlaps(
 	range: { start: number; end: number },
 	ranges: ReadonlyArray<{ start: number; end: number }>,
@@ -256,12 +383,24 @@ function classifyMarkdownFile(input: {
 }): FileClassification | null {
 	if (!/packages\s*\??\.\s*invoke\b/.test(input.source)) return null
 	const fences = listMarkdownCodeFences(input.source)
-	const coveredRanges: Array<{ start: number; end: number }> = fences.map(
-		(fence) => ({ start: fence.start, end: fence.end }),
-	)
+	const htmlRanges = listMarkdownHtmlRanges(input.source)
+	const coveredRanges: Array<{ start: number; end: number }> = [
+		...fences.map((fence) => ({ start: fence.start, end: fence.end })),
+		...htmlRanges,
+	]
 	const rewrites: Array<SourceRewrite> = []
 	let needsManual: string | null = null
+	if (
+		htmlRanges.some((range) =>
+			/packages\s*\??\.\s*invoke\b/.test(
+				input.source.slice(range.start, range.end),
+			),
+		)
+	) {
+		needsManual = manualMessage
+	}
 	for (const fence of fences) {
+		if (rangeOverlaps(fence, htmlRanges)) continue
 		const content = input.source.slice(fence.contentStart, fence.contentEnd)
 		if (!markdownModuleLanguages.has(fence.language)) {
 			if (/packages\s*\??\.\s*invoke\b/.test(content)) {
@@ -279,7 +418,10 @@ function classifyMarkdownFile(input: {
 		needsManual ??= classification.needsManual
 	}
 
-	const inlineCodePattern = /`([^`\n]+)`/g
+	// Only single, unescaped backtick spans are mechanically unambiguous.
+	// Multi-backtick spans and escaped delimiters remain unchanged and fall
+	// through to the fixed manual finding below.
+	const inlineCodePattern = /(?<![\\`])`(?!`)([^`\n]+)`(?!`)/g
 	let inlineCode: RegExpExecArray | null
 	while ((inlineCode = inlineCodePattern.exec(input.source))) {
 		const range = {

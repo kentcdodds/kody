@@ -11,15 +11,16 @@ export type PackageInvokeSpecifierTelemetryEnv = {
 	PACKAGE_INVOKE_SPECIFIER_EVENTS?: AnalyticsEngineDataset
 }
 
-const prefixedSpecifierPattern = /^kody:@[^/\s]+\/[^/\s]+(?:\/[^\s/]+)*$/
-const prefixlessSpecifierPattern = /^@[^/\s]+\/[^/\s]+(?:\/[^\s/]+)*$/
-
 export function classifyPackageInvokeSpecifierForm(
 	rawSpecifier: string,
 ): PackageInvokeSpecifierForm | null {
 	const specifier = rawSpecifier.trim()
-	if (prefixedSpecifierPattern.test(specifier)) return 'kody_prefixed'
-	if (prefixlessSpecifierPattern.test(specifier)) return 'prefixless'
+	// Classify only from the raw leading form. The parser accepts whitespace
+	// inside owner/package segments, and malformed attempts are intentionally
+	// counted: false positives delay retirement, while false negatives could
+	// incorrectly authorize removing a still-used form.
+	if (specifier.startsWith('kody:@')) return 'kody_prefixed'
+	if (specifier.startsWith('@')) return 'prefixless'
 	return null
 }
 
