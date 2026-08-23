@@ -585,44 +585,34 @@ function listMarkdownHtmlRanges(
 
 function listMarkdownInlineCode(source: string): Array<MarkdownInlineCode> {
 	const spans: Array<MarkdownInlineCode> = []
-	for (let start = 0; start < source.length; start += 1) {
-		if (
-			source[start] !== '`' ||
-			source[start - 1] === '\\' ||
-			source[start - 1] === '`' ||
-			source[start + 1] === '`'
-		) {
-			continue
-		}
-		let cursor = start + 1
-		while (cursor < source.length && source[cursor] !== '\n') {
-			if (source[cursor] === '/' && source[cursor + 1] === '*') {
-				const commentEnd = source.indexOf('*/', cursor + 2)
-				if (
-					commentEnd === -1 ||
-					source.slice(cursor, commentEnd).includes('\n')
-				) {
-					break
-				}
-				cursor = commentEnd + 2
+	let lineStart = 0
+	while (lineStart < source.length) {
+		const newline = source.indexOf('\n', lineStart)
+		const lineEnd = newline === -1 ? source.length : newline
+		let opener: number | null = null
+		for (let cursor = lineStart; cursor < lineEnd; cursor += 1) {
+			if (
+				source[cursor] !== '`' ||
+				source[cursor - 1] === '\\' ||
+				source[cursor - 1] === '`' ||
+				source[cursor + 1] === '`'
+			) {
 				continue
 			}
-			if (
-				source[cursor] === '`' &&
-				source[cursor - 1] !== '\\' &&
-				source[cursor + 1] !== '`'
-			) {
+			if (opener == null) {
+				opener = cursor
+			} else {
 				spans.push({
-					start,
+					start: opener,
 					end: cursor + 1,
-					contentStart: start + 1,
+					contentStart: opener + 1,
 					contentEnd: cursor,
 				})
-				start = cursor
-				break
+				opener = null
 			}
-			cursor += 1
 		}
+		if (newline === -1) break
+		lineStart = newline + 1
 	}
 	return spans
 }
@@ -695,9 +685,8 @@ function classifyMarkdownFile(input: {
 		needsManual ??= classification.needsManual
 	}
 
-	// Only single, unescaped backtick spans are mechanically unambiguous.
-	// Backticks inside block comments are part of JavaScript/JSDoc, not Markdown
-	// delimiters; this keeps generated JSDoc assertions parseable on rerun.
+	// Only line-local pairs of single, unescaped backticks are mechanically
+	// unambiguous. Multiline, escaped, and multi-backtick spans stay manual.
 	for (const inlineCode of listMarkdownInlineCode(input.source)) {
 		const range = {
 			start: inlineCode.start,

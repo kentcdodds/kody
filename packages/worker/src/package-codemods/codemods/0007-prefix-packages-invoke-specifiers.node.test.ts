@@ -795,6 +795,59 @@ test('0007 keeps multiline Markdown inline spans manual', () => {
 	expect(JSON.stringify(result.needsManual)).not.toContain('privateSpecifier')
 })
 
+test('0007 confines malformed inline delimiters to physical lines', () => {
+	const malformed = [
+		'Malformed: `packages.invoke(/* private-source',
+		'backtick on another line `',
+		'*/ privateSpecifier)`.',
+	].join('\r\n')
+	const ordinary = 'Ordinary: `balanced /* Markdown prose */ span` stays.'
+	const unmatchedCommentProse =
+		'Ordinary unmatched /* prose does not suppress later spans.'
+	const prose =
+		'Intervening prose packages.invoke(privateProse) must remain unchanged.'
+	const later = 'Later: `packages.invoke(laterSpecifier, laterOptions)`.'
+	const source = [
+		malformed,
+		'',
+		ordinary,
+		unmatchedCommentProse,
+		prose,
+		'',
+		later,
+		'',
+	].join('\r\n')
+	const result = prefixPackagesInvokeSpecifiersCodemod.transform({
+		'recovery.md': source,
+	})
+	const transformed = result.files['recovery.md'] ?? ''
+
+	expect(result.changedPaths).toEqual(['recovery.md'])
+	expect(result.needsManual).toEqual([
+		{
+			path: 'recovery.md',
+			message:
+				'A packages.invoke call is ambiguous or cannot be safely rewritten; add the kody: prefix manually.',
+		},
+	])
+	expect(transformed).toContain(malformed)
+	expect(transformed).toContain(ordinary)
+	expect(transformed).toContain(unmatchedCommentProse)
+	expect(transformed).toContain(prose)
+	expect(transformed).toContain('Later: `packages.invoke(/** @type {any} */')
+	const repeated = prefixPackagesInvokeSpecifiersCodemod.transform(result.files)
+	expect(repeated).toEqual({
+		files: result.files,
+		changed: false,
+		changedPaths: [],
+		needsManual: result.needsManual,
+	})
+	expect(JSON.stringify(result.needsManual)).not.toContain('private-source')
+	expect(JSON.stringify(result.needsManual)).not.toContain('privateSpecifier')
+	expect(JSON.stringify(result.needsManual)).not.toContain('privateProse')
+	expect(JSON.stringify(result.needsManual)).not.toContain('laterSpecifier')
+})
+
 test('0007 Markdown fallback requires a call shape and keeps findings privacy-safe', () => {
 	const privateSource = '@private-owner/private-package/private-export'
 	const files = {
