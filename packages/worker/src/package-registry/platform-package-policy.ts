@@ -80,6 +80,20 @@ export async function findPersonPackagePlatformReference(input: {
 	})
 }
 
+/** Fail closed only when the missing name is a platform-account scope. */
+export async function throwIfPersonPackagePlatformReference(input: {
+	db: D1Database
+	packageName: string
+}): Promise<void> {
+	const platformName = await findPlatformScopedPackageName({
+		db: input.db,
+		packageNames: [input.packageName],
+	})
+	if (platformName) {
+		throw new Error(formatPersonPackagePlatformDependencyMessage(platformName))
+	}
+}
+
 export function rewriteForkedPackageSelfReferences(input: {
 	files: Record<string, string>
 	originPackageName: string

@@ -7,7 +7,7 @@ import {
 	parseAuthoredPackageJson,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
-import { formatPersonPackagePlatformDependencyMessage } from '#worker/package-registry/platform-package-policy.ts'
+import { throwIfPersonPackagePlatformReference } from '#worker/package-registry/platform-package-policy.ts'
 import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
@@ -208,9 +208,10 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 					})
 			if (!resolution) {
 				if (input.allowPlatformScopes === false) {
-					throw new Error(
-						formatPersonPackagePlatformDependencyMessage(parsed.packageName),
-					)
+					await throwIfPersonPackagePlatformReference({
+						db: input.env.APP_DB,
+						packageName: parsed.packageName,
+					})
 				}
 				const plainRepo = await findPlainRepoPromotionHint(input.env.APP_DB, {
 					userId: input.userId,

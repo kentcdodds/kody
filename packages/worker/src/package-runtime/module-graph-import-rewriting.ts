@@ -7,7 +7,7 @@ import {
 	normalizePackageWorkspacePath,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
-import { formatPersonPackagePlatformDependencyMessage } from '#worker/package-registry/platform-package-policy.ts'
+import { throwIfPersonPackagePlatformReference } from '#worker/package-registry/platform-package-policy.ts'
 import {
 	type AuthoredPackageJson,
 	type SavedPackageRecord,
@@ -196,9 +196,10 @@ async function ensurePackageLoaded(
 	})
 	if (!resolution) {
 		if (!state.allowPlatformScopes) {
-			throw new Error(
-				formatPersonPackagePlatformDependencyMessage(parsed.packageName),
-			)
+			await throwIfPersonPackagePlatformReference({
+				db: state.env.APP_DB,
+				packageName: parsed.packageName,
+			})
 		}
 		throw new Error(
 			`Saved package "${parsed.packageName}" was not found for this user.`,

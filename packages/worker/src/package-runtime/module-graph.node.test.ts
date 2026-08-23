@@ -10,6 +10,7 @@ const mockModule = vi.hoisted(() => ({
 	createWorker: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	getSavedPackageByName: vi.fn(),
+	getPlatformAccountByUsername: vi.fn(async () => null),
 	loadPackageSourceBySourceId: vi.fn(),
 	loadPublishedBundleArtifactByIdentity: vi.fn(),
 }))
@@ -21,7 +22,8 @@ vi.mock('#worker/worker-bundler-modules.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/scope-grants.ts', () => ({
-	getPlatformAccountByUsername: async () => null,
+	getPlatformAccountByUsername: (...args: Array<unknown>) =>
+		mockModule.getPlatformAccountByUsername(...args),
 	isPlatformAccountStableUserId: async () => false,
 	listPlatformAccountUsernames: async () => [],
 }))
@@ -2652,6 +2654,56 @@ test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 		},
 	)
 	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
+})
+
+test('buildKodyModuleBundle rejects person-package imports of platform scopes', async () => {
+	mockModule.getPlatformAccountByUsername.mockImplementation(
+		async (_db: unknown, username: unknown) =>
+			username === 'kody'
+				? {
+						id: 1,
+						username: 'kody',
+						email: 'kody@example.com',
+						stableUserId: 'platform-kody',
+					}
+				: null,
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(null)
+
+	try {
+		const { buildKodyModuleBundle } = await import('./module-graph.ts')
+		const { personPackagePlatformDependencyMessage } = await import(
+			'#worker/package-registry/platform-package-policy.ts'
+		)
+
+		await expect(
+			buildKodyModuleBundle({
+				env: {
+					APP_DB: {},
+					REPO_SESSION: {},
+				} as Env,
+				baseUrl: 'https://heykody.dev',
+				userId: 'user-1',
+				sourceFiles: {
+					'package.json': JSON.stringify({
+						name: '@alice/local-package',
+						exports: {
+							'.': './index.js',
+						},
+						kody: {
+							id: 'local-package',
+							description: 'Local package',
+						},
+					}),
+					'index.js':
+						'import github from "kody:@kody/github"\nexport default github\n',
+				},
+				entryPoint: 'index.js',
+			}),
+		).rejects.toThrow(personPackagePlatformDependencyMessage)
+	} finally {
+		mockModule.getPlatformAccountByUsername.mockResolvedValue(null)
+	}
 })
 
 test('buildKodyAppBundle rewrites static and dynamic kody runtime imports inside TypeScript package apps', async () => {

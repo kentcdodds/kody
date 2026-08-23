@@ -9,6 +9,7 @@ import {
 	formatPersonPackagePlatformDependencyMessage,
 	personPackagePlatformDependencyMessage,
 	rewriteForkedPackageSelfReferences,
+	throwIfPersonPackagePlatformReference,
 } from './platform-package-policy.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
@@ -66,6 +67,18 @@ test('findPersonPackagePlatformReference names the official package and ignores 
 	expect(
 		formatPersonPackagePlatformDependencyMessage('@kody/notion'),
 	).toContain('@kody/notion')
+	await expect(
+		throwIfPersonPackagePlatformReference({
+			db,
+			packageName: '@alice/helper',
+		}),
+	).resolves.toBeUndefined()
+	await expect(
+		throwIfPersonPackagePlatformReference({
+			db,
+			packageName: '@kody/notion',
+		}),
+	).rejects.toThrow(personPackagePlatformDependencyMessage)
 })
 
 test('rewriteForkedPackageSelfReferences rewrites only the forked package name', () => {
