@@ -11,13 +11,16 @@ People following a host-specific walkthrough can stay on this page or use Get
 started (`/onboarding`).
 
 The in-app Get started page (`/onboarding`) has tabs with client-specific
-instructions and copyable config snippets for the host you are on.
+instructions. Step 1 shows a copyable Automatic install command first. Deeplinks,
+the MCP URL, and JSON/TOML merge stay under Manual.
 
 ## Add the MCP server
 
 1. Open Get started (`/onboarding`) and choose your client tab, or follow the
    short notes below.
-2. Use this deployment’s MCP URL: `https://<this-host>/mcp`.
+2. Run the Automatic install command for your client. It already includes this
+   deployment’s MCP URL (`https://<this-host>/mcp`). Hosts without a CLI copy
+   that URL instead.
 3. Complete the OAuth flow when the host opens it. Sign in to Kody if needed,
    then approve access.
 
@@ -30,13 +33,15 @@ MCP URL and setup prompt.
 
 ### Client notes
 
-- **Cursor** — Add a remote MCP server from Customize, or merge a
-  `mcpServers.kody.url` entry into `~/.cursor/mcp.json` / `.cursor/mcp.json`.
-- **Claude Desktop** — Use Settings → Connectors (custom connector + MCP URL).
-  Remote servers are not configured through `claude_desktop_config.json`. After
-  connecting, start a new chat and ask Claude to list Kody tools before the
-  first task — Claude Desktop often does not bind MCP tools until that next
-  turn.
+- **Cursor** — Run the Automatic Node command to merge `mcpServers.kody.url`
+  into `~/.cursor/mcp.json` without replacing other servers, then Authenticate
+  in the Cursor MCP list. Manual includes Add to Cursor, the MCP URL, and JSON
+  merge for `~/.cursor/mcp.json` / `.cursor/mcp.json`.
+- **Claude Desktop** — Copy the MCP URL into Settings → Connectors (custom
+  connector). Remote servers are not configured through
+  `claude_desktop_config.json`. After connecting, start a new chat and ask
+  Claude to list Kody tools before the first task — Claude Desktop often does
+  not bind MCP tools until that next turn.
 - **Grok** — On [grok.com/connectors](https://grok.com/connectors), click **New
   Connector**, select **Custom**, and paste the MCP URL. Complete OAuth when
   prompted. For Grok Business and Enterprise, a team admin must first add this
@@ -53,13 +58,16 @@ MCP URL and setup prompt.
   Plugins UI is missing. You can use the site favicon (`/apple-touch-icon.png`)
   for the app icon; the owner can edit a developer-mode app's name and logo
   later from Manage in Apps settings.
-- **Codex** — Codex (ChatGPT desktop, CLI, IDE) shares `~/.codex/config.toml`
-  with an `[mcp_servers.kody]` `url` entry.
-- **OpenCode** — Add a `mcp.kody` remote entry in `opencode.json`
-  (`"type": "remote"`).
-- **Copilot** — In VS Code, use `.vscode/mcp.json` with root key `servers` (not
-  `mcpServers`) and `"type": "http"`, then Agent mode in Copilot Chat. In
-  Copilot CLI, run `copilot mcp add --transport http kody <url>` or merge a
+- **Codex** — `codex mcp add kody --url <url>`, then `codex mcp login kody` if
+  OAuth does not start. Manual includes the shared `~/.codex/config.toml`
+  `[mcp_servers.kody]` `url` entry.
+- **OpenCode** — `opencode mcp add kody --url <url>`, then
+  `opencode mcp auth kody` if prompted. Manual includes a `mcp.kody` remote
+  entry in `opencode.json` (`"type": "remote"`).
+- **Copilot** — In Copilot CLI, run
+  `copilot mcp add --transport http kody <url>`. In VS Code Copilot Chat, use
+  Add to VS Code or `.vscode/mcp.json` with root key `servers` (not
+  `mcpServers`) and `"type": "http"`, then Agent mode. You can also merge a
   `mcpServers` entry into `~/.copilot/mcp-config.json` (CLI does not read
   `.vscode/mcp.json`).
 - **Copilot App** — In the GitHub Copilot app, open settings → **MCP Servers**
