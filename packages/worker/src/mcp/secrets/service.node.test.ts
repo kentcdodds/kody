@@ -933,15 +933,20 @@ test('user secrets persist per-entry expiry, stay listed after expiry, and fail 
 	}
 	const userId = 'user-123'
 
+	const futureDateOnly = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+		.toISOString()
+		.slice(0, 10)
+	const futureIso = `${futureDateOnly}T00:00:00.000Z`
+
 	const saved = await saveSecret({
 		env,
 		userId,
 		scope: 'user',
 		name: 'githubPat',
 		value: 'ghp_old',
-		expiresAt: '2026-12-01',
+		expiresAt: futureDateOnly,
 	})
-	expect(saved.expiresAt).toBe('2026-12-01T00:00:00.000Z')
+	expect(saved.expiresAt).toBe(futureIso)
 	expect(saved.ttlMs).toBeGreaterThan(0)
 
 	await expect(
@@ -952,7 +957,7 @@ test('user secrets persist per-entry expiry, stay listed after expiry, and fail 
 	expect(listed).toEqual([
 		expect.objectContaining({
 			name: 'githubPat',
-			expiresAt: '2026-12-01T00:00:00.000Z',
+			expiresAt: futureIso,
 		}),
 	])
 
