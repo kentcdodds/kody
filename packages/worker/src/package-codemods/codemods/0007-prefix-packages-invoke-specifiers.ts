@@ -598,7 +598,12 @@ function listMarkdownInlineCode(source: string): Array<MarkdownInlineCode> {
 		while (cursor < source.length && source[cursor] !== '\n') {
 			if (source[cursor] === '/' && source[cursor + 1] === '*') {
 				const commentEnd = source.indexOf('*/', cursor + 2)
-				if (commentEnd === -1) break
+				if (
+					commentEnd === -1 ||
+					source.slice(cursor, commentEnd).includes('\n')
+				) {
+					break
+				}
 				cursor = commentEnd + 2
 				continue
 			}

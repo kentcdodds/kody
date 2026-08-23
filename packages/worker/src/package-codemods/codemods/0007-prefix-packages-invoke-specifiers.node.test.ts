@@ -773,6 +773,28 @@ test('0007 keeps generated single-backtick Markdown inline code valid', () => {
 	expect(prefixPackagesInvokeSpecifiersCodemod.detect(result.files)).toEqual([])
 })
 
+test('0007 keeps multiline Markdown inline spans manual', () => {
+	const source =
+		'Inline: `packages.invoke(/* private comment\n*/ privateSpecifier)`.\n'
+	const result = prefixPackagesInvokeSpecifiersCodemod.transform({
+		'multiline-inline.md': source,
+	})
+
+	expect(result).toEqual({
+		files: { 'multiline-inline.md': source },
+		changed: false,
+		changedPaths: [],
+		needsManual: [
+			{
+				path: 'multiline-inline.md',
+				message:
+					'A packages.invoke call is ambiguous or cannot be safely rewritten; add the kody: prefix manually.',
+			},
+		],
+	})
+	expect(JSON.stringify(result.needsManual)).not.toContain('privateSpecifier')
+})
+
 test('0007 Markdown fallback requires a call shape and keeps findings privacy-safe', () => {
 	const privateSource = '@private-owner/private-package/private-export'
 	const files = {
