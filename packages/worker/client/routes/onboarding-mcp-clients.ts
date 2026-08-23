@@ -122,6 +122,91 @@ export function buildClaudeCodeAddCommand(mcpServerUrl: string) {
 	return `claude mcp add --transport http -s user kody ${mcpServerUrl}`
 }
 
+/** Codex CLI streamable HTTP add. OAuth may need `codex mcp login kody`. */
+export function buildCodexMcpAddCommand(mcpServerUrl: string) {
+	return `codex mcp add kody --url ${mcpServerUrl}`
+}
+
+export const codexMcpLoginCommand = 'codex mcp login kody'
+
+/**
+ * OpenCode non-interactive remote add (`opencode mcp add <name> --url`).
+ * OAuth may need `opencode mcp auth kody`.
+ */
+export function buildOpenCodeMcpAddCommand(mcpServerUrl: string) {
+	return `opencode mcp add kody --url ${mcpServerUrl}`
+}
+
+export const openCodeMcpAuthCommand = 'opencode mcp auth kody'
+
+/**
+ * Merge `mcpServers.kody.url` into a Cursor user-global `mcp.json` object
+ * without replacing other top-level keys or other servers.
+ */
+export function mergeCursorUserMcpConfig(
+	existing: unknown,
+	mcpServerUrl: string,
+) {
+	if (
+		existing != null &&
+		(typeof existing !== 'object' || Array.isArray(existing))
+	) {
+		throw new Error('Cursor mcp.json must be a JSON object')
+	}
+	const config =
+		existing == null ? {} : { ...(existing as Record<string, unknown>) }
+	const existingServers = config.mcpServers
+	if (
+		existingServers != null &&
+		(typeof existingServers !== 'object' || Array.isArray(existingServers))
+	) {
+		throw new Error('Cursor mcp.json mcpServers must be an object')
+	}
+	const servers =
+		existingServers == null
+			? {}
+			: { ...(existingServers as Record<string, unknown>) }
+	config.mcpServers = {
+		...servers,
+		kody: { url: mcpServerUrl },
+	}
+	return config
+}
+
+/**
+ * Copyable Node heredoc that writes `~/.cursor/mcp.json`. Cursor has no
+ * official `mcp add` CLI (agent mcp only lists, enables, and logs in).
+ */
+export function buildCursorMcpMergeCommand(mcpServerUrl: string) {
+	const urlLiteral = JSON.stringify(mcpServerUrl)
+	return [
+		'# Adds Kody to ~/.cursor/mcp.json without replacing other servers',
+		"node <<'EOF'",
+		"const fs = require('node:fs')",
+		"const path = require('node:path')",
+		"const os = require('node:os')",
+		"const file = path.join(os.homedir(), '.cursor', 'mcp.json')",
+		`const url = ${urlLiteral}`,
+		'let config = {}',
+		'try {',
+		"  config = JSON.parse(fs.readFileSync(file, 'utf8'))",
+		'} catch (error) {',
+		"  if (error.code !== 'ENOENT') throw error",
+		'}',
+		'if (!config || typeof config !== "object" || Array.isArray(config)) {',
+		"  throw new Error('~/.cursor/mcp.json must be a JSON object')",
+		'}',
+		'const servers = config.mcpServers',
+		'if (servers != null && (typeof servers !== "object" || Array.isArray(servers))) {',
+		"  throw new Error('~/.cursor/mcp.json mcpServers must be an object')",
+		'}',
+		'config.mcpServers = { ...servers, kody: { url } }',
+		"fs.mkdirSync(path.dirname(file), { recursive: true })",
+		"fs.writeFileSync(file, JSON.stringify(config, null, 2) + '\\n')",
+		'EOF',
+	].join('\n')
+}
+
 /** VS Code Copilot `.vscode/mcp.json` (root key is `servers`, not `mcpServers`). */
 export function buildVsCodeMcpJson(mcpServerUrl: string) {
 	return prettyJson({

@@ -1,17 +1,27 @@
+import { execSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
+	buildCodexMcpAddCommand,
 	buildCodexMcpToml,
 	buildCopilotCliAddCommand,
 	buildCopilotCliMcpJson,
 	buildCursorInstallUrl,
 	buildCursorMcpJson,
+	buildCursorMcpMergeCommand,
 	buildKodyAppIconUrl,
+	buildOpenCodeMcpAddCommand,
 	buildOpenCodeMcpJson,
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
+	codexMcpLoginCommand,
 	mcpClientTabs,
+	mergeCursorUserMcpConfig,
+	openCodeMcpAuthCommand,
 } from './onboarding-mcp-clients.ts'
 
 const mcpServerUrl = 'https://heykody.dev/mcp'
@@ -54,7 +64,17 @@ test('onboarding MCP client builders emit the structured configs each host expec
 			},
 		},
 	})
-	expect(buildClaudeCodeAddCommand(mcpServerUrl)).toContain(mcpServerUrl)
+	expect(buildClaudeCodeAddCommand(mcpServerUrl)).toBe(
+		`claude mcp add --transport http -s user kody ${mcpServerUrl}`,
+	)
+	expect(buildCodexMcpAddCommand(mcpServerUrl)).toBe(
+		`codex mcp add kody --url ${mcpServerUrl}`,
+	)
+	expect(codexMcpLoginCommand).toBe('codex mcp login kody')
+	expect(buildOpenCodeMcpAddCommand(mcpServerUrl)).toBe(
+		`opencode mcp add kody --url ${mcpServerUrl}`,
+	)
+	expect(openCodeMcpAuthCommand).toBe('opencode mcp auth kody')
 	expect(JSON.parse(buildVsCodeMcpJson(mcpServerUrl))).toEqual({
 		servers: {
 			kody: {
@@ -119,4 +139,88 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		type: 'http',
 		url: mcpServerUrl,
 	})
+
+	expect(mergeCursorUserMcpConfig(null, mcpServerUrl)).toEqual({
+		mcpServers: { kody: { url: mcpServerUrl } },
+	})
+	expect(
+		mergeCursorUserMcpConfig(
+			{
+				mcpServers: {
+					other: { command: 'npx' },
+					kody: { url: 'https://old.example/mcp', headers: { X: '1' } },
+				},
+				theme: 'dark',
+			},
+			mcpServerUrl,
+		),
+	).toEqual({
+		mcpServers: {
+			other: { command: 'npx' },
+			kody: { url: mcpServerUrl },
+		},
+		theme: 'dark',
+	})
+	expect(() => mergeCursorUserMcpConfig([], mcpServerUrl)).toThrow(
+		/must be a JSON object/u,
+	)
+	expect(() =>
+		mergeCursorUserMcpConfig({ mcpServers: [] }, mcpServerUrl),
+	).toThrow(/mcpServers must be an object/u)
+
+	const cursorCommand = buildCursorMcpMergeCommand(mcpServerUrl)
+	expect(cursorCommand).toContain(mcpServerUrl)
+	expect(cursorCommand).toContain("node <<'EOF'")
+	expect(cursorCommand).not.toMatch(/cursor mcp add|agent mcp add/u)
+
+	const home = mkdtempSync(join(tmpdir(), 'kody-cursor-mcp-'))
+	execSync(cursorCommand, {
+		env: { ...process.env, HOME: home },
+		shell: '/bin/bash',
+	})
+	expect(
+		JSON.parse(readFileSync(join(home, '.cursor', 'mcp.json'), 'utf8')),
+	).toEqual({
+		mcpServers: { kody: { url: mcpServerUrl } },
+	})
+
+	mkdirSync(join(home, 'existing', '.cursor'), { recursive: true })
+	const existingHome = join(home, 'existing')
+	writeFileSync(
+		join(existingHome, '.cursor', 'mcp.json'),
+		JSON.stringify(
+			{
+				mcpServers: { notes: { command: 'notes' } },
+				extra: true,
+			},
+			null,
+			2,
+		),
+	)
+	execSync(buildCursorMcpMergeCommand(mcpServerUrl), {
+		env: { ...process.env, HOME: existingHome },
+		shell: '/bin/bash',
+	})
+	expect(
+		JSON.parse(readFileSync(join(existingHome, '.cursor', 'mcp.json'), 'utf8')),
+	).toEqual({
+		mcpServers: {
+			notes: { command: 'notes' },
+			kody: { url: mcpServerUrl },
+		},
+		extra: true,
+	})
+
+	const invalidHome = join(home, 'invalid')
+	mkdirSync(join(invalidHome, '.cursor'), { recursive: true })
+	writeFileSync(join(invalidHome, '.cursor', 'mcp.json'), '{not-json')
+	expect(() =>
+		execSync(buildCursorMcpMergeCommand(mcpServerUrl), {
+			env: { ...process.env, HOME: invalidHome },
+			shell: '/bin/bash',
+		}),
+	).toThrow()
+	expect(readFileSync(join(invalidHome, '.cursor', 'mcp.json'), 'utf8')).toBe(
+		'{not-json',
+	)
 })
