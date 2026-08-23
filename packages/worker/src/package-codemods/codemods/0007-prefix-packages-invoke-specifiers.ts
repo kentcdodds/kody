@@ -45,7 +45,7 @@ const markdownTypescriptLanguages = new Set([
 	'typescript',
 ])
 
-type SourceKind = 'javascript' | 'typescript'
+type SourceKind = 'javascript' | 'markdown-inline' | 'typescript'
 
 type AstNode = ModuleAstNode & {
 	start?: number
@@ -383,13 +383,15 @@ function createDynamicSpecifierWrapper(input: {
 	if (input.sourceKind === 'typescript') {
 		return (
 			`((${valueName}: unknown): ${specifierType} => ${body})` +
-			`(${input.expression})`
+			`((${input.expression}))`
 		)
 	}
+	const assertionType =
+		input.sourceKind === 'markdown-inline' ? 'any' : specifierType
 	return (
-		`/** @type {${specifierType}} */ (` +
+		`/** @type {${assertionType}} */ (` +
 		`((/** @type {unknown} */ ${valueName}) => ${body})` +
-		`(${input.expression}))`
+		`((${input.expression})))`
 	)
 }
 
@@ -704,7 +706,7 @@ function classifyMarkdownFile(input: {
 				inlineCode.contentStart,
 				inlineCode.contentEnd,
 			),
-			sourceKind: 'javascript',
+			sourceKind: 'markdown-inline',
 			offset: inlineCode.contentStart,
 		})
 		if (!classification) continue

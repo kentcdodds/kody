@@ -1,6 +1,7 @@
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
 import { expect, test } from 'vitest'
+import { parseModuleSource } from '#worker/module-source.ts'
 import { getPackageCodemodById } from '../registry.ts'
 import {
 	prefixPackagesInvokeSpecifiersCodemod,
@@ -429,6 +430,50 @@ globalThis.codemodResult = { producerCalls }
 	])
 })
 
+test('0007 preserves sequence-expression semantics and evaluates it once', () => {
+	const source = `
+let initCalls = 0
+function init() {
+  initCalls += 1
+}
+const spec = '@owner/pkg/run'
+const result = packages.invoke((init(), spec))
+globalThis.codemodResult = { initCalls, result }
+`
+	const result = prefixPackagesInvokeSpecifiersCodemod.transform({
+		'sequence.js': source,
+	})
+	const transformed = result.files['sequence.js'] ?? ''
+	const observed: Array<unknown> = []
+	const context: {
+		codemodResult?: { initCalls: number; result: unknown }
+		packages: { invoke(value: unknown): unknown }
+	} = {
+		packages: {
+			invoke(value) {
+				observed.push(value)
+				return value
+			},
+		},
+	}
+
+	expect(transformed).toContain('})((init(), spec)))')
+	runInNewContext(transformed, context)
+	expect(context.codemodResult).toEqual({
+		initCalls: 1,
+		result: 'kody:@owner/pkg/run',
+	})
+	expect(observed).toEqual(['kody:@owner/pkg/run'])
+	expect(prefixPackagesInvokeSpecifiersCodemod.transform(result.files)).toEqual(
+		{
+			files: result.files,
+			changed: false,
+			changedPaths: [],
+			needsManual: [],
+		},
+	)
+})
+
 test('0007 normalizes every parseable dynamic expression and preserves the rest of each call', () => {
 	const source = `
 const __kodyCodemod0007Value = outerValue
@@ -452,15 +497,17 @@ await packages?.invoke(__kodyCodemod0007Value, options)
 	expect(result.needsManual).toEqual([])
 	expect(transformed.match(/kody-codemod-0007/g)).toHaveLength(5)
 	expect(transformed).toContain(
-		'})(result.exports[0].import_specifier), {\n  exportName: chooseExport(primary, fallback),\n  params: buildParams({ complete: true }),\n  idempotencyKey: event.id,\n  topic: `events:${kind}`,\n})',
+		'})((result.exports[0].import_specifier)), {\n  exportName: chooseExport(primary, fallback),\n  params: buildParams({ complete: true }),\n  idempotencyKey: event.id,\n  topic: `events:${kind}`,\n})',
 	)
-	expect(transformed).toContain('})(condition ? left : right), options)')
-	expect(transformed).toContain('})(getSpecifier(input)), buildOptions())')
-	expect(transformed).toContain('})(`@${owner}/${packageName}/run`), options)')
+	expect(transformed).toContain('})((condition ? left : right)), options)')
+	expect(transformed).toContain('})((getSpecifier(input))), buildOptions())')
+	expect(transformed).toContain(
+		'})((`@${owner}/${packageName}/run`)), options)',
+	)
 	expect(transformed).toContain(
 		'packages?.invoke(((__kodyCodemod0007Value: unknown)',
 	)
-	expect(transformed).toContain('})(__kodyCodemod0007Value), options)')
+	expect(transformed).toContain('})((__kodyCodemod0007Value)), options)')
 })
 
 test('0007 recognizes only the exact generated wrapper shape', () => {
@@ -479,7 +526,7 @@ test('0007 recognizes only the exact generated wrapper shape', () => {
 		'kody-codemod-0007 */ const',
 	)
 	expect(result.files['marker-dynamic.js']).toContain(
-		"})(getSpecifier('kody-codemod-0007'))), options)",
+		"})((getSpecifier('kody-codemod-0007')))), options)",
 	)
 	expect(prefixPackagesInvokeSpecifiersCodemod.transform(result.files)).toEqual(
 		{
@@ -505,10 +552,10 @@ packages!.invoke!(thirdSpecifier, thirdOptions)
 
 	expect(result.needsManual).toEqual([])
 	expect(transformed.match(/kody-codemod-0007/g)).toHaveLength(4)
-	expect(transformed).toContain('})(firstSpecifier), firstOptions)')
-	expect(transformed).toContain('})(secondSpecifier), secondOptions)')
-	expect(transformed).toContain('})(thirdSpecifier), thirdOptions)')
-	expect(transformed).toContain('})(fourthSpecifier), fourthOptions))!')
+	expect(transformed).toContain('})((firstSpecifier)), firstOptions)')
+	expect(transformed).toContain('})((secondSpecifier)), secondOptions)')
+	expect(transformed).toContain('})((thirdSpecifier)), thirdOptions)')
+	expect(transformed).toContain('})((fourthSpecifier)), fourthOptions))!')
 	expect(prefixPackagesInvokeSpecifiersCodemod.transform(result.files)).toEqual(
 		{
 			files: result.files,
@@ -685,10 +732,36 @@ await packages?.invoke(\`@\${owner}/pkg/run\`, options)
 	expect(result.files['guide.md']).toContain(
 		'(__kodyCodemod0007Value: unknown)',
 	)
-	expect(result.files['guide.md']).toContain(
-		'/** @type {`kody:@${string}/${string}`} */',
-	)
+	expect(result.files['guide.md']).toContain('/** @type {any} */')
 	expect(result.files['guide.mdx']).toContain('kody-codemod-0007')
+	expect(prefixPackagesInvokeSpecifiersCodemod.transform(result.files)).toEqual(
+		{
+			files: result.files,
+			changed: false,
+			changedPaths: [],
+			needsManual: [],
+		},
+	)
+	expect(prefixPackagesInvokeSpecifiersCodemod.detect(result.files)).toEqual([])
+})
+
+test('0007 keeps generated single-backtick Markdown inline code valid', () => {
+	const source =
+		'Inline: `packages.invoke(condition ? left : right, options)`.\n'
+	const result = prefixPackagesInvokeSpecifiersCodemod.transform({
+		'inline.md': source,
+	})
+	const transformed = result.files['inline.md'] ?? ''
+	const backticks = transformed.match(/`/g) ?? []
+	const inlineContent = transformed.slice(
+		transformed.indexOf('`') + 1,
+		transformed.lastIndexOf('`'),
+	)
+
+	expect(backticks).toHaveLength(2)
+	expect(transformed).toContain('/** @type {any} */')
+	expect(transformed).not.toContain('`kody:@${string}/${string}`')
+	expect(() => parseModuleSource(inlineContent)).not.toThrow()
 	expect(prefixPackagesInvokeSpecifiersCodemod.transform(result.files)).toEqual(
 		{
 			files: result.files,
