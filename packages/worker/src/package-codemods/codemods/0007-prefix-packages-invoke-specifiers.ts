@@ -69,6 +69,10 @@ type MarkdownCodeFence = {
 	language: string
 }
 
+function hasPackagesInvokeTokens(source: string) {
+	return source.includes('packages') && source.includes('invoke')
+}
+
 function patternBindsPackages(pattern: unknown): boolean {
 	if (!pattern || typeof pattern !== 'object') return false
 	const node = pattern as Record<string, unknown>
@@ -273,7 +277,9 @@ function classifyModuleSource(input: {
 	source: string
 	offset?: number
 }): FileClassification | null {
-	if (!packagesInvokeDetectorPattern.test(input.source)) return null
+	// Keep the module prefilter deliberately broad. The AST below owns call
+	// identification, including comments between member-access tokens.
+	if (!hasPackagesInvokeTokens(input.source)) return null
 	const program = parseProgram(input.source)
 	if (!program) {
 		return {
@@ -406,7 +412,7 @@ function classifyMarkdownFile(input: {
 	path: string
 	source: string
 }): FileClassification | null {
-	if (!packagesInvokeDetectorPattern.test(input.source)) return null
+	if (!hasPackagesInvokeTokens(input.source)) return null
 	const fences = listMarkdownCodeFences(input.source)
 	const htmlRanges = listMarkdownHtmlRanges(input.source)
 	const coveredRanges: Array<{ start: number; end: number }> = [

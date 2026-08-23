@@ -44,7 +44,12 @@ completed; the end must be after the observation window closed.
 ```sql
 SELECT
   blob2 AS surface,
-  COUNT(*) AS retained_samples_total,
+  COUNT(*) AS retained_calls_total,
+  SUM(CASE WHEN blob1 = 'prefixless' THEN 1 ELSE 0 END)
+    AS retained_prefixless_calls,
+  SUM(CASE WHEN blob1 = 'kody_prefixed' THEN 1 ELSE 0 END)
+    AS retained_kody_prefixed_calls,
+  MAX(_sample_interval) AS max_sample_interval,
   SUM(_sample_interval) AS weighted_calls_total,
   SUM(
     CASE WHEN blob1 = 'prefixless' THEN _sample_interval ELSE 0 END
@@ -62,9 +67,12 @@ ORDER BY blob2
 ```
 
 Analytics Engine can sample high-volume data. Each retained row represents
-`_sample_interval` source events. The weighted sums estimate workload coverage;
-`retained_samples_total` measures how many rows actually support that estimate.
-Both are required by the gate below.
+`_sample_interval` source events. The weighted sums report estimated workload
+volume, but they are not independent observations. Retirement evidence is valid
+only when `max_sample_interval = 1`, meaning the entire evidence window is
+unsampled. If any sampling occurs, the gate stays closed and the operator must
+collect a different unsampled window or use a separate unsampled evidence
+source.
 
 ## Cleanup gate
 
@@ -72,26 +80,27 @@ Remove prefixless runtime support only when one query window proves all of the
 following:
 
 - `execute`, `package`, and `job` each independently have exactly `0`
+  `retained_prefixless_calls`, at least `300` `retained_calls_total`, at least
+  `30` `retained_kody_prefixed_calls`, and `max_sample_interval = 1`. The
+  required weighted thresholds remain the same: exactly `0`
   `weighted_prefixless_calls`, at least `300` `weighted_calls_total`, and at
-  least `30` `weighted_kody_prefixed_calls`. Each must also have at least `300`
-  `retained_samples_total`.
+  least `30` `weighted_kody_prefixed_calls`.
 - `app` is observed in every readout. If it has any traffic, it must meet the
-  same weighted `0` / `300` / `30` thresholds and the same
-  `retained_samples_total >= 300` floor independently. A missing app row means
-  no app traffic and does not block cleanup.
+  same unsampled retained and weighted `0` / `300` / `30` thresholds
+  independently. A missing app row means no app traffic and does not block
+  cleanup.
 
 Do not combine surfaces to reach a threshold. Execute, package, and job are
 historically active and each must pass independently.
 
-Weighted thresholds measure estimated workload coverage, but a few retained rows
-with large `_sample_interval` values must not satisfy the gate by themselves.
-The 300-row retained-sample floor provides that independent evidence-quality
-check. Analytics Engine uses adaptive sampling, and events are indexed by form,
-so neither weighted totals nor retained rows justify a formal binomial
-confidence interval. This is a conservative operational gate, not a claimed 95%
-bound. The independent minimum of 30 weighted `kody_prefixed` calls still
-prevents a dead or miswired telemetry path from looking safe merely because it
-reported zero deprecated calls.
+The unsampled-only requirement makes each retained row one observed call rather
+than an expanded estimate. Zero deprecated calls among at least 300 observed
+calls is the rule-of-three coverage target (an approximate one-sided 95% upper
+bound near 1% under independent calls). The separate minimum of 30 observed
+`kody_prefixed` calls prevents a dead or miswired telemetry path from looking
+safe merely because it reported zero deprecated calls. Weighted sums stay in the
+evidence as volume reporting and equal retained counts when
+`max_sample_interval = 1`; they never substitute for unsampled observations.
 
 Attach the following evidence to the final cutover:
 
