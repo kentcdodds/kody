@@ -350,6 +350,7 @@ test('0007 detect orders rewritable and manual findings and omits prefixed calls
 		'c-prefixed.ts':
 			"packages.invoke('kody:@private-owner/private-package/export')\n",
 		'd-parse.ts': "packages.invoke('@private-owner/private-package/export'\n",
+		'e-unrelated-parse.ts': 'const packages = (\nconst invoke = true\n',
 	})
 
 	expect(findings).toEqual([
@@ -370,6 +371,9 @@ test('0007 detect orders rewritable and manual findings and omits prefixed calls
 		},
 	])
 	expect(findings.map((finding) => finding.path)).not.toContain('c-prefixed.ts')
+	expect(findings.map((finding) => finding.path)).not.toContain(
+		'e-unrelated-parse.ts',
+	)
 	expect(JSON.stringify(findings)).not.toContain('private-owner')
 	expect(JSON.stringify(findings)).not.toContain('private-package')
 })

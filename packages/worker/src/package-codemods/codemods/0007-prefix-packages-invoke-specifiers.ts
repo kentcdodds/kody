@@ -282,11 +282,13 @@ function classifyModuleSource(input: {
 	if (!hasPackagesInvokeTokens(input.source)) return null
 	const program = parseProgram(input.source)
 	if (!program) {
-		return {
-			path: input.path,
-			rewrites: [],
-			needsManual: parseFailureMessage,
-		}
+		return packagesInvokeDetectorPattern.test(input.source)
+			? {
+					path: input.path,
+					rewrites: [],
+					needsManual: parseFailureMessage,
+				}
+			: null
 	}
 	const rewrites: Array<SourceRewrite> = []
 	let hasManual = false
