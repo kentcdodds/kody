@@ -2,6 +2,7 @@ import {
 	isBrowserAbortError,
 	isBrowserInjectedGlobalNoiseError,
 	isFirefoxDomPermissionDeniedError,
+	isSyntaxHighlightCoreDynamicImportFailureError,
 } from '#client/sentry-browser-filters.ts'
 import {
 	parseSentryClientConfig,
@@ -49,7 +50,8 @@ function shouldIgnoreBufferedError(error: unknown) {
 	return (
 		isBrowserAbortError(error) ||
 		isFirefoxDomPermissionDeniedError(error) ||
-		isBrowserInjectedGlobalNoiseError(error)
+		isBrowserInjectedGlobalNoiseError(error) ||
+		isSyntaxHighlightCoreDynamicImportFailureError(error)
 	)
 }
 

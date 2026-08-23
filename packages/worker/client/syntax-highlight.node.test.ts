@@ -6,6 +6,7 @@ import {
 	loadSyntaxHighlight,
 	renderHighlightedCode,
 	resetSyntaxHighlightLoadForTests,
+	setHighlightCoreImporterForTests,
 } from '#client/syntax-highlight.tsx'
 
 test('highlights known languages with dual-theme token styles and escapes content', async () => {
@@ -65,4 +66,54 @@ test('public API falls back to plaintext until the core chunk loads', async () =
 	)
 	expect(loadedHtml).toContain('--shiki-dark:')
 	expect(loadedHtml).toContain('const')
+})
+
+test('loadSyntaxHighlight retries once after a transient core import failure', async () => {
+	resetSyntaxHighlightLoadForTests()
+	let attempts = 0
+	const module = {
+		renderHighlightedCode: renderHighlightedCodeCore,
+	}
+	setHighlightCoreImporterForTests(async () => {
+		attempts += 1
+		if (attempts === 1) {
+			throw new TypeError(
+				'Failed to fetch dynamically imported module: https://kody.codes/assets/syntax-highlight-core-VCFYP6MU.js',
+			)
+		}
+		return module
+	})
+	try {
+		await loadSyntaxHighlight()
+		expect(attempts).toBe(2)
+		const loadedHtml = await renderToString(
+			jsx('div', {
+				children: renderHighlightedCode('const x = 1', 'ts'),
+			}),
+		)
+		expect(loadedHtml).toContain('--shiki-dark:')
+	} finally {
+		setHighlightCoreImporterForTests(null)
+		resetSyntaxHighlightLoadForTests()
+	}
+})
+
+test('loadSyntaxHighlight rejects after a second core import failure', async () => {
+	resetSyntaxHighlightLoadForTests()
+	let attempts = 0
+	setHighlightCoreImporterForTests(async () => {
+		attempts += 1
+		throw new TypeError(
+			'Failed to fetch dynamically imported module: https://kody.codes/assets/syntax-highlight-core-VCFYP6MU.js',
+		)
+	})
+	try {
+		await expect(loadSyntaxHighlight()).rejects.toThrow(
+			/Failed to fetch dynamically imported module/,
+		)
+		expect(attempts).toBe(2)
+	} finally {
+		setHighlightCoreImporterForTests(null)
+		resetSyntaxHighlightLoadForTests()
+	}
 })

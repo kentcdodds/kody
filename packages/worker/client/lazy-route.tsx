@@ -425,7 +425,15 @@ export async function preloadClientRouteModules(
 	const match = preloadMatcher.match(url)
 	if (!match) return
 	if (syntaxHighlightAreaNameSet.has(match.data.name)) {
-		await Promise.all([match.data.load(), loadSyntaxHighlight()])
+		// Route chunk failure must still reject (boot reloads on stale hashes).
+		// Highlight is optional — plaintext fences hydrate fine — so a flaky
+		// Shiki fetch must not fail the whole preload (KODY-CLOUDFLARE-5W).
+		await match.data.load()
+		try {
+			await loadSyntaxHighlight()
+		} catch {
+			// Leave fences as escaped plaintext until a later load succeeds.
+		}
 		return
 	}
 	await match.data.load()

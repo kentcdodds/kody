@@ -731,6 +731,62 @@ export function filterBrowserBlobImportScriptsNetworkSentryEvent<
 	return event
 }
 
+/**
+ * Optional Shiki chunk failed to load (`import('./syntax-highlight-core')`).
+ * Observed as an unhandledrejection on `/` when the homepage landing loop
+ * fire-and-forgot the preload without a catch (KODY-CLOUDFLARE-5W, Mobile
+ * Safari). Fences already render as escaped plaintext until the chunk
+ * resolves, so this is expected degradation — not an app defect. Match only
+ * the browser "Failed to fetch dynamically imported module" signature with
+ * `syntax-highlight-core` in the URL so other chunk-load failures stay
+ * Sentry-visible (route boot still reloads on stale area hashes).
+ */
+const syntaxHighlightCoreDynamicImportFailureMessage =
+	/Failed to fetch dynamically imported module:\s*\S*syntax-highlight-core[^/\s]*\.js/i
+
+export function isSyntaxHighlightCoreDynamicImportFailureMessage(
+	message: string,
+) {
+	return syntaxHighlightCoreDynamicImportFailureMessage.test(message.trim())
+}
+
+export function isSyntaxHighlightCoreDynamicImportFailureError(error: unknown) {
+	if (typeof error === 'string') {
+		return isSyntaxHighlightCoreDynamicImportFailureMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isSyntaxHighlightCoreDynamicImportFailureMessage(error.message)
+}
+
+export function isSyntaxHighlightCoreDynamicImportFailureSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isSyntaxHighlightCoreDynamicImportFailureError(originalException)) {
+		return true
+	}
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isSyntaxHighlightCoreDynamicImportFailureMessage(message),
+	)
+}
+
+export function filterSyntaxHighlightCoreDynamicImportFailureSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (
+		isSyntaxHighlightCoreDynamicImportFailureSentryEvent(
+			event,
+			originalException,
+		)
+	) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -803,6 +859,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	}
 	if (
 		filterBrowserBlobImportScriptsNetworkSentryEvent(
+			event,
+			originalException,
+		) === null
+	) {
+		return null
+	}
+	if (
+		filterSyntaxHighlightCoreDynamicImportFailureSentryEvent(
 			event,
 			originalException,
 		) === null

@@ -10,6 +10,10 @@ import { type RemixNode } from 'remix/ui'
  * hydration, and SPA preload already do this for those areas). Until the
  * chunk resolves, fences render as escaped plaintext in the same wrapper
  * so hydration has a safe fallback.
+ *
+ * Import failures (stale deploy hashes, Mobile Safari flakes) reject after
+ * one retry. Callers that treat highlighting as optional must catch — the
+ * homepage landing loop and route preload already do.
  */
 type HighlightModule = {
 	renderHighlightedCode: (
@@ -19,22 +23,35 @@ type HighlightModule = {
 	) => RemixNode
 }
 
+type HighlightCoreImporter = () => Promise<HighlightModule>
+
 let highlightModule: HighlightModule | null = null
 let highlightPending: Promise<HighlightModule> | null = null
+// Dynamic import is intentional so Shiki is an async chunk (sanctioned
+// exception to the no-inline-imports rule). Swappable in tests.
+let importHighlightCore: HighlightCoreImporter = () =>
+	import('./syntax-highlight-core.tsx')
+
+async function loadHighlightCoreWithRetry(): Promise<HighlightModule> {
+	try {
+		const module = await importHighlightCore()
+		highlightModule = module
+		return module
+	} catch {
+		// One retry covers transient network / Mobile Safari module-fetch
+		// flakes (KODY-CLOUDFLARE-5W). A second failure propagates.
+		const module = await importHighlightCore()
+		highlightModule = module
+		return module
+	}
+}
 
 export function loadSyntaxHighlight(): Promise<HighlightModule> {
 	if (highlightModule) return Promise.resolve(highlightModule)
 	if (!highlightPending) {
-		// Dynamic import is intentional so Shiki is an async chunk
-		// (sanctioned exception to the no-inline-imports rule).
-		highlightPending = import('./syntax-highlight-core.tsx')
-			.then((module) => {
-				highlightModule = module
-				return module
-			})
-			.finally(() => {
-				if (!highlightModule) highlightPending = null
-			})
+		highlightPending = loadHighlightCoreWithRetry().finally(() => {
+			if (!highlightModule) highlightPending = null
+		})
 	}
 	return highlightPending
 }
@@ -43,6 +60,14 @@ export function loadSyntaxHighlight(): Promise<HighlightModule> {
 export function resetSyntaxHighlightLoadForTests() {
 	highlightModule = null
 	highlightPending = null
+}
+
+/** Test hook: replace the core chunk importer (retry / failure coverage). */
+export function setHighlightCoreImporterForTests(
+	importer: HighlightCoreImporter | null,
+) {
+	importHighlightCore =
+		importer ?? (() => import('./syntax-highlight-core.tsx'))
 }
 
 /**
