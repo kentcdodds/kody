@@ -483,3 +483,44 @@ test('browser Sentry filters drop WorkerGlobalScope blob importScripts NetworkEr
 		}),
 	).not.toBeNull()
 })
+
+test('browser Sentry filters drop syntax-highlight-core dynamic import fetch failures (KODY-CLOUDFLARE-5W)', () => {
+	const highlightChunkMessage =
+		'Failed to fetch dynamically imported module: https://kody.codes/assets/syntax-highlight-core-VCFYP6MU.js'
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: highlightChunkMessage,
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'TypeError', value: 'something else' }],
+				},
+			},
+			new TypeError(highlightChunkMessage),
+		),
+	).toBeNull()
+	// Other hashed asset chunk misses must stay visible (boot reload path).
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							'Failed to fetch dynamically imported module: https://kody.codes/assets/blog-area-ABC123.js',
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+})

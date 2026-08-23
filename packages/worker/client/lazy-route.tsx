@@ -425,6 +425,10 @@ export async function preloadClientRouteModules(
 	const match = preloadMatcher.match(url)
 	if (!match) return
 	if (syntaxHighlightAreaNameSet.has(match.data.name)) {
+		// Keep highlight in this await: SSR already rendered Shiki fences for
+		// these areas, so a client miss would hydrate plaintext against
+		// highlighted markup. Boot reload (entry.tsx) recovers stale hashes;
+		// optional homepage prefetch catches separately (landing-loop-player).
 		await Promise.all([match.data.load(), loadSyntaxHighlight()])
 		return
 	}

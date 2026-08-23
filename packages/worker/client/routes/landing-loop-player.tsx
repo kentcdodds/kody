@@ -172,9 +172,16 @@ export function LandingLoopPlayer(handle: Handle) {
 	}
 
 	whenWindowLoaded(() => {
-		void loadSyntaxHighlight().then(() => {
-			if (!handle.signal.aborted) handle.update()
-		})
+		// Best-effort: plaintext fences already render until Shiki loads.
+		// An uncaught rejection here was KODY-CLOUDFLARE-5W (Mobile Safari
+		// "Failed to fetch dynamically imported module" for the highlight chunk).
+		void loadSyntaxHighlight()
+			.then(() => {
+				if (!handle.signal.aborted) handle.update()
+			})
+			.catch(() => {
+				// Keep playing with plaintext; a later navigation may retry.
+			})
 	}, handle.signal)
 
 	return () => {
