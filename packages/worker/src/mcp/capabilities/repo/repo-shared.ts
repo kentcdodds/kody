@@ -94,8 +94,36 @@ export const repoResolvedTargetSchema = z.union([
 	}),
 ])
 
+/**
+ * Agents sometimes pass literal placeholders (`none`, `null`, …) when they do
+ * not have a session id yet. Reject those at the schema boundary with guidance
+ * so the mistake never reaches the RepoSession DO or Sentry (KODY-CLOUDFLARE-5V).
+ */
+const repoSessionIdPlaceholderValues = new Set([
+	'none',
+	'null',
+	'undefined',
+	'nil',
+	'n/a',
+	'na',
+])
+
+export const repoSessionIdFieldSchema = z
+	.string()
+	.min(1)
+	.refine(
+		(value) => !repoSessionIdPlaceholderValues.has(value.trim().toLowerCase()),
+		{
+			message:
+				'session_id must be a real id from repo_open_session or repo_list_sessions, not a placeholder like "none".',
+		},
+	)
+	.describe(
+		'Active repo session id from repo_open_session or repo_list_sessions.',
+	)
+
 export const repoSessionIdSchema = z.object({
-	session_id: z.string().min(1).describe('Active repo session id.'),
+	session_id: repoSessionIdFieldSchema,
 })
 
 export const repoPublishSessionInputSchema = repoSessionIdSchema.extend({

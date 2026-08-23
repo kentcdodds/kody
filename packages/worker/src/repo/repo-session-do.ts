@@ -105,7 +105,11 @@ import {
 	measureRepoSessionWorkspaceBlobBytes,
 	purgeRepoSessionWorkspaceBlobs,
 } from './repo-session-blobs.ts'
-import { isGitPushNotFastForwardError } from './repo-session-caller-error.ts'
+import {
+	buildRepoSessionNotFoundForUserMessage,
+	buildRepoSessionNotFoundMessage,
+	isGitPushNotFastForwardError,
+} from './repo-session-caller-error.ts'
 import {
 	assertPackagePrivateVisibilityChangeAllowed,
 	assertPackageSourceOverwriteAllowed,
@@ -456,12 +460,10 @@ class RepoSessionBase extends DurableObject<Env> {
 			cachedState?.sessionRow ??
 			null
 		if (!sessionRow) {
-			throw new Error(`Repo session "${sessionId}" was not found.`)
+			throw new Error(buildRepoSessionNotFoundMessage(sessionId))
 		}
 		if (sessionRow.user_id !== userId) {
-			throw new Error(
-				`Repo session "${sessionId}" was not found for this user.`,
-			)
+			throw new Error(buildRepoSessionNotFoundForUserMessage(sessionId))
 		}
 		const allowedStatuses = options.allowedStatuses ?? ['active']
 		if (!allowedStatuses.includes(sessionRow.status)) {
@@ -1331,7 +1333,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		} else {
 			if (sessionRow.user_id !== input.userId) {
 				throw new Error(
-					`Repo session "${input.sessionId}" was not found for this user.`,
+					buildRepoSessionNotFoundForUserMessage(input.sessionId),
 				)
 			}
 			if (sessionRow.status !== 'active') {
@@ -1562,7 +1564,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		if (sessionRow.user_id !== input.userId) {
 			throw new Error(
-				`Repo session "${input.sessionId}" was not found for this user.`,
+				buildRepoSessionNotFoundForUserMessage(input.sessionId),
 			)
 		}
 		await updateRepoSession(this.env, {
@@ -1590,7 +1592,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		})
 		if (sessionRow && sessionRow.user_id !== input.userId) {
 			throw new Error(
-				`Repo session "${input.sessionId}" was not found for this user.`,
+				buildRepoSessionNotFoundForUserMessage(input.sessionId),
 			)
 		}
 		await this.clearCachedSessionState(input.sessionId)
@@ -1629,7 +1631,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		if (sessionRow.user_id !== input.userId) {
 			throw new Error(
-				`Repo session "${input.sessionId}" was not found for this user.`,
+				buildRepoSessionNotFoundForUserMessage(input.sessionId),
 			)
 		}
 		const sessionBranch = sessionRow.session_branch
