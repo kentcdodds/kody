@@ -12,8 +12,9 @@ import { type RemixNode } from 'remix/ui'
  * so hydration has a safe fallback.
  *
  * Import failures (stale deploy hashes, Mobile Safari flakes) reject after
- * one retry. Callers that treat highlighting as optional must catch — the
- * homepage landing loop and route preload already do.
+ * one retry. Optional post-load callers (homepage landing loop) must catch —
+ * fences stay plaintext until a later load succeeds. Route preload must
+ * still await a successful load so SSR-highlighted fences hydrate cleanly.
  */
 type HighlightModule = {
 	renderHighlightedCode: (

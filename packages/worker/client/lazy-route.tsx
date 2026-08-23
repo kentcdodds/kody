@@ -425,15 +425,11 @@ export async function preloadClientRouteModules(
 	const match = preloadMatcher.match(url)
 	if (!match) return
 	if (syntaxHighlightAreaNameSet.has(match.data.name)) {
-		// Route chunk failure must still reject (boot reloads on stale hashes).
-		// Highlight is optional — plaintext fences hydrate fine — so a flaky
-		// Shiki fetch must not fail the whole preload (KODY-CLOUDFLARE-5W).
-		await match.data.load()
-		try {
-			await loadSyntaxHighlight()
-		} catch {
-			// Leave fences as escaped plaintext until a later load succeeds.
-		}
+		// Keep highlight in this await: SSR already rendered Shiki fences for
+		// these areas, so a client miss would hydrate plaintext against
+		// highlighted markup. Boot reload (entry.tsx) recovers stale hashes;
+		// optional homepage prefetch catches separately (landing-loop-player).
+		await Promise.all([match.data.load(), loadSyntaxHighlight()])
 		return
 	}
 	await match.data.load()
