@@ -22,7 +22,7 @@ test('onboarding MCP tabs show Automatic first and collapse Manual', async () =>
 	)
 	expect(html).toContain('>Automatic<')
 	expect(html).toContain('>Manual<')
-	expect(html).toContain('name="cursor"')
+	expect(html).toMatch(/aria-selected="true"[^>]*>Cursor</)
 
 	expect(html).toContain(mcpServerUrl)
 	expect(html).toContain('~/.cursor/mcp.json')

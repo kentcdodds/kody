@@ -218,6 +218,7 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		execSync(buildCursorMcpMergeCommand(mcpServerUrl), {
 			env: { ...process.env, HOME: invalidHome },
 			shell: '/bin/bash',
+			stdio: 'pipe',
 		}),
 	).toThrow()
 	expect(readFileSync(join(invalidHome, '.cursor', 'mcp.json'), 'utf8')).toBe(
