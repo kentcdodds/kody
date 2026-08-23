@@ -15,14 +15,16 @@ export const prefixPackagesInvokeSpecifiersCodemodId =
 const rewriteMessage =
 	'Uses a deprecated prefixless packages.invoke specifier; add the kody: prefix.'
 const manualMessage =
-	'A packages.invoke specifier is dynamic or ambiguous; add the kody: prefix manually.'
+	'A packages.invoke call is ambiguous or cannot be safely rewritten; add the kody: prefix manually.'
 const parseFailureMessage =
 	'File references packages.invoke but could not be parsed; add kody: prefixes manually.'
+const generatedWrapperMarker = 'kody-codemod-0007'
 
 const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
+const typescriptModuleFilePattern = /\.(?:[cm]?ts|tsx)$/
 const markdownFilePattern = /\.mdx?$/
 const packagesInvokeDetectorPattern =
-	/\bpackages(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\r\n]*)*(?:\?\.|\.)(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\r\n]*)*invoke\b/
+	/\bpackages(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\r\n]*)*!?(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\r\n]*)*(?:\?\.|\.)(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\r\n]*)*invoke(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\r\n]*)*!?(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\r\n]*)*(?:\?\.(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\r\n]*)*)?\(/
 const markdownModuleLanguages = new Set([
 	'cjs',
 	'cts',
@@ -35,6 +37,15 @@ const markdownModuleLanguages = new Set([
 	'tsx',
 	'typescript',
 ])
+const markdownTypescriptLanguages = new Set([
+	'cts',
+	'mts',
+	'ts',
+	'tsx',
+	'typescript',
+])
+
+type SourceKind = 'javascript' | 'markdown-inline' | 'typescript'
 
 type AstNode = ModuleAstNode & {
 	start?: number
@@ -47,6 +58,9 @@ type AstNode = ModuleAstNode & {
 	property?: AstNode
 	arguments?: Array<AstNode>
 	expressions?: Array<AstNode>
+	expression?: AstNode
+	params?: Array<AstNode>
+	body?: AstNode
 }
 
 type SourceRewrite = {
@@ -67,6 +81,13 @@ type MarkdownCodeFence = {
 	contentStart: number
 	contentEnd: number
 	language: string
+}
+
+type MarkdownInlineCode = {
+	start: number
+	end: number
+	contentStart: number
+	contentEnd: number
 }
 
 function hasPackagesInvokeTokens(source: string) {
@@ -106,6 +127,52 @@ function patternBindsPackages(pattern: unknown): boolean {
 	}
 }
 
+function unwrapTransparentExpression(
+	node: AstNode | undefined,
+): AstNode | undefined {
+	let current = node
+	while (
+		current?.type === 'TSNonNullExpression' ||
+		current?.type === 'ParenthesizedExpression' ||
+		current?.type === 'ChainExpression'
+	) {
+		current = current.expression
+	}
+	return current
+}
+
+function isIdentifierNamed(node: AstNode | undefined, name: string) {
+	const unwrapped = unwrapTransparentExpression(node)
+	return unwrapped?.type === 'Identifier' && unwrapped.name === name
+}
+
+function isStaticInvokeProperty(node: AstNode) {
+	const property = unwrapTransparentExpression(node.property)
+	return node.computed === true
+		? (property?.type === 'StringLiteral' || property?.type === 'Literal') &&
+				property.value === 'invoke'
+		: isIdentifierNamed(property, 'invoke')
+}
+
+function isPackagesMutationTarget(value: unknown) {
+	if (!value || typeof value !== 'object' || !('type' in value)) return false
+	const node = unwrapTransparentExpression(value as AstNode)
+	if (isIdentifierNamed(node, 'packages')) return true
+	if (
+		node?.type !== 'MemberExpression' &&
+		node?.type !== 'OptionalMemberExpression'
+	) {
+		return false
+	}
+	return (
+		isIdentifierNamed(node.object, 'packages') && isStaticInvokeProperty(node)
+	)
+}
+
+function isPackagesAssignmentTarget(value: unknown) {
+	return patternBindsPackages(value) || isPackagesMutationTarget(value)
+}
+
 function classifyPackagesBindings(program: AstNode) {
 	let canonicalImportCount = 0
 	let hasOtherBinding = false
@@ -120,7 +187,19 @@ function classifyPackagesBindings(program: AstNode) {
 		const node = value as Record<string, unknown>
 		const type = node['type']
 
-		if (type === 'ImportDeclaration') {
+		if (
+			(type === 'AssignmentExpression' &&
+				isPackagesAssignmentTarget(node['left'])) ||
+			(type === 'UpdateExpression' &&
+				isPackagesMutationTarget(node['argument'])) ||
+			(type === 'UnaryExpression' &&
+				node['operator'] === 'delete' &&
+				isPackagesMutationTarget(node['argument'])) ||
+			((type === 'ForOfStatement' || type === 'ForInStatement') &&
+				isPackagesAssignmentTarget(node['left']))
+		) {
+			hasOtherBinding = true
+		} else if (type === 'ImportDeclaration') {
 			const source = node['source']
 			const sourceValue =
 				source && typeof source === 'object'
@@ -202,15 +281,12 @@ function isPackagesInvokeCall(node: AstNode) {
 	) {
 		return false
 	}
-	const callee = node.callee
+	const callee = unwrapTransparentExpression(node.callee)
 	return (
 		(callee?.type === 'MemberExpression' ||
 			callee?.type === 'OptionalMemberExpression') &&
-		callee.computed !== true &&
-		callee.object?.type === 'Identifier' &&
-		callee.object.name === 'packages' &&
-		callee.property?.type === 'Identifier' &&
-		callee.property.name === 'invoke'
+		isIdentifierNamed(callee.object, 'packages') &&
+		isStaticInvokeProperty(callee)
 	)
 }
 
@@ -272,9 +348,78 @@ function classifyLiteralSpecifier(
 	}
 }
 
+function isStaticStringSpecifier(node: AstNode) {
+	if (node.type === 'StringLiteral') return true
+	if (node.type === 'Literal') return typeof node.value === 'string'
+	return node.type === 'TemplateLiteral' && node.expressions?.length === 0
+}
+
+function createDynamicSpecifierBody(sourceKind: SourceKind) {
+	const valueName = '__kodyCodemod0007Value'
+	const trimmedName = '__kodyCodemod0007Trimmed'
+	const specifierType = '`kody:@${string}/${string}`'
+	const normalizedExpression =
+		`typeof ${valueName} === 'string' && ${trimmedName}.startsWith('@') ` +
+		`? ${
+			sourceKind === 'typescript'
+				? `\`kody:\${${trimmedName}}\``
+				: `'kody:' + ${trimmedName}`
+		} : ${valueName}`
+	const bodyStart =
+		`{ /* ${generatedWrapperMarker} */ ` +
+		`const ${trimmedName} = typeof ${valueName} === 'string' ? ${valueName}.trim() : ''; `
+	return sourceKind === 'typescript'
+		? `${bodyStart}return (${normalizedExpression}) as ${specifierType} }`
+		: `${bodyStart}return ${normalizedExpression} }`
+}
+
+function createDynamicSpecifierWrapper(input: {
+	expression: string
+	sourceKind: SourceKind
+}) {
+	const valueName = '__kodyCodemod0007Value'
+	const specifierType = '`kody:@${string}/${string}`'
+	const body = createDynamicSpecifierBody(input.sourceKind)
+	if (input.sourceKind === 'typescript') {
+		return (
+			`((${valueName}: unknown): ${specifierType} => ${body})` +
+			`((${input.expression}))`
+		)
+	}
+	const assertionType =
+		input.sourceKind === 'markdown-inline' ? 'any' : specifierType
+	return (
+		`/** @type {${assertionType}} */ (` +
+		`((/** @type {unknown} */ ${valueName}) => ${body})` +
+		`((${input.expression})))`
+	)
+}
+
+function isGeneratedDynamicSpecifierWrapper(node: AstNode, source: string) {
+	if (node.type !== 'CallExpression' || node.arguments?.length !== 1)
+		return false
+	const callee = unwrapTransparentExpression(node.callee)
+	if (
+		callee?.type !== 'ArrowFunctionExpression' ||
+		callee.params?.length !== 1 ||
+		!isIdentifierNamed(callee.params[0], '__kodyCodemod0007Value') ||
+		callee.body?.type !== 'BlockStatement' ||
+		typeof callee.body.start !== 'number' ||
+		typeof callee.body.end !== 'number'
+	) {
+		return false
+	}
+	const bodySource = source.slice(callee.body.start, callee.body.end)
+	return (
+		bodySource === createDynamicSpecifierBody('javascript') ||
+		bodySource === createDynamicSpecifierBody('typescript')
+	)
+}
+
 function classifyModuleSource(input: {
 	path: string
 	source: string
+	sourceKind: SourceKind
 	offset?: number
 }): FileClassification | null {
 	// Keep the module prefilter deliberately broad. The AST below owns call
@@ -302,29 +447,81 @@ function classifyModuleSource(input: {
 		}
 		if (!('type' in node)) return
 		const typedNode = node as AstNode
-		if (isPackagesInvokeCall(typedNode)) {
-			const firstArg = typedNode.arguments?.[0]
-			if (firstArg?.type !== 'ObjectExpression') {
-				if (
-					firstArg?.type === 'StringLiteral' ||
-					firstArg?.type === 'Literal' ||
-					firstArg?.type === 'TemplateLiteral'
-				) {
-					const result = classifyLiteralSpecifier(input.source, firstArg)
-					if (result !== 'unchanged') {
-						if (!bindingClassification.canRewrite || result === 'manual') {
-							hasManual = true
-						} else {
-							rewrites.push(result)
-						}
-					}
-				} else {
-					hasManual = true
-				}
+		const packagesInvokeCall = isPackagesInvokeCall(typedNode)
+		const firstArg = packagesInvokeCall ? typedNode.arguments?.[0] : undefined
+		const firstArgSource =
+			firstArg &&
+			typeof firstArg.start === 'number' &&
+			typeof firstArg.end === 'number'
+				? input.source.slice(firstArg.start, firstArg.end)
+				: null
+		const hasGeneratedWrapper =
+			firstArg != null &&
+			isGeneratedDynamicSpecifierWrapper(firstArg, input.source)
+
+		for (const [key, value] of Object.entries(
+			node as Record<string, unknown>,
+		)) {
+			if (value == null || typeof value !== 'object') continue
+			if (hasGeneratedWrapper && key === 'arguments' && Array.isArray(value)) {
+				for (const argument of value.slice(1)) visit(argument)
+			} else {
+				visit(value)
 			}
 		}
-		for (const value of Object.values(node as Record<string, unknown>)) {
-			if (value != null && typeof value === 'object') visit(value)
+
+		if (!packagesInvokeCall || hasGeneratedWrapper) return
+		if (firstArg?.type !== 'ObjectExpression') {
+			if (firstArg && isStaticStringSpecifier(firstArg)) {
+				const result = classifyLiteralSpecifier(input.source, firstArg)
+				if (result !== 'unchanged') {
+					if (!bindingClassification.canRewrite || result === 'manual') {
+						hasManual = true
+					} else {
+						rewrites.push(result)
+					}
+				}
+			} else if (
+				firstArg &&
+				typeof firstArg.start === 'number' &&
+				typeof firstArg.end === 'number' &&
+				firstArg.type !== 'SpreadElement' &&
+				firstArgSource != null
+			) {
+				if (!bindingClassification.canRewrite) {
+					hasManual = true
+				} else {
+					const firstArgStart = firstArg.start
+					const firstArgEnd = firstArg.end
+					const nestedRewrites = rewrites.filter(
+						(rewrite) =>
+							rewrite.start >= firstArgStart && rewrite.end <= firstArgEnd,
+					)
+					const nestedRewriteSet = new Set(nestedRewrites)
+					for (let index = rewrites.length - 1; index >= 0; index -= 1) {
+						if (nestedRewriteSet.has(rewrites[index]!))
+							rewrites.splice(index, 1)
+					}
+					const expression = applyRewrites(
+						firstArgSource,
+						nestedRewrites.map((rewrite) => ({
+							...rewrite,
+							start: rewrite.start - firstArgStart,
+							end: rewrite.end - firstArgStart,
+						})),
+					)
+					rewrites.push({
+						start: firstArgStart,
+						end: firstArgEnd,
+						replacement: createDynamicSpecifierWrapper({
+							expression,
+							sourceKind: input.sourceKind,
+						}),
+					})
+				}
+			} else if (!firstArg || firstArg.type === 'SpreadElement') {
+				hasManual = true
+			}
 		}
 	}
 
@@ -386,6 +583,40 @@ function listMarkdownHtmlRanges(
 	return ranges
 }
 
+function listMarkdownInlineCode(source: string): Array<MarkdownInlineCode> {
+	const spans: Array<MarkdownInlineCode> = []
+	let lineStart = 0
+	while (lineStart < source.length) {
+		const newline = source.indexOf('\n', lineStart)
+		const lineEnd = newline === -1 ? source.length : newline
+		let opener: number | null = null
+		for (let cursor = lineStart; cursor < lineEnd; cursor += 1) {
+			if (
+				source[cursor] !== '`' ||
+				source[cursor - 1] === '\\' ||
+				source[cursor - 1] === '`' ||
+				source[cursor + 1] === '`'
+			) {
+				continue
+			}
+			if (opener == null) {
+				opener = cursor
+			} else {
+				spans.push({
+					start: opener,
+					end: cursor + 1,
+					contentStart: opener + 1,
+					contentEnd: cursor,
+				})
+				opener = null
+			}
+		}
+		if (newline === -1) break
+		lineStart = newline + 1
+	}
+	return spans
+}
+
 function rangeOverlaps(
 	range: { start: number; end: number },
 	ranges: ReadonlyArray<{ start: number; end: number }>,
@@ -444,6 +675,9 @@ function classifyMarkdownFile(input: {
 		const classification = classifyModuleSource({
 			path: input.path,
 			source: content,
+			sourceKind: markdownTypescriptLanguages.has(fence.language)
+				? 'typescript'
+				: 'javascript',
 			offset: fence.contentStart,
 		})
 		if (!classification) continue
@@ -451,22 +685,23 @@ function classifyMarkdownFile(input: {
 		needsManual ??= classification.needsManual
 	}
 
-	// Only single, unescaped backtick spans are mechanically unambiguous.
-	// Multi-backtick spans and escaped delimiters remain unchanged and fall
-	// through to the fixed manual finding below.
-	const inlineCodePattern = /(?<![\\`])`(?!`)([^`\n]+)`(?!`)/g
-	let inlineCode: RegExpExecArray | null
-	while ((inlineCode = inlineCodePattern.exec(input.source))) {
+	// Only line-local pairs of single, unescaped backticks are mechanically
+	// unambiguous. Multiline, escaped, and multi-backtick spans stay manual.
+	for (const inlineCode of listMarkdownInlineCode(input.source)) {
 		const range = {
-			start: inlineCode.index,
-			end: inlineCode.index + inlineCode[0].length,
+			start: inlineCode.start,
+			end: inlineCode.end,
 		}
 		if (rangeOverlaps(range, coveredRanges)) continue
 		coveredRanges.push(range)
 		const classification = classifyModuleSource({
 			path: input.path,
-			source: inlineCode[1] ?? '',
-			offset: inlineCode.index + 1,
+			source: input.source.slice(
+				inlineCode.contentStart,
+				inlineCode.contentEnd,
+			),
+			sourceKind: 'markdown-inline',
+			offset: inlineCode.contentStart,
 		})
 		if (!classification) continue
 		rewrites.push(...classification.rewrites)
@@ -490,7 +725,12 @@ function classifyFile(input: {
 	) {
 		return null
 	}
-	return classifyModuleSource(input)
+	return classifyModuleSource({
+		...input,
+		sourceKind: typescriptModuleFilePattern.test(input.path)
+			? 'typescript'
+			: 'javascript',
+	})
 }
 
 function classifyFiles(
@@ -557,7 +797,7 @@ function transform(
 export const prefixPackagesInvokeSpecifiersCodemod = {
 	id: prefixPackagesInvokeSpecifiersCodemodId,
 	description:
-		'Rewrite literal prefixless packages.invoke specifiers to the preferred kody:@owner/package[/export] form; flag dynamic or unparseable calls for manual review.',
+		'Rewrite literal prefixless packages.invoke specifiers and normalize parseable dynamic specifiers to the preferred kody:@owner/package[/export] form; flag ambiguous or unparseable calls for manual review.',
 	detect,
 	transform,
 } satisfies PackageCodemod

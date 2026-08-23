@@ -272,7 +272,12 @@ object-only JavaScript and TypeScript call sites; the permanent
 `0006-invoke-object-to-specifier` package codemod repairs safe cases. After that
 repair, the permanent `0007-prefix-packages-invoke-specifiers` codemod adds
 `kody:` to literal prefixless calls without changing the options argument or
-export precedence. Dynamic specifiers are left for manual review.
+export precedence. For parseable dynamic first arguments, 0007 inserts an inline
+normalizer that evaluates the original expression once, prefixes a trimmed
+string only when it begins with `@`, and otherwise passes the value through for
+the existing runtime parser to canonicalize or reject. Unparseable or
+binding-ambiguous calls remain manual because a textual fallback cannot prove
+the binding and argument boundaries safely.
 
 Package runtime contexts, authenticated ad hoc MCP `execute` calls, and package
 job runtimes can call `packages.invoke`. Person-scoped targets resolve only from

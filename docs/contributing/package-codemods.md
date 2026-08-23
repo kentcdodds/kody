@@ -257,15 +257,28 @@ preferred explicit scheme:
 
 - Rewrites literal `packages.invoke("@owner/package[/export]", options)` calls
   to `packages.invoke("kody:@owner/package[/export]", options)`.
+- Rewrites parseable non-object dynamic first arguments (identifiers, member and
+  helper-call expressions, conditionals, and interpolated templates) through a
+  marked inline normalizer. The original expression is passed into the IIFE and
+  therefore evaluated exactly once. At runtime the normalizer trims strings only
+  to detect a leading `@`, prefixes that trimmed prefixless value, and passes
+  already-prefixed strings, other strings, and non-strings through unchanged so
+  the existing runtime parser still canonicalizes or rejects them.
 - Preserves the complete options argument byte-for-byte, including `exportName`,
   so an export subpath keeps its existing precedence.
 - Handles JavaScript and TypeScript modules plus parseable JS/TS fenced and
-  inline examples in Markdown and MDX.
-- Leaves already-prefixed calls unchanged and is deterministic and idempotent.
-- Emits fixed, privacy-safe `needsManual` messages for dynamic or ambiguous
-  specifiers, examples outside parseable JS/TS Markdown ranges, and parse
-  failures. Messages never interpolate a specifier, package, export, parameter,
-  or source value.
+  inline examples in Markdown and MDX. TypeScript uses a return assertion on the
+  generated normalizer; JavaScript and untyped inline examples use a JSDoc
+  expression assertion, so generated JavaScript contains no TypeScript syntax.
+- Leaves already-prefixed calls and marked generated normalizers unchanged and
+  is deterministic and idempotent.
+- Emits fixed, privacy-safe `needsManual` messages for ambiguous bindings,
+  spread/missing arguments, genuinely call-shaped examples outside parseable
+  JS/TS Markdown ranges, and parse failures. Unparseable source has no textual
+  rewrite fallback: without an AST, the codemod cannot prove either binding or
+  argument boundaries safely. Markdown prose that merely names `packages.invoke`
+  without a following call is ignored. Messages never interpolate a specifier,
+  package, export, parameter, or source value.
 - Leaves object-only calls unchanged. Their migration remains the permanent
   `0006-invoke-object-to-specifier` codemod's responsibility.
 
