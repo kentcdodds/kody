@@ -193,24 +193,24 @@ reconnects use `/connect/oauth?provider=google` and the connect UI scope menu.
 - `403` from Gmail with a Calendar-only token: scopes are per-connection.
   Reconnect with the needed Gmail scope (BYO for inbox read).
 
-## Use the official package and verify
+## Fork the official package and verify
 
-A saved integration is auth credentials only. Finish by calling the live
-official helpers so day-to-day work goes through maintained Gmail, Calendar, and
-Drive helpers instead of raw `createAuthenticatedFetch` calls. Official
-`@kody/*` packages resolve in the caller runtime against the caller's secrets —
-do **not** fork them just to use them. Fork only when you need to customize the
-source.
+A saved integration is auth credentials only. Finish by forking the trusted
+official package so day-to-day work goes through maintained Gmail, Calendar, and
+Drive helpers instead of raw `createAuthenticatedFetch` calls:
 
-1. Search for `@kody/google` (or import `kody:@kody/google` directly). It covers
-   Gmail, Calendar, Drive, People, and YouTube.
-2. Check its README **Required setup**: the `personal` account alias maps to an
-   integration named `google` — the default name this guide's connect link uses,
-   so the primary lane needs no adaptation.
-3. Verify the live package against your integration from `execute`:
+1. Find the listing with `community_search({ query: 'google' })` — the trusted
+   `@kody/google` listing covers Gmail, Calendar, Drive, People, and YouTube.
+2. Fork it with `community_fork` (or click **Install** on the listing page).
+3. Check the fork's README **Required setup**: the `personal` account alias maps
+   to an integration named `google` — the default name this guide's connect link
+   uses, so the primary lane needs no adaptation. Trim the other account aliases
+   (`business`, `youtube-*`) unless you connect those too.
+4. Verify the package against your integration with its built-in smoke test from
+   `execute`:
 
 ```ts
-import { smokeTest } from 'kody:@kody/google'
+import { smokeTest } from 'kody:@<your-username>/google'
 
 export default async function main() {
 	return smokeTest({ account: 'personal' })
@@ -218,4 +218,4 @@ export default async function main() {
 ```
 
 A successful response returns the Google profile your integration resolves to —
-proving the live package, the OAuth tokens, and the host approvals all line up.
+proving the fork, the OAuth tokens, and the host approvals all line up.

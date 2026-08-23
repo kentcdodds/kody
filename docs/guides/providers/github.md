@@ -75,8 +75,8 @@ https://kody.codes/account/secrets/new?name=githubAccessToken&description=GitHub
 ```
 
 Approve the `api.github.com` host on the same page after saving. The name
-`githubAccessToken` is exactly what live `kody:@kody/github` reads by default,
-so no rename is needed.
+`githubAccessToken` is exactly what the official `@kody/github` community
+package reads by default, so a fork of it works without renaming anything.
 
 ## Lane C: bring-your-own OAuth App
 
@@ -185,24 +185,27 @@ per-capability.
 - Token exchange fails in Lane C: the client secret is required even with PKCE.
   Regenerate the secret and reconnect.
 
-## Use the official package and verify
+## Fork the official package and verify
 
-A saved token or integration is credentials only. Finish by calling the live
-official helpers so day-to-day work goes through maintained code instead of
-hand-rolled API calls. Official `@kody/*` packages resolve in the caller runtime
-against the caller's secrets — do **not** fork them just to use them. Fork only
-when you need to customize the source.
+A saved token or integration is credentials only. Finish by forking the trusted
+official package so day-to-day work goes through maintained helpers instead of
+hand-rolled API calls:
 
-1. Search for `@kody/github` (or import `kody:@kody/github` directly). It wraps
-   REST, GraphQL, pagination, and PR helpers.
-2. Check its README **Required setup**: the default `bot` account reads the
-   `githubAccessToken` secret — the exact name Lane B saved, so no adaptation is
-   needed for the PAT lane. For OAuth (Lane A/C), remap the account to the
-   `github` integration name when the package supports that.
-3. Verify the live package against your credentials from `execute`:
+1. Find the listing with `community_search({ query: 'github' })` — the trusted
+   `@kody/github` listing wraps REST, GraphQL, pagination, and PR helpers.
+2. Fork it with `community_fork` (or click **Install** on the listing page). The
+   fork lands in your account under your own scope.
+3. Check the fork's README **Required setup**: its default `bot` account reads
+   the `githubAccessToken` secret — the exact name Lane B saved, so no
+   adaptation is needed for the PAT lane. For OAuth (Lane A/C), remap the
+   account to the `github` integration name when the package supports that.
+   Remove or remap the extra `kent`/`explicit-only` account aliases if you do
+   not want them.
+4. Verify the package against your credentials by running its identity smoke
+   test from `execute`:
 
 ```ts
-import getViewer from 'kody:@kody/github/get-viewer'
+import getViewer from 'kody:@<your-username>/github/get-viewer'
 
 export default async function main() {
 	return getViewer({ account: 'bot' })
@@ -210,4 +213,4 @@ export default async function main() {
 ```
 
 A successful response returns the GitHub login your token resolves to — proving
-the live package, the secret, and the host approval all line up.
+the fork, the secret, and the host approval all line up.

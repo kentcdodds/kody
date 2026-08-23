@@ -158,23 +158,24 @@ internal connection, edit the page's **Connections** menu.
 - Installation scope wrong on a public connection: it cannot be edited after
   creation; create a new public connection instead.
 
-## Use the official package and verify (Lane B / OAuth)
+## Fork the official package and verify
 
-Lane A stays on the raw `notionToken` fetch above. The live official package is
-the Lane B finish: it uses the saved `notion` OAuth integration and does not
-read `notionToken`. Official `@kody/*` packages resolve in the caller runtime
-against the caller's secrets — do **not** fork them just to use them. Fork only
-when you need to customize the source.
+A saved integration is auth credentials only. Finish by forking the trusted
+official package so day-to-day work goes through maintained search, read, query,
+and confirmed-write helpers:
 
-1. Search for `@kody/notion` (or import `kody:@kody/notion` directly). It wraps
-   pages, databases, and a generic request escape hatch.
-2. Check its README **Required setup**: it expects an OAuth integration named
-   `notion` — the default name this guide's Lane B connect link uses, so no
+1. Find the listing with `community_search({ query: 'notion' })` — the trusted
+   `@kody/notion` listing wraps pages, databases, and a generic request escape
+   hatch.
+2. Fork it with `community_fork` (or click **Install** on the listing page).
+3. Check the fork's README **Required setup**: it expects an OAuth integration
+   named `notion` — the default name this guide's connect link uses, so no
    adaptation is needed.
-3. Verify the live package against the OAuth integration from `execute`:
+4. Verify the package against your integration with its built-in smoke test from
+   `execute`:
 
 ```ts
-import smokeTest from 'kody:@kody/notion/smoke-test'
+import smokeTest from 'kody:@<your-username>/notion/smoke-test'
 
 export default async function main() {
 	return smokeTest()
@@ -182,5 +183,5 @@ export default async function main() {
 ```
 
 A successful response confirms OAuth access without returning workspace PII —
-proving the live package, the tokens, and the page grants all line up. Remember
-the package only sees pages you shared on Notion's consent screen.
+proving the fork, the tokens, and the page grants all line up. Remember the
+package only sees pages you shared on Notion's consent screen.
