@@ -137,14 +137,29 @@ export function normalizeOnboardingMcpServerUrl(url: string): string {
 	}
 }
 
+function onboardingMcpServerHostsMatch(left: string, right: string): boolean {
+	try {
+		return new URL(left).hostname === new URL(right).hostname
+	} catch {
+		return false
+	}
+}
+
 export function matchOnboardingFeaturedMcpServer(
 	setting: { name: string; url: string },
 	option: Pick<OnboardingFeaturedMcpServerOption, 'name' | 'url'>,
 ): boolean {
-	return (
-		setting.name === option.name ||
+	if (
 		normalizeOnboardingMcpServerUrl(setting.url) ===
-			normalizeOnboardingMcpServerUrl(option.url)
+		normalizeOnboardingMcpServerUrl(option.url)
+	) {
+		return true
+	}
+	// Name alone is not enough: a custom server named "linear" with some
+	// other host must stay on the custom list, not overlay the official card.
+	return (
+		setting.name === option.name &&
+		onboardingMcpServerHostsMatch(setting.url, option.url)
 	)
 }
 
@@ -257,4 +272,113 @@ export function hasPendingOnboardingFeaturedMcpAuth(
 	servers: Array<OnboardingFeaturedMcpServer>,
 ): boolean {
 	return servers.some((server) => server.serverId != null && !server.connected)
+}
+
+/**
+ * A remote MCP server the person added themselves — not one of the featured
+ * official remotes. Same add/reconnect API as `/account/mcp-servers/new`.
+ */
+export type OnboardingCustomMcpServer = {
+	id: string
+	name: string
+	url: string
+	connected: boolean
+	authUrl: string | null
+	state: string | null
+	error: string | null
+}
+
+export type OnboardingMcpChooserOverlay = {
+	settings: Array<{
+		id: string
+		name: string
+		url: string
+	}>
+	statusByServerId?: Map<
+		string,
+		{
+			connected: boolean
+			authUrl: string | null
+			state: string
+			error: string | null
+		}
+	>
+}
+
+export function listOnboardingCustomMcpServers(
+	input: OnboardingMcpChooserOverlay,
+): Array<OnboardingCustomMcpServer> {
+	return input.settings
+		.filter(
+			(setting) =>
+				!onboardingFeaturedMcpServers.some((option) =>
+					matchOnboardingFeaturedMcpServer(setting, option),
+				),
+		)
+		.map((setting) => {
+			const status = input.statusByServerId?.get(setting.id)
+			return {
+				id: setting.id,
+				name: setting.name,
+				url: setting.url,
+				connected: status?.connected ?? false,
+				authUrl: status?.authUrl ?? null,
+				state: status?.state ?? null,
+				error: status?.error ?? null,
+			}
+		})
+}
+
+export function customOnboardingMcpFingerprint(
+	servers: Array<OnboardingCustomMcpServer>,
+): string {
+	return servers
+		.map((server) =>
+			[server.id, server.state ?? '', server.connected ? '1' : '0'].join(':'),
+		)
+		.join('|')
+}
+
+export function hasConnectedOnboardingCustomMcpServer(
+	servers: Array<OnboardingCustomMcpServer>,
+): boolean {
+	return servers.some((server) => server.connected)
+}
+
+export function hasPendingOnboardingCustomMcpAuth(
+	servers: Array<OnboardingCustomMcpServer>,
+): boolean {
+	return servers.some((server) => {
+		if (server.connected) return false
+		if (server.authUrl != null) return true
+		switch (server.state) {
+			case 'authenticating':
+			case 'connecting':
+			case 'connected':
+			case 'discovering':
+				return true
+			default:
+				return false
+		}
+	})
+}
+
+export function hasConnectedOnboardingWorkspaceMcp(input: {
+	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
+	customMcpServers: Array<OnboardingCustomMcpServer>
+}): boolean {
+	return (
+		hasConnectedOnboardingFeaturedMcpServer(input.featuredMcpServers) ||
+		hasConnectedOnboardingCustomMcpServer(input.customMcpServers)
+	)
+}
+
+export function firstConnectedOnboardingWorkspaceLabel(input: {
+	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
+	customMcpServers: Array<OnboardingCustomMcpServer>
+}): string | null {
+	const featured = input.featuredMcpServers.find((server) => server.connected)
+	if (featured) return featured.label
+	const custom = input.customMcpServers.find((server) => server.connected)
+	return custom?.name ?? null
 }

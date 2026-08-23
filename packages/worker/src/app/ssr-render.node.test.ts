@@ -379,6 +379,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		featuredListings: [],
 		builtInProviders: [],
 		featuredMcpServers: [],
+		customMcpServers: [],
 		persistedPackageKodyId: null,
 		checklist: null,
 	})

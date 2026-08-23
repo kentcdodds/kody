@@ -10,11 +10,12 @@ import {
 type OnboardingPersistCardProps = {
 	persistPrompt: string
 	connectedServerLabel: string | null
+	installedExampleName: string | null
 }
 
 /**
  * Step 3 lead: copy the ad hoc → persist prompt after the person connected
- * (or skipped) a featured MCP server.
+ * a workspace MCP, installed a Just-try-Kody example, or skipped.
  */
 export function OnboardingPersistCard(
 	handle: Handle<OnboardingPersistCardProps>,
@@ -41,18 +42,20 @@ export function OnboardingPersistCard(
 
 	return () => {
 		const connectedLabel = handle.props.connectedServerLabel
+		const exampleName = handle.props.installedExampleName
+		const targetLabel = connectedLabel ?? exampleName
 		return (
 			<div mix={css(cardCss)} data-testid="onboarding-persist-card">
 				<p mix={css(kickerCss)}>Paste this next</p>
 				<h3 mix={css(titleCss)}>
-					{connectedLabel
-						? `Ask your agent to use ${connectedLabel}, then save the result`
+					{targetLabel
+						? `Ask your agent to use ${targetLabel}, then save the result`
 						: 'Ask your agent to try something, then save the result'}
 				</h3>
 				<p mix={css(copyCss)}>
 					The prompt tells your agent to run one ad hoc request
-					{connectedLabel ? ` against ${connectedLabel}` : ''}, show you the
-					result, and persist that working code as a package you own.
+					{targetLabel ? ` against ${targetLabel}` : ''}, show you the result,
+					and persist that working code as a package you own.
 				</p>
 				<button
 					type="button"

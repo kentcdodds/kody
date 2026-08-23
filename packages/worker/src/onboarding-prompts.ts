@@ -29,6 +29,8 @@ export function buildOnboardingSetupPrompt() {
 		'Help me get started with Kody.',
 		'First, briefly explain what Kody can do for me in plain language.',
 		`Then help me connect ${formatOnboardingFeaturedMcpChoice()} as a remote MCP server: call mcp_server_add with one of ${formatOnboardingFeaturedMcpAddHint()}. If I already connected one on /onboarding, skip add and use mcp_server_list. When the result includes an authUrl, ask me to open it and authorize Kody, then check mcp_server_list.`,
+		'If none of those services are useful, add a custom remote MCP server with mcp_server_add (name + URL), or skip to a zero-auth example / ad hoc request.',
+		'Do not start a bring-your-own-key OAuth-app walkthrough unless I ask — that path is harder and belongs after the first package.',
 		'Do not offer GitHub official MCP as the first option — it does not return an authorization URL.',
 		'Do not create any packages until one connected server works — start with a small ad hoc execute smoke test against its tools (for example search Notion, list Linear issues, or list Stripe customers).',
 		'Once that ad hoc call works, persist the working code as a package I own with package_save, or community_fork the matching official @kody/*-mcp listing if one is closer. Only create a new package if nothing suitable exists.',
@@ -89,15 +91,27 @@ export function buildFirstWinPrompt(input: {
 export function buildPersistFirstPackagePrompt(input: {
 	env: OnboardingPromptEnv
 	requestUrl: string | URL
+	connectedWorkspaceLabel?: string | null
+	installedExampleName?: string | null
 }) {
 	const origin = getAppBaseUrl({
 		env: input.env,
 		requestUrl: input.requestUrl,
 	})
+	const step2Context = input.connectedWorkspaceLabel
+		? `I connected ${input.connectedWorkspaceLabel} as a remote MCP server from /onboarding Step 2.`
+		: input.installedExampleName
+			? `I installed ${input.installedExampleName} from /onboarding Step 2 Just try Kody.`
+			: `I may have connected ${formatOnboardingFeaturedMcpChoice()} or a custom MCP server on /onboarding Step 2, installed a zero-auth example, or skipped so I could try an ad hoc request first.`
+	const executeHint = input.connectedWorkspaceLabel
+		? `Use execute for one useful ad hoc call against ${input.connectedWorkspaceLabel}.`
+		: input.installedExampleName
+			? `Use execute or packages.invoke for one useful call against ${input.installedExampleName}.`
+			: 'Use execute for one useful ad hoc call (search Notion, list Linear issues, list Stripe customers, invoke a Just-try-Kody example, or ask me what I want if I skipped).'
 	return [
 		`Ask the connected Kody server to read ${origin}/guides/quick-example and help me with my first build on Kody.`,
-		`I connected ${formatOnboardingFeaturedMcpChoice()} as a remote MCP server from /onboarding Step 2, or skipped so I could try an ad hoc request first.`,
-		'Use execute for one useful ad hoc call (search Notion, list Linear issues, list Stripe customers, or ask me what I want if I skipped). Show the result, then persist that working code as a package I own with package_save — or community_fork the matching official @kody/*-mcp listing if one is closer.',
+		step2Context,
+		`${executeHint} Show the result, then persist that working code as a package I own with package_save — or community_fork the matching official @kody/*-mcp listing if one is closer.`,
 		'Explain that I own the package. Ask if I want a trigger (webhook, Kody app, cron, or skip) without recommending one.',
 		'Keep messages short. Do not poll.',
 	].join(' ')

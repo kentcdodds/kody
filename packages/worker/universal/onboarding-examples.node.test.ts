@@ -2,7 +2,10 @@ import { expect, test } from 'vitest'
 import {
 	buildOnboardingExamplePrompt,
 	buildOnboardingPackageAuthoringPrompt,
+	firstInstalledOnboardingExampleName,
+	hasInstalledOnboardingExample,
 	isOnboardingExampleListing,
+	onboardingExampleInstallFingerprint,
 	onboardingExampleListingIds,
 	selectOnboardingExampleListings,
 	selectOnboardingServiceStarterListings,
@@ -56,6 +59,52 @@ test('selects zero-auth examples in the known production order', () => {
 			tags: [],
 		}),
 	).toBe(true)
+	expect(hasInstalledOnboardingExample(featured)).toBe(false)
+	expect(
+		hasInstalledOnboardingExample([
+			{
+				...featured[2]!,
+				viewerInstall: {
+					status: 'installed',
+					targetName: '@me/local-conditions',
+					agentPrompt: 'Use it',
+					packageId: 'pkg-1',
+					listingAhead: false,
+					listingAheadPrompt: null,
+				},
+			},
+		]),
+	).toBe(true)
+	expect(
+		firstInstalledOnboardingExampleName([
+			{
+				...featured[2]!,
+				viewerInstall: {
+					status: 'installed',
+					targetName: '@me/local-conditions',
+					agentPrompt: 'Use it',
+					packageId: 'pkg-1',
+					listingAhead: false,
+					listingAheadPrompt: null,
+				},
+			},
+		]),
+	).toBe('@me/local-conditions')
+	expect(
+		onboardingExampleInstallFingerprint([
+			{
+				...featured[2]!,
+				viewerInstall: {
+					status: 'installed',
+					targetName: '@me/local-conditions',
+					agentPrompt: 'Use it',
+					packageId: 'pkg-1',
+					listingAhead: false,
+					listingAheadPrompt: null,
+				},
+			},
+		]),
+	).toContain('installed')
 })
 
 test('example prompt searches the user-owned scoped package and invokes in user scope', () => {

@@ -70,6 +70,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		featuredListings: [],
 		builtInProviders: [],
 		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+		customMcpServers: [],
 		persistedPackageKodyId: null,
 		checklist: null,
 	})
@@ -111,6 +112,7 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		featuredListings: [],
 		builtInProviders: [],
 		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+		customMcpServers: [],
 		persistedPackageKodyId: null,
 		checklist: null,
 	})
@@ -196,4 +198,37 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	})
 	expect(whenProviderListingFails.hasMcpClient).toBe(false)
 	expect(whenProviderListingFails.needsOnboarding).toBe(true)
+
+	const withCustomPersist = await loadOnboardingData({
+		env: {
+			OAUTH_PROVIDER: {
+				listUserGrants: vi.fn(async () => ({ items: [] })),
+			},
+		},
+		requestUrl: 'https://heykody.dev/onboarding',
+		stableUserId: 'user-1',
+		username: 'u-b',
+		emailVerified: true,
+		persistContext: { connectedWorkspaceLabel: 'acme' },
+	})
+	expect(withCustomPersist.persistPrompt).toContain(
+		'I connected acme as a remote MCP server',
+	)
+	expect(withCustomPersist.customMcpServers).toEqual([])
+
+	const withExamplePersist = await loadOnboardingData({
+		env: {
+			OAUTH_PROVIDER: {
+				listUserGrants: vi.fn(async () => ({ items: [] })),
+			},
+		},
+		requestUrl: 'https://heykody.dev/onboarding',
+		stableUserId: 'user-1',
+		username: 'u-b',
+		emailVerified: true,
+		persistContext: { installedExampleName: '@kody/hn-pulse' },
+	})
+	expect(withExamplePersist.persistPrompt).toContain(
+		'I installed @kody/hn-pulse from /onboarding Step 2 Just try Kody',
+	)
 })

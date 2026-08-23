@@ -5,6 +5,7 @@ import {
 	createOnboardingApiHandler,
 	createOnboardingHandler,
 	loadOnboardingBuiltInProviders,
+	loadOnboardingCustomMcpServers,
 	loadOnboardingFeaturedMcpServers,
 	loadPersistedPackageKodyId,
 	loadWelcomeEmail,
@@ -330,6 +331,54 @@ test('onboarding featured MCP servers overlay Notion and Linear connection state
 	await expect(
 		loadOnboardingFeaturedMcpServers(env, 'viewer-1'),
 	).resolves.toEqual(listDisconnectedOnboardingFeaturedMcpServers())
+})
+
+test('onboarding custom MCP servers exclude featured remotes', async () => {
+	const env = {} as Env
+	mockModule.listMcpServerSettings.mockResolvedValue([
+		{
+			id: 'srv-linear',
+			name: 'linear',
+			url: 'https://mcp.linear.app/mcp',
+			enabled: true,
+			createdAt: '2026-08-01T00:00:00.000Z',
+			updatedAt: '2026-08-01T00:00:00.000Z',
+		},
+		{
+			id: 'srv-acme',
+			name: 'acme',
+			url: 'https://mcp.acme.example/mcp',
+			enabled: true,
+			createdAt: '2026-08-01T00:00:00.000Z',
+			updatedAt: '2026-08-01T00:00:00.000Z',
+		},
+	])
+	mockModule.loadMcpClientHubSnapshotOrNull.mockResolvedValue({
+		servers: [
+			{
+				serverId: 'srv-acme',
+				state: 'ready',
+				authUrl: null,
+				error: null,
+				tools: [{ name: 'ping' }],
+			},
+		],
+	})
+
+	await expect(loadOnboardingCustomMcpServers(env)).resolves.toEqual([])
+	await expect(
+		loadOnboardingCustomMcpServers(env, 'viewer-1'),
+	).resolves.toEqual([
+		{
+			id: 'srv-acme',
+			name: 'acme',
+			url: 'https://mcp.acme.example/mcp',
+			connected: true,
+			authUrl: null,
+			state: 'ready',
+			error: null,
+		},
+	])
 })
 
 test('onboarding persist next-steps use the newest saved-package kody id', async () => {

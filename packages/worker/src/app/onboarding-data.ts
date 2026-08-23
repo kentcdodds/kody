@@ -10,6 +10,7 @@ import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboard
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
 	type OnboardingLoaderData,
 	type OnboardingWelcomeEmail,
@@ -85,6 +86,7 @@ export function loadPublicOnboardingData(input: {
 		featuredListings: [],
 		builtInProviders: [],
 		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+		customMcpServers: [],
 		persistedPackageKodyId: null,
 		checklist: null,
 	}
@@ -105,6 +107,13 @@ export async function loadOnboardingData(input: {
 	builtInProviders?: Array<OnboardingBuiltInProvider>
 	/** Official workspace MCP chooser cards, loaded by the handler. */
 	featuredMcpServers?: Array<OnboardingFeaturedMcpServer>
+	/** Non-featured MCP servers the viewer added, loaded by the handler. */
+	customMcpServers?: Array<OnboardingCustomMcpServer>
+	/** Contextual Step 3 persist prompt, computed by the handler. */
+	persistContext?: {
+		connectedWorkspaceLabel?: string | null
+		installedExampleName?: string | null
+	}
 	/** Most recently updated saved-package kody id, loaded by the handler. */
 	persistedPackageKodyId?: string | null
 	/** Derived progress checklist, computed by the handler. */
@@ -151,6 +160,9 @@ export async function loadOnboardingData(input: {
 			? buildPersistFirstPackagePrompt({
 					env: input.env,
 					requestUrl: input.requestUrl,
+					connectedWorkspaceLabel:
+						input.persistContext?.connectedWorkspaceLabel,
+					installedExampleName: input.persistContext?.installedExampleName,
 				})
 			: '',
 		hasMcpClient,
@@ -162,6 +174,7 @@ export async function loadOnboardingData(input: {
 			? (input.featuredMcpServers ??
 				listDisconnectedOnboardingFeaturedMcpServers())
 			: [],
+		customMcpServers: input.emailVerified ? (input.customMcpServers ?? []) : [],
 		// Computed by the handler alongside the checklist probes.
 		hasSentWelcomeEmail: false,
 		welcomeEmail: input.welcomeEmail ?? null,
