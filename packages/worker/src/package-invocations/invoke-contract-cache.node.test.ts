@@ -407,7 +407,7 @@ test('contract-check caches never serve entries across users', async () => {
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
 })
 
-test('platform package invalidation clears the owner-keyed specifier cache for callers', async () => {
+test('platform package invalidation clears every caller specifier cache', async () => {
 	const platformFixture = createFixture({
 		userId: 'platform-owner',
 		publishedCommit: 'commit-platform',
