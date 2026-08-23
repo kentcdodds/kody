@@ -10,6 +10,8 @@ import {
 	buildCopilotCliMcpJson,
 	buildCursorInstallUrl,
 	buildCursorMcpJson,
+	buildGrokCliAddCommand,
+	buildGrokCliMcpToml,
 	buildKodyAppIconUrl,
 	buildKodyCliInstallCommand,
 	buildOpenCodeMcpAddCommand,
@@ -22,6 +24,7 @@ import {
 	codingAgentPackageHint,
 	copilotAppCustomizeGuideUrl,
 	copilotCliMcpGuideUrl,
+	grokCliMcpGuideUrl,
 	grokConnectorsUrl,
 	grokCustomMcpGuideUrl,
 	type McpClientKind,
@@ -262,17 +265,9 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						</a>
 						, click <strong>New Connector</strong>, select{' '}
 						<strong>Custom</strong>, and paste this MCP URL. Complete OAuth when
-						Grok prompts you.
-					</p>
-					<CopyCard
-						label="MCP URL"
-						value={mcpServerUrl}
-						copyLabel="Copy MCP URL"
-					/>
-					<p>
-						For Grok Business and Enterprise, a team admin must first add this
-						custom MCP server in the cloud console. Members can then connect it
-						from the Grok connectors page. See xAI&apos;s{' '}
+						Grok prompts you. For Grok Business and Enterprise, a team admin
+						must first add this custom MCP server in the cloud console. Members
+						can then connect it from the Grok connectors page. See xAI&apos;s{' '}
 						<a
 							href={grokCustomMcpGuideUrl}
 							target="_blank"
@@ -282,9 +277,60 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						</a>{' '}
 						for details.
 					</p>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+						variant="pill"
+					/>
+					<p>
+						For the Grok CLI, use the <strong>Grok CLI</strong> tab.
+					</p>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
+		case 'grok-cli': {
+			const grokCliCommand = buildGrokCliAddCommand(mcpServerUrl)
+			const grokCliToml = buildGrokCliMcpToml(mcpServerUrl)
+			return (
+				<>
+					<p>
+						Add a remote HTTP server (writes <code>~/.grok/config.toml</code>).
+						OAuth opens a browser on first use; in the TUI, <code>/mcps</code>{' '}
+						then <strong>i</strong> authenticates:
+					</p>
+					<CopyCard
+						label="grok CLI"
+						value={grokCliCommand}
+						copyLabel="Copy command"
+						variant="pill"
+						lang="sh"
+					/>
+					<p>
+						Or merge this into <code>~/.grok/config.toml</code>:
+					</p>
+					<CopyCard
+						label="~/.grok/config.toml"
+						value={grokCliToml}
+						copyLabel="Copy TOML"
+						lang="toml"
+					/>
+					<p>
+						See xAI&apos;s{' '}
+						<a
+							href={grokCliMcpGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Grok CLI MCP docs
+						</a>{' '}
+						for <code>grok mcp list</code>, <code>grok mcp doctor</code>, and
+						project scope. For grok.com, use the <strong>Grok.com</strong> tab.
+					</p>
+					<ClientNote>{codingAgentPackageHint}</ClientNote>
+				</>
+			)
+		}
 		case 'claude-code': {
 			const claudeCodeCommand = buildClaudeCodeAddCommand(mcpServerUrl)
 			const claudeCodeJson = buildClaudeCodeMcpJson(mcpServerUrl)

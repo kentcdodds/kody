@@ -9,6 +9,7 @@ export type McpClientKind =
 	| 'codex'
 	| 'claude-desktop'
 	| 'grok'
+	| 'grok-cli'
 	| 'claude-code'
 	| 'opencode'
 	| 'copilot'
@@ -27,7 +28,8 @@ export const mcpClientTabs = [
 	{ id: 'chatgpt', label: 'ChatGPT', isNonCodingAgent: true },
 	{ id: 'codex', label: 'Codex', isNonCodingAgent: false },
 	{ id: 'claude-desktop', label: 'Claude Desktop', isNonCodingAgent: true },
-	{ id: 'grok', label: 'Grok', isNonCodingAgent: true },
+	{ id: 'grok', label: 'Grok.com', isNonCodingAgent: true },
+	{ id: 'grok-cli', label: 'Grok CLI', isNonCodingAgent: false },
 	{ id: 'claude-code', label: 'Claude Code', isNonCodingAgent: false },
 	{ id: 'opencode', label: 'OpenCode', isNonCodingAgent: false },
 	{ id: 'copilot', label: 'Copilot', isNonCodingAgent: false },
@@ -51,13 +53,16 @@ export const grokConnectorsUrl = 'https://grok.com/connectors'
 
 export const grokCustomMcpGuideUrl = 'https://docs.x.ai/grok/connectors'
 
+/** Grok CLI (`grok`) MCP add / config.toml docs. */
+export const grokCliMcpGuideUrl = 'https://docs.x.ai/build/features/mcp-servers'
+
 /** Square favicon suitable for ChatGPT plugin / connector app icons. */
 export function buildKodyAppIconUrl(mcpServerUrl: string) {
 	return new URL('/apple-touch-icon.png', mcpServerUrl).href
 }
 
 export const nonCodingAgentNote =
-	'Using Kody packages works great with non-coding agents. For creating or editing packages, a coding agent such as Cursor, Claude Code, Codex, Copilot, or OpenCode is usually smoother — those hosts can edit files and iterate on code more easily.'
+	'Using Kody packages works great with non-coding agents. For creating or editing packages, a coding agent such as Cursor, Claude Code, Codex, Grok CLI, Copilot, or OpenCode is usually smoother — those hosts can edit files and iterate on code more easily.'
 
 /** Claude Desktop often does not bind MCP tools until the next turn. */
 export const claudeDesktopToolHint =
@@ -205,6 +210,20 @@ export function buildOpenCodeMcpJson(mcpServerUrl: string) {
 
 /** Codex shared `~/.codex/config.toml` streamable HTTP entry. */
 export function buildCodexMcpToml(mcpServerUrl: string) {
+	return [
+		'[mcp_servers.kody]',
+		`url = ${JSON.stringify(mcpServerUrl)}`,
+		'',
+	].join('\n')
+}
+
+/** Grok CLI one-shot remote HTTP add (writes `~/.grok/config.toml`). */
+export function buildGrokCliAddCommand(mcpServerUrl: string) {
+	return `grok mcp add --transport http --scope user kody ${mcpServerUrl}`
+}
+
+/** Grok CLI user config (`~/.grok/config.toml`) streamable HTTP entry. */
+export function buildGrokCliMcpToml(mcpServerUrl: string) {
 	return [
 		'[mcp_servers.kody]',
 		`url = ${JSON.stringify(mcpServerUrl)}`,

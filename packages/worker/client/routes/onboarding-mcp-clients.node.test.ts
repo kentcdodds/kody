@@ -8,6 +8,8 @@ import {
 	buildCopilotCliMcpJson,
 	buildCursorInstallUrl,
 	buildCursorMcpJson,
+	buildGrokCliAddCommand,
+	buildGrokCliMcpToml,
 	buildKodyAppIconUrl,
 	buildKodyCliInstallCommand,
 	buildOpenCodeMcpAddCommand,
@@ -29,6 +31,7 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		'codex',
 		'claude-desktop',
 		'grok',
+		'grok-cli',
 		'claude-code',
 		'opencode',
 		'copilot',
@@ -38,6 +41,10 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(
 		mcpClientTabs.filter((tab) => tab.isNonCodingAgent).map((tab) => tab.id),
 	).toEqual(['chatgpt', 'claude-desktop', 'grok', 'copilot-app'])
+	expect(mcpClientTabs.find((tab) => tab.id === 'grok')?.label).toBe('Grok.com')
+	expect(mcpClientTabs.find((tab) => tab.id === 'grok-cli')?.label).toBe(
+		'Grok CLI',
+	)
 	expect(mcpClientTabs.find((tab) => tab.id === 'copilot')?.label).toBe(
 		'Copilot',
 	)
@@ -110,6 +117,12 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		},
 	})
 	expect(buildCodexMcpToml(mcpServerUrl)).toBe(
+		['[mcp_servers.kody]', `url = "${mcpServerUrl}"`, ''].join('\n'),
+	)
+	expect(buildGrokCliAddCommand(mcpServerUrl)).toBe(
+		`grok mcp add --transport http --scope user kody ${mcpServerUrl}`,
+	)
+	expect(buildGrokCliMcpToml(mcpServerUrl)).toBe(
 		['[mcp_servers.kody]', `url = "${mcpServerUrl}"`, ''].join('\n'),
 	)
 	expect(buildKodyAppIconUrl(mcpServerUrl)).toBe(
