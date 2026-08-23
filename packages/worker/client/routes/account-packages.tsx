@@ -418,25 +418,18 @@ export function AccountPackagesRoute(handle: Handle) {
 					rows={packages.map((pkg) => ({
 						id: pkg.id,
 						href: packagesRoute.buildDetailHref(pkg.id, getCurrentSearch()),
-						cells: {
-							name: (
-								<span
-									mix={css({
-										display: 'inline-flex',
-										alignItems: 'center',
-										gap: spacing.xs,
-										minWidth: 0,
-									})}
-								>
-									<span mix={css(recordCellClamp(36))}>{pkg.name}</span>
-									{pkg.listingAhead ? (
+						...(pkg.listingAhead
+							? {
+									primaryAccessory: (
 										<ForkOutdatedCopyButton
 											prompt={pkg.listingAhead.prompt}
 											testId={`account-package-listing-ahead-${pkg.id}`}
 										/>
-									) : null}
-								</span>
-							),
+									),
+								}
+							: {}),
+						cells: {
+							name: <span mix={css(recordCellClamp(36))}>{pkg.name}</span>,
 							kodyId: (
 								<code
 									mix={css({
