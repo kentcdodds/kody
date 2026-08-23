@@ -53,6 +53,57 @@ await packages.invoke('kody:@owner/already/export', { params: {} })
 	})
 })
 
+test('0007 detects and rewrites comment-separated packages.invoke access', () => {
+	const files = {
+		'before-operator.ts': `
+await packages /* block note */ .invoke('@owner/block/export')
+await packages // line note
+  .invoke('@owner/line/export')
+`,
+		'before-invoke.ts': `
+await packages. /* block note */ invoke('@owner/block/export')
+await packages. // line note
+  invoke('@owner/line/export')
+await packages /* optional note */ ?. /* property note */ invoke('@owner/optional/export')
+`,
+	}
+
+	expect(prefixPackagesInvokeSpecifiersCodemod.detect(files)).toEqual([
+		{
+			path: 'before-invoke.ts',
+			message:
+				'Uses a deprecated prefixless packages.invoke specifier; add the kody: prefix.',
+		},
+		{
+			path: 'before-operator.ts',
+			message:
+				'Uses a deprecated prefixless packages.invoke specifier; add the kody: prefix.',
+		},
+	])
+
+	const result = prefixPackagesInvokeSpecifiersCodemod.transform(files)
+	expect(result.changedPaths).toEqual([
+		'before-invoke.ts',
+		'before-operator.ts',
+	])
+	expect(result.needsManual).toEqual([])
+	expect(result.files['before-operator.ts']).toContain(
+		"packages /* block note */ .invoke('kody:@owner/block/export')",
+	)
+	expect(result.files['before-operator.ts']).toContain(
+		"packages // line note\n  .invoke('kody:@owner/line/export')",
+	)
+	expect(result.files['before-invoke.ts']).toContain(
+		"packages. /* block note */ invoke('kody:@owner/block/export')",
+	)
+	expect(result.files['before-invoke.ts']).toContain(
+		"packages. // line note\n  invoke('kody:@owner/line/export')",
+	)
+	expect(result.files['before-invoke.ts']).toContain(
+		"packages /* optional note */ ?. /* property note */ invoke('kody:@owner/optional/export')",
+	)
+})
+
 test('0007 rewrites only proven Kody packages bindings', () => {
 	const files = {
 		'global.ts': "await packages.invoke('@owner/global/export')\n",

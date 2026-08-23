@@ -21,7 +21,8 @@ const parseFailureMessage =
 
 const scannableModuleFilePattern = /\.(?:[cm]?[jt]s|[jt]sx)$/
 const markdownFilePattern = /\.mdx?$/
-const packagesInvokeDetectorPattern = /packages\s*\??\.\s*invoke\b/
+const packagesInvokeDetectorPattern =
+	/\bpackages(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\r\n]*)*(?:\?\.|\.)(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\r\n]*)*invoke\b/
 const markdownModuleLanguages = new Set([
 	'cjs',
 	'cts',
