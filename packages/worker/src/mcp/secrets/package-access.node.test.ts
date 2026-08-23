@@ -7,6 +7,7 @@ import {
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
+	findPlatformPackageByRef: vi.fn(),
 	getCommunityForkByForkedPackageId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	resolveSecret: vi.fn(),
@@ -15,6 +16,11 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
+}))
+
+vi.mock('#worker/package-registry/platform-packages.ts', () => ({
+	findPlatformPackageByRef: (...args: Array<unknown>) =>
+		mockModule.findPlatformPackageByRef(...args),
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
@@ -185,7 +191,102 @@ test('package secret access grants cover owned, self-authored, forked, adopted, 
 	).resolves.toBeUndefined()
 	// Grant short-circuits before package/fork lookups.
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
+	expect(mockModule.findPlatformPackageByRef).not.toHaveBeenCalled()
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
+})
+
+test('package secret access resolves live platform packages the caller does not own', async () => {
+	const platformPackage = {
+		...savedPackage,
+		id: '91d7d9e4-6b88-44da-ab19-01fe26845ac5',
+		kodyId: 'notion',
+		name: '@kody/notion',
+	}
+	const platformAccess = accessInput({
+		storageContext: {
+			sessionId: null,
+			packageId: platformPackage.id,
+		},
+	})
+
+	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
+	mockModule.findPlatformPackageByRef.mockResolvedValueOnce({
+		record: platformPackage,
+		platformScope: 'kody',
+		ownerUserId: 'platform-user',
+	})
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(null)
+	await expect(
+		assertPackageCanAccessResolvedSecret(platformAccess),
+	).resolves.toBeUndefined()
+	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
+		expect.anything(),
+		{ userId: 'user-1', packageId: platformPackage.id },
+	)
+	expect(mockModule.findPlatformPackageByRef).toHaveBeenCalledWith(
+		expect.anything(),
+		{ idOrKodyId: platformPackage.id },
+	)
+	expect(mockModule.getCommunityForkByForkedPackageId).toHaveBeenCalledWith(
+		expect.anything(),
+		{ forkerUserId: 'user-1', forkedPackageId: platformPackage.id },
+	)
+
+	// Mutate still needs an allowed-packages grant after the platform lookup.
+	mockModule.getSavedPackageById.mockClear()
+	mockModule.findPlatformPackageByRef.mockClear()
+	mockModule.getCommunityForkByForkedPackageId.mockClear()
+	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
+	mockModule.findPlatformPackageByRef.mockResolvedValueOnce({
+		record: platformPackage,
+		platformScope: 'kody',
+		ownerUserId: 'platform-user',
+	})
+	await expect(
+		assertPackageCanAccessResolvedSecret(
+			accessInput({
+				intent: 'mutate',
+				storageContext: {
+					sessionId: null,
+					packageId: platformPackage.id,
+				},
+			}),
+		),
+	).rejects.toSatisfy((error: unknown) => {
+		expect(error).toBeInstanceOf(PackageSecretAccessDeniedError)
+		expect(error).toBeInstanceOf(McpCallerError)
+		expect(parsePackageAccessRequiredMessage((error as Error).message)).toEqual(
+			{
+				secretName: 'userToken',
+				packageName: 'notion',
+			},
+		)
+		return true
+	})
+	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
+
+	mockModule.getSavedPackageById.mockReset()
+	mockModule.findPlatformPackageByRef.mockReset()
+	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
+	mockModule.findPlatformPackageByRef.mockResolvedValueOnce(null)
+	await expect(
+		assertPackageCanAccessResolvedSecret(platformAccess),
+	).rejects.toSatisfy((error: unknown) => {
+		expect(error).toBeInstanceOf(PackageSecretAccessDeniedError)
+		expect((error as Error).message).toBe(
+			`Package "${platformPackage.id}" was not found for secret access.`,
+		)
+		return true
+	})
+
+	mockModule.getSavedPackageById.mockReset()
+	mockModule.findPlatformPackageByRef.mockReset()
+	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
+	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(null)
+	await expect(
+		assertPackageCanAccessResolvedSecret(accessInput()),
+	).resolves.toBeUndefined()
+	expect(mockModule.findPlatformPackageByRef).not.toHaveBeenCalled()
 })
 
 test('assertCanSetSecrets fails closed for mutate grants before any provider work', async () => {
