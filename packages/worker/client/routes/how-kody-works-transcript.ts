@@ -529,7 +529,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 			{
 				role: 'agent',
 				tone: 'reasoning',
-				text: 'Favorite bot is kody-bot. I will fetch public events with the saved token.',
+				text: 'Favorite bot is the GitHub account kody-bot. I will fetch its public events with the saved token.',
 			},
 			{
 				role: 'tools',
@@ -752,6 +752,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 	},
 	{
 		id: 'invoke',
+		scene: 'phone',
 		kicker:
 			'Later, on your phone with a completely different Kody-connected agent',
 		title: 'Ask again. Now safer, cheaper, and more reliable.',
@@ -763,7 +764,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 			{
 				role: 'agent',
 				tone: 'reasoning',
-				text: 'Same question in different words. I will search for a package that already answers this.',
+				text: 'I will search for a package that already answers this.',
 			},
 			{
 				role: 'tools',

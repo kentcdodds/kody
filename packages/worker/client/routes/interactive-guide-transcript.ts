@@ -32,10 +32,14 @@ export type TranscriptLine =
 			files: Array<TranscriptFile>
 	  }
 
+export type TranscriptScene = 'phone'
+
 export type TranscriptAct = {
 	id: string
 	kicker: string
 	title: string
+	/** Homepage loop only: start a new surface after this act header. */
+	scene?: TranscriptScene
 	lines: Array<TranscriptLine>
 }
 

@@ -11,11 +11,13 @@ import { type TranscriptLine } from './interactive-guide-transcript.ts'
 import {
 	createLandingLoopPlayer,
 	flattenTranscriptActs,
+	groupLandingLoopScenes,
 	landingLoopChatScrollShouldExplore,
 	landingLoopHoldMs,
 	landingLoopTeaser,
 	waitLandingLoopHold,
 	type LandingLoopBeat,
+	type LandingLoopSceneGroup,
 } from './landing-loop-state.ts'
 
 type LoopLineRenderer = (line: TranscriptLine) => RemixNode
@@ -27,7 +29,8 @@ type LoopLineRenderer = (line: TranscriptLine) => RemixNode
  * it does not block first paint or the first beats. Hover/focus (fine
  * pointers) and explore (scroll up or open a tool) pause the autoplay;
  * Play scrolls to the latest beat and continues. The last beat pauses
- * and offers Restart instead of looping.
+ * and offers Restart instead of looping. The phone act is a later scene
+ * in the same card — a time skip plus device chrome, not a reset.
  */
 export function LandingLoopPlayer(handle: Handle) {
 	let beats: Array<LandingLoopBeat> | null = null
@@ -186,6 +189,7 @@ export function LandingLoopPlayer(handle: Handle) {
 
 	return () => {
 		const visibleBeats = beats?.slice(0, player.revealedCount) ?? null
+		const sceneGroups = visibleBeats ? groupLandingLoopScenes(visibleBeats) : []
 		const lineRenderer = renderLine
 		const loaded = visibleBeats != null && lineRenderer != null
 		const ended = loaded && player.isEnded() && !reducedMotion
@@ -347,12 +351,12 @@ export function LandingLoopPlayer(handle: Handle) {
 					]}
 				>
 					{visibleBeats && lineRenderer
-						? visibleBeats.map((beat, index) =>
-								renderBeat(
-									beat,
+						? sceneGroups.map((group, groupIndex) =>
+								renderSceneGroup(
+									group,
+									groupIndex,
 									lineRenderer,
-									`${beatKey(beat)}-${index}`,
-									index === visibleBeats.length - 1,
+									groupIndex === sceneGroups.length - 1,
 								),
 							)
 						: renderTeaser()}
@@ -364,6 +368,49 @@ export function LandingLoopPlayer(handle: Handle) {
 				</p>
 			</div>
 		)
+	}
+}
+
+function renderSceneGroup(
+	group: LandingLoopSceneGroup,
+	groupIndex: number,
+	lineRenderer: LoopLineRenderer,
+	newestGroup: boolean,
+) {
+	const lines = group.beats.map((beat, index) =>
+		renderBeat(
+			beat,
+			lineRenderer,
+			`${beatKey(beat)}-${index}`,
+			newestGroup && index === group.beats.length - 1,
+		),
+	)
+	switch (group.scene) {
+		case 'desk':
+			return (
+				<div
+					key={`scene-${group.scene}-${groupIndex}`}
+					class="landing-loop-scene"
+				>
+					{lines}
+				</div>
+			)
+		case 'phone':
+			return (
+				<div
+					key={`scene-${group.scene}-${groupIndex}`}
+					class="landing-loop-scene landing-loop-scene-phone"
+				>
+					<p class="landing-loop-later" aria-hidden="true">
+						Later
+					</p>
+					<div class="landing-loop-scene-frame">{lines}</div>
+				</div>
+			)
+		default: {
+			const exhaustive: never = group.scene
+			return exhaustive
+		}
 	}
 }
 

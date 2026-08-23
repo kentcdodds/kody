@@ -748,6 +748,7 @@ test('renderAppPage embeds a tabular homepage code-runs ticker', async () => {
 	expect(ticker).toMatch(/--runs-ch:\s*7ch/)
 	expect(ticker).toContain(formatCodeRunsCount(count))
 	expect(ticker).toContain('code runs')
+	expect(ticker).toContain('Sandboxed executes across Kody accounts')
 	expect(html).not.toContain('aria-live')
 })
 

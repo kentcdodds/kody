@@ -3,6 +3,7 @@ import { howKodyWorksTranscriptActs } from './how-kody-works-transcript.ts'
 import {
 	createLandingLoopPlayer,
 	flattenTranscriptActs,
+	groupLandingLoopScenes,
 	landingLoopChatScrollShouldExplore,
 	landingLoopHoldMs,
 	landingLoopTeaser,
@@ -17,15 +18,27 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 		id: 'ask',
 		kicker: landingLoopTeaser.kicker,
 		title: landingLoopTeaser.title,
+		scene: 'desk',
 	})
 	expect(beats[1]).toMatchObject({
 		kind: 'line',
 		actId: 'ask',
+		scene: 'desk',
 		line: { role: 'user', text: landingLoopTeaser.user },
 	})
 	expect(
 		beats.some((beat) => beat.kind === 'act' && beat.id === 'invoke'),
 	).toBe(true)
+	expect(
+		beats.some(
+			(beat) =>
+				beat.kind === 'act' && beat.id === 'invoke' && beat.scene === 'phone',
+		),
+	).toBe(true)
+	expect(groupLandingLoopScenes(beats).map((group) => group.scene)).toEqual([
+		'desk',
+		'phone',
+	])
 	expect(
 		beats.some((beat) => beat.kind === 'line' && beat.line.role === 'tools'),
 	).toBe(true)
