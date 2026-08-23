@@ -255,12 +255,12 @@ test('package secret access resolves live platform packages the caller does not 
 	).rejects.toSatisfy((error: unknown) => {
 		expect(error).toBeInstanceOf(PackageSecretAccessDeniedError)
 		expect(error).toBeInstanceOf(McpCallerError)
-		expect(
-			parsePackageAccessRequiredMessage((error as Error).message),
-		).toEqual({
-			secretName: 'userToken',
-			packageName: 'notion',
-		})
+		expect(parsePackageAccessRequiredMessage((error as Error).message)).toEqual(
+			{
+				secretName: 'userToken',
+				packageName: 'notion',
+			},
+		)
 		return true
 	})
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()

@@ -328,13 +328,12 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   are derived at read time from `community_forks` / `community_stars`
 - `secret_buckets`: encrypted-secret ownership buckets scoped to `user`,
   `package`, or `session`. Package buckets bind directly to `saved_packages.id`;
-  package runtimes may use their own package secrets.   User secrets are
+  package runtimes may use their own package secrets. User secrets are
   auto-granted for read/use to self-authored packages (no `community_forks` row
   for that `saved_packages.id` + `userId`), live official platform packages
-  (caller-owned `saved_packages` miss falls back to
-  `findPlatformPackageByRef`; decision
-  [0014](../decisions/0014-platform-live-packages.md)), and adopted forks
-  (`community_forks.adopted_at` set via `community_fork_adopt`). Unadopted
+  (caller-owned `saved_packages` miss falls back to `findPlatformPackageByRef`;
+  decision [0014](../decisions/0014-platform-live-packages.md)), and adopted
+  forks (`community_forks.adopted_at` set via `community_fork_adopt`). Unadopted
   community forks (`community_forks.forked_package_id`, indexed in the squashed
   baseline) still require an explicit `allowed_packages` grant on every package
   read path. Updating or deleting a user secret from package code (`secret_set`
