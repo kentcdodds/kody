@@ -17,6 +17,8 @@ const manifestScopeMessage =
 	'Package scope could not be read from package.json; migrate deprecated object-only `packages.invoke` calls manually.'
 const platformScopeMessage =
 	'Platform-owned runtime source uses deprecated object-only `packages.invoke`, whose target resolves against the runtime caller; migrate this call manually.'
+const platformForkDocsMessage =
+	'Platform-owned package documentation requires the installed user-fork owner to preserve packageStorage semantics; migrate this example manually.'
 const parseFailureMessage =
 	'File references `packages.invoke` but could not be parsed; migrate any deprecated object-only calls manually.'
 
@@ -40,6 +42,11 @@ const supportedOptionKeys = new Set([
 	'params',
 	'idempotencyKey',
 	'topic',
+])
+const platformForkDocumentationPackages = new Set([
+	'@kody/notify',
+	'@kody/personal-capture',
+	'@kody/stash',
 ])
 
 type AstNode = ModuleAstNode & {
@@ -90,7 +97,7 @@ function parseProgram(source: string): AstNode | null {
 	}
 }
 
-function readPackageScope(files: Record<string, string>): string | null {
+function readPackageName(files: Record<string, string>): string | null {
 	const source = files[packageManifestPath]
 	if (typeof source !== 'string') return null
 	try {
@@ -100,11 +107,18 @@ function readPackageScope(files: Record<string, string>): string | null {
 		}
 		const name = (parsed as Record<string, unknown>)['name']
 		if (typeof name !== 'string') return null
-		const match = /^@([^/\s]+)\/[^/\s]+$/.exec(name.trim())
-		return match?.[1] ? `@${match[1]}` : null
+		const trimmedName = name.trim()
+		return /^@[^/\s]+\/[^/\s]+$/.test(trimmedName) ? trimmedName : null
 	} catch {
 		return null
 	}
+}
+
+function readPackageScope(files: Record<string, string>): string | null {
+	const packageName = readPackageName(files)
+	if (!packageName) return null
+	const match = /^@([^/\s]+)\/[^/\s]+$/.exec(packageName)
+	return match?.[1] ? `@${match[1]}` : null
 }
 
 function isPlatformPackageScope(scope: string) {
@@ -237,24 +251,7 @@ function classifyObjectCall(input: {
 	) {
 		return null
 	}
-	if (properties.length === 1) {
-		if (
-			typeof input.objectNode.start !== 'number' ||
-			typeof input.objectNode.end !== 'number'
-		) {
-			return null
-		}
-		const objectSource = input.source.slice(
-			input.objectNode.start,
-			input.objectNode.end,
-		)
-		if (objectSource.includes('//') || objectSource.includes('/*')) return null
-		return {
-			start: input.objectNode.start,
-			end: input.objectNode.end,
-			replacement: JSON.stringify(`kody:${input.scope}/${kodyId}`),
-		}
-	}
+	if (!namedProperties.some((entry) => entry.name === 'exportName')) return null
 	const optionsSource = buildOptionsSource({
 		source: input.source,
 		objectNode: input.objectNode,
@@ -515,10 +512,15 @@ function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
 	}
 	const scope = readPackageScope(files)
 	if (scope && isPlatformPackageScope(scope)) {
+		const packageNeedsForkOwner = platformForkDocumentationPackages.has(
+			readPackageName(files) ?? '',
+		)
 		return classifications.map((classification) => ({
 			path: classification.path,
 			message: markdownFilePattern.test(classification.path)
-				? (classification.manualMessage ?? rewriteDetectMessage)
+				? packageNeedsForkOwner
+					? platformForkDocsMessage
+					: (classification.manualMessage ?? rewriteDetectMessage)
 				: platformScopeMessage,
 		}))
 	}
@@ -565,10 +567,24 @@ function transform(
 	}
 	const scope = readPackageScope(files)
 	const platformScope = scope != null && isPlatformPackageScope(scope)
+	const packageNeedsForkOwner = platformForkDocumentationPackages.has(
+		readPackageName(files) ?? '',
+	)
 	const nextFiles = { ...files }
 	const changedPaths: Array<string> = []
 	const needsManual: Array<PackageCodemodFinding> = []
 	for (const classification of classifications) {
+		if (
+			platformScope &&
+			packageNeedsForkOwner &&
+			markdownFilePattern.test(classification.path)
+		) {
+			needsManual.push({
+				path: classification.path,
+				message: platformForkDocsMessage,
+			})
+			continue
+		}
 		if (platformScope && !markdownFilePattern.test(classification.path)) {
 			needsManual.push({
 				path: classification.path,
