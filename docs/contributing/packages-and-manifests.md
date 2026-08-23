@@ -269,7 +269,9 @@ lookup and therefore remains collision-prone.
 
 Production and preview record privacy-safe overload telemetry in the
 `kody_package_invoke_events` and `kody_package_invoke_events_preview` Analytics
-Engine datasets. Each data point contains only:
+Engine datasets. Pull-request previews inherit the preview dataset; the
+`kody_package_invoke_events_pr` name exists only in config-generator test
+fixtures and is not a deployed dataset. Each data point contains only:
 
 - `blob1` / `index1`: `legacy_object` or `string_first`
 - `blob2`: the coarse runtime surface (`execute`, `package`, `app`, or `job`)
