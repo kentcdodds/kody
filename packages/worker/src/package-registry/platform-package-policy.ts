@@ -1,5 +1,9 @@
 import { collectStaticKodyPackageImportsFromFiles } from '#worker/package-runtime/static-kody-imports.ts'
-import { getPlatformAccountByUsername } from './scope-grants.ts'
+import { getSavedPackageById } from './repo.ts'
+import {
+	getPlatformAccountByUsername,
+	isPlatformAccountStableUserId,
+} from './scope-grants.ts'
 import { listKodyPackageDependencyNames } from './types.ts'
 
 /**
@@ -78,6 +82,33 @@ export async function findPersonPackagePlatformReference(input: {
 		db: input.db,
 		packageNames: collectScopedPackageNamesFromSource(input),
 	})
+}
+
+/**
+ * Already-published person-package artifacts (modules, jobs, and apps) that
+ * recorded `platformOwned` dependencies fail closed. Platform-account
+ * packages may still compose with each other.
+ */
+export async function assertPersonOwnedPackageMayNotRunPlatformDependencies(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+	dependencies: ReadonlyArray<{ platformOwned?: boolean }>
+}): Promise<void> {
+	if (
+		!input.dependencies.some((dependency) => dependency.platformOwned === true)
+	) {
+		return
+	}
+	const callerOwned = await getSavedPackageById(input.db, {
+		userId: input.userId,
+		packageId: input.packageId,
+	})
+	if (!callerOwned) return
+	if (await isPlatformAccountStableUserId(input.db, callerOwned.userId)) {
+		return
+	}
+	throw new Error(personPackagePlatformDependencyMessage)
 }
 
 /** Fail closed only when the missing name is a platform-account scope. */
