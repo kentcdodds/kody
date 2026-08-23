@@ -11,6 +11,7 @@ import { type TranscriptLine } from './interactive-guide-transcript.ts'
 import {
 	createLandingLoopPlayer,
 	flattenTranscriptActs,
+	landingLoopChatScrollShouldExplore,
 	landingLoopHoldMs,
 	landingLoopTeaser,
 	waitLandingLoopHold,
@@ -25,16 +26,18 @@ type LoopLineRenderer = (line: TranscriptLine) => RemixNode
  * out of the marketing entry. Shiki prefetches after window `load` so
  * it does not block first paint or the first beats. Hover/focus (fine
  * pointers) and explore (scroll up or open a tool) pause the autoplay;
- * Play scrolls to the latest beat and continues.
+ * Play scrolls to the latest beat and continues. The last beat pauses
+ * and offers Restart instead of looping.
  */
 export function LandingLoopPlayer(handle: Handle) {
 	let beats: Array<LandingLoopBeat> | null = null
 	let renderLine: LoopLineRenderer | null = null
 	let player = createLandingLoopPlayer({ beatCount: 1, reducedMotion: false })
 	let reducedMotion = false
-	let hoverPauses = false
+	let finePointerPauses = false
 	let chatEl: HTMLElement | null = null
 	let autoScrolling = false
+	let chatUserDriven = false
 	let playGeneration = 0
 	let loadStarted = false
 	let loopEl: HTMLElement | null = null
@@ -47,7 +50,7 @@ export function LandingLoopPlayer(handle: Handle) {
 		)
 	}
 
-	function canHoverPause() {
+	function canFinePointerPause() {
 		return (
 			typeof matchMedia === 'function' &&
 			matchMedia('(hover: hover) and (pointer: fine)').matches
@@ -81,7 +84,7 @@ export function LandingLoopPlayer(handle: Handle) {
 			beats = flattenTranscriptActs(transcript.howKodyWorksTranscriptActs)
 			renderLine = walkthrough.renderInteractiveGuideLine
 			reducedMotion = prefersReducedMotion()
-			hoverPauses = canHoverPause()
+			finePointerPauses = canFinePointerPause()
 			player = createLandingLoopPlayer({
 				beatCount: beats.length,
 				reducedMotion,
@@ -95,18 +98,22 @@ export function LandingLoopPlayer(handle: Handle) {
 		}
 	}
 
+	function markAutoScroll() {
+		autoScrolling = true
+		const done = () => {
+			autoScrolling = false
+		}
+		chatEl?.addEventListener('scrollend', done, { once: true })
+		window.setTimeout(done, 800)
+	}
+
 	function scrollChatToBottom() {
 		if (!chatEl) return
-		autoScrolling = true
+		markAutoScroll()
 		chatEl.scrollTo({
 			top: chatEl.scrollHeight,
 			behavior: reducedMotion ? 'auto' : 'smooth',
 		})
-		const done = () => {
-			autoScrolling = false
-		}
-		chatEl.addEventListener('scrollend', done, { once: true })
-		window.setTimeout(done, 480)
 	}
 
 	function startPlayLoop() {
@@ -120,12 +127,8 @@ export function LandingLoopPlayer(handle: Handle) {
 				if (!currentBeats || currentBeats.length === 0) return
 				const current = currentBeats[player.revealedCount - 1]
 				if (!current) return
-				const hold =
-					player.revealedCount >= currentBeats.length
-						? landingLoopHoldMs('loop')
-						: landingLoopHoldMs(current)
 				const finished = await waitLandingLoopHold({
-					ms: hold,
+					ms: landingLoopHoldMs(current),
 					isPaused: () => player.isPaused(),
 					subscribe: player.subscribe,
 					signal,
@@ -134,19 +137,37 @@ export function LandingLoopPlayer(handle: Handle) {
 					return
 				}
 				if (player.isPaused()) continue
-				player.advance()
+				const step = player.advance()
 				await handle.update()
 				if (signal.aborted || generation !== playGeneration) return
+				if (step.ended) continue
 				scrollChatToBottom()
 			}
 		})()
 	}
 
 	function playFromHere() {
+		chatUserDriven = false
 		player.play()
 		handle.update()
+		startPlayLoop()
 		handle.queueTask(() => {
 			scrollChatToBottom()
+		})
+	}
+
+	function restartFromStart() {
+		chatUserDriven = false
+		player.restart()
+		handle.update()
+		startPlayLoop()
+		handle.queueTask(() => {
+			if (!chatEl) return
+			markAutoScroll()
+			chatEl.scrollTo({
+				top: 0,
+				behavior: reducedMotion ? 'auto' : 'smooth',
+			})
 		})
 	}
 
@@ -160,6 +181,7 @@ export function LandingLoopPlayer(handle: Handle) {
 		const visibleBeats = beats?.slice(0, player.revealedCount) ?? null
 		const lineRenderer = renderLine
 		const loaded = visibleBeats != null && lineRenderer != null
+		const ended = loaded && player.isEnded() && !reducedMotion
 		const userPaused =
 			loaded && player.pauseReasons().some((reason) => reason !== 'offscreen')
 		const paused = userPaused && !reducedMotion
@@ -170,15 +192,16 @@ export function LandingLoopPlayer(handle: Handle) {
 				class="landing-loop"
 				data-paused={paused ? 'true' : undefined}
 				data-playing={playing ? 'true' : undefined}
+				data-ended={ended ? 'true' : undefined}
 				aria-label="Factory loop conversation"
 				mix={[
 					on('pointerenter', () => {
-						if (!hoverPauses) return
+						if (!finePointerPauses) return
 						player.setHover(true)
 						handle.update()
 					}),
 					on('pointerleave', () => {
-						if (!hoverPauses) return
+						if (!finePointerPauses) return
 						player.setHover(false)
 						handle.update()
 					}),
@@ -224,36 +247,47 @@ export function LandingLoopPlayer(handle: Handle) {
 						<span class="landing-loop-status-dot"></span>
 						{reducedMotion
 							? 'The loop'
-							: paused
-								? 'Paused'
-								: loaded
-									? 'Playing'
-									: 'The loop'}
+							: ended
+								? 'The loop'
+								: paused
+									? 'Paused'
+									: loaded
+										? 'Playing'
+										: 'The loop'}
 					</p>
 					{reducedMotion || !loaded || !(playing || paused) ? null : (
 						<button
 							type="button"
 							class="landing-loop-toggle"
 							mix={on('click', () => {
-								if (player.isPaused()) playFromHere()
+								if (player.isEnded()) restartFromStart()
+								else if (player.isPaused()) playFromHere()
 								else {
 									player.pause()
 									handle.update()
 								}
 							})}
 						>
-							{paused ? 'Play' : 'Pause'}
+							{ended ? 'Restart' : paused ? 'Play' : 'Pause'}
 						</button>
 					)}
 				</div>
 				<div
 					class="landing-loop-chat"
 					mix={[
+						on('pointerdown', () => {
+							chatUserDriven = true
+						}),
+						on('wheel', () => {
+							chatUserDriven = true
+						}),
 						on('focusin', () => {
+							if (!finePointerPauses) return
 							player.setFocus(true)
 							handle.update()
 						}),
 						on('focusout', (event) => {
+							if (!finePointerPauses) return
 							const next = event.relatedTarget
 							if (
 								next instanceof Node &&
@@ -266,12 +300,20 @@ export function LandingLoopPlayer(handle: Handle) {
 							handle.update()
 						}),
 						on('scroll', () => {
-							if (!chatEl || autoScrolling) return
+							if (!chatEl) return
 							const slack = 28
 							const atBottom =
 								chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight <=
 								slack
-							if (atBottom) return
+							if (
+								!landingLoopChatScrollShouldExplore({
+									autoScrolling,
+									userDriven: chatUserDriven,
+									atBottom,
+								})
+							) {
+								return
+							}
 							player.setExplore(true)
 							handle.update()
 						}),
