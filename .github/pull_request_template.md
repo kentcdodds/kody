@@ -1,6 +1,10 @@
 ## Intent
 
-<!-- Overarching goal of this change — why it exists, not how it works. -->
+<!-- Overarching goal of this change — what it is for, not how it works. -->
+
+## Why
+
+<!-- Why this change is needed. -->
 
 ## Summary
 
