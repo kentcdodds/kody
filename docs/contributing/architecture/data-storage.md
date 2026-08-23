@@ -1213,6 +1213,12 @@ on write unless a migration backfills existing rows.
   retention job.
 - `mcp_memories.tags_json` and `mcp_memories.source_uris_json`
   (`0001-squashed-init.sql`) back memory search and provenance.
+- `secret_entries.expires_at` (`0023-secret-entry-expires-at.sql`) is the
+  optional per-secret UTC expiry the account UI and `secret_set` write. Session
+  lifetime stays on `secret_buckets.expires_at`. Resolve and fetch placeholders
+  treat an expired entry as missing; list and account views still show the row
+  so it can be rotated. Effective remaining TTL is the earlier of entry and
+  bucket expiry.
 - `secret_entries.allowed_hosts`, `secret_entries.allowed_capabilities`, and
   `secret_entries.allowed_packages` are JSON string lists used as security
   policy inputs (`0001-squashed-init.sql`). Tightening parse-error behavior

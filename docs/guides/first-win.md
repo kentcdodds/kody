@@ -16,7 +16,7 @@ category: platform
 <!--
 Agent notes — for AI agents driving the optional email loop from this page:
 
-- Onboarding Step 2 connects Notion or Linear as a remote MCP server. Step 3
+- Onboarding Step 2 connects an official workspace MCP server. Step 3
   climax is /guides/quick-example (ad hoc execute → persist → own). Use this
   guide only when the person wants the email-and-memories loop.
 - You drive the whole loop. The person stays in this chat; they should not need
@@ -129,10 +129,15 @@ moment the whole loop pays off, so make it visible rather than silent.
 
 The first win is done. Offer one concrete next step and let them choose:
 
-- **Connect Notion or Linear as a remote MCP server.** Send them to
-  `/onboarding#connect-mcp` on the same origin this guide came from, or call
-  `mcp_server_add` with `https://mcp.notion.com/mcp` or
-  `https://mcp.linear.app/mcp`, then verify with a small ad hoc `execute` call.
+- **Connect a workspace MCP server.** Send them to `/onboarding#connect-mcp` on
+  the same origin this guide came from, or call `mcp_server_add` with one of
+  `https://mcp.notion.com/mcp`, `https://mcp.linear.app/mcp`,
+  `https://mcp.atlassian.com/v1/mcp/authv2`, `https://mcp.stripe.com`,
+  `https://mcp.sentry.dev/mcp`, or `https://mcp.canva.com/mcp`, then verify with
+  a small ad hoc `execute` call. Prefer the matching official `@kody/*-mcp`
+  listing when they want a reusable first package. Official non-MCP API packages
+  (`@kody/notion`, `@kody/linear`, `@kody/jira`, `@kody/stripe`, `@kody/sentry`,
+  `@kody/canva`) stay the long-term helpers — do not convert them to MCP-first.
 - **Bring their own OAuth app or API key** when they need scopes or rate limits
   a hosted app does not offer — load `coding_guide_get` with `guide: "oauth"`,
   or the matching `provider_*` guide.

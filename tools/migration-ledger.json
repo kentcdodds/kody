@@ -91,6 +91,10 @@
 		{
 			"filename": "0022-community-listing-category.sql",
 			"sha256": "2740b7fb83d996e84e0c3cc5dfe07a9ccf7de6b76e5e0f6ca01d371cfb7aa046"
+		},
+		{
+			"filename": "0023-secret-entry-expires-at.sql",
+			"sha256": "a8fff9cfb73ea4b6a741e0a2e61f95417d11927a46b6055a362a27b8a1b0abca"
 		}
 	]
 }

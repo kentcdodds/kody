@@ -1,26 +1,62 @@
 import { expect, test } from 'vitest'
 import {
+	attachOnboardingMcpPackageListings,
+	featuredOnboardingMcpFingerprint,
+	formatOnboardingFeaturedMcpAddHint,
+	formatOnboardingFeaturedMcpChoice,
 	hasConnectedOnboardingFeaturedMcpServer,
 	hasPendingOnboardingFeaturedMcpAuth,
 	listDisconnectedOnboardingFeaturedMcpServers,
+	listOnboardingFeaturedMcpListingIds,
 	matchOnboardingFeaturedMcpServer,
 	normalizeOnboardingMcpServerUrl,
 	onboardingFeaturedMcpServers,
 	overlayOnboardingFeaturedMcpServers,
 } from './onboarding-mcp-chooser.ts'
 
-test('featured MCP chooser is Notion and Linear only, matched by name or URL', () => {
+test('featured MCP chooser ships six official OAuth servers with packages', () => {
 	expect(onboardingFeaturedMcpServers.map((server) => server.id)).toEqual([
 		'notion',
 		'linear',
+		'atlassian',
+		'stripe',
+		'sentry',
+		'canva',
 	])
 	expect(onboardingFeaturedMcpServers.map((server) => server.url)).toEqual([
 		'https://mcp.notion.com/mcp',
 		'https://mcp.linear.app/mcp',
+		'https://mcp.atlassian.com/v1/mcp/authv2',
+		'https://mcp.stripe.com',
+		'https://mcp.sentry.dev/mcp',
+		'https://mcp.canva.com/mcp',
 	])
+	expect(
+		onboardingFeaturedMcpServers.every(
+			(server) =>
+				server.packageKodyId === `${server.id}-mcp` &&
+				server.listingId.length > 0,
+		),
+	).toBe(true)
 	expect(
 		onboardingFeaturedMcpServers.some((server) => server.id === 'github'),
 	).toBe(false)
+	expect(
+		onboardingFeaturedMcpServers.some(
+			(server) =>
+				server.id === 'slack' || server.id === 'asana' || server.id === 'figma',
+		),
+	).toBe(false)
+	expect(listOnboardingFeaturedMcpListingIds()).toHaveLength(6)
+	expect(formatOnboardingFeaturedMcpChoice()).toBe(
+		'Notion, Linear, Atlassian, Stripe, Sentry, or Canva',
+	)
+	expect(formatOnboardingFeaturedMcpAddHint()).toContain(
+		'notion (https://mcp.notion.com/mcp)',
+	)
+	expect(formatOnboardingFeaturedMcpAddHint()).toContain(
+		'canva (https://mcp.canva.com/mcp)',
+	)
 
 	expect(normalizeOnboardingMcpServerUrl('https://mcp.notion.com/mcp/')).toBe(
 		'https://mcp.notion.com/mcp',
@@ -39,8 +75,12 @@ test('featured MCP chooser is Notion and Linear only, matched by name or URL', (
 	).toBe(true)
 
 	const disconnected = listDisconnectedOnboardingFeaturedMcpServers()
+	expect(disconnected).toHaveLength(6)
 	expect(hasConnectedOnboardingFeaturedMcpServer(disconnected)).toBe(false)
 	expect(hasPendingOnboardingFeaturedMcpAuth(disconnected)).toBe(false)
+	expect(disconnected.every((server) => server.packageListing == null)).toBe(
+		true,
+	)
 
 	const overlaid = overlayOnboardingFeaturedMcpServers({
 		settings: [
@@ -95,4 +135,57 @@ test('featured MCP chooser is Notion and Linear only, matched by name or URL', (
 	})
 	expect(hasConnectedOnboardingFeaturedMcpServer(connected)).toBe(true)
 	expect(hasPendingOnboardingFeaturedMcpAuth(connected)).toBe(false)
+
+	const attached = attachOnboardingMcpPackageListings(connected, [
+		{
+			id: onboardingFeaturedMcpServers[0].listingId,
+			kodyId: 'notion-mcp',
+			name: '@kody/notion-mcp',
+			description: 'Notion MCP helpers',
+			iconUrl: '/icon.png',
+			tags: ['notion', 'mcp'],
+		},
+	])
+	expect(attached[0]?.packageListing?.name).toBe('@kody/notion-mcp')
+	expect(attached[1]?.packageListing).toBeNull()
+})
+
+test('featured MCP poll fingerprint changes when a listing appears after a miss', () => {
+	const withoutListing = listDisconnectedOnboardingFeaturedMcpServers()
+	const notionListing = {
+		id: onboardingFeaturedMcpServers[0].listingId,
+		kodyId: 'notion-mcp',
+		name: '@kody/notion-mcp',
+		description: 'Notion MCP helpers',
+		iconUrl: '/icon.png',
+		tags: ['notion', 'mcp'],
+	}
+	const withListing = attachOnboardingMcpPackageListings(withoutListing, [
+		notionListing,
+	])
+	const withInstall = attachOnboardingMcpPackageListings(withoutListing, [
+		{
+			...notionListing,
+			viewerInstall: {
+				status: 'installed',
+				targetName: '@me/notion-mcp',
+				agentPrompt: 'Use @me/notion-mcp',
+				packageId: 'pkg-notion-mcp',
+				listingAhead: false,
+				listingAheadPrompt: null,
+			},
+		},
+	])
+
+	expect(featuredOnboardingMcpFingerprint(withoutListing)).not.toBe(
+		featuredOnboardingMcpFingerprint(withListing),
+	)
+	expect(featuredOnboardingMcpFingerprint(withListing)).not.toBe(
+		featuredOnboardingMcpFingerprint(withInstall),
+	)
+	expect(featuredOnboardingMcpFingerprint(withListing)).toBe(
+		featuredOnboardingMcpFingerprint(
+			attachOnboardingMcpPackageListings(withoutListing, [notionListing]),
+		),
+	)
 })

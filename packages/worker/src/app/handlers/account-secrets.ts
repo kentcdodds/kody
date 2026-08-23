@@ -58,6 +58,7 @@ import {
 	resolveTokenExchangeStyle,
 	type TokenExchangeStyle,
 } from '#worker/integrations/oauth-token-exchange.ts'
+import { normalizeSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import { readNonEmptyTrimmedString as readString } from '#app/request-body.ts'
 
 type AccountEditableSecretScope = Extract<SecretScope, 'package' | 'user'>
@@ -1166,6 +1167,17 @@ async function handleSaveAction(input: {
 	let value = readString(input.body, 'value')
 	const scope = readAccountSecretScope(input.body)
 	const description = readOptionalString(input.body, 'description') ?? ''
+	const expiresAt = readOptionalExpiresAt(input.body)
+	if (expiresAt === false) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					'Expiry must be a UTC ISO timestamp (for example 2026-12-01T00:00:00Z), a YYYY-MM-DD date, or empty.',
+			},
+			400,
+		)
+	}
 	const allowedHosts = normalizeAllowedHosts(
 		readStringArray(input.body, 'allowedHosts'),
 	)
@@ -1200,6 +1212,7 @@ async function handleSaveAction(input: {
 				userId: input.user.mcpUser.userId,
 				name: parsed.name,
 				scope: parsed.scope,
+				includeExpired: true,
 				storageContext: getSecretContextForAccountSecret(parsed),
 			})
 			if (existing.found && existing.value != null) {
@@ -1263,6 +1276,7 @@ async function handleSaveAction(input: {
 			value,
 			scope,
 			description,
+			expiresAt,
 			storageContext: getSecretContextForAccountSecret({
 				scope,
 				packageId,
@@ -1375,6 +1389,18 @@ async function handleDeleteAction(input: {
 function readOptionalString(body: object, key: string) {
 	const value = (body as Record<string, unknown>)[key]
 	return typeof value === 'string' ? value.trim() : null
+}
+
+function readOptionalExpiresAt(body: object) {
+	if (!Object.hasOwn(body, 'expiresAt')) return undefined
+	const value = (body as Record<string, unknown>).expiresAt
+	if (value == null) return null
+	if (typeof value !== 'string') return false
+	try {
+		return normalizeSecretExpiresAt(value)
+	} catch {
+		return false
+	}
 }
 
 function readOptionalBoolean(body: object, key: string) {

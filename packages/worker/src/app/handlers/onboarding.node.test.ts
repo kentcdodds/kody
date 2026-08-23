@@ -43,6 +43,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 
 vi.mock('#worker/community/service.ts', () => ({
 	listFeaturedCommunityListingsWithAggregates: vi.fn(async () => []),
+	getCommunityListingWithAggregates: vi.fn(async () => null),
 }))
 
 vi.mock('#worker/email/owner-email-reader.ts', () => ({

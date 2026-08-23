@@ -5,6 +5,7 @@ const newSecretPath = '/account/secrets/new'
 const newSecretQueryKeys = [
 	'name',
 	'description',
+	'expiresAt',
 	'scope',
 	'packageId',
 	'allowedHosts',

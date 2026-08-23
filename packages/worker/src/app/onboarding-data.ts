@@ -103,7 +103,7 @@ export async function loadOnboardingData(input: {
 	featuredListings?: Array<OnboardingFeaturedListing>
 	/** Top enabled built-in integrations, loaded by the handler. */
 	builtInProviders?: Array<OnboardingBuiltInProvider>
-	/** Notion and Linear MCP chooser cards, loaded by the handler. */
+	/** Official workspace MCP chooser cards, loaded by the handler. */
 	featuredMcpServers?: Array<OnboardingFeaturedMcpServer>
 	/** Most recently updated saved-package kody id, loaded by the handler. */
 	persistedPackageKodyId?: string | null

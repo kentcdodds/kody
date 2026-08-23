@@ -844,7 +844,7 @@ export type OnboardingLoaderData = {
 	featuredListings: Array<OnboardingFeaturedListing>
 	/** Top enabled platform (built-in) integrations by use, for one-click connect. */
 	builtInProviders: Array<OnboardingBuiltInProvider>
-	/** Notion and Linear MCP chooser cards, with viewer connection overlay. */
+	/** Official workspace MCP chooser cards, with viewer connection overlay. */
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
 	/**
 	 * Most recently updated saved-package kody id for this account, used by
@@ -1172,6 +1172,7 @@ export type AccountSecretListItem = {
 	allowedPackages: Array<string>
 	createdAt: string
 	updatedAt: string
+	expiresAt: string | null
 	ttlMs: number | null
 }
 

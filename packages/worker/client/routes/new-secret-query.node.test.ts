@@ -17,7 +17,7 @@ test('prefilled /new?name=... keys autofocus on the secret value', () => {
 	).toBe('')
 
 	const prefilled =
-		'/account/secrets/new?name=discordBotTokenKodyOfficial&description=Discord%20bot%20token&allowedHosts=discord.com&scope=user'
+		'/account/secrets/new?name=discordBotTokenKodyOfficial&description=Discord%20bot%20token&expiresAt=2026-12-01T00:00:00.000Z&allowedHosts=discord.com&scope=user'
 	expect(getNewSecretValueAutofocusKey(prefilled)).toBe(
 		getNewSecretQueryKey(prefilled),
 	)

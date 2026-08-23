@@ -762,6 +762,7 @@ test('integrations API merge-keeps pre-existing client-secret allowed hosts on r
 			allowedPackages: [],
 			createdAt: '1970-01-01T00:00:00.000Z',
 			updatedAt: '1970-01-01T00:00:00.001Z',
+			expiresAt: null,
 			ttlMs: null,
 		},
 	])

@@ -1,3 +1,9 @@
+import {
+	earliestSecretExpiresAt,
+	isSecretExpired,
+	nextSecretExpiresAt,
+	secretTtlMs,
+} from '@kody-internal/shared/secret-expires-at.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	normalizeAllowedCapabilities,
@@ -59,6 +65,7 @@ type SaveSecretInput = SecretOwnerContext & {
 	name: string
 	value: string
 	description?: string | null
+	expiresAt?: string | null
 	sessionExpiresAt?: string | null
 	userEmail?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -73,6 +80,7 @@ type ResolveSecretInput = SecretOwnerContext & {
 	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 	name: string
 	scope?: SecretScope | null
+	includeExpired?: boolean
 }
 
 type UpdateSecretInput = SecretOwnerContext & {
@@ -81,6 +89,7 @@ type UpdateSecretInput = SecretOwnerContext & {
 	scope: SecretScope
 	value?: string | null
 	description?: string | null
+	expiresAt?: string | null
 }
 
 type DeleteSecretInput = SecretOwnerContext & {
@@ -167,6 +176,10 @@ export async function saveSecret(
 		}),
 	})
 	const now = new Date().toISOString()
+	const entryExpiresAt = nextSecretExpiresAt({
+		existing: existingEntry?.expires_at,
+		requested: input.expiresAt,
+	})
 	await upsertSecretEntry({
 		db: input.env.APP_DB,
 		row: {
@@ -177,6 +190,7 @@ export async function saveSecret(
 			allowed_hosts: existingEntry?.allowed_hosts ?? '[]',
 			allowed_capabilities: existingEntry?.allowed_capabilities ?? '[]',
 			allowed_packages: existingEntry?.allowed_packages ?? '[]',
+			expires_at: entryExpiresAt,
 			created_at: existingEntry?.created_at ?? now,
 			updated_at: now,
 		},
@@ -197,7 +211,7 @@ export async function saveSecret(
 			: [],
 		createdAt: existingEntry?.created_at ?? now,
 		updatedAt: now,
-		expiresAt: bucket.expires_at,
+		expiresAt: earliestSecretExpiresAt(entryExpiresAt, bucket.expires_at),
 	})
 }
 
@@ -249,6 +263,7 @@ export async function setSecretsAtomically(input: {
 		value: string
 		scope: SecretScope
 		description?: string | null
+		expiresAt?: string | null
 	}>
 	storageContext?: StorageContext | null
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -269,6 +284,11 @@ export async function setSecretsAtomically(input: {
 	}
 
 	if (scope === 'user' && packageId) {
+		if (input.secrets.some((secret) => secret.expiresAt !== undefined)) {
+			throw new McpCallerError(
+				'Package runtimes cannot change user secret expiry. Set expires_at from the account page or secret_set outside a package.',
+			)
+		}
 		for (const secret of input.secrets) {
 			const name = secret.name.trim()
 			if (!name) throw new Error('Secret name is required.')
@@ -308,6 +328,7 @@ export async function setSecretsAtomically(input: {
 			name: secret.name,
 			value: secret.value,
 			description: secret.description,
+			expiresAt: secret.expiresAt,
 		})),
 		storageContext,
 		waitUntil: input.waitUntil,
@@ -438,7 +459,10 @@ export async function updateUserSecretsForPackageAtomically(input: {
 			),
 			createdAt: entry.existingEntry.created_at,
 			updatedAt: now,
-			expiresAt: bucket.expires_at,
+			expiresAt: earliestSecretExpiresAt(
+				entry.existingEntry.expires_at,
+				bucket.expires_at,
+			),
 		}),
 	)
 }
@@ -452,6 +476,7 @@ async function saveSecretsAtomically(input: {
 		name: string
 		value: string
 		description?: string | null
+		expiresAt?: string | null
 	}>
 	storageContext?: StorageContext | null
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -468,6 +493,7 @@ async function saveSecretsAtomically(input: {
 		name: string
 		description: string
 		encryptedValue: string
+		expiresAt: string | null
 		existingEntry: Awaited<ReturnType<typeof getSecretEntry>>
 	}> = []
 	let newSecretCount = 0
@@ -517,7 +543,16 @@ async function saveSecretsAtomically(input: {
 					}
 				: null,
 		})
-		prepared.push({ name, description, encryptedValue, existingEntry })
+		prepared.push({
+			name,
+			description,
+			encryptedValue,
+			expiresAt: nextSecretExpiresAt({
+				existing: existingEntry?.expires_at,
+				requested: secret.expiresAt,
+			}),
+			existingEntry,
+		})
 	}
 
 	if (newSecretCount > 0) {
@@ -547,6 +582,7 @@ async function saveSecretsAtomically(input: {
 			allowed_hosts: entry.existingEntry?.allowed_hosts ?? '[]',
 			allowed_capabilities: entry.existingEntry?.allowed_capabilities ?? '[]',
 			allowed_packages: entry.existingEntry?.allowed_packages ?? '[]',
+			expires_at: entry.expiresAt,
 			created_at: entry.existingEntry?.created_at ?? now,
 			updated_at: now,
 		})),
@@ -569,7 +605,7 @@ async function saveSecretsAtomically(input: {
 				: [],
 			createdAt: entry.existingEntry?.created_at ?? now,
 			updatedAt: now,
-			expiresAt: bucket.expires_at,
+			expiresAt: earliestSecretExpiresAt(entry.expiresAt, bucket.expires_at),
 		}),
 	)
 }
@@ -632,6 +668,9 @@ export async function resolveSecret(
 				name: input.name,
 			})
 			if (!entry) return null
+			if (!input.includeExpired && isSecretExpired(entry.expires_at)) {
+				return null
+			}
 			const decrypted = await decryptSecretValue(
 				input.env,
 				entry.encrypted_value,
@@ -713,13 +752,23 @@ export async function updateSecret(
 			: input.description.trim()
 	const hasValueUpdate = input.value != null
 	const nextValue = input.value?.trim() ?? null
-	if (!hasValueUpdate && input.description == null) {
-		throw new Error('Provide a new secret value or description to update.')
+	if (
+		!hasValueUpdate &&
+		input.description == null &&
+		input.expiresAt === undefined
+	) {
+		throw new Error(
+			'Provide a new secret value, description, or expires_at to update.',
+		)
 	}
 	if (hasValueUpdate && !nextValue) {
 		throw new Error('Secret value must not be empty.')
 	}
 	const now = new Date().toISOString()
+	const entryExpiresAt = nextSecretExpiresAt({
+		existing: existingEntry.expires_at,
+		requested: input.expiresAt,
+	})
 	await upsertSecretEntry({
 		db: input.env.APP_DB,
 		row: {
@@ -736,6 +785,7 @@ export async function updateSecret(
 			allowed_hosts: existingEntry.allowed_hosts,
 			allowed_capabilities: existingEntry.allowed_capabilities,
 			allowed_packages: existingEntry.allowed_packages,
+			expires_at: entryExpiresAt,
 			created_at: existingEntry.created_at,
 			updated_at: now,
 		},
@@ -752,7 +802,7 @@ export async function updateSecret(
 		allowedPackages: parseAllowedPackages(existingEntry.allowed_packages),
 		createdAt: existingEntry.created_at,
 		updatedAt: now,
-		expiresAt: bucket.expires_at,
+		expiresAt: earliestSecretExpiresAt(entryExpiresAt, bucket.expires_at),
 	})
 }
 
@@ -933,10 +983,8 @@ function toSecretMetadata(input: {
 		allowedPackages: normalizeAllowedPackages(input.allowedPackages),
 		createdAt: input.createdAt,
 		updatedAt: input.updatedAt,
-		ttlMs:
-			input.expiresAt == null
-				? null
-				: Math.max(0, new Date(input.expiresAt).getTime() - Date.now()),
+		expiresAt: input.expiresAt,
+		ttlMs: secretTtlMs(input.expiresAt),
 	}
 }
 
@@ -991,7 +1039,10 @@ export async function setSecretAllowedHosts(input: {
 		allowedPackages: parseAllowedPackages(existingEntry.allowed_packages),
 		createdAt: existingEntry.created_at,
 		updatedAt: now,
-		expiresAt: bucket.expires_at,
+		expiresAt: earliestSecretExpiresAt(
+			existingEntry.expires_at,
+			bucket.expires_at,
+		),
 	})
 }
 
@@ -1046,7 +1097,10 @@ export async function setSecretAllowedCapabilities(input: {
 		allowedPackages: parseAllowedPackages(existingEntry.allowed_packages),
 		createdAt: existingEntry.created_at,
 		updatedAt: now,
-		expiresAt: bucket.expires_at,
+		expiresAt: earliestSecretExpiresAt(
+			existingEntry.expires_at,
+			bucket.expires_at,
+		),
 	})
 }
 
@@ -1104,7 +1158,10 @@ export async function setSecretAllowedPackages(input: {
 		allowedPackages: input.allowedPackages,
 		createdAt: existingEntry.created_at,
 		updatedAt: now,
-		expiresAt: bucket.expires_at,
+		expiresAt: earliestSecretExpiresAt(
+			existingEntry.expires_at,
+			bucket.expires_at,
+		),
 	})
 }
 
