@@ -159,8 +159,9 @@ two-rule contract enforced at publish time (see
   those files so safe object inputs become scoped string-first calls in the same
   run.
 - Emits `needsManual` when that second-stage object repair cannot safely derive
-  the owner/target; it never leaves a mechanically rewritten call on the removed
-  object-only API without a blocking finding.
+  the owner/target. That second stage is all-or-nothing: any manual finding
+  restores the original tree and returns `changed: false`, forcing the engine's
+  `needs_manual` stop instead of applying a partial rewrite to removed API.
 - Emits `needsManual` for `packages.check(...)` (its contract return value has
   no mechanical equivalent — `invoke` checks internally) and for literal dynamic
   `import("kody:@...")` (namespace semantics and `kody.dependencies` manifest

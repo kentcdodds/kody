@@ -265,6 +265,14 @@ function transform(
 		}
 		const objectRepair =
 			invokeObjectToSpecifierCodemod.transform(objectRepairFiles)
+		if (objectRepair.needsManual.length > 0) {
+			return {
+				files: { ...files },
+				changed: false,
+				changedPaths: [],
+				needsManual: [...needsManual, ...objectRepair.needsManual],
+			}
+		}
 		for (const path of objectRepair.changedPaths) {
 			const source = objectRepair.files[path]
 			if (typeof source !== 'string') continue

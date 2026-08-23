@@ -74,6 +74,30 @@ test('0002 rewrites invokeChecked member calls and leaves non-targets alone', ()
 	expect(untouchedResult.files).toEqual(untouched)
 })
 
+test('0002 leaves the original tree unchanged when 0006 needs manual repair', () => {
+	const files = {
+		'package.json': manifest(),
+		'index.ts': [
+			"import { packages } from 'kody:runtime'",
+			'export default async function run(input) {',
+			'\treturn packages.invokeChecked(input)',
+			'}',
+			'',
+		].join('\n'),
+	}
+
+	const result = staticFirstInvocationCodemod.transform(files)
+	expect(result.changed).toBe(false)
+	expect(result.changedPaths).toEqual([])
+	expect(result.files).toEqual(files)
+	expect(result.needsManual).toEqual([
+		{
+			path: 'index.ts',
+			message: expect.stringContaining('cannot be migrated safely'),
+		},
+	])
+})
+
 test('0002 reports needsManual for check/dynamic imports, parse failures, and mixed packages', () => {
 	const manualFiles = {
 		'package.json': manifest(),
