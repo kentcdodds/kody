@@ -2,19 +2,25 @@ import { expect, test } from 'vitest'
 import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
+	buildCodexMcpAddCommand,
 	buildCodexMcpToml,
 	buildCopilotCliAddCommand,
 	buildCopilotCliMcpJson,
 	buildCursorInstallUrl,
 	buildCursorMcpJson,
 	buildKodyAppIconUrl,
+	buildKodyCliInstallCommand,
+	buildOpenCodeMcpAddCommand,
 	buildOpenCodeMcpJson,
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
+	codexMcpLoginCommand,
+	defaultKodyMcpUrl,
 	mcpClientTabs,
+	openCodeMcpAuthCommand,
 } from './onboarding-mcp-clients.ts'
 
-const mcpServerUrl = 'https://heykody.dev/mcp'
+const mcpServerUrl = defaultKodyMcpUrl
 
 test('onboarding MCP client builders emit the structured configs each host expects', () => {
 	expect(mcpClientTabs.map((tab) => tab.id)).toEqual([
@@ -39,6 +45,16 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		'Copilot App',
 	)
 
+	expect(buildKodyCliInstallCommand(mcpServerUrl)).toBe(
+		'npx @kodycodes/cli install',
+	)
+	expect(buildKodyCliInstallCommand(`${mcpServerUrl}/`)).toBe(
+		'npx @kodycodes/cli install',
+	)
+	expect(buildKodyCliInstallCommand('http://localhost:3742/mcp')).toBe(
+		'npx @kodycodes/cli install --mcp-url http://localhost:3742/mcp',
+	)
+
 	expect(JSON.parse(buildCursorMcpJson(mcpServerUrl))).toEqual({
 		mcpServers: {
 			kody: {
@@ -54,7 +70,17 @@ test('onboarding MCP client builders emit the structured configs each host expec
 			},
 		},
 	})
-	expect(buildClaudeCodeAddCommand(mcpServerUrl)).toContain(mcpServerUrl)
+	expect(buildClaudeCodeAddCommand(mcpServerUrl)).toBe(
+		`claude mcp add --transport http -s user kody ${mcpServerUrl}`,
+	)
+	expect(buildCodexMcpAddCommand(mcpServerUrl)).toBe(
+		`codex mcp add kody --url ${mcpServerUrl}`,
+	)
+	expect(codexMcpLoginCommand).toBe('codex mcp login kody')
+	expect(buildOpenCodeMcpAddCommand(mcpServerUrl)).toBe(
+		`opencode mcp add kody --url ${mcpServerUrl}`,
+	)
+	expect(openCodeMcpAuthCommand).toBe('opencode mcp auth kody')
 	expect(JSON.parse(buildVsCodeMcpJson(mcpServerUrl))).toEqual({
 		servers: {
 			kody: {
@@ -87,7 +113,7 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		['[mcp_servers.kody]', `url = "${mcpServerUrl}"`, ''].join('\n'),
 	)
 	expect(buildKodyAppIconUrl(mcpServerUrl)).toBe(
-		'https://heykody.dev/apple-touch-icon.png',
+		'https://kody.codes/apple-touch-icon.png',
 	)
 
 	const cursorInstallUrl = new URL(buildCursorInstallUrl(mcpServerUrl))

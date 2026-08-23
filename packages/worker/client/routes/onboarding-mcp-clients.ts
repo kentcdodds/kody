@@ -66,6 +66,25 @@ export const claudeDesktopToolHint =
 export const codingAgentPackageHint =
 	'Coding agents are the best fit when you want to create or edit Kody packages. Once a package exists, non-coding agents can use it just fine.'
 
+/** Production MCP URL. `@kodycodes/cli install` uses this when `--mcp-url` is omitted. */
+export const defaultKodyMcpUrl = 'https://kody.codes/mcp'
+
+/**
+ * Copyable Automatic command for every client. Production uses the CLI
+ * default; preview and local origins pass `--mcp-url` so install writes
+ * this deployment's MCP endpoint.
+ */
+export function buildKodyCliInstallCommand(mcpServerUrl: string) {
+	if (normalizeMcpUrl(mcpServerUrl) === defaultKodyMcpUrl) {
+		return 'npx @kodycodes/cli install'
+	}
+	return `npx @kodycodes/cli install --mcp-url ${mcpServerUrl}`
+}
+
+function normalizeMcpUrl(mcpServerUrl: string) {
+	return mcpServerUrl.replace(/\/+$/u, '')
+}
+
 function prettyJson(value: unknown) {
 	return `${JSON.stringify(value, null, 2)}\n`
 }
@@ -121,6 +140,23 @@ export function buildClaudeCodeMcpJson(mcpServerUrl: string) {
 export function buildClaudeCodeAddCommand(mcpServerUrl: string) {
 	return `claude mcp add --transport http -s user kody ${mcpServerUrl}`
 }
+
+/** Codex CLI streamable HTTP add. OAuth may need `codex mcp login kody`. */
+export function buildCodexMcpAddCommand(mcpServerUrl: string) {
+	return `codex mcp add kody --url ${mcpServerUrl}`
+}
+
+export const codexMcpLoginCommand = 'codex mcp login kody'
+
+/**
+ * OpenCode non-interactive remote add (`opencode mcp add <name> --url`).
+ * OAuth may need `opencode mcp auth kody`.
+ */
+export function buildOpenCodeMcpAddCommand(mcpServerUrl: string) {
+	return `opencode mcp add kody --url ${mcpServerUrl}`
+}
+
+export const openCodeMcpAuthCommand = 'opencode mcp auth kody'
 
 /** VS Code Copilot `.vscode/mcp.json` (root key is `servers`, not `mcpServers`). */
 export function buildVsCodeMcpJson(mcpServerUrl: string) {

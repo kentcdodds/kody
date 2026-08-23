@@ -609,13 +609,12 @@ export function OnboardingRoute(handle: Handle) {
 								>
 									<strong>Authenticate Kody before you continue</strong>
 									<span>
-										<strong>Cursor:</strong> after Add to Cursor, open the
-										Cursor MCP list and click <strong>Authenticate</strong>.
+										<strong>Cursor:</strong> after install, open the Cursor MCP
+										list and click <strong>Authenticate</strong>.
 									</span>
 									<span>
-										<strong>Claude Code:</strong> after copying and running the
-										command, enter <code>/mcp</code> → Kody →{' '}
-										<strong>Authenticate</strong>.
+										<strong>Claude Code:</strong> after install, enter{' '}
+										<code>/mcp</code> → Kody → <strong>Authenticate</strong>.
 									</span>
 									<span>
 										Approve the <strong>kody.codes</strong> OAuth window. This
