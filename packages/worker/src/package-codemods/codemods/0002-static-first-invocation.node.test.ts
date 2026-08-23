@@ -44,12 +44,13 @@ test('0002 rewrites invokeChecked member calls and leaves non-targets alone', ()
 	expect(result.changedPaths).toEqual(['index.ts'])
 	expect(result.needsManual).toEqual([])
 	expect(result.files['index.ts']).toContain(
-		"await packages.invoke({ kodyId: 'github'",
+		'await packages.invoke("kody:@user/github", { exportName:',
 	)
 	expect(result.files['index.ts']).toContain(
-		"await packages?.invoke({ kodyId: 'github'",
+		'await packages?.invoke("kody:@user/github", { exportName:',
 	)
 	expect(result.files['index.ts']).not.toContain('invokeChecked')
+	expect(result.files['index.ts']).not.toContain("kodyId: 'github'")
 
 	const rerun = staticFirstInvocationCodemod.transform(result.files)
 	expect(rerun.changed).toBe(false)
@@ -139,7 +140,9 @@ test('0002 reports needsManual for check/dynamic imports, parse failures, and mi
 	const mixedResult = staticFirstInvocationCodemod.transform(mixedFiles)
 	expect(mixedResult.changed).toBe(true)
 	expect(mixedResult.changedPaths).toEqual(['auto.ts'])
-	expect(mixedResult.files['auto.ts']).toContain('packages.invoke({')
+	expect(mixedResult.files['auto.ts']).toContain(
+		'packages.invoke("kody:@user/skills", { exportName:',
+	)
 	expect(mixedResult.files['auto.ts']).not.toContain('invokeChecked')
 	expect(mixedResult.files['manual.ts']).toBe(mixedFiles['manual.ts'])
 	expect(mixedResult.needsManual).toEqual([

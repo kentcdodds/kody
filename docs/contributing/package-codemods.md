@@ -154,9 +154,13 @@ two-rule contract enforced at publish time (see
 [`architecture/invocation-overhead-guardrails.md`](./architecture/invocation-overhead-guardrails.md)):
 
 - Rewrites `packages.invokeChecked(...)` member calls (including
-  `packages?.invokeChecked`) to `packages.invoke(...)` via AST range replacement
-  — identical input shape; `packages.invoke` is always contract-checked and
-  key-less calls take the lean/ephemeral path.
+  `packages?.invokeChecked`) to `packages.invoke(...)` via AST range
+  replacement, then composes the `0006-invoke-object-to-specifier` repair over
+  those files so safe object inputs become scoped string-first calls in the same
+  run.
+- Emits `needsManual` when that second-stage object repair cannot safely derive
+  the owner/target; it never leaves a mechanically rewritten call on the removed
+  object-only API without a blocking finding.
 - Emits `needsManual` for `packages.check(...)` (its contract return value has
   no mechanical equivalent — `invoke` checks internally) and for literal dynamic
   `import("kody:@...")` (namespace semantics and `kody.dependencies` manifest
