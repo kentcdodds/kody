@@ -25,6 +25,7 @@ Do not spawn a one-agent "fleet."
 
 ## Defaults (override only if the user says so)
 
+- **Model.** Use the latest Grok model unless the user requests another.
 - **Escalate before fleet.** Analysis → multi-track program needs explicit
   approve: tracks, wall-clock, stop criteria, out-of-scope.
 - **Tracks implement by default.** Hand `orchestrate` only for clear parallel
@@ -113,11 +114,14 @@ review-only.
 
 ```javascript
 import { createAgent } from 'kody:@kentcdodds/cursor/agents'
+import { listModels } from 'kody:@kentcdodds/cursor/models'
 import { createRun } from 'kody:@kentcdodds/cursor/runs'
 
 export default async function main() {
+	const { items } = await listModels()
+	const latestGrok = items.find((item) => item.id.startsWith('grok-'))
 	const { agent } = await createAgent({
-		model: 'gpt-5.6-sol',
+		model: latestGrok.id,
 		repository: 'https://github.com/owner/repo',
 		ref: 'main',
 		name: 'track-short-name',
