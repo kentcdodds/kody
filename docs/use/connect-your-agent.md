@@ -13,7 +13,9 @@ started (`/onboarding`).
 The in-app Get started page (`/onboarding`) shows one Automatic command first:
 `npx @kodycodes/cli install`. That CLI detects running local agents and writes
 each host's remote MCP entry for this deployment. Host-specific deeplinks,
-vendor CLIs, the MCP URL, and JSON/TOML merge stay under Manual.
+vendor CLIs, the MCP URL, and JSON/TOML merge stay under Manual. A second
+client is worth it when you want the same [memories](./memory.md) and packages
+from another agent — you do not need every Manual tab.
 
 ## Add the MCP server
 
@@ -49,12 +51,17 @@ Manual on Get started has one tab per host. Use those when you are not running
   `claude_desktop_config.json`. After connecting, start a new chat and ask
   Claude to list Kody tools before the first task — Claude Desktop often does
   not bind MCP tools until that next turn.
-- **Grok** — On [grok.com/connectors](https://grok.com/connectors), click **New
-  Connector**, select **Custom**, and paste the MCP URL. Complete OAuth when
-  prompted. For Grok Business and Enterprise, a team admin must first add this
-  custom MCP server in the cloud console; members can then connect it from the
-  Grok connectors page. See xAI's
+- **Grok.com** — On [grok.com/connectors](https://grok.com/connectors), click
+  **New Connector**, select **Custom**, and paste the MCP URL. Complete OAuth
+  when prompted. For Grok Business and Enterprise, a team admin must first add
+  this custom MCP server in the cloud console; members can then connect it from
+  the Grok connectors page. See xAI's
   [custom MCP connector docs](https://docs.x.ai/grok/connectors).
+- **Grok CLI** — `grok mcp add --transport http --scope user kody <url>`. That
+  writes `~/.grok/config.toml`. OAuth opens a browser on first use; in the TUI,
+  `/mcps` then `i` authenticates. `grok mcp doctor kody` checks the
+  connection. See xAI's
+  [Grok CLI MCP docs](https://docs.x.ai/build/features/mcp-servers).
 - **Claude Code** — After the CLI writes the remote entry, enter `/mcp` → Kody →
   Authenticate. Manual includes
   `claude mcp add --transport http -s user kody <url>`, or a `.mcp.json` entry
@@ -96,10 +103,10 @@ Manual on Get started has one tab per host. Use those when you are not running
 ### Coding vs non-coding agents
 
 Using Kody packages works great with non-coding agents such as Claude Desktop,
-ChatGPT, Grok, and the GitHub Copilot app. For creating or editing packages, a
-coding agent (Cursor, Claude Code, Codex, Copilot, OpenCode, and similar) is
-usually smoother because those hosts can edit files and iterate on code more
-easily.
+ChatGPT, Grok.com, and the GitHub Copilot app. For creating or editing packages,
+a coding agent (Cursor, Claude Code, Codex, Grok CLI, Copilot, OpenCode, and
+similar) is usually smoother because those hosts can edit files and iterate on
+code more easily.
 
 ## Connect Notion or Linear, then persist a first build
 

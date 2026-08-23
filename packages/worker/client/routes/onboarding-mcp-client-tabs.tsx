@@ -10,6 +10,8 @@ import {
 	buildCopilotCliMcpJson,
 	buildCursorInstallUrl,
 	buildCursorMcpJson,
+	buildGrokCliAddCommand,
+	buildGrokCliMcpToml,
 	buildKodyAppIconUrl,
 	buildKodyCliInstallCommand,
 	buildOpenCodeMcpAddCommand,
@@ -22,6 +24,7 @@ import {
 	codingAgentPackageHint,
 	copilotAppCustomizeGuideUrl,
 	copilotCliMcpGuideUrl,
+	grokCliMcpGuideUrl,
 	grokConnectorsUrl,
 	grokCustomMcpGuideUrl,
 	type McpClientKind,
@@ -248,17 +251,54 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
-		case 'grok':
+		case 'grok': {
+			const grokCliCommand = buildGrokCliAddCommand(mcpServerUrl)
+			const grokCliToml = buildGrokCliMcpToml(mcpServerUrl)
 			return (
 				<>
 					<p>
-						In{' '}
+						<strong>In Grok CLI:</strong> add a remote HTTP server (writes{' '}
+						<code>~/.grok/config.toml</code>). OAuth opens a browser on first
+						use; in the TUI, <code>/mcps</code> then <strong>i</strong>{' '}
+						authenticates:
+					</p>
+					<CopyCard
+						label="grok CLI"
+						value={grokCliCommand}
+						copyLabel="Copy command"
+						variant="pill"
+						lang="sh"
+					/>
+					<p>
+						Or merge this into <code>~/.grok/config.toml</code>:
+					</p>
+					<CopyCard
+						label="~/.grok/config.toml"
+						value={grokCliToml}
+						copyLabel="Copy TOML"
+						lang="toml"
+					/>
+					<p>
+						See xAI&apos;s{' '}
+						<a
+							href={grokCliMcpGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Grok CLI MCP docs
+						</a>{' '}
+						for <code>grok mcp list</code>, <code>grok mcp doctor</code>, and
+						project scope.
+					</p>
+					<ClientNote>{codingAgentPackageHint}</ClientNote>
+					<p>
+						<strong>On Grok.com:</strong> open{' '}
 						<a
 							href={grokConnectorsUrl}
 							target="_blank"
 							rel="noreferrer noopener"
 						>
-							Grok.com → Connectors
+							Connectors
 						</a>
 						, click <strong>New Connector</strong>, select{' '}
 						<strong>Custom</strong>, and paste this MCP URL. Complete OAuth when
@@ -279,12 +319,13 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 							rel="noreferrer noopener"
 						>
 							custom MCP connector docs
-						</a>{' '}
-						for details.
+						</a>
+						.
 					</p>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
+		}
 		case 'claude-code': {
 			const claudeCodeCommand = buildClaudeCodeAddCommand(mcpServerUrl)
 			const claudeCodeJson = buildClaudeCodeMcpJson(mcpServerUrl)
@@ -553,6 +594,12 @@ const tabKickerCss = {
 	textTransform: 'uppercase' as const,
 	letterSpacing: '0.09em',
 	color: colors.primaryText,
+}
+
+const tabLeadCss = {
+	margin: 0,
+	font: `400 0.95rem/1.45 ${typography.fontFamilyBody}`,
+	color: colors.textMuted,
 }
 
 const tabListCss = {

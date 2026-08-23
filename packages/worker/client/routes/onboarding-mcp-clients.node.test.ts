@@ -8,6 +8,8 @@ import {
 	buildCopilotCliMcpJson,
 	buildCursorInstallUrl,
 	buildCursorMcpJson,
+	buildGrokCliAddCommand,
+	buildGrokCliMcpToml,
 	buildKodyAppIconUrl,
 	buildKodyCliInstallCommand,
 	buildOpenCodeMcpAddCommand,
@@ -110,6 +112,12 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		},
 	})
 	expect(buildCodexMcpToml(mcpServerUrl)).toBe(
+		['[mcp_servers.kody]', `url = "${mcpServerUrl}"`, ''].join('\n'),
+	)
+	expect(buildGrokCliAddCommand(mcpServerUrl)).toBe(
+		`grok mcp add --transport http --scope user kody ${mcpServerUrl}`,
+	)
+	expect(buildGrokCliMcpToml(mcpServerUrl)).toBe(
 		['[mcp_servers.kody]', `url = "${mcpServerUrl}"`, ''].join('\n'),
 	)
 	expect(buildKodyAppIconUrl(mcpServerUrl)).toBe(

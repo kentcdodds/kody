@@ -617,6 +617,12 @@ export function OnboardingRoute(handle: Handle) {
 										<code>/mcp</code> → Kody → <strong>Authenticate</strong>.
 									</span>
 									<span>
+										<strong>Grok CLI:</strong> after adding the server, OAuth
+										opens on first use. In the TUI, <code>/mcps</code> then{' '}
+										<strong>i</strong> authenticates.{' '}
+										<code>grok mcp doctor kody</code> checks the connection.
+									</span>
+									<span>
 										Approve the <strong>kody.codes</strong> OAuth window. This
 										is the step that connects your agent to your factory.
 									</span>
