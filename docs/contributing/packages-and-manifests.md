@@ -202,11 +202,12 @@ await packages.invoke('kody:@kentcdodds/event-subscriber/handle-event', {
 })
 ```
 
-The first argument must be `kody:@scope/package` or
-`kody:@scope/package/export`. `exportName` is optional only when the specifier
-includes the export; if both are present, the specifier export wins. The second
-argument accepts `exportName`, `params`, `idempotencyKey`, and `topic`; unknown
-keys fail.
+The preferred first argument is `kody:@scope/package` or
+`kody:@scope/package/export`. Prefixless `@scope/package[/export]` is also
+accepted and canonicalized to `kody:`. `exportName` is optional only when the
+specifier includes the export; if both are present, the specifier export wins.
+The second argument accepts `exportName`, `params`, `idempotencyKey`, and
+`topic`; unknown keys fail.
 
 Exact scoped resolution avoids bare-id collisions. A `kody:@kody/...` target
 resolves the public live package owned by the platform account, while a

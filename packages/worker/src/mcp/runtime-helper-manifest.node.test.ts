@@ -28,10 +28,18 @@ test('packages helper forwards string-first invoke and rejects the removed objec
 		options: { params: {} },
 	})
 	await expect(
+		packages.invoke('@kentcdodds/github/request', {
+			params: { path: '/user' },
+		}),
+	).resolves.toEqual({
+		specifier: '@kentcdodds/github/request',
+		options: { params: { path: '/user' } },
+	})
+	await expect(
 		(packages.invoke as (input: unknown) => Promise<unknown>)({
 			kodyId: 'google',
 			exportName: 'profile',
 		}),
 	).rejects.toThrow('Object-only packages.invoke was removed')
-	expect(invoke).toHaveBeenCalledTimes(1)
+	expect(invoke).toHaveBeenCalledTimes(2)
 })

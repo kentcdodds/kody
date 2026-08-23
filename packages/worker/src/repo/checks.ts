@@ -313,7 +313,9 @@ function createExecuteTypecheckPrelude(input?: {
 
 type KodyCapabilityArgs = Record<string, unknown>;
 type KodyCapabilityResult = unknown;
-type KodyPackageSpecifier = \`kody:@\${string}/\${string}\`;
+type KodyPackageSpecifier =
+  | \`kody:@\${string}/\${string}\`
+  | \`@\${string}/\${string}\`;
 type KodyPackagesInvokeOptions = {
   /**
    * Required when the specifier has no export subpath. When both are present,
@@ -330,7 +332,8 @@ type KodyPackagesRuntime = {
    * published package export before invoking; a failing contract rejects with
    * "packages.invoke contract check failed: ...". Key-less calls are
    * lean/ephemeral; pass idempotencyKey only for exactly-once semantics.
-   * A kody:@scope/package[/export] specifier is required.
+   * Prefer kody:@scope/package[/export]; @scope/package[/export] is also
+   * accepted and canonicalized to the kody: form.
    */
   invoke(
     specifier: KodyPackageSpecifier,

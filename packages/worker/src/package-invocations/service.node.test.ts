@@ -1699,7 +1699,7 @@ test('package runtime invoke contract-checks once and executes the target', asyn
 	expect(repoMockModule.runBundledModuleWithRegistry).toHaveBeenCalledTimes(1)
 })
 
-test('execute runtime invoke invokes target package with execute provenance', async () => {
+test('execute runtime invoke canonicalizes a prefixless target and preserves execute provenance', async () => {
 	const db = createDatabase()
 	seedRuntimeDispatchPackages()
 	repoMockModule.runBundledModuleWithRegistry.mockResolvedValue({
@@ -1725,7 +1725,7 @@ test('execute runtime invoke invokes target package with execute provenance', as
 
 	const result = await tools.invoke({
 		specifier:
-			'kody:@kentcdodds/discord-general-chat/handle-discord-message-created',
+			'@kentcdodds/discord-general-chat/handle-discord-message-created',
 		options: { params: { event: { id: 'message-1' } } },
 	})
 

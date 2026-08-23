@@ -65,24 +65,25 @@ function parsePackageInvokeSpecifier(
 ) {
 	if (typeof specifierValue !== 'string' || !specifierValue.trim()) {
 		throw new Error(
-			`${operationName} requires a kody:@owner/package[/export] specifier.`,
+			`${operationName} requires a kody:@owner/package[/export] or @owner/package[/export] specifier.`,
 		)
 	}
 	const trimmed = specifierValue.trim()
-	if (!trimmed.startsWith(packageSpecifierPrefix)) {
+	const specifier = trimmed.startsWith('@') ? `kody:${trimmed}` : trimmed
+	if (!specifier.startsWith(packageSpecifierPrefix)) {
 		throw new Error(
-			`${operationName} requires a kody:@owner/package[/export] specifier.`,
+			`${operationName} requires a kody:@owner/package[/export] or @owner/package[/export] specifier.`,
 		)
 	}
-	const parsed = parseKodyPackageSpecifier(trimmed)
-	const pathSegments = trimmed.slice(packageSpecifierPrefix.length).split('/')
+	const parsed = parseKodyPackageSpecifier(specifier)
+	const pathSegments = specifier.slice(packageSpecifierPrefix.length).split('/')
 	const specifierExportName = pathSegments
 		.slice(2)
 		.some((segment) => segment.trim())
 		? parsed.exportName
 		: null
 	return {
-		specifier: trimmed,
+		specifier,
 		packageName: parsed.packageName,
 		specifierExportName,
 	}
