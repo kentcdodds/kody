@@ -17,6 +17,7 @@ import {
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingFeaturedMcpServer,
 } from '#universal/loader-data.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
@@ -26,17 +27,24 @@ import {
 	selectOnboardingServiceStarterListings,
 } from '#universal/onboarding-examples.ts'
 import {
+	hasConnectedOnboardingFeaturedMcpServer,
+	hasPendingOnboardingFeaturedMcpAuth,
+} from '#universal/onboarding-mcp-chooser.ts'
+import {
 	fetchOnboardingPayload,
 	onboardingApiPath,
 	type OnboardingPayload,
 } from '#client/routes/onboarding-payload.ts'
 import { OnboardingDiyCard } from '#client/routes/onboarding-diy-card.tsx'
 import {
+	isOnboardingChecklistItemDone,
 	OnboardingChecklistCard,
 	shouldShowOnboardingChecklist,
 } from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
+import { OnboardingMcpChooserCard } from '#client/routes/onboarding-mcp-chooser-card.tsx'
 import { OnboardingExampleCard } from '#client/routes/onboarding-example-card.tsx'
+import { OnboardingPersistCard } from '#client/routes/onboarding-persist-card.tsx'
 import { OnboardingFactoryCard } from '#client/routes/onboarding-factory-card.tsx'
 import { createOnboardingNextConfirmation } from '#client/routes/onboarding-next-confirmation.ts'
 import { OnboardingPackageNextSteps } from '#client/routes/onboarding-package-next-steps.tsx'
@@ -67,32 +75,34 @@ import {
 
 /**
  * Onboarding wizard: shirt-pattern head, three-step stepper (Connect your
- * agent · Try a quick example · Connect your real services), one surface
+ * agent · Connect Notion or Linear · Try it, then persist), one surface
  * panel at a time with hand-tilted mascot art, and the BYOK argument folded
- * behind a disclosure. Server state (prompts, MCP URL, featured listings,
- * hasMcpClient / install polling) stays in the route state.
+ * behind a disclosure. Server state (prompts, MCP URL, featured MCP
+ * servers, hasMcpClient / OAuth polling) stays in the route state.
  *
- * Step 2 is the permanence lesson: fork a zero-auth example, copy a prompt
- * while install finishes, invoke the owned package. Step 3 is real services
- * (built-in OAuth + starters that need accounts). Built-ins lead when the
- * deployment has any; remaining featured starters demote to Advanced.
+ * Step 2 adds Notion or Linear as a remote MCP server (or skip). Step 3 is
+ * the permanence lesson: copy a prompt that runs one ad hoc execute, then
+ * persist that working code as a package. Built-in platform OAuth and
+ * featured starters stay available under Advanced.
  */
 
 type OnboardingStep = 1 | 2 | 3
 
 const onboardingSteps = [
 	{ number: 1, label: 'Connect your agent', hash: 'connect-agent' },
-	{ number: 2, label: 'Try a quick example', hash: 'quick-example' },
-	{ number: 3, label: 'Connect your real services', hash: 'connect-services' },
+	{ number: 2, label: 'Connect Notion or Linear', hash: 'connect-mcp' },
+	{ number: 3, label: 'Try it, then persist', hash: 'first-build' },
 ] as const satisfies ReadonlyArray<{
 	number: OnboardingStep
 	label: string
 	hash: string
 }>
 
-/** Older hashes from the email/memory first-win + tools step labels. */
+/** Older hashes from the email/memory, example-fork, and OAuth-lead steps. */
 const legacyOnboardingStepHashes: Record<string, OnboardingStep> = {
 	'first-win': 2,
+	'quick-example': 3,
+	'connect-services': 2,
 	'starter-packages': 3,
 }
 
@@ -155,12 +165,15 @@ export function OnboardingRoute(handle: Handle) {
 	let username: string | null = null
 	let mcpServerUrl = ''
 	let setupPrompt = ''
+	let persistPrompt = ''
 	let hasMcpClient = false
-	let hasQuickExample = false
+	let hasFeaturedMcp = false
+	let hasPersistedPackage = false
 	let featuredListings: Array<OnboardingFeaturedListing> = []
 	let exampleListings: Array<OnboardingFeaturedListing> = []
 	let serviceStarterListings: Array<OnboardingFeaturedListing> = []
 	let builtInProviders: Array<OnboardingBuiltInProvider> = []
+	let featuredMcpServers: Array<OnboardingFeaturedMcpServer> = []
 	let checklist: OnboardingChecklistLoaderData | null = null
 	let checklistHidden = false
 	let activeStep: OnboardingStep = 1
@@ -171,44 +184,40 @@ export function OnboardingRoute(handle: Handle) {
 	let panelAnimationArmed = false
 	const loadLatch = createRouteLoadLatch()
 
-	function readHasQuickExample(
-		payload: Pick<OnboardingPayload, 'featuredListings'>,
-	) {
-		// Step 2 is specifically a zero-auth example install — not "any saved
-		// package" (the shared install-starter checklist signal).
-		return selectOnboardingExampleListings(payload.featuredListings ?? []).some(
-			(listing) => listing.viewerInstall != null,
-		)
-	}
-
 	function applyPayload(payload: OnboardingPayload) {
 		const wasConnected = hasMcpClient
 		loggedIn = payload.loggedIn
 		username = payload.username
 		mcpServerUrl = payload.mcpServerUrl
 		setupPrompt = payload.setupPrompt
+		persistPrompt = payload.persistPrompt
 		hasMcpClient = payload.hasMcpClient
 		featuredListings = payload.featuredListings ?? []
 		exampleListings = selectOnboardingExampleListings(featuredListings)
 		serviceStarterListings =
 			selectOnboardingServiceStarterListings(featuredListings)
-		hasQuickExample = readHasQuickExample(payload)
+		featuredMcpServers = payload.featuredMcpServers ?? []
+		hasFeaturedMcp = hasConnectedOnboardingFeaturedMcpServer(featuredMcpServers)
 		builtInProviders = payload.builtInProviders ?? []
 		checklist = payload.checklist
+		hasPersistedPackage = isOnboardingChecklistItemDone(
+			payload.checklist,
+			'install-starter',
+		)
 		if (payload.checklist?.dismissed) checklistHidden = true
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
-			activeStep = hasQuickExample ? 3 : payload.hasMcpClient ? 2 : 1
+			activeStep = hasFeaturedMcp ? 3 : payload.hasMcpClient ? 2 : 1
 			initializedStep = true
-		} else if (!wasConnected && payload.hasMcpClient && !hasQuickExample) {
+		} else if (!wasConnected && payload.hasMcpClient && !hasFeaturedMcp) {
 			panelAnimationArmed = true
 			activeStep = 2
 			updateStepHash(2)
 			scrollToNav('onboarding-steps-nav')
 		}
-		// Stay on Step 2 when a quick example finishes so the expanded
-		// copy-prompt climax is not unmounted mid-paste. Wizard nav advances.
+		// Stay on Step 2 when a featured MCP finishes so the Connected
+		// state is visible; wizard nav advances to the persist prompt.
 	}
 
 	/**
@@ -334,9 +343,9 @@ export function OnboardingRoute(handle: Handle) {
 	}
 
 	// Users typically keep this page open while their MCP client runs OAuth
-	// and while a Step 2 install finishes, so poll the same JSON endpoint
-	// until those signals land and collapse completed steps without a manual
-	// refresh.
+	// and while a Step 2 Notion/Linear authorize finishes, so poll the same
+	// JSON endpoint until those signals land and collapse completed steps
+	// without a manual refresh.
 	//
 	// The interval must stay clear of 5000ms: workerd's HTTP server closes
 	// idle keep-alive connections after exactly 5s (kj pipeline timeout), so
@@ -348,38 +357,34 @@ export function OnboardingRoute(handle: Handle) {
 	let pollIntervalId: ReturnType<typeof setInterval> | undefined
 	let pollInFlight = false
 
-	function exampleInstallFingerprint(
-		listings: Array<OnboardingFeaturedListing>,
-	) {
-		return selectOnboardingExampleListings(listings)
+	function featuredMcpFingerprint(servers: Array<OnboardingFeaturedMcpServer>) {
+		return servers
 			.map(
-				(listing) =>
-					`${listing.id}:${listing.viewerInstall?.status ?? ''}:${listing.viewerInstall?.targetName ?? ''}`,
+				(server) =>
+					`${server.id}:${server.serverId ?? ''}:${server.state ?? ''}:${server.connected ? '1' : '0'}`,
 			)
 			.join('|')
 	}
 
 	async function pollOnboardingProgress() {
-		if (hasQuickExample && hasMcpClient) {
-			clearInterval(pollIntervalId)
+		if (pollInFlight || status !== 'ready' || !loggedIn) return
+		if (
+			hasMcpClient &&
+			!hasPendingOnboardingFeaturedMcpAuth(featuredMcpServers)
+		) {
 			return
 		}
-		if (pollInFlight || status !== 'ready' || !loggedIn) return
 		if (document.hidden) return
 		if (!isOnboardingPath(readCurrentRouterHref(handle))) return
 		pollInFlight = true
 		try {
 			const payload = await fetchOnboardingPayload(handle.signal)
 			if (handle.signal.aborted || !payload) return
-			const nextHasMcpClient = payload.hasMcpClient
-			const nextHasQuickExample = readHasQuickExample(payload)
-			const nextExampleInstalls = exampleInstallFingerprint(
-				payload.featuredListings ?? [],
-			)
+			const nextServers = payload.featuredMcpServers ?? []
 			if (
-				nextHasMcpClient === hasMcpClient &&
-				nextHasQuickExample === hasQuickExample &&
-				nextExampleInstalls === exampleInstallFingerprint(featuredListings)
+				payload.hasMcpClient === hasMcpClient &&
+				featuredMcpFingerprint(nextServers) ===
+					featuredMcpFingerprint(featuredMcpServers)
 			) {
 				return
 			}
@@ -464,8 +469,8 @@ export function OnboardingRoute(handle: Handle) {
 					</h1>
 					<p data-rise style={{ '--rise': '1' }}>
 						Give your agent a personal software factory: connect any MCP-capable
-						host, fork a ready-made package, then wire real services when you
-						are ready. New here?{' '}
+						host, add Notion or Linear, then run an ad hoc request and persist
+						it as a package you own. New here?{' '}
 						<a
 							href="/guides/what-is-kody"
 							target="_blank"
@@ -512,7 +517,7 @@ export function OnboardingRoute(handle: Handle) {
 								const isActive = activeStep === step.number
 								const isComplete =
 									(step.number === 1 && hasMcpClient) ||
-									(step.number === 2 && hasQuickExample)
+									(step.number === 2 && hasFeaturedMcp)
 								return (
 									<button
 										key={step.number}
@@ -613,20 +618,20 @@ export function OnboardingRoute(handle: Handle) {
 
 						{activeStep === 2 ? (
 							<section
-								id="quick-example"
-								aria-labelledby="quick-example-title"
-								data-testid="onboarding-quick-example"
+								id="connect-mcp"
+								aria-labelledby="connect-mcp-title"
+								data-testid="onboarding-connect-mcp"
 								mix={[css(wizardPanelCss), panelEntrance()]}
 							>
 								<div mix={css(panelHeadCss)}>
 									<div>
 										<p mix={css(panelKickerCss)}>Step 2</p>
 										<h2
-											id="quick-example-title"
+											id="connect-mcp-title"
 											tabIndex={-1}
 											mix={css(panelTitleCss)}
 										>
-											Try a quick example
+											Connect Notion or Linear
 										</h2>
 									</div>
 									<img
@@ -640,60 +645,33 @@ export function OnboardingRoute(handle: Handle) {
 									/>
 								</div>
 								<p mix={css(panelLedeCss)}>
-									Get a first win with a package you own: fork one of these
-									three demos, run your copy once, then change it whenever you
-									want. The weather, HN, or capture result is only the starting
-									point.
+									Give your agent a live workspace: add Notion or Linear as a
+									remote MCP server, authorize it, then skip if you would rather
+									try an ad hoc request first.
 								</p>
-								{exampleListings.length > 0 ? (
-									<ul
-										mix={css(starterGridCss)}
-										data-testid="onboarding-example-packages"
-									>
-										{exampleListings.map((listing) => (
-											<OnboardingExampleCard
-												key={listing.id}
-												listing={listing}
-												loggedIn={loggedIn}
-												username={username}
-												onInstalled={() => {
-													void refreshOnboardingAfterInstall()
-												}}
-											/>
-										))}
-									</ul>
-								) : (
-									<p
-										mix={css(panelLedeCss)}
-										data-testid="onboarding-example-packages-empty"
-									>
-										Featured examples are unavailable right now. Continue to
-										connect real services, or{' '}
-										<a
-											href="/community"
-											target="_blank"
-											rel="noreferrer noopener"
-											mix={css(primaryLinkCss)}
-										>
-											browse community packages
-										</a>
-										.
-									</p>
-								)}
-								{hasQuickExample ? (
-									<>
-										<p
-											mix={css(quickExampleDoneCss)}
-											data-testid="onboarding-quick-example-done"
-										>
-											Done — you have a package in your account. Paste the
-											prompt into your agent if you have not already, then make
-											the fork yours.
-										</p>
-										<OnboardingPackageNextSteps
-											kodyId={readOwnedExampleKodyId(exampleListings)}
+								<ul
+									mix={css(starterGridCss)}
+									data-testid="onboarding-mcp-chooser"
+								>
+									{featuredMcpServers.map((server) => (
+										<OnboardingMcpChooserCard
+											key={server.id}
+											server={server}
+											loggedIn={loggedIn}
+											onChanged={() => {
+												void refreshOnboardingAfterInstall()
+											}}
 										/>
-									</>
+									))}
+								</ul>
+								{hasFeaturedMcp ? (
+									<p
+										mix={css(quickExampleDoneCss)}
+										data-testid="onboarding-mcp-chooser-done"
+									>
+										Connected — continue to run one useful request and persist
+										it as a package you own.
+									</p>
 								) : null}
 								<aside
 									aria-label="How it works"
@@ -702,36 +680,39 @@ export function OnboardingRoute(handle: Handle) {
 								>
 									<p mix={css(howItWorksLabelCss)}>How it works</p>
 									<p>
-										Pick a card to start install immediately. Copy the agent
-										prompt while install finishes — your agent waits for the
-										fork, invokes <em>your</em> copy of the package, and can
-										offer optional triggers (webhook, app, cron). That owned
-										package is the point of Kody.
+										Connect adds the official MCP URL and opens the provider
+										authorize page. Approve access, then your agent can call
+										those tools as <em>kody.mcp</em> capabilities. GitHub's
+										official MCP is not on this list — it does not return an
+										authorization link.
 									</p>
 								</aside>
 								<WizardNavigation
 									activeStep={activeStep}
 									onSelectStep={selectStep}
+									confirmUnconnectedNext={!hasFeaturedMcp}
+									skipLabel="Skip for now"
+									onSkip={() => selectStep(3)}
 								/>
 							</section>
 						) : null}
 
 						{activeStep === 3 ? (
 							<section
-								id="connect-services"
-								aria-labelledby="connect-services-title"
-								data-testid="onboarding-connect-services"
+								id="first-build"
+								aria-labelledby="first-build-title"
+								data-testid="onboarding-first-build"
 								mix={[css(wizardPanelCss), panelEntrance()]}
 							>
 								<div mix={css(panelHeadCss)}>
 									<div>
 										<p mix={css(panelKickerCss)}>Step 3</p>
 										<h2
-											id="connect-services-title"
+											id="first-build-title"
 											tabIndex={-1}
 											mix={css(panelTitleCss)}
 										>
-											Connect your real services
+											Try it, then persist
 										</h2>
 									</div>
 									<img
@@ -744,13 +725,59 @@ export function OnboardingRoute(handle: Handle) {
 										mix={css(panelArtCss)}
 									/>
 								</div>
-								{builtInProviders.length > 0 ? (
+								<p mix={css(panelLedeCss)}>
+									This is the permanence lesson: run one useful ad hoc request
+									{featuredMcpServers.find((server) => server.connected)
+										? ` against ${featuredMcpServers.find((server) => server.connected)?.label}`
+										: ''}
+									, then save that working code as a package you own.
+								</p>
+								<OnboardingPersistCard
+									persistPrompt={persistPrompt}
+									connectedServerLabel={
+										featuredMcpServers.find((server) => server.connected)
+											?.label ?? null
+									}
+								/>
+								{hasPersistedPackage ? (
 									<>
-										<p mix={css(panelLedeCss)}>
-											This is where it gets useful — GitHub, Google, Slack,
-											Notion, and more. Built-in for speed, or bring your own
-											keys for full control.
+										<p
+											mix={css(quickExampleDoneCss)}
+											data-testid="onboarding-first-build-done"
+										>
+											Done — you have a package in your account. Keep editing
+											it, or start another.
 										</p>
+										<OnboardingPackageNextSteps
+											kodyId={readOwnedExampleKodyId(exampleListings)}
+										/>
+									</>
+								) : null}
+								<aside
+									aria-label="How it works"
+									mix={css(howItWorksCss)}
+									data-testid="onboarding-persist-how-it-works"
+								>
+									<p mix={css(howItWorksLabelCss)}>How it works</p>
+									<p>
+										Paste the prompt into your connected agent. It runs one{' '}
+										<em>execute</em> call, shows the result, then persists that
+										code with <em>package_save</em> (or forks a trusted
+										community listing if one is closer). That owned package is
+										the point of Kody.
+									</p>
+								</aside>
+								<div mix={css(advancedSectionCss)}>
+									<p mix={css(advancedLabelCss)}>
+										More ways to connect
+										<span mix={css(advancedBadgeCss)}>Advanced</span>
+									</p>
+									<p mix={css(advancedLedeCss)}>
+										Built-in platform OAuth and featured starters stay available
+										after the first build. Prefer your own keys for full
+										control.
+									</p>
+									{builtInProviders.length > 0 ? (
 										<ul
 											mix={css(starterGridCss)}
 											data-testid="onboarding-built-in-integrations"
@@ -806,92 +833,50 @@ export function OnboardingRoute(handle: Handle) {
 												)
 											})}
 										</ul>
-										<p mix={css(builtInByoCss)}>
-											Want scopes or rate limits Kody's app does not offer?{' '}
-											<a
-												href="/guides/oauth"
-												target="_blank"
-												rel="noreferrer noopener"
-												mix={css(primaryLinkCss)}
-											>
-												Bring your own OAuth app
-											</a>{' '}
-											for more power — the guide explains how connections and
-											helper packages work. Or open{' '}
-											<a href="#byok" mix={css(primaryLinkCss)}>
-												Bring your own API keys
-											</a>{' '}
-											below.
-										</p>
-										<div mix={css(advancedSectionCss)}>
-											<p mix={css(advancedLabelCss)}>
-												Starter packages
-												<span mix={css(advancedBadgeCss)}>Advanced</span>
-											</p>
-											<p mix={css(advancedLedeCss)}>
-												{serviceStarterListings.length > 0
-													? 'Admin-reviewed packages that usually need a connected account. After install, use Copy prompt so your agent can finish setup.'
-													: 'No OAuth starter packages are featured right now. Copy the Choose your own adventure prompt to explore with your agent, or browse community packages.'}
-											</p>
-											<ul mix={css(starterListCss)}>
-												{serviceStarterListings.map((listing) => (
-													<OnboardingStarterCard
-														key={listing.id}
-														listing={listing}
-														loggedIn={loggedIn}
-														variant="row"
-													/>
-												))}
-												<OnboardingDiyCard
-													setupPrompt={setupPrompt}
-													variant="row"
-												/>
-											</ul>
-											<p mix={css({ margin: '0.2rem 0 0' })}>
-												<a
-													href="/community"
-													target="_blank"
-													rel="noreferrer noopener"
-													mix={css(primaryLinkCss)}
-												>
-													Browse all community packages
-												</a>
-											</p>
-										</div>
-									</>
-								) : (
-									<>
-										<p mix={css(panelLedeCss)}>
-											This is where it gets useful — connect the services you
-											actually use. Prefer featured starters that need an
-											account, bring your own keys, or ask your agent what to
-											build next.
-										</p>
-										<ul mix={css(starterGridCss)}>
-											{serviceStarterListings.map((listing) => (
-												<OnboardingStarterCard
+									) : null}
+									{exampleListings.length > 0 ? (
+										<ul
+											mix={css(starterGridCss)}
+											data-testid="onboarding-example-packages"
+										>
+											{exampleListings.map((listing) => (
+												<OnboardingExampleCard
 													key={listing.id}
 													listing={listing}
 													loggedIn={loggedIn}
+													username={username}
+													onInstalled={() => {
+														void refreshOnboardingAfterInstall()
+													}}
 												/>
 											))}
-											<OnboardingDiyCard setupPrompt={setupPrompt} />
 										</ul>
-										<p mix={css({ margin: '0.2rem 0 0' })}>
-											<a
-												href="/community"
-												target="_blank"
-												rel="noreferrer noopener"
-												mix={css(primaryLinkCss)}
-											>
-												Browse all community packages
-											</a>
-										</p>
-									</>
-								)}
-								{/* The last step doubles as the "what's left" recap, so the
-								    derived checklist lives here instead of distracting from
-								    the earlier steps. */}
+									) : null}
+									<ul mix={css(starterListCss)}>
+										{serviceStarterListings.map((listing) => (
+											<OnboardingStarterCard
+												key={listing.id}
+												listing={listing}
+												loggedIn={loggedIn}
+												variant="row"
+											/>
+										))}
+										<OnboardingDiyCard
+											setupPrompt={setupPrompt}
+											variant="row"
+										/>
+									</ul>
+									<p mix={css({ margin: '0.2rem 0 0' })}>
+										<a
+											href="/community"
+											target="_blank"
+											rel="noreferrer noopener"
+											mix={css(primaryLinkCss)}
+										>
+											Browse all community packages
+										</a>
+									</p>
+								</div>
 								{shouldShowOnboardingChecklist(checklist) &&
 								!checklistHidden ? (
 									<OnboardingChecklistCard
@@ -941,6 +926,8 @@ function WizardNavigation(
 		onBack?: () => void
 		onNext?: () => void
 		confirmUnconnectedNext?: boolean
+		skipLabel?: string
+		onSkip?: () => void
 	}>,
 ) {
 	const nextConfirmation = createOnboardingNextConfirmation(handle)
@@ -953,9 +940,8 @@ function WizardNavigation(
 			handle.props.activeStep < 3
 				? ((handle.props.activeStep + 1) as OnboardingStep)
 				: null
-		const { onBack, onNext } = handle.props
+		const { onBack, onNext, onSkip, skipLabel } = handle.props
 		const requiresConnectionConfirmation =
-			handle.props.activeStep === 1 &&
 			handle.props.confirmUnconnectedNext === true
 		const advance = () => {
 			if (onNext) return onNext()
@@ -977,20 +963,31 @@ function WizardNavigation(
 				>
 					Back
 				</button>
-				<button
-					type="button"
-					disabled={!onNext && nextStep == null}
-					mix={[
-						css(wizardNextButtonCss),
-						...nextConfirmation.getButtonMix({
-							confirm: requiresConnectionConfirmation,
-							onNext: advance,
-						}),
-					]}
-					data-testid="onboarding-wizard-next"
-				>
-					{nextConfirmation.getLabel(requiresConnectionConfirmation)}
-				</button>
+				<div mix={css(wizardNavTrailingCss)}>
+					{onSkip && skipLabel ? (
+						<button
+							type="button"
+							mix={[css(wizardSkipButtonCss), on('click', onSkip)]}
+							data-testid="onboarding-wizard-skip"
+						>
+							{skipLabel}
+						</button>
+					) : null}
+					<button
+						type="button"
+						disabled={!onNext && nextStep == null}
+						mix={[
+							css(wizardNextButtonCss),
+							...nextConfirmation.getButtonMix({
+								confirm: requiresConnectionConfirmation,
+								onNext: advance,
+							}),
+						]}
+						data-testid="onboarding-wizard-next"
+					>
+						{nextConfirmation.getLabel(requiresConnectionConfirmation)}
+					</button>
+				</div>
 			</footer>
 		)
 	}
@@ -1465,13 +1462,7 @@ const providerConnectedPillCss = {
 	cursor: 'pointer',
 }
 
-const builtInByoCss = {
-	margin: 0,
-	color: colors.textMuted,
-	fontSize: '0.9rem',
-}
-
-/* Starter packages demote to a labeled "Advanced" list under the cards. */
+/* Built-in OAuth and featured starters demote to Advanced under the persist lead. */
 const advancedSectionCss = {
 	display: 'grid',
 	gap: '0.55rem',
@@ -1537,6 +1528,18 @@ const wizardNavCss = {
 	marginTop: '0.3rem',
 	paddingTop: '1.1rem',
 	borderTop: `1px solid ${colors.border}`,
+}
+
+const wizardNavTrailingCss = {
+	display: 'flex',
+	justifyContent: 'flex-end',
+	flexWrap: 'wrap' as const,
+	gap: '0.6rem',
+}
+
+const wizardSkipButtonCss = {
+	...getGhostButtonCss(),
+	minWidth: '6.5rem',
 }
 
 const wizardButtonDisabledCss = {
