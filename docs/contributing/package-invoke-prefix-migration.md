@@ -19,16 +19,17 @@ to the dedicated production Analytics Engine dataset
 
 The schema is deliberately coarse:
 
-| Field     | Value                                 |
-| --------- | ------------------------------------- |
-| `index1`  | `kody_prefixed` or `prefixless`       |
-| `blob1`   | same form value                       |
-| `blob2`   | `execute`, `package`, `job`, or `app` |
-| `double1` | `1`                                   |
+| Field     | Value                                     |
+| --------- | ----------------------------------------- |
+| `index1`  | `package_invoke_specifier_form_migration` |
+| `blob1`   | same form value                           |
+| `blob2`   | `execute`, `package`, `job`, or `app`     |
+| `double1` | `1`                                       |
 
 No user, package, specifier, export, params, source, run, request, or
 conversation identity is recorded. Recording is nonthrowing and a no-op where
-the binding is absent.
+the binding is absent. Both forms use the same constant `index1`, so they share
+one Analytics Engine sampling population; form remains only in `blob1`.
 
 Attribution is deterministic: a parent job run selects `job`; otherwise an app
 runtime marker selects `app`; otherwise an execute caller selects `execute`; all
@@ -96,10 +97,12 @@ historically active and each must pass independently.
 The unsampled-only requirement makes each retained row one observed call rather
 than an expanded estimate. Zero deprecated calls among at least 300 observed
 calls is the rule-of-three coverage target (an approximate one-sided 95% upper
-bound near 1% under independent calls). The separate minimum of 30 observed
-`kody_prefixed` calls prevents a dead or miswired telemetry path from looking
-safe merely because it reported zero deprecated calls. Weighted sums stay in the
-evidence as volume reporting and equal retained counts when
+bound near 1% under independent calls). Because both forms share one Analytics
+Engine sampling population and the gate requires `max_sample_interval = 1`,
+those retained calls are not separately sampled by form. The separate minimum of
+30 observed `kody_prefixed` calls prevents a dead or miswired telemetry path
+from looking safe merely because it reported zero deprecated calls. Weighted
+sums stay in the evidence as volume reporting and equal retained counts when
 `max_sample_interval = 1`; they never substitute for unsampled observations.
 
 Attach the following evidence to the final cutover:

@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	classifyPackageInvokeSpecifierForm,
+	packageInvokeSpecifierTelemetryIndex,
 	recordPackageInvokeSpecifierForm,
 	resolvePackageInvokeTelemetrySurface,
 } from './specifier-form-telemetry.ts'
@@ -67,8 +68,24 @@ test('records a privacy-safe payload and never throws when unavailable or broken
 		},
 	)
 	expect(writeDataPoint).toHaveBeenCalledExactlyOnceWith({
-		indexes: ['prefixless'],
+		indexes: [packageInvokeSpecifierTelemetryIndex],
 		blobs: ['prefixless', 'job'],
+		doubles: [1],
+	})
+	recordPackageInvokeSpecifierForm(
+		{
+			PACKAGE_INVOKE_SPECIFIER_EVENTS: {
+				writeDataPoint,
+			} as unknown as AnalyticsEngineDataset,
+		},
+		{
+			rawSpecifier: 'kody:@owner/package/export',
+			surface: 'execute',
+		},
+	)
+	expect(writeDataPoint).toHaveBeenLastCalledWith({
+		indexes: [packageInvokeSpecifierTelemetryIndex],
+		blobs: ['kody_prefixed', 'execute'],
 		doubles: [1],
 	})
 	expect(JSON.stringify(writeDataPoint.mock.calls)).not.toContain('secret')
@@ -156,7 +173,7 @@ test('runtime helpers record raw prefixless forms for execute, package, job, and
 			'packages.invoke requires exportName when the package specifier has no export subpath.',
 		)
 		expect(writeDataPoint).toHaveBeenLastCalledWith({
-			indexes: ['prefixless'],
+			indexes: [packageInvokeSpecifierTelemetryIndex],
 			blobs: ['prefixless', surface],
 			doubles: [1],
 		})

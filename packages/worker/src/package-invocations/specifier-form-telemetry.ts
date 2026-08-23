@@ -11,6 +11,9 @@ export type PackageInvokeSpecifierTelemetryEnv = {
 	PACKAGE_INVOKE_SPECIFIER_EVENTS?: AnalyticsEngineDataset
 }
 
+export const packageInvokeSpecifierTelemetryIndex =
+	'package_invoke_specifier_form_migration'
+
 export function classifyPackageInvokeSpecifierForm(
 	rawSpecifier: string,
 ): PackageInvokeSpecifierForm | null {
@@ -52,9 +55,9 @@ export function recordPackageInvokeSpecifierForm(
 	if (!form) return
 	try {
 		env.PACKAGE_INVOKE_SPECIFIER_EVENTS?.writeDataPoint({
-			// Keep sampling independent by form so low-volume prefixless calls
-			// remain visible during retirement.
-			indexes: [form],
+			// Both forms must share one sampling population. Retirement evidence
+			// is valid only when the query proves _sample_interval stayed at 1.
+			indexes: [packageInvokeSpecifierTelemetryIndex],
 			blobs: [form, input.surface],
 			doubles: [1],
 		})
