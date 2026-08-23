@@ -82,6 +82,9 @@ function stubSavedPackage(input?: {
 	listingCurrent?: boolean | null
 	listingKodyId?: string | null
 }) {
+	const selfAuthored = input?.sourceListingId === null
+	const listingCurrent = selfAuthored ? null : (input?.listingCurrent ?? true)
+	const listingGone = listingCurrent === false
 	mockModule.getSavedPackageWithCommunityProvenanceById.mockResolvedValue({
 		id: 'package-1',
 		userId: input?.userId ?? 'user-1',
@@ -94,17 +97,20 @@ function stubSavedPackage(input?: {
 		hasApp: input?.hasApp ?? true,
 		hidden: false,
 		isPrivate: false,
-		sourceListingId: input?.sourceListingId ?? 'listing-1',
-		listingCurrent: input?.listingCurrent ?? true,
-		listingKodyId: input?.listingKodyId ?? 'upstream-discord-gateway',
+		sourceListingId: selfAuthored
+			? null
+			: (input?.sourceListingId ?? 'listing-1'),
+		listingCurrent,
+		listingKodyId: selfAuthored
+			? null
+			: (input?.listingKodyId ?? 'upstream-discord-gateway'),
 		listingName:
-			input?.sourceListingId === null ? null : '@kentcdodds/discord-gateway',
-		originCommit: input?.sourceListingId === null ? null : 'commit-origin',
-		listingPinnedCommit:
-			input?.sourceListingId === null ? null : 'commit-origin',
+			selfAuthored || listingGone ? null : '@kentcdodds/discord-gateway',
+		originCommit: selfAuthored ? null : 'commit-origin',
+		listingPinnedCommit: selfAuthored || listingGone ? null : 'commit-origin',
 		listingPublishedAt:
-			input?.sourceListingId === null ? null : '2026-04-20T00:00:00.000Z',
-		listingAhead: input?.sourceListingId === null ? null : false,
+			selfAuthored || listingGone ? null : '2026-04-20T00:00:00.000Z',
+		listingAhead: selfAuthored ? null : false,
 		createdAt: '2026-04-25T00:00:00.000Z',
 		updatedAt: '2026-04-26T00:00:00.000Z',
 	})

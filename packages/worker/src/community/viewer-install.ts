@@ -98,19 +98,21 @@ export function resolveViewerListingInstalls(input: {
 			(fork) => fork.targetKodyId === listing.kodyId,
 		)
 		const newestFork = listingForks?.[0]
-		const ahead = listingAheadState({
-			originCommit: matchingKodyFork?.originCommit ?? newestFork?.originCommit,
-			pinnedCommit: listing.pinnedCommit,
-		})
 
 		const savedByKody = savedByKodyId.get(listing.kodyId)
 		if (savedByKody) {
+			const forkForSaved = listingForks?.find(
+				(fork) => fork.forkedPackageId === savedByKody.id,
+			)
 			resolved.set(listing.id, {
 				status: 'installed',
 				targetName: savedByKody.name,
 				sourceId: savedByKody.sourceId,
 				packageId: savedByKody.id,
-				...ahead,
+				...listingAheadState({
+					originCommit: forkForSaved?.originCommit,
+					pinnedCommit: listing.pinnedCommit,
+				}),
 			})
 			continue
 		}
@@ -118,6 +120,10 @@ export function resolveViewerListingInstalls(input: {
 		if (!listingForks || listingForks.length === 0) continue
 		const fork = matchingKodyFork ?? newestFork
 		if (!fork) continue
+		const ahead = listingAheadState({
+			originCommit: fork.originCommit,
+			pinnedCommit: listing.pinnedCommit,
+		})
 		const forkedSaved = savedById.get(fork.forkedPackageId)
 		if (forkedSaved) {
 			resolved.set(listing.id, {
