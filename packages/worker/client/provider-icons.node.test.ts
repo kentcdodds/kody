@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest'
+import { onboardingFeaturedMcpServerIds } from '#universal/onboarding-mcp-chooser.ts'
 import { resolveProviderIconId } from './provider-icons.tsx'
 
 test('resolveProviderIconId matches exact keys, families, and authorize hosts', () => {
@@ -28,4 +29,10 @@ test('resolveProviderIconId matches exact keys, families, and authorize hosts', 
 			host: 'login.unknown.test',
 		}),
 	).toBeNull()
+})
+
+test('every onboarding Step 2 featured MCP server has an official provider mark', () => {
+	for (const id of onboardingFeaturedMcpServerIds) {
+		expect(resolveProviderIconId({ providerKey: id })).toBe(id)
+	}
 })
