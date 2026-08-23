@@ -19,7 +19,7 @@ const inputSchema = z
 		plan: planNameSchema
 			.nullable()
 			.describe(
-				'Entitlement plan to set. Null maps to free (never persists NULL).',
+				'Manual entitlement grant to set (users.plan). Null maps to free (never persists NULL). Does not change the Stripe subscription.',
 			),
 	})
 	.refine(
@@ -40,7 +40,7 @@ export const adminUserUpdateCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'admin_user_update',
 		description:
-			'Update account metadata for one user by stable user id, email, or username. Supports setting the entitlement plan (null maps to free). Admin-only; never touches user content.',
+			'Update account metadata for one user by stable user id, email, or username. Supports setting the manual entitlement grant (null maps to free; Stripe subscriptions stay on stripe_plan). Admin-only; never touches user content.',
 		keywords: ['admin', 'user', 'update', 'account', 'plan', 'entitlements'],
 		inputSchema,
 		outputSchema,

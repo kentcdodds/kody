@@ -7,7 +7,9 @@ import { type AdminUsersLoaderData } from '#universal/loader-data.ts'
 import { type RoleName, roleNames } from '#universal/permissions.ts'
 import {
 	parseStoredPlanName,
+	parseStripePlanName,
 	planNames,
+	resolveEffectivePlan,
 	resolvePlanWrite,
 	type PlanName,
 } from '#universal/plans.ts'
@@ -24,6 +26,10 @@ export const adminUserListItemFieldNames = [
 	'email_verified',
 	'email_verified_at',
 	'plan',
+	'manualPlan',
+	'stripePlan',
+	'effectivePlan',
+	'stripeCustomerLinked',
 	'suspended_at',
 	'email_outbound_paused_at',
 	'created_at',
@@ -41,6 +47,10 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 	email_verified: boolean
 	email_verified_at: string | null
 	plan: PlanName
+	manualPlan: PlanName
+	stripePlan: PlanName | null
+	effectivePlan: PlanName
+	stripeCustomerLinked: boolean
 	suspended_at: string | null
 	email_outbound_paused_at: string | null
 	created_at: string
@@ -159,7 +169,7 @@ export async function loadAdminUsersData(
 			.bind(...params)
 			.first<{ total: number }>(),
 		env.APP_DB.prepare(
-			`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
+			`SELECT id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
 				email_outbound_paused_at, created_at, updated_at
 			 FROM users
 			 ${whereClause}
@@ -212,7 +222,7 @@ export async function loadAdminUserByTarget(
 	const userRow = stableUserId
 		? await db
 				.prepare(
-					`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
+					`SELECT id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
 						email_outbound_paused_at, created_at, updated_at
 					 FROM users
 					 WHERE stable_user_id = ?`,
@@ -222,7 +232,7 @@ export async function loadAdminUserByTarget(
 		: email
 			? await db
 					.prepare(
-						`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
+						`SELECT id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
 							email_outbound_paused_at, created_at, updated_at
 						 FROM users
 						 WHERE email = ? COLLATE NOCASE`,
@@ -232,7 +242,7 @@ export async function loadAdminUserByTarget(
 			: username
 				? await db
 						.prepare(
-							`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
+							`SELECT id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
 								email_outbound_paused_at, created_at, updated_at
 							 FROM users
 							 WHERE username = ? COLLATE NOCASE`,
@@ -247,9 +257,10 @@ export async function loadAdminUserByTarget(
 }
 
 /**
- * Set the entitlement plan on one user account. Nullish inputs map to `free`,
- * the normal default plan; writers never persist NULL. Returns the updated
- * account metadata record, or null when no user matches the target.
+ * Set the manual entitlement grant on one user account (`users.plan`).
+ * Nullish inputs map to `free`, the normal default; writers never persist
+ * NULL. Stripe subscriptions stay on `users.stripe_plan`. Returns the
+ * updated account metadata record, or null when no user matches the target.
  */
 export async function updateAdminUserPlan(
 	db: D1Database,
@@ -357,6 +368,8 @@ type AdminUserRow = {
 	email: string
 	email_verified_at: string | null
 	plan: string
+	stripe_plan: string | null
+	stripe_customer_id: string | null
 	suspended_at: string | null
 	email_outbound_paused_at: string | null
 	created_at: string
@@ -367,13 +380,19 @@ function toAdminUserListItem(
 	row: AdminUserRow,
 	roles: Array<RoleName>,
 ): AdminUserListItem {
+	const manualPlan = parseStoredPlanName(row.plan)
+	const stripePlan = parseStripePlanName(row.stripe_plan)
 	return {
 		stableUserId: row.stable_user_id,
 		username: row.username,
 		email: row.email,
 		email_verified: Boolean(row.email_verified_at),
 		email_verified_at: row.email_verified_at,
-		plan: parseStoredPlanName(row.plan),
+		plan: manualPlan,
+		manualPlan,
+		stripePlan,
+		effectivePlan: resolveEffectivePlan(manualPlan, row.stripe_plan),
+		stripeCustomerLinked: Boolean(row.stripe_customer_id),
 		suspended_at: row.suspended_at,
 		email_outbound_paused_at: row.email_outbound_paused_at,
 		created_at: row.created_at,
@@ -389,7 +408,7 @@ export async function loadAdminUserRowByStableUserId(
 	if (!isStableUserId(stableUserId)) return null
 	return await db
 		.prepare(
-			`SELECT id, stable_user_id, username, email, email_verified_at, plan, suspended_at,
+			`SELECT id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
 				email_outbound_paused_at, created_at, updated_at
 			 FROM users
 			 WHERE stable_user_id = ?`,

@@ -34,6 +34,8 @@ type UserRow = {
 	email: string
 	stable_user_id: string
 	plan?: string
+	stripe_plan?: string | null
+	stripe_customer_id?: string | null
 	suspended_at?: string | null
 	email_outbound_paused_at?: string | null
 	created_at: string
@@ -48,6 +50,8 @@ function adminTestUser(
 	return {
 		...input,
 		plan: input.plan ?? 'free',
+		stripe_plan: input.stripe_plan ?? null,
+		stripe_customer_id: input.stripe_customer_id ?? null,
 		suspended_at: input.suspended_at ?? null,
 		email_outbound_paused_at: input.email_outbound_paused_at ?? null,
 		stable_user_id:
@@ -206,7 +210,7 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, stable_user_id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where stable_user_id = ?',
+							'select id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at, email_outbound_paused_at, created_at, updated_at from users where stable_user_id = ?',
 						)
 					) {
 						return (users.find((user) => user.stable_user_id === params[0]) ??
@@ -233,7 +237,7 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, stable_user_id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where email = ? collate nocase',
+							'select id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at, email_outbound_paused_at, created_at, updated_at from users where email = ? collate nocase',
 						)
 					) {
 						const email = String(params[0]).toLowerCase()
@@ -242,7 +246,7 @@ function createAdminCapabilityTestDb(input: {
 					}
 					if (
 						normalizedQuery.includes(
-							'select id, stable_user_id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where username = ? collate nocase',
+							'select id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at, email_outbound_paused_at, created_at, updated_at from users where username = ? collate nocase',
 						)
 					) {
 						const username = String(params[0]).toLowerCase()
@@ -316,7 +320,7 @@ function createAdminCapabilityTestDb(input: {
 				async all<T>() {
 					if (
 						normalizedQuery.includes(
-							'select id, stable_user_id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users order by id asc limit ? offset ?',
+							'select id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at, email_outbound_paused_at, created_at, updated_at from users order by id asc limit ? offset ?',
 						)
 					) {
 						const pageSize = Number(params[0])
@@ -610,6 +614,11 @@ test('admin capabilities list and get account metadata and query sanitized audit
 				email: 'jane@example.com',
 				email_verified: false,
 				email_verified_at: null,
+				plan: 'free',
+				manualPlan: 'free',
+				stripePlan: null,
+				effectivePlan: 'free',
+				stripeCustomerLinked: false,
 				roles: ['user'],
 			}),
 		],
