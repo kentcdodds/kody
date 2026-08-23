@@ -14,8 +14,8 @@ import {
 	ensureModuleArtifact,
 	loadInvokeManifestBySourceId,
 	resolvePackageModuleResolution,
+	resolveSavedPackageBySpecifier,
 } from './module-artifacts.ts'
-import { resolveSavedPackageImport } from '#worker/package-runtime/package-import-resolution.ts'
 
 function createPackageInvokeCheckFailure(input: {
 	message: string
@@ -58,7 +58,9 @@ function buildPackageInvokeCheckWarnings(input: {
  * call resolves its package exactly once.
  */
 export type PackageInvokeCheckPreloads = {
-	savedPackage: NonNullable<Awaited<ReturnType<typeof resolveSavedPackage>>>
+	savedPackage: NonNullable<
+		Awaited<ReturnType<typeof resolveSavedPackageBySpecifier>>
+	>
 	moduleArtifact: Awaited<ReturnType<typeof ensureModuleArtifact>>
 }
 
@@ -91,12 +93,12 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	}
 	const exportName = normalizeExportName(request.exportName)
 	const invoke = buildNormalizedPackageInvokeInput({ request, exportName })
-	const resolvedTarget = await resolveSavedPackageImport({
+	const savedPackage = await resolveSavedPackageBySpecifier({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		specifier: request.specifier,
 	})
-	if (!resolvedTarget) {
+	if (!savedPackage) {
 		const message = `Kody package specifier ${JSON.stringify(request.specifier)} could not be resolved for this caller.`
 		return {
 			result: createPackageInvokeCheckFailure({
@@ -107,7 +109,7 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 			preloads: null,
 		}
 	}
-	const { row: savedPackage, sourceOwnerUserId } = resolvedTarget
+	const sourceOwnerUserId = savedPackage.userId
 	const packageContract = {
 		packageId: savedPackage.id,
 		kodyId: savedPackage.kodyId,

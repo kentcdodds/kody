@@ -138,7 +138,22 @@ function rewriteInvokeChecked(source: string): string | null {
 	return rewritten
 }
 
-function findingMessageForUsage(usage: DeprecatedInvocationUsage): string {
+type StaticFirstDeprecatedInvocationUsage = DeprecatedInvocationUsage & {
+	kind: Exclude<DeprecatedInvocationUsage['kind'], 'packages.invoke-object'>
+}
+
+function collectStaticFirstDeprecatedInvocationUsage(
+	files: Record<string, string>,
+): Array<StaticFirstDeprecatedInvocationUsage> {
+	return collectDeprecatedInvocationUsage(files).filter(
+		(usage): usage is StaticFirstDeprecatedInvocationUsage =>
+			usage.kind !== 'packages.invoke-object',
+	)
+}
+
+function findingMessageForUsage(
+	usage: StaticFirstDeprecatedInvocationUsage,
+): string {
 	switch (usage.kind) {
 		case 'packages.invokeChecked':
 			return invokeCheckedDetectMessage
@@ -156,7 +171,7 @@ function findingMessageForUsage(usage: DeprecatedInvocationUsage): string {
 
 function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
 	const findings: Array<PackageCodemodFinding> =
-		collectDeprecatedInvocationUsage(files).map((usage) => ({
+		collectStaticFirstDeprecatedInvocationUsage(files).map((usage) => ({
 			path: usage.filePath,
 			message: findingMessageForUsage(usage),
 		}))
@@ -171,7 +186,7 @@ function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
 function transform(
 	files: Record<string, string>,
 ): PackageCodemodTransformResult {
-	const usages = collectDeprecatedInvocationUsage(files)
+	const usages = collectStaticFirstDeprecatedInvocationUsage(files)
 	const nextFiles: Record<string, string> = { ...files }
 	const changedPaths: Array<string> = []
 	const needsManual: Array<PackageCodemodFinding> = []

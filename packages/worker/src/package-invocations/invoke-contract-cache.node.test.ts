@@ -13,6 +13,7 @@ import {
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
+	getSavedPackageByName: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	loadPublishedEntityManifest: vi.fn(),
 	loadPublishedEntitySource: vi.fn(),
@@ -27,6 +28,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageById(...args),
 	getSavedPackageByKodyId: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByKodyId(...args),
+	getSavedPackageByName: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageByName(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -66,6 +69,7 @@ vi.mock('#worker/package-runtime/module-graph.ts', () => ({
 const contractCheckLoadMocks = [
 	['saved package by id (D1)', mockModule.getSavedPackageById],
 	['saved package by kody id (D1)', mockModule.getSavedPackageByKodyId],
+	['saved package by name (D1)', mockModule.getSavedPackageByName],
 	['entity source row (D1)', mockModule.getEntitySourceById],
 	['published manifest snapshot (KV)', mockModule.loadPublishedEntityManifest],
 	['published source snapshot (KV)', mockModule.loadPublishedEntitySource],
@@ -172,6 +176,14 @@ function seedFixtures(fixturesByUserId: Record<string, Fixture>) {
 		async (_db: unknown, input: { userId: string; kodyId: string }) =>
 			byKodyId(input.userId, input.kodyId),
 	)
+	mockModule.getSavedPackageByName.mockImplementation(
+		async (_db: unknown, input: { userId: string; name: string }) => {
+			const fixture = fixturesByUserId[input.userId]
+			return fixture?.savedPackage.name === input.name
+				? fixture.savedPackage
+				: null
+		},
+	)
 	mockModule.getEntitySourceById.mockImplementation(
 		async (_db: unknown, sourceId: string) =>
 			Object.values(fixturesByUserId).find(
@@ -218,11 +230,9 @@ async function runContractCheck(input: { userId: string }) {
 		operationName: 'packages.invoke',
 		userId: input.userId,
 		rawInput: {
-			kodyId: 'sentry-triage',
-			exportName: 'get-issue-state',
-			params: { issueId: 'issue-1' },
+			specifier: 'kody:@kentcdodds/sentry-triage/get-issue-state',
+			options: { params: { issueId: 'issue-1' } },
 		},
-		includeExportProjection: false,
 	})
 }
 
@@ -236,7 +246,7 @@ test('a warm keyless invoke contract check performs zero D1/KV loads', async () 
 	expect(cold.preloads?.moduleArtifact.artifact.publishedCommit).toBe(
 		'commit-1',
 	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(1)
+	expect(mockModule.getSavedPackageByName).toHaveBeenCalledTimes(1)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
 	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledTimes(1)
 	expect(
@@ -257,6 +267,7 @@ test('a warm keyless invoke contract check performs zero D1/KV loads', async () 
 	expect(countContractCheckLoads()).toEqual({
 		'saved package by id (D1)': 0,
 		'saved package by kody id (D1)': 0,
+		'saved package by name (D1)': 0,
 		'entity source row (D1)': 0,
 		'published manifest snapshot (KV)': 0,
 		'published source snapshot (KV)': 0,
@@ -291,7 +302,11 @@ test('a republish is picked up immediately after same-isolate invalidation', asy
 	// The projection refresh invalidates in its own isolate.
 	invalidateInvokeContractFreshness({
 		userId: 'user-1',
-		packageIdOrKodyIds: [fixture.savedPackage.id, fixture.savedPackage.kodyId],
+		packageIdOrKodyIds: [
+			fixture.savedPackage.id,
+			fixture.savedPackage.kodyId,
+			`kody:${fixture.savedPackage.name}`,
+		],
 		sourceId: fixture.source.id,
 	})
 	const afterInvalidation = await runContractCheck({ userId: 'user-1' })
@@ -363,7 +378,7 @@ test('contract-check caches never serve entries across users', async () => {
 	)
 	expect(other.preloads?.savedPackage.id).toBe('pkg-user-2')
 	// The second user's check must load its own rows, not reuse user-1's.
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(1)
+	expect(mockModule.getSavedPackageByName).toHaveBeenCalledTimes(1)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
 })
 

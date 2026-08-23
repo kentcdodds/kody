@@ -447,8 +447,12 @@ export async function refreshSavedPackageProjection(input: {
 				packageIdOrKodyIds: [
 					input.packageId,
 					row.kody_id,
+					`kody:${savedPackage.name}`,
 					...(existing && existing.kodyId !== row.kody_id
 						? [existing.kodyId]
+						: []),
+					...(existing && existing.name !== savedPackage.name
+						? [`kody:${existing.name}`]
 						: []),
 				],
 				sourceId: input.sourceId,
@@ -612,7 +616,9 @@ export async function deleteSavedPackageProjection(input: {
 				userId: input.userId,
 				packageIdOrKodyIds: [
 					input.packageId,
-					...(savedPackage ? [savedPackage.kodyId] : []),
+					...(savedPackage
+						? [savedPackage.kodyId, `kody:${savedPackage.name}`]
+						: []),
 				],
 				sourceId: savedPackage?.sourceId ?? null,
 			})
