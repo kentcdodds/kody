@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { buildVerificationEmail } from './messages.ts'
+import {
+	buildUserEntitlementWarningEmail,
+	buildVerificationEmail,
+} from './messages.ts'
 import { renderTransactionalEmail } from './template.ts'
 
 test('transactional emails escape untrusted content and put action URLs in both parts', () => {
@@ -35,4 +38,26 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(verification.html).toContain(verificationUrl)
 	expect(verification.text).toContain(verificationUrl)
 	expect(verification.html).toContain('https://kody.codes/images/kody-mark.png')
+	expect(verification.html).toContain(
+		'https://kody.codes/images/kody-lantern.png',
+	)
+
+	const warning = buildUserEntitlementWarningEmail({
+		appBaseUrl: 'https://kody.codes',
+		billingUrl: 'https://kody.codes/account/billing',
+		usageUrl: 'https://kody.codes/account/usage',
+		warnings: [
+			{
+				label: 'execute calls per day',
+				current: 200,
+				limit: 250,
+				percentOfLimit: 0.8,
+			},
+		],
+	})
+	expect(warning.html).toContain('https://kody.codes/account/billing')
+	expect(warning.text).toContain('https://kody.codes/account/usage')
+	expect(warning.html).toContain('execute calls per day')
+	expect(warning.html).toContain('https://kody.codes/images/kody-lantern.png')
+	expect(warning.html).toContain('https://kody.codes/images/kody-mark.png')
 })

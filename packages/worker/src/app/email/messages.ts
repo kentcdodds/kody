@@ -23,7 +23,7 @@ export function buildVerificationEmail(input: {
 		action: { label: 'Verify email address', url: input.verificationUrl },
 		afterAction: ['This link expires in 24 hours.'],
 		illustration: {
-			src: '/images/kody-lantern.webp',
+			src: '/images/kody-lantern.png',
 			alt: '',
 			width: 96,
 			height: 96,
@@ -52,6 +52,45 @@ export function buildEmailChangeEmail(input: {
 		afterAction: ['This link expires in 24 hours.'],
 		footnote:
 			'If you did not request this change, you can safely ignore this email — your current address stays in place.',
+	})
+}
+
+export function buildUserEntitlementWarningEmail(input: {
+	appBaseUrl: string
+	billingUrl: string
+	usageUrl: string
+	warnings: Array<{
+		label: string
+		current: number
+		limit: number
+		percentOfLimit: number
+	}>
+}) {
+	const lines = input.warnings.map((warning) => {
+		const percent = Math.round(warning.percentOfLimit * 100)
+		return `${warning.label} — ${warning.current.toLocaleString('en-US')} of ${warning.limit.toLocaleString('en-US')} (${percent}%).`
+	})
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: "You're approaching a Kody plan limit",
+		preheader: 'One or more resources on your plan are over 80%.',
+		heading: "You're getting close to a plan limit",
+		body: [
+			'Just a heads-up: one or more resources on your Kody account are over 80% of your current plan.',
+			...lines,
+		],
+		action: { label: 'Review your plan', url: input.billingUrl },
+		afterAction: [
+			`You can also see every limit on your usage page: ${input.usageUrl}`,
+		],
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote:
+			"You're receiving this because your account is approaching a plan limit.",
 	})
 }
 

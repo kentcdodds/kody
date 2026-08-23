@@ -62,7 +62,9 @@ manual-only — admin-visible, not paid or public — and never written from Str
 `resolveEffectivePlan(manual, stripe)` compares a non-null manual plan (after
 `parseStoredPlanName`) with `users.stripe_plan`. Manual `max` always wins over
 Stripe; otherwise the higher-ranked of the two is returned. Unknown or null
-`stripe_plan` values contribute nothing.
+`stripe_plan` values contribute nothing. Admin user list/get (page and MCP)
+expose the grant, Stripe tier, effective plan, and whether a Stripe customer
+is linked. `plan` on those records remains the grant that Manage plan edits.
 
 ### `max` plan limits
 
@@ -179,7 +181,13 @@ the same cold zero-init path):
   `storage_bytes` from UserMeter)
 - Admin fleet entitlement-pressure panel and `usage_entitlement_alert` lane —
   same `readAdminEntitlementConsumption` helper over a bounded sweep of the top
-  ~15 active users by current-month event count
+  ~15 active users by current-month event count. The same hourly lane also
+  emails verified person accounts when a resource crosses 80% of their
+  effective plan (transactional template, KV cooldown per user/resource:
+  UTC day for daily counters, seven days for stock). Candidate selection is
+  the top ~80 accounts by current-month event count plus high package/secret
+  stock, capped at 100. Operator fleet mail is unchanged and still runs if
+  user warning sends fail.
 
 `readEntitlementResourceUsage` counts only APP_DB-backed row resources (`repos`,
 `saved_packages`, `secrets`). Resources whose authority is elsewhere
