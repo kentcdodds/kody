@@ -201,7 +201,7 @@ Package reuse follows two rules:
 
 The preferred first argument is the target's scoped Kody module specifier:
 `kody:@username/kodyid` or `kody:@username/kodyid/export-subpath`. The `kody:`
-prefix is preferred; `@username/kodyid` is also accepted for existing callers. A
+prefix is preferred; the prefixless `@username/kodyid` form is also accepted. A
 package-only specifier requires `exportName` in the options object. When both
 the specifier and options name an export, the specifier's export subpath wins.
 
@@ -259,7 +259,9 @@ invocation error code in the message. Kody surfaces JSDoc/type metadata but not
 a machine-readable params schema for package exports, so params are only
 validated as a JSON object.
 
-The old object-only form remains available for compatibility:
+**Deprecated overload:** bare `kodyId` lookup is scoped to the current user and
+collides when a person package and a platform package share the same id. Prefer
+the scoped specifier form above.
 
 ```ts
 await packages.invoke({
@@ -269,10 +271,6 @@ await packages.invoke({
 	idempotencyKey: event.id,
 })
 ```
-
-This form is deprecated because bare `kodyId` lookup is scoped to the current
-user and is ambiguous when a person package and a platform package share the
-same id. It keeps today's user-scoped lookup behavior and is not removed.
 
 Package runtime contexts, authenticated ad hoc MCP `execute` calls, and package
 job runtimes can call `packages.invoke`. Person-scoped targets resolve only from
@@ -308,8 +306,8 @@ all three with the supported replacement named. In the execute sandbox the
 throws a normal `TypeError`. Package-app runtimes reject those helpers with an
 error that names the supported replacement. `packages.invoke` performs the
 contract check inline, and the static/dynamic rules above cover literal dynamic
-import cases. The `0002-static-first-invocation` package codemod remains
-available to repair `invokeChecked` call sites mechanically.
+import cases. The `0002-static-first-invocation` package codemod repairs
+`invokeChecked` call sites mechanically.
 
 ## Package storage
 
@@ -623,28 +621,14 @@ resolve hidden packages.
 
 ## Community fork provenance
 
-**`package_list`** and **`package_get`** also return community-fork provenance
-on each package summary:
-
-- **`source_listing_id`** — listing the package was forked from
-- **`listing_current`** — whether that listing id is an active listing
-- **`listing_kody_id`** — the source listing's recorded `kody.id`
-- **`listing_name`** — current listing package name when the listing is active
-- **`origin_commit`** — listing pinned commit this fork last absorbed
-- **`listing_pinned_commit`** — the listing's current pinned commit
-- **`listing_published_at`** — last community publish time of the listing
-- **`listing_ahead`** — `true` when the listing pin moved past `origin_commit`
-
-All listing fields are `null` for self-authored packages. When the source
-listing is unpublished, `listing_current` is `false` and `listing_ahead` is
-`false`. Republishing the same source package moves prior forks to the new
-listing id. `/account/packages` and the listing page replace the Installed /
-Forked pill with a yellow **Fork outdated** button when `listing_ahead` is true.
-Clicking it copies an agent prompt. Package **search** hits and
-`{kodyId}:package` entity detail also surface `listingAhead` (with a one-line
-`community_get` / `community_fork_absorb` next step) when that flag is true.
-After the agent ports relevant listing changes and publishes,
-`community_fork_absorb` records the current pin as absorbed so the pill clears.
+**`package_list`** and **`package_get`** return community-fork provenance on
+each package summary (`source_listing_id`, `listing_current`, `listing_kody_id`,
+`listing_name`, `origin_commit`, `listing_pinned_commit`,
+`listing_published_at`, `listing_ahead`). Those fields are `null` for
+self-authored packages. When `listing_ahead` is true, `/account/packages`, the
+listing page, package search, and `{kodyId}:package` entity detail surface a
+**Fork outdated** / absorb next step. Full workflow:
+[Community packages → Forking a listing](./community-packages.md#forking-a-listing).
 
 ## Author a saved package via direct git push
 

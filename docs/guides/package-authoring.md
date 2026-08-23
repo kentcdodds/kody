@@ -210,5 +210,5 @@ generates a package-name fallback when the repository has no icon.
 
 Publishing the package refreshes the community listing icon automatically. The
 candidate paths win in the order listed above, so when replacing an icon with a
-different format (for example svg → png), delete the old file in the same commit
-or the old format keeps being served.
+different format (for example svg → png), delete the superseded file in the same
+commit or the earlier path in that list keeps winning.

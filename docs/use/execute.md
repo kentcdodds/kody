@@ -46,11 +46,10 @@ helpers are runtime exports:
   you need exactly-once.
   `packages.invoke("kody:@scope/package/export", { params })` (plus an optional
   `idempotencyKey` field for exactly-once calls) is the only dynamic call and is
-  always contract-checked before invoking. The scoped specifier avoids
-  collisions between platform and person packages. The legacy object-only
-  `packages.invoke({ kodyId, exportName, params })` form remains supported but
-  is deprecated because its bare id lookup is user-scoped and collision-prone.
-  When the target package's name is known when the code is written, use a static
+  always contract-checked before invoking. Prefer the scoped specifier; the
+  object-only overload is deprecated for bare-id collisions (see
+  [Dynamic package invocation](./packages.md#dynamic-package-invocation)). When
+  the target package's name is known when the code is written, use a static
   `kody:@...` import instead (see below)
 - use **`import thing from 'kody:@scope/my-package/export-name'`** or
   **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
@@ -63,9 +62,9 @@ helpers are runtime exports:
   staleness only affects package-to-package static dependencies, which keep the
   bundled snapshot until the dependent republishes.
 
-`kody:runtime` is always supplied by the Kody host at execution time. Saved
-package artifacts do not contain a copy of the host runtime implementation, so
-old package artifacts automatically observe current host runtime behavior.
+`kody:runtime` is always supplied by the Kody host at execution time. Published
+package artifacts do not bundle the host runtime; execution always hydrates the
+deployed `kody:runtime` module.
 
 Literal dynamic imports (`await import('kody:@scope/my-package/export-name')`)
 are unsupported. The call site throws a teaching error naming the replacement:
