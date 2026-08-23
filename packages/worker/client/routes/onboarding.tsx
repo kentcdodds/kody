@@ -27,6 +27,7 @@ import {
 	selectOnboardingServiceStarterListings,
 } from '#universal/onboarding-examples.ts'
 import {
+	formatOnboardingFeaturedMcpChoice,
 	hasConnectedOnboardingFeaturedMcpServer,
 	hasPendingOnboardingFeaturedMcpAuth,
 } from '#universal/onboarding-mcp-chooser.ts'
@@ -75,12 +76,12 @@ import {
 
 /**
  * Onboarding wizard: shirt-pattern head, three-step stepper (Connect your
- * agent · Connect Notion or Linear · Try it, then persist), one surface
+ * agent · Connect a workspace · Try it, then persist), one surface
  * panel at a time with hand-tilted mascot art, and the BYOK argument folded
  * behind a disclosure. Server state (prompts, MCP URL, featured MCP
  * servers, hasMcpClient / OAuth polling) stays in the route state.
  *
- * Step 2 adds Notion or Linear as a remote MCP server (or skip). Step 3 is
+ * Step 2 adds an official workspace MCP server (or skip). Step 3 is
  * the permanence lesson: copy a prompt that runs one ad hoc execute, then
  * persist that working code as a package. Built-in platform OAuth and
  * featured starters stay available under Advanced.
@@ -90,7 +91,7 @@ type OnboardingStep = 1 | 2 | 3
 
 const onboardingSteps = [
 	{ number: 1, label: 'Connect your agent', hash: 'connect-agent' },
-	{ number: 2, label: 'Connect Notion or Linear', hash: 'connect-mcp' },
+	{ number: 2, label: 'Connect a workspace', hash: 'connect-mcp' },
 	{ number: 3, label: 'Try it, then persist', hash: 'first-build' },
 ] as const satisfies ReadonlyArray<{
 	number: OnboardingStep
@@ -363,7 +364,7 @@ export function OnboardingRoute(handle: Handle) {
 		return servers
 			.map(
 				(server) =>
-					`${server.id}:${server.serverId ?? ''}:${server.state ?? ''}:${server.connected ? '1' : '0'}`,
+					`${server.id}:${server.serverId ?? ''}:${server.state ?? ''}:${server.connected ? '1' : '0'}:${server.packageListing?.viewerInstall?.status ?? ''}`,
 			)
 			.join('|')
 	}
@@ -483,8 +484,8 @@ export function OnboardingRoute(handle: Handle) {
 					</h1>
 					<p data-rise style={{ '--rise': '1' }}>
 						Give your agent a personal software factory: connect any MCP-capable
-						host, add Notion or Linear, then run an ad hoc request and persist
-						it as a package you own. New here?{' '}
+						host, add {formatOnboardingFeaturedMcpChoice()}, then run an ad hoc
+						request and persist it as a package you own. New here?{' '}
 						<a
 							href="/guides/what-is-kody"
 							target="_blank"
@@ -654,7 +655,7 @@ export function OnboardingRoute(handle: Handle) {
 											tabIndex={-1}
 											mix={css(panelTitleCss)}
 										>
-											Connect Notion or Linear
+											Connect a workspace
 										</h2>
 									</div>
 									<img
@@ -668,9 +669,10 @@ export function OnboardingRoute(handle: Handle) {
 									/>
 								</div>
 								<p mix={css(panelLedeCss)}>
-									Give your agent a live workspace: add Notion or Linear as a
-									remote MCP server, authorize it, then skip if you would rather
-									try an ad hoc request first.
+									Give your agent a live workspace: add{' '}
+									{formatOnboardingFeaturedMcpChoice()} as a remote MCP server,
+									authorize it, and install the matching official package — or
+									skip if you would rather try an ad hoc request first.
 								</p>
 								<ul
 									mix={css(starterGridCss)}
@@ -705,9 +707,10 @@ export function OnboardingRoute(handle: Handle) {
 									<p>
 										Connect adds the official MCP URL and opens the provider
 										authorize page. Approve access, then your agent can call
-										those tools as <em>kody.mcp</em> capabilities. GitHub's
-										official MCP is not on this list — it does not return an
-										authorization link.
+										those tools as <em>kody.mcp</em> capabilities. Each card
+										also offers the official <em>@kody</em> package for that
+										server. GitHub's official MCP is not on this list — it does
+										not return an authorization link.
 									</p>
 								</aside>
 								<WizardNavigation
