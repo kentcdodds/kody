@@ -13,9 +13,9 @@ started (`/onboarding`).
 The in-app Get started page (`/onboarding`) shows one Automatic command first:
 `npx @kodycodes/cli install`. That CLI detects running local agents and writes
 each host's remote MCP entry for this deployment. Host-specific deeplinks,
-vendor CLIs, the MCP URL, and JSON/TOML merge stay under Manual. A second
-client is worth it when you want the same [memories](./memory.md) and packages
-from another agent — you do not need every Manual tab.
+vendor CLIs, the MCP URL, and JSON/TOML merge stay under Manual. A second client
+is worth it when you want the same [memories](./memory.md) and packages from
+another agent — you do not need every Manual tab.
 
 ## Add the MCP server
 
@@ -59,9 +59,8 @@ Manual on Get started has one tab per host. Use those when you are not running
   [custom MCP connector docs](https://docs.x.ai/grok/connectors).
 - **Grok CLI** — `grok mcp add --transport http --scope user kody <url>`. That
   writes `~/.grok/config.toml`. OAuth opens a browser on first use; in the TUI,
-  `/mcps` then `i` authenticates. `grok mcp doctor kody` checks the
-  connection. See xAI's
-  [Grok CLI MCP docs](https://docs.x.ai/build/features/mcp-servers).
+  `/mcps` then `i` authenticates. `grok mcp doctor kody` checks the connection.
+  See xAI's [Grok CLI MCP docs](https://docs.x.ai/build/features/mcp-servers).
 - **Claude Code** — After the CLI writes the remote entry, enter `/mcp` → Kody →
   Authenticate. Manual includes
   `claude mcp add --transport http -s user kody <url>`, or a `.mcp.json` entry
