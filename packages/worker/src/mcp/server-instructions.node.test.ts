@@ -62,7 +62,7 @@ test('popular package MCP instructions omit cold start, list kody ids under budg
 
 test('base instructions name Kody as the system of record over host built-ins', () => {
 	const instructions = buildBaseMcpServerInstructions()
-	expect(instructions).toContain('system of record')
+	expect(instructions).toContain('Kody is the system of record')
 	expect(instructions).toContain("host's overlapping built-ins")
 	expect(instructions).toContain(
 		'Fall back to a host tool only when Kody lacks',
