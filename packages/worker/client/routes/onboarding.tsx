@@ -617,6 +617,10 @@ export function OnboardingRoute(handle: Handle) {
 										<code>/mcp</code> → Kody → <strong>Authenticate</strong>.
 									</span>
 									<span>
+										<strong>Grok.com:</strong> after adding the custom
+										connector, complete OAuth when Grok prompts you.
+									</span>
+									<span>
 										<strong>Grok CLI:</strong> after adding the server, OAuth
 										opens on first use. In the TUI, <code>/mcps</code> then{' '}
 										<strong>i</strong> authenticates.{' '}

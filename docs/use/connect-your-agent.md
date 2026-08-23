@@ -1,9 +1,9 @@
 # Connect your agent
 
 Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
-Grok, Claude Code, OpenCode, GitHub Copilot (VS Code or CLI), the GitHub Copilot
-app, or any other AI agent that supports MCP — not from a separate Kody chat
-app.
+Grok.com, Grok CLI, Claude Code, OpenCode, GitHub Copilot (VS Code or CLI), the
+GitHub Copilot app, or any other AI agent that supports MCP — not from a
+separate Kody chat app.
 
 Agents discovering this host can read `/auth.md` for the OAuth registration
 block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.

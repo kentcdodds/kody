@@ -31,6 +31,7 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		'codex',
 		'claude-desktop',
 		'grok',
+		'grok-cli',
 		'claude-code',
 		'opencode',
 		'copilot',
@@ -40,6 +41,10 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(
 		mcpClientTabs.filter((tab) => tab.isNonCodingAgent).map((tab) => tab.id),
 	).toEqual(['chatgpt', 'claude-desktop', 'grok', 'copilot-app'])
+	expect(mcpClientTabs.find((tab) => tab.id === 'grok')?.label).toBe('Grok.com')
+	expect(mcpClientTabs.find((tab) => tab.id === 'grok-cli')?.label).toBe(
+		'Grok CLI',
+	)
 	expect(mcpClientTabs.find((tab) => tab.id === 'copilot')?.label).toBe(
 		'Copilot',
 	)

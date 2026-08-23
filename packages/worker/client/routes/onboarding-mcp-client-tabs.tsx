@@ -251,16 +251,53 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
-		case 'grok': {
+		case 'grok':
+			return (
+				<>
+					<p>
+						In{' '}
+						<a
+							href={grokConnectorsUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Grok.com → Connectors
+						</a>
+						, click <strong>New Connector</strong>, select{' '}
+						<strong>Custom</strong>, and paste this MCP URL. Complete OAuth when
+						Grok prompts you. For Grok Business and Enterprise, a team admin
+						must first add this custom MCP server in the cloud console. Members
+						can then connect it from the Grok connectors page. See xAI&apos;s{' '}
+						<a
+							href={grokCustomMcpGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							custom MCP connector docs
+						</a>{' '}
+						for details.
+					</p>
+					<CopyCard
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+						variant="pill"
+					/>
+					<p>
+						For the Grok CLI, use the <strong>Grok CLI</strong> tab.
+					</p>
+					<ClientNote>{nonCodingAgentNote}</ClientNote>
+				</>
+			)
+		case 'grok-cli': {
 			const grokCliCommand = buildGrokCliAddCommand(mcpServerUrl)
 			const grokCliToml = buildGrokCliMcpToml(mcpServerUrl)
 			return (
 				<>
 					<p>
-						<strong>In Grok CLI:</strong> add a remote HTTP server (writes{' '}
-						<code>~/.grok/config.toml</code>). OAuth opens a browser on first
-						use; in the TUI, <code>/mcps</code> then <strong>i</strong>{' '}
-						authenticates:
+						Add a remote HTTP server (writes <code>~/.grok/config.toml</code>).
+						OAuth opens a browser on first use; in the TUI, <code>/mcps</code>{' '}
+						then <strong>i</strong> authenticates:
 					</p>
 					<CopyCard
 						label="grok CLI"
@@ -288,41 +325,9 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 							Grok CLI MCP docs
 						</a>{' '}
 						for <code>grok mcp list</code>, <code>grok mcp doctor</code>, and
-						project scope.
+						project scope. For grok.com, use the <strong>Grok.com</strong> tab.
 					</p>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
-					<p>
-						<strong>On Grok.com:</strong> open{' '}
-						<a
-							href={grokConnectorsUrl}
-							target="_blank"
-							rel="noreferrer noopener"
-						>
-							Connectors
-						</a>
-						, click <strong>New Connector</strong>, select{' '}
-						<strong>Custom</strong>, and paste this MCP URL. Complete OAuth when
-						Grok prompts you.
-					</p>
-					<CopyCard
-						label="MCP URL"
-						value={mcpServerUrl}
-						copyLabel="Copy MCP URL"
-					/>
-					<p>
-						For Grok Business and Enterprise, a team admin must first add this
-						custom MCP server in the cloud console. Members can then connect it
-						from the Grok connectors page. See xAI&apos;s{' '}
-						<a
-							href={grokCustomMcpGuideUrl}
-							target="_blank"
-							rel="noreferrer noopener"
-						>
-							custom MCP connector docs
-						</a>
-						.
-					</p>
-					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
 		}
@@ -594,12 +599,6 @@ const tabKickerCss = {
 	textTransform: 'uppercase' as const,
 	letterSpacing: '0.09em',
 	color: colors.primaryText,
-}
-
-const tabLeadCss = {
-	margin: 0,
-	font: `400 0.95rem/1.45 ${typography.fontFamilyBody}`,
-	color: colors.textMuted,
 }
 
 const tabListCss = {

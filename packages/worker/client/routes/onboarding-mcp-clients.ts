@@ -9,6 +9,7 @@ export type McpClientKind =
 	| 'codex'
 	| 'claude-desktop'
 	| 'grok'
+	| 'grok-cli'
 	| 'claude-code'
 	| 'opencode'
 	| 'copilot'
@@ -27,7 +28,8 @@ export const mcpClientTabs = [
 	{ id: 'chatgpt', label: 'ChatGPT', isNonCodingAgent: true },
 	{ id: 'codex', label: 'Codex', isNonCodingAgent: false },
 	{ id: 'claude-desktop', label: 'Claude Desktop', isNonCodingAgent: true },
-	{ id: 'grok', label: 'Grok', isNonCodingAgent: true },
+	{ id: 'grok', label: 'Grok.com', isNonCodingAgent: true },
+	{ id: 'grok-cli', label: 'Grok CLI', isNonCodingAgent: false },
 	{ id: 'claude-code', label: 'Claude Code', isNonCodingAgent: false },
 	{ id: 'opencode', label: 'OpenCode', isNonCodingAgent: false },
 	{ id: 'copilot', label: 'Copilot', isNonCodingAgent: false },
