@@ -371,12 +371,14 @@ export function OnboardingRoute(handle: Handle) {
 	async function pollOnboardingProgress() {
 		if (pollInFlight || status !== 'ready' || !loggedIn) return
 		// Stop only when the agent is connected, featured MCP auth is idle,
-		// and persist has landed. Staying on Step 3 still needs the poll so
-		// install-starter / hasPersistedPackage can flip without a reload.
+		// and persist has landed with a kody id. install-starter can flip on
+		// the same tick that loadPersistedPackageKodyId fails open to null,
+		// so keep polling until the id arrives.
 		if (
 			hasMcpClient &&
 			!hasPendingOnboardingFeaturedMcpAuth(featuredMcpServers) &&
-			hasPersistedPackage
+			hasPersistedPackage &&
+			persistedPackageKodyId != null
 		) {
 			return
 		}
@@ -395,7 +397,8 @@ export function OnboardingRoute(handle: Handle) {
 				payload.hasMcpClient === hasMcpClient &&
 				featuredMcpFingerprint(nextServers) ===
 					featuredMcpFingerprint(featuredMcpServers) &&
-				nextHasPersistedPackage === hasPersistedPackage
+				nextHasPersistedPackage === hasPersistedPackage &&
+				payload.persistedPackageKodyId === persistedPackageKodyId
 			) {
 				return
 			}
