@@ -77,6 +77,8 @@ export type PackageRuntimeToolFactoryInput = {
 	packageContext: PackageRuntimeContext | null
 	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
+	/** Coarse telemetry attribution for package-app bridge calls. */
+	runtimeSurface?: 'app'
 	/**
 	 * When set, nested package/export/subscription run-record finishes are
 	 * scheduled on this callback instead of being awaited.

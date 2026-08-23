@@ -1368,6 +1368,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 						packageContext,
 						parentRunRecord: null,
 						packageInvokeDepth: 0,
+						runtimeSurface: 'app',
 					})
 				},
 			)

@@ -149,6 +149,10 @@ function buildMainGeneratedConfig(envName: string) {
 				binding: 'MCP_PROTOCOL_EVENTS',
 				dataset: 'kody_mcp_protocol_events_pr',
 			},
+			{
+				binding: 'PACKAGE_INVOKE_EVENTS',
+				dataset: 'kody_package_invoke_events_pr',
+			},
 		],
 		vars: {
 			APP_BASE_URL: 'https://kody-pr-7.example.workers.dev',

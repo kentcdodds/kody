@@ -485,7 +485,10 @@ function createDatabase(
 	return db
 }
 
-function createEnv(db: ReturnType<typeof createDatabase>) {
+function createEnv(
+	db: ReturnType<typeof createDatabase>,
+	overrides: Record<string, unknown> = {},
+) {
 	return {
 		APP_DB: db,
 		RUN_LOG: db.runLog.namespace,
@@ -494,6 +497,7 @@ function createEnv(db: ReturnType<typeof createDatabase>) {
 			put: async () => undefined,
 			delete: async () => undefined,
 		},
+		...overrides,
 	} as unknown as Env
 }
 
@@ -1233,6 +1237,94 @@ test('runtime invoke tools expose only the supported invoke helper', () => {
 	// exposes only invoke.
 	expect(tools.check).toBeUndefined()
 	expect(tools.invokeChecked).toBeUndefined()
+})
+
+test('runtime invoke tools record privacy-safe call shape by coarse surface', async () => {
+	const db = createDatabase()
+	const writeDataPoint = vi.fn()
+	const env = createEnv(db, {
+		PACKAGE_INVOKE_EVENTS: { writeDataPoint },
+	})
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://kody.dev',
+		user: {
+			userId: 'private-user-id',
+			email: 'private@example.com',
+			displayName: 'Private User',
+		},
+	})
+	const packageContext = {
+		packageId: 'private-package-id',
+		kodyId: 'private-kody-id',
+		sourceId: 'private-source-id',
+	}
+
+	await expect(
+		createExecutePackageInvokeTools({
+			env,
+			baseUrl: 'https://kody.dev',
+			callerContext,
+		}).invoke({}),
+	).rejects.toThrow('packages.invoke requires kodyId or packageId.')
+	await expect(
+		createPackageRuntimeInvokeTools({
+			env,
+			baseUrl: 'https://kody.dev',
+			callerContext,
+			packageContext,
+		}).invoke({ specifier: '' }),
+	).rejects.toThrow('packages.invoke requires a kody:@username/kodyid specifier.')
+	await expect(
+		createExecutePackageInvokeTools({
+			env,
+			baseUrl: 'https://kody.dev',
+			callerContext,
+			parentRunRecord: { surface: 'job' },
+		}).invoke({}),
+	).rejects.toThrow('packages.invoke requires kodyId or packageId.')
+	await expect(
+		createPackageRuntimeInvokeTools({
+			env,
+			baseUrl: 'https://kody.dev',
+			callerContext,
+			packageContext,
+			runtimeSurface: 'app',
+		}).invoke({ specifier: '' }),
+	).rejects.toThrow('packages.invoke requires a kody:@username/kodyid specifier.')
+
+	expect(writeDataPoint.mock.calls).toEqual([
+		[
+			{
+				indexes: ['legacy_object'],
+				blobs: ['legacy_object', 'execute'],
+				doubles: [1],
+			},
+		],
+		[
+			{
+				indexes: ['string_first'],
+				blobs: ['string_first', 'package'],
+				doubles: [1],
+			},
+		],
+		[
+			{
+				indexes: ['legacy_object'],
+				blobs: ['legacy_object', 'job'],
+				doubles: [1],
+			},
+		],
+		[
+			{
+				indexes: ['string_first'],
+				blobs: ['string_first', 'app'],
+				doubles: [1],
+			},
+		],
+	])
+	expect(JSON.stringify(writeDataPoint.mock.calls)).not.toMatch(
+		/private-user-id|private@example|private-package-id|private-kody-id|private-source-id/,
+	)
 })
 
 test('package runtime dispatch enqueues declared events and validates payloadSchema', async () => {

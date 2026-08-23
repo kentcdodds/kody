@@ -267,6 +267,39 @@ The object-only
 deprecated but remains supported. It preserves the old current-user bare-id
 lookup and therefore remains collision-prone.
 
+Production and preview record privacy-safe overload telemetry in the
+`kody_package_invoke_events` and `kody_package_invoke_events_preview` Analytics
+Engine datasets. Each data point contains only:
+
+- `blob1` / `index1`: `legacy_object` or `string_first`
+- `blob2`: the coarse runtime surface (`execute`, `package`, `app`, or `job`)
+- `double1`: `1`
+
+No source, user id, package id, export name, specifier, parameters, or other raw
+identifier is recorded. Operators can inspect adoption by surface through the
+Cloudflare Analytics Engine SQL API/dashboard:
+
+```sql
+SELECT
+	blob1 AS call_shape,
+	blob2 AS runtime_surface,
+	SUM(_sample_interval) AS calls
+FROM kody_package_invoke_events
+WHERE timestamp >= NOW() - INTERVAL '30' DAY
+GROUP BY call_shape, runtime_surface
+ORDER BY call_shape, runtime_surface
+```
+
+The shim-removal gate uses this zero-legacy query across the full agreed soak;
+`legacy_calls` must be `0` (or `NULL` when the dataset has no rows):
+
+```sql
+SELECT SUM(_sample_interval) AS legacy_calls
+FROM kody_package_invoke_events
+WHERE timestamp >= NOW() - INTERVAL '30' DAY
+	AND blob1 = 'legacy_object'
+```
+
 **Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
 dynamic `import("kody:@...")` are not available. `packages.invoke` subsumes both
 helpers because checking is not optional or separate. Publish checks fail on all
