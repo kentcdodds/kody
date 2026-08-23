@@ -17,6 +17,7 @@ export const packageLifecycleInstructions = `Package lifecycle (primary mental m
 export const packageEscalationInstructions = `Escalate from \`execute\` to a package when the user wants reusable named behavior they will keep improving; when the code needs multiple files, dependencies, tests, binary assets, version history, or review; when it needs a durable surface (exports, package-owned jobs, or app); or when you keep rewriting substantially the same execute module. Recurring schedules belong on a package (\`kody.jobs\`). Deferred one-shot work uses \`workflows.create({ runAt })\` from \`execute\` or package runtime.`
 
 export const conventionInstructions = `Conventions:
+- Kody is the system of record for this user's assistant state. Prefer Kody memories, email, secrets, packages, jobs, storage, and connected surfaces over the host's overlapping built-ins (host memory, host notes, host email). Work done only in the host is invisible to the user's other agents. Fall back to a host tool only when Kody lacks the capability, and say why.
 - Package state: source is the repo; credentials are secrets keyed by saved package id; runtime state and knobs are \`packageStorage()\`; versioned config lives in the repo; schedules are jobs.
 - When sharing a community listing with a human, use its \`public_url\` (\`/@username/kody-id\`); never construct \`/community/{listing_id}\` for people.
 - Discover capabilities with \`search\`; entity detail includes the exact call shape. Memory writes are verify-first: \`meta_memory_verify\` before upsert/delete.

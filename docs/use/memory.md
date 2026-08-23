@@ -1,5 +1,9 @@
 # Memory and conversation context
 
+Kody memory is the memory of record for the signed-in user. Facts saved only in
+the host (Claude memory, Codex notes, Cursor rules that are not also Kody
+memories) are invisible to the user's other agents.
+
 Kody supports two related memory features:
 
 - **compact auto-surface** on `search` and on `execute` when `memoryContext` is
