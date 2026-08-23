@@ -217,13 +217,14 @@ export const maxPlanEmailLimits = {
  * use {@link maxPlanEmailLimits} abuse caps instead.
  */
 export const planLimits: Record<PlanName, PlanLimits> = {
-	// Free stays roomy for setup (packages, secrets, a handful of jobs) and
-	// tighter on rates / live compute — the real cost and the upgrade story.
-	// Secrets stay at 25 because one OAuth integration commonly needs three
-	// entries (client secret, access token, refresh token).
+	// Free stays roomy for setup (secrets, a handful of jobs) and tighter on
+	// rates / live compute — the real cost and the upgrade story. Packages
+	// sit at 10 so a serious catalog wants Standard; secrets stay at 25
+	// because one OAuth integration commonly needs three entries (client
+	// secret, access token, refresh token).
 	free: {
 		maxRepos: 20,
-		maxSavedPackages: 15,
+		maxSavedPackages: 10,
 		maxScheduledJobs: 5,
 		// Sessions are cheap (catalog row + dormant DO workspace + Artifacts
 		// branch). Unused (never-checkpointed) leftovers sweep after 30
@@ -243,7 +244,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// Concurrent active runs (not lifetime or daily).
 		maxConcurrentWorkflows: 2,
 		maxExecuteCallsPerDay: 250,
-		maxOutboundFetchesPerDay: 1_000,
+		maxOutboundFetchesPerDay: 500,
 		maxJobRunsPerDay: 500,
 	},
 	standard: {
