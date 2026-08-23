@@ -116,7 +116,7 @@ the stored mark. `listFeaturedCommunityListings` feeds the onboarding page (slim
 badge on the detail page, the admin-only toggle
 (`POST /community/:listingId/feature.json`, audited), the admin-only
 `community_set_featured` capability, and onboarding Steps 2–3: Step 2 offers
-official workspace MCP servers (Notion, Linear, Slack, Asana, Sentry, Canva)
+official workspace MCP servers (Notion, Linear, Atlassian, Stripe, Sentry, Canva)
 plus the matching `@kody` package (or skip); Step 3 leads with an ad hoc execute
 → persist prompt, then keeps built-in service connects, featured zero-auth
 examples, and non-example featured starters under Advanced (Install then Copy

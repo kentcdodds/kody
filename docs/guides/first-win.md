@@ -132,7 +132,7 @@ The first win is done. Offer one concrete next step and let them choose:
 - **Connect a workspace MCP server.** Send them to `/onboarding#connect-mcp` on
   the same origin this guide came from, or call `mcp_server_add` with one of
   `https://mcp.notion.com/mcp`, `https://mcp.linear.app/mcp`,
-  `https://mcp.slack.com/mcp`, `https://mcp.asana.com/v2/mcp`,
+  `https://mcp.atlassian.com/v1/mcp/authv2`, `https://mcp.stripe.com`,
   `https://mcp.sentry.dev/mcp`, or `https://mcp.canva.com/mcp`, then verify with
   a small ad hoc `execute` call. Prefer the matching official `@kody` listing
   when they want a reusable package.

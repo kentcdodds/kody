@@ -1,11 +1,13 @@
 /**
- * Primary onboarding MCP chooser. These remote servers return an OAuth
- * `authUrl` so the wizard can add them and send the person to authorize.
- * GitHub's official MCP is intentionally absent: it connected without an
- * `authUrl`, so it cannot lead a one-click authorize path.
+ * Primary onboarding MCP chooser. Locked to official remotes that return an
+ * OAuth `authUrl` against production Kody CIMD so the wizard can add them
+ * and `window.open` the authorize URL. Servers that failed that spike, or
+ * that require the person to register an OAuth app, stay off this list
+ * (GitHub official MCP, Slack, Asana, Figma, HubSpot, and others).
  *
- * Each card pairs with the official `@kody/<id>` listing so Step 2 can
- * connect the server and install the matching package.
+ * Each card already knows name + url. Connect POSTs the account MCP-servers
+ * add/reconnect API with that hardcoded url. Each card also pairs with the
+ * official `@kody/<id>` listing so Step 2 can install the matching package.
  */
 
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
@@ -13,8 +15,8 @@ import { type OnboardingFeaturedListing } from '#universal/community-public-type
 export const onboardingFeaturedMcpServerIds = [
 	'notion',
 	'linear',
-	'slack',
-	'asana',
+	'atlassian',
+	'stripe',
 	'sentry',
 	'canva',
 ] as const
@@ -61,22 +63,22 @@ export const onboardingFeaturedMcpServers = [
 		listingId: '41431740-2189-43f6-8db4-a9c10ed6def4',
 	},
 	{
-		id: 'slack',
-		name: 'slack',
-		label: 'Slack',
-		url: 'https://mcp.slack.com/mcp',
-		description: 'Read channels and send messages as the authorizing user.',
-		packageKodyId: 'slack',
-		listingId: '1528b06f-2912-48f6-bda5-bc3bb7c4113b',
+		id: 'atlassian',
+		name: 'atlassian',
+		label: 'Atlassian',
+		url: 'https://mcp.atlassian.com/v1/mcp/authv2',
+		description: 'Search Jira issues and Confluence pages you can already see.',
+		packageKodyId: 'atlassian',
+		listingId: 'e70783f0-b879-4ba3-8562-309a1110ff7b',
 	},
 	{
-		id: 'asana',
-		name: 'asana',
-		label: 'Asana',
-		url: 'https://mcp.asana.com/v2/mcp',
-		description: 'List workspaces, projects, and tasks you can already see.',
-		packageKodyId: 'asana',
-		listingId: '2b96da82-36c5-454d-9b9b-bcfdc27076ae',
+		id: 'stripe',
+		name: 'stripe',
+		label: 'Stripe',
+		url: 'https://mcp.stripe.com',
+		description: 'Inspect customers, invoices, and recent payments you can access.',
+		packageKodyId: 'stripe',
+		listingId: 'e62a890e-d8df-41c1-8449-a5c093dcce02',
 	},
 	{
 		id: 'sentry',
@@ -102,7 +104,7 @@ export function listOnboardingFeaturedMcpListingIds(): Array<string> {
 	return onboardingFeaturedMcpServers.map((server) => server.listingId)
 }
 
-/** "Notion, Linear, Slack, Asana, Sentry, or Canva" */
+/** "Notion, Linear, Atlassian, Stripe, Sentry, or Canva" */
 export function formatOnboardingFeaturedMcpChoice(): string {
 	const labels = onboardingFeaturedMcpServers.map((server) => server.label)
 	if (labels.length === 0) return ''

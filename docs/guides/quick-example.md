@@ -15,7 +15,7 @@ category: platform
 Agent notes — for AI agents driving onboarding Step 3 from this page:
 
 - The person already connected a workspace MCP server on /onboarding Step 2
-  (Notion, Linear, Slack, Asana, Sentry, or Canva), or skipped so they could
+  (Notion, Linear, Atlassian, Stripe, Sentry, or Canva), or skipped so they could
   try an ad hoc request first.
 - Your job is one useful execute call, a short result, then persist that
   working code as a package they own. That owned package is the point of Kody.
@@ -24,7 +24,8 @@ Agent notes — for AI agents driving onboarding Step 3 from this page:
   authorizing, ask them to say when /onboarding shows Connected and try once
   more.
 - Discover tools with search or mcp_server_list. Call them from execute as
-  kody.mcp["notion"].tool_name(...), kody.mcp["linear"].tool_name(...), or the
+  kody.mcp["notion"].tool_name(...), kody.mcp["linear"].tool_name(...),
+  kody.mcp["atlassian"].tool_name(...), kody.mcp["stripe"].tool_name(...), or the
   matching connected server name.
 - Persist with package_save after the ad hoc call works. community_fork the
   matching official @kody listing when that is closer than writing a new package.
@@ -52,8 +53,8 @@ to try and use whatever tools are already available.
 ## Step 1 — Confirm the connection
 
 If they named a workspace MCP server, look it up once with `mcp_server_list` (or
-`search` for `mcp:notion`, `mcp:linear`, `mcp:slack`, `mcp:asana`, `mcp:sentry`,
-or `mcp:canva`).
+`search` for `mcp:notion`, `mcp:linear`, `mcp:atlassian`, `mcp:stripe`,
+`mcp:sentry`, or `mcp:canva`).
 
 If the server is still authorizing, tell them to finish the provider window and
 say when `/onboarding` shows Connected. Try the list **once** more after they
@@ -68,8 +69,8 @@ Use `execute` for a single useful call. Prefer the connected MCP tools:
 
 - **Notion** — search a page they mention, or list recent pages they can access.
 - **Linear** — list a few issues, or summarize what is in progress.
-- **Slack** — list channels, or summarize a recent conversation they name.
-- **Asana** — list a few tasks or projects they can already see.
+- **Atlassian** — list Jira issues or Confluence pages they can already see.
+- **Stripe** — list recent customers, invoices, or payments they can access.
 - **Sentry** — list recent issues, or summarize one they name.
 - **Canva** — list recent designs or folders they can access.
 

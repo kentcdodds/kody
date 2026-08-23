@@ -17,16 +17,16 @@ test('featured MCP chooser ships six official OAuth servers with packages', () =
 	expect(onboardingFeaturedMcpServers.map((server) => server.id)).toEqual([
 		'notion',
 		'linear',
-		'slack',
-		'asana',
+		'atlassian',
+		'stripe',
 		'sentry',
 		'canva',
 	])
 	expect(onboardingFeaturedMcpServers.map((server) => server.url)).toEqual([
 		'https://mcp.notion.com/mcp',
 		'https://mcp.linear.app/mcp',
-		'https://mcp.slack.com/mcp',
-		'https://mcp.asana.com/v2/mcp',
+		'https://mcp.atlassian.com/v1/mcp/authv2',
+		'https://mcp.stripe.com',
 		'https://mcp.sentry.dev/mcp',
 		'https://mcp.canva.com/mcp',
 	])
@@ -39,9 +39,17 @@ test('featured MCP chooser ships six official OAuth servers with packages', () =
 	expect(
 		onboardingFeaturedMcpServers.some((server) => server.id === 'github'),
 	).toBe(false)
+	expect(
+		onboardingFeaturedMcpServers.some(
+			(server) =>
+				server.id === 'slack' ||
+				server.id === 'asana' ||
+				server.id === 'figma',
+		),
+	).toBe(false)
 	expect(listOnboardingFeaturedMcpListingIds()).toHaveLength(6)
 	expect(formatOnboardingFeaturedMcpChoice()).toBe(
-		'Notion, Linear, Slack, Asana, Sentry, or Canva',
+		'Notion, Linear, Atlassian, Stripe, Sentry, or Canva',
 	)
 	expect(formatOnboardingFeaturedMcpAddHint()).toContain(
 		'notion (https://mcp.notion.com/mcp)',

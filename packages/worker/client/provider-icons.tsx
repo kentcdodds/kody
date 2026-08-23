@@ -176,8 +176,37 @@ function renderCanvaIcon(size: string) {
 	)
 }
 
+function renderAtlassianIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#1868DB"
+		>
+			<path d="M19.31 7.547c-.426-.643-1.108-.643-1.534 0L12 15.53 6.224 7.547c-.426-.643-1.108-.643-1.534 0C3.037 10.268.76 14.05.76 14.05c-.425.642-.132 1.166.65 1.166h5.622c.425 0 .85-.212 1.108-.642L12 9.39l3.86 5.184c.258.43.683.642 1.108.642h5.622c.782 0 1.075-.524.65-1.166 0 0-2.277-3.782-3.93-6.503z" />
+		</svg>
+	)
+}
+
+function renderStripeIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#635BFF"
+		>
+			<path d="M13.976 9.15c-2.172-.806-3.356-1.426-3.356-2.409 0-.831.683-1.305 1.901-1.305 2.227 0 4.515.858 6.09 1.631l.89-5.494C18.252.975 15.697 0 12.165 0 9.667 0 7.589.654 6.104 1.872 4.56 3.147 3.757 4.992 3.757 7.218c0 4.039 2.467 5.76 6.476 7.219 2.585.92 3.445 1.574 3.445 2.583 0 .98-.84 1.545-2.354 1.545-1.875 0-4.965-.921-6.99-2.109l-.9 5.555C5.175 22.99 8.385 24 11.714 24c2.641 0 4.843-.624 6.328-1.813 1.664-1.305 2.525-3.236 2.525-5.732 0-4.128-2.524-5.851-6.594-7.305h.003z" />
+		</svg>
+	)
+}
+
 const knownProviderIconIds = [
 	'asana',
+	'atlassian',
 	'canva',
 	'discord',
 	'github',
@@ -187,6 +216,7 @@ const knownProviderIconIds = [
 	'sentry',
 	'slack',
 	'spotify',
+	'stripe',
 	'x',
 ] as const
 
@@ -197,6 +227,7 @@ const providerIconRenderers: Record<
 	(size: string) => JSX.Element
 > = {
 	asana: renderAsanaIcon,
+	atlassian: renderAtlassianIcon,
 	canva: renderCanvaIcon,
 	github: renderGitHubIcon,
 	google: renderGoogleIcon,
@@ -205,6 +236,7 @@ const providerIconRenderers: Record<
 	sentry: renderSentryIcon,
 	slack: renderSlackIcon,
 	spotify: renderSpotifyIcon,
+	stripe: renderStripeIcon,
 	notion: renderNotionIcon,
 	discord: renderDiscordIcon,
 }
@@ -217,15 +249,21 @@ const providerIconHosts: Record<string, ProviderIconId> = {
 	'api.notion.com': 'notion',
 	'linear.app': 'linear',
 	'mcp.asana.com': 'asana',
+	'mcp.atlassian.com': 'atlassian',
 	'mcp.canva.com': 'canva',
 	'mcp.linear.app': 'linear',
 	'mcp.notion.com': 'notion',
 	'mcp.sentry.dev': 'sentry',
 	'mcp.slack.com': 'slack',
+	'mcp.stripe.com': 'stripe',
 	'app.asana.com': 'asana',
 	'asana.com': 'asana',
+	'atlassian.com': 'atlassian',
+	'auth.atlassian.com': 'atlassian',
 	'canva.com': 'canva',
 	'sentry.io': 'sentry',
+	'api.stripe.com': 'stripe',
+	'stripe.com': 'stripe',
 	'api.spotify.com': 'spotify',
 	'discord.com': 'discord',
 	'discordapp.com': 'discord',

@@ -18,6 +18,10 @@ test('resolveProviderIconId matches exact keys, families, and authorize hosts', 
 	expect(resolveProviderIconId({ host: 'mcp.notion.com' })).toBe('notion')
 	expect(resolveProviderIconId({ host: 'mcp.slack.com' })).toBe('slack')
 	expect(resolveProviderIconId({ host: 'mcp.asana.com' })).toBe('asana')
+	expect(resolveProviderIconId({ host: 'mcp.atlassian.com' })).toBe(
+		'atlassian',
+	)
+	expect(resolveProviderIconId({ host: 'mcp.stripe.com' })).toBe('stripe')
 	expect(resolveProviderIconId({ host: 'mcp.sentry.dev' })).toBe('sentry')
 	expect(resolveProviderIconId({ host: 'mcp.canva.com' })).toBe('canva')
 	expect(

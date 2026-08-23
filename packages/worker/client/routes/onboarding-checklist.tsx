@@ -29,8 +29,8 @@ export const onboardingChecklistItemLabels: Record<
 const integrationGuideProviders = [
 	{ id: 'notion', label: 'Notion', href: `${onboardingPath}#connect-mcp` },
 	{ id: 'linear', label: 'Linear', href: `${onboardingPath}#connect-mcp` },
-	{ id: 'slack', label: 'Slack', href: `${onboardingPath}#connect-mcp` },
-	{ id: 'asana', label: 'Asana', href: `${onboardingPath}#connect-mcp` },
+	{ id: 'atlassian', label: 'Atlassian', href: `${onboardingPath}#connect-mcp` },
+	{ id: 'stripe', label: 'Stripe', href: `${onboardingPath}#connect-mcp` },
 	{ id: 'sentry', label: 'Sentry', href: `${onboardingPath}#connect-mcp` },
 	{ id: 'canva', label: 'Canva', href: `${onboardingPath}#connect-mcp` },
 ] as const
