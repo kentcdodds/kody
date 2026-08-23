@@ -140,12 +140,51 @@ function renderDiscordIcon(size: string) {
 	)
 }
 
+function renderAsanaIcon(size: string) {
+	return (
+		<svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+			<circle cx="12" cy="6.4" r="3.15" fill="#F06A6A" />
+			<circle cx="7.15" cy="16.35" r="3.15" fill="#F06A6A" />
+			<circle cx="16.85" cy="16.35" r="3.15" fill="#F06A6A" />
+		</svg>
+	)
+}
+
+function renderSentryIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#362D59"
+		>
+			<path d="M13.83 2.245a1.97 1.97 0 0 0-1.8-1.237h-.007a1.972 1.972 0 0 0-1.799 1.237L.113 19.797a1.978 1.978 0 0 0 .017 1.974c.347.607.993.97 1.703.97h20.334c.71 0 1.356-.363 1.703-.97a1.978 1.978 0 0 0 .017-1.974L13.83 2.245zm-.547 1.017 9.516 17.388H1.2L13.283 3.262z" />
+		</svg>
+	)
+}
+
+function renderCanvaIcon(size: string) {
+	return (
+		<svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+			<circle cx="12" cy="12" r="10" fill="#00C4CC" />
+			<path
+				fill="#fff"
+				d="M14.7 7.35c-1.02-.7-2.28-.7-3.18.08-1.38 1.2-1.5 3.42-.28 5.02.86 1.12 2.22 1.68 3.42 1.42.62-.14 1.18.3 1.18.94 0 .44-.3.82-.72.94-1.86.52-3.98-.28-5.22-1.9-1.86-2.44-1.68-5.86.42-7.68 1.62-1.4 3.92-1.4 5.58-.26.5.34.6 1.04.24 1.52-.36.48-1.04.58-1.54.24-.3-.2-.62-.3-.9-.32z"
+			/>
+		</svg>
+	)
+}
+
 const knownProviderIconIds = [
+	'asana',
+	'canva',
 	'discord',
 	'github',
 	'google',
 	'linear',
 	'notion',
+	'sentry',
 	'slack',
 	'spotify',
 	'x',
@@ -157,10 +196,13 @@ const providerIconRenderers: Record<
 	ProviderIconId,
 	(size: string) => JSX.Element
 > = {
+	asana: renderAsanaIcon,
+	canva: renderCanvaIcon,
 	github: renderGitHubIcon,
 	google: renderGoogleIcon,
 	linear: renderLinearIcon,
 	x: renderXIcon,
+	sentry: renderSentryIcon,
 	slack: renderSlackIcon,
 	spotify: renderSpotifyIcon,
 	notion: renderNotionIcon,
@@ -174,8 +216,16 @@ const providerIconHosts: Record<string, ProviderIconId> = {
 	'api.linear.app': 'linear',
 	'api.notion.com': 'notion',
 	'linear.app': 'linear',
+	'mcp.asana.com': 'asana',
+	'mcp.canva.com': 'canva',
 	'mcp.linear.app': 'linear',
 	'mcp.notion.com': 'notion',
+	'mcp.sentry.dev': 'sentry',
+	'mcp.slack.com': 'slack',
+	'app.asana.com': 'asana',
+	'asana.com': 'asana',
+	'canva.com': 'canva',
+	'sentry.io': 'sentry',
 	'api.spotify.com': 'spotify',
 	'discord.com': 'discord',
 	'discordapp.com': 'discord',

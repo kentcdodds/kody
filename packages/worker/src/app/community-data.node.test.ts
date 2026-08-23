@@ -4,11 +4,13 @@ import {
 	type CommunityCategoryCounts,
 } from '#universal/community-categories.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
+import { onboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 import { resetDataCacheForTests } from './data-cache.ts'
 import {
 	loadCommunityDetailData,
 	loadCommunityIndexData,
 	loadOnboardingFeaturedListings,
+	loadOnboardingMcpChooserListings,
 } from './community-data.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -168,6 +170,37 @@ test('community index overlays matching kody_id installs for signed-in viewers',
 		undefined,
 		expect.objectContaining({ userId: 'viewer-1' }),
 	)
+})
+
+test('onboarding MCP chooser listings load official packages by pinned id', async () => {
+	resetDataCacheForTests()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.getCommunityListingWithAggregates.mockImplementation(
+		async (input: { listingId: string }) => {
+			if (input.listingId !== onboardingFeaturedMcpServers[0].listingId) {
+				return null
+			}
+			return {
+				...sampleListing,
+				id: input.listingId,
+				kodyId: 'notion',
+				name: '@kody/notion',
+			}
+		},
+	)
+
+	const listings = await loadOnboardingMcpChooserListings(
+		{} as Env,
+		new Request('https://example.com/onboarding'),
+	)
+	expect(listings).toEqual([
+		expect.objectContaining({
+			id: onboardingFeaturedMcpServers[0].listingId,
+			kodyId: 'notion',
+			name: '@kody/notion',
+		}),
+	])
+	expect(mockModule.getCommunityListingWithAggregates).toHaveBeenCalledTimes(6)
 })
 
 test('onboarding featured listings overlay inert forks as adaptation_required', async () => {

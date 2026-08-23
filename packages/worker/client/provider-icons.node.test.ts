@@ -16,6 +16,10 @@ test('resolveProviderIconId matches exact keys, families, and authorize hosts', 
 	expect(resolveProviderIconId({ providerKey: 'linear' })).toBe('linear')
 	expect(resolveProviderIconId({ host: 'mcp.linear.app' })).toBe('linear')
 	expect(resolveProviderIconId({ host: 'mcp.notion.com' })).toBe('notion')
+	expect(resolveProviderIconId({ host: 'mcp.slack.com' })).toBe('slack')
+	expect(resolveProviderIconId({ host: 'mcp.asana.com' })).toBe('asana')
+	expect(resolveProviderIconId({ host: 'mcp.sentry.dev' })).toBe('sentry')
+	expect(resolveProviderIconId({ host: 'mcp.canva.com' })).toBe('canva')
 	expect(
 		resolveProviderIconId({
 			providerKey: 'custom-crm',

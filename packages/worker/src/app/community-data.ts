@@ -13,9 +13,11 @@ import {
 	buildCommunityDetailListingCacheKey,
 	buildCommunityFeaturedCacheKey,
 	buildCommunityIndexCacheKey,
+	buildCommunityOnboardingMcpPackagesCacheKey,
 	getOrSetDataCache,
 } from '#app/data-cache.ts'
 import { parseCommunityListingCategory } from '#universal/community-categories.ts'
+import { listOnboardingFeaturedMcpListingIds } from '#universal/onboarding-mcp-chooser.ts'
 import { parseCommunityListingSort } from '#universal/community-search.ts'
 import {
 	type CommunityDetailLoaderData,
@@ -222,6 +224,48 @@ export async function loadOnboardingFeaturedListings(
 		})
 	} catch (error) {
 		console.error('Failed to load onboarding featured listings:', error)
+		return []
+	}
+}
+
+/**
+ * Official `@kody` listings paired with the Step 2 MCP chooser. Loaded by
+ * pinned listing id so they appear even when an admin has not featured them.
+ * Fails open to an empty list.
+ */
+export async function loadOnboardingMcpChooserListings(
+	env: Env,
+	request: Request,
+): Promise<Array<OnboardingFeaturedListing>> {
+	const listingIds = listOnboardingFeaturedMcpListingIds()
+	try {
+		const listings = await loadWithCommunityCache(
+			env,
+			request,
+			buildCommunityOnboardingMcpPackagesCacheKey(),
+			async () => {
+				const rows = await Promise.all(
+					listingIds.map((listingId) =>
+						getCommunityListingWithAggregates({
+							env,
+							listingId,
+							includeDelisted: false,
+						}),
+					),
+				)
+				return rows
+					.filter((row) => row != null)
+					.map(toOnboardingFeaturedListing)
+			},
+		)
+		const user = await readOptionalAuthenticatedViewer(request, env)
+		return overlayViewerInstallsOnListings({
+			env,
+			user,
+			listings,
+		})
+	} catch (error) {
+		console.error('Failed to load onboarding MCP chooser listings:', error)
 		return []
 	}
 }

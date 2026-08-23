@@ -49,6 +49,10 @@ export function buildCommunityFeaturedCacheKey(limit: number) {
 	return `community-featured:v${communityPublicCacheVersion}:limit=${limit}`
 }
 
+export function buildCommunityOnboardingMcpPackagesCacheKey() {
+	return `community-onboarding-mcp-packages:v${communityPublicCacheVersion}`
+}
+
 function sweepExpiredEntries(now = Date.now()) {
 	for (const [key, entry] of store) {
 		if (entry.expiresAt <= now) {
