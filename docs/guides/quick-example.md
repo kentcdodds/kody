@@ -64,7 +64,8 @@ Use keyless `packages.invoke` with the installed package's scoped name. Replace
   `packages.invoke("kody:@their-username/hn-pulse/getTopStories", { params: { limit: 5 } })`
 - **personal-capture** —
   `packages.invoke("kody:@their-username/personal-capture/capture", { params: { text: "Onboarding first build" } })`,
-  then invoke `kody:@their-username/personal-capture/listCaptures`
+  then invoke
+  `packages.invoke("kody:@their-username/personal-capture/listCaptures", { params: { limit: 5 } })`
 
 Show a short summary of the result.
 
