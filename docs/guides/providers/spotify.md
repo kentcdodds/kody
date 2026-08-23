@@ -141,10 +141,12 @@ Changing scopes means reconnecting: `/connect/oauth?provider=spotify` with a new
   authorization, not the last refresh). Reconnect at
   `/connect/oauth?provider=spotify` to start a fresh six-month window.
 
-## Fork the official package and verify
+## Use a helper package and verify
 
-A saved integration is auth credentials only. Finish by forking the community
-package so playback, playlist, and library work goes through maintained helpers:
+A saved integration is auth credentials only. Finish by putting maintained
+helpers in front of it. There is no live official `@kody/spotify` package, so
+this path is a person-account community listing — review the source, then fork
+only because it is not an official `@kody/*` helper.
 
 1. Find the listing with `community_search({ query: 'spotify' })` — the
    `@kentcdodds/spotify` listing wraps playback, playlists, search, library, and
