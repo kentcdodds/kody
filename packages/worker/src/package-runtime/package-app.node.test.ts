@@ -668,9 +668,7 @@ test('buildPackageAppWorker loads published app artifacts with artifactName null
 	expect(packageAppHostSource).toContain(
 		'Object-only packages.invoke was removed.',
 	)
-	expect(packageAppHostSource).toContain(
-		"if (typeof specifier !== 'string')",
-	)
+	expect(packageAppHostSource).toContain("if (typeof specifier !== 'string')")
 })
 
 test('buildPackageAppWorker acquires a fresh stub per request while reusing the built worker options', async () => {
