@@ -76,6 +76,10 @@ const contractCheckLoadMocks = [
 	['saved package by id (D1)', mockModule.getSavedPackageById],
 	['saved package by kody id (D1)', mockModule.getSavedPackageByKodyId],
 	['saved package by name (D1)', mockModule.getSavedPackageByName],
+	[
+		'platform account by username (D1)',
+		mockModule.getPlatformAccountByUsername,
+	],
 	['entity source row (D1)', mockModule.getEntitySourceById],
 	['published manifest snapshot (KV)', mockModule.loadPublishedEntityManifest],
 	['published source snapshot (KV)', mockModule.loadPublishedEntitySource],
@@ -288,6 +292,7 @@ test('a warm keyless invoke contract check performs zero D1/KV loads', async () 
 		'saved package by id (D1)': 0,
 		'saved package by kody id (D1)': 0,
 		'saved package by name (D1)': 0,
+		'platform account by username (D1)': 0,
 		'entity source row (D1)': 0,
 		'published manifest snapshot (KV)': 0,
 		'published source snapshot (KV)': 0,
@@ -418,6 +423,23 @@ test('platform package invalidation clears the owner-keyed specifier cache for c
 	expect(beforeDelete.preloads?.savedPackage.id).toBe(
 		platformFixture.savedPackage.id,
 	)
+
+	clearContractCheckLoadCounters()
+	const warm = await runContractCheck({
+		userId: 'person-caller',
+		specifier: 'kody:@kody/sentry-triage/get-issue-state',
+	})
+	expect(warm.result.ok).toBe(true)
+	expect(countContractCheckLoads()).toEqual({
+		'saved package by id (D1)': 0,
+		'saved package by kody id (D1)': 0,
+		'saved package by name (D1)': 0,
+		'platform account by username (D1)': 0,
+		'entity source row (D1)': 0,
+		'published manifest snapshot (KV)': 0,
+		'published source snapshot (KV)': 0,
+		'bundle artifact identity + payload (D1 + KV)': 0,
+	})
 
 	seedFixtures({})
 	invalidateInvokeContractFreshness({
