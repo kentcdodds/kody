@@ -16,6 +16,11 @@ import {
 	invokePackageExportForPackageRuntime,
 } from './http-invoke.ts'
 import { parsePackageInvokeInput } from './input-parsing.ts'
+import {
+	classifyPackageInvokeCallShape,
+	recordPackageInvokeCall,
+	type PackageInvokeRuntimeSurface,
+} from './invoke-call-telemetry.ts'
 import { checkPackageInvokeForRuntimeWithPreloads } from './invoke-check.ts'
 
 function throwIfPackageInvokeAborted(signal?: AbortSignal) {
@@ -32,6 +37,7 @@ export function createPackageRuntimeInvokeToolsWithToolFactories(input: {
 	packageContext: PackageRuntimeContext | null
 	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
+	runtimeSurface?: 'app'
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
 }): PackageInvokeTools {
@@ -60,6 +66,22 @@ export function createExecutePackageInvokeToolsWithToolFactories(input: {
 	})
 }
 
+export function resolvePackageInvokeRuntimeSurface(input: {
+	callerKind: 'package' | 'execute'
+	parentRunRecord?: RunRecordContext | null
+	runtimeSurface?: 'app'
+}): PackageInvokeRuntimeSurface {
+	if (input.runtimeSurface) return input.runtimeSurface
+	if (input.parentRunRecord?.surface === 'job') return 'job'
+	if (
+		input.parentRunRecord?.surface === 'app_fetch' ||
+		input.parentRunRecord?.surface === 'app_realtime'
+	) {
+		return 'app'
+	}
+	return input.callerKind
+}
+
 function createPackageInvokeTools(input: {
 	env: Env
 	baseUrl: string
@@ -68,6 +90,7 @@ function createPackageInvokeTools(input: {
 	parentRunRecord?: RunRecordContext | null
 	packageInvokeDepth?: number
 	callerKind: 'package' | 'execute'
+	runtimeSurface?: 'app'
 	conversationId?: string | null
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -92,6 +115,10 @@ function createPackageInvokeTools(input: {
 	const invoke = async (rawInput: PackageInvokeInput, signal?: AbortSignal) => {
 		throwIfPackageInvokeAborted(signal)
 		const { user, packageContext } = requireRuntimeCaller('packages.invoke')
+		recordPackageInvokeCall(input.env, {
+			callShape: classifyPackageInvokeCallShape(rawInput),
+			surface: resolvePackageInvokeRuntimeSurface(input),
+		})
 		const packageInvokeDepth = input.packageInvokeDepth ?? 0
 		if (packageInvokeDepth >= maxPackageRuntimeInvokeDepth) {
 			throw new Error(
