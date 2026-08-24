@@ -19,15 +19,9 @@ import {
 	ActionButtonLoader,
 	installProgressWords,
 } from '#client/action-button-loader.tsx'
-import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import {
-	colors,
-	radius,
-	transitions,
-	typography,
-} from '#universal/styles/tokens.ts'
+import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
 	getPillButtonCss,
@@ -56,8 +50,9 @@ import { UserAvatar } from '#universal/user-avatar.tsx'
  * post: the listing head (back link, icon + name + author + badges, tags,
  * quiet meta row) stays server-rendered in the `community-detail` frame —
  * see `src/app/community-detail-content.tsx` — while this shell renders the
- * interactive sections around it: one-click install, the fork prompt block,
- * the README as `.prose`, stars, admin tools, and the report disclosure.
+ * interactive sections around it: the README as `.prose`, stars, admin
+ * tools, and the report disclosure. Install / Installed / Fork outdated
+ * live in the frame next to Trusted.
  */
 
 type CommunityDetailApiPayload = {
@@ -255,7 +250,6 @@ function buildReportApiPath(listingId: string) {
 }
 
 export function CommunityDetailRoute(handle: Handle) {
-	let forkPrompt = ''
 	let loggedIn = false
 	let viewerIsAdmin = false
 	let trusted = false
@@ -267,7 +261,6 @@ export function CommunityDetailRoute(handle: Handle) {
 	let installState: 'idle' | 'confirming' | 'submitting' | 'error' = 'idle'
 	let installMessage: string | null = null
 	let installOutcome: CommunityInstallOutcome | null = null
-	let existingInstall: ViewerListingInstall | null = null
 	let readmeContent: string | null = null
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
 	let shellLoadRequestId = 0
@@ -341,7 +334,6 @@ export function CommunityDetailRoute(handle: Handle) {
 				throw new Error('Unable to load community package.')
 			}
 			rememberListingId(ref.pathname, payload.listing.id)
-			forkPrompt = payload.forkPrompt
 			loggedIn = payload.loggedIn
 			viewerIsAdmin = payload.viewerIsAdmin
 			trusted = payload.listing.trusted
@@ -353,7 +345,6 @@ export function CommunityDetailRoute(handle: Handle) {
 			installState = 'idle'
 			installMessage = null
 			installOutcome = null
-			existingInstall = payload.viewerInstall
 			readmeContent = payload.listing.readmeContent
 			starCount = payload.listing.starCount
 			starredByViewer = payload.starredByViewer
@@ -639,6 +630,8 @@ export function CommunityDetailRoute(handle: Handle) {
 			}
 			installState = 'idle'
 			handle.update()
+			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
+			if (frame) void frame.reload()
 		} catch (error) {
 			if (getCurrentListingId(handle) !== listingId) return
 			installState = 'error'
@@ -648,6 +641,21 @@ export function CommunityDetailRoute(handle: Handle) {
 					: 'Unable to install this community package.'
 			handle.update()
 		}
+	}
+
+	function handleCommunityInstallClick(event: Event) {
+		const target = event.target
+		if (!(target instanceof Element)) return
+		const control = target.closest('[data-community-install]')
+		if (!control || control instanceof HTMLAnchorElement) return
+		event.preventDefault()
+		if (control.getAttribute('data-trusted') === 'true') {
+			void submitInstall()
+			return
+		}
+		installState = 'confirming'
+		installMessage = null
+		handle.update()
 	}
 
 	listenToRouterNavigation(handle, () => {
@@ -671,7 +679,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		if (!routeData || !listingId || routeData.listingId !== listingId) {
 			return false
 		}
-		forkPrompt = routeData.forkPrompt
 		loggedIn = routeData.loggedIn
 		viewerIsAdmin = routeData.viewerIsAdmin
 		trusted = routeData.trusted
@@ -683,7 +690,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		installState = 'idle'
 		installMessage = null
 		installOutcome = null
-		existingInstall = routeData.viewerInstall
 		readmeContent = routeData.readmeContent
 		starCount = routeData.starCount
 		starredByViewer = routeData.starredByViewer
@@ -771,24 +777,19 @@ export function CommunityDetailRoute(handle: Handle) {
 			: showShellReady
 				? ''
 				: 'Loading community package details…'
-		const shownInstall = installOutcome
-			? {
-					...installOutcome,
-					existing: false,
-				}
-			: existingInstall
-				? {
-						status: existingInstall.status,
-						targetName: existingInstall.targetName,
-						agentPrompt: existingInstall.agentPrompt,
-						packageId: existingInstall.packageId,
-						failedChecks: [] as Array<{ kind: string; message: string }>,
-						existing: true,
-					}
-				: null
+		const installAnnouncement = installOutcome
+			? installOutcome.status === 'installed'
+				? `Installed as ${installOutcome.targetName}.`
+				: `Forked as ${installOutcome.targetName}; it needs adaptation before it can run.`
+			: ''
 
 		return (
-			<article mix={css(detailArticleCss)}>
+			<article
+				mix={[
+					css(detailArticleCss),
+					on('click', (event) => handleCommunityInstallClick(event)),
+				]}
+			>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
 
 				{/*
@@ -817,200 +818,59 @@ export function CommunityDetailRoute(handle: Handle) {
 
 				{showShellReady ? (
 					<>
-						<section
-							aria-labelledby="install-title"
-							mix={css(detailSectionCss)}
-							data-testid="community-install"
-						>
-							<h2 id="install-title">One-click install</h2>
-							{shownInstall ? (
-								shownInstall.status === 'installed' ? (
-									<>
-										<p data-testid="community-install-success" role="status">
-											{shownInstall.existing
-												? 'Already installed as'
-												: 'Installed as'}{' '}
-											{shownInstall.targetName}.
-											{shownInstall.existing
-												? ''
-												: ' Any jobs the package declares are now scheduled.'}
-										</p>
-										<p>
-											<a
-												href={
-													shownInstall.packageId
-														? routes.accountPackageDetail.href({
-																packageId: shownInstall.packageId,
-															})
-														: routes.accountPackages.href()
-												}
-												mix={css(inlineLinkCss)}
-												data-testid="community-install-open-package"
-											>
-												{shownInstall.packageId
-													? 'Open in your packages'
-													: 'View it in your packages'}
-											</a>
-										</p>
-										<p>
-											Give this prompt to your agent to finish any remaining
-											setup (secrets, connections, a first test run):
-										</p>
-										<div mix={css(promptGroupCss)}>
-											<blockquote mix={css(promptBlockCss)}>
-												{shownInstall.agentPrompt}
-											</blockquote>
-											<CopyTextButton
-												value={shownInstall.agentPrompt}
-												idleLabel="Copy prompt"
-												variant="pill"
-											/>
-										</div>
-									</>
-								) : (
-									<>
-										<p data-testid="community-install-adaptation" role="status">
-											{shownInstall.existing
-												? 'Already forked as'
-												: 'Forked as'}{' '}
-											{shownInstall.targetName}, but it needs adaptation before
-											it can run in your account.
-										</p>
-										{shownInstall.failedChecks.length > 0 ? (
-											<ul mix={css(checkListCss)}>
-												{shownInstall.failedChecks.map((check) => (
-													<li key={check.kind}>
-														{check.kind}: {check.message}
-													</li>
-												))}
-											</ul>
-										) : null}
-										<p>
-											Give this prompt to your agent to adapt and publish it:
-										</p>
-										<div mix={css(promptGroupCss)}>
-											<blockquote mix={css(promptBlockCss)}>
-												{shownInstall.agentPrompt}
-											</blockquote>
-											<CopyTextButton
-												value={shownInstall.agentPrompt}
-												idleLabel="Copy prompt"
-												variant="pill"
-											/>
-										</div>
-									</>
-								)
-							) : (
-								<>
-									<p>
-										Install forks this package into your account and publishes
-										it right away when it passes the standard package checks.
-										{trusted
-											? ' An admin reviewed and trusted this exact version.'
-											: ' This listing has not been reviewed by an admin.'}
-									</p>
-									{loggedIn ? (
-										installState === 'confirming' ? (
-											<div
-												mix={css(warningCardCss)}
-												data-testid="community-install-warning"
-												role="alert"
-											>
-												<p mix={css({ margin: 0 })}>
-													This package is not trusted: no admin has reviewed its
-													code, and it was written by another user. Installing
-													publishes it into your account and can activate its
-													scheduled jobs immediately. Only continue if you
-													accept that risk.
-												</p>
-												<div mix={css(buttonRowCss)}>
-													<button
-														mix={[
-															on('click', () => void submitInstall()),
-															css(dangerPillButtonCss),
-														]}
-													>
-														Install anyway
-													</button>
-													<button
-														mix={[
-															on('click', () => {
-																installState = 'idle'
-																handle.update()
-															}),
-															css(smallGhostButtonCss),
-														]}
-													>
-														Cancel
-													</button>
-												</div>
-											</div>
-										) : (
-											<div mix={css(sectionActionCss)}>
-												<button
-													disabled={installState === 'submitting'}
-													aria-busy={
-														installState === 'submitting' ? 'true' : undefined
-													}
-													mix={[
-														on('click', () => {
-															if (trusted) {
-																void submitInstall()
-																return
-															}
-															installState = 'confirming'
-															installMessage = null
-															handle.update()
-														}),
-														css(pillButtonCss),
-													]}
-												>
-													{installState === 'submitting' ? (
-														<ActionButtonLoader
-															label="Installing"
-															words={installProgressWords}
-														/>
-													) : (
-														'Install'
-													)}
-												</button>
-											</div>
-										)
-									) : (
-										<p>
-											<a href="/login" mix={css(inlineLinkCss)}>
-												Log in
-											</a>{' '}
-											to install this package.
-										</p>
-									)}
-									{installMessage ? (
-										<p mix={css(errorTextCss)} role="alert">
-											{installMessage}
-										</p>
-									) : null}
-								</>
-							)}
-						</section>
-
-						<section aria-labelledby="fork-title" mix={css(detailSectionCss)}>
-							<h2 id="fork-title">Fork with your agent</h2>
-							<p>
-								Copy this prompt into your MCP-capable agent to fork and adapt
-								the package safely. Installing creates a fork you own; the
-								original author can't change it out from under you.
+						<div data-testid="community-install" mix={css(installStripCss)}>
+							<p role="status" mix={css(visuallyHiddenCss)}>
+								{installAnnouncement}
 							</p>
-							<div mix={css(promptGroupCss)}>
-								<blockquote id="fork-prompt" mix={css(promptBlockCss)}>
-									{forkPrompt}
-								</blockquote>
-								<CopyTextButton
-									value={forkPrompt}
-									idleLabel="Copy prompt"
-									variant="pill"
-								/>
-							</div>
-						</section>
+							{installState === 'submitting' ? (
+								<p mix={css(installProgressCss)} role="status">
+									<ActionButtonLoader
+										label="Installing"
+										words={installProgressWords}
+									/>
+								</p>
+							) : null}
+							{installState === 'confirming' ? (
+								<div
+									mix={css(warningCardCss)}
+									data-testid="community-install-warning"
+									role="alert"
+								>
+									<p mix={css({ margin: 0 })}>
+										This package is not trusted: no admin has reviewed its code,
+										and it was written by another user. Installing publishes it
+										into your account and can activate its scheduled jobs
+										immediately. Only continue if you accept that risk.
+									</p>
+									<div mix={css(buttonRowCss)}>
+										<button
+											mix={[
+												on('click', () => void submitInstall()),
+												css(dangerPillButtonCss),
+											]}
+										>
+											Install anyway
+										</button>
+										<button
+											mix={[
+												on('click', () => {
+													installState = 'idle'
+													handle.update()
+												}),
+												css(smallGhostButtonCss),
+											]}
+										>
+											Cancel
+										</button>
+									</div>
+								</div>
+							) : null}
+							{installMessage ? (
+								<p mix={css(errorTextCss)} role="alert">
+									{installMessage}
+								</p>
+							) : null}
+						</div>
 
 						{readmeContent ? (
 							<section
@@ -1343,24 +1203,15 @@ const sectionActionCss = {
 	marginTop: '1.1rem',
 }
 
-const promptGroupCss = {
-	marginTop: '1.2rem',
-	'& > button': {
-		marginTop: '0.8rem',
-	},
+const installStripCss = {
+	display: 'grid',
+	gap: '0.75rem',
 }
 
-const promptBlockCss = {
-	margin: 0,
-	fontSize: '0.98rem',
-	lineHeight: 1.6,
-	color: colors.text,
-	backgroundColor: colors.surface,
-	border: `1.5px solid ${colors.border}`,
-	borderRadius: radius.card,
-	padding: '1.1rem 1.3rem',
-	whiteSpace: 'pre-wrap' as const,
-	overflowWrap: 'break-word' as const,
+const installProgressCss = {
+	margin: '1.2rem 0 0',
+	color: colors.textMuted,
+	fontSize: '0.95rem',
 }
 
 const pillButtonCss = getPillButtonCss()
@@ -1399,15 +1250,6 @@ const buttonRowCss = {
 	display: 'flex',
 	gap: '0.5rem',
 	flexWrap: 'wrap' as const,
-}
-
-const checkListCss = {
-	margin: '0.8rem 0 0',
-	paddingLeft: '1.25rem',
-	color: colors.textMuted,
-	fontSize: '0.92rem',
-	display: 'grid',
-	gap: '0.35rem',
 }
 
 const inlineLinkCss = {

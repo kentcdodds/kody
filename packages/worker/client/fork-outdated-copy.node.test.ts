@@ -10,7 +10,10 @@ test('fork outdated click copies the prompt and swaps the tooltip to Copied', as
 
 	const tooltip = { textContent: 'Click to copy an update prompt' }
 	const button = {
-		dataset: { copyText: 'absorb these listing changes' },
+		dataset: {
+			copyText: 'absorb these listing changes',
+			copyTooltip: 'Click to copy an update prompt',
+		},
 		querySelector: (selector: string) =>
 			selector === '[role="tooltip"]' ? tooltip : null,
 		contains: () => false,
@@ -18,7 +21,7 @@ test('fork outdated click copies the prompt and swaps the tooltip to Copied', as
 	const event = {
 		target: {
 			closest: (selector: string) =>
-				selector === '[data-fork-outdated-copy]' ? button : null,
+				selector === '[data-copy-prompt]' ? button : null,
 		},
 		preventDefault: vi.fn(),
 		stopPropagation: vi.fn(),

@@ -73,32 +73,32 @@ export function CommunityDetailContent(
 				<CommunityListingIcon listing={listing} size="detail" />
 				<div mix={css(headTextCss)}>
 					<h1>{renderCommunityListingName(listing.name)}</h1>
-					{listing.trusted || listing.featured || listing.viewerInstall ? (
-						<span mix={css(detailBadgeGroupCss)}>
-							{listing.trusted ? (
-								<span
-									data-testid="community-detail-trusted-badge"
-									title="An admin reviewed this exact version and marked it trusted."
-									mix={css(badgeCss)}
-								>
-									Trusted
-								</span>
-							) : null}
-							{listing.featured ? (
-								<span
-									data-testid="community-detail-featured-badge"
-									title="An admin featured this package as an onboarding starter install."
-									mix={css(badgeCss)}
-								>
-									Featured
-								</span>
-							) : null}
-							{renderCommunityViewerInstallBadge({
-								listing,
-								variant: 'detail',
-							})}
-						</span>
-					) : null}
+					<span mix={css(detailBadgeGroupCss)}>
+						{listing.trusted ? (
+							<span
+								data-testid="community-detail-trusted-badge"
+								title="An admin reviewed this exact version and marked it trusted."
+								mix={css(badgeCss)}
+							>
+								Trusted
+							</span>
+						) : null}
+						{listing.featured ? (
+							<span
+								data-testid="community-detail-featured-badge"
+								title="An admin featured this package as an onboarding starter install."
+								mix={css(badgeCss)}
+							>
+								Featured
+							</span>
+						) : null}
+						{renderCommunityViewerInstallBadge({
+							listing,
+							variant: 'detail',
+							loggedIn,
+							returnTo,
+						})}
+					</span>
 					{/* A div, not a p: the signed-in follow control is a form, and
 					    browsers close a p before a form, which drops the glyph
 					    onto the next line. Separate flex items (not nested flex +
