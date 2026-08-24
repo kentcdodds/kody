@@ -155,14 +155,21 @@ If the answer is “library import stays stateless; persist is a package run,”
 option A or C: keep the filter, fix the teaching error, and keep README
 examples that persist on invoke.
 
-If the goal is that `packages.invoke` becomes an **edge case** (or later
-goes away), **B is the least surprising option.** Caller-owned static
-imports already persist. Official invoke already writes
-`(callerUserId, package:{officialPackageId})`. B makes official static
-import join that same world instead of inventing a second bucket or
-keeping persist on invoke. A and C do the opposite: they make invoke the
-only official write path. A synthetic alias or execute-wide
-`packageContext` (D) is more surprising than B.
+If person accounts still live-resolve `@kody/*` and the goal is that
+`packages.invoke` becomes an **edge case**, **B is the least surprising
+option.** Caller-owned static imports already persist. Official invoke
+already writes `(callerUserId, package:{officialPackageId})`. B makes
+official static import join that same world. A and C do the opposite.
+
+If person accounts **do not run official packages** (draft
+[0036](https://github.com/kentcdodds/kody/blob/cursor/official-kody-packagestorage-destination-3561/docs/contributing/decisions/0036-platform-packages-fork-only.md)
+/ [#1741](https://github.com/kentcdodds/kody/pull/1741): execute import
+and invoke of `@kody/*` both fail closed; fork first), **B is vacated.**
+There is no official static-import grant to add. The person-account
+bucket is the fork's UUID. Caller-owned static import already has
+`packageStorage()`. Invoke stays an edge case for **your** packages
+(specifier-as-data, keyed exactly-once, enter-as-package), not for
+official ones.
 
 B does not eliminate invoke. After B, invoke still uniquely covers:
 
