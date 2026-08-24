@@ -285,6 +285,24 @@ preferred explicit scheme:
 Prefixless calls remain publishable during this measurement phase; 0007 is a
 migration aid, not a publish-rejection rule.
 
+### `0008-packages-invoke-to-static-import`
+
+This permanent migration codemod removes author-facing `packages.invoke`
+(decision 0037):
+
+- Rewrites literal `packages.invoke("kody:@owner/package/export", { params })`
+  calls to a static `import export from "kody:@owner/package/export"` plus
+  `export(params)`, and adds the package name to
+  `package.json#kody.dependencies`.
+- Rewrites computed first arguments to `(await import(specifier)).default(...)`.
+  That is the name-as-data path; do not use this rewrite when the name is
+  known at write time.
+- Handles JavaScript and TypeScript modules plus parseable JS/TS fenced and
+  inline examples in Markdown and MDX.
+- Emits `needsManual` for keyed invokes (`idempotencyKey` — use workflows),
+  ambiguous options, and leftover prose that still names `packages.invoke`.
+- Leaves already-migrated static imports unchanged and is idempotent.
+
 Fleet scan `803e3045` found zero executable-source findings, drift, or errors.
 Its three remaining findings are private README-only documentation debt: those
 files cannot execute and therefore do not block later runtime/type prefix
