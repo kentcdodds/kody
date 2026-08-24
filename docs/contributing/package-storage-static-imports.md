@@ -188,3 +188,154 @@ with grants. B only fills execute and official-to-official composition.
 
 Do not grant a cross-user or platform-account bucket. The runtime cannot do
 that by accident: the Durable Object name includes the calling user id.
+
+## Recommended model (secrets, storage, context)
+
+Assume 0036: person accounts fork `@kody/*` and then only run **their** copy.
+Three facts, one rule each:
+
+| Thing | Identity | Rule |
+| --- | --- | --- |
+| `packageStorage()` | declaring module (bundler stamp) | A's code always hits `(callerUserId, package:{A.id})` when granted |
+| `packageContext` | the run | one ambient; A only when the run *is* A |
+| Secrets | the run | user-secret `allowed_packages` and `packageSecrets` mounts check `storageContext.packageId` |
+
+**Recommend:** static `import` when the name is known (library in this isolate).
+`packages.invoke` when you need A's run: A's mounts, A's `allowed_packages`,
+A's `packageContext`, A's isolate, or a keyed exactly-once ledger. Do not
+point `packageContext` at “the” imported module. Do not treat `import()` as
+invoke.
+
+Static import of caller-owned A (including a fork). Storage follows A; the
+run stays B or execute.
+
+```mermaid
+sequenceDiagram
+	actor Caller
+	participant Execute as execute B
+	participant Stamp as A stamp
+	participant Bucket as StorageRunner
+	participant Gateway as fetch gateway
+	Caller->>Execute: import fn from kody:@user/A/export
+	Execute->>Stamp: rewrite kody:runtime to package-runtime/hex(A)
+	Execute->>Stamp: fn()
+	Stamp->>Bucket: packageStorage() packageId A
+	Note over Bucket: granted from static dep A
+	Bucket-->>Stamp: A's per-caller bucket
+	Stamp->>Gateway: fetch with user secret placeholder
+	Note over Gateway: storageContext.packageId is B or null
+	Gateway-->>Stamp: authorize as the run not as A
+```
+
+Invoke A. New run. Storage is still A's bucket. Secrets and context are A's.
+
+```mermaid
+sequenceDiagram
+	actor Caller
+	participant Execute as execute B
+	participant Invoke as packages.invoke A
+	participant Bucket as StorageRunner
+	participant Mounts as packageSecrets
+	participant Gateway as fetch gateway
+	Caller->>Execute: packages.invoke kody:@user/A/export
+	Execute->>Invoke: new isolate packageContext A
+	Invoke->>Bucket: packageStorage() packageId A
+	Note over Bucket: granted from packageContext
+	Bucket-->>Invoke: same A bucket as the import path
+	Invoke->>Mounts: packageSecrets.get alias
+	Note over Mounts: requires packageContext equals A
+	Mounts-->>Invoke: A's kody.secretMounts
+	Invoke->>Gateway: fetch with user secret placeholder
+	Note over Gateway: storageContext.packageId is A
+	Gateway-->>Invoke: allowed_packages must include A
+```
+
+A-only secret, B imports A vs B invokes A. This is the isolation the stamp
+does **not** give you.
+
+```mermaid
+sequenceDiagram
+	actor Caller
+	participant B as run B
+	participant Amod as A's imported module
+	participant Invoke as invoke A
+	participant Gateway as fetch gateway
+	Note over Caller: user secret granted only to A
+	Caller->>B: execute or invoke B
+	B->>Amod: static import call A's export
+	Amod->>Gateway: use A-only user secret
+	Gateway->>Gateway: check storageContext.packageId B
+	Gateway-->>Amod: deny A-only grant does not list B
+	B->>Invoke: packages.invoke A's export
+	Invoke->>Gateway: use A-only user secret
+	Gateway->>Gateway: check storageContext.packageId A
+	Gateway-->>Invoke: allow
+```
+
+On ad hoc execute with no `packageId`, the `allowed_packages` check is
+skipped (`assertPackageCanAccessResolvedSecret` returns). Execute can use
+**your** user secrets. It still cannot use A's `packageSecrets` mounts.
+
+## Dynamic `import()` is not impossible
+
+The hydrator already rebuilds caller-owned `importable-module` artifacts and
+installs them (`resolveCurrentDynamicPackageArtifact` in
+`module-graph-hydration.ts`). The call site is rewritten to a teaching
+error. That is a policy disable, not a missing loader.
+
+If the specifier is a **caller-owned** package and `import()` means “library
+load in this isolate,” the host can do it. Storage, context, and secrets
+match static import: A's bucket, this run's `packageContext`, this run's
+secret authority. Specifier-as-data **library** load is a reasonable
+revisit. It is not invoke.
+
+```mermaid
+sequenceDiagram
+	actor Caller
+	participant Execute as execute B
+	participant Hydrate as hydrator
+	participant KV as BUNDLE_ARTIFACTS_KV
+	participant Amod as A's module
+	Caller->>Execute: await import(runtimeSpecifier)
+	Note over Execute: today the rewriter throws here
+	Execute->>Hydrate: resolveCurrentDynamicPackageArtifact
+	Hydrate->>Hydrate: allowPlatformScopes false
+	Hydrate->>KV: persist importable-module under caller userId
+	KV-->>Hydrate: artifact
+	Hydrate-->>Execute: install A's modules in B's isolate
+	Execute->>Amod: call export
+	Note over Amod: same as static import
+	Note over Amod: packageStorage A if granted
+	Note over Amod: packageContext is B or null
+	Note over Amod: secrets authorized as the run
+```
+
+0014 blocked **platform** dynamic import because that persist step writes
+under the **caller**. A live `@kody/*` specifier would store an official
+artifact as if the person owned it. Under 0036 person accounts cannot
+resolve `@kody/*` at all, so that footgun does not apply to person execute.
+It is still a reason not to re-open platform dynamic import if official
+live-resolve comes back.
+
+`import()` cannot replace `packages.invoke` unless you lie about what
+`import()` is. ESM `import()` has no `params`, no `idempotencyKey`, and
+does not start a package run. To get A's mounts and A's
+`allowed_packages` you must start a run whose `packageContext` is A — that
+is invoke, whatever the syntax. Overloading `import()` to secretly invoke
+would make a side-effectful import that still has nowhere honest to put a
+key or params.
+
+```mermaid
+sequenceDiagram
+	actor Caller
+	participant Import as import specifier
+	participant Invoke as packages.invoke
+	Caller->>Import: name is data library load
+	Import-->>Caller: module in this isolate
+	Note over Import: possible for caller-owned
+	Note over Import: not A's run
+	Caller->>Invoke: name is data enter as A
+	Invoke-->>Caller: A's isolate context mounts ledger
+	Note over Invoke: this is the enter-as-package primitive
+	Note over Import: making import mean invoke rebuilds invoke behind ESM
+```
