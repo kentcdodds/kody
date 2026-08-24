@@ -204,7 +204,10 @@ before canonicalization; recording failure fails that deprecated call. Canonical
 the relevant user population and reports only global totals and accounting
 completeness. A cryptographic population fingerprint must stay unchanged across
 the gate; in-progress deletion is incomplete, and a completed deletion or signup
-changes the fingerprint instead of silently changing the denominator. See
+changes the fingerprint instead of silently changing the denominator. Because
+paged reads are not atomic with live writes, the exact methods and epoch remain
+through the later runtime cutover and a post-drain aggregate verifies no late
+call raced it. See
 [the migration runbook](../package-invoke-prefix-migration.md).
 
 ## Agent package popularity (MCP instructions hint)

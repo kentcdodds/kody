@@ -175,6 +175,17 @@ The exact counter proves prefixless absence; Analytics Engine proves that each
 surface remained live and using the canonical form. The separate minimum of 30
 prefixed calls prevents a dead or miswired liveness path from looking safe.
 
+A paged aggregate is not an atomic fleet snapshot while prefixless writes are
+still enabled. Treat the last read while acceptance remains enabled as
+provisional. Keep the exact UserMeter methods and epoch deployed while the
+cutover removes prefixless runtime acceptance, allow old Worker isolates and
+in-flight calls to drain, then run the aggregate again. That verification read
+after acceptance removal must retain the same epoch and population version,
+report `complete = true`, and still contain all-zero totals before the
+compatibility storage or methods may be removed. Any increase means a late
+deprecated call raced the cutover; restore compatibility, deploy a new epoch,
+capture a new zero baseline, and restart the gate.
+
 The three README-only findings remain aggregate owner-action documentation debt.
 Track their count without publishing private package ids or owners. Keep codemod
 0007 and the local prefixless teaching error available to repair those docs; do

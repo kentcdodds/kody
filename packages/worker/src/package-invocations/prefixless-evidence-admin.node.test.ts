@@ -86,4 +86,19 @@ test('admin evidence aggregates paged UserMeters without identifiers and marks a
 	expect(afterDeletion.population.populationVersion).not.toBe(
 		result.population.populationVersion,
 	)
+
+	const missingBinding = await loadPackageInvokePrefixlessEvidenceAggregate({
+		APP_DB: createD1FromSqlite(sqlite),
+		USER_METER: undefined,
+	} as unknown as Pick<Env, 'APP_DB' | 'USER_METER'>)
+	expect(missingBinding).toMatchObject({
+		totals: { execute: 0, package: 0, job: 0, app: 0 },
+		population: {
+			usersExpected: 51,
+			usersAttempted: 51,
+			usersLoaded: 0,
+			usersUnreachable: 51,
+			complete: false,
+		},
+	})
 })

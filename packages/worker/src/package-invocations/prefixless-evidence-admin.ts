@@ -110,14 +110,14 @@ export async function loadPackageInvokePrefixlessEvidenceAggregate(
 		populationUserIds.push(...users.map((user) => user.stable_user_id))
 
 		const reads = await Promise.allSettled(
-			users.map((user) =>
-				userMeterRpc({
+			users.map(async (user) => {
+				return await userMeterRpc({
 					env,
 					userId: user.stable_user_id,
 				}).readPackageInvokePrefixless({
 					epoch: packageInvokePrefixlessEvidenceEpoch,
-				}),
-			),
+				})
+			}),
 		)
 		for (const read of reads) {
 			if (read.status === 'rejected') {
