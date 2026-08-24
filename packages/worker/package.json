@@ -14,7 +14,6 @@
     "@epic-web/cachified": "^5.6.3",
     "@epic-web/invariant": "^1.0.0",
     "@epic-web/totp": "^4.0.1",
-    "@kody-bot/connector-kit": "^2.0.1",
     "@kody-internal/shared": "file:../shared",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@modelcontextprotocol/server": "2.0.0",
