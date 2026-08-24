@@ -1,5 +1,4 @@
 import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import { type ValueMetadata } from '#mcp/values/types.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 
 import {
@@ -63,9 +62,6 @@ export type SearchEntityPlugin<Type extends SearchMatch['type']> = {
 	buildDescriptors?: (
 		input: SearchEntityDescriptorInput,
 	) => Array<SearchableEntityDescriptor>
-	buildValueRowDescriptor?: (
-		row: ValueMetadata,
-	) => SearchableEntityDescriptor | undefined
 	buildCandidates?: (
 		input: SearchEntityCandidateInput,
 	) => Array<SearchCandidate> | Promise<Array<SearchCandidate>>
