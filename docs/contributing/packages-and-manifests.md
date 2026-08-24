@@ -487,6 +487,15 @@ ids, package ids, error strings, and all user content. There is no Queue for
 this topic. See
 [Package subscriptions](../guides/package-subscriptions.md#fleetpackageerrorrateelevated-admins).
 
+Fleet entitlement crossings are a separate admin-only, best-effort path. The
+hourly `usage_entitlement_alert` lane fans `fleet.entitlement.crossed` only to
+packages whose owners hold the admin role at dispatch time, once per 80% or 100%
+crossing (and per first over-threshold runtime-duration month). The payload is
+stable user id, username, resource counts or runtime duration, and admin URLs.
+It omits emails, plans, secrets, and package source. There is no Queue for this
+topic. See
+[Package subscriptions](../guides/package-subscriptions.md#fleetentitlementcrossed-admins).
+
 ## Package-owned workflows
 
 Packages declare workflow entrypoints in runtime code, not in

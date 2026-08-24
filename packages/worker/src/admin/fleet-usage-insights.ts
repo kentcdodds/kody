@@ -12,6 +12,7 @@ import {
 	type AdminInsightsEventCountConsumer,
 	type AdminInsightsMetricDurationConsumers,
 	type AdminPlanName,
+	type AdminUsageEntitlementResource,
 	type AdminUsageMetric,
 } from '#universal/loader-data.ts'
 
@@ -67,8 +68,10 @@ export type FleetEntitlementPressureIssue =
 			kind: 'entitlement'
 			stableUserId: string
 			username: string
-			resource: string
+			resource: AdminUsageEntitlementResource
 			label: string
+			current: number
+			limit: number
 			percentOfLimit: number
 	  }
 	| {
@@ -77,6 +80,21 @@ export type FleetEntitlementPressureIssue =
 			username: string
 			totalDurationMs: number
 	  }
+
+export type FleetEntitlementCrossingSnapshot = {
+	stableUserId: string
+	username: string
+	isAdmin: boolean
+	entitlements: Array<{
+		resource: AdminUsageEntitlementResource
+		label: string
+		current: number
+		limit: number
+		percentOfLimit: number | null
+		overEightyPercent: boolean
+	}>
+	runtimeDurationMs: number
+}
 
 export async function loadFleetUsageInsights(input: {
 	db: D1Database
@@ -108,14 +126,11 @@ export async function loadFleetUsageInsights(input: {
 	}
 }
 
-export async function detectFleetUsagePressure(input: {
+export async function loadFleetEntitlementCrossingSnapshots(input: {
 	db: D1Database
 	env: Env
 	now: Date
-	runtimeDurationThresholdMs?: number
-}): Promise<Array<FleetEntitlementPressureIssue>> {
-	const runtimeDurationThresholdMs =
-		input.runtimeDurationThresholdMs ?? fleetRuntimeDurationAlertThresholdMs
+}): Promise<Array<FleetEntitlementCrossingSnapshot>> {
 	const currentMonth = utcMonthKey(input.now)
 	const activeUsers = await listActiveUsersForEntitlementSweep(
 		input.db,
@@ -132,7 +147,7 @@ export async function detectFleetUsagePressure(input: {
 		),
 		listAdminStableUserIds(input.db),
 	])
-	const issues: Array<FleetEntitlementPressureIssue> = []
+	const snapshots: Array<FleetEntitlementCrossingSnapshot> = []
 
 	await mapWithConcurrency(
 		activeUsers,
@@ -148,33 +163,63 @@ export async function detectFleetUsagePressure(input: {
 				plan,
 				now: input.now,
 			})
-			for (const item of consumption) {
-				if (!item.overEightyPercent || item.percentOfLimit == null) continue
-				issues.push({
-					kind: 'entitlement',
-					stableUserId: user.stable_user_id,
-					username: user.username,
+			snapshots.push({
+				stableUserId: user.stable_user_id,
+				username: user.username,
+				isAdmin: adminUserIds.has(user.stable_user_id),
+				entitlements: consumption.map((item) => ({
 					resource: item.resource,
 					label: item.label,
+					current: item.current,
+					limit: item.limit,
 					percentOfLimit: item.percentOfLimit,
-				})
-			}
-			if (adminUserIds.has(user.stable_user_id)) return
-			const totalDurationMs = durationByUser.get(user.stable_user_id) ?? 0
-			if (totalDurationMs > runtimeDurationThresholdMs) {
-				issues.push({
-					kind: 'runtime_duration',
-					stableUserId: user.stable_user_id,
-					username: user.username,
-					totalDurationMs,
-				})
-			}
+					overEightyPercent: item.overEightyPercent,
+				})),
+				runtimeDurationMs: durationByUser.get(user.stable_user_id) ?? 0,
+			})
 		},
 	)
 
-	return issues.sort((left, right) =>
+	return snapshots.sort((left, right) =>
 		left.stableUserId.localeCompare(right.stableUserId),
 	)
+}
+
+export async function detectFleetUsagePressure(input: {
+	db: D1Database
+	env: Env
+	now: Date
+	runtimeDurationThresholdMs?: number
+}): Promise<Array<FleetEntitlementPressureIssue>> {
+	const runtimeDurationThresholdMs =
+		input.runtimeDurationThresholdMs ?? fleetRuntimeDurationAlertThresholdMs
+	const snapshots = await loadFleetEntitlementCrossingSnapshots(input)
+	const issues: Array<FleetEntitlementPressureIssue> = []
+	for (const snapshot of snapshots) {
+		for (const item of snapshot.entitlements) {
+			if (!item.overEightyPercent || item.percentOfLimit == null) continue
+			issues.push({
+				kind: 'entitlement',
+				stableUserId: snapshot.stableUserId,
+				username: snapshot.username,
+				resource: item.resource,
+				label: item.label,
+				current: item.current,
+				limit: item.limit,
+				percentOfLimit: item.percentOfLimit,
+			})
+		}
+		if (snapshot.isAdmin) continue
+		if (snapshot.runtimeDurationMs > runtimeDurationThresholdMs) {
+			issues.push({
+				kind: 'runtime_duration',
+				stableUserId: snapshot.stableUserId,
+				username: snapshot.username,
+				totalDurationMs: snapshot.runtimeDurationMs,
+			})
+		}
+	}
+	return issues
 }
 
 async function queryTopRuntimeDurationConsumers(

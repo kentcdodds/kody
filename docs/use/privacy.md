@@ -89,7 +89,11 @@ Admin-configured notification packages may receive the same community metadata,
 and a metadata-only `user.created` or `user.deleted` event when a person account
 is created or self-deleted (stable user id, username, email, and the create
 source or delete timestamp). Those lifecycle events omit passwords, roles, plan,
-secrets, and unrelated account content.
+secrets, and unrelated account content. Admin-configured notification packages
+may also receive a metadata-only `fleet.entitlement.crossed` event when a swept
+account first crosses 80% or 100% of a plan-limit resource (stable user id,
+username, resource counts, and admin dashboard URLs). That event omits emails,
+plans, secrets, package source, and unrelated account content.
 
 ## Platform feedback
 

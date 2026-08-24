@@ -4,7 +4,7 @@ import { checkEmailDeliveryBurstAndNotify } from '#app/email-delivery-alerts.ts'
 import { refreshFleetPackageErrorRateAndMaybeAlert } from '#app/fleet-package-error-rate-alerts.ts'
 import { pruneRetention } from '#app/retention.ts'
 import { sendUserEntitlementWarningEmails } from '#app/user-entitlement-warning-emails.ts'
-import { checkUsageEntitlementPressureAndNotify } from '#app/usage-entitlement-alerts.ts'
+import { emitFleetEntitlementCrossingEvents } from '#app/usage-entitlement-alerts.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
 	runDrExportTick,
@@ -148,7 +148,7 @@ export async function runScheduledLane(input: {
 				console.warn('user-entitlement-warning-emails-failed', error)
 				userWarnings = { status: 'failed' }
 			}
-			const ops = await checkUsageEntitlementPressureAndNotify({
+			const ops = await emitFleetEntitlementCrossingEvents({
 				env: input.env,
 				now: input.scheduledAt,
 			})

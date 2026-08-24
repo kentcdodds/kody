@@ -356,14 +356,17 @@ Guarantees and rules:
   Queries are `LIMIT`-bounded; entitlement reads run with modest concurrency.
 - **Proactive alerts** (`usage_entitlement_alert` scheduled lane in
   `packages/worker/src/app/usage-entitlement-alerts.ts`): hourly sweep of the
-  same ~15-user bound. Emails admin-role users when any swept account is above
-  80% of a plan-limit resource, or when a non-admin account's combined execute,
-  job_run, and workflow_run duration for the month exceeds
-  `fleetRuntimeDurationAlertThresholdMs` (24h). Admin-role dogfooding stays on
-  `/admin/insights` rankings but does not page. The KV cooldown key
-  `ops-alert:usage-entitlement-pressure:v1` suppresses repeat pages. Admin email
-  links are built with `joinAppUrl` so a trailing slash on `APP_BASE_URL` cannot
-  produce `https://host//admin/…`.
+  same ~15-user bound. Emits `fleet.entitlement.crossed` to admin-owned packages
+  once when a swept account first crosses 80% or 100% of a plan-limit resource,
+  or when a non-admin account's combined execute, job_run, and workflow_run
+  duration for the month first exceeds `fleetRuntimeDurationAlertThresholdMs`
+  (24h). Staying over the same threshold does not emit again. Admin-role
+  dogfooding stays on `/admin/insights` rankings and can still appear as an
+  entitlement crossing, but does not page the runtime-duration signal. KV prefix
+  `fleet-entitlement-crossing:v1` claims each crossing. Admin links in the
+  payload are built with `joinAppUrl` so a trailing slash on `APP_BASE_URL`
+  cannot produce `https://host//admin/…`. See
+  [Package subscriptions](../../guides/package-subscriptions.md#fleetentitlementcrossed-admins).
 - **Fleet package error rate** (same `usage_aggregation` hour): a second
   Analytics Engine SQL, not grouped by user, totals `package_export`,
   `package_static_call`, `job_run`, and `workflow_run` for the last completed
