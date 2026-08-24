@@ -106,7 +106,7 @@ export function buildPersistFirstPackagePrompt(input: {
 	const executeHint = input.connectedWorkspaceLabel
 		? `Use execute for one useful ad hoc call against ${input.connectedWorkspaceLabel}.`
 		: input.installedExampleName
-			? `Use execute or packages.invoke for one useful call against ${input.installedExampleName}.`
+			? `Use execute or a static import for one useful call against ${input.installedExampleName}.`
 			: 'Use execute for one useful ad hoc call (search Notion, list Linear issues, list Stripe customers, invoke a Just-try-Kody example, or ask me what I want if I skipped).'
 	return [
 		`Ask the connected Kody server to read ${origin}/guides/quick-example and help me with my first build on Kody.`,

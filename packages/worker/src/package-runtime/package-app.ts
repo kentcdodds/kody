@@ -352,13 +352,13 @@ function createPackagesProxy(runtimeBridge) {
 	return {
 		check: () => {
 			throw new Error(
-				'packages.check was removed: packages.invoke always contract-checks before invoking, so call packages.invoke("kody:@scope/package/export", { params }) directly. A failing contract rejects with "packages.invoke contract check failed: ..." before any execution.',
+				'packages.check was removed: statically import kody:@scope/package/export when the name is known, or import(specifier) when the name is data.',
 			);
 		},
 		invoke: async (specifier, options) => {
 			if (typeof specifier !== 'string') {
 				throw new Error(
-					'Object-only packages.invoke was removed. Use packages.invoke("kody:@owner/package/export", { params }) instead.',
+					'Object-only packages.invoke was removed. Use a static import (import fn from "kody:@owner/package/export") when the name is known, or import(specifier) when the name is data.',
 				)
 			}
 			return await runtimeBridge.packageInvoke({
@@ -368,7 +368,7 @@ function createPackagesProxy(runtimeBridge) {
 		},
 		invokeChecked: () => {
 			throw new Error(
-				'packages.invokeChecked was removed: call packages.invoke("kody:@scope/package/export", { params }) instead — it is always contract-checked (add idempotencyKey only when you need exactly-once) — or use a static import (import fn from "kody:@scope/pkg/export") when the target package is known at write time.',
+				'packages.invokeChecked was removed: use a static import (import fn from "kody:@scope/pkg/export") when the target package is known at write time, or import(specifier) when the name is data. Exactly-once work uses workflows.',
 			);
 		},
 	};

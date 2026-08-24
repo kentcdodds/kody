@@ -149,11 +149,11 @@ export function collectDeprecatedInvocationUsage(
 const removedUsageReplacements: Record<DeprecatedInvocationUsageKind, string> =
 	{
 		'packages.check':
-			'packages.check was removed: packages.invoke always contract-checks before invoking, so call it directly',
+			'packages.check was removed: statically import kody:@scope/package/export when the name is known, or import(specifier) when the name is data',
 		'packages.invokeChecked':
-			'packages.invokeChecked was removed: use a static kody:@scope/pkg/export import when the target package is known at write time, or packages.invoke("kody:@scope/pkg/export", { params }) for dynamic targets',
+			'packages.invokeChecked was removed: use a static kody:@scope/pkg/export import when the target package is known at write time, or import(specifier) when the name is data',
 		'packages.invoke-object':
-			'object-only packages.invoke was removed: use packages.invoke("kody:@owner/package/export", { params })',
+			'object-only packages.invoke was removed: use a static kody:@owner/package/export import when the name is known, or import(specifier) when the name is data',
 		'dynamic-kody-import':
 			'literal dynamic import("kody:@...") was removed: use a static import and declare it in package.json#kody.dependencies when the name is known, or import(specifier) when the name is data',
 	}
