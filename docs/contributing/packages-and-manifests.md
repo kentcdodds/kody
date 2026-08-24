@@ -154,13 +154,18 @@ A saved package is a repo with the package extension activated. Four concepts:
   `packageStorage()` bucket access is granted only from host-controlled
   provenance metadata: the run's own package context, the `packageId` entries
   recorded in the bundle's static dependency metadata, and published static
-  dependency artifacts installed during hydration. Sandbox-supplied strings
-  never extend the grant set, so hand-written source claiming an arbitrary
-  package id is rejected (`packageId` on `BundleArtifactDependency`,
-  `collectPackageStorageGrantIds` in `#mcp/run-kody-registry.ts`, and
-  `createPackageStorageKodyTools` in `#worker/storage-runner.ts`). Cross-user
-  access stays structurally impossible because storage runner names are keyed by
-  the calling user's id.
+  dependency artifacts installed during hydration. Platform-owned static
+  dependencies (`platformOwned` on `BundleArtifactDependency`) are stamped
+  but excluded from that grant set, so official `@kody/*` modules fail closed
+  on static import; `packages.invoke` of an official target still grants
+  through `packageContext` (see
+  [packageStorage on official static imports](./package-storage-static-imports.md)).
+  Sandbox-supplied strings never extend the grant set, so hand-written source
+  claiming an arbitrary package id is rejected (`packageId` on
+  `BundleArtifactDependency`, `collectPackageStorageGrantIds` in
+  `#mcp/run-kody-registry.ts`, and `createPackageStorageKodyTools` in
+  `#worker/storage-runner.ts`). Cross-user access stays structurally
+  impossible because storage runner names are keyed by the calling user's id.
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data
