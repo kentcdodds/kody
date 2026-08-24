@@ -41,6 +41,7 @@ import {
 	hasConnectedOnboardingWorkspaceMcp,
 	hasPendingOnboardingCustomMcpAuth,
 	hasPendingOnboardingFeaturedMcpAuth,
+	resolveOnboardingMcpOAuthBanner,
 } from '#universal/onboarding-mcp-chooser.ts'
 import {
 	fetchOnboardingPayload,
@@ -193,6 +194,7 @@ export function OnboardingRoute(handle: Handle) {
 	let appliedInitialHash = false
 	let awaitingMcpConnection = false
 	let oauthReturnError: string | null = null
+	let oauthReturnSucceeded = false
 	// Panel entrances only play for real step changes, never on the first
 	// paint — the page-open choreography belongs to the head's data-rise.
 	let panelAnimationArmed = false
@@ -218,7 +220,11 @@ export function OnboardingRoute(handle: Handle) {
 		})
 		hasStep2Win =
 			workspaceConnected || hasInstalledOnboardingExample(exampleListings)
-		if (workspaceConnected) awaitingMcpConnection = false
+		if (workspaceConnected) {
+			awaitingMcpConnection = false
+			oauthReturnError = null
+			oauthReturnSucceeded = true
+		}
 		checklist = payload.checklist
 		hasPersistedPackage = isOnboardingChecklistItemDone(
 			payload.checklist,
@@ -444,10 +450,12 @@ export function OnboardingRoute(handle: Handle) {
 		listenForOnboardingMcpOAuthDone((outcome) => {
 			if (outcome.auth === 'error' && outcome.reason) {
 				oauthReturnError = outcome.reason
+				oauthReturnSucceeded = false
 				awaitingMcpConnection = false
 				handle.update()
 			} else if (outcome.auth === 'success') {
 				oauthReturnError = null
+				oauthReturnSucceeded = true
 			}
 			void refreshOnboardingAfterInstall()
 		}, handle.signal)
@@ -743,9 +751,15 @@ export function OnboardingRoute(handle: Handle) {
 									exampleInstalled={hasInstalledOnboardingExample(
 										exampleListings,
 									)}
-									oauthError={
-										oauthReturnError ?? readOnboardingMcpOAuthError(handle)
-									}
+									oauthError={resolveOnboardingMcpOAuthBanner({
+										connected: hasConnectedOnboardingWorkspaceMcp({
+											featuredMcpServers,
+											customMcpServers,
+										}),
+										returnedSuccess: oauthReturnSucceeded,
+										returnedError: oauthReturnError,
+										urlError: readOnboardingMcpOAuthError(handle),
+									})}
 									onNext={() => selectStep(3)}
 								/>
 								<aside
@@ -1506,13 +1520,6 @@ function Step2ConnectStatus(
 	return () => {
 		const { waiting, connected, exampleInstalled, oauthError, onNext } =
 			handle.props
-		if (oauthError) {
-			return (
-				<p mix={css(step2OAuthErrorCss)} role="alert">
-					{oauthError}
-				</p>
-			)
-		}
 		if (connected) {
 			return (
 				<div
@@ -1539,6 +1546,13 @@ function Step2ConnectStatus(
 						Next
 					</button>
 				</div>
+			)
+		}
+		if (oauthError) {
+			return (
+				<p mix={css(step2OAuthErrorCss)} role="alert">
+					{oauthError}
+				</p>
 			)
 		}
 		if (waiting) {

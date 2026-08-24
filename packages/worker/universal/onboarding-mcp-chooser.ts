@@ -37,8 +37,6 @@ export type OnboardingFeaturedMcpServerOption = {
 	description: string
 	packageKodyId: string
 	listingId: string
-	/** Extra authorize requirement shown on the card. */
-	connectHint?: string
 }
 
 export type OnboardingFeaturedMcpServer = OnboardingFeaturedMcpServerOption & {
@@ -77,8 +75,6 @@ export const onboardingFeaturedMcpServers = [
 		description: 'Search Jira issues and Confluence pages you can already see.',
 		packageKodyId: 'atlassian-mcp',
 		listingId: '5db964f9-df0d-4193-81cb-e561fb869e2a',
-		connectHint:
-			'Needs a Jira or Confluence Cloud site on the Atlassian account you authorize.',
 	},
 	{
 		id: 'stripe',
@@ -385,4 +381,18 @@ export function firstConnectedOnboardingWorkspaceLabel(input: {
 	if (featured) return featured.label
 	const custom = input.customMcpServers.find((server) => server.connected)
 	return custom?.name ?? null
+}
+
+/**
+ * A later success (popup message or connected poll) must not lose to a leftover
+ * `?auth=error` from the same-tab fallback.
+ */
+export function resolveOnboardingMcpOAuthBanner(input: {
+	connected: boolean
+	returnedSuccess: boolean
+	returnedError: string | null
+	urlError: string | null
+}): string | null {
+	if (input.connected || input.returnedSuccess) return null
+	return input.returnedError ?? input.urlError
 }

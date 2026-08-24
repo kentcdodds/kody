@@ -196,9 +196,6 @@ export function OnboardingMcpChooserCard(
 				</span>
 				<strong mix={css(nameCss)}>{server.label}</strong>
 				<span mix={css(descriptionCss)}>{server.description}</span>
-				{server.connectHint ? (
-					<span mix={css(hintCss)}>{server.connectHint}</span>
-				) : null}
 				<button
 					type="button"
 					disabled={busy || server.connected}
@@ -268,13 +265,6 @@ const connectedButtonCss = {
 const errorCss = {
 	margin: 0,
 	color: colors.error,
-	font: `550 0.82rem/1.4 ${typography.fontFamilyBody}`,
-	textAlign: 'center' as const,
-}
-
-const hintCss = {
-	margin: 0,
-	color: colors.textMuted,
 	font: `550 0.82rem/1.4 ${typography.fontFamilyBody}`,
 	textAlign: 'center' as const,
 }
