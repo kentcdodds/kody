@@ -215,8 +215,8 @@ export function HomeRoute(handle: Handle) {
 						<em>all your agents can share</em>
 					</h1>
 					<p data-rise style={{ '--rise': '1' }} class="landing-hero-sub">
-						It&apos;s like your own npm and GitHub that any of your agents can
-						use.
+						It&apos;s like your own personal npm and GitHub that all of your
+						agents can use.
 					</p>
 					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}
 					<div data-rise style={{ '--rise': '2' }} class="landing-hero-actions">
