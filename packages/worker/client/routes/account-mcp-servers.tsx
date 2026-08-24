@@ -32,7 +32,10 @@ import {
 	recordBodyCss,
 	recordCellClamp,
 } from '#client/routes/record-table.tsx'
-import { closeOnboardingMcpOAuthPopupIfOpened } from '#client/mcp-oauth-popup.ts'
+import {
+	clearOnboardingMcpOAuthReturnCookie,
+	closeOnboardingMcpOAuthPopupIfOpened,
+} from '#client/mcp-oauth-popup.ts'
 import {
 	colors,
 	radius,
@@ -215,7 +218,9 @@ export function AccountMcpServersRoute(handle: Handle) {
 	const deleteServerCheck = createDoubleCheck(handle)
 	let oauthResultConsumed = false
 	if (typeof document !== 'undefined') {
-		closeOnboardingMcpOAuthPopupIfOpened()
+		if (!closeOnboardingMcpOAuthPopupIfOpened()) {
+			clearOnboardingMcpOAuthReturnCookie()
+		}
 	}
 
 	const primaryButtonCss = getPillButtonCss({ size: 'sm' })

@@ -192,6 +192,7 @@ export function OnboardingRoute(handle: Handle) {
 	let initializedStep = false
 	let appliedInitialHash = false
 	let awaitingMcpConnection = false
+	let oauthReturnError: string | null = null
 	// Panel entrances only play for real step changes, never on the first
 	// paint — the page-open choreography belongs to the head's data-rise.
 	let panelAnimationArmed = false
@@ -440,7 +441,14 @@ export function OnboardingRoute(handle: Handle) {
 		handle.signal.addEventListener('abort', () =>
 			window.removeEventListener('hashchange', handleHashChange),
 		)
-		listenForOnboardingMcpOAuthDone(() => {
+		listenForOnboardingMcpOAuthDone((outcome) => {
+			if (outcome.auth === 'error' && outcome.reason) {
+				oauthReturnError = outcome.reason
+				awaitingMcpConnection = false
+				handle.update()
+			} else if (outcome.auth === 'success') {
+				oauthReturnError = null
+			}
 			void refreshOnboardingAfterInstall()
 		}, handle.signal)
 	}
@@ -735,7 +743,9 @@ export function OnboardingRoute(handle: Handle) {
 									exampleInstalled={hasInstalledOnboardingExample(
 										exampleListings,
 									)}
-									oauthError={readOnboardingMcpOAuthError(handle)}
+									oauthError={
+										oauthReturnError ?? readOnboardingMcpOAuthError(handle)
+									}
 									onNext={() => selectStep(3)}
 								/>
 								<aside

@@ -28,10 +28,10 @@ test('origin rejections include CIMD details when present and leave unrelated er
 	expect(enrichMcpOAuthProviderError('Invalid state.', oauth)).toBe(
 		'Invalid state.',
 	)
-	expect(
-		enrichMcpOAuthProviderError(
-			'Supported sites required. Your account is not currently associated with a supported site.',
-			oauth,
-		),
-	).toContain('Jira or Confluence Cloud site')
+	const atlassian = enrichMcpOAuthProviderError(
+		'Supported sites required. Your account is not currently associated with a supported site.',
+		oauth,
+	)
+	expect(atlassian).toContain('Supported sites required.')
+	expect(atlassian).toContain('Jira or Confluence Cloud site')
 })

@@ -329,9 +329,10 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	expect(onboardingLocation.pathname).toBe('/onboarding')
 	expect(onboardingLocation.hash).toBe('#connect-mcp')
 	expect(onboardingLocation.searchParams.get('auth')).toBe('success')
-	expect(onboardingReturnResponse.headers.get('Set-Cookie')).toContain(
-		'kody_mcp_oauth_return=',
-	)
+	const onboardingSetCookie =
+		onboardingReturnResponse.headers.get('Set-Cookie') ?? ''
+	expect(onboardingSetCookie).toContain('kody_mcp_oauth_return=;')
+	expect(onboardingSetCookie).toContain('Max-Age=0')
 
 	expect(mockModule.handleOAuthCallback).toHaveBeenCalledWith({
 		url: 'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=xyz',

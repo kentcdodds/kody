@@ -4,30 +4,36 @@ import {
 	mcpOAuthPopupName,
 	mcpOAuthReturnCookie,
 	mcpOAuthReturnOnboarding,
+	readMcpOAuthDoneMessage,
+	type McpOAuthDoneMessage,
 } from '#universal/mcp-oauth-return.ts'
 
 export { mcpOAuthMessageType }
 
 function isOnboardingMcpOAuthPopup() {
-	if (typeof window === 'undefined') return false
-	if (window.name === mcpOAuthPopupName) return true
-	return Boolean(window.opener && !window.opener.closed)
+	return typeof window !== 'undefined' && window.name === mcpOAuthPopupName
 }
 
-function publishOnboardingMcpOAuthDone() {
+function readAuthOutcomeFromLocation(): Omit<McpOAuthDoneMessage, 'type'> {
+	const params = new URLSearchParams(window.location.search)
+	return {
+		auth: params.get('auth'),
+		reason: params.get('reason'),
+		server: params.get('server'),
+	}
+}
+
+function publishOnboardingMcpOAuthDone(outcome: McpOAuthDoneMessage) {
 	try {
 		const channel = new BroadcastChannel(mcpOAuthChannelName)
-		channel.postMessage({ type: mcpOAuthMessageType })
+		channel.postMessage(outcome)
 		channel.close()
 	} catch {
 		// BroadcastChannel is missing in some embeds; postMessage still runs.
 	}
 	if (typeof window === 'undefined') return
 	if (!window.opener || window.opener.closed) return
-	window.opener.postMessage(
-		{ type: mcpOAuthMessageType },
-		window.location.origin,
-	)
+	window.opener.postMessage(outcome, window.location.origin)
 }
 
 /**
@@ -50,25 +56,40 @@ export function openOnboardingMcpOAuthPopup(authUrl: string) {
 	}
 }
 
+/** Drop the onboarding return marker so a later account authorize stays put. */
+export function clearOnboardingMcpOAuthReturnCookie() {
+	document.cookie = mcpOAuthReturnCookie({
+		value: '',
+		secure: window.location.protocol === 'https:',
+	})
+}
+
 /**
  * Close the authorize popup after callback. Always notify the opener (or
- * any same-origin tab) so Step 2 can flip to Connected without a refresh.
+ * any same-origin tab) so Step 2 can flip to Connected or show the error.
  */
 export function closeOnboardingMcpOAuthPopupIfOpened() {
 	if (!isOnboardingMcpOAuthPopup()) return false
-	publishOnboardingMcpOAuthDone()
+	publishOnboardingMcpOAuthDone({
+		type: mcpOAuthMessageType,
+		...readAuthOutcomeFromLocation(),
+	})
 	window.close()
 	return true
 }
 
 export function listenForOnboardingMcpOAuthDone(
-	onDone: () => void,
+	onDone: (outcome: McpOAuthDoneMessage) => void,
 	signal: AbortSignal,
 ) {
+	function handleData(data: unknown) {
+		const outcome = readMcpOAuthDoneMessage(data)
+		if (!outcome) return
+		onDone(outcome)
+	}
 	function onMessage(event: MessageEvent) {
 		if (event.origin !== window.location.origin) return
-		if (event.data?.type !== mcpOAuthMessageType) return
-		onDone()
+		handleData(event.data)
 	}
 	window.addEventListener('message', onMessage, { signal })
 	try {
@@ -76,8 +97,7 @@ export function listenForOnboardingMcpOAuthDone(
 		channel.addEventListener(
 			'message',
 			(event) => {
-				if (event.data?.type !== mcpOAuthMessageType) return
-				onDone()
+				handleData(event.data)
 			},
 			{ signal },
 		)

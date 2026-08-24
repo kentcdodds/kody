@@ -1,10 +1,12 @@
 import { expect, test } from 'vitest'
 import {
 	mcpOAuthChannelName,
+	mcpOAuthMessageType,
 	mcpOAuthPopupName,
 	mcpOAuthReturnCookie,
 	mcpOAuthReturnCookieName,
 	mcpOAuthReturnOnboarding,
+	readMcpOAuthDoneMessage,
 	readMcpOAuthReturnCookie,
 } from './mcp-oauth-return.ts'
 
@@ -24,4 +26,21 @@ test('readMcpOAuthReturnCookie finds the onboarding return marker', () => {
 	)
 	expect(mcpOAuthPopupName).toBe('kody-mcp-oauth')
 	expect(mcpOAuthChannelName).toBe('kody-mcp-oauth')
+	expect(mcpOAuthReturnCookie({ value: '', secure: false })).toContain(
+		'kody_mcp_oauth_return=;',
+	)
+	expect(
+		readMcpOAuthDoneMessage({
+			type: mcpOAuthMessageType,
+			auth: 'error',
+			reason: 'Supported sites required.',
+			server: 'atlassian',
+		}),
+	).toEqual({
+		type: mcpOAuthMessageType,
+		auth: 'error',
+		reason: 'Supported sites required.',
+		server: 'atlassian',
+	})
+	expect(readMcpOAuthDoneMessage({ type: 'other' })).toBeNull()
 })
