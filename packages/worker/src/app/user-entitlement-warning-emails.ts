@@ -22,7 +22,9 @@ import {
  * One email per crossing of 80% or 100% on a specific entitlement. Staying
  * over the same threshold does not mail again. A later drop below that
  * threshold, then a climb back over it, is a new instance. Same-hour
- * crossings of the same kind still batch into one mail.
+ * crossings of the same kind still batch into one mail. Stock claims expire
+ * after 30 days unless an hourly sweep still sees the user over and refreshes
+ * the TTL; daily `*_per_day` claims stay scoped to the UTC day.
  */
 
 export const userEntitlementWarningKvKeyPrefix = 'entitlement-warning-user:v3'
@@ -36,6 +38,7 @@ export const userEntitlementReachedThreshold = 1
 const warningSweepConcurrency = 4
 const dailyClaimLookbackDays = 3
 export const userEntitlementWarningDailyClaimTtlSeconds = 36 * 60 * 60
+export const userEntitlementWarningStockClaimTtlSeconds = 30 * 24 * 60 * 60
 
 const stockPackageThreshold = Math.ceil(planLimits.free.maxSavedPackages * 0.8)
 const stockSecretThreshold = Math.ceil(planLimits.free.maxSecrets * 0.8)
@@ -232,6 +235,15 @@ async function warnOneUserIfNeeded(input: {
 		kind: 'approaching',
 		warnings: approaching,
 		now: input.now,
+	})
+	await refreshStillOverStockClaims({
+		kv,
+		userId: input.user.stable_user_id,
+		now: input.now,
+		reached,
+		approaching,
+		newReached,
+		newApproaching,
 	})
 	if (newApproaching.length === 0 && newReached.length === 0) return null
 
@@ -433,6 +445,59 @@ async function claimWarningInstance(input: {
 	}
 }
 
+async function refreshStillOverStockClaims(input: {
+	kv: KVNamespace
+	userId: string
+	now: Date
+	reached: Array<WarningResource>
+	approaching: Array<WarningResource>
+	newReached: Array<WarningResource>
+	newApproaching: Array<WarningResource>
+}) {
+	const claimedAt = String(input.now.getTime())
+	const newReachedResources = new Set(
+		input.newReached.map((warning) => warning.resource),
+	)
+	const newApproachingResources = new Set(
+		input.newApproaching.map((warning) => warning.resource),
+	)
+	for (const warning of input.reached) {
+		if (isDailyEntitlementResource(warning.resource)) continue
+		if (newReachedResources.has(warning.resource)) continue
+		await putWarningClaim({
+			kv: input.kv,
+			userId: input.userId,
+			kind: 'reached',
+			resource: warning.resource,
+			now: input.now,
+			claimedAt,
+		})
+		// Keep the paired approaching claim alive so sitting at a cap does
+		// not let the 80% claim expire and rematch on a later drop to 80–99%.
+		if (newApproachingResources.has(warning.resource)) continue
+		await putWarningClaim({
+			kv: input.kv,
+			userId: input.userId,
+			kind: 'approaching',
+			resource: warning.resource,
+			now: input.now,
+			claimedAt,
+		})
+	}
+	for (const warning of input.approaching) {
+		if (isDailyEntitlementResource(warning.resource)) continue
+		if (newApproachingResources.has(warning.resource)) continue
+		await putWarningClaim({
+			kv: input.kv,
+			userId: input.userId,
+			kind: 'approaching',
+			resource: warning.resource,
+			now: input.now,
+			claimedAt,
+		})
+	}
+}
+
 function warningInstanceKey(input: {
 	userId: string
 	kind: UserEntitlementWarningKind
@@ -458,13 +523,18 @@ async function putWarningClaim(input: {
 	claimedAt: string
 }) {
 	const key = warningInstanceKey(input)
-	if (isDailyEntitlementResource(input.resource)) {
-		await input.kv.put(key, input.claimedAt, {
-			expirationTtl: userEntitlementWarningDailyClaimTtlSeconds,
+	const expirationTtl = isDailyEntitlementResource(input.resource)
+		? userEntitlementWarningDailyClaimTtlSeconds
+		: userEntitlementWarningStockClaimTtlSeconds
+	try {
+		await input.kv.put(key, input.claimedAt, { expirationTtl })
+	} catch (error) {
+		console.warn('user-entitlement-warning-claim-failed', {
+			kind: input.kind,
+			resource: input.resource,
+			error,
 		})
-		return
 	}
-	await input.kv.put(key, input.claimedAt)
 }
 
 async function deleteWarningClaims(input: {

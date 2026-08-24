@@ -189,13 +189,16 @@ the same cold zero-init path):
   back over it is a new instance. Same-hour crossings of the same kind still
   batch into one mail. KV prefix `entitlement-warning-user:v3` stores
   `{prefix}:{userId}:{kind}:{resource}` for stock limits, and appends the UTC
-  day for `*_per_day` counters so a midnight reset is a new instance. A
-  remaining same-day `v2` daily key for the same user and kind counts as a claim
-  for every resource currently in that bucket. A leftover `v2` key from an
-  earlier UTC day claims stock limits only, so a `*_per_day` midnight reset can
-  still mail. Candidate selection is the top ~80 accounts by current-month event
-  count plus high package/secret stock, capped at 100. Operator fleet mail is
-  unchanged and still runs if user warning sends fail.
+  day for `*_per_day` counters so a midnight reset is a new instance. Stock
+  claims use a 30-day TTL that the hourly sweep refreshes while the user is
+  still over, so sitting at a cap stays silent and a later drop out of the
+  candidate set can rematch after the claim expires. Daily claims keep a 36-hour
+  TTL. A remaining same-day `v2` daily key for the same user and kind counts as
+  a claim for every resource currently in that bucket. A leftover `v2` key from
+  an earlier UTC day claims stock limits only, so a `*_per_day` midnight reset
+  can still mail. Candidate selection is the top ~80 accounts by current-month
+  event count plus high package/secret stock, capped at 100. Operator fleet mail
+  is unchanged and still runs if user warning sends fail.
 
 `readEntitlementResourceUsage` counts only APP_DB-backed row resources (`repos`,
 `saved_packages`, `secrets`). Resources whose authority is elsewhere

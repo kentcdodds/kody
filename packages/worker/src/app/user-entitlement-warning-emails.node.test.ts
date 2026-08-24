@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import type { EntitlementResource } from '#universal/plans.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const readAdminEntitlementConsumption = vi.fn()
 
@@ -19,8 +20,10 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 
 const {
 	sendUserEntitlementWarningEmails,
+	userEntitlementWarningDailyClaimTtlSeconds,
 	userEntitlementWarningDailyKvKey,
 	userEntitlementWarningKvKey,
+	userEntitlementWarningStockClaimTtlSeconds,
 } = await import('#app/user-entitlement-warning-emails.ts')
 
 const stableUserId = 'a'.repeat(64)
@@ -40,13 +43,24 @@ function consumptionRow(input: {
 
 function createKv() {
 	const store = new Map<string, string>()
+	const puts: Array<{
+		key: string
+		value: string
+		options?: { expirationTtl?: number }
+	}> = []
 	return {
 		store,
+		puts,
 		kv: {
 			async get(key: string) {
 				return store.get(key) ?? null
 			},
-			async put(key: string, value: string) {
+			async put(
+				key: string,
+				value: string,
+				options?: { expirationTtl?: number },
+			) {
+				puts.push({ key, value, options })
 				store.set(key, value)
 			},
 			async delete(key: string) {
@@ -115,7 +129,7 @@ function instanceKey(
 
 test('user entitlement warnings mail once per entitlement crossing, not once per day', async () => {
 	const now = new Date('2026-07-25T12:00:00.000Z')
-	const { kv, store } = createKv()
+	const { kv, store, puts } = createKv()
 	readAdminEntitlementConsumption.mockResolvedValue([
 		consumptionRow({
 			resource: 'execute_calls_per_day',
@@ -376,6 +390,16 @@ test('user entitlement warnings mail once per entitlement crossing, not once per
 	expect(store.get(instanceKey('approaching', 'saved_packages'))).toBe(
 		String(jumpedToLimit.getTime()),
 	)
+	expect(
+		puts.find((put) => put.key === instanceKey('reached', 'saved_packages'))
+			?.options?.expirationTtl,
+	).toBe(userEntitlementWarningStockClaimTtlSeconds)
+	expect(
+		puts.find(
+			(put) =>
+				put.key === instanceKey('approaching', 'execute_calls_per_day', now),
+		)?.options?.expirationTtl,
+	).toBe(userEntitlementWarningDailyClaimTtlSeconds)
 
 	readAdminEntitlementConsumption.mockResolvedValue([
 		consumptionRow({
@@ -478,6 +502,150 @@ test('user entitlement warnings absorb leftover daily claims without mailing aga
 	})
 	expect(nextDay).toEqual({ status: 'no_warnings' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+})
+
+test('stock entitlement warning claims refresh TTL while the user stays over', async () => {
+	const now = new Date('2026-08-24T02:00:00.000Z')
+	const { kv, store, puts } = createKv()
+	readAdminEntitlementConsumption.mockResolvedValue([
+		consumptionRow({
+			resource: 'saved_packages',
+			label: 'saved packages',
+			current: 10,
+			limit: 10,
+		}),
+		consumptionRow({
+			resource: 'execute_calls_per_day',
+			label: 'execute calls per day',
+			current: 250,
+			limit: 250,
+		}),
+	])
+	sendCloudflareEmail.mockClear()
+	const env = createEnv({
+		users: [
+			{
+				stable_user_id: stableUserId,
+				email: 'maciek@example.com',
+				plan: 'free',
+				stripe_plan: null,
+			},
+		],
+		kv,
+	})
+
+	const first = await sendUserEntitlementWarningEmails({ env, now })
+	expect(first).toEqual({
+		status: 'notified',
+		emailedUsers: 1,
+		emailsSent: 1,
+		warnedResources: 2,
+	})
+	expect(store.get(instanceKey('reached', 'saved_packages'))).toBe(
+		String(now.getTime()),
+	)
+
+	sendCloudflareEmail.mockClear()
+	puts.length = 0
+	const later = new Date('2026-08-24T03:00:00.000Z')
+	const stillOver = await sendUserEntitlementWarningEmails({
+		env,
+		now: later,
+	})
+	expect(stillOver).toEqual({ status: 'no_warnings' })
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+	expect(store.get(instanceKey('reached', 'saved_packages'))).toBe(
+		String(later.getTime()),
+	)
+	expect(store.get(instanceKey('approaching', 'saved_packages'))).toBe(
+		String(later.getTime()),
+	)
+	expect(
+		puts.filter((put) => put.key === instanceKey('reached', 'saved_packages')),
+	).toEqual([
+		{
+			key: instanceKey('reached', 'saved_packages'),
+			value: String(later.getTime()),
+			options: {
+				expirationTtl: userEntitlementWarningStockClaimTtlSeconds,
+			},
+		},
+	])
+	expect(puts.some((put) => put.key.includes('execute_calls_per_day'))).toBe(
+		false,
+	)
+})
+
+test('user entitlement warning claim write failures do not abort the sweep', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const otherUserId = 'b'.repeat(64)
+	const { kv, store } = createKv()
+	const originalPut = kv.put.bind(kv)
+	kv.put = async (
+		key: string,
+		value: string,
+		options?: { expirationTtl?: number },
+	) => {
+		if (key.includes(stableUserId) && key.includes('saved_packages')) {
+			throw new Error('kv write failed')
+		}
+		return originalPut(key, value, options)
+	}
+	readAdminEntitlementConsumption.mockResolvedValue([
+		consumptionRow({
+			resource: 'saved_packages',
+			label: 'saved packages',
+			current: 10,
+			limit: 10,
+		}),
+	])
+	sendCloudflareEmail.mockClear()
+	const env = createEnv({
+		users: [
+			{
+				stable_user_id: stableUserId,
+				email: 'first@example.com',
+				plan: 'free',
+				stripe_plan: null,
+			},
+			{
+				stable_user_id: otherUserId,
+				email: 'second@example.com',
+				plan: 'free',
+				stripe_plan: null,
+			},
+		],
+		kv,
+	})
+
+	const result = await sendUserEntitlementWarningEmails({
+		env,
+		now: new Date('2026-08-24T04:00:00.000Z'),
+	})
+	expect(result).toEqual({
+		status: 'notified',
+		emailedUsers: 2,
+		emailsSent: 2,
+		warnedResources: 2,
+	})
+	expect(sendCloudflareEmail).toHaveBeenCalledTimes(2)
+	expect(store.get(instanceKey('reached', 'saved_packages'))).toBeUndefined()
+	expect(
+		store.get(
+			userEntitlementWarningKvKey({
+				userId: otherUserId,
+				kind: 'reached',
+				resource: 'saved_packages',
+			}),
+		),
+	).toBe(String(new Date('2026-08-24T04:00:00.000Z').getTime()))
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'user-entitlement-warning-claim-failed',
+		expect.objectContaining({
+			kind: 'reached',
+			resource: 'saved_packages',
+		}),
+	)
 })
 
 test('user entitlement warnings skip when KV or transactional email is missing', async () => {
