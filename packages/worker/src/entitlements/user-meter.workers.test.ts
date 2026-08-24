@@ -228,7 +228,7 @@ test('prefixless migration evidence is epoch-scoped, atomic, and identity-free',
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
 	)
-	await runInDurableObject(stub, async (_instance: UserMeter, state) => {
+	await runInDurableObject(stub, async (instance: UserMeter, state) => {
 		const columns = state.storage.sql
 			.exec<{ name: string }>(
 				`PRAGMA table_info(package_invoke_prefixless_evidence)`,
@@ -253,6 +253,15 @@ test('prefixless migration evidence is epoch-scoped, atomic, and identity-free',
 			`DELETE FROM package_invoke_prefixless_evidence WHERE epoch = ?`,
 			packageInvokePrefixlessEvidenceEpoch,
 		)
+		await expect(
+			instance.recordPackageInvokePrefixless({
+				epoch: packageInvokePrefixlessEvidenceEpoch,
+				surface: 'execute',
+			}),
+		).rejects.toThrow('epoch is not initialized')
+		await expect(
+			instance.readPackageInvokePrefixless({ epoch: 'previous-deployment' }),
+		).rejects.toThrow('epoch is unsupported')
 	})
 
 	expect(
@@ -263,15 +272,6 @@ test('prefixless migration evidence is epoch-scoped, atomic, and identity-free',
 		outcome: 'epoch_missing',
 		epoch: packageInvokePrefixlessEvidenceEpoch,
 	})
-	await expect(
-		meter.recordPackageInvokePrefixless({
-			epoch: packageInvokePrefixlessEvidenceEpoch,
-			surface: 'execute',
-		}),
-	).rejects.toThrow('epoch is not initialized')
-	await expect(
-		meter.readPackageInvokePrefixless({ epoch: 'previous-deployment' }),
-	).rejects.toThrow('epoch is unsupported')
 }, 30_000)
 
 /**
@@ -592,6 +592,10 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 	})
 	expect(await meterA.exportCounters({})).toEqual({
 		counters: [],
+		packageInvokePrefixlessEvidence: {
+			epoch: packageInvokePrefixlessEvidenceEpoch,
+			counts: { execute: 0, package: 0, job: 0, app: 0 },
+		},
 		storageBytesState: null,
 		deletionState: {
 			deletingAt: null,
@@ -698,6 +702,10 @@ test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore
 	expect(readDuringPurge).toEqual({ outcome: 'needs_bootstrap' })
 	expect(exportDuringPurge).toEqual({
 		counters: [],
+		packageInvokePrefixlessEvidence: {
+			epoch: packageInvokePrefixlessEvidenceEpoch,
+			counts: { execute: 0, package: 0, job: 0, app: 0 },
+		},
 		storageBytesState: null,
 		deletionState: {
 			deletingAt: null,
@@ -895,6 +903,10 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 	})
 	expect(await meter.exportCounters({})).toEqual({
 		counters: [],
+		packageInvokePrefixlessEvidence: {
+			epoch: packageInvokePrefixlessEvidenceEpoch,
+			counts: { execute: 0, package: 0, job: 0, app: 0 },
+		},
 		storageBytesState: null,
 		deletionState: {
 			deletingAt: null,
@@ -1089,6 +1101,10 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	})
 	expect(await meterA.exportCounters({})).toEqual({
 		counters: [],
+		packageInvokePrefixlessEvidence: {
+			epoch: packageInvokePrefixlessEvidenceEpoch,
+			counts: { execute: 0, package: 0, job: 0, app: 0 },
+		},
 		storageBytesState: null,
 		deletionState: {
 			deletingAt: '2026-08-01 10:00:00',

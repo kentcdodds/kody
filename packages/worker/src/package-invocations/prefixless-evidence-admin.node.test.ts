@@ -19,7 +19,11 @@ test('admin evidence aggregates paged UserMeters without identifiers and marks a
 	const insert = sqlite.prepare(
 		`INSERT INTO users (id, stable_user_id, deleting_at) VALUES (?, ?, ?)`,
 	)
-	for (let index = 1; index <= packageInvokeEvidenceAdminPageSize + 1; index++) {
+	for (
+		let index = 1;
+		index <= packageInvokeEvidenceAdminPageSize + 1;
+		index++
+	) {
 		insert.run(index, `private-user-${index}`, null)
 	}
 	insert.run(1000, 'deleting-private-user', '2026-08-24T00:00:00.000Z')

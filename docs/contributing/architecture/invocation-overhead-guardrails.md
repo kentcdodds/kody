@@ -22,9 +22,9 @@ call, not about what user code does inside the call.
   round trips, eager run-record writes, synchronous vector or KV lookups)
   belongs in the keyed mode or off the hot path (`waitUntil`).
 - **Deprecated prefixless `packages.invoke` is the temporary migration
-  exception.** A valid `@owner/package[/export]` call awaits one exact
-  per-user `UserMeter` RPC before canonicalization and fails closed if it cannot
-  be recorded. Canonical `kody:@owner/package[/export]` calls do not enter that
+  exception.** A valid `@owner/package[/export]` call awaits one exact per-user
+  `UserMeter` RPC before canonicalization and fails closed if it cannot be
+  recorded. Canonical `kody:@owner/package[/export]` calls do not enter that
   branch and incur no new Durable Object RPC. Remove the exception with the
   prefixless parser after the migration gate in
   [the prefix runbook](../package-invoke-prefix-migration.md).

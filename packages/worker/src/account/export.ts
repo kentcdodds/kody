@@ -1858,8 +1858,7 @@ export async function readAccountExportSection(input: {
 		return {
 			section: input.section,
 			items: page.counters,
-			packageInvokePrefixlessEvidence:
-				page.packageInvokePrefixlessEvidence,
+			packageInvokePrefixlessEvidence: page.packageInvokePrefixlessEvidence,
 			storageBytesState: page.storageBytesState,
 			deletionState: page.deletionState,
 			truncated: page.truncated,

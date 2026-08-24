@@ -28,5 +28,7 @@ export function emptyPackageInvokePrefixlessEvidenceCounts(): PackageInvokePrefi
 export function isPackageInvokeEvidenceSurface(
 	value: string,
 ): value is PackageInvokeEvidenceSurface {
-	return (packageInvokeEvidenceSurfaces as ReadonlyArray<string>).includes(value)
+	return (packageInvokeEvidenceSurfaces as ReadonlyArray<string>).includes(
+		value,
+	)
 }

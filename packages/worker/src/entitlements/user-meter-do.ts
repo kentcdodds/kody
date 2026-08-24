@@ -210,12 +210,10 @@ export type UserMeterPackageInvokePrefixlessEvidenceReadResult =
 export type UserMeterExportResult = {
 	counters: Array<UserMeterCounterRow>
 	/** Current deployment's content-free migration counters, first page only. */
-	packageInvokePrefixlessEvidence:
-		| {
-				epoch: string
-				counts: PackageInvokePrefixlessEvidenceCounts
-		  }
-		| null
+	packageInvokePrefixlessEvidence: {
+		epoch: string
+		counts: PackageInvokePrefixlessEvidenceCounts
+	} | null
 	/**
 	 * Authoritative storage-byte state. Emitted only on the first export page
 	 * (`startAfter` absent); subsequent pages return `null` so paged consumers

@@ -17,8 +17,8 @@ which retains responsibility for the removed object-only API.
 
 Analytics Engine remains the weighted liveness and volume source. Every
 string-first call is classified before parser canonicalization and written to
-the dedicated production dataset `kody_package_invoke_specifier_events`
-(preview uses `kody_package_invoke_specifier_events_preview`).
+the dedicated production dataset `kody_package_invoke_specifier_events` (preview
+uses `kody_package_invoke_specifier_events_preview`).
 
 The schema is deliberately coarse:
 
@@ -60,12 +60,11 @@ caller's existing per-user `UserMeter` Durable Object:
   identity. A possible conservative overcount blocks cleanup; it cannot create
   false absence.
 
-The current epoch is
-`packages-invoke-prefixless-2026-08-24-v1`. The UserMeter schema initializes a
-zero row for that exact epoch when the deployed class is reached. A reset
-requires changing the epoch, bumping the UserMeter schema version, and
-deploying both together. Readers request only the compiled epoch, so counters
-from an earlier deployment can never mix with the current gate.
+The current epoch is `packages-invoke-prefixless-2026-08-24-v1`. The UserMeter
+schema initializes a zero row for that exact epoch when the deployed class is
+reached. A reset requires changing the epoch, bumping the UserMeter schema
+version, and deploying both together. Readers request only the compiled epoch,
+so counters from an earlier deployment can never mix with the current gate.
 
 ## Admin exact aggregate
 
@@ -130,8 +129,8 @@ Engine for each surface:
 
 A missing required surface (`execute`, `package`, or `job`) fails the Analytics
 Engine liveness gate. A missing `app` row means no observed app liveness and
-does not block cleanup unless app traffic appears in another readout. Follow
-the ordered fixed one-hour ledger anchored at `2026-08-23T21:22:35Z` from
+does not block cleanup unless app traffic appears in another readout. Follow the
+ordered fixed one-hour ledger anchored at `2026-08-23T21:22:35Z` from
 [cleanup issue #1702](https://github.com/kentcdodds/kody/issues/1702). Windows
 before the exact-counter production deploy remain reporting-only because the
 counter did not cover them.
@@ -145,8 +144,8 @@ Remove prefixless runtime support only when all of the following hold:
   zero for every surface.
 - `execute`, `package`, and `job` each independently accumulate at least `300`
   retained calls and `30` retained `kody_prefixed` calls from ordered,
-  post-exact-deploy, unsampled Analytics Engine surface-windows. Weighted
-  values remain liveness/volume reporting only.
+  post-exact-deploy, unsampled Analytics Engine surface-windows. Weighted values
+  remain liveness/volume reporting only.
 - `app` is observed in every readout. If it has any traffic, it must meet the
   same retained `300` / `30` liveness thresholds independently while its exact
   prefixless total remains zero.

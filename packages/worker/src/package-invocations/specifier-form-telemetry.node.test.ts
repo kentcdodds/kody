@@ -174,16 +174,18 @@ test('runtime helpers record exact prefixless evidence for every valid runtime s
 	}
 	expect(writeDataPoint).toHaveBeenCalledTimes(4)
 	expect(recordPackageInvokePrefixless).toHaveBeenCalledTimes(4)
-	expect(recordPackageInvokePrefixless.mock.calls.map(([input]) => input)).toEqual(
+	expect(
+		recordPackageInvokePrefixless.mock.calls.map(([input]) => input),
+	).toEqual(
 		toolsBySurface.map(({ surface }) => ({
 			epoch: packageInvokePrefixlessEvidenceEpoch,
 			surface,
 		})),
 	)
 	expect(JSON.stringify(writeDataPoint.mock.calls)).not.toContain('private')
-	expect(JSON.stringify(recordPackageInvokePrefixless.mock.calls)).not.toContain(
-		'private',
-	)
+	expect(
+		JSON.stringify(recordPackageInvokePrefixless.mock.calls),
+	).not.toContain('private')
 })
 
 test('prefixed calls add no UserMeter RPC and prefixless evidence failure is fail-closed without retry', async () => {

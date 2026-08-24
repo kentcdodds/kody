@@ -199,10 +199,10 @@ returned rows have `_sample_interval = 1`.
 Temporary exact absence evidence lives in the existing per-user `UserMeter`
 Durable Object. A validated prefixless call synchronously increments one
 deployment-epoch row by coarse surface (`execute`, `package`, `job`, or `app`)
-before canonicalization; recording failure fails that deprecated call.
-Canonical `kody:` calls perform no new Durable Object RPC. The admin-only
-aggregate pages the relevant user population and reports only global totals and
-accounting completeness. See
+before canonicalization; recording failure fails that deprecated call. Canonical
+`kody:` calls perform no new Durable Object RPC. The admin-only aggregate pages
+the relevant user population and reports only global totals and accounting
+completeness. See
 [the migration runbook](../package-invoke-prefix-migration.md).
 
 ## Agent package popularity (MCP instructions hint)

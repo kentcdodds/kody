@@ -11,13 +11,10 @@ vi.mock('#app/permissions-server.ts', () => ({
 		mocks.requireUserWithRole(...args),
 }))
 
-vi.mock(
-	'#worker/package-invocations/prefixless-evidence-admin.ts',
-	() => ({
-		loadPackageInvokePrefixlessEvidenceAggregate: (...args: Array<unknown>) =>
-			mocks.loadAggregate(...args),
-	}),
-)
+vi.mock('#worker/package-invocations/prefixless-evidence-admin.ts', () => ({
+	loadPackageInvokePrefixlessEvidenceAggregate: (...args: Array<unknown>) =>
+		mocks.loadAggregate(...args),
+}))
 
 test('package-invoke evidence endpoint is admin-only and returns only aggregate data', async () => {
 	const env = {} as Env
