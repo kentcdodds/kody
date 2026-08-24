@@ -2688,8 +2688,7 @@ test('runBundledModuleWithRegistry leaves claimed job transient failures running
 		.mockResolvedValue(true)
 	const { createStorageEstimateReadError } =
 		await import('#worker/storage-estimate-error.ts')
-	const { d1NetworkConnectionLostMessage } =
-		await import('#worker/d1-retry.ts')
+	const { d1NetworkConnectionLostMessage } = await import('#worker/d1-retry.ts')
 	const estimateError = createStorageEstimateReadError({
 		storageId: 'package:estimate-target',
 		attempts: 4,
