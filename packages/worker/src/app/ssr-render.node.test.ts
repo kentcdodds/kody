@@ -768,6 +768,11 @@ test('renderAppPage embeds the homepage factory-loop conversation teaser', async
 	expect(html).toContain('/guides/how-kody-works')
 	expect(html).toContain('Read the walkthrough')
 	expect(html).not.toContain('See the whole loop')
+	// Pause is on the teaser so the header does not shift when playback starts.
+	expect(html).toContain('class="landing-loop-toggle"')
+	expect(html).toMatch(
+		/<button[^>]*class="landing-loop-toggle"[^>]*>\s*Pause\s*<\/button>/,
+	)
 })
 
 test('signup social buttons are icon-only with accessible names', async () => {

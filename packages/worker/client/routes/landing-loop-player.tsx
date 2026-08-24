@@ -15,6 +15,7 @@ import {
 	landingLoopChatScrollShouldExplore,
 	landingLoopHoldMs,
 	landingLoopTeaser,
+	landingLoopToggleLabel,
 	waitLandingLoopHold,
 	type LandingLoopBeat,
 	type LandingLoopSceneGroup,
@@ -29,8 +30,10 @@ type LoopLineRenderer = (line: TranscriptLine) => RemixNode
  * it does not block first paint or the first beats. Hover/focus (fine
  * pointers) and explore (scroll up or open a tool) pause the autoplay;
  * Play scrolls to the latest beat and continues. The last beat pauses
- * and offers Restart instead of looping. The phone act is a later scene
- * in the same card — a time skip plus device chrome, not a reset.
+ * and offers Restart instead of looping. Pause is painted on the SSR
+ * teaser so the header does not shift when the transcript chunk loads.
+ * The phone act is a later scene in the same card — a time skip plus
+ * device chrome, not a reset.
  */
 export function LandingLoopPlayer(handle: Handle) {
 	let beats: Array<LandingLoopBeat> | null = null
@@ -43,6 +46,7 @@ export function LandingLoopPlayer(handle: Handle) {
 	let chatUserDriven = false
 	let playGeneration = 0
 	let loadStarted = false
+	let heldPause = false
 	let loopEl: HTMLElement | null = null
 	let visibleInViewport = true
 
@@ -92,6 +96,7 @@ export function LandingLoopPlayer(handle: Handle) {
 				beatCount: beats.length,
 				reducedMotion,
 			})
+			if (heldPause) player.pause()
 			syncVisibility()
 			if (!reducedMotion && !player.isPaused()) startPlayLoop()
 			handle.update()
@@ -150,6 +155,7 @@ export function LandingLoopPlayer(handle: Handle) {
 	}
 
 	function playFromHere() {
+		heldPause = false
 		chatUserDriven = false
 		player.play()
 		handle.update()
@@ -160,6 +166,7 @@ export function LandingLoopPlayer(handle: Handle) {
 	}
 
 	function restartFromStart() {
+		heldPause = false
 		chatUserDriven = false
 		player.restart()
 		handle.update()
@@ -194,9 +201,15 @@ export function LandingLoopPlayer(handle: Handle) {
 		const loaded = visibleBeats != null && lineRenderer != null
 		const ended = loaded && player.isEnded() && !reducedMotion
 		const userPaused =
-			loaded && player.pauseReasons().some((reason) => reason !== 'offscreen')
+			heldPause ||
+			player.pauseReasons().some((reason) => reason !== 'offscreen')
 		const paused = userPaused && !reducedMotion
-		const playing = loaded && !player.isPaused() && !reducedMotion
+		const playing = loaded && !player.isPaused() && !reducedMotion && !heldPause
+		const toggleLabel = landingLoopToggleLabel({
+			reducedMotion,
+			ended,
+			paused,
+		})
 
 		return (
 			<div
@@ -266,22 +279,23 @@ export function LandingLoopPlayer(handle: Handle) {
 										? 'Playing'
 										: 'The loop'}
 					</p>
-					{reducedMotion || !loaded || !(playing || paused) ? null : (
+					{toggleLabel ? (
 						<button
 							type="button"
 							class="landing-loop-toggle"
 							mix={on('click', () => {
 								if (player.isEnded()) restartFromStart()
-								else if (player.isPaused()) playFromHere()
+								else if (player.isPaused() || heldPause) playFromHere()
 								else {
+									heldPause = true
 									player.pause()
 									handle.update()
 								}
 							})}
 						>
-							{ended ? 'Restart' : paused ? 'Play' : 'Pause'}
+							{toggleLabel}
 						</button>
-					)}
+					) : null}
 				</div>
 				<div
 					class="landing-loop-chat"
