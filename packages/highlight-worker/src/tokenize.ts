@@ -89,6 +89,7 @@ const langAliases: Record<string, string> = {
 	bash: 'shellscript',
 	shell: 'shellscript',
 	zsh: 'shellscript',
+	console: 'shellscript',
 	golang: 'go',
 	env: 'dotenv',
 }
