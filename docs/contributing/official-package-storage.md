@@ -203,6 +203,28 @@ authors to `packages.invoke` so "the package's own runtime" does the I/O.
 
 This is the status quo, not a coherent product option.
 
+### 5. Ban all person-account references to `@kody/*`
+
+Ad hoc execute cannot statically import or `packages.invoke` a platform scope.
+Person-owned packages already cannot
+([0035](./decisions/0035-platform-packages-execute-only.md)). `@kody/*` becomes
+catalog + fork source only. Platform-account packages may still compose with
+each other.
+
+- One rule for agents: you never run `kody:@kody/…` in a user account. Fork,
+  then use `kody:@you/…`. The packageStorage question disappears — there is no
+  live official declaring package in the caller's runtime.
+- Pays the cost 0014 existed to avoid. Official helper bugfixes do not reach
+  execute callers; every `@kody/github` / `@kody/notion` / `@kody/google` smoke
+  test in the provider guides needs a fork first. Live 2026-08-24 `get-viewer`
+  without a fork goes away.
+- Reverses the 1691 product call (official packages are usable without forking
+  for caller secrets) and the remaining execute-live half of 0014. 0035 already
+  removed the durable-product half.
+- Coherent if the operator wants official listings to be a catalog, not a
+  runtime. Incoherent as a fix _for this storage question alone_: option 1
+  closes the persist hole and keeps stateless helpers live.
+
 ### Not an option: shared platform bucket
 
 A single `(platformUserId, package:{officialId})` store shared by every caller
@@ -212,10 +234,11 @@ dropping `userId` from the DO name.
 
 ## What a later decision must change
 
-Pick 1 or 3 (fail closed on platform-owned declaring packages, invoke included)
-**or** pick 2 (grant the official UUID on static import too, and teach
-inventory/UI about ownerless `package:` buckets). Then garden
-`docs/use/packages.md`, 0014's grant paragraph, the
+Pick 1 or 3 (fail closed on platform-owned declaring packages, invoke included),
+pick 2 (grant the official UUID on static import too, and teach inventory/UI
+about ownerless `package:` buckets), **or** pick 5 (ban person-account
+`kody:@kody/…` in execute as well as saved packages). Then garden
+`docs/use/packages.md`, provider guides, 0014's grant paragraph, the
 `collectPackageStorageGrantIds` comment, official listing READMEs, and the
 access-denied invoke hint so they tell the same story.
 
