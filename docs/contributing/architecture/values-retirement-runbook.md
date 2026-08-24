@@ -1,8 +1,30 @@
 # Values retirement runbook
 
 Executable plan for retiring the values primitive (ADR
-[0022](../decisions/0022-retire-values-primitive.md)). Landing this document
-does **not** change production behavior.
+[0022](../decisions/0022-retire-values-primitive.md)).
+
+## Status
+
+Phase 0 is in the repo: ADR 0022, this runbook, the per-affected-user
+retiring-primitives notice, and the `values` coding guide. `value_set` still
+writes. `primitives.yaml` still lists `values` until the removal PR.
+
+Phase 1 already has the onboarding dismiss column
+(`users.onboarding_checklist_dismissed_at`, migration `0015`) and the
+`retiringPrimitiveNotices` registry
+(`packages/worker/src/mcp/instructions/retiring-primitives.ts`). Agents for
+users who still have at least one non-expired stored value get a one-line notice
+that points at `coding_guide_get({ guide: "values" })`. Users with no value rows
+(or only an empty / expired bucket) do not see the section. The
+preview-manual-test worked example writes that onboarding column
+([preview-manual-testing.md](../preview-manual-testing.md)), not
+`/account/values.json`.
+
+There is no `values-writes` feature flag.
+`packages/worker/universal/feature-flags/registry.ts` does not define that key.
+Do not describe or flip a registry flag that is not there. A later write freeze
+adds a flag to that registry (or another explicit gate) in the same change that
+starts rejecting writes.
 
 Intended cadence is about thirty days. Removal waits for the gates in
 [Retirement criterion](#retirement-criterion), the same metrics-then-cut pattern
@@ -29,19 +51,13 @@ the unused buckets with the tables.
 
 ## Agent channel
 
-Do not dump this runbook into always-on MCP instructions. Agents for users who
-still have at least one non-expired stored value get a one-line notice from
-`retiringPrimitiveNotices`
-(`packages/worker/src/mcp/instructions/retiring-primitives.ts`) that points at
-`coding_guide_get({ guide: "values" })`. Users with no value rows (or only an
-empty / expired bucket) do not see the section. The destination map and steps
-live in `docs/guides/values.md`. An empty active-notice set omits the section,
-so later retirements reuse the same slot: add a notice plus a coding guide and a
-cheap EXISTS gate, then delete both when the primitive is gone.
+Do not dump this runbook into always-on MCP instructions. The destination map
+and steps live in `docs/guides/values.md`. An empty active-notice set omits the
+section, so later retirements reuse the same slot: add a notice plus a coding
+guide and a cheap EXISTS gate, then delete both when the primitive is gone.
 
-This PR ships that per-affected-user notice and guide. Later phase-1 work still
-moves onboarding dismiss, bearer-token-like rows, write-result hints, and
-insights counts.
+Remaining phase-1 work still moves bearer-token-like rows, write-result hints,
+and insights counts.
 
 ## Production inventory (baseline, 2026-08-19)
 
@@ -72,34 +88,32 @@ GROUP BY vb.scope;
 
 ## Phases
 
-### Phase 0 — Record the decision and tell agents (this change)
+### Phase 0 — Record the decision and tell agents
 
-Ship ADR 0022, this runbook, the per-affected-user retiring-primitives
+In the repo: ADR 0022, this runbook, the per-affected-user retiring-primitives
 instruction notice, and the `values` coding guide. `value_set` still writes.
 `primitives.yaml` still lists `values` until the removal PR.
 
-### Phase 1 — Stop the bleeding (week 1)
+### Phase 1 — Stop the bleeding
 
 Goal: the platform stops _creating_ reasons to use values, and the one security
 smell leaves the readable store.
 
-1. **Move onboarding dismiss off values.** Add
-   `users.onboarding_checklist_dismissed_at` (nullable ISO timestamp). Migration
-   `0015` backfills from `onboardingChecklistDismissed` and deletes those rows.
-   Reads copy any leftover value onto the column; writes go to the column only.
-   The operator account plus six others drop off values without a user action.
+1. **Onboarding dismiss lives on the users column.**
+   `users.onboarding_checklist_dismissed_at` is a nullable ISO timestamp.
+   Migration `0015` backfills from `onboardingChecklistDismissed` and deletes
+   those rows. Reads copy any leftover value onto the column; writes go to the
+   column only. `POST /onboarding/checklist-dismiss.json` is the account JSON
+   route (`packages/worker/universal/routes.ts`).
 2. **Move bearer-token-like rows to a secret** (operator). Values entity detail
    prints the stored string; bearer tokens must not live there.
-3. **Tell agents in server instructions.** Keep a `retiringPrimitiveNotices`
-   registry (`packages/worker/src/mcp/instructions/retiring-primitives.ts`).
-   Each notice is one line plus `coding_guide_get({ guide })`, and
+3. **Tell agents in server instructions.** Keep the `retiringPrimitiveNotices`
+   registry. Each notice is one line plus `coding_guide_get({ guide })`, and
    `loadActiveRetiringNoticeIds` includes the values notice only when that user
    still has a live stored value. The destination map lives in
    `docs/guides/values.md` (id `values`), not in the always-on instruction
-   string. An empty active set omits the section. Future retirements add a
-   notice + guide + EXISTS gate the same way. Also stop recommending values in
-   execute tool text, capability descriptions, usage docs, and project-intent's
-   isolation list.
+   string. Also stop recommending values in execute tool text, capability
+   descriptions, usage docs, and project-intent's isolation list.
 4. **Deprecate writes in place.** `value_set` and `POST /account/values.json`
    still succeed. Responses and the account UI include a deprecation notice and
    a destination hint (table above). Do not add a new MCP capability for this —
@@ -108,9 +122,10 @@ smell leaves the readable store.
 5. **Watch the fleet.** Admin insights totals gain `value_entries` and
    `users_with_value_rows` (counts only, no names or contents). That is the
    phase dashboard; remove the counters with the primitive.
-6. **Retire values as the preview-manual-test example.** Point
-   `docs/contributing/preview-manual-testing.md` and the skill at a surface that
-   will survive (memories, secrets metadata, or the new onboarding column).
+6. **Preview-manual-test uses a surviving surface.**
+   `docs/contributing/preview-manual-testing.md` and the skill post
+   `/onboarding/checklist-dismiss.json` (the onboarding column), not
+   `/account/values.json`.
 
 Do **not** auto-upsert memories from values (verify-first). Do **not** hide
 `value_get` / `value_list` / search-entity `value` yet — agents need them to
@@ -141,7 +156,7 @@ rows.
 | Package detector / setting keys     | 1 (5 rows)   | owning package storage or repo               |
 | OAuth client ids and leftover URLs  | 9 (1–5 each) | integrations; leftover URLs → owning package |
 | Profile blob                        | 1            | memory                                       |
-| Only `onboardingChecklistDismissed` | 5            | done in phase 1 after onboarding backfill    |
+| Only `onboardingChecklistDismissed` | 5            | onboarding column (`0015`)                   |
 | Empty bucket                        | 1            | dropped with the tables                      |
 
 Outreach is a short Discord note plus the account-page banner: values go away;
@@ -155,16 +170,21 @@ a new domain.
 
 ### Phase 3 — Write freeze (week 4)
 
-Add registry flag `values-writes` (default enabled). When disabled:
+The feature-flag registry has no `values-writes` key. When this phase starts,
+add an explicit gate in the same PR — a new registry flag or an equivalent
+code-reviewed switch — then use it to reject writes. Until that change lands,
+`value_set` and account save keep succeeding.
+
+Once a gate exists and is disabled:
 
 - `value_set` and account save reject **new names** with a destination hint
 - updates to existing names stay allowed for a few days, then reject too
 - `value_get` / `value_list` / `value_delete` / search / account read stay
 - hide `/account/values/new`
 
-Flip the flag globally when phase 2 outreach has landed and insights show
+Flip the gate globally when phase 2 outreach has landed and insights show
 new-name writes near zero. Per-user override on if someone still needs a last
-update. Rollback is re-enabling the flag.
+update. Rollback is re-enabling the gate.
 
 ### Phase 4 — Remove the primitive
 
@@ -189,11 +209,12 @@ Re-run the inventory queries. Remove the primitive when **all** hold for the
 2. `onboardingChecklistDismissed` has **zero** rows (backfill + cutoff done).
 3. Admin insights `value_entries` is **unchanged or falling**, and `value_set` /
    account-save writes are **near zero** (no new names; leftover updates only
-   from the freeze overrides).
+   from freeze overrides).
 4. Every remaining row has a recorded destination (migrated, exported, or owner
    notified). Empty buckets do not block.
-5. `values-writes` has been globally off for those seven days without a
-   rollback.
+5. Writes have been rejected by an explicit gate (see Phase 3) for those seven
+   days without a rollback. Do not treat a non-existent `values-writes` registry
+   flag as that gate.
 
 If (3) or (5) fails, keep reads and reset the seven-day window. Do not delete on
 day 30 because the calendar said so.
@@ -208,6 +229,8 @@ day 30 because the calendar said so.
   `packageStorage().get` / `set`, or a package export.
 - Do not query other users' stored contents during this migration. Counts,
   names, and scopes are enough.
+- Do not document a `values-writes` feature flag unless it is in
+  `packages/worker/universal/feature-flags/registry.ts`.
 
 ## Related
 

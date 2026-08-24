@@ -42,6 +42,7 @@ top; do not move the status page into the main worker. The status worker
 duplicates a small amount of email-sending code rather than importing from
 `packages/worker` (import boundaries keep it dependency-free). Incident records
 are probe-derived only; manually posted incident narratives are a possible later
-addition, not built now. `status.heykody.dev` stays a worker custom domain for
-legacy links and 308s to `status.kody.codes` except `/health`, which remains
-reachable on the legacy host if the canonical hostname is not attached yet.
+addition, not built now. `status.kody.codes` is the attached canonical hostname.
+`status.heykody.dev` is a legacy worker custom domain: GET/HEAD other than
+`/health` 308 to `status.kody.codes`. `/health` stays reachable on the legacy
+host as a fallback when the canonical hostname returns Cloudflare 1016.

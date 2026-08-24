@@ -1,172 +1,109 @@
 # Jobs worker migration runbook
 
-Production already owns `JobManager`, `JOBS_DB`, and the five-minute cron on
+Production owns `JobManager`, `JOBS_DB`, and the five-minute cron on
 `kody-jobs`. `transferred_classes` is a one-shot cutover; do not invent a second
-transfer or add `deleted_classes` for `JobManager`. This page records ownership,
-the cutover order that landed, and rollback constraints.
+transfer or add `deleted_classes` for `JobManager`.
 
-Operational runbook for the dedicated jobs worker (`packages/jobs-worker`, ADR
+This page records current ownership and the invariants later deploys must keep.
+The cutover that landed is in the
+[historical appendix](#historical-appendix-2026-jobs-cutover). Do not follow
+that appendix as a live playbook.
+
+Operational notes for the dedicated jobs worker (`packages/jobs-worker`, ADR
 [0016 — Mono-worker extraction](../decisions/0016-mono-worker-extraction.md)).
-It covers two coordinated moves that already landed:
+Later deploys follow `.github/workflows/deploy.yml`. Do not re-run the Durable
+Object transfer or a bounded D1 copy against live production.
 
-1. **Durable Object transfer** — the `JobManager` class moves from the deployed
-   `kody-production` script to the `kody-jobs` script via a Wrangler
-   `transferred_classes` script migration, keeping every existing per-user DO's
-   storage and alarm.
-2. **Bounded D1 data migration** — the `jobs` and `archived_job_artifacts` rows
-   move from `APP_DB` (`kody-db`) into the dedicated `kody-jobs` D1 database.
+## Ownership
 
-The cutover already landed. Later deploys follow `.github/workflows/deploy.yml`.
-Keep the invariants below when changing jobs bindings or `JOBS_DB`. Do not
-re-run the transfer or the bounded D1 copy against live production.
+| Concern                                                          | Owner                                                              |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `JobManager` Durable Object (per-user scheduling state + alarms) | `kody-jobs`                                                        |
+| `jobs` / `archived_job_artifacts` tables                         | `JOBS_DB` on `kody-jobs`                                           |
+| Five-minute cron and `kody-scheduled-dispatch` queues            | `kody-jobs`                                                        |
+| Job execution / scheduled lanes (`JobsHost`)                     | `kody` (origin); `kody-jobs` calls back through the `HOST` binding |
+| Job reads and writes from origin / MCP / dashboards              | `JOBS` service binding (`JobsService`) on origin                   |
+
+`APP_DB` has no `jobs` or `archived_job_artifacts` tables. The schema change is
+`packages/worker/migrations/0010-drop-jobs-tables.sql`. Live authority is
+`JOBS_DB`. Do not query those names on `APP_DB`, do not copy them "one more
+time," and do not treat 0010 as a waiting follow-up.
 
 ## Invariants
 
-- `JobManager` DO storage (per-user scheduling state and alarms) must survive
-  the move byte-for-byte. `transferred_classes` guarantees this: the namespace
-  and all object storage move to the receiving script; object IDs derived from
-  user IDs stay valid.
-- The `jobs` / `archived_job_artifacts` tables must not take writes while rows
-  are copied (brief write pause; the pause window only blocks job
-  create/update/delete and job finalization, not the rest of the app).
-- After the read/write flip, `APP_DB` retains a cold copy of those tables only
-  until migration `packages/worker/migrations/0010-drop-jobs-tables.sql` drops
-  them (step 8). Live authority is `JOBS_DB` on the jobs worker.
-
-## Cloudflare mechanics (why the order below)
-
-- A `transferred_classes` migration lives in the **receiving** worker's config
-  (`packages/jobs-worker/wrangler.jsonc`, tag `v1`,
+- Do not add another `transferred_classes` row for `JobManager`. The `v1`
+  transfer already applied on production `kody-jobs`
+  (`packages/jobs-worker/wrangler.jsonc`,
   `{ from: "JobManager", from_script: "kody-production", to: "JobManager" }`).
-  It is applied when the receiving worker (`kody-jobs`) is deployed.
-- At the moment the transfer is applied, the source script (`kody-production`)
-  must still have the `JobManager` class deployed and no in-flight deploy
-  removing it. After the transfer, the namespace belongs to `kody-jobs`; a
-  subsequent deploy of `kody-production` without the class (and without its DO
-  binding) is valid and must **not** include a `deleted_classes` migration for
-  `JobManager` (that would destroy the transferred data; the deploy-guardrails
-  check enforces an allowlist for any `deleted_classes`).
+- Never add `deleted_classes` for `JobManager`. That destroys transferred
+  per-user DO storage. Deploy guardrails allowlist any `deleted_classes` edit.
+- Object IDs derived from user IDs stay valid because the namespace moved with
+  the class. Do not recreate `JobManager` on origin.
 - Service bindings are by deployed worker name (wrangler appends the
   environment, so the production main worker script is `kody-production`):
-  `kody-production` reaches the jobs worker through the `JOBS` binding
-  (`JobsService` entrypoint) and `kody-jobs` calls back into `kody-production`
-  through the `HOST` binding (`JobsHost` entrypoint). The jobs worker must exist
-  before a main-worker deploy that declares the `JOBS` binding can validate,
-  hence the deploy ordering in `.github/workflows/deploy.yml` (jobs worker
-  deploys first).
+  origin reaches the jobs worker through `JOBS` (`JobsService`) and `kody-jobs`
+  calls back through `HOST` (`JobsHost`). The jobs worker must exist before a
+  main-worker deploy that declares the `JOBS` binding can validate, which is why
+  `.github/workflows/deploy.yml` deploys the jobs worker first when jobs sources
+  change.
+- Shared D1 besides `JOBS_DB` is unchanged: jobs data does not live on `APP_DB`.
 
-## Cutover steps (production)
+## Later deploys
 
-Prerequisites: Cloudflare API token with D1 + Workers permissions, `jq`,
-repository checkout at the release SHA.
+The merged main-branch deploy workflow encodes deploy order. Merge and watch; do
+not pause job writes, export `APP_DB`, or apply a jobs-table drop by hand.
 
-### 1. Provision resources (idempotent)
+When jobs sources change, the workflow deploys `kody-jobs` before origin so the
+`JOBS` binding validates. That order is binding hygiene. It does not re-apply
+the `v1` transfer and it does not copy rows.
 
-```sh
-node tools/ci/jobs-worker-resources.ts ensure --env production \
-	--out-config packages/jobs-worker/wrangler-production.generated.json
-```
+Remix/blog/UI-only uploads skip jobs.
 
-Creates (when missing) the `kody-jobs` D1 database and the
-`kody-scheduled-dispatch` / `kody-scheduled-dispatch-dlq` queues, and writes the
-generated deploy config. The deploy workflow runs the same command.
+Verify cron ticks (jobs-worker logs show `scheduled` invocations every 5 minutes
+and queue consumption on `kody-scheduled-dispatch`), a due job running
+end-to-end (`JobManager` alarm → `HOST.runDueJobsForUser` → a run in the user's
+activity), and dashboards (`/account/jobs`) plus MCP `jobs_*` listing `JOBS_DB`
+rows.
 
-### 2. Apply the jobs D1 schema
+## Historical appendix: 2026 jobs cutover
 
-```sh
-node ./wrangler-env.ts d1 migrations apply JOBS_DB --remote \
-	--config packages/jobs-worker/wrangler-production.generated.json
-```
+**Do not re-run these steps.** They describe the one-shot Durable Object
+transfer and bounded D1 copy that already landed. Re-exporting `jobs` /
+`archived_job_artifacts` from `APP_DB` fails: those tables are gone. Re-issuing
+`transferred_classes` or adding `deleted_classes` for `JobManager` destroys or
+orphans production scheduling state.
 
-### 3. Pause job writes briefly
+Two coordinated moves landed:
 
-Enable the platform kill switch for job mutation surfaces (or schedule the
-window during a quiet period). The copy in step 4 is bounded: both tables are
-small (thousands of rows, not millions), so the pause is minutes. Dual-write is
-intentionally not used — the tables have single-writer semantics through the
-jobs service and a short pause is simpler and safer than reconciling concurrent
-writers.
+1. **Durable Object transfer** — `JobManager` moved from the deployed
+   `kody-production` script to the `kody-jobs` script via `transferred_classes`,
+   keeping every existing per-user DO's storage and alarm.
+2. **Bounded D1 data migration** — `jobs` and `archived_job_artifacts` rows
+   copied from `APP_DB` (`kody-db`) into `JOBS_DB` during a brief write pause
+   (job create/update/delete and finalization only). Dual-write was not used.
+   After the read/write flip, `APP_DB` held a cold copy until
+   `packages/worker/migrations/0010-drop-jobs-tables.sql` removed those tables.
 
-### 4. Copy `jobs` and `archived_job_artifacts` from `APP_DB`
+Coordinated order that landed:
 
-Export via the Cloudflare D1 export API (SQL dump limited to the two tables),
-then import into `kody-jobs`:
+1. Provision `kody-jobs` D1 and the `kody-scheduled-dispatch` /
+   `kody-scheduled-dispatch-dlq` queues (`tools/ci/jobs-worker-resources.ts`).
+2. Apply the jobs D1 schema on `JOBS_DB`.
+3. Pause job mutation surfaces (or wait for a quiet window).
+4. Export the two tables from `APP_DB` and import into `JOBS_DB`; verify row
+   counts.
+5. Deploy `kody-jobs` (applied `v1` `transferred_classes`).
+6. Deploy origin without a `JobManager` export, jobs cron, or scheduled-queue
+   consumer — the read/write flip onto the `JOBS` binding.
+7. Unpause; confirm cron, a due job, and dashboard/MCP lists.
+8. After every remaining `APP_DB` reader of those tables was ported to the JOBS
+   service contract, apply 0010. That migration is in the schema. There is no
+   cold copy left on `APP_DB`.
 
-```sh
-# Export from APP_DB (kody-db)
-curl -sX POST \
-	"https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/d1/database/$APP_DB_ID/export" \
-	-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-	-H 'Content-Type: application/json' \
-	-d '{"output_format":"polling","dump_options":{"tables":["jobs","archived_job_artifacts"],"no_schema":true}}' \
-	| jq -r '.result.at_bookmark' # poll until signed_url is returned, then download
-
-# Import into kody-jobs (schema already applied in step 2)
-npx wrangler d1 execute kody-jobs --remote --file ./jobs-export.sql
-```
-
-Verify row counts match on both sides:
-
-```sh
-npx wrangler d1 execute kody-db --remote \
-	--command 'SELECT COUNT(*) FROM jobs; SELECT COUNT(*) FROM archived_job_artifacts;'
-npx wrangler d1 execute kody-jobs --remote \
-	--command 'SELECT COUNT(*) FROM jobs; SELECT COUNT(*) FROM archived_job_artifacts;'
-```
-
-### 5. Deploy the jobs worker (applies the DO transfer)
-
-Deploy `kody-jobs` **before** deploying a main-worker build that removes the
-`JobManager` class:
-
-```sh
-npm run build # not required for the jobs worker; it deploys from source
-npx wrangler deploy --config packages/jobs-worker/wrangler-production.generated.json --env production
-```
-
-This deploy applies migration tag `v1` (`transferred_classes`), taking ownership
-of every existing `JobManager` object and its storage. Healthcheck:
-`curl https://<jobs-worker-host>/health`.
-
-### 6. Deploy the main worker (flips reads/writes to the jobs worker)
-
-Deploy the main-worker (`kody-production`) build from this PR. Its config has no
-`JobManager` class export, no jobs cron, and no scheduled-queue consumer; all
-job reads and writes go through the `JOBS` service binding, so this deploy is
-the read/write flip. The regular deploy workflow performs steps 1, 2, 5, and 6
-in this order automatically.
-
-### 7. Unpause and verify
-
-- Clear the kill switch from step 3.
-- Confirm cron ticks: jobs-worker logs show `scheduled` invocations every 5
-  minutes and queue consumption on `kody-scheduled-dispatch`.
-- Confirm a due job runs end-to-end (JobManager alarm → `HOST.runDueJobsForUser`
-  → run recorded in the user's activity).
-- Confirm dashboards (`/account/jobs`) and MCP `jobs_*` capabilities list the
-  copied rows.
-
-### 8. Drop the old tables from `APP_DB`
-
-After every main-worker surface that still read the old `APP_DB` copies
-(entitlement counts and storage bytes, DR exporter inventory, admin insights,
-account export / user-inventory storage ids, account data targets) is ported to
-the JOBS service contract, migration
-`packages/worker/migrations/0010-drop-jobs-tables.sql` drops `jobs` and
-`archived_job_artifacts` from `APP_DB` (applied by the regular deploy pipeline's
-D1 migration step).
-
-## Rollback
-
-- Before step 5: nothing to roll back (resources are additive).
-- After step 5 but before step 6: redeploy the previous main-worker build; the
-  DO namespace already belongs to `kody-jobs`, and the previous build reaches it
-  only if it still has a `JOB_MANAGER` binding — so prefer rolling forward. A
-  reverse `transferred_classes` migration (`from_script: "kody-jobs"`) is the
-  escape hatch to hand the namespace back.
-- After step 6: roll forward. The old `APP_DB` tables still hold the pre-pause
-  rows as a cold copy until step 8, so data loss is bounded to the cutover
-  window in the worst case.
+Recovery after the transfer applied: roll _forward_ on `kody-jobs`. A reverse
+`transferred_classes` migration (`from_script: "kody-jobs"`) was the escape
+hatch to hand the namespace back; do not use it under incident pressure. There
+is no `APP_DB` rollback copy.
 
 Leftovers that wait on a later drop follow
 [Cleanup after migrations](../cleanup-after-migrations.md).
