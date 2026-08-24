@@ -11,9 +11,13 @@ import {
 } from '#client/sentry-client.ts'
 import { AppRoot, APP_ROOT_ENTRY_ID } from './app-root.tsx'
 import { ensureCryptoRandomUUID } from './ensure-crypto-random-uuid.ts'
+import { ensureNavigationApi } from './ensure-navigation-api.ts'
 
 // Remix frame ids call crypto.randomUUID(); some in-app browsers omit it.
 ensureCryptoRandomUUID()
+// Remix `run()` calls window.navigation.updateCurrentEntry; Safari < 26.2 and
+// iOS in-app browsers omit the Navigation API entirely.
+ensureNavigationApi()
 initSentryClient(document)
 
 const clientRegistry: Record<string, typeof AppRoot> = {
