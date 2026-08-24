@@ -147,9 +147,9 @@ When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
 
 1. Ensure each secret exists (see `guide: "connect_secret"` /
    `guide: "secret_backed_integration"`).
-2. Self-authored packages, live official platform packages, and community forks
-   adopted with `community_fork_adopt` after a real source review get automatic
-   read/use access to user secrets (host approval still applies; `secret_set` /
+2. Self-authored packages and community forks adopted with
+   `community_fork_adopt` after a real source review get automatic read/use
+   access to user secrets (host approval still applies; `secret_set` /
    `secret_delete` still need an `allowed_packages` grant). After save/publish,
    read `pending_secret_package_approvals` from the tool result — it is non-null
    only for unadopted community forks.

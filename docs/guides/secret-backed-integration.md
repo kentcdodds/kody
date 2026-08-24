@@ -72,11 +72,10 @@ smoke-test path is unclear.
      browser-side forms, or hosted callbacks.
 8. After the package is saved or published, finish package secret approval when
    needed.
-   - Self-authored packages, live official platform packages, and adopted forks
-     (`community_fork_adopt`) get automatic read/use access to user secrets
-     (mutations still need an `allowed_packages` grant); unadopted community
-     forks still need explicit package approval for read/use, or adoption after
-     review.
+   - Self-authored packages and adopted forks (`community_fork_adopt`) get
+     automatic read/use access to user secrets (mutations still need an
+     `allowed_packages` grant); unadopted community forks still need explicit
+     package approval for read/use, or adoption after review.
    - An ad hoc `execute` smoke test does **not** grant package secret access for
      community forks.
    - Read `pending_secret_package_approvals` from `package_save` or

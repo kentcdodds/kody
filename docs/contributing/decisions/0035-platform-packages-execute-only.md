@@ -1,6 +1,6 @@
 # 0035 — Platform packages are execute-only
 
-- **Status:** accepted
+- **Status:** superseded by [0036](./0036-platform-packages-fork-only.md)
 - **Date:** 2026-08-23
 
 ## Context
@@ -42,6 +42,3 @@ or durability own a fork.
 
 Revisit only if official packages grow a real versioning contract that 0001 and
 0031 still refuse.
-
-Open question, not decided here: whose `packageStorage()` a live `@kody/*`
-invoke reaches. See [official package storage](../official-package-storage.md).

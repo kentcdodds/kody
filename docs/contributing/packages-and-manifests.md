@@ -161,11 +161,8 @@ A saved package is a repo with the package extension activated. Four concepts:
   `createPackageStorageKodyTools` in `#worker/storage-runner.ts`). Cross-user
   access stays structurally impossible because storage runner names are keyed by
   the calling user's id. Platform-owned **dependencies** are excluded from that
-  grant set (`platformOwned`), so a static import of `@kody/*` fails closed.
-  `packages.invoke` of the same official package grants the run's
-  `packageContext.packageId` (the official UUID) and writes a caller-local
-  bucket. That split is an open product question — see
-  [official package storage](./official-package-storage.md).
+  grant set (`platformOwned`). Person accounts must `community_fork` an official
+  package before importing or invoking it (decision 0036).
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data
@@ -216,10 +213,10 @@ export; if both are present, the specifier export wins. The second argument
 accepts `exportName`, `params`, `idempotencyKey`, and `topic`; unknown keys
 fail.
 
-Exact scoped resolution avoids bare-id collisions. A `kody:@kody/...` target
-resolves the public live package owned by the platform account, while a
-`kody:@person/...` target resolves that caller-owned person package. Foreign
-person accounts remain unresolvable.
+Exact scoped resolution avoids bare-id collisions. A `kody:@person/...` target
+resolves that caller-owned person package. A `kody:@kody/...` target is not
+runnable in a person account (`community_fork` first). Foreign person accounts
+remain unresolvable. Platform-account packages may compose with each other.
 
 This path deliberately does not rewrite to a static `kody:@...` import during
 bundle construction. It resolves the target saved package and export at call
@@ -252,10 +249,9 @@ the underlying bracketed code, for example `[invocation_failed] ...`.
 Security and loop safeguards:
 
 - Person-scope resolution is same-user only; package code cannot invoke another
-  person's saved package. Public platform scopes resolve live from **ad hoc
-  execute** and from other platform-account packages. Person-owned packages must
-  fork an official package into the caller's scope before importing or invoking
-  it (decision 0035).
+  person's saved package. Person accounts must fork an official package into the
+  caller's scope before importing or invoking it (decision 0036).
+  Platform-account packages may compose with each other.
 - `packages.invoke` requires package runtime context or authenticated execute
   context. Static `kody:@...` imports remain library imports in the caller's
   runtime; use keyless `packages.invoke` when execute or a package job needs to

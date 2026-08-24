@@ -3,8 +3,9 @@
 ## Status
 
 Superseded by [0035](./0035-platform-packages-execute-only.md) for saved
-person-account packages. Ad hoc execute may still resolve platform scopes live
-as described here.
+person-account packages, then fully by
+[0036](./0036-platform-packages-fork-only.md) (person accounts do not run
+official platform packages, including ad hoc execute).
 
 ## Context
 
@@ -46,10 +47,7 @@ Bounds that keep the isolation story intact:
 - **Stateless in the caller.** Platform-owned dependency ids are excluded from
   `packageStorage()` grants (`platformOwned` on `BundleArtifactDependency`), so
   `packageStorage()` inside live platform code fails closed instead of opening a
-  misleading empty caller-local bucket. That skip applies to static-import
-  **dependencies**. `packages.invoke` of a platform package grants the official
-  UUID as the run's own `packageContext` — an open question, not settled here
-  (see [official package storage](../official-package-storage.md)).
+  misleading empty caller-local bucket.
 - **Static imports only.** The dynamic-import hydration lane persists rebuilt
   artifacts under the caller's identity, which must never happen for
   platform-owned sources; dynamic `import("kody:@kody/…")` reports a teaching
