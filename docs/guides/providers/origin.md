@@ -80,8 +80,10 @@ name `originAppPrivateKey` is what `@kentcdodds/origin` reads by default.
 
 ### Save the readable ids
 
-App id and installation id are not secrets. Store them in memories or
-`packageStorage()`:
+App id and installation id are not secrets. Put them in a memory (`meta_memory_verify`,
+then `meta_memory_upsert`) so later agents can recall them. Inside a saved
+package, `packageStorage()` holds that package's own knobs — do not call it from
+bare `execute`.
 
 - `originAppId` — the `app_01…` id (JWT `iss` and `kid`)
 - `originInstallationId` — the `i_01…` id used to mint installation tokens
@@ -91,16 +93,17 @@ when more than one installation is available.
 
 ## Smoke test
 
-After the secret and ids exist, run this in `execute`. It signs an app JWT and
-reads the zero-cost rate-limit endpoint:
+After the secret exists, run this in `execute` with params
+`{ "appId": "app_01…" }`. It signs an app JWT and reads the zero-cost
+rate-limit endpoint:
 
 ```ts
-import { kody, packageStorage } from 'kody:runtime'
+import { kody } from 'kody:runtime'
 
-export default async function main() {
-	const appId = (await packageStorage().get('originAppId')) as string | null
+export default async function main(input: { appId?: string } = {}) {
+	const appId = input.appId
 	if (!appId) {
-		throw new Error('Store originAppId in packageStorage or a memory first.')
+		throw new Error('Pass appId in execute params.')
 	}
 	const now = Math.floor(Date.now() / 1000)
 	const { jwt } = await kody.secret_jwt_sign({
