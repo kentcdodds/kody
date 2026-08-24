@@ -285,6 +285,14 @@ preferred explicit scheme:
 Prefixless calls remain publishable during this measurement phase; 0007 is a
 migration aid, not a publish-rejection rule.
 
+Fleet scan `803e3045` found zero executable-source findings, drift, or errors.
+Its three remaining findings are private README-only documentation debt: those
+files cannot execute and therefore do not block later runtime/type prefix
+removal once the telemetry gate passes. Keep the debt tracked as an aggregate
+owner-action count without publishing private package ids or owners. Codemod
+0007 and the local prefixless teaching error remain the repair path for those
+documents.
+
 ## Engine
 
 The engine entry point is `runPackageCodemodStep` in
