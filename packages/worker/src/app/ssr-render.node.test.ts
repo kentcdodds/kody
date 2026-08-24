@@ -1648,8 +1648,10 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 	expect(html).toContain('data-testid="community-detail-trusted-badge"')
 	expect(html).toContain('data-testid="community-readme"')
 	expect(html).toContain('data-testid="community-detail-install"')
+	expect(html).toContain('data-testid="community-detail-star"')
 	expect(html).not.toContain('One-click install')
 	expect(html).not.toContain('Fork with your agent')
+	expect(html).not.toContain('id="stars-title"')
 	const props = readAppRootProps(html)
 	expect(props.loaderData?.communityDetailShell).toMatchObject({
 		ok: true,

@@ -41,6 +41,7 @@ test('community detail head replaces Installed with Fork outdated when the listi
 		},
 		ownerProfilePublic: true,
 		loggedIn: true,
+		starredByViewer: false,
 		viewerFollowsOwner: false,
 		viewerIsOwner: false,
 		returnTo: '/community',
@@ -61,6 +62,7 @@ test('community detail head shows an Install pill when the viewer has not forked
 		listing: sampleListing,
 		ownerProfilePublic: true,
 		loggedIn: true,
+		starredByViewer: false,
 		viewerFollowsOwner: false,
 		viewerIsOwner: false,
 		returnTo: '/@kentcdodds/github-triage',
@@ -92,6 +94,7 @@ test('community detail Installed pill copies an adapt prompt', async () => {
 		},
 		ownerProfilePublic: true,
 		loggedIn: true,
+		starredByViewer: false,
 		viewerFollowsOwner: false,
 		viewerIsOwner: false,
 		returnTo: '/@kentcdodds/github-triage',
@@ -103,4 +106,59 @@ test('community detail Installed pill copies an adapt prompt', async () => {
 	expect(html).toContain('data-copy-prompt')
 	expect(html).toContain(agentPrompt)
 	expect(html).not.toContain('data-testid="community-detail-install"')
+})
+
+test('community detail title row shows an empty star next to the name', async () => {
+	const html = await renderCommunityDetailContentHtml({
+		listing: sampleListing,
+		ownerProfilePublic: true,
+		loggedIn: true,
+		starredByViewer: false,
+		viewerFollowsOwner: false,
+		viewerIsOwner: false,
+		returnTo: '/@kentcdodds/github-triage',
+		followError: null,
+	})
+
+	expect(html).toContain('data-testid="community-detail-star"')
+	expect(html).toContain('data-community-star')
+	expect(html).toContain('data-starred="false"')
+	expect(html).toContain('title="Star"')
+	expect(html.indexOf('data-testid="community-detail-star"')).toBeGreaterThan(
+		html.indexOf('<h1'),
+	)
+})
+
+test('community detail title star is filled when the viewer already starred', async () => {
+	const html = await renderCommunityDetailContentHtml({
+		listing: sampleListing,
+		ownerProfilePublic: true,
+		loggedIn: true,
+		starredByViewer: true,
+		viewerFollowsOwner: false,
+		viewerIsOwner: false,
+		returnTo: '/@kentcdodds/github-triage',
+		followError: null,
+	})
+
+	expect(html).toContain('data-starred="true"')
+	expect(html).toContain('title="Unstar"')
+	expect(html).toContain('fill="currentColor"')
+})
+
+test('logged-out title star is a login link', async () => {
+	const html = await renderCommunityDetailContentHtml({
+		listing: sampleListing,
+		ownerProfilePublic: true,
+		loggedIn: false,
+		starredByViewer: false,
+		viewerFollowsOwner: false,
+		viewerIsOwner: false,
+		returnTo: '/@kentcdodds/github-triage',
+		followError: null,
+	})
+
+	expect(html).toContain('data-testid="community-detail-star"')
+	expect(html).toContain('/login?redirectTo=%2F%40kentcdodds%2Fgithub-triage')
+	expect(html).not.toContain('data-starred=')
 })
