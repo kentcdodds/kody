@@ -500,6 +500,12 @@ function createEnv(
 			put: async () => undefined,
 			delete: async () => undefined,
 		},
+		USER_METER: {
+			idFromName: (name: string) => ({ name }),
+			get: () => ({
+				recordPackageInvokePrefixless: async () => ({ recorded: true }),
+			}),
+		},
 		...overrides,
 	} as unknown as Env
 }

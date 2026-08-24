@@ -1,11 +1,8 @@
 import { type RunRecordContext } from '#worker/run-records/types.ts'
+import { type PackageInvokeEvidenceSurface } from '#universal/package-invoke-prefixless-evidence.ts'
 
 export type PackageInvokeSpecifierForm = 'kody_prefixed' | 'prefixless'
-export type PackageInvokeTelemetrySurface =
-	| 'execute'
-	| 'package'
-	| 'job'
-	| 'app'
+export type PackageInvokeTelemetrySurface = PackageInvokeEvidenceSurface
 
 export type PackageInvokeSpecifierTelemetryEnv = {
 	PACKAGE_INVOKE_SPECIFIER_EVENTS?: AnalyticsEngineDataset

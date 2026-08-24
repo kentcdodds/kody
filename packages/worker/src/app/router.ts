@@ -35,6 +35,7 @@ import {
 	createAdminInsightsApiHandler,
 	createAdminInsightsHandler,
 } from '#app/handlers/admin-insights.ts'
+import { createAdminPackageInvokeEvidenceApiHandler } from '#app/handlers/admin-package-invoke-evidence.ts'
 import {
 	createAdminPlatformFeedbackApiHandler,
 	createAdminPlatformFeedbackHandler,
@@ -411,6 +412,8 @@ export function createAppRouter(env: Env) {
 			adminUserUsageApi: createAdminUserUsageApiHandler(env),
 			adminInsights: createAdminInsightsHandler(env),
 			adminInsightsApi: createAdminInsightsApiHandler(env),
+			adminPackageInvokeEvidenceApi:
+				createAdminPackageInvokeEvidenceApiHandler(env),
 			adminPlatformFeedback: createAdminPlatformFeedbackHandler(env),
 			adminPlatformFeedbackApi: createAdminPlatformFeedbackApiHandler(env),
 			adminSystemEmail: createAdminSystemEmailHandler(env),

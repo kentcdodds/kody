@@ -21,6 +21,13 @@ call, not about what user code does inside the call.
   platform overhead per call. Work that would push it beyond that (extra D1
   round trips, eager run-record writes, synchronous vector or KV lookups)
   belongs in the keyed mode or off the hot path (`waitUntil`).
+- **Deprecated prefixless `packages.invoke` is the temporary migration
+  exception.** A valid `@owner/package[/export]` call awaits one exact
+  per-user `UserMeter` RPC before canonicalization and fails closed if it cannot
+  be recorded. Canonical `kody:@owner/package[/export]` calls do not enter that
+  branch and incur no new Durable Object RPC. Remove the exception with the
+  prefixless parser after the migration gate in
+  [the prefix runbook](../package-invoke-prefix-migration.md).
 - **Keyed `packages.invoke`** deliberately pays for durability: a ledger claim,
   eager run records, and a bounded response snapshot for replay. That cost is
   the feature; it must never silently leak into the keyless mode. The ledger

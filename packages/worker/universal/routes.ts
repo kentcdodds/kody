@@ -115,6 +115,8 @@ export const routes = route({
 	adminUserUsageApi: '/admin/users/usage.json',
 	adminInsights: '/admin/insights',
 	adminInsightsApi: '/admin/insights.json',
+	adminPackageInvokeEvidenceApi:
+		'/admin/insights/package-invoke-prefixless-evidence.json',
 	adminPlatformFeedback: '/admin/platform-feedback',
 	adminPlatformFeedbackApi: '/admin/platform-feedback.json',
 	adminSystemEmail: '/admin/system-email',

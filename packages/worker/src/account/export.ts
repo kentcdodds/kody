@@ -202,6 +202,7 @@ function countUserMeterExportEntries(result: UserMeterExportResult): number {
 				result.deletionState.activeWriteLeaseCount
 	return (
 		result.counters.length +
+		(result.packageInvokePrefixlessEvidence == null ? 0 : 1) +
 		(result.storageBytesState == null ? 0 : 1) +
 		deletionStateCount
 	)
@@ -280,6 +281,8 @@ export type AccountExportSectionResult = {
 	 * `user_meter` page (`startAfter` absent); later pages set it to `null`.
 	 */
 	storageBytesState?: UserMeterExportResult['storageBytesState']
+	/** Content-free prefixless migration counters, first `user_meter` page only. */
+	packageInvokePrefixlessEvidence?: UserMeterExportResult['packageInvokePrefixlessEvidence']
 	/**
 	 * Sanitized UserMeter deletion-fence / write-lease inventory (no raw token
 	 * or holder). Present only on the first `user_meter` page (`startAfter`
@@ -1855,6 +1858,8 @@ export async function readAccountExportSection(input: {
 		return {
 			section: input.section,
 			items: page.counters,
+			packageInvokePrefixlessEvidence:
+				page.packageInvokePrefixlessEvidence,
 			storageBytesState: page.storageBytesState,
 			deletionState: page.deletionState,
 			truncated: page.truncated,

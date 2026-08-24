@@ -7,6 +7,7 @@ import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { EntitlementLimitError } from './errors.ts'
 import { planLimits } from '#universal/plans.ts'
+import { packageInvokePrefixlessEvidenceEpoch } from '#universal/package-invoke-prefixless-evidence.ts'
 import {
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
@@ -56,8 +57,8 @@ function accountWriteLeaseColumnNames(state: DurableObjectState) {
 		.map((row) => String(row.name))
 }
 
-test('fresh UserMeter schema v10 creates the final write-lease shape', async () => {
-	const user = await seedFreeUser('meter-schema-v10-fresh')
+test('fresh UserMeter schema v11 creates the final write-lease shape', async () => {
+	const user = await seedFreeUser('meter-schema-v11-fresh')
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
 	)
@@ -69,7 +70,7 @@ test('fresh UserMeter schema v10 creates the final write-lease shape', async () 
 				WHERE key = 'schema_version' LIMIT 1`,
 			)
 			.toArray()[0]
-		expect(Number(version?.value)).toBe(10)
+		expect(Number(version?.value)).toBe(11)
 		expect(accountWriteLeaseColumnNames(state)).toEqual([
 			'token',
 			'holder',
@@ -79,7 +80,7 @@ test('fresh UserMeter schema v10 creates the final write-lease shape', async () 
 	})
 }, 30_000)
 
-test('warm UserMeter schema v7 upgrades to v10 and preserves leases', async () => {
+test('warm UserMeter schema v7 upgrades to v11 and preserves leases', async () => {
 	const user = await seedFreeUser('meter-schema-v7-upgrade')
 	const stub = env.USER_METER.get(
 		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
@@ -130,7 +131,7 @@ test('warm UserMeter schema v7 upgrades to v10 and preserves leases', async () =
 				WHERE key = 'schema_version' LIMIT 1`,
 			)
 			.toArray()[0]
-		expect(Number(version?.value)).toBe(10)
+		expect(Number(version?.value)).toBe(11)
 		expect(accountWriteLeaseColumnNames(state)).toEqual([
 			'token',
 			'holder',
@@ -176,6 +177,101 @@ test('warm UserMeter schema v7 upgrades to v10 and preserves leases', async () =
 			.toArray()
 		expect(packageServiceTables).toEqual([])
 	})
+}, 30_000)
+
+test('prefixless migration evidence is epoch-scoped, atomic, and identity-free', async () => {
+	const user = await seedFreeUser('meter-prefixless-evidence')
+	const meter = userMeterRpc({ env, userId: user.userId })
+
+	expect(
+		await meter.readPackageInvokePrefixless({
+			epoch: packageInvokePrefixlessEvidenceEpoch,
+		}),
+	).toEqual({
+		outcome: 'ready',
+		epoch: packageInvokePrefixlessEvidenceEpoch,
+		counts: { execute: 0, package: 0, job: 0, app: 0 },
+	})
+
+	await Promise.all([
+		...Array.from({ length: 12 }, () =>
+			meter.recordPackageInvokePrefixless({
+				epoch: packageInvokePrefixlessEvidenceEpoch,
+				surface: 'execute',
+			}),
+		),
+		...Array.from({ length: 7 }, () =>
+			meter.recordPackageInvokePrefixless({
+				epoch: packageInvokePrefixlessEvidenceEpoch,
+				surface: 'package',
+			}),
+		),
+		meter.recordPackageInvokePrefixless({
+			epoch: packageInvokePrefixlessEvidenceEpoch,
+			surface: 'job',
+		}),
+		meter.recordPackageInvokePrefixless({
+			epoch: packageInvokePrefixlessEvidenceEpoch,
+			surface: 'app',
+		}),
+	])
+	expect(
+		await meter.readPackageInvokePrefixless({
+			epoch: packageInvokePrefixlessEvidenceEpoch,
+		}),
+	).toEqual({
+		outcome: 'ready',
+		epoch: packageInvokePrefixlessEvidenceEpoch,
+		counts: { execute: 12, package: 7, job: 1, app: 1 },
+	})
+
+	const stub = env.USER_METER.get(
+		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
+	)
+	await runInDurableObject(stub, async (_instance: UserMeter, state) => {
+		const columns = state.storage.sql
+			.exec<{ name: string }>(
+				`PRAGMA table_info(package_invoke_prefixless_evidence)`,
+			)
+			.toArray()
+			.map((row) => row.name)
+		expect(columns).toEqual([
+			'epoch',
+			'execute_count',
+			'package_count',
+			'job_count',
+			'app_count',
+		])
+		expect(
+			JSON.stringify(
+				state.storage.sql
+					.exec(`SELECT * FROM package_invoke_prefixless_evidence`)
+					.toArray(),
+			),
+		).not.toContain(user.userId)
+		state.storage.sql.exec(
+			`DELETE FROM package_invoke_prefixless_evidence WHERE epoch = ?`,
+			packageInvokePrefixlessEvidenceEpoch,
+		)
+	})
+
+	expect(
+		await meter.readPackageInvokePrefixless({
+			epoch: packageInvokePrefixlessEvidenceEpoch,
+		}),
+	).toEqual({
+		outcome: 'epoch_missing',
+		epoch: packageInvokePrefixlessEvidenceEpoch,
+	})
+	await expect(
+		meter.recordPackageInvokePrefixless({
+			epoch: packageInvokePrefixlessEvidenceEpoch,
+			surface: 'execute',
+		}),
+	).rejects.toThrow('epoch is not initialized')
+	await expect(
+		meter.readPackageInvokePrefixless({ epoch: 'previous-deployment' }),
+	).rejects.toThrow('epoch is unsupported')
 }, 30_000)
 
 /**

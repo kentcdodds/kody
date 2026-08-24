@@ -69,30 +69,30 @@ function parsePackageInvokeSpecifier(
 		)
 	}
 	const trimmed = specifierValue.trim()
-	const specifier = trimmed.startsWith('@') ? `kody:${trimmed}` : trimmed
-	if (!specifier.startsWith(packageSpecifierPrefix)) {
+	const prefixless = trimmed.startsWith('@')
+	const parseableSpecifier = prefixless ? `kody:${trimmed}` : trimmed
+	if (!parseableSpecifier.startsWith(packageSpecifierPrefix)) {
 		throw new Error(
 			`${operationName} requires a kody:@owner/package[/export] or @owner/package[/export] specifier.`,
 		)
 	}
-	const parsed = parseKodyPackageSpecifier(specifier)
-	const pathSegments = specifier.slice(packageSpecifierPrefix.length).split('/')
+	const parsed = parseKodyPackageSpecifier(parseableSpecifier)
+	const pathSegments = parseableSpecifier
+		.slice(packageSpecifierPrefix.length)
+		.split('/')
 	const specifierExportName = pathSegments
 		.slice(2)
 		.some((segment) => segment.trim())
 		? parsed.exportName
 		: null
-	const canonicalSpecifier = `${packageSpecifierPrefix}${parsed.packageName.slice(1)}${
-		specifierExportName ? `/${specifierExportName}` : ''
-	}`
 	return {
-		specifier: canonicalSpecifier,
+		prefixless,
 		packageName: parsed.packageName,
 		specifierExportName,
 	}
 }
 
-export function parsePackageInvokeInput(
+export function validatePackageInvokeInput(
 	input: PackageInvokeInput,
 	operationName = 'packages.invoke',
 ) {
@@ -123,13 +123,43 @@ export function parsePackageInvokeInput(
 		)
 	}
 	return {
-		specifier: parsedSpecifier.specifier,
-		packageName: parsedSpecifier.packageName,
+		parsedSpecifier,
 		exportName,
 		params: readPackageInvokeParams(options, operationName),
 		idempotencyKey: readOptionalString(options, 'idempotencyKey'),
 		topic: readOptionalString(options, 'topic'),
 	}
+}
+
+export type ValidatedPackageInvokeInput = ReturnType<
+	typeof validatePackageInvokeInput
+>
+
+export function canonicalizeValidatedPackageInvokeInput(
+	input: ValidatedPackageInvokeInput,
+) {
+	const { parsedSpecifier } = input
+	return {
+		specifier: `${packageSpecifierPrefix}${parsedSpecifier.packageName.slice(1)}${
+			parsedSpecifier.specifierExportName
+				? `/${parsedSpecifier.specifierExportName}`
+				: ''
+		}`,
+		packageName: parsedSpecifier.packageName,
+		exportName: input.exportName,
+		params: input.params,
+		idempotencyKey: input.idempotencyKey,
+		topic: input.topic,
+	}
+}
+
+export function parsePackageInvokeInput(
+	input: PackageInvokeInput,
+	operationName = 'packages.invoke',
+) {
+	return canonicalizeValidatedPackageInvokeInput(
+		validatePackageInvokeInput(input, operationName),
+	)
 }
 
 export type ParsedPackageInvokeInput = ReturnType<

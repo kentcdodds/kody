@@ -7,6 +7,11 @@ import {
 	type UserMeterWriteLeaseEntry,
 } from '#worker/entitlements/user-meter-do.ts'
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
+import {
+	emptyPackageInvokePrefixlessEvidenceCounts,
+	packageInvokePrefixlessEvidenceEpoch,
+	type PackageInvokePrefixlessEvidenceCounts,
+} from '#universal/package-invoke-prefixless-evidence.ts'
 
 type MeterRow = { count: number; revision: number }
 type StorageRow = { bytes: number; revision: number; updatedAt: string }
@@ -29,6 +34,10 @@ export function createInMemoryUserMeterEnv() {
 	const metersByUser = new Map<string, Map<string, MeterRow>>()
 	const storageByUser = new Map<string, StorageRow>()
 	const deletionByUser = new Map<string, DeletionState>()
+	const prefixlessEvidenceByUser = new Map<
+		string,
+		PackageInvokePrefixlessEvidenceCounts
+	>()
 	function counterKey(resource: string, day: string) {
 		return `${resource}\0${day}`
 	}
@@ -149,6 +158,32 @@ export function createInMemoryUserMeterEnv() {
 		}
 
 		return {
+			async recordPackageInvokePrefixless(input: {
+				epoch: string
+				surface: 'execute' | 'package' | 'job' | 'app'
+			}) {
+				if (input.epoch !== packageInvokePrefixlessEvidenceEpoch) {
+					throw new Error('Unsupported package-invoke evidence epoch.')
+				}
+				const counts =
+					prefixlessEvidenceByUser.get(userId) ??
+					emptyPackageInvokePrefixlessEvidenceCounts()
+				counts[input.surface] += 1
+				prefixlessEvidenceByUser.set(userId, counts)
+				return { recorded: true as const }
+			},
+			async readPackageInvokePrefixless(input: { epoch: string }) {
+				if (input.epoch !== packageInvokePrefixlessEvidenceEpoch) {
+					throw new Error('Unsupported package-invoke evidence epoch.')
+				}
+				return {
+					outcome: 'ready' as const,
+					epoch: input.epoch,
+					counts:
+						prefixlessEvidenceByUser.get(userId) ??
+						emptyPackageInvokePrefixlessEvidenceCounts(),
+				}
+			},
 			async initialize(input: {
 				resource: string
 				day: string
@@ -388,6 +423,7 @@ export function createInMemoryUserMeterEnv() {
 				const deletingAt = deletion.deletingAt
 				rows.clear()
 				storageByUser.delete(userId)
+				prefixlessEvidenceByUser.delete(userId)
 				deletion.leases.clear()
 				deletion.deletingAt = deletingAt
 				return { ok: true as const }
@@ -427,6 +463,14 @@ export function createInMemoryUserMeterEnv() {
 					: null
 				return {
 					counters,
+					packageInvokePrefixlessEvidence: includeFirstPageState
+						? {
+								epoch: packageInvokePrefixlessEvidenceEpoch,
+								counts:
+									prefixlessEvidenceByUser.get(userId) ??
+									emptyPackageInvokePrefixlessEvidenceCounts(),
+							}
+						: null,
 					storageBytesState,
 					deletionState,
 					nextStartAfter: null,
@@ -448,6 +492,7 @@ export function createInMemoryUserMeterEnv() {
 		metersByUser,
 		storageByUser,
 		deletionByUser,
+		prefixlessEvidenceByUser,
 		async seed(input: {
 			userId: string
 			resource: DailyEntitlementResource

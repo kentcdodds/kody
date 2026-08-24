@@ -15,8 +15,12 @@ import {
 	invokePackageExportForExecuteRuntime,
 	invokePackageExportForPackageRuntime,
 } from './http-invoke.ts'
-import { parsePackageInvokeInput } from './input-parsing.ts'
+import {
+	canonicalizeValidatedPackageInvokeInput,
+	validatePackageInvokeInput,
+} from './input-parsing.ts'
 import { checkPackageInvokeForRuntimeWithPreloads } from './invoke-check.ts'
+import { recordPackageInvokePrefixlessEvidence } from './prefixless-evidence.ts'
 import {
 	recordPackageInvokeSpecifierForm,
 	resolvePackageInvokeTelemetrySurface,
@@ -113,11 +117,20 @@ function createPackageInvokeTools(input: {
 				`packages.invoke exceeded the maximum nested invocation depth (${maxPackageRuntimeInvokeDepth}).`,
 			)
 		}
+		const surface = resolvePackageInvokeTelemetrySurface(input)
 		recordPackageInvokeSpecifierForm(input.env, {
 			rawSpecifier: rawInput.specifier,
-			surface: resolvePackageInvokeTelemetrySurface(input),
+			surface,
 		})
-		const request = parsePackageInvokeInput(rawInput)
+		const validatedRequest = validatePackageInvokeInput(rawInput)
+		if (validatedRequest.parsedSpecifier.prefixless) {
+			await recordPackageInvokePrefixlessEvidence({
+				env: input.env,
+				userId: user.userId,
+				surface,
+			})
+		}
+		const request = canonicalizeValidatedPackageInvokeInput(validatedRequest)
 		const check = await checkPackageInvokeForRuntimeWithPreloads({
 			env: input.env,
 			baseUrl: input.baseUrl,

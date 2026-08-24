@@ -7,6 +7,13 @@ import {
 	restoreToBookmark,
 } from '#worker/dr/do-pitr.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import {
+	emptyPackageInvokePrefixlessEvidenceCounts,
+	isPackageInvokeEvidenceSurface,
+	packageInvokePrefixlessEvidenceEpoch,
+	type PackageInvokeEvidenceSurface,
+	type PackageInvokePrefixlessEvidenceCounts,
+} from '#universal/package-invoke-prefixless-evidence.ts'
 import { type EntitlementResource } from '#universal/plans.ts'
 
 /** Daily rate-style resources stored in the per-user UserMeter (UTC day keys). */
@@ -32,7 +39,7 @@ export const userMeterDailyCounterRetentionDays = 7
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 10
+const userMeterSchemaVersion = 11
 /** Singleton row id for authoritative storage-byte state (schema v4). */
 const storageBytesStateRowId = 1
 /** Singleton row id for deletion fence / write leases (schema v6+). */
@@ -189,8 +196,26 @@ export type UserMeterWriteLeaseCountResult = {
 	count: number
 }
 
+export type UserMeterPackageInvokePrefixlessEvidenceReadResult =
+	| {
+			outcome: 'ready'
+			epoch: string
+			counts: PackageInvokePrefixlessEvidenceCounts
+	  }
+	| {
+			outcome: 'epoch_missing'
+			epoch: string
+	  }
+
 export type UserMeterExportResult = {
 	counters: Array<UserMeterCounterRow>
+	/** Current deployment's content-free migration counters, first page only. */
+	packageInvokePrefixlessEvidence:
+		| {
+				epoch: string
+				counts: PackageInvokePrefixlessEvidenceCounts
+		  }
+		| null
 	/**
 	 * Authoritative storage-byte state. Emitted only on the first export page
 	 * (`startAfter` absent); subsequent pages return `null` so paged consumers
@@ -258,6 +283,43 @@ function assertInboundReceiveResource(
 		)
 	}
 	return daily
+}
+
+function assertPackageInvokeEvidenceEpoch(epoch: string): string {
+	if (epoch !== packageInvokePrefixlessEvidenceEpoch) {
+		throw new Error('UserMeter package-invoke evidence epoch is unsupported.')
+	}
+	return epoch
+}
+
+function assertPackageInvokeEvidenceSurface(
+	surface: string,
+): PackageInvokeEvidenceSurface {
+	if (!isPackageInvokeEvidenceSurface(surface)) {
+		throw new Error('UserMeter package-invoke evidence surface is unsupported.')
+	}
+	return surface
+}
+
+function packageInvokeEvidenceColumn(
+	surface: PackageInvokeEvidenceSurface,
+): string {
+	switch (surface) {
+		case 'execute':
+			return 'execute_count'
+		case 'package':
+			return 'package_count'
+		case 'job':
+			return 'job_count'
+		case 'app':
+			return 'app_count'
+		default: {
+			const exhaustiveSurface: never = surface
+			throw new Error(
+				`Unhandled package-invoke evidence surface: ${exhaustiveSurface}`,
+			)
+		}
+	}
 }
 
 function assertUtcDayKey(day: string): string {
@@ -488,6 +550,22 @@ class UserMeterBase extends DurableObject<Env> {
 				updated_at TEXT NOT NULL
 			)
 		`)
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS package_invoke_prefixless_evidence (
+				epoch TEXT PRIMARY KEY NOT NULL,
+				execute_count INTEGER NOT NULL DEFAULT 0,
+				package_count INTEGER NOT NULL DEFAULT 0,
+				job_count INTEGER NOT NULL DEFAULT 0,
+				app_count INTEGER NOT NULL DEFAULT 0
+			)
+		`)
+		this.ctx.storage.sql.exec(
+			`INSERT INTO package_invoke_prefixless_evidence (
+				epoch, execute_count, package_count, job_count, app_count
+			) VALUES (?, 0, 0, 0, 0)
+			ON CONFLICT(epoch) DO NOTHING`,
+			packageInvokePrefixlessEvidenceEpoch,
+		)
 		if (version != null && version < 10) {
 			this.ctx.storage.sql.exec(
 				`DROP INDEX IF EXISTS idx_package_service_states_status_source`,
@@ -593,6 +671,31 @@ class UserMeterBase extends DurableObject<Env> {
 			bytes: Math.max(0, Number(row.bytes ?? 0)),
 			revision: Math.max(0, Number(row.revision ?? 0)),
 			updatedAt: String(row.updated_at ?? ''),
+		}
+	}
+
+	private readPackageInvokePrefixlessEvidence(
+		epoch: string,
+	): PackageInvokePrefixlessEvidenceCounts | null {
+		const row = this.ctx.storage.sql
+			.exec<{
+				execute_count: number
+				package_count: number
+				job_count: number
+				app_count: number
+			}>(
+				`SELECT execute_count, package_count, job_count, app_count
+				FROM package_invoke_prefixless_evidence
+				WHERE epoch = ?`,
+				epoch,
+			)
+			.toArray()[0]
+		if (!row) return null
+		return {
+			execute: Math.max(0, Number(row.execute_count) || 0),
+			package: Math.max(0, Number(row.package_count) || 0),
+			job: Math.max(0, Number(row.job_count) || 0),
+			app: Math.max(0, Number(row.app_count) || 0),
 		}
 	}
 
@@ -752,6 +855,48 @@ class UserMeterBase extends DurableObject<Env> {
 		const row = this.readRow(resource, day)
 		if (!row) return { outcome: 'needs_bootstrap' }
 		return readyState(row.count, row.revision)
+	}
+
+	/**
+	 * Exact, monotonic migration evidence. Each RPC is one logical prefixless
+	 * call; callers intentionally do not retry an ambiguous RPC because the
+	 * privacy contract stores no per-call idempotency identity.
+	 */
+	async recordPackageInvokePrefixless(input: {
+		epoch: string
+		surface: string
+	}): Promise<{ recorded: true }> {
+		const epoch = assertPackageInvokeEvidenceEpoch(input.epoch)
+		const surface = assertPackageInvokeEvidenceSurface(input.surface)
+		const column = packageInvokeEvidenceColumn(surface)
+		const cursor = this.ctx.storage.sql.exec(
+			`UPDATE package_invoke_prefixless_evidence
+			SET ${column} = ${column} + 1
+			WHERE epoch = ?`,
+			epoch,
+		)
+		if (cursor.rowsWritten !== 1) {
+			throw new Error(
+				'UserMeter package-invoke evidence epoch is not initialized.',
+			)
+		}
+		return { recorded: true }
+	}
+
+	async readPackageInvokePrefixless(input: {
+		epoch: string
+	}): Promise<UserMeterPackageInvokePrefixlessEvidenceReadResult> {
+		const epoch = assertPackageInvokeEvidenceEpoch(input.epoch)
+		const counts = this.readPackageInvokePrefixlessEvidence(epoch)
+		if (!counts) return { outcome: 'epoch_missing', epoch }
+		return {
+			outcome: 'ready',
+			epoch,
+			counts: {
+				...emptyPackageInvokePrefixlessEvidenceCounts(),
+				...counts,
+			},
+		}
 	}
 
 	/**
@@ -1479,12 +1624,23 @@ class UserMeterBase extends DurableObject<Env> {
 		// it once on the first page so totals and consumers never double-count.
 		const includeFirstPageState = cursor == null
 		const storageRow = includeFirstPageState ? this.readStorageRow() : null
+		const packageInvokePrefixlessCounts = includeFirstPageState
+			? this.readPackageInvokePrefixlessEvidence(
+					packageInvokePrefixlessEvidenceEpoch,
+				)
+			: null
 		const deletionState = includeFirstPageState
 			? this.readDeletionStateExport()
 			: null
 		const last = pageRows[pageRows.length - 1]
 		return {
 			counters,
+			packageInvokePrefixlessEvidence: packageInvokePrefixlessCounts
+				? {
+						epoch: packageInvokePrefixlessEvidenceEpoch,
+						counts: packageInvokePrefixlessCounts,
+					}
+				: null,
 			storageBytesState: storageRow
 				? {
 						bytes: storageRow.bytes,
@@ -1536,6 +1692,13 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 		day: string
 		now?: string
 	}) => Promise<UserMeterReadResult>
+	recordPackageInvokePrefixless: (input: {
+		epoch: string
+		surface: string
+	}) => Promise<{ recorded: true }>
+	readPackageInvokePrefixless: (input: {
+		epoch: string
+	}) => Promise<UserMeterPackageInvokePrefixlessEvidenceReadResult>
 	refund: (input: {
 		resource: string
 		day: string

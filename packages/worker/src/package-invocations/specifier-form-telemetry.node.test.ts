@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { packageInvokePrefixlessEvidenceEpoch } from '#universal/package-invoke-prefixless-evidence.ts'
 import {
 	classifyPackageInvokeSpecifierForm,
 	packageInvokeSpecifierTelemetryIndex,
@@ -106,13 +107,18 @@ test('records a privacy-safe payload and never throws when unavailable or broken
 	)
 })
 
-test('runtime helpers record raw prefixless forms for execute, package, job, and app before canonicalization', async () => {
+test('runtime helpers record exact prefixless evidence for every valid runtime surface before canonicalization', async () => {
 	const writeDataPoint = vi.fn()
+	const recordPackageInvokePrefixless = vi.fn(async () => ({ recorded: true }))
 	const sharedInput = {
 		env: {
 			PACKAGE_INVOKE_SPECIFIER_EVENTS: {
 				writeDataPoint,
 			} as unknown as AnalyticsEngineDataset,
+			USER_METER: {
+				idFromName: (name: string) => ({ name }),
+				get: () => ({ recordPackageInvokePrefixless }),
+			} as unknown as DurableObjectNamespace,
 		} as Env,
 		baseUrl: 'https://example.test',
 		callerContext: {
@@ -156,12 +162,10 @@ test('runtime helpers record raw prefixless forms for execute, package, job, and
 	for (const { surface, tools } of toolsBySurface) {
 		await expect(
 			tools.invoke({
-				specifier: '@private-owner/private-package',
+				specifier: '@private-owner/private-package/private-export',
 				options: {},
 			}),
-		).rejects.toThrow(
-			'packages.invoke requires exportName when the package specifier has no export subpath.',
-		)
+		).rejects.toThrow()
 		expect(writeDataPoint).toHaveBeenLastCalledWith({
 			indexes: [packageInvokeSpecifierTelemetryIndex],
 			blobs: ['prefixless', surface],
@@ -169,5 +173,53 @@ test('runtime helpers record raw prefixless forms for execute, package, job, and
 		})
 	}
 	expect(writeDataPoint).toHaveBeenCalledTimes(4)
+	expect(recordPackageInvokePrefixless).toHaveBeenCalledTimes(4)
+	expect(recordPackageInvokePrefixless.mock.calls.map(([input]) => input)).toEqual(
+		toolsBySurface.map(({ surface }) => ({
+			epoch: packageInvokePrefixlessEvidenceEpoch,
+			surface,
+		})),
+	)
 	expect(JSON.stringify(writeDataPoint.mock.calls)).not.toContain('private')
+	expect(JSON.stringify(recordPackageInvokePrefixless.mock.calls)).not.toContain(
+		'private',
+	)
+})
+
+test('prefixed calls add no UserMeter RPC and prefixless evidence failure is fail-closed without retry', async () => {
+	const recordPackageInvokePrefixless = vi
+		.fn()
+		.mockRejectedValue(new Error('meter unavailable'))
+	const tools = createExecutePackageInvokeToolsWithToolFactories({
+		env: {
+			USER_METER: {
+				idFromName: (name: string) => ({ name }),
+				get: () => ({ recordPackageInvokePrefixless }),
+			} as unknown as DurableObjectNamespace,
+		} as Env,
+		baseUrl: 'https://example.test',
+		callerContext: {
+			user: { userId: 'private-user' },
+		} as never,
+		toolFactories: {} as never,
+	})
+
+	await expect(
+		tools.invoke({
+			specifier: 'kody:@owner/package/export',
+			options: {},
+		}),
+	).rejects.toThrow()
+	expect(recordPackageInvokePrefixless).not.toHaveBeenCalled()
+
+	await expect(
+		tools.invoke({
+			specifier: '@owner/package/export',
+			options: {},
+		}),
+	).rejects.toThrow('could not record exact migration evidence')
+	expect(recordPackageInvokePrefixless).toHaveBeenCalledExactlyOnceWith({
+		epoch: packageInvokePrefixlessEvidenceEpoch,
+		surface: 'execute',
+	})
 })

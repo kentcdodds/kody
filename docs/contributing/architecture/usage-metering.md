@@ -189,6 +189,22 @@ each chokepoint records exactly one event per metered unit, so sums are safe.
    The rollup is the cheap read path for month-to-date admin and cohort views:
    one point lookup per user, metric, and month.
 
+### Prefixless `packages.invoke` migration evidence
+
+The dedicated `PACKAGE_INVOKE_SPECIFIER_EVENTS` Analytics Engine dataset is
+weighted liveness and volume reporting only. Its form is a non-indexed blob, so
+a missing prefixless group cannot prove absence, including in windows where
+returned rows have `_sample_interval = 1`.
+
+Temporary exact absence evidence lives in the existing per-user `UserMeter`
+Durable Object. A validated prefixless call synchronously increments one
+deployment-epoch row by coarse surface (`execute`, `package`, `job`, or `app`)
+before canonicalization; recording failure fails that deprecated call.
+Canonical `kody:` calls perform no new Durable Object RPC. The admin-only
+aggregate pages the relevant user population and reports only global totals and
+accounting completeness. See
+[the migration runbook](../package-invoke-prefix-migration.md).
+
 ## Agent package popularity (MCP instructions hint)
 
 Separate from `usage_rollups`, D1 table `agent_package_conversation_uses` (also
