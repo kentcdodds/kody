@@ -5,6 +5,7 @@ import {
 	type OnboardingFeaturedMcpServer,
 	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
+import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 
 /**
@@ -17,6 +18,7 @@ export type OnboardingPayload = {
 	loggedIn: boolean
 	username: string | null
 	mcpServerUrl: string
+	mcpHighlights?: Record<string, HighlightedCode>
 	setupPrompt: string
 	discoveryPrompt: string
 	firstWinPrompt: string

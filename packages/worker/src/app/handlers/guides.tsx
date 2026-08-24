@@ -15,6 +15,7 @@ import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
+import { highlightMarkdownFences } from '#app/highlight-code.ts'
 
 function buildGuidesIndexMarkdown(baseUrl: string): string {
 	const lines = [
@@ -130,6 +131,7 @@ export function createGuideDetailHandler(env: Env) {
 							provider: guide.provider,
 							lastVerified: guide.lastVerified,
 							body: guide.body,
+							bodyFences: await highlightMarkdownFences(env, guide.body),
 						},
 					},
 				}),
@@ -138,7 +140,7 @@ export function createGuideDetailHandler(env: Env) {
 	} satisfies Action<typeof routes.guideDetail>
 }
 
-export function createGuideDetailApiHandler(_env: Env) {
+export function createGuideDetailApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ params }) {
@@ -159,6 +161,7 @@ export function createGuideDetailApiHandler(_env: Env) {
 				provider: guide.provider,
 				lastVerified: guide.lastVerified,
 				body: guide.body,
+				bodyFences: await highlightMarkdownFences(env, guide.body),
 			})
 		},
 	} satisfies Action<typeof routes.guideDetailApi>

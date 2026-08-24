@@ -30,6 +30,8 @@ import {
 } from '#worker/community/service.ts'
 import { type CommunityListingRecord } from '#worker/community/types.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
+import { highlightMarkdownFences } from '#app/highlight-code.ts'
+import { type HighlightedCode } from '#universal/highlighted-code.ts'
 
 const reportReasonSchema = z
 	.string()
@@ -77,6 +79,11 @@ async function renderCommunityListingPage(input: {
 		})
 	}
 
+	const readmeFences = await highlightReadmeFences(
+		input.env,
+		detail.listing.readmeContent,
+	)
+
 	return renderAppPage({
 		request: input.request,
 		env: input.env,
@@ -92,12 +99,21 @@ async function renderCommunityListingPage(input: {
 				trusted: detail.listing.trusted,
 				featured: detail.listing.featured,
 				readmeContent: detail.listing.readmeContent,
+				readmeFences,
 				starCount: detail.listing.starCount,
 				starredByViewer: detail.starredByViewer,
 				viewerInstall: detail.viewerInstall,
 			},
 		},
 	})
+}
+
+async function highlightReadmeFences(
+	env: Env,
+	readmeContent: string | null,
+): Promise<Array<HighlightedCode>> {
+	if (!readmeContent) return []
+	return highlightMarkdownFences(env, readmeContent)
 }
 
 /**
@@ -171,7 +187,13 @@ export function createCommunityDetailApiHandler(env: Env) {
 				)
 			}
 
-			return jsonResponse(request, detail)
+			return jsonResponse(request, {
+				...detail,
+				readmeFences: await highlightReadmeFences(
+					env,
+					detail.listing.readmeContent,
+				),
+			})
 		},
 	} satisfies Action<typeof routes.communityDetailApi>
 }
@@ -211,7 +233,13 @@ export function createCommunityPackageApiHandler(env: Env) {
 				)
 			}
 
-			return jsonResponse(request, detail)
+			return jsonResponse(request, {
+				...detail,
+				readmeFences: await highlightReadmeFences(
+					env,
+					detail.listing.readmeContent,
+				),
+			})
 		},
 	} satisfies Action<typeof routes.communityPackageApi>
 }

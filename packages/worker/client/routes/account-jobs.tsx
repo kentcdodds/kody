@@ -52,6 +52,7 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
+import { plainHighlightedCode } from '#universal/highlighted-code.ts'
 import {
 	cardCss,
 	cardTitleCss,
@@ -929,8 +930,11 @@ export function AccountJobsRoute(handle: Handle) {
 												})}
 											>
 												{renderHighlightedCode(
-													JSON.stringify(detail.params, null, 2),
-													'json',
+													detail.paramsHighlighted ??
+														plainHighlightedCode(
+															JSON.stringify(detail.params, null, 2),
+															'json',
+														),
 												)}
 											</div>
 										</div>

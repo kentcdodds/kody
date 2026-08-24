@@ -159,16 +159,17 @@ OAuth, account, and every other HTML path stay `no-store`.
 
 Browser pages that show code — markdown bodies on guides, blog posts, and
 community READMEs, onboarding MCP config snippets, and JSON dumps on account
-jobs/activity — highlight with [Shiki](https://shiki.style/). The Worker uses a
-fine-grained sync highlighter (`createHighlighterCoreSync` + the JavaScript
-regex engine, no Oniguruma WASM) with a fixed language set and GitHub light/dark
-dual themes. Tokens become Remix JSX text and inline styles, never `innerHTML`,
-so untrusted README fences stay inside the markdown safety model. Theme
-switching follows `:root[data-theme]` (and `prefers-color-scheme` when no theme
-is set) via CSS variables in `packages/worker/public/styles.css`. The browser
-loads the grammars through a dynamic `syntax-highlight-core` chunk: SSR,
-hydration, and SPA preload wait for it on those areas, and the marketing entry's
-static closure does not include it.
+jobs/activity — highlight with [Shiki](https://shiki.style/) on the
+`kody-highlight` worker. Origin loaders POST snippets over the `HIGHLIGHT`
+service binding (`POST /highlight`) and attach serializable token trees to
+loader/API data. The browser only paints those tokens as Remix JSX text and
+inline styles — never `innerHTML` — so untrusted README fences stay inside the
+markdown safety model. Theme switching follows `:root[data-theme]` (and
+`prefers-color-scheme` when no theme is set) via CSS variables in
+`packages/worker/public/styles.css`. Shiki grammars are not part of the browser
+bundle; missing tokens render as escaped plaintext in the same wrapper. Both
+origin and the highlight worker cache token batches keyed by highlighter
+version.
 
 ## Client-side navigation flow
 

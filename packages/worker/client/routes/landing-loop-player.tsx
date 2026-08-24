@@ -4,8 +4,6 @@ import {
 	observeNearViewport,
 } from '#client/deferred-turnstile.ts'
 import { on } from '#client/event-mixin.ts'
-import { loadSyntaxHighlight } from '#client/syntax-highlight.tsx'
-import { whenWindowLoaded } from '#client/when-window-loaded.ts'
 import { routes } from '#universal/routes.ts'
 import { type TranscriptLine } from './interactive-guide-transcript.ts'
 import {
@@ -183,19 +181,6 @@ export function LandingLoopPlayer(handle: Handle) {
 			})
 		})
 	}
-
-	whenWindowLoaded(() => {
-		// Best-effort: plaintext fences already render until Shiki loads.
-		// An uncaught rejection here was KODY-CLOUDFLARE-5W (Mobile Safari
-		// "Failed to fetch dynamically imported module" for the highlight chunk).
-		void loadSyntaxHighlight()
-			.then(() => {
-				if (!handle.signal.aborted) handle.update()
-			})
-			.catch(() => {
-				// Keep playing with plaintext; a later navigation may retry.
-			})
-	}, handle.signal)
 
 	return () => {
 		const visibleBeats = beats?.slice(0, player.revealedCount) ?? null

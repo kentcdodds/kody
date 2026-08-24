@@ -1,0 +1,11 @@
+{
+  "name": "@kody/highlight-worker",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*"
+  },
+  "dependencies": {
+    "shiki": "^4.4.2"
+  }
+}

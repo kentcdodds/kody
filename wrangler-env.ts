@@ -13,6 +13,7 @@ import { resolveLocalBinary } from './tools/node-runtime.ts'
 import { ensureWorkerBundlerModules } from './tools/build-worker-bundler-modules.ts'
 import {
 	getDefaultWranglerConfigPath,
+	highlightWorkerWranglerConfigPath,
 	jobsWorkerWranglerConfigPath,
 	resolveWranglerConfigPath,
 } from './tools/wrangler-env-config.ts'
@@ -55,6 +56,17 @@ if (
 		)
 	) {
 		commandArgs.push('--config', jobsWorkerWranglerConfigPath)
+	}
+	if (
+		isDevCommand &&
+		existsSync(
+			resolveWranglerConfigPath(
+				highlightWorkerWranglerConfigPath,
+				process.cwd(),
+			),
+		)
+	) {
+		commandArgs.push('--config', highlightWorkerWranglerConfigPath)
 	}
 	// Multi-worker local dev (ADR 0016): the main worker's production env
 	// binds the runtime worker (RUNTIME_WORKER service binding plus

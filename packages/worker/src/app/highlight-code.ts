@@ -1,0 +1,182 @@
+import { lexer, type Token, type Tokens } from 'marked'
+import {
+	highlightSnippetKey,
+	plainHighlightedCode,
+	type HighlightedCode,
+	type HighlightSnippet,
+} from '#universal/highlighted-code.ts'
+
+export type HighlightEnv = {
+	HIGHLIGHT?: Fetcher
+}
+
+const highlightOrigin = 'https://highlight.internal'
+const originCacheOrigin = 'https://highlight-origin.local'
+const originHighlightCacheName = 'kody-highlight-origin'
+
+async function originHighlightCache() {
+	if (typeof caches === 'undefined') return null
+	return caches.open(originHighlightCacheName)
+}
+
+function originCacheRequest(snippets: Array<HighlightSnippet>) {
+	const key = snippets.map((snippet) => highlightSnippetKey(snippet)).join('\n')
+	return new Request(`${originCacheOrigin}/batch`, {
+		method: 'POST',
+		headers: { 'content-type': 'text/plain' },
+		body: key,
+	})
+}
+
+function isHighlightedCode(value: unknown): value is HighlightedCode {
+	if (typeof value !== 'object' || value === null) return false
+	const item = value as HighlightedCode
+	return (
+		typeof item.code === 'string' &&
+		typeof item.lang === 'string' &&
+		typeof item.plain === 'boolean' &&
+		Array.isArray(item.lines)
+	)
+}
+
+async function readOriginCache(snippets: Array<HighlightSnippet>) {
+	try {
+		const cache = await originHighlightCache()
+		if (!cache) return null
+		const cached = await cache.match(originCacheRequest(snippets))
+		if (!cached?.ok) return null
+		const body = (await cached.json()) as { results?: unknown }
+		if (!Array.isArray(body.results)) return null
+		if (body.results.length !== snippets.length) return null
+		if (!body.results.every(isHighlightedCode)) return null
+		return body.results
+	} catch {
+		return null
+	}
+}
+
+async function writeOriginCache(
+	snippets: Array<HighlightSnippet>,
+	results: Array<HighlightedCode>,
+) {
+	try {
+		const cache = await originHighlightCache()
+		if (!cache) return
+		await cache.put(
+			originCacheRequest(snippets),
+			new Response(JSON.stringify({ results }), {
+				headers: {
+					'content-type': 'application/json',
+					'cache-control': 'public, max-age=86400',
+				},
+			}),
+		)
+	} catch (error) {
+		console.debug('highlight-origin-cache-write-failed', error)
+	}
+}
+
+export async function highlightSnippets(
+	env: HighlightEnv,
+	snippets: Array<HighlightSnippet>,
+): Promise<Array<HighlightedCode>> {
+	if (snippets.length === 0) return []
+
+	const cached = await readOriginCache(snippets)
+	if (cached) return cached
+
+	const highlight = env.HIGHLIGHT
+	if (!highlight) {
+		return snippets.map((snippet) =>
+			plainHighlightedCode(snippet.code, snippet.lang),
+		)
+	}
+
+	try {
+		const response = await highlight.fetch(`${highlightOrigin}/highlight`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ snippets }),
+		})
+		if (!response.ok) {
+			throw new Error(`highlight worker ${response.status}`)
+		}
+		const body = (await response.json()) as { results?: unknown }
+		if (
+			!Array.isArray(body.results) ||
+			body.results.length !== snippets.length
+		) {
+			throw new Error('highlight worker returned unexpected results')
+		}
+		if (!body.results.every(isHighlightedCode)) {
+			throw new Error('highlight worker returned unexpected results')
+		}
+		await writeOriginCache(snippets, body.results)
+		return body.results
+	} catch (error) {
+		console.debug('highlight-binding-failed', error)
+		return snippets.map((snippet) =>
+			plainHighlightedCode(snippet.code, snippet.lang),
+		)
+	}
+}
+
+function walkMarkdownTokens(
+	tokens: Array<Token>,
+	fences: Array<HighlightSnippet>,
+) {
+	for (const token of tokens) {
+		if (token.type === 'code') {
+			const code = token as Tokens.Code
+			fences.push({ code: code.text, lang: code.lang })
+			continue
+		}
+		if (token.type === 'list') {
+			const list = token as Tokens.List
+			for (const item of list.items) {
+				if (item.tokens) walkMarkdownTokens(item.tokens, fences)
+			}
+			continue
+		}
+		if ('tokens' in token && Array.isArray(token.tokens)) {
+			walkMarkdownTokens(token.tokens, fences)
+		}
+	}
+}
+
+export function collectMarkdownFences(
+	markdown: string,
+): Array<HighlightSnippet> {
+	const fences: Array<HighlightSnippet> = []
+	walkMarkdownTokens(lexer(markdown), fences)
+	return fences
+}
+
+export async function highlightMarkdownFences(
+	env: HighlightEnv,
+	markdown: string,
+): Promise<Array<HighlightedCode>> {
+	return highlightSnippets(env, collectMarkdownFences(markdown))
+}
+
+export async function highlightJsonValue(
+	env: HighlightEnv,
+	value: unknown,
+): Promise<HighlightedCode> {
+	const code = JSON.stringify(value, null, 2)
+	const [result] = await highlightSnippets(env, [{ code, lang: 'json' }])
+	return result ?? plainHighlightedCode(code, 'json')
+}
+
+export function highlightResultsByKey(
+	snippets: Array<HighlightSnippet>,
+	results: Array<HighlightedCode>,
+): Record<string, HighlightedCode> {
+	const map: Record<string, HighlightedCode> = {}
+	for (const [index, snippet] of snippets.entries()) {
+		const result = results[index]
+		if (!result) continue
+		map[highlightSnippetKey(snippet)] = result
+	}
+	return map
+}

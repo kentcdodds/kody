@@ -5,6 +5,9 @@ export const defaultWranglerConfigPath = 'packages/worker/wrangler.jsonc'
 export const jobsWorkerWranglerConfigPath =
 	'packages/jobs-worker/wrangler.jsonc'
 
+export const highlightWorkerWranglerConfigPath =
+	'packages/highlight-worker/wrangler.jsonc'
+
 export function getDefaultWranglerConfigPath(
 	env: Partial<Pick<NodeJS.ProcessEnv, 'WRANGLER_CONFIG'>> = process.env,
 ) {

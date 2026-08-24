@@ -1,4 +1,6 @@
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { highlightJsonValue } from '#app/highlight-code.ts'
+import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import {
 	getRunRecord,
 	listRunRecords,
@@ -79,6 +81,7 @@ export type AccountActivityRunDetail = AccountActivityRunListItem & {
 	triagedAt: string | null
 	triagedBy: string | null
 	metadata: Record<string, unknown>
+	metadataHighlighted?: HighlightedCode
 	logs: Array<AccountActivityRunLog>
 }
 
@@ -224,10 +227,11 @@ function toListItem(run: RunRecord): AccountActivityRunListItem {
 	}
 }
 
-function toDetail(
+async function toDetail(
+	env: Env,
 	run: RunRecord,
 	logs: Array<RunRecordLog>,
-): AccountActivityRunDetail {
+): Promise<AccountActivityRunDetail> {
 	return {
 		...toListItem(run),
 		kodyId: run.kodyId,
@@ -243,6 +247,7 @@ function toDetail(
 		triagedAt: run.triagedAt,
 		triagedBy: run.triagedBy,
 		metadata: run.metadata,
+		metadataHighlighted: await highlightJsonValue(env, run.metadata),
 		logs: logs
 			.slice()
 			.sort((a, b) => a.sequence - b.sequence)
@@ -319,7 +324,7 @@ export async function loadAccountActivityData(input: {
 		runs: page.runs.map(toListItem),
 		nextCursor: page.nextCursor,
 		selectedRun: selectedRecord
-			? toDetail(selectedRecord.run, selectedRecord.logs)
+			? await toDetail(input.env, selectedRecord.run, selectedRecord.logs)
 			: null,
 		selectedRunId,
 		retentionDays: runRecordRetentionDays,

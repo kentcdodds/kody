@@ -20,6 +20,7 @@ import {
 	installProgressWords,
 } from '#client/action-button-loader.tsx'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
+import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { decideCommunityInstallClick } from '#client/routes/community-detail-install.ts'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
@@ -65,6 +66,7 @@ type CommunityDetailApiPayload = {
 	forkPrompt: string
 	starredByViewer: boolean
 	viewerInstall: ViewerListingInstall | null
+	readmeFences?: Array<HighlightedCode>
 }
 
 type CommunityPackageMovedPayload = {
@@ -239,6 +241,7 @@ export async function communityDetailRouteLoader(
 			trusted: payload.listing.trusted,
 			featured: payload.listing.featured,
 			readmeContent: payload.listing.readmeContent,
+			readmeFences: payload.readmeFences,
 			starCount: payload.listing.starCount,
 			starredByViewer: payload.starredByViewer,
 			viewerInstall: payload.viewerInstall,
@@ -263,6 +266,7 @@ export function CommunityDetailRoute(handle: Handle) {
 	let installMessage: string | null = null
 	let installOutcome: CommunityInstallOutcome | null = null
 	let readmeContent: string | null = null
+	let readmeFences: Array<HighlightedCode> = []
 	let shellStatus: 'loading' | 'ready' | 'error' = 'loading'
 	let shellLoadRequestId = 0
 	let reportReason = ''
@@ -285,16 +289,21 @@ export function CommunityDetailRoute(handle: Handle) {
 	// Re-lexing markdown on every handle.update() would be wasted work; cache
 	// the rendered README per markdown string (same policy as MarkdownView).
 	let renderedForReadme: string | null = null
+	let renderedForReadmeFences: Array<HighlightedCode> | undefined
 	let renderedReadme: Array<RemixNode> = []
 
-	function renderReadme(markdown: string) {
-		if (renderedForReadme !== markdown) {
+	function renderReadme(markdown: string, fences?: Array<HighlightedCode>) {
+		if (renderedForReadme !== markdown || renderedForReadmeFences !== fences) {
 			renderedForReadme = markdown
+			renderedForReadmeFences = fences
 			// Third-party README in the page's prose voice: authored `##`
 			// sections land on h3 (DESIGN.md's "h3 subheads"; publishing
 			// requires a `## Intent` section), the page keeps its h1, and the
 			// untrusted-content link policy (`nofollow ugc`) stays the default.
-			renderedReadme = renderMarkdownNodes(markdown, { headingOffset: 1 })
+			renderedReadme = renderMarkdownNodes(markdown, {
+				headingOffset: 1,
+				fences,
+			})
 		}
 		return renderedReadme
 	}
@@ -347,6 +356,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			installMessage = null
 			installOutcome = null
 			readmeContent = payload.listing.readmeContent
+			readmeFences = payload.readmeFences ?? []
 			starCount = payload.listing.starCount
 			starredByViewer = payload.starredByViewer
 			starState = 'idle'
@@ -706,6 +716,7 @@ export function CommunityDetailRoute(handle: Handle) {
 		installMessage = null
 		installOutcome = null
 		readmeContent = routeData.readmeContent
+		readmeFences = routeData.readmeFences ?? []
 		starCount = routeData.starCount
 		starredByViewer = routeData.starredByViewer
 		starState = 'idle'
@@ -894,7 +905,7 @@ export function CommunityDetailRoute(handle: Handle) {
 							>
 								<h2 id="readme-title">README</h2>
 								<div data-testid="community-readme" mix={css(readmeProseCss)}>
-									{renderReadme(readmeContent)}
+									{renderReadme(readmeContent, readmeFences)}
 								</div>
 							</section>
 						) : null}

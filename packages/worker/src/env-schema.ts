@@ -194,6 +194,9 @@ export const EnvSchema = object({
 		if (value === undefined) return { value: undefined }
 		return { value: value as Fetcher }
 	}),
+	// Highlight worker service binding. Optional: tests and single-worker
+	// local fallback to plaintext tokens when the binding is absent.
+	HIGHLIGHT: optionalFetcherSchema,
 	STORAGE_RUNNER: requiredDurableObjectNamespaceSchema(
 		'Missing STORAGE_RUNNER binding for durable execute and job storage.',
 	),

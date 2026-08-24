@@ -3,7 +3,6 @@ import {
 	clientRouteAreaNameForPath,
 	createLazyRoute,
 	createLazyRouteArea,
-	syntaxHighlightAreaNames,
 } from '#client/lazy-route.tsx'
 import { clientRouteLoaders, clientRoutes } from '#client/routes/index.tsx'
 import { oauthPaths } from '#universal/oauth-paths.ts'
@@ -29,16 +28,6 @@ function concretePathForPattern(pattern: string) {
 		})
 		.join('/')
 }
-
-test('syntax highlight areas stay a subset of registered lazy areas', () => {
-	expect([...syntaxHighlightAreaNames].sort()).toEqual([
-		'account-area',
-		'blog-area',
-		'community-area',
-		'onboarding-area',
-		'package-files-area',
-	])
-})
 
 test('every non-eager route pattern resolves to a registered lazy area', () => {
 	const patterns = new Set([

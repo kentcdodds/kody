@@ -1,92 +1,68 @@
 import { type RemixNode } from 'remix/ui'
+import {
+	plainHighlightedCode,
+	shikiPreClass,
+	type HighlightedCode,
+} from '#universal/highlighted-code.ts'
 
 /**
- * Public highlighting API. The Shiki grammars live in
- * `syntax-highlight-core.tsx` and are loaded only through this dynamic
- * import so they stay out of the marketing entry's static closure (esbuild
- * otherwise merges them into the shared homepage chunk).
- *
- * Call `loadSyntaxHighlight()` before rendering code-bearing routes (SSR,
- * hydration, and SPA preload already do this for those areas). Until the
- * chunk resolves, fences render as escaped plaintext in the same wrapper
- * so hydration has a safe fallback.
- *
- * Import failures (stale deploy hashes, Mobile Safari flakes) reject after
- * one retry. Optional post-load callers (homepage landing loop) must catch —
- * fences stay plaintext until a later load succeeds. Route preload must
- * still await a successful load so SSR-highlighted fences hydrate cleanly.
+ * Paints a pre-tokenized code block. Origin (or the highlight worker) owns
+ * Shiki; this module only turns serializable spans into Remix JSX text and
+ * inline styles — never `innerHTML`.
  */
-type HighlightModule = {
-	renderHighlightedCode: (
-		code: string,
-		lang?: string | null,
-		key?: number,
-	) => RemixNode
-}
-
-type HighlightCoreImporter = () => Promise<HighlightModule>
-
-let highlightModule: HighlightModule | null = null
-let highlightPending: Promise<HighlightModule> | null = null
-// Dynamic import is intentional so Shiki is an async chunk (sanctioned
-// exception to the no-inline-imports rule). Swappable in tests.
-let importHighlightCore: HighlightCoreImporter = () =>
-	import('./syntax-highlight-core.tsx')
-
-async function loadHighlightCoreWithRetry(): Promise<HighlightModule> {
-	try {
-		const module = await importHighlightCore()
-		highlightModule = module
-		return module
-	} catch {
-		// One retry covers transient network / Mobile Safari module-fetch
-		// flakes (KODY-CLOUDFLARE-5W). A second failure propagates.
-		const module = await importHighlightCore()
-		highlightModule = module
-		return module
+function rootStyleFromTokens(fg: string | undefined, bg: string | undefined) {
+	const style: Record<string, string> = {}
+	for (const value of [bg, fg]) {
+		if (!value) continue
+		const [first, ...rest] = value.split(';')
+		if (first && value === bg) style.backgroundColor = first
+		if (first && value === fg) style.color = first
+		for (const part of rest) {
+			const separator = part.indexOf(':')
+			if (separator <= 0) continue
+			style[part.slice(0, separator)] = part.slice(separator + 1)
+		}
 	}
+	return style
 }
 
-export function loadSyntaxHighlight(): Promise<HighlightModule> {
-	if (highlightModule) return Promise.resolve(highlightModule)
-	if (!highlightPending) {
-		highlightPending = loadHighlightCoreWithRetry().finally(() => {
-			if (!highlightModule) highlightPending = null
-		})
-	}
-	return highlightPending
-}
-
-/** Test hook: drops the cached highlighter module. */
-export function resetSyntaxHighlightLoadForTests() {
-	highlightModule = null
-	highlightPending = null
-}
-
-/** Test hook: replace the core chunk importer (retry / failure coverage). */
-export function setHighlightCoreImporterForTests(
-	importer: HighlightCoreImporter | null,
-) {
-	importHighlightCore =
-		importer ?? (() => import('./syntax-highlight-core.tsx'))
-}
-
-/**
- * Highlight `code` as a `<pre class="shiki">` tree once the core chunk is
- * loaded. Unknown languages and oversized snippets fall back to escaped
- * plain text in the same wrapper.
- */
 export function renderHighlightedCode(
+	highlighted: HighlightedCode,
+	key?: number,
+): RemixNode {
+	if (highlighted.plain || highlighted.lines.length === 0) {
+		return (
+			<pre key={key} class={shikiPreClass}>
+				<code>{highlighted.code}</code>
+			</pre>
+		)
+	}
+	return (
+		<pre
+			key={key}
+			class={shikiPreClass}
+			style={rootStyleFromTokens(highlighted.fg, highlighted.bg)}
+		>
+			<code>
+				{highlighted.lines.map((line, lineIndex) => (
+					<span class="line" key={lineIndex}>
+						{line.map((token, tokenIndex) => (
+							<span key={tokenIndex} style={token.style}>
+								{token.content}
+							</span>
+						))}
+						{lineIndex < highlighted.lines.length - 1 ? '\n' : null}
+					</span>
+				))}
+			</code>
+		</pre>
+	)
+}
+
+export function renderPlainCode(
 	code: string,
 	lang?: string | null,
 	key?: number,
 ): RemixNode {
-	if (highlightModule) {
-		return highlightModule.renderHighlightedCode(code, lang, key)
-	}
-	return (
-		<pre key={key} class="shiki shiki-themes github-light github-dark">
-			<code>{code}</code>
-		</pre>
-	)
+	return renderHighlightedCode(plainHighlightedCode(code, lang), key)
 }

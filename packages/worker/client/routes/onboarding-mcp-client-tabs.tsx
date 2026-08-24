@@ -43,9 +43,15 @@ import {
 	hoverMq,
 } from '#universal/styles/style-primitives.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
+import {
+	highlightSnippetKey,
+	plainHighlightedCode,
+	type HighlightedCode,
+} from '#universal/highlighted-code.ts'
 
 type OnboardingMcpClientTabsProps = {
 	mcpServerUrl: string
+	highlights?: Record<string, HighlightedCode>
 }
 
 type CopyCardProps = {
@@ -54,6 +60,7 @@ type CopyCardProps = {
 	copyLabel: string
 	variant?: 'pill' | 'ghost'
 	lang?: string | null
+	highlights?: Record<string, HighlightedCode>
 }
 
 /**
@@ -76,7 +83,14 @@ function CopyCard(handle: Handle<CopyCardProps>) {
 				</div>
 			</div>
 			<div mix={css(snippetPreCss)}>
-				{renderHighlightedCode(handle.props.value, handle.props.lang)}
+				{renderHighlightedCode(
+					handle.props.highlights?.[
+						highlightSnippetKey({
+							code: handle.props.value,
+							lang: handle.props.lang,
+						})
+					] ?? plainHighlightedCode(handle.props.value, handle.props.lang),
+				)}
 			</div>
 		</div>
 	)
@@ -129,7 +143,11 @@ function ManualPath(handle: Handle<{ children?: RemixNode }>) {
 	)
 }
 
-function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
+function renderPanelContent(
+	kind: McpClientKind,
+	mcpServerUrl: string,
+	highlights?: Record<string, HighlightedCode>,
+) {
 	switch (kind) {
 		case 'cursor': {
 			const cursorJson = buildCursorMcpJson(mcpServerUrl)
@@ -144,6 +162,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 					</p>
 					<InstallDeepLink href={installUrl} label="Add to Cursor" />
 					<CopyCard
+						highlights={highlights}
 						label="MCP URL"
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
@@ -153,6 +172,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						you already have one):
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="mcp.json"
 						value={cursorJson}
 						copyLabel="Copy JSON"
@@ -184,6 +204,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						prompted.
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="MCP URL"
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
@@ -194,6 +215,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						its <strong>Manage</strong> menu in Apps settings.
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="App icon (favicon)"
 						value={appIconUrl}
 						copyLabel="Copy icon URL"
@@ -214,12 +236,14 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						automatically, or add the streamable HTTP entry yourself:
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="codex CLI"
 						value={codexCommand}
 						copyLabel="Copy command"
 						lang="sh"
 					/>
 					<CopyCard
+						highlights={highlights}
 						label="config.toml"
 						value={codexToml}
 						copyLabel="Copy TOML"
@@ -238,6 +262,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						URL. Claude Desktop handles remote OAuth through that UI.
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="MCP URL"
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
@@ -278,6 +303,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						for details.
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="MCP URL"
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
@@ -300,6 +326,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						then <strong>i</strong> authenticates:
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="grok CLI"
 						value={grokCliCommand}
 						copyLabel="Copy command"
@@ -310,6 +337,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						Or merge this into <code>~/.grok/config.toml</code>:
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="~/.grok/config.toml"
 						value={grokCliToml}
 						copyLabel="Copy TOML"
@@ -343,12 +371,14 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						<code>type: &quot;http&quot;</code> for remote servers:
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="claude CLI"
 						value={claudeCodeCommand}
 						copyLabel="Copy command"
 						lang="sh"
 					/>
 					<CopyCard
+						highlights={highlights}
 						label=".mcp.json"
 						value={claudeCodeJson}
 						copyLabel="Copy JSON"
@@ -371,12 +401,14 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						<code>type: &quot;remote&quot;</code>:
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="opencode CLI"
 						value={openCodeCommand}
 						copyLabel="Copy command"
 						lang="sh"
 					/>
 					<CopyCard
+						highlights={highlights}
 						label="opencode.json"
 						value={openCodeJson}
 						copyLabel="Copy JSON"
@@ -399,6 +431,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						<code>.vscode/mcp.json</code>:
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="copilot CLI"
 						value={copilotCliCommand}
 						copyLabel="Copy command"
@@ -415,6 +448,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 					</p>
 					<InstallDeepLink href={installUrl} label="Add to VS Code" />
 					<CopyCard
+						highlights={highlights}
 						label=".vscode/mcp.json"
 						value={vsCodeJson}
 						copyLabel="Copy JSON"
@@ -425,6 +459,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						<code>mcpServers</code>):
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="~/.copilot/mcp-config.json"
 						value={copilotCliJson}
 						copyLabel="Copy JSON"
@@ -456,6 +491,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						this MCP URL, then complete OAuth when the app opens it:
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="MCP URL"
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
@@ -466,6 +502,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						<code>~/.copilot/mcp-config.json</code> instead:
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="~/.copilot/mcp-config.json"
 						value={copilotCliJson}
 						copyLabel="Copy JSON"
@@ -495,6 +532,7 @@ function renderPanelContent(kind: McpClientKind, mcpServerUrl: string) {
 						complete the OAuth flow when the host opens it:
 					</p>
 					<CopyCard
+						highlights={highlights}
 						label="MCP URL"
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
@@ -536,6 +574,7 @@ export function OnboardingMcpClientTabs(
 						and Grok stay under Manual.
 					</p>
 					<CopyCard
+						highlights={handle.props.highlights}
 						label="Install command"
 						value={installCommand}
 						copyLabel="Copy command"
@@ -566,7 +605,11 @@ export function OnboardingMcpClientTabs(
 
 						{mcpClientTabs.map((tab) => (
 							<TabPanel key={tab.id} name={tab.id} mix={css(tabPanelCss)}>
-								{renderPanelContent(tab.id, handle.props.mcpServerUrl)}
+								{renderPanelContent(
+									tab.id,
+									handle.props.mcpServerUrl,
+									handle.props.highlights,
+								)}
 							</TabPanel>
 						))}
 					</Tabs>

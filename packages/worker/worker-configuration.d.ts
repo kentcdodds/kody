@@ -68,6 +68,7 @@ interface __BaseEnv_Env {
 	REPO_SESSION: DurableObjectNamespace<import("./src/index").RepoSession>;
 	PACKAGE_REALTIME_SESSION: DurableObjectNamespace /* PackageRealtimeSession from kody-runtime */;
 	JOBS: Service /* entrypoint JobsService from kody-jobs */;
+	HIGHLIGHT?: Fetcher /* service kody-highlight */;
 	DYNAMIC_CALLABLE_WORKFLOWS: Workflow /* DynamicCallableWorkflow from kody-runtime */;
 }
 declare namespace Cloudflare {

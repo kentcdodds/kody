@@ -8,9 +8,9 @@
  *   types, so every string goes through the framework's escaping.
  * - Raw HTML tokens (block and inline) are rendered as escaped literal text,
  *   never as markup.
- * - Fenced code is highlighted with Shiki tokens rendered as JSX text and
+ * - Fenced code paints pre-tokenized highlight data as JSX text and
  *   inline styles — never `innerHTML` — so highlighting cannot introduce
- *   markup. Unknown languages fall back to escaped plaintext.
+ *   markup. Missing tokens fall back to escaped plaintext.
  * - No resource-loading elements are emitted (`<img>`, `<iframe>`, media,
  *   etc.), so a README can never make a viewer's browser issue requests —
  *   including to hosted package endpoints (`/@username/packages/*` and the
@@ -36,6 +36,10 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
+import {
+	plainHighlightedCode,
+	type HighlightedCode,
+} from '#universal/highlighted-code.ts'
 
 const allowedLinkProtocols = new Set(['http:', 'https:', 'mailto:'])
 
@@ -66,15 +70,24 @@ export type RenderMarkdownOptions = {
 	 * first-party surfaces whose snippets are meant to be pasted (guides).
 	 */
 	copyCodeBlocks?: boolean
+	/**
+	 * Highlight tokens for fenced code, in the same order `marked` emits
+	 * `code` tokens. Missing or mismatched entries fall back to plaintext.
+	 */
+	fences?: Array<HighlightedCode>
 }
 
-type ResolvedRenderOptions = Required<RenderMarkdownOptions>
+type ResolvedRenderOptions = Required<Omit<RenderMarkdownOptions, 'fences'>> & {
+	fences: Array<HighlightedCode>
+	fenceCursor: { index: number }
+}
 
-const defaultRenderOptions: ResolvedRenderOptions = {
+const defaultRenderOptions = {
 	headingOffset: 2,
 	linkRel: 'noopener noreferrer nofollow ugc',
-	linkPolicy: 'untrusted',
+	linkPolicy: 'untrusted' as const,
 	copyCodeBlocks: false,
+	fences: [] as Array<HighlightedCode>,
 }
 
 /**
@@ -269,16 +282,18 @@ function renderToken(
 			return <hr key={key} />
 		case 'code': {
 			const codeToken = token as Tokens.Code
+			const highlighted = takeFence(options, codeToken.text, codeToken.lang)
 			if (options.copyCodeBlocks) {
 				return (
 					<CopyCodeBlock
 						key={key}
 						code={codeToken.text}
 						lang={codeToken.lang}
+						highlighted={highlighted}
 					/>
 				)
 			}
-			return renderHighlightedCode(codeToken.text, codeToken.lang, key)
+			return renderHighlightedCode(highlighted, key)
 		}
 		case 'list': {
 			// marked's Token union includes a generic catch-all, so `type`
@@ -381,12 +396,28 @@ function renderTokens(
 	return tokens.map((token, index) => renderToken(token, index, options))
 }
 
+function takeFence(
+	options: ResolvedRenderOptions,
+	code: string,
+	lang: string | null | undefined,
+): HighlightedCode {
+	const next = options.fences[options.fenceCursor.index]
+	options.fenceCursor.index += 1
+	if (next && next.code === code) return next
+	return plainHighlightedCode(code, lang)
+}
+
 /** Parses untrusted markdown and returns safe JSX (see module docs). */
 export function renderMarkdownNodes(
 	markdown: string,
 	options?: RenderMarkdownOptions,
 ): Array<RemixNode> {
-	return renderTokens(lexer(markdown), { ...defaultRenderOptions, ...options })
+	return renderTokens(lexer(markdown), {
+		...defaultRenderOptions,
+		...options,
+		fences: options?.fences ?? defaultRenderOptions.fences,
+		fenceCursor: { index: 0 },
+	})
 }
 
 export type MarkdownViewProps = { markdown: string }

@@ -19,26 +19,22 @@ import xmlLang from '@shikijs/langs/xml'
 import yamlLang from '@shikijs/langs/yaml'
 import githubDark from '@shikijs/themes/github-dark'
 import githubLight from '@shikijs/themes/github-light'
-import { type RemixNode } from 'remix/ui'
 import { createHighlighterCoreSync } from 'shiki/core'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
+import {
+	plainHighlightedCode,
+	type HighlightedCode,
+	type HighlightedSpan,
+	type HighlightSnippet,
+} from '../../worker/universal/highlighted-code.ts'
 
 /**
  * Fine-grained Shiki bundle for first-party pages and markdown code fences.
  *
- * Loaded only via dynamic `import()` from `syntax-highlight.tsx` so the
- * grammars stay out of the marketing entry / shared homepage chunk.
- *
- * Worker constraints drive the shape:
- * - JavaScript regex engine (no Oniguruma WASM init on Workers)
- * - Sync highlighter so SSR markdown stays synchronous and hydrates
- * - Explicit langs/themes only (the full `shiki` entry would bloat both
- *   worker and client bundles)
- * - Tokens rendered as JSX text + inline styles (never `innerHTML`), so
- *   untrusted README fences stay inside the markdown safety model
- *
- * The highlighter is created lazily on first use so worker isolates that never
- * render code fences avoid grammar compilation at cold start.
+ * Worker constraints:
+ * - JavaScript regex engine (no Oniguruma WASM)
+ * - Explicit langs/themes only
+ * - Tokens are serializable data (never HTML strings)
  */
 let highlighter: ReturnType<typeof createHighlighterCoreSync> | null = null
 
@@ -73,16 +69,12 @@ function getHighlighter() {
 	return highlighter
 }
 
-/** Skip highlighting past this size; huge dumps stay readable as plain text. */
 const maxHighlightChars = 50_000
 const maxLineLength = 2_000
-
-export const shikiPreClass = 'shiki shiki-themes github-light github-dark'
 
 function normalizeLang(lang: string | null | undefined): string {
 	const trimmed = lang?.trim().toLowerCase() ?? ''
 	if (!trimmed) return 'plaintext'
-	// marked / authors sometimes pass `ts tsx` or `javascript {1,3}`.
 	const primary = trimmed.split(/[\s{,]+/, 1)[0] ?? 'plaintext'
 	return primary || 'plaintext'
 }
@@ -93,6 +85,10 @@ const langAliases: Record<string, string> = {
 	cjs: 'ts',
 	mjs: 'ts',
 	jsx: 'tsx',
+	sh: 'shellscript',
+	bash: 'shellscript',
+	shell: 'shellscript',
+	zsh: 'shellscript',
 }
 
 function resolveLang(lang: string | null | undefined): string {
@@ -110,42 +106,35 @@ function resolveLang(lang: string | null | undefined): string {
 		: 'plaintext'
 }
 
-function rootStyleFromTokens(fg: string | undefined, bg: string | undefined) {
-	const style: Record<string, string> = {}
-	for (const value of [bg, fg]) {
-		if (!value) continue
-		const [first, ...rest] = value.split(';')
-		if (first && value === bg) style.backgroundColor = first
-		if (first && value === fg) style.color = first
-		for (const part of rest) {
+function tokenStyle(token: {
+	htmlStyle?: string | Record<string, string>
+	color?: string
+}): Record<string, string> | undefined {
+	if (token.htmlStyle && typeof token.htmlStyle === 'object') {
+		return token.htmlStyle
+	}
+	if (typeof token.htmlStyle === 'string' && token.htmlStyle.trim()) {
+		const style: Record<string, string> = {}
+		for (const part of token.htmlStyle.split(';')) {
 			const separator = part.indexOf(':')
 			if (separator <= 0) continue
-			style[part.slice(0, separator)] = part.slice(separator + 1)
+			style[part.slice(0, separator).trim()] = part.slice(separator + 1).trim()
 		}
+		if (Object.keys(style).length > 0) return style
 	}
-	return style
+	if (token.color) return { color: token.color }
+	return undefined
 }
 
-function renderPlainCode(code: string, key?: number): RemixNode {
-	return (
-		<pre key={key} class={shikiPreClass}>
-			<code>{code}</code>
-		</pre>
-	)
-}
-
-/**
- * Highlight `code` as a `<pre class="shiki">` tree. Unknown languages and
- * oversized snippets fall back to escaped plain text in the same wrapper.
- */
-export function renderHighlightedCode(
-	code: string,
-	lang?: string | null,
-	key?: number,
-): RemixNode {
-	if (code.length > maxHighlightChars) return renderPlainCode(code, key)
-
-	const resolvedLang = resolveLang(lang)
+export function tokenizeSnippet(snippet: HighlightSnippet): HighlightedCode {
+	const code = snippet.code
+	if (code.length > maxHighlightChars) {
+		return plainHighlightedCode(code, snippet.lang)
+	}
+	const resolvedLang = resolveLang(snippet.lang)
+	if (resolvedLang === 'plaintext') {
+		return plainHighlightedCode(code, snippet.lang)
+	}
 	try {
 		const result = getHighlighter().codeToTokens(code, {
 			lang: resolvedLang,
@@ -155,30 +144,28 @@ export function renderHighlightedCode(
 			},
 			tokenizeMaxLineLength: maxLineLength,
 		})
-		return (
-			<pre
-				key={key}
-				class={shikiPreClass}
-				style={rootStyleFromTokens(result.fg, result.bg)}
-			>
-				<code>
-					{result.tokens.map((line, lineIndex) => (
-						<span class="line" key={lineIndex}>
-							{line.map((token) => (
-								<span
-									key={token.offset}
-									style={token.htmlStyle ?? { color: token.color }}
-								>
-									{token.content}
-								</span>
-							))}
-							{lineIndex < result.tokens.length - 1 ? '\n' : null}
-						</span>
-					))}
-				</code>
-			</pre>
-		)
+		return {
+			code,
+			lang: resolvedLang,
+			plain: false,
+			fg: result.fg,
+			bg: result.bg,
+			lines: result.tokens.map((line) =>
+				line.map((token) => {
+					const span: HighlightedSpan = { content: token.content }
+					const style = tokenStyle(token)
+					if (style) span.style = style
+					return span
+				}),
+			),
+		}
 	} catch {
-		return renderPlainCode(code, key)
+		return plainHighlightedCode(code, snippet.lang)
 	}
+}
+
+export function tokenizeSnippets(
+	snippets: Array<HighlightSnippet>,
+): Array<HighlightedCode> {
+	return snippets.map((snippet) => tokenizeSnippet(snippet))
 }

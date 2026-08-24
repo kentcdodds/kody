@@ -18,6 +18,7 @@ import {
 	withVaryAccept,
 } from '#app/markdown-negotiation.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
+import { highlightMarkdownFences } from '#app/highlight-code.ts'
 
 export function createBlogHandler(env: Env) {
 	return {
@@ -49,7 +50,7 @@ export function createBlogApiHandler(_env: Env) {
 }
 
 /** Loader payload shared by the SSR page and the JSON API. */
-function toBlogPostLoaderData(post: BlogPost) {
+async function toBlogPostLoaderData(env: Env, post: BlogPost) {
 	return {
 		ok: true as const,
 		slug: post.slug,
@@ -61,6 +62,7 @@ function toBlogPostLoaderData(post: BlogPost) {
 		imageAlt: post.imageAlt,
 		ogImage: post.ogImage,
 		body: post.body,
+		bodyFences: await highlightMarkdownFences(env, post.body),
 		readNext: getReadNextBlogPost(post.slug),
 	}
 }
@@ -93,7 +95,7 @@ export function createBlogPostHandler(env: Env) {
 					request,
 					env,
 					loaderData: {
-						blogPost: toBlogPostLoaderData(post),
+						blogPost: await toBlogPostLoaderData(env, post),
 					},
 				}),
 			)
@@ -101,7 +103,7 @@ export function createBlogPostHandler(env: Env) {
 	} satisfies Action<typeof routes.blogPost>
 }
 
-export function createBlogPostApiHandler(_env: Env) {
+export function createBlogPostApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ params }) {
@@ -110,7 +112,7 @@ export function createBlogPostApiHandler(_env: Env) {
 				return jsonResponse({ ok: false, error: 'Blog post not found.' }, 404)
 			}
 
-			return jsonResponse(toBlogPostLoaderData(post))
+			return jsonResponse(await toBlogPostLoaderData(env, post))
 		},
 	} satisfies Action<typeof routes.blogPostApi>
 }

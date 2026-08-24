@@ -259,6 +259,7 @@ each PR preview is isolated:
 - Platform worker: `<preview-worker-name>-platform`
 - Runtime worker: `<preview-worker-name>-runtime`
 - Jobs worker: `<preview-worker-name>-jobs`
+- Highlight worker: `<preview-worker-name>-highlight`
 - App D1 database: `<preview-worker-name>-db`
 - Audit D1 database: `<preview-worker-name>-audit-db`
 - Jobs D1 database: ensured by `jobs-worker-resources.ts` for

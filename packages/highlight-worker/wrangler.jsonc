@@ -1,0 +1,34 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	// Syntax-highlight worker: Shiki lives only here. Origin reaches it
+	// through the HIGHLIGHT service binding (no public hostname).
+	"name": "kody-highlight",
+	"main": "./src/index.ts",
+	"compatibility_date": "2026-04-16",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"minify": true,
+	"upload_source_maps": true,
+	"observability": {
+		"enabled": true,
+		"traces": {
+			"enabled": true,
+		},
+	},
+	"env": {
+		"production": {
+			"vars": {
+				"SENTRY_ENVIRONMENT": "production",
+			},
+		},
+		"preview": {
+			"vars": {
+				"SENTRY_ENVIRONMENT": "preview",
+			},
+		},
+		"test": {
+			"vars": {
+				"SENTRY_ENVIRONMENT": "test",
+			},
+		},
+	},
+}

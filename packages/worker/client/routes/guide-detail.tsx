@@ -116,6 +116,7 @@ export function GuideDetailRoute(handle: Handle) {
 				linkRel: 'noopener noreferrer',
 				linkPolicy: 'first-party',
 				copyCodeBlocks: true,
+				fences: guide?.bodyFences,
 			})
 		}
 		return renderedBody

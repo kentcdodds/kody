@@ -176,6 +176,7 @@ export function OnboardingRoute(handle: Handle) {
 	let loggedIn = false
 	let username: string | null = null
 	let mcpServerUrl = ''
+	let mcpHighlights: OnboardingPayload['mcpHighlights'] = {}
 	let setupPrompt = ''
 	let persistPrompt = ''
 	let hasMcpClient = false
@@ -205,6 +206,7 @@ export function OnboardingRoute(handle: Handle) {
 		loggedIn = payload.loggedIn
 		username = payload.username
 		mcpServerUrl = payload.mcpServerUrl
+		mcpHighlights = payload.mcpHighlights ?? {}
 		setupPrompt = payload.setupPrompt
 		persistPrompt = payload.persistPrompt
 		hasMcpClient = payload.hasMcpClient
@@ -646,7 +648,10 @@ export function OnboardingRoute(handle: Handle) {
 										waitingLabel: 'Waiting for your agent to connect…',
 									})}
 								</div>
-								<OnboardingMcpClientTabs mcpServerUrl={mcpServerUrl} />
+								<OnboardingMcpClientTabs
+									mcpServerUrl={mcpServerUrl}
+									highlights={mcpHighlights}
+								/>
 								<div
 									mix={css(authNoteCss)}
 									role="note"
