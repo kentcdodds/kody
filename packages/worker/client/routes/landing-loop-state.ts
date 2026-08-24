@@ -17,8 +17,8 @@ export type LandingLoopToggleLabel = 'Restart' | 'Play' | 'Pause'
 
 /**
  * Header control for the factory loop. Pause is the default — including
- * before the transcript chunk loads — so SSR reserves the button and
- * first paint does not shift when playback starts.
+ * before the transcript chunk loads — so SSR reserves the combined
+ * playing/pause control and first paint does not shift.
  */
 export function landingLoopToggleLabel(input: {
 	reducedMotion: boolean

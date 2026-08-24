@@ -19,6 +19,7 @@ import {
 	waitLandingLoopHold,
 	type LandingLoopBeat,
 	type LandingLoopSceneGroup,
+	type LandingLoopToggleLabel,
 } from './landing-loop-state.ts'
 
 type LoopLineRenderer = (line: TranscriptLine) => RemixNode
@@ -30,11 +31,12 @@ type LoopLineRenderer = (line: TranscriptLine) => RemixNode
  * it does not block first paint or the first beats. Hover/focus (fine
  * pointers) and explore (scroll up or open a tool) pause the autoplay;
  * Play scrolls to the latest beat and continues. The last beat pauses
- * and offers Restart instead of looping. Pause is painted on the SSR
- * teaser so the header does not shift when the transcript chunk loads.
- * A reserved toggle slot keeps that height if reduced-motion later
- * hides the button. The phone act is a later scene in the same card
- * — a time skip plus device chrome, not a reset.
+ * and offers Restart instead of looping. One header control is both
+ * the playing indicator and play/pause (icons, not words). SSR paints
+ * Pause so the header does not shift when the transcript chunk loads.
+ * A reserved slot keeps that size if reduced-motion later hides it.
+ * The phone act is a later scene in the same card — a time skip plus
+ * device chrome, not a reset.
  */
 export function LandingLoopPlayer(handle: Handle) {
 	let beats: Array<LandingLoopBeat> | null = null
@@ -268,23 +270,12 @@ export function LandingLoopPlayer(handle: Handle) {
 				]}
 			>
 				<div class="landing-loop-head">
-					<p class="landing-loop-status" aria-hidden="true">
-						<span class="landing-loop-status-dot"></span>
-						{reducedMotion
-							? 'The loop'
-							: ended
-								? 'The loop'
-								: paused
-									? 'Paused'
-									: loaded
-										? 'Playing'
-										: 'The loop'}
-					</p>
 					<span class="landing-loop-toggle-slot">
 						{toggleLabel ? (
 							<button
 								type="button"
 								class="landing-loop-toggle"
+								aria-label={toggleLabel}
 								mix={on('click', () => {
 									if (player.isEnded()) restartFromStart()
 									else if (player.isPaused() || heldPause) playFromHere()
@@ -295,7 +286,8 @@ export function LandingLoopPlayer(handle: Handle) {
 									}
 								})}
 							>
-								{toggleLabel}
+								<span class="landing-loop-status-dot"></span>
+								{renderLoopToggleIcon(toggleLabel)}
 							</button>
 						) : null}
 					</span>
@@ -480,4 +472,55 @@ function renderTeaser() {
 			</figure>
 		</>
 	)
+}
+
+function renderLoopToggleIcon(label: LandingLoopToggleLabel) {
+	switch (label) {
+		case 'Pause':
+			return (
+				<svg
+					viewBox="0 0 24 24"
+					width="1em"
+					height="1em"
+					aria-hidden="true"
+					fill="currentColor"
+				>
+					<rect x="6" y="5" width="4.5" height="14" rx="1" />
+					<rect x="13.5" y="5" width="4.5" height="14" rx="1" />
+				</svg>
+			)
+		case 'Play':
+			return (
+				<svg
+					viewBox="0 0 24 24"
+					width="1em"
+					height="1em"
+					aria-hidden="true"
+					fill="currentColor"
+				>
+					<path d="M8 5.5v13l11-6.5-11-6.5Z" />
+				</svg>
+			)
+		case 'Restart':
+			return (
+				<svg
+					viewBox="0 0 24 24"
+					width="1em"
+					height="1em"
+					aria-hidden="true"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" />
+					<path d="M4.5 4.5v5h5" />
+				</svg>
+			)
+		default: {
+			const exhaustive: never = label
+			return exhaustive
+		}
+	}
 }
