@@ -816,10 +816,6 @@ html.is-settled {
 	color: var(--color-primary-text);
 }
 
-.landing-hero-benefits-rest {
-	white-space: nowrap;
-}
-
 .landing-hero-sub {
 	margin: 1.5rem auto 0;
 	font-size: clamp(1.05rem, 1.6vw, 1.2rem);

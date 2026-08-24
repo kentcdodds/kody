@@ -608,6 +608,11 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
 	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
+	expect(withoutAssetsHtml).toContain('The private software ecosystem')
+	expect(withoutAssetsHtml).toContain('all your agents can share')
+	expect(withoutAssetsHtml).toContain(
+		"It's like your own personal npm and GitHub that all of your agents can use.",
+	)
 	expect(withoutAssetsHtml).toContain('Kody keeps it')
 	expect(withoutAssetsHtml).toContain('href="/images/hero/kody-base-640.webp"')
 	expect(withoutAssetsHtml).toContain('kody-base-960.webp')
