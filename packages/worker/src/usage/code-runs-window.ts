@@ -3,6 +3,7 @@ import {
 	isStillPublicCodeRunsWindow,
 	parsePublicCodeRunsWindow,
 	publicCodeRunsWindowMs,
+	stillPublicCodeRunsWindow,
 	type PublicCodeRunsWindow,
 } from '#universal/code-runs.ts'
 
@@ -32,7 +33,7 @@ export async function loadPublicCodeRunsWindow(
 	}
 	const total = await sumExecuteEventCount(env)
 	if (total === null || total <= 0) return null
-	return stillWindow(total, now)
+	return stillPublicCodeRunsWindow(total, now)
 }
 
 export async function refreshPublicCodeRunsWindow(input: {
@@ -58,30 +59,33 @@ export async function refreshPublicCodeRunsWindow(input: {
 			return { status: 'skipped', reason: 'kv_read_failed' }
 		}
 		if (existing.status === 'missing') {
-			await writeStoredWindow(kv, stillWindow(total, now))
+			await writeStoredWindow(kv, stillPublicCodeRunsWindow(total, now))
 			return { status: 'initialized' }
 		}
 		const existingWindow = existing.window
-
+		const still = isStillPublicCodeRunsWindow(existingWindow)
 		const windowEndMs = Date.parse(existingWindow.windowEnd)
 		const beforeEnd =
 			Number.isFinite(windowEndMs) && now.getTime() < windowEndMs
-		const stillGrowing =
-			isStillPublicCodeRunsWindow(existingWindow) &&
-			total > existingWindow.current
+		const stillGrowing = still && total > existingWindow.current
+		const stillRegressed = still && total < existingWindow.current
 		// A still pair is a bootstrap (KV miss or first write). Holding it
-		// for 24h freezes the homepage ticker even while executes accrue.
+		// for 24h freezes the homepage ticker even while executes accrue,
+		// and `current = max(total, previous)` latches a stale high-water
+		// mark when the fleet SUM later drops (authoritative AE recompute).
 		// Live windows still hold until windowEnd so interpolation stays
 		// deterministic for every visitor.
-		if (beforeEnd && !stillGrowing) {
+		if (beforeEnd && !stillGrowing && !stillRegressed) {
 			return { status: 'held' }
 		}
+		if (total <= existingWindow.current) {
+			await writeStoredWindow(kv, stillPublicCodeRunsWindow(total, now))
+			return { status: 'rotated' }
+		}
 
-		const previous = existingWindow.current
-		const current = Math.max(total, previous)
 		await writeStoredWindow(kv, {
-			previous,
-			current,
+			previous: existingWindow.current,
+			current: total,
 			windowStart: now.toISOString(),
 			windowEnd: new Date(now.getTime() + publicCodeRunsWindowMs).toISOString(),
 		})
@@ -119,15 +123,6 @@ async function writeStoredWindow(
 	await kv.put(publicCodeRunsKvKey, JSON.stringify(window))
 }
 
-function stillWindow(total: number, now: Date): PublicCodeRunsWindow {
-	return {
-		previous: total,
-		current: total,
-		windowStart: now.toISOString(),
-		windowEnd: new Date(now.getTime() + publicCodeRunsWindowMs).toISOString(),
-	}
-}
-
 async function sumExecuteEventCount(
 	env: CodeRunsWindowEnv,
 ): Promise<number | null> {
@@ -137,14 +132,26 @@ async function sumExecuteEventCount(
 			`SELECT COALESCE(SUM(event_count), 0) AS total
 			 FROM usage_rollups
 			 WHERE metric = 'execute'`,
-		).first<{ total: number }>()
-		const total = row?.total
-		if (typeof total !== 'number' || !Number.isFinite(total) || total < 0) {
-			return 0
-		}
-		return Math.floor(total)
+		).first<{ total: unknown }>()
+		return toNonNegativeCount(row?.total)
 	} catch (error) {
 		console.debug('public-code-runs-sum-failed', error)
 		return null
 	}
+}
+
+/**
+ * D1 `SUM` / `COALESCE` can arrive as a number, numeric string, or bigint.
+ * Treating anything but `typeof === 'number'` as zero froze the homepage
+ * ticker on a still pair even while execute rollups existed.
+ */
+function toNonNegativeCount(value: unknown): number {
+	if (typeof value === 'bigint') {
+		if (value < 0n) return 0
+		const parsed = Number(value)
+		return Number.isFinite(parsed) ? Math.floor(parsed) : 0
+	}
+	const parsed = Number(value)
+	if (!Number.isFinite(parsed) || parsed < 0) return 0
+	return Math.floor(parsed)
 }

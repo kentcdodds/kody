@@ -11,7 +11,10 @@
  * replaying missed steps. When leftover budget cannot support a 3-second
  * integer backbone, the client moves honest progress toward the next tick
  * instead of inventing +1s. Homepage GET may continue an expired or still
- * pair in memory when the fleet total has grown; it does not write KV.
+ * pair in memory when the fleet total has grown, or reset one to a new
+ * still window when the fleet total has dropped; it does not write KV.
+ * A client that cannot paint a next tick refetches `/code-runs.json`
+ * instead of giving up for the rest of the tab.
  */
 
 export const publicCodeRunsWindowMs = 24 * 60 * 60 * 1000
@@ -26,6 +29,31 @@ export type PublicCodeRunsWindow = {
 
 export function isStillPublicCodeRunsWindow(window: PublicCodeRunsWindow) {
 	return window.previous === window.current
+}
+
+export function stillPublicCodeRunsWindow(
+	total: number,
+	now: Date,
+): PublicCodeRunsWindow {
+	const nowMs = now.getTime()
+	return {
+		previous: total,
+		current: total,
+		windowStart: now.toISOString(),
+		windowEnd: new Date(nowMs + publicCodeRunsWindowMs).toISOString(),
+	}
+}
+
+export function publicCodeRunsWindowsEqual(
+	left: PublicCodeRunsWindow,
+	right: PublicCodeRunsWindow,
+) {
+	return (
+		left.previous === right.previous &&
+		left.current === right.current &&
+		left.windowStart === right.windowStart &&
+		left.windowEnd === right.windowEnd
+	)
 }
 
 export function parsePublicCodeRunsWindow(
@@ -128,19 +156,25 @@ export function msUntilNextCodeRunsPaint(
 
 /**
  * In-memory continuation when KV still holds a pair that cannot tick.
- * Homepage GET uses this instead of writing. Null means keep `stored`.
+ * Grows a still / expired pair when the fleet total is higher. Resets to a
+ * new still window when the fleet total dropped (a latched high-water mark
+ * would otherwise freeze the ticker). Null means keep `stored`.
  */
 export function continuePublicCodeRunsWindow(input: {
 	stored: PublicCodeRunsWindow
 	total: number
 	now: Date
 }): PublicCodeRunsWindow | null {
-	if (input.total <= input.stored.current) return null
+	if (input.total <= 0) return null
 	const nowMs = input.now.getTime()
 	const endMs = Date.parse(input.stored.windowEnd)
 	const expired = Number.isFinite(endMs) && nowMs >= endMs
 	const still = isStillPublicCodeRunsWindow(input.stored)
 	if (!expired && !still) return null
+	if (input.total < input.stored.current) {
+		return stillPublicCodeRunsWindow(input.total, input.now)
+	}
+	if (input.total === input.stored.current) return null
 	if (still && !expired) {
 		return {
 			previous: input.stored.current,
@@ -152,7 +186,7 @@ export function continuePublicCodeRunsWindow(input: {
 	const startMs = Number.isFinite(endMs) ? endMs : nowMs
 	return {
 		previous: input.stored.current,
-		current: Math.max(input.total, input.stored.current),
+		current: input.total,
 		windowStart: new Date(startMs).toISOString(),
 		windowEnd: new Date(startMs + publicCodeRunsWindowMs).toISOString(),
 	}

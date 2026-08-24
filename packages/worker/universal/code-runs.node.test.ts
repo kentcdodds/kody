@@ -12,6 +12,7 @@ import {
 	msUntilNextCodeRunsPaint,
 	nextDisplayedCodeRunsCount,
 	parsePublicCodeRunsWindow,
+	publicCodeRunsWindowsEqual,
 } from './code-runs.ts'
 
 const windowStart = '2026-08-21T00:00:00.000Z'
@@ -296,6 +297,10 @@ test('continuePublicCodeRunsWindow unsticks still and expired pairs without writ
 		windowStart: '2026-08-21T00:00:00.000Z',
 		windowEnd: '2026-08-22T00:00:00.000Z',
 	}
+	expect(publicCodeRunsWindowsEqual(still, still)).toBe(true)
+	expect(publicCodeRunsWindowsEqual(still, { ...still, current: 101 })).toBe(
+		false,
+	)
 	expect(
 		continuePublicCodeRunsWindow({ stored: still, total: 100, now }),
 	).toBeNull()
@@ -304,6 +309,14 @@ test('continuePublicCodeRunsWindow unsticks still and expired pairs without writ
 	).toEqual({
 		previous: 100,
 		current: 140,
+		windowStart: '2026-08-21T12:00:00.000Z',
+		windowEnd: '2026-08-22T12:00:00.000Z',
+	})
+	expect(
+		continuePublicCodeRunsWindow({ stored: still, total: 80, now }),
+	).toEqual({
+		previous: 80,
+		current: 80,
 		windowStart: '2026-08-21T12:00:00.000Z',
 		windowEnd: '2026-08-22T12:00:00.000Z',
 	})
@@ -325,5 +338,17 @@ test('continuePublicCodeRunsWindow unsticks still and expired pairs without writ
 		current: 2000,
 		windowStart: '2026-08-22T00:00:00.000Z',
 		windowEnd: '2026-08-23T00:00:00.000Z',
+	})
+	expect(
+		continuePublicCodeRunsWindow({
+			stored: window,
+			total: 900,
+			now: new Date('2026-08-22T01:00:00.000Z'),
+		}),
+	).toEqual({
+		previous: 900,
+		current: 900,
+		windowStart: '2026-08-22T01:00:00.000Z',
+		windowEnd: '2026-08-23T01:00:00.000Z',
 	})
 })

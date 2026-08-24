@@ -85,12 +85,18 @@ baseline with `complete = true` and all four totals at zero. Any nonzero total
 blocks cutover. If a reset is needed, deploy a new epoch and capture a new
 complete zero baseline; do not clear or reuse an epoch in place.
 
-## Analytics Engine liveness query
+## Fixed-window query procedure
 
-Run this query against `kody_package_invoke_specifier_events`. Replace only the
-two UTC timestamp literals, using Analytics Engine's accepted
-`YYYY-MM-DD HH:MM:SS` format. The start must be after the telemetry deploy
-completed; the end must be after the observation window closed.
+The evidence schedule is fixed before reading form outcomes. Window `n` is the
+one-hour interval
+`[2026-08-23T21:22:35Z + n hours, 2026-08-23T21:22:35Z + (n + 1) hours)`, for
+integer `n >= 0`. Query every closed window in order. Never skip, reorder,
+overlap, resize, or combine windows in response to their form results.
+
+Run this query separately for each window against
+`kody_package_invoke_specifier_events`. Replace only the two UTC timestamp
+literals with that window's exact bounds, using Analytics Engine's accepted
+`YYYY-MM-DD HH:MM:SS` format. This example is window `0`.
 
 ```sql
 SELECT
@@ -100,76 +106,104 @@ SELECT
   MAX(_sample_interval) AS max_sample_interval,
   SUM(_sample_interval) AS weighted_calls
 FROM kody_package_invoke_specifier_events
-WHERE timestamp >= toDateTime('2026-08-01 00:00:00')
-  AND timestamp < toDateTime('2026-08-08 00:00:00')
+WHERE timestamp >= toDateTime('2026-08-23 21:22:35')
+  AND timestamp < toDateTime('2026-08-23 22:22:35')
   AND blob1 IN ('prefixless', 'kody_prefixed')
   AND blob2 IN ('execute', 'package', 'job', 'app')
 GROUP BY surface, form
 ORDER BY surface, form
 ```
 
-Analytics Engine can sample high-volume data. Each retained row represents
-`_sample_interval` source events. Weighted sums report estimated workload
-volume, but they are not independent observations. Only prefixed liveness rows
-from predeclared disjoint windows whose returned surface rows all have
-`max_sample_interval = 1` contribute retained confidence counts. Every observed
-prefixless row is still a hard failure, sampled or not. Missing prefixless rows
-never contribute absence evidence; only the complete exact UserMeter aggregate
-does that.
+The query returns one row per surface and form. Process each closed window
+before moving to the next:
 
-The query returns one row per surface and form. Aggregate it outside Analytics
-Engine for each surface:
-
-- retained total = sum of `retained_calls` across its form rows;
-- retained `kody_prefixed` / `prefixless` = each matching form row's
-  `retained_calls`;
-- weighted total = sum of `weighted_calls` across its form rows, with each
-  form's weighted count taken from its row; and
-- surface sampling interval = maximum `max_sample_interval` across its rows.
-
-A missing required surface (`execute`, `package`, or `job`) fails the Analytics
-Engine liveness gate. A missing `app` row means no observed app liveness and
-does not block cleanup unless app traffic appears in another readout. Follow the
-ordered fixed one-hour ledger anchored at `2026-08-23T21:22:35Z` from
-[cleanup issue #1702](https://github.com/kentcdodds/kody/issues/1702). Windows
-before the exact-counter production deploy remain reporting-only because the
-counter did not cover them.
+1. Inspect every returned row, including sampled rows. Any observed `prefixless`
+   row with `retained_calls > 0` fails and restarts the entire telemetry gate.
+   Reset every surface's confidence accumulator and resume with the next fixed
+   window.
+2. For each surface, take the maximum `max_sample_interval` across its form
+   rows. A window with at least one row and a maximum of `1` may contribute
+   retained `kody_prefixed` liveness counts for that surface. This selection
+   depends only on sampling, never on form outcome.
+3. Do **not** infer zero from a missing `prefixless` row. Form is stored in
+   non-indexed `blob1`; Analytics Engine may omit a rare blob subgroup even when
+   returned rows have `_sample_interval = 1`. The shared constant index does not
+   make this grouped query absence-capable.
+4. Zero-prefixless confidence comes only from the exact UserMeter aggregate.
+   Every aggregate from the production baseline through the final window check
+   must use the same epoch, report `complete = true`, and keep every surface
+   total at zero. Windows before that baseline remain reporting-only.
+5. Sampled or missing surface-windows add no confidence counts, but remain in
+   the ordered evidence ledger. Sum `weighted_calls` by surface/form for
+   reporting only; weighted values never enter the confidence gate.
 
 ## Cleanup gate
 
-Remove prefixless runtime support only when all of the following hold:
+Remove prefixless runtime and type support only when both safety gates pass:
 
-- Every exact aggregate from the post-deploy baseline through the final check
-  has the same epoch, `complete = true`, and global prefixless totals of exactly
-  zero for every surface.
-- `execute`, `package`, and `job` each independently accumulate at least `300`
-  retained calls and `30` retained `kody_prefixed` calls from ordered,
-  post-exact-deploy, unsampled Analytics Engine surface-windows. Weighted values
-  remain liveness/volume reporting only.
-- `app` is observed in every readout. If it has any traffic, it must meet the
-  same retained `300` / `30` liveness thresholds independently while its exact
-  prefixless total remains zero.
+1. **Executable source:** fleet scan `803e3045` reports 307 clean packages, zero
+   executable-source findings, zero drift, and zero errors. Its three remaining
+   findings are private README-only documentation and cannot execute. They do
+   not block runtime/type removal once telemetry passes.
+2. **Telemetry:** an absence-capable proof source exists for every runtime
+   surface. From the exact counter's complete all-zero production baseline,
+   predeclared disjoint Analytics Engine windows accumulate, independently for
+   `execute`, `package`, and `job`, at least 300 retained calls total and at
+   least 30 retained `kody_prefixed` calls while every exact aggregate remains
+   complete and zero. If `app` is active, it must independently meet the same
+   liveness thresholds and exact-zero requirement.
 
-Do not combine surfaces to reach a threshold. Execute, package, and job each
-must pass independently.
+The fixed windows are disjoint, so calls included for one surface are never
+double-counted. Predeclaring every window and selecting solely on sampling and
+the independently documented proof source prevents cherry-picking based on the
+desired zero outcome. Once absence-capable windows accumulate 300 unsampled
+calls, they support the rule-of-three target (an approximate one-sided 95% upper
+bound near 1% under independent calls). Thirty observed `kody_prefixed` calls
+separately prove that each surface is live. Every Analytics Engine window must
+still be queried: an observed prefixless row in a sampled or unsampled window
+restarts the gate.
 
 The exact counter proves prefixless absence; Analytics Engine proves that each
 surface remained live and using the canonical form. The separate minimum of 30
 prefixed calls prevents a dead or miswired liveness path from looking safe.
 
+The three README-only findings remain aggregate owner-action documentation debt.
+Track their count without publishing private package ids or owners. Keep codemod
+0007 and the local prefixless teaching error available to repair those docs; do
+not treat documentation debt as executable compatibility risk.
+
+## Current evidence
+
+The cumulative check recorded in
+[issue #1702](https://github.com/kentcdodds/kody/issues/1702#issuecomment-5400279163)
+covered `[2026-08-23T21:22:35Z, 2026-08-24T19:30:00Z)`:
+
+| Surface   | Retained prefixed | Weighted prefixed | Maximum sample interval |
+| --------- | ----------------: | ----------------: | ----------------------: |
+| `execute` |                63 |                76 |                       2 |
+| `job`     |                86 |                86 |                       1 |
+| `package` |                71 |                71 |                       1 |
+
+No prefixless or app rows were returned. This is non-qualifying historical
+evidence: execute was sampled, and absence of a non-indexed form cannot be
+inferred from the returned rows. Analytics Engine may choose a different read
+resolution for shorter time ranges, so this result does not establish the
+capacity of any fixed one-hour window. The operator must replay fixed one-hour
+windows from window `0` in order, but those queries cannot complete the
+zero-prefixless gate before the exact UserMeter baseline.
+
 Attach the following evidence to the final cutover:
 
 1. The exact-counter deployed commit, deploy link, epoch, complete zero
    baseline, and every bounded follow-up aggregate.
-2. Every fixed window number in order, the exact query text used, and dataset
-   name `kody_package_invoke_specifier_events`.
-3. Exact start and end UTC timestamps in ISO 8601 form alongside each executed
-   query. The evidence timestamps correspond exactly to the UTC values passed to
-   `toDateTime(...)`; ISO formatting is for the evidence record, not the SQL
-   literal.
-4. Every result row, including app when present.
-5. Prefixless reset points and per-surface retained and weighted liveness
-   accumulators.
+2. Every closed fixed window number and exact UTC bounds, in order, including
+   sampled and empty surface-windows.
+3. The exact supported query, every grouped result row, and per-surface retained
+   and weighted liveness accumulators.
+4. Prefixless reset points, dataset name, index values, telemetry deploy link,
+   and deployed commit.
+5. Fleet scan `803e3045` totals plus the aggregate count of README-only debt;
+   never publish private package ids or owners.
 
 Keep prefixless runtime acceptance and the exact/Analytics evidence paths
 through final cutover verification. Object invocation stays removed; do not add

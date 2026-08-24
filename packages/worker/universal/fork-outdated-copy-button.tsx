@@ -1,6 +1,8 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
 import { type Handle, css } from 'remix/ui'
+import { communityStatusPillBoxCss } from '#universal/community-status-pill.ts'
+import { hoverMq } from '#universal/styles/style-primitives.ts'
 import {
 	colors,
 	radius,
@@ -8,10 +10,24 @@ import {
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
-import { hoverMq } from '#universal/styles/style-primitives.ts'
 
+export const COPY_PROMPT_ATTRIBUTE = 'data-copy-prompt'
+export const COPY_PROMPT_SELECTOR = '[data-copy-prompt]'
 export const FORK_OUTDATED_COPY_TOOLTIP = 'Click to copy an update prompt'
-export const FORK_OUTDATED_COPIED_TOOLTIP = 'Copied'
+export const INSTALLED_COPY_TOOLTIP =
+	'Click to copy a prompt to look up this package and adapt it'
+export const FORKED_COPY_TOOLTIP =
+	'Click to copy a prompt to finish adapting this fork'
+export const COPY_PROMPT_COPIED_TOOLTIP = 'Copied'
+export const FORK_OUTDATED_COPIED_TOOLTIP = COPY_PROMPT_COPIED_TOOLTIP
+
+type CopyPromptPillInput = {
+	label: string
+	prompt: string
+	testId: string
+	tooltip: string
+	tone: 'badge' | 'outdated'
+}
 
 type ForkOutdatedCopyButtonProps = {
 	prompt: string
@@ -19,60 +35,48 @@ type ForkOutdatedCopyButtonProps = {
 }
 
 /**
- * Yellow pill that stands in for Installed/Forked when a community listing
- * has been republished ahead of this fork. Frames render this as static HTML;
- * the hydrated app copies `data-copy-text` on click and swaps the tooltip.
+ * Static HTML copy pill. Frames render it without hydration; the app copies
+ * `data-copy-text` on click and swaps the tooltip.
  */
-export function ForkOutdatedCopyButton(
-	handle: Handle<ForkOutdatedCopyButtonProps>,
-) {
-	return () => (
+export function renderCopyPromptPill(input: CopyPromptPillInput) {
+	return (
 		<button
 			type="button"
-			data-testid={handle.props.testId}
-			data-fork-outdated-copy=""
-			data-copy-text={handle.props.prompt}
-			mix={css(forkOutdatedCopyButtonCss)}
+			data-testid={input.testId}
+			data-copy-prompt=""
+			data-copy-text={input.prompt}
+			data-copy-tooltip={input.tooltip}
+			{...(input.tone === 'outdated' ? { 'data-fork-outdated-copy': '' } : {})}
+			mix={css(
+				input.tone === 'outdated'
+					? forkOutdatedCopyButtonCss
+					: badgeCopyPromptButtonCss,
+			)}
 		>
-			Fork outdated
-			<span role="tooltip">{FORK_OUTDATED_COPY_TOOLTIP}</span>
+			{input.label}
+			<span role="tooltip">{input.tooltip}</span>
 		</button>
 	)
 }
 
-/*
- * CSS hover/focus tooltip (same grammar as onboarding Copy prompt): a
- * top-layer popover would steal pointer events from neighboring pills.
- * `pointer-events: none` keeps the tip from becoming a hover target.
- * `z-index` lifts the control above a listing card's stretched name-link
- * overlay so the click hits the button instead of the card.
+/**
+ * Yellow pill that stands in for Installed/Forked when a community listing
+ * has been republished ahead of this fork.
  */
-const forkOutdatedCopyButtonCss = {
-	position: 'relative' as const,
-	zIndex: 1,
-	flex: 'none',
-	appearance: 'none' as const,
-	margin: 0,
-	border: 'none',
-	fontFamily: 'inherit',
-	fontSize: '0.78rem',
-	fontWeight: 650,
-	lineHeight: 1.2,
-	color: 'oklch(0.48 0.12 85)',
-	backgroundColor: 'oklch(0.88 0.12 95 / 0.92)',
-	borderRadius: '999px',
-	padding: '0.15rem 0.6rem',
-	whiteSpace: 'nowrap' as const,
-	cursor: 'pointer',
-	[hoverMq]: {
-		'&:hover': {
-			backgroundColor: 'oklch(0.84 0.13 95)',
-		},
-	},
-	'&:focus-visible': {
-		outline: `2px solid oklch(0.7 0.14 90)`,
-		outlineOffset: '2px',
-	},
+export function ForkOutdatedCopyButton(
+	handle: Handle<ForkOutdatedCopyButtonProps>,
+) {
+	return () =>
+		renderCopyPromptPill({
+			label: 'Fork outdated',
+			prompt: handle.props.prompt,
+			testId: handle.props.testId,
+			tooltip: FORK_OUTDATED_COPY_TOOLTIP,
+			tone: 'outdated',
+		})
+}
+
+const copyPromptTooltipCss = {
 	'& [role="tooltip"]': {
 		position: 'absolute' as const,
 		left: '50%',
@@ -112,5 +116,51 @@ const forkOutdatedCopyButtonCss = {
 	'&:focus-visible [role="tooltip"]': {
 		opacity: 1,
 		visibility: 'visible' as const,
+	},
+}
+
+const copyPromptButtonBaseCss = {
+	...communityStatusPillBoxCss,
+	position: 'relative' as const,
+	zIndex: 1,
+	appearance: 'none' as const,
+	cursor: 'pointer',
+	...copyPromptTooltipCss,
+}
+
+/*
+ * CSS hover/focus tooltip (same grammar as onboarding Copy prompt): a
+ * top-layer popover would steal pointer events from neighboring pills.
+ * `pointer-events: none` keeps the tip from becoming a hover target.
+ * `z-index` lifts the control above a listing card's stretched name-link
+ * overlay so the click hits the button instead of the card.
+ */
+const forkOutdatedCopyButtonCss = {
+	...copyPromptButtonBaseCss,
+	color: 'oklch(0.48 0.12 85)',
+	backgroundColor: 'oklch(0.88 0.12 95 / 0.92)',
+	[hoverMq]: {
+		'&:hover': {
+			backgroundColor: 'oklch(0.84 0.13 95)',
+		},
+	},
+	'&:focus-visible': {
+		outline: `2px solid oklch(0.7 0.14 90)`,
+		outlineOffset: '2px',
+	},
+}
+
+const badgeCopyPromptButtonCss = {
+	...copyPromptButtonBaseCss,
+	color: colors.primaryText,
+	backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
+	[hoverMq]: {
+		'&:hover': {
+			backgroundColor: `oklch(from ${colors.primary} l c h / 0.2)`,
+		},
+	},
+	'&:focus-visible': {
+		outline: `2px solid ${colors.primary}`,
+		outlineOffset: '2px',
 	},
 }

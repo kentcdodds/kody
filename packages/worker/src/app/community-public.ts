@@ -178,7 +178,7 @@ export function buildInstallAdaptPrompt(input: {
 }
 
 export function buildExistingInstallPrompt(input: { targetName: string }) {
-	return `I already have the community package "${input.targetName}" in my Kody account. Call package_get for it and read its README, then walk me through any remaining setup: create required secrets or OAuth connections, approve package secret access if prompted, and run a quick test to confirm it works.`
+	return `I have the community package "${input.targetName}" installed in my Kody account. Call package_get for it and read its README, then adapt it to my needs: update the README Intent section, change behavior if needed, and publish the result.`
 }
 
 export function buildExistingAdaptPrompt(input: {

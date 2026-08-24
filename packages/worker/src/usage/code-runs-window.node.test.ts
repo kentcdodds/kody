@@ -49,6 +49,25 @@ async function createEnv(input?: {
 	return { APP_DB: db, BUNDLE_ARTIFACTS_KV: kv }
 }
 
+function withCoercedExecuteSum(
+	env: { APP_DB: D1Database },
+	coerce: (total: unknown) => unknown,
+) {
+	const prepare = env.APP_DB.prepare.bind(env.APP_DB)
+	env.APP_DB.prepare = ((sql: string) => {
+		const statement = prepare(sql)
+		if (!sql.includes('SUM(event_count)')) return statement
+		const first = statement.first.bind(statement)
+		return Object.assign(statement, {
+			async first() {
+				const row = await first<{ total?: unknown }>()
+				if (row == null || row.total == null) return row
+				return { total: coerce(row.total) }
+			},
+		})
+	}) as D1Database['prepare']
+}
+
 test('refreshPublicCodeRunsWindow initializes a still pair, unsticks when the fleet grows, and holds a live window for 24h', async () => {
 	const env = await createEnv({
 		rows: [
@@ -137,8 +156,8 @@ test('refreshPublicCodeRunsWindow initializes a still pair, unsticks when the fl
 	expect(
 		await loadPublicCodeRunsWindow(env, new Date('2026-08-23T12:01:00.000Z')),
 	).toEqual({
-		previous: 150,
-		current: 150,
+		previous: 50,
+		current: 50,
 		windowStart: '2026-08-23T12:01:00.000Z',
 		windowEnd: '2026-08-24T12:01:00.000Z',
 	})
@@ -208,5 +227,80 @@ test('public code-runs load continues an expired window without writing KV', asy
 			windowStart: '2026-08-21T00:00:00.000Z',
 			windowEnd: '2026-08-22T00:00:00.000Z',
 		}),
+	)
+})
+
+test('public code-runs load continues a still pair from a D1 SUM number, string, or bigint without writing KV', async () => {
+	const stored = {
+		previous: 257940,
+		current: 257940,
+		windowStart: '2026-08-24T17:00:18.000Z',
+		windowEnd: '2026-08-25T17:00:18.000Z',
+	}
+	const now = new Date('2026-08-24T19:26:00.000Z')
+	const continued = {
+		previous: 257940,
+		current: 257941,
+		windowStart: '2026-08-24T19:26:00.000Z',
+		windowEnd: '2026-08-25T19:26:00.000Z',
+	}
+
+	const numeric = await createEnv({
+		rows: [{ userId: 'a', month: '2026-08', eventCount: 257941 }],
+		window: stored,
+	})
+	expect(await loadPublicCodeRunsWindow(numeric, now)).toEqual(continued)
+	expect(numeric.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(stored),
+	)
+
+	const stringSum = await createEnv({
+		rows: [{ userId: 'a', month: '2026-08', eventCount: 257941 }],
+		window: stored,
+	})
+	withCoercedExecuteSum(stringSum, String)
+	expect(await loadPublicCodeRunsWindow(stringSum, now)).toEqual(continued)
+	await expect(
+		refreshPublicCodeRunsWindow({ env: stringSum, now }),
+	).resolves.toEqual({ status: 'rotated' })
+	expect(stringSum.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(continued),
+	)
+
+	const bigintSum = await createEnv({
+		rows: [{ userId: 'a', month: '2026-08', eventCount: 257941 }],
+		window: stored,
+	})
+	withCoercedExecuteSum(bigintSum, (total) => BigInt(Number(total)))
+	expect(await loadPublicCodeRunsWindow(bigintSum, now)).toEqual(continued)
+})
+
+test('public code-runs load and refresh reset a still pair when the fleet SUM drops', async () => {
+	const stored = {
+		previous: 257940,
+		current: 257940,
+		windowStart: '2026-08-24T17:00:18.000Z',
+		windowEnd: '2026-08-25T17:00:18.000Z',
+	}
+	const now = new Date('2026-08-24T20:15:00.000Z')
+	const reset = {
+		previous: 190213,
+		current: 190213,
+		windowStart: '2026-08-24T20:15:00.000Z',
+		windowEnd: '2026-08-25T20:15:00.000Z',
+	}
+	const env = await createEnv({
+		rows: [{ userId: 'a', month: '2026-08', eventCount: 190213 }],
+		window: stored,
+	})
+	expect(await loadPublicCodeRunsWindow(env, now)).toEqual(reset)
+	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(stored),
+	)
+	await expect(refreshPublicCodeRunsWindow({ env, now })).resolves.toEqual({
+		status: 'rotated',
+	})
+	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(reset),
 	)
 })
