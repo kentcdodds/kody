@@ -229,7 +229,12 @@ export type AdminUserListItem = {
 	email: string
 	email_verified: boolean
 	email_verified_at: string | null
+	/** Manual grant (`users.plan`). Manage plan writes this column. */
 	plan: AdminPlanName
+	manualPlan: AdminPlanName
+	stripePlan: AdminPlanName | null
+	effectivePlan: AdminPlanName
+	stripeCustomerLinked: boolean
 	suspended_at: string | null
 	email_outbound_paused_at: string | null
 	created_at: string

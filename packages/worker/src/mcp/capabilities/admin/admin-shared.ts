@@ -43,8 +43,22 @@ export const adminUserMetadataSchema = z.object({
 		.nullable()
 		.describe('Raw users.email_verified_at timestamp, or null if unverified.'),
 	plan: planNameSchema.describe(
-		'Entitlement plan name. Unknown or unexpected NULL stored values resolve to max.',
+		'Manual entitlement grant (users.plan). Manage plan writes this column. Ordinary Stripe subscribers keep this as free.',
 	),
+	manualPlan: planNameSchema.describe(
+		'Same as plan: the admin/manual grant on users.plan.',
+	),
+	stripePlan: planNameSchema
+		.nullable()
+		.describe(
+			'Stripe-derived paid tier from users.stripe_plan, or null when none.',
+		),
+	effectivePlan: planNameSchema.describe(
+		'Higher of the manual grant and Stripe subscription. This is the plan entitlements enforce.',
+	),
+	stripeCustomerLinked: z
+		.boolean()
+		.describe('True when users.stripe_customer_id is set.'),
 	suspended_at: z
 		.string()
 		.nullable()

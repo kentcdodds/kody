@@ -3,6 +3,7 @@ import { checkAuthDenialBurstAndNotify } from '#app/auth-denial-alerts.ts'
 import { checkEmailDeliveryBurstAndNotify } from '#app/email-delivery-alerts.ts'
 import { refreshFleetPackageErrorRateAndMaybeAlert } from '#app/fleet-package-error-rate-alerts.ts'
 import { pruneRetention } from '#app/retention.ts'
+import { sendUserEntitlementWarningEmails } from '#app/user-entitlement-warning-emails.ts'
 import { checkUsageEntitlementPressureAndNotify } from '#app/usage-entitlement-alerts.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
@@ -134,11 +135,25 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
-		case 'usage_entitlement_alert':
-			return checkUsageEntitlementPressureAndNotify({
+		case 'usage_entitlement_alert': {
+			let userWarnings:
+				| Awaited<ReturnType<typeof sendUserEntitlementWarningEmails>>
+				| { status: 'failed' }
+			try {
+				userWarnings = await sendUserEntitlementWarningEmails({
+					env: input.env,
+					now: input.scheduledAt,
+				})
+			} catch (error) {
+				console.warn('user-entitlement-warning-emails-failed', error)
+				userWarnings = { status: 'failed' }
+			}
+			const ops = await checkUsageEntitlementPressureAndNotify({
 				env: input.env,
 				now: input.scheduledAt,
 			})
+			return { ...ops, userWarnings }
+		}
 		// DR export lanes are dispatched on cadence by the jobs worker without
 		// access to DR configuration; both ticks exit cheaply with a
 		// `not-configured` result when DR export is disabled.
