@@ -2653,7 +2653,7 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 	}
 })
 
-test('runBundledModuleWithRegistry leaves claimed job storage-estimate failures running', async () => {
+test('runBundledModuleWithRegistry leaves claimed job transient failures running', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
@@ -2688,25 +2688,91 @@ test('runBundledModuleWithRegistry leaves claimed job storage-estimate failures 
 		.mockResolvedValue(true)
 	const { createStorageEstimateReadError } =
 		await import('#worker/storage-estimate-error.ts')
+	const { d1NetworkConnectionLostMessage } =
+		await import('#worker/d1-retry.ts')
 	const estimateError = createStorageEstimateReadError({
 		storageId: 'package:estimate-target',
 		attempts: 4,
 		cause: new Error('Storage estimate read timed out after 2000ms.'),
 	})
+	const transientErrors = [
+		estimateError.message,
+		`${d1NetworkConnectionLostMessage}.`,
+		`D1_ERROR: ${d1NetworkConnectionLostMessage}.`,
+	]
+	let executeError: unknown = transientErrors[0]
 	const createExecuteExecutorSpy = vi
 		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
 		.mockReturnValue({
 			async execute() {
+				if (executeError instanceof Error) {
+					throw executeError
+				}
 				return {
 					result: undefined,
-					error: estimateError.message,
+					error: executeError,
 					logs: [],
 				}
 			},
 		} as never)
+	const claimedJobOptions = {
+		skipCapabilityRegistry: true,
+		runRecord: {
+			surface: 'job' as const,
+			name: 'sweep',
+			jobId: 'package-job:estimate:sweep',
+		},
+		runRecordHandle: handle,
+	}
 
 	try {
-		const claimed = await runBundledModuleWithRegistry(
+		for (const error of transientErrors) {
+			executeError = error
+			finishSpy.mockClear()
+			const claimed = await runBundledModuleWithRegistry(
+				env,
+				callerContext,
+				bundle,
+				undefined,
+				claimedJobOptions,
+			)
+			expect(claimed.error).toBe(error)
+			expect(finishSpy).not.toHaveBeenCalled()
+		}
+
+		executeError = new Error(`${d1NetworkConnectionLostMessage}.`)
+		finishSpy.mockClear()
+		await expect(
+			runBundledModuleWithRegistry(
+				env,
+				callerContext,
+				bundle,
+				undefined,
+				claimedJobOptions,
+			),
+		).rejects.toThrow(`${d1NetworkConnectionLostMessage}.`)
+		expect(finishSpy).not.toHaveBeenCalled()
+
+		executeError = 'user code failed'
+		finishSpy.mockClear()
+		const userCode = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			bundle,
+			undefined,
+			claimedJobOptions,
+		)
+		expect(userCode.error).toBe('user code failed')
+		expect(finishSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				handle,
+				status: 'error',
+			}),
+		)
+
+		executeError = `${d1NetworkConnectionLostMessage}.`
+		finishSpy.mockClear()
+		const executeFailure = await runBundledModuleWithRegistry(
 			env,
 			callerContext,
 			bundle,
@@ -2714,15 +2780,27 @@ test('runBundledModuleWithRegistry leaves claimed job storage-estimate failures 
 			{
 				skipCapabilityRegistry: true,
 				runRecord: {
-					surface: 'job',
-					name: 'sweep',
-					jobId: 'package-job:estimate:sweep',
+					surface: 'execute',
+					name: null,
+					storageId: 'storage-1',
 				},
-				runRecordHandle: handle,
+				runRecordHandle: {
+					...handle,
+					context: {
+						surface: 'execute',
+						name: null,
+						storageId: 'storage-1',
+						metadata: {},
+					},
+				},
 			},
 		)
-		expect(claimed.error).toBe(estimateError.message)
-		expect(finishSpy).not.toHaveBeenCalled()
+		expect(executeFailure.error).toBe(`${d1NetworkConnectionLostMessage}.`)
+		expect(finishSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				status: 'error',
+			}),
+		)
 	} finally {
 		finishSpy.mockRestore()
 		createExecuteExecutorSpy.mockRestore()
