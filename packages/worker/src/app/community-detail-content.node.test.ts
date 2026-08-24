@@ -53,4 +53,54 @@ test('community detail head replaces Installed with Fork outdated when the listi
 	expect(html).not.toContain(
 		'data-testid="community-detail-viewer-install-badge"',
 	)
+	expect(html).not.toContain('data-testid="community-detail-install"')
+})
+
+test('community detail head shows an Install pill when the viewer has not forked it', async () => {
+	const html = await renderCommunityDetailContentHtml({
+		listing: sampleListing,
+		ownerProfilePublic: true,
+		loggedIn: true,
+		viewerFollowsOwner: false,
+		viewerIsOwner: false,
+		returnTo: '/@kentcdodds/github-triage',
+		followError: null,
+	})
+
+	expect(html).toContain('data-testid="community-detail-install"')
+	expect(html).toContain('data-community-install')
+	expect(html).toContain('data-trusted="false"')
+	expect(html).not.toContain('One-click install')
+	expect(html).not.toContain('Fork with your agent')
+})
+
+test('community detail Installed pill copies an adapt prompt', async () => {
+	const agentPrompt =
+		'Call package_get for @me/github-triage and adapt it to my needs.'
+	const html = await renderCommunityDetailContentHtml({
+		listing: {
+			...sampleListing,
+			trusted: true,
+			viewerInstall: {
+				status: 'installed',
+				targetName: '@me/github-triage',
+				agentPrompt,
+				packageId: 'pkg-1',
+				listingAhead: false,
+				listingAheadPrompt: null,
+			},
+		},
+		ownerProfilePublic: true,
+		loggedIn: true,
+		viewerFollowsOwner: false,
+		viewerIsOwner: false,
+		returnTo: '/@kentcdodds/github-triage',
+		followError: null,
+	})
+
+	expect(html).toContain('data-testid="community-detail-trusted-badge"')
+	expect(html).toContain('data-testid="community-detail-viewer-install-badge"')
+	expect(html).toContain('data-copy-prompt')
+	expect(html).toContain(agentPrompt)
+	expect(html).not.toContain('data-testid="community-detail-install"')
 })
