@@ -11,8 +11,9 @@ summary:
   notification guidance, admin-only community.activity.recorded /
   community.listing.published community notifications, admin-only
   status.incident.opened / status.incident.resolved operator telemetry,
-  admin-only fleet.package_error_rate.elevated package-runtime health, and
-  admin-only user.created / user.deleted account lifecycle notifications.
+  admin-only fleet.package_error_rate.elevated package-runtime health,
+  admin-only fleet.entitlement.crossed entitlement crossings, and admin-only
+  user.created / user.deleted account lifecycle notifications.
 category: platform
 ---
 
@@ -131,9 +132,10 @@ publish result. Failed and non-fast-forward results have no test hints.
 - **Admin-only topics** (`email.system-message.received`,
   `platform.feedback.submitted`, `community.activity.recorded`,
   `community.listing.published`, `status.incident.opened`,
-  `fleet.package_error_rate.elevated`, `status.incident.resolved`,
-  `user.created`, `user.deleted`) gate **production** fan-out on admin role;
-  synthetic dispatch still runs your handler directly for smoke testing.
+  `fleet.package_error_rate.elevated`, `fleet.entitlement.crossed`,
+  `status.incident.resolved`, `user.created`, `user.deleted`) gate
+  **production** fan-out on admin role; synthetic dispatch still runs your
+  handler directly for smoke testing.
 - **Activity.** Synthetic runs appear on the `subscription` surface. Handler
   failures do not emit `run.error.recorded` (recursion guard).
 
@@ -983,6 +985,77 @@ Use this topic for notifier packages that enqueue a Kody-repo investigation
 request. Agent spawning stays on the scheduled sweep, not in the subscription
 handler. Do not treat this topic as permission to read another user's Activity
 or package source.
+
+## `fleet.entitlement.crossed` (admins)
+
+The hourly `usage_entitlement_alert` lane sweeps the top ~15 active accounts
+this UTC month and fans `fleet.entitlement.crossed` to packages saved by users
+who hold the admin role at dispatch time. A non-admin package may declare the
+topic, but it never receives the event. Role revocation stops delivery on the
+next crossing.
+
+One event fires per crossing of 80% (`approaching`) or 100% (`reached`) on a
+specific entitlement, or when a non-admin account first exceeds 24h of combined
+execute / job / workflow runtime in the UTC month. Staying over the same
+threshold does not emit again. A later drop below that threshold, then a climb
+back over it, is a new instance. A same-hour jump to 100% emits `reached` only
+and claims the 80% crossing so a later drop into the 80–99% band stays silent.
+
+There is no Queue / DLQ for this topic. A missed invoke is logged and does not
+fail the hourly sweep. Retry happens on the next hour if the crossing is still
+unclaimed.
+
+Handlers receive operator telemetry only:
+
+```ts
+type FleetEntitlementCrossedEvent =
+	| {
+			event: 'fleet.entitlement.crossed'
+			kind: 'entitlement'
+			user: { id: string; username: string }
+			resource:
+				| 'saved_packages'
+				| 'scheduled_jobs'
+				| 'repo_sessions'
+				| 'email_sends_per_day'
+				| 'email_receives_per_day'
+				| 'stored_email_messages'
+				| 'secrets'
+				| 'concurrent_workflows'
+				| 'storage_bytes'
+				| 'execute_calls_per_day'
+				| 'outbound_fetches_per_day'
+				| 'job_runs_per_day'
+			label: string
+			threshold: 'approaching' | 'reached'
+			current: number
+			limit: number
+			percent_of_limit: number
+			insights_url: string
+			users_url: string
+			observed_at: string
+	  }
+	| {
+			event: 'fleet.entitlement.crossed'
+			kind: 'runtime_duration'
+			user: { id: string; username: string }
+			total_duration_ms: number
+			threshold_ms: number
+			insights_url: string
+			users_url: string
+			observed_at: string
+	  }
+```
+
+`user.id` is the stable account user id. `insights_url` and `users_url` are
+operator dashboards. Timestamps are ISO-8601 UTC. The event omits emails, plan
+names, secrets, package source, and unrelated account content. Idempotency keys
+include the topic, user id, crossing kind, threshold or UTC month, resource, UTC
+day for `*_per_day` resources, and subscriber package id.
+
+Use this topic for notifier packages that send an operator message (for example
+Discord) when an account first crosses a plan limit. Do not treat this topic as
+permission to read another user's packages, secrets, or Activity.
 
 ## User created and deleted (admins)
 
