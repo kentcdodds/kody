@@ -1,15 +1,22 @@
 /**
  * Outbound era classification for Kody-as-client.
  *
- * Client 2.0.0 `classifyProbeOutcome` treats HeaderMismatch (-32020) and most
- * unrecognized probe failures as a 2025 server, then sends `initialize`.
- * Unauthenticated (401) and header-mismatch outcomes are not era evidence:
- * retry `server/discover` after the token is available, and do not persist a
- * legacy session from those probes. Fall back to `initialize` only when the
- * server is actually 2025-era.
+ * Client 2.0.0 `classifyProbeOutcome` is not injectable. It treats
+ * HeaderMismatch (-32020) and most unrecognized probe failures as a 2025
+ * server, then sends `initialize`. Kody applies this policy at the session
+ * boundary instead: restore/reconnect drop stored 2025 sessions and force
+ * `versionNegotiation: { mode: 'auto' }` so the next connect re-probes with
+ * `server/discover`. Unauthenticated (401) and header-mismatch outcomes are
+ * not era evidence. `-32022` (UnsupportedProtocolVersion) is a version
+ * mismatch, not a 2025 verdict — retry a mutual modern version, do not fall
+ * back to `initialize`. Fall back only when the server is actually 2025-era
+ * (`-32601` MethodNotFound).
  */
 
-import { modernMcpProtocolVersion } from './transport-session.ts'
+import {
+	isFreshModernDiscoverResult,
+	modernMcpProtocolVersion,
+} from './transport-session.ts'
 
 export const headerMismatchErrorCode = -32020
 export const unsupportedProtocolVersionErrorCode = -32022
@@ -39,10 +46,19 @@ export function classifyOutboundMcpProbeSignal(input: {
 	if (input.rpcCode === methodNotFoundErrorCode) {
 		return { kind: 'legacy' }
 	}
-	if (input.rpcCode === unsupportedProtocolVersionErrorCode) {
-		const supported = input.discoverSupportedVersions ?? []
-		const hasLegacy = supported.some((version) => version.startsWith('2025-'))
-		if (hasLegacy || supported.length === 0) return { kind: 'legacy' }
+	return { kind: 'unknown' }
+}
+
+/**
+ * A stored `server_options` blob is not a probe. Client 2.0 persists a 2025
+ * session after HeaderMismatch fallback; that is not confirmed-legacy
+ * evidence, so restore must re-probe.
+ */
+export function classifyPersistedMcpSession(input: {
+	discoverResult?: unknown
+}): OutboundMcpProbeSignal {
+	if (isFreshModernDiscoverResult(input.discoverResult)) {
+		return { kind: 'modern' }
 	}
 	return { kind: 'unknown' }
 }

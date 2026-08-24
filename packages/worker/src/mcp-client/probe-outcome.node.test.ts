@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	classifyOutboundMcpProbeSignal,
+	classifyPersistedMcpSession,
 	headerMismatchErrorCode,
 	methodNotFoundErrorCode,
 	shouldFallbackToLegacyInitialize,
@@ -40,7 +41,16 @@ test('unauthenticated and header-mismatch probes are not a 2025 verdict', () => 
 		rpcCode: unsupportedProtocolVersionErrorCode,
 		discoverSupportedVersions: ['2025-11-25'],
 	})
-	expect(unsupportedLegacy).toEqual({ kind: 'legacy' })
+	expect(unsupportedLegacy).toEqual({ kind: 'unknown' })
+	expect(shouldFallbackToLegacyInitialize(unsupportedLegacy)).toBe(false)
+	expect(shouldPersistLegacyMcpSession(unsupportedLegacy)).toBe(false)
+
+	const unsupportedEmpty = classifyOutboundMcpProbeSignal({
+		rpcCode: unsupportedProtocolVersionErrorCode,
+	})
+	expect(unsupportedEmpty).toEqual({ kind: 'unknown' })
+	expect(shouldFallbackToLegacyInitialize(unsupportedEmpty)).toBe(false)
+	expect(shouldPersistLegacyMcpSession(unsupportedEmpty)).toBe(false)
 
 	const unrecognized = classifyOutboundMcpProbeSignal({
 		httpStatus: 400,
@@ -49,4 +59,16 @@ test('unauthenticated and header-mismatch probes are not a 2025 verdict', () => 
 	expect(unrecognized).toEqual({ kind: 'unknown' })
 	expect(shouldFallbackToLegacyInitialize(unrecognized)).toBe(false)
 	expect(shouldPersistLegacyMcpSession(unrecognized)).toBe(false)
+
+	const storedModern = classifyPersistedMcpSession({
+		discoverResult: { supportedVersions: [modernMcpProtocolVersion] },
+	})
+	expect(storedModern).toEqual({ kind: 'modern' })
+	expect(shouldPersistLegacyMcpSession(storedModern)).toBe(false)
+
+	const storedStale = classifyPersistedMcpSession({
+		discoverResult: { supportedVersions: ['2025-11-25'] },
+	})
+	expect(storedStale).toEqual({ kind: 'unknown' })
+	expect(shouldPersistLegacyMcpSession(storedStale)).toBe(false)
 })

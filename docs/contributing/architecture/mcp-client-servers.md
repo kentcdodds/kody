@@ -37,12 +37,15 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
   `requestInit.headers` still win. Outbound connections prefer MCP `2026-07-28`
   (`server/discover`) and fall back to the 2025 `initialize` handshake only when
   the remote server is actually 2025-era. Restore and reconnect drop persisted
-  2025 `sessionId` / `protocolVersion` / `discoverResult` values so a stored
-  2025 session cannot skip the modern probe or DELETE a session against a
-  modern-only server (`packages/worker/src/mcp-client/restore.ts`,
-  `packages/worker/src/mcp-client/reconnect.ts`). Header-mismatch and
-  unauthenticated probe outcomes are not persisted as a legacy verdict; after
-  OAuth the hub retries `server/discover` with the token.
+  2025 `sessionId` / `protocolVersion` / `discoverResult` values and rewrite
+  stored `client.versionNegotiation` to `{ mode: 'auto' }` so a stored 2025
+  session or a persisted `legacy` negotiation mode cannot skip the modern
+  probe or DELETE a session against a modern-only server
+  (`packages/worker/src/mcp-client/restore.ts`,
+  `packages/worker/src/mcp-client/reconnect.ts`). Header-mismatch,
+  unauthenticated, and `-32022` UnsupportedProtocolVersion probe outcomes are
+  not a 2025 verdict; after OAuth the hub retries `server/discover` with the
+  token.
 
 ## OAuth flow
 

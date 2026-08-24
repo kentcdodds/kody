@@ -1,5 +1,10 @@
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 import {
+	classifyPersistedMcpSession,
+	shouldPersistLegacyMcpSession,
+} from './probe-outcome.ts'
+import { outboundMcpClientOptions } from './reconnect.ts'
+import {
 	isFreshModernDiscoverResult,
 	type PersistedMcpServerOptions,
 	type PersistedMcpTransport,
@@ -12,11 +17,21 @@ export function sanitizePersistedMcpServerOptions(
 	const discoverResult = isFreshModernDiscoverResult(options.discoverResult)
 		? options.discoverResult
 		: undefined
+	const keepLegacySession = shouldPersistLegacyMcpSession(
+		classifyPersistedMcpSession(options),
+	)
 	const transport = withoutPersistedMcpSession(options.transport, {
 		keepModernProtocolVersion: discoverResult !== undefined,
 	})
+	if (!keepLegacySession) {
+		delete transport.sessionId
+		if (discoverResult === undefined) {
+			delete transport.protocolVersion
+		}
+	}
 	const next: PersistedMcpServerOptions = {
 		...options,
+		client: outboundMcpClientOptions(options.client),
 		transport,
 	}
 	if (discoverResult !== undefined) {
