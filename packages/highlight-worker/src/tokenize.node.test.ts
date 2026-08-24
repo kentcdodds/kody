@@ -33,6 +33,10 @@ test('tokenizes known languages with dual-theme styles', () => {
 	const golang = tokenizeSnippet({ code: 'package main', lang: 'golang' })
 	expect(golang.plain).toBe(false)
 	expect(golang.lang).toBe('go')
+
+	const consoleLang = tokenizeSnippet({ code: 'echo hi', lang: 'console' })
+	expect(consoleLang.plain).toBe(false)
+	expect(consoleLang.lang).toBe('shellscript')
 })
 
 test('unknown languages and oversized snippets stay plaintext', () => {
