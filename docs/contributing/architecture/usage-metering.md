@@ -342,7 +342,11 @@ Guarantees and rules:
   `prefers-reduced-motion` snaps and does not animate. A frozen tab (rAF gap,
   hidden, or a late timeout) snaps to the official count instead of rolling
   through every missed integer. Live leftover ticks in a busy second still step
-  +1; leftover catch-up delays stay under that freeze window.
+  +1; leftover catch-up delays stay under that freeze window. A still pair
+  (`previous === current`, used when KV is empty) does **not** hold for 24h once
+  the fleet execute total grows — the next `usage_aggregation` refresh rotates
+  it so the ticker can move. Live windows with a real delta still hold until
+  `windowEnd`.
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration

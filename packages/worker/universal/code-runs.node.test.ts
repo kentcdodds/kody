@@ -4,6 +4,7 @@ import {
 	codeRunsCatchUpSnapAfterMs,
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
+	isStillPublicCodeRunsWindow,
 	msUntilNextCodeRunsCount,
 	nextDisplayedCodeRunsCount,
 	parsePublicCodeRunsWindow,
@@ -134,6 +135,10 @@ test('interpolateCodeRunsCount wobbles +1 ticks without long idle when the pair 
 	expect(
 		msUntilNextCodeRunsCount({ ...window, previous: 80, current: 80 }, nowMs),
 	).toBeNull()
+	expect(
+		isStillPublicCodeRunsWindow({ ...window, previous: 80, current: 80 }),
+	).toBe(true)
+	expect(isStillPublicCodeRunsWindow(window)).toBe(false)
 })
 
 test('interpolateCodeRunsCount rolls every extra integer inside a second', () => {

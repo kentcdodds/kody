@@ -17,6 +17,9 @@ import {
  * missed integer. Live leftover ticks in a busy second still step +1.
  * Mono digits plus a reserved width from `current` keep the label from
  * shifting as digits change. The line is sized larger than the hero subtitle.
+ * A still window (`previous === current`) has no next tick — that is a
+ * bootstrap pair, not a client bug. Refresh unsticks it when the fleet
+ * total grows.
  */
 export function CodeRunsTicker(
 	handle: Handle<{ window: PublicCodeRunsWindow }>,
