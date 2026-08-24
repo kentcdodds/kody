@@ -12,6 +12,8 @@
  * integer backbone, the client moves honest progress toward the next tick
  * instead of inventing +1s. Homepage GET may continue an expired or still
  * pair in memory when the fleet total has grown; it does not write KV.
+ * A client that cannot paint a next tick refetches `/code-runs.json`
+ * instead of giving up for the rest of the tab.
  */
 
 export const publicCodeRunsWindowMs = 24 * 60 * 60 * 1000
@@ -26,6 +28,18 @@ export type PublicCodeRunsWindow = {
 
 export function isStillPublicCodeRunsWindow(window: PublicCodeRunsWindow) {
 	return window.previous === window.current
+}
+
+export function publicCodeRunsWindowsEqual(
+	left: PublicCodeRunsWindow,
+	right: PublicCodeRunsWindow,
+) {
+	return (
+		left.previous === right.previous &&
+		left.current === right.current &&
+		left.windowStart === right.windowStart &&
+		left.windowEnd === right.windowEnd
+	)
 }
 
 export function parsePublicCodeRunsWindow(

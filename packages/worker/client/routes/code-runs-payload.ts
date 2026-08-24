@@ -5,11 +5,18 @@ import { readJson } from '#client/routes/account-approval-shared.ts'
 
 export const codeRunsApiPath = routes.codeRunsApi.href()
 
-export async function fetchCodeRunsPayload(signal?: AbortSignal) {
+/** How long a stuck ticker waits before asking origin for a newer window. */
+export const codeRunsStillWindowRefreshMs = 60_000
+
+export async function fetchCodeRunsPayload(
+	signal?: AbortSignal,
+	init?: { cache?: RequestCache },
+) {
 	try {
 		const response = await fetch(codeRunsApiPath, {
 			headers: { Accept: 'application/json' },
 			signal,
+			cache: init?.cache,
 		})
 		const payload = await readJson<CodeRunsLoaderData>(response)
 		if (!response.ok || payload?.ok !== true) return null

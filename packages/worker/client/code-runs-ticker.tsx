@@ -1,5 +1,9 @@
 import { type Handle } from 'remix/ui'
 import {
+	codeRunsStillWindowRefreshMs,
+	fetchCodeRunsPayload,
+} from '#client/routes/code-runs-payload.ts'
+import {
 	codeRunsCatchUpDelayMs,
 	codeRunsCatchUpSnapAfterMs,
 	codeRunsProgressToNext,
@@ -7,6 +11,7 @@ import {
 	interpolateCodeRunsCount,
 	msUntilNextCodeRunsPaint,
 	nextDisplayedCodeRunsCount,
+	publicCodeRunsWindowsEqual,
 	type PublicCodeRunsWindow,
 } from '#universal/code-runs.ts'
 
@@ -17,14 +22,17 @@ import {
  * longest the official integer may sit when budget allows; thinner windows
  * move the progress underline instead of inventing +1s. A frozen tab (rAF
  * gap, hidden, or a late timeout) snaps to the official count instead of
- * rolling through every missed integer. Mono digits plus a reserved width
- * from `current` keep the label from shifting as digits change.
+ * rolling through every missed integer. A still or ended window refetches
+ * `/code-runs.json` instead of stopping for the rest of the tab. Mono
+ * digits plus a reserved width from `current` keep the label from shifting
+ * as digits change.
  */
 export function CodeRunsTicker(
 	handle: Handle<{ window: PublicCodeRunsWindow }>,
 ) {
-	let displayed = interpolateCodeRunsCount(handle.props.window, Date.now())
-	let progress = codeRunsProgressToNext(handle.props.window, Date.now())
+	let activeWindow = handle.props.window
+	let displayed = interpolateCodeRunsCount(activeWindow, Date.now())
+	let progress = codeRunsProgressToNext(activeWindow, Date.now())
 	let lastDisplayAt = Date.now()
 	const prefersReducedMotion =
 		typeof matchMedia === 'function' &&
@@ -36,7 +44,21 @@ export function CodeRunsTicker(
 		let lastFrameAt = performance.now()
 
 		function officialAt(now: number) {
-			return interpolateCodeRunsCount(handle.props.window, now)
+			return interpolateCodeRunsCount(activeWindow, now)
+		}
+
+		function progressAt(now: number) {
+			return codeRunsProgressToNext(activeWindow, now)
+		}
+
+		async function refreshStuckWindow() {
+			const payload = await fetchCodeRunsPayload(handle.signal, {
+				cache: 'no-store',
+			})
+			if (handle.signal.aborted) return
+			const next = payload?.window
+			if (!next || publicCodeRunsWindowsEqual(next, activeWindow)) return
+			activeWindow = next
 		}
 
 		function clearTimer() {
@@ -54,11 +76,7 @@ export function CodeRunsTicker(
 		}
 
 		function snapToOfficial(now = Date.now()) {
-			show(
-				officialAt(now),
-				codeRunsProgressToNext(handle.props.window, now),
-				now,
-			)
+			show(officialAt(now), progressAt(now), now)
 		}
 
 		function scheduleNext() {
@@ -74,7 +92,7 @@ export function CodeRunsTicker(
 					official,
 					elapsedMsSinceDisplay: now - lastDisplayAt,
 				})
-				show(next, codeRunsProgressToNext(handle.props.window, now), now)
+				show(next, progressAt(now), now)
 				if (next < official) {
 					timeoutId = setTimeout(() => {
 						scheduleNext()
@@ -83,13 +101,17 @@ export function CodeRunsTicker(
 				}
 			}
 			const nowAfter = Date.now()
-			show(
-				officialAt(nowAfter),
-				codeRunsProgressToNext(handle.props.window, nowAfter),
-				nowAfter,
-			)
-			const delay = msUntilNextCodeRunsPaint(handle.props.window, nowAfter)
-			if (delay === null) return
+			show(officialAt(nowAfter), progressAt(nowAfter), nowAfter)
+			const delay = msUntilNextCodeRunsPaint(activeWindow, nowAfter)
+			if (delay === null) {
+				timeoutId = setTimeout(() => {
+					void refreshStuckWindow().finally(() => {
+						if (handle.signal.aborted) return
+						scheduleNext()
+					})
+				}, codeRunsStillWindowRefreshMs)
+				return
+			}
 			timeoutId = setTimeout(
 				() => {
 					scheduleNext()
@@ -146,7 +168,7 @@ export function CodeRunsTicker(
 	}
 
 	return () => {
-		const reserved = formatCodeRunsCount(handle.props.window.current)
+		const reserved = formatCodeRunsCount(activeWindow.current)
 		return (
 			<p data-rise style={{ '--rise': '1.5' }} class="landing-hero-runs">
 				<span class="landing-hero-runs-line">

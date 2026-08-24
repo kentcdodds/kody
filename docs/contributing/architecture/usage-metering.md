@@ -346,9 +346,13 @@ Guarantees and rules:
   through every missed integer. Live leftover ticks in a busy second still step
   +1; leftover catch-up delays stay under that freeze window. Homepage GET
   continues an expired or still pair in memory when the fleet total has grown;
-  it does not write KV. The hourly `usage_aggregation` refresh still persists
-  the next official pair. Live windows with a real delta still hold until
-  `windowEnd`.
+  it does not write KV. The D1 `SUM(event_count)` for `metric = 'execute'` is
+  coerced with `Number()` the same way other rollup readers do — a
+  `typeof === 'number'` check treated D1 numeric strings as zero and froze the
+  ticker on a still pair. A tab that cannot paint a next tick refetches
+  `/code-runs.json` (cache bypass) instead of stopping for the rest of the
+  session. The hourly `usage_aggregation` refresh still persists the next
+  official pair. Live windows with a real delta still hold until `windowEnd`.
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration
