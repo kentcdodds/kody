@@ -241,9 +241,9 @@ function toCount(value: number | string) {
 	return Number.isFinite(parsed) ? Math.round(parsed) : 0
 }
 
-async function filterLiveUsageRows(
+export async function filterLiveUsageRows<T extends { user_id: string }>(
 	db: D1Database,
-	rows: Array<AnalyticsEngineSqlRow>,
+	rows: Array<T>,
 ) {
 	const systemRows = rows.filter((row) => row.user_id === 'system:email')
 	const userIds = [

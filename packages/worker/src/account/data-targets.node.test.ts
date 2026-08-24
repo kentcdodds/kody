@@ -208,6 +208,7 @@ test('operator-owned tables are explicit deletion/export exclusions', () => {
 	using db = new DatabaseSync(':memory:')
 	applyMigrations(db)
 	const expectedTables = [
+		'fleet_execute_days',
 		'platform_oauth_apps',
 		'repo_session_storage_bucket_cursor',
 		'system_email_attachments',
@@ -237,7 +238,8 @@ test('operator-owned tables are explicit deletion/export exclusions', () => {
 					reason: expect.stringContaining(
 						table === 'platform_oauth_apps'
 							? 'Operator-provisioned built-in OAuth app'
-							: table.startsWith('repo_session_')
+							: table.startsWith('repo_session_') ||
+								  table === 'fleet_execute_days'
 								? 'Platform-owned'
 								: 'operator-owned system email',
 					),

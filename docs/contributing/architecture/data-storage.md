@@ -441,6 +441,12 @@ Two D1 reporting projections deliberately remain:
   Engine's account retention is approximately 90 days, so it cannot safely serve
   the 12-month admin trend or preserve the 24-month read model. The hourly
   Analytics Engine recompute and D1 table remain unchanged.
+- `fleet_execute_days` keeps platform-owned UTC-day fleet `execute` totals for
+  the homepage ticker (no `user_id`; not an account export/deletion target). The
+  hourly `usage_aggregation` lane rewrites the current and previous UTC months
+  from Analytics Engine. Public reads use only completed days (through
+  yesterday); older monthly `usage_rollups` fill months before the daily series
+  starts.
 - `agent_package_conversation_uses` is read while building MCP server
   instructions to provide popular-package hints. That request path is
   latency-sensitive, so Analytics Engine SQL is not a suitable replacement. A
@@ -453,7 +459,8 @@ OAuth provider state is stored in `OAUTH_KV` through the
 `@cloudflare/workers-oauth-provider` integration. Published package/job source
 snapshots, bundle artifacts, package retriever caches, and community listing
 snapshots are stored in `BUNDLE_ARTIFACTS_KV`. That binding also holds the
-platform-owned `public-code-runs:v1` window for the homepage ticker.
+platform-owned `public-code-runs:v2` delayed daily window for the homepage
+ticker.
 
 - Bindings are configured in `packages/worker/wrangler.jsonc` (remote KV IDs are
   supplied at deploy time via generated Wrangler configs, not committed in the
@@ -1305,10 +1312,11 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
   serialized queue message would exceed 120 KB. Immediate account-deletion
   cleanup is not required because KV enforces the TTL; the queue consumer
   deletes the key after a terminal delivery.
-- `public-code-runs:v1` — platform-owned 24-hour delayed fleet `execute` window
-  for the homepage ticker (`{ previous, current, windowStart, windowEnd }`). Not
-  scoped by user id; account deletion must not remove it. Homepage GET is
-  read-only; the `usage_aggregation` lane writes it.
+- `public-code-runs:v2` — platform-owned delayed fleet `execute` window for the
+  homepage ticker (`{ start, end, updateAt }`). Not scoped by user id; account
+  deletion must not remove it. Homepage GET fills the cache from D1 when the key
+  is missing or `updateAt` has passed; the `usage_aggregation` lane syncs daily
+  D1 rows and refreshes the triple.
 
 Account deletion derives these keys from D1 rows and package ids before deleting
 D1 projections. New KV prefixes must add corresponding account-deletion coverage
@@ -1488,10 +1496,13 @@ Current retention policies:
   (`userMeterDailyCounterRetentionDays`); `admin_user_meter_parity` reports
   meter-only daily counts.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
-  raw Analytics Engine usage events follow platform retention. The homepage
-  ticker reads an anonymous `SUM(event_count)` of `execute` rows from this
-  table; the official replay pair is the platform KV key `public-code-runs:v1`
-  and is independent of account deletion/export.
+  raw Analytics Engine usage events follow platform retention. Months before the
+  earliest `fleet_execute_days` row still feed the homepage ticker prefix.
+- `fleet_execute_days`: platform-owned UTC-day fleet `execute` totals (no
+  `user_id`). Rows are rewritten hourly for the current and previous UTC months;
+  older days remain so the delayed lifetime total can climb. The official replay
+  triple is the platform KV key `public-code-runs:v2` and is independent of
+  account deletion/export.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90
   days by `day` key, matching Analytics Engine retention for the production
   `FLAG_EXPOSURES` exposure stream; the admin metric readout window is the

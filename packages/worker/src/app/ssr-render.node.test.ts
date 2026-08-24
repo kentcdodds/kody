@@ -723,10 +723,9 @@ test('renderAppPage embeds a tabular homepage code-runs ticker', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const env = createTestEnv(createUserTestDb([]))
 	const window = {
-		previous: 128447,
-		current: 151203,
-		windowStart: '2026-08-22T00:00:00.000Z',
-		windowEnd: '2026-08-23T00:00:00.000Z',
+		start: 128447,
+		end: 151203,
+		updateAt: '2026-08-23T00:00:00.000Z',
 	}
 	const nowMs = Date.parse('2026-08-22T12:00:00.000Z')
 	vi.useFakeTimers()

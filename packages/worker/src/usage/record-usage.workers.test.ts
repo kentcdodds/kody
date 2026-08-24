@@ -4,6 +4,13 @@ import { recordUsage } from './record-usage.ts'
 import { ensureUsageRollupsTestSchema } from './test-schema.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
+async function listFleetDays(db: D1Database) {
+	const { results } = await db
+		.prepare(`SELECT day, event_count FROM fleet_execute_days ORDER BY day`)
+		.all()
+	return results
+}
+
 async function listRollups(db: D1Database, userId: string) {
 	const { results } = await db
 		.prepare(
@@ -72,6 +79,7 @@ test('recordUsage writes only Analytics Engine data points when USAGE_EVENTS is 
 	// hourly aggregation cron, never written per event.
 	expect(await listRollups(env.APP_DB, userA)).toEqual([])
 	expect(await listRollups(env.APP_DB, userB)).toEqual([])
+	expect(await listFleetDays(env.APP_DB)).toEqual([])
 })
 
 test('recordUsage accumulates per-user monthly rollups without USAGE_EVENTS (local dev)', async () => {
@@ -146,6 +154,9 @@ test('recordUsage accumulates per-user monthly rollups without USAGE_EVENTS (loc
 			total_cpu_ms: 0,
 			total_bytes: 0,
 		},
+	])
+	expect(await listFleetDays(env.APP_DB)).toEqual([
+		{ day: '2026-07-05', event_count: 3 },
 	])
 })
 

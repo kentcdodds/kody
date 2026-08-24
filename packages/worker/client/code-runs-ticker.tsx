@@ -1,6 +1,6 @@
 import { type Handle } from 'remix/ui'
 import {
-	codeRunsStillWindowRefreshMs,
+	codeRunsWindowRefreshRetryMs,
 	fetchCodeRunsPayload,
 } from '#client/routes/code-runs-payload.ts'
 import {
@@ -9,6 +9,7 @@ import {
 	codeRunsProgressToNext,
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
+	msUntilCodeRunsWindowRefresh,
 	msUntilNextCodeRunsPaint,
 	nextDisplayedCodeRunsCount,
 	publicCodeRunsWindowsEqual,
@@ -22,9 +23,9 @@ import {
  * longest the official integer may sit when budget allows; thinner windows
  * move the progress underline instead of inventing +1s. A frozen tab (rAF
  * gap, hidden, or a late timeout) snaps to the official count instead of
- * rolling through every missed integer. A still or ended window refetches
- * `/code-runs.json` instead of stopping for the rest of the tab. Mono
- * digits plus a reserved width from `current` keep the label from shifting
+ * rolling through every missed integer. When no next integer can paint, the
+ * ticker waits until `updateAt` then refetches `/code-runs.json`. Mono
+ * digits plus a reserved width from `end` keep the label from shifting
  * as digits change.
  */
 export function CodeRunsTicker(
@@ -104,12 +105,16 @@ export function CodeRunsTicker(
 			show(officialAt(nowAfter), progressAt(nowAfter), nowAfter)
 			const delay = msUntilNextCodeRunsPaint(activeWindow, nowAfter)
 			if (delay === null) {
-				timeoutId = setTimeout(() => {
-					void refreshStuckWindow().finally(() => {
-						if (handle.signal.aborted) return
-						scheduleNext()
-					})
-				}, codeRunsStillWindowRefreshMs)
+				const refreshIn = msUntilCodeRunsWindowRefresh(activeWindow, nowAfter)
+				timeoutId = setTimeout(
+					() => {
+						void refreshStuckWindow().finally(() => {
+							if (handle.signal.aborted) return
+							scheduleNext()
+						})
+					},
+					refreshIn > 0 ? refreshIn : codeRunsWindowRefreshRetryMs,
+				)
 				return
 			}
 			timeoutId = setTimeout(
@@ -168,7 +173,7 @@ export function CodeRunsTicker(
 	}
 
 	return () => {
-		const reserved = formatCodeRunsCount(activeWindow.current)
+		const reserved = formatCodeRunsCount(activeWindow.end)
 		return (
 			<p data-rise style={{ '--rise': '1.5' }} class="landing-hero-runs">
 				<span class="landing-hero-runs-line">
