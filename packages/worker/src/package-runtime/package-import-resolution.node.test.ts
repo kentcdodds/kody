@@ -61,10 +61,18 @@ test('resolveSavedPackageImport resolves platform scopes, prefers caller copies,
 		kodyId: 'github',
 	})
 
+	await expect(
+		resolveSavedPackageImport({
+			db,
+			userId: 'caller-user',
+			specifier: 'kody:@kody/github/issues',
+		}),
+	).resolves.toBeNull()
 	const platformResolved = await resolveSavedPackageImport({
 		db,
 		userId: 'caller-user',
 		specifier: 'kody:@kody/github/issues',
+		allowPlatformScopes: true,
 	})
 	expect(platformResolved).toMatchObject({
 		sourceOwnerUserId: platformUserId,
@@ -129,6 +137,7 @@ test('resolveSavedPackageImport resolves platform scopes, prefers caller copies,
 			db,
 			userId: 'caller-user',
 			specifier: 'kody:@kody/wip-package',
+			allowPlatformScopes: true,
 		}),
 	).resolves.toBeNull()
 	await expect(
@@ -136,6 +145,7 @@ test('resolveSavedPackageImport resolves platform scopes, prefers caller copies,
 			db,
 			userId: 'caller-user',
 			specifier: 'kody:@kody/internal-package',
+			allowPlatformScopes: true,
 		}),
 	).resolves.toBeNull()
 	await expect(

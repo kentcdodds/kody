@@ -507,7 +507,7 @@ export async function prepareKodyGraphFiles(input: {
 		sourceFiles: input.sourceFiles,
 		rootPackage,
 		rootPackageId: input.rootPackageId?.trim() || null,
-		allowPlatformScopes: input.allowPlatformScopes !== false,
+		allowPlatformScopes: input.allowPlatformScopes === true,
 		proxies: new Map(),
 		dynamicPackageImports: new Map(),
 		packages: new Map(),

@@ -77,7 +77,6 @@ async function resolveAllowPlatformScopes(input: {
 	userId: string
 	bundleContext?: 'ad-hoc-execute' | 'saved-package-module'
 }) {
-	if (input.bundleContext === 'ad-hoc-execute') return true
 	return await isPlatformAccountStableUserId(input.env.APP_DB, input.userId)
 }
 

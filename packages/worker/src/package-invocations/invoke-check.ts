@@ -4,9 +4,12 @@ import {
 	type PackageInvokeContract,
 	type PackageInvokeInput,
 } from '#mcp/run-kody-registry.ts'
-import { formatPersonPackagePlatformDependencyMessage } from '#worker/package-registry/platform-package-policy.ts'
-import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import {
+	findPlatformScopedPackageName,
+	formatPersonPackagePlatformDependencyMessage,
+} from '#worker/package-registry/platform-package-policy.ts'
 import { isPlatformAccountStableUserId } from '#worker/package-registry/scope-grants.ts'
+import { parseKodyPackageSpecifier } from '#worker/package-runtime/package-import-resolution.ts'
 import { type PackageExportProjection } from '#worker/package-registry/manifest.ts'
 import { normalizeExportName } from './common.ts'
 import {
@@ -98,12 +101,40 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	}
 	const exportName = normalizeExportName(request.exportName)
 	const invoke = buildNormalizedPackageInvokeInput({ request, exportName })
+	const callerIsPlatformAccount = await isPlatformAccountStableUserId(
+		input.env.APP_DB,
+		input.userId,
+	)
 	const savedPackage = await resolveSavedPackageBySpecifier({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		specifier: request.specifier,
+		allowPlatformScopes: callerIsPlatformAccount,
 	})
 	if (!savedPackage) {
+		if (!callerIsPlatformAccount) {
+			try {
+				const parsed = parseKodyPackageSpecifier(request.specifier)
+				const platformName = await findPlatformScopedPackageName({
+					db: input.env.APP_DB,
+					packageNames: [parsed.packageName],
+				})
+				if (platformName) {
+					const message =
+						formatPersonPackagePlatformDependencyMessage(platformName)
+					return {
+						result: createPackageInvokeCheckFailure({
+							message,
+							problems: [message],
+							contract: { exportName },
+						}),
+						preloads: null,
+					}
+				}
+			} catch {
+				// Invalid specifiers already fail in parsePackageInvokeInput.
+			}
+		}
 		const message = `Kody package specifier ${JSON.stringify(request.specifier)} could not be resolved for this caller.`
 		return {
 			result: createPackageInvokeCheckFailure({
@@ -114,33 +145,20 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 			preloads: null,
 		}
 	}
-	if (input.callerKind === 'package' && input.callingPackageId) {
-		const callingOwned = await getSavedPackageById(input.env.APP_DB, {
-			userId: input.userId,
-			packageId: input.callingPackageId,
-		})
-		if (
-			callingOwned &&
-			!(await isPlatformAccountStableUserId(
-				input.env.APP_DB,
-				callingOwned.userId,
-			)) &&
-			(await isPlatformAccountStableUserId(
-				input.env.APP_DB,
-				savedPackage.userId,
-			))
-		) {
-			const message = formatPersonPackagePlatformDependencyMessage(
-				savedPackage.name,
-			)
-			return {
-				result: createPackageInvokeCheckFailure({
-					message,
-					problems: [message],
-					contract: { exportName },
-				}),
-				preloads: null,
-			}
+	if (
+		!callerIsPlatformAccount &&
+		(await isPlatformAccountStableUserId(input.env.APP_DB, savedPackage.userId))
+	) {
+		const message = formatPersonPackagePlatformDependencyMessage(
+			savedPackage.name,
+		)
+		return {
+			result: createPackageInvokeCheckFailure({
+				message,
+				problems: [message],
+				contract: { exportName },
+			}),
+			preloads: null,
 		}
 	}
 	const sourceOwnerUserId = savedPackage.userId
