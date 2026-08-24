@@ -13,6 +13,24 @@ export const landingLoopTeaser = {
 /** Act header plus the first user turn — matches the SSR teaser. */
 export const landingLoopTeaserBeatCount = 2
 
+export type LandingLoopToggleLabel = 'Restart' | 'Play' | 'Pause'
+
+/**
+ * Header control for the factory loop. Pause is the default — including
+ * before the transcript chunk loads — so SSR reserves the combined
+ * playing/pause control and first paint does not shift.
+ */
+export function landingLoopToggleLabel(input: {
+	reducedMotion: boolean
+	ended: boolean
+	paused: boolean
+}): LandingLoopToggleLabel | null {
+	if (input.reducedMotion) return null
+	if (input.ended) return 'Restart'
+	if (input.paused) return 'Play'
+	return 'Pause'
+}
+
 export type LandingLoopPauseReason =
 	| 'hover'
 	| 'focus'

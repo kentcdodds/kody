@@ -93,4 +93,11 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 	expect(
 		agentLines.every((text) => !text.includes('New agent, same ask')),
 	).toBe(true)
+	expect(
+		agentLines.some((text) =>
+			text.includes(
+				'You now have `@you/kody-bot-shipped`. Ask again from any agent and I will invoke the export instead of walking GitHub by hand.',
+			),
+		),
+	).toBe(true)
 })

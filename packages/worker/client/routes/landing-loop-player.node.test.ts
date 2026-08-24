@@ -8,6 +8,7 @@ import {
 	landingLoopHoldMs,
 	landingLoopTeaser,
 	landingLoopTeaserBeatCount,
+	landingLoopToggleLabel,
 	waitLandingLoopHold,
 } from './landing-loop-state.ts'
 
@@ -184,4 +185,35 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 	} finally {
 		vi.useRealTimers()
 	}
+})
+
+test('homepage loop toggle defaults to Pause so the combined icon control can paint on the teaser', () => {
+	expect(
+		landingLoopToggleLabel({
+			reducedMotion: false,
+			ended: false,
+			paused: false,
+		}),
+	).toBe('Pause')
+	expect(
+		landingLoopToggleLabel({
+			reducedMotion: false,
+			ended: false,
+			paused: true,
+		}),
+	).toBe('Play')
+	expect(
+		landingLoopToggleLabel({
+			reducedMotion: false,
+			ended: true,
+			paused: true,
+		}),
+	).toBe('Restart')
+	expect(
+		landingLoopToggleLabel({
+			reducedMotion: true,
+			ended: false,
+			paused: false,
+		}),
+	).toBeNull()
 })

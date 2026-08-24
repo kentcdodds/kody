@@ -768,6 +768,14 @@ test('renderAppPage embeds the homepage factory-loop conversation teaser', async
 	expect(html).toContain('/guides/how-kody-works')
 	expect(html).toContain('Read the walkthrough')
 	expect(html).not.toContain('See the whole loop')
+	// Combined playing/pause control is on the teaser so the header does
+	// not shift when playback starts. Icons, not the word Pause.
+	expect(html).toContain('class="landing-loop-toggle-slot"')
+	expect(html).toContain('class="landing-loop-toggle"')
+	expect(html).toContain('aria-label="Pause"')
+	expect(html).toContain('class="landing-loop-status-dot"')
+	expect(html).not.toContain('>Playing<')
+	expect(html).not.toContain('>Pause<')
 })
 
 test('signup social buttons are icon-only with accessible names', async () => {

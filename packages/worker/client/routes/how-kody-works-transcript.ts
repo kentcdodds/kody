@@ -746,7 +746,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 			},
 			{
 				role: 'agent',
-				text: 'You now have `kody-bot-shipped`. Ask again from any agent and I will invoke the export instead of walking GitHub by hand.',
+				text: 'You now have `@you/kody-bot-shipped`. Ask again from any agent and I will invoke the export instead of walking GitHub by hand.',
 			},
 		],
 	},
