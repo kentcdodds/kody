@@ -49,6 +49,25 @@ async function createEnv(input?: {
 	return { APP_DB: db, BUNDLE_ARTIFACTS_KV: kv }
 }
 
+function withCoercedExecuteSum(
+	env: { APP_DB: D1Database },
+	coerce: (total: unknown) => unknown,
+) {
+	const prepare = env.APP_DB.prepare.bind(env.APP_DB)
+	env.APP_DB.prepare = ((sql: string) => {
+		const statement = prepare(sql)
+		if (!sql.includes('SUM(event_count)')) return statement
+		const first = statement.first.bind(statement)
+		return Object.assign(statement, {
+			async first() {
+				const row = await first<{ total?: unknown }>()
+				if (row == null || row.total == null) return row
+				return { total: coerce(row.total) }
+			},
+		})
+	}) as D1Database['prepare']
+}
+
 test('refreshPublicCodeRunsWindow initializes a still pair, unsticks when the fleet grows, and holds a live window for 24h', async () => {
 	const env = await createEnv({
 		rows: [
@@ -209,4 +228,49 @@ test('public code-runs load continues an expired window without writing KV', asy
 			windowEnd: '2026-08-22T00:00:00.000Z',
 		}),
 	)
+})
+
+test('public code-runs load continues a still pair from a D1 SUM number, string, or bigint without writing KV', async () => {
+	const stored = {
+		previous: 257940,
+		current: 257940,
+		windowStart: '2026-08-24T17:00:18.000Z',
+		windowEnd: '2026-08-25T17:00:18.000Z',
+	}
+	const now = new Date('2026-08-24T19:26:00.000Z')
+	const continued = {
+		previous: 257940,
+		current: 257941,
+		windowStart: '2026-08-24T19:26:00.000Z',
+		windowEnd: '2026-08-25T19:26:00.000Z',
+	}
+
+	const numeric = await createEnv({
+		rows: [{ userId: 'a', month: '2026-08', eventCount: 257941 }],
+		window: stored,
+	})
+	expect(await loadPublicCodeRunsWindow(numeric, now)).toEqual(continued)
+	expect(numeric.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(stored),
+	)
+
+	const stringSum = await createEnv({
+		rows: [{ userId: 'a', month: '2026-08', eventCount: 257941 }],
+		window: stored,
+	})
+	withCoercedExecuteSum(stringSum, String)
+	expect(await loadPublicCodeRunsWindow(stringSum, now)).toEqual(continued)
+	await expect(
+		refreshPublicCodeRunsWindow({ env: stringSum, now }),
+	).resolves.toEqual({ status: 'rotated' })
+	expect(stringSum.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(continued),
+	)
+
+	const bigintSum = await createEnv({
+		rows: [{ userId: 'a', month: '2026-08', eventCount: 257941 }],
+		window: stored,
+	})
+	withCoercedExecuteSum(bigintSum, (total) => BigInt(Number(total)))
+	expect(await loadPublicCodeRunsWindow(bigintSum, now)).toEqual(continued)
 })

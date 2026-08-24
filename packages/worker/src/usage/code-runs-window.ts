@@ -137,14 +137,26 @@ async function sumExecuteEventCount(
 			`SELECT COALESCE(SUM(event_count), 0) AS total
 			 FROM usage_rollups
 			 WHERE metric = 'execute'`,
-		).first<{ total: number }>()
-		const total = row?.total
-		if (typeof total !== 'number' || !Number.isFinite(total) || total < 0) {
-			return 0
-		}
-		return Math.floor(total)
+		).first<{ total: unknown }>()
+		return toNonNegativeCount(row?.total)
 	} catch (error) {
 		console.debug('public-code-runs-sum-failed', error)
 		return null
 	}
+}
+
+/**
+ * D1 `SUM` / `COALESCE` can arrive as a number, numeric string, or bigint.
+ * Treating anything but `typeof === 'number'` as zero froze the homepage
+ * ticker on a still pair even while execute rollups existed.
+ */
+function toNonNegativeCount(value: unknown): number {
+	if (typeof value === 'bigint') {
+		if (value < 0n) return 0
+		const parsed = Number(value)
+		return Number.isFinite(parsed) ? Math.floor(parsed) : 0
+	}
+	const parsed = Number(value)
+	if (!Number.isFinite(parsed) || parsed < 0) return 0
+	return Math.floor(parsed)
 }

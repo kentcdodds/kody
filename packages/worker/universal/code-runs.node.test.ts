@@ -12,6 +12,7 @@ import {
 	msUntilNextCodeRunsPaint,
 	nextDisplayedCodeRunsCount,
 	parsePublicCodeRunsWindow,
+	publicCodeRunsWindowsEqual,
 } from './code-runs.ts'
 
 const windowStart = '2026-08-21T00:00:00.000Z'
@@ -296,6 +297,10 @@ test('continuePublicCodeRunsWindow unsticks still and expired pairs without writ
 		windowStart: '2026-08-21T00:00:00.000Z',
 		windowEnd: '2026-08-22T00:00:00.000Z',
 	}
+	expect(publicCodeRunsWindowsEqual(still, still)).toBe(true)
+	expect(publicCodeRunsWindowsEqual(still, { ...still, current: 101 })).toBe(
+		false,
+	)
 	expect(
 		continuePublicCodeRunsWindow({ stored: still, total: 100, now }),
 	).toBeNull()
