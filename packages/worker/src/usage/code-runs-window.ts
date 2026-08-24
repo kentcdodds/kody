@@ -24,14 +24,18 @@ export async function loadPublicCodeRunsWindow(
 		return stored.window
 	}
 	const computed = await computeWindow(env, now)
-	if (computed && env.BUNDLE_ARTIFACTS_KV) {
+	if (computed.status === 'failed') {
+		return stored.status === 'found' ? stored.window : null
+	}
+	if (computed.status === 'empty') return null
+	if (env.BUNDLE_ARTIFACTS_KV) {
 		try {
-			await writeStoredWindow(env.BUNDLE_ARTIFACTS_KV, computed)
+			await writeStoredWindow(env.BUNDLE_ARTIFACTS_KV, computed.window)
 		} catch (error) {
 			console.debug('public-code-runs-window-write-failed', error)
 		}
 	}
-	return computed
+	return computed.window
 }
 
 export async function refreshPublicCodeRunsWindow(input: {
@@ -54,7 +58,10 @@ export async function refreshPublicCodeRunsWindow(input: {
 		if (existing.status === 'failed') {
 			return { status: 'skipped', reason: 'kv_read_failed' }
 		}
-		if (!computed) {
+		if (computed.status === 'failed') {
+			return { status: 'skipped', reason: 'query_failed' }
+		}
+		if (computed.status === 'empty') {
 			if (existing.status === 'found') {
 				try {
 					await kv.delete(publicCodeRunsKvKey)
@@ -66,12 +73,12 @@ export async function refreshPublicCodeRunsWindow(input: {
 		}
 		if (
 			existing.status === 'found' &&
-			publicCodeRunsWindowsEqual(existing.window, computed) &&
-			now.getTime() < Date.parse(computed.updateAt)
+			publicCodeRunsWindowsEqual(existing.window, computed.window) &&
+			now.getTime() < Date.parse(computed.window.updateAt)
 		) {
 			return { status: 'held' }
 		}
-		await writeStoredWindow(kv, computed)
+		await writeStoredWindow(kv, computed.window)
 		return {
 			status: existing.status === 'missing' ? 'initialized' : 'rotated',
 		}
@@ -81,11 +88,8 @@ export async function refreshPublicCodeRunsWindow(input: {
 	}
 }
 
-async function computeWindow(
-	env: CodeRunsWindowEnv,
-	now: Date,
-): Promise<PublicCodeRunsWindow | null> {
-	if (!env.APP_DB) return null
+async function computeWindow(env: CodeRunsWindowEnv, now: Date) {
+	if (!env.APP_DB) return { status: 'failed' as const }
 	return computeDelayedExecuteWindow(env.APP_DB, now)
 }
 

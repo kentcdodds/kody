@@ -192,3 +192,27 @@ test('a cached regressing triple is served until updateAt', async () => {
 		JSON.stringify(regression),
 	)
 })
+
+test('a D1 query failure keeps the cached window instead of treating it as empty', async () => {
+	const stale = {
+		start: 90_000,
+		end: 100_000,
+		updateAt: '2026-08-24T00:00:00.000Z',
+	}
+	const env = await seededEnv(stale)
+	env.APP_DB = {
+		prepare() {
+			throw new Error('D1 unavailable')
+		},
+	} as unknown as D1Database
+	await expect(
+		refreshPublicCodeRunsWindow({ env, now: midday }),
+	).resolves.toEqual({
+		status: 'skipped',
+		reason: 'query_failed',
+	})
+	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(stale),
+	)
+	expect(await loadPublicCodeRunsWindow(env, midday)).toEqual(stale)
+})

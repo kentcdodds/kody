@@ -126,16 +126,21 @@ export async function syncFleetExecuteDays(
 	return result
 }
 
+export type DelayedExecuteWindowResult =
+	| { status: 'ready'; window: PublicCodeRunsWindow }
+	| { status: 'empty' }
+	| { status: 'failed' }
+
 export async function computeDelayedExecuteWindow(
 	db: D1Database,
 	now: Date,
-): Promise<PublicCodeRunsWindow | null> {
+): Promise<DelayedExecuteWindowResult> {
 	try {
 		const oldest = await db
 			.prepare(`SELECT MIN(day) AS oldest FROM fleet_execute_days`)
 			.first<{ oldest: string | null }>()
 		const oldestDay = normalizeUtcDay(oldest?.oldest)
-		if (!oldestDay) return null
+		if (!oldestDay) return { status: 'empty' }
 
 		const today = utcDayString(now)
 		const yesterday = addUtcDays(today, -1)
@@ -145,15 +150,16 @@ export async function computeDelayedExecuteWindow(
 		const start =
 			prefix + (await sumFleetExecuteDaysThrough(db, dayBeforeYesterday))
 		const end = prefix + (await sumFleetExecuteDaysThrough(db, yesterday))
-		if (start === 0 && end === 0) return null
-		return parsePublicCodeRunsWindow({
+		if (start === 0 && end === 0) return { status: 'empty' }
+		const window = parsePublicCodeRunsWindow({
 			start,
 			end,
 			updateAt: nextUtcMidnight(now).toISOString(),
 		})
+		return window ? { status: 'ready', window } : { status: 'failed' }
 	} catch (error) {
 		console.debug('fleet-execute-days-window-failed', error)
-		return null
+		return { status: 'failed' }
 	}
 }
 

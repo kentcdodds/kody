@@ -22,7 +22,9 @@ official `{ start, end, updateAt }` triple — cumulative through the day before
 yesterday, cumulative through yesterday, and the next UTC midnight — is cached
 at `public-code-runs:v2` on `BUNDLE_ARTIFACTS_KV`. Homepage GET fills that cache
 from D1 when the key is missing or `updateAt` has passed; it does not latch a
-high-water mark. The public payload never includes per-user rows. See
+high-water mark. A D1 read failure is not an empty series: GET serves the last
+cached triple when one exists, and hourly refresh does not delete the key. The
+public payload never includes per-user rows. See
 [Authorization](./authorization.md).
 
 ## The event schema

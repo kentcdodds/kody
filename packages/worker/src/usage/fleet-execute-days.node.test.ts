@@ -197,23 +197,32 @@ test('computeDelayedExecuteWindow sums older monthly rollups plus completed days
 	expect(
 		await computeDelayedExecuteWindow(db, new Date('2026-08-24T15:00:00.000Z')),
 	).toEqual({
-		start: 125,
-		end: 155,
-		updateAt: '2026-08-25T00:00:00.000Z',
+		status: 'ready',
+		window: {
+			start: 125,
+			end: 155,
+			updateAt: '2026-08-25T00:00:00.000Z',
+		},
 	})
 	expect(
 		await computeDelayedExecuteWindow(db, new Date('2026-08-25T00:00:00.000Z')),
 	).toEqual({
-		start: 155,
-		end: 254,
-		updateAt: '2026-08-26T00:00:00.000Z',
+		status: 'ready',
+		window: {
+			start: 155,
+			end: 254,
+			updateAt: '2026-08-26T00:00:00.000Z',
+		},
 	})
 	expect(
 		await computeDelayedExecuteWindow(db, new Date('2026-08-24T15:00:00.000Z')),
 	).toEqual({
-		start: 125,
-		end: 155,
-		updateAt: '2026-08-25T00:00:00.000Z',
+		status: 'ready',
+		window: {
+			start: 125,
+			end: 155,
+			updateAt: '2026-08-25T00:00:00.000Z',
+		},
 	})
 })
 
@@ -223,5 +232,16 @@ test('computeDelayedExecuteWindow hides when the daily table is empty', async ()
 	})
 	expect(
 		await computeDelayedExecuteWindow(db, new Date('2026-08-24T15:00:00.000Z')),
-	).toBeNull()
+	).toEqual({ status: 'empty' })
+})
+
+test('computeDelayedExecuteWindow reports failed when D1 throws instead of empty', async () => {
+	const db = {
+		prepare() {
+			throw new Error('D1 unavailable')
+		},
+	} as unknown as D1Database
+	expect(
+		await computeDelayedExecuteWindow(db, new Date('2026-08-24T15:00:00.000Z')),
+	).toEqual({ status: 'failed' })
 })
