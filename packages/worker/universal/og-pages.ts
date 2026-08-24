@@ -21,10 +21,9 @@ export type PublicOgPage = {
 
 export const publicOgPages = {
 	home: {
-		imageTitle: 'A private software ecosystem all your agents can share',
-		// Complements the title rather than restating it: the card shows both at
-		// once, so repeating the headline wastes the only supporting line.
-		imageSubtitle: 'Your agents do the thinking. Kody holds the result.',
+		// Short enough for 78px OG type. The homepage H1 keeps the full sentence.
+		imageTitle: 'A private software ecosystem',
+		imageSubtitle: 'All your agents can share.',
 		ogTitle: 'A private software ecosystem all your agents can share',
 		ogDescription:
 			'Your agents do the thinking. Kody holds the result. Packages you own, secrets they never see, and jobs that keep running.',
