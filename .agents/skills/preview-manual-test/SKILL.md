@@ -26,9 +26,9 @@ the assertions as the same logged-in user:
 
 ```bash
 npm run preview:manual-test -- \
-  --request 'POST /account/values.json {"action":"save","name":"preview-locale","value":"en-US"}' \
-  --request 'GET /account/values.json' \
-  --check /account/values
+  --request 'POST /onboarding/checklist-dismiss.json {}' \
+  --request 'GET /onboarding.json' \
+  --check /onboarding
 ```
 
 `--request` spec: `METHOD /path [status] [json-body]` (default success: 2xx).

@@ -26,9 +26,9 @@ as the same user:
 
 ```bash
 npm run preview:manual-test -- \
-  --request 'POST /account/values.json {"action":"save","name":"preview-locale","value":"en-US"}' \
-  --request 'GET /account/values.json' \
-  --check /account/values
+  --request 'POST /onboarding/checklist-dismiss.json {}' \
+  --request 'GET /onboarding.json' \
+  --check /onboarding
 ```
 
 `--request` is authenticated HTTP as the seed user. Spec:
@@ -41,7 +41,7 @@ session. `--cookie-file .tmp/preview-cookie` writes that header value:
 ```bash
 COOKIE=$(cat .tmp/preview-cookie)
 curl -sS -H "Cookie: $COOKIE" -H 'Accept: application/json' \
-  "$PREVIEW_URL/account/values.json"
+  "$PREVIEW_URL/onboarding.json"
 ```
 
 `--no-wait` fails immediately if the preview is not up. `--url` skips GitHub

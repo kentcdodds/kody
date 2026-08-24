@@ -78,3 +78,13 @@ package-app apex:
   owner's hosted app.
 - Revisit per-package subdomains only if same-owner isolation becomes a reported
   abuse vector or a product requirement.
+
+## Later update (2026-08-24)
+
+The 2026-08-11 decision above used `kodyapps.dev` as the package-app apex. That
+hostname is not rewritten here. The canonical package-app apex is `kody.run`
+(`PACKAGE_APP_BASE_URL`). Production public URL shape is
+`https://{username}.kody.run/packages/{kodyId}/{path}`. `kodyapps.dev` is
+dual-served as a legacy package-app zone (apex + `*.kodyapps.dev`) pending
+[#1428](https://github.com/kentcdodds/kody/issues/1428). See
+[`setup-manifest.md`](../setup-manifest.md) and [`security.md`](../security.md).
