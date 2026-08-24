@@ -187,7 +187,7 @@ per-capability.
 
 ## Use the official package and verify
 
-Ad hoc `execute` may import or `packages.invoke` `kody:@kody/github` live. A
+Ad hoc `execute` may import `kody:@kody/github` live. A
 saved token or integration is credentials only. Finish by calling the live
 official helpers so day-to-day work goes through maintained code instead of
 hand-rolled API calls. Official `@kody/*` packages resolve in the execute caller

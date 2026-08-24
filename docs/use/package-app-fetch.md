@@ -25,7 +25,8 @@ Hosted-URL checks remain useful for UI, OAuth redirects, and websocket facets.
 - To prove a fetch handler returns expected status/body before sharing
   `hosted_app_url` with a user
 
-Prefer `packages.invoke` for export smoke tests. Prefer
+Prefer a static `kody:@scope/package/export` import from `execute` for export
+smoke tests. Prefer
 [Inbound webhooks](./webhooks.md) ingress for provider POST deliveries.
 
 ## Call shape

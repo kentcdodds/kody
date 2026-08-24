@@ -195,7 +195,7 @@ reconnects use `/connect/oauth?provider=google` and the connect UI scope menu.
 
 ## Use the official package and verify
 
-Ad hoc `execute` may import or `packages.invoke` `kody:@kody/google` live. A
+Ad hoc `execute` may import `kody:@kody/google` live. A
 saved integration is auth credentials only. Finish by calling the live official
 helpers so day-to-day work goes through maintained Gmail, Calendar, and Drive
 helpers instead of raw `createAuthenticatedFetch` calls. Official `@kody/*`

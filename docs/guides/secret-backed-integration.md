@@ -85,13 +85,12 @@ smoke-test path is unclear.
    - When present, either review the source and call `community_fork_adopt`, or
      send `bulk_approval_url` / each `approval_url`.
    - Wait for the user to approve or for adoption (when required), then verify
-     with a keyless `packages.invoke(...)` smoke test before treating the
-     package as complete. It must be `packages.invoke` (not a static import)
-     because only the package's own runtime exercises `kody.secretMounts`
-     mounts. Prefer a read-only export or a package-supported dry-run input that
-     actually reads the approved secret (for example an authenticated read-only
-     API call), so verification proves secret access without external side
-     effects.
+     from `execute` with a static `kody:@scope/package/export` import before
+     treating the package as complete. Prefer a read-only export or a
+     package-supported dry-run input that actually reads the approved secret
+     (for example an authenticated read-only API call), so verification proves
+     secret access without external side effects. Secret mounts bind in the
+     package's own surfaces (jobs, apps, subscriptions, HTTP invocation).
 
 ## Secret names and value names
 

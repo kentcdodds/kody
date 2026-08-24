@@ -284,7 +284,7 @@ Recommended flow for a trusted external client:
 
 A token with `exportNames: ["*"]` can call any export on that package.
 Cross-package callers invoke one package (an orchestrator or discovery package)
-and use `packages.invoke` inside Kody, or they speak MCP.
+and statically import that package inside Kody, or they speak MCP.
 
 ## Related
 
