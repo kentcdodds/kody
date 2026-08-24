@@ -26,7 +26,7 @@ export const publicOgPages = {
 		imageSubtitle: 'All your agents can share.',
 		ogTitle: 'The private software ecosystem all your agents can share',
 		ogDescription:
-			'Your agents do the thinking. Kody holds the result. Packages you own, secrets they never see, and jobs that keep running.',
+			"It's like your own npm and GitHub that any of your agents can use.",
 		path: '/',
 	},
 	community: {
