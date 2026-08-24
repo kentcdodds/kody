@@ -1004,9 +1004,7 @@ export function AdminUsersRoute(handle: Handle) {
 												css(primaryButtonCss),
 											]}
 										>
-											{actionState === 'saving-plan'
-												? 'Saving…'
-												: 'Save grant'}
+											{actionState === 'saving-plan' ? 'Saving…' : 'Save grant'}
 										</button>
 									</div>
 								</AccountManagementPanel>

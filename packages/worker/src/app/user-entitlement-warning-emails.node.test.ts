@@ -52,12 +52,14 @@ function createKv() {
 	}
 }
 
-function createDb(users: Array<{
-	stable_user_id: string
-	email: string
-	plan: string
-	stripe_plan: string | null
-}>) {
+function createDb(
+	users: Array<{
+		stable_user_id: string
+		email: string
+		plan: string
+		stripe_plan: string | null
+	}>,
+) {
 	return {
 		prepare(query: string) {
 			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()

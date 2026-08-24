@@ -136,9 +136,9 @@ export async function runScheduledLane(input: {
 				now: input.scheduledAt,
 			})
 		case 'usage_entitlement_alert': {
-			let userWarnings: Awaited<
-				ReturnType<typeof sendUserEntitlementWarningEmails>
-			> | { status: 'failed' }
+			let userWarnings:
+				| Awaited<ReturnType<typeof sendUserEntitlementWarningEmails>>
+				| { status: 'failed' }
 			try {
 				userWarnings = await sendUserEntitlementWarningEmails({
 					env: input.env,
