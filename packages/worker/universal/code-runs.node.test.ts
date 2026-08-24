@@ -3,13 +3,11 @@ import {
 	codeRunsCatchUpDelayMs,
 	codeRunsCatchUpSnapAfterMs,
 	codeRunsHonestySlotMs,
-	codeRunsProgressToNext,
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
 	isStillPublicCodeRunsWindow,
 	msUntilCodeRunsWindowRefresh,
 	msUntilNextCodeRunsCount,
-	msUntilNextCodeRunsPaint,
 	nextDisplayedCodeRunsCount,
 	parsePublicCodeRunsWindow,
 	publicCodeRunsWindowsEqual,
@@ -265,25 +263,19 @@ test('a 3-second backbone never waits longer than the honesty slot when budget a
 	// backbone is a fixed 3-second cadence.
 	expect(new Set(gaps.slice(1)).size).toBe(1)
 	expect(gaps[1]).toBe(codeRunsHonestySlotMs)
-	expect(msUntilNextCodeRunsPaint(honest, startMs + 10)).toBeLessThanOrEqual(
-		codeRunsHonestySlotMs,
-	)
 })
 
-test('thin windows move progress instead of inventing integers', () => {
+test('thin windows sit on the integer until the next real +1', () => {
 	const thin = { ...window, start: 10, end: 20 }
 	const nowMs = startMs + 6 * hourMs
 	const wait = msUntilNextCodeRunsCount(thin, nowMs)
 	expect(wait).not.toBeNull()
 	expect(wait!).toBeGreaterThan(codeRunsHonestySlotMs)
-	expect(msUntilNextCodeRunsPaint(thin, nowMs)).toBe(codeRunsHonestySlotMs)
-	const frac = codeRunsProgressToNext(thin, nowMs)
-	expect(frac).toBeGreaterThan(0)
-	expect(frac).toBeLessThan(1)
-	expect(codeRunsProgressToNext(thin, nowMs + 3_000)).toBeGreaterThan(frac)
-	expect(codeRunsProgressToNext({ ...window, start: 80, end: 80 }, nowMs)).toBe(
-		0,
+	const here = interpolateCodeRunsCount(thin, nowMs)
+	expect(interpolateCodeRunsCount(thin, nowMs + codeRunsHonestySlotMs)).toBe(
+		here,
 	)
+	expect(interpolateCodeRunsCount(thin, nowMs + wait!)).toBe(here + 1)
 })
 
 test('a regressing end shows immediately and refresh waits until updateAt', () => {

@@ -748,6 +748,7 @@ test('renderAppPage embeds a tabular homepage code-runs ticker', async () => {
 	)?.[0]
 	expect(ticker).toBeTruthy()
 	expect(ticker).toContain('landing-hero-runs-count')
+	expect(ticker).not.toContain('landing-hero-runs-progress')
 	expect(ticker).toMatch(/--runs-ch:\s*7ch/)
 	expect(ticker).toContain(formatCodeRunsCount(count))
 	expect(ticker).toContain('code runs')
