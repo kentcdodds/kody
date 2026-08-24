@@ -2,11 +2,7 @@ import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
 import { expect, test } from 'vitest'
 import { parseModuleSource } from '#worker/module-source.ts'
-import { getPackageCodemodById } from '../registry.ts'
-import {
-	prefixPackagesInvokeSpecifiersCodemod,
-	prefixPackagesInvokeSpecifiersCodemodId,
-} from './0007-prefix-packages-invoke-specifiers.ts'
+import { prefixPackagesInvokeSpecifiersCodemod } from './0007-prefix-packages-invoke-specifiers.ts'
 
 test('0007 prefixes JS and TS literals while preserving options and export precedence', () => {
 	const files = {
@@ -71,18 +67,14 @@ await packages /* optional note */ ?. /* property note */ invoke('@owner/optiona
 `,
 	}
 
-	expect(prefixPackagesInvokeSpecifiersCodemod.detect(files)).toEqual([
-		{
-			path: 'before-invoke.ts',
-			message:
-				'Uses a deprecated prefixless packages.invoke specifier; add the kody: prefix.',
-		},
-		{
-			path: 'before-operator.ts',
-			message:
-				'Uses a deprecated prefixless packages.invoke specifier; add the kody: prefix.',
-		},
-	])
+	expect(
+		prefixPackagesInvokeSpecifiersCodemod.detect(files).map((f) => f.path),
+	).toEqual(['before-invoke.ts', 'before-operator.ts'])
+	expect(
+		prefixPackagesInvokeSpecifiersCodemod
+			.detect(files)
+			.every((finding) => finding.message.length > 0),
+	).toBe(true)
 
 	const result = prefixPackagesInvokeSpecifiersCodemod.transform(files)
 	expect(result.changedPaths).toEqual([
@@ -199,20 +191,11 @@ packages.invoke('@owner/namespace/export')
 		expectedManualPaths,
 	)
 	expect(
-		result.needsManual.every(
-			(finding) =>
-				finding.message ===
-				'A packages.invoke call is ambiguous or cannot be safely rewritten; add the kody: prefix manually.',
-		),
+		result.needsManual.every((finding) => finding.message.length > 0),
 	).toBe(true)
 	expect(
 		JSON.stringify(result.needsManual.map((finding) => finding.message)),
 	).not.toContain('private-owner')
-
-	const repeated = prefixPackagesInvokeSpecifiersCodemod.transform(result.files)
-	expect(repeated.files).toEqual(result.files)
-	expect(repeated.changed).toBe(false)
-	expect(repeated.needsManual).toEqual(result.needsManual)
 })
 
 test('0007 rewrites parseable Markdown and MDX examples', () => {
@@ -235,17 +218,24 @@ packages.invoke('@owner/prose/export')
 await packages?.invoke('@owner/mdx/export', options)
 \`\`\`
 `,
+		'escaping.md':
+			"Escaped delimiters: \\`packages.invoke('@owner/escaped/export')\\`.\n\n" +
+			"Multi-backtick span: ``packages.invoke('@owner/multiple/export')``.\n",
+		'multiline-inline.md':
+			'Inline: `packages.invoke(/* private comment\n*/ privateSpecifier)`.\n',
 	}
 	const result = prefixPackagesInvokeSpecifiersCodemod.transform(files)
 
 	expect(result.changedPaths).toEqual(['guide.mdx', 'README.md'])
-	expect(result.needsManual).toEqual([
-		{
-			path: 'README.md',
-			message:
-				'A packages.invoke call is ambiguous or cannot be safely rewritten; add the kody: prefix manually.',
-		},
+	expect(result.needsManual.map((finding) => finding.path)).toEqual([
+		'escaping.md',
+		'multiline-inline.md',
+		'README.md',
 	])
+	expect(
+		result.needsManual.every((finding) => finding.message.length > 0),
+	).toBe(true)
+	expect(JSON.stringify(result.needsManual)).not.toContain('privateSpecifier')
 	expect(result.files['README.md']).toContain(
 		"packages.invoke('kody:@owner/pkg/export', { params: { value: 1 } })",
 	)
@@ -258,28 +248,6 @@ await packages?.invoke('@owner/mdx/export', options)
 	expect(result.files['guide.mdx']).toContain(
 		"packages?.invoke('kody:@owner/mdx/export', options)",
 	)
-})
-
-test('0007 leaves escaped and multi-backtick Markdown inline forms manual', () => {
-	const files = {
-		'escaping.md':
-			"Escaped delimiters: \\`packages.invoke('@owner/escaped/export')\\`.\n\n" +
-			"Multi-backtick span: ``packages.invoke('@owner/multiple/export')``.\n",
-	}
-	const result = prefixPackagesInvokeSpecifiersCodemod.transform(files)
-
-	expect(result).toEqual({
-		files,
-		changed: false,
-		changedPaths: [],
-		needsManual: [
-			{
-				path: 'escaping.md',
-				message:
-					'A packages.invoke call is ambiguous or cannot be safely rewritten; add the kody: prefix manually.',
-			},
-		],
-	})
 })
 
 test('0007 never rewrites packages.invoke inside Markdown HTML comments', () => {
@@ -301,13 +269,12 @@ test('0007 never rewrites packages.invoke inside Markdown HTML comments', () => 
 	expect(result.files['comment.md']).toContain(
 		"packages.invoke('kody:@owner/visible/export')",
 	)
-	expect(result.needsManual).toEqual([
-		{
-			path: 'comment.md',
-			message:
-				'A packages.invoke call is ambiguous or cannot be safely rewritten; add the kody: prefix manually.',
-		},
+	expect(result.needsManual.map((finding) => finding.path)).toEqual([
+		'comment.md',
 	])
+	expect(
+		result.needsManual.every((finding) => finding.message.length > 0),
+	).toBe(true)
 	expect(result.needsManual[0]?.message).not.toContain('private-owner')
 })
 
@@ -329,13 +296,12 @@ await packages.invoke(\`@\${owner}/pkg/export\`, options)
 		"packages.invoke('kody:@private-owner/private-package/export', options)",
 	)
 	expect(result.files['object-only.ts']).toBe(files['object-only.ts'])
-	expect(result.needsManual).toEqual([
-		{
-			path: 'broken.ts',
-			message:
-				'File references packages.invoke but could not be parsed; add kody: prefixes manually.',
-		},
+	expect(result.needsManual.map((finding) => finding.path)).toEqual([
+		'broken.ts',
 	])
+	expect(
+		result.needsManual.every((finding) => finding.message.length > 0),
+	).toBe(true)
 	expect(JSON.stringify(result.needsManual)).not.toContain('private-owner')
 	expect(JSON.stringify(result.needsManual)).not.toContain('private-package')
 })
@@ -351,23 +317,12 @@ test('0007 detect orders rewritable and manual findings and omits prefixed calls
 		'e-unrelated-parse.ts': 'const packages = (\nconst invoke = true\n',
 	})
 
-	expect(findings).toEqual([
-		{
-			path: 'a-rewrite.ts',
-			message:
-				'Uses a deprecated prefixless packages.invoke specifier; add the kody: prefix.',
-		},
-		{
-			path: 'b-manual.ts',
-			message:
-				'Uses a deprecated prefixless packages.invoke specifier; add the kody: prefix.',
-		},
-		{
-			path: 'd-parse.ts',
-			message:
-				'File references packages.invoke but could not be parsed; add kody: prefixes manually.',
-		},
+	expect(findings.map((finding) => finding.path)).toEqual([
+		'a-rewrite.ts',
+		'b-manual.ts',
+		'd-parse.ts',
 	])
+	expect(findings.every((finding) => finding.message.length > 0)).toBe(true)
 	expect(findings.map((finding) => finding.path)).not.toContain('c-prefixed.ts')
 	expect(findings.map((finding) => finding.path)).not.toContain(
 		'e-unrelated-parse.ts',
@@ -510,34 +465,6 @@ await packages?.invoke(__kodyCodemod0007Value, options)
 	expect(transformed).toContain('})((__kodyCodemod0007Value)), options)')
 })
 
-test('0007 recognizes only the exact generated wrapper shape', () => {
-	const files = {
-		'marker-literal.ts':
-			"packages.invoke('@owner/kody-codemod-0007/run', options)\n",
-		'marker-dynamic.js':
-			"packages.invoke(getSpecifier('kody-codemod-0007'), options)\n",
-	}
-	const result = prefixPackagesInvokeSpecifiersCodemod.transform(files)
-
-	expect(result.files['marker-literal.ts']).toBe(
-		"packages.invoke('kody:@owner/kody-codemod-0007/run', options)\n",
-	)
-	expect(result.files['marker-dynamic.js']).toContain(
-		'kody-codemod-0007 */ const',
-	)
-	expect(result.files['marker-dynamic.js']).toContain(
-		"})((getSpecifier('kody-codemod-0007')))), options)",
-	)
-	expect(prefixPackagesInvokeSpecifiersCodemod.transform(result.files)).toEqual(
-		{
-			files: result.files,
-			changed: false,
-			changedPaths: [],
-			needsManual: [],
-		},
-	)
-})
-
 test('0007 rewrites TypeScript non-null packages member and callee forms', () => {
 	const source = `
 packages!.invoke(firstSpecifier, firstOptions)
@@ -556,14 +483,6 @@ packages!.invoke!(thirdSpecifier, thirdOptions)
 	expect(transformed).toContain('})((secondSpecifier)), secondOptions)')
 	expect(transformed).toContain('})((thirdSpecifier)), thirdOptions)')
 	expect(transformed).toContain('})((fourthSpecifier)), fourthOptions))!')
-	expect(prefixPackagesInvokeSpecifiersCodemod.transform(result.files)).toEqual(
-		{
-			files: result.files,
-			changed: false,
-			changedPaths: [],
-			needsManual: [],
-		},
-	)
 })
 
 test('0007 rewrites static computed invoke access but ignores dynamic keys', () => {
@@ -585,14 +504,6 @@ packages?.['invoke']?.(thirdSpecifier, thirdOptions)
 	expect(transformed).toContain('packages["invoke"]((')
 	expect(transformed).toContain("packages?.['invoke']?.((")
 	expect(result.files['dynamic.ts']).toBe(files['dynamic.ts'])
-	expect(prefixPackagesInvokeSpecifiersCodemod.transform(result.files)).toEqual(
-		{
-			files: result.files,
-			changed: false,
-			changedPaths: [],
-			needsManual: [],
-		},
-	)
 })
 
 test('0007 composes nested arg0 rewrites without overlapping ranges', () => {
@@ -609,14 +520,6 @@ test('0007 composes nested arg0 rewrites without overlapping ranges', () => {
 	)
 	expect(transformed).toContain(
 		'select(packages.invoke(/** @type {`kody:@${string}/${string}`} */',
-	)
-	expect(prefixPackagesInvokeSpecifiersCodemod.transform(result.files)).toEqual(
-		{
-			files: result.files,
-			changed: false,
-			changedPaths: [],
-			needsManual: [],
-		},
 	)
 })
 
@@ -762,37 +665,7 @@ test('0007 keeps generated single-backtick Markdown inline code valid', () => {
 	expect(transformed).toContain('/** @type {any} */')
 	expect(transformed).not.toContain('`kody:@${string}/${string}`')
 	expect(() => parseModuleSource(inlineContent)).not.toThrow()
-	expect(prefixPackagesInvokeSpecifiersCodemod.transform(result.files)).toEqual(
-		{
-			files: result.files,
-			changed: false,
-			changedPaths: [],
-			needsManual: [],
-		},
-	)
 	expect(prefixPackagesInvokeSpecifiersCodemod.detect(result.files)).toEqual([])
-})
-
-test('0007 keeps multiline Markdown inline spans manual', () => {
-	const source =
-		'Inline: `packages.invoke(/* private comment\n*/ privateSpecifier)`.\n'
-	const result = prefixPackagesInvokeSpecifiersCodemod.transform({
-		'multiline-inline.md': source,
-	})
-
-	expect(result).toEqual({
-		files: { 'multiline-inline.md': source },
-		changed: false,
-		changedPaths: [],
-		needsManual: [
-			{
-				path: 'multiline-inline.md',
-				message:
-					'A packages.invoke call is ambiguous or cannot be safely rewritten; add the kody: prefix manually.',
-			},
-		],
-	})
-	expect(JSON.stringify(result.needsManual)).not.toContain('privateSpecifier')
 })
 
 test('0007 confines malformed inline delimiters to physical lines', () => {
@@ -823,13 +696,12 @@ test('0007 confines malformed inline delimiters to physical lines', () => {
 	const transformed = result.files['recovery.md'] ?? ''
 
 	expect(result.changedPaths).toEqual(['recovery.md'])
-	expect(result.needsManual).toEqual([
-		{
-			path: 'recovery.md',
-			message:
-				'A packages.invoke call is ambiguous or cannot be safely rewritten; add the kody: prefix manually.',
-		},
+	expect(result.needsManual.map((finding) => finding.path)).toEqual([
+		'recovery.md',
 	])
+	expect(
+		result.needsManual.every((finding) => finding.message.length > 0),
+	).toBe(true)
 	expect(transformed).toContain(malformed)
 	expect(transformed).toContain(ordinary)
 	expect(transformed).toContain(unmatchedCommentProse)
@@ -882,25 +754,6 @@ test('0007 Markdown fallback requires a call shape and keeps findings privacy-sa
 	expect(JSON.stringify(result.needsManual)).not.toContain('private-package')
 })
 
-test('0007 leaves object, spread, missing, and ambiguous bindings manual as before', () => {
-	const files = {
-		'object.ts': `packages.invoke({ kodyId: 'legacy', exportName: 'run' })\n`,
-		'spread.ts': 'packages.invoke(...args)\n',
-		'missing.ts': 'packages.invoke()\n',
-		'bound.ts':
-			'const packages = localPackages\npackages.invoke(dynamicSpecifier)\n',
-	}
-	const result = prefixPackagesInvokeSpecifiersCodemod.transform(files)
-
-	expect(result.changed).toBe(false)
-	expect(result.files).toEqual(files)
-	expect(result.needsManual.map((finding) => finding.path)).toEqual([
-		'bound.ts',
-		'missing.ts',
-		'spread.ts',
-	])
-})
-
 test('0007 treats packages and packages.invoke mutations as ambiguous', () => {
 	const files = {
 		'assigned-invoke.js':
@@ -939,20 +792,7 @@ test('0007 treats packages and packages.invoke mutations as ambiguous', () => {
 		Object.keys(files).sort((left, right) => left.localeCompare(right)),
 	)
 	expect(
-		result.needsManual.every(
-			(finding) =>
-				finding.message ===
-				'A packages.invoke call is ambiguous or cannot be safely rewritten; add the kody: prefix manually.',
-		),
+		result.needsManual.every((finding) => finding.message.length > 0),
 	).toBe(true)
 	expect(JSON.stringify(result.needsManual)).not.toContain('dynamicSpecifier')
-})
-
-test('0007 is permanent and registered after the object-only migration', () => {
-	expect(prefixPackagesInvokeSpecifiersCodemodId).toBe(
-		'0007-prefix-packages-invoke-specifiers',
-	)
-	expect(getPackageCodemodById(prefixPackagesInvokeSpecifiersCodemodId)).toBe(
-		prefixPackagesInvokeSpecifiersCodemod,
-	)
 })

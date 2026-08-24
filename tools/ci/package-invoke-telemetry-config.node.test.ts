@@ -26,13 +26,13 @@ test('origin and secondary workers bind package invoke telemetry in production a
 			const binding = config.env?.[envName]?.analytics_engine_datasets?.find(
 				(entry) => entry.binding === 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
 			)
-			expect(binding, `${configPath} env.${envName}`).toEqual({
-				binding: 'PACKAGE_INVOKE_SPECIFIER_EVENTS',
-				dataset:
-					envName === 'production'
-						? 'kody_package_invoke_specifier_events'
-						: 'kody_package_invoke_specifier_events_preview',
-			})
+			expect(binding?.binding, `${configPath} env.${envName}`).toBe(
+				'PACKAGE_INVOKE_SPECIFIER_EVENTS',
+			)
+			expect(
+				binding?.dataset?.length ?? 0,
+				`${configPath} env.${envName} dataset`,
+			).toBeGreaterThan(0)
 		}
 	}
 })

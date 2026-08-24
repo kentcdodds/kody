@@ -185,9 +185,7 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 	} finally {
 		vi.useRealTimers()
 	}
-})
 
-test('homepage loop toggle defaults to Pause so the combined icon control can paint on the teaser', () => {
 	expect(
 		landingLoopToggleLabel({
 			reducedMotion: false,
