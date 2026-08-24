@@ -203,11 +203,13 @@ await packages.invoke('kody:@kentcdodds/event-subscriber/handle-event', {
 ```
 
 The first argument should be `kody:@scope/package` or
-`kody:@scope/package/export`. Prefixless `@scope/package[/export]` is deprecated
-during migration, though it remains accepted and canonicalized to `kody:`.
-`exportName` is optional only when the specifier includes the export; if both
-are present, the specifier export wins. The second argument accepts
-`exportName`, `params`, `idempotencyKey`, and `topic`; unknown keys fail.
+`kody:@scope/package/export`. Prefixless `@scope/package[/export]` is
+deprecated; the runtime accepts it and canonicalizes to `kody:`. See
+[packages.invoke prefix migration](./package-invoke-prefix-migration.md) for the
+retirement gate. `exportName` is optional only when the specifier includes the
+export; if both are present, the specifier export wins. The second argument
+accepts `exportName`, `params`, `idempotencyKey`, and `topic`; unknown keys
+fail.
 
 Exact scoped resolution avoids bare-id collisions. A `kody:@kody/...` target
 resolves the public live package owned by the platform account, while a
@@ -288,7 +290,7 @@ the execute sandbox the `packages` helper exposes only `invoke`, so accessing
 `check` or `invokeChecked` throws a normal `TypeError`. Package-app runtimes
 reject those helpers with an error that names the supported replacement. The
 permanent `0002-static-first-invocation` and `0006-invoke-object-to-specifier`
-repair codemods remain available. See
+repair codemods cover those migrations. See
 [Invocation overhead guardrails](./architecture/invocation-overhead-guardrails.md)
 for the performance budget that keeps the keyless path honest.
 

@@ -206,11 +206,12 @@ Package reuse follows two rules:
 
 The first argument should be the target's scoped Kody module specifier:
 `kody:@username/package-name` or `kody:@username/package-name/export-subpath`.
-The prefixless `@username/package-name[/export-subpath]` form is deprecated
-during the migration phase. It remains accepted and is canonicalized to `kody:`,
-but new and updated code should not use it. A package-only specifier requires
-`exportName` in the options object. When both the specifier and options name an
-export, the specifier's export subpath wins.
+The prefixless `@username/package-name[/export-subpath]` form is deprecated. The
+runtime accepts it and canonicalizes to `kody:`, but new and updated code should
+not use it. Retirement soak evidence lives in
+[packages.invoke prefix migration](../contributing/package-invoke-prefix-migration.md).
+A package-only specifier requires `exportName` in the options object. When both
+the specifier and options name an export, the specifier's export subpath wins.
 
 ```ts
 import { packages } from 'kody:runtime'

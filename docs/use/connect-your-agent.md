@@ -112,9 +112,10 @@ code more easily.
 After the connection works, Get started Step 2 offers official remote MCP
 servers for Notion, Linear, Atlassian, Stripe, Sentry, and Canva, plus the
 matching `@kody/*-mcp` helper. You can also add a custom MCP URL, try a
-zero-auth example, or skip. MCP is the quicker first-value path. The official
-non-MCP packages (`@kody/notion`, `@kody/linear`, `@kody/jira`, `@kody/stripe`,
-`@kody/sentry`, `@kody/canva`) stay the long-term API helpers.
+zero-auth example, or skip. MCP is the quicker first-value path. Prefer the
+official non-MCP API packages (`@kody/notion`, `@kody/linear`, `@kody/jira`,
+`@kody/stripe`, `@kody/sentry`, `@kody/canva`) for reusable integrations — do
+not convert them to MCP-first.
 
 Step 3 copies a prompt that asks your agent to run one ad hoc request, then
 persist that working code as a package you own. Built-in platform OAuth and

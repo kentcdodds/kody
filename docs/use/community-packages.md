@@ -155,21 +155,21 @@ is ahead.
 
 ## One-click install
 
-Each listing detail page has an **Install** button for signed-in users. On
-`/onboarding`, Step 2 offers official workspace MCP servers and the matching
-`@kody` package, a custom MCP URL, or Just-try-Kody zero-auth examples. Step 3
-leads with an ad hoc → persist prompt so your agent can save a first package you
-own. Built-in service connects stay under Advanced; after those installs, **Copy
-prompt** gives your agent a short setup prompt. If you already have a saved
-package with the same `kody_id`, or a fork of that listing, onboarding, listing
-cards, and the detail page show **Copy prompt** / **Installed** (or **Forked**)
-instead of Install. Listing cards and the detail page place **Trusted** /
-**Installed** (or **Forked**) badges on their own row under the package name. A
-trailing **Choose your own adventure** card copies an open-ended setup prompt
-when you want to explore or build something custom instead. Install forks the
-listing into your account and, when the fork passes the same publish checks a
-repo session would run, publishes it immediately as a live saved package.
-**Publishing activates the package right away** — declared jobs are scheduled.
+Each listing detail page has an **Install** button for signed-in users. Get
+started Step 2–3 follow
+[Connect your agent](./connect-your-agent.md#connect-a-workspace-mcp-then-persist-a-first-build)
+(workspace MCP or Just-try-Kody, then ad hoc → persist). Built-in service
+connects live under Advanced; after those installs, **Copy prompt** gives your
+agent a short setup prompt. If you already have a saved package with the same
+`kody_id`, or a fork of that listing, onboarding, listing cards, and the detail
+page show **Copy prompt** / **Installed** (or **Forked**) instead of Install.
+Listing cards and the detail page place **Trusted** / **Installed** (or
+**Forked**) badges on their own row under the package name. A trailing **Choose
+your own adventure** card copies an open-ended setup prompt when you want to
+explore or build something custom instead. Install forks the listing into your
+account and, when the fork passes the same publish checks a repo session would
+run, publishes it immediately as a live saved package. **Publishing activates
+the package right away** — declared jobs are scheduled.
 
 - **Untrusted listings** show a warning first: no admin has reviewed the code,
   and installing runs it in your account. You must explicitly confirm. Direct

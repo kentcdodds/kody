@@ -1,9 +1,9 @@
 # `packages.invoke` prefix migration
 
 String-first `packages.invoke` accepts both `kody:@owner/package[/export]` and
-the deprecated prefixless `@owner/package[/export]` form during this migration
-phase. The parser canonicalizes the latter to `kody:`. Object-only invocation
-remains removed, and publishing does not reject prefixless string-first calls.
+the deprecated prefixless `@owner/package[/export]` form. The parser
+canonicalizes the latter to `kody:`. Object-only invocation is removed, and
+publishing does not reject prefixless string-first calls.
 
 Use permanent codemod `0007-prefix-packages-invoke-specifiers` to migrate
 literal calls and parseable dynamic first arguments. Dynamic calls receive an
@@ -101,8 +101,8 @@ following:
   the weighted equivalents. A missing app row means no app traffic and does not
   block cleanup.
 
-Do not combine surfaces to reach a threshold. Execute, package, and job are
-historically active and each must pass independently.
+Do not combine surfaces to reach a threshold. Execute, package, and job each
+must pass independently.
 
 The unsampled-only requirement makes each retained row one observed call rather
 than an expanded estimate. Zero deprecated calls among at least 300 observed
