@@ -45,6 +45,8 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Packages and MCP
 
 - [Packages and manifests](./packages-and-manifests.md)
+- [Official `@kody/*` packageStorage](./official-package-storage.md) (open
+  question: invoke vs static import grants)
 - [Package codemods](./package-codemods.md)
 - [`packages.invoke` prefix migration](./package-invoke-prefix-migration.md)
 - [Community packages](./community-packages.md)

@@ -160,7 +160,12 @@ A saved package is a repo with the package extension activated. Four concepts:
   `collectPackageStorageGrantIds` in `#mcp/run-kody-registry.ts`, and
   `createPackageStorageKodyTools` in `#worker/storage-runner.ts`). Cross-user
   access stays structurally impossible because storage runner names are keyed by
-  the calling user's id.
+  the calling user's id. Platform-owned **dependencies** are excluded from that
+  grant set (`platformOwned`), so a static import of `@kody/*` fails closed.
+  `packages.invoke` of the same official package grants the run's
+  `packageContext.packageId` (the official UUID) and writes a caller-local
+  bucket. That split is an open product question — see
+  [official package storage](./official-package-storage.md).
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data

@@ -42,3 +42,6 @@ or durability own a fork.
 
 Revisit only if official packages grow a real versioning contract that 0001 and
 0031 still refuse.
+
+Open question, not decided here: whose `packageStorage()` a live `@kody/*`
+invoke reaches. See [official package storage](../official-package-storage.md).
