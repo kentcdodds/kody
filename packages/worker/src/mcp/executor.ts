@@ -1537,13 +1537,13 @@ const kodyRuntimeExportNames = new Set([
  */
 const unboundRuntimeHelperNextSteps: Record<string, string> = {
 	storage:
-		"If this code belongs to a saved package that owns its data, use `packageStorage()` from 'kody:runtime' inside that package's module instead of ambient `storage`: it always reaches the declaring package's own bucket, in the package's own runtime and when statically imported into another context. Otherwise ambient `storage` is only bound when the call provides durable storage: retry the execute call with a `storageId` to bind a caller-owned bucket. To work with another package's data, call that package's export with keyless `packages.invoke(\"kody:@scope/package/export\", { params })` so it runs in the package's own runtime context. Code that must also run without storage can guard with `if (storage) { ... }`.",
+		"If this code belongs to a saved package that owns its data, use `packageStorage()` from 'kody:runtime' inside that package's module instead of ambient `storage`: it always reaches the declaring package's own bucket, in the package's own runtime and when statically imported into another context. Otherwise ambient `storage` is only bound when the call provides durable storage: retry the execute call with a `storageId` to bind a caller-owned bucket. To work with another package's data, statically import that package's export (`import fn from \"kody:@scope/package/export\"`) so its stamped `packageStorage()` does the reading and writing. Code that must also run without storage can guard with `if (storage) { ... }`.",
 	packages:
-		'`packages` is bound for authenticated ad hoc execute calls, scheduled jobs, and saved-package runtime contexts; retry the call as an authenticated user or from a scheduled job, or guard with `if (packages) { ... }` where dynamic package invocation is optional.',
+		'`packages` is bound for authenticated ad hoc execute calls, scheduled jobs, and saved-package runtime contexts. Prefer a static `kody:@scope/package/export` import when the name is known, or `import(specifier)` when the name is data. Guard with `if (packages) { ... }` when this helper is optional.',
 	events:
-		"`events` is only bound in saved-package runtime contexts that can dispatch package events; call the owning package's export with keyless `packages.invoke` so it runs in that context, or guard with `if (events) { ... }`.",
+		"`events` is only bound in saved-package runtime contexts that can dispatch package events; statically import the owning package's export so it runs in that context, or guard with `if (events) { ... }`.",
 	packageSecrets:
-		"`packageSecrets` is only bound in saved-package runtime contexts; call the owning package's export with keyless `packages.invoke` so it runs with the package's mounted secrets, or guard with `if (packageSecrets) { ... }`.",
+		"`packageSecrets` is only bound in saved-package runtime contexts; statically import the owning package's export so it runs with the package's mounted secrets, or guard with `if (packageSecrets) { ... }`.",
 	email:
 		'`email` is only bound for email-triggered runs; guard with `if (email) { ... }` when the code can also run outside an email context.',
 }
@@ -1551,7 +1551,7 @@ const unboundRuntimeHelperNextSteps: Record<string, string> = {
 function buildUnboundRuntimeHelperNextStep(helperName: string) {
 	return (
 		unboundRuntimeHelperNextSteps[helperName] ??
-		`The optional \`${helperName}\` export of 'kody:runtime' is not provided in this execution context; guard with a falsiness check (for example \`if (${helperName}) { ... }\`) or run the code in a context that binds it, such as calling the owning saved package's export via keyless \`packages.invoke\`.`
+		`The optional \`${helperName}\` export of 'kody:runtime' is not provided in this execution context; guard with a falsiness check (for example \`if (${helperName}) { ... }\`) or run the code in a context that binds it, such as statically importing the owning saved package's export.`
 	)
 }
 

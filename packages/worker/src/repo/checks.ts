@@ -336,12 +336,11 @@ type KodyPackagesInvokeOptions = {
 };
 type KodyPackagesRuntime = {
   /**
-   * The only dynamic invocation primitive. Always contract-checks the current
-   * published package export before invoking; a failing contract rejects with
-   * "packages.invoke contract check failed: ...". Key-less calls are
-   * lean/ephemeral; pass idempotencyKey only for exactly-once semantics.
-   * Use kody:@scope/package[/export]. The prefixless form is deprecated; the
-   * runtime accepts it and canonicalizes to the kody: form.
+   * Dynamic invocation helper kept for published modules that still call it.
+   * Prefer a static kody:@scope/package/export import when the name is known,
+   * or import(specifier) when the name is data. Exactly-once work uses
+   * workflows.
+   * @deprecated Use a static kody:@ import or import(specifier).
    */
   invoke(
     specifier: KodyPrefixedPackageSpecifier,

@@ -2432,7 +2432,7 @@ export default async function main() {
 		).toMatchObject({
 			kind: 'runtime_helper_unbound',
 			helperName: 'storage',
-			nextStep: expect.stringContaining('packages.invoke'),
+			nextStep: expect.stringContaining('statically import'),
 		})
 		expect(
 			mcpExecutor.getExecutionErrorDetails(unboundResult.error)?.nextStep,

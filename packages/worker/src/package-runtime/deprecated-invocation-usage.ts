@@ -155,7 +155,7 @@ const removedUsageReplacements: Record<DeprecatedInvocationUsageKind, string> =
 		'packages.invoke-object':
 			'object-only packages.invoke was removed: use packages.invoke("kody:@owner/package/export", { params })',
 		'dynamic-kody-import':
-			'literal dynamic import("kody:@...") was removed: use a static import and declare it in package.json#kody.dependencies, or packages.invoke when the target is data',
+			'literal dynamic import("kody:@...") was removed: use a static import and declare it in package.json#kody.dependencies when the name is known, or import(specifier) when the name is data',
 	}
 
 const maxReportedRemovedUsages = 5
