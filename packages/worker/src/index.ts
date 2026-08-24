@@ -238,6 +238,8 @@ const appHandler = withCors({
 		}
 
 		if (url.pathname === '/__maintenance/execute-smoke') {
+			// Origin-only: proves this script's ctx.exports.KodyFetchGateway.
+			// MCP execute looks up the gateway on kody-platform.
 			return handleExecuteSmokeRequest(request, env)
 		}
 

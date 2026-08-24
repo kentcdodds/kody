@@ -13,10 +13,14 @@ vi.mock('#mcp/executor.ts', () => ({
 		createExecuteExecutorMock(...args),
 }))
 
-const { handleExecuteSmokeRequest, runExecuteSmokeCheck } =
-	await import('./execute-maintenance.ts')
+const {
+	executeSmokeProves,
+	executeSmokeScope,
+	handleExecuteSmokeRequest,
+	runExecuteSmokeCheck,
+} = await import('./execute-maintenance.ts')
 
-test('runExecuteSmokeCheck executes trivial code through the dynamic worker path', async () => {
+test('runExecuteSmokeCheck executes trivial code through the origin gateway and labels the result origin-only', async () => {
 	const execute = vi.fn(async () => ({ result: 42, logs: [] }))
 	createExecuteExecutorMock.mockReturnValue({ execute })
 
@@ -25,7 +29,14 @@ test('runExecuteSmokeCheck executes trivial code through the dynamic worker path
 		LOADER: {},
 	} as Env
 
-	await expect(runExecuteSmokeCheck(env)).resolves.toEqual({ result: 42 })
+	await expect(runExecuteSmokeCheck(env)).resolves.toEqual({
+		result: 42,
+		scope: executeSmokeScope,
+		proves: executeSmokeProves,
+		notMcpExecute: true,
+	})
+	expect(executeSmokeScope).toBe('origin-only')
+	expect(executeSmokeProves).toBe('origin-kody-fetch-gateway')
 	expect(createExecuteExecutorMock).toHaveBeenCalledWith(
 		expect.objectContaining({
 			timeoutMs: 10_000,
@@ -46,7 +57,7 @@ test('runExecuteSmokeCheck executes trivial code through the dynamic worker path
 	])
 })
 
-test('handleExecuteSmokeRequest enforces auth and reports smoke results', async () => {
+test('handleExecuteSmokeRequest enforces auth and reports origin-only smoke results', async () => {
 	const execute = vi.fn(async () => ({ result: 42, logs: [] }))
 	createExecuteExecutorMock.mockReturnValue({ execute })
 
@@ -77,5 +88,8 @@ test('handleExecuteSmokeRequest enforces auth and reports smoke results', async 
 	await expect(success.json()).resolves.toEqual({
 		ok: true,
 		result: 42,
+		scope: 'origin-only',
+		proves: 'origin-kody-fetch-gateway',
+		notMcpExecute: true,
 	})
 })

@@ -429,7 +429,7 @@ automatically:
 - `AI_GATEWAY_ID` (optional Worker secret; routes Workers AI embedding calls
   through the configured Cloudflare AI Gateway when set)
 - `CAPABILITY_REINDEX_SECRET` (strongly recommended for production — CI skips
-  the post-deploy reindex and execute smoke check when unset; optional locally
+  the post-deploy reindex and origin-only execute smoke check when unset; optional locally
   and for previews; bearer auth for `POST /__maintenance/reindex-capabilities`.
   Production deploy refreshes builtin capability vectors only
   (`{ "phases": ["capabilities"] }`). Omit `phases` to rebuild memories, jobs,
@@ -697,7 +697,7 @@ How to get/set each value:
     required so restored D1 fingerprints cannot skip an empty index. The same
     bearer authenticates `POST /__maintenance/reencrypt-secrets` (see
     [Secret rotation](./secret-rotation.md)). Local and preview environments can
-    omit it; CI skips reindex and execute-smoke when the secret is unset.
+    omit it; CI skips reindex and origin-only execute-smoke when the secret is unset.
 - `JOB_REINDEX_SECRET` (optional; jobs-only reindex)
   - Bearer token for `POST /__maintenance/reindex-jobs`. Generate and sync the
     same way as `CAPABILITY_REINDEX_SECRET` only if you want the jobs-only
