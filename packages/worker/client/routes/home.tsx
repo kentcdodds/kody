@@ -36,9 +36,9 @@ import { LandingLoopPlayer } from './landing-loop-player.tsx'
  * work. Motion is enhance-only (`html.js`) and fully off under
  * `prefers-reduced-motion`.
  *
- * Positioning: permanence / personal software factory — not "equip your
- * agent." Factory-loop art reuses the existing 3D set; do not generate a
- * new koala.
+ * Positioning: a private software ecosystem all your agents can share, not
+ * another agent and not "equip your agent." Factory-loop art reuses the
+ * existing 3D set; do not generate a new koala.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
  * emit a per-node `<style data-rmx>` tag for every marketing block.
@@ -210,17 +210,12 @@ export function HomeRoute(handle: Handle) {
 				{/* ============ hero ============ */}
 				<section data-parallax-scope class="landing-hero">
 					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
-						Kody makes your agent
+						A private software ecosystem
 						<br />
-						<em>safer, cheaper,</em>{' '}
-						<span class="landing-hero-benefits-rest">
-							and more <em>reliable</em>.
-						</span>
+						<em>all your agents can share</em>
 					</h1>
 					<p data-rise style={{ '--rise': '1' }} class="landing-hero-sub">
-						A personal <strong>software factory</strong>. Turn the ad hoc agent
-						work into deterministic code you can run on a trigger or save tokens
-						with your agent.
+						Your agents do the thinking. Kody holds the result.
 					</p>
 					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}
 					<div data-rise style={{ '--rise': '2' }} class="landing-hero-actions">

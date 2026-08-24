@@ -21,14 +21,13 @@ export type PublicOgPage = {
 
 export const publicOgPages = {
 	home: {
-		imageTitle: 'Safer, cheaper, more reliable.',
+		imageTitle: 'A private software ecosystem all your agents can share',
 		// Complements the title rather than restating it: the card shows both at
 		// once, so repeating the headline wastes the only supporting line.
-		imageSubtitle:
-			'A personal software factory for the agent you already use. Turn ad hoc work into code that keeps running.',
-		ogTitle: 'Kody makes your agent safer, cheaper, and more reliable',
+		imageSubtitle: 'Your agents do the thinking. Kody holds the result.',
+		ogTitle: 'A private software ecosystem all your agents can share',
 		ogDescription:
-			'A personal software factory. Turn the ad hoc agent work into deterministic code you can run on a trigger, or save tokens with your agent.',
+			'Your agents do the thinking. Kody holds the result. Packages you own, secrets they never see, and jobs that keep running.',
 		path: '/',
 	},
 	community: {
