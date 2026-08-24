@@ -634,7 +634,7 @@ DO with revision-checked updates.
 
 ## How to add an enforcement point
 
-The exemplar is job scheduling: `createJob` in
+The exemplar is package job sync: `syncPackageJobsForPackage` in
 `packages/worker/src/jobs/service.ts`.
 
 1. Find the service-layer function that **creates** the resource (enforce on
@@ -682,7 +682,7 @@ workflows via RunLog, and similar).
 
 | Resource                   | Enforcement point                                                                                                                                                                                                                     |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scheduled_jobs`           | `createJob` and the full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot)         |
+| `scheduled_jobs`           | Full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot)                             |
 | `saved_packages`           | new-package branch of `package_save` and projection insert                                                                                                                                                                            |
 | `repo_sessions`            | `repo_open_session` before creating a new session                                                                                                                                                                                     |
 | `email_sends_per_day`      | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                   |
