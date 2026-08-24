@@ -92,10 +92,10 @@ import {
  *
  * Step 2 ranks exits: featured official MCP, custom MCP, BYOK explanation
  * (not a connect step), then Just-try-Kody zero-auth examples, then skip.
- * Official non-MCP API packages stay the long-term preferred path. Step 3
- * is the permanence lesson: copy a prompt that runs one ad hoc execute,
- * then persist that working code as a package. Built-in platform OAuth and
- * featured starters stay available under Advanced.
+ * Prefer official non-MCP API packages for reusable integrations — do not
+ * convert them to MCP-first. Step 3 is the permanence lesson: copy a prompt
+ * that runs one ad hoc execute, then persist that working code as a package.
+ * Built-in platform OAuth and featured starters live under Advanced.
  */
 
 type OnboardingStep = 1 | 2 | 3

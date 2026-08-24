@@ -340,8 +340,8 @@ type KodyPackagesRuntime = {
    * published package export before invoking; a failing contract rejects with
    * "packages.invoke contract check failed: ...". Key-less calls are
    * lean/ephemeral; pass idempotencyKey only for exactly-once semantics.
-   * Use kody:@scope/package[/export]. The prefixless form remains accepted
-   * temporarily but is deprecated and canonicalized to the kody: form.
+   * Use kody:@scope/package[/export]. The prefixless form is deprecated; the
+   * runtime accepts it and canonicalizes to the kody: form.
    */
   invoke(
     specifier: KodyPrefixedPackageSpecifier,

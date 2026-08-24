@@ -6,8 +6,8 @@ import { isTypeDeclarationFilePath } from './static-kody-imports.ts'
 /**
  * Permanent publish-time guard for unsupported invocation forms:
  * `packages.check`, `packages.invokeChecked`, object-only `packages.invoke`,
- * and literal dynamic `import("kody:@...")`. Publish checks fail on these and
- * permanent repair codemods remain available for mechanical migrations.
+ * and literal dynamic `import("kody:@...")`. Publish checks fail on these;
+ * permanent repair codemods cover mechanical migrations.
  */
 export type DeprecatedInvocationUsageKind =
 	| 'packages.check'
