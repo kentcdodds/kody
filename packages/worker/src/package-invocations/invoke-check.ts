@@ -105,8 +105,7 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	const callerIsPlatformAccount =
 		await loadPlatformAccountFlagWithFreshnessCache({
 			userId: input.userId,
-			load: () =>
-				isPlatformAccountStableUserId(input.env.APP_DB, input.userId),
+			load: () => isPlatformAccountStableUserId(input.env.APP_DB, input.userId),
 		})
 	const savedPackage = await resolveSavedPackageBySpecifier({
 		db: input.env.APP_DB,
@@ -154,10 +153,7 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 		(await loadPlatformAccountFlagWithFreshnessCache({
 			userId: savedPackage.userId,
 			load: () =>
-				isPlatformAccountStableUserId(
-					input.env.APP_DB,
-					savedPackage.userId,
-				),
+				isPlatformAccountStableUserId(input.env.APP_DB, savedPackage.userId),
 		}))
 	) {
 		const message = formatPersonPackagePlatformDependencyMessage(
