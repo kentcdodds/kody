@@ -1,4 +1,5 @@
 import {
+	isStillPublicCodeRunsWindow,
 	parsePublicCodeRunsWindow,
 	publicCodeRunsWindowMs,
 	type PublicCodeRunsWindow,
@@ -52,7 +53,16 @@ export async function refreshPublicCodeRunsWindow(input: {
 		const existingWindow = existing.window
 
 		const windowEndMs = Date.parse(existingWindow.windowEnd)
-		if (Number.isFinite(windowEndMs) && now.getTime() < windowEndMs) {
+		const beforeEnd =
+			Number.isFinite(windowEndMs) && now.getTime() < windowEndMs
+		const stillGrowing =
+			isStillPublicCodeRunsWindow(existingWindow) &&
+			total > existingWindow.current
+		// A still pair is a bootstrap (KV miss or first write). Holding it
+		// for 24h freezes the homepage ticker even while executes accrue.
+		// Live windows still hold until windowEnd so interpolation stays
+		// deterministic for every visitor.
+		if (beforeEnd && !stillGrowing) {
 			return { status: 'held' }
 		}
 

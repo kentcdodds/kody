@@ -19,6 +19,10 @@ export type PublicCodeRunsWindow = {
 	windowEnd: string
 }
 
+export function isStillPublicCodeRunsWindow(window: PublicCodeRunsWindow) {
+	return window.previous === window.current
+}
+
 export function parsePublicCodeRunsWindow(
 	value: unknown,
 ): PublicCodeRunsWindow | null {
