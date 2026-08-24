@@ -105,18 +105,18 @@ Manual on Get started has one tab per host. Use those when you are not running
 Using Kody packages works great with non-coding agents such as Claude Desktop,
 ChatGPT.com, Grok.com, and the GitHub Copilot app. For creating or editing
 packages, a coding agent (Cursor, Claude Code, Codex / ChatGPT desktop, Grok
-CLI, Copilot, OpenCode, and similar) is usually smoother because those hosts
-can edit files and iterate on code more easily.
+CLI, Copilot, OpenCode, and similar) is usually smoother because those hosts can
+edit files and iterate on code more easily.
 
 ## Give Kody Access, then persist a first build
 
 After the connection works, Get started Step 2 is **Give Kody Access**: official
 one-click login for Notion, Linear, Atlassian, Stripe, Sentry, and Canva.
-Connect authorizes the service and copies the matching official helper into
-your account. You run that owned copy — official `@kody/*` listings are a
-catalog, not something a person account invokes live. You can also add a custom
-server, follow an Advanced provider guide (GitHub, Google), try a zero-auth
-example, or skip.
+Connect authorizes the service and copies the matching official helper into your
+account. You run that owned copy — official `@kody/*` listings are a catalog,
+not something a person account invokes live. You can also add a custom server,
+follow an Advanced provider guide (GitHub, Google), try a zero-auth example, or
+skip.
 
 Step 3 copies a prompt that asks your agent to run one ad hoc request, then
 persist that working code as a package you own. If nothing fits, use **Choose

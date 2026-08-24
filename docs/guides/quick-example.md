@@ -45,17 +45,17 @@ their agent as soon as they reach that step.
 
 ## Before you start
 
-The account needs a verified email and an authorized MCP host. If they gave
-Kody access on `/onboarding` Step 2 (featured or custom), confirm the server
-is ready with `mcp_server_list` before calling its tools. If they installed a
+The account needs a verified email and an authorized MCP host. If they gave Kody
+access on `/onboarding` Step 2 (featured or custom), confirm the server is ready
+with `mcp_server_list` before calling its tools. If they installed a
 Just-try-Kody example, invoke that owned package. If they skipped, ask what they
 want to try and use whatever tools are already available.
 
 ## Step 1 — Confirm the connection
 
 If they named a service they gave Kody access to, look it up once with
-`mcp_server_list` (or `search` for `mcp:notion`, `mcp:linear`,
-`mcp:atlassian`, `mcp:stripe`, `mcp:sentry`, or `mcp:canva`).
+`mcp_server_list` (or `search` for `mcp:notion`, `mcp:linear`, `mcp:atlassian`,
+`mcp:stripe`, `mcp:sentry`, or `mcp:canva`).
 
 If the server is still authorizing, tell them to finish the provider window and
 say when `/onboarding` shows Connected. Try the list **once** more after they
@@ -104,8 +104,8 @@ for now. List the options. If they skip, they are done with Get started.
 - **Server not connected** — the authorize window is still open, or they are on
   a different account than the browser session. Wait for their "Connected"
   message; one retry.
-- **No connected tools** — they skipped Step 2, or the server name is not one
-  of the Step 2 cards. Ask what they want, or send them back to
+- **No connected tools** — they skipped Step 2, or the server name is not one of
+  the Step 2 cards. Ask what they want, or send them back to
   `/onboarding#connect-mcp`.
 - **`package_save` rejected** — the ad hoc module is incomplete. Keep the
   execute evidence, fix the package files, and save again. Do not invent extra

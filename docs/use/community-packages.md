@@ -161,9 +161,9 @@ Each listing detail page has an **Install** pill next to **Trusted** for
 signed-in users. Logged-out visitors get the same pill as a login link. Get
 started Step 2–3 follow
 [Connect your agent](./connect-your-agent.md#give-kody-access-then-persist-a-first-build)
-(Give Kody Access or Just-try-Kody, then ad hoc → persist). If you already have a
-saved package with the same `kody_id`, or a fork of that listing, listing cards
-and the detail page show **Installed** or **Forked** instead of Install.
+(Give Kody Access or Just-try-Kody, then ad hoc → persist). If you already have
+a saved package with the same `kody_id`, or a fork of that listing, listing
+cards and the detail page show **Installed** or **Forked** instead of Install.
 Clicking that pill copies a prompt so your agent can look up the installed
 package and adapt it. Listing cards and the detail page place **Trusted** /
 **Installed** (or **Forked**) pills on their own row under the package name.

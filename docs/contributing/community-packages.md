@@ -122,13 +122,13 @@ guides, Just-try-Kody zero-auth examples, or skip as the quicker first-value
 path. Official `@kody/*` listings are catalog and fork source — person accounts
 run the owned copy, not the platform package. Step 3 leads with an ad hoc
 execute → persist prompt. Step 2 Connect forks the matching `@kody/*-mcp`
-listing automatically. Signed-in onboarding, `/community`
-cards, and listing detail overlay a per-request `viewerInstall` when the viewer
-already has a matching `kody_id` saved package or a `community_forks` row for
-that listing, so those surfaces show Copy prompt instead of Install. Listing
-cards and detail place Trusted / Installed / Forked badges on a row under the
-title so wrapping `@scope/name` stays aligned. `community_get` exposes the
-effective `featured` flag. Onboarding loads up to 12 featured listings.
+listing automatically. Signed-in onboarding, `/community` cards, and listing
+detail overlay a per-request `viewerInstall` when the viewer already has a
+matching `kody_id` saved package or a `community_forks` row for that listing, so
+those surfaces show Copy prompt instead of Install. Listing cards and detail
+place Trusted / Installed / Forked badges on a row under the title so wrapping
+`@scope/name` stays aligned. `community_get` exposes the effective `featured`
+flag. Onboarding loads up to 12 featured listings.
 
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.

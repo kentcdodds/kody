@@ -772,10 +772,9 @@ export function OnboardingRoute(handle: Handle) {
 									<p>
 										Connect adds the official login, copies the matching helper
 										into your account, and opens the provider authorize page.
-										Approve access, then your agent can use those tools. You
-										run the copy in your account — official{' '}
-										<em>@kody</em> listings are a catalog, not something a
-										person account invokes live.
+										Approve access, then your agent can use those tools. You run
+										the copy in your account — official <em>@kody</em> listings
+										are a catalog, not something a person account invokes live.
 									</p>
 								</aside>
 								<div
@@ -802,9 +801,9 @@ export function OnboardingRoute(handle: Handle) {
 								<div mix={css(step2ExitCss)} data-testid="onboarding-advanced">
 									<p mix={css(step2ExitLabelCss)}>Advanced</p>
 									<p mix={css(step2ExitLedeCss)}>
-										No one-click login for that service? Follow a provider
-										guide — GitHub and Google are the usual next ones — or
-										bring your own keys after the first build.
+										No one-click login for that service? Follow a provider guide
+										— GitHub and Google are the usual next ones — or bring your
+										own keys after the first build.
 									</p>
 									<p mix={css(step2ExitLedeCss)}>
 										<a href="/guides/github" mix={css(primaryLinkCss)}>
