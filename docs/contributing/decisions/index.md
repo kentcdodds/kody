@@ -56,6 +56,8 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0035 — Platform packages are execute-only; person packages must fork](./0035-platform-packages-execute-only.md)
   — supersedes the saved-package half of 0014; ad hoc execute may still resolve
   platform scopes live
+- [0037 — No author-facing `packages.invoke`](./0037-no-author-packages-invoke.md)
+  — static import, `import(specifier)`, or workflows; HTTP tokens stay
 - [0015 — Wait on Skills over MCP; serve skill content via packages](./0015-skills-over-mcp-wait.md)
 - [0017 — Hosted package apps use per-user subdomains; same-owner isolation deferred](./0017-per-user-package-app-subdomains.md)
 - [0020 — Repo sessions spill Workspace objects to R2; do not adopt `@cloudflare/computer`](./0020-repo-session-workspace-r2-not-computer.md)
