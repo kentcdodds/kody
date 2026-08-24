@@ -21,8 +21,8 @@ Authors do not get `packages.invoke`.
 - Name known at write time → static `import` from `kody:@scope/package/export`.
 - Name is data → `import(specifier)` (caller-owned / forks). Computed
   specifiers load through a runtime helper that still uses the quarantined
-  invoke path until that helper is deleted (Cleanup issue opened with this
-  change).
+  invoke path until that helper is deleted
+  ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
 - Exactly-once → workflows. Do not keep a keyed invoke beside them.
 - External callers → HTTP invocation tokens (`POST /@:user/api/package-invocations/…`).
   That path stays. It is not `packages.invoke`.

@@ -7,6 +7,8 @@ Quarantine for the `kody:runtime` `packages.invoke` helper (decision
 subscriptions, and apps use host `invokePackageExport` /
 `runSavedPackageModule` in the parent folder. Those stay.
 
+Tracker: [#1750](https://github.com/kentcdodds/kody/issues/1750).
+
 Delete this leftover when:
 
 1. Fleet codemod `0008-packages-invoke-to-static-import` has applied (or
