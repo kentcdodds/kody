@@ -180,3 +180,33 @@ test('public code-runs load falls back to D1 and hides when KV fails or there ar
 	).resolves.toEqual({ status: 'skipped', reason: 'no_runs' })
 	expect(await loadPublicCodeRunsWindow(empty)).toBeNull()
 })
+
+test('public code-runs load continues an expired window without writing KV', async () => {
+	const env = await createEnv({
+		rows: [{ userId: 'a', month: '2026-08', eventCount: 200 }],
+		window: {
+			previous: 100,
+			current: 150,
+			windowStart: '2026-08-21T00:00:00.000Z',
+			windowEnd: '2026-08-22T00:00:00.000Z',
+		},
+	})
+	const loaded = await loadPublicCodeRunsWindow(
+		env,
+		new Date('2026-08-22T02:00:00.000Z'),
+	)
+	expect(loaded).toEqual({
+		previous: 150,
+		current: 200,
+		windowStart: '2026-08-22T00:00:00.000Z',
+		windowEnd: '2026-08-23T00:00:00.000Z',
+	})
+	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify({
+			previous: 100,
+			current: 150,
+			windowStart: '2026-08-21T00:00:00.000Z',
+			windowEnd: '2026-08-22T00:00:00.000Z',
+		}),
+	)
+})

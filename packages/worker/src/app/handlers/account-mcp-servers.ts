@@ -9,6 +9,10 @@ import {
 	readTrimmedStringOrEmpty,
 } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import {
+	mcpOAuthReturnCookie,
+	readMcpOAuthReturnCookie,
+} from '#universal/mcp-oauth-return.ts'
 import { routes } from '#universal/routes.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
@@ -172,9 +176,19 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				authError = enrichMcpOAuthProviderError(authError, oauth)
 			}
 
-			const target = serverId
-				? new URL(routes.accountMcpServerDetail.href({ serverId }), request.url)
-				: new URL(routes.accountMcpServers.href(), request.url)
+			const returnToOnboarding =
+				readMcpOAuthReturnCookie(request.headers.get('Cookie')) != null
+			const target = returnToOnboarding
+				? new URL(routes.onboarding.href(), request.url)
+				: serverId
+					? new URL(
+							routes.accountMcpServerDetail.href({ serverId }),
+							request.url,
+						)
+					: new URL(routes.accountMcpServers.href(), request.url)
+			if (returnToOnboarding) {
+				target.hash = 'connect-mcp'
+			}
 			if (authorizationNeeded) {
 				target.searchParams.set('auth', serverId ? 'required' : 'retry')
 			} else if (authSuccess) {
@@ -186,7 +200,17 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 				target.searchParams.set('auth', 'error')
 				target.searchParams.set('reason', authError ?? 'Authorization failed.')
 			}
-			return Response.redirect(target.toString(), 303)
+			const headers = new Headers({ Location: target.toString() })
+			if (returnToOnboarding) {
+				headers.append(
+					'Set-Cookie',
+					mcpOAuthReturnCookie({
+						value: '',
+						secure: new URL(request.url).protocol === 'https:',
+					}),
+				)
+			}
+			return new Response(null, { status: 303, headers })
 		},
 	} satisfies Action<typeof routes.accountMcpServersOauthCallback>
 }

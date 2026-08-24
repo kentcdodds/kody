@@ -1,4 +1,5 @@
 import {
+	continuePublicCodeRunsWindow,
 	isStillPublicCodeRunsWindow,
 	parsePublicCodeRunsWindow,
 	publicCodeRunsWindowMs,
@@ -18,7 +19,17 @@ export async function loadPublicCodeRunsWindow(
 ): Promise<PublicCodeRunsWindow | null> {
 	const stored = await readStoredWindow(env)
 	if (stored.status === 'failed') return null
-	if (stored.status === 'found') return stored.window
+	if (stored.status === 'found') {
+		const window = stored.window
+		const endMs = Date.parse(window.windowEnd)
+		const expired = Number.isFinite(endMs) && now.getTime() >= endMs
+		if (!expired && !isStillPublicCodeRunsWindow(window)) return window
+		const total = await sumExecuteEventCount(env)
+		if (total === null || total <= 0) return window
+		return (
+			continuePublicCodeRunsWindow({ stored: window, total, now }) ?? window
+		)
+	}
 	const total = await sumExecuteEventCount(env)
 	if (total === null || total <= 0) return null
 	return stillWindow(total, now)

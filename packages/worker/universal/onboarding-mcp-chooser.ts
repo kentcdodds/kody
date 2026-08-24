@@ -6,8 +6,8 @@
  * (GitHub official MCP, Slack, Asana, Figma, HubSpot, and others).
  *
  * Each card already knows name + url. Connect POSTs the account MCP-servers
- * add/reconnect API with that hardcoded url. Each card also pairs with the
- * official `@kody/<id>-mcp` listing so Step 2 can install the MCP helper.
+ * add/reconnect API with that hardcoded url and forks the official
+ * `@kody/<id>-mcp` listing in the same click.
  * MCP here is the quicker first-value path. The long-term preferred path is
  * regular APIs via the official non-MCP packages (`@kody/notion`,
  * `@kody/linear`, `@kody/jira`, `@kody/stripe`, `@kody/sentry`,
@@ -37,6 +37,8 @@ export type OnboardingFeaturedMcpServerOption = {
 	description: string
 	packageKodyId: string
 	listingId: string
+	/** Extra authorize requirement shown on the card. */
+	connectHint?: string
 }
 
 export type OnboardingFeaturedMcpServer = OnboardingFeaturedMcpServerOption & {
@@ -75,6 +77,8 @@ export const onboardingFeaturedMcpServers = [
 		description: 'Search Jira issues and Confluence pages you can already see.',
 		packageKodyId: 'atlassian-mcp',
 		listingId: '5db964f9-df0d-4193-81cb-e561fb869e2a',
+		connectHint:
+			'Needs a Jira or Confluence Cloud site on the Atlassian account you authorize.',
 	},
 	{
 		id: 'stripe',
@@ -222,8 +226,8 @@ export function overlayOnboardingFeaturedMcpServers(input: {
 
 /**
  * Poll skip key for Step 2. Must change when a listing appears after a
- * transient miss (Install is hidden until `packageListing` is set) or when
- * viewer-install status flips. Listing id is the presence signal.
+ * transient miss or when viewer-install status flips. Listing id is the
+ * presence signal.
  */
 export function featuredOnboardingMcpFingerprint(
 	servers: Array<OnboardingFeaturedMcpServer>,

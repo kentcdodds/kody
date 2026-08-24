@@ -29,8 +29,7 @@ type OnboardingStarterCardProps = {
 	loggedIn: boolean
 	/**
 	 * `card`: the centered grid tile (default). `row`: the compact list item
-	 * used when built-in integrations own the step-3 spotlight and starter
-	 * packages demote to an "Advanced" list.
+	 * used when starter packages demote to an "Advanced" list.
 	 */
 	variant?: 'card' | 'row'
 }

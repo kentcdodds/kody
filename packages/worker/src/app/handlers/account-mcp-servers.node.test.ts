@@ -310,6 +310,29 @@ test('MCP servers OAuth callback redirects with the auth outcome', async () => {
 	expect(successLocation.pathname).toBe('/account/mcp-servers/server-1')
 	expect(successLocation.searchParams.get('auth')).toBe('success')
 	expect(successLocation.searchParams.get('server')).toBe('linear')
+
+	const onboardingReturnResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=xyz',
+			{
+				headers: {
+					Cookie: 'kody_mcp_oauth_return=onboarding',
+				},
+			},
+		),
+		params: {},
+	} as never)
+	expect(onboardingReturnResponse.status).toBe(303)
+	const onboardingLocation = new URL(
+		onboardingReturnResponse.headers.get('Location') ?? '',
+	)
+	expect(onboardingLocation.pathname).toBe('/onboarding')
+	expect(onboardingLocation.hash).toBe('#connect-mcp')
+	expect(onboardingLocation.searchParams.get('auth')).toBe('success')
+	expect(onboardingReturnResponse.headers.get('Set-Cookie')).toContain(
+		'kody_mcp_oauth_return=',
+	)
+
 	expect(mockModule.handleOAuthCallback).toHaveBeenCalledWith({
 		url: 'https://example.com/account/mcp-servers/oauth/callback?code=abc&state=xyz',
 		callbackUrl: 'https://example.com/account/mcp-servers/oauth/callback',

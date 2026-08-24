@@ -1,6 +1,5 @@
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import {
-	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
 	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
@@ -28,7 +27,6 @@ export type OnboardingPayload = {
 	emailVerified: boolean
 	needsOnboarding: boolean
 	featuredListings: Array<OnboardingFeaturedListing>
-	builtInProviders: Array<OnboardingBuiltInProvider>
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
 	customMcpServers: Array<OnboardingCustomMcpServer>
 	/**

@@ -30,6 +30,10 @@ test('featured MCP chooser overlays OAuth state and package listings', () => {
 				server.url.startsWith('https://'),
 		),
 	).toBe(true)
+	const atlassian = onboardingFeaturedMcpServers.find(
+		(server) => server.id === 'atlassian',
+	)
+	expect(atlassian?.connectHint).toMatch(/Jira or Confluence Cloud/)
 	expect(listOnboardingFeaturedMcpListingIds()).toEqual(
 		onboardingFeaturedMcpServers.map((server) => server.listingId),
 	)

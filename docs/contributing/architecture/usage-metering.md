@@ -332,20 +332,22 @@ Guarantees and rules:
   `previous → current` across the 24-hour window. The payload is the window pair
   only — never per-user rows. Interpolation is deterministic from the window so
   every visitor at a given clock time sees the same integer. Official `current`
-  appears at `windowEnd`. Each displayed step is +1: when the pair has at least
-  one tick per second, that tick lands at a hashed time inside the second so the
-  cadence wobbles instead of marching on the clock. Leftover count (more than
-  one tick in a second) rolls through that second without skipping, with hashed
-  gaps between those ticks so a busy second does not march on even slots. It
-  never passes `current`. The client schedules the next integer
-  (`msUntilNextCodeRunsCount`) rather than polling once a second;
+  appears at `windowEnd`. Each displayed step is +1. When the pair has at least
+  one tick per 3-second honesty slot, a backbone tick lands every slot at a
+  hashed phase so the cadence does not march on the clock. Leftover count (more
+  than the backbone) still warps into busy seconds and rolls through those
+  seconds without skipping, with hashed gaps so a busy second does not march on
+  even slots. It never passes `current`. When leftover budget cannot support a
+  3-second integer backbone, the client moves honest progress toward the next
+  tick instead of inventing +1s. The client schedules the next paint
+  (`msUntilNextCodeRunsPaint`) rather than polling once a second;
   `prefers-reduced-motion` snaps and does not animate. A frozen tab (rAF gap,
   hidden, or a late timeout) snaps to the official count instead of rolling
   through every missed integer. Live leftover ticks in a busy second still step
-  +1; leftover catch-up delays stay under that freeze window. A still pair
-  (`previous === current`, used when KV is empty) does **not** hold for 24h once
-  the fleet execute total grows — the next `usage_aggregation` refresh rotates
-  it so the ticker can move. Live windows with a real delta still hold until
+  +1; leftover catch-up delays stay under that freeze window. Homepage GET
+  continues an expired or still pair in memory when the fleet total has grown;
+  it does not write KV. The hourly `usage_aggregation` refresh still persists
+  the next official pair. Live windows with a real delta still hold until
   `windowEnd`.
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over

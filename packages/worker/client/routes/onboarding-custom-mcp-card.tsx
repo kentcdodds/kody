@@ -1,5 +1,6 @@
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
+import { openOnboardingMcpOAuthPopup } from '#client/mcp-oauth-popup.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { routes } from '#universal/routes.ts'
 import { type OnboardingCustomMcpServer } from '#universal/onboarding-mcp-chooser.ts'
@@ -26,6 +27,7 @@ type OnboardingCustomMcpCardProps = {
 	servers: Array<OnboardingCustomMcpServer>
 	loggedIn: boolean
 	onChanged: () => void
+	onAuthStarted: () => void
 }
 
 /**
@@ -50,7 +52,8 @@ export function OnboardingCustomMcpCard(
 	}
 
 	function openAuthUrl(authUrl: string) {
-		window.open(authUrl, '_blank', 'noopener,noreferrer')
+		handle.props.onAuthStarted()
+		openOnboardingMcpOAuthPopup(authUrl)
 	}
 
 	async function postMcpServerAction(body: Record<string, unknown>) {

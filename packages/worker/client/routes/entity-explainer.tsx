@@ -94,7 +94,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is an integration?',
 		match: accountSection(routes.accountIntegrations.href()),
 		paragraphs: [
-			"An integration is a connected service — usually OAuth — so Kody can act as you on that provider. Built-in integrations use Kody's registered app; you can also bring your own OAuth client.",
+			'An integration is a connected service — usually OAuth — so Kody can act as you on that provider. You register your own OAuth client, and tokens land as your secrets.',
 			'Use an integration when a provider needs a signed-in connection rather than a static API key. Tokens land as your secrets. Scope connections deliberately and revoke unused ones.',
 		],
 		learnMore: {
