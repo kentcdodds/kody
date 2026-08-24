@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { howKodyWorksTranscriptActs } from './how-kody-works-transcript.ts'
 import {
+	collectTranscriptSnippets,
 	executeTextReturn,
 	searchTextReturn,
 } from './interactive-guide-transcript.ts'
@@ -47,4 +48,51 @@ test('homepage search/execute returns keep memories as one-liners, not structure
 	expect(toolResults.every((result) => !result.includes('"surfaced"'))).toBe(
 		true,
 	)
+
+	const snippets = collectTranscriptSnippets([
+		{
+			id: 'collect',
+			kicker: 'Collect',
+			title: 'Collect',
+			lines: [
+				{ role: 'user', text: 'skip me' },
+				{ role: 'agent', text: 'skip me too' },
+				{
+					role: 'tools',
+					tools: [
+						{
+							name: 'search',
+							summary: 'look',
+							note: 'note',
+							inputs: [
+								{ name: 'code', kind: 'code', lang: 'ts', value: '1 + 1' },
+							],
+							resultLang: 'json',
+							result: '{"ok":true}',
+						},
+					],
+				},
+				{
+					role: 'files',
+					summary: 'clone',
+					note: 'note',
+					files: [
+						{
+							path: 'src/example.ts',
+							summary: 'example',
+							content: 'export const n = 1',
+						},
+					],
+				},
+			],
+		},
+	])
+	expect(snippets).toEqual([
+		{ code: '1 + 1', lang: 'ts' },
+		{ code: '{"ok":true}', lang: 'json' },
+		{ code: 'export const n = 1', lang: 'ts' },
+	])
+	expect(
+		collectTranscriptSnippets(howKodyWorksTranscriptActs).length,
+	).toBeGreaterThan(0)
 })

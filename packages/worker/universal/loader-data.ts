@@ -95,6 +95,8 @@ export type GuideDetailLoaderData = {
 	body: string
 	/** Highlight tokens for fenced code in `body`, in lexer order. */
 	bodyFences?: Array<HighlightedCode>
+	/** Highlight tokens for interactive walkthrough snippets, keyed by snippet. */
+	walkthroughHighlights?: Record<string, HighlightedCode>
 }
 
 export type CommunityIndexGroup = {

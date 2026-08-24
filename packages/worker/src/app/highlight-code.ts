@@ -164,6 +164,20 @@ export async function highlightJsonValue(
 	return result ?? plainHighlightedCode(code, 'json')
 }
 
+export function uniqueHighlightSnippets(
+	snippets: Array<HighlightSnippet>,
+): Array<HighlightSnippet> {
+	const seen = new Set<string>()
+	const unique: Array<HighlightSnippet> = []
+	for (const snippet of snippets) {
+		const key = highlightSnippetKey(snippet)
+		if (seen.has(key)) continue
+		seen.add(key)
+		unique.push(snippet)
+	}
+	return unique
+}
+
 export function highlightResultsByKey(
 	snippets: Array<HighlightSnippet>,
 	results: Array<HighlightedCode>,

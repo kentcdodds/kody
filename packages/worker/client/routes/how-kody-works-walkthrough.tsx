@@ -1,8 +1,13 @@
 import { css } from 'remix/ui'
 import { CopyCodeBlock } from '#client/copy-code-block.tsx'
 import {
+	highlightSnippetKey,
+	type HighlightedCode,
+} from '#universal/highlighted-code.ts'
+import {
 	howKodyWorksPackageFiles,
 	howKodyWorksTranscriptActs,
+	transcriptFileLang,
 } from './how-kody-works-transcript.ts'
 import {
 	interactiveGuideActCss,
@@ -19,10 +24,13 @@ import {
  * Interactive factory-loop transcript for /guides/how-kody-works.
  * Shared line/tool rendering lives in interactive-guide-walkthrough.tsx.
  */
-export function renderHowKodyWorksWalkthrough() {
+export function renderHowKodyWorksWalkthrough(
+	highlights?: Record<string, HighlightedCode>,
+) {
 	return renderInteractiveGuideWalkthrough({
 		lead: 'A question you would ask again becomes an export you can invoke from any agent, then a daily email that stays quiet until something actually shipped.',
 		acts: howKodyWorksTranscriptActs,
+		highlights,
 		afterActs: (
 			<section
 				mix={css(interactiveGuideActCss)}
@@ -50,12 +58,14 @@ export function renderHowKodyWorksWalkthrough() {
 							<CopyCodeBlock
 								copy={false}
 								code={code}
-								lang={
-									path.endsWith('.ts')
-										? 'ts'
-										: path.endsWith('.json')
-											? 'json'
-											: 'md'
+								lang={transcriptFileLang(path)}
+								highlighted={
+									highlights?.[
+										highlightSnippetKey({
+											code,
+											lang: transcriptFileLang(path),
+										})
+									]
 								}
 							/>
 						</div>

@@ -1,11 +1,18 @@
 import { expect, test } from 'vitest'
+import { uniqueHighlightSnippets } from '#app/highlight-code.ts'
+import { highlightSnippetKey } from '#universal/highlighted-code.ts'
+import {
+	collectHowKodyWorksSnippets,
+	howKodyWorksPackageFiles,
+} from '#universal/how-kody-works-transcript.ts'
+import { collectGoogleOauthSnippets } from '#universal/google-oauth-transcript.ts'
+import { getGuideBySlug, listGuides } from '#worker/guides/catalog.ts'
 import {
 	createGuideDetailApiHandler,
 	createGuideDetailMarkdownHandler,
 	createGuidesApiHandler,
 	createGuidesMarkdownHandler,
 } from './guides.tsx'
-import { getGuideBySlug, listGuides } from '#worker/guides/catalog.ts'
 
 const env = { APP_BASE_URL: 'https://kody.example' } as Env
 
@@ -137,4 +144,99 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 		},
 	)
 	expect(missingApi.status).toBe(404)
+})
+
+test('interactive guide JSON includes walkthrough highlight tokens', async () => {
+	const howKodyWorksSnippets = uniqueHighlightSnippets(
+		collectHowKodyWorksSnippets(),
+	)
+	let received: Array<{ code: string; lang?: string | null }> | undefined
+	const env = {
+		APP_BASE_URL: 'https://kody.example',
+		HIGHLIGHT: {
+			fetch: async (_input: RequestInfo | URL, init?: RequestInit) => {
+				const body = JSON.parse(String(init?.body)) as {
+					snippets: Array<{ code: string; lang?: string | null }>
+				}
+				received = body.snippets
+				return Response.json({
+					results: body.snippets.map((snippet) => ({
+						code: snippet.code,
+						lang: snippet.lang ?? 'plaintext',
+						plain: false,
+						lines: [
+							[
+								{
+									content: snippet.code,
+									style: { color: '#111', '--shiki-dark': '#eee' },
+								},
+							],
+						],
+					})),
+				})
+			},
+		} as unknown as Fetcher,
+	} as Env
+
+	const howKodyWorksResponse = await callHandler(
+		createGuideDetailApiHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/how-kody-works.json'),
+			params: { slug: 'how-kody-works' },
+		},
+	)
+	expect(howKodyWorksResponse.status).toBe(200)
+	const howKodyWorksPayload = (await howKodyWorksResponse.json()) as {
+		ok: boolean
+		walkthroughHighlights?: Record<
+			string,
+			{ plain: boolean; lines: Array<Array<{ style?: { color?: string } }>> }
+		>
+	}
+	expect(howKodyWorksPayload.ok).toBe(true)
+	expect(received).toEqual(howKodyWorksSnippets)
+	const packageJsonKey = highlightSnippetKey({
+		code: howKodyWorksPackageFiles['package.json'],
+		lang: 'json',
+	})
+	expect(
+		howKodyWorksPayload.walkthroughHighlights?.[packageJsonKey],
+	).toMatchObject({
+		plain: false,
+		lines: [[{ style: { color: '#111' } }]],
+	})
+
+	const googleOauthResponse = await callHandler(
+		createGuideDetailApiHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/google-oauth.json'),
+			params: { slug: 'google-oauth' },
+		},
+	)
+	const googleOauthPayload = (await googleOauthResponse.json()) as {
+		walkthroughHighlights?: Record<string, { plain: boolean }>
+	}
+	const googleOauthKeys = Object.keys(
+		googleOauthPayload.walkthroughHighlights ?? {},
+	)
+	expect(googleOauthKeys.length).toBe(
+		uniqueHighlightSnippets(collectGoogleOauthSnippets()).length,
+	)
+	expect(
+		googleOauthKeys.every(
+			(key) => googleOauthPayload.walkthroughHighlights?.[key]?.plain === false,
+		),
+	).toBe(true)
+
+	const oauthResponse = await callHandler(
+		createGuideDetailApiHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/oauth.json'),
+			params: { slug: 'oauth' },
+		},
+	)
+	const oauthPayload = (await oauthResponse.json()) as {
+		walkthroughHighlights?: Record<string, unknown>
+	}
+	expect(oauthPayload.walkthroughHighlights).toBeUndefined()
 })

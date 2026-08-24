@@ -1,4 +1,5 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
+import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type GuideDetailLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
@@ -24,7 +25,12 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 const interactiveGuideRenderers: Readonly<
-	Record<string, () => ReturnType<typeof renderHowKodyWorksWalkthrough>>
+	Record<
+		string,
+		(
+			highlights?: Record<string, HighlightedCode>,
+		) => ReturnType<typeof renderHowKodyWorksWalkthrough>
+	>
 > = {
 	'how-kody-works': renderHowKodyWorksWalkthrough,
 	'google-oauth': renderGoogleOauthWalkthrough,
@@ -276,9 +282,9 @@ export function GuideDetailRoute(handle: Handle) {
 							/>
 						) : null}
 
-						{interactiveGuideRenderers[guide.slug]?.() ?? (
-							<div mix={css(proseCss)}>{renderGuideBody(guide.body)}</div>
-						)}
+						{interactiveGuideRenderers[guide.slug]?.(
+							guide.walkthroughHighlights,
+						) ?? <div mix={css(proseCss)}>{renderGuideBody(guide.body)}</div>}
 
 						<footer mix={css(guideFootCss)}>
 							<p>

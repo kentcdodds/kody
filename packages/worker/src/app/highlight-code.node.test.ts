@@ -5,6 +5,7 @@ import {
 	highlightMarkdownFences,
 	highlightResultsByKey,
 	highlightSnippets,
+	uniqueHighlightSnippets,
 } from '#app/highlight-code.ts'
 import {
 	highlightSnippetKey,
@@ -65,6 +66,9 @@ test('highlightSnippets returns worker tokens and maps them by snippet key', asy
 	expect(highlightResultsByKey([snippet], results)).toEqual({
 		[highlightSnippetKey(snippet)]: fixture,
 	})
+	expect(
+		uniqueHighlightSnippets([snippet, snippet, { code: 'x', lang: 'txt' }]),
+	).toEqual([snippet, { code: 'x', lang: 'txt' }])
 })
 
 test('highlightSnippets falls back when the worker errors', async () => {

@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest'
+import { highlightSnippetKey } from '#universal/highlighted-code.ts'
 import {
+	collectHowKodyWorksSnippets,
 	howKodyWorksPackageFiles,
 	howKodyWorksTranscriptActs,
 } from './how-kody-works-transcript.ts'
@@ -62,4 +64,24 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 		'shipped.length === 0',
 	)
 	expect(howKodyWorksPackageFiles['package.json']).toContain('"enabled": true')
+
+	const snippets = collectHowKodyWorksSnippets()
+	expect(snippets.length).toBeGreaterThan(0)
+	expect(
+		snippets.some(
+			(snippet) =>
+				snippet.code === howKodyWorksPackageFiles['src/daily-digest.ts'] &&
+				snippet.lang === 'ts',
+		),
+	).toBe(true)
+	expect(
+		snippets.some(
+			(snippet) =>
+				snippet.code === howKodyWorksPackageFiles['package.json'] &&
+				snippet.lang === 'json',
+		),
+	).toBe(true)
+	expect(
+		new Set(snippets.map((snippet) => highlightSnippetKey(snippet))).size,
+	).toBeGreaterThan(0)
 })
