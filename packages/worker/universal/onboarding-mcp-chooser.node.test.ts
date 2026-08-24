@@ -18,6 +18,7 @@ import {
 	normalizeOnboardingMcpServerUrl,
 	onboardingFeaturedMcpServers,
 	overlayOnboardingFeaturedMcpServers,
+	resolveOnboardingMcpOAuthBanner,
 } from './onboarding-mcp-chooser.ts'
 
 test('featured MCP chooser overlays OAuth state and package listings', () => {
@@ -253,4 +254,39 @@ test('custom MCP servers exclude featured remotes and count as a workspace conne
 			customMcpServers: [],
 		}),
 	).toBe(false)
+})
+
+test('onboarding OAuth banner prefers a later success over leftover URL error', () => {
+	expect(
+		resolveOnboardingMcpOAuthBanner({
+			connected: false,
+			returnedSuccess: false,
+			returnedError: null,
+			urlError: 'access_denied',
+		}),
+	).toBe('access_denied')
+	expect(
+		resolveOnboardingMcpOAuthBanner({
+			connected: false,
+			returnedSuccess: true,
+			returnedError: null,
+			urlError: 'access_denied',
+		}),
+	).toBeNull()
+	expect(
+		resolveOnboardingMcpOAuthBanner({
+			connected: true,
+			returnedSuccess: false,
+			returnedError: 'access_denied',
+			urlError: 'access_denied',
+		}),
+	).toBeNull()
+	expect(
+		resolveOnboardingMcpOAuthBanner({
+			connected: false,
+			returnedSuccess: false,
+			returnedError: 'Supported sites required.',
+			urlError: 'access_denied',
+		}),
+	).toBe('Supported sites required.')
 })

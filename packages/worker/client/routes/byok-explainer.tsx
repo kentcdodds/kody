@@ -83,10 +83,8 @@ function renderDiagramChip(
 }
 
 /**
- * "Bring your own keys" pitch for surfaces that also offer built-ins.
- * Matches onboarding's hasBuiltIns framing: built-ins = fast start on an app
- * Kody hosts; BYO = full control / custom scopes. Shared with the
- * integrations page so the story stays consistent.
+ * "Bring your own keys" pitch. Shared with the integrations page so the
+ * story stays consistent with onboarding.
  */
 export function renderByokExplainer(options?: {
 	image?: keyof typeof kodyImages
@@ -128,10 +126,9 @@ export function renderByokExplainer(options?: {
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
 						<h2 mix={css(cardTitleCss)}>Bring your own keys</h2>
 						<p mix={css(descriptionCss)}>
-							Built-in integrations run on an app Kody hosts, for a fast start.
-							For everything else — or for full control — you create the
-							connection yourself, and your agent walks you through it, so it is
-							completely yours: your app, your scopes, no middleman.
+							You create the connection yourself, and your agent walks you
+							through it, so it is completely yours: your app, your scopes, no
+							middleman.
 						</p>
 					</div>
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -175,8 +172,8 @@ export function renderByokExplainer(options?: {
 						</li>
 						<li>
 							<strong>Full control when you want it.</strong> Bring-your-own
-							keeps nothing between you and the provider — your app, your scopes
-							(including custom scopes outside a built-in allowlist).
+							keeps nothing between you and the provider — your app, your
+							scopes.
 						</li>
 						<li>
 							<strong>No fixed list.</strong> If it has an API, your Kody can
@@ -184,8 +181,8 @@ export function renderByokExplainer(options?: {
 						</li>
 					</ul>
 					<p mix={css(descriptionCss)}>
-						Built-ins are one click. Bring-your-own takes a few minutes of
-						setup; your agent does the tedious parts.
+						Bring-your-own takes a few minutes of setup; your agent does the
+						tedious parts.
 					</p>
 				</div>
 			</div>

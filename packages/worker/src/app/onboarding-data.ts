@@ -8,7 +8,6 @@ import {
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 import {
-	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
 	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
@@ -84,7 +83,6 @@ export function loadPublicOnboardingData(input: {
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
-		builtInProviders: [],
 		featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
 		customMcpServers: [],
 		persistedPackageKodyId: null,
@@ -103,8 +101,6 @@ export async function loadOnboardingData(input: {
 	 * worker Env); this module stays narrow so it is trivially testable.
 	 */
 	featuredListings?: Array<OnboardingFeaturedListing>
-	/** Top enabled built-in integrations, loaded by the handler. */
-	builtInProviders?: Array<OnboardingBuiltInProvider>
 	/** Official workspace MCP chooser cards, loaded by the handler. */
 	featuredMcpServers?: Array<OnboardingFeaturedMcpServer>
 	/** Non-featured MCP servers the viewer added, loaded by the handler. */
@@ -169,7 +165,6 @@ export async function loadOnboardingData(input: {
 		emailVerified: input.emailVerified,
 		needsOnboarding,
 		featuredListings: input.emailVerified ? (input.featuredListings ?? []) : [],
-		builtInProviders: input.emailVerified ? (input.builtInProviders ?? []) : [],
 		featuredMcpServers: input.emailVerified
 			? (input.featuredMcpServers ??
 				listDisconnectedOnboardingFeaturedMcpServers())

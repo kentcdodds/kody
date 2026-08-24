@@ -2,15 +2,20 @@
  * Public homepage “code runs” ticker: a 24-hour delayed replay of fleet
  * `execute` event counts. Interpolation is deterministic from the window so
  * every visitor at a given clock time sees the same integer. Each displayed
- * step is +1. When the pair has at least one tick per second, a tick lands
- * every second at a hashed time so the cadence wobbles instead of marching
- * on the clock. Extra count rolls through the second without skipping, with
- * hashed gaps between those leftover ticks so a busy second does not march.
- * The count stays monotonic between `previous` and `current`. A frozen
- * client snaps to the official integer instead of replaying missed steps.
+ * step is +1. When the pair has at least one tick per 3-second honesty
+ * slot, a backbone tick lands every slot at a hashed phase so the cadence
+ * does not march on the clock. Extra count still warps into busy seconds
+ * and rolls through those seconds without skipping, with hashed gaps so a
+ * busy second does not march. The count stays monotonic between `previous`
+ * and `current`. A frozen client snaps to the official integer instead of
+ * replaying missed steps. When leftover budget cannot support a 3-second
+ * integer backbone, the client moves honest progress toward the next tick
+ * instead of inventing +1s. Homepage GET may continue an expired or still
+ * pair in memory when the fleet total has grown; it does not write KV.
  */
 
 export const publicCodeRunsWindowMs = 24 * 60 * 60 * 1000
+export const codeRunsHonestySlotMs = 3000
 
 export type PublicCodeRunsWindow = {
 	previous: number
@@ -81,6 +86,76 @@ export function msUntilNextCodeRunsCount(
 		else lo = mid + 1
 	}
 	return lo - nowMs
+}
+
+/**
+ * Honest 0–1 progress from the last integer to the next. Zero when there is
+ * no next tick (still pair, window ended, or already at current).
+ */
+export function codeRunsProgressToNext(
+	window: PublicCodeRunsWindow,
+	nowMs: number,
+): number {
+	const wait = msUntilNextCodeRunsCount(window, nowMs)
+	if (wait == null || wait <= 0) return 0
+	const bounds = windowBounds(window)
+	if (!bounds || nowMs <= bounds.startMs) return 0
+	const here = interpolateCodeRunsCount(window, nowMs)
+	let lo = bounds.startMs
+	let hi = nowMs
+	while (lo < hi) {
+		const mid = lo + Math.floor((hi - lo) / 2)
+		if (interpolateCodeRunsCount(window, mid) < here) lo = mid + 1
+		else hi = mid
+	}
+	const gap = nowMs - lo + wait
+	if (gap <= 0) return 0
+	return Math.min(1, (nowMs - lo) / gap)
+}
+
+/**
+ * When to repaint so something honest moves at least every honesty slot.
+ * Integer cadence wins when the next +1 is sooner than that.
+ */
+export function msUntilNextCodeRunsPaint(
+	window: PublicCodeRunsWindow,
+	nowMs: number,
+): number | null {
+	const wait = msUntilNextCodeRunsCount(window, nowMs)
+	if (wait == null) return null
+	return Math.min(wait, codeRunsHonestySlotMs)
+}
+
+/**
+ * In-memory continuation when KV still holds a pair that cannot tick.
+ * Homepage GET uses this instead of writing. Null means keep `stored`.
+ */
+export function continuePublicCodeRunsWindow(input: {
+	stored: PublicCodeRunsWindow
+	total: number
+	now: Date
+}): PublicCodeRunsWindow | null {
+	if (input.total <= input.stored.current) return null
+	const nowMs = input.now.getTime()
+	const endMs = Date.parse(input.stored.windowEnd)
+	const expired = Number.isFinite(endMs) && nowMs >= endMs
+	const still = isStillPublicCodeRunsWindow(input.stored)
+	if (!expired && !still) return null
+	if (still && !expired) {
+		return {
+			previous: input.stored.current,
+			current: input.total,
+			windowStart: input.now.toISOString(),
+			windowEnd: new Date(nowMs + publicCodeRunsWindowMs).toISOString(),
+		}
+	}
+	const startMs = Number.isFinite(endMs) ? endMs : nowMs
+	return {
+		previous: input.stored.current,
+		current: Math.max(input.total, input.stored.current),
+		windowStart: new Date(startMs).toISOString(),
+		windowEnd: new Date(startMs + publicCodeRunsWindowMs).toISOString(),
+	}
 }
 
 export const codeRunsCatchUpSnapAfterMs = 1000
@@ -163,40 +238,49 @@ function ticksAfterElapsed(input: {
 	if (totalSeconds <= 0) {
 		return Math.floor(input.delta * (input.elapsedMs / input.totalMs))
 	}
+	const slots = Math.floor(input.totalMs / codeRunsHonestySlotMs)
+	const useBackbone = input.delta >= slots && slots > 0
+	const extra = useBackbone ? input.delta - slots : input.delta
 	const secondIndex = Math.min(
 		Math.floor(input.elapsedMs / 1000),
 		totalSeconds - 1,
 	)
 	const fracMs = input.elapsedMs - secondIndex * 1000
-	const before = officialTicksAtSecond(
+	const extrasBefore = extraBeforeSecond(
 		secondIndex,
+		extra,
 		totalSeconds,
-		input.delta,
 		input.seed,
 	)
-	const after = officialTicksAtSecond(
+	const extrasAfter = extraBeforeSecond(
 		secondIndex + 1,
+		extra,
 		totalSeconds,
-		input.delta,
 		input.seed,
 	)
-	return (
-		before + ticksFiredInSecond(after - before, fracMs, input.seed, secondIndex)
+	const extrasFired = ticksFiredInSecond(
+		extrasAfter - extrasBefore,
+		fracMs,
+		input.seed,
+		secondIndex,
 	)
+	const backbone = useBackbone
+		? backboneTicksAfterElapsed(input.elapsedMs, slots, input.seed)
+		: 0
+	return extrasBefore + extrasFired + backbone
 }
 
-function officialTicksAtSecond(
-	secondIndex: number,
-	totalSeconds: number,
-	delta: number,
+function backboneTicksAfterElapsed(
+	elapsedMs: number,
+	slots: number,
 	seed: number,
 ): number {
-	if (secondIndex <= 0) return 0
-	if (secondIndex >= totalSeconds) return delta
-	const useBackbone = delta >= totalSeconds
-	const extra = useBackbone ? delta - totalSeconds : delta
-	const extras = extraBeforeSecond(secondIndex, extra, totalSeconds, seed)
-	return extras + (useBackbone ? secondIndex : 0)
+	const phase = Math.floor(hashUnit(seed, 11) * codeRunsHonestySlotMs)
+	if (elapsedMs < phase) return 0
+	return Math.min(
+		slots,
+		1 + Math.floor((elapsedMs - phase) / codeRunsHonestySlotMs),
+	)
 }
 
 function extraBeforeSecond(

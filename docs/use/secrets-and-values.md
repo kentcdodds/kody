@@ -32,19 +32,10 @@ prefilling **`/account/secrets/new`** can set **`expiresAt`** as a query
 parameter so the human pastes the token without typing the date. See
 [Account secret setup](../guides/account-secret-setup.md).
 
-## Built-in integrations
-
-Some providers are available as **built-in integrations**: the deployment
-operator has already registered the OAuth app, so you connect with one click at
-**`/connect/oauth?provider=<slug>`** — no provider developer console, client ID,
-or client secret needed. Agents can list the available built-in apps with
-**`integration_platform_app_list`**. Tokens for a built-in connection are stored
-as your own secrets, the same as any other integration.
-
-Built-in or not, a connection authorizes _your_ agent — and any code you run or
-install — to act as you on that provider. Kody does not control or supervise
-what your agent does with the access you grant; scope connections deliberately
-and revoke unused ones. See the [Terms](/terms).
+A connection authorizes _your_ agent — and any code you run or install — to act
+as you on that provider. Kody does not control or supervise what your agent does
+with the access you grant; scope connections deliberately and revoke unused
+ones. See the [Terms](/terms).
 
 ## Placeholders in `fetch` and capability inputs
 

@@ -6,8 +6,8 @@
  * (GitHub official MCP, Slack, Asana, Figma, HubSpot, and others).
  *
  * Each card already knows name + url. Connect POSTs the account MCP-servers
- * add/reconnect API with that hardcoded url. Each card also pairs with the
- * official `@kody/<id>-mcp` listing so Step 2 can install the MCP helper.
+ * add/reconnect API with that hardcoded url and forks the official
+ * `@kody/<id>-mcp` listing in the same click.
  * MCP here is the quicker first-value path. The long-term preferred path is
  * regular APIs via the official non-MCP packages (`@kody/notion`,
  * `@kody/linear`, `@kody/jira`, `@kody/stripe`, `@kody/sentry`,
@@ -222,8 +222,8 @@ export function overlayOnboardingFeaturedMcpServers(input: {
 
 /**
  * Poll skip key for Step 2. Must change when a listing appears after a
- * transient miss (Install is hidden until `packageListing` is set) or when
- * viewer-install status flips. Listing id is the presence signal.
+ * transient miss or when viewer-install status flips. Listing id is the
+ * presence signal.
  */
 export function featuredOnboardingMcpFingerprint(
 	servers: Array<OnboardingFeaturedMcpServer>,
@@ -381,4 +381,18 @@ export function firstConnectedOnboardingWorkspaceLabel(input: {
 	if (featured) return featured.label
 	const custom = input.customMcpServers.find((server) => server.connected)
 	return custom?.name ?? null
+}
+
+/**
+ * A later success (popup message or connected poll) must not lose to a leftover
+ * `?auth=error` from the same-tab fallback.
+ */
+export function resolveOnboardingMcpOAuthBanner(input: {
+	connected: boolean
+	returnedSuccess: boolean
+	returnedError: string | null
+	urlError: string | null
+}): string | null {
+	if (input.connected || input.returnedSuccess) return null
+	return input.returnedError ?? input.urlError
 }

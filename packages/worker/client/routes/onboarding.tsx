@@ -15,11 +15,14 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
 	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
 } from '#universal/loader-data.ts'
+import {
+	closeOnboardingMcpOAuthPopupIfOpened,
+	listenForOnboardingMcpOAuthDone,
+} from '#client/mcp-oauth-popup.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
@@ -38,6 +41,7 @@ import {
 	hasConnectedOnboardingWorkspaceMcp,
 	hasPendingOnboardingCustomMcpAuth,
 	hasPendingOnboardingFeaturedMcpAuth,
+	resolveOnboardingMcpOAuthBanner,
 } from '#universal/onboarding-mcp-chooser.ts'
 import {
 	fetchOnboardingPayload,
@@ -58,10 +62,7 @@ import { OnboardingPersistCard } from '#client/routes/onboarding-persist-card.ts
 import { OnboardingFactoryCard } from '#client/routes/onboarding-factory-card.tsx'
 import { createOnboardingNextConfirmation } from '#client/routes/onboarding-next-confirmation.ts'
 import { OnboardingPackageNextSteps } from '#client/routes/onboarding-package-next-steps.tsx'
-import {
-	OnboardingStarterCard,
-	starterCardCss,
-} from '#client/routes/onboarding-starter-card.tsx'
+import { OnboardingStarterCard } from '#client/routes/onboarding-starter-card.tsx'
 import { ProviderIcon } from '#client/provider-icons.tsx'
 import {
 	onboardingPath,
@@ -76,7 +77,6 @@ import {
 import {
 	getAccentCalloutCss,
 	getGhostButtonCss,
-	getLogoWellCss,
 	getPillButtonCss,
 	hoverMq,
 	inlineSpinnerCss,
@@ -95,7 +95,7 @@ import {
  * Prefer official non-MCP API packages for reusable integrations — do not
  * convert them to MCP-first. Step 3 is the permanence lesson: copy a prompt
  * that runs one ad hoc execute, then persist that working code as a package.
- * Built-in platform OAuth and featured starters live under Advanced.
+ * Featured starters live under Advanced.
  */
 
 type OnboardingStep = 1 | 2 | 3
@@ -185,7 +185,6 @@ export function OnboardingRoute(handle: Handle) {
 	let featuredListings: Array<OnboardingFeaturedListing> = []
 	let exampleListings: Array<OnboardingFeaturedListing> = []
 	let serviceStarterListings: Array<OnboardingFeaturedListing> = []
-	let builtInProviders: Array<OnboardingBuiltInProvider> = []
 	let featuredMcpServers: Array<OnboardingFeaturedMcpServer> = []
 	let customMcpServers: Array<OnboardingCustomMcpServer> = []
 	let checklist: OnboardingChecklistLoaderData | null = null
@@ -193,6 +192,9 @@ export function OnboardingRoute(handle: Handle) {
 	let activeStep: OnboardingStep = 1
 	let initializedStep = false
 	let appliedInitialHash = false
+	let awaitingMcpConnection = false
+	let oauthReturnError: string | null = null
+	let oauthReturnSucceeded = false
 	// Panel entrances only play for real step changes, never on the first
 	// paint — the page-open choreography belongs to the head's data-rise.
 	let panelAnimationArmed = false
@@ -212,12 +214,17 @@ export function OnboardingRoute(handle: Handle) {
 			selectOnboardingServiceStarterListings(featuredListings)
 		featuredMcpServers = payload.featuredMcpServers ?? []
 		customMcpServers = payload.customMcpServers ?? []
+		const workspaceConnected = hasConnectedOnboardingWorkspaceMcp({
+			featuredMcpServers,
+			customMcpServers,
+		})
 		hasStep2Win =
-			hasConnectedOnboardingWorkspaceMcp({
-				featuredMcpServers,
-				customMcpServers,
-			}) || hasInstalledOnboardingExample(exampleListings)
-		builtInProviders = payload.builtInProviders ?? []
+			workspaceConnected || hasInstalledOnboardingExample(exampleListings)
+		if (workspaceConnected) {
+			awaitingMcpConnection = false
+			oauthReturnError = null
+			oauthReturnSucceeded = true
+		}
 		checklist = payload.checklist
 		hasPersistedPackage = isOnboardingChecklistItemDone(
 			payload.checklist,
@@ -428,6 +435,9 @@ export function OnboardingRoute(handle: Handle) {
 	}
 
 	if (typeof document !== 'undefined') {
+		if (closeOnboardingMcpOAuthPopupIfOpened()) {
+			// This tab was the authorize popup. The opener stays on the wizard.
+		}
 		pollIntervalId = setInterval(
 			pollOnboardingProgress,
 			onboardingProgressPollIntervalMs,
@@ -437,6 +447,18 @@ export function OnboardingRoute(handle: Handle) {
 		handle.signal.addEventListener('abort', () =>
 			window.removeEventListener('hashchange', handleHashChange),
 		)
+		listenForOnboardingMcpOAuthDone((outcome) => {
+			if (outcome.auth === 'error' && outcome.reason) {
+				oauthReturnError = outcome.reason
+				oauthReturnSucceeded = false
+				awaitingMcpConnection = false
+				handle.update()
+			} else if (outcome.auth === 'success') {
+				oauthReturnError = null
+				oauthReturnSucceeded = true
+			}
+			void refreshOnboardingAfterInstall()
+		}, handle.signal)
 	}
 
 	function handleHashChange() {
@@ -692,8 +714,8 @@ export function OnboardingRoute(handle: Handle) {
 								</div>
 								<p mix={css(panelLedeCss)}>
 									Give your agent a live workspace. Official MCP is the easy
-									login path: add {formatOnboardingFeaturedMcpChoice()},
-									authorize it, and install the matching official{' '}
+									login path: add {formatOnboardingFeaturedMcpChoice()} and
+									authorize it. Connect also forks the matching official{' '}
 									<em>@kody/*-mcp</em> helper. None of these? Add a custom
 									server, or just try Kody without a third-party login.
 								</p>
@@ -709,29 +731,37 @@ export function OnboardingRoute(handle: Handle) {
 											onChanged={() => {
 												void refreshOnboardingAfterInstall()
 											}}
+											onAuthStarted={() => {
+												awaitingMcpConnection = true
+												handle.update()
+											}}
 										/>
 									))}
 								</ul>
-								{hasConnectedOnboardingWorkspaceMcp({
-									featuredMcpServers,
-									customMcpServers,
-								}) ? (
-									<p
-										mix={css(quickExampleDoneCss)}
-										data-testid="onboarding-mcp-chooser-done"
-									>
-										Connected — continue to run one useful request and persist
-										it as a package you own.
-									</p>
-								) : hasInstalledOnboardingExample(exampleListings) ? (
-									<p
-										mix={css(quickExampleDoneCss)}
-										data-testid="onboarding-example-done"
-									>
-										Installed — continue to try it and persist a package you
-										own.
-									</p>
-								) : null}
+								<Step2ConnectStatus
+									waiting={
+										awaitingMcpConnection ||
+										hasPendingOnboardingFeaturedMcpAuth(featuredMcpServers) ||
+										hasPendingOnboardingCustomMcpAuth(customMcpServers)
+									}
+									connected={hasConnectedOnboardingWorkspaceMcp({
+										featuredMcpServers,
+										customMcpServers,
+									})}
+									exampleInstalled={hasInstalledOnboardingExample(
+										exampleListings,
+									)}
+									oauthError={resolveOnboardingMcpOAuthBanner({
+										connected: hasConnectedOnboardingWorkspaceMcp({
+											featuredMcpServers,
+											customMcpServers,
+										}),
+										returnedSuccess: oauthReturnSucceeded,
+										returnedError: oauthReturnError,
+										urlError: readOnboardingMcpOAuthError(handle),
+									})}
+									onNext={() => selectStep(3)}
+								/>
 								<aside
 									aria-label="How it works"
 									mix={css(howItWorksCss)}
@@ -739,13 +769,13 @@ export function OnboardingRoute(handle: Handle) {
 								>
 									<p mix={css(howItWorksLabelCss)}>How it works</p>
 									<p>
-										Connect is the quicker first win: it adds the official MCP
-										URL and opens the provider authorize page. Approve access,
-										then your agent can call those tools as <em>kody.mcp</em>.
-										Each card also offers the matching <em>@kody/*-mcp</em>{' '}
-										helper. Day-to-day work later prefers the official{' '}
-										<em>@kody</em> API packages. GitHub's official MCP is not on
-										this list — it does not return an authorization link.
+										Connect adds the official MCP URL, forks the matching{' '}
+										<em>@kody/*-mcp</em> helper, and opens the provider
+										authorize page. Approve access, then your agent can call
+										those tools as <em>kody.mcp</em>. Day-to-day work later
+										prefers the official <em>@kody</em> API packages. GitHub's
+										official MCP is not on this list — it does not return an
+										authorization link.
 									</p>
 								</aside>
 								<div
@@ -762,6 +792,10 @@ export function OnboardingRoute(handle: Handle) {
 										loggedIn={loggedIn}
 										onChanged={() => {
 											void refreshOnboardingAfterInstall()
+										}}
+										onAuthStarted={() => {
+											awaitingMcpConnection = true
+											handle.update()
 										}}
 									/>
 								</div>
@@ -895,67 +929,9 @@ export function OnboardingRoute(handle: Handle) {
 										<span mix={css(advancedBadgeCss)}>Advanced</span>
 									</p>
 									<p mix={css(advancedLedeCss)}>
-										Built-in platform OAuth and featured starters stay available
-										after the first build. Prefer your own keys for full
-										control.
+										Featured starters stay available after the first build.
+										Prefer your own keys for full control.
 									</p>
-									{builtInProviders.length > 0 ? (
-										<ul
-											mix={css(starterGridCss)}
-											data-testid="onboarding-built-in-integrations"
-										>
-											{builtInProviders.map((provider) => {
-												const href =
-													provider.connected && provider.connectionName
-														? routes.accountIntegrationDetail.href({
-																integrationName: provider.connectionName,
-															})
-														: `/connect/oauth?provider=${encodeURIComponent(provider.slug)}`
-												return (
-													<li
-														key={provider.slug}
-														mix={css(providerCardCss)}
-														data-connected={
-															provider.connected ? 'true' : undefined
-														}
-														data-testid={`onboarding-provider-${provider.slug}`}
-													>
-														<a href={href} mix={css(providerCardLinkCss)}>
-															<span mix={css(providerIconWellCss)}>
-																{provider.logoPath ? (
-																	<img
-																		src={provider.logoPath}
-																		alt=""
-																		width={30}
-																		height={30}
-																		loading="lazy"
-																		mix={css(providerLogoCss)}
-																	/>
-																) : (
-																	<ProviderIcon
-																		providerId={provider.slug}
-																		size="30"
-																	/>
-																)}
-															</span>
-															<strong mix={css(providerCardNameCss)}>
-																{provider.label}
-															</strong>
-															<span
-																mix={css(
-																	provider.connected
-																		? providerConnectedPillCss
-																		: providerConnectPillCss,
-																)}
-															>
-																{provider.connected ? 'Connected' : 'Connect'}
-															</span>
-														</a>
-													</li>
-												)
-											})}
-										</ul>
-									) : null}
 									<ul mix={css(starterListCss)}>
 										{serviceStarterListings.map((listing) => (
 											<OnboardingStarterCard
@@ -1002,7 +978,7 @@ export function OnboardingRoute(handle: Handle) {
 
 						{/* Outside the wizard panels on purpose: the prototype keeps the
 					    BYOK disclosure visible on every step. */}
-						{renderByokDetails(builtInProviders.length > 0)}
+						{renderByokDetails()}
 
 						{loggedIn ? null : (
 							<p mix={css(authLinksCss)}>
@@ -1103,7 +1079,7 @@ function WizardNavigation(
  * prototype's onboarding-specific framing ("Why there's no one-click
  * connect"); the integrations page keeps its own `byok-explainer` copy.
  */
-function renderByokDetails(hasBuiltIns: boolean) {
+function renderByokDetails() {
 	return (
 		<details id="byok" mix={css(byokDetailsCss)}>
 			<summary mix={css(byokSummaryCss)}>Bring your own API keys</summary>
@@ -1120,14 +1096,11 @@ function renderByokDetails(hasBuiltIns: boolean) {
 				/>
 				<div>
 					<h2 id="byok-note-title" mix={css(byokTitleCss)}>
-						{hasBuiltIns
-							? 'Why bring your own keys?'
-							: "Why there's no one-click connect"}
+						Why bring your own keys?
 					</h2>
 					<p mix={css(byokCopyCss)}>
-						{hasBuiltIns
-							? 'Built-in integrations run on an app Kody hosts, for a fast start. For everything else — or for full control — you create the connection yourself, and your agent walks you through it, so it is completely yours: your app, your scopes, no middleman.'
-							: 'Kody never asks a company for access on your behalf. You create the connection yourself, and your agent walks you through it, so it is completely yours: your app, your scopes, no middleman.'}
+						You create the connection yourself, and your agent walks you through
+						it, so it is completely yours: your app, your scopes, no middleman.
 					</p>
 					<dl mix={css(byokCompareCss)}>
 						<div>
@@ -1495,7 +1468,7 @@ function connectStatusContent(input: {
 	if (input.connected) {
 		return [
 			<span key="check" mix={css(connectCheckCss)} aria-hidden="true">
-				✓
+				{connectedCheckIcon()}
 			</span>,
 			<strong key="label">{input.connectedLabel}</strong>,
 		]
@@ -1510,60 +1483,120 @@ function connectStatusContent(input: {
 	]
 }
 
-/* Built-in integrations lead step 3 as full cards — the path of least
-   resistance reads first, with BYO as the power-user footnote. */
-const providerCardCss = {
-	...starterCardCss,
+function connectedCheckIcon() {
+	return (
+		<svg
+			viewBox="0 0 16 16"
+			width="14"
+			height="14"
+			aria-hidden="true"
+			focusable={false}
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="1.8"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			<path d="M3.4 8.2 6.5 11.2 12.6 4.8" />
+		</svg>
+	)
 }
 
-const providerCardLinkCss = {
-	flex: 1,
+function readOnboardingMcpOAuthError(handle: Handle) {
+	const params = new URLSearchParams(readRouterSearch(handle))
+	if (params.get('auth') !== 'error') return null
+	return params.get('reason')
+}
+
+function Step2ConnectStatus(
+	handle: Handle<{
+		waiting: boolean
+		connected: boolean
+		exampleInstalled: boolean
+		oauthError: string | null
+		onNext: () => void
+	}>,
+) {
+	return () => {
+		const { waiting, connected, exampleInstalled, oauthError, onNext } =
+			handle.props
+		if (connected) {
+			return (
+				<div
+					mix={css(step2ConnectedRowCss)}
+					data-testid="onboarding-mcp-chooser-done"
+				>
+					<div
+						mix={css(connectStatusCss)}
+						role="status"
+						aria-live="polite"
+						data-connected="true"
+					>
+						{connectStatusContent({
+							connected: true,
+							connectedLabel: 'Connected',
+							waitingLabel: 'Waiting for first connection…',
+						})}
+					</div>
+					<button
+						type="button"
+						mix={[css(wizardNextButtonCss), on('click', onNext)]}
+						data-testid="onboarding-mcp-connected-next"
+					>
+						Next
+					</button>
+				</div>
+			)
+		}
+		if (oauthError) {
+			return (
+				<p mix={css(step2OAuthErrorCss)} role="alert">
+					{oauthError}
+				</p>
+			)
+		}
+		if (waiting) {
+			return (
+				<div
+					mix={css(connectStatusCss)}
+					role="status"
+					aria-live="polite"
+					data-testid="onboarding-mcp-waiting"
+				>
+					{connectStatusContent({
+						connected: false,
+						connectedLabel: 'Connected',
+						waitingLabel: 'Waiting for first connection…',
+					})}
+				</div>
+			)
+		}
+		if (exampleInstalled) {
+			return (
+				<p mix={css(quickExampleDoneCss)} data-testid="onboarding-example-done">
+					Installed — continue to try it and persist a package you own.
+				</p>
+			)
+		}
+		return null
+	}
+}
+
+const step2ConnectedRowCss = {
 	display: 'flex',
-	flexDirection: 'column' as const,
+	flexWrap: 'wrap' as const,
 	alignItems: 'center',
-	gap: '0.65rem',
-	textDecoration: 'none',
-	color: 'inherit',
-	minWidth: 0,
+	justifyContent: 'center',
+	gap: '0.75rem 1rem',
+	marginTop: '0.35rem',
 }
 
-/* Same rounded white logo plate as CommunityListingIcon size="starter". */
-const providerIconWellCss = {
-	...getLogoWellCss({ size: '3.2rem', radius: '12px' }),
-	marginBottom: '0.2rem',
-	transition: `border-color 160ms ${transitions.easeOut}`,
-}
-
-const providerLogoCss = {
-	display: 'block',
-	borderRadius: '4px',
-}
-
-const providerCardNameCss = {
-	color: colors.text,
-	fontWeight: 650,
-	fontSize: '0.98rem',
-}
-
-const providerConnectPillCss = {
-	...getPillButtonCss(),
-	marginTop: 'auto',
-	width: '100%',
-	fontSize: '0.95rem',
+const step2OAuthErrorCss = {
+	margin: '0.35rem 0 0',
+	color: colors.error,
+	font: `550 0.9rem/1.45 ${typography.fontFamilyBody}`,
 	textAlign: 'center' as const,
-}
-
-/** Already-connected providers: solid status pill, not another Connect CTA. */
-const providerConnectedPillCss = {
-	...getGhostButtonCss(),
-	marginTop: 'auto',
-	width: '100%',
-	fontSize: '0.95rem',
-	textAlign: 'center' as const,
-	color: colors.primaryText,
-	borderColor: `oklch(from ${colors.primary} l c h / 0.45)`,
-	backgroundColor: `oklch(from ${colors.primary} l c h / 0.08)`,
-	cursor: 'pointer',
+	textWrap: 'pretty' as const,
 }
 
 const step2ExitCss = {
@@ -1590,7 +1623,7 @@ const step2ExitLedeCss = {
 	maxWidth: '68ch',
 }
 
-/* Built-in OAuth and featured starters demote to Advanced under the persist lead. */
+/* Featured starters demote to Advanced under the persist lead. */
 const advancedSectionCss = {
 	display: 'grid',
 	gap: '0.55rem',
