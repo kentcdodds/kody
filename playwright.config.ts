@@ -40,7 +40,11 @@ export default defineConfig({
 			// Fatal wrangler exits land here; CI uploads this directory on E2E
 			// failure (see validate.yml + e2e/web-server-liveness.ts).
 			WRANGLER_LOG_PATH: './logs.local',
-			WRANGLER_DISABLE_REQUEST_BODY_DRAINING: 'true',
+			// Keep wrangler's default incoming-body drain. Setting
+			// WRANGLER_DISABLE_REQUEST_BODY_DRAINING=true recreates the
+			// workers-sdk#5106 ProxyWorker "Network connection lost" race on
+			// POST /auth and other JSON posts; wrangler 4.114+ then exits
+			// instead of recovering (workers-sdk#14926).
 			// Wrangler 4.118+ enables local observability capture by default in
 			// `wrangler dev`. The extra collector/tail services have crashed the
 			// Playwright webServer mid-suite here; opt out for e2e stability.
