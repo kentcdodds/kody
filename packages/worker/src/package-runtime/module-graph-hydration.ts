@@ -1,3 +1,4 @@
+import { throwIfPersonPackagePlatformReference } from '#worker/package-registry/platform-package-policy.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import {
 	normalizePackageExportKey,
@@ -39,9 +40,8 @@ async function resolveCurrentDynamicPackageArtifact(input: {
 		)
 	}
 	const parsed = parseKodyPackageSpecifier(input.specifier)
-	// This lane rebuilds and persists artifacts under the caller's identity,
-	// which must never happen for platform-owned sources — platform packages
-	// resolve through static imports only.
+	// This lane rebuilds and persists artifacts under the caller's identity.
+	// Person accounts never resolve platform-owned sources here.
 	const resolution = await resolveSavedPackageImport({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -49,15 +49,12 @@ async function resolveCurrentDynamicPackageArtifact(input: {
 		allowPlatformScopes: false,
 	})
 	if (!resolution) {
-		const platformResolution = await resolveSavedPackageImport({
+		await throwIfPersonPackagePlatformReference({
 			db: input.env.APP_DB,
-			userId: input.userId,
-			specifier: parsed,
+			packageName: parsed.packageName,
 		})
 		throw new Error(
-			platformResolution?.platformScope
-				? `Dynamic import of platform package "${parsed.packageName}" is unsupported. From ad hoc execute, use a static import (import x from "${input.specifier}"). Saved person-account packages must community_fork the official package into your scope.`
-				: `Dynamic Kody package import "${input.specifier}" could not find saved package "${parsed.packageName}" for this user.`,
+			`Dynamic Kody package import "${input.specifier}" could not find saved package "${parsed.packageName}" for this user.`,
 		)
 	}
 	const { row } = resolution

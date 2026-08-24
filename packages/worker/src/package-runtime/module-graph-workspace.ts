@@ -207,7 +207,7 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 						allowPlatformScopes: input.allowPlatformScopes,
 					})
 			if (!resolution) {
-				if (input.allowPlatformScopes === false) {
+				if (input.allowPlatformScopes !== true) {
 					await throwIfPersonPackagePlatformReference({
 						db: input.env.APP_DB,
 						packageName: parsed.packageName,

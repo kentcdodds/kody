@@ -160,23 +160,20 @@ internal connection, edit the page's **Connections** menu.
 
 ## Use the official package and verify (Lane B / OAuth)
 
-Lane A stays on the raw `notionToken` fetch above. Ad hoc `execute` may import
-or `packages.invoke` `kody:@kody/notion` live. The live official package is the
-Lane B finish: it uses the saved `notion` OAuth integration and does not read
-`notionToken`. Official `@kody/*` packages resolve in the execute caller runtime
-against the caller's secrets. Saved person-account packages cannot import or
-invoke a platform scope — `community_fork` into the caller's scope first, or
-fork when you need to customize the source.
+Lane A stays on the raw `notionToken` fetch above. The official `@kody/notion`
+listing is the Lane B finish after you fork it: it uses the saved `notion` OAuth
+integration and does not read `notionToken`.
 
-1. Search for `@kody/notion` (or import `kody:@kody/notion` directly). It wraps
-   pages, databases, and a generic request escape hatch.
-2. Check its README **Required setup**: it expects an OAuth integration named
-   `notion` — the default name this guide's Lane B connect link uses, so no
-   adaptation is needed.
-3. Verify the live package against the OAuth integration from `execute`:
+1. Search for `@kody/notion`. It wraps pages, databases, and a generic request
+   escape hatch.
+2. `community_fork` it into your scope (or click **Install** on the listing).
+3. Check the fork's README **Required setup**: it expects an OAuth integration
+   named `notion` — the default name this guide's Lane B connect link uses, so
+   no adaptation is needed.
+4. Verify the fork against the OAuth integration from `execute`:
 
 ```ts
-import smokeTest from 'kody:@kody/notion/smoke-test'
+import smokeTest from 'kody:@<your-username>/notion/smoke-test'
 
 export default async function main() {
 	return smokeTest()
@@ -184,5 +181,5 @@ export default async function main() {
 ```
 
 A successful response confirms OAuth access without returning workspace PII —
-proving the live package, the tokens, and the page grants all line up. Remember
-the package only sees pages you shared on Notion's consent screen.
+proving the fork, the tokens, and the page grants all line up. Remember the
+package only sees pages you shared on Notion's consent screen.

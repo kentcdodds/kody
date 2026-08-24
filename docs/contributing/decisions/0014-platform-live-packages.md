@@ -3,8 +3,9 @@
 ## Status
 
 Superseded by [0035](./0035-platform-packages-execute-only.md) for saved
-person-account packages. Ad hoc execute may still resolve platform scopes live
-as described here.
+person-account packages, then fully by
+[0036](./0036-platform-packages-fork-only.md) (person accounts do not run
+official platform packages, including ad hoc execute).
 
 ## Context
 

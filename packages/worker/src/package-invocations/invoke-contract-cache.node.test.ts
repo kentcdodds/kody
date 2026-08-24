@@ -83,6 +83,10 @@ const contractCheckLoadMocks = [
 		'platform account by username (D1)',
 		mockModule.getPlatformAccountByUsername,
 	],
+	[
+		'platform account by user id (D1)',
+		mockModule.isPlatformAccountStableUserId,
+	],
 	['entity source row (D1)', mockModule.getEntitySourceById],
 	['published manifest snapshot (KV)', mockModule.loadPublishedEntityManifest],
 	['published source snapshot (KV)', mockModule.loadPublishedEntitySource],
@@ -302,7 +306,7 @@ test('person package runtimes cannot invoke official platform packages', async (
 		callingPackageId: 'pkg-user-1',
 	})
 	expect(denied.result.ok).toBe(false)
-	expect(denied.result.message).toContain('execute-only')
+	expect(denied.result.message).toContain('not runnable from a person account')
 	expect(denied.preloads).toBeNull()
 
 	const fromExecute = await checkPackageInvokeForRuntimeWithPreloads({
@@ -316,7 +320,11 @@ test('person package runtimes cannot invoke official platform packages', async (
 		},
 		callerKind: 'execute',
 	})
-	expect(fromExecute.result.ok).toBe(true)
+	expect(fromExecute.result.ok).toBe(false)
+	expect(fromExecute.result.message).toContain(
+		'not runnable from a person account',
+	)
+	expect(fromExecute.preloads).toBeNull()
 
 	mockModule.getSavedPackageById.mockImplementation(
 		async (_db: unknown, input: { userId: string; packageId: string }) =>
@@ -377,6 +385,7 @@ test('a warm keyless invoke contract check performs zero D1/KV loads', async () 
 		'saved package by kody id (D1)': 0,
 		'saved package by name (D1)': 0,
 		'platform account by username (D1)': 0,
+		'platform account by user id (D1)': 0,
 		'entity source row (D1)': 0,
 		'published manifest snapshot (KV)': 0,
 		'published source snapshot (KV)': 0,
@@ -491,7 +500,7 @@ test('contract-check caches never serve entries across users', async () => {
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
 })
 
-test('platform package invalidation clears every caller specifier cache', async () => {
+test('platform package invalidation clears the platform-owner specifier cache', async () => {
 	const platformFixture = createFixture({
 		userId: 'platform-owner',
 		publishedCommit: 'commit-platform',
@@ -500,7 +509,7 @@ test('platform package invalidation clears every caller specifier cache', async 
 	seedFixtures({ 'platform-owner': platformFixture })
 
 	const beforeDelete = await runContractCheck({
-		userId: 'person-caller',
+		userId: 'platform-owner',
 		specifier: 'kody:@kody/sentry-triage/get-issue-state',
 	})
 	expect(beforeDelete.result.ok).toBe(true)
@@ -510,7 +519,7 @@ test('platform package invalidation clears every caller specifier cache', async 
 
 	clearContractCheckLoadCounters()
 	const warm = await runContractCheck({
-		userId: 'person-caller',
+		userId: 'platform-owner',
 		specifier: 'kody:@kody/sentry-triage/get-issue-state',
 	})
 	expect(warm.result.ok).toBe(true)
@@ -519,6 +528,7 @@ test('platform package invalidation clears every caller specifier cache', async 
 		'saved package by kody id (D1)': 0,
 		'saved package by name (D1)': 0,
 		'platform account by username (D1)': 0,
+		'platform account by user id (D1)': 0,
 		'entity source row (D1)': 0,
 		'published manifest snapshot (KV)': 0,
 		'published source snapshot (KV)': 0,
@@ -537,7 +547,7 @@ test('platform package invalidation clears every caller specifier cache', async 
 	})
 
 	const afterDelete = await runContractCheck({
-		userId: 'person-caller',
+		userId: 'platform-owner',
 		specifier: 'kody:@kody/sentry-triage/get-issue-state',
 	})
 	expect(afterDelete.result.ok).toBe(false)

@@ -21,10 +21,10 @@ export type KodyPackageSpecifier = {
  * `platformScope` carries the scope username.
  *
  * Isolation invariant: platform resolution only widens *which published
- * source the bundler may read*, and only for ad hoc execute (decision 0035).
- * Saved person-account packages must not resolve platform scopes; they fork
- * into the caller's scope instead. Platform-account packages may still
- * compose with each other. The caller's own copy always wins.
+ * source the bundler may read*, and only when the caller is a platform
+ * account composing with another platform scope (decision 0036). Person
+ * accounts — ad hoc execute and saved packages — must `community_fork`
+ * into the caller's scope. The caller's own copy always wins.
  */
 export type ResolvedPackageImport = {
 	row: SavedPackageRecord
@@ -100,7 +100,7 @@ export async function resolveSavedPackageImport(input: {
 			platformScope: null,
 		}
 	}
-	if (input.allowPlatformScopes === false) return null
+	if (input.allowPlatformScopes !== true) return null
 	return await resolvePlatformScopedPackageImport({
 		db: input.db,
 		packageName: parsed.packageName,

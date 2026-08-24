@@ -13,7 +13,6 @@ import { resolveSecret, type ResolvedSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { getCommunityForkByForkedPackageId } from '#worker/community/repo.ts'
-import { findPlatformPackageByRef } from '#worker/package-registry/platform-packages.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	loadPackageManifestBySourceId,
@@ -62,25 +61,18 @@ export function isPackageSecretAccessUnavailableError(error: unknown) {
 /**
  * Resolve the package whose runtime is asking for a user secret.
  *
- * The caller's own copy always wins. Live official platform packages
- * (decision 0014) are not owned by the caller, so a miss falls back to
- * {@link findPlatformPackageByRef} — the same widening search already uses
- * for entity detail. Hidden and private platform packages stay unresolvable.
+ * Person accounts only run caller-owned packages (decision 0036), so this
+ * lookup is caller-owned `saved_packages` only.
  */
 async function resolvePackageRecordForSecretAccess(input: {
 	db: D1Database
 	userId: string
 	packageId: string
 }): Promise<SavedPackageRecord | null> {
-	const owned = await getSavedPackageById(input.db, {
+	return await getSavedPackageById(input.db, {
 		userId: input.userId,
 		packageId: input.packageId,
 	})
-	if (owned) return owned
-	const platform = await findPlatformPackageByRef(input.db, {
-		idOrKodyId: input.packageId,
-	})
-	return platform?.record ?? null
 }
 
 export async function assertPackageCanAccessResolvedSecret(input: {
@@ -124,11 +116,10 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 				forkedPackageId: savedPackage.id,
 			},
 		)
-		// Self-authored packages (no community fork row), live official
-		// platform packages, and adopted community forks may read/use user
-		// secrets without an explicit allowed_packages grant. Unadopted
-		// community forks still require approval. Mutations never take this
-		// path.
+		// Self-authored packages (no community fork row) and adopted
+		// community forks may read/use user secrets without an explicit
+		// allowed_packages grant. Unadopted community forks still require
+		// approval. Mutations never take this path.
 		if (!communityFork || communityFork.adoptedAt) return
 	}
 

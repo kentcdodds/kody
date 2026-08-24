@@ -195,92 +195,29 @@ test('package secret access grants cover owned, self-authored, forked, adopted, 
 	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 })
 
-test('package secret access resolves live platform packages the caller does not own', async () => {
-	const platformPackage = {
-		...savedPackage,
-		id: '91d7d9e4-6b88-44da-ab19-01fe26845ac5',
-		kodyId: 'notion',
-		name: '@kody/notion',
-	}
+test('package secret access does not resolve platform packages the caller does not own', async () => {
+	const platformPackageId = '91d7d9e4-6b88-44da-ab19-01fe26845ac5'
 	const platformAccess = accessInput({
 		storageContext: {
 			sessionId: null,
-			packageId: platformPackage.id,
+			packageId: platformPackageId,
 		},
 	})
 
 	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
-	mockModule.findPlatformPackageByRef.mockResolvedValueOnce({
-		record: platformPackage,
-		platformScope: 'kody',
-		ownerUserId: 'platform-user',
-	})
-	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(null)
-	await expect(
-		assertPackageCanAccessResolvedSecret(platformAccess),
-	).resolves.toBeUndefined()
-	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
-		expect.anything(),
-		{ userId: 'user-1', packageId: platformPackage.id },
-	)
-	expect(mockModule.findPlatformPackageByRef).toHaveBeenCalledWith(
-		expect.anything(),
-		{ idOrKodyId: platformPackage.id },
-	)
-	expect(mockModule.getCommunityForkByForkedPackageId).toHaveBeenCalledWith(
-		expect.anything(),
-		{ forkerUserId: 'user-1', forkedPackageId: platformPackage.id },
-	)
-
-	// Mutate still needs an allowed-packages grant after the platform lookup.
-	mockModule.getSavedPackageById.mockClear()
-	mockModule.findPlatformPackageByRef.mockClear()
-	mockModule.getCommunityForkByForkedPackageId.mockClear()
-	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
-	mockModule.findPlatformPackageByRef.mockResolvedValueOnce({
-		record: platformPackage,
-		platformScope: 'kody',
-		ownerUserId: 'platform-user',
-	})
-	await expect(
-		assertPackageCanAccessResolvedSecret(
-			accessInput({
-				intent: 'mutate',
-				storageContext: {
-					sessionId: null,
-					packageId: platformPackage.id,
-				},
-			}),
-		),
-	).rejects.toSatisfy((error: unknown) => {
-		expect(error).toBeInstanceOf(PackageSecretAccessDeniedError)
-		expect(error).toBeInstanceOf(McpCallerError)
-		expect(parsePackageAccessRequiredMessage((error as Error).message)).toEqual(
-			{
-				secretName: 'userToken',
-				packageName: 'notion',
-			},
-		)
-		return true
-	})
-	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
-
-	mockModule.getSavedPackageById.mockReset()
-	mockModule.findPlatformPackageByRef.mockReset()
-	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
-	mockModule.findPlatformPackageByRef.mockResolvedValueOnce(null)
 	await expect(
 		assertPackageCanAccessResolvedSecret(platformAccess),
 	).rejects.toSatisfy((error: unknown) => {
 		expect(error).toBeInstanceOf(PackageSecretAccessDeniedError)
 		expect((error as Error).message).toBe(
-			`Package "${platformPackage.id}" was not found for secret access.`,
+			`Package "${platformPackageId}" was not found for secret access.`,
 		)
 		return true
 	})
+	expect(mockModule.findPlatformPackageByRef).not.toHaveBeenCalled()
+	expect(mockModule.getCommunityForkByForkedPackageId).not.toHaveBeenCalled()
 
 	mockModule.getSavedPackageById.mockReset()
-	mockModule.findPlatformPackageByRef.mockReset()
 	mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValueOnce(null)
 	await expect(

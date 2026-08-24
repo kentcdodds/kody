@@ -65,6 +65,7 @@ export async function resolveSavedPackageBySpecifier(input: {
 	db: D1Database
 	userId: string
 	specifier: string
+	allowPlatformScopes?: boolean
 }): Promise<SavedPackageRecord | null> {
 	const parsed = parseKodyPackageSpecifier(input.specifier)
 	const cacheKey = `kody:${parsed.packageName}`
@@ -77,6 +78,7 @@ export async function resolveSavedPackageBySpecifier(input: {
 					db: input.db,
 					userId: input.userId,
 					specifier: parsed,
+					allowPlatformScopes: input.allowPlatformScopes,
 				})
 			)?.row ?? null,
 	})

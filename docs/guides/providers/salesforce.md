@@ -94,11 +94,12 @@ targets that connection instead of the default `salesforce` name.
 
 ## Verify
 
-After connecting, run the official smoke test from `execute` (pass
-`integrationName` when the connection is not named `salesforce`):
+After connecting, `community_fork` `@kody/salesforce` into your scope and run
+the fork's smoke test from `execute` (pass `integrationName` when the connection
+is not named `salesforce`):
 
 ```ts
-import smokeTest from 'kody:@kody/salesforce/smoke-test'
+import smokeTest from 'kody:@<your-username>/salesforce/smoke-test'
 
 export default async function main() {
 	return smokeTest()
