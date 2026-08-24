@@ -11,9 +11,9 @@ Production has two public HTTP entrypoints:
   email, and queue consumers. Runtime-owned paths (`/@{username}/packages/…`,
   package-invocation API, inline `/apps`) forward over the `RUNTIME_WORKER`
   service binding to `kody-runtime`.
-- **Package-app origin** (`kody.run` / `kodyapps.dev`) —
-  `packages/worker/src/runtime-worker.ts`. Zone routes on that script; the
-  origin handler does not see this host in production.
+- **Package-app origin** (`kody.run`; legacy `kodyapps.dev` dual-served until
+  issues 1300 and 1428) — `packages/worker/src/runtime-worker.ts`. Zone routes
+  on that script; the origin handler does not see this host in production.
 
 The routing order below is the **app-origin** handler.
 
@@ -87,8 +87,10 @@ Requests are handled in this order:
      ([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)). MCP
      `execute` looks up `KodyFetchGateway` on `ctx.exports` of the script that
      **owns** `MCP` — that is `kody-platform`. Origin
-     `/__maintenance/execute-smoke` uses origin `ctx.exports` and can pass while
-     MCP execute is broken if platform does not export the gateway.
+     `POST /__maintenance/execute-smoke` is **origin-only**: it uses origin
+     `ctx.exports` and returns `scope: "origin-only"`,
+     `proves: "origin-kody-fetch-gateway"`, and `notMcpExecute: true`. A passing
+     smoke does not prove MCP execute health.
 6. Public `@username` ingress handled in `packages/worker/src/index.ts` before
    the OAuth provider / app router (needs `ExecutionContext` for background
    work). Production forwards package-invocation and package-app paths to

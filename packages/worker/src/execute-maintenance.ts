@@ -13,6 +13,15 @@ const executeSmokeProviders = [
 	},
 ] as const
 
+/**
+ * Origin `/__maintenance/execute-smoke` proves this script's
+ * `ctx.exports.KodyFetchGateway` only. MCP `execute` looks up the gateway on
+ * `kody-platform` (the script that owns the `MCP` Durable Object). A passing
+ * origin smoke is not MCP execute health.
+ */
+export const executeSmokeScope = 'origin-only' as const
+export const executeSmokeProves = 'origin-kody-fetch-gateway' as const
+
 export async function runExecuteSmokeCheck(env: Env) {
 	if (!env.LOADER) {
 		throw new Error('Execute smoke check requires the LOADER binding.')
@@ -46,7 +55,12 @@ export async function runExecuteSmokeCheck(env: Env) {
 			`Execute smoke check returned unexpected result: ${getErrorMessage(result.result)}`,
 		)
 	}
-	return { result: result.result }
+	return {
+		result: result.result,
+		scope: executeSmokeScope,
+		proves: executeSmokeProves,
+		notMcpExecute: true,
+	}
 }
 
 export async function handleExecuteSmokeRequest(
@@ -56,7 +70,7 @@ export async function handleExecuteSmokeRequest(
 	return handleSecretMaintenanceRequest({
 		request,
 		secret: env.CAPABILITY_REINDEX_SECRET,
-		notConfiguredMessage: 'Execute smoke check is not configured',
+		notConfiguredMessage: 'Origin-only execute smoke check is not configured',
 		run: async () => await runExecuteSmokeCheck(env),
 	})
 }

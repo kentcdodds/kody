@@ -13,15 +13,15 @@ Production is four product scripts plus independent ops workers. Origin owns
 **zero** Durable Object classes
 ([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)).
 
-| Script                       | Public surface                                      | Owns                                                                                                                                               | Binds                                                           |
-| ---------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `kody-production` (origin)   | `kody.codes` (legacy `heykody.app` / `heykody.dev`) | Remix, MCP HTTP, OAuth, inbound email, queue consumers, `JobsHost`                                                                                 | Platform DOs, runtime DOs / workflows, `RUNTIME_WORKER`, `JOBS` |
-| `kody-platform`              | `/__platform/health` only                           | `MCP`, `McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`, `Mailbox`, `RepoSession`, `RepoSessionIndex`, `StripePlanRefresh`, `KodyFetchGateway` | Shared D1/KV/R2/AI; runtime DOs for package work                |
-| `kody-runtime`               | `kody.run` / `kodyapps.dev`; `/__runtime/health`    | `StorageRunner`, `RunLog`, `PackageRealtimeSession`, `DynamicCallableWorkflow`, `KodyFetchGateway`, `PackageAppRuntimeBridge`                      | Platform DOs, `JOBS`                                            |
-| `kody-jobs`                  | no public hostname                                  | `JobManager`, `JOBS_DB`, `kody-scheduled-dispatch`                                                                                                 | `HOST` → origin `JobsHost`                                      |
-| `kody-status`                | `status.kody.codes`                                 | `StatusStore`                                                                                                                                      | HTTP probes + `JOBS` service                                    |
-| `kody-nx-cache`              | `nx-cache.kody.codes`                               | R2 `kody-nx-cache`                                                                                                                                 | —                                                               |
-| `kody-production-d1-backups` | operator-only                                       | D1 backup / DR workflows                                                                                                                           | R2 `kody-production-backups`                                    |
+| Script                       | Public surface                                                                               | Owns                                                                                                                                               | Binds                                                           |
+| ---------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `kody-production` (origin)   | `kody.codes` (legacy hosts dual-served until #1300/#1428)                                    | Remix, MCP HTTP, OAuth, inbound email, queue consumers, `JobsHost`                                                                                 | Platform DOs, runtime DOs / workflows, `RUNTIME_WORKER`, `JOBS` |
+| `kody-platform`              | `/__platform/health` only                                                                    | `MCP`, `McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`, `Mailbox`, `RepoSession`, `RepoSessionIndex`, `StripePlanRefresh`, `KodyFetchGateway` | Shared D1/KV/R2/AI; runtime DOs for package work                |
+| `kody-runtime`               | `{user}.kody.run` (legacy `kodyapps.dev` dual-served until #1300/#1428); `/__runtime/health` | `StorageRunner`, `RunLog`, `PackageRealtimeSession`, `DynamicCallableWorkflow`, `KodyFetchGateway`, `PackageAppRuntimeBridge`                      | Platform DOs, `JOBS`                                            |
+| `kody-jobs`                  | no public hostname                                                                           | `JobManager`, `JOBS_DB`, `kody-scheduled-dispatch`                                                                                                 | `HOST` → origin `JobsHost`                                      |
+| `kody-status`                | `status.kody.codes`                                                                          | `StatusStore`                                                                                                                                      | HTTP probes + `JOBS` service                                    |
+| `kody-nx-cache`              | `nx-cache.kody.codes`                                                                        | R2 `kody-nx-cache`                                                                                                                                 | —                                                               |
+| `kody-production-d1-backups` | operator-only                                                                                | D1 backup / DR workflows                                                                                                                           | R2 `kody-production-backups`                                    |
 
 Local `npm run dev` attaches origin, platform, runtime, and jobs in one
 Miniflare. Playwright `CLOUDFLARE_ENV=test` is the exception: Durable Object
@@ -33,8 +33,10 @@ origin and platform because MCP `coding_guide_get` bundles those files.
 
 MCP `execute` resolves `KodyFetchGateway` from `ctx.exports` on the script that
 owns the `MCP` Durable Object (`kody-platform`). Origin
-`/__maintenance/execute-smoke` uses origin `ctx.exports` and can pass while MCP
-execute is broken.
+`POST /__maintenance/execute-smoke` is **origin-only**: it uses origin
+`ctx.exports` and returns `scope: "origin-only"`,
+`proves: "origin-kody-fetch-gateway"`, and `notMcpExecute: true`. A passing
+smoke does not prove MCP execute health.
 
 ## Core docs
 
