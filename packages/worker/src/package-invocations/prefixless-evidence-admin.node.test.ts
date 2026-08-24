@@ -57,17 +57,33 @@ test('admin evidence aggregates paged UserMeters without identifiers and marks a
 
 	expect(result).toEqual({
 		epoch: packageInvokePrefixlessEvidenceEpoch,
-		totals: { execute: 49, package: 98, job: 147, app: 196 },
+		totals: { execute: 50, package: 100, job: 150, app: 200 },
 		population: {
-			usersExpected: 51,
-			usersEnumerated: 51,
-			usersAttempted: 51,
-			usersLoaded: 49,
+			usersExpected: 52,
+			usersEnumerated: 52,
+			usersAttempted: 52,
+			usersLoaded: 50,
 			usersMissingEpoch: 1,
 			usersUnreachable: 1,
+			usersDeleting: 1,
 			pagesScanned: 2,
+			populationVersion: expect.stringMatching(/^[a-f0-9]{64}$/),
 			complete: false,
 		},
 	})
 	expect(JSON.stringify(result)).not.toContain('private-user')
+
+	sqlite.exec(`DELETE FROM users WHERE id = 1000`)
+	const afterDeletion = await loadPackageInvokePrefixlessEvidenceAggregate({
+		APP_DB: createD1FromSqlite(sqlite),
+		USER_METER: namespace,
+	})
+	expect(afterDeletion.population).toMatchObject({
+		usersExpected: 51,
+		usersEnumerated: 51,
+		usersDeleting: 0,
+	})
+	expect(afterDeletion.population.populationVersion).not.toBe(
+		result.population.populationVersion,
+	)
 })

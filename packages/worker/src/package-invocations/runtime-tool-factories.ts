@@ -130,6 +130,7 @@ function createPackageInvokeTools(input: {
 				surface,
 			})
 		}
+		throwIfPackageInvokeAborted(signal)
 		const request = canonicalizeValidatedPackageInvokeInput(validatedRequest)
 		const check = await checkPackageInvokeForRuntimeWithPreloads({
 			env: input.env,

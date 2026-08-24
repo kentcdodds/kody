@@ -76,14 +76,18 @@ UserMeter with bounded page fan-out, and returns only:
 - global `execute`, `package`, `job`, and `app` totals; and
 - population/accounting fields (`usersExpected`, `usersEnumerated`,
   `usersAttempted`, `usersLoaded`, `usersMissingEpoch`, `usersUnreachable`,
-  `pagesScanned`, and `complete`).
+  `usersDeleting`, `pagesScanned`, a cryptographic `populationVersion`, and
+  `complete`).
 
 It returns no user rows or identifiers. A missing epoch, failed UserMeter RPC,
-missing binding, or population mismatch makes `complete = false`; those users
-are never treated as zero. Immediately after production deployment, capture a
-baseline with `complete = true` and all four totals at zero. Any nonzero total
-blocks cutover. If a reset is needed, deploy a new epoch and capture a new
-complete zero baseline; do not clear or reuse an epoch in place.
+missing binding, in-progress account deletion, or population mismatch makes
+`complete = false`; those users are never treated as zero. The population
+fingerprint must remain identical from baseline through final check, so a
+completed deletion or new account cannot silently change the denominator.
+Immediately after production deployment, capture a baseline with
+`complete = true` and all four totals at zero. Any nonzero total or population
+change blocks cutover. Deploy a new epoch and capture a new complete zero
+baseline; do not clear or reuse an epoch in place.
 
 ## Fixed-window query procedure
 
@@ -119,8 +123,9 @@ before moving to the next:
 
 1. Inspect every returned row, including sampled rows. Any observed `prefixless`
    row with `retained_calls > 0` fails and restarts the entire telemetry gate.
-   Reset every surface's confidence accumulator and resume with the next fixed
-   window.
+   Deploy a new UserMeter epoch, capture a complete zero baseline, reset every
+   surface's confidence accumulator, and restart fixed windows after that
+   baseline.
 2. For each surface, take the maximum `max_sample_interval` across its form
    rows. A window with at least one row and a maximum of `1` may contribute
    retained `kody_prefixed` liveness counts for that surface. This selection
@@ -131,8 +136,11 @@ before moving to the next:
    make this grouped query absence-capable.
 4. Zero-prefixless confidence comes only from the exact UserMeter aggregate.
    Every aggregate from the production baseline through the final window check
-   must use the same epoch, report `complete = true`, and keep every surface
-   total at zero. Windows before that baseline remain reporting-only.
+   must use the same epoch and population version, report `complete = true`, and
+   keep every surface total at zero. If any exact total or the population
+   version changes, deploy a new epoch, capture a complete zero baseline, and
+   restart fixed windows after that baseline. Windows before that baseline
+   remain reporting-only.
 5. Sampled or missing surface-windows add no confidence counts, but remain in
    the ordered evidence ledger. Sum `weighted_calls` by surface/form for
    reporting only; weighted values never enter the confidence gate.

@@ -32,7 +32,9 @@ test('package-invoke evidence endpoint is admin-only and returns only aggregate 
 			usersLoaded: 2,
 			usersMissingEpoch: 0,
 			usersUnreachable: 0,
+			usersDeleting: 0,
 			pagesScanned: 1,
+			populationVersion: 'population-version',
 			complete: true,
 		},
 	}

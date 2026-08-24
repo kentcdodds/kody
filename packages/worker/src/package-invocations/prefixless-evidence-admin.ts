@@ -10,6 +10,7 @@ export const packageInvokeEvidenceAdminPageSize = 50
 type EvidenceUserRow = {
 	id: string
 	stable_user_id: string
+	deleting_at: string | null
 }
 
 export type PackageInvokePrefixlessEvidenceAggregate = {
@@ -22,9 +23,23 @@ export type PackageInvokePrefixlessEvidenceAggregate = {
 		usersLoaded: number
 		usersMissingEpoch: number
 		usersUnreachable: number
+		usersDeleting: number
 		pagesScanned: number
+		populationVersion: string
 		complete: boolean
 	}
+}
+
+async function hashEvidencePopulation(
+	stableUserIds: ReadonlyArray<string>,
+): Promise<string> {
+	const encoded = new TextEncoder().encode(
+		stableUserIds.map((userId) => `${userId.length}:${userId}`).join('|'),
+	)
+	const digest = await crypto.subtle.digest('SHA-256', encoded)
+	return Array.from(new Uint8Array(digest), (byte) =>
+		byte.toString(16).padStart(2, '0'),
+	).join('')
 }
 
 async function listEvidenceUsersPage(input: {
@@ -35,10 +50,9 @@ async function listEvidenceUsersPage(input: {
 	if (input.startAfterId) {
 		statement = input.db
 			.prepare(
-				`SELECT id, stable_user_id
+				`SELECT id, stable_user_id, deleting_at
 				 FROM users
-				 WHERE deleting_at IS NULL
-				   AND stable_user_id IS NOT NULL
+				 WHERE stable_user_id IS NOT NULL
 				   AND stable_user_id != ''
 				   AND id > ?
 				 ORDER BY id ASC
@@ -48,10 +62,9 @@ async function listEvidenceUsersPage(input: {
 	} else {
 		statement = input.db
 			.prepare(
-				`SELECT id, stable_user_id
+				`SELECT id, stable_user_id, deleting_at
 				 FROM users
-				 WHERE deleting_at IS NULL
-				   AND stable_user_id IS NOT NULL
+				 WHERE stable_user_id IS NOT NULL
 				   AND stable_user_id != ''
 				 ORDER BY id ASC
 				 LIMIT ?`,
@@ -69,8 +82,7 @@ export async function loadPackageInvokePrefixlessEvidenceAggregate(
 	const expectedRow = await env.APP_DB.prepare(
 		`SELECT COUNT(*) AS count
 		 FROM users
-		 WHERE deleting_at IS NULL
-		   AND stable_user_id IS NOT NULL
+		 WHERE stable_user_id IS NOT NULL
 		   AND stable_user_id != ''`,
 	).first<{ count: number }>()
 	const usersExpected = Math.max(0, Number(expectedRow?.count) || 0)
@@ -80,8 +92,10 @@ export async function loadPackageInvokePrefixlessEvidenceAggregate(
 	let usersLoaded = 0
 	let usersMissingEpoch = 0
 	let usersUnreachable = 0
+	let usersDeleting = 0
 	let pagesScanned = 0
 	let startAfterId: string | null = null
+	const populationUserIds: Array<string> = []
 
 	while (true) {
 		const users = await listEvidenceUsersPage({
@@ -92,6 +106,8 @@ export async function loadPackageInvokePrefixlessEvidenceAggregate(
 		pagesScanned += 1
 		usersEnumerated += users.length
 		usersAttempted += users.length
+		usersDeleting += users.filter((user) => user.deleting_at != null).length
+		populationUserIds.push(...users.map((user) => user.stable_user_id))
 
 		const reads = await Promise.allSettled(
 			users.map((user) =>
@@ -124,12 +140,14 @@ export async function loadPackageInvokePrefixlessEvidenceAggregate(
 		startAfterId = last.id
 	}
 
+	const populationVersion = await hashEvidencePopulation(populationUserIds)
 	const complete =
 		usersEnumerated === usersExpected &&
 		usersAttempted === usersExpected &&
 		usersLoaded === usersExpected &&
 		usersMissingEpoch === 0 &&
-		usersUnreachable === 0
+		usersUnreachable === 0 &&
+		usersDeleting === 0
 	return {
 		epoch: packageInvokePrefixlessEvidenceEpoch,
 		totals,
@@ -140,7 +158,9 @@ export async function loadPackageInvokePrefixlessEvidenceAggregate(
 			usersLoaded,
 			usersMissingEpoch,
 			usersUnreachable,
+			usersDeleting,
 			pagesScanned,
+			populationVersion,
 			complete,
 		},
 	}

@@ -224,4 +224,21 @@ test('prefixed calls add no UserMeter RPC and prefixless evidence failure is fai
 		epoch: packageInvokePrefixlessEvidenceEpoch,
 		surface: 'execute',
 	})
+
+	recordPackageInvokePrefixless.mockReset()
+	const controller = new AbortController()
+	recordPackageInvokePrefixless.mockImplementation(async () => {
+		controller.abort(new Error('cancelled after evidence'))
+		return { recorded: true }
+	})
+	await expect(
+		tools.invoke(
+			{
+				specifier: '@owner/package/export',
+				options: {},
+			},
+			controller.signal,
+		),
+	).rejects.toThrow('cancelled after evidence')
+	expect(recordPackageInvokePrefixless).toHaveBeenCalledTimes(1)
 })

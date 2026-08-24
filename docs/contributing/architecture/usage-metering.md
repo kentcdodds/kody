@@ -202,7 +202,9 @@ deployment-epoch row by coarse surface (`execute`, `package`, `job`, or `app`)
 before canonicalization; recording failure fails that deprecated call. Canonical
 `kody:` calls perform no new Durable Object RPC. The admin-only aggregate pages
 the relevant user population and reports only global totals and accounting
-completeness. See
+completeness. A cryptographic population fingerprint must stay unchanged across
+the gate; in-progress deletion is incomplete, and a completed deletion or signup
+changes the fingerprint instead of silently changing the denominator. See
 [the migration runbook](../package-invoke-prefix-migration.md).
 
 ## Agent package popularity (MCP instructions hint)
