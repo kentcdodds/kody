@@ -1950,7 +1950,9 @@ test('syncPackageJobsForPackage enforces scheduled job entitlements for plan use
 		packageId: 'below-max-package',
 	})
 	if (isEntitlementLimitError(belowMaxJob)) {
-		throw new Error('Expected package job sync below the max ceiling to succeed.')
+		throw new Error(
+			'Expected package job sync below the max ceiling to succeed.',
+		)
 	}
 	expect(belowMaxJob).toMatchObject({ name: 'quota-job' })
 
