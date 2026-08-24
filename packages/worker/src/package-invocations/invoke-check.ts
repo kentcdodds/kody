@@ -16,6 +16,7 @@ import {
 	buildNormalizedPackageInvokeInput,
 	parsePackageInvokeInput,
 } from './input-parsing.ts'
+import { loadPlatformAccountFlagWithFreshnessCache } from './invoke-contract-cache.ts'
 import {
 	ensureModuleArtifact,
 	loadInvokeManifestBySourceId,
@@ -101,10 +102,12 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	}
 	const exportName = normalizeExportName(request.exportName)
 	const invoke = buildNormalizedPackageInvokeInput({ request, exportName })
-	const callerIsPlatformAccount = await isPlatformAccountStableUserId(
-		input.env.APP_DB,
-		input.userId,
-	)
+	const callerIsPlatformAccount =
+		await loadPlatformAccountFlagWithFreshnessCache({
+			userId: input.userId,
+			load: () =>
+				isPlatformAccountStableUserId(input.env.APP_DB, input.userId),
+		})
 	const savedPackage = await resolveSavedPackageBySpecifier({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -147,7 +150,15 @@ export async function checkPackageInvokeForRuntimeWithPreloads(input: {
 	}
 	if (
 		!callerIsPlatformAccount &&
-		(await isPlatformAccountStableUserId(input.env.APP_DB, savedPackage.userId))
+		savedPackage.userId !== input.userId &&
+		(await loadPlatformAccountFlagWithFreshnessCache({
+			userId: savedPackage.userId,
+			load: () =>
+				isPlatformAccountStableUserId(
+					input.env.APP_DB,
+					savedPackage.userId,
+				),
+		}))
 	) {
 		const message = formatPersonPackagePlatformDependencyMessage(
 			savedPackage.name,

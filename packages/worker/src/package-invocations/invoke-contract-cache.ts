@@ -11,12 +11,14 @@ import { type EntitySourceRow } from '#worker/repo/types.ts'
  *
  * Two tiers with different lifetimes:
  *
- * - **Freshness tier** (saved-package row, entity-source row): these rows can
- *   change on republish/rename, so they carry a short TTL. That TTL is the
- *   cross-isolate republish staleness bound; the isolate that runs the
- *   projection refresh also invalidates eagerly, so it picks the new publish
- *   up immediately. Misses are never retained — a package saved moments later
- *   is visible on the next lookup.
+ * - **Freshness tier** (saved-package row, entity-source row, platform-account
+ *   flag): these rows can change on republish/rename, so they carry a short
+ *   TTL. That TTL is the cross-isolate republish staleness bound; the isolate
+ *   that runs the projection refresh also invalidates eagerly, so it picks
+ *   the new publish up immediately. Misses are never retained — a package
+ *   saved moments later is visible on the next lookup. The platform-account
+ *   flag is stable for an isolate lifetime in practice; the TTL only keeps it
+ *   on the same freshness clock as the other invoke lookups.
  * - **Commit tier** (prepared bundle artifact): keyed by the published commit
  *   taken from the freshness tier, and a published commit's artifact is
  *   immutable, so entries here are never a staleness source. The TTL only
@@ -63,6 +65,7 @@ function createArtifactCache() {
 
 let savedPackageCache = createFreshnessCache<SavedPackageRecord | null>()
 let sourceRowCache = createFreshnessCache<EntitySourceRow>()
+let platformAccountFlagCache = createFreshnessCache<boolean>()
 let moduleArtifactCache = createArtifactCache()
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
@@ -111,6 +114,10 @@ function sourceRowCacheKey(input: { userId: string; sourceId: string }) {
 	return JSON.stringify(['source-row', input.userId, input.sourceId])
 }
 
+function platformAccountFlagCacheKey(userId: string) {
+	return JSON.stringify(['platform-account', userId])
+}
+
 export async function resolveSavedPackageWithFreshnessCache(input: {
 	userId: string
 	packageIdOrKodyId: string
@@ -140,6 +147,16 @@ export async function loadSourceRowWithFreshnessCache(input: {
 	return await sourceRowCache.getOrCreate({
 		cacheKey: sourceRowCacheKey(input),
 		create: async () => deepFreeze(await input.load()),
+	})
+}
+
+export async function loadPlatformAccountFlagWithFreshnessCache(input: {
+	userId: string
+	load: () => Promise<boolean>
+}): Promise<boolean> {
+	return await platformAccountFlagCache.getOrCreate({
+		cacheKey: platformAccountFlagCacheKey(input.userId),
+		create: input.load,
 	})
 }
 
@@ -218,5 +235,6 @@ export function invalidateInvokeContractFreshness(input: {
 export function clearInvokeContractCachesForTests() {
 	savedPackageCache = createFreshnessCache<SavedPackageRecord | null>()
 	sourceRowCache = createFreshnessCache<EntitySourceRow>()
+	platformAccountFlagCache = createFreshnessCache<boolean>()
 	moduleArtifactCache = createArtifactCache()
 }
