@@ -39,8 +39,8 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
   the remote server is actually 2025-era. Restore and reconnect drop persisted
   2025 `sessionId` / `protocolVersion` / `discoverResult` values and rewrite
   stored `client.versionNegotiation` to `{ mode: 'auto' }` so a stored 2025
-  session or a persisted `legacy` negotiation mode cannot skip the modern
-  probe or DELETE a session against a modern-only server
+  session or a persisted `legacy` negotiation mode cannot skip the modern probe
+  or DELETE a session against a modern-only server
   (`packages/worker/src/mcp-client/restore.ts`,
   `packages/worker/src/mcp-client/reconnect.ts`). Header-mismatch,
   unauthenticated, and `-32022` UnsupportedProtocolVersion probe outcomes are
