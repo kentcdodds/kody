@@ -14,9 +14,9 @@
  * ticker shows `end` immediately — wobble math cannot use a negative delta.
  * A frozen client snaps to the official integer instead of replaying missed
  * steps. When leftover budget cannot support a 3-second integer backbone,
- * the client moves honest progress toward the next tick instead of inventing
- * +1s. A client that cannot paint a next tick waits until `updateAt`, then
- * refetches `/code-runs.json` instead of polling a still pair.
+ * the displayed integer sits until the next real +1. A client that cannot
+ * paint a next tick waits until `updateAt`, then refetches
+ * `/code-runs.json` instead of polling a still pair.
  */
 
 export const publicCodeRunsWindowMs = 24 * 60 * 60 * 1000
@@ -97,44 +97,6 @@ export function msUntilNextCodeRunsCount(
 		else lo = mid + 1
 	}
 	return lo - nowMs
-}
-
-/**
- * Honest 0–1 progress from the last integer to the next. Zero when there is
- * no next tick (still pair, window ended, regression, or already at end).
- */
-export function codeRunsProgressToNext(
-	window: PublicCodeRunsWindow,
-	nowMs: number,
-): number {
-	const wait = msUntilNextCodeRunsCount(window, nowMs)
-	if (wait == null || wait <= 0) return 0
-	const bounds = windowBounds(window)
-	if (!bounds || nowMs <= bounds.startMs) return 0
-	const here = interpolateCodeRunsCount(window, nowMs)
-	let lo = bounds.startMs
-	let hi = nowMs
-	while (lo < hi) {
-		const mid = lo + Math.floor((hi - lo) / 2)
-		if (interpolateCodeRunsCount(window, mid) < here) lo = mid + 1
-		else hi = mid
-	}
-	const gap = nowMs - lo + wait
-	if (gap <= 0) return 0
-	return Math.min(1, (nowMs - lo) / gap)
-}
-
-/**
- * When to repaint so something honest moves at least every honesty slot.
- * Integer cadence wins when the next +1 is sooner than that.
- */
-export function msUntilNextCodeRunsPaint(
-	window: PublicCodeRunsWindow,
-	nowMs: number,
-): number | null {
-	const wait = msUntilNextCodeRunsCount(window, nowMs)
-	if (wait == null) return null
-	return Math.min(wait, codeRunsHonestySlotMs)
 }
 
 /** Milliseconds until the cached triple should be replaced. */
