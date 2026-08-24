@@ -1,6 +1,8 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
 import { type Handle, css } from 'remix/ui'
+import { communityStatusPillBoxCss } from '#universal/community-status-pill.ts'
+import { hoverMq } from '#universal/styles/style-primitives.ts'
 import {
 	colors,
 	radius,
@@ -8,8 +10,6 @@ import {
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
-import { communityStatusPillBoxCss } from '#universal/community-status-pill.ts'
-import { hoverMq } from '#universal/styles/style-primitives.ts'
 
 export const COPY_PROMPT_ATTRIBUTE = 'data-copy-prompt'
 export const COPY_PROMPT_SELECTOR = '[data-copy-prompt]'
