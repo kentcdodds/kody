@@ -74,3 +74,11 @@ immediately.
 Edit [`tools/site-perf/budget.json`](../../tools/site-perf/budget.json) when the
 live site has a new honest baseline. Bump a threshold only after the change is
 on production and the collector agrees.
+
+`htmlBytes` counts the full anonymous document, including the intentionally
+inlined `styles.css` `<style>` block (see
+[`inline-stylesheet.ts`](../../packages/worker/src/app/inline-stylesheet.ts)).
+That trade removes a render-blocking stylesheet round trip; do not "fix" an
+`html-over-budget` finding by switching back to a `<link rel="stylesheet">`
+without a product call. When landing CSS grows for real product work, raise
+`htmlBytes` to the new honest production size instead.
