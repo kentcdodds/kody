@@ -116,15 +116,13 @@ the stored mark. `listFeaturedCommunityListings` feeds the onboarding page (slim
 badge on the detail page, the admin-only toggle
 (`POST /community/:listingId/feature.json`, audited), the admin-only
 `community_set_featured` capability, and onboarding Steps 2–3: Step 2 offers
-official workspace MCP servers (Notion, Linear, Atlassian, Stripe, Sentry,
-Canva) plus the matching `@kody/*-mcp` helper, a custom MCP URL, Just-try-Kody
-zero-auth examples, or skip as the quicker first-value path. Prefer official
-non-MCP API packages (`@kody/notion`, `@kody/linear`, `@kody/jira`,
-`@kody/stripe`, `@kody/sentry`, `@kody/canva`) for reusable integrations — do
-not convert them to MCP-first. Step 3 leads with an ad hoc execute → persist
-prompt, then puts non-example featured starters under Advanced (Install then
-Copy prompt, with Choose your own adventure). Step 2 Connect also forks the
-matching `@kody/*-mcp` listing automatically. Signed-in onboarding, `/community`
+official one-click access (Notion, Linear, Atlassian, Stripe, Sentry, Canva)
+plus the matching `@kody/*-mcp` helper, a custom MCP URL, Advanced provider
+guides, Just-try-Kody zero-auth examples, or skip as the quicker first-value
+path. Official `@kody/*` listings are catalog and fork source — person accounts
+run the owned copy, not the platform package. Step 3 leads with an ad hoc
+execute → persist prompt. Step 2 Connect forks the matching `@kody/*-mcp`
+listing automatically. Signed-in onboarding, `/community`
 cards, and listing detail overlay a per-request `viewerInstall` when the viewer
 already has a matching `kody_id` saved package or a `community_forks` row for
 that listing, so those surfaces show Copy prompt instead of Install. Listing

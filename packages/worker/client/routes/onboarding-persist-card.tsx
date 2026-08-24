@@ -15,7 +15,7 @@ type OnboardingPersistCardProps = {
 
 /**
  * Step 3 lead: copy the ad hoc → persist prompt after the person connected
- * a workspace MCP, installed a Just-try-Kody example, or skipped.
+ * access, installed a Just-try-Kody example, or skipped.
  */
 export function OnboardingPersistCard(
 	handle: Handle<OnboardingPersistCardProps>,

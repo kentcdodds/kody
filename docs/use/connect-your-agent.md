@@ -65,17 +65,18 @@ Manual on Get started has one tab per host. Use those when you are not running
   Authenticate. Manual includes
   `claude mcp add --transport http -s user kody <url>`, or a `.mcp.json` entry
   with `"type": "http"`.
-- **ChatGPT** — On an
+- **ChatGPT.com** — This is the web app. On an
   [eligible paid plan (Plus, Pro, Business, Enterprise, or Education)](https://developers.openai.com/api/docs/guides/developer-mode),
-  turn on Developer mode on the web (Settings → Security and login), then create
-  an app under Settings → Plugins → Browse plugins → Create app with the MCP
-  URL. In a managed workspace, ask an admin to enable access if the setting or
-  Plugins UI is missing. You can use the site favicon (`/apple-touch-icon.png`)
-  for the app icon; the owner can edit a developer-mode app's name and logo
-  later from Manage in Apps settings.
-- **Codex** — After the CLI writes the shared config, run `codex mcp login kody`
-  if OAuth does not start. Manual includes `codex mcp add kody --url <url>` and
-  the shared `~/.codex/config.toml` `[mcp_servers.kody]` `url` entry.
+  turn on Developer mode (Settings → Security and login), then create an app
+  under Settings → Plugins → Browse plugins → Create app with the MCP URL. In a
+  managed workspace, ask an admin to enable access if the setting or Plugins UI
+  is missing. You can use the site favicon (`/apple-touch-icon.png`) for the app
+  icon; the owner can edit a developer-mode app's name and logo later from
+  Manage in Apps settings. ChatGPT desktop is Codex — use that entry instead.
+- **Codex** — ChatGPT desktop is Codex. After the CLI writes the shared config,
+  run `codex mcp login kody` if OAuth does not start. Manual includes
+  `codex mcp add kody --url <url>` and the shared `~/.codex/config.toml`
+  `[mcp_servers.kody]` `url` entry.
 - **OpenCode** — After the CLI writes the remote entry, run
   `opencode mcp auth kody` if prompted. Manual includes
   `opencode mcp add kody --url <url>` and a `mcp.kody` remote entry in
@@ -102,25 +103,24 @@ Manual on Get started has one tab per host. Use those when you are not running
 ### Coding vs non-coding agents
 
 Using Kody packages works great with non-coding agents such as Claude Desktop,
-ChatGPT, Grok.com, and the GitHub Copilot app. For creating or editing packages,
-a coding agent (Cursor, Claude Code, Codex, Grok CLI, Copilot, OpenCode, and
-similar) is usually smoother because those hosts can edit files and iterate on
-code more easily.
+ChatGPT.com, Grok.com, and the GitHub Copilot app. For creating or editing
+packages, a coding agent (Cursor, Claude Code, Codex / ChatGPT desktop, Grok
+CLI, Copilot, OpenCode, and similar) is usually smoother because those hosts
+can edit files and iterate on code more easily.
 
-## Connect a workspace MCP, then persist a first build
+## Give Kody Access, then persist a first build
 
-After the connection works, Get started Step 2 offers official remote MCP
-servers for Notion, Linear, Atlassian, Stripe, Sentry, and Canva. Connect
-authorizes the server and forks the matching `@kody/*-mcp` helper. You can also
-add a custom MCP URL, try a zero-auth example, or skip. MCP is the quicker
-first-value path. Prefer the official non-MCP API packages (`@kody/notion`,
-`@kody/linear`, `@kody/jira`, `@kody/stripe`, `@kody/sentry`, `@kody/canva`) for
-reusable integrations — do not convert them to MCP-first.
+After the connection works, Get started Step 2 is **Give Kody Access**: official
+one-click login for Notion, Linear, Atlassian, Stripe, Sentry, and Canva.
+Connect authorizes the service and copies the matching official helper into
+your account. You run that owned copy — official `@kody/*` listings are a
+catalog, not something a person account invokes live. You can also add a custom
+server, follow an Advanced provider guide (GitHub, Google), try a zero-auth
+example, or skip.
 
 Step 3 copies a prompt that asks your agent to run one ad hoc request, then
-persist that working code as a package you own. Featured starters stay under
-Advanced. If nothing fits, use **Choose your own adventure** to copy an
-open-ended setup prompt.
+persist that working code as a package you own. If nothing fits, use **Choose
+your own adventure** to copy an open-ended setup prompt.
 
 ## Where to go next
 

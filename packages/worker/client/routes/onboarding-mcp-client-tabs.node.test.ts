@@ -46,6 +46,9 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	expect(manualBlock).toContain(buildCopilotCliAddCommand(defaultKodyMcpUrl))
 	expect(manualBlock).toContain('Add to Cursor')
 	expect(manualBlock).toContain('Add to VS Code')
+	expect(manualBlock).toContain('ChatGPT.com')
+	expect(manualBlock).toContain('chatgpt.com')
+	expect(manualBlock).toContain('ChatGPT desktop is Codex')
 
 	const previewHtml = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
