@@ -21,6 +21,7 @@ import {
 } from '#client/action-button-loader.tsx'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { decideCommunityInstallClick } from '#client/routes/community-detail-install.ts'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
@@ -649,13 +650,27 @@ export function CommunityDetailRoute(handle: Handle) {
 		const control = target.closest('[data-community-install]')
 		if (!control || control instanceof HTMLAnchorElement) return
 		event.preventDefault()
-		if (control.getAttribute('data-trusted') === 'true') {
-			void submitInstall()
-			return
+		const decision = decideCommunityInstallClick({
+			installState,
+			alreadyInstalled: installOutcome != null,
+			listingTrusted: trusted,
+		})
+		switch (decision) {
+			case 'ignore':
+				return
+			case 'submit':
+				void submitInstall()
+				return
+			case 'confirm':
+				installState = 'confirming'
+				installMessage = null
+				handle.update()
+				return
+			default: {
+				const exhaustive: never = decision
+				throw new Error(`Unhandled install click: ${String(exhaustive)}`)
+			}
 		}
-		installState = 'confirming'
-		installMessage = null
-		handle.update()
 	}
 
 	listenToRouterNavigation(handle, () => {
