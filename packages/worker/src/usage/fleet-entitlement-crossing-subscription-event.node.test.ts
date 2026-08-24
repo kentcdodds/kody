@@ -73,4 +73,25 @@ test('fleet entitlement crossing builders keep a metadata-only operator snapshot
 	).toBe(
 		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:runtime_duration:2026-08:package-1',
 	)
+
+	const daily = buildFleetEntitlementResourceCrossedEvent({
+		user: entitlement.user,
+		resource: 'execute_calls_per_day',
+		label: 'execute calls per day',
+		threshold: 'reached',
+		current: 250,
+		limit: 250,
+		percentOfLimit: 1,
+		insightsUrl: entitlement.insights_url,
+		usersUrl: entitlement.users_url,
+		observedAt: entitlement.observed_at,
+	})
+	expect(
+		buildFleetEntitlementCrossingIdempotencyKey({
+			event: daily,
+			packageId: 'package-1',
+		}),
+	).toBe(
+		'fleet-entitlement-crossing:fleet.entitlement.crossed:user-1:entitlement:reached:execute_calls_per_day:2026-08-24:package-1',
+	)
 })

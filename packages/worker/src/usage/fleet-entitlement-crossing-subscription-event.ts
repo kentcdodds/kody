@@ -1,3 +1,4 @@
+import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import { type AdminUsageEntitlementResource } from '#universal/loader-data.ts'
 
 export const fleetEntitlementCrossedTopic = 'fleet.entitlement.crossed'
@@ -114,8 +115,12 @@ export function buildFleetEntitlementCrossingIdempotencyKey(input: {
 	packageId: string
 }) {
 	switch (input.event.kind) {
-		case 'entitlement':
-			return `fleet-entitlement-crossing:${input.event.event}:${input.event.user.id}:${input.event.kind}:${input.event.threshold}:${input.event.resource}:${input.packageId}`
+		case 'entitlement': {
+			const dailySuffix = input.event.resource.endsWith('_per_day')
+				? `:${isoTimestampDayKey(input.event.observed_at)}`
+				: ''
+			return `fleet-entitlement-crossing:${input.event.event}:${input.event.user.id}:${input.event.kind}:${input.event.threshold}:${input.event.resource}${dailySuffix}:${input.packageId}`
+		}
 		case 'runtime_duration':
 			return `fleet-entitlement-crossing:${input.event.event}:${input.event.user.id}:${input.event.kind}:${input.event.observed_at.slice(0, 7)}:${input.packageId}`
 		default: {

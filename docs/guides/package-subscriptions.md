@@ -1050,8 +1050,8 @@ type FleetEntitlementCrossedEvent =
 `user.id` is the stable account user id. `insights_url` and `users_url` are
 operator dashboards. Timestamps are ISO-8601 UTC. The event omits emails, plan
 names, secrets, package source, and unrelated account content. Idempotency keys
-include the topic, user id, crossing kind, threshold or UTC month, resource, and
-subscriber package id.
+include the topic, user id, crossing kind, threshold or UTC month, resource, UTC
+day for `*_per_day` resources, and subscriber package id.
 
 Use this topic for notifier packages that send an operator message (for example
 Discord) when an account first crosses a plan limit. Do not treat this topic as
