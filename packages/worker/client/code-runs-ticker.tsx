@@ -153,8 +153,10 @@ export function CodeRunsTicker(
 			},
 			{ signal: handle.signal },
 		)
-		scheduleNext()
-		rafId = requestAnimationFrame(onFrame)
+		handle.queueTask(() => {
+			scheduleNext()
+			rafId = requestAnimationFrame(onFrame)
+		})
 		handle.signal.addEventListener(
 			'abort',
 			() => {
