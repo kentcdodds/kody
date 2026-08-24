@@ -86,7 +86,7 @@ function createEnv(input: {
 }) {
 	return {
 		APP_DB: createDb(input.users),
-		APP_BASE_URL: 'https://heykody.dev/',
+		APP_BASE_URL: 'https://kody.codes/',
 		CLOUDFLARE_ACCOUNT_ID: 'acct',
 		CLOUDFLARE_API_TOKEN: 'token',
 		BUNDLE_ARTIFACTS_KV: input.kv,
@@ -144,17 +144,17 @@ test('user entitlement warnings send one 80% email and one 100% email per UTC da
 		text: string
 	}
 	expect(approachingPayload.to).toBe('jelias@example.com')
-	expect(approachingPayload.from).toBe('kody@heykody.dev')
+	expect(approachingPayload.from).toBe('kody@kody.codes')
 	expect(approachingPayload.subject).toContain('approaching')
 	expect(approachingPayload.html).toContain(
-		'https://heykody.dev/account/billing',
+		'https://kody.codes/account/billing',
 	)
-	expect(approachingPayload.text).toContain('https://heykody.dev/account/usage')
+	expect(approachingPayload.text).toContain('https://kody.codes/account/usage')
 	expect(approachingPayload.html).toContain('execute calls per day')
 	expect(approachingPayload.html).toContain('saved packages')
 	expect(approachingPayload.html).not.toContain('secrets')
 	expect(approachingPayload.html).toContain(
-		'https://heykody.dev/images/kody-lantern.png',
+		'https://kody.codes/images/kody-lantern.png',
 	)
 
 	const approachingKey = userEntitlementWarningKvKey({

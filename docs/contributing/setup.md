@@ -46,11 +46,12 @@ Quick notes for getting a local kody environment running.
   clone/pull/push flows need a real Git-capable Artifacts remote and are not
   fully simulated by the local mock. Password reset and email-verification
   messages send through the same Cloudflare Email API helper. Both send from
-  `kody@<SYSTEM_EMAIL_DOMAIN>` (falling back to the `APP_BASE_URL` hostname) and
-  put that same sending domain on action and asset links, so a legacy
-  `APP_BASE_URL` cannot pin `heykody.dev` into the message. Local `npm run dev`
-  keeps those action and asset links on the request origin so they stay
-  clickable. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock
+  `kody@<SYSTEM_EMAIL_DOMAIN>` (falling back to the worker's `APP_BASE_URL`
+  hostname) and put action and asset links on that worker origin. A leftover
+  `heykody.app` / `heykody.dev` origin remaps to `SYSTEM_EMAIL_DOMAIN` when set,
+  otherwise `kody.codes`, so live mail cannot keep the retired hosts. Local
+  `npm run dev` keeps those action and asset links on the request origin so they
+  stay clickable. Set `SKIP_CLOUDFLARE_MOCK=1` to skip the local Cloudflare mock
   entirely. The main worker streams logs live; the client bundle and background
   mock workers buffer logs and only print them if that child process exits with
   an error.
