@@ -4,7 +4,7 @@ import { tokenizeSnippet } from './tokenize.ts'
 test('tokenizes known languages with dual-theme styles', () => {
 	const ts = tokenizeSnippet({ code: 'const secret = "<script>"', lang: 'ts' })
 	expect(ts.plain).toBe(false)
-	expect(ts.lang).toBe('typescript')
+	expect(ts.lang).toBe('ts')
 	expect(ts.code).toContain('<script>')
 	const styles = ts.lines
 		.flat()
@@ -20,7 +20,7 @@ test('tokenizes known languages with dual-theme styles', () => {
 	)
 
 	const jsAlias = tokenizeSnippet({ code: 'const x = 1', lang: 'js' })
-	expect(jsAlias.lang).toBe('typescript')
+	expect(jsAlias.lang).toBe('ts')
 	expect(jsAlias.plain).toBe(false)
 
 	const shell = tokenizeSnippet({
