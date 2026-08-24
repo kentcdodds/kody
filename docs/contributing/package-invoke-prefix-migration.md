@@ -48,26 +48,17 @@ completed; the end must be after the observation window closed.
 ```sql
 SELECT
   blob2 AS surface,
-  COUNT(*) AS retained_calls_total,
-  SUM(CASE WHEN blob1 = 'prefixless' THEN 1 ELSE 0 END)
-    AS retained_prefixless_calls,
-  SUM(CASE WHEN blob1 = 'kody_prefixed' THEN 1 ELSE 0 END)
-    AS retained_kody_prefixed_calls,
+  blob1 AS form,
+  COUNT() AS retained_calls,
   MAX(_sample_interval) AS max_sample_interval,
-  SUM(_sample_interval) AS weighted_calls_total,
-  SUM(
-    CASE WHEN blob1 = 'prefixless' THEN _sample_interval ELSE 0 END
-  ) AS weighted_prefixless_calls,
-  SUM(
-    CASE WHEN blob1 = 'kody_prefixed' THEN _sample_interval ELSE 0 END
-  ) AS weighted_kody_prefixed_calls
+  SUM(_sample_interval) AS weighted_calls
 FROM kody_package_invoke_specifier_events
 WHERE timestamp >= toDateTime('2026-08-01 00:00:00')
   AND timestamp < toDateTime('2026-08-08 00:00:00')
   AND blob1 IN ('prefixless', 'kody_prefixed')
   AND blob2 IN ('execute', 'package', 'job', 'app')
-GROUP BY blob2
-ORDER BY blob2
+GROUP BY surface, form
+ORDER BY surface, form
 ```
 
 Analytics Engine can sample high-volume data. Each retained row represents
@@ -78,21 +69,37 @@ unsampled. If any sampling occurs, the gate stays closed and the operator must
 collect a different unsampled window or use a separate unsampled evidence
 source.
 
+The query returns one row per surface and form. Aggregate it outside Analytics
+Engine for each surface:
+
+- retained total = sum of `retained_calls` across its form rows;
+- retained `kody_prefixed` / `prefixless` = each matching form row's
+  `retained_calls`;
+- weighted total = sum of `weighted_calls` across its form rows, with each
+  form's weighted count taken from its row; and
+- surface sampling interval = maximum `max_sample_interval` across its rows.
+
+A missing `prefixless` row counts as zero only when the deployed event schema
+uses the shared constant `index1 = package_invoke_specifier_form_migration` and
+every returned row in the evidence window has `max_sample_interval = 1`. A
+missing required surface (`execute`, `package`, or `job`) is not zero-usage
+evidence; it fails the volume and liveness gates. A missing `app` row still
+means no observed app traffic and does not block cleanup.
+
 ## Cleanup gate
 
 Remove prefixless runtime support only when one query window proves all of the
 following:
 
-- `execute`, `package`, and `job` each independently have exactly `0`
-  `retained_prefixless_calls`, at least `300` `retained_calls_total`, at least
-  `30` `retained_kody_prefixed_calls`, and `max_sample_interval = 1`. The
-  required weighted thresholds remain the same: exactly `0`
-  `weighted_prefixless_calls`, at least `300` `weighted_calls_total`, and at
-  least `30` `weighted_kody_prefixed_calls`.
+- `execute`, `package`, and `job` each independently have exactly `0` retained
+  `prefixless` calls, at least `300` retained calls total, at least `30`
+  retained `kody_prefixed` calls, and a surface maximum sample interval of `1`.
+  The weighted equivalents (`0` / `300` / `30`) remain reporting-only and do not
+  substitute for retained unsampled calls.
 - `app` is observed in every readout. If it has any traffic, it must meet the
-  same unsampled retained and weighted `0` / `300` / `30` thresholds
-  independently. A missing app row means no app traffic and does not block
-  cleanup.
+  same unsampled retained `0` / `300` / `30` thresholds independently and report
+  the weighted equivalents. A missing app row means no app traffic and does not
+  block cleanup.
 
 Do not combine surfaces to reach a threshold. Execute, package, and job are
 historically active and each must pass independently.
