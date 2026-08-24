@@ -1,4 +1,4 @@
-import type { AdminUsageEntitlementResource } from '#universal/loader-data.ts'
+import { type AdminUsageEntitlementResource } from '#universal/loader-data.ts'
 
 export const fleetEntitlementCrossedTopic = 'fleet.entitlement.crossed'
 

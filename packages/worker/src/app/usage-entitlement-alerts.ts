@@ -5,7 +5,7 @@ import {
 	type FleetEntitlementCrossingSnapshot,
 } from '#worker/admin/fleet-usage-insights.ts'
 import { joinAppUrl } from '#worker/app-base-url.ts'
-import type { AdminUsageEntitlementResource } from '#universal/loader-data.ts'
+import { type AdminUsageEntitlementResource } from '#universal/loader-data.ts'
 import {
 	buildFleetEntitlementResourceCrossedEvent,
 	buildFleetRuntimeDurationCrossedEvent,
@@ -458,12 +458,18 @@ async function deleteCrossingClaims(input: {
 		)
 		return
 	}
+	const entitlementCrossing = input.crossing
 	await Promise.all(
 		recentUtcDayKeys(input.now).map((day) =>
 			input.kv.delete(
 				fleetEntitlementCrossingKvKey({
 					userId: input.userId,
-					crossing: { ...input.crossing, day },
+					crossing: {
+						kind: 'entitlement',
+						threshold: entitlementCrossing.threshold,
+						resource: entitlementCrossing.resource,
+						day,
+					},
 				}),
 			),
 		),
