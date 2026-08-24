@@ -32,6 +32,8 @@ type UserRow = {
 	email: string
 	email_verified_at?: string | null
 	plan?: string | null
+	stripe_plan?: string | null
+	stripe_customer_id?: string | null
 	suspended_at?: string | null
 	email_outbound_paused_at?: string | null
 	created_at: string
@@ -79,6 +81,8 @@ function createAdminTestEnv(input: {
 				// Normal fixtures default to free; unknown/null stay
 				// explicit so the dedicated stored-plan coercion test can warn.
 				plan: user.plan === undefined ? 'free' : user.plan,
+				stripe_plan: user.stripe_plan ?? null,
+				stripe_customer_id: user.stripe_customer_id ?? null,
 				suspended_at: user.suspended_at ?? null,
 				email_outbound_paused_at: user.email_outbound_paused_at ?? null,
 			},
@@ -200,7 +204,7 @@ function createAdminTestEnv(input: {
 								}
 								if (
 									normalizedQuery.includes(
-										'select id, stable_user_id, username, email, email_verified_at, plan, suspended_at, email_outbound_paused_at, created_at, updated_at from users where stable_user_id =',
+										'select id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at, email_outbound_paused_at, created_at, updated_at from users where stable_user_id =',
 									)
 								) {
 									const user = Array.from(users.values()).find(
@@ -325,6 +329,8 @@ test('admin users list payload exposes only account metadata fields', async () =
 				email: 'member@example.com',
 				email_verified_at: null,
 				plan: 'free',
+				stripe_plan: 'standard',
+				stripe_customer_id: 'cus_member',
 				created_at: '2026-01-03 00:00:00',
 				updated_at: '2026-01-04 00:00:00',
 			},
@@ -370,12 +376,20 @@ test('admin users list payload exposes only account metadata fields', async () =
 			email_verified: true,
 			email_verified_at: '2026-01-01T00:00:00.000Z',
 			plan: 'pro',
+			manualPlan: 'pro',
+			stripePlan: null,
+			effectivePlan: 'pro',
+			stripeCustomerLinked: false,
 		}),
 		expect.objectContaining({
 			email: 'member@example.com',
 			email_verified: false,
 			email_verified_at: null,
 			plan: 'free',
+			manualPlan: 'free',
+			stripePlan: 'standard',
+			effectivePlan: 'standard',
+			stripeCustomerLinked: true,
 		}),
 	])
 })

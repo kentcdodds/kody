@@ -135,13 +135,18 @@ export function CodeRunsTicker(
 		const reserved = formatCodeRunsCount(handle.props.window.current)
 		return (
 			<p data-rise style={{ '--rise': '1.5' }} class="landing-hero-runs">
-				<span
-					class="landing-hero-runs-count"
-					style={{ '--runs-ch': `${reserved.length}ch` }}
-				>
-					{formatCodeRunsCount(displayed)}
+				<span class="landing-hero-runs-line">
+					<span
+						class="landing-hero-runs-count"
+						style={{ '--runs-ch': `${reserved.length}ch` }}
+					>
+						{formatCodeRunsCount(displayed)}
+					</span>
+					<span class="landing-hero-runs-label">code runs</span>
 				</span>
-				<span class="landing-hero-runs-label">code runs</span>
+				<span class="landing-hero-runs-caption">
+					Sandboxed executes across Kody accounts
+				</span>
 			</p>
 		)
 	}

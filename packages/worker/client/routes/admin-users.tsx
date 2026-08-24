@@ -556,7 +556,7 @@ export function AdminUsersRoute(handle: Handle) {
 			applyMutationPayload(payload, href)
 			invalidateUsage()
 			lastLoadedDataKey = getDataKey(href)
-			message = `Updated plan to ${plan}.`
+			message = `Updated admin grant to ${plan}.`
 			status = 'ready'
 			actionState = 'idle'
 			handle.update()
@@ -847,8 +847,22 @@ export function AdminUsersRoute(handle: Handle) {
 													: 'None',
 										},
 										{
-											label: 'Plan',
+											label: 'Admin grant',
 											value: selectedUser.plan ?? 'free',
+										},
+										{
+											label: 'Subscription plan',
+											value: selectedUser.stripePlan ?? 'None',
+										},
+										{
+											label: 'Effective plan',
+											value: selectedUser.effectivePlan ?? 'free',
+										},
+										{
+											label: 'Stripe customer',
+											value: selectedUser.stripeCustomerLinked
+												? 'Linked'
+												: 'Not linked',
 										},
 										{
 											label: 'Suspended',
@@ -940,7 +954,10 @@ export function AdminUsersRoute(handle: Handle) {
 										</button>
 									</div>
 								</AccountManagementPanel>
-								<AccountManagementPanel title="Manage plan">
+								<AccountManagementPanel
+									title="Manage plan"
+									description="Sets the admin grant (users.plan). Ordinary Stripe subscribers keep this as free; their paid tier lives on the subscription plan. The effective plan is the higher of the two."
+								>
 									<div
 										mix={css({
 											display: 'grid',
@@ -951,11 +968,11 @@ export function AdminUsersRoute(handle: Handle) {
 										})}
 									>
 										<label mix={css(fieldCss)}>
-											<span mix={css(fieldLabelCss)}>Plan</span>
+											<span mix={css(fieldLabelCss)}>Admin grant</span>
 											<select
 												data-field-ring
 												disabled={isMutating}
-												aria-label="Plan"
+												aria-label="Admin grant"
 												mix={[
 													on('change', (event) => {
 														selectedPlanChoice = event.currentTarget
@@ -987,7 +1004,7 @@ export function AdminUsersRoute(handle: Handle) {
 												css(primaryButtonCss),
 											]}
 										>
-											{actionState === 'saving-plan' ? 'Saving…' : 'Save plan'}
+											{actionState === 'saving-plan' ? 'Saving…' : 'Save grant'}
 										</button>
 									</div>
 								</AccountManagementPanel>

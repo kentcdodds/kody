@@ -12,6 +12,7 @@ import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 import { type OnboardingChecklistItemId } from '#universal/onboarding-checklist-types.ts'
 import {
+	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
 	type OnboardingFeaturedMcpServerId,
 } from '#universal/onboarding-mcp-chooser.ts'
@@ -26,7 +27,11 @@ import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
 export type { OnboardingChecklistItemId }
-export type { OnboardingFeaturedMcpServer, OnboardingFeaturedMcpServerId }
+export type {
+	OnboardingCustomMcpServer,
+	OnboardingFeaturedMcpServer,
+	OnboardingFeaturedMcpServerId,
+}
 
 export type BlogPostSummaryLoaderData = {
 	slug: string
@@ -224,7 +229,12 @@ export type AdminUserListItem = {
 	email: string
 	email_verified: boolean
 	email_verified_at: string | null
+	/** Manual grant (`users.plan`). Manage plan writes this column. */
 	plan: AdminPlanName
+	manualPlan: AdminPlanName
+	stripePlan: AdminPlanName | null
+	effectivePlan: AdminPlanName
+	stripeCustomerLinked: boolean
 	suspended_at: string | null
 	email_outbound_paused_at: string | null
 	created_at: string
@@ -846,6 +856,8 @@ export type OnboardingLoaderData = {
 	builtInProviders: Array<OnboardingBuiltInProvider>
 	/** Official workspace MCP chooser cards, with viewer connection overlay. */
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
+	/** Non-featured MCP servers the viewer added themselves. */
+	customMcpServers: Array<OnboardingCustomMcpServer>
 	/**
 	 * Most recently updated saved-package kody id for this account, used by
 	 * Step 3 next-steps after persist. Null when logged out, unverified, or

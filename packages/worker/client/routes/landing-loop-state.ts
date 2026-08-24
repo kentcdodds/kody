@@ -1,6 +1,7 @@
 import {
 	type TranscriptAct,
 	type TranscriptLine,
+	type TranscriptScene,
 } from './interactive-guide-transcript.ts'
 
 export const landingLoopTeaser = {
@@ -20,18 +21,31 @@ export type LandingLoopPauseReason =
 	| 'manual'
 	| 'ended'
 
+export type LandingLoopScene = TranscriptScene | 'desk'
+
 export type LandingLoopBeat =
 	| {
 			kind: 'act'
 			id: string
 			kicker: string
 			title: string
+			scene: LandingLoopScene
 	  }
 	| {
 			kind: 'line'
 			actId: string
+			scene: LandingLoopScene
 			line: TranscriptLine
 	  }
+
+export type LandingLoopSceneGroup = {
+	scene: LandingLoopScene
+	beats: Array<LandingLoopBeat>
+}
+
+function actScene(act: TranscriptAct): LandingLoopScene {
+	return act.scene === 'phone' ? 'phone' : 'desk'
+}
 
 export type LandingLoopAdvance = {
 	didAdvance: boolean
@@ -43,17 +57,34 @@ export function flattenTranscriptActs(
 ): Array<LandingLoopBeat> {
 	const beats: Array<LandingLoopBeat> = []
 	for (const act of acts) {
+		const scene = actScene(act)
 		beats.push({
 			kind: 'act',
 			id: act.id,
 			kicker: act.kicker,
 			title: act.title,
+			scene,
 		})
 		for (const line of act.lines) {
-			beats.push({ kind: 'line', actId: act.id, line })
+			beats.push({ kind: 'line', actId: act.id, scene, line })
 		}
 	}
 	return beats
+}
+
+export function groupLandingLoopScenes(
+	beats: ReadonlyArray<LandingLoopBeat>,
+): Array<LandingLoopSceneGroup> {
+	const groups: Array<LandingLoopSceneGroup> = []
+	for (const beat of beats) {
+		const last = groups.at(-1)
+		if (last?.scene === beat.scene) {
+			last.beats.push(beat)
+			continue
+		}
+		groups.push({ scene: beat.scene, beats: [beat] })
+	}
+	return groups
 }
 
 export function landingLoopChatScrollShouldExplore(input: {

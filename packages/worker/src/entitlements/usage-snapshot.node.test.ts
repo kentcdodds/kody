@@ -90,7 +90,7 @@ test('readEntitlementUsageSnapshot warns at 80% and includes the account resourc
 	const email = 'warn@example.com'
 	const { stableUserId, db } = createUsageTestDb({
 		email,
-		packageCount: 9,
+		packageCount: 7,
 		storageBucketEstimates: [2_000, null, 3_000],
 	})
 	const env = withUsageEnv({ APP_DB: db })

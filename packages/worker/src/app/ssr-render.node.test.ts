@@ -379,6 +379,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		featuredListings: [],
 		builtInProviders: [],
 		featuredMcpServers: [],
+		customMcpServers: [],
 		persistedPackageKodyId: null,
 		checklist: null,
 	})
@@ -747,6 +748,7 @@ test('renderAppPage embeds a tabular homepage code-runs ticker', async () => {
 	expect(ticker).toMatch(/--runs-ch:\s*7ch/)
 	expect(ticker).toContain(formatCodeRunsCount(count))
 	expect(ticker).toContain('code runs')
+	expect(ticker).toContain('Sandboxed executes across Kody accounts')
 	expect(html).not.toContain('aria-live')
 })
 

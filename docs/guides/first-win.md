@@ -16,7 +16,8 @@ category: platform
 <!--
 Agent notes — for AI agents driving the optional email loop from this page:
 
-- Onboarding Step 2 connects an official workspace MCP server. Step 3
+- Onboarding Step 2 connects a workspace MCP server (featured or custom) or a
+  Just-try-Kody example. Step 3
   climax is /guides/quick-example (ad hoc execute → persist → own). Use this
   guide only when the person wants the email-and-memories loop.
 - You drive the whole loop. The person stays in this chat; they should not need

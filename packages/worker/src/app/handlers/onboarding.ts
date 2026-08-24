@@ -27,12 +27,16 @@ import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import {
 	attachOnboardingMcpPackageListings,
+	firstConnectedOnboardingWorkspaceLabel,
 	listDisconnectedOnboardingFeaturedMcpServers,
+	listOnboardingCustomMcpServers,
 	overlayOnboardingFeaturedMcpServers,
 } from '#universal/onboarding-mcp-chooser.ts'
+import { firstInstalledOnboardingExampleName } from '#universal/onboarding-examples.ts'
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
 	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
@@ -193,15 +197,15 @@ export async function loadOnboardingBuiltInProviders(
  * overlays saved MCP servers and hub connection state. Fails open to the
  * disconnected catalog so a hub or D1 blip never breaks the payload.
  */
-export async function loadOnboardingFeaturedMcpServers(
+async function loadOnboardingMcpChooserOverlay(
 	env: Env,
 	userId?: string | null,
-): Promise<Array<OnboardingFeaturedMcpServer>> {
-	if (!userId) return listDisconnectedOnboardingFeaturedMcpServers()
+) {
+	if (!userId) return { settings: [], statusByServerId: undefined }
 	try {
 		const settings = await listMcpServerSettings({ env, userId })
 		if (settings.length === 0) {
-			return listDisconnectedOnboardingFeaturedMcpServers()
+			return { settings: [], statusByServerId: undefined }
 		}
 		const snapshot = await loadMcpClientHubSnapshotOrNull({ env, userId })
 		const statusByServerId = new Map(
@@ -224,25 +228,86 @@ export async function loadOnboardingFeaturedMcpServers(
 				] as const
 			}),
 		)
-		return overlayOnboardingFeaturedMcpServers({
-			settings,
-			statusByServerId,
-		})
+		return { settings, statusByServerId }
+	} catch {
+		return { settings: [], statusByServerId: undefined }
+	}
+}
+
+export async function loadOnboardingFeaturedMcpServers(
+	env: Env,
+	userId?: string | null,
+): Promise<Array<OnboardingFeaturedMcpServer>> {
+	if (!userId) return listDisconnectedOnboardingFeaturedMcpServers()
+	try {
+		const overlay = await loadOnboardingMcpChooserOverlay(env, userId)
+		if (overlay.settings.length === 0) {
+			return listDisconnectedOnboardingFeaturedMcpServers()
+		}
+		return overlayOnboardingFeaturedMcpServers(overlay)
 	} catch {
 		return listDisconnectedOnboardingFeaturedMcpServers()
 	}
 }
 
-async function loadOnboardingChooserMcpServers(
+export async function loadOnboardingCustomMcpServers(
+	env: Env,
+	userId?: string | null,
+): Promise<Array<OnboardingCustomMcpServer>> {
+	if (!userId) return []
+	const overlay = await loadOnboardingMcpChooserOverlay(env, userId)
+	return listOnboardingCustomMcpServers(overlay)
+}
+
+async function loadOnboardingChooserMcpState(
 	env: Env,
 	request: Request,
 	userId?: string | null,
-): Promise<Array<OnboardingFeaturedMcpServer>> {
-	const [servers, listings] = await Promise.all([
-		loadOnboardingFeaturedMcpServers(env, userId),
+): Promise<{
+	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
+	customMcpServers: Array<OnboardingCustomMcpServer>
+}> {
+	const [overlay, listings] = await Promise.all([
+		loadOnboardingMcpChooserOverlay(env, userId),
 		loadOnboardingMcpChooserListings(env, request),
 	])
-	return attachOnboardingMcpPackageListings(servers, listings)
+	const featuredBase =
+		overlay.settings.length === 0
+			? listDisconnectedOnboardingFeaturedMcpServers()
+			: overlayOnboardingFeaturedMcpServers(overlay)
+	return {
+		featuredMcpServers: attachOnboardingMcpPackageListings(
+			featuredBase,
+			listings,
+		),
+		customMcpServers: listOnboardingCustomMcpServers(overlay),
+	}
+}
+
+async function loadOnboardingChooserFields(
+	env: Env,
+	request: Request,
+	userId?: string | null,
+) {
+	const [featuredListings, builtInProviders, chooser] = await Promise.all([
+		loadOnboardingFeaturedListings(env, request),
+		loadOnboardingBuiltInProviders(env, userId),
+		loadOnboardingChooserMcpState(env, request, userId),
+	])
+	return {
+		featuredListings,
+		builtInProviders,
+		featuredMcpServers: chooser.featuredMcpServers,
+		customMcpServers: chooser.customMcpServers,
+		persistContext: {
+			connectedWorkspaceLabel: firstConnectedOnboardingWorkspaceLabel({
+				featuredMcpServers: chooser.featuredMcpServers,
+				customMcpServers: chooser.customMcpServers,
+			}),
+			installedExampleName:
+				firstInstalledOnboardingExampleName(featuredListings),
+		},
+	}
 }
 
 function redirectUnverifiedToPending(request: Request) {
@@ -263,17 +328,14 @@ export function createOnboardingHandler(env: Env) {
 		async handler({ request }) {
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
+				const { persistContext: _persistContext, ...chooser } =
+					await loadOnboardingChooserFields(env, request)
 				const onboarding = {
 					...loadPublicOnboardingData({
 						env,
 						requestUrl: request.url,
 					}),
-					featuredListings: await loadOnboardingFeaturedListings(env, request),
-					builtInProviders: await loadOnboardingBuiltInProviders(env),
-					featuredMcpServers: await loadOnboardingChooserMcpServers(
-						env,
-						request,
-					),
+					...chooser,
 				}
 				return renderAppPage({
 					request,
@@ -286,22 +348,18 @@ export function createOnboardingHandler(env: Env) {
 				return redirectUnverifiedToPending(request)
 			}
 
+			const chooser = await loadOnboardingChooserFields(
+				env,
+				request,
+				user.mcpUser.userId,
+			)
 			const onboarding = await loadOnboardingData({
 				env,
 				requestUrl: request.url,
 				stableUserId: user.mcpUser.userId,
 				username: user.username,
 				emailVerified: user.emailVerified,
-				featuredListings: await loadOnboardingFeaturedListings(env, request),
-				builtInProviders: await loadOnboardingBuiltInProviders(
-					env,
-					user.mcpUser.userId,
-				),
-				featuredMcpServers: await loadOnboardingChooserMcpServers(
-					env,
-					request,
-					user.mcpUser.userId,
-				),
+				...chooser,
 			})
 			;[
 				onboarding.checklist,
@@ -333,42 +391,30 @@ export function createOnboardingApiHandler(env: Env) {
 
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
+				const { persistContext: _persistContext, ...chooser } =
+					await loadOnboardingChooserFields(env, request)
 				return jsonResponse({
 					...loadPublicOnboardingData({
 						env,
 						requestUrl: request.url,
 					}),
-					featuredListings: await loadOnboardingFeaturedListings(env, request),
-					builtInProviders: await loadOnboardingBuiltInProviders(env),
-					featuredMcpServers: await loadOnboardingChooserMcpServers(
-						env,
-						request,
-					),
+					...chooser,
 				})
 			}
 
 			// Unverified callers still get a payload so clients can detect the
 			// gate; MCP URL/setup and featured fields stay empty until
 			// verification succeeds.
+			const chooser = user.emailVerified
+				? await loadOnboardingChooserFields(env, request, user.mcpUser.userId)
+				: null
 			const onboarding = await loadOnboardingData({
 				env,
 				requestUrl: request.url,
 				stableUserId: user.mcpUser.userId,
 				username: user.username,
 				emailVerified: user.emailVerified,
-				featuredListings: user.emailVerified
-					? await loadOnboardingFeaturedListings(env, request)
-					: [],
-				builtInProviders: user.emailVerified
-					? await loadOnboardingBuiltInProviders(env, user.mcpUser.userId)
-					: [],
-				featuredMcpServers: user.emailVerified
-					? await loadOnboardingChooserMcpServers(
-							env,
-							request,
-							user.mcpUser.userId,
-						)
-					: [],
+				...chooser,
 			})
 			if (user.emailVerified) {
 				;[

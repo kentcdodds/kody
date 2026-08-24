@@ -9,6 +9,8 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 		'ask',
 		'invoke',
 	])
+	expect(howKodyWorksTranscriptActs[0]?.scene).toBeUndefined()
+	expect(howKodyWorksTranscriptActs[1]?.scene).toBe('phone')
 
 	const tools = howKodyWorksTranscriptActs.flatMap((act) =>
 		act.lines.flatMap((line) => (line.role === 'tools' ? line.tools : [])),
@@ -72,5 +74,23 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 	)
 	expect(
 		agentLines.some((text) => /webhook/i.test(text) && /cron/i.test(text)),
+	).toBe(true)
+	expect(
+		agentLines.some((text) =>
+			text.includes('Favorite bot is the GitHub account kody-bot'),
+		),
+	).toBe(true)
+	expect(
+		agentLines.some((text) =>
+			text.includes('I will search for a package that already answers this.'),
+		),
+	).toBe(true)
+	expect(
+		agentLines.every(
+			(text) => !text.includes('Same question in different words'),
+		),
+	).toBe(true)
+	expect(
+		agentLines.every((text) => !text.includes('New agent, same ask')),
 	).toBe(true)
 })

@@ -4,8 +4,14 @@ import {
 	featuredOnboardingMcpFingerprint,
 	formatOnboardingFeaturedMcpAddHint,
 	formatOnboardingFeaturedMcpChoice,
+	customOnboardingMcpFingerprint,
+	hasConnectedOnboardingCustomMcpServer,
 	hasConnectedOnboardingFeaturedMcpServer,
+	firstConnectedOnboardingWorkspaceLabel,
+	hasConnectedOnboardingWorkspaceMcp,
+	hasPendingOnboardingCustomMcpAuth,
 	hasPendingOnboardingFeaturedMcpAuth,
+	listOnboardingCustomMcpServers,
 	listDisconnectedOnboardingFeaturedMcpServers,
 	listOnboardingFeaturedMcpListingIds,
 	matchOnboardingFeaturedMcpServer,
@@ -69,10 +75,16 @@ test('featured MCP chooser ships six official OAuth servers with packages', () =
 	).toBe(true)
 	expect(
 		matchOnboardingFeaturedMcpServer(
-			{ name: 'linear', url: 'https://example.test/other' },
+			{ name: 'linear', url: 'https://mcp.linear.app/sse' },
 			onboardingFeaturedMcpServers[1],
 		),
 	).toBe(true)
+	expect(
+		matchOnboardingFeaturedMcpServer(
+			{ name: 'linear', url: 'https://example.test/other' },
+			onboardingFeaturedMcpServers[1],
+		),
+	).toBe(false)
 
 	const disconnected = listDisconnectedOnboardingFeaturedMcpServers()
 	expect(disconnected).toHaveLength(6)
@@ -188,4 +200,93 @@ test('featured MCP poll fingerprint changes when a listing appears after a miss'
 			attachOnboardingMcpPackageListings(withoutListing, [notionListing]),
 		),
 	)
+})
+
+test('custom MCP servers exclude featured remotes and count as a workspace connect', () => {
+	const custom = listOnboardingCustomMcpServers({
+		settings: [
+			{
+				id: 'srv-linear',
+				name: 'linear',
+				url: 'https://mcp.linear.app/mcp',
+			},
+			{
+				id: 'srv-acme',
+				name: 'acme',
+				url: 'https://mcp.acme.example/mcp',
+			},
+			{
+				id: 'srv-other-linear',
+				name: 'linear',
+				url: 'https://mcp.other.example/mcp',
+			},
+		],
+		statusByServerId: new Map([
+			[
+				'srv-acme',
+				{
+					connected: true,
+					authUrl: null,
+					state: 'ready',
+					error: null,
+				},
+			],
+		]),
+	})
+	expect(custom).toEqual([
+		{
+			id: 'srv-acme',
+			name: 'acme',
+			url: 'https://mcp.acme.example/mcp',
+			connected: true,
+			authUrl: null,
+			state: 'ready',
+			error: null,
+		},
+		{
+			id: 'srv-other-linear',
+			name: 'linear',
+			url: 'https://mcp.other.example/mcp',
+			connected: false,
+			authUrl: null,
+			state: null,
+			error: null,
+		},
+	])
+	expect(hasConnectedOnboardingCustomMcpServer(custom)).toBe(true)
+	expect(hasPendingOnboardingCustomMcpAuth(custom)).toBe(false)
+	expect(
+		hasPendingOnboardingCustomMcpAuth([
+			{
+				id: 'srv-pending',
+				name: 'acme',
+				url: 'https://mcp.acme.example/mcp',
+				connected: false,
+				authUrl: 'https://auth.acme.example/authorize',
+				state: 'authenticating',
+				error: null,
+			},
+		]),
+	).toBe(true)
+	expect(
+		hasConnectedOnboardingWorkspaceMcp({
+			featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+			customMcpServers: custom,
+		}),
+	).toBe(true)
+	expect(
+		firstConnectedOnboardingWorkspaceLabel({
+			featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+			customMcpServers: custom,
+		}),
+	).toBe('acme')
+	expect(customOnboardingMcpFingerprint(custom)).toBe(
+		'srv-acme:ready:1|srv-other-linear::0',
+	)
+	expect(
+		hasConnectedOnboardingWorkspaceMcp({
+			featuredMcpServers: listDisconnectedOnboardingFeaturedMcpServers(),
+			customMcpServers: [],
+		}),
+	).toBe(false)
 })

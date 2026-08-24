@@ -2,6 +2,7 @@ import { type OnboardingFeaturedListing } from '#universal/community-public-type
 import {
 	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
+	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
 	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
@@ -29,6 +30,7 @@ export type OnboardingPayload = {
 	featuredListings: Array<OnboardingFeaturedListing>
 	builtInProviders: Array<OnboardingBuiltInProvider>
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
+	customMcpServers: Array<OnboardingCustomMcpServer>
 	/**
 	 * Most recently updated saved-package kody id after persist. Null when
 	 * logged out, unverified, or the listing fails open.
