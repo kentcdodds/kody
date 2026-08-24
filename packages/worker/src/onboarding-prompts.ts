@@ -27,13 +27,11 @@ export function buildMcpServerUrl(input: {
 export function buildOnboardingSetupPrompt() {
 	return [
 		'Help me get started with Kody.',
-		'First, briefly explain what Kody can do for me in plain language.',
-		`Then help me connect ${formatOnboardingFeaturedMcpChoice()} as a remote MCP server: call mcp_server_add with one of ${formatOnboardingFeaturedMcpAddHint()}. If I already connected one on /onboarding, skip add and use mcp_server_list. When the result includes an authUrl, ask me to open it and authorize Kody, then check mcp_server_list.`,
-		'If none of those services are useful, add a custom remote MCP server with mcp_server_add (name + URL), or skip to a zero-auth example / ad hoc request.',
-		'Do not start a bring-your-own-key OAuth-app walkthrough unless I ask — that path is harder and belongs after the first package.',
-		'Do not offer GitHub official MCP as the first option — it does not return an authorization URL.',
-		'Do not create any packages until one connected server works — start with a small ad hoc execute smoke test against its tools (for example search Notion, list Linear issues, or list Stripe customers).',
-		'Once that ad hoc call works, persist the working code as a package I own with package_save, or community_fork the matching official @kody/*-mcp listing if one is closer. Only create a new package if nothing suitable exists.',
+		'Briefly explain what Kody can do.',
+		`Then help me give Kody access to ${formatOnboardingFeaturedMcpChoice()}: call mcp_server_add with one of ${formatOnboardingFeaturedMcpAddHint()}. If I already connected one on /onboarding, skip add and use mcp_server_list. When the result includes an authUrl, ask me to open it and authorize, then check mcp_server_list.`,
+		'If none of those help, add a custom remote MCP server (name + URL) or skip to a zero-auth example.',
+		'Do not start a bring-your-own-key walkthrough unless I ask.',
+		'Smoke-test with one execute call against the connected tools, then persist that working code with package_save.',
 	].join(' ')
 }
 
@@ -84,9 +82,9 @@ export function buildFirstWinPrompt(input: {
 }
 
 /**
- * Onboarding Step 3 climax: one ad hoc execute against a connected MCP server
- * (or whatever the person asks for if they skipped Step 2), then persist that
- * working code as a package they own.
+ * Onboarding Step 3 climax: one ad hoc execute against something they gave
+ * Kody access to (or whatever they ask for if they skipped Step 2), then
+ * persist that working code as a package they own.
  */
 export function buildPersistFirstPackagePrompt(input: {
 	env: OnboardingPromptEnv
@@ -99,19 +97,19 @@ export function buildPersistFirstPackagePrompt(input: {
 		requestUrl: input.requestUrl,
 	})
 	const step2Context = input.connectedWorkspaceLabel
-		? `I connected ${input.connectedWorkspaceLabel} as a remote MCP server from /onboarding Step 2.`
+		? `I gave Kody access to ${input.connectedWorkspaceLabel} from /onboarding Step 2.`
 		: input.installedExampleName
 			? `I installed ${input.installedExampleName} from /onboarding Step 2 Just try Kody.`
-			: `I may have connected ${formatOnboardingFeaturedMcpChoice()} or a custom MCP server on /onboarding Step 2, installed a zero-auth example, or skipped so I could try an ad hoc request first.`
+			: `I may have given Kody access on /onboarding Step 2, installed a zero-auth example, or skipped so I could try an ad hoc request first.`
 	const executeHint = input.connectedWorkspaceLabel
-		? `Use execute for one useful ad hoc call against ${input.connectedWorkspaceLabel}.`
+		? `Use execute for one useful call against ${input.connectedWorkspaceLabel}.`
 		: input.installedExampleName
-			? `Use execute or packages.invoke for one useful call against ${input.installedExampleName}.`
-			: 'Use execute for one useful ad hoc call (search Notion, list Linear issues, list Stripe customers, invoke a Just-try-Kody example, or ask me what I want if I skipped).'
+			? `Use packages.invoke for one useful call against ${input.installedExampleName}.`
+			: 'Use execute for one useful call (search Notion, list Linear issues, or ask me what I want if I skipped).'
 	return [
-		`Ask the connected Kody server to read ${origin}/guides/quick-example and help me with my first build on Kody.`,
+		`Ask the connected Kody server to read ${origin}/guides/quick-example and help me with my first build.`,
 		step2Context,
-		`${executeHint} Show the result, then persist that working code as a package I own with package_save — or community_fork the matching official @kody/*-mcp listing if one is closer.`,
+		`${executeHint} Show the result, then persist that working code with package_save.`,
 		'Explain that I own the package. Ask if I want a trigger (webhook, Kody app, cron, or skip) without recommending one.',
 		'Keep messages short. Do not poll.',
 	].join(' ')

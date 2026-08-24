@@ -7,12 +7,10 @@
  *
  * Each card already knows name + url. Connect POSTs the account MCP-servers
  * add/reconnect API with that hardcoded url and forks the official
- * `@kody/<id>-mcp` listing in the same click.
- * MCP here is the quicker first-value path. The long-term preferred path is
- * regular APIs via the official non-MCP packages (`@kody/notion`,
- * `@kody/linear`, `@kody/jira`, `@kody/stripe`, `@kody/sentry`,
- * `@kody/canva`). Do not convert those API packages to MCP-first.
- * MCP *server* names stay the short official names.
+ * `@kody/<id>-mcp` listing in the same click. Person accounts run that
+ * owned copy — official `@kody/*` listings are catalog and fork source.
+ * Do not convert the official API packages to MCP-first. MCP *server*
+ * names stay the short official names.
  */
 
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'

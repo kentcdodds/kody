@@ -22,7 +22,7 @@ export const onboardingChecklistItemLabels: Record<
 	'connect-agent': 'Connect your agent',
 	'first-hello': 'Exchange a first email with Kody',
 	'save-memory': 'Save a memory',
-	'connect-integration': 'Connect a workspace MCP',
+	'connect-integration': 'Give Kody Access',
 	'install-starter': 'Persist your first package',
 }
 

@@ -16,7 +16,7 @@ category: platform
 <!--
 Agent notes — for AI agents driving the optional email loop from this page:
 
-- Onboarding Step 2 connects a workspace MCP server (featured or custom) or a
+- Onboarding Step 2 gives Kody access (featured or custom) or installs a
   Just-try-Kody example. Step 3
   climax is /guides/quick-example (ad hoc execute → persist → own). Use this
   guide only when the person wants the email-and-memories loop.
@@ -130,16 +130,14 @@ moment the whole loop pays off, so make it visible rather than silent.
 
 The first win is done. Offer one concrete next step and let them choose:
 
-- **Connect a workspace MCP server.** Send them to `/onboarding#connect-mcp` on
-  the same origin this guide came from, or call `mcp_server_add` with one of
+- **Give Kody Access.** Send them to `/onboarding#connect-mcp` on the same
+  origin this guide came from, or call `mcp_server_add` with one of
   `https://mcp.notion.com/mcp`, `https://mcp.linear.app/mcp`,
   `https://mcp.atlassian.com/v1/mcp/authv2`, `https://mcp.stripe.com`,
   `https://mcp.sentry.dev/mcp`, or `https://mcp.canva.com/mcp`, then verify with
-  a small ad hoc `execute` call. Prefer the matching official `@kody/*-mcp`
-  listing when they want a reusable first package. Prefer official non-MCP API
-  packages (`@kody/notion`, `@kody/linear`, `@kody/jira`, `@kody/stripe`,
-  `@kody/sentry`, `@kody/canva`) for reusable integrations — do not convert them
-  to MCP-first.
+  a small ad hoc `execute` call. Connect copies the matching official helper
+  into their account — they run that owned copy, not `kody:@kody/*`. GitHub and
+  Google live under Advanced (`/guides/github`, `/guides/google`).
 - **Bring their own OAuth app or API key** when they need scopes or rate limits
   a hosted app does not offer — load `coding_guide_get` with `guide: "oauth"`,
   or the matching `provider_*` guide.
