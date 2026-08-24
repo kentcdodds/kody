@@ -427,10 +427,7 @@ export function filterChromeExtensionSendMessageTabNotFoundSentryEvent<
 	T extends SentryErrorEventLike,
 >(event: T, originalException?: unknown): T | null {
 	if (
-		isChromeExtensionSendMessageTabNotFoundSentryEvent(
-			event,
-			originalException,
-		)
+		isChromeExtensionSendMessageTabNotFoundSentryEvent(event, originalException)
 	) {
 		return null
 	}

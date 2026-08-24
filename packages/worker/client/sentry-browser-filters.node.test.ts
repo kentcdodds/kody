@@ -264,7 +264,8 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 				values: [
 					{
 						type: 'Error',
-						value: 'MetaMask extension not found',						stacktrace: {
+						value: 'MetaMask extension not found',
+						stacktrace: {
 							frames: [
 								{
 									filename:
