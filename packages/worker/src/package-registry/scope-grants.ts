@@ -44,8 +44,9 @@ export type PlatformAccountRow = {
 }
 
 /**
- * Usernames of every platform account. Ad hoc execute may resolve those
- * scopes live; saved person-account packages must not (decision 0035).
+ * Usernames of every platform account. Person accounts must not resolve
+ * those scopes live (decision 0036). Platform-account packages may still
+ * compose with each other.
  */
 export async function listPlatformAccountUsernames(
 	db: D1Database,
