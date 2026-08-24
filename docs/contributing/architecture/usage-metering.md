@@ -351,19 +351,18 @@ Guarantees and rules:
   second does not march on even slots. It never passes `end`. If `end < start`
   (an Analytics Engine regression), the ticker shows `end` immediately — wobble
   math cannot use a negative delta. When leftover budget cannot support a
-  3-second integer backbone, the client moves honest progress toward the next
-  tick instead of inventing +1s. The client schedules the next paint
-  (`msUntilNextCodeRunsPaint`) rather than polling once a second;
-  `prefers-reduced-motion` snaps and does not animate. A frozen tab (rAF gap,
-  hidden, or a late timeout) snaps to the official count instead of rolling
-  through every missed integer. Live leftover ticks in a busy second still step
-  +1; leftover catch-up delays stay under that freeze window. A tab that cannot
-  paint a next tick waits until `updateAt` and refetches `/code-runs.json`
-  (cache bypass). If that fetch still returns the same triple (cron lag at
-  midnight), it retries about once a minute. The hourly `usage_aggregation` lane
-  syncs `fleet_execute_days` from Analytics Engine, then refreshes the cached
-  triple. Empty D1 (no daily rows, or no completed-day total) hides the ticker
-  (`window: null`).
+  3-second integer backbone, the displayed integer sits until the next real +1.
+  The client schedules the next integer (`msUntilNextCodeRunsCount`) rather than
+  polling once a second; `prefers-reduced-motion` snaps and does not animate. A
+  frozen tab (rAF gap, hidden, or a late timeout) snaps to the official count
+  instead of rolling through every missed integer. Live leftover ticks in a busy
+  second still step +1; leftover catch-up delays stay under that freeze window.
+  A tab that cannot paint a next tick waits until `updateAt` and refetches
+  `/code-runs.json` (cache bypass). If that fetch still returns the same triple
+  (cron lag at midnight), it retries about once a minute. The hourly
+  `usage_aggregation` lane syncs `fleet_execute_days` from Analytics Engine,
+  then refreshes the cached triple. Empty D1 (no daily rows, or no completed-day
+  total) hides the ticker (`window: null`).
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration

@@ -535,8 +535,8 @@ export function OnboardingMcpClientTabs(
 					<p>
 						Run this to add Kody to the local agents the CLI finds (Cursor,
 						Claude Desktop, VS Code, Claude Code, Codex / ChatGPT desktop, and
-						others). Then Authenticate in that client. Web hosts such as
-						ChatGPT.com, Claude.ai, and Grok stay under Manual.
+						others). Then Authenticate in that client. You can also manually
+						connect web hosts such as ChatGPT, Claude.ai, and Grok below.
 					</p>
 					<CopyCard
 						label="Install command"
