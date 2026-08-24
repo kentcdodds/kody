@@ -230,16 +230,23 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).toBeNull()
 	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value:
+							'Error: Invalid call to runtime.sendMessage(). Tab not found.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
 		filterBrowserSentryEvent(
 			{
 				exception: {
-					values: [
-						{
-							type: 'Error',
-							value:
-								'Error: Invalid call to runtime.sendMessage(). Tab not found.',
-						},
-					],
+					values: [{ type: 'Error', value: 'something else' }],
 				},
 			},
 			new Error('Invalid call to runtime.sendMessage(). Tab not found.'),
