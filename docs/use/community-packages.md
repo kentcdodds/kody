@@ -99,9 +99,10 @@ image (1200×630). When the owner keeps a
 shows a follow control next to the username. Private owners show as `@username`
 with a lock that explains the profile is private.
 
-The detail page opens with the README. Next to **Trusted** (and **Featured**,
-when present) a pill says **Install**, **Installed**, **Forked**, or **Fork
-outdated**. You can also ask your agent to use `community_search` or
+The detail page opens with the README. A star control sits next to the package
+name — filled when you have starred the listing. Next to **Trusted** (and
+**Featured**, when present) a pill says **Install**, **Installed**, **Forked**,
+or **Fork outdated**. You can also ask your agent to use `community_search` or
 `community_get` from the `community` domain.
 
 ## Forking a listing
@@ -159,10 +160,10 @@ is ahead.
 Each listing detail page has an **Install** pill next to **Trusted** for
 signed-in users. Logged-out visitors get the same pill as a login link. Get
 started Step 2–3 follow
-[Connect your agent](./connect-your-agent.md#connect-a-workspace-mcp-then-persist-a-first-build)
-(workspace MCP or Just-try-Kody, then ad hoc → persist). If you already have a
-saved package with the same `kody_id`, or a fork of that listing, listing cards
-and the detail page show **Installed** or **Forked** instead of Install.
+[Connect your agent](./connect-your-agent.md#give-kody-access-then-persist-a-first-build)
+(Give Kody Access or Just-try-Kody, then ad hoc → persist). If you already have
+a saved package with the same `kody_id`, or a fork of that listing, listing
+cards and the detail page show **Installed** or **Forked** instead of Install.
 Clicking that pill copies a prompt so your agent can look up the installed
 package and adapt it. Listing cards and the detail page place **Trusted** /
 **Installed** (or **Forked**) pills on their own row under the package name.
@@ -231,9 +232,10 @@ capability.
 ## Stars (stargazers)
 
 Anyone signed in can **star** a listing as a public bookmark (`community_star` /
-`community_unstar`). Star counts appear on search and detail outputs; stargazer
-lists include only users with public profiles. Stars are separate from the 1–5
-**ratings** below — see
+`community_unstar`). The listing page puts that control next to the package
+name. Star counts appear on search cards and in the detail meta row. Stargazer
+lists from `community_get` include only users with public profiles. Stars are
+separate from the 1–5 **ratings** below — see
 [Community profiles](./community-profiles.md#stars-vs-ratings).
 
 ## Ratings

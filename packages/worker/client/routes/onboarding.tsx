@@ -85,24 +85,25 @@ import {
 
 /**
  * Onboarding wizard: shirt-pattern head, three-step stepper (Connect your
- * agent · Connect a workspace · Try it, then persist), one surface
- * panel at a time with hand-tilted mascot art, and the BYOK argument folded
- * behind a disclosure. Server state (prompts, MCP URL, featured MCP
- * servers, hasMcpClient / OAuth polling) stays in the route state.
+ * agent · Give Kody Access · Try it, then persist), one surface panel at a
+ * time with hand-tilted mascot art, and the BYOK argument folded behind a
+ * disclosure. Server state (prompts, MCP URL, featured MCP servers,
+ * hasMcpClient / OAuth polling) stays in the route state.
  *
- * Step 2 ranks exits: featured official MCP, custom MCP, BYOK explanation
- * (not a connect step), then Just-try-Kody zero-auth examples, then skip.
- * Prefer official non-MCP API packages for reusable integrations — do not
- * convert them to MCP-first. Step 3 is the permanence lesson: copy a prompt
- * that runs one ad hoc execute, then persist that working code as a package.
- * Featured starters live under Advanced.
+ * Step 2 is "give Kody access to your stuff." Official remote MCP is the
+ * easy login path; Connect also forks the matching `@kody/*-mcp` helper
+ * into the person's account. Official `@kody/*` listings are catalog and
+ * fork source — person accounts run the owned copy, not the platform
+ * package. Ranked exits: featured official MCP, custom MCP, Advanced
+ * (provider guides + BYOK), Just-try-Kody, then skip. Step 3 is the
+ * permanence lesson: one ad hoc execute, then persist that working code.
  */
 
 type OnboardingStep = 1 | 2 | 3
 
 const onboardingSteps = [
 	{ number: 1, label: 'Connect your agent', hash: 'connect-agent' },
-	{ number: 2, label: 'Connect a workspace', hash: 'connect-mcp' },
+	{ number: 2, label: 'Give Kody Access', hash: 'connect-mcp' },
 	{ number: 3, label: 'Try it, then persist', hash: 'first-build' },
 ] as const satisfies ReadonlyArray<{
 	number: OnboardingStep
@@ -245,7 +246,7 @@ export function OnboardingRoute(handle: Handle) {
 			updateStepHash(2)
 			scrollToNav('onboarding-steps-nav')
 		}
-		// Stay on Step 2 when a workspace MCP or example finishes so the
+		// Stay on Step 2 when access or an example finishes so the
 		// Connected/Installed state is visible; wizard nav advances.
 	}
 
@@ -704,7 +705,7 @@ export function OnboardingRoute(handle: Handle) {
 											tabIndex={-1}
 											mix={css(panelTitleCss)}
 										>
-											Connect a workspace
+											Give Kody Access
 										</h2>
 									</div>
 									<img
@@ -718,11 +719,11 @@ export function OnboardingRoute(handle: Handle) {
 									/>
 								</div>
 								<p mix={css(panelLedeCss)}>
-									Give your agent a live workspace. Official MCP is the easy
-									login path: add {formatOnboardingFeaturedMcpChoice()} and
-									authorize it. Connect also forks the matching official{' '}
-									<em>@kody/*-mcp</em> helper. None of these? Add a custom
-									server, or just try Kody without a third-party login.
+									Give Kody access to your stuff. Official one-click login is
+									the easy path: add {formatOnboardingFeaturedMcpChoice()} and
+									authorize it. Connect also copies the matching official helper
+									into your account. None of these? Add another server, or just
+									try Kody without a third-party login.
 								</p>
 								<ul
 									mix={css(starterGridCss)}
@@ -774,13 +775,11 @@ export function OnboardingRoute(handle: Handle) {
 								>
 									<p mix={css(howItWorksLabelCss)}>How it works</p>
 									<p>
-										Connect adds the official MCP URL, forks the matching{' '}
-										<em>@kody/*-mcp</em> helper, and opens the provider
-										authorize page. Approve access, then your agent can call
-										those tools as <em>kody.mcp</em>. Day-to-day work later
-										prefers the official <em>@kody</em> API packages. GitHub's
-										official MCP is not on this list — it does not return an
-										authorization link.
+										Connect adds the official login, copies the matching helper
+										into your account, and opens the provider authorize page.
+										Approve access, then your agent can use those tools. You run
+										the copy in your account — official <em>@kody</em> listings
+										are a catalog, not something a person account invokes live.
 									</p>
 								</aside>
 								<div
@@ -804,17 +803,26 @@ export function OnboardingRoute(handle: Handle) {
 										}}
 									/>
 								</div>
-								<div mix={css(step2ExitCss)} data-testid="onboarding-no-mcp">
-									<p mix={css(step2ExitLabelCss)}>No MCP for that service?</p>
+								<div mix={css(step2ExitCss)} data-testid="onboarding-advanced">
+									<p mix={css(step2ExitLabelCss)}>Advanced</p>
 									<p mix={css(step2ExitLedeCss)}>
-										Bring-your-own-key is the durable path when a tool has no
-										remote MCP — you create the app, your agent walks you
-										through it. That is harder. Finish this first build first,
-										then connect from Advanced or{' '}
+										No one-click login for that service? Follow a provider guide
+										— GitHub and Google are the usual next ones — or bring your
+										own keys after the first build.
+									</p>
+									<p mix={css(step2ExitLedeCss)}>
+										<a href="/guides/github" mix={css(primaryLinkCss)}>
+											Connect GitHub
+										</a>
+										{' · '}
+										<a href="/guides/google" mix={css(primaryLinkCss)}>
+											Connect Google
+										</a>
+										{' · '}
 										<a href="/account/secrets/new" mix={css(primaryLinkCss)}>
 											Account → Secrets
 										</a>
-										.{' '}
+										{' · '}
 										<a href="#byok" mix={css(primaryLinkCss)}>
 											Why bring your own keys?
 										</a>
@@ -923,9 +931,8 @@ export function OnboardingRoute(handle: Handle) {
 									<p>
 										Paste the prompt into your connected agent. It runs one{' '}
 										<em>execute</em> call, shows the result, then persists that
-										code with <em>package_save</em> (or forks a trusted
-										community listing if one is closer). That owned package is
-										the point of Kody.
+										working code with <em>package_save</em>. That owned package
+										is the point of Kody.
 									</p>
 								</aside>
 								<div mix={css(advancedSectionCss)}>

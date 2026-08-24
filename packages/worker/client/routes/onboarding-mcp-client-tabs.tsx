@@ -187,8 +187,10 @@ function renderPanelContent(
 			return (
 				<>
 					<p>
-						In ChatGPT, turn on <strong>Developer mode</strong> under Settings →
-						Security and login. Developer mode is available on the web for{' '}
+						This tab is <strong>chatgpt.com</strong> (web). ChatGPT desktop is
+						Codex — use that tab, or the Automatic CLI. On chatgpt.com, turn on{' '}
+						<strong>Developer mode</strong> under Settings → Security and login.
+						Developer mode is available on the web for{' '}
 						<a
 							href={chatGptDeveloperModeGuideUrl}
 							target="_blank"
@@ -230,8 +232,9 @@ function renderPanelContent(
 			return (
 				<>
 					<p>
-						Codex (ChatGPT desktop, Codex CLI, and the IDE extension) shares{' '}
-						<code>~/.codex/config.toml</code>. Run the Codex CLI, then{' '}
+						ChatGPT desktop is Codex. It shares{' '}
+						<code>~/.codex/config.toml</code> with Codex CLI and the IDE
+						extension. Run the Codex CLI, then{' '}
 						<code>{codexMcpLoginCommand}</code> if OAuth does not start
 						automatically, or add the streamable HTTP entry yourself:
 					</p>
@@ -569,9 +572,9 @@ export function OnboardingMcpClientTabs(
 				<AutomaticPath>
 					<p>
 						Run this to add Kody to the local agents the CLI finds (Cursor,
-						Claude Desktop, VS Code, Claude Code, Codex, and others). Then
-						Authenticate in that client. Web hosts such as ChatGPT, Claude.ai,
-						and Grok stay under Manual.
+						Claude Desktop, VS Code, Claude Code, Codex / ChatGPT desktop, and
+						others). Then Authenticate in that client. You can also manually
+						connect web hosts such as ChatGPT, Claude.ai, and Grok below.
 					</p>
 					<CopyCard
 						highlights={handle.props.highlights}

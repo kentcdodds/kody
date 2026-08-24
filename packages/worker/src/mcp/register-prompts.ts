@@ -32,7 +32,7 @@ export async function registerPrompts(agent: McpRegistrationAgent) {
 		{
 			title: 'Kody setup',
 			description:
-				'Get started with Kody: explain what it can do, connect one integration, verify with execute, then fork or create a package only if needed.',
+				'Get started with Kody: explain what it can do, give Kody access to one service, verify with execute, then persist a package they own.',
 		},
 		() =>
 			textPromptResult({

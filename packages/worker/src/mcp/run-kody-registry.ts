@@ -75,8 +75,8 @@ import {
 } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { runWithTransientDurableObjectResetRetry } from '#worker/durable-object-reset-retry.ts'
 import { evaluationHasHostMediatedSideEffects } from '#mcp/evaluation-side-effects.ts'
+import { isTransientJobExecutionError } from '#worker/jobs/execution-safety.ts'
 import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
-import { isStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
 import {
 	type RunRecordContext,
 	type RunRecordHandle,
@@ -814,6 +814,10 @@ export async function runBundledModuleWithRegistry(
 			waitUntil,
 		})
 	let runRecordFinished = false
+	const callerOwnsScheduledJobRun =
+		options?.runRecordHandle != null &&
+		(options.runRecord?.surface === 'job' ||
+			options.runRecordHandle.context.surface === 'job')
 	let exposeRunId = runRecordHandle?.persistence === 'eager'
 	let capturedLogs: Array<string> | undefined
 	// The metering span covers the whole bundled run (module hydration,
@@ -1128,17 +1132,16 @@ ${runtimeHelperRuntimePropertySource}
 						error: secretRedactor.redactErrorMessage(rewrittenMessage),
 					}
 				: sanitizedResult
-			const callerOwnsScheduledJobRun =
-				options?.runRecordHandle != null &&
-				(options.runRecord?.surface === 'job' ||
-					options.runRecordHandle.context.surface === 'job')
 			if (
 				callerOwnsScheduledJobRun &&
-				isStorageEstimateReadError(finalResult.error)
+				isTransientJobExecutionError(finalResult.error)
 			) {
 				// Leave the claimed run `running` so the job scheduler can
 				// abandon it and retry the same scheduledFor. Finishing as
-				// error would make the idempotency replay permanent.
+				// error would make the idempotency replay permanent — the
+				// next claim would replay the terminal row instead of
+				// retrying the occurrence (D1 blips, DO isolate resets,
+				// storage-estimate misses).
 				return withRunId(finalResult)
 			}
 			await finishObservedRun({
@@ -1149,6 +1152,13 @@ ${runtimeHelperRuntimePropertySource}
 			await recordPackageExportUsage('error')
 			return withRunId(finalResult)
 		} catch (error) {
+			if (
+				!runRecordFinished &&
+				callerOwnsScheduledJobRun &&
+				isTransientJobExecutionError(error)
+			) {
+				throw error
+			}
 			if (!runRecordFinished) {
 				await finishObservedRun({
 					status: 'error',
@@ -1159,6 +1169,13 @@ ${runtimeHelperRuntimePropertySource}
 			throw error
 		}
 	} catch (error) {
+		if (
+			!runRecordFinished &&
+			callerOwnsScheduledJobRun &&
+			isTransientJobExecutionError(error)
+		) {
+			throw error
+		}
 		if (!runRecordFinished) {
 			await finishObservedRun({
 				status: 'error',

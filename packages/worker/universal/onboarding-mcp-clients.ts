@@ -26,7 +26,7 @@ export type McpClientTab = {
 
 export const mcpClientTabs = [
 	{ id: 'cursor', label: 'Cursor', isNonCodingAgent: false },
-	{ id: 'chatgpt', label: 'ChatGPT', isNonCodingAgent: true },
+	{ id: 'chatgpt', label: 'ChatGPT.com', isNonCodingAgent: true },
 	{ id: 'codex', label: 'Codex', isNonCodingAgent: false },
 	{ id: 'claude-desktop', label: 'Claude Desktop', isNonCodingAgent: true },
 	{ id: 'grok', label: 'Grok.com', isNonCodingAgent: true },

@@ -116,6 +116,8 @@ test('example prompt searches the user-owned scoped package and invokes in user 
 
 	expect(prompt).toContain('@u-b/hn-pulse')
 	expect(prompt).toMatch(/packages\.invoke\("kody:@u-b\/hn-pulse\//)
+	expect(prompt).not.toContain('kody:@kody/')
+	expect(prompt).not.toContain('person accounts cannot')
 	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
 		'package_get_git_remote',
 	)
