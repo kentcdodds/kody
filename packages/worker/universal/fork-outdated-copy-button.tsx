@@ -1,6 +1,8 @@
 /** @jsxImportSource remix/ui */
 /** @jsxRuntime automatic */
 import { type Handle, css } from 'remix/ui'
+import { communityStatusPillBoxCss } from '#universal/community-status-pill.ts'
+import { hoverMq } from '#universal/styles/style-primitives.ts'
 import {
 	colors,
 	radius,
@@ -8,7 +10,6 @@ import {
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
-import { hoverMq } from '#universal/styles/style-primitives.ts'
 
 export const COPY_PROMPT_ATTRIBUTE = 'data-copy-prompt'
 export const COPY_PROMPT_SELECTOR = '[data-copy-prompt]'
@@ -119,19 +120,10 @@ const copyPromptTooltipCss = {
 }
 
 const copyPromptButtonBaseCss = {
+	...communityStatusPillBoxCss,
 	position: 'relative' as const,
 	zIndex: 1,
-	flex: 'none',
 	appearance: 'none' as const,
-	margin: 0,
-	border: 'none',
-	fontFamily: 'inherit',
-	fontSize: '0.78rem',
-	fontWeight: 650,
-	lineHeight: 1.2,
-	borderRadius: '999px',
-	padding: '0.15rem 0.6rem',
-	whiteSpace: 'nowrap' as const,
 	cursor: 'pointer',
 	...copyPromptTooltipCss,
 }
