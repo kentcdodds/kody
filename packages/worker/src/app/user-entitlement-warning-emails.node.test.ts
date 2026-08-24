@@ -16,11 +16,8 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 		sendCloudflareEmail(...args),
 }))
 
-const {
-	sendUserEntitlementWarningEmails,
-	userEntitlementWarningKvKey,
-	userEntitlementWarningPeriodKey,
-} = await import('#app/user-entitlement-warning-emails.ts')
+const { sendUserEntitlementWarningEmails, userEntitlementWarningKvKey } =
+	await import('#app/user-entitlement-warning-emails.ts')
 
 const stableUserId = 'a'.repeat(64)
 
@@ -29,11 +26,11 @@ function consumptionRow(input: {
 	label: string
 	current: number
 	limit: number
-	overEightyPercent: boolean
 }) {
 	return {
 		...input,
 		percentOfLimit: input.current / input.limit,
+		overEightyPercent: input.current / input.limit > 0.8,
 	}
 }
 
@@ -96,7 +93,7 @@ function createEnv(input: {
 	} as unknown as Env
 }
 
-test('user entitlement warnings email once per daily resource then cool down until the next UTC day', async () => {
+test('user entitlement warnings send one 80% email and one 100% email per UTC day regardless of resource', async () => {
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	const { kv, store } = createKv()
 	readAdminEntitlementConsumption.mockResolvedValue([
@@ -105,21 +102,18 @@ test('user entitlement warnings email once per daily resource then cool down unt
 			label: 'execute calls per day',
 			current: 200,
 			limit: 250,
-			overEightyPercent: true,
 		}),
 		consumptionRow({
 			resource: 'saved_packages',
 			label: 'saved packages',
 			current: 9,
 			limit: 10,
-			overEightyPercent: true,
 		}),
 		consumptionRow({
 			resource: 'secrets',
 			label: 'secrets',
 			current: 4,
 			limit: 25,
-			overEightyPercent: false,
 		}),
 	])
 	const env = createEnv({
@@ -138,68 +132,131 @@ test('user entitlement warnings email once per daily resource then cool down unt
 	expect(first).toEqual({
 		status: 'notified',
 		emailedUsers: 1,
+		emailsSent: 1,
 		warnedResources: 2,
 	})
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
-	const payload = sendCloudflareEmail.mock.calls[0]?.[1] as {
+	const approachingPayload = sendCloudflareEmail.mock.calls[0]?.[1] as {
 		to: string
 		from: string
 		subject: string
 		html: string
 		text: string
 	}
-	expect(payload.to).toBe('jelias@example.com')
-	expect(payload.from).toBe('kody@heykody.dev')
-	expect(payload.subject).toContain('plan limit')
-	expect(payload.html).toContain('https://heykody.dev/account/billing')
-	expect(payload.text).toContain('https://heykody.dev/account/usage')
-	expect(payload.html).toContain('execute calls per day')
-	expect(payload.html).toContain('saved packages')
-	expect(payload.html).not.toContain('secrets')
-	expect(payload.html).toContain('https://heykody.dev/images/kody-lantern.png')
-	expect(payload.html).toContain('https://heykody.dev/images/kody-mark.png')
-
-	const executeKey = userEntitlementWarningKvKey({
-		userId: stableUserId,
-		resource: 'execute_calls_per_day',
-		period: userEntitlementWarningPeriodKey('execute_calls_per_day', now),
-	})
-	const packagesKey = userEntitlementWarningKvKey({
-		userId: stableUserId,
-		resource: 'saved_packages',
-		period: userEntitlementWarningPeriodKey('saved_packages', now),
-	})
-	expect(store.get(executeKey)).toBe(String(now.getTime()))
-	expect(store.get(packagesKey)).toBe(String(now.getTime()))
-	expect(userEntitlementWarningPeriodKey('execute_calls_per_day', now)).toBe(
-		utcDayKey(now),
+	expect(approachingPayload.to).toBe('jelias@example.com')
+	expect(approachingPayload.from).toBe('kody@heykody.dev')
+	expect(approachingPayload.subject).toContain('approaching')
+	expect(approachingPayload.html).toContain(
+		'https://heykody.dev/account/billing',
 	)
-	expect(userEntitlementWarningPeriodKey('saved_packages', now)).toBe('stock')
+	expect(approachingPayload.text).toContain('https://heykody.dev/account/usage')
+	expect(approachingPayload.html).toContain('execute calls per day')
+	expect(approachingPayload.html).toContain('saved packages')
+	expect(approachingPayload.html).not.toContain('secrets')
+	expect(approachingPayload.html).toContain(
+		'https://heykody.dev/images/kody-lantern.png',
+	)
+
+	const approachingKey = userEntitlementWarningKvKey({
+		userId: stableUserId,
+		kind: 'approaching',
+		day: utcDayKey(now),
+	})
+	expect(store.get(approachingKey)).toBe(String(now.getTime()))
+	expect(
+		store.get(
+			userEntitlementWarningKvKey({
+				userId: stableUserId,
+				kind: 'reached',
+				day: utcDayKey(now),
+			}),
+		),
+	).toBeUndefined()
 
 	sendCloudflareEmail.mockClear()
-	const second = await sendUserEntitlementWarningEmails({
+	const stillApproaching = await sendUserEntitlementWarningEmails({
 		env,
 		now: new Date(now.getTime() + 60 * 60 * 1000),
 	})
-	expect(second).toEqual({ status: 'no_warnings' })
+	expect(stillApproaching).toEqual({ status: 'no_warnings' })
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+
+	readAdminEntitlementConsumption.mockResolvedValue([
+		consumptionRow({
+			resource: 'execute_calls_per_day',
+			label: 'execute calls per day',
+			current: 250,
+			limit: 250,
+		}),
+		consumptionRow({
+			resource: 'outbound_fetches_per_day',
+			label: 'outbound fetches per day',
+			current: 500,
+			limit: 500,
+		}),
+		consumptionRow({
+			resource: 'saved_packages',
+			label: 'saved packages',
+			current: 9,
+			limit: 10,
+		}),
+	])
+	const reached = await sendUserEntitlementWarningEmails({
+		env,
+		now: new Date(now.getTime() + 2 * 60 * 60 * 1000),
+	})
+	expect(reached).toEqual({
+		status: 'notified',
+		emailedUsers: 1,
+		emailsSent: 1,
+		warnedResources: 2,
+	})
+	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
+	const reachedPayload = sendCloudflareEmail.mock.calls[0]?.[1] as {
+		subject: string
+		html: string
+	}
+	expect(reachedPayload.subject).toContain('reached')
+	expect(reachedPayload.html).toContain('execute calls per day')
+	expect(reachedPayload.html).toContain('outbound fetches per day')
+	expect(reachedPayload.html).not.toContain('saved packages')
+	expect(
+		store.get(
+			userEntitlementWarningKvKey({
+				userId: stableUserId,
+				kind: 'reached',
+				day: utcDayKey(now),
+			}),
+		),
+	).toBe(String(now.getTime() + 2 * 60 * 60 * 1000))
+
+	sendCloudflareEmail.mockClear()
+	const sameDay = await sendUserEntitlementWarningEmails({
+		env,
+		now: new Date(now.getTime() + 3 * 60 * 60 * 1000),
+	})
+	expect(sameDay).toEqual({ status: 'no_warnings' })
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 
 	const nextDay = new Date('2026-07-26T01:00:00.000Z')
-	const third = await sendUserEntitlementWarningEmails({
+	const nextDayResult = await sendUserEntitlementWarningEmails({
 		env,
 		now: nextDay,
 	})
-	expect(third).toEqual({
+	expect(nextDayResult).toEqual({
 		status: 'notified',
 		emailedUsers: 1,
-		warnedResources: 1,
+		emailsSent: 2,
+		warnedResources: 3,
 	})
-	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
-	const nextPayload = sendCloudflareEmail.mock.calls[0]?.[1] as {
-		html: string
-	}
-	expect(nextPayload.html).toContain('execute calls per day')
-	expect(nextPayload.html).not.toContain('saved packages')
+	expect(sendCloudflareEmail).toHaveBeenCalledTimes(2)
+	const nextSubjects = sendCloudflareEmail.mock.calls.map(
+		(call) => (call[1] as { subject: string }).subject,
+	)
+	expect(nextSubjects).toEqual([
+		"You've reached a Kody plan limit",
+		"You're approaching a Kody plan limit",
+	])
 })
 
 test('user entitlement warnings skip when KV or transactional email is missing', async () => {
@@ -209,7 +266,6 @@ test('user entitlement warnings skip when KV or transactional email is missing',
 			label: 'execute calls per day',
 			current: 200,
 			limit: 250,
-			overEightyPercent: true,
 		}),
 	])
 	sendCloudflareEmail.mockClear()

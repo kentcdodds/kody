@@ -46,6 +46,7 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		appBaseUrl: 'https://kody.codes',
 		billingUrl: 'https://kody.codes/account/billing',
 		usageUrl: 'https://kody.codes/account/usage',
+		kind: 'approaching',
 		warnings: [
 			{
 				label: 'execute calls per day',
@@ -55,9 +56,28 @@ test('transactional emails escape untrusted content and put action URLs in both 
 			},
 		],
 	})
+	expect(warning.subject).toContain('approaching')
 	expect(warning.html).toContain('https://kody.codes/account/billing')
 	expect(warning.text).toContain('https://kody.codes/account/usage')
 	expect(warning.html).toContain('execute calls per day')
 	expect(warning.html).toContain('https://kody.codes/images/kody-lantern.png')
 	expect(warning.html).toContain('https://kody.codes/images/kody-mark.png')
+
+	const reached = buildUserEntitlementWarningEmail({
+		appBaseUrl: 'https://kody.codes',
+		billingUrl: 'https://kody.codes/account/billing',
+		usageUrl: 'https://kody.codes/account/usage',
+		kind: 'reached',
+		warnings: [
+			{
+				label: 'execute calls per day',
+				current: 250,
+				limit: 250,
+				percentOfLimit: 1,
+			},
+		],
+	})
+	expect(reached.subject).toContain('reached')
+	expect(reached.html).toContain('250 of 250 (100%)')
+	expect(reached.html).toContain('https://kody.codes/images/kody-lantern.png')
 })

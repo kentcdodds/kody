@@ -1,29 +1,35 @@
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
-import { buildUserEntitlementWarningEmail } from '#app/email/messages.ts'
+import {
+	buildUserEntitlementWarningEmail,
+	type UserEntitlementWarningKind,
+} from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consumption.ts'
-import { entitlementResourceVisibility } from '#worker/entitlements/resource-visibility.ts'
 import {
 	parseStoredPlanName,
 	planLimits,
 	resolveEffectivePlan,
-	type EntitlementResource,
 } from '#universal/plans.ts'
 
 /**
- * Hourly user-facing 80% entitlement warnings. Shares the
+ * Hourly user-facing entitlement warnings. Shares the
  * `usage_entitlement_alert` lane with the operator fleet-pressure mail so
  * both stay on the same UTC-hour cadence. Failures here must not block
  * the operator alert.
+ *
+ * Throttle is one approaching (80%) email and one reached (100%) email per
+ * verified person per UTC day, listing every resource currently in that
+ * bucket. It is not per-resource.
  */
 
-export const userEntitlementWarningKvKeyPrefix = 'entitlement-warning-user:v1'
+export const userEntitlementWarningKvKeyPrefix = 'entitlement-warning-user:v2'
 export const userEntitlementWarningSweepLimit = 100
 export const userEntitlementWarningActiveSweepLimit = 80
 export const userEntitlementWarningStockSweepLimit = 40
 export const userEntitlementWarningDailyTtlSeconds = 36 * 60 * 60
-export const userEntitlementWarningStockTtlSeconds = 7 * 24 * 60 * 60
+export const userEntitlementApproachingThreshold = 0.8
+export const userEntitlementReachedThreshold = 1
 const warningSweepConcurrency = 4
 
 const stockPackageThreshold = Math.ceil(planLimits.free.maxSavedPackages * 0.8)
@@ -36,35 +42,29 @@ type WarningCandidate = {
 	stripe_plan: string | null
 }
 
+type WarningResource = {
+	label: string
+	current: number
+	limit: number
+	percentOfLimit: number
+}
+
 export type UserEntitlementWarningEmailResult =
 	| { status: 'skipped'; reason: 'no_kv' | 'no_email_config' }
 	| { status: 'no_warnings' }
-	| { status: 'notified'; emailedUsers: number; warnedResources: number }
-
-export function isDailyEntitlementWarningResource(resource: string) {
-	return (
-		resource in entitlementResourceVisibility &&
-		entitlementResourceVisibility[resource as EntitlementResource].group ===
-			'daily'
-	)
-}
-
-export function userEntitlementWarningPeriodKey(resource: string, now: Date) {
-	return isDailyEntitlementWarningResource(resource) ? utcDayKey(now) : 'stock'
-}
+	| {
+			status: 'notified'
+			emailedUsers: number
+			emailsSent: number
+			warnedResources: number
+	  }
 
 export function userEntitlementWarningKvKey(input: {
 	userId: string
-	resource: string
-	period: string
+	kind: UserEntitlementWarningKind
+	day: string
 }) {
-	return `${userEntitlementWarningKvKeyPrefix}:${input.userId}:${input.resource}:${input.period}`
-}
-
-export function userEntitlementWarningTtlSeconds(resource: string) {
-	return isDailyEntitlementWarningResource(resource)
-		? userEntitlementWarningDailyTtlSeconds
-		: userEntitlementWarningStockTtlSeconds
+	return `${userEntitlementWarningKvKeyPrefix}:${input.userId}:${input.kind}:${input.day}`
 }
 
 export async function sendUserEntitlementWarningEmails(input: {
@@ -87,6 +87,7 @@ export async function sendUserEntitlementWarningEmails(input: {
 	if (candidates.length === 0) return { status: 'no_warnings' }
 
 	let emailedUsers = 0
+	let emailsSent = 0
 	let warnedResources = 0
 	await mapWithConcurrency(
 		candidates,
@@ -100,16 +101,18 @@ export async function sendUserEntitlementWarningEmails(input: {
 			})
 			if (!sent) return
 			emailedUsers += 1
-			warnedResources += sent
+			emailsSent += sent.emailsSent
+			warnedResources += sent.warnedResources
 		},
 	)
 
 	if (emailedUsers === 0) return { status: 'no_warnings' }
 	console.info('user-entitlement-warning-emailed', {
 		emailedUsers,
+		emailsSent,
 		warnedResources,
 	})
-	return { status: 'notified', emailedUsers, warnedResources }
+	return { status: 'notified', emailedUsers, emailsSent, warnedResources }
 }
 
 async function warnOneUserIfNeeded(input: {
@@ -117,7 +120,7 @@ async function warnOneUserIfNeeded(input: {
 	emailConfig: { appBaseUrl: string; fromEmail: string }
 	user: WarningCandidate
 	now: Date
-}): Promise<number | null> {
+}): Promise<{ emailsSent: number; warnedResources: number } | null> {
 	const kv = input.env.BUNDLE_ARTIFACTS_KV
 	if (!kv) return null
 
@@ -131,24 +134,70 @@ async function warnOneUserIfNeeded(input: {
 		plan,
 		now: input.now,
 	})
-	const overLimit = consumption.filter(
-		(item) => item.overEightyPercent && item.percentOfLimit != null,
-	)
-	if (overLimit.length === 0) return null
-
-	const newlyWarned = []
-	for (const item of overLimit) {
-		const period = userEntitlementWarningPeriodKey(item.resource, input.now)
-		const key = userEntitlementWarningKvKey({
-			userId: input.user.stable_user_id,
-			resource: item.resource,
-			period,
-		})
-		const alreadySent = await kv.get(key)
-		if (alreadySent) continue
-		newlyWarned.push(item)
+	const approaching: Array<WarningResource> = []
+	const reached: Array<WarningResource> = []
+	for (const item of consumption) {
+		if (item.percentOfLimit == null) continue
+		const warning = {
+			label: item.label,
+			current: item.current,
+			limit: item.limit,
+			percentOfLimit: item.percentOfLimit,
+		}
+		if (item.percentOfLimit >= userEntitlementReachedThreshold) {
+			reached.push(warning)
+			continue
+		}
+		if (item.percentOfLimit >= userEntitlementApproachingThreshold) {
+			approaching.push(warning)
+		}
 	}
-	if (newlyWarned.length === 0) return null
+	if (approaching.length === 0 && reached.length === 0) return null
+
+	const day = utcDayKey(input.now)
+	let emailsSent = 0
+	let warnedResources = 0
+	// Reached first so a same-hour jump to 100% sends the limit mail
+	// even when an 80% send is also due.
+	for (const [kind, warnings] of [
+		['reached', reached],
+		['approaching', approaching],
+	] as const) {
+		const sent = await sendThresholdEmailIfNeeded({
+			env: input.env,
+			kv,
+			emailConfig: input.emailConfig,
+			user: input.user,
+			kind,
+			warnings,
+			day,
+			now: input.now,
+		})
+		if (!sent) continue
+		emailsSent += 1
+		warnedResources += warnings.length
+	}
+	if (emailsSent === 0) return null
+	return { emailsSent, warnedResources }
+}
+
+async function sendThresholdEmailIfNeeded(input: {
+	env: Env
+	kv: KVNamespace
+	emailConfig: { appBaseUrl: string; fromEmail: string }
+	user: WarningCandidate
+	kind: UserEntitlementWarningKind
+	warnings: Array<WarningResource>
+	day: string
+	now: Date
+}): Promise<boolean> {
+	if (input.warnings.length === 0) return false
+	const key = userEntitlementWarningKvKey({
+		userId: input.user.stable_user_id,
+		kind: input.kind,
+		day: input.day,
+	})
+	if (await input.kv.get(key)) return false
 
 	const billingUrl = new URL(
 		'/account/billing',
@@ -162,12 +211,8 @@ async function warnOneUserIfNeeded(input: {
 		appBaseUrl: input.emailConfig.appBaseUrl,
 		billingUrl,
 		usageUrl,
-		warnings: newlyWarned.map((item) => ({
-			label: item.label,
-			current: item.current,
-			limit: item.limit,
-			percentOfLimit: item.percentOfLimit ?? 0,
-		})),
+		kind: input.kind,
+		warnings: input.warnings,
 	})
 
 	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
@@ -188,28 +233,19 @@ async function warnOneUserIfNeeded(input: {
 		)
 	} catch (error) {
 		console.warn('user-entitlement-warning-send-failed', error)
-		return null
+		return false
 	}
 	if (!sendResult.ok) {
 		console.warn('user-entitlement-warning-send-skipped', {
 			reason: sendResult.error ?? 'unconfigured',
 		})
-		return null
+		return false
 	}
 
-	for (const item of newlyWarned) {
-		const period = userEntitlementWarningPeriodKey(item.resource, input.now)
-		await kv.put(
-			userEntitlementWarningKvKey({
-				userId: input.user.stable_user_id,
-				resource: item.resource,
-				period,
-			}),
-			String(input.now.getTime()),
-			{ expirationTtl: userEntitlementWarningTtlSeconds(item.resource) },
-		)
-	}
-	return newlyWarned.length
+	await input.kv.put(key, String(input.now.getTime()), {
+		expirationTtl: userEntitlementWarningDailyTtlSeconds,
+	})
+	return true
 }
 
 async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {

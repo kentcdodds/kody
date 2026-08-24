@@ -55,10 +55,16 @@ export function buildEmailChangeEmail(input: {
 	})
 }
 
+export const userEntitlementWarningKinds = ['approaching', 'reached'] as const
+
+export type UserEntitlementWarningKind =
+	(typeof userEntitlementWarningKinds)[number]
+
 export function buildUserEntitlementWarningEmail(input: {
 	appBaseUrl: string
 	billingUrl: string
 	usageUrl: string
+	kind: UserEntitlementWarningKind
 	warnings: Array<{
 		label: string
 		current: number
@@ -70,15 +76,13 @@ export function buildUserEntitlementWarningEmail(input: {
 		const percent = Math.round(warning.percentOfLimit * 100)
 		return `${warning.label} — ${warning.current.toLocaleString('en-US')} of ${warning.limit.toLocaleString('en-US')} (${percent}%).`
 	})
+	const copy = entitlementWarningCopy(input.kind)
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
-		subject: "You're approaching a Kody plan limit",
-		preheader: 'One or more resources on your plan are over 80%.',
-		heading: "You're getting close to a plan limit",
-		body: [
-			'Just a heads-up: one or more resources on your Kody account are over 80% of your current plan.',
-			...lines,
-		],
+		subject: copy.subject,
+		preheader: copy.preheader,
+		heading: copy.heading,
+		body: [copy.intro, ...lines],
 		action: { label: 'Review your plan', url: input.billingUrl },
 		afterAction: [
 			`You can also see every limit on your usage page: ${input.usageUrl}`,
@@ -89,9 +93,37 @@ export function buildUserEntitlementWarningEmail(input: {
 			width: 96,
 			height: 96,
 		},
-		footnote:
-			"You're receiving this because your account is approaching a plan limit.",
+		footnote: copy.footnote,
 	})
+}
+
+function entitlementWarningCopy(kind: UserEntitlementWarningKind) {
+	switch (kind) {
+		case 'approaching':
+			return {
+				subject: "You're approaching a Kody plan limit",
+				preheader: 'One or more resources on your plan are over 80%.',
+				heading: "You're getting close to a plan limit",
+				intro:
+					'Just a heads-up: one or more resources on your Kody account are over 80% of your current plan.',
+				footnote:
+					"You're receiving this because your account is approaching a plan limit.",
+			}
+		case 'reached':
+			return {
+				subject: "You've reached a Kody plan limit",
+				preheader: 'One or more resources on your plan are at 100%.',
+				heading: "You've hit a plan limit",
+				intro:
+					'Just a heads-up: one or more resources on your Kody account are at their current plan limit.',
+				footnote:
+					"You're receiving this because your account has reached a plan limit.",
+			}
+		default: {
+			const exhaustive: never = kind
+			throw new Error(`Unknown entitlement warning kind: ${String(exhaustive)}`)
+		}
+	}
 }
 
 export function buildPasswordResetEmail(input: {
