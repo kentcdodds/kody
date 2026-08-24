@@ -67,9 +67,9 @@ await packages /* optional note */ ?. /* property note */ invoke('@owner/optiona
 `,
 	}
 
-	expect(prefixPackagesInvokeSpecifiersCodemod.detect(files).map((f) => f.path)).toEqual(
-		['before-invoke.ts', 'before-operator.ts'],
-	)
+	expect(
+		prefixPackagesInvokeSpecifiersCodemod.detect(files).map((f) => f.path),
+	).toEqual(['before-invoke.ts', 'before-operator.ts'])
 	expect(
 		prefixPackagesInvokeSpecifiersCodemod
 			.detect(files)
@@ -269,7 +269,9 @@ test('0007 never rewrites packages.invoke inside Markdown HTML comments', () => 
 	expect(result.files['comment.md']).toContain(
 		"packages.invoke('kody:@owner/visible/export')",
 	)
-	expect(result.needsManual.map((finding) => finding.path)).toEqual(['comment.md'])
+	expect(result.needsManual.map((finding) => finding.path)).toEqual([
+		'comment.md',
+	])
 	expect(
 		result.needsManual.every((finding) => finding.message.length > 0),
 	).toBe(true)
@@ -294,7 +296,9 @@ await packages.invoke(\`@\${owner}/pkg/export\`, options)
 		"packages.invoke('kody:@private-owner/private-package/export', options)",
 	)
 	expect(result.files['object-only.ts']).toBe(files['object-only.ts'])
-	expect(result.needsManual.map((finding) => finding.path)).toEqual(['broken.ts'])
+	expect(result.needsManual.map((finding) => finding.path)).toEqual([
+		'broken.ts',
+	])
 	expect(
 		result.needsManual.every((finding) => finding.message.length > 0),
 	).toBe(true)
@@ -692,7 +696,9 @@ test('0007 confines malformed inline delimiters to physical lines', () => {
 	const transformed = result.files['recovery.md'] ?? ''
 
 	expect(result.changedPaths).toEqual(['recovery.md'])
-	expect(result.needsManual.map((finding) => finding.path)).toEqual(['recovery.md'])
+	expect(result.needsManual.map((finding) => finding.path)).toEqual([
+		'recovery.md',
+	])
 	expect(
 		result.needsManual.every((finding) => finding.message.length > 0),
 	).toBe(true)

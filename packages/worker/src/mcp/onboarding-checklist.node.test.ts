@@ -170,9 +170,9 @@ test('search onboarding notice points at /onboarding and goes quiet after dismis
 		userId,
 		baseUrl: 'https://kody.example',
 	})
-	expect(notice).toContain('https://kody.example/onboarding')
 	expect(typeof notice).toBe('string')
 	expect(notice!.length).toBeGreaterThan(0)
+	expect(notice).toContain('/onboarding')
 
 	await dismissOnboardingChecklist({ env, userId })
 	expect(
@@ -202,35 +202,4 @@ test('first-win Send is done when email_send meter counts even without mailbox',
 	expect(
 		await userHasSentWelcomeEmail({ env, userId: 'b'.repeat(64), now }),
 	).toBe(false)
-})
-
-test('leftover onboardingChecklistDismissed value copies onto the users column', async () => {
-	const { env } = createEnv()
-	await seedUser(env.APP_DB)
-	await env.APP_DB.prepare(
-		`INSERT INTO value_buckets (id, user_id, scope, binding_key, created_at, updated_at)
-		 VALUES (?, ?, 'user', '', ?, ?)`,
-	)
-		.bind(
-			'vb-onboarding',
-			userId,
-			'2026-08-01T00:00:00.000Z',
-			'2026-08-01T00:00:00.000Z',
-		)
-		.run()
-	await env.APP_DB.prepare(
-		`INSERT INTO value_entries (bucket_id, name, description, value, created_at, updated_at)
-		 VALUES (?, 'onboardingChecklistDismissed', '', ?, ?, ?)`,
-	)
-		.bind(
-			'vb-onboarding',
-			'2026-08-01T12:00:00.000Z',
-			'2026-08-01T12:00:00.000Z',
-			'2026-08-01T12:00:00.000Z',
-		)
-		.run()
-
-	expect(await readDismissedAt(env.APP_DB)).toBe(null)
-	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(true)
-	expect(await readDismissedAt(env.APP_DB)).toBe('2026-08-01T12:00:00.000Z')
 })

@@ -3,9 +3,12 @@ import {
 	sanitizePersistedMcpServerOptions,
 	sanitizeStoredMcpSessions,
 } from './restore.ts'
-import { modernMcpProtocolVersion } from './transport-session.ts'
+import {
+	clearLiveMcpTransportSession,
+	modernMcpProtocolVersion,
+} from './transport-session.ts'
 
-test('restore clears stale 2025 sessions and keeps a fresh modern discoverResult', () => {
+test('restore and live session sanitization clears stale 2025 state and keeps fresh modern discoverResult', () => {
 	const stale = sanitizePersistedMcpServerOptions({
 		transport: {
 			type: 'auto',
@@ -44,6 +47,25 @@ test('restore clears stale 2025 sessions and keeps a fresh modern discoverResult
 		capabilities: { elicitation: { form: {} } },
 		versionNegotiation: { mode: 'auto' },
 	})
+
+	const live = {
+		cleared: false,
+		clearResumedSession() {
+			this.cleared = true
+		},
+		options: {
+			transport: {
+				sessionId: 'live-2025',
+				protocolVersion: '2025-11-25',
+			},
+			discoverResult: { supportedVersions: ['2025-11-25'] },
+		},
+	}
+	clearLiveMcpTransportSession(live)
+	expect(live.cleared).toBe(true)
+	expect(live.options.transport.sessionId).toBeUndefined()
+	expect(live.options.transport.protocolVersion).toBeUndefined()
+	expect(live.options.discoverResult).toBeUndefined()
 
 	const updates: Array<{ id: string; options: string }> = []
 	sanitizeStoredMcpSessions({

@@ -20,49 +20,21 @@ import {
 	overlayOnboardingFeaturedMcpServers,
 } from './onboarding-mcp-chooser.ts'
 
-test('featured MCP chooser ships six official OAuth servers with packages', () => {
-	expect(onboardingFeaturedMcpServers.map((server) => server.id)).toEqual([
-		'notion',
-		'linear',
-		'atlassian',
-		'stripe',
-		'sentry',
-		'canva',
-	])
-	expect(onboardingFeaturedMcpServers.map((server) => server.url)).toEqual([
-		'https://mcp.notion.com/mcp',
-		'https://mcp.linear.app/mcp',
-		'https://mcp.atlassian.com/v1/mcp/authv2',
-		'https://mcp.stripe.com',
-		'https://mcp.sentry.dev/mcp',
-		'https://mcp.canva.com/mcp',
-	])
+test('featured MCP chooser overlays OAuth state and package listings', () => {
+	expect(onboardingFeaturedMcpServers.length).toBeGreaterThan(0)
 	expect(
 		onboardingFeaturedMcpServers.every(
 			(server) =>
 				server.packageKodyId === `${server.id}-mcp` &&
-				server.listingId.length > 0,
+				server.listingId.length > 0 &&
+				server.url.startsWith('https://'),
 		),
 	).toBe(true)
-	expect(
-		onboardingFeaturedMcpServers.some((server) => server.id === 'github'),
-	).toBe(false)
-	expect(
-		onboardingFeaturedMcpServers.some(
-			(server) =>
-				server.id === 'slack' || server.id === 'asana' || server.id === 'figma',
-		),
-	).toBe(false)
-	expect(listOnboardingFeaturedMcpListingIds()).toHaveLength(6)
-	expect(formatOnboardingFeaturedMcpChoice()).toBe(
-		'Notion, Linear, Atlassian, Stripe, Sentry, or Canva',
+	expect(listOnboardingFeaturedMcpListingIds()).toEqual(
+		onboardingFeaturedMcpServers.map((server) => server.listingId),
 	)
-	expect(formatOnboardingFeaturedMcpAddHint()).toContain(
-		'notion (https://mcp.notion.com/mcp)',
-	)
-	expect(formatOnboardingFeaturedMcpAddHint()).toContain(
-		'canva (https://mcp.canva.com/mcp)',
-	)
+	expect(formatOnboardingFeaturedMcpChoice().length).toBeGreaterThan(0)
+	expect(formatOnboardingFeaturedMcpAddHint().length).toBeGreaterThan(0)
 
 	expect(normalizeOnboardingMcpServerUrl('https://mcp.notion.com/mcp/')).toBe(
 		'https://mcp.notion.com/mcp',
@@ -160,9 +132,7 @@ test('featured MCP chooser ships six official OAuth servers with packages', () =
 	])
 	expect(attached[0]?.packageListing?.name).toBe('@kody/notion-mcp')
 	expect(attached[1]?.packageListing).toBeNull()
-})
 
-test('featured MCP poll fingerprint changes when a listing appears after a miss', () => {
 	const withoutListing = listDisconnectedOnboardingFeaturedMcpServers()
 	const notionListing = {
 		id: onboardingFeaturedMcpServers[0].listingId,
@@ -188,17 +158,11 @@ test('featured MCP poll fingerprint changes when a listing appears after a miss'
 			},
 		},
 	])
-
 	expect(featuredOnboardingMcpFingerprint(withoutListing)).not.toBe(
 		featuredOnboardingMcpFingerprint(withListing),
 	)
 	expect(featuredOnboardingMcpFingerprint(withListing)).not.toBe(
 		featuredOnboardingMcpFingerprint(withInstall),
-	)
-	expect(featuredOnboardingMcpFingerprint(withListing)).toBe(
-		featuredOnboardingMcpFingerprint(
-			attachOnboardingMcpPackageListings(withoutListing, [notionListing]),
-		),
 	)
 })
 

@@ -576,7 +576,9 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 		String(later.getTime()),
 	)
 	expect(
-		ttlPuts.filter((put) => put.key === instanceKey('reached', 'saved_packages')),
+		ttlPuts.filter(
+			(put) => put.key === instanceKey('reached', 'saved_packages'),
+		),
 	).toEqual([
 		{
 			key: instanceKey('reached', 'saved_packages'),
@@ -643,7 +645,9 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 		warnedResources: 2,
 	})
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(2)
-	expect(failStore.get(instanceKey('reached', 'saved_packages'))).toBeUndefined()
+	expect(
+		failStore.get(instanceKey('reached', 'saved_packages')),
+	).toBeUndefined()
 	expect(
 		failStore.get(
 			userEntitlementWarningKvKey({

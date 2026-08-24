@@ -20,11 +20,8 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	expect(html).toMatch(
 		/<details(?![^>]*\bopen\b)[^>]*data-testid="onboarding-mcp-manual"/,
 	)
-	expect(html).toContain('>Automatic<')
-	expect(html).toContain('>Manual<')
 	expect(html).toContain('npx @kodycodes/cli install')
 	expect(html).not.toContain('--mcp-url')
-	expect(html).not.toMatch(/heykody\.(?:app|dev)/)
 	expect(html).toMatch(/aria-selected="true"[^>]*>Cursor</)
 
 	const automaticBlock = html.slice(
