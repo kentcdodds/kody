@@ -28,8 +28,8 @@ origin request path is:
 `packages/worker/src/index.ts` -> `packages/worker/src/app/handler.ts` ->
 `packages/worker/src/app/router.ts`
 
-Package-app hosts (`kody.run`; legacy `kodyapps.dev` dual-served until
-#1300/#1428) and the invocation API live on `kody-runtime`. Platform Durable
+Package-app hosts (`kody.run`; legacy `kodyapps.dev` dual-served until issues
+1300 and 1428) and the invocation API live on `kody-runtime`. Platform Durable
 Objects and scheduled jobs live on `kody-platform` and `kody-jobs`. See
 [architecture](architecture/index.md#production-worker-fleet).
 
