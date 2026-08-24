@@ -35,15 +35,9 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import {
 	type PublicCommunityListing,
-	type PublicCommunityStargazer,
 	type ViewerListingInstall,
 } from '#universal/community-public-types.ts'
-import {
-	type AppLoaderData,
-	type CommunityStargazersLoaderData,
-} from '#universal/loader-data.ts'
-import { formatCommunityPublishedDate } from '#universal/community-display.ts'
-import { UserAvatar } from '#universal/user-avatar.tsx'
+import { type AppLoaderData } from '#universal/loader-data.ts'
 
 /**
  * Community detail, ported from the redesign prototype
@@ -51,9 +45,9 @@ import { UserAvatar } from '#universal/user-avatar.tsx'
  * post: the listing head (back link, icon + name + author + badges, tags,
  * quiet meta row) stays server-rendered in the `community-detail` frame —
  * see `src/app/community-detail-content.tsx` — while this shell renders the
- * interactive sections around it: the README as `.prose`, stars, admin
- * tools, and the report disclosure. Install / Installed / Fork outdated
- * live in the frame next to Trusted.
+ * interactive sections around it: the README as `.prose`, admin tools, and
+ * the report disclosure. Install / Installed / Fork outdated live in the
+ * frame next to Trusted. The title star lives there too.
  */
 
 type CommunityDetailApiPayload = {
@@ -273,14 +267,9 @@ export function CommunityDetailRoute(handle: Handle) {
 	// way.
 	let shellLoadedForPathname: string | null = null
 	let shellRequestedForPathname: string | null = null
-	let starCount = 0
 	let starredByViewer = false
 	let starState: 'idle' | 'submitting' | 'error' = 'idle'
 	let starMessage: string | null = null
-	let stargazers: Array<PublicCommunityStargazer> = []
-	let stargazersTotal = 0
-	let stargazersStatus: 'idle' | 'loading' | 'ready' | 'error' = 'idle'
-	let stargazersLoadedForListingId: string | null = null
 
 	// Re-lexing markdown on every handle.update() would be wasted work; cache
 	// the rendered README per markdown string (same policy as MarkdownView).
@@ -347,7 +336,6 @@ export function CommunityDetailRoute(handle: Handle) {
 			installMessage = null
 			installOutcome = null
 			readmeContent = payload.listing.readmeContent
-			starCount = payload.listing.starCount
 			starredByViewer = payload.starredByViewer
 			starState = 'idle'
 			starMessage = null
@@ -356,36 +344,12 @@ export function CommunityDetailRoute(handle: Handle) {
 			shellLoadedForPathname = ref.pathname
 			shellStatus = 'ready'
 			handle.update()
-			void loadStargazers(payload.listing.id)
 		} catch {
 			if (requestId !== shellLoadRequestId) return
 			// Mark the listing as attempted so renders do not requeue the load
 			// in a loop; the user can recover via navigation or reload.
 			shellLoadedForPathname = ref.pathname
 			shellStatus = 'error'
-			handle.update()
-		}
-	}
-
-	async function loadStargazers(listingId: string) {
-		stargazersStatus = 'loading'
-		handle.update()
-		try {
-			const response = await fetch(
-				routes.communityStargazersApi.href({ listingId }),
-				{ headers: { Accept: 'application/json' } },
-			)
-			const payload = await readJson<CommunityStargazersLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load stargazers.')
-			}
-			stargazers = payload.stargazers
-			stargazersTotal = payload.totalStars
-			stargazersLoadedForListingId = listingId
-			stargazersStatus = 'ready'
-			handle.update()
-		} catch {
-			stargazersStatus = 'error'
 			handle.update()
 		}
 	}
@@ -425,10 +389,8 @@ export function CommunityDetailRoute(handle: Handle) {
 				throw new Error(payload?.error ?? 'Unable to update star status.')
 			}
 			starredByViewer = payload.starred ?? nextStarred
-			starCount = payload.starCount ?? starCount
 			starState = 'idle'
 			handle.update()
-			void loadStargazers(listingId)
 			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
 			if (frame) void frame.reload()
 		} catch (error) {
@@ -673,6 +635,16 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
+	function handleCommunityStarClick(event: Event) {
+		const target = event.target
+		if (!(target instanceof Element)) return
+		const control = target.closest('[data-community-star]')
+		if (!control || control instanceof HTMLAnchorElement) return
+		event.preventDefault()
+		if (starState === 'submitting') return
+		void submitStar(!starredByViewer)
+	}
+
 	listenToRouterNavigation(handle, () => {
 		if (!getListingPageRef(readRouterPathname(handle))) return
 
@@ -706,7 +678,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		installMessage = null
 		installOutcome = null
 		readmeContent = routeData.readmeContent
-		starCount = routeData.starCount
 		starredByViewer = routeData.starredByViewer
 		starState = 'idle'
 		starMessage = null
@@ -714,14 +685,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		reportMessage = null
 		shellLoadedForPathname = pathname
 		shellStatus = 'ready'
-		if (stargazersLoadedForListingId !== listingId) {
-			// This runs during render, and `loadStargazers` calls
-			// `handle.update()` before its first await. The runtime only wires
-			// up a component's update scheduler after its first render
-			// returns, so calling it inline throws instead of scheduling:
-			// https://github.com/remix-run/remix/issues/11642
-			handle.queueTask(() => void loadStargazers(listingId))
-		}
 		return true
 	}
 
@@ -802,7 +765,10 @@ export function CommunityDetailRoute(handle: Handle) {
 			<article
 				mix={[
 					css(detailArticleCss),
-					on('click', (event) => handleCommunityInstallClick(event)),
+					on('click', (event) => {
+						handleCommunityInstallClick(event)
+						handleCommunityStarClick(event)
+					}),
 				]}
 			>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
@@ -885,6 +851,11 @@ export function CommunityDetailRoute(handle: Handle) {
 									{installMessage}
 								</p>
 							) : null}
+							{starMessage ? (
+								<p mix={css(errorTextCss)} role="alert">
+									{starMessage}
+								</p>
+							) : null}
 						</div>
 
 						{readmeContent ? (
@@ -898,99 +869,6 @@ export function CommunityDetailRoute(handle: Handle) {
 								</div>
 							</section>
 						) : null}
-
-						<section
-							aria-labelledby="stars-title"
-							mix={css(detailSectionCss)}
-							data-testid="community-star"
-						>
-							<h2 id="stars-title">Stars</h2>
-							<p data-testid="community-star-count">
-								{starCount} {starCount === 1 ? 'star' : 'stars'}
-							</p>
-							{loggedIn ? (
-								<div mix={css(sectionActionCss)}>
-									<button
-										type="button"
-										disabled={starState === 'submitting'}
-										mix={[
-											on('click', () => void submitStar(!starredByViewer)),
-											css(
-												starredByViewer ? smallGhostButtonCss : pillButtonCss,
-											),
-										]}
-									>
-										{starState === 'submitting'
-											? 'Saving…'
-											: starredByViewer
-												? 'Unstar'
-												: 'Star'}
-									</button>
-								</div>
-							) : (
-								<p>
-									<a href="/login" mix={css(inlineLinkCss)}>
-										Log in
-									</a>{' '}
-									to star this package.
-								</p>
-							)}
-							{starMessage ? (
-								<p mix={css(errorTextCss)} role="alert">
-									{starMessage}
-								</p>
-							) : null}
-							{/*
-							 * Only once the fetch resolved. `stargazersTotal` starts
-							 * at 0, so rendering it unconditionally put a second,
-							 * contradictory number next to the shell's own
-							 * `starCount` ("5 stars" above "0 stargazers") for the
-							 * length of the request — and left it there for good if
-							 * the request failed.
-							 */}
-							{stargazersStatus === 'ready' ? (
-								<p data-testid="community-stargazers-total">
-									{stargazersTotal}{' '}
-									{stargazersTotal === 1 ? 'stargazer' : 'stargazers'}
-								</p>
-							) : null}
-							{stargazersStatus === 'loading' ? (
-								<p>Loading stargazers…</p>
-							) : null}
-							{stargazersStatus === 'error' ? (
-								<p>Unable to load the stargazer list.</p>
-							) : null}
-							{stargazersStatus === 'ready' && stargazers.length > 0 ? (
-								<ul
-									mix={css(stargazerListCss)}
-									data-testid="community-stargazers"
-								>
-									{stargazers.map((stargazer) => (
-										<li key={stargazer.username}>
-											<UserAvatar
-												displayName={stargazer.displayName}
-												avatarUrl={stargazer.avatarUrl}
-												size={32}
-											/>
-											<span>
-												<a
-													href={routes.profile.href({
-														username: stargazer.username,
-													})}
-													mix={css(stargazerLinkCss)}
-												>
-													{stargazer.displayName}
-												</a>{' '}
-												<span mix={css({ color: colors.textMuted })}>
-													starred{' '}
-													{formatCommunityPublishedDate(stargazer.starredAt)}
-												</span>
-											</span>
-										</li>
-									))}
-								</ul>
-							) : null}
-						</section>
 
 						{viewerIsAdmin ? (
 							<section
@@ -1229,8 +1107,6 @@ const installProgressCss = {
 	fontSize: '0.95rem',
 }
 
-const pillButtonCss = getPillButtonCss()
-
 /* The prototype's smaller `.account-form .button` sizing. */
 const smallGhostButtonCss = mergeCss(getGhostButtonCss(), {
 	fontSize: '0.95rem',
@@ -1307,30 +1183,6 @@ const readmeProseCss = mergeCss(proseCss, {
 		letterSpacing: '-0.01em',
 	},
 })
-
-const stargazerListCss = {
-	listStyle: 'none',
-	margin: '1.1rem 0 0',
-	padding: 0,
-	display: 'grid',
-	gap: '0.45rem',
-	fontSize: '0.92rem',
-	'& > li': {
-		display: 'flex',
-		alignItems: 'center',
-		gap: '0.5rem',
-	},
-}
-
-const stargazerLinkCss = {
-	color: colors.text,
-	fontWeight: 550,
-	textDecoration: 'none',
-	transition: `color ${transitions.fast}`,
-	'&:hover': {
-		color: colors.primaryText,
-	},
-}
 
 /* "Report this listing" tucked in a details disclosure. */
 const reportDisclosureCss = {
