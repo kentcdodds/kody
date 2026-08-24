@@ -190,11 +190,12 @@ the same cold zero-init path):
   batch into one mail. KV prefix `entitlement-warning-user:v3` stores
   `{prefix}:{userId}:{kind}:{resource}` for stock limits, and appends the UTC
   day for `*_per_day` counters so a midnight reset is a new instance. A
-  remaining `v2` daily key for the same user and kind from the last 36 hours
-  counts as a claim for every resource currently in that bucket. Candidate
-  selection is the top ~80 accounts by current-month event count plus high
-  package/secret stock, capped at 100. Operator fleet mail is unchanged and
-  still runs if user warning sends fail.
+  remaining same-day `v2` daily key for the same user and kind counts as a claim
+  for every resource currently in that bucket. A leftover `v2` key from an
+  earlier UTC day claims stock limits only, so a `*_per_day` midnight reset can
+  still mail. Candidate selection is the top ~80 accounts by current-month event
+  count plus high package/secret stock, capped at 100. Operator fleet mail is
+  unchanged and still runs if user warning sends fail.
 
 `readEntitlementResourceUsage` counts only APP_DB-backed row resources (`repos`,
 `saved_packages`, `secrets`). Resources whose authority is elsewhere

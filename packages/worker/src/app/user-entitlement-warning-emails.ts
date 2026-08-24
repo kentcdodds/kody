@@ -332,13 +332,15 @@ async function absorbDailyClaims(input: {
 	now: Date
 }) {
 	if (input.warnings.length === 0) return
-	for (const day of recentUtcDayKeys(input.now)) {
-		const dailyKey = userEntitlementWarningDailyKvKey({
+	const today = utcDayKey(input.now)
+	const todayClaimed = await input.kv.get(
+		userEntitlementWarningDailyKvKey({
 			userId: input.userId,
 			kind: input.kind,
-			day,
-		})
-		if (!(await input.kv.get(dailyKey))) continue
+			day: today,
+		}),
+	)
+	if (todayClaimed) {
 		await claimWarningInstance({
 			kv: input.kv,
 			userId: input.userId,
@@ -348,6 +350,33 @@ async function absorbDailyClaims(input: {
 		})
 		return
 	}
+
+	let priorDayClaimed = false
+	for (const day of recentUtcDayKeys(input.now)) {
+		if (day === today) continue
+		const dailyKey = userEntitlementWarningDailyKvKey({
+			userId: input.userId,
+			kind: input.kind,
+			day,
+		})
+		if (await input.kv.get(dailyKey)) {
+			priorDayClaimed = true
+			break
+		}
+	}
+	if (!priorDayClaimed) return
+
+	const stockWarnings = input.warnings.filter(
+		(warning) => !isDailyEntitlementResource(warning.resource),
+	)
+	if (stockWarnings.length === 0) return
+	await claimWarningInstance({
+		kv: input.kv,
+		userId: input.userId,
+		kind: input.kind,
+		warnings: stockWarnings,
+		now: input.now,
+	})
 }
 
 async function unclaimedWarnings(input: {

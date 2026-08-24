@@ -413,6 +413,12 @@ test('user entitlement warnings absorb leftover daily claims without mailing aga
 			current: 10,
 			limit: 10,
 		}),
+		consumptionRow({
+			resource: 'execute_calls_per_day',
+			label: 'execute calls per day',
+			current: 250,
+			limit: 250,
+		}),
 	])
 	sendCloudflareEmail.mockClear()
 	const env = createEnv({
@@ -428,15 +434,43 @@ test('user entitlement warnings absorb leftover daily claims without mailing aga
 	})
 
 	const absorbed = await sendUserEntitlementWarningEmails({ env, now })
-	expect(absorbed).toEqual({ status: 'no_warnings' })
-	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+	expect(absorbed).toEqual({
+		status: 'notified',
+		emailedUsers: 1,
+		emailsSent: 1,
+		warnedResources: 1,
+	})
+	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
+	expect(
+		(sendCloudflareEmail.mock.calls[0]?.[1] as { html: string }).html,
+	).toContain('execute calls per day')
+	expect(
+		(sendCloudflareEmail.mock.calls[0]?.[1] as { html: string }).html,
+	).not.toContain('saved packages')
 	expect(store.get(instanceKey('reached', 'saved_packages'))).toBe(
 		String(now.getTime()),
 	)
 	expect(store.get(instanceKey('approaching', 'saved_packages'))).toBe(
 		String(now.getTime()),
 	)
+	expect(store.get(instanceKey('reached', 'execute_calls_per_day', now))).toBe(
+		String(now.getTime()),
+	)
 
+	readAdminEntitlementConsumption.mockResolvedValue([
+		consumptionRow({
+			resource: 'saved_packages',
+			label: 'saved packages',
+			current: 10,
+			limit: 10,
+		}),
+		consumptionRow({
+			resource: 'execute_calls_per_day',
+			label: 'execute calls per day',
+			current: 0,
+			limit: 250,
+		}),
+	])
 	sendCloudflareEmail.mockClear()
 	const nextDay = await sendUserEntitlementWarningEmails({
 		env,
