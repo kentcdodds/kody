@@ -195,14 +195,13 @@ reconnects use `/connect/oauth?provider=google` and the connect UI scope menu.
 
 ## Use the official package and verify
 
-Ad hoc `execute` may import `kody:@kody/google` live. A
-saved integration is auth credentials only. Finish by calling the live official
-helpers so day-to-day work goes through maintained Gmail, Calendar, and Drive
-helpers instead of raw `createAuthenticatedFetch` calls. Official `@kody/*`
-packages resolve in the execute caller runtime against the caller's secrets.
-Saved person-account packages cannot import or invoke a platform scope —
-`community_fork` into the caller's scope first, or fork when you need to
-customize the source.
+Ad hoc `execute` may import `kody:@kody/google` live. A saved integration is
+auth credentials only. Finish by calling the live official helpers so day-to-day
+work goes through maintained Gmail, Calendar, and Drive helpers instead of raw
+`createAuthenticatedFetch` calls. Official `@kody/*` packages resolve in the
+execute caller runtime against the caller's secrets. Saved person-account
+packages cannot import or invoke a platform scope — `community_fork` into the
+caller's scope first, or fork when you need to customize the source.
 
 1. Search for `@kody/google` (or import `kody:@kody/google` directly). It covers
    Gmail, Calendar, Drive, People, and YouTube.

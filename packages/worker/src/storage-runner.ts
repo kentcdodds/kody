@@ -1198,7 +1198,7 @@ export function createPackageStorageAccessDeniedMessage(packageId: string) {
 		'Package storage access is granted only from bundler-recorded provenance: the running package itself and ' +
 		'the saved packages this bundle statically imported (kody:@scope/package/export). If the target package is ' +
 		'known when the code is written, statically import one of its exports so the bundler records the dependency; ' +
-		'otherwise import(specifier) a caller-owned or forked package when the name is data so that package\'s ' +
+		"otherwise import(specifier) a caller-owned or forked package when the name is data so that package's " +
 		'own runtime does the reading and writing.'
 	)
 }

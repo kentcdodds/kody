@@ -143,17 +143,16 @@ exhaustive.
 - **Platform (built-in) scopes are execute-only.** When a scope's username
   belongs to a platform account (for example `@kody`), ad hoc `execute` may
   statically import the current published version — for example
-  `import gh from 'kody:@kody/github/issues'`. A static import runs in
-  **your** execute runtime against your secrets and grants. **Saved
-  person-owned packages must not depend on a platform scope.** Official
-  `@kody` packages may still compose with each other. Publish checks reject
-  `kody:@kody/…` static imports and `kody.dependencies` entries in
-  person-owned package source. Fork the official package into your scope
-  (`community_fork`) and depend on that copy. Platform package code cannot
-  use `packageStorage()` in your account. Platform packages appear in
-  `search` results (marked with their platform scope) so agents discover
-  them for execute; the detail text says to fork before using them in a
-  saved person-account package.
+  `import gh from 'kody:@kody/github/issues'`. A static import runs in **your**
+  execute runtime against your secrets and grants. **Saved person-owned packages
+  must not depend on a platform scope.** Official `@kody` packages may still
+  compose with each other. Publish checks reject `kody:@kody/…` static imports
+  and `kody.dependencies` entries in person-owned package source. Fork the
+  official package into your scope (`community_fork`) and depend on that copy.
+  Platform package code cannot use `packageStorage()` in your account. Platform
+  packages appear in `search` results (marked with their platform scope) so
+  agents discover them for execute; the detail text says to fork before using
+  them in a saved person-account package.
 - Static `kody:@...` imports in saved package code are bundled into published
   runtime artifacts as snapshots of the imported package's published bundle.
   Republishing the imported package does not change already-published
@@ -194,9 +193,9 @@ Package reuse follows two rules:
 1. **Name known when the code is written → static import.** Use
    `import fn from 'kody:@scope/my-package/export-name'` from execute and from
    other packages. This is the default.
-2. **Name is data → `import(specifier)`** of a caller-owned (or forked)
-   module. Exactly-once work uses [workflows](./workflows.md), not a second
-   invoke primitive.
+2. **Name is data → `import(specifier)`** of a caller-owned (or forked) module.
+   Exactly-once work uses [workflows](./workflows.md), not a second invoke
+   primitive.
 
 ```ts
 import handleEvent from 'kody:@kentcdodds/event-subscriber/handle-event'
@@ -207,13 +206,13 @@ const account = await profile({})
 ```
 
 Declare every static `kody:@` import in `package.json#kody.dependencies`.
-Person-owned packages must not import a platform scope; `community_fork`
-first. `packageStorage()` on a static import reaches the declaring
-package's bucket for **caller-owned** packages.
+Person-owned packages must not import a platform scope; `community_fork` first.
+`packageStorage()` on a static import reaches the declaring package's bucket for
+**caller-owned** packages.
 
-There is no author-facing `packages.invoke`. External trusted clients that
-must call a named export over HTTP use package invocation tokens. Before
-sending a user to create one, load `coding_guide_get` with
+There is no author-facing `packages.invoke`. External trusted clients that must
+call a named export over HTTP use package invocation tokens. Before sending a
+user to create one, load `coding_guide_get` with
 `guide: "package_invocation_token_setup"` and construct a prefilled
 `/account/packages/:packageId?newToken=1` URL without raw token material.
 
@@ -228,8 +227,8 @@ Every saved package owns one durable storage bucket per user
   and workflows.
 - **Writing ad hoc `execute` code against a caller-owned bucket?** Bind a
   `storageId` on the execute call and use ambient `storage`.
-- **Touching another package's data?** Statically import that package's
-  export (`import fn from 'kody:@scope/package/export'`) so its stamped
+- **Touching another package's data?** Statically import that package's export
+  (`import fn from 'kody:@scope/package/export'`) so its stamped
   `packageStorage()` does the reading and writing.
 
 `packageStorage()` returns the same storage interface as ambient `storage`

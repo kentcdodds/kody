@@ -187,13 +187,13 @@ per-capability.
 
 ## Use the official package and verify
 
-Ad hoc `execute` may import `kody:@kody/github` live. A
-saved token or integration is credentials only. Finish by calling the live
-official helpers so day-to-day work goes through maintained code instead of
-hand-rolled API calls. Official `@kody/*` packages resolve in the execute caller
-runtime against the caller's secrets. Saved person-account packages cannot
-import or invoke a platform scope — `community_fork` into the caller's scope
-first, or fork when you need to customize the source.
+Ad hoc `execute` may import `kody:@kody/github` live. A saved token or
+integration is credentials only. Finish by calling the live official helpers so
+day-to-day work goes through maintained code instead of hand-rolled API calls.
+Official `@kody/*` packages resolve in the execute caller runtime against the
+caller's secrets. Saved person-account packages cannot import or invoke a
+platform scope — `community_fork` into the caller's scope first, or fork when
+you need to customize the source.
 
 1. Search for `@kody/github` (or import `kody:@kody/github` directly). It wraps
    REST, GraphQL, pagination, and PR helpers.

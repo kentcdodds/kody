@@ -154,17 +154,17 @@ A saved package is a repo with the package extension activated. Four concepts:
   provenance metadata: the run's own package context, the `packageId` entries
   recorded in the bundle's static dependency metadata, and published static
   dependency artifacts installed during hydration. Platform-owned static
-  dependencies (`platformOwned` on `BundleArtifactDependency`) are stamped
-  but excluded from that grant set, so official `@kody/*` modules fail closed
-  on static import; `packages.invoke` of an official target still grants
-  through `packageContext` (see
+  dependencies (`platformOwned` on `BundleArtifactDependency`) are stamped but
+  excluded from that grant set, so official `@kody/*` modules fail closed on
+  static import; `packages.invoke` of an official target still grants through
+  `packageContext` (see
   [packageStorage on official static imports](./package-storage-static-imports.md)).
   Sandbox-supplied strings never extend the grant set, so hand-written source
   claiming an arbitrary package id is rejected (`packageId` on
   `BundleArtifactDependency`, `collectPackageStorageGrantIds` in
   `#mcp/run-kody-registry.ts`, and `createPackageStorageKodyTools` in
-  `#worker/storage-runner.ts`). Cross-user access stays structurally
-  impossible because storage runner names are keyed by the calling user's id.
+  `#worker/storage-runner.ts`). Cross-user access stays structurally impossible
+  because storage runner names are keyed by the calling user's id.
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data
@@ -202,16 +202,16 @@ import handleEvent from 'kody:@kentcdodds/event-subscriber/handle-event'
 await handleEvent({ event })
 ```
 
-`kody:runtime` still binds `packages` for already-published modules. Authors
-and agents do not get that helper. Fleet source migrates with package
-codemod `0008-packages-invoke-to-static-import`. See
+`kody:runtime` still binds `packages` for already-published modules. Authors and
+agents do not get that helper. Fleet source migrates with package codemod
+`0008-packages-invoke-to-static-import`. See
 [0037](./decisions/0037-no-author-packages-invoke.md).
 
 Exact scoped resolution avoids bare-id collisions. A `kody:@kody/...` target
 resolves the public live package owned by the platform account, while a
 `kody:@person/...` target resolves that caller-owned person package. Foreign
-person accounts remain unresolvable. Person-owned packages must fork an
-official package into the caller's scope before importing it (decision 0035).
+person accounts remain unresolvable. Person-owned packages must fork an official
+package into the caller's scope before importing it (decision 0035).
 
 Literal `import("kody:@...")` stays a teaching error: known names are static
 imports. Computed `import(specifier)` is the name-as-data path. Exactly-once
@@ -220,8 +220,7 @@ work uses workflows. HTTP invocation tokens stay for external clients.
 Publish checks still reject object-only `packages.invoke`,
 `packages.invokeChecked`, `packages.check`, and literal dynamic
 `import("kody:@...")`. Codemods `0002`, `0006`, `0007`, and `0008` are the
-mechanical repair path. See
-[package codemods](./package-codemods.md).
+mechanical repair path. See [package codemods](./package-codemods.md).
 
 ## Package apps
 

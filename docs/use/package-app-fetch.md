@@ -26,8 +26,8 @@ Hosted-URL checks remain useful for UI, OAuth redirects, and websocket facets.
   `hosted_app_url` with a user
 
 Prefer a static `kody:@scope/package/export` import from `execute` for export
-smoke tests. Prefer
-[Inbound webhooks](./webhooks.md) ingress for provider POST deliveries.
+smoke tests. Prefer [Inbound webhooks](./webhooks.md) ingress for provider POST
+deliveries.
 
 ## Call shape
 

@@ -27,8 +27,8 @@ invoke it instead of creating another implementation.
   package reuse from `execute` and from other packages. Ad hoc execute bundles
   per call, so static imports from execute always see the current published
   version.
-- When the target's name is data, use `import(specifier)` for a caller-owned
-  or forked module. Exactly-once work uses workflows.
+- When the target's name is data, use `import(specifier)` for a caller-owned or
+  forked module. Exactly-once work uses workflows.
 
 This is the default for an established operation whose behavior should stay
 owned by its existing capability or package.
@@ -159,9 +159,9 @@ package-owned job with `"enabled": false`.
 After package checks and publishing succeed:
 
 1. Inspect the published package and export contracts.
-2. Call the scheduled wrapper from authenticated `execute` with a static
-   import and no extra arguments. This verifies the same no-input contract
-   the scheduler uses.
+2. Call the scheduled wrapper from authenticated `execute` with a static import
+   and no extra arguments. This verifies the same no-input contract the
+   scheduler uses.
 3. Optionally invoke the underlying callable export with representative input:
    realistic field shapes, boundary values, and the same configuration
    references the wrapper will load. Never put plaintext secrets in params.

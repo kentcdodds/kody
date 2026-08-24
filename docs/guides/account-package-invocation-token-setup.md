@@ -20,9 +20,8 @@ bearer token in the URL.
 For code that runs inside Kody, never use bearer tokens: statically import the
 target package (`kody:@scope/package/export`) when its name is known when the
 code is written, or `import(specifier)` when the name is data. Package
-invocation tokens are for external systems such as webhooks,
-gateway proxies, CLIs, or other trusted personal clients that call Kody over
-HTTP.
+invocation tokens are for external systems such as webhooks, gateway proxies,
+CLIs, or other trusted personal clients that call Kody over HTTP.
 
 ## When to use `/account/packages/:packageId?newToken=1`
 

@@ -295,8 +295,8 @@ This permanent migration codemod removes author-facing `packages.invoke`
   `export(params)`, and adds the package name to
   `package.json#kody.dependencies`.
 - Rewrites computed first arguments to `(await import(specifier)).default(...)`.
-  That is the name-as-data path; do not use this rewrite when the name is
-  known at write time.
+  That is the name-as-data path; do not use this rewrite when the name is known
+  at write time.
 - Handles JavaScript and TypeScript modules plus parseable JS/TS fenced and
   inline examples in Markdown and MDX.
 - Emits `needsManual` for keyed invokes (`idempotencyKey` — use workflows),

@@ -114,6 +114,7 @@ type AstNode = ModuleAstNode & {
 	local?: AstNode
 	imported?: AstNode
 	expressions?: Array<AstNode>
+	expression?: AstNode
 }
 
 type SourceRewrite = {
@@ -303,10 +304,7 @@ function specifierWithExportName(
 	return `${packageSpecifierPrefix}${parsed.packageName.slice(1)}/${normalizedExport}`
 }
 
-function classifyOptionsObject(input: {
-	source: string
-	objectNode: AstNode
-}):
+function classifyOptionsObject(input: { source: string; objectNode: AstNode }):
 	| {
 			kind: 'ok'
 			paramsSource: string | null
@@ -642,9 +640,9 @@ function buildModuleRewrites(input: {
 		needsManual:
 			manualReasons.size === 0
 				? null
-				: ([...manualReasons].includes(keyedMessage)
-						? keyedMessage
-						: ([...manualReasons][0] ?? null)),
+				: [...manualReasons].includes(keyedMessage)
+					? keyedMessage
+					: ([...manualReasons][0] ?? null),
 	}
 }
 
@@ -722,9 +720,12 @@ function listMarkdownCodeFences(source: string): Array<MarkdownCodeFence> {
 	return fences
 }
 
-function listMarkdownInlineCode(
-	source: string,
-): Array<{ start: number; end: number; contentStart: number; contentEnd: number }> {
+function listMarkdownInlineCode(source: string): Array<{
+	start: number
+	end: number
+	contentStart: number
+	contentEnd: number
+}> {
 	const spans: Array<{
 		start: number
 		end: number
@@ -952,10 +953,9 @@ function applyRewrites(source: string, rewrites: Array<SourceRewrite>) {
 			rewrite.replacement +
 			nextSource.slice(rewrite.end)
 	}
-	return nextSource.replaceAll(/import \{,\s*/g, 'import {').replaceAll(
-		/,\s*\} from/g,
-		' } from',
-	)
+	return nextSource
+		.replaceAll(/import \{,\s*/g, 'import {')
+		.replaceAll(/,\s*\} from/g, ' } from')
 }
 
 function detect(files: Record<string, string>): Array<PackageCodemodFinding> {
