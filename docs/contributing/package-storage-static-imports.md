@@ -155,5 +155,29 @@ If the answer is “library import stays stateless; persist is a package run,”
 option A or C: keep the filter, fix the teaching error, and keep README
 examples that persist on invoke.
 
+If the goal is that `packages.invoke` becomes an **edge case** (or later
+goes away), **B is the least surprising option.** Caller-owned static
+imports already persist. Official invoke already writes
+`(callerUserId, package:{officialPackageId})`. B makes official static
+import join that same world instead of inventing a second bucket or
+keeping persist on invoke. A and C do the opposite: they make invoke the
+only official write path. A synthetic alias or execute-wide
+`packageContext` (D) is more surprising than B.
+
+B does not eliminate invoke. After B, invoke still uniquely covers:
+
+- the specifier is data, not a static `kody:@…` import
+- keyed exactly-once (`idempotencyKey`)
+- entering the package runtime: `packageContext`, `kody.secretMounts`,
+  own isolate
+
+`packageStorage()` identity is per-module (the stamp). `packageContext` is
+one ambient per run. Two official static imports cannot each own
+`packageContext`. Do not try to retire invoke by setting execute's
+`packageContext` to “the” imported package.
+
+Person-owned packages already static-import their own (or forked) modules
+with grants. B only fills execute and official-to-official composition.
+
 Do not grant a cross-user or platform-account bucket. The runtime cannot do
 that by accident: the Durable Object name includes the calling user id.
