@@ -12,9 +12,8 @@ Production has two public HTTP entrypoints:
   package-invocation API, inline `/apps`) forward over the `RUNTIME_WORKER`
   service binding to `kody-runtime`.
 - **Package-app origin** (`kody.run`; legacy `kodyapps.dev` dual-served until
-  #1300/#1428) —
-  `packages/worker/src/runtime-worker.ts`. Zone routes on that script; the
-  origin handler does not see this host in production.
+  #1300/#1428) — `packages/worker/src/runtime-worker.ts`. Zone routes on that
+  script; the origin handler does not see this host in production.
 
 The routing order below is the **app-origin** handler.
 
