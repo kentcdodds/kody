@@ -1000,8 +1000,7 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 		return null
 	}
 	if (
-		filterResolveFrameFetchNetworkSentryEvent(event, originalException) ===
-		null
+		filterResolveFrameFetchNetworkSentryEvent(event, originalException) === null
 	) {
 		return null
 	}
