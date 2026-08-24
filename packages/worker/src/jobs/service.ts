@@ -37,7 +37,6 @@ import {
 	toJobView,
 } from './schedule.ts'
 import {
-	type JobCreateInput,
 	type JobExecutionOutcome,
 	type JobExecutionResult,
 	type JobRepoCheckPolicy,
@@ -52,18 +51,15 @@ import {
 	consumeDailyEntitlement,
 } from '#worker/entitlements/service.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
-import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
 	normalizePackageWorkspacePath,
 	type parseAuthoredPackageJson,
 } from '#worker/package-registry/manifest.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
-import { hasTopLevelDefaultExport } from '#worker/module-source.ts'
 import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
-import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-kody-execution.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
 	deleteEntitySource,
@@ -120,19 +116,6 @@ function normalizeJobName(name: string) {
 	const trimmed = name.trim()
 	if (!trimmed) {
 		throw new McpCallerError('Jobs require a non-empty name.')
-	}
-	return trimmed
-}
-
-function normalizeJobCode(code: string) {
-	const trimmed = code.trim()
-	if (!trimmed) {
-		throw new McpCallerError('Jobs require non-empty code.')
-	}
-	if (!hasTopLevelDefaultExport(trimmed)) {
-		// Caller-supplied module shape mistake — keep it off Sentry via
-		// McpCallerError so agent retries do not open platform bug issues.
-		throw new McpCallerError(repoBackedModuleEntrypointExportErrorMessage)
 	}
 	return trimmed
 }
@@ -855,15 +838,6 @@ function resolvePackageJobEnabled(input: {
 	return input.existingEnabled || manifestEnabled
 }
 
-function resolveCreateShape(input: JobCreateInput) {
-	return {
-		moduleSource: normalizeJobCode(input.code),
-		sourceId: input.sourceId ?? null,
-		publishedCommit: input.publishedCommit ?? null,
-		repoCheckPolicy: normalizeJobRepoCheckPolicy(input.repoCheckPolicy),
-	}
-}
-
 function resolveUpdatedShape(input: {
 	existing: JobRecord
 	body: JobUpdateInput
@@ -941,110 +915,6 @@ export function assertJobDeleteAllowsJobId(jobId: string) {
 	if (isPackageOwnedJobId(jobId)) {
 		throw new McpCallerError(packageOwnedJobDeleteErrorMessage)
 	}
-}
-
-export async function createJob(input: {
-	env: Env
-	callerContext: McpCallerContext
-	body: JobCreateInput
-}) {
-	const callerContext = requirePersistableJobCallerContext(input.callerContext)
-	return await withAccountWriteLease({
-		db: input.env.APP_DB,
-		stableUserId: callerContext.user.userId,
-		env: input.env,
-		async write() {
-			await assertWithinEntitlement({
-				db: input.env.APP_DB,
-				userId: callerContext.user.userId,
-				email: callerContext.user.email,
-				resource: 'scheduled_jobs',
-				getCurrent: () =>
-					jobsData(input.env).countJobsForUser({
-						userId: callerContext.user.userId,
-					}),
-			})
-			const schedule = normalizeJobSchedule(input.body.schedule)
-			const timezone = normalizeJobTimezone(input.body.timezone)
-			const expiresAt = normalizeJobExpiresAt(input.body.expiresAt)
-			const now = new Date().toISOString()
-			const shape = resolveCreateShape(input.body)
-			const jobId = crypto.randomUUID()
-			const ensuredSource = await ensureEntitySource({
-				db: input.env.APP_DB,
-				env: input.env,
-				id: shape.sourceId ?? undefined,
-				userId: callerContext.user.userId,
-				entityKind: 'job',
-				entityId: jobId,
-				sourceRoot: '/',
-				requirePersistence: true,
-			})
-			const requestedEnabled = input.body.enabled ?? true
-			const expiredAtCreate = isJobExpired({ expiresAt }, new Date(now))
-			const job: JobRecord = {
-				version: 1,
-				id: jobId,
-				userId: callerContext.user.userId,
-				name: normalizeJobName(input.body.name),
-				sourceId: ensuredSource.id,
-				publishedCommit: shape.publishedCommit ?? null,
-				repoCheckPolicy: shape.repoCheckPolicy,
-				storageId: createJobStorageId(jobId),
-				params: normalizeOptionalParams(input.body.params),
-				schedule,
-				timezone,
-				enabled: expiredAtCreate ? false : requestedEnabled,
-				killSwitchEnabled: input.body.killSwitchEnabled ?? false,
-				preserved: input.body.preserved ?? false,
-				expiresAt,
-				createdAt: now,
-				updatedAt: now,
-				nextRunAt: computeNextRunAt({
-					schedule,
-					timezone,
-				}),
-				runCount: 0,
-				successCount: 0,
-				errorCount: 0,
-			}
-			const syncedPublishedCommit = await syncArtifactSourceSnapshot({
-				env: input.env,
-				userId: callerContext.user.userId,
-				baseUrl: callerContext.baseUrl,
-				sourceId: job.sourceId,
-				bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
-				files: buildJobSourceFiles({
-					job: toJobView(job),
-					moduleSource: shape.moduleSource,
-				}),
-			})
-			if (syncedPublishedCommit) {
-				job.publishedCommit = syncedPublishedCommit
-			}
-			const callerContextJson = serializeCallerContext(callerContext)
-			await jobsData(input.env).insertJob({
-				userId: callerContext.user.userId,
-				job,
-				callerContextJson,
-			})
-			await upsertJobVector(input.env, {
-				jobId: job.id,
-				userId: callerContext.user.userId,
-				embedText: buildJobEmbedText({
-					name: job.name,
-					scheduleSummary: toJobView(job).scheduleSummary,
-					sourceId: job.sourceId,
-					publishedCommit: job.publishedCommit,
-				}),
-			})
-			await syncJobManagerAlarm({
-				env: input.env,
-				userId: callerContext.user.userId,
-			})
-			return toJobView(job)
-		},
-	})
 }
 
 export async function updateJob(input: {

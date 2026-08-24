@@ -30,6 +30,16 @@ export function enrichMcpOAuthProviderError(
 		lower.includes('redirect_uri') ||
 		lower.includes('redirect uri')
 
+	const looksLikeMissingAtlassianSite =
+		lower.includes('supported sites required') ||
+		lower.includes('not currently associated with a supported site')
+	if (looksLikeMissingAtlassianSite) {
+		return [
+			trimmed,
+			'Atlassian Rovo MCP needs a Jira or Confluence Cloud site on the account you authorize. A site-less Atlassian account cannot finish this connect.',
+		].join(' ')
+	}
+
 	if (!looksLikeOriginRejection && !looksLikeRedirectRejection) {
 		return trimmed
 	}

@@ -218,9 +218,9 @@ rows were bounded.
 
 - Write paths bound large text columns via
   `packages/shared/src/backup-restore-safety.ts` (64 KiB per column):
-  package-invocation replay caches are dropped when oversized, stored email
-  bodies are truncated (raw MIME in R2 stays canonical), and `value_set` rejects
-  oversized values (use durable storage instead).
+  package-invocation replay caches are dropped when oversized, and stored email
+  bodies are truncated (raw MIME in R2 stays canonical). Large payloads belong
+  in durable storage.
 - The control plane measures statement lengths while streaming every export and
   writes `<objectKey>.stats.json` beside the SQL. A nonzero
   `oversizedStatementCount` logs `backup-unrestorable-statements` (failure

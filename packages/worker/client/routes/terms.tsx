@@ -78,10 +78,9 @@ export function TermsRoute(_handle: Handle) {
 					actions it will take.
 				</p>
 				<p mix={css(descriptionCss)}>
-					When you connect an integration — whether a built-in one that Kody
-					hosts the provider registration for, or one you register yourself — or
-					store a secret, you are authorizing your agent and any code you run to
-					act as you with that access. Actions taken with your tokens, keys, and
+					When you connect an integration you register yourself, or store a
+					secret, you are authorizing your agent and any code you run to act as
+					you with that access. Actions taken with your tokens, keys, and
 					connections are your actions: messages sent, data read, changed, or
 					deleted, purchases made, and anything else your agent does on a
 					third-party service. Those services also have their own terms, which

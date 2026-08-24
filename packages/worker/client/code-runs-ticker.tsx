@@ -2,9 +2,10 @@ import { type Handle } from 'remix/ui'
 import {
 	codeRunsCatchUpDelayMs,
 	codeRunsCatchUpSnapAfterMs,
+	codeRunsProgressToNext,
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
-	msUntilNextCodeRunsCount,
+	msUntilNextCodeRunsPaint,
 	nextDisplayedCodeRunsCount,
 	type PublicCodeRunsWindow,
 } from '#universal/code-runs.ts'
@@ -12,16 +13,18 @@ import {
 /**
  * 24-hour delayed fleet execute count. SSR paints the interpolated value;
  * the client advances one integer at a time, scheduled to the next hashed
- * fire so the cadence wobbles. A frozen tab (rAF gap, hidden, or a late
- * timeout) snaps to the official count instead of rolling through every
- * missed integer. Live leftover ticks in a busy second still step +1.
- * Mono digits plus a reserved width from `current` keep the label from
- * shifting as digits change. The line is sized larger than the hero subtitle.
+ * fire so leftover ticks still wobble. A 3-second honesty slot is the
+ * longest the official integer may sit when budget allows; thinner windows
+ * move the progress underline instead of inventing +1s. A frozen tab (rAF
+ * gap, hidden, or a late timeout) snaps to the official count instead of
+ * rolling through every missed integer. Mono digits plus a reserved width
+ * from `current` keep the label from shifting as digits change.
  */
 export function CodeRunsTicker(
 	handle: Handle<{ window: PublicCodeRunsWindow }>,
 ) {
 	let displayed = interpolateCodeRunsCount(handle.props.window, Date.now())
+	let progress = codeRunsProgressToNext(handle.props.window, Date.now())
 	let lastDisplayAt = Date.now()
 	const prefersReducedMotion =
 		typeof matchMedia === 'function' &&
@@ -42,15 +45,20 @@ export function CodeRunsTicker(
 			timeoutId = undefined
 		}
 
-		function show(count: number, now: number) {
-			if (count === displayed) return
+		function show(count: number, nextProgress: number, now: number) {
+			if (count === displayed && nextProgress === progress) return
+			if (count !== displayed) lastDisplayAt = now
 			displayed = count
-			lastDisplayAt = now
+			progress = nextProgress
 			handle.update()
 		}
 
 		function snapToOfficial(now = Date.now()) {
-			show(officialAt(now), now)
+			show(
+				officialAt(now),
+				codeRunsProgressToNext(handle.props.window, now),
+				now,
+			)
 		}
 
 		function scheduleNext() {
@@ -66,7 +74,7 @@ export function CodeRunsTicker(
 					official,
 					elapsedMsSinceDisplay: now - lastDisplayAt,
 				})
-				show(next, now)
+				show(next, codeRunsProgressToNext(handle.props.window, now), now)
 				if (next < official) {
 					timeoutId = setTimeout(() => {
 						scheduleNext()
@@ -74,7 +82,13 @@ export function CodeRunsTicker(
 					return
 				}
 			}
-			const delay = msUntilNextCodeRunsCount(handle.props.window, Date.now())
+			const nowAfter = Date.now()
+			show(
+				officialAt(nowAfter),
+				codeRunsProgressToNext(handle.props.window, nowAfter),
+				nowAfter,
+			)
+			const delay = msUntilNextCodeRunsPaint(handle.props.window, nowAfter)
 			if (delay === null) return
 			timeoutId = setTimeout(
 				() => {
@@ -141,6 +155,14 @@ export function CodeRunsTicker(
 						style={{ '--runs-ch': `${reserved.length}ch` }}
 					>
 						{formatCodeRunsCount(displayed)}
+						{progress > 0 ? (
+							<span
+								class="landing-hero-runs-progress"
+								style={{
+									transform: `scaleX(${progress})`,
+								}}
+							/>
+						) : null}
 					</span>
 					<span class="landing-hero-runs-label">code runs</span>
 				</span>

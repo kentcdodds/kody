@@ -11,8 +11,8 @@ export const valueDeleteCapability = defineDomainCapability(
 	{
 		name: 'value_delete',
 		description:
-			'Delete an existing readable persisted value for the signed-in user.',
-		keywords: ['value', 'config', 'delete', 'remove', 'non-secret'],
+			'Delete an existing leftover persisted row for the signed-in user.',
+		keywords: ['config', 'delete', 'remove'],
 		readOnly: false,
 		idempotent: false,
 		destructive: true,

@@ -19,12 +19,6 @@ function executeUsageSnippet(usage: string) {
 				args: JSON.parse(JSON.stringify(args)),
 			})
 		},
-		value_get(args: unknown) {
-			calls.push({
-				toolName: 'value_get',
-				args: JSON.parse(JSON.stringify(args)),
-			})
-		},
 	}
 	new Script(usage).runInContext(createContext({ kody }))
 	return calls
@@ -104,10 +98,9 @@ test('parseEntityRef rejects malformed refs as caller errors', () => {
 })
 
 test('search formatting keeps entity refs and generates safe, runnable usage snippets', () => {
-	expect(parseEntityRef('user:preferred_repo:value')).toEqual({
-		id: 'user:preferred_repo',
-		type: 'value',
-	})
+	expect(() => parseEntityRef('user:preferred_repo:value')).toThrow(
+		/Entity type must be one of/,
+	)
 	expect(parseEntityRef('github:integration')).toEqual({
 		id: 'github',
 		type: 'integration',
@@ -116,18 +109,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	const structuredMatches = toSlimStructuredMatches({
 		baseUrl: 'http://localhost',
 		matches: [
-			{
-				type: 'value',
-				valueId: 'user:preferred_repo',
-				name: 'preferred_repo',
-				scope: 'user',
-				description: 'Preferred repository owner/name.',
-				value: 'kentcdodds/kody',
-				appId: null,
-				updatedAt: '2026-03-20T00:00:00.000Z',
-				ttlMs: null,
-				fusedScore: 1,
-			},
 			{
 				type: 'integration',
 				integrationName: 'github',
@@ -148,14 +129,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 					extraAuthorizeParams: { prompt: 'consent' },
 				},
 				fusedScore: 0.9,
-			},
-			{
-				type: 'value',
-				valueId: 'user:strange-name',
-				name: 'display"name',
-				scope: 'user"scope',
-				description: 'Value with quotes in the lookup fields.',
-				appId: null,
 			},
 			{
 				type: 'integration',
@@ -180,13 +153,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	})
 
 	expect(structuredMatches[0]).toMatchObject({
-		type: 'value',
-		id: 'user:preferred_repo',
-		entityRef: 'user:preferred_repo:value',
-		scope: 'user',
-		appId: null,
-	})
-	expect(structuredMatches[1]).toMatchObject({
 		type: 'integration',
 		entityRef: 'github:integration',
 		flow: 'confidential',
@@ -198,17 +164,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		},
 	})
 
-	const quotedValueMatch = structuredMatches[2]
-	const quotedIntegrationMatch = structuredMatches[3]
-	expect(executeUsageSnippet(quotedValueMatch?.usage ?? '')).toEqual([
-		{
-			toolName: 'value_get',
-			args: {
-				name: 'display"name',
-				scope: 'user"scope',
-			},
-		},
-	])
+	const quotedIntegrationMatch = structuredMatches[1]
 	expect(executeUsageSnippet(quotedIntegrationMatch?.usage ?? '')).toEqual([
 		{
 			toolName: 'integration_get',
@@ -218,35 +174,12 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 		},
 	])
 
-	expect(structuredMatches[4]).toMatchObject({
+	expect(structuredMatches[2]).toMatchObject({
 		type: 'secret',
 		id: 'secret "name"',
 		entityRef: 'secret "name":secret',
 	})
-	expect(structuredMatches[4]?.usage).not.toContain('{{secret:')
-
-	const valueDetail = formatEntityDetailMarkdown({
-		type: 'value',
-		id: 'user:preferred_repo',
-		title: 'preferred_repo',
-		description: 'Preferred repository owner/name.',
-		row: {
-			name: 'preferred_repo',
-			scope: 'user',
-			value: 'kentcdodds/kody',
-			description: 'Preferred repository owner/name.',
-			appId: null,
-			createdAt: '2026-03-20T00:00:00.000Z',
-			updatedAt: '2026-03-20T00:00:00.000Z',
-			ttlMs: null,
-		},
-	})
-	expect(valueDetail.structured).toMatchObject({
-		type: 'value',
-		entityRef: 'user:preferred_repo:value',
-		scope: 'user',
-		value: 'kentcdodds/kody',
-	})
+	expect(structuredMatches[2]?.usage).not.toContain('{{secret:')
 
 	const integrationDetail = formatEntityDetailMarkdown({
 		type: 'integration',

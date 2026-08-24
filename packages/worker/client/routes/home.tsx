@@ -437,8 +437,7 @@ export function HomeRoute(handle: Handle) {
 							prompt (as opposed to the .env file your agent happily reads).
 						</p>
 						<p class="landing-split-copy">
-							A few built-in integrations are one-click for simple cases. Need
-							your own scopes, or a provider we don&apos;t host? Your agent
+							Need your own scopes, or a provider we don&apos;t host? Your agent
 							registers the app with you. No shared app sits between you and
 							your accounts.
 						</p>

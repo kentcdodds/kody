@@ -17,15 +17,12 @@ Use the same disposable Kody account when comparing Warp, Cursor, Claude, and
 ChatGPT. Do not use a production account: schedule and authoring cases mutate
 state.
 
-In a separate operator session, create the only required controlled fixture by
-calling `value_set` through `execute` with:
+In a separate operator session, create the only required controlled fixture as a
+memory (verify-first) named `project-updates` with:
 
 ```json
 {
-	"name": "project-updates",
-	"value": "Checkout retry shipped; onboarding copy is in review; billing export is blocked on sample data.",
-	"description": "Deterministic lifecycle evaluation fixture.",
-	"scope": "user"
+	"content": "Checkout retry shipped; onboarding copy is in review; billing export is blocked on sample data."
 }
 ```
 

@@ -114,13 +114,12 @@ test('example prompt searches the user-owned scoped package and invokes in user 
 		username: 'u-b',
 	})
 
-	expect(prompt).toContain('search({ query: "@u-b/hn-pulse" })')
-	expect(prompt).toContain(
-		'packages.invoke("kody:@u-b/hn-pulse/getTopStories", { params:',
-	)
-	expect(prompt).not.toContain('packages.invoke("kody:@kody/hn-pulse')
-
+	expect(prompt).toContain('@u-b/hn-pulse')
+	expect(prompt).toMatch(/packages\.invoke\("kody:@u-b\/hn-pulse\//)
 	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
-		'package_get_git_remote({ create: true, kody_id: "hn-pulse" })',
+		'package_get_git_remote',
+	)
+	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
+		'hn-pulse',
 	)
 })

@@ -377,6 +377,64 @@ export function filterChromeExtensionReceivingEndMissingSentryEvent<
 }
 
 /**
+ * Browser-extension messaging noise: content scripts / page-injected extension
+ * code call `runtime.sendMessage` against a tab id that no longer exists
+ * (closed, navigated away, or never created). Chromium (and Safari Web
+ * Extensions that surface the same IPC wording) reject with this exact
+ * message. The promise often surfaces on the host page via
+ * `onunhandledrejection` with no app stack frames (Sentry attributes the
+ * culprit to the document URL).
+ *
+ * Signature from production issue 7689579030 / KODY-CLOUDFLARE-5X (Mobile
+ * Safari on https://kody.codes/, zero frames). Kody never uses
+ * `chrome.runtime` / `browser.runtime`. Match is intentionally narrow: only
+ * this exact "Invalid call to runtime.sendMessage(). Tab not found" wording
+ * (optional `Error:` preface). Never blanket-drop sendMessage or tab errors.
+ */
+const chromeExtensionSendMessageTabNotFoundMessage =
+	/^(?:Error:\s*)?Invalid call to runtime\.sendMessage\(\)\. Tab not found\.?$/
+
+export function isChromeExtensionSendMessageTabNotFoundMessage(
+	message: string,
+) {
+	return chromeExtensionSendMessageTabNotFoundMessage.test(message.trim())
+}
+
+export function isChromeExtensionSendMessageTabNotFoundError(error: unknown) {
+	if (typeof error === 'string') {
+		return isChromeExtensionSendMessageTabNotFoundMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isChromeExtensionSendMessageTabNotFoundMessage(error.message)
+}
+
+export function isChromeExtensionSendMessageTabNotFoundSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isChromeExtensionSendMessageTabNotFoundError(originalException)) {
+		return true
+	}
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isChromeExtensionSendMessageTabNotFoundMessage(message),
+	)
+}
+
+export function filterChromeExtensionSendMessageTabNotFoundSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (
+		isChromeExtensionSendMessageTabNotFoundSentryEvent(event, originalException)
+	) {
+		return null
+	}
+	return event
+}
+
+/**
  * MetaMask (`chrome-extension://nkbihfbeogaeaoehlefnkodbefgpgknn/…`) injects
  * `inpage.js` into every page and tries to restore a wallet session on load.
  * When the extension's background/service worker is unavailable it rejects
@@ -818,6 +876,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	}
 	if (
 		filterChromeExtensionReceivingEndMissingSentryEvent(
+			event,
+			originalException,
+		) === null
+	) {
+		return null
+	}
+	if (
+		filterChromeExtensionSendMessageTabNotFoundSentryEvent(
 			event,
 			originalException,
 		) === null

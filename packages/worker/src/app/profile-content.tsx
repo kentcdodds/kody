@@ -191,7 +191,7 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 										<div mix={css(packageTitleGroupCss)}>
 											{listingHref ? (
 												<a
-													href={`${listingHref}#fork-title`}
+													href={listingHref}
 													title="fork"
 													aria-label="fork"
 													mix={css(forkButtonCss)}

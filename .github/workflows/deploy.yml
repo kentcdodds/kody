@@ -831,7 +831,7 @@ jobs:
           fi
           exit 1
 
-      - name: 🧪 Execute smoke check (production)
+      - name: 🧪 Origin-only execute smoke check (production)
         if: needs.sha-guard.outputs.deploy_main == 'true'
         shell: bash
         env:

@@ -11,7 +11,13 @@ import {
 	isStuckMcpAuthenticatingWithoutAuthUrl,
 	resolveMcpOAuthCallbackOutcome,
 } from './oauth-callback-outcome.ts'
+import {
+	outboundMcpClientOptions,
+	reconnectMcpServerOptions,
+} from './reconnect.ts'
+import { sanitizeStoredMcpSessions } from './restore.ts'
 import { withStaticTransportHeaders } from './transport-headers.ts'
+import { clearLiveMcpTransportSession } from './transport-session.ts'
 import {
 	createInitialMcpConnectionEpisode,
 	mcpConnectionEpisodeStorageKey,
@@ -94,8 +100,18 @@ class McpClientHubBase extends DurableObject<Env> {
 	}
 
 	private ensureRestored() {
-		this.restored ??= this.manager.restoreConnectionsFromStorage(mcpClientName)
+		this.restored ??= this.restoreSanitizedConnections()
 		return this.restored
+	}
+
+	private async restoreSanitizedConnections() {
+		sanitizeStoredMcpSessions(this.ctx.storage)
+		await this.manager.restoreConnectionsFromStorage(mcpClientName)
+	}
+
+	private clearSessionBeforeConnect(serverId: string) {
+		const connection = this.manager.mcpConnections[serverId]
+		if (connection) clearLiveMcpTransportSession(connection)
 	}
 
 	private connectionStateFor(serverId: string): McpServerConnectionState {
@@ -200,12 +216,14 @@ class McpClientHubBase extends DurableObject<Env> {
 			url: input.url,
 			name: input.name,
 			callbackUrl: input.callbackUrl,
+			client: outboundMcpClientOptions(),
 			transport: withStaticTransportHeaders({
 				type: 'auto' as const,
 				authProvider,
 				...(input.headers ? { headers: input.headers } : {}),
 			}),
 		})
+		this.clearSessionBeforeConnect(input.serverId)
 		const connected = await this.manager.connectToServer(input.serverId)
 		if (connected.state === 'connected') {
 			await this.manager.discoverIfConnected(input.serverId, {
@@ -342,6 +360,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			})
 		}
 		if (result.authSuccess && serverId) {
+			this.clearSessionBeforeConnect(serverId)
 			await this.manager.establishConnection(serverId)
 			await this.manager.waitForConnections({
 				timeout: connectionSettleTimeoutMs,
@@ -460,15 +479,16 @@ class McpClientHubBase extends DurableObject<Env> {
 			authProvider.serverId = input.serverId
 			if (clientId) authProvider.clientId = clientId
 
+			const reconnected = reconnectMcpServerOptions(existingOptions)
 			await this.manager.registerServer(input.serverId, {
 				url: row.server_url,
 				name: row.name,
 				callbackUrl: input.callbackUrl,
 				...(clientId ? { clientId } : {}),
-				...(existingOptions?.client ? { client: existingOptions.client } : {}),
+				client: reconnected.client,
 				transport: withStaticTransportHeaders({
-					...existingOptions?.transport,
-					type: existingOptions?.transport.type ?? 'auto',
+					...reconnected.transport,
+					type: reconnected.transport.type ?? 'auto',
 					authProvider,
 				}),
 			})
@@ -486,6 +506,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			)
 			originalAuthProvider.serverId = input.serverId
 			if (row.client_id) originalAuthProvider.clientId = row.client_id
+			const restored = reconnectMcpServerOptions(existingOptions)
 			await this.manager
 				.registerServer(input.serverId, {
 					url: row.server_url,
@@ -493,18 +514,17 @@ class McpClientHubBase extends DurableObject<Env> {
 					callbackUrl: row.callback_url,
 					...(row.client_id ? { clientId: row.client_id } : {}),
 					...(row.auth_url ? { authUrl: row.auth_url } : {}),
-					...(existingOptions?.client
-						? { client: existingOptions.client }
-						: {}),
+					client: restored.client,
 					transport: withStaticTransportHeaders({
-						...existingOptions?.transport,
-						type: existingOptions?.transport.type ?? 'auto',
+						...restored.transport,
+						type: restored.transport.type ?? 'auto',
 						authProvider: originalAuthProvider,
 					}),
 				})
 				.catch(() => {})
 			throw error
 		}
+		this.clearSessionBeforeConnect(input.serverId)
 		const result = await this.manager.connectToServer(input.serverId)
 		if (result.state === 'connected') {
 			await this.manager.discoverIfConnected(input.serverId, {
@@ -549,6 +569,7 @@ class McpClientHubBase extends DurableObject<Env> {
 				// Best-effort: reconnect below still regenerates OAuth when possible.
 			}
 		}
+		this.clearSessionBeforeConnect(serverId)
 		const result = await this.manager.connectToServer(serverId)
 		if (result.state === 'connected') {
 			await this.manager.discoverIfConnected(serverId, {
@@ -648,6 +669,7 @@ class McpClientHubBase extends DurableObject<Env> {
 	}
 
 	private async lightweightReconnectServer(serverId: string) {
+		this.clearSessionBeforeConnect(serverId)
 		const connected = await this.manager.connectToServer(serverId)
 		if (connected.state === 'connected') {
 			await this.manager.discoverIfConnected(serverId, {

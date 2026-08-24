@@ -54,7 +54,6 @@ export const adminDomain = defineDomain({
 		'community activity',
 		'platform accounts',
 		'platform oauth apps',
-		'built-in integrations',
 		'package scope grants',
 		'codemod',
 		'package codemod',

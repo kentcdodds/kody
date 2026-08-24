@@ -94,7 +94,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is an integration?',
 		match: accountSection(routes.accountIntegrations.href()),
 		paragraphs: [
-			"An integration is a connected service — usually OAuth — so Kody can act as you on that provider. Built-in integrations use Kody's registered app; you can also bring your own OAuth client.",
+			'An integration is a connected service — usually OAuth — so Kody can act as you on that provider. You register your own OAuth client, and tokens land as your secrets.',
 			'Use an integration when a provider needs a signed-in connection rather than a static API key. Tokens land as your secrets. Scope connections deliberately and revoke unused ones.',
 		],
 		learnMore: {
@@ -141,19 +141,6 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 			'A star is your bookmark for a community package listing. It is separate from the 1–5 rating you can leave on a listing.',
 			'Star packages you want to find again, fork later, or keep an eye on. Stars are public on listings; this page is your personal list.',
 		],
-	},
-	{
-		id: 'values',
-		question: 'What is a value?',
-		match: accountSection(routes.accountValues.href()),
-		paragraphs: [
-			'Values were named readable config rows. New values are not created; existing rows stay here so you can migrate them to memories, package storage, repos, secrets, or integrations, then delete them.',
-			'Open this page only during migration. Prefer memories for durable facts, package storage for package state, and secrets for credentials.',
-		],
-		learnMore: {
-			href: routes.guideDetail.href({ slug: 'values' }),
-			label: 'Values migration guide',
-		},
 	},
 	{
 		id: 'usage',

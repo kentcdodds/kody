@@ -1,7 +1,6 @@
 import { type IntegrationConfig } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
-import { type ValueMetadata } from '#mcp/values/types.ts'
 import { type PackageRetrieverSurfaceResult } from '#worker/package-retrievers/types.ts'
 import {
 	type AuthoredPackageJson,
@@ -12,13 +11,11 @@ export type SearchEntityType =
 	| 'capability'
 	| 'package'
 	| 'secret'
-	| 'value'
 	| 'integration'
 
 type SearchMatchType =
 	| 'capability'
 	| 'package'
-	| 'value'
 	| 'integration'
 	| 'secret'
 	| 'retriever_result'
@@ -206,17 +203,6 @@ export type SlimSearchMatch =
 			usage: string
 	  }
 	| {
-			type: 'value'
-			id: string
-			entityRef: string
-			name: string
-			title: string
-			description: string
-			usage: string
-			scope: string
-			appId: string | null
-	  }
-	| {
 			type: 'integration'
 			id: string
 			entityRef: string
@@ -326,20 +312,6 @@ export type SearchEntityDetailStructured =
 	  }
 	| {
 			kind: 'entity'
-			type: 'value'
-			id: string
-			entityRef: string
-			title: string
-			description: string
-			usage: string
-			scope: string
-			appId: string | null
-			value: string
-			updatedAt: string
-			ttlMs: number | null
-	  }
-	| {
-			kind: 'entity'
 			type: 'integration'
 			id: string
 			entityRef: string
@@ -389,13 +361,6 @@ export type SearchEntityDetail =
 			title: string
 			description: string
 			row: SecretSearchRow
-	  }
-	| {
-			type: 'value'
-			id: string
-			title: string
-			description: string
-			row: ValueMetadata
 	  }
 	| {
 			type: 'integration'
@@ -463,14 +428,6 @@ export type SearchMatch =
 			actionMatches?: Array<PackageActionMatch>
 			/** Present only when the source community listing pin moved past this fork. */
 			listingAhead?: true
-	  }
-	| {
-			type: 'value'
-			valueId: string
-			name: string
-			description: string
-			scope: string
-			appId: string | null
 	  }
 	| {
 			type: 'integration'

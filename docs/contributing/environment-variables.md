@@ -280,8 +280,9 @@ Worker secrets:
   logged/routed through AI Gateway. When unset, the Worker calls Workers AI
   directly.
 - **`CAPABILITY_REINDEX_SECRET`** — strongly recommended for production (CI
-  skips the post-deploy capability reindex and execute smoke check when it is
-  unset); bearer token for `POST /__maintenance/reindex-capabilities`,
+  skips the post-deploy capability reindex and origin-only execute smoke check
+  when it is unset); bearer token for
+  `POST /__maintenance/reindex-capabilities`,
   `POST /__maintenance/reencrypt-secrets`, and other secret-gated maintenance
   endpoints. Production deploy POSTs `{ "phases": ["capabilities"] }` so only
   builtin capability vectors refresh after a ship. User-owned memory, job, and

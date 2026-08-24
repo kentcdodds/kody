@@ -5,7 +5,6 @@ import { packageSearchEntityPlugin } from './search-entity-plugins/package.ts'
 import { providerSearchEntityPlugin } from './search-entity-plugins/provider.ts'
 import { retrieverResultSearchEntityPlugin } from './search-entity-plugins/retriever-result.ts'
 import { secretSearchEntityPlugin } from './search-entity-plugins/secret.ts'
-import { valueSearchEntityPlugin } from './search-entity-plugins/value.ts'
 import {
 	type SearchEntityDetail,
 	type SearchMatch,
@@ -14,7 +13,6 @@ import {
 export const searchEntityPlugins = [
 	capabilitySearchEntityPlugin,
 	packageSearchEntityPlugin,
-	valueSearchEntityPlugin,
 	integrationSearchEntityPlugin,
 	secretSearchEntityPlugin,
 	retrieverResultSearchEntityPlugin,

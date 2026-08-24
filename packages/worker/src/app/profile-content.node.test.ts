@@ -54,7 +54,6 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	})
 
 	expect(guestHtml).toContain('href="/@kody/fathom-analytics"')
-	expect(guestHtml).toContain('href="/@kody/fathom-analytics#fork-title"')
 	// Listed packages get one fork control; unpublished packages do not.
 	expect(guestHtml.match(/aria-label="fork"/g)).toHaveLength(1)
 	expect(guestHtml).toContain('notes')

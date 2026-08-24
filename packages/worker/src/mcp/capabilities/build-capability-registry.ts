@@ -31,22 +31,28 @@ export function buildCapabilityRegistry(
 		seenRegistryDomains.add(domain.name)
 	}
 
+	const advertised = normalized.filter((domain) => !domain.unadvertised)
+
 	const capabilityDomains: ReadonlyArray<CapabilityDomainMetadata> =
-		normalized.map((domain) => ({
+		advertised.map((domain) => ({
 			name: domain.name,
 			description: domain.description,
 			...(domain.keywords ? { keywords: domain.keywords } : {}),
 		}))
 
 	const capabilityDomainDescriptionsByName = Object.fromEntries(
-		normalized.map((domain) => [domain.name, domain.description]),
+		advertised.map((domain) => [domain.name, domain.description]),
 	) as Record<CapabilityDomain, string>
 
 	const capabilityList = normalized.flatMap((domain) => domain.capabilities)
+	const advertisedCapabilities = advertised.flatMap(
+		(domain) => domain.capabilities,
+	)
 	const capabilityMap = createCapabilityMap(capabilityList)
-	const capabilitySpecs = createCapabilitySpecs(capabilityList)
-	const capabilityToolDescriptors =
-		createCapabilityToolDescriptors(capabilityList)
+	const capabilitySpecs = createCapabilitySpecs(advertisedCapabilities)
+	const capabilityToolDescriptors = createCapabilityToolDescriptors(
+		advertisedCapabilities,
+	)
 	const capabilityHandlers = Object.fromEntries(
 		Object.entries(capabilityMap).map(([name, capability]) => [
 			name,

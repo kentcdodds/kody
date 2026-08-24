@@ -806,20 +806,6 @@ export type AccountConnectionsLoaderData = {
 	canSyncDiscordRoles: boolean
 }
 
-/** One-click built-in integration offered during onboarding. */
-export type OnboardingBuiltInProvider = {
-	slug: string
-	label: string
-	logoPath: string | null
-	/** True when the signed-in viewer already has a connection for this app. */
-	connected: boolean
-	/**
-	 * Connection name for `/account/integrations/:name` when `connected`.
-	 * Null when disconnected or anonymous.
-	 */
-	connectionName: string | null
-}
-
 /**
  * Subject and sender of the welcome email Kody actually stored, so the Reply
  * sub-step can name what to search a personal inbox for. Null until an
@@ -852,8 +838,6 @@ export type OnboardingLoaderData = {
 	needsOnboarding: boolean
 	/** Admin-featured trusted listings offered as one-click starter installs. */
 	featuredListings: Array<OnboardingFeaturedListing>
-	/** Top enabled platform (built-in) integrations by use, for one-click connect. */
-	builtInProviders: Array<OnboardingBuiltInProvider>
 	/** Official workspace MCP chooser cards, with viewer connection overlay. */
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
 	/** Non-featured MCP servers the viewer added themselves. */

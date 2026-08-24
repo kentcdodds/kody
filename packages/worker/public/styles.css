@@ -851,6 +851,7 @@ html.is-settled {
 }
 
 .landing-hero-runs-count {
+	position: relative;
 	display: inline-block;
 	box-sizing: content-box;
 	min-width: var(--runs-ch, 1ch);
@@ -862,6 +863,19 @@ html.is-settled {
 		'tnum' 1,
 		'lnum' 1;
 	color: var(--color-text);
+}
+
+.landing-hero-runs-progress {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: -0.18em;
+	height: 2px;
+	border-radius: 999px;
+	background: currentColor;
+	opacity: 0.4;
+	transform-origin: left center;
+	pointer-events: none;
 }
 
 .landing-hero-runs-label {
@@ -1157,6 +1171,7 @@ html.is-settled {
 }
 
 .landing-loop-head {
+	justify-content: flex-end;
 	border-bottom: 1px solid var(--color-border);
 }
 
@@ -1169,16 +1184,10 @@ html.is-settled {
 	font-weight: 600;
 }
 
-.landing-loop-status {
-	display: flex;
-	align-items: center;
-	gap: 0.45rem;
-	margin: 0;
-}
-
 .landing-loop-status-dot {
 	width: 0.5rem;
 	height: 0.5rem;
+	flex: 0 0 auto;
 	border-radius: 50%;
 	background: var(--color-text-muted);
 	box-shadow: 0 0 0 3px
@@ -1191,24 +1200,39 @@ html.is-settled {
 		color-mix(in oklch, var(--color-primary) 22%, transparent);
 }
 
-.landing-loop[data-paused] .landing-loop-status-dot {
+.landing-loop[data-paused] .landing-loop-status-dot,
+.landing-loop[data-ended] .landing-loop-status-dot {
 	background: var(--color-text-muted);
 	box-shadow: none;
 }
 
 .landing-loop-toggle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.45rem;
 	margin: 0;
-	padding: 0.45rem 0.9rem;
+	padding: 0.45rem 0.7rem;
 	min-height: 2.25rem;
-	min-width: 4.75rem;
+	min-width: 3.5rem;
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-full);
 	background: var(--color-surface);
 	color: var(--color-text);
-	font: 650 0.78rem/1 var(--font-display);
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
+	font-size: 0.95rem;
+	line-height: 1;
 	cursor: pointer;
+}
+
+/* Same box as the control so reduced-motion can drop the button
+   without shrinking the header. */
+.landing-loop-toggle-slot {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 2.25rem;
+	min-width: 3.5rem;
+	flex: 0 0 auto;
 }
 
 .landing-loop-toggle:hover,

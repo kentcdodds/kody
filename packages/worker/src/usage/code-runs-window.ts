@@ -1,4 +1,6 @@
 import {
+	continuePublicCodeRunsWindow,
+	isStillPublicCodeRunsWindow,
 	parsePublicCodeRunsWindow,
 	publicCodeRunsWindowMs,
 	type PublicCodeRunsWindow,
@@ -17,7 +19,17 @@ export async function loadPublicCodeRunsWindow(
 ): Promise<PublicCodeRunsWindow | null> {
 	const stored = await readStoredWindow(env)
 	if (stored.status === 'failed') return null
-	if (stored.status === 'found') return stored.window
+	if (stored.status === 'found') {
+		const window = stored.window
+		const endMs = Date.parse(window.windowEnd)
+		const expired = Number.isFinite(endMs) && now.getTime() >= endMs
+		if (!expired && !isStillPublicCodeRunsWindow(window)) return window
+		const total = await sumExecuteEventCount(env)
+		if (total === null || total <= 0) return window
+		return (
+			continuePublicCodeRunsWindow({ stored: window, total, now }) ?? window
+		)
+	}
 	const total = await sumExecuteEventCount(env)
 	if (total === null || total <= 0) return null
 	return stillWindow(total, now)
@@ -52,7 +64,16 @@ export async function refreshPublicCodeRunsWindow(input: {
 		const existingWindow = existing.window
 
 		const windowEndMs = Date.parse(existingWindow.windowEnd)
-		if (Number.isFinite(windowEndMs) && now.getTime() < windowEndMs) {
+		const beforeEnd =
+			Number.isFinite(windowEndMs) && now.getTime() < windowEndMs
+		const stillGrowing =
+			isStillPublicCodeRunsWindow(existingWindow) &&
+			total > existingWindow.current
+		// A still pair is a bootstrap (KV miss or first write). Holding it
+		// for 24h freezes the homepage ticker even while executes accrue.
+		// Live windows still hold until windowEnd so interpolation stays
+		// deterministic for every visitor.
+		if (beforeEnd && !stillGrowing) {
 			return { status: 'held' }
 		}
 

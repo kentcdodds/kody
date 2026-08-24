@@ -49,7 +49,7 @@ async function createEnv(input?: {
 	return { APP_DB: db, BUNDLE_ARTIFACTS_KV: kv }
 }
 
-test('refreshPublicCodeRunsWindow initializes a still pair, holds it for 24h, then rotates without going backwards', async () => {
+test('refreshPublicCodeRunsWindow initializes a still pair, unsticks when the fleet grows, and holds a live window for 24h', async () => {
 	const env = await createEnv({
 		rows: [
 			{ userId: 'a', month: '2026-07', eventCount: 40 },
@@ -69,30 +69,60 @@ test('refreshPublicCodeRunsWindow initializes a still pair, holds it for 24h, th
 		windowEnd: '2026-08-22T00:00:00.000Z',
 	})
 
+	await expect(
+		refreshPublicCodeRunsWindow({
+			env,
+			now: new Date('2026-08-21T12:00:00.000Z'),
+		}),
+	).resolves.toEqual({ status: 'held' })
+	expect(await loadPublicCodeRunsWindow(env, start)).toEqual(still)
+
 	await env.APP_DB.prepare(
 		`UPDATE usage_rollups SET event_count = 90 WHERE user_id = 'b'`,
 	).run()
 	await expect(
 		refreshPublicCodeRunsWindow({
 			env,
-			now: new Date('2026-08-21T23:59:00.000Z'),
+			now: new Date('2026-08-21T12:01:00.000Z'),
+		}),
+	).resolves.toEqual({ status: 'rotated' })
+	const live = await loadPublicCodeRunsWindow(
+		env,
+		new Date('2026-08-21T12:01:00.000Z'),
+	)
+	expect(live).toEqual({
+		previous: 100,
+		current: 130,
+		windowStart: '2026-08-21T12:01:00.000Z',
+		windowEnd: '2026-08-22T12:01:00.000Z',
+	})
+
+	await env.APP_DB.prepare(
+		`UPDATE usage_rollups SET event_count = 110 WHERE user_id = 'b'`,
+	).run()
+	await expect(
+		refreshPublicCodeRunsWindow({
+			env,
+			now: new Date('2026-08-21T18:00:00.000Z'),
 		}),
 	).resolves.toEqual({ status: 'held' })
-	expect(await loadPublicCodeRunsWindow(env, start)).toEqual(still)
+	expect(
+		await loadPublicCodeRunsWindow(env, new Date('2026-08-21T18:00:00.000Z')),
+	).toEqual(live)
 
 	await expect(
 		refreshPublicCodeRunsWindow({
 			env,
-			now: new Date('2026-08-22T00:00:00.000Z'),
+			now: new Date('2026-08-22T12:01:00.000Z'),
 		}),
 	).resolves.toEqual({ status: 'rotated' })
 	expect(
-		await loadPublicCodeRunsWindow(env, new Date('2026-08-22T00:00:00.000Z')),
+		await loadPublicCodeRunsWindow(env, new Date('2026-08-22T12:01:00.000Z')),
 	).toEqual({
-		previous: 100,
-		current: 130,
-		windowStart: '2026-08-22T00:00:00.000Z',
-		windowEnd: '2026-08-23T00:00:00.000Z',
+		previous: 130,
+		current: 150,
+		windowStart: '2026-08-22T12:01:00.000Z',
+		windowEnd: '2026-08-23T12:01:00.000Z',
 	})
 
 	await env.APP_DB.prepare(
@@ -101,16 +131,16 @@ test('refreshPublicCodeRunsWindow initializes a still pair, holds it for 24h, th
 	await expect(
 		refreshPublicCodeRunsWindow({
 			env,
-			now: new Date('2026-08-23T00:00:00.000Z'),
+			now: new Date('2026-08-23T12:01:00.000Z'),
 		}),
 	).resolves.toEqual({ status: 'rotated' })
 	expect(
-		await loadPublicCodeRunsWindow(env, new Date('2026-08-23T00:00:00.000Z')),
+		await loadPublicCodeRunsWindow(env, new Date('2026-08-23T12:01:00.000Z')),
 	).toEqual({
-		previous: 130,
-		current: 130,
-		windowStart: '2026-08-23T00:00:00.000Z',
-		windowEnd: '2026-08-24T00:00:00.000Z',
+		previous: 150,
+		current: 150,
+		windowStart: '2026-08-23T12:01:00.000Z',
+		windowEnd: '2026-08-24T12:01:00.000Z',
 	})
 })
 
@@ -149,4 +179,34 @@ test('public code-runs load falls back to D1 and hides when KV fails or there ar
 		}),
 	).resolves.toEqual({ status: 'skipped', reason: 'no_runs' })
 	expect(await loadPublicCodeRunsWindow(empty)).toBeNull()
+})
+
+test('public code-runs load continues an expired window without writing KV', async () => {
+	const env = await createEnv({
+		rows: [{ userId: 'a', month: '2026-08', eventCount: 200 }],
+		window: {
+			previous: 100,
+			current: 150,
+			windowStart: '2026-08-21T00:00:00.000Z',
+			windowEnd: '2026-08-22T00:00:00.000Z',
+		},
+	})
+	const loaded = await loadPublicCodeRunsWindow(
+		env,
+		new Date('2026-08-22T02:00:00.000Z'),
+	)
+	expect(loaded).toEqual({
+		previous: 150,
+		current: 200,
+		windowStart: '2026-08-22T00:00:00.000Z',
+		windowEnd: '2026-08-23T00:00:00.000Z',
+	})
+	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify({
+			previous: 100,
+			current: 150,
+			windowStart: '2026-08-21T00:00:00.000Z',
+			windowEnd: '2026-08-22T00:00:00.000Z',
+		}),
+	)
 })

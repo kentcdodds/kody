@@ -16,7 +16,13 @@ import {
 } from '#universal/community-display.ts'
 import { renderCommunityEmptyState } from '#universal/community-empty-state.tsx'
 import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
-import { ForkOutdatedCopyButton } from '#universal/fork-outdated-copy-button.tsx'
+import {
+	FORKED_COPY_TOOLTIP,
+	FORK_OUTDATED_COPY_TOOLTIP,
+	INSTALLED_COPY_TOOLTIP,
+	renderCopyPromptPill,
+} from '#universal/fork-outdated-copy-button.tsx'
+import { routes } from '#universal/routes.ts'
 import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import { getCommunityListingHref } from '#universal/community-links.ts'
 import {
@@ -28,6 +34,7 @@ import { type CommunityIndexGroup } from '#universal/loader-data.ts'
 import { colors, transitions } from '#universal/styles/tokens.ts'
 import {
 	getSurfaceCardCss,
+	hoverMq,
 	mergeCss,
 	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
@@ -286,37 +293,61 @@ function renderCommunityListingGrid(
 export function renderCommunityViewerInstallBadge(input: {
 	listing: PublicCommunityListing
 	variant: 'card' | 'detail'
+	loggedIn?: boolean
+	returnTo?: string
 }) {
 	const install = input.listing.viewerInstall
-	if (!install) return null
-	if (install.listingAhead && install.listingAheadPrompt) {
+	if (install?.listingAhead && install.listingAheadPrompt) {
+		return renderCopyPromptPill({
+			label: 'Fork outdated',
+			prompt: install.listingAheadPrompt,
+			testId:
+				input.variant === 'card'
+					? `community-listing-ahead-${input.listing.id}`
+					: 'community-detail-listing-ahead-badge',
+			tooltip: FORK_OUTDATED_COPY_TOOLTIP,
+			tone: 'outdated',
+		})
+	}
+	if (install) {
+		const installed = install.status === 'installed'
+		return renderCopyPromptPill({
+			label: installed ? 'Installed' : 'Forked',
+			prompt: install.agentPrompt,
+			testId:
+				input.variant === 'card'
+					? `community-listing-viewer-install-${input.listing.id}`
+					: 'community-detail-viewer-install-badge',
+			tooltip: installed ? INSTALLED_COPY_TOOLTIP : FORKED_COPY_TOOLTIP,
+			tone: 'badge',
+		})
+	}
+	if (input.variant !== 'detail') return null
+	const loginHref = routes.login.href(null, {
+		searchParams: { redirectTo: input.returnTo ?? routes.community.href() },
+	})
+	if (!input.loggedIn) {
 		return (
-			<ForkOutdatedCopyButton
-				prompt={install.listingAheadPrompt}
-				testId={
-					input.variant === 'card'
-						? `community-listing-ahead-${input.listing.id}`
-						: 'community-detail-listing-ahead-badge'
-				}
-			/>
+			<a
+				href={loginHref}
+				data-testid="community-detail-install"
+				data-community-install=""
+				mix={css(communityInstallPillCss)}
+			>
+				Install
+			</a>
 		)
 	}
 	return (
-		<span
-			data-testid={
-				input.variant === 'card'
-					? `community-listing-viewer-install-${input.listing.id}`
-					: 'community-detail-viewer-install-badge'
-			}
-			title={
-				install.status === 'installed'
-					? `Installed in your account as ${install.targetName}.`
-					: `Forked in your account as ${install.targetName}; still needs adaptation.`
-			}
-			mix={css(communityBadgePillCss)}
+		<button
+			type="button"
+			data-testid="community-detail-install"
+			data-community-install=""
+			data-trusted={input.listing.trusted ? 'true' : 'false'}
+			mix={css(communityInstallPillCss)}
 		>
-			{install.status === 'installed' ? 'Installed' : 'Forked'}
-		</span>
+			Install
+		</button>
 	)
 }
 
@@ -589,6 +620,27 @@ export const communityBadgePillCss = {
 	padding: '0.15rem 0.6rem',
 	whiteSpace: 'nowrap' as const,
 	cursor: 'help',
+}
+
+export const communityInstallPillCss = {
+	...communityBadgePillCss,
+	appearance: 'none' as const,
+	margin: 0,
+	border: 'none',
+	fontFamily: 'inherit',
+	lineHeight: 1.2,
+	textDecoration: 'none',
+	cursor: 'pointer',
+	[hoverMq]: {
+		'&:hover': {
+			backgroundColor: `oklch(from ${colors.primary} l c h / 0.2)`,
+			color: colors.primaryText,
+		},
+	},
+	'&:focus-visible': {
+		outline: `2px solid ${colors.primary}`,
+		outlineOffset: '2px',
+	},
 }
 
 const listingBadgeGroupCss = {

@@ -10,6 +10,7 @@ import {
 	parseStoredPlanName,
 	planLimits,
 	resolveEffectivePlan,
+	type EntitlementResource,
 } from '#universal/plans.ts'
 
 /**
@@ -18,19 +19,26 @@ import {
  * both stay on the same UTC-hour cadence. Failures here must not block
  * the operator alert.
  *
- * Throttle is one approaching (80%) email and one reached (100%) email per
- * verified person per UTC day, listing every resource currently in that
- * bucket. It is not per-resource.
+ * One email per crossing of 80% or 100% on a specific entitlement. Staying
+ * over the same threshold does not mail again. A later drop below that
+ * threshold, then a climb back over it, is a new instance. Same-hour
+ * crossings of the same kind still batch into one mail. Stock claims expire
+ * after 30 days unless an hourly sweep still sees the user over and refreshes
+ * the TTL; daily `*_per_day` claims stay scoped to the UTC day.
  */
 
-export const userEntitlementWarningKvKeyPrefix = 'entitlement-warning-user:v2'
+export const userEntitlementWarningKvKeyPrefix = 'entitlement-warning-user:v3'
+export const userEntitlementWarningDailyKvKeyPrefix =
+	'entitlement-warning-user:v2'
 export const userEntitlementWarningSweepLimit = 100
 export const userEntitlementWarningActiveSweepLimit = 80
 export const userEntitlementWarningStockSweepLimit = 40
-export const userEntitlementWarningDailyTtlSeconds = 36 * 60 * 60
 export const userEntitlementApproachingThreshold = 0.8
 export const userEntitlementReachedThreshold = 1
 const warningSweepConcurrency = 4
+const dailyClaimLookbackDays = 3
+export const userEntitlementWarningDailyClaimTtlSeconds = 36 * 60 * 60
+export const userEntitlementWarningStockClaimTtlSeconds = 30 * 24 * 60 * 60
 
 const stockPackageThreshold = Math.ceil(planLimits.free.maxSavedPackages * 0.8)
 const stockSecretThreshold = Math.ceil(planLimits.free.maxSecrets * 0.8)
@@ -43,6 +51,7 @@ type WarningCandidate = {
 }
 
 type WarningResource = {
+	resource: EntitlementResource
 	label: string
 	current: number
 	limit: number
@@ -59,12 +68,32 @@ export type UserEntitlementWarningEmailResult =
 			warnedResources: number
 	  }
 
+export function isDailyEntitlementResource(resource: EntitlementResource) {
+	return resource.endsWith('_per_day')
+}
+
 export function userEntitlementWarningKvKey(input: {
+	userId: string
+	kind: UserEntitlementWarningKind
+	resource: EntitlementResource
+	day?: string
+}) {
+	const base = `${userEntitlementWarningKvKeyPrefix}:${input.userId}:${input.kind}:${input.resource}`
+	if (!isDailyEntitlementResource(input.resource)) return base
+	if (!input.day) {
+		throw new Error(
+			`Daily entitlement warning key for ${input.resource} requires a UTC day`,
+		)
+	}
+	return `${base}:${input.day}`
+}
+
+export function userEntitlementWarningDailyKvKey(input: {
 	userId: string
 	kind: UserEntitlementWarningKind
 	day: string
 }) {
-	return `${userEntitlementWarningKvKeyPrefix}:${input.userId}:${input.kind}:${input.day}`
+	return `${userEntitlementWarningDailyKvKeyPrefix}:${input.userId}:${input.kind}:${input.day}`
 }
 
 export async function sendUserEntitlementWarningEmails(input: {
@@ -139,6 +168,7 @@ async function warnOneUserIfNeeded(input: {
 	for (const item of consumption) {
 		if (item.percentOfLimit == null) continue
 		const warning = {
+			resource: item.resource,
 			label: item.label,
 			current: item.current,
 			limit: item.limit,
@@ -150,18 +180,80 @@ async function warnOneUserIfNeeded(input: {
 		}
 		if (item.percentOfLimit >= userEntitlementApproachingThreshold) {
 			approaching.push(warning)
+			await deleteWarningClaims({
+				kv,
+				userId: input.user.stable_user_id,
+				kind: 'reached',
+				resource: item.resource,
+				now: input.now,
+			})
+			continue
 		}
+		await Promise.all([
+			deleteWarningClaims({
+				kv,
+				userId: input.user.stable_user_id,
+				kind: 'approaching',
+				resource: item.resource,
+				now: input.now,
+			}),
+			deleteWarningClaims({
+				kv,
+				userId: input.user.stable_user_id,
+				kind: 'reached',
+				resource: item.resource,
+				now: input.now,
+			}),
+		])
 	}
-	if (approaching.length === 0 && reached.length === 0) return null
 
-	const day = utcDayKey(input.now)
+	await absorbDailyClaims({
+		kv,
+		userId: input.user.stable_user_id,
+		kind: 'reached',
+		warnings: reached,
+		now: input.now,
+	})
+	await absorbDailyClaims({
+		kv,
+		userId: input.user.stable_user_id,
+		kind: 'approaching',
+		warnings: approaching,
+		now: input.now,
+	})
+
+	const newReached = await unclaimedWarnings({
+		kv,
+		userId: input.user.stable_user_id,
+		kind: 'reached',
+		warnings: reached,
+		now: input.now,
+	})
+	const newApproaching = await unclaimedWarnings({
+		kv,
+		userId: input.user.stable_user_id,
+		kind: 'approaching',
+		warnings: approaching,
+		now: input.now,
+	})
+	await refreshStillOverStockClaims({
+		kv,
+		userId: input.user.stable_user_id,
+		now: input.now,
+		reached,
+		approaching,
+		newReached,
+		newApproaching,
+	})
+	if (newApproaching.length === 0 && newReached.length === 0) return null
+
 	let emailsSent = 0
 	let warnedResources = 0
 	// Reached first so a same-hour jump to 100% sends the limit mail
 	// even when an 80% send is also due.
 	for (const [kind, warnings] of [
-		['reached', reached],
-		['approaching', approaching],
+		['reached', newReached],
+		['approaching', newApproaching],
 	] as const) {
 		const sent = await sendThresholdEmailIfNeeded({
 			env: input.env,
@@ -170,7 +262,6 @@ async function warnOneUserIfNeeded(input: {
 			user: input.user,
 			kind,
 			warnings,
-			day,
 			now: input.now,
 		})
 		if (!sent) continue
@@ -188,16 +279,9 @@ async function sendThresholdEmailIfNeeded(input: {
 	user: WarningCandidate
 	kind: UserEntitlementWarningKind
 	warnings: Array<WarningResource>
-	day: string
 	now: Date
 }): Promise<boolean> {
 	if (input.warnings.length === 0) return false
-	const key = userEntitlementWarningKvKey({
-		userId: input.user.stable_user_id,
-		kind: input.kind,
-		day: input.day,
-	})
-	if (await input.kv.get(key)) return false
 
 	const billingUrl = new URL(
 		'/account/billing',
@@ -242,10 +326,256 @@ async function sendThresholdEmailIfNeeded(input: {
 		return false
 	}
 
-	await input.kv.put(key, String(input.now.getTime()), {
-		expirationTtl: userEntitlementWarningDailyTtlSeconds,
+	await claimWarningInstance({
+		kv: input.kv,
+		userId: input.user.stable_user_id,
+		kind: input.kind,
+		warnings: input.warnings,
+		now: input.now,
 	})
 	return true
+}
+
+async function absorbDailyClaims(input: {
+	kv: KVNamespace
+	userId: string
+	kind: UserEntitlementWarningKind
+	warnings: Array<WarningResource>
+	now: Date
+}) {
+	if (input.warnings.length === 0) return
+	const today = utcDayKey(input.now)
+	const todayClaimed = await input.kv.get(
+		userEntitlementWarningDailyKvKey({
+			userId: input.userId,
+			kind: input.kind,
+			day: today,
+		}),
+	)
+	if (todayClaimed) {
+		await claimWarningInstance({
+			kv: input.kv,
+			userId: input.userId,
+			kind: input.kind,
+			warnings: input.warnings,
+			now: input.now,
+		})
+		return
+	}
+
+	let priorDayClaimed = false
+	for (const day of recentUtcDayKeys(input.now)) {
+		if (day === today) continue
+		const dailyKey = userEntitlementWarningDailyKvKey({
+			userId: input.userId,
+			kind: input.kind,
+			day,
+		})
+		if (await input.kv.get(dailyKey)) {
+			priorDayClaimed = true
+			break
+		}
+	}
+	if (!priorDayClaimed) return
+
+	const stockWarnings = input.warnings.filter(
+		(warning) => !isDailyEntitlementResource(warning.resource),
+	)
+	if (stockWarnings.length === 0) return
+	await claimWarningInstance({
+		kv: input.kv,
+		userId: input.userId,
+		kind: input.kind,
+		warnings: stockWarnings,
+		now: input.now,
+	})
+}
+
+async function unclaimedWarnings(input: {
+	kv: KVNamespace
+	userId: string
+	kind: UserEntitlementWarningKind
+	warnings: Array<WarningResource>
+	now: Date
+}) {
+	const next: Array<WarningResource> = []
+	for (const warning of input.warnings) {
+		const claimed = await input.kv.get(
+			warningInstanceKey({
+				userId: input.userId,
+				kind: input.kind,
+				resource: warning.resource,
+				now: input.now,
+			}),
+		)
+		if (claimed) continue
+		next.push(warning)
+	}
+	return next
+}
+
+async function claimWarningInstance(input: {
+	kv: KVNamespace
+	userId: string
+	kind: UserEntitlementWarningKind
+	warnings: Array<WarningResource>
+	now: Date
+}) {
+	const claimedAt = String(input.now.getTime())
+	for (const warning of input.warnings) {
+		await putWarningClaim({
+			kv: input.kv,
+			userId: input.userId,
+			kind: input.kind,
+			resource: warning.resource,
+			now: input.now,
+			claimedAt,
+		})
+		if (input.kind !== 'reached') continue
+		// Same climb already passed 80%. Claiming approaching here keeps a
+		// later drop into the 80–99% band from sending a second mail.
+		await putWarningClaim({
+			kv: input.kv,
+			userId: input.userId,
+			kind: 'approaching',
+			resource: warning.resource,
+			now: input.now,
+			claimedAt,
+		})
+	}
+}
+
+async function refreshStillOverStockClaims(input: {
+	kv: KVNamespace
+	userId: string
+	now: Date
+	reached: Array<WarningResource>
+	approaching: Array<WarningResource>
+	newReached: Array<WarningResource>
+	newApproaching: Array<WarningResource>
+}) {
+	const claimedAt = String(input.now.getTime())
+	const newReachedResources = new Set(
+		input.newReached.map((warning) => warning.resource),
+	)
+	const newApproachingResources = new Set(
+		input.newApproaching.map((warning) => warning.resource),
+	)
+	for (const warning of input.reached) {
+		if (isDailyEntitlementResource(warning.resource)) continue
+		if (newReachedResources.has(warning.resource)) continue
+		await putWarningClaim({
+			kv: input.kv,
+			userId: input.userId,
+			kind: 'reached',
+			resource: warning.resource,
+			now: input.now,
+			claimedAt,
+		})
+		// Keep the paired approaching claim alive so sitting at a cap does
+		// not let the 80% claim expire and rematch on a later drop to 80–99%.
+		if (newApproachingResources.has(warning.resource)) continue
+		await putWarningClaim({
+			kv: input.kv,
+			userId: input.userId,
+			kind: 'approaching',
+			resource: warning.resource,
+			now: input.now,
+			claimedAt,
+		})
+	}
+	for (const warning of input.approaching) {
+		if (isDailyEntitlementResource(warning.resource)) continue
+		if (newApproachingResources.has(warning.resource)) continue
+		await putWarningClaim({
+			kv: input.kv,
+			userId: input.userId,
+			kind: 'approaching',
+			resource: warning.resource,
+			now: input.now,
+			claimedAt,
+		})
+	}
+}
+
+function warningInstanceKey(input: {
+	userId: string
+	kind: UserEntitlementWarningKind
+	resource: EntitlementResource
+	now: Date
+}) {
+	return userEntitlementWarningKvKey({
+		userId: input.userId,
+		kind: input.kind,
+		resource: input.resource,
+		day: isDailyEntitlementResource(input.resource)
+			? utcDayKey(input.now)
+			: undefined,
+	})
+}
+
+async function putWarningClaim(input: {
+	kv: KVNamespace
+	userId: string
+	kind: UserEntitlementWarningKind
+	resource: EntitlementResource
+	now: Date
+	claimedAt: string
+}) {
+	const key = warningInstanceKey(input)
+	const expirationTtl = isDailyEntitlementResource(input.resource)
+		? userEntitlementWarningDailyClaimTtlSeconds
+		: userEntitlementWarningStockClaimTtlSeconds
+	try {
+		await input.kv.put(key, input.claimedAt, { expirationTtl })
+	} catch (error) {
+		console.warn('user-entitlement-warning-claim-failed', {
+			kind: input.kind,
+			resource: input.resource,
+			error,
+		})
+	}
+}
+
+async function deleteWarningClaims(input: {
+	kv: KVNamespace
+	userId: string
+	kind: UserEntitlementWarningKind
+	resource: EntitlementResource
+	now: Date
+}) {
+	if (!isDailyEntitlementResource(input.resource)) {
+		await input.kv.delete(
+			userEntitlementWarningKvKey({
+				userId: input.userId,
+				kind: input.kind,
+				resource: input.resource,
+			}),
+		)
+		return
+	}
+	await Promise.all(
+		recentUtcDayKeys(input.now).map((day) =>
+			input.kv.delete(
+				userEntitlementWarningKvKey({
+					userId: input.userId,
+					kind: input.kind,
+					resource: input.resource,
+					day,
+				}),
+			),
+		),
+	)
+}
+
+function recentUtcDayKeys(now: Date) {
+	const keys: Array<string> = []
+	for (let daysAgo = 0; daysAgo < dailyClaimLookbackDays; daysAgo += 1) {
+		keys.push(
+			utcDayKey(new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000)),
+		)
+	}
+	return keys
 }
 
 async function listUsersForEntitlementWarningSweep(db: D1Database, now: Date) {

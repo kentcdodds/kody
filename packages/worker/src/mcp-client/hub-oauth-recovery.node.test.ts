@@ -21,6 +21,8 @@ type FakeConnection = {
 		transport: {
 			type: string
 			headers?: Record<string, string>
+			sessionId?: string
+			protocolVersion?: string
 			authProvider: {
 				serverId: string
 				clientId?: string
@@ -274,6 +276,8 @@ function seedServer(input: {
 				transport: {
 					type: 'auto',
 					headers: { 'X-Test': 'preserved' },
+					sessionId: 'stale-2025-session',
+					protocolVersion: '2025-11-25',
 					authProvider: provider,
 				},
 			},
@@ -334,6 +338,15 @@ test('reconnect repairs stale callbacks and always replaces pending OAuth state'
 	expect(manager.mcpConnections['server-1']?.options.transport.headers).toEqual(
 		{ 'X-Test': 'preserved' },
 	)
+	expect(
+		manager.mcpConnections['server-1']?.options.transport.sessionId,
+	).toBeUndefined()
+	expect(
+		manager.mcpConnections['server-1']?.options.transport.protocolVersion,
+	).toBeUndefined()
+	expect(manager.mcpConnections['server-1']?.options.client).toMatchObject({
+		versionNegotiation: { mode: 'auto' },
+	})
 	expect([...values.keys()].filter((key) => key.startsWith('/Kody/'))).toEqual(
 		[],
 	)

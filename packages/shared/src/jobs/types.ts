@@ -104,21 +104,6 @@ export type PersistedJobCallerContext = Pick<
 	user: McpUserContext
 }
 
-export type JobCreateInput = {
-	name: string
-	code: string
-	sourceId?: string | null
-	publishedCommit?: string | null
-	repoCheckPolicy?: JobRepoCheckPolicy | null
-	params?: Record<string, unknown>
-	schedule: JobSchedule
-	timezone?: string | null
-	enabled?: boolean
-	killSwitchEnabled?: boolean
-	preserved?: boolean
-	expiresAt?: string | null
-}
-
 export type JobUpdateInput = {
 	id: string
 	name?: string
@@ -133,21 +118,5 @@ export type JobUpdateInput = {
 	killSwitchEnabled?: boolean
 	preserved?: boolean
 	/** Pass null to clear expiry. Omit to leave unchanged. */
-	expiresAt?: string | null
-}
-
-export type JobUpsertInput = {
-	id?: string
-	name?: string
-	code?: string
-	sourceId?: string | null
-	publishedCommit?: string | null
-	repoCheckPolicy?: JobRepoCheckPolicy | null
-	params?: Record<string, unknown> | null
-	schedule?: JobSchedule
-	timezone?: string | null
-	enabled?: boolean
-	killSwitchEnabled?: boolean
-	preserved?: boolean
 	expiresAt?: string | null
 }

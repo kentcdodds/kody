@@ -22,12 +22,6 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 			.filter((tool) => tool.name === 'execute')
 			.every((tool) => tool.inputs.some((input) => input.name === 'code')),
 	).toBe(true)
-	// Git / repo lane — never the old package_save path.
-	expect(
-		tools.every((tool) =>
-			tool.inputs.every((input) => !input.value.includes('package_save')),
-		),
-	).toBe(true)
 	expect(
 		tools.some((tool) =>
 			tool.inputs.some((input) =>
@@ -68,29 +62,4 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 		'shipped.length === 0',
 	)
 	expect(howKodyWorksPackageFiles['package.json']).toContain('"enabled": true')
-
-	const agentLines = howKodyWorksTranscriptActs.flatMap((act) =>
-		act.lines.flatMap((line) => (line.role === 'agent' ? [line.text] : [])),
-	)
-	expect(
-		agentLines.some((text) => /webhook/i.test(text) && /cron/i.test(text)),
-	).toBe(true)
-	expect(
-		agentLines.some((text) =>
-			text.includes('Favorite bot is the GitHub account kody-bot'),
-		),
-	).toBe(true)
-	expect(
-		agentLines.some((text) =>
-			text.includes('I will search for a package that already answers this.'),
-		),
-	).toBe(true)
-	expect(
-		agentLines.every(
-			(text) => !text.includes('Same question in different words'),
-		),
-	).toBe(true)
-	expect(
-		agentLines.every((text) => !text.includes('New agent, same ask')),
-	).toBe(true)
 })

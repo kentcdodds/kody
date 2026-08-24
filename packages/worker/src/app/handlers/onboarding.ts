@@ -20,9 +20,6 @@ import {
 	buildMcpServerStatusView,
 	loadMcpClientHubSnapshotOrNull,
 } from '#mcp/capabilities/mcp-servers/shared.ts'
-import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
-import { listTopPlatformAppsByUse } from '#worker/integrations/platform-apps.ts'
-import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import {
@@ -34,7 +31,6 @@ import {
 } from '#universal/onboarding-mcp-chooser.ts'
 import { firstInstalledOnboardingExampleName } from '#universal/onboarding-examples.ts'
 import {
-	type OnboardingBuiltInProvider,
 	type OnboardingChecklistLoaderData,
 	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
@@ -142,56 +138,6 @@ export async function loadWelcomeEmail(
 	}
 }
 
-const onboardingBuiltInProviderLimit = 6
-
-/**
- * Top enabled built-in integrations by adoption, offered as one-click
- * connects in the wizard. When `userId` is set, overlays whether the viewer
- * already has a platform connection for each app. Fails open to an empty
- * list so a D1 blip (or a deployment with no platform apps) never breaks
- * the onboarding payload; connection lookup failures leave cards disconnected.
- */
-export async function loadOnboardingBuiltInProviders(
-	env: Env,
-	userId?: string | null,
-): Promise<Array<OnboardingBuiltInProvider>> {
-	try {
-		const apps = await listTopPlatformAppsByUse({
-			db: env.APP_DB,
-			limit: onboardingBuiltInProviderLimit,
-		})
-		const connectedBySlug = new Map<string, string>()
-		if (userId) {
-			try {
-				const integrations = await listJoinedIntegrations({ env, userId })
-				for (const joined of integrations) {
-					if (joined.lane !== 'platform') continue
-					const slug = joined.connection.platformAppSlug
-					if (!slug || connectedBySlug.has(slug)) continue
-					connectedBySlug.set(slug, joined.connection.name)
-				}
-			} catch (error) {
-				console.error(
-					'Failed to load viewer connections for onboarding providers:',
-					error,
-				)
-			}
-		}
-		return apps.map((app) => {
-			const connectionName = connectedBySlug.get(app.slug) ?? null
-			return {
-				slug: app.slug,
-				label: app.label ?? app.slug,
-				logoPath: buildPlatformOauthAppLogoPath(app),
-				connected: connectionName != null,
-				connectionName,
-			}
-		})
-	} catch {
-		return []
-	}
-}
-
 /**
  * Official workspace MCP chooser cards for the wizard. When `userId` is set,
  * overlays saved MCP servers and hub connection state. Fails open to the
@@ -289,14 +235,12 @@ async function loadOnboardingChooserFields(
 	request: Request,
 	userId?: string | null,
 ) {
-	const [featuredListings, builtInProviders, chooser] = await Promise.all([
+	const [featuredListings, chooser] = await Promise.all([
 		loadOnboardingFeaturedListings(env, request),
-		loadOnboardingBuiltInProviders(env, userId),
 		loadOnboardingChooserMcpState(env, request, userId),
 	])
 	return {
 		featuredListings,
-		builtInProviders,
 		featuredMcpServers: chooser.featuredMcpServers,
 		customMcpServers: chooser.customMcpServers,
 		persistContext: {

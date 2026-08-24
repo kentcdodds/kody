@@ -89,7 +89,7 @@ test('public route hardening rejects retired connector paths, unknown paths, and
 		{
 			path: '/__maintenance/execute-smoke',
 			secret: env.CAPABILITY_REINDEX_SECRET,
-			notConfiguredMessage: 'Execute smoke check is not configured',
+			notConfiguredMessage: 'Origin-only execute smoke check is not configured',
 		},
 		{
 			path: '/__maintenance/reindex-memories',

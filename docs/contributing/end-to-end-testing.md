@@ -80,8 +80,10 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   exited mid-suite (avoids burning retries on `ECONNREFUSED`). That error names
   the unread `request.clone()` tee fix (`discardUnreadRequestBody` in
   `#worker/request-body.ts`) when logs show `Network connection lost` /
-  `Error inside ProxyWorker`. On CI, the `🎭 E2E` job uploads `logs.local/` as
-  the `e2e-wrangler-logs` artifact when the suite fails.
+  `Error inside ProxyWorker`. Playwright keeps wrangler's default incoming-body
+  drain enabled so unused proxy tees do not kill `wrangler dev` mid-suite. On
+  CI, the `🎭 E2E` job uploads `logs.local/` as the `e2e-wrangler-logs` artifact
+  when the suite fails.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
   assets, KV, and durable objects since these are not inherited from top-level
   Wrangler config.

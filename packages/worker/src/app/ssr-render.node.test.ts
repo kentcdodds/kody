@@ -377,7 +377,6 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		emailVerified: false,
 		needsOnboarding: true,
 		featuredListings: [],
-		builtInProviders: [],
 		featuredMcpServers: [],
 		customMcpServers: [],
 		persistedPackageKodyId: null,
@@ -768,6 +767,14 @@ test('renderAppPage embeds the homepage factory-loop conversation teaser', async
 	expect(html).toContain('/guides/how-kody-works')
 	expect(html).toContain('Read the walkthrough')
 	expect(html).not.toContain('See the whole loop')
+	// Combined playing/pause control is on the teaser so the header does
+	// not shift when playback starts. Icons, not the word Pause.
+	expect(html).toContain('class="landing-loop-toggle-slot"')
+	expect(html).toContain('class="landing-loop-toggle"')
+	expect(html).toContain('aria-label="Pause"')
+	expect(html).toContain('class="landing-loop-status-dot"')
+	expect(html).not.toContain('>Playing<')
+	expect(html).not.toContain('>Pause<')
 })
 
 test('signup social buttons are icon-only with accessible names', async () => {
@@ -1636,6 +1643,9 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 	expect(html).toContain('/community/listing-detail-1/icon/abc1234567890')
 	expect(html).toContain('data-testid="community-detail-trusted-badge"')
 	expect(html).toContain('data-testid="community-readme"')
+	expect(html).toContain('data-testid="community-detail-install"')
+	expect(html).not.toContain('One-click install')
+	expect(html).not.toContain('Fork with your agent')
 	const props = readAppRootProps(html)
 	expect(props.loaderData?.communityDetailShell).toMatchObject({
 		ok: true,

@@ -1,18 +1,20 @@
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
+import {
+	createRemovedValueWriteError,
+	removedValueWriteMessage,
+} from './shared.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listValues: vi.fn(),
-	saveValue: vi.fn(),
 }))
 
 vi.mock('#mcp/values/service.ts', () => ({
 	listValues: (...args: Array<unknown>) => mockModule.listValues(...args),
-	saveValue: (...args: Array<unknown>) => mockModule.saveValue(...args),
 }))
 
 const { valueListCapability } = await import('./value-list.ts')
-const { valueSetCapability } = await import('./value-set.ts')
 
 function buildCallerContext() {
 	return createMcpCallerContext({
@@ -25,7 +27,7 @@ function buildCallerContext() {
 	})
 }
 
-test('value list/set treat underscore-prefixed names as ordinary values', async () => {
+test('value list treats underscore-prefixed names as ordinary leftovers', async () => {
 	mockModule.listValues.mockResolvedValue([
 		{
 			name: 'preferred_repo',
@@ -48,16 +50,6 @@ test('value list/set treat underscore-prefixed names as ordinary values', async 
 			ttlMs: null,
 		},
 	])
-	mockModule.saveValue.mockResolvedValue({
-		name: '_scratch:notes',
-		scope: 'user',
-		value: 'updated',
-		description: 'Scratch notes',
-		appId: null,
-		createdAt: '2026-01-01T00:00:00.000Z',
-		updatedAt: '2026-01-01T00:00:00.000Z',
-		ttlMs: null,
-	})
 
 	const listed = await valueListCapability.handler(
 		{},
@@ -70,27 +62,26 @@ test('value list/set treat underscore-prefixed names as ordinary values', async 
 		'preferred_repo',
 		'_scratch:notes',
 	])
+})
 
-	const env = {} as Env
-	const callerContext = buildCallerContext()
-	await expect(
-		valueSetCapability.handler(
-			{
-				name: '_scratch:notes',
-				value: 'updated',
-				scope: 'user',
-			},
-			{ env, callerContext },
-		),
-	).resolves.toMatchObject({
-		name: '_scratch:notes',
-		value: 'updated',
-	})
-	expect(mockModule.saveValue).toHaveBeenCalledWith(
-		expect.objectContaining({
-			name: '_scratch:notes',
-			value: 'updated',
-			scope: 'user',
-		}),
-	)
+test('values domain is unadvertised and value_set is not a capability', () => {
+	const registry = getStaticRegistry()
+	expect(
+		registry.capabilityDomains.some((domain) => domain.name === 'values'),
+	).toBe(false)
+	expect(registry.capabilitySpecs.value_get).toBeUndefined()
+	expect(registry.capabilitySpecs.value_list).toBeUndefined()
+	expect(registry.capabilitySpecs.value_delete).toBeUndefined()
+	expect(registry.capabilitySpecs.value_set).toBeUndefined()
+	expect(registry.capabilityMap.value_get).toBeTruthy()
+	expect(registry.capabilityMap.value_list).toBeTruthy()
+	expect(registry.capabilityMap.value_delete).toBeTruthy()
+	expect(registry.capabilityMap.value_set).toBeUndefined()
+	expect(createRemovedValueWriteError().message).toBe(removedValueWriteMessage)
+	expect(removedValueWriteMessage).toMatch(/memories/)
+	expect(removedValueWriteMessage).toMatch(/packageStorage/)
+	expect(removedValueWriteMessage).toMatch(/repo/)
+	expect(removedValueWriteMessage).toMatch(/secrets/)
+	expect(removedValueWriteMessage.toLowerCase()).not.toMatch(/retir/)
+	expect(removedValueWriteMessage).not.toMatch(/value_set/)
 })

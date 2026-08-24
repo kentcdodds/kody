@@ -1077,8 +1077,7 @@ export function ConnectOauthRoute(handle: Handle) {
 		return (
 			<section mix={css(cardCss)} data-testid="connect-oauth-chooser">
 				<p mix={css({ margin: 0, color: colors.text })}>
-					Pick a service to connect. Built-ins and your saved integrations start
-					from a name alone.
+					Pick a service to connect. Saved integrations start from a name alone.
 				</p>
 				{showFilter ? (
 					<input
@@ -1148,9 +1147,7 @@ export function ConnectOauthRoute(handle: Handle) {
 						<p mix={css(descriptionCss)}>No services match that filter.</p>
 					)
 				) : (
-					<p mix={css(descriptionCss)}>
-						No built-in apps or saved connections are ready yet.
-					</p>
+					<p mix={css(descriptionCss)}>No saved connections are ready yet.</p>
 				)}
 				<p mix={css(descriptionCss)}>
 					Need a service that is not listed?{' '}
@@ -1581,7 +1578,7 @@ export function ConnectOauthRoute(handle: Handle) {
 				return 'This URL is missing the provider endpoints needed to start OAuth.'
 			}
 			if (!requestedProvider) {
-				return 'Choose a built-in service or one of your saved integrations.'
+				return 'Choose one of your saved integrations.'
 			}
 			return statusMessage
 		}

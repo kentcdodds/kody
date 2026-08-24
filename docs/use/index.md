@@ -45,7 +45,7 @@ Read in order for a full tour, or jump to a topic.
   timelines, and listing stars
 - [Repo-backed editing sessions](./repo-sessions.md)
 - [Raw MCP content blocks](./raw-content-blocks.md)
-- [Secrets, values, and host approval](./secrets-and-values.md)
+- [Secrets and host approval](./secrets-and-values.md)
 - [Email primitives](./email-primitives.md) — the per-user inbox, notify-self
   sends, and replies
 - [Inbound webhooks](./webhooks.md) — user-owned HTTPS endpoints that dispatch

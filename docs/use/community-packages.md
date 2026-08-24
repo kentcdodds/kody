@@ -99,8 +99,9 @@ image (1200×630). When the owner keeps a
 shows a follow control next to the username. Private owners show as `@username`
 with a lock that explains the profile is private.
 
-Each detail page includes a **copyable prompt** you can hand to your agent to
-start a fork. You can also ask your agent to use `community_search` or
+The detail page opens with the README. Next to **Trusted** (and **Featured**,
+when present) a pill says **Install**, **Installed**, **Forked**, or **Fork
+outdated**. You can also ask your agent to use `community_search` or
 `community_get` from the `community` domain.
 
 ## Forking a listing
@@ -155,21 +156,20 @@ is ahead.
 
 ## One-click install
 
-Each listing detail page has an **Install** button for signed-in users. On
-`/onboarding`, Step 2 offers official workspace MCP servers and the matching
-`@kody` package, a custom MCP URL, or Just-try-Kody zero-auth examples. Step 3
-leads with an ad hoc → persist prompt so your agent can save a first package you
-own. Built-in service connects stay under Advanced; after those installs, **Copy
-prompt** gives your agent a short setup prompt. If you already have a saved
-package with the same `kody_id`, or a fork of that listing, onboarding, listing
-cards, and the detail page show **Copy prompt** / **Installed** (or **Forked**)
-instead of Install. Listing cards and the detail page place **Trusted** /
-**Installed** (or **Forked**) badges on their own row under the package name. A
-trailing **Choose your own adventure** card copies an open-ended setup prompt
-when you want to explore or build something custom instead. Install forks the
-listing into your account and, when the fork passes the same publish checks a
-repo session would run, publishes it immediately as a live saved package.
-**Publishing activates the package right away** — declared jobs are scheduled.
+Each listing detail page has an **Install** pill next to **Trusted** for
+signed-in users. Logged-out visitors get the same pill as a login link. Get
+started Step 2–3 follow
+[Connect your agent](./connect-your-agent.md#connect-a-workspace-mcp-then-persist-a-first-build)
+(workspace MCP or Just-try-Kody, then ad hoc → persist). If you already have a
+saved package with the same `kody_id`, or a fork of that listing, listing cards
+and the detail page show **Installed** or **Forked** instead of Install.
+Clicking that pill copies a prompt so your agent can look up the installed
+package and adapt it. Listing cards and the detail page place **Trusted** /
+**Installed** (or **Forked**) pills on their own row under the package name.
+Install forks the listing into your account and, when the fork passes the same
+publish checks a repo session would run, publishes it immediately as a live
+saved package. **Publishing activates the package right away** — declared jobs
+are scheduled.
 
 - **Untrusted listings** show a warning first: no admin has reviewed the code,
   and installing runs it in your account. You must explicitly confirm. Direct
@@ -179,13 +179,12 @@ repo session would run, publishes it immediately as a live saved package.
 
 When checks fail — most commonly because the package imports code from the
 original author's scope (`kody:@originuser/...`) — nothing is published. The
-fork stays **inert** exactly as a manual `community_fork` would, and the page
-gives you a copyable prompt so your agent can review, adapt, and publish it
+fork stays **inert** exactly as a manual `community_fork` would, and the
+**Forked** pill copies a prompt so your agent can review, adapt, and publish it
 through a repo session.
 
-After a successful install the page shows a copyable prompt for your agent to
-finish setup: required secrets, OAuth connections, package secret-access
-approval, and a first test run.
+After a successful install the **Installed** pill copies a prompt so your agent
+can look up that package and adapt it to your needs.
 
 One-click install is deliberately a **UI-only** flow. Agents use
 `community_fork` plus a repo session instead, which keeps a human review step

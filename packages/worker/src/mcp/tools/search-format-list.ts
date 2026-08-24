@@ -106,10 +106,6 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 				: ''
 		return `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${actionSummary}${listingAheadNote}`
 	}
-	if (match.type === 'value') {
-		const entityRef = buildEntityRef(match.valueId, 'value')
-		return `${String(index + 1)}. **value** ${formatMarkdownInlineCode(match.name)} (${formatMarkdownInlineCode(match.scope)} scope) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
-	}
 	if (match.type === 'integration') {
 		const entityRef = buildEntityRef(match.integrationName, 'integration')
 		return `${String(index + 1)}. **integration** ${formatMarkdownInlineCode(match.integrationName)} — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`

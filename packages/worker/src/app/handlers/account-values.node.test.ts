@@ -39,16 +39,6 @@ const mockModule = vi.hoisted(() => ({
 		},
 	]),
 	getValue: vi.fn(async () => null),
-	saveValue: vi.fn(async () => ({
-		name: 'locale',
-		scope: 'user' as const,
-		value: 'en-US',
-		description: 'Preferred locale',
-		appId: null,
-		createdAt: new Date(0).toISOString(),
-		updatedAt: new Date(0).toISOString(),
-		ttlMs: null,
-	})),
 	deleteValue: vi.fn(async () => true),
 }))
 
@@ -73,7 +63,6 @@ vi.mock('#app/ssr-render.tsx', () => ({
 vi.mock('#mcp/values/service.ts', () => ({
 	listValues: (...args: Array<unknown>) => mockModule.listValues(...args),
 	getValue: (...args: Array<unknown>) => mockModule.getValue(...args),
-	saveValue: (...args: Array<unknown>) => mockModule.saveValue(...args),
 	deleteValue: (...args: Array<unknown>) => mockModule.deleteValue(...args),
 }))
 
@@ -85,7 +74,7 @@ function createEnv() {
 	} as Env
 }
 
-test('values API lists, selects, saves, and deletes user-scoped values', async () => {
+test('values API lists, selects, and deletes leftover user-scoped rows', async () => {
 	const handler = createAccountValuesApiHandler(createEnv())
 
 	const listResponse = await handler.handler({
@@ -140,48 +129,6 @@ test('values API lists, selects, saves, and deletes user-scoped values', async (
 		}),
 	})
 
-	mockModule.listValues.mockResolvedValueOnce([
-		{
-			name: 'locale',
-			scope: 'user' as const,
-			value: 'en-US',
-			description: 'Preferred locale',
-			appId: null,
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			ttlMs: null,
-		},
-	])
-	const saveResponse = await handler.handler({
-		request: new Request('https://example.com/account/values.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'save',
-				name: 'locale',
-				value: 'en-US',
-				description: 'Preferred locale',
-			}),
-		}),
-	})
-	expect(saveResponse.status).toBe(200)
-	expect(mockModule.saveValue).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			scope: 'user',
-			storageContext: { sessionId: null, appId: null },
-			name: 'locale',
-			value: 'en-US',
-			description: 'Preferred locale',
-			userEmail: 'user@example.com',
-		}),
-	)
-	expect(await saveResponse.json()).toMatchObject({
-		ok: true,
-		selectedValueId: 'locale',
-		selectedValue: expect.objectContaining({ id: 'locale', value: 'en-US' }),
-	})
-
 	mockModule.listValues.mockResolvedValueOnce([])
 	const deleteResponse = await handler.handler({
 		request: new Request('https://example.com/account/values.json', {
@@ -209,49 +156,26 @@ test('values API lists, selects, saves, and deletes user-scoped values', async (
 	})
 })
 
-test('values API rejects missing deletes, invalid actions, and unauthenticated requests', async () => {
+test('values API rejects save, missing deletes, invalid actions, and unauthenticated requests', async () => {
 	const handler = createAccountValuesApiHandler(createEnv())
-	mockModule.saveValue.mockClear()
 	mockModule.deleteValue.mockClear()
 
-	mockModule.saveValue.mockResolvedValueOnce({
-		name: '_scratch:notes',
-		scope: 'user' as const,
-		value: 'updated',
-		description: 'Scratch notes',
-		appId: null,
-		createdAt: new Date(0).toISOString(),
-		updatedAt: new Date(0).toISOString(),
-		ttlMs: null,
-	})
-	mockModule.listValues.mockResolvedValueOnce([
-		{
-			name: '_scratch:notes',
-			scope: 'user' as const,
-			value: 'updated',
-			description: 'Scratch notes',
-			appId: null,
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			ttlMs: null,
-		},
-	])
-	const underscoreSave = await handler.handler({
+	const saveRejected = await handler.handler({
 		request: new Request('https://example.com/account/values.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				action: 'save',
-				name: '_scratch:notes',
-				value: 'updated',
-				description: 'Scratch notes',
+				name: 'locale',
+				value: 'en-US',
 			}),
 		}),
 	})
-	expect(underscoreSave.status).toBe(200)
-	expect(mockModule.saveValue).toHaveBeenCalledWith(
-		expect.objectContaining({ name: '_scratch:notes' }),
-	)
+	expect(saveRejected.status).toBe(400)
+	await expect(saveRejected.json()).resolves.toMatchObject({
+		ok: false,
+		error: 'Invalid action.',
+	})
 
 	mockModule.deleteValue.mockResolvedValueOnce(false)
 	const missingDelete = await handler.handler({

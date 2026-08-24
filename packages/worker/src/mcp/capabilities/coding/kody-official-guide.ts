@@ -11,7 +11,8 @@ import { getGuideById, guides } from '#worker/guides/catalog.ts'
  * content with no request-time GitHub dependency.
  */
 
-const guideIds = guides.map((guide) => guide.id)
+const advertisedGuides = guides.filter((guide) => !guide.unadvertised)
+const knownGuideIds = new Set(guides.map((guide) => guide.id))
 
 function buildCapabilityDescription(): string {
 	return [
@@ -29,11 +30,14 @@ function buildCapabilityDescription(): string {
 }
 
 const guideFieldSchema = z
-	.enum(guideIds as [string, ...Array<string>])
+	.string()
+	.refine((id) => knownGuideIds.has(id), {
+		message: 'Unknown Kody guide.',
+	})
 	.describe(
 		[
 			'Which guide to load.',
-			...guides.map((guide) => `\`${guide.id}\`: ${guide.summary}`),
+			...advertisedGuides.map((guide) => `\`${guide.id}\`: ${guide.summary}`),
 		].join(' '),
 	)
 
