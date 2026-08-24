@@ -1,4 +1,5 @@
 import { lexer, type Token, type Tokens } from 'marked'
+import { highlightBatchCacheRequest } from '#universal/highlight-cache-request.ts'
 import {
 	highlightSnippetKey,
 	plainHighlightedCode,
@@ -20,12 +21,7 @@ async function originHighlightCache() {
 }
 
 function originCacheRequest(snippets: Array<HighlightSnippet>) {
-	const key = snippets.map((snippet) => highlightSnippetKey(snippet)).join('\n')
-	return new Request(`${originCacheOrigin}/batch`, {
-		method: 'POST',
-		headers: { 'content-type': 'text/plain' },
-		body: key,
-	})
+	return highlightBatchCacheRequest(originCacheOrigin, snippets)
 }
 
 function isHighlightedCode(value: unknown): value is HighlightedCode {
@@ -43,7 +39,7 @@ async function readOriginCache(snippets: Array<HighlightSnippet>) {
 	try {
 		const cache = await originHighlightCache()
 		if (!cache) return null
-		const cached = await cache.match(originCacheRequest(snippets))
+		const cached = await cache.match(await originCacheRequest(snippets))
 		if (!cached?.ok) return null
 		const body = (await cached.json()) as { results?: unknown }
 		if (!Array.isArray(body.results)) return null
@@ -63,7 +59,7 @@ async function writeOriginCache(
 		const cache = await originHighlightCache()
 		if (!cache) return
 		await cache.put(
-			originCacheRequest(snippets),
+			await originCacheRequest(snippets),
 			new Response(JSON.stringify({ results }), {
 				headers: {
 					'content-type': 'application/json',

@@ -38,7 +38,7 @@ async function readCachedResults(
 ): Promise<Array<HighlightedCode> | null> {
 	try {
 		const cache = await highlightTokenCache()
-		const cached = await cache.match(highlightCacheRequest(snippets))
+		const cached = await cache.match(await highlightCacheRequest(snippets))
 		if (!cached?.ok) return null
 		const body = (await cached.json()) as { results?: unknown }
 		if (!Array.isArray(body.results)) return null
@@ -55,7 +55,7 @@ async function writeCachedResults(
 	try {
 		const cache = await highlightTokenCache()
 		await cache.put(
-			highlightCacheRequest(snippets),
+			await highlightCacheRequest(snippets),
 			new Response(JSON.stringify({ results }), {
 				headers: {
 					'content-type': 'application/json',
