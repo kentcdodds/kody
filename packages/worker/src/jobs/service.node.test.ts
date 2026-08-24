@@ -1,7 +1,6 @@
 import { expect, test, vi, afterEach } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { repoBackedModuleEntrypointExportErrorMessage } from '#worker/repo/repo-kody-execution.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import {
 	createInMemoryUserMeterEnv,
@@ -16,7 +15,6 @@ import { saveValue } from '#mcp/values/service.ts'
 import { buildPublishedSourceSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import {
-	createJob,
 	deleteJob,
 	executeJobOnce,
 	getJob,
@@ -26,6 +24,9 @@ import {
 	syncPackageJobsForPackage,
 	updateJob,
 } from './service.ts'
+import { jobsData } from './jobs-data.ts'
+import { computeNextRunAt, toJobView } from './schedule.ts'
+import { createJobStorageId } from '#worker/storage-runner.ts'
 import {
 	listJobRowsByUserId,
 	refreshPackageJobRowIdentity,
@@ -34,8 +35,8 @@ import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { packageOwnedJobDeleteErrorMessage } from './job-retention.ts'
 import { buildPackageJobId } from './package-job-id.ts'
 import {
-	type JobCreateInput,
 	type JobRecord,
+	type JobSchedule,
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
@@ -1327,6 +1328,132 @@ function createBaseCallerContext(): PersistedJobCallerContext {
 	}) as PersistedJobCallerContext
 }
 
+async function insertLeftoverJob(input: {
+	env: Env
+	callerContext: PersistedJobCallerContext
+	body: {
+		name: string
+		schedule: JobSchedule
+		code?: string
+		params?: Record<string, unknown>
+		timezone?: string | null
+		enabled?: boolean
+		sourceId?: string | null
+		publishedCommit?: string | null
+	}
+}) {
+	const now = new Date().toISOString()
+	const jobId = crypto.randomUUID()
+	const sourceId = input.body.sourceId ?? `job-${jobId}`
+	const publishedCommit = input.body.publishedCommit ?? 'published-commit-1'
+	const timezone = input.body.timezone ?? 'UTC'
+	const job: JobRecord = {
+		version: 1,
+		id: jobId,
+		userId: input.callerContext.user.userId,
+		name: input.body.name,
+		sourceId,
+		publishedCommit,
+		storageId: createJobStorageId(jobId),
+		params: input.body.params,
+		schedule: input.body.schedule,
+		timezone,
+		enabled: input.body.enabled ?? true,
+		killSwitchEnabled: false,
+		preserved: false,
+		expiresAt: null,
+		createdAt: now,
+		updatedAt: now,
+		nextRunAt: computeNextRunAt({
+			schedule: input.body.schedule,
+			timezone,
+		}),
+		runCount: 0,
+		successCount: 0,
+		errorCount: 0,
+	}
+	if (input.body.sourceId == null) {
+		const jobView = toJobView(job)
+		await insertPublishedEntitySource({
+			db: input.env.APP_DB as ReturnType<typeof createDatabase>,
+			env: input.env.BUNDLE_ARTIFACTS_KV ? input.env : undefined,
+			userId: input.callerContext.user.userId,
+			sourceId,
+			entityKind: 'job',
+			entityId: jobId,
+			publishedCommit,
+			files: input.env.BUNDLE_ARTIFACTS_KV
+				? buildJobSourceFiles({
+						job: jobView,
+						moduleSource:
+							input.body.code ?? 'export default async () => ({ ok: true })',
+					})
+				: undefined,
+		})
+	}
+	await jobsData(input.env).insertJob({
+		userId: input.callerContext.user.userId,
+		job,
+		callerContextJson: JSON.stringify(input.callerContext),
+	})
+	return toJobView(job)
+}
+
+async function syncSinglePackageJob(input: {
+	env: Env
+	userId: string
+	baseUrl: string
+	packageId: string
+	sourceId: string
+	jobName: string
+	schedule?: Record<string, unknown>
+	publishedCommit?: string
+}) {
+	await insertPublishedEntitySource({
+		db: input.env.APP_DB as ReturnType<typeof createDatabase>,
+		userId: input.userId,
+		sourceId: input.sourceId,
+		entityKind: 'package',
+		entityId: input.packageId,
+		publishedCommit: input.publishedCommit ?? 'package-published-commit',
+		manifestPath: 'package.json',
+	})
+	await syncPackageJobsForPackage({
+		env: input.env,
+		userId: input.userId,
+		baseUrl: input.baseUrl,
+		packageId: input.packageId,
+		sourceId: input.sourceId,
+		manifest: parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: `@owner/${input.packageId}`,
+				exports: { '.': './index.ts' },
+				kody: {
+					id: input.packageId,
+					description: 'Package job fixture',
+					jobs: {
+						[input.jobName]: {
+							entry: './job.ts',
+							schedule: input.schedule ?? {
+								type: 'interval',
+								every: '15m',
+							},
+						},
+					},
+				},
+			}),
+		}),
+	})
+	const jobId = buildPackageJobId(input.packageId, input.jobName)
+	const row = await (
+		await import('@kody-internal/shared/jobs/repo.ts')
+	).getJobRowById(input.env.APP_DB, input.userId, jobId)
+	if (!row) {
+		throw new Error(`Expected package job "${jobId}".`)
+	}
+	return toJobView(row.record)
+}
+
 test('package job sync reports scheduler changes for add, update, and remove only', async () => {
 	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
@@ -1600,7 +1727,7 @@ test('package job sync preflights the full addition set without partial inserts'
 	expect(await listJobRowsByUserId(db, userId)).toHaveLength(existingJobCount)
 })
 
-test('create, update, and delete jobs sync the job manager alarm', async () => {
+test('updateJob and deleteJob sync the job manager alarm', async () => {
 	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
 		CLOUDFLARE_ACCOUNT_ID: 'acct-test',
@@ -1610,17 +1737,16 @@ test('create, update, and delete jobs sync the job manager alarm', async () => {
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 
-	const intervalJob = await createJob({
+	const intervalJob = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {
 			name: 'Deploy Worker',
-			code: 'export default async () => ({ ok: true })',
 			schedule: {
 				type: 'interval',
 				every: '15m',
 			},
-		} satisfies JobCreateInput,
+		},
 	})
 
 	expect(intervalJob.schedule).toEqual({
@@ -1628,37 +1754,25 @@ test('create, update, and delete jobs sync the job manager alarm', async () => {
 		every: '15m',
 	})
 	expect(intervalJob.storageId).toBe(`job:${intervalJob.id}`)
-	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
-		env,
-		userId: callerContext.user.userId,
-	})
 
-	jobManagerMockModule.syncJobManagerAlarm.mockClear()
-	const onceJob = await createJob({
+	const onceJob = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {
-			name: 'Sync job manager on create',
-			code: 'export default async () => ({ ok: true })',
+			name: 'Leftover once fixture',
 			schedule: {
 				type: 'once',
 				runAt: '2026-04-17T15:00:00Z',
 			},
 		},
 	})
-	expect(jobManagerMockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
-		env,
-		userId: callerContext.user.userId,
-	})
 	expect(onceJob.storageId).toBe(`job:${onceJob.id}`)
 
-	jobManagerMockModule.syncJobManagerAlarm.mockClear()
-	const created = await createJob({
+	const leftover = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {
 			name: 'Sync job manager on update',
-			code: 'export default async () => ({ ok: true })',
 			schedule: {
 				type: 'interval',
 				every: '15m',
@@ -1666,11 +1780,12 @@ test('create, update, and delete jobs sync the job manager alarm', async () => {
 		},
 	})
 
+	jobManagerMockModule.syncJobManagerAlarm.mockClear()
 	await updateJob({
 		env,
 		callerContext,
 		body: {
-			id: created.id,
+			id: leftover.id,
 			schedule: {
 				type: 'interval',
 				every: '30m',
@@ -1694,19 +1809,19 @@ test('create, update, and delete jobs sync the job manager alarm', async () => {
 	await deleteJob({
 		env,
 		userId: callerContext.user.userId,
-		jobId: created.id,
+		jobId: leftover.id,
 	})
 
 	expect(repoMockModule.cleanupArtifactReposForSource).toHaveBeenCalledWith({
 		env,
 		userId: callerContext.user.userId,
-		sourceId: created.sourceId,
+		sourceId: leftover.sourceId,
 	})
 	expect(repoMockModule.deleteRepoSessionsBySourceForUser).toHaveBeenCalledWith(
 		env,
 		{
 			userId: callerContext.user.userId,
-			sourceId: created.sourceId,
+			sourceId: leftover.sourceId,
 		},
 	)
 	expect(repoMockModule.cleanupSessionBranch).not.toHaveBeenCalled()
@@ -1731,20 +1846,42 @@ function createPlanUserCallerContext(input: { userId: string; email: string }) {
 	}) as PersistedJobCallerContext
 }
 
-function buildEntitlementTestJobBody(index: number): JobCreateInput {
-	return {
-		name: `Quota job ${index}`,
-		code: 'export default async () => ({ ok: true })',
-		schedule: {
-			type: 'interval',
-			every: '15m',
-		},
-	}
+async function trySyncQuotaPackageJob(input: {
+	env: Env
+	userId: string
+	packageId: string
+}) {
+	return syncSinglePackageJob({
+		env: input.env,
+		userId: input.userId,
+		baseUrl: 'https://example.com',
+		packageId: input.packageId,
+		sourceId: `${input.packageId}-source`,
+		jobName: 'quota-job',
+	}).then(
+		(job) => job,
+		(thrown: unknown) => thrown,
+	)
 }
 
-test('createJob enforces scheduled job entitlements for plan users and denies at the max plan ceiling', async () => {
+test('syncPackageJobsForPackage enforces scheduled job entitlements for plan users and denies at the max plan ceiling', async () => {
 	const plannedEmail = 'planned@example.com'
 	const plannedUserId = await createStableUserIdFromEmail(plannedEmail)
+	const maxEmail = 'max@example.com'
+	const maxUserId = await createStableUserIdFromEmail(maxEmail)
+	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
+		async (_db: D1Database, userId: string) => ({
+			userId,
+			email:
+				userId === plannedUserId
+					? plannedEmail
+					: userId === maxUserId
+						? maxEmail
+						: `${userId}@example.com`,
+			username: userId,
+			displayName: userId,
+		}),
+	)
 	const plannedEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
 			users: [
@@ -1756,7 +1893,6 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 			],
 		}),
 	})
-	mockRepoPersistence()
 	const plannedCallerContext = createPlanUserCallerContext({
 		userId: plannedUserId,
 		email: plannedEmail,
@@ -1764,23 +1900,28 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 	const freeLimit = planLimits.free.maxScheduledJobs
 
 	for (let index = 0; index < freeLimit; index += 1) {
-		await createJob({
+		await insertLeftoverJob({
 			env: plannedEnv,
 			callerContext: plannedCallerContext,
-			body: buildEntitlementTestJobBody(index),
+			body: {
+				name: `Quota job ${index}`,
+				schedule: {
+					type: 'interval',
+					every: '15m',
+				},
+			},
 		})
 	}
 
-	const freeError = await createJob({
+	const freeError = await trySyncQuotaPackageJob({
 		env: plannedEnv,
-		callerContext: plannedCallerContext,
-		body: buildEntitlementTestJobBody(freeLimit),
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
+		userId: plannedUserId,
+		packageId: 'free-quota-package',
+	})
 	if (!isEntitlementLimitError(freeError)) {
-		throw new Error('Expected an EntitlementLimitError from createJob.')
+		throw new Error(
+			'Expected an EntitlementLimitError from syncPackageJobsForPackage.',
+		)
 	}
 	expect(freeError.details).toMatchObject({
 		code: 'entitlement_limit_exceeded',
@@ -1790,8 +1931,6 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 		current: freeLimit,
 	})
 
-	const maxEmail = 'max@example.com'
-	const maxUserId = await createStableUserIdFromEmail(maxEmail)
 	const maxLimit = planLimits.max.maxScheduledJobs
 	const belowMaxEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
@@ -1805,16 +1944,15 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 			),
 		}),
 	})
-	mockRepoPersistence()
-	const maxCallerContext = createPlanUserCallerContext({
-		userId: maxUserId,
-		email: maxEmail,
-	})
-	await createJob({
+	const belowMaxJob = await trySyncQuotaPackageJob({
 		env: belowMaxEnv,
-		callerContext: maxCallerContext,
-		body: buildEntitlementTestJobBody(0),
+		userId: maxUserId,
+		packageId: 'below-max-package',
 	})
+	if (isEntitlementLimitError(belowMaxJob)) {
+		throw new Error('Expected package job sync below the max ceiling to succeed.')
+	}
+	expect(belowMaxJob).toMatchObject({ name: 'quota-job' })
 
 	const atCeilingEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
@@ -1825,14 +1963,11 @@ test('createJob enforces scheduled job entitlements for plan users and denies at
 			})),
 		}),
 	})
-	const maxError = await createJob({
+	const maxError = await trySyncQuotaPackageJob({
 		env: atCeilingEnv,
-		callerContext: maxCallerContext,
-		body: buildEntitlementTestJobBody(1),
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
+		userId: maxUserId,
+		packageId: 'max-quota-package',
+	})
 	if (!isEntitlementLimitError(maxError)) {
 		throw new Error('Expected an EntitlementLimitError at the max job ceiling.')
 	}
@@ -1892,13 +2027,22 @@ test('blank-email package context uses the max plan for storage writes and neste
 			storageContext: stalePackageContext.storageContext,
 		}),
 	).resolves.toMatchObject({ name: 'checkpoint' })
+	identityMockModule.resolveBackgroundMcpUser.mockResolvedValueOnce({
+		userId,
+		email,
+		username: userId,
+		displayName: 'Package Owner',
+	})
 	await expect(
-		createJob({
+		syncSinglePackageJob({
 			env,
-			callerContext: stalePackageContext,
-			body: buildEntitlementTestJobBody(1),
+			userId,
+			baseUrl: stalePackageContext.baseUrl,
+			packageId: 'nested-schedule-package',
+			sourceId: 'nested-schedule-source',
+			jobName: 'quota-job',
 		}),
-	).resolves.toMatchObject({ name: 'Quota job 1' })
+	).resolves.toMatchObject({ name: 'quota-job' })
 })
 
 test('updateJob and deleteJob reject another user trying to mutate or remove a job by id', async () => {
@@ -1907,7 +2051,7 @@ test('updateJob and deleteJob reject another user trying to mutate or remove a j
 	})
 	mockRepoPersistence()
 	const ownerCallerContext = createBaseCallerContext()
-	const created = await createJob({
+	const created = await insertLeftoverJob({
 		env,
 		callerContext: ownerCallerContext,
 		body: {
@@ -2014,7 +2158,7 @@ test('updateJob clears params, updates timezone, and disables a job', async () =
 	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
-	const created = await createJob({
+	const created = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {
@@ -2174,7 +2318,7 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	})
 	expect(repoMockModule.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
 
-	const leftover = await createJob({
+	const leftover = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {
@@ -2233,38 +2377,17 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	})
 })
 
-test('createJob rejects modules without a default export as McpCallerError and updateJob rejects code changes', async () => {
+test('updateJob rejects code changes on leftover jobs', async () => {
 	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
 	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
-	const bareArrowSnippet = 'async () => ({ ok: true })'
-
-	const createError = await createJob({
+	const leftover = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {
-			name: 'Missing default export',
-			code: bareArrowSnippet,
-			schedule: {
-				type: 'once',
-				runAt: new Date(Date.now() + 60_000).toISOString(),
-			},
-		},
-	}).catch((caught: unknown) => caught)
-
-	expect(createError).toBeInstanceOf(McpCallerError)
-	expect(createError).toMatchObject({
-		message: repoBackedModuleEntrypointExportErrorMessage,
-	})
-
-	const created = await createJob({
-		env,
-		callerContext,
-		body: {
-			name: 'Mutable job for export check',
-			code: 'export default async () => ({ ok: true })',
+			name: 'Mutable leftover job',
 			schedule: {
 				type: 'once',
 				runAt: new Date(Date.now() + 60_000).toISOString(),
@@ -2276,8 +2399,8 @@ test('createJob rejects modules without a default export as McpCallerError and u
 		env,
 		callerContext,
 		body: {
-			id: created.id,
-			code: bareArrowSnippet,
+			id: leftover.id,
+			code: 'async () => ({ ok: true })',
 		},
 	}).catch((caught: unknown) => caught)
 
@@ -2293,7 +2416,7 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
-	const created = await createJob({
+	const created = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {
@@ -2403,7 +2526,7 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
-	const created = await createJob({
+	const created = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {
@@ -2489,7 +2612,7 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 		error: null,
 	})
 
-	const missingEntrypointJob = await createJob({
+	const missingEntrypointJob = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {
@@ -2538,7 +2661,7 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 		APP_DB: createDatabase(),
 		BUNDLE_ARTIFACTS_KV: bundleKv,
 	})
-	const missingManifestJob = await createJob({
+	const missingManifestJob = await insertLeftoverJob({
 		env: manifestEnv,
 		callerContext,
 		body: {
@@ -2737,7 +2860,7 @@ test('executeJobOnce background execution workflow', async () => {
 			executionOrigin: 'interactive' as const,
 		}
 
-		const jobView = await createJob({
+		const jobView = await insertLeftoverJob({
 			env,
 			callerContext,
 			body: {
@@ -2927,7 +3050,7 @@ test('executeJobOnce background execution workflow', async () => {
 		})
 		mockRepoPersistence()
 		const callerContext = createBaseCallerContext()
-		const jobView = await createJob({
+		const jobView = await insertLeftoverJob({
 			env,
 			callerContext,
 			body: {
@@ -3027,7 +3150,7 @@ test('executeJobOnce background kody semantics and usage workflow', async () => 
 			storageContext: callerContext.storageContext,
 		})
 
-		const jobView = await createJob({
+		const jobView = await insertLeftoverJob({
 			env,
 			callerContext,
 			body: {
@@ -3192,7 +3315,7 @@ test('executeJobOnce background kody semantics and usage workflow', async () => 
 		})
 		mockRepoPersistence()
 		const callerContext = createBaseCallerContext()
-		const jobView = await createJob({
+		const jobView = await insertLeftoverJob({
 			env,
 			callerContext,
 			body: {
@@ -3378,7 +3501,7 @@ test('executeJobOnce repo-backed job execution workflow', async () => {
 		mockRepoPersistence()
 		const callerContext = createBaseCallerContext()
 
-		const jobView = await createJob({
+		const jobView = await insertLeftoverJob({
 			env,
 			callerContext,
 			body: {
@@ -4860,7 +4983,7 @@ test('executeJobOnce retries claimed platform blips and surfaces them on run-now
 	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
-	const jobView = await createJob({
+	const jobView = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {
@@ -4988,7 +5111,7 @@ test('runJobNow retains once jobs for retention cleanup instead of deleting them
 	}) as Env & { CAPABILITY_VECTOR_INDEX?: Pick<VectorizeIndex, 'deleteByIds'> }
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
-	const jobView = await createJob({
+	const jobView = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {
@@ -5156,7 +5279,7 @@ test('runJobNow can use a one-off repo check policy override without changing th
 	})
 	const callerContext = createBaseCallerContext()
 	mockRepoPersistence()
-	const jobView = await createJob({
+	const jobView = await insertLeftoverJob({
 		env,
 		callerContext,
 		body: {

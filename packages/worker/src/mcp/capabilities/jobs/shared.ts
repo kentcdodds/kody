@@ -59,7 +59,7 @@ export const jobInspectionInputSchema = z.object({
 	id: z
 		.string()
 		.min(1)
-		.describe('Job id from job_list output or a previous scheduling response.'),
+		.describe('Job id from job_list or job_get output.'),
 })
 
 export const jobGetInputSchema = z
@@ -69,7 +69,7 @@ export const jobGetInputSchema = z
 			.min(1)
 			.optional()
 			.describe(
-				'Job id from job_list output or a previous scheduling response.',
+				'Job id from job_list or job_get output.',
 			),
 		job_id: z
 			.string()
@@ -261,9 +261,7 @@ export const jobUpdateInputSchema = z
 		id: z
 			.string()
 			.min(1)
-			.describe(
-				'Existing job id from job_list output or a prior job response.',
-			),
+			.describe('Existing job id from job_list or job_get output.'),
 		name: z
 			.string()
 			.min(1)

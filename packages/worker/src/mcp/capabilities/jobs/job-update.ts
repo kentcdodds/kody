@@ -12,7 +12,7 @@ export const jobUpdateCapability = defineDomainCapability(
 	{
 		name: 'job_update',
 		description:
-			'Update metadata on a scheduled job owned by the signed-in user: enabled, kill switch, preserved, expires_at, params, schedule, and timezone. Package-owned jobs keep source in the package repo, so name, code, and published source cannot change here — edit the package and publish. Jobs that are not package-owned accept the same metadata fields and cannot change source through this capability.',
+			'Update metadata on a package-owned scheduled job: enabled, kill switch, preserved, expires_at, params, schedule, and timezone. Source stays in the package repo, so name, code, and published source cannot change here — edit the package and publish. Recurring schedules belong on a package (`kody.jobs`); deferred one-shots use `workflows.create`.',
 		keywords: [
 			'job',
 			'update',
