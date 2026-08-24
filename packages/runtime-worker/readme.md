@@ -2,7 +2,8 @@
 
 The package runtime lane extracted from the main `kody` Worker per
 [ADR 0016](../../docs/contributing/decisions/0016-mono-worker-extraction.md):
-the package-app origin (`kody.run` / `kodyapps.dev`), inline package-app serving
+the package-app origin (`kody.run`; legacy `kodyapps.dev` dual-served until
+#1300/#1428), inline package-app serving
 forwarded from origin, the package invocation API, dynamic callable workflows
 (`DynamicCallableWorkflow`), `PackageAppRuntimeBridge`, `KodyFetchGateway`, and
 the runtime Durable Objects (`StorageRunner`, `RunLog`, and
