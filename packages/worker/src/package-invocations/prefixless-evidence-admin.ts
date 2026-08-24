@@ -27,6 +27,42 @@ export type PackageInvokePrefixlessEvidenceAggregate = {
 	}
 }
 
+async function listEvidenceUsersPage(input: {
+	db: D1Database
+	startAfterId: string | null
+}): Promise<Array<EvidenceUserRow>> {
+	let statement: D1PreparedStatement
+	if (input.startAfterId) {
+		statement = input.db
+			.prepare(
+				`SELECT id, stable_user_id
+				 FROM users
+				 WHERE deleting_at IS NULL
+				   AND stable_user_id IS NOT NULL
+				   AND stable_user_id != ''
+				   AND id > ?
+				 ORDER BY id ASC
+				 LIMIT ?`,
+			)
+			.bind(input.startAfterId, packageInvokeEvidenceAdminPageSize)
+	} else {
+		statement = input.db
+			.prepare(
+				`SELECT id, stable_user_id
+				 FROM users
+				 WHERE deleting_at IS NULL
+				   AND stable_user_id IS NOT NULL
+				   AND stable_user_id != ''
+				 ORDER BY id ASC
+				 LIMIT ?`,
+			)
+			.bind(packageInvokeEvidenceAdminPageSize)
+	}
+	const result: D1Result<EvidenceUserRow> =
+		await statement.all<EvidenceUserRow>()
+	return result.results ?? []
+}
+
 export async function loadPackageInvokePrefixlessEvidenceAggregate(
 	env: Pick<Env, 'APP_DB' | 'USER_METER'>,
 ): Promise<PackageInvokePrefixlessEvidenceAggregate> {
@@ -48,28 +84,10 @@ export async function loadPackageInvokePrefixlessEvidenceAggregate(
 	let startAfterId: string | null = null
 
 	while (true) {
-		const statement = startAfterId
-			? env.APP_DB.prepare(
-					`SELECT id, stable_user_id
-					 FROM users
-					 WHERE deleting_at IS NULL
-					   AND stable_user_id IS NOT NULL
-					   AND stable_user_id != ''
-					   AND id > ?
-					 ORDER BY id ASC
-					 LIMIT ?`,
-				).bind(startAfterId, packageInvokeEvidenceAdminPageSize)
-			: env.APP_DB.prepare(
-					`SELECT id, stable_user_id
-					 FROM users
-					 WHERE deleting_at IS NULL
-					   AND stable_user_id IS NOT NULL
-					   AND stable_user_id != ''
-					 ORDER BY id ASC
-					 LIMIT ?`,
-				).bind(packageInvokeEvidenceAdminPageSize)
-		const page = await statement.all<EvidenceUserRow>()
-		const users = page.results ?? []
+		const users = await listEvidenceUsersPage({
+			db: env.APP_DB,
+			startAfterId,
+		})
 		if (users.length === 0) break
 		pagesScanned += 1
 		usersEnumerated += users.length

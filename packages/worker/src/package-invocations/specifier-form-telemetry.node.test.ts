@@ -165,7 +165,7 @@ test('runtime helpers record exact prefixless evidence for every valid runtime s
 				specifier: '@private-owner/private-package/private-export',
 				options: {},
 			}),
-		).rejects.toThrow()
+		).rejects.toBeInstanceOf(Error)
 		expect(writeDataPoint).toHaveBeenLastCalledWith({
 			indexes: [packageInvokeSpecifierTelemetryIndex],
 			blobs: ['prefixless', surface],
@@ -211,7 +211,7 @@ test('prefixed calls add no UserMeter RPC and prefixless evidence failure is fai
 			specifier: 'kody:@owner/package/export',
 			options: {},
 		}),
-	).rejects.toThrow()
+	).rejects.toBeInstanceOf(Error)
 	expect(recordPackageInvokePrefixless).not.toHaveBeenCalled()
 
 	await expect(
