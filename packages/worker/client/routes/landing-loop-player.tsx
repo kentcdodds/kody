@@ -32,8 +32,9 @@ type LoopLineRenderer = (line: TranscriptLine) => RemixNode
  * Play scrolls to the latest beat and continues. The last beat pauses
  * and offers Restart instead of looping. Pause is painted on the SSR
  * teaser so the header does not shift when the transcript chunk loads.
- * The phone act is a later scene in the same card — a time skip plus
- * device chrome, not a reset.
+ * A reserved toggle slot keeps that height if reduced-motion later
+ * hides the button. The phone act is a later scene in the same card
+ * — a time skip plus device chrome, not a reset.
  */
 export function LandingLoopPlayer(handle: Handle) {
 	let beats: Array<LandingLoopBeat> | null = null
@@ -279,23 +280,25 @@ export function LandingLoopPlayer(handle: Handle) {
 										? 'Playing'
 										: 'The loop'}
 					</p>
-					{toggleLabel ? (
-						<button
-							type="button"
-							class="landing-loop-toggle"
-							mix={on('click', () => {
-								if (player.isEnded()) restartFromStart()
-								else if (player.isPaused() || heldPause) playFromHere()
-								else {
-									heldPause = true
-									player.pause()
-									handle.update()
-								}
-							})}
-						>
-							{toggleLabel}
-						</button>
-					) : null}
+					<span class="landing-loop-toggle-slot">
+						{toggleLabel ? (
+							<button
+								type="button"
+								class="landing-loop-toggle"
+								mix={on('click', () => {
+									if (player.isEnded()) restartFromStart()
+									else if (player.isPaused() || heldPause) playFromHere()
+									else {
+										heldPause = true
+										player.pause()
+										handle.update()
+									}
+								})}
+							>
+								{toggleLabel}
+							</button>
+						) : null}
+					</span>
 				</div>
 				<div
 					class="landing-loop-chat"

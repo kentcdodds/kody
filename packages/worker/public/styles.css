@@ -1211,6 +1211,17 @@ html.is-settled {
 	cursor: pointer;
 }
 
+/* Same box as the control so reduced-motion can drop the button
+   without shrinking the header. */
+.landing-loop-toggle-slot {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 2.25rem;
+	min-width: 4.75rem;
+	flex: 0 0 auto;
+}
+
 .landing-loop-toggle:hover,
 .landing-loop-toggle:focus-visible {
 	border-color: color-mix(
