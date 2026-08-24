@@ -1,6 +1,14 @@
 import { z } from 'zod'
 import { valueScopeValues } from '#mcp/values/types.ts'
 
+/** Thrown when old packages still call `value_set`. Destinations only. */
+export const removedValueWriteMessage =
+	'Persist this with memories, packageStorage(), a repo, or secrets.'
+
+export function createRemovedValueWriteError() {
+	return new Error(removedValueWriteMessage)
+}
+
 export const valueMetadataSchema = z.object({
 	name: z.string(),
 	scope: z.enum(valueScopeValues),

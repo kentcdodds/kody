@@ -9,7 +9,7 @@ import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { deleteValue, saveValue } from '#mcp/values/service.ts'
+import { deleteValue } from '#mcp/values/service.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -48,7 +48,7 @@ export function createAccountValuesHandler(env: Env) {
 }
 
 /**
- * JSON API for `/account/values.json` (GET + POST). Actions: `save`, `delete`.
+ * JSON API for `/account/values.json` (GET + POST). Action: `delete`.
  */
 export function createAccountValuesApiHandler(env: Env) {
 	return {
@@ -80,9 +80,6 @@ export function createAccountValuesApiHandler(env: Env) {
 
 			const action = readTrimmedStringOrEmpty(body, 'action')
 			try {
-				if (action === 'save') {
-					return await handleSaveAction({ env, user, body })
-				}
 				if (action === 'delete') {
 					return await handleDeleteAction({ env, user, body })
 				}
@@ -102,38 +99,6 @@ export function createAccountValuesApiHandler(env: Env) {
 			return jsonResponse({ ok: false, error: 'Invalid action.' }, 400)
 		},
 	} satisfies Action<typeof routes.accountValuesApi>
-}
-
-async function handleSaveAction(input: {
-	env: Env
-	user: AuthenticatedUser
-	body: object
-}) {
-	const name = readTrimmedStringOrEmpty(input.body, 'name')
-	if (!name) {
-		throw new Error('Value name is required.')
-	}
-	const value = readTrimmedStringOrEmpty(input.body, 'value')
-	const description = readOptionalDescription(input.body)
-	const saved = await saveValue({
-		env: input.env,
-		userId: input.user.mcpUser.userId,
-		scope: 'user',
-		storageContext: userScopedStorageContext,
-		name,
-		value,
-		description,
-		userEmail: input.user.email,
-	})
-	const payload = await loadAccountValuesData({
-		env: input.env,
-		user: input.user,
-		selectedValueId: saved.name,
-	})
-	return jsonResponse({
-		...payload,
-		selectedValueId: saved.name,
-	})
 }
 
 async function handleDeleteAction(input: {
@@ -162,10 +127,4 @@ async function handleDeleteAction(input: {
 			selectedValueId: null,
 		}),
 	)
-}
-
-function readOptionalDescription(body: object) {
-	const value = (body as Record<string, unknown>).description
-	if (typeof value !== 'string') return null
-	return value.trim()
 }

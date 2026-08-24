@@ -9,12 +9,10 @@
  * section is omitted from the assembled server instructions.
  */
 
-import { userHasPersistedValues } from '#mcp/values/repo.ts'
-
 export type RetiringPrimitiveNotice = {
 	/** Stable id used to gate the notice per affected user. */
 	id: string
-	/** Human label (for example "Values"). */
+	/** Human label (for example "Jobs"). */
 	label: string
 	/** `coding_guide_get` id that holds the destination map and steps. */
 	guide: string
@@ -22,31 +20,16 @@ export type RetiringPrimitiveNotice = {
 	summary: string
 }
 
-export const retiringPrimitiveNotices = [
-	{
-		id: 'values',
-		label: 'Values',
-		guide: 'values',
-		summary: 'Do not write new `value_set` rows. Existing names stay readable.',
-	},
-] as const satisfies ReadonlyArray<RetiringPrimitiveNotice>
+export const retiringPrimitiveNotices: ReadonlyArray<RetiringPrimitiveNotice> =
+	[]
 
-export type RetiringPrimitiveNoticeId =
-	(typeof retiringPrimitiveNotices)[number]['id']
+export type RetiringPrimitiveNoticeId = string
 
 export async function loadActiveRetiringNoticeIds(
-	db: D1Database,
-	userId: string | null,
+	_db: D1Database,
+	_userId: string | null,
 ): Promise<ReadonlySet<RetiringPrimitiveNoticeId>> {
-	const ids = new Set<RetiringPrimitiveNoticeId>()
-	if (
-		userId != null &&
-		userId !== '' &&
-		(await userHasPersistedValues({ db, userId }))
-	) {
-		ids.add('values')
-	}
-	return ids
+	return new Set()
 }
 
 export function formatRetiringPrimitivesInstructions(

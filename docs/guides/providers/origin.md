@@ -78,9 +78,12 @@ https://kody.codes/account/secrets/new?name=originAppPrivateKey&description=Orig
 Approve `api.cursor.com` and the `secret_jwt_sign` capability on that page. The
 name `originAppPrivateKey` is what `@kentcdodds/origin` reads by default.
 
-### Save the readable ids as values
+### Save the readable ids
 
-App id and installation id are not secrets. Store them as user values:
+App id and installation id are not secrets. Put them in a memory
+(`meta_memory_verify`, then `meta_memory_upsert`) so later agents can recall
+them. Inside a saved package, `packageStorage()` holds that package's own knobs
+— do not call it from bare `execute`.
 
 - `originAppId` — the `app_01…` id (JWT `iss` and `kid`)
 - `originInstallationId` — the `i_01…` id used to mint installation tokens
@@ -90,17 +93,17 @@ when more than one installation is available.
 
 ## Smoke test
 
-After the secret and values exist, run this in `execute`. It signs an app JWT
-and reads the zero-cost rate-limit endpoint:
+After the secret exists, run this in `execute` with params
+`{ "appId": "app_01…" }`. It signs an app JWT and reads the zero-cost rate-limit
+endpoint:
 
 ```ts
 import { kody } from 'kody:runtime'
 
-export default async function main() {
-	const appId = (await kody.value_get({ name: 'originAppId', scope: 'user' }))
-		?.value
+export default async function main(input: { appId?: string } = {}) {
+	const appId = input.appId
 	if (!appId) {
-		throw new Error('Save originAppId as a user value first.')
+		throw new Error('Pass appId in execute params.')
 	}
 	const now = Math.floor(Date.now() / 1000)
 	const { jwt } = await kody.secret_jwt_sign({
@@ -165,4 +168,4 @@ should keep calling.
 - [Origin API](https://cursor.com/docs/api/origin)
 - [Secret-backed integration recipe](../secret-backed-integration.md)
 - [Account secret setup](../account-secret-setup.md)
-- [Secrets, values, and host approval](../../use/secrets-and-values.md)
+- [Secrets and host approval](../../use/secrets-and-values.md)

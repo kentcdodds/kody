@@ -1,12 +1,6 @@
 import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
-import {
-	buildValueEntityId,
-	describeValue,
-	parseValueEntityId,
-} from '#mcp/tools/search-entities.ts'
-import { getValue } from '#mcp/values/service.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	getJoinedIntegration,
@@ -110,35 +104,6 @@ export async function resolveEntityDetail(input: {
 							kodyId: record.kodyId,
 						})
 					: null,
-		}
-	}
-
-	if (ref.type === 'value') {
-		const valueRef = parseValueEntityId(ref.id)
-		const row =
-			input.searchRows.userValueRows.find(
-				(value) =>
-					value.scope === valueRef.scope && value.name === valueRef.name,
-			) ??
-			(await getValue({
-				env: input.agent.getEnv(),
-				userId: input.userId,
-				name: valueRef.name,
-				scope: valueRef.scope,
-				storageContext: {
-					sessionId: input.callerContext.storageContext?.sessionId ?? null,
-					appId: input.callerContext.storageContext?.appId ?? null,
-				},
-			}))
-		if (!row) {
-			throw new McpCallerError('Persisted value not found for this user.')
-		}
-		return {
-			type: 'value' as const,
-			id: buildValueEntityId(row),
-			title: row.name,
-			description: describeValue(row),
-			row,
 		}
 	}
 

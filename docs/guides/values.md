@@ -1,18 +1,15 @@
 ---
 id: values
-title: Persist outside values
+title: Persist named state
 summary:
-  Do not write new values. Map existing named rows to memories, package storage,
-  repos, secrets, or integrations, then delete the value.
+  Map leftover named rows to memories, package storage, repos, or secrets.
+unadvertised: true
 category: platform
 ---
 
-# Persist outside values
+# Persist named state
 
-Do not store new named config or state with `value_set`. Existing rows stay
-readable through `value_get` / `value_list` and `/account/values` so you can
-move them. The account section nav omits Values; open `/account/values` directly
-during migration. Load this guide before writing or migrating a value.
+Use the destination that matches the job. Do not invent a thinner kv primitive.
 
 ## Destination map
 
@@ -25,30 +22,4 @@ during migration. Load this guide before writing or migrating a value.
 | OAuth client ids and connections     | integrations          | `/connect/oauth?provider=...` or `integration_*`.                                     |
 | Ids several packages share           | owning package export | One package holds the id; others `packages.invoke` or a static import.                |
 
-Do not invent a new kv primitive. `packageStorage().get` / `set` is the
-named-read API.
-
-## Migrate an existing name
-
-1. `value_list({})` or `search` for the name. Entity detail includes the stored
-   string.
-2. Pick a row from the table above. Facts go to memories; package state goes to
-   that package's `packageStorage()`; files go in a repo; credentials go to
-   secrets.
-3. Write the destination, then `value_delete`. For secrets, verify only the
-   saved secret reference or metadata — never read the raw secret into chat. For
-   other destinations, confirm a read-back first.
-4. Update callers that used `value_get({ name })`.
-
-Do not copy a value into a memory without `meta_memory_verify`. Do not put
-tokens or passwords in values — they are searchable and returned in entity
-detail.
-
-## Reads during retirement
-
-`value_get`, `value_list`, and the `value` search entity remain so agents can
-find leftover names. `value_set` still writes, but every new row is work to
-undo. Prefer the destination on the first persist.
-
-Contributor plan:
-https://github.com/kentcdodds/kody/blob/main/docs/contributing/architecture/values-retirement-runbook.md
+`packageStorage().get` / `set` is the named-read API for package state.

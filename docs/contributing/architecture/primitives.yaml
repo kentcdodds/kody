@@ -306,13 +306,6 @@ primitives:
     docs:
       - docs/contributing/architecture/request-lifecycle.md
 
-  - id: values
-    group: assistant
-    name: Values
-    summary: Readable persisted non-secret configuration.
-    code:
-      - packages/worker/src/mcp/capabilities/values/
-
   - id: secrets
     group: assistant
     name: Secret references

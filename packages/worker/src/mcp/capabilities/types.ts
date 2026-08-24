@@ -148,5 +148,10 @@ export type DomainSpec = {
 	name: CapabilityDomain
 	description: string
 	keywords?: Array<string>
+	/**
+	 * When true, the domain and its capabilities stay callable by exact name
+	 * but are omitted from search, domain browse, and MCP domain instructions.
+	 */
+	unadvertised?: boolean
 	capabilities: Array<Capability>
 }

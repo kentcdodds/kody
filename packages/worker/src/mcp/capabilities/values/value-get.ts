@@ -12,8 +12,8 @@ export const valueGetCapability = defineDomainCapability(
 	{
 		name: 'value_get',
 		description:
-			'Read an existing persisted value by name. Do not add new values; load coding_guide_get({ guide: "values" }) to migrate. When scope is omitted, Kody checks accessible scopes in precedence order.',
-		keywords: ['value', 'config', 'read', 'lookup', 'non-secret'],
+			'Read an existing persisted leftover by name. When scope is omitted, Kody checks accessible scopes in precedence order.',
+		keywords: ['config', 'read', 'lookup'],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,

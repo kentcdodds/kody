@@ -359,24 +359,24 @@ export default async function main() {
 ```
 
 For the lower-level token request built directly with `secretHeaders.basic`, see
-the worked example in
-[Secrets, values, and host approval](./secrets-and-values.md).
+the worked example in [Secrets and host approval](./secrets-and-values.md).
 
 Kody resolves both saved secrets server-side, requires the token endpoint host
 to be approved for both secrets, and only sends the derived Basic header in the
 outbound request.
 
-See [Secrets, values, and host approval](./secrets-and-values.md) for
-placeholders, host approval, **`kody.secret_list`** / **`secret_set`**, and the
-rules for mentioning placeholder syntax without resolving it (the inert
+See [Secrets and host approval](./secrets-and-values.md) for placeholders, host
+approval, **`kody.secret_list`** / **`secret_set`**, and the rules for
+mentioning placeholder syntax without resolving it (the inert
 `{{secret:<name>}}` form and the `x-kody-secret-resolution: off` header). Treat
 placeholder syntax as operational wiring, not prose — never place a resolvable
 **`{{secret:...}}`** token into content shown to users or sent to third parties.
 
-## Values
+## Named state
 
-Readable non-secret configuration uses **`kody.value_get`** and
-**`kody.value_list`** (for example data package apps should persist).
+Durable facts and preferences belong in memories. Package runtime state and
+knobs belong in **`packageStorage()`**. Versioned config belongs in a repo.
+Credentials belong in secrets.
 
 ## Returning content blocks
 

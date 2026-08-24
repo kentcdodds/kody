@@ -263,7 +263,7 @@ async function getOrCreateValueBucket(input: {
 	const bindingKey = getStorageBindingKey(input.scope, input.storageContext)
 	if (bindingKey == null) {
 		// Caller asked for session/app scope without that binding in the
-		// current storage context (common for MCP value_set with default
+		// current storage context (common for leftover-row writes with default
 		// scope "session"). Keep it off Sentry via McpCallerError.
 		throw new McpCallerError(
 			`Value scope "${input.scope}" is unavailable in this context.`,

@@ -24,6 +24,11 @@ export type GuideFrontmatter = {
 	 * third-party surfaces that change without notice.
 	 */
 	lastVerified: string | null
+	/**
+	 * When true, the guide stays callable by exact id but is omitted from
+	 * web/agent listings and `coding_guide_get` advertisements.
+	 */
+	unadvertised: boolean
 }
 
 export type Guide = GuideFrontmatter & {
@@ -121,6 +126,16 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 	const ogImage = fields.get('ogImage') ?? null
 	const provider = fields.get('provider') ?? null
 	const lastVerified = fields.get('lastVerified') ?? null
+	const unadvertisedField = fields.get('unadvertised') ?? null
+	let unadvertised = false
+	if (unadvertisedField !== null) {
+		if (unadvertisedField !== 'true' && unadvertisedField !== 'false') {
+			throw new Error(
+				`Guide "${slug}" has invalid frontmatter "unadvertised" (expected true or false).`,
+			)
+		}
+		unadvertised = unadvertisedField === 'true'
+	}
 
 	if (!id) {
 		throw new Error(`Guide "${slug}" is missing frontmatter "id".`)
@@ -188,6 +203,7 @@ export function parseGuideMarkdown(slug: string, raw: string): Guide {
 		ogImage,
 		provider,
 		lastVerified,
+		unadvertised,
 		body,
 	}
 }

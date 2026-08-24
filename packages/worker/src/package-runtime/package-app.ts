@@ -15,6 +15,7 @@ import {
 	type PackageInvokeTools,
 } from '#mcp/run-kody-registry.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
+import { createRemovedValueWriteError } from '#mcp/capabilities/values/shared.ts'
 import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import {
 	createAuthenticatedFetch,
@@ -1037,7 +1038,10 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			callerContext,
 		})
 		const capability = capabilityMap[name]
-		if (!capability) {
+		if (name === 'value_set' || !capability) {
+			if (name === 'value_set') {
+				throw createRemovedValueWriteError()
+			}
 			throw new Error(`Package app capability "${name}" is not available.`)
 		}
 		return await capability.handler(

@@ -143,19 +143,6 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 	},
 	{
-		id: 'values',
-		question: 'What is a value?',
-		match: accountSection(routes.accountValues.href()),
-		paragraphs: [
-			'Values were named readable config rows. New values are not created; existing rows stay here so you can migrate them to memories, package storage, repos, secrets, or integrations, then delete them.',
-			'Open this page only during migration. Prefer memories for durable facts, package storage for package state, and secrets for credentials.',
-		],
-		learnMore: {
-			href: routes.guideDetail.href({ slug: 'values' }),
-			label: 'Values migration guide',
-		},
-	},
-	{
 		id: 'usage',
 		question: 'What is usage?',
 		match: accountSection(routes.accountUsage.href()),

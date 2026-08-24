@@ -5,7 +5,7 @@ import {
 	createGuidesApiHandler,
 	createGuidesMarkdownHandler,
 } from './guides.tsx'
-import { guides } from '#worker/guides/catalog.ts'
+import { getGuideBySlug, listGuides } from '#worker/guides/catalog.ts'
 
 const env = { APP_BASE_URL: 'https://kody.example' } as Env
 
@@ -29,7 +29,8 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 		guides: Array<{ slug: string; id: string; title: string }>
 	}
 	expect(payload.ok).toBe(true)
-	expect(payload.guides.length).toBe(guides.length)
+	expect(payload.guides.length).toBe(listGuides().length)
+	expect(payload.guides.some((guide) => guide.id === 'values')).toBe(false)
 	// Bodies stay out of the index payload.
 	expect(JSON.stringify(payload)).not.toContain('## ')
 
@@ -45,9 +46,21 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 	)
 	const indexBody = await markdownIndex.text()
 	expect(indexBody.startsWith('#')).toBe(true)
-	for (const guide of guides) {
+	for (const guide of listGuides()) {
 		expect(indexBody).toContain(`https://kody.example/guides/${guide.slug}.md`)
 	}
+	expect(indexBody).not.toContain('https://kody.example/guides/values.md')
+	expect(getGuideBySlug('values')?.unadvertised).toBe(true)
+
+	const valuesDetail = await callHandler(
+		createGuideDetailMarkdownHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/values.md'),
+			params: { slug: 'values' },
+		},
+	)
+	expect(valuesDetail.status).toBe(200)
+	expect(await valuesDetail.text()).toContain('## Destination map')
 
 	const detail = await callHandler(
 		createGuideDetailMarkdownHandler(env) as never,

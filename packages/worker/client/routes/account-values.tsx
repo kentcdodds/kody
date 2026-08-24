@@ -1,6 +1,5 @@
 import { type Handle, css } from 'remix/ui'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
-import { on } from '#client/event-mixin.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
@@ -40,8 +39,6 @@ import {
 	fieldCss,
 	fieldLabelCss,
 	getDangerPillCss,
-	getGhostButtonCss,
-	getPillButtonCss,
 } from '#universal/styles/style-primitives.ts'
 import {
 	type AccountValueDetail,
@@ -152,7 +149,7 @@ export async function accountValuesRouteLoader(
 
 export function AccountValuesRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
-	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
+	let saveState: 'idle' | 'deleting' = 'idle'
 	let values: Array<AccountValueListItem> = []
 	let selectedValue: AccountValueDetail | null = null
 	let editorState = createEmptyEditorState()
@@ -162,8 +159,6 @@ export function AccountValuesRoute(handle: Handle) {
 	const deleteValueCheck = createDoubleCheck(handle)
 	let syncedSelectionKey: string | null = null
 
-	const primaryButtonCss = getPillButtonCss({ size: 'sm' })
-	const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
 	const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 	function getCurrentHref() {
@@ -274,84 +269,6 @@ export function AccountValuesRoute(handle: Handle) {
 		}
 	}
 
-	function readEditorStateFromForm(form: HTMLFormElement): EditorState {
-		const formData = new FormData(form)
-		return {
-			name: String(formData.get('name') ?? '').trim(),
-			description: String(formData.get('description') ?? '').trim(),
-			value: String(formData.get('value') ?? ''),
-		}
-	}
-
-	async function saveValueEntry(form?: HTMLFormElement) {
-		if (saveState !== 'idle') return
-		const nextEditorState = form ? readEditorStateFromForm(form) : editorState
-		// When editing, the name field is locked; keep the original name even if
-		// a stale form submission somehow changes it.
-		if (selectedValue) {
-			nextEditorState.name = selectedValue.name
-		}
-		editorState = nextEditorState
-		if (!nextEditorState.name.trim()) {
-			setMessage('Value name is required.', 'error')
-			handle.update()
-			return
-		}
-		if (!nextEditorState.value.trim()) {
-			setMessage('Value is required.', 'error')
-			handle.update()
-			return
-		}
-		const wasEditing = selectedValue != null
-		const previousName = selectedValue?.name ?? null
-		saveState = 'saving'
-		setMessage(null)
-		handle.update()
-		try {
-			const response = await fetch(accountValuesApiPath, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					action: 'save',
-					name: nextEditorState.name,
-					value: nextEditorState.value,
-					description: nextEditorState.description,
-				}),
-			})
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<
-				AccountValuesLoaderData & { error?: string; ok?: boolean }
-			>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error || 'Unable to save value.')
-			}
-			applyPayload(payload)
-			saveState = 'idle'
-			setMessage(wasEditing ? 'Saved value.' : 'Created value.')
-			const nextId = payload.selectedValueId
-			if (nextId && (!wasEditing || previousName !== nextId)) {
-				syncRouterLocation(
-					valuesRoute.buildDetailHref(nextId, getCurrentSearch()),
-				)
-			}
-			handle.update()
-		} catch (error) {
-			saveState = 'idle'
-			setMessage(
-				error instanceof Error ? error.message : 'Unable to save value.',
-				'error',
-			)
-			handle.update()
-		}
-	}
-
 	async function deleteValueEntry() {
 		if (!selectedValue || saveState !== 'idle') return
 		saveState = 'deleting'
@@ -405,30 +322,6 @@ export function AccountValuesRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function startNewValue() {
-		editorState = createEmptyEditorState()
-		selectedValue = null
-		syncedSelectionKey = 'new'
-		deleteValueCheck.reset()
-		setMessage(null)
-		syncRouterLocation(valuesRoute.buildNewHref(getCurrentSearch()))
-		handle.update()
-	}
-
-	function resetEditor() {
-		const selection = valuesRoute.getSelection(getCurrentHref())
-		if (selection.isCreating) {
-			editorState = createEmptyEditorState()
-		} else if (selectedValue) {
-			editorState = createEditorStateFromDetail(selectedValue)
-		} else {
-			editorState = createEmptyEditorState()
-		}
-		deleteValueCheck.reset()
-		setMessage(null)
-		handle.update()
-	}
-
 	function applyRouteLoaderData(href: string) {
 		if (!valuesRoute.isRoutePath(href)) return false
 		const routeData = tryConsumeRouteLoaderData(handle, 'accountValues', href)
@@ -460,22 +353,18 @@ export function AccountValuesRoute(handle: Handle) {
 		const filteredValues = filterValues(values, search)
 		const isMutating = saveState !== 'idle'
 		const detail = selectedValue
-		const isEditing = detail != null
 		const isLoadingSelection =
 			selection.selectedId != null &&
 			(detail == null || detail.id !== selection.selectedId) &&
 			needsLoad
 		const showEditor =
-			selection.isCreating ||
-			(selection.selectedId != null && detail != null && !isLoadingSelection)
+			selection.selectedId != null && detail != null && !isLoadingSelection
 		const showValueNotFound =
 			selection.selectedId != null &&
 			detail == null &&
 			status === 'ready' &&
 			!needsLoad
-		const selectedLabel = selection.isCreating
-			? 'New value'
-			: (detail?.name ?? selection.selectedId ?? 'Value')
+		const selectedLabel = detail?.name ?? selection.selectedId ?? 'Value'
 
 		const monospaceValueCss = {
 			...accountTextareaCss,
@@ -488,17 +377,8 @@ export function AccountValuesRoute(handle: Handle) {
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Values"
-					description="Leftover readable config while values are retired. This route stays available for migration; it is not listed in account navigation."
+					description="Operator drain for leftover named rows. This route is not listed in account navigation."
 					currentHref={currentHref}
-					actions={
-						<button
-							type="button"
-							disabled={isMutating}
-							mix={[on('click', startNewValue), css(primaryButtonCss)]}
-						>
-							New value
-						</button>
-					}
 				/>
 
 				{status === 'loading' ? (
@@ -525,8 +405,8 @@ export function AccountValuesRoute(handle: Handle) {
 						countLabel={`${filteredValues.length} of ${values.length} shown`}
 						emptyLabel={
 							values.length === 0
-								? 'No values yet. Create one to get started.'
-								: 'No values match the current filters.'
+								? 'No leftover rows.'
+								: 'No leftover rows match the current filters.'
 						}
 						toolbar={
 							<RecordTableSearch
@@ -544,16 +424,6 @@ export function AccountValuesRoute(handle: Handle) {
 							{ key: 'preview', label: 'Value', drop: 2 },
 							{ key: 'updated', label: 'Updated' },
 						]}
-						createRow={
-							selection.isCreating
-								? {
-										href: isMutating
-											? undefined
-											: valuesRoute.buildNewHref(getCurrentSearch()),
-										label: 'New value',
-									}
-								: undefined
-						}
 						rows={filteredValues.map((entry) => ({
 							id: entry.id,
 							// A save or delete is in flight; the expanded editor owns
@@ -586,25 +456,12 @@ export function AccountValuesRoute(handle: Handle) {
 									Loading value...
 								</p>
 							) : showEditor ? (
-								<form
-									method="post"
-									noValidate
-									mix={[
-										on('submit', (event) => {
-											event.preventDefault()
-											if (event.currentTarget instanceof HTMLFormElement) {
-												void saveValueEntry(event.currentTarget)
-											}
-										}),
-										css(recordBodyCss),
-									]}
-								>
+								<div mix={css(recordBodyCss)}>
 									<div mix={css({ display: 'grid', gap: spacing.xs })}>
 										<h2 mix={css(cardTitleCss)}>{selectedLabel}</h2>
 										<p mix={css(descriptionCss)}>
-											{selection.isCreating
-												? 'Create a named value your packages and workflows can read. Names are unique within your user scope.'
-												: 'Edit this user-scoped value. The name is fixed; saving updates description and value only.'}
+											Read-only leftover row. Move the contents to memories,
+											package storage, a repo, or secrets, then delete.
 										</p>
 									</div>
 
@@ -615,43 +472,14 @@ export function AccountValuesRoute(handle: Handle) {
 											name="name"
 											type="text"
 											value={editorState.name}
-											placeholder="preferred-locale"
-											disabled={isMutating}
-											readOnly={isEditing}
-											required
-											mix={[
-												on('input', (event) => {
-													if (isEditing) return
-													editorState = {
-														...editorState,
-														name: event.currentTarget.value,
-													}
-													handle.update()
-												}),
-												css({
-													...accountInputCss,
-													...(isEditing
-														? {
-																color: colors.textMuted,
-																cursor: 'default',
-															}
-														: null),
-												}),
-											]}
+											readOnly
+											mix={css({
+												...accountInputCss,
+												color: colors.textMuted,
+												cursor: 'default',
+											})}
 										/>
 									</label>
-									{isEditing ? (
-										<p
-											mix={css({
-												margin: 0,
-												color: colors.textMuted,
-												fontSize: typography.fontSize.sm,
-											})}
-										>
-											Name cannot be changed after creation. Create a new value
-											to use a different name.
-										</p>
-									) : null}
 
 									<label mix={css(fieldCss)}>
 										<span mix={css(fieldLabelCss)}>Description</span>
@@ -660,18 +488,12 @@ export function AccountValuesRoute(handle: Handle) {
 											name="description"
 											type="text"
 											value={editorState.description}
-											placeholder="Optional description"
-											disabled={isMutating}
-											mix={[
-												on('input', (event) => {
-													editorState = {
-														...editorState,
-														description: event.currentTarget.value,
-													}
-													handle.update()
-												}),
-												css(accountInputCss),
-											]}
+											readOnly
+											mix={css({
+												...accountInputCss,
+												color: colors.textMuted,
+												cursor: 'default',
+											})}
 										/>
 									</label>
 
@@ -681,19 +503,12 @@ export function AccountValuesRoute(handle: Handle) {
 											data-field-ring
 											name="value"
 											value={editorState.value}
-											placeholder="Readable configuration text"
-											disabled={isMutating}
-											required
-											mix={[
-												on('input', (event) => {
-													editorState = {
-														...editorState,
-														value: event.currentTarget.value,
-													}
-													handle.update()
-												}),
-												css(monospaceValueCss),
-											]}
+											readOnly
+											mix={css({
+												...monospaceValueCss,
+												color: colors.textMuted,
+												cursor: 'default',
+											})}
 										/>
 									</label>
 
@@ -728,45 +543,25 @@ export function AccountValuesRoute(handle: Handle) {
 										})}
 									>
 										<button
-											type="submit"
-											disabled={isMutating}
-											mix={css(primaryButtonCss)}
-										>
-											{saveState === 'saving'
-												? 'Saving...'
-												: selection.isCreating
-													? 'Create value'
-													: 'Save value'}
-										</button>
-										<button
 											type="button"
 											disabled={isMutating}
-											mix={[on('click', resetEditor), css(secondaryButtonCss)]}
+											mix={[
+												...deleteValueCheck.getButtonMix({
+													on: {
+														click: () => void deleteValueEntry(),
+													},
+												}),
+												css(dangerButtonCss),
+											]}
 										>
-											Reset form
+											{saveState === 'deleting'
+												? 'Deleting...'
+												: deleteValueCheck.doubleCheck
+													? 'Confirm delete'
+													: 'Delete'}
 										</button>
-										{isEditing ? (
-											<button
-												type="button"
-												disabled={isMutating}
-												mix={[
-													...deleteValueCheck.getButtonMix({
-														on: {
-															click: () => void deleteValueEntry(),
-														},
-													}),
-													css(dangerButtonCss),
-												]}
-											>
-												{saveState === 'deleting'
-													? 'Deleting...'
-													: deleteValueCheck.doubleCheck
-														? 'Confirm delete'
-														: 'Delete'}
-											</button>
-										) : null}
 									</div>
-								</form>
+								</div>
 							) : showValueNotFound ? (
 								<div mix={css({ ...recordBodyCss, gap: spacing.sm })}>
 									<h2
