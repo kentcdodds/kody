@@ -572,3 +572,61 @@ test('browser Sentry filters drop syntax-highlight-core dynamic import fetch fai
 		}),
 	).not.toBeNull()
 })
+
+test('browser Sentry filters drop resolveFrame fetch network TypeErrors (KODY-CLOUDFLARE-5Y)', () => {
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: 'Load failed',
+						stacktrace: {
+							frames: [
+								{
+									function: 'app.resolveFrame',
+									filename: '../client/entry.tsx',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'TypeError', value: 'Failed to fetch' }],
+				},
+			},
+			Object.assign(new TypeError('Failed to fetch'), {
+				stack: 'resolveFrame@https://kody.codes/client-entry.js:3:61347',
+			}),
+		),
+	).toBeNull()
+	// Generic fetch TypeErrors without resolveFrame must stay visible.
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [{ type: 'TypeError', value: 'TypeError: Failed to fetch' }],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: 'Load failed',
+						stacktrace: {
+							frames: [{ function: 'someOtherFetch', filename: 'app.js' }],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+})

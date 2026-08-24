@@ -3,6 +3,12 @@
  * tests can exercise the predicates with plain event shapes.
  */
 
+import {
+	errorStackMentionsResolveFrame,
+	isBrowserFetchNetworkError,
+	isBrowserFetchNetworkErrorMessage,
+} from '#client/browser-fetch-network-error.ts'
+
 type SentryStackFrame = {
 	filename?: string
 	abs_path?: string
@@ -845,6 +851,60 @@ export function filterSyntaxHighlightCoreDynamicImportFailureSentryEvent<
 	return event
 }
 
+/**
+ * Remix `resolveFrame` `fetch()` network TypeErrors (WebKit "Load failed",
+ * Chromium "Failed to fetch", Firefox NetworkError). Observed as a handled
+ * client hydration error after a successful GET of the same frame URL
+ * (KODY-CLOUDFLARE-5Y, Mobile Safari on `/@kody/planetscale`). External
+ * connectivity blips — not an app defect. Match only when a stack frame names
+ * `resolveFrame` so other fetch TypeErrors stay Sentry-visible.
+ */
+export function isResolveFrameFetchNetworkSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	const networkFromException =
+		isBrowserFetchNetworkError(originalException) ||
+		(typeof originalException === 'object' &&
+			originalException !== null &&
+			'message' in originalException &&
+			typeof originalException.message === 'string' &&
+			isBrowserFetchNetworkErrorMessage(originalException.message) &&
+			'name' in originalException &&
+			originalException.name === 'TypeError')
+
+	const networkFromEvent =
+		event.exception?.values?.some(
+			(value) =>
+				value.type === 'TypeError' &&
+				typeof value.value === 'string' &&
+				isBrowserFetchNetworkErrorMessage(value.value),
+		) ?? false
+
+	if (!networkFromException && !networkFromEvent) return false
+
+	if (errorStackMentionsResolveFrame(originalException)) return true
+	return sentryEventStackFrameFunctions(event).some((name) =>
+		name.includes('resolveFrame'),
+	)
+}
+
+/** Pre-SDK buffer gate: network TypeError whose stack names `resolveFrame`. */
+export function isResolveFrameFetchNetworkError(error: unknown) {
+	return (
+		isBrowserFetchNetworkError(error) && errorStackMentionsResolveFrame(error)
+	)
+}
+
+export function filterResolveFrameFetchNetworkSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isResolveFrameFetchNetworkSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
 /** Combined browser beforeSend / capture gate used by the client SDK. */
 export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	event: T,
@@ -936,6 +996,12 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 			event,
 			originalException,
 		) === null
+	) {
+		return null
+	}
+	if (
+		filterResolveFrameFetchNetworkSentryEvent(event, originalException) ===
+		null
 	) {
 		return null
 	}

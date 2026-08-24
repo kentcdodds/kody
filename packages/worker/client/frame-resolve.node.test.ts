@@ -1,6 +1,6 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
-import { createFrameResolveInit } from './frame-resolve.ts'
+import { createFrameResolveInit, fetchFrameResolve } from './frame-resolve.ts'
 
 test('frame resolve never attaches a body to GET or HEAD, including lowercase methods', () => {
 	const formData = new FormData()
@@ -33,4 +33,56 @@ test('frame resolve never attaches a body to GET or HEAD, including lowercase me
 	expect(postInit.method).toBe('post')
 	expect(postInit.body).toBeInstanceOf(URLSearchParams)
 	expect(String(postInit.body)).toBe('q=remix')
+})
+
+test('fetchFrameResolve retries once on GET network TypeError (KODY-CLOUDFLARE-5Y)', async () => {
+	const ok = new Response('<html></html>', { status: 200 })
+	const fetchMock = vi
+		.fn()
+		.mockRejectedValueOnce(new TypeError('Load failed'))
+		.mockResolvedValueOnce(ok)
+	vi.stubGlobal('fetch', fetchMock)
+
+	try {
+		const response = await fetchFrameResolve('/@kody/planetscale')
+		expect(response).toBe(ok)
+		expect(fetchMock).toHaveBeenCalledTimes(2)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('fetchFrameResolve does not retry POST network TypeErrors', async () => {
+	const fetchMock = vi
+		.fn()
+		.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+	vi.stubGlobal('fetch', fetchMock)
+
+	try {
+		await expect(
+			fetchFrameResolve('/action', {
+				method: 'post',
+				formData: new FormData(),
+			}),
+		).rejects.toThrow('Failed to fetch')
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
+test('fetchFrameResolve does not retry non-network TypeErrors', async () => {
+	const fetchMock = vi
+		.fn()
+		.mockRejectedValueOnce(new TypeError('null is not an object'))
+	vi.stubGlobal('fetch', fetchMock)
+
+	try {
+		await expect(fetchFrameResolve('/@kody/planetscale')).rejects.toThrow(
+			'null is not an object',
+		)
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })
