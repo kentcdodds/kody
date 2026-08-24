@@ -36,7 +36,7 @@ import { LandingLoopPlayer } from './landing-loop-player.tsx'
  * work. Motion is enhance-only (`html.js`) and fully off under
  * `prefers-reduced-motion`.
  *
- * Positioning: a private software ecosystem all your agents can share, not
+ * Positioning: the private software ecosystem all your agents can share, not
  * another agent and not "equip your agent." Factory-loop art reuses the
  * existing 3D set; do not generate a new koala.
  *
@@ -210,7 +210,7 @@ export function HomeRoute(handle: Handle) {
 				{/* ============ hero ============ */}
 				<section data-parallax-scope class="landing-hero">
 					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
-						A private software ecosystem
+						The private software ecosystem
 						<br />
 						<em>all your agents can share</em>
 					</h1>

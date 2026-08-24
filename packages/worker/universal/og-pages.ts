@@ -22,9 +22,9 @@ export type PublicOgPage = {
 export const publicOgPages = {
 	home: {
 		// Short enough for 78px OG type. The homepage H1 keeps the full sentence.
-		imageTitle: 'A private software ecosystem',
+		imageTitle: 'The private software ecosystem',
 		imageSubtitle: 'All your agents can share.',
-		ogTitle: 'A private software ecosystem all your agents can share',
+		ogTitle: 'The private software ecosystem all your agents can share',
 		ogDescription:
 			'Your agents do the thinking. Kody holds the result. Packages you own, secrets they never see, and jobs that keep running.',
 		path: '/',
