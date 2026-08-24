@@ -1,6 +1,11 @@
 import { expect, test } from 'vitest'
-import { renderCommunityListingsContentHtml } from '#app/community-listings-content.tsx'
+import {
+	communityBadgePillCss,
+	communityInstallPillCss,
+	renderCommunityListingsContentHtml,
+} from '#app/community-listings-content.tsx'
 import { type PublicCommunityListing } from '#universal/community-public-types.ts'
+import { communityStatusPillBoxCss } from '#universal/community-status-pill.ts'
 
 const sampleListing = {
 	id: 'listing-1',
@@ -177,4 +182,19 @@ test('community listings render sort controls, categories, empty states, and for
 	expect(aheadHtml).not.toContain(
 		'data-testid="community-listing-viewer-install-listing-1"',
 	)
+})
+
+test('Trusted and Install pills share one box so they match when adjacent', () => {
+	for (const key of [
+		'display',
+		'alignItems',
+		'boxSizing',
+		'fontSize',
+		'lineHeight',
+		'padding',
+		'border',
+	] as const) {
+		expect(communityBadgePillCss[key]).toBe(communityStatusPillBoxCss[key])
+		expect(communityInstallPillCss[key]).toBe(communityStatusPillBoxCss[key])
+	}
 })

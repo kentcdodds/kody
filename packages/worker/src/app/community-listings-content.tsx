@@ -23,8 +23,9 @@ import {
 	renderCopyPromptPill,
 } from '#universal/fork-outdated-copy-button.tsx'
 import { routes } from '#universal/routes.ts'
-import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
 import { getCommunityListingHref } from '#universal/community-links.ts'
+import { renderCommunityListingName } from '#universal/community-listing-name.tsx'
+import { communityStatusPillBoxCss } from '#universal/community-status-pill.ts'
 import {
 	buildCommunityIndexHref,
 	defaultCommunityListingSort,
@@ -609,26 +610,17 @@ const listingLinkCss = {
 }
 
 /* The prototype's `.badge-trusted` pill; the detail head reuses it without
-   the card's trailing-edge push. */
+   the card's trailing-edge push. Same box as Install / Installed. */
 export const communityBadgePillCss = {
-	flex: 'none',
-	fontSize: '0.78rem',
-	fontWeight: 650,
+	...communityStatusPillBoxCss,
 	color: colors.primaryText,
 	backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
-	borderRadius: '999px',
-	padding: '0.15rem 0.6rem',
-	whiteSpace: 'nowrap' as const,
 	cursor: 'help',
 }
 
 export const communityInstallPillCss = {
 	...communityBadgePillCss,
 	appearance: 'none' as const,
-	margin: 0,
-	border: 'none',
-	fontFamily: 'inherit',
-	lineHeight: 1.2,
 	textDecoration: 'none',
 	cursor: 'pointer',
 	[hoverMq]: {
