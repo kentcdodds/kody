@@ -1,13 +1,11 @@
 import {
-	continuePublicCodeRunsWindow,
-	isStillPublicCodeRunsWindow,
 	parsePublicCodeRunsWindow,
-	publicCodeRunsWindowMs,
-	stillPublicCodeRunsWindow,
+	publicCodeRunsWindowsEqual,
 	type PublicCodeRunsWindow,
 } from '#universal/code-runs.ts'
+import { computeDelayedExecuteWindow } from './fleet-execute-days.ts'
 
-export const publicCodeRunsKvKey = 'public-code-runs:v1'
+export const publicCodeRunsKvKey = 'public-code-runs:v2'
 
 type CodeRunsWindowEnv = {
 	APP_DB?: D1Database
@@ -20,20 +18,20 @@ export async function loadPublicCodeRunsWindow(
 ): Promise<PublicCodeRunsWindow | null> {
 	const stored = await readStoredWindow(env)
 	if (stored.status === 'failed') return null
-	if (stored.status === 'found') {
-		const window = stored.window
-		const endMs = Date.parse(window.windowEnd)
-		const expired = Number.isFinite(endMs) && now.getTime() >= endMs
-		if (!expired && !isStillPublicCodeRunsWindow(window)) return window
-		const total = await sumExecuteEventCount(env)
-		if (total === null || total <= 0) return window
-		return (
-			continuePublicCodeRunsWindow({ stored: window, total, now }) ?? window
-		)
+	const cachedUntil =
+		stored.status === 'found' ? Date.parse(stored.window.updateAt) : NaN
+	if (stored.status === 'found' && now.getTime() < cachedUntil) {
+		return stored.window
 	}
-	const total = await sumExecuteEventCount(env)
-	if (total === null || total <= 0) return null
-	return stillPublicCodeRunsWindow(total, now)
+	const computed = await computeWindow(env, now)
+	if (computed && env.BUNDLE_ARTIFACTS_KV) {
+		try {
+			await writeStoredWindow(env.BUNDLE_ARTIFACTS_KV, computed)
+		} catch (error) {
+			console.debug('public-code-runs-window-write-failed', error)
+		}
+	}
+	return computed
 }
 
 export async function refreshPublicCodeRunsWindow(input: {
@@ -50,50 +48,45 @@ export async function refreshPublicCodeRunsWindow(input: {
 	if (!kv) return { status: 'skipped', reason: 'no_kv' }
 	const now = input.now ?? new Date()
 	try {
-		const total = await sumExecuteEventCount(input.env)
-		if (total === null) return { status: 'skipped', reason: 'query_failed' }
-		if (total <= 0) return { status: 'skipped', reason: 'no_runs' }
-
+		if (!input.env.APP_DB) return { status: 'skipped', reason: 'query_failed' }
+		const computed = await computeDelayedExecuteWindow(input.env.APP_DB, now)
 		const existing = await readStoredWindow(input.env)
 		if (existing.status === 'failed') {
 			return { status: 'skipped', reason: 'kv_read_failed' }
 		}
-		if (existing.status === 'missing') {
-			await writeStoredWindow(kv, stillPublicCodeRunsWindow(total, now))
-			return { status: 'initialized' }
+		if (!computed) {
+			if (existing.status === 'found') {
+				try {
+					await kv.delete(publicCodeRunsKvKey)
+				} catch (error) {
+					console.debug('public-code-runs-window-delete-failed', error)
+				}
+			}
+			return { status: 'skipped', reason: 'no_runs' }
 		}
-		const existingWindow = existing.window
-		const still = isStillPublicCodeRunsWindow(existingWindow)
-		const windowEndMs = Date.parse(existingWindow.windowEnd)
-		const beforeEnd =
-			Number.isFinite(windowEndMs) && now.getTime() < windowEndMs
-		const stillGrowing = still && total > existingWindow.current
-		const stillRegressed = still && total < existingWindow.current
-		// A still pair is a bootstrap (KV miss or first write). Holding it
-		// for 24h freezes the homepage ticker even while executes accrue,
-		// and `current = max(total, previous)` latches a stale high-water
-		// mark when the fleet SUM later drops (authoritative AE recompute).
-		// Live windows still hold until windowEnd so interpolation stays
-		// deterministic for every visitor.
-		if (beforeEnd && !stillGrowing && !stillRegressed) {
+		if (
+			existing.status === 'found' &&
+			publicCodeRunsWindowsEqual(existing.window, computed) &&
+			now.getTime() < Date.parse(computed.updateAt)
+		) {
 			return { status: 'held' }
 		}
-		if (total <= existingWindow.current) {
-			await writeStoredWindow(kv, stillPublicCodeRunsWindow(total, now))
-			return { status: 'rotated' }
+		await writeStoredWindow(kv, computed)
+		return {
+			status: existing.status === 'missing' ? 'initialized' : 'rotated',
 		}
-
-		await writeStoredWindow(kv, {
-			previous: existingWindow.current,
-			current: total,
-			windowStart: now.toISOString(),
-			windowEnd: new Date(now.getTime() + publicCodeRunsWindowMs).toISOString(),
-		})
-		return { status: 'rotated' }
 	} catch (error) {
 		console.warn('public-code-runs-window-refresh-failed', error)
 		return { status: 'skipped', reason: 'query_failed' }
 	}
+}
+
+async function computeWindow(
+	env: CodeRunsWindowEnv,
+	now: Date,
+): Promise<PublicCodeRunsWindow | null> {
+	if (!env.APP_DB) return null
+	return computeDelayedExecuteWindow(env.APP_DB, now)
 }
 
 async function readStoredWindow(
@@ -121,37 +114,4 @@ async function writeStoredWindow(
 	window: PublicCodeRunsWindow,
 ) {
 	await kv.put(publicCodeRunsKvKey, JSON.stringify(window))
-}
-
-async function sumExecuteEventCount(
-	env: CodeRunsWindowEnv,
-): Promise<number | null> {
-	if (!env.APP_DB) return null
-	try {
-		const row = await env.APP_DB.prepare(
-			`SELECT COALESCE(SUM(event_count), 0) AS total
-			 FROM usage_rollups
-			 WHERE metric = 'execute'`,
-		).first<{ total: unknown }>()
-		return toNonNegativeCount(row?.total)
-	} catch (error) {
-		console.debug('public-code-runs-sum-failed', error)
-		return null
-	}
-}
-
-/**
- * D1 `SUM` / `COALESCE` can arrive as a number, numeric string, or bigint.
- * Treating anything but `typeof === 'number'` as zero froze the homepage
- * ticker on a still pair even while execute rollups existed.
- */
-function toNonNegativeCount(value: unknown): number {
-	if (typeof value === 'bigint') {
-		if (value < 0n) return 0
-		const parsed = Number(value)
-		return Number.isFinite(parsed) ? Math.floor(parsed) : 0
-	}
-	const parsed = Number(value)
-	if (!Number.isFinite(parsed) || parsed < 0) return 0
-	return Math.floor(parsed)
 }

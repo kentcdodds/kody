@@ -19,11 +19,15 @@ function createMemoryKv(initial?: Record<string, string>) {
 		async put(key: string, value: string) {
 			store.set(key, value)
 		},
+		async delete(key: string) {
+			store.delete(key)
+		},
 		store,
 	} as unknown as KVNamespace & { store: Map<string, string> }
 }
 
 async function createEnv(input?: {
+	days?: Array<{ day: string; eventCount: number }>
 	rows?: Array<{ userId: string; month: string; eventCount: number }>
 	window?: unknown
 }) {
@@ -41,6 +45,15 @@ async function createEnv(input?: {
 			.bind(row.userId, row.month, row.eventCount)
 			.run()
 	}
+	for (const day of input?.days ?? []) {
+		await db
+			.prepare(
+				`INSERT INTO fleet_execute_days (day, event_count, updated_at)
+				VALUES (?, ?, '2026-08-24T12:00:00.000Z')`,
+			)
+			.bind(day.day, day.eventCount)
+			.run()
+	}
 	const kv = createMemoryKv(
 		input?.window
 			? { [publicCodeRunsKvKey]: JSON.stringify(input.window) }
@@ -49,258 +62,133 @@ async function createEnv(input?: {
 	return { APP_DB: db, BUNDLE_ARTIFACTS_KV: kv }
 }
 
-function withCoercedExecuteSum(
-	env: { APP_DB: D1Database },
-	coerce: (total: unknown) => unknown,
-) {
-	const prepare = env.APP_DB.prepare.bind(env.APP_DB)
-	env.APP_DB.prepare = ((sql: string) => {
-		const statement = prepare(sql)
-		if (!sql.includes('SUM(event_count)')) return statement
-		const first = statement.first.bind(statement)
-		return Object.assign(statement, {
-			async first() {
-				const row = await first<{ total?: unknown }>()
-				if (row == null || row.total == null) return row
-				return { total: coerce(row.total) }
-			},
-		})
-	}) as D1Database['prepare']
+const midday = new Date('2026-08-24T15:00:00.000Z')
+const expectedWindow = {
+	start: 1030,
+	end: 1060,
+	updateAt: '2026-08-25T00:00:00.000Z',
 }
 
-test('refreshPublicCodeRunsWindow initializes a still pair, unsticks when the fleet grows, and holds a live window for 24h', async () => {
-	const env = await createEnv({
-		rows: [
-			{ userId: 'a', month: '2026-07', eventCount: 40 },
-			{ userId: 'b', month: '2026-08', eventCount: 60 },
+async function seededEnv(window?: unknown) {
+	return createEnv({
+		rows: [{ userId: 'a', month: '2026-07', eventCount: 1000 }],
+		days: [
+			{ day: '2026-08-21', eventCount: 10 },
+			{ day: '2026-08-22', eventCount: 20 },
+			{ day: '2026-08-23', eventCount: 30 },
+			{ day: '2026-08-24', eventCount: 99 },
 		],
+		window,
 	})
-	const start = new Date('2026-08-21T00:00:00.000Z')
+}
+
+test('load and refresh derive start/end from completed days and ignore today', async () => {
+	const env = await seededEnv()
 	await expect(
-		refreshPublicCodeRunsWindow({ env, now: start }),
+		refreshPublicCodeRunsWindow({ env, now: midday }),
 	).resolves.toEqual({ status: 'initialized' })
-
-	const still = await loadPublicCodeRunsWindow(env, start)
-	expect(still).toEqual({
-		previous: 100,
-		current: 100,
-		windowStart: '2026-08-21T00:00:00.000Z',
-		windowEnd: '2026-08-22T00:00:00.000Z',
-	})
-
-	await expect(
-		refreshPublicCodeRunsWindow({
-			env,
-			now: new Date('2026-08-21T12:00:00.000Z'),
-		}),
-	).resolves.toEqual({ status: 'held' })
-	expect(await loadPublicCodeRunsWindow(env, start)).toEqual(still)
-
-	await env.APP_DB.prepare(
-		`UPDATE usage_rollups SET event_count = 90 WHERE user_id = 'b'`,
-	).run()
-	await expect(
-		refreshPublicCodeRunsWindow({
-			env,
-			now: new Date('2026-08-21T12:01:00.000Z'),
-		}),
-	).resolves.toEqual({ status: 'rotated' })
-	const live = await loadPublicCodeRunsWindow(
-		env,
-		new Date('2026-08-21T12:01:00.000Z'),
+	expect(await loadPublicCodeRunsWindow(env, midday)).toEqual(expectedWindow)
+	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(expectedWindow),
 	)
-	expect(live).toEqual({
-		previous: 100,
-		current: 130,
-		windowStart: '2026-08-21T12:01:00.000Z',
-		windowEnd: '2026-08-22T12:01:00.000Z',
-	})
 
-	await env.APP_DB.prepare(
-		`UPDATE usage_rollups SET event_count = 110 WHERE user_id = 'b'`,
-	).run()
 	await expect(
-		refreshPublicCodeRunsWindow({
-			env,
-			now: new Date('2026-08-21T18:00:00.000Z'),
-		}),
+		refreshPublicCodeRunsWindow({ env, now: midday }),
 	).resolves.toEqual({ status: 'held' })
-	expect(
-		await loadPublicCodeRunsWindow(env, new Date('2026-08-21T18:00:00.000Z')),
-	).toEqual(live)
+	expect(await loadPublicCodeRunsWindow(env, midday)).toEqual(expectedWindow)
+})
 
-	await expect(
-		refreshPublicCodeRunsWindow({
-			env,
-			now: new Date('2026-08-22T12:01:00.000Z'),
-		}),
-	).resolves.toEqual({ status: 'rotated' })
-	expect(
-		await loadPublicCodeRunsWindow(env, new Date('2026-08-22T12:01:00.000Z')),
-	).toEqual({
-		previous: 130,
-		current: 150,
-		windowStart: '2026-08-22T12:01:00.000Z',
-		windowEnd: '2026-08-23T12:01:00.000Z',
+test('load recomputes after updateAt and fills KV without latching a high-water mark', async () => {
+	const stale = {
+		start: 257940,
+		end: 257940,
+		updateAt: '2026-08-24T00:00:00.000Z',
+	}
+	const env = await seededEnv(stale)
+	const loaded = await loadPublicCodeRunsWindow(env, midday)
+	expect(loaded).toEqual(expectedWindow)
+	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(expectedWindow),
+	)
+})
+
+test('load returns a valid cached triple without writing and ignores v1 JSON', async () => {
+	const cached = {
+		start: 10,
+		end: 20,
+		updateAt: '2026-08-25T00:00:00.000Z',
+	}
+	const cachedEnv = await seededEnv(cached)
+	expect(await loadPublicCodeRunsWindow(cachedEnv, midday)).toEqual(cached)
+	expect(cachedEnv.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(cached),
+	)
+
+	const v1 = await createEnv({
+		days: [{ day: '2026-08-23', eventCount: 12 }],
+		window: {
+			previous: 12,
+			current: 12,
+			windowStart: '2026-08-24T00:00:00.000Z',
+			windowEnd: '2026-08-25T00:00:00.000Z',
+		},
 	})
-
-	await env.APP_DB.prepare(
-		`UPDATE usage_rollups SET event_count = 10 WHERE user_id = 'b'`,
-	).run()
-	await expect(
-		refreshPublicCodeRunsWindow({
-			env,
-			now: new Date('2026-08-23T12:01:00.000Z'),
-		}),
-	).resolves.toEqual({ status: 'rotated' })
-	expect(
-		await loadPublicCodeRunsWindow(env, new Date('2026-08-23T12:01:00.000Z')),
-	).toEqual({
-		previous: 50,
-		current: 50,
-		windowStart: '2026-08-23T12:01:00.000Z',
-		windowEnd: '2026-08-24T12:01:00.000Z',
+	expect(await loadPublicCodeRunsWindow(v1, midday)).toEqual({
+		start: 0,
+		end: 12,
+		updateAt: '2026-08-25T00:00:00.000Z',
 	})
 })
 
-test('public code-runs load falls back to D1 and hides when KV fails or there are no runs', async () => {
-	const fallback = await createEnv({
-		rows: [{ userId: 'a', month: '2026-08', eventCount: 12 }],
-	})
-	fallback.BUNDLE_ARTIFACTS_KV.store.clear()
-	expect(
-		await loadPublicCodeRunsWindow(
-			fallback,
-			new Date('2026-08-22T12:00:00.000Z'),
-		),
-	).toMatchObject({ previous: 12, current: 12 })
-
-	const kvDown = await createEnv({
-		rows: [{ userId: 'a', month: '2026-08', eventCount: 12 }],
-	})
+test('public code-runs load hides when KV fails or there are no completed days', async () => {
+	const kvDown = await seededEnv()
 	kvDown.BUNDLE_ARTIFACTS_KV.get = async () => {
 		throw new Error('kv down')
 	}
 	await expect(
-		refreshPublicCodeRunsWindow({
-			env: kvDown,
-			now: new Date('2026-08-22T00:00:00.000Z'),
-		}),
+		refreshPublicCodeRunsWindow({ env: kvDown, now: midday }),
 	).resolves.toEqual({ status: 'skipped', reason: 'kv_read_failed' })
 	expect(kvDown.BUNDLE_ARTIFACTS_KV.store.size).toBe(0)
-	expect(await loadPublicCodeRunsWindow(kvDown)).toBeNull()
+	expect(await loadPublicCodeRunsWindow(kvDown, midday)).toBeNull()
 
 	const empty = await createEnv()
 	await expect(
-		refreshPublicCodeRunsWindow({
-			env: empty,
-			now: new Date('2026-08-22T00:00:00.000Z'),
-		}),
+		refreshPublicCodeRunsWindow({ env: empty, now: midday }),
 	).resolves.toEqual({ status: 'skipped', reason: 'no_runs' })
-	expect(await loadPublicCodeRunsWindow(empty)).toBeNull()
+	expect(await loadPublicCodeRunsWindow(empty, midday)).toBeNull()
+
+	const todayOnly = await createEnv({
+		days: [{ day: '2026-08-24', eventCount: 99 }],
+	})
+	expect(await loadPublicCodeRunsWindow(todayOnly, midday)).toBeNull()
 })
 
-test('public code-runs load continues an expired window without writing KV', async () => {
-	const env = await createEnv({
-		rows: [{ userId: 'a', month: '2026-08', eventCount: 200 }],
-		window: {
-			previous: 100,
-			current: 150,
-			windowStart: '2026-08-21T00:00:00.000Z',
-			windowEnd: '2026-08-22T00:00:00.000Z',
-		},
+test('refresh replaces yesterday’s triple at the next UTC midnight without waiting for cron', async () => {
+	const env = await seededEnv({
+		start: 1030,
+		end: 1060,
+		updateAt: '2026-08-25T00:00:00.000Z',
 	})
-	const loaded = await loadPublicCodeRunsWindow(
-		env,
-		new Date('2026-08-22T02:00:00.000Z'),
-	)
-	expect(loaded).toEqual({
-		previous: 150,
-		current: 200,
-		windowStart: '2026-08-22T00:00:00.000Z',
-		windowEnd: '2026-08-23T00:00:00.000Z',
-	})
-	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
-		JSON.stringify({
-			previous: 100,
-			current: 150,
-			windowStart: '2026-08-21T00:00:00.000Z',
-			windowEnd: '2026-08-22T00:00:00.000Z',
-		}),
-	)
-})
-
-test('public code-runs load continues a still pair from a D1 SUM number, string, or bigint without writing KV', async () => {
-	const stored = {
-		previous: 257940,
-		current: 257940,
-		windowStart: '2026-08-24T17:00:18.000Z',
-		windowEnd: '2026-08-25T17:00:18.000Z',
-	}
-	const now = new Date('2026-08-24T19:26:00.000Z')
-	const continued = {
-		previous: 257940,
-		current: 257941,
-		windowStart: '2026-08-24T19:26:00.000Z',
-		windowEnd: '2026-08-25T19:26:00.000Z',
-	}
-
-	const numeric = await createEnv({
-		rows: [{ userId: 'a', month: '2026-08', eventCount: 257941 }],
-		window: stored,
-	})
-	expect(await loadPublicCodeRunsWindow(numeric, now)).toEqual(continued)
-	expect(numeric.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
-		JSON.stringify(stored),
-	)
-
-	const stringSum = await createEnv({
-		rows: [{ userId: 'a', month: '2026-08', eventCount: 257941 }],
-		window: stored,
-	})
-	withCoercedExecuteSum(stringSum, String)
-	expect(await loadPublicCodeRunsWindow(stringSum, now)).toEqual(continued)
+	const midnight = new Date('2026-08-25T00:00:00.000Z')
 	await expect(
-		refreshPublicCodeRunsWindow({ env: stringSum, now }),
+		refreshPublicCodeRunsWindow({ env, now: midnight }),
 	).resolves.toEqual({ status: 'rotated' })
-	expect(stringSum.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
-		JSON.stringify(continued),
-	)
-
-	const bigintSum = await createEnv({
-		rows: [{ userId: 'a', month: '2026-08', eventCount: 257941 }],
-		window: stored,
+	expect(await loadPublicCodeRunsWindow(env, midnight)).toEqual({
+		start: 1060,
+		end: 1159,
+		updateAt: '2026-08-26T00:00:00.000Z',
 	})
-	withCoercedExecuteSum(bigintSum, (total) => BigInt(Number(total)))
-	expect(await loadPublicCodeRunsWindow(bigintSum, now)).toEqual(continued)
 })
 
-test('public code-runs load and refresh reset a still pair when the fleet SUM drops', async () => {
-	const stored = {
-		previous: 257940,
-		current: 257940,
-		windowStart: '2026-08-24T17:00:18.000Z',
-		windowEnd: '2026-08-25T17:00:18.000Z',
+test('a cached regressing triple is served until updateAt', async () => {
+	const regression = {
+		start: 200,
+		end: 150,
+		updateAt: '2026-08-25T00:00:00.000Z',
 	}
-	const now = new Date('2026-08-24T20:15:00.000Z')
-	const reset = {
-		previous: 190213,
-		current: 190213,
-		windowStart: '2026-08-24T20:15:00.000Z',
-		windowEnd: '2026-08-25T20:15:00.000Z',
-	}
-	const env = await createEnv({
-		rows: [{ userId: 'a', month: '2026-08', eventCount: 190213 }],
-		window: stored,
-	})
-	expect(await loadPublicCodeRunsWindow(env, now)).toEqual(reset)
+	const env = await seededEnv(regression)
+	expect(await loadPublicCodeRunsWindow(env, midday)).toEqual(regression)
 	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
-		JSON.stringify(stored),
-	)
-	await expect(refreshPublicCodeRunsWindow({ env, now })).resolves.toEqual({
-		status: 'rotated',
-	})
-	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
-		JSON.stringify(reset),
+		JSON.stringify(regression),
 	)
 })

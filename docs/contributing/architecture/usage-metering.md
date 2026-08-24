@@ -15,12 +15,14 @@ Usage metering follows the repo-wide isolation invariant: every event carries a
 required `userId`, the Analytics Engine index is the `userId`, and the D1 rollup
 table is keyed by `user_id`. Admin and account reads stay scoped to one user.
 
-The homepage code-runs ticker is a documented exception: an anonymous
-`SUM(event_count)` of `execute` rows (no user ids) is replayed 24 hours delayed.
-The official `{ previous, current, windowStart, windowEnd }` pair lives at the
-platform KV key `public-code-runs:v1` on `BUNDLE_ARTIFACTS_KV`. Homepage GET
-does not write that key; the hourly `usage_aggregation` lane rotates it. The
-public payload never includes per-user rows. See
+The homepage code-runs ticker is a documented exception: an anonymous delayed
+lifetime total of fleet `execute` events (no user ids) is replayed across the
+current UTC day. Daily counts live in platform-owned `fleet_execute_days`. The
+official `{ start, end, updateAt }` triple — cumulative through the day before
+yesterday, cumulative through yesterday, and the next UTC midnight — is cached
+at `public-code-runs:v2` on `BUNDLE_ARTIFACTS_KV`. Homepage GET fills that cache
+from D1 when the key is missing or `updateAt` has passed; it does not latch a
+high-water mark. The public payload never includes per-user rows. See
 [Authorization](./authorization.md).
 
 ## The event schema
@@ -185,6 +187,8 @@ each chokepoint records exactly one event per metered unit, so sums are safe.
    **Local-dev direct fallback:** when `USAGE_EVENTS` is absent (local dev,
    tests), `recordUsage` upserts `usage_rollups` directly per event, so local
    admin pages and workers-unit tests work without Analytics Engine access.
+   `execute` events also increment today's `fleet_execute_days` row so the
+   homepage ticker has daily facts without Analytics Engine.
 
    The rollup is the cheap read path for month-to-date admin and cohort views:
    one point lookup per user, metric, and month.
@@ -247,9 +251,10 @@ Guarantees and rules:
 - If `userId` is empty, the event is skipped entirely. Callers on paths that can
   run without a user (for example anonymous gateway fetches) must guard with
   `if (userId)` and not invent placeholder ids.
-- The returned promise resolves quickly (one `writeDataPoint`, or one D1 upsert
-  in local dev). `await` it inline, or pass it to `ctx.waitUntil(...)` inside
-  Durable Objects when the caller must not block.
+- The returned promise resolves quickly (one `writeDataPoint`, or one or two D1
+  upserts in local dev — rollup plus `fleet_execute_days` for `execute`).
+  `await` it inline, or pass it to `ctx.waitUntil(...)` inside Durable Objects
+  when the caller must not block.
 
 ## Recipe: instrumenting a new chokepoint
 
@@ -328,34 +333,35 @@ Guarantees and rules:
   direct D1 queries when KV is unavailable. Usage is loaded for one selected
   account at a time, so admin reads stay O(1) per view as the user base grows.
 - **Public homepage ticker** (`GET /code-runs.json`, SSR on `/`): reads the
-  platform KV pair (or a still D1 sum when KV is empty) and interpolates
-  `previous → current` across the 24-hour window. The payload is the window pair
-  only — never per-user rows. Interpolation is deterministic from the window so
-  every visitor at a given clock time sees the same integer. Official `current`
-  appears at `windowEnd`. Each displayed step is +1. When the pair has at least
-  one tick per 3-second honesty slot, a backbone tick lands every slot at a
-  hashed phase so the cadence does not march on the clock. Leftover count (more
-  than the backbone) still warps into busy seconds and rolls through those
-  seconds without skipping, with hashed gaps so a busy second does not march on
-  even slots. It never passes `current`. When leftover budget cannot support a
+  cached `{ start, end, updateAt }` triple (or recomputes it from D1 when the
+  cache is missing or `now >= updateAt`) and interpolates `start → end` across
+  today (`[updateAt - 24h, updateAt)`). `end` is the cumulative fleet `execute`
+  total through yesterday; `start` is the same total through the day before
+  yesterday. Monthly `usage_rollups` fill only months **before** the earliest
+  `fleet_execute_days` row; today is stored hourly but never used in the public
+  payload. The payload is the triple only — never per-user rows. Interpolation
+  is deterministic from the triple so every visitor at a given clock time sees
+  the same integer. Official `end` appears at `updateAt`. Each displayed step is
+  +1. When the pair has at least one tick per 3-second honesty slot, a backbone
+  tick lands every slot at a hashed phase so the cadence does not march on the
+  clock. Leftover count (more than the backbone) still warps into busy seconds
+  and rolls through those seconds without skipping, with hashed gaps so a busy
+  second does not march on even slots. It never passes `end`. If `end < start`
+  (an Analytics Engine regression), the ticker shows `end` immediately — wobble
+  math cannot use a negative delta. When leftover budget cannot support a
   3-second integer backbone, the client moves honest progress toward the next
   tick instead of inventing +1s. The client schedules the next paint
   (`msUntilNextCodeRunsPaint`) rather than polling once a second;
   `prefers-reduced-motion` snaps and does not animate. A frozen tab (rAF gap,
   hidden, or a late timeout) snaps to the official count instead of rolling
   through every missed integer. Live leftover ticks in a busy second still step
-  +1; leftover catch-up delays stay under that freeze window. Homepage GET
-  continues an expired or still pair in memory when the fleet total has grown,
-  and resets a still or expired pair to a new still window when the fleet total
-  has dropped (an authoritative rollup recompute can land below a latched
-  high-water mark; `max(total, previous)` would freeze the ticker). It does not
-  write KV. The D1 `SUM(event_count)` for `metric = 'execute'` is coerced with
-  `Number()` the same way other rollup readers do — a `typeof === 'number'`
-  check treated D1 numeric strings as zero and froze the ticker on a still pair.
-  A tab that cannot paint a next tick refetches `/code-runs.json` (cache bypass)
-  instead of stopping for the rest of the session. The hourly
-  `usage_aggregation` refresh still persists the next official pair. Live
-  windows with a real delta still hold until `windowEnd`.
+  +1; leftover catch-up delays stay under that freeze window. A tab that cannot
+  paint a next tick waits until `updateAt` and refetches `/code-runs.json`
+  (cache bypass). If that fetch still returns the same triple (cron lag at
+  midnight), it retries about once a minute. The hourly `usage_aggregation` lane
+  syncs `fleet_execute_days` from Analytics Engine, then refreshes the cached
+  triple. Empty D1 (no daily rows, or no completed-day total) hides the ticker
+  (`window: null`).
 - **Fleet visibility** (`/admin/insights`, loader in
   `packages/worker/src/admin/fleet-usage-insights.ts`): bounded SQL over
   `usage_rollups` for the current UTC month — top-10 combined runtime duration

@@ -5,8 +5,8 @@ import { readJson } from '#client/routes/account-approval-shared.ts'
 
 export const codeRunsApiPath = routes.codeRunsApi.href()
 
-/** How long a stuck ticker waits before asking origin for a newer window. */
-export const codeRunsStillWindowRefreshMs = 60_000
+/** Retry after `updateAt` when origin still returns the same cached triple. */
+export const codeRunsWindowRefreshRetryMs = 60_000
 
 export async function fetchCodeRunsPayload(
 	signal?: AbortSignal,
