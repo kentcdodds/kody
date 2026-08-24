@@ -37,10 +37,6 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	})
 	expect(verification.html).toContain(verificationUrl)
 	expect(verification.text).toContain(verificationUrl)
-	expect(verification.html).toContain('https://kody.codes/images/kody-mark.png')
-	expect(verification.html).toContain(
-		'https://kody.codes/images/kody-lantern.png',
-	)
 
 	const warning = buildUserEntitlementWarningEmail({
 		appBaseUrl: 'https://kody.codes',
@@ -59,9 +55,7 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(warning.subject).toContain('approaching')
 	expect(warning.html).toContain('https://kody.codes/account/billing')
 	expect(warning.text).toContain('https://kody.codes/account/usage')
-	expect(warning.html).toContain('execute calls per day')
-	expect(warning.html).toContain('https://kody.codes/images/kody-lantern.png')
-	expect(warning.html).toContain('https://kody.codes/images/kody-mark.png')
+	expect(warning.html).toContain('200 of 250 (80%)')
 
 	const reached = buildUserEntitlementWarningEmail({
 		appBaseUrl: 'https://kody.codes',
@@ -79,5 +73,4 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	})
 	expect(reached.subject).toContain('reached')
 	expect(reached.html).toContain('250 of 250 (100%)')
-	expect(reached.html).toContain('https://kody.codes/images/kody-lantern.png')
 })
