@@ -2,7 +2,6 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
-import { listValues } from '#mcp/values/service.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
@@ -140,15 +139,7 @@ export async function loadSearchRowsAndRegistry(input: {
 					env: input.env,
 					userId: input.userId!,
 				}),
-			loadUserValues: () =>
-				listValues({
-					env: input.env,
-					userId: input.userId!,
-					storageContext: {
-						sessionId: input.callerContext.storageContext?.sessionId ?? null,
-						appId: input.callerContext.storageContext?.appId ?? null,
-					},
-				}),
+			loadUserValues: async () => [],
 			loadUserIntegrations: () =>
 				listJoinedIntegrations({
 					env: input.env,

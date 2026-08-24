@@ -44,6 +44,8 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(getGuideBySlug('salesforce')?.id).toBe('provider_salesforce')
 	expect(getGuideById('provider_salesforce')?.slug).toBe('salesforce')
 	expect(getGuideById('provider_salesforce')?.provider).toBe('Salesforce')
+	expect(getGuideById('values')?.unadvertised).toBe(true)
+	expect(listGuides().some((guide) => guide.id === 'values')).toBe(false)
 
 	// Web ordering: platform guides first, then provider guides sorted by
 	// provider name.

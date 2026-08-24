@@ -1,8 +1,8 @@
 # Search
 
-The **search** tool finds **built-in capabilities**, **saved packages**,
-**persisted values**, **saved integrations**, and **user secret references**
-(metadata only, not secret values).
+The **search** tool finds **built-in capabilities**, **saved packages**, **saved
+integrations**, and **user secret references** (metadata only, not secret
+values).
 
 **Community package listings** are not included. Use the `community` domain
 (`community_search`, `community_get`) or the public `/community` pages. See
@@ -53,8 +53,8 @@ to resolve raw operations directly.
 Pass optional **`domain`** with a capability domain id:
 
 - **With `query`** — ranks only that domain's capabilities. User-owned entities
-  (packages, values, integrations, secrets, retriever results) are excluded
-  because they have no domain.
+  (packages, integrations, secrets, retriever results) are excluded because they
+  have no domain.
 - **Without `query`** — lists the domain's capabilities in curated registry
   order (with inlined call shapes for the top hits), which completes the two-hop
   browse flow: broad query → domain overview → domain listing.
@@ -95,10 +95,10 @@ a tight size budget does not drop them.
 ## Entity indexes and detail
 
 To inspect one hit, call **search** again with **`entity`** set to
-`"{id}:{type}"` where **`type`** is `capability`, `value`, `integration`,
-`package`, or `secret`. Capability entities additionally include a ready-to-run
-**execute** snippet plus `inputTypeDefinition` / `outputTypeDefinition`. OpenAPI
-capability titles use `METHOD path`; the operation slug stays in the entity ref.
+`"{id}:{type}"` where **`type`** is `capability`, `integration`, `package`, or
+`secret`. Capability entities additionally include a ready-to-run **execute**
+snippet plus `inputTypeDefinition` / `outputTypeDefinition`. OpenAPI capability
+titles use `METHOD path`; the operation slug stays in the entity ref.
 
 Pass an **array of 1–10 entity refs** when you need several related details at
 once (for example a create/poll OpenAPI pair). Each ref resolves independently:
@@ -109,7 +109,6 @@ Examples:
 
 - `coding_guide_get:capability`
 - `["openapi:canva:createdesignexportjob:capability", "openapi:canva:getdesignexportjob:capability"]`
-- `user:preferred_org:value`
 - `github:integration`
 - `my-package:package`
 - `550e8400-e29b-41d4-a716-446655440000:package`

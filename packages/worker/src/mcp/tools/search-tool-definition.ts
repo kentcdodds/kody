@@ -9,9 +9,9 @@ import {
 
 export const searchTool = {
 	name: 'search',
-	title: 'Search Capabilities, Packages, Values, Integrations, and Secrets',
+	title: 'Search Capabilities, Packages, Integrations, and Secrets',
 	description: `
-Find **built-in capabilities**, **saved packages**, **persisted values**,
+Find **built-in capabilities**, **saved packages**,
 **saved integrations**, and **user secret references** (metadata only)
 before \`execute\`.
 
@@ -32,7 +32,7 @@ owner-matching hosted package URL resolves as exact user-scoped package identity
 without competing semantic matches. Hidden exact queries require
 \`includeHiddenPackages: true\`.
 
-**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`value\`
+**entity: "{id}:{type}"** — detail for one hit (\`capability\`
 | \`integration\` | \`package\` | \`secret\`), or an array of 1–10 refs to batch
 related lookups in one call. Package detail defaults to a slim index (export
 subpaths, job/retriever names, README Intent). Capability detail includes an
@@ -58,7 +58,6 @@ Example arguments:
 - \`{ "domain": "jobs" }\`
 - \`{ "entity": "coding_guide_get:capability" }\`
 - \`{ "entity": ["openapi:canva:createdesignexportjob:capability", "openapi:canva:getdesignexportjob:capability"] }\`
-- \`{ "entity": "user:preferred_org:value" }\`
 - \`{ "entity": "github:integration" }\`
 
 https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
@@ -86,7 +85,7 @@ export const searchToolInputSchema = {
 		])
 		.optional()
 		.describe(
-			'Optional exact entity reference "{id}:{type}" (capability, package, secret, value, or integration), or an array of 1–10 refs to batch related detail lookups.',
+			'Optional exact entity reference "{id}:{type}" (capability, package, secret, or integration), or an array of 1–10 refs to batch related detail lookups.',
 		),
 	domain: z
 		.string()

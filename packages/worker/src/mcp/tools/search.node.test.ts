@@ -332,18 +332,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 				updatedAt: '2026-04-20T00:00:00.000Z',
 			},
 		],
-		userValueRows: [
-			{
-				name: 'preferred-alpha',
-				scope: 'user',
-				value: 'beta',
-				description: 'gamma delta',
-				appId: null,
-				createdAt: '2026-04-20T00:00:00.000Z',
-				updatedAt: '2026-04-20T00:00:00.000Z',
-				ttlMs: null,
-			},
-		],
+		userValueRows: [],
 		userIntegrationRows: [
 			createJoinedIntegration({
 				name: 'github',
@@ -371,7 +360,7 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 	})
 
 	expect(result.offline).toBe(true)
-	expect(result.matches).toHaveLength(5)
+	expect(result.matches).toHaveLength(4)
 	expect(result.matches).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
@@ -381,10 +370,6 @@ test('searchUnified ranks mixed search rows through one shared pipeline', async 
 			expect.objectContaining({
 				type: 'package',
 				packageId: 'pkg-1',
-			}),
-			expect.objectContaining({
-				type: 'value',
-				name: 'preferred-alpha',
 			}),
 			expect.objectContaining({
 				type: 'integration',
@@ -1593,33 +1578,30 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 		kodyId: 'sonos-setup-notes',
 	})
 
-	const genericValue = await searchUnified({
+	const genericSecret = await searchUnified({
 		env: {} as Env,
-		query: 'show my webhook api key value',
+		query: 'show my webhook api key',
 		limit: 5,
 		userId: 'user-1',
 		registry,
 		optionalRows: {
 			packageRows: [],
-			userSecretRows: [],
-			userValueRows: [
+			userSecretRows: [
 				{
 					name: 'webhook_api_key',
 					scope: 'user',
-					value: 'secret-value',
-					description: 'Webhook API key value for outbound hooks',
+					description: 'Webhook API key for outbound hooks',
 					appId: null,
-					createdAt: '2026-04-20T00:00:00.000Z',
 					updatedAt: '2026-04-20T00:00:00.000Z',
-					ttlMs: null,
 				},
 			],
+			userValueRows: [],
 			userIntegrationRows: [],
 		},
 	})
-	expect(genericValue.intent.task.name).toBe('inspect')
-	expect(genericValue.matches[0]).toMatchObject({
-		type: 'value',
+	expect(genericSecret.intent.task.name).toBe('inspect')
+	expect(genericSecret.matches[0]).toMatchObject({
+		type: 'secret',
 		name: 'webhook_api_key',
 	})
 })

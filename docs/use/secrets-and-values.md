@@ -1,4 +1,4 @@
-# Secrets, values, and host approval
+# Secrets and host approval
 
 ## Secrets
 
@@ -151,20 +151,15 @@ work for one-off grants. For community forks, reviewing the source and calling
 
 ## Package config vs package storage
 
-Package-scoped secrets and app-scoped values are **package config**: they are
-keyed by the saved package id (secret buckets for the package; value buckets use
-`appId` set to that package id). They hold credentials and readable settings,
-not application records.
+Package-scoped secrets are **package config**: they are keyed by the saved
+package id. They hold credentials, not application records.
 
 Durable package data — rows, documents, checkpoints — lives in the package
 storage bucket via `packageStorage()`. See
 [Package state model](./packages.md#package-state-model).
 
-## Values
+## Named state
 
-Do not write new named config with `value_set`. Existing rows stay readable so
-you can migrate them to memories, `packageStorage()`, repos, secrets, or
-integrations. Load `coding_guide_get` with `guide: "values"` (or open
-[Persist outside values](../guides/values.md)) before moving a name. The account
-section nav omits Values; open `/account/values` directly while retiring
-leftovers.
+Durable facts and preferences belong in memories. Package runtime state and
+knobs belong in `packageStorage()`. Versioned config belongs in a repo.
+Credentials belong in secrets. OAuth client ids belong in integrations.

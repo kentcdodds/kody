@@ -49,3 +49,9 @@ a surface. Shared D1 write traffic for `value_entries` goes away
 becomes moot when the tables drop). Community listings and packages that still
 say `value_get` need a migration pass. Revisit only if a real cross-package
 config need appears that memories plus a settings package cannot cover.
+
+## LATER-NOTE (2026-08-24)
+
+Writes and agent-facing surfaces are gone. `value_get` / `value_list` /
+`value_delete` remain as an unadvertised drain until the D1 tables drop. See the
+[values retirement runbook](../architecture/values-retirement-runbook.md).

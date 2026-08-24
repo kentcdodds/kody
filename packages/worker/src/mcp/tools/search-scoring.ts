@@ -383,7 +383,6 @@ function scoreTaskAffinity(
 			break
 		case 'setup':
 			if (candidate.type === 'integration') taskAffinity += 0.18
-			if (candidate.type === 'value') taskAffinity += 0.06
 			if (candidate.type === 'capability') taskAffinity += 0.05
 			break
 		case 'inspect': {
@@ -391,7 +390,7 @@ function scoreTaskAffinity(
 			const liveStatusInspect = isLiveStatusInspect(intent)
 			if (packageOrientedInspect) {
 				if (candidate.type === 'capability') taskAffinity += 0.04
-				if (candidate.type === 'value' || candidate.type === 'integration') {
+				if (candidate.type === 'integration') {
 					taskAffinity += 0.06
 				}
 				if (candidate.type === 'package') taskAffinity += 0.16
@@ -411,7 +410,7 @@ function scoreTaskAffinity(
 				if (candidate.type === 'capability') {
 					taskAffinity += 0.16 + Math.min(0.16, inspectionKeyHits * 0.08)
 				}
-				if (candidate.type === 'value' || candidate.type === 'integration') {
+				if (candidate.type === 'integration') {
 					taskAffinity += 0.06
 				}
 				if (candidate.type === 'package') {
@@ -419,7 +418,7 @@ function scoreTaskAffinity(
 					if (inspectionKeyHits === 0) taskAffinity -= 0.1
 				}
 			} else {
-				if (candidate.type === 'value' || candidate.type === 'integration') {
+				if (candidate.type === 'integration') {
 					taskAffinity += 0.12
 				}
 				if (candidate.type === 'package') taskAffinity += 0.05
@@ -439,7 +438,6 @@ function scoreTaskAffinity(
 				}
 			}
 			if (candidate.type === 'capability') taskAffinity += 0.06
-			if (candidate.type === 'value') taskAffinity += 0.04
 			break
 		case 'unknown':
 			break

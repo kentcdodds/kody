@@ -121,8 +121,9 @@ export function getGuideById(id: string): Guide | null {
  * provider name — the order the web index renders.
  */
 export function listGuides(): ReadonlyArray<Guide> {
-	const platform = guides.filter((guide) => guide.category === 'platform')
-	const provider = guides
+	const advertised = guides.filter((guide) => !guide.unadvertised)
+	const platform = advertised.filter((guide) => guide.category === 'platform')
+	const provider = advertised
 		.filter((guide) => guide.category === 'provider')
 		.toSorted((a, b) => (a.provider ?? '').localeCompare(b.provider ?? ''))
 	return [...platform, ...provider]

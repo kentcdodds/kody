@@ -54,10 +54,10 @@ test('popular package MCP instructions omit cold start, list kody ids under budg
 		popularPackages: [{ kodyId: 'notes', description: 'Scratch notes' }],
 		userOverlay: 'Prefer concise replies.',
 		domains: [],
-		retiringNoticeIds: new Set(['values']),
+		retiringNoticeIds: new Set(),
 	})
-	expect(affected).toContain('Retiring primitives')
-	expect(affected).toContain('coding_guide_get({ guide: "values" })')
+	expect(affected).not.toContain('Retiring primitives')
+	expect(affected).not.toContain('coding_guide_get({ guide: "values" })')
 })
 
 test('domain instructions list builtins and summarize connected bindings', () => {

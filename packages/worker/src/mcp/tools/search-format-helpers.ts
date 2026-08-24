@@ -106,10 +106,6 @@ export function formatInlineTypeDefinition(typeDefinition: string) {
 	return typeDefinition.replace(/\s+/g, ' ').trim()
 }
 
-export function buildValueUsage(name: string, scope: string) {
-	return `kody.value_get({ name: ${JSON.stringify(name)}, scope: ${JSON.stringify(scope)} })`
-}
-
 export function buildIntegrationUsage(name: string) {
 	return `kody.integration_get({ name: ${JSON.stringify(name)} })`
 }
@@ -153,7 +149,7 @@ export function parseEntityRef(entity: string): {
 	const separator = trimmed.lastIndexOf(':')
 	if (separator <= 0 || separator === trimmed.length - 1) {
 		throw new McpCallerError(
-			'Entity must use the format "{id}:{type}" where type is capability, package, secret, value, or integration.',
+			'Entity must use the format "{id}:{type}" where type is capability, package, secret, or integration.',
 		)
 	}
 	const id = trimmed.slice(0, separator).trim()
@@ -162,11 +158,10 @@ export function parseEntityRef(entity: string): {
 		type !== 'capability' &&
 		type !== 'package' &&
 		type !== 'secret' &&
-		type !== 'value' &&
 		type !== 'integration'
 	) {
 		throw new McpCallerError(
-			'Entity type must be one of: capability, package, secret, value, or integration.',
+			'Entity type must be one of: capability, package, secret, or integration.',
 		)
 	}
 	if (!id) {
