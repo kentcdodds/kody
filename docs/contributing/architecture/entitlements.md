@@ -183,12 +183,16 @@ the same cold zero-init path):
   same `readAdminEntitlementConsumption` helper over a bounded sweep of the top
   ~15 active users by current-month event count. The same hourly lane also
   emails verified person accounts when usage crosses 80% or 100% of their
-  effective plan (transactional template). Throttle is one approaching email and
-  one reached email per user per UTC day, listing every resource currently in
-  that bucket — not one mail per entitlement. Candidate selection is the top ~80
-  accounts by current-month event count plus high package/secret stock, capped
-  at 100. Operator fleet mail is unchanged and still runs if user warning sends
-  fail.
+  effective plan (transactional template). Throttle is one mail per crossing of
+  a given percentage on a specific entitlement: staying at 10/10 packages does
+  not mail again the next UTC day. Dropping below that threshold and climbing
+  back over it is a new instance. Same-hour crossings of the same kind still
+  batch into one mail. KV prefix `entitlement-warning-user:v3` stores
+  `{prefix}:{userId}:{kind}:{resource}`. A remaining `v2` daily key for the
+  same user and kind counts as a claim for every resource currently in that
+  bucket. Candidate selection is the top ~80 accounts by current-month event
+  count plus high package/secret stock, capped at 100. Operator fleet mail is
+  unchanged and still runs if user warning sends fail.
 
 `readEntitlementResourceUsage` counts only APP_DB-backed row resources (`repos`,
 `saved_packages`, `secrets`). Resources whose authority is elsewhere
