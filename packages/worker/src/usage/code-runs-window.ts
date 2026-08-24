@@ -3,6 +3,7 @@ import {
 	isStillPublicCodeRunsWindow,
 	parsePublicCodeRunsWindow,
 	publicCodeRunsWindowMs,
+	stillPublicCodeRunsWindow,
 	type PublicCodeRunsWindow,
 } from '#universal/code-runs.ts'
 
@@ -32,7 +33,7 @@ export async function loadPublicCodeRunsWindow(
 	}
 	const total = await sumExecuteEventCount(env)
 	if (total === null || total <= 0) return null
-	return stillWindow(total, now)
+	return stillPublicCodeRunsWindow(total, now)
 }
 
 export async function refreshPublicCodeRunsWindow(input: {
@@ -58,30 +59,33 @@ export async function refreshPublicCodeRunsWindow(input: {
 			return { status: 'skipped', reason: 'kv_read_failed' }
 		}
 		if (existing.status === 'missing') {
-			await writeStoredWindow(kv, stillWindow(total, now))
+			await writeStoredWindow(kv, stillPublicCodeRunsWindow(total, now))
 			return { status: 'initialized' }
 		}
 		const existingWindow = existing.window
-
+		const still = isStillPublicCodeRunsWindow(existingWindow)
 		const windowEndMs = Date.parse(existingWindow.windowEnd)
 		const beforeEnd =
 			Number.isFinite(windowEndMs) && now.getTime() < windowEndMs
-		const stillGrowing =
-			isStillPublicCodeRunsWindow(existingWindow) &&
-			total > existingWindow.current
+		const stillGrowing = still && total > existingWindow.current
+		const stillRegressed = still && total < existingWindow.current
 		// A still pair is a bootstrap (KV miss or first write). Holding it
-		// for 24h freezes the homepage ticker even while executes accrue.
+		// for 24h freezes the homepage ticker even while executes accrue,
+		// and `current = max(total, previous)` latches a stale high-water
+		// mark when the fleet SUM later drops (authoritative AE recompute).
 		// Live windows still hold until windowEnd so interpolation stays
 		// deterministic for every visitor.
-		if (beforeEnd && !stillGrowing) {
+		if (beforeEnd && !stillGrowing && !stillRegressed) {
 			return { status: 'held' }
 		}
+		if (total <= existingWindow.current) {
+			await writeStoredWindow(kv, stillPublicCodeRunsWindow(total, now))
+			return { status: 'rotated' }
+		}
 
-		const previous = existingWindow.current
-		const current = Math.max(total, previous)
 		await writeStoredWindow(kv, {
-			previous,
-			current,
+			previous: existingWindow.current,
+			current: total,
 			windowStart: now.toISOString(),
 			windowEnd: new Date(now.getTime() + publicCodeRunsWindowMs).toISOString(),
 		})
@@ -117,15 +121,6 @@ async function writeStoredWindow(
 	window: PublicCodeRunsWindow,
 ) {
 	await kv.put(publicCodeRunsKvKey, JSON.stringify(window))
-}
-
-function stillWindow(total: number, now: Date): PublicCodeRunsWindow {
-	return {
-		previous: total,
-		current: total,
-		windowStart: now.toISOString(),
-		windowEnd: new Date(now.getTime() + publicCodeRunsWindowMs).toISOString(),
-	}
 }
 
 async function sumExecuteEventCount(
