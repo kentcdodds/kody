@@ -156,8 +156,8 @@ test('refreshPublicCodeRunsWindow initializes a still pair, unsticks when the fl
 	expect(
 		await loadPublicCodeRunsWindow(env, new Date('2026-08-23T12:01:00.000Z')),
 	).toEqual({
-		previous: 150,
-		current: 150,
+		previous: 50,
+		current: 50,
 		windowStart: '2026-08-23T12:01:00.000Z',
 		windowEnd: '2026-08-24T12:01:00.000Z',
 	})
@@ -273,4 +273,34 @@ test('public code-runs load continues a still pair from a D1 SUM number, string,
 	})
 	withCoercedExecuteSum(bigintSum, (total) => BigInt(Number(total)))
 	expect(await loadPublicCodeRunsWindow(bigintSum, now)).toEqual(continued)
+})
+
+test('public code-runs load and refresh reset a still pair when the fleet SUM drops', async () => {
+	const stored = {
+		previous: 257940,
+		current: 257940,
+		windowStart: '2026-08-24T17:00:18.000Z',
+		windowEnd: '2026-08-25T17:00:18.000Z',
+	}
+	const now = new Date('2026-08-24T20:15:00.000Z')
+	const reset = {
+		previous: 190213,
+		current: 190213,
+		windowStart: '2026-08-24T20:15:00.000Z',
+		windowEnd: '2026-08-25T20:15:00.000Z',
+	}
+	const env = await createEnv({
+		rows: [{ userId: 'a', month: '2026-08', eventCount: 190213 }],
+		window: stored,
+	})
+	expect(await loadPublicCodeRunsWindow(env, now)).toEqual(reset)
+	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(stored),
+	)
+	await expect(refreshPublicCodeRunsWindow({ env, now })).resolves.toEqual({
+		status: 'rotated',
+	})
+	expect(env.BUNDLE_ARTIFACTS_KV.store.get(publicCodeRunsKvKey)).toBe(
+		JSON.stringify(reset),
+	)
 })

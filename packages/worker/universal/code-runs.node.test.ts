@@ -313,6 +313,14 @@ test('continuePublicCodeRunsWindow unsticks still and expired pairs without writ
 		windowEnd: '2026-08-22T12:00:00.000Z',
 	})
 	expect(
+		continuePublicCodeRunsWindow({ stored: still, total: 80, now }),
+	).toEqual({
+		previous: 80,
+		current: 80,
+		windowStart: '2026-08-21T12:00:00.000Z',
+		windowEnd: '2026-08-22T12:00:00.000Z',
+	})
+	expect(
 		continuePublicCodeRunsWindow({
 			stored: window,
 			total: 2000,
@@ -330,5 +338,17 @@ test('continuePublicCodeRunsWindow unsticks still and expired pairs without writ
 		current: 2000,
 		windowStart: '2026-08-22T00:00:00.000Z',
 		windowEnd: '2026-08-23T00:00:00.000Z',
+	})
+	expect(
+		continuePublicCodeRunsWindow({
+			stored: window,
+			total: 900,
+			now: new Date('2026-08-22T01:00:00.000Z'),
+		}),
+	).toEqual({
+		previous: 900,
+		current: 900,
+		windowStart: '2026-08-22T01:00:00.000Z',
+		windowEnd: '2026-08-23T01:00:00.000Z',
 	})
 })
