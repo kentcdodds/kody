@@ -606,6 +606,39 @@ test('browser Sentry filters drop resolveFrame fetch network TypeErrors (KODY-CL
 			}),
 		),
 	).toBeNull()
+	// Safari often keeps only the immediate fetchFrameResolve caller.
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [{ type: 'TypeError', value: 'Load failed' }],
+				},
+			},
+			Object.assign(new TypeError('Load failed'), {
+				stack: 'fetchFrameResolve@https://kody.codes/client-entry.js:3:61000',
+			}),
+		),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: 'Load failed',
+						stacktrace: {
+							frames: [
+								{
+									function: 'fetchFrameResolve',
+									filename: '../client/frame-resolve.ts',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
 	// Generic fetch TypeErrors without resolveFrame must stay visible.
 	expect(
 		filterBrowserSentryEvent({

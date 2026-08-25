@@ -857,7 +857,8 @@ export function filterSyntaxHighlightCoreDynamicImportFailureSentryEvent<
  * client hydration error after a successful GET of the same frame URL
  * (KODY-CLOUDFLARE-5Y, Mobile Safari on `/@kody/planetscale`). External
  * connectivity blips — not an app defect. Match only when a stack frame names
- * `resolveFrame` so other fetch TypeErrors stay Sentry-visible.
+ * `resolveFrame` or `fetchFrameResolve` so other fetch TypeErrors stay
+ * Sentry-visible.
  */
 export function isResolveFrameFetchNetworkSentryEvent(
 	event: SentryErrorEventLike,
@@ -884,12 +885,13 @@ export function isResolveFrameFetchNetworkSentryEvent(
 	if (!networkFromException && !networkFromEvent) return false
 
 	if (errorStackMentionsResolveFrame(originalException)) return true
-	return sentryEventStackFrameFunctions(event).some((name) =>
-		name.includes('resolveFrame'),
+	return sentryEventStackFrameFunctions(event).some(
+		(name) =>
+			name.includes('resolveFrame') || name.includes('fetchFrameResolve'),
 	)
 }
 
-/** Pre-SDK buffer gate: network TypeError whose stack names `resolveFrame`. */
+/** Pre-SDK buffer gate: network TypeError from resolveFrame / fetchFrameResolve. */
 export function isResolveFrameFetchNetworkError(error: unknown) {
 	return (
 		isBrowserFetchNetworkError(error) && errorStackMentionsResolveFrame(error)
