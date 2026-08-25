@@ -60,6 +60,7 @@ test('CodeRunsTicker defers scheduleNext through queueTask so setup never calls 
 		queuedTask?.(abort.signal)
 
 		expect(globalThis.requestAnimationFrame).toHaveBeenCalled()
+		expect(globalThis.setTimeout).toHaveBeenCalled()
 	} finally {
 		abort.abort()
 		globalThis.document = previousDocument
