@@ -16,7 +16,7 @@ export const repoEditFilesCapability = defineDomainCapability(
 	{
 		name: 'repo_edit_files',
 		description: [
-			'Apply a batch of file-level edits in an active repo session: write, replace, writeJson, delete, or move.',
+			'Apply a batch of file-level edits in an active repo session: write, replace, writeJson, delete, or move. Same-path write/replace/writeJson edits in one call compose in order against each prior result.',
 			fileLevelApiNote,
 			'Each content-changing edit is subject to a 10 MiB per-file size limit on the planned result.',
 			'Edits mutate the live session overlay only; pair with `repo_commit`, `repo_run_checks`, and `repo_publish_session` to validate and publish.',

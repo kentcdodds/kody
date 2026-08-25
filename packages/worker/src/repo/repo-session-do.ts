@@ -45,6 +45,7 @@ import {
 	loadPublishedSourceSnapshot,
 	writePublishedSourceSnapshot,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
+import { planRepoSessionContentEdits } from './plan-repo-session-content-edits.ts'
 import { searchRepoWorkspace } from './repo-session-search.ts'
 import { repoSessionRpc as createRepoSessionRpc } from './repo-session-rpc.ts'
 import {
@@ -1103,7 +1104,11 @@ class RepoSessionBase extends DurableObject<Env> {
 			edits: [],
 		}
 		if (contentEdits.length > 0) {
-			const plan = await this.state.planEdits(
+			// @cloudflare/shell planEdits reads every instruction against the
+			// file at batch start, so same-path writes overwrite one another.
+			// Plan through a staged overlay so sequential edits observe prior
+			// results, matching applyUnifiedDiff and the batch contract.
+			const plan = await planRepoSessionContentEdits(
 				contentEdits.map((edit) => {
 					const path = resolveRepoWorkspacePath(
 						edit.path,
@@ -1149,6 +1154,7 @@ class RepoSessionBase extends DurableObject<Env> {
 						}
 					}
 				}),
+				async (path) => (await this.workspace.readFile(path)) ?? null,
 			)
 			for (const plannedEdit of plan.edits) {
 				if (!plannedEdit.changed) continue
