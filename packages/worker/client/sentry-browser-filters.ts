@@ -566,6 +566,85 @@ export function filterChromeExtensionClientDestroyedSentryEvent<
 }
 
 /**
+ * Some Chrome extensions wrap `performance` accessors in a recursive
+ * `Performance.get` proxy and blow the call stack on the host page. Sentry
+ * attributes the RangeError to the document because the promise rejects in
+ * page context, but every real frame is `chrome-extension://…` (plus
+ * engine-native `<anonymous>` / `[native code]` frames). Signature from
+ * production issues 7690314544 / 7690316805 (`chrome-extension://nmpbkb…
+ * /data/content_script/page_context/inject.js`).
+ *
+ * Match is intentionally narrow: Maximum call stack size exceeded wording,
+ * at least one `chrome-extension:` frame, and every reported frame URL is
+ * either `chrome-extension:` or anonymous/native. Never blanket-drop stack
+ * overflows that include first-party or http(s) frames.
+ */
+const chromeExtensionCallStackExceededMessage =
+	/^(?:(?:RangeError|Error):\s*)?Maximum call stack size exceeded\.?$/i
+
+export function isChromeExtensionCallStackExceededMessage(message: string) {
+	return chromeExtensionCallStackExceededMessage.test(message.trim())
+}
+
+export function isAnonymousOrNativeStackFrameUrl(url: string) {
+	const trimmed = url.trim()
+	return (
+		trimmed.length === 0 ||
+		trimmed === '<anonymous>' ||
+		trimmed === '[native code]' ||
+		trimmed === 'native'
+	)
+}
+
+export function isChromeExtensionOrAnonymousStackFrameUrl(url: string) {
+	return (
+		isAnonymousOrNativeStackFrameUrl(url) || isChromeExtensionStackFrameUrl(url)
+	)
+}
+
+export function isChromeExtensionCallStackExceededError(error: unknown) {
+	if (typeof error === 'string') {
+		return isChromeExtensionCallStackExceededMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isChromeExtensionCallStackExceededMessage(error.message)
+}
+
+export function isChromeExtensionCallStackExceededSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	const hasCallStackMessage =
+		isChromeExtensionCallStackExceededError(originalException) ||
+		event.exception?.values?.some(
+			(value) =>
+				value.type === 'RangeError' &&
+				typeof value.value === 'string' &&
+				isChromeExtensionCallStackExceededMessage(value.value),
+		) ||
+		sentryEventMessages(event).some(
+			(message) =>
+				typeof message === 'string' &&
+				isChromeExtensionCallStackExceededMessage(message),
+		)
+	if (!hasCallStackMessage) return false
+	const frameUrls = sentryEventStackFrameUrls(event)
+	if (frameUrls.length === 0) return false
+	if (!frameUrls.some(isChromeExtensionStackFrameUrl)) return false
+	return frameUrls.every(isChromeExtensionOrAnonymousStackFrameUrl)
+}
+
+export function filterChromeExtensionCallStackExceededSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isChromeExtensionCallStackExceededSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
+/**
  * Twitter/X iOS in-app browser chrome (`updateFooterPositions` /
  * `updateGapFiller`) references a host-page `CONFIG` global that Kody never
  * defines. WebKit reports it as an unhandled `ReferenceError` attributed to
@@ -895,6 +974,14 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	}
 	if (
 		filterChromeExtensionClientDestroyedSentryEvent(
+			event,
+			originalException,
+		) === null
+	) {
+		return null
+	}
+	if (
+		filterChromeExtensionCallStackExceededSentryEvent(
 			event,
 			originalException,
 		) === null

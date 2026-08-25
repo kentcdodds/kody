@@ -372,6 +372,77 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 			exception: {
 				values: [
 					{
+						type: 'RangeError',
+						value: 'Maximum call stack size exceeded',
+						stacktrace: {
+							frames: [
+								{
+									function: 'Performance.get',
+									filename:
+										'chrome-extension://nmpbkbkalejlobohneicicgoojjokopi/data/content_script/page_context/inject.js',
+								},
+								{
+									function: 'Reflect.get',
+									filename: '<anonymous>',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'RangeError',
+						value: 'Maximum call stack size exceeded',
+						stacktrace: {
+							frames: [
+								{
+									function: 'Performance.get',
+									filename:
+										'chrome-extension://nmpbkbkalejlobohneicicgoojjokopi/data/content_script/page_context/inject.js',
+								},
+								{
+									function: 'boot',
+									filename: 'https://kody.codes/assets/entry.js',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'RangeError',
+						value: 'Maximum call stack size exceeded',
+						stacktrace: {
+							frames: [
+								{
+									function: 'scheduleNext',
+									filename: '../client/code-runs-ticker.tsx',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
 						type: 'ReferenceError',
 						value: 'CONFIG is not defined',
 						stacktrace: {
