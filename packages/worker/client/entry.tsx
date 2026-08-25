@@ -10,6 +10,7 @@ import {
 	initSentryClient,
 } from '#client/sentry-client.ts'
 import { AppRoot, APP_ROOT_ENTRY_ID } from './app-root.tsx'
+import { ensureConstructableStylesheets } from './ensure-constructable-stylesheets.ts'
 import { ensureCryptoRandomUUID } from './ensure-crypto-random-uuid.ts'
 import { ensureNavigationApi } from './ensure-navigation-api.ts'
 
@@ -18,6 +19,9 @@ ensureCryptoRandomUUID()
 // Remix `run()` calls window.navigation.updateCurrentEntry; Safari < 26.2 and
 // iOS in-app browsers omit the Navigation API entirely.
 ensureNavigationApi()
+// Remix StyleManager uses `new CSSStyleSheet()` + adoptedStyleSheets; Safari
+// / iOS before 16.4 throw TypeError: Illegal constructor (KODY-CLOUDFLARE-63).
+ensureConstructableStylesheets()
 initSentryClient(document)
 
 const clientRegistry: Record<string, typeof AppRoot> = {
