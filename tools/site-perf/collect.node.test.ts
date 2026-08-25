@@ -1,5 +1,9 @@
-import { expect, test } from 'vitest'
-import { classifySitePerf, type SitePerfBudget } from './collect.ts'
+import { expect, test, vi } from 'vitest'
+import {
+	classifySitePerf,
+	collectSitePerf,
+	type SitePerfBudget,
+} from './collect.ts'
 
 const budget: SitePerfBudget = {
 	htmlBytes: 1000,
@@ -88,4 +92,32 @@ test('classifySitePerf scores healthy landing signals and flags cache, LCP, Shik
 			],
 		}).verdict,
 	).toBe('ok')
+})
+
+test('collectSitePerf keeps homepage classify when extra landing probes fail', async () => {
+	const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+		const url = String(input)
+		if (new URL(url).pathname === '/') {
+			return new Response(healthyHtml, {
+				headers: {
+					'Cache-Control': 'public, max-age=60, stale-while-revalidate=300',
+					Vary: 'Cookie',
+					'Server-Timing': 'session;dur=1, ssr;dur=4',
+				},
+			})
+		}
+		throw new Error(`extra landing probe failed: ${url}`)
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		const report = await collectSitePerf({
+			url: 'https://kody.codes/',
+			budget,
+		})
+		expect(report.pages).toEqual([])
+		expect(report.verdict).toBe('ok')
+		expect(report.findings).toEqual([])
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })

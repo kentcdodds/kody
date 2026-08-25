@@ -190,22 +190,26 @@ async function byteLengthOf(url: string): Promise<number | null> {
 
 const extraLandingPaths = ['/onboarding', '/guides/how-kody-works'] as const
 
-async function probePage(url: string): Promise<SitePerfPageProbe> {
-	const startedAt = performance.now()
-	const response = await fetch(url, {
-		headers: { Accept: 'text/html' },
-		redirect: 'follow',
-	})
-	const ttfbMs = Math.round(performance.now() - startedAt)
-	const html = await response.text()
-	return {
-		url: response.url || url,
-		htmlBytes: new TextEncoder().encode(html).byteLength,
-		cacheControl: response.headers.get('Cache-Control'),
-		ttfbMs,
-		serverTiming: parseServerTimingHeader(
-			response.headers.get('Server-Timing'),
-		),
+async function probePage(url: string): Promise<SitePerfPageProbe | null> {
+	try {
+		const startedAt = performance.now()
+		const response = await fetch(url, {
+			headers: { Accept: 'text/html' },
+			redirect: 'follow',
+		})
+		const ttfbMs = Math.round(performance.now() - startedAt)
+		const html = await response.text()
+		return {
+			url: response.url || url,
+			htmlBytes: new TextEncoder().encode(html).byteLength,
+			cacheControl: response.headers.get('Cache-Control'),
+			ttfbMs,
+			serverTiming: parseServerTimingHeader(
+				response.headers.get('Server-Timing'),
+			),
+		}
+	} catch {
+		return null
 	}
 }
 
@@ -229,11 +233,13 @@ export async function collectSitePerf(input: {
 	const resolvedUrl = response.url || input.url
 	const extraPages =
 		new URL(resolvedUrl).pathname === '/'
-			? await Promise.all(
-					extraLandingPaths.map((pathname) =>
-						probePage(new URL(pathname, resolvedUrl).href),
-					),
-				)
+			? (
+					await Promise.all(
+						extraLandingPaths.map((pathname) =>
+							probePage(new URL(pathname, resolvedUrl).href),
+						),
+					)
+				).filter((page): page is SitePerfPageProbe => page !== null)
 			: []
 	const scriptHrefs = hrefsMatching(html, /<script[^>]+src=["']([^"']+)["']/gi)
 	const preloadHrefs = hrefsMatching(
