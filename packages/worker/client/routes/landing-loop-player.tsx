@@ -4,8 +4,10 @@ import {
 	observeNearViewport,
 } from '#client/deferred-turnstile.ts'
 import { on } from '#client/event-mixin.ts'
+import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { routes } from '#universal/routes.ts'
 import { type TranscriptLine } from './interactive-guide-transcript.ts'
+import { fetchLandingLoopHighlights } from './landing-loop-highlights.ts'
 import {
 	createLandingLoopPlayer,
 	flattenTranscriptActs,
@@ -25,20 +27,21 @@ type LoopLineRenderer = (line: TranscriptLine) => RemixNode
 /**
  * Homepage factory-loop player. SSR paints the first user turn; the
  * transcript chunk loads once the card is near the viewport so it stays
- * out of the marketing entry. Shiki prefetches after window `load` so
- * it does not block first paint or the first beats. Hover/focus (fine
- * pointers) and explore (scroll up or open a tool) pause the autoplay;
- * Play scrolls to the latest beat and continues. The last beat pauses
- * and offers Restart instead of looping. One header control is both
- * the playing indicator and play/pause (icons, not words). SSR paints
- * Pause so the header does not shift when the transcript chunk loads.
- * A reserved slot keeps that size if reduced-motion later hides it.
- * The phone act is a later scene in the same card — a time skip plus
- * device chrome, not a reset.
+ * out of the marketing entry. Walkthrough highlight tokens fetch in
+ * parallel so tool/file beats paint colored spans instead of plaintext.
+ * Hover/focus (fine pointers) and explore (scroll up or open a tool)
+ * pause the autoplay; Play scrolls to the latest beat and continues.
+ * The last beat pauses and offers Restart instead of looping. One
+ * header control is both the playing indicator and play/pause (icons,
+ * not words). SSR paints Pause so the header does not shift when the
+ * transcript chunk loads. A reserved slot keeps that size if
+ * reduced-motion later hides it. The phone act is a later scene in the
+ * same card — a time skip plus device chrome, not a reset.
  */
 export function LandingLoopPlayer(handle: Handle) {
 	let beats: Array<LandingLoopBeat> | null = null
 	let renderLine: LoopLineRenderer | null = null
+	let highlightsPromise: Promise<Record<string, HighlightedCode>> | null = null
 	let player = createLandingLoopPlayer({ beatCount: 1, reducedMotion: false })
 	let reducedMotion = false
 	let finePointerPauses = false
@@ -65,9 +68,15 @@ export function LandingLoopPlayer(handle: Handle) {
 		)
 	}
 
+	function startHighlightsFetch() {
+		if (highlightsPromise || handle.signal.aborted) return
+		highlightsPromise = fetchLandingLoopHighlights(handle.signal)
+	}
+
 	function armLoad() {
 		if (loadStarted || handle.signal.aborted) return
 		loadStarted = true
+		startHighlightsFetch()
 		void loadLoop()
 	}
 
@@ -81,16 +90,18 @@ export function LandingLoopPlayer(handle: Handle) {
 
 	async function loadLoop() {
 		try {
-			const [transcript, walkthrough] = await Promise.all([
+			const [transcript, walkthrough, highlights] = await Promise.all([
 				// Dynamic import is intentional so the factory transcript and
-				// tool-call renderer stay out of the homepage chunk. Shiki
-				// stays off this path — plaintext fences are enough to start.
+				// tool-call renderer stay out of the homepage chunk. Tokens
+				// come from the How Kody works guide JSON, not client Shiki.
 				import('./how-kody-works-transcript.ts'),
 				import('./interactive-guide-walkthrough.tsx'),
+				highlightsPromise ?? fetchLandingLoopHighlights(handle.signal),
 			])
 			if (handle.signal.aborted) return
 			beats = flattenTranscriptActs(transcript.howKodyWorksTranscriptActs)
-			renderLine = walkthrough.renderInteractiveGuideLine
+			renderLine = (line) =>
+				walkthrough.renderInteractiveGuideLine(line, highlights)
 			reducedMotion = prefersReducedMotion()
 			finePointerPauses = canFinePointerPause()
 			player = createLandingLoopPlayer({
@@ -183,6 +194,7 @@ export function LandingLoopPlayer(handle: Handle) {
 	}
 
 	return () => {
+		if (typeof document !== 'undefined') startHighlightsFetch()
 		const visibleBeats = beats?.slice(0, player.revealedCount) ?? null
 		const sceneGroups = visibleBeats ? groupLandingLoopScenes(visibleBeats) : []
 		const lineRenderer = renderLine
