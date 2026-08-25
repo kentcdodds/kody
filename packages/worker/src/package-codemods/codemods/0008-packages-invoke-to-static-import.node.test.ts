@@ -170,3 +170,69 @@ test('0008 reuses an existing static import and is registered for admin runs', (
 		packagesInvokeToStaticImportCodemod,
 	)
 })
+
+test('0008 rewrites static template specifiers and keeps other packages uses', () => {
+	const files = {
+		'package.json': manifest('@user/demo'),
+		'index.ts': [
+			"import { storage, packages, secrets } from 'kody:runtime'",
+			'',
+			'export default async function run() {',
+			'\tconst listed = await packages.invoke(`kody:@user/inbox/list`)',
+			'\tvoid packages.check',
+			'\treturn listed',
+			'}',
+			'',
+		].join('\n'),
+	}
+
+	const result = packagesInvokeToStaticImportCodemod.transform(files)
+	expect(result.changed).toBe(true)
+	expect(result.files['index.ts']).toContain(
+		'import list from "kody:@user/inbox/list"',
+	)
+	expect(result.files['index.ts']).toContain('await list()')
+	expect(result.files['index.ts']).toContain(
+		"import { storage, packages, secrets } from 'kody:runtime'",
+	)
+	expect(result.files['index.ts']).toContain('void packages.check')
+	expect(result.files['index.ts']).not.toContain('packages.invoke')
+})
+
+test('0008 leaves topic invokes manual and removes only unused packages specifiers', () => {
+	const files = {
+		'package.json': manifest('@user/demo'),
+		'topic.ts': [
+			"import { packages } from 'kody:runtime'",
+			'',
+			'export default async function run() {',
+			"\treturn await packages.invoke('kody:@user/inbox/list', { topic: 'mail' })",
+			'}',
+			'',
+		].join('\n'),
+		'multi.ts': [
+			"import { storage, packages, secrets } from 'kody:runtime'",
+			'',
+			'export default async function run() {',
+			"\treturn await packages.invoke('kody:@user/inbox/list')",
+			'}',
+			'',
+		].join('\n'),
+	}
+
+	const result = packagesInvokeToStaticImportCodemod.transform(files)
+	expect(result.changed).toBe(true)
+	expect(result.changedPaths).toEqual(['multi.ts', 'package.json'])
+	expect(result.files['topic.ts']).toBe(files['topic.ts'])
+	expect(result.needsManual).toEqual([
+		{
+			path: 'topic.ts',
+			message: expect.stringContaining('import'),
+		},
+	])
+	expect(result.files['multi.ts']).toContain(
+		"import { storage, secrets } from 'kody:runtime'",
+	)
+	expect(result.files['multi.ts']).not.toMatch(/\{\s*,/)
+	expect(result.files['multi.ts']).not.toContain('packages.invoke')
+})

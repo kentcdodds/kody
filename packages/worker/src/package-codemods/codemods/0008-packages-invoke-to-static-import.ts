@@ -115,6 +115,7 @@ type AstNode = ModuleAstNode & {
 	imported?: AstNode
 	expressions?: Array<AstNode>
 	expression?: AstNode
+	quasis?: Array<AstNode>
 }
 
 type SourceRewrite = {
@@ -231,11 +232,16 @@ function readStringLiteral(node: AstNode | undefined): string | null {
 	}
 	if (
 		unwrapped?.type === 'TemplateLiteral' &&
-		(unwrapped.expressions?.length ?? 0) === 0 &&
-		typeof unwrapped.start === 'number' &&
-		typeof unwrapped.end === 'number'
+		(unwrapped.expressions?.length ?? 0) === 0
 	) {
-		return typeof unwrapped.value === 'string' ? unwrapped.value : null
+		const quasiValue = unwrapped.quasis?.[0]?.value
+		const cooked =
+			quasiValue != null &&
+			typeof quasiValue === 'object' &&
+			'cooked' in quasiValue
+				? (quasiValue as { cooked?: unknown }).cooked
+				: null
+		return typeof cooked === 'string' ? cooked : null
 	}
 	return null
 }
@@ -327,7 +333,9 @@ function classifyOptionsObject(input: { source: string; objectNode: AstNode }):
 		if (name === 'idempotencyKey') {
 			return { kind: 'keyed' }
 		}
-		if (name === 'topic') continue
+		if (name === 'topic') {
+			return { kind: 'manual' }
+		}
 		if (name === 'exportName') {
 			const literal = readStringLiteral(value)
 			if (literal == null) return { kind: 'manual' }
@@ -618,13 +626,19 @@ function buildModuleRewrites(input: {
 		})
 	}
 
+	const remainingMemberCount = [...input.source.matchAll(/\bpackages\s*\??\./g)]
+		.length
 	if (
 		remainingInvokeCount === callRewrites.length &&
+		remainingMemberCount === remainingInvokeCount &&
 		![...manualReasons].some(
 			(reason) => reason === keyedMessage || reason === manualMessage,
 		)
 	) {
-		const unusedPackagesImport = collectUnusedPackagesImportRewrite(program)
+		const unusedPackagesImport = collectUnusedPackagesImportRewrite(
+			program,
+			input.source,
+		)
 		if (unusedPackagesImport) rewrites.push(unusedPackagesImport)
 	}
 
@@ -648,6 +662,7 @@ function buildModuleRewrites(input: {
 
 function collectUnusedPackagesImportRewrite(
 	program: AstNode,
+	source: string,
 ): SourceRewrite | null {
 	const body = programBody(program)
 	for (const statement of body) {
@@ -681,6 +696,22 @@ function collectUnusedPackagesImportRewrite(
 			typeof packagesSpec.end !== 'number'
 		) {
 			continue
+		}
+		const trailingComma = /^\s*,\s*/.exec(source.slice(packagesSpec.end))
+		if (trailingComma) {
+			return {
+				start: packagesSpec.start,
+				end: packagesSpec.end + trailingComma[0].length,
+				replacement: '',
+			}
+		}
+		const leadingComma = /,\s*$/.exec(source.slice(0, packagesSpec.start))
+		if (leadingComma) {
+			return {
+				start: packagesSpec.start - leadingComma[0].length,
+				end: packagesSpec.end,
+				replacement: '',
+			}
 		}
 		return {
 			start: packagesSpec.start,
