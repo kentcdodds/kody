@@ -32,6 +32,12 @@ test('platform interrupt has a stable error contract and only auto-ignores retry
 			idempotencyKey: 'delivery-123',
 		}),
 	).toBe('ignored')
+	expect(
+		platformInterruptTriage({
+			surface: 'export',
+			idempotencyKey: 'youtube:websub:video-1:2026-08-25T13:41:52.301Z',
+		}),
+	).toBe('ignored')
 
 	expect(
 		platformInterruptTriage({
@@ -42,6 +48,12 @@ test('platform interrupt has a stable error contract and only auto-ignores retry
 	expect(
 		platformInterruptTriage({
 			surface: 'subscription',
+			idempotencyKey: ' ',
+		}),
+	).toBeNull()
+	expect(
+		platformInterruptTriage({
+			surface: 'export',
 			idempotencyKey: ' ',
 		}),
 	).toBeNull()

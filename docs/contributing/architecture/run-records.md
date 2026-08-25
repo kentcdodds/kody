@@ -212,12 +212,12 @@ retention passes, and **on read** (`getRun`, keyed lookup, `listRuns`,
 `summarize`) so Activity and keyed-execute recovery do not wait for an alarm.
 
 Interrupted scheduled-job occurrences (`idempotency_key` beginning
-`scheduled-job:`) and keyed subscription deliveries are retained with
-`error_triage=ignored` because their scheduler or delivery queue retries the
-same idempotent unit. Manual jobs, keyed execute calls, and other surfaces stay
-open: their caller may need to recover or act on the unknown outcome. A later
-terminal finish still replaces the reconciled row when the outcome becomes
-known.
+`scheduled-job:`), keyed subscription deliveries, and keyed package-export
+invocations are retained with `error_triage=ignored` because their scheduler,
+delivery queue, or invocation-token caller retries the same idempotent unit.
+Manual jobs, keyed execute calls, and other surfaces stay open: their caller
+may need to recover or act on the unknown outcome. A later terminal finish
+still replaces the reconciled row when the outcome becomes known.
 
 ## Keyed package-invocation idempotency ledger
 

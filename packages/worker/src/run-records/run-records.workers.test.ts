@@ -987,6 +987,13 @@ test('cap and stale retention journey', async () => {
 				surface: 'subscription',
 				idempotencyKey: 'delivery-123',
 			})
+			insertRunRow(state, {
+				id: 'stale-keyed-export',
+				status: 'running',
+				startedAt: staleSubscriptionStartedAt,
+				surface: 'export',
+				idempotencyKey: 'youtube:websub:video-1:2026-08-25T13:41:52.301Z',
+			})
 		})
 
 		const summary = await summarizeRunRecords({
@@ -996,7 +1003,7 @@ test('cap and stale retention journey', async () => {
 		})
 		expect(summary).toMatchObject({
 			errors: 0,
-			ignored: 2,
+			ignored: 3,
 			running: 0,
 		})
 		const page = await listRunRecords({
@@ -1004,7 +1011,7 @@ test('cap and stale retention journey', async () => {
 			userId,
 			filter: { errorTriage: 'ignored' },
 		})
-		expect(page.runs).toHaveLength(2)
+		expect(page.runs).toHaveLength(3)
 		for (const run of page.runs) {
 			expect(run).toMatchObject({
 				status: 'error',
@@ -1049,6 +1056,18 @@ test('cap and stale retention journey', async () => {
 					env,
 					userId,
 					runId: 'stale-subscription-delivery',
+				})
+			)?.run,
+		).toMatchObject({
+			errorName: runRecordPlatformInterruptedErrorName,
+			errorTriage: 'ignored',
+		})
+		expect(
+			(
+				await getRunRecord({
+					env,
+					userId,
+					runId: 'stale-keyed-export',
 				})
 			)?.run,
 		).toMatchObject({
