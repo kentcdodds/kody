@@ -7,6 +7,7 @@ import {
 	onboardingChecklistItems,
 	onboardingWizardStepByNumber,
 	onboardingWizardSteps,
+	readLegacyOnboardingStep,
 } from './onboarding-process.ts'
 
 const guidesDirectory = join(import.meta.dirname, '../../../docs/guides')
@@ -59,4 +60,6 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 			`/onboarding#${step.hash}`,
 		)
 	}
+	expect(readLegacyOnboardingStep('first-win')).toBe(3)
+	expect(readLegacyOnboardingStep('toString')).toBe(null)
 })

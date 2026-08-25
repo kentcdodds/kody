@@ -27,6 +27,13 @@ export const legacyOnboardingStepHashes: Record<
 	'starter-packages': 3,
 }
 
+export function readLegacyOnboardingStep(
+	hash: string,
+): OnboardingWizardStepNumber | null {
+	if (!Object.hasOwn(legacyOnboardingStepHashes, hash)) return null
+	return legacyOnboardingStepHashes[hash] ?? null
+}
+
 export const onboardingChecklistItems = [
 	{
 		id: 'verify-email',

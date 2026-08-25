@@ -27,8 +27,8 @@ import { type OnboardingFeaturedListing } from '#universal/community-public-type
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
 import {
-	legacyOnboardingStepHashes,
 	onboardingWizardSteps,
+	readLegacyOnboardingStep,
 	type OnboardingWizardStepNumber,
 } from '#universal/onboarding-process.ts'
 import {
@@ -127,8 +127,7 @@ function readStepFromHref(href: string): OnboardingStep | null {
 	const hash = new URL(href, 'http://localhost').hash.slice(1)
 	return (
 		onboardingSteps.find((candidate) => candidate.hash === hash)?.number ??
-		legacyOnboardingStepHashes[hash] ??
-		null
+		readLegacyOnboardingStep(hash)
 	)
 }
 
