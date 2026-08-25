@@ -71,9 +71,10 @@ export const runRecordPlatformInterruptedErrorMessage =
 	'The platform interrupted this run before completion; outcome unknown.'
 
 /**
- * Idempotent unattended deliveries are retried by their owning scheduler or
- * queue, so retain their interrupted attempt as ignored history instead of an
- * open user-facing failure. Interactive and non-idempotent attempts stay open.
+ * Idempotent unattended deliveries are retried by their owning scheduler,
+ * queue, or invocation token, so retain their interrupted attempt as ignored
+ * history instead of an open user-facing failure. Interactive and
+ * non-idempotent attempts stay open.
  */
 export function runErrorTriageForPlatformInterrupt(
 	context: Pick<RunRecordContext, 'surface' | 'idempotencyKey'>,
@@ -83,9 +84,9 @@ export function runErrorTriageForPlatformInterrupt(
 		case 'job':
 			return idempotencyKey?.startsWith('scheduled-job:') ? 'ignored' : null
 		case 'subscription':
+		case 'export':
 			return idempotencyKey ? 'ignored' : null
 		case 'execute':
-		case 'export':
 		case 'app_fetch':
 		case 'app_realtime':
 		case 'workflow':
