@@ -686,6 +686,20 @@ test('renderAppPage caches anonymous marketing HTML and keeps session pages priv
 		'public, max-age=60, stale-while-revalidate=300',
 	)
 	expect(anonymousHome.headers.get('Vary')).toBe('Cookie')
+	const anonymousOnboarding = await renderAppPage({
+		request: new Request('https://example.com/onboarding'),
+		env,
+	})
+	expect(anonymousOnboarding.headers.get('Cache-Control')).toBe(
+		'public, max-age=60, stale-while-revalidate=300',
+	)
+	const anonymousGuide = await renderAppPage({
+		request: new Request('https://example.com/guides/how-kody-works'),
+		env,
+	})
+	expect(anonymousGuide.headers.get('Cache-Control')).toBe(
+		'public, max-age=60, stale-while-revalidate=300',
+	)
 	const homeTiming = anonymousHome.headers.get('Server-Timing') ?? ''
 	expect(homeTiming).toContain('session;dur=')
 	expect(homeTiming).toContain('ssr;dur=')

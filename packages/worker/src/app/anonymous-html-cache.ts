@@ -10,12 +10,21 @@ export const sessionCookieName = 'kody_session'
 export const anonymousHtmlCacheControl =
 	'public, max-age=60, stale-while-revalidate=300'
 
-const cacheableAnonymousPaths = new Set([
+const cacheableAnonymousExactPaths = new Set([
 	'/',
 	'/pricing',
 	'/blog',
 	'/community',
+	'/onboarding',
+	'/guides',
 ])
+
+export function isCacheableAnonymousPath(pathname: string) {
+	if (cacheableAnonymousExactPaths.has(pathname)) return true
+	if (!pathname.startsWith('/guides/')) return false
+	const rest = pathname.slice('/guides/'.length)
+	return rest.length > 0 && !rest.includes('/')
+}
 
 export function requestHasSessionCookie(request: Request): boolean {
 	const cookie = request.headers.get('Cookie') ?? ''
@@ -37,11 +46,28 @@ export function resolveAppPageCacheControl(input: {
 	if (requestHasSessionCookie(input.request)) {
 		return { cacheControl: 'no-store' }
 	}
-	if (!cacheableAnonymousPaths.has(input.pathname)) {
+	if (!isCacheableAnonymousPath(input.pathname)) {
 		return { cacheControl: 'no-store' }
 	}
 	return {
 		cacheControl: anonymousHtmlCacheControl,
 		vary: 'Cookie',
+	}
+}
+
+export function publicSharedJsonCacheHeaders(): HeadersInit {
+	return { 'Cache-Control': anonymousHtmlCacheControl }
+}
+
+export function anonymousPersonalizedJsonCacheHeaders(input: {
+	personalized: boolean
+	request: Request
+}): HeadersInit {
+	if (input.personalized || requestHasSessionCookie(input.request)) {
+		return { 'Cache-Control': 'no-store' }
+	}
+	return {
+		'Cache-Control': anonymousHtmlCacheControl,
+		Vary: 'Cookie',
 	}
 }

@@ -12,6 +12,7 @@ import {
 	withVaryAccept,
 } from '#app/markdown-negotiation.ts'
 import { type routes } from '#universal/routes.ts'
+import { publicSharedJsonCacheHeaders } from '#app/anonymous-html-cache.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
@@ -200,6 +201,7 @@ export function createGuideDetailApiHandler(env: Env) {
 			const serverTiming: Array<ServerTimingEntry> = []
 			return jsonResponse(await toGuideDetail(env, guide, serverTiming), {
 				serverTiming,
+				headers: publicSharedJsonCacheHeaders(),
 			})
 		},
 	} satisfies Action<typeof routes.guideDetailApi>

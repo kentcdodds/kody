@@ -150,10 +150,13 @@ session, logout, password reset, health).
 
 `renderAppPage` sets
 `Cache-Control: public, max-age=60, stale-while-revalidate=300` and
-`Vary: Cookie` for anonymous `/`, `/pricing`, `/blog`, and `/community`. The
-response stays `no-store` when the request carries a `kody_session` cookie,
-`loadSessionInfo` resolves a session, or the response sets a cookie. Auth,
-OAuth, account, and every other HTML path stay `no-store`.
+`Vary: Cookie` for anonymous `/`, `/pricing`, `/blog`, `/community`,
+`/onboarding`, `/guides`, and `/guides/:slug`. Anonymous `/onboarding.json` uses
+that same short cache. `/guides/:slug.json` is publicly cacheable without a
+cookie vary (the payload is identical for every visitor). The response stays
+`no-store` when the request carries a `kody_session` cookie, `loadSessionInfo`
+resolves a session, or the response sets a cookie. Auth, OAuth, account, and
+every other HTML path stay `no-store`.
 
 ## Page Server-Timing
 
