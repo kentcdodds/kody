@@ -829,7 +829,6 @@ function classifyMarkdownFile(input: {
 		(fence) => ({ start: fence.start, end: fence.end }),
 	)
 	const rewrites: Array<SourceRewrite> = []
-	const dependencyNames = new Set<string>()
 	let needsManual: string | null = null
 	for (const fence of fences) {
 		const content = input.source.slice(fence.contentStart, fence.contentEnd)
@@ -846,9 +845,6 @@ function classifyMarkdownFile(input: {
 		})
 		if (!classification) continue
 		rewrites.push(...classification.rewrites)
-		for (const name of classification.dependencyNames) {
-			dependencyNames.add(name)
-		}
 		needsManual ??= classification.needsManual
 	}
 	for (const inlineCode of listMarkdownInlineCode(input.source)) {
@@ -865,9 +861,6 @@ function classifyMarkdownFile(input: {
 		})
 		if (!classification) continue
 		rewrites.push(...classification.rewrites)
-		for (const name of classification.dependencyNames) {
-			dependencyNames.add(name)
-		}
 		needsManual ??= classification.needsManual
 	}
 	if (sourceOutsideRangesHasPackagesInvoke(input.source, coveredRanges)) {
@@ -877,7 +870,9 @@ function classifyMarkdownFile(input: {
 	return {
 		path: input.path,
 		rewrites,
-		dependencyNames: [...dependencyNames],
+		// Repo checks count static kody:@ imports in JS/TS only. README
+		// examples must not add unused kody.dependencies entries.
+		dependencyNames: [],
 		needsManual,
 	}
 }
@@ -1046,14 +1041,15 @@ function transform(
 /**
  * Replace author-facing `packages.invoke` with composition primitives:
  * literal specifiers become static `kody:@` imports (and `kody.dependencies`
- * entries), including JavaScript/TypeScript Markdown fences and inline
- * examples. Computed specifiers become `import(specifier)` (name is data).
- * Keyed invokes stay `needsManual` for workflows.
+ * entries from JS/TS modules only). JavaScript/TypeScript Markdown fences and
+ * inline examples are rewritten the same way but do not declare dependencies.
+ * Computed specifiers become `import(specifier)` (name is data). Keyed invokes
+ * stay `needsManual` for workflows.
  */
 export const packagesInvokeToStaticImportCodemod = {
 	id: packagesInvokeToStaticImportCodemodId,
 	description:
-		'Rewrite literal packages.invoke targets to static kody:@ imports (and kody.dependencies), including Markdown examples; rewrite computed specifiers to import(specifier); flag keyed invokes for workflows.',
+		'Rewrite literal packages.invoke targets to static kody:@ imports (and kody.dependencies from JS/TS), including Markdown examples; rewrite computed specifiers to import(specifier); flag keyed invokes for workflows.',
 	detect,
 	transform,
 } satisfies PackageCodemod

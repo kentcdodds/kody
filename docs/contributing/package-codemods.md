@@ -293,7 +293,9 @@ This permanent migration codemod removes author-facing `packages.invoke`
 - Rewrites literal `packages.invoke("kody:@owner/package/export", { params })`
   calls to a static `import export from "kody:@owner/package/export"` plus
   `export(params)`, and adds the package name to
-  `package.json#kody.dependencies`.
+  `package.json#kody.dependencies` when the rewrite is in a JS/TS module. Repo
+  checks only count those static imports, so Markdown examples are rewritten
+  without declaring unused dependencies.
 - Rewrites computed first arguments to `(await import(specifier)).default(...)`.
   That is the name-as-data path; do not use this rewrite when the name is known
   at write time.

@@ -130,7 +130,7 @@ test('0008 rewrites Markdown fences and inline examples to static imports', () =
 
 	const result = packagesInvokeToStaticImportCodemod.transform(files)
 	expect(result.changed).toBe(true)
-	expect(result.changedPaths).toEqual(['package.json', 'README.md'])
+	expect(result.changedPaths).toEqual(['README.md'])
 	expect(result.needsManual).toEqual([])
 	expect(result.files['README.md']).toContain(
 		'import request from "kody:@docs-owner/github/request"',
@@ -140,10 +140,44 @@ test('0008 rewrites Markdown fences and inline examples to static imports', () =
 		'import list from "kody:@docs-owner/inbox/list"',
 	)
 	expect(result.files['README.md']).not.toContain('packages.invoke')
+	expect(result.files['package.json']).toBe(files['package.json'])
+	expect(JSON.parse(result.files['package.json']!).kody.dependencies).toBe(
+		undefined,
+	)
+})
+
+test('0008 records kody.dependencies only from module rewrites, not Markdown', () => {
+	const files = {
+		'package.json': manifest('@user/demo'),
+		'index.ts': [
+			"import { packages } from 'kody:runtime'",
+			'',
+			'export default async function run() {',
+			"\treturn await packages.invoke('kody:@user/helper/run')",
+			'}',
+			'',
+		].join('\n'),
+		'README.md': [
+			'# Usage',
+			'',
+			'```ts',
+			"await packages.invoke('kody:@docs-owner/inbox/list')",
+			'```',
+			'',
+		].join('\n'),
+	}
+
+	const result = packagesInvokeToStaticImportCodemod.transform(files)
+	expect(result.changed).toBe(true)
+	expect(result.changedPaths).toEqual(['index.ts', 'package.json', 'README.md'])
 	expect(JSON.parse(result.files['package.json']!).kody.dependencies).toEqual({
-		'@docs-owner/github': '*',
-		'@docs-owner/inbox': '*',
+		'@user/helper': '*',
 	})
+	expect(result.files['README.md']).toContain(
+		'import list from "kody:@docs-owner/inbox/list"',
+	)
+	expect(result.files['index.ts']).toContain('kody:@user/helper/run')
+	expect(result.files['index.ts']).not.toContain('packages.invoke')
 })
 
 test('0008 reuses an existing static import and is registered for admin runs', () => {
