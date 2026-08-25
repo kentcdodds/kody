@@ -1,0 +1,11 @@
+{
+  "name": "kody",
+  "version": "1.0.2",
+  "description": "Personal assistant MCP server with search, execute, packages, jobs, secrets, and integrations.",
+  "author": { "name": "Kent C. Dodds" },
+  "homepage": "https://kody.codes",
+  "repository": "https://github.com/kentcdodds/kody",
+  "mcpServers": {
+    "kody": { "url": "https://kody.codes/mcp" }
+  }
+}
