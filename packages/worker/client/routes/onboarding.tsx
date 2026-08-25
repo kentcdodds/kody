@@ -648,8 +648,8 @@ export function OnboardingRoute(handle: Handle) {
 								>
 									<strong>Authenticate Kody before you continue</strong>
 									<span>
-										<strong>Cursor:</strong> after installing the plugin (or raw
-										MCP), open the Cursor MCP list and click{' '}
+										<strong>Cursor:</strong> after installing the plugin, open
+										the Cursor MCP list and click{' '}
 										<strong>Authenticate</strong>.
 									</span>
 									<span>

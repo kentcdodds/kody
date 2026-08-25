@@ -45,11 +45,7 @@ Manual on Get started has one tab per host. Use those when you are not running
 
 - **Cursor** — Install the official
   [Kody plugin](https://cursor.com/marketplace/kody), or in Cursor chat run
-  `/add-plugin kody`. After install, Authenticate in the Cursor MCP list. The
-  marketplace plugin targets production [kody.codes](https://kody.codes).
-  Preview and local origins still need a raw MCP server: Manual / fallback
-  includes Add to Cursor (MCP deeplink), the MCP URL, and JSON merge for
-  `~/.cursor/mcp.json` / `.cursor/mcp.json`.
+  `/add-plugin kody`. After install, Authenticate in the Cursor MCP list.
 - **Claude Desktop** — Copy the MCP URL into Settings → Connectors (custom
   connector). Remote servers are not configured through
   `claude_desktop_config.json`. After connecting, start a new chat and ask
@@ -69,9 +65,7 @@ Manual on Get started has one tab per host. Use those when you are not running
   official Kody plugin with
   [`grokbot://app/v1/plugin/add?id=56286216`](grokbot://app/v1/plugin/add?id=56286216),
   or open **Plugins** in the Grok Bot sidebar and add Kody. See Cursor's
-  [Grok Bot plugin help](https://cursor.com/help/grok-bot/connect-plugins). The
-  marketplace plugin targets production kody.codes. Manual / fallback is the MCP
-  URL for a custom connector (preview and local origins need this).
+  [Grok Bot plugin help](https://cursor.com/help/grok-bot/connect-plugins).
 - **Claude Code** — After the CLI writes the remote entry, enter `/mcp` → Kody →
   Authenticate. Manual includes
   `claude mcp add --transport http -s user kody <url>`, or a `.mcp.json` entry

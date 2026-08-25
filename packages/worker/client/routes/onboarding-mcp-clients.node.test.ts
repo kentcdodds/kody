@@ -6,8 +6,6 @@ import {
 	buildCodexMcpToml,
 	buildCopilotCliAddCommand,
 	buildCopilotCliMcpJson,
-	buildCursorInstallUrl,
-	buildCursorMcpJson,
 	buildGrokCliAddCommand,
 	buildGrokCliMcpToml,
 	buildKodyAppIconUrl,
@@ -68,13 +66,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		'npx @kodycodes/cli install --mcp-url http://localhost:3742/mcp',
 	)
 
-	expect(JSON.parse(buildCursorMcpJson(mcpServerUrl))).toEqual({
-		mcpServers: {
-			kody: {
-				url: mcpServerUrl,
-			},
-		},
-	})
 	expect(JSON.parse(buildClaudeCodeMcpJson(mcpServerUrl))).toEqual({
 		mcpServers: {
 			kody: {
@@ -147,24 +138,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 			mcpServerUrl,
 		]),
 	)
-
-	const cursorInstallUrl = new URL(buildCursorInstallUrl(mcpServerUrl))
-	expect(cursorInstallUrl.protocol).toBe('cursor:')
-	expect(cursorInstallUrl.hostname).toBe('anysphere.cursor-deeplink')
-	expect(cursorInstallUrl.pathname).toBe('/mcp/install')
-	expect(cursorInstallUrl.searchParams.get('name')).toBe('kody')
-	const cursorConfig = cursorInstallUrl.searchParams.get('config')
-	expect(cursorConfig).toMatch(/^[\w-]+$/u)
-	expect(
-		JSON.parse(
-			atob(
-				cursorConfig!
-					.replaceAll('-', '+')
-					.replaceAll('_', '/')
-					.padEnd(Math.ceil(cursorConfig!.length / 4) * 4, '='),
-			),
-		),
-	).toEqual({ url: mcpServerUrl })
 
 	const vsCodeInstallUrl = buildVsCodeInstallUrl(mcpServerUrl)
 	expect(vsCodeInstallUrl.startsWith('vscode:mcp/install?')).toBe(true)

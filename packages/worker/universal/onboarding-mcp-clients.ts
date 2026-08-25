@@ -117,19 +117,6 @@ function prettyJson(value: unknown) {
 	return `${JSON.stringify(value, null, 2)}\n`
 }
 
-function encodeBase64Url(value: string) {
-	return btoa(value)
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replace(/=+$/u, '')
-}
-
-/** Cursor protocol handler for installing a remote MCP server. */
-export function buildCursorInstallUrl(mcpServerUrl: string) {
-	const config = encodeBase64Url(JSON.stringify({ url: mcpServerUrl }))
-	return `cursor://anysphere.cursor-deeplink/mcp/install?name=kody&config=${config}`
-}
-
 /** VS Code protocol handler for installing a remote MCP server. */
 export function buildVsCodeInstallUrl(mcpServerUrl: string) {
 	const config = encodeURIComponent(
@@ -140,17 +127,6 @@ export function buildVsCodeInstallUrl(mcpServerUrl: string) {
 		}),
 	)
 	return `vscode:mcp/install?${config}`
-}
-
-/** Cursor `~/.cursor/mcp.json` or `.cursor/mcp.json` remote server entry. */
-export function buildCursorMcpJson(mcpServerUrl: string) {
-	return prettyJson({
-		mcpServers: {
-			kody: {
-				url: mcpServerUrl,
-			},
-		},
-	})
 }
 
 /** Claude Code project `.mcp.json` or user-scoped `mcpServers` entry. */
@@ -264,7 +240,6 @@ export function collectOnboardingMcpSnippets(mcpServerUrl: string) {
 		{ code: buildKodyAppIconUrl(mcpServerUrl) },
 		{ code: kodyCursorAddPluginCommand },
 		{ code: grokBotInstallUrl },
-		{ code: buildCursorMcpJson(mcpServerUrl), lang: 'json' },
 		{ code: buildCodexMcpAddCommand(mcpServerUrl), lang: 'sh' },
 		{ code: buildCodexMcpToml(mcpServerUrl), lang: 'toml' },
 		{ code: buildGrokCliAddCommand(mcpServerUrl), lang: 'sh' },
