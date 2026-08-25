@@ -54,10 +54,7 @@ test('same-path replace and write instructions compose in order instead of keepi
 		},
 	)
 
-	expect(reads).toEqual([
-		'/session/src/ci-secrets.ts',
-		'/session/src/other.ts',
-	])
+	expect(reads).toEqual(['/session/src/ci-secrets.ts', '/session/src/other.ts'])
 	expect(plan.totalChanged).toBe(5)
 	expect(plan.edits.map((edit) => edit.changed)).toEqual([
 		true,
@@ -139,6 +136,19 @@ test('replace options, missing files, and no-op searches keep the shell contract
 		async (path) => files.get(path) ?? null,
 	)
 	expect(wholeWord.edits[0]?.content).toBe('Ok foo FOO\n')
+
+	const dollarLiteral = await planRepoSessionContentEdits(
+		[
+			{
+				kind: 'replace',
+				path: '/session/src/note.ts',
+				search: 'FOO',
+				replacement: '$PRICE $$ $&',
+			},
+		],
+		async (path) => files.get(path) ?? null,
+	)
+	expect(dollarLiteral.edits[0]?.content).toBe('Foo foo $PRICE $$ $&\n')
 
 	const regex = await planRepoSessionContentEdits(
 		[

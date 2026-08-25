@@ -106,11 +106,7 @@ function plannedContentForInstruction(
 	}
 }
 
-function stringifyJsonFileContent(
-	value: unknown,
-	path: string,
-	spaces = 2,
-) {
+function stringifyJsonFileContent(value: unknown, path: string, spaces = 2) {
 	const serialized = JSON.stringify(value, null, spaces)
 	if (serialized === undefined) {
 		throw new Error(`Unable to serialize JSON for ${path}`)
@@ -129,7 +125,9 @@ function replaceTextContent(
 	},
 ) {
 	const matcher = createTextMatcher(search, options ?? {})
-	return content.replace(matcher, replacement)
+	// Replacer function keeps `$`, `$&`, and `$$` literal, matching
+	// `@cloudflare/shell` replaceTextContent.
+	return content.replace(matcher, () => replacement)
 }
 
 function createTextMatcher(
