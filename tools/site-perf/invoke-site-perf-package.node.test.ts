@@ -16,6 +16,9 @@ const needsFixReport: SitePerfReport = {
 	vary: null,
 	largestSameOriginJsBytes: 800,
 	lcpImageBytes: 800,
+	ttfbMs: 80,
+	serverTiming: [{ name: 'ssr', durationMs: 20 }],
+	pages: [],
 	findings: [
 		{
 			id: 'home-no-store',

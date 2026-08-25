@@ -29,6 +29,11 @@ import {
 } from '#universal/sentry-config.ts'
 import '#app/frame-registrations.ts'
 import { resolveRegisteredFrameHtml } from '#app/frame-registry.ts'
+import {
+	applyServerTimingHeader,
+	pushServerTiming,
+	type ServerTimingEntry,
+} from '#worker/server-timing.ts'
 
 /**
  * The remix/ui stream renderer emits markup starting at `<html>`; without a
@@ -68,15 +73,22 @@ export type RenderAppPageInput = {
 	notFound?: boolean
 	status?: number
 	extraSetCookies?: Array<string>
+	/** Loader phases already recorded for this request; session + ssr append. */
+	serverTiming?: Array<ServerTimingEntry>
 }
 
 export async function renderAppPage(input: RenderAppPageInput) {
 	const { request, env, title, loaderData, notFound, status, extraSetCookies } =
 		input
+	const serverTiming = input.serverTiming ?? []
 	// OAuth authorize (and any SSR entry) can run outside appHandler, so configure
 	// the session cookie before reading request cookies.
 	setAuthSessionSecret(getEnv(env).COOKIE_SECRET)
-	const { session, setCookie } = await loadSessionInfo(request, env)
+	const { session, setCookie } = await pushServerTiming(
+		serverTiming,
+		'session',
+		() => loadSessionInfo(request, env),
+	)
 	const requestUrl = new URL(request.url)
 	const url = `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}`
 	const clientEntryHref = buildClientEntryHref(getClientBuildId(getEnv(env)))
@@ -104,88 +116,92 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		: null
 	const fathomSiteId = parsedEnv.FATHOM_SITE_ID?.trim() || null
 
-	// Warm lazy route chunks before streaming so SSR HTML includes the real
-	// route tree (dynamic import resolves in the worker bundle), and resolve
-	// the modulepreload hints and inline stylesheet in parallel.
-	const [, modulePreloadHrefs, inlineStylesheet] = await Promise.all([
-		preloadClientRouteModules(`${requestUrl.pathname}${requestUrl.search}`),
-		getClientModulePreloadHrefs({
-			assets: env.ASSETS,
-			buildId: getClientBuildId(parsedEnv),
+	const response = await pushServerTiming(serverTiming, 'ssr', async () => {
+		// Warm lazy route chunks before streaming so SSR HTML includes the real
+		// route tree (dynamic import resolves in the worker bundle), and resolve
+		// the modulepreload hints and inline stylesheet in parallel.
+		const [, modulePreloadHrefs, inlineStylesheet] = await Promise.all([
+			preloadClientRouteModules(`${requestUrl.pathname}${requestUrl.search}`),
+			getClientModulePreloadHrefs({
+				assets: env.ASSETS,
+				buildId: getClientBuildId(parsedEnv),
+				pathname: requestUrl.pathname,
+			}),
+			getInlineStylesheet({
+				assets: env.ASSETS,
+				buildId: getClientBuildId(parsedEnv),
+			}),
+		])
+
+		const stream = renderToStream(
+			// Remix server components accept props via handle.props; JSX typing is loose here.
+			(
+				<SsrDocument
+					documentHead={documentHead}
+					canonicalOrigin={origin}
+					url={url}
+					session={session}
+					loaderData={loaderData}
+					notFound={notFound}
+					clientEntryHref={clientEntryHref}
+					stylesheetHref={stylesheetHref}
+					modulePreloadHrefs={modulePreloadHrefs}
+					inlineStylesheet={inlineStylesheet}
+					sentryConfig={sentryConfig}
+					fathomSiteId={fathomSiteId}
+				/>
+			) as RemixNode,
+			{
+				frameSrc: request.url,
+				resolveFrame(src, target, context) {
+					return resolveRegisteredFrameHtml({
+						src,
+						target,
+						request,
+						env,
+						pageUrl: requestUrl,
+						currentFrameSrc: context?.currentFrameSrc,
+					})
+				},
+				onError(error) {
+					console.error('SSR render error:', error)
+				},
+			},
+		)
+
+		const responseSetsCookie =
+			Boolean(setCookie) || (extraSetCookies?.length ?? 0) > 0
+		const pageCache = resolveAppPageCacheControl({
 			pathname: requestUrl.pathname,
-		}),
-		getInlineStylesheet({
-			assets: env.ASSETS,
-			buildId: getClientBuildId(parsedEnv),
-		}),
-	])
+			session,
+			request,
+			responseSetsCookie,
+		})
+		const headers = new Headers({
+			'Cache-Control': pageCache.cacheControl,
+			'Content-Type': 'text/html; charset=utf-8',
+		})
+		if (pageCache.vary) {
+			headers.set('Vary', pageCache.vary)
+		}
+		if (setCookie) {
+			headers.append('Set-Cookie', setCookie)
+		}
+		for (const cookie of extraSetCookies ?? []) {
+			headers.append('Set-Cookie', cookie)
+		}
+		const cacheLookup = getRequestDataCacheLookup(request)
+		if (cacheLookup) {
+			headers.set('X-Kody-Cache', cacheLookup)
+		}
 
-	const stream = renderToStream(
-		// Remix server components accept props via handle.props; JSX typing is loose here.
-		(
-			<SsrDocument
-				documentHead={documentHead}
-				canonicalOrigin={origin}
-				url={url}
-				session={session}
-				loaderData={loaderData}
-				notFound={notFound}
-				clientEntryHref={clientEntryHref}
-				stylesheetHref={stylesheetHref}
-				modulePreloadHrefs={modulePreloadHrefs}
-				inlineStylesheet={inlineStylesheet}
-				sentryConfig={sentryConfig}
-				fathomSiteId={fathomSiteId}
-			/>
-		) as RemixNode,
-		{
-			frameSrc: request.url,
-			resolveFrame(src, target, context) {
-				return resolveRegisteredFrameHtml({
-					src,
-					target,
-					request,
-					env,
-					pageUrl: requestUrl,
-					currentFrameSrc: context?.currentFrameSrc,
-				})
-			},
-			onError(error) {
-				console.error('SSR render error:', error)
-			},
-		},
-	)
-
-	const responseSetsCookie =
-		Boolean(setCookie) || (extraSetCookies?.length ?? 0) > 0
-	const pageCache = resolveAppPageCacheControl({
-		pathname: requestUrl.pathname,
-		session,
-		request,
-		responseSetsCookie,
+		return applyFirstPartySecurityHeaders(
+			new Response(prependDoctype(stream), {
+				status: status ?? 200,
+				headers,
+			}),
+		)
 	})
-	const headers = new Headers({
-		'Cache-Control': pageCache.cacheControl,
-		'Content-Type': 'text/html; charset=utf-8',
-	})
-	if (pageCache.vary) {
-		headers.set('Vary', pageCache.vary)
-	}
-	if (setCookie) {
-		headers.append('Set-Cookie', setCookie)
-	}
-	for (const cookie of extraSetCookies ?? []) {
-		headers.append('Set-Cookie', cookie)
-	}
-	const cacheLookup = getRequestDataCacheLookup(request)
-	if (cacheLookup) {
-		headers.set('X-Kody-Cache', cacheLookup)
-	}
-
-	return applyFirstPartySecurityHeaders(
-		new Response(prependDoctype(stream), {
-			status: status ?? 200,
-			headers,
-		}),
-	)
+	applyServerTimingHeader(response.headers, serverTiming)
+	return response
 }

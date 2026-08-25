@@ -25,6 +25,7 @@ import { collectGoogleOauthSnippets } from '#universal/google-oauth-transcript.t
 import { collectHowKodyWorksSnippets } from '#universal/how-kody-works-transcript.ts'
 import { type GuideDetailLoaderData } from '#universal/loader-data.ts'
 import { type Guide } from '#worker/guides/parse-frontmatter.ts'
+import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
 function buildGuidesIndexMarkdown(baseUrl: string): string {
 	const lines = [
@@ -67,19 +68,27 @@ function collectWalkthroughSnippets(slug: string) {
 	}
 }
 
-async function highlightWalkthrough(env: Env, slug: string) {
+async function highlightWalkthrough(
+	env: Env,
+	slug: string,
+	serverTiming?: Array<ServerTimingEntry>,
+) {
 	const snippets = uniqueHighlightSnippets(collectWalkthroughSnippets(slug))
 	if (snippets.length === 0) return undefined
-	return highlightResultsByKey(snippets, await highlightSnippets(env, snippets))
+	return highlightResultsByKey(
+		snippets,
+		await highlightSnippets(env, snippets, { serverTiming }),
+	)
 }
 
 async function toGuideDetail(
 	env: Env,
 	guide: Guide,
+	serverTiming?: Array<ServerTimingEntry>,
 ): Promise<GuideDetailLoaderData> {
 	const [bodyFences, walkthroughHighlights] = await Promise.all([
-		highlightMarkdownFences(env, guide.body),
-		highlightWalkthrough(env, guide.slug),
+		highlightMarkdownFences(env, guide.body, { serverTiming }),
+		highlightWalkthrough(env, guide.slug, serverTiming),
 	])
 	return {
 		ok: true,
@@ -165,13 +174,15 @@ export function createGuideDetailHandler(env: Env) {
 			if (prefersMarkdown(request)) {
 				return markdownResponse(guide.body)
 			}
+			const serverTiming: Array<ServerTimingEntry> = []
 			return withVaryAccept(
 				await renderAppPage({
 					request,
 					env,
 					loaderData: {
-						guideDetail: await toGuideDetail(env, guide),
+						guideDetail: await toGuideDetail(env, guide, serverTiming),
 					},
+					serverTiming,
 				}),
 			)
 		},
@@ -186,7 +197,10 @@ export function createGuideDetailApiHandler(env: Env) {
 			if (!guide) {
 				return jsonResponse({ ok: false, error: 'Guide not found.' }, 404)
 			}
-			return jsonResponse(await toGuideDetail(env, guide))
+			const serverTiming: Array<ServerTimingEntry> = []
+			return jsonResponse(await toGuideDetail(env, guide, serverTiming), {
+				serverTiming,
+			})
 		},
 	} satisfies Action<typeof routes.guideDetailApi>
 }

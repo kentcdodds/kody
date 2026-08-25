@@ -15,6 +15,7 @@ import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listRunRecords } from '#worker/run-records/service.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { highlightJsonValue } from '#app/highlight-code.ts'
+import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -196,6 +197,7 @@ async function toDetail(input: {
 	userId: string
 	job: JobView
 	packageNamesById: ReadonlyMap<string, string>
+	serverTiming?: Array<ServerTimingEntry>
 }): Promise<AccountJobDetail> {
 	const inspection = buildJobInspectionOutput(input.job)
 	const recentRuns = await loadRecentRunsForJob({
@@ -209,6 +211,7 @@ async function toDetail(input: {
 		paramsHighlighted: await highlightJsonValue(
 			input.env,
 			input.job.params ?? {},
+			{ serverTiming: input.serverTiming },
 		),
 		schedule: input.job.schedule,
 		lastRunError: input.job.lastRunError ?? null,
@@ -240,6 +243,7 @@ export async function loadAccountJobsData(input: {
 	request: Request
 	user: AuthenticatedUser
 	pathJobId?: string
+	serverTiming?: Array<ServerTimingEntry>
 }): Promise<AccountJobsLoaderData> {
 	const userId = input.user.mcpUser.userId
 	const selectedJobId = readAccountJobsSelectedJobId(
@@ -273,6 +277,7 @@ export async function loadAccountJobsData(input: {
 					userId,
 					job: selectedRecord,
 					packageNamesById,
+					serverTiming: input.serverTiming,
 				})
 			: null,
 		selectedJobId,

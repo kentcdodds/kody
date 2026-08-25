@@ -12,6 +12,7 @@ import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { type ServerTimingEntry } from '#worker/server-timing.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { runJobNowViaManager } from '#worker/jobs/manager-client.ts'
 import { updateJobRetentionPreferencesForUser } from '#worker/jobs/job-retention-cleanup.ts'
@@ -45,11 +46,13 @@ export function createAccountJobsHandler(env: Env) {
 				return user
 			}
 
+			const serverTiming: Array<ServerTimingEntry> = []
 			const accountJobs = await loadAccountJobsData({
 				env,
 				request,
 				user,
 				pathJobId: readPathJobId(params),
+				serverTiming,
 			})
 			return renderAppPage({
 				request,
@@ -58,6 +61,7 @@ export function createAccountJobsHandler(env: Env) {
 				loaderData: {
 					accountJobs: accountJobs as AppAccountJobsLoaderData,
 				},
+				serverTiming,
 			})
 		},
 	} satisfies Action<typeof routes.accountJobs | typeof routes.accountJobDetail>
@@ -76,12 +80,15 @@ export function createAccountJobsApiHandler(env: Env) {
 			}
 
 			if (request.method === 'GET') {
+				const serverTiming: Array<ServerTimingEntry> = []
 				return jsonResponse(
 					await loadAccountJobsData({
 						env,
 						request,
 						user,
+						serverTiming,
 					}),
+					{ serverTiming },
 				)
 			}
 

@@ -155,6 +155,22 @@ response stays `no-store` when the request carries a `kody_session` cookie,
 `loadSessionInfo` resolves a session, or the response sets a cookie. Auth,
 OAuth, account, and every other HTML path stay `no-store`.
 
+## Page Server-Timing
+
+`renderAppPage` and page JSON companions emit an HTTP `Server-Timing` header
+with request-scoped phases (`{ name, durationMs, desc? }`, same helper as
+execute). Cloudflare may append `cfEdge` / `cfOrigin` / `cfWorker`. App phases
+are:
+
+- `session` — `loadSessionInfo`
+- `ssr` — route preload, stylesheet, and starting the HTML stream
+- `highlight` — token batch (`desc` is `hit`, `worker`, `miss`, or `fallback`)
+- `listings` — onboarding featured/chooser load
+- `code-runs` — homepage public ticker window
+
+Durations use `Date.now()`, which Workers only advance across I/O. The weekly
+site-perf collector records these phases; it does not budget them.
+
 ## Syntax highlighting
 
 Browser pages that show code — markdown bodies on guides, blog posts, and
