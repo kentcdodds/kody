@@ -113,7 +113,7 @@ test('ensureConstructableStylesheets polyfills Illegal constructor hosts so Remi
 	expect(headChildren).toHaveLength(0)
 })
 
-test('ensureConstructableStylesheets reorders connected style elements when adoptedStyleSheets is reassigned', () => {
+test('ensureConstructableStylesheets reorders connected style elements without dropping CSSOM', () => {
 	const { doc, headChildren, Ctor } = installOnFakeHost()
 
 	const first = new Ctor()
@@ -122,23 +122,11 @@ test('ensureConstructableStylesheets reorders connected style elements when adop
 	expect(headChildren).toHaveLength(2)
 	const firstStyle = headChildren[0]
 	const secondStyle = headChildren[1]
-
-	doc.adoptedStyleSheets = [second as never, first as never]
-	expect(headChildren).toEqual([secondStyle, firstStyle])
-})
-
-test('ensureConstructableStylesheets keeps insertRule CSSOM across reorder without disconnecting', () => {
-	const { doc, headChildren, Ctor } = installOnFakeHost()
-
-	const first = new Ctor()
-	const second = new Ctor()
-	doc.adoptedStyleSheets!.push(first as never, second as never)
 	first.insertRule('.rmxc-a { color: red }', 0)
 	second.insertRule('.rmxc-b { color: blue }', 0)
 
 	doc.adoptedStyleSheets = [second as never, first as never]
-
-	expect(headChildren).toHaveLength(2)
+	expect(headChildren).toEqual([secondStyle, firstStyle])
 	expect(first.cssRules.length).toBe(1)
 	expect(second.cssRules.length).toBe(1)
 })

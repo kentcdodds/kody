@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { decideCommunityInstallClick } from './community-detail-install.ts'
 
-test('trusted idle install submits immediately', () => {
+test('decideCommunityInstallClick covers idle submit/confirm, ignore gates, and error retry', () => {
 	expect(
 		decideCommunityInstallClick({
 			installState: 'idle',
@@ -9,9 +9,6 @@ test('trusted idle install submits immediately', () => {
 			listingTrusted: true,
 		}),
 	).toBe('submit')
-})
-
-test('untrusted idle install asks for confirmation even if the frame still says trusted', () => {
 	expect(
 		decideCommunityInstallClick({
 			installState: 'idle',
@@ -19,9 +16,7 @@ test('untrusted idle install asks for confirmation even if the frame still says 
 			listingTrusted: false,
 		}),
 	).toBe('confirm')
-})
 
-test('install clicks are ignored while submitting, confirming, or already installed', () => {
 	expect(
 		decideCommunityInstallClick({
 			installState: 'submitting',
@@ -43,9 +38,7 @@ test('install clicks are ignored while submitting, confirming, or already instal
 			listingTrusted: true,
 		}),
 	).toBe('ignore')
-})
 
-test('a failed install can be retried', () => {
 	expect(
 		decideCommunityInstallClick({
 			installState: 'error',

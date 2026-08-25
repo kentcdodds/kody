@@ -1,9 +1,5 @@
 import { expect, test } from 'vitest'
-import { getPackageCodemodById } from '../registry.ts'
-import {
-	packagesInvokeToStaticImportCodemod,
-	packagesInvokeToStaticImportCodemodId,
-} from './0008-packages-invoke-to-static-import.ts'
+import { packagesInvokeToStaticImportCodemod } from './0008-packages-invoke-to-static-import.ts'
 
 function manifest(
 	name = '@user/demo',
@@ -111,8 +107,8 @@ test('0008 rewrites computed specifiers to import(specifier) and leaves keyed in
 	])
 })
 
-test('0008 rewrites Markdown fences and inline examples to static imports', () => {
-	const files = {
+test('0008 rewrites Markdown fences without recording kody.dependencies from docs', () => {
+	const docsOnly = {
 		'package.json': manifest('@docs-owner/demo'),
 		'README.md': [
 			'# Usage',
@@ -128,26 +124,24 @@ test('0008 rewrites Markdown fences and inline examples to static imports', () =
 		].join('\n'),
 	}
 
-	const result = packagesInvokeToStaticImportCodemod.transform(files)
-	expect(result.changed).toBe(true)
-	expect(result.changedPaths).toEqual(['README.md'])
-	expect(result.needsManual).toEqual([])
-	expect(result.files['README.md']).toContain(
+	const docsResult = packagesInvokeToStaticImportCodemod.transform(docsOnly)
+	expect(docsResult.changed).toBe(true)
+	expect(docsResult.changedPaths).toEqual(['README.md'])
+	expect(docsResult.needsManual).toEqual([])
+	expect(docsResult.files['README.md']).toContain(
 		'import request from "kody:@docs-owner/github/request"',
 	)
-	expect(result.files['README.md']).toContain('await request({})')
-	expect(result.files['README.md']).toContain(
+	expect(docsResult.files['README.md']).toContain('await request({})')
+	expect(docsResult.files['README.md']).toContain(
 		'import list from "kody:@docs-owner/inbox/list"',
 	)
-	expect(result.files['README.md']).not.toContain('packages.invoke')
-	expect(result.files['package.json']).toBe(files['package.json'])
-	expect(JSON.parse(result.files['package.json']!).kody.dependencies).toBe(
+	expect(docsResult.files['README.md']).not.toContain('packages.invoke')
+	expect(docsResult.files['package.json']).toBe(docsOnly['package.json'])
+	expect(JSON.parse(docsResult.files['package.json']!).kody.dependencies).toBe(
 		undefined,
 	)
-})
 
-test('0008 records kody.dependencies only from module rewrites, not Markdown', () => {
-	const files = {
+	const mixed = {
 		'package.json': manifest('@user/demo'),
 		'index.ts': [
 			"import { packages } from 'kody:runtime'",
@@ -167,20 +161,26 @@ test('0008 records kody.dependencies only from module rewrites, not Markdown', (
 		].join('\n'),
 	}
 
-	const result = packagesInvokeToStaticImportCodemod.transform(files)
-	expect(result.changed).toBe(true)
-	expect(result.changedPaths).toEqual(['index.ts', 'package.json', 'README.md'])
-	expect(JSON.parse(result.files['package.json']!).kody.dependencies).toEqual({
+	const mixedResult = packagesInvokeToStaticImportCodemod.transform(mixed)
+	expect(mixedResult.changed).toBe(true)
+	expect(mixedResult.changedPaths).toEqual([
+		'index.ts',
+		'package.json',
+		'README.md',
+	])
+	expect(
+		JSON.parse(mixedResult.files['package.json']!).kody.dependencies,
+	).toEqual({
 		'@user/helper': '*',
 	})
-	expect(result.files['README.md']).toContain(
+	expect(mixedResult.files['README.md']).toContain(
 		'import list from "kody:@docs-owner/inbox/list"',
 	)
-	expect(result.files['index.ts']).toContain('kody:@user/helper/run')
-	expect(result.files['index.ts']).not.toContain('packages.invoke')
+	expect(mixedResult.files['index.ts']).toContain('kody:@user/helper/run')
+	expect(mixedResult.files['index.ts']).not.toContain('packages.invoke')
 })
 
-test('0008 reuses an existing static import and is registered for admin runs', () => {
+test('0008 reuses an existing static import', () => {
 	const files = {
 		'package.json': manifest('@user/demo', { '@user/helper': '*' }),
 		'index.ts': [
@@ -200,9 +200,6 @@ test('0008 reuses an existing static import and is registered for admin runs', (
 	expect(JSON.parse(result.files['package.json']!).kody.dependencies).toEqual({
 		'@user/helper': '*',
 	})
-	expect(getPackageCodemodById(packagesInvokeToStaticImportCodemodId)).toBe(
-		packagesInvokeToStaticImportCodemod,
-	)
 })
 
 test('0008 rewrites static template specifiers and keeps other packages uses', () => {

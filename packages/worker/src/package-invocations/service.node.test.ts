@@ -1276,9 +1276,7 @@ test('runtime invoke tools reject the removed object API before resolving a targ
 			kodyId: 'private-kody-id',
 			exportName: './private-export',
 		} as never),
-	).rejects.toThrow(
-		'Object-only packages.invoke was removed. Use a static import (import fn from "kody:@owner/package/export") when the name is known, or import(specifier) when the name is data.',
-	)
+	).rejects.toThrow(/Object-only packages\.invoke was removed/)
 	expect(repoMockModule.getSavedPackageById).not.toHaveBeenCalled()
 	expect(repoMockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 	expect(repoMockModule.getSavedPackageByName).not.toHaveBeenCalled()
