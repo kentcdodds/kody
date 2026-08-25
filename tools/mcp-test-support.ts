@@ -18,8 +18,8 @@ import {
 	nodeBin,
 	spawnProcess,
 	stopProcess,
-	wranglerBin,
 } from '#mcp/test-process.ts'
+import { startCloudflareMock } from '#worker/test-support/cloudflare-mock-server.ts'
 import { buildRoleAssignmentSql } from './seed-sql.ts'
 
 const projectRoot = process.cwd()
@@ -158,15 +158,14 @@ async function startDevServerWithCloudflareMock(persistDir: string) {
 	// Artifacts REST mock. Signup still permits a skipped verification send when
 	// the mock is unavailable; createMcpClient marks the account verified before
 	// OAuth begins either way.
-	await using cloudflareMock = await startMcpCloudflareMock()
+	const cloudflareMock = await startCloudflareMock(
+		`mcp-e2e-cloudflare-${randomUUID()}`,
+	)
 	const cloudflareVars = {
 		CLOUDFLARE_API_BASE_URL: cloudflareMock.origin,
 		CLOUDFLARE_API_TOKEN: cloudflareMock.token,
 		CLOUDFLARE_ACCOUNT_ID: 'cf_account_mock_123',
 	}
-	// Keep the mock alive across the returned worker lifetime by transferring
-	// ownership into the disposable we hand back.
-	let retainCloudflareMock = false
 	try {
 		for (let attempt = 1; attempt <= maxPortBindRetries; attempt++) {
 			const port = await getPort({ host: localhost })
@@ -215,13 +214,14 @@ async function startDevServerWithCloudflareMock(persistDir: string) {
 					getStdout,
 					getStderr,
 				})
-				retainCloudflareMock = true
-				const mockProc = cloudflareMock.proc
 				return {
 					origin,
 					async [Symbol.asyncDispose]() {
-						await stopProcess(proc)
-						await stopProcess(mockProc).catch(() => undefined)
+						try {
+							await stopProcess(proc)
+						} finally {
+							await cloudflareMock[Symbol.asyncDispose]()
+						}
 					},
 				}
 			} catch (error) {
@@ -236,98 +236,8 @@ async function startDevServerWithCloudflareMock(persistDir: string) {
 		throw new Error(
 			'Failed to start MCP test dev servers after multiple retries.',
 		)
-	} finally {
-		if (retainCloudflareMock) {
-			// Prevent await-using cleanup from stopping a mock the caller now owns.
-			cloudflareMock.proc = null
-		}
-	}
-}
-
-async function startMcpCloudflareMock() {
-	const token = `mcp-e2e-cloudflare-${randomUUID()}`
-	const proc = spawnProcess({
-		cmd: [
-			wranglerBin,
-			'dev',
-			'--local',
-			'--config',
-			'packages/mock-servers/cloudflare/wrangler.jsonc',
-			'--var',
-			`MOCK_API_TOKEN:${token}`,
-			'--port',
-			'0',
-			'--inspector-port',
-			'0',
-			'--ip',
-			localhost,
-			'--show-interactive-dev-session=false',
-			'--log-level',
-			'info',
-		],
-		cwd: projectRoot,
-	})
-	const getStdout = captureOutput(proc.stdout)
-	const getStderr = captureOutput(proc.stderr)
-	const mock = {
-		origin: '',
-		token,
-		proc: proc as ReturnType<typeof spawnProcess> | null,
-		async [Symbol.asyncDispose]() {
-			if (mock.proc) {
-				await stopProcess(mock.proc).catch(() => undefined)
-				mock.proc = null
-			}
-		},
-	}
-	try {
-		const deadline = Date.now() + defaultWaitTimeoutMs
-		while (Date.now() < deadline) {
-			const exitCode = await Promise.race([
-				proc.exited,
-				delay(200).then(() => null),
-			])
-			if (typeof exitCode === 'number') {
-				throw new Error(
-					[
-						`Mock Cloudflare exited before becoming ready (exit ${exitCode}).`,
-						getStdout(),
-						getStderr(),
-					]
-						.filter(Boolean)
-						.join('\n\n'),
-				)
-			}
-			const readyMatch = stripVTControlCharacters(
-				`${getStdout()}\n${getStderr()}`,
-			).match(/\bReady on (http:\/\/127\.0\.0\.1:\d+)\b/)
-			const origin = readyMatch?.[1]
-			if (!origin) continue
-			try {
-				const response = await fetch(`${origin}/__mocks/meta`, {
-					signal: AbortSignal.timeout(perAttemptFetchTimeoutMs),
-				})
-				await response.body?.cancel()
-				if (response.ok) {
-					mock.origin = origin
-					return mock
-				}
-			} catch {
-				// Retry until the mock accepts connections.
-			}
-		}
-		throw new Error(
-			[
-				'Timed out waiting for mock Cloudflare to become ready.',
-				getStdout(),
-				getStderr(),
-			]
-				.filter(Boolean)
-				.join('\n\n'),
-		)
 	} catch (error) {
-		await stopProcess(proc).catch(() => undefined)
-		mock.proc = null
+		await cloudflareMock[Symbol.asyncDispose]()
 		throw error
 	}
 }

@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { stripVTControlCharacters } from 'node:util'
 import {
@@ -5,6 +8,7 @@ import {
 	spawnProcess,
 	stopProcess,
 	wranglerBin,
+	type SpawnedProcess,
 } from '#mcp/test-process.ts'
 
 const workerConfig = 'packages/mock-servers/cloudflare/wrangler.jsonc'
@@ -61,12 +65,27 @@ async function waitForCloudflareMock(
 	)
 }
 
+async function disposeCloudflareMock(proc: SpawnedProcess, persistDir: string) {
+	try {
+		await stopProcess(proc)
+	} finally {
+		await rm(persistDir, { recursive: true, force: true })
+	}
+}
+
 export async function startCloudflareMock(token: string) {
+	// Isolated persist dir: this mock uses SQLite-backed Durable Objects.
+	// Sharing Wrangler's default `.wrangler/state` across parallel `wrangler
+	// dev` processes (email + artifacts node-unit, or a leftover local dev
+	// lock) crashes workerd with SQLITE_BUSY_RECOVERY before Ready.
+	const persistDir = await mkdtemp(path.join(tmpdir(), 'kody-cf-mock-'))
 	const proc = spawnProcess({
 		cmd: [
 			wranglerBin,
 			'dev',
 			'--local',
+			'--persist-to',
+			persistDir,
 			'--config',
 			workerConfig,
 			'--var',
@@ -91,11 +110,11 @@ export async function startCloudflareMock(token: string) {
 			origin,
 			token,
 			async [Symbol.asyncDispose]() {
-				await stopProcess(proc)
+				await disposeCloudflareMock(proc, persistDir)
 			},
 		}
 	} catch (error) {
-		await stopProcess(proc)
+		await disposeCloudflareMock(proc, persistDir)
 		throw error
 	}
 }
