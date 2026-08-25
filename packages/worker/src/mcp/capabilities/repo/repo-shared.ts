@@ -355,7 +355,7 @@ export const repoEditFilesInputSchema = repoSessionIdSchema.extend({
 		.array(repoSessionEditSchema)
 		.min(1)
 		.describe(
-			'Batch of file-level edits: write, replace, writeJson, delete, or move.',
+			'Batch of file-level edits: write, replace, writeJson, delete, or move. Multiple content edits to the same path compose sequentially.',
 		),
 	dry_run: z
 		.boolean()

@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { createWorkspaceStateBackend } from '@cloudflare/shell'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as Artifacts from './artifacts.ts'
@@ -396,8 +397,8 @@ vi.mock('@cloudflare/shell', () => ({
 		constructor(_workspace: unknown) {}
 	},
 	createWorkspaceStateBackend: vi.fn(() => ({
-		// Mirror the real backend closely enough for the applyEdits size gate:
-		// planned edits carry the resulting content per instruction.
+		// applyEditPlan persists caller-planned contents. Sequential same-path
+		// composition is planned in Kody before this backend sees the batch.
 		planEdits: vi.fn(
 			async (
 				instructions: Array<{ kind: string; path: string; content?: string }>,
@@ -1314,6 +1315,97 @@ test('applyEdits rejects a write over the per-file repo size limit with hosting 
 		}),
 	).rejects.toThrow(/"assets\/dataset\.csv".*per-file limit.*Cloudflare R2/s)
 	expect(mockModule.workspaceWriteFile).not.toHaveBeenCalled()
+})
+
+test('applyEdits composes multiple replace edits to the same file instead of keeping only the last', async () => {
+	setCommonSessionFixtures()
+	mockModule.workspaceReadFile.mockImplementation(async (path: string) => {
+		if (path === '/session/src/ci-secrets.ts') {
+			return [
+				'const accountId = status.accountId',
+				'const value = status.accountId',
+				'const extra = status.accountId',
+				'',
+			].join('\n')
+		}
+		return ''
+	})
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+
+	const result = await repoSession.applyEdits({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		edits: [
+			{
+				kind: 'replace',
+				path: 'src/ci-secrets.ts',
+				search: 'const accountId = status.accountId',
+				replacement: 'const accountId = accountId',
+			},
+			{
+				kind: 'replace',
+				path: 'src/ci-secrets.ts',
+				search: 'const value = status.accountId',
+				replacement: 'const value = accountId',
+			},
+			{
+				kind: 'replace',
+				path: 'src/ci-secrets.ts',
+				search: 'const extra = status.accountId',
+				replacement: 'const extra = accountId',
+			},
+		],
+	})
+
+	const backend = vi.mocked(createWorkspaceStateBackend).mock.results.at(-1)
+		?.value as {
+		applyEditPlan: ReturnType<typeof vi.fn>
+	}
+	expect(backend.applyEditPlan).toHaveBeenCalledWith(
+		expect.objectContaining({
+			totalChanged: 3,
+			edits: [
+				expect.objectContaining({
+					changed: true,
+					content: [
+						'const accountId = accountId',
+						'const value = status.accountId',
+						'const extra = status.accountId',
+						'',
+					].join('\n'),
+				}),
+				expect.objectContaining({
+					changed: true,
+					content: [
+						'const accountId = accountId',
+						'const value = accountId',
+						'const extra = status.accountId',
+						'',
+					].join('\n'),
+				}),
+				expect.objectContaining({
+					changed: true,
+					content: [
+						'const accountId = accountId',
+						'const value = accountId',
+						'const extra = accountId',
+						'',
+					].join('\n'),
+				}),
+			],
+		}),
+		expect.objectContaining({ dryRun: undefined }),
+	)
+	expect(result.totalChanged).toBe(3)
+	expect(result.edits.map((edit) => edit.changed)).toEqual([true, true, true])
+	expect(result.edits.at(-1)?.content).toBe(
+		[
+			'const accountId = accountId',
+			'const value = accountId',
+			'const extra = accountId',
+			'',
+		].join('\n'),
+	)
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {

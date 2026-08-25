@@ -178,5 +178,9 @@ await kody.repo_run_checks({ session_id: session.id })
 await kody.repo_publish_session({ session_id: session.id })
 ```
 
+Same-path `write`, `replace`, and `writeJson` edits in one `repo_edit_files`
+call compose in order: each instruction sees the file as left by the previous
+one. The last same-path edit's `content` is the file after the whole batch.
+
 Each step returns structured JSON so agents can inspect diffs, check outcomes,
 and publish results without shell parsing.

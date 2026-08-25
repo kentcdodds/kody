@@ -1053,15 +1053,16 @@ Operational notes:
   projections of that repo-backed source rather than a competing second source
   of truth.
 - Repo sessions expose a file-level API inside the RepoSession Durable Object:
-  batch edits (`repo_edit_files`: write/replace/writeJson/delete/move), unified
-  diff apply (`repo_apply_patch`), git inspection (`repo_status`, `repo_diff`,
-  `repo_log`), commit (`repo_commit`), and restore (`repo_restore`). There is no
-  git-command parser channel; branch/checkout/remote operations require the
-  Artifacts git lane via `package_get_git_remote`. Package runtime bundles are
-  loaded from published artifacts rather than a mounted checkout. The session
-  Workspace spills objects above the inline threshold to `REPO_SESSION_BLOBS` so
-  clone and checkout can honor the 10 MiB per-file policy without hitting the
-  Durable Object SQLite 2 MiB row limit.
+  batch edits (`repo_edit_files`: write/replace/writeJson/delete/move; same-path
+  content edits compose in order), unified diff apply (`repo_apply_patch`), git
+  inspection (`repo_status`, `repo_diff`, `repo_log`), commit (`repo_commit`),
+  and restore (`repo_restore`). There is no git-command parser channel;
+  branch/checkout/remote operations require the Artifacts git lane via
+  `package_get_git_remote`. Package runtime bundles are loaded from published
+  artifacts rather than a mounted checkout. The session Workspace spills objects
+  above the inline threshold to `REPO_SESSION_BLOBS` so clone and checkout can
+  honor the 10 MiB per-file policy without hitting the Durable Object SQLite 2
+  MiB row limit.
 - `repo_write_file` exposes the same Durable Object's `applyEdits` write path as
   a first-class MCP capability for whole-file overwrites. Prefer it over
   `repo_apply_patch` when the agent is replacing an entire file (for example, a
