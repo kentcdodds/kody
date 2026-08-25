@@ -6,7 +6,10 @@ import {
 	normalizeProviderKey,
 	safeParseHost,
 } from '@kody-internal/shared/url-hosts.ts'
+import { isBrowserFetchNetworkError } from '#client/browser-fetch-network-error.ts'
 import { type AccountIntegrationListItem } from '#universal/loader-data.ts'
+
+export { isBrowserFetchNetworkError }
 
 export type OAuthFlow = 'pkce' | 'confidential'
 export type TokenExchangeStyle = 'form' | 'basic-json' | 'basic-form'
@@ -576,21 +579,6 @@ export function summarizeStoredSetupState(input: {
 		missingFields,
 		isReady: missingFields.length === 0,
 	}
-}
-
-/**
- * Browser `fetch()` network failures that reject as TypeError. Exact strings
- * only — Firefox (KODY-CLOUDFLARE-3P), Chromium, and WebKit — so unrelated
- * TypeErrors still surface their own message.
- */
-export function isBrowserFetchNetworkError(error: unknown): boolean {
-	if (!(error instanceof TypeError)) return false
-	const message = error.message.trim().replace(/^TypeError:\s*/i, '')
-	return (
-		message === 'NetworkError when attempting to fetch resource.' ||
-		message === 'Failed to fetch' ||
-		message === 'Load failed'
-	)
 }
 
 /**

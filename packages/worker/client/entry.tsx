@@ -1,7 +1,7 @@
 import { run } from 'remix/ui'
 import { consumePrefetchedFrame } from '#client/frame-prefetch.ts'
 import {
-	createFrameResolveInit,
+	fetchFrameResolve,
 	prefetchedFrameResponse,
 } from '#client/frame-resolve.ts'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
@@ -78,7 +78,7 @@ async function boot() {
 			if (cached !== undefined) {
 				return prefetchedFrameResponse(cached)
 			}
-			const response = await fetch(src, createFrameResolveInit(options))
+			const response = await fetchFrameResolve(src, options)
 			if (!response.ok) {
 				throw new Error(
 					`Frame resolve failed (${response.status}) for ${src}${target ? ` target=${target}` : ''}`,

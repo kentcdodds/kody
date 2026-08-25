@@ -1,4 +1,5 @@
 import { type ResolveFrameOptions } from 'remix/ui'
+import { isBrowserFetchNetworkError } from '#client/browser-fetch-network-error.ts'
 import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 
 const safeFrameMethods = new Set(['GET', 'HEAD'])
@@ -29,6 +30,30 @@ export function createFrameResolveInit(options?: ResolveFrameOptions) {
 		init.body = encodeFrameFormBody(formData, options?.encType)
 	}
 	return init
+}
+
+/**
+ * Fetch a Remix frame document. Idempotent GET/HEAD retries once on browser
+ * `fetch` network TypeErrors (WebKit "Load failed", Chromium "Failed to
+ * fetch", Firefox NetworkError) — KODY-CLOUDFLARE-5Y Mobile Safari blips after
+ * the same URL already succeeded.
+ */
+export async function fetchFrameResolve(
+	src: string,
+	options?: ResolveFrameOptions,
+) {
+	const init = createFrameResolveInit(options)
+	try {
+		return await fetch(src, init)
+	} catch (error: unknown) {
+		if (
+			!isBrowserFetchNetworkError(error) ||
+			!isSafeFrameMethod(init.method ?? 'GET')
+		) {
+			throw error
+		}
+		return await fetch(src, init)
+	}
 }
 
 function isSafeFrameMethod(method: string) {
