@@ -46,6 +46,9 @@ smoke does not prove MCP execute health.
 - [Request Lifecycle](./request-lifecycle.md): how requests are routed in the
   Worker, including syntax highlighting on code-bearing pages and the short CDN
   cache for anonymous marketing HTML.
+- [Onboarding process](./onboarding.md): wizard steps, derived checklist, and
+  the optional first-win guide (aligned by
+  `packages/worker/universal/onboarding-process.ts`).
 - [Authentication](./authentication.md): app session auth and OAuth-protected
   MCP auth.
 - [Platform accounts](./platform-accounts.md): operator-provisioned platform

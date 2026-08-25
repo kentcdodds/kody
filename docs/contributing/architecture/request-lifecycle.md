@@ -171,6 +171,12 @@ are:
 - `listings` — onboarding featured/chooser load
 - `code-runs` — homepage public ticker window
 
+Signed-in `/onboarding` loads featured listings, then derives the setup
+checklist from verification, MCP OAuth grants, saved integrations or MCP
+servers, and saved-package meter counts. The optional first-win email loop is
+not a checklist item and does not run Mailbox probes on this page. See
+[onboarding process](./onboarding.md).
+
 Durations use `Date.now()`, which Workers only advance across I/O. The weekly
 site-perf collector records these phases; it does not budget them.
 

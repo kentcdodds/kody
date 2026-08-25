@@ -12,7 +12,6 @@ import {
 	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
 	type OnboardingLoaderData,
-	type OnboardingWelcomeEmail,
 } from '#universal/loader-data.ts'
 
 export {
@@ -69,16 +68,10 @@ export function loadPublicOnboardingData(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 		}),
-		firstWinPrompt: buildFirstWinPrompt({
-			env: input.env,
-			requestUrl: input.requestUrl,
-		}),
 		persistPrompt: buildPersistFirstPackagePrompt({
 			env: input.env,
 			requestUrl: input.requestUrl,
 		}),
-		hasSentWelcomeEmail: false,
-		welcomeEmail: null,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -114,8 +107,6 @@ export async function loadOnboardingData(input: {
 	persistedPackageKodyId?: string | null
 	/** Derived progress checklist, computed by the handler. */
 	checklist?: OnboardingChecklistLoaderData | null
-	/** Stored welcome email metadata, loaded by the handler. */
-	welcomeEmail?: OnboardingWelcomeEmail | null
 }): Promise<OnboardingLoaderData> {
 	const hasMcpClient = await userHasMcpOAuthGrants(
 		input.env,
@@ -146,12 +137,6 @@ export async function loadOnboardingData(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 		}),
-		firstWinPrompt: input.emailVerified
-			? buildFirstWinPrompt({
-					env: input.env,
-					requestUrl: input.requestUrl,
-				})
-			: '',
 		persistPrompt: input.emailVerified
 			? buildPersistFirstPackagePrompt({
 					env: input.env,
@@ -170,9 +155,6 @@ export async function loadOnboardingData(input: {
 				listDisconnectedOnboardingFeaturedMcpServers())
 			: [],
 		customMcpServers: input.emailVerified ? (input.customMcpServers ?? []) : [],
-		// Computed by the handler alongside the checklist probes.
-		hasSentWelcomeEmail: false,
-		welcomeEmail: input.welcomeEmail ?? null,
 		persistedPackageKodyId: input.emailVerified
 			? (input.persistedPackageKodyId ?? null)
 			: null,

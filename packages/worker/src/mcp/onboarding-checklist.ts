@@ -1,16 +1,14 @@
-import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
 import {
 	readCurrentEntitlementResourceUsage,
 	type EntitlementUsageEnv,
 } from '#worker/entitlements/service.ts'
 import { listIntegrations } from '#worker/integrations/service.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
-import { listMemoriesByUserId } from '#mcp/memory/repo.ts'
 import { getValue } from '#mcp/values/service.ts'
 import {
 	type OnboardingChecklistItem,
 	type OnboardingChecklistItemId,
-} from '#universal/onboarding-checklist-types.ts'
+} from '#universal/onboarding-process.ts'
 
 /**
  * Derived onboarding progress. Every item is computed from data the platform
@@ -32,48 +30,14 @@ export const onboardingChecklistDismissedValueName =
 /** User-scope value lookups bind with no session or app. */
 const userScopedStorageContext = { sessionId: null, appId: null }
 
-export type OnboardingChecklistEnv = Pick<Env, 'APP_DB'> &
-	EntitlementUsageEnv & { MAILBOX: Env['MAILBOX'] }
+export type OnboardingChecklistEnv = Pick<Env, 'APP_DB'> & EntitlementUsageEnv
 
 /**
- * First-win Send sub-step: a successful `email_send` (UserMeter daily count)
- * or any stored outbound mailbox copy. Meter covers the case where Hotmail
- * already received the message but the mailbox mirror lagged; mailbox covers
- * sends from a previous UTC day after the daily meter resets. Failed mailbox
- * stores refund the meter before throwing, so a rejected send cannot mark
- * Send done. Probe failures fail open to false so a Mailbox or UserMeter
- * blip never marks Send done.
- */
-export async function userHasSentWelcomeEmail(input: {
-	env: OnboardingChecklistEnv
-	userId: string
-	now?: Date
-}): Promise<boolean> {
-	const now = input.now ?? new Date()
-	const [outboundMail, emailSendsToday] = await Promise.all([
-		countInternalUserEmailMessages({
-			env: input.env,
-			ownerId: input.userId,
-			filters: { direction: 'outbound' },
-		}).catch(() => 0),
-		readCurrentEntitlementResourceUsage({
-			db: input.env.APP_DB,
-			env: input.env,
-			userId: input.userId,
-			resource: 'email_sends_per_day',
-			now,
-		}).catch(() => 0),
-	])
-	return outboundMail > 0 || emailSendsToday > 0
-}
-
-/**
- * Compute the checklist from existing signals: one Mailbox DO count (stored
- * INBOUND mail — the welcome email alone is outbound, so "exchange a first
- * email" only completes once the user's reply lands), and three cheap D1
- * reads (active memories, saved integrations or MCP servers, saved
- * packages). Individual probe failures fail open to "not done" so a
- * storage blip never breaks onboarding surfaces.
+ * Compute the checklist from existing signals: MCP OAuth grants (passed in),
+ * saved integrations or MCP servers, and the saved-package meter. Individual
+ * probe failures fail open to "not done" so a storage blip never breaks
+ * onboarding surfaces. The optional first-win email loop is not a checklist
+ * item.
  */
 export async function deriveOnboardingChecklist(input: {
 	env: OnboardingChecklistEnv
@@ -84,33 +48,21 @@ export async function deriveOnboardingChecklist(input: {
 }): Promise<OnboardingChecklist> {
 	const { env, userId } = input
 	const now = input.now ?? new Date()
-	const [inboundMail, memories, integrations, mcpServers, savedPackages] =
-		await Promise.all([
-			countInternalUserEmailMessages({
-				env,
-				ownerId: userId,
-				filters: { direction: 'inbound' },
-			}).catch(() => 0),
-			listMemoriesByUserId(env.APP_DB, userId, {
-				limit: 1,
-				statuses: ['active'],
-			}).catch(() => []),
-			listIntegrations({ env, userId }).catch(() => [] as Array<unknown>),
-			listMcpServerSettings({ env, userId }).catch(() => [] as Array<unknown>),
-			readCurrentEntitlementResourceUsage({
-				db: env.APP_DB,
-				env,
-				userId,
-				resource: 'saved_packages',
-				now,
-			}).catch(() => 0),
-		])
+	const [integrations, mcpServers, savedPackages] = await Promise.all([
+		listIntegrations({ env, userId }).catch(() => [] as Array<unknown>),
+		listMcpServerSettings({ env, userId }).catch(() => [] as Array<unknown>),
+		readCurrentEntitlementResourceUsage({
+			db: env.APP_DB,
+			env,
+			userId,
+			resource: 'saved_packages',
+			now,
+		}).catch(() => 0),
+	])
 
 	const items: Array<OnboardingChecklistItem> = [
 		{ id: 'verify-email', done: input.emailVerified },
 		{ id: 'connect-agent', done: input.hasMcpClient },
-		{ id: 'first-hello', done: inboundMail > 0 },
-		{ id: 'save-memory', done: memories.length > 0 },
 		{
 			id: 'connect-integration',
 			done: integrations.length > 0 || mcpServers.length > 0,

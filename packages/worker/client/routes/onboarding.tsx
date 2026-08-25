@@ -27,6 +27,11 @@ import { type OnboardingFeaturedListing } from '#universal/community-public-type
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
 import {
+	legacyOnboardingStepHashes,
+	onboardingWizardSteps,
+	type OnboardingWizardStepNumber,
+} from '#universal/onboarding-process.ts'
+import {
 	firstInstalledOnboardingExampleName,
 	hasInstalledOnboardingExample,
 	onboardingExampleInstallFingerprint,
@@ -99,25 +104,9 @@ import {
  * permanence lesson: one ad hoc execute, then persist that working code.
  */
 
-type OnboardingStep = 1 | 2 | 3
+type OnboardingStep = OnboardingWizardStepNumber
 
-const onboardingSteps = [
-	{ number: 1, label: 'Connect your agent', hash: 'connect-agent' },
-	{ number: 2, label: 'Give Kody Access', hash: 'connect-mcp' },
-	{ number: 3, label: 'Try it, then persist', hash: 'first-build' },
-] as const satisfies ReadonlyArray<{
-	number: OnboardingStep
-	label: string
-	hash: string
-}>
-
-/** Older hashes from the email/memory, example-fork, and OAuth-lead steps. */
-const legacyOnboardingStepHashes: Record<string, OnboardingStep> = {
-	'first-win': 2,
-	'quick-example': 3,
-	'connect-services': 2,
-	'starter-packages': 3,
-}
+const onboardingSteps = onboardingWizardSteps
 
 function isOnboardingPath(href: string) {
 	return new URL(href, 'http://localhost').pathname === onboardingPath
