@@ -45,7 +45,7 @@ test('collectMarkdownFences walks top-level and nested code tokens', () => {
 	).toEqual([{ code: '{"ok": true}', lang: 'json' }])
 })
 
-test('highlightSnippets records fallback, worker, miss, and origin-hit timings', async () => {
+test('highlightSnippets covers fallback, worker timings, key mapping, and worker errors', async () => {
 	const fallbackTiming: Array<ServerTimingEntry> = []
 	const fallback = await highlightSnippets(
 		{},
@@ -69,14 +69,19 @@ test('highlightSnippets records fallback, worker, miss, and origin-hit timings',
 				),
 		} as unknown as Fetcher,
 	}
-	expect(
-		await highlightSnippets(workerEnv, [snippet], {
-			serverTiming: workerTiming,
-		}),
-	).toEqual([fixture])
+	const workerResults = await highlightSnippets(workerEnv, [snippet], {
+		serverTiming: workerTiming,
+	})
+	expect(workerResults).toEqual([fixture])
 	expect(workerTiming).toEqual([
 		expect.objectContaining({ name: 'highlight', desc: 'worker' }),
 	])
+	expect(highlightResultsByKey([snippet], workerResults)).toEqual({
+		[highlightSnippetKey(snippet)]: fixture,
+	})
+	expect(
+		uniqueHighlightSnippets([snippet, snippet, { code: 'x', lang: 'txt' }]),
+	).toEqual([snippet, { code: 'x', lang: 'txt' }])
 
 	const missTiming: Array<ServerTimingEntry> = []
 	const missEnv = {
@@ -94,39 +99,15 @@ test('highlightSnippets records fallback, worker, miss, and origin-hit timings',
 	expect(missTiming).toEqual([
 		expect.objectContaining({ name: 'highlight', desc: 'miss' }),
 	])
-})
 
-test('highlightSnippets returns worker tokens and maps them by snippet key', async () => {
-	const snippet = { code: 'const x = 1', lang: 'ts' as const }
-	const fixture = highlightedFixture(snippet.code)
-	const env = {
-		HIGHLIGHT: {
-			fetch: async () =>
-				Response.json({
-					results: [fixture],
-				}),
-		} as unknown as Fetcher,
-	}
-	const results = await highlightSnippets(env, [snippet])
-	expect(results).toEqual([fixture])
-	expect(highlightResultsByKey([snippet], results)).toEqual({
-		[highlightSnippetKey(snippet)]: fixture,
-	})
-	expect(
-		uniqueHighlightSnippets([snippet, snippet, { code: 'x', lang: 'txt' }]),
-	).toEqual([snippet, { code: 'x', lang: 'txt' }])
-})
-
-test('highlightSnippets falls back when the worker errors', async () => {
-	const env = {
+	const errorEnv = {
 		HIGHLIGHT: {
 			fetch: async () => new Response('nope', { status: 503 }),
 		} as unknown as Fetcher,
 	}
-	const results = await highlightSnippets(env, [
-		{ code: 'const x = 1', lang: 'ts' },
-	])
-	expect(results).toEqual([plainHighlightedCode('const x = 1', 'ts')])
+	expect(
+		await highlightSnippets(errorEnv, [{ code: 'const x = 1', lang: 'ts' }]),
+	).toEqual([plainHighlightedCode('const x = 1', 'ts')])
 })
 
 test('highlightMarkdownFences and highlightJsonValue use the worker', async () => {

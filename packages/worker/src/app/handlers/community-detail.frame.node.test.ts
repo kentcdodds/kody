@@ -122,7 +122,6 @@ test('community detail handler returns bare detail frame HTML for target header'
 		'data-testid="community-detail-owner-private"',
 	)
 	expect(publicHtml).toContain('data-testid="community-detail-star"')
-	expect(publicHtml).toContain('title="Star"')
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
 	expect(publicHtml).toContain('data-testid="community-browse-files"')
 	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/files"')

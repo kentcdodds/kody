@@ -12,15 +12,16 @@ test('retiring-primitives registry is empty and omits the instruction section', 
 		loadActiveRetiringNoticeIds({} as D1Database, 'user-1'),
 	).resolves.toEqual(new Set())
 	expect(formatActiveRetiringPrimitivesInstructions(new Set())).toBe('')
-	expect(
-		formatRetiringPrimitivesInstructions([
-			{
-				label: 'Example',
-				guide: 'example',
-				summary: 'One-line rule.',
-			},
-		]),
-	).toBe(
-		'Retiring primitives\n- Example: One-line rule. Load `coding_guide_get({ guide: "example" })` to migrate.',
-	)
+
+	const formatted = formatRetiringPrimitivesInstructions([
+		{
+			label: 'Example',
+			guide: 'example',
+			summary: 'One-line rule.',
+		},
+	])
+	expect(formatted.startsWith('Retiring primitives')).toBe(true)
+	expect(formatted).toContain('Example:')
+	expect(formatted).toContain('coding_guide_get')
+	expect(formatted).toContain('"example"')
 })

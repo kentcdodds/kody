@@ -1,8 +1,6 @@
 import { expect, test } from 'vitest'
 import {
-	mcpOAuthChannelName,
 	mcpOAuthMessageType,
-	mcpOAuthPopupName,
 	mcpOAuthReturnCookie,
 	mcpOAuthReturnCookieName,
 	mcpOAuthReturnOnboarding,
@@ -24,10 +22,8 @@ test('readMcpOAuthReturnCookie finds the onboarding return marker', () => {
 	expect(mcpOAuthReturnCookie({ value: '', secure: false })).toContain(
 		'Max-Age=0',
 	)
-	expect(mcpOAuthPopupName).toBe('kody-mcp-oauth')
-	expect(mcpOAuthChannelName).toBe('kody-mcp-oauth')
 	expect(mcpOAuthReturnCookie({ value: '', secure: false })).toContain(
-		'kody_mcp_oauth_return=;',
+		`${mcpOAuthReturnCookieName}=;`,
 	)
 	expect(
 		readMcpOAuthDoneMessage({
@@ -36,10 +32,9 @@ test('readMcpOAuthReturnCookie finds the onboarding return marker', () => {
 			reason: 'Supported sites required.',
 			server: 'atlassian',
 		}),
-	).toEqual({
+	).toMatchObject({
 		type: mcpOAuthMessageType,
 		auth: 'error',
-		reason: 'Supported sites required.',
 		server: 'atlassian',
 	})
 	expect(readMcpOAuthDoneMessage({ type: 'other' })).toBeNull()

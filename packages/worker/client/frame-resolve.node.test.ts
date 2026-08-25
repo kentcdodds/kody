@@ -35,29 +35,24 @@ test('frame resolve never attaches a body to GET or HEAD, including lowercase me
 	expect(String(postInit.body)).toBe('q=remix')
 })
 
-test('fetchFrameResolve retries once on GET network TypeError (KODY-CLOUDFLARE-5Y)', async () => {
+test('fetchFrameResolve retries once on GET network TypeErrors only', async () => {
 	const ok = new Response('<html></html>', { status: 200 })
-	const fetchMock = vi
+	const getRetry = vi
 		.fn()
 		.mockRejectedValueOnce(new TypeError('Load failed'))
 		.mockResolvedValueOnce(ok)
-	vi.stubGlobal('fetch', fetchMock)
-
+	vi.stubGlobal('fetch', getRetry)
 	try {
-		const response = await fetchFrameResolve('/@kody/planetscale')
-		expect(response).toBe(ok)
-		expect(fetchMock).toHaveBeenCalledTimes(2)
+		expect(await fetchFrameResolve('/@kody/planetscale')).toBe(ok)
+		expect(getRetry).toHaveBeenCalledTimes(2)
 	} finally {
 		vi.unstubAllGlobals()
 	}
-})
 
-test('fetchFrameResolve does not retry POST network TypeErrors', async () => {
-	const fetchMock = vi
+	const postNoRetry = vi
 		.fn()
 		.mockRejectedValueOnce(new TypeError('Failed to fetch'))
-	vi.stubGlobal('fetch', fetchMock)
-
+	vi.stubGlobal('fetch', postNoRetry)
 	try {
 		await expect(
 			fetchFrameResolve('/action', {
@@ -65,23 +60,20 @@ test('fetchFrameResolve does not retry POST network TypeErrors', async () => {
 				formData: new FormData(),
 			}),
 		).rejects.toThrow('Failed to fetch')
-		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(postNoRetry).toHaveBeenCalledTimes(1)
 	} finally {
 		vi.unstubAllGlobals()
 	}
-})
 
-test('fetchFrameResolve does not retry non-network TypeErrors', async () => {
-	const fetchMock = vi
+	const nonNetwork = vi
 		.fn()
 		.mockRejectedValueOnce(new TypeError('null is not an object'))
-	vi.stubGlobal('fetch', fetchMock)
-
+	vi.stubGlobal('fetch', nonNetwork)
 	try {
 		await expect(fetchFrameResolve('/@kody/planetscale')).rejects.toThrow(
 			'null is not an object',
 		)
-		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(nonNetwork).toHaveBeenCalledTimes(1)
 	} finally {
 		vi.unstubAllGlobals()
 	}

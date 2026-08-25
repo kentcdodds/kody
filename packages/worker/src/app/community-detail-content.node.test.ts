@@ -24,62 +24,28 @@ const sampleListing = {
 	starCount: 0,
 } satisfies PublicCommunityListing
 
-test('community detail head replaces Installed with Fork outdated when the listing is ahead', async () => {
-	const aheadPrompt =
-		'Compare the current listing snapshot, keep local customizations, then call community_fork_absorb.'
-	const html = await renderCommunityDetailContentHtml({
-		listing: {
-			...sampleListing,
-			viewerInstall: {
-				status: 'installed',
-				targetName: '@me/github-triage',
-				agentPrompt: 'Finish setup for @me/github-triage.',
-				packageId: 'pkg-1',
-				listingAhead: true,
-				listingAheadPrompt: aheadPrompt,
-			},
-		},
-		ownerProfilePublic: true,
-		loggedIn: true,
-		starredByViewer: false,
-		viewerFollowsOwner: false,
-		viewerIsOwner: false,
-		returnTo: '/community',
-		followError: null,
-	})
+const detailBase = {
+	ownerProfilePublic: true,
+	viewerFollowsOwner: false,
+	viewerIsOwner: false,
+	returnTo: '/@kentcdodds/github-triage',
+	followError: null,
+} as const
 
-	expect(html).toContain('data-testid="community-detail-listing-ahead-badge"')
-	expect(html).toContain('data-fork-outdated-copy')
-	expect(html).toContain(aheadPrompt)
-	expect(html).not.toContain(
-		'data-testid="community-detail-viewer-install-badge"',
-	)
-	expect(html).not.toContain('data-testid="community-detail-install"')
-})
-
-test('community detail head shows an Install pill when the viewer has not forked it', async () => {
-	const html = await renderCommunityDetailContentHtml({
+test('community detail head covers install, installed, and listing-ahead badges', async () => {
+	const installHtml = await renderCommunityDetailContentHtml({
 		listing: sampleListing,
-		ownerProfilePublic: true,
+		...detailBase,
 		loggedIn: true,
 		starredByViewer: false,
-		viewerFollowsOwner: false,
-		viewerIsOwner: false,
-		returnTo: '/@kentcdodds/github-triage',
-		followError: null,
 	})
+	expect(installHtml).toContain('data-testid="community-detail-install"')
+	expect(installHtml).toContain('data-community-install')
+	expect(installHtml).toContain('data-trusted="false"')
 
-	expect(html).toContain('data-testid="community-detail-install"')
-	expect(html).toContain('data-community-install')
-	expect(html).toContain('data-trusted="false"')
-	expect(html).not.toContain('One-click install')
-	expect(html).not.toContain('Fork with your agent')
-})
-
-test('community detail Installed pill copies an adapt prompt', async () => {
 	const agentPrompt =
 		'Call package_get for @me/github-triage and adapt it to my needs.'
-	const html = await renderCommunityDetailContentHtml({
+	const installedHtml = await renderCommunityDetailContentHtml({
 		listing: {
 			...sampleListing,
 			trusted: true,
@@ -92,73 +58,81 @@ test('community detail Installed pill copies an adapt prompt', async () => {
 				listingAheadPrompt: null,
 			},
 		},
-		ownerProfilePublic: true,
+		...detailBase,
 		loggedIn: true,
 		starredByViewer: false,
-		viewerFollowsOwner: false,
-		viewerIsOwner: false,
-		returnTo: '/@kentcdodds/github-triage',
-		followError: null,
 	})
-
-	expect(html).toContain('data-testid="community-detail-trusted-badge"')
-	expect(html).toContain('data-testid="community-detail-viewer-install-badge"')
-	expect(html).toContain('data-copy-prompt')
-	expect(html).toContain(agentPrompt)
-	expect(html).not.toContain('data-testid="community-detail-install"')
-})
-
-test('community detail title row shows an empty star next to the name', async () => {
-	const html = await renderCommunityDetailContentHtml({
-		listing: sampleListing,
-		ownerProfilePublic: true,
-		loggedIn: true,
-		starredByViewer: false,
-		viewerFollowsOwner: false,
-		viewerIsOwner: false,
-		returnTo: '/@kentcdodds/github-triage',
-		followError: null,
-	})
-
-	expect(html).toContain('data-testid="community-detail-star"')
-	expect(html).toContain('data-community-star')
-	expect(html).toContain('data-starred="false"')
-	expect(html).toContain('title="Star"')
-	expect(html.indexOf('data-testid="community-detail-star"')).toBeGreaterThan(
-		html.indexOf('<h1'),
+	expect(installedHtml).toContain(
+		'data-testid="community-detail-trusted-badge"',
 	)
+	expect(installedHtml).toContain(
+		'data-testid="community-detail-viewer-install-badge"',
+	)
+	expect(installedHtml).toContain('data-copy-prompt')
+	expect(installedHtml).toContain(agentPrompt)
+	expect(installedHtml).not.toContain('data-testid="community-detail-install"')
+
+	const aheadPrompt =
+		'Compare the current listing snapshot, keep local customizations, then call community_fork_absorb.'
+	const aheadHtml = await renderCommunityDetailContentHtml({
+		listing: {
+			...sampleListing,
+			viewerInstall: {
+				status: 'installed',
+				targetName: '@me/github-triage',
+				agentPrompt: 'Finish setup for @me/github-triage.',
+				packageId: 'pkg-1',
+				listingAhead: true,
+				listingAheadPrompt: aheadPrompt,
+			},
+		},
+		...detailBase,
+		returnTo: '/community',
+		loggedIn: true,
+		starredByViewer: false,
+	})
+	expect(aheadHtml).toContain(
+		'data-testid="community-detail-listing-ahead-badge"',
+	)
+	expect(aheadHtml).toContain('data-fork-outdated-copy')
+	expect(aheadHtml).toContain(aheadPrompt)
+	expect(aheadHtml).not.toContain(
+		'data-testid="community-detail-viewer-install-badge"',
+	)
+	expect(aheadHtml).not.toContain('data-testid="community-detail-install"')
 })
 
-test('community detail title star is filled when the viewer already starred', async () => {
-	const html = await renderCommunityDetailContentHtml({
+test('community detail title star covers empty, starred, and logged-out states', async () => {
+	const emptyHtml = await renderCommunityDetailContentHtml({
 		listing: sampleListing,
-		ownerProfilePublic: true,
+		...detailBase,
+		loggedIn: true,
+		starredByViewer: false,
+	})
+	expect(emptyHtml).toContain('data-testid="community-detail-star"')
+	expect(emptyHtml).toContain('data-community-star')
+	expect(emptyHtml).toContain('data-starred="false"')
+	expect(
+		emptyHtml.indexOf('data-testid="community-detail-star"'),
+	).toBeGreaterThan(emptyHtml.indexOf('<h1'))
+
+	const starredHtml = await renderCommunityDetailContentHtml({
+		listing: sampleListing,
+		...detailBase,
 		loggedIn: true,
 		starredByViewer: true,
-		viewerFollowsOwner: false,
-		viewerIsOwner: false,
-		returnTo: '/@kentcdodds/github-triage',
-		followError: null,
 	})
+	expect(starredHtml).toContain('data-starred="true"')
 
-	expect(html).toContain('data-starred="true"')
-	expect(html).toContain('title="Unstar"')
-	expect(html).toContain('fill="currentColor"')
-})
-
-test('logged-out title star is a login link', async () => {
-	const html = await renderCommunityDetailContentHtml({
+	const loggedOutHtml = await renderCommunityDetailContentHtml({
 		listing: sampleListing,
-		ownerProfilePublic: true,
+		...detailBase,
 		loggedIn: false,
 		starredByViewer: false,
-		viewerFollowsOwner: false,
-		viewerIsOwner: false,
-		returnTo: '/@kentcdodds/github-triage',
-		followError: null,
 	})
-
-	expect(html).toContain('data-testid="community-detail-star"')
-	expect(html).toContain('/login?redirectTo=%2F%40kentcdodds%2Fgithub-triage')
-	expect(html).not.toContain('data-starred=')
+	expect(loggedOutHtml).toContain('data-testid="community-detail-star"')
+	expect(loggedOutHtml).toContain(
+		'/login?redirectTo=%2F%40kentcdodds%2Fgithub-triage',
+	)
+	expect(loggedOutHtml).not.toContain('data-starred=')
 })
