@@ -60,7 +60,9 @@ function supportsConstructableStylesheets(
 ): boolean {
 	const doc = host.document
 	if (!doc) return false
-	return canConstructStyleSheet(host.CSSStyleSheet) && 'adoptedStyleSheets' in doc
+	return (
+		canConstructStyleSheet(host.CSSStyleSheet) && 'adoptedStyleSheets' in doc
+	)
 }
 
 function appendStyleElement(
@@ -179,9 +181,7 @@ function installCssStyleSheetConstructor(
 	host: ConstructableStylesheetsHost,
 	doc: ConstructableStylesheetsDocument,
 ): void {
-	function PolyfilledCSSStyleSheet(
-		this: unknown,
-	): PolyfilledStyleSheet {
+	function PolyfilledCSSStyleSheet(this: unknown): PolyfilledStyleSheet {
 		// Returning an object from `new` replaces the constructed instance.
 		return createPolyfilledStyleSheet(doc)
 	}
