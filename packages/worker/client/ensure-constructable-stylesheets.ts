@@ -119,10 +119,11 @@ function syncAdoptedStyleSheets(
 	previous: Array<PolyfilledStyleSheet>,
 	next: Array<PolyfilledStyleSheet>,
 ): void {
+	// Detach everything first, then append `next` in order. Skipping detach for
+	// retained sheets would keep the old DOM order when assignment only
+	// reorders (e.g. `[a, b]` → `[b, a]`), which would ignore cascade order.
 	for (const sheet of previous) {
-		if (!next.includes(sheet)) {
-			sheet._detach()
-		}
+		sheet._detach()
 	}
 	for (const sheet of next) {
 		sheet._attach(doc)

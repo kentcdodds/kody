@@ -97,6 +97,30 @@ test('ensureConstructableStylesheets polyfills Illegal constructor hosts so Remi
 	expect(headChildren).toHaveLength(0)
 })
 
+test('ensureConstructableStylesheets reorders connected style elements when adoptedStyleSheets is reassigned', () => {
+	const { doc, headChildren } = createFakeDocument()
+	function NonConstructableCSSStyleSheet() {
+		throw new TypeError('Illegal constructor')
+	}
+	const host = {
+		CSSStyleSheet: NonConstructableCSSStyleSheet,
+		document: doc,
+	}
+
+	ensureConstructableStylesheets(host)
+
+	const Ctor = host.CSSStyleSheet as new () => object
+	const first = new Ctor()
+	const second = new Ctor()
+	doc.adoptedStyleSheets!.push(first as never, second as never)
+	expect(headChildren).toHaveLength(2)
+	const firstStyle = headChildren[0]
+	const secondStyle = headChildren[1]
+
+	doc.adoptedStyleSheets = [second as never, first as never]
+	expect(headChildren).toEqual([secondStyle, firstStyle])
+})
+
 test('ensureConstructableStylesheets leaves a real Constructable Stylesheets implementation alone', () => {
 	const existingSheet = { cssRules: { length: 0 } }
 	function NativeCSSStyleSheet() {
