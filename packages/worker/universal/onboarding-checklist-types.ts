@@ -1,17 +1,8 @@
 /**
- * Onboarding checklist item ids, in display order. Kept in a dependency-free
- * module because both the client-safe loader payload types and the MCP-layer
- * derivation service need them.
+ * Checklist item ids stay next to the wizard contract so client payload types
+ * and MCP derivation share one union.
  */
-export type OnboardingChecklistItemId =
-	| 'verify-email'
-	| 'connect-agent'
-	| 'first-hello'
-	| 'save-memory'
-	| 'connect-integration'
-	| 'install-starter'
-
-export type OnboardingChecklistItem = {
-	id: OnboardingChecklistItemId
-	done: boolean
-}
+export {
+	type OnboardingChecklistItem,
+	type OnboardingChecklistItemId,
+} from './onboarding-process.ts'

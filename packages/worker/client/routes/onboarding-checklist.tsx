@@ -1,9 +1,12 @@
 import { type Handle, css } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
 import {
+	onboardingChecklistItemHref,
+	onboardingChecklistItemLabels,
+	onboardingWizardStepByNumber,
 	type OnboardingChecklistItemId,
-	type OnboardingChecklistLoaderData,
-} from '#universal/loader-data.ts'
+} from '#universal/onboarding-process.ts'
+import { type OnboardingChecklistLoaderData } from '#universal/loader-data.ts'
 import { on } from '#client/event-mixin.ts'
 import { ProviderIcon } from '#client/provider-icons.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -14,50 +17,25 @@ import {
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
 
-export const onboardingChecklistItemLabels: Record<
-	OnboardingChecklistItemId,
-	string
-> = {
-	'verify-email': 'Verify your email',
-	'connect-agent': 'Connect your agent',
-	'first-hello': 'Exchange a first email with Kody',
-	'save-memory': 'Save a memory',
-	'connect-integration': 'Give Kody Access',
-	'install-starter': 'Persist your first package',
-}
+export { onboardingChecklistItemLabels }
+
+const connectMcpHref = `${onboardingPath}#${onboardingWizardStepByNumber(2).hash}`
 
 const integrationGuideProviders = [
-	{ id: 'notion', label: 'Notion', href: `${onboardingPath}#connect-mcp` },
-	{ id: 'linear', label: 'Linear', href: `${onboardingPath}#connect-mcp` },
+	{ id: 'notion', label: 'Notion', href: connectMcpHref },
+	{ id: 'linear', label: 'Linear', href: connectMcpHref },
 	{
 		id: 'atlassian',
 		label: 'Atlassian',
-		href: `${onboardingPath}#connect-mcp`,
+		href: connectMcpHref,
 	},
-	{ id: 'stripe', label: 'Stripe', href: `${onboardingPath}#connect-mcp` },
-	{ id: 'sentry', label: 'Sentry', href: `${onboardingPath}#connect-mcp` },
-	{ id: 'canva', label: 'Canva', href: `${onboardingPath}#connect-mcp` },
+	{ id: 'stripe', label: 'Stripe', href: connectMcpHref },
+	{ id: 'sentry', label: 'Sentry', href: connectMcpHref },
+	{ id: 'canva', label: 'Canva', href: connectMcpHref },
 ] as const
 
-function readChecklistItemHref(id: OnboardingChecklistItemId): string | null {
-	switch (id) {
-		case 'verify-email':
-			return '/pending-verification'
-		case 'connect-agent':
-			return `${onboardingPath}#connect-agent`
-		case 'first-hello':
-		case 'save-memory':
-			// Optional deeper loop (email → memories); not the Step 3 climax.
-			return '/guides/first-win'
-		case 'connect-integration':
-			return `${onboardingPath}#connect-mcp`
-		case 'install-starter':
-			return `${onboardingPath}#first-build`
-		default: {
-			const neverId: never = id
-			return neverId
-		}
-	}
+function readChecklistItemHref(id: OnboardingChecklistItemId): string {
+	return onboardingChecklistItemHref(id, onboardingPath)
 }
 
 export function shouldShowOnboardingChecklist(

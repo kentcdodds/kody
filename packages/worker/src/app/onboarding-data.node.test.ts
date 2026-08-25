@@ -57,16 +57,10 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: { APP_BASE_URL: 'https://heykody.dev' },
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
-		firstWinPrompt: buildFirstWinPrompt({
-			env: { APP_BASE_URL: 'https://heykody.dev' },
-			requestUrl: 'https://heykody.dev/onboarding',
-		}),
 		persistPrompt: buildPersistFirstPackagePrompt({
 			env: { APP_BASE_URL: 'https://heykody.dev' },
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
-		hasSentWelcomeEmail: false,
-		welcomeEmail: null,
 		hasMcpClient: false,
 		emailVerified: false,
 		needsOnboarding: true,
@@ -98,16 +92,10 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 			env: {},
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
-		firstWinPrompt: buildFirstWinPrompt({
-			env: {},
-			requestUrl: 'https://heykody.dev/onboarding',
-		}),
 		persistPrompt: buildPersistFirstPackagePrompt({
 			env: {},
 			requestUrl: 'https://heykody.dev/onboarding',
 		}),
-		hasSentWelcomeEmail: false,
-		welcomeEmail: null,
 		hasMcpClient: false,
 		emailVerified: true,
 		needsOnboarding: true,
@@ -130,10 +118,6 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		stableUserId: 'user-1',
 		username: 'u-b',
 		emailVerified: true,
-		welcomeEmail: {
-			subject: 'Welcome to Kody — reply to introduce yourself',
-			fromAddress: 'kody@heykody.app',
-		},
 		persistedPackageKodyId: 'morning-digest',
 	})
 	expect(withClient).toMatchObject({
@@ -142,12 +126,6 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		emailVerified: true,
 		needsOnboarding: false,
 		mcpServerUrl: 'http://localhost:3742/mcp',
-		// Passed straight through so the Reply sub-step can name the real
-		// subject and sender instead of the copy the prompt suggests.
-		welcomeEmail: {
-			subject: 'Welcome to Kody — reply to introduce yourself',
-			fromAddress: 'kody@heykody.app',
-		},
 		// Handler-loaded persist target is passed through for Step 3 next-steps.
 		persistedPackageKodyId: 'morning-digest',
 	})
@@ -172,8 +150,6 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		needsOnboarding: true,
 		mcpServerUrl: '',
 		setupPrompt: '',
-		// The first-win prompt needs a verified email (it sends real mail).
-		firstWinPrompt: '',
 		persistPrompt: '',
 		// Discovery needs no verified email or MCP host, so it is never gated.
 		discoveryPrompt: buildDiscoveryPrompt({

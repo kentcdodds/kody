@@ -16,13 +16,14 @@ category: platform
 <!--
 Agent notes — for AI agents driving the optional email loop from this page:
 
-- Onboarding Step 2 gives Kody access (featured or custom) or installs a
-  Just-try-Kody example. Step 3
-  climax is /guides/quick-example (ad hoc execute → persist → own). Use this
-  guide only when the person wants the email-and-memories loop.
+- Onboarding Step 1 is Connect your agent (`#connect-agent`). Step 2 is Give
+  Kody Access (`#connect-mcp`): featured or custom MCP, or a Just-try-Kody
+  example. Step 3 climax is Try it, then persist (`#first-build` /
+  /guides/quick-example: ad hoc execute → persist → own). Use this guide only
+  when the person wants the email-and-memories loop.
 - You drive the whole loop. The person stays in this chat; they should not need
-  to go back to the Kody web page for anything except the optional integration
-  connect at the end.
+  to go back to the Kody web page except to finish Step 3 at
+  `/onboarding#first-build` if they have not persisted a package yet.
 - Work one step at a time and confirm each step out loud before moving on. Keep
   messages short — under roughly 120 words.
 - NEVER poll, sleep, retry on a timer, or "wait" for the reply to arrive. Tell
@@ -128,22 +129,18 @@ moment the whole loop pays off, so make it visible rather than silent.
 
 ## Step 6 — Offer the next step
 
-The first win is done. Offer one concrete next step and let them choose:
+The email loop is done. Offer one concrete next step and let them choose:
 
-- **Give Kody Access.** Send them to `/onboarding#connect-mcp` on the same
-  origin this guide came from, or call `mcp_server_add` with one of
-  `https://mcp.notion.com/mcp`, `https://mcp.linear.app/mcp`,
-  `https://mcp.atlassian.com/v1/mcp/authv2`, `https://mcp.stripe.com`,
-  `https://mcp.sentry.dev/mcp`, or `https://mcp.canva.com/mcp`, then verify with
-  a small ad hoc `execute` call. Connect copies the matching official helper
-  into their account — they run that owned copy, not `kody:@kody/*`. GitHub and
-  Google live under Advanced (`/guides/github`, `/guides/google`).
-- **Bring their own OAuth app or API key** when they need scopes or rate limits
-  a hosted app does not offer — load `coding_guide_get` with `guide: "oauth"`,
-  or the matching `provider_*` guide.
+- **Try it, then persist.** If they have not finished onboarding Step 3, send
+  them to `/onboarding#first-build` on the same origin this guide came from, or
+  load `coding_guide_get` with `guide: "quick_example"`: one ad hoc execute,
+  then persist a package they own.
 - **Ask what they want automated** and use `coding_guide_get` with
   `guide: "package_lifecycle"` to pick between a one-off `execute`, a community
   fork, and a new package.
+- **Bring their own OAuth app or API key** when they need scopes or rate limits
+  a hosted app does not offer — load `coding_guide_get` with `guide: "oauth"`,
+  or the matching `provider_*` guide.
 
 ## Troubleshooting
 

@@ -7,11 +7,9 @@ import {
 	loadOnboardingCustomMcpServers,
 	loadOnboardingFeaturedMcpServers,
 	loadPersistedPackageKodyId,
-	loadWelcomeEmail,
 } from '#app/handlers/onboarding.ts'
 import {
 	buildDiscoveryPrompt,
-	buildFirstWinPrompt,
 	buildOnboardingSetupPrompt,
 	buildPersistFirstPackagePrompt,
 } from '#app/onboarding-data.ts'
@@ -21,8 +19,6 @@ const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
-	listOwnerEmailMessages: vi.fn(),
-	searchOwnerEmailMessages: vi.fn(),
 	listMcpServerSettings: vi.fn(),
 	loadMcpClientHubSnapshotOrNull: vi.fn(),
 	listSavedPackagesByUserId: vi.fn(),
@@ -40,13 +36,6 @@ vi.mock('#app/authenticated-user.ts', () => ({
 vi.mock('#worker/community/service.ts', () => ({
 	listFeaturedCommunityListingsWithAggregates: vi.fn(async () => []),
 	getCommunityListingWithAggregates: vi.fn(async () => null),
-}))
-
-vi.mock('#worker/email/owner-email-reader.ts', () => ({
-	listOwnerEmailMessages: (...args: Array<unknown>) =>
-		mockModule.listOwnerEmailMessages(...args),
-	searchOwnerEmailMessages: (...args: Array<unknown>) =>
-		mockModule.searchOwnerEmailMessages(...args),
 }))
 
 vi.mock('#worker/mcp-client/settings-service.ts', () => ({
@@ -104,10 +93,6 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 			env,
 			requestUrl: 'https://example.com/onboarding.json',
 		}),
-		firstWinPrompt: buildFirstWinPrompt({
-			env,
-			requestUrl: 'https://example.com/onboarding.json',
-		}),
 		persistPrompt: buildPersistFirstPackagePrompt({
 			env,
 			requestUrl: 'https://example.com/onboarding.json',
@@ -138,41 +123,6 @@ test('onboarding API includes the authenticated package-scope username', async (
 		username: 'u-b',
 		persistedPackageKodyId: null,
 	})
-})
-
-test('the Reply sub-step names the welcome email, not merely the newest outbound', async () => {
-	const env = {} as Env
-
-	// A mailbox holding other outbound mail still surfaces the welcome message.
-	mockModule.searchOwnerEmailMessages.mockResolvedValue([
-		{
-			subject: 'Welcome to Kody — reply to introduce yourself',
-			fromAddress: 'kody@heykody.app',
-		},
-	])
-	mockModule.listOwnerEmailMessages.mockResolvedValue([
-		{ subject: 'Your morning digest', fromAddress: 'kody@heykody.app' },
-	])
-	await expect(loadWelcomeEmail(env, 'user-1')).resolves.toEqual({
-		subject: 'Welcome to Kody — reply to introduce yourself',
-		fromAddress: 'kody@heykody.app',
-	})
-
-	// Agents write their own subject, so an unmatched mailbox falls back to the
-	// newest outbound message.
-	mockModule.searchOwnerEmailMessages.mockResolvedValue([])
-	await expect(loadWelcomeEmail(env, 'user-1')).resolves.toEqual({
-		subject: 'Your morning digest',
-		fromAddress: 'kody@heykody.app',
-	})
-
-	// An empty mailbox and a Mailbox blip both fail open.
-	mockModule.listOwnerEmailMessages.mockResolvedValue([])
-	await expect(loadWelcomeEmail(env, 'user-1')).resolves.toBeNull()
-	mockModule.searchOwnerEmailMessages.mockRejectedValue(
-		new Error('mailbox unavailable'),
-	)
-	await expect(loadWelcomeEmail(env, 'user-1')).resolves.toBeNull()
 })
 
 test('onboarding featured MCP servers overlay Notion and Linear connection state', async () => {
@@ -304,8 +254,6 @@ test('onboarding persist next-steps use the newest saved-package kody id', async
 		{ kodyId: 'morning-digest' },
 	])
 	mockModule.listMcpServerSettings.mockResolvedValue([])
-	mockModule.listOwnerEmailMessages.mockResolvedValue([])
-	mockModule.searchOwnerEmailMessages.mockResolvedValue([])
 
 	const response = await createOnboardingApiHandler(env).handler(
 		new RequestContext(new Request('https://example.com/onboarding.json')),

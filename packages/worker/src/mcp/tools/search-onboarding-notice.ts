@@ -1,8 +1,8 @@
+import { onboardingChecklistSearchLabels } from '#universal/onboarding-process.ts'
 import {
 	deriveOnboardingChecklist,
 	dismissOnboardingChecklist,
 	readOnboardingChecklistDismissed,
-	type OnboardingChecklistItemId,
 } from '#mcp/onboarding-checklist.ts'
 
 /**
@@ -13,14 +13,7 @@ import {
  * established accounts stop paying the derivation on new conversations.
  */
 
-const itemLabels: Record<OnboardingChecklistItemId, string> = {
-	'verify-email': 'verify your email',
-	'connect-agent': 'connect your agent',
-	'first-hello': 'exchange a first email with Kody',
-	'save-memory': 'save a memory',
-	'connect-integration': 'give Kody access',
-	'install-starter': 'persist your first package',
-}
+const itemLabels = onboardingChecklistSearchLabels
 
 export async function buildOnboardingSearchNotice(input: {
 	env: Env
