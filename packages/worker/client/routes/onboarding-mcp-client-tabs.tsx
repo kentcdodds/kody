@@ -24,9 +24,14 @@ import {
 	codingAgentPackageHint,
 	copilotAppCustomizeGuideUrl,
 	copilotCliMcpGuideUrl,
+	grokBotConnectPluginsUrl,
+	grokBotInstallUrl,
 	grokCliMcpGuideUrl,
 	grokConnectorsUrl,
 	grokCustomMcpGuideUrl,
+	isDefaultKodyMcpUrl,
+	kodyCursorAddPluginCommand,
+	kodyCursorMarketplaceUrl,
 	type McpClientKind,
 	mcpClientTabs,
 	nonCodingAgentNote,
@@ -111,7 +116,10 @@ function ClientNote(handle: Handle<ClientNoteProps>) {
 }
 
 function InstallDeepLink(
-	handle: Handle<{ href: string; label: 'Add to Cursor' | 'Add to VS Code' }>,
+	handle: Handle<{
+		href: string
+		label: 'Add to Cursor' | 'Add to Grok Bot' | 'Add to VS Code'
+	}>,
 ) {
 	return () => (
 		<div mix={css(deepLinkCss)}>
@@ -143,6 +151,25 @@ function ManualPath(handle: Handle<{ children?: RemixNode }>) {
 	)
 }
 
+function ClientFallbackPath(
+	handle: Handle<{
+		children?: RemixNode
+		testId: string
+		open?: boolean
+	}>,
+) {
+	return () => (
+		<details
+			data-testid={handle.props.testId}
+			open={handle.props.open ? true : undefined}
+			mix={css(manualDetailsCss)}
+		>
+			<summary mix={css(manualSummaryCss)}>Manual / fallback</summary>
+			<div mix={css(manualBodyCss)}>{handle.props.children}</div>
+		</details>
+	)
+}
+
 function renderPanelContent(
 	kind: McpClientKind,
 	mcpServerUrl: string,
@@ -151,33 +178,69 @@ function renderPanelContent(
 	switch (kind) {
 		case 'cursor': {
 			const cursorJson = buildCursorMcpJson(mcpServerUrl)
-			const installUrl = buildCursorInstallUrl(mcpServerUrl)
+			const mcpInstallUrl = buildCursorInstallUrl(mcpServerUrl)
+			const isProduction = isDefaultKodyMcpUrl(mcpServerUrl)
 			return (
 				<>
 					<p>
-						Install with the deeplink, open <strong>Customize</strong> and add a
-						remote MCP server with the URL, or merge the JSON into{' '}
-						<code>~/.cursor/mcp.json</code> (global) or{' '}
-						<code>.cursor/mcp.json</code> (project).
+						Install the official{' '}
+						<a
+							href={kodyCursorMarketplaceUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Kody plugin
+						</a>{' '}
+						from the Cursor Marketplace, or in Cursor chat run{' '}
+						<code>{kodyCursorAddPluginCommand}</code>. The marketplace listing
+						targets production <code>kody.codes</code>.
 					</p>
-					<InstallDeepLink href={installUrl} label="Add to Cursor" />
+					<InstallDeepLink
+						href={kodyCursorMarketplaceUrl}
+						label="Add to Cursor"
+					/>
 					<CopyCard
 						highlights={highlights}
-						label="MCP URL"
-						value={mcpServerUrl}
-						copyLabel="Copy MCP URL"
+						label="/add-plugin"
+						value={kodyCursorAddPluginCommand}
+						copyLabel="Copy command"
 					/>
-					<p>
-						JSON config (merge under your existing <code>mcpServers</code> if
-						you already have one):
-					</p>
-					<CopyCard
-						highlights={highlights}
-						label="mcp.json"
-						value={cursorJson}
-						copyLabel="Copy JSON"
-						lang="json"
-					/>
+					{isProduction ? null : (
+						<p>
+							This origin is not production <code>kody.codes</code>. Use Manual
+							/ fallback so Cursor talks to this deployment&apos;s MCP URL.
+						</p>
+					)}
+					<ClientFallbackPath
+						testId="onboarding-mcp-cursor-fallback"
+						open={!isProduction}
+					>
+						<p>
+							Preview and local origins, or a raw MCP server: install with the
+							deeplink, open <strong>Customize</strong> and add a remote MCP
+							server with the URL, or merge the JSON into{' '}
+							<code>~/.cursor/mcp.json</code> (global) or{' '}
+							<code>.cursor/mcp.json</code> (project).
+						</p>
+						<InstallDeepLink href={mcpInstallUrl} label="Add to Cursor" />
+						<CopyCard
+							highlights={highlights}
+							label="MCP URL"
+							value={mcpServerUrl}
+							copyLabel="Copy MCP URL"
+						/>
+						<p>
+							JSON config (merge under your existing <code>mcpServers</code> if
+							you already have one):
+						</p>
+						<CopyCard
+							highlights={highlights}
+							label="mcp.json"
+							value={cursorJson}
+							copyLabel="Copy JSON"
+							lang="json"
+						/>
+					</ClientFallbackPath>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
@@ -313,7 +376,8 @@ function renderPanelContent(
 						variant="pill"
 					/>
 					<p>
-						For the Grok CLI, use the <strong>Grok CLI</strong> tab.
+						For the Grok CLI, use the <strong>Grok CLI</strong> tab. For Grok
+						Bot (Cursor desktop), use the <strong>Grok Bot</strong> tab.
 					</p>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
@@ -357,8 +421,62 @@ function renderPanelContent(
 						</a>{' '}
 						for <code>grok mcp list</code>, <code>grok mcp doctor</code>, and
 						project scope. For grok.com, use the <strong>Grok.com</strong> tab.
+						For Grok Bot, use the <strong>Grok Bot</strong> tab.
 					</p>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
+				</>
+			)
+		}
+		case 'grok-bot': {
+			const isProduction = isDefaultKodyMcpUrl(mcpServerUrl)
+			return (
+				<>
+					<p>
+						Install the official Kody plugin in Grok Bot. Click{' '}
+						<strong>Add to Grok Bot</strong>, or open <strong>Plugins</strong>{' '}
+						in the Grok Bot sidebar and add Kody. See Cursor&apos;s{' '}
+						<a
+							href={grokBotConnectPluginsUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Grok Bot plugin help
+						</a>
+						. The marketplace plugin targets production <code>kody.codes</code>.
+					</p>
+					<InstallDeepLink href={grokBotInstallUrl} label="Add to Grok Bot" />
+					<CopyCard
+						highlights={highlights}
+						label="Grok Bot plugin"
+						value={grokBotInstallUrl}
+						copyLabel="Copy link"
+					/>
+					{isProduction ? null : (
+						<p>
+							This origin is not production <code>kody.codes</code>. Use Manual
+							/ fallback so Grok Bot talks to this deployment&apos;s MCP URL.
+						</p>
+					)}
+					<ClientFallbackPath
+						testId="onboarding-mcp-grok-bot-fallback"
+						open={!isProduction}
+					>
+						<p>
+							You can also add a custom connector with this MCP URL (preview and
+							local origins need this):
+						</p>
+						<CopyCard
+							highlights={highlights}
+							label="MCP URL"
+							value={mcpServerUrl}
+							copyLabel="Copy MCP URL"
+						/>
+					</ClientFallbackPath>
+					<p>
+						Grok.com (xAI web connectors) and Grok CLI are separate products.
+						Use those tabs when you are not installing the Grok Bot plugin.
+					</p>
+					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
 		}

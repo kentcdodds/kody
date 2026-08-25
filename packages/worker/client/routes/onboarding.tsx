@@ -648,8 +648,9 @@ export function OnboardingRoute(handle: Handle) {
 								>
 									<strong>Authenticate Kody before you continue</strong>
 									<span>
-										<strong>Cursor:</strong> after install, open the Cursor MCP
-										list and click <strong>Authenticate</strong>.
+										<strong>Cursor:</strong> after installing the plugin (or raw
+										MCP), open the Cursor MCP list and click{' '}
+										<strong>Authenticate</strong>.
 									</span>
 									<span>
 										<strong>Claude Code:</strong> after install, enter{' '}
@@ -658,6 +659,10 @@ export function OnboardingRoute(handle: Handle) {
 									<span>
 										<strong>Grok.com:</strong> after adding the custom
 										connector, complete OAuth when Grok prompts you.
+									</span>
+									<span>
+										<strong>Grok Bot:</strong> after adding the plugin, complete{' '}
+										<strong>Authorize</strong> when Grok Bot prompts you.
 									</span>
 									<span>
 										<strong>Grok CLI:</strong> after adding the server, OAuth

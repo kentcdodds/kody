@@ -6,9 +6,13 @@ import {
 	buildClaudeCodeAddCommand,
 	buildCodexMcpAddCommand,
 	buildCopilotCliAddCommand,
+	buildCursorInstallUrl,
 	buildKodyCliInstallCommand,
 	buildOpenCodeMcpAddCommand,
 	defaultKodyMcpUrl,
+	grokBotInstallUrl,
+	kodyCursorAddPluginCommand,
+	kodyCursorMarketplaceUrl,
 } from './onboarding-mcp-clients.ts'
 
 test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async () => {
@@ -51,7 +55,25 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	expect(manualBlock).toContain(buildCopilotCliAddCommand(defaultKodyMcpUrl))
 	expect(manualBlock).toContain('Add to Cursor')
 	expect(manualBlock).toContain('Add to VS Code')
+	expect(manualBlock).toContain('Add to Grok Bot')
 	expect(manualBlock).toContain('chatgpt.com')
+	expect(manualBlock).toContain('>Grok Bot<')
+	expect(manualBlock).toContain(kodyCursorMarketplaceUrl)
+	expect(manualBlock).toContain(kodyCursorAddPluginCommand)
+	expect(manualBlock).toContain(grokBotInstallUrl)
+	expect(manualBlock).toContain(
+		buildCursorInstallUrl(defaultKodyMcpUrl).replaceAll('&', '&amp;'),
+	)
+	expect(manualBlock).toContain('data-testid="onboarding-mcp-cursor-fallback"')
+	expect(manualBlock).toContain(
+		'data-testid="onboarding-mcp-grok-bot-fallback"',
+	)
+	expect(manualBlock).not.toMatch(
+		/<details[^>]*\bopen\b[^>]*data-testid="onboarding-mcp-cursor-fallback"/,
+	)
+	expect(manualBlock).toContain(
+		'https://cursor.com/help/grok-bot/connect-plugins',
+	)
 
 	const previewHtml = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
@@ -60,5 +82,11 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	)
 	expect(previewHtml).toContain(
 		'npx @kodycodes/cli install --mcp-url http://localhost:3742/mcp',
+	)
+	expect(previewHtml).toContain(
+		'This origin is not production <code>kody.codes</code>',
+	)
+	expect(previewHtml).toMatch(
+		/<details[^>]*\bopen\b[^>]*data-testid="onboarding-mcp-cursor-fallback"|<details[^>]*data-testid="onboarding-mcp-cursor-fallback"[^>]*\bopen\b/,
 	)
 })
