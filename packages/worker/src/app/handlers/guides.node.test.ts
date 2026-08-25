@@ -186,6 +186,9 @@ test('interactive guide JSON includes walkthrough highlight tokens', async () =>
 		},
 	)
 	expect(howKodyWorksResponse.status).toBe(200)
+	expect(howKodyWorksResponse.headers.get('Cache-Control')).toBe(
+		'public, max-age=60, stale-while-revalidate=300',
+	)
 	expect(howKodyWorksResponse.headers.get('Server-Timing') ?? '').toContain(
 		'highlight;dur=',
 	)

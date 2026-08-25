@@ -63,10 +63,13 @@ returns an agent URL comments it on the open needs-fix issue.
 
 ## What the homepage already does
 
-Anonymous `/`, `/pricing`, `/blog`, and `/community` HTML is
-`public, max-age=60, stale-while-revalidate=300` with `Vary: Cookie`. Any
-`kody_session` cookie, a resolved session, or a `Set-Cookie` response stays
-`no-store`. Auth, OAuth, and account pages never use the short CDN cache.
+Anonymous `/`, `/pricing`, `/blog`, `/community`, `/onboarding`, `/guides`, and
+`/guides/:slug` HTML is `public, max-age=60, stale-while-revalidate=300` with
+`Vary: Cookie`. Anonymous `/onboarding.json` uses the same cache with
+`Vary: Cookie`. Guide JSON (`/guides/:slug.json`) is shared publicly without a
+cookie vary because the body is the same for every visitor. Any `kody_session`
+cookie, a resolved session, or a `Set-Cookie` response stays `no-store` on HTML.
+Auth, OAuth, and account pages never use the short CDN cache.
 
 Landing layout CSS lives in `packages/worker/public/styles.css` (`.landing-*`)
 so SSR does not emit a Remix style tag per marketing node. Hero and below-fold

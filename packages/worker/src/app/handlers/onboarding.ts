@@ -41,6 +41,7 @@ import {
 	loadOnboardingData,
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
+import { anonymousPersonalizedJsonCacheHeaders } from '#app/anonymous-html-cache.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
 import {
@@ -391,7 +392,13 @@ export function createOnboardingApiHandler(env: Env) {
 						},
 						serverTiming,
 					),
-					{ serverTiming },
+					{
+						serverTiming,
+						headers: anonymousPersonalizedJsonCacheHeaders({
+							personalized: false,
+							request,
+						}),
+					},
 				)
 			}
 

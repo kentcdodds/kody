@@ -85,6 +85,10 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 		new RequestContext(new Request('https://example.com/onboarding.json')),
 	)
 	expect(anonymousApiResponse.status).toBe(200)
+	expect(anonymousApiResponse.headers.get('Cache-Control')).toBe(
+		'public, max-age=60, stale-while-revalidate=300',
+	)
+	expect(anonymousApiResponse.headers.get('Vary')).toBe('Cookie')
 	const onboardingTiming =
 		anonymousApiResponse.headers.get('Server-Timing') ?? ''
 	expect(onboardingTiming).toContain('listings;dur=')
@@ -127,6 +131,7 @@ test('onboarding API includes the authenticated package-scope username', async (
 	)
 
 	expect(response.status).toBe(200)
+	expect(response.headers.get('Cache-Control')).toBe('no-store')
 	await expect(response.json()).resolves.toMatchObject({
 		ok: true,
 		loggedIn: true,

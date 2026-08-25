@@ -1,6 +1,9 @@
 import { expect, test } from 'vitest'
 import {
 	anonymousHtmlCacheControl,
+	anonymousPersonalizedJsonCacheHeaders,
+	isCacheableAnonymousPath,
+	publicSharedJsonCacheHeaders,
 	requestHasSessionCookie,
 	resolveAppPageCacheControl,
 } from '#app/anonymous-html-cache.ts'
@@ -53,6 +56,37 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 
 	expect(
 		resolveAppPageCacheControl({
+			pathname: '/onboarding',
+			session: null,
+			request: request('https://example.com/onboarding'),
+			responseSetsCookie: false,
+		}),
+	).toEqual({
+		cacheControl: anonymousHtmlCacheControl,
+		vary: 'Cookie',
+	})
+	expect(
+		resolveAppPageCacheControl({
+			pathname: '/guides',
+			session: null,
+			request: request('https://example.com/guides'),
+			responseSetsCookie: false,
+		}).cacheControl,
+	).toBe(anonymousHtmlCacheControl)
+	expect(
+		resolveAppPageCacheControl({
+			pathname: '/guides/how-kody-works',
+			session: null,
+			request: request('https://example.com/guides/how-kody-works'),
+			responseSetsCookie: false,
+		}).cacheControl,
+	).toBe(anonymousHtmlCacheControl)
+
+	expect(isCacheableAnonymousPath('/guides/how-kody-works.json')).toBe(true)
+	expect(isCacheableAnonymousPath('/guides/nested/path')).toBe(false)
+
+	expect(
+		resolveAppPageCacheControl({
 			pathname: '/account',
 			session: null,
 			request: request('https://example.com/account'),
@@ -86,4 +120,32 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 			responseSetsCookie: true,
 		}),
 	).toEqual({ cacheControl: 'no-store' })
+
+	expect(publicSharedJsonCacheHeaders()).toEqual({
+		'Cache-Control': anonymousHtmlCacheControl,
+	})
+	expect(
+		anonymousPersonalizedJsonCacheHeaders({
+			personalized: false,
+			request: request('https://example.com/onboarding.json'),
+		}),
+	).toEqual({
+		'Cache-Control': anonymousHtmlCacheControl,
+		Vary: 'Cookie',
+	})
+	expect(
+		anonymousPersonalizedJsonCacheHeaders({
+			personalized: true,
+			request: request('https://example.com/onboarding.json'),
+		}),
+	).toEqual({ 'Cache-Control': 'no-store' })
+	expect(
+		anonymousPersonalizedJsonCacheHeaders({
+			personalized: false,
+			request: request(
+				'https://example.com/onboarding.json',
+				'kody_session=stale',
+			),
+		}),
+	).toEqual({ 'Cache-Control': 'no-store' })
 })
