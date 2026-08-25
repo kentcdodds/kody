@@ -41,8 +41,10 @@ republishes. Agents still get live helpers in execute. Users who want insulation
 or durability own a fork.
 
 This record does not change the 0014 `packageStorage()` grant exclusion for
-platform-owned static dependencies. That follow-up is
-[packageStorage on official static imports](../package-storage-static-imports.md).
+platform-owned static dependencies.
+[0036](./0036-platform-packages-fork-only.md) vacated person-account official
+live-resolve; current grant mechanics:
+[packageStorage grants and caller-owned packages](../package-storage-static-imports.md).
 
 Revisit only if official packages grow a real versioning contract that 0001 and
 0031 still refuse.

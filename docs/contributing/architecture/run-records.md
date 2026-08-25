@@ -224,9 +224,9 @@ known.
 The same per-user `RunLog` DO also hosts the **keyed package-invocation
 idempotency ledger** (`package_invocation_ledger` table). This is correctness
 state, not observability: it holds the claims and bounded replay responses that
-keyed `packages.invoke` dedupes against. Unlike run history it cannot be rebuilt
-— a lost terminal row means a replayed delivery for that key re-executes instead
-of replaying.
+keyed package-export runs dedupe against. Unlike run history it cannot be
+rebuilt — a lost terminal row means a replayed delivery for that key re-executes
+instead of replaying.
 
 - **Claim + run-record begin are one awaited DO RPC**
   (`claimPackageInvocation`): lookup-then-insert is atomic because DO execution

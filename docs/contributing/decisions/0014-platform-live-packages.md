@@ -63,8 +63,10 @@ Community fork policy follows: `scanCrossScopeReferences` accepts platform
 scopes as always-valid references (`allowedForeignScopes`), so forks keep
 `@kody/...` imports instead of being told to rewrite them.
 
-Open follow-up (not decided here):
-[packageStorage on official static imports](../package-storage-static-imports.md).
+[0036](./0036-platform-packages-fork-only.md) vacated the person-account
+live-resolve lane (and with it the “grant official UUID on static import”
+follow-up). Current grant mechanics:
+[packageStorage grants and caller-owned packages](../package-storage-static-imports.md).
 
 ## Consequences
 

@@ -11,7 +11,7 @@ Production has two public HTTP entrypoints:
   email, and queue consumers. Runtime-owned paths (`/@{username}/packages/…`,
   package-invocation API, inline `/apps`) forward over the `RUNTIME_WORKER`
   service binding to `kody-runtime`.
-- **Package-app origin** (`kody.run`; legacy `kodyapps.dev` dual-served until
+- **Package-app origin** (`kody.run`; legacy `kodyapps.dev` dual-served; cleanup
   issues 1300 and 1428) — `packages/worker/src/runtime-worker.ts`. Zone routes
   on that script; the origin handler does not see this host in production.
 
