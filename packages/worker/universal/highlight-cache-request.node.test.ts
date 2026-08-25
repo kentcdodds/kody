@@ -20,4 +20,22 @@ test('highlight cache keys are GET URLs that differ by snippet identity', async 
 	expect(same.url).toBe(first.url)
 	expect(other.url).not.toBe(first.url)
 	expect(other.method).toBe('GET')
+
+	const colonLang = await highlightBatchCacheRequest(origin, [
+		{ code: ' number = 1', lang: 'ts:const x' },
+	])
+	const colonCode = await highlightBatchCacheRequest(origin, [
+		{ code: 'const x: number = 1', lang: 'ts' },
+	])
+	expect(colonLang.url).not.toBe(colonCode.url)
+
+	const firstNewlineBatch = await highlightBatchCacheRequest(origin, [
+		{ code: 'x\n1::y', lang: '' },
+		{ code: 'z', lang: '' },
+	])
+	const secondNewlineBatch = await highlightBatchCacheRequest(origin, [
+		{ code: 'x', lang: '' },
+		{ code: 'y\n1::z', lang: '' },
+	])
+	expect(firstNewlineBatch.url).not.toBe(secondNewlineBatch.url)
 })

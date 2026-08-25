@@ -159,7 +159,7 @@ export async function highlightJsonValue(
 	env: HighlightEnv,
 	value: unknown,
 ): Promise<HighlightedCode> {
-	const code = JSON.stringify(value, null, 2)
+	const code = JSON.stringify(value, null, 2) ?? 'null'
 	const [result] = await highlightSnippets(env, [{ code, lang: 'json' }])
 	return result ?? plainHighlightedCode(code, 'json')
 }

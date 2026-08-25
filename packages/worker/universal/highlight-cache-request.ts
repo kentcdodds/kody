@@ -11,9 +11,9 @@ export async function highlightBatchCacheRequest(
 	cacheOrigin: string,
 	snippets: Array<HighlightSnippet>,
 ) {
-	const material = snippets
-		.map((snippet) => highlightSnippetKey(snippet))
-		.join('\n')
+	const material = JSON.stringify(
+		snippets.map((snippet) => highlightSnippetKey(snippet)),
+	)
 	const digest = await crypto.subtle.digest(
 		'SHA-256',
 		new TextEncoder().encode(material),

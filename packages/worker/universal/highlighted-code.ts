@@ -29,7 +29,7 @@ export type HighlightSnippet = {
 
 export function highlightSnippetKey(snippet: HighlightSnippet) {
 	const lang = snippet.lang?.trim().toLowerCase() ?? ''
-	return `${highlighterVersion}:${lang}:${snippet.code}`
+	return JSON.stringify([highlighterVersion, lang, snippet.code])
 }
 
 export function plainHighlightedCode(
