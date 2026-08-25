@@ -199,8 +199,8 @@ each chokepoint records exactly one event per metered unit, so sums are safe.
 
 Separate from `usage_rollups`, D1 table `agent_package_conversation_uses` (also
 defined in `0001-squashed-init.sql`) tracks **distinct conversations** in which
-a signed-in user’s agents used a saved package via MCP `execute`
-(`packages.invoke*` with execute provenance, plus static/dynamic `kody:@…` deps
+a signed-in user’s agents used a saved package via MCP `execute` (package-export
+runs attributed to that execute call, plus static/dynamic `kody:@…` deps
 attributed to that execute call’s `conversationId`).
 
 - Key: `(user_id, package_id, conversation_id)` — upsert updates `last_used_at`;

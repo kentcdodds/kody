@@ -1,9 +1,15 @@
 # `packages.invoke` prefix migration
 
-String-first `packages.invoke` accepts both `kody:@owner/package[/export]` and
-the deprecated prefixless `@owner/package[/export]` form. The parser
-canonicalizes the latter to `kody:`. Object-only invocation is removed, and
-publishing does not reject prefixless string-first calls.
+Soak telemetry and codemod notes for the quarantined `kody:runtime`
+`packages.invoke` helper ([0037](./decisions/0037-no-author-packages-invoke.md),
+[#1750](https://github.com/kentcdodds/kody/issues/1750)). Authors and agents do
+not get that helper; this page is for operators migrating leftover published
+calls.
+
+The string-first helper accepts both `kody:@owner/package[/export]` and the
+deprecated prefixless `@owner/package[/export]` form. The parser canonicalizes
+the latter to `kody:`. Object-only invocation is rejected, and publishing does
+not reject prefixless string-first calls.
 
 Use permanent codemod `0007-prefix-packages-invoke-specifiers` to migrate
 literal calls and parseable dynamic first arguments. Dynamic calls receive an
