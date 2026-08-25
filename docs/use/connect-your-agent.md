@@ -1,9 +1,9 @@
 # Connect your agent
 
 Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
-Grok.com, Grok CLI, Claude Code, OpenCode, GitHub Copilot (VS Code or CLI), the
-GitHub Copilot app, or any other AI agent that supports MCP — not from a
-separate Kody chat app.
+Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, GitHub Copilot (VS Code or
+CLI), the GitHub Copilot app, or any other AI agent that supports MCP — not from
+a separate Kody chat app.
 
 Agents discovering this host can read `/auth.md` for the OAuth registration
 block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.
@@ -43,9 +43,9 @@ MCP URL and setup prompt.
 Manual on Get started has one tab per host. Use those when you are not running
 `@kodycodes/cli`, or when the host is web-only.
 
-- **Cursor** — After the CLI writes `~/.cursor/mcp.json`, Authenticate in the
-  Cursor MCP list. Manual includes Add to Cursor, the MCP URL, and JSON merge
-  for `~/.cursor/mcp.json` / `.cursor/mcp.json`.
+- **Cursor** — Install the official
+  [Kody plugin](https://cursor.com/marketplace/kody), or in Cursor chat run
+  `/add-plugin kody`. After install, Authenticate in the Cursor MCP list.
 - **Claude Desktop** — Copy the MCP URL into Settings → Connectors (custom
   connector). Remote servers are not configured through
   `claude_desktop_config.json`. After connecting, start a new chat and ask
@@ -61,6 +61,11 @@ Manual on Get started has one tab per host. Use those when you are not running
   writes `~/.grok/config.toml`. OAuth opens a browser on first use; in the TUI,
   `/mcps` then `i` authenticates. `grok mcp doctor kody` checks the connection.
   See xAI's [Grok CLI MCP docs](https://docs.x.ai/build/features/mcp-servers).
+- **Grok Bot** — Grok Bot is Cursor's desktop assistant, not grok.com. Add the
+  official Kody plugin with
+  [`grokbot://app/v1/plugin/add?id=56286216`](grokbot://app/v1/plugin/add?id=56286216),
+  or open **Plugins** in the Grok Bot sidebar and add Kody. See Cursor's
+  [Grok Bot plugin help](https://cursor.com/help/grok-bot/connect-plugins).
 - **Claude Code** — After the CLI writes the remote entry, enter `/mcp` → Kody →
   Authenticate. Manual includes
   `claude mcp add --transport http -s user kody <url>`, or a `.mcp.json` entry
@@ -103,10 +108,10 @@ Manual on Get started has one tab per host. Use those when you are not running
 ### Coding vs non-coding agents
 
 Using Kody packages works great with non-coding agents such as Claude Desktop,
-ChatGPT.com, Grok.com, and the GitHub Copilot app. For creating or editing
-packages, a coding agent (Cursor, Claude Code, Codex / ChatGPT desktop, Grok
-CLI, Copilot, OpenCode, and similar) is usually smoother because those hosts can
-edit files and iterate on code more easily.
+ChatGPT.com, Grok.com, Grok Bot, and the GitHub Copilot app. For creating or
+editing packages, a coding agent (Cursor, Claude Code, Codex / ChatGPT desktop,
+Grok CLI, Copilot, OpenCode, and similar) is usually smoother because those
+hosts can edit files and iterate on code more easily.
 
 ## Give Kody Access, then persist a first build
 

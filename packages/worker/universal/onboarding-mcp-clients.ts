@@ -11,6 +11,7 @@ export type McpClientKind =
 	| 'claude-desktop'
 	| 'grok'
 	| 'grok-cli'
+	| 'grok-bot'
 	| 'claude-code'
 	| 'opencode'
 	| 'copilot'
@@ -31,6 +32,7 @@ export const mcpClientTabs = [
 	{ id: 'claude-desktop', label: 'Claude Desktop', isNonCodingAgent: true },
 	{ id: 'grok', label: 'Grok.com', isNonCodingAgent: true },
 	{ id: 'grok-cli', label: 'Grok CLI', isNonCodingAgent: false },
+	{ id: 'grok-bot', label: 'Grok Bot', isNonCodingAgent: true },
 	{ id: 'claude-code', label: 'Claude Code', isNonCodingAgent: false },
 	{ id: 'opencode', label: 'OpenCode', isNonCodingAgent: false },
 	{ id: 'copilot', label: 'Copilot', isNonCodingAgent: false },
@@ -57,6 +59,22 @@ export const grokCustomMcpGuideUrl = 'https://docs.x.ai/grok/connectors'
 /** Grok CLI (`grok`) MCP add / config.toml docs. */
 export const grokCliMcpGuideUrl = 'https://docs.x.ai/build/features/mcp-servers'
 
+/** Cursor Marketplace listing for the official Kody plugin (production). */
+export const kodyCursorMarketplaceUrl = 'https://cursor.com/marketplace/kody'
+
+/** Cursor chat command shown on the marketplace listing. */
+export const kodyCursorAddPluginCommand = '/add-plugin kody'
+
+/** Confirmed Cursor Marketplace plugin id for Kody. */
+export const kodyMarketplacePluginId = '56286216'
+
+/** Confirmed Grok Bot one-click add for the official Kody plugin. */
+export const grokBotInstallUrl = `grokbot://app/v1/plugin/add?id=${kodyMarketplacePluginId}`
+
+/** Grok Bot sidebar plugin help. */
+export const grokBotConnectPluginsUrl =
+	'https://cursor.com/help/grok-bot/connect-plugins'
+
 /** Square favicon suitable for ChatGPT plugin / connector app icons. */
 export function buildKodyAppIconUrl(mcpServerUrl: string) {
 	return new URL('/apple-touch-icon.png', mcpServerUrl).href
@@ -80,8 +98,12 @@ export const defaultKodyMcpUrl = 'https://kody.codes/mcp'
  * default; preview and local origins pass `--mcp-url` so install writes
  * this deployment's MCP endpoint.
  */
+export function isDefaultKodyMcpUrl(mcpServerUrl: string) {
+	return normalizeMcpUrl(mcpServerUrl) === defaultKodyMcpUrl
+}
+
 export function buildKodyCliInstallCommand(mcpServerUrl: string) {
-	if (normalizeMcpUrl(mcpServerUrl) === defaultKodyMcpUrl) {
+	if (isDefaultKodyMcpUrl(mcpServerUrl)) {
 		return 'npx @kodycodes/cli install'
 	}
 	return `npx @kodycodes/cli install --mcp-url ${mcpServerUrl}`
@@ -95,19 +117,6 @@ function prettyJson(value: unknown) {
 	return `${JSON.stringify(value, null, 2)}\n`
 }
 
-function encodeBase64Url(value: string) {
-	return btoa(value)
-		.replaceAll('+', '-')
-		.replaceAll('/', '_')
-		.replace(/=+$/u, '')
-}
-
-/** Cursor protocol handler for installing a remote MCP server. */
-export function buildCursorInstallUrl(mcpServerUrl: string) {
-	const config = encodeBase64Url(JSON.stringify({ url: mcpServerUrl }))
-	return `cursor://anysphere.cursor-deeplink/mcp/install?name=kody&config=${config}`
-}
-
 /** VS Code protocol handler for installing a remote MCP server. */
 export function buildVsCodeInstallUrl(mcpServerUrl: string) {
 	const config = encodeURIComponent(
@@ -118,17 +127,6 @@ export function buildVsCodeInstallUrl(mcpServerUrl: string) {
 		}),
 	)
 	return `vscode:mcp/install?${config}`
-}
-
-/** Cursor `~/.cursor/mcp.json` or `.cursor/mcp.json` remote server entry. */
-export function buildCursorMcpJson(mcpServerUrl: string) {
-	return prettyJson({
-		mcpServers: {
-			kody: {
-				url: mcpServerUrl,
-			},
-		},
-	})
 }
 
 /** Claude Code project `.mcp.json` or user-scoped `mcpServers` entry. */
@@ -240,7 +238,8 @@ export function collectOnboardingMcpSnippets(mcpServerUrl: string) {
 	return [
 		{ code: mcpServerUrl },
 		{ code: buildKodyAppIconUrl(mcpServerUrl) },
-		{ code: buildCursorMcpJson(mcpServerUrl), lang: 'json' },
+		{ code: kodyCursorAddPluginCommand },
+		{ code: grokBotInstallUrl },
 		{ code: buildCodexMcpAddCommand(mcpServerUrl), lang: 'sh' },
 		{ code: buildCodexMcpToml(mcpServerUrl), lang: 'toml' },
 		{ code: buildGrokCliAddCommand(mcpServerUrl), lang: 'sh' },

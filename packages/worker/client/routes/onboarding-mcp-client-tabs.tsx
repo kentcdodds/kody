@@ -8,8 +8,6 @@ import {
 	buildCodexMcpToml,
 	buildCopilotCliAddCommand,
 	buildCopilotCliMcpJson,
-	buildCursorInstallUrl,
-	buildCursorMcpJson,
 	buildGrokCliAddCommand,
 	buildGrokCliMcpToml,
 	buildKodyAppIconUrl,
@@ -24,9 +22,13 @@ import {
 	codingAgentPackageHint,
 	copilotAppCustomizeGuideUrl,
 	copilotCliMcpGuideUrl,
+	grokBotConnectPluginsUrl,
+	grokBotInstallUrl,
 	grokCliMcpGuideUrl,
 	grokConnectorsUrl,
 	grokCustomMcpGuideUrl,
+	kodyCursorAddPluginCommand,
+	kodyCursorMarketplaceUrl,
 	type McpClientKind,
 	mcpClientTabs,
 	nonCodingAgentNote,
@@ -111,13 +113,48 @@ function ClientNote(handle: Handle<ClientNoteProps>) {
 }
 
 function InstallDeepLink(
-	handle: Handle<{ href: string; label: 'Add to Cursor' | 'Add to VS Code' }>,
+	handle: Handle<{
+		href: string
+		label: 'Add to Cursor' | 'Add to VS Code'
+	}>,
 ) {
 	return () => (
 		<div mix={css(deepLinkCss)}>
 			<a href={handle.props.href} mix={css(deepLinkButtonCss)}>
 				{handle.props.label}
 			</a>
+			<small mix={css(deepLinkNoteCss)}>
+				Your client will still ask you to authorize access afterwards.
+			</small>
+		</div>
+	)
+}
+
+function PluginPrimaryInstall(
+	handle: Handle<{
+		href: string
+		label: 'Add to Cursor' | 'Add to Grok Bot'
+		alternativeValue: string
+		alternativeCopyLabel: string
+	}>,
+) {
+	return () => (
+		<div data-testid="onboarding-mcp-plugin-primary" mix={css(deepLinkCss)}>
+			<a href={handle.props.href} mix={css(deepLinkButtonCss)}>
+				{handle.props.label}
+			</a>
+			<p
+				data-testid="onboarding-mcp-plugin-alternative"
+				mix={css(pluginAlternativeCss)}
+			>
+				Or do this: <code>{handle.props.alternativeValue}</code>
+				<CopyTextButton
+					value={handle.props.alternativeValue}
+					idleLabel="Copy"
+					variant="chip"
+					ariaLabel={handle.props.alternativeCopyLabel}
+				/>
+			</p>
 			<small mix={css(deepLinkNoteCss)}>
 				Your client will still ask you to authorize access afterwards.
 			</small>
@@ -149,39 +186,29 @@ function renderPanelContent(
 	highlights?: Record<string, HighlightedCode>,
 ) {
 	switch (kind) {
-		case 'cursor': {
-			const cursorJson = buildCursorMcpJson(mcpServerUrl)
-			const installUrl = buildCursorInstallUrl(mcpServerUrl)
+		case 'cursor':
 			return (
 				<>
 					<p>
-						Install with the deeplink, open <strong>Customize</strong> and add a
-						remote MCP server with the URL, or merge the JSON into{' '}
-						<code>~/.cursor/mcp.json</code> (global) or{' '}
-						<code>.cursor/mcp.json</code> (project).
+						Install the official{' '}
+						<a
+							href={kodyCursorMarketplaceUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Kody plugin
+						</a>{' '}
+						from the Cursor Marketplace.
 					</p>
-					<InstallDeepLink href={installUrl} label="Add to Cursor" />
-					<CopyCard
-						highlights={highlights}
-						label="MCP URL"
-						value={mcpServerUrl}
-						copyLabel="Copy MCP URL"
-					/>
-					<p>
-						JSON config (merge under your existing <code>mcpServers</code> if
-						you already have one):
-					</p>
-					<CopyCard
-						highlights={highlights}
-						label="mcp.json"
-						value={cursorJson}
-						copyLabel="Copy JSON"
-						lang="json"
+					<PluginPrimaryInstall
+						href={kodyCursorMarketplaceUrl}
+						label="Add to Cursor"
+						alternativeValue={kodyCursorAddPluginCommand}
+						alternativeCopyLabel="Copy /add-plugin kody"
 					/>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
-		}
 		case 'chatgpt': {
 			const appIconUrl = buildKodyAppIconUrl(mcpServerUrl)
 			return (
@@ -313,7 +340,8 @@ function renderPanelContent(
 						variant="pill"
 					/>
 					<p>
-						For the Grok CLI, use the <strong>Grok CLI</strong> tab.
+						For the Grok CLI, use the <strong>Grok CLI</strong> tab. For Grok
+						Bot (Cursor desktop), use the <strong>Grok Bot</strong> tab.
 					</p>
 					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
@@ -357,11 +385,41 @@ function renderPanelContent(
 						</a>{' '}
 						for <code>grok mcp list</code>, <code>grok mcp doctor</code>, and
 						project scope. For grok.com, use the <strong>Grok.com</strong> tab.
+						For Grok Bot, use the <strong>Grok Bot</strong> tab.
 					</p>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
 		}
+		case 'grok-bot':
+			return (
+				<>
+					<p>
+						Install the official Kody plugin in Grok Bot. Click{' '}
+						<strong>Add to Grok Bot</strong>, or open <strong>Plugins</strong>{' '}
+						in the Grok Bot sidebar and add Kody. See{' '}
+						<a
+							href={grokBotConnectPluginsUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							Grok Bot plugin help
+						</a>
+						.
+					</p>
+					<PluginPrimaryInstall
+						href={grokBotInstallUrl}
+						label="Add to Grok Bot"
+						alternativeValue={grokBotInstallUrl}
+						alternativeCopyLabel="Copy Grok Bot plugin link"
+					/>
+					<p>
+						Grok.com (xAI web connectors) and Grok CLI are separate products.
+						Use those tabs when you are not installing the Grok Bot plugin.
+					</p>
+					<ClientNote>{nonCodingAgentNote}</ClientNote>
+				</>
+			)
 		case 'claude-code': {
 			const claudeCodeCommand = buildClaudeCodeAddCommand(mcpServerUrl)
 			const claudeCodeJson = buildClaudeCodeMcpJson(mcpServerUrl)
@@ -543,9 +601,9 @@ function renderPanelContent(
 					<p>
 						Config file shapes differ by host. If your client expects a JSON{' '}
 						<code>mcpServers</code> map with a <code>url</code> field, start
-						from the Cursor or Copilot CLI snippet; if it uses{' '}
-						<code>servers</code> with <code>type: &quot;http&quot;</code>, use
-						the Copilot (VS Code) snippet.
+						from the Copilot CLI snippet; if it uses <code>servers</code> with{' '}
+						<code>type: &quot;http&quot;</code>, use the Copilot (VS Code)
+						snippet.
 					</p>
 				</>
 			)
@@ -806,6 +864,20 @@ const deepLinkButtonCss = getPillButtonCss()
 const deepLinkNoteCss = {
 	color: colors.textMuted,
 	fontSize: '0.88rem',
+}
+
+const pluginAlternativeCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	gap: '0.35rem 0.5rem',
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.88rem',
+	maxWidth: '72ch',
+	'& code': {
+		overflowWrap: 'anywhere' as const,
+	},
 }
 
 /* Config snippets: labeled wells with their copy button in the header. */
