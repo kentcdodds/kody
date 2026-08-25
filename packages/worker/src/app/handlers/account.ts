@@ -35,6 +35,7 @@ export function createAccountHandler(env: Env) {
 					env,
 					user.mcpUser.userId,
 					onboarding.hasMcpClient,
+					{ probeMailbox: onboarding.hasMcpClient },
 				)
 			}
 			return renderAppPage({

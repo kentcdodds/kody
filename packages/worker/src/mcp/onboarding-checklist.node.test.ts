@@ -7,7 +7,9 @@ import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { upsertIntegration } from '#worker/integrations/service.ts'
 import { insertMemory } from '#mcp/memory/repo.ts'
 import { buildOnboardingSearchNotice } from '#mcp/tools/search-onboarding-notice.ts'
+import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import {
+	assembleOnboardingChecklist,
 	deriveOnboardingChecklist,
 	dismissOnboardingChecklist,
 	readOnboardingChecklistDismissed,
@@ -182,6 +184,50 @@ test('search onboarding notice points at /onboarding and goes quiet after dismis
 			baseUrl: 'https://kody.example',
 		}),
 	).toBe(null)
+})
+
+test('checklist install-starter reads saved packages from D1 and can skip Mailbox', async () => {
+	const { env } = createEnv()
+	await seedUser(env.APP_DB)
+	await insertSavedPackage(env.APP_DB, {
+		id: 'pkg-1',
+		user_id: userId,
+		name: '@user/starter',
+		kody_id: 'starter',
+		description: 'Starter',
+		tags_json: '[]',
+		source_id: 'src-1',
+		has_app: 0,
+	})
+
+	const skipped = await deriveOnboardingChecklist({
+		env,
+		userId,
+		emailVerified: true,
+		hasMcpClient: false,
+		probeMailbox: false,
+	})
+	expect(
+		Object.fromEntries(skipped.items.map((item) => [item.id, item.done])),
+	).toEqual({
+		'verify-email': true,
+		'connect-agent': false,
+		'first-hello': false,
+		'save-memory': false,
+		'connect-integration': false,
+		'install-starter': true,
+	})
+
+	expect(
+		assembleOnboardingChecklist({
+			emailVerified: true,
+			hasMcpClient: true,
+			inboundMail: 2,
+			hasMemory: true,
+			hasIntegrationOrMcp: true,
+			hasSavedPackage: true,
+		}).complete,
+	).toBe(true)
 })
 
 test('first-win Send is done when email_send meter counts even without mailbox', async () => {

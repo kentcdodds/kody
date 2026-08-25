@@ -26,6 +26,7 @@ const mockModule = vi.hoisted(() => ({
 	listMcpServerSettings: vi.fn(),
 	loadMcpClientHubSnapshotOrNull: vi.fn(),
 	listSavedPackagesByUserId: vi.fn(),
+	countInternalUserEmailMessages: vi.fn(),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -47,6 +48,11 @@ vi.mock('#worker/email/owner-email-reader.ts', () => ({
 		mockModule.listOwnerEmailMessages(...args),
 	searchOwnerEmailMessages: (...args: Array<unknown>) =>
 		mockModule.searchOwnerEmailMessages(...args),
+}))
+
+vi.mock('#worker/email/mailbox-internal-read.ts', () => ({
+	countInternalUserEmailMessages: (...args: Array<unknown>) =>
+		mockModule.countInternalUserEmailMessages(...args),
 }))
 
 vi.mock('#worker/mcp-client/settings-service.ts', () => ({
@@ -306,6 +312,7 @@ test('onboarding persist next-steps use the newest saved-package kody id', async
 	mockModule.listMcpServerSettings.mockResolvedValue([])
 	mockModule.listOwnerEmailMessages.mockResolvedValue([])
 	mockModule.searchOwnerEmailMessages.mockResolvedValue([])
+	mockModule.countInternalUserEmailMessages.mockReset()
 
 	const response = await createOnboardingApiHandler(env).handler(
 		new RequestContext(new Request('https://example.com/onboarding.json')),
@@ -315,6 +322,31 @@ test('onboarding persist next-steps use the newest saved-package kody id', async
 		ok: true,
 		loggedIn: true,
 		username: 'u-b',
+		hasMcpClient: false,
+		hasSentWelcomeEmail: false,
 		persistedPackageKodyId: 'morning-digest',
 	})
+	expect(mockModule.countInternalUserEmailMessages).not.toHaveBeenCalled()
+	expect(mockModule.searchOwnerEmailMessages).not.toHaveBeenCalled()
+	expect(response.headers.get('Server-Timing')).toContain('mailbox;dur=')
+	expect(response.headers.get('Server-Timing')).toContain('desc="skip"')
+
+	mockModule.countInternalUserEmailMessages.mockResolvedValue(0)
+	const connectedEnv = {
+		...env,
+		OAUTH_PROVIDER: {
+			listUserGrants: async () => ({ items: [{ id: 'grant-1' }] }),
+		},
+	} as Env
+	const connected = await createOnboardingApiHandler(connectedEnv).handler(
+		new RequestContext(new Request('https://example.com/onboarding.json')),
+	)
+	expect(connected.status).toBe(200)
+	await expect(connected.json()).resolves.toMatchObject({
+		ok: true,
+		hasMcpClient: true,
+		hasSentWelcomeEmail: false,
+	})
+	expect(mockModule.countInternalUserEmailMessages).toHaveBeenCalled()
+	expect(connected.headers.get('Server-Timing')).toContain('desc="probe"')
 })

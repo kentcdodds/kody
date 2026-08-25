@@ -116,11 +116,14 @@ export async function loadOnboardingData(input: {
 	checklist?: OnboardingChecklistLoaderData | null
 	/** Stored welcome email metadata, loaded by the handler. */
 	welcomeEmail?: OnboardingWelcomeEmail | null
+	/** Precomputed MCP OAuth grant signal so the handler can overlap listings. */
+	hasMcpClient?: boolean
+	/** First-win Send sub-step, loaded by the handler. */
+	hasSentWelcomeEmail?: boolean
 }): Promise<OnboardingLoaderData> {
-	const hasMcpClient = await userHasMcpOAuthGrants(
-		input.env,
-		input.stableUserId,
-	)
+	const hasMcpClient =
+		input.hasMcpClient ??
+		(await userHasMcpOAuthGrants(input.env, input.stableUserId))
 	// Incomplete setup means either the account email is still unverified or no
 	// MCP host has authorized yet. An unverified account with a leftover grant
 	// still needs onboarding until verification is finished.
@@ -170,8 +173,7 @@ export async function loadOnboardingData(input: {
 				listDisconnectedOnboardingFeaturedMcpServers())
 			: [],
 		customMcpServers: input.emailVerified ? (input.customMcpServers ?? []) : [],
-		// Computed by the handler alongside the checklist probes.
-		hasSentWelcomeEmail: false,
+		hasSentWelcomeEmail: input.hasSentWelcomeEmail ?? false,
 		welcomeEmail: input.welcomeEmail ?? null,
 		persistedPackageKodyId: input.emailVerified
 			? (input.persistedPackageKodyId ?? null)

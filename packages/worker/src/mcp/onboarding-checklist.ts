@@ -5,6 +5,7 @@ import {
 } from '#worker/entitlements/service.ts'
 import { listIntegrations } from '#worker/integrations/service.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listMemoriesByUserId } from '#mcp/memory/repo.ts'
 import { getValue } from '#mcp/values/service.ts'
 import {
@@ -68,59 +69,82 @@ export async function userHasSentWelcomeEmail(input: {
 }
 
 /**
- * Compute the checklist from existing signals: one Mailbox DO count (stored
- * INBOUND mail — the welcome email alone is outbound, so "exchange a first
- * email" only completes once the user's reply lands), and three cheap D1
+ * Compute the checklist from existing signals: an optional Mailbox DO count
+ * (stored INBOUND mail — the welcome email alone is outbound, so "exchange
+ * a first email" only completes once the user's reply lands), and cheap D1
  * reads (active memories, saved integrations or MCP servers, saved
  * packages). Individual probe failures fail open to "not done" so a
  * storage blip never breaks onboarding surfaces.
  */
+export function assembleOnboardingChecklist(input: {
+	emailVerified: boolean
+	hasMcpClient: boolean
+	inboundMail: number
+	hasMemory: boolean
+	hasIntegrationOrMcp: boolean
+	hasSavedPackage: boolean
+}): OnboardingChecklist {
+	const items: Array<OnboardingChecklistItem> = [
+		{ id: 'verify-email', done: input.emailVerified },
+		{ id: 'connect-agent', done: input.hasMcpClient },
+		{ id: 'first-hello', done: input.inboundMail > 0 },
+		{ id: 'save-memory', done: input.hasMemory },
+		{ id: 'connect-integration', done: input.hasIntegrationOrMcp },
+		{ id: 'install-starter', done: input.hasSavedPackage },
+	]
+	return {
+		items,
+		complete: items.every((item) => item.done),
+	}
+}
+
 export async function deriveOnboardingChecklist(input: {
 	env: OnboardingChecklistEnv
 	userId: string
 	emailVerified: boolean
 	hasMcpClient: boolean
-	now?: Date
+	/**
+	 * When false, skip the Mailbox Durable Object. First-hello stays not-done
+	 * unless `inboundMail` is provided. Signed-in onboarding uses this until
+	 * an MCP host has authorized, so a first page load does not pay a cold
+	 * platform-worker Mailbox wake.
+	 */
+	probeMailbox?: boolean
+	/** Preloaded inbound count; skips the Mailbox inbound probe when set. */
+	inboundMail?: number
 }): Promise<OnboardingChecklist> {
 	const { env, userId } = input
-	const now = input.now ?? new Date()
+	const probeMailbox = input.probeMailbox ?? input.inboundMail === undefined
 	const [inboundMail, memories, integrations, mcpServers, savedPackages] =
 		await Promise.all([
-			countInternalUserEmailMessages({
-				env,
-				ownerId: userId,
-				filters: { direction: 'inbound' },
-			}).catch(() => 0),
+			input.inboundMail !== undefined
+				? Promise.resolve(input.inboundMail)
+				: probeMailbox
+					? countInternalUserEmailMessages({
+							env,
+							ownerId: userId,
+							filters: { direction: 'inbound' },
+						}).catch(() => 0)
+					: Promise.resolve(0),
 			listMemoriesByUserId(env.APP_DB, userId, {
 				limit: 1,
 				statuses: ['active'],
 			}).catch(() => []),
 			listIntegrations({ env, userId }).catch(() => [] as Array<unknown>),
 			listMcpServerSettings({ env, userId }).catch(() => [] as Array<unknown>),
-			readCurrentEntitlementResourceUsage({
-				db: env.APP_DB,
-				env,
-				userId,
-				resource: 'saved_packages',
-				now,
-			}).catch(() => 0),
+			listSavedPackagesByUserId(env.APP_DB, { userId }).catch(
+				() => [] as Array<unknown>,
+			),
 		])
 
-	const items: Array<OnboardingChecklistItem> = [
-		{ id: 'verify-email', done: input.emailVerified },
-		{ id: 'connect-agent', done: input.hasMcpClient },
-		{ id: 'first-hello', done: inboundMail > 0 },
-		{ id: 'save-memory', done: memories.length > 0 },
-		{
-			id: 'connect-integration',
-			done: integrations.length > 0 || mcpServers.length > 0,
-		},
-		{ id: 'install-starter', done: savedPackages > 0 },
-	]
-	return {
-		items,
-		complete: items.every((item) => item.done),
-	}
+	return assembleOnboardingChecklist({
+		emailVerified: input.emailVerified,
+		hasMcpClient: input.hasMcpClient,
+		inboundMail,
+		hasMemory: memories.length > 0,
+		hasIntegrationOrMcp: integrations.length > 0 || mcpServers.length > 0,
+		hasSavedPackage: savedPackages.length > 0,
+	})
 }
 
 export async function readOnboardingChecklistDismissed(input: {
