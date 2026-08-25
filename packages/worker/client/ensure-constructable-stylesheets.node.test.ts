@@ -7,6 +7,12 @@ function createFakeDocument() {
 	const headChildren: Array<{ remove: () => void; isConnected: boolean }> = []
 	const head = {
 		appendChild(node: { isConnected: boolean }) {
+			// Mirror DOM move semantics: re-appending a connected node relocates
+			// it without disconnecting (CSSOM rules must survive).
+			const existing = headChildren.indexOf(
+				node as { remove: () => void; isConnected: boolean },
+			)
+			if (existing >= 0) headChildren.splice(existing, 1)
 			node.isConnected = true
 			headChildren.push(node as { remove: () => void; isConnected: boolean })
 			return node
@@ -47,6 +53,9 @@ function createFakeDocument() {
 				},
 				remove() {
 					this.isConnected = false
+					// Real browsers drop CSSOM mutations on disconnect and reparse
+					// empty textContent on reconnect.
+					rules.length = 0
 					const index = headChildren.indexOf(this)
 					if (index >= 0) headChildren.splice(index, 1)
 				},
@@ -62,7 +71,13 @@ function createFakeDocument() {
 	return { doc, headChildren }
 }
 
-test('ensureConstructableStylesheets polyfills Illegal constructor hosts so Remix StyleManager construct + push + insertRule works', () => {
+type PolyfilledSheet = {
+	cssRules: { length: number }
+	insertRule: (rule: string, index?: number) => number
+	deleteRule: (index: number) => void
+}
+
+function installOnFakeHost() {
 	const { doc, headChildren } = createFakeDocument()
 	function NonConstructableCSSStyleSheet() {
 		throw new TypeError('Illegal constructor')
@@ -71,17 +86,18 @@ test('ensureConstructableStylesheets polyfills Illegal constructor hosts so Remi
 		CSSStyleSheet: NonConstructableCSSStyleSheet,
 		document: doc,
 	}
-
 	ensureConstructableStylesheets(host)
+	const Ctor = host.CSSStyleSheet as new () => PolyfilledSheet
+	return { doc, headChildren, Ctor }
+}
 
-	expect(typeof host.CSSStyleSheet).toBe('function')
-	expect(() => new (host.CSSStyleSheet as new () => object)()).not.toThrow()
+test('ensureConstructableStylesheets polyfills Illegal constructor hosts so Remix StyleManager construct + push + insertRule works', () => {
+	const { doc, headChildren, Ctor } = installOnFakeHost()
 
-	const sheet = new (host.CSSStyleSheet as new () => {
-		cssRules: { length: number }
-		insertRule: (rule: string, index?: number) => number
-		deleteRule: (index: number) => void
-	})()
+	expect(typeof Ctor).toBe('function')
+	expect(() => new Ctor()).not.toThrow()
+
+	const sheet = new Ctor()
 
 	doc.adoptedStyleSheets!.push(sheet as never)
 	expect(headChildren).toHaveLength(1)
@@ -98,18 +114,8 @@ test('ensureConstructableStylesheets polyfills Illegal constructor hosts so Remi
 })
 
 test('ensureConstructableStylesheets reorders connected style elements when adoptedStyleSheets is reassigned', () => {
-	const { doc, headChildren } = createFakeDocument()
-	function NonConstructableCSSStyleSheet() {
-		throw new TypeError('Illegal constructor')
-	}
-	const host = {
-		CSSStyleSheet: NonConstructableCSSStyleSheet,
-		document: doc,
-	}
+	const { doc, headChildren, Ctor } = installOnFakeHost()
 
-	ensureConstructableStylesheets(host)
-
-	const Ctor = host.CSSStyleSheet as new () => object
 	const first = new Ctor()
 	const second = new Ctor()
 	doc.adoptedStyleSheets!.push(first as never, second as never)
@@ -119,6 +125,22 @@ test('ensureConstructableStylesheets reorders connected style elements when adop
 
 	doc.adoptedStyleSheets = [second as never, first as never]
 	expect(headChildren).toEqual([secondStyle, firstStyle])
+})
+
+test('ensureConstructableStylesheets keeps insertRule CSSOM across reorder without disconnecting', () => {
+	const { doc, headChildren, Ctor } = installOnFakeHost()
+
+	const first = new Ctor()
+	const second = new Ctor()
+	doc.adoptedStyleSheets!.push(first as never, second as never)
+	first.insertRule('.rmxc-a { color: red }', 0)
+	second.insertRule('.rmxc-b { color: blue }', 0)
+
+	doc.adoptedStyleSheets = [second as never, first as never]
+
+	expect(headChildren).toHaveLength(2)
+	expect(first.cssRules.length).toBe(1)
+	expect(second.cssRules.length).toBe(1)
 })
 
 test('ensureConstructableStylesheets leaves a real Constructable Stylesheets implementation alone', () => {

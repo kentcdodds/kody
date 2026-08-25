@@ -69,8 +69,9 @@ function appendStyleElement(
 	doc: ConstructableStylesheetsDocument,
 	style: PolyfilledStyleElement,
 ): void {
-	if (style.isConnected) return
 	const parent = doc.head ?? doc.documentElement
+	// Always appendChild: a connected node is moved without disconnecting, so
+	// CSSOM rules from insertRule survive reorder (unlike remove + reinsert).
 	parent?.appendChild(style)
 }
 
@@ -119,11 +120,12 @@ function syncAdoptedStyleSheets(
 	previous: Array<PolyfilledStyleSheet>,
 	next: Array<PolyfilledStyleSheet>,
 ): void {
-	// Detach everything first, then append `next` in order. Skipping detach for
-	// retained sheets would keep the old DOM order when assignment only
-	// reorders (e.g. `[a, b]` → `[b, a]`), which would ignore cascade order.
+	// Drop sheets that left the list. Retained sheets stay connected so
+	// insertRule CSSOM state survives; appendChild below only moves them.
 	for (const sheet of previous) {
-		sheet._detach()
+		if (!next.includes(sheet)) {
+			sheet._detach()
+		}
 	}
 	for (const sheet of next) {
 		sheet._attach(doc)
