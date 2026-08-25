@@ -186,7 +186,7 @@ test('search onboarding notice points at /onboarding and goes quiet after dismis
 	).toBe(null)
 })
 
-test('checklist install-starter reads saved packages from D1 and can skip Mailbox', async () => {
+test('checklist install-starter reads saved packages from D1', async () => {
 	const { env } = createEnv()
 	await seedUser(env.APP_DB)
 	await insertSavedPackage(env.APP_DB, {
@@ -205,7 +205,7 @@ test('checklist install-starter reads saved packages from D1 and can skip Mailbo
 		userId,
 		emailVerified: true,
 		hasMcpClient: false,
-		probeMailbox: false,
+		inboundMail: 0,
 	})
 	expect(
 		Object.fromEntries(skipped.items.map((item) => [item.id, item.done])),

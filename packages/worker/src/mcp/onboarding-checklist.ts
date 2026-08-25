@@ -69,12 +69,12 @@ export async function userHasSentWelcomeEmail(input: {
 }
 
 /**
- * Compute the checklist from existing signals: an optional Mailbox DO count
- * (stored INBOUND mail — the welcome email alone is outbound, so "exchange
- * a first email" only completes once the user's reply lands), and cheap D1
- * reads (active memories, saved integrations or MCP servers, saved
- * packages). Individual probe failures fail open to "not done" so a
- * storage blip never breaks onboarding surfaces.
+ * Compute the checklist from existing signals: one Mailbox inbound count
+ * (the welcome email alone is outbound, so "exchange a first email" only
+ * completes once the user's reply lands), and cheap D1 reads (active
+ * memories, saved integrations or MCP servers, saved packages). Individual
+ * probe failures fail open to "not done" so a storage blip never breaks
+ * onboarding surfaces.
  */
 export function assembleOnboardingChecklist(input: {
 	emailVerified: boolean
@@ -103,29 +103,19 @@ export async function deriveOnboardingChecklist(input: {
 	userId: string
 	emailVerified: boolean
 	hasMcpClient: boolean
-	/**
-	 * When false, skip the Mailbox Durable Object. First-hello stays not-done
-	 * unless `inboundMail` is provided. Signed-in onboarding uses this until
-	 * an MCP host has authorized, so a first page load does not pay a cold
-	 * platform-worker Mailbox wake.
-	 */
-	probeMailbox?: boolean
-	/** Preloaded inbound count; skips the Mailbox inbound probe when set. */
+	/** Preloaded inbound count; skips a second Mailbox inbound probe. */
 	inboundMail?: number
 }): Promise<OnboardingChecklist> {
 	const { env, userId } = input
-	const probeMailbox = input.probeMailbox ?? input.inboundMail === undefined
 	const [inboundMail, memories, integrations, mcpServers, savedPackages] =
 		await Promise.all([
 			input.inboundMail !== undefined
 				? Promise.resolve(input.inboundMail)
-				: probeMailbox
-					? countInternalUserEmailMessages({
-							env,
-							ownerId: userId,
-							filters: { direction: 'inbound' },
-						}).catch(() => 0)
-					: Promise.resolve(0),
+				: countInternalUserEmailMessages({
+						env,
+						ownerId: userId,
+						filters: { direction: 'inbound' },
+					}).catch(() => 0),
 			listMemoriesByUserId(env.APP_DB, userId, {
 				limit: 1,
 				statuses: ['active'],

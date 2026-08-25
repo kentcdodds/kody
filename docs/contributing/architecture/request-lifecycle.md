@@ -169,15 +169,13 @@ are:
 - `ssr` — route preload, stylesheet, and starting the HTML stream
 - `highlight` — token batch (`desc` is `hit`, `worker`, `miss`, or `fallback`)
 - `listings` — onboarding featured/chooser load
-- `mailbox` — signed-in onboarding Mailbox first-win probes (`desc` is `skip`
-  until an MCP host has authorized, otherwise `probe`)
+- `mailbox` — signed-in onboarding Mailbox first-win probes
 - `code-runs` — homepage public ticker window
 
 Signed-in `/onboarding` overlaps featured listings, MCP OAuth grant listing, and
-D1 checklist reads. It does not call Mailbox or UserMeter until `hasMcpClient`
-is true, so a first visit after login does not wake the platform worker. When it
-does probe, one unfiltered Mailbox count returns immediately for an empty
-mailbox.
+the Mailbox first-win read. That Mailbox read is one unfiltered count; search
+and list run only when the mailbox is not empty. `install-starter` reads saved
+packages from D1.
 
 Durations use `Date.now()`, which Workers only advance across I/O. The weekly
 site-perf collector records these phases; it does not budget them.

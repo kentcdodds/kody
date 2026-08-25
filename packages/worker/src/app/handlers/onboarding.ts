@@ -6,7 +6,10 @@ import {
 	readOnboardingChecklistDismissed,
 } from '#mcp/onboarding-checklist.ts'
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import {
+	readAuthenticatedAppUser,
+	type AuthenticatedAppUser,
+} from '#app/authenticated-user.ts'
 import {
 	loadOnboardingFeaturedListings,
 	loadOnboardingMcpChooserListings,
@@ -64,7 +67,7 @@ export async function loadChecklist(
 	env: Env,
 	userId: string,
 	hasMcpClient: boolean,
-	options?: { probeMailbox?: boolean },
+	options?: { inboundMail?: number },
 ): Promise<OnboardingChecklistLoaderData> {
 	const [checklist, dismissed] = await Promise.all([
 		deriveOnboardingChecklist({
@@ -72,7 +75,7 @@ export async function loadChecklist(
 			userId,
 			emailVerified: true,
 			hasMcpClient,
-			probeMailbox: options?.probeMailbox,
+			inboundMail: options?.inboundMail,
 		}),
 		readOnboardingChecklistDismissed({ env, userId }),
 	])
@@ -87,8 +90,8 @@ const emptyOnboardingMailboxSignals = {
 
 /**
  * Mailbox-backed first-win signals. One unfiltered count first: an empty
- * mailbox (the usual first-visit case) returns without a second RPC. Search
- * and list run only when something is stored.
+ * mailbox returns without a second RPC. Search and list run only when
+ * something is stored.
  */
 async function loadOnboardingMailboxSignals(
 	env: Env,
@@ -127,61 +130,40 @@ async function loadOnboardingMailboxSignals(
 	}
 }
 
-function withInboundMail(
-	checklist: OnboardingChecklistLoaderData,
-	inboundMail: number,
-): OnboardingChecklistLoaderData {
-	return {
-		...checklist,
-		items: checklist.items.map((item) =>
-			item.id === 'first-hello' ? { ...item, done: inboundMail > 0 } : item,
-		),
-	}
-}
-
-async function loadSignedInOnboardingD1Progress(env: Env, userId: string) {
-	const [checklist, persistedPackageKodyId] = await Promise.all([
-		loadChecklist(env, userId, false, { probeMailbox: false }),
-		loadPersistedPackageKodyId(env, userId),
-	])
-	return { checklist, persistedPackageKodyId }
-}
-
-async function loadSignedInOnboardingMailboxProgress(input: {
+async function loadSignedInOnboardingPageData(input: {
 	env: Env
-	userId: string
-	hasMcpClient: boolean
-	checklist: OnboardingChecklistLoaderData
+	request: Request
+	user: AuthenticatedAppUser
 	serverTiming: Array<ServerTimingEntry>
-}): Promise<{
-	checklist: OnboardingChecklistLoaderData
-	hasSentWelcomeEmail: boolean
-	welcomeEmail: OnboardingWelcomeEmail | null
-}> {
-	const mailboxStartedAt = Date.now()
-	const mailbox = input.hasMcpClient
-		? await loadOnboardingMailboxSignals(input.env, input.userId)
-		: emptyOnboardingMailboxSignals
-	input.serverTiming.push({
-		name: 'mailbox',
-		durationMs: Date.now() - mailboxStartedAt,
-		desc: input.hasMcpClient ? 'probe' : 'skip',
+}) {
+	const userId = input.user.mcpUser.userId
+	const [chooser, hasMcpClient, mailbox, persistedPackageKodyId] =
+		await Promise.all([
+			pushServerTiming(input.serverTiming, 'listings', () =>
+				loadOnboardingChooserFields(input.env, input.request, userId),
+			),
+			userHasMcpOAuthGrants(input.env, userId),
+			pushServerTiming(input.serverTiming, 'mailbox', () =>
+				loadOnboardingMailboxSignals(input.env, userId),
+			),
+			loadPersistedPackageKodyId(input.env, userId),
+		])
+	const checklist = await loadChecklist(input.env, userId, hasMcpClient, {
+		inboundMail: mailbox.inboundMail,
 	})
-	return {
-		checklist: withInboundMail(
-			{
-				...input.checklist,
-				items: input.checklist.items.map((item) =>
-					item.id === 'connect-agent'
-						? { ...item, done: input.hasMcpClient }
-						: item,
-				),
-			},
-			mailbox.inboundMail,
-		),
+	return loadOnboardingData({
+		env: input.env,
+		requestUrl: input.request.url,
+		stableUserId: userId,
+		username: input.user.username,
+		emailVerified: input.user.emailVerified,
+		hasMcpClient,
+		...chooser,
+		persistedPackageKodyId,
+		checklist,
 		hasSentWelcomeEmail: mailbox.hasSentWelcomeEmail,
 		welcomeEmail: mailbox.welcomeEmail,
-	}
+	})
 }
 
 /**
@@ -424,30 +406,11 @@ export function createOnboardingHandler(env: Env) {
 				return redirectUnverifiedToPending(request)
 			}
 
-			const [chooser, hasMcpClient, d1Progress] = await Promise.all([
-				pushServerTiming(serverTiming, 'listings', () =>
-					loadOnboardingChooserFields(env, request, user.mcpUser.userId),
-				),
-				userHasMcpOAuthGrants(env, user.mcpUser.userId),
-				loadSignedInOnboardingD1Progress(env, user.mcpUser.userId),
-			])
-			const mailboxProgress = await loadSignedInOnboardingMailboxProgress({
+			const onboarding = await loadSignedInOnboardingPageData({
 				env,
-				userId: user.mcpUser.userId,
-				hasMcpClient,
-				checklist: d1Progress.checklist,
+				request,
+				user,
 				serverTiming,
-			})
-			const onboarding = await loadOnboardingData({
-				env,
-				requestUrl: request.url,
-				stableUserId: user.mcpUser.userId,
-				username: user.username,
-				emailVerified: user.emailVerified,
-				hasMcpClient,
-				...chooser,
-				persistedPackageKodyId: d1Progress.persistedPackageKodyId,
-				...mailboxProgress,
 			})
 			return renderAppPage({
 				request,
@@ -505,35 +468,20 @@ export function createOnboardingApiHandler(env: Env) {
 			// Unverified callers still get a payload so clients can detect the
 			// gate; MCP URL/setup and featured fields stay empty until
 			// verification succeeds.
-			const [chooser, hasMcpClient, d1Progress] = user.emailVerified
-				? await Promise.all([
-						pushServerTiming(serverTiming, 'listings', () =>
-							loadOnboardingChooserFields(env, request, user.mcpUser.userId),
-						),
-						userHasMcpOAuthGrants(env, user.mcpUser.userId),
-						loadSignedInOnboardingD1Progress(env, user.mcpUser.userId),
-					])
-				: [null, false, null]
-			const mailboxProgress = d1Progress
-				? await loadSignedInOnboardingMailboxProgress({
+			const onboarding = user.emailVerified
+				? await loadSignedInOnboardingPageData({
 						env,
-						userId: user.mcpUser.userId,
-						hasMcpClient,
-						checklist: d1Progress.checklist,
+						request,
+						user,
 						serverTiming,
 					})
-				: null
-			const onboarding = await loadOnboardingData({
-				env,
-				requestUrl: request.url,
-				stableUserId: user.mcpUser.userId,
-				username: user.username,
-				emailVerified: user.emailVerified,
-				hasMcpClient,
-				...chooser,
-				persistedPackageKodyId: d1Progress?.persistedPackageKodyId,
-				...mailboxProgress,
-			})
+				: await loadOnboardingData({
+						env,
+						requestUrl: request.url,
+						stableUserId: user.mcpUser.userId,
+						username: user.username,
+						emailVerified: user.emailVerified,
+					})
 			return jsonResponse(
 				await withOnboardingHighlights(env, onboarding, serverTiming),
 				{ serverTiming },

@@ -313,6 +313,7 @@ test('onboarding persist next-steps use the newest saved-package kody id', async
 	mockModule.listOwnerEmailMessages.mockResolvedValue([])
 	mockModule.searchOwnerEmailMessages.mockResolvedValue([])
 	mockModule.countInternalUserEmailMessages.mockReset()
+	mockModule.countInternalUserEmailMessages.mockResolvedValue(0)
 
 	const response = await createOnboardingApiHandler(env).handler(
 		new RequestContext(new Request('https://example.com/onboarding.json')),
@@ -326,11 +327,12 @@ test('onboarding persist next-steps use the newest saved-package kody id', async
 		hasSentWelcomeEmail: false,
 		persistedPackageKodyId: 'morning-digest',
 	})
-	expect(mockModule.countInternalUserEmailMessages).not.toHaveBeenCalled()
+	expect(mockModule.countInternalUserEmailMessages).toHaveBeenCalledTimes(1)
 	expect(mockModule.searchOwnerEmailMessages).not.toHaveBeenCalled()
 	expect(response.headers.get('Server-Timing')).toContain('mailbox;dur=')
-	expect(response.headers.get('Server-Timing')).toContain('desc="skip"')
+	expect(response.headers.get('Server-Timing')).toContain('listings;dur=')
 
+	mockModule.countInternalUserEmailMessages.mockClear()
 	mockModule.countInternalUserEmailMessages.mockResolvedValue(0)
 	const connectedEnv = {
 		...env,
@@ -347,6 +349,32 @@ test('onboarding persist next-steps use the newest saved-package kody id', async
 		hasMcpClient: true,
 		hasSentWelcomeEmail: false,
 	})
-	expect(mockModule.countInternalUserEmailMessages).toHaveBeenCalled()
-	expect(connected.headers.get('Server-Timing')).toContain('desc="probe"')
+	expect(mockModule.countInternalUserEmailMessages).toHaveBeenCalledTimes(1)
+	expect(mockModule.searchOwnerEmailMessages).not.toHaveBeenCalled()
+
+	mockModule.countInternalUserEmailMessages.mockReset()
+	mockModule.countInternalUserEmailMessages
+		.mockResolvedValueOnce(2)
+		.mockResolvedValueOnce(1)
+		.mockResolvedValueOnce(1)
+	mockModule.searchOwnerEmailMessages.mockResolvedValue([
+		{
+			subject: 'Welcome to Kody — reply to introduce yourself',
+			fromAddress: 'kody@heykody.app',
+		},
+	])
+	const withMail = await createOnboardingApiHandler(connectedEnv).handler(
+		new RequestContext(new Request('https://example.com/onboarding.json')),
+	)
+	expect(withMail.status).toBe(200)
+	await expect(withMail.json()).resolves.toMatchObject({
+		ok: true,
+		hasSentWelcomeEmail: true,
+		welcomeEmail: {
+			subject: 'Welcome to Kody — reply to introduce yourself',
+			fromAddress: 'kody@heykody.app',
+		},
+	})
+	expect(mockModule.countInternalUserEmailMessages).toHaveBeenCalledTimes(3)
+	expect(mockModule.searchOwnerEmailMessages).toHaveBeenCalled()
 })
