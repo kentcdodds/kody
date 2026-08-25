@@ -31,6 +31,15 @@ test('format and parse Server-Timing keep page phases and quoted desc', () => {
 		{ name: 'highlight', durationMs: 20, desc: 'worker' },
 	])
 	expect(parseServerTimingHeader(null)).toEqual([])
+	expect(
+		parseServerTimingHeader('highlight;dur=20;desc="hit;miss", session;dur=1'),
+	).toEqual([
+		{ name: 'highlight', durationMs: 20, desc: 'hit;miss' },
+		{ name: 'session', durationMs: 1 },
+	])
+	expect(
+		parseServerTimingHeader('highlight;dur=20;desc="say \\"hi\\""'),
+	).toEqual([{ name: 'highlight', durationMs: 20, desc: 'say "hi"' }])
 })
 
 test('applyServerTimingHeader appends to an existing header', () => {

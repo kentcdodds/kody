@@ -53,14 +53,25 @@ export function formatServerTimingHeader(
 		.join(', ')
 }
 
-function splitServerTimingParts(header: string) {
+function splitServerTimingParts(header: string, delimiter = ',') {
 	const parts: Array<string> = []
 	let current = ''
 	let inQuotes = false
+	let escaped = false
 	for (const char of header) {
+		if (escaped) {
+			current += char
+			escaped = false
+			continue
+		}
+		if (inQuotes && char === '\\') {
+			current += char
+			escaped = true
+			continue
+		}
 		if (char === '"' && !inQuotes) inQuotes = true
 		else if (char === '"' && inQuotes) inQuotes = false
-		else if (char === ',' && !inQuotes) {
+		else if (char === delimiter && !inQuotes) {
 			parts.push(current)
 			current = ''
 			continue
@@ -77,8 +88,7 @@ export function parseServerTimingHeader(
 	if (!header) return []
 	const entries: Array<ServerTimingEntry> = []
 	for (const part of splitServerTimingParts(header)) {
-		const tokens = part
-			.split(';')
+		const tokens = splitServerTimingParts(part, ';')
 			.map((token) => token.trim())
 			.filter(Boolean)
 		const name = tokens[0]
