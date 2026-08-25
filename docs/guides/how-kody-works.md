@@ -49,7 +49,7 @@ Agent notes — for AI agents explaining or recreating this loop:
   not write memory unless the person asks.
 - Agents call the owned export from `execute` with a static
   `kody:@scope/package/export` import. Use `import(specifier)` when the
-  target name is data.
+  target name is data (caller-owned or forked modules).
 -->
 
 Kody turns a question you would ask again into code you own. The agent you

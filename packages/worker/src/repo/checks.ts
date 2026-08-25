@@ -340,7 +340,7 @@ type KodyPackagesRuntime = {
    * Prefer a static kody:@scope/package/export import when the name is known,
    * or import(specifier) when the name is data. Exactly-once work uses
    * workflows.
-   * @deprecated Use a static kody:@ import or import(specifier).
+   * @deprecated Use a static kody:@ import, import(specifier), or workflows.
    */
   invoke(
     specifier: KodyPrefixedPackageSpecifier,

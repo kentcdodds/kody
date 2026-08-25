@@ -283,8 +283,9 @@ Recommended flow for a trusted external client:
    optional JSON `source` label for logs
 
 A token with `exportNames: ["*"]` can call any export on that package.
-Cross-package callers invoke one package (an orchestrator or discovery package)
-and statically import that package inside Kody, or they speak MCP.
+Cross-package HTTP clients call one package (an orchestrator or discovery
+package) over HTTP. Static imports are for in-Kody callers, not those external
+clients. Or they speak MCP.
 
 ## Related
 

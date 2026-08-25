@@ -199,8 +199,10 @@ import handleEvent from 'kody:@kentcdodds/event-subscriber/handle-event'
 await handleEvent({ event })
 ```
 
-`kody:runtime` still binds `packages` for already-published modules. Authors and
-agents do not get that helper. Fleet source migrates with package codemod
+`kody:runtime` still binds `packages` for already-published modules and for
+authenticated ad hoc execute (soak until
+[#1750](https://github.com/kentcdodds/kody/issues/1750)). Authors and agents do
+not get that helper. Fleet source migrates with package codemod
 `0008-packages-invoke-to-static-import`. See
 [0037](./decisions/0037-no-author-packages-invoke.md).
 

@@ -188,8 +188,8 @@ by accident: the Durable Object name includes the calling user id.
 
 ## Recommended model (secrets, storage, context)
 
-Assume 0036: person accounts fork `@kody/*` and then only run **their** copy.
-Three facts, one rule each:
+[0036](./decisions/0036-platform-packages-fork-only.md) landed: person accounts
+fork `@kody/*` and then only run **their** copy. Three facts, one rule each:
 
 | Thing              | Identity                         | Rule                                                                                        |
 | ------------------ | -------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -198,9 +198,9 @@ Three facts, one rule each:
 | Secrets            | the run                          | user-secret `allowed_packages` and `packageSecrets` mounts check `storageContext.packageId` |
 
 **Recommend:** static `import` when the name is known (library in this isolate).
-`packages.invoke` when you need A's run: A's mounts, A's `allowed_packages`, A's
-`packageContext`, A's isolate, or a keyed exactly-once ledger. Do not point
-`packageContext` at “the” imported module. Do not treat `import()` as invoke.
+Computed `import(specifier)` when the name is data (caller-owned / forks).
+Workflows when you need exactly-once. Do not point `packageContext` at “the”
+imported module. Computed `import()` is a library load, not invoke.
 
 Static import of caller-owned A (including a fork). Storage follows A; the run
 stays B or execute.
@@ -274,15 +274,18 @@ secrets. It still cannot use A's `packageSecrets` mounts.
 
 ## Dynamic `import()` is not impossible
 
-The hydrator already rebuilds caller-owned `importable-module` artifacts and
-installs them (`resolveCurrentDynamicPackageArtifact` in
-`module-graph-hydration.ts`). The call site is rewritten to a teaching error.
-That is a policy disable, not a missing loader.
+Literal `import("kody:@...")` is still a teaching error: known names are static
+imports. Computed `import(specifier)` for `kody:@` names currently facades
+through the quarantined helper
+([#1750](https://github.com/kentcdodds/kody/issues/1750)). The hydrator already
+rebuilds caller-owned `importable-module` artifacts
+(`resolveCurrentDynamicPackageArtifact` in `module-graph-hydration.ts`). After
+that leftover is deleted, computed import should load those artifacts without
+the invoke facade.
 
 If the specifier is a **caller-owned** package and `import()` means “library
-load in this isolate,” the host can do it. Storage, context, and secrets match
-static import: A's bucket, this run's `packageContext`, this run's secret
-authority. Specifier-as-data **library** load is a reasonable revisit. It is not
+load in this isolate,” storage, context, and secrets match static import: A's
+bucket, this run's `packageContext`, this run's secret authority. That is not
 invoke.
 
 ```mermaid

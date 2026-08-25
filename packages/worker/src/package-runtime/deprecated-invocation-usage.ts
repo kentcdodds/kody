@@ -151,7 +151,7 @@ const removedUsageReplacements: Record<DeprecatedInvocationUsageKind, string> =
 		'packages.check':
 			'packages.check was removed: statically import kody:@scope/package/export when the name is known, or import(specifier) when the name is data',
 		'packages.invokeChecked':
-			'packages.invokeChecked was removed: use a static kody:@scope/pkg/export import when the target package is known at write time, or import(specifier) when the name is data',
+			'packages.invokeChecked was removed: use a static kody:@scope/pkg/export import when the target package is known at write time, import(specifier) when the name is data, or workflows for exactly-once',
 		'packages.invoke-object':
 			'object-only packages.invoke was removed: use a static kody:@owner/package/export import when the name is known, or import(specifier) when the name is data',
 		'dynamic-kody-import':
