@@ -1,11 +1,16 @@
 import { type RemixNode, css } from 'remix/ui'
 import { CopyCodeBlock } from '#client/copy-code-block.tsx'
 import {
+	type HighlightedCode,
+	highlightSnippetKey,
+} from '#universal/highlighted-code.ts'
+import {
 	type TranscriptAct,
 	type TranscriptFile,
 	type TranscriptInput,
 	type TranscriptLine,
 	type TranscriptTool,
+	transcriptFileLang,
 } from './interactive-guide-transcript.ts'
 import {
 	getAccentCalloutCss,
@@ -28,6 +33,7 @@ export function renderInteractiveGuideWalkthrough(input: {
 	lead: string
 	acts: Array<TranscriptAct>
 	afterActs?: RemixNode
+	highlights?: Record<string, HighlightedCode>
 }) {
 	return (
 		<div mix={css(walkthroughCss)}>
@@ -50,7 +56,7 @@ export function renderInteractiveGuideWalkthrough(input: {
 					<ol mix={css(threadCss)}>
 						{act.lines.map((line, index) => (
 							<li key={`${act.id}-${index}`}>
-								{renderInteractiveGuideLine(line)}
+								{renderInteractiveGuideLine(line, input.highlights)}
 							</li>
 						))}
 					</ol>
@@ -62,7 +68,10 @@ export function renderInteractiveGuideWalkthrough(input: {
 	)
 }
 
-export function renderInteractiveGuideLine(line: TranscriptLine) {
+export function renderInteractiveGuideLine(
+	line: TranscriptLine,
+	highlights?: Record<string, HighlightedCode>,
+) {
 	switch (line.role) {
 		case 'user':
 			return (
@@ -93,11 +102,11 @@ export function renderInteractiveGuideLine(line: TranscriptLine) {
 		case 'tools':
 			return (
 				<div mix={css(toolsCss)}>
-					{line.tools.map((tool) => renderToolCall(tool))}
+					{line.tools.map((tool) => renderToolCall(tool, highlights))}
 				</div>
 			)
 		case 'files':
-			return renderFiles(line)
+			return renderFiles(line, highlights)
 		default: {
 			const exhaustive: never = line
 			return exhaustive
@@ -125,7 +134,25 @@ function sortToolInputs(inputs: Array<TranscriptInput>) {
 	})
 }
 
-function renderFiles(line: Extract<TranscriptLine, { role: 'files' }>) {
+function renderWalkthroughCode(
+	highlights: Record<string, HighlightedCode> | undefined,
+	code: string,
+	lang: string,
+) {
+	return (
+		<CopyCodeBlock
+			copy={false}
+			code={code}
+			lang={lang}
+			highlighted={highlights?.[highlightSnippetKey({ code, lang })]}
+		/>
+	)
+}
+
+function renderFiles(
+	line: Extract<TranscriptLine, { role: 'files' }>,
+	highlights?: Record<string, HighlightedCode>,
+) {
 	return (
 		<div mix={css(toolsCss)}>
 			<details mix={css(toolCss)}>
@@ -138,14 +165,18 @@ function renderFiles(line: Extract<TranscriptLine, { role: 'files' }>) {
 						{renderInfoIcon()}
 						<p>{renderNotedText(line.note)}</p>
 					</aside>
-					{line.files.map((file) => renderCloneFile(file))}
+					{line.files.map((file) => renderCloneFile(file, highlights))}
 				</div>
 			</details>
 		</div>
 	)
 }
 
-function renderCloneFile(file: TranscriptFile) {
+function renderCloneFile(
+	file: TranscriptFile,
+	highlights?: Record<string, HighlightedCode>,
+) {
+	const lang = transcriptFileLang(file.path, file.lang)
 	return (
 		<details key={file.path} mix={css(toolCss)}>
 			<summary>
@@ -153,24 +184,16 @@ function renderCloneFile(file: TranscriptFile) {
 				<span mix={css(toolSummaryCss)}>{file.summary}</span>
 			</summary>
 			<div mix={css(toolBodyCss)}>
-				<CopyCodeBlock
-					copy={false}
-					code={file.content}
-					lang={file.lang ?? fileLangFromPath(file.path)}
-				/>
+				{renderWalkthroughCode(highlights, file.content, lang)}
 			</div>
 		</details>
 	)
 }
 
-function fileLangFromPath(path: string) {
-	if (path.endsWith('.ts')) return 'ts'
-	if (path.endsWith('.json')) return 'json'
-	if (path.endsWith('.md')) return 'md'
-	return 'txt'
-}
-
-function renderToolCall(tool: TranscriptTool) {
+function renderToolCall(
+	tool: TranscriptTool,
+	highlights?: Record<string, HighlightedCode>,
+) {
 	return (
 		<details key={`${tool.name}-${tool.summary}`} mix={css(toolCss)}>
 			<summary>
@@ -185,15 +208,17 @@ function renderToolCall(tool: TranscriptTool) {
 					{renderInfoIcon()}
 					<p>{renderNotedText(tool.note)}</p>
 				</aside>
-				{sortToolInputs(tool.inputs).map((input) => renderInput(input))}
+				{sortToolInputs(tool.inputs).map((input) =>
+					renderInput(input, highlights),
+				)}
 				<hr mix={css(ioRuleCss)} />
 				<div mix={css(paneCss)}>
 					<span mix={css(paneLabelCss)}>Returns</span>
-					<CopyCodeBlock
-						copy={false}
-						code={tool.result}
-						lang={tool.resultLang ?? 'json'}
-					/>
+					{renderWalkthroughCode(
+						highlights,
+						tool.result,
+						tool.resultLang ?? 'json',
+					)}
 				</div>
 			</div>
 		</details>
@@ -286,15 +311,15 @@ function renderKodyMark() {
 	)
 }
 
-function renderInput(input: TranscriptInput) {
+function renderInput(
+	input: TranscriptInput,
+	highlights?: Record<string, HighlightedCode>,
+) {
+	const lang = input.lang ?? 'json'
 	return (
 		<div mix={css(paneCss)} data-kind={input.kind}>
 			<span mix={css(paneLabelCss)}>{input.name}</span>
-			<CopyCodeBlock
-				copy={false}
-				code={input.value}
-				lang={input.lang ?? 'json'}
-			/>
+			{renderWalkthroughCode(highlights, input.value, lang)}
 		</div>
 	)
 }

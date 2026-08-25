@@ -382,6 +382,10 @@ async function ensurePreviewResources(options: CliOptions) {
 				binding: 'JOBS',
 				service: `${options.workerName}-jobs`,
 			},
+			{
+				binding: 'HIGHLIGHT',
+				service: `${options.workerName}-highlight`,
+			},
 		],
 	})
 
@@ -433,6 +437,7 @@ function deletePreviewWorkers(workerName: string, dryRun: boolean) {
 	deleteWorkerScript({ name: `${workerName}-platform`, dryRun })
 	deleteWorkerScript({ name: workerName, dryRun })
 	deleteWorkerScript({ name: `${workerName}-jobs`, dryRun })
+	deleteWorkerScript({ name: `${workerName}-highlight`, dryRun })
 	for (const service of listMockServerNames()) {
 		deleteWorkerScript({
 			name: `${workerName}-mock-${service}`,

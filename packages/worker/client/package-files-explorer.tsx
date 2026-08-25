@@ -6,6 +6,7 @@ import { on } from '#client/event-mixin.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
+import { plainHighlightedCode } from '#universal/highlighted-code.ts'
 import {
 	buildPackageFilesAncestors,
 	joinPackageFilesPath,
@@ -358,11 +359,16 @@ function renderContent(data: PackageFilesLoaderData): RemixNode {
 			</div>
 			{data.contentKind === 'markdown' ? (
 				<div mix={css(markdownCss)} data-testid="package-files-markdown">
-					{renderMarkdownNodes(body)}
+					{renderMarkdownNodes(body, {
+						fences: data.contentFences,
+					})}
 				</div>
 			) : (
 				<div mix={css(codeCss)} data-testid="package-files-code">
-					{renderHighlightedCode(body, data.language ?? 'plaintext')}
+					{renderHighlightedCode(
+						data.contentHighlighted ??
+							plainHighlightedCode(body, data.language ?? 'plaintext'),
+					)}
 				</div>
 			)}
 		</div>

@@ -18,11 +18,11 @@ export default mergeConfig(
 					environment: 'test',
 				},
 				miniflare: {
-					// The test env's JOBS service binding (ADR 0016) targets the
-					// jobs worker, which local `wrangler dev` runs alongside the
-					// main worker; the pool only loads the main config, so an
-					// auxiliary worker (bundled by the global setup below) serves
-					// the JobsService contract from its own D1 database.
+					// The test env's JOBS and HIGHLIGHT service bindings target
+					// sibling workers that local `wrangler dev` runs alongside
+					// the main worker. The pool only loads the main config, so
+					// auxiliary workers (bundled by the global setups below)
+					// serve those contracts.
 					workers: [
 						{
 							name: 'kody-jobs-test',
@@ -30,6 +30,15 @@ export default mergeConfig(
 							scriptPath: resolve(rootDir, '.tmp/jobs-test-service/index.mjs'),
 							compatibilityDate: '2025-06-01',
 							d1Databases: ['JOBS_DB'],
+						},
+						{
+							name: 'kody-highlight-test',
+							modules: true,
+							scriptPath: resolve(
+								rootDir,
+								'.tmp/highlight-test-service/index.mjs',
+							),
+							compatibilityDate: '2025-06-01',
 						},
 					],
 				},
@@ -41,6 +50,7 @@ export default mergeConfig(
 			globalSetup: [
 				resolve(rootDir, 'tools/vitest-global-setup-worker-bundler-modules.ts'),
 				resolve(rootDir, 'tools/vitest-global-setup-jobs-test-service.ts'),
+				resolve(rootDir, 'tools/vitest-global-setup-highlight-test-service.ts'),
 			],
 		},
 	}),

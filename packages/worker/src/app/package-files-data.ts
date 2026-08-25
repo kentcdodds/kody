@@ -14,19 +14,42 @@ import {
 } from '#universal/package-files.ts'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
+import {
+	highlightMarkdownFences,
+	highlightSnippets,
+} from '#app/highlight-code.ts'
+import { plainHighlightedCode } from '#universal/highlighted-code.ts'
 
 export function readPackageFilesSelectedPath(requestUrl: string) {
 	const url = new URL(requestUrl, 'http://localhost')
 	return normalizePackageFilesPath(url.searchParams.get('path'))
 }
 
-function toLoaderData(input: {
+async function toLoaderData(input: {
+	env: Env
 	title: string
 	backHref: string
 	backLabel: string
 	filesBasePath: string
 	view: PackageFilesView
-}): PackageFilesLoaderData {
+}): Promise<PackageFilesLoaderData> {
+	const content = input.view.content
+	const language = input.view.language
+	const contentKind = input.view.contentKind
+	const contentFences =
+		contentKind === 'markdown' && content
+			? await highlightMarkdownFences(input.env, content)
+			: []
+	const contentHighlighted =
+		contentKind === 'code' && content
+			? ((
+					await highlightSnippets(input.env, [
+						{ code: content, lang: language ?? 'plaintext' },
+					])
+				)[0] ?? plainHighlightedCode(content, language))
+			: content
+				? plainHighlightedCode(content, language)
+				: null
 	return {
 		ok: true,
 		title: input.title,
@@ -37,10 +60,12 @@ function toLoaderData(input: {
 		kind: input.view.kind,
 		paths: input.view.paths,
 		children: input.view.children,
-		content: input.view.content,
+		content,
 		contentPath: input.view.contentPath,
-		contentKind: input.view.contentKind,
-		language: input.view.language,
+		contentKind,
+		language,
+		contentFences,
+		contentHighlighted,
 	}
 }
 
@@ -71,6 +96,7 @@ export async function loadCommunityPackageFilesData(input: {
 	if (!view) return null
 
 	return toLoaderData({
+		env: input.env,
 		title: listing.name,
 		backHref: getCommunityListingHref({
 			listingId: listing.id,
@@ -116,6 +142,7 @@ export async function loadAccountPackageFilesData(input: {
 	if (!view) return null
 
 	return toLoaderData({
+		env: input.env,
 		title: record.name,
 		backHref: routes.accountPackageDetail.href({ packageId: record.id }),
 		backLabel: 'Package',

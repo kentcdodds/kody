@@ -100,6 +100,17 @@ primitives:
       - docs/contributing/decisions/0016-mono-worker-extraction.md
       - docs/contributing/architecture/jobs-worker-migration-runbook.md
 
+  - id: highlight-worker
+    group: surfaces
+    name: Highlight worker
+    summary:
+      Service-binding-only Shiki tokenizer. Origin sends snippets over HIGHLIGHT
+      and receives serializable token trees; there is no public hostname.
+    code:
+      - packages/highlight-worker/
+    docs:
+      - docs/contributing/architecture/request-lifecycle.md
+
   - id: scheduled-cron
     group: surfaces
     name: Scheduled handler

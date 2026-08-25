@@ -229,11 +229,22 @@
 			],
 			// Package runtime Worker (ADR 0016): runtime-owned requests are
 			// forwarded wholesale over this service binding (see
-			// packages/worker/src/runtime-worker-routing.ts).
+			// packages/worker/src/runtime-worker-routing.ts). Jobs (ADR 0016)
+			// and highlight (fetch-only Shiki tokenizer) share this array —
+			// wrangler JSONC last-wins, so do not add a second "services" key.
 			"services": [
 				{
 					"binding": "RUNTIME_WORKER",
 					"service": "kody-runtime",
+				},
+				{
+					"binding": "JOBS",
+					"service": "kody-jobs",
+					"entrypoint": "JobsService",
+				},
+				{
+					"binding": "HIGHLIGHT",
+					"service": "kody-highlight",
 				},
 			],
 			"assets": {
@@ -335,16 +346,6 @@
 			"send_email": [
 				{
 					"name": "EMAIL",
-				},
-			],
-			// Jobs worker service binding (ADR 0016): account dashboards, MCP
-			// capabilities, and account deletion/export reach jobs data and the
-			// JobManager Durable Object through this coarse-grained contract.
-			"services": [
-				{
-					"binding": "JOBS",
-					"service": "kody-jobs",
-					"entrypoint": "JobsService",
 				},
 			],
 			"queues": {
@@ -691,10 +692,20 @@
 			// Preview deploys generate per-PR worker names; the deploy config
 			// generator rewrites "kody-runtime" service/script references to the
 			// PR's runtime worker name (tools/ci/runtime-worker-config.ts).
+			// Jobs and highlight names are rewritten by preview-resources.ts.
 			"services": [
 				{
 					"binding": "RUNTIME_WORKER",
 					"service": "kody-runtime",
+				},
+				{
+					"binding": "JOBS",
+					"service": "kody-jobs",
+					"entrypoint": "JobsService",
+				},
+				{
+					"binding": "HIGHLIGHT",
+					"service": "kody-highlight",
 				},
 			],
 			"assets": {
@@ -790,15 +801,6 @@
 			"send_email": [
 				{
 					"name": "EMAIL",
-				},
-			],
-			// Rewired per preview by tools/ci/preview-resources.ts to the
-			// per-preview jobs worker name.
-			"services": [
-				{
-					"binding": "JOBS",
-					"service": "kody-jobs",
-					"entrypoint": "JobsService",
 				},
 			],
 			"queues": {
@@ -1088,14 +1090,18 @@
 					"name": "EMAIL",
 				},
 			],
-			// Jobs worker service binding (ADR 0016): local dev/e2e runs both
-			// configs together (`wrangler dev --env test` names the jobs worker
-			// script "kody-jobs-test") so jobs data resolves in-process.
+			// Jobs + highlight: local dev/e2e runs the secondary configs
+			// together (`wrangler dev --env test` names them
+			// "kody-jobs-test" and "kody-highlight-test").
 			"services": [
 				{
 					"binding": "JOBS",
 					"service": "kody-jobs-test",
 					"entrypoint": "JobsService",
+				},
+				{
+					"binding": "HIGHLIGHT",
+					"service": "kody-highlight-test",
 				},
 			],
 			"queues": {

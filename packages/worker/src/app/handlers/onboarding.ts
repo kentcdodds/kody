@@ -35,6 +35,7 @@ import {
 	type OnboardingCustomMcpServer,
 	type OnboardingFeaturedMcpServer,
 	type OnboardingWelcomeEmail,
+	type OnboardingLoaderData,
 } from '#universal/loader-data.ts'
 import {
 	loadOnboardingData,
@@ -42,6 +43,11 @@ import {
 } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
+import {
+	highlightResultsByKey,
+	highlightSnippets,
+} from '#app/highlight-code.ts'
+import { collectOnboardingMcpSnippets } from '#universal/onboarding-mcp-clients.ts'
 
 /**
  * The checklist derives from existing signals (mailbox, memories,
@@ -266,6 +272,21 @@ function redirectUnverifiedToPending(request: Request) {
 	return Response.redirect(pendingUrl, 302)
 }
 
+async function withOnboardingHighlights(
+	env: Env,
+	data: OnboardingLoaderData,
+): Promise<OnboardingLoaderData> {
+	if (!data.mcpServerUrl) {
+		return { ...data, mcpHighlights: {} }
+	}
+	const snippets = collectOnboardingMcpSnippets(data.mcpServerUrl)
+	const results = await highlightSnippets(env, snippets)
+	return {
+		...data,
+		mcpHighlights: highlightResultsByKey(snippets, results),
+	}
+}
+
 export function createOnboardingHandler(env: Env) {
 	return {
 		middleware: [],
@@ -274,13 +295,13 @@ export function createOnboardingHandler(env: Env) {
 			if (!user) {
 				const { persistContext: _persistContext, ...chooser } =
 					await loadOnboardingChooserFields(env, request)
-				const onboarding = {
+				const onboarding = await withOnboardingHighlights(env, {
 					...loadPublicOnboardingData({
 						env,
 						requestUrl: request.url,
 					}),
 					...chooser,
-				}
+				})
 				return renderAppPage({
 					request,
 					env,
@@ -319,7 +340,9 @@ export function createOnboardingHandler(env: Env) {
 			return renderAppPage({
 				request,
 				env,
-				loaderData: { onboarding },
+				loaderData: {
+					onboarding: await withOnboardingHighlights(env, onboarding),
+				},
 			})
 		},
 	} satisfies Action<typeof routes.onboarding>
@@ -337,13 +360,15 @@ export function createOnboardingApiHandler(env: Env) {
 			if (!user) {
 				const { persistContext: _persistContext, ...chooser } =
 					await loadOnboardingChooserFields(env, request)
-				return jsonResponse({
-					...loadPublicOnboardingData({
-						env,
-						requestUrl: request.url,
+				return jsonResponse(
+					await withOnboardingHighlights(env, {
+						...loadPublicOnboardingData({
+							env,
+							requestUrl: request.url,
+						}),
+						...chooser,
 					}),
-					...chooser,
-				})
+				)
 			}
 
 			// Unverified callers still get a payload so clients can detect the
@@ -373,7 +398,7 @@ export function createOnboardingApiHandler(env: Env) {
 					loadPersistedPackageKodyId(env, user.mcpUser.userId),
 				])
 			}
-			return jsonResponse(onboarding)
+			return jsonResponse(await withOnboardingHighlights(env, onboarding))
 		},
 	} satisfies Action<typeof routes.onboardingApi>
 }

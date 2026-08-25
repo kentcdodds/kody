@@ -13,6 +13,7 @@ test('production deploy path filter selects Durable Object scripts only when nee
 		deployPlatform: false,
 		deployRuntime: false,
 		deployJobs: false,
+		deployHighlight: false,
 	})
 
 	expect(
@@ -22,6 +23,7 @@ test('production deploy path filter selects Durable Object scripts only when nee
 		deployPlatform: true,
 		deployRuntime: false,
 		deployJobs: false,
+		deployHighlight: false,
 	})
 	expect(
 		classifyProductionDeployPaths([
@@ -34,6 +36,7 @@ test('production deploy path filter selects Durable Object scripts only when nee
 		deployPlatform: true,
 		deployRuntime: false,
 		deployJobs: false,
+		deployHighlight: false,
 	})
 	expect(
 		classifyProductionDeployPaths(['packages/worker/src/guides/catalog.ts']),
@@ -42,6 +45,7 @@ test('production deploy path filter selects Durable Object scripts only when nee
 		deployPlatform: true,
 		deployRuntime: false,
 		deployJobs: false,
+		deployHighlight: false,
 	})
 
 	expect(
@@ -53,6 +57,7 @@ test('production deploy path filter selects Durable Object scripts only when nee
 		deployPlatform: true,
 		deployRuntime: true,
 		deployJobs: true,
+		deployHighlight: true,
 	})
 	expect(
 		classifyProductionDeployPaths(['packages/worker/src/app/handlers/home.ts']),
@@ -61,6 +66,28 @@ test('production deploy path filter selects Durable Object scripts only when nee
 		deployPlatform: false,
 		deployRuntime: false,
 		deployJobs: false,
+		deployHighlight: false,
+	})
+	expect(
+		classifyProductionDeployPaths(['packages/highlight-worker/src/index.ts']),
+	).toEqual({
+		deployMain: false,
+		deployPlatform: false,
+		deployRuntime: false,
+		deployJobs: false,
+		deployHighlight: true,
+	})
+	expect(
+		classifyProductionDeployPaths([
+			'packages/highlight-worker/src/index.ts',
+			'packages/worker/client/routes/blog-post.tsx',
+		]),
+	).toEqual({
+		deployMain: true,
+		deployPlatform: false,
+		deployRuntime: false,
+		deployJobs: false,
+		deployHighlight: true,
 	})
 	expect(
 		classifyProductionDeployPaths([
@@ -72,5 +99,6 @@ test('production deploy path filter selects Durable Object scripts only when nee
 		deployPlatform: true,
 		deployRuntime: true,
 		deployJobs: true,
+		deployHighlight: true,
 	})
 })

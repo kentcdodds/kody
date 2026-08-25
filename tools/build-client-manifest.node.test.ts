@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	buildClientPreloadManifest,
-	highlightAreaNames,
 	lazyAreaNames,
 	type ClientMetafile,
 } from './build-client-manifest.ts'
@@ -15,14 +14,6 @@ test('lazy area names match the client router contract', () => {
 		'blog-area',
 		'community-area',
 		'marketing-area',
-		'onboarding-area',
-		'package-files-area',
-	])
-	// Keep in sync with `syntaxHighlightAreaNames` in lazy-route.tsx.
-	expect([...highlightAreaNames].sort()).toEqual([
-		'account-area',
-		'blog-area',
-		'community-area',
 		'onboarding-area',
 		'package-files-area',
 	])
@@ -41,6 +32,22 @@ const dynamicImport = (name: string) => ({
 	kind: 'dynamic-import',
 })
 
+function areaOutputs() {
+	return {
+		[chunk('account-area-H1.js')]: output([
+			staticImport('chunk-A.js'),
+			staticImport('chunk-C.js'),
+		]),
+		[chunk('admin-area-H3.js')]: output([]),
+		[chunk('blog-area-H4.js')]: output([]),
+		[chunk('community-area-H5.js')]: output([]),
+		[chunk('onboarding-area-H6.js')]: output([]),
+		[chunk('auth-area-H8.js')]: output([]),
+		[chunk('marketing-area-H9.js')]: output([]),
+		[chunk('package-files-area-H10.js')]: output([]),
+	}
+}
+
 test('manifest contains the entry static closure and per-area unique chunks', () => {
 	const metafile: ClientMetafile = {
 		outputs: {
@@ -51,23 +58,9 @@ test('manifest contains the entry static closure and per-area unique chunks', ()
 			]),
 			[chunk('chunk-A.js')]: output([staticImport('chunk-B.js')]),
 			[chunk('chunk-B.js')]: output([]),
-			[chunk('account-area-H1.js')]: output([
-				staticImport('chunk-A.js'),
-				staticImport('chunk-C.js'),
-			]),
 			[chunk('chunk-C.js')]: output([]),
 			[chunk('sentry-init-H2.js')]: output([]),
-			[chunk('admin-area-H3.js')]: output([]),
-			[chunk('blog-area-H4.js')]: output([]),
-			[chunk('community-area-H5.js')]: output([]),
-			[chunk('onboarding-area-H6.js')]: output([]),
-			[chunk('auth-area-H8.js')]: output([]),
-			[chunk('marketing-area-H9.js')]: output([]),
-			[chunk('package-files-area-H10.js')]: output([]),
-			[chunk('syntax-highlight-core-H7.js')]: output([
-				staticImport('shiki-lang.js'),
-			]),
-			[chunk('shiki-lang.js')]: output([]),
+			...areaOutputs(),
 		},
 	}
 
@@ -77,18 +70,13 @@ test('manifest contains the entry static closure and per-area unique chunks', ()
 		'/assets/chunk-A.js',
 		'/assets/chunk-B.js',
 	])
-	// Area chunks list themselves first, then deps not already in the entry.
-	// Highlight areas also attach the dynamic Shiki chunk (not in the entry).
 	expect(manifest.areas['account-area']).toEqual([
 		'/assets/account-area-H1.js',
 		'/assets/chunk-C.js',
-		'/assets/syntax-highlight-core-H7.js',
-		'/assets/shiki-lang.js',
 	])
 	expect(manifest.areas['admin-area']).toEqual(['/assets/admin-area-H3.js'])
-	expect(manifest.entry).not.toContain('/assets/syntax-highlight-core-H7.js')
-	// The lazily loaded Sentry chunk is not preloaded.
 	expect(JSON.stringify(manifest)).not.toContain('sentry-init')
+	expect(JSON.stringify(manifest)).not.toContain('syntax-highlight-core')
 })
 
 test('manifest builder rejects a metafile without the client entry', () => {
@@ -101,7 +89,6 @@ test('manifest builder rejects a metafile missing a lazy area chunk', () => {
 	const metafile: ClientMetafile = {
 		outputs: {
 			'packages/worker/public/client-entry.js': output([]),
-			[chunk('syntax-highlight-core-H7.js')]: output([]),
 		},
 	}
 	expect(() => buildClientPreloadManifest(metafile)).toThrow(
@@ -109,43 +96,15 @@ test('manifest builder rejects a metafile missing a lazy area chunk', () => {
 	)
 })
 
-test('manifest builder rejects a metafile missing the highlight chunk', () => {
+test('manifest builder rejects a leaked syntax-highlight-core chunk', () => {
 	const metafile: ClientMetafile = {
 		outputs: {
 			'packages/worker/public/client-entry.js': output([]),
-			[chunk('account-area-H1.js')]: output([]),
-			[chunk('admin-area-H3.js')]: output([]),
-			[chunk('blog-area-H4.js')]: output([]),
-			[chunk('community-area-H5.js')]: output([]),
-			[chunk('onboarding-area-H6.js')]: output([]),
-			[chunk('auth-area-H8.js')]: output([]),
-			[chunk('marketing-area-H9.js')]: output([]),
-			[chunk('package-files-area-H10.js')]: output([]),
-		},
-	}
-	expect(() => buildClientPreloadManifest(metafile)).toThrow(
-		/Dynamic highlight chunk "syntax-highlight-core" not found/,
-	)
-})
-
-test('manifest builder rejects a highlight chunk that leaked into the entry', () => {
-	const metafile: ClientMetafile = {
-		outputs: {
-			'packages/worker/public/client-entry.js': output([
-				staticImport('syntax-highlight-core-H7.js'),
-			]),
+			...areaOutputs(),
 			[chunk('syntax-highlight-core-H7.js')]: output([]),
-			[chunk('account-area-H1.js')]: output([]),
-			[chunk('admin-area-H3.js')]: output([]),
-			[chunk('blog-area-H4.js')]: output([]),
-			[chunk('community-area-H5.js')]: output([]),
-			[chunk('onboarding-area-H6.js')]: output([]),
-			[chunk('auth-area-H8.js')]: output([]),
-			[chunk('marketing-area-H9.js')]: output([]),
-			[chunk('package-files-area-H10.js')]: output([]),
 		},
 	}
 	expect(() => buildClientPreloadManifest(metafile)).toThrow(
-		/Highlight chunk "syntax-highlight-core" is in the entry static closure/,
+		/must not include "syntax-highlight-core"/,
 	)
 })

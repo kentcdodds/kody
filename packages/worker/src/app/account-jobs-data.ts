@@ -13,6 +13,8 @@ import { inspectJobsForUser } from '#worker/jobs/inspect.ts'
 import { type JobSchedule, type JobView } from '#worker/jobs/types.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { listRunRecords } from '#worker/run-records/service.ts'
+import { type HighlightedCode } from '#universal/highlighted-code.ts'
+import { highlightJsonValue } from '#app/highlight-code.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -56,6 +58,7 @@ export type AccountJobSchedule = JobSchedule
 
 export type AccountJobDetail = AccountJobListItem & {
 	params: Record<string, unknown> | null
+	paramsHighlighted?: HighlightedCode
 	schedule: AccountJobSchedule
 	lastRunError: string | null
 	lastDurationMs: number | null
@@ -203,6 +206,10 @@ async function toDetail(input: {
 	return {
 		...toListItem(input.job, input.packageNamesById, inspection),
 		params: input.job.params ?? null,
+		paramsHighlighted: await highlightJsonValue(
+			input.env,
+			input.job.params ?? {},
+		),
 		schedule: input.job.schedule,
 		lastRunError: input.job.lastRunError ?? null,
 		lastDurationMs: input.job.lastDurationMs ?? null,

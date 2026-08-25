@@ -23,6 +23,7 @@ import {
 } from '#universal/community-categories.ts'
 import { type CommunityListingSort } from '#universal/community-search.ts'
 import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
+import { type HighlightedCode } from '#universal/highlighted-code.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -58,6 +59,8 @@ export type BlogPostLoaderData = {
 	imageAlt: string | null
 	ogImage: string | null
 	body: string
+	/** Highlight tokens for fenced code in `body`, in lexer order. */
+	bodyFences?: Array<HighlightedCode>
 	/** Next post in catalog order for the post foot; null when alone. */
 	readNext: { slug: string; title: string } | null
 }
@@ -90,6 +93,10 @@ export type GuideDetailLoaderData = {
 	provider: string | null
 	lastVerified: string | null
 	body: string
+	/** Highlight tokens for fenced code in `body`, in lexer order. */
+	bodyFences?: Array<HighlightedCode>
+	/** Highlight tokens for interactive walkthrough snippets, keyed by snippet. */
+	walkthroughHighlights?: Record<string, HighlightedCode>
 }
 
 export type CommunityIndexGroup = {
@@ -133,6 +140,7 @@ export type CommunityDetailLoaderData = {
 	starredByViewer: boolean
 	/** Existing fork/install for the signed-in viewer, when one exists. */
 	viewerInstall: ViewerListingInstall | null
+	readmeFences?: Array<HighlightedCode>
 }
 
 export type PackageFilesChildLoaderData = {
@@ -155,6 +163,8 @@ export type PackageFilesLoaderData = {
 	contentPath: string | null
 	contentKind: 'markdown' | 'code' | 'text' | null
 	language: string | null
+	contentHighlighted?: HighlightedCode | null
+	contentFences?: Array<HighlightedCode>
 }
 
 /** SSR-embedded shell data for client-only regions on the detail page. */
@@ -169,6 +179,7 @@ export type CommunityDetailShellLoaderData = {
 	trusted: boolean
 	featured: boolean
 	readmeContent: string | null
+	readmeFences?: Array<HighlightedCode>
 	starCount: number
 	starredByViewer: boolean
 	viewerInstall: ViewerListingInstall | null
@@ -822,6 +833,8 @@ export type OnboardingLoaderData = {
 	/** Signed-in package scope owner; null for public onboarding payloads. */
 	username: string | null
 	mcpServerUrl: string
+	/** Highlight tokens for MCP tab snippets, keyed by highlightSnippetKey. */
+	mcpHighlights?: Record<string, HighlightedCode>
 	setupPrompt: string
 	/** Pre-connection "is Kody for me?" prompt; usable in any tool-calling agent. */
 	discoveryPrompt: string
@@ -1285,6 +1298,7 @@ export type AccountJobRecentRun = {
 
 export type AccountJobDetail = AccountJobListItem & {
 	params: { [key: string]: AccountLoaderJsonValue } | null
+	paramsHighlighted?: HighlightedCode
 	schedule: AccountJobSchedule
 	lastRunError: string | null
 	lastDurationMs: number | null
@@ -1422,6 +1436,7 @@ export type AccountActivityRunDetail = AccountActivityRunListItem & {
 	triagedAt: string | null
 	triagedBy: string | null
 	metadata: { [key: string]: AccountLoaderJsonValue }
+	metadataHighlighted?: HighlightedCode
 	logs: Array<AccountActivityRunLog>
 }
 

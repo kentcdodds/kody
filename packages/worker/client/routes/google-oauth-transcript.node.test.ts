@@ -1,5 +1,9 @@
 import { expect, test } from 'vitest'
-import { googleOauthTranscriptActs } from './google-oauth-transcript.ts'
+import { highlightSnippetKey } from '#universal/highlighted-code.ts'
+import {
+	collectGoogleOauthSnippets,
+	googleOauthTranscriptActs,
+} from './google-oauth-transcript.ts'
 
 test('google oauth transcript covers Lane B discover, console, and connect', () => {
 	expect(googleOauthTranscriptActs.map((act) => act.id)).toEqual([
@@ -85,4 +89,15 @@ test('google oauth transcript covers Lane B discover, console, and connect', () 
 			),
 		),
 	).toBe(true)
+
+	const snippets = collectGoogleOauthSnippets()
+	expect(snippets.length).toBeGreaterThan(0)
+	expect(
+		snippets.some((snippet) =>
+			snippet.code.includes("createAuthenticatedFetch('google')"),
+		),
+	).toBe(true)
+	expect(
+		new Set(snippets.map((snippet) => highlightSnippetKey(snippet))).size,
+	).toBeGreaterThan(0)
 })

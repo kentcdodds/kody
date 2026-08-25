@@ -15,6 +15,16 @@ import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
+import {
+	highlightMarkdownFences,
+	highlightResultsByKey,
+	highlightSnippets,
+	uniqueHighlightSnippets,
+} from '#app/highlight-code.ts'
+import { collectGoogleOauthSnippets } from '#universal/google-oauth-transcript.ts'
+import { collectHowKodyWorksSnippets } from '#universal/how-kody-works-transcript.ts'
+import { type GuideDetailLoaderData } from '#universal/loader-data.ts'
+import { type Guide } from '#worker/guides/parse-frontmatter.ts'
 
 function buildGuidesIndexMarkdown(baseUrl: string): string {
 	const lines = [
@@ -44,6 +54,49 @@ function buildGuidesIndexMarkdown(baseUrl: string): string {
 	}
 	lines.push('')
 	return lines.join('\n')
+}
+
+function collectWalkthroughSnippets(slug: string) {
+	switch (slug) {
+		case 'how-kody-works':
+			return collectHowKodyWorksSnippets()
+		case 'google-oauth':
+			return collectGoogleOauthSnippets()
+		default:
+			return []
+	}
+}
+
+async function highlightWalkthrough(env: Env, slug: string) {
+	const snippets = uniqueHighlightSnippets(collectWalkthroughSnippets(slug))
+	if (snippets.length === 0) return undefined
+	return highlightResultsByKey(snippets, await highlightSnippets(env, snippets))
+}
+
+async function toGuideDetail(
+	env: Env,
+	guide: Guide,
+): Promise<GuideDetailLoaderData> {
+	const [bodyFences, walkthroughHighlights] = await Promise.all([
+		highlightMarkdownFences(env, guide.body),
+		highlightWalkthrough(env, guide.slug),
+	])
+	return {
+		ok: true,
+		slug: guide.slug,
+		id: guide.id,
+		title: guide.title,
+		summary: guide.summary,
+		category: guide.category,
+		image: guide.image,
+		imageAlt: guide.imageAlt,
+		ogImage: guide.ogImage,
+		provider: guide.provider,
+		lastVerified: guide.lastVerified,
+		body: guide.body,
+		bodyFences,
+		...(walkthroughHighlights ? { walkthroughHighlights } : {}),
+	}
 }
 
 export function createGuidesHandler(env: Env) {
@@ -117,20 +170,7 @@ export function createGuideDetailHandler(env: Env) {
 					request,
 					env,
 					loaderData: {
-						guideDetail: {
-							ok: true,
-							slug: guide.slug,
-							id: guide.id,
-							title: guide.title,
-							summary: guide.summary,
-							category: guide.category,
-							image: guide.image,
-							imageAlt: guide.imageAlt,
-							ogImage: guide.ogImage,
-							provider: guide.provider,
-							lastVerified: guide.lastVerified,
-							body: guide.body,
-						},
+						guideDetail: await toGuideDetail(env, guide),
 					},
 				}),
 			)
@@ -138,7 +178,7 @@ export function createGuideDetailHandler(env: Env) {
 	} satisfies Action<typeof routes.guideDetail>
 }
 
-export function createGuideDetailApiHandler(_env: Env) {
+export function createGuideDetailApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ params }) {
@@ -146,20 +186,7 @@ export function createGuideDetailApiHandler(_env: Env) {
 			if (!guide) {
 				return jsonResponse({ ok: false, error: 'Guide not found.' }, 404)
 			}
-			return jsonResponse({
-				ok: true,
-				slug: guide.slug,
-				id: guide.id,
-				title: guide.title,
-				summary: guide.summary,
-				category: guide.category,
-				image: guide.image,
-				imageAlt: guide.imageAlt,
-				ogImage: guide.ogImage,
-				provider: guide.provider,
-				lastVerified: guide.lastVerified,
-				body: guide.body,
-			})
+			return jsonResponse(await toGuideDetail(env, guide))
 		},
 	} satisfies Action<typeof routes.guideDetailApi>
 }

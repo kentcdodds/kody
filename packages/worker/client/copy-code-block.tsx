@@ -8,11 +8,16 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
+import {
+	plainHighlightedCode,
+	type HighlightedCode,
+} from '#universal/highlighted-code.ts'
 
 export type CopyCodeBlockProps = {
 	code: string
 	lang?: string | null
 	copy?: boolean
+	highlighted?: HighlightedCode
 }
 
 /**
@@ -44,7 +49,10 @@ export function CopyCodeBlock(handle: Handle<CopyCodeBlockProps>) {
 
 	return () => (
 		<div mix={css(wrapperCss)}>
-			{renderHighlightedCode(handle.props.code, handle.props.lang)}
+			{renderHighlightedCode(
+				handle.props.highlighted ??
+					plainHighlightedCode(handle.props.code, handle.props.lang),
+			)}
 			{handle.props.copy === false ? null : (
 				<button
 					type="button"
