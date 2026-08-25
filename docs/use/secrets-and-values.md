@@ -122,12 +122,11 @@ does not by itself approve new hosts.
 
 User-scoped secrets are available automatically for **reading and using**
 (mounts, fetch placeholders, capability inputs) to packages the user authored
-themselves, live official platform packages, and adopted community forks
-(`community_fork_adopt` after a real source review). Unadopted community-forked
-packages need explicit **package** approval (`allowed_packages`) before those
-read/use paths. Updating or deleting a user secret from package code
-(`secret_set`, `secret_delete`) always needs the grant, including for
-self-authored, official platform, and adopted packages. Official OAuth token
+themselves and adopted community forks (`community_fork_adopt` after a real
+source review). Unadopted community-forked packages need explicit **package**
+approval (`allowed_packages`) before those read/use paths. Updating or deleting
+a user secret from package code (`secret_set`, `secret_delete`) always needs the
+grant, including for self-authored and adopted packages. Official OAuth token
 rotation (`createAuthenticatedFetch`, `refreshAccessToken`, OpenAPI integration
 401 retry) persists host-side and does not need that write grant. Saving a
 secret, approving a host, or succeeding in an ad hoc execute smoke test does not

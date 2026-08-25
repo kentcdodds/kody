@@ -4,7 +4,7 @@ import { checkEmailDeliveryBurstAndNotify } from '#app/email-delivery-alerts.ts'
 import { refreshFleetPackageErrorRateAndMaybeAlert } from '#app/fleet-package-error-rate-alerts.ts'
 import { pruneRetention } from '#app/retention.ts'
 import { sendUserEntitlementWarningEmails } from '#app/user-entitlement-warning-emails.ts'
-import { checkUsageEntitlementPressureAndNotify } from '#app/usage-entitlement-alerts.ts'
+import { emitFleetEntitlementCrossingEvents } from '#app/usage-entitlement-alerts.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
 	runDrExportTick,
@@ -20,6 +20,7 @@ import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
 import { aggregateUsageRollups } from '#worker/usage/aggregate-rollups.ts'
 import { refreshPublicCodeRunsWindow } from '#worker/usage/code-runs-window.ts'
+import { syncFleetExecuteDays } from '#worker/usage/fleet-execute-days.ts'
 
 export {
 	isScheduledLaneName,
@@ -102,6 +103,7 @@ export async function runScheduledLane(input: {
 			return pruneJobRetention({ env: input.env, now: input.scheduledAt })
 		case 'usage_aggregation': {
 			const result = await aggregateUsageRollups(input.env, input.scheduledAt)
+			await syncFleetExecuteDays(input.env, input.scheduledAt)
 			await refreshPublicCodeRunsWindow({
 				env: input.env,
 				now: input.scheduledAt,
@@ -148,7 +150,7 @@ export async function runScheduledLane(input: {
 				console.warn('user-entitlement-warning-emails-failed', error)
 				userWarnings = { status: 'failed' }
 			}
-			const ops = await checkUsageEntitlementPressureAndNotify({
+			const ops = await emitFleetEntitlementCrossingEvents({
 				env: input.env,
 				now: input.scheduledAt,
 			})

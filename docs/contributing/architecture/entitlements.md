@@ -181,7 +181,14 @@ the same cold zero-init path):
   `storage_bytes` from UserMeter)
 - Admin fleet entitlement-pressure panel and `usage_entitlement_alert` lane —
   same `readAdminEntitlementConsumption` helper over a bounded sweep of the top
-  ~15 active users by current-month event count.
+  ~15 active users by current-month event count. The lane emits one
+  `fleet.entitlement.crossed` event per 80% or 100% crossing (and per first
+  over-threshold runtime-duration month) to admin-owned packages. Staying over
+  the same threshold does not emit again; dropping below and climbing back is a
+  new instance. KV prefix `fleet-entitlement-crossing:v1` stores
+  `{prefix}:{userId}:entitlement:{threshold}:{resource}` for stock limits,
+  appends the UTC day for `*_per_day` counters, and uses
+  `{prefix}:{userId}:runtime_duration:{month}` for the 24h runtime signal.
 - User entitlement warning emails (same hourly lane) — emails verified person
   accounts when usage crosses 80% or 100% of their effective plan (transactional
   template). Throttle is one mail per crossing of a given percentage on a
@@ -197,8 +204,8 @@ the same cold zero-init path):
   (one claim for every resource in that kind's bucket). A `v2` key from a prior
   UTC day claims stock limits only, so a `*_per_day` midnight reset can mail.
   Candidate selection is the top ~80 accounts by current-month event count plus
-  high package/secret stock, capped at 100. Operator fleet mail runs even when
-  user warning sends fail.
+  high package/secret stock, capped at 100. Operator crossing events run even
+  when user warning sends fail.
 
 `readEntitlementResourceUsage` counts only APP_DB-backed row resources (`repos`,
 `saved_packages`, `secrets`). Resources whose authority is elsewhere

@@ -20,10 +20,11 @@ scores. This boundary never exposes forked package source, rating notes,
 secrets, or unrelated account content.
 
 The homepage code-runs ticker is a fifth narrow exception. Anonymous visitors
-and signed-in users see the same delayed fleet total: a `SUM(event_count)` of
-`execute` rows from `usage_rollups` with no user ids. The official
-`{ previous, current, windowStart, windowEnd }` pair lives at the platform KV
-key `public-code-runs:v1`. Homepage GET does not write that key. See
+and signed-in users see the same delayed fleet total: cumulative `execute`
+counts through completed UTC days, with no user ids. The official
+`{ start, end, updateAt }` triple lives at the platform KV key
+`public-code-runs:v2`. Homepage GET may fill that cache from D1 when the key is
+missing or `updateAt` has passed; it does not persist a high-water mark. See
 [Usage metering](./usage-metering.md).
 
 For browser and MCP authentication mechanics, see
@@ -381,6 +382,16 @@ rates, the public status URL, and the insights URL. It omits user ids, package
 ids, error strings, logs, and unrelated account content. This is operator
 telemetry about kody itself, not a user-data exception. Delivery is best-effort
 (no Queue). A six-hour cooldown suppresses repeat pages.
+
+**Admins can subscribe to fleet entitlement crossings.** The hourly
+`usage_entitlement_alert` lane sweeps the top ~15 active accounts and fans
+`fleet.entitlement.crossed` only to packages whose owners hold the admin role at
+dispatch time. One event fires per 80% or 100% crossing of a plan-limit
+resource, or per first over-threshold runtime-duration month. The event contains
+the stable user id, username, resource label and counts (or runtime duration),
+and admin insights/users URLs. It omits emails, plans, secrets, package source,
+and unrelated account content. Delivery is best-effort (no Queue). Staying over
+the same threshold does not emit again.
 
 **Admins can subscribe to person-account create and delete.** Password signup,
 social-login signup, and admin-created person accounts fan `user.created`.

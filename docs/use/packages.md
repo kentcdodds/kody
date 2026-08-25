@@ -140,19 +140,16 @@ exhaustive.
   package's name is known when the code is written. Static imports are typed,
   publish-verified, dependency-graph-visible, and add zero per-call platform
   cost.
-- **Platform (built-in) scopes are execute-only.** When a scope's username
-  belongs to a platform account (for example `@kody`), ad hoc `execute` may
-  statically import the current published version — for example
-  `import gh from 'kody:@kody/github/issues'`. A static import runs in **your**
-  execute runtime against your secrets and grants. **Saved person-owned packages
-  must not depend on a platform scope.** Official `@kody` packages may still
-  compose with each other. Publish checks reject `kody:@kody/…` static imports
-  and `kody.dependencies` entries in person-owned package source. Fork the
-  official package into your scope (`community_fork`) and depend on that copy.
-  Platform package code cannot use `packageStorage()` in your account. Platform
+- **Platform (built-in) scopes are fork-only.** When a scope's username belongs
+  to a platform account (for example `@kody`), person accounts must not
+  statically import that package from ad hoc `execute` or from a saved
+  person-owned package. Official `@kody` packages may still compose with each
+  other. Publish checks reject `kody:@kody/…` static imports and
+  `kody.dependencies` entries in person-owned package source. Execute fails the
+  same way. Fork the official package into your scope (`community_fork`) and
+  import that copy. Dynamic `import("kody:@kody/…")` is unsupported. Platform
   packages appear in `search` results (marked with their platform scope) so
-  agents discover them for execute; the detail text says to fork before using
-  them in a saved person-account package.
+  agents can discover them and fork.
 - Static `kody:@...` imports in saved package code are bundled into published
   runtime artifacts as snapshots of the imported package's published bundle.
   Republishing the imported package does not change already-published
@@ -215,6 +212,11 @@ call a named export over HTTP use package invocation tokens. Before sending a
 user to create one, load `coding_guide_get` with
 `guide: "package_invocation_token_setup"` and construct a prefilled
 `/account/packages/:packageId?newToken=1` URL without raw token material.
+
+Scoped resolution is exact: `kody:@kentcdodds/google` selects the caller's
+package under that person scope. A person scope never grants access to another
+user's packages. A platform specifier such as `kody:@kody/google` is not
+runnable in a person account — `community_fork` it first.
 
 ## Package storage
 
@@ -387,8 +389,8 @@ topic. This is the generic discovery step before building fan-out, debugging why
 an event did or did not dispatch, or checking which packages subscribe to
 `email.message.received`, `run.error.recorded`, `integration.auth.failed`,
 `integration.auth.succeeded`, `mcp.server.disconnected`,
-`mcp.server.reconnected`, or admin-only topics such as `status.incident.opened`
-and `fleet.package_error_rate.elevated`.
+`mcp.server.reconnected`, or admin-only topics such as `status.incident.opened`,
+`fleet.package_error_rate.elevated`, and `fleet.entitlement.crossed`.
 
 For accepted stored inbound email, the topic is `email.message.received`.
 Quarantined inbound email dispatches `email.message.quarantined` instead. Both

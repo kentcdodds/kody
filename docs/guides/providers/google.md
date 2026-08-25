@@ -195,23 +195,20 @@ reconnects use `/connect/oauth?provider=google` and the connect UI scope menu.
 
 ## Use the official package and verify
 
-Ad hoc `execute` may import `kody:@kody/google` live. A saved integration is
-auth credentials only. Finish by calling the live official helpers so day-to-day
-work goes through maintained Gmail, Calendar, and Drive helpers instead of raw
-`createAuthenticatedFetch` calls. Official `@kody/*` packages resolve in the
-execute caller runtime against the caller's secrets. Saved person-account
-packages cannot import or invoke a platform scope — `community_fork` into the
-caller's scope first, or fork when you need to customize the source.
+A saved integration is auth credentials only. Finish by forking the official
+helpers so day-to-day work goes through maintained Gmail, Calendar, and Drive
+helpers in **your** scope instead of raw `createAuthenticatedFetch` calls.
 
-1. Search for `@kody/google` (or import `kody:@kody/google` directly). It covers
-   Gmail, Calendar, Drive, People, and YouTube.
-2. Check its README **Required setup**: the `personal` account alias maps to an
-   integration named `google` — the default name this guide's connect link uses,
-   so the primary lane needs no adaptation.
-3. Verify the live package against your integration from `execute`:
+1. Search for `@kody/google`. It covers Gmail, Calendar, Drive, People, and
+   YouTube.
+2. `community_fork` it into your scope (or click **Install** on the listing).
+3. Check the fork's README **Required setup**: the `personal` account alias maps
+   to an integration named `google` — the default name this guide's connect link
+   uses, so the primary lane needs no adaptation.
+4. Verify the fork against your integration from `execute`:
 
 ```ts
-import { smokeTest } from 'kody:@kody/google'
+import { smokeTest } from 'kody:@<your-username>/google'
 
 export default async function main() {
 	return smokeTest({ account: 'personal' })
@@ -219,4 +216,4 @@ export default async function main() {
 ```
 
 A successful response returns the Google profile your integration resolves to —
-proving the live package, the OAuth tokens, and the host approvals all line up.
+proving the fork, the OAuth tokens, and the host approvals all line up.

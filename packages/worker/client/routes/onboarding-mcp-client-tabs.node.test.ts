@@ -31,6 +31,11 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	expect(automaticBlock).toContain(
 		buildKodyCliInstallCommand(defaultKodyMcpUrl),
 	)
+	expect(automaticBlock).toContain(
+		'You can also manually connect web hosts such as ChatGPT, Claude.ai, and Grok below.',
+	)
+	expect(automaticBlock).toContain('Codex / ChatGPT desktop')
+	expect(automaticBlock).not.toContain('stay under Manual')
 	expect(automaticBlock).not.toContain('Add to Cursor')
 	expect(automaticBlock).not.toContain('Choose your client')
 
@@ -46,6 +51,9 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	expect(manualBlock).toContain(buildCopilotCliAddCommand(defaultKodyMcpUrl))
 	expect(manualBlock).toContain('Add to Cursor')
 	expect(manualBlock).toContain('Add to VS Code')
+	expect(manualBlock).toContain('ChatGPT.com')
+	expect(manualBlock).toContain('chatgpt.com')
+	expect(manualBlock).toContain('ChatGPT desktop is Codex')
 
 	const previewHtml = await renderToString(
 		jsx(OnboardingMcpClientTabs, {

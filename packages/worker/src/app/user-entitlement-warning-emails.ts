@@ -15,9 +15,9 @@ import {
 
 /**
  * Hourly user-facing entitlement warnings. Shares the
- * `usage_entitlement_alert` lane with the operator fleet-pressure mail so
- * both stay on the same UTC-hour cadence. Failures here must not block
- * the operator alert.
+ * `usage_entitlement_alert` lane with operator
+ * `fleet.entitlement.crossed` events so both stay on the same UTC-hour
+ * cadence. Failures here must not block the operator events.
  *
  * One email per crossing of 80% or 100% on a specific entitlement. Staying
  * over the same threshold does not mail again. A later drop below that

@@ -65,9 +65,9 @@ export async function resolveEntityDetail(input: {
 				userId: input.userId,
 				kodyId: ref.id,
 			}))
-		// Platform (built-in) packages resolve live for every caller, so
-		// their detail is readable without a fork; the caller's own copy
-		// wins, mirroring import resolution.
+		// Platform (built-in) packages stay discoverable without a fork so
+		// agents can inspect and community_fork them. The caller's own copy
+		// wins when both exist.
 		const platformFallback = ownRecord
 			? null
 			: await findPlatformPackageByRef(env.APP_DB, { idOrKodyId: ref.id })

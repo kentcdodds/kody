@@ -816,10 +816,6 @@ html.is-settled {
 	color: var(--color-primary-text);
 }
 
-.landing-hero-benefits-rest {
-	white-space: nowrap;
-}
-
 .landing-hero-sub {
 	margin: 1.5rem auto 0;
 	font-size: clamp(1.05rem, 1.6vw, 1.2rem);
@@ -851,7 +847,6 @@ html.is-settled {
 }
 
 .landing-hero-runs-count {
-	position: relative;
 	display: inline-block;
 	box-sizing: content-box;
 	min-width: var(--runs-ch, 1ch);
@@ -863,19 +858,6 @@ html.is-settled {
 		'tnum' 1,
 		'lnum' 1;
 	color: var(--color-text);
-}
-
-.landing-hero-runs-progress {
-	position: absolute;
-	left: 0;
-	right: 0;
-	bottom: -0.18em;
-	height: 2px;
-	border-radius: 999px;
-	background: currentColor;
-	opacity: 0.4;
-	transform-origin: left center;
-	pointer-events: none;
 }
 
 .landing-hero-runs-label {

@@ -16,7 +16,9 @@
  *   would serialize every metered request on D1's single writer.
  * - When `USAGE_EVENTS` is absent (local dev, tests), the event is upserted
  *   directly into `usage_rollups` so local admin pages and tests work without
- *   Analytics Engine access.
+ *   Analytics Engine access. `execute` events also increment today's
+ *   `fleet_execute_days` row for the homepage ticker. `execute` events also increment today's
+ *   `fleet_execute_days` row for the homepage ticker.
  *
  * `recordUsage` never throws and never rejects; metering must not break the
  * paths it observes. In local dev and tests where a binding is missing it
@@ -87,6 +89,14 @@ ON CONFLICT (user_id, metric, month) DO UPDATE SET
 	updated_at = excluded.updated_at
 `.trim()
 
+const fleetExecuteDayUpsertStatement = `
+INSERT INTO fleet_execute_days (day, event_count, updated_at)
+VALUES (?1, 1, ?2)
+ON CONFLICT (day) DO UPDATE SET
+	event_count = event_count + 1,
+	updated_at = excluded.updated_at
+`.trim()
+
 /**
  * Record one usage event.
  *
@@ -120,6 +130,7 @@ export async function recordUsage(
 		}
 		console.debug('usage-event-local', JSON.stringify({ ...event, timestamp }))
 		await writeUsageRollup(env, event, timestamp)
+		await writeLocalFleetExecuteDay(env, event, timestamp)
 	} catch (error) {
 		console.warn('usage-event-record-failed', error)
 	}
@@ -196,5 +207,21 @@ async function writeUsageRollup(
 			.run()
 	} catch (error) {
 		console.warn('usage-rollup-failed', error)
+	}
+}
+
+async function writeLocalFleetExecuteDay(
+	env: UsageEnv,
+	event: UsageEvent,
+	timestamp: string,
+) {
+	if (event.eventType !== 'execute') return
+	if (!env.APP_DB) return
+	try {
+		await env.APP_DB.prepare(fleetExecuteDayUpsertStatement)
+			.bind(timestamp.slice(0, 10), timestamp)
+			.run()
+	} catch (error) {
+		console.warn('usage-fleet-execute-day-failed', error)
 	}
 }

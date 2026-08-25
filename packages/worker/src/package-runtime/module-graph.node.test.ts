@@ -2656,6 +2656,46 @@ test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 	expect(mockModule.getSavedPackageByKodyId).not.toHaveBeenCalled()
 })
 
+test('buildKodyModuleBundle rejects ad-hoc execute imports of platform scopes', async () => {
+	mockModule.getPlatformAccountByUsername.mockImplementation(
+		async (_db: unknown, username: unknown) =>
+			username === 'kody'
+				? {
+						id: 1,
+						username: 'kody',
+						email: 'kody@example.com',
+						stableUserId: 'platform-kody',
+					}
+				: null,
+	)
+	mockModule.getSavedPackageByName.mockResolvedValue(null)
+
+	try {
+		const { buildKodyModuleBundle } = await import('./module-graph.ts')
+		const { personPackagePlatformDependencyMessage } =
+			await import('#worker/package-registry/platform-package-policy.ts')
+
+		await expect(
+			buildKodyModuleBundle({
+				env: {
+					APP_DB: {},
+					REPO_SESSION: {},
+				} as Env,
+				baseUrl: 'https://heykody.dev',
+				userId: 'user-1',
+				sourceFiles: {
+					'index.js':
+						'import github from "kody:@kody/github"\nexport default github\n',
+				},
+				entryPoint: 'index.js',
+				bundleContext: 'ad-hoc-execute',
+			}),
+		).rejects.toThrow(personPackagePlatformDependencyMessage)
+	} finally {
+		mockModule.getPlatformAccountByUsername.mockResolvedValue(null)
+	}
+})
+
 test('buildKodyModuleBundle rejects person-package imports of platform scopes', async () => {
 	mockModule.getPlatformAccountByUsername.mockImplementation(
 		async (_db: unknown, username: unknown) =>

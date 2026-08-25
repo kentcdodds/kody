@@ -53,9 +53,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0008 — No traces, previews, browser-run, gradual deploys, or session mining](./0008-declined-adlc-primitives.md)
 - [0011 — Keep workers-unit per-file isolation; do not warm DOs to "fix" slowness](./0011-workers-unit-pool-harness.md)
 - [0013 — Post-publish checks stay on MCP; no signed app URLs or inbox injection](./0013-synthetic-package-requests.md)
-- [0035 — Platform packages are execute-only; person packages must fork](./0035-platform-packages-execute-only.md)
-  — supersedes the saved-package half of 0014; ad hoc execute may still resolve
-  platform scopes live
+- [0036 — Person accounts do not run official platform packages](./0036-platform-packages-fork-only.md)
+  — supersedes 0035 and the remaining execute-live half of 0014; fork, then use
+  the copy
 - [0037 — No author-facing `packages.invoke`](./0037-no-author-packages-invoke.md)
   — static import, `import(specifier)`, or workflows; HTTP tokens stay
 - [0015 — Wait on Skills over MCP; serve skill content via packages](./0015-skills-over-mcp-wait.md)
@@ -80,9 +80,10 @@ Open these before proposing a new primitive, surface, or storage home.
 Accepted or superseded records that do **not** change the next product proposal.
 Do not treat this list as homework. History stays; it is not silently deleted.
 
+- [0035 — Platform packages are execute-only; person packages must fork](./0035-platform-packages-execute-only.md)
+  — superseded by 0036; execute-live half is gone
 - [0014 — Platform scopes resolve live; person-account imports stay caller-owned](./0014-platform-live-packages.md)
-  — superseded by 0035 for saved person-account packages; execute-live half
-  remains
+  — superseded by 0035 then 0036
 - [0009 — Shiki for in-app syntax highlighting](./0009-shiki-syntax-highlighting.md)
   — library pick; the highlighter is already in the app
 - [0010 — One RecordTable for account and admin list/detail screens](./0010-account-record-table.md)

@@ -95,6 +95,10 @@
 		{
 			"filename": "0023-secret-entry-expires-at.sql",
 			"sha256": "a8fff9cfb73ea4b6a741e0a2e61f95417d11927a46b6055a362a27b8a1b0abca"
+		},
+		{
+			"filename": "0024-fleet-execute-days.sql",
+			"sha256": "05a0061079a3988b424a0b63646510857ceec11197128e63735ff6b30b46ef8b"
 		}
 	]
 }

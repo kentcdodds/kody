@@ -21,14 +21,12 @@ export type PublicOgPage = {
 
 export const publicOgPages = {
 	home: {
-		imageTitle: 'Safer, cheaper, more reliable.',
-		// Complements the title rather than restating it: the card shows both at
-		// once, so repeating the headline wastes the only supporting line.
-		imageSubtitle:
-			'A personal software factory for the agent you already use. Turn ad hoc work into code that keeps running.',
-		ogTitle: 'Kody makes your agent safer, cheaper, and more reliable',
+		// Short enough for 78px OG type. The homepage H1 keeps the full sentence.
+		imageTitle: 'The private software ecosystem',
+		imageSubtitle: 'All your agents can share.',
+		ogTitle: 'The private software ecosystem all your agents can share',
 		ogDescription:
-			'A personal software factory. Turn the ad hoc agent work into deterministic code you can run on a trigger, or save tokens with your agent.',
+			"It's like your own personal npm and GitHub that all of your agents can use.",
 		path: '/',
 	},
 	community: {

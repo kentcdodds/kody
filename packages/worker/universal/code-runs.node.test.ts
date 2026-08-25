@@ -3,28 +3,24 @@ import {
 	codeRunsCatchUpDelayMs,
 	codeRunsCatchUpSnapAfterMs,
 	codeRunsHonestySlotMs,
-	codeRunsProgressToNext,
-	continuePublicCodeRunsWindow,
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
 	isStillPublicCodeRunsWindow,
+	msUntilCodeRunsWindowRefresh,
 	msUntilNextCodeRunsCount,
-	msUntilNextCodeRunsPaint,
 	nextDisplayedCodeRunsCount,
 	parsePublicCodeRunsWindow,
 	publicCodeRunsWindowsEqual,
 } from './code-runs.ts'
 
-const windowStart = '2026-08-21T00:00:00.000Z'
-const windowEnd = '2026-08-22T00:00:00.000Z'
-const startMs = Date.parse(windowStart)
+const updateAt = '2026-08-22T00:00:00.000Z'
+const startMs = Date.parse(updateAt) - 24 * 60 * 60 * 1000
 const hourMs = 60 * 60 * 1000
 
 const window = {
-	previous: 1000,
-	current: 1240,
-	windowStart,
-	windowEnd,
+	start: 1000,
+	end: 1240,
+	updateAt,
 }
 
 test('interpolateCodeRunsCount stays monotonic, warped, and holds at bounds', () => {
@@ -52,53 +48,52 @@ test('interpolateCodeRunsCount stays monotonic, warped, and holds at bounds', ()
 	const busiest = Math.max(...hourlyDeltas)
 	expect(busiest).toBeGreaterThan(quietest)
 	expect(interpolateCodeRunsCount(window, startMs + 12 * hourMs)).not.toBe(1120)
-	const firstPair = { ...window, previous: 0, current: 1_000_000 }
-	const secondPair = { ...firstPair, previous: 100, current: 1_000_100 }
+	const firstPair = { ...window, start: 0, end: 1_000_000 }
+	const secondPair = { ...firstPair, start: 100, end: 1_000_100 }
 	const sampleMs = startMs + 6 * hourMs
 	expect(
-		interpolateCodeRunsCount(firstPair, sampleMs) - firstPair.previous,
-	).not.toBe(
-		interpolateCodeRunsCount(secondPair, sampleMs) - secondPair.previous,
-	)
+		interpolateCodeRunsCount(firstPair, sampleMs) - firstPair.start,
+	).not.toBe(interpolateCodeRunsCount(secondPair, sampleMs) - secondPair.start)
 
 	const offset = {
 		...window,
-		previous: 171540,
-		current: 257940,
-		windowStart: '2026-08-22T15:47:07.637Z',
-		windowEnd: '2026-08-23T15:47:07.637Z',
+		start: 171540,
+		end: 257940,
+		updateAt: '2026-08-23T15:47:07.637Z',
 	}
-	const endMs = Date.parse(offset.windowEnd)
+	const endMs = Date.parse(offset.updateAt)
 	expect(interpolateCodeRunsCount(offset, endMs - 1)).toBeLessThan(257940)
 	expect(interpolateCodeRunsCount(offset, endMs)).toBe(257940)
 	expect(interpolateCodeRunsCount(offset, endMs + 1000)).toBe(257940)
 	expect(
 		interpolateCodeRunsCount(
-			{ ...window, previous: 80, current: 80 },
+			{ ...window, start: 80, end: 80 },
 			startMs + 6 * hourMs,
 		),
 	).toBe(80)
 
 	expect(parsePublicCodeRunsWindow(window)).toEqual(window)
-	expect(parsePublicCodeRunsWindow({ ...window, current: 900 })).toEqual({
+	expect(parsePublicCodeRunsWindow({ ...window, end: 900 })).toEqual({
 		...window,
-		current: 1000,
+		end: 900,
 	})
-	expect(parsePublicCodeRunsWindow({ ...window, previous: -1 })).toBeNull()
-	expect(parsePublicCodeRunsWindow({ ...window, windowEnd: windowStart })).toBe(
-		null,
-	)
+	expect(parsePublicCodeRunsWindow({ ...window, start: -1 })).toBeNull()
+	expect(
+		parsePublicCodeRunsWindow({ ...window, updateAt: 'not-a-date' }),
+	).toBeNull()
 	expect(
 		parsePublicCodeRunsWindow({
-			...window,
-			windowEnd: '2026-08-21T12:00:00.000Z',
+			previous: 1000,
+			current: 1240,
+			windowStart: '2026-08-21T00:00:00.000Z',
+			windowEnd: '2026-08-22T00:00:00.000Z',
 		}),
 	).toBeNull()
 	expect(parsePublicCodeRunsWindow(null)).toBeNull()
 })
 
 test('interpolateCodeRunsCount wobbles +1 ticks without long idle when the pair is dense', () => {
-	const busy = { ...window, previous: 0, current: 86_400 }
+	const busy = { ...window, start: 0, end: 86_400 }
 	const gaps: Array<number> = []
 	let previous = interpolateCodeRunsCount(busy, startMs)
 	let at = startMs
@@ -138,16 +133,16 @@ test('interpolateCodeRunsCount wobbles +1 ticks without long idle when the pair 
 	expect(interpolateCodeRunsCount(busy, nowMs + wait!)).toBe(here + 1)
 	expect(msUntilNextCodeRunsCount(busy, startMs + 24 * hourMs)).toBeNull()
 	expect(
-		msUntilNextCodeRunsCount({ ...window, previous: 80, current: 80 }, nowMs),
+		msUntilNextCodeRunsCount({ ...window, start: 80, end: 80 }, nowMs),
 	).toBeNull()
-	expect(
-		isStillPublicCodeRunsWindow({ ...window, previous: 80, current: 80 }),
-	).toBe(true)
+	expect(isStillPublicCodeRunsWindow({ ...window, start: 80, end: 80 })).toBe(
+		true,
+	)
 	expect(isStillPublicCodeRunsWindow(window)).toBe(false)
 })
 
 test('interpolateCodeRunsCount rolls every extra integer inside a second', () => {
-	const packed = { ...window, previous: 0, current: 86_400 * 5 }
+	const packed = { ...window, start: 0, end: 86_400 * 5 }
 	const midSecond = startMs + 6 * hourMs
 	const seen = new Set<number>()
 	const offsets: Array<number> = []
@@ -172,7 +167,7 @@ test('interpolateCodeRunsCount rolls every extra integer inside a second', () =>
 	const even = 1000 / offsets.length
 	expect(gaps.some((gap) => Math.abs(gap - even) > 30)).toBe(true)
 
-	const dense = { ...window, previous: 0, current: 86_400 * 50 }
+	const dense = { ...window, start: 0, end: 86_400 * 50 }
 	const denseStart = startMs + 6 * hourMs
 	let densePrevious = interpolateCodeRunsCount(dense, denseStart - 1)
 	for (let offset = 0; offset < 30_000; offset += 1) {
@@ -249,7 +244,7 @@ test('displayed code-runs catch-up snaps after a freeze and stays under the snap
 
 test('a 3-second backbone never waits longer than the honesty slot when budget allows', () => {
 	const slots = (24 * 60 * 60 * 1000) / codeRunsHonestySlotMs
-	const honest = { ...window, previous: 0, current: slots }
+	const honest = { ...window, start: 0, end: slots }
 	const gaps: Array<number> = []
 	let at = startMs
 	let previous = interpolateCodeRunsCount(honest, at)
@@ -268,87 +263,43 @@ test('a 3-second backbone never waits longer than the honesty slot when budget a
 	// backbone is a fixed 3-second cadence.
 	expect(new Set(gaps.slice(1)).size).toBe(1)
 	expect(gaps[1]).toBe(codeRunsHonestySlotMs)
-	expect(msUntilNextCodeRunsPaint(honest, startMs + 10)).toBeLessThanOrEqual(
-		codeRunsHonestySlotMs,
-	)
 })
 
-test('thin windows move progress instead of inventing integers', () => {
-	const thin = { ...window, previous: 10, current: 20 }
+test('thin windows sit on the integer until the next real +1', () => {
+	const thin = { ...window, start: 10, end: 20 }
 	const nowMs = startMs + 6 * hourMs
 	const wait = msUntilNextCodeRunsCount(thin, nowMs)
 	expect(wait).not.toBeNull()
 	expect(wait!).toBeGreaterThan(codeRunsHonestySlotMs)
-	expect(msUntilNextCodeRunsPaint(thin, nowMs)).toBe(codeRunsHonestySlotMs)
-	const frac = codeRunsProgressToNext(thin, nowMs)
-	expect(frac).toBeGreaterThan(0)
-	expect(frac).toBeLessThan(1)
-	expect(codeRunsProgressToNext(thin, nowMs + 3_000)).toBeGreaterThan(frac)
-	expect(
-		codeRunsProgressToNext({ ...window, previous: 80, current: 80 }, nowMs),
-	).toBe(0)
+	const here = interpolateCodeRunsCount(thin, nowMs)
+	expect(interpolateCodeRunsCount(thin, nowMs + codeRunsHonestySlotMs)).toBe(
+		here,
+	)
+	expect(interpolateCodeRunsCount(thin, nowMs + wait!)).toBe(here + 1)
 })
 
-test('continuePublicCodeRunsWindow unsticks still and expired pairs without writing', () => {
-	const now = new Date('2026-08-21T12:00:00.000Z')
-	const still = {
-		previous: 100,
-		current: 100,
-		windowStart: '2026-08-21T00:00:00.000Z',
-		windowEnd: '2026-08-22T00:00:00.000Z',
-	}
+test('a regressing end shows immediately and refresh waits until updateAt', () => {
+	const still = { start: 100, end: 100, updateAt }
 	expect(publicCodeRunsWindowsEqual(still, still)).toBe(true)
-	expect(publicCodeRunsWindowsEqual(still, { ...still, current: 101 })).toBe(
-		false,
+	expect(publicCodeRunsWindowsEqual(still, { ...still, end: 101 })).toBe(false)
+	expect(isStillPublicCodeRunsWindow({ start: 200, end: 150, updateAt })).toBe(
+		true,
 	)
 	expect(
-		continuePublicCodeRunsWindow({ stored: still, total: 100, now }),
+		interpolateCodeRunsCount(
+			{ start: 200, end: 150, updateAt },
+			startMs + 6 * hourMs,
+		),
+	).toBe(150)
+	expect(
+		msUntilNextCodeRunsCount(
+			{ start: 200, end: 150, updateAt },
+			startMs + 6 * hourMs,
+		),
 	).toBeNull()
+	expect(msUntilCodeRunsWindowRefresh(window, startMs)).toBe(24 * hourMs)
+	expect(msUntilCodeRunsWindowRefresh(window, Date.parse(updateAt))).toBe(0)
 	expect(
-		continuePublicCodeRunsWindow({ stored: still, total: 140, now }),
-	).toEqual({
-		previous: 100,
-		current: 140,
-		windowStart: '2026-08-21T12:00:00.000Z',
-		windowEnd: '2026-08-22T12:00:00.000Z',
-	})
-	expect(
-		continuePublicCodeRunsWindow({ stored: still, total: 80, now }),
-	).toEqual({
-		previous: 80,
-		current: 80,
-		windowStart: '2026-08-21T12:00:00.000Z',
-		windowEnd: '2026-08-22T12:00:00.000Z',
-	})
-	expect(
-		continuePublicCodeRunsWindow({
-			stored: window,
-			total: 2000,
-			now: new Date('2026-08-21T12:00:00.000Z'),
-		}),
-	).toBeNull()
-	expect(
-		continuePublicCodeRunsWindow({
-			stored: window,
-			total: 2000,
-			now: new Date('2026-08-22T01:00:00.000Z'),
-		}),
-	).toEqual({
-		previous: 1240,
-		current: 2000,
-		windowStart: '2026-08-22T00:00:00.000Z',
-		windowEnd: '2026-08-23T00:00:00.000Z',
-	})
-	expect(
-		continuePublicCodeRunsWindow({
-			stored: window,
-			total: 900,
-			now: new Date('2026-08-22T01:00:00.000Z'),
-		}),
-	).toEqual({
-		previous: 900,
-		current: 900,
-		windowStart: '2026-08-22T01:00:00.000Z',
-		windowEnd: '2026-08-23T01:00:00.000Z',
-	})
+		msUntilCodeRunsWindowRefresh(window, Date.parse(updateAt) + 1_000),
+	).toBe(0)
 })

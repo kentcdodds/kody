@@ -18,7 +18,7 @@ const itemLabels: Record<OnboardingChecklistItemId, string> = {
 	'connect-agent': 'connect your agent',
 	'first-hello': 'exchange a first email with Kody',
 	'save-memory': 'save a memory',
-	'connect-integration': 'connect a workspace MCP',
+	'connect-integration': 'give Kody access',
 	'install-starter': 'persist your first package',
 }
 

@@ -1,6 +1,5 @@
 /**
- * Mirrors the `usage_rollups` schema in
- * `packages/worker/migrations/0001-squashed-init.sql` for
+ * Mirrors the `usage_rollups` and `fleet_execute_days` schemas for
  * `*.workers.test.ts` suites, which run against a local D1 database without
  * applying migrations.
  */
@@ -21,6 +20,12 @@ export async function ensureUsageRollupsTestSchema(db: D1Database) {
 );`,
 		`CREATE INDEX idx_usage_rollups_user_month
 ON usage_rollups(user_id, month);`,
+		`DROP TABLE IF EXISTS fleet_execute_days;`,
+		`CREATE TABLE fleet_execute_days (
+	day TEXT PRIMARY KEY NOT NULL,
+	event_count INTEGER NOT NULL,
+	updated_at TEXT NOT NULL
+);`,
 	]
 	for (const statement of statements) {
 		await db.prepare(statement).run()

@@ -99,8 +99,9 @@ type RewriteState = {
 	 */
 	rootPackageId: string | null
 	/**
-	 * Ad hoc execute and platform-owned package graphs may resolve live
-	 * `@kody/*` imports. Person-owned saved package graphs must not.
+	 * Platform-account package graphs may resolve live `@kody/*` imports
+	 * when composing with other platform scopes (decision 0036). Person
+	 * accounts — ad hoc execute and saved packages — must not.
 	 */
 	allowPlatformScopes: boolean
 	proxies: Map<string, string>
@@ -507,7 +508,7 @@ export async function prepareKodyGraphFiles(input: {
 		sourceFiles: input.sourceFiles,
 		rootPackage,
 		rootPackageId: input.rootPackageId?.trim() || null,
-		allowPlatformScopes: input.allowPlatformScopes !== false,
+		allowPlatformScopes: input.allowPlatformScopes === true,
 		proxies: new Map(),
 		dynamicPackageImports: new Map(),
 		packages: new Map(),

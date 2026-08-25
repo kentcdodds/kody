@@ -285,6 +285,8 @@ test('detectFleetUsagePressure flags entitlement and runtime duration thresholds
 			username: 'alice',
 			resource: 'secrets',
 			label: 'secrets',
+			current: 9,
+			limit: 10,
 			percentOfLimit: 0.9,
 		},
 		{
@@ -293,6 +295,8 @@ test('detectFleetUsagePressure flags entitlement and runtime duration thresholds
 			username: 'kentcdodds',
 			resource: 'saved_packages',
 			label: 'saved packages',
+			current: 9_001,
+			limit: 10_000,
 			percentOfLimit: 0.9001,
 		},
 		{

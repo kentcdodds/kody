@@ -153,24 +153,21 @@ A saved package is a repo with the package extension activated. Four concepts:
   `packageStorage()` bucket access is granted only from host-controlled
   provenance metadata: the run's own package context, the `packageId` entries
   recorded in the bundle's static dependency metadata, and published static
-  dependency artifacts installed during hydration. Platform-owned static
-  dependencies (`platformOwned` on `BundleArtifactDependency`) are stamped but
-  excluded from that grant set, so official `@kody/*` modules fail closed on
-  static import; `packages.invoke` of an official target still grants through
-  `packageContext` (see
-  [packageStorage on official static imports](./package-storage-static-imports.md)).
-  Sandbox-supplied strings never extend the grant set, so hand-written source
-  claiming an arbitrary package id is rejected (`packageId` on
-  `BundleArtifactDependency`, `collectPackageStorageGrantIds` in
-  `#mcp/run-kody-registry.ts`, and `createPackageStorageKodyTools` in
-  `#worker/storage-runner.ts`). Cross-user access stays structurally impossible
-  because storage runner names are keyed by the calling user's id.
+  dependency artifacts installed during hydration. Sandbox-supplied strings
+  never extend the grant set, so hand-written source claiming an arbitrary
+  package id is rejected (`packageId` on `BundleArtifactDependency`,
+  `collectPackageStorageGrantIds` in `#mcp/run-kody-registry.ts`, and
+  `createPackageStorageKodyTools` in `#worker/storage-runner.ts`). Cross-user
+  access stays structurally impossible because storage runner names are keyed by
+  the calling user's id. Platform-owned **dependencies** are excluded from that
+  grant set (`platformOwned`). Person accounts must `community_fork` an official
+  package before importing it (decision 0036).
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data
-  goes through keyless `packages.invoke`. Package-invocation runs (exports,
-  subscription handlers, retrievers) bind no ambient `storage`, so guard-less
-  ambient access in those contexts fails with the structured
+  goes through a static import or `import(specifier)`. Package-invocation runs
+  (exports, subscription handlers, retrievers) bind no ambient `storage`, so
+  guard-less ambient access in those contexts fails with the structured
   `runtime_helper_unbound` hint pointing at `packageStorage()`. Job runtimes
   bind job-scoped scratch buckets. Repo checks fail (the `lint` result) when
   package sources import ambient `storage` from `kody:runtime` with a value
@@ -207,11 +204,10 @@ agents do not get that helper. Fleet source migrates with package codemod
 `0008-packages-invoke-to-static-import`. See
 [0037](./decisions/0037-no-author-packages-invoke.md).
 
-Exact scoped resolution avoids bare-id collisions. A `kody:@kody/...` target
-resolves the public live package owned by the platform account, while a
-`kody:@person/...` target resolves that caller-owned person package. Foreign
-person accounts remain unresolvable. Person-owned packages must fork an official
-package into the caller's scope before importing it (decision 0035).
+Exact scoped resolution avoids bare-id collisions. A `kody:@person/...` target
+resolves that caller-owned person package. A `kody:@kody/...` target is not
+runnable in a person account (`community_fork` first). Foreign person accounts
+remain unresolvable. Platform-account packages may compose with each other.
 
 Literal `import("kody:@...")` stays a teaching error: known names are static
 imports. Computed `import(specifier)` is the name-as-data path. Exactly-once
@@ -414,6 +410,15 @@ per-metric counts and rates, `status_url`, and `insights_url`. It omits user
 ids, package ids, error strings, and all user content. There is no Queue for
 this topic. See
 [Package subscriptions](../guides/package-subscriptions.md#fleetpackageerrorrateelevated-admins).
+
+Fleet entitlement crossings are a separate admin-only, best-effort path. The
+hourly `usage_entitlement_alert` lane fans `fleet.entitlement.crossed` only to
+packages whose owners hold the admin role at dispatch time, once per 80% or 100%
+crossing (and per first over-threshold runtime-duration month). The payload is
+stable user id, username, resource counts or runtime duration, and admin URLs.
+It omits emails, plans, secrets, and package source. There is no Queue for this
+topic. See
+[Package subscriptions](../guides/package-subscriptions.md#fleetentitlementcrossed-admins).
 
 ## Package-owned workflows
 

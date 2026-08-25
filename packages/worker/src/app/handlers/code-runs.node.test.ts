@@ -3,10 +3,9 @@ import { createCodeRunsApiHandler } from './code-runs.ts'
 
 test('code-runs.json returns the stored public window or null', async () => {
 	const window = {
-		previous: 1000,
-		current: 1240,
-		windowStart: '2026-08-21T00:00:00.000Z',
-		windowEnd: '2026-08-22T00:00:00.000Z',
+		start: 1000,
+		end: 1240,
+		updateAt: '2099-01-01T00:00:00.000Z',
 	}
 	const present = await createCodeRunsApiHandler({
 		BUNDLE_ARTIFACTS_KV: {

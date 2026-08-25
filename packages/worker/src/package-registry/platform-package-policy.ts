@@ -8,12 +8,12 @@ import { listKodyPackageDependencyNames } from './types.ts'
 
 /**
  * Official `@kody/*` (and any other platform-account scope) packages are
- * execute-only. Ad hoc execute may import them live.
- * Saved person-account packages must fork into the caller's scope. Decision
- * 0035; this supersedes the package-import half of 0014.
+ * not runnable in a person account. Ad hoc execute and saved person-account
+ * packages must fork into the caller's scope. Platform-account packages may
+ * still compose with each other. Decision 0036.
  */
 export const personPackagePlatformDependencyMessage =
-	'Official platform packages are execute-only. Ad hoc execute may import them live. Saved person-account packages must community_fork the official package into your scope and depend on that copy — platform APIs are not a stable package dependency.'
+	'Official platform packages are not runnable from a person account. community_fork the official package into your scope and import that copy — platform APIs are not a live dependency.'
 
 export function formatPersonPackagePlatformDependencyMessage(
 	packageName: string,

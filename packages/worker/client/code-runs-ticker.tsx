@@ -1,15 +1,15 @@
 import { type Handle } from 'remix/ui'
 import {
-	codeRunsStillWindowRefreshMs,
+	codeRunsWindowRefreshRetryMs,
 	fetchCodeRunsPayload,
 } from '#client/routes/code-runs-payload.ts'
 import {
 	codeRunsCatchUpDelayMs,
 	codeRunsCatchUpSnapAfterMs,
-	codeRunsProgressToNext,
 	formatCodeRunsCount,
 	interpolateCodeRunsCount,
-	msUntilNextCodeRunsPaint,
+	msUntilCodeRunsWindowRefresh,
+	msUntilNextCodeRunsCount,
 	nextDisplayedCodeRunsCount,
 	publicCodeRunsWindowsEqual,
 	type PublicCodeRunsWindow,
@@ -20,11 +20,11 @@ import {
  * the client advances one integer at a time, scheduled to the next hashed
  * fire so leftover ticks still wobble. A 3-second honesty slot is the
  * longest the official integer may sit when budget allows; thinner windows
- * move the progress underline instead of inventing +1s. A frozen tab (rAF
+ * wait for the next real +1 instead of inventing ticks. A frozen tab (rAF
  * gap, hidden, or a late timeout) snaps to the official count instead of
- * rolling through every missed integer. A still or ended window refetches
- * `/code-runs.json` instead of stopping for the rest of the tab. Mono
- * digits plus a reserved width from `current` keep the label from shifting
+ * rolling through every missed integer. When no next integer can paint, the
+ * ticker waits until `updateAt` then refetches `/code-runs.json`. Mono
+ * digits plus a reserved width from `end` keep the label from shifting
  * as digits change.
  */
 export function CodeRunsTicker(
@@ -32,7 +32,6 @@ export function CodeRunsTicker(
 ) {
 	let activeWindow = handle.props.window
 	let displayed = interpolateCodeRunsCount(activeWindow, Date.now())
-	let progress = codeRunsProgressToNext(activeWindow, Date.now())
 	let lastDisplayAt = Date.now()
 	const prefersReducedMotion =
 		typeof matchMedia === 'function' &&
@@ -45,10 +44,6 @@ export function CodeRunsTicker(
 
 		function officialAt(now: number) {
 			return interpolateCodeRunsCount(activeWindow, now)
-		}
-
-		function progressAt(now: number) {
-			return codeRunsProgressToNext(activeWindow, now)
 		}
 
 		async function refreshStuckWindow() {
@@ -67,16 +62,15 @@ export function CodeRunsTicker(
 			timeoutId = undefined
 		}
 
-		function show(count: number, nextProgress: number, now: number) {
-			if (count === displayed && nextProgress === progress) return
-			if (count !== displayed) lastDisplayAt = now
+		function show(count: number, now: number) {
+			if (count === displayed) return
+			lastDisplayAt = now
 			displayed = count
-			progress = nextProgress
 			handle.update()
 		}
 
 		function snapToOfficial(now = Date.now()) {
-			show(officialAt(now), progressAt(now), now)
+			show(officialAt(now), now)
 		}
 
 		function scheduleNext() {
@@ -92,7 +86,7 @@ export function CodeRunsTicker(
 					official,
 					elapsedMsSinceDisplay: now - lastDisplayAt,
 				})
-				show(next, progressAt(now), now)
+				show(next, now)
 				if (next < official) {
 					timeoutId = setTimeout(() => {
 						scheduleNext()
@@ -101,15 +95,19 @@ export function CodeRunsTicker(
 				}
 			}
 			const nowAfter = Date.now()
-			show(officialAt(nowAfter), progressAt(nowAfter), nowAfter)
-			const delay = msUntilNextCodeRunsPaint(activeWindow, nowAfter)
+			show(officialAt(nowAfter), nowAfter)
+			const delay = msUntilNextCodeRunsCount(activeWindow, nowAfter)
 			if (delay === null) {
-				timeoutId = setTimeout(() => {
-					void refreshStuckWindow().finally(() => {
-						if (handle.signal.aborted) return
-						scheduleNext()
-					})
-				}, codeRunsStillWindowRefreshMs)
+				const refreshIn = msUntilCodeRunsWindowRefresh(activeWindow, nowAfter)
+				timeoutId = setTimeout(
+					() => {
+						void refreshStuckWindow().finally(() => {
+							if (handle.signal.aborted) return
+							scheduleNext()
+						})
+					},
+					refreshIn > 0 ? refreshIn : codeRunsWindowRefreshRetryMs,
+				)
 				return
 			}
 			timeoutId = setTimeout(
@@ -155,8 +153,10 @@ export function CodeRunsTicker(
 			},
 			{ signal: handle.signal },
 		)
-		scheduleNext()
-		rafId = requestAnimationFrame(onFrame)
+		handle.queueTask(() => {
+			scheduleNext()
+			rafId = requestAnimationFrame(onFrame)
+		})
 		handle.signal.addEventListener(
 			'abort',
 			() => {
@@ -168,7 +168,7 @@ export function CodeRunsTicker(
 	}
 
 	return () => {
-		const reserved = formatCodeRunsCount(activeWindow.current)
+		const reserved = formatCodeRunsCount(activeWindow.end)
 		return (
 			<p data-rise style={{ '--rise': '1.5' }} class="landing-hero-runs">
 				<span class="landing-hero-runs-line">
@@ -177,14 +177,6 @@ export function CodeRunsTicker(
 						style={{ '--runs-ch': `${reserved.length}ch` }}
 					>
 						{formatCodeRunsCount(displayed)}
-						{progress > 0 ? (
-							<span
-								class="landing-hero-runs-progress"
-								style={{
-									transform: `scaleX(${progress})`,
-								}}
-							/>
-						) : null}
 					</span>
 					<span class="landing-hero-runs-label">code runs</span>
 				</span>

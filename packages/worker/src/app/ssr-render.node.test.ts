@@ -608,6 +608,11 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
 	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
+	expect(withoutAssetsHtml).toContain('The private software ecosystem')
+	expect(withoutAssetsHtml).toContain('all your agents can share')
+	expect(withoutAssetsHtml).toContain(
+		"It's like your own personal npm and GitHub that all of your agents can use.",
+	)
 	expect(withoutAssetsHtml).toContain('Kody keeps it')
 	expect(withoutAssetsHtml).toContain('href="/images/hero/kody-base-640.webp"')
 	expect(withoutAssetsHtml).toContain('kody-base-960.webp')
@@ -718,10 +723,9 @@ test('renderAppPage embeds a tabular homepage code-runs ticker', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const env = createTestEnv(createUserTestDb([]))
 	const window = {
-		previous: 128447,
-		current: 151203,
-		windowStart: '2026-08-22T00:00:00.000Z',
-		windowEnd: '2026-08-23T00:00:00.000Z',
+		start: 128447,
+		end: 151203,
+		updateAt: '2026-08-23T00:00:00.000Z',
 	}
 	const nowMs = Date.parse('2026-08-22T12:00:00.000Z')
 	vi.useFakeTimers()
@@ -744,6 +748,7 @@ test('renderAppPage embeds a tabular homepage code-runs ticker', async () => {
 	)?.[0]
 	expect(ticker).toBeTruthy()
 	expect(ticker).toContain('landing-hero-runs-count')
+	expect(ticker).not.toContain('landing-hero-runs-progress')
 	expect(ticker).toMatch(/--runs-ch:\s*7ch/)
 	expect(ticker).toContain(formatCodeRunsCount(count))
 	expect(ticker).toContain('code runs')
@@ -1644,8 +1649,10 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 	expect(html).toContain('data-testid="community-detail-trusted-badge"')
 	expect(html).toContain('data-testid="community-readme"')
 	expect(html).toContain('data-testid="community-detail-install"')
+	expect(html).toContain('data-testid="community-detail-star"')
 	expect(html).not.toContain('One-click install')
 	expect(html).not.toContain('Fork with your agent')
+	expect(html).not.toContain('id="stars-title"')
 	const props = readAppRootProps(html)
 	expect(props.loaderData?.communityDetailShell).toMatchObject({
 		ok: true,

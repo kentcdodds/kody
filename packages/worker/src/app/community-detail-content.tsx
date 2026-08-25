@@ -39,6 +39,7 @@ export type CommunityDetailContentProps = {
 	listing: PublicCommunityListing
 	ownerProfilePublic: boolean
 	loggedIn: boolean
+	starredByViewer: boolean
 	viewerFollowsOwner: boolean
 	viewerIsOwner: boolean
 	returnTo: string
@@ -52,6 +53,7 @@ export function CommunityDetailContent(
 		listing,
 		ownerProfilePublic,
 		loggedIn,
+		starredByViewer,
 		viewerFollowsOwner,
 		viewerIsOwner,
 		returnTo,
@@ -72,7 +74,15 @@ export function CommunityDetailContent(
 			<header data-rise style={{ '--rise': '1' }} mix={css(detailHeadCss)}>
 				<CommunityListingIcon listing={listing} size="detail" />
 				<div mix={css(headTextCss)}>
-					<h1>{renderCommunityListingName(listing.name)}</h1>
+					<div mix={css(titleRowCss)}>
+						<h1>{renderCommunityListingName(listing.name)}</h1>
+						{renderCommunityDetailStarControl({
+							listingName: listing.name,
+							loggedIn,
+							starred: starredByViewer,
+							returnTo,
+						})}
+					</div>
 					<span mix={css(detailBadgeGroupCss)}>
 						{listing.trusted ? (
 							<span
@@ -247,6 +257,66 @@ export async function renderCommunityDetailContentHtml(
 	return renderToString(<CommunityDetailContent {...props} />)
 }
 
+function renderCommunityDetailStarControl(input: {
+	listingName: string
+	loggedIn: boolean
+	starred: boolean
+	returnTo: string
+}) {
+	const label = input.starred
+		? `Unstar ${input.listingName}`
+		: `Star ${input.listingName}`
+	const glyph = renderCommunityStarGlyph(input.starred)
+	if (!input.loggedIn) {
+		const loginHref = routes.login.href(null, {
+			searchParams: { redirectTo: input.returnTo },
+		})
+		return (
+			<a
+				href={loginHref}
+				title="Star"
+				data-testid="community-detail-star"
+				data-community-star=""
+				mix={css(starButtonCss)}
+			>
+				{glyph}
+				<span mix={css(visuallyHiddenCss)}>{label}</span>
+			</a>
+		)
+	}
+	return (
+		<button
+			type="button"
+			title={input.starred ? 'Unstar' : 'Star'}
+			data-testid="community-detail-star"
+			data-community-star=""
+			data-starred={input.starred ? 'true' : 'false'}
+			mix={css(input.starred ? starredButtonCss : starButtonCss)}
+		>
+			{glyph}
+			<span mix={css(visuallyHiddenCss)}>{label}</span>
+		</button>
+	)
+}
+
+function renderCommunityStarGlyph(starred: boolean) {
+	return (
+		<svg
+			viewBox="0 0 16 16"
+			width="1em"
+			height="1em"
+			aria-hidden="true"
+			focusable={false}
+			fill={starred ? 'currentColor' : 'none'}
+			stroke="currentColor"
+			strokeWidth={starred ? 0 : 1.4}
+			strokeLinejoin="round"
+		>
+			<path d="M8 1.7 9.9 6.1l4.7.4-3.6 3.1 1.1 4.6L8 11.8l-4.1 2.4 1.1-4.6-3.6-3.1 4.7-.4z" />
+		</svg>
+	)
+}
+
 /* ---------- styles (prototype: `.pkg-detail` in landing/styles.css) ---------- */
 
 const backLinkCss = {
@@ -282,6 +352,54 @@ const headTextCss = {
 		letterSpacing: '-0.024em',
 		lineHeight: 1.05,
 		overflowWrap: 'anywhere' as const,
+	},
+}
+
+const titleRowCss = {
+	display: 'flex',
+	alignItems: 'center',
+	flexWrap: 'wrap' as const,
+	gap: '0.5rem',
+	minWidth: 0,
+	'& h1': {
+		flex: '0 1 auto',
+		minWidth: 0,
+	},
+}
+
+const starButtonCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	width: '1.85rem',
+	height: '1.85rem',
+	padding: 0,
+	border: `1px solid ${colors.border}`,
+	borderRadius: '999px',
+	backgroundColor: 'transparent',
+	color: colors.textMuted,
+	textDecoration: 'none',
+	cursor: 'pointer',
+	flexShrink: 0,
+	'&:hover': {
+		color: colors.primaryText,
+		borderColor: colors.primaryText,
+	},
+	'&:focus-visible': {
+		outline: `2px solid ${colors.primary}`,
+		outlineOffset: '2px',
+	},
+}
+
+const starredButtonCss = {
+	...starButtonCss,
+	color: colors.primary,
+	borderColor: colors.primary,
+	backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
+	'&:hover': {
+		color: colors.primaryText,
+		borderColor: colors.primaryText,
+		backgroundColor: `oklch(from ${colors.primary} l c h / 0.2)`,
 	},
 }
 

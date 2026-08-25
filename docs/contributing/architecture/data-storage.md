@@ -330,12 +330,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `package`, or `session`. Package buckets bind directly to `saved_packages.id`;
   package runtimes may use their own package secrets. User secrets are
   auto-granted for read/use to self-authored packages (no `community_forks` row
-  for that `saved_packages.id` + `userId`), live official platform packages
-  (caller-owned `saved_packages` miss falls back to `findPlatformPackageByRef`;
-  execute-live half of [0014](../decisions/0014-platform-live-packages.md);
-  saved person packages must fork per
-  [0035](../decisions/0035-platform-packages-execute-only.md)), and adopted
-  forks (`community_forks.adopted_at` set via `community_fork_adopt`). Unadopted
+  for that `saved_packages.id` + `userId`) and adopted forks
+  (`community_forks.adopted_at` set via `community_fork_adopt`). Person accounts
+  do not run official platform packages
+  ([0036](../decisions/0036-platform-packages-fork-only.md)). Unadopted
   community forks (`community_forks.forked_package_id`, indexed in the squashed
   baseline) still require an explicit `allowed_packages` grant on every package
   read path. Updating or deleting a user secret from package code (`secret_set`
@@ -443,6 +441,12 @@ Two D1 reporting projections deliberately remain:
   Engine's account retention is approximately 90 days, so it cannot safely serve
   the 12-month admin trend or preserve the 24-month read model. The hourly
   Analytics Engine recompute and D1 table remain unchanged.
+- `fleet_execute_days` keeps platform-owned UTC-day fleet `execute` totals for
+  the homepage ticker (no `user_id`; not an account export/deletion target). The
+  hourly `usage_aggregation` lane rewrites the current and previous UTC months
+  from Analytics Engine. Public reads use only completed days (through
+  yesterday); older monthly `usage_rollups` fill months before the daily series
+  starts.
 - `agent_package_conversation_uses` is read while building MCP server
   instructions to provide popular-package hints. That request path is
   latency-sensitive, so Analytics Engine SQL is not a suitable replacement. A
@@ -455,7 +459,8 @@ OAuth provider state is stored in `OAUTH_KV` through the
 `@cloudflare/workers-oauth-provider` integration. Published package/job source
 snapshots, bundle artifacts, package retriever caches, and community listing
 snapshots are stored in `BUNDLE_ARTIFACTS_KV`. That binding also holds the
-platform-owned `public-code-runs:v1` window for the homepage ticker.
+platform-owned `public-code-runs:v2` delayed daily window for the homepage
+ticker.
 
 - Bindings are configured in `packages/worker/wrangler.jsonc` (remote KV IDs are
   supplied at deploy time via generated Wrangler configs, not committed in the
@@ -1307,10 +1312,11 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
   serialized queue message would exceed 120 KB. Immediate account-deletion
   cleanup is not required because KV enforces the TTL; the queue consumer
   deletes the key after a terminal delivery.
-- `public-code-runs:v1` — platform-owned 24-hour delayed fleet `execute` window
-  for the homepage ticker (`{ previous, current, windowStart, windowEnd }`). Not
-  scoped by user id; account deletion must not remove it. Homepage GET is
-  read-only; the `usage_aggregation` lane writes it.
+- `public-code-runs:v2` — platform-owned delayed fleet `execute` window for the
+  homepage ticker (`{ start, end, updateAt }`). Not scoped by user id; account
+  deletion must not remove it. Homepage GET fills the cache from D1 when the key
+  is missing or `updateAt` has passed; the `usage_aggregation` lane syncs daily
+  D1 rows and refreshes the triple.
 
 Account deletion derives these keys from D1 rows and package ids before deleting
 D1 projections. New KV prefixes must add corresponding account-deletion coverage
@@ -1422,18 +1428,13 @@ Saved package imports in user code use `kody:@scope/name/export` specifiers:
 1. `packages/worker/src/package-runtime/package-import-resolution.ts` parses the
    `kody:@` prefix, the `@scope/name` package name, and an optional export
    subpath (default `.`).
-2. Resolution is scoped to the caller's `userId`, with one structural exception
-   for **ad hoc execute**: scopes whose username belongs to a **platform
-   account** (`users.account_type = 'platform'`, e.g. `@kody`) resolve live from
-   the platform account's current published version when the caller has no copy
-   of their own. Saved person-account packages must `community_fork` that
-   official package into the caller's scope before importing or invoking it
-   (decision
-   [0035 — Platform packages are execute-only](../decisions/0035-platform-packages-execute-only.md);
-   supersedes the package-import half of
-   [0014](../decisions/0014-platform-live-packages.md)). Person-account and
-   community package scopes never grant cross-user imports. Platform-account
-   packages may still compose with each other.
+2. Resolution is scoped to the caller's `userId`. Person accounts — ad hoc
+   execute and saved packages — must `community_fork` a platform-account package
+   (for example `@kody/github`) into the caller's scope before importing or
+   invoking it (decision
+   [0036 — Person accounts do not run official platform packages](../decisions/0036-platform-packages-fork-only.md)).
+   Person-account and community package scopes never grant cross-user imports.
+   Platform-account packages may still compose with each other.
 3. `packages/worker/src/package-registry/manifest.ts` normalizes export keys and
    resolves them through `package.json#exports`.
 4. Static imports are pinned into bundle dependencies at publish time. Literal
@@ -1495,10 +1496,13 @@ Current retention policies:
   (`userMeterDailyCounterRetentionDays`); `admin_user_meter_parity` reports
   meter-only daily counts.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
-  raw Analytics Engine usage events follow platform retention. The homepage
-  ticker reads an anonymous `SUM(event_count)` of `execute` rows from this
-  table; the official replay pair is the platform KV key `public-code-runs:v1`
-  and is independent of account deletion/export.
+  raw Analytics Engine usage events follow platform retention. Months before the
+  earliest `fleet_execute_days` row still feed the homepage ticker prefix.
+- `fleet_execute_days`: platform-owned UTC-day fleet `execute` totals (no
+  `user_id`). Rows are rewritten hourly for the current and previous UTC months;
+  older days remain so the delayed lifetime total can climb. The official replay
+  triple is the platform KV key `public-code-runs:v2` and is independent of
+  account deletion/export.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90
   days by `day` key, matching Analytics Engine retention for the production
   `FLAG_EXPOSURES` exposure stream; the admin metric readout window is the

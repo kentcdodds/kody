@@ -121,6 +121,8 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(publicHtml).not.toContain(
 		'data-testid="community-detail-owner-private"',
 	)
+	expect(publicHtml).toContain('data-testid="community-detail-star"')
+	expect(publicHtml).toContain('title="Star"')
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
 	expect(publicHtml).toContain('data-testid="community-browse-files"')
 	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/files"')
@@ -178,6 +180,8 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(signedInHtml).not.toMatch(
 		/<p[^>]*data-testid="community-detail-owner-line"/,
 	)
+	expect(signedInHtml).toContain('data-testid="community-detail-star"')
+	expect(signedInHtml).toContain('data-starred="false"')
 	expect(signedInHtml).toContain('data-testid="community-detail-owner-follow"')
 	expect(signedInHtml).toContain(
 		'data-testid="community-detail-viewer-install-badge"',

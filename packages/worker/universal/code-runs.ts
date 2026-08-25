@@ -1,47 +1,35 @@
 /**
  * Public homepage “code runs” ticker: a 24-hour delayed replay of fleet
- * `execute` event counts. Interpolation is deterministic from the window so
- * every visitor at a given clock time sees the same integer. Each displayed
- * step is +1. When the pair has at least one tick per 3-second honesty
- * slot, a backbone tick lands every slot at a hashed phase so the cadence
- * does not march on the clock. Extra count still warps into busy seconds
- * and rolls through those seconds without skipping, with hashed gaps so a
- * busy second does not march. The count stays monotonic between `previous`
- * and `current`. A frozen client snaps to the official integer instead of
- * replaying missed steps. When leftover budget cannot support a 3-second
- * integer backbone, the client moves honest progress toward the next tick
- * instead of inventing +1s. Homepage GET may continue an expired or still
- * pair in memory when the fleet total has grown, or reset one to a new
- * still window when the fleet total has dropped; it does not write KV.
- * A client that cannot paint a next tick refetches `/code-runs.json`
- * instead of giving up for the rest of the tab.
+ * `execute` event counts. The official payload is the cached triple
+ * `{ start, end, updateAt }` — cumulative totals through the day before
+ * yesterday and through yesterday, plus the next UTC midnight. Interpolation
+ * is deterministic from that triple so every visitor at a given clock time
+ * sees the same integer. Playback is `[updateAt - 24h, updateAt)`. Each
+ * displayed step is +1. When the pair has at least one tick per 3-second
+ * honesty slot, a backbone tick lands every slot at a hashed phase so the
+ * cadence does not march on the clock. Extra count still warps into busy
+ * seconds and rolls through those seconds without skipping, with hashed gaps
+ * so a busy second does not march. The count stays monotonic between `start`
+ * and `end` when `end >= start`. If `end < start` (an AE regression), the
+ * ticker shows `end` immediately — wobble math cannot use a negative delta.
+ * A frozen client snaps to the official integer instead of replaying missed
+ * steps. When leftover budget cannot support a 3-second integer backbone,
+ * the displayed integer sits until the next real +1. A client that cannot
+ * paint a next tick waits until `updateAt`, then refetches
+ * `/code-runs.json` instead of polling a still pair.
  */
 
 export const publicCodeRunsWindowMs = 24 * 60 * 60 * 1000
 export const codeRunsHonestySlotMs = 3000
 
 export type PublicCodeRunsWindow = {
-	previous: number
-	current: number
-	windowStart: string
-	windowEnd: string
+	start: number
+	end: number
+	updateAt: string
 }
 
 export function isStillPublicCodeRunsWindow(window: PublicCodeRunsWindow) {
-	return window.previous === window.current
-}
-
-export function stillPublicCodeRunsWindow(
-	total: number,
-	now: Date,
-): PublicCodeRunsWindow {
-	const nowMs = now.getTime()
-	return {
-		previous: total,
-		current: total,
-		windowStart: now.toISOString(),
-		windowEnd: new Date(nowMs + publicCodeRunsWindowMs).toISOString(),
-	}
+	return window.end <= window.start
 }
 
 export function publicCodeRunsWindowsEqual(
@@ -49,10 +37,9 @@ export function publicCodeRunsWindowsEqual(
 	right: PublicCodeRunsWindow,
 ) {
 	return (
-		left.previous === right.previous &&
-		left.current === right.current &&
-		left.windowStart === right.windowStart &&
-		left.windowEnd === right.windowEnd
+		left.start === right.start &&
+		left.end === right.end &&
+		left.updateAt === right.updateAt
 	)
 }
 
@@ -61,20 +48,16 @@ export function parsePublicCodeRunsWindow(
 ): PublicCodeRunsWindow | null {
 	if (!value || typeof value !== 'object') return null
 	const record = value as Record<string, unknown>
-	const previous = readNonNegativeInt(record.previous)
-	const current = readNonNegativeInt(record.current)
-	if (previous === null || current === null) return null
-	if (typeof record.windowStart !== 'string') return null
-	if (typeof record.windowEnd !== 'string') return null
-	const startMs = Date.parse(record.windowStart)
-	const endMs = Date.parse(record.windowEnd)
-	if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null
-	if (endMs - startMs !== publicCodeRunsWindowMs) return null
+	const start = readNonNegativeInt(record.start)
+	const end = readNonNegativeInt(record.end)
+	if (start === null || end === null) return null
+	if (typeof record.updateAt !== 'string') return null
+	const updateAtMs = Date.parse(record.updateAt)
+	if (!Number.isFinite(updateAtMs)) return null
 	return {
-		previous,
-		current: Math.max(current, previous),
-		windowStart: record.windowStart,
-		windowEnd: record.windowEnd,
+		start,
+		end,
+		updateAt: record.updateAt,
 	}
 }
 
@@ -83,10 +66,10 @@ export function interpolateCodeRunsCount(
 	nowMs: number,
 ): number {
 	const bounds = windowBounds(window)
-	if (!bounds) return Math.max(window.current, window.previous)
+	if (!bounds) return window.end
+	if (bounds.delta === 0) return bounds.current
 	if (nowMs <= bounds.startMs) return bounds.previous
 	if (nowMs >= bounds.endMs) return bounds.current
-	if (bounds.delta === 0) return bounds.previous
 	const ticks = ticksAfterElapsed({
 		elapsedMs: nowMs - bounds.startMs,
 		totalMs: bounds.totalMs,
@@ -116,80 +99,14 @@ export function msUntilNextCodeRunsCount(
 	return lo - nowMs
 }
 
-/**
- * Honest 0–1 progress from the last integer to the next. Zero when there is
- * no next tick (still pair, window ended, or already at current).
- */
-export function codeRunsProgressToNext(
+/** Milliseconds until the cached triple should be replaced. */
+export function msUntilCodeRunsWindowRefresh(
 	window: PublicCodeRunsWindow,
 	nowMs: number,
 ): number {
-	const wait = msUntilNextCodeRunsCount(window, nowMs)
-	if (wait == null || wait <= 0) return 0
-	const bounds = windowBounds(window)
-	if (!bounds || nowMs <= bounds.startMs) return 0
-	const here = interpolateCodeRunsCount(window, nowMs)
-	let lo = bounds.startMs
-	let hi = nowMs
-	while (lo < hi) {
-		const mid = lo + Math.floor((hi - lo) / 2)
-		if (interpolateCodeRunsCount(window, mid) < here) lo = mid + 1
-		else hi = mid
-	}
-	const gap = nowMs - lo + wait
-	if (gap <= 0) return 0
-	return Math.min(1, (nowMs - lo) / gap)
-}
-
-/**
- * When to repaint so something honest moves at least every honesty slot.
- * Integer cadence wins when the next +1 is sooner than that.
- */
-export function msUntilNextCodeRunsPaint(
-	window: PublicCodeRunsWindow,
-	nowMs: number,
-): number | null {
-	const wait = msUntilNextCodeRunsCount(window, nowMs)
-	if (wait == null) return null
-	return Math.min(wait, codeRunsHonestySlotMs)
-}
-
-/**
- * In-memory continuation when KV still holds a pair that cannot tick.
- * Grows a still / expired pair when the fleet total is higher. Resets to a
- * new still window when the fleet total dropped (a latched high-water mark
- * would otherwise freeze the ticker). Null means keep `stored`.
- */
-export function continuePublicCodeRunsWindow(input: {
-	stored: PublicCodeRunsWindow
-	total: number
-	now: Date
-}): PublicCodeRunsWindow | null {
-	if (input.total <= 0) return null
-	const nowMs = input.now.getTime()
-	const endMs = Date.parse(input.stored.windowEnd)
-	const expired = Number.isFinite(endMs) && nowMs >= endMs
-	const still = isStillPublicCodeRunsWindow(input.stored)
-	if (!expired && !still) return null
-	if (input.total < input.stored.current) {
-		return stillPublicCodeRunsWindow(input.total, input.now)
-	}
-	if (input.total === input.stored.current) return null
-	if (still && !expired) {
-		return {
-			previous: input.stored.current,
-			current: input.total,
-			windowStart: input.now.toISOString(),
-			windowEnd: new Date(nowMs + publicCodeRunsWindowMs).toISOString(),
-		}
-	}
-	const startMs = Number.isFinite(endMs) ? endMs : nowMs
-	return {
-		previous: input.stored.current,
-		current: input.total,
-		windowStart: new Date(startMs).toISOString(),
-		windowEnd: new Date(startMs + publicCodeRunsWindowMs).toISOString(),
-	}
+	const updateAtMs = Date.parse(window.updateAt)
+	if (!Number.isFinite(updateAtMs)) return 0
+	return Math.max(0, updateAtMs - nowMs)
 }
 
 export const codeRunsCatchUpSnapAfterMs = 1000
@@ -240,24 +157,19 @@ type WindowBounds = {
 }
 
 function windowBounds(window: PublicCodeRunsWindow): WindowBounds | null {
-	const previous = window.previous
-	const current = Math.max(window.current, previous)
-	const startMs = Date.parse(window.windowStart)
-	const endMs = Date.parse(window.windowEnd)
-	if (
-		!Number.isFinite(startMs) ||
-		!Number.isFinite(endMs) ||
-		endMs <= startMs
-	) {
-		return null
-	}
+	const endMs = Date.parse(window.updateAt)
+	if (!Number.isFinite(endMs)) return null
+	const startMs = endMs - publicCodeRunsWindowMs
+	const previous = window.start
+	const current = window.end
+	const delta = Math.max(0, window.end - window.start)
 	return {
 		previous,
 		current,
-		delta: current - previous,
+		delta,
 		startMs,
 		endMs,
-		totalMs: endMs - startMs,
+		totalMs: publicCodeRunsWindowMs,
 		seed: windowSeed(window),
 	}
 }
@@ -395,9 +307,9 @@ function singleTickFireMs(seed: number, secondIndex: number): number {
 
 function windowSeed(window: PublicCodeRunsWindow): number {
 	return hash32(
-		hash32(Date.parse(window.windowStart)) ^
-			hash32(window.previous) ^
-			Math.imul(hash32(window.current), 3),
+		hash32(Date.parse(window.updateAt) - publicCodeRunsWindowMs) ^
+			hash32(window.start) ^
+			Math.imul(hash32(window.end), 3),
 	)
 }
 
