@@ -142,27 +142,23 @@ exhaustive.
   cost.
 - **Platform (built-in) scopes are fork-only.** When a scope's username belongs
   to a platform account (for example `@kody`), person accounts must not
-  statically import or `packages.invoke` that package from ad hoc `execute` or
-  from a saved person-owned package. Official `@kody` packages may still compose
-  with each other. Publish checks reject `kody:@kody/…` static imports,
-  `kody.dependencies` entries, and `packages.invoke('kody:@kody/…')` in
-  person-owned package source. Execute fails the same way. Fork the official
-  package into your scope (`community_fork`) and import or invoke that copy.
-  Dynamic `import("kody:@kody/…")` is unsupported. Platform packages appear in
-  `search` results (marked with their platform scope) so agents can discover
-  them and fork.
+  statically import that package from ad hoc `execute` or from a saved
+  person-owned package. Official `@kody` packages may still compose with each
+  other. Publish checks reject `kody:@kody/…` static imports and
+  `kody.dependencies` entries in person-owned package source. Execute fails the
+  same way. Fork the official package into your scope (`community_fork`) and
+  import that copy. Dynamic `import("kody:@kody/…")` is unsupported. Platform
+  packages appear in `search` results (marked with their platform scope) so
+  agents can discover them and fork.
 - Static `kody:@...` imports in saved package code are bundled into published
   runtime artifacts as snapshots of the imported package's published bundle.
   Republishing the imported package does not change already-published
   dependents; they keep using the bundled snapshot until they are republished.
   Ad hoc execute code bundles per call, so static imports from execute always
   see the current published version.
-- Literal dynamic imports such as
-  `await import("kody:@scope/my-package/export")` are unsupported. The call site
-  throws a teaching error naming the replacement, and package publish checks
-  fail on them: use a static import when the name is known at write time, or
-  `packages.invoke` when it is not (see
-  [Dynamic package invocation](#dynamic-package-invocation)).
+- Prefer a static import when the name is known at write time. Use
+  `import(specifier)` only when the package name is data. See
+  [Package reuse](#package-reuse).
 - Every direct static `kody:@...` import must be declared in
   `package.json#kody.dependencies` using the imported package name, for example
   `"dependencies": { "@scope/my-package": "*" }` inside the `kody` object. `*`
@@ -170,9 +166,8 @@ exhaustive.
   publishes. Package checks fail when static imports and declarations differ.
   Type-only imports do not count, and declaration files such as `.d.ts` are
   treated as type-only.
-- Computed dynamic Kody package imports, including template strings and
-  variables such as `import(packageSpecifier)`, are unsupported. When the target
-  package is not known until runtime, use `packages.invoke` instead.
+- When the target package is not known until runtime, use
+  `import(packageSpecifier)` for a caller-owned or forked module.
 - `kody:runtime` is always host-owned and request-scoped. Static imports such as
   `import { kody } from "kody:runtime"` stay valid, but saved package artifacts
   do not persist Kody's runtime implementation; execution always uses the
@@ -188,128 +183,40 @@ exhaustive.
   descriptions, export descriptions, function signatures, JSDoc, and type
   definitions.
 
-### Dynamic package invocation
+### Package reuse
 
 Package reuse follows two rules:
 
 1. **Name known when the code is written → static import.** Use
    `import fn from 'kody:@scope/my-package/export-name'` from execute and from
    other packages. This is the default.
-2. **Name is data, the call needs the target package's own runtime, or you need
-   exactly-once → `packages.invoke`.** It is the only dynamic primitive, and it
-   is always contract-checked before invoking — checking is not optional and not
-   a separate API.
-
-The first argument should be the target's scoped Kody module specifier:
-`kody:@username/package-name` or `kody:@username/package-name/export-subpath`.
-The prefixless `@username/package-name[/export-subpath]` form is deprecated. The
-runtime accepts it and canonicalizes to `kody:`, but new and updated code should
-not use it. Retirement soak evidence lives in
-[packages.invoke prefix migration](../contributing/package-invoke-prefix-migration.md).
-A package-only specifier requires `exportName` in the options object. When both
-the specifier and options name an export, the specifier's export subpath wins.
+2. **Name is data → `import(specifier)`** of a caller-owned (or forked) module.
+   Exactly-once work uses [workflows](./workflows.md), not a second invoke
+   primitive.
 
 ```ts
-import { packages } from 'kody:runtime'
+import handleEvent from 'kody:@kentcdodds/event-subscriber/handle-event'
+import profile from 'kody:@kentcdodds/google/profile'
 
-const result = await packages.invoke(
-	'kody:@kentcdodds/event-subscriber/handle-event',
-	{
-		params: { event },
-	},
-)
-
-const profile = await packages.invoke('kody:@kentcdodds/google', {
-	exportName: 'profile',
-	params: {},
-})
+const result = await handleEvent({ event })
+const account = await profile({})
 ```
 
-The options object accepts `exportName`, `params`, `idempotencyKey`, and
-`topic`. Unknown keys are rejected.
+Declare every static `kody:@` import in `package.json#kody.dependencies`.
+Person-owned packages must not import a platform scope; `community_fork` first.
+`packageStorage()` on a static import reaches the declaring package's bucket for
+**caller-owned** packages.
+
+There is no author-facing `packages.invoke`. External trusted clients that must
+call a named export over HTTP use package invocation tokens. Before sending a
+user to create one, load `coding_guide_get` with
+`guide: "package_invocation_token_setup"` and construct a prefilled
+`/account/packages/:packageId?newToken=1` URL without raw token material.
 
 Scoped resolution is exact: `kody:@kentcdodds/google` selects the caller's
 package under that person scope. A person scope never grants access to another
 user's packages. A platform specifier such as `kody:@kody/google` is not
 runnable in a person account — `community_fork` it first.
-
-The optional `idempotencyKey` selects between the two invoke modes:
-
-- **Keyless (default) — lean and ephemeral.** The call resolves the target
-  package's current published version and runs it in the target package's own
-  runtime: `packageContext`, `kody.secretMounts` package secrets,
-  `packageStorage()`, its own isolate. No idempotency ledger row is written and
-  run records stay on-failure-only, so keyless invoke stays cheap — platform
-  overhead is tens of milliseconds.
-- **Keyed — durable and exactly-once.** Passing `idempotencyKey` claims a ledger
-  row, records the run eagerly, and replays a bounded response snapshot when the
-  same key is retried. Use a key only when the call must dedupe: domain events
-  (for example webhook event ids) and retried dispatch.
-
-This mirrors execute's keyless/keyed convention: keyless is on-failure-only and
-lean, keyed is durable and replayable.
-
-Because invocation resolves the target package at runtime, republishing the
-scoped target changes what a dispatcher observes without republishing the
-dispatcher. For an event-dispatch package, subscriber dispatch should use
-`packages.invoke` with the source event id as the explicit `idempotencyKey` when
-available.
-
-`packages.invoke` returns the target export's unwrapped return value. If the
-pre-invoke contract check fails (missing package, missing export, params not a
-JSON object), the promise rejects before invoking the target export. If
-execution fails, the promise rejects with an error that includes the package
-invocation error code in the message. Kody surfaces JSDoc/type metadata but not
-a machine-readable params schema for package exports, so params are only
-validated as a JSON object.
-
-The removed object-only form is rejected locally before any package request is
-forwarded. Use the scoped string-first call shown above. Publish checks reject
-object-only JavaScript and TypeScript call sites; the permanent
-`0006-invoke-object-to-specifier` package codemod repairs safe cases. After that
-repair, the permanent `0007-prefix-packages-invoke-specifiers` codemod adds
-`kody:` to literal prefixless calls without changing the options argument or
-export precedence. For parseable dynamic first arguments, 0007 inserts an inline
-normalizer that evaluates the original expression once, prefixes a trimmed
-string only when it begins with `@`, and otherwise passes the value through for
-the existing runtime parser to canonicalize or reject. Unparseable or
-binding-ambiguous calls remain manual because a textual fallback cannot prove
-the binding and argument boundaries safely.
-
-Package runtime contexts, authenticated ad hoc MCP `execute` calls, and package
-job runtimes can call `packages.invoke`. Person-scoped targets resolve only from
-packages owned by the current authenticated user. Public platform-scoped targets
-are not runnable from a person account. Official platform packages may compose
-with each other. A person-owned package, job, app, or ad hoc execute call that
-invokes `kody:@kody/…` fails closed: fork the official package into your scope
-first. Package code does not need to mint or pass package-invocation bearer
-tokens. Nested package invocations are depth-limited to prevent runaway loops.
-
-External trusted clients that must call package exports over HTTP use package
-invocation tokens instead. Before sending a user to create one, agents should
-load `coding_guide_get` with `guide: "package_invocation_token_setup"` and
-construct a prefilled `/account/packages/:packageId?newToken=1` URL without raw
-token material.
-
-Static package imports from ad hoc MCP `execute` code, such as
-`kody:@scope/package/export`, do not get a package runtime context. They run as
-library imports in the execute caller's runtime, where `packageStorage()` still
-reaches the declaring package's own storage bucket (see
-[Package storage](#package-storage)) — for **caller-owned** packages only.
-Platform (built-in) specifiers fail closed; `community_fork` into your scope
-first. `{{secret:...}}` placeholders for user-scope secrets resolve at the fetch
-gateway under the calling user. Use `packages.invoke` from a package job runtime
-only for **your** packages.
-
-**Unsupported helpers:** `packages.invokeChecked`, `packages.check`, and literal
-dynamic `import("kody:@...")` are not available. Package publish checks reject
-all three with the supported replacement named. In the execute sandbox the
-`packages` helper exposes only `invoke`, so accessing `check` or `invokeChecked`
-throws a normal `TypeError`. Package-app runtimes reject those helpers with an
-error that names the supported replacement. `packages.invoke` performs the
-contract check inline, and the static/dynamic rules above cover literal dynamic
-import cases. The `0002-static-first-invocation` package codemod repairs
-`invokeChecked` call sites mechanically.
 
 ## Package storage
 
@@ -322,9 +229,9 @@ Every saved package owns one durable storage bucket per user
   and workflows.
 - **Writing ad hoc `execute` code against a caller-owned bucket?** Bind a
   `storageId` on the execute call and use ambient `storage`.
-- **Touching another package's data?** Call that package's exports via keyless
-  `packages.invoke("kody:@scope/package/export", { params })` so its own runtime
-  does the reading and writing.
+- **Touching another package's data?** Statically import that package's export
+  (`import fn from 'kody:@scope/package/export'`) so its stamped
+  `packageStorage()` does the reading and writing.
 
 `packageStorage()` returns the same storage interface as ambient `storage`
 (`get`/`set`/`list`/`sql`/`delete`/`clear`/`id`), writable, always bound to the
@@ -342,9 +249,7 @@ declaring package's own bucket no matter where the code runs:
   imported code sees the caller's bucket or `undefined`. Note that grants are
   per-bundle, not per-module: statically importing a package grants the whole
   bundle read/write access to that package's bucket, so treat static imports of
-  unadopted community forks as a trust decision (adopt after review) and use
-  keyless `packages.invoke` when you want the other package's own runtime to
-  mediate access.
+  unadopted community forks as a trust decision (adopt after review).
 
 ```ts
 import { packageStorage } from 'kody:runtime'
@@ -364,12 +269,11 @@ Hand-written code cannot claim another package's id to read its bucket. Two
 consequences:
 
 - Inline `execute` code has no package provenance, so `packageStorage()` throws
-  an actionable error there. Bind a `storageId` and use ambient `storage`,
-  statically import the owning package's export, or call it via keyless
-  `packages.invoke`.
+  an actionable error there. Bind a `storageId` and use ambient `storage`, or
+  statically import the owning package's export.
 - Provenance grants cover directly imported packages. For data owned by a
   package that is not the running package and not statically imported by the
-  bundle, use keyless `packages.invoke` so its own runtime does the reading.
+  bundle, import that package's export and let its stamp do the reading.
 
 ### Ambient `storage` in package code
 
@@ -441,7 +345,7 @@ Treat package apps like Worker-style modules:
 
 Enabled MCP servers from `/account/mcp-servers` are available as
 `kody.mcp["name"]` in execute and in package runtimes that build caller context:
-package apps (when capabilities or nested `packages.invoke` need them), package
+package apps (when capabilities or nested package imports need them), package
 subscription handlers, package-owned jobs, workflows, HTTP invocation tokens,
 and webhook delivery.
 

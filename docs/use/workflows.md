@@ -39,8 +39,8 @@ export default async function main() {
 `workflows.create` accepts one durable workflow request with two source shapes:
 
 - `code`: a complete ESM module string with a default export. Kody runs it later
-  through the same module loader used by `execute`, including `packages.invoke`
-  for dynamic package calls.
+  through the same module loader used by `execute`, including static `kody:@`
+  imports and `import(specifier)` when the package name is data.
 - `exportName`: a saved-package export to invoke later. In package runtime code,
   Kody resolves `packageId` from `packageContext`. Outside a package runtime,
   pass `packageId` explicitly.

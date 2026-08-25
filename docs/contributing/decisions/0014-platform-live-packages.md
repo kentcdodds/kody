@@ -63,6 +63,9 @@ Community fork policy follows: `scanCrossScopeReferences` accepts platform
 scopes as always-valid references (`allowedForeignScopes`), so forks keep
 `@kody/...` imports instead of being told to rewrite them.
 
+Open follow-up (not decided here):
+[packageStorage on official static imports](../package-storage-static-imports.md).
+
 ## Consequences
 
 - Users get official helper packages with zero fork friction, and operator bug

@@ -45,6 +45,8 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Packages and MCP
 
 - [Packages and manifests](./packages-and-manifests.md)
+- [`packageStorage()` on official static imports](./package-storage-static-imports.md)
+  (open design: 0014 grant exclusion vs invoke-already-persists)
 - [Package codemods](./package-codemods.md)
 - [`packages.invoke` prefix migration](./package-invoke-prefix-migration.md)
 - [Community packages](./community-packages.md)

@@ -13,7 +13,7 @@ import { listKodyPackageDependencyNames } from './types.ts'
  * still compose with each other. Decision 0036.
  */
 export const personPackagePlatformDependencyMessage =
-	'Official platform packages are not runnable from a person account. community_fork the official package into your scope and import or invoke that copy — platform APIs are not a live dependency.'
+	'Official platform packages are not runnable from a person account. community_fork the official package into your scope and import that copy — platform APIs are not a live dependency.'
 
 export function formatPersonPackagePlatformDependencyMessage(
 	packageName: string,

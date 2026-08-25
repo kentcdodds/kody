@@ -27,12 +27,8 @@ invoke it instead of creating another implementation.
   package reuse from `execute` and from other packages. Ad hoc execute bundles
   per call, so static imports from execute always see the current published
   version.
-- Use keyless `packages.invoke("kody:@scope/package/export", { params })` from
-  an authenticated `execute` call, a package job runtime, or other package
-  runtime when the target's name is data or the call must run in the target
-  package's own runtime (package secret mounts, `packageStorage()`,
-  `packageContext`). Pass `idempotencyKey` only when the call needs exactly-once
-  semantics.
+- When the target's name is data, use `import(specifier)` for a caller-owned or
+  forked module. Exactly-once work uses workflows.
 
 This is the default for an established operation whose behavior should stay
 owned by its existing capability or package.
@@ -163,9 +159,9 @@ package-owned job with `"enabled": false`.
 After package checks and publishing succeed:
 
 1. Inspect the published package and export contracts.
-2. Invoke the scheduled wrapper from authenticated `execute` with keyless
-   `packages.invoke(...)` and omit `params`. This verifies the same no-input
-   contract the scheduler uses, in the package's own runtime.
+2. Call the scheduled wrapper from authenticated `execute` with a static import
+   and no extra arguments. This verifies the same no-input contract the
+   scheduler uses.
 3. Optionally invoke the underlying callable export with representative input:
    realistic field shapes, boundary values, and the same configuration
    references the wrapper will load. Never put plaintext secrets in params.
@@ -183,10 +179,10 @@ After package checks and publishing succeed:
 Example test call:
 
 ```ts
-import { packages } from 'kody:runtime'
+import scheduledReport from 'kody:@kentcdodds/daily-report/scheduled-report'
 
 export default async function main() {
-	return await packages.invoke('kody:@kentcdodds/daily-report/scheduled-report')
+	return await scheduledReport()
 }
 ```
 

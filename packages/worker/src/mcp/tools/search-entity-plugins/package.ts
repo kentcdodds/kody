@@ -437,7 +437,7 @@ export const packageSearchEntityPlugin = {
 			? getPrimaryPackageActionFunction(primaryAction)
 			: null
 		const platformSuffix = match.platformScope
-			? ` This is a platform (built-in) package from @${match.platformScope}. community_fork it into your scope before importing or invoking it.`
+			? ` This is a platform (built-in) package from @${match.platformScope}. community_fork it into your scope before importing it.`
 			: ''
 		const listingAheadSuffix =
 			match.listingAhead === true ? ` ${listingAheadSearchNotice}` : ''

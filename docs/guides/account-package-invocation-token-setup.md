@@ -19,11 +19,10 @@ bearer token in the URL.
 
 For code that runs inside Kody, never use bearer tokens: statically import the
 target package (`kody:@scope/package/export`) when its name is known when the
-code is written, or call
-`packages.invoke("kody:@scope/package/export", { params })` when the call must
-be dynamic. Package invocation tokens are for external systems such as webhooks,
-gateway proxies, CLIs, or other trusted personal clients that call Kody over
-HTTP.
+code is written, or `import(specifier)` when the name is data (caller-owned or
+forked modules). Package invocation tokens are for external systems such as
+webhooks, gateway proxies, CLIs, or other trusted personal clients that call
+Kody over HTTP.
 
 ## When to use `/account/packages/:packageId?newToken=1`
 
@@ -124,8 +123,8 @@ export name used for token scope checks, token setup URL, and source guidance
 for each callable export.
 
 A token belongs to one package. Cross-package HTTP clients call one package (an
-orchestrator or discovery package) and use `packages.invoke` inside Kody, or
-they speak MCP.
+orchestrator or discovery package) over HTTP. In-Kody code statically imports
+that orchestrator; it does not use tokens. Or they speak MCP.
 
 ## Agent instructions
 

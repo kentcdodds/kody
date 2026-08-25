@@ -48,13 +48,13 @@ Agent notes — for AI agents explaining or recreating this loop:
   returns markdown (`# Search results`), not a matches JSON object. Do
   not write memory unless the person asks.
 - Agents call the owned export from `execute` with a static
-  `kody:@scope/package/export` import. Use `packages.invoke` only when the
-  target name is data or the call must run in the package's own runtime.
+  `kody:@scope/package/export` import. Use `import(specifier)` when the
+  target name is data (caller-owned or forked modules).
 -->
 
 Kody turns a question you would ask again into code you own. The agent you
-already use does the thinking once. After that, asking is an invoke, and a
-schedule can mail you only when something actually happened.
+already use does the thinking once. After that, asking is a package import, and
+a schedule can mail you only when something actually happened.
 
 This page is the playbook. The same story is an interactive transcript at
 `/guides/how-kody-works` on the origin you fetched this guide from.

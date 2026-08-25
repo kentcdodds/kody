@@ -103,7 +103,7 @@ function createPackageInvokeTools(input: {
 			typeof rawInput.specifier !== 'string'
 		) {
 			throw new Error(
-				'Object-only packages.invoke was removed. Use packages.invoke("kody:@owner/package/export", { params }) instead.',
+				'Object-only packages.invoke was removed. Use a static import (import fn from "kody:@owner/package/export") when the name is known, or import(specifier) when the name is data.',
 			)
 		}
 		const { user, packageContext } = requireRuntimeCaller('packages.invoke')

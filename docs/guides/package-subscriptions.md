@@ -209,7 +209,8 @@ Rules:
 - Payloads are capped at 64 KiB (canonical JSON). Store large data with
   `packageStorage()` and emit a reference instead.
 - `events.dispatch` is unavailable in ad hoc `execute` runs — topics belong to
-  packages, so emit from package code (or `packages.invoke` into one).
+  packages, so emit from package code (or statically import a package export
+  that dispatches).
 
 ### Delivery semantics
 
@@ -238,8 +239,8 @@ type PackageEventEnvelope = {
   attempts, then the `kody-package-events-dispatch-dlq` dead-letter queue).
   Terminal handler failures do not retry — a stored failed invocation replays
   rather than re-running — and stay visible in run records.
-- Event-driven chains carry the same nested invocation depth budget as
-  `packages.invoke` (max 8 hops), so emit cycles between packages terminate.
+- Event-driven chains carry a nested invocation depth budget (max 8 hops), so
+  emit cycles between packages terminate.
 - In environments without the Queue binding (local dev, preview) — or when an
   enqueue fails — dispatch falls back to inline delivery with the same consumer
   code path and reports `status: "delivered_inline"` instead of `"enqueued"`.

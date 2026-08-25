@@ -946,7 +946,7 @@ subscriptions, jobs, package apps, workflows, and ad hoc execute). Static
 `kody:@...` package imports remain pinned snapshots, while literal dynamic
 `import("kody:@...")` is permanently unsupported. Publish checks reject the
 pattern, and runtime rewriting returns a teaching error that names static
-imports and `packages.invoke` as the supported alternatives.
+imports and `import(specifier)` as the supported alternatives.
 
 ## Configuration reference
 

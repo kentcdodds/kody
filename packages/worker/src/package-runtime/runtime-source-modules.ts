@@ -478,7 +478,7 @@ export function packageStorage() {
 			'packageStorage() requires package provenance: this module was not bundled from a saved package and the run has no package context. ' +
 				'For ad hoc execute code, bind a storageId to the execute call and use the ambient storage helper, ' +
 				"statically import the owning package's export (kody:@scope/package/export) when the package name is known, " +
-				"or call the owning package's export via keyless packages.invoke('kody:@scope/package/export', { params }).",
+				'or import(specifier) when the package name is data.',
 		);
 	}
 	return __kodyResolvePackageStorage(declaringPackageId);
@@ -821,7 +821,7 @@ export function buildRemovedDynamicKodyImportMessage(specifier: string) {
 		`Dynamic import(${JSON.stringify(specifier)}) was removed: use a static import ` +
 		`(import fn from ${JSON.stringify(specifier)}) — execute bundles always see the current ` +
 		`published version, and saved packages declare the dependency in package.json#kody.dependencies — ` +
-		`or packages.invoke("kody:@scope/package/export", { params }) when the target package is data.`
+		`or import(specifier) when the target package is data.`
 	)
 }
 
@@ -842,9 +842,19 @@ const ${input.helperName} = async (specifier) => {
 	if (typeof specifier === 'string' && specifier.startsWith(${JSON.stringify(
 		packageSpecifierPrefix,
 	)})) {
-		throw new Error(
-			'Dynamic kody:@ package imports were removed. Use a static import (import fn from "kody:@scope/package/export") when the package name is known at write time, or packages.invoke("kody:@scope/package/export", { params }) when the target is data.',
-		);
+		const runtimeStorage = globalThis[Symbol.for('kody.runtimeStorage')];
+		const packages = runtimeStorage?.getStore?.()?.packages;
+		if (packages == null || typeof packages.invoke !== 'function') {
+			throw new Error(
+				'Dynamic kody:@ package import requires an authenticated runtime. Use a static import (import fn from "kody:@scope/package/export") when the package name is known at write time.',
+			);
+		}
+		return {
+			default: async (params) =>
+				params === undefined
+					? await packages.invoke(specifier)
+					: await packages.invoke(specifier, { params }),
+		};
 	}
 	return await import(specifier);
 };
@@ -859,7 +869,7 @@ export function createRemovedDynamicKodyImportHelperSource(input: {
 	return `
 const ${input.helperName} = (specifier) => {
 	throw new Error(
-		'Dynamic import("' + specifier + '") was removed: use a static import (import fn from "' + specifier + '") — execute bundles always see the current published version, and saved packages declare the dependency in package.json#kody.dependencies — or packages.invoke("kody:@scope/package/export", { params }) when the target package is data.',
+		'Dynamic import("' + specifier + '") was removed: use a static import (import fn from "' + specifier + '") — execute bundles always see the current published version, and saved packages declare the dependency in package.json#kody.dependencies — or import(specifier) when the target package is data.',
 	);
 };
 `.trim()

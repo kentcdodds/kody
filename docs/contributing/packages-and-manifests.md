@@ -117,9 +117,9 @@ A saved package is a repo with the package extension activated. Four concepts:
   published commit in bundle dependency metadata. Republishing the imported
   package does not rewrite already-published dependent bundles.
 - Literal dynamic imports such as `await import("kody:@scope/pkg/export")` are
-  unsupported (use static imports when the name is known at write time and
-  `packages.invoke` otherwise). Publish checks reject the pattern permanently,
-  and the runtime rewrites the call site to a teaching error.
+  unsupported (use a static import when the name is known at write time).
+  Publish checks reject the pattern permanently, and the runtime rewrites the
+  call site to a teaching error.
 - Direct static `kody:@...` imports are a breaking manifest contract: they must
   be listed in `package.json#kody.dependencies` by package name, for example
   `"dependencies": { "@scope/my-package": "*" }` inside the `kody` object. `*`
@@ -129,11 +129,10 @@ A saved package is a repo with the package extension activated. Four concepts:
   count, and declaration files such as `.d.ts` are treated as type-only. Literal
   dynamic `import("kody:@...")` expressions are not static dependency
   declarations.
-- Computed dynamic Kody package imports are intentionally unsupported. The
-  bundler rewrites non-literal `import(...)` expressions with a guard that
-  throws clearly when the runtime specifier starts with `kody:@`; do not add
-  arbitrary computed package resolution until the security and review model is
-  designed.
+- Computed `import(specifier)` is the name-as-data path for caller-owned and
+  forked modules. The bundler rewrites non-literal `import(...)` expressions
+  through a runtime helper that loads `kody:@` specifiers when the package
+  helper is bound. Prefer a static import when the name is known at write time.
 - `kody:runtime` is a reserved host-external virtual module. The bundler may add
   a placeholder so author code can keep `import { kody } from "kody:runtime"`,
   but published bundle artifacts must not persist the host runtime
@@ -162,13 +161,13 @@ A saved package is a repo with the package extension activated. Four concepts:
   access stays structurally impossible because storage runner names are keyed by
   the calling user's id. Platform-owned **dependencies** are excluded from that
   grant set (`platformOwned`). Person accounts must `community_fork` an official
-  package before importing or invoking it (decision 0036).
+  package before importing it (decision 0036).
 - The author-facing storage prescription is one rule per context: saved-package
   code always uses `packageStorage()` for the package's own data; ad hoc execute
   code binds a `storageId` and uses ambient `storage`; another package's data
-  goes through keyless `packages.invoke`. Package-invocation runs (exports,
-  subscription handlers, retrievers) bind no ambient `storage`, so guard-less
-  ambient access in those contexts fails with the structured
+  goes through a static import or `import(specifier)`. Package-invocation runs
+  (exports, subscription handlers, retrievers) bind no ambient `storage`, so
+  guard-less ambient access in those contexts fails with the structured
   `runtime_helper_unbound` hint pointing at `packageStorage()`. Job runtimes
   bind job-scoped scratch buckets. Repo checks fail (the `lint` result) when
   package sources import ambient `storage` from `kody:runtime` with a value
@@ -179,9 +178,9 @@ A saved package is a repo with the package extension activated. Four concepts:
   registry.
 - Packages may also export non-callable helper modules and values for reuse.
 
-### Dynamic invocation (`packages.invoke`)
+### Package reuse
 
-The agent-facing package-reuse contract is two rules:
+The author-facing package-reuse contract is two rules (decision 0037):
 
 1. **Name known when the code is written → static import**
    (`kody:@scope/package/export`). The default from execute and from other
@@ -190,110 +189,36 @@ The agent-facing package-reuse contract is two rules:
    and zero per-call platform cost. Ad hoc execute bundles per call, so static
    imports from execute always see the current published version; snapshot
    staleness only affects package-to-package static dependencies.
-2. **Name is data, the call needs the target package's own runtime, or the call
-   needs exactly-once → `packages.invoke`.** Package runtime contexts and
-   authenticated ad hoc execute calls expose it from `kody:runtime`. It is the
-   only dynamic primitive and is always contract-checked before invoking.
+2. **Name is data → `import(specifier)`** of a caller-owned or forked module.
+   Exactly-once work uses [workflows](../use/workflows.md). External trusted
+   clients use HTTP invocation tokens, not author composition.
 
 ```ts
-import { packages } from 'kody:runtime'
+import handleEvent from 'kody:@kentcdodds/event-subscriber/handle-event'
 
-await packages.invoke('kody:@kentcdodds/event-subscriber/handle-event', {
-	params: { event },
-	idempotencyKey: event.id, // only when exactly-once is needed
-})
+await handleEvent({ event })
 ```
 
-The first argument should be `kody:@scope/package` or
-`kody:@scope/package/export`. Prefixless `@scope/package[/export]` is
-deprecated; the runtime accepts it and canonicalizes to `kody:`. See
-[packages.invoke prefix migration](./package-invoke-prefix-migration.md) for the
-retirement gate. `exportName` is optional only when the specifier includes the
-export; if both are present, the specifier export wins. The second argument
-accepts `exportName`, `params`, `idempotencyKey`, and `topic`; unknown keys
-fail.
+`kody:runtime` still binds `packages` for already-published modules and for
+authenticated ad hoc execute (soak until
+[#1750](https://github.com/kentcdodds/kody/issues/1750)). Authors and agents do
+not get that helper. Fleet source migrates with package codemod
+`0008-packages-invoke-to-static-import`. See
+[0037](./decisions/0037-no-author-packages-invoke.md).
 
 Exact scoped resolution avoids bare-id collisions. A `kody:@person/...` target
 resolves that caller-owned person package. A `kody:@kody/...` target is not
 runnable in a person account (`community_fork` first). Foreign person accounts
 remain unresolvable. Platform-account packages may compose with each other.
 
-This path deliberately does not rewrite to a static `kody:@...` import during
-bundle construction. It resolves the target saved package and export at call
-time through the package invocation service, using the current authenticated
-user and package caller context. Package code never handles external
-package-invocation bearer tokens for this flow.
+Literal `import("kody:@...")` stays a teaching error: known names are static
+imports. Computed `import(specifier)` is the name-as-data path. Exactly-once
+work uses workflows. HTTP invocation tokens stay for external clients.
 
-Invoke has two modes, selected by `idempotencyKey` (mirroring execute's
-keyless/keyed convention):
-
-- **Keyless — lean/ephemeral.** Resolves the current published version and runs
-  it in the target package's own runtime (`packageContext`, `kody.secretMounts`
-  package secrets, `packageStorage()`, own isolate). No idempotency ledger row;
-  run records stay on-failure-only; per-call platform overhead stays in the tens
-  of milliseconds.
-- **Keyed — durable/exactly-once.** Claims a ledger row, records the run
-  eagerly, and replays a bounded response snapshot on retry with the same key.
-  For domain events (webhook event ids) and retried dispatch.
-
-The pre-invoke contract check is built in: `packages.invoke` rejects before
-invoking when the package or export does not exist or params are not a JSON
-object, with a message of the form
-`packages.invoke contract check failed: <message>` (no bracketed code prefix).
-Package exports do not publish machine-readable params schemas, so Kody cannot
-validate field-level params shape beyond requiring `params` to be a JSON object.
-On success it returns the target export's unwrapped result; execution-phase
-failures after the check passes reject with an error whose message starts with
-the underlying bracketed code, for example `[invocation_failed] ...`.
-
-Security and loop safeguards:
-
-- Person-scope resolution is same-user only; package code cannot invoke another
-  person's saved package. Person accounts must fork an official package into the
-  caller's scope before importing or invoking it (decision 0036).
-  Platform-account packages may compose with each other.
-- `packages.invoke` requires package runtime context or authenticated execute
-  context. Static `kody:@...` imports remain library imports in the caller's
-  runtime; use keyless `packages.invoke` when execute or a package job needs to
-  enter a package runtime.
-- Nested dynamic package invocations are depth-limited to prevent runaway
-  package-to-package loops.
-
-For event dispatcher/subscriber packages, dispatchers should use
-`packages.invoke("kody:@scope/package/export", { params, idempotencyKey })`
-rather than statically importing subscriber packages. Republish subscribers
-independently; the dispatcher will observe the current published subscriber
-export on its next dispatch without being republished.
-
-The removed object-only
-`packages.invoke({ kodyId, exportName, params, idempotencyKey })` API is
-rejected locally with replacement guidance. Publish checks reject object-only
-call sites in JavaScript and TypeScript. The permanent
-`0006-invoke-object-to-specifier` codemod repairs safe calls and flags ambiguous
-ones for manual migration. The separate permanent
-`0007-prefix-packages-invoke-specifiers` codemod then prefixes literal
-string-first calls while preserving their entire options argument. For parseable
-dynamic first arguments it generates a marked inline normalizer: the source
-expression is evaluated exactly once, a string is trimmed only when detecting
-and prefixing a leading `@`, and already-prefixed strings, other strings, and
-non-string values pass through to the existing runtime canonicalization or
-rejection path. Unparseable or binding-ambiguous calls remain manual; there is
-no textual rewrite fallback because it cannot prove binding and argument
-boundaries. 0007 deliberately does not take over 0006's object-only migration.
-
-**Unsupported helpers:** object-only `packages.invoke`,
+Publish checks still reject object-only `packages.invoke`,
 `packages.invokeChecked`, `packages.check`, and literal dynamic
-`import("kody:@...")` are not available. `packages.invoke` subsumes both helpers
-because checking is not optional or separate. Publish checks fail on all four
-unsupported forms with the replacement named (`deprecated-invocation-usage.ts`),
-and the bundler rewrites literal dynamic kody imports to a teaching error. In
-the execute sandbox the `packages` helper exposes only `invoke`, so accessing
-`check` or `invokeChecked` throws a normal `TypeError`. Package-app runtimes
-reject those helpers with an error that names the supported replacement. The
-permanent `0002-static-first-invocation` and `0006-invoke-object-to-specifier`
-repair codemods cover those migrations. See
-[Invocation overhead guardrails](./architecture/invocation-overhead-guardrails.md)
-for the performance budget that keeps the keyless path honest.
+`import("kody:@...")`. Codemods `0002`, `0006`, `0007`, and `0008` are the
+mechanical repair path. See [package codemods](./package-codemods.md).
 
 ## Package apps
 

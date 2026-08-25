@@ -20,6 +20,6 @@ Use the destination that matches the job. Do not invent a thinner kv primitive.
 | Versioned calibration or documents   | a repo                | Edit the package repo or a plain repo; live-at-HEAD for plain repos.                  |
 | Credentials, tokens, API keys        | secrets               | Prefill `/account/secrets/new?...` — never paste into chat.                           |
 | OAuth client ids and connections     | integrations          | `/connect/oauth?provider=...` or `integration_*`.                                     |
-| Ids several packages share           | owning package export | One package holds the id; others `packages.invoke` or a static import.                |
+| Ids several packages share           | owning package export | One package holds the id; others statically import that export.                       |
 
 `packageStorage().get` / `set` is the named-read API for package state.

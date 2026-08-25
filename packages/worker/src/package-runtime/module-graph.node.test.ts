@@ -1539,7 +1539,7 @@ export default async function run() {
 			default: () => Promise<unknown>
 		}
 		await expect(entry.default()).rejects.toThrow(
-			'Dynamic kody:@ package imports were removed',
+			'Dynamic kody:@ package import requires an authenticated runtime',
 		)
 	} finally {
 		await moduleGraph.cleanup()

@@ -162,13 +162,13 @@ to user secrets (host approval still applies; updating or deleting a user secret
 from package code still needs an `allowed_packages` grant). After you save or
 publish a secret-using package, read `pending_secret_package_approvals`; when it
 is non-null (unadopted community forks), either adopt after review or surface
-`bulk_approval_url`, wait when required, and verify with a keyless
-`packages.invoke` smoke test before calling the work complete. The smoke test
-must use `packages.invoke` so the export runs in the package's own runtime and
-exercises its secret mounts; a static import cannot verify those. Pick a
-read-only export or a package-supported dry-run input that actually reads the
-approved secret (for example an authenticated read-only API call), so
-verification proves secret access without triggering external side effects.
+`bulk_approval_url`, wait when required, and verify with a static
+`kody:@scope/package/export` import from `execute` before calling the work
+complete. Pick a read-only export or a package-supported dry-run input that
+actually reads the approved secret (for example an authenticated read-only API
+call), so verification proves secret access without triggering external side
+effects. Secret mounts bind in the package's own surfaces (jobs, apps,
+subscriptions, HTTP invocation).
 
 ## Important exceptions
 

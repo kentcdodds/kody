@@ -40,18 +40,10 @@ helpers are runtime exports:
   that may run longer than execute's timeout. See [Workflows](./workflows.md)
 - use **`import { packageContext } from 'kody:runtime'`** inside saved package
   code when you need package metadata; it is **`null`** for ad hoc execute calls
-- use **`import { packages } from 'kody:runtime'`** inside saved package runtime
-  contexts or authenticated execute calls when a package call must be dynamic:
-  the target's name is data, the call needs the target package's own runtime, or
-  you need exactly-once.
-  `packages.invoke("kody:@scope/package/export", { params })` (plus an optional
-  `idempotencyKey` field for exactly-once calls) is the only dynamic call and is
-  always contract-checked before invoking. Prefer the `kody:`-prefixed scoped
-  specifier; prefixless `@scope/package[/export]` is also accepted and
-  canonicalized. Scoped resolution avoids collisions between platform and person
-  packages. Object-only calls are rejected locally with string-first replacement
-  guidance. When the target package's name is known when the code is written,
-  use a static `kody:@...` import instead (see below)
+- when a package name is data, use `import(specifier)` for a caller-owned or
+  forked module. Exactly-once work uses [workflows](./workflows.md). When the
+  target package's name is known when the code is written, use a static
+  `kody:@...` import (see below)
 - use **`import thing from 'kody:@scope/my-package/export-name'`** or
   **`import { helper } from 'kody:@scope/my-package/export-name'`** to reuse a
   saved package export by npm-scoped package name. This is **the default for
@@ -67,11 +59,8 @@ helpers are runtime exports:
 package artifacts do not bundle the host runtime; execution always hydrates the
 deployed `kody:runtime` module.
 
-Literal dynamic imports (`await import('kody:@scope/my-package/export-name')`)
-are unsupported. The call site throws a teaching error naming the replacement:
-use a static `kody:@...` import when the target package's name is known when the
-code is written, or `packages.invoke` when it is not. Computed dynamic Kody
-package imports, including variables and template strings, are also unsupported.
+Prefer a static `kody:@...` import when the target package's name is known when
+the code is written. Use `import(specifier)` when the name is data.
 
 **execute** also accepts optional **`params`**. Kody passes that JSON object to
 the module's **default export** as the first function argument. Shared helpers
@@ -204,11 +193,8 @@ but `packageContext` remains **`null`** because the imported module has not been
 entered as its own package runtime. This is fine for most reuse — packages
 backed by user-scope secrets (for example `github`) work fully through plain
 static imports because `{{secret:...}}` placeholders resolve at the fetch
-gateway under the calling user. When execute must enter a saved package export
-as that package — package-mounted secrets (`kody.secretMounts`),
-`packageContext`, the package's own `packageStorage()` bucket — use keyless
-`packages.invoke` from `kody:runtime`, preferably with the scoped
-`kody:@scope/package/export` specifier.
+gateway under the calling user. Imported modules keep stamped
+`packageStorage()`. `packageContext` stays `null` on ad hoc execute.
 
 When you need to edit saved source, prefer the repo-backed workflow in
 [Repo-backed editing sessions](./repo-sessions.md). Open by package identity
@@ -231,8 +217,8 @@ from execute or another saved package.
 
 One rule per context: ad hoc execute code binds a `storageId` on the call and
 uses ambient `storage`; saved-package code always uses `packageStorage()` for
-the package's own data; another package's data goes through keyless
-`packages.invoke` so its own runtime does the reading and writing. See
+the package's own data; another package's data goes through a static import of
+that package's export so its stamp does the reading and writing. See
 [Package storage](./packages.md#package-storage).
 
 Kody supports durable storage binding for execute and package-owned jobs:

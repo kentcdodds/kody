@@ -405,7 +405,7 @@ export const packageAppFetchCapability = defineDomainCapability(
 			}
 			if (!savedPackage.hasApp) {
 				throw new McpCallerError(
-					`Saved package "${savedPackage.kodyId}" has no declared app (package.json#kody.app). Use packages.invoke for export smoke tests, or ${packageAppFetchCapabilityName} after declaring kody.app.`,
+					`Saved package "${savedPackage.kodyId}" has no declared app (package.json#kody.app). Use a static kody:@ import from execute for export smoke tests, or ${packageAppFetchCapabilityName} after declaring kody.app.`,
 				)
 			}
 

@@ -107,7 +107,7 @@ test('selects zero-auth examples in the known production order', () => {
 	).toContain('installed')
 })
 
-test('example prompt searches the user-owned scoped package and invokes in user scope', () => {
+test('example prompt searches the user-owned scoped package and statically imports in user scope', () => {
 	const prompt = buildOnboardingExamplePrompt({
 		listingName: '@kody/hn-pulse',
 		kodyId: 'hn-pulse',
@@ -115,8 +115,11 @@ test('example prompt searches the user-owned scoped package and invokes in user 
 	})
 
 	expect(prompt).toContain('@u-b/hn-pulse')
-	expect(prompt).toMatch(/packages\.invoke\("kody:@u-b\/hn-pulse\//)
-	expect(prompt).not.toContain('kody:@kody/')
+	expect(prompt).toContain(
+		'import getTopStories from "kody:@u-b/hn-pulse/getTopStories"',
+	)
+	expect(prompt).not.toContain('packages.invoke')
+	expect(prompt).toContain('not a platform "kody:@kody/')
 	expect(prompt).not.toContain('person accounts cannot')
 	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
 		'package_get_git_remote',

@@ -19,7 +19,7 @@ const checkDetectMessage =
 	'Calls unsupported `packages.check`; `packages.invoke` already contract-checks before invoking, so restructure the call site manually (no mechanical rewrite preserves the contract return value).'
 
 const dynamicImportDetectMessage =
-	'Uses a literal dynamic `import("kody:@...")`; migrate manually — `packages.invoke` when the target is data, or a static import (declared in `package.json#kody.dependencies`) when the target is known at write time. Namespace semantics differ, so no mechanical rewrite is safe.'
+	'Uses a literal dynamic `import("kody:@...")`; migrate manually — a static import (declared in `package.json#kody.dependencies`) when the target is known at write time, or `import(specifier)` when the name is data. Namespace semantics differ, so no mechanical rewrite is safe.'
 
 const manualParseFailureMessage =
 	'File references unsupported invocation forms but could not be parsed; replace them with `packages.invoke` / static imports manually.'
