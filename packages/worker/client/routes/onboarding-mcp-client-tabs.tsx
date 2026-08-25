@@ -118,7 +118,7 @@ function ClientNote(handle: Handle<ClientNoteProps>) {
 function InstallDeepLink(
 	handle: Handle<{
 		href: string
-		label: 'Add to Cursor' | 'Add to Grok Bot' | 'Add to VS Code'
+		label: 'Add to Cursor' | 'Add to VS Code'
 	}>,
 ) {
 	return () => (
@@ -126,6 +126,38 @@ function InstallDeepLink(
 			<a href={handle.props.href} mix={css(deepLinkButtonCss)}>
 				{handle.props.label}
 			</a>
+			<small mix={css(deepLinkNoteCss)}>
+				Your client will still ask you to authorize access afterwards.
+			</small>
+		</div>
+	)
+}
+
+function PluginPrimaryInstall(
+	handle: Handle<{
+		href: string
+		label: 'Add to Cursor' | 'Add to Grok Bot'
+		alternativeValue: string
+		alternativeCopyLabel: string
+	}>,
+) {
+	return () => (
+		<div data-testid="onboarding-mcp-plugin-primary" mix={css(deepLinkCss)}>
+			<a href={handle.props.href} mix={css(deepLinkButtonCss)}>
+				{handle.props.label}
+			</a>
+			<p
+				data-testid="onboarding-mcp-plugin-alternative"
+				mix={css(pluginAlternativeCss)}
+			>
+				Or do this: <code>{handle.props.alternativeValue}</code>
+				<CopyTextButton
+					value={handle.props.alternativeValue}
+					idleLabel="Copy"
+					variant="chip"
+					ariaLabel={handle.props.alternativeCopyLabel}
+				/>
+			</p>
 			<small mix={css(deepLinkNoteCss)}>
 				Your client will still ask you to authorize access afterwards.
 			</small>
@@ -191,19 +223,14 @@ function renderPanelContent(
 						>
 							Kody plugin
 						</a>{' '}
-						from the Cursor Marketplace, or in Cursor chat run{' '}
-						<code>{kodyCursorAddPluginCommand}</code>. The marketplace listing
-						targets production <code>kody.codes</code>.
+						from the Cursor Marketplace. The marketplace listing targets
+						production <code>kody.codes</code>.
 					</p>
-					<InstallDeepLink
+					<PluginPrimaryInstall
 						href={kodyCursorMarketplaceUrl}
 						label="Add to Cursor"
-					/>
-					<CopyCard
-						highlights={highlights}
-						label="/add-plugin"
-						value={kodyCursorAddPluginCommand}
-						copyLabel="Copy command"
+						alternativeValue={kodyCursorAddPluginCommand}
+						alternativeCopyLabel="Copy /add-plugin kody"
 					/>
 					{isProduction ? null : (
 						<p>
@@ -434,7 +461,7 @@ function renderPanelContent(
 					<p>
 						Install the official Kody plugin in Grok Bot. Click{' '}
 						<strong>Add to Grok Bot</strong>, or open <strong>Plugins</strong>{' '}
-						in the Grok Bot sidebar and add Kody. See Cursor&apos;s{' '}
+						in the Grok Bot sidebar and add Kody. See{' '}
 						<a
 							href={grokBotConnectPluginsUrl}
 							target="_blank"
@@ -444,12 +471,11 @@ function renderPanelContent(
 						</a>
 						. The marketplace plugin targets production <code>kody.codes</code>.
 					</p>
-					<InstallDeepLink href={grokBotInstallUrl} label="Add to Grok Bot" />
-					<CopyCard
-						highlights={highlights}
-						label="Grok Bot plugin"
-						value={grokBotInstallUrl}
-						copyLabel="Copy link"
+					<PluginPrimaryInstall
+						href={grokBotInstallUrl}
+						label="Add to Grok Bot"
+						alternativeValue={grokBotInstallUrl}
+						alternativeCopyLabel="Copy Grok Bot plugin link"
 					/>
 					{isProduction ? null : (
 						<p>
@@ -924,6 +950,20 @@ const deepLinkButtonCss = getPillButtonCss()
 const deepLinkNoteCss = {
 	color: colors.textMuted,
 	fontSize: '0.88rem',
+}
+
+const pluginAlternativeCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	gap: '0.35rem 0.5rem',
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.88rem',
+	maxWidth: '72ch',
+	'& code': {
+		overflowWrap: 'anywhere' as const,
+	},
 }
 
 /* Config snippets: labeled wells with their copy button in the header. */

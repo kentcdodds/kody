@@ -61,6 +61,14 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	expect(manualBlock).toContain(kodyCursorMarketplaceUrl)
 	expect(manualBlock).toContain(kodyCursorAddPluginCommand)
 	expect(manualBlock).toContain(grokBotInstallUrl)
+	expect(manualBlock).toContain('Or do this:')
+	expect(manualBlock).toContain('data-testid="onboarding-mcp-plugin-primary"')
+	expect(manualBlock).toContain(
+		'data-testid="onboarding-mcp-plugin-alternative"',
+	)
+	expect(manualBlock).not.toContain('Cursor&apos;s')
+	expect(manualBlock).not.toContain("Cursor's")
+	expect(manualBlock).toContain('>Grok Bot plugin help<')
 	expect(manualBlock).toContain(
 		buildCursorInstallUrl(defaultKodyMcpUrl).replaceAll('&', '&amp;'),
 	)
@@ -74,6 +82,27 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	expect(manualBlock).toContain(
 		'https://cursor.com/help/grok-bot/connect-plugins',
 	)
+
+	const cursorPrimary = manualBlock.slice(
+		manualBlock.indexOf('onboarding-mcp-plugin-primary'),
+		manualBlock.indexOf('onboarding-mcp-cursor-fallback'),
+	)
+	expect(
+		cursorPrimary.indexOf(`href="${kodyCursorMarketplaceUrl}"`),
+	).toBeLessThan(cursorPrimary.indexOf('onboarding-mcp-plugin-alternative'))
+	expect(
+		cursorPrimary.indexOf('onboarding-mcp-plugin-alternative'),
+	).toBeLessThan(cursorPrimary.indexOf(kodyCursorAddPluginCommand))
+	expect(cursorPrimary).not.toContain('Copy command')
+
+	const grokBotPrimary = manualBlock.slice(
+		manualBlock.lastIndexOf('onboarding-mcp-plugin-primary'),
+		manualBlock.indexOf('onboarding-mcp-grok-bot-fallback'),
+	)
+	expect(grokBotPrimary.indexOf(`href="${grokBotInstallUrl}"`)).toBeLessThan(
+		grokBotPrimary.indexOf('onboarding-mcp-plugin-alternative'),
+	)
+	expect(grokBotPrimary).not.toContain('Copy link')
 
 	const previewHtml = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
