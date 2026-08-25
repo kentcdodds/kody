@@ -77,9 +77,13 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 		'https://cursor.com/help/grok-bot/connect-plugins',
 	)
 
-	const firstPrimary = manualBlock.indexOf('onboarding-mcp-plugin-primary')
-	const secondPrimary = manualBlock.lastIndexOf('onboarding-mcp-plugin-primary')
-	const cursorPrimary = manualBlock.slice(firstPrimary, secondPrimary)
+	const pluginBlocks = [
+		...manualBlock.matchAll(
+			/<div data-testid="onboarding-mcp-plugin-primary"[\s\S]*?<\/small><\/div>/g,
+		),
+	].map((match) => match[0])
+	expect(pluginBlocks).toHaveLength(2)
+	const [cursorPrimary, grokBotPrimary] = pluginBlocks
 	expect(
 		cursorPrimary.indexOf(`href="${kodyCursorMarketplaceUrl}"`),
 	).toBeLessThan(cursorPrimary.indexOf('onboarding-mcp-plugin-alternative'))
@@ -88,8 +92,6 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	).toBeLessThan(cursorPrimary.indexOf(kodyCursorAddPluginCommand))
 	expect(cursorPrimary).not.toContain('Copy command')
 	expect(cursorPrimary).not.toContain('Manual / fallback')
-
-	const grokBotPrimary = manualBlock.slice(secondPrimary)
 	expect(grokBotPrimary.indexOf(`href="${grokBotInstallUrl}"`)).toBeLessThan(
 		grokBotPrimary.indexOf('onboarding-mcp-plugin-alternative'),
 	)
