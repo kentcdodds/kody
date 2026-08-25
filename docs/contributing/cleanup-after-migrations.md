@@ -88,7 +88,7 @@ durable tracker after the session ends.
 
 ## Related
 
-- [Authoring D1 migrations](./setup.md#authoring-d1-migrations)
+- [Authoring D1 migrations](./setup/migrations.md)
 - [Package codemod rollout](./package-codemods.md#rollout-doctrine)
 - [Harness engineering](./harness-engineering.md)
 - [Values retirement runbook](./architecture/values-retirement-runbook.md)

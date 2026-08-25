@@ -36,7 +36,8 @@ The setup flow assumes:
   declares bindings and `database_name` values but does **not** commit remote
   resource IDs (`database_id`, KV `id` / `preview_id`). Production and preview
   deploys run ensure scripts that create or resolve resources and write
-  generated Wrangler configs with real IDs (see `docs/contributing/setup.md`).
+  generated Wrangler configs with real IDs (see
+  [`docs/contributing/setup/local-development.md`](./setup/local-development.md)).
   **Local development does not require** provisioning remote D1 or KV;
   `npm run dev` uses local Wrangler persistence.
 
@@ -143,7 +144,10 @@ template).
 
 ## Local development
 
-See `docs/contributing/setup.md` for local dev commands and verification steps.
+See
+[`docs/contributing/setup/local-development.md`](./setup/local-development.md)
+for local dev commands and
+[`docs/contributing/setup/checks.md`](./setup/checks.md) for verification steps.
 
 To create a deterministic test login in a running environment:
 

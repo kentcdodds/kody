@@ -40,7 +40,7 @@ so a green local `validate` means CI will pass. `validate` is read-only; use
 - [AGENTS.md](../AGENTS.md) - Agent instructions and verification steps
 - [.agents/skills/remix/SKILL.md](../.agents/skills/remix/SKILL.md) - Remix
   skill
-- [docs/contributing/setup.md](../docs/contributing/setup.md) - Setup
+- [docs/contributing/setup/](../docs/contributing/setup/index.md) - Setup
   documentation
 - [docs/contributing/cloud-agents.md](../docs/contributing/cloud-agents.md) -
   Cloud Agent VM gotchas (canonical; this file is a quick reference)

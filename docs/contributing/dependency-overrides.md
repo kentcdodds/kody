@@ -6,10 +6,10 @@ the same commit.
 
 After changing overrides, run `npm run audit:prod` as a diagnostic check on
 production dependencies — it is not the merge gate. Use `npm run validate` as
-the single authoritative read-only merge gate (see [`setup.md`](./setup.md)).
-Clearing these override targets does not mean the whole production audit is
-clean — other transitive packages can still report advisories outside this
-file's scope.
+the single authoritative read-only merge gate (see
+[`checks`](./setup/checks.md)). Clearing these override targets does not mean
+the whole production audit is clean — other transitive packages can still report
+advisories outside this file's scope.
 
 ## Production overrides
 

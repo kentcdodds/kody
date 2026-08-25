@@ -33,7 +33,9 @@ older manifest shapes.
 **Stay lightweight but valuable.** Prefer small, accurate pages over large stale
 ones. **Garden** docs when behavior changes: update or delete sections in the
 same change as the code when possible. Remove duplication between pages by
-linking out instead of copying paragraphs.
+linking out instead of copying paragraphs. When a contributing guide grows past
+a single topic, turn it into a directory with a short `index.md` and one file
+per topic so agents load only what they need (see [`setup/`](./setup/index.md)).
 
 **Prefer a checker over a should-list.** Constraints that lint, TypeScript, or
 `npm run validate` can reject belong in those tools. Contributing docs describe

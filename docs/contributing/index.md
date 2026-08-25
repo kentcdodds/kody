@@ -12,7 +12,8 @@ style, tests, MCP capabilities, and runtime architecture.
   (policy-grid evidence; re-run `node tools/memory-auto-surface-lab/run.mjs`)
 - [Inbound contributions](./inbound-contributions.md) (CLA for patches to this
   repository)
-- [Setup](./setup.md), [environment variables](./environment-variables.md),
+- [Setup](./setup/index.md),
+  [environment variables](./environment-variables.md),
   [setup manifest](./setup-manifest.md)
 - [Manual PR preview testing](./preview-manual-testing.md)
 - [Optional Cloudflare offerings](./cloudflare-offerings.md)

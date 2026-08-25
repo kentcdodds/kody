@@ -58,7 +58,7 @@ origin worker (`kody-pr-<n>`), sibling platform, runtime, and jobs workers
 (`kody-pr-<n>-platform`, `kody-pr-<n>-runtime`, `kody-pr-<n>-jobs`), isolated
 app/audit/jobs D1 resources, KV, mock workers, and a seeded login. The workflow
 comments the URL on the PR. Details of resource names and cleanup live in
-[`setup.md`](./setup.md#pr-preview-deployments).
+[`preview deploys`](./setup/preview-deploys.md).
 
 `/health` `commitSha` is GitHub's `github.sha` for that workflow run. On
 `pull_request` events that is the merge commit, not the branch tip, so it can
@@ -124,5 +124,5 @@ Pushing to the PR (or marking it ready) is the deploy trigger.
 ## Resource reset
 
 Full preview resource delete/recreate remains the operator path in
-[`setup.md`](./setup.md#reset-re-migrate-then-seed). The manual-test script does
-not create or destroy Cloudflare resources.
+[`seeding`](./setup/seeding.md#reset-re-migrate-then-seed). The manual-test
+script does not create or destroy Cloudflare resources.

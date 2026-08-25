@@ -2,8 +2,8 @@
 
 Kody runs on Cloudflare Workers: the origin app/MCP worker plus platform,
 runtime, jobs, and status workers (Remix 3 UI + OAuth-protected MCP). See
-[`setup.md`](./setup.md) for the full local dev guide; this document covers
-Cloud Agent VM gotchas only.
+[`local development`](./setup/local-development.md) for the local dev guide;
+this document covers Cloud Agent VM gotchas only.
 
 ## Node 26
 
@@ -85,8 +85,8 @@ Copy `packages/worker/.env.example` to `packages/worker/.env` if missing.
 ## Seeding a test account
 
 After `npm run migrate:local`, seed the local fixture logins per
-[`setup.md`](./setup.md): `kody@example.com` / `ilikecode` (seeded with the
-`admin` role) and `jane@example.com` / `ilikecode` (regular account). These
+[`seeding`](./setup/seeding.md): `kody@example.com` / `ilikecode` (seeded with
+the `admin` role) and `jane@example.com` / `ilikecode` (regular account). These
 credentials are local test fixtures only. The seed script resolves the worker
 Wrangler config automatically (same default as `wrangler-env.ts`), so
 `node tools/seed-test-data.ts --local` works without extra flags.

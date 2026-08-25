@@ -245,9 +245,9 @@ Production CI deploys ensure these resources exist (create when missing) and
 write resolved IDs into `packages/worker/wrangler-production.generated.json`
 before migrations and deploy. Preview deploys do the same per preview worker via
 `packages/worker/wrangler-preview.generated.json` (see
-`docs/contributing/setup.md`). Cloudflare deploys do not auto-create these
-resources from bindings alone, so the deploy workflow runs
-`node tools/ci/production-resources.ts ensure` first.
+[`docs/contributing/setup/local-development.md`](./setup/local-development.md)).
+Cloudflare deploys do not auto-create these resources from bindings alone, so
+the deploy workflow runs `node tools/ci/production-resources.ts ensure` first.
 
 ### Disaster-recovery control plane
 

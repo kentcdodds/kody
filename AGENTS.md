@@ -16,7 +16,7 @@ This file is intentionally brief. Detailed instructions live in focused docs:
   or surface):
   [docs/contributing/decisions/index.md](./docs/contributing/decisions/index.md)
 - Setup, checks, docs maintenance, preview deploys, and seeding:
-  - [docs/contributing/setup.md](./docs/contributing/setup.md)
+  - [docs/contributing/setup/index.md](./docs/contributing/setup/index.md)
 - Manual PR preview testing (medium/high risk, logged-in user + data):
   - [docs/contributing/preview-manual-testing.md](./docs/contributing/preview-manual-testing.md)
     and the

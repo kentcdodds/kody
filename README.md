@@ -110,7 +110,7 @@ kody.run    → kody-runtime (package-app zone routes)
 | [`docs/contributing/project-intent.md`](./docs/contributing/project-intent.md)               | Scope, goals, and non-goals          |
 | [`docs/contributing/index.md`](./docs/contributing/index.md)                                 | Developing and extending Kody        |
 | [`docs/use/index.md`](./docs/use/index.md)                                                   | Using Kody over MCP                  |
-| [`docs/contributing/setup.md`](./docs/contributing/setup.md)                                 | Local development and verification   |
+| [`docs/contributing/setup/`](./docs/contributing/setup/index.md)                             | Local development and verification   |
 
 ## Contributing
 
