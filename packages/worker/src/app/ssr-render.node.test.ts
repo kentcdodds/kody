@@ -686,6 +686,9 @@ test('renderAppPage caches anonymous marketing HTML and keeps session pages priv
 		'public, max-age=60, stale-while-revalidate=300',
 	)
 	expect(anonymousHome.headers.get('Vary')).toBe('Cookie')
+	const homeTiming = anonymousHome.headers.get('Server-Timing') ?? ''
+	expect(homeTiming).toContain('session;dur=')
+	expect(homeTiming).toContain('ssr;dur=')
 
 	const staleCookieHome = await renderAppPage({
 		request: new Request('https://example.com/', {

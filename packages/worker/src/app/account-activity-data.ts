@@ -1,5 +1,6 @@
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { highlightJsonValue } from '#app/highlight-code.ts'
+import { type ServerTimingEntry } from '#worker/server-timing.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import {
 	getRunRecord,
@@ -231,6 +232,7 @@ async function toDetail(
 	env: Env,
 	run: RunRecord,
 	logs: Array<RunRecordLog>,
+	serverTiming?: Array<ServerTimingEntry>,
 ): Promise<AccountActivityRunDetail> {
 	return {
 		...toListItem(run),
@@ -247,7 +249,9 @@ async function toDetail(
 		triagedAt: run.triagedAt,
 		triagedBy: run.triagedBy,
 		metadata: run.metadata,
-		metadataHighlighted: await highlightJsonValue(env, run.metadata),
+		metadataHighlighted: await highlightJsonValue(env, run.metadata, {
+			serverTiming,
+		}),
 		logs: logs
 			.slice()
 			.sort((a, b) => a.sequence - b.sequence)
@@ -270,6 +274,7 @@ export async function loadAccountActivityData(input: {
 	user: AuthenticatedUser
 	pathRunId?: string
 	now?: Date
+	serverTiming?: Array<ServerTimingEntry>
 }): Promise<AccountActivityLoaderData> {
 	const userId = input.user.mcpUser.userId
 	const now = input.now ?? new Date()
@@ -324,7 +329,12 @@ export async function loadAccountActivityData(input: {
 		runs: page.runs.map(toListItem),
 		nextCursor: page.nextCursor,
 		selectedRun: selectedRecord
-			? await toDetail(input.env, selectedRecord.run, selectedRecord.logs)
+			? await toDetail(
+					input.env,
+					selectedRecord.run,
+					selectedRecord.logs,
+					input.serverTiming,
+				)
 			: null,
 		selectedRunId,
 		retentionDays: runRecordRetentionDays,

@@ -13,6 +13,7 @@
 	"include": [
 		"src/**/*.ts",
 		"../worker/universal/highlighted-code.ts",
+		"../worker/universal/highlight-cache-header.ts",
 		"../worker/universal/highlight-cache-request.ts"
 	]
 }

@@ -1,3 +1,4 @@
+import { highlightCacheHeaderName } from '../../worker/universal/highlight-cache-header.ts'
 import {
 	type HighlightedCode,
 	type HighlightSnippet,
@@ -90,12 +91,22 @@ const handler = {
 		}
 
 		const cached = await readCachedResults(snippets)
-		if (cached) return Response.json({ results: cached })
+		if (cached) return highlightJsonResponse(cached, 'hit')
 
 		const results = tokenizeSnippets(snippets)
 		await writeCachedResults(snippets, results)
-		return Response.json({ results })
+		return highlightJsonResponse(results, 'miss')
 	},
 } satisfies ExportedHandler<HighlightWorkerEnv>
+
+function highlightJsonResponse(
+	results: Array<HighlightedCode>,
+	cache: 'hit' | 'miss',
+) {
+	return Response.json(
+		{ results },
+		{ headers: { [highlightCacheHeaderName]: cache } },
+	)
+}
 
 export default handler

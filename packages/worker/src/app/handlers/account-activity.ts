@@ -6,6 +6,7 @@ import { type AccountActivityLoaderData as AppAccountActivityLoaderData } from '
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
 function readPathRunId(params: unknown) {
 	if (
@@ -31,11 +32,13 @@ export function createAccountActivityHandler(env: Env) {
 				return user
 			}
 
+			const serverTiming: Array<ServerTimingEntry> = []
 			const accountActivity = await loadAccountActivityData({
 				env,
 				request,
 				user,
 				pathRunId: readPathRunId(params),
+				serverTiming,
 			})
 			return renderAppPage({
 				request,
@@ -44,6 +47,7 @@ export function createAccountActivityHandler(env: Env) {
 				loaderData: {
 					accountActivity: accountActivity as AppAccountActivityLoaderData,
 				},
+				serverTiming,
 			})
 		},
 	} satisfies Action<
@@ -67,12 +71,15 @@ export function createAccountActivityApiHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
 			}
 
+			const serverTiming: Array<ServerTimingEntry> = []
 			return jsonResponse(
 				await loadAccountActivityData({
 					env,
 					request,
 					user,
+					serverTiming,
 				}),
+				{ serverTiming },
 			)
 		},
 	} satisfies Action<typeof routes.accountActivityApi>

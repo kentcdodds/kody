@@ -17,6 +17,10 @@ import {
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { loadPublicCodeRunsWindow } from '#worker/usage/code-runs-window.ts'
 import { type routes } from '#universal/routes.ts'
+import {
+	pushServerTiming,
+	type ServerTimingEntry,
+} from '#worker/server-timing.ts'
 
 export function createHomeHandler(env: Env) {
 	return {
@@ -30,7 +34,12 @@ export function createHomeHandler(env: Env) {
 				)
 			}
 
-			const codeRunsWindow = await loadPublicCodeRunsWindow(env)
+			const serverTiming: Array<ServerTimingEntry> = []
+			const codeRunsWindow = await pushServerTiming(
+				serverTiming,
+				'code-runs',
+				() => loadPublicCodeRunsWindow(env),
+			)
 			const codeRuns = { ok: true as const, window: codeRunsWindow }
 
 			const user = await readAuthenticatedAppUser(request, env)
@@ -50,6 +59,7 @@ export function createHomeHandler(env: Env) {
 								}),
 								codeRuns,
 							},
+							serverTiming,
 						}),
 					),
 					origin,
@@ -69,6 +79,7 @@ export function createHomeHandler(env: Env) {
 						request,
 						env,
 						loaderData: { onboarding, codeRuns },
+						serverTiming,
 					}),
 				),
 				origin,

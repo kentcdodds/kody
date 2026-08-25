@@ -85,6 +85,10 @@ test('onboarding serves public setup content to anonymous visitors', async () =>
 		new RequestContext(new Request('https://example.com/onboarding.json')),
 	)
 	expect(anonymousApiResponse.status).toBe(200)
+	const onboardingTiming =
+		anonymousApiResponse.headers.get('Server-Timing') ?? ''
+	expect(onboardingTiming).toContain('listings;dur=')
+	expect(onboardingTiming).toContain('highlight;dur=')
 	// Payload shape belongs to onboarding-data; the handler just serves it.
 	await expect(anonymousApiResponse.json()).resolves.toMatchObject({
 		ok: true,

@@ -19,6 +19,7 @@ import {
 	highlightSnippets,
 } from '#app/highlight-code.ts'
 import { plainHighlightedCode } from '#universal/highlighted-code.ts'
+import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
 export function readPackageFilesSelectedPath(requestUrl: string) {
 	const url = new URL(requestUrl, 'http://localhost')
@@ -32,20 +33,24 @@ async function toLoaderData(input: {
 	backLabel: string
 	filesBasePath: string
 	view: PackageFilesView
+	serverTiming?: Array<ServerTimingEntry>
 }): Promise<PackageFilesLoaderData> {
 	const content = input.view.content
 	const language = input.view.language
 	const contentKind = input.view.contentKind
+	const highlightOptions = { serverTiming: input.serverTiming }
 	const contentFences =
 		contentKind === 'markdown' && content
-			? await highlightMarkdownFences(input.env, content)
+			? await highlightMarkdownFences(input.env, content, highlightOptions)
 			: []
 	const contentHighlighted =
 		contentKind === 'code' && content
 			? ((
-					await highlightSnippets(input.env, [
-						{ code: content, lang: language ?? 'plaintext' },
-					])
+					await highlightSnippets(
+						input.env,
+						[{ code: content, lang: language ?? 'plaintext' }],
+						highlightOptions,
+					)
 				)[0] ?? plainHighlightedCode(content, language))
 			: content
 				? plainHighlightedCode(content, language)
@@ -73,6 +78,7 @@ export async function loadCommunityPackageFilesData(input: {
 	env: Env
 	listingId: string
 	selectedPath: string
+	serverTiming?: Array<ServerTimingEntry>
 }): Promise<PackageFilesLoaderData | null> {
 	const listing = await getCommunityListingById(input.env.APP_DB, {
 		listingId: input.listingId,
@@ -106,6 +112,7 @@ export async function loadCommunityPackageFilesData(input: {
 		backLabel: 'Package listing',
 		filesBasePath,
 		view,
+		serverTiming: input.serverTiming,
 	})
 }
 
@@ -115,6 +122,7 @@ export async function loadAccountPackageFilesData(input: {
 	userId: string
 	packageId: string
 	selectedPath: string
+	serverTiming?: Array<ServerTimingEntry>
 }): Promise<PackageFilesLoaderData | null> {
 	const record = await getSavedPackageById(input.env.APP_DB, {
 		userId: input.userId,
@@ -148,5 +156,6 @@ export async function loadAccountPackageFilesData(input: {
 		backLabel: 'Package',
 		filesBasePath: getAccountPackageFilesHref({ packageId: record.id }),
 		view,
+		serverTiming: input.serverTiming,
 	})
 }

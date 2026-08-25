@@ -21,7 +21,12 @@ npm run site-perf -- --url https://kody.codes/ --json
 
 [`tools/site-perf/collect.ts`](../../tools/site-perf/collect.ts) fetches the
 homepage, records HTML weight, `Cache-Control`, the largest same-origin JS
-payload, and the preloaded LCP image, then classifies against
+payload, the preloaded LCP image, TTFB, and `Server-Timing` phases (`session`,
+`ssr`, plus loader phases such as `code-runs`). When the primary URL is `/`, it
+also probes `/onboarding` and `/guides/how-kody-works` for the same timing
+snapshot. Those extra pages are observational and do not change the verdict.
+Homepage HTML that lacks an app `ssr` phase is a finding. The collector then
+classifies against
 [`tools/site-perf/budget.json`](../../tools/site-perf/budget.json).
 
 [`.github/workflows/weekly-site-perf.yml`](../../.github/workflows/weekly-site-perf.yml)

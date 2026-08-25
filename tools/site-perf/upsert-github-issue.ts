@@ -35,6 +35,18 @@ function issueBody(report: SitePerfReport) {
 		`HTML: ${report.htmlBytes} bytes`,
 		`Largest same-origin JS: ${report.largestSameOriginJsBytes ?? 'n/a'} bytes`,
 		`LCP image: ${report.lcpImageBytes ?? 'n/a'} bytes`,
+		`TTFB: ${report.ttfbMs ?? 'n/a'} ms`,
+		`Server-Timing: ${
+			report.serverTiming.length === 0
+				? 'n/a'
+				: report.serverTiming
+						.map((entry) =>
+							entry.desc
+								? `${entry.name}=${entry.durationMs}ms (${entry.desc})`
+								: `${entry.name}=${entry.durationMs}ms`,
+						)
+						.join(', ')
+		}`,
 		`Cache-Control: ${report.cacheControl ?? 'n/a'}`,
 		'',
 		'Findings:',

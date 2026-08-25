@@ -22,6 +22,7 @@ import {
 	normalizePackageFilesPath,
 } from '#universal/package-files.ts'
 import { type routes } from '#universal/routes.ts'
+import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
 function redirectToCanonicalPath(input: { path: string; url: URL }) {
 	const destination = new URL(input.path, input.url)
@@ -41,11 +42,13 @@ async function renderCommunityFilesPage(input: {
 	listingId: string | null
 	selectedPath: string
 }) {
+	const serverTiming: Array<ServerTimingEntry> = []
 	const data = input.listingId
 		? await loadCommunityPackageFilesData({
 				env: input.env,
 				listingId: input.listingId,
 				selectedPath: input.selectedPath,
+				serverTiming,
 			})
 		: null
 	if (!data) {
@@ -55,6 +58,7 @@ async function renderCommunityFilesPage(input: {
 			title: 'Package files not found',
 			notFound: true,
 			status: 404,
+			serverTiming,
 		})
 	}
 	return renderAppPage({
@@ -62,6 +66,7 @@ async function renderCommunityFilesPage(input: {
 		env: input.env,
 		title: `${data.title} files`,
 		loaderData: { packageFiles: data },
+		serverTiming,
 	})
 }
 
@@ -172,11 +177,13 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 					404,
 				)
 			}
+			const serverTiming: Array<ServerTimingEntry> = []
 			const data = target
 				? await loadCommunityPackageFilesData({
 						env,
 						listingId: target.listingId,
 						selectedPath,
+						serverTiming,
 					})
 				: null
 			if (!data) {
@@ -185,7 +192,7 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 					404,
 				)
 			}
-			return jsonResponse(data)
+			return jsonResponse(data, { serverTiming })
 		},
 	} satisfies Action<typeof routes.communityPackageFilesApi>
 }
@@ -201,10 +208,12 @@ export function createCommunityDetailFilesApiHandler(env: Env) {
 					400,
 				)
 			}
+			const serverTiming: Array<ServerTimingEntry> = []
 			const data = await loadCommunityPackageFilesData({
 				env,
 				listingId: params.listingId,
 				selectedPath,
+				serverTiming,
 			})
 			if (!data) {
 				return jsonResponse(
@@ -212,7 +221,7 @@ export function createCommunityDetailFilesApiHandler(env: Env) {
 					404,
 				)
 			}
-			return jsonResponse(data)
+			return jsonResponse(data, { serverTiming })
 		},
 	} satisfies Action<typeof routes.communityDetailFilesApi>
 }
@@ -237,12 +246,14 @@ export function createAccountPackageFilesHandler(env: Env) {
 				})
 			}
 
+			const serverTiming: Array<ServerTimingEntry> = []
 			const data = await loadAccountPackageFilesData({
 				env,
 				request,
 				userId: user.mcpUser.userId,
 				packageId: params.packageId,
 				selectedPath,
+				serverTiming,
 			})
 			if (!data) {
 				return renderAppPage({
@@ -251,6 +262,7 @@ export function createAccountPackageFilesHandler(env: Env) {
 					title: 'Package files not found',
 					notFound: true,
 					status: 404,
+					serverTiming,
 				})
 			}
 			return renderAppPage({
@@ -258,6 +270,7 @@ export function createAccountPackageFilesHandler(env: Env) {
 				env,
 				title: `${data.title} files`,
 				loaderData: { packageFiles: data },
+				serverTiming,
 			})
 		},
 	} satisfies Action<typeof routes.accountPackageFiles>
@@ -281,12 +294,14 @@ export function createAccountPackageFilesApiHandler(env: Env) {
 					400,
 				)
 			}
+			const serverTiming: Array<ServerTimingEntry> = []
 			const data = await loadAccountPackageFilesData({
 				env,
 				request,
 				userId: user.mcpUser.userId,
 				packageId: params.packageId,
 				selectedPath,
+				serverTiming,
 			})
 			if (!data) {
 				return jsonResponse(
@@ -294,7 +309,7 @@ export function createAccountPackageFilesApiHandler(env: Env) {
 					404,
 				)
 			}
-			return jsonResponse(data)
+			return jsonResponse(data, { serverTiming })
 		},
 	} satisfies Action<typeof routes.accountPackageFilesApi>
 }

@@ -48,6 +48,10 @@ import {
 	highlightSnippets,
 } from '#app/highlight-code.ts'
 import { collectOnboardingMcpSnippets } from '#universal/onboarding-mcp-clients.ts'
+import {
+	pushServerTiming,
+	type ServerTimingEntry,
+} from '#worker/server-timing.ts'
 
 /**
  * The checklist derives from existing signals (mailbox, memories,
@@ -275,12 +279,13 @@ function redirectUnverifiedToPending(request: Request) {
 async function withOnboardingHighlights(
 	env: Env,
 	data: OnboardingLoaderData,
+	serverTiming?: Array<ServerTimingEntry>,
 ): Promise<OnboardingLoaderData> {
 	if (!data.mcpServerUrl) {
 		return { ...data, mcpHighlights: {} }
 	}
 	const snippets = collectOnboardingMcpSnippets(data.mcpServerUrl)
-	const results = await highlightSnippets(env, snippets)
+	const results = await highlightSnippets(env, snippets, { serverTiming })
 	return {
 		...data,
 		mcpHighlights: highlightResultsByKey(snippets, results),
@@ -291,21 +296,29 @@ export function createOnboardingHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
+			const serverTiming: Array<ServerTimingEntry> = []
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
 				const { persistContext: _persistContext, ...chooser } =
-					await loadOnboardingChooserFields(env, request)
-				const onboarding = await withOnboardingHighlights(env, {
-					...loadPublicOnboardingData({
-						env,
-						requestUrl: request.url,
-					}),
-					...chooser,
-				})
+					await pushServerTiming(serverTiming, 'listings', () =>
+						loadOnboardingChooserFields(env, request),
+					)
+				const onboarding = await withOnboardingHighlights(
+					env,
+					{
+						...loadPublicOnboardingData({
+							env,
+							requestUrl: request.url,
+						}),
+						...chooser,
+					},
+					serverTiming,
+				)
 				return renderAppPage({
 					request,
 					env,
 					loaderData: { onboarding },
+					serverTiming,
 				})
 			}
 
@@ -313,10 +326,8 @@ export function createOnboardingHandler(env: Env) {
 				return redirectUnverifiedToPending(request)
 			}
 
-			const chooser = await loadOnboardingChooserFields(
-				env,
-				request,
-				user.mcpUser.userId,
+			const chooser = await pushServerTiming(serverTiming, 'listings', () =>
+				loadOnboardingChooserFields(env, request, user.mcpUser.userId),
 			)
 			const onboarding = await loadOnboardingData({
 				env,
@@ -341,8 +352,13 @@ export function createOnboardingHandler(env: Env) {
 				request,
 				env,
 				loaderData: {
-					onboarding: await withOnboardingHighlights(env, onboarding),
+					onboarding: await withOnboardingHighlights(
+						env,
+						onboarding,
+						serverTiming,
+					),
 				},
+				serverTiming,
 			})
 		},
 	} satisfies Action<typeof routes.onboarding>
@@ -356,18 +372,26 @@ export function createOnboardingApiHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
 			}
 
+			const serverTiming: Array<ServerTimingEntry> = []
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
 				const { persistContext: _persistContext, ...chooser } =
-					await loadOnboardingChooserFields(env, request)
+					await pushServerTiming(serverTiming, 'listings', () =>
+						loadOnboardingChooserFields(env, request),
+					)
 				return jsonResponse(
-					await withOnboardingHighlights(env, {
-						...loadPublicOnboardingData({
-							env,
-							requestUrl: request.url,
-						}),
-						...chooser,
-					}),
+					await withOnboardingHighlights(
+						env,
+						{
+							...loadPublicOnboardingData({
+								env,
+								requestUrl: request.url,
+							}),
+							...chooser,
+						},
+						serverTiming,
+					),
+					{ serverTiming },
 				)
 			}
 
@@ -375,7 +399,9 @@ export function createOnboardingApiHandler(env: Env) {
 			// gate; MCP URL/setup and featured fields stay empty until
 			// verification succeeds.
 			const chooser = user.emailVerified
-				? await loadOnboardingChooserFields(env, request, user.mcpUser.userId)
+				? await pushServerTiming(serverTiming, 'listings', () =>
+						loadOnboardingChooserFields(env, request, user.mcpUser.userId),
+					)
 				: null
 			const onboarding = await loadOnboardingData({
 				env,
@@ -398,7 +424,10 @@ export function createOnboardingApiHandler(env: Env) {
 					loadPersistedPackageKodyId(env, user.mcpUser.userId),
 				])
 			}
-			return jsonResponse(await withOnboardingHighlights(env, onboarding))
+			return jsonResponse(
+				await withOnboardingHighlights(env, onboarding, serverTiming),
+				{ serverTiming },
+			)
 		},
 	} satisfies Action<typeof routes.onboardingApi>
 }

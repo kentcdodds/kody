@@ -90,6 +90,7 @@ test('community files API resolves the listing, rejects traversal, and 404s miss
 		env: {},
 		listingId: 'listing-1',
 		selectedPath: 'src/index.ts',
+		serverTiming: expect.any(Array),
 	})
 
 	const invalid = await handler.handler({
@@ -147,5 +148,6 @@ test('account files API requires the owner session and does not leak other users
 		userId: 'stable-user-1',
 		packageId: 'pkg-1',
 		selectedPath: 'src/index.ts',
+		serverTiming: expect.any(Array),
 	})
 })

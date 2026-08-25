@@ -1,6 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { isExecutedDirectly } from '../node-runtime.ts'
+import {
+	parseServerTimingHeader,
+	type ServerTimingEntry,
+} from '#worker/server-timing.ts'
 
 export type SitePerfVerdict = 'ok' | 'needs-fix'
 
@@ -15,6 +19,14 @@ export type SitePerfFinding = {
 	message: string
 }
 
+export type SitePerfPageProbe = {
+	url: string
+	htmlBytes: number
+	cacheControl: string | null
+	ttfbMs: number | null
+	serverTiming: Array<ServerTimingEntry>
+}
+
 export type SitePerfReport = {
 	url: string
 	fetchedAt: string
@@ -23,6 +35,9 @@ export type SitePerfReport = {
 	vary: string | null
 	largestSameOriginJsBytes: number | null
 	lcpImageBytes: number | null
+	ttfbMs: number | null
+	serverTiming: Array<ServerTimingEntry>
+	pages: Array<SitePerfPageProbe>
 	findings: Array<SitePerfFinding>
 	verdict: SitePerfVerdict
 }
@@ -58,6 +73,9 @@ export function classifySitePerf(input: {
 	largestSameOriginJsBytes: number | null
 	lcpImageBytes: number | null
 	budget: SitePerfBudget
+	ttfbMs?: number | null
+	serverTiming?: Array<ServerTimingEntry>
+	pages?: Array<SitePerfPageProbe>
 }): SitePerfReport {
 	const findings: Array<SitePerfFinding> = []
 	const { html, budget } = input
@@ -128,6 +146,18 @@ export function classifySitePerf(input: {
 		})
 	}
 
+	if (
+		new URL(input.url).pathname === '/' &&
+		input.serverTiming &&
+		!input.serverTiming.some((entry) => entry.name === 'ssr')
+	) {
+		findings.push({
+			id: 'missing-app-timing',
+			message:
+				'Homepage Server-Timing is missing the app ssr phase (session/ssr).',
+		})
+	}
+
 	return {
 		url: input.url,
 		fetchedAt: new Date(0).toISOString(),
@@ -136,6 +166,9 @@ export function classifySitePerf(input: {
 		vary: input.vary,
 		largestSameOriginJsBytes: input.largestSameOriginJsBytes,
 		lcpImageBytes: input.lcpImageBytes,
+		ttfbMs: input.ttfbMs ?? null,
+		serverTiming: input.serverTiming ?? [],
+		pages: input.pages ?? [],
 		findings,
 		verdict: findings.length > 0 ? 'needs-fix' : 'ok',
 	}
@@ -155,18 +188,53 @@ async function byteLengthOf(url: string): Promise<number | null> {
 	}
 }
 
+const extraLandingPaths = ['/onboarding', '/guides/how-kody-works'] as const
+
+async function probePage(url: string): Promise<SitePerfPageProbe> {
+	const startedAt = performance.now()
+	const response = await fetch(url, {
+		headers: { Accept: 'text/html' },
+		redirect: 'follow',
+	})
+	const ttfbMs = Math.round(performance.now() - startedAt)
+	const html = await response.text()
+	return {
+		url: response.url || url,
+		htmlBytes: new TextEncoder().encode(html).byteLength,
+		cacheControl: response.headers.get('Cache-Control'),
+		ttfbMs,
+		serverTiming: parseServerTimingHeader(
+			response.headers.get('Server-Timing'),
+		),
+	}
+}
+
 export async function collectSitePerf(input: {
 	url: string
 	budget?: SitePerfBudget
 	now?: Date
 }): Promise<SitePerfReport> {
 	const budget = input.budget ?? (await loadSitePerfBudget())
+	const startedAt = performance.now()
 	const response = await fetch(input.url, {
 		headers: { Accept: 'text/html' },
 		redirect: 'follow',
 	})
+	const ttfbMs = Math.round(performance.now() - startedAt)
 	const html = await response.text()
 	const htmlBytes = new TextEncoder().encode(html).byteLength
+	const serverTiming = parseServerTimingHeader(
+		response.headers.get('Server-Timing'),
+	)
+	const resolvedUrl = response.url || input.url
+	const extraPages =
+		new URL(resolvedUrl).pathname === '/'
+			? await Promise.all(
+					extraLandingPaths.map((pathname) =>
+						probePage(new URL(pathname, resolvedUrl).href),
+					),
+				)
+			: []
 	const scriptHrefs = hrefsMatching(html, /<script[^>]+src=["']([^"']+)["']/gi)
 	const preloadHrefs = hrefsMatching(
 		html,
@@ -197,7 +265,7 @@ export async function collectSitePerf(input: {
 		: null
 
 	const report = classifySitePerf({
-		url: response.url || input.url,
+		url: resolvedUrl,
 		html,
 		cacheControl: response.headers.get('Cache-Control'),
 		vary: response.headers.get('Vary'),
@@ -205,6 +273,9 @@ export async function collectSitePerf(input: {
 		largestSameOriginJsBytes,
 		lcpImageBytes,
 		budget,
+		ttfbMs,
+		serverTiming,
+		pages: extraPages,
 	})
 	report.fetchedAt = (input.now ?? new Date()).toISOString()
 	return report
@@ -235,7 +306,7 @@ export async function main(argv = process.argv.slice(2)) {
 		process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
 	} else {
 		process.stdout.write(
-			`${report.verdict} ${report.url} html=${report.htmlBytes} js=${report.largestSameOriginJsBytes ?? 'n/a'} lcp=${report.lcpImageBytes ?? 'n/a'}\n`,
+			`${report.verdict} ${report.url} html=${report.htmlBytes} js=${report.largestSameOriginJsBytes ?? 'n/a'} lcp=${report.lcpImageBytes ?? 'n/a'} ttfb=${report.ttfbMs ?? 'n/a'}\n`,
 		)
 		for (const finding of report.findings) {
 			process.stdout.write(`- ${finding.message}\n`)

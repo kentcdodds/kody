@@ -19,6 +19,7 @@ import {
 } from '#app/markdown-negotiation.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
 import { highlightMarkdownFences } from '#app/highlight-code.ts'
+import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
 export function createBlogHandler(env: Env) {
 	return {
@@ -50,7 +51,11 @@ export function createBlogApiHandler(_env: Env) {
 }
 
 /** Loader payload shared by the SSR page and the JSON API. */
-async function toBlogPostLoaderData(env: Env, post: BlogPost) {
+async function toBlogPostLoaderData(
+	env: Env,
+	post: BlogPost,
+	serverTiming?: Array<ServerTimingEntry>,
+) {
 	return {
 		ok: true as const,
 		slug: post.slug,
@@ -62,7 +67,7 @@ async function toBlogPostLoaderData(env: Env, post: BlogPost) {
 		imageAlt: post.imageAlt,
 		ogImage: post.ogImage,
 		body: post.body,
-		bodyFences: await highlightMarkdownFences(env, post.body),
+		bodyFences: await highlightMarkdownFences(env, post.body, { serverTiming }),
 		readNext: getReadNextBlogPost(post.slug),
 	}
 }
@@ -90,13 +95,15 @@ export function createBlogPostHandler(env: Env) {
 				return markdownResponse(post.body)
 			}
 
+			const serverTiming: Array<ServerTimingEntry> = []
 			return withVaryAccept(
 				await renderAppPage({
 					request,
 					env,
 					loaderData: {
-						blogPost: await toBlogPostLoaderData(env, post),
+						blogPost: await toBlogPostLoaderData(env, post, serverTiming),
 					},
+					serverTiming,
 				}),
 			)
 		},
@@ -112,7 +119,10 @@ export function createBlogPostApiHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Blog post not found.' }, 404)
 			}
 
-			return jsonResponse(await toBlogPostLoaderData(env, post))
+			const serverTiming: Array<ServerTimingEntry> = []
+			return jsonResponse(await toBlogPostLoaderData(env, post, serverTiming), {
+				serverTiming,
+			})
 		},
 	} satisfies Action<typeof routes.blogPostApi>
 }

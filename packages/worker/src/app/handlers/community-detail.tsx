@@ -32,6 +32,7 @@ import { type CommunityListingRecord } from '#worker/community/types.ts'
 import { parseOgTheme } from '#worker/og/palette.ts'
 import { highlightMarkdownFences } from '#app/highlight-code.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
+import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
 const reportReasonSchema = z
 	.string()
@@ -79,14 +80,17 @@ async function renderCommunityListingPage(input: {
 		})
 	}
 
+	const serverTiming: Array<ServerTimingEntry> = []
 	const readmeFences = await highlightReadmeFences(
 		input.env,
 		detail.listing.readmeContent,
+		serverTiming,
 	)
 
 	return renderAppPage({
 		request: input.request,
 		env: input.env,
+		serverTiming,
 		loaderData: {
 			communityDetailShell: {
 				ok: true,
@@ -111,9 +115,10 @@ async function renderCommunityListingPage(input: {
 async function highlightReadmeFences(
 	env: Env,
 	readmeContent: string | null,
+	serverTiming?: Array<ServerTimingEntry>,
 ): Promise<Array<HighlightedCode>> {
 	if (!readmeContent) return []
-	return highlightMarkdownFences(env, readmeContent)
+	return highlightMarkdownFences(env, readmeContent, { serverTiming })
 }
 
 /**
@@ -187,13 +192,20 @@ export function createCommunityDetailApiHandler(env: Env) {
 				)
 			}
 
-			return jsonResponse(request, {
-				...detail,
-				readmeFences: await highlightReadmeFences(
-					env,
-					detail.listing.readmeContent,
-				),
-			})
+			const serverTiming: Array<ServerTimingEntry> = []
+			return jsonResponse(
+				request,
+				{
+					...detail,
+					readmeFences: await highlightReadmeFences(
+						env,
+						detail.listing.readmeContent,
+						serverTiming,
+					),
+				},
+				200,
+				serverTiming,
+			)
 		},
 	} satisfies Action<typeof routes.communityDetailApi>
 }
@@ -233,13 +245,20 @@ export function createCommunityPackageApiHandler(env: Env) {
 				)
 			}
 
-			return jsonResponse(request, {
-				...detail,
-				readmeFences: await highlightReadmeFences(
-					env,
-					detail.listing.readmeContent,
-				),
-			})
+			const serverTiming: Array<ServerTimingEntry> = []
+			return jsonResponse(
+				request,
+				{
+					...detail,
+					readmeFences: await highlightReadmeFences(
+						env,
+						detail.listing.readmeContent,
+						serverTiming,
+					),
+				},
+				200,
+				serverTiming,
+			)
 		},
 	} satisfies Action<typeof routes.communityPackageApi>
 }
@@ -392,10 +411,12 @@ function jsonResponse(
 	request: Request,
 	body: Record<string, unknown>,
 	status = 200,
+	serverTiming?: Array<ServerTimingEntry>,
 ) {
 	const cacheLookup = getRequestDataCacheLookup(request)
 	return buildJsonResponse(body, {
 		status,
 		headers: cacheLookup ? { 'X-Kody-Cache': cacheLookup } : undefined,
+		serverTiming,
 	})
 }

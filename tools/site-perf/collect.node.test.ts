@@ -57,4 +57,35 @@ test('classifySitePerf scores healthy landing signals and flags cache, LCP, Shik
 		'shiki-on-home',
 		'js-over-budget',
 	])
+
+	const missingTiming = classifySitePerf({
+		url: 'https://kody.codes/',
+		html: healthyHtml,
+		cacheControl: 'public, max-age=60, stale-while-revalidate=300',
+		vary: 'Cookie',
+		htmlBytes: 800,
+		largestSameOriginJsBytes: 800,
+		lcpImageBytes: 800,
+		budget,
+		serverTiming: [{ name: 'cfEdge', durationMs: 9 }],
+	})
+	expect(missingTiming.findings.map((finding) => finding.id)).toContain(
+		'missing-app-timing',
+	)
+	expect(
+		classifySitePerf({
+			url: 'https://kody.codes/',
+			html: healthyHtml,
+			cacheControl: 'public, max-age=60, stale-while-revalidate=300',
+			vary: 'Cookie',
+			htmlBytes: 800,
+			largestSameOriginJsBytes: 800,
+			lcpImageBytes: 800,
+			budget,
+			serverTiming: [
+				{ name: 'session', durationMs: 4 },
+				{ name: 'ssr', durationMs: 20 },
+			],
+		}).verdict,
+	).toBe('ok')
 })
