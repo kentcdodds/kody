@@ -27,7 +27,7 @@ import {
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
-import { LandingHeroOrbit } from './landing-hero-orbit.tsx'
+import { LandingHeroOrbit } from '#client/routes/landing-hero-orbit.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
 
 /**

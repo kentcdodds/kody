@@ -1011,8 +1011,22 @@ html.is-settled {
 	z-index: 0;
 }
 
+.landing-hero-orbit-you-layer {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	overflow: visible;
+	pointer-events: none;
+	z-index: 3;
+}
+
 .landing-hero-orbit-spoke {
-	stroke: color-mix(in oklab, var(--color-border) 85%, var(--color-primary-text));
+	stroke: color-mix(
+		in oklab,
+		var(--color-border) 85%,
+		var(--color-primary-text)
+	);
 	stroke-width: 0.45;
 	stroke-linecap: round;
 	opacity: 0.9;
@@ -1041,37 +1055,43 @@ html.is-settled {
 	box-shadow: 0 1px 0 oklch(from var(--color-text) l c h / 0.04);
 }
 
-@property --hero-you-angle {
-	syntax: '<number>';
-	inherits: false;
-	initial-value: 2.89;
-}
-
-.landing-hero-orbit-you {
-	position: absolute;
-	z-index: 3;
-	left: calc(50% + cos(var(--hero-you-angle) * 1rad) * 38%);
-	top: calc(78% - sin(var(--hero-you-angle) * 1rad) * 38%);
-	translate: -50% -115%;
-	display: grid;
-	justify-items: center;
-	row-gap: 0.15rem;
+.landing-hero-orbit-you-motion,
+.landing-hero-orbit-you-static {
 	color: var(--color-text);
 	pointer-events: none;
 }
 
-.landing-hero-orbit-you-label {
-	font-size: 0.78rem;
+.landing-hero-orbit-you-label-svg {
+	font-size: 3.2px;
 	font-weight: 650;
 	letter-spacing: 0.02em;
-	color: var(--color-text-muted);
+	fill: var(--color-text-muted);
 	text-transform: lowercase;
 }
 
-.landing-hero-orbit-you-figure {
-	display: grid;
-	place-items: center;
-	filter: drop-shadow(-6px 0 0 oklch(from var(--color-primary-text) l c h / 0.18));
+.landing-hero-orbit-you-figure-svg {
+	filter: drop-shadow(
+		-1.2px 0 0 oklch(from var(--color-primary-text) l c h / 0.2)
+	);
+}
+
+/* Default: static You. Motion twin only with JS + motion OK (SMIL). */
+.landing-hero-orbit-you-motion {
+	display: none;
+}
+
+.landing-hero-orbit-you-static {
+	display: inline;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	html.js .landing-hero-orbit-you-motion {
+		display: inline;
+	}
+
+	html.js .landing-hero-orbit-you-static {
+		display: none;
+	}
 }
 
 .landing-hero-orbit-hub {
@@ -1100,45 +1120,6 @@ html.is-settled {
 	font-weight: 720;
 	letter-spacing: -0.02em;
 	color: var(--color-text);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-	html.js .landing-hero-orbit-you {
-		animation: landing-hero-you-walk 8s ease-in-out infinite alternate;
-	}
-
-	html.js .landing-hero-orbit-you-stride {
-		animation: landing-hero-you-stride 0.55s ease-in-out infinite alternate;
-		transform-origin: 16px 34px;
-	}
-}
-
-@keyframes landing-hero-you-walk {
-	from {
-		--hero-you-angle: 2.89;
-	}
-
-	to {
-		--hero-you-angle: 0.251;
-	}
-}
-
-@keyframes landing-hero-you-stride {
-	from {
-		transform: skewX(-4deg);
-	}
-
-	to {
-		transform: skewX(4deg);
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.landing-hero-orbit-you {
-		left: 50%;
-		top: 22%;
-		--hero-you-angle: 1.57;
-	}
 }
 
 @media (max-width: 640px) {

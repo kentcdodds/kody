@@ -4,7 +4,7 @@ import {
 	heroOrbitHub,
 	heroOrbitPoint,
 	heroOrbitSpokePath,
-} from './landing-hero-orbit.ts'
+} from './landing-hero-orbit-geometry.ts'
 
 test('hero orbit points sit on an upper arc above the Kody hub', () => {
 	const total = 8

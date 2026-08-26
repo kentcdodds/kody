@@ -5,7 +5,7 @@ import {
 	heroOrbitHub,
 	heroOrbitPoint,
 	heroOrbitSpokePath,
-} from './landing-hero-orbit.ts'
+} from './landing-hero-orbit-geometry.ts'
 
 const hostAgents = [
 	{ label: 'Cursor', icon: 'cursor' },
@@ -85,28 +85,64 @@ export function LandingHeroOrbit(_handle: Handle) {
 							)
 						})}
 					</ul>
-					<div class="landing-hero-orbit-you" aria-hidden="true">
-						<span class="landing-hero-orbit-you-label">You</span>
-						<span class="landing-hero-orbit-you-figure">
-							<svg
-								viewBox="0 0 32 40"
-								width="28"
-								height="34"
-								aria-hidden="true"
+					{/* Separate SVG layer so You walks above the chips. */}
+					<svg
+						class="landing-hero-orbit-you-layer"
+						viewBox="0 0 100 100"
+						aria-hidden="true"
+					>
+						<path
+							id="landing-hero-you-path"
+							d={arcPath}
+							fill="none"
+							stroke="none"
+						/>
+						<g class="landing-hero-orbit-you-motion">
+							<g transform="translate(0 -8)">
+								<text
+									class="landing-hero-orbit-you-label-svg"
+									text-anchor="middle"
+									x="0"
+									y="-10"
+								>
+									You
+								</text>
+								<g
+									class="landing-hero-orbit-you-figure-svg"
+									fill="currentColor"
+								>
+									<circle cx="0" cy="-5.5" r="1.6" />
+									<path d="M-2.2-3.2h4.4c.4 0 .7.3.7.7v2.4l-1.1.4v3.6h-1.2v-2.9h-1.2v2.9h-1.2V-.1L-2.9.1v-2.4c0-.4.3-.7.7-.7z" />
+								</g>
+							</g>
+							<animateMotion
+								dur="8s"
+								repeatCount="indefinite"
+								keyPoints="0;1;0"
+								keyTimes="0;0.5;1"
+								calcMode="linear"
 							>
-								<circle cx="16" cy="7" r="5" fill="currentColor" />
-								<path
-									fill="currentColor"
-									d="M10 14h12c1.2 0 2 .8 2 2v7l-3 1v10h-3.2V26h-3.6v8H11V24l-3-1v-7c0-1.2.8-2 2-2z"
-								/>
-								<path
-									class="landing-hero-orbit-you-stride"
-									fill="currentColor"
-									d="M9 34h5l2 6H10zm9 0h5l-1 6h-5z"
-								/>
-							</svg>
-						</span>
-					</div>
+								<mpath href="#landing-hero-you-path" />
+							</animateMotion>
+						</g>
+						<g
+							class="landing-hero-orbit-you-static"
+							transform={`translate(${heroOrbitPoint(3, orbitTotal).x} ${heroOrbitPoint(3, orbitTotal).y - 8})`}
+						>
+							<text
+								class="landing-hero-orbit-you-label-svg"
+								text-anchor="middle"
+								x="0"
+								y="-10"
+							>
+								You
+							</text>
+							<g class="landing-hero-orbit-you-figure-svg" fill="currentColor">
+								<circle cx="0" cy="-5.5" r="1.6" />
+								<path d="M-2.2-3.2h4.4c.4 0 .7.3.7.7v2.4l-1.1.4v3.6h-1.2v-2.9h-1.2v2.9h-1.2V-.1L-2.9.1v-2.4c0-.4.3-.7.7-.7z" />
+							</g>
+						</g>
+					</svg>
 					<div
 						class="landing-hero-orbit-hub"
 						style={{
