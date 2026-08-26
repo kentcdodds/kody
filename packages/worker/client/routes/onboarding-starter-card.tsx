@@ -462,11 +462,11 @@ const starterErrorCss = {
 	textWrap: 'pretty' as const,
 }
 
-const rowCopyPromptButtonCss = {
-	...getPillButtonCss(),
-	...rowActionButtonSizeCss,
-	...starterCopyPromptTooltipCss,
-}
+const rowCopyPromptButtonCss = mergeCss(
+	getPillButtonCss(),
+	rowActionButtonSizeCss,
+	starterCopyPromptTooltipCss,
+)
 
 const starterRowStatusCss = {
 	...starterStatusCss,
