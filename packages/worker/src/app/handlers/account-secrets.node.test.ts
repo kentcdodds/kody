@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import type * as AllowedCapabilities from '#mcp/secrets/allowed-capabilities.ts'
 import type * as AllowedHosts from '#mcp/secrets/allowed-hosts.ts'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
+import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(async () => ({
@@ -92,6 +93,13 @@ const mockModule = vi.hoisted(() => ({
 	),
 	getPlatformOauthAppClientSecret: vi.fn(async () => null),
 	dispatchIntegrationAuthSucceededSubscriptionEvents: vi.fn(async () => []),
+	persistIntegrationTokens: vi.fn(async () => undefined),
+	persistUserOauthAppClientSecret: vi.fn(async () => undefined),
+	getJoinedIntegration: vi.fn(async (input: { name: string }) => ({
+		lane: 'user' as const,
+		app: { slug: String(input.name).toLowerCase() },
+		connection: { name: String(input.name).toLowerCase() },
+	})),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -173,6 +181,8 @@ vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 			mockModule.getAvailablePlatformApp(...args),
 		upsertPlatformIntegration: (...args: Array<unknown>) =>
 			mockModule.upsertPlatformIntegration(...args),
+		getJoinedIntegration: (...args: Array<unknown>) =>
+			mockModule.getJoinedIntegration(...args),
 		// Real scope validation so handler ordering tests exercise the actual
 		// allowlist semantics.
 		assertScopesAllowedForPlatformApp: actual.assertScopesAllowedForPlatformApp,
@@ -192,6 +202,17 @@ vi.mock('#worker/integrations/platform-apps.ts', () => ({
 	getPlatformOauthAppClientSecret: (...args: Array<unknown>) =>
 		mockModule.getPlatformOauthAppClientSecret(...args),
 }))
+
+vi.mock('#worker/integrations/credentials.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof IntegrationsCredentials>()
+	return {
+		...actual,
+		persistIntegrationTokens: (...args: Array<unknown>) =>
+			mockModule.persistIntegrationTokens(...args),
+		persistUserOauthAppClientSecret: (...args: Array<unknown>) =>
+			mockModule.persistUserOauthAppClientSecret(...args),
+	}
+})
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesByUserId: (...args: Array<unknown>) =>

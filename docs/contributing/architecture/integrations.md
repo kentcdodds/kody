@@ -152,8 +152,10 @@ query-param tokens). It also refreshes host-side
 (`integration_refresh_access_token` → `refreshIntegrationTokens`) so token
 rotation does not need an `allowed_packages` write grant, then materializes the
 new access token for user-lane integrations and throws for platform ones
-(`integration_get` carries `platform: true`). Unadopted community forks still
-need a read/use grant before the helper will return a raw token. Token-exchange
+(`integration_get` carries `platform: true`). The integration usage grant
+(`any`, or `packages` that includes that package) decides whether a package —
+including an unadopted community fork — can refresh or materialize tokens.
+Token-exchange
 request building is shared:
 `packages/worker/src/integrations/oauth-token-exchange.ts` lives in the
 shared-primitive layer so both the `/connect/oauth` handlers and the MCP refresh
