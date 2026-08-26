@@ -18,7 +18,7 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	).toBeVisible()
 	await expect(
 		page.getByRole('heading', {
-			name: /The private software ecosystem\s*all your agents can share/i,
+			name: /Keep using Cursor, Claude, or ChatGPT\s*Kody is the account they share/i,
 		}),
 	).toBeVisible()
 

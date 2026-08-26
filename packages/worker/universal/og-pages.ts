@@ -21,12 +21,12 @@ export type PublicOgPage = {
 
 export const publicOgPages = {
 	home: {
-		// Short enough for 78px OG type. The homepage H1 keeps the full sentence.
-		imageTitle: 'The private software ecosystem',
-		imageSubtitle: 'All your agents can share.',
-		ogTitle: 'The private software ecosystem all your agents can share',
+		// Short enough for 78px OG type. The homepage H1 keeps the full door.
+		imageTitle: 'Keep using your agents',
+		imageSubtitle: 'Tools and memory stay on Kody.',
+		ogTitle: 'Keep using Cursor, Claude, or ChatGPT — Kody',
 		ogDescription:
-			"It's like your own personal npm and GitHub that all of your agents can use.",
+			'Kody is the account your tools and memory live on when you switch. Not another chat. Not another harness.',
 		path: '/',
 	},
 	community: {

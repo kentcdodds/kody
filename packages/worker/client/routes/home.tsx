@@ -36,9 +36,9 @@ import { LandingLoopPlayer } from './landing-loop-player.tsx'
  * work. Motion is enhance-only (`html.js`) and fully off under
  * `prefers-reduced-motion`.
  *
- * Positioning: the private software ecosystem all your agents can share, not
- * another agent and not "equip your agent." Factory-loop art reuses the
- * existing 3D set; do not generate a new koala.
+ * Positioning (public door): keep using Cursor / Claude / ChatGPT — Kody is
+ * the account tools and memory live on when you switch. Not another agent,
+ * chat, or harness. Factory / npm / packages stay below the fold.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
  * emit a per-node `<style data-rmx>` tag for every marketing block.
@@ -210,13 +210,13 @@ export function HomeRoute(handle: Handle) {
 				{/* ============ hero ============ */}
 				<section data-parallax-scope class="landing-hero">
 					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
-						The private software ecosystem
+						Keep using Cursor, Claude, or ChatGPT
 						<br />
-						<em>all your agents can share</em>
+						<em>Kody is the account they share</em>
 					</h1>
 					<p data-rise style={{ '--rise': '1' }} class="landing-hero-sub">
-						It&apos;s like your own personal npm and GitHub that all of your
-						agents can use.
+						Tools, setup, and memory live here when you switch. Not another
+						chat. Not another harness.
 					</p>
 					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}
 					<div data-rise style={{ '--rise': '2' }} class="landing-hero-actions">
