@@ -22,6 +22,7 @@ import {
 	getGhostButtonCss,
 	getPillButtonCss,
 	hoverMq,
+	mergeCss,
 } from '#universal/styles/style-primitives.ts'
 
 type OnboardingStarterCardProps = {
@@ -375,9 +376,11 @@ export const starterCopyPromptTooltipCss = {
 		border: '6px solid transparent',
 		borderTopColor: colors.surface,
 	},
-	[`${hoverMq} &:hover [role="tooltip"]`]: {
-		opacity: 1,
-		visibility: 'visible' as const,
+	[hoverMq]: {
+		'&:hover [role="tooltip"]': {
+			opacity: 1,
+			visibility: 'visible' as const,
+		},
 	},
 	'&:focus-visible [role="tooltip"]': {
 		opacity: 1,
@@ -385,11 +388,11 @@ export const starterCopyPromptTooltipCss = {
 	},
 }
 
-const copyPromptButtonCss = {
-	...getPillButtonCss(),
-	...starterActionButtonSizeCss,
-	...starterCopyPromptTooltipCss,
-}
+const copyPromptButtonCss = mergeCss(
+	getPillButtonCss(),
+	starterActionButtonSizeCss,
+	starterCopyPromptTooltipCss,
+)
 
 /* Compact "Advanced" list row: icon + text left, action right, status wraps
    to a full-width line beneath. */
@@ -459,11 +462,11 @@ const starterErrorCss = {
 	textWrap: 'pretty' as const,
 }
 
-const rowCopyPromptButtonCss = {
-	...getPillButtonCss(),
-	...rowActionButtonSizeCss,
-	...starterCopyPromptTooltipCss,
-}
+const rowCopyPromptButtonCss = mergeCss(
+	getPillButtonCss(),
+	rowActionButtonSizeCss,
+	starterCopyPromptTooltipCss,
+)
 
 const starterRowStatusCss = {
 	...starterStatusCss,
