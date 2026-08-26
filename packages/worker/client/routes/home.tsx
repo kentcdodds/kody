@@ -36,8 +36,9 @@ import { LandingLoopPlayer } from './landing-loop-player.tsx'
  * work. Motion is enhance-only (`html.js`) and fully off under
  * `prefers-reduced-motion`.
  *
- * Positioning (public door): keep using Cursor / Claude / ChatGPT — Kody is
- * the account tools and memory live on when you switch. Not another agent,
+ * Positioning (public door): keep using the agent you already have — Kody is
+ * the account tools and memory live on when you switch. Host logos in the
+ * hero name the agents; the H1 stays vendor-agnostic. Not another agent,
  * chat, or harness. Factory / npm / packages stay below the fold.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
@@ -210,7 +211,7 @@ export function HomeRoute(handle: Handle) {
 				{/* ============ hero ============ */}
 				<section data-parallax-scope class="landing-hero">
 					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
-						Keep using Cursor, Claude, or ChatGPT
+						Keep using the agent you already have
 						<br />
 						<em>Kody is the account they share</em>
 					</h1>
@@ -218,6 +219,29 @@ export function HomeRoute(handle: Handle) {
 						Tools, setup, and memory live here when you switch. Not another
 						chat. Not another harness.
 					</p>
+					<ul
+						aria-label="Agents Kody plugs into"
+						data-rise
+						style={{ '--rise': '1.2' }}
+						class="landing-pitch-hosts landing-hero-hosts"
+					>
+						{hostAgents.map((agent, index) => (
+							<li
+								key={agent.label}
+								class="landing-chip landing-chip-icon landing-host-chip"
+								style={chipIconStyle(agent.icon)}
+								mix={revealPop(index * 35)}
+							>
+								{agent.label}
+							</li>
+						))}
+						<li
+							class="landing-chip landing-chip-muted landing-host-chip"
+							mix={revealPop(hostAgents.length * 35)}
+						>
+							anything that speaks MCP
+						</li>
+					</ul>
 					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}
 					<div data-rise style={{ '--rise': '2' }} class="landing-hero-actions">
 						{isSignedIn ? (
@@ -295,24 +319,6 @@ export function HomeRoute(handle: Handle) {
 							Because your agent does the thinking,{' '}
 							<strong>Kody gets better every time your agent does.</strong>
 						</p>
-						<ul aria-label="Agents Kody plugs into" class="landing-pitch-hosts">
-							{hostAgents.map((agent, index) => (
-								<li
-									key={agent.label}
-									class="landing-chip landing-chip-icon landing-host-chip"
-									style={chipIconStyle(agent.icon)}
-									mix={revealPop(index * 35)}
-								>
-									{agent.label}
-								</li>
-							))}
-							<li
-								class="landing-chip landing-chip-muted landing-host-chip"
-								mix={revealPop(hostAgents.length * 35)}
-							>
-								anything that speaks MCP
-							</li>
-						</ul>
 					</div>
 				</section>
 

@@ -955,6 +955,14 @@ html.is-settled {
 	gap: 0.6rem;
 }
 
+/* Same host chip row, centered under the hero door. */
+.landing-hero-hosts {
+	justify-content: center;
+	margin-top: 1.4rem;
+	max-width: 48rem;
+	margin-inline: auto;
+}
+
 .landing-chip {
 	display: inline-flex;
 	align-items: center;
