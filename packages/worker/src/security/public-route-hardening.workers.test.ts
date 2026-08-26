@@ -132,6 +132,11 @@ test('public route hardening rejects retired connector paths, unknown paths, and
 			secret: env.CAPABILITY_REINDEX_SECRET,
 			notConfiguredMessage: 'Secret re-encryption is not configured',
 		},
+		{
+			path: '/__maintenance/backfill-integration-credentials',
+			secret: env.CAPABILITY_REINDEX_SECRET,
+			notConfiguredMessage: 'Integration credential backfill is not configured',
+		},
 	] as const
 
 	for (const route of registeredMaintenanceRoutes) {

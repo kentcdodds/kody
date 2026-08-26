@@ -435,7 +435,8 @@ automatically:
   builtin capability vectors only (`{ "phases": ["capabilities"] }`). Omit
   `phases` to rebuild memories, jobs, and saved packages too. Saved package
   projections also refresh when packages are saved or published. Same bearer
-  authenticates `POST /__maintenance/reencrypt-secrets` — see
+  authenticates `POST /__maintenance/reencrypt-secrets` and
+  `POST /__maintenance/backfill-integration-credentials` — see
   [Secret rotation](./secret-rotation.md).)
 - `JOB_REINDEX_SECRET` (optional Worker secret; bearer auth for
   `POST /__maintenance/reindex-jobs` for a jobs-only Vectorize rebuild. Not
@@ -695,7 +696,8 @@ How to get/set each value:
     the fingerprint, so a pooling-only change also needs `force` (or a
     `vectorEmbedFingerprintVersion` bump). After Vectorize data loss, `force` is
     required so restored D1 fingerprints cannot skip an empty index. The same
-    bearer authenticates `POST /__maintenance/reencrypt-secrets` (see
+    bearer authenticates `POST /__maintenance/reencrypt-secrets` and
+    `POST /__maintenance/backfill-integration-credentials` (see
     [Secret rotation](./secret-rotation.md)). Local and preview environments can
     omit it; CI skips reindex and origin-only execute-smoke when the secret is
     unset.

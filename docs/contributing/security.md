@@ -383,11 +383,15 @@ guarded by a bearer secret comparison.
   under the same KEK and upgrade to `v2` on write re-encryption, or via the
   operator pass at `POST /__maintenance/reencrypt-secrets` (same KEK; optimistic
   compare so a concurrent user rotation wins; decrypt failures are counted and
-  left unchanged). Only `v2` provides owner binding: a 2-part ciphertext carries
-  no AAD, so a copied row would decrypt until rewritten (metadata-only writes
-  preserve the 2-part ciphertext). Row swaps already require write access to the
-  database, so this is defense-in-depth, not a standing hole. Decrypt dual-reads
-  both shapes; user-facing reads never rewrite.
+  left unchanged). Leftover integration-owned OAuth values that still live only
+  in `secret_entries` are copied onto the connection/app ciphertext columns by
+  `POST /__maintenance/backfill-integration-credentials` (same bearer; writes
+  only where the ciphertext column is still null). Only `v2` provides owner
+  binding: a 2-part ciphertext carries no AAD, so a copied row would decrypt
+  until rewritten (metadata-only writes preserve the 2-part ciphertext). Row
+  swaps already require write access to the database, so this is
+  defense-in-depth, not a standing hole. Decrypt dual-reads both shapes;
+  user-facing reads never rewrite.
 - `SECRET_STORE_KEY` is escrowed for disaster recovery as a passphrase-sealed
   blob in the DR backup bucket (solo operator; see
   [Disaster recovery](./disaster-recovery.md) and

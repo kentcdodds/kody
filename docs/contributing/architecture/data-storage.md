@@ -1247,7 +1247,10 @@ on write unless a migration backfills existing rows.
   layer own the shapes. Access and refresh token ciphertexts live on
   `user_integrations`; the user-lane client secret ciphertext lives on
   `user_oauth_apps`. Account export redacts those columns. `*_secret_name`
-  columns remain for dual-write soak.
+  columns remain for dual-write soak. The operator backfill at
+  `POST /__maintenance/backfill-integration-credentials` copies leftover
+  secret-store values onto null ciphertext columns (see
+  [Secret rotation](../secret-rotation.md#backfilling-integration-owned-credentials)).
 - `user_openapi_bindings.auth_json`, `user_openapi_bindings.selection_json`, and
   `user_openapi_binding_operations.operation_json` (`0001-squashed-init.sql`,
   `packages/worker/src/openapi/`) store the auth discriminant, selection object,

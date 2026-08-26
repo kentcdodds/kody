@@ -98,6 +98,42 @@ rows that failed decryption and stay 2-part). If `remaining` stalls and
 inspect those keys instead of looping. This is a production mutation; run it
 only after an explicit operator go-ahead.
 
+## Backfilling integration-owned credentials
+
+After [OAuth integrations](./architecture/integrations.md) persist access,
+refresh, and user-lane client secrets as ciphertext on `user_integrations` /
+`user_oauth_apps`, some rows can still have a `*_secret_name` and a null
+ciphertext column (idle pre-migration connections, names-only seed rows).
+Resolve falls back to `secret_entries` for those rows. The operator pass copies
+the leftover secret-store values onto the columns so
+[#1773](https://github.com/kentcdodds/kody/issues/1773) can drop the dual-write
+and the names.
+
+`POST /__maintenance/backfill-integration-credentials` (bearer
+`CAPABILITY_REINDEX_SECRET`). Operators with Actions access dispatch
+`.github/workflows/backfill-integration-credentials.yml` (`dry_run` defaults to
+true) so the bearer never leaves GitHub Actions.
+
+The pass:
+
+1. Counts leftover fields (`*_secret_name` set, matching `*_encrypted` null).
+2. Resolves each leftover name from the user secret store, encrypts it with the
+   integration/app AAD, and writes only `WHERE <column> IS NULL` so a concurrent
+   persist wins.
+3. Leaves missing or unreadable secrets unchanged and reports stable row keys
+   (`userId:name:access`, never plaintext or ciphertext).
+
+Optional JSON body: `{ "dryRun": true }` to resolve-verify without writes;
+`{ "maxRows": 50 }` to bound leftover **fields that can still make progress**
+(copied or raced) in one invocation (default 500). Missing or unreadable
+leftovers are scanned and reported; they do not consume `maxRows`, so a later
+copyable connection or app still copies in the same invocation. Repeat the write
+until every field reports `remaining: 0`. `remaining` includes rows whose secret
+is missing. If `remaining` stalls and `missingSecrets` is non-empty after a run
+that did not hit the copy budget, inspect those keys instead of looping. This is
+a production mutation; run `dryRun: true` first and only write after an explicit
+operator go-ahead.
+
 ## Generating secure key values
 
 Use a cryptographically random string of at least 32 characters:
