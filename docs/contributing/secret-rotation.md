@@ -127,12 +127,12 @@ Optional JSON body: `{ "dryRun": true }` to resolve-verify without writes;
 `{ "maxRows": 50 }` to bound leftover **fields that can still make progress**
 (copied or raced) in one invocation (default 500). Missing or unreadable
 leftovers are scanned and reported; they do not consume `maxRows`, so a later
-copyable connection or app still copies in the same invocation. Repeat the
-write until every field reports `remaining: 0`. `remaining` includes rows
-whose secret is missing. If `remaining` stalls and `missingSecrets` is
-non-empty after a run that did not hit the copy budget, inspect those keys
-instead of looping. This is a production mutation; run `dryRun: true` first
-and only write after an explicit operator go-ahead.
+copyable connection or app still copies in the same invocation. Repeat the write
+until every field reports `remaining: 0`. `remaining` includes rows whose secret
+is missing. If `remaining` stalls and `missingSecrets` is non-empty after a run
+that did not hit the copy budget, inspect those keys instead of looping. This is
+a production mutation; run `dryRun: true` first and only write after an explicit
+operator go-ahead.
 
 ## Generating secure key values
 

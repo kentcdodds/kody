@@ -407,8 +407,12 @@ test('missing leftover prefix does not starve later copyable connections or apps
 		},
 	])
 	expect(readCiphertexts(sqlite, 'user-a').access_token_encrypted).toBeNull()
-	expect(readCiphertexts(sqlite, 'user-z').access_token_encrypted).not.toBeNull()
-	expect(readCiphertexts(sqlite, 'user-z').refresh_token_encrypted).not.toBeNull()
+	expect(
+		readCiphertexts(sqlite, 'user-z').access_token_encrypted,
+	).not.toBeNull()
+	expect(
+		readCiphertexts(sqlite, 'user-z').refresh_token_encrypted,
+	).not.toBeNull()
 	expect(
 		(
 			sqlite
