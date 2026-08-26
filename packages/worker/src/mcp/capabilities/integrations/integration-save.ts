@@ -128,8 +128,8 @@ function assertIntegrationSaveKeepsApprovedHosts(input: {
 	current: IntegrationConfig
 	next: IntegrationConfig
 }) {
-	const approved = new Set(input.current.requiredHosts)
-	const addedHosts = input.next.requiredHosts.filter(
+	const approved = new Set(input.current.requiredHosts ?? [])
+	const addedHosts = (input.next.requiredHosts ?? []).filter(
 		(host) => !approved.has(host),
 	)
 	if (addedHosts.length > 0) {

@@ -334,7 +334,9 @@ test('integration_save reuses an existing app when credentials match and preserv
 	).rejects.toSatisfy(
 		(error: unknown) =>
 			error instanceof McpCallerError &&
-			error.message.includes('Cannot point tokenUrl at host "attacker.example"'),
+			error.message.includes(
+				'Cannot point tokenUrl at host "attacker.example"',
+			),
 	)
 })
 

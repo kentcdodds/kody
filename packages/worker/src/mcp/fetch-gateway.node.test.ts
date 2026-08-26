@@ -261,14 +261,16 @@ test('fetch gateway gates integration-owned token names by the connection grant,
 			adoptedAt: null,
 			adoptionNote: null,
 		})
-	const resolveSpy = vi.spyOn(secretService, 'resolveSecret').mockResolvedValue({
-		found: true,
-		value: 'oauth-access',
-		scope: 'user',
-		allowedHosts: ['example.com'],
-		allowedCapabilities: [],
-		allowedPackages: [],
-	})
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue({
+			found: true,
+			value: 'oauth-access',
+			scope: 'user',
+			allowedHosts: ['example.com'],
+			allowedCapabilities: [],
+			allowedPackages: [],
+		})
 	const ownerSpy = vi
 		.spyOn(ownedSecretNames, 'findIntegrationOwningSecretName')
 		.mockResolvedValue({ name: 'google' })
