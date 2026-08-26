@@ -412,6 +412,15 @@ export function AccountRoute(handle: Handle) {
 		handle.update()
 	}
 
+	function setAvatarEditorBusy(busy: boolean) {
+		if (busy) {
+			avatarStatus = 'uploading'
+		} else if (editorFile) {
+			avatarStatus = 'editing'
+		}
+		handle.update()
+	}
+
 	async function uploadPreparedAvatar(prepared: File) {
 		editorFile = null
 		avatarStatus = 'uploading'
@@ -1272,6 +1281,7 @@ export function AccountRoute(handle: Handle) {
 				<AccountAvatarEditor
 					file={editorFile}
 					onCancel={closeAvatarEditor}
+					onBusyChange={setAvatarEditorBusy}
 					onApply={(prepared) => {
 						void uploadPreparedAvatar(prepared)
 					}}

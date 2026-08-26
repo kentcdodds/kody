@@ -48,6 +48,7 @@ export function AccountAvatarEditor(
 		file: File | null
 		onCancel: () => void
 		onApply: (prepared: File) => void
+		onBusyChange: (busy: boolean) => void
 	}>,
 ) {
 	let dialogNode: HTMLDialogElement | null = null
@@ -141,6 +142,7 @@ export function AccountAvatarEditor(
 		if (!file || !bitmap || !bounds || status !== 'ready') return
 		status = 'applying'
 		error = null
+		handle.props.onBusyChange(true)
 		handle.update()
 		try {
 			const prepared = await prepareDecodedAvatarImage(
@@ -161,6 +163,7 @@ export function AccountAvatarEditor(
 					? caught.message
 					: 'Unable to prepare that avatar.'
 			status = 'ready'
+			handle.props.onBusyChange(false)
 			handle.update()
 		}
 	}
@@ -351,6 +354,16 @@ export function AccountAvatarEditor(
 		applyVisuals()
 	}
 
+	handle.signal.addEventListener(
+		'abort',
+		() => {
+			loadGeneration += 1
+			releaseBitmap()
+			unlockScroll()
+		},
+		{ once: true },
+	)
+
 	return () => {
 		const file = handle.props.file
 		if (file !== activeFile && status !== 'applying') {
@@ -390,6 +403,13 @@ export function AccountAvatarEditor(
 					}),
 					on('keydown', (event) => {
 						if (!(event instanceof KeyboardEvent) || status !== 'ready') return
+						if (
+							event.target === zoomInputNode ||
+							(event.target instanceof HTMLInputElement &&
+								event.target.type === 'range')
+						) {
+							return
+						}
 						const key = event.key
 						if (key === 'ArrowLeft') {
 							event.preventDefault()
