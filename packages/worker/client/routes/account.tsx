@@ -1,6 +1,8 @@
 import { type Handle, css } from 'remix/ui'
 import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import { on } from '#client/event-mixin.ts'
+import { listenForAvatarFileDrop } from '#client/listen-for-avatar-file-drop.ts'
+import { prepareAvatarImage } from '#client/prepare-avatar-image.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { ProviderIcon } from '#client/provider-icons.tsx'
@@ -18,7 +20,12 @@ import {
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
-import { colors, spacing, typography } from '#universal/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import {
 	getDangerPillCss,
 	getGhostButtonCss,
@@ -148,7 +155,8 @@ export function AccountRoute(handle: Handle) {
 	let savedBio = ''
 	let savedProfileVisibility: ProfileVisibility = 'public'
 	let avatarUrl: string | null = null
-	let avatarStatus: 'idle' | 'uploading' | 'removing' = 'idle'
+	let avatarStatus: 'idle' | 'preparing' | 'uploading' | 'removing' = 'idle'
+	let avatarDropActive = false
 	let draftEmail = ''
 	let emailChangePassword = ''
 	let message: string | null = null
@@ -375,18 +383,32 @@ export function AccountRoute(handle: Handle) {
 		avatarUrl = payload.avatarUrl
 	}
 
-	async function handleAvatarSelected(event: Event) {
-		const input = event.currentTarget
-		if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return
-		const file = input.files[0]
-		avatarStatus = 'uploading'
+	if (typeof document !== 'undefined') {
+		listenForAvatarFileDrop({
+			signal: handle.signal,
+			onDragActiveChange(active) {
+				avatarDropActive = active
+				handle.update()
+			},
+			onImageFile(file) {
+				void uploadAvatarFile(file)
+			},
+		})
+	}
+
+	async function uploadAvatarFile(file: File) {
+		if (avatarStatus !== 'idle') return
+		avatarStatus = 'preparing'
 		message = null
 		messageTone = 'info'
 		handle.update()
 
 		try {
+			const prepared = await prepareAvatarImage(file)
+			avatarStatus = 'uploading'
+			handle.update()
 			const body = new FormData()
-			body.set('avatar', file)
+			body.set('avatar', prepared)
 			const response = await fetch(accountAvatarApiPath, {
 				method: 'POST',
 				headers: { Accept: 'application/json' },
@@ -412,8 +434,17 @@ export function AccountRoute(handle: Handle) {
 			messageTone = 'error'
 		} finally {
 			avatarStatus = 'idle'
-			input.value = ''
 			handle.update()
+		}
+	}
+
+	async function handleAvatarSelected(event: Event) {
+		const input = event.currentTarget
+		if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return
+		try {
+			await uploadAvatarFile(input.files[0])
+		} finally {
+			input.value = ''
 		}
 	}
 
@@ -766,7 +797,7 @@ export function AccountRoute(handle: Handle) {
 												type="file"
 												name="avatar"
 												data-field-ring
-												accept="image/png,image/jpeg,image/webp"
+												accept="image/*,.heic,.heif"
 												disabled={avatarStatus !== 'idle' || isSaving}
 												mix={[
 													css(accountInputCss),
@@ -776,6 +807,11 @@ export function AccountRoute(handle: Handle) {
 												]}
 											/>
 										</label>
+										<p mix={css(accountFieldNoteCss)}>
+											HEIC, AVIF, and large photos are converted and resized in
+											the browser. You can also drop a photo anywhere on this
+											page.
+										</p>
 										{avatarUrl ? (
 											<button
 												type="button"
@@ -791,6 +827,9 @@ export function AccountRoute(handle: Handle) {
 													? 'Removing...'
 													: 'Remove avatar'}
 											</button>
+										) : null}
+										{avatarStatus === 'preparing' ? (
+											<p mix={css(accountFieldNoteCss)}>Preparing avatar…</p>
 										) : null}
 										{avatarStatus === 'uploading' ? (
 											<p mix={css(accountFieldNoteCss)}>Uploading avatar…</p>
@@ -1220,6 +1259,36 @@ export function AccountRoute(handle: Handle) {
 					</>
 				) : null}
 
+				{avatarDropActive ? (
+					<div
+						role="status"
+						data-testid="account-avatar-drop-overlay"
+						mix={css({
+							position: 'fixed',
+							inset: 0,
+							zIndex: 2000,
+							display: 'grid',
+							placeItems: 'center',
+							backgroundColor:
+								'color-mix(in srgb, var(--color-background) 72%, transparent)',
+							pointerEvents: 'none',
+						})}
+					>
+						<p
+							mix={css({
+								margin: 0,
+								padding: `${spacing.md} ${spacing.lg}`,
+								border: `2px dashed ${colors.primary}`,
+								borderRadius: radius.lg,
+								backgroundColor: colors.surface,
+								color: colors.text,
+								fontWeight: typography.fontWeight.semibold,
+							})}
+						>
+							Drop to set your avatar
+						</p>
+					</div>
+				) : null}
 				<p mix={css({ margin: 0 })}>
 					<a href="/privacy" mix={css(mutedLinkCss)}>
 						Privacy
