@@ -221,6 +221,10 @@ and the inline `client_id`, never encrypted secret payloads. Exporting
 credential value. `platform_oauth_apps` is global operator config and is not
 part of any user's export.
 
+Connections that still have a `*_secret_name` and a null ciphertext column are
+copied by `POST /__maintenance/backfill-integration-credentials` (see
+[Secret rotation](../secret-rotation.md#backfilling-integration-owned-credentials)).
+
 ## Two independent host gates
 
 Outbound OAuth calls enforce two allowlists that are not collapsed:
