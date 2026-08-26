@@ -538,7 +538,7 @@ export async function getAvailablePlatformApp(input: {
 
 async function deleteOauthAppIfNoConnections(input: {
 	db: D1Database
-	env?: Partial<Pick<Env, 'COMMUNITY_ASSETS'>>
+	env?: { COMMUNITY_ASSETS?: Env['COMMUNITY_ASSETS'] }
 	userId: string
 	appSlug: string
 }): Promise<void> {

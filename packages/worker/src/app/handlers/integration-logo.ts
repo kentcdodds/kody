@@ -55,7 +55,7 @@ export function createIntegrationLogoHandler(env: Env) {
 				return new Response('Not found', { status: 404 })
 			}
 			return logoResponse(object, {
-				contentType: app.logoContentType,
+				contentType: app.logoContentType ?? null,
 				cacheControl: 'private, max-age=31536000, immutable',
 			})
 		},

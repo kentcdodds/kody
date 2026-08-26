@@ -163,11 +163,12 @@ User-lane OAuth apps have the same asset pipeline on `user_oauth_apps`
 `integration_save.logoBase64` is omit / value / `null` like the platform field.
 When no explicit upload is stored, connect and account-page loads fetch the
 registrable-domain favicon of `authorizeUrl` (then `apiBaseUrl` / `tokenUrl`)
-over HTTPS with manual redirects, prefer `apple-touch-icon` then `rel=icon`, and
-store a raster under `user-oauth-app-logos/{userId}/{slug}/`. Display order is
-explicit upload, official `ProviderIcon` catalog, auto-favicon, then the letter
-fallback. The same `/integrations/logos/:slug` route serves user assets only to
-the signed-in owner after a platform miss.
+over HTTPS with manual redirects, prefer `apple-touch-icon` then `rel=icon`,
+accept `/favicon.ico` only when it embeds a PNG, and store a raster under
+`user-oauth-app-logos/{userId}/{slug}/`. Display order is explicit upload,
+official `ProviderIcon` catalog, auto-favicon, then the letter fallback. The
+same `/integrations/logos/:slug` route serves user assets only to the signed-in
+owner after a platform miss.
 
 ### Admin provisioning
 

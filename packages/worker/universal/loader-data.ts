@@ -1070,6 +1070,7 @@ export type ConnectOauthLoaderData = {
 			detail: string
 			providerKey: string
 			logoPath: string | null
+			autoLogoPath: string | null
 			kind: 'connection' | 'platform'
 		}>
 	}

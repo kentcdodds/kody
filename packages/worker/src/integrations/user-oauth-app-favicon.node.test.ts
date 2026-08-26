@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	assertHttpsPublicUrl,
+	extractPngFromIco,
 	parseHtmlIconCandidates,
 	resolveFaviconOrigin,
 	shouldFetchUserOauthAppFavicon,
@@ -103,4 +104,20 @@ test('shouldFetchUserOauthAppFavicon skips explicit uploads and stale-host refet
 			faviconSourceHost: 'old.example',
 		}),
 	).toBe(true)
+})
+
+test('extractPngFromIco returns the largest embedded PNG and skips BMP ICO', () => {
+	const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+	const header = new Uint8Array(6 + 16)
+	const view = new DataView(header.buffer)
+	view.setUint16(0, 0, true)
+	view.setUint16(2, 1, true)
+	view.setUint16(4, 1, true)
+	view.setUint32(6 + 8, png.byteLength, true)
+	view.setUint32(6 + 12, header.byteLength, true)
+	const ico = new Uint8Array(header.byteLength + png.byteLength)
+	ico.set(header)
+	ico.set(png, header.byteLength)
+	expect(extractPngFromIco(ico)).toEqual(png)
+	expect(extractPngFromIco(new Uint8Array([0, 0, 1, 0, 0, 0]))).toBeNull()
 })

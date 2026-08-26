@@ -86,6 +86,15 @@ export async function setUserOauthAppLogo(input: {
 	if (!app) {
 		throw new Error(`OAuth app "${input.slug}" was not found.`)
 	}
+	// Favicon fill is async; a user upload that lands while we are fetching
+	// must win. Re-read happens here so the write itself is the guard.
+	if (
+		input.source === 'favicon' &&
+		app.logoSource === 'upload' &&
+		app.logoKey
+	) {
+		return app
+	}
 	const previousKey = app.logoKey
 
 	let nextKey: string | null = null

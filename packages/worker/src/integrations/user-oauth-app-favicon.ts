@@ -131,6 +131,39 @@ function isRedirectStatus(status: number): boolean {
 	return status >= 300 && status < 400
 }
 
+/**
+ * Classic ICO is a BMP container we do not rasterize. Vista+ ICO files
+ * often embed a PNG; extract the largest one so `/favicon.ico` still
+ * works when that is the only published mark.
+ */
+export function extractPngFromIco(bytes: Uint8Array): Uint8Array | null {
+	if (bytes.byteLength < 6) return null
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+	if (view.getUint16(0, true) !== 0 || view.getUint16(2, true) !== 1) {
+		return null
+	}
+	const count = view.getUint16(4, true)
+	if (count === 0 || bytes.byteLength < 6 + count * 16) return null
+	let best: Uint8Array | null = null
+	for (let index = 0; index < count; index += 1) {
+		const entry = 6 + index * 16
+		const size = view.getUint32(entry + 8, true)
+		const offset = view.getUint32(entry + 12, true)
+		if (size < 8 || offset + size > bytes.byteLength) continue
+		const image = bytes.subarray(offset, offset + size)
+		if (
+			image[0] !== 0x89 ||
+			image[1] !== 0x50 ||
+			image[2] !== 0x4e ||
+			image[3] !== 0x47
+		) {
+			continue
+		}
+		if (!best || image.byteLength > best.byteLength) best = image
+	}
+	return best
+}
+
 async function fetchHttpsPublic(input: {
 	url: string
 	accept: string
@@ -208,8 +241,12 @@ export async function fetchFaviconBytes(input: {
 			fetchImpl: input.fetchImpl,
 		})
 		if (!fetched?.bytes) continue
-		if (!sniffPlatformOauthAppLogoFormat(fetched.bytes)) continue
-		return fetched.bytes
+		const sourceBytes =
+			sniffPlatformOauthAppLogoFormat(fetched.bytes) != null
+				? fetched.bytes
+				: extractPngFromIco(fetched.bytes)
+		if (!sourceBytes) continue
+		return sourceBytes
 	}
 	return null
 }
