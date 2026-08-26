@@ -8,7 +8,7 @@ import {
 	type UserAvatarOutputContentType,
 } from '#universal/user-avatar-limits.ts'
 
-/** Longest side written by the browser encoder. Server still allows 4096. */
+/** Longest side the browser encoder writes. Server still allows 4096. */
 export const userAvatarBrowserEncodeMaxDimension = 1024
 
 export type AvatarImageBitmap = {
