@@ -1357,6 +1357,14 @@ test('applyEdits composes multiple replace edits to the same file instead of kee
 		],
 	})
 
+	// Planner unit tests cover stepwise composition; here assert applyEdits
+	// routes through that planner (shell planEdits would keep only the last).
+	const composed = [
+		'const accountId = accountId',
+		'const value = accountId',
+		'const extra = accountId',
+		'',
+	].join('\n')
 	const backend = vi.mocked(createWorkspaceStateBackend).mock.results.at(-1)
 		?.value as {
 		applyEditPlan: ReturnType<typeof vi.fn>
@@ -1364,48 +1372,14 @@ test('applyEdits composes multiple replace edits to the same file instead of kee
 	expect(backend.applyEditPlan).toHaveBeenCalledWith(
 		expect.objectContaining({
 			totalChanged: 3,
-			edits: [
-				expect.objectContaining({
-					changed: true,
-					content: [
-						'const accountId = accountId',
-						'const value = status.accountId',
-						'const extra = status.accountId',
-						'',
-					].join('\n'),
-				}),
-				expect.objectContaining({
-					changed: true,
-					content: [
-						'const accountId = accountId',
-						'const value = accountId',
-						'const extra = status.accountId',
-						'',
-					].join('\n'),
-				}),
-				expect.objectContaining({
-					changed: true,
-					content: [
-						'const accountId = accountId',
-						'const value = accountId',
-						'const extra = accountId',
-						'',
-					].join('\n'),
-				}),
-			],
+			edits: expect.arrayContaining([
+				expect.objectContaining({ changed: true, content: composed }),
+			]),
 		}),
 		expect.objectContaining({ dryRun: undefined }),
 	)
 	expect(result.totalChanged).toBe(3)
-	expect(result.edits.map((edit) => edit.changed)).toEqual([true, true, true])
-	expect(result.edits.at(-1)?.content).toBe(
-		[
-			'const accountId = accountId',
-			'const value = accountId',
-			'const extra = accountId',
-			'',
-		].join('\n'),
-	)
+	expect(result.edits.at(-1)?.content).toBe(composed)
 })
 
 test('publishSession persists the workspace snapshot to BUNDLE_ARTIFACTS_KV so downstream readers find the freshly published commit', async () => {

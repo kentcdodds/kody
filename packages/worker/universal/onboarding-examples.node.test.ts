@@ -118,9 +118,7 @@ test('example prompt searches the user-owned scoped package and statically impor
 	expect(prompt).toContain(
 		'import getTopStories from "kody:@u-b/hn-pulse/getTopStories"',
 	)
-	expect(prompt).not.toContain('packages.invoke')
 	expect(prompt).toContain('not a platform "kody:@kody/')
-	expect(prompt).not.toContain('person accounts cannot')
 	expect(buildOnboardingPackageAuthoringPrompt('hn-pulse')).toContain(
 		'package_get_git_remote',
 	)

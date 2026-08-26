@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	applyServerTimingHeader,
 	formatServerTimingHeader,
@@ -57,16 +57,22 @@ test('applyServerTimingHeader appends to an existing header', () => {
 	)
 })
 
-test('pushServerTiming records I/O-bounded durations when a bag is present', async () => {
-	const timings: Array<ServerTimingEntry> = []
-	const value = await pushServerTiming(timings, 'listings', async () => {
-		await new Promise((resolve) => setTimeout(resolve, 5))
-		return 7
-	})
-	expect(value).toBe(7)
-	expect(timings).toHaveLength(1)
-	expect(timings[0]?.name).toBe('listings')
-	expect(timings[0]?.durationMs).toBeGreaterThanOrEqual(5)
+test('pushServerTiming records durations when a bag is present', async () => {
+	vi.useFakeTimers({ now: 1_000 })
+	try {
+		const timings: Array<ServerTimingEntry> = []
+		const pending = pushServerTiming(timings, 'listings', async () => {
+			await new Promise((resolve) => setTimeout(resolve, 12))
+			return 7
+		})
+		await vi.advanceTimersByTimeAsync(12)
+		expect(await pending).toBe(7)
+		expect(timings).toEqual([{ name: 'listings', durationMs: 12 }])
 
-	expect(await pushServerTiming(undefined, 'skip', async () => 'ok')).toBe('ok')
+		expect(await pushServerTiming(undefined, 'skip', async () => 'ok')).toBe(
+			'ok',
+		)
+	} finally {
+		vi.useRealTimers()
+	}
 })
