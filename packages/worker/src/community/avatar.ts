@@ -1,6 +1,14 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import {
+	normalizeUserAvatarContentType,
+	userAvatarMaxAspectRatio,
+	userAvatarMaxDimension,
+	userAvatarMaxSourceBytes,
+	userAvatarMinDimension,
+	type UserAvatarOutputContentType,
+} from '#universal/user-avatar-limits.ts'
+import {
 	assertAccountWritableDb,
 	withAccountWriteLease,
 } from '#worker/account/deletion-state.ts'
@@ -11,14 +19,10 @@ import {
 	readWebpDimensions,
 } from './community-icon.ts'
 
-const maxUserAvatarSourceBytes = 1_000_000
-const minUserAvatarDimension = 64
-const maxUserAvatarDimension = 4096
-const maxUserAvatarAspectRatio = 3
 const userAvatarR2KeyPrefix = 'user-avatars/'
 const userAvatarCacheControl = 'public, max-age=31536000, immutable'
 
-export type UserAvatarContentType = 'image/png' | 'image/jpeg' | 'image/webp'
+export type UserAvatarContentType = UserAvatarOutputContentType
 
 type ProcessedUserAvatar = {
 	bytes: Uint8Array
@@ -37,23 +41,6 @@ function extensionForContentType(contentType: UserAvatarContentType) {
 			const unreachable: never = contentType
 			throw new Error(`Unsupported avatar content type: ${unreachable}`)
 		}
-	}
-}
-
-function normalizeAvatarContentType(
-	contentType: string,
-): UserAvatarContentType | null {
-	const normalized = contentType.trim().toLowerCase()
-	switch (normalized) {
-		case 'image/png':
-			return 'image/png'
-		case 'image/jpeg':
-		case 'image/jpg':
-			return 'image/jpeg'
-		case 'image/webp':
-			return 'image/webp'
-		default:
-			return null
 	}
 }
 
@@ -83,9 +70,9 @@ export function splitUserAvatarCacheKey(
 }
 
 function assertUserAvatarSourceSize(bytes: Uint8Array) {
-	if (bytes.byteLength === 0 || bytes.byteLength > maxUserAvatarSourceBytes) {
+	if (bytes.byteLength === 0 || bytes.byteLength > userAvatarMaxSourceBytes) {
 		throw new Error(
-			`Avatars must be between 1 byte and ${maxUserAvatarSourceBytes} bytes.`,
+			`Avatars must be between 1 byte and ${userAvatarMaxSourceBytes} bytes.`,
 		)
 	}
 }
@@ -97,20 +84,20 @@ function assertUserAvatarDimensions(dimensions: {
 	if (
 		!Number.isInteger(dimensions.width) ||
 		!Number.isInteger(dimensions.height) ||
-		dimensions.width < minUserAvatarDimension ||
-		dimensions.height < minUserAvatarDimension ||
-		dimensions.width > maxUserAvatarDimension ||
-		dimensions.height > maxUserAvatarDimension
+		dimensions.width < userAvatarMinDimension ||
+		dimensions.height < userAvatarMinDimension ||
+		dimensions.width > userAvatarMaxDimension ||
+		dimensions.height > userAvatarMaxDimension
 	) {
 		throw new Error(
-			`Avatars must be between ${minUserAvatarDimension}px and ${maxUserAvatarDimension}px on each side.`,
+			`Avatars must be between ${userAvatarMinDimension}px and ${userAvatarMaxDimension}px on each side.`,
 		)
 	}
 	const longer = Math.max(dimensions.width, dimensions.height)
 	const shorter = Math.min(dimensions.width, dimensions.height)
-	if (longer / shorter > maxUserAvatarAspectRatio) {
+	if (longer / shorter > userAvatarMaxAspectRatio) {
 		throw new Error(
-			`Avatars must have an aspect ratio of at most ${maxUserAvatarAspectRatio}:1.`,
+			`Avatars must have an aspect ratio of at most ${userAvatarMaxAspectRatio}:1.`,
 		)
 	}
 }
@@ -137,7 +124,7 @@ export function processUserAvatar(input: {
 	contentType: string
 	sourceBytes: Uint8Array
 }): ProcessedUserAvatar {
-	const contentType = normalizeAvatarContentType(input.contentType)
+	const contentType = normalizeUserAvatarContentType(input.contentType)
 	if (!contentType) {
 		throw new Error('Avatars must be PNG, JPEG, or WebP images.')
 	}

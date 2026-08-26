@@ -2,6 +2,7 @@ import { addEventListeners, type Handle } from 'remix/ui'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { applyDocumentHead } from './document-head.ts'
+import { installFileDropNavigationGuard } from './file-drop-navigation.ts'
 import {
 	abortIntentPrefetch,
 	prefetchRouteOnIntent,
@@ -964,6 +965,7 @@ function ensureRouter() {
 	document.addEventListener('touchstart', handleImmediateIntent, {
 		passive: true,
 	})
+	installFileDropNavigationGuard()
 }
 
 export function listenToRouterNavigation(

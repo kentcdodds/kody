@@ -32,6 +32,7 @@ import {
 import { visuallyHiddenUntilFocusedCss } from '#universal/styles/style-primitives.ts'
 import { SiteFooter } from './site-footer.tsx'
 import { SiteHeader } from './site-header.tsx'
+import { Toaster } from './toaster.tsx'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { isPackageFilesPathname } from '#universal/package-files.ts'
 import { userHasRole } from '#universal/permissions.ts'
@@ -311,6 +312,7 @@ export function App(handle: Handle<AppProps>) {
 						{isAuthShellPath ? null : (
 							<SiteFooter loggedIn={isLoggedIn} loginHref={loginHref} />
 						)}
+						<Toaster />
 					</div>
 				</AppSessionProvider>
 			</AppLoaderDataProvider>

@@ -1,6 +1,8 @@
 import { type Handle, css } from 'remix/ui'
 import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import { on } from '#client/event-mixin.ts'
+import { listenForAvatarFileDrop } from '#client/listen-for-avatar-file-drop.ts'
+import { AccountAvatarEditor } from '#client/routes/account-avatar-editor.tsx'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { ProviderIcon } from '#client/provider-icons.tsx'
@@ -18,14 +20,23 @@ import {
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
-import { colors, spacing, typography } from '#universal/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	shadows,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import {
 	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
+	hoverMq,
 	mutedLinkCss,
+	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 import { queueSessionRefresh } from '#client/session.ts'
+import { toast } from '#client/toast.ts'
 import {
 	type AccountStatus,
 	accountProfileApiPath,
@@ -148,7 +159,10 @@ export function AccountRoute(handle: Handle) {
 	let savedBio = ''
 	let savedProfileVisibility: ProfileVisibility = 'public'
 	let avatarUrl: string | null = null
-	let avatarStatus: 'idle' | 'uploading' | 'removing' = 'idle'
+	let optimisticAvatarObjectUrl: string | null = null
+	let avatarStatus: 'idle' | 'editing' | 'uploading' | 'removing' = 'idle'
+	let editorFile: File | null = null
+	let avatarDropActive = false
 	let draftEmail = ''
 	let emailChangePassword = ''
 	let message: string | null = null
@@ -372,21 +386,72 @@ export function AccountRoute(handle: Handle) {
 		draftDisplayName = payload.displayName
 		draftBio = payload.bio ?? ''
 		draftProfileVisibility = payload.profileVisibility
-		avatarUrl = payload.avatarUrl
+		if (!optimisticAvatarObjectUrl) avatarUrl = payload.avatarUrl
 	}
 
-	async function handleAvatarSelected(event: Event) {
-		const input = event.currentTarget
-		if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return
-		const file = input.files[0]
-		avatarStatus = 'uploading'
+	function releaseOptimisticAvatar() {
+		if (!optimisticAvatarObjectUrl) return
+		URL.revokeObjectURL(optimisticAvatarObjectUrl)
+		optimisticAvatarObjectUrl = null
+	}
+
+	if (typeof document !== 'undefined') {
+		listenForAvatarFileDrop({
+			signal: handle.signal,
+			onDragActiveChange(active) {
+				avatarDropActive = active
+				handle.update()
+			},
+			onImageFile(file) {
+				openAvatarEditor(file)
+			},
+		})
+	}
+
+	handle.signal.addEventListener(
+		'abort',
+		() => {
+			releaseOptimisticAvatar()
+		},
+		{ once: true },
+	)
+
+	function openAvatarEditor(file: File) {
+		if (avatarStatus !== 'idle' && avatarStatus !== 'editing') return
+		editorFile = file
+		avatarStatus = 'editing'
 		message = null
 		messageTone = 'info'
+		handle.update()
+	}
+
+	function closeAvatarEditor() {
+		editorFile = null
+		if (avatarStatus === 'editing') avatarStatus = 'idle'
+		handle.update()
+	}
+
+	function setAvatarEditorBusy(busy: boolean) {
+		if (busy) {
+			avatarStatus = 'uploading'
+		} else if (editorFile) {
+			avatarStatus = 'editing'
+		}
+		handle.update()
+	}
+
+	async function uploadPreparedAvatar(prepared: File) {
+		editorFile = null
+		const previousAvatarUrl = avatarUrl
+		releaseOptimisticAvatar()
+		optimisticAvatarObjectUrl = URL.createObjectURL(prepared)
+		avatarUrl = optimisticAvatarObjectUrl
+		avatarStatus = 'uploading'
 		handle.update()
 
 		try {
 			const body = new FormData()
-			body.set('avatar', file)
+			body.set('avatar', prepared)
 			const response = await fetch(accountAvatarApiPath, {
 				method: 'POST',
 				headers: { Accept: 'application/json' },
@@ -403,24 +468,36 @@ export function AccountRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to upload avatar.')
 			}
+			releaseOptimisticAvatar()
 			applyProfileFields(payload)
-			message = 'Avatar updated.'
-			messageTone = 'info'
+			toast.success('Avatar updated.')
 		} catch (error) {
-			message =
-				error instanceof Error ? error.message : 'Unable to upload avatar.'
-			messageTone = 'error'
+			releaseOptimisticAvatar()
+			avatarUrl = previousAvatarUrl
+			toast.error(
+				error instanceof Error ? error.message : 'Unable to upload avatar.',
+			)
 		} finally {
 			avatarStatus = 'idle'
-			input.value = ''
 			handle.update()
 		}
 	}
 
+	function handleAvatarSelected(event: Event) {
+		const input = event.currentTarget
+		if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return
+		try {
+			openAvatarEditor(input.files[0])
+		} finally {
+			input.value = ''
+		}
+	}
+
 	async function handleRemoveAvatar() {
+		const previousAvatarUrl = avatarUrl
+		releaseOptimisticAvatar()
+		avatarUrl = null
 		avatarStatus = 'removing'
-		message = null
-		messageTone = 'info'
 		handle.update()
 
 		try {
@@ -444,12 +521,12 @@ export function AccountRoute(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to remove avatar.')
 			}
 			applyProfileFields(payload)
-			message = 'Avatar removed.'
-			messageTone = 'info'
+			toast.success('Avatar removed.')
 		} catch (error) {
-			message =
-				error instanceof Error ? error.message : 'Unable to remove avatar.'
-			messageTone = 'error'
+			avatarUrl = previousAvatarUrl
+			toast.error(
+				error instanceof Error ? error.message : 'Unable to remove avatar.',
+			)
 		} finally {
 			avatarStatus = 'idle'
 			handle.update()
@@ -753,49 +830,59 @@ export function AccountRoute(handle: Handle) {
 								]}
 							>
 								<div mix={css(avatarSectionCss)} data-testid="account-avatar">
-									<UserAvatar
-										displayName={draftDisplayName || username}
-										avatarUrl={avatarUrl}
-										size={72}
-										testId="account-avatar-image"
-									/>
-									<div mix={css({ display: 'grid', gap: spacing.sm })}>
-										<label mix={css(accountFieldCss)}>
-											<span mix={css(accountFieldLabelCss)}>Avatar</span>
-											<input
-												type="file"
-												name="avatar"
-												data-field-ring
-												accept="image/png,image/jpeg,image/webp"
-												disabled={avatarStatus !== 'idle' || isSaving}
-												mix={[
-													css(accountInputCss),
-													on('change', (event) => {
-														void handleAvatarSelected(event)
-													}),
-												]}
-											/>
-										</label>
-										{avatarUrl ? (
-											<button
-												type="button"
-												disabled={avatarStatus !== 'idle' || isSaving}
-												mix={[
-													css(compactGhostButtonCss),
-													on('click', () => {
-														void handleRemoveAvatar()
-													}),
-												]}
-											>
-												{avatarStatus === 'removing'
-													? 'Removing...'
-													: 'Remove avatar'}
-											</button>
-										) : null}
-										{avatarStatus === 'uploading' ? (
-											<p mix={css(accountFieldNoteCss)}>Uploading avatar…</p>
-										) : null}
-									</div>
+									<label
+										mix={css({
+											...avatarEditCss,
+											cursor:
+												avatarStatus !== 'idle' || isSaving
+													? 'not-allowed'
+													: 'pointer',
+											opacity: avatarStatus !== 'idle' || isSaving ? 0.7 : 1,
+										})}
+									>
+										<UserAvatar
+											displayName={draftDisplayName || username}
+											avatarUrl={avatarUrl}
+											size={accountAvatarSize}
+											testId="account-avatar-image"
+										/>
+										<input
+											type="file"
+											name="avatar"
+											accept="image/*,.heic,.heif"
+											disabled={avatarStatus !== 'idle' || isSaving}
+											data-testid="account-avatar-file"
+											mix={[
+												css(visuallyHiddenCss),
+												on('change', (event) => {
+													void handleAvatarSelected(event)
+												}),
+											]}
+										/>
+										<span
+											data-avatar-edit-affordance
+											mix={css(avatarEditAffordanceCss)}
+										>
+											{avatarEditIcon()}
+										</span>
+										<span mix={css(visuallyHiddenCss)}>Change avatar</span>
+									</label>
+									{avatarUrl ? (
+										<button
+											type="button"
+											disabled={avatarStatus !== 'idle' || isSaving}
+											mix={[
+												css(compactGhostButtonCss),
+												on('click', () => {
+													void handleRemoveAvatar()
+												}),
+											]}
+										>
+											{avatarStatus === 'removing'
+												? 'Removing...'
+												: 'Remove avatar'}
+										</button>
+									) : null}
 								</div>
 								<label mix={css(accountFieldCss)}>
 									<span mix={css(accountFieldLabelCss)}>Username</span>
@@ -1220,6 +1307,44 @@ export function AccountRoute(handle: Handle) {
 					</>
 				) : null}
 
+				<AccountAvatarEditor
+					file={editorFile}
+					onCancel={closeAvatarEditor}
+					onBusyChange={setAvatarEditorBusy}
+					onApply={(prepared) => {
+						void uploadPreparedAvatar(prepared)
+					}}
+				/>
+				{avatarDropActive ? (
+					<div
+						role="status"
+						data-testid="account-avatar-drop-overlay"
+						mix={css({
+							position: 'fixed',
+							inset: 0,
+							zIndex: 2000,
+							display: 'grid',
+							placeItems: 'center',
+							backgroundColor:
+								'color-mix(in srgb, var(--color-background) 72%, transparent)',
+							pointerEvents: 'none',
+						})}
+					>
+						<p
+							mix={css({
+								margin: 0,
+								padding: `${spacing.md} ${spacing.lg}`,
+								border: `2px dashed ${colors.primary}`,
+								borderRadius: radius.lg,
+								backgroundColor: colors.surface,
+								color: colors.text,
+								fontWeight: typography.fontWeight.semibold,
+							})}
+						>
+							Drop to set your avatar
+						</p>
+					</div>
+				) : null}
 				<p mix={css({ margin: 0 })}>
 					<a href="/privacy" mix={css(mutedLinkCss)}>
 						Privacy
@@ -1242,9 +1367,64 @@ const compactGhostButtonCss = getGhostButtonCss({ size: 'sm' })
 
 const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
+const accountAvatarSize = 128
+
 const avatarSectionCss = {
-	display: 'flex',
-	alignItems: 'flex-start',
-	gap: spacing.md,
-	flexWrap: 'wrap' as const,
+	display: 'grid',
+	gap: spacing.sm,
+	justifyItems: 'start' as const,
+}
+
+const avatarEditCss = {
+	position: 'relative' as const,
+	display: 'inline-block',
+	width: `${accountAvatarSize}px`,
+	height: `${accountAvatarSize}px`,
+	borderRadius: radius.full,
+	[hoverMq]: {
+		'& [data-avatar-edit-affordance]': {
+			opacity: 0,
+		},
+		'&:hover [data-avatar-edit-affordance], &:focus-within [data-avatar-edit-affordance]':
+			{
+				opacity: 1,
+			},
+	},
+}
+
+const avatarEditAffordanceCss = {
+	position: 'absolute' as const,
+	right: '0.15rem',
+	bottom: '0.15rem',
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	width: '2.25rem',
+	height: '2.25rem',
+	borderRadius: radius.full,
+	backgroundColor: colors.surface,
+	color: colors.text,
+	border: `1px solid ${colors.border}`,
+	boxShadow: shadows.md,
+	opacity: 1,
+	pointerEvents: 'none' as const,
+}
+
+function avatarEditIcon() {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width="16"
+			height="16"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
+			<path d="M12 20h9" />
+			<path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+		</svg>
+	)
 }

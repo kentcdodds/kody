@@ -85,6 +85,11 @@ file style first, then run the formatter.
   during the undo window — remount commits immediately and loader data can
   restore the optimistic removal. Navigate after `onCommit` if the selection is
   gone.
+- For non-undo flash messages (save/upload success, or errors that should not
+  shift page layout), use `toast` from `packages/worker/client/toast.ts`. The
+  app shell already mounts `<Toaster />`. `toast.success` and `toast.info`
+  auto-dismiss; `toast.error` stays until dismissed. Pass `duration: null` (or
+  `Infinity`) to persist any tone, or `action: { label, onClick }` for a button.
 
 ## Absence values
 
