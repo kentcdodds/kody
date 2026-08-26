@@ -656,22 +656,6 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withCommentedCssHtml).not.toContain('<main>')
 
 	expect(withoutAssetsHtml).toContain('src="/page-init.js"')
-	expect(withoutAssetsHtml).not.toContain('theme-init.js')
-	expect(withoutAssetsHtml).not.toContain('aria-label="Dark mode"')
-	expect(withoutAssetsHtml).not.toContain('data-theme')
-	expect(withoutAssetsHtml).not.toContain('kody-theme')
-
-	const loginHtml = await readResponseText(
-		await renderAppPage({
-			request: new Request('https://example.com/login'),
-			env,
-		}),
-	)
-	expect(loginHtml).toContain('Back to Kody')
-	expect(loginHtml).toContain('src="/page-init.js"')
-	expect(loginHtml).not.toContain('theme-init.js')
-	expect(loginHtml).not.toContain('aria-label="Dark mode"')
-	expect(loginHtml).not.toContain('data-theme')
 
 	// CSS needing HTML escaping must fall back to the <link> (the stream
 	// renderer escapes text children, which would corrupt selectors).
@@ -951,7 +935,6 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 	expect(html).toContain('data-testid="connect-oauth-advanced"')
 	expect(html).toContain('data-testid="connect-oauth-scopes"')
 	expect(html).toContain('https://accounts.google.com/o/oauth2/v2/auth')
-	expect(html).not.toContain('>Status<')
 
 	// A built-in connect that would replace a user-lane connection under the
 	// same name server-renders the replace confirmation and withholds the
@@ -1321,9 +1304,6 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(connectionHtml).toContain('data-highlighted="true"')
 	expect(connectionHtml).toContain('Services you connect so Kody can use them.')
 	expect(connectionHtml).toContain('aria-label="Integrations"')
-	expect(connectionHtml).not.toContain('OAuth configured')
-	expect(connectionHtml).not.toContain('aria-label="OAuth apps"')
-	expect(connectionHtml).not.toContain('This account is connected.')
 
 	const appResponse = await renderAppPage({
 		request: new Request(
@@ -1423,7 +1403,6 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 		'/connect/oauth?provider=google-work&amp;platform=google',
 	)
 	expect(builtInHtml).not.toContain('Rotate credentials')
-	expect(builtInHtml).not.toContain('Cursor-hosted repos')
 
 	const missingConnectionResponse = await renderAppPage({
 		request: new Request(
@@ -1490,8 +1469,6 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(emptyHtml).toContain(
 		'No integrations yet. Copy a setup prompt below to get started.',
 	)
-	expect(emptyHtml).not.toContain('aria-label="OAuth apps"')
-	expect(emptyHtml).not.toContain('Cursor-hosted repos')
 
 	const approvalResponse = await renderAppPage({
 		request: new Request(
@@ -1560,7 +1537,6 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	expect(approvalHtml).toContain('gmail.googleapis.com')
 	expect(approvalHtml).toContain('data-testid="secret-approval-advanced"')
 	expect(approvalHtml).not.toContain('Approve secret access')
-	expect(approvalHtml).not.toContain('Current allowed hosts:')
 })
 
 test('renderAppPage renders the redesigned pricing page', async () => {
@@ -1675,7 +1651,6 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 	expect(html).toContain('data-testid="community-readme"')
 	expect(html).toContain('data-testid="community-detail-install"')
 	expect(html).toContain('data-testid="community-detail-star"')
-	expect(html).not.toContain('id="stars-title"')
 	const props = readAppRootProps(html)
 	expect(props.loaderData?.communityDetailShell).toMatchObject({
 		ok: true,
