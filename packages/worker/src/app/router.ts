@@ -307,6 +307,7 @@ export function createAppRouter(env: Env) {
 			accountExport: createAccountExportHandler(env),
 			accountIntegrations: createAccountIntegrationsHandler(env),
 			accountOauthAppDetail: createAccountIntegrationsHandler(env),
+			accountIntegrationsApprove: createAccountIntegrationsHandler(env),
 			accountIntegrationDetail: createAccountIntegrationsHandler(env),
 			accountIntegrationsApi: createAccountIntegrationsApiHandler(env),
 			accountIntegrationsApiPost: createAccountIntegrationsApiHandler(env),

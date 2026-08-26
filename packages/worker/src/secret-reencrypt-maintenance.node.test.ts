@@ -93,6 +93,20 @@ test('secret re-encrypt maintenance route enforces auth and returns counts witho
 			decryptFailed: 0,
 			remaining: 0,
 		},
+		userIntegrations: {
+			scanned: 0,
+			rewritten: 0,
+			skippedConcurrent: 0,
+			decryptFailed: 0,
+			remaining: 0,
+		},
+		userOauthApps: {
+			scanned: 0,
+			rewritten: 0,
+			skippedConcurrent: 0,
+			decryptFailed: 0,
+			remaining: 0,
+		},
 		decryptFailures: [],
 	})
 	expect(JSON.stringify(payload)).not.toMatch(/encrypted/i)

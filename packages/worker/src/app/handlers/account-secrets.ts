@@ -43,10 +43,15 @@ import {
 import {
 	assertScopesAllowedForPlatformApp,
 	getAvailablePlatformApp,
+	getJoinedIntegration,
 	upsertIntegration,
 	upsertOauthAppWithoutConnection,
 	upsertPlatformIntegration,
 } from '#worker/integrations/service.ts'
+import {
+	persistIntegrationTokens,
+	persistUserOauthAppClientSecret,
+} from '#worker/integrations/credentials.ts'
 import { getPlatformOauthAppClientSecret } from '#worker/integrations/platform-apps.ts'
 import { dispatchIntegrationAuthSucceededSubscriptionEvents } from '#worker/integrations/package-subscriptions.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
@@ -427,6 +432,7 @@ async function handleConnectOauthAction(input: {
 				userId: input.user.mcpUser.userId,
 				scope: 'user',
 				storageContext: null,
+				includeIntegrationOwned: true,
 			})
 		).map((secret) => [secret.name, new Set(secret.allowedHosts)]),
 	)
@@ -503,6 +509,47 @@ async function handleConnectOauthAction(input: {
 					}
 				: null,
 		})
+	}
+	await persistIntegrationTokens({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		userEmail: input.user.mcpUser.email,
+		name: integrationName,
+		accessToken,
+		refreshToken:
+			refreshToken && persistRefreshTokenSecretName ? refreshToken : null,
+		accessTokenSecretName,
+		refreshTokenSecretName: persistRefreshTokenSecretName,
+		descriptionPrefix: provider,
+	})
+	if (!platformApp && clientSecretSecretName) {
+		const resolvedClientSecret = await resolveSecret({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			name: clientSecretSecretName,
+			scope: 'user',
+			storageContext: { sessionId: null, appId: null, packageId: null },
+		})
+		const saved = await getJoinedIntegration({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			name: integrationName,
+		})
+		if (
+			resolvedClientSecret.found &&
+			resolvedClientSecret.value &&
+			saved?.lane === 'user'
+		) {
+			await persistUserOauthAppClientSecret({
+				env: input.env,
+				userId: input.user.mcpUser.userId,
+				userEmail: input.user.mcpUser.email,
+				slug: saved.app.slug,
+				value: resolvedClientSecret.value,
+				secretName: clientSecretSecretName,
+				description: `${provider} OAuth client secret`,
+			})
+		}
 	}
 	const approvalSecretNames = [
 		accessTokenSecretName,

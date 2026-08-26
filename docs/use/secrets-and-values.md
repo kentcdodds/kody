@@ -152,4 +152,7 @@ storage bucket via `packageStorage()`. See
 
 Durable facts and preferences belong in memories. Package runtime state and
 knobs belong in `packageStorage()`. Versioned config belongs in a repo.
-Credentials belong in secrets. OAuth client ids belong in integrations.
+Credentials belong in secrets. OAuth client ids belong in integrations. OAuth
+access and refresh tokens, and a user-registered app's client secret, live on
+the integration — they do not appear in the Secrets list. PATs, API keys, and
+webhook HMAC secrets stay in the secret store.

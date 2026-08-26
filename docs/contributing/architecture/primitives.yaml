@@ -330,7 +330,8 @@ primitives:
     name: OAuth integrations
     summary:
       Per-user connections over user-owned or platform (built-in) OAuth apps;
-      token secrets stay in the user secret store.
+      access/refresh tokens and user-lane client secrets live encrypted on the
+      connection/app, with a user-gated any/packages grant.
     code:
       - packages/worker/src/integrations/
       - packages/worker/src/mcp/capabilities/integrations/

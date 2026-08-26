@@ -1,5 +1,13 @@
 import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import {
+	parseAllowedPackages,
+	stringifyAllowedPackages,
+} from '#mcp/secrets/allowed-packages.ts'
+import {
+	normalizeIntegrationUsageMode,
+	type IntegrationUsageMode,
+} from './usage-mode.ts'
+import {
 	mapPlatformOauthAppRow,
 	type PlatformOauthAppRow,
 } from './platform-apps.ts'
@@ -28,6 +36,8 @@ type JoinedIntegrationRow = NullablePrefixed<UserOauthAppRow, 'a_'> &
 		required_hosts_json: string
 		access_token_secret_name: string
 		refresh_token_secret_name: string | null
+		usage_mode: string | null
+		allowed_packages_json: string | null
 		connected_at: string | null
 		token_refreshed_at: string | null
 		connection_created_at: string
@@ -98,6 +108,8 @@ const joinedSelectColumns = `
 	i.required_hosts_json AS required_hosts_json,
 	i.access_token_secret_name AS access_token_secret_name,
 	i.refresh_token_secret_name AS refresh_token_secret_name,
+	i.usage_mode AS usage_mode,
+	i.allowed_packages_json AS allowed_packages_json,
 	i.connected_at AS connected_at,
 	i.token_refreshed_at AS token_refreshed_at,
 	i.created_at AS connection_created_at,
@@ -500,6 +512,120 @@ export async function deleteIntegrationConnection(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
+export async function getIntegrationCredentialCiphertexts(input: {
+	db: D1Database
+	userId: string
+	name: string
+}): Promise<{
+	accessTokenEncrypted: string | null
+	refreshTokenEncrypted: string | null
+} | null> {
+	const row = await input.db
+		.prepare(
+			`SELECT access_token_encrypted, refresh_token_encrypted
+			FROM user_integrations
+			WHERE user_id = ? AND name = ?
+			LIMIT 1`,
+		)
+		.bind(input.userId, input.name)
+		.first<{
+			access_token_encrypted: string | null
+			refresh_token_encrypted: string | null
+		}>()
+	if (!row) return null
+	return {
+		accessTokenEncrypted: row.access_token_encrypted,
+		refreshTokenEncrypted: row.refresh_token_encrypted,
+	}
+}
+
+export async function updateIntegrationCredentialCiphertexts(input: {
+	db: D1Database
+	userId: string
+	name: string
+	accessTokenEncrypted: string
+	refreshTokenEncrypted: string | null
+}): Promise<void> {
+	const now = new Date().toISOString()
+	await input.db
+		.prepare(
+			`UPDATE user_integrations
+			SET access_token_encrypted = ?,
+				refresh_token_encrypted = COALESCE(?, refresh_token_encrypted),
+				updated_at = ?
+			WHERE user_id = ? AND name = ?`,
+		)
+		.bind(
+			input.accessTokenEncrypted,
+			input.refreshTokenEncrypted,
+			now,
+			input.userId,
+			input.name,
+		)
+		.run()
+}
+
+export async function getOauthAppClientSecretCiphertext(input: {
+	db: D1Database
+	userId: string
+	slug: string
+}): Promise<string | null> {
+	const row = await input.db
+		.prepare(
+			`SELECT client_secret_encrypted
+			FROM user_oauth_apps
+			WHERE user_id = ? AND slug = ?
+			LIMIT 1`,
+		)
+		.bind(input.userId, input.slug)
+		.first<{ client_secret_encrypted: string | null }>()
+	return row?.client_secret_encrypted ?? null
+}
+
+export async function updateOauthAppClientSecretCiphertext(input: {
+	db: D1Database
+	userId: string
+	slug: string
+	clientSecretEncrypted: string
+}): Promise<void> {
+	const now = new Date().toISOString()
+	await input.db
+		.prepare(
+			`UPDATE user_oauth_apps
+			SET client_secret_encrypted = ?, updated_at = ?
+			WHERE user_id = ? AND slug = ?`,
+		)
+		.bind(input.clientSecretEncrypted, now, input.userId, input.slug)
+		.run()
+}
+
+export async function updateIntegrationUsage(input: {
+	db: D1Database
+	userId: string
+	name: string
+	usageMode: IntegrationUsageMode
+	allowedPackageIds: Array<string>
+}): Promise<boolean> {
+	const now = new Date().toISOString()
+	const result = await input.db
+		.prepare(
+			`UPDATE user_integrations
+			SET usage_mode = ?,
+				allowed_packages_json = ?,
+				updated_at = ?
+			WHERE user_id = ? AND name = ?`,
+		)
+		.bind(
+			input.usageMode,
+			stringifyAllowedPackages(input.allowedPackageIds),
+			now,
+			input.userId,
+			input.name,
+		)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export function mapOauthAppRow(row: UserOauthAppRow): UserOauthApp {
 	return {
 		userId: row.user_id,
@@ -539,6 +665,8 @@ export function mapIntegrationRow(
 		requiredHosts: parseJsonStringArray(row.required_hosts_json),
 		accessTokenSecretName: row.access_token_secret_name,
 		refreshTokenSecretName: row.refresh_token_secret_name,
+		usageMode: normalizeIntegrationUsageMode(row.usage_mode),
+		allowedPackageIds: parseAllowedPackages(row.allowed_packages_json),
 		connectedAt: row.connected_at,
 		tokenRefreshedAt: row.token_refreshed_at,
 		createdAt: row.created_at,
@@ -558,6 +686,8 @@ function mapJoinedRow(row: JoinedIntegrationRow): JoinedIntegration {
 		required_hosts_json: row.required_hosts_json,
 		access_token_secret_name: row.access_token_secret_name,
 		refresh_token_secret_name: row.refresh_token_secret_name,
+		usage_mode: normalizeIntegrationUsageMode(row.usage_mode),
+		allowed_packages_json: row.allowed_packages_json ?? '[]',
 		connected_at: row.connected_at,
 		token_refreshed_at: row.token_refreshed_at,
 		created_at: row.connection_created_at,

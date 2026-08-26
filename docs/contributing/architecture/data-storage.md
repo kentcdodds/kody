@@ -1238,12 +1238,15 @@ on write unless a migration backfills existing rows.
   persists host-side and does not use that write grant. Package-scoped secrets
   are owned exclusively by the package id in their bucket binding.
 - `user_oauth_apps.extra_authorize_params_json`,
-  `user_integrations.scopes_json`, and `user_integrations.required_hosts_json`
-  (`0001-squashed-init.sql`, `packages/worker/src/integrations/`) store a
-  string→string object, a scope string list, and a host string list
-  respectively. Parsers in the integrations data-access layer own the shapes;
-  credential values are never stored in these columns (only secret names and the
-  inline non-secret `client_id`).
+  `user_integrations.scopes_json`, `user_integrations.required_hosts_json`, and
+  `user_integrations.allowed_packages_json` (`0001-squashed-init.sql` /
+  `0026-integration-owned-credentials.sql`, `packages/worker/src/integrations/`)
+  store a string→string object, a scope string list, a host string list, and a
+  saved-package-id list respectively. Parsers in the integrations data-access
+  layer own the shapes. Access and refresh token ciphertexts live on
+  `user_integrations`; the user-lane client secret ciphertext lives on
+  `user_oauth_apps`. Account export redacts those columns. `*_secret_name`
+  columns remain for dual-write soak.
 - `user_openapi_bindings.auth_json`, `user_openapi_bindings.selection_json`, and
   `user_openapi_binding_operations.operation_json` (`0001-squashed-init.sql`,
   `packages/worker/src/openapi/`) store the auth discriminant, selection object,

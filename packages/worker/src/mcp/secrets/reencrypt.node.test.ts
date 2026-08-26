@@ -5,9 +5,13 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import {
 	decryptPlatformOauthClientSecret,
 	decryptSecretValue,
+	decryptUserOauthAccessToken,
+	decryptUserOauthClientSecret,
 	encryptPlatformOauthClientSecret,
 	encryptSecretValue,
 	platformOauthAppContext,
+	userIntegrationCredentialContext,
+	userOauthAppCredentialContext,
 	userSecretContext,
 } from './crypto.ts'
 import { reencryptLegacySecretCiphertexts } from './reencrypt.ts'
@@ -102,6 +106,60 @@ async function insertPlatformApp(
 		.run(input.slug, input.encryptedSecret)
 }
 
+function insertUserOauthApp(
+	sqlite: DatabaseSync,
+	input: {
+		userId: string
+		slug: string
+		encryptedSecret: string
+	},
+) {
+	sqlite
+		.prepare(
+			`INSERT INTO user_oauth_apps (
+				user_id, slug, provider, label, client_id,
+				token_url, flow, extra_authorize_params_json,
+				client_secret_encrypted
+			) VALUES (
+				?, ?, 'google', NULL, 'client-id',
+				'https://example.com/token', 'confidential', '{}',
+				?
+			)`,
+		)
+		.run(input.userId, input.slug, input.encryptedSecret)
+}
+
+function insertUserIntegration(
+	sqlite: DatabaseSync,
+	input: {
+		userId: string
+		name: string
+		appSlug: string
+		accessTokenEncrypted: string
+		refreshTokenEncrypted: string
+	},
+) {
+	sqlite
+		.prepare(
+			`INSERT INTO user_integrations (
+				user_id, name, app_slug, platform_app_slug,
+				description, scopes_json, required_hosts_json,
+				access_token_secret_name, refresh_token_secret_name,
+				access_token_encrypted, refresh_token_encrypted
+			) VALUES (
+				?, ?, ?, NULL, '', '[]', '[]',
+				'access', 'refresh', ?, ?
+			)`,
+		)
+		.run(
+			input.userId,
+			input.name,
+			input.appSlug,
+			input.accessTokenEncrypted,
+			input.refreshTokenEncrypted,
+		)
+}
+
 function readSecretPayload(
 	sqlite: DatabaseSync,
 	bucketId: string,
@@ -188,6 +246,30 @@ test('legacy secret re-encryption upgrades 2-part payloads, leaves v2 and corrup
 		slug: 'corrupt-app',
 		encryptedSecret: 'totally-broken',
 	})
+	const userAccessLegacy = await encryptLegacyPayload({
+		purpose: 'user-oauth-access-token',
+		plaintext: 'user-access-legacy',
+	})
+	const userRefreshLegacy = await encryptLegacyPayload({
+		purpose: 'user-oauth-refresh-token',
+		plaintext: 'user-refresh-legacy',
+	})
+	const userClientSecretLegacy = await encryptLegacyPayload({
+		purpose: 'user-oauth-client-secret',
+		plaintext: 'user-client-secret-legacy',
+	})
+	insertUserOauthApp(sqlite, {
+		userId: 'user-a',
+		slug: 'google',
+		encryptedSecret: userClientSecretLegacy,
+	})
+	insertUserIntegration(sqlite, {
+		userId: 'user-a',
+		name: 'google',
+		appSlug: 'google',
+		accessTokenEncrypted: userAccessLegacy,
+		refreshTokenEncrypted: userRefreshLegacy,
+	})
 
 	const dryRun = await reencryptLegacySecretCiphertexts({
 		env,
@@ -208,6 +290,20 @@ test('legacy secret re-encryption upgrades 2-part payloads, leaves v2 and corrup
 		decryptFailed: 1,
 		remaining: 2,
 	})
+	expect(dryRun.userIntegrations).toEqual({
+		scanned: 2,
+		rewritten: 2,
+		skippedConcurrent: 0,
+		decryptFailed: 0,
+		remaining: 2,
+	})
+	expect(dryRun.userOauthApps).toEqual({
+		scanned: 1,
+		rewritten: 1,
+		skippedConcurrent: 0,
+		decryptFailed: 0,
+		remaining: 1,
+	})
 	expect(dryRun.decryptFailures).toEqual([
 		{ table: 'secret_entries', key: 'bucket-a/z-corrupt' },
 		{ table: 'platform_oauth_apps', key: 'corrupt-app' },
@@ -227,6 +323,8 @@ test('legacy secret re-encryption upgrades 2-part payloads, leaves v2 and corrup
 	expect(bounded.secretEntries.rewritten).toBe(2)
 	expect(bounded.secretEntries.remaining).toBe(2)
 	expect(bounded.platformOauthApps.scanned).toBe(0)
+	expect(bounded.userIntegrations.scanned).toBe(0)
+	expect(bounded.userOauthApps.scanned).toBe(0)
 
 	const finish = await reencryptLegacySecretCiphertexts({ env, pageSize: 1 })
 	expect(finish.secretEntries).toEqual({
@@ -243,6 +341,47 @@ test('legacy secret re-encryption upgrades 2-part payloads, leaves v2 and corrup
 		decryptFailed: 1,
 		remaining: 1,
 	})
+	expect(finish.userIntegrations).toEqual({
+		scanned: 2,
+		rewritten: 2,
+		skippedConcurrent: 0,
+		decryptFailed: 0,
+		remaining: 0,
+	})
+	expect(finish.userOauthApps).toEqual({
+		scanned: 1,
+		rewritten: 1,
+		skippedConcurrent: 0,
+		decryptFailed: 0,
+		remaining: 0,
+	})
+	const upgradedAccess = sqlite
+		.prepare(
+			`SELECT access_token_encrypted FROM user_integrations
+			WHERE user_id = ? AND name = ?`,
+		)
+		.get('user-a', 'google') as { access_token_encrypted: string }
+	expect(upgradedAccess.access_token_encrypted.startsWith('v2.')).toBe(true)
+	expect(
+		await decryptUserOauthAccessToken(
+			env,
+			upgradedAccess.access_token_encrypted,
+			userIntegrationCredentialContext('user-a', 'google'),
+		),
+	).toBe('user-access-legacy')
+	const upgradedUserClient = sqlite
+		.prepare(
+			`SELECT client_secret_encrypted FROM user_oauth_apps
+			WHERE user_id = ? AND slug = ?`,
+		)
+		.get('user-a', 'google') as { client_secret_encrypted: string }
+	expect(
+		await decryptUserOauthClientSecret(
+			env,
+			upgradedUserClient.client_secret_encrypted,
+			userOauthAppCredentialContext('user-a', 'google'),
+		),
+	).toBe('user-client-secret-legacy')
 
 	const upgradedUserA = readSecretPayload(sqlite, 'bucket-a', 'a-legacy')
 	expect(upgradedUserA.encrypted_value.startsWith('v2.')).toBe(true)

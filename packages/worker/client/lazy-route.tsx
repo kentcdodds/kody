@@ -249,6 +249,7 @@ registerPreloadPatterns(
 		routePattern(routes.accountUsage),
 		routePattern(routes.accountIntegrations),
 		routePattern(routes.accountOauthAppDetail),
+		routePattern(routes.accountIntegrationsApprove),
 		routePattern(routes.accountIntegrationDetail),
 		routePattern(routes.accountMcpServers),
 		routePattern(routes.accountMcpServerNew),

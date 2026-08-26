@@ -2,15 +2,25 @@ import { runD1WithRetry } from '#worker/d1-retry.ts'
 import {
 	decryptPlatformOauthClientSecret,
 	decryptSecretValue,
+	decryptUserOauthAccessToken,
+	decryptUserOauthClientSecret,
+	decryptUserOauthRefreshToken,
 	encryptPlatformOauthClientSecret,
 	encryptSecretValue,
+	encryptUserOauthAccessToken,
+	encryptUserOauthClientSecret,
+	encryptUserOauthRefreshToken,
 	platformOauthAppContext,
+	userIntegrationCredentialContext,
+	userOauthAppCredentialContext,
 	userSecretContext,
 } from './crypto.ts'
 
 export const secretCiphertextTables = [
 	'secret_entries',
 	'platform_oauth_apps',
+	'user_integrations',
+	'user_oauth_apps',
 ] as const
 
 export type SecretCiphertextTable = (typeof secretCiphertextTables)[number]
@@ -39,6 +49,8 @@ export type ReencryptLegacySecretCiphertextsResult = {
 	dryRun: boolean
 	secretEntries: SecretReencryptTableResult
 	platformOauthApps: SecretReencryptTableResult
+	userIntegrations: SecretReencryptTableResult
+	userOauthApps: SecretReencryptTableResult
 	decryptFailures: Array<SecretReencryptDecryptFailure>
 }
 
@@ -55,6 +67,19 @@ type SecretEntryLegacyRow = {
 }
 
 type PlatformOauthLegacyRow = {
+	slug: string
+	client_secret_encrypted: string
+}
+
+type UserIntegrationLegacyRow = {
+	user_id: string
+	name: string
+	access_token_encrypted: string | null
+	refresh_token_encrypted: string | null
+}
+
+type UserOauthAppLegacyRow = {
+	user_id: string
 	slug: string
 	client_secret_encrypted: string
 }
@@ -115,11 +140,12 @@ function recordDecryptFailure(
 async function countRemaining(input: {
 	db: D1Database
 	sql: string
+	bindings?: Array<string>
 }): Promise<number> {
 	const row = await runD1WithRetry(() =>
 		input.db
 			.prepare(input.sql)
-			.bind(versionedCiphertextPrefix)
+			.bind(...(input.bindings ?? [versionedCiphertextPrefix]))
 			.first<Record<string, unknown>>(),
 	)
 	return readCount(row, 'remaining')
@@ -250,6 +276,141 @@ async function updatePlatformOauthApp(input: {
 	return Number(result.meta.changes ?? 0)
 }
 
+async function listUserIntegrationPage(input: {
+	db: D1Database
+	afterUserId: string
+	afterName: string
+	limit: number
+}): Promise<Array<UserIntegrationLegacyRow>> {
+	const { results } = await runD1WithRetry(() =>
+		input.db
+			.prepare(
+				`SELECT user_id, name, access_token_encrypted, refresh_token_encrypted
+				FROM user_integrations
+				WHERE (
+					(access_token_encrypted IS NOT NULL AND access_token_encrypted NOT LIKE ?)
+					OR (refresh_token_encrypted IS NOT NULL AND refresh_token_encrypted NOT LIKE ?)
+				)
+					AND (user_id > ? OR (user_id = ? AND name > ?))
+				ORDER BY user_id, name
+				LIMIT ?`,
+			)
+			.bind(
+				versionedCiphertextPrefix,
+				versionedCiphertextPrefix,
+				input.afterUserId,
+				input.afterUserId,
+				input.afterName,
+				input.limit,
+			)
+			.all<Record<string, unknown>>(),
+	)
+	return (results ?? []).map((row) => ({
+		user_id: String(row['user_id'] ?? ''),
+		name: String(row['name'] ?? ''),
+		access_token_encrypted:
+			typeof row['access_token_encrypted'] === 'string'
+				? row['access_token_encrypted']
+				: null,
+		refresh_token_encrypted:
+			typeof row['refresh_token_encrypted'] === 'string'
+				? row['refresh_token_encrypted']
+				: null,
+	}))
+}
+
+async function listUserOauthAppPage(input: {
+	db: D1Database
+	afterUserId: string
+	afterSlug: string
+	limit: number
+}): Promise<Array<UserOauthAppLegacyRow>> {
+	const { results } = await runD1WithRetry(() =>
+		input.db
+			.prepare(
+				`SELECT user_id, slug, client_secret_encrypted
+				FROM user_oauth_apps
+				WHERE client_secret_encrypted IS NOT NULL
+					AND client_secret_encrypted NOT LIKE ?
+					AND (user_id > ? OR (user_id = ? AND slug > ?))
+				ORDER BY user_id, slug
+				LIMIT ?`,
+			)
+			.bind(
+				versionedCiphertextPrefix,
+				input.afterUserId,
+				input.afterUserId,
+				input.afterSlug,
+				input.limit,
+			)
+			.all<Record<string, unknown>>(),
+	)
+	return (results ?? []).map((row) => ({
+		user_id: String(row['user_id'] ?? ''),
+		slug: String(row['slug'] ?? ''),
+		client_secret_encrypted: String(row['client_secret_encrypted'] ?? ''),
+	}))
+}
+
+function isLegacyCiphertext(payload: string | null): payload is string {
+	return payload != null && !payload.startsWith('v2.')
+}
+
+async function updateUserIntegrationCiphertext(input: {
+	db: D1Database
+	userId: string
+	name: string
+	column: 'access_token_encrypted' | 'refresh_token_encrypted'
+	nextPayload: string
+	previousPayload: string
+}): Promise<number> {
+	const now = new Date().toISOString()
+	const result = await runD1WithRetry(() =>
+		input.db
+			.prepare(
+				`UPDATE user_integrations
+				SET ${input.column} = ?, updated_at = ?
+				WHERE user_id = ? AND name = ? AND ${input.column} = ?`,
+			)
+			.bind(
+				input.nextPayload,
+				now,
+				input.userId,
+				input.name,
+				input.previousPayload,
+			)
+			.run(),
+	)
+	return Number(result.meta.changes ?? 0)
+}
+
+async function updateUserOauthApp(input: {
+	db: D1Database
+	userId: string
+	slug: string
+	nextPayload: string
+	previousPayload: string
+}): Promise<number> {
+	const now = new Date().toISOString()
+	const result = await runD1WithRetry(() =>
+		input.db
+			.prepare(
+				`UPDATE user_oauth_apps
+				SET client_secret_encrypted = ?, updated_at = ?
+				WHERE user_id = ? AND slug = ? AND client_secret_encrypted = ?`,
+			)
+			.bind(
+				input.nextPayload,
+				now,
+				input.userId,
+				input.slug,
+				input.previousPayload,
+			)
+			.run(),
+	)
+	return Number(result.meta.changes ?? 0)
+}
+
 /**
  * Format-upgrade pass for pre-AAD (2-part) secret ciphertexts. Decrypts via
  * the existing dual-read, re-encrypts as v2 with the owning identity AAD, and
@@ -265,6 +426,8 @@ export async function reencryptLegacySecretCiphertexts(
 	const decryptFailures: Array<SecretReencryptDecryptFailure> = []
 	const secretEntries = emptyTableResult()
 	const platformOauthApps = emptyTableResult()
+	const userIntegrations = emptyTableResult()
+	const userOauthApps = emptyTableResult()
 	const db = input.env.APP_DB
 
 	let afterBucketId = ''
@@ -376,10 +539,146 @@ export async function reencryptLegacySecretCiphertexts(
 				AND client_secret_encrypted NOT LIKE ?`,
 	})
 
+	let afterIntegrationUserId = ''
+	let afterIntegrationName = ''
+	while (remainingBudget > 0) {
+		const rows = await listUserIntegrationPage({
+			db,
+			afterUserId: afterIntegrationUserId,
+			afterName: afterIntegrationName,
+			limit: Math.min(pageSize, remainingBudget),
+		})
+		if (rows.length === 0) break
+		for (const row of rows) {
+			const context = userIntegrationCredentialContext(row.user_id, row.name)
+			const columns = [
+				{
+					column: 'access_token_encrypted' as const,
+					payload: row.access_token_encrypted,
+					decrypt: decryptUserOauthAccessToken,
+					encrypt: encryptUserOauthAccessToken,
+				},
+				{
+					column: 'refresh_token_encrypted' as const,
+					payload: row.refresh_token_encrypted,
+					decrypt: decryptUserOauthRefreshToken,
+					encrypt: encryptUserOauthRefreshToken,
+				},
+			]
+			for (const column of columns) {
+				if (!isLegacyCiphertext(column.payload) || remainingBudget <= 0) {
+					continue
+				}
+				const previousPayload = column.payload!
+				const outcome = await rewritePayload({
+					dryRun,
+					previousPayload,
+					decrypt: () => column.decrypt(input.env, previousPayload, context),
+					encrypt: (plaintext) => column.encrypt(input.env, plaintext, context),
+					write: (nextPayload, previous) =>
+						updateUserIntegrationCiphertext({
+							db,
+							userId: row.user_id,
+							name: row.name,
+							column: column.column,
+							nextPayload,
+							previousPayload: previous,
+						}),
+				})
+				recordOutcome(userIntegrations, outcome)
+				if (outcome === 'decryptFailed') {
+					recordDecryptFailure(decryptFailures, {
+						table: 'user_integrations',
+						key: `${row.user_id}/${row.name}/${column.column}`,
+					})
+				}
+				remainingBudget -= 1
+			}
+		}
+		if (rows.length < pageSize) break
+		const last = rows[rows.length - 1]!
+		afterIntegrationUserId = last.user_id
+		afterIntegrationName = last.name
+	}
+	userIntegrations.remaining = await countRemaining({
+		db,
+		sql: `SELECT (
+				SUM(CASE
+					WHEN access_token_encrypted IS NOT NULL
+						AND access_token_encrypted NOT LIKE ?
+					THEN 1 ELSE 0 END)
+				+ SUM(CASE
+					WHEN refresh_token_encrypted IS NOT NULL
+						AND refresh_token_encrypted NOT LIKE ?
+					THEN 1 ELSE 0 END)
+			) AS remaining
+			FROM user_integrations`,
+		bindings: [versionedCiphertextPrefix, versionedCiphertextPrefix],
+	})
+
+	let afterUserOauthUserId = ''
+	let afterUserOauthSlug = ''
+	while (remainingBudget > 0) {
+		const rows = await listUserOauthAppPage({
+			db,
+			afterUserId: afterUserOauthUserId,
+			afterSlug: afterUserOauthSlug,
+			limit: Math.min(pageSize, remainingBudget),
+		})
+		if (rows.length === 0) break
+		for (const row of rows) {
+			const outcome = await rewritePayload({
+				dryRun,
+				previousPayload: row.client_secret_encrypted,
+				decrypt: () =>
+					decryptUserOauthClientSecret(
+						input.env,
+						row.client_secret_encrypted,
+						userOauthAppCredentialContext(row.user_id, row.slug),
+					),
+				encrypt: (plaintext) =>
+					encryptUserOauthClientSecret(
+						input.env,
+						plaintext,
+						userOauthAppCredentialContext(row.user_id, row.slug),
+					),
+				write: (nextPayload, previousPayload) =>
+					updateUserOauthApp({
+						db,
+						userId: row.user_id,
+						slug: row.slug,
+						nextPayload,
+						previousPayload,
+					}),
+			})
+			recordOutcome(userOauthApps, outcome)
+			if (outcome === 'decryptFailed') {
+				recordDecryptFailure(decryptFailures, {
+					table: 'user_oauth_apps',
+					key: `${row.user_id}/${row.slug}`,
+				})
+			}
+			remainingBudget -= 1
+		}
+		if (rows.length < pageSize) break
+		const last = rows[rows.length - 1]!
+		afterUserOauthUserId = last.user_id
+		afterUserOauthSlug = last.slug
+	}
+	userOauthApps.remaining = await countRemaining({
+		db,
+		sql: `SELECT COUNT(*) AS remaining
+			FROM user_oauth_apps
+			WHERE client_secret_encrypted IS NOT NULL
+				AND client_secret_encrypted NOT LIKE ?`,
+	})
+
 	return {
 		dryRun,
 		secretEntries,
 		platformOauthApps,
+		userIntegrations,
+		userOauthApps,
 		decryptFailures,
 	}
 }

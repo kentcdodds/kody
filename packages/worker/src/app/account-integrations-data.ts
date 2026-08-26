@@ -24,6 +24,8 @@ import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app
 import { buildUserOauthAppLogoPaths } from '#worker/integrations/user-oauth-app-logo.ts'
 import { backfillMissingUserOauthAppFavicons } from '#worker/integrations/user-oauth-app-favicon.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
+import { getOauthAppClientSecretCiphertext } from '#worker/integrations/repo.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -51,6 +53,8 @@ function toAccountIntegrationRecord(
 			: buildUserOauthAppLogoPaths(entry.app)),
 		createdAt: entry.connection.createdAt,
 		updatedAt: entry.connection.updatedAt,
+		usageMode: entry.connection.usageMode,
+		allowedPackageIds: entry.connection.allowedPackageIds,
 	}
 }
 
@@ -238,18 +242,30 @@ function buildOauthAppRecords(
 export async function loadAccountIntegrationsData(
 	env: Env,
 	user: AuthenticatedUser,
-	options?: { waitUntil?: (promise: Promise<unknown>) => void },
+	options?: {
+		waitUntil?: (promise: Promise<unknown>) => void
+		searchParams?: URLSearchParams
+	},
 ): Promise<{
 	ok: true
 	email: string
 	username: string
 	integrations: Array<AccountIntegrationRecord>
 	apps: Array<AccountOauthAppRecord>
+	savedPackages: Array<{ id: string; kodyId: string }>
+	approval: {
+		name: string
+		packageId: string
+		packageKodyId: string | null
+		usageMode: 'any' | 'packages'
+		alreadyGranted: boolean
+	} | null
 }> {
 	const userId = user.mcpUser.userId
-	const [joined, apps] = await Promise.all([
+	const [joined, apps, savedPackages] = await Promise.all([
 		listJoinedIntegrations({ env, userId }),
 		listOauthApps({ env, userId }),
+		listSavedPackagesByUserId(env.APP_DB, { userId }),
 	])
 	const integrations = joined
 		.map((entry) => toAccountIntegrationRecord(entry))
@@ -267,12 +283,47 @@ export async function loadAccountIntegrationsData(
 		waitUntil: options?.waitUntil,
 	})
 
+	const packageRecords = savedPackages.map((entry) => ({
+		id: entry.id,
+		kodyId: entry.kodyId,
+	}))
+	const approvalName = options?.searchParams?.get('name')?.trim() ?? ''
+	const approvalPackageId =
+		options?.searchParams?.get('package_id')?.trim() ?? ''
+	let approval: {
+		name: string
+		packageId: string
+		packageKodyId: string | null
+		usageMode: 'any' | 'packages'
+		alreadyGranted: boolean
+	} | null = null
+	if (approvalName && approvalPackageId) {
+		const connection = integrations.find((entry) => entry.name === approvalName)
+		if (connection) {
+			const savedPackage = packageRecords.find(
+				(entry) => entry.id === approvalPackageId,
+			)
+			const usageMode = connection.usageMode === 'packages' ? 'packages' : 'any'
+			approval = {
+				name: approvalName,
+				packageId: approvalPackageId,
+				packageKodyId: savedPackage?.kodyId ?? null,
+				usageMode,
+				alreadyGranted:
+					usageMode === 'any' ||
+					(connection.allowedPackageIds ?? []).includes(approvalPackageId),
+			}
+		}
+	}
+
 	return {
 		ok: true,
 		email: user.email,
 		username: user.username,
 		integrations,
 		apps: buildOauthAppRecords(apps, joined),
+		savedPackages: packageRecords,
+		approval,
 	}
 }
 
@@ -452,11 +503,22 @@ export async function hasStoredConnectClientSecret(
 	const secretName =
 		record?.clientSecretSecretName?.trim() ||
 		`${normalizeProviderKey(name)}ClientSecret`
-	const secrets = await listSecrets({
-		env,
-		userId: user.mcpUser.userId,
-		scope: 'user',
-	})
+	const [secrets, storedCiphertext] = await Promise.all([
+		listSecrets({
+			env,
+			userId: user.mcpUser.userId,
+			scope: 'user',
+			includeIntegrationOwned: true,
+		}),
+		record?.appSlug && !record.platform
+			? getOauthAppClientSecretCiphertext({
+					db: env.APP_DB,
+					userId: user.mcpUser.userId,
+					slug: record.appSlug,
+				})
+			: Promise.resolve(null),
+	])
+	if (storedCiphertext) return true
 	return secrets.some(
 		(secret) => secret.scope === 'user' && secret.name === secretName,
 	)

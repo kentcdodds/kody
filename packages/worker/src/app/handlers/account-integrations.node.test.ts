@@ -1,5 +1,8 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
+import type * as IntegrationsRepo from '#worker/integrations/repo.ts'
+import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
+import type * as PackageRegistryRepo from '#worker/package-registry/repo.ts'
 
 const createdAt = '1970-01-01T00:00:00.000Z'
 const updatedAt = '1970-01-01T00:00:00.001Z'
@@ -52,6 +55,8 @@ const mockModule = vi.hoisted(() => ({
 				requiredHosts: ['www.googleapis.com'],
 				accessTokenSecretName: 'googleAccessToken',
 				refreshTokenSecretName: 'googleRefreshToken',
+				usageMode: 'any',
+				allowedPackageIds: [],
 				connectedAt: null,
 				tokenRefreshedAt: null,
 				createdAt: '1970-01-01T00:00:00.000Z',
@@ -265,6 +270,19 @@ const mockModule = vi.hoisted(() => ({
 		deleted: true,
 		connectionNames: ['google', 'google-calendar'],
 	})),
+	listSavedPackagesByUserId: vi.fn(async () => []),
+	getOauthAppClientSecretCiphertext: vi.fn(async () => null),
+	persistUserOauthAppClientSecret: vi.fn(async () => undefined),
+	setIntegrationUsage: vi.fn(async () => ({
+		name: 'google',
+		usageMode: 'packages' as const,
+		allowedPackageIds: ['pkg-mail'],
+	})),
+	grantIntegrationPackage: vi.fn(async () => ({
+		name: 'google',
+		usageMode: 'packages' as const,
+		allowedPackageIds: ['pkg-mail'],
+	})),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -315,6 +333,37 @@ vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 			mockModule.getAvailablePlatformApp(...args),
 		listAvailablePlatformApps: (...args: Array<unknown>) =>
 			mockModule.listAvailablePlatformApps(...args),
+		setIntegrationUsage: (...args: Array<unknown>) =>
+			mockModule.setIntegrationUsage(...args),
+		grantIntegrationPackage: (...args: Array<unknown>) =>
+			mockModule.grantIntegrationPackage(...args),
+	}
+})
+
+vi.mock('#worker/package-registry/repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof PackageRegistryRepo>()
+	return {
+		...actual,
+		listSavedPackagesByUserId: (...args: Array<unknown>) =>
+			mockModule.listSavedPackagesByUserId(...args),
+	}
+})
+
+vi.mock('#worker/integrations/repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof IntegrationsRepo>()
+	return {
+		...actual,
+		getOauthAppClientSecretCiphertext: (...args: Array<unknown>) =>
+			mockModule.getOauthAppClientSecretCiphertext(...args),
+	}
+})
+
+vi.mock('#worker/integrations/credentials.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof IntegrationsCredentials>()
+	return {
+		...actual,
+		persistUserOauthAppClientSecret: (...args: Array<unknown>) =>
+			mockModule.persistUserOauthAppClientSecret(...args),
 	}
 })
 
@@ -377,6 +426,8 @@ test('integrations API lists connections with app grouping metadata and never ex
 		ok: true,
 		email: 'user@example.com',
 		username: 'test-user',
+		savedPackages: [],
+		approval: null,
 		apps: [
 			{
 				slug: 'github',
@@ -474,6 +525,8 @@ test('integrations API lists connections with app grouping metadata and never ex
 				autoLogoPath: null,
 				createdAt,
 				updatedAt,
+				usageMode: 'any',
+				allowedPackageIds: [],
 			},
 			{
 				name: 'google-calendar',
@@ -715,13 +768,14 @@ test('integrations API rotates OAuth app credentials for the authenticated user'
 		userId: 'stable-user-1',
 		scope: 'user',
 		storageContext: { sessionId: null, appId: null, packageId: null },
+		includeIntegrationOwned: true,
 	})
-	expect(mockModule.saveSecret).toHaveBeenCalledWith(
+	expect(mockModule.persistUserOauthAppClientSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'stable-user-1',
-			name: 'googleClientSecret',
+			slug: 'google',
 			value: 'new-google-client-secret',
-			scope: 'user',
+			secretName: 'googleClientSecret',
 		}),
 	)
 	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith({
@@ -922,7 +976,7 @@ test('integrations API scopes rotate actions to the authenticated user', async (
 			slug: 'google',
 		}),
 	)
-	expect(mockModule.saveSecret).toHaveBeenCalledWith(
+	expect(mockModule.persistUserOauthAppClientSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'stable-user-other',
 		}),
@@ -1008,4 +1062,111 @@ test('integrations API disconnects a connection and deletes a user-lane OAuth ap
 		params: {},
 	} as never)
 	expect(missingApp.status).toBe(404)
+})
+
+test('integrations API sets usage, returns approval payload, and grants a package without widening any', async () => {
+	const handler = createAccountIntegrationsApiHandler(createEnv())
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([
+		{
+			id: 'pkg-mail',
+			userId: 'stable-user-1',
+			name: 'mail',
+			kodyId: 'mail',
+			description: '',
+			tags: [],
+			searchText: null,
+			sourceId: 'source-mail',
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: createdAt,
+			updatedAt: updatedAt,
+		},
+	])
+
+	const usageResponse = await handler.handler({
+		request: new Request('https://example.com/account/integrations.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'set_usage',
+				name: 'google',
+				usageMode: 'packages',
+				allowedPackageIds: ['pkg-mail'],
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(usageResponse.status).toBe(200)
+	expect(mockModule.setIntegrationUsage).toHaveBeenCalledWith({
+		env: expect.any(Object),
+		userId: 'stable-user-1',
+		name: 'google',
+		usageMode: 'packages',
+		allowedPackageIds: ['pkg-mail'],
+	})
+	await expect(usageResponse.json()).resolves.toEqual({
+		ok: true,
+		usageMode: 'packages',
+		allowedPackageIds: ['pkg-mail'],
+	})
+
+	const approvalGet = await handler.handler({
+		request: new Request(
+			'https://example.com/account/integrations.json?name=google&package_id=pkg-mail',
+		),
+		params: {},
+	} as never)
+	expect(approvalGet.status).toBe(200)
+	const approvalPayload = await approvalGet.json()
+	expect(approvalPayload).toMatchObject({
+		ok: true,
+		approval: {
+			name: 'google',
+			packageId: 'pkg-mail',
+			packageKodyId: 'mail',
+			usageMode: 'any',
+			alreadyGranted: true,
+		},
+	})
+	expect(approvalPayload.integration).toBeUndefined()
+
+	mockModule.grantIntegrationPackage.mockResolvedValueOnce({
+		name: 'google',
+		usageMode: 'any',
+		allowedPackageIds: [],
+	})
+	const approveAny = await handler.handler({
+		request: new Request('https://example.com/account/integrations.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'approve_package',
+				name: 'google',
+				packageId: 'pkg-mail',
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(approveAny.status).toBe(200)
+	await expect(approveAny.json()).resolves.toEqual({
+		ok: true,
+		alreadyGranted: true,
+		usageMode: 'any',
+		allowedPackageIds: [],
+	})
+
+	const missingPackage = await handler.handler({
+		request: new Request('https://example.com/account/integrations.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'approve_package',
+				name: 'google',
+				packageId: 'pkg-missing',
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(missingPackage.status).toBe(400)
 })

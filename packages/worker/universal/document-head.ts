@@ -137,6 +137,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountIntegrations)]: titleOnly('Integrations'),
 	[routePattern(routes.accountOauthAppDetail)]: titleOnly('Integrations'),
+	[routePattern(routes.accountIntegrationsApprove)]: titleOnly('Integrations'),
 	[routePattern(routes.accountIntegrationDetail)]: titleOnly('Integrations'),
 	[routePattern(routes.accountMcpServers)]: titleOnly('MCP servers'),
 	[routePattern(routes.accountMcpServerNew)]: titleOnly('MCP servers'),

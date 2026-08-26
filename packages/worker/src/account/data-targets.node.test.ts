@@ -185,6 +185,15 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 	expect(accountExportRedactedColumnsByTable.secret_entries).toEqual(
 		expect.arrayContaining(['encrypted_value', 'lookup_hash']),
 	)
+	expect(accountExportRedactedColumnsByTable.user_integrations).toEqual(
+		expect.arrayContaining([
+			'access_token_encrypted',
+			'refresh_token_encrypted',
+		]),
+	)
+	expect(accountExportRedactedColumnsByTable.user_oauth_apps).toEqual(
+		expect.arrayContaining(['client_secret_encrypted']),
+	)
 	expect(accountExportForeignUserIdColumnsByTable.user_follows).toEqual(
 		expect.arrayContaining(['follower_user_id', 'followee_user_id']),
 	)

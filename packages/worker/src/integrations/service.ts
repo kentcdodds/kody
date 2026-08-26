@@ -8,11 +8,13 @@ import {
 	type IntegrationConfig,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
+import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import {
 	getPlatformOauthAppBySlug,
 	listPlatformOauthApps,
 	type PlatformOauthApp,
 } from './platform-apps.ts'
+import { deleteIntegrationOwnedSecrets } from './credentials.ts'
 import {
 	addPlatformIntegrationRequiredHosts,
 	countConnectionsForApp,
@@ -25,10 +27,15 @@ import {
 	listJoinedIntegrationsForUser,
 	listOauthAppsByProvider,
 	listOauthAppsWithConnectionCounts,
+	updateIntegrationUsage,
 	updateOauthAppClientCredentials,
 	upsertIntegrationConnection,
 	upsertOauthApp,
 } from './repo.ts'
+import {
+	normalizeIntegrationUsageMode,
+	type IntegrationUsageMode,
+} from './usage-mode.ts'
 import {
 	deleteUserOauthAppLogoAsset,
 	setUserOauthAppLogo,
@@ -110,6 +117,7 @@ export function toIntegrationConfig(
 		requiredHosts: connection.requiredHosts,
 		tokenExchangeStyle: app.tokenExchangeStyle,
 		authorization,
+		...usageFields(connection),
 	})
 }
 
@@ -142,8 +150,17 @@ export function toPlatformIntegrationConfig(
 				scopeSeparator: app.scopeSeparator,
 				extraAuthorizeParams: app.extraAuthorizeParams,
 			},
+			...usageFields(connection),
 		}),
 		platform: true,
+	}
+}
+
+function usageFields(connection: UserIntegrationConnection) {
+	if (connection.usageMode !== 'packages') return {}
+	return {
+		usageMode: 'packages' as const,
+		allowedPackageIds: connection.allowedPackageIds,
 	}
 }
 
@@ -382,6 +399,14 @@ export async function deleteIntegration(input: {
 		name,
 	})
 	if (!existing) return false
+	await deleteIntegrationOwnedSecrets({
+		env: input.env,
+		userId: input.userId,
+		secretNames: [
+			existing.connection.accessTokenSecretName,
+			existing.connection.refreshTokenSecretName,
+		],
+	})
 	const deleted = await deleteIntegrationConnection({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -839,6 +864,14 @@ export async function deleteOauthAppWithConnections(input: {
 	const connectionNames: Array<string> = []
 	for (const entry of joined) {
 		if (entry.lane !== 'user' || entry.app.slug !== existing.slug) continue
+		await deleteIntegrationOwnedSecrets({
+			env: input.env,
+			userId: input.userId,
+			secretNames: [
+				entry.connection.accessTokenSecretName,
+				entry.connection.refreshTokenSecretName,
+			],
+		})
 		const deleted = await deleteIntegrationConnection({
 			db: input.env.APP_DB,
 			userId: input.userId,
@@ -852,6 +885,13 @@ export async function deleteOauthAppWithConnections(input: {
 		userId: input.userId,
 		slug: existing.slug,
 	})
+	if (deleted) {
+		await deleteIntegrationOwnedSecrets({
+			env: input.env,
+			userId: input.userId,
+			secretNames: [existing.clientSecretSecretName],
+		})
+	}
 	if (deleted && input.env.COMMUNITY_ASSETS) {
 		await deleteUserOauthAppLogoAsset({
 			env: { COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS },
@@ -1187,4 +1227,79 @@ async function allocateAppSlug(input: {
 	throw new Error(
 		`Unable to allocate an OAuth app slug for "${input.preferredSlug}".`,
 	)
+}
+
+export async function setIntegrationUsage(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	name: string
+	usageMode: IntegrationUsageMode
+	allowedPackageIds?: Array<string>
+}): Promise<UserIntegrationConnection | null> {
+	const name = canonicalIntegrationName(input.name)
+	if (!name) return null
+	const existing = await getJoinedIntegrationByName({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name,
+	})
+	if (!existing) return null
+	const usageMode = normalizeIntegrationUsageMode(input.usageMode)
+	const allowedPackageIds =
+		usageMode === 'packages'
+			? normalizeAllowedPackages(input.allowedPackageIds ?? [])
+			: []
+	const updated = await updateIntegrationUsage({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name,
+		usageMode,
+		allowedPackageIds,
+	})
+	if (!updated) return null
+	const saved = await getJoinedIntegrationByName({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name,
+	})
+	return saved?.connection ?? null
+}
+
+export async function grantIntegrationPackage(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	name: string
+	packageId: string
+}): Promise<UserIntegrationConnection | null> {
+	const name = canonicalIntegrationName(input.name)
+	const packageId = input.packageId.trim()
+	if (!name || !packageId) return null
+	const existing = await getJoinedIntegrationByName({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name,
+	})
+	if (!existing) return null
+	if (existing.connection.usageMode === 'any') return existing.connection
+	if (existing.connection.allowedPackageIds.includes(packageId)) {
+		return existing.connection
+	}
+	const allowedPackageIds = normalizeAllowedPackages([
+		...existing.connection.allowedPackageIds,
+		packageId,
+	])
+	const updated = await updateIntegrationUsage({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name,
+		usageMode: 'packages',
+		allowedPackageIds,
+	})
+	if (!updated) return null
+	const saved = await getJoinedIntegrationByName({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name,
+	})
+	return saved?.connection ?? null
 }
