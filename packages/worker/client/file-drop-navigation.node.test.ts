@@ -90,7 +90,14 @@ test('file-drop helpers keep the page from navigating and route images to avatar
 		control: labeledInput,
 		querySelector: () => labeledInput,
 	} as unknown as EventTarget
-	expect(isFileInputDropTarget(labelTarget)).toBe(true)
+	expect(isFileInputDropTarget(labelTarget)).toBe(false)
+	const labelDrop = createDragEvent({
+		type: 'drop',
+		types: ['Files'],
+		target: labelTarget,
+	})
+	expect(preventFileDropNavigation(labelDrop)).toBe(true)
+	expect(labelDrop.preventDefault).toHaveBeenCalledOnce()
 
 	const photo = new File([Uint8Array.from([1, 2, 3])], 'photo.heic', {
 		type: '',
@@ -177,4 +184,14 @@ test('file-drop helpers keep the page from navigating and route images to avatar
 	})
 	avatarListeners.get('drop')?.(ignoredInputDrop)
 	expect(received).toHaveLength(1)
+
+	const labeledAvatarDrop = createDragEvent({
+		type: 'drop',
+		types: ['Files'],
+		files: [droppedPhoto],
+		target: labelTarget,
+	})
+	avatarListeners.get('drop')?.(labeledAvatarDrop)
+	expect(labeledAvatarDrop.preventDefault).toHaveBeenCalledOnce()
+	expect(received).toEqual([droppedPhoto, droppedPhoto])
 })

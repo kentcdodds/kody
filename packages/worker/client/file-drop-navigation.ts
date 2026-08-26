@@ -1,7 +1,8 @@
 /**
  * File drags onto a page otherwise navigate the browser to that file. Guard
- * dragover/drop so the app stays put, while native file inputs still receive
- * their own drops.
+ * dragover/drop so the app stays put. Only a real `input[type=file]` assigns
+ * dropped files natively — labels wrapping those inputs do not, so those
+ * drops still need preventDefault.
  */
 
 export function eventHasFileDrag(
@@ -18,22 +19,14 @@ export function eventHasFileDrag(
 type ClosestElement = {
 	tagName?: string
 	type?: string
-	control?: EventTarget | null
 	closest?: (selector: string) => EventTarget | null
-	querySelector?: (selector: string) => EventTarget | null
 }
 
 export function isFileInputDropTarget(target: EventTarget | null): boolean {
 	const element = asClosestElement(target)
 	if (!element) return false
 	if (isFileInputElement(element)) return true
-	if (isFileInputElement(element.closest?.('input[type="file"]') ?? null)) {
-		return true
-	}
-	const label = asClosestElement(element.closest?.('label') ?? null)
-	if (!label) return false
-	if (isFileInputElement(label.control ?? null)) return true
-	return isFileInputElement(label.querySelector?.('input[type="file"]') ?? null)
+	return isFileInputElement(element.closest?.('input[type="file"]') ?? null)
 }
 
 function asClosestElement(target: unknown): ClosestElement | null {
