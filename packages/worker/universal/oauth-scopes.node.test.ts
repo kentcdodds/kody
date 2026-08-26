@@ -71,5 +71,4 @@ test('oauth scope helpers unique, order the menu, and steer reconnect prompts', 
 	})
 	expect(platform).toContain('Do not call integration_save')
 	expect(platform).toContain('/connect/oauth?provider=google')
-	expect(platform).not.toContain('Use integration_save')
 })

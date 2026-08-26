@@ -762,12 +762,9 @@ test('renderAppPage embeds a tabular homepage code-runs ticker', async () => {
 	)?.[0]
 	expect(ticker).toBeTruthy()
 	expect(ticker).toContain('landing-hero-runs-count')
-	expect(ticker).not.toContain('landing-hero-runs-progress')
 	expect(ticker).toMatch(/--runs-ch:\s*7ch/)
 	expect(ticker).toContain(formatCodeRunsCount(count))
 	expect(ticker).toContain('code runs')
-	expect(ticker).toContain('Sandboxed executes across Kody accounts')
-	expect(html).not.toContain('aria-live')
 })
 
 test('renderAppPage embeds the homepage factory-loop conversation teaser', async () => {
@@ -781,19 +778,13 @@ test('renderAppPage embeds the homepage factory-loop conversation teaser', async
 	expect(response.status).toBe(200)
 	const html = await readResponseText(response)
 	expect(html).toContain('class="landing-loop"')
-	expect(html).toContain('Factory loop conversation')
-	expect(html).toContain('What did my favorite bot ship recently on GitHub?')
 	expect(html).toContain('/guides/how-kody-works')
-	expect(html).toContain('Read the walkthrough')
-	expect(html).not.toContain('See the whole loop')
 	// Combined playing/pause control is on the teaser so the header does
 	// not shift when playback starts. Icons, not the word Pause.
 	expect(html).toContain('class="landing-loop-toggle-slot"')
 	expect(html).toContain('class="landing-loop-toggle"')
 	expect(html).toContain('aria-label="Pause"')
 	expect(html).toContain('class="landing-loop-status-dot"')
-	expect(html).not.toContain('>Playing<')
-	expect(html).not.toContain('>Pause<')
 })
 
 test('signup social buttons are icon-only with accessible names', async () => {

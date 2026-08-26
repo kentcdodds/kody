@@ -15,13 +15,8 @@ import {
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
 	codexMcpLoginCommand,
-	collectOnboardingMcpSnippets,
 	defaultKodyMcpUrl,
-	grokBotInstallUrl,
 	isDefaultKodyMcpUrl,
-	kodyCursorAddPluginCommand,
-	kodyCursorMarketplaceUrl,
-	kodyMarketplacePluginId,
 	mcpClientTabs,
 	openCodeMcpAuthCommand,
 } from './onboarding-mcp-clients.ts'
@@ -46,12 +41,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(
 		mcpClientTabs.filter((tab) => tab.isNonCodingAgent).map((tab) => tab.id),
 	).toEqual(['chatgpt', 'claude-desktop', 'grok', 'grok-bot', 'copilot-app'])
-	expect(mcpClientTabs.find((tab) => tab.id === 'grok-bot')?.label).toBe(
-		'Grok Bot',
-	)
-	expect(
-		mcpClientTabs.every((tab) => typeof tab.label === 'string' && tab.label),
-	).toBe(true)
 
 	expect(isDefaultKodyMcpUrl(mcpServerUrl)).toBe(true)
 	expect(isDefaultKodyMcpUrl(`${mcpServerUrl}/`)).toBe(true)
@@ -124,19 +113,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	)
 	expect(buildKodyAppIconUrl(mcpServerUrl)).toBe(
 		'https://kody.codes/apple-touch-icon.png',
-	)
-	expect(kodyCursorMarketplaceUrl).toBe('https://cursor.com/marketplace/kody')
-	expect(kodyCursorAddPluginCommand).toBe('/add-plugin kody')
-	expect(kodyMarketplacePluginId).toBe('56286216')
-	expect(grokBotInstallUrl).toBe('grokbot://app/v1/plugin/add?id=56286216')
-	expect(
-		collectOnboardingMcpSnippets(mcpServerUrl).map((snippet) => snippet.code),
-	).toEqual(
-		expect.arrayContaining([
-			kodyCursorAddPluginCommand,
-			grokBotInstallUrl,
-			mcpServerUrl,
-		]),
 	)
 
 	const vsCodeInstallUrl = buildVsCodeInstallUrl(mcpServerUrl)

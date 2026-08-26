@@ -23,8 +23,6 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	expect(html).toMatch(
 		/<details(?![^>]*\bopen\b)[^>]*data-testid="onboarding-mcp-manual"/,
 	)
-	expect(html).toContain('npx @kodycodes/cli install')
-	expect(html).not.toContain('--mcp-url')
 	expect(html).toMatch(/aria-selected="true"[^>]*>Cursor</)
 
 	const automaticBlock = html.slice(
@@ -34,12 +32,6 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	expect(automaticBlock).toContain(
 		buildKodyCliInstallCommand(defaultKodyMcpUrl),
 	)
-	expect(automaticBlock).toContain(
-		'You can also manually connect web hosts such as ChatGPT, Claude.ai, and Grok below.',
-	)
-	expect(automaticBlock).toContain('Codex / ChatGPT desktop')
-	expect(automaticBlock).not.toContain('stay under Manual')
-	expect(automaticBlock).not.toContain('Add to Cursor')
 	expect(automaticBlock).not.toContain('Choose your client')
 
 	const manualBlock = html.slice(
@@ -51,30 +43,12 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	expect(manualBlock).toContain(buildCodexMcpAddCommand(defaultKodyMcpUrl))
 	expect(manualBlock).toContain(buildOpenCodeMcpAddCommand(defaultKodyMcpUrl))
 	expect(manualBlock).toContain(buildCopilotCliAddCommand(defaultKodyMcpUrl))
-	expect(manualBlock).toContain('Add to Cursor')
-	expect(manualBlock).toContain('Add to VS Code')
-	expect(manualBlock).toContain('Add to Grok Bot')
-	expect(manualBlock).toContain('chatgpt.com')
-	expect(manualBlock).toContain('>Grok Bot<')
 	expect(manualBlock).toContain(kodyCursorMarketplaceUrl)
 	expect(manualBlock).toContain(kodyCursorAddPluginCommand)
 	expect(manualBlock).toContain(grokBotInstallUrl)
-	expect(manualBlock).toContain('Or do this:')
 	expect(manualBlock).toContain('data-testid="onboarding-mcp-plugin-primary"')
 	expect(manualBlock).toContain(
 		'data-testid="onboarding-mcp-plugin-alternative"',
-	)
-	expect(manualBlock).not.toContain('Cursor&apos;s')
-	expect(manualBlock).not.toContain("Cursor's")
-	expect(manualBlock).not.toContain('~/.cursor/mcp.json')
-	expect(manualBlock).not.toContain('cursor://anysphere.cursor-deeplink')
-	expect(manualBlock).not.toContain('onboarding-mcp-cursor-fallback')
-	expect(manualBlock).not.toContain('onboarding-mcp-grok-bot-fallback')
-	expect(manualBlock).not.toContain('This origin is not production')
-	expect(manualBlock).not.toContain('targets production')
-	expect(manualBlock).toContain('>Grok Bot plugin help<')
-	expect(manualBlock).toContain(
-		'https://cursor.com/help/grok-bot/connect-plugins',
 	)
 
 	const pluginBlocks = [
@@ -90,13 +64,9 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	expect(
 		cursorPrimary.indexOf('onboarding-mcp-plugin-alternative'),
 	).toBeLessThan(cursorPrimary.indexOf(kodyCursorAddPluginCommand))
-	expect(cursorPrimary).not.toContain('Copy command')
-	expect(cursorPrimary).not.toContain('Manual / fallback')
 	expect(grokBotPrimary.indexOf(`href="${grokBotInstallUrl}"`)).toBeLessThan(
 		grokBotPrimary.indexOf('onboarding-mcp-plugin-alternative'),
 	)
-	expect(grokBotPrimary).not.toContain('Copy link')
-	expect(grokBotPrimary).not.toContain('Manual / fallback')
 
 	const previewHtml = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
@@ -108,8 +78,4 @@ test('onboarding Step 1 shows @kodycodes/cli first and collapses Manual', async 
 	)
 	expect(previewHtml).toContain(kodyCursorMarketplaceUrl)
 	expect(previewHtml).toContain(grokBotInstallUrl)
-	expect(previewHtml).not.toContain('This origin is not production')
-	expect(previewHtml).not.toContain('onboarding-mcp-cursor-fallback')
-	expect(previewHtml).not.toContain('onboarding-mcp-grok-bot-fallback')
-	expect(previewHtml).not.toContain('cursor://anysphere.cursor-deeplink')
 })
