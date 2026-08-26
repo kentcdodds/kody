@@ -352,11 +352,14 @@ export async function expandSecretPlaceholders(input: {
 			if (!resolved.found || typeof resolved.value !== 'string') {
 				throw new Error(createMissingSecretMessage(referenced.name))
 			}
-			const owningIntegration = await findIntegrationOwningSecretName({
-				db: input.env.APP_DB,
-				userId: input.props.userId!,
-				secretName: referenced.name,
-			})
+			const owningIntegration =
+				resolved.scope === 'user'
+					? await findIntegrationOwningSecretName({
+							db: input.env.APP_DB,
+							userId: input.props.userId!,
+							secretName: referenced.name,
+						})
+					: null
 			// Dual-written OAuth names are hidden from /account/secrets, so
 			// secret allowed_packages is not a grant the user can manage.
 			// The connection's any/packages grant is the only package gate.

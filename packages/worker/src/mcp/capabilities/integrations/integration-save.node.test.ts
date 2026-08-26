@@ -338,6 +338,16 @@ test('integration_save reuses an existing app when credentials match and preserv
 				'Cannot point tokenUrl at host "attacker.example"',
 			),
 	)
+	const sameHost = await integrationSaveCapability.handler(
+		{
+			name: 'google',
+			tokenUrl: 'https://oauth2.googleapis.com/oauth/token',
+		},
+		{ env, callerContext: caller(userId) },
+	)
+	expect(sameHost.integration.tokenUrl).toBe(
+		'https://oauth2.googleapis.com/oauth/token',
+	)
 })
 
 test('integration_delete and credential rotation return the expected MCP response shapes', async () => {

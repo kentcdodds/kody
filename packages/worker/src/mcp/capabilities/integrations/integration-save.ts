@@ -128,7 +128,11 @@ function assertIntegrationSaveKeepsApprovedHosts(input: {
 	current: IntegrationConfig
 	next: IntegrationConfig
 }) {
-	const approved = new Set(input.current.requiredHosts ?? [])
+	const currentTokenHost = safeParseHost(input.current.tokenUrl)
+	const approved = new Set([
+		...(input.current.requiredHosts ?? []),
+		...(currentTokenHost ? [currentTokenHost] : []),
+	])
 	const addedHosts = (input.next.requiredHosts ?? []).filter(
 		(host) => !approved.has(host),
 	)

@@ -1030,6 +1030,7 @@ async function handleApprovalAction(input: {
 					env: input.env,
 					userId: input.user.mcpUser.userId,
 					scope: 'user',
+					includeIntegrationOwned: true,
 				})
 				const byName = new Map(
 					current
@@ -1090,6 +1091,7 @@ async function handleApprovalAction(input: {
 					userId: input.user.mcpUser.userId,
 					scope: approval.scope,
 					storageContext: approval.storageContext,
+					includeIntegrationOwned: true,
 				})
 				const secret = current.find(
 					(item) =>
@@ -1125,6 +1127,7 @@ async function handleApprovalAction(input: {
 					userId: input.user.mcpUser.userId,
 					scope: approval.scope,
 					storageContext: approval.storageContext,
+					includeIntegrationOwned: true,
 				})
 				const secret = current.find(
 					(item) =>
@@ -1160,6 +1163,7 @@ async function handleApprovalAction(input: {
 					userId: input.user.mcpUser.userId,
 					scope: approval.scope,
 					storageContext: approval.storageContext,
+					includeIntegrationOwned: true,
 				})
 				const secret = current.find(
 					(item) =>

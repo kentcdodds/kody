@@ -18,6 +18,7 @@ import { deleteIntegrationOwnedSecrets } from './credentials.ts'
 import {
 	addPlatformIntegrationRequiredHosts,
 	countConnectionsForApp,
+	countOauthAppsByClientSecretName,
 	deleteIntegrationConnection,
 	deleteOauthApp,
 	findOauthAppByAppTuple,
@@ -574,17 +575,27 @@ async function deleteOauthAppIfNoConnections(input: {
 		userId: input.userId,
 		slug: input.appSlug,
 	})
-	await deleteOauthApp({
+	const deleted = await deleteOauthApp({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		slug: input.appSlug,
 	})
-	if (!existing) return
-	await deleteIntegrationOwnedSecrets({
-		env: input.env,
-		userId: input.userId,
-		secretNames: [existing.clientSecretSecretName],
-	})
+	if (!deleted || !existing) return
+	const clientSecretName = existing.clientSecretSecretName?.trim() ?? ''
+	if (clientSecretName) {
+		const stillReferenced = await countOauthAppsByClientSecretName({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			secretName: clientSecretName,
+		})
+		if (stillReferenced === 0) {
+			await deleteIntegrationOwnedSecrets({
+				env: input.env,
+				userId: input.userId,
+				secretNames: [clientSecretName],
+			})
+		}
+	}
 	if (input.env.COMMUNITY_ASSETS) {
 		await deleteUserOauthAppLogoAsset({
 			env: { COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS },

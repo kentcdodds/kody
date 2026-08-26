@@ -422,6 +422,24 @@ export async function deleteOauthApp(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
+export async function countOauthAppsByClientSecretName(input: {
+	db: D1Database
+	userId: string
+	secretName: string
+}): Promise<number> {
+	const name = input.secretName.trim()
+	if (!name) return 0
+	const row = await input.db
+		.prepare(
+			`SELECT COUNT(*) AS count
+			FROM user_oauth_apps
+			WHERE user_id = ? AND client_secret_secret_name = ?`,
+		)
+		.bind(input.userId, name)
+		.first<{ count: number }>()
+	return row?.count ?? 0
+}
+
 export async function upsertIntegrationConnection(input: {
 	db: D1Database
 	row: Omit<UserIntegrationRow, 'created_at' | 'updated_at'> & {
