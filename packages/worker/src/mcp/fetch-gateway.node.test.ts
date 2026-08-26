@@ -14,6 +14,8 @@ import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
+import * as ownedSecretNames from '#worker/integrations/owned-secret-names.ts'
+import * as integrationPackageAccess from '#worker/integrations/package-access.ts'
 
 const userMeter = createInMemoryUserMeterEnv()
 const env = {
@@ -209,6 +211,92 @@ test('fetch gateway requires package approval before resolving user secrets', as
 		packageSpy.mockRestore()
 		forkSpy.mockRestore()
 		resolveSpy.mockRestore()
+	}
+})
+
+test('fetch gateway gates integration-owned token names by the connection grant, not secret allowed_packages', async () => {
+	const request = () =>
+		new Request('https://example.com/api', {
+			headers: {
+				Authorization: 'Bearer {{secret:googleAccessToken|scope=user}}',
+			},
+		})
+	const packageProps = {
+		...props,
+		storageContext: {
+			sessionId: null,
+			appId: 'pkg-1',
+			packageId: 'pkg-1',
+			storageId: 'pkg-1',
+		},
+	}
+	const packageSpy = vi
+		.spyOn(packageRepo, 'getSavedPackageById')
+		.mockResolvedValue({
+			id: 'pkg-1',
+			userId: 'user-123',
+			kodyId: 'example-package',
+			name: '@user/example-package',
+			description: '',
+			tags: [],
+			searchText: null,
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			sourceId: 'source-1',
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		})
+	const forkSpy = vi
+		.spyOn(communityRepo, 'getCommunityForkByForkedPackageId')
+		.mockResolvedValue({
+			id: 'fork-1',
+			listingId: 'listing-1',
+			forkerUserId: 'user-123',
+			originCommit: 'abc123',
+			forkedPackageId: 'pkg-1',
+			forkedSourceId: 'source-1',
+			targetKodyId: 'example-package',
+			createdAt: '2026-01-01T00:00:00.000Z',
+			adoptedAt: null,
+			adoptionNote: null,
+		})
+	const resolveSpy = vi.spyOn(secretService, 'resolveSecret').mockResolvedValue({
+		found: true,
+		value: 'oauth-access',
+		scope: 'user',
+		allowedHosts: ['example.com'],
+		allowedCapabilities: [],
+		allowedPackages: [],
+	})
+	const ownerSpy = vi
+		.spyOn(ownedSecretNames, 'findIntegrationOwningSecretName')
+		.mockResolvedValue({ name: 'google' })
+	const grantSpy = vi
+		.spyOn(integrationPackageAccess, 'assertCanUseIntegration')
+		.mockResolvedValue(undefined)
+
+	try {
+		const transformed = await expandSecretPlaceholders({
+			request: request(),
+			props: packageProps,
+			env,
+		})
+		expect(transformed.headers.get('Authorization')).toBe('Bearer oauth-access')
+		expect(grantSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				name: 'google',
+				packageId: 'pkg-1',
+			}),
+		)
+		expect(packageSpy).not.toHaveBeenCalled()
+		expect(forkSpy).not.toHaveBeenCalled()
+	} finally {
+		packageSpy.mockRestore()
+		forkSpy.mockRestore()
+		resolveSpy.mockRestore()
+		ownerSpy.mockRestore()
+		grantSpy.mockRestore()
 	}
 })
 

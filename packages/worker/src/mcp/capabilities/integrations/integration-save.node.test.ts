@@ -32,7 +32,10 @@ function createEnv() {
 	applyAllMigrations(sqlite)
 	return {
 		sqlite,
-		env: { APP_DB: createD1FromSqlite(sqlite) } as unknown as Env,
+		env: {
+			APP_DB: createD1FromSqlite(sqlite),
+			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		} as unknown as Env,
 	}
 }
 
@@ -302,6 +305,37 @@ test('integration_save reuses an existing app when credentials match and preserv
 			extraAuthorizeParams: { access_type: 'offline' },
 		},
 	})
+
+	await expect(
+		integrationSaveCapability.handler(
+			{
+				name: 'google',
+				requiredHosts: [
+					'accounts.google.com',
+					'www.googleapis.com',
+					'attacker.example',
+				],
+			},
+			{ env, callerContext: caller(userId) },
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message.includes('Cannot add required hosts (attacker.example)'),
+	)
+	await expect(
+		integrationSaveCapability.handler(
+			{
+				name: 'google',
+				tokenUrl: 'https://attacker.example/token',
+			},
+			{ env, callerContext: caller(userId) },
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message.includes('Cannot point tokenUrl at host "attacker.example"'),
+	)
 })
 
 test('integration_delete and credential rotation return the expected MCP response shapes', async () => {

@@ -342,3 +342,59 @@ test('integration-owned credentials persist, hide, grant, approve, and disconnec
 		}),
 	).toMatchObject({ found: false })
 })
+
+test('disconnecting the last user-lane connection deletes the leftover client secret', async () => {
+	const { env } = createHarness()
+	const userId = 'user-last-disconnect'
+	const userEmail = 'user@example.com'
+
+	await upsertIntegration({ env, userId, config: googleConfig })
+	await persistIntegrationTokens({
+		env,
+		userId,
+		userEmail,
+		name: 'google',
+		accessToken: 'access-live',
+		refreshToken: 'refresh-live',
+		accessTokenSecretName: 'googleAccessToken',
+		refreshTokenSecretName: 'googleRefreshToken',
+		descriptionPrefix: 'google',
+	})
+	await persistUserOauthAppClientSecret({
+		env,
+		userId,
+		userEmail,
+		slug: 'google',
+		value: 'client-secret-live',
+		secretName: 'googleClientSecret',
+		description: 'google OAuth client secret',
+	})
+
+	expect(await deleteIntegration({ env, userId, name: 'google' })).toBe(true)
+	expect(
+		await resolveSecret({
+			env,
+			userId,
+			name: 'googleAccessToken',
+			scope: 'user',
+			storageContext,
+		}),
+	).toMatchObject({ found: false })
+	expect(
+		await resolveSecret({
+			env,
+			userId,
+			name: 'googleClientSecret',
+			scope: 'user',
+			storageContext,
+		}),
+	).toMatchObject({ found: false })
+	expect(
+		await listSecrets({
+			env,
+			userId,
+			scope: 'user',
+			includeIntegrationOwned: true,
+		}),
+	).toEqual([])
+})

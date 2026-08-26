@@ -51,7 +51,7 @@ import {
 export type { IntegrationConfig, PlatformOauthApp }
 
 type IntegrationWriteEnv = Pick<Env, 'APP_DB'> &
-	Partial<Pick<Env, 'COMMUNITY_ASSETS'>>
+	Partial<Pick<Env, 'COMMUNITY_ASSETS' | 'SECRET_STORE_KEY'>>
 
 type LogoWriteInput = {
 	logoBase64?: string | null
@@ -319,8 +319,7 @@ export async function upsertIntegration(
 
 	if (existing && existing.lane === 'user' && existing.app.slug !== appSlug) {
 		await deleteOauthAppIfNoConnections({
-			db: input.env.APP_DB,
-			communityAssets: input.env.COMMUNITY_ASSETS,
+			env: input.env,
 			userId: input.userId,
 			appSlug: existing.app.slug,
 		})
@@ -417,8 +416,7 @@ export async function deleteIntegration(input: {
 	// cleans up the shared app row.
 	if (existing.lane === 'user') {
 		await deleteOauthAppIfNoConnections({
-			db: input.env.APP_DB,
-			communityAssets: input.env.COMMUNITY_ASSETS,
+			env: input.env,
 			userId: input.userId,
 			appSlug: existing.app.slug,
 		})
@@ -432,7 +430,7 @@ export async function deleteIntegration(input: {
  * secret) is operator-owned.
  */
 export async function upsertPlatformIntegration(input: {
-	env: Pick<Env, 'APP_DB'>
+	env: IntegrationWriteEnv
 	userId: string
 	platformAppSlug: string
 	name?: string | null
@@ -504,7 +502,7 @@ export async function upsertPlatformIntegration(input: {
 	// same way a user-lane app switch does.
 	if (existing?.lane === 'user') {
 		await deleteOauthAppIfNoConnections({
-			db: input.env.APP_DB,
+			env: input.env,
 			userId: input.userId,
 			appSlug: existing.app.slug,
 		})
@@ -561,30 +559,35 @@ export async function getAvailablePlatformApp(input: {
 }
 
 async function deleteOauthAppIfNoConnections(input: {
-	db: D1Database
-	communityAssets?: Env['COMMUNITY_ASSETS']
+	env: IntegrationWriteEnv
 	userId: string
 	appSlug: string
 }): Promise<void> {
 	const remaining = await countConnectionsForApp({
-		db: input.db,
+		db: input.env.APP_DB,
 		userId: input.userId,
 		appSlug: input.appSlug,
 	})
 	if (remaining !== 0) return
 	const existing = await getOauthAppBySlug({
-		db: input.db,
+		db: input.env.APP_DB,
 		userId: input.userId,
 		slug: input.appSlug,
 	})
 	await deleteOauthApp({
-		db: input.db,
+		db: input.env.APP_DB,
 		userId: input.userId,
 		slug: input.appSlug,
 	})
-	if (existing && input.communityAssets) {
+	if (!existing) return
+	await deleteIntegrationOwnedSecrets({
+		env: input.env,
+		userId: input.userId,
+		secretNames: [existing.clientSecretSecretName],
+	})
+	if (input.env.COMMUNITY_ASSETS) {
 		await deleteUserOauthAppLogoAsset({
-			env: { COMMUNITY_ASSETS: input.communityAssets },
+			env: { COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS },
 			logoKey: existing.logoKey ?? null,
 		})
 	}
