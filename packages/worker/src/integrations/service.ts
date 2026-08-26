@@ -303,7 +303,7 @@ export async function upsertIntegration(
 	if (existing && existing.lane === 'user' && existing.app.slug !== appSlug) {
 		await deleteOauthAppIfNoConnections({
 			db: input.env.APP_DB,
-			env: input.env,
+			communityAssets: input.env.COMMUNITY_ASSETS,
 			userId: input.userId,
 			appSlug: existing.app.slug,
 		})
@@ -393,7 +393,7 @@ export async function deleteIntegration(input: {
 	if (existing.lane === 'user') {
 		await deleteOauthAppIfNoConnections({
 			db: input.env.APP_DB,
-			env: input.env,
+			communityAssets: input.env.COMMUNITY_ASSETS,
 			userId: input.userId,
 			appSlug: existing.app.slug,
 		})
@@ -480,7 +480,6 @@ export async function upsertPlatformIntegration(input: {
 	if (existing?.lane === 'user') {
 		await deleteOauthAppIfNoConnections({
 			db: input.env.APP_DB,
-			env: input.env,
 			userId: input.userId,
 			appSlug: existing.app.slug,
 		})
@@ -538,7 +537,7 @@ export async function getAvailablePlatformApp(input: {
 
 async function deleteOauthAppIfNoConnections(input: {
 	db: D1Database
-	env?: { COMMUNITY_ASSETS?: Env['COMMUNITY_ASSETS'] }
+	communityAssets?: Env['COMMUNITY_ASSETS']
 	userId: string
 	appSlug: string
 }): Promise<void> {
@@ -558,9 +557,9 @@ async function deleteOauthAppIfNoConnections(input: {
 		userId: input.userId,
 		slug: input.appSlug,
 	})
-	if (existing && input.env?.COMMUNITY_ASSETS) {
+	if (existing && input.communityAssets) {
 		await deleteUserOauthAppLogoAsset({
-			env: { COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS },
+			env: { COMMUNITY_ASSETS: input.communityAssets },
 			logoKey: existing.logoKey ?? null,
 		})
 	}
