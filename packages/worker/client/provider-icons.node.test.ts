@@ -9,11 +9,21 @@ test('resolveProviderIconId matches exact keys, families, and authorize hosts', 
 	expect(resolveProviderIconId({ providerKey: 'work-slack' })).toBe('slack')
 	expect(resolveProviderIconId({ providerKey: 'x-kodykoala' })).toBe('x')
 	expect(resolveProviderIconId({ providerKey: 'twitter' })).toBe('x')
+	expect(resolveProviderIconId({ providerKey: 'xero' })).toBe('xero')
+	expect(resolveProviderIconId({ providerKey: 'dropbox' })).toBe('dropbox')
+	expect(resolveProviderIconId({ providerKey: 'producthunt' })).toBe(
+		'producthunt',
+	)
 	expect(resolveProviderIconId({ providerKey: 'example' })).toBeNull()
 	expect(resolveProviderIconId({ host: 'accounts.google.com' })).toBe('google')
 	expect(resolveProviderIconId({ host: 'github.com' })).toBe('github')
 	expect(resolveProviderIconId({ host: 'mcp.linear.app' })).toBe('linear')
 	expect(resolveProviderIconId({ host: 'mcp.notion.com' })).toBe('notion')
+	expect(resolveProviderIconId({ host: 'api.dropboxapi.com' })).toBe('dropbox')
+	expect(resolveProviderIconId({ host: 'identity.xero.com' })).toBe('xero')
+	expect(
+		resolveProviderIconId({ host: 'fleet-api.prd.na.vn.cloud.tesla.com' }),
+	).toBe('tesla')
 	expect(
 		resolveProviderIconId({
 			providerKey: 'custom-crm',
