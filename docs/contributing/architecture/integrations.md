@@ -118,10 +118,11 @@ tokens on the connection (and dual-writes the secret-store names during soak),
 and returns only `{ ok, refreshedAt, refreshTokenRotated }` — never token
 values. Platform connections require this path — the shared client secret has no
 user-facing secret name by design. User-lane connections may also refresh
-through it; because their `tokenUrl` is user-configurable, the user lane
-enforces each materialized secret's `allowed_hosts` against the token host
-before the request — the same containment the fetch gateway applied when refresh
-ran in-sandbox via placeholder resolution. Platform-lane destinations are
+through it. Ciphertext-backed refresh enforces the connection's `requiredHosts`
+against the token host. The secret-store fallback (soak / pre-migration rows)
+still enforces that secret's `allowed_hosts`. `integration_save` cannot add new
+hosts or retarget `tokenUrl` to an unapproved host; reconnect at
+`/connect/oauth` to approve a new destination. Platform-lane destinations are
 operator-pinned rows, so no user-secret allowlist applies.
 
 Reconnectable caller-errors (`IntegrationTokenRefreshCallerError`: missing

@@ -36,10 +36,12 @@ user-owned rows and objects.
 
 When you connect a third-party service — an OAuth app or API key you register
 yourself — Kody stores that connection in your account only: tokens, the scopes
-you granted, and host allowlists. Those credentials stay in the encrypted secret
-store. Your agent and package code refer to them by name; Kody substitutes them
-at the network boundary and never returns the raw value to chat, search, or
-capability output.
+you granted, and host allowlists. OAuth access and refresh tokens, and a
+user-lane app client secret, are stored encrypted on that connection or app.
+Standalone credentials (PATs and API keys) stay in the encrypted secret store.
+Your agent and package code refer to them by name; Kody substitutes them at the
+network boundary and never returns the raw value to chat, search, or capability
+output.
 
 Kody fetches data from a connected service only to fulfill a request you, or a
 job you saved, just made. Content a package or job persists (for example a saved

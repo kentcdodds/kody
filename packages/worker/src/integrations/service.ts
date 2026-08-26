@@ -559,6 +559,26 @@ export async function getAvailablePlatformApp(input: {
 	})
 }
 
+async function deleteUnreferencedClientSecret(input: {
+	env: IntegrationWriteEnv
+	userId: string
+	secretName: string | null | undefined
+}): Promise<void> {
+	const secretName = input.secretName?.trim() ?? ''
+	if (!secretName) return
+	const stillReferenced = await countOauthAppsByClientSecretName({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		secretName,
+	})
+	if (stillReferenced !== 0) return
+	await deleteIntegrationOwnedSecrets({
+		env: input.env,
+		userId: input.userId,
+		secretNames: [secretName],
+	})
+}
+
 async function deleteOauthAppIfNoConnections(input: {
 	env: IntegrationWriteEnv
 	userId: string
@@ -581,21 +601,11 @@ async function deleteOauthAppIfNoConnections(input: {
 		slug: input.appSlug,
 	})
 	if (!deleted || !existing) return
-	const clientSecretName = existing.clientSecretSecretName?.trim() ?? ''
-	if (clientSecretName) {
-		const stillReferenced = await countOauthAppsByClientSecretName({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			secretName: clientSecretName,
-		})
-		if (stillReferenced === 0) {
-			await deleteIntegrationOwnedSecrets({
-				env: input.env,
-				userId: input.userId,
-				secretNames: [clientSecretName],
-			})
-		}
-	}
+	await deleteUnreferencedClientSecret({
+		env: input.env,
+		userId: input.userId,
+		secretName: existing.clientSecretSecretName,
+	})
 	if (input.env.COMMUNITY_ASSETS) {
 		await deleteUserOauthAppLogoAsset({
 			env: { COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS },
@@ -900,10 +910,10 @@ export async function deleteOauthAppWithConnections(input: {
 		slug: existing.slug,
 	})
 	if (deleted) {
-		await deleteIntegrationOwnedSecrets({
+		await deleteUnreferencedClientSecret({
 			env: input.env,
 			userId: input.userId,
-			secretNames: [existing.clientSecretSecretName],
+			secretName: existing.clientSecretSecretName,
 		})
 	}
 	if (deleted && input.env.COMMUNITY_ASSETS) {
