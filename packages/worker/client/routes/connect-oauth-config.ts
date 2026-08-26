@@ -67,6 +67,10 @@ export type ConnectOauthConfig = {
 	platformAppSlug: string | null
 	/** Relative path of the operator-uploaded provider logo, when present. */
 	platformLogoPath: string | null
+	/** Explicit user-uploaded OAuth app logo (beats the catalog SVG). */
+	logoPath?: string | null
+	/** Auto-fetched favicon (loses to the catalog SVG). */
+	autoLogoPath?: string | null
 	/** Operator-authored provider note (limitations, caveats), when present. */
 	platformDescription: string | null
 	/**
@@ -109,6 +113,8 @@ export type StoredIntegrationConfig = Omit<
 	platformAllowedScopes?: Array<string>
 	/** Relative path of the operator-uploaded provider logo. */
 	platformLogoPath?: string | null
+	logoPath?: string | null
+	autoLogoPath?: string | null
 	/** Operator-authored provider note (limitations, caveats). */
 	platformDescription?: string | null
 }
@@ -196,6 +202,8 @@ export function toStoredIntegrationConfig(
 						integration.authorization.extraAuthorizeParams ?? {},
 				}
 			: null,
+		logoPath: integration.logoPath ?? null,
+		autoLogoPath: integration.autoLogoPath ?? null,
 		...(integration.platform === true
 			? {
 					platformAppSlug: integration.appSlug,
@@ -420,6 +428,8 @@ export function mergeConnectOauthConfig(input: {
 		platformLogoPath: platformAppSlug
 			? parsePlatformLogoPath(input.storedIntegration?.platformLogoPath)
 			: null,
+		logoPath: input.storedIntegration?.logoPath?.trim() || null,
+		autoLogoPath: input.storedIntegration?.autoLogoPath?.trim() || null,
 		platformDescription: platformAppSlug
 			? input.storedIntegration?.platformDescription?.trim() || null
 			: null,
@@ -530,6 +540,14 @@ export function parseSessionConnectOauthConfig(
 				? record.platformAppSlug
 				: null,
 		platformLogoPath: parsePlatformLogoPath(record.platformLogoPath),
+		logoPath:
+			typeof record.logoPath === 'string' && record.logoPath.trim()
+				? record.logoPath.trim()
+				: null,
+		autoLogoPath:
+			typeof record.autoLogoPath === 'string' && record.autoLogoPath.trim()
+				? record.autoLogoPath.trim()
+				: null,
 		platformDescription:
 			typeof record.platformDescription === 'string' &&
 			record.platformDescription.trim()

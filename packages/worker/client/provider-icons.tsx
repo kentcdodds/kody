@@ -477,30 +477,55 @@ export function ProviderIcon(
 }
 
 /**
+ * Display priority for a provider mark: explicit upload, official catalog
+ * SVG, auto-fetched favicon, then the letter fallback.
+ */
+export function resolveProviderMarkSource(input: {
+	providerKey: string
+	host?: string | null
+	logoPath?: string | null
+	autoLogoPath?: string | null
+}): 'upload' | 'catalog' | 'favicon' | 'letter' {
+	if (input.logoPath?.trim()) return 'upload'
+	if (resolveProviderIconId(input)) return 'catalog'
+	if (input.autoLogoPath?.trim()) return 'favicon'
+	return 'letter'
+}
+
+/**
  * Provider identity for connect / integration headers: uploaded logo, known
- * brand SVG, or a letter fallback. Always sits on the white logo well so
- * dark marks stay readable in dark mode.
+ * brand SVG, auto-favicon, or a letter fallback. Always sits on the white
+ * logo well so dark marks stay readable in dark mode.
  */
 export function ProviderMark(
 	handle: Handle<{
 		providerKey: string
 		label: string
 		logoPath?: string | null
+		autoLogoPath?: string | null
 		host?: string | null
 		size?: string
 	}>,
 ) {
 	return () => {
-		const { providerKey, label, logoPath, host } = handle.props
+		const { providerKey, label, logoPath, autoLogoPath, host } = handle.props
 		const wellSize = handle.props.size ?? '3rem'
-		const iconId = resolveProviderIconId({ providerKey, host })
+		const source = resolveProviderMarkSource({
+			providerKey,
+			host,
+			logoPath,
+			autoLogoPath,
+		})
 		const letter = label.trim().charAt(0).toUpperCase() || '?'
 		const iconSize =
 			wellSize === '3rem' ? '1.65rem' : `calc(${wellSize} * 0.62)`
+		const iconId = resolveProviderIconId({ providerKey, host })
+		const imagePath = source === 'upload' ? logoPath : autoLogoPath
 		return (
 			<span
 				aria-hidden="true"
 				data-testid="provider-mark"
+				data-source={source}
 				mix={css({
 					...getLogoWellCss({
 						size: wellSize,
@@ -511,9 +536,9 @@ export function ProviderMark(
 					lineHeight: 1,
 				})}
 			>
-				{logoPath ? (
+				{source === 'upload' || source === 'favicon' ? (
 					<img
-						src={logoPath}
+						src={imagePath ?? ''}
 						alt=""
 						width={40}
 						height={40}
@@ -524,7 +549,7 @@ export function ProviderMark(
 							objectFit: 'contain' as const,
 						})}
 					/>
-				) : iconId ? (
+				) : source === 'catalog' && iconId ? (
 					<ProviderIcon providerId={iconId} size={iconSize} />
 				) : (
 					letter

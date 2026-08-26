@@ -99,6 +99,10 @@
 		{
 			"filename": "0024-fleet-execute-days.sql",
 			"sha256": "05a0061079a3988b424a0b63646510857ceec11197128e63735ff6b30b46ef8b"
+		},
+		{
+			"filename": "0025-user-oauth-app-logos.sql",
+			"sha256": "39222c8848b5528baa3985de4886b8b5c3ca03fa8e545d78ab2e4710fa369404"
 		}
 	]
 }

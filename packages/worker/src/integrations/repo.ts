@@ -41,7 +41,8 @@ type UserOauthAppWithCountRow = UserOauthAppRow & {
 const appSelectColumns = `
 	user_id, slug, provider, label, client_id, client_secret_secret_name,
 	token_url, authorize_url, api_base_url, flow, use_pkce, token_exchange_style,
-	scope_separator, extra_authorize_params_json, created_at, updated_at
+	scope_separator, extra_authorize_params_json, logo_key, logo_content_type,
+	logo_source, favicon_source_host, created_at, updated_at
 `
 
 const joinedSelectColumns = `
@@ -60,6 +61,10 @@ const joinedSelectColumns = `
 	a.token_exchange_style AS a_token_exchange_style,
 	a.scope_separator AS a_scope_separator,
 	a.extra_authorize_params_json AS a_extra_authorize_params_json,
+	a.logo_key AS a_logo_key,
+	a.logo_content_type AS a_logo_content_type,
+	a.logo_source AS a_logo_source,
+	a.favicon_source_host AS a_favicon_source_host,
 	a.created_at AS a_created_at,
 	a.updated_at AS a_updated_at,
 	p.slug AS p_slug,
@@ -267,7 +272,8 @@ export async function listOauthAppsWithConnectionCounts(input: {
 				a.client_secret_secret_name, a.token_url, a.authorize_url,
 				a.api_base_url, a.flow, a.use_pkce, a.token_exchange_style,
 				a.scope_separator, a.extra_authorize_params_json,
-				a.created_at, a.updated_at,
+				a.logo_key, a.logo_content_type, a.logo_source,
+				a.favicon_source_host, a.created_at, a.updated_at,
 				(
 					SELECT count(*)
 					FROM user_integrations i
@@ -303,7 +309,15 @@ export async function countConnectionsForApp(input: {
 
 export async function upsertOauthApp(input: {
 	db: D1Database
-	row: Omit<UserOauthAppRow, 'created_at' | 'updated_at'> & {
+	row: Omit<
+		UserOauthAppRow,
+		| 'created_at'
+		| 'updated_at'
+		| 'logo_key'
+		| 'logo_content_type'
+		| 'logo_source'
+		| 'favicon_source_host'
+	> & {
 		created_at?: string
 		updated_at?: string
 	}
@@ -502,6 +516,10 @@ export function mapOauthAppRow(row: UserOauthAppRow): UserOauthApp {
 		tokenExchangeStyle: row.token_exchange_style,
 		scopeSeparator: row.scope_separator,
 		extraAuthorizeParams: parseJsonObject(row.extra_authorize_params_json),
+		logoKey: row.logo_key ?? null,
+		logoContentType: row.logo_content_type ?? null,
+		logoSource: row.logo_source ?? null,
+		faviconSourceHost: row.favicon_source_host ?? null,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	}
@@ -597,6 +615,10 @@ function mapJoinedRow(row: JoinedIntegrationRow): JoinedIntegration {
 			token_exchange_style: row.a_token_exchange_style,
 			scope_separator: row.a_scope_separator,
 			extra_authorize_params_json: row.a_extra_authorize_params_json ?? '{}',
+			logo_key: row.a_logo_key ?? null,
+			logo_content_type: row.a_logo_content_type ?? null,
+			logo_source: row.a_logo_source ?? null,
+			favicon_source_host: row.a_favicon_source_host ?? null,
 			created_at: row.a_created_at ?? '',
 			updated_at: row.a_updated_at ?? '',
 		}),

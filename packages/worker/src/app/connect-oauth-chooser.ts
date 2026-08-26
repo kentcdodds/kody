@@ -3,6 +3,7 @@ import {
 	type ConnectOauthChooserOption,
 } from '#universal/oauth-connect.ts'
 import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
+import { buildUserOauthAppLogoPaths } from '#worker/integrations/user-oauth-app-logo.ts'
 import {
 	listAvailablePlatformApps,
 	listJoinedIntegrations,
@@ -30,7 +31,11 @@ export async function loadConnectOauthChooser(input: {
 				logoPath:
 					entry.lane === 'platform'
 						? buildPlatformOauthAppLogoPath(entry.app)
-						: null,
+						: buildUserOauthAppLogoPaths(entry.app).logoPath,
+				autoLogoPath:
+					entry.lane === 'platform'
+						? null
+						: buildUserOauthAppLogoPaths(entry.app).autoLogoPath,
 				platform: entry.lane === 'platform',
 				appSlug: entry.app.slug,
 				canDrive: Boolean(

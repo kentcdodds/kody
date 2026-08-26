@@ -17,6 +17,62 @@ function parseContentLength(response: Response): number | null {
 	return length
 }
 
+export async function readBoundedBodyBytes(
+	response: Response,
+	maxBytes: number,
+): Promise<Uint8Array> {
+	const contentLength = parseContentLength(response)
+	if (contentLength != null && contentLength > maxBytes) {
+		throw new BoundedBodyTooLargeError(maxBytes)
+	}
+
+	if (response.body == null) {
+		const body = new Uint8Array(await response.arrayBuffer())
+		if (body.byteLength > maxBytes) {
+			throw new BoundedBodyTooLargeError(maxBytes)
+		}
+		return body
+	}
+
+	const reader = response.body.getReader()
+	const chunks: Array<Uint8Array> = []
+	let totalBytes = 0
+
+	try {
+		while (true) {
+			const { done, value } = await reader.read()
+			if (done) {
+				break
+			}
+			if (value.byteLength === 0) {
+				continue
+			}
+
+			totalBytes += value.byteLength
+			if (totalBytes > maxBytes) {
+				void reader.cancel().catch(() => {})
+				throw new BoundedBodyTooLargeError(maxBytes)
+			}
+
+			chunks.push(value)
+		}
+	} catch (error) {
+		if (error instanceof BoundedBodyTooLargeError) {
+			throw error
+		}
+		void reader.cancel().catch(() => {})
+		throw error
+	}
+
+	const bytes = new Uint8Array(totalBytes)
+	let offset = 0
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset)
+		offset += chunk.byteLength
+	}
+	return bytes
+}
+
 export async function readBoundedBody(
 	response: Response,
 	maxBytes: number,

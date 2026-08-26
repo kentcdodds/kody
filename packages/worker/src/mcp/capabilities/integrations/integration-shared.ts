@@ -92,6 +92,13 @@ export const integrationSaveSchema = z
 		tokenExchangeStyle: z.enum(tokenExchangeStyleValues).nullable().optional(),
 		authorization: integrationAuthorizationSchema.nullable().optional(),
 		accountLabel: z.string().min(1).nullable().optional(),
+		logoBase64: z
+			.string()
+			.nullable()
+			.optional()
+			.describe(
+				'Base64-encoded OAuth app logo (SVG, PNG, JPEG, or WebP; SVG is rasterized to PNG). Omit to keep the current logo, pass null to clear it and re-fetch the provider favicon.',
+			),
 	})
 	.strict()
 

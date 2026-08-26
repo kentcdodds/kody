@@ -507,6 +507,7 @@ function renderNamedProvider(input: {
 	providerKey: string
 	label: string
 	logoPath?: string | null
+	autoLogoPath?: string | null
 	host?: string | null
 	builtIn?: boolean
 }) {
@@ -523,6 +524,7 @@ function renderNamedProvider(input: {
 				providerKey={input.providerKey}
 				label={input.label}
 				logoPath={input.logoPath}
+				autoLogoPath={input.autoLogoPath}
 				host={input.host}
 				size="1.75rem"
 			/>
@@ -1100,7 +1102,8 @@ export function AccountIntegrationsRoute(handle: Handle) {
 									name: renderNamedProvider({
 										providerKey: app.provider || app.slug,
 										label: oauthAppTitle(app),
-										logoPath: app.platformLogoPath,
+										logoPath: app.platformLogoPath ?? app.logoPath,
+										autoLogoPath: app.autoLogoPath,
 										host: hostFromUrl(app.authorizeUrl ?? app.tokenUrl),
 										builtIn: isBuiltInApp(app),
 									}),
@@ -1120,7 +1123,10 @@ export function AccountIntegrationsRoute(handle: Handle) {
 											<ProviderMark
 												providerKey={selectedApp.provider || selectedApp.slug}
 												label={oauthAppTitle(selectedApp)}
-												logoPath={selectedApp.platformLogoPath}
+												logoPath={
+													selectedApp.platformLogoPath ?? selectedApp.logoPath
+												}
+												autoLogoPath={selectedApp.autoLogoPath}
 												host={hostFromUrl(
 													selectedApp.authorizeUrl ?? selectedApp.tokenUrl,
 												)}

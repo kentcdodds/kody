@@ -1,3 +1,4 @@
+import { waitUntil } from 'cloudflare:workers'
 import { jsonResponse } from '#worker/json-response.ts'
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import { type Action } from 'remix/router'
@@ -239,6 +240,7 @@ async function handleSaveOauthAppAction(input: {
 		const app = await upsertOauthAppWithoutConnection({
 			env: input.env,
 			userId: input.user.mcpUser.userId,
+			waitUntil,
 			config: {
 				name: provider,
 				tokenUrl,
@@ -909,6 +911,7 @@ async function saveIntegrationConfig(input: {
 		env: input.env,
 		userId: input.userId,
 		config: normalizeIntegrationConfig(parsed.data),
+		waitUntil,
 	})
 	return integration.name
 }

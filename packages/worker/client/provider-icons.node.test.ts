@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { resolveProviderIconId } from './provider-icons.tsx'
+import {
+	resolveProviderIconId,
+	resolveProviderMarkSource,
+} from './provider-icons.tsx'
 
 test('resolveProviderIconId matches exact keys, families, and authorize hosts', () => {
 	expect(resolveProviderIconId({ providerKey: 'GitHub' })).toBe('github')
@@ -30,4 +33,33 @@ test('resolveProviderIconId matches exact keys, families, and authorize hosts', 
 			host: 'login.unknown.test',
 		}),
 	).toBeNull()
+})
+
+test('resolveProviderMarkSource prefers upload, then catalog, then favicon', () => {
+	expect(
+		resolveProviderMarkSource({
+			providerKey: 'dropbox',
+			logoPath: '/integrations/logos/dropbox?v=1',
+			autoLogoPath: '/integrations/logos/dropbox?v=2',
+		}),
+	).toBe('upload')
+	expect(
+		resolveProviderMarkSource({
+			providerKey: 'dropbox',
+			autoLogoPath: '/integrations/logos/dropbox?v=2',
+		}),
+	).toBe('catalog')
+	expect(
+		resolveProviderMarkSource({
+			providerKey: 'obscure-crm',
+			host: 'login.unknown.test',
+			autoLogoPath: '/integrations/logos/obscure-crm?v=2',
+		}),
+	).toBe('favicon')
+	expect(
+		resolveProviderMarkSource({
+			providerKey: 'obscure-crm',
+			host: 'login.unknown.test',
+		}),
+	).toBe('letter')
 })

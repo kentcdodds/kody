@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { buildUserOauthAppLogoPaths } from '#worker/integrations/user-oauth-app-logo.ts'
 import {
 	type UserOauthApp,
 	type UserOauthAppWithConnectionCount,
@@ -33,6 +34,9 @@ export const oauthAppPublicSchema = z.object({
 	extraAuthorizeParams: z.record(z.string(), z.string()),
 	connectionCount: z.number().int().nonnegative(),
 	connections: z.array(oauthAppConnectionRefSchema),
+	logoPath: z.string().nullable().optional(),
+	autoLogoPath: z.string().nullable().optional(),
+	logoSource: z.enum(['upload', 'favicon']).nullable().optional(),
 	createdAt: z.string().min(1),
 	updatedAt: z.string().min(1),
 })
@@ -45,6 +49,7 @@ export function toOauthAppPublic(
 ): OauthAppPublic {
 	const connectionCount =
 		'connectionCount' in app ? app.connectionCount : connections.length
+	const logoPaths = buildUserOauthAppLogoPaths(app)
 	return {
 		slug: app.slug,
 		provider: app.provider,
@@ -61,6 +66,9 @@ export function toOauthAppPublic(
 		extraAuthorizeParams: app.extraAuthorizeParams,
 		connectionCount,
 		connections,
+		logoPath: logoPaths.logoPath,
+		autoLogoPath: logoPaths.autoLogoPath,
+		logoSource: app.logoSource,
 		createdAt: app.createdAt,
 		updatedAt: app.updatedAt,
 	}
