@@ -955,12 +955,216 @@ html.is-settled {
 	gap: 0.6rem;
 }
 
-/* Same host chip row, centered under the hero door. */
-.landing-hero-hosts {
-	justify-content: center;
-	margin-top: 1.4rem;
-	max-width: 48rem;
-	margin-inline: auto;
+/* Hub-and-spoke: host chips on an arc, Kody hub at the base, You walks the arc. */
+.landing-hero-orbit {
+	width: min(100%, 42rem);
+	margin: 1.75rem auto 0;
+}
+
+.landing-hero-orbit-stage {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 1.15 / 1;
+	isolation: isolate;
+}
+
+.landing-hero-orbit-agents-label {
+	position: absolute;
+	left: 4%;
+	top: 10%;
+	margin: 0;
+	font-size: 0.78rem;
+	font-weight: 550;
+	letter-spacing: 0.02em;
+	color: var(--color-text-muted);
+	text-transform: lowercase;
+	pointer-events: none;
+}
+
+.landing-hero-orbit-hub-label,
+.landing-hero-orbit-mcp {
+	margin: 0.35rem 0 0;
+	text-align: center;
+	font-weight: 550;
+	color: var(--color-text-muted);
+}
+
+.landing-hero-orbit-hub-label {
+	font-size: 0.78rem;
+	letter-spacing: 0.02em;
+	text-transform: lowercase;
+}
+
+.landing-hero-orbit-mcp {
+	margin-top: 0.15rem;
+	font-size: 0.82rem;
+	font-weight: 500;
+}
+
+.landing-hero-orbit-canvas {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	overflow: visible;
+	pointer-events: none;
+	z-index: 0;
+}
+
+.landing-hero-orbit-spoke {
+	stroke: color-mix(in oklab, var(--color-border) 85%, var(--color-primary-text));
+	stroke-width: 0.45;
+	stroke-linecap: round;
+	opacity: 0.9;
+}
+
+.landing-hero-orbit-arc {
+	stroke: color-mix(in oklab, var(--color-border) 70%, transparent);
+	stroke-width: 0.35;
+	stroke-dasharray: 1.1 1.4;
+	opacity: 0.75;
+}
+
+.landing-hero-orbit-hosts {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+}
+
+.landing-hero-orbit-host {
+	position: absolute;
+	translate: -50% -50%;
+	white-space: nowrap;
+	box-shadow: 0 1px 0 oklch(from var(--color-text) l c h / 0.04);
+}
+
+@property --hero-you-angle {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 2.89;
+}
+
+.landing-hero-orbit-you {
+	position: absolute;
+	z-index: 3;
+	left: calc(50% + cos(var(--hero-you-angle) * 1rad) * 38%);
+	top: calc(78% - sin(var(--hero-you-angle) * 1rad) * 38%);
+	translate: -50% -115%;
+	display: grid;
+	justify-items: center;
+	row-gap: 0.15rem;
+	color: var(--color-text);
+	pointer-events: none;
+}
+
+.landing-hero-orbit-you-label {
+	font-size: 0.78rem;
+	font-weight: 650;
+	letter-spacing: 0.02em;
+	color: var(--color-text-muted);
+	text-transform: lowercase;
+}
+
+.landing-hero-orbit-you-figure {
+	display: grid;
+	place-items: center;
+	filter: drop-shadow(-6px 0 0 oklch(from var(--color-primary-text) l c h / 0.18));
+}
+
+.landing-hero-orbit-hub {
+	position: absolute;
+	z-index: 4;
+	translate: -50% -50%;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.55rem;
+	padding: 0.55rem 1.05rem 0.55rem 0.65rem;
+	border-radius: var(--radius-full);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	box-shadow:
+		0 10px 28px oklch(from var(--color-text) l c h / 0.08),
+		0 1px 0 oklch(from var(--color-text) l c h / 0.04);
+}
+
+.landing-hero-orbit-hub-mark {
+	display: block;
+	border-radius: 50%;
+}
+
+.landing-hero-orbit-hub-name {
+	font-size: 1.05rem;
+	font-weight: 720;
+	letter-spacing: -0.02em;
+	color: var(--color-text);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	html.js .landing-hero-orbit-you {
+		animation: landing-hero-you-walk 8s ease-in-out infinite alternate;
+	}
+
+	html.js .landing-hero-orbit-you-stride {
+		animation: landing-hero-you-stride 0.55s ease-in-out infinite alternate;
+		transform-origin: 16px 34px;
+	}
+}
+
+@keyframes landing-hero-you-walk {
+	from {
+		--hero-you-angle: 2.89;
+	}
+
+	to {
+		--hero-you-angle: 0.251;
+	}
+}
+
+@keyframes landing-hero-you-stride {
+	from {
+		transform: skewX(-4deg);
+	}
+
+	to {
+		transform: skewX(4deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.landing-hero-orbit-you {
+		left: 50%;
+		top: 22%;
+		--hero-you-angle: 1.57;
+	}
+}
+
+@media (max-width: 640px) {
+	.landing-hero-orbit {
+		width: min(100%, 26rem);
+		margin-top: 1.35rem;
+	}
+
+	.landing-hero-orbit-stage {
+		aspect-ratio: 1 / 1.05;
+	}
+
+	.landing-hero-orbit-host {
+		font-size: 0;
+		gap: 0;
+		padding: 0.55rem;
+	}
+
+	.landing-hero-orbit-host.landing-chip-icon::before {
+		width: 1.15em;
+		height: 1.15em;
+	}
+
+	.landing-hero-orbit-mcp {
+		font-size: 0.75rem;
+	}
 }
 
 .landing-chip {

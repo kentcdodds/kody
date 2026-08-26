@@ -28,6 +28,7 @@ import {
 } from '#client/public-form-protection.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
+import { LandingHeroOrbit } from './landing-hero-orbit.tsx'
 
 /**
  * heykody.app landing page, ported from the redesign prototype
@@ -37,9 +38,10 @@ import { LandingLoopPlayer } from './landing-loop-player.tsx'
  * `prefers-reduced-motion`.
  *
  * Positioning (public door): keep using the agent you already have — Kody is
- * the account tools and memory live on when you switch. Host logos in the
- * hero name the agents; the H1 stays vendor-agnostic. Not another agent,
- * chat, or harness. Factory / npm / packages stay below the fold.
+ * the account tools and memory live on when you switch. Hero hub-and-spoke
+ * (host chips + existing kody mark + walking You) names the agents; the H1
+ * stays vendor-agnostic. Not another agent, chat, or harness. Factory / npm /
+ * packages stay below the fold.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
  * emit a per-node `<style data-rmx>` tag for every marketing block.
@@ -80,17 +82,6 @@ const honestRows = [
 		from: 'Context stuck in one host',
 		to: 'Memories that follow the account.',
 	},
-] as const
-
-const hostAgents = [
-	{ label: 'Cursor', icon: 'cursor' },
-	{ label: 'Claude Code', icon: 'claudecode' },
-	{ label: 'ChatGPT', icon: 'chatgpt' },
-	{ label: 'Copilot', icon: 'githubcopilot' },
-	{ label: 'Claude', icon: 'claude' },
-	{ label: 'Grok', icon: 'grok' },
-	{ label: 'Grok Bot', icon: 'grokbot' },
-	{ label: 'OpenCode', icon: 'opencode' },
 ] as const
 
 const worldBrands = [
@@ -219,29 +210,7 @@ export function HomeRoute(handle: Handle) {
 						Tools, setup, and memory live here when you switch. Not another
 						chat. Not another harness.
 					</p>
-					<ul
-						aria-label="Agents Kody plugs into"
-						data-rise
-						style={{ '--rise': '1.2' }}
-						class="landing-pitch-hosts landing-hero-hosts"
-					>
-						{hostAgents.map((agent, index) => (
-							<li
-								key={agent.label}
-								class="landing-chip landing-chip-icon landing-host-chip"
-								style={chipIconStyle(agent.icon)}
-								mix={revealPop(index * 35)}
-							>
-								{agent.label}
-							</li>
-						))}
-						<li
-							class="landing-chip landing-chip-muted landing-host-chip"
-							mix={revealPop(hostAgents.length * 35)}
-						>
-							anything that speaks MCP
-						</li>
-					</ul>
+					<LandingHeroOrbit />
 					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}
 					<div data-rise style={{ '--rise': '2' }} class="landing-hero-actions">
 						{isSignedIn ? (
