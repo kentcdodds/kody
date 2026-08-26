@@ -948,9 +948,9 @@ export type AccountIntegrationListItem = {
 	platformAllowedScopes?: Array<string>
 	/** Relative serving path of the operator-uploaded provider logo. */
 	platformLogoPath?: string | null
-	/** Explicit user-uploaded OAuth app logo (beats the catalog SVG). */
+	/** Explicit user-uploaded OAuth app logo (beats the auto-favicon). */
 	logoPath?: string | null
-	/** Auto-fetched favicon (loses to the catalog SVG). */
+	/** Auto-fetched favicon (loses to an explicit upload). */
 	autoLogoPath?: string | null
 	/** Operator-authored provider note for platform apps (limitations, caveats). */
 	platformDescription?: string | null
@@ -993,9 +993,9 @@ export type AccountOauthAppListItem = {
 	platform?: boolean
 	/** Relative serving path of the operator-uploaded provider logo. */
 	platformLogoPath?: string | null
-	/** Explicit user-uploaded OAuth app logo (beats the catalog SVG). */
+	/** Explicit user-uploaded OAuth app logo (beats the auto-favicon). */
 	logoPath?: string | null
-	/** Auto-fetched favicon (loses to the catalog SVG). */
+	/** Auto-fetched favicon (loses to an explicit upload). */
 	autoLogoPath?: string | null
 	createdAt: string
 	updatedAt: string
