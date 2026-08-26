@@ -1,8 +1,8 @@
 # First steps
 
 Kody exposes **search** and **execute** as the main tools. The agent should
-**search first** to find the right capability, package, integration, value, or
-secret reference, then run work through **execute**.
+**search first** to find the right capability, package, integration, or secret
+reference, then run work through **execute**.
 
 ## Habits that help
 
@@ -38,10 +38,9 @@ secret reference, then run work through **execute**.
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Credentials use connect flows.** Use saved secrets, `/connect/oauth`,
   `/account/secrets/new`, or the flows described in
-  [Secrets, values, and host approval](./secrets-and-values.md). Per-provider
-  connect guides are available: load
-  `coding_guide_get({ guide: "provider_<name>" })` (for example
-  `provider_github`) or browse
+  [Secrets and host approval](./secrets-and-values.md). Per-provider connect
+  guides are available: load `coding_guide_get({ guide: "provider_<name>" })`
+  (for example `provider_github`) or browse
   [https://kody.codes/guides](https://kody.codes/guides) (each page also serves
   raw markdown at `/guides/<slug>.md`).
 - **Confirm destructive work** before mutating GitHub, Cloudflare, or Cursor

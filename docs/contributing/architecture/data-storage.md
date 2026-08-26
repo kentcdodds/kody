@@ -867,12 +867,12 @@ Package and plain-repo state maps onto storage homes as follows:
 
 - **Package source** — Cloudflare Artifacts repos + D1 `entity_sources`
   projections; `package.json` is authoritative.
-- **Package config** — D1/secret/value rows keyed by the saved package id
-  (manifest metadata, package-scoped secrets, app-scoped values with
-  `appId = packageId`).
+- **Package config** — D1 and secret rows keyed by the saved package id
+  (manifest metadata and package-scoped secrets).
 - **Package storage** — StorageRunner bucket
   `package:{encodeURIComponent(packageId)}` via `buildPackageStorageId` /
-  `packageStorage()`. Shared durable data for every package surface.
+  `packageStorage()`. Shared durable data and non-secret knobs for every package
+  surface.
 - **Package jobs** — schedule metadata in `JOBS_DB` `jobs`; run-local scratch in
   `job:package-job:{packageId}:{encodeURIComponent(jobName)}`; shared durable
   data in package storage.

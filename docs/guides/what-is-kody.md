@@ -78,7 +78,7 @@ supporting cast.
    [secrets capabilities](https://github.com/kentcdodds/kody/tree/main/packages/worker/src/mcp/capabilities/secrets)
    are `secret_list`, `secret_set`, `secret_set_many`, `secret_delete`, and
    `secret_jwt_sign`; there is deliberately no `secret_get`. See
-   [Secrets, values, and host approval](../use/secrets-and-values.md).
+   [Secrets and host approval](../use/secrets-and-values.md).
 3. **Every install is a fork you own.** Installing someone else's automation
    puts code in your account, on your credentials, that you can open, change,
    schedule, and republish. Nothing stays locked in someone else's runtime. See
@@ -90,7 +90,7 @@ supporting cast.
   services you already use; verified per-provider walkthroughs live at
   [kody.codes/guides](https://kody.codes/guides). Credentials stay server-side
   and never enter your agent's context. See
-  [Secrets, values, and host approval](../use/secrets-and-values.md).
+  [Secrets and host approval](../use/secrets-and-values.md).
 - **Ad hoc execution** — your agent runs sandboxed code against those
   integrations immediately, no deploy step. See
   [Execute and workflows](../use/execute.md).

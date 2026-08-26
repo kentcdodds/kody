@@ -154,4 +154,4 @@ the mint; re-enable with `webhook_enable`. Rotate the URL secret with
 
 - Packages: [Packages](./packages.md)
 - Architecture: [Inbound webhooks](../contributing/architecture/webhooks.md)
-- Secrets: [Secrets, values, and host approval](./secrets-and-values.md)
+- Secrets: [Secrets and host approval](./secrets-and-values.md)

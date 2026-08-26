@@ -93,13 +93,13 @@ A saved package is a repo with the package extension activated. Four concepts:
 1. **Package source** — Artifacts repo + D1 `entity_sources` projection;
    manifest rooted at `package.json`.
 2. **Package config** — owned by the saved package id: `package.json#kody`
-   metadata, secret buckets keyed by the saved package id (`kody.secretMounts`),
-   and value buckets keyed by `appId` (package surfaces set `appId` to the saved
-   package id).
+   metadata and secret buckets keyed by the saved package id
+   (`kody.secretMounts`).
 3. **Package storage** — StorageRunner bucket
    `storageId = buildPackageStorageId(packageId)` →
    `package:{encodeURIComponent(packageId)}`, reached via `packageStorage()`
    from every package surface (exports, subscriptions, retrievers, jobs, apps).
+   Non-secret knobs and runtime state live here.
 4. **Package jobs** — `package.json#kody.jobs` with schedule/execution metadata
    in D1 `jobs` rows; each run binds
    `job:package-job:{packageId}:{encodeURIComponent(jobName)}` scratch storage;
@@ -199,10 +199,10 @@ import handleEvent from 'kody:@kentcdodds/event-subscriber/handle-event'
 await handleEvent({ event })
 ```
 
-`kody:runtime` quarantines a `packages` helper for already-published modules
-that still call it ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
-Authors and agents do not get that helper. Fleet source migrates with package
-codemod `0008-packages-invoke-to-static-import`. See
+`kody:runtime` quarantines a `packages` helper for leftover published modules
+that call it ([#1750](https://github.com/kentcdodds/kody/issues/1750)). Authors
+and agents do not get that helper. Fleet source migrates with package codemod
+`0008-packages-invoke-to-static-import`. See
 [0037](./decisions/0037-no-author-packages-invoke.md).
 
 Exact scoped resolution avoids bare-id collisions. A `kody:@person/...` target
@@ -210,14 +210,14 @@ resolves that caller-owned person package. A `kody:@kody/...` target is not
 runnable in a person account (`community_fork` first). Foreign person accounts
 remain unresolvable. Platform-account packages may compose with each other.
 
-Literal `import("kody:@...")` stays a teaching error: known names are static
+Literal `import("kody:@...")` is a teaching error: known names are static
 imports. Computed `import(specifier)` is the name-as-data path. Exactly-once
 work uses workflows. HTTP invocation tokens stay for external clients.
 
-Publish checks still reject object-only `packages.invoke`,
-`packages.invokeChecked`, `packages.check`, and literal dynamic
-`import("kody:@...")`. Codemods `0002`, `0006`, `0007`, and `0008` are the
-mechanical repair path. See [package codemods](./package-codemods.md).
+Publish checks reject object-only `packages.invoke`, `packages.invokeChecked`,
+`packages.check`, and literal dynamic `import("kody:@...")`. Codemods `0002`,
+`0006`, `0007`, and `0008` are the mechanical repair path. See
+[package codemods](./package-codemods.md).
 
 ## Package apps
 

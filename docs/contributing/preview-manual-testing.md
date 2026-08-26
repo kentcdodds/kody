@@ -20,9 +20,9 @@ npm run preview:manual-test
 Same thing: `node tools/preview-manual-test.ts`.
 
 The script signs in as the preview seed user and keeps that session. The seed
-account starts **empty** except the user row — there are no secrets, values,
-packages, or jobs until you create them. Create that data and assert the change
-as the same user:
+account starts **empty** except the user row — there are no secrets, packages,
+or jobs until you create them. Create that data and assert the change as the
+same user:
 
 ```bash
 npm run preview:manual-test -- \
