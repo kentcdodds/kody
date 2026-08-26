@@ -236,7 +236,6 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	expect(integrationDetail.markdown).toContain('github:package')
 	expect(integrationDetail.markdown).toContain('listing-1')
 	expect(integrationDetail.markdown).toContain('Client ID: `github_client_id`')
-	expect(integrationDetail.markdown).not.toContain('Client ID value name')
 
 	const leanIntegrationDetail = formatEntityDetailMarkdown({
 		type: 'integration',

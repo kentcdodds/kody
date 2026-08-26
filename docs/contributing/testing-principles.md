@@ -68,6 +68,13 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
   as tool descriptions, usage hints, warnings, or other instructional copy. If
   the behavior matters, test the behavior or stable structured contract rather
   than asserting that specific prose appears.
+- Do not commit tests whose only job is asserting a deleted implementation
+  detail is absent (old class names, old script filenames, old `aria-label`s,
+  leftover CSS selectors, renamed copy). Those cannot fail unless someone pastes
+  the old code back. Fine to use such checks locally while verifying a deletion.
+  Absence is a good assertion when the code still has a path that could show the
+  thing: loading vs ready, empty vs populated, secret vs redacted, branch A vs
+  branch B, or transform input vs output.
 - Run server/unit tests with `npm run test` (plus targeted Vitest paths when
   needed) to avoid Playwright spec discovery and accidental matches like
   `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts`.
