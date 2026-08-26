@@ -155,8 +155,7 @@ new access token for user-lane integrations and throws for platform ones
 (`integration_get` carries `platform: true`). The integration usage grant
 (`any`, or `packages` that includes that package) decides whether a package —
 including an unadopted community fork — can refresh or materialize tokens.
-Token-exchange
-request building is shared:
+Token-exchange request building is shared:
 `packages/worker/src/integrations/oauth-token-exchange.ts` lives in the
 shared-primitive layer so both the `/connect/oauth` handlers and the MCP refresh
 capability use it within the import boundaries.
