@@ -96,7 +96,7 @@ export async function scheduleMcpServerFaviconFill(input: {
 		input.waitUntil(work)
 		return
 	}
-	void work
+	await work
 }
 
 export async function backfillMissingMcpServerFavicons(input: {
@@ -134,5 +134,5 @@ export async function backfillMissingMcpServerFavicons(input: {
 		input.waitUntil(work)
 		return
 	}
-	void work
+	await work
 }

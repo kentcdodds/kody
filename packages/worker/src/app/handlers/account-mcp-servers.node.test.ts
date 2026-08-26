@@ -237,6 +237,7 @@ test('MCP servers API add action uses the canonical OAuth callback origin', asyn
 			url: 'https://mcp.notion.example/mcp',
 			baseUrl: 'https://example.com',
 			bearerToken: 'secret-token',
+			waitUntil: expect.any(Function),
 		}),
 	)
 	const payload = (await addResponse.json()) as {

@@ -166,6 +166,7 @@ export async function addMcpServer(input: {
 	 * D1 — only forwarded into the hub DO's Agents SDK server options.
 	 */
 	bearerToken?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<{
 	setting: McpServerSettingMetadata
 	connection: McpServerConnectResult
@@ -236,6 +237,7 @@ export async function addMcpServer(input: {
 		env: input.env,
 		userId: input.userId,
 		serverId: row.id,
+		waitUntil: input.waitUntil,
 	})
 	return {
 		setting: toMetadata(row),

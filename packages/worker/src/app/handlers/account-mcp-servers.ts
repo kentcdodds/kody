@@ -235,6 +235,7 @@ async function handleAddAction(input: {
 		url: readTrimmedStringOrEmpty(input.body, 'url'),
 		baseUrl: oauth.clientOrigin,
 		bearerToken: readNonEmptyTrimmedString(input.body, 'bearerToken'),
+		waitUntil,
 	})
 	const payload = await loadAccountMcpServersData({
 		env: input.env,
