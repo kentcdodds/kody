@@ -1,8 +1,8 @@
 # kody agent index
 
 Kody is a multi-user personal assistant: every signed-in user gets a fully
-isolated assistant (own packages, jobs, secrets, values, memories, remote
-connectors, email inboxes, durable storage).
+isolated assistant (own packages, jobs, secrets, memories, remote connectors,
+email inboxes, durable storage).
 
 `npm run validate` is the single authoritative local gate.
 

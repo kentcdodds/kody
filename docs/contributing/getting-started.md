@@ -149,21 +149,8 @@ See
 for local dev commands and
 [`docs/contributing/setup/checks.md`](./setup/checks.md) for verification steps.
 
-To create a deterministic test login in a running environment:
-
-```bash
-npm run migrate:local
-node tools/seed-test-data.ts --local
-```
-
-Default fixture credentials (both use password `ilikecode`):
-
-- `kody@example.com` — admin fixture (seeded with the `admin` role)
-- `jane@example.com` — regular fixture (`user` role only)
-
-These credentials are a local test fixture only. Pass
-`--email <email> --password <password>` when you need explicit fixture
-credentials (custom accounts are non-admin unless you pass `--admin`).
+To create a deterministic test login after migrations, see
+[`docs/contributing/setup/seeding.md`](./setup/seeding.md).
 
 ## Build and deploy
 

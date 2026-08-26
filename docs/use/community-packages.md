@@ -140,7 +140,7 @@ Your agent should:
 7. Optionally call `community_fork_adopt` (with a short `review_summary`) after
    a real source review, so the fork gets the same automatic secret read/use
    access as self-authored packages (see
-   [Secrets and values](./secrets-and-values.md)).
+   [Secrets and host approval](./secrets-and-values.md)).
 
 Only after publish does the package become a live saved package in your account.
 
@@ -278,7 +278,7 @@ Use the MCP `community` domain:
   published)
 - `community_fork_adopt` — mark a reviewed fork as adopted, granting it
   self-authored-like secret read/use access (see
-  [Secrets and values](./secrets-and-values.md))
+  [Secrets and host approval](./secrets-and-values.md))
 - `community_fork_absorb` — after porting a newer listing snapshot into a fork,
   record the listing's current pinned commit so `listing_ahead` clears
 - `community_rate` — rate a listing after forking

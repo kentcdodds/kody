@@ -34,14 +34,13 @@ durable home, packages add runtime. Four concepts make up its state:
    (Artifacts repos plus D1 `entity_sources` projections). `package.json` is the
    source of truth.
 2. **Package config** — configuration owned by the saved package id: manifest
-   metadata (`package.json#kody`), package-scoped secrets (secret buckets keyed
-   by the saved package id, mounted via `kody.secretMounts`), and app-scoped
-   values (value buckets keyed by `appId`, which package surfaces set to the
-   saved package id).
+   metadata (`package.json#kody`) and package-scoped secrets (secret buckets
+   keyed by the saved package id, mounted via `kody.secretMounts`).
 3. **Package storage** — the package's durable StorageRunner (SQLite) bucket,
    reached via `packageStorage()` from `kody:runtime`. This is the durable-data
    primitive for every package surface: exports/invocations, subscriptions,
-   retrievers, jobs, and package apps.
+   retrievers, jobs, and package apps. Non-secret knobs and runtime state live
+   here.
 4. **Package jobs** — scheduled execution owned by the package
    (`package.json#kody.jobs`): schedule/execution metadata lives in D1 job rows;
    each job run binds a job-scoped scratch bucket; package config stays keyed by
@@ -50,8 +49,7 @@ durable home, packages add runtime. Four concepts make up its state:
 When to use which:
 
 - Durable package data → `packageStorage()`
-- Credentials → package secrets; non-secret knobs → `packageStorage()` (do not
-  write new values rows — see [Persist outside values](../guides/values.md))
+- Credentials → package secrets; non-secret knobs → `packageStorage()`
 - Scheduled work → a package job
 - Per-app realtime internals → app facets (implementation detail, not the
   persistence mechanism)

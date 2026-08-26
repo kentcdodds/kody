@@ -7,9 +7,9 @@ admin can see.
 
 Each signed-in user gets a fully isolated assistant. Kody stores account profile
 information (email, username, optional display name and bio, and profile
-visibility), secrets, values, memories, packages and their source, jobs, email
-inboxes and messages, durable storage, MCP server configuration, OAuth grants,
-package invocation tokens, short-lived execution history (see
+visibility), secrets, memories, packages and their source, jobs, email inboxes
+and messages, durable storage, MCP server configuration, OAuth grants, package
+invocation tokens, short-lived execution history (see
 [Activity](./activity.md)), community social graph edges (follows, listing
 stars, and stored activity events), and any platform feedback you approve for
 submission. All of this remains scoped to your account except for content you
