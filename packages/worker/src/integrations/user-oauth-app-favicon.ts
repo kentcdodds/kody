@@ -58,12 +58,26 @@ export function assertHttpsPublicUrl(raw: string): URL {
 		host === '127.0.0.1' ||
 		host === '0.0.0.0' ||
 		host === '::1' ||
+		host.includes(':') ||
+		isIpv4Hostname(host) ||
 		host.endsWith('.internal') ||
 		host.endsWith('.local')
 	) {
 		throw new Error(`Favicon host is not a public domain: ${host}`)
 	}
 	return url
+}
+
+function isIpv4Hostname(host: string): boolean {
+	const parts = host.split('.')
+	return (
+		parts.length === 4 &&
+		parts.every((part) => {
+			if (!/^\d{1,3}$/.test(part)) return false
+			const value = Number(part)
+			return value >= 0 && value <= 255
+		})
+	)
 }
 
 type IconCandidate = {

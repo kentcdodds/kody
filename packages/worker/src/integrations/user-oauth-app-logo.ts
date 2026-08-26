@@ -8,7 +8,7 @@ import {
 import { type UserOauthApp } from './types.ts'
 
 export const userOauthAppLogoR2KeyPrefix = 'user-oauth-app-logos/'
-const userOauthAppLogoCacheControl = 'private, max-age=31536000, immutable'
+const userOauthAppLogoCacheControl = 'private, no-store'
 
 export type UserOauthAppLogoSource = 'upload' | 'favicon'
 
@@ -123,9 +123,15 @@ export async function setUserOauthAppLogo(input: {
 		})
 	}
 
-	await input.db
+	const updated = await input.db
 		.prepare(
-			`UPDATE user_oauth_apps
+			input.source === 'favicon'
+				? `UPDATE user_oauth_apps
+			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
+				favicon_source_host = ?, updated_at = ?
+			WHERE user_id = ? AND slug = ?
+				AND (logo_source IS NULL OR logo_source <> 'upload')`
+				: `UPDATE user_oauth_apps
 			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
 				favicon_source_host = ?, updated_at = ?
 			WHERE user_id = ? AND slug = ?`,
@@ -140,6 +146,27 @@ export async function setUserOauthAppLogo(input: {
 			app.slug,
 		)
 		.run()
+
+	if (input.source === 'favicon' && (updated.meta.changes ?? 0) === 0) {
+		if (nextKey) {
+			try {
+				await input.env.COMMUNITY_ASSETS.delete(nextKey)
+			} catch (error) {
+				console.error(
+					'user-oauth-app-logo-raced-favicon-delete-failed',
+					nextKey,
+					error,
+				)
+			}
+		}
+		return (
+			(await getOauthAppBySlug({
+				db: input.db,
+				userId: input.userId,
+				slug: app.slug,
+			})) ?? app
+		)
+	}
 
 	if (previousKey && previousKey !== nextKey) {
 		try {

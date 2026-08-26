@@ -56,7 +56,7 @@ export function createIntegrationLogoHandler(env: Env) {
 			}
 			return logoResponse(object, {
 				contentType: app.logoContentType ?? null,
-				cacheControl: 'private, max-age=31536000, immutable',
+				cacheControl: 'private, no-store',
 			})
 		},
 	} satisfies Action<typeof routes.integrationLogo>

@@ -540,14 +540,8 @@ export function parseSessionConnectOauthConfig(
 				? record.platformAppSlug
 				: null,
 		platformLogoPath: parsePlatformLogoPath(record.platformLogoPath),
-		logoPath:
-			typeof record.logoPath === 'string' && record.logoPath.trim()
-				? record.logoPath.trim()
-				: null,
-		autoLogoPath:
-			typeof record.autoLogoPath === 'string' && record.autoLogoPath.trim()
-				? record.autoLogoPath.trim()
-				: null,
+		logoPath: parsePlatformLogoPath(record.logoPath),
+		autoLogoPath: parsePlatformLogoPath(record.autoLogoPath),
 		platformDescription:
 			typeof record.platformDescription === 'string' &&
 			record.platformDescription.trim()

@@ -38,6 +38,10 @@ test('assertHttpsPublicUrl rejects credentials and localhost', () => {
 	expect(() => assertHttpsPublicUrl('https://127.0.0.1/icon.png')).toThrow(
 		/public/,
 	)
+	expect(() =>
+		assertHttpsPublicUrl('https://169.254.169.254/latest/meta-data'),
+	).toThrow(/public/)
+	expect(() => assertHttpsPublicUrl('https://[::1]/icon.png')).toThrow(/public/)
 })
 
 test('parseHtmlIconCandidates ranks apple-touch-icon then larger icons', () => {
