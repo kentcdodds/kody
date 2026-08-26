@@ -24,4 +24,6 @@ test('production styles.css is escape-safe so homepage SSR can inline it', async
 	expect(inlined).not.toBeNull()
 	expect(inlined!.length).toBeGreaterThan(0)
 	expect(inlined).not.toMatch(/[<>&]/)
+	expect(css).not.toMatch(/\[data-theme/)
+	expect(css).toContain('@media (prefers-color-scheme: dark)')
 })

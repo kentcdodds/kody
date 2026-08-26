@@ -189,12 +189,11 @@ jobs/activity — highlight with [Shiki](https://shiki.style/) on the
 service binding (`POST /highlight`) and attach serializable token trees to
 loader/API data. The browser only paints those tokens as Remix JSX text and
 inline styles — never `innerHTML` — so untrusted README fences stay inside the
-markdown safety model. Theme switching follows `:root[data-theme]` (and
-`prefers-color-scheme` when no theme is set) via CSS variables in
-`packages/worker/public/styles.css`. Shiki grammars are not part of the browser
-bundle; missing tokens render as escaped plaintext in the same wrapper. Both
-origin and the highlight worker cache token batches keyed by highlighter
-version.
+markdown safety model. Light and dark tokens follow `prefers-color-scheme` via
+CSS variables in `packages/worker/public/styles.css`. Shiki grammars are not
+part of the browser bundle; missing tokens render as escaped plaintext in the
+same wrapper. Both origin and the highlight worker cache token batches keyed by
+highlighter version.
 
 ## Client-side navigation flow
 

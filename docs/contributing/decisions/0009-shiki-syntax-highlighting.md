@@ -10,7 +10,7 @@ account JSON dumps rendered code as unstyled `<pre><code>`. The app is a
 Cloudflare Worker with Remix 3 SSR + client hydration, a strict first-party CSP
 (`script-src 'self'`), and a markdown safety model that never uses marked's HTML
 renderer or `innerHTML`. Highlighting has to stay Worker-safe, theme-aware
-(`data-theme` light/dark), and escape-safe for untrusted README fences.
+(`prefers-color-scheme`), and escape-safe for untrusted README fences.
 
 ## Decision
 

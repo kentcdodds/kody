@@ -1,5 +1,4 @@
 import { type Handle, css } from 'remix/ui'
-import { ThemeToggle } from '#client/theme-toggle.tsx'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import { layoutMaxWidths } from '#universal/styles/style-primitives.ts'
 
@@ -10,7 +9,7 @@ export type SiteFooterProps = {
 
 /**
  * Site footer from the heykody.dev redesign: brand, the tagline voice line,
- * footer nav, and the theme toggle.
+ * and footer nav. Color scheme follows the system preference.
  */
 export function SiteFooter(handle: Handle<SiteFooterProps>) {
 	return () => (
@@ -21,21 +20,18 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					<span>Kody</span>
 				</a>
 				<p mix={css(taglineCss)}>Make it permanent.</p>
-				<div mix={css(footerEndCss)}>
-					<nav aria-label="Footer" mix={css(footerNavCss)}>
-						<a href="/community">Community</a>
-						<a href="/discord">Discord</a>
-						<a href="/guides">Guides</a>
-						<a href="/pricing">Pricing</a>
-						<a href="/blog">Blog</a>
-						{handle.props.loggedIn ? (
-							<a href="/account">Account</a>
-						) : (
-							<a href={handle.props.loginHref}>Log in</a>
-						)}
-					</nav>
-					<ThemeToggle />
-				</div>
+				<nav aria-label="Footer" mix={css(footerNavCss)}>
+					<a href="/community">Community</a>
+					<a href="/discord">Discord</a>
+					<a href="/guides">Guides</a>
+					<a href="/pricing">Pricing</a>
+					<a href="/blog">Blog</a>
+					{handle.props.loggedIn ? (
+						<a href="/account">Account</a>
+					) : (
+						<a href={handle.props.loginHref}>Log in</a>
+					)}
+				</nav>
 			</div>
 		</footer>
 	)
@@ -81,25 +77,13 @@ const taglineCss = {
 	fontOpticalSizing: 'auto' as const,
 }
 
-const footerEndCss = {
+const footerNavCss = {
 	display: 'flex',
-	alignItems: 'center',
 	gap: '1.4rem',
 	justifySelf: 'end',
 	'@media (max-width: 720px)': {
 		justifySelf: 'center',
 	},
-	/* Stacked nav: the toggle moves below the link column rather than beside it,
-	   which would leave it floating against a tall stack. */
-	'@media (max-width: 560px)': {
-		flexDirection: 'column' as const,
-		gap: '1.1rem',
-	},
-}
-
-const footerNavCss = {
-	display: 'flex',
-	gap: '1.4rem',
 	'& a': {
 		color: colors.textMuted,
 		textDecoration: 'none',
