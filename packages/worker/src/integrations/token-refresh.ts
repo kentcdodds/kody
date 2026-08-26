@@ -1,5 +1,11 @@
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
-import { resolveSecret, saveSecret } from '#mcp/secrets/service.ts'
+import {
+	persistIntegrationTokens,
+	resolveIntegrationAccessToken,
+	resolveIntegrationRefreshToken,
+	resolveUserOauthAppClientSecret,
+} from './credentials.ts'
+import { assertCanUseIntegration } from './package-access.ts'
 import {
 	buildOAuthTokenExchangeRequest,
 	resolveTokenExchangeStyle,
@@ -308,6 +314,9 @@ export async function refreshIntegrationTokens(input: {
 	userId: string
 	userEmail?: string | undefined
 	name: string
+	baseUrl?: string
+	packageId?: string | null
+	packageKodyId?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<IntegrationTokenRefreshResult> {
 	try {
@@ -331,8 +340,21 @@ async function refreshIntegrationTokensOrThrow(input: {
 	userId: string
 	userEmail?: string | undefined
 	name: string
+	baseUrl?: string
+	packageId?: string | null
+	packageKodyId?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<IntegrationTokenRefreshResult> {
+	if (input.baseUrl) {
+		await assertCanUseIntegration({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			name: input.name,
+			packageId: input.packageId,
+			packageKodyId: input.packageKodyId,
+		})
+	}
 	const joined = await getJoinedIntegration({
 		env: input.env,
 		userId: input.userId,
@@ -381,7 +403,6 @@ async function refreshIntegrationTokensOrThrow(input: {
 		)
 	}
 
-	const storageContext = { sessionId: null, appId: null, packageId: null }
 	// User-lane destinations are user-configurable (integration_save can point
 	// tokenUrl anywhere), so materializing user secrets here must honor the
 	// same per-secret host allowlist the fetch gateway enforces for
@@ -405,23 +426,32 @@ async function refreshIntegrationTokensOrThrow(input: {
 		)
 	}
 
-	const refreshTokenSecret = await resolveSecret({
+	const refreshTokenSecret = await resolveIntegrationRefreshToken({
 		env: input.env,
 		userId: input.userId,
-		name: refreshTokenSecretName,
-		scope: 'user',
-		storageContext,
+		name: connection.name,
+		secretName: refreshTokenSecretName,
 	})
-	if (!refreshTokenSecret.found || !refreshTokenSecret.value) {
+	if (!refreshTokenSecret.value) {
 		throw fail(
 			`Refresh token secret "${refreshTokenSecretName}" was not found. Reconnect at ${reconnectPath}.`,
 			{ reason: 'missing_refresh_token' },
 		)
 	}
-	assertUserSecretAllowedForTokenHost(
-		refreshTokenSecretName,
-		refreshTokenSecret.allowedHosts,
-	)
+	if (refreshTokenSecret.source === 'secret') {
+		assertUserSecretAllowedForTokenHost(
+			refreshTokenSecretName,
+			refreshTokenSecret.allowedHosts,
+		)
+	} else if (
+		joined.lane === 'user' &&
+		!connection.requiredHosts.includes(tokenHost)
+	) {
+		throw fail(
+			`Integration "${connection.name}" is not approved for host "${tokenHost}".`,
+			{ reason: 'host_not_approved' },
+		)
+	}
 
 	let clientSecret: string | null = null
 	if (app.flow === 'confidential') {
@@ -443,20 +473,27 @@ async function refreshIntegrationTokensOrThrow(input: {
 						{ reason: 'missing_secret' },
 					)
 				}
-				const resolved = await resolveSecret({
+				const resolved = await resolveUserOauthAppClientSecret({
 					env: input.env,
 					userId: input.userId,
-					name: clientSecretSecretName,
-					scope: 'user',
-					storageContext,
+					slug: joined.app.slug,
+					secretName: clientSecretSecretName,
 				})
-				if (resolved.found) {
+				if (resolved.source === 'secret') {
 					assertUserSecretAllowedForTokenHost(
 						clientSecretSecretName,
 						resolved.allowedHosts,
 					)
+				} else if (
+					joined.lane === 'user' &&
+					!connection.requiredHosts.includes(tokenHost)
+				) {
+					throw fail(
+						`Integration "${connection.name}" is not approved for host "${tokenHost}".`,
+						{ reason: 'host_not_approved' },
+					)
 				}
-				clientSecret = resolved.found ? (resolved.value ?? null) : null
+				clientSecret = resolved.value
 				break
 			}
 			default: {
@@ -541,27 +578,18 @@ async function refreshIntegrationTokensOrThrow(input: {
 	const refreshTokenRotated =
 		typeof payload.refresh_token === 'string' &&
 		payload.refresh_token.length > 0
-	if (refreshTokenRotated) {
-		await saveSecret({
-			env: input.env,
-			userId: input.userId,
-			userEmail: input.userEmail,
-			name: refreshTokenSecretName,
-			value: payload.refresh_token as string,
-			scope: 'user',
-			description: `${connection.name} OAuth refresh token`,
-			storageContext,
-		})
-	}
-	await saveSecret({
+	await persistIntegrationTokens({
 		env: input.env,
 		userId: input.userId,
 		userEmail: input.userEmail,
-		name: accessTokenSecretName,
-		value: payload.access_token,
-		scope: 'user',
-		description: `${connection.name} OAuth access token`,
-		storageContext,
+		name: connection.name,
+		accessToken: payload.access_token,
+		refreshToken: refreshTokenRotated
+			? (payload.refresh_token as string)
+			: null,
+		accessTokenSecretName,
+		refreshTokenSecretName,
+		descriptionPrefix: connection.name,
 	})
 
 	const refreshedAt = new Date().toISOString()
@@ -621,6 +649,9 @@ export async function refreshAndMaterializeUserLaneAccessToken(input: {
 	userId: string
 	userEmail?: string | undefined
 	name: string
+	baseUrl?: string
+	packageId?: string | null
+	packageKodyId?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<IntegrationRefreshAccessTokenResult> {
 	const joined = await getJoinedIntegration({
@@ -639,14 +670,13 @@ export async function refreshAndMaterializeUserLaneAccessToken(input: {
 
 	const result = await refreshIntegrationTokens(input)
 	const accessTokenSecretName = joined.connection.accessTokenSecretName.trim()
-	const accessTokenSecret = await resolveSecret({
+	const accessToken = await resolveIntegrationAccessToken({
 		env: input.env,
 		userId: input.userId,
-		name: accessTokenSecretName,
-		scope: 'user',
-		storageContext: { sessionId: null, appId: null, packageId: null },
+		name: joined.connection.name,
+		secretName: accessTokenSecretName,
 	})
-	if (!accessTokenSecret.found || !accessTokenSecret.value) {
+	if (!accessToken) {
 		throw callerRefreshError(
 			`Access token secret "${accessTokenSecretName}" was not found after refreshing integration "${joined.connection.name}".`,
 			{
@@ -657,6 +687,6 @@ export async function refreshAndMaterializeUserLaneAccessToken(input: {
 	}
 	return {
 		...result,
-		accessToken: accessTokenSecret.value,
+		accessToken,
 	}
 }

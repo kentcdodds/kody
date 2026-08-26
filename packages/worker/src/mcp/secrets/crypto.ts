@@ -144,6 +144,9 @@ const secretStorePurpose = 'mcp-secret-store'
  * them, so sandboxed code has no resolution path to the shared credential.
  */
 const platformOauthClientSecretPurpose = 'platform-oauth-client-secret'
+const userOauthAccessTokenPurpose = 'user-oauth-access-token'
+const userOauthRefreshTokenPurpose = 'user-oauth-refresh-token'
+const userOauthClientSecretPurpose = 'user-oauth-client-secret'
 
 /** AAD context for a user-owned secret ciphertext. */
 export function userSecretContext(userId: string) {
@@ -153,6 +156,19 @@ export function userSecretContext(userId: string) {
 /** AAD context for a platform OAuth app client secret ciphertext. */
 export function platformOauthAppContext(slug: string) {
 	return `app:${slug}`
+}
+
+/** AAD context for a user-lane OAuth connection token ciphertext. */
+export function userIntegrationCredentialContext(
+	userId: string,
+	integrationName: string,
+) {
+	return `user:${userId}:integration:${integrationName}`
+}
+
+/** AAD context for a user-lane OAuth app client secret ciphertext. */
+export function userOauthAppCredentialContext(userId: string, slug: string) {
+	return `user:${userId}:oauth-app:${slug}`
 }
 
 export async function encryptPlatformOauthClientSecret(
@@ -182,6 +198,96 @@ export async function decryptPlatformOauthClientSecret(
 		)
 	} catch {
 		throw new Error('Unable to decrypt platform client secret.')
+	}
+}
+
+export async function encryptUserOauthAccessToken(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	value: string,
+	context: string,
+) {
+	return encryptWithKey(
+		env.SECRET_STORE_KEY,
+		userOauthAccessTokenPurpose,
+		context,
+		value,
+	)
+}
+
+export async function decryptUserOauthAccessToken(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	payload: string,
+	context: string,
+) {
+	try {
+		return await decryptWithKey(
+			env.SECRET_STORE_KEY,
+			userOauthAccessTokenPurpose,
+			context,
+			payload,
+		)
+	} catch {
+		throw new Error('Unable to decrypt integration access token.')
+	}
+}
+
+export async function encryptUserOauthRefreshToken(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	value: string,
+	context: string,
+) {
+	return encryptWithKey(
+		env.SECRET_STORE_KEY,
+		userOauthRefreshTokenPurpose,
+		context,
+		value,
+	)
+}
+
+export async function decryptUserOauthRefreshToken(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	payload: string,
+	context: string,
+) {
+	try {
+		return await decryptWithKey(
+			env.SECRET_STORE_KEY,
+			userOauthRefreshTokenPurpose,
+			context,
+			payload,
+		)
+	} catch {
+		throw new Error('Unable to decrypt integration refresh token.')
+	}
+}
+
+export async function encryptUserOauthClientSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	value: string,
+	context: string,
+) {
+	return encryptWithKey(
+		env.SECRET_STORE_KEY,
+		userOauthClientSecretPurpose,
+		context,
+		value,
+	)
+}
+
+export async function decryptUserOauthClientSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	payload: string,
+	context: string,
+) {
+	try {
+		return await decryptWithKey(
+			env.SECRET_STORE_KEY,
+			userOauthClientSecretPurpose,
+			context,
+			payload,
+		)
+	} catch {
+		throw new Error('Unable to decrypt OAuth app client secret.')
 	}
 }
 

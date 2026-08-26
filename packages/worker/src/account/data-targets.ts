@@ -243,8 +243,8 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	},
 	{ kind: 'user_id', table: 'secret_buckets' },
 	// Connections reference OAuth apps with ON DELETE RESTRICT, so delete
-	// user_integrations before user_oauth_apps. Neither table stores credential
-	// values (only secret names + the non-secret OAuth client id).
+	// user_integrations before user_oauth_apps. Ciphertext columns are redacted
+	// on export; secret-name placeholders stay for soak compatibility.
 	{ kind: 'user_id', table: 'user_integrations' },
 	{ kind: 'user_id', table: 'user_oauth_apps' },
 	// OpenAPI binding operations before bindings (composite FK child).
@@ -762,6 +762,8 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	pending_email_changes: ['token_hash'],
 	platform_feedback: ['reviewed_by_user_id', 'reviewed_at', 'admin_note'],
 	secret_entries: ['encrypted_value', 'lookup_hash'],
+	user_integrations: ['access_token_encrypted', 'refresh_token_encrypted'],
+	user_oauth_apps: ['client_secret_encrypted'],
 	users: ['password_hash'],
 	verifications: ['secret'],
 	webhook_endpoints: ['url_secret_hash'],

@@ -7,8 +7,12 @@ two lanes: **user lane** — a per-user `user_oauth_apps` row the user registere
 with the provider — or **platform lane** — an operator-provisioned built-in
 `platform_oauth_apps` row every user can connect to (see
 [Platform (built-in) OAuth apps](#platform-built-in-oauth-apps)). Per-user
-credential _values_ never enter these tables — they live in the secret store and
-are referenced by name.
+access and refresh tokens live encrypted on the connection
+(`access_token_encrypted` / `refresh_token_encrypted`). User-lane client secrets
+live encrypted on the app (`client_secret_encrypted`). During soak those values
+are dual-written to `secret_entries` under the `*_secret_name` columns so
+placeholder resolution and reconnect still work; those names stay hidden from
+`/account/secrets`, `secret_list`, and search.
 
 Data access lives under `packages/worker/src/integrations/`. MCP capabilities
 live under `packages/worker/src/mcp/capabilities/integrations/`. The hosted
@@ -20,7 +24,10 @@ An **OAuth app** (`user_oauth_apps`) holds the provider client identity and
 endpoint config that many connections can share:
 
 - `client_id` (inline non-secret identifier)
-- `client_secret_secret_name` (secret-store name, or null for public PKCE apps)
+- `client_secret_encrypted` (user-lane AES-GCM ciphertext; purpose
+  `user-oauth-client-secret`)
+- `client_secret_secret_name` (soak dual-write name, or null for public PKCE
+  apps)
 - `token_url`, optional `authorize_url` / `api_base_url`
 - `flow` (`pkce` | `confidential`), optional `use_pkce`, `token_exchange_style`,
   `scope_separator`, and `extra_authorize_params_json`
@@ -33,7 +40,13 @@ either lane:
   `platform_app_slug` (FK to `platform_oauth_apps(slug)`), enforced by a `CHECK`
   constraint
 - `scopes_json`, `required_hosts_json`
-- `access_token_secret_name` and optional `refresh_token_secret_name`
+- `access_token_encrypted` / optional `refresh_token_encrypted` (AES-GCM;
+  purposes `user-oauth-access-token` / `user-oauth-refresh-token`)
+- `access_token_secret_name` and optional `refresh_token_secret_name` (soak
+  dual-write names)
+- `usage_mode` (`any` | `packages`) and `allowed_packages_json` (user-gated
+  grant: `any` is execute plus every package; `packages` is only the listed
+  saved package ids, and execute is denied)
 - optional `account_label` / `description`, plus connect/refresh timestamps
 
 `JoinedIntegration` (`packages/worker/src/integrations/types.ts`) joins a
@@ -52,7 +65,9 @@ isolation structural. Both connection FKs use `ON DELETE RESTRICT`, so
 connections must be removed before their app (user lane) and a platform app
 cannot be deleted while any user's connection references it. Platform-lane
 connections point at a global app row, but the connection itself and its token
-secrets stay scoped by `user_id`, so per-user isolation is unaffected.
+ciphertexts stay scoped by `user_id`, so per-user isolation is unaffected.
+Disconnect deletes that connection's token secrets, not a sibling connection's
+shared user-lane client secret. Deleting the app removes the client secret.
 
 ## Platform (built-in) OAuth apps
 
@@ -99,15 +114,16 @@ Both lanes refresh host-side by default through `createAuthenticatedFetch`.
 `integration_token_refresh` (implemented by `refreshIntegrationTokens` in
 `packages/worker/src/integrations/token-refresh.ts`) resolves the refresh token
 and client secret server-side, POSTs to the provider token URL, persists rotated
-tokens back to the user secret store, and returns only
-`{ ok, refreshedAt, refreshTokenRotated }` — never token values. Platform
-connections require this path — the shared client secret has no user-facing
-secret name by design. User-lane connections may also refresh through it;
-because their `tokenUrl` is user-configurable, the user lane enforces each
-materialized secret's `allowed_hosts` against the token host before the request
-— the same containment the fetch gateway applied when refresh ran in-sandbox via
-placeholder resolution. Platform-lane destinations are operator-pinned rows, so
-no user-secret allowlist applies.
+tokens on the connection (and dual-writes the secret-store names during soak),
+and returns only `{ ok, refreshedAt, refreshTokenRotated }` — never token
+values. Platform connections require this path — the shared client secret has no
+user-facing secret name by design. User-lane connections may also refresh
+through it. Ciphertext-backed refresh enforces the connection's `requiredHosts`
+against the token host. The secret-store fallback (soak / pre-migration rows)
+still enforces that secret's `allowed_hosts`. `integration_save` cannot add new
+hosts or retarget `tokenUrl` to an unapproved host; reconnect at
+`/connect/oauth` to approve a new destination. Platform-lane destinations are
+operator-pinned rows, so no user-secret allowlist applies.
 
 Reconnectable caller-errors (`IntegrationTokenRefreshCallerError`: missing
 refresh token, provider HTTP 4xx / `invalid_grant`, missing secrets,
@@ -137,9 +153,10 @@ query-param tokens). It also refreshes host-side
 (`integration_refresh_access_token` → `refreshIntegrationTokens`) so token
 rotation does not need an `allowed_packages` write grant, then materializes the
 new access token for user-lane integrations and throws for platform ones
-(`integration_get` carries `platform: true`). Unadopted community forks still
-need a read/use grant before the helper will return a raw token. Token-exchange
-request building is shared:
+(`integration_get` carries `platform: true`). The integration usage grant
+(`any`, or `packages` that includes that package) decides whether a package —
+including an unadopted community fork — can refresh or materialize tokens.
+Token-exchange request building is shared:
 `packages/worker/src/integrations/oauth-token-exchange.ts` lives in the
 shared-primitive layer so both the `/connect/oauth` handlers and the MCP refresh
 capability use it within the import boundaries.
@@ -271,16 +288,21 @@ highlight that connection. User-registered integrations also have
 `/account/integrations/apps/:appSlug` (a connection named `apps` resolves at
 `/account/integrations/apps`). Endpoints, secret names, host allowlists, flow /
 PKCE / exchange style, and credential rotation stay behind an advanced
-disclosure. The rotate form posts to `/account/integrations.json` with
-`action: "rotate_oauth_app_credentials"`: it stores a new client-secret value in
-the secret store (when provided), then calls `rotateOauthAppClientCredentials`
-so every sibling connection picks up the new client id / secret name on the next
-join. Each connection has a double-checked Disconnect control; user-registered
-integrations also have Delete integration. Both are delayed-commit undoable
-actions (`createUndoableAction`): the UI updates immediately, and
-`/account/integrations.json` receives `disconnect_connection` or
-`delete_oauth_app` only after the undo window (or when the user leaves).
-Built-in apps cannot be deleted; disconnect their connections instead.
+disclosure. Each connection also shows a usage grant: **any context** (execute
+and every package) or **specific packages** only. One-click approval lives at
+`/account/integrations/approve?name=&package_id=`; approving a package while the
+connection is still `any` leaves it `any` so execute stays usable. The rotate
+form posts to `/account/integrations.json` with
+`action: "rotate_oauth_app_credentials"`: it stores a new client-secret value on
+the app (and dual-writes the secret store during soak), then calls
+`rotateOauthAppClientCredentials` so every sibling connection picks up the new
+client id / secret name on the next join. Each connection has a double-checked
+Disconnect control; user-registered integrations also have Delete integration.
+Both are delayed-commit undoable actions (`createUndoableAction`): the UI
+updates immediately, and `/account/integrations.json` receives
+`disconnect_connection` or `delete_oauth_app` only after the undo window (or
+when the user leaves). Built-in apps cannot be deleted; disconnect their
+connections instead.
 
 ## Capability surface
 

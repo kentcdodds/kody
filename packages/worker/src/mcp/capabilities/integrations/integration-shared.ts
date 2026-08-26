@@ -72,6 +72,12 @@ export const integrationConfigSchema = z.object({
 	 * host-side (`integration_token_refresh`).
 	 */
 	platform: z.boolean().optional(),
+	/**
+	 * Omitted means `any` (execute plus every package). `packages` is only
+	 * the listed saved package ids — execute is denied.
+	 */
+	usageMode: z.enum(['any', 'packages']).optional(),
+	allowedPackageIds: z.array(z.string()).optional(),
 })
 
 export type IntegrationConfig = z.infer<typeof integrationConfigSchema>
@@ -128,6 +134,8 @@ function normalizeIntegrationConfigFields(
 		| 'requiredHosts'
 		| 'tokenExchangeStyle'
 		| 'authorization'
+		| 'usageMode'
+		| 'allowedPackageIds'
 	>,
 ) {
 	const authorization = value.authorization
@@ -153,6 +161,18 @@ function normalizeIntegrationConfigFields(
 		requiredHosts: normalizeAllowedHosts(value.requiredHosts ?? []),
 		...(tokenExchangeStyle ? { tokenExchangeStyle } : {}),
 		...(authorization ? { authorization } : {}),
+		...(value.usageMode === 'packages'
+			? {
+					usageMode: 'packages' as const,
+					allowedPackageIds: Array.from(
+						new Set(
+							(value.allowedPackageIds ?? [])
+								.map((id) => id.trim())
+								.filter(Boolean),
+						),
+					).sort((left, right) => left.localeCompare(right)),
+				}
+			: {}),
 	}
 }
 

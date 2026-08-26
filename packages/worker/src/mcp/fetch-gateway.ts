@@ -21,6 +21,8 @@ import {
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
+import { findIntegrationOwningSecretName } from '#worker/integrations/owned-secret-names.ts'
+import { assertCanUseIntegration } from '#worker/integrations/package-access.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import {
 	consumeDailyEntitlement,
@@ -350,14 +352,35 @@ export async function expandSecretPlaceholders(input: {
 			if (!resolved.found || typeof resolved.value !== 'string') {
 				throw new Error(createMissingSecretMessage(referenced.name))
 			}
-			await assertPackageCanAccessResolvedSecret({
-				env: input.env,
-				baseUrl: input.props.baseUrl,
-				userId: input.props.userId!,
-				storageContext: input.props.storageContext,
-				secretName: referenced.name,
-				resolved,
-			})
+			const owningIntegration =
+				resolved.scope === 'user'
+					? await findIntegrationOwningSecretName({
+							db: input.env.APP_DB,
+							userId: input.props.userId!,
+							secretName: referenced.name,
+						})
+					: null
+			// Dual-written OAuth names are hidden from /account/secrets, so
+			// secret allowed_packages is not a grant the user can manage.
+			// The connection's any/packages grant is the only package gate.
+			if (owningIntegration) {
+				await assertCanUseIntegration({
+					env: input.env,
+					baseUrl: input.props.baseUrl,
+					userId: input.props.userId!,
+					name: owningIntegration.name,
+					packageId: input.props.storageContext?.packageId ?? null,
+				})
+			} else {
+				await assertPackageCanAccessResolvedSecret({
+					env: input.env,
+					baseUrl: input.props.baseUrl,
+					userId: input.props.userId!,
+					storageContext: input.props.storageContext,
+					secretName: referenced.name,
+					resolved,
+				})
+			}
 			return { referenced, resolved, value: resolved.value }
 		}),
 	)

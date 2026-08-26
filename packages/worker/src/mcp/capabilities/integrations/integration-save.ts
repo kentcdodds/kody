@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -61,6 +62,13 @@ export const integrationSaveCapability = defineDomainCapability(
 			const config = existing
 				? mergeIntegrationConfig(existing, args)
 				: createNewIntegrationConfig(args)
+			if (existing) {
+				assertIntegrationSaveKeepsApprovedHosts({
+					name: existing.name,
+					current: existing,
+					next: config,
+				})
+			}
 			const integration = await upsertIntegration({
 				env: ctx.env,
 				userId: user.userId,
@@ -113,4 +121,31 @@ function createNewIntegrationConfig(
 		)
 	}
 	return normalizeIntegrationConfig(parsed.data)
+}
+
+function assertIntegrationSaveKeepsApprovedHosts(input: {
+	name: string
+	current: IntegrationConfig
+	next: IntegrationConfig
+}) {
+	const currentTokenHost = safeParseHost(input.current.tokenUrl)
+	const approved = new Set([
+		...(input.current.requiredHosts ?? []),
+		...(currentTokenHost ? [currentTokenHost] : []),
+	])
+	const addedHosts = (input.next.requiredHosts ?? []).filter(
+		(host) => !approved.has(host),
+	)
+	if (addedHosts.length > 0) {
+		throw new McpCallerError(
+			`Cannot add required hosts (${addedHosts.join(', ')}) on "${input.name}" via integration_save. Reconnect at /connect/oauth?provider=${encodeURIComponent(input.name)} so the user can approve new destinations.`,
+		)
+	}
+	if (input.next.tokenUrl === input.current.tokenUrl) return
+	const tokenHost = safeParseHost(input.next.tokenUrl)
+	if (tokenHost && !approved.has(tokenHost)) {
+		throw new McpCallerError(
+			`Cannot point tokenUrl at host "${tokenHost}" on "${input.name}" via integration_save. Reconnect at /connect/oauth?provider=${encodeURIComponent(input.name)} to approve that token endpoint.`,
+		)
+	}
 }

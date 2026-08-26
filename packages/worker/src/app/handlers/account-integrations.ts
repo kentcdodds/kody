@@ -19,18 +19,18 @@ import { renderAppPage } from '#app/ssr-render.tsx'
 import { toOauthAppPublic } from '#mcp/capabilities/integrations/oauth-app-shared.ts'
 import { canonicalIntegrationName } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
-import {
-	listSecrets,
-	saveSecret,
-	setSecretAllowedHosts,
-} from '#mcp/secrets/service.ts'
+import { listSecrets, setSecretAllowedHosts } from '#mcp/secrets/service.ts'
 import {
 	deleteIntegration,
 	deleteOauthAppWithConnections,
 	getOauthApp,
 	listJoinedIntegrations,
+	grantIntegrationPackage,
 	rotateOauthAppClientCredentials,
+	setIntegrationUsage,
 } from '#worker/integrations/service.ts'
+import { persistUserOauthAppClientSecret } from '#worker/integrations/credentials.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { type routes } from '#universal/routes.ts'
 
 const rotateOauthAppCredentialsSchema = z
@@ -60,12 +60,31 @@ const deleteOauthAppSchema = z
 	})
 	.strict()
 
+const setUsageSchema = z
+	.object({
+		action: z.literal('set_usage'),
+		name: z.string().min(1),
+		usageMode: z.enum(['any', 'packages']),
+		allowedPackageIds: z.array(z.string()).optional(),
+	})
+	.strict()
+
+const approvePackageSchema = z
+	.object({
+		action: z.literal('approve_package'),
+		name: z.string().min(1),
+		packageId: z.string().min(1),
+	})
+	.strict()
+
 const accountIntegrationsActionSchema = z
 	.object({
 		action: z.enum([
 			'rotate_oauth_app_credentials',
 			'disconnect_connection',
 			'delete_oauth_app',
+			'set_usage',
+			'approve_package',
 		]),
 	})
 	.passthrough()
@@ -81,6 +100,7 @@ export function createAccountIntegrationsHandler(env: Env) {
 
 			const accountIntegrations = await loadAccountIntegrationsData(env, user, {
 				waitUntil,
+				searchParams: new URL(request.url).searchParams,
 			})
 			return renderAppPage({
 				request,
@@ -92,6 +112,7 @@ export function createAccountIntegrationsHandler(env: Env) {
 	} satisfies Action<
 		| typeof routes.accountIntegrations
 		| typeof routes.accountOauthAppDetail
+		| typeof routes.accountIntegrationsApprove
 		| typeof routes.accountIntegrationDetail
 	>
 }
@@ -117,7 +138,8 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 					})
 				}
 				const name = searchParams.get('name')?.trim()
-				if (name) {
+				const approvalPackageId = searchParams.get('package_id')?.trim()
+				if (name && !approvalPackageId) {
 					// `platform=1` forces the built-in of the same name;
 					// `platform=<slug>` connects that built-in under a
 					// different connection name (rename-instead-of-replace).
@@ -154,7 +176,10 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 					return jsonResponse({ ok: true, app })
 				}
 				return jsonResponse(
-					await loadAccountIntegrationsData(env, user, { waitUntil }),
+					await loadAccountIntegrationsData(env, user, {
+						waitUntil,
+						searchParams: new URL(request.url).searchParams,
+					}),
 				)
 			}
 
@@ -211,6 +236,34 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 						appSlug: parsed.data.appSlug,
 					})
 				}
+				case 'set_usage': {
+					const parsed = setUsageSchema.safeParse(body)
+					if (!parsed.success) {
+						return jsonResponse(
+							{ ok: false, error: 'Invalid request body.' },
+							400,
+						)
+					}
+					return handleSetUsage({
+						env,
+						user,
+						body: parsed.data,
+					})
+				}
+				case 'approve_package': {
+					const parsed = approvePackageSchema.safeParse(body)
+					if (!parsed.success) {
+						return jsonResponse(
+							{ ok: false, error: 'Invalid request body.' },
+							400,
+						)
+					}
+					return handleApprovePackage({
+						env,
+						user,
+						body: parsed.data,
+					})
+				}
 				default: {
 					const _exhaustive: never = actionParsed.data.action
 					return _exhaustive
@@ -221,6 +274,68 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 		| typeof routes.accountIntegrationsApi
 		| typeof routes.accountIntegrationsApiPost
 	>
+}
+
+async function handleSetUsage(input: {
+	env: Env
+	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
+	body: z.infer<typeof setUsageSchema>
+}) {
+	const allowedPackageIds =
+		input.body.usageMode === 'packages'
+			? (input.body.allowedPackageIds ?? [])
+			: []
+	const updated = await setIntegrationUsage({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		name: input.body.name,
+		usageMode: input.body.usageMode,
+		allowedPackageIds,
+	})
+	if (!updated) {
+		return jsonResponse({ ok: false, error: 'Connection not found.' }, 404)
+	}
+	return jsonResponse({
+		ok: true,
+		usageMode: updated.usageMode,
+		allowedPackageIds: updated.allowedPackageIds,
+	})
+}
+
+async function handleApprovePackage(input: {
+	env: Env
+	user: NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>
+	body: z.infer<typeof approvePackageSchema>
+}) {
+	const userId = input.user.mcpUser.userId
+	const savedPackage = (
+		await listSavedPackagesByUserId(input.env.APP_DB, {
+			userId,
+		})
+	).find((entry) => entry.id === input.body.packageId)
+	if (!savedPackage) {
+		return jsonResponse(
+			{ ok: false, error: 'That package is not on this account.' },
+			400,
+		)
+	}
+	const updated = await grantIntegrationPackage({
+		env: input.env,
+		userId,
+		name: input.body.name,
+		packageId: input.body.packageId,
+	})
+	if (!updated) {
+		return jsonResponse({ ok: false, error: 'Connection not found.' }, 404)
+	}
+	return jsonResponse({
+		ok: true,
+		alreadyGranted:
+			updated.usageMode === 'any' ||
+			updated.allowedPackageIds.includes(input.body.packageId),
+		usageMode: updated.usageMode,
+		allowedPackageIds: updated.allowedPackageIds,
+	})
 }
 
 async function handleDisconnectConnection(input: {
@@ -303,6 +418,7 @@ async function handleRotateOauthAppCredentials(input: {
 				userId,
 				scope: 'user',
 				storageContext,
+				includeIntegrationOwned: true,
 			})
 			const existingSecret = currentSecrets.find(
 				(secret) => secret.name === secretName && secret.scope === 'user',
@@ -311,15 +427,14 @@ async function handleRotateOauthAppCredentials(input: {
 				...(existingSecret?.allowedHosts ?? []),
 				...oauthAppSecretAllowedHosts(existing),
 			])
-			await saveSecret({
+			await persistUserOauthAppClientSecret({
 				env: input.env,
 				userId,
 				userEmail: input.user.mcpUser.email,
-				name: secretName,
+				slug: existing.slug,
 				value: input.body.clientSecret,
-				scope: 'user',
+				secretName,
 				description: `${existing.provider} OAuth client secret`,
-				storageContext,
 			})
 			await setSecretAllowedHosts({
 				env: input.env,

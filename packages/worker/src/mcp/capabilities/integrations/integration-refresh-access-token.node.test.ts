@@ -13,11 +13,12 @@ vi.mock('#worker/integrations/package-subscriptions.ts', () => ({
 }))
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import { PackageSecretAccessDeniedError } from '#mcp/secrets/package-access.ts'
 import { saveSecret, setSecretAllowedHosts } from '#mcp/secrets/service.ts'
 import { insertCommunityFork } from '#worker/community/repo.ts'
 import { upsertPlatformOauthApp } from '#worker/integrations/platform-apps.ts'
+import { IntegrationPackageAccessDeniedError } from '#worker/integrations/package-access.ts'
 import {
+	setIntegrationUsage,
 	upsertIntegration,
 	upsertPlatformIntegration,
 } from '#worker/integrations/service.ts'
@@ -157,6 +158,14 @@ test('self-authored packages can materialize a refreshed access token without an
 		})
 		expect(fetchMock).toHaveBeenCalledTimes(1)
 
+		await setIntegrationUsage({
+			env,
+			userId,
+			name: 'x-kodykoala',
+			usageMode: 'packages',
+			allowedPackageIds: [packageId],
+		})
+
 		const forkPackageId = 'fork-pkg-1'
 		await insertPackage(env, userId, forkPackageId, {
 			name: '@someone/x',
@@ -196,10 +205,10 @@ test('self-authored packages can materialize a refreshed access token without an
 				},
 			),
 		).rejects.toSatisfy((error: unknown) => {
-			expect(error).toBeInstanceOf(PackageSecretAccessDeniedError)
+			expect(error).toBeInstanceOf(IntegrationPackageAccessDeniedError)
 			expect(error).toBeInstanceOf(McpCallerError)
 			expect((error as Error).message).toContain(
-				'is not allowed for package "x-fork"',
+				'is not approved to use integration "x-kodykoala"',
 			)
 			return true
 		})

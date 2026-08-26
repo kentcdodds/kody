@@ -956,6 +956,9 @@ export type AccountIntegrationListItem = {
 	platformDescription?: string | null
 	createdAt: string
 	updatedAt: string
+	/** Omitted or `any` is execute plus every package. */
+	usageMode?: 'any' | 'packages'
+	allowedPackageIds?: Array<string>
 }
 
 export type AccountOauthAppConnectionRef = {
@@ -1004,6 +1007,14 @@ export type AccountIntegrationsLoaderData = {
 	username: string
 	integrations: Array<AccountIntegrationListItem>
 	apps: Array<AccountOauthAppListItem>
+	savedPackages?: Array<{ id: string; kodyId: string }>
+	approval?: {
+		name: string
+		packageId: string
+		packageKodyId: string | null
+		usageMode: 'any' | 'packages'
+		alreadyGranted: boolean
+	} | null
 }
 
 export type AccountIntegrationDetailLoaderData = {

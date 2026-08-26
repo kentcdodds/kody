@@ -17,6 +17,9 @@ export const routes = route({
 	// resolves at `/account/integrations/apps` while OAuth apps live under
 	// `/account/integrations/apps/:appSlug`.
 	accountOauthAppDetail: '/account/integrations/apps/:appSlug',
+	// Static `/approve` must win over `:integrationName` so a connection named
+	// `approve` is not required to claim the one-click grant URL.
+	accountIntegrationsApprove: '/account/integrations/approve',
 	accountIntegrationDetail: '/account/integrations/:integrationName',
 	accountIntegrationsApi: '/account/integrations.json',
 	accountIntegrationsApiPost: post('/account/integrations.json'),

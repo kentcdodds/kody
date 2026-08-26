@@ -85,7 +85,18 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 const accountIntegrationsApiPath = routes.accountIntegrationsApi.href()
-const integrationsRoute = createListDetailRoute('/account/integrations')
+const integrationsRoute = createListDetailRoute('/account/integrations', {
+	parseDetailId(pathname) {
+		const prefix = `${routes.accountIntegrations.href()}/`
+		if (!pathname.startsWith(prefix)) return null
+		const segment = pathname.slice(prefix.length)
+		if (!segment || segment.includes('/') || segment === 'approve') {
+			return null
+		}
+		return decodePathSegment(segment)
+	},
+})
+
 const oauthAppsPathPrefix = `${routes.accountIntegrations.href()}/apps/`
 
 function decodePathSegment(value: string) {
@@ -249,8 +260,24 @@ const clampedCellCss = css(recordCellClamp(26))
  * filter do not change the GET response, so keying the latch on the base path
  * avoids spurious refetches when only those URL parts change.
  */
-function getDataLatchKey(_href: string) {
+function getDataLatchKey(href: string) {
+	const url = new URL(href, 'http://localhost')
+	if (url.pathname === routes.accountIntegrationsApprove.href()) {
+		return `${url.pathname}?${url.searchParams.get('name') ?? ''}&${url.searchParams.get('package_id') ?? ''}`
+	}
 	return '/account/integrations'
+}
+
+function buildIntegrationsApiHref(href: string) {
+	const url = new URL(href, 'http://localhost')
+	const requestUrl = new URL(accountIntegrationsApiPath, url.origin)
+	if (url.pathname === routes.accountIntegrationsApprove.href()) {
+		const name = url.searchParams.get('name')
+		const packageId = url.searchParams.get('package_id')
+		if (name) requestUrl.searchParams.set('name', name)
+		if (packageId) requestUrl.searchParams.set('package_id', packageId)
+	}
+	return `${requestUrl.pathname}${requestUrl.search}`
 }
 
 function readSearchFilter(href: string) {
@@ -258,10 +285,10 @@ function readSearchFilter(href: string) {
 }
 
 export async function accountIntegrationsRouteLoader(
-	_url: URL,
+	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const response = await fetch(accountIntegrationsApiPath, {
+	const response = await fetch(buildIntegrationsApiHref(url.toString()), {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
 		signal,
@@ -639,10 +666,156 @@ const highlightedConnectionCardCss = {
 	borderRadius: `0 ${radius.lg} ${radius.lg} 0`,
 }
 
+function ConnectionUsageForm(
+	handle: Handle<{
+		connection: AccountIntegrationListItem
+		savedPackages: ReadonlyArray<{ id: string; kodyId: string }>
+		draft: { usageMode: 'any' | 'packages'; allowedPackageIds: Array<string> }
+		saving: boolean
+		onDraftChange: (draft: {
+			usageMode: 'any' | 'packages'
+			allowedPackageIds: Array<string>
+		}) => void
+		onSave: () => void
+	}>,
+) {
+	return () => {
+		const { connection, savedPackages, draft, saving, onDraftChange, onSave } =
+			handle.props
+		return (
+			<section
+				data-testid="integration-usage"
+				mix={css({ display: 'grid', gap: spacing.xs })}
+			>
+				<p
+					mix={css({
+						...fieldLabelCss,
+						margin: 0,
+					})}
+				>
+					Usage
+				</p>
+				<label
+					mix={css({
+						display: 'flex',
+						gap: spacing.xs,
+						alignItems: 'flex-start',
+						color: colors.text,
+						fontSize: typography.fontSize.sm,
+					})}
+				>
+					<input
+						type="radio"
+						name={`usage-mode-${connection.name}`}
+						checked={draft.usageMode === 'any'}
+						disabled={saving}
+						mix={[
+							on('change', () =>
+								onDraftChange({
+									usageMode: 'any',
+									allowedPackageIds: [],
+								}),
+							),
+						]}
+					/>
+					<span>Any context (execute and every package)</span>
+				</label>
+				<label
+					mix={css({
+						display: 'flex',
+						gap: spacing.xs,
+						alignItems: 'flex-start',
+						color: colors.text,
+						fontSize: typography.fontSize.sm,
+					})}
+				>
+					<input
+						type="radio"
+						name={`usage-mode-${connection.name}`}
+						checked={draft.usageMode === 'packages'}
+						disabled={saving}
+						mix={[
+							on('change', () =>
+								onDraftChange({
+									usageMode: 'packages',
+									allowedPackageIds: draft.allowedPackageIds,
+								}),
+							),
+						]}
+					/>
+					<span>Specific packages only</span>
+				</label>
+				{draft.usageMode === 'packages' ? (
+					savedPackages.length === 0 ? (
+						<p mix={css({ ...descriptionCss, margin: 0 })}>
+							Save a package first, then approve it here. Execute cannot use
+							this connection while it is limited to specific packages.
+						</p>
+					) : (
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							{savedPackages.map((savedPackage) => {
+								const checked = draft.allowedPackageIds.includes(
+									savedPackage.id,
+								)
+								return (
+									<label
+										key={savedPackage.id}
+										mix={css({
+											display: 'flex',
+											gap: spacing.xs,
+											alignItems: 'center',
+											fontSize: typography.fontSize.sm,
+										})}
+									>
+										<input
+											type="checkbox"
+											checked={checked}
+											disabled={saving}
+											mix={[
+												on('change', () =>
+													onDraftChange({
+														usageMode: 'packages',
+														allowedPackageIds: checked
+															? draft.allowedPackageIds.filter(
+																	(id) => id !== savedPackage.id,
+																)
+															: [...draft.allowedPackageIds, savedPackage.id],
+													}),
+												),
+											]}
+										/>
+										<span>{savedPackage.kodyId}</span>
+									</label>
+								)
+							})}
+						</div>
+					)
+				) : null}
+				<button
+					type="button"
+					data-testid="save-integration-usage"
+					disabled={saving}
+					mix={[css(getPillButtonCss({ size: 'sm' })), on('click', onSave)]}
+				>
+					{saving ? 'Saving…' : 'Save usage'}
+				</button>
+			</section>
+		)
+	}
+}
+
 export function AccountIntegrationsRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let integrations: Array<AccountIntegrationListItem> = []
 	let apps: Array<AccountOauthAppListItem> = []
+	let savedPackages: Array<{ id: string; kodyId: string }> = []
+	let approval: AccountIntegrationsLoaderData['approval'] = null
+	let usageDrafts = new Map<
+		string,
+		{ usageMode: 'any' | 'packages'; allowedPackageIds: Array<string> }
+	>()
+	let usageSavingName: string | null = null
+	let approvalSubmitting = false
 	let message: string | null = null
 	let rotateClientId = ''
 	let rotateClientSecret = ''
@@ -741,6 +914,95 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		apps = apps.filter(
 			(entry) => integrationListId(entry) !== integrationListId(app),
 		)
+	}
+
+	function usageDraftFor(connection: AccountIntegrationListItem) {
+		return (
+			usageDrafts.get(connection.name) ?? {
+				usageMode: connection.usageMode === 'packages' ? 'packages' : 'any',
+				allowedPackageIds: [...(connection.allowedPackageIds ?? [])],
+			}
+		)
+	}
+
+	function setUsageDraft(
+		name: string,
+		draft: { usageMode: 'any' | 'packages'; allowedPackageIds: Array<string> },
+	) {
+		usageDrafts = new Map(usageDrafts)
+		usageDrafts.set(name, draft)
+		handle.update()
+	}
+
+	async function submitUsage(connection: AccountIntegrationListItem) {
+		if (usageSavingName) return
+		const draft = usageDraftFor(connection)
+		usageSavingName = connection.name
+		handle.update()
+		try {
+			await postIntegrationsMutation({
+				action: 'set_usage',
+				name: connection.name,
+				usageMode: draft.usageMode,
+				allowedPackageIds:
+					draft.usageMode === 'packages' ? draft.allowedPackageIds : [],
+			})
+			integrations = integrations.map((entry) =>
+				entry.name === connection.name
+					? {
+							...entry,
+							usageMode: draft.usageMode,
+							allowedPackageIds:
+								draft.usageMode === 'packages' ? draft.allowedPackageIds : [],
+						}
+					: entry,
+			)
+			usageDrafts = new Map(usageDrafts)
+			usageDrafts.delete(connection.name)
+			message = `Updated usage for ${connectionLabel(connection)}.`
+		} catch (error) {
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to update integration usage.'
+		} finally {
+			usageSavingName = null
+			handle.update()
+		}
+	}
+
+	async function submitApproval() {
+		if (!approval || approvalSubmitting) return
+		approvalSubmitting = true
+		handle.update()
+		try {
+			await postIntegrationsMutation({
+				action: 'approve_package',
+				name: approval.name,
+				packageId: approval.packageId,
+			})
+			integrations = integrations.map((entry) => {
+				if (entry.name !== approval?.name) return entry
+				if (entry.usageMode === 'any' || !entry.usageMode) return entry
+				const allowed = new Set(entry.allowedPackageIds ?? [])
+				allowed.add(approval.packageId)
+				return {
+					...entry,
+					usageMode: 'packages',
+					allowedPackageIds: Array.from(allowed),
+				}
+			})
+			approval = approval ? { ...approval, alreadyGranted: true } : approval
+			navigate(routes.accountIntegrations.href())
+		} catch (error) {
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to approve that package.'
+		} finally {
+			approvalSubmitting = false
+			handle.update()
+		}
 	}
 
 	async function postIntegrationsMutation(body: Record<string, unknown>) {
@@ -863,7 +1125,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		const href = getCurrentHref()
 		const latchKey = getDataLatchKey(href)
 		try {
-			const response = await fetch(accountIntegrationsApiPath, {
+			const response = await fetch(buildIntegrationsApiHref(href), {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
 				signal,
@@ -880,6 +1142,8 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			if (getDataLatchKey(getCurrentHref()) !== latchKey) return
 			integrations = payload.integrations
 			apps = payload.apps ?? []
+			savedPackages = payload.savedPackages ?? []
+			approval = payload.approval ?? null
 			status = 'ready'
 			message = null
 			loadLatch.markLoaded(latchKey)
@@ -905,6 +1169,8 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		if (!routeData) return false
 		integrations = routeData.integrations
 		apps = routeData.apps ?? []
+		savedPackages = routeData.savedPackages ?? []
+		approval = routeData.approval ?? null
 		status = 'ready'
 		message = null
 		loadLatch.markLoaded(getDataLatchKey(href))
@@ -1063,6 +1329,98 @@ export function AccountIntegrationsRoute(handle: Handle) {
 					>
 						{message}
 					</AccountManagementMessage>
+				) : null}
+
+				{status === 'ready' && approval ? (
+					<section
+						data-testid="integration-approval-card"
+						mix={css({
+							display: 'grid',
+							gap: spacing.md,
+							padding: spacing.lg,
+							borderRadius: radius.lg,
+							border: `1px solid ${colors.primary}`,
+							backgroundColor: colors.primarySoftest,
+							marginBlockEnd: spacing.lg,
+						})}
+					>
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							<h2
+								mix={css({
+									margin: 0,
+									fontSize: typography.fontSize.lg,
+									fontWeight: typography.fontWeight.semibold,
+									color: colors.text,
+								})}
+							>
+								Approve integration access
+							</h2>
+							<p mix={css({ margin: 0, color: colors.textMuted })}>
+								{approval.alreadyGranted ? (
+									<>
+										Package{' '}
+										<strong mix={css({ color: colors.text })}>
+											{approval.packageKodyId ?? approval.packageId}
+										</strong>{' '}
+										can already use integration <code>{approval.name}</code>
+										{approval.usageMode === 'any' ? ' from any context.' : '.'}
+									</>
+								) : (
+									<>
+										Allow package{' '}
+										<strong mix={css({ color: colors.text })}>
+											{approval.packageKodyId ?? approval.packageId}
+										</strong>{' '}
+										to use integration <code>{approval.name}</code>.
+									</>
+								)}
+							</p>
+						</div>
+						<div
+							mix={css({
+								display: 'flex',
+								flexWrap: 'wrap',
+								gap: spacing.xs,
+							})}
+						>
+							{approval.alreadyGranted ? (
+								<a
+									href={routes.accountIntegrations.href()}
+									mix={css({
+										...getPillButtonCss({ size: 'sm' }),
+										display: 'inline-flex',
+										textDecoration: 'none',
+									})}
+								>
+									Back to integrations
+								</a>
+							) : (
+								<>
+									<button
+										type="button"
+										data-testid="approve-integration-package"
+										disabled={approvalSubmitting}
+										mix={[
+											css(getPillButtonCss({ size: 'sm' })),
+											on('click', () => void submitApproval()),
+										]}
+									>
+										{approvalSubmitting ? 'Approving…' : 'Approve'}
+									</button>
+									<a
+										href={routes.accountIntegrations.href()}
+										mix={css({
+											...getPillButtonCss({ size: 'sm' }),
+											display: 'inline-flex',
+											textDecoration: 'none',
+										})}
+									>
+										Cancel
+									</a>
+								</>
+							)}
+						</div>
+					</section>
 				) : null}
 
 				{status === 'ready' ? (
@@ -1298,8 +1656,27 @@ export function AccountIntegrationsRoute(handle: Handle) {
 																					}).length,
 																				})}`
 																			: ''}
+																		{connection
+																			? ` · ${
+																					connection.usageMode === 'packages'
+																						? 'Specific packages'
+																						: 'Any context'
+																				}`
+																			: ''}
 																	</p>
 																</div>
+																{connection ? (
+																	<ConnectionUsageForm
+																		connection={connection}
+																		savedPackages={savedPackages}
+																		draft={usageDraftFor(connection)}
+																		saving={usageSavingName === connection.name}
+																		onDraftChange={(draft) =>
+																			setUsageDraft(connection.name, draft)
+																		}
+																		onSave={() => void submitUsage(connection)}
+																	/>
+																) : null}
 																<div
 																	mix={css({
 																		display: 'flex',

@@ -4,6 +4,7 @@ import {
 	tokenExchangeStyleValues,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { type PlatformOauthApp } from './platform-apps.ts'
+import { integrationUsageModeValues } from './usage-mode.ts'
 export const oauthAppFlowSchema = z.enum(integrationFlowValues)
 export const oauthTokenExchangeStyleSchema = z.enum(tokenExchangeStyleValues)
 
@@ -45,6 +46,8 @@ export const userIntegrationConnectionSchema = z.object({
 	requiredHosts: z.array(z.string()),
 	accessTokenSecretName: z.string().min(1),
 	refreshTokenSecretName: z.string().min(1).nullable(),
+	usageMode: z.enum(integrationUsageModeValues),
+	allowedPackageIds: z.array(z.string()),
 	connectedAt: z.string().min(1).nullable(),
 	tokenRefreshedAt: z.string().min(1).nullable(),
 	createdAt: z.string().min(1),
@@ -110,6 +113,10 @@ export type UserIntegrationRow = {
 	required_hosts_json: string
 	access_token_secret_name: string
 	refresh_token_secret_name: string | null
+	access_token_encrypted?: string | null
+	refresh_token_encrypted?: string | null
+	usage_mode?: (typeof integrationUsageModeValues)[number]
+	allowed_packages_json?: string
 	connected_at: string | null
 	token_refreshed_at: string | null
 	created_at: string
