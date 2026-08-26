@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { on } from '#client/event-mixin.ts'
 import { colors, typography } from '#universal/styles/tokens.ts'
+import { mergeCss } from '#universal/styles/style-primitives.ts'
 import {
 	starterCardCss,
 	starterCopyPromptTooltipCss,
@@ -117,10 +118,10 @@ const diyDescriptionCss = {
 	lineHeight: 1.45,
 }
 
-const diyCopyButtonCss = {
-	...starterGhostButtonCss,
-	...starterCopyPromptTooltipCss,
-}
+const diyCopyButtonCss = mergeCss(
+	starterGhostButtonCss,
+	starterCopyPromptTooltipCss,
+)
 
 const diyRowCss = {
 	...starterRowCss,
@@ -137,10 +138,12 @@ const diyRowBodyCss = {
 	justifyItems: 'start',
 }
 
-const diyRowCopyButtonCss = {
-	...starterGhostButtonCss,
-	...starterCopyPromptTooltipCss,
-	width: 'auto',
-	flex: 'none',
-	fontSize: '0.9rem',
-}
+const diyRowCopyButtonCss = mergeCss(
+	starterGhostButtonCss,
+	starterCopyPromptTooltipCss,
+	{
+		width: 'auto',
+		flex: 'none',
+		fontSize: '0.9rem',
+	},
+)

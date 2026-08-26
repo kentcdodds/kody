@@ -15,6 +15,7 @@ import { colors, radius, transitions } from '#universal/styles/tokens.ts'
 import {
 	getPillButtonCss,
 	hoverMq,
+	mergeCss,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
 import {
@@ -345,16 +346,18 @@ const exampleTryButtonCss = {
 	fontSize: '0.95rem',
 }
 
-const exampleCopyButtonCss = {
-	...getPillButtonCss(),
-	width: '100%',
-	fontSize: '0.95rem',
-	...starterCopyPromptTooltipCss,
-	'[data-selected] &': {
-		width: 'auto',
-		justifySelf: 'start',
+const exampleCopyButtonCss = mergeCss(
+	getPillButtonCss(),
+	starterCopyPromptTooltipCss,
+	{
+		width: '100%',
+		fontSize: '0.95rem',
+		'[data-selected] &': {
+			width: 'auto',
+			justifySelf: 'start',
+		},
 	},
-}
+)
 
 const examplePromptBlockCss = {
 	margin: 0,

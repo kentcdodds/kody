@@ -615,9 +615,11 @@ const builtInIndicatorCss = {
 		border: '6px solid transparent',
 		borderTopColor: colors.surface,
 	},
-	[`${hoverMq} &:hover [role="tooltip"]`]: {
-		opacity: 1,
-		visibility: 'visible' as const,
+	[hoverMq]: {
+		'&:hover [role="tooltip"]': {
+			opacity: 1,
+			visibility: 'visible' as const,
+		},
 	},
 	'&:focus-visible [role="tooltip"]': {
 		opacity: 1,

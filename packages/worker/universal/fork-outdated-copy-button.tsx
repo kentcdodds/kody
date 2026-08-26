@@ -2,7 +2,7 @@
 /** @jsxRuntime automatic */
 import { type Handle, css } from 'remix/ui'
 import { communityStatusPillBoxCss } from '#universal/community-status-pill.ts'
-import { hoverMq } from '#universal/styles/style-primitives.ts'
+import { hoverMq, mergeCss } from '#universal/styles/style-primitives.ts'
 import {
 	colors,
 	radius,
@@ -109,9 +109,11 @@ const copyPromptTooltipCss = {
 		border: '6px solid transparent',
 		borderTopColor: colors.surface,
 	},
-	[`${hoverMq} &:hover [role="tooltip"]`]: {
-		opacity: 1,
-		visibility: 'visible' as const,
+	[hoverMq]: {
+		'&:hover [role="tooltip"]': {
+			opacity: 1,
+			visibility: 'visible' as const,
+		},
 	},
 	'&:focus-visible [role="tooltip"]': {
 		opacity: 1,
@@ -135,8 +137,7 @@ const copyPromptButtonBaseCss = {
  * `z-index` lifts the control above a listing card's stretched name-link
  * overlay so the click hits the button instead of the card.
  */
-const forkOutdatedCopyButtonCss = {
-	...copyPromptButtonBaseCss,
+const forkOutdatedCopyButtonCss = mergeCss(copyPromptButtonBaseCss, {
 	color: 'oklch(0.48 0.12 85)',
 	backgroundColor: 'oklch(0.88 0.12 95 / 0.92)',
 	[hoverMq]: {
@@ -148,10 +149,9 @@ const forkOutdatedCopyButtonCss = {
 		outline: `2px solid oklch(0.7 0.14 90)`,
 		outlineOffset: '2px',
 	},
-}
+})
 
-const badgeCopyPromptButtonCss = {
-	...copyPromptButtonBaseCss,
+const badgeCopyPromptButtonCss = mergeCss(copyPromptButtonBaseCss, {
 	color: colors.primaryText,
 	backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
 	[hoverMq]: {
@@ -163,4 +163,4 @@ const badgeCopyPromptButtonCss = {
 		outline: `2px solid ${colors.primary}`,
 		outlineOffset: '2px',
 	},
-}
+})
