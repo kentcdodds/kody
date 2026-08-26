@@ -34,7 +34,7 @@ export type PrepareAvatarImageHost = {
 	encodeImage: (input: EncodeAvatarImageInput) => Promise<Blob>
 }
 
-type CropRect = {
+export type AvatarCropRect = {
 	sourceX: number
 	sourceY: number
 	sourceWidth: number
@@ -46,22 +46,26 @@ const defaultHost: PrepareAvatarImageHost = {
 	encodeImage: encodeImageWithBrowser,
 }
 
-export async function prepareAvatarImage(
+export async function decodeAvatarImage(
 	file: File,
 	host: PrepareAvatarImageHost = defaultHost,
-): Promise<File> {
+): Promise<AvatarImageBitmap> {
 	if (file.size === 0) {
 		throw new Error('Avatar file is required.')
 	}
-
-	let bitmap: AvatarImageBitmap
 	try {
-		bitmap = await host.decodeImage(file)
+		return await host.decodeImage(file)
 	} catch (error) {
 		if (error instanceof Error) throw error
 		throw createDecodeError(file)
 	}
+}
 
+export async function prepareAvatarImage(
+	file: File,
+	host: PrepareAvatarImageHost = defaultHost,
+): Promise<File> {
+	const bitmap = await decodeAvatarImage(file, host)
 	try {
 		return await prepareDecodedAvatarImage(file, bitmap, host)
 	} finally {
@@ -69,10 +73,11 @@ export async function prepareAvatarImage(
 	}
 }
 
-async function prepareDecodedAvatarImage(
+export async function prepareDecodedAvatarImage(
 	file: File,
 	bitmap: AvatarImageBitmap,
-	host: PrepareAvatarImageHost,
+	host: PrepareAvatarImageHost = defaultHost,
+	requestedCrop?: AvatarCropRect,
 ): Promise<File> {
 	if (
 		!Number.isFinite(bitmap.width) ||
@@ -85,7 +90,8 @@ async function prepareDecodedAvatarImage(
 		)
 	}
 
-	const crop = cropToMaxAspect(bitmap.width, bitmap.height)
+	const crop = requestedCrop ?? cropToMaxAspect(bitmap.width, bitmap.height)
+	assertCropFitsBitmap(bitmap, crop)
 	const needsCrop =
 		crop.sourceX !== 0 ||
 		crop.sourceY !== 0 ||
@@ -162,6 +168,25 @@ async function prepareDecodedAvatarImage(
 	)
 }
 
+function assertCropFitsBitmap(bitmap: AvatarImageBitmap, crop: AvatarCropRect) {
+	if (
+		!Number.isFinite(crop.sourceX) ||
+		!Number.isFinite(crop.sourceY) ||
+		!Number.isFinite(crop.sourceWidth) ||
+		!Number.isFinite(crop.sourceHeight) ||
+		crop.sourceX < 0 ||
+		crop.sourceY < 0 ||
+		crop.sourceWidth < userAvatarMinDimension ||
+		crop.sourceHeight < userAvatarMinDimension ||
+		crop.sourceX + crop.sourceWidth > bitmap.width ||
+		crop.sourceY + crop.sourceHeight > bitmap.height
+	) {
+		throw new Error(
+			`Avatars must be between ${userAvatarMinDimension}px and ${userAvatarMaxDimension}px on each side.`,
+		)
+	}
+}
+
 function preferredOutputTypes(file: File): Array<UserAvatarOutputContentType> {
 	if (file.type === 'image/png')
 		return ['image/png', 'image/webp', 'image/jpeg']
@@ -194,7 +219,7 @@ export function cropToMaxAspect(
 	width: number,
 	height: number,
 	maxAspect = userAvatarMaxAspectRatio,
-): CropRect {
+): AvatarCropRect {
 	const longer = Math.max(width, height)
 	const shorter = Math.min(width, height)
 	if (shorter <= 0 || longer / shorter <= maxAspect) {
@@ -229,12 +254,36 @@ export function scaleToMaxDimension(
 	maxDimension: number,
 ): { width: number; height: number } {
 	const longest = Math.max(width, height)
-	if (longest <= maxDimension) return { width, height }
-	const scale = maxDimension / longest
-	return {
-		width: Math.max(1, Math.round(width * scale)),
-		height: Math.max(1, Math.round(height * scale)),
+	const scaled =
+		longest <= maxDimension
+			? { width, height }
+			: {
+					width: Math.max(1, Math.round(width * (maxDimension / longest))),
+					height: Math.max(1, Math.round(height * (maxDimension / longest))),
+				}
+	return clampEncodedAspect(scaled.width, scaled.height)
+}
+
+/**
+ * Rounding after a max-dimension scale can push a 3:1 crop just over the
+ * server's `longer / shorter > 3` check (1200×400 → 1024×341). Grow the
+ * shorter side so the encoded canvas stays within the stored-avatar limit.
+ */
+export function clampEncodedAspect(
+	width: number,
+	height: number,
+	maxAspect = userAvatarMaxAspectRatio,
+): { width: number; height: number } {
+	const longer = Math.max(width, height)
+	const shorter = Math.min(width, height)
+	if (shorter <= 0 || longer / shorter <= maxAspect) {
+		return { width, height }
 	}
+	const minShorter = Math.ceil(longer / maxAspect)
+	if (width >= height) {
+		return { width, height: minShorter }
+	}
+	return { width: minShorter, height }
 }
 
 export function isHeicLikeFile(file: File): boolean {

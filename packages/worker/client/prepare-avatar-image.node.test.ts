@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest'
 import {
+	clampEncodedAspect,
 	cropToMaxAspect,
 	prepareAvatarImage,
+	prepareDecodedAvatarImage,
 	scaleToMaxDimension,
 	userAvatarBrowserEncodeMaxDimension,
 	type EncodeAvatarImageInput,
@@ -38,6 +40,14 @@ test('prepareAvatarImage converts, resizes, crops, and rejects unusable photos',
 		width: 1024,
 		height: 512,
 	})
+	expect(scaleToMaxDimension(1200, 400, 1024)).toEqual({
+		width: 1024,
+		height: 342,
+	})
+	expect(clampEncodedAspect(1024, 341)).toEqual({ width: 1024, height: 342 })
+	expect(
+		1024 / scaleToMaxDimension(1200, 400, 1024).height,
+	).toBeLessThanOrEqual(3)
 
 	const readyJpeg = new File([Uint8Array.from([1, 2, 3, 4])], 'ready.jpg', {
 		type: 'image/jpeg',
@@ -113,6 +123,58 @@ test('prepareAvatarImage converts, resizes, crops, and rejects unusable photos',
 		sourceHeight: 100,
 		width: 300,
 		height: 100,
+	})
+
+	const banner = new File([new Uint8Array(2000)], 'wide-banner.png', {
+		type: 'image/png',
+	})
+	const bannerCalls: Array<EncodeAvatarImageInput> = []
+	await prepareAvatarImage(
+		banner,
+		createHost({
+			width: 2400,
+			height: 400,
+			encode: (request) => {
+				bannerCalls.push(request)
+				return new Blob([Uint8Array.from([1])], { type: 'image/png' })
+			},
+		}),
+	)
+	expect(bannerCalls[0]).toMatchObject({
+		sourceX: 600,
+		sourceY: 0,
+		sourceWidth: 1200,
+		sourceHeight: 400,
+		width: 1024,
+		height: 342,
+	})
+	expect(
+		Math.max(bannerCalls[0]?.width ?? 0, bannerCalls[0]?.height ?? 0) /
+			Math.min(bannerCalls[0]?.width ?? 1, bannerCalls[0]?.height ?? 1),
+	).toBeLessThanOrEqual(3)
+
+	const squareCropCalls: Array<EncodeAvatarImageInput> = []
+	await prepareDecodedAvatarImage(
+		banner,
+		{ width: 2400, height: 400 },
+		{
+			async decodeImage() {
+				throw new Error('decoded bitmaps should not be decoded again')
+			},
+			async encodeImage(request) {
+				squareCropCalls.push(request)
+				return new Blob([Uint8Array.from([1])], { type: 'image/jpeg' })
+			},
+		},
+		{ sourceX: 1000, sourceY: 0, sourceWidth: 400, sourceHeight: 400 },
+	)
+	expect(squareCropCalls[0]).toMatchObject({
+		sourceX: 1000,
+		sourceY: 0,
+		sourceWidth: 400,
+		sourceHeight: 400,
+		width: 400,
+		height: 400,
 	})
 
 	const tiny = new File([Uint8Array.from([1])], 'tiny.png', {

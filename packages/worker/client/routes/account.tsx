@@ -2,7 +2,7 @@ import { type Handle, css } from 'remix/ui'
 import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import { on } from '#client/event-mixin.ts'
 import { listenForAvatarFileDrop } from '#client/listen-for-avatar-file-drop.ts'
-import { prepareAvatarImage } from '#client/prepare-avatar-image.ts'
+import { AccountAvatarEditor } from '#client/routes/account-avatar-editor.tsx'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { ProviderIcon } from '#client/provider-icons.tsx'
@@ -155,7 +155,8 @@ export function AccountRoute(handle: Handle) {
 	let savedBio = ''
 	let savedProfileVisibility: ProfileVisibility = 'public'
 	let avatarUrl: string | null = null
-	let avatarStatus: 'idle' | 'preparing' | 'uploading' | 'removing' = 'idle'
+	let avatarStatus: 'idle' | 'editing' | 'uploading' | 'removing' = 'idle'
+	let editorFile: File | null = null
 	let avatarDropActive = false
 	let draftEmail = ''
 	let emailChangePassword = ''
@@ -391,22 +392,34 @@ export function AccountRoute(handle: Handle) {
 				handle.update()
 			},
 			onImageFile(file) {
-				void uploadAvatarFile(file)
+				openAvatarEditor(file)
 			},
 		})
 	}
 
-	async function uploadAvatarFile(file: File) {
-		if (avatarStatus !== 'idle') return
-		avatarStatus = 'preparing'
+	function openAvatarEditor(file: File) {
+		if (avatarStatus !== 'idle' && avatarStatus !== 'editing') return
+		editorFile = file
+		avatarStatus = 'editing'
+		message = null
+		messageTone = 'info'
+		handle.update()
+	}
+
+	function closeAvatarEditor() {
+		editorFile = null
+		if (avatarStatus === 'editing') avatarStatus = 'idle'
+		handle.update()
+	}
+
+	async function uploadPreparedAvatar(prepared: File) {
+		editorFile = null
+		avatarStatus = 'uploading'
 		message = null
 		messageTone = 'info'
 		handle.update()
 
 		try {
-			const prepared = await prepareAvatarImage(file)
-			avatarStatus = 'uploading'
-			handle.update()
 			const body = new FormData()
 			body.set('avatar', prepared)
 			const response = await fetch(accountAvatarApiPath, {
@@ -438,11 +451,11 @@ export function AccountRoute(handle: Handle) {
 		}
 	}
 
-	async function handleAvatarSelected(event: Event) {
+	function handleAvatarSelected(event: Event) {
 		const input = event.currentTarget
 		if (!(input instanceof HTMLInputElement) || !input.files?.[0]) return
 		try {
-			await uploadAvatarFile(input.files[0])
+			openAvatarEditor(input.files[0])
 		} finally {
 			input.value = ''
 		}
@@ -808,9 +821,9 @@ export function AccountRoute(handle: Handle) {
 											/>
 										</label>
 										<p mix={css(accountFieldNoteCss)}>
-											HEIC, AVIF, and large photos are converted and resized in
-											the browser. You can also drop a photo anywhere on this
-											page.
+											Choose a photo, then crop and zoom. HEIC, AVIF, and other
+											formats are converted to PNG, JPEG, or WebP in the
+											browser. You can also drop a photo anywhere on this page.
 										</p>
 										{avatarUrl ? (
 											<button
@@ -827,9 +840,6 @@ export function AccountRoute(handle: Handle) {
 													? 'Removing...'
 													: 'Remove avatar'}
 											</button>
-										) : null}
-										{avatarStatus === 'preparing' ? (
-											<p mix={css(accountFieldNoteCss)}>Preparing avatar…</p>
 										) : null}
 										{avatarStatus === 'uploading' ? (
 											<p mix={css(accountFieldNoteCss)}>Uploading avatar…</p>
@@ -1259,6 +1269,13 @@ export function AccountRoute(handle: Handle) {
 					</>
 				) : null}
 
+				<AccountAvatarEditor
+					file={editorFile}
+					onCancel={closeAvatarEditor}
+					onApply={(prepared) => {
+						void uploadPreparedAvatar(prepared)
+					}}
+				/>
 				{avatarDropActive ? (
 					<div
 						role="status"
