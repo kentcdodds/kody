@@ -19,6 +19,10 @@ test('router prefers static nested paths and package files over dynamic siblings
 		createStubHandler('oauth-callback'),
 	)
 	router.get(
+		routePattern(routes.accountMcpServerLogo),
+		createStubHandler('server-logo'),
+	)
+	router.get(
 		routePattern(routes.accountMcpServerDetail),
 		createStubHandler('server-detail'),
 	)
@@ -62,6 +66,15 @@ test('router prefers static nested paths and package files over dynamic siblings
 			)
 		).text(),
 	).toBe('oauth-callback')
+	expect(
+		await (
+			await router.fetch(
+				new Request(
+					'http://localhost/account/mcp-servers/logos/550e8400-e29b-41d4-a716-446655440000',
+				),
+			)
+		).text(),
+	).toBe('server-logo')
 	expect(
 		await (
 			await router.fetch(

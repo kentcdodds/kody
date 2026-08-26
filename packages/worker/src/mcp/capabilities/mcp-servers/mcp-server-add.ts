@@ -84,6 +84,7 @@ export const mcpServerAddCapability = defineDomainCapability(
 				url: args.url,
 				baseUrl: oauth.clientOrigin,
 				bearerToken: args.bearerToken,
+				waitUntil: ctx.waitUntil,
 			})
 			const error = connection.error
 				? enrichMcpOAuthProviderError(connection.error, oauth)

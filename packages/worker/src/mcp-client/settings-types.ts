@@ -1,3 +1,5 @@
+export type McpServerLogoSource = 'favicon'
+
 export type McpServerSettingRow = {
 	id: string
 	user_id: string
@@ -6,6 +8,10 @@ export type McpServerSettingRow = {
 	enabled: boolean
 	created_at: string
 	updated_at: string
+	logo_key: string | null
+	logo_content_type: string | null
+	logo_source: McpServerLogoSource | null
+	favicon_source_host: string | null
 }
 
 export type McpServerSettingMetadata = {
@@ -15,4 +21,8 @@ export type McpServerSettingMetadata = {
 	enabled: boolean
 	createdAt: string
 	updatedAt: string
+	logoKey: string | null
+	logoContentType: string | null
+	logoSource: McpServerLogoSource | null
+	faviconSourceHost: string | null
 }

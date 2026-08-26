@@ -150,6 +150,7 @@ import {
 import { createCommunityFeatureApiPostHandler } from '#app/handlers/community-feature.ts'
 import { createCommunityIconHandler } from '#app/handlers/community-icon.ts'
 import { createIntegrationLogoHandler } from '#app/handlers/integration-logo.ts'
+import { createMcpServerLogoHandler } from '#app/handlers/mcp-server-logo.ts'
 import { createCommunityInstallApiPostHandler } from '#app/handlers/community-install.ts'
 import { createCommunityTrustApiPostHandler } from '#app/handlers/community-trust.ts'
 import {
@@ -313,6 +314,7 @@ export function createAppRouter(env: Env) {
 			accountIntegrationsApiPost: createAccountIntegrationsApiHandler(env),
 			accountMcpServers: createAccountMcpServersHandler(env),
 			accountMcpServerNew: createAccountMcpServersHandler(env),
+			accountMcpServerLogo: createMcpServerLogoHandler(env),
 			accountMcpServerDetail: createAccountMcpServersHandler(env),
 			accountMcpServersOauthCallback:
 				createAccountMcpServersOauthCallbackHandler(env),

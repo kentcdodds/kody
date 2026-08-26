@@ -19,8 +19,12 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
   `purgeForAccountDeletion`.
 - **D1 `mcp_server_settings` table**
   (`packages/worker/migrations/0001-squashed-init.sql`) — user-scoped metadata
-  (id, name, url, enabled). D1 answers "which servers does this user have
-  enabled" without waking the DO; the DO owns live connection state and tokens.
+  (id, name, url, enabled, plus optional favicon columns). D1 answers "which
+  servers does this user have enabled" without waking the DO; the DO owns live
+  connection state and tokens. Account-page loads fetch the registrable-domain
+  favicon of `url` with the same HTTPS pipeline as user-lane OAuth apps and
+  store a raster under `user-mcp-server-logos/{userId}/{id}/`. The signed-in
+  owner loads it from `/account/mcp-servers/logos/:serverId`.
 - **Hub client with snapshot cache**
   (`packages/worker/src/mcp-client/hub-client.ts`) — worker-side facade over the
   DO stub. Snapshots are cached per user for 30 seconds and invalidated on every
@@ -118,8 +122,8 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
 ## Management surfaces
 
 - **UI**: `/account/mcp-servers` (add with optional bearer token, authorize,
-  reconnect, refresh tools, enable/disable, remove; shows live state and
-  discovered tools).
+  reconnect, refresh tools, enable/disable, remove; shows live state, discovered
+  tools, and the auto-fetched server favicon next to the name).
 - **Capabilities**: the `mcp_servers` domain (`mcp_server_add`,
   `mcp_server_list`, `mcp_server_reconnect`, `mcp_server_refresh`,
   `mcp_server_remove`, `mcp_server_set_enabled`). `mcp_server_add` accepts

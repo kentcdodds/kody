@@ -4,6 +4,8 @@ import {
 	buildMcpServerStatusView,
 	loadMcpClientHubSnapshotOrNull,
 } from '#mcp/capabilities/mcp-servers/shared.ts'
+import { backfillMissingMcpServerFavicons } from '#worker/mcp-client/mcp-server-favicon.ts'
+import { buildMcpServerAutoLogoPath } from '#worker/mcp-client/mcp-server-logo.ts'
 import {
 	listMcpServerSettings,
 	resolveMcpServerOAuthClientUrls,
@@ -17,6 +19,7 @@ export async function loadAccountMcpServersData(input: {
 	env: Env
 	user: AuthenticatedUser
 	requestUrl?: string | URL | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<AccountMcpServersLoaderData> {
 	const userId = input.user.mcpUser.userId
 	const oauth = resolveMcpServerOAuthClientUrls({
@@ -24,6 +27,13 @@ export async function loadAccountMcpServersData(input: {
 		requestUrl: input.requestUrl,
 	})
 	const settings = await listMcpServerSettings({ env: input.env, userId })
+	await backfillMissingMcpServerFavicons({
+		db: input.env.APP_DB,
+		env: input.env,
+		userId,
+		servers: settings,
+		waitUntil: input.waitUntil,
+	})
 	const snapshot =
 		settings.length > 0
 			? await loadMcpClientHubSnapshotOrNull({ env: input.env, userId })
@@ -35,8 +45,8 @@ export async function loadAccountMcpServersData(input: {
 		oauthClientOrigin: oauth.clientOrigin,
 		oauthCallbackUrl: oauth.callbackUrl,
 		oauthClientMetadataUrl: oauth.clientMetadataUrl,
-		servers: settings.map((setting) =>
-			buildMcpServerStatusView({
+		servers: settings.map((setting) => ({
+			...buildMcpServerStatusView({
 				setting,
 				snapshot:
 					snapshot?.servers.find((server) => server.serverId === setting.id) ??
@@ -45,6 +55,7 @@ export async function loadAccountMcpServersData(input: {
 				oauthClientOrigin: oauth.clientOrigin,
 				oauthClientMetadataUrl: oauth.clientMetadataUrl,
 			}),
-		),
+			autoLogoPath: buildMcpServerAutoLogoPath(setting),
+		})),
 	}
 }

@@ -1,6 +1,10 @@
-import { type McpServerSettingRow } from './settings-types.ts'
+import {
+	type McpServerLogoSource,
+	type McpServerSettingRow,
+} from './settings-types.ts'
 
-const selectColumns = 'id, user_id, name, url, enabled, created_at, updated_at'
+const selectColumns =
+	'id, user_id, name, url, enabled, created_at, updated_at, logo_key, logo_content_type, logo_source, favicon_source_host'
 
 export async function listMcpServerSettingRows(input: {
 	db: D1Database
@@ -134,6 +138,10 @@ export async function deleteMcpServerSettingRow(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
+function mapLogoSource(value: unknown): McpServerLogoSource | null {
+	return value === 'favicon' ? 'favicon' : null
+}
+
 function mapMcpServerSettingRow(
 	row: Record<string, unknown>,
 ): McpServerSettingRow {
@@ -145,5 +153,15 @@ function mapMcpServerSettingRow(
 		enabled: Boolean(Number(row['enabled'])),
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
+		logo_key: row['logo_key'] == null ? null : String(row['logo_key']),
+		logo_content_type:
+			row['logo_content_type'] == null
+				? null
+				: String(row['logo_content_type']),
+		logo_source: mapLogoSource(row['logo_source']),
+		favicon_source_host:
+			row['favicon_source_host'] == null
+				? null
+				: String(row['favicon_source_host']),
 	}
 }

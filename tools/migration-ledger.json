@@ -107,6 +107,10 @@
 		{
 			"filename": "0026-integration-owned-credentials.sql",
 			"sha256": "cedea1c9d99566ef07cc1f942037c3a7f9045ae594ff3165eafd3adb208a08fb"
+		},
+		{
+			"filename": "0027-mcp-server-logos.sql",
+			"sha256": "c48d9b5814af7a15900e5eb1cbabe4998b817ba988748f8b54d3ac1863c969fb"
 		}
 	]
 }

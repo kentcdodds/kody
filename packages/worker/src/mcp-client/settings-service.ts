@@ -23,6 +23,8 @@ import {
 	listMcpServerSettingRows,
 	updateMcpServerSettingRow,
 } from './settings-repo.ts'
+import { scheduleMcpServerFaviconFill } from './mcp-server-favicon.ts'
+import { deleteMcpServerLogoAsset } from './mcp-server-logo.ts'
 import {
 	type McpServerSettingMetadata,
 	type McpServerSettingRow,
@@ -68,6 +70,10 @@ function toMetadata(row: McpServerSettingRow): McpServerSettingMetadata {
 		enabled: row.enabled,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
+		logoKey: row.logo_key,
+		logoContentType: row.logo_content_type,
+		logoSource: row.logo_source,
+		faviconSourceHost: row.favicon_source_host,
 	}
 }
 
@@ -160,6 +166,7 @@ export async function addMcpServer(input: {
 	 * D1 — only forwarded into the hub DO's Agents SDK server options.
 	 */
 	bearerToken?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<{
 	setting: McpServerSettingMetadata
 	connection: McpServerConnectResult
@@ -192,6 +199,10 @@ export async function addMcpServer(input: {
 		enabled: true,
 		created_at: now,
 		updated_at: now,
+		logo_key: null,
+		logo_content_type: null,
+		logo_source: null,
+		favicon_source_host: null,
 	} satisfies McpServerSettingRow
 
 	const hub = createMcpClientHubClient({
@@ -221,6 +232,13 @@ export async function addMcpServer(input: {
 		throw error
 	}
 	invalidateEnabledMcpServerRefsCache({ userId: input.userId })
+	await scheduleMcpServerFaviconFill({
+		db: input.env.APP_DB,
+		env: input.env,
+		userId: input.userId,
+		serverId: row.id,
+		waitUntil: input.waitUntil,
+	})
 	return {
 		setting: toMetadata(row),
 		connection,
@@ -274,6 +292,12 @@ export async function deleteMcpServer(input: {
 		userId: input.userId,
 	})
 	await hub.removeServer({ serverId: input.id })
+	if ('COMMUNITY_ASSETS' in input.env && input.env.COMMUNITY_ASSETS) {
+		await deleteMcpServerLogoAsset({
+			env: input.env,
+			logoKey: existing.logo_key,
+		})
+	}
 	const deleted = await deleteMcpServerSettingRow({
 		db: input.env.APP_DB,
 		userId: input.userId,
