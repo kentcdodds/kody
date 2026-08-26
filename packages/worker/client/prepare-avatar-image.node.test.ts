@@ -147,4 +147,31 @@ test('prepareAvatarImage converts, resizes, crops, and rejects unusable photos',
 			}),
 		),
 	).rejects.toThrow(`${userAvatarMaxSourceBytes} bytes`)
+
+	const stubborn = new File(
+		[new Uint8Array(userAvatarMaxSourceBytes + 1)],
+		'huge.avif',
+		{ type: 'image/avif' },
+	)
+	const stubbornWidths: Array<number> = []
+	const prepared = await prepareAvatarImage(
+		stubborn,
+		createHost({
+			width: 8000,
+			height: 8000,
+			encode: (request) => {
+				stubbornWidths.push(request.width)
+				const stillTooBig = request.width >= userAvatarBrowserEncodeMaxDimension
+				return new Blob(
+					[new Uint8Array(stillTooBig ? userAvatarMaxSourceBytes + 1 : 12)],
+					{ type: 'image/webp' },
+				)
+			},
+		}),
+	)
+	expect(prepared.size).toBe(12)
+	expect(stubbornWidths[0]).toBe(userAvatarBrowserEncodeMaxDimension)
+	expect(stubbornWidths.at(-1)).toBeLessThan(
+		userAvatarBrowserEncodeMaxDimension,
+	)
 })

@@ -101,7 +101,10 @@ async function prepareDecodedAvatarImage(
 
 	if (alreadyFitsServer) return file
 
-	let longest = Math.max(crop.sourceWidth, crop.sourceHeight)
+	let longest = Math.min(
+		Math.max(crop.sourceWidth, crop.sourceHeight),
+		userAvatarBrowserEncodeMaxDimension,
+	)
 	let quality = 0.86
 	const preferredTypes = preferredOutputTypes(file)
 
