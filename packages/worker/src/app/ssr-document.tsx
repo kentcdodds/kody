@@ -199,10 +199,10 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 					content="#111417"
 					media="(prefers-color-scheme: dark)"
 				/>
-				{/* Blocking on purpose: applies the stored theme and the `js`
-				    class before first paint (no theme flash, enhance-only
-				    motion). CSP disallows inline scripts, hence the file. */}
-				<script src="/theme-init.js"></script>
+				{/* Blocking on purpose: applies the `js` class before first
+				    paint so enhance-only motion can gate on it. CSP disallows
+				    inline scripts, hence the file. Color scheme is CSS-only. */}
+				<script src="/page-init.js"></script>
 				{/* Fonts are self-hosted (CSP allows only 'self' for styles and
 				    fonts); preload the latin faces used on every page. Do not
 				    drop or delay these to save weight — a flash of the wrong

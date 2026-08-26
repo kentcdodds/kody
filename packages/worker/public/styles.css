@@ -209,37 +209,8 @@
 	}
 }
 
-/* Explicit light choice must pin UA rendering even under a dark system. */
-:root[data-theme='light'] {
-	color-scheme: light;
-}
-
-:root[data-theme='dark'] {
-	color-scheme: dark;
-	--color-primary: var(--color-primary-dark);
-	--color-primary-hover: var(--color-primary-hover-dark);
-	--color-primary-active: var(--color-primary-active-dark);
-	--color-on-primary: var(--color-on-primary-dark);
-	--color-primary-text: var(--color-primary-text-dark);
-	--color-background: var(--color-background-dark);
-	--color-surface: var(--color-surface-dark);
-	--color-text: var(--color-text-dark);
-	--color-text-muted: var(--color-text-muted-dark);
-	--color-border: var(--color-border-dark);
-	--color-danger: var(--color-danger-dark);
-	--color-danger-hover: var(--color-danger-hover-dark);
-	--color-on-danger: var(--color-on-danger-dark);
-	--lantern-glow: var(--lantern-glow-dark);
-	--select-chevron: var(--select-chevron-dark);
-	--line-height-body: var(--line-height-body-dark);
-
-	/* Dark mode shadows - lighter for visibility */
-	--shadow-sm: var(--shadow-sm-dark);
-	--shadow-md: var(--shadow-md-dark);
-}
-
 @media (prefers-color-scheme: dark) {
-	:root:not([data-theme='light']) {
+	:root {
 		color-scheme: dark;
 		--color-primary: var(--color-primary-dark);
 		--color-primary-hover: var(--color-primary-hover-dark);
@@ -371,46 +342,16 @@ html {
 }
 
 /* Smooth scrolling only after the initial #hash jump has settled (set by
-   theme-init.js) so cross-page anchor arrivals land instantly. */
+   page-init.js) so cross-page anchor arrivals land instantly. */
 html.is-settled {
 	scroll-behavior: smooth;
 }
 
-/* Theme toggle icons: the button shows the theme you'd switch to via CSS so
-   the server-rendered markup is correct before hydration. */
-:root[data-theme='light'] .icon-sun,
-:root:not([data-theme]) .icon-sun {
-	display: none;
-}
-
-:root[data-theme='dark'] .icon-moon {
-	display: none;
-}
-
+/* Shiki dual-theme tokens follow the system color scheme. Inline light
+   colors are the default. */
 @media (prefers-color-scheme: dark) {
-	:root:not([data-theme]) .icon-sun {
-		display: inline;
-	}
-
-	:root:not([data-theme]) .icon-moon {
-		display: none;
-	}
-}
-
-/* Shiki dual-theme tokens follow `:root[data-theme]` (and system dark when
-   no explicit theme is set). Inline light colors are the default. */
-:root[data-theme='dark'] .shiki,
-:root[data-theme='dark'] .shiki span {
-	color: var(--shiki-dark) !important;
-	background-color: var(--shiki-dark-bg) !important;
-	font-style: var(--shiki-dark-font-style) !important;
-	font-weight: var(--shiki-dark-font-weight) !important;
-	text-decoration: var(--shiki-dark-text-decoration) !important;
-}
-
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme='light']) .shiki,
-	:root:not([data-theme='light']) .shiki span {
+	.shiki,
+	.shiki span {
 		color: var(--shiki-dark) !important;
 		background-color: var(--shiki-dark-bg) !important;
 		font-style: var(--shiki-dark-font-style) !important;
@@ -421,7 +362,7 @@ html.is-settled {
 
 /* ---------- motion system (heykody.dev redesign) ----------
    Enhance-only: content is fully visible without JS; the `html.js` class
-   (set pre-paint by theme-init.js) gates initial-hidden states, and
+   (set pre-paint by page-init.js) gates initial-hidden states, and
    reduced-motion removes everything. One ease everywhere (--ease-out). */
 
 @media (prefers-reduced-motion: no-preference) {

@@ -655,6 +655,24 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withCommentedCssHtml).not.toContain('href="/styles.css')
 	expect(withCommentedCssHtml).not.toContain('<main>')
 
+	expect(withoutAssetsHtml).toContain('src="/page-init.js"')
+	expect(withoutAssetsHtml).not.toContain('theme-init.js')
+	expect(withoutAssetsHtml).not.toContain('aria-label="Dark mode"')
+	expect(withoutAssetsHtml).not.toContain('data-theme')
+	expect(withoutAssetsHtml).not.toContain('kody-theme')
+
+	const loginHtml = await readResponseText(
+		await renderAppPage({
+			request: new Request('https://example.com/login'),
+			env,
+		}),
+	)
+	expect(loginHtml).toContain('Back to Kody')
+	expect(loginHtml).toContain('src="/page-init.js"')
+	expect(loginHtml).not.toContain('theme-init.js')
+	expect(loginHtml).not.toContain('aria-label="Dark mode"')
+	expect(loginHtml).not.toContain('data-theme')
+
 	// CSS needing HTML escaping must fall back to the <link> (the stream
 	// renderer escapes text children, which would corrupt selectors).
 	resetInlineStylesheetCache()

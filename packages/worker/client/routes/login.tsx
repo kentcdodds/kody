@@ -31,7 +31,6 @@ import {
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import { type SignupMode } from '#universal/signup-mode.ts'
-import { ThemeToggle } from '#client/theme-toggle.tsx'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import { resolvePasswordAuthRedirect } from '#client/routes/resolve-password-auth-redirect.ts'
 import {
@@ -939,7 +938,6 @@ export function LoginRoute(handle: Handle) {
 
 					<div mix={css(authCornerCss)}>
 						<a href="/">&larr; Back to Kody</a>
-						<ThemeToggle />
 					</div>
 				</div>
 			</div>
@@ -1283,8 +1281,7 @@ const authCornerCss = {
 	 * why the corner has to stay on wider screens, where that in-card brand is
 	 * `display: none` and the only other one is inside the `aria-hidden` visual
 	 * panel at `tabIndex={-1}`. Hiding it there would leave no reachable way
-	 * home. The theme toggle goes with it; the theme still follows the system
-	 * preference, and this is a screen you pass through.
+	 * home.
 	 */
 	[mobileMq]: { display: 'none' },
 }
