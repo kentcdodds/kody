@@ -1862,6 +1862,13 @@ export async function writeGeneratedWranglerConfig({
 		sortWranglerMigrations(migrationList)
 	}
 
+	// Preview publishes no custom-domain routes, so the earlier route helper
+	// never sets this. `wrangler secret bulk` still reapplies the generated
+	// config after deploy; omitting `workers_dev` drops the
+	// `<name>.<subdomain>.workers.dev` trigger and Cloudflare answers that
+	// hostname with error 1042.
+	;(targetEnv as Record<string, unknown>).workers_dev = true
+
 	const resolvedOut = path.resolve(outConfigPath)
 	await writeFile(
 		resolvedOut,

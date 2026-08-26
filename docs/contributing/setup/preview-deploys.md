@@ -4,7 +4,9 @@ The GitHub Actions preview workflow creates per-preview Cloudflare resources so
 each PR preview is isolated. See the [setup index](./index.md) for the other
 setup pages.
 
-- App worker: `<preview-worker-name>` (for kody: `kody-pr-<n>`)
+- App worker: `<preview-worker-name>` (for kody: `kody-pr-<n>`). Generated
+  preview config sets `workers_dev: true` so secret-bulk reapply cannot drop the
+  `<name>.<subdomain>.workers.dev` trigger (Cloudflare error 1042).
 - Platform worker: `<preview-worker-name>-platform`
 - Runtime worker: `<preview-worker-name>-runtime`
 - Jobs worker: `<preview-worker-name>-jobs`
