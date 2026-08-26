@@ -158,6 +158,18 @@ immutable caching; projections expose the relative `logoPath`. The connect page
 and account integration views render it, falling back to the built-in
 `ProviderIcon` set.
 
+User-lane OAuth apps have the same asset pipeline on `user_oauth_apps`
+(`logo_key`, `logo_content_type`, `logo_source`, `favicon_source_host`).
+`integration_save.logoBase64` is omit / value / `null` like the platform field.
+When no explicit upload is stored, connect and account-page loads fetch the
+registrable-domain favicon of `authorizeUrl` (then `apiBaseUrl` / `tokenUrl`)
+over HTTPS with manual redirects, prefer `apple-touch-icon` then `rel=icon`,
+accept `/favicon.ico` only when it embeds a PNG, and store a raster under
+`user-oauth-app-logos/{userId}/{slug}/`. Display order is explicit upload,
+official `ProviderIcon` catalog, auto-favicon, then the letter fallback. The
+same `/integrations/logos/:slug` route serves user assets only to the signed-in
+owner after a platform miss.
+
 ### Admin provisioning
 
 Operators manage platform apps through role-gated capabilities in the `admin`

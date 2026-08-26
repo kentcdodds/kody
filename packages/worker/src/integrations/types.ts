@@ -22,6 +22,10 @@ export const userOauthAppSchema = z.object({
 	tokenExchangeStyle: oauthTokenExchangeStyleSchema.nullable(),
 	scopeSeparator: z.string().min(1).nullable(),
 	extraAuthorizeParams: z.record(z.string(), z.string()),
+	logoKey: z.string().min(1).nullable().optional(),
+	logoContentType: z.string().min(1).nullable().optional(),
+	logoSource: z.enum(['upload', 'favicon']).nullable().optional(),
+	faviconSourceHost: z.string().min(1).nullable().optional(),
 	createdAt: z.string().min(1),
 	updatedAt: z.string().min(1),
 })
@@ -87,6 +91,10 @@ export type UserOauthAppRow = {
 	token_exchange_style: (typeof tokenExchangeStyleValues)[number] | null
 	scope_separator: string | null
 	extra_authorize_params_json: string
+	logo_key: string | null
+	logo_content_type: string | null
+	logo_source: 'upload' | 'favicon' | null
+	favicon_source_host: string | null
 	created_at: string
 	updated_at: string
 }

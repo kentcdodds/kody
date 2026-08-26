@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { waitUntil } from 'cloudflare:workers'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
@@ -78,7 +79,9 @@ export function createAccountIntegrationsHandler(env: Env) {
 				return user
 			}
 
-			const accountIntegrations = await loadAccountIntegrationsData(env, user)
+			const accountIntegrations = await loadAccountIntegrationsData(env, user, {
+				waitUntil,
+			})
 			return renderAppPage({
 				request,
 				env,
@@ -150,7 +153,9 @@ export function createAccountIntegrationsApiHandler(env: Env) {
 					}
 					return jsonResponse({ ok: true, app })
 				}
-				return jsonResponse(await loadAccountIntegrationsData(env, user))
+				return jsonResponse(
+					await loadAccountIntegrationsData(env, user, { waitUntil }),
+				)
 			}
 
 			if (request.method !== 'POST') {

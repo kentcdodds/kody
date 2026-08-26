@@ -1,3 +1,4 @@
+import { base64ToBytes } from '@kody-internal/shared/base64.ts'
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import {
 	canonicalIntegrationName,
@@ -29,6 +30,11 @@ import {
 	upsertOauthApp,
 } from './repo.ts'
 import {
+	deleteUserOauthAppLogoAsset,
+	setUserOauthAppLogo,
+} from './user-oauth-app-logo.ts'
+import { scheduleUserOauthAppFaviconFill } from './user-oauth-app-favicon.ts'
+import {
 	type JoinedIntegration,
 	type UserIntegrationConnection,
 	type UserOauthApp,
@@ -36,6 +42,14 @@ import {
 } from './types.ts'
 
 export type { IntegrationConfig, PlatformOauthApp }
+
+type IntegrationWriteEnv = Pick<Env, 'APP_DB'> &
+	Partial<Pick<Env, 'COMMUNITY_ASSETS'>>
+
+type LogoWriteInput = {
+	logoBase64?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
+}
 
 /**
  * App-level OAuth config (no connection / token secret fields). Used by
@@ -233,13 +247,15 @@ async function refreshPlatformIntegrationRequiredHosts(
 	}
 }
 
-export async function upsertIntegration(input: {
-	env: Pick<Env, 'APP_DB'>
-	userId: string
-	config: IntegrationConfig
-	description?: string | null
-	accountLabel?: string | null
-}): Promise<IntegrationConfig> {
+export async function upsertIntegration(
+	input: {
+		env: IntegrationWriteEnv
+		userId: string
+		config: IntegrationConfig
+		description?: string | null
+		accountLabel?: string | null
+	} & LogoWriteInput,
+): Promise<IntegrationConfig> {
 	const parsed = integrationConfigSchema.parse(input.config)
 	const config = normalizeIntegrationConfig(parsed)
 	const now = new Date().toISOString()
@@ -287,10 +303,19 @@ export async function upsertIntegration(input: {
 	if (existing && existing.lane === 'user' && existing.app.slug !== appSlug) {
 		await deleteOauthAppIfNoConnections({
 			db: input.env.APP_DB,
+			communityAssets: input.env.COMMUNITY_ASSETS,
 			userId: input.userId,
 			appSlug: existing.app.slug,
 		})
 	}
+
+	await applyUserOauthAppLogoWrite({
+		env: input.env,
+		userId: input.userId,
+		slug: appSlug,
+		logoBase64: input.logoBase64,
+		waitUntil: input.waitUntil,
+	})
 
 	const saved = await getIntegration({
 		env: input.env,
@@ -312,17 +337,26 @@ export async function upsertIntegration(input: {
  * full-tuple reuse and reclaiming a connectionless preferred slug when the
  * user re-runs setup with an edited client id.
  */
-export async function upsertOauthAppWithoutConnection(input: {
-	env: Pick<Env, 'APP_DB'>
-	userId: string
-	config: OauthAppConfigInput
-}): Promise<UserOauthApp> {
+export async function upsertOauthAppWithoutConnection(
+	input: {
+		env: IntegrationWriteEnv
+		userId: string
+		config: OauthAppConfigInput
+	} & LogoWriteInput,
+): Promise<UserOauthApp> {
 	const config = normalizeOauthAppConfig(input.config)
 	const { appSlug } = await resolveOrCreateOauthApp({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		config,
 		existingConnectionApp: null,
+	})
+	await applyUserOauthAppLogoWrite({
+		env: input.env,
+		userId: input.userId,
+		slug: appSlug,
+		logoBase64: input.logoBase64,
+		waitUntil: input.waitUntil,
 	})
 	const saved = await getOauthAppBySlug({
 		db: input.env.APP_DB,
@@ -336,7 +370,7 @@ export async function upsertOauthAppWithoutConnection(input: {
 }
 
 export async function deleteIntegration(input: {
-	env: Pick<Env, 'APP_DB'>
+	env: IntegrationWriteEnv
 	userId: string
 	name: string
 }): Promise<boolean> {
@@ -359,6 +393,7 @@ export async function deleteIntegration(input: {
 	if (existing.lane === 'user') {
 		await deleteOauthAppIfNoConnections({
 			db: input.env.APP_DB,
+			communityAssets: input.env.COMMUNITY_ASSETS,
 			userId: input.userId,
 			appSlug: existing.app.slug,
 		})
@@ -502,6 +537,7 @@ export async function getAvailablePlatformApp(input: {
 
 async function deleteOauthAppIfNoConnections(input: {
 	db: D1Database
+	communityAssets?: Env['COMMUNITY_ASSETS']
 	userId: string
 	appSlug: string
 }): Promise<void> {
@@ -510,11 +546,21 @@ async function deleteOauthAppIfNoConnections(input: {
 		userId: input.userId,
 		appSlug: input.appSlug,
 	})
-	if (remaining === 0) {
-		await deleteOauthApp({
-			db: input.db,
-			userId: input.userId,
-			slug: input.appSlug,
+	if (remaining !== 0) return
+	const existing = await getOauthAppBySlug({
+		db: input.db,
+		userId: input.userId,
+		slug: input.appSlug,
+	})
+	await deleteOauthApp({
+		db: input.db,
+		userId: input.userId,
+		slug: input.appSlug,
+	})
+	if (existing && input.communityAssets) {
+		await deleteUserOauthAppLogoAsset({
+			env: { COMMUNITY_ASSETS: input.communityAssets },
+			logoKey: existing.logoKey ?? null,
 		})
 	}
 }
@@ -564,6 +610,8 @@ export type OauthAppSetupPrefill = {
 	tokenExchangeStyle: UserOauthApp['tokenExchangeStyle']
 	scopeSeparator: string | null
 	extraAuthorizeParams: Record<string, string> | null
+	logoKey: string | null
+	logoSource: UserOauthApp['logoSource']
 	createdAt: string
 	updatedAt: string
 }
@@ -630,6 +678,8 @@ export function oauthAppToSetupPrefill(
 		tokenExchangeStyle: app.tokenExchangeStyle,
 		scopeSeparator: app.scopeSeparator,
 		extraAuthorizeParams: app.extraAuthorizeParams,
+		logoKey: app.logoKey ?? null,
+		logoSource: app.logoSource ?? null,
 		createdAt: app.createdAt,
 		updatedAt: app.updatedAt,
 	}
@@ -671,6 +721,8 @@ function mergeOauthAppFamilyPrefill(input: {
 			candidates.map((app) => app.extraAuthorizeParams),
 			sameExtraAuthorizeParams,
 		),
+		logoKey: null,
+		logoSource: null,
 		createdAt: first.createdAt,
 		updatedAt: first.updatedAt,
 	}
@@ -767,7 +819,7 @@ export async function rotateOauthAppClientCredentials(input: {
 }
 
 export async function deleteOauthAppWithConnections(input: {
-	env: Pick<Env, 'APP_DB'>
+	env: IntegrationWriteEnv
 	userId: string
 	slug: string
 }): Promise<{ deleted: boolean; connectionNames: Array<string> }> {
@@ -800,11 +852,17 @@ export async function deleteOauthAppWithConnections(input: {
 		userId: input.userId,
 		slug: existing.slug,
 	})
+	if (deleted && input.env.COMMUNITY_ASSETS) {
+		await deleteUserOauthAppLogoAsset({
+			env: { COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS },
+			logoKey: existing.logoKey ?? null,
+		})
+	}
 	return { deleted, connectionNames }
 }
 
 export async function deleteOauthAppIfUnused(input: {
-	env: Pick<Env, 'APP_DB'>
+	env: IntegrationWriteEnv
 	userId: string
 	slug: string
 }): Promise<boolean> {
@@ -826,10 +884,49 @@ export async function deleteOauthAppIfUnused(input: {
 			`OAuth app "${slug}" still has ${connectionCount} connection${connectionCount === 1 ? '' : 's'}.`,
 		)
 	}
-	return deleteOauthApp({
+	const deleted = await deleteOauthApp({
 		db: input.env.APP_DB,
 		userId: input.userId,
 		slug,
+	})
+	if (deleted && input.env.COMMUNITY_ASSETS) {
+		await deleteUserOauthAppLogoAsset({
+			env: { COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS },
+			logoKey: existing.logoKey ?? null,
+		})
+	}
+	return deleted
+}
+
+async function applyUserOauthAppLogoWrite(input: {
+	env: IntegrationWriteEnv
+	userId: string
+	slug: string
+	logoBase64?: string | null
+	waitUntil?: (promise: Promise<unknown>) => void
+}) {
+	if (!input.env.COMMUNITY_ASSETS) return
+	const env = {
+		APP_DB: input.env.APP_DB,
+		COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS,
+	}
+	if (input.logoBase64 !== undefined) {
+		await setUserOauthAppLogo({
+			db: input.env.APP_DB,
+			env,
+			userId: input.userId,
+			slug: input.slug,
+			sourceBytes:
+				input.logoBase64 === null ? null : base64ToBytes(input.logoBase64),
+			source: 'upload',
+		})
+	}
+	await scheduleUserOauthAppFaviconFill({
+		db: input.env.APP_DB,
+		env,
+		userId: input.userId,
+		slug: input.slug,
+		waitUntil: input.waitUntil,
 	})
 }
 

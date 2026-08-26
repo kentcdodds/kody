@@ -68,6 +68,10 @@ export const integrationSaveCapability = defineDomainCapability(
 				...(args.accountLabel !== undefined
 					? { accountLabel: args.accountLabel }
 					: {}),
+				...(args.logoBase64 !== undefined
+					? { logoBase64: args.logoBase64 }
+					: {}),
+				waitUntil: ctx.waitUntil,
 			})
 			return { integration }
 		},

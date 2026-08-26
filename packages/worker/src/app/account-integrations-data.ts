@@ -21,6 +21,8 @@ import {
 	type PlatformOauthApp,
 } from '#worker/integrations/service.ts'
 import { buildPlatformOauthAppLogoPath } from '#worker/integrations/platform-app-logo.ts'
+import { buildUserOauthAppLogoPaths } from '#worker/integrations/user-oauth-app-logo.ts'
+import { backfillMissingUserOauthAppFavicons } from '#worker/integrations/user-oauth-app-favicon.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -46,7 +48,7 @@ function toAccountIntegrationRecord(
 					platformLogoPath: buildPlatformOauthAppLogoPath(entry.app),
 					platformDescription: entry.app.description,
 				}
-			: {}),
+			: buildUserOauthAppLogoPaths(entry.app)),
 		createdAt: entry.connection.createdAt,
 		updatedAt: entry.connection.updatedAt,
 	}
@@ -138,6 +140,11 @@ function toAppOnlyIntegrationRecord(
 					extraAuthorizeParams: prefill.extraAuthorizeParams ?? {},
 				}
 			: null,
+		...buildUserOauthAppLogoPaths({
+			slug: prefill.slug,
+			logoKey: prefill.logoKey,
+			logoSource: prefill.logoSource,
+		}),
 		createdAt: prefill.createdAt,
 		updatedAt: prefill.updatedAt,
 	}
@@ -231,6 +238,7 @@ function buildOauthAppRecords(
 export async function loadAccountIntegrationsData(
 	env: Env,
 	user: AuthenticatedUser,
+	options?: { waitUntil?: (promise: Promise<unknown>) => void },
 ): Promise<{
 	ok: true
 	email: string
@@ -250,6 +258,14 @@ export async function loadAccountIntegrationsData(
 			if (appCompare !== 0) return appCompare
 			return left.name.localeCompare(right.name)
 		})
+
+	await backfillMissingUserOauthAppFavicons({
+		db: env.APP_DB,
+		env,
+		userId,
+		apps,
+		waitUntil: options?.waitUntil,
+	})
 
 	return {
 		ok: true,

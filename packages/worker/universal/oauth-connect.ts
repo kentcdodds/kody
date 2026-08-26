@@ -9,6 +9,7 @@ export type ConnectOauthChooserOption = {
 	detail: string
 	providerKey: string
 	logoPath: string | null
+	autoLogoPath: string | null
 	kind: ConnectOauthChooserKind
 }
 
@@ -37,6 +38,7 @@ export function buildConnectOauthChooserOptions(input: {
 		label: string
 		providerKey: string
 		logoPath: string | null
+		autoLogoPath: string | null
 		platform: boolean
 		appSlug: string
 		canDrive: boolean
@@ -74,6 +76,7 @@ export function buildConnectOauthChooserOptions(input: {
 					: 'Reconnect your OAuth app',
 				providerKey,
 				logoPath: connection.logoPath,
+				autoLogoPath: connection.autoLogoPath,
 				kind: 'connection' as const,
 			}
 		})
@@ -95,6 +98,7 @@ export function buildConnectOauthChooserOptions(input: {
 				detail: "Connect with Kody's built-in app",
 				providerKey,
 				logoPath: app.logoPath,
+				autoLogoPath: null,
 				kind: 'platform' as const,
 			}
 		})

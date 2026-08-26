@@ -205,20 +205,155 @@ function renderStripeIcon(size: string) {
 	)
 }
 
+function renderDropboxIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#0061FF"
+		>
+			<path d="M6 1.807L0 5.629l6 3.822 6.001-3.822L6 1.807zM18 1.807l-6 3.822 6 3.822 6-3.822-6-3.822zM0 13.274l6 3.822 6.001-3.822L6 9.452l-6 3.822zM18 9.452l-6 3.822 6 3.822 6-3.822-6-3.822zM6 18.371l6.001 3.822 6-3.822-6-3.822L6 18.371z" />
+		</svg>
+	)
+}
+
+function renderGroupMeIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#00AFF0"
+		>
+			<path d="M11.1597 6.57419H12.8398V8.16898H11.1597V6.57419ZM18.1997 0H5.80011C3.14898 0 1 2.03979 1 4.55577V16.3243C1 18.8402 3.14898 20.88 5.80011 20.88H9.92715L11.9786 24L14.0306 20.88H18.1997C20.8506 20.88 23 18.8402 23 16.3243V4.55574C23 2.03976 20.8506 0 18.1997 0ZM7.56833 8.16895H9.34755V6.57416H7.56833V4.85447H9.34755V3.16587H11.1597V4.85447H12.8398V3.16587H14.6519V4.85447H16.4308V6.57416H14.6519V8.16895H16.4308V9.88852H14.6519V11.5772H12.8398V9.88852H11.1597V11.5772H9.34755V9.88852H7.56833V8.16895ZM20.3122 13.4321C20.3122 13.4321 17.9202 17.708 12.2406 17.708C12.1619 17.708 12.0843 17.707 12.007 17.7057C11.9299 17.707 11.8522 17.708 11.7737 17.708C6.09416 17.708 3.70211 13.4321 3.70211 13.4321C3.70211 13.4321 3.54729 13.1536 3.54729 12.8534C3.53754 12.6368 3.64915 12.3263 3.9421 12.1433C4.105 12.0417 4.259 11.9914 4.40179 11.9757C5.08566 11.9069 5.48202 12.3295 5.80794 12.8121C6.16788 13.3447 8.24445 15.678 12.007 15.7672C15.7698 15.678 17.8464 13.3447 18.2063 12.8121C18.5322 12.3295 18.9429 11.9062 19.6125 11.9757C19.7553 11.9914 19.9094 12.0417 20.0722 12.1433C20.3652 12.3263 20.4792 12.5839 20.469 12.8532C20.446 13.2494 20.3122 13.4321 20.3122 13.4321Z" />
+		</svg>
+	)
+}
+
+function renderLinkedInIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#0A66C2"
+		>
+			<path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+		</svg>
+	)
+}
+
+function renderProductHuntIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#DA552F"
+		>
+			<path d="M13.604 8.4h-3.405V12h3.405c.995 0 1.801-.806 1.801-1.801 0-.993-.805-1.799-1.801-1.799zM12 0C5.372 0 0 5.372 0 12s5.372 12 12 12 12-5.372 12-12S18.628 0 12 0zm1.604 14.4h-3.405V18H7.801V6h5.804c2.319 0 4.2 1.88 4.2 4.199 0 2.321-1.881 4.201-4.201 4.201z" />
+		</svg>
+	)
+}
+
+function renderTelegramIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#26A5E4"
+		>
+			<path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+		</svg>
+	)
+}
+
+function renderTeslaIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#CC0000"
+		>
+			<path d="M12 5.362l2.475-3.026s4.245.09 8.471 2.054c-1.082 1.636-3.231 2.438-3.231 2.438-.146-1.439-1.154-1.79-4.354-1.79L12 24 8.619 5.034c-3.18 0-4.188.354-4.335 1.792 0 0-2.146-.795-3.229-2.43C5.28 2.431 9.525 2.34 9.525 2.34L12 5.362l-.004.002H12v-.002zm0-3.899c3.415-.03 7.326.528 11.328 2.28.535-.968.672-1.395.672-1.395C19.625.612 15.528.015 12 0 8.472.015 4.375.61 0 2.349c0 0 .195.525.672 1.396C4.674 1.989 8.585 1.435 12 1.46v.003z" />
+		</svg>
+	)
+}
+
+function renderTwitchIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#9146FF"
+		>
+			<path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z" />
+		</svg>
+	)
+}
+
+function renderXeroIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#13B5EA"
+		>
+			<path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm6.585 14.655c-1.485 0-2.69-1.206-2.69-2.689 0-1.485 1.207-2.691 2.69-2.691 1.485 0 2.69 1.207 2.69 2.691s-1.207 2.689-2.69 2.689zM7.53 14.644c-.099 0-.192-.041-.267-.116l-2.043-2.04-2.052 2.047c-.069.068-.16.108-.258.108-.202 0-.368-.166-.368-.368 0-.099.04-.191.111-.263l2.04-2.05-2.038-2.047c-.075-.069-.113-.162-.113-.261 0-.203.166-.366.368-.366.098 0 .188.037.258.105l2.055 2.048 2.048-2.045c.069-.071.162-.108.26-.108.211 0 .375.165.375.366 0 .098-.029.188-.104.258l-2.056 2.055 2.055 2.051c.068.069.104.16.104.258 0 .202-.165.368-.365.368h-.01zm8.017-4.591c-.796.101-.882.476-.882 1.404v2.787c0 .202-.165.366-.366.366-.203 0-.367-.165-.368-.366v-4.53c0-.204.16-.366.362-.366.166 0 .316.125.346.289.27-.209.6-.317.93-.317h.105c.195 0 .359.165.359.368 0 .201-.164.352-.375.359 0 0-.09 0-.164.008l.053-.002zm-3.091 2.205H8.625c0 .019.003.037.006.057.02.105.045.211.083.31.194.531.765 1.275 1.829 1.29.33-.003.631-.086.9-.229.21-.12.391-.271.525-.428.045-.058.09-.112.12-.168.18-.229.405-.186.54-.083.164.135.18.391.045.57l-.016.016c-.21.27-.435.495-.689.66-.255.164-.525.284-.811.345-.33.09-.645.104-.975.06-1.095-.135-2.01-.93-2.28-2.01-.06-.21-.09-.42-.09-.645 0-.855.421-1.695 1.125-2.205.885-.615 2.085-.66 3-.075.63.405 1.035 1.021 1.185 1.771.075.419-.21.794-.734.81l.068-.046zm6.129-2.223c-1.064 0-1.931.865-1.931 1.931 0 1.064.866 1.931 1.931 1.931s1.931-.867 1.931-1.931c0-1.065-.866-1.933-1.931-1.933v.002zm0 2.595c-.367 0-.666-.297-.666-.666 0-.367.3-.665.666-.665.367 0 .667.299.667.665 0 .369-.3.667-.667.666zm-8.04-2.603c-.91 0-1.672.623-1.886 1.466v.03h3.776c-.203-.855-.973-1.494-1.891-1.494v-.002z" />
+		</svg>
+	)
+}
+
+function renderZoomIcon(size: string) {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			aria-hidden="true"
+			fill="#0B5CFF"
+		>
+			<path d="M5.033 14.649H.743a.74.74 0 0 1-.686-.458.74.74 0 0 1 .16-.808L3.19 10.41H1.06A1.06 1.06 0 0 1 0 9.35h3.957c.301 0 .57.18.686.458a.74.74 0 0 1-.161.808L1.51 13.59h2.464c.585 0 1.06.475 1.06 1.06zM24 11.338c0-1.14-.927-2.066-2.066-2.066-.61 0-1.158.265-1.537.686a2.061 2.061 0 0 0-1.536-.686c-1.14 0-2.066.926-2.066 2.066v3.311a1.06 1.06 0 0 0 1.06-1.06v-2.251a1.004 1.004 0 0 1 2.013 0v2.251c0 .586.474 1.06 1.06 1.06v-3.311a1.004 1.004 0 0 1 2.012 0v2.251c0 .586.475 1.06 1.06 1.06zM16.265 12a2.728 2.728 0 1 1-5.457 0 2.728 2.728 0 0 1 5.457 0zm-1.06 0a1.669 1.669 0 1 0-3.338 0 1.669 1.669 0 0 0 3.338 0zm-4.82 0a2.728 2.728 0 1 1-5.458 0 2.728 2.728 0 0 1 5.457 0zm-1.06 0a1.669 1.669 0 1 0-3.338 0 1.669 1.669 0 0 0 3.338 0z" />
+		</svg>
+	)
+}
+
 const knownProviderIconIds = [
 	'asana',
 	'atlassian',
 	'canva',
 	'discord',
+	'dropbox',
 	'github',
 	'google',
+	'groupme',
 	'linear',
+	'linkedin',
 	'notion',
+	'producthunt',
 	'sentry',
 	'slack',
 	'spotify',
 	'stripe',
+	'telegram',
+	'tesla',
+	'twitch',
 	'x',
+	'xero',
+	'zoom',
 ] as const
 
 export type ProviderIconId = (typeof knownProviderIconIds)[number]
@@ -230,16 +365,25 @@ const providerIconRenderers: Record<
 	asana: renderAsanaIcon,
 	atlassian: renderAtlassianIcon,
 	canva: renderCanvaIcon,
+	discord: renderDiscordIcon,
+	dropbox: renderDropboxIcon,
 	github: renderGitHubIcon,
 	google: renderGoogleIcon,
+	groupme: renderGroupMeIcon,
 	linear: renderLinearIcon,
-	x: renderXIcon,
+	linkedin: renderLinkedInIcon,
+	notion: renderNotionIcon,
+	producthunt: renderProductHuntIcon,
 	sentry: renderSentryIcon,
 	slack: renderSlackIcon,
 	spotify: renderSpotifyIcon,
 	stripe: renderStripeIcon,
-	notion: renderNotionIcon,
-	discord: renderDiscordIcon,
+	telegram: renderTelegramIcon,
+	tesla: renderTeslaIcon,
+	twitch: renderTwitchIcon,
+	x: renderXIcon,
+	xero: renderXeroIcon,
+	zoom: renderZoomIcon,
 }
 
 const providerIconHosts: Record<string, ProviderIconId> = {
@@ -276,6 +420,16 @@ const providerIconHosts: Record<string, ProviderIconId> = {
 	'spotify.com': 'spotify',
 	'twitter.com': 'x',
 	'x.com': 'x',
+	'dropbox.com': 'dropbox',
+	'dropboxapi.com': 'dropbox',
+	'groupme.com': 'groupme',
+	'linkedin.com': 'linkedin',
+	'producthunt.com': 'producthunt',
+	'telegram.org': 'telegram',
+	'tesla.com': 'tesla',
+	'twitch.tv': 'twitch',
+	'xero.com': 'xero',
+	'zoom.us': 'zoom',
 }
 
 function isProviderIconId(value: string): value is ProviderIconId {
@@ -323,30 +477,55 @@ export function ProviderIcon(
 }
 
 /**
+ * Display priority for a provider mark: explicit upload, official catalog
+ * SVG, auto-fetched favicon, then the letter fallback.
+ */
+export function resolveProviderMarkSource(input: {
+	providerKey: string
+	host?: string | null
+	logoPath?: string | null
+	autoLogoPath?: string | null
+}): 'upload' | 'catalog' | 'favicon' | 'letter' {
+	if (input.logoPath?.trim()) return 'upload'
+	if (resolveProviderIconId(input)) return 'catalog'
+	if (input.autoLogoPath?.trim()) return 'favicon'
+	return 'letter'
+}
+
+/**
  * Provider identity for connect / integration headers: uploaded logo, known
- * brand SVG, or a letter fallback. Always sits on the white logo well so
- * dark marks stay readable in dark mode.
+ * brand SVG, auto-favicon, or a letter fallback. Always sits on the white
+ * logo well so dark marks stay readable in dark mode.
  */
 export function ProviderMark(
 	handle: Handle<{
 		providerKey: string
 		label: string
 		logoPath?: string | null
+		autoLogoPath?: string | null
 		host?: string | null
 		size?: string
 	}>,
 ) {
 	return () => {
-		const { providerKey, label, logoPath, host } = handle.props
+		const { providerKey, label, logoPath, autoLogoPath, host } = handle.props
 		const wellSize = handle.props.size ?? '3rem'
-		const iconId = resolveProviderIconId({ providerKey, host })
+		const source = resolveProviderMarkSource({
+			providerKey,
+			host,
+			logoPath,
+			autoLogoPath,
+		})
 		const letter = label.trim().charAt(0).toUpperCase() || '?'
 		const iconSize =
 			wellSize === '3rem' ? '1.65rem' : `calc(${wellSize} * 0.62)`
+		const iconId = resolveProviderIconId({ providerKey, host })
+		const imagePath = source === 'upload' ? logoPath : autoLogoPath
 		return (
 			<span
 				aria-hidden="true"
 				data-testid="provider-mark"
+				data-source={source}
 				mix={css({
 					...getLogoWellCss({
 						size: wellSize,
@@ -357,9 +536,9 @@ export function ProviderMark(
 					lineHeight: 1,
 				})}
 			>
-				{logoPath ? (
+				{source === 'upload' || source === 'favicon' ? (
 					<img
-						src={logoPath}
+						src={imagePath ?? ''}
 						alt=""
 						width={40}
 						height={40}
@@ -370,7 +549,7 @@ export function ProviderMark(
 							objectFit: 'contain' as const,
 						})}
 					/>
-				) : iconId ? (
+				) : source === 'catalog' && iconId ? (
 					<ProviderIcon providerId={iconId} size={iconSize} />
 				) : (
 					letter

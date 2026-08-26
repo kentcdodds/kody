@@ -1131,6 +1131,7 @@ export function ConnectOauthRoute(handle: Handle) {
 											providerKey={option.providerKey}
 											label={option.label}
 											logoPath={option.logoPath}
+											autoLogoPath={option.autoLogoPath}
 											size={connectOauthChooserOptionMarkSize}
 										/>
 										<span mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -1835,7 +1836,8 @@ export function ConnectOauthRoute(handle: Handle) {
 					<ProviderMark
 						providerKey={config.providerKey}
 						label={config.provider}
-						logoPath={config.platformLogoPath}
+						logoPath={config.platformLogoPath ?? config.logoPath}
+						autoLogoPath={config.autoLogoPath}
 						host={config.authorizeHost}
 					/>
 					<span mix={css(eyebrowCss)}>Connect an account</span>

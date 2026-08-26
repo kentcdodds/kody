@@ -1101,6 +1101,7 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 							detail: "Connect with Kody's built-in app",
 							providerKey: 'google',
 							logoPath: null,
+							autoLogoPath: null,
 							kind: 'platform',
 						},
 					],
@@ -1135,6 +1136,7 @@ test('renderAppPage server-renders connect-oauth provider visits without a loadi
 		detail: "Connect with Kody's built-in app",
 		providerKey: slug,
 		logoPath: null,
+		autoLogoPath: null,
 		kind: 'platform' as const,
 	}))
 	const sixChooserResponse = await renderAppPage({
