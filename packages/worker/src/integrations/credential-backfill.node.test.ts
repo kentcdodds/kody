@@ -315,6 +315,126 @@ test('missing leftover secrets are counted and left null', async () => {
 	expect(readCiphertexts(sqlite, userId).access_token_encrypted).toBeNull()
 })
 
+test('missing leftover prefix does not starve later copyable connections or apps', async () => {
+	const { sqlite, env } = createHarness()
+	for (const userId of ['user-a', 'user-b', 'user-c']) {
+		await seedLeftoverConnection({
+			env,
+			userId,
+			userEmail: `${userId}@example.com`,
+		})
+	}
+	await seedLeftoverConnection({
+		env,
+		userId: 'user-z',
+		userEmail: 'user-z@example.com',
+		accessToken: 'access-after-missing',
+		refreshToken: 'refresh-after-missing',
+		clientSecret: 'client-after-missing',
+	})
+
+	const result = await backfillIntegrationCredentials({
+		env,
+		maxRows: 3,
+	})
+
+	expect(result.userIntegrations.access).toMatchObject({
+		leftover: 4,
+		scanned: 4,
+		copied: 1,
+		missingSecret: 3,
+		remaining: 3,
+	})
+	expect(result.userIntegrations.refresh).toMatchObject({
+		leftover: 4,
+		scanned: 4,
+		copied: 1,
+		missingSecret: 3,
+		remaining: 3,
+	})
+	expect(result.userOauthApps.clientSecret).toMatchObject({
+		leftover: 4,
+		scanned: 4,
+		copied: 1,
+		missingSecret: 3,
+		remaining: 3,
+	})
+	expect(result.missingSecrets).toEqual([
+		{
+			table: 'user_integrations',
+			key: 'user-a:google:access',
+			reason: 'not_found',
+		},
+		{
+			table: 'user_integrations',
+			key: 'user-a:google:refresh',
+			reason: 'not_found',
+		},
+		{
+			table: 'user_integrations',
+			key: 'user-b:google:access',
+			reason: 'not_found',
+		},
+		{
+			table: 'user_integrations',
+			key: 'user-b:google:refresh',
+			reason: 'not_found',
+		},
+		{
+			table: 'user_integrations',
+			key: 'user-c:google:access',
+			reason: 'not_found',
+		},
+		{
+			table: 'user_integrations',
+			key: 'user-c:google:refresh',
+			reason: 'not_found',
+		},
+		{
+			table: 'user_oauth_apps',
+			key: 'user-a:google:clientSecret',
+			reason: 'not_found',
+		},
+		{
+			table: 'user_oauth_apps',
+			key: 'user-b:google:clientSecret',
+			reason: 'not_found',
+		},
+		{
+			table: 'user_oauth_apps',
+			key: 'user-c:google:clientSecret',
+			reason: 'not_found',
+		},
+	])
+	expect(readCiphertexts(sqlite, 'user-a').access_token_encrypted).toBeNull()
+	expect(readCiphertexts(sqlite, 'user-z').access_token_encrypted).not.toBeNull()
+	expect(readCiphertexts(sqlite, 'user-z').refresh_token_encrypted).not.toBeNull()
+	expect(
+		(
+			sqlite
+				.prepare(
+					`SELECT client_secret_encrypted
+					FROM user_oauth_apps
+					WHERE user_id = ? AND slug = ?`,
+				)
+				.get('user-z', leftoverConfig.name) as {
+				client_secret_encrypted: string | null
+			}
+		).client_secret_encrypted,
+	).not.toBeNull()
+	expect(
+		await resolveIntegrationAccessToken({
+			env,
+			userId: 'user-z',
+			name: leftoverConfig.name,
+			secretName: leftoverConfig.accessTokenSecretName,
+		}),
+	).toBe('access-after-missing')
+	expect(JSON.stringify(result)).not.toMatch(
+		/access-after-missing|refresh-after-missing|client-after-missing/,
+	)
+})
+
 test('write does not overwrite ciphertext when a persist lands first', async () => {
 	const { env } = createHarness()
 	const userId = 'user-leftover-race'

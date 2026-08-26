@@ -126,6 +126,20 @@ function recordOutcome(
 	}
 }
 
+function consumeCopyBudget(remainingBudget: number, outcome: CopyOutcome) {
+	switch (outcome) {
+		case 'copied':
+		case 'skippedConcurrent':
+			return remainingBudget - 1
+		case 'missingSecret':
+			return remainingBudget
+		default: {
+			const exhaustive: never = outcome
+			throw new Error(`Unhandled credential backfill outcome: ${exhaustive}`)
+		}
+	}
+}
+
 function recordMissingSecret(
 	missingSecrets: Array<CredentialBackfillMissingSecret>,
 	missing: CredentialBackfillMissingSecret,
@@ -334,8 +348,9 @@ async function copyLeftoverField(input: {
  * Copy leftover integration-owned OAuth values from `secret_entries` onto the
  * connection/app ciphertext columns. Skips rows that already have ciphertext.
  * Writes only where the target column is still null so a concurrent persist
- * wins. The JSON result is counts plus stable row keys — never plaintext or
- * ciphertext.
+ * wins. Missing or unreadable leftovers are reported and do not consume
+ * `maxRows`, so a later copyable row still copies. The JSON result is counts
+ * plus stable row keys — never plaintext or ciphertext.
  */
 export async function backfillIntegrationCredentials(
 	input: BackfillIntegrationCredentialsInput,
@@ -352,16 +367,15 @@ export async function backfillIntegrationCredentials(
 
 	let afterUserId = ''
 	let afterName = ''
-	while (remainingBudget > 0) {
+	scanIntegrations: while (remainingBudget > 0) {
 		const rows = await listLeftoverIntegrationPage({
 			db,
 			afterUserId,
 			afterName,
-			limit: Math.min(pageSize, remainingBudget),
+			limit: pageSize,
 		})
 		if (rows.length === 0) break
 		for (const row of rows) {
-			remainingBudget -= 1
 			if (
 				isLeftoverCiphertext(
 					row.access_token_secret_name,
@@ -401,6 +415,8 @@ export async function backfillIntegrationCredentials(
 					missingSecrets,
 				})
 				recordOutcome(access, outcome)
+				remainingBudget = consumeCopyBudget(remainingBudget, outcome)
+				if (remainingBudget <= 0) break scanIntegrations
 			}
 			if (
 				isLeftoverCiphertext(
@@ -441,6 +457,8 @@ export async function backfillIntegrationCredentials(
 					missingSecrets,
 				})
 				recordOutcome(refresh, outcome)
+				remainingBudget = consumeCopyBudget(remainingBudget, outcome)
+				if (remainingBudget <= 0) break scanIntegrations
 			}
 		}
 		const last = rows[rows.length - 1]
@@ -451,16 +469,15 @@ export async function backfillIntegrationCredentials(
 
 	afterUserId = ''
 	let afterSlug = ''
-	while (remainingBudget > 0) {
+	scanOauthApps: while (remainingBudget > 0) {
 		const rows = await listLeftoverOauthAppPage({
 			db,
 			afterUserId,
 			afterSlug,
-			limit: Math.min(pageSize, remainingBudget),
+			limit: pageSize,
 		})
 		if (rows.length === 0) break
 		for (const row of rows) {
-			remainingBudget -= 1
 			if (
 				!isLeftoverCiphertext(
 					row.client_secret_secret_name,
@@ -502,6 +519,8 @@ export async function backfillIntegrationCredentials(
 				missingSecrets,
 			})
 			recordOutcome(clientSecret, outcome)
+			remainingBudget = consumeCopyBudget(remainingBudget, outcome)
+			if (remainingBudget <= 0) break scanOauthApps
 		}
 		const last = rows[rows.length - 1]
 		if (!last) break
