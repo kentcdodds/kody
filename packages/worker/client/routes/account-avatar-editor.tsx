@@ -97,8 +97,15 @@ export function AccountAvatarEditor(
 
 	function setTransform(next: AvatarCropTransform) {
 		const bounds = currentBounds()
+		const previousScale = transform.scale
 		transform = bounds ? clampTransform(bounds, next) : next
 		applyVisuals()
+		// Wheel and pinch update the image immediately. Remix still owns the
+		// slider `value` and zoom-button disabled state, so a scale change
+		// without `handle.update()` leaves those controls on the last render.
+		if (Math.abs(transform.scale - previousScale) > 0.0001) {
+			handle.update()
+		}
 	}
 
 	function zoomFromCenter(nextScale: number) {

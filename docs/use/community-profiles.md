@@ -25,15 +25,16 @@ avatar, join date, follower and following counts, the user's **public packages**
 ### Avatars
 
 Upload or remove an avatar from **Account → Profile** in the web UI (MCP does
-not accept avatar uploads). Choosing or dropping a photo opens a crop and zoom
-editor (drag, pinch, scroll, or the slider) so you can frame a square that
-matches the circular avatar. The browser converts HEIC, AVIF, and other photos
-to PNG, JPEG, or WebP and resizes large images before upload. Stored avatars are
-PNG, JPEG, or WebP, up to 1 MB, with each side between 64px and 4096px and an
-aspect ratio of at most 3:1. Dropping a photo on the account page opens that
-editor; dropping a file elsewhere in the app does not navigate away. Avatars
-appear on the public profile and in timeline and profile activity rows. Private
-profiles still keep the avatar for the owner; other users do not see it.
+not accept avatar uploads). Click the avatar, or drop a photo anywhere on the
+account page, to open a crop and zoom editor (drag, pinch, scroll, or the
+slider) so you can frame a square that matches the circular avatar. The browser
+converts HEIC, AVIF, and other photos to PNG, JPEG, or WebP and resizes large
+images before upload. Stored avatars are PNG, JPEG, or WebP, up to 1 MB, with
+each side between 64px and 4096px and an aspect ratio of at most 3:1. Dropping a
+photo on the account page opens that editor; dropping a file elsewhere in the
+app does not navigate away. Avatars appear on the public profile and in timeline
+and profile activity rows. Private profiles still keep the avatar for the owner;
+other users do not see it.
 
 Package privacy follows `package.json#private` (projected onto
 `saved_packages.is_private`):
