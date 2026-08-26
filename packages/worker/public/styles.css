@@ -964,7 +964,8 @@ html.is-settled {
 .landing-hero-orbit-stage {
 	position: relative;
 	width: 100%;
-	aspect-ratio: 1.15 / 1;
+	/* Square so SVG viewBox 0 0 100 100 matches %-positioned host chips. */
+	aspect-ratio: 1 / 1;
 	isolation: isolate;
 }
 
@@ -1126,21 +1127,6 @@ html.is-settled {
 	.landing-hero-orbit {
 		width: min(100%, 26rem);
 		margin-top: 1.35rem;
-	}
-
-	.landing-hero-orbit-stage {
-		aspect-ratio: 1 / 1.05;
-	}
-
-	.landing-hero-orbit-host {
-		font-size: 0;
-		gap: 0;
-		padding: 0.55rem;
-	}
-
-	.landing-hero-orbit-host.landing-chip-icon::before {
-		width: 1.15em;
-		height: 1.15em;
 	}
 
 	.landing-hero-orbit-mcp {
@@ -1930,5 +1916,17 @@ html.is-settled {
 		border-left: none;
 		border-top: 1px solid var(--color-border);
 		border-radius: 0;
+	}
+
+	/* After .landing-host-chip so these win the cascade on small screens. */
+	.landing-hero-orbit-host {
+		font-size: 0;
+		gap: 0;
+		padding: 0.55rem;
+	}
+
+	.landing-hero-orbit-host.landing-chip-icon::before {
+		width: 1.15rem;
+		height: 1.15rem;
 	}
 }

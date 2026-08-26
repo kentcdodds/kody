@@ -1,5 +1,4 @@
 import { type Handle } from 'remix/ui'
-import { revealPop } from '#client/reveal.ts'
 import {
 	heroOrbitArcPath,
 	heroOrbitHub,
@@ -78,7 +77,6 @@ export function LandingHeroOrbit(_handle: Handle) {
 										left: `${point.x}%`,
 										top: `${point.y}%`,
 									}}
-									mix={revealPop(index * 35)}
 								>
 									{agent.label}
 								</li>
