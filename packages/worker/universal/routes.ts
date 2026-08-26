@@ -25,6 +25,9 @@ export const routes = route({
 	accountIntegrationsApiPost: post('/account/integrations.json'),
 	accountMcpServers: '/account/mcp-servers',
 	accountMcpServerNew: '/account/mcp-servers/new',
+	// More specific than `:serverId` so favicon assets do not collide with
+	// the expand-detail route.
+	accountMcpServerLogo: '/account/mcp-servers/logos/:serverId',
 	accountMcpServerDetail: '/account/mcp-servers/:serverId',
 	accountMcpServersOauthCallback: '/account/mcp-servers/oauth/callback',
 	accountMcpServersApi: '/account/mcp-servers.json',

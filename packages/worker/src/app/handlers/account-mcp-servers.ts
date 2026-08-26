@@ -1,3 +1,4 @@
+import { waitUntil } from 'cloudflare:workers'
 import { jsonResponse } from '#worker/json-response.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type Action } from 'remix/router'
@@ -41,6 +42,7 @@ export function createAccountMcpServersHandler(env: Env) {
 				env,
 				user,
 				requestUrl: request.url,
+				waitUntil,
 			})
 			return renderAppPage({
 				request,
@@ -71,6 +73,7 @@ export function createAccountMcpServersApiHandler(env: Env) {
 						env,
 						user,
 						requestUrl: request.url,
+						waitUntil,
 					}),
 				)
 			}
@@ -237,6 +240,7 @@ async function handleAddAction(input: {
 		env: input.env,
 		user: input.user,
 		requestUrl: input.request.url,
+		waitUntil,
 	})
 	return jsonResponse({
 		...payload,
@@ -272,6 +276,7 @@ async function handleConnectionAction(input: {
 		env: input.env,
 		user: input.user,
 		requestUrl: input.request.url,
+		waitUntil,
 	})
 	return jsonResponse({
 		...payload,
@@ -296,6 +301,7 @@ async function handleSetEnabledAction(input: {
 		env: input.env,
 		user: input.user,
 		requestUrl: input.request.url,
+		waitUntil,
 	})
 	return jsonResponse({
 		...payload,
@@ -323,6 +329,7 @@ async function handleDeleteAction(input: {
 			env: input.env,
 			user: input.user,
 			requestUrl: input.request.url,
+			waitUntil,
 		}),
 	)
 }

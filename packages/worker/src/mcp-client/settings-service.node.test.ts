@@ -53,6 +53,10 @@ function createSettingRow(input: { id: string; enabled?: boolean }) {
 		enabled: input.enabled ?? true,
 		created_at: '2026-07-01T00:00:00.000Z',
 		updated_at: '2026-07-01T00:00:00.000Z',
+		logo_key: null,
+		logo_content_type: null,
+		logo_source: null,
+		favicon_source_host: null,
 	}
 }
 

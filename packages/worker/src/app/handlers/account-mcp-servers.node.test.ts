@@ -1,6 +1,8 @@
 import { expect, test, vi } from 'vitest'
+import type * as CloudflareWorkers from 'cloudflare:workers'
 
 const mockModule = vi.hoisted(() => ({
+	waitUntil: vi.fn(),
 	readAuthenticatedAppUser: vi.fn(async () => ({
 		sessionUserId: '42',
 		userId: 42,
@@ -95,6 +97,14 @@ const mockModule = vi.hoisted(() => ({
 		toolCount: 0,
 	})),
 }))
+
+vi.mock('cloudflare:workers', async (importOriginal) => {
+	const actual = await importOriginal<typeof CloudflareWorkers>()
+	return {
+		...actual,
+		waitUntil: (...args: Array<unknown>) => mockModule.waitUntil(...args),
+	}
+})
 
 vi.mock('#app/authenticated-user.ts', () => ({
 	readAuthenticatedAppUser: (...args: Array<unknown>) =>
@@ -196,6 +206,7 @@ test('MCP servers API lists servers with live hub status', async () => {
 				tools: ['create_issue', 'list_issues'],
 				createdAt: new Date(0).toISOString(),
 				updatedAt: new Date(0).toISOString(),
+				autoLogoPath: null,
 			},
 		],
 	})

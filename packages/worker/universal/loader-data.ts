@@ -1100,6 +1100,8 @@ export type AccountMcpServerListItem = {
 	tools: Array<string>
 	createdAt: string
 	updatedAt: string
+	/** Auto-fetched registrable-domain favicon for the server URL. */
+	autoLogoPath: string | null
 }
 
 export type AccountMcpServersLoaderData = {

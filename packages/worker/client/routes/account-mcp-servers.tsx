@@ -8,6 +8,7 @@ import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { replaceLocation } from '#client/replace-location.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
+import { ProviderMark } from '#client/provider-icons.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import {
 	type AccountStatus,
@@ -54,6 +55,41 @@ import {
 
 const clampedCellCss = css(recordCellClamp(26))
 
+function hostFromUrl(url: string | null | undefined) {
+	if (!url) return null
+	try {
+		return new URL(url).hostname || null
+	} catch {
+		return null
+	}
+}
+
+function renderNamedServer(input: {
+	name: string
+	url: string
+	autoLogoPath?: string | null
+}) {
+	return (
+		<span
+			mix={css({
+				display: 'inline-flex',
+				alignItems: 'center',
+				gap: spacing.sm,
+				minWidth: 0,
+			})}
+		>
+			<ProviderMark
+				providerKey={input.name}
+				label={input.name}
+				autoLogoPath={input.autoLogoPath}
+				host={hostFromUrl(input.url)}
+				size="1.75rem"
+			/>
+			<span mix={clampedCellCss}>{input.name}</span>
+		</span>
+	)
+}
+
 type McpServerListItem = {
 	id: string
 	name: string
@@ -67,6 +103,7 @@ type McpServerListItem = {
 	tools: Array<string>
 	createdAt: string
 	updatedAt: string
+	autoLogoPath: string | null
 }
 
 type AccountMcpServersPayload = {
@@ -607,7 +644,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 								? undefined
 								: mcpServersRoute.buildDetailHref(item.id, getCurrentSearch()),
 							cells: {
-								name: item.name,
+								name: renderNamedServer(item),
 								state: (
 									<span mix={css({ color: stateColor(item) })}>
 										{stateLabel(item)}
@@ -739,12 +776,26 @@ export function AccountMcpServersRoute(handle: Handle) {
 								</form>
 							) : server ? (
 								<section mix={css(recordBodyCss)}>
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<h2 mix={css(cardTitleCss)}>{server.name}</h2>
-										<p mix={css(descriptionCss)}>
-											Saved MCP server connection. Kody keeps OAuth tokens and
-											connection state isolated to your account.
-										</p>
+									<div
+										mix={css({
+											display: 'flex',
+											alignItems: 'flex-start',
+											gap: spacing.md,
+										})}
+									>
+										<ProviderMark
+											providerKey={server.name}
+											label={server.name}
+											autoLogoPath={server.autoLogoPath}
+											host={hostFromUrl(server.url)}
+										/>
+										<div mix={css({ display: 'grid', gap: spacing.xs })}>
+											<h2 mix={css(cardTitleCss)}>{server.name}</h2>
+											<p mix={css(descriptionCss)}>
+												Saved MCP server connection. Kody keeps OAuth tokens and
+												connection state isolated to your account.
+											</p>
+										</div>
 									</div>
 
 									<MetadataGrid
