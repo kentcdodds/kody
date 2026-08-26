@@ -139,11 +139,8 @@ export const integrationSearchEntityPlugin = {
 			apiBaseUrl: match.apiBaseUrl,
 			requiredHosts: match.requiredHosts,
 			clientId: match.clientId,
-			clientSecretSecretName: match.clientSecretSecretName,
-			accessTokenSecretName: match.accessTokenSecretName,
-			refreshTokenSecretName: match.refreshTokenSecretName,
 			authorization: match.authorization ?? null,
-			nextStep: `Inspect integration detail with search({ entity: "${match.integrationName}:integration" }) and then run a minimal authenticated execute smoke test before building or calling integration-backed code.`,
+			nextStep: `Inspect integration detail with search({ entity: "${match.integrationName}:integration" }), then smoke-test with createAuthenticatedFetch('${match.integrationName}'). Do not persist tokens with secret_set.`,
 		}
 	},
 	formatEntityDetail(detail) {
@@ -170,12 +167,10 @@ export const integrationSearchEntityPlugin = {
 			`- \`${buildIntegrationUsage(detail.config.name)}\``,
 			'- `kody.integration_list({})`',
 			'',
-			'## Related stored names',
+			'## Credentials',
 			'',
 			`- Client ID: \`${detail.config.clientId}\``,
-			`- Client secret secret name: ${detail.config.clientSecretSecretName ? `\`${detail.config.clientSecretSecretName}\`` : 'none'}`,
-			`- Access token secret name: \`${detail.config.accessTokenSecretName}\``,
-			`- Refresh token secret name: ${detail.config.refreshTokenSecretName ? `\`${detail.config.refreshTokenSecretName}\`` : 'none'}`,
+			`- Access and refresh tokens live on this connection. Call \`createAuthenticatedFetch('${detail.config.name}')\` or \`integration_token_refresh\`. Do not read or write them with \`secret_set\` / \`secret_list\`.`,
 		]
 		if (authorization) {
 			lines.push(
@@ -231,9 +226,6 @@ export const integrationSearchEntityPlugin = {
 				tokenUrl: detail.config.tokenUrl,
 				apiBaseUrl: detail.config.apiBaseUrl ?? null,
 				clientId: detail.config.clientId,
-				clientSecretSecretName: detail.config.clientSecretSecretName ?? null,
-				accessTokenSecretName: detail.config.accessTokenSecretName,
-				refreshTokenSecretName: detail.config.refreshTokenSecretName ?? null,
 				requiredHosts,
 				authorization,
 				...(relatedPackageSuggestions.length > 0

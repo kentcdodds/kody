@@ -362,7 +362,9 @@ placeholder syntax as operational wiring, not prose — never place a resolvable
 
 Durable facts and preferences belong in memories. Package runtime state and
 knobs belong in **`packageStorage()`**. Versioned config belongs in a repo.
-Credentials belong in secrets.
+API keys, PATs, and HMAC secrets belong in the secret store. OAuth access and
+refresh tokens, and a user-registered app's client secret, live on the
+integration.
 
 ## Returning content blocks
 

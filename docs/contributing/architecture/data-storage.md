@@ -365,9 +365,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `(user_id, app_slug) → user_oauth_apps(user_id, slug)`) or nullable
   `platform_app_slug` (FK to `platform_oauth_apps(slug)`) is set, enforced by a
   `CHECK` constraint; both FKs use `ON DELETE RESTRICT`. Holds `scopes_json`,
-  `required_hosts_json`, and access/refresh token secret names. Secret
-  credential values stay in `secret_entries` in both lanes; the non-secret
-  `client_id` is stored inline on the owning app row.
+  `required_hosts_json`, `usage_mode` / `allowed_packages_json`, and access /
+  refresh token ciphertext. Soak dual-write still keeps `*_secret_name` columns
+  pointing at `secret_entries`. The non-secret `client_id` is stored inline on
+  the owning app row.
 - `user_openapi_bindings` (`0001-squashed-init.sql`): per-user OpenAPI provider
   binding rows keyed by `(user_id, name)`. Holds `spec_url`, `api_base_url`,
   `auth_json`, `selection_json`, `include_destructive`, and optional description

@@ -215,9 +215,6 @@ export type SlimSearchMatch =
 			apiBaseUrl: string | null
 			requiredHosts: Array<string>
 			clientId: string
-			clientSecretSecretName: string | null
-			accessTokenSecretName: string
-			refreshTokenSecretName: string | null
 			authorization: IntegrationConfig['authorization'] | null
 			nextStep?: string
 	  }
@@ -322,9 +319,6 @@ export type SearchEntityDetailStructured =
 			tokenUrl: string
 			apiBaseUrl: string | null
 			clientId: string
-			clientSecretSecretName: string | null
-			accessTokenSecretName: string
-			refreshTokenSecretName: string | null
 			requiredHosts: Array<string>
 			authorization: IntegrationConfig['authorization'] | null
 			relatedPackageSuggestions?: Array<RelatedIntegrationPackageSuggestion>

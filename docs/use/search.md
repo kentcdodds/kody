@@ -175,8 +175,9 @@ behavior work without user-scoped data.
 Package and integration query hits stay summary-only. Exact package detail
 (`entity: "my-package:package"`) returns the package index described above.
 Exact integration detail (`entity: "github:integration"`) includes operational
-details such as token URL, API base URL, client id, required hosts, and related
-secret names.
+details such as token URL, API base URL, client id, and required hosts. Access
+and refresh tokens live on the connection — call
+**`createAuthenticatedFetch(name)`**. They do not appear as secret names.
 
 Long-term memory retrieval also requires a signed-in MCP user.
 

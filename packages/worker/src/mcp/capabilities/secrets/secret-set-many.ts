@@ -139,13 +139,13 @@ export const secretSetManyCapability = defineDomainCapability(
 	{
 		name: 'secret_set_many',
 		description:
-			'Assert authorization for, and optionally atomically persist, multiple secret references for the signed-in user. Use assertOnly before an OAuth token refresh that may rotate refresh tokens so a permission denial cannot consume the provider token. When persisting rotated OAuth tokens, list the refresh token before the access token; both writes commit in one D1 batch. Host use and direct capability access are authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
+			'Assert authorization for, and optionally atomically persist, multiple secret references for the signed-in user (API keys, PATs, HMAC secrets). Use assertOnly before a multi-write that must not partially succeed. Do not use this for OAuth access or refresh tokens — `/connect/oauth` and `createAuthenticatedFetch` / `integration_token_refresh` persist those on the connection. Host use and direct capability access are authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
 		keywords: [
 			'secret',
 			'persist',
 			'store',
-			'oauth',
-			'token',
+			'api key',
+			'pat',
 			'credential',
 			'atomic',
 			'batch',

@@ -31,7 +31,7 @@ here.
 Send the signed-in user to `https://kody.codes/connect/oauth` with query
 parameters that describe the provider. The page runs authorize -> callback ->
 token exchange in a full browser context and persists access and refresh tokens
-through the account secrets flow.
+on the connection.
 
 This path does not require package-app-specific OAuth code.
 
@@ -247,7 +247,9 @@ create a thin helpers package.
 4. For BYO only, tell the user the exact redirect URI to register:
    `https://kody.codes/connect/oauth`. The page shows it with a copy button.
 5. Have the user open the URL while signed in and wait for success.
-6. Run the authenticated smoke test from `integration_bootstrap`.
+6. Run the authenticated smoke test from `integration_bootstrap`
+   (`createAuthenticatedFetch`). Do not persist access or refresh tokens with
+   `secret_set` / `secret_set_many`.
 7. Use the connect success `nextSteps` (or `community_search`, preferring
    `trusted`) to fork/adapt a helpers package, or create a thin helpers package
    when none fits. Continue with dependent package apps only after that surface
