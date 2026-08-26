@@ -27,8 +27,8 @@ import {
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
-import { LandingLoopPlayer } from './landing-loop-player.tsx'
 import { LandingHeroOrbit } from './landing-hero-orbit.tsx'
+import { LandingLoopPlayer } from './landing-loop-player.tsx'
 
 /**
  * heykody.app landing page, ported from the redesign prototype
