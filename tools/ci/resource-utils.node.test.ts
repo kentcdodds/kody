@@ -243,10 +243,11 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 				},
 			],
 		})
-		// Preview serves package apps inline on its own origin, so it publishes no
-		// routes and keeps whatever domains and triggers it already had.
+		// Preview serves package apps inline on its own origin, so it publishes
+		// no routes. It still sets workers_dev so secret-bulk reapply cannot
+		// drop the workers.dev trigger (Cloudflare 1042).
 		expect(previewConfig.env?.preview?.routes).toBeUndefined()
-		expect(previewConfig.env?.preview?.workers_dev).toBeUndefined()
+		expect(previewConfig.env?.preview?.workers_dev).toBe(true)
 		expect(consoleError).toHaveBeenCalledWith(
 			`Wrote generated Wrangler config: ${previewOutPath}`,
 		)
