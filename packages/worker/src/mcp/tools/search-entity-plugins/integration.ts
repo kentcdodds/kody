@@ -140,7 +140,7 @@ export const integrationSearchEntityPlugin = {
 			requiredHosts: match.requiredHosts,
 			clientId: match.clientId,
 			authorization: match.authorization ?? null,
-			nextStep: `Inspect integration detail with search({ entity: "${match.integrationName}:integration" }), then smoke-test with createAuthenticatedFetch('${match.integrationName}'). Do not persist tokens with secret_set.`,
+			nextStep: `Inspect integration detail with search({ entity: "${match.integrationName}:integration" }), then smoke-test with createAuthenticatedFetch('${match.integrationName}'). Do not persist tokens with secret_set or secret_set_many.`,
 		}
 	},
 	formatEntityDetail(detail) {
@@ -170,7 +170,7 @@ export const integrationSearchEntityPlugin = {
 			'## Credentials',
 			'',
 			`- Client ID: \`${detail.config.clientId}\``,
-			`- Access and refresh tokens live on this connection. Call \`createAuthenticatedFetch('${detail.config.name}')\` or \`integration_token_refresh\`. Do not read or write them with \`secret_set\` / \`secret_list\`.`,
+			`- Access and refresh tokens live on this connection. Call \`createAuthenticatedFetch('${detail.config.name}')\` or \`integration_token_refresh\`. Do not read or write them with \`secret_set\`, \`secret_set_many\`, or \`secret_list\`.`,
 		]
 		if (authorization) {
 			lines.push(

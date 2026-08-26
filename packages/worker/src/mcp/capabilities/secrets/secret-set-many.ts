@@ -40,13 +40,13 @@ const secretSetManyInputSchema = z
 			.array(secretSetManyEntrySchema)
 			.min(1)
 			.describe(
-				'Secrets to assert and optionally persist. Order is preserved; OAuth refresh-token rotations must list the refresh token before the access token.',
+				'Secrets to assert and optionally persist. Order is preserved. Do not include OAuth access or refresh tokens — those persist on the connection.',
 			),
 		assertOnly: z
 			.boolean()
 			.optional()
 			.describe(
-				'When true, only authorize the writes (no values required) and do not persist. Use before provider token requests that may rotate refresh tokens.',
+				'When true, only authorize the writes (no values required) and do not persist. Use before a multi-write that must not partially succeed.',
 			),
 	})
 	.superRefine((value, ctx) => {

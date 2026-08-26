@@ -139,8 +139,8 @@ Known host defaults (no extra params needed):
   `https://www.canva.com/api/oauth/authorize`, token URL is
   `https://api.canva.com/rest/v1/oauth/token`.
 
-Client ID, access token, and refresh token names are derived from a normalized
-slug of `provider`.
+The connection name is a normalized slug of `provider`. Access and refresh
+tokens live on that connection — not as separately named secrets.
 
 After a successful connection, Kody saves the non-secret OAuth authorization
 metadata needed for future reconnects in the integration record:

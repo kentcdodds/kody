@@ -113,7 +113,7 @@ Examples:
 - `my-package:package`
 - `550e8400-e29b-41d4-a716-446655440000:package`
 - `spotify:integration`
-- `spotify-access-token:secret`
+- `githubPat:secret`
 
 There is **no separate `detail` flag** on search. Deeper inspection uses
 **`entity`**, not a different mode of the same ranked query.

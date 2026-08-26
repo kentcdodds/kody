@@ -206,13 +206,13 @@ become reachable.
 
 ## Where credentials live
 
-| Field                         | Storage                                         | Notes                                                                 |
-| ----------------------------- | ----------------------------------------------- | --------------------------------------------------------------------- |
-| Client id                     | `user_oauth_apps` / `platform_oauth_apps`       | Non-secret OAuth client identifier                                    |
-| Client secret (user lane)     | `user_oauth_apps.client_secret_encrypted`       | AES-GCM; dual-written to `secret_entries` under `client_secret_secret_name` during soak |
-| Client secret (platform lane) | `platform_oauth_apps.client_secret_encrypted`   | Encrypted at rest; never placeholder-named                            |
-| Access token                  | `user_integrations.access_token_encrypted`      | AES-GCM; dual-written under `access_token_secret_name` during soak    |
-| Refresh token                 | `user_integrations.refresh_token_encrypted`     | AES-GCM; dual-written under `refresh_token_secret_name` during soak   |
+| Field                         | Storage                                       | Notes                                                                                   |
+| ----------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Client id                     | `user_oauth_apps` / `platform_oauth_apps`     | Non-secret OAuth client identifier                                                      |
+| Client secret (user lane)     | `user_oauth_apps.client_secret_encrypted`     | AES-GCM; dual-written to `secret_entries` under `client_secret_secret_name` during soak |
+| Client secret (platform lane) | `platform_oauth_apps.client_secret_encrypted` | Encrypted at rest; never placeholder-named                                              |
+| Access token                  | `user_integrations.access_token_encrypted`    | AES-GCM; dual-written under `access_token_secret_name` during soak                      |
+| Refresh token                 | `user_integrations.refresh_token_encrypted`   | AES-GCM; dual-written under `refresh_token_secret_name` during soak                     |
 
 Access and refresh tokens are per-user ciphertext on the connection in **both**
 lanes. Account export includes both per-user tables; rows contain soak secret
@@ -243,11 +243,11 @@ note on the architecture index.
 `/connect/oauth` runs authorize → callback → token exchange in the browser
 session, writes access/refresh tokens on the connection (and dual-writes the
 soak secret-store names), and upserts the app + connection via the integrations
-service. A signed-in visit
-with no `provider` renders a chooser of enabled built-ins and saved connections
-that can start from a name alone. Reconnect with `?provider=<integration-name>`
-reuses saved authorize metadata (scopes, `scopeSeparator`,
-`extraAuthorizeParams`) and the current app client credentials.
+service. A signed-in visit with no `provider` renders a chooser of enabled
+built-ins and saved connections that can start from a name alone. Reconnect with
+`?provider=<integration-name>` reuses saved authorize metadata (scopes,
+`scopeSeparator`, `extraAuthorizeParams`) and the current app client
+credentials.
 
 When the user has no matching user-lane app, `?provider=<slug>` prefills from an
 enabled platform app (`loadAccountIntegrationByName` in
@@ -272,8 +272,9 @@ returns a fetch wrapper that:
 2. attaches the bearer token only after that check passes
 
 Capability and search detail surfaces keep a **flat connection-shaped** config
-(`clientId`, secret names, endpoints, `authorization`, `requiredHosts`) so
-callers do not need to join app and connection themselves.
+(`clientId`, endpoints, `authorization`, `requiredHosts`) so callers do not need
+to join app and connection themselves. Search does not list soak token secret
+names.
 
 ## Account UI
 
