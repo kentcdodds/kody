@@ -236,6 +236,17 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	expect(integrationDetail.markdown).toContain('github:package')
 	expect(integrationDetail.markdown).toContain('listing-1')
 	expect(integrationDetail.markdown).toContain('Client ID: `github_client_id`')
+	expect(integrationDetail.markdown).toContain(
+		"createAuthenticatedFetch('github')",
+	)
+	expect(integrationDetail.markdown).not.toContain('github_access_token')
+	expect(integrationDetail.markdown).not.toContain('github_client_secret')
+	expect(integrationDetail.structured).not.toHaveProperty(
+		'accessTokenSecretName',
+	)
+	expect(integrationDetail.structured).not.toHaveProperty(
+		'clientSecretSecretName',
+	)
 
 	const leanIntegrationDetail = formatEntityDetailMarkdown({
 		type: 'integration',

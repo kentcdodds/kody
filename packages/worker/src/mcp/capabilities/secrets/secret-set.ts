@@ -65,13 +65,13 @@ export const secretSetCapability = defineDomainCapability(
 	{
 		name: 'secret_set',
 		description:
-			'Create or update a stored secret reference for the signed-in user. Use this for server-side persistence of secret values that are already available inside trusted execution, such as refreshed OAuth tokens. Optional expires_at is a UTC ISO timestamp or YYYY-MM-DD; null clears expiry. Updates that only change description or expiry may omit value. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation. Host use and direct capability access are authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
+			'Create or update a stored secret reference for the signed-in user. Use this for API keys, PATs, webhook HMAC secrets, and other static credentials already available inside trusted execution. Do not persist OAuth access or refresh tokens here — `/connect/oauth` and `createAuthenticatedFetch` / `integration_token_refresh` write those on the connection. Optional expires_at is a UTC ISO timestamp or YYYY-MM-DD; null clears expiry. Updates that only change description or expiry may omit value. Use `/account/secrets/new` for user-provided API key, PAT, and credential entry or rotation. Host use and direct capability access are authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
 		keywords: [
 			'secret',
 			'persist',
 			'store',
-			'oauth',
-			'token',
+			'api key',
+			'pat',
 			'credential',
 			'expires',
 			'expiry',

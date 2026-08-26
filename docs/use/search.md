@@ -113,7 +113,7 @@ Examples:
 - `my-package:package`
 - `550e8400-e29b-41d4-a716-446655440000:package`
 - `spotify:integration`
-- `spotify-access-token:secret`
+- `githubPat:secret`
 
 There is **no separate `detail` flag** on search. Deeper inspection uses
 **`entity`**, not a different mode of the same ranked query.
@@ -175,8 +175,9 @@ behavior work without user-scoped data.
 Package and integration query hits stay summary-only. Exact package detail
 (`entity: "my-package:package"`) returns the package index described above.
 Exact integration detail (`entity: "github:integration"`) includes operational
-details such as token URL, API base URL, client id, required hosts, and related
-secret names.
+details such as token URL, API base URL, client id, and required hosts. Access
+and refresh tokens live on the connection — call
+**`createAuthenticatedFetch(name)`**. They do not appear as secret names.
 
 Long-term memory retrieval also requires a signed-in MCP user.
 

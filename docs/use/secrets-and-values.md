@@ -21,11 +21,14 @@ that package runs. Access rules for user-scoped secrets from package code are
 covered in [Package approval](#package-approval).
 
 **`kody.secret_set(...)`** persists a value that is already available inside
-execution (for example a refreshed OAuth token). It does not return secret
-values. Optional **`expires_at`** is a UTC ISO timestamp (or `YYYY-MM-DD` at
-midnight UTC). Omit it to leave an existing expiry unchanged; pass `null` to
-clear. Updates that only change description or expiry may omit **`value`**.
-Package runtimes cannot change expiry on a user secret.
+execution (for example an API key the package just minted). It does not return
+secret values. Do not use it for OAuth access or refresh tokens —
+`/connect/oauth` and **`createAuthenticatedFetch`** /
+**`integration_token_refresh`** persist those on the connection. Optional
+**`expires_at`** is a UTC ISO timestamp (or `YYYY-MM-DD` at midnight UTC). Omit
+it to leave an existing expiry unchanged; pass `null` to clear. Updates that
+only change description or expiry may omit **`value`**. Package runtimes cannot
+change expiry on a user secret.
 
 The account create/edit form has the same optional expiry field. Agents
 prefilling **`/account/secrets/new`** can set **`expiresAt`** as a query
