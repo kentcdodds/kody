@@ -172,8 +172,8 @@ active image format is never stored or served. Assets live in the
 `platform_oauth_apps.logo_key` / `logo_content_type` point at the current asset.
 Serving is the public `/integrations/logos/:integrationSlug` route with
 immutable caching; projections expose the relative `logoPath`. The connect page
-and account integration views render it, falling back to the built-in
-`ProviderIcon` set.
+and account integration views render it, falling back to the auto-favicon and
+then the letter.
 
 User-lane OAuth apps have the same asset pipeline on `user_oauth_apps`
 (`logo_key`, `logo_content_type`, `logo_source`, `favicon_source_host`).
@@ -183,9 +183,8 @@ registrable-domain favicon of `authorizeUrl` (then `apiBaseUrl` / `tokenUrl`)
 over HTTPS with manual redirects, prefer `apple-touch-icon` then `rel=icon`,
 accept `/favicon.ico` only when it embeds a PNG, and store a raster under
 `user-oauth-app-logos/{userId}/{slug}/`. Display order is explicit upload,
-official `ProviderIcon` catalog, auto-favicon, then the letter fallback. The
-same `/integrations/logos/:slug` route serves user assets only to the signed-in
-owner after a platform miss.
+auto-favicon, then the letter fallback. The same `/integrations/logos/:slug`
+route serves user assets only to the signed-in owner after a platform miss.
 
 ### Admin provisioning
 

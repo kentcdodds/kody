@@ -477,25 +477,23 @@ export function ProviderIcon(
 }
 
 /**
- * Display priority for a provider mark: explicit upload, official catalog
- * SVG, auto-fetched favicon, then the letter fallback.
+ * Display priority for a provider mark: explicit upload, auto-fetched
+ * favicon, then the letter fallback. Saved integrations do not use the
+ * official catalog SVGs — those stay on login and onboarding.
  */
 export function resolveProviderMarkSource(input: {
-	providerKey: string
-	host?: string | null
 	logoPath?: string | null
 	autoLogoPath?: string | null
-}): 'upload' | 'catalog' | 'favicon' | 'letter' {
+}): 'upload' | 'favicon' | 'letter' {
 	if (input.logoPath?.trim()) return 'upload'
-	if (resolveProviderIconId(input)) return 'catalog'
 	if (input.autoLogoPath?.trim()) return 'favicon'
 	return 'letter'
 }
 
 /**
- * Provider identity for connect / integration headers: uploaded logo, known
- * brand SVG, auto-favicon, or a letter fallback. Always sits on the white
- * logo well so dark marks stay readable in dark mode.
+ * Provider identity for connect / integration headers: uploaded logo,
+ * auto-favicon, or a letter fallback. Always sits on the white logo well
+ * so dark marks stay readable in dark mode.
  */
 export function ProviderMark(
 	handle: Handle<{
@@ -508,18 +506,13 @@ export function ProviderMark(
 	}>,
 ) {
 	return () => {
-		const { providerKey, label, logoPath, autoLogoPath, host } = handle.props
+		const { label, logoPath, autoLogoPath } = handle.props
 		const wellSize = handle.props.size ?? '3rem'
 		const source = resolveProviderMarkSource({
-			providerKey,
-			host,
 			logoPath,
 			autoLogoPath,
 		})
 		const letter = label.trim().charAt(0).toUpperCase() || '?'
-		const iconSize =
-			wellSize === '3rem' ? '1.65rem' : `calc(${wellSize} * 0.62)`
-		const iconId = resolveProviderIconId({ providerKey, host })
 		const imagePath = source === 'upload' ? logoPath : autoLogoPath
 		return (
 			<span
@@ -549,8 +542,6 @@ export function ProviderMark(
 							objectFit: 'contain' as const,
 						})}
 					/>
-				) : source === 'catalog' && iconId ? (
-					<ProviderIcon providerId={iconId} size={iconSize} />
 				) : (
 					letter
 				)}
