@@ -47,6 +47,7 @@
 		"./src/test-support/**/*.ts",
 		"./src/mcp/test-process.ts",
 		"./src/og/og-image-assets.node.ts",
+		"./src/og/og-resvg-wasm.node.ts",
 		"./src/og/og-binary-assets.node.ts",
 		"./src/app/ssr-document.tsx",
 		"./src/app/ssr-render.tsx",

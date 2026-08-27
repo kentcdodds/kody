@@ -22,11 +22,12 @@ export type PublicOgPage = {
 export const publicOgPages = {
 	home: {
 		// Short enough for 78px OG type. The homepage H1 keeps the full door.
-		imageTitle: 'Keep using your agent',
-		imageSubtitle: 'Tools and memory stay on Kody.',
-		ogTitle: 'Keep using the agent you already have — Kody',
+		imageTitle: 'The Home Your Agents Share',
+		imageSubtitle:
+			"For all the agents you use today,\nand the ones you'll use tomorrow",
+		ogTitle: 'The Home Your Agents Share — Kody',
 		ogDescription:
-			'Kody is the account your tools and memory live on when you switch. Not another chat. Not another harness.',
+			"For all the agents you use today, and the ones you'll use tomorrow.",
 		path: '/',
 	},
 	community: {

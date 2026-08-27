@@ -1,5 +1,10 @@
 import { type Handle, ref } from 'remix/ui'
 import { stageParallax } from '#client/hero-stage.tsx'
+import {
+	landingLantern,
+	landingOrbitAgents,
+	landingOrbitTetherPath,
+} from '#universal/landing-agent-orbit.ts'
 import { heroBaseImage } from '#universal/landing-images.ts'
 
 /**
@@ -17,108 +22,31 @@ import { heroBaseImage } from '#universal/landing-images.ts'
  *
  * Coordinates are percentages of the square stage; the SVG line layer shares
  * the 0–100 viewBox so SSR draws the tethers at rest, and `tetherFollow`
- * keeps them pinned once tokens and Kody start moving.
+ * keeps them pinned once tokens and Kody start moving. Orbit positions live
+ * in `#universal/landing-agent-orbit` so OG cards can compose the same still.
  */
 
 /** `dur`/`del` drive the drift. `cycle`/`phase`/`travel` (seconds) drive
  *  each tether's light: one light per cycle, in flight for `travel` of it.
  *  Periods and speeds are deliberately unequal so the lights overlap in
- *  ever-changing combinations. */
-const hostAgents = [
-	{
-		label: 'Cursor',
-		icon: 'cursor',
-		x: 12,
-		y: 19,
-		dur: '8s',
-		del: '-2s',
-		cycle: 4.6,
-		phase: 1.1,
-		travel: 1.9,
-	},
-	{
-		label: 'Claude Code',
-		icon: 'claudecode',
-		x: 88,
-		y: 19,
-		dur: '8.5s',
-		del: '-1.5s',
-		cycle: 6.3,
-		phase: 3.4,
-		travel: 2.6,
-	},
-	{
-		label: 'ChatGPT',
-		icon: 'chatgpt',
-		x: 93,
-		y: 46,
-		dur: '6s',
-		del: '-1s',
-		cycle: 5.1,
-		phase: 2.7,
-		travel: 1.6,
-	},
-	{
-		label: 'Copilot',
-		icon: 'githubcopilot',
-		x: 87,
-		y: 72,
-		dur: '7.5s',
-		del: '-6s',
-		cycle: 7.4,
-		phase: 0.6,
-		travel: 3.2,
-	},
-	{
-		label: 'Claude',
-		icon: 'claude',
-		x: 74,
-		y: 92,
-		dur: '9s',
-		del: '-4s',
-		cycle: 4.2,
-		phase: 1.9,
-		travel: 2.1,
-	},
-	{
-		label: 'Grok',
-		icon: 'grok',
-		x: 26,
-		y: 92,
-		dur: '6.5s',
-		del: '-5s',
-		cycle: 7.9,
-		phase: 5.2,
-		travel: 2.4,
-	},
-	{
-		label: 'Grok Bot',
-		icon: 'grokbot',
-		x: 13,
-		y: 72,
-		dur: '5.5s',
-		del: '-2.5s',
-		cycle: 5.7,
-		phase: 2.3,
-		travel: 1.7,
-	},
-	{
-		label: 'OpenCode',
-		icon: 'opencode',
-		x: 7,
-		y: 46,
-		dur: '9.5s',
-		del: '-3.5s',
-		cycle: 6.8,
-		phase: 4.5,
-		travel: 2.9,
-	},
+ *  ever-changing combinations. Order matches `landingOrbitAgents`. */
+const hostAgentMotion = [
+	{ dur: '8s', del: '-2s', cycle: 4.6, phase: 1.1, travel: 1.9 },
+	{ dur: '8.5s', del: '-1.5s', cycle: 6.3, phase: 3.4, travel: 2.6 },
+	{ dur: '6s', del: '-1s', cycle: 5.1, phase: 2.7, travel: 1.6 },
+	{ dur: '7.5s', del: '-6s', cycle: 7.4, phase: 0.6, travel: 3.2 },
+	{ dur: '9s', del: '-4s', cycle: 4.2, phase: 1.9, travel: 2.1 },
+	{ dur: '6.5s', del: '-5s', cycle: 7.9, phase: 5.2, travel: 2.4 },
+	{ dur: '5.5s', del: '-2.5s', cycle: 5.7, phase: 2.3, travel: 1.7 },
+	{ dur: '9.5s', del: '-3.5s', cycle: 6.8, phase: 4.5, travel: 2.9 },
 ] as const
 
-/** The lantern globe, as a fraction of the Kody image (measured from the
- *  art: glass spans x 50.7–63.3, y 44.0–54.8): where every tether ends,
- *  every light lands, and the glow sits. */
-const lantern = { x: 57, y: 49.4 }
+const hostAgents = landingOrbitAgents.map((agent, index) => ({
+	...agent,
+	...hostAgentMotion[index]!,
+}))
+
+const lantern = landingLantern
 
 /** Where along its trip a light is, and how it looks: it leaves the token
  *  slowly and is pulled in faster, shrinks as it nears the lantern, fades in
@@ -140,18 +68,7 @@ function lightAt(agent: (typeof hostAgents)[number], seconds: number) {
  *  in front of the backdrop. */
 const tokenDepth = '0.32'
 
-/** Cubic bézier from a token to the lantern: leaves the token toward Kody's
- *  midline, then arrives at the lantern from the token's side, so the fan
- *  reads as drawn rather than ruled. */
-function tetherPath(x: number, y: number, hx: number, hy: number) {
-	const dx = hx - x
-	const dy = hy - y
-	const c1x = x + dx * 0.1
-	const c1y = y + dy * 0.6
-	const c2x = hx - dx * 0.45
-	const c2y = hy - dy * 0.05
-	return `M${x} ${y} C${c1x} ${c1y} ${c2x} ${c2y} ${hx} ${hy}`
-}
+const tetherPath = landingOrbitTetherPath
 
 /** Keep every tether pinned to its token and to the lantern while both move
  *  (drift, pointer parallax), and move each light along its tether. Positions

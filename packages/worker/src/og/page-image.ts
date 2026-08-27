@@ -1,7 +1,5 @@
-import {
-	getKodyDiscordDataUri,
-	getKodyHeroDataUri,
-} from '#worker/og/og-image-assets.ts'
+import { createAgentsHero } from '#worker/og/agents-hero.ts'
+import { getKodyDiscordDataUri } from '#worker/og/og-image-assets.ts'
 import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
 import { type PublicOgPage } from '#universal/og-pages.ts'
 import {
@@ -22,23 +20,10 @@ function getPageHeroKind(page: PublicOgPage): PageHeroKind {
 	return page.path === '/discord' ? 'discord' : 'lantern'
 }
 
-function getPageHeroDataUri(kind: PageHeroKind): string {
-	switch (kind) {
-		case 'discord':
-			return getKodyDiscordDataUri()
-		case 'lantern':
-			return getKodyHeroDataUri()
-		default: {
-			const _exhaustive: never = kind
-			throw new Error(`Unhandled page hero: ${_exhaustive}`)
-		}
-	}
-}
-
 function createHeroHalo(input: {
 	kind: PageHeroKind
 	theme?: OgTheme
-}): SatoriElement {
+}): SatoriElement | null {
 	const isLight = input.theme === 'light'
 	switch (input.kind) {
 		case 'discord':
@@ -62,30 +47,46 @@ function createHeroHalo(input: {
 				},
 			}
 		case 'lantern':
-			return {
-				type: 'div',
-				props: {
-					// Warm halo behind the lantern, centred on where it sits
-					// inside the composed art rather than on the art's own
-					// centre — Kody holds it low and right of middle. Much
-					// weaker on the pale ground: light added to light reads as
-					// a dirty smudge rather than a glow.
-					style: {
-						position: 'absolute',
-						right: 52,
-						top: 113,
-						width: 380,
-						height: 380,
-						borderRadius: 190,
-						backgroundImage: isLight
-							? 'radial-gradient(circle at center, rgba(232, 168, 32, 0.16) 0%, rgba(232, 168, 32, 0.06) 38%, rgba(232, 168, 32, 0) 72%)'
-							: 'radial-gradient(circle at center, rgba(245, 198, 90, 0.34) 0%, rgba(245, 198, 90, 0.12) 38%, rgba(245, 198, 90, 0) 72%)',
-					},
-				},
-			}
+			// Warm glow is composed inside `createAgentsHero` on the lantern.
+			return null
 		default: {
 			const _exhaustive: never = input.kind
 			throw new Error(`Unhandled page hero halo: ${_exhaustive}`)
+		}
+	}
+}
+
+function createPageHero(input: {
+	kind: PageHeroKind
+	theme?: OgTheme
+}): SatoriElement {
+	switch (input.kind) {
+		case 'discord':
+			return {
+				type: 'img',
+				props: {
+					src: getKodyDiscordDataUri(),
+					width: 560,
+					height: 560,
+					style: {
+						position: 'absolute',
+						// Bled past the frame padding so the art reads as part of
+						// the ground rather than an inset picture.
+						right: -46,
+						// Centred on the whole 630px canvas: the content box starts
+						// at the 40px top padding, so (630 - 560) / 2 - 40 = -5.
+						top: -5,
+						width: 560,
+						height: 560,
+						objectFit: 'contain',
+					},
+				},
+			}
+		case 'lantern':
+			return createAgentsHero(input.theme ?? 'dark')
+		default: {
+			const _exhaustive: never = input.kind
+			throw new Error(`Unhandled page hero: ${_exhaustive}`)
 		}
 	}
 }
@@ -96,6 +97,7 @@ function createPageOgMarkup(input: {
 }): SatoriElement {
 	const palette = getOgPalette(input.theme)
 	const heroKind = getPageHeroKind(input.page)
+	const halo = createHeroHalo({ kind: heroKind, theme: input.theme })
 	return createOgFrame({
 		theme: input.theme,
 		children: {
@@ -109,7 +111,7 @@ function createPageOgMarkup(input: {
 					position: 'relative',
 				},
 				children: [
-					createHeroHalo({ kind: heroKind, theme: input.theme }),
+					...(halo ? [halo] : []),
 					{
 						type: 'div',
 						props: {
@@ -143,6 +145,8 @@ function createPageOgMarkup(input: {
 									props: {
 										style: {
 											maxWidth: 560,
+											display: 'flex',
+											flexDirection: 'column',
 											// Sized and toned for a feed thumbnail rather than a
 											// full-size view: see `textReading` in palette.ts.
 											fontSize: 30,
@@ -152,32 +156,18 @@ function createPageOgMarkup(input: {
 										children: truncateOgText(
 											input.page.imageSubtitle,
 											SUBTITLE_MAX_LENGTH,
-										),
+										)
+											.split('\n')
+											.map((line) => ({
+												type: 'div',
+												props: { children: line },
+											})),
 									},
 								},
 							],
 						},
 					},
-					{
-						type: 'img',
-						props: {
-							src: getPageHeroDataUri(heroKind),
-							width: 560,
-							height: 560,
-							style: {
-								position: 'absolute',
-								// Bled past the frame padding so the art reads as part of
-								// the ground rather than an inset picture.
-								right: -46,
-								// Centred on the whole 630px canvas: the content box starts
-								// at the 40px top padding, so (630 - 560) / 2 - 40 = -5.
-								top: -5,
-								width: 560,
-								height: 560,
-								objectFit: 'contain',
-							},
-						},
-					},
+					createPageHero({ kind: heroKind, theme: input.theme }),
 				],
 			},
 		},

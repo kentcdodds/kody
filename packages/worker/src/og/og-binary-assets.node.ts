@@ -2,27 +2,36 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
+import {
+	landingOrbitAgents,
+	type LandingOrbitAgentIcon,
+} from '#universal/landing-agent-orbit.ts'
+import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
 
-const publicOgDir = join(
-	dirname(fileURLToPath(import.meta.url)),
-	'../../public/og',
-)
+const publicDir = join(dirname(fileURLToPath(import.meta.url)), '../../public')
+const publicOgDir = join(publicDir, 'og')
+const publicIconsDir = join(publicDir, 'images', 'icons')
+
+const AGENT_ICON_IDS = landingOrbitAgents.map((agent) => agent.icon)
+
+type AgentIconSvgById = Record<LandingOrbitAgentIcon, string>
 
 type OgBinaryAssetCache = {
 	bricolageGrotesqueLatin700: ArrayBuffer
 	wixMadeforTextLatin400: ArrayBuffer
 	kodyPatternDarkDataUri: string
 	kodyPatternLightDataUri: string
-	kodyHeroDataUri: string
+	kodyBaseDataUri: string
 	kodyDiscordDataUri: string
 	kodyLogoDataUri: string
+	agentIconSvgs: AgentIconSvgById
 }
 
 let cache: OgBinaryAssetCache | null = null
 
 export type OgAssetsFetcher = { fetch: (request: Request) => Promise<Response> }
 
-function readAssetFile(name: string): Uint8Array {
+function readOgAssetFile(name: string): Uint8Array {
 	return readFileSync(join(publicOgDir, name))
 }
 
@@ -37,24 +46,47 @@ function bytesToPngDataUri(bytes: Uint8Array): string {
 	return `data:image/png;base64,${bytesToBase64(bytes)}`
 }
 
+function tintAgentSvg(svg: string, color: string): string {
+	return svg.replace(/fill="[^"]*"/gi, `fill="${color}"`)
+}
+
+function svgToDataUri(svg: string): string {
+	return `data:image/svg+xml;base64,${bytesToBase64(
+		new TextEncoder().encode(svg),
+	)}`
+}
+
+function loadAgentIconSvgs(): AgentIconSvgById {
+	const agentIconSvgs = {} as AgentIconSvgById
+	for (const icon of AGENT_ICON_IDS) {
+		agentIconSvgs[icon] = readFileSync(
+			join(publicIconsDir, `${icon}.svg`),
+			'utf8',
+		)
+	}
+	return agentIconSvgs
+}
+
 function ensureCache(): OgBinaryAssetCache {
 	if (cache) return cache
 	cache = {
 		bricolageGrotesqueLatin700: toArrayBuffer(
-			readAssetFile('bricolage-grotesque-latin-700.ttf'),
+			readOgAssetFile('bricolage-grotesque-latin-700.ttf'),
 		),
 		wixMadeforTextLatin400: toArrayBuffer(
-			readAssetFile('wix-madefor-text-latin-400.ttf'),
+			readOgAssetFile('wix-madefor-text-latin-400.ttf'),
 		),
 		kodyPatternDarkDataUri: bytesToPngDataUri(
-			readAssetFile('kody-pattern-dark.png'),
+			readOgAssetFile('kody-pattern-dark.png'),
 		),
 		kodyPatternLightDataUri: bytesToPngDataUri(
-			readAssetFile('kody-pattern-light.png'),
+			readOgAssetFile('kody-pattern-light.png'),
 		),
-		kodyHeroDataUri: bytesToPngDataUri(readAssetFile('kody-hero.png')),
-		kodyDiscordDataUri: bytesToPngDataUri(readAssetFile('kody-discord.png')),
-		kodyLogoDataUri: bytesToPngDataUri(readAssetFile('kody-logo.png')),
+		// Same pixels as `images/hero/kody-base-640.webp` (PNG for Satori).
+		kodyBaseDataUri: bytesToPngDataUri(readOgAssetFile('kody-base.png')),
+		kodyDiscordDataUri: bytesToPngDataUri(readOgAssetFile('kody-discord.png')),
+		kodyLogoDataUri: bytesToPngDataUri(readOgAssetFile('kody-logo.png')),
+		agentIconSvgs: loadAgentIconSvgs(),
 	}
 	return cache
 }
@@ -85,8 +117,16 @@ export function getKodyPatternDataUri(theme: 'light' | 'dark'): string {
 		: loaded.kodyPatternDarkDataUri
 }
 
-export function getKodyHeroDataUri(): string {
-	return ensureCache().kodyHeroDataUri
+export function getKodyBaseDataUri(): string {
+	return ensureCache().kodyBaseDataUri
+}
+
+export function getLandingAgentIconDataUri(
+	icon: LandingOrbitAgentIcon,
+	theme: OgTheme,
+): string {
+	const svg = ensureCache().agentIconSvgs[icon]
+	return svgToDataUri(tintAgentSvg(svg, getOgPalette(theme).text))
 }
 
 export function getKodyDiscordDataUri(): string {
