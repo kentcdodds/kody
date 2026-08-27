@@ -24,6 +24,7 @@ export type UserCreatedEvent = {
 	user: UserLifecycleIdentity
 	source: UserCreatedSource
 	created_at: string
+	invite_code: string | null
 }
 
 export type UserDeletedEvent = {
@@ -44,12 +45,14 @@ export function buildUserCreatedEvent(input: {
 	user: UserLifecycleIdentity
 	source: UserCreatedSource
 	createdAt: string
+	inviteCode?: string | null
 }): UserCreatedEvent {
 	return {
 		event: userCreatedTopic,
 		user: input.user,
 		source: input.source,
 		created_at: input.createdAt,
+		invite_code: input.inviteCode ?? null,
 	}
 }
 

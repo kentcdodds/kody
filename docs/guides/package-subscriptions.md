@@ -1086,6 +1086,7 @@ type UserCreatedEvent = {
 	}
 	source: 'signup' | 'oauth' | 'admin'
 	created_at: string
+	invite_code: string | null
 }
 
 type UserDeletedEvent = {
@@ -1100,7 +1101,9 @@ type UserDeletedEvent = {
 ```
 
 `user.id` is the stable account user id. `source` is the create path that
-committed. Timestamps are ISO-8601 UTC. The event omits passwords, roles, plan,
-secrets, packages, and unrelated account content. Notification copies already
-delivered outside Kody cannot be recalled after account deletion. Idempotency
-keys include the topic, user id, timestamp, and package id.
+committed. `invite_code` is the consumed, normalized invite code when signup
+used one, otherwise `null`. Timestamps are ISO-8601 UTC. The event omits
+passwords, roles, plan, secrets, packages, and unrelated account content.
+Notification copies already delivered outside Kody cannot be recalled after
+account deletion. Idempotency keys include the topic, user id, timestamp, and
+package id.

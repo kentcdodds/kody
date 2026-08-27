@@ -441,6 +441,7 @@ export function createAuthHandler(env: Env) {
 						email: normalizedEmail,
 					},
 					source: 'signup',
+					inviteCode: consumedInviteCode,
 				})
 
 				const cookie = await createAuthCookie(

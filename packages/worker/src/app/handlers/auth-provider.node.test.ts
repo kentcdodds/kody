@@ -334,6 +334,7 @@ test('github sign-in creates a verified account, then signs it back in', async (
 	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env: expect.anything(),
 		source: 'oauth',
+		inviteCode: null,
 		user: {
 			id: await createStableUserIdFromEmail('octo@example.com'),
 			username: 'octo-cat',
@@ -1281,6 +1282,16 @@ test('production OAuth signup is invite-gated while existing connections still l
 			reason: expect.stringContaining('invite_code=SOCIAL-INVITE'),
 		}),
 	)
+	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
+		env: expect.anything(),
+		source: 'oauth',
+		inviteCode: 'SOCIAL-INVITE',
+		user: {
+			id: await createStableUserIdFromEmail('social-invited@example.com'),
+			username: user.username,
+			email: 'social-invited@example.com',
+		},
+	})
 
 	const existingLogin = createMigratedDb()
 	const existingEnv = createAppEnv(existingLogin.db, {
