@@ -53,6 +53,11 @@ export function renderInteractiveGuideWalkthrough(input: {
 					mix={css(actCss)}
 					aria-labelledby={`${act.id}-title`}
 				>
+					{act.later ? (
+						<p mix={css(laterCss)} aria-hidden="true">
+							{act.later}
+						</p>
+					) : null}
 					{act.kicker ? (
 						<p
 							mix={css(
@@ -418,6 +423,25 @@ export const interactiveGuideKickerCss = {
 }
 
 const kickerCss = interactiveGuideKickerCss
+
+const laterCss = {
+	margin: '0 0 0.85rem',
+	textAlign: 'center' as const,
+	fontSize: '0.72rem',
+	fontWeight: 700,
+	letterSpacing: '0.14em',
+	textTransform: 'uppercase' as const,
+	color: colors.textMuted,
+	'&::before, &::after': {
+		content: '""',
+		display: 'inline-block',
+		width: '2.4rem',
+		height: '1px',
+		margin: '0 0.7rem',
+		verticalAlign: 'middle',
+		backgroundColor: colors.border,
+	},
+}
 
 const exampleKickerCss = {
 	margin: 0,

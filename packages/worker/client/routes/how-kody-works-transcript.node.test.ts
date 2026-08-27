@@ -22,7 +22,10 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 			(line) =>
 				line.role === 'email' &&
 				line.subject.includes('kody-bot shipped') &&
-				line.text.includes('kody-bot/lantern'),
+				line.text.includes('kody-bot/lantern v1.4.1') &&
+				line.text.includes('kody-bot/quiet-days v0.1.0') &&
+				!line.text.includes('v1.4.0') &&
+				!line.text.includes('New repo'),
 		),
 	).toBe(true)
 

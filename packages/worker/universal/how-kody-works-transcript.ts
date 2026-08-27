@@ -965,14 +965,14 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 	},
 	{
 		id: 'mail',
-		kicker: 'The next day.',
+		kicker: '',
 		title: 'Something shipped.',
 		later: 'The next day',
 		lines: [
 			{
 				role: 'email',
 				subject: 'kody-bot shipped 2 things',
-				text: 'kody-bot/lantern v1.4.0\nNew repo kody-bot/quiet-days',
+				text: 'kody-bot/lantern v1.4.1\nkody-bot/quiet-days v0.1.0',
 			},
 		],
 	},
