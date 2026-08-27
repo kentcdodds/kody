@@ -15,4 +15,13 @@ test('truncateOgText collapses whitespace, breaks on word boundaries, and hard-c
 	expect(truncateOgText('supercalifragilisticexpialidocious tail', 12)).toBe(
 		'supercalifr…',
 	)
+
+	expect(
+		truncateOgText(
+			"For all the agents you use today,\nand the ones you'll use tomorrow",
+			160,
+		),
+	).toBe(
+		"For all the agents you use today,\nand the ones you'll use tomorrow",
+	)
 })

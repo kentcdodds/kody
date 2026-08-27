@@ -143,6 +143,8 @@ function createPageOgMarkup(input: {
 									props: {
 										style: {
 											maxWidth: 560,
+											display: 'flex',
+											flexDirection: 'column',
 											// Sized and toned for a feed thumbnail rather than a
 											// full-size view: see `textReading` in palette.ts.
 											fontSize: 30,
@@ -152,7 +154,12 @@ function createPageOgMarkup(input: {
 										children: truncateOgText(
 											input.page.imageSubtitle,
 											SUBTITLE_MAX_LENGTH,
-										),
+										)
+											.split('\n')
+											.map((line) => ({
+												type: 'div',
+												props: { children: line },
+											})),
 									},
 								},
 							],

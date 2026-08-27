@@ -81,8 +81,8 @@ const hostAgents = [
 		travel: 2.1,
 	},
 	{
-		label: 'Grok',
-		icon: 'grok',
+		label: 'Devin',
+		icon: 'devin',
 		x: 26,
 		y: 92,
 		dur: '6.5s',

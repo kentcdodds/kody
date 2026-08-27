@@ -67,13 +67,45 @@ export async function ensureRenderPipelineReady(input?: {
  * excerpt reads as a trailing-off sentence rather than a severed word
  * ("no m…"). Falls back to a hard cut when a single word exceeds the budget,
  * which is the only case where mid-word is the lesser evil.
+ *
+ * Intentional `\n` line breaks are preserved (collapsed per line); callers that
+ * need hard breaks in Satori should split on `\n` and render one node per line.
  */
 export function truncateOgText(text: string, maxLength: number): string {
-	const normalized = text.trim().replace(/\s+/g, ' ')
-	if (normalized.length <= maxLength) {
-		return normalized
+	const lines = text
+		.trim()
+		.split('\n')
+		.map((line) => line.replace(/\s+/g, ' ').trim())
+		.filter((line) => line.length > 0)
+	if (lines.length === 0) {
+		return ''
 	}
-	const clipped = normalized.slice(0, maxLength - 1)
+	if (lines.length === 1) {
+		return truncateOgLine(lines[0]!, maxLength)
+	}
+	// Keep the author-supplied breaks; budget is spent across the joined copy
+	// so a long second line cannot silently balloon past the card limit.
+	const joined = lines.join('\n')
+	if (joined.length <= maxLength) {
+		return joined
+	}
+	const truncated: string[] = []
+	let remaining = maxLength
+	for (const [index, line] of lines.entries()) {
+		if (remaining <= 1) break
+		const piece = truncateOgLine(line, remaining)
+		truncated.push(piece)
+		remaining -= piece.length
+		if (index < lines.length - 1) remaining -= 1 // account for the `\n`
+	}
+	return truncated.join('\n')
+}
+
+function truncateOgLine(text: string, maxLength: number): string {
+	if (text.length <= maxLength) {
+		return text
+	}
+	const clipped = text.slice(0, maxLength - 1)
 	const lastSpace = clipped.lastIndexOf(' ')
 	// Only honour the boundary if it keeps most of the budget; otherwise a long
 	// first word would collapse the line to almost nothing.
