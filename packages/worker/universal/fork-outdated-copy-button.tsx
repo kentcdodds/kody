@@ -14,8 +14,6 @@ import {
 export const COPY_PROMPT_ATTRIBUTE = 'data-copy-prompt'
 export const COPY_PROMPT_SELECTOR = '[data-copy-prompt]'
 export const FORK_OUTDATED_COPY_TOOLTIP = 'Click to copy an update prompt'
-export const INSTALLED_COPY_TOOLTIP =
-	'Click to copy a prompt to look up this package and adapt it'
 export const FORKED_COPY_TOOLTIP =
 	'Click to copy a prompt to finish adapting this fork'
 export const COPY_PROMPT_COPIED_TOOLTIP = 'Copied'

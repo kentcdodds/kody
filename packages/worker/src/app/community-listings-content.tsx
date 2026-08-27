@@ -19,7 +19,6 @@ import { CommunityListingIcon } from '#universal/community-listing-icon.tsx'
 import {
 	FORKED_COPY_TOOLTIP,
 	FORK_OUTDATED_COPY_TOOLTIP,
-	INSTALLED_COPY_TOOLTIP,
 	renderCopyPromptPill,
 } from '#universal/fork-outdated-copy-button.tsx'
 import { routes } from '#universal/routes.ts'
@@ -296,7 +295,9 @@ export function renderCommunityViewerInstallBadge(input: {
 	variant: 'card' | 'detail'
 	loggedIn?: boolean
 	returnTo?: string
+	viewerIsOwner?: boolean
 }) {
+	if (input.viewerIsOwner) return null
 	const install = input.listing.viewerInstall
 	if (install?.listingAhead && install.listingAheadPrompt) {
 		return renderCopyPromptPill({
@@ -311,15 +312,22 @@ export function renderCommunityViewerInstallBadge(input: {
 		})
 	}
 	if (install) {
-		const installed = install.status === 'installed'
+		const testId =
+			input.variant === 'card'
+				? `community-listing-viewer-install-${input.listing.id}`
+				: 'community-detail-viewer-install-badge'
+		if (install.status === 'installed') {
+			return (
+				<span data-testid={testId} mix={css(communityViewerInstallStatusCss)}>
+					Installed
+				</span>
+			)
+		}
 		return renderCopyPromptPill({
-			label: installed ? 'Installed' : 'Forked',
+			label: 'Forked',
 			prompt: install.agentPrompt,
-			testId:
-				input.variant === 'card'
-					? `community-listing-viewer-install-${input.listing.id}`
-					: 'community-detail-viewer-install-badge',
-			tooltip: installed ? INSTALLED_COPY_TOOLTIP : FORKED_COPY_TOOLTIP,
+			testId,
+			tooltip: FORKED_COPY_TOOLTIP,
 			tone: 'badge',
 		})
 	}
@@ -607,6 +615,12 @@ const listingLinkCss = {
 		position: 'absolute' as const,
 		inset: 0,
 	},
+}
+
+const communityViewerInstallStatusCss = {
+	...communityStatusPillBoxCss,
+	color: colors.primaryText,
+	backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
 }
 
 /* The prototype's `.badge-trusted` pill; the detail head reuses it without

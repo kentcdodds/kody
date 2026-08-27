@@ -150,7 +150,8 @@ test('community listings render sort controls, categories, empty states, and for
 	expect(installedHtml).toContain(
 		'data-testid="community-listing-viewer-install-listing-1"',
 	)
-	expect(installedHtml).toContain('data-copy-prompt')
+	expect(installedHtml).toContain('Installed')
+	expect(installedHtml).not.toContain('data-copy-prompt')
 	expect(installedHtml).not.toContain(
 		'data-testid="community-listing-ahead-listing-1"',
 	)

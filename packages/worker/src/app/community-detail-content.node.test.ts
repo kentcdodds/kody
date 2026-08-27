@@ -68,9 +68,35 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(installedHtml).toContain(
 		'data-testid="community-detail-viewer-install-badge"',
 	)
-	expect(installedHtml).toContain('data-copy-prompt')
-	expect(installedHtml).toContain(agentPrompt)
+	expect(installedHtml).toContain('Installed')
+	expect(installedHtml).not.toContain('data-copy-prompt')
+	expect(installedHtml).not.toContain(agentPrompt)
 	expect(installedHtml).not.toContain('data-testid="community-detail-install"')
+
+	const ownInstalledHtml = await renderCommunityDetailContentHtml({
+		listing: {
+			...sampleListing,
+			viewerInstall: {
+				status: 'installed',
+				targetName: '@kentcdodds/github-triage',
+				agentPrompt,
+				packageId: 'pkg-1',
+				listingAhead: false,
+				listingAheadPrompt: null,
+			},
+		},
+		...detailBase,
+		viewerIsOwner: true,
+		loggedIn: true,
+		starredByViewer: false,
+	})
+	expect(ownInstalledHtml).not.toContain(
+		'data-testid="community-detail-viewer-install-badge"',
+	)
+	expect(ownInstalledHtml).not.toContain(
+		'data-testid="community-detail-install"',
+	)
+	expect(ownInstalledHtml).not.toContain('data-copy-prompt')
 
 	const aheadPrompt =
 		'Compare the current listing snapshot, keep local customizations, then call community_fork_absorb.'
