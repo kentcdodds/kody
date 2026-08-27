@@ -16,6 +16,18 @@ export type ReferencedBasicAuthSecretPlaceholder = {
 	scope: SecretScope | null
 }
 
+/**
+ * WHATWG URL serialization percent-encodes `{` and `}` in pathnames
+ * (`%7B` / `%7D`). `new Request('https://host/bot{{secret:name}}/me')`
+ * therefore stores `bot%7B%7Bsecret:name%7D%7D` on `request.url`, and
+ * the literal `{{secret:...}}` regex never matches. Restore those
+ * delimiters so path placeholders parse and replace the same as
+ * headers, bodies, and query strings (where `{` / `}` stay unencoded).
+ */
+export function decodeSecretPlaceholderDelimiters(value: string) {
+	return value.replaceAll(/%7B/gi, '{').replaceAll(/%7D/gi, '}')
+}
+
 export function parseSecretPlaceholders(value: string) {
 	const secrets: Array<ReferencedSecret> = []
 	for (const match of value.matchAll(secretPlaceholderRegex)) {
