@@ -680,7 +680,8 @@ How to get/set each value:
   - Generate a second `openssl rand -hex 32` value. Store it as the repository
     secret `NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN` only. Do not put this value
     on Cloud Agent environments. The same deploy workflow syncs it as
-    `CACHE_READ_TOKEN`.
+    `CACHE_READ_TOKEN`. After adding or rotating the GitHub secret, run that
+    workflow on `main` so the worker secret matches.
 - `SENTRY_ORG` / `SENTRY_PROJECT` (optional)
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from

@@ -33,12 +33,18 @@ export async function authorizeCacheRequest(
 			response: plainText(503, 'Nx cache is not configured'),
 		}
 	}
+	const read = tokens.read?.trim() ?? ''
+	if (read && (await timingSafeEqualString(write, read))) {
+		return {
+			ok: false,
+			response: plainText(503, 'Nx cache tokens are misconfigured'),
+		}
+	}
 	const bearer = readBearerToken(request)
 	if (bearer === null) {
 		return { ok: false, response: plainText(401, 'Unauthorized') }
 	}
 	const writeMatch = await timingSafeEqualString(bearer, write)
-	const read = tokens.read?.trim() ?? ''
 	const readMatch = read ? await timingSafeEqualString(bearer, read) : false
 	if (writeMatch) return { ok: true, canWrite: true }
 	if (readMatch) return { ok: true, canWrite: false }

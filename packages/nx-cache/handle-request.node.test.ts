@@ -87,6 +87,14 @@ test('health is public; cache routes require a configured bearer token', async (
 		{ CACHE_ACCESS_TOKEN: undefined, BUILD_COMMIT: 'commit-sha' },
 	)
 	expect(unconfigured.status).toBe(503)
+
+	const identicalTokens = await handle(
+		authorized('PUT', `/v1/cache/${HASH}`),
+		createMemoryCacheStore(),
+		env({ token: ACCESS_TOKEN, readToken: ACCESS_TOKEN }),
+	)
+	expect(identicalTokens.status).toBe(503)
+	expect(await identicalTokens.text()).toBe('Nx cache tokens are misconfigured')
 })
 
 test('PUT then GET round-trips an artifact and rejects invalid writes', async () => {

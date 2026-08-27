@@ -21,7 +21,7 @@ GitHub Actions (`NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN`).
 
 ```bash
 export NX_SELF_HOSTED_REMOTE_CACHE_SERVER=https://nx-cache.kody.codes
-export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN="$NX_CACHE_WRITE_OR_READ_TOKEN"
+export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN="<write-or-read-token>"
 ```
 
 Leave them unset to run with the local `.nx` cache only. Validate and
