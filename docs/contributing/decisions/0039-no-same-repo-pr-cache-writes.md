@@ -1,6 +1,6 @@
 # 0039: Same-repo pull_request jobs do not write the Nx cache
 
-- **Status:** accepted
+- **Status:** superseded by [0040](./0040-same-repo-writers-may-put-nx-cache.md)
 - **Date:** 2026-08-27
 
 ## Context

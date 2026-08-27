@@ -18,16 +18,15 @@ permissions:
   contents: read
 
 # Pin CI=1 (not GitHub's CI=true) so Nx cache hashes match local
-# `validate` / `test:push`. pull_request jobs get the read token so a
-# same-repo branch cannot PUT artifacts that main later GETs (the
-# workflow file and checkout are the PR's). push to main and
-# workflow_dispatch on main get the write token. Agents also write.
+# `validate` / `test:push`. Anyone who can push already has the write
+# token locally, so same-repo validate (push, workflow_dispatch, and
+# non-fork pull_request) presents it too. Fork PRs get the read token.
 # Nx treats an unreachable self-hosted cache as a fatal error, so
 # setup-validate probes before setting the server URL.
 env:
   CI: '1'
   NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN:
-    ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')) && secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN || secrets.NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN }}
+    ${{ github.event.pull_request.head.repo.fork == true && secrets.NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN || secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN }}
 
 concurrency:
   group: >-

@@ -7,17 +7,16 @@ The worker implements the
 [Nx self-hosted cache OpenAPI spec](https://nx.dev/docs/kb/self-hosted-caching):
 `GET`/`PUT /v1/cache/{hash}` with bearer auth, `409` on overwrite, `403` when a
 read-only token PUTs, and artifacts stored in R2. `neverConnectToCloud` stays on
-so Nx does not prompt for Nx Cloud. `pull_request` validate uses the read token.
-Validate on `push` to `main` and Cloud Agent environments use the write token so
-post-merge CI and agents populate the cache and PR branches cannot.
+so Nx does not prompt for Nx Cloud. Same-repo validate and Cloud Agent
+environments use the write token. Fork `pull_request` jobs use the read token.
 
 Public URL: `https://nx-cache.kody.codes`.
 
 ## Clients
 
 Nx always reads `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`. The value is the
-write token on trusted writers (Cloud Agent environments, validate `push` to
-`main`) and the read token on `pull_request` validate
+write token on trusted writers (Cloud Agent environments and same-repo validate)
+and the read token on fork `pull_request` validate
 (`NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN`).
 
 ```bash

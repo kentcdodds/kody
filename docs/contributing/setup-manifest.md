@@ -571,15 +571,15 @@ Configure these GitHub Actions secrets and variables for workflows:
   with `openssl rand -hex 32`. Production deploy and the dedicated
   `🧊 Nx cache worker` workflow sync it to the worker as `CACHE_ACCESS_TOKEN`.
   Use the same value in Cursor Cloud Agent environments so agent `validate` /
-  `test:push` can populate the cache. Validate on `push` to `main` (and
-  `workflow_dispatch` on `main`) also uses this write token. Leave unset to run
-  without remote writes.)
+  `test:push` can populate the cache. Same-repo validate (`push`,
+  `workflow_dispatch`, and non-fork `pull_request`) uses this write token too.
+  Leave unset to run without remote writes.)
 - `NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN` (optional GitHub **secret**; read
   bearer for the same worker. Generate a second `openssl rand -hex 32` value,
-  not the write token. `pull_request` validate jobs set Nx's
-  `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` from this secret so PR CI can GET
+  not the write token. Fork `pull_request` validate jobs set Nx's
+  `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` from this secret so they can GET
   and cannot PUT. The worker syncs it as `CACHE_READ_TOKEN`. PUT with this token
-  returns 403. Leave unset to run PR CI with local `.nx` + `actions/cache`
+  returns 403. Leave unset to run fork CI with local `.nx` + `actions/cache`
   only.)
 - **Repository variables** `SENTRY_ORG` and `SENTRY_PROJECT` (optional; Sentry
   organization and project **slugs** for source map upload — same values as in
@@ -678,15 +678,15 @@ How to get/set each value:
     Cloud Agent environments (write token). Production deploy and the dedicated
     `🧊 Nx cache worker` workflow sync it to the `kody-nx-cache` Worker as
     `CACHE_ACCESS_TOKEN`. After rotating the GitHub secret, run that workflow on
-    `main` so the worker secret matches. Validate on `push` to `main` also
-    presents this write token to Nx.
+    `main` so the worker secret matches. Same-repo validate presents this write
+    token to Nx.
 - `NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN` (optional)
   - Generate a second `openssl rand -hex 32` value. Store it as the repository
     secret `NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN` only. Do not put this value
     on Cloud Agent environments. The same deploy workflow syncs it as
     `CACHE_READ_TOKEN`. After adding or rotating the GitHub secret, run that
-    workflow on `main` so the worker secret matches. `pull_request` validate
-    uses this token so a same-repo branch cannot PUT.
+    workflow on `main` so the worker secret matches. Fork `pull_request`
+    validate uses this token so a fork cannot PUT.
 - `SENTRY_ORG` / `SENTRY_PROJECT` (optional)
   - In GitHub: **Settings → Secrets and variables → Actions → Variables**, add
     `SENTRY_ORG` and `SENTRY_PROJECT` with your Sentry slugs (for example from
