@@ -507,6 +507,57 @@ export function filterMetaMaskExtensionSentryEvent<
 }
 
 /**
+ * MetaMask (and forks) inject `window.ethereum` and sometimes reject on the
+ * host page with a plain EIP-1193-shaped object `{ code, message }` when the
+ * extension vault has no usable account. Sentry then synthesizes
+ * "Object captured as exception with keys: code, message" because the
+ * rejection is not an `Error`. Signature from production issue 7696001937 /
+ * KODY-CLOUDFLARE-64 on `/` (`code: 4001`, message
+ * `"wallet must has at least one account"` — known MetaMask grammar).
+ *
+ * Pre-SDK buffering attributes the flush stack to `captureBrowserException`,
+ * so there are no chrome-extension frames to require. Match is intentionally
+ * narrow: this exact MetaMask "wallet must has at least one account" wording
+ * (optional `Error:` preface; tolerate corrected "have"). Never blanket-drop
+ * EIP-1193 `4001` or other `{ code, message }` objects.
+ */
+const metaMaskWalletNoAccountMessage =
+	/^(?:Error:\s*)?wallet must ha(?:s|ve) at least one account\.?$/i
+
+export function isMetaMaskWalletNoAccountMessage(message: string) {
+	return metaMaskWalletNoAccountMessage.test(message.trim())
+}
+
+export function isMetaMaskWalletNoAccountError(error: unknown) {
+	if (typeof error === 'string') {
+		return isMetaMaskWalletNoAccountMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	if (!('message' in error) || typeof error.message !== 'string') return false
+	return isMetaMaskWalletNoAccountMessage(error.message)
+}
+
+export function isMetaMaskWalletNoAccountSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isMetaMaskWalletNoAccountError(originalException)) return true
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' && isMetaMaskWalletNoAccountMessage(message),
+	)
+}
+
+export function filterMetaMaskWalletNoAccountSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isMetaMaskWalletNoAccountSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
+/**
  * Chrome extension page hooks reject with "Client has been destroyed" when
  * their background/service-worker client is gone (reload, update, or tab
  * teardown). The rejected promise surfaces on the host page via
@@ -1032,6 +1083,11 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 		return null
 	}
 	if (filterMetaMaskExtensionSentryEvent(event, originalException) === null) {
+		return null
+	}
+	if (
+		filterMetaMaskWalletNoAccountSentryEvent(event, originalException) === null
+	) {
 		return null
 	}
 	if (

@@ -301,6 +301,51 @@ test('browser Sentry filters drop AbortError and Firefox Xray noise and keep rea
 		}),
 	).not.toBeNull()
 
+	// MetaMask plain-object rejection (KODY-CLOUDFLARE-64): buffered
+	// unhandledrejection with { code: 4001, message: "wallet must has…" }.
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [
+						{
+							type: 'Error',
+							value: 'Object captured as exception with keys: code, message',
+						},
+					],
+				},
+			},
+			{ code: 4001, message: 'wallet must has at least one account' },
+		),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'Error',
+						value: 'wallet must has at least one account',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [
+						{
+							type: 'Error',
+							value: 'Object captured as exception with keys: code, message',
+						},
+					],
+				},
+			},
+			{ code: 4001, message: 'User rejected the request.' },
+		),
+	).not.toBeNull()
+
 	expect(
 		filterBrowserSentryEvent({
 			exception: {

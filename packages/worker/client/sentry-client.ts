@@ -2,6 +2,7 @@ import {
 	isBrowserAbortError,
 	isBrowserInjectedGlobalNoiseError,
 	isFirefoxDomPermissionDeniedError,
+	isMetaMaskWalletNoAccountError,
 	isResolveFrameFetchNetworkError,
 	isSyntaxHighlightCoreDynamicImportFailureError,
 } from '#client/sentry-browser-filters.ts'
@@ -52,6 +53,7 @@ function shouldIgnoreBufferedError(error: unknown) {
 		isBrowserAbortError(error) ||
 		isFirefoxDomPermissionDeniedError(error) ||
 		isBrowserInjectedGlobalNoiseError(error) ||
+		isMetaMaskWalletNoAccountError(error) ||
 		isSyntaxHighlightCoreDynamicImportFailureError(error) ||
 		isResolveFrameFetchNetworkError(error)
 	)
