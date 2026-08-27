@@ -39,10 +39,12 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   worker limits, and Nx cache hashes match the contended parallel layout used in
   GitHub Actions. CI runs the same checks as parallel jobs (🧹 Static, 🧪 Node,
   ☁️ Workers, 🔌 MCP, 🎭 E2E, aggregated by ✅ Validate). If `npm run validate`
-  passes locally, CI will pass. When `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and
-  `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` are set, Nx uploads those task
-  artifacts to `https://nx-cache.kody.codes` so CI can reuse them (see
-  [decision 0019](../decisions/0019-self-hosted-nx-remote-cache.md) and
+  passes locally, CI will pass. Trusted writers (Cloud Agent environments) set
+  `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write token so Nx uploads task
+  artifacts to `https://nx-cache.kody.codes`. GitHub Actions validate uses the
+  read token and can only GET (see
+  [decision 0019](../decisions/0019-self-hosted-nx-remote-cache.md),
+  [decision 0038](../decisions/0038-no-nx-cloud-read-write-cache-tokens.md), and
   [`packages/nx-cache/readme.md`](../../../packages/nx-cache/readme.md)).
 - `npm run deploy-guardrails:check` protects reviewed Durable Object migration
   history and bindings in both Wrangler configs, requires exact allowlisting for

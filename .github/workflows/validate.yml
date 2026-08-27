@@ -18,13 +18,15 @@ permissions:
   contents: read
 
 # Pin CI=1 (not GitHub's CI=true) so Nx cache hashes match local
-# `validate` / `test:push`. Remote cache is used only when the access
-# token secret is present and setup-validate can reach /health; Nx
-# treats an unreachable self-hosted cache as a fatal error.
+# `validate` / `test:push`. Actions gets the read-only cache token so
+# untrusted PR branches cannot PUT artifacts that main later consumes.
+# Agents keep the write token. Nx treats an unreachable self-hosted
+# cache as a fatal error, so setup-validate probes before setting the
+# server URL.
 env:
   CI: '1'
   NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN:
-    ${{ secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN }}
+    ${{ secrets.NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN }}
 
 concurrency:
   group: >-

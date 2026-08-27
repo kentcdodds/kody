@@ -5,19 +5,23 @@ share task artifacts so CI does not rerun work the agent already completed.
 
 The worker implements the
 [Nx self-hosted cache OpenAPI spec](https://nx.dev/docs/kb/self-hosted-caching):
-`GET`/`PUT /v1/cache/{hash}` with bearer auth, `409` on overwrite, and artifacts
-stored in R2. `neverConnectToCloud` stays on so Nx does not prompt for Nx Cloud.
+`GET`/`PUT /v1/cache/{hash}` with bearer auth, `409` on overwrite, `403` when a
+read-only token PUTs, and artifacts stored in R2. `neverConnectToCloud` stays on
+so Nx does not prompt for Nx Cloud. GitHub Actions validate uses the read token;
+Cursor Cloud Agent environments keep the write token so agents populate the
+cache and untrusted PR branches cannot.
 
 Public URL: `https://nx-cache.kody.codes`.
 
 ## Clients
 
-Set both variables in GitHub Actions (validate jobs) and in Cursor Cloud Agent
-environments:
+Nx always reads `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`. The value is the
+write token on trusted writers (Cloud Agent environments) and the read token in
+GitHub Actions (`NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN`).
 
 ```bash
 export NX_SELF_HOSTED_REMOTE_CACHE_SERVER=https://nx-cache.kody.codes
-export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN="$NX_CACHE_TOKEN"
+export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN="$NX_CACHE_WRITE_OR_READ_TOKEN"
 ```
 
 Leave them unset to run with the local `.nx` cache only. Validate and
@@ -46,12 +50,12 @@ the window after which a poisoned hash can be replaced.
 
 Production deploy (`.github/workflows/deploy.yml`) creates the `kody-nx-cache`
 R2 bucket, applies the 14-day lifecycle, uploads the worker, and syncs
-`CACHE_ACCESS_TOKEN` from the `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` GitHub
-Actions secret when cache-related paths change or when that workflow is
-dispatched on `main`. The job no-ops when that secret is missing so a first
-merge does not block production.
+`CACHE_ACCESS_TOKEN` / `CACHE_READ_TOKEN` from the matching GitHub Actions
+secrets when cache-related paths change or when that workflow is dispatched on
+`main`. The job no-ops when the write secret is missing so a first merge does
+not block production.
 
-To redeploy only the cache worker (for example after rotating
-`NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`), run **Actions → 🧊 Nx cache worker
-→ Run workflow** on `main` (`.github/workflows/nx-cache-deploy.yml`). That
-reuses the same job and does not cancel an in-progress production deploy.
+To redeploy only the cache worker (for example after rotating either token), run
+**Actions → 🧊 Nx cache worker → Run workflow** on `main`
+(`.github/workflows/nx-cache-deploy.yml`). That reuses the same job and does not
+cancel an in-progress production deploy.

@@ -5,11 +5,15 @@ import { createMemoryCacheStore } from './memory-store.ts'
 import { type NxCacheEnv } from './nx-cache-types.ts'
 
 const ACCESS_TOKEN = 'test-nx-cache-token'
+const READ_TOKEN = 'test-nx-cache-read-token'
 const HASH = '0123456789abcdef0123456789abcdef'
 
-function env(overrides: { token?: string; commit?: string } = {}) {
+function env(
+	overrides: { token?: string; readToken?: string; commit?: string } = {},
+) {
 	return {
 		CACHE_ACCESS_TOKEN: overrides.token ?? ACCESS_TOKEN,
+		CACHE_READ_TOKEN: overrides.readToken,
 		BUILD_COMMIT: overrides.commit ?? 'commit-sha',
 	}
 }
@@ -17,16 +21,24 @@ function env(overrides: { token?: string; commit?: string } = {}) {
 async function handle(
 	request: Request,
 	store = createMemoryCacheStore(),
-	environment: Pick<NxCacheEnv, 'CACHE_ACCESS_TOKEN' | 'BUILD_COMMIT'> = env(),
+	environment: Pick<
+		NxCacheEnv,
+		'CACHE_ACCESS_TOKEN' | 'CACHE_READ_TOKEN' | 'BUILD_COMMIT'
+	> = env(),
 ) {
 	return handleNxCacheRequest(request, environment, store)
 }
 
-function authorized(method: string, path: string, body?: ArrayBuffer) {
+function authorized(
+	method: string,
+	path: string,
+	body?: ArrayBuffer,
+	token = ACCESS_TOKEN,
+) {
 	return new Request(`https://nx-cache.kody.codes${path}`, {
 		method,
 		headers: {
-			authorization: `Bearer ${ACCESS_TOKEN}`,
+			authorization: `Bearer ${token}`,
 			...(body
 				? {
 						'content-type': 'application/octet-stream',
@@ -106,6 +118,23 @@ test('PUT then GET round-trips an artifact and rejects invalid writes', async ()
 
 	const badHash = await handle(authorized('GET', '/v1/cache/../secrets'), store)
 	expect(badHash.status).toBe(404)
+
+	const readGet = await handle(
+		authorized('GET', `/v1/cache/${HASH}`, undefined, READ_TOKEN),
+		store,
+		env({ readToken: READ_TOKEN }),
+	)
+	expect(readGet.status).toBe(200)
+	expect(await readGet.text()).toBe('nx-cache-artifact')
+
+	const readPut = await handle(
+		authorized('PUT', `/v1/cache/${'b'.repeat(32)}`, artifact, READ_TOKEN),
+		store,
+		env({ readToken: READ_TOKEN }),
+	)
+	expect(readPut.status).toBe(403)
+	expect(readPut.headers.get('content-type')).toMatch(/^text\/plain/)
+	expect(await store.get('b'.repeat(32))).toBeNull()
 
 	const missingLength = await handle(
 		new Request(`https://nx-cache.kody.codes/v1/cache/${HASH}`, {

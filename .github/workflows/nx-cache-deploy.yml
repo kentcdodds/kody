@@ -97,21 +97,24 @@ jobs:
             deploy_delay_seconds=$((deploy_delay_seconds * 2))
           done
 
-      - name: 🔐 Sync Nx cache access token
+      - name: 🔐 Sync Nx cache access tokens
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CACHE_ACCESS_TOKEN:
             ${{ secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN }}
+          CACHE_READ_TOKEN:
+            ${{ secrets.NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "${CACHE_ACCESS_TOKEN:-}" ]; then
-            echo "Skipping Nx cache secret sync: token is not set."
+            echo "Skipping Nx cache secret sync: write token is not set."
             exit 0
           fi
           node tools/ci/sync-worker-secrets.ts --env "" --config \
             packages/nx-cache/wrangler.jsonc --name kody-nx-cache \
-            --set-from-env CACHE_ACCESS_TOKEN
+            --set-from-env CACHE_ACCESS_TOKEN \
+            --set-from-env-optional CACHE_READ_TOKEN
 
       - name: 🩺 Healthcheck (Nx cache worker)
         shell: bash
