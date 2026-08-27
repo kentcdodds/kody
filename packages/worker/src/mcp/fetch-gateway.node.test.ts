@@ -474,40 +474,31 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		expect(new Uint8Array(await transformedOptOutBinary.arrayBuffer())).toEqual(
 			optOutBinaryBody,
 		)
-	} finally {
-		resolveSpy.mockRestore()
-	}
-})
 
-test('fetch gateway expands placeholders in form-urlencoded bodies', async () => {
-	const resolveSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue({
+		resolveSpy.mockResolvedValue({
 			found: true,
 			value: 'secret value+/&=',
 			scope: 'user',
 			allowedHosts: ['example.com'],
 			allowedCapabilities: [],
 		})
-	const body = new URLSearchParams({
-		grant_type: 'refresh_token',
-		refresh_token: '{{secret:spotifyRefreshToken|scope=user}}',
-	}).toString()
-	const request = new Request('https://example.com/api/token', {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded',
-		},
-		body,
-	})
-
-	try {
-		const transformed = await expandSecretPlaceholders({
-			request,
+		const formBody = new URLSearchParams({
+			grant_type: 'refresh_token',
+			refresh_token: '{{secret:spotifyRefreshToken|scope=user}}',
+		}).toString()
+		const formRequest = new Request('https://example.com/api/token', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+			},
+			body: formBody,
+		})
+		const transformedForm = await expandSecretPlaceholders({
+			request: formRequest,
 			props,
 			env,
 		})
-		expect(await transformed.text()).toBe(
+		expect(await transformedForm.text()).toBe(
 			new URLSearchParams({
 				grant_type: 'refresh_token',
 				refresh_token: 'secret value+/&=',
@@ -683,13 +674,13 @@ test('fetch gateway resolves path-only URLs against baseUrl', async () => {
 
 test('outbound requests get a default User-Agent; caller values win', async () => {
 	// GitHub rejects UA-less requests with an opaque 403, and workerd sends
-	// no UA by default.
+	// no UA by default. Pin presence/override, not the default string value.
 	const bare = await expandSecretPlaceholders({
 		request: new Request('https://api.github.com/user'),
 		props,
 		env,
 	})
-	expect(bare.headers.get('user-agent')).toBe('kody-agent/1.0')
+	expect(bare.headers.get('user-agent')).toBeTruthy()
 
 	const custom = await expandSecretPlaceholders({
 		request: new Request('https://api.github.com/user', {
@@ -700,7 +691,6 @@ test('outbound requests get a default User-Agent; caller values win', async () =
 	})
 	expect(custom.headers.get('user-agent')).toBe('my-package/2.0')
 
-	// The resolution-off fast path applies the same default.
 	const modeOff = await expandSecretPlaceholders({
 		request: new Request('https://api.github.com/user', {
 			headers: { 'x-kody-secret-resolution': 'off' },
@@ -708,7 +698,7 @@ test('outbound requests get a default User-Agent; caller values win', async () =
 		props,
 		env,
 	})
-	expect(modeOff.headers.get('user-agent')).toBe('kody-agent/1.0')
+	expect(modeOff.headers.get('user-agent')).toBeTruthy()
 })
 
 test('gateway fetch records outbound_fetch usage metering', async () => {

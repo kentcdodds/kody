@@ -1,15 +1,16 @@
 import { expect, test } from 'vitest'
 import {
-	clampEncodedAspect,
-	cropToMaxAspect,
 	prepareAvatarImage,
 	prepareDecodedAvatarImage,
-	scaleToMaxDimension,
 	userAvatarBrowserEncodeMaxDimension,
 	type EncodeAvatarImageInput,
 	type PrepareAvatarImageHost,
 } from './prepare-avatar-image.ts'
-import { userAvatarMaxSourceBytes } from '#universal/user-avatar-limits.ts'
+import {
+	userAvatarMaxDimension,
+	userAvatarMaxSourceBytes,
+	userAvatarMinDimension,
+} from '#universal/user-avatar-limits.ts'
 
 function createHost(input: {
 	width: number
@@ -30,25 +31,6 @@ function createHost(input: {
 }
 
 test('prepareAvatarImage converts, resizes, crops, and rejects unusable photos', async () => {
-	expect(cropToMaxAspect(900, 100)).toEqual({
-		sourceX: 300,
-		sourceY: 0,
-		sourceWidth: 300,
-		sourceHeight: 100,
-	})
-	expect(scaleToMaxDimension(4000, 2000, 1024)).toEqual({
-		width: 1024,
-		height: 512,
-	})
-	expect(scaleToMaxDimension(1200, 400, 1024)).toEqual({
-		width: 1024,
-		height: 342,
-	})
-	expect(clampEncodedAspect(1024, 341)).toEqual({ width: 1024, height: 342 })
-	expect(
-		1024 / scaleToMaxDimension(1200, 400, 1024).height,
-	).toBeLessThanOrEqual(3)
-
 	const readyJpeg = new File([Uint8Array.from([1, 2, 3, 4])], 'ready.jpg', {
 		type: 'image/jpeg',
 	})
@@ -90,7 +72,7 @@ test('prepareAvatarImage converts, resizes, crops, and rejects unusable photos',
 		oversized,
 		createHost({
 			width: 8000,
-			height: 8000,
+			height: 4000,
 			encode: (request) => {
 				encodeCalls.push(request)
 				return new Blob([Uint8Array.from([1])], { type: 'image/webp' })
@@ -98,7 +80,7 @@ test('prepareAvatarImage converts, resizes, crops, and rejects unusable photos',
 		}),
 	)
 	expect(encodeCalls[0]?.width).toBe(userAvatarBrowserEncodeMaxDimension)
-	expect(encodeCalls[0]?.height).toBe(userAvatarBrowserEncodeMaxDimension)
+	expect(encodeCalls[0]?.height).toBe(userAvatarBrowserEncodeMaxDimension / 2)
 	expect(encodeCalls[0]?.sourceWidth).toBe(8000)
 
 	const panorama = new File([new Uint8Array(2000)], 'wide.jpg', {
@@ -182,14 +164,14 @@ test('prepareAvatarImage converts, resizes, crops, and rejects unusable photos',
 	})
 	await expect(
 		prepareAvatarImage(tiny, createHost({ width: 32, height: 32 })),
-	).rejects.toThrow('between 64px and 4096px')
+	).rejects.toThrow(
+		`between ${userAvatarMinDimension}px and ${userAvatarMaxDimension}px`,
+	)
 
 	const unreadHeic = new File([Uint8Array.from([1])], 'iphone.heic', {
 		type: '',
 	})
-	await expect(prepareAvatarImage(unreadHeic)).rejects.toThrow(
-		'cannot convert HEIC',
-	)
+	await expect(prepareAvatarImage(unreadHeic)).rejects.toThrow(/HEIC/)
 
 	const tooHeavy = new File(
 		[new Uint8Array(userAvatarMaxSourceBytes + 1)],

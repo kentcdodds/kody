@@ -109,7 +109,21 @@ function readCiphertexts(sqlite: DatabaseSync, userId: string) {
 	}
 }
 
-test('dry-run counts leftover named secrets and does not write ciphertext', async () => {
+function readClientSecretCiphertext(sqlite: DatabaseSync, userId: string) {
+	return (
+		sqlite
+			.prepare(
+				`SELECT client_secret_encrypted
+				FROM user_oauth_apps
+				WHERE user_id = ? AND slug = ?`,
+			)
+			.get(userId, leftoverConfig.name) as {
+			client_secret_encrypted: string | null
+		}
+	).client_secret_encrypted
+}
+
+test('dry-run counts leftover named secrets, missing secrets, and does not write ciphertext', async () => {
 	const { sqlite, env } = createHarness()
 	const userId = 'user-leftover-dry'
 	await seedLeftoverConnection({
@@ -164,18 +178,60 @@ test('dry-run counts leftover named secrets and does not write ciphertext', asyn
 	const ciphertexts = readCiphertexts(sqlite, userId)
 	expect(ciphertexts.access_token_encrypted).toBeNull()
 	expect(ciphertexts.refresh_token_encrypted).toBeNull()
+	expect(readClientSecretCiphertext(sqlite, userId)).toBeNull()
+
+	const missingUserId = 'user-leftover-missing'
+	await seedLeftoverConnection({
+		env,
+		userId: missingUserId,
+		userEmail: 'missing@example.com',
+	})
+	const missing = await backfillIntegrationCredentials({
+		env,
+		dryRun: true,
+	})
+	expect(missing.userIntegrations.access).toMatchObject({
+		leftover: 2,
+		scanned: 2,
+		copied: 1,
+		missingSecret: 1,
+		remaining: 2,
+	})
+	expect(missing.userIntegrations.refresh).toMatchObject({
+		leftover: 2,
+		scanned: 2,
+		copied: 1,
+		missingSecret: 1,
+		remaining: 2,
+	})
+	expect(missing.userOauthApps.clientSecret).toMatchObject({
+		leftover: 2,
+		scanned: 2,
+		copied: 1,
+		missingSecret: 1,
+		remaining: 2,
+	})
+	expect(missing.missingSecrets).toEqual(
+		expect.arrayContaining([
+			{
+				table: 'user_integrations',
+				key: `${missingUserId}:${leftoverConfig.name}:access`,
+				reason: 'not_found',
+			},
+			{
+				table: 'user_integrations',
+				key: `${missingUserId}:${leftoverConfig.name}:refresh`,
+				reason: 'not_found',
+			},
+			{
+				table: 'user_oauth_apps',
+				key: `${missingUserId}:${leftoverConfig.name}:clientSecret`,
+				reason: 'not_found',
+			},
+		]),
+	)
 	expect(
-		(
-			sqlite
-				.prepare(
-					`SELECT client_secret_encrypted
-					FROM user_oauth_apps
-					WHERE user_id = ? AND slug = ?`,
-				)
-				.get(userId, leftoverConfig.name) as {
-				client_secret_encrypted: string | null
-			}
-		).client_secret_encrypted,
+		readCiphertexts(sqlite, missingUserId).access_token_encrypted,
 	).toBeNull()
 })
 
@@ -259,60 +315,40 @@ test('write copies leftover secret-store values onto ciphertext and leaves exist
 			secretName: leftoverConfig.clientSecretSecretName,
 		}),
 	).toMatchObject({ value: 'client-from-store', source: 'integration' })
-})
 
-test('missing leftover secrets are counted and left null', async () => {
-	const { sqlite, env } = createHarness()
-	const userId = 'user-leftover-missing'
+	const raceUserId = 'user-leftover-race'
+	const raceEmail = 'race@example.com'
 	await seedLeftoverConnection({
 		env,
-		userId,
-		userEmail: 'missing@example.com',
+		userId: raceUserId,
+		userEmail: raceEmail,
+		accessToken: 'access-from-store-race',
 	})
-
-	const result = await backfillIntegrationCredentials({
+	await persistIntegrationTokens({
 		env,
-		dryRun: true,
+		userId: raceUserId,
+		userEmail: raceEmail,
+		name: leftoverConfig.name,
+		accessToken: 'access-won-the-race',
+		refreshToken: null,
+		accessTokenSecretName: leftoverConfig.accessTokenSecretName,
+		descriptionPrefix: 'google',
 	})
-	expect(result.userIntegrations.access).toMatchObject({
-		leftover: 1,
-		scanned: 1,
+	const race = await backfillIntegrationCredentials({ env })
+	expect(race.userIntegrations.access).toMatchObject({
+		leftover: 0,
+		scanned: 0,
 		copied: 0,
-		missingSecret: 1,
-		remaining: 1,
+		remaining: 0,
 	})
-	expect(result.userIntegrations.refresh).toMatchObject({
-		leftover: 1,
-		scanned: 1,
-		copied: 0,
-		missingSecret: 1,
-		remaining: 1,
-	})
-	expect(result.userOauthApps.clientSecret).toMatchObject({
-		leftover: 1,
-		scanned: 1,
-		copied: 0,
-		missingSecret: 1,
-		remaining: 1,
-	})
-	expect(result.missingSecrets).toEqual([
-		{
-			table: 'user_integrations',
-			key: `${userId}:${leftoverConfig.name}:access`,
-			reason: 'not_found',
-		},
-		{
-			table: 'user_integrations',
-			key: `${userId}:${leftoverConfig.name}:refresh`,
-			reason: 'not_found',
-		},
-		{
-			table: 'user_oauth_apps',
-			key: `${userId}:${leftoverConfig.name}:clientSecret`,
-			reason: 'not_found',
-		},
-	])
-	expect(readCiphertexts(sqlite, userId).access_token_encrypted).toBeNull()
+	expect(
+		await resolveIntegrationAccessToken({
+			env,
+			userId: raceUserId,
+			name: leftoverConfig.name,
+			secretName: leftoverConfig.accessTokenSecretName,
+		}),
+	).toBe('access-won-the-race')
 })
 
 test('missing leftover prefix does not starve later copyable connections or apps', async () => {
@@ -413,19 +449,7 @@ test('missing leftover prefix does not starve later copyable connections or apps
 	expect(
 		readCiphertexts(sqlite, 'user-z').refresh_token_encrypted,
 	).not.toBeNull()
-	expect(
-		(
-			sqlite
-				.prepare(
-					`SELECT client_secret_encrypted
-					FROM user_oauth_apps
-					WHERE user_id = ? AND slug = ?`,
-				)
-				.get('user-z', leftoverConfig.name) as {
-				client_secret_encrypted: string | null
-			}
-		).client_secret_encrypted,
-	).not.toBeNull()
+	expect(readClientSecretCiphertext(sqlite, 'user-z')).not.toBeNull()
 	expect(
 		await resolveIntegrationAccessToken({
 			env,
@@ -437,42 +461,4 @@ test('missing leftover prefix does not starve later copyable connections or apps
 	expect(JSON.stringify(result)).not.toMatch(
 		/access-after-missing|refresh-after-missing|client-after-missing/,
 	)
-})
-
-test('write does not overwrite ciphertext when a persist lands first', async () => {
-	const { env } = createHarness()
-	const userId = 'user-leftover-race'
-	const userEmail = 'race@example.com'
-	await seedLeftoverConnection({
-		env,
-		userId,
-		userEmail,
-		accessToken: 'access-from-store',
-	})
-	await persistIntegrationTokens({
-		env,
-		userId,
-		userEmail,
-		name: leftoverConfig.name,
-		accessToken: 'access-won-the-race',
-		refreshToken: null,
-		accessTokenSecretName: leftoverConfig.accessTokenSecretName,
-		descriptionPrefix: 'google',
-	})
-
-	const result = await backfillIntegrationCredentials({ env })
-	expect(result.userIntegrations.access).toMatchObject({
-		leftover: 0,
-		scanned: 0,
-		copied: 0,
-		remaining: 0,
-	})
-	expect(
-		await resolveIntegrationAccessToken({
-			env,
-			userId,
-			name: leftoverConfig.name,
-			secretName: leftoverConfig.accessTokenSecretName,
-		}),
-	).toBe('access-won-the-race')
 })
