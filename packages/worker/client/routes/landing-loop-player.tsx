@@ -25,6 +25,7 @@ import {
 	type LandingLoopSceneGroup,
 	type LandingLoopToggleLabel,
 } from './landing-loop-state.ts'
+import { renderWalkthroughKicker } from './walkthrough-ask-kicker.tsx'
 
 type LoopLineRenderer = (line: TranscriptLine, actId: string) => RemixNode
 
@@ -380,9 +381,10 @@ export function LandingLoopPlayer(
 									groupIndex,
 									lineRenderer,
 									groupIndex === sceneGroups.length - 1,
+									handle.props.hosts,
 								),
 							)
-						: renderTeaser()}
+						: renderTeaser(handle.props.hosts)}
 				</div>
 				<p class="landing-loop-foot">
 					<a href={routes.guideDetail.href({ slug: 'how-kody-works' })}>
@@ -399,6 +401,7 @@ function renderSceneGroup(
 	groupIndex: number,
 	lineRenderer: LoopLineRenderer,
 	newestGroup: boolean,
+	hosts?: WalkthroughHostPick,
 ) {
 	const lines = group.beats.map((beat, index) =>
 		renderBeat(
@@ -406,18 +409,25 @@ function renderSceneGroup(
 			lineRenderer,
 			`${beatKey(beat)}-${index}`,
 			newestGroup && index === group.beats.length - 1,
+			hosts,
 		),
 	)
 	return (
 		<div key={`scene-${group.scene}-${groupIndex}`} class="landing-loop-scene">
 			{groupIndex > 0 ? (
 				<p class="landing-loop-later" aria-hidden="true">
-					Later
+					{landingLoopLaterLabel(group)}
 				</p>
 			) : null}
 			{lines}
 		</div>
 	)
+}
+
+function landingLoopLaterLabel(group: LandingLoopSceneGroup) {
+	const header = group.beats[0]
+	if (header?.kind === 'act' && header.later) return header.later
+	return 'Later'
 }
 
 function beatKey(beat: LandingLoopBeat) {
@@ -430,6 +440,7 @@ function renderBeat(
 	renderLine: LoopLineRenderer,
 	key: string,
 	newest: boolean,
+	hosts?: WalkthroughHostPick,
 ) {
 	if (beat.kind === 'act') {
 		return (
@@ -438,7 +449,11 @@ function renderBeat(
 				class="landing-loop-act"
 				data-newest={newest ? 'true' : undefined}
 			>
-				{beat.kicker ? <p class="landing-loop-kicker">{beat.kicker}</p> : null}
+				{beat.kicker ? (
+					<p class="landing-loop-kicker">
+						{renderWalkthroughKicker(beat.kicker, hosts)}
+					</p>
+				) : null}
 				<h3>{beat.title}</h3>
 			</header>
 		)
@@ -454,12 +469,14 @@ function renderBeat(
 	)
 }
 
-function renderTeaser() {
+function renderTeaser(hosts?: WalkthroughHostPick) {
 	return (
 		<>
 			<header class="landing-loop-act">
 				{landingLoopTeaser.kicker ? (
-					<p class="landing-loop-kicker">{landingLoopTeaser.kicker}</p>
+					<p class="landing-loop-kicker">
+						{renderWalkthroughKicker(landingLoopTeaser.kicker, hosts)}
+					</p>
 				) : null}
 				<h3>{landingLoopTeaser.title}</h3>
 			</header>
@@ -508,13 +525,14 @@ function renderLoopToggleIcon(label: LandingLoopToggleLabel) {
 					height="1em"
 					aria-hidden="true"
 					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
 				>
-					<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" />
-					<path d="M4.5 4.5v5h5" />
+					<path
+						d="M17.4 6.7A7.2 7.2 0 1 1 12 4.8"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+					/>
+					<path d="M12.6 2.45 17.4 5.5 12.6 8.55Z" fill="currentColor" />
 				</svg>
 			)
 		default: {

@@ -6,6 +6,10 @@ import {
 } from '#universal/walkthrough-hosts.ts'
 import {
 	landingHeroLightAt,
+	landingHeroLightProximity,
+	landingHeroLightRate,
+	landingHeroLightRateFar,
+	landingHeroLightRateNear,
 	landingHeroPinnedHostIds,
 	landingHeroSlots,
 	pickLandingHeroRing,
@@ -84,5 +88,41 @@ test('hero tether lights travel inbound to the lantern and outbound to the agent
 	expect(outboundMid!.progress).toBeGreaterThan(0)
 	expect(outboundMid!.progress).toBeLessThan(1)
 	expect(outboundMid!.scale).toBeGreaterThan(0.45)
-	expect(landingHeroSlots.every((slot) => slot.cycle < 5)).toBe(true)
+	expect(landingHeroSlots.every((slot) => slot.cycle < 7)).toBe(true)
+	expect(landingHeroLightRate(0)).toBe(landingHeroLightRateFar)
+	expect(landingHeroLightRate(1)).toBe(landingHeroLightRateNear)
+	expect(landingHeroLightRate(0.5)).toBeGreaterThan(landingHeroLightRateFar)
+	expect(landingHeroLightRate(0.5)).toBeLessThan(landingHeroLightRateNear)
+	expect(
+		landingHeroLightProximity({
+			lantern: { x: 100, y: 100 },
+			pointer: { x: 100, y: 100 },
+			viewport: { width: 800, height: 600 },
+			finePointer: true,
+		}),
+	).toBe(1)
+	expect(
+		landingHeroLightProximity({
+			lantern: { x: 100, y: 100 },
+			pointer: null,
+			viewport: { width: 800, height: 600 },
+			finePointer: true,
+		}),
+	).toBe(0)
+	expect(
+		landingHeroLightProximity({
+			lantern: { x: 400, y: 300 },
+			pointer: null,
+			viewport: { width: 800, height: 600 },
+			finePointer: false,
+		}),
+	).toBe(1)
+	expect(
+		landingHeroLightProximity({
+			lantern: { x: 0, y: 0 },
+			pointer: null,
+			viewport: { width: 800, height: 600 },
+			finePointer: false,
+		}),
+	).toBeLessThan(0.5)
 })

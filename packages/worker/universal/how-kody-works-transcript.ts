@@ -493,7 +493,7 @@ For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{typ
 export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 	{
 		id: 'ask',
-		kicker: '',
+		kicker: 'You start on the computer with {coding}.',
 		title: 'Ask once',
 		lines: [
 			{
@@ -757,7 +757,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 	{
 		id: 'invoke',
 		scene: 'phone',
-		kicker: 'Later, on your phone with a different agent.',
+		kicker: 'Later, on your phone with {invoke}.',
 		title: 'Ask again. Now safer, cheaper, and more reliable.',
 		lines: [
 			{
@@ -827,7 +827,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 	{
 		id: 'notify',
 		scene: 'phone',
-		kicker: 'Later still, with another Kody-connected agent.',
+		kicker: 'Later still, with {notify}.',
 		title: 'Ask to be notified.',
 		lines: [
 			{
@@ -960,6 +960,19 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 			{
 				role: 'agent',
 				text: 'It will check every morning. If kody-bot shipped something, you get mail. If not, nothing hits your inbox.',
+			},
+		],
+	},
+	{
+		id: 'mail',
+		kicker: 'The next day.',
+		title: 'Something shipped.',
+		later: 'The next day',
+		lines: [
+			{
+				role: 'email',
+				subject: 'kody-bot shipped 2 things',
+				text: 'kody-bot/lantern v1.4.0\nNew repo kody-bot/quiet-days',
 			},
 		],
 	},

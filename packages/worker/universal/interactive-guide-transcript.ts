@@ -24,6 +24,7 @@ export type TranscriptFile = {
 export type TranscriptLine =
 	| { role: 'user'; text: string }
 	| { role: 'agent'; text: string; tone?: 'reasoning' }
+	| { role: 'email'; subject: string; text: string }
 	| { role: 'tools'; tools: Array<TranscriptTool> }
 	| {
 			role: 'files'
@@ -40,6 +41,8 @@ export type TranscriptAct = {
 	title: string
 	/** Homepage loop only: start a new surface after this act header. */
 	scene?: TranscriptScene
+	/** Homepage loop divider before this act. Defaults to “Later”. */
+	later?: string
 	lines: Array<TranscriptLine>
 }
 
@@ -60,6 +63,7 @@ export function collectTranscriptSnippets(
 			switch (line.role) {
 				case 'user':
 				case 'agent':
+				case 'email':
 					break
 				case 'tools':
 					for (const tool of line.tools) {

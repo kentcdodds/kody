@@ -18,6 +18,7 @@ import {
 	type TranscriptTool,
 	transcriptFileLang,
 } from './interactive-guide-transcript.ts'
+import { renderWalkthroughKicker } from './walkthrough-ask-kicker.tsx'
 import {
 	getAccentCalloutCss,
 	getArticleBreakoutCss,
@@ -58,7 +59,7 @@ export function renderInteractiveGuideWalkthrough(input: {
 								act.id === input.acts[0]?.id ? exampleKickerCss : kickerCss,
 							)}
 						>
-							{act.kicker}
+							{renderWalkthroughKicker(act.kicker, input.hosts)}
 						</p>
 					) : null}
 					<h2 id={`${act.id}-title`}>{act.title}</h2>
@@ -113,6 +114,19 @@ export function renderInteractiveGuideLine(
 				</figure>
 			)
 		}
+		case 'email':
+			return (
+				<figure mix={css(emailCss)}>
+					<figcaption>
+						{renderEmailIcon()}
+						Email
+					</figcaption>
+					<blockquote>
+						<p mix={css(emailSubjectCss)}>{line.subject}</p>
+						<p mix={css(emailBodyCss)}>{line.text}</p>
+					</blockquote>
+				</figure>
+			)
 		case 'tools':
 			return (
 				<div mix={css(toolsCss)}>
@@ -269,6 +283,25 @@ function renderAgentMark(host: WalkthroughHost) {
 			style={{ '--chip-icon': `url("${walkthroughHostMarkUrl(host)}")` }}
 			aria-hidden="true"
 		></span>
+	)
+}
+
+function renderEmailIcon() {
+	return (
+		<svg
+			viewBox="0 0 24 24"
+			width="1em"
+			height="1em"
+			aria-hidden="true"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<rect x="3.5" y="6" width="17" height="12" rx="2" />
+			<path d="m4.2 7.6 7.8 5.2 7.8-5.2" />
+		</svg>
 	)
 }
 
@@ -468,6 +501,19 @@ const agentCss = {
 		...bubbleCss['& blockquote'],
 		backgroundColor: colors.surface,
 	},
+}
+
+const emailCss = {
+	...agentCss,
+}
+
+const emailSubjectCss = {
+	fontWeight: 650,
+}
+
+const emailBodyCss = {
+	margin: '0.35rem 0 0',
+	whiteSpace: 'pre-line' as const,
 }
 
 const agentReasoningCss = {

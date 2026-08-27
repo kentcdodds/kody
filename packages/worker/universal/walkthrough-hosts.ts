@@ -269,6 +269,18 @@ export function walkthroughHostForAct(
 	return hosts[slot]
 }
 
+/** Fill `{coding}`, `{invoke}`, and `{notify}` in act kickers with host labels. */
+export function resolveWalkthroughKicker(
+	kicker: string,
+	hosts?: WalkthroughHostPick | null,
+): string {
+	if (!hosts) return kicker
+	return kicker
+		.replaceAll('{coding}', hosts.coding.label)
+		.replaceAll('{invoke}', hosts.invoke.label)
+		.replaceAll('{notify}', hosts.notify.label)
+}
+
 export function walkthroughHostSlotLabel(slot: WalkthroughHostSlot) {
 	switch (slot) {
 		case 'coding':

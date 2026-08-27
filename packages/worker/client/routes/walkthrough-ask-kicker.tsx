@@ -1,10 +1,11 @@
-import { css } from 'remix/ui'
+import { css, type RemixNode } from 'remix/ui'
 import {
 	joinWalkthroughHostLabels,
 	listWalkthroughConversationHosts,
 	walkthroughHostMarkUrl,
 	type WalkthroughHost,
 	type WalkthroughHostPick,
+	type WalkthroughHostSlot,
 } from '#universal/walkthrough-hosts.ts'
 
 export function renderWalkthroughPackageTitle(hosts?: WalkthroughHostPick) {
@@ -27,6 +28,56 @@ export function walkthroughPackageTitleLabel(hosts?: WalkthroughHostPick) {
 	if (labels.length === 0) return 'What the agent wrote'
 	const noun = labels.length === 1 ? 'agent' : 'agents'
 	return `What your ${noun} ${joinWalkthroughHostLabels(labels)} wrote`
+}
+
+const walkthroughKickerToken = /\{(coding|invoke|notify)\}/g
+
+/** Interpolate act-kicker tokens with a host mark to the left of the name. */
+export function renderWalkthroughKicker(
+	kicker: string,
+	hosts?: WalkthroughHostPick | null,
+) {
+	if (!hosts) return kicker
+	const nodes: Array<RemixNode> = []
+	let lastIndex = 0
+	for (const match of kicker.matchAll(walkthroughKickerToken)) {
+		const slot = walkthroughKickerSlot(match[1])
+		if (!slot) continue
+		const index = match.index ?? 0
+		if (index > lastIndex) nodes.push(kicker.slice(lastIndex, index))
+		nodes.push(renderWalkthroughHostName(hosts[slot]))
+		lastIndex = index + match[0].length
+	}
+	if (lastIndex < kicker.length) nodes.push(kicker.slice(lastIndex))
+	return nodes
+}
+
+function walkthroughKickerSlot(
+	value: string | undefined,
+): WalkthroughHostSlot | undefined {
+	switch (value) {
+		case 'coding':
+		case 'invoke':
+		case 'notify':
+			return value
+		default:
+			return undefined
+	}
+}
+
+function renderWalkthroughHostName(host: WalkthroughHost) {
+	return (
+		<span key={host.id} mix={css(kickerHostCss)}>
+			<span
+				mix={css(titleMarkCss)}
+				style={{
+					'--chip-icon': `url("${walkthroughHostMarkUrl(host)}")`,
+				}}
+				aria-hidden="true"
+			></span>
+			{host.label}
+		</span>
+	)
 }
 
 function renderJoinedWalkthroughHostMarks(
@@ -67,4 +118,12 @@ const titleMarkCss = {
 	WebkitMaskPosition: 'center',
 	WebkitMaskSize: 'contain',
 	WebkitMaskRepeat: 'no-repeat',
+}
+
+const kickerHostCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.3em',
+	whiteSpace: 'nowrap' as const,
+	verticalAlign: '-0.12em' as const,
 }

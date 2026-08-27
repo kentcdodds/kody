@@ -11,10 +11,20 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 		'ask',
 		'invoke',
 		'notify',
+		'mail',
 	])
 	expect(howKodyWorksTranscriptActs[0]?.scene).toBeUndefined()
 	expect(howKodyWorksTranscriptActs[1]?.scene).toBe('phone')
 	expect(howKodyWorksTranscriptActs[2]?.scene).toBe('phone')
+	expect(howKodyWorksTranscriptActs[3]?.later).toBe('The next day')
+	expect(
+		howKodyWorksTranscriptActs[3]?.lines.some(
+			(line) =>
+				line.role === 'email' &&
+				line.subject.includes('kody-bot shipped') &&
+				line.text.includes('kody-bot/lantern'),
+		),
+	).toBe(true)
 
 	const tools = howKodyWorksTranscriptActs.flatMap((act) =>
 		act.lines.flatMap((line) => (line.role === 'tools' ? line.tools : [])),
@@ -72,7 +82,11 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 		}
 		return [...ids]
 	})
-	expect(conversationIds.every((ids) => ids.length === 1)).toBe(true)
+	expect(
+		conversationIds
+			.filter((ids) => ids.length > 0)
+			.every((ids) => ids.length === 1),
+	).toBe(true)
 	expect(new Set(conversationIds.flat()).size).toBe(3)
 
 	expect(howKodyWorksPackageFiles['src/what-shipped.ts']).toContain(

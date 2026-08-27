@@ -28,7 +28,36 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 		line: { role: 'user', text: landingLoopTeaser.user },
 	})
 	expect(
-		beats.some((beat) => beat.kind === 'act' && beat.id === 'invoke'),
+		beats.some(
+			(beat) =>
+				beat.kind === 'act' &&
+				beat.id === 'invoke' &&
+				beat.kicker === 'Later, on your phone with {invoke}.',
+		),
+	).toBe(true)
+	expect(
+		beats.some(
+			(beat) =>
+				beat.kind === 'act' &&
+				beat.id === 'notify' &&
+				beat.kicker === 'Later still, with {notify}.',
+		),
+	).toBe(true)
+	expect(
+		beats.some(
+			(beat) =>
+				beat.kind === 'act' &&
+				beat.id === 'mail' &&
+				beat.later === 'The next day',
+		),
+	).toBe(true)
+	expect(
+		beats.some(
+			(beat) =>
+				beat.kind === 'line' &&
+				beat.actId === 'mail' &&
+				beat.line.role === 'email',
+		),
 	).toBe(true)
 	expect(
 		beats.some(
@@ -54,6 +83,7 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 		{ scene: 'desk', act: 'ask' },
 		{ scene: 'phone', act: 'invoke' },
 		{ scene: 'phone', act: 'notify' },
+		{ scene: 'desk', act: 'mail' },
 	])
 	expect(
 		beats.some((beat) => beat.kind === 'line' && beat.line.role === 'tools'),

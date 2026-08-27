@@ -10,6 +10,7 @@ import {
 	listWalkthroughHostOptions,
 	pickWalkthroughHosts,
 	replaceWalkthroughHost,
+	resolveWalkthroughKicker,
 	shuffleWalkthroughHosts,
 	walkthroughHostCatalog,
 	walkthroughHostForAct,
@@ -172,6 +173,18 @@ test('walkthroughHostForAct maps ask/invoke/notify onto the picked hosts', () =>
 	)
 	expect(joinWalkthroughHostLabels(['Cursor', 'Claude', 'Grok'])).toBe(
 		'Cursor, Claude, and Grok',
+	)
+	expect(
+		resolveWalkthroughKicker('You start on the computer with {coding}.', pick),
+	).toBe(`You start on the computer with ${pick.coding.label}.`)
+	expect(
+		resolveWalkthroughKicker('Later, on your phone with {invoke}.', pick),
+	).toBe(`Later, on your phone with ${pick.invoke.label}.`)
+	expect(resolveWalkthroughKicker('Later still, with {notify}.', pick)).toBe(
+		`Later still, with ${pick.notify.label}.`,
+	)
+	expect(resolveWalkthroughKicker('Later, on your phone with {invoke}.')).toBe(
+		'Later, on your phone with {invoke}.',
 	)
 })
 

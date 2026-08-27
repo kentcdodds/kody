@@ -5,7 +5,7 @@ import {
 } from './interactive-guide-transcript.ts'
 
 export const landingLoopTeaser = {
-	kicker: '',
+	kicker: 'You start on the computer with {coding}.',
 	title: 'Ask once',
 	user: 'What did my favorite bot ship recently on GitHub?',
 } as const
@@ -47,6 +47,7 @@ export type LandingLoopBeat =
 			id: string
 			kicker: string
 			title: string
+			later?: string
 			scene: LandingLoopScene
 	  }
 	| {
@@ -81,6 +82,7 @@ export function flattenTranscriptActs(
 			id: act.id,
 			kicker: act.kicker,
 			title: act.title,
+			later: act.later,
 			scene,
 		})
 		for (const line of act.lines) {
@@ -124,6 +126,13 @@ export function landingLoopHoldMs(beat: LandingLoopBeat): number {
 		case 'user':
 		case 'agent':
 			return Math.min(2200, 500 + beat.line.text.length * 4) + 700
+		case 'email':
+			return (
+				Math.min(
+					2200,
+					500 + (beat.line.subject.length + beat.line.text.length) * 4,
+				) + 700
+			)
 		case 'tools':
 		case 'files':
 			return 1500

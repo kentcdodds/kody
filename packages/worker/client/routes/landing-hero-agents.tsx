@@ -34,19 +34,21 @@ import {
 /** Slot motion. Identities come from the SSR-shuffled catalog: pinned hosts
  *  always make the ring, leftover slots fill from the rest, then allRow
  *  order assigns them so hydrate matches. `dur`/`del` drive the drift.
- *  `cycle`/`phase`/`travel` (seconds) drive each tether's lights: inbound
- *  and outbound share the cycle, outbound offset by ~0.42 of it, in flight
- *  for `travel`. Periods are deliberately unequal so the lights overlap in
- *  ever-changing combinations. Order matches `landingOrbitAgents`. */
+ *  `cycle`/`phase`/`travel` (seconds at rate 1) drive each tether's lights:
+ *  inbound and outbound share the cycle, outbound offset by ~0.42 of it,
+ *  in flight for `travel`. The frame loop advances that clock slower at
+ *  rest and faster as the pointer (desktop) or lantern (mobile) nears.
+ *  Periods are deliberately unequal so the lights overlap in ever-changing
+ *  combinations. Order matches `landingOrbitAgents`. */
 const hostAgentMotion = [
-	{ dur: '8s', del: '-2s', cycle: 2.5, phase: 0.6, travel: 1.05 },
-	{ dur: '8.5s', del: '-1.5s', cycle: 3.5, phase: 1.9, travel: 1.4 },
-	{ dur: '6s', del: '-1s', cycle: 2.8, phase: 1.5, travel: 0.9 },
-	{ dur: '7.5s', del: '-6s', cycle: 4.1, phase: 0.3, travel: 1.75 },
-	{ dur: '9s', del: '-4s', cycle: 2.3, phase: 1.0, travel: 1.15 },
-	{ dur: '6.5s', del: '-5s', cycle: 4.3, phase: 2.9, travel: 1.3 },
-	{ dur: '5.5s', del: '-2.5s', cycle: 3.1, phase: 1.3, travel: 0.95 },
-	{ dur: '9.5s', del: '-3.5s', cycle: 3.7, phase: 2.5, travel: 1.6 },
+	{ dur: '8s', del: '-2s', cycle: 3.4, phase: 0.8, travel: 1.45 },
+	{ dur: '8.5s', del: '-1.5s', cycle: 4.8, phase: 2.6, travel: 1.9 },
+	{ dur: '6s', del: '-1s', cycle: 3.8, phase: 2.0, travel: 1.25 },
+	{ dur: '7.5s', del: '-6s', cycle: 5.6, phase: 0.4, travel: 2.4 },
+	{ dur: '9s', del: '-4s', cycle: 3.2, phase: 1.4, travel: 1.55 },
+	{ dur: '6.5s', del: '-5s', cycle: 5.9, phase: 4.0, travel: 1.8 },
+	{ dur: '5.5s', del: '-2.5s', cycle: 4.2, phase: 1.8, travel: 1.3 },
+	{ dur: '9.5s', del: '-3.5s', cycle: 5.1, phase: 3.4, travel: 2.2 },
 ] as const
 
 export const landingHeroSlots = landingOrbitAgents.map((agent, index) => ({
@@ -125,6 +127,43 @@ export function landingHeroLightAt(
 	return { progress, opacity: Math.min(fadeIn, fadeOut), scale }
 }
 
+/** Wall-clock multiplier for the light clock. `proximity` is 0 far, 1 close. */
+export const landingHeroLightRateFar = 0.54
+export const landingHeroLightRateNear = 2.31
+
+export function landingHeroLightRate(proximity: number) {
+	const t = Math.min(1, Math.max(0, proximity))
+	const ease = t * t * (3 - 2 * t)
+	return (
+		landingHeroLightRateFar +
+		(landingHeroLightRateNear - landingHeroLightRateFar) * ease
+	)
+}
+
+/** How close the controlling point is to the lantern, 0–1. Fine pointers
+ *  use the mouse; coarse pointers use the viewport centre (scroll). */
+export function landingHeroLightProximity(input: {
+	lantern: { x: number; y: number }
+	pointer: { x: number; y: number } | null
+	viewport: { width: number; height: number }
+	finePointer: boolean
+}) {
+	const range = Math.hypot(input.viewport.width, input.viewport.height) * 0.38
+	if (range <= 0) return 0
+	const target = input.finePointer
+		? input.pointer
+		: {
+				x: input.viewport.width / 2,
+				y: input.viewport.height / 2,
+			}
+	if (!target) return 0
+	const distance = Math.hypot(
+		target.x - input.lantern.x,
+		target.y - input.lantern.y,
+	)
+	return 1 - Math.min(1, distance / range)
+}
+
 /** Tokens sit deeper in the parallax field than Kody (-0.06) so they float
  *  in front of the backdrop. */
 const tokenDepth = '0.32'
@@ -151,8 +190,15 @@ function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 		]
 		if (!kody || !lines || tiles.length === 0) return
 
+		let clock = 0
+		let lastNow = performance.now()
+		let pointer: { x: number; y: number } | null = null
+		const finePointer = matchMedia('(hover: hover) and (pointer: fine)')
+
 		const draw = () => {
-			const seconds = performance.now() / 1000
+			const now = performance.now()
+			const dt = Math.min(0.05, (now - lastNow) / 1000)
+			lastNow = now
 			const stage = node.getBoundingClientRect()
 			if (stage.width === 0) return
 			const toUnits = (px: number, py: number) => ({
@@ -160,10 +206,25 @@ function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 				y: ((py - stage.top) / stage.height) * 100,
 			})
 			const kodyRect = kody.getBoundingClientRect()
-			const end = toUnits(
-				kodyRect.left + (kodyRect.width * lantern.x) / 100,
-				kodyRect.top + (kodyRect.height * lantern.y) / 100,
-			)
+			const lanternPx = {
+				x: kodyRect.left + (kodyRect.width * lantern.x) / 100,
+				y: kodyRect.top + (kodyRect.height * lantern.y) / 100,
+			}
+			clock +=
+				dt *
+				landingHeroLightRate(
+					landingHeroLightProximity({
+						lantern: lanternPx,
+						pointer,
+						viewport: {
+							width: window.innerWidth,
+							height: window.innerHeight,
+						},
+						finePointer: finePointer.matches,
+					}),
+				)
+			const seconds = clock
+			const end = toUnits(lanternPx.x, lanternPx.y)
 			// The stage is square, so viewBox units double as percentages.
 			lines.style.setProperty('--lantern-x', `${end.x}%`)
 			lines.style.setProperty('--lantern-y', `${end.y}%`)
@@ -214,6 +275,7 @@ function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 			if (visible && motionOk.matches) raf = requestAnimationFrame(tick)
 		}
 		const wake = () => {
+			lastNow = performance.now()
 			if (raf == null) raf = requestAnimationFrame(tick)
 		}
 
@@ -222,8 +284,17 @@ function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 			wake()
 		})
 		observer.observe(node)
+		window.addEventListener(
+			'pointermove',
+			(event) => {
+				if (!(event instanceof PointerEvent)) return
+				pointer = { x: event.clientX, y: event.clientY }
+			},
+			{ signal, passive: true },
+		)
 		window.addEventListener('resize', wake, { signal })
 		motionOk.addEventListener('change', wake, { signal })
+		finePointer.addEventListener('change', wake, { signal })
 		wake()
 		signal.addEventListener('abort', () => {
 			observer.disconnect()
