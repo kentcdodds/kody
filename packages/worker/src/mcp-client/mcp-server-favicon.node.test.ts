@@ -2,7 +2,7 @@ import { expect, test } from 'vitest'
 import { shouldFetchMcpServerFavicon } from './mcp-server-favicon.ts'
 import { buildMcpServerAutoLogoPath } from './mcp-server-logo.ts'
 
-test('shouldFetchMcpServerFavicon fetches missing public hosts and stale domains', () => {
+test('MCP server favicon fetch gate and auto-logo cache-buster path', () => {
 	expect(
 		shouldFetchMcpServerFavicon({
 			url: 'https://mcp.agentcard.sh/mcp',
@@ -35,9 +35,7 @@ test('shouldFetchMcpServerFavicon fetches missing public hosts and stale domains
 			faviconSourceHost: 'agentcard.sh',
 		}),
 	).toBe(true)
-})
 
-test('buildMcpServerAutoLogoPath uses the content-hash cache buster', () => {
 	expect(
 		buildMcpServerAutoLogoPath({
 			id: 'server-1',

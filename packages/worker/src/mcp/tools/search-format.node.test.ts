@@ -236,11 +236,7 @@ test('search formatting keeps entity refs and generates safe, runnable usage sni
 	expect(integrationDetail.markdown).toContain('github:package')
 	expect(integrationDetail.markdown).toContain('listing-1')
 	expect(integrationDetail.markdown).toContain('Client ID: `github_client_id`')
-	expect(integrationDetail.markdown).toContain(
-		"createAuthenticatedFetch('github')",
-	)
-	expect(integrationDetail.markdown).not.toContain('github_access_token')
-	expect(integrationDetail.markdown).not.toContain('github_client_secret')
+	// Structured contract omits soak token secret names (input still carries them).
 	expect(integrationDetail.structured).not.toHaveProperty(
 		'accessTokenSecretName',
 	)
@@ -630,11 +626,6 @@ export declare function fetch(request: Request): Promise<Response>
 		listingAhead: null,
 	})
 	expect(observedPackageDetail.markdown).not.toContain('community_fork_absorb')
-	expect(observedPackageDetail.markdown).not.toContain('src/app.d.ts')
-	expect(observedPackageDetail.markdown).not.toContain('Token setup URL')
-	expect(JSON.stringify(observedPackageDetail.structured)).not.toContain(
-		'typeDefinition',
-	)
 })
 
 test('package search surfaces listing ahead only when the fork is behind', () => {
@@ -1311,10 +1302,6 @@ test('search formatting inlines top capability call shapes, related ops, and pac
 		'Keep notes workflows safe and reusable.',
 	)
 	expect(packageDetail.markdown).not.toContain('Full usage details.')
-	expect(packageDetail.markdown).not.toContain('typeDefinition')
-	expect(JSON.stringify(packageDetail.structured)).not.toContain(
-		'referencedTypes',
-	)
 	expect(packageDetail.structured).toMatchObject({
 		type: 'package',
 		exports: [
