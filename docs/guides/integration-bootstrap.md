@@ -101,6 +101,10 @@ If those conditions are not met, stop and fix the integration first.
    - Example:
      `import { refreshAccessToken, createAuthenticatedFetch } from 'kody:runtime'`
    - Use the real auth path the final integration will use.
+   - Confirm **token kind** as well as scopes. A connected Slack grant that
+     `auth.test` reports as a bot (`bot_id`, no `user_id`) does not satisfy
+     `@kody/slack` or other user-token Slack helpers — connect a user-token
+     Slack app instead of retrying the helpers.
    - Prefer a cheap read-only request such as `GET /me`, `GET /viewer`, or a
      similarly small account/profile endpoint.
    - Confirm the integration or secret name, token refresh behavior, and allowed
