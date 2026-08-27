@@ -113,6 +113,32 @@ function createTetherLayer(theme: OgTheme): SatoriElement {
 	}
 }
 
+/**
+ * Same dissolve as `.landing-hero-agents-lines`: a hole over the lantern globe
+ * so strokes (and arriving lights) fade into the glow instead of crossing it.
+ * Percentages match the homepage CSS (`ellipse 9.5% 8.2%` at lantern %).
+ */
+function withLanternTetherMask(
+	children: Array<SatoriElement>,
+): SatoriElement {
+	const maskImage = `radial-gradient(ellipse 9.5% 8.2% at ${landingLantern.x}% ${landingLantern.y}%, transparent 66%, black 100%)`
+	return {
+		type: 'div',
+		props: {
+			style: {
+				position: 'absolute',
+				left: 0,
+				top: 0,
+				width: AGENTS_HERO_SIZE,
+				height: AGENTS_HERO_SIZE,
+				display: 'flex',
+				maskImage,
+			},
+			children,
+		},
+	}
+}
+
 function createAgentChip(input: {
 	icon: LandingOrbitAgentIcon
 	x: number
@@ -282,9 +308,8 @@ export function createAgentsHero(theme: OgTheme = 'dark'): SatoriElement {
 					},
 				},
 				createLanternGlow(theme),
-				createTetherLayer(theme),
+				withLanternTetherMask([createTetherLayer(theme), ...lights]),
 				...chips,
-				...lights,
 			],
 		},
 	}
