@@ -5,7 +5,7 @@ import {
 	googleOauthTranscriptActs,
 } from './google-oauth-transcript.ts'
 
-test('google oauth transcript covers Lane B discover, console, and connect', () => {
+test('google oauth transcript covers discover, console, and connect', () => {
 	expect(googleOauthTranscriptActs.map((act) => act.id)).toEqual([
 		'discover',
 		'console',

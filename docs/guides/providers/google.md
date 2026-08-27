@@ -2,10 +2,9 @@
 id: provider_google
 title: Connect Google (Gmail, Calendar, Drive)
 summary:
-  Verified walkthrough for connecting Google to Kody: the built-in Google
-  integration for Calendar and allowed scopes, bring-your-own OAuth for inbox
-  reading or Drive-wide access, Google Auth Platform console steps, the
-  Testing-status 7-day refresh-token trap, and a Calendar smoke test.
+  Verified walkthrough for connecting Google to Kody: bring-your-own OAuth
+  client, Google Auth Platform console steps, the Testing-status 7-day
+  refresh-token trap, and a Calendar or Gmail smoke test.
 category: provider
 provider: Google
 lastVerified: 2026-08
@@ -13,45 +12,24 @@ lastVerified: 2026-08
 
 # Connect Google (Gmail, Calendar, Drive)
 
-Prefer the **built-in** Google integration when its scope menu covers the task
-(Calendar, send-only Gmail, Docs/Sheets the assistant creates, contacts, Tasks,
-and related allowed scopes). Bring your own Google OAuth client when you need
-access outside that menu — especially inbox reading or Drive-wide access.
+Connect Google by creating your own OAuth client in Google Cloud. Register
+Kody's redirect URI, then finish on `/connect/oauth`. Inbox reading and
+Drive-wide access need those scopes on the client you own.
 
-For a teaching walkthrough of Lane B (Gmail inbox reading) as an interactive
-agent transcript, see [google-oauth.md](../google-oauth.md).
+For a teaching walkthrough of Gmail inbox reading as an interactive agent
+transcript, see [google-oauth.md](../google-oauth.md).
 
 ## What you get
 
 Once connected, you can ask Kody things like:
 
 - "What is on my calendar tomorrow?" or "Summarize this week's meetings."
-- "Send this status update to the billing alias." (built-in `gmail.send`)
-- "Check my inbox for the invoice from Acme and summarize it." (BYO; not on the
-  built-in menu)
-- "Find the latest budget spreadsheet in my Drive." (BYO Drive-wide; built-in
-  covers `drive.file` only)
+- "Send this status update to the billing alias." (`gmail.send`)
+- "Check my inbox for the invoice from Acme and summarize it."
+  (`gmail.readonly`)
+- "Find the latest budget spreadsheet in my Drive." (Drive-wide access)
 
-## Lane A: built-in Google (default)
-
-List enabled built-ins with `integration_platform_app_list`. When `google` is
-enabled, connect with:
-
-```text
-https://kody.codes/connect/oauth?provider=google
-```
-
-No Google Cloud project, redirect URI, or client ID/secret. Token exchange uses
-the operator-provisioned app; your access and refresh tokens still land in your
-secret store like any other connection. The built-in default scopes include
-Calendar plus OpenID profile/email; widen within the allowed menu from the
-connect UI when a task needs it. The platform description on the app is the
-authority for what the built-in covers.
-
-Skip to [Verify](#verify) after connecting. Use Lane B only when the built-in
-scope menu cannot express the access you need.
-
-## Before you start (BYO)
+## Before you start
 
 - You need a Google account and access to
   [Google Cloud console](https://console.cloud.google.com). A free account is
@@ -63,9 +41,7 @@ scope menu cannot express the access you need.
 - Gmail read scopes are "restricted" in Google's verification program. That is
   fine for a personal (unverified) app; see the Scopes section before choosing.
 
-## Lane B: bring-your-own OAuth client
-
-### Create the OAuth client
+## Create the OAuth client
 
 1. Open [console.cloud.google.com](https://console.cloud.google.com) and create
    or select a project.
@@ -121,8 +97,8 @@ Google only returns a refresh token on the first consent for a given client;
 
 ## Verify
 
-Run this smoke test in `execute` after connecting (works for built-in or BYO;
-adjust the integration name if you chose something other than `google`):
+Run this smoke test in `execute` after connecting (adjust the integration name
+if you chose something other than `google`):
 
 ```ts
 import { createAuthenticatedFetch } from 'kody:runtime'
@@ -150,12 +126,7 @@ For a Gmail-scoped connection, swap the URL for
 
 ## Scopes
 
-**Built-in:** stay inside the allowed menu from `integration_platform_app_list`
-(Calendar, `gmail.send`, `drive.file`, contacts/Tasks/Docs/Sheets variants, and
-related entries). Inbox reading (`gmail.readonly` and other Gmail read scopes)
-and Drive-wide access are outside that menu — use Lane B.
-
-**BYO:** start minimal and widen only when a task needs it:
+Start minimal and widen only when a task needs it:
 
 - Minimal read-mostly tier: `https://www.googleapis.com/auth/calendar.readonly`
   (or the narrower `calendar.events.readonly`),
@@ -171,27 +142,24 @@ and Drive-wide access are outside that menu — use Lane B.
   (`.../auth/drive`) let Kody create events and files, at the cost of a much
   bigger blast radius if misused.
 
-Changing BYO scopes means reconnecting: update the **Data Access** tab, then
-open `/connect/oauth?provider=google` with the new `scopes` value. Built-in
-reconnects use `/connect/oauth?provider=google` and the connect UI scope menu.
+Changing scopes means reconnecting: update the **Data Access** tab, then open
+`/connect/oauth?provider=google` with the new `scopes` value.
 
 ## Troubleshooting
 
-- Built-in connect still asks for a client ID: the `google` platform app is
-  disabled or missing — call `integration_platform_app_list`, or use Lane B.
-- `redirect_uri_mismatch` during BYO consent: the registered redirect URI must
-  be exactly `https://kody.codes/connect/oauth` — no trailing slash, no `www`.
-- BYO integration works for a week, then fails with `invalid_grant`: the app is
-  in **Testing** publishing status. Publish it to Production and reconnect.
-- No refresh token saved (BYO): Google only returns one on first consent.
-  Reconnect with `prompt=consent` in `extraAuthorizeParams` (the prefilled link
-  includes it).
+- `redirect_uri_mismatch` during consent: the registered redirect URI must be
+  exactly `https://kody.codes/connect/oauth` — no trailing slash, no `www`.
+- Integration works for a week, then fails with `invalid_grant`: the app is in
+  **Testing** publishing status. Publish it to Production and reconnect.
+- No refresh token saved: Google only returns one on first consent. Reconnect
+  with `prompt=consent` in `extraAuthorizeParams` (the prefilled link includes
+  it).
 - `403 accessNotConfigured` or "API has not been used in project": enable the
-  Calendar/Gmail/Drive API in the BYO project's API Library.
-- "Google hasn't verified this app" interstitial: expected for a personal BYO
-  app. Click **Advanced** and continue.
+  Calendar/Gmail/Drive API in the project's API Library.
+- "Google hasn't verified this app" interstitial: expected for a personal app.
+  Click **Advanced** and continue.
 - `403` from Gmail with a Calendar-only token: scopes are per-connection.
-  Reconnect with the needed Gmail scope (BYO for inbox read).
+  Reconnect with the needed Gmail scope.
 
 ## Use the official package and verify
 

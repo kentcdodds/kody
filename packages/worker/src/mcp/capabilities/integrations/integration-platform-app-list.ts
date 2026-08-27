@@ -20,7 +20,7 @@ export const integrationPlatformAppListCapability = defineDomainCapability(
 	{
 		name: 'integration_platform_app_list',
 		description:
-			'List platform (built-in) OAuth apps users can connect without registering their own provider app. Connect via /connect/oauth?provider=<slug>; the operator owns the client registration and the shared client secret never leaves the server.',
+			'List operator-provisioned platform OAuth apps on this deployment. User connections use a bring-your-own provider app at /connect/oauth; this list is inspection only and is not a connect path.',
 		keywords: [
 			'integration',
 			'oauth',

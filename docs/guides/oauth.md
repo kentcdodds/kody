@@ -17,9 +17,8 @@ similar providers).
 This guide covers the standard hosted OAuth path. Use it before building a
 package or package app that depends on the resulting integration or tokens.
 
-For a teaching walkthrough of Google Lane B (bring-your-own client for Gmail
-inbox reading) as an interactive agent transcript, see
-[google-oauth.md](./google-oauth.md).
+For a teaching walkthrough of Google OAuth (Gmail inbox reading) as an
+interactive agent transcript, see [google-oauth.md](./google-oauth.md).
 
 ## Default path: `/connect/oauth`
 
@@ -39,28 +38,18 @@ Example shape:
 
 `https://kody.codes/connect/oauth?provider=...&authorizeUrl=...&tokenUrl=...`
 
-## Platform OAuth apps skip provider setup
+## Token refresh
 
-Some providers ship as platform OAuth apps registered by the deployment
-operator. For those, `https://kody.codes/connect/oauth?provider=<slug>` skips
-the setup step below (developer console, redirect-URI registration, client ID /
-client secret form). The connect page stays on-screen so the user can review the
-requested scopes — defaults from `default_scopes`, with the rest of the
-operator-verified menu available under **Change scopes** — then continue to the
-provider. Token exchange runs server-side with the operator's credentials. List
-the available platform apps with `integration_platform_app_list`. All
-integrations refresh host-side through `createAuthenticatedFetch`, which calls
-`integration_token_refresh` on 401 and retries with a secret placeholder — raw
-tokens never enter the sandbox. Reconnectable refresh failures dispatch
+All integrations refresh host-side through `createAuthenticatedFetch`, which
+calls `integration_token_refresh` on 401 and retries with a secret placeholder
+— raw tokens never enter the sandbox. Reconnectable refresh failures dispatch
 `integration.auth.failed` to packages that subscribe; successful refreshes and
 `/connect/oauth` persists dispatch `integration.auth.succeeded` (see
 [package subscriptions](./package-subscriptions.md)). Use `refreshAccessToken`
 only for auth that cannot use an Authorization header (WebSockets, SDK
 constructors, query-param tokens). It refreshes host-side like
 `createAuthenticatedFetch` (no `allowed_packages` write grant for token
-rotation), returns the raw access token for user-owned apps, and throws for
-platform OAuth apps. The rest of this guide applies to providers without a
-platform app.
+rotation) and returns the raw access token.
 
 ## Redirect URI
 
@@ -157,13 +146,11 @@ full authorize URL by hand, open `/connect/oauth?provider=<integration-name>`;
 the page derives the provider authorize URL from the saved integration config
 and the current client credentials.
 
-`integration_save` can widen `authorization.scopes` on a **user-lane**
-connection. That field is reconnect metadata — the list the next
-`/connect/oauth` visit requests — not the current access token. After saving,
-tell the user the token is unchanged until they reconnect, then ask whether to
-reconnect each affected account. Scopes are per connection. Platform (built-in)
-connections refuse `integration_save`; reconnect from the connect-page scope
-menu, or replace the connection with a bring-your-own app.
+`integration_save` can widen `authorization.scopes` on a connection. That field
+is reconnect metadata — the list the next `/connect/oauth` visit requests — not
+the current access token. After saving, tell the user the token is unchanged
+until they reconnect, then ask whether to reconnect each affected account.
+Scopes are per connection.
 
 A `?provider=` visit that has no stored authorize/token URLs and no query
 endpoints shows a copy-prompt so an agent can return a complete connect URL
@@ -175,30 +162,26 @@ Integration identity is the canonical provider key: names are normalized to
 lowercase kebab (letters, numbers, `.`, `_`, `-`) on every save and lookup, so
 `GitHub`, `github`, and `Git Hub` all resolve to the same `github` connection.
 Each connection is a D1 row in `user_integrations` keyed by `(user_id, name)`. A
-connection points at either a **platform** app (`platform_app_slug` →
-`platform_oauth_apps`) or a **user-lane** app (`app_slug` → `user_oauth_apps`).
-User-lane connections share one `user_oauth_apps` row only when their entire
-app-level configuration matches: client credentials, provider endpoints, flow
-and PKCE, token exchange style, scope separator, and extra authorize params.
-Anything that differs gets its own app. Rotating a user-lane app's client
-credentials updates every connection sharing it. Platform connections share the
-operator-provisioned app; users do not rotate that client secret.
+connection points at a user-registered OAuth app (`app_slug` →
+`user_oauth_apps`). Connections share one `user_oauth_apps` row only when their
+entire app-level configuration matches: client credentials, provider endpoints,
+flow and PKCE, token exchange style, scope separator, and extra authorize
+params. Anything that differs gets its own app. Rotating an app's client
+credentials updates every connection sharing it.
 
 Prefer integration names like `<provider>-<purpose>` when multiple accounts may
 exist: `google` for a default account, `google-business` for a business account,
 or `google-youtube-brand` for a brand identity. Agents should call
 `integration_list` up front when a provider may have multiple accounts
-connected, and `integration_platform_app_list` before building a BYO connect
-URL.
+connected.
 
 Manage integrations from `/account/integrations`. The list is one row per
-service; opening a row unfolds its connections in the table. Built-in
-integrations are marked “Provided by Kody.” User-registered integrations also
-resolve at `/account/integrations/apps/<app-slug>`. Disconnect a connected
-account or delete a user-registered integration from that expanded row — both
-ask for a second click, then offer Undo for a few seconds. App metadata and the
-client-secret rotation form live under Advanced details, with an explicit
-confirmation step. Agents can call `integration_oauth_app_list`,
+service; opening a row unfolds its connections in the table. User-registered
+integrations also resolve at `/account/integrations/apps/<app-slug>`. Disconnect
+a connected account or delete a user-registered integration from that expanded
+row — both ask for a second click, then offer Undo for a few seconds. App
+metadata and the client-secret rotation form live under Advanced details, with
+an explicit confirmation step. Agents can call `integration_oauth_app_list`,
 `integration_oauth_app_delete`, and `integration_oauth_app_rotate_credentials`
 when working outside the account UI.
 
@@ -238,19 +221,16 @@ create a thin helpers package.
 ## Agent checklist
 
 1. Confirm OAuth is the right auth shape.
-2. Call `integration_platform_app_list`. When an enabled built-in matches the
-   provider and its scope menu covers the task, send
-   `https://kody.codes/connect/oauth?provider=<slug>` and skip provider-console
-   setup. The user reviews scopes on that page before continuing.
-3. Otherwise build the BYO connect URL with the required params:
+2. Build the connect URL with the required params:
    `https://kody.codes/connect/oauth?...`.
-4. For BYO only, tell the user the exact redirect URI to register:
+3. Tell the user the exact redirect URI to register:
    `https://kody.codes/connect/oauth`. The page shows it with a copy button.
-5. Have the user open the URL while signed in and wait for success.
-6. Run the authenticated smoke test from `integration_bootstrap`
+4. Have the user open the URL while signed in, paste their client ID (and
+   client secret when the flow is confidential), and wait for success.
+5. Run the authenticated smoke test from `integration_bootstrap`
    (`createAuthenticatedFetch`). Do not persist access or refresh tokens with
    `secret_set` / `secret_set_many`.
-7. Use the connect success `nextSteps` (or `community_search`, preferring
+6. Use the connect success `nextSteps` (or `community_search`, preferring
    `trusted`) to fork/adapt a helpers package, or create a thin helpers package
    when none fits. Continue with dependent package apps only after that surface
    exists and the smoke test passes.
