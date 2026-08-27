@@ -172,27 +172,40 @@ export function filterIntegrationTokenRefreshCallerSentryEvent(
 
 /**
  * Exact Cloudflare Durable Object platform-reset messages. When a DO hits its
- * memory or CPU limit, when a deploy replaces DO code under an in-flight
- * RPC/alarm (for example cron `oauth_purge_expired` → OAuthPurgeCoordinator),
- * when `blockConcurrencyWhile` exceeds its ~30s deadlock timeout (for
- * example PartyServer awaiting MCP Agent `onStart` via `getServerByName` →
- * `setName`), when a DO SQLite storage operation exceeds the platform timeout
- * and resets the object, when DO SQLite storage hits an opaque internal
- * fault and resets the object, or when an in-flight RPC's target instance is
- * evicted or replaced ("no longer active"), the platform surfaces one of
- * these errors to the caller. The next call gets a fresh isolate / storage
- * handle; app-level retry of non-idempotent work is still unsafe, and moving
- * heavy Agent/MCP startup out of `onStart` is an architectural change
- * outside a triage fix. Match only the bare platform strings (plus the
- * storage form that requires a support `reference =` token) so wrapped
- * failures such as exhausted `package_publish_external_push` recovery
- * messages stay visible.
+ * memory or CPU limit, when DO SQLite's allocator fails with SQLITE_NOMEM
+ * before the isolate hard cap (KODY-65 / KODY-66), when a deploy replaces DO
+ * code under an in-flight RPC/alarm (for example cron `oauth_purge_expired` →
+ * OAuthPurgeCoordinator), when `blockConcurrencyWhile` exceeds its ~30s
+ * deadlock timeout (for example PartyServer awaiting MCP Agent `onStart` via
+ * `getServerByName` → `setName`), when a DO SQLite storage operation exceeds
+ * the platform timeout and resets the object, when DO SQLite storage hits an
+ * opaque internal fault and resets the object, or when an in-flight RPC's
+ * target instance is evicted or replaced ("no longer active"), the platform
+ * surfaces one of these errors to the caller. The next call gets a fresh
+ * isolate / storage handle; app-level retry of non-idempotent work is still
+ * unsafe, and moving heavy Agent/MCP startup out of `onStart` is an
+ * architectural change outside a triage fix. Match only the bare platform
+ * strings (plus the storage form that requires a support `reference =`
+ * token) so wrapped failures such as exhausted
+ * `package_publish_external_push` recovery messages stay visible.
  */
 export const durableObjectIsolateMemoryResetMessage =
 	"Durable Object's isolate exceeded its memory limit and was reset."
 
 export const durableObjectIsolateCpuResetMessage =
 	'Durable Object exceeded its CPU time limit and was reset.'
+
+/**
+ * Cloudflare Durable Object SQLite allocator OOM (KODY-65 UserMeter lease
+ * acquire; KODY-66 Agents `_ensureSchema` / `addColumnIfNotExists`). Same
+ * resource-limit class as the isolate memory reset string: SQLite gives up
+ * before workerd's hard isolate cap, so the platform surfaces
+ * `out of memory: SQLITE_NOMEM` instead of "exceeded its memory limit".
+ * Match only this bare SQLite phrasing so wrapped recovery messages and
+ * unrelated `…: SQLITE_*` caller SQL failures stay Sentry-visible.
+ */
+export const durableObjectSqliteOutOfMemoryMessage =
+	'out of memory: SQLITE_NOMEM.'
 
 export const durableObjectCodeUpdatedResetMessage =
 	'Durable Object reset because its code was updated.'
@@ -244,10 +257,10 @@ export function isDurableObjectStorageObjectResetMessage(message: string) {
 }
 
 /**
- * Memory/CPU isolate resets only. Isolated throwaway runners remap these to
- * actionable "package too large" outcomes; deploy resets ("code was updated")
- * and other platform resets must keep propagating so idempotent callers can
- * retry on a fresh isolate.
+ * Memory/CPU isolate resets and DO SQLite SQLITE_NOMEM only. Isolated
+ * throwaway runners remap these to actionable "package too large" outcomes;
+ * deploy resets ("code was updated") and other platform resets must keep
+ * propagating so idempotent callers can retry on a fresh isolate.
  */
 export function isDurableObjectIsolateResourceLimitResetMessage(
 	message: string,
@@ -255,7 +268,8 @@ export function isDurableObjectIsolateResourceLimitResetMessage(
 	const normalized = normalizeDurableObjectIsolateResetMessage(message)
 	return (
 		normalized === durableObjectIsolateMemoryResetMessage ||
-		normalized === durableObjectIsolateCpuResetMessage
+		normalized === durableObjectIsolateCpuResetMessage ||
+		normalized === durableObjectSqliteOutOfMemoryMessage
 	)
 }
 
@@ -466,10 +480,11 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// caller state (missing refresh token, provider 4xx / invalid_grant)
 		// is dropped the same way — see
 		// filterIntegrationTokenRefreshCallerSentryEvent. Bare Cloudflare Durable
-		// Object platform reset strings (memory/CPU limits, deploy-time code
-		// updates, blockConcurrencyWhile timeouts, DO storage operation
-		// timeouts, and DO storage object-reset with a support reference) are
-		// dropped the same way — see filterDurableObjectIsolateResetSentryEvent.
+		// Object platform reset strings (memory/CPU limits, DO SQLite
+		// SQLITE_NOMEM, deploy-time code updates, blockConcurrencyWhile
+		// timeouts, DO storage operation timeouts, and DO storage object-reset
+		// with a support reference) are dropped the same way — see
+		// filterDurableObjectIsolateResetSentryEvent.
 		// Exact opaque Cloudflare "An internal error occurred." (and Artifacts
 		// INTERNAL_ERROR wording) with no support reference are dropped the
 		// same way — see filterCloudflareOpaqueInternalErrorSentryEvent.
