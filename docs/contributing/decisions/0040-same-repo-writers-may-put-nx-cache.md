@@ -19,11 +19,13 @@ the write token.
 
 ## Decision
 
-Anyone who can push may write the remote cache before review. Validate uses
-`CACHE_ACCESS_TOKEN` on `push`, `workflow_dispatch`, and non-fork
-`pull_request`. Fork `pull_request` jobs use `CACHE_READ_TOKEN` only. Do not use
-`pull_request_target` to hand the write token to a fork. Agents keep the write
-token. Supersedes 0039.
+Anyone who can push may write the remote cache before review. Validate presents
+`NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` (worker `CACHE_ACCESS_TOKEN`) on
+`push`, `workflow_dispatch`, and non-fork `pull_request`. Fork `pull_request`
+jobs present `NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN` (worker
+`CACHE_READ_TOKEN`) only — if that secret is unset, remote cache stays off. Do
+not use `pull_request_target` to hand the write token to a fork. Agents keep the
+write token. Supersedes 0039.
 
 ## Consequences
 
