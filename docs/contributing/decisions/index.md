@@ -97,7 +97,11 @@ Do not treat this list as homework. History stays; it is not silently deleted.
 - [0019 — Self-hosted Nx remote cache (not Nx Cloud)](./0019-self-hosted-nx-remote-cache.md)
   — contributor infra, not a product primitive
 - [0038 — Still no Nx Cloud; split self-hosted cache read and write tokens](./0038-no-nx-cloud-read-write-cache-tokens.md)
-  — Actions validate is read-only; agents keep the write token
+  — token split; who may write is 0040
+- [0039 — Same-repo pull_request jobs do not write the Nx cache](./0039-no-same-repo-pr-cache-writes.md)
+  — superseded by 0040
+- [0040 — Same-repo writers may PUT the Nx cache; fork PRs may not](./0040-same-repo-writers-may-put-nx-cache.md)
+  — push access already implies the local write token
 - [0028 — List/detail records expand inside the table](./0028-list-detail-expand.md)
   — UI mode assignment (supersedes 0010)
 - [0029 — Discord social login and official guild role](./0029-discord-social-login-and-guild-role.md)
