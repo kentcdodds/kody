@@ -20,17 +20,19 @@ permissions:
 # Pin CI=1 (not GitHub's CI=true) so Nx cache hashes match local
 # `validate` / `test:push`. Anyone who can push already has the write
 # token locally, so same-repo validate (push, workflow_dispatch, and
-# non-fork pull_request) presents it too. Fork PRs select the read
-# secret by name so a missing read token stays empty and does not
-# fall through to write. Nx treats an unreachable self-hosted cache
-# as a fatal error, so setup-validate probes before setting the
-# server URL.
+# non-fork pull_request) presents it too. Fork PRs use the read token
+# only: a missing read secret stays empty and does not fall through
+# to write. Literal secret refs only — do not index `secrets[...]`
+# (overprovisions the whole secrets context). Nx treats an
+# unreachable self-hosted cache as a fatal error, so setup-validate
+# probes before setting the server URL.
 env:
   CI: '1'
   NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN:
-    ${{ secrets[github.event.pull_request.head.repo.fork == true &&
-    'NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN' ||
-    'NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN'] }}
+    ${{ github.event.pull_request.head.repo.fork == true &&
+    secrets.NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN ||
+    github.event.pull_request.head.repo.fork != true &&
+    secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN || '' }}
 
 concurrency:
   group: >-
