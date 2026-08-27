@@ -13,9 +13,9 @@ category: platform
 
 Use this guide when Kody itself creates friction while you are using built-in
 capabilities, saved packages, package apps, jobs, memories, integrations, or
-official Kody guides. Contributor papercuts while developing this repository
-use the [friction log](../contributing/friction-log.md) (`friction` GitHub
-issues), not this guide.
+official Kody guides. Contributor papercuts while developing this repository use
+the [friction log](../contributing/friction-log.md) (`friction` GitHub issues),
+not this guide.
 
 The goal is small, user-approved improvement: resolve what can be fixed in the
 current task, remember durable user-specific context when appropriate, and offer

@@ -33,6 +33,7 @@ body:
     id: cost
     attributes:
       label: Cost
-      description: Time lost, how often this happens, who it hits, and the workaround.
+      description:
+        Time lost, how often this happens, who it hits, and the workaround.
     validations:
       required: true

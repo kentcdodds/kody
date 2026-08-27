@@ -27,9 +27,9 @@ Use the [Friction issue form](../../.github/ISSUE_TEMPLATE/friction.yml) or:
 gh issue create --title "Friction: …" --label friction --body-file -
 ```
 
-Write one issue per papercut. Include what you were doing, the unexpected
-cost, the workaround, and enough reproduction to investigate without the
-original session.
+Write one issue per papercut. Include what you were doing, the unexpected cost,
+the workaround, and enough reproduction to investigate without the original
+session.
 
 Do not commit a `.agents/friction-log/` directory. GitHub is the log.
 
@@ -41,25 +41,25 @@ spawns one Cursor Cloud Agent on `kentcdodds/kody` `main`.
 
 The investigator chooses one outcome per issue:
 
-| Outcome | What happens |
-| ------- | ------------ |
-| Already fixed | Closes the issue with the evidence. |
-| Invalid | Closes the issue (not repo friction, duplicate, or not actionable). |
-| Skip | Comments a recommended fix and marks the issue skipped until @kentcdodds replies. |
-| Fix | Opens a PR and follows [ship-pr](../../.agents/skills/ship-pr/SKILL.md). Low and medium risk may squash-merge. High risk stays ready-for-review. |
+| Outcome       | What happens                                                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Already fixed | Closes the issue with the evidence.                                                                                                              |
+| Invalid       | Closes the issue (not repo friction, duplicate, or not actionable).                                                                              |
+| Skip          | Comments a recommended fix and marks the issue skipped until @kentcdodds replies.                                                                |
+| Fix           | Opens a PR and follows [ship-pr](../../.agents/skills/ship-pr/SKILL.md). Low and medium risk may squash-merge. High risk stays ready-for-review. |
 
-A skip comment includes `<!-- friction-log:skipped -->`. Later daily runs
-ignore that issue until @kentcdodds comments (approve the recommendation, close
-it, or give a different approach).
+A skip comment includes `<!-- friction-log:skipped -->`. Later daily runs ignore
+that issue until @kentcdodds comments (approve the recommendation, close it, or
+give a different approach).
 
 ## Operator controls
 
-| Export | Purpose |
-| ------ | ------- |
-| `kody:@kentcdodds/friction-log/scan` | Read-only eligibility scan. No agent. |
-| `kody:@kentcdodds/friction-log/sweep` | Scan and optionally spawn (`dryRun`, `force`). |
-| `kody:@kentcdodds/friction-log/pause` | Kill switch: stop spawning. |
-| `kody:@kentcdodds/friction-log/resume` | Re-enable spawning. |
-| `kody:@kentcdodds/friction-log/status` | Kill switch, today's sweep, recent outcomes. |
+| Export                                 | Purpose                                        |
+| -------------------------------------- | ---------------------------------------------- |
+| `kody:@kentcdodds/friction-log/scan`   | Read-only eligibility scan. No agent.          |
+| `kody:@kentcdodds/friction-log/sweep`  | Scan and optionally spawn (`dryRun`, `force`). |
+| `kody:@kentcdodds/friction-log/pause`  | Kill switch: stop spawning.                    |
+| `kody:@kentcdodds/friction-log/resume` | Re-enable spawning.                            |
+| `kody:@kentcdodds/friction-log/status` | Kill switch, today's sweep, recent outcomes.   |
 
 The 05:00 job calls `./daily`, the no-arg wrapper around `sweep`.
