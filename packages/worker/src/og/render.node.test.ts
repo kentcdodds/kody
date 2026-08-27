@@ -21,7 +21,5 @@ test('truncateOgText collapses whitespace, breaks on word boundaries, and hard-c
 			"For all the agents you use today,\nand the ones you'll use tomorrow",
 			160,
 		),
-	).toBe(
-		"For all the agents you use today,\nand the ones you'll use tomorrow",
-	)
+	).toBe("For all the agents you use today,\nand the ones you'll use tomorrow")
 })

@@ -9,7 +9,7 @@ import {
 	landingOrbitAgents,
 	type LandingOrbitAgentIcon,
 } from '#universal/landing-agent-orbit.ts'
-import { type OgTheme } from '#worker/og/palette.ts'
+import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
 
 const OG_ASSET_URLS = {
 	bricolageGrotesqueLatin700:
@@ -27,16 +27,13 @@ const OG_ASSET_URLS = {
 
 const AGENT_ICON_IDS = landingOrbitAgents.map((agent) => agent.icon)
 
-function agentIconUrl(theme: OgTheme, icon: LandingOrbitAgentIcon): string {
-	return `https://assets.local/og/agent-icons/${theme}/${icon}.png`
+function agentIconSvgUrl(icon: LandingOrbitAgentIcon): string {
+	return `https://assets.local/images/icons/${icon}.svg`
 }
 
 export type OgAssetsFetcher = { fetch: (request: Request) => Promise<Response> }
 
-type AgentIconDataUris = Record<
-	LandingOrbitAgentIcon,
-	{ light: string; dark: string }
->
+type AgentIconSvgById = Record<LandingOrbitAgentIcon, string>
 
 type OgBinaryAssetCache = {
 	bricolageGrotesqueLatin700: ArrayBuffer
@@ -46,7 +43,7 @@ type OgBinaryAssetCache = {
 	kodyBaseDataUri: string
 	kodyDiscordDataUri: string
 	kodyLogoDataUri: string
-	agentIconDataUris: AgentIconDataUris
+	agentIconSvgs: AgentIconSvgById
 }
 
 let cache: OgBinaryAssetCache | null = null
@@ -67,6 +64,27 @@ function bytesToPngDataUri(bytes: Uint8Array): string {
 	return `data:image/png;base64,${btoa(binary)}`
 }
 
+function bytesToUtf8(bytes: Uint8Array): string {
+	return new TextDecoder().decode(bytes)
+}
+
+/**
+ * Homepage chips paint icons via CSS mask + `currentColor`. Satori has no
+ * mask path, so retint the shared SVG fills to the theme text colour.
+ */
+function tintAgentSvg(svg: string, color: string): string {
+	return svg.replace(/fill="[^"]*"/gi, `fill="${color}"`)
+}
+
+function svgToDataUri(svg: string): string {
+	const bytes = new TextEncoder().encode(svg)
+	let binary = ''
+	for (const byte of bytes) {
+		binary += String.fromCharCode(byte)
+	}
+	return `data:image/svg+xml;base64,${btoa(binary)}`
+}
+
 async function fetchAssetBytes(
 	assets: OgAssetsFetcher,
 	url: string,
@@ -81,18 +99,12 @@ async function fetchAssetBytes(
 async function loadOgBinaryAssets(
 	assets: OgAssetsFetcher,
 ): Promise<OgBinaryAssetCache> {
-	const iconFetches = AGENT_ICON_IDS.flatMap((icon) => [
-		fetchAssetBytes(assets, agentIconUrl('light', icon)).then((bytes) => ({
+	const iconFetches = AGENT_ICON_IDS.map((icon) =>
+		fetchAssetBytes(assets, agentIconSvgUrl(icon)).then((bytes) => ({
 			icon,
-			theme: 'light' as const,
-			bytes,
+			svg: bytesToUtf8(bytes),
 		})),
-		fetchAssetBytes(assets, agentIconUrl('dark', icon)).then((bytes) => ({
-			icon,
-			theme: 'dark' as const,
-			bytes,
-		})),
-	])
+	)
 
 	const [
 		bricolageGrotesqueLatin700,
@@ -114,14 +126,9 @@ async function loadOgBinaryAssets(
 		...iconFetches,
 	])
 
-	const agentIconDataUris = {} as AgentIconDataUris
-	for (const icon of AGENT_ICON_IDS) {
-		agentIconDataUris[icon] = { light: '', dark: '' }
-	}
+	const agentIconSvgs = {} as AgentIconSvgById
 	for (const result of iconResults) {
-		agentIconDataUris[result.icon][result.theme] = bytesToPngDataUri(
-			result.bytes,
-		)
+		agentIconSvgs[result.icon] = result.svg
 	}
 
 	return {
@@ -132,7 +139,7 @@ async function loadOgBinaryAssets(
 		kodyBaseDataUri: bytesToPngDataUri(kodyBase),
 		kodyDiscordDataUri: bytesToPngDataUri(kodyDiscord),
 		kodyLogoDataUri: bytesToPngDataUri(kodyLogo),
-		agentIconDataUris,
+		agentIconSvgs,
 	}
 }
 
@@ -193,7 +200,8 @@ export function getLandingAgentIconDataUri(
 	icon: LandingOrbitAgentIcon,
 	theme: OgTheme,
 ): string {
-	return requireCache().agentIconDataUris[icon][theme]
+	const svg = requireCache().agentIconSvgs[icon]
+	return svgToDataUri(tintAgentSvg(svg, getOgPalette(theme).text))
 }
 
 export function getKodyDiscordDataUri(): string {

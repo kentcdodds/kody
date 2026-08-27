@@ -56,8 +56,18 @@ function createLanternGlow(theme: OgTheme): SatoriElement {
 	}
 }
 
+/** Clearer than raw `palette.border` on the dark OG ground (Satori softens 1px). */
+function tetherStrokeColor(theme: OgTheme): string {
+	return theme === 'light' ? '#6a7078' : '#9aa1a9'
+}
+
+function chipBorderColor(theme: OgTheme): string {
+	return theme === 'light' ? '#9aa1a9' : '#7a828c'
+}
+
 function createTetherLayer(theme: OgTheme): SatoriElement {
 	const palette = getOgPalette(theme)
+	const stroke = tetherStrokeColor(theme)
 	const hx = pctToPx(landingLantern.x)
 	const hy = pctToPx(landingLantern.y)
 	const paths: Array<SatoriElement> = []
@@ -69,9 +79,9 @@ function createTetherLayer(theme: OgTheme): SatoriElement {
 				d,
 				fill: 'none',
 				stroke: palette.text,
-				strokeWidth: 7,
+				strokeWidth: 8,
 				strokeLinecap: 'round',
-				strokeOpacity: 0.06,
+				strokeOpacity: theme === 'light' ? 0.08 : 0.12,
 			},
 		})
 		paths.push({
@@ -79,8 +89,8 @@ function createTetherLayer(theme: OgTheme): SatoriElement {
 			props: {
 				d,
 				fill: 'none',
-				stroke: palette.border,
-				strokeWidth: 2.2,
+				stroke,
+				strokeWidth: 2.6,
 				strokeLinecap: 'round',
 			},
 		})
@@ -126,11 +136,12 @@ function createAgentChip(input: {
 				alignItems: 'center',
 				justifyContent: 'center',
 				backgroundColor: palette.surface,
-				border: `1px solid ${palette.border}`,
+				// 2px — 1px borders disappear under Satori/resvg antialias on dark.
+				border: `2px solid ${chipBorderColor(input.theme)}`,
 				boxShadow:
 					input.theme === 'light'
 						? '0 10px 24px rgba(23, 27, 32, 0.12)'
-						: '0 10px 24px rgba(0, 0, 0, 0.35)',
+						: '0 10px 24px rgba(0, 0, 0, 0.45)',
 			},
 			children: {
 				type: 'img',
