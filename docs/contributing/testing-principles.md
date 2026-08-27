@@ -41,6 +41,24 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
 - Avoid shared mutable test state across cases. If the next assertion depends on
   the same rendered object, request, or response, it likely belongs in the same
   test.
+- Do not add tautological assertions. An assertion is tautological when it
+  cannot fail unless the implementation and the test change in lockstep — there
+  is no independent oracle. Typical forms:
+  - Identity predicates: `isFoo(FOO_CONSTANT)` when `isFoo` is `===`,
+    `includes`, or `Set.has` of that same constant. Keep the interesting
+    branches (normalization, prefix/suffix, negatives, Error wrapping, cause
+    chains).
+  - Constant-to-self pins: `expect(EXPORTED_DAYS).toBe(14)` or
+    `expect(exportedDelays).toEqual([100, 500, 1_500])`. If the value is a
+    public contract, assert it where a caller observes it (serialized payload,
+    HTTP body, retry `nextDelayMs`), not on the export itself.
+  - Algorithm echo: building `expected` with the same helper the production
+    function uses (`shellQuote(x)` on both sides; picking the same fields
+    `toSummary(post)` returns). Use an independent oracle (hardcoded quoted
+    string, live schema after migration).
+  - Self-equality: `equal(x, x)`. Type-only checks, instructional-copy pins, and
+    absence-only deleted details (the next bullets) are the same failure mode. A
+    cheap syntactic checker cannot see this reliably; reject it in review.
 - Don't write tests for what the type system already guarantees.
 - Use disposable objects only when there is real cleanup. If no cleanup, skip
   `using` and `Symbol.dispose`.
@@ -129,6 +147,20 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
   and route `logAuditEvent` back through the shared spy.
 
 ## Examples
+
+### Tautological assertions
+
+```ts
+// Bad — matcher is `normalized === THE_CONSTANT`
+expect(isResetMessage(resetMessageConstant)).toBe(true)
+expect(exportedRetryDelaysMs).toEqual([100, 500, 1_500])
+expect(windowsEqual(window, window)).toBe(true)
+
+// Good — independent oracle or a real branch
+expect(isResetMessage(resetMessageConstant.replace(/\.$/, ''))).toBe(true)
+expect(retries).toEqual([{ attempt: 1, nextDelayMs: 100 }])
+expect(windowsEqual(window, { ...window, end: window.end + 1 })).toBe(false)
+```
 
 ### `Symbol.dispose` with `using`
 
