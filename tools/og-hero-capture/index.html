@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>OG hero capture (green screen)</title>
+		<style>
+			:root {
+				--color-text: #2a2e38;
+				--color-surface: #f7f8f9;
+				--color-border: #c9ced6;
+				--lantern-glow: oklch(0.88 0.11 85 / 0.4);
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html,
+			body {
+				margin: 0;
+				padding: 0;
+				background: #ff00ff;
+				overflow: hidden;
+				font-family:
+					system-ui,
+					-apple-system,
+					sans-serif;
+			}
+			.stage {
+				position: relative;
+				width: 1000px;
+				height: 1000px;
+				margin: 40px auto;
+				isolation: isolate;
+			}
+			.kody {
+				position: relative;
+				z-index: 1;
+				display: block;
+				width: 100%;
+				height: auto;
+			}
+			.glow {
+				position: absolute;
+				z-index: 1;
+				left: 57%;
+				top: 49.4%;
+				width: 26%;
+				aspect-ratio: 1;
+				translate: -50% -50%;
+				border-radius: 50%;
+				background: radial-gradient(
+					closest-side,
+					var(--lantern-glow),
+					transparent 70%
+				);
+				mix-blend-mode: screen;
+				pointer-events: none;
+			}
+			.lines {
+				position: absolute;
+				inset: 0;
+				width: 100%;
+				height: 100%;
+				overflow: visible;
+				pointer-events: none;
+				z-index: 2;
+				mask-image: radial-gradient(
+					ellipse 9.5% 8.2% at 57% 49.4%,
+					transparent 66%,
+					black 100%
+				);
+				-webkit-mask-image: radial-gradient(
+					ellipse 9.5% 8.2% at 57% 49.4%,
+					transparent 66%,
+					black 100%
+				);
+			}
+			.line {
+				fill: none;
+				stroke: color-mix(in oklab, var(--color-border) 75%, var(--color-text));
+				stroke-width: 0.55;
+				stroke-linecap: round;
+			}
+			.line-glow {
+				fill: none;
+				stroke: var(--color-text);
+				stroke-width: 1.4;
+				stroke-linecap: round;
+				opacity: 0.06;
+				filter: blur(0.5px);
+			}
+			.list {
+				list-style: none;
+				margin: 0;
+				padding: 0;
+				position: absolute;
+				inset: 0;
+				z-index: 3;
+				pointer-events: none;
+			}
+			.agent {
+				position: absolute;
+				left: var(--x);
+				top: var(--y);
+				translate: -50% -50%;
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				z-index: 3;
+			}
+			.agent::before {
+				content: '';
+				position: absolute;
+				top: 0.45rem;
+				left: 50%;
+				translate: -50% 0;
+				width: 4rem;
+				height: 4rem;
+				border-radius: 1.1rem;
+				background: rgba(20, 22, 28, 0.65);
+				z-index: -1;
+				filter: blur(5px);
+			}
+			.tile {
+				display: grid;
+				place-items: center;
+				width: 3.85rem;
+				height: 3.85rem;
+				border-radius: 1rem;
+				color: #2a2e38;
+				background: #ffffff;
+				border: 3px solid #4a5260;
+			}
+			.tile::before {
+				content: '';
+				width: 1.7rem;
+				height: 1.7rem;
+				background: currentColor;
+				mask-image: var(--chip-icon);
+				mask-position: center;
+				mask-size: contain;
+				mask-repeat: no-repeat;
+				-webkit-mask-image: var(--chip-icon);
+				-webkit-mask-position: center;
+				-webkit-mask-size: contain;
+				-webkit-mask-repeat: no-repeat;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="stage" id="stage">
+			<img
+				class="kody"
+				src="./kody-base-og-flat.png"
+				width="1254"
+				height="1254"
+				alt=""
+			/>
+			<div class="glow"></div>
+			<svg class="lines" viewBox="0 0 100 100" aria-hidden="true">
+				<g id="tethers"></g>
+			</svg>
+			<ul class="list" id="agents" aria-hidden="true"></ul>
+		</div>
+		<script>
+			const lantern = { x: 57, y: 49.4 }
+			const hostAgents = [
+				{ label: 'Cursor', icon: 'cursor', x: 12, y: 19 },
+				{ label: 'Claude Code', icon: 'claudecode', x: 88, y: 19 },
+				{ label: 'ChatGPT', icon: 'chatgpt', x: 93, y: 46 },
+				{ label: 'Copilot', icon: 'githubcopilot', x: 87, y: 72 },
+				{ label: 'Claude', icon: 'claude', x: 74, y: 92 },
+				{ label: 'Devin', icon: 'devin', x: 26, y: 92 },
+				{ label: 'Grok Bot', icon: 'grokbot', x: 13, y: 72 },
+				{ label: 'OpenCode', icon: 'opencode', x: 7, y: 46 },
+			]
+			function tetherPath(x, y, hx, hy) {
+				const dx = hx - x
+				const dy = hy - y
+				const len = Math.hypot(dx, dy) || 1
+				// Start on the tile rim (not the center) so the stroke meets the chip.
+				const inset = 0
+				const sx = x + (dx / len) * inset
+				const sy = y + (dy / len) * inset
+				const c1x = sx + dx * 0.1
+				const c1y = sy + dy * 0.6
+				const c2x = hx - dx * 0.45
+				const c2y = hy - dy * 0.05
+				return `M${sx} ${sy} C${c1x} ${c1y} ${c2x} ${c2y} ${hx} ${hy}`
+			}
+			const tethers = document.getElementById('tethers')
+			const agents = document.getElementById('agents')
+			const stage = document.getElementById('stage')
+			const tiles = []
+			for (const agent of hostAgents) {
+				const li = document.createElement('li')
+				li.className = 'agent'
+				li.style.setProperty('--x', `${agent.x}%`)
+				li.style.setProperty('--y', `${agent.y}%`)
+				li.innerHTML = `<span class="tile" style="--chip-icon:url('../../packages/worker/public/images/icons/${agent.icon}.svg')"></span>`
+				agents.appendChild(li)
+				tiles.push(li.querySelector('.tile'))
+			}
+			function redraw() {
+				const sr = stage.getBoundingClientRect()
+				const toU = (px, py) => ({
+					x: ((px - sr.left) / sr.width) * 100,
+					y: ((py - sr.top) / sr.height) * 100,
+				})
+				const kody = stage.querySelector('.kody')
+				const kr = kody.getBoundingClientRect()
+				const end = toU(
+					kr.left + (kr.width * lantern.x) / 100,
+					kr.top + (kr.height * lantern.y) / 100,
+				)
+				tethers.replaceChildren()
+				tiles.forEach((tile) => {
+					const tr = tile.getBoundingClientRect()
+					const cx = tr.left + tr.width / 2
+					const cy = tr.top + tr.height / 2
+					// Point on the tile border toward the lantern
+					const dx = end.x - ((cx - sr.left) / sr.width) * 100
+					const dy = end.y - ((cy - sr.top) / sr.height) * 100
+					const ang = Math.atan2(dy, dx)
+					const startPx = {
+						x: cx + Math.cos(ang) * (tr.width / 2),
+						y: cy + Math.sin(ang) * (tr.height / 2),
+					}
+					const start = toU(startPx.x, startPx.y)
+					const d = tetherPath(start.x, start.y, end.x, end.y)
+					const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+					g.innerHTML = `<path class="line-glow" d="${d}" /><path class="line" d="${d}" />`
+					tethers.appendChild(g)
+				})
+			}
+			const img = stage.querySelector('.kody')
+			if (img.complete) redraw()
+			else img.addEventListener('load', redraw)
+			requestAnimationFrame(() => requestAnimationFrame(redraw))
+		</script>
+	</body>
+</html>
