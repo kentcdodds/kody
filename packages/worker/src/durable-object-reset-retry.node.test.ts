@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import {
 	durableObjectCodeUpdatedResetMessage,
 	durableObjectInstanceInactiveCloseMessage,
+	durableObjectSqliteOutOfMemoryMessage,
 } from '#worker/sentry-options.ts'
 import {
 	durableObjectResetRetryDelaysMs,
@@ -34,6 +35,16 @@ test('transient Durable Object reset retry recovers thrown and result errors the
 	expect(
 		isTransientDurableObjectResetError(
 			new Error(durableObjectInstanceInactiveCloseMessage),
+		),
+	).toBe(true)
+	expect(
+		isTransientDurableObjectResetError(
+			durableObjectSqliteOutOfMemoryMessage.replace(/\.$/, ''),
+		),
+	).toBe(true)
+	expect(
+		isTransientDurableObjectResetError(
+			new Error(durableObjectSqliteOutOfMemoryMessage),
 		),
 	).toBe(true)
 	expect(

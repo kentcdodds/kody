@@ -9,6 +9,7 @@ import {
 	durableObjectInstanceInactiveCloseMessage,
 	durableObjectIsolateCpuResetMessage,
 	durableObjectIsolateMemoryResetMessage,
+	durableObjectSqliteOutOfMemoryMessage,
 	durableObjectStorageOperationTimeoutResetMessage,
 	executorSandboxTimeoutMessage,
 	executorSandboxTimeoutMessageExplanation,
@@ -31,6 +32,16 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	expect(
 		isDurableObjectIsolateResourceLimitResetMessage(
 			durableObjectIsolateCpuResetMessage,
+		),
+	).toBe(true)
+	expect(
+		isDurableObjectIsolateResourceLimitResetMessage(
+			durableObjectSqliteOutOfMemoryMessage,
+		),
+	).toBe(true)
+	expect(
+		isDurableObjectIsolateResourceLimitResetMessage(
+			durableObjectSqliteOutOfMemoryMessage.replace(/\.$/, ''),
 		),
 	).toBe(true)
 	expect(
@@ -466,16 +477,27 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		),
 	).not.toBeNull()
 
-	// Bare Cloudflare DO platform resets (memory / CPU / deploy-time code
-	// update / blockConcurrencyWhile timeout / storage-op timeout / storage
-	// object-reset / instance-inactive RPC close) are transient — one
-	// representative form per family, plus an `Error:`-prefixed variant and
-	// a missing trailing period. Wrapped recovery failures and unreferenced
-	// storage resets must stay visible.
+	// Bare Cloudflare DO platform resets (memory / CPU / SQLITE_NOMEM /
+	// deploy-time code update / blockConcurrencyWhile timeout / storage-op
+	// timeout / storage object-reset / instance-inactive RPC close) are
+	// transient — one representative form per family, plus an
+	// `Error:`-prefixed variant and a missing trailing period. Wrapped
+	// recovery failures and unreferenced storage resets must stay visible.
 	expect(
 		filterSentryEvent({
 			exception: {
 				values: [{ value: durableObjectIsolateMemoryResetMessage }],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
+						value: `Error: ${durableObjectSqliteOutOfMemoryMessage.replace(/\.$/, '')}`,
+					},
+				],
 			},
 		}),
 	).toBeNull()
@@ -540,6 +562,17 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	expect(filterSentryEvent(exhaustedPublishRecovery)).toBe(
 		exhaustedPublishRecovery,
 	)
+
+	const wrappedSqliteNomem = {
+		exception: {
+			values: [
+				{
+					value: `UserMeter acquireWriteLease failed after retries: ${durableObjectSqliteOutOfMemoryMessage}`,
+				},
+			],
+		},
+	}
+	expect(filterSentryEvent(wrappedSqliteNomem)).toBe(wrappedSqliteNomem)
 
 	const exhaustedArtifactRebuildRecovery = {
 		exception: {
