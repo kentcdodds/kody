@@ -8,7 +8,9 @@ import {
 import { heroBaseImage } from '#universal/landing-images.ts'
 import {
 	listAllWalkthroughHosts,
+	walkthroughHostMarkPaint,
 	type WalkthroughHost,
+	type WalkthroughHostMarkPaint,
 	type WalkthroughHostPick,
 } from '#universal/walkthrough-hosts.ts'
 
@@ -67,6 +69,7 @@ export const landingHeroPinnedHostIds = [
 export type LandingHeroAgent = (typeof landingHeroSlots)[number] & {
 	label: string
 	icon: string
+	paint: WalkthroughHostMarkPaint
 }
 
 export function pickLandingHeroRing(
@@ -96,6 +99,7 @@ export function placeLandingHeroAgents(
 			...slot,
 			label: identity.label,
 			icon: identity.icon,
+			paint: walkthroughHostMarkPaint(identity),
 		}
 	})
 }
@@ -406,6 +410,7 @@ export function LandingHeroAgents(
 							>
 								<span
 									class="landing-hero-agent-tile"
+									data-mark={agent.paint}
 									style={{
 										'--chip-icon': `url("/images/icons/${agent.icon}.svg")`,
 									}}

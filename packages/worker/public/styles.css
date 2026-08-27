@@ -1104,6 +1104,16 @@ html.is-settled {
 	-webkit-mask-repeat: no-repeat;
 }
 
+.landing-hero-agent-tile[data-mark='image']::before {
+	background: none;
+	background-image: var(--chip-icon);
+	background-position: center;
+	background-size: contain;
+	background-repeat: no-repeat;
+	mask-image: none;
+	-webkit-mask-image: none;
+}
+
 .landing-hero-agent-name {
 	font-size: 0.8rem;
 	font-weight: 600;

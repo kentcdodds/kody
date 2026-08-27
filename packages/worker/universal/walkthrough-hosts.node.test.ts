@@ -15,8 +15,10 @@ import {
 	replaceWalkthroughHost,
 	resolveWalkthroughKicker,
 	shuffleWalkthroughHosts,
+	walkthroughHostById,
 	walkthroughHostCatalog,
 	walkthroughHostForAct,
+	walkthroughHostMarkPaint,
 	walkthroughHostMarkUrl,
 } from './walkthrough-hosts.ts'
 
@@ -108,6 +110,8 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 			)
 			.map((host) => host.icon),
 	).toEqual([])
+	expect(walkthroughHostMarkPaint(walkthroughHostById('hermes')!)).toBe('image')
+	expect(walkthroughHostMarkPaint(walkthroughHostById('pi')!)).toBe('mask')
 	expect(
 		picks.some(
 			(pick) =>

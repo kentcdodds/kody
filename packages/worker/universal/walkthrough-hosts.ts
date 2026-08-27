@@ -25,12 +25,17 @@ export type WalkthroughHostSlot = 'coding' | 'invoke' | 'notify'
 
 export type WalkthroughHostKind = 'coding' | 'chat' | 'both'
 
+/** How the host mark is painted. Masks follow currentColor; images keep
+ *  their own ink (Hermes has no upstream SVG, only the nous-girl artwork). */
+export type WalkthroughHostMarkPaint = 'mask' | 'image'
+
 export type WalkthroughHost = {
 	id: string
 	label: string
 	icon: string
 	company: WalkthroughHostCompany
 	kind: WalkthroughHostKind
+	paint?: WalkthroughHostMarkPaint
 }
 
 /** Serializable triple embedded in SSR loader data so hydrate matches. */
@@ -172,6 +177,7 @@ export const walkthroughHostCatalog = [
 		icon: 'hermes',
 		company: 'nous',
 		kind: 'coding',
+		paint: 'image',
 	},
 ] as const satisfies ReadonlyArray<WalkthroughHost>
 
@@ -390,6 +396,40 @@ export function replaceWalkthroughHost(
 
 export function walkthroughHostMarkUrl(host: WalkthroughHost) {
 	return `/images/icons/${host.icon}.svg`
+}
+
+export function walkthroughHostMarkPaint(
+	host: Pick<WalkthroughHost, 'paint'>,
+): WalkthroughHostMarkPaint {
+	return host.paint ?? 'mask'
+}
+
+export function walkthroughHostMarkPaintCss(paint: WalkthroughHostMarkPaint) {
+	switch (paint) {
+		case 'image':
+			return {
+				backgroundImage: 'var(--chip-icon)',
+				backgroundPosition: 'center',
+				backgroundSize: 'contain',
+				backgroundRepeat: 'no-repeat' as const,
+			}
+		case 'mask':
+			return {
+				background: 'currentColor',
+				maskImage: 'var(--chip-icon)',
+				maskPosition: 'center',
+				maskSize: 'contain',
+				maskRepeat: 'no-repeat' as const,
+				WebkitMaskImage: 'var(--chip-icon)',
+				WebkitMaskPosition: 'center',
+				WebkitMaskSize: 'contain',
+				WebkitMaskRepeat: 'no-repeat' as const,
+			}
+		default: {
+			const exhaustive: never = paint
+			return exhaustive
+		}
+	}
 }
 
 /** Conversation hosts in story order, unique by id. */

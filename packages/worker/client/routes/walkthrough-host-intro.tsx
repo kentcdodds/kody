@@ -3,6 +3,8 @@ import { on } from '#client/event-mixin.ts'
 import {
 	listWalkthroughHostOptions,
 	replaceWalkthroughHost,
+	walkthroughHostMarkPaint,
+	walkthroughHostMarkPaintCss,
 	walkthroughHostMarkUrl,
 	walkthroughHostSlotLabel,
 	type WalkthroughHost,
@@ -97,7 +99,10 @@ function renderHostOption(host: WalkthroughHost) {
 	return (
 		<span mix={css(optionInnerCss)}>
 			<span
-				mix={css(optionMarkCss)}
+				mix={css({
+					...optionMarkBoxCss,
+					...walkthroughHostMarkPaintCss(walkthroughHostMarkPaint(host)),
+				})}
 				style={{
 					'--chip-icon': `url("${walkthroughHostMarkUrl(host)}")`,
 				}}
@@ -206,17 +211,8 @@ const optionInnerCss = {
 	gap: '0.35em',
 }
 
-const optionMarkCss = {
+const optionMarkBoxCss = {
 	width: '0.85em',
 	height: '0.85em',
 	flex: 'none',
-	background: 'currentColor',
-	maskImage: 'var(--chip-icon)',
-	maskPosition: 'center',
-	maskSize: 'contain',
-	maskRepeat: 'no-repeat',
-	WebkitMaskImage: 'var(--chip-icon)',
-	WebkitMaskPosition: 'center',
-	WebkitMaskSize: 'contain',
-	WebkitMaskRepeat: 'no-repeat',
 }
