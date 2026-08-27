@@ -41,8 +41,8 @@ Example shape:
 ## Token refresh
 
 All integrations refresh host-side through `createAuthenticatedFetch`, which
-calls `integration_token_refresh` on 401 and retries with a secret placeholder
-— raw tokens never enter the sandbox. Reconnectable refresh failures dispatch
+calls `integration_token_refresh` on 401 and retries with a secret placeholder —
+raw tokens never enter the sandbox. Reconnectable refresh failures dispatch
 `integration.auth.failed` to packages that subscribe; successful refreshes and
 `/connect/oauth` persists dispatch `integration.auth.succeeded` (see
 [package subscriptions](./package-subscriptions.md)). Use `refreshAccessToken`
@@ -225,8 +225,8 @@ create a thin helpers package.
    `https://kody.codes/connect/oauth?...`.
 3. Tell the user the exact redirect URI to register:
    `https://kody.codes/connect/oauth`. The page shows it with a copy button.
-4. Have the user open the URL while signed in, paste their client ID (and
-   client secret when the flow is confidential), and wait for success.
+4. Have the user open the URL while signed in, paste their client ID (and client
+   secret when the flow is confidential), and wait for success.
 5. Run the authenticated smoke test from `integration_bootstrap`
    (`createAuthenticatedFetch`). Do not persist access or refresh tokens with
    `secret_set` / `secret_set_many`.

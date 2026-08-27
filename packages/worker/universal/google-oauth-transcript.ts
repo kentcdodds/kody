@@ -201,7 +201,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 								},
 								google: {
 									title: 'Connect Google (Gmail, Calendar, Drive)',
-									body: '# Connect Google (Gmail, Calendar, Drive)\n\nConnect Google by creating your own OAuth client in Google Cloud. Register Kody\'s redirect URI, then finish on `/connect/oauth`.\n\n## Create the OAuth client\n\n…',
+									body: "# Connect Google (Gmail, Calendar, Drive)\n\nConnect Google by creating your own OAuth client in Google Cloud. Register Kody's redirect URI, then finish on `/connect/oauth`.\n\n## Create the OAuth client\n\n…",
 								},
 							},
 						}),

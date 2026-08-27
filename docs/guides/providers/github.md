@@ -173,8 +173,8 @@ instead of hand-rolled API calls.
 2. `community_fork` it into your scope (or click **Install** on the listing).
 3. Check the fork's README **Required setup**: the default `bot` account reads
    the `githubAccessToken` secret — the exact name Lane A saved, so no
-   adaptation is needed for the PAT lane. For OAuth (Lane B), remap the
-   account to the `github` integration name when the package supports that.
+   adaptation is needed for the PAT lane. For OAuth (Lane B), remap the account
+   to the `github` integration name when the package supports that.
 4. Verify the fork against your credentials from `execute`:
 
 ```ts
