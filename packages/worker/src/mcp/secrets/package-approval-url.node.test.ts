@@ -19,6 +19,18 @@ test('buildSecretPackageApprovalUrl keeps the single-secret detail path', () => 
 	).toBe(
 		'https://example.com/account/secrets/user/discordBotToken?package_id=pkg-1&package=release',
 	)
+	expect(
+		buildSecretPackageApprovalUrl({
+			baseUrl: 'https://kody.codes',
+			name: 'grokBotWake.71e7550e-746d-417f-b253-05165975ff69',
+			scope: 'user',
+			packageId: 'pkg-1',
+			kodyId: 'release',
+			storageContext: null,
+		}),
+	).toBe(
+		'https://kody.codes/account/secrets/user/grokBotWake%2E71e7550e-746d-417f-b253-05165975ff69?package_id=pkg-1&package=release',
+	)
 })
 
 test('bulk package approval URL lists unique secret names on the approve route', () => {

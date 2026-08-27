@@ -1,4 +1,7 @@
-import { buildAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
+import {
+	buildAccountSecretPath,
+	joinOriginAndEncodedPath,
+} from '@kody-internal/shared/account-secret-route.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { normalizeHost } from './allowed-hosts.ts'
 import { type SecretScope } from './types.ts'
@@ -16,7 +19,7 @@ export function buildSecretHostApprovalUrl(input: {
 		packageId: input.storageContext?.packageId ?? null,
 		sessionId: input.storageContext?.sessionId ?? null,
 	})
-	const url = new URL(secretPath, input.baseUrl)
-	url.searchParams.set('allowed-host', normalizeHost(input.requestedHost))
-	return url.toString()
+	const search = new URLSearchParams()
+	search.set('allowed-host', normalizeHost(input.requestedHost))
+	return `${joinOriginAndEncodedPath(input.baseUrl, secretPath)}?${search}`
 }

@@ -128,6 +128,35 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 		'https://example.com/account/secrets/user/discordBotToken',
 	)
 
+	const dottedSecretName = 'grokBotWake.71e7550e-746d-417f-b253-05165975ff69'
+	mockModule.listSecretLocationsByNameForUser.mockResolvedValue([
+		{
+			scope: 'user',
+			binding_key: '',
+			name: dottedSecretName,
+			expires_at: null,
+		},
+	])
+	const dottedMiss = await createUnresolvedSecretMessage({
+		env,
+		userId,
+		name: dottedSecretName,
+		scope: 'package',
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: null,
+			storageId: null,
+		},
+		baseUrl: 'https://kody.codes',
+	})
+	expect(dottedMiss).toContain(
+		'https://kody.codes/account/secrets/user/grokBotWake%2E71e7550e-746d-417f-b253-05165975ff69',
+	)
+	expect(dottedMiss).not.toContain(
+		'https://kody.codes/account/secrets/user/grokBotWake.71e7550e-746d-417f-b253-05165975ff69',
+	)
+
 	mockModule.listSecretLocationsByNameForUser.mockRejectedValue(
 		new Error('d1 unavailable'),
 	)

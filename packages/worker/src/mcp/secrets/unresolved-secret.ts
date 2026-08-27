@@ -1,4 +1,4 @@
-import { buildAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
+import { buildAccountSecretUrl } from '@kody-internal/shared/account-secret-route.ts'
 import { isSecretExpired } from '@kody-internal/shared/secret-expires-at.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
@@ -147,13 +147,13 @@ function buildSecretScopeEditorUrl(input: {
 	sessionId: string | null
 }) {
 	try {
-		const secretPath = buildAccountSecretPath({
+		return buildAccountSecretUrl({
+			baseUrl: input.baseUrl,
 			name: input.name,
 			scope: input.scope,
 			packageId: input.packageId,
 			sessionId: input.sessionId,
 		})
-		return new URL(secretPath, input.baseUrl).toString()
 	} catch {
 		return null
 	}
