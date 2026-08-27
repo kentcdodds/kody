@@ -60,6 +60,15 @@
 			"fallthrough": true,
 		},
 		{
+			// Page OG composition — dynamically imported via a relative specifier
+			// from `app/handlers/og-page-image.ts`. Keep it (and its agents-hero
+			// dependency, bundled into this module) out of index.js so isolate
+			// cold starts stay under CF's 1s budget.
+			"type": "ESModule",
+			"globs": ["og/page-image.ts", "./og/page-image.ts"],
+			"fallthrough": true,
+		},
+		{
 			"type": "CompiledWasm",
 			"globs": ["generated/*.wasm"],
 			"fallthrough": true,

@@ -1,4 +1,3 @@
-import resvgWasm from '@resvg/resvg-wasm/index_bg.wasm'
 import yogaWasm from 'satori/yoga.wasm'
 
 export {
@@ -14,5 +13,6 @@ export {
 	type OgAssetsFetcher,
 } from './og-binary-assets.ts'
 
+export { ogResvgWasm } from './og-resvg-wasm.ts'
+
 export const ogYogaWasm = yogaWasm
-export const ogResvgWasm = resvgWasm

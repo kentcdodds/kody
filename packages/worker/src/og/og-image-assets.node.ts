@@ -4,7 +4,6 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 
 const yogaWasmPath = require.resolve('satori/yoga.wasm')
-const resvgWasmPath = require.resolve('@resvg/resvg-wasm/index_bg.wasm')
 
 export {
 	ensureOgBinaryAssetsReady,
@@ -19,7 +18,6 @@ export {
 	type OgAssetsFetcher,
 } from './og-binary-assets.node.ts'
 
+export { ogResvgWasm } from './og-resvg-wasm.node.ts'
+
 export const ogYogaWasm = await WebAssembly.compile(readFileSync(yogaWasmPath))
-export const ogResvgWasm = await WebAssembly.compile(
-	readFileSync(resvgWasmPath),
-)

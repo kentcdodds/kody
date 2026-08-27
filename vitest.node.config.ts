@@ -25,6 +25,20 @@ export default mergeConfig(
 					),
 				},
 				{
+					find: '#worker/og/og-resvg-wasm.ts',
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/og/og-resvg-wasm.node.ts',
+					),
+				},
+				{
+					find: /\/og\/og-resvg-wasm\.ts$/,
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/og/og-resvg-wasm.node.ts',
+					),
+				},
+				{
 					find: '#worker/og/og-binary-assets.ts',
 					replacement: resolve(
 						rootDir,

@@ -20,7 +20,11 @@ export function createOgPageImageHandler(env: Env) {
 			// the OG renderer pulls in satori and @resvg/resvg-wasm plus two wasm
 			// binaries, which would otherwise bloat isolate cold starts for a
 			// route that is only hit by social-media crawlers.
-			const { renderPageOgImage } = await import('#worker/og/page-image.ts')
+			// Relative specifier on purpose: wrangler `find_additional_modules`
+			// only keeps modules external when the import matches a rule glob
+			// (see `generated/*.mjs`); `#worker/…` aliases get inlined into
+			// index.js and still cost cold-start parse CPU.
+			const { renderPageOgImage } = await import('../../og/page-image.ts')
 			const png = await renderPageOgImage({ page, theme, assets: env.ASSETS })
 
 			return new Response(png, {
