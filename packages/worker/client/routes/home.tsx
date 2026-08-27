@@ -41,11 +41,10 @@ import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
  * work. Motion is enhance-only (`html.js`) and fully off under
  * `prefers-reduced-motion`.
  *
- * Positioning (public door): keep using the agent you already have — Kody is
- * the account tools and memory live on when you switch. The hero stage (Kody
- * with the host agents tethered around it) names the agents; the H1 stays
- * vendor-agnostic. Not another agent, chat, or harness. Factory / npm /
- * packages stay below the fold.
+ * Positioning (public door): Kody is the home your agents share — for the
+ * agents you use today and the ones you'll use tomorrow. The hero stage
+ * (Kody with the host agents tethered around it) names the agents; the H1
+ * matches the OG card. Factory / npm / packages stay below the fold.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
  * emit a per-node `<style data-rmx>` tag for every marketing block.
@@ -215,13 +214,12 @@ export function HomeRoute(handle: Handle) {
 				{/* ============ hero ============ */}
 				<section data-parallax-scope class="landing-hero">
 					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
-						Keep using the agent you already have
-						<br />
-						<em>Kody is the account they share</em>
+						The Home Your Agents Share
 					</h1>
 					<p data-rise style={{ '--rise': '1' }} class="landing-hero-sub">
-						Tools, setup, and memory live here when you switch. Not another
-						chat. Not another harness.
+						For all the agents you use today,
+						<br />
+						and the ones you&apos;ll use tomorrow
 					</p>
 					<LandingHeroAgents hosts={walkthroughHosts ?? undefined} />
 					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}

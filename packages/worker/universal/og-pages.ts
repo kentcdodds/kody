@@ -21,7 +21,7 @@ export type PublicOgPage = {
 
 export const publicOgPages = {
 	home: {
-		// Short enough for 78px OG type. The homepage H1 keeps the full door.
+		// Same copy as the homepage H1 and subtitle.
 		imageTitle: 'The Home Your Agents Share',
 		imageSubtitle:
 			"For all the agents you use today,\nand the ones you'll use tomorrow",

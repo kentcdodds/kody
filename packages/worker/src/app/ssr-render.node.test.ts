@@ -605,11 +605,9 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
 	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
-	expect(withoutAssetsHtml).toContain('Keep using the agent you already have')
-	expect(withoutAssetsHtml).toContain('Kody is the account they share')
-	expect(withoutAssetsHtml).toContain(
-		'Tools, setup, and memory live here when you switch. Not another chat. Not another harness.',
-	)
+	expect(withoutAssetsHtml).toContain('The Home Your Agents Share')
+	expect(withoutAssetsHtml).toContain('For all the agents you use today,')
+	expect(withoutAssetsHtml).toContain("and the ones you'll use tomorrow")
 	// Hero stage: one agent list around Kody, every token tethered by a line.
 	expect(withoutAssetsHtml).toContain('landing-hero-agents')
 	expect(withoutAssetsHtml).toContain('/images/kody-mark.png')

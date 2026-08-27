@@ -19,7 +19,7 @@ const publicRoutes: RouteScenario[] = [
 		ready: async (page) => {
 			await expect(
 				page.getByRole('heading', {
-					name: /Keep using the agent you already have\s*Kody is the account they share/i,
+					name: /The Home Your Agents Share/i,
 				}),
 			).toBeVisible()
 		},
