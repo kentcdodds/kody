@@ -175,7 +175,7 @@ function createEnv() {
 	} as Env
 }
 
-test('MCP servers API lists servers with live hub status', async () => {
+test('MCP servers API lists, adds, reconnects, disables, and deletes with user scope', async () => {
 	const handler = createAccountMcpServersApiHandler(createEnv())
 
 	const listResponse = await handler.handler({
@@ -210,10 +210,6 @@ test('MCP servers API lists servers with live hub status', async () => {
 			},
 		],
 	})
-})
-
-test('MCP servers API add action uses the canonical OAuth callback origin', async () => {
-	const handler = createAccountMcpServersApiHandler(createEnv())
 
 	const addResponse = await handler.handler({
 		request: new Request('https://example.com/account/mcp-servers.json', {
@@ -246,10 +242,6 @@ test('MCP servers API add action uses the canonical OAuth callback origin', asyn
 	}
 	expect(payload.ok).toBe(true)
 	expect(payload.selectedServerId).toBe('server-2')
-})
-
-test('MCP servers API reconnect uses the current callback and starts fresh authorization', async () => {
-	const handler = createAccountMcpServersApiHandler(createEnv())
 
 	const reconnectResponse = await handler.handler({
 		request: new Request('https://example.com/account/mcp-servers.json', {
@@ -265,10 +257,6 @@ test('MCP servers API reconnect uses the current callback and starts fresh autho
 		serverId: 'server-1',
 		callbackUrl: 'https://example.com/account/mcp-servers/oauth/callback',
 	})
-})
-
-test('MCP servers API set-enabled and delete actions are user-scoped', async () => {
-	const handler = createAccountMcpServersApiHandler(createEnv())
 
 	const disableResponse = await handler.handler({
 		request: new Request('https://example.com/account/mcp-servers.json', {

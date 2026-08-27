@@ -8,17 +8,15 @@ import {
 } from './user-oauth-app-favicon.ts'
 import { type UserOauthApp } from './types.ts'
 
-test('resolveFaviconOrigin prefers authorizeUrl registrable domain', () => {
-	const resolved = resolveFaviconOrigin([
+test('favicon origin resolution prefers authorize hosts and skips unsafe URLs', () => {
+	const google = resolveFaviconOrigin([
 		'https://accounts.google.com/o/oauth2/v2/auth',
 		'https://www.googleapis.com',
 		'https://oauth2.googleapis.com/token',
 	])
-	expect(resolved?.host).toBe('google.com')
-	expect(resolved?.origin.href).toBe('https://google.com/')
-})
+	expect(google?.host).toBe('google.com')
+	expect(google?.origin.href).toBe('https://google.com/')
 
-test('resolveFaviconOrigin skips http and private hosts', () => {
 	expect(
 		resolveFaviconOrigin([
 			'http://dropbox.com/oauth2/authorize',
@@ -26,9 +24,7 @@ test('resolveFaviconOrigin skips http and private hosts', () => {
 			'https://www.dropbox.com/oauth2/authorize',
 		])?.host,
 	).toBe('dropbox.com')
-})
 
-test('assertHttpsPublicUrl rejects credentials and localhost', () => {
 	expect(() => assertHttpsPublicUrl('http://example.com/icon.png')).toThrow(
 		/https/,
 	)
