@@ -5,6 +5,12 @@
  * is rendered.
  */
 
+import {
+	landingOrbitAgents,
+	type LandingOrbitAgentIcon,
+} from '#universal/landing-agent-orbit.ts'
+import { type OgTheme } from '#worker/og/palette.ts'
+
 const OG_ASSET_URLS = {
 	bricolageGrotesqueLatin700:
 		'https://assets.local/og/bricolage-grotesque-latin-700.ttf',
@@ -12,21 +18,33 @@ const OG_ASSET_URLS = {
 		'https://assets.local/og/wix-madefor-text-latin-400.ttf',
 	kodyPatternDark: 'https://assets.local/og/kody-pattern-dark.png',
 	kodyPatternLight: 'https://assets.local/og/kody-pattern-light.png',
-	kodyHero: 'https://assets.local/og/kody-hero.png',
+	kodyLanternBase: 'https://assets.local/og/kody-lantern-base.png',
 	kodyDiscord: 'https://assets.local/og/kody-discord.png',
 	kodyLogo: 'https://assets.local/og/kody-logo.png',
 } as const
 
+const AGENT_ICON_IDS = landingOrbitAgents.map((agent) => agent.icon)
+
+function agentIconUrl(theme: OgTheme, icon: LandingOrbitAgentIcon): string {
+	return `https://assets.local/og/agent-icons/${theme}/${icon}.png`
+}
+
 export type OgAssetsFetcher = { fetch: (request: Request) => Promise<Response> }
+
+type AgentIconDataUris = Record<
+	LandingOrbitAgentIcon,
+	{ light: string; dark: string }
+>
 
 type OgBinaryAssetCache = {
 	bricolageGrotesqueLatin700: ArrayBuffer
 	wixMadeforTextLatin400: ArrayBuffer
 	kodyPatternDarkDataUri: string
 	kodyPatternLightDataUri: string
-	kodyHeroDataUri: string
+	kodyLanternBaseDataUri: string
 	kodyDiscordDataUri: string
 	kodyLogoDataUri: string
+	agentIconDataUris: AgentIconDataUris
 }
 
 let cache: OgBinaryAssetCache | null = null
@@ -61,32 +79,58 @@ async function fetchAssetBytes(
 async function loadOgBinaryAssets(
 	assets: OgAssetsFetcher,
 ): Promise<OgBinaryAssetCache> {
+	const iconFetches = AGENT_ICON_IDS.flatMap((icon) => [
+		fetchAssetBytes(assets, agentIconUrl('light', icon)).then((bytes) => ({
+			icon,
+			theme: 'light' as const,
+			bytes,
+		})),
+		fetchAssetBytes(assets, agentIconUrl('dark', icon)).then((bytes) => ({
+			icon,
+			theme: 'dark' as const,
+			bytes,
+		})),
+	])
+
 	const [
 		bricolageGrotesqueLatin700,
 		wixMadeforTextLatin400,
 		kodyPatternDark,
 		kodyPatternLight,
-		kodyHero,
+		kodyLanternBase,
 		kodyDiscord,
 		kodyLogo,
+		...iconResults
 	] = await Promise.all([
 		fetchAssetBytes(assets, OG_ASSET_URLS.bricolageGrotesqueLatin700),
 		fetchAssetBytes(assets, OG_ASSET_URLS.wixMadeforTextLatin400),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyPatternDark),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyPatternLight),
-		fetchAssetBytes(assets, OG_ASSET_URLS.kodyHero),
+		fetchAssetBytes(assets, OG_ASSET_URLS.kodyLanternBase),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyDiscord),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyLogo),
+		...iconFetches,
 	])
+
+	const agentIconDataUris = {} as AgentIconDataUris
+	for (const icon of AGENT_ICON_IDS) {
+		agentIconDataUris[icon] = { light: '', dark: '' }
+	}
+	for (const result of iconResults) {
+		agentIconDataUris[result.icon][result.theme] = bytesToPngDataUri(
+			result.bytes,
+		)
+	}
 
 	return {
 		bricolageGrotesqueLatin700: toArrayBuffer(bricolageGrotesqueLatin700),
 		wixMadeforTextLatin400: toArrayBuffer(wixMadeforTextLatin400),
 		kodyPatternDarkDataUri: bytesToPngDataUri(kodyPatternDark),
 		kodyPatternLightDataUri: bytesToPngDataUri(kodyPatternLight),
-		kodyHeroDataUri: bytesToPngDataUri(kodyHero),
+		kodyLanternBaseDataUri: bytesToPngDataUri(kodyLanternBase),
 		kodyDiscordDataUri: bytesToPngDataUri(kodyDiscord),
 		kodyLogoDataUri: bytesToPngDataUri(kodyLogo),
+		agentIconDataUris,
 	}
 }
 
@@ -139,8 +183,15 @@ export function getKodyPatternDataUri(theme: 'light' | 'dark'): string {
 		: loaded.kodyPatternDarkDataUri
 }
 
-export function getKodyHeroDataUri(): string {
-	return requireCache().kodyHeroDataUri
+export function getKodyLanternBaseDataUri(): string {
+	return requireCache().kodyLanternBaseDataUri
+}
+
+export function getLandingAgentIconDataUri(
+	icon: LandingOrbitAgentIcon,
+	theme: OgTheme,
+): string {
+	return requireCache().agentIconDataUris[icon][theme]
 }
 
 export function getKodyDiscordDataUri(): string {

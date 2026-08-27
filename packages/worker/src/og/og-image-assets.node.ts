@@ -9,7 +9,8 @@ const resvgWasmPath = require.resolve('@resvg/resvg-wasm/index_bg.wasm')
 export {
 	ensureOgBinaryAssetsReady,
 	getBricolageGrotesqueLatin700FontData,
-	getKodyHeroDataUri,
+	getKodyLanternBaseDataUri,
+	getLandingAgentIconDataUri,
 	getKodyDiscordDataUri,
 	getKodyLogoDataUri,
 	getKodyPatternDataUri,

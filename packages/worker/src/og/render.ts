@@ -36,6 +36,12 @@ export type SatoriElement = {
 		fill?: string
 		stroke?: string
 		strokeWidth?: number
+		strokeLinecap?: 'butt' | 'round' | 'square'
+		strokeOpacity?: number
+		opacity?: number
+		cx?: number
+		cy?: number
+		r?: number
 	}
 }
 
