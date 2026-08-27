@@ -26,7 +26,9 @@ permissions:
 env:
   CI: '1'
   NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN:
-    ${{ github.event.pull_request.head.repo.fork == true && secrets.NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN || secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN }}
+    ${{ github.event.pull_request.head.repo.fork == true &&
+    secrets.NX_SELF_HOSTED_REMOTE_CACHE_READ_TOKEN ||
+    secrets.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN }}
 
 concurrency:
   group: >-
