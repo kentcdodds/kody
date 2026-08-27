@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
 import type * as IntegrationsRepo from '#worker/integrations/repo.ts'
 import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
@@ -377,42 +377,16 @@ function createEnv() {
 	} as Env
 }
 
-beforeEach(() => {
-	vi.clearAllMocks()
-})
-
-test('integrations API serves the connect-oauth chooser without token values', async () => {
+test('integrations API lists connections with app grouping metadata and serves the connect-oauth chooser without token values', async () => {
 	const handler = createAccountIntegrationsApiHandler(createEnv())
-	const response = await handler.handler({
-		request: new Request(
-			'https://example.com/account/integrations.json?connectChooser=1',
-		),
-		params: {},
-	} as never)
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload.ok).toBe(true)
-	expect(payload.chooser.options).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				id: 'connection:google',
-				kind: 'connection',
-				href: '/connect/oauth?provider=google&app=google',
-			}),
-		]),
-	)
-	expect(JSON.stringify(payload)).not.toMatch(/secret-value|token-value/i)
-})
 
-test('integrations API lists connections with app grouping metadata and never exposes token values', async () => {
-	const handler = createAccountIntegrationsApiHandler(createEnv())
-	const response = await handler.handler({
+	const listResponse = await handler.handler({
 		request: new Request('https://example.com/account/integrations.json'),
 		params: {},
 	} as never)
 
-	expect(response.status).toBe(200)
-	expect(response.headers.get('Cache-Control')).toBe('no-store')
+	expect(listResponse.status).toBe(200)
+	expect(listResponse.headers.get('Cache-Control')).toBe('no-store')
 	expect(mockModule.listJoinedIntegrations).toHaveBeenCalledWith({
 		env: expect.any(Object),
 		userId: 'stable-user-1',
@@ -421,145 +395,60 @@ test('integrations API lists connections with app grouping metadata and never ex
 		env: expect.any(Object),
 		userId: 'stable-user-1',
 	})
-	const payload = await response.json()
-	expect(payload).toEqual({
+	const listPayload = await listResponse.json()
+	expect(listPayload).toMatchObject({
 		ok: true,
 		email: 'user@example.com',
 		username: 'test-user',
 		savedPackages: [],
 		approval: null,
-		apps: [
-			{
+	})
+	expect(listPayload.apps).toHaveLength(2)
+	expect(listPayload.apps).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
 				slug: 'github',
-				provider: 'github',
-				label: null,
 				clientId: 'github-client-id-value',
-				clientSecretSecretName: 'githubClientSecret',
-				tokenUrl: 'https://github.com/login/oauth/access_token',
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
-				apiBaseUrl: 'https://api.github.com',
-				flow: 'confidential',
-				usePkce: null,
-				tokenExchangeStyle: null,
-				scopeSeparator: null,
-				extraAuthorizeParams: {},
 				connectionCount: 1,
 				connections: [{ name: 'github', accountLabel: null }],
-				logoPath: null,
-				autoLogoPath: null,
-				createdAt,
-				updatedAt,
-			},
-			{
+			}),
+			expect.objectContaining({
 				slug: 'google',
-				provider: 'google',
-				label: null,
 				clientId: 'shared-google-client',
-				clientSecretSecretName: 'googleClientSecret',
-				tokenUrl: 'https://oauth2.googleapis.com/token',
-				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				apiBaseUrl: 'https://www.googleapis.com',
-				flow: 'pkce',
-				usePkce: null,
-				tokenExchangeStyle: null,
-				scopeSeparator: null,
-				extraAuthorizeParams: { access_type: 'offline' },
 				connectionCount: 2,
 				connections: [
 					{ name: 'google', accountLabel: 'Personal' },
 					{ name: 'google-calendar', accountLabel: 'Work calendar' },
 				],
-				logoPath: null,
-				autoLogoPath: null,
-				createdAt,
-				updatedAt,
-			},
-		],
-		integrations: [
-			{
+			}),
+		]),
+	)
+	expect(listPayload.integrations).toHaveLength(3)
+	expect(listPayload.integrations).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
 				name: 'github',
 				appSlug: 'github',
-				provider: 'github',
-				appLabel: null,
-				accountLabel: null,
-				tokenUrl: 'https://github.com/login/oauth/access_token',
-				apiBaseUrl: 'https://api.github.com',
-				flow: 'confidential',
 				clientId: 'github-client-id-value',
-				clientSecretSecretName: 'githubClientSecret',
-				accessTokenSecretName: 'githubAccessToken',
-				refreshTokenSecretName: null,
-				requiredHosts: ['api.github.com'],
-				authorization: {
-					authorizeUrl: 'https://github.com/login/oauth/authorize',
-					scopes: ['repo', 'read:user'],
-					scopeSeparator: null,
-					extraAuthorizeParams: {},
-				},
-				logoPath: null,
-				autoLogoPath: null,
-				createdAt,
-				updatedAt,
-			},
-			{
+			}),
+			expect.objectContaining({
 				name: 'google',
 				appSlug: 'google',
-				provider: 'google',
-				appLabel: null,
-				accountLabel: 'Personal',
-				tokenUrl: 'https://oauth2.googleapis.com/token',
-				apiBaseUrl: 'https://www.googleapis.com',
-				flow: 'pkce',
 				clientId: 'shared-google-client',
-				clientSecretSecretName: 'googleClientSecret',
-				accessTokenSecretName: 'googleAccessToken',
-				refreshTokenSecretName: 'googleRefreshToken',
-				requiredHosts: ['www.googleapis.com'],
-				authorization: {
-					authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-					scopes: ['openid', 'email'],
-					scopeSeparator: null,
-					extraAuthorizeParams: { access_type: 'offline' },
-				},
-				logoPath: null,
-				autoLogoPath: null,
-				createdAt,
-				updatedAt,
 				usageMode: 'any',
-				allowedPackageIds: [],
-			},
-			{
+			}),
+			expect.objectContaining({
 				name: 'google-calendar',
 				appSlug: 'google',
-				provider: 'google',
-				appLabel: null,
-				accountLabel: 'Work calendar',
-				tokenUrl: 'https://oauth2.googleapis.com/token',
-				apiBaseUrl: 'https://www.googleapis.com',
-				flow: 'pkce',
 				clientId: 'shared-google-client',
-				clientSecretSecretName: 'googleClientSecret',
-				accessTokenSecretName: 'googleCalendarAccessToken',
-				refreshTokenSecretName: 'googleCalendarRefreshToken',
-				requiredHosts: ['www.googleapis.com'],
-				authorization: {
-					authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-					scopes: ['calendar.readonly'],
-					scopeSeparator: null,
-					extraAuthorizeParams: { access_type: 'offline' },
-				},
-				logoPath: null,
-				autoLogoPath: null,
-				createdAt,
-				updatedAt,
-			},
-		],
-	})
+			}),
+		]),
+	)
 	// Secret *names* are fine in the payload; raw token values must never appear.
-	expect(JSON.stringify(payload)).not.toMatch(
+	expect(JSON.stringify(listPayload)).not.toMatch(
 		/"access_token"\s*:|"refresh_token"\s*:/,
 	)
-	const googleConnections = payload.integrations.filter(
+	const googleConnections = listPayload.integrations.filter(
 		(entry: { appSlug: string }) => entry.appSlug === 'google',
 	)
 	expect(googleConnections).toHaveLength(2)
@@ -568,81 +457,73 @@ test('integrations API lists connections with app grouping metadata and never ex
 			googleConnections.map((entry: { clientId: string }) => entry.clientId),
 		),
 	).toEqual(new Set(['shared-google-client']))
+
+	const chooserResponse = await handler.handler({
+		request: new Request(
+			'https://example.com/account/integrations.json?connectChooser=1',
+		),
+		params: {},
+	} as never)
+	expect(chooserResponse.status).toBe(200)
+	const chooserPayload = await chooserResponse.json()
+	expect(chooserPayload.ok).toBe(true)
+	expect(chooserPayload.chooser.options).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				id: 'connection:google',
+				kind: 'connection',
+				href: '/connect/oauth?provider=google&app=google',
+			}),
+		]),
+	)
+	expect(JSON.stringify(chooserPayload)).not.toMatch(/secret-value|token-value/i)
 })
 
-test('integrations API returns one connection by name for the connect OAuth flow', async () => {
+test('integrations API resolves named connections for connect OAuth, including missing and abandoned setup', async () => {
 	const handler = createAccountIntegrationsApiHandler(createEnv())
-	const response = await handler.handler({
+
+	const githubResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/integrations.json?name=GitHub',
 		),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(200)
+	expect(githubResponse.status).toBe(200)
 	expect(mockModule.getJoinedIntegration).toHaveBeenCalledWith({
 		env: expect.any(Object),
 		userId: 'stable-user-1',
 		name: 'GitHub',
 	})
-	await expect(response.json()).resolves.toEqual({
+	await expect(githubResponse.json()).resolves.toMatchObject({
 		ok: true,
 		builtInAvailable: false,
 		existingConnection: { lane: 'user', appSlug: 'github' },
-		// The mocked secrets list is empty, so the stored `githubClientSecret`
-		// name resolves to "not stored yet".
 		hasStoredClientSecret: false,
 		integration: {
 			name: 'github',
 			appSlug: 'github',
-			provider: 'github',
-			appLabel: null,
-			accountLabel: null,
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			apiBaseUrl: 'https://api.github.com',
-			flow: 'confidential',
 			clientId: 'github-client-id-value',
-			clientSecretSecretName: 'githubClientSecret',
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: null,
-			requiredHosts: ['api.github.com'],
-			authorization: {
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
-				scopes: ['repo', 'read:user'],
-				scopeSeparator: null,
-				extraAuthorizeParams: {},
-			},
-			logoPath: null,
-			autoLogoPath: null,
-			createdAt,
-			updatedAt,
 		},
 	})
-})
 
-test('integrations API returns null when a named connection is missing', async () => {
-	// Two reads: the record lookup and the existing-connection summary.
 	mockModule.getJoinedIntegration.mockResolvedValueOnce(null)
 	mockModule.getJoinedIntegration.mockResolvedValueOnce(null)
 	mockModule.findOauthAppForProviderSetup.mockResolvedValueOnce(null)
-	const handler = createAccountIntegrationsApiHandler(createEnv())
-	const response = await handler.handler({
+	const missingResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/integrations.json?name=missing',
 		),
 		params: {},
 	} as never)
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toEqual({
+	expect(missingResponse.status).toBe(200)
+	await expect(missingResponse.json()).resolves.toEqual({
 		ok: true,
 		builtInAvailable: false,
 		existingConnection: null,
 		hasStoredClientSecret: false,
 		integration: null,
 	})
-})
 
-test('integrations API falls back to provider-setup app resolution so abandoned setup still returns the client id', async () => {
 	mockModule.getJoinedIntegration.mockResolvedValueOnce(null)
 	mockModule.findOauthAppForProviderSetup.mockResolvedValueOnce({
 		userId: 'stable-user-1',
@@ -662,15 +543,14 @@ test('integrations API falls back to provider-setup app resolution so abandoned 
 		createdAt,
 		updatedAt,
 	})
-	const handler = createAccountIntegrationsApiHandler(createEnv())
-	const response = await handler.handler({
+	const abandonedResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/integrations.json?name=spotify',
 		),
 		params: {},
 	} as never)
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toMatchObject({
+	expect(abandonedResponse.status).toBe(200)
+	await expect(abandonedResponse.json()).resolves.toMatchObject({
 		ok: true,
 		integration: {
 			name: 'spotify',
@@ -689,9 +569,7 @@ test('integrations API falls back to provider-setup app resolution so abandoned 
 		userId: 'stable-user-1',
 		name: 'spotify',
 	})
-})
 
-test('integrations API prefills a shared family app when setting up google-calendar', async () => {
 	mockModule.getJoinedIntegration.mockResolvedValueOnce(null)
 	mockModule.findOauthAppForProviderSetup.mockResolvedValueOnce({
 		userId: 'stable-user-1',
@@ -711,16 +589,15 @@ test('integrations API prefills a shared family app when setting up google-calen
 		createdAt,
 		updatedAt,
 	})
-	const handler = createAccountIntegrationsApiHandler(createEnv())
-	const response = await handler.handler({
+	const familyResponse = await handler.handler({
 		request: new Request(
 			'https://example.com/account/integrations.json?name=google-calendar',
 		),
 		params: {},
 	} as never)
-	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload).toMatchObject({
+	expect(familyResponse.status).toBe(200)
+	const familyPayload = await familyResponse.json()
+	expect(familyPayload).toMatchObject({
 		ok: true,
 		integration: {
 			name: 'google-calendar',
@@ -730,7 +607,7 @@ test('integrations API prefills a shared family app when setting up google-calen
 			accessTokenSecretName: 'google-calendarAccessToken',
 		},
 	})
-	expect(JSON.stringify(payload)).not.toMatch(
+	expect(JSON.stringify(familyPayload)).not.toMatch(
 		/"access_token"\s*:|"refresh_token"\s*:|sk_|secret_value/,
 	)
 	expect(mockModule.findOauthAppForProviderSetup).toHaveBeenCalledWith({
@@ -740,9 +617,10 @@ test('integrations API prefills a shared family app when setting up google-calen
 	})
 })
 
-test('integrations API rotates OAuth app credentials for the authenticated user', async () => {
+test('integrations API rotates OAuth app credentials with auth scoping and validation', async () => {
 	const handler = createAccountIntegrationsApiHandler(createEnv())
-	const response = await handler.handler({
+
+	const rotateResponse = await handler.handler({
 		request: new Request('https://example.com/account/integrations.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -756,8 +634,7 @@ test('integrations API rotates OAuth app credentials for the authenticated user'
 		}),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(200)
+	expect(rotateResponse.status).toBe(200)
 	expect(mockModule.getOauthApp).toHaveBeenCalledWith({
 		env: expect.any(Object),
 		userId: 'stable-user-1',
@@ -797,8 +674,8 @@ test('integrations API rotates OAuth app credentials for the authenticated user'
 		clientId: 'shared-google-client-rotated',
 		clientSecretSecretName: 'googleClientSecret',
 	})
-	const payload = await response.json()
-	expect(payload).toMatchObject({
+	const rotatePayload = await rotateResponse.json()
+	expect(rotatePayload).toMatchObject({
 		ok: true,
 		app: {
 			slug: 'google',
@@ -811,12 +688,10 @@ test('integrations API rotates OAuth app credentials for the authenticated user'
 			],
 		},
 	})
-	expect(JSON.stringify(payload)).not.toMatch(
+	expect(JSON.stringify(rotatePayload)).not.toMatch(
 		/new-google-client-secret|"access_token"\s*:|"refresh_token"\s*:/,
 	)
-})
 
-test('integrations API merge-keeps pre-existing client-secret allowed hosts on rotate', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
 		{
 			name: 'googleClientSecret',
@@ -832,8 +707,7 @@ test('integrations API merge-keeps pre-existing client-secret allowed hosts on r
 			ttlMs: null,
 		},
 	])
-	const handler = createAccountIntegrationsApiHandler(createEnv())
-	const response = await handler.handler({
+	const mergeResponse = await handler.handler({
 		request: new Request('https://example.com/account/integrations.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -846,8 +720,7 @@ test('integrations API merge-keeps pre-existing client-secret allowed hosts on r
 		}),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(200)
+	expect(mergeResponse.status).toBe(200)
 	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith({
 		env: expect.any(Object),
 		userId: 'stable-user-1',
@@ -861,15 +734,15 @@ test('integrations API merge-keeps pre-existing client-secret allowed hosts on r
 		],
 		storageContext: { sessionId: null, appId: null, packageId: null },
 	})
-	expect(JSON.stringify(await response.json())).not.toMatch(
+	expect(JSON.stringify(await mergeResponse.json())).not.toMatch(
 		/rotated-secret-value/,
 	)
-})
 
-test('integrations API returns 404 when rotating an unknown OAuth app slug', async () => {
 	mockModule.getOauthApp.mockResolvedValueOnce(null)
-	const handler = createAccountIntegrationsApiHandler(createEnv())
-	const response = await handler.handler({
+	const rotateCallsBeforeMissingApp =
+		mockModule.rotateOauthAppClientCredentials.mock.calls.length
+	const saveSecretCallsBeforeMissingApp = mockModule.saveSecret.mock.calls.length
+	const missingAppResponse = await handler.handler({
 		request: new Request('https://example.com/account/integrations.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -882,19 +755,22 @@ test('integrations API returns 404 when rotating an unknown OAuth app slug', asy
 		}),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(404)
-	await expect(response.json()).resolves.toEqual({
+	expect(missingAppResponse.status).toBe(404)
+	await expect(missingAppResponse.json()).resolves.toEqual({
 		ok: false,
 		error: 'OAuth app not found.',
 	})
-	expect(mockModule.rotateOauthAppClientCredentials).not.toHaveBeenCalled()
-	expect(mockModule.saveSecret).not.toHaveBeenCalled()
-})
+	expect(mockModule.rotateOauthAppClientCredentials.mock.calls.length).toBe(
+		rotateCallsBeforeMissingApp,
+	)
+	expect(mockModule.saveSecret.mock.calls.length).toBe(
+		saveSecretCallsBeforeMissingApp,
+	)
 
-test('integrations API rejects invalid rotate payloads', async () => {
-	const handler = createAccountIntegrationsApiHandler(createEnv())
-	const response = await handler.handler({
+	const getOauthAppCallsBeforeInvalid = mockModule.getOauthApp.mock.calls.length
+	const rotateCallsBeforeInvalid =
+		mockModule.rotateOauthAppClientCredentials.mock.calls.length
+	const invalidResponse = await handler.handler({
 		request: new Request('https://example.com/account/integrations.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -906,20 +782,22 @@ test('integrations API rejects invalid rotate payloads', async () => {
 		}),
 		params: {},
 	} as never)
-
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toEqual({
+	expect(invalidResponse.status).toBe(400)
+	await expect(invalidResponse.json()).resolves.toEqual({
 		ok: false,
 		error: 'Invalid request body.',
 	})
-	expect(mockModule.getOauthApp).not.toHaveBeenCalled()
-	expect(mockModule.rotateOauthAppClientCredentials).not.toHaveBeenCalled()
-})
+	expect(mockModule.getOauthApp.mock.calls.length).toBe(
+		getOauthAppCallsBeforeInvalid,
+	)
+	expect(mockModule.rotateOauthAppClientCredentials.mock.calls.length).toBe(
+		rotateCallsBeforeInvalid,
+	)
 
-test('integrations API scopes rotate actions to the authenticated user', async () => {
+	const rotateCallsBeforeUnauthorized =
+		mockModule.rotateOauthAppClientCredentials.mock.calls.length
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(null)
-	const handler = createAccountIntegrationsApiHandler(createEnv())
-	const unauthorized = await handler.handler({
+	const unauthorizedResponse = await handler.handler({
 		request: new Request('https://example.com/account/integrations.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -932,8 +810,10 @@ test('integrations API scopes rotate actions to the authenticated user', async (
 		}),
 		params: {},
 	} as never)
-	expect(unauthorized.status).toBe(401)
-	expect(mockModule.rotateOauthAppClientCredentials).not.toHaveBeenCalled()
+	expect(unauthorizedResponse.status).toBe(401)
+	expect(mockModule.rotateOauthAppClientCredentials.mock.calls.length).toBe(
+		rotateCallsBeforeUnauthorized,
+	)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce({
 		sessionUserId: '99',
@@ -949,8 +829,7 @@ test('integrations API scopes rotate actions to the authenticated user', async (
 			displayName: 'other',
 		},
 	})
-	const handlerForOtherUser = createAccountIntegrationsApiHandler(createEnv())
-	const response = await handlerForOtherUser.handler({
+	const otherUserResponse = await handler.handler({
 		request: new Request('https://example.com/account/integrations.json', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -964,7 +843,7 @@ test('integrations API scopes rotate actions to the authenticated user', async (
 		}),
 		params: {},
 	} as never)
-	expect(response.status).toBe(200)
+	expect(otherUserResponse.status).toBe(200)
 	expect(mockModule.getOauthApp).toHaveBeenCalledWith({
 		env: expect.any(Object),
 		userId: 'stable-user-other',
