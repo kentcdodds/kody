@@ -107,6 +107,7 @@ export function CommunityDetailContent(
 							variant: 'detail',
 							loggedIn,
 							returnTo,
+							viewerIsOwner,
 						})}
 					</span>
 					{/* A div, not a p: the signed-in follow control is a form, and
