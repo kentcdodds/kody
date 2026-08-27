@@ -20,7 +20,7 @@ export const integrationPlatformAppListCapability = defineDomainCapability(
 	{
 		name: 'integration_platform_app_list',
 		description:
-			'List operator-provisioned platform OAuth apps on this deployment. User connections use a bring-your-own provider app at /connect/oauth; this list is inspection only and is not a connect path.',
+			'List operator-provisioned platform OAuth apps on this deployment. OAuth connections use a bring-your-own provider app at /connect/oauth; this list is inspection only and is not a connect path.',
 		keywords: [
 			'integration',
 			'oauth',

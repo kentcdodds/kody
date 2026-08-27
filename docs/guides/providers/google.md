@@ -143,7 +143,8 @@ Start minimal and widen only when a task needs it:
   bigger blast radius if misused.
 
 Changing scopes means reconnecting: update the **Data Access** tab, then open
-`/connect/oauth?provider=google` with the new `scopes` value.
+`/connect/oauth?provider=<your-integration-name>` with the new `scopes` value
+(the default name in this guide is `google`).
 
 ## Troubleshooting
 
