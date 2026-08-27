@@ -476,7 +476,9 @@ test('integrations API lists connections with app grouping metadata and serves t
 			}),
 		]),
 	)
-	expect(JSON.stringify(chooserPayload)).not.toMatch(/secret-value|token-value/i)
+	expect(JSON.stringify(chooserPayload)).not.toMatch(
+		/secret-value|token-value/i,
+	)
 })
 
 test('integrations API resolves named connections for connect OAuth, including missing and abandoned setup', async () => {
@@ -741,7 +743,8 @@ test('integrations API rotates OAuth app credentials with auth scoping and valid
 	mockModule.getOauthApp.mockResolvedValueOnce(null)
 	const rotateCallsBeforeMissingApp =
 		mockModule.rotateOauthAppClientCredentials.mock.calls.length
-	const saveSecretCallsBeforeMissingApp = mockModule.saveSecret.mock.calls.length
+	const saveSecretCallsBeforeMissingApp =
+		mockModule.saveSecret.mock.calls.length
 	const missingAppResponse = await handler.handler({
 		request: new Request('https://example.com/account/integrations.json', {
 			method: 'POST',
