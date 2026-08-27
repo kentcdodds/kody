@@ -6,6 +6,7 @@ import {
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 	createPackageSecretAccessDeniedBatchMessage,
+	createSecretScopeUnavailableMessage,
 } from '#mcp/secrets/errors.ts'
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
@@ -1599,6 +1600,50 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 			{ secretName: 'xAccessToken', packageId: 'pkg-1' },
 		],
 	})
+
+	const missingSecretError = new Error(
+		createMissingSecretMessage('missingToken'),
+	)
+	expect(getExecutionErrorDetails(missingSecretError)).toMatchObject({
+		kind: 'secret_required',
+		secretNames: ['missingToken'],
+		suggestedAction: {
+			type: 'connect_secret',
+			reason: 'collect_secret',
+		},
+	})
+
+	const scopeUnavailableError = new Error(
+		createSecretScopeUnavailableMessage([
+			{
+				secretName: 'discordBotToken',
+				scope: 'package',
+				packageId: 'pkg-1',
+				packageName: 'discord-gateway',
+				sessionId: null,
+				editorUrl:
+					'https://example.com/account/secrets/package/pkg-1/discordBotToken',
+			},
+		]),
+	)
+	expect(getExecutionErrorDetails(scopeUnavailableError)).toMatchObject({
+		kind: 'secret_scope_unavailable',
+		secretNames: ['discordBotToken'],
+		scope: 'package',
+		packageName: 'discord-gateway',
+		editorUrl:
+			'https://example.com/account/secrets/package/pkg-1/discordBotToken',
+		suggestedAction: {
+			type: 'edit_secret_policy',
+			policyField: 'scope',
+		},
+	})
+	expect(getExecutionErrorDetails(scopeUnavailableError)?.nextStep).toContain(
+		'invoke the work through that package',
+	)
+	expect(
+		formatExecutionOutput({ error: scopeUnavailableError } as const),
+	).toContain('Editor link:')
 
 	const entitlementError = new EntitlementLimitError({
 		resource: 'saved_packages',

@@ -19,6 +19,7 @@ import {
 	createMissingSecretMessage,
 	fetchSecretAuthRequiredMessage,
 } from '#mcp/secrets/errors.ts'
+import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
@@ -352,7 +353,16 @@ export async function expandSecretPlaceholders(input: {
 				storageContext: input.props.storageContext,
 			})
 			if (!resolved.found || typeof resolved.value !== 'string') {
-				throw new Error(createMissingSecretMessage(referenced.name))
+				throw new Error(
+					await createUnresolvedSecretMessage({
+						env: input.env,
+						userId: input.props.userId!,
+						name: referenced.name,
+						scope: referenced.scope,
+						storageContext: input.props.storageContext,
+						baseUrl: input.props.baseUrl,
+					}),
+				)
 			}
 			const owningIntegration =
 				resolved.scope === 'user'

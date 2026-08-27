@@ -25,8 +25,8 @@ import {
 	capabilityInputSecretAuthRequiredMessage,
 	createCapabilitySecretAccessDeniedMessage,
 	createCapabilitySecretAccessDeniedBatchMessage,
-	createMissingSecretMessage,
 } from '#mcp/secrets/errors.ts'
+import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import {
 	assertPackageCanAccessResolvedSecret,
 	resolvePackageMountedSecret,
@@ -564,7 +564,16 @@ function createCapabilityInputSecretResolver(
 			storageContext: normalizedStorageContext,
 		})
 		if (!resolved.found || typeof resolved.value !== 'string') {
-			throw new Error(createMissingSecretMessage(secret.name))
+			throw new Error(
+				await createUnresolvedSecretMessage({
+					env,
+					userId,
+					name: secret.name,
+					scope: secret.scope,
+					storageContext: normalizedStorageContext,
+					baseUrl: callerContext.baseUrl,
+				}),
+			)
 		}
 		await assertPackageCanAccessResolvedSecret({
 			env,

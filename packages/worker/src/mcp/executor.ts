@@ -34,7 +34,9 @@ import {
 	parseMissingSecretMessage,
 	parsePackageAccessRequiredBatchMessage,
 	parsePackageAccessRequiredMessage,
+	parseSecretScopeUnavailableMessage,
 } from '#mcp/secrets/errors.ts'
+import { type SecretScope } from '#mcp/secrets/types.ts'
 import {
 	isEntitlementLimitError,
 	parseEntitlementLimitMessage,
@@ -1196,6 +1198,19 @@ export type ExecutionErrorDetails =
 			}
 	  }
 	| {
+			kind: 'secret_scope_unavailable'
+			message: string
+			nextStep: string
+			secretNames: Array<string>
+			scope: SecretScope
+			packageName: string | null
+			editorUrl: string | null
+			suggestedAction: {
+				type: 'edit_secret_policy'
+				policyField: 'scope'
+			}
+	  }
+	| {
 			kind: 'secret_required'
 			message: string
 			nextStep: string
@@ -1436,6 +1451,27 @@ export function getExecutionErrorDetails(
 			suggestedAction: {
 				type: 'edit_secret_policy',
 				policyField: 'allowed_packages',
+			},
+		}
+	}
+
+	const scopeUnavailableDetails = parseSecretScopeUnavailableMessage(message)
+	if (scopeUnavailableDetails) {
+		const editorUrl = extractFirstUrl(message)
+		return {
+			kind: 'secret_scope_unavailable',
+			message,
+			nextStep:
+				scopeUnavailableDetails.scope === 'package'
+					? 'This secret exists on a package this runtime cannot see. Either invoke the work through that package, or send the user the editor link so they can change the secret scope, then retry.'
+					: 'This secret exists in another scope this runtime cannot see. Send the user the editor link so they can change the secret scope, or retry from a runtime that can see it.',
+			secretNames: [scopeUnavailableDetails.secretName],
+			scope: scopeUnavailableDetails.scope,
+			packageName: scopeUnavailableDetails.packageName,
+			editorUrl,
+			suggestedAction: {
+				type: 'edit_secret_policy',
+				policyField: 'scope',
 			},
 		}
 	}

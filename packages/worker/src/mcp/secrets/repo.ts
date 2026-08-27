@@ -362,6 +362,48 @@ export async function listUserScopeSecretMetadata(input: {
 	return (results ?? []).map(mapSecretMetadataRow)
 }
 
+export type SecretLocationRow = {
+	scope: SecretScope
+	binding_key: string
+	name: string
+	expires_at: string | null
+}
+
+/**
+ * Same-user locations for a secret name across every scope/binding. Does not
+ * return ciphertext. Used to distinguish a true miss from a scope the current
+ * runtime cannot see.
+ */
+export async function listSecretLocationsByNameForUser(input: {
+	db: D1Database
+	userId: string
+	name: string
+	now?: string
+}): Promise<Array<SecretLocationRow>> {
+	const now = input.now ?? new Date().toISOString()
+	const { results } = await input.db
+		.prepare(
+			`SELECT b.scope, b.binding_key, e.name, e.expires_at AS entry_expires_at, b.expires_at AS bucket_expires_at
+			FROM secret_buckets b
+			JOIN secret_entries e ON e.bucket_id = b.id
+			WHERE b.user_id = ? AND e.name = ?
+				AND (b.expires_at IS NULL OR b.expires_at > ?)
+				AND (e.expires_at IS NULL OR e.expires_at > ?)
+			ORDER BY b.scope ASC, b.binding_key ASC`,
+		)
+		.bind(input.userId, input.name, now, now)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map((row) => {
+		const mapped = mapSecretMetadataRow(row)
+		return {
+			scope: mapped.scope,
+			binding_key: mapped.binding_key,
+			name: mapped.name,
+			expires_at: mapped.expires_at,
+		}
+	})
+}
+
 export async function listPackageScopeSecretMetadata(input: {
 	db: D1Database
 	userId: string
