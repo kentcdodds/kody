@@ -445,6 +445,24 @@ test('mcp endpoint serves browser guidance without changing protocol auth challe
 		invalidTokenResponse.headers.get('WWW-Authenticate') ?? '',
 		origin,
 	)
+
+	const lowercaseBearerResponse = await handleMcpRequestAndDrain({
+		request: new Request(`${origin}${mcpResourcePath}`, {
+			headers: { Authorization: 'bearer invalid-token' },
+		}),
+		env,
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(lowercaseBearerResponse.status).toBe(401)
+	expect(await lowercaseBearerResponse.json()).toEqual({
+		error: 'invalid_token',
+		error_description: mcpInvalidTokenDescription,
+	})
+	expectAuthenticateHeader(
+		lowercaseBearerResponse.headers.get('WWW-Authenticate') ?? '',
+		origin,
+	)
 })
 
 test('protected resource metadata and auth challenge resolve origin consistently', async () => {

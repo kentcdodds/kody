@@ -105,6 +105,14 @@ function createUnauthorizedBody(kind: McpUnauthorizedKind) {
 	}
 }
 
+function readBearerToken(authorization: string | null) {
+	if (!authorization) return null
+	const match = authorization.match(/^Bearer(?:\s+(.*))?$/i)
+	if (!match) return null
+	const token = match[1]?.trim() ?? ''
+	return token.length > 0 ? token : null
+}
+
 function createUnauthorizedResponse(origin: string, kind: McpUnauthorizedKind) {
 	// Keep a JSON body in addition to WWW-Authenticate. Some remote MCP clients
 	// (notably Gemini custom connected apps) treat an empty 401 as a hard
@@ -227,13 +235,8 @@ export async function handleMcpRequest({
 	// a stranger drive unbounded D1 writes, and an unattributable "someone sent
 	// a bad token" carries little signal on its own. Flood control for anonymous
 	// traffic belongs at the edge; see docs/contributing/security.md.
-	const authHeader = request.headers.get('Authorization')
-	if (!authHeader || !authHeader.startsWith('Bearer ')) {
-		return createUnauthorizedResponse(origin, 'missing_credential')
-	}
-
-	const token = authHeader.slice('Bearer '.length).trim()
-	if (!token) {
+	const token = readBearerToken(request.headers.get('Authorization'))
+	if (token === null) {
 		return createUnauthorizedResponse(origin, 'missing_credential')
 	}
 
