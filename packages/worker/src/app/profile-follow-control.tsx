@@ -30,14 +30,14 @@ export function renderProfileFollowControl(input: {
 				data-testid={input.testId}
 				mix={css(followButtonCss)}
 			>
-				{renderFollowGlyph(false)}
+				{renderFollowPlusGlyph()}
 				<span mix={css(visuallyHiddenCss)}>Follow @{input.username}</span>
 			</a>
 		)
 	}
 
 	return (
-		<div mix={css(followControlCss)}>
+		<div data-community-follow-control="" mix={css(followControlCss)}>
 			<form
 				method="post"
 				action={routes.profileFollowApiPost.href({ username: input.username })}
@@ -49,48 +49,47 @@ export function renderProfileFollowControl(input: {
 					type="submit"
 					title={input.isFollowing ? 'Unfollow' : 'Follow'}
 					data-testid={input.testId}
+					data-community-follow=""
+					data-follow-username={input.username}
 					data-following={input.isFollowing ? 'true' : 'false'}
 					mix={css(followButtonCss)}
 				>
-					{renderFollowGlyph(input.isFollowing)}
-					<span mix={css(visuallyHiddenCss)}>
+					{renderFollowGlyphs()}
+					<span data-community-follow-label="" mix={css(visuallyHiddenCss)}>
 						{input.isFollowing
 							? `Unfollow @${input.username}`
 							: `Follow @${input.username}`}
 					</span>
 				</button>
 			</form>
-			{input.followError ? (
-				<span
-					role="alert"
-					data-testid={input.errorTestId}
-					mix={css(followErrorCss)}
-				>
-					{input.followError}
-				</span>
-			) : null}
+			<span
+				role="alert"
+				hidden={input.followError ? undefined : true}
+				data-testid={input.errorTestId}
+				data-community-follow-error=""
+				mix={css(followErrorCss)}
+			>
+				{input.followError ?? ''}
+			</span>
 		</div>
 	)
 }
 
-function renderFollowGlyph(following: boolean) {
-	return following ? (
-		<svg
-			viewBox="0 0 16 16"
-			width="1em"
-			height="1em"
-			aria-hidden="true"
-			focusable={false}
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.5"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<circle cx="8" cy="8" r="5.4" />
-			<path d="M5.3 8.1 7.1 9.9 10.8 6.1" />
-		</svg>
-	) : (
+function renderFollowGlyphs() {
+	return (
+		<>
+			<span data-follow-glyph="follow" aria-hidden="true">
+				{renderFollowPlusGlyph()}
+			</span>
+			<span data-follow-glyph="following" aria-hidden="true">
+				{renderFollowCheckGlyph()}
+			</span>
+		</>
+	)
+}
+
+function renderFollowPlusGlyph() {
+	return (
 		<svg
 			viewBox="0 0 16 16"
 			width="1em"
@@ -105,6 +104,26 @@ function renderFollowGlyph(following: boolean) {
 		>
 			<circle cx="8" cy="8" r="5.4" />
 			<path d="M8 5.2v5.6M5.2 8h5.6" />
+		</svg>
+	)
+}
+
+function renderFollowCheckGlyph() {
+	return (
+		<svg
+			viewBox="0 0 16 16"
+			width="1em"
+			height="1em"
+			aria-hidden="true"
+			focusable={false}
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="1.5"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			<circle cx="8" cy="8" r="5.4" />
+			<path d="M5.3 8.1 7.1 9.9 10.8 6.1" />
 		</svg>
 	)
 }
@@ -141,6 +160,18 @@ const followButtonCss = {
 	textDecoration: 'none',
 	cursor: 'pointer',
 	flexShrink: 0,
+	'& [data-follow-glyph="follow"]': {
+		display: 'inline-flex',
+	},
+	'& [data-follow-glyph="following"]': {
+		display: 'none',
+	},
+	'&[data-following="true"] [data-follow-glyph="follow"]': {
+		display: 'none',
+	},
+	'&[data-following="true"] [data-follow-glyph="following"]': {
+		display: 'inline-flex',
+	},
 	'&:hover': {
 		color: colors.primaryText,
 		borderColor: colors.primaryText,

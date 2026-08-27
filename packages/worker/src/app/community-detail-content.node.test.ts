@@ -112,6 +112,11 @@ test('community detail title star covers empty, starred, and logged-out states',
 	expect(emptyHtml).toContain('data-testid="community-detail-star"')
 	expect(emptyHtml).toContain('data-community-star')
 	expect(emptyHtml).toContain('data-starred="false"')
+	expect(emptyHtml).toContain('data-listing-name=')
+	expect(emptyHtml).toContain('data-community-star-label')
+	expect(emptyHtml).toContain('data-community-star-count')
+	expect(emptyHtml).toContain('data-community-follow')
+	expect(emptyHtml).toContain('data-follow-username="kentcdodds"')
 	expect(
 		emptyHtml.indexOf('data-testid="community-detail-star"'),
 	).toBeGreaterThan(emptyHtml.indexOf('<h1'))
@@ -134,5 +139,7 @@ test('community detail title star covers empty, starred, and logged-out states',
 	expect(loggedOutHtml).toContain(
 		'/login?redirectTo=%2F%40kentcdodds%2Fgithub-triage',
 	)
-	expect(loggedOutHtml).not.toContain('data-starred=')
+	expect(loggedOutHtml).not.toMatch(
+		/data-testid="community-detail-star"[^>]*data-starred=/,
+	)
 })

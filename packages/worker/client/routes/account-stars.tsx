@@ -57,7 +57,6 @@ export function AccountStarsRoute(handle: Handle) {
 	let status: 'loading' | 'ready' | 'error' = 'loading'
 	let listings: Array<PublicCommunityListing> = []
 	let message: string | null = null
-	let busyListingId: string | null = null
 	const loadLatch = createRouteLoadLatch()
 
 	async function loadStars() {
@@ -88,8 +87,10 @@ export function AccountStarsRoute(handle: Handle) {
 	}
 
 	async function unstarListing(listingId: string) {
-		if (busyListingId) return
-		busyListingId = listingId
+		const index = listings.findIndex((listing) => listing.id === listingId)
+		const removed = listings[index]
+		if (index === -1 || !removed) return
+		listings = listings.filter((listing) => listing.id !== listingId)
 		message = null
 		handle.update()
 		try {
@@ -113,11 +114,14 @@ export function AccountStarsRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error ?? 'Unable to unstar package.')
 			}
-			listings = listings.filter((listing) => listing.id !== listingId)
-			busyListingId = null
-			handle.update()
 		} catch (error) {
-			busyListingId = null
+			if (!listings.some((listing) => listing.id === listingId)) {
+				listings = [
+					...listings.slice(0, index),
+					removed,
+					...listings.slice(index),
+				]
+			}
 			message =
 				error instanceof Error ? error.message : 'Unable to unstar package.'
 			handle.update()
@@ -211,13 +215,12 @@ export function AccountStarsRoute(handle: Handle) {
 									</div>
 									<button
 										type="button"
-										disabled={busyListingId === listing.id}
 										mix={[
 											on('click', () => void unstarListing(listing.id)),
 											css(dangerButtonCss),
 										]}
 									>
-										{busyListingId === listing.id ? 'Removing…' : 'Unstar'}
+										Unstar
 									</button>
 								</div>
 							</li>

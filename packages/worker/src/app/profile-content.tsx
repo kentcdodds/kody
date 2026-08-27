@@ -158,7 +158,12 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 					</div>
 					<div>
 						<dt>Followers</dt>
-						<dd data-testid="profile-followers">{profile.followerCount}</dd>
+						<dd
+							data-testid="profile-followers"
+							data-community-follower-count=""
+						>
+							{profile.followerCount}
+						</dd>
 					</div>
 					<div>
 						<dt>Following</dt>
