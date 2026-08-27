@@ -64,30 +64,65 @@ export function handleProtectedResourceMetadata(request: Request, env?: Env) {
 	})
 }
 
-function buildWwwAuthenticateHeader(origin: string) {
+export const mcpInvalidTokenDescription =
+	'Authentication required. Obtain an access token via OAuth and retry with Authorization: Bearer.'
+
+type McpUnauthorizedKind = 'missing_credential' | 'invalid_token'
+
+function buildWwwAuthenticateHeader(origin: string, kind: McpUnauthorizedKind) {
 	const resourceMetadata = `${origin}${protectedResourceMetadataPath}`
 	const scope =
-		oauthScopes.length > 0 ? ` scope="${oauthScopes.join(' ')}"` : ''
-	return `Bearer resource_metadata="${resourceMetadata}"${scope}`
+		oauthScopes.length > 0 ? `, scope="${oauthScopes.join(' ')}"` : ''
+	const resourceAndScope = `resource_metadata="${resourceMetadata}"${scope}`
+	switch (kind) {
+		case 'missing_credential':
+			// RFC 6750 §3.1: omit error attributes when no credentials were sent.
+			return `Bearer ${resourceAndScope}`
+		case 'invalid_token':
+			// Hosts that refresh on `error="invalid_token"` need that attribute on
+			// the wire, not only in the JSON body.
+			return `Bearer error="invalid_token", error_description="${mcpInvalidTokenDescription}", ${resourceAndScope}`
+		default: {
+			const exhaustive: never = kind
+			throw new Error(`unexpected MCP unauthorized kind: ${exhaustive}`)
+		}
+	}
 }
 
-function createUnauthorizedResponse(origin: string) {
+function createUnauthorizedBody(kind: McpUnauthorizedKind) {
+	switch (kind) {
+		case 'missing_credential':
+			return { error_description: mcpInvalidTokenDescription }
+		case 'invalid_token':
+			return {
+				error: 'invalid_token',
+				error_description: mcpInvalidTokenDescription,
+			}
+		default: {
+			const exhaustive: never = kind
+			throw new Error(`unexpected MCP unauthorized kind: ${exhaustive}`)
+		}
+	}
+}
+
+function readBearerToken(authorization: string | null) {
+	if (!authorization) return null
+	const match = authorization.match(/^Bearer(?:\s+(.*))?$/i)
+	if (!match) return null
+	const token = match[1]?.trim() ?? ''
+	return token.length > 0 ? token : null
+}
+
+function createUnauthorizedResponse(origin: string, kind: McpUnauthorizedKind) {
 	// Keep a JSON body in addition to WWW-Authenticate. Some remote MCP clients
 	// (notably Gemini custom connected apps) treat an empty 401 as a hard
 	// connectivity failure and never start OAuth discovery / DCR.
-	return Response.json(
-		{
-			error: 'invalid_token',
-			error_description:
-				'Authentication required. Obtain an access token via OAuth and retry with Authorization: Bearer.',
+	return Response.json(createUnauthorizedBody(kind), {
+		status: 401,
+		headers: {
+			'WWW-Authenticate': buildWwwAuthenticateHeader(origin, kind),
 		},
-		{
-			status: 401,
-			headers: {
-				'WWW-Authenticate': buildWwwAuthenticateHeader(origin),
-			},
-		},
-	)
+	})
 }
 
 function acceptsMediaType(accept: string, mediaType: string) {
@@ -200,24 +235,19 @@ export async function handleMcpRequest({
 	// a stranger drive unbounded D1 writes, and an unattributable "someone sent
 	// a bad token" carries little signal on its own. Flood control for anonymous
 	// traffic belongs at the edge; see docs/contributing/security.md.
-	const authHeader = request.headers.get('Authorization')
-	if (!authHeader || !authHeader.startsWith('Bearer ')) {
-		return createUnauthorizedResponse(origin)
-	}
-
-	const token = authHeader.slice('Bearer '.length).trim()
-	if (!token) {
-		return createUnauthorizedResponse(origin)
+	const token = readBearerToken(request.headers.get('Authorization'))
+	if (token === null) {
+		return createUnauthorizedResponse(origin, 'missing_credential')
 	}
 
 	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
 	if (!helpers) {
-		return createUnauthorizedResponse(origin)
+		return createUnauthorizedResponse(origin, 'invalid_token')
 	}
 
 	const tokenSummary = await helpers.unwrapToken(token)
 	if (!tokenSummary || !audienceMatches(tokenSummary.audience, origin)) {
-		return createUnauthorizedResponse(origin)
+		return createUnauthorizedResponse(origin, 'invalid_token')
 	}
 
 	const context = ctx as OAuthExecutionContext

@@ -566,12 +566,31 @@ routed from `packages/worker/src/index.ts`.
 - Approval is rejected before `completeAuthorization` when the account email is
   unverified, so no grant/token is created until verification succeeds.
 
+Token lifetimes are set on the `OAuthProvider` in
+`packages/worker/src/index.ts`:
+
+- Access tokens keep the provider default of 1 hour
+- Refresh tokens are issued with no expiry (`refreshTokenTTL: undefined`). The
+  provider default is 30 days; omitting the option keeps that default, so the
+  explicit `undefined` is required
+- Dynamically registered clients are stored with no KV expiry
+  (`clientRegistrationTTL: undefined`). The provider default is 90 days. Clients
+  created through `OAuthHelpers.createClient()` are unexpiring. A DCR client
+  record that already has a KV TTL still expires at that instant unless the host
+  re-registers
+
 `/mcp` is protected by `packages/worker/src/mcp-auth.ts`:
 
 - Requires `Authorization: Bearer <token>`
 - Token is validated via OAuth provider helpers (`unwrapToken`)
 - Audience must match the app origin or `<origin>/mcp`
-- Unauthenticated requests return `401` with `WWW-Authenticate` metadata
+- Requests without a Bearer token return `401` with `WWW-Authenticate` carrying
+  RFC 9728 `resource_metadata` (and scopes). RFC 6750 omits `error` when
+  credentials are absent
+- A present but rejected Bearer token returns `401` with RFC 6750
+  `error="invalid_token"` plus `error_description` and the same
+  `resource_metadata`, so hosts that refresh on that challenge can do so without
+  starting a new browser login
 - The account email must be verified; unverified accounts receive a
   `403 email_verification_required` response (see the email verification section
   above)

@@ -15,6 +15,24 @@ authorization. Open the verification link sent at signup, or sign in and use
 authorize page. Keep an open `/oauth/authorize` tab so you can continue the same
 OAuth request after verifying in another tab, then reconnect or approve again.
 
+## Codex keeps asking for `codex mcp login kody`
+
+Kody access tokens last one hour. A host that stores the refresh token should
+call `/oauth/token` and stay signed in. Cursor does this. Some Codex builds send
+the expired access token, get a 401, and ask for a full browser login instead.
+
+Try this first:
+
+1. Update Codex.
+2. Run `codex mcp logout kody`, then `codex mcp login kody`.
+3. Avoid running Codex desktop and the CLI at the same time against the same
+   login. They can race a rotating refresh token and both get kicked out.
+
+If it still happens about every hour or every new Codex launch, that is the host
+skipping refresh. Cursor and Claude Code stay logged in. Email
+[`support@kody.codes`](mailto:support@kody.codes) with your Codex version and
+how often it asks again if you want us to look.
+
 ## The host never opens the Kody authorize window
 
 Dynamic OAuth needs the host to open `/oauth/authorize`. If Admin add-connection

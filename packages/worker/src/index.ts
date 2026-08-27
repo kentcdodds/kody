@@ -424,6 +424,11 @@ const oauthProvider = new OAuthProvider({
 	// wrangler.jsonc) so metadata fetches are SSRF-safe; the provider only
 	// advertises CIMD support when both are on.
 	clientIdMetadataDocumentEnabled: true,
+	// Provider defaults are 30-day refresh tokens and 90-day DCR clients.
+	// Explicit `undefined` disables those expiries (omitting the option keeps
+	// the defaults). Access tokens stay at the 1-hour default.
+	refreshTokenTTL: undefined,
+	clientRegistrationTTL: undefined,
 	// Provider default onError logs every structured OAuth error via console.warn.
 	// Keep those responses on the wire without duplicating them into worker logs /
 	// test console guards; unexpected throws still reach our fetch catch + Sentry.

@@ -81,7 +81,9 @@ Manual on Get started has one tab per host. Use those when you are not running
 - **Codex** — ChatGPT desktop is Codex. After the CLI writes the shared config,
   run `codex mcp login kody` if OAuth does not start. Manual includes
   `codex mcp add kody --url <url>` and the shared `~/.codex/config.toml`
-  `[mcp_servers.kody]` `url` entry.
+  `[mcp_servers.kody]` `url` entry. If Codex asks you to log in again after
+  about an hour, see
+  [Codex keeps asking for `codex mcp login kody`](./troubleshooting.md#codex-keeps-asking-for-codex-mcp-login-kody).
 - **OpenCode** — After the CLI writes the remote entry, run
   `opencode mcp auth kody` if prompted. Manual includes
   `opencode mcp add kody --url <url>` and a `mcp.kody` remote entry in
