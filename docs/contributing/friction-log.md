@@ -24,12 +24,12 @@ Label: `friction`.
 Use the [Friction issue form](../../.github/ISSUE_TEMPLATE/friction.yml) or:
 
 ```bash
-gh issue create --title "Friction: …" --label friction --body-file -
+gh issue create --repo kentcdodds/kody --title "Friction: …" --label friction --body-file -
 ```
 
 Write one issue per papercut. Include what you were doing, the unexpected cost,
 the workaround, and enough reproduction to investigate without the original
-session.
+session. Omit secrets, tokens, and unrelated private content.
 
 Do not commit a `.agents/friction-log/` directory. GitHub is the log.
 

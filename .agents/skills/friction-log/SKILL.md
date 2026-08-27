@@ -25,7 +25,7 @@ file it before you forget.
 Search open issues first:
 
 ```bash
-gh issue list --label friction --state open --search "in:title Friction:"
+gh issue list --repo kentcdodds/kody --label friction --state open --search "in:title Friction:"
 ```
 
 Comment on a match instead of opening a duplicate.
@@ -56,7 +56,7 @@ Time lost, how often this happens, who it hits, and the workaround.
 ```
 
 ```bash
-gh issue create --title "Friction: …" --label friction --body-file -
+gh issue create --repo kentcdodds/kody --title "Friction: …" --label friction --body-file -
 ```
 
 Or `kody:@kentcdodds/github/request` `POST /repos/kentcdodds/kody/issues` with
