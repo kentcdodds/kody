@@ -118,9 +118,7 @@ function createTetherLayer(theme: OgTheme): SatoriElement {
  * so strokes (and arriving lights) fade into the glow instead of crossing it.
  * Percentages match the homepage CSS (`ellipse 9.5% 8.2%` at lantern %).
  */
-function withLanternTetherMask(
-	children: Array<SatoriElement>,
-): SatoriElement {
+function withLanternTetherMask(children: Array<SatoriElement>): SatoriElement {
 	const maskImage = `radial-gradient(ellipse 9.5% 8.2% at ${landingLantern.x}% ${landingLantern.y}%, transparent 66%, black 100%)`
 	return {
 		type: 'div',
