@@ -1,11 +1,12 @@
 /**
  * Satori composition of the homepage agents-around-lantern hero for OG cards.
- * Shares orbit geometry with the live landing stage so chips, tethers, and
- * mid-flight lantern lights land in the same places.
+ * Uses the same Kody base art as the live landing stage (`kody-base`), then
+ * draws chips, tethers, and mid-flight lantern lights from shared orbit
+ * geometry so the share card matches the homepage still.
  */
 
 import {
-	getKodyLanternBaseDataUri,
+	getKodyBaseDataUri,
 	getLandingAgentIconDataUri,
 } from '#worker/og/og-image-assets.ts'
 import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
@@ -256,7 +257,7 @@ export function createAgentsHero(theme: OgTheme = 'dark'): SatoriElement {
 				{
 					type: 'img',
 					props: {
-						src: getKodyLanternBaseDataUri(),
+						src: getKodyBaseDataUri(),
 						width: AGENTS_HERO_SIZE,
 						height: AGENTS_HERO_SIZE,
 						style: {

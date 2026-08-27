@@ -4,7 +4,7 @@ import yogaWasm from 'satori/yoga.wasm'
 export {
 	ensureOgBinaryAssetsReady,
 	getBricolageGrotesqueLatin700FontData,
-	getKodyLanternBaseDataUri,
+	getKodyBaseDataUri,
 	getLandingAgentIconDataUri,
 	getKodyDiscordDataUri,
 	getKodyLogoDataUri,

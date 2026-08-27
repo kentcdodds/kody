@@ -18,7 +18,9 @@ const OG_ASSET_URLS = {
 		'https://assets.local/og/wix-madefor-text-latin-400.ttf',
 	kodyPatternDark: 'https://assets.local/og/kody-pattern-dark.png',
 	kodyPatternLight: 'https://assets.local/og/kody-pattern-light.png',
-	kodyLanternBase: 'https://assets.local/og/kody-lantern-base.png',
+	// PNG of the homepage hero (`images/hero/kody-base-*.webp`) — Satori/resvg
+	// need PNG; pixels match the live landing base (chips/tethers drawn on top).
+	kodyBase: 'https://assets.local/og/kody-base.png',
 	kodyDiscord: 'https://assets.local/og/kody-discord.png',
 	kodyLogo: 'https://assets.local/og/kody-logo.png',
 } as const
@@ -41,7 +43,7 @@ type OgBinaryAssetCache = {
 	wixMadeforTextLatin400: ArrayBuffer
 	kodyPatternDarkDataUri: string
 	kodyPatternLightDataUri: string
-	kodyLanternBaseDataUri: string
+	kodyBaseDataUri: string
 	kodyDiscordDataUri: string
 	kodyLogoDataUri: string
 	agentIconDataUris: AgentIconDataUris
@@ -97,7 +99,7 @@ async function loadOgBinaryAssets(
 		wixMadeforTextLatin400,
 		kodyPatternDark,
 		kodyPatternLight,
-		kodyLanternBase,
+		kodyBase,
 		kodyDiscord,
 		kodyLogo,
 		...iconResults
@@ -106,7 +108,7 @@ async function loadOgBinaryAssets(
 		fetchAssetBytes(assets, OG_ASSET_URLS.wixMadeforTextLatin400),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyPatternDark),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyPatternLight),
-		fetchAssetBytes(assets, OG_ASSET_URLS.kodyLanternBase),
+		fetchAssetBytes(assets, OG_ASSET_URLS.kodyBase),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyDiscord),
 		fetchAssetBytes(assets, OG_ASSET_URLS.kodyLogo),
 		...iconFetches,
@@ -127,7 +129,7 @@ async function loadOgBinaryAssets(
 		wixMadeforTextLatin400: toArrayBuffer(wixMadeforTextLatin400),
 		kodyPatternDarkDataUri: bytesToPngDataUri(kodyPatternDark),
 		kodyPatternLightDataUri: bytesToPngDataUri(kodyPatternLight),
-		kodyLanternBaseDataUri: bytesToPngDataUri(kodyLanternBase),
+		kodyBaseDataUri: bytesToPngDataUri(kodyBase),
 		kodyDiscordDataUri: bytesToPngDataUri(kodyDiscord),
 		kodyLogoDataUri: bytesToPngDataUri(kodyLogo),
 		agentIconDataUris,
@@ -183,8 +185,8 @@ export function getKodyPatternDataUri(theme: 'light' | 'dark'): string {
 		: loaded.kodyPatternDarkDataUri
 }
 
-export function getKodyLanternBaseDataUri(): string {
-	return requireCache().kodyLanternBaseDataUri
+export function getKodyBaseDataUri(): string {
+	return requireCache().kodyBaseDataUri
 }
 
 export function getLandingAgentIconDataUri(

@@ -25,7 +25,7 @@ type OgBinaryAssetCache = {
 	wixMadeforTextLatin400: ArrayBuffer
 	kodyPatternDarkDataUri: string
 	kodyPatternLightDataUri: string
-	kodyLanternBaseDataUri: string
+	kodyBaseDataUri: string
 	kodyDiscordDataUri: string
 	kodyLogoDataUri: string
 	agentIconDataUris: AgentIconDataUris
@@ -80,9 +80,8 @@ function ensureCache(): OgBinaryAssetCache {
 		kodyPatternLightDataUri: bytesToPngDataUri(
 			readAssetFile('kody-pattern-light.png'),
 		),
-		kodyLanternBaseDataUri: bytesToPngDataUri(
-			readAssetFile('kody-lantern-base.png'),
-		),
+		// Same pixels as `images/hero/kody-base-640.webp` (PNG for Satori).
+		kodyBaseDataUri: bytesToPngDataUri(readAssetFile('kody-base.png')),
 		kodyDiscordDataUri: bytesToPngDataUri(readAssetFile('kody-discord.png')),
 		kodyLogoDataUri: bytesToPngDataUri(readAssetFile('kody-logo.png')),
 		agentIconDataUris: loadAgentIconDataUris(),
@@ -116,8 +115,8 @@ export function getKodyPatternDataUri(theme: 'light' | 'dark'): string {
 		: loaded.kodyPatternDarkDataUri
 }
 
-export function getKodyLanternBaseDataUri(): string {
-	return ensureCache().kodyLanternBaseDataUri
+export function getKodyBaseDataUri(): string {
+	return ensureCache().kodyBaseDataUri
 }
 
 export function getLandingAgentIconDataUri(
