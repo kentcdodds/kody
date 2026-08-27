@@ -61,12 +61,7 @@ function createTetherLayer(theme: OgTheme): SatoriElement {
 	const hy = pctToPx(landingLantern.y)
 	const paths: Array<SatoriElement> = []
 	for (const agent of landingOrbitAgents) {
-		const d = landingOrbitTetherPath(
-			pctToPx(agent.x),
-			pctToPx(agent.y),
-			hx,
-			hy,
-		)
+		const d = landingOrbitTetherPath(pctToPx(agent.x), pctToPx(agent.y), hx, hy)
 		paths.push({
 			type: 'path',
 			props: {

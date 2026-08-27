@@ -17,14 +17,13 @@ export const landingOrbitAgents = [
 	{ label: 'OpenCode', icon: 'opencode', x: 7, y: 46 },
 ] as const
 
-export type LandingOrbitAgentIcon =
-	(typeof landingOrbitAgents)[number]['icon']
+export type LandingOrbitAgentIcon = (typeof landingOrbitAgents)[number]['icon']
 
 /** Static stills of the travelling lantern lights for OG (no animation). */
 export const landingOrbitOgLights = [
-	{ icon: 'cursor' as const, progress: 0.34, scale: 1 },
-	{ icon: 'chatgpt' as const, progress: 0.55, scale: 0.85 },
-	{ icon: 'claude' as const, progress: 0.72, scale: 0.7 },
+	{ icon: 'cursor' as const, progress: 0.28, scale: 1 },
+	{ icon: 'chatgpt' as const, progress: 0.46, scale: 0.9 },
+	{ icon: 'claude' as const, progress: 0.62, scale: 0.78 },
 ]
 
 /** Cubic bézier control points matching the live hero tetherPath(). */
