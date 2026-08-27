@@ -11,9 +11,13 @@ pushes. See the [setup index](./index.md) for the other setup pages.
 - `git push` runs the Husky `pre-push` hook, which executes `npm run test:push`
   (`CI=1` `test:node` + `test:workers` + Playwright E2E) so pushes are blocked
   when those suites fail. Those are the same Nx targets GitHub Actions runs, so
-  a remote-cache hit is possible after push. Vitest's default `testTimeout` is
-  20s so the workers pool's first Durable Object RPC in a file (~10s) does not
-  fail the default budget (see
+  a remote-cache hit is possible after push. Cursor Cloud Agent VMs keep
+  Cursor's hook dispatcher as `core.hooksPath` and compose Husky through
+  `npm run hooks:ensure` (`prepare` runs it after `husky`; Cloud Agent
+  environment `start` should run it too) so `pre-push` still reaches `.husky/_`
+  — see [cloud-agents.md](../cloud-agents.md#git-hooks). Vitest's default
+  `testTimeout` is 20s so the workers pool's first Durable Object RPC in a file
+  (~10s) does not fail the default budget (see
   [decision 0011](../decisions/0011-workers-unit-pool-harness.md)); the push
   gate also sets `CI=1` so worker count, Playwright retries, and Nx cache hashes
   match GitHub Actions.

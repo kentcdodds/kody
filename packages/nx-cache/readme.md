@@ -22,11 +22,13 @@ export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN="$NX_CACHE_TOKEN"
 
 Leave them unset to run with the local `.nx` cache only. Validate and
 `test:push` use `CI=1` so cache hashes match GitHub Actions (`CI=true` would
-miss). GitHub Actions only sets the server URL after `GET /health` succeeds and
-an authorized `GET /v1/cache/{hash}` returns 200 or 404 — Nx fails the job if
-the host is configured but unreachable or unauthorized, so validate can still
-pass before the worker exists or after a token rotation that has not been synced
-yet.
+miss). On Cloud Agent VMs, `npm run hooks:ensure` composes Husky through
+Cursor's hook dispatcher so `git push` still runs `test:push` and can upload
+those artifacts before CI starts. GitHub Actions only sets the server URL after
+`GET /health` succeeds and an authorized `GET /v1/cache/{hash}` returns 200 or
+404 — Nx fails the job if the host is configured but unreachable or
+unauthorized, so validate can still pass before the worker exists or after a
+token rotation that has not been synced yet.
 
 `npm run nx-cache:smoke` (also part of `test:node`) starts a local HTTP cache,
 runs `nx-cache:smoke-probe` twice with an isolated local cache wiped in between,
