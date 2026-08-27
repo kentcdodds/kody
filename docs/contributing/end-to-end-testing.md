@@ -60,10 +60,12 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 ## Server and routing
 
 - The test server is started via Playwright `webServer` using Wrangler.
-- `playwright.config.ts` is self-sufficient: Playwright starts the E2E server by
-  running `npm run preview:e2e -- --port 3847`.
-- `preview:e2e` prepares `packages/worker/.env`, builds the client bundles,
-  applies local D1 migrations, and starts Wrangler against
+- `playwright.config.ts` starts the E2E server with
+  `npm run e2e:web-server -- --port 3847` (D1 migrations + Wrangler) and waits
+  on `/health`. Nx `test-e2e` already ran `build-client` and `prepare-e2e-env`,
+  so the webServer does not rebuild `public/` into wrangler's assets watcher.
+- `preview:e2e` is the manual path: it prepares `packages/worker/.env`, rebuilds
+  the client bundles, applies local D1 migrations, and starts Wrangler against
   `.wrangler/state/e2e`.
 - `npm run test:e2e:run` ensures Playwright Chromium is installed before the
   suite starts (`tools/ensure-playwright-browser.ts`). The Validate E2E job

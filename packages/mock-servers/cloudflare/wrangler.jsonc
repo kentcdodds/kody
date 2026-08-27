@@ -9,7 +9,11 @@
 	],
 	"main": "./src/worker.ts",
 	"preview_urls": true,
-	"observability": { "enabled": true },
+	// Local `wrangler dev` (node-unit + MCP e2e) must not start the 4.118+
+	// observability collector/tail pair. Parallel mock processes then 503 or
+	// return empty JSON on the first Durable Object RPC. Preview/production
+	// keep observability below.
+	"observability": { "enabled": false },
 	// SQLite-backed classes: Cloudflare rejects creating new key-value backed
 	// Durable Object namespaces (error 10099), and every PR preview deploys a
 	// fresh mock script that runs these migrations from scratch. Long-lived
@@ -38,6 +42,7 @@
 	},
 	"env": {
 		"production": {
+			"observability": { "enabled": true },
 			"durable_objects": {
 				"bindings": [
 					{
@@ -52,6 +57,7 @@
 			},
 		},
 		"preview": {
+			"observability": { "enabled": true },
 			"durable_objects": {
 				"bindings": [
 					{

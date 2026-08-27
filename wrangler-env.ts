@@ -131,6 +131,18 @@ if (isDevCommand) {
 	commandArgs.push('--var', 'WRANGLER_IS_LOCAL_DEV:true')
 }
 
+if (
+	isDevCommand &&
+	envName === 'test' &&
+	!args.includes('--live-reload') &&
+	!args.some((arg) => arg.startsWith('--live-reload='))
+) {
+	// Playwright / MCP e2e do not edit worker source. HTML live-reload
+	// still arms a watcher that has looped on `generated/esbuild.wasm`
+	// on Cloud Agent VMs (Friction #1789).
+	commandArgs.push('--live-reload', 'false')
+}
+
 let resolvedPort = process.env.PORT
 
 if (isDevCommand && hasPortFlag) {
@@ -203,6 +215,13 @@ const processEnv = {
 	...process.env,
 	CLOUDFLARE_ENV: envName,
 	...(resolvedPort ? { PORT: resolvedPort } : {}),
+	...(envName === 'test'
+		? {
+				X_LOCAL_OBSERVABILITY: process.env.X_LOCAL_OBSERVABILITY ?? 'false',
+				WRANGLER_CI_DISABLE_CONFIG_WATCHING:
+					process.env.WRANGLER_CI_DISABLE_CONFIG_WATCHING ?? 'true',
+			}
+		: {}),
 }
 
 const localWranglerPath = path.join(
