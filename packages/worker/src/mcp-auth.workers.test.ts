@@ -8,6 +8,7 @@ import {
 	buildProtectedResourceMetadata,
 	handleMcpRequest,
 	handleProtectedResourceMetadata,
+	mcpInvalidTokenDescription,
 	mcpResourcePath,
 	protectedResourceMetadataPath,
 } from './mcp-auth.ts'
@@ -23,6 +24,8 @@ function expectAuthenticateHeader(
 		expectScope?: boolean
 	} = {},
 ) {
+	expect(header).toContain('error="invalid_token"')
+	expect(header).toContain(`error_description="${mcpInvalidTokenDescription}"`)
 	expect(header).toContain(
 		`resource_metadata="${origin}${protectedResourceMetadataPath}"`,
 	)
@@ -398,8 +401,7 @@ test('mcp endpoint serves browser guidance without changing protocol auth challe
 		expect(response.headers.get('Content-Type')).toMatch(/application\/json/)
 		expect(await response.json()).toEqual({
 			error: 'invalid_token',
-			error_description:
-				'Authentication required. Obtain an access token via OAuth and retry with Authorization: Bearer.',
+			error_description: mcpInvalidTokenDescription,
 		})
 		expectAuthenticateHeader(
 			response.headers.get('WWW-Authenticate') ?? '',
@@ -446,8 +448,7 @@ test('protected resource metadata and auth challenge resolve origin consistently
 	)
 	expect(await requestOriginUnauthorizedResponse.json()).toEqual({
 		error: 'invalid_token',
-		error_description:
-			'Authentication required. Obtain an access token via OAuth and retry with Authorization: Bearer.',
+		error_description: mcpInvalidTokenDescription,
 	})
 	expectAuthenticateHeader(
 		requestOriginUnauthorizedResponse.headers.get('WWW-Authenticate') ?? '',

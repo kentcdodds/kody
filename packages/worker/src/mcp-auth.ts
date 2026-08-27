@@ -64,11 +64,16 @@ export function handleProtectedResourceMetadata(request: Request, env?: Env) {
 	})
 }
 
+export const mcpInvalidTokenDescription =
+	'Authentication required. Obtain an access token via OAuth and retry with Authorization: Bearer.'
+
 function buildWwwAuthenticateHeader(origin: string) {
 	const resourceMetadata = `${origin}${protectedResourceMetadataPath}`
 	const scope =
-		oauthScopes.length > 0 ? ` scope="${oauthScopes.join(' ')}"` : ''
-	return `Bearer resource_metadata="${resourceMetadata}"${scope}`
+		oauthScopes.length > 0 ? `, scope="${oauthScopes.join(' ')}"` : ''
+	// RFC 6750 + RFC 9728: hosts that refresh on `error="invalid_token"` need
+	// that challenge attribute on the wire, not only in the JSON body.
+	return `Bearer error="invalid_token", error_description="${mcpInvalidTokenDescription}", resource_metadata="${resourceMetadata}"${scope}`
 }
 
 function createUnauthorizedResponse(origin: string) {
@@ -78,8 +83,7 @@ function createUnauthorizedResponse(origin: string) {
 	return Response.json(
 		{
 			error: 'invalid_token',
-			error_description:
-				'Authentication required. Obtain an access token via OAuth and retry with Authorization: Bearer.',
+			error_description: mcpInvalidTokenDescription,
 		},
 		{
 			status: 401,
