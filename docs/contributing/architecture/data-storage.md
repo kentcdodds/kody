@@ -341,8 +341,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   state. Official OAuth token rotation persists host-side and does not use that
   write grant.
 - `user_oauth_apps` (`0001-squashed-init.sql`): per-user OAuth app rows keyed by
-  `(user_id, slug)`. Holds shared client id, client-secret secret name, provider
-  endpoints, and flow options. See [OAuth integrations](./integrations.md).
+  `(user_id, slug)`. Holds shared client id, client-secret ciphertext (soak
+  dual-write also keeps `client_secret_secret_name`), provider endpoints, and
+  flow options. See [OAuth integrations](./integrations.md).
 - `platform_oauth_apps` (`0004-platform-oauth-apps.sql`): operator-provisioned
   built-in OAuth apps users connect to without registering their own provider
   app. Global operator config with **no `user_id`** (like feature flags, not
@@ -366,7 +367,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `platform_app_slug` (FK to `platform_oauth_apps(slug)`) is set, enforced by a
   `CHECK` constraint; both FKs use `ON DELETE RESTRICT`. Holds `scopes_json`,
   `required_hosts_json`, `usage_mode` / `allowed_packages_json`, and access /
-  refresh token ciphertext. Soak dual-write still keeps `*_secret_name` columns
+  refresh token ciphertext. Soak dual-write keeps `*_secret_name` columns
   pointing at `secret_entries`. The non-secret `client_id` is stored inline on
   the owning app row.
 - `user_openapi_bindings` (`0001-squashed-init.sql`): per-user OpenAPI provider

@@ -46,8 +46,8 @@ smoke-test path is unclear.
    - Confirm which fields are secrets and which are readable config.
    - Prefer the provider's native credential shape when possible.
    - If the API also needs readable configuration such as an account ID, base
-     URL, region, workspace slug, or default sender, plan to store those as
-     **values**, not secrets.
+     URL, region, workspace slug, or default sender, store those in memories,
+     `packageStorage()`, or a repo — not as secrets.
 2. Check whether the needed secrets already exist.
    - Use `search` first for saved secret references.
    - Use `kody.secret_list({})` inside `execute` only when you need the current
@@ -91,22 +91,22 @@ smoke-test path is unclear.
      secret access without external side effects. Secret mounts bind in the
      package's own surfaces (jobs, apps, subscriptions, HTTP invocation).
 
-## Secret names and value names
+## Secret names and readable config
 
-Use descriptive, provider-agnostic-enough names that reflect the real auth
-contract:
+Use descriptive names that reflect the real auth contract:
 
 - good secret names:
   - `providerApiKey`
   - `providerAccessToken`
   - `providerAccountToken`
-- good value names:
-  - `providerAccountId`
-  - `providerRegion`
-  - `providerDefaultSender`
+- good places for readable identifiers and defaults (account id, region,
+  sender):
+  - memories for durable facts the agent should recall
+  - `packageStorage()` for package runtime knobs
+  - a repo for versioned calibration or documents
 
 If the auth contract has multiple fields, save only the truly sensitive fields
-as secrets. Keep readable identifiers and defaults in values.
+as secrets. Keep readable identifiers and defaults out of the secret store.
 
 ## Using a saved secret in `fetch`
 
@@ -167,7 +167,7 @@ A package app is the exception when the setup requires something
 - browser-side OAuth or hosted callback handling
 - a provider-specific setup wizard with multiple non-secret choices
 - a required transformation step that cannot be represented by saving the raw
-  secret plus values directly
+  secret plus readable config directly
 
 Even then, keep the UI focused on setup. The downstream package should wait for
 the post-setup smoke test.
@@ -185,8 +185,9 @@ For a new secret-backed integration, the default response shape is:
 Example:
 
 - \"This API uses an account ID plus a token. Please save `providerToken`
-  through `/account/secrets/new`. I will use `providerAccountId` as a value, run
-  a real authenticated smoke test, and then build the package.\"
+  through `/account/secrets/new`. I will keep `providerAccountId` as readable
+  config (memory or package storage), run a real authenticated smoke test, and
+  then build the package.\"
 
 ## Anti-patterns
 
