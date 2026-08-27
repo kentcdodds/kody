@@ -947,10 +947,9 @@ html.is-settled {
 	gap: 0.6rem;
 }
 
-/* Hero stage: Kody with the host agents tethered around it. Each tether
-   carries a light pulse on its own --cycle/--phase (CSS only, JS + motion-OK
-   gated), so several run at once in shifting combinations. Neutral, not
-   accent: the pulse is the text color at partial opacity. */
+/* Hero stage: Kody with the host agents tethered to his lantern. Tethers are
+   drawn over him so they visibly reach the globe; balls of lantern light
+   travel them (frame-driven, shown only with JS + motion OK). */
 .landing-hero-agents {
 	width: min(100%, 40rem);
 	margin: 1.75rem auto 0;
@@ -978,22 +977,78 @@ html.is-settled {
 	height: 100%;
 	overflow: visible;
 	pointer-events: none;
-	z-index: 0;
+	z-index: 2;
 }
 
+/* Strokes and lights dissolve into the globe instead of crossing it. Masked
+   on the <svg> box (percentages: the stage is square, so they match viewBox
+   units); the centre tracks the lantern through parallax. */
+.landing-hero-agents-lines {
+	/* Glass radii ≈ 6.3% × 5.4%; fully clear inside, faded out by ~1.5× that. */
+	mask-image: radial-gradient(
+		ellipse 9.5% 8.2% at var(--lantern-x) var(--lantern-y),
+		transparent 66%,
+		black 100%
+	);
+	-webkit-mask-image: radial-gradient(
+		ellipse 9.5% 8.2% at var(--lantern-x) var(--lantern-y),
+		transparent 66%,
+		black 100%
+	);
+}
+
+/* Neutral threads; only the travelling lights carry the lantern's warmth. */
 .landing-hero-agent-line {
-	stroke: var(--color-border);
+	stroke: color-mix(in oklab, var(--color-border) 75%, var(--color-text));
 	stroke-width: 0.4;
 	stroke-linecap: round;
 }
 
-.landing-hero-agent-pulse {
+/* Faint soft bloom under each line so they sit in the scene, not on it. */
+.landing-hero-agent-glow {
 	stroke: var(--color-text);
-	stroke-width: 0.45;
+	stroke-width: 1.4;
 	stroke-linecap: round;
-	stroke-dasharray: 0.22 1;
-	stroke-dashoffset: 0.22;
-	opacity: 0;
+	opacity: 0.06;
+	filter: blur(0.5px);
+}
+
+/* Lights are motion-only: no JS or reduced motion leaves the tethers still. */
+.landing-hero-agent-light {
+	display: none;
+}
+
+.landing-hero-agent-light-halo {
+	fill: oklch(0.88 0.13 85 / 0.45);
+	filter: blur(0.6px);
+}
+
+.landing-hero-agent-light-core {
+	fill: oklch(0.97 0.05 90);
+}
+
+/* The shared .landing-hero-art glow is placed for the old stage; here the
+   glow lives inside the stage, centred on the globe (the image parallaxes,
+   so the glow moves with it). Static on purpose: the lights are the motion. */
+.landing-hero-agents.landing-hero-art::after {
+	display: none;
+}
+
+.landing-hero-agents-glow {
+	position: absolute;
+	z-index: 1;
+	width: 26%;
+	aspect-ratio: 1;
+	/* translate, not transform: pointer parallax owns transform. */
+	translate: -50% -50%;
+	border-radius: 50%;
+	background: radial-gradient(
+		closest-side,
+		var(--lantern-glow),
+		transparent 70%
+	);
+	mix-blend-mode: screen;
+	pointer-events: none;
 }
 
 .landing-hero-agents-list {
@@ -1002,7 +1057,7 @@ html.is-settled {
 	padding: 0;
 	position: absolute;
 	inset: 0;
-	z-index: 2;
+	z-index: 3;
 	pointer-events: none;
 }
 
@@ -1073,45 +1128,14 @@ html.is-settled {
 	}
 }
 
-/* Two pulses per cycle run token → Kody along the tether while the token is
-   active; the dash resets while fully transparent so it never streaks back. */
-@keyframes agent-pulse {
-	0%,
-	24.5%,
-	25.5%,
-	49%,
-	100% {
-		stroke-dashoffset: 0.22;
-		opacity: 0;
-	}
-
-	3%,
-	28% {
-		stroke-dashoffset: 0.22;
-		opacity: 0.55;
-	}
-
-	23%,
-	48% {
-		stroke-dashoffset: -1;
-		opacity: 0.55;
-	}
-
-	24%,
-	48.5% {
-		stroke-dashoffset: -1;
-		opacity: 0;
-	}
-}
-
 @media (prefers-reduced-motion: no-preference) {
 	html.js .landing-hero-agent {
 		animation: agent-drift var(--dur, 7s) ease-in-out var(--del, 0s) infinite
 			alternate;
 	}
 
-	html.js .landing-hero-agent-pulse {
-		animation: agent-pulse var(--cycle, 9s) ease-in-out var(--phase) infinite;
+	html.js .landing-hero-agent-light {
+		display: inline;
 	}
 }
 
