@@ -9,25 +9,29 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   for the repo, and runs `npm run migrations:check` before the commit is
   created.
 - `git push` runs the Husky `pre-push` hook, which executes `npm run test:push`
-  (`CI=1` `test:node` + `test:workers` + Playwright E2E) so pushes are blocked
-  when those suites fail. Those are the same Nx targets GitHub Actions runs, so
-  a remote-cache hit is possible after push. Cursor Cloud Agent VMs keep
-  Cursor's hook dispatcher as `core.hooksPath` and compose Husky through
+  (`CI=1` `test:node` + `test:workers`) so pushes are blocked when those suites
+  fail. Those are the same Nx targets the CI Node / Workers jobs run, so a
+  remote-cache hit is possible after push. Playwright E2E stays in
+  `npm run validate` and the CI E2E job. The push hook stops short of that suite
+  because Playwright's webServer can hang in a wrangler reload loop
+  (`generated/esbuild.wasm`) on Cloud Agent VMs, and a failed e2e leg skips the
+  unit gate when the push is retried with `--no-verify`. Cursor Cloud Agent VMs
+  keep Cursor's hook dispatcher as `core.hooksPath` and compose Husky through
   `npm run hooks:ensure` (`prepare` runs it after `husky`; Cloud Agent
   environment `start` should run it too) so `pre-push` still reaches `.husky/_`
   — see [cloud-agents.md](../cloud-agents.md#git-hooks). Vitest's default
   `testTimeout` is 20s so the workers pool's first Durable Object RPC in a file
   (~10s) does not fail the default budget (see
   [decision 0011](../decisions/0011-workers-unit-pool-harness.md)); the push
-  gate also sets `CI=1` so worker count, Playwright retries, and Nx cache hashes
-  match GitHub Actions.
+  gate also sets `CI=1` so worker count and Nx cache hashes match GitHub
+  Actions.
 - Because the commit hook already enforces formatting, lint fixes, and
   typechecking, agents do not need to run those checks separately before every
   commit unless they want earlier feedback or are validating a larger change set
   before opening a PR.
-- Push-time hooks intentionally stop short of `npm run validate`; MCP E2E and
-  repo-wide format checks remain explicit checks because they are heavier than
-  the push gate.
+- Push-time hooks intentionally stop short of `npm run validate`; Playwright
+  E2E, MCP E2E, and repo-wide format checks remain explicit checks because they
+  are heavier than the push gate.
 - `npm run validate` is the single authoritative local gate. It is read-only and
   executes `format:check`, `lint`, `typecheck`, `test:node`, `test:workers`,
   Playwright E2E, MCP E2E, `backup:build`, `status:build`, `nx-cache:build`,
@@ -54,12 +58,10 @@ pushes. See the [setup index](./index.md) for the other setup pages.
 - `npm run validate:fix` runs `format` + `lint:fix` and is the explicit opt-in
   for mutating auto-fixes. It is never required to pass `validate`.
 - `npm run format` applies formatting updates on its own.
-- `npm run test:push` runs the same `test:node`, `test:workers`, and Playwright
-  E2E suites enforced by the Husky `pre-push` hook and by the CI Node / Workers
-  / E2E jobs.
+- `npm run test:push` runs the same `test:node` and `test:workers` suites
+  enforced by the Husky `pre-push` hook and by the CI Node / Workers jobs.
 - `npm run test:e2e:run` ensures Playwright Chromium is installed before the
-  suite starts, so `npm run validate` and `npm run test:push` self-heal on a
-  fresh machine.
+  suite starts, so `npm run validate` self-heals on a fresh machine.
 - Use `npm run test:e2e:install` when you want to prefetch Playwright browsers
   ahead of time instead of waiting for the first E2E run. CI caches
   `~/.cache/ms-playwright` and runs `test:e2e:ensure`, so a lockfile-matching

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, open, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build, type Plugin } from 'esbuild'
@@ -139,6 +139,20 @@ export async function ensureWorkerBundlerModules() {
 		path.join(generatedDir, 'esbuild.wasm'),
 	)
 	await writeFile(stampPath, stampContent)
+	// Flush before `wrangler dev` starts watching `src/`. On Cloud Agent
+	// overlay FS, pending create events for `generated/esbuild.wasm` have
+	// retriggered wrangler's additional-module watcher into a reload loop
+	// (Friction #1789).
+	await fsyncGeneratedDir()
+}
+
+async function fsyncGeneratedDir() {
+	const handle = await open(generatedDir, 'r')
+	try {
+		await handle.sync()
+	} finally {
+		await handle.close()
+	}
 }
 
 if (isExecutedDirectly(import.meta.url)) {
