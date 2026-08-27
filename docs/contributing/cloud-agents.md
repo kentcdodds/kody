@@ -54,6 +54,21 @@ Use `CI=1` on cached test commands (the repo scripts already do). Leave the
 variables unset to run without remote cache. See
 [`packages/nx-cache/readme.md`](../packages/nx-cache/readme.md).
 
+## Git hooks
+
+Cursor Cloud Agent VMs set `core.hooksPath` to a dispatcher under
+`~/.cursor/agent-hooks/` so Cursor can run secret-scan and co-author hooks.
+`npm run hooks:ensure` (`prepare` runs it after `husky`) composes that
+dispatcher with Husky: `core.hooksPath` stays on the dispatcher,
+`.cursor-original-hooks-path` points at `.husky/_`, and `pre-push` /
+`pre-commit` / `commit-msg` become dispatcher symlinks when those user scripts
+exist. `git push` then runs `npm run test:push` and can upload Nx remote-cache
+artifacts before GitHub Actions starts.
+
+Cloud Agent environment `start` should run `npm run hooks:ensure` so a snapshot
+boot that skips `npm ci` still composes hooks after Cursor installs the
+dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
+
 ## Quick commands
 
 | Task               | Command                                                         |

@@ -81,7 +81,8 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:install": "playwright install chromium --with-deps",
     "test:mcp": "nx run worker:test-mcp",
-    "prepare": "husky",
+    "hooks:ensure": "node tools/ensure-cloud-agent-hooks.ts",
+    "prepare": "husky && node tools/ensure-cloud-agent-hooks.ts",
     "nx:graph": "nx graph",
     "nx:show-projects": "nx show projects",
     "audit:prod": "npm audit --omit=dev"

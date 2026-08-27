@@ -4,16 +4,17 @@ A full-stack web application built on Cloudflare Workers with Remix 3 (beta).
 
 ## Quick Reference
 
-| Task                   | Command                |
-| ---------------------- | ---------------------- |
-| Start dev server       | `npm run dev`          |
-| Full validation        | `npm run validate`     |
-| Apply formatter / lint | `npm run validate:fix` |
-| Lint                   | `npm run lint`         |
-| Format                 | `npm run format`       |
-| Type check             | `npm run typecheck`    |
-| Build                  | `npm run build`        |
-| E2E tests              | `npm run test:e2e:run` |
+| Task                          | Command                |
+| ----------------------------- | ---------------------- |
+| Start dev server              | `npm run dev`          |
+| Full validation               | `npm run validate`     |
+| Compose Cloud Agent git hooks | `npm run hooks:ensure` |
+| Apply formatter / lint        | `npm run validate:fix` |
+| Lint                          | `npm run lint`         |
+| Format                        | `npm run format`       |
+| Type check                    | `npm run typecheck`    |
+| Build                         | `npm run build`        |
+| E2E tests                     | `npm run test:e2e:run` |
 
 `npm run validate` is the single authoritative local gate. CI runs the same
 checks as parallel jobs (including separate 🧪 Node and ☁️ Workers unit jobs),
