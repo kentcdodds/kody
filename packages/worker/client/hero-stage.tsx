@@ -159,7 +159,7 @@ const stageProps = [
 
 /** Pointer parallax over the stage. Drift animations own `translate`;
  *  parallax composes through `transform`, so the two never fight. */
-function stageParallax() {
+export function stageParallax() {
 	return ref((node: Element, signal: AbortSignal) => {
 		if (!matchMedia('(hover: hover) and (pointer: fine)').matches) return
 		if (matchMedia('(prefers-reduced-motion: reduce)').matches) return

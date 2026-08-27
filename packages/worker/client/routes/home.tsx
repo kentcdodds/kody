@@ -2,7 +2,6 @@ import { type Handle, ref } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { observeNearViewport } from '#client/deferred-turnstile.ts'
 import { on } from '#client/event-mixin.ts'
-import { HeroStage } from '#client/hero-stage.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -27,7 +26,7 @@ import {
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
-import { LandingHeroOrbit } from '#client/routes/landing-hero-orbit.tsx'
+import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
 
 /**
@@ -38,9 +37,9 @@ import { LandingLoopPlayer } from './landing-loop-player.tsx'
  * `prefers-reduced-motion`.
  *
  * Positioning (public door): keep using the agent you already have — Kody is
- * the account tools and memory live on when you switch. Hero hub-and-spoke
- * (host chips + existing kody mark + walking You) names the agents; the H1
- * stays vendor-agnostic. Not another agent, chat, or harness. Factory / npm /
+ * the account tools and memory live on when you switch. The hero stage (Kody
+ * with the host agents tethered around it) names the agents; the H1 stays
+ * vendor-agnostic. Not another agent, chat, or harness. Factory / npm /
  * packages stay below the fold.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
@@ -210,7 +209,7 @@ export function HomeRoute(handle: Handle) {
 						Tools, setup, and memory live here when you switch. Not another
 						chat. Not another harness.
 					</p>
-					<LandingHeroOrbit />
+					<LandingHeroAgents />
 					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}
 					<div data-rise style={{ '--rise': '2' }} class="landing-hero-actions">
 						{isSignedIn ? (
@@ -261,15 +260,6 @@ export function HomeRoute(handle: Handle) {
 							/>
 						</div>
 					) : null}
-					<h2 data-rise style={{ '--rise': '3.4' }} class="landing-hero-meet">
-						Meet Kody
-					</h2>
-					<div data-rise style={{ '--rise': '1.5' }} class="landing-hero-art">
-						<HeroStage
-							size="landing"
-							alt="Kody the koala holding a warmly glowing lantern, surrounded by floating notes, bookmarks, packages, and tool tokens"
-						/>
-					</div>
 				</section>
 
 				{/* ============ nothing new to learn ============ */}
