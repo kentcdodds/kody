@@ -78,6 +78,21 @@ jobs:
       - name: 📥 Install Dependencies
         run: npm ci
 
+      - name: 🧾 Collect deploy info
+        id: deploy_info
+        env:
+          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          DEPLOY_ENVIRONMENT: preview
+          DEPLOY_PR_NUMBER:
+            ${{ github.event.pull_request.number || inputs.pr_number }}
+          DEPLOY_PR_URL: ${{ github.event.pull_request.html_url }}
+          DEPLOY_PR_TITLE: ${{ github.event.pull_request.title }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          APP_DEPLOY_INFO="$(node tools/ci/build-deploy-info.ts)"
+          echo "app_deploy_info=$APP_DEPLOY_INFO" >> "$GITHUB_OUTPUT"
+
       - name: 🧾 Resolve preview names
         id: names
         shell: bash
@@ -340,9 +355,10 @@ jobs:
           WRANGLER_CONFIG:
             ${{ steps.runtime_config.outputs.main_bootstrap_wrangler_config }}
           DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          APP_DEPLOY_INFO: ${{ steps.deploy_info.outputs.app_deploy_info }}
         run: |
           set -euo pipefail
-          npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
+          npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" --var "APP_DEPLOY_INFO:${APP_DEPLOY_INFO}"
 
       - name: ☁️ Bootstrap preview platform Worker (runtime DOs on main)
         env:
@@ -412,11 +428,12 @@ jobs:
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
           DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          APP_DEPLOY_INFO: ${{ steps.deploy_info.outputs.app_deploy_info }}
         run: |
           set -euo pipefail
           echo "worker_name=$APP_WORKER_NAME" >> "$GITHUB_OUTPUT"
 
-          npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" ${APP_BASE_URL:+--var "APP_BASE_URL:${APP_BASE_URL}"} 2>&1 | tee deploy.log
+          npm run deploy -- --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" --var "APP_DEPLOY_INFO:${APP_DEPLOY_INFO}" ${APP_BASE_URL:+--var "APP_BASE_URL:${APP_BASE_URL}"} 2>&1 | tee deploy.log
 
           PREVIEW_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy.log "$APP_WORKER_NAME")"
           if [ -n "$PREVIEW_URL" ]; then

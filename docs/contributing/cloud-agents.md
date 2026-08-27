@@ -90,8 +90,10 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
   3742 is taken and prints `App running at http://localhost:<port>`.
 - Run long-lived dev in tmux so the session survives tool timeouts.
 - Health check (no auth): `curl http://localhost:<port>/health` →
-  `{"ok":true,"commitSha":...}`. Platform and runtime health paths
-  (`/__platform/health`, `/__runtime/health`) 404 on the origin port.
+  `{"ok":true,"commitSha":...,"commit":...,"pullRequest":...,"deploy":...}`.
+  Locally the extra fields are `null` unless a deploy var is set. Platform and
+  runtime health paths (`/__platform/health`, `/__runtime/health`) 404 on the
+  origin port.
 
 ## Environment file
 
