@@ -90,7 +90,7 @@ For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{typ
 
 1. **capability** \`coding_guide_get\` (\`coding\`) — Load an official Kody guide (markdown, bundled from the kody repository). Prefer this capability plus \`search\` results over local repo spelunking when Kody auth or integration behavior is already documented. Entity: \`coding_guide_get:capability\`
    \`kody.coding_guide_get(args)\` — \`type CodingGuideGetInput = { guide: "integration_bootstrap" | "oauth" | "provider_google" | ... }\`; use entity detail for the full definition
-2. **guide** Connect Google (Gmail, Calendar, Drive) — Built-in Calendar scopes vs bring-your-own OAuth for inbox reading. Entity: \`provider_google:guide\`
+2. **guide** Connect Google (Gmail, Calendar, Drive) — Bring-your-own OAuth client, Google Auth Platform console steps, and the Testing-status refresh-token trap. Entity: \`provider_google:guide\`
 3. **guide** OAuth guide (standard path) — Hosted \`/connect/oauth\`, redirect URI, PKCE vs confidential. Entity: \`oauth:guide\``
 
 const codingGuideDetailMarkdown = `# Capability — \`coding_guide_get\`
@@ -98,7 +98,7 @@ const codingGuideDetailMarkdown = `# Capability — \`coding_guide_get\`
 Load an official Kody guide (markdown, bundled from the kody repository).
 Use \`guide: "integration_bootstrap"\` before building anything that depends on third-party auth.
 Use \`guide: "oauth"\` for the hosted \`/connect/oauth\` path and redirect URI.
-Use \`guide: "provider_google"\` for Google console steps, built-in vs BYO lanes, and the Testing-status refresh-token trap.
+Use \`guide: "provider_google"\` for Google console steps and the Testing-status refresh-token trap.
 
 ## Summary
 
@@ -201,7 +201,7 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 								},
 								google: {
 									title: 'Connect Google (Gmail, Calendar, Drive)',
-									body: '# Connect Google (Gmail, Calendar, Drive)\n\nPrefer the built-in Google integration when its scope menu covers the task. Bring your own Google OAuth client when you need access outside that menu — especially inbox reading.\n\n## Lane A: built-in Google (default)\n\n…\n\n## Lane B: bring-your-own OAuth client\n\n…',
+									body: "# Connect Google (Gmail, Calendar, Drive)\n\nConnect Google by creating your own OAuth client in Google Cloud. Register Kody's redirect URI, then finish on `/connect/oauth`.\n\n## Create the OAuth client\n\n…",
 								},
 							},
 						}),
@@ -211,11 +211,11 @@ export const googleOauthTranscriptActs: Array<TranscriptAct> = [
 			{
 				role: 'agent',
 				tone: 'reasoning',
-				text: 'Inbox reading (`gmail.readonly`) is outside the built-in Google scope menu. That means Lane B: bring-your-own OAuth client in Google Cloud, not the one-click `/connect/oauth?provider=google` path.',
+				text: 'Inbox reading (`gmail.readonly`) needs a Google Cloud OAuth client the user owns, then a prefilled `/connect/oauth` URL. I will walk the console one step at a time.',
 			},
 			{
 				role: 'agent',
-				text: 'Reading your Gmail inbox needs a Google Cloud OAuth client you own — the built-in Google connect only covers scopes like Calendar and send-only Gmail, not inbox reading. I will walk you through the console one step at a time. Open https://console.cloud.google.com and create a new project (or select one you already use). Reply when that is done.',
+				text: 'Reading your Gmail inbox needs a Google Cloud OAuth client you own. I will walk you through the console one step at a time. Open https://console.cloud.google.com and create a new project (or select one you already use). Reply when that is done.',
 			},
 		],
 	},

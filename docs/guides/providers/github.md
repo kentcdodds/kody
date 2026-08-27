@@ -2,9 +2,9 @@
 id: provider_github
 title: Connect GitHub
 summary:
-  Verified walkthrough for connecting GitHub to Kody: the built-in OAuth
-  integration, fine-grained personal access tokens, bring-your-own OAuth Apps,
-  scope choices, prefilled connect links, and copy-paste smoke tests.
+  Verified walkthrough for connecting GitHub to Kody: fine-grained personal
+  access tokens, bring-your-own OAuth Apps, scope choices, prefilled connect
+  links, and copy-paste smoke tests.
 category: provider
 provider: GitHub
 lastVerified: 2026-08
@@ -12,15 +12,12 @@ lastVerified: 2026-08
 
 # Connect GitHub
 
-GitHub has three good lanes:
+GitHub has two good lanes:
 
-- **Built-in OAuth** — one-click `/connect/oauth?provider=github` when the
-  platform app is enabled (default for durable OAuth without registering your
-  own GitHub app).
 - **Personal access token** — fastest for many automations; saved as a Kody
   secret (and what `@kody/github` reads by default).
-- **Bring-your-own OAuth App** — when you need scopes outside the built-in menu
-  or your own client rate limits.
+- **Bring-your-own OAuth App** — when you want a durable OAuth connection with
+  your own client and rate limits.
 
 ## What you get
 
@@ -34,26 +31,12 @@ Once connected, you can ask Kody things like:
 
 - Personal accounts are free; no review process applies to these lanes.
 - If you need repositories in an organization with OAuth App access
-  restrictions, an org owner must approve the OAuth App (built-in or BYO) before
-  it can see org data. Fine-grained tokens have their own per-org approval flow
-  for org-owned repositories.
+  restrictions, an org owner must approve the OAuth App before it can see org
+  data. Fine-grained tokens have their own per-org approval flow for org-owned
+  repositories.
 - The API rate limit is 5,000 requests per hour per authenticated user.
 
-## Lane A: built-in GitHub OAuth
-
-List enabled built-ins with `integration_platform_app_list`. When `github` is
-enabled, connect with:
-
-```text
-https://kody.codes/connect/oauth?provider=github
-```
-
-No GitHub developer-console app registration. Default scopes typically include
-`read:user`, `repo`, and `user:email`; widen within the allowed menu from the
-connect UI when needed. Bring your own OAuth app (Lane C) if you need different
-scopes or your own rate limits.
-
-## Lane B: personal access token (fastest for many automations)
+## Lane A: personal access token (fastest for many automations)
 
 1. Open
    [github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens)
@@ -78,7 +61,7 @@ Approve the `api.github.com` host on the same page after saving. The name
 `githubAccessToken` is exactly what the official `@kody/github` listing (and a
 fork of it) reads by default, so no rename is needed.
 
-## Lane C: bring-your-own OAuth App
+## Lane B: bring-your-own OAuth App
 
 1. Open [github.com/settings/developers](https://github.com/settings/developers)
    -> **OAuth Apps** -> **New OAuth App**.
@@ -110,7 +93,7 @@ authorize.
 
 ## Verify
 
-Lane B (saved secret) — run in `execute` after the host is approved:
+Lane A (saved secret) — run in `execute` after the host is approved:
 
 ```ts
 export default async function main() {
@@ -131,7 +114,7 @@ export default async function main() {
 }
 ```
 
-Lane A / Lane C (OAuth integration):
+Lane B (OAuth integration):
 
 ```ts
 import { createAuthenticatedFetch } from 'kody:runtime'
@@ -153,11 +136,7 @@ export default async function main() {
 
 ## Scopes
 
-**Built-in:** stay inside the allowed menu from `integration_platform_app_list`
-(`read:user`, `repo`, `user:email`, plus optional entries such as `gist`,
-`notifications`, `read:org`, and `workflow`).
-
-**BYO OAuth** scopes are space-delimited and coarse:
+OAuth App scopes are space-delimited and coarse:
 
 - Minimal read-mostly tier: `read:user`, `user:email`, `notifications`,
   `public_repo` (public repositories only), `read:org`.
@@ -165,14 +144,12 @@ export default async function main() {
   no read-only scope for private repos, so requesting private access means
   accepting write access too. Add `gist` for gists.
 
-Fine-grained tokens (Lane B) are the better tool when you want read-only access
+Fine-grained tokens (Lane A) are the better tool when you want read-only access
 to private repositories: their permissions are per-repository and
 per-capability.
 
 ## Troubleshooting
 
-- Built-in connect still asks for a client ID: the `github` platform app is
-  disabled or missing — call `integration_platform_app_list`, or use Lane C.
 - `The redirect_uri MUST match the registered callback URL`: the callback must
   be exactly `https://kody.codes/connect/oauth`.
 - Organization repositories missing from results: the org restricts OAuth App
@@ -182,7 +159,7 @@ per-capability.
   stray space. Rotate it at the token settings page and update the secret.
 - `403` with `X-RateLimit-Remaining: 0`: the 5,000 req/hr per-user limit. Wait
   for the reset or batch queries with the GraphQL API.
-- Token exchange fails in Lane C: the client secret is required even with PKCE.
+- Token exchange fails in Lane B: the client secret is required even with PKCE.
   Regenerate the secret and reconnect.
 
 ## Use the official package and verify
@@ -195,9 +172,9 @@ instead of hand-rolled API calls.
    helpers.
 2. `community_fork` it into your scope (or click **Install** on the listing).
 3. Check the fork's README **Required setup**: the default `bot` account reads
-   the `githubAccessToken` secret — the exact name Lane B saved, so no
-   adaptation is needed for the PAT lane. For OAuth (Lane A/C), remap the
-   account to the `github` integration name when the package supports that.
+   the `githubAccessToken` secret — the exact name Lane A saved, so no
+   adaptation is needed for the PAT lane. For OAuth (Lane B), remap the account
+   to the `github` integration name when the package supports that.
 4. Verify the fork against your credentials from `execute`:
 
 ```ts

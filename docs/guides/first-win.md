@@ -138,9 +138,11 @@ The email loop is done. Offer one concrete next step and let them choose:
 - **Ask what they want automated** and use `coding_guide_get` with
   `guide: "package_lifecycle"` to pick between a one-off `execute`, a community
   fork, and a new package.
-- **Bring their own OAuth app or API key** when they need scopes or rate limits
-  a hosted app does not offer — load `coding_guide_get` with `guide: "oauth"`,
-  or the matching `provider_*` guide.
+- **Bring their own OAuth app** to connect a service — load `coding_guide_get`
+  with `guide: "oauth"`, or the matching `provider_*` guide.
+- **Bring their own API key or PAT** to connect a service — load
+  `coding_guide_get` with `guide: "connect_secret"`, or the matching
+  `provider_*` guide.
 
 ## Troubleshooting
 

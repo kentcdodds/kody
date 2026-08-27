@@ -3,9 +3,9 @@ id: google_oauth
 title: Google OAuth interactive guide
 summary:
   Interactive transcript of a coding agent walking a naive user through
-  Lane B Google OAuth for Gmail inbox reading: official guides first,
-  one console step at a time, prefilled /connect/oauth, refuse secrets
-  in chat, then a Gmail profile smoke test.
+  Google OAuth for Gmail inbox reading: official guides first, one
+  console step at a time, prefilled /connect/oauth, refuse secrets in
+  chat, then a Gmail profile smoke test.
 category: platform
 ---
 
@@ -18,10 +18,9 @@ Agent notes — for AI agents explaining or recreating this loop:
   same story. This markdown is the playbook.
 - Do not invent Google console UI, URLs, or scopes. Load provider_google,
   oauth, and integration_bootstrap via coding_guide_get and follow those.
-- Honest Lane B reason: inbox reading (gmail.readonly) is outside the
-  built-in Google scope menu. Do not pretend Calendar-only needs a BYO
-  client, and do not start already knowing "Lane B" or the 7-day trap —
-  discover those from the guides.
+- Inbox reading (gmail.readonly) needs a Google Cloud OAuth client the
+  user owns. Do not start already knowing the 7-day Testing-status trap —
+  discover that from the guides.
 - Walk the user one console step at a time. Wait for "done" between:
   Cloud project → enable Gmail API → Google Auth Platform Get started →
   Web client with redirect https://kody.codes/connect/oauth → Data Access
@@ -44,9 +43,9 @@ Agent notes — for AI agents explaining or recreating this loop:
   memories.
 -->
 
-Kody can connect Google two ways. The built-in path covers Calendar and other
-allowed scopes without a Cloud project. Inbox reading needs a bring-your-own
-OAuth client (Lane B) because `gmail.readonly` is outside that menu.
+Connecting Google means creating an OAuth client the user owns in Google Cloud,
+then finishing on `/connect/oauth`. Inbox reading needs the `gmail.readonly`
+scope on that client.
 
 This page is the playbook. The same story is an interactive transcript at
 `/guides/google-oauth` on the origin you fetched this guide from.
@@ -58,12 +57,12 @@ This page is the playbook. The same story is an interactive transcript at
 2. **Look up the guides.** Search for Google / Gmail / OAuth, open
    `coding_guide_get` entity detail, then load `integration_bootstrap`, `oauth`,
    and `provider_google`.
-3. **Choose Lane B.** Built-in Google does not cover inbox reading. Walk Google
-   Cloud and Google Auth Platform one step at a time: project, enable Gmail API,
-   branding and External audience, Web client with redirect
-   `https://kody.codes/connect/oauth`, Data Access scope
-   `https://www.googleapis.com/auth/gmail.readonly`, test user while Testing,
-   then Publish to Production so refresh tokens are not limited to seven days.
+3. **Walk the console.** Create the OAuth client in Google Cloud and Google Auth
+   Platform one step at a time: project, enable Gmail API, branding and External
+   audience, Web client with redirect `https://kody.codes/connect/oauth`, Data
+   Access scope `https://www.googleapis.com/auth/gmail.readonly`, test user
+   while Testing, then Publish to Production so refresh tokens are not limited
+   to seven days.
 4. **Connect on Kody.** Send a prefilled `/connect/oauth` URL (confidential,
    `gmail.readonly`, `gmail.googleapis.com`, `access_type=offline`,
    `prompt=consent`). Paste client ID and secret only on that form. Refuse any
@@ -76,6 +75,6 @@ This page is the playbook. The same story is an interactive transcript at
 
 Load `google_oauth` when someone wants a teaching walkthrough of Google OAuth
 for Gmail inbox reading, or when an agent should see how to coach a user through
-Lane B without inventing console steps. For the authoritative console checklist,
+the console without inventing steps. For the authoritative console checklist,
 load `provider_google`. For the generic OAuth path, load `oauth`. For ordering
 before packages, load `integration_bootstrap`.

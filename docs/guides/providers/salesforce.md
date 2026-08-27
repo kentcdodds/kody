@@ -12,9 +12,9 @@ lastVerified: 2026-08
 
 # Connect Salesforce
 
-Salesforce has no built-in Kody platform app. Every connection is
-bring-your-own: you create a Connected App or External Client App in the org,
-register Kody's redirect URI, then finish OAuth on `/connect/oauth`.
+Every connection is bring-your-own: you create a Connected App or External
+Client App in the org, register Kody's redirect URI, then finish OAuth on
+`/connect/oauth`.
 
 ## What you get
 
