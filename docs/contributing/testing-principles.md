@@ -239,20 +239,3 @@ test('fetches from a disposable server', async () => {
 	expect(await response.text()).toBe('ok')
 })
 ```
-
-## Nightly cleanup
-
-A scheduled Cursor automation (Keep Tests Tight) re-reads this page and removes
-tests that do not meet the bar. Prompt for that automation:
-
-```
-If the default branch had no commits in the last 24 hours, exit early.
-
-Read docs/contributing/testing-principles.md and apply that bar. Agents often leave extra regression tests, tautological asserts (a value compared to itself), static-value pins, and lone "q is not there" checks after a deletion. Those help while verifying; they are not worth keeping.
-
-Keep absence asserts that flip state: x is there, z is not; click y; now x is gone and z is there. Delete a lone "q is not there" after q was removed.
-
-Edit, combine, or delete until every remaining test has an independent oracle and could still fail if a live path regresses. A test has to justify its existence.
-
-If you change anything: run formatting before each commit, open a ready-for-review PR, then follow .agents/skills/ship-pr/SKILL.md. Squash-merge when risk is low or medium and CI is green.
-```
