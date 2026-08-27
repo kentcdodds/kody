@@ -448,6 +448,16 @@ test('auth handler login and signup workflow', async () => {
 			result: 'success',
 		}),
 	)
+	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
+		env: expect.anything(),
+		source: 'signup',
+		inviteCode: 'PROD-INVITE',
+		user: {
+			id: await createStableUserIdFromEmail('invited@example.com'),
+			username: 'invited-user',
+			email: 'invited@example.com',
+		},
+	})
 
 	const weakPasswordSignupResponse = await signupContext.request({
 		email: 'weak@example.com',
@@ -620,6 +630,7 @@ test('successful open signup schedules an admin user.created event', async () =>
 	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env: expect.anything(),
 		source: 'signup',
+		inviteCode: null,
 		user: {
 			id: await createStableUserIdFromEmail(email),
 			username: 'newbie',

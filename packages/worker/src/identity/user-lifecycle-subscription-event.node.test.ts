@@ -32,6 +32,21 @@ test('user lifecycle event builders keep a metadata-only identity snapshot', () 
 		},
 		source: 'signup',
 		created_at: '2026-08-20T12:00:00.000Z',
+		invite_code: null,
+	})
+	expect(
+		buildUserCreatedEvent({
+			user: created.user,
+			source: 'oauth',
+			createdAt: '2026-08-20T12:00:00.000Z',
+			inviteCode: 'KODY-AAAA-BBBB-CCCC-DDDD',
+		}),
+	).toEqual({
+		event: userCreatedTopic,
+		user: created.user,
+		source: 'oauth',
+		created_at: '2026-08-20T12:00:00.000Z',
+		invite_code: 'KODY-AAAA-BBBB-CCCC-DDDD',
 	})
 	expect(deleted).toEqual({
 		event: userDeletedTopic,

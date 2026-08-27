@@ -720,6 +720,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					email,
 				},
 				source: 'oauth',
+				inviteCode: consumedInviteCode,
 			})
 
 			void logAuditEvent({

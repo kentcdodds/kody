@@ -89,13 +89,14 @@ This activity view never includes private package source, rating notes, email,
 stable user ids, private profiles, secrets, or unrelated account content.
 Admin-configured notification packages may receive the same community metadata,
 and a metadata-only `user.created` or `user.deleted` event when a person account
-is created or self-deleted (stable user id, username, email, and the create
-source or delete timestamp). Those lifecycle events omit passwords, roles, plan,
-secrets, and unrelated account content. Admin-configured notification packages
-may also receive a metadata-only `fleet.entitlement.crossed` event when a swept
-account first crosses 80% or 100% of a plan-limit resource, or when a non-admin
-account first exceeds the monthly runtime-duration threshold. Entitlement events
-include stable user id, username, resource counts, and admin dashboard URLs;
+is created or self-deleted (stable user id, username, email, the create source
+or delete timestamp, and the consumed invite code when `user.created` used one).
+Those lifecycle events omit passwords, roles, plan, secrets, and unrelated
+account content. Admin-configured notification packages may also receive a
+metadata-only `fleet.entitlement.crossed` event when a swept account first
+crosses 80% or 100% of a plan-limit resource, or when a non-admin account first
+exceeds the monthly runtime-duration threshold. Entitlement events include
+stable user id, username, resource counts, and admin dashboard URLs;
 runtime-duration events include stable user id, username, `total_duration_ms`,
 `threshold_ms`, and admin dashboard URLs. Both event kinds omit emails, plans,
 secrets, package source, and unrelated account content.
