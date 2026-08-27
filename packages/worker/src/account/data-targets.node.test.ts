@@ -258,12 +258,6 @@ test('operator-owned tables are explicit deletion/export exclusions', () => {
 })
 
 test('final schema drops entitlement_daily_counters without stale inventory coverage', () => {
-	expect(getAccountExportExcludedD1Surfaces()).not.toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({ name: 'entitlement_daily_counters' }),
-		]),
-	)
-
 	const deletionStatements = accountUserDataTargets.map((target) => {
 		const match = matchFor(target)
 		return buildUserScopedDeleteOrUpdateSql(match).sql
@@ -311,7 +305,6 @@ test('final schema drops entitlement_daily_counters without stale inventory cove
 		}
 	}
 	const coveredColumns = getAccountD1UserColumnCoverage()
-	expect(coveredColumns.has('entitlement_daily_counters.user_id')).toBe(false)
 	expect(liveUserColumns.has('entitlement_daily_counters.user_id')).toBe(false)
 	const missing = [...liveUserColumns].filter(
 		(column) => !coveredColumns.has(column),
@@ -385,7 +378,6 @@ test('final schema drops legacy RunLog D1 projections without stale inventory co
 	}
 	const coveredColumns = getAccountD1UserColumnCoverage()
 	for (const table of retiredTables) {
-		expect(coveredColumns.has(`${table}.user_id`)).toBe(false)
 		expect(liveUserColumns.has(`${table}.user_id`)).toBe(false)
 	}
 	const missing = [...liveUserColumns].filter(

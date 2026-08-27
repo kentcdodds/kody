@@ -57,8 +57,9 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
     `toSummary(post)` returns). Use an independent oracle (hardcoded quoted
     string, live schema after migration).
   - Self-equality: `equal(x, x)`. Type-only checks, instructional-copy pins, and
-    absence-only deleted details (the next bullets) are the same failure mode. A
-    cheap syntactic checker cannot see this reliably; reject it in review.
+    a lone "q is not there" after a deletion (later bullets) are the same
+    failure mode. A cheap syntactic checker cannot see this reliably; reject it
+    in review.
 - Don't write tests for what the type system already guarantees.
 - Use disposable objects only when there is real cleanup. If no cleanup, skip
   `using` and `Symbol.dispose`.
@@ -86,13 +87,15 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
   as tool descriptions, usage hints, warnings, or other instructional copy. If
   the behavior matters, test the behavior or stable structured contract rather
   than asserting that specific prose appears.
-- Do not commit tests whose only job is asserting a deleted implementation
-  detail is absent (old class names, old script filenames, old `aria-label`s,
-  leftover CSS selectors, renamed copy). Those cannot fail unless someone pastes
-  the old code back. Fine to use such checks locally while verifying a deletion.
-  Absence is a good assertion when the code still has a path that could show the
-  thing: loading vs ready, empty vs populated, secret vs redacted, branch A vs
-  branch B, or transform input vs output.
+- Keep absence assertions that flip state. "x is there, z is not; click y; now x
+  is gone and z is there" is useful. A lone "q is not there" after q was deleted
+  is not. That only fails if someone pastes the old name back. Fine to use
+  locally while deleting; do not commit it. Same for old class names, filenames,
+  aria-labels, CSS selectors, retired capability ids, and deleted table names on
+  a static inventory list. Absence is still a good assertion when a live path
+  could show the thing: loading vs ready, empty vs populated, secret vs
+  redacted, admin vs user, or generated SQL vs a table the generator could still
+  emit.
 - Run server/unit tests with `npm run test` (plus targeted Vitest paths when
   needed) to avoid Playwright spec discovery and accidental matches like
   `packages/worker/src/mcp/mcp-server.mcp-e2e.test.ts`.
@@ -162,6 +165,18 @@ expect(retries).toEqual([{ attempt: 1, nextDelayMs: 100 }])
 expect(windowsEqual(window, { ...window, end: window.end + 1 })).toBe(false)
 ```
 
+### Absence assertions
+
+```ts
+// Bad — q is gone; nothing can show it again
+expect(capabilityMap.old_write).toBeUndefined()
+expect(html).not.toContain('old-aria-label')
+
+// Good — state flip: present on one path, absent on the other
+expect(adminMap.admin_user_list).toBeTruthy()
+expect(userMap.admin_user_list).toBeUndefined()
+```
+
 ### `Symbol.dispose` with `using`
 
 ```ts
@@ -223,4 +238,21 @@ test('fetches from a disposable server', async () => {
 	const response = await fetch(server.url)
 	expect(await response.text()).toBe('ok')
 })
+```
+
+## Nightly cleanup
+
+A scheduled Cursor automation (Keep Tests Tight) re-reads this page and removes
+tests that do not meet the bar. Prompt for that automation:
+
+```
+If the default branch had no commits in the last 24 hours, exit early.
+
+Read docs/contributing/testing-principles.md and apply that bar. Agents often leave extra regression tests, tautological asserts (a value compared to itself), static-value pins, and lone "q is not there" checks after a deletion. Those help while verifying; they are not worth keeping.
+
+Keep absence asserts that flip state: x is there, z is not; click y; now x is gone and z is there. Delete a lone "q is not there" after q was removed.
+
+Edit, combine, or delete until every remaining test has an independent oracle and could still fail if a live path regresses. A test has to justify its existence.
+
+If you change anything: run formatting before each commit, open a ready-for-review PR, then follow .agents/skills/ship-pr/SKILL.md. Squash-merge when risk is low or medium and CI is green.
 ```

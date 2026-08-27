@@ -114,10 +114,6 @@ test('job observability counters start from zero on first terminal finish', asyn
 		lastRunStatus: 'error',
 		lastRunError: 'new failure',
 	})
-	expect(
-		await getJobRunObservability({ env, userId, jobId }),
-	).not.toHaveProperty('legacySeeded')
-
 	const second = beginRunRecord({
 		env,
 		userId,

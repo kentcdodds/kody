@@ -1250,10 +1250,6 @@ test('runtime invoke tools expose only the supported invoke helper', () => {
 	const tools = createRuntimeDispatchTools(db) as Record<string, unknown>
 
 	expect(typeof tools.invoke).toBe('function')
-	// Sandbox teaching stubs reject unsupported names; the host tool set
-	// exposes only invoke.
-	expect(tools.check).toBeUndefined()
-	expect(tools.invokeChecked).toBeUndefined()
 })
 
 test('runtime invoke tools reject the removed object API before resolving a target', async () => {

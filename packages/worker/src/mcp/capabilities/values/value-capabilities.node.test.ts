@@ -64,7 +64,7 @@ test('value list treats underscore-prefixed names as ordinary leftovers', async 
 	])
 })
 
-test('values domain is unadvertised and value_set is not a capability', () => {
+test('values domain is unadvertised while read and delete stay on the map', () => {
 	const registry = getStaticRegistry()
 	expect(
 		registry.capabilityDomains.some((domain) => domain.name === 'values'),
@@ -72,16 +72,12 @@ test('values domain is unadvertised and value_set is not a capability', () => {
 	expect(registry.capabilitySpecs.value_get).toBeUndefined()
 	expect(registry.capabilitySpecs.value_list).toBeUndefined()
 	expect(registry.capabilitySpecs.value_delete).toBeUndefined()
-	expect(registry.capabilitySpecs.value_set).toBeUndefined()
 	expect(registry.capabilityMap.value_get).toBeTruthy()
 	expect(registry.capabilityMap.value_list).toBeTruthy()
 	expect(registry.capabilityMap.value_delete).toBeTruthy()
-	expect(registry.capabilityMap.value_set).toBeUndefined()
 	expect(createRemovedValueWriteError().message).toBe(removedValueWriteMessage)
 	expect(removedValueWriteMessage).toMatch(/memories/)
 	expect(removedValueWriteMessage).toMatch(/packageStorage/)
 	expect(removedValueWriteMessage).toMatch(/repo/)
 	expect(removedValueWriteMessage).toMatch(/secrets/)
-	expect(removedValueWriteMessage.toLowerCase()).not.toMatch(/retir/)
-	expect(removedValueWriteMessage).not.toMatch(/value_set/)
 })

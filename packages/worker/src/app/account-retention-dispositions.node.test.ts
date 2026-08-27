@@ -56,14 +56,6 @@ test('retention dispositions stay aligned with scheduled policies and documented
 	).toBe(true)
 	expect(
 		nonScheduled.some(
-			(disposition) => disposition.table === 'entitlement_daily_counters',
-		),
-	).toBe(false)
-	expect(getRetentionPolicyCoverage().has('entitlement_daily_counters')).toBe(
-		false,
-	)
-	expect(
-		nonScheduled.some(
 			(disposition) =>
 				disposition.table === 'mcp_memories' &&
 				disposition.kind === 'durable_forever',
@@ -76,14 +68,6 @@ test('retention dispositions stay aligned with scheduled policies and documented
 				disposition.kind === 'durable_forever',
 		),
 	).toBe(true)
-	expect(
-		nonScheduled.some((disposition) => disposition.table === 'workflow_runs'),
-	).toBe(false)
-	expect(
-		nonScheduled.some(
-			(disposition) => disposition.table === 'user_package_run_successes',
-		),
-	).toBe(false)
 	// The schema-growth heuristic in retention.node.test.ts remains the broader
 	// guardrail for discovering new growth-pattern tables.
 	expect(getRetentionPolicyCoverage().has('mcp_memories')).toBe(true)

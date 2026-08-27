@@ -39,8 +39,6 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 		}),
 	).toContain('https://preview.example/guides/quick-example')
 	expect(buildOnboardingSetupPrompt()).toContain('give Kody access')
-	expect(buildOnboardingSetupPrompt()).not.toContain('community_fork')
-	expect(buildOnboardingSetupPrompt()).not.toContain('kody:@kody/')
 
 	expect(
 		loadPublicOnboardingData({
@@ -191,8 +189,6 @@ test('onboarding data builds the MCP URL and derives incomplete setup from verif
 	expect(withCustomPersist.persistPrompt).toContain(
 		'I gave Kody access to acme',
 	)
-	expect(withCustomPersist.persistPrompt).not.toContain('community_fork')
-	expect(withCustomPersist.persistPrompt).not.toContain('kody:@kody/')
 	expect(withCustomPersist.customMcpServers).toEqual([])
 
 	const withExamplePersist = await loadOnboardingData({

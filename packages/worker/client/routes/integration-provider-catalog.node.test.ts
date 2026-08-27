@@ -28,10 +28,6 @@ test('integration provider suggestions resolve guide-backed prompts and keep a g
 		expect(prompt).toContain(`provider_${provider.guideSlug}`)
 	}
 
-	expect(
-		integrationProviderSuggestions.some((provider) => provider.id === 'origin'),
-	).toBe(false)
-
 	const slack = integrationProviderSuggestions.find(
 		(provider) => provider.id === 'slack',
 	)

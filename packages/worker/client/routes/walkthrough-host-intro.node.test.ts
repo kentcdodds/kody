@@ -32,7 +32,6 @@ test('host intro names the three story agents as styleable selects', async () =>
 	expect(html).toContain(`/images/icons/${hosts.coding.icon}.svg`)
 	expect(html).toContain('@supports (appearance: base-select)')
 	expect(html).toContain('@supports not (appearance: base-select)')
-	expect(html).not.toContain('data-native')
 	expect(latest).toEqual(hosts)
 
 	const picker = await renderToString(
@@ -52,9 +51,6 @@ test('host intro names the three story agents as styleable selects', async () =>
 	expect(picker).toContain('aria-label="Chat agent on your phone"')
 	expect(picker).toContain('aria-label="Another agent you sometimes use"')
 	expect(picker).not.toContain("Let's say you use")
-	expect(picker).not.toContain('Daily coding agent')
-	expect(picker).not.toContain('Phone Chat agent')
-	expect(picker).not.toContain('Secondary coding agent')
 })
 
 test('how-kody-works walkthrough uses the intro and host marks instead of the old lead', async () => {
@@ -63,7 +59,6 @@ test('how-kody-works walkthrough uses the intro and host marks instead of the ol
 
 	expect(html).toContain("Let's say you use")
 	expect(html).not.toContain('A question you would ask again')
-	expect(html).not.toContain('Example of a conversation')
 	expect(html).toContain(`>${hosts.coding.label}</figcaption>`)
 	expect(html).toContain('What your agents')
 	expect(html).toContain(`/images/icons/${hosts.coding.icon}.svg`)
@@ -83,6 +78,4 @@ test('how-kody-works walkthrough uses the intro and host marks instead of the ol
 	expect(html).not.toContain('You start on the computer with {coding}.')
 	expect(html).not.toContain('Later, on your phone with {invoke}.')
 	expect(html).not.toContain('Later still, with {notify}.')
-	expect(html).not.toContain('a different agent')
-	expect(html).not.toContain('another Kody-connected agent')
 })
