@@ -64,11 +64,14 @@ export async function writeLocalPlatformDevConfig({
 		}
 	}
 
-	// Env blocks without their own migrations inherit the top-level chain.
-	envRecord.migrations = localizeMigrations(
+	// Wrangler builds the local sqlite-class map from top-level migrations
+	// even when `--env` is set. Put the rewritten chain there (and on the
+	// env block so inherit/override both stay consistent).
+	const localized = localizeMigrations(
 		envRecord.migrations ?? config.migrations,
 	)
-	delete config.migrations
+	config.migrations = localized
+	envRecord.migrations = localized
 
 	const vars =
 		envRecord.vars && typeof envRecord.vars === 'object'

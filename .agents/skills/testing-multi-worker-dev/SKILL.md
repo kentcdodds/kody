@@ -40,12 +40,23 @@ configs to `wrangler dev` directly: `tools/local-runtime-dev-config.ts` and
 `tools/local-platform-dev-config.ts` generate
 `wrangler-local-dev.generated.json` next to each committed config (gitignored)
 on each dev start. Those files pin the secondary registered names to
-`kody-runtime` and `kody-platform`, drop each secondary `ai` binding, and inject
-`APP_BASE_URL`, `COOKIE_SECRET`, `SECRET_STORE_KEY`, and `WRANGLER_IS_LOCAL_DEV`
-from the dev process env. Runtime still rewrites any remaining
-`script_name: "kody"` refs to the primary's dev name (`kody-<env>`). If
-runtime-owned paths 503 with `Worker "kody-runtime" not found` or a secondary
-worker 500s on missing vars, inspect those generated files first.
+`kody-runtime` and `kody-platform`, drop each secondary `ai` binding, rewrite
+Durable Object migrations for local replay (`tools/local-dev-migrations.ts`:
+transfers become `new_sqlite_classes`, create-then-delete pairs such as
+`PackageServiceInstance` are elided), and inject `APP_BASE_URL`,
+`COOKIE_SECRET`, `SECRET_STORE_KEY`, and `WRANGLER_IS_LOCAL_DEV` from the dev
+process env. Runtime still rewrites any remaining `script_name: "kody"` refs to
+the primary's dev name (`kody-<env>`). If runtime-owned paths 503 with
+`Worker "kody-runtime" not found` or a secondary worker 500s on missing vars,
+inspect those generated files first.
+
+If `npm run dev` fails with
+`Cannot apply deleted_classes migration to non-existent class PackageServiceInstance`,
+the generated runtime config still has the production transfer+delete chain.
+Wrangler's local sqlite-class map ignores `transferred_classes`, so the later
+`deleted_classes` has nothing to delete. Confirm `localizeMigrations` ran and
+that the generated file's **top-level** `migrations` (not only
+`env.production.migrations`) has no `PackageServiceInstance` delete.
 
 ## Jobs-worker Durable Object pitfall (boot failure)
 
