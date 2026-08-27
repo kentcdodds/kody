@@ -238,7 +238,9 @@ export function CommunityDetailContent(
 				</div>
 				<div>
 					<dt>Stars</dt>
-					<dd data-testid="community-detail-stars">{listing.starCount}</dd>
+					<dd data-testid="community-detail-stars" data-community-star-count="">
+						{listing.starCount}
+					</dd>
 				</div>
 				<div>
 					<dt>Adaptation effort</dt>
@@ -266,7 +268,7 @@ function renderCommunityDetailStarControl(input: {
 	const label = input.starred
 		? `Unstar ${input.listingName}`
 		: `Star ${input.listingName}`
-	const glyph = renderCommunityStarGlyph(input.starred)
+	const glyph = renderCommunityStarGlyph()
 	if (!input.loggedIn) {
 		const loginHref = routes.login.href(null, {
 			searchParams: { redirectTo: input.returnTo },
@@ -291,15 +293,18 @@ function renderCommunityDetailStarControl(input: {
 			data-testid="community-detail-star"
 			data-community-star=""
 			data-starred={input.starred ? 'true' : 'false'}
-			mix={css(input.starred ? starredButtonCss : starButtonCss)}
+			data-listing-name={input.listingName}
+			mix={css(starButtonCss)}
 		>
 			{glyph}
-			<span mix={css(visuallyHiddenCss)}>{label}</span>
+			<span data-community-star-label="" mix={css(visuallyHiddenCss)}>
+				{label}
+			</span>
 		</button>
 	)
 }
 
-function renderCommunityStarGlyph(starred: boolean) {
+function renderCommunityStarGlyph() {
 	return (
 		<svg
 			viewBox="0 0 16 16"
@@ -307,9 +312,9 @@ function renderCommunityStarGlyph(starred: boolean) {
 			height="1em"
 			aria-hidden="true"
 			focusable={false}
-			fill={starred ? 'currentColor' : 'none'}
+			fill="none"
 			stroke="currentColor"
-			strokeWidth={starred ? 0 : 1.4}
+			strokeWidth={1.4}
 			strokeLinejoin="round"
 		>
 			<path d="M8 1.7 9.9 6.1l4.7.4-3.6 3.1 1.1 4.6L8 11.8l-4.1 2.4 1.1-4.6-3.6-3.1 4.7-.4z" />
@@ -389,17 +394,24 @@ const starButtonCss = {
 		outline: `2px solid ${colors.primary}`,
 		outlineOffset: '2px',
 	},
-}
-
-const starredButtonCss = {
-	...starButtonCss,
-	color: colors.primary,
-	borderColor: colors.primary,
-	backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
-	'&:hover': {
-		color: colors.primaryText,
-		borderColor: colors.primaryText,
-		backgroundColor: `oklch(from ${colors.primary} l c h / 0.2)`,
+	'& svg': {
+		fill: 'none',
+		stroke: 'currentColor',
+		strokeWidth: 1.4,
+	},
+	'&[data-starred="true"]': {
+		color: colors.primary,
+		borderColor: colors.primary,
+		backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
+		'& svg': {
+			fill: 'currentColor',
+			strokeWidth: 0,
+		},
+		'&:hover': {
+			color: colors.primaryText,
+			borderColor: colors.primaryText,
+			backgroundColor: `oklch(from ${colors.primary} l c h / 0.2)`,
+		},
 	},
 }
 

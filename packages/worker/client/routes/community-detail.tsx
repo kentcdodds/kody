@@ -23,6 +23,16 @@ import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { decideCommunityInstallClick } from '#client/routes/community-detail-install.ts'
+import {
+	applyCommunityStarAppearance,
+	applyDisplayedCount,
+	findCommunityStarCountElement,
+	nextDisplayedCount,
+	postSocialToggleJson,
+	readDisplayedCount,
+	readFollowButtonFromEvent,
+	submitOptimisticFollow,
+} from '#client/community-social-toggle.ts'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
@@ -272,8 +282,9 @@ export function CommunityDetailRoute(handle: Handle) {
 	let shellLoadedForPathname: string | null = null
 	let shellRequestedForPathname: string | null = null
 	let starredByViewer = false
-	let starState: 'idle' | 'submitting' | 'error' = 'idle'
 	let starMessage: string | null = null
+	let starRequestId = 0
+	let followRequestId = 0
 
 	// Re-lexing markdown on every handle.update() would be wasted work; cache
 	// the rendered README per markdown string (same policy as MarkdownView).
@@ -347,7 +358,6 @@ export function CommunityDetailRoute(handle: Handle) {
 			readmeContent = payload.listing.readmeContent
 			readmeFences = payload.readmeFences ?? []
 			starredByViewer = payload.starredByViewer
-			starState = 'idle'
 			starMessage = null
 			reportState = 'idle'
 			reportMessage = null
@@ -364,50 +374,70 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
-	async function submitStar(nextStarred: boolean) {
+	async function submitStar(button: HTMLElement, nextStarred: boolean) {
 		const listingId = getCurrentListingId(handle)
-		if (!listingId || starState === 'submitting') return
+		if (!listingId) return
 
-		starState = 'submitting'
+		const requestId = ++starRequestId
+		const previousStarred = button.dataset.starred === 'true'
+		const starCountEl = findCommunityStarCountElement(button)
+		const previousCount = readDisplayedCount(starCountEl)
+
+		starredByViewer = nextStarred
 		starMessage = null
+		applyCommunityStarAppearance(button, nextStarred)
+		applyDisplayedCount(
+			starCountEl,
+			nextDisplayedCount(previousCount, previousStarred, nextStarred),
+		)
 		handle.update()
 
-		try {
-			const response = await fetch(
-				routes.communityStarApiPost.href({ listingId }),
-				{
-					method: 'POST',
-					headers: {
-						Accept: 'application/json',
-						'Content-Type': 'application/json',
-					},
-					credentials: 'include',
-					body: JSON.stringify({ starred: nextStarred }),
-				},
-			)
-			if (response.status === 401) {
+		const result = await postSocialToggleJson<{
+			ok: boolean
+			starred?: boolean
+			starCount?: number
+			error?: string
+		}>(
+			routes.communityStarApiPost.href({ listingId }),
+			{ starred: nextStarred },
+			'Unable to update star status.',
+		)
+		if (requestId !== starRequestId) return
+
+		switch (result.status) {
+			case 'unauthorized':
 				window.location.assign('/login')
 				return
+			case 'ok':
+				starredByViewer = result.payload.starred ?? nextStarred
+				applyCommunityStarAppearance(button, starredByViewer)
+				if (result.payload.starCount != null) {
+					applyDisplayedCount(starCountEl, result.payload.starCount)
+				}
+				handle.update()
+				return
+			case 'error':
+				starredByViewer = previousStarred
+				applyCommunityStarAppearance(button, previousStarred)
+				applyDisplayedCount(starCountEl, previousCount)
+				starMessage = result.message
+				handle.update()
+				return
+			default: {
+				const exhaustive: never = result
+				throw new Error(`Unhandled star result: ${String(exhaustive)}`)
 			}
-			const payload = await readJson<{
-				ok: boolean
-				starred?: boolean
-				starCount?: number
-				error?: string
-			}>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error ?? 'Unable to update star status.')
-			}
-			starredByViewer = payload.starred ?? nextStarred
-			starState = 'idle'
-			handle.update()
-			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
-			if (frame) void frame.reload()
-		} catch (error) {
-			starState = 'error'
-			starMessage =
-				error instanceof Error ? error.message : 'Unable to update star status.'
-			handle.update()
+		}
+	}
+
+	async function submitFollow(button: HTMLButtonElement) {
+		const requestId = ++followRequestId
+		const outcome = await submitOptimisticFollow(
+			button,
+			() => requestId !== followRequestId,
+		)
+		if (outcome === 'unauthorized') {
+			window.location.assign('/login')
 		}
 	}
 
@@ -649,10 +679,21 @@ export function CommunityDetailRoute(handle: Handle) {
 		const target = event.target
 		if (!(target instanceof Element)) return
 		const control = target.closest('[data-community-star]')
-		if (!control || control instanceof HTMLAnchorElement) return
+		if (
+			!(control instanceof HTMLElement) ||
+			control instanceof HTMLAnchorElement
+		)
+			return
 		event.preventDefault()
-		if (starState === 'submitting') return
-		void submitStar(!starredByViewer)
+		const nextStarred = control.dataset.starred !== 'true'
+		void submitStar(control, nextStarred)
+	}
+
+	function handleCommunityFollowActivate(event: Event) {
+		const button = readFollowButtonFromEvent(event)
+		if (!button) return
+		event.preventDefault()
+		void submitFollow(button)
 	}
 
 	listenToRouterNavigation(handle, () => {
@@ -690,7 +731,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		readmeContent = routeData.readmeContent
 		readmeFences = routeData.readmeFences ?? []
 		starredByViewer = routeData.starredByViewer
-		starState = 'idle'
 		starMessage = null
 		reportState = 'idle'
 		reportMessage = null
@@ -779,7 +819,9 @@ export function CommunityDetailRoute(handle: Handle) {
 					on('click', (event) => {
 						handleCommunityInstallClick(event)
 						handleCommunityStarClick(event)
+						handleCommunityFollowActivate(event)
 					}),
+					on('submit', handleCommunityFollowActivate),
 				]}
 			>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
