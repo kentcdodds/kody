@@ -96,7 +96,12 @@ export function buildHealthReport(env: {
 	APP_DEPLOY_INFO?: string
 }): HealthReport {
 	const commitSha = env.APP_COMMIT_SHA ?? null
-	const info = parseDeployInfo(env.APP_DEPLOY_INFO)
+	const parsed = parseDeployInfo(env.APP_DEPLOY_INFO)
+	const info =
+		parsed &&
+		(!commitSha || parsed.commit.sha.toLowerCase() === commitSha.toLowerCase())
+			? parsed
+			: null
 	const repoUrl = info?.repoUrl ?? defaultGithubRepoUrl
 	const sha = commitSha ?? info?.commit.sha ?? null
 	return {

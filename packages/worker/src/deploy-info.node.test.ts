@@ -92,6 +92,24 @@ test('deploy info encodes for wrangler vars and rebuilds the /health report', ()
 		}).commitSha,
 	).toBe('f2d82dba4ba50cf2ad3f56f5c88f7b8ef5f97d8e')
 
+	expect(
+		buildHealthReport({
+			APP_COMMIT_SHA: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+			APP_DEPLOY_INFO: encodeDeployInfo(sampleDeployInfo),
+		}),
+	).toEqual({
+		ok: true,
+		commitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+		commit: {
+			sha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+			url: 'https://github.com/kentcdodds/kody/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+			message: null,
+			committedAt: null,
+		},
+		pullRequest: null,
+		deploy: null,
+	})
+
 	expect(pullRequestNumberFromCommitMessage('feat: foo (#12)\n\n(#99)')).toBe(
 		99,
 	)
