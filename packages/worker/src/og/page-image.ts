@@ -1,4 +1,4 @@
-import { createAgentsHero } from './agents-hero.ts'
+import { createAgentsHero } from '#worker/og/agents-hero.ts'
 import { getKodyDiscordDataUri } from '#worker/og/og-image-assets.ts'
 import { getOgPalette, type OgTheme } from '#worker/og/palette.ts'
 import { type PublicOgPage } from '#universal/og-pages.ts'
