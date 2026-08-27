@@ -1408,6 +1408,13 @@ html.is-settled {
 	cursor: pointer;
 }
 
+.landing-loop-toggle svg {
+	display: block;
+	width: 1.1em;
+	height: 1.1em;
+	flex: none;
+}
+
 /* Same box as the control so reduced-motion can drop the button
    without shrinking the header. */
 .landing-loop-toggle-slot {

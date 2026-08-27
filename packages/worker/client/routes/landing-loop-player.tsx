@@ -525,14 +525,13 @@ function renderLoopToggleIcon(label: LandingLoopToggleLabel) {
 					height="1em"
 					aria-hidden="true"
 					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
 				>
-					<path
-						d="M17.4 6.7A7.2 7.2 0 1 1 12 4.8"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-					/>
-					<path d="M12.6 2.45 17.4 5.5 12.6 8.55Z" fill="currentColor" />
+					<path d="M9 14 4 9l5-5" />
+					<path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11" />
 				</svg>
 			)
 		default: {
