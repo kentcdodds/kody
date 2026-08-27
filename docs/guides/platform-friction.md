@@ -12,8 +12,8 @@ category: platform
 # Kody platform friction guide
 
 Use this guide when Kody itself creates friction while you are using built-in
-capabilities, saved packages, package apps, jobs, memories, values,
-integrations, or official Kody guides.
+capabilities, saved packages, package apps, jobs, memories, integrations, or
+official Kody guides.
 
 The goal is small, user-approved improvement: resolve what can be fixed in the
 current task, remember durable user-specific context when appropriate, and offer

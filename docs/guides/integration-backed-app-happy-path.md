@@ -21,8 +21,9 @@ quickly.
    - Read full integration metadata only when you need the exact names, hosts,
      or API base URL.
 2. Verify the required integration exists.
-   - Confirm the integration name, token secret names, and API base URL match
-     the app you are about to build.
+   - For OAuth: confirm the integration name, required hosts, and API base URL
+     match the app you are about to build (tokens live on the connection).
+   - For secret-backed auth: confirm the secret names and allowed hosts match.
 3. Run one cheap authenticated smoke test in `execute`.
    - Prefer a small read-only request such as `GET /me`, `GET /viewer`, or
      `GET /v1/me`.
@@ -55,9 +56,9 @@ For non-trivial or integration-backed package apps, prefer this split:
 
 ## Avoid this detour
 
-If the integration state, secret names, allowed hosts, and provider contract are
-already clear enough, do **not** spend extra time spelunking the local repo
-before building the app.
+If the integration state, hosts, secret names (when applicable), and provider
+contract are already clear enough, do **not** spend extra time spelunking the
+local repo before building the app.
 
 Inspect local source only when you specifically need repo conventions, shared
 helpers, or an existing package to extend.
