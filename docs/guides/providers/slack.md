@@ -2,8 +2,8 @@
 id: provider_slack
 title: Connect Slack
 summary:
-  Verified walkthrough for connecting Slack to Kody with a user-token Slack
-  app, then calling it from `@kody/slack`.
+  Verified walkthrough for connecting Slack to Kody with a user-token Slack app,
+  then calling it from `@kody/slack`.
 category: provider
 provider: Slack
 lastVerified: 2026-08
@@ -13,8 +13,8 @@ lastVerified: 2026-08
 
 `@kody/slack` talks Slack with a **user token**. Create your own Slack app with
 **User Token Scopes**, register Kody's redirect URI, then finish on
-`/connect/oauth`. The helpers reject bot-only grants (`xoxb-` / `auth.test`
-with `bot_id` and no `user_id`).
+`/connect/oauth`. The helpers reject bot-only grants (`xoxb-` / `auth.test` with
+`bot_id` and no `user_id`).
 
 ## What you get
 
@@ -29,11 +29,11 @@ Exact capabilities depend on the User Token Scopes granted at connect time.
 ## Create a user-token Slack app
 
 1. Confirm there is no existing **user-token** Slack connection:
-   `integration_list`. A connection named `slack` that only has a bot grant
-   does not count — leave it and use a distinct name such as `slack-user`.
+   `integration_list`. A connection named `slack` that only has a bot grant does
+   not count — leave it and use a distinct name such as `slack-user`.
 2. Create a Slack app at <https://api.slack.com/apps> with **User Token
-   Scopes**. User-token Slack uses `oauth/v2_user` + `oauth.v2.user.access`,
-   not the bot-token `oauth/v2` + `oauth.v2.access`.
+   Scopes**. User-token Slack uses `oauth/v2_user` + `oauth.v2.user.access`, not
+   the bot-token `oauth/v2` + `oauth.v2.access`.
 3. Register the redirect URI `https://kody.codes/connect/oauth`.
 4. Ask the user for the **client id**. They paste the **client secret** on
    `/connect/oauth` — never in chat.
@@ -47,9 +47,9 @@ Exact capabilities depend on the User Token Scopes granted at connect time.
    - **Scopes:** comma-separated User Token Scopes
    - **PKCE:** off (confidential client)
    - **Allowed hosts:** `slack.com,files.slack.com`
-6. After they authorize, `./smoke-test` on `@kody/slack` (or the forked
-   package) must report a user identity. A bot token is a failed setup, not a
-   package bug.
+6. After they authorize, `./smoke-test` on `@kody/slack` (or the forked package)
+   must report a user identity. A bot token is a failed setup, not a package
+   bug.
 
 See the [OAuth guide](../oauth.md) for query parameters, confidential exchange,
 and reconnect behavior.
@@ -99,13 +99,13 @@ store Slack OAuth tokens as named secrets.
 ## Troubleshooting
 
 - `invalid_auth` / `token_revoked`: reconnect with your `/connect/oauth` URL.
-- Missing channels or post failures: the granted User Token Scopes do not
-  cover the API method. Reconnect with a Slack app that includes them.
+- Missing channels or post failures: the granted User Token Scopes do not cover
+  the API method. Reconnect with a Slack app that includes them.
 - `redirect_uri` mismatches: the registered redirect must be exactly
   `https://kody.codes/connect/oauth`.
-- `auth.test` shows `bot_id` and no `user_id`: this is a bot token. Do not
-  retry `@kody/slack` helpers. Connect a user-token Slack app instead (use a
-  distinct name such as `slack-user` if `slack` is already the bot connection).
+- `auth.test` shows `bot_id` and no `user_id`: this is a bot token. Do not retry
+  `@kody/slack` helpers. Connect a user-token Slack app instead (use a distinct
+  name such as `slack-user` if `slack` is already the bot connection).
 
 ## Do not
 
