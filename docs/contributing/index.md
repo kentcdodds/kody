@@ -24,6 +24,8 @@ style, tests, MCP capabilities, and runtime architecture.
   lessons into checkers before should-lists)
 - [Cleanup after migrations](./cleanup-after-migrations.md) (drop leftovers in
   the same change, or open a GitHub issue)
+- [Friction log](./friction-log.md) (GitHub issues labeled `friction`; daily
+  Cursor agent investigates)
 
 ## Code and tooling
 
