@@ -67,31 +67,54 @@ export function handleProtectedResourceMetadata(request: Request, env?: Env) {
 export const mcpInvalidTokenDescription =
 	'Authentication required. Obtain an access token via OAuth and retry with Authorization: Bearer.'
 
-function buildWwwAuthenticateHeader(origin: string) {
+type McpUnauthorizedKind = 'missing_credential' | 'invalid_token'
+
+function buildWwwAuthenticateHeader(origin: string, kind: McpUnauthorizedKind) {
 	const resourceMetadata = `${origin}${protectedResourceMetadataPath}`
 	const scope =
 		oauthScopes.length > 0 ? `, scope="${oauthScopes.join(' ')}"` : ''
-	// RFC 6750 + RFC 9728: hosts that refresh on `error="invalid_token"` need
-	// that challenge attribute on the wire, not only in the JSON body.
-	return `Bearer error="invalid_token", error_description="${mcpInvalidTokenDescription}", resource_metadata="${resourceMetadata}"${scope}`
+	const resourceAndScope = `resource_metadata="${resourceMetadata}"${scope}`
+	switch (kind) {
+		case 'missing_credential':
+			// RFC 6750 §3.1: omit error attributes when no credentials were sent.
+			return `Bearer ${resourceAndScope}`
+		case 'invalid_token':
+			// Hosts that refresh on `error="invalid_token"` need that attribute on
+			// the wire, not only in the JSON body.
+			return `Bearer error="invalid_token", error_description="${mcpInvalidTokenDescription}", ${resourceAndScope}`
+		default: {
+			const exhaustive: never = kind
+			throw new Error(`unexpected MCP unauthorized kind: ${exhaustive}`)
+		}
+	}
 }
 
-function createUnauthorizedResponse(origin: string) {
+function createUnauthorizedBody(kind: McpUnauthorizedKind) {
+	switch (kind) {
+		case 'missing_credential':
+			return { error_description: mcpInvalidTokenDescription }
+		case 'invalid_token':
+			return {
+				error: 'invalid_token',
+				error_description: mcpInvalidTokenDescription,
+			}
+		default: {
+			const exhaustive: never = kind
+			throw new Error(`unexpected MCP unauthorized kind: ${exhaustive}`)
+		}
+	}
+}
+
+function createUnauthorizedResponse(origin: string, kind: McpUnauthorizedKind) {
 	// Keep a JSON body in addition to WWW-Authenticate. Some remote MCP clients
 	// (notably Gemini custom connected apps) treat an empty 401 as a hard
 	// connectivity failure and never start OAuth discovery / DCR.
-	return Response.json(
-		{
-			error: 'invalid_token',
-			error_description: mcpInvalidTokenDescription,
+	return Response.json(createUnauthorizedBody(kind), {
+		status: 401,
+		headers: {
+			'WWW-Authenticate': buildWwwAuthenticateHeader(origin, kind),
 		},
-		{
-			status: 401,
-			headers: {
-				'WWW-Authenticate': buildWwwAuthenticateHeader(origin),
-			},
-		},
-	)
+	})
 }
 
 function acceptsMediaType(accept: string, mediaType: string) {
@@ -206,22 +229,22 @@ export async function handleMcpRequest({
 	// traffic belongs at the edge; see docs/contributing/security.md.
 	const authHeader = request.headers.get('Authorization')
 	if (!authHeader || !authHeader.startsWith('Bearer ')) {
-		return createUnauthorizedResponse(origin)
+		return createUnauthorizedResponse(origin, 'missing_credential')
 	}
 
 	const token = authHeader.slice('Bearer '.length).trim()
 	if (!token) {
-		return createUnauthorizedResponse(origin)
+		return createUnauthorizedResponse(origin, 'missing_credential')
 	}
 
 	const helpers = (env as OAuthEnv).OAUTH_PROVIDER
 	if (!helpers) {
-		return createUnauthorizedResponse(origin)
+		return createUnauthorizedResponse(origin, 'invalid_token')
 	}
 
 	const tokenSummary = await helpers.unwrapToken(token)
 	if (!tokenSummary || !audienceMatches(tokenSummary.audience, origin)) {
-		return createUnauthorizedResponse(origin)
+		return createUnauthorizedResponse(origin, 'invalid_token')
 	}
 
 	const context = ctx as OAuthExecutionContext

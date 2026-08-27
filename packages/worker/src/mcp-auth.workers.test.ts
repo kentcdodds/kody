@@ -22,10 +22,26 @@ function expectAuthenticateHeader(
 	origin: string,
 	options: {
 		expectScope?: boolean
+		kind?: 'missing_credential' | 'invalid_token'
 	} = {},
 ) {
-	expect(header).toContain('error="invalid_token"')
-	expect(header).toContain(`error_description="${mcpInvalidTokenDescription}"`)
+	const kind = options.kind ?? 'invalid_token'
+	switch (kind) {
+		case 'missing_credential':
+			expect(header).not.toContain('error=')
+			expect(header).not.toContain('error_description=')
+			break
+		case 'invalid_token':
+			expect(header).toContain('error="invalid_token"')
+			expect(header).toContain(
+				`error_description="${mcpInvalidTokenDescription}"`,
+			)
+			break
+		default: {
+			const exhaustive: never = kind
+			throw new Error(`unexpected challenge kind: ${exhaustive}`)
+		}
+	}
 	expect(header).toContain(
 		`resource_metadata="${origin}${protectedResourceMetadataPath}"`,
 	)
@@ -366,7 +382,7 @@ test('mcp endpoint serves browser guidance without changing protocol auth challe
 	)
 	expect(browserResponse.headers.get('WWW-Authenticate')).toBeNull()
 
-	const protocolRequests = [
+	const missingCredentialRequests = [
 		new Request(`${origin}${mcpResourcePath}`, {
 			headers: { Accept: 'text/event-stream' },
 		}),
@@ -383,14 +399,11 @@ test('mcp endpoint serves browser guidance without changing protocol auth challe
 			}),
 		}),
 		new Request(`${origin}${mcpResourcePath}`, {
-			headers: {
-				Accept: 'text/html',
-				Authorization: 'Bearer invalid-token',
-			},
+			headers: { Authorization: 'Bearer ' },
 		}),
 	]
 
-	for (const request of protocolRequests) {
+	for (const request of missingCredentialRequests) {
 		const response = await handleMcpRequestAndDrain({
 			request,
 			env,
@@ -400,14 +413,38 @@ test('mcp endpoint serves browser guidance without changing protocol auth challe
 		expect(response.status).toBe(401)
 		expect(response.headers.get('Content-Type')).toMatch(/application\/json/)
 		expect(await response.json()).toEqual({
-			error: 'invalid_token',
 			error_description: mcpInvalidTokenDescription,
 		})
 		expectAuthenticateHeader(
 			response.headers.get('WWW-Authenticate') ?? '',
 			origin,
+			{ kind: 'missing_credential' },
 		)
 	}
+
+	const invalidTokenResponse = await handleMcpRequestAndDrain({
+		request: new Request(`${origin}${mcpResourcePath}`, {
+			headers: {
+				Accept: 'text/html',
+				Authorization: 'Bearer invalid-token',
+			},
+		}),
+		env,
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(invalidTokenResponse.status).toBe(401)
+	expect(invalidTokenResponse.headers.get('Content-Type')).toMatch(
+		/application\/json/,
+	)
+	expect(await invalidTokenResponse.json()).toEqual({
+		error: 'invalid_token',
+		error_description: mcpInvalidTokenDescription,
+	})
+	expectAuthenticateHeader(
+		invalidTokenResponse.headers.get('WWW-Authenticate') ?? '',
+		origin,
+	)
 })
 
 test('protected resource metadata and auth challenge resolve origin consistently', async () => {
@@ -447,12 +484,12 @@ test('protected resource metadata and auth challenge resolve origin consistently
 		/application\/json/,
 	)
 	expect(await requestOriginUnauthorizedResponse.json()).toEqual({
-		error: 'invalid_token',
 		error_description: mcpInvalidTokenDescription,
 	})
 	expectAuthenticateHeader(
 		requestOriginUnauthorizedResponse.headers.get('WWW-Authenticate') ?? '',
 		requestOrigin,
+		{ kind: 'missing_credential' },
 	)
 
 	const appBaseUrlUnauthorizedResponse = await handleMcpRequestAndDrain({
@@ -467,6 +504,7 @@ test('protected resource metadata and auth challenge resolve origin consistently
 	expectAuthenticateHeader(
 		appBaseUrlUnauthorizedResponse.headers.get('WWW-Authenticate') ?? '',
 		workersDevOrigin,
+		{ kind: 'missing_credential' },
 	)
 })
 
@@ -515,6 +553,10 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		fetchMcp: () => new Response('ok'),
 	})
 	expect(invalidResponse.status).toBe(401)
+	expectAuthenticateHeader(
+		invalidResponse.headers.get('WWW-Authenticate') ?? '',
+		'https://example.com',
+	)
 
 	const missingAudienceResponse = await handleMcpRequestAndDrain({
 		request,
@@ -527,6 +569,10 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		fetchMcp: () => new Response('ok'),
 	})
 	expect(missingAudienceResponse.status).toBe(401)
+	expectAuthenticateHeader(
+		missingAudienceResponse.headers.get('WWW-Authenticate') ?? '',
+		'https://example.com',
+	)
 
 	let receivedProps: unknown = null
 	const validResponse = await handleMcpRequestAndDrain({

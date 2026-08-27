@@ -584,10 +584,13 @@ Token lifetimes are set on the `OAuthProvider` in
 - Requires `Authorization: Bearer <token>`
 - Token is validated via OAuth provider helpers (`unwrapToken`)
 - Audience must match the app origin or `<origin>/mcp`
-- Unauthenticated requests return `401` with `WWW-Authenticate` metadata. The
-  challenge includes RFC 6750 `error="invalid_token"` plus RFC 9728
-  `resource_metadata`, so hosts that refresh on an invalid-token challenge can
-  do so without starting a new browser login
+- Requests without a Bearer token return `401` with `WWW-Authenticate` carrying
+  RFC 9728 `resource_metadata` (and scopes). RFC 6750 omits `error` when
+  credentials are absent
+- A present but rejected Bearer token returns `401` with RFC 6750
+  `error="invalid_token"` plus `error_description` and the same
+  `resource_metadata`, so hosts that refresh on that challenge can do so without
+  starting a new browser login
 - The account email must be verified; unverified accounts receive a
   `403 email_verification_required` response (see the email verification section
   above)
