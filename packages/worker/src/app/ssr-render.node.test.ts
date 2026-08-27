@@ -605,11 +605,19 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
 	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
-	expect(withoutAssetsHtml).toContain('The private software ecosystem')
-	expect(withoutAssetsHtml).toContain('all your agents can share')
+	expect(withoutAssetsHtml).toContain('Keep using the agent you already have')
+	expect(withoutAssetsHtml).toContain('Kody is the account they share')
 	expect(withoutAssetsHtml).toContain(
-		"It's like your own personal npm and GitHub that all of your agents can use.",
+		'Tools, setup, and memory live here when you switch. Not another chat. Not another harness.',
 	)
+	// Hero stage: one agent list around Kody, every token tethered by a line.
+	expect(withoutAssetsHtml).toContain('landing-hero-agents')
+	expect(withoutAssetsHtml).toContain('/images/kody-mark.png')
+	expect(
+		withoutAssetsHtml.match(/aria-label="Agents Kody plugs into"/g),
+	).toEqual(['aria-label="Agents Kody plugs into"'])
+	expect(withoutAssetsHtml).toContain('landing-hero-agent-light')
+	expect(withoutAssetsHtml).not.toContain('landing-hero-hosts')
 	expect(withoutAssetsHtml).toContain('Kody keeps it')
 	expect(withoutAssetsHtml).toContain('href="/images/hero/kody-base-640.webp"')
 	expect(withoutAssetsHtml).toContain('kody-base-960.webp')

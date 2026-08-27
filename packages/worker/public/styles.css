@@ -836,14 +836,6 @@ html.is-settled {
 	margin-top: 2rem;
 }
 
-.landing-hero-meet {
-	margin: clamp(2.5rem, 5vw, 4rem) 0 0;
-	font-size: clamp(2.2rem, 5vw, 4rem);
-	font-weight: 740;
-	letter-spacing: -0.03em;
-	line-height: 1.04;
-}
-
 .landing-hero-art {
 	margin-top: 0.85rem;
 	position: relative;
@@ -955,6 +947,228 @@ html.is-settled {
 	gap: 0.6rem;
 }
 
+/* Hero stage: Kody with the host agents tethered to his lantern. Tethers are
+   drawn over him so they visibly reach the globe; balls of lantern light
+   travel them (frame-driven, shown only with JS + motion OK). */
+.landing-hero-agents {
+	width: min(100%, 40rem);
+	margin: 1.75rem auto 0;
+}
+
+.landing-hero-agents-stage {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 1 / 1;
+	isolation: isolate;
+}
+
+.landing-hero-agents-kody {
+	position: relative;
+	z-index: 1;
+	display: block;
+	width: 100%;
+	height: auto;
+}
+
+.landing-hero-agents-lines {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	overflow: visible;
+	pointer-events: none;
+	z-index: 2;
+}
+
+/* Strokes and lights dissolve into the globe instead of crossing it. Masked
+   on the <svg> box (percentages: the stage is square, so they match viewBox
+   units); the centre tracks the lantern through parallax. */
+.landing-hero-agents-lines {
+	/* Glass radii ≈ 6.3% × 5.4%; fully clear inside, faded out by ~1.5× that. */
+	mask-image: radial-gradient(
+		ellipse 9.5% 8.2% at var(--lantern-x) var(--lantern-y),
+		transparent 66%,
+		black 100%
+	);
+	-webkit-mask-image: radial-gradient(
+		ellipse 9.5% 8.2% at var(--lantern-x) var(--lantern-y),
+		transparent 66%,
+		black 100%
+	);
+}
+
+/* Neutral threads; only the travelling lights carry the lantern's warmth. */
+.landing-hero-agent-line {
+	stroke: color-mix(in oklab, var(--color-border) 75%, var(--color-text));
+	stroke-width: 0.4;
+	stroke-linecap: round;
+}
+
+/* Faint soft bloom under each line so they sit in the scene, not on it. */
+.landing-hero-agent-glow {
+	stroke: var(--color-text);
+	stroke-width: 1.4;
+	stroke-linecap: round;
+	opacity: 0.06;
+	filter: blur(0.5px);
+}
+
+/* Lights are motion-only: no JS or reduced motion leaves the tethers still. */
+.landing-hero-agent-light {
+	display: none;
+}
+
+.landing-hero-agent-light-halo {
+	fill: oklch(0.88 0.13 85 / 0.45);
+	filter: blur(0.6px);
+}
+
+.landing-hero-agent-light-core {
+	fill: oklch(0.97 0.05 90);
+}
+
+/* The shared .landing-hero-art glow is placed for the old stage; here the
+   glow lives inside the stage, centred on the globe (the image parallaxes,
+   so the glow moves with it). Static on purpose: the lights are the motion. */
+.landing-hero-agents.landing-hero-art::after {
+	display: none;
+}
+
+.landing-hero-agents-glow {
+	position: absolute;
+	z-index: 1;
+	width: 26%;
+	aspect-ratio: 1;
+	/* translate, not transform: pointer parallax owns transform. */
+	translate: -50% -50%;
+	border-radius: 50%;
+	background: radial-gradient(
+		closest-side,
+		var(--lantern-glow),
+		transparent 70%
+	);
+	mix-blend-mode: screen;
+	pointer-events: none;
+}
+
+.landing-hero-agents-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	position: absolute;
+	inset: 0;
+	z-index: 3;
+	pointer-events: none;
+}
+
+.landing-hero-agent {
+	position: absolute;
+	left: var(--x);
+	top: var(--y);
+	translate: -50% -50%;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.45rem;
+	white-space: nowrap;
+}
+
+.landing-hero-agent-tile {
+	display: grid;
+	place-items: center;
+	width: 3.5rem;
+	height: 3.5rem;
+	border-radius: 1rem;
+	color: var(--color-text);
+	background: var(--color-surface);
+	border: 1px solid var(--color-border);
+	box-shadow:
+		0 10px 24px oklch(from var(--color-text) l c h / 0.1),
+		inset 0 1px 0 oklch(from var(--color-surface) calc(l + 0.06) c h);
+}
+
+.landing-hero-agent-tile::before {
+	content: '';
+	width: 1.7rem;
+	height: 1.7rem;
+	background: currentColor;
+	mask-image: var(--chip-icon);
+	mask-position: center;
+	mask-size: contain;
+	mask-repeat: no-repeat;
+	-webkit-mask-image: var(--chip-icon);
+	-webkit-mask-position: center;
+	-webkit-mask-size: contain;
+	-webkit-mask-repeat: no-repeat;
+}
+
+.landing-hero-agent-name {
+	font-size: 0.8rem;
+	font-weight: 600;
+	letter-spacing: 0.01em;
+	color: var(--color-text-muted);
+	text-shadow: 0 1px 0 var(--color-background);
+}
+
+.landing-hero-agents-mcp {
+	margin: 0.6rem 0 0;
+	text-align: center;
+	font-size: 0.82rem;
+	font-weight: 500;
+	color: var(--color-text-muted);
+}
+
+@keyframes agent-drift {
+	from {
+		translate: -50% -50%;
+	}
+
+	to {
+		translate: -50% calc(-50% - 10px);
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	html.js .landing-hero-agent {
+		animation: agent-drift var(--dur, 7s) ease-in-out var(--del, 0s) infinite
+			alternate;
+	}
+
+	html.js .landing-hero-agent-light {
+		display: inline;
+	}
+}
+
+@media (max-width: 640px) {
+	.landing-hero-agents {
+		width: min(100%, 26rem);
+		margin-top: 1.35rem;
+	}
+
+	.landing-hero-agent {
+		gap: 0.3rem;
+	}
+
+	.landing-hero-agent-tile {
+		width: 2.5rem;
+		height: 2.5rem;
+		border-radius: 0.75rem;
+	}
+
+	.landing-hero-agent-tile::before {
+		width: 1.2rem;
+		height: 1.2rem;
+	}
+
+	.landing-hero-agent-name {
+		font-size: 0.66rem;
+	}
+
+	.landing-hero-agents-mcp {
+		font-size: 0.75rem;
+	}
+}
+
 .landing-chip {
 	display: inline-flex;
 	align-items: center;
@@ -988,11 +1202,6 @@ html.is-settled {
 	-webkit-mask-position: center;
 	-webkit-mask-size: contain;
 	-webkit-mask-repeat: no-repeat;
-}
-
-.landing-host-chip {
-	font-size: 0.92rem;
-	padding: 0.4rem 0.95rem;
 }
 
 .landing-factory {

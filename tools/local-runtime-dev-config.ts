@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseJsonc } from './ci/resource-utils.ts'
+import { localizeMigrations } from './local-dev-migrations.ts'
 
 type JsonRecord = Record<string, unknown>
 
@@ -61,6 +62,12 @@ export async function writeLocalRuntimeDevConfig({
 			}
 		}
 	}
+
+	// Env blocks without their own migrations inherit the top-level chain.
+	envRecord.migrations = localizeMigrations(
+		envRecord.migrations ?? config.migrations,
+	)
+	delete config.migrations
 
 	const vars =
 		envRecord.vars && typeof envRecord.vars === 'object'

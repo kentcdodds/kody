@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parseJsonc } from './ci/resource-utils.ts'
+import { localizeMigrations } from './local-dev-migrations.ts'
 
 type JsonRecord = Record<string, unknown>
 
@@ -42,9 +43,12 @@ export async function writeLocalPlatformDevConfig({
 	// resolve.
 	envRecord.name = config.name
 
-	// The secondary config's `ai` binding is an always-remote type in
-	// miniflare and fails dev startup without a real Cloudflare session.
+	// The secondary config's `ai` and `artifacts` bindings are always-remote
+	// types in miniflare and fail dev startup without a real Cloudflare
+	// session (Artifacts opens an edge-preview proxy the local mock can't
+	// serve).
 	delete envRecord.ai
+	delete envRecord.artifacts
 
 	const durableObjects = envRecord.durable_objects
 	if (durableObjects && typeof durableObjects === 'object') {
@@ -59,6 +63,12 @@ export async function writeLocalPlatformDevConfig({
 			}
 		}
 	}
+
+	// Env blocks without their own migrations inherit the top-level chain.
+	envRecord.migrations = localizeMigrations(
+		envRecord.migrations ?? config.migrations,
+	)
+	delete config.migrations
 
 	const vars =
 		envRecord.vars && typeof envRecord.vars === 'object'

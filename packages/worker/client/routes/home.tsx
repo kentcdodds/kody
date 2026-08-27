@@ -2,7 +2,6 @@ import { type Handle, ref } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { observeNearViewport } from '#client/deferred-turnstile.ts'
 import { on } from '#client/event-mixin.ts'
-import { HeroStage } from '#client/hero-stage.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -27,6 +26,7 @@ import {
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
+import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
 
 /**
@@ -36,9 +36,11 @@ import { LandingLoopPlayer } from './landing-loop-player.tsx'
  * work. Motion is enhance-only (`html.js`) and fully off under
  * `prefers-reduced-motion`.
  *
- * Positioning: the private software ecosystem all your agents can share, not
- * another agent and not "equip your agent." Factory-loop art reuses the
- * existing 3D set; do not generate a new koala.
+ * Positioning (public door): keep using the agent you already have — Kody is
+ * the account tools and memory live on when you switch. The hero stage (Kody
+ * with the host agents tethered around it) names the agents; the H1 stays
+ * vendor-agnostic. Not another agent, chat, or harness. Factory / npm /
+ * packages stay below the fold.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
  * emit a per-node `<style data-rmx>` tag for every marketing block.
@@ -79,17 +81,6 @@ const honestRows = [
 		from: 'Context stuck in one host',
 		to: 'Memories that follow the account.',
 	},
-] as const
-
-const hostAgents = [
-	{ label: 'Cursor', icon: 'cursor' },
-	{ label: 'Claude Code', icon: 'claudecode' },
-	{ label: 'ChatGPT', icon: 'chatgpt' },
-	{ label: 'Copilot', icon: 'githubcopilot' },
-	{ label: 'Claude', icon: 'claude' },
-	{ label: 'Grok', icon: 'grok' },
-	{ label: 'Grok Bot', icon: 'grokbot' },
-	{ label: 'OpenCode', icon: 'opencode' },
 ] as const
 
 const worldBrands = [
@@ -210,14 +201,15 @@ export function HomeRoute(handle: Handle) {
 				{/* ============ hero ============ */}
 				<section data-parallax-scope class="landing-hero">
 					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
-						The private software ecosystem
+						Keep using the agent you already have
 						<br />
-						<em>all your agents can share</em>
+						<em>Kody is the account they share</em>
 					</h1>
 					<p data-rise style={{ '--rise': '1' }} class="landing-hero-sub">
-						It&apos;s like your own personal npm and GitHub that all of your
-						agents can use.
+						Tools, setup, and memory live here when you switch. Not another
+						chat. Not another harness.
 					</p>
+					<LandingHeroAgents />
 					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}
 					<div data-rise style={{ '--rise': '2' }} class="landing-hero-actions">
 						{isSignedIn ? (
@@ -268,15 +260,6 @@ export function HomeRoute(handle: Handle) {
 							/>
 						</div>
 					) : null}
-					<h2 data-rise style={{ '--rise': '3.4' }} class="landing-hero-meet">
-						Meet Kody
-					</h2>
-					<div data-rise style={{ '--rise': '1.5' }} class="landing-hero-art">
-						<HeroStage
-							size="landing"
-							alt="Kody the koala holding a warmly glowing lantern, surrounded by floating notes, bookmarks, packages, and tool tokens"
-						/>
-					</div>
 				</section>
 
 				{/* ============ nothing new to learn ============ */}
@@ -295,24 +278,6 @@ export function HomeRoute(handle: Handle) {
 							Because your agent does the thinking,{' '}
 							<strong>Kody gets better every time your agent does.</strong>
 						</p>
-						<ul aria-label="Agents Kody plugs into" class="landing-pitch-hosts">
-							{hostAgents.map((agent, index) => (
-								<li
-									key={agent.label}
-									class="landing-chip landing-chip-icon landing-host-chip"
-									style={chipIconStyle(agent.icon)}
-									mix={revealPop(index * 35)}
-								>
-									{agent.label}
-								</li>
-							))}
-							<li
-								class="landing-chip landing-chip-muted landing-host-chip"
-								mix={revealPop(hostAgents.length * 35)}
-							>
-								anything that speaks MCP
-							</li>
-						</ul>
 					</div>
 				</section>
 
