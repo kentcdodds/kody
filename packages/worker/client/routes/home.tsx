@@ -31,6 +31,7 @@ import {
 	type WalkthroughHostPick,
 } from '#universal/walkthrough-hosts.ts'
 import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
+import { LandingTestimonialsCarousel } from './landing-testimonials-carousel.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
 import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
 
@@ -347,6 +348,21 @@ export function HomeRoute(handle: Handle) {
 					) : (
 						<LandingLoopPlayer />
 					)}
+				</section>
+
+				{/* ============ testimonials ============ */}
+				<section
+					aria-labelledby="testimonials-title"
+					class="landing-testimonials"
+				>
+					<h2 id="testimonials-title" class="landing-section-heading">
+						Early builders, on the record
+					</h2>
+					<p class="landing-testimonials-lead">
+						A few notes from people already putting Kody to work with the agents
+						they use every day.
+					</p>
+					<LandingTestimonialsCarousel />
 				</section>
 
 				{/* ============ honest runtime ============ */}
