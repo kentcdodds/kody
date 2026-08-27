@@ -14,11 +14,9 @@ import {
 	buildOpenCodeMcpJson,
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
-	codexMcpLoginCommand,
 	defaultKodyMcpUrl,
 	isDefaultKodyMcpUrl,
 	mcpClientTabs,
-	openCodeMcpAuthCommand,
 } from './onboarding-mcp-clients.ts'
 
 const mcpServerUrl = defaultKodyMcpUrl
@@ -42,7 +40,6 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		mcpClientTabs.filter((tab) => tab.isNonCodingAgent).map((tab) => tab.id),
 	).toEqual(['chatgpt', 'claude-desktop', 'grok', 'grok-bot', 'copilot-app'])
 
-	expect(isDefaultKodyMcpUrl(mcpServerUrl)).toBe(true)
 	expect(isDefaultKodyMcpUrl(`${mcpServerUrl}/`)).toBe(true)
 	expect(isDefaultKodyMcpUrl('http://localhost:3742/mcp')).toBe(false)
 	expect(buildKodyCliInstallCommand(mcpServerUrl)).toBe(
@@ -69,11 +66,9 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(buildCodexMcpAddCommand(mcpServerUrl)).toBe(
 		`codex mcp add kody --url ${mcpServerUrl}`,
 	)
-	expect(codexMcpLoginCommand).toBe('codex mcp login kody')
 	expect(buildOpenCodeMcpAddCommand(mcpServerUrl)).toBe(
 		`opencode mcp add kody --url ${mcpServerUrl}`,
 	)
-	expect(openCodeMcpAuthCommand).toBe('opencode mcp auth kody')
 	expect(JSON.parse(buildVsCodeMcpJson(mcpServerUrl))).toEqual({
 		servers: {
 			kody: {

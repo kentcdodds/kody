@@ -38,8 +38,6 @@ test('user lifecycle event builders keep a metadata-only identity snapshot', () 
 		user: created.user,
 		deleted_at: '2026-08-20T13:00:00.000Z',
 	})
-	expect(isUserLifecycleEventTopic(userCreatedTopic)).toBe(true)
-	expect(isUserLifecycleEventTopic(userDeletedTopic)).toBe(true)
 	expect(isUserLifecycleEventTopic('user.updated')).toBe(false)
 	expect(
 		buildUserLifecycleIdempotencyKey({

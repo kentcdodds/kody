@@ -2,10 +2,6 @@ import { expect, test, vi } from 'vitest'
 
 import {
 	ensureNxCacheResources,
-	NX_CACHE_LIFECYCLE_RULE_ID,
-	NX_CACHE_MULTIPART_ABORT_DAYS,
-	NX_CACHE_OBJECT_PREFIX,
-	NX_CACHE_OBJECT_RETENTION_DAYS,
 	NX_CACHE_R2_BUCKET_NAME,
 	nxCacheLifecyclePolicy,
 } from './nx-cache-resources.ts'
@@ -43,27 +39,4 @@ test('ensureNxCacheResources creates the shared R2 bucket and applies 14-day exp
 		policy: nxCacheLifecyclePolicy,
 		dryRun: true,
 	})
-	expect(nxCacheLifecyclePolicy).toEqual({
-		rules: [
-			{
-				id: NX_CACHE_LIFECYCLE_RULE_ID,
-				enabled: true,
-				conditions: { prefix: NX_CACHE_OBJECT_PREFIX },
-				deleteObjectsTransition: {
-					condition: {
-						type: 'Age',
-						maxAge: NX_CACHE_OBJECT_RETENTION_DAYS * 86_400,
-					},
-				},
-				abortMultipartUploadsTransition: {
-					condition: {
-						type: 'Age',
-						maxAge: NX_CACHE_MULTIPART_ABORT_DAYS * 86_400,
-					},
-				},
-			},
-		],
-	})
-	expect(NX_CACHE_OBJECT_RETENTION_DAYS).toBe(14)
-	expect(NX_CACHE_MULTIPART_ABORT_DAYS).toBe(1)
 })

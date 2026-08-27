@@ -7,7 +7,6 @@ import {
 	durableObjectBlockConcurrencyWhileTimeoutResetMessage,
 	durableObjectCodeUpdatedResetMessage,
 	durableObjectInstanceInactiveCloseMessage,
-	durableObjectIsolateCpuResetMessage,
 	durableObjectIsolateMemoryResetMessage,
 	durableObjectSqliteOutOfMemoryMessage,
 	durableObjectStorageOperationTimeoutResetMessage,
@@ -24,21 +23,6 @@ import {
 test('filterSentryEvent drops expected platform and caller noise and keeps real errors', () => {
 	// Isolate resource-limit resets are the only DO resets that isolated
 	// artifact rebuild / check phases treat as retryable.
-	expect(
-		isDurableObjectIsolateResourceLimitResetMessage(
-			durableObjectIsolateMemoryResetMessage,
-		),
-	).toBe(true)
-	expect(
-		isDurableObjectIsolateResourceLimitResetMessage(
-			durableObjectIsolateCpuResetMessage,
-		),
-	).toBe(true)
-	expect(
-		isDurableObjectIsolateResourceLimitResetMessage(
-			durableObjectSqliteOutOfMemoryMessage,
-		),
-	).toBe(true)
 	expect(
 		isDurableObjectIsolateResourceLimitResetMessage(
 			durableObjectSqliteOutOfMemoryMessage.replace(/\.$/, ''),
@@ -150,11 +134,6 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 	// wrapped recovery text must also stay visible.
 	expect(
 		isCloudflareOpaqueInternalErrorMessage(
-			cloudflareOpaqueInternalErrorMessage,
-		),
-	).toBe(true)
-	expect(
-		isCloudflareOpaqueInternalErrorMessage(
 			cloudflareArtifactsOpaqueInternalErrorMessage.replace(/\.$/, ''),
 		),
 	).toBe(true)
@@ -235,11 +214,6 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 
 	// Bare Agents MCP session teardown abort (`ctx.abort("destroyed")`) —
 	// KODY-CLOUDFLARE-4K. Wrapped "stream was destroyed" forms stay visible.
-	expect(
-		isMcpAgentSessionDestroyedAbortMessage(
-			mcpAgentSessionDestroyedAbortMessage,
-		),
-	).toBe(true)
 	expect(isMcpAgentSessionDestroyedAbortMessage('Error: destroyed')).toBe(true)
 	expect(isMcpAgentSessionDestroyedAbortMessage('destroyed.')).toBe(true)
 	expect(

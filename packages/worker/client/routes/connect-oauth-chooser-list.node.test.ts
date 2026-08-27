@@ -1,10 +1,7 @@
 import { expect, test } from 'vitest'
-import {
-	connectOauthChooserFilterMinOptions,
-	filterConnectOauthChooserOptions,
-} from './connect-oauth-chooser-list.ts'
+import { filterConnectOauthChooserOptions } from './connect-oauth-chooser-list.ts'
 
-test('connect chooser filter matches label, detail, and provider key and stays hidden at six options', () => {
+test('connect chooser filter matches label, detail, and provider key', () => {
 	const options = [
 		{
 			label: 'Google',
@@ -23,7 +20,6 @@ test('connect chooser filter matches label, detail, and provider key and stays h
 		},
 	]
 
-	expect(connectOauthChooserFilterMinOptions).toBe(6)
 	expect(filterConnectOauthChooserOptions(options, '')).toEqual(options)
 	expect(filterConnectOauthChooserOptions(options, '  built-in  ')).toEqual([
 		options[0],

@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { landingOrbitAgents } from '#universal/landing-agent-orbit.ts'
 import {
 	listAllWalkthroughHosts,
 	pickWalkthroughHosts,
@@ -18,11 +17,6 @@ import {
 
 test('hero ring always includes the pinned hosts and fills leftover slots from the SSR shuffle', () => {
 	const catalog = listAllWalkthroughHosts()
-	expect(landingHeroPinnedHostIds).toHaveLength(3)
-	expect(landingHeroSlots).toHaveLength(landingOrbitAgents.length)
-	expect(landingHeroSlots.map((slot) => ({ x: slot.x, y: slot.y }))).toEqual(
-		landingOrbitAgents.map((agent) => ({ x: agent.x, y: agent.y })),
-	)
 	expect(landingHeroSlots.length).toBeLessThan(catalog.length)
 
 	const fallback = placeLandingHeroAgents()

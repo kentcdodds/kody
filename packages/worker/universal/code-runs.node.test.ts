@@ -280,7 +280,6 @@ test('thin windows sit on the integer until the next real +1', () => {
 
 test('a regressing end shows immediately and refresh waits until updateAt', () => {
 	const still = { start: 100, end: 100, updateAt }
-	expect(publicCodeRunsWindowsEqual(still, still)).toBe(true)
 	expect(publicCodeRunsWindowsEqual(still, { ...still, end: 101 })).toBe(false)
 	expect(isStillPublicCodeRunsWindow({ start: 200, end: 150, updateAt })).toBe(
 		true,

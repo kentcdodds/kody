@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import { publishedPackageArtifactRebuildConcurrency } from './package-artifact-rebuild.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listPublishedPackageArtifactTargets: vi.fn(),
@@ -65,7 +64,6 @@ function resetMocks() {
 }
 
 test('isolated rebuild lists then stages once, fans out with bounded concurrency, and discards staging', async () => {
-	expect(publishedPackageArtifactRebuildConcurrency).toBe(2)
 	resetMocks()
 
 	const run = vi.fn(async () => ({

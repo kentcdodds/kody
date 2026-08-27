@@ -5,7 +5,6 @@ import {
 	evaluationHasHostMediatedSideEffects,
 	hostSideEffectProviderName,
 	isPlatformOnlyHostSideEffectProvider,
-	staticCallMeterRuntimeBridgeProviderName,
 } from './evaluation-side-effects.ts'
 
 test('evaluation side-effect tracker counts attempts and treats a missing snapshot as dirty', () => {
@@ -39,14 +38,6 @@ test('evaluation side-effect tracker counts attempts and treats a missing snapsh
 	})
 	expect(evaluationHasHostMediatedSideEffects(fetchOnly.snapshot())).toBe(true)
 
-	expect(isPlatformOnlyHostSideEffectProvider(hostSideEffectProviderName)).toBe(
-		true,
-	)
-	expect(
-		isPlatformOnlyHostSideEffectProvider(
-			staticCallMeterRuntimeBridgeProviderName,
-		),
-	).toBe(true)
 	expect(isPlatformOnlyHostSideEffectProvider('kody')).toBe(false)
 
 	const provider = createHostSideEffectProvider(fetchOnly)

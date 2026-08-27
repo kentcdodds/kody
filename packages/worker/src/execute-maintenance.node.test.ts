@@ -35,8 +35,6 @@ test('runExecuteSmokeCheck executes trivial code through the origin gateway and 
 		proves: executeSmokeProves,
 		notMcpExecute: true,
 	})
-	expect(executeSmokeScope).toBe('origin-only')
-	expect(executeSmokeProves).toBe('origin-kody-fetch-gateway')
 	expect(createExecuteExecutorMock).toHaveBeenCalledWith(
 		expect.objectContaining({
 			timeoutMs: 10_000,

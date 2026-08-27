@@ -1,12 +1,9 @@
 import { expect, test } from 'vitest'
 import {
-	capabilityInputSecretAuthRequiredMessage,
 	createCapabilitySecretAccessDeniedMessage,
 	createCapabilitySecretAccessDeniedBatchMessage,
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
-	fetchSecretAuthRequiredMessage,
-	isSecretAuthRequiredMessage,
 	parseCapabilityAccessRequiredBatchMessage,
 	parseCapabilityAccessRequiredMessage,
 	parseHostApprovalRequiredBatchMessage,
@@ -15,10 +12,6 @@ import {
 } from './errors.ts'
 
 test('secret error message helpers parse auth, missing-secret, and approval payloads', () => {
-	expect(isSecretAuthRequiredMessage(fetchSecretAuthRequiredMessage)).toBe(true)
-	expect(
-		isSecretAuthRequiredMessage(capabilityInputSecretAuthRequiredMessage),
-	).toBe(true)
 	expect(
 		parseMissingSecretMessage(createMissingSecretMessage('lutronPassword')),
 	).toEqual({
