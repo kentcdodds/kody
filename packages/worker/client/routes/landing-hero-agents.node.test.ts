@@ -61,18 +61,6 @@ test('hero ring always includes the pinned hosts and fills leftover slots from t
 	for (const id of landingHeroPinnedHostIds) {
 		expect(fromPinnedLast.some((host) => host.id === id)).toBe(true)
 	}
-	const hermesFirst = [
-		catalog.find((host) => host.id === 'hermes')!,
-		...catalog.filter((host) => host.id !== 'hermes'),
-	]
-	const hermesPlaced = placeLandingHeroAgents({
-		...pickWalkthroughHosts(() => 0),
-		allRow: hermesFirst,
-	})
-	expect(hermesPlaced.some((agent) => agent.icon === 'hermes')).toBe(true)
-	expect(hermesPlaced.find((agent) => agent.icon === 'hermes')?.paint).toBe(
-		'image',
-	)
 	expect(fromPinnedLast.map((host) => host.id)).not.toEqual(
 		pinnedLast.slice(0, landingHeroSlots.length).map((host) => host.id),
 	)

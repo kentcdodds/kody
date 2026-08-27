@@ -6,8 +6,6 @@ import {
 } from '#universal/highlighted-code.ts'
 import {
 	walkthroughHostForAct,
-	walkthroughHostMarkPaint,
-	walkthroughHostMarkPaintCss,
 	walkthroughHostMarkUrl,
 	type WalkthroughHost,
 	type WalkthroughHostPick,
@@ -286,10 +284,7 @@ function renderUserIcon() {
 function renderAgentMark(host: WalkthroughHost) {
 	return (
 		<span
-			mix={css({
-				...agentMarkBoxCss,
-				...walkthroughHostMarkPaintCss(walkthroughHostMarkPaint(host)),
-			})}
+			mix={css(agentMarkCss)}
 			style={{ '--chip-icon': `url("${walkthroughHostMarkUrl(host)}")` }}
 			aria-hidden="true"
 		></span>
@@ -468,10 +463,19 @@ const threadCss = {
 
 const captionIconGap = '0.35em'
 
-const agentMarkBoxCss = {
+const agentMarkCss = {
 	width: '1em',
 	height: '1em',
 	flex: 'none',
+	background: 'currentColor',
+	maskImage: 'var(--chip-icon)',
+	maskPosition: 'center',
+	maskSize: 'contain',
+	maskRepeat: 'no-repeat',
+	WebkitMaskImage: 'var(--chip-icon)',
+	WebkitMaskPosition: 'center',
+	WebkitMaskSize: 'contain',
+	WebkitMaskRepeat: 'no-repeat',
 }
 
 const bubbleCss = {

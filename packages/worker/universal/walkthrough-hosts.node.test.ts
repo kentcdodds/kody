@@ -15,10 +15,8 @@ import {
 	replaceWalkthroughHost,
 	resolveWalkthroughKicker,
 	shuffleWalkthroughHosts,
-	walkthroughHostById,
 	walkthroughHostCatalog,
 	walkthroughHostForAct,
-	walkthroughHostMarkPaint,
 	walkthroughHostMarkUrl,
 } from './walkthrough-hosts.ts'
 
@@ -94,12 +92,12 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 		false,
 	)
 	expect(
-		['amp', 'warp', 'goose', 'zed', 'devin', 'pi', 'openclaw', 'hermes'].every(
-			(id) => listCodingWalkthroughHosts().some((host) => host.id === id),
+		['amp', 'warp', 'goose', 'zed', 'devin', 'pi', 'openclaw'].every((id) =>
+			listCodingWalkthroughHosts().some((host) => host.id === id),
 		),
 	).toBe(true)
 	expect(
-		['amp', 'warp', 'goose', 'zed', 'devin', 'pi', 'openclaw', 'hermes'].every(
+		['amp', 'warp', 'goose', 'zed', 'devin', 'pi', 'openclaw'].every(
 			(id) => !listChatWalkthroughHosts().some((host) => host.id === id),
 		),
 	).toBe(true)
@@ -110,8 +108,6 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 			)
 			.map((host) => host.icon),
 	).toEqual([])
-	expect(walkthroughHostMarkPaint(walkthroughHostById('hermes')!)).toBe('image')
-	expect(walkthroughHostMarkPaint(walkthroughHostById('pi')!)).toBe('mask')
 	expect(
 		picks.some(
 			(pick) =>

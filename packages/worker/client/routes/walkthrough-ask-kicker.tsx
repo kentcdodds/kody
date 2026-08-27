@@ -2,8 +2,6 @@ import { css, type RemixNode } from 'remix/ui'
 import {
 	joinWalkthroughHostLabels,
 	listWalkthroughConversationHosts,
-	walkthroughHostMarkPaint,
-	walkthroughHostMarkPaintCss,
 	walkthroughHostMarkUrl,
 	type WalkthroughHost,
 	type WalkthroughHostPick,
@@ -71,10 +69,7 @@ function renderWalkthroughHostName(host: WalkthroughHost) {
 	return (
 		<span key={host.id} mix={css(kickerHostCss)}>
 			<span
-				mix={css({
-					...titleMarkBoxCss,
-					...walkthroughHostMarkPaintCss(walkthroughHostMarkPaint(host)),
-				})}
+				mix={css(titleMarkCss)}
 				style={{
 					'--chip-icon': `url("${walkthroughHostMarkUrl(host)}")`,
 				}}
@@ -98,10 +93,7 @@ function renderJoinedWalkthroughHostMarks(
 						: ', and '
 					: ', '}
 			<span
-				mix={css({
-					...titleMarkBoxCss,
-					...walkthroughHostMarkPaintCss(walkthroughHostMarkPaint(host)),
-				})}
+				mix={css(titleMarkCss)}
 				style={{
 					'--chip-icon': `url("${walkthroughHostMarkUrl(host)}")`,
 				}}
@@ -111,12 +103,21 @@ function renderJoinedWalkthroughHostMarks(
 	))
 }
 
-const titleMarkBoxCss = {
+const titleMarkCss = {
 	width: '0.85em',
 	height: '0.85em',
 	flex: 'none',
 	display: 'inline-block' as const,
 	verticalAlign: '-0.05em' as const,
+	background: 'currentColor',
+	maskImage: 'var(--chip-icon)',
+	maskPosition: 'center',
+	maskSize: 'contain',
+	maskRepeat: 'no-repeat',
+	WebkitMaskImage: 'var(--chip-icon)',
+	WebkitMaskPosition: 'center',
+	WebkitMaskSize: 'contain',
+	WebkitMaskRepeat: 'no-repeat',
 }
 
 const kickerHostCss = {
