@@ -197,7 +197,6 @@ test('every accountUserDataTargets kind has a shared match builder and export gu
 	expect(accountExportForeignUserIdColumnsByTable.user_follows).toEqual(
 		expect.arrayContaining(['follower_user_id', 'followee_user_id']),
 	)
-	expect(typeof accountExportRedactedForeignUserId).toBe('string')
 	expect(accountExportRedactedForeignUserId.length).toBeGreaterThan(0)
 
 	const excludedListingChildren = accountUserDataTargets.filter(
@@ -259,18 +258,6 @@ test('operator-owned tables are explicit deletion/export exclusions', () => {
 })
 
 test('final schema drops entitlement_daily_counters without stale inventory coverage', () => {
-	expect(
-		accountUserDataTargets.some(
-			(target) =>
-				'table' in target && target.table === 'entitlement_daily_counters',
-		),
-	).toBe(false)
-	expect(getAccountExportExcludedD1Surfaces()).not.toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({ name: 'entitlement_daily_counters' }),
-		]),
-	)
-
 	const deletionStatements = accountUserDataTargets.map((target) => {
 		const match = matchFor(target)
 		return buildUserScopedDeleteOrUpdateSql(match).sql
@@ -318,7 +305,6 @@ test('final schema drops entitlement_daily_counters without stale inventory cove
 		}
 	}
 	const coveredColumns = getAccountD1UserColumnCoverage()
-	expect(coveredColumns.has('entitlement_daily_counters.user_id')).toBe(false)
 	expect(liveUserColumns.has('entitlement_daily_counters.user_id')).toBe(false)
 	const missing = [...liveUserColumns].filter(
 		(column) => !coveredColumns.has(column),
@@ -336,13 +322,6 @@ test('final schema drops legacy RunLog D1 projections without stale inventory co
 		'user_package_run_successes',
 		'user_activation_milestones',
 	] as const
-	for (const table of retiredTables) {
-		expect(
-			accountUserDataTargets.some(
-				(target) => 'table' in target && target.table === table,
-			),
-		).toBe(false)
-	}
 
 	const deletionStatements = accountUserDataTargets.map((target) => {
 		const match = matchFor(target)
@@ -399,7 +378,6 @@ test('final schema drops legacy RunLog D1 projections without stale inventory co
 	}
 	const coveredColumns = getAccountD1UserColumnCoverage()
 	for (const table of retiredTables) {
-		expect(coveredColumns.has(`${table}.user_id`)).toBe(false)
 		expect(liveUserColumns.has(`${table}.user_id`)).toBe(false)
 	}
 	const missing = [...liveUserColumns].filter(

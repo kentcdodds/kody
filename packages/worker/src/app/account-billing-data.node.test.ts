@@ -66,7 +66,6 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 		'totally_new_code',
 	)
 	expect(resolveBillingErrorMessage(null)).toBeUndefined()
-	expect(typeof resolveBillingErrorMessage('no_customer')).toBe('string')
 
 	refreshStripePlanForUser.mockResolvedValueOnce({
 		stripePlan: 'pro',

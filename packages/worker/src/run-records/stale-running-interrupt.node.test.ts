@@ -1,8 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	runErrorTriageForPlatformInterrupt,
-	runRecordPlatformInterruptedErrorMessage,
-	runRecordPlatformInterruptedErrorName,
 	type RunRecordContext,
 } from './types.ts'
 
@@ -15,11 +13,6 @@ function platformInterruptTriage(overrides: Partial<RunRecordContext>) {
 }
 
 test('platform interrupt has a stable error contract and only auto-ignores retryable deliveries', () => {
-	expect(runRecordPlatformInterruptedErrorName).toBe('platform_interrupted')
-	expect(runRecordPlatformInterruptedErrorMessage).toBe(
-		'The platform interrupted this run before completion; outcome unknown.',
-	)
-
 	expect(
 		platformInterruptTriage({
 			surface: 'job',

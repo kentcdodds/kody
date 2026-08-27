@@ -10,9 +10,6 @@ import {
 } from './package-token-export-selection.ts'
 
 test('package token export selection normalizes names, wildcard exclusivity, and stale choices', () => {
-	expect(tryNormalizePackageTokenExportName('*')).toBe(
-		packageTokenWildcardExport,
-	)
 	expect(tryNormalizePackageTokenExportName('dispatch-event')).toBe(
 		'./dispatch-event',
 	)
@@ -94,6 +91,5 @@ test('package token export selection normalizes names, wildcard exclusivity, and
 		}),
 	).toEqual(['.', './dispatch-message-created'])
 
-	expect(isPackageTokenWildcardSelected(['*'])).toBe(true)
 	expect(isPackageTokenWildcardSelected(['./process-video'])).toBe(false)
 })

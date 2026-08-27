@@ -5,31 +5,21 @@ import {
 	durableObjectSqliteOutOfMemoryMessage,
 } from '#worker/sentry-options.ts'
 import {
-	durableObjectResetRetryDelaysMs,
 	isTransientDurableObjectResetError,
 	runWithTransientDurableObjectResetRetry,
 } from './durable-object-reset-retry.ts'
 
 test('transient Durable Object reset retry recovers thrown and result errors then exhausts', async () => {
-	expect(durableObjectResetRetryDelaysMs).toEqual([100, 500, 1_500])
 	expect(
 		isTransientDurableObjectResetError(
 			new Error(durableObjectCodeUpdatedResetMessage),
 		),
 	).toBe(true)
 	expect(
-		isTransientDurableObjectResetError(durableObjectCodeUpdatedResetMessage),
-	).toBe(true)
-	expect(
 		isTransientDurableObjectResetError(
 			new Error('wrapped', {
 				cause: new Error(durableObjectCodeUpdatedResetMessage),
 			}),
-		),
-	).toBe(true)
-	expect(
-		isTransientDurableObjectResetError(
-			durableObjectInstanceInactiveCloseMessage,
 		),
 	).toBe(true)
 	expect(

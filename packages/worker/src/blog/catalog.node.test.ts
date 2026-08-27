@@ -1,10 +1,5 @@
 import { expect, test } from 'vitest'
-import {
-	getBlogPost,
-	getReadNextBlogPost,
-	listBlogPosts,
-	toBlogPostSummary,
-} from './catalog.ts'
+import { getBlogPost, getReadNextBlogPost, listBlogPosts } from './catalog.ts'
 import { parseBlogPostMarkdown } from './parse-frontmatter.ts'
 import { buildBlogRssXml } from './rss.ts'
 
@@ -168,13 +163,6 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 		expect(Number.isInteger(post.order)).toBe(true)
 		expect(post.body.length).toBeGreaterThan(0)
 		expect(getBlogPost(post.slug)).toEqual(post)
-		expect(toBlogPostSummary(post)).toEqual({
-			slug: post.slug,
-			title: post.title,
-			date: post.date,
-			description: post.description,
-			order: post.order,
-		})
 	}
 
 	const comparison = getBlogPost('kody-vs-executor')

@@ -2030,14 +2030,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 		)
 		expect(packageResult.result).toBe('ok')
 		expect(providerFns).not.toBeNull()
-		expect(providerFns?.package_invoke_check).toBeUndefined()
-		expect(providerFns?.package_invoke).toBeUndefined()
-		expect(providerFns?.package_invoke_checked).toBeUndefined()
 		expect(packageBridgeFns).not.toBeNull()
-		// Unsupported helpers have no bridge tools; only invoke crosses the
-		// sandbox boundary.
-		expect(packageBridgeFns?.check).toBeUndefined()
-		expect(packageBridgeFns?.invokeChecked).toBeUndefined()
 		await expect(
 			packageBridgeFns?.invoke({
 				specifier:

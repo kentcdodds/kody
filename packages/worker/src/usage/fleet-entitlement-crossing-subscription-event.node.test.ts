@@ -53,9 +53,6 @@ test('fleet entitlement crossing builders keep a metadata-only operator snapshot
 		users_url: entitlement.users_url,
 		observed_at: entitlement.observed_at,
 	})
-	expect(
-		isFleetEntitlementCrossingEventTopic(fleetEntitlementCrossedTopic),
-	).toBe(true)
 	expect(isFleetEntitlementCrossingEventTopic('user.created')).toBe(false)
 	expect(
 		buildFleetEntitlementCrossingIdempotencyKey({

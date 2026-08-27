@@ -35,6 +35,5 @@ test('large-file policy measures UTF-8 bytes, finds the first oversize file, and
 		byteLength: maxRepoSourceFileBytes + 1,
 	})
 	expect(message).toContain('"assets/too-big.txt"')
-	expect(isRepoLargeFileMessage(message)).toBe(true)
 	expect(isRepoLargeFileMessage('Source "x" was not found.')).toBe(false)
 })

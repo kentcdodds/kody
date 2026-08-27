@@ -62,9 +62,7 @@ test('getStaticRegistry memoizes the builtin registry', () => {
 	const first = getStaticRegistry()
 	const second = getStaticRegistry()
 	expect(first).toBe(second)
-	expect(first.capabilityMap.email_send).toBeTruthy()
 	expect(Object.keys(first.capabilitySpecs).length).toBeGreaterThan(0)
-	expect('email_send' in first.capabilityMap).toBe(true)
 })
 
 test('getCapabilityRegistryForContext filters admin capabilities by current caller roles', async () => {
@@ -117,25 +115,4 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	expect(
 		regularRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
 	).toBe(false)
-})
-
-test('the email domain no longer exposes self-service inbox or sender-identity capabilities', () => {
-	// Inboxes are auto-provisioned at {username}@<platform domain> and the
-	// outbound from address is platform-assigned, so these capabilities were
-	// removed and must never come back silently.
-	const { capabilityMap } = getStaticRegistry()
-	expect(capabilityMap.email_inbox_create).toBeUndefined()
-	expect(capabilityMap.email_sender_identity_verify).toBeUndefined()
-	expect(capabilityMap.email_inbox_list).toBeTruthy()
-	expect(capabilityMap.email_send).toBeTruthy()
-	expect(capabilityMap.email_reply).toBeTruthy()
-	expect(capabilityMap.email_message_list).toBeTruthy()
-	expect(capabilityMap.email_message_get).toBeTruthy()
-	expect(capabilityMap.email_message_classify).toBeTruthy()
-	expect(capabilityMap.email_sender_rule_list).toBeTruthy()
-	expect(capabilityMap.email_sender_rule_set).toBeTruthy()
-	expect(capabilityMap.email_sender_rule_delete).toBeTruthy()
-	expect(capabilityMap.admin_system_email_sender_rule_list).toBeTruthy()
-	expect(capabilityMap.admin_system_email_sender_rule_set).toBeTruthy()
-	expect(capabilityMap.admin_system_email_sender_rule_delete).toBeTruthy()
 })

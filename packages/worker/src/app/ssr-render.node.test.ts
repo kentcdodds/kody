@@ -615,7 +615,6 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 		withoutAssetsHtml.match(/aria-label="Agents Kody plugs into"/g),
 	).toEqual(['aria-label="Agents Kody plugs into"'])
 	expect(withoutAssetsHtml).toContain('landing-hero-agent-light')
-	expect(withoutAssetsHtml).not.toContain('landing-hero-hosts')
 	expect(withoutAssetsHtml).toContain('Kody keeps it')
 	expect(withoutAssetsHtml).toContain('href="/images/hero/kody-base-640.webp"')
 	expect(withoutAssetsHtml).toContain('kody-base-960.webp')

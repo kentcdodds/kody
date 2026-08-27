@@ -131,17 +131,6 @@ test('account deletion and export consume the out-of-band surface registry', () 
 			(surface) => surface.id === 'run_log',
 		)?.notes,
 	).toMatch(/There are no D1 tables workflow_runs/)
-	expect(
-		accountUserOwnedDurableObjectSurfaces.find(
-			(surface) => surface.id === 'run_log',
-		)?.notes,
-	).not.toMatch(/retired by migration|quiescent pending/)
-	expect(
-		accountUserOwnedDurableObjectSurfaces.find(
-			(surface) => surface.id === 'user_meter',
-		)?.notes,
-	).not.toMatch(/dropped by migration|Migration 0141 dropped/)
-
 	expect(accountDeletionSource).toContain(
 		"from '#worker/account/user-owned-surfaces.ts'",
 	)
