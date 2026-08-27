@@ -44,7 +44,8 @@ manually with native `unzip`:
 Validate and `test:push` write Nx task artifacts. Those stay local unless the
 self-hosted cache is configured. To populate GitHub Actions hits, set both on
 the Cloud **environment** (not a one-off `export`). Use the write token
-(`NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`), not the Actions read token:
+(`NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`), not the Actions pull_request read
+token. Validate on `push` to `main` also writes; PR jobs do not:
 
 ```bash
 export NX_SELF_HOSTED_REMOTE_CACHE_SERVER=https://nx-cache.kody.codes
