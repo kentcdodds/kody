@@ -36,7 +36,9 @@ migrations/deploy:
 Both the preview and production deploy workflows run post-deploy healthchecks
 and fail the job if any expected worker is missing the deployed commit:
 
-- origin: `<deploy-url>/health` → `{ ok: true, commitSha }`
+- origin: `<deploy-url>/health` →
+  `{ ok: true, commitSha, commit, pullRequest, deploy }` (`commitSha` is the
+  version pin; browsers that prefer HTML get clickable commit/PR/job links)
 - platform: `/__platform/health` → `{ status: "ok", commitSha }`
 - runtime: `/__runtime/health` → `{ status: "ok", commitSha }`
 - jobs: `/health` on the jobs workers.dev URL → `{ ok: true, commit }` (jobs has

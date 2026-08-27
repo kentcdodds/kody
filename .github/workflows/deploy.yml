@@ -13,6 +13,7 @@ on:
 permissions:
   contents: read
   deployments: write
+  pull-requests: read
 
 concurrency:
   group: deploy-production
@@ -726,6 +727,18 @@ jobs:
             echo "url=$RUNTIME_URL" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: 🧾 Collect deploy info
+        id: deploy_info
+        if: needs.sha-guard.outputs.deploy_main == 'true'
+        env:
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+          DEPLOY_ENVIRONMENT: production
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          APP_DEPLOY_INFO="$(node tools/ci/build-deploy-info.ts)"
+          echo "app_deploy_info=$APP_DEPLOY_INFO" >> "$GITHUB_OUTPUT"
+
       - name: ☁️ Deploy to Cloudflare Workers
         id: deploy
         if: needs.sha-guard.outputs.deploy_main == 'true'
@@ -733,10 +746,11 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+          APP_DEPLOY_INFO: ${{ steps.deploy_info.outputs.app_deploy_info }}
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
         run: |
           set -euo pipefail
-          DEPLOY_ARGS=(--config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}")
+          DEPLOY_ARGS=(--config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" --var "APP_DEPLOY_INFO:${APP_DEPLOY_INFO}")
 
           is_retryable_deploy_failure() {
             node <<'NODE'

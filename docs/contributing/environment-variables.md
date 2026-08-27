@@ -85,6 +85,19 @@ Optional Wrangler `var` (public, non-secret; see
   `https://cdn.usefathom.com` in `script-src` and `img-src` for the tracker and
   its image beacon.
 
+## Build metadata
+
+Optional Wrangler vars set by the production and preview deploy workflows (see
+`packages/worker/src/deploy-info.ts` and `tools/ci/build-deploy-info.ts`):
+
+- `APP_COMMIT_SHA` — the git SHA being deployed. `GET /health` reports it as
+  `commitSha` so post-deploy healthchecks can pin the version. Also used as the
+  Sentry **release**.
+- `APP_DEPLOY_INFO` — base64url JSON (raw JSON is also accepted) with the commit
+  message and date, repo/PR links, and the GitHub Actions run that deployed.
+  `GET /health` decodes it; invalid values are ignored so a bad var cannot take
+  the worker down. Unset in local dev.
+
 ## App origin and domain migration
 
 Wrangler `vars` (public and non-secret; see

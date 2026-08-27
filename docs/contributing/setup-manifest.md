@@ -401,6 +401,9 @@ automatically:
   `{username}.kody.run`. Leave unset to dual-serve.)
 - `APP_COMMIT_SHA` (optional; set automatically by deploy workflows for
   version-aware `/health` checks)
+- `APP_DEPLOY_INFO` (optional; set automatically by deploy workflows as
+  base64url JSON. `GET /health` decodes it for commit message/date, commit and
+  PR links, and deploy job metadata. Invalid values are ignored.)
 - `CLOUDFLARE_ACCOUNT_ID` (required for the Cloudflare Email Service REST API
   fallback used by local mocks and preview deploys)
 - `CLOUDFLARE_API_TOKEN` (used by the Cloudflare Email Service REST API fallback
