@@ -20,8 +20,6 @@ export function OnboardingFactoryCard(_handle: Handle) {
 		>
 			<img
 				{...landingArtAttrs('kody-factory-map')}
-				width={1024}
-				height={1024}
 				alt="Kody presenting a map of the software factory"
 			/>
 			<span mix={css(factoryCopyCss)}>
@@ -57,6 +55,7 @@ const factoryCardCss = {
 		display: 'block',
 		width: '100%',
 		height: 'auto',
+		aspectRatio: '1',
 		borderRadius: `calc(${radius.card} - 0.35rem)`,
 	},
 	[hoverMq]: {

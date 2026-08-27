@@ -65,13 +65,17 @@ const authenticatedRoutes: RouteScenario[] = [
  * `#989b9e` rather than its settled `#171b20`) as a contrast failure.
  *
  * Indefinite animations (the spinner) never finish, so they are skipped rather
- * than waited on.
+ * than waited on. Scroll-driven timelines also stay `running` for the life of
+ * the page — treat those as settled too.
  */
 async function waitForAnimationsToSettle(page: Page) {
 	await page.waitForFunction(() =>
 		document.getAnimations().every((animation) => {
 			const timing = animation.effect?.getComputedTiming()
 			if (timing?.activeDuration === Infinity) return true
+			if (animation.timeline && animation.timeline !== document.timeline) {
+				return true
+			}
 			return animation.playState === 'finished'
 		}),
 	)

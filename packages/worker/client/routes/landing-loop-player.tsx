@@ -6,6 +6,10 @@ import {
 import { on } from '#client/event-mixin.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { routes } from '#universal/routes.ts'
+import {
+	walkthroughHostForAct,
+	type WalkthroughHostPick,
+} from '#universal/walkthrough-hosts.ts'
 import { type TranscriptLine } from './interactive-guide-transcript.ts'
 import { fetchLandingLoopHighlights } from './landing-loop-highlights.ts'
 import {
@@ -22,7 +26,7 @@ import {
 	type LandingLoopToggleLabel,
 } from './landing-loop-state.ts'
 
-type LoopLineRenderer = (line: TranscriptLine) => RemixNode
+type LoopLineRenderer = (line: TranscriptLine, actId: string) => RemixNode
 
 /**
  * Homepage factory-loop player. SSR paints the first user turn; the
@@ -35,10 +39,13 @@ type LoopLineRenderer = (line: TranscriptLine) => RemixNode
  * header control is both the playing indicator and play/pause (icons,
  * not words). SSR paints Pause so the header does not shift when the
  * transcript chunk loads. A reserved slot keeps that size if
- * reduced-motion later hides it. The phone act is a later scene in the
- * same card — a time skip plus device chrome, not a reset.
+ * reduced-motion later hides it. Later acts stay in the same card, each
+ * introduced by a time-skip rule. Host marks come from SSR/loader props
+ * so hydrate matches the pick.
  */
-export function LandingLoopPlayer(handle: Handle) {
+export function LandingLoopPlayer(
+	handle: Handle<{ hosts?: WalkthroughHostPick }>,
+) {
 	let beats: Array<LandingLoopBeat> | null = null
 	let renderLine: LoopLineRenderer | null = null
 	let highlightsPromise: Promise<Record<string, HighlightedCode>> | null = null
@@ -100,8 +107,12 @@ export function LandingLoopPlayer(handle: Handle) {
 			])
 			if (handle.signal.aborted) return
 			beats = flattenTranscriptActs(transcript.howKodyWorksTranscriptActs)
-			renderLine = (line) =>
-				walkthrough.renderInteractiveGuideLine(line, highlights)
+			renderLine = (line, actId) =>
+				walkthrough.renderInteractiveGuideLine(
+					line,
+					highlights,
+					walkthroughHostForAct(handle.props.hosts, actId),
+				)
 			reducedMotion = prefersReducedMotion()
 			finePointerPauses = canFinePointerPause()
 			player = createLandingLoopPlayer({
@@ -267,6 +278,12 @@ export function LandingLoopPlayer(handle: Handle) {
 				]}
 			>
 				<div class="landing-loop-head">
+					<p class="landing-loop-title">
+						<span class="landing-loop-title-full">
+							Example conversation with your agents and Kody
+						</span>
+						<span class="landing-loop-title-short">Example conversation</span>
+					</p>
 					<span class="landing-loop-toggle-slot">
 						{toggleLabel ? (
 							<button
@@ -391,33 +408,16 @@ function renderSceneGroup(
 			newestGroup && index === group.beats.length - 1,
 		),
 	)
-	switch (group.scene) {
-		case 'desk':
-			return (
-				<div
-					key={`scene-${group.scene}-${groupIndex}`}
-					class="landing-loop-scene"
-				>
-					{lines}
-				</div>
-			)
-		case 'phone':
-			return (
-				<div
-					key={`scene-${group.scene}-${groupIndex}`}
-					class="landing-loop-scene landing-loop-scene-phone"
-				>
-					<p class="landing-loop-later" aria-hidden="true">
-						Later
-					</p>
-					<div class="landing-loop-scene-frame">{lines}</div>
-				</div>
-			)
-		default: {
-			const exhaustive: never = group.scene
-			return exhaustive
-		}
-	}
+	return (
+		<div key={`scene-${group.scene}-${groupIndex}`} class="landing-loop-scene">
+			{groupIndex > 0 ? (
+				<p class="landing-loop-later" aria-hidden="true">
+					Later
+				</p>
+			) : null}
+			{lines}
+		</div>
+	)
 }
 
 function beatKey(beat: LandingLoopBeat) {
@@ -438,7 +438,7 @@ function renderBeat(
 				class="landing-loop-act"
 				data-newest={newest ? 'true' : undefined}
 			>
-				<p class="landing-loop-kicker">{beat.kicker}</p>
+				{beat.kicker ? <p class="landing-loop-kicker">{beat.kicker}</p> : null}
 				<h3>{beat.title}</h3>
 			</header>
 		)
@@ -449,7 +449,7 @@ function renderBeat(
 			class="landing-loop-line"
 			data-newest={newest ? 'true' : undefined}
 		>
-			{renderLine(beat.line)}
+			{renderLine(beat.line, beat.actId)}
 		</div>
 	)
 }
@@ -458,7 +458,9 @@ function renderTeaser() {
 	return (
 		<>
 			<header class="landing-loop-act">
-				<p class="landing-loop-kicker">{landingLoopTeaser.kicker}</p>
+				{landingLoopTeaser.kicker ? (
+					<p class="landing-loop-kicker">{landingLoopTeaser.kicker}</p>
+				) : null}
 				<h3>{landingLoopTeaser.title}</h3>
 			</header>
 			<figure class="landing-loop-you">

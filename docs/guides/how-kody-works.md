@@ -75,11 +75,12 @@ This page is the playbook. The same story is an interactive transcript at
 3. **Ask again from any agent.** "Anything interesting shipped by my favorite
    bot recently?" Search finds the owned package. Invoke it. A phone agent does
    not rewrite the GitHub walk.
-4. **Get notified.** Search first. There is no GitHub webhook for one person's
-   public activity, so add a package-owned daily cron through a repo session
-   (patch only the new wrapper and the changed manifest lines). The wrapper
-   calls the same export and runs `email_send` only when the list is non-empty.
-   Enable the job after invoking the wrapper once.
+4. **Get notified.** From a third agent, in a new conversation: search first.
+   There is no GitHub webhook for one person's public activity, so add a
+   package-owned daily cron through a repo session (patch only the new wrapper
+   and the changed manifest lines). The wrapper calls the same export and runs
+   `email_send` only when the list is non-empty. Enable the job after invoking
+   the wrapper once.
 
 ## What "shipped" means
 

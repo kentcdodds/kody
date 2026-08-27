@@ -1,6 +1,7 @@
 import { type Handle, type RemixNode, css } from 'remix/ui'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type GuideDetailLoaderData } from '#universal/loader-data.ts'
+import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { routes } from '#universal/routes.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -14,7 +15,7 @@ import {
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { formatLastVerified } from '#client/routes/guides.tsx'
-import { renderHowKodyWorksWalkthrough } from '#client/routes/how-kody-works-walkthrough.tsx'
+import { HowKodyWorksWalkthrough } from '#client/routes/how-kody-works-walkthrough.tsx'
 import { renderGoogleOauthWalkthrough } from '#client/routes/google-oauth-walkthrough.tsx'
 import { colors, radius } from '#universal/styles/tokens.ts'
 import {
@@ -29,11 +30,14 @@ const interactiveGuideRenderers: Readonly<
 		string,
 		(
 			highlights?: Record<string, HighlightedCode>,
-		) => ReturnType<typeof renderHowKodyWorksWalkthrough>
+			hosts?: WalkthroughHostPick,
+		) => RemixNode
 	>
 > = {
-	'how-kody-works': renderHowKodyWorksWalkthrough,
-	'google-oauth': renderGoogleOauthWalkthrough,
+	'how-kody-works': (highlights, hosts) => (
+		<HowKodyWorksWalkthrough highlights={highlights} hosts={hosts} />
+	),
+	'google-oauth': (highlights) => renderGoogleOauthWalkthrough(highlights),
 }
 
 /**
@@ -284,6 +288,7 @@ export function GuideDetailRoute(handle: Handle) {
 
 						{interactiveGuideRenderers[guide.slug]?.(
 							guide.walkthroughHighlights,
+							guide.walkthroughHosts,
 						) ?? <div mix={css(proseCss)}>{renderGuideBody(guide.body)}</div>}
 
 						<footer mix={css(guideFootCss)}>

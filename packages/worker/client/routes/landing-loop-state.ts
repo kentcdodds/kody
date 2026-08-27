@@ -5,7 +5,7 @@ import {
 } from './interactive-guide-transcript.ts'
 
 export const landingLoopTeaser = {
-	kicker: 'Example of a conversation you might have with your agent.',
+	kicker: '',
 	title: 'Ask once',
 	user: 'What did my favorite bot ship recently on GitHub?',
 } as const
@@ -90,13 +90,18 @@ export function flattenTranscriptActs(
 	return beats
 }
 
+function landingLoopBeatActId(beat: LandingLoopBeat) {
+	return beat.kind === 'act' ? beat.id : beat.actId
+}
+
 export function groupLandingLoopScenes(
 	beats: ReadonlyArray<LandingLoopBeat>,
 ): Array<LandingLoopSceneGroup> {
 	const groups: Array<LandingLoopSceneGroup> = []
 	for (const beat of beats) {
 		const last = groups.at(-1)
-		if (last?.scene === beat.scene) {
+		const lastActId = last ? landingLoopBeatActId(last.beats[0]!) : null
+		if (last && lastActId === landingLoopBeatActId(beat)) {
 			last.beats.push(beat)
 			continue
 		}

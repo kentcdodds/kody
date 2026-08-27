@@ -5,6 +5,12 @@ import {
 	highlightSnippetKey,
 } from '#universal/highlighted-code.ts'
 import {
+	walkthroughHostForAct,
+	walkthroughHostMarkUrl,
+	type WalkthroughHost,
+	type WalkthroughHostPick,
+} from '#universal/walkthrough-hosts.ts'
+import {
 	type TranscriptAct,
 	type TranscriptFile,
 	type TranscriptInput,
@@ -30,10 +36,11 @@ import {
  * CopyCodeBlock needs a handle.
  */
 export function renderInteractiveGuideWalkthrough(input: {
-	lead: string
+	lead: RemixNode
 	acts: Array<TranscriptAct>
 	afterActs?: RemixNode
 	highlights?: Record<string, HighlightedCode>
+	hosts?: WalkthroughHostPick
 }) {
 	return (
 		<div mix={css(walkthroughCss)}>
@@ -45,18 +52,24 @@ export function renderInteractiveGuideWalkthrough(input: {
 					mix={css(actCss)}
 					aria-labelledby={`${act.id}-title`}
 				>
-					<p
-						mix={css(
-							act.id === input.acts[0]?.id ? exampleKickerCss : kickerCss,
-						)}
-					>
-						{act.kicker}
-					</p>
+					{act.kicker ? (
+						<p
+							mix={css(
+								act.id === input.acts[0]?.id ? exampleKickerCss : kickerCss,
+							)}
+						>
+							{act.kicker}
+						</p>
+					) : null}
 					<h2 id={`${act.id}-title`}>{act.title}</h2>
 					<ol mix={css(threadCss)}>
 						{act.lines.map((line, index) => (
 							<li key={`${act.id}-${index}`}>
-								{renderInteractiveGuideLine(line, input.highlights)}
+								{renderInteractiveGuideLine(
+									line,
+									input.highlights,
+									walkthroughHostForAct(input.hosts, act.id),
+								)}
 							</li>
 						))}
 					</ol>
@@ -71,11 +84,12 @@ export function renderInteractiveGuideWalkthrough(input: {
 export function renderInteractiveGuideLine(
 	line: TranscriptLine,
 	highlights?: Record<string, HighlightedCode>,
+	host?: WalkthroughHost,
 ) {
 	switch (line.role) {
 		case 'user':
 			return (
-				<figure mix={css(youCss)}>
+				<figure class="landing-loop-you" mix={css(youCss)}>
 					<figcaption>
 						You
 						{renderUserIcon()}
@@ -90,11 +104,11 @@ export function renderInteractiveGuideLine(
 			return (
 				<figure mix={css(reasoning ? agentReasoningCss : agentCss)}>
 					<figcaption>
-						{renderAgentIcon()}
-						{reasoning ? 'Reasoning' : 'Agent'}
+						{host ? renderAgentMark(host) : renderAgentIcon()}
+						{host?.label ?? 'Agent'}
 					</figcaption>
 					<blockquote>
-						<p>{line.text}</p>
+						<p>{reasoning ? `Reasoning: ${line.text}` : line.text}</p>
 					</blockquote>
 				</figure>
 			)
@@ -248,6 +262,16 @@ function renderUserIcon() {
 	)
 }
 
+function renderAgentMark(host: WalkthroughHost) {
+	return (
+		<span
+			mix={css(agentMarkCss)}
+			style={{ '--chip-icon': `url("${walkthroughHostMarkUrl(host)}")` }}
+			aria-hidden="true"
+		></span>
+	)
+}
+
 function renderAgentIcon() {
 	return (
 		<svg
@@ -382,6 +406,21 @@ const threadCss = {
 
 const captionIconGap = '0.35em'
 
+const agentMarkCss = {
+	width: '1em',
+	height: '1em',
+	flex: 'none',
+	background: 'currentColor',
+	maskImage: 'var(--chip-icon)',
+	maskPosition: 'center',
+	maskSize: 'contain',
+	maskRepeat: 'no-repeat',
+	WebkitMaskImage: 'var(--chip-icon)',
+	WebkitMaskPosition: 'center',
+	WebkitMaskSize: 'contain',
+	WebkitMaskRepeat: 'no-repeat',
+}
+
 const bubbleCss = {
 	margin: 0,
 	'& figcaption': {
@@ -448,11 +487,13 @@ const agentReasoningCss = {
 	},
 }
 
-const toolsCss = {
+export const interactiveGuideToolsCss = {
 	display: 'grid',
 	gap: '0.55rem',
 	minWidth: 0,
 }
+
+const toolsCss = interactiveGuideToolsCss
 
 export const interactiveGuideToolCss = {
 	minWidth: 0,

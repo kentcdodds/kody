@@ -26,8 +26,7 @@ export type SiteHeaderProps = {
 /**
  * Sticky site header from the heykody.dev redesign: brand, marketing nav
  * (Community · Pricing · Blog), and the session corner. The bottom hairline
- * appears only after the page scrolls, so the header reads as part of the
- * canvas at rest.
+ * is a static CSS border so it paints before JS.
  */
 const marketingLinks = [
 	{ href: '/community', label: 'Community' },
@@ -62,22 +61,9 @@ export function dismissOpenPopoverPanel(panel: Element | null) {
 }
 
 export function SiteHeader(handle: Handle<SiteHeaderProps>) {
-	let scrolled = false
 	let menuOpen = false
 
 	if (typeof document !== 'undefined') {
-		const onScroll = () => {
-			const next = window.scrollY > 8
-			if (next === scrolled) return
-			scrolled = next
-			handle.update()
-		}
-		window.addEventListener('scroll', onScroll, {
-			passive: true,
-			signal: handle.signal,
-		})
-		handle.queueTask(onScroll)
-
 		// Following a link inside the menu is a client-side navigation, so
 		// nothing would otherwise dismiss the panel.
 		listenToRouterNavigation(handle, () => {
@@ -95,7 +81,7 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 	}
 
 	return () => (
-		<header data-scrolled={scrolled ? 'true' : undefined} mix={css(headerCss)}>
+		<header class="site-header" mix={css(headerCss)}>
 			<nav aria-label="Main" mix={css(navCss)}>
 				<a href="/" mix={css(brandCss)}>
 					<img src="/images/kody-mark.png" alt="" width={34} height={34} />
@@ -253,13 +239,6 @@ const headerCss = {
 	zIndex: 10,
 	viewTransitionName: 'site-header',
 	background: `oklch(from ${colors.background} l c h / 0.85)`,
-	borderBottom: '1px solid transparent',
-	transition: `border-color 200ms ${transitions.easeOut}`,
-	// css() is static — the scrolled state must flow through an attribute,
-	// not a swapped style object (which never re-applies after hydration).
-	'&[data-scrolled]': {
-		borderBottomColor: colors.border,
-	},
 	'@supports (backdrop-filter: blur(1px))': {
 		backdropFilter: 'blur(14px)',
 	},

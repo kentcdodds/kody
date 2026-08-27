@@ -36,9 +36,24 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 				beat.kind === 'act' && beat.id === 'invoke' && beat.scene === 'phone',
 		),
 	).toBe(true)
-	expect(groupLandingLoopScenes(beats).map((group) => group.scene)).toEqual([
-		'desk',
-		'phone',
+	expect(
+		beats.some(
+			(beat) =>
+				beat.kind === 'act' && beat.id === 'notify' && beat.scene === 'phone',
+		),
+	).toBe(true)
+	expect(
+		groupLandingLoopScenes(beats).map((group) => ({
+			scene: group.scene,
+			act:
+				group.beats[0]?.kind === 'act'
+					? group.beats[0].id
+					: group.beats[0]?.actId,
+		})),
+	).toEqual([
+		{ scene: 'desk', act: 'ask' },
+		{ scene: 'phone', act: 'invoke' },
+		{ scene: 'phone', act: 'notify' },
 	])
 	expect(
 		beats.some((beat) => beat.kind === 'line' && beat.line.role === 'tools'),

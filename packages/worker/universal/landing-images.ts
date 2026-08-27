@@ -45,6 +45,8 @@ export function landingArtAttrs(name: LandingArtName) {
 		src: `/images/${name}-480.webp`,
 		srcSet: candidates.join(', '),
 		sizes: '(max-width: 800px) 60vw, 400px',
+		width: fullWidth,
+		height: fullWidth,
 		decoding: 'async' as const,
 		loading: 'lazy' as const,
 	}

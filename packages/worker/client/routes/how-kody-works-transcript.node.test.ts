@@ -10,9 +10,11 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 	expect(howKodyWorksTranscriptActs.map((act) => act.id)).toEqual([
 		'ask',
 		'invoke',
+		'notify',
 	])
 	expect(howKodyWorksTranscriptActs[0]?.scene).toBeUndefined()
 	expect(howKodyWorksTranscriptActs[1]?.scene).toBe('phone')
+	expect(howKodyWorksTranscriptActs[2]?.scene).toBe('phone')
 
 	const tools = howKodyWorksTranscriptActs.flatMap((act) =>
 		act.lines.flatMap((line) => (line.role === 'tools' ? line.tools : [])),
@@ -50,9 +52,28 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 	expect(fileLines.length).toBeGreaterThan(0)
 	expect(
 		howKodyWorksTranscriptActs
-			.find((act) => act.id === 'invoke')
-			?.lines.every((line) => line.role !== 'files'),
+			.filter((act) => act.id === 'invoke' || act.id === 'notify')
+			.every((act) => act.lines.every((line) => line.role !== 'files')),
 	).toBe(true)
+
+	const conversationIds = howKodyWorksTranscriptActs.map((act) => {
+		const ids = new Set<string>()
+		for (const line of act.lines) {
+			if (line.role !== 'tools') continue
+			for (const tool of line.tools) {
+				const minted = /^conversationId: (\S+)/m.exec(tool.result)
+				if (minted?.[1]) ids.add(minted[1])
+				for (const input of tool.inputs) {
+					if (input.name !== 'conversationId') continue
+					const value = /"([^"]+)"/.exec(input.value)
+					if (value?.[1]) ids.add(value[1])
+				}
+			}
+		}
+		return [...ids]
+	})
+	expect(conversationIds.every((ids) => ids.length === 1)).toBe(true)
+	expect(new Set(conversationIds.flat()).size).toBe(3)
 
 	expect(howKodyWorksPackageFiles['src/what-shipped.ts']).toContain(
 		"Authorization: 'Bearer {{secret:githubAccessToken}}'",

@@ -26,8 +26,13 @@ import {
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
+import {
+	pickWalkthroughHosts,
+	type WalkthroughHostPick,
+} from '#universal/walkthrough-hosts.ts'
 import { LandingHeroAgents } from '#client/routes/landing-hero-agents.tsx'
 import { LandingLoopPlayer } from './landing-loop-player.tsx'
+import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
 
 /**
  * heykody.app landing page, ported from the redesign prototype
@@ -118,6 +123,7 @@ export async function homeRouteLoader(
 	const result: RouteLoaderResult = {}
 	if (onboarding) result.onboarding = onboarding
 	if (codeRuns) result.codeRuns = codeRuns
+	result.walkthroughHosts = pickWalkthroughHosts()
 	return result
 }
 
@@ -128,6 +134,7 @@ export function HomeRoute(handle: Handle) {
 	let discoveryPrompt = ''
 	let codeRunsWindow: PublicCodeRunsWindow | null = null
 	let onboardingStatus: 'idle' | 'loading' | 'ready' = 'idle'
+	let walkthroughHosts: WalkthroughHostPick | null = null
 	const loadLatch = createRouteLoadLatch()
 
 	function applyOnboardingPayload(payload: OnboardingPayload | null) {
@@ -155,6 +162,7 @@ export function HomeRoute(handle: Handle) {
 			if (signal.aborted) return
 			applyOnboardingPayload(payload)
 			applyCodeRunsPayload(codeRuns)
+			if (!walkthroughHosts) walkthroughHosts = pickWalkthroughHosts()
 			loadLatch.markLoaded(href)
 			handle.update()
 		} catch {
@@ -170,6 +178,12 @@ export function HomeRoute(handle: Handle) {
 		if (!isHomePath(href)) return false
 		const onboardingData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		const codeRunsData = tryConsumeRouteLoaderData(handle, 'codeRuns', href)
+		const hostsData = tryConsumeRouteLoaderData(
+			handle,
+			'walkthroughHosts',
+			href,
+		)
+		if (hostsData) walkthroughHosts = hostsData
 		if (codeRunsData) applyCodeRunsPayload(codeRunsData)
 		if (!onboardingData) return false
 		applyOnboardingPayload(onboardingData)
@@ -209,7 +223,7 @@ export function HomeRoute(handle: Handle) {
 						Tools, setup, and memory live here when you switch. Not another
 						chat. Not another harness.
 					</p>
-					<LandingHeroAgents />
+					<LandingHeroAgents hosts={walkthroughHosts ?? undefined} />
 					{codeRunsWindow ? <CodeRunsTicker window={codeRunsWindow} /> : null}
 					<div data-rise style={{ '--rise': '2' }} class="landing-hero-actions">
 						{isSignedIn ? (
@@ -293,8 +307,6 @@ export function HomeRoute(handle: Handle) {
 					</p>
 					<img
 						{...landingArtAttrs('kody-compounding-capabilities')}
-						width={480}
-						height={480}
 						alt="Kody tending glowing package pods on a small plant"
 						class="landing-factory-art"
 						mix={reveal()}
@@ -320,7 +332,23 @@ export function HomeRoute(handle: Handle) {
 						<strong>pretty much anything</strong>. What will{' '}
 						<strong>you</strong> build?
 					</p>
-					<LandingLoopPlayer />
+					{walkthroughHosts ? (
+						<div class="landing-walkthrough-story">
+							<div class="landing-walkthrough-intro">
+								<WalkthroughHostIntro
+									variant="picker"
+									hosts={walkthroughHosts}
+									onHostsChange={(next) => {
+										walkthroughHosts = next
+										handle.update()
+									}}
+								/>
+							</div>
+							<LandingLoopPlayer hosts={walkthroughHosts} />
+						</div>
+					) : (
+						<LandingLoopPlayer />
+					)}
 				</section>
 
 				{/* ============ honest runtime ============ */}
@@ -369,8 +397,6 @@ export function HomeRoute(handle: Handle) {
 					</div>
 					<img
 						{...landingArtAttrs('kody-community-packages')}
-						width={480}
-						height={480}
 						alt="Kody handing a wrapped package across a counter of neatly sorted parcels"
 						class="landing-ecosystem-art"
 						mix={reveal()}
@@ -381,8 +407,6 @@ export function HomeRoute(handle: Handle) {
 				<section aria-labelledby="byok-title" class="landing-byok">
 					<img
 						{...landingArtAttrs('kody-keys')}
-						width={480}
-						height={480}
 						alt="Kody holding up a set of golden keys"
 						class="landing-byok-art"
 						mix={reveal()}
@@ -464,8 +488,6 @@ export function HomeRoute(handle: Handle) {
 				>
 					<img
 						{...landingArtAttrs('kody-greeting')}
-						width={480}
-						height={480}
 						alt="Kody waving hello with an open hand"
 						class="landing-invite-art"
 					/>

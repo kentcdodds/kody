@@ -6,14 +6,19 @@ import {
 	landingOrbitTetherPath,
 } from '#universal/landing-agent-orbit.ts'
 import { heroBaseImage } from '#universal/landing-images.ts'
+import {
+	listAllWalkthroughHosts,
+	type WalkthroughHost,
+	type WalkthroughHostPick,
+} from '#universal/walkthrough-hosts.ts'
 
 /**
  * Hero stage: Kody holds the lantern while the agents you already use float
  * around as logo tokens, each tethered to the lantern by a bézier. Balls of
- * lantern light run down the tethers on independent clocks (driven by the
- * same frame loop that keeps the tethers attached; motion-only), so several
- * are in flight at once and the overlaps keep shifting — it reads as all of
- * them in use, feeding the same account.
+ * lantern light run both ways on independent clocks (driven by the same
+ * frame loop that keeps the tethers attached; motion-only), so several are
+ * in flight at once and the overlaps keep shifting — inbound reads as the
+ * agents feeding the account, outbound as Kody answering back.
  *
  * Tethers sit in front of Kody so every line and light visibly arrives at
  * the lantern instead of vanishing behind his body; a radial mask centred on
@@ -26,41 +31,97 @@ import { heroBaseImage } from '#universal/landing-images.ts'
  * in `#universal/landing-agent-orbit` so OG cards can compose the same still.
  */
 
-/** `dur`/`del` drive the drift. `cycle`/`phase`/`travel` (seconds) drive
- *  each tether's light: one light per cycle, in flight for `travel` of it.
- *  Periods and speeds are deliberately unequal so the lights overlap in
+/** Slot motion. Identities come from the SSR-shuffled catalog: pinned hosts
+ *  always make the ring, leftover slots fill from the rest, then allRow
+ *  order assigns them so hydrate matches. `dur`/`del` drive the drift.
+ *  `cycle`/`phase`/`travel` (seconds) drive each tether's lights: inbound
+ *  and outbound share the cycle, outbound offset by ~0.42 of it, in flight
+ *  for `travel`. Periods are deliberately unequal so the lights overlap in
  *  ever-changing combinations. Order matches `landingOrbitAgents`. */
 const hostAgentMotion = [
-	{ dur: '8s', del: '-2s', cycle: 4.6, phase: 1.1, travel: 1.9 },
-	{ dur: '8.5s', del: '-1.5s', cycle: 6.3, phase: 3.4, travel: 2.6 },
-	{ dur: '6s', del: '-1s', cycle: 5.1, phase: 2.7, travel: 1.6 },
-	{ dur: '7.5s', del: '-6s', cycle: 7.4, phase: 0.6, travel: 3.2 },
-	{ dur: '9s', del: '-4s', cycle: 4.2, phase: 1.9, travel: 2.1 },
-	{ dur: '6.5s', del: '-5s', cycle: 7.9, phase: 5.2, travel: 2.4 },
-	{ dur: '5.5s', del: '-2.5s', cycle: 5.7, phase: 2.3, travel: 1.7 },
-	{ dur: '9.5s', del: '-3.5s', cycle: 6.8, phase: 4.5, travel: 2.9 },
+	{ dur: '8s', del: '-2s', cycle: 2.5, phase: 0.6, travel: 1.05 },
+	{ dur: '8.5s', del: '-1.5s', cycle: 3.5, phase: 1.9, travel: 1.4 },
+	{ dur: '6s', del: '-1s', cycle: 2.8, phase: 1.5, travel: 0.9 },
+	{ dur: '7.5s', del: '-6s', cycle: 4.1, phase: 0.3, travel: 1.75 },
+	{ dur: '9s', del: '-4s', cycle: 2.3, phase: 1.0, travel: 1.15 },
+	{ dur: '6.5s', del: '-5s', cycle: 4.3, phase: 2.9, travel: 1.3 },
+	{ dur: '5.5s', del: '-2.5s', cycle: 3.1, phase: 1.3, travel: 0.95 },
+	{ dur: '9.5s', del: '-3.5s', cycle: 3.7, phase: 2.5, travel: 1.6 },
 ] as const
 
-const hostAgents = landingOrbitAgents.map((agent, index) => ({
-	...agent,
+export const landingHeroSlots = landingOrbitAgents.map((agent, index) => ({
+	x: agent.x,
+	y: agent.y,
 	...hostAgentMotion[index]!,
 }))
 
+/** Always on the homepage ring. Everyone else competes for leftover slots. */
+export const landingHeroPinnedHostIds = [
+	'grok-bot',
+	'chatgpt',
+	'claude-code',
+] as const
+
+export type LandingHeroAgent = (typeof landingHeroSlots)[number] & {
+	label: string
+	icon: string
+}
+
+export function pickLandingHeroRing(
+	allRow: ReadonlyArray<WalkthroughHost>,
+	slotCount: number = landingHeroSlots.length,
+): Array<WalkthroughHost> {
+	const order = allRow.length > 0 ? allRow : listAllWalkthroughHosts()
+	const pinnedIds = new Set<string>(landingHeroPinnedHostIds)
+	const pinned = order.filter((host) => pinnedIds.has(host.id))
+	const rest = order.filter((host) => !pinnedIds.has(host.id))
+	const selectedIds = new Set(
+		[...pinned, ...rest].slice(0, slotCount).map((host) => host.id),
+	)
+	return order.filter((host) => selectedIds.has(host.id))
+}
+
+export function placeLandingHeroAgents(
+	hosts?: WalkthroughHostPick | null,
+): Array<LandingHeroAgent> {
+	const identities = pickLandingHeroRing(
+		hosts?.allRow ?? listAllWalkthroughHosts(),
+	)
+	const fallback = listAllWalkthroughHosts()
+	return landingHeroSlots.map((slot, index) => {
+		const identity = identities[index] ?? fallback[index]!
+		return {
+			...slot,
+			label: identity.label,
+			icon: identity.icon,
+		}
+	})
+}
+
 const lantern = landingLantern
 
-/** Where along its trip a light is, and how it looks: it leaves the token
- *  slowly and is pulled in faster, shrinks as it nears the lantern, fades in
- *  leaving and out arriving. `null` while it rests. */
-function lightAt(agent: (typeof hostAgents)[number], seconds: number) {
-	const t =
-		(((seconds + agent.phase) % agent.cycle) + agent.cycle) % agent.cycle
+export type LandingHeroLightDirection = 'in' | 'out'
+
+/** Where along its trip a light is, and how it looks. Inbound leaves the
+ *  token slowly and is pulled in faster, shrinking as it nears the lantern.
+ *  Outbound is the reverse: small at the lantern, growing toward the token.
+ *  Fades in leaving and out arriving. `null` while it rests. */
+export function landingHeroLightAt(
+	agent: Pick<LandingHeroAgent, 'cycle' | 'phase' | 'travel'>,
+	seconds: number,
+	direction: LandingHeroLightDirection = 'in',
+) {
+	const phase =
+		direction === 'out' ? agent.phase + agent.cycle * 0.42 : agent.phase
+	const t = (((seconds + phase) % agent.cycle) + agent.cycle) % agent.cycle
 	const linear = t / agent.travel
 	if (linear >= 1) return null
-	// Ease-in: gentle departure, quickening approach.
-	const progress = linear * linear * (1.7 - 0.7 * linear)
-	const fadeIn = Math.min(1, progress / 0.1)
-	const fadeOut = Math.min(1, (1 - progress) / 0.14)
-	const scale = 1 - 0.55 * progress
+	// Ease-in along the trip: gentle departure, quickening approach.
+	const eased = linear * linear * (1.7 - 0.7 * linear)
+	const progress = direction === 'out' ? 1 - eased : eased
+	const fadeIn = Math.min(1, linear / 0.1)
+	const fadeOut = Math.min(1, (1 - linear) / 0.14)
+	const scale = direction === 'out' ? 0.45 + 0.55 * eased : 1 - 0.55 * eased
 	return { progress, opacity: Math.min(fadeIn, fadeOut), scale }
 }
 
@@ -76,7 +137,7 @@ const tetherPath = landingOrbitTetherPath
  *  SVG itself never transforms. Runs only while the stage is on screen; under
  *  reduced motion nothing moves and lights stay hidden, so a single pass
  *  after layout (and on resize) is enough. */
-function tetherFollow() {
+function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 	return ref((node: Element, signal: AbortSignal) => {
 		const kody = node.querySelector<HTMLElement>('.landing-hero-agents-kody')
 		const lines = node.querySelector<SVGSVGElement>(
@@ -113,7 +174,7 @@ function tetherFollow() {
 			for (const tether of tethers) {
 				const index = Number(tether.dataset.agent)
 				const start = starts[index]
-				const agent = hostAgents[index]
+				const agent = agents[index]
 				if (!start || !agent) continue
 				const d = tetherPath(start.x, start.y, end.x, end.y)
 				for (const path of tether.querySelectorAll('path')) {
@@ -122,22 +183,25 @@ function tetherFollow() {
 				const line = tether.querySelector<SVGPathElement>(
 					'.landing-hero-agent-line',
 				)
-				const light = tether.querySelector<SVGGElement>(
+				const lights = tether.querySelectorAll<SVGGElement>(
 					'g.landing-hero-agent-light',
 				)
-				if (!line || !light) continue
-				const at = lightAt(agent, seconds)
-				if (!at) {
-					light.setAttribute('opacity', '0')
-					continue
-				}
+				if (!line || lights.length === 0) continue
 				const length = line.getTotalLength()
-				const point = line.getPointAtLength(at.progress * length)
-				light.setAttribute(
-					'transform',
-					`translate(${point.x} ${point.y}) scale(${at.scale})`,
-				)
-				light.setAttribute('opacity', String(at.opacity))
+				for (const light of lights) {
+					const direction = light.dataset.direction === 'out' ? 'out' : 'in'
+					const at = landingHeroLightAt(agent, seconds, direction)
+					if (!at) {
+						light.setAttribute('opacity', '0')
+						continue
+					}
+					const point = line.getPointAtLength(at.progress * length)
+					light.setAttribute(
+						'transform',
+						`translate(${point.x} ${point.y}) scale(${at.scale})`,
+					)
+					light.setAttribute('opacity', String(at.opacity))
+				}
 			}
 		}
 
@@ -170,106 +234,121 @@ function tetherFollow() {
 
 /** The SVG of every tether, drawn over Kody. Lights start hidden;
  *  `tetherFollow` places them. */
-function TetherLayer(_handle: Handle) {
-	return () => {
-		return (
-			<svg
-				class="landing-hero-agents-lines"
-				viewBox="0 0 100 100"
-				aria-hidden="true"
-				style={{
-					'--lantern-x': `${lantern.x}%`,
-					'--lantern-y': `${lantern.y}%`,
-				}}
-			>
-				<g class="landing-hero-agents-tethers">
-					{hostAgents.map((agent, index) => {
-						const d = tetherPath(agent.x, agent.y, lantern.x, lantern.y)
-						return (
+function renderTetherLayer(agents: ReadonlyArray<LandingHeroAgent>) {
+	return (
+		<svg
+			class="landing-hero-agents-lines"
+			viewBox="0 0 100 100"
+			aria-hidden="true"
+			style={{
+				'--lantern-x': `${lantern.x}%`,
+				'--lantern-y': `${lantern.y}%`,
+			}}
+		>
+			<g class="landing-hero-agents-tethers">
+				{agents.map((agent, index) => {
+					const d = tetherPath(agent.x, agent.y, lantern.x, lantern.y)
+					return (
+						<g
+							key={agent.label}
+							class="landing-hero-agent-tether"
+							data-agent={String(index)}
+						>
+							<path class="landing-hero-agent-glow" d={d} fill="none" />
+							<path class="landing-hero-agent-line" d={d} fill="none" />
 							<g
-								key={agent.label}
-								class="landing-hero-agent-tether"
-								data-agent={String(index)}
+								class="landing-hero-agent-light"
+								data-direction="in"
+								opacity="0"
 							>
-								<path class="landing-hero-agent-glow" d={d} fill="none" />
-								<path class="landing-hero-agent-line" d={d} fill="none" />
-								<g class="landing-hero-agent-light" opacity="0">
-									<circle class="landing-hero-agent-light-halo" r="2.4" />
-									<circle class="landing-hero-agent-light-core" r="0.85" />
-								</g>
+								<circle class="landing-hero-agent-light-halo" r="2.4" />
+								<circle class="landing-hero-agent-light-core" r="0.85" />
 							</g>
-						)
-					})}
-				</g>
-			</svg>
-		)
-	}
+							<g
+								class="landing-hero-agent-light"
+								data-direction="out"
+								opacity="0"
+							>
+								<circle class="landing-hero-agent-light-halo" r="2.4" />
+								<circle class="landing-hero-agent-light-core" r="0.85" />
+							</g>
+						</g>
+					)
+				})}
+			</g>
+		</svg>
+	)
 }
 
-export function LandingHeroAgents(_handle: Handle) {
-	return () => (
-		<figure
-			data-rise
-			style={{ '--rise': '1.2' }}
-			class="landing-hero-art landing-hero-agents"
-		>
-			<figcaption class="visually-hidden">
-				Kody the koala holding a warmly glowing lantern, with the agents it
-				plugs into floating around it, each connected to Kody.
-			</figcaption>
-			<div
-				class="landing-hero-agents-stage"
-				mix={[stageParallax(), tetherFollow()]}
+export function LandingHeroAgents(
+	handle: Handle<{ hosts?: WalkthroughHostPick }>,
+) {
+	return () => {
+		const agents = placeLandingHeroAgents(handle.props.hosts)
+		return (
+			<figure
+				data-rise
+				style={{ '--rise': '1.2' }}
+				class="landing-hero-art landing-hero-agents"
 			>
-				<img
-					src={heroBaseImage.src}
-					srcSet={heroBaseImage.srcSet}
-					sizes={heroBaseImage.sizes}
-					width={heroBaseImage.width}
-					height={heroBaseImage.height}
-					fetchPriority="high"
-					decoding="async"
-					data-depth="-0.06"
-					alt=""
-					class="landing-hero-agents-kody"
-				/>
+				<figcaption class="visually-hidden">
+					Kody the koala holding a warmly glowing lantern, with the agents it
+					plugs into floating around it, each connected to Kody.
+				</figcaption>
 				<div
-					class="landing-hero-agents-glow"
-					style={{ left: `${lantern.x}%`, top: `${lantern.y}%` }}
-					data-depth="-0.06"
-				></div>
-				<TetherLayer />
-				<ul
-					aria-label="Agents Kody plugs into"
-					class="landing-hero-agents-list"
+					class="landing-hero-agents-stage"
+					mix={[stageParallax(), tetherFollow(agents)]}
 				>
-					{hostAgents.map((agent) => (
-						<li
-							key={agent.label}
-							class="landing-hero-agent"
-							data-depth={tokenDepth}
-							style={{
-								'--x': `${agent.x}%`,
-								'--y': `${agent.y}%`,
-								'--dur': agent.dur,
-								'--del': agent.del,
-							}}
-						>
-							<span
-								class="landing-hero-agent-tile"
+					<img
+						src={heroBaseImage.src}
+						srcSet={heroBaseImage.srcSet}
+						sizes={heroBaseImage.sizes}
+						width={heroBaseImage.width}
+						height={heroBaseImage.height}
+						fetchPriority="high"
+						decoding="async"
+						data-depth="-0.06"
+						alt=""
+						class="landing-hero-agents-kody"
+					/>
+					<div
+						class="landing-hero-agents-glow"
+						style={{ left: `${lantern.x}%`, top: `${lantern.y}%` }}
+						data-depth="-0.06"
+					></div>
+					{renderTetherLayer(agents)}
+					<ul
+						aria-label="Agents Kody plugs into"
+						class="landing-hero-agents-list"
+					>
+						{agents.map((agent) => (
+							<li
+								key={agent.label}
+								class="landing-hero-agent"
+								data-depth={tokenDepth}
 								style={{
-									'--chip-icon': `url("/images/icons/${agent.icon}.svg")`,
+									'--x': `${agent.x}%`,
+									'--y': `${agent.y}%`,
+									'--dur': agent.dur,
+									'--del': agent.del,
 								}}
-								aria-hidden="true"
-							></span>
-							<span class="landing-hero-agent-name">{agent.label}</span>
-						</li>
-					))}
-				</ul>
-			</div>
-			<p class="landing-hero-agents-mcp">
-				Kody works with any agent that supports MCP
-			</p>
-		</figure>
-	)
+							>
+								<span
+									class="landing-hero-agent-tile"
+									style={{
+										'--chip-icon': `url("/images/icons/${agent.icon}.svg")`,
+									}}
+									aria-hidden="true"
+								></span>
+								<span class="landing-hero-agent-name">{agent.label}</span>
+							</li>
+						))}
+					</ul>
+				</div>
+				<p class="landing-hero-agents-mcp">
+					Kody works with any agent that supports MCP
+				</p>
+			</figure>
+		)
+	}
 }

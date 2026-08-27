@@ -326,6 +326,7 @@ const watchLoginMemory = {
 
 const askConversationId = '3k7n2p9q4r8w'
 const phoneConversationId = '5h8m2q7t1v4x'
+const notifyConversationId = '8w3k6n1p5r9t'
 const repoSessionId = 'rs_kody_bot_shipped'
 
 const addDailyJobSessionCode = `import { kody } from 'kody:runtime'
@@ -335,7 +336,7 @@ const dailyDigest = ${asEmbeddedTemplateLiteral(dailyDigestSource)}
 export default async function main() {
 	const session = await kody.repo_open_session({
 		target: { kind: 'package', kody_id: 'kody-bot-shipped' },
-		conversation_id: '${phoneConversationId}',
+		conversation_id: '${notifyConversationId}',
 	})
 	await kody.repo_write_file({
 		session_id: session.id,
@@ -390,7 +391,7 @@ const enableDailyJobSessionCode = `import { kody } from 'kody:runtime'
 export default async function main() {
 	const session = await kody.repo_open_session({
 		target: { kind: 'package', kody_id: 'kody-bot-shipped' },
-		conversation_id: '${phoneConversationId}',
+		conversation_id: '${notifyConversationId}',
 	})
 	await kody.repo_edit_files({
 		session_id: session.id,
@@ -492,7 +493,7 @@ For full detail on entity-backed hits, call \`search\` with \`entity: "{id}:{typ
 export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 	{
 		id: 'ask',
-		kicker: 'Example of a conversation you might have with your agent.',
+		kicker: '',
 		title: 'Ask once',
 		lines: [
 			{
@@ -756,8 +757,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 	{
 		id: 'invoke',
 		scene: 'phone',
-		kicker:
-			'Later, on your phone with a completely different Kody-connected agent',
+		kicker: 'Later, on your phone with a different agent.',
 		title: 'Ask again. Now safer, cheaper, and more reliable.',
 		lines: [
 			{
@@ -822,6 +822,14 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 				role: 'agent',
 				text: 'Nothing interesting has shipped.',
 			},
+		],
+	},
+	{
+		id: 'notify',
+		scene: 'phone',
+		kicker: 'Later still, with another Kody-connected agent.',
+		title: 'Ask to be notified.',
+		lines: [
 			{
 				role: 'user',
 				text: 'Update me when kody-bot does something.',
@@ -837,7 +845,7 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 					{
 						name: 'search',
 						summary: 'Find how to notify when the export has news',
-						note: 'Same phone conversation, new task. Search ranks the lifecycle guide, inbound webhooks, and package-owned jobs. The compact kody-bot memory one-liner can appear again.',
+						note: 'A new conversation and a new agent. Search ranks the lifecycle guide, inbound webhooks, and package-owned jobs. The compact kody-bot memory one-liner can appear again.',
 						inputs: [
 							{
 								name: 'query',
@@ -845,12 +853,11 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 								lang: 'json',
 								value: jsonInput('notify when github user ships'),
 							},
-							conversationIdInput(phoneConversationId),
 							memoryContextInput(notifyMemoryContext),
 						],
 						resultLang: 'md',
 						result: searchTextReturn({
-							conversationId: phoneConversationId,
+							conversationId: notifyConversationId,
 							body: notifySearchMarkdown,
 							memories: [watchLoginMemory],
 						}),
@@ -866,12 +873,12 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 								lang: 'ts',
 								value: loadLifecycleCode,
 							},
-							conversationIdInput(phoneConversationId),
+							conversationIdInput(notifyConversationId),
 							memoryContextInput(notifyMemoryContext),
 						],
 						resultLang: 'md',
 						result: executeTextReturn({
-							conversationId: phoneConversationId,
+							conversationId: notifyConversationId,
 							value: {
 								title: 'Durable package lifecycle guide',
 								body: '# Durable package lifecycle\n\nUse this guide to decide whether to reuse existing behavior, explore with `execute`, or create durable repo-backed package code. Use it before scheduling new package behavior.\n\n## Choose the smallest durable surface\n\n…',
@@ -899,12 +906,12 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 								lang: 'ts',
 								value: addDailyJobSessionCode,
 							},
-							conversationIdInput(phoneConversationId),
+							conversationIdInput(notifyConversationId),
 							memoryContextInput(notifyMemoryContext),
 						],
 						resultLang: 'md',
 						result: executeTextReturn({
-							conversationId: phoneConversationId,
+							conversationId: notifyConversationId,
 							value: repoSessionPublishReturn('c8e2b1a04f73'),
 						}),
 					},
@@ -919,12 +926,12 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 								lang: 'ts',
 								value: invokeDailyDigestCode,
 							},
-							conversationIdInput(phoneConversationId),
+							conversationIdInput(notifyConversationId),
 							memoryContextInput(notifyMemoryContext),
 						],
 						resultLang: 'md',
 						result: executeTextReturn({
-							conversationId: phoneConversationId,
+							conversationId: notifyConversationId,
 							value: { emailed: false },
 						}),
 					},
@@ -939,12 +946,12 @@ export const howKodyWorksTranscriptActs: Array<TranscriptAct> = [
 								lang: 'ts',
 								value: enableDailyJobSessionCode,
 							},
-							conversationIdInput(phoneConversationId),
+							conversationIdInput(notifyConversationId),
 							memoryContextInput(notifyMemoryContext),
 						],
 						resultLang: 'md',
 						result: executeTextReturn({
-							conversationId: phoneConversationId,
+							conversationId: notifyConversationId,
 							value: repoSessionPublishReturn('e1d9c70b3a26'),
 						}),
 					},

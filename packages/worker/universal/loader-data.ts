@@ -24,6 +24,7 @@ import {
 import { type CommunityListingSort } from '#universal/community-search.ts'
 import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
+import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -97,6 +98,8 @@ export type GuideDetailLoaderData = {
 	bodyFences?: Array<HighlightedCode>
 	/** Highlight tokens for interactive walkthrough snippets, keyed by snippet. */
 	walkthroughHighlights?: Record<string, HighlightedCode>
+	/** How Kody works only: SSR host pick so hydrate shows the same marks. */
+	walkthroughHosts?: WalkthroughHostPick
 }
 
 export type CommunityIndexGroup = {
@@ -1686,6 +1689,7 @@ export type AppLoaderData = {
 	accountUsage?: AccountUsageLoaderData
 	discord?: DiscordPageLoaderData
 	codeRuns?: CodeRunsLoaderData
+	walkthroughHosts?: WalkthroughHostPick
 }
 
 export type CodeRunsLoaderData = {

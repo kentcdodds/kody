@@ -6,6 +6,10 @@ import {
 	howKodyWorksPackageFiles,
 } from '#universal/how-kody-works-transcript.ts'
 import { collectGoogleOauthSnippets } from '#universal/google-oauth-transcript.ts'
+import {
+	isValidWalkthroughHostPick,
+	type WalkthroughHostPick,
+} from '#universal/walkthrough-hosts.ts'
 import { getGuideBySlug, listGuides } from '#worker/guides/catalog.ts'
 import {
 	createGuideDetailApiHandler,
@@ -198,6 +202,7 @@ test('interactive guide JSON includes walkthrough highlight tokens', async () =>
 			string,
 			{ plain: boolean; lines: Array<Array<{ style?: { color?: string } }>> }
 		>
+		walkthroughHosts?: WalkthroughHostPick
 	}
 	expect(howKodyWorksPayload.ok).toBe(true)
 	expect(received).toEqual(howKodyWorksSnippets)
@@ -211,6 +216,10 @@ test('interactive guide JSON includes walkthrough highlight tokens', async () =>
 		plain: false,
 		lines: [[{ style: { color: '#111' } }]],
 	})
+	expect(howKodyWorksPayload.walkthroughHosts).toBeDefined()
+	expect(
+		isValidWalkthroughHostPick(howKodyWorksPayload.walkthroughHosts!),
+	).toBe(true)
 
 	const googleOauthResponse = await callHandler(
 		createGuideDetailApiHandler(env) as never,
@@ -221,6 +230,7 @@ test('interactive guide JSON includes walkthrough highlight tokens', async () =>
 	)
 	const googleOauthPayload = (await googleOauthResponse.json()) as {
 		walkthroughHighlights?: Record<string, { plain: boolean }>
+		walkthroughHosts?: unknown
 	}
 	const googleOauthKeys = Object.keys(
 		googleOauthPayload.walkthroughHighlights ?? {},
@@ -233,6 +243,7 @@ test('interactive guide JSON includes walkthrough highlight tokens', async () =>
 			(key) => googleOauthPayload.walkthroughHighlights?.[key]?.plain === false,
 		),
 	).toBe(true)
+	expect(googleOauthPayload.walkthroughHosts).toBeUndefined()
 
 	const oauthResponse = await callHandler(
 		createGuideDetailApiHandler(env) as never,

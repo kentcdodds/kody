@@ -25,6 +25,7 @@ import {
 import { collectGoogleOauthSnippets } from '#universal/google-oauth-transcript.ts'
 import { collectHowKodyWorksSnippets } from '#universal/how-kody-works-transcript.ts'
 import { type GuideDetailLoaderData } from '#universal/loader-data.ts'
+import { pickWalkthroughHosts } from '#universal/walkthrough-hosts.ts'
 import { type Guide } from '#worker/guides/parse-frontmatter.ts'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
@@ -106,6 +107,9 @@ async function toGuideDetail(
 		body: guide.body,
 		bodyFences,
 		...(walkthroughHighlights ? { walkthroughHighlights } : {}),
+		...(guide.slug === 'how-kody-works'
+			? { walkthroughHosts: pickWalkthroughHosts() }
+			: {}),
 	}
 }
 
