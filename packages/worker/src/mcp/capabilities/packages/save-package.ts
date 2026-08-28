@@ -481,7 +481,7 @@ export const savePackageCapability = defineDomainCapability(
 				tags: saved.tags,
 				has_app: saved.hasApp,
 				hidden: saved.hidden,
-				locked_at: saved.lockedAt,
+				locked_at: saved.lockedAt ?? null,
 				source_id: saved.sourceId,
 				created_at: saved.createdAt,
 				updated_at: saved.updatedAt,
