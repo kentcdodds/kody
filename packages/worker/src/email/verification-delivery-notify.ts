@@ -52,26 +52,33 @@ export async function notifyAdminsOfVerificationDeliveryFailure(input: {
 			path: adminUsersPath,
 		})
 		if (isUserEmailVerificationFailedStatus(input.event.status)) {
-			await dispatchUserEmailVerificationFailedSubscriptionEvent({
-				env: input.env,
-				event: buildUserEmailVerificationFailedEvent({
-					user: {
-						id: user?.stable_user_id ?? String(input.event.userId),
-						username,
-						email,
-					},
-					status: input.event.status,
-					class: input.event.class,
-					adminUserUrl,
-					occurredAt: new Date().toISOString(),
-				}),
-				waitUntil: input.waitUntil,
-			}).catch((error) => {
-				console.warn(
-					'email-verification-failed-subscription-dispatch-failed',
-					error,
-				)
-			})
+			const dispatchPromise =
+				dispatchUserEmailVerificationFailedSubscriptionEvent({
+					env: input.env,
+					event: buildUserEmailVerificationFailedEvent({
+						user: {
+							id: user?.stable_user_id ?? String(input.event.userId),
+							username,
+							email,
+						},
+						status: input.event.status,
+						class: input.event.class,
+						adminUserUrl,
+						occurredAt: new Date().toISOString(),
+					}),
+					waitUntil: input.waitUntil,
+				}).catch((error) => {
+					console.warn(
+						'email-verification-failed-subscription-dispatch-failed',
+						error,
+					)
+				})
+			// Do not await fan-out: a slow or hung invoke must not delay or
+			// skip the existing all-admin Cloudflare mail. Queue retries skip
+			// this notify once alreadyTerminal is set.
+			if (input.waitUntil) {
+				input.waitUntil(dispatchPromise)
+			}
 		}
 
 		const systemDomain = getSystemEmailDomain(input.env)

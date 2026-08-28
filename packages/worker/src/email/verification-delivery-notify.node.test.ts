@@ -90,3 +90,49 @@ test('verification delivery notify fans the admin event and emails every admin',
 		}),
 	)
 })
+
+test('verification delivery notify emails admins without waiting for package fan-out', async () => {
+	mocks.sendCloudflareEmail.mockClear()
+	mocks.dispatchUserEmailVerificationFailedSubscriptionEvent.mockImplementationOnce(
+		() => new Promise(() => {}),
+	)
+	const first = vi.fn().mockResolvedValue({
+		username: 'ada',
+		email: 'ada@example.com',
+		stable_user_id: 'user-1',
+	})
+	const all = vi.fn().mockResolvedValue({
+		results: [{ email: 'me@kentcdodds.com', username: 'kent' }],
+	})
+	const waitUntil = vi.fn()
+	const prepare = vi.fn((sql: string) => {
+		if (sql.includes('stable_user_id')) {
+			return { bind: () => ({ first }) }
+		}
+		return { all }
+	})
+	const env = {
+		APP_DB: { prepare },
+		APP_BASE_URL: 'https://kody.codes',
+		BUNDLE_ARTIFACTS_KV: {},
+		CLOUDFLARE_ACCOUNT_ID: 'account',
+		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.com',
+		CLOUDFLARE_API_TOKEN: 'token',
+	} as unknown as Env
+
+	await notifyAdminsOfVerificationDeliveryFailure({
+		env,
+		event: {
+			userId: 9,
+			kind: 'email_verification',
+			recipient: 'ada@example.com',
+			status: 'bounced',
+			class: 'sender_block',
+			alreadyTerminal: false,
+		},
+		waitUntil,
+	})
+
+	expect(mocks.sendCloudflareEmail).toHaveBeenCalledOnce()
+	expect(waitUntil).toHaveBeenCalledWith(expect.any(Promise))
+})

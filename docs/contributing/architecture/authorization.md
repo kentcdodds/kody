@@ -411,8 +411,8 @@ content. Delivery is best-effort (no Queue) after the account change commits.
 bounce, failure, rejection, or complaint on a signup/verify send emails every
 admin account and fans `user.email_verification.failed` only to packages whose
 owners hold the admin role at dispatch time. The event contains the stable user
-id, username, email, delivery status, optional `sender_block` class, an
-`/admin/users/:stableUserId` URL, and the observed timestamp. It omits SMTP
+id, username, email, delivery status, `class` (`sender_block` / `other` /
+`null`), an `/admin/users/:stableUserId` URL, and `occurred_at`. It omits SMTP
 transcripts, tokens, and unrelated account content. Delivery is best-effort (no
 Queue) after the user row already carries the bounce.
 
