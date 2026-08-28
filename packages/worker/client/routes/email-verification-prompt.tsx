@@ -1,4 +1,8 @@
 import { css } from 'remix/ui'
+import {
+	describeEmailVerificationDelivery,
+	type EmailVerificationDelivery,
+} from '#universal/email-verification-delivery.ts'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { on } from '#client/event-mixin.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
@@ -69,6 +73,7 @@ type EmailVerificationPromptOptions = {
 	email?: string | null
 	title?: string
 	description: string
+	delivery?: EmailVerificationDelivery | null
 	resendStatus: 'idle' | 'sending'
 	resendMessage: string | null
 	resendTone?: 'error' | 'info'
@@ -87,6 +92,10 @@ export function renderEmailVerificationPrompt(
 	options: EmailVerificationPromptOptions,
 ) {
 	const title = options.title ?? 'Verify your email'
+	const delivery = describeEmailVerificationDelivery(options.delivery ?? null)
+	const promptTitle = delivery.headline ?? title
+	const promptDescription = delivery.detail ?? options.description
+	const canResend = delivery.canResend
 	const primaryButtonCss = getPrimaryButtonCss({
 		size: 'md',
 		weight: 'semibold',
@@ -101,12 +110,15 @@ export function renderEmailVerificationPrompt(
 			aria-label="Email verification status"
 			mix={css({
 				...cardCss,
-				borderColor: colors.primary,
-				backgroundColor: colors.primarySoftest,
+				borderColor: delivery.tone === 'error' ? colors.danger : colors.primary,
+				backgroundColor:
+					delivery.tone === 'error'
+						? 'color-mix(in srgb, var(--color-danger) 6%, transparent)'
+						: colors.primarySoftest,
 			})}
 		>
-			<h2 mix={css(cardTitleCss)}>{title}</h2>
-			<p mix={css(descriptionCss)}>{options.description}</p>
+			<h2 mix={css(cardTitleCss)}>{promptTitle}</h2>
+			<p mix={css(descriptionCss)}>{promptDescription}</p>
 			{options.email ? (
 				<p mix={css({ ...descriptionCss, margin: 0 })}>
 					Sent to <strong>{options.email}</strong>
@@ -122,12 +134,14 @@ export function renderEmailVerificationPrompt(
 			>
 				<button
 					type="button"
-					disabled={options.resendStatus === 'sending'}
+					disabled={!canResend || options.resendStatus === 'sending'}
 					mix={[css(primaryButtonCss), on('click', options.onResend)]}
 				>
 					{options.resendStatus === 'sending'
 						? 'Sending...'
-						: 'Resend verification email'}
+						: canResend
+							? 'Resend verification email'
+							: 'Resend unavailable'}
 				</button>
 				{options.continueLabel && options.onContinue ? (
 					<button

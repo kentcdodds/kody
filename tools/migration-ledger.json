@@ -111,6 +111,10 @@
 		{
 			"filename": "0027-mcp-server-logos.sql",
 			"sha256": "c48d9b5814af7a15900e5eb1cbabe4998b817ba988748f8b54d3ac1863c969fb"
+		},
+		{
+			"filename": "0028-email-verification-delivery.sql",
+			"sha256": "21eacbf3f12130e3f2ef4cccf8eee4cd723c8224e434e103f77bcf3de64ca25a"
 		}
 	]
 }

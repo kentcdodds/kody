@@ -2,6 +2,7 @@ import { processCloudflareEmailDeliveryEvent } from './delivery-events.ts'
 import { applyOutboundEmailAbusePause } from './outbound-abuse.ts'
 import { dispatchEmailDeliverySubscriptionEvents } from './package-subscriptions.ts'
 import { type EmailReportingEnv } from './reporting-events.ts'
+import { notifyAdminsOfVerificationDeliveryFailure } from './verification-delivery-notify.ts'
 
 const unmatchedRetryDelaySeconds = 30
 export const emailDeliveryQueueName = 'kody-email-delivery'
@@ -23,6 +24,27 @@ export async function handleEmailDeliveryQueue(
 				case 'invalid':
 					queueMessage.ack()
 					break
+				case 'recorded_transactional': {
+					const status = result.event.status
+					if (
+						!result.event.alreadyTerminal &&
+						(status === 'bounced' ||
+							status === 'failed' ||
+							status === 'rejected' ||
+							status === 'complained')
+					) {
+						console.warn('email-verification-delivery-failed', {
+							status,
+							class: result.event.class,
+						})
+						await notifyAdminsOfVerificationDeliveryFailure({
+							env,
+							event: result.event,
+						})
+					}
+					queueMessage.ack()
+					break
+				}
 				case 'unmatched':
 					console.warn('email-delivery-event-unmatched', {
 						queueMessageId: queueMessage.id,

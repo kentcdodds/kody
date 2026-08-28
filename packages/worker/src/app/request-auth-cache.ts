@@ -21,11 +21,16 @@ import { resolveDisplayName } from '#worker/identity/username.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { resolveUserStableId } from '#worker/user-id.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
+import {
+	parseEmailVerificationDelivery,
+	type EmailVerificationDelivery,
+} from '#universal/email-verification-delivery.ts'
 
 type ResolvedAuthUser = {
 	userId: number
 	email: string
 	emailVerified: boolean
+	emailVerificationDelivery: EmailVerificationDelivery | null
 	username: string
 	displayName: string
 	accountDeleting: boolean
@@ -117,6 +122,11 @@ async function resolveRequestAuth(
 			userId: userRecord.id,
 			email: userRecord.email,
 			emailVerified: Boolean(userRecord.email_verified_at),
+			emailVerificationDelivery: parseEmailVerificationDelivery({
+				status: userRecord.email_verification_delivery_status,
+				class: userRecord.email_verification_delivery_class,
+				at: userRecord.email_verification_delivery_at,
+			}),
 			username: userRecord.username,
 			displayName,
 			accountDeleting: Boolean(userRecord.deleting_at),

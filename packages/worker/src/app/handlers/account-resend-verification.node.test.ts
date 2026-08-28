@@ -17,7 +17,13 @@ const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
 type StatementMeta = { changes: number; last_row_id: number }
 
-function createResendTestDb(options: { emailVerifiedAt?: string | null } = {}) {
+function createResendTestDb(
+	options: {
+		emailVerifiedAt?: string | null
+		deliveryClass?: string | null
+		deliveryStatus?: string | null
+	} = {},
+) {
 	const user = {
 		id: 1,
 		email: 'resend-user@example.com',
@@ -63,6 +69,13 @@ function createResendTestDb(options: { emailVerifiedAt?: string | null } = {}) {
 				}
 			},
 			async first() {
+				if (normalized.includes('email_verification_delivery_status')) {
+					return {
+						email_verification_delivery_status: options.deliveryStatus ?? null,
+						email_verification_delivery_class: options.deliveryClass ?? null,
+						email_verification_delivery_at: null,
+					}
+				}
 				const result = await statement.all()
 				return result.results[0] ?? null
 			},
@@ -217,6 +230,33 @@ test('resend verification issues a fresh token for unverified accounts and rate-
 			category: 'auth',
 			action: 'email_verification_resend',
 			result: 'rate_limited',
+		}),
+	)
+})
+
+test('resend verification refuses a known sender-domain block without sending again', async () => {
+	const testDb = createResendTestDb({
+		emailVerifiedAt: null,
+		deliveryStatus: 'bounced',
+		deliveryClass: 'sender_block',
+	})
+	const handler = createAccountResendVerificationHandler(
+		createAppEnv(testDb.db),
+	)
+
+	const response = await runHandler(handler, await createResendRequest(session))
+	expect(response.status).toBe(409)
+	expect(await response.json()).toMatchObject({
+		ok: false,
+		code: 'sender_block',
+	})
+	expect(testDb.state.verificationInserts).toBe(0)
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'email_verification_resend',
+			result: 'failure',
+			reason: 'sender_block',
 		}),
 	)
 })

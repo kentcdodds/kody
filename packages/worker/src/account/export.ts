@@ -164,6 +164,7 @@ export type AccountExportManifest = {
 	}
 	excludedOperationalData: {
 		email_outbound_provider_index: string
+		transactional_email_delivery_index: string
 	}
 	excludedDurableObjects: Array<{
 		name: string
@@ -1606,6 +1607,8 @@ function buildManifest(input: {
 		excludedOperationalData: {
 			email_outbound_provider_index:
 				'Operational global provider→owner reverse lookup for outbound delivery webhooks. It is omitted from the D1 export payload; Mailbox messages retain provider ids, but this export does not claim or perform a fleet-wide rebuild.',
+			transactional_email_delivery_index:
+				'Operational Cloudflare message-id → user reverse lookup for signup/verify delivery webhooks. It is omitted from the D1 export payload; users.email_verification_delivery_* columns remain on the exported user row.',
 		},
 		excludedDurableObjects: getAccountExportExcludedDurableObjects(),
 		excludedD1Surfaces: getAccountExportExcludedD1Surfaces(),

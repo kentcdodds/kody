@@ -25,6 +25,7 @@ import { type CommunityListingSort } from '#universal/community-search.ts'
 import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
+import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -251,6 +252,8 @@ export type AdminUserListItem = {
 	stripeCustomerLinked: boolean
 	suspended_at: string | null
 	email_outbound_paused_at: string | null
+	email_verification_delivery: EmailVerificationDelivery | null
+	email_verification_delivery_detail: string | null
 	created_at: string
 	updated_at: string
 	roles: Array<RoleName>
@@ -278,6 +281,8 @@ export type AdminUsersLoaderData = {
  */
 export type AdminUsersMutationData = AdminUsersLoaderData & {
 	updatedUser: AdminUserListItem | null
+	verifyUrl?: string | null
+	verifyUrlExpiresAt?: number | null
 }
 
 export type AdminRoleListItem = {
@@ -796,6 +801,7 @@ export type AccountProfileLoaderData = {
 	ok: true
 	email: string
 	emailVerified: boolean
+	emailVerificationDelivery?: EmailVerificationDelivery | null
 	username: string
 	displayName: string
 	bio: string | null
@@ -897,6 +903,7 @@ export type AccountMcpOauthClientsLoaderData = {
 export type PendingVerificationLoaderData = {
 	ok: true
 	email: string
+	emailVerificationDelivery?: EmailVerificationDelivery | null
 }
 
 export type EmailVerificationLoaderData =

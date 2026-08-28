@@ -178,6 +178,27 @@ null until `GET /verify-email?token=...` succeeds. Seeded and test fixture
 accounts are created verified. Unverified accounts can sign in and see their
 status on `/account`.
 
+Verification mail is sent from `kody@<SYSTEM_EMAIL_DOMAIN>` through Cloudflare
+Email Sending. Provider accept is not delivery: the send stores
+`provider_message_id` in `transactional_email_delivery_index` and sets
+`users.email_verification_delivery_status` to `accepted`. Later Cloudflare
+lifecycle events (`delivered`, `bounced`, `failed`, `rejected`, `complained`)
+update that status. A Fastmail-style sender-domain/IP block (`RLR613`, `RLR813`,
+"blacklisted") is classified as `sender_block`. The pending-verification,
+account, and OAuth authorize UIs surface the bounce instead of staying silently
+pending, and `POST /account/resend-verification.json` refuses to retry into a
+known `sender_block`.
+
+Operators can unblock a stranded signup without a raw D1 write:
+
+- `admin_user_verify` (`mark_verified` or `mint_verify_url`) and the matching
+  `/admin/users` actions (`mark_email_verified`, `mint_verify_url`)
+- `mark_verified` sets `email_verified_at` (idempotent), clears outstanding
+  tokens, and clears the delivery fields
+- `mint_verify_url` returns a one-time `/verify-email?token=...` link so the
+  operator can send it over a path that is not `kody.codes`
+- both paths audit the actor and `target_stable_user_id`
+
 Unverified accounts can still use browser sessions (sign in, manage account,
 resend verification), but they must verify before MCP OAuth authorization or
 assistant features:

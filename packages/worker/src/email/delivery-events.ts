@@ -1,8 +1,10 @@
 import { z } from 'zod'
+import { recordDeliveryAlertEvent } from './delivery-alert-events.ts'
 import { type MailboxEnv } from './mailbox-client.ts'
 import { type EmailReportingEnv } from './reporting-events.ts'
 import { recordProviderEmailDeliveryEvent } from './service.ts'
 import { emailDeliveryStatusValues, type EmailDeliveryStatus } from './types.ts'
+import { recordTransactionalEmailDeliveryEvent } from './verification-delivery.ts'
 
 const cloudflareEmailDeliveryTypeValues = [
 	'cf.email.sending.message.delivered',
@@ -125,5 +127,40 @@ export async function processCloudflareEmailDeliveryEvent(input: {
 			metadata: providerEvent.metadata,
 		},
 	})
-	return { ...result, providerEvent }
+	if (result.outcome !== 'unmatched') {
+		return { ...result, providerEvent }
+	}
+
+	const transactional = await recordTransactionalEmailDeliveryEvent({
+		db: input.env.APP_DB,
+		providerMessageId: providerEvent.payload.messageId,
+		deliveryStatus: providerEvent.payload.delivery.status,
+		eventTimestamp: providerEvent.metadata.eventTimestamp,
+		smtpResponse: providerEvent.payload.delivery.smtpResponse,
+		smtpEnhancedStatusCode:
+			providerEvent.payload.delivery.smtpEnhancedStatusCode,
+	})
+	if (transactional.outcome !== 'recorded') {
+		return { ...result, providerEvent }
+	}
+
+	if (
+		providerEvent.payload.delivery.status === 'bounced' ||
+		providerEvent.payload.delivery.status === 'complained'
+	) {
+		await recordDeliveryAlertEvent({
+			db: input.env.APP_DB,
+			providerEventId: providerEvent.payload.eventId,
+			provider: 'cloudflare-email',
+			eventType: providerEvent.payload.delivery.status,
+			occurredAt: providerEvent.metadata.eventTimestamp,
+		})
+	}
+
+	return {
+		outcome: 'recorded_transactional' as const,
+		providerEvent,
+		event: transactional.event,
+		message: null,
+	}
 }

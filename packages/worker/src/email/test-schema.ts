@@ -5,6 +5,7 @@ export async function ensureEmailTestSchema(db: D1Database) {
 	// exercising email sends needs the entitlement tables too.
 	await ensureEntitlementTestSchema(db)
 	const statements = [
+		`DROP TABLE IF EXISTS transactional_email_delivery_index;`,
 		`DROP TABLE IF EXISTS email_delivery_alert_events;`,
 		`DROP TABLE IF EXISTS email_outbound_provider_index_repair_owners;`,
 		`DROP TABLE IF EXISTS email_inbound_due_owners;`,
@@ -213,6 +214,15 @@ WHERE direction = 'outbound' AND provider_message_id IS NOT NULL;`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_system_email_delivery_events_provider_event_id
 ON system_email_delivery_events(provider_event_id)
 WHERE provider_event_id IS NOT NULL;`,
+		`CREATE TABLE IF NOT EXISTS transactional_email_delivery_index (
+	provider_message_id TEXT PRIMARY KEY NOT NULL,
+	user_id INTEGER NOT NULL,
+	kind TEXT NOT NULL,
+	recipient TEXT NOT NULL,
+	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);`,
+		`CREATE INDEX IF NOT EXISTS idx_transactional_email_delivery_user_id
+ON transactional_email_delivery_index(user_id);`,
 		`CREATE TABLE IF NOT EXISTS email_outbound_provider_index (
 	provider TEXT NOT NULL,
 	provider_message_id TEXT NOT NULL,

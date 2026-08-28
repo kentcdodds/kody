@@ -18,6 +18,7 @@ import {
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
+import { acceptedEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
@@ -150,6 +151,8 @@ export function AccountRoute(handle: Handle) {
 	let resendTone: 'error' | 'info' = 'info'
 	let email = ''
 	let emailVerified = false
+	let emailVerificationDelivery: AccountProfileLoaderData['emailVerificationDelivery'] =
+		null
 	let username = ''
 	let draftUsername = ''
 	let draftDisplayName = ''
@@ -359,6 +362,7 @@ export function AccountRoute(handle: Handle) {
 			applyConnectionsPayload(connectionsPayload)
 			email = payload.email
 			emailVerified = payload.emailVerified
+			emailVerificationDelivery = payload.emailVerificationDelivery ?? null
 			username = payload.username
 			draftUsername = payload.username
 			applyProfileFields(payload)
@@ -547,6 +551,9 @@ export function AccountRoute(handle: Handle) {
 			}
 			resendTone = result.ok ? 'info' : 'error'
 			resendMessage = result.message
+			if (result.ok) {
+				emailVerificationDelivery = acceptedEmailVerificationDelivery()
+			}
 		} catch {
 			resendTone = 'error'
 			resendMessage = 'Unable to send the verification email.'
@@ -692,6 +699,7 @@ export function AccountRoute(handle: Handle) {
 			}
 			email = payload.email
 			emailVerified = payload.emailVerified
+			emailVerificationDelivery = payload.emailVerificationDelivery ?? null
 			username = payload.username
 			draftUsername = payload.username
 			applyProfileFields(payload)
@@ -730,6 +738,7 @@ export function AccountRoute(handle: Handle) {
 		if (!connectionsData) return false
 		email = routeData.email
 		emailVerified = routeData.emailVerified
+		emailVerificationDelivery = routeData.emailVerificationDelivery ?? null
 		username = routeData.username
 		draftUsername = routeData.username
 		applyProfileFields(routeData)
@@ -804,6 +813,7 @@ export function AccountRoute(handle: Handle) {
 							? renderEmailVerificationPrompt({
 									description:
 										'Check your inbox for the verification link. MCP access and email features stay locked until this account email is verified.',
+									delivery: emailVerificationDelivery,
 									resendStatus,
 									resendMessage,
 									resendTone,

@@ -17,7 +17,14 @@ import {
 	chunkArray,
 	maxD1BoundParameters,
 } from '@kody-internal/shared/chunk.ts'
+import {
+	parseEmailVerificationDelivery,
+	type EmailVerificationDelivery,
+} from '#universal/email-verification-delivery.ts'
 import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
+
+export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
+				email_outbound_paused_at, email_verification_delivery_status, email_verification_delivery_at, email_verification_delivery_detail, email_verification_delivery_class, created_at, updated_at`
 
 export const adminUserListItemFieldNames = [
 	'stableUserId',
@@ -32,6 +39,8 @@ export const adminUserListItemFieldNames = [
 	'stripeCustomerLinked',
 	'suspended_at',
 	'email_outbound_paused_at',
+	'email_verification_delivery',
+	'email_verification_delivery_detail',
 	'created_at',
 	'updated_at',
 	'roles',
@@ -53,6 +62,8 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 	stripeCustomerLinked: boolean
 	suspended_at: string | null
 	email_outbound_paused_at: string | null
+	email_verification_delivery: EmailVerificationDelivery | null
+	email_verification_delivery_detail: string | null
 	created_at: string
 	updated_at: string
 	roles: Array<RoleName>
@@ -169,8 +180,7 @@ export async function loadAdminUsersData(
 			.bind(...params)
 			.first<{ total: number }>(),
 		env.APP_DB.prepare(
-			`SELECT id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
-				email_outbound_paused_at, created_at, updated_at
+			`SELECT ${adminUserRowSelectSql}
 			 FROM users
 			 ${whereClause}
 			 ORDER BY id ASC
@@ -222,8 +232,7 @@ export async function loadAdminUserByTarget(
 	const userRow = stableUserId
 		? await db
 				.prepare(
-					`SELECT id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
-						email_outbound_paused_at, created_at, updated_at
+					`SELECT ${adminUserRowSelectSql}
 					 FROM users
 					 WHERE stable_user_id = ?`,
 				)
@@ -232,8 +241,7 @@ export async function loadAdminUserByTarget(
 		: email
 			? await db
 					.prepare(
-						`SELECT id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
-							email_outbound_paused_at, created_at, updated_at
+						`SELECT ${adminUserRowSelectSql}
 						 FROM users
 						 WHERE email = ? COLLATE NOCASE`,
 					)
@@ -242,8 +250,7 @@ export async function loadAdminUserByTarget(
 			: username
 				? await db
 						.prepare(
-							`SELECT id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
-								email_outbound_paused_at, created_at, updated_at
+							`SELECT ${adminUserRowSelectSql}
 							 FROM users
 							 WHERE username = ? COLLATE NOCASE`,
 						)
@@ -372,6 +379,10 @@ type AdminUserRow = {
 	stripe_customer_id: string | null
 	suspended_at: string | null
 	email_outbound_paused_at: string | null
+	email_verification_delivery_status: string | null
+	email_verification_delivery_at: string | null
+	email_verification_delivery_detail: string | null
+	email_verification_delivery_class: string | null
 	created_at: string
 	updated_at: string
 }
@@ -395,6 +406,13 @@ function toAdminUserListItem(
 		stripeCustomerLinked: Boolean(row.stripe_customer_id),
 		suspended_at: row.suspended_at,
 		email_outbound_paused_at: row.email_outbound_paused_at,
+		email_verification_delivery: parseEmailVerificationDelivery({
+			status: row.email_verification_delivery_status,
+			class: row.email_verification_delivery_class,
+			at: row.email_verification_delivery_at,
+		}),
+		email_verification_delivery_detail:
+			row.email_verification_delivery_detail ?? null,
 		created_at: row.created_at,
 		updated_at: row.updated_at,
 		roles,
@@ -408,8 +426,7 @@ export async function loadAdminUserRowByStableUserId(
 	if (!isStableUserId(stableUserId)) return null
 	return await db
 		.prepare(
-			`SELECT id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
-				email_outbound_paused_at, created_at, updated_at
+			`SELECT ${adminUserRowSelectSql}
 			 FROM users
 			 WHERE stable_user_id = ?`,
 		)

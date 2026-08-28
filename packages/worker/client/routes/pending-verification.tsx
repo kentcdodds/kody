@@ -28,6 +28,10 @@ import { fetchSessionInfo } from '#client/session.ts'
 import { colors } from '#universal/styles/tokens.ts'
 import { layoutMaxWidths } from '#universal/styles/style-primitives.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
+import {
+	acceptedEmailVerificationDelivery,
+	type EmailVerificationDelivery,
+} from '#universal/email-verification-delivery.ts'
 import { type PendingVerificationLoaderData } from '#universal/loader-data.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
 
@@ -65,21 +69,28 @@ export async function pendingVerificationRouteLoader(
 		)
 	}
 	return {
-		pendingVerification: { ok: true, email: session.email },
+		pendingVerification: {
+			ok: true,
+			email: session.email,
+			emailVerificationDelivery: session.emailVerificationDelivery,
+		},
 	}
 }
 
 export function PendingVerificationRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let email = ''
+	let emailVerificationDelivery: EmailVerificationDelivery | null = null
 	let message: string | null = null
 	let resendStatus: 'idle' | 'sending' = 'idle'
 	let resendMessage: string | null = null
 	let resendTone: 'error' | 'info' = 'info'
 	const loadLatch = createRouteLoadLatch()
+	let deliveryPollScheduled = false
 
 	function applyPayload(payload: PendingVerificationLoaderData) {
 		email = payload.email
+		emailVerificationDelivery = payload.emailVerificationDelivery ?? null
 		status = 'ready'
 		message = null
 	}
@@ -99,7 +110,11 @@ export function PendingVerificationRoute(handle: Handle) {
 				)
 				return
 			}
-			applyPayload({ ok: true, email: session.email })
+			applyPayload({
+				ok: true,
+				email: session.email,
+				emailVerificationDelivery: session.emailVerificationDelivery,
+			})
 			loadLatch.markLoaded(href)
 			handle.update()
 		} catch (error) {
@@ -110,6 +125,29 @@ export function PendingVerificationRoute(handle: Handle) {
 					? error.message
 					: 'Unable to load verification status.'
 			loadLatch.markFailed(href)
+			handle.update()
+		}
+	}
+
+	async function pollVerificationDelivery() {
+		deliveryPollScheduled = false
+		try {
+			const session = await fetchSessionInfo()
+			if (!session) {
+				handle.update()
+				return
+			}
+			if (session.emailVerified) {
+				window.location.assign(
+					resolvePostVerificationRedirect(readPendingRedirectTo(handle)),
+				)
+				return
+			}
+			emailVerificationDelivery = session.emailVerificationDelivery
+			deliveryPollScheduled = false
+			handle.update()
+		} catch {
+			deliveryPollScheduled = false
 			handle.update()
 		}
 	}
@@ -129,6 +167,9 @@ export function PendingVerificationRoute(handle: Handle) {
 			}
 			resendTone = result.ok ? 'info' : 'error'
 			resendMessage = result.message
+			if (result.ok) {
+				emailVerificationDelivery = acceptedEmailVerificationDelivery()
+			}
 		} catch {
 			resendTone = 'error'
 			resendMessage = 'Unable to resend the verification email.'
@@ -183,6 +224,18 @@ export function PendingVerificationRoute(handle: Handle) {
 		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadPending)
 		}
+		if (
+			status === 'ready' &&
+			!deliveryPollScheduled &&
+			typeof document !== 'undefined'
+		) {
+			deliveryPollScheduled = true
+			handle.queueTask(() => {
+				window.setTimeout(() => {
+					void pollVerificationDelivery()
+				}, 15_000)
+			})
+		}
 
 		return (
 			<AccountManagementShell maxWidth={layoutMaxWidths.content}>
@@ -207,6 +260,7 @@ export function PendingVerificationRoute(handle: Handle) {
 							email,
 							description:
 								'We sent a verification link to your inbox. MCP access stays locked until you verify. Keep this browser signed in so you can resend the email or continue once the link works.',
+							delivery: emailVerificationDelivery,
 							resendStatus,
 							resendMessage,
 							resendTone,

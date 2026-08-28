@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/ui'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { replaceLocation } from '#client/replace-location.ts'
@@ -52,6 +53,7 @@ import {
 	type AdminUsersMutationData,
 	type AdminUserUsageLoaderData,
 } from '#universal/loader-data.ts'
+import { describeEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -189,7 +191,11 @@ export function AdminUsersRoute(handle: Handle) {
 		| 'assigning'
 		| 'removing'
 		| 'saving-plan'
-		| 'moderating' = 'idle'
+		| 'moderating'
+		| 'verifying' = 'idle'
+	let mintedVerifyUrl: string | null = null
+	let mintedVerifyUrlForStableUserId: string | null = null
+	const markVerifiedCheck = createDoubleCheck(handle)
 	let selectedRoleToAssign = 'user' as RoleName
 	// Draft follows the selected user (see the render body) until the admin
 	// edits it. Null stored plan values are shown/saved as `free`.
@@ -568,6 +574,63 @@ export function AdminUsersRoute(handle: Handle) {
 		}
 	}
 
+	async function submitVerificationAction(
+		action: 'mark_email_verified' | 'mint_verify_url',
+	) {
+		const href = getCurrentHref()
+		const selectedUser = resolveSelectedUser(href)
+		if (!selectedUser || actionState !== 'idle') return
+		actionState = 'verifying'
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(buildAdminUsersApiRequestUrl(href), {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action,
+					stableUserId: selectedUser.stableUserId,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AdminUsersMutationData & { ok?: boolean; error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to update verification.')
+			}
+			applyMutationPayload(payload, href)
+			lastLoadedDataKey = getDataKey(href)
+			if (action === 'mint_verify_url' && payload.verifyUrl) {
+				mintedVerifyUrl = payload.verifyUrl
+				mintedVerifyUrlForStableUserId = selectedUser.stableUserId
+				message =
+					'Minted a one-time verify link. Send it over a path that is not kody.codes.'
+			} else {
+				mintedVerifyUrl = null
+				mintedVerifyUrlForStableUserId = null
+				message = 'Marked email verified.'
+			}
+			status = 'ready'
+			actionState = 'idle'
+			handle.update()
+		} catch (error) {
+			actionState = 'idle'
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to update verification.'
+			handle.update()
+		}
+	}
+
 	async function submitModerationAction(
 		action: 'suspend_user' | 'unsuspend_user' | 'resume_email_outbound',
 	) {
@@ -831,6 +894,18 @@ export function AdminUsersRoute(handle: Handle) {
 												: 'No',
 										},
 										{
+											label: 'Verification mail',
+											value: selectedUser.email_verification_delivery
+												? [
+														selectedUser.email_verification_delivery.status,
+														selectedUser.email_verification_delivery.class,
+														selectedUser.email_verification_delivery_detail,
+													]
+														.filter(Boolean)
+														.join(' · ')
+												: 'Not tracked',
+										},
+										{
 											label: 'Stable user id',
 											value: (
 												<IdValue
@@ -954,6 +1029,98 @@ export function AdminUsersRoute(handle: Handle) {
 										</button>
 									</div>
 								</AccountManagementPanel>
+								{!selectedUser.email_verified ? (
+									<AccountManagementPanel
+										title="Email verification"
+										description="Mark verified after the person proves they own the address (for example they mailed kody@ from it), or mint a one-time link to send over a path that is not kody.codes."
+									>
+										{selectedUser.email_verification_delivery ? (
+											<p
+												mix={css({
+													margin: 0,
+													color:
+														describeEmailVerificationDelivery(
+															selectedUser.email_verification_delivery,
+														).tone === 'error'
+															? colors.error
+															: colors.textMuted,
+												})}
+											>
+												{describeEmailVerificationDelivery(
+													selectedUser.email_verification_delivery,
+												).headline ??
+													selectedUser.email_verification_delivery.status}
+												{selectedUser.email_verification_delivery_detail
+													? ` — ${selectedUser.email_verification_delivery_detail}`
+													: ''}
+											</p>
+										) : null}
+										<div
+											mix={css({
+												display: 'flex',
+												gap: spacing.md,
+												flexWrap: 'wrap',
+											})}
+										>
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													...markVerifiedCheck.getButtonMix({
+														on: {
+															click: () =>
+																void submitVerificationAction(
+																	'mark_email_verified',
+																),
+														},
+													}),
+													css(primaryButtonCss),
+												]}
+											>
+												{actionState === 'verifying'
+													? 'Working…'
+													: markVerifiedCheck.doubleCheck
+														? 'Confirm mark verified'
+														: 'Mark email verified'}
+											</button>
+											<button
+												type="button"
+												disabled={isMutating}
+												mix={[
+													on(
+														'click',
+														() =>
+															void submitVerificationAction('mint_verify_url'),
+													),
+													css(secondaryButtonCss),
+												]}
+											>
+												{actionState === 'verifying'
+													? 'Working…'
+													: 'Mint verify link'}
+											</button>
+										</div>
+										{mintedVerifyUrl &&
+										mintedVerifyUrlForStableUserId ===
+											selectedUser.stableUserId ? (
+											<label mix={css(fieldCss)}>
+												<span mix={css(fieldLabelCss)}>
+													One-time verify URL
+												</span>
+												<input
+													data-field-ring
+													readOnly
+													value={mintedVerifyUrl}
+													aria-label="One-time verify URL"
+													mix={css({
+														width: '100%',
+														fontFamily: typography.fontFamilyMono,
+													})}
+												/>
+											</label>
+										) : null}
+									</AccountManagementPanel>
+								) : null}
 								<AccountManagementPanel
 									title="Manage plan"
 									description="Sets the admin grant (users.plan). Ordinary Stripe subscribers keep this as free; their paid tier lives on the subscription plan. The effective plan is the higher of the two."

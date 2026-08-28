@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 	processCloudflareEmailDeliveryEvent: vi.fn(),
 	applyOutboundEmailAbusePause: vi.fn(),
 	dispatchEmailDeliverySubscriptionEvents: vi.fn(),
+	notifyAdminsOfVerificationDeliveryFailure: vi.fn(),
 }))
 
 vi.mock('./delivery-events.ts', () => ({
@@ -22,6 +23,11 @@ vi.mock('./outbound-abuse.ts', () => ({
 vi.mock('./package-subscriptions.ts', () => ({
 	dispatchEmailDeliverySubscriptionEvents:
 		mocks.dispatchEmailDeliverySubscriptionEvents,
+}))
+
+vi.mock('./verification-delivery-notify.ts', () => ({
+	notifyAdminsOfVerificationDeliveryFailure:
+		mocks.notifyAdminsOfVerificationDeliveryFailure,
 }))
 
 const { handleEmailDeliveryQueue } = await import('./delivery-queue.ts')
@@ -45,6 +51,9 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 	const invalid = createQueueMessage('queue-invalid', { kind: 'invalid' })
 	const stale = createQueueMessage('queue-stale', { kind: 'stale' })
 	const unmatched = createQueueMessage('queue-unmatched', { kind: 'unmatched' })
+	const transactional = createQueueMessage('queue-transactional', {
+		kind: 'recorded_transactional',
+	})
 	const dispatchFailure = createQueueMessage('queue-dispatch-failure', {
 		kind: 'dispatch-failure',
 	})
@@ -83,6 +92,19 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 			message: null,
 		})
 		.mockResolvedValueOnce({
+			outcome: 'recorded_transactional',
+			providerEvent,
+			event: {
+				userId: 9,
+				kind: 'email_verification',
+				recipient: 'blocked@example.com',
+				status: 'bounced',
+				class: 'sender_block',
+				alreadyTerminal: false,
+			},
+			message: null,
+		})
+		.mockResolvedValueOnce({
 			outcome: 'recorded',
 			providerEvent,
 			message: storedMessage,
@@ -110,6 +132,7 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 				invalid,
 				stale,
 				unmatched,
+				transactional,
 				dispatchFailure,
 			],
 			ackAll() {},
@@ -124,6 +147,14 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 	expect(invalid.ack).toHaveBeenCalledOnce()
 	expect(stale.ack).toHaveBeenCalledOnce()
 	expect(unmatched.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
+	expect(transactional.ack).toHaveBeenCalledOnce()
+	expect(mocks.notifyAdminsOfVerificationDeliveryFailure).toHaveBeenCalledWith({
+		env: expect.anything(),
+		event: expect.objectContaining({
+			status: 'bounced',
+			class: 'sender_block',
+		}),
+	})
 	expect(dispatchFailure.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
 	expect(mocks.dispatchEmailDeliverySubscriptionEvents).toHaveBeenCalledTimes(3)
 	expect(waitUntilPromises).toHaveLength(0)

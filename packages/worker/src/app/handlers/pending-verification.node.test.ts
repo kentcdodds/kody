@@ -112,6 +112,7 @@ test('pending verification requires a live session, preserves redirectTo after v
 			pendingVerification: {
 				ok: true,
 				email: 'pending@example.com',
+				emailVerificationDelivery: null,
 			},
 		},
 	})

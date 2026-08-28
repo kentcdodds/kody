@@ -48,6 +48,7 @@ test('email verification redirect helpers preserve safe targets and reject open 
 	const unverifiedUser: SessionInfo = {
 		email: 'user@example.com',
 		emailVerified: false,
+		emailVerificationDelivery: null,
 		username: 'account-user',
 		roles: ['user'],
 		permissions: [],

@@ -30,6 +30,7 @@ export function buildAccountProfilePayload(
 		ok: true,
 		email: user.email,
 		emailVerified: user.emailVerified,
+		emailVerificationDelivery: user.emailVerificationDelivery ?? null,
 		username: user.username,
 		// Prefer an explicit community display name; otherwise fall back to the
 		// auth display name (username) so existing username-only clients keep a
