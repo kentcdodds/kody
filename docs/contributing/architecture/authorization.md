@@ -257,11 +257,14 @@ role. User-approved platform feedback is a narrow user-content exception.
 
 **For account administration, admins can see only** user id, username, email,
 email-verification state (including the latest verification-mail delivery
-outcome), entitlement plan, `created_at`, `updated_at`, and role assignments.
-The plan is account metadata (it drives quota enforcement), not user content,
-and admins can change it via `/admin/users` or the `admin_user_update` MCP
-capability. Admins can mark an account email verified or mint a one-time verify
-URL via `/admin/users` or `admin_user_verify`.
+outcome), entitlement plan, first-touch marketing attribution fields when
+present, activation first-seen timestamps (email verified, first MCP connection,
+first execute, first saved package), MCP client name when known, last-active
+stamps, `created_at`, `updated_at`, and role assignments. The plan is account
+metadata (it drives quota enforcement), not user content, and admins can change
+it via `/admin/users` or the `admin_user_update` MCP capability. Admins can mark
+an account email verified or mint a one-time verify URL via `/admin/users` or
+`admin_user_verify`.
 
 **Admins can see and triage user-approved platform feedback.** The submit
 capability requires `user_confirmed: true` and accepts submissions only from an
@@ -443,9 +446,11 @@ This boundary is enforced structurally:
    fan-out.
 5. **A shape test pins the admin users API payload.**
    `adminUserListItemFieldNames` in `admin-users.ts` defines the allowed fields
-   (`id`, `username`, `email`, `email_verified`, `email_verified_at`, `plan`,
-   verification-mail delivery fields, `created_at`, `updated_at`, `roles`). The
-   unit test in `admin-users.node.test.ts` asserts every user object in the list
+   (`stableUserId`, `username`, `email`, `email_verified`, `email_verified_at`,
+   plan fields, suspension / outbound-pause stamps, verification-mail delivery
+   fields, first-touch UTM and landing fields, activation and last-active
+   stamps, `mcp_client_name`, `created_at`, `updated_at`, `roles`). The unit
+   test in `admin-users.node.test.ts` asserts every user object in the list
    response has exactly those keys — an accidental widening fails
    `npm run validate`.
 6. **Existing owner-only paths take no admin bypass.** Secret reveal remains
