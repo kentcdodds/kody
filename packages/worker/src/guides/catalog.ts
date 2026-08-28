@@ -1,3 +1,4 @@
+import { sortGuidesByAuthoredOrder } from './guide-order.ts'
 import { parseGuideMarkdown, type Guide } from './parse-frontmatter.ts'
 import {
 	rewriteRelativeGuideLinks,
@@ -89,7 +90,7 @@ function buildCatalog(): ReadonlyArray<Guide> {
 	// Authored bodies keep GitHub-relative links; the bundled copies rewrite
 	// them so every serving surface gets resolvable targets.
 	const knownSlugs = new Set(parsed.map((guide) => guide.slug))
-	return parsed.map((guide) => {
+	const rewritten = parsed.map((guide) => {
 		const sourceDir: GuideSourceDir =
 			guide.category === 'provider' ? 'docs/guides/providers' : 'docs/guides'
 		return {
@@ -101,6 +102,11 @@ function buildCatalog(): ReadonlyArray<Guide> {
 			}),
 		}
 	})
+	// `guideSources` above is already written in authored order, but sorting
+	// through the shared `guide-order.ts` helper (rather than relying on that
+	// literal array order) makes the order an explicit, enforced invariant
+	// shared with the generated catalog modules — see guide-order.ts.
+	return sortGuidesByAuthoredOrder(rewritten)
 }
 
 export const guides: ReadonlyArray<Guide> = buildCatalog()

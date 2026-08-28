@@ -1,0 +1,33 @@
+import { guideMetadata } from './generated/guide-metadata.mjs'
+import { type Guide, type GuideMetadata } from './guides/guide-types.ts'
+
+/**
+ * Lazy access to the full guide catalog, generated from `docs/guides/` by
+ * `tools/build-guide-catalog-modules.ts` into `./generated/` (gitignored).
+ *
+ * `guideMetadataList` is small (frontmatter only, no bodies) and safe to
+ * statically import: it costs no per-guide parsing at runtime and adds
+ * negligible size to whichever Worker registers `coding_guide_get`.
+ *
+ * `importGuideCatalog()` returns the full parsed catalog (bodies included).
+ * An ordinary dynamic `import()` of an in-repo module — e.g. one that walked
+ * the same markdown/TS import graph as `#worker/guides/catalog.ts` — still
+ * gets bundled into the single main worker script by Wrangler, so V8 must
+ * parse and link that extra code on every isolate cold start even though its
+ * *execution* stays deferred until the `import()` call runs. The generated
+ * `./generated/guide-catalog.mjs` file instead matches the `generated/*.mjs`
+ * `find_additional_modules` rule in `wrangler.jsonc`, so Wrangler uploads it
+ * as a separate external module: it is excluded from the main script
+ * entirely and only fetched, parsed, and evaluated when a request actually
+ * calls the `coding_guide_get` handler. Merely registering the capability
+ * does not add guide-catalog parse/link cost to the main module's cold
+ * start.
+ */
+
+export const guideMetadataList: ReadonlyArray<GuideMetadata> = guideMetadata
+
+export function importGuideCatalog(): Promise<{
+	guides: ReadonlyArray<Guide>
+}> {
+	return import('./generated/guide-catalog.mjs')
+}
