@@ -1,5 +1,4 @@
 import { cachified } from '@epic-web/cachified'
-import { Resvg } from '@resvg/resvg-wasm'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import {
 	AccountDeletionInProgressError,
@@ -10,7 +9,6 @@ import {
 	createKvCachifiedCache,
 	derivedCacheKeyPrefix,
 } from '#worker/kv-cachified.ts'
-import { ensureResvgWasmReady } from '#worker/og/resvg-wasm-init.ts'
 import { readFirstArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
@@ -461,6 +459,13 @@ function assertSafeCommunitySvg(source: string) {
 }
 
 async function renderCommunitySvgIcon(source: string) {
+	// SVG icons are uncommon. Keep Resvg's WASM glue and module-scope setup
+	// outside the startup path of every Worker that imports the community
+	// capability graph.
+	const [{ Resvg }, { ensureResvgWasmReady }] = await Promise.all([
+		import('@resvg/resvg-wasm'),
+		import('#worker/og/resvg-wasm-init.ts'),
+	])
 	await ensureResvgWasmReady()
 	const resvg = new Resvg(source, {
 		fitTo: { mode: 'width', value: communityIconOutputSize },
