@@ -157,6 +157,10 @@ async function buildStampContent(filePaths: ReadonlyArray<string>) {
 		path.join(repoRoot, 'packages/worker/src/guides/rewrite-relative-links.ts'),
 		'utf8',
 	)
+	const guideOrderSource = await readFile(
+		path.join(repoRoot, 'packages/worker/src/guides/guide-order.ts'),
+		'utf8',
+	)
 	const guideFileContents = await Promise.all(
 		filePaths.map(async (filePath) => ({
 			filePath: path.relative(repoRoot, filePath),
@@ -167,6 +171,7 @@ async function buildStampContent(filePaths: ReadonlyArray<string>) {
 		.update(generatorSource)
 		.update(parseFrontmatterSource)
 		.update(rewriteLinksSource)
+		.update(guideOrderSource)
 		.update(JSON.stringify(guideFileContents))
 		.digest('hex')
 	return JSON.stringify({ hash }, null, '\t')

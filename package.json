@@ -77,6 +77,7 @@
     "test:workers": "nx run worker:test-workers",
     "test:push": "CI=1 npm run test:node && CI=1 npm run test:workers",
     "inspect": "npx -y @mcpjam/inspector inspector",
+    "prevalidate": "node tools/build-worker-bundler-modules.ts && node tools/build-guide-catalog-modules.ts",
     "validate": "concurrently -n format,lint,typecheck,test-node,test-workers,e2e,mcp,backup-build,status-build,nx-cache-build,jobs-build,highlight-build,runtime-build,platform-build,main-build,startup-bundles,primitives,migrations,deploy-guardrails,origin-production-exports,docs-temporal,docs-decisions -c green,yellow,magenta,blue,cyan,red,blueBright,yellowBright,cyanBright,cyan,white,gray,redBright,greenBright,magentaBright,blue,whiteBright,black,white,gray,white,cyan \"npm run format:check\" \"npm run lint\" \"npm run typecheck\" \"CI=1 npm run test:node\" \"CI=1 npm run test:workers\" \"CI=1 npm run test:e2e:run\" \"CI=1 npm run test:mcp\" \"npm run backup:build\" \"npm run status:build\" \"npm run nx-cache:build\" \"npm run jobs:build\" \"npm run highlight:build\" \"npm run runtime:build\" \"npm run platform:build\" \"npm run main:build\" \"npm run worker-startup-bundles:check\" \"npm run primitives:check\" \"npm run migrations:check\" \"npm run deploy-guardrails:check\" \"npm run origin-production-exports:check\" \"npm run docs:check-temporal\" \"npm run docs:check-decisions\"",
     "validate:fix": "npm run format && npm run lint:fix",
     "test:e2e:ensure": "node tools/ensure-playwright-browser.ts",
