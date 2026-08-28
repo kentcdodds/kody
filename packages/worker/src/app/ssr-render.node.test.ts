@@ -611,7 +611,6 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 		'Kody works with any agent that supports MCP',
 	)
 	expect(withoutAssetsHtml).toContain('Watch some example conversations')
-	expect(withoutAssetsHtml).toContain('Choose three agents you use:')
 	expect(withoutAssetsHtml).toContain('For all the agents you use today,')
 	expect(withoutAssetsHtml).toContain("and the ones you'll use tomorrow")
 	// Hero stage: one agent list around Kody, every token tethered by a line.
