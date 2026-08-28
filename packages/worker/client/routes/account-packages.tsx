@@ -165,33 +165,42 @@ export function AccountPackagesRoute(handle: Handle) {
 
 	async function postPackageLockAction(action: 'lock' | 'unlock') {
 		if (!selectedPackage) return
+		const href = getCurrentHref()
 		lockBusy = true
 		message = null
 		handle.update()
-		const response = await fetch(accountPackagesApiPath, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			credentials: 'include',
-			body: JSON.stringify({
-				action,
-				packageId: selectedPackage.id,
-			}),
-		})
-		const payload = await readJson<
-			AccountPackagesLoaderData & { error?: string }
-		>(response)
-		lockBusy = false
-		if (!response.ok || !payload?.ok) {
-			message = payload?.error ?? 'Could not update the publish lock.'
-			handle.update()
-			return
+		try {
+			const response = await fetch(buildPackagesApiRequestUrl(href), {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action,
+					packageId: selectedPackage.id,
+				}),
+			})
+			const payload = await readJson<
+				AccountPackagesLoaderData & { error?: string }
+			>(response)
+			if (getCurrentHref() !== href) return
+			if (!response.ok || !payload?.ok) {
+				message = payload?.error ?? 'Could not update the publish lock.'
+				return
+			}
+			applyPayload(payload, href)
+			unlockCheck.reset()
+		} catch {
+			if (getCurrentHref() !== href) return
+			message = 'Could not update the publish lock.'
+		} finally {
+			lockBusy = false
+			if (getCurrentHref() === href) {
+				handle.update()
+			}
 		}
-		applyPayload(payload, getCurrentHref())
-		unlockCheck.reset()
-		handle.update()
 	}
 
 	function getCurrentSearch() {

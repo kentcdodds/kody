@@ -250,7 +250,7 @@ export async function publishFromExternalRef(input: {
 			return {
 				status: 'locked',
 				previous_commit: source.published_commit,
-				published_commit: input.newCommit,
+				pending_commit: input.newCommit,
 				message: error.message,
 				packageId: lockedPackage.id,
 				packageName: lockedPackage.name,

@@ -642,17 +642,17 @@ publish checks run.
    before recording the new published version, writing the published source
    snapshot, rebuilding package bundle artifacts, and refreshing search
    projections. If the pushed HEAD is already current, the tool returns
-   `already_published`. If the package is locked, it returns `locked` with an
-   `approval_url` after checks pass and leaves `published_commit` unchanged. If
-   checks fail, it returns `checks_failed` with the failed check entries and
-   leaves the underlying storage state unchanged. Successful `published`
-   responses, and `already_published` responses when the metadata is available,
-   include a bounded `static_dependents` summary of direct saved packages whose
-   published bundle artifacts statically reference this package. Stale entries
-   mean the dependent bundle captured a dependency commit that differs from the
-   current published commit. Kody does not automatically republish those
-   dependents; inspect and republish only the ones whose static snapshot should
-   reference the current published commit.
+   `already_published`. If the package is locked, it returns `locked` with a
+   `pending_commit` and `approval_url` after checks pass and leaves
+   `published_commit` unchanged. If checks fail, it returns `checks_failed` with
+   the failed check entries and leaves the underlying storage state unchanged.
+   Successful `published` responses, and `already_published` responses when the
+   metadata is available, include a bounded `static_dependents` summary of
+   direct saved packages whose published bundle artifacts statically reference
+   this package. Stale entries mean the dependent bundle captured a dependency
+   commit that differs from the current published commit. Kody does not
+   automatically republish those dependents; inspect and republish only the ones
+   whose static snapshot should reference the current published commit.
 
 Dynamic package invocation is different from static bundled imports. When a
 runtime feature invokes another package dynamically through the package

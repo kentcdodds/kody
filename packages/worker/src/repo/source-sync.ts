@@ -11,7 +11,10 @@ import {
 } from './large-file-policy.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { parseRepoManifest } from './manifest.ts'
-import { PackagePublishLockedError } from '#worker/package-registry/package-publish-lock.ts'
+import {
+	loadLockedSavedPackage,
+	PackagePublishLockedError,
+} from '#worker/package-registry/package-publish-lock.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 import {
 	buildPublishedSourceSnapshotKvKey,
@@ -70,6 +73,25 @@ function validateEntitySourceManifest(input: {
 		content: input.content,
 		manifestPath: input.manifestPath,
 	})
+}
+
+async function assertPackageBootstrapUnlocked(input: {
+	env: Env
+	userId: string
+	source: EntitySourceRow
+	allowLockedPublish?: boolean
+}): Promise<void> {
+	if (input.source.entity_kind !== 'package') return
+	if (input.allowLockedPublish === true) return
+	const lockedPackage = await loadLockedSavedPackage({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: input.source.entity_id,
+	})
+	if (!lockedPackage) return
+	throw new Error(
+		`Package "${lockedPackage.name}" is locked. Unlock it on the website before the first published snapshot can be created.`,
+	)
 }
 
 function canSyncArtifactSource(env: Env) {
@@ -142,6 +164,12 @@ export async function syncArtifactSourceSnapshot(
 	}))
 	try {
 		if (!source.published_commit) {
+			await assertPackageBootstrapUnlocked({
+				env: input.env,
+				userId: input.userId,
+				source,
+				allowLockedPublish: input.allowLockedPublish,
+			})
 			if (
 				input.bootstrapAccess?.remote &&
 				isLoopbackArtifactsRemote(input.bootstrapAccess.remote)

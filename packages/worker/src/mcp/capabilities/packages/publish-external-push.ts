@@ -257,7 +257,11 @@ const outputSchema = z.discriminatedUnion('status', [
 	z.object({
 		status: z.literal('locked'),
 		previous_commit: z.string().nullable(),
-		published_commit: z.string(),
+		pending_commit: z
+			.string()
+			.describe(
+				'HEAD commit that passed checks. Promote it on the website approval page.',
+			),
 		approval_url: z.string(),
 		message: z.string(),
 	}),
@@ -600,12 +604,12 @@ async function runExternalPublishAttempt(input: {
 				const approvalUrl = buildPackagePublishApprovalUrl({
 					baseUrl: input.baseUrl,
 					packageId: result.packageId,
-					commit: result.published_commit,
+					commit: result.pending_commit,
 				})
 				return {
 					status: 'locked' as const,
 					previous_commit: result.previous_commit,
-					published_commit: result.published_commit,
+					pending_commit: result.pending_commit,
 					approval_url: approvalUrl,
 					message: result.message.replace(result.approvalPath, approvalUrl),
 				}

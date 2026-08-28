@@ -363,7 +363,7 @@ export type RepoExternalPublishResult =
 	| {
 			status: 'locked'
 			previous_commit: string | null
-			published_commit: string
+			pending_commit: string
 			message: string
 			packageId: string
 			packageName: string

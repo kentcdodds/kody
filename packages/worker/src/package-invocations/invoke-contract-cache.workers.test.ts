@@ -43,6 +43,11 @@ async function ensureSavedPackageArtifactSchema() {
 		created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 		updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 	)`)
+	try {
+		await runSql(`ALTER TABLE saved_packages ADD COLUMN locked_at TEXT`)
+	} catch {
+		// Column already present on newer schemas.
+	}
 	await runSql(`CREATE TABLE IF NOT EXISTS published_bundle_artifacts (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL,

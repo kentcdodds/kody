@@ -499,7 +499,7 @@ test('locked package finishes checks then withholds published_commit unless allo
 	expect(locked).toMatchObject({
 		status: 'locked',
 		previous_commit: 'commit-old',
-		published_commit: 'commit-new',
+		pending_commit: 'commit-new',
 		packageId: 'package-1',
 		packageName: '@scope/demo',
 		approvalPath:

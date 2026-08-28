@@ -815,3 +815,38 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
 })
+
+test('publishExternalPush returns locked with pending_commit and an approval URL', async () => {
+	setupDefaultMocks()
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-new',
+	})
+	mockModule.publishFromExternalRef.mockResolvedValue({
+		status: 'locked',
+		previous_commit: 'commit-old',
+		pending_commit: 'commit-new',
+		message:
+			'Package "@kentcdodds/demo-package" is locked. Publishes require approval at /account/packages/package-1/approve-publish?commit=commit-new.',
+		packageId: 'package-1',
+		packageName: '@kentcdodds/demo-package',
+		approvalPath:
+			'/account/packages/package-1/approve-publish?commit=commit-new',
+	})
+
+	const locked = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		createContext(),
+	)
+
+	expect(locked).toEqual({
+		status: 'locked',
+		previous_commit: 'commit-old',
+		pending_commit: 'commit-new',
+		approval_url:
+			'https://kody.test/account/packages/package-1/approve-publish?commit=commit-new',
+		message:
+			'Package "@kentcdodds/demo-package" is locked. Publishes require approval at https://kody.test/account/packages/package-1/approve-publish?commit=commit-new.',
+	})
+	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
+})

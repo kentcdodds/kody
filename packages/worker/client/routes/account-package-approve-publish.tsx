@@ -109,27 +109,33 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 		status = 'promoting'
 		message = null
 		handle.update()
-		const response = await fetch(accountPackagesApiPath, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			credentials: 'include',
-			body: JSON.stringify({
-				action: 'approve-publish',
-				packageId: payload.package.id,
-				commit: payload.pendingCommit,
-			}),
-		})
-		const body = await readJson<{ ok?: boolean; error?: string }>(response)
-		if (!response.ok || body?.ok === false) {
+		try {
+			const response = await fetch(accountPackagesApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'approve-publish',
+					packageId: payload.package.id,
+					commit: payload.pendingCommit,
+				}),
+			})
+			const body = await readJson<{ ok?: boolean; error?: string }>(response)
+			if (!response.ok || body?.ok === false) {
+				status = 'ready'
+				message = body?.error ?? 'Could not promote this commit.'
+				handle.update()
+				return
+			}
+			location.href = payload.packageHref
+		} catch {
 			status = 'ready'
-			message = body?.error ?? 'Could not promote this commit.'
+			message = 'Could not promote this commit.'
 			handle.update()
-			return
 		}
-		location.href = payload.packageHref
 	}
 
 	handle.queueTask(loadPage)
