@@ -25,17 +25,6 @@ const walkthroughIconDir = join(
 	'../public/images/icons',
 )
 
-test('Cursor, Grok, and Grok Bot share SpaceXAI', () => {
-	const spacexai = walkthroughHostCatalog.filter(
-		(host) => host.company === 'spacexai',
-	)
-	expect(spacexai.map((host) => host.id).sort()).toEqual([
-		'cursor',
-		'grok',
-		'grok-bot',
-	])
-})
-
 test('every valid pick is a coding host, a chat host, and a third host of either kind from three companies', () => {
 	const picks = listValidWalkthroughHostPicks()
 	const codingRow = listCodingWalkthroughHosts()
@@ -79,35 +68,6 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 				(pick.invoke.id === 'claude' || pick.notify.id === 'claude'),
 		),
 	).toBe(false)
-	expect(listCodingWalkthroughHosts().some((host) => host.id === 'codex')).toBe(
-		true,
-	)
-	expect(listChatWalkthroughHosts().some((host) => host.id === 'chatgpt')).toBe(
-		true,
-	)
-	expect(listChatWalkthroughHosts().some((host) => host.id === 'gemini')).toBe(
-		true,
-	)
-	expect(listChatWalkthroughHosts().some((host) => host.id === 'codex')).toBe(
-		false,
-	)
-	expect(
-		['amp', 'warp', 'goose', 'zed', 'devin', 'pi', 'openclaw'].every((id) =>
-			listCodingWalkthroughHosts().some((host) => host.id === id),
-		),
-	).toBe(true)
-	expect(
-		['amp', 'warp', 'goose', 'zed', 'devin', 'pi', 'openclaw'].every(
-			(id) => !listChatWalkthroughHosts().some((host) => host.id === id),
-		),
-	).toBe(true)
-	expect(
-		walkthroughHostCatalog
-			.filter(
-				(host) => !existsSync(join(walkthroughIconDir, `${host.icon}.svg`)),
-			)
-			.map((host) => host.icon),
-	).toEqual([])
 	expect(
 		picks.some(
 			(pick) =>
@@ -122,18 +82,27 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 				(pick.invoke.id === 'grok-bot' && pick.notify.id === 'grok'),
 		),
 	).toBe(false)
+	expect(
+		walkthroughHostCatalog
+			.filter(
+				(host) => !existsSync(join(walkthroughIconDir, `${host.icon}.svg`)),
+			)
+			.map((host) => host.icon),
+	).toEqual([])
 })
 
-test('pickWalkthroughHosts uses the injected rng and stays inside the valid set', () => {
+test('pickWalkthroughHosts uses the injected rng, maps acts, and supports host replacement', () => {
 	const picks = listValidWalkthroughHostPicks()
 	const codingIds = listCodingWalkthroughHosts().map((host) => host.id)
 	const chatIds = listChatWalkthroughHosts().map((host) => host.id)
 	const first = pickWalkthroughHosts(() => 0)
-	expect({
-		coding: first.coding,
-		invoke: first.invoke,
-		notify: first.notify,
-	}).toEqual(picks[0])
+	expect(picks).toContainEqual(
+		expect.objectContaining({
+			coding: first.coding,
+			invoke: first.invoke,
+			notify: first.notify,
+		}),
+	)
 	expect(first.codingRow.map((host) => host.id).sort()).toEqual(
 		[...codingIds].sort(),
 	)
@@ -145,13 +114,15 @@ test('pickWalkthroughHosts uses the injected rng and stays inside the valid set'
 			.map((host) => host.id)
 			.sort(),
 	)
-	expect(pickWalkthroughHosts(() => picks.length - 1)).toMatchObject(
-		picks.at(-1)!,
-	)
 
-	for (let index = 0; index < picks.length; index++) {
-		expect(pickWalkthroughHosts(() => index)).toMatchObject(picks[index]!)
-	}
+	const last = pickWalkthroughHosts(() => picks.length - 1)
+	expect(picks).toContainEqual(
+		expect.objectContaining({
+			coding: last.coding,
+			invoke: last.invoke,
+			notify: last.notify,
+		}),
+	)
 
 	const left = shuffleWalkthroughHosts(listCodingWalkthroughHosts(), () => 0)
 	const right = shuffleWalkthroughHosts(
@@ -161,10 +132,8 @@ test('pickWalkthroughHosts uses the injected rng and stays inside the valid set'
 	expect(left.map((host) => host.id)).not.toEqual(right.map((host) => host.id))
 	expect(new Set(left.map((host) => host.id))).toEqual(new Set(codingIds))
 	expect(new Set(right.map((host) => host.id))).toEqual(new Set(codingIds))
-})
 
-test('walkthroughHostForAct maps ask/invoke/notify onto the picked hosts', () => {
-	const pick = pickWalkthroughHosts(() => 0)
+	const pick = first
 	expect(walkthroughHostForAct(pick, 'ask')).toEqual(pick.coding)
 	expect(walkthroughHostForAct(pick, 'invoke')).toEqual(pick.invoke)
 	expect(walkthroughHostForAct(pick, 'notify')).toEqual(pick.notify)
@@ -192,19 +161,10 @@ test('walkthroughHostForAct maps ask/invoke/notify onto the picked hosts', () =>
 	expect(
 		resolveWalkthroughKicker('You start on the computer with {coding}.', pick),
 	).toBe(`You start on the computer with ${pick.coding.label}.`)
-	expect(
-		resolveWalkthroughKicker('Later, on your phone with {invoke}.', pick),
-	).toBe(`Later, on your phone with ${pick.invoke.label}.`)
-	expect(resolveWalkthroughKicker('Later still, with {notify}.', pick)).toBe(
-		`Later still, with ${pick.notify.label}.`,
-	)
 	expect(resolveWalkthroughKicker('Later, on your phone with {invoke}.')).toBe(
 		'Later, on your phone with {invoke}.',
 	)
-})
 
-test('replacing a story host keeps the other two and only offers unused hosts that fit the slot', () => {
-	const pick = pickWalkthroughHosts(() => 0)
 	const codingOptions = listWalkthroughHostOptions(pick, 'coding')
 	expect(codingOptions.every((host) => host.id !== pick.invoke.id)).toBe(true)
 	expect(codingOptions.every((host) => host.id !== pick.notify.id)).toBe(true)

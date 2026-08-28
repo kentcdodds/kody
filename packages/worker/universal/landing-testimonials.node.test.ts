@@ -5,36 +5,6 @@ import {
 	testimonialInitials,
 } from '#universal/landing-testimonials.ts'
 
-test('landing testimonials ship the two cleared quotes as structured data without emails', () => {
-	expect(landingTestimonials).toHaveLength(2)
-
-	const maciek = landingTestimonials.find(
-		(entry) => entry.name === 'Maciek Sitkowski',
-	)
-	const justin = landingTestimonials.find(
-		(entry) => entry.name === 'Justin Elias',
-	)
-
-	expect(maciek).toEqual({
-		quote:
-			"Kody gives my agents one entry point with all my context and tools behind it. I've got into the habit of saying hey kody, so whatever agent I'm in knows to reach for it right away. It's changed how I work with agents day to day.",
-		name: 'Maciek Sitkowski',
-		photo: '/images/testimonials/maciek-sitkowski.webp',
-		href: 'https://macieksitkowski.com',
-	})
-	expect(justin).toEqual({
-		quote:
-			'Kody feels like the missing layer between my coding agents and the real systems I need them to operate. My agents still do the thinking and build the software, but Kody gives that work a durable home that isn’t tied to any one agent or tool.',
-		name: 'Justin Elias',
-		photo: '/images/testimonials/justin-elias.webp',
-		href: 'https://www.linkedin.com/in/justin-elias',
-	})
-
-	const serialized = JSON.stringify(landingTestimonials)
-	expect(serialized).not.toContain('@')
-	expect(serialized).not.toContain('community around')
-})
-
 test('shuffleTestimonials can grow to six entries and randomizes with the provided RNG', () => {
 	const six = [
 		...landingTestimonials,

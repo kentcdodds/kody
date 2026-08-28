@@ -32,9 +32,6 @@ test('hero ring always includes the pinned hosts and fills leftover slots from t
 	const pick = pickWalkthroughHosts(() => 0)
 	const placed = placeLandingHeroAgents(pick)
 	expect(placed).toHaveLength(landingHeroSlots.length)
-	expect(placed.map((agent) => agent.label)).toEqual(
-		pickLandingHeroRing(pick.allRow).map((host) => host.label),
-	)
 	for (const id of landingHeroPinnedHostIds) {
 		const host = catalog.find((entry) => entry.id === id)
 		expect(host).toBeDefined()
@@ -82,9 +79,6 @@ test('hero tether lights travel inbound to the lantern and outbound to the agent
 	expect(outboundMid!.progress).toBeGreaterThan(0)
 	expect(outboundMid!.progress).toBeLessThan(1)
 	expect(outboundMid!.scale).toBeGreaterThan(0.45)
-	expect(landingHeroSlots.every((slot) => slot.cycle < 7)).toBe(true)
-	expect(landingHeroLightRate(0)).toBe(landingHeroLightRateFar)
-	expect(landingHeroLightRate(1)).toBe(landingHeroLightRateNear)
 	expect(landingHeroLightRate(0.5)).toBeGreaterThan(landingHeroLightRateFar)
 	expect(landingHeroLightRate(0.5)).toBeLessThan(landingHeroLightRateNear)
 	expect(

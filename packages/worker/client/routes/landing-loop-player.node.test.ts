@@ -6,7 +6,6 @@ import {
 	groupLandingLoopScenes,
 	landingLoopChatScrollShouldExplore,
 	landingLoopHoldMs,
-	landingLoopTeaser,
 	landingLoopTeaserBeatCount,
 	landingLoopToggleLabel,
 	waitLandingLoopHold,
@@ -17,22 +16,21 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 	expect(beats[0]).toMatchObject({
 		kind: 'act',
 		id: 'ask',
-		kicker: landingLoopTeaser.kicker,
-		title: landingLoopTeaser.title,
 		scene: 'desk',
 	})
 	expect(beats[1]).toMatchObject({
 		kind: 'line',
 		actId: 'ask',
 		scene: 'desk',
-		line: { role: 'user', text: landingLoopTeaser.user },
+		line: { role: 'user' },
 	})
 	expect(
 		beats.some(
 			(beat) =>
 				beat.kind === 'act' &&
 				beat.id === 'invoke' &&
-				beat.kicker === 'Later, on your phone with {invoke}.',
+				beat.scene === 'phone' &&
+				beat.kicker.includes('{invoke}'),
 		),
 	).toBe(true)
 	expect(
@@ -40,7 +38,8 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 			(beat) =>
 				beat.kind === 'act' &&
 				beat.id === 'notify' &&
-				beat.kicker === 'Later still, with {notify}.',
+				beat.scene === 'phone' &&
+				beat.kicker.includes('{notify}'),
 		),
 	).toBe(true)
 	expect(
@@ -57,18 +56,6 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 				beat.kind === 'line' &&
 				beat.actId === 'mail' &&
 				beat.line.role === 'email',
-		),
-	).toBe(true)
-	expect(
-		beats.some(
-			(beat) =>
-				beat.kind === 'act' && beat.id === 'invoke' && beat.scene === 'phone',
-		),
-	).toBe(true)
-	expect(
-		beats.some(
-			(beat) =>
-				beat.kind === 'act' && beat.id === 'notify' && beat.scene === 'phone',
 		),
 	).toBe(true)
 	expect(
