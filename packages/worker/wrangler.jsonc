@@ -183,6 +183,14 @@
 	// 0016); the main worker has no scheduled handler.
 	"env": {
 		"production": {
+			// Slimmer origin entry (ADR 0034): every durable_objects/workflows
+			// binding below sets `script_name`, so production owns zero Durable
+			// Object classes and does not need index.ts's class exports. See
+			// packages/worker/src/production-worker.ts and
+			// docs/contributing/architecture/platform-worker-migration-runbook.md.
+			// env.preview and env.test intentionally do not override `main` —
+			// they inherit the top-level `./src/index.ts`.
+			"main": "./src/production-worker.ts",
 			"ratelimits": [
 				{
 					"name": "AUTH_RATE_LIMITER",
