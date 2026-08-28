@@ -288,8 +288,11 @@ test('github sign-in creates a verified account, then signs it back in', async (
 		{ provider: 'github' },
 	)
 	expect(callbackResponse.status).toBe(302)
-	// An explicit redirectTo still wins over the new-account onboarding default.
-	expect(callbackResponse.headers.get('Location')).toBe('/community')
+	// An explicit redirectTo still wins over the new-account onboarding default,
+	// and accountCreated=1 is appended so Fathom can record account_created.
+	expect(callbackResponse.headers.get('Location')).toBe(
+		'/community?accountCreated=1',
+	)
 	const setCookies = callbackResponse.headers.getSetCookie()
 	expect(setCookies.some((cookie) => cookie.startsWith('kody_session='))).toBe(
 		true,
@@ -340,6 +343,7 @@ test('github sign-in creates a verified account, then signs it back in', async (
 			username: 'octo-cat',
 			email: 'octo@example.com',
 		},
+		attribution: null,
 	})
 
 	// A second sign-in with the same provider identity reuses the account.
@@ -532,7 +536,9 @@ test('discord sign-in creates a verified account and assigns the guild role', as
 		{ provider: 'discord' },
 	)
 	expect(callbackResponse.status).toBe(302)
-	expect(callbackResponse.headers.get('Location')).toBe('/onboarding')
+	expect(callbackResponse.headers.get('Location')).toBe(
+		'/onboarding?accountCreated=1',
+	)
 	const user = sqlite
 		.prepare(`SELECT * FROM users WHERE email = ?`)
 		.get('kody-fan@example.com') as Record<string, unknown>
@@ -1149,7 +1155,9 @@ test('MOCK_ client ids run the whole flow in-worker without network access', asy
 	expect(callbackResponse.status).toBe(302)
 	// A brand-new social account lands on onboarding, the same place password
 	// signups reach after verification.
-	expect(callbackResponse.headers.get('Location')).toBe('/onboarding')
+	expect(callbackResponse.headers.get('Location')).toBe(
+		'/onboarding?accountCreated=1',
+	)
 	const user = sqlite
 		.prepare(`SELECT * FROM users WHERE email = ?`)
 		.get('mock-github-user@example.com') as Record<string, unknown>
@@ -1256,7 +1264,9 @@ test('production OAuth signup is invite-gated while existing connections still l
 		{ provider: 'github' },
 	)
 	expect(invitedCallback.status).toBe(302)
-	expect(invitedCallback.headers.get('Location')).toBe('/onboarding')
+	expect(invitedCallback.headers.get('Location')).toBe(
+		'/onboarding?accountCreated=1',
+	)
 	const user = invitedSignup.sqlite
 		.prepare(`SELECT * FROM users WHERE email = ?`)
 		.get('social-invited@example.com') as Record<string, unknown>
@@ -1291,6 +1301,7 @@ test('production OAuth signup is invite-gated while existing connections still l
 			username: user.username,
 			email: 'social-invited@example.com',
 		},
+		attribution: null,
 	})
 
 	const existingLogin = createMigratedDb()
@@ -1330,4 +1341,51 @@ test('production OAuth signup is invite-gated while existing connections still l
 	expect(
 		existingLogin.sqlite.prepare(`SELECT COUNT(*) AS count FROM users`).get(),
 	).toEqual({ count: 1 })
+})
+
+test('OAuth signup persists first-touch UTMs from the start URL through login state', async () => {
+	lifecycleMocks.scheduleUserCreatedEvent.mockClear()
+	const { sqlite, db } = createMigratedDb()
+	const env = createAppEnv(db)
+	mockGithubProfileExchange('utm-oauth@example.com')
+
+	const start = await startProviderFlow(
+		env,
+		'github',
+		'http://example.com/auth/github?utm_source=youtube&utm_medium=video&utm_campaign=bwk-2026-08-27&landing_path=%2Fsignup',
+	)
+	const callbackResponse = await runHandler(
+		createAuthProviderCallbackHandler(env),
+		new Request(
+			`http://example.com/auth/github/callback?code=github-auth-code&state=${start.state}`,
+			{ headers: { Cookie: start.stateCookie } },
+		),
+		{ provider: 'github' },
+	)
+	expect(callbackResponse.status).toBe(302)
+	expect(callbackResponse.headers.get('Location')).toBe(
+		'/onboarding?accountCreated=1',
+	)
+	const user = sqlite
+		.prepare(
+			`SELECT utm_source, utm_medium, utm_campaign, first_touch_landing_path
+			 FROM users WHERE email = ?`,
+		)
+		.get('utm-oauth@example.com') as Record<string, unknown>
+	expect(user).toEqual({
+		utm_source: 'youtube',
+		utm_medium: 'video',
+		utm_campaign: 'bwk-2026-08-27',
+		first_touch_landing_path: '/signup',
+	})
+	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			attribution: expect.objectContaining({
+				utmSource: 'youtube',
+				utmMedium: 'video',
+				utmCampaign: 'bwk-2026-08-27',
+				landingPath: '/signup',
+			}),
+		}),
+	)
 })

@@ -22,6 +22,7 @@ import {
 	purgePersistedMcpAgentSession,
 	registerMcpAgentSession,
 } from './session-registry.ts'
+import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
 
 export type State = {
 	searchConversationIdsWithPreamble?: Array<string>
@@ -50,6 +51,11 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				userId,
 				doId: this.ctx.id.toString(),
 			})
+			this.ctx.waitUntil(
+				stampFirstMcpConnected(this.env.APP_DB, {
+					stableUserId: userId,
+				}),
+			)
 		}
 		const [overlay, registry, popularPackages, retiringNoticeIds] =
 			await Promise.all([

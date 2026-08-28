@@ -24,6 +24,13 @@ import {
 	type AuthProviderInfo,
 } from '#client/social-sign-in.ts'
 import {
+	clearStoredFirstTouchAttribution,
+	readSignupFirstTouchAttribution,
+} from '#client/first-touch-attribution.ts'
+import { fathomEventNames, trackFathomEvent } from '#client/fathom-events.ts'
+import { serializeFirstTouchAttributionForTransport } from '#universal/first-touch-attribution.ts'
+import { withAccountCreatedQuery } from '#universal/fathom-events.ts'
+import {
 	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
@@ -145,6 +152,15 @@ export function LoginRoute(handle: Handle) {
 		signupMode,
 	)
 	let prefillInviteCode = readPrefillInviteCode(getSearchParams(handle))
+	let signupStartedTracked = false
+
+	function maybeTrackSignupStarted() {
+		if (signupStartedTracked) return
+		if (getCurrentAuthMode(handle) !== 'signup') return
+		readSignupFirstTouchAttribution()
+		if (!trackFathomEvent(fathomEventNames.signupStarted)) return
+		signupStartedTracked = true
+	}
 
 	function setState(nextStatus: AuthStatus, nextMessage: string | null = null) {
 		status = nextStatus
@@ -187,6 +203,7 @@ export function LoginRoute(handle: Handle) {
 		routePath = nextPath
 		resetAuthState()
 		if (getAuthModeFromPathname(nextPath) === 'signup') {
+			signupStartedTracked = false
 			applySignupSearch(getSearchParams(handle))
 		}
 	})
@@ -296,6 +313,8 @@ export function LoginRoute(handle: Handle) {
 		setState('submitting')
 
 		try {
+			const attribution =
+				mode === 'signup' ? readSignupFirstTouchAttribution() : null
 			const response = await fetch('/auth', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -311,6 +330,7 @@ export function LoginRoute(handle: Handle) {
 								username,
 								inviteCode,
 								redirectTo: getCurrentRedirectTo(handle),
+								...serializeFirstTouchAttributionForTransport(attribution),
 							}
 						: {}),
 				}),
@@ -323,6 +343,24 @@ export function LoginRoute(handle: Handle) {
 						? payload.error
 						: 'Unable to authenticate.'
 				setSubmitError(errorMessage)
+				return
+			}
+
+			if (mode === 'signup') {
+				const tracked = trackFathomEvent(fathomEventNames.accountCreated)
+				clearStoredFirstTouchAttribution()
+				if (typeof window !== 'undefined') {
+					const destination = resolvePasswordAuthRedirect({
+						mode,
+						requiresTwoFactor: payload?.requiresTwoFactor === true,
+						emailVerificationRequired:
+							payload?.emailVerificationRequired === true,
+						redirectTo: getCurrentRedirectTo(handle),
+					})
+					window.location.assign(
+						tracked ? destination : withAccountCreatedQuery(destination),
+					)
+				}
 				return
 			}
 
@@ -365,6 +403,9 @@ export function LoginRoute(handle: Handle) {
 				getCurrentRedirectTo(handle),
 				inviteCode,
 				protection,
+				getCurrentAuthMode(handle) === 'signup'
+					? readSignupFirstTouchAttribution()
+					: null,
 			)
 			if (errorMessage) {
 				setSubmitError(errorMessage)
@@ -531,6 +572,9 @@ export function LoginRoute(handle: Handle) {
 		}
 		if (typeof document !== 'undefined' && sessionStatus === 'idle') {
 			handle.queueTask(loadSessionAndProviders)
+		}
+		if (typeof document !== 'undefined') {
+			maybeTrackSignupStarted()
 		}
 		const mode = getCurrentAuthMode(handle)
 		const currentSignupSearch = readRouterSearch(handle)

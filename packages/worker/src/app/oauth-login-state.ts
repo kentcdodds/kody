@@ -3,12 +3,19 @@ import {
 	isOauthProviderId,
 	type OauthProviderId,
 } from '#app/oauth-providers.ts'
+import {
+	emptyFirstTouchAttribution,
+	hasFirstTouchAttribution,
+	parseFirstTouchAttribution,
+	type FirstTouchAttribution,
+} from '#universal/first-touch-attribution.ts'
 
 /**
  * Short-lived signed cookie that carries the social-login round-trip state:
  * the CSRF `state` value, the PKCE code verifier, the post-login redirect
- * target, and an optional invite code for production social signup. Written
- * when the flow starts and cleared by the callback.
+ * target, an optional invite code for production social signup, and optional
+ * first-touch UTM attribution so social sign-in does not drop the query.
+ * Written when the flow starts and cleared by the callback.
  */
 const oauthLoginStateMaxAgeSeconds = 60 * 10
 
@@ -18,6 +25,7 @@ export type OauthLoginState = {
 	codeVerifier: string
 	redirectTo: string | null
 	inviteCode: string | null
+	attribution: FirstTouchAttribution | null
 }
 
 let stateCookie: ReturnType<typeof createCookie> | null = null
@@ -52,6 +60,13 @@ function getStateCookie() {
 	return stateCookie
 }
 
+function parseAttributionField(value: unknown): FirstTouchAttribution | null {
+	if (value == null) return null
+	if (typeof value !== 'object') return null
+	const attribution = parseFirstTouchAttribution({ body: value })
+	return hasFirstTouchAttribution(attribution) ? attribution : null
+}
+
 function isOauthLoginState(value: unknown): value is OauthLoginState {
 	if (!value || typeof value !== 'object') return false
 	const record = value as Record<string, unknown>
@@ -59,6 +74,10 @@ function isOauthLoginState(value: unknown): value is OauthLoginState {
 		record.inviteCode === undefined ||
 		record.inviteCode === null ||
 		typeof record.inviteCode === 'string'
+	const attributionOk =
+		record.attribution === undefined ||
+		record.attribution === null ||
+		typeof record.attribution === 'object'
 	return (
 		typeof record.provider === 'string' &&
 		isOauthProviderId(record.provider) &&
@@ -67,7 +86,8 @@ function isOauthLoginState(value: unknown): value is OauthLoginState {
 		typeof record.codeVerifier === 'string' &&
 		record.codeVerifier.length > 0 &&
 		(record.redirectTo === null || typeof record.redirectTo === 'string') &&
-		inviteCodeOk
+		inviteCodeOk &&
+		attributionOk
 	)
 }
 
@@ -78,6 +98,7 @@ function normalizeOauthLoginState(value: OauthLoginState): OauthLoginState {
 			typeof value.inviteCode === 'string' && value.inviteCode.length > 0
 				? value.inviteCode
 				: null,
+		attribution: parseAttributionField(value.attribution),
 	}
 }
 
@@ -118,4 +139,10 @@ export async function readOauthLoginState(
 	}
 
 	return null
+}
+
+export function attributionFromOauthLoginState(
+	state: OauthLoginState | null | undefined,
+): FirstTouchAttribution {
+	return state?.attribution ?? emptyFirstTouchAttribution
 }

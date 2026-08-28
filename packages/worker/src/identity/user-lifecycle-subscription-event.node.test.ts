@@ -33,6 +33,15 @@ test('user lifecycle event builders keep a metadata-only identity snapshot', () 
 		source: 'signup',
 		created_at: '2026-08-20T12:00:00.000Z',
 		invite_code: null,
+		attribution: {
+			utm_source: null,
+			utm_medium: null,
+			utm_campaign: null,
+			utm_content: null,
+			utm_term: null,
+			landing_path: null,
+			referrer: null,
+		},
 	})
 	expect(
 		buildUserCreatedEvent({
@@ -40,6 +49,15 @@ test('user lifecycle event builders keep a metadata-only identity snapshot', () 
 			source: 'oauth',
 			createdAt: '2026-08-20T12:00:00.000Z',
 			inviteCode: 'KODY-AAAA-BBBB-CCCC-DDDD',
+			attribution: {
+				utmSource: 'youtube',
+				utmMedium: 'video',
+				utmCampaign: 'bwk-2026-08-27',
+				utmContent: null,
+				utmTerm: null,
+				landingPath: '/signup',
+				referrer: null,
+			},
 		}),
 	).toEqual({
 		event: userCreatedTopic,
@@ -47,6 +65,15 @@ test('user lifecycle event builders keep a metadata-only identity snapshot', () 
 		source: 'oauth',
 		created_at: '2026-08-20T12:00:00.000Z',
 		invite_code: 'KODY-AAAA-BBBB-CCCC-DDDD',
+		attribution: {
+			utm_source: 'youtube',
+			utm_medium: 'video',
+			utm_campaign: 'bwk-2026-08-27',
+			utm_content: null,
+			utm_term: null,
+			landing_path: '/signup',
+			referrer: null,
+		},
 	})
 	expect(deleted).toEqual({
 		event: userDeletedTopic,

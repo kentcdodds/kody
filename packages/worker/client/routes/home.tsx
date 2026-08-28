@@ -26,6 +26,7 @@ import {
 	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
+import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
 import {
 	pickWalkthroughHosts,
 	type WalkthroughHostPick,
@@ -245,7 +246,7 @@ export function HomeRoute(handle: Handle) {
 								<a href="#invite" class="landing-pill">
 									Join the waiting list
 								</a>
-								<a href="/signup" class="landing-code-link">
+								<a href={homepageSignupPath} class="landing-code-link">
 									I have a code
 								</a>
 							</>
@@ -531,7 +532,7 @@ export function HomeRoute(handle: Handle) {
 							</p>
 							<WaitlistForm />
 							<p class="landing-invite-code">
-								<a href="/signup" class="landing-code-link">
+								<a href={homepageSignupPath} class="landing-code-link">
 									I have a code
 								</a>
 							</p>

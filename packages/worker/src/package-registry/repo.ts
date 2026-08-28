@@ -2,6 +2,7 @@ import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import { isCommunityListingAhead } from '#universal/community-listing-ahead.ts'
 import { buildLengthSafeVectorId } from '#worker/vectorize/vector-ids.ts'
+import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
 import {
 	type SavedPackageCommunityProvenance,
 	type SavedPackageRecord,
@@ -146,6 +147,10 @@ export async function insertSavedPackage(
 			row.updated_at ?? now,
 		)
 		.run()
+	await stampFirstSavedPackage(db, {
+		stableUserId: row.user_id,
+		at: row.created_at ?? now,
+	})
 }
 
 export async function updateSavedPackage(

@@ -24,7 +24,10 @@ import {
 import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
 
 export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at,
-				email_outbound_paused_at, email_verification_delivery_status, email_verification_delivery_at, email_verification_delivery_detail, email_verification_delivery_class, created_at, updated_at`
+				email_outbound_paused_at, email_verification_delivery_status, email_verification_delivery_at, email_verification_delivery_detail, email_verification_delivery_class,
+				utm_source, utm_medium, utm_campaign, utm_content, utm_term, first_touch_landing_path, first_touch_referrer,
+				first_mcp_connected_at, first_execute_at, first_saved_package_at, mcp_client_name, last_active_at,
+				created_at, updated_at`
 
 export const adminUserListItemFieldNames = [
 	'stableUserId',
@@ -41,6 +44,18 @@ export const adminUserListItemFieldNames = [
 	'email_outbound_paused_at',
 	'email_verification_delivery',
 	'email_verification_delivery_detail',
+	'utm_source',
+	'utm_medium',
+	'utm_campaign',
+	'utm_content',
+	'utm_term',
+	'first_touch_landing_path',
+	'first_touch_referrer',
+	'first_mcp_connected_at',
+	'first_execute_at',
+	'first_saved_package_at',
+	'mcp_client_name',
+	'last_active_at',
 	'created_at',
 	'updated_at',
 	'roles',
@@ -64,6 +79,18 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 	email_outbound_paused_at: string | null
 	email_verification_delivery: EmailVerificationDelivery | null
 	email_verification_delivery_detail: string | null
+	utm_source: string | null
+	utm_medium: string | null
+	utm_campaign: string | null
+	utm_content: string | null
+	utm_term: string | null
+	first_touch_landing_path: string | null
+	first_touch_referrer: string | null
+	first_mcp_connected_at: string | null
+	first_execute_at: string | null
+	first_saved_package_at: string | null
+	mcp_client_name: string | null
+	last_active_at: string | null
 	created_at: string
 	updated_at: string
 	roles: Array<RoleName>
@@ -383,6 +410,18 @@ type AdminUserRow = {
 	email_verification_delivery_at: string | null
 	email_verification_delivery_detail: string | null
 	email_verification_delivery_class: string | null
+	utm_source: string | null
+	utm_medium: string | null
+	utm_campaign: string | null
+	utm_content: string | null
+	utm_term: string | null
+	first_touch_landing_path: string | null
+	first_touch_referrer: string | null
+	first_mcp_connected_at: string | null
+	first_execute_at: string | null
+	first_saved_package_at: string | null
+	mcp_client_name: string | null
+	last_active_at: string | null
 	created_at: string
 	updated_at: string
 }
@@ -413,6 +452,18 @@ function toAdminUserListItem(
 		}),
 		email_verification_delivery_detail:
 			row.email_verification_delivery_detail ?? null,
+		utm_source: row.utm_source ?? null,
+		utm_medium: row.utm_medium ?? null,
+		utm_campaign: row.utm_campaign ?? null,
+		utm_content: row.utm_content ?? null,
+		utm_term: row.utm_term ?? null,
+		first_touch_landing_path: row.first_touch_landing_path ?? null,
+		first_touch_referrer: row.first_touch_referrer ?? null,
+		first_mcp_connected_at: row.first_mcp_connected_at ?? null,
+		first_execute_at: row.first_execute_at ?? null,
+		first_saved_package_at: row.first_saved_package_at ?? null,
+		mcp_client_name: row.mcp_client_name ?? null,
+		last_active_at: row.last_active_at ?? null,
 		created_at: row.created_at,
 		updated_at: row.updated_at,
 		roles,

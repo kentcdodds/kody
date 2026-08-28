@@ -906,6 +906,52 @@ export function AdminUsersRoute(handle: Handle) {
 												: 'Not tracked',
 										},
 										{
+											label: 'First-touch UTMs',
+											value:
+												[
+													selectedUser.utm_source &&
+														`source=${selectedUser.utm_source}`,
+													selectedUser.utm_medium &&
+														`medium=${selectedUser.utm_medium}`,
+													selectedUser.utm_campaign &&
+														`campaign=${selectedUser.utm_campaign}`,
+													selectedUser.utm_content &&
+														`content=${selectedUser.utm_content}`,
+													selectedUser.utm_term &&
+														`term=${selectedUser.utm_term}`,
+												]
+													.filter(Boolean)
+													.join(' · ') || 'None',
+										},
+										{
+											label: 'Landing path',
+											value: selectedUser.first_touch_landing_path ?? 'None',
+										},
+										{
+											label: 'Referrer',
+											value: selectedUser.first_touch_referrer ?? 'None',
+										},
+										{
+											label: 'First MCP connected',
+											value: selectedUser.first_mcp_connected_at ?? 'Not yet',
+										},
+										{
+											label: 'MCP client',
+											value: selectedUser.mcp_client_name ?? 'Unknown',
+										},
+										{
+											label: 'First execute',
+											value: selectedUser.first_execute_at ?? 'Not yet',
+										},
+										{
+											label: 'First saved package',
+											value: selectedUser.first_saved_package_at ?? 'Not yet',
+										},
+										{
+											label: 'Last active',
+											value: selectedUser.last_active_at ?? 'Unknown',
+										},
+										{
 											label: 'Stable user id',
 											value: (
 												<IdValue

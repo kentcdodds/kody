@@ -17,6 +17,7 @@ import {
 } from './mcp/protocol-metrics.ts'
 import { handleStatelessMcpRequest } from './mcp/stateless-lane.ts'
 import { oauthScopes } from './oauth-handlers.ts'
+import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
 
 export const mcpResourcePath = '/mcp'
 export const protectedResourceMetadataPath =
@@ -305,6 +306,12 @@ export async function handleMcpRequest({
 			}
 		})(),
 	})
+	ctx.waitUntil(
+		stampFirstMcpConnected(env.APP_DB, {
+			stableUserId: mcpUser.userId,
+			clientName: classification.clientName || null,
+		}),
+	)
 
 	return await withAccountWriteLease({
 		db: env.APP_DB,

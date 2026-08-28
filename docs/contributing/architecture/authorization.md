@@ -399,10 +399,10 @@ the same threshold does not emit again.
 social-login signup, and admin-created person accounts fan `user.created`.
 Self-service account deletion fans `user.deleted`. Fan-out selects only packages
 whose owners hold the admin role at dispatch time. The event contains the stable
-user id, username, email, create source or delete timestamp, and the consumed
-invite code when `user.created` used one. It omits passwords, roles, plan,
-secrets, and unrelated account content. Delivery is best-effort (no Queue) after
-the account change commits.
+user id, username, email, create source or delete timestamp, the consumed invite
+code when `user.created` used one, and first-touch marketing attribution when
+present. It omits passwords, roles, plan, secrets, and unrelated account
+content. Delivery is best-effort (no Queue) after the account change commits.
 
 **Admins can see** operator-owned system mail for reserved platform addresses
 (`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin`). That mail

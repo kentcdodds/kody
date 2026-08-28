@@ -86,6 +86,14 @@ type TestUser = {
 	password_hash: string
 	plan: string
 	stable_user_id: string
+	utm_source: string | null
+	utm_medium: string | null
+	utm_campaign: string | null
+	utm_content: string | null
+	utm_term: string | null
+	first_touch_landing_path: string | null
+	first_touch_referrer: string | null
+	last_active_at: string | null
 }
 
 type TestInvite = {
@@ -158,6 +166,30 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 							password_hash: passwordHash,
 							plan,
 							stable_user_id: stableUserId,
+							utm_source:
+								values.utm_source == null ? null : String(values.utm_source),
+							utm_medium:
+								values.utm_medium == null ? null : String(values.utm_medium),
+							utm_campaign:
+								values.utm_campaign == null
+									? null
+									: String(values.utm_campaign),
+							utm_content:
+								values.utm_content == null ? null : String(values.utm_content),
+							utm_term:
+								values.utm_term == null ? null : String(values.utm_term),
+							first_touch_landing_path:
+								values.first_touch_landing_path == null
+									? null
+									: String(values.first_touch_landing_path),
+							first_touch_referrer:
+								values.first_touch_referrer == null
+									? null
+									: String(values.first_touch_referrer),
+							last_active_at:
+								values.last_active_at == null
+									? null
+									: String(values.last_active_at),
 						}
 						nextId += 1
 						users.set(normalizedEmail, user)
@@ -322,6 +354,14 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 			password_hash: passwordHash,
 			plan: 'free',
 			stable_user_id: await createStableUserIdFromEmail(email),
+			utm_source: null,
+			utm_medium: null,
+			utm_campaign: null,
+			utm_content: null,
+			utm_term: null,
+			first_touch_landing_path: null,
+			first_touch_referrer: null,
+			last_active_at: null,
 		}
 		nextId += 1
 		users.set(email.toLowerCase(), user)
@@ -456,6 +496,15 @@ test('auth handler login and signup workflow', async () => {
 			id: await createStableUserIdFromEmail('invited@example.com'),
 			username: 'invited-user',
 			email: 'invited@example.com',
+		},
+		attribution: {
+			utmSource: null,
+			utmMedium: null,
+			utmCampaign: null,
+			utmContent: null,
+			utmTerm: null,
+			landingPath: null,
+			referrer: null,
 		},
 	})
 
@@ -636,7 +685,53 @@ test('successful open signup schedules an admin user.created event', async () =>
 			username: 'newbie',
 			email,
 		},
+		attribution: {
+			utmSource: null,
+			utmMedium: null,
+			utmCampaign: null,
+			utmContent: null,
+			utmTerm: null,
+			landingPath: null,
+			referrer: null,
+		},
 	})
+})
+
+test('password signup persists first-touch UTMs on the account once', async () => {
+	lifecycleMocks.scheduleUserCreatedEvent.mockClear()
+	const context = createAuthTestContext({ signupMode: 'open' })
+	const email = 'attributed@example.com'
+	const response = await context.request({
+		email,
+		username: 'attributed',
+		password: 'password123',
+		mode: 'signup',
+		utmSource: 'youtube',
+		utmMedium: 'video',
+		utmCampaign: 'bwk-2026-08-27',
+		landingPath: '/signup',
+		referrer: 'https://youtube.com/watch?v=abc',
+	})
+	expect(response.status).toBe(200)
+	const user = context.testDb.users.get(email)
+	expect(user).toMatchObject({
+		utm_source: 'youtube',
+		utm_medium: 'video',
+		utm_campaign: 'bwk-2026-08-27',
+		first_touch_landing_path: '/signup',
+		first_touch_referrer: 'https://youtube.com/watch?v=abc',
+	})
+	expect(user?.last_active_at).toBeTruthy()
+	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			attribution: expect.objectContaining({
+				utmSource: 'youtube',
+				utmMedium: 'video',
+				utmCampaign: 'bwk-2026-08-27',
+				landingPath: '/signup',
+			}),
+		}),
+	)
 })
 
 test('signup fails when the default user role cannot be assigned', async () => {

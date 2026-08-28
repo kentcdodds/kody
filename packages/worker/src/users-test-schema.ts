@@ -77,6 +77,18 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	active_write_count: { create: 'INTEGER NOT NULL DEFAULT 0' },
 	active_write_expires_at: { create: 'TEXT' },
 	display_name: { create: 'TEXT' },
+	utm_source: { create: 'TEXT' },
+	utm_medium: { create: 'TEXT' },
+	utm_campaign: { create: 'TEXT' },
+	utm_content: { create: 'TEXT' },
+	utm_term: { create: 'TEXT' },
+	first_touch_landing_path: { create: 'TEXT' },
+	first_touch_referrer: { create: 'TEXT' },
+	first_mcp_connected_at: { create: 'TEXT' },
+	first_execute_at: { create: 'TEXT' },
+	first_saved_package_at: { create: 'TEXT' },
+	mcp_client_name: { create: 'TEXT' },
+	last_active_at: { create: 'TEXT' },
 }
 
 /**

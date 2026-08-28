@@ -39,6 +39,11 @@ import { userHasRole } from '#universal/permissions.ts'
 import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import { WaitlistBanner } from './waitlist-banner.tsx'
+import { scheduleConsumeAccountCreatedFathomSignal } from './fathom-events.ts'
+import {
+	captureFirstTouchAttributionFromLocation,
+	clearStoredFirstTouchAttribution,
+} from './first-touch-attribution.ts'
 
 registerRouteLoaders(clientRouteLoaders)
 registerClientRoutes(clientRoutes)
@@ -112,6 +117,21 @@ export function App(handle: Handle<AppProps>) {
 	// but auth may have changed since the document was rendered.
 	if (typeof document !== 'undefined') {
 		setSessionRefreshHandler(queueSessionRefresh)
+		// Capture UTMs from any landing URL before homepage CTAs rewrite them.
+		captureFirstTouchAttributionFromLocation()
+		// New-account signal: drop tab-scoped first-touch so a later signup in
+		// this tab cannot inherit the previous visitor's campaign.
+		try {
+			if (
+				new URL(window.location.href).searchParams.get('accountCreated') === '1'
+			) {
+				clearStoredFirstTouchAttribution()
+			}
+		} catch {
+			// ignore malformed locations
+		}
+		// Fathom loads deferred; retry briefly so OAuth ?accountCreated=1 is not dropped.
+		scheduleConsumeAccountCreatedFathomSignal()
 		handle.queueTask(() => {
 			queueSessionRefresh()
 		})
