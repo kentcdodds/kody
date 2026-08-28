@@ -759,6 +759,11 @@ html.is-settled {
 	font-variation-settings: 'opsz' 96;
 }
 
+.landing-hero-title em {
+	font-style: normal;
+	color: var(--color-primary-text);
+}
+
 .landing-hero-sub {
 	margin: 1.5rem auto 0;
 	font-size: clamp(1.05rem, 1.6vw, 1.2rem);
@@ -1112,14 +1117,6 @@ html.is-settled {
 	text-shadow: 0 1px 0 var(--color-background);
 }
 
-.landing-hero-agents-mcp {
-	margin: 0.6rem 0 0;
-	text-align: center;
-	font-size: 0.82rem;
-	font-weight: 500;
-	color: var(--color-text-muted);
-}
-
 @keyframes agent-drift {
 	from {
 		translate: -50% -50%;
@@ -1164,10 +1161,6 @@ html.is-settled {
 
 	.landing-hero-agent-name {
 		font-size: 0.66rem;
-	}
-
-	.landing-hero-agents-mcp {
-		font-size: 0.75rem;
 	}
 }
 
@@ -1282,8 +1275,12 @@ html.is-settled {
 }
 
 .landing-walkthrough-story {
-	margin: clamp(1.75rem, 4vw, 2.5rem) auto 0;
+	margin: clamp(3.75rem, 8vw, 6rem) auto 0;
 	max-width: 40rem;
+}
+
+.landing-walkthrough-heading {
+	margin: 0 0 1.35rem;
 }
 
 .landing-walkthrough-intro {

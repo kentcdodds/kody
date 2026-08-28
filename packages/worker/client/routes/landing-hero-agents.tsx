@@ -416,9 +416,6 @@ export function LandingHeroAgents(
 						))}
 					</ul>
 				</div>
-				<p class="landing-hero-agents-mcp">
-					Kody works with any agent that supports MCP
-				</p>
 			</figure>
 		)
 	}

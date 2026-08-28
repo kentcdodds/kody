@@ -606,7 +606,11 @@ test('renderAppPage emits a doctype, meta description, and inlines the styleshee
 	expect(withoutAssetsHtml.startsWith('<!DOCTYPE html>')).toBe(true)
 	expect(withoutAssetsHtml).toContain('href="/styles.css')
 	expect(withoutAssetsHtml).toContain('name="description"')
-	expect(withoutAssetsHtml).toContain('The Home Your Agents Share')
+	expect(withoutAssetsHtml).toContain('The Home Your Agents <em>Share</em>')
+	expect(withoutAssetsHtml).not.toContain(
+		'Kody works with any agent that supports MCP',
+	)
+	expect(withoutAssetsHtml).toContain('Watch some example conversations')
 	expect(withoutAssetsHtml).toContain('For all the agents you use today,')
 	expect(withoutAssetsHtml).toContain("and the ones you'll use tomorrow")
 	// Hero stage: one agent list around Kody, every token tethered by a line.

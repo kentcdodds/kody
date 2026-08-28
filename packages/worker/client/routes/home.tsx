@@ -216,7 +216,7 @@ export function HomeRoute(handle: Handle) {
 				{/* ============ hero ============ */}
 				<section data-parallax-scope class="landing-hero">
 					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
-						The Home Your Agents Share
+						The Home Your Agents <em>Share</em>
 					</h1>
 					<p data-rise style={{ '--rise': '1' }} class="landing-hero-sub">
 						For all the agents you use today,
@@ -332,8 +332,17 @@ export function HomeRoute(handle: Handle) {
 						<strong>pretty much anything</strong>. What will{' '}
 						<strong>you</strong> build?
 					</p>
-					{walkthroughHosts ? (
-						<div class="landing-walkthrough-story">
+					<section
+						aria-labelledby="walkthrough-title"
+						class="landing-walkthrough-story"
+					>
+						<h2
+							id="walkthrough-title"
+							class="landing-section-heading landing-walkthrough-heading"
+						>
+							Watch some example conversations
+						</h2>
+						{walkthroughHosts ? (
 							<div class="landing-walkthrough-intro">
 								<WalkthroughHostIntro
 									variant="picker"
@@ -344,11 +353,9 @@ export function HomeRoute(handle: Handle) {
 									}}
 								/>
 							</div>
-							<LandingLoopPlayer hosts={walkthroughHosts} />
-						</div>
-					) : (
-						<LandingLoopPlayer />
-					)}
+						) : null}
+						<LandingLoopPlayer hosts={walkthroughHosts ?? undefined} />
+					</section>
 				</section>
 
 				{/* ============ testimonials ============ */}
