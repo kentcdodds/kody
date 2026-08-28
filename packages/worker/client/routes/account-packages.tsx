@@ -197,9 +197,7 @@ export function AccountPackagesRoute(handle: Handle) {
 			message = 'Could not update the publish lock.'
 		} finally {
 			lockBusy = false
-			if (getCurrentHref() === href) {
-				handle.update()
-			}
+			handle.update()
 		}
 	}
 
@@ -223,6 +221,7 @@ export function AccountPackagesRoute(handle: Handle) {
 	}
 
 	function applyPayload(payload: AccountPackagesLoaderData, href: string) {
+		const previousSelectedId = selectedPackage?.id ?? null
 		const listKey = getListKey(href)
 		// Selection-only navigations deep in the scroll window keep the
 		// already-loaded pages; anything else reseeds from page one so
@@ -241,6 +240,9 @@ export function AccountPackagesRoute(handle: Handle) {
 			lastLoadedListKey = listKey
 		}
 		selectedPackage = payload.selectedPackage
+		if ((selectedPackage?.id ?? null) !== previousSelectedId) {
+			unlockCheck.reset()
+		}
 		username = payload.username
 		invocationUrlOrigin = payload.invocationUrlOrigin
 		message =

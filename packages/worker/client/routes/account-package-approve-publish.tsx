@@ -83,25 +83,31 @@ export function AccountPackageApprovePublishRoute(handle: Handle) {
 		}
 		status = 'loading'
 		handle.update()
-		const response = await fetch(buildApprovePublishApiUrl(href), {
-			headers: { Accept: 'application/json' },
-			credentials: 'include',
-		})
-		if (response.status === 401) {
-			location.href = '/login'
-			return
-		}
-		const next =
-			await readJson<AccountPackageApprovePublishLoaderData>(response)
-		if (!response.ok || !next?.ok) {
+		try {
+			const response = await fetch(buildApprovePublishApiUrl(href), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+			})
+			if (response.status === 401) {
+				location.href = '/login'
+				return
+			}
+			const next =
+				await readJson<AccountPackageApprovePublishLoaderData>(response)
+			if (!response.ok || !next?.ok) {
+				status = 'error'
+				message = 'Unable to load this publish approval.'
+				handle.update()
+				return
+			}
+			payload = next
+			status = 'ready'
+			handle.update()
+		} catch {
 			status = 'error'
 			message = 'Unable to load this publish approval.'
 			handle.update()
-			return
 		}
-		payload = next
-		status = 'ready'
-		handle.update()
 	}
 
 	async function promoteCommit() {
