@@ -80,11 +80,12 @@ required by law.
 ## What a deployment admin can see
 
 On shared deployments, operators can grant an admin role for account
-administration. Admins see account metadata: user id, username, email, created
-and updated timestamps, role assignments, first-touch marketing attribution
-fields when present, activation first-seen timestamps, MCP client name, and
-last-active stamps. The account-administration UI lists users and roles; it does
-not expose account content.
+administration. Admins see account metadata: user id, username, email,
+email-verification state (including the latest verification-mail delivery
+outcome), entitlement plan, created and updated timestamps, role assignments,
+first-touch marketing attribution fields when present, activation first-seen
+timestamps, MCP client name, and last-active stamps. The account-administration
+UI lists users and roles; it does not expose account content.
 
 Platform feedback you explicitly approve for admin review is a narrow
 user-content exception.

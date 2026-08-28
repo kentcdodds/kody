@@ -21,8 +21,8 @@ npm run preview:manual-test
 
 On **medium or high risk**, do not stop at the default health/login smoke. The
 seed user (`me@kentcdodds.com` / `ilikecode`, username `user-me`) has **no**
-secrets, values, packages, or jobs until you create them. Script that data and
-the assertions as the same logged-in user:
+secrets, packages, or jobs until you create them. Script that data and the
+assertions as the same logged-in user:
 
 ```bash
 npm run preview:manual-test -- \

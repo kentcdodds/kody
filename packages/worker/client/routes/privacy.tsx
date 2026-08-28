@@ -39,13 +39,29 @@ export function PrivacyRoute(_handle: Handle) {
 				<h2 mix={css(cardTitleCss)}>What Kody stores per account</h2>
 				<p mix={css(descriptionCss)}>
 					Each signed-in user gets a fully isolated assistant. Kody stores
-					account profile information (email and username), secrets, values,
-					memories, packages and their source, jobs, email inboxes and messages,
-					durable storage, MCP server configuration, OAuth grants, package
-					invocation tokens, and any platform feedback you approve for
-					submission. All of this remains scoped to your account except for the
-					narrow admin review of approved platform feedback and the community
-					activity metadata described below.
+					account profile information (email, username, optional display name
+					and bio, and profile visibility), first-touch marketing attribution
+					captured on public-site visits when UTM or landing context is present
+					and associated with the account at signup, first-seen activation
+					timestamps (email verified, first MCP connection, first execute, first
+					saved package), MCP client name when known, last-active day stamps
+					used for return metrics, secrets, memories, packages and their source,
+					jobs, email inboxes and messages, durable storage, MCP server
+					configuration, OAuth grants, package invocation tokens, short-lived
+					execution history, community social graph edges (follows, listing
+					stars, and stored activity events), and any platform feedback you
+					approve for submission. All of this remains scoped to your account
+					except for content you deliberately make public (community listings
+					and a public profile), the narrow admin review of approved platform
+					feedback, and the community activity metadata described below.
+				</p>
+				<p mix={css(descriptionCss)}>
+					When profile visibility is <strong>public</strong>, display name, bio,
+					public package metadata, follow counts, and public activity are
+					visible on <code>/@username</code> and related social surfaces. When
+					visibility is <strong>private</strong>, the public profile is not
+					found, others cannot follow you, and you are omitted from stargazer
+					lists and other users&apos; timelines.
 				</p>
 			</section>
 
@@ -54,10 +70,13 @@ export function PrivacyRoute(_handle: Handle) {
 				<p mix={css(descriptionCss)}>
 					When you connect a third-party service — an OAuth app or API key you
 					register yourself — Kody stores that connection in your account only:
-					tokens, the scopes you granted, and host allowlists. Those credentials
-					stay in the encrypted secret store. Your agent and package code refer
-					to them by name; Kody substitutes them at the network boundary and
-					never returns the raw value to chat, search, or capability output.
+					tokens, the scopes you granted, and host allowlists. OAuth access and
+					refresh tokens, and a user-lane app client secret, are stored
+					encrypted on that connection or app. Standalone credentials (PATs and
+					API keys) stay in the encrypted secret store. Your agent and package
+					code refer to them by name; Kody substitutes them at the network
+					boundary and never returns the raw value to chat, search, or
+					capability output.
 				</p>
 				<p mix={css(descriptionCss)}>
 					Kody fetches data from a connected service only to fulfill a request
@@ -88,9 +107,9 @@ export function PrivacyRoute(_handle: Handle) {
 					When you connect Google, the rules above apply to Google user data —
 					Calendar, Docs, Sheets, Gmail send, Contacts, Tasks, YouTube, and any
 					other Google scopes you grant. Kody uses Google user data only to
-					fulfill your request or saved job. Kody stores Google OAuth tokens in
-					your encrypted secret store and does not use Google user data for
-					advertising. Kody shares, transfers, or discloses Google user data
+					fulfill your request or saved job. Kody stores Google OAuth tokens
+					encrypted on that Google connection and does not use Google user data
+					for advertising. Kody shares, transfers, or discloses Google user data
 					only with Cloudflare (hosting), the MCP host you connected when it
 					asks Kody to act, Google when Kody calls Google APIs on your behalf,
 					and when required by law.
@@ -101,23 +120,36 @@ export function PrivacyRoute(_handle: Handle) {
 				<h2 mix={css(cardTitleCss)}>What a deployment admin can see</h2>
 				<p mix={css(descriptionCss)}>
 					On shared deployments, operators can grant an admin role for account
-					administration. Admins see account metadata only: user id, username,
-					email, created and updated timestamps, and role assignments. The admin
-					UI lists users and roles; it does not expose account content. Platform
-					feedback you explicitly approve for admin review is a narrow
-					user-content exception. Admin-configured notification packages may
-					also receive a metadata-only notice when a person account is created
-					or deleted: user id, username, email, and the create source or delete
-					timestamp.
+					administration. Admins see account metadata: user id, username, email,
+					email-verification state (including the latest verification-mail
+					delivery outcome), entitlement plan, created and updated timestamps,
+					role assignments, first-touch marketing attribution fields when
+					present, activation first-seen timestamps, MCP client name, and
+					last-active stamps. The account-administration UI lists users and
+					roles; it does not expose account content. Platform feedback you
+					explicitly approve for admin review is a narrow user-content
+					exception.
 				</p>
 				<p mix={css(descriptionCss)}>
 					Admins also moderate public community listings and attributed
 					community reports, and can see who forked or rated a public listing,
 					when, and the rating scores. One-click installs appear as forks
-					because both use the same activity record. This view and
-					admin-configured notifications never include private package source,
-					rating notes, email, stable user ids, secrets, or unrelated account
-					content.
+					because both use the same activity record. This activity view never
+					includes private package source, rating notes, email, stable user ids,
+					private profiles, secrets, or unrelated account content.
+					Admin-configured notification packages may receive the same community
+					metadata, and a metadata-only notice when a person account is created
+					or self-deleted (stable user id, username, email, the create source or
+					delete timestamp, the consumed invite code when signup used one, and
+					first-touch marketing attribution fields when present). Those
+					lifecycle events omit passwords, roles, plan, secrets, and unrelated
+					account content. Admin-configured notification packages may also
+					receive a metadata-only notice when a swept account first crosses 80%
+					or 100% of a plan-limit resource, or when a non-admin account first
+					exceeds the monthly runtime-duration threshold. Entitlement and
+					runtime-duration events include stable user id, username, resource or
+					duration counts, and admin dashboard URLs; they omit emails, plans,
+					secrets, package source, and unrelated account content.
 				</p>
 			</section>
 
@@ -171,9 +203,9 @@ export function PrivacyRoute(_handle: Handle) {
 					<li>Private packages and their source</li>
 					<li>Jobs</li>
 					<li>Email inboxes and messages</li>
+					<li>Inbound webhook endpoints and delivery logs</li>
 					<li>Durable storage contents</li>
-					<li>MCP server configuration</li>
-					<li>OAuth grants</li>
+					<li>Connected MCP server configuration and OAuth grants</li>
 				</ul>
 				<p mix={css(descriptionCss)}>
 					None of this appears in any admin endpoint, page, or API payload — not
@@ -215,9 +247,9 @@ export function PrivacyRoute(_handle: Handle) {
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>How long Kody keeps data</h2>
 				<p mix={css(descriptionCss)}>
-					Account content such as packages, secrets, values, memories, jobs, and
-					durable storage remains available while your account and that content
-					exist. You can delete individual content or the whole account. Some
+					Account content such as packages, secrets, memories, jobs, and durable
+					storage remains available while your account and that content exist.
+					You can delete individual content or the whole account. Some
 					operational records have fixed cleanup periods:
 				</p>
 				<ul mix={css(listCss)}>
