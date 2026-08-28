@@ -616,15 +616,7 @@ jobs:
           set -euo pipefail
 
           is_retryable_deploy_failure() {
-            node <<'NODE'
-          const fs = require('node:fs')
-          const text = fs.readFileSync('deploy-platform.log', 'utf8').replace(/\u001b\[[0-9;]*m/g, '')
-          const retryablePatterns = [
-            /workflows\.api\.error\.internal_server/i,
-            /Cloudflare API[\s\S]*\[code:\s*10001\]/i,
-          ]
-          process.exit(retryablePatterns.some((pattern) => pattern.test(text)) ? 0 : 1)
-          NODE
+            node tools/ci/is-retryable-deploy-failure.ts deploy-platform.log
           }
 
           deploy_attempts=3
@@ -680,15 +672,7 @@ jobs:
           set -euo pipefail
 
           is_retryable_deploy_failure() {
-            node <<'NODE'
-          const fs = require('node:fs')
-          const text = fs.readFileSync('deploy-runtime.log', 'utf8').replace(/\u001b\[[0-9;]*m/g, '')
-          const retryablePatterns = [
-            /workflows\.api\.error\.internal_server/i,
-            /Cloudflare API[\s\S]*\[code:\s*10001\]/i,
-          ]
-          process.exit(retryablePatterns.some((pattern) => pattern.test(text)) ? 0 : 1)
-          NODE
+            node tools/ci/is-retryable-deploy-failure.ts deploy-runtime.log
           }
 
           deploy_attempts=3
@@ -753,15 +737,7 @@ jobs:
           DEPLOY_ARGS=(--config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" --var "APP_DEPLOY_INFO:${APP_DEPLOY_INFO}")
 
           is_retryable_deploy_failure() {
-            node <<'NODE'
-          const fs = require('node:fs')
-          const text = fs.readFileSync('deploy.log', 'utf8').replace(/\u001b\[[0-9;]*m/g, '')
-          const retryablePatterns = [
-            /workflows\.api\.error\.internal_server/i,
-            /Cloudflare API[\s\S]*\[code:\s*10001\]/i,
-          ]
-          process.exit(retryablePatterns.some((pattern) => pattern.test(text)) ? 0 : 1)
-          NODE
+            node tools/ci/is-retryable-deploy-failure.ts deploy.log
           }
 
           deploy_attempts=3
