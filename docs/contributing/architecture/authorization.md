@@ -420,7 +420,7 @@ the user row already carries the bounce.
 or five bounced sends in a UTC day, Kody pauses that account's outbound email
 and fans `user.email_outbound.paused` only to packages whose owners hold the
 admin role at dispatch time. The event contains the stable user id, username,
-email, reason, bounce threshold when the reason is bounces, an admin user URL,
+email, reason, bounce threshold when the reason is `bounced`, an admin user URL,
 and `occurred_at`. Delivery is best-effort (no Queue) after the pause write
 commits.
 
@@ -428,7 +428,7 @@ commits.
 fans `auth.denial.burst` when MCP auth failures in the last 60 minutes cross 50.
 The `email_delivery_alert` lane fans `email.delivery.burst` when shared-domain
 bounce or complaint outcomes in the last 60 minutes cross 20. Both payloads are
-count, threshold, window, insights URL, and `occurred` timestamp. They omit user
+count, threshold, window, insights URL, and `observed_at`. They omit user
 identities, tokens, recipients, and message content. A six-hour KV cooldown
 suppresses repeat pages. Delivery is best-effort (no Queue).
 

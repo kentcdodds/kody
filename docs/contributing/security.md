@@ -338,7 +338,7 @@ implemented by `checkAuthDenialBurstAndNotify` in
 admin-owned packages when MCP auth denials in the last 60 minutes cross a
 threshold (default 50). A KV cooldown prevents re-paging on the same sustained
 spike. Charts on `/admin/insights` remain the browse surface; the event is the
-page.
+input a notifier package can page from.
 
 A second hourly lane (`email_delivery_alert`, implemented by
 `checkEmailDeliveryBurstAndNotify` in

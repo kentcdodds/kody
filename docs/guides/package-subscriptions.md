@@ -1203,9 +1203,10 @@ ISO-8601 UTC. The event omits SMTP transcripts, message bodies, passwords,
 roles, plan, secrets, and unrelated account content. Idempotency keys include
 the topic, user id, timestamp, and subscriber package id.
 
-Use this topic for notifier packages that email or page an operator when a
-shared-domain sender is paused. Do not treat this topic as permission to clear
-the pause — call the audited `resume_email_outbound` admin action after review.
+Use this topic for notifier packages that email or page an operator when one
+account's outbound sending is paused. Do not treat this topic as permission to
+clear the pause — call the audited `resume_email_outbound` admin action after
+review. Shared-domain pressure uses `email.delivery.burst`.
 
 ## `auth.denial.burst` (admins)
 

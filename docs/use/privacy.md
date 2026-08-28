@@ -109,7 +109,7 @@ event omits SMTP transcripts, tokens, and unrelated account content.
 Admin-configured notification packages may also receive a metadata-only
 `user.email_outbound.paused` event when outbound sending is paused after a spam
 complaint or repeated bounces (stable user id, username, email, reason, bounce
-threshold when the reason is bounces, an admin user URL, and `occurred_at`).
+threshold when the reason is `bounced`, an admin user URL, and `occurred_at`).
 That event omits SMTP transcripts, message bodies, and unrelated account
 content. Admin-configured notification packages may also receive metadata-only
 `auth.denial.burst` or `email.delivery.burst` events when hourly MCP auth
