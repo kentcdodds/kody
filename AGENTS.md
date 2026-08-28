@@ -10,6 +10,9 @@ This file is intentionally brief. Detailed instructions live in focused docs:
 
 - Contributor documentation map:
   - [docs/contributing/index.md](./docs/contributing/index.md)
+- Friction log (repo papercuts; file through
+  `kody:@kentcdodds/friction-log/create`, never raw GitHub):
+  [docs/contributing/friction-log.md](./docs/contributing/friction-log.md)
 - Project intent and scope:
   [docs/contributing/project-intent.md](./docs/contributing/project-intent.md)
 - Decision records (steering veto list — open before proposing a new primitive
