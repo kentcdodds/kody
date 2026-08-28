@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import {
 	consumeAccountCreatedFathomSignal,
 	fathomEventNames,
+	scheduleConsumeAccountCreatedFathomSignal,
 	trackFathomEvent,
 } from './fathom-events.ts'
 
@@ -57,4 +58,48 @@ test('consumeAccountCreatedFathomSignal fires once and strips the query', () => 
 	expect(replaceState).toHaveBeenCalledWith(null, '', '/onboarding')
 	expect(consumeAccountCreatedFathomSignal()).toBe(false)
 	expect(trackEvent).toHaveBeenCalledTimes(1)
+})
+
+test('scheduleConsumeAccountCreatedFathomSignal retries until Fathom loads', () => {
+	vi.useFakeTimers()
+	const trackEvent = vi.fn()
+	const replaceState = vi.fn()
+	let href = 'https://kody.codes/onboarding?accountCreated=1'
+	const win: {
+		location: { href: string }
+		history: {
+			state: null
+			replaceState: (_state: unknown, _title: string, next: string) => void
+		}
+		fathom?: { trackEvent: typeof trackEvent }
+		setInterval: typeof setInterval
+		clearInterval: typeof clearInterval
+	} = {
+		get location() {
+			return { href }
+		},
+		history: {
+			state: null,
+			replaceState(_state: unknown, _title: string, next: string) {
+				replaceState(_state, _title, next)
+				href = `https://kody.codes${next}`
+			},
+		},
+		setInterval,
+		clearInterval,
+	}
+	vi.stubGlobal('window', win)
+
+	const cancel = scheduleConsumeAccountCreatedFathomSignal({
+		intervalMs: 100,
+		maxAttempts: 5,
+	})
+	expect(trackEvent).not.toHaveBeenCalled()
+
+	win.fathom = { trackEvent }
+	vi.advanceTimersByTime(100)
+	expect(trackEvent).toHaveBeenCalledWith('account_created')
+	expect(replaceState).toHaveBeenCalledWith(null, '', '/onboarding')
+	cancel()
+	vi.useRealTimers()
 })

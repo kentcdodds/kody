@@ -58,3 +58,30 @@ export function consumeAccountCreatedFathomSignal(): boolean {
 		return false
 	}
 }
+
+const accountCreatedRetryIntervalMs = 250
+const accountCreatedRetryAttempts = 40
+
+/**
+ * Consume `accountCreated=1` immediately, then retry briefly while the
+ * deferred Fathom script may still be loading. No-ops when the query is
+ * absent. Returns a cancel function for tests / unmount.
+ */
+export function scheduleConsumeAccountCreatedFathomSignal(options?: {
+	intervalMs?: number
+	maxAttempts?: number
+}): () => void {
+	if (typeof window === 'undefined') return () => {}
+	const intervalMs = options?.intervalMs ?? accountCreatedRetryIntervalMs
+	const maxAttempts = options?.maxAttempts ?? accountCreatedRetryAttempts
+	if (consumeAccountCreatedFathomSignal()) return () => {}
+
+	let attempts = 0
+	const timer = window.setInterval(() => {
+		attempts += 1
+		if (consumeAccountCreatedFathomSignal() || attempts >= maxAttempts) {
+			window.clearInterval(timer)
+		}
+	}, intervalMs)
+	return () => window.clearInterval(timer)
+}
