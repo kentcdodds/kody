@@ -51,9 +51,11 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				userId,
 				doId: this.ctx.id.toString(),
 			})
-			void stampFirstMcpConnected(this.env.APP_DB, {
-				stableUserId: userId,
-			})
+			this.ctx.waitUntil(
+				stampFirstMcpConnected(this.env.APP_DB, {
+					stableUserId: userId,
+				}),
+			)
 		}
 		const [overlay, registry, popularPackages, retiringNoticeIds] =
 			await Promise.all([

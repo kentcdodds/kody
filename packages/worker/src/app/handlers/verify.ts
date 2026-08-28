@@ -20,6 +20,7 @@ import {
 	setVerifySessionSecret,
 } from '#app/verify-session.ts'
 import { createDb, usersTable } from '#worker/db.ts'
+import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 
 export function createVerifyHandler(env: Env) {
 	return {
@@ -124,6 +125,9 @@ export function createTwoFactorVerifyApiHandler(env: Env) {
 			)
 			headers.append('Set-Cookie', await destroyVerifySessionCookie(secure))
 
+			await touchLastActiveAt(env.APP_DB, {
+				stableUserId: pendingSession.stableUserId,
+			})
 			void logAuditEvent({
 				category: 'auth',
 				action: 'login_2fa_verify',

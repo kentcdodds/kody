@@ -147,7 +147,7 @@ export async function insertSavedPackage(
 			row.updated_at ?? now,
 		)
 		.run()
-	void stampFirstSavedPackage(db, {
+	await stampFirstSavedPackage(db, {
 		stableUserId: row.user_id,
 		at: row.created_at ?? now,
 	})

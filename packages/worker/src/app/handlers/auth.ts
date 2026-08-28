@@ -582,7 +582,7 @@ export function createAuthHandler(env: Env) {
 				},
 				isSecureRequest(request),
 			)
-			void touchLastActiveAt(env.APP_DB, {
+			await touchLastActiveAt(env.APP_DB, {
 				stableUserId: resolveUserStableId(userRecord),
 			})
 			void logAuditEvent({

@@ -24,27 +24,32 @@ function readFathom(): FathomTracker | null {
 }
 
 /**
- * Fire a named Fathom event. No-ops when Fathom is not loaded (local/dev
- * without FATHOM_SITE_ID, or before the script runs).
+ * Fire a named Fathom event. Returns true when Fathom accepted the call.
+ * No-ops (returns false) when Fathom is not loaded yet.
  */
-export function trackFathomEvent(name: FathomEventName | string): void {
+export function trackFathomEvent(name: FathomEventName | string): boolean {
 	try {
-		readFathom()?.trackEvent(name)
+		const fathom = readFathom()
+		if (!fathom) return false
+		fathom.trackEvent(name)
+		return true
 	} catch {
 		// Analytics must never break auth or navigation.
+		return false
 	}
 }
 
 /**
- * If the current URL carries accountCreated=1, fire account_created once and
- * strip the query param from the address bar without a navigation.
+ * If the current URL carries accountCreated=1, fire account_created and
+ * strip the query only after Fathom accepts the event. When Fathom is not
+ * ready yet, leave the query so a later hydration pass can retry.
  */
 export function consumeAccountCreatedFathomSignal(): boolean {
 	if (typeof window === 'undefined') return false
 	try {
 		const url = new URL(window.location.href)
 		if (url.searchParams.get(accountCreatedQueryParam) !== '1') return false
-		trackFathomEvent(fathomEventNames.accountCreated)
+		if (!trackFathomEvent(fathomEventNames.accountCreated)) return false
 		url.searchParams.delete(accountCreatedQueryParam)
 		const next = `${url.pathname}${url.search}${url.hash}`
 		window.history.replaceState(window.history.state, '', next)

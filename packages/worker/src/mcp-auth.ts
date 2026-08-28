@@ -306,12 +306,12 @@ export async function handleMcpRequest({
 			}
 		})(),
 	})
-	if (classification.clientName) {
-		void stampFirstMcpConnected(env.APP_DB, {
+	ctx.waitUntil(
+		stampFirstMcpConnected(env.APP_DB, {
 			stableUserId: mcpUser.userId,
-			clientName: classification.clientName,
-		})
-	}
+			clientName: classification.clientName || null,
+		}),
+	)
 
 	return await withAccountWriteLease({
 		db: env.APP_DB,

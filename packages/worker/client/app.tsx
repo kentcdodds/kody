@@ -40,6 +40,7 @@ import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import { WaitlistBanner } from './waitlist-banner.tsx'
 import { consumeAccountCreatedFathomSignal } from './fathom-events.ts'
+import { captureFirstTouchAttributionFromLocation } from './first-touch-attribution.ts'
 
 registerRouteLoaders(clientRouteLoaders)
 registerClientRoutes(clientRoutes)
@@ -113,6 +114,8 @@ export function App(handle: Handle<AppProps>) {
 	// but auth may have changed since the document was rendered.
 	if (typeof document !== 'undefined') {
 		setSessionRefreshHandler(queueSessionRefresh)
+		// Capture UTMs from any landing URL before homepage CTAs rewrite them.
+		captureFirstTouchAttributionFromLocation()
 		consumeAccountCreatedFathomSignal()
 		handle.queueTask(() => {
 			queueSessionRefresh()

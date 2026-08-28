@@ -156,9 +156,9 @@ export function LoginRoute(handle: Handle) {
 	function maybeTrackSignupStarted() {
 		if (signupStartedTracked) return
 		if (getCurrentAuthMode(handle) !== 'signup') return
-		signupStartedTracked = true
 		readSignupFirstTouchAttribution()
-		trackFathomEvent(fathomEventNames.signupStarted)
+		if (!trackFathomEvent(fathomEventNames.signupStarted)) return
+		signupStartedTracked = true
 	}
 
 	function setState(nextStatus: AuthStatus, nextMessage: string | null = null) {
@@ -202,6 +202,7 @@ export function LoginRoute(handle: Handle) {
 		routePath = nextPath
 		resetAuthState()
 		if (getAuthModeFromPathname(nextPath) === 'signup') {
+			signupStartedTracked = false
 			applySignupSearch(getSearchParams(handle))
 		}
 	})

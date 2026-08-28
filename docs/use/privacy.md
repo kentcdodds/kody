@@ -7,15 +7,19 @@ admin can see.
 
 Each signed-in user gets a fully isolated assistant. Kody stores account profile
 information (email, username, optional display name and bio, and profile
-visibility), secrets, memories, packages and their source, jobs, email inboxes
-and messages, durable storage, MCP server configuration, OAuth grants, package
-invocation tokens, short-lived execution history (see
-[Activity](./activity.md)), community social graph edges (follows, listing
-stars, and stored activity events), and any platform feedback you approve for
-submission. All of this remains scoped to your account except for content you
-deliberately make public (community listings and a public profile), the narrow
-admin review of approved platform feedback, and the community activity metadata
-described below.
+visibility), first-touch marketing attribution captured at signup when present
+(`utm_source` / `utm_medium` / `utm_campaign` / `utm_content` / `utm_term`,
+landing path, and referrer), first-seen activation timestamps (email verified,
+first MCP connection, first execute, first saved package), MCP client name when
+known, last-active day stamps used for return metrics, secrets, memories,
+packages and their source, jobs, email inboxes and messages, durable storage,
+MCP server configuration, OAuth grants, package invocation tokens, short-lived
+execution history (see [Activity](./activity.md)), community social graph edges
+(follows, listing stars, and stored activity events), and any platform feedback
+you approve for submission. All of this remains scoped to your account except
+for content you deliberately make public (community listings and a public
+profile), the narrow admin review of approved platform feedback, and the
+community activity metadata described below.
 
 When profile visibility is **public**, display name, bio, public package
 metadata, follow counts, and public activity are visible on `/@username` and
@@ -76,8 +80,10 @@ required by law.
 
 On shared deployments, operators can grant an admin role for account
 administration. Admins see account metadata: user id, username, email, created
-and updated timestamps, and role assignments. The account-administration UI
-lists users and roles; it does not expose account content.
+and updated timestamps, role assignments, first-touch marketing attribution
+fields when present, activation first-seen timestamps, MCP client name, and
+last-active stamps. The account-administration UI lists users and roles; it does
+not expose account content.
 
 Platform feedback you explicitly approve for admin review is a narrow
 user-content exception.

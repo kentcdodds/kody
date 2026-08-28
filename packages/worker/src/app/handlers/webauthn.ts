@@ -24,6 +24,7 @@ import {
 	updatePasskeyCounter,
 } from '#app/passkeys.ts'
 import { type routes } from '#universal/routes.ts'
+import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import {
 	createWebAuthnChallengeCookie,
 	destroyWebAuthnChallengeCookie,
@@ -343,6 +344,9 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 					secure,
 				),
 			)
+			await touchLastActiveAt(env.APP_DB, {
+				stableUserId: resolveUserStableId(userRecord),
+			})
 			void logAuditEvent({
 				category: 'auth',
 				action: 'passkey_login',

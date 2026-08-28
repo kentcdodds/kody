@@ -461,7 +461,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					{ stableUserId, email: user.email, rememberMe: false },
 					secure,
 				)
-				void touchLastActiveAt(env.APP_DB, { stableUserId })
+				await touchLastActiveAt(env.APP_DB, { stableUserId })
 				void logAuditEvent({
 					category: 'auth',
 					action: 'oauth_login',

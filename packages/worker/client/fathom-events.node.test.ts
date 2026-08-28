@@ -14,13 +14,25 @@ test('trackFathomEvent calls window.fathom.trackEvent when present', () => {
 	vi.stubGlobal('window', {
 		fathom: { trackEvent },
 	})
-	trackFathomEvent(fathomEventNames.signupStarted)
+	expect(trackFathomEvent(fathomEventNames.signupStarted)).toBe(true)
 	expect(trackEvent).toHaveBeenCalledWith('signup_started')
 })
 
-test('trackFathomEvent no-ops without fathom and never throws', () => {
+test('trackFathomEvent returns false without fathom and never throws', () => {
 	vi.stubGlobal('window', {})
-	expect(() => trackFathomEvent('account_created')).not.toThrow()
+	expect(trackFathomEvent('account_created')).toBe(false)
+})
+
+test('consumeAccountCreatedFathomSignal keeps the query when Fathom is unavailable', () => {
+	const replaceState = vi.fn()
+	vi.stubGlobal('window', {
+		location: {
+			href: 'https://kody.codes/onboarding?accountCreated=1',
+		},
+		history: { state: null, replaceState },
+	})
+	expect(consumeAccountCreatedFathomSignal()).toBe(false)
+	expect(replaceState).not.toHaveBeenCalled()
 })
 
 test('consumeAccountCreatedFathomSignal fires once and strips the query', () => {
