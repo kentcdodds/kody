@@ -1,11 +1,12 @@
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { joinAppUrl } from '#worker/app-base-url.ts'
-import { getSystemEmailDomain } from '#worker/email/platform-address.ts'
+import { dispatchAuthDenialBurstSubscriptionEvent } from './auth-denial-package-subscriptions.ts'
+import { buildAuthDenialBurstEvent } from './auth-denial-subscription-event.ts'
 
 /**
  * Hourly MCP auth-denial burst check. Denials are already recorded in
- * `audit_events` and charted on `/admin/insights`; this lane emails admins when
- * the last hour crosses a threshold so a probe is not only visible in charts.
+ * `audit_events` and charted on `/admin/insights`; this lane fans
+ * `auth.denial.burst` when the last hour crosses a threshold so a probe
+ * is not only visible in charts.
  */
 
 export const authDenialAlertWindowMinutes = 60
@@ -23,9 +24,6 @@ type AuthDenialAlertEnv = {
 	APP_DB: D1Database
 	AUDIT_DB: D1Database
 	APP_BASE_URL?: string
-	CLOUDFLARE_ACCOUNT_ID?: string
-	CLOUDFLARE_API_BASE_URL?: string
-	CLOUDFLARE_API_TOKEN?: string
 	BUNDLE_ARTIFACTS_KV?: KVNamespace
 }
 
@@ -37,8 +35,8 @@ export function shouldRunAuthDenialAlertCron(now: Date) {
 export type AuthDenialAlertResult =
 	| { status: 'below_threshold'; count: number }
 	| { status: 'cooldown'; count: number }
-	| { status: 'notified'; count: number; recipients: number }
-	| { status: 'skipped'; reason: 'no_system_domain' | 'no_admins' }
+	| { status: 'notified'; count: number }
+	| { status: 'skipped'; reason: 'notify_failed' }
 
 export async function checkAuthDenialBurstAndNotify(input: {
 	env: AuthDenialAlertEnv
@@ -83,15 +81,26 @@ export async function checkAuthDenialBurstAndNotify(input: {
 		}
 	}
 
-	const notified = await notifyAdminsOfAuthDenialBurst({
-		env: input.env,
-		count,
-		threshold,
-		windowMinutes,
-		now,
-	})
-	if (notified.status !== 'notified') {
-		return notified
+	try {
+		await dispatchAuthDenialBurstSubscriptionEvent({
+			env: input.env as Pick<
+				Env,
+				'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL'
+			>,
+			event: buildAuthDenialBurstEvent({
+				count,
+				threshold,
+				windowMinutes,
+				insightsUrl: joinAppUrl({
+					env: input.env,
+					path: '/admin/insights',
+				}),
+				observedAt: now.toISOString(),
+			}),
+		})
+	} catch (error) {
+		console.warn('auth-denial-alert-notification-failed', error)
+		return { status: 'skipped', reason: 'notify_failed' }
 	}
 
 	if (input.env.BUNDLE_ARTIFACTS_KV) {
@@ -105,87 +114,10 @@ export async function checkAuthDenialBurstAndNotify(input: {
 		)
 	}
 
-	return notified
-}
-
-async function notifyAdminsOfAuthDenialBurst(input: {
-	env: AuthDenialAlertEnv
-	count: number
-	threshold: number
-	windowMinutes: number
-	now: Date
-}): Promise<
-	| { status: 'notified'; count: number; recipients: number }
-	| { status: 'skipped'; reason: 'no_system_domain' | 'no_admins' }
-> {
-	const systemDomain = getSystemEmailDomain(input.env)
-	if (!systemDomain) {
-		return { status: 'skipped', reason: 'no_system_domain' }
-	}
-
-	const admins = await input.env.APP_DB.prepare(
-		`SELECT u.email FROM users u
-		 INNER JOIN user_roles ur ON ur.user_id = u.id
-		 INNER JOIN roles r ON r.id = ur.role_id
-		 WHERE r.name = 'admin'
-		 ORDER BY u.id ASC`,
-	).all<{ email: string }>()
-	const recipients = (admins.results ?? []).map((row) => row.email)
-	if (recipients.length === 0) {
-		return { status: 'skipped', reason: 'no_admins' }
-	}
-
-	const insightsUrl = joinAppUrl({
-		env: input.env,
-		path: '/admin/insights',
-	})
-	const text = [
-		`Kody recorded ${input.count} MCP auth denials in the last ${input.windowMinutes} minutes (threshold ${input.threshold}).`,
-		'A single denial is routine; a burst can mean permission probing or a compromised account.',
-		`Review the failure charts at ${insightsUrl} and query auth failures with admin_audit_log_query.`,
-		`Checked at ${input.now.toISOString()}.`,
-	].join('\n\n')
-
-	try {
-		await sendCloudflareEmail(
-			{
-				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
-				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
-				apiToken: input.env.CLOUDFLARE_API_TOKEN,
-			},
-			{
-				to: recipients.length === 1 ? recipients[0]! : recipients,
-				from: `kody@${systemDomain}`,
-				subject: `MCP auth denial burst: ${input.count} in ${input.windowMinutes}m`,
-				text,
-				html: `<!doctype html><html lang="en"><body>${text
-					.split('\n\n')
-					.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
-					.join('')}</body></html>`,
-			},
-		)
-	} catch (error) {
-		console.warn('auth-denial-alert-notification-failed', error)
-		throw error
-	}
-
 	console.warn('auth-denial-burst-alerted', {
-		count: input.count,
-		threshold: input.threshold,
-		recipients: recipients.length,
+		count,
+		threshold,
 	})
 
-	return {
-		status: 'notified',
-		count: input.count,
-		recipients: recipients.length,
-	}
-}
-
-function escapeHtml(value: string) {
-	return value
-		.replaceAll('&', '&amp;')
-		.replaceAll('<', '&lt;')
-		.replaceAll('>', '&gt;')
-		.replaceAll('"', '&quot;')
+	return { status: 'notified', count }
 }

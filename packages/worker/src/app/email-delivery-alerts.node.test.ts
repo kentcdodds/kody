@@ -1,11 +1,12 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { emailDeliveryBurstTopic } from './email-delivery-burst-subscription-event.ts'
 
-const sendCloudflareEmail = vi.fn(async () => ({ ok: true }))
+const dispatchEmailDeliveryBurstSubscriptionEvent = vi.fn(async () => [])
 
-vi.mock('#app/email/cloudflare-email.ts', () => ({
-	sendCloudflareEmail: (...args: Array<unknown>) =>
-		sendCloudflareEmail(...args),
+vi.mock('./email-delivery-burst-package-subscriptions.ts', () => ({
+	dispatchEmailDeliveryBurstSubscriptionEvent: (...args: Array<unknown>) =>
+		dispatchEmailDeliveryBurstSubscriptionEvent(...args),
 }))
 
 const {
@@ -28,14 +29,6 @@ function createDb(count: number) {
 					}
 					return null
 				},
-				async all<T>() {
-					if (normalized.includes('from users as user')) {
-						return {
-							results: [{ email: 'admin@example.com' }],
-						} as { results: Array<T> }
-					}
-					return { results: [] }
-				},
 				async run() {
 					return { meta: { changes: 0 } }
 				},
@@ -51,12 +44,13 @@ test('thin delivery alert signals notify once per cooldown window', async () => 
 	expect(
 		shouldRunEmailDeliveryAlertCron(new Date('2026-07-25T12:05:00.000Z')),
 	).toBe(false)
-	sendCloudflareEmail.mockClear()
+	dispatchEmailDeliveryBurstSubscriptionEvent.mockClear()
 	const quiet = await checkEmailDeliveryBurstAndNotify({
 		env: { APP_DB: createDb(10), APP_BASE_URL: 'https://heykody.dev' },
 		threshold: 20,
 	})
 	expect(quiet).toEqual({ status: 'below_threshold', count: 10 })
+	expect(dispatchEmailDeliveryBurstSubscriptionEvent).not.toHaveBeenCalled()
 
 	consoleWarn.mockImplementation(() => {})
 	const kvStore = new Map<string, string>()
@@ -71,17 +65,23 @@ test('thin delivery alert signals notify once per cooldown window', async () => 
 	const env = {
 		APP_DB: createDb(35),
 		APP_BASE_URL: 'https://heykody.dev/',
-		USER_EMAIL_DOMAIN: 'mail.heykody.dev',
 		BUNDLE_ARTIFACTS_KV: kv,
 	}
 	const now = new Date('2026-07-25T12:00:00.000Z')
 	try {
 		await expect(
 			checkEmailDeliveryBurstAndNotify({ env, now, threshold: 20 }),
-		).resolves.toEqual({ status: 'notified', count: 35, recipients: 1 })
-		const payload = sendCloudflareEmail.mock.calls[0]?.[1] as { text: string }
-		expect(payload.text).toContain('https://heykody.dev/admin/insights')
-		expect(payload.text).not.toContain('heykody.dev//')
+		).resolves.toEqual({ status: 'notified', count: 35 })
+		expect(dispatchEmailDeliveryBurstSubscriptionEvent).toHaveBeenCalledWith({
+			env,
+			event: expect.objectContaining({
+				event: emailDeliveryBurstTopic,
+				count: 35,
+				threshold: 20,
+				window_minutes: 60,
+				insights_url: 'https://heykody.dev/admin/insights',
+			}),
+		})
 		expect(kvStore.get(emailDeliveryAlertKvKey)).toBe(String(now.getTime()))
 		await expect(
 			checkEmailDeliveryBurstAndNotify({
@@ -90,7 +90,7 @@ test('thin delivery alert signals notify once per cooldown window', async () => 
 				threshold: 20,
 			}),
 		).resolves.toEqual({ status: 'cooldown', count: 35 })
-		expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
+		expect(dispatchEmailDeliveryBurstSubscriptionEvent).toHaveBeenCalledTimes(1)
 	} finally {
 		consoleWarn.mockReset()
 	}

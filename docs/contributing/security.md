@@ -334,16 +334,17 @@ charts on `/admin/insights`. Two sites record:
 
 An hourly cron lane (`auth_denial_alert` in `packages/worker/src/scheduled/`,
 implemented by `checkAuthDenialBurstAndNotify` in
-`packages/worker/src/app/auth-denial-alerts.ts`) emails every admin account when
-MCP auth denials in the last 60 minutes cross a threshold (default 50). A KV
-cooldown prevents re-paging on the same sustained spike. Charts on
-`/admin/insights` remain the browse surface; the email is the page.
+`packages/worker/src/app/auth-denial-alerts.ts`) fans `auth.denial.burst` to
+admin-owned packages when MCP auth denials in the last 60 minutes cross a
+threshold (default 50). A KV cooldown prevents re-paging on the same sustained
+spike. Charts on `/admin/insights` remain the browse surface; the event is the
+input a notifier package can page from.
 
 A second hourly lane (`email_delivery_alert`, implemented by
 `checkEmailDeliveryBurstAndNotify` in
-`packages/worker/src/app/email-delivery-alerts.ts`) pages admins when
-platform-wide Cloudflare Email Sending outcomes of `complained` or `bounced` in
-the last 60 minutes cross a threshold (default 20). Those match the
+`packages/worker/src/app/email-delivery-alerts.ts`) fans `email.delivery.burst`
+when platform-wide Cloudflare Email Sending outcomes of `complained` or
+`bounced` in the last 60 minutes cross a threshold (default 20). Those match the
 outbound-abuse reputation signals (`failed` / `rejected` are not counted).
 Cooldown is 6 hours via `BUNDLE_ARTIFACTS_KV`. This complements the per-user
 outbound pause in `outbound-abuse.ts` — that path stops one account; the cron
@@ -446,7 +447,7 @@ blast radius:
   delivery queue evaluates provider delivery events
   (`packages/worker/src/email/outbound-abuse.ts`): one spam complaint, or five
   or more bounced sends within a UTC day, pauses that account's outbound email
-  and notifies admin accounts through the transactional sender. The pause write
+  and fans `user.email_outbound.paused` to admin-owned packages. The pause write
   is idempotent (only transitions NULL), the send path rejects while paused, and
   the audited `resume_email_outbound` admin action clears it after review. The
   `/admin/insights` "Email delivery health" chart shows platform-wide outcome

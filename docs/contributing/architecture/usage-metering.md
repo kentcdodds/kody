@@ -389,8 +389,8 @@ Guarantees and rules:
   hour vs the hour before and the last 24 hours vs the 24 hours before. The
   content-free snapshot lives at the platform KV key
   `fleet-package-error-rate:v1` and feeds `/admin/insights`. When the combined
-  rate rises past a volume floor, Kody emails admins and fans
-  `fleet.package_error_rate.elevated` to admin-owned packages. The KV cooldown
-  key `ops-alert:fleet-package-error-rate:v1` suppresses repeat pages for six
-  hours. The payload has no user ids, package ids, or error strings. See
+  rate rises past a volume floor, Kody fans `fleet.package_error_rate.elevated`
+  to admin-owned packages. The KV cooldown key
+  `ops-alert:fleet-package-error-rate:v1` suppresses repeat pages for six hours.
+  The payload has no user ids, package ids, or error strings. See
   [Package subscriptions](../../guides/package-subscriptions.md#fleetpackageerrorrateelevated-admins).

@@ -380,13 +380,13 @@ polling remains the backstop.
 **Admins can subscribe to fleet package-runtime error-rate elevations.** The
 hourly usage-aggregation lane compares anonymous Analytics Engine totals for
 `package_export`, `package_static_call`, `job_run`, and `workflow_run`. When the
-combined error rate rises, Kody emails admins and fans
-`fleet.package_error_rate.elevated` only to packages whose owners hold the admin
-role at dispatch time. The event contains window bounds, per-metric counts and
-rates, the public status URL, and the insights URL. It omits user ids, package
-ids, error strings, logs, and unrelated account content. This is operator
-telemetry about kody itself, not a user-data exception. Delivery is best-effort
-(no Queue). A six-hour cooldown suppresses repeat pages.
+combined error rate rises, Kody fans `fleet.package_error_rate.elevated` only to
+packages whose owners hold the admin role at dispatch time. The event contains
+window bounds, per-metric counts and rates, the public status URL, and the
+insights URL. It omits user ids, package ids, error strings, logs, and unrelated
+account content. This is operator telemetry about kody itself, not a user-data
+exception. Delivery is best-effort (no Queue). A six-hour cooldown suppresses
+repeat pages.
 
 **Admins can subscribe to fleet entitlement crossings.** The hourly
 `usage_entitlement_alert` lane sweeps the top ~15 active accounts and fans
@@ -408,13 +408,29 @@ present. It omits passwords, roles, plan, secrets, and unrelated account
 content. Delivery is best-effort (no Queue) after the account change commits.
 
 **Admins can subscribe to verification-mail terminal failures.** The first
-bounce, failure, rejection, or complaint on a signup/verify send emails every
-admin account and fans `user.email_verification.failed` only to packages whose
-owners hold the admin role at dispatch time. The event contains the stable user
-id, username, email, delivery status, `class` (`sender_block` / `other` /
-`null`), an `/admin/users/:stableUserId` URL, and `occurred_at`. It omits SMTP
-transcripts, tokens, and unrelated account content. Delivery is best-effort (no
-Queue) after the user row already carries the bounce.
+bounce, failure, rejection, or complaint on a signup/verify send fans
+`user.email_verification.failed` only to packages whose owners hold the admin
+role at dispatch time. The event contains the stable user id, username, email,
+delivery status, `class` (`sender_block` / `other` / `null`), an
+`/admin/users/:stableUserId` URL, and `occurred_at`. It omits SMTP transcripts,
+tokens, and unrelated account content. Delivery is best-effort (no Queue) after
+the user row already carries the bounce.
+
+**Admins can subscribe to outbound-mail abuse pauses.** After one spam complaint
+or five bounced sends in a UTC day, Kody pauses that account's outbound email
+and fans `user.email_outbound.paused` only to packages whose owners hold the
+admin role at dispatch time. The event contains the stable user id, username,
+email, reason, bounce threshold when the reason is `bounced`, an admin user URL,
+and `occurred_at`. Delivery is best-effort (no Queue) after the pause write
+commits.
+
+**Admins can subscribe to hourly operator bursts.** The `auth_denial_alert` lane
+fans `auth.denial.burst` when MCP auth failures in the last 60 minutes cross 50.
+The `email_delivery_alert` lane fans `email.delivery.burst` when shared-domain
+bounce or complaint outcomes in the last 60 minutes cross 20. Both payloads are
+count, threshold, window, insights URL, and `observed_at`. They omit user
+identities, tokens, recipients, and message content. A six-hour KV cooldown
+suppresses repeat pages. Delivery is best-effort (no Queue).
 
 **Admins can see** operator-owned system mail for reserved platform addresses
 (`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin`). That mail

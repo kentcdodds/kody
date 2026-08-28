@@ -13,8 +13,10 @@ summary:
   status.incident.opened / status.incident.resolved operator telemetry,
   admin-only fleet.package_error_rate.elevated package-runtime health,
   admin-only fleet.entitlement.crossed entitlement crossings, admin-only
+  auth.denial.burst / email.delivery.burst operator bursts, admin-only
   user.created / user.deleted account lifecycle notifications, and admin-only
-  user.email_verification.failed verification-mail failure notifications.
+  user.email_verification.failed / user.email_outbound.paused mail-operator
+  notifications.
 category: platform
 ---
 
@@ -134,8 +136,9 @@ publish result. Failed and non-fast-forward results have no test hints.
   `platform.feedback.submitted`, `community.activity.recorded`,
   `community.listing.published`, `status.incident.opened`,
   `fleet.package_error_rate.elevated`, `fleet.entitlement.crossed`,
-  `status.incident.resolved`, `user.created`, `user.deleted`,
-  `user.email_verification.failed`) gate **production** fan-out on admin role;
+  `auth.denial.burst`, `email.delivery.burst`, `status.incident.resolved`,
+  `user.created`, `user.deleted`, `user.email_verification.failed`,
+  `user.email_outbound.paused`) gate **production** fan-out on admin role;
   synthetic dispatch still runs your handler directly for smoke testing.
 - **Activity.** Synthetic runs appear on the `subscription` surface. Handler
   failures do not emit `run.error.recorded` (recursion guard).
@@ -920,10 +923,10 @@ totals of `package_export`, `package_static_call`, `job_run`, and
 `workflow_run`. It compares the last completed hour to the hour before it, and
 the last 24 hours to the 24 hours before that. When the combined error rate
 rises past a volume floor, Kody writes a content-free KV snapshot for
-`/admin/insights`, emails admin-role users, and fans
-`fleet.package_error_rate.elevated` to packages saved by users who hold the
-admin role at dispatch time. A non-admin package may declare the topic, but it
-never receives the event. Role revocation stops delivery on the next elevation.
+`/admin/insights` and fans `fleet.package_error_rate.elevated` to packages saved
+by users who hold the admin role at dispatch time. A non-admin package may
+declare the topic, but it never receives the event. Role revocation stops
+delivery on the next elevation.
 
 There is no Queue / DLQ for this topic. A missed invoke is logged and does not
 fail usage rollup aggregation. A six-hour cooldown suppresses repeat pages
@@ -1122,11 +1125,11 @@ the topic, user id, timestamp, and package id.
 ## `user.email_verification.failed` (admins)
 
 The first terminal Cloudflare lifecycle event on a signup/verify send
-(`bounced`, `failed`, `rejected`, or `complained`) emails every admin account
-and fans `user.email_verification.failed` to packages saved by users who hold
-the admin role at dispatch time. A later replay of the same terminal state does
-not emit again. A non-admin package may declare the topic, but it never receives
-the event. Role revocation stops delivery on the next failure.
+(`bounced`, `failed`, `rejected`, or `complained`) fans
+`user.email_verification.failed` to packages saved by users who hold the admin
+role at dispatch time. A later replay of the same terminal state does not emit
+again. A non-admin package may declare the topic, but it never receives the
+event. Role revocation stops delivery on the next failure.
 
 There is no Queue / DLQ for this topic. Dispatch is best-effort after the user
 row already carries the bounce: a failed invoke is logged and does not fail
@@ -1162,3 +1165,115 @@ signup is stranded. `user.created` still fires for every new person account,
 including accounts that later verify themselves. Do not treat this topic as
 permission to mark the account verified or mint a link — call
 `admin_user_verify` from an admin session when ownership is proven.
+
+## `user.email_outbound.paused` (admins)
+
+The delivery-queue abuse lane pauses outbound sending after one spam complaint
+or five bounced sends in a UTC day, then fans `user.email_outbound.paused` to
+packages saved by users who hold the admin role at dispatch time. A later replay
+of the same pause write does not emit again. A non-admin package may declare the
+topic, but it never receives the event. Role revocation stops delivery on the
+next pause.
+
+There is no Queue / DLQ for this topic. Dispatch is best-effort after the pause
+is already committed: a failed invoke is logged and does not fail delivery-event
+processing.
+
+Handlers receive a metadata-only operator snapshot:
+
+```ts
+type UserEmailOutboundPausedEvent = {
+	event: 'user.email_outbound.paused'
+	user: {
+		id: string
+		username: string
+		email: string
+	}
+	reason: 'complained' | 'bounced'
+	bounce_threshold: number | null
+	admin_user_url: string
+	occurred_at: string
+}
+```
+
+`user.id` is the stable account user id. `bounce_threshold` is the daily bounce
+count that triggered the pause (`5`) when `reason` is `bounced`, otherwise
+`null`. `admin_user_url` is the operator page for that account. Timestamps are
+ISO-8601 UTC. The event omits SMTP transcripts, message bodies, passwords,
+roles, plan, secrets, and unrelated account content. Idempotency keys include
+the topic, user id, timestamp, and subscriber package id.
+
+Use this topic for notifier packages that email or page an operator when one
+account's outbound sending is paused. Do not treat this topic as permission to
+clear the pause — call the audited `resume_email_outbound` admin action after
+review. Shared-domain pressure uses `email.delivery.burst`.
+
+## `auth.denial.burst` (admins)
+
+The hourly `auth_denial_alert` lane counts MCP auth failures
+(`mcp_token_rejected`, `mcp_capability_denied`) in the last 60 minutes. When the
+count crosses 50, it fans `auth.denial.burst` to packages saved by users who
+hold the admin role at dispatch time. A six-hour KV cooldown suppresses repeat
+pages on the same sustained spike. A non-admin package may declare the topic,
+but it never receives the event.
+
+There is no Queue / DLQ for this topic. A missed invoke is logged and does not
+fail the hourly cron. Audit rows and `/admin/insights` remain the browse
+surface.
+
+Handlers receive operator telemetry only:
+
+```ts
+type AuthDenialBurstEvent = {
+	event: 'auth.denial.burst'
+	count: number
+	threshold: number
+	window_minutes: number
+	insights_url: string
+	observed_at: string
+}
+```
+
+`insights_url` is the operator insights dashboard. The event omits user ids,
+token ids, capability names, request bodies, and unrelated account content.
+Idempotency keys include the topic, observed timestamp, and subscriber package
+id.
+
+Use this topic for notifier packages that page an operator when permission
+probing or a compromised account is likely. Do not treat this topic as
+permission to suspend an account.
+
+## `email.delivery.burst` (admins)
+
+The hourly `email_delivery_alert` lane counts platform-wide Cloudflare Email
+Sending outcomes of `complained` or `bounced` in the last 60 minutes. When the
+count crosses 20, it fans `email.delivery.burst` to packages saved by users who
+hold the admin role at dispatch time. A six-hour KV cooldown suppresses repeat
+pages. A non-admin package may declare the topic, but it never receives the
+event.
+
+There is no Queue / DLQ for this topic. A missed invoke is logged and does not
+fail the hourly cron. Thin `email_delivery_alert_events` rows and the Email
+delivery health chart on `/admin/insights` remain the browse surface.
+
+Handlers receive operator telemetry only:
+
+```ts
+type EmailDeliveryBurstEvent = {
+	event: 'email.delivery.burst'
+	count: number
+	threshold: number
+	window_minutes: number
+	insights_url: string
+	observed_at: string
+}
+```
+
+`insights_url` is the operator insights dashboard. The event omits user ids,
+recipients, message bodies, SMTP transcripts, and unrelated account content.
+Idempotency keys include the topic, observed timestamp, and subscriber package
+id.
+
+Use this topic for notifier packages that page an operator when the shared
+sending domain is under platform-wide pressure. The per-user
+`user.email_outbound.paused` topic still fires when one account is paused.

@@ -187,8 +187,8 @@ update that status. A Fastmail-style sender-domain/IP block (`RLR613`, `RLR813`,
 "blacklisted") is classified as `sender_block`. The pending-verification,
 account, and OAuth authorize UIs surface the bounce instead of staying silently
 pending, and `POST /account/resend-verification.json` refuses to retry into a
-known `sender_block`. The first terminal failure emails every admin account and
-fans `user.email_verification.failed` to admin-owned packages. See
+known `sender_block`. The first terminal failure fans
+`user.email_verification.failed` to admin-owned packages. See
 [the subscription guide](../../guides/package-subscriptions.md#useremailverificationfailed-admins).
 
 Operators can unblock a stranded signup without a raw D1 write:

@@ -12,10 +12,13 @@
  */
 
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
-import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { joinAppUrl } from '#worker/app-base-url.ts'
 import { mailboxRpc } from './mailbox-client.ts'
-import { getSystemEmailDomain } from './platform-address.ts'
+import { dispatchUserEmailOutboundPausedSubscriptionEvent } from './outbound-paused-package-subscriptions.ts'
+import {
+	buildUserEmailOutboundPausedEvent,
+	isUserEmailOutboundPausedReason,
+} from './outbound-paused-subscription-event.ts'
 import { type EmailDeliveryStatus } from './types.ts'
 
 /**
@@ -30,12 +33,7 @@ export const emailOutboundPausedMessage =
 
 type OutboundAbuseEnv = Pick<
 	Env,
-	| 'APP_DB'
-	| 'APP_BASE_URL'
-	| 'CLOUDFLARE_ACCOUNT_ID'
-	| 'CLOUDFLARE_API_BASE_URL'
-	| 'CLOUDFLARE_API_TOKEN'
-	| 'MAILBOX'
+	'APP_DB' | 'APP_BASE_URL' | 'BUNDLE_ARTIFACTS_KV' | 'MAILBOX'
 >
 
 /**
@@ -59,6 +57,7 @@ export async function applyOutboundEmailAbusePause(input: {
 	 */
 	eventRecorded: boolean
 	now?: Date
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<{ paused: boolean }> {
 	const now = input.now ?? new Date()
 	switch (input.deliveryStatus) {
@@ -117,6 +116,7 @@ export async function applyOutboundEmailAbusePause(input: {
 			env: input.env,
 			userId: input.userId,
 			deliveryStatus: input.deliveryStatus,
+			waitUntil: input.waitUntil,
 		})
 	}
 	return { paused }
@@ -142,62 +142,52 @@ async function countProviderDeliveryEventsToday(input: {
 }
 
 /**
- * Best-effort operator notification through the transactional system
- * sender (`kody@<apex>`), addressed to every admin account email. A send
- * failure must never fail delivery-event processing — the pause itself is
- * already committed and the admin users page shows the paused state.
+ * Best-effort operator notification: fans `user.email_outbound.paused` to
+ * admin-owned packages. A dispatch failure must never fail delivery-event
+ * processing — the pause itself is already committed and the admin users
+ * page shows the paused state.
  */
 async function notifyAdminsOfOutboundEmailPause(input: {
 	env: OutboundAbuseEnv
 	userId: string
 	deliveryStatus: EmailDeliveryStatus
+	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	try {
-		const systemDomain = getSystemEmailDomain(input.env)
-		if (!systemDomain) return
-		// The admin roster is operator-controlled and small; no LIMIT so
-		// every admin is notified.
-		const admins = await input.env.APP_DB.prepare(
-			`SELECT u.email, u.username FROM users u
-			 INNER JOIN user_roles ur ON ur.user_id = u.id
-			 INNER JOIN roles r ON r.id = ur.role_id
-			 WHERE r.name = 'admin'
-			 ORDER BY u.id ASC`,
-		).all<{ email: string; username: string }>()
-		const recipients = (admins.results ?? []).map((row) => row.email)
-		if (recipients.length === 0) return
+		if (!isUserEmailOutboundPausedReason(input.deliveryStatus)) return
 		const pausedUser = await input.env.APP_DB.prepare(
-			`SELECT username FROM users WHERE stable_user_id = ?`,
+			`SELECT username, email FROM users WHERE stable_user_id = ?`,
 		)
 			.bind(input.userId)
-			.first<{ username: string }>()
-		const username = pausedUser?.username ?? 'unknown'
-		const reason =
-			input.deliveryStatus === 'complained'
-				? 'a spam complaint'
-				: `${outboundEmailBouncePauseThresholdPerDay}+ bounced sends today`
-		const text = [
-			`Outbound email was automatically paused for user "${username}" after ${reason}.`,
-			'The account can still receive mail and use every other capability; only outbound sending is blocked.',
-			`Review the delivery history and clear the pause from ${joinAppUrl({ env: input.env, path: '/admin/users' })} if this was a false positive.`,
-		].join('\n\n')
-		await sendCloudflareEmail(
-			{
-				accountId: input.env.CLOUDFLARE_ACCOUNT_ID,
-				apiBaseUrl: input.env.CLOUDFLARE_API_BASE_URL,
-				apiToken: input.env.CLOUDFLARE_API_TOKEN,
-			},
-			{
-				to: recipients.length === 1 ? recipients[0]! : recipients,
-				from: `kody@${systemDomain}`,
-				subject: `Outbound email paused for ${username}`,
-				text,
-				html: `<!doctype html><html lang="en"><body>${text
-					.split('\n\n')
-					.map((paragraph) => `<p>${paragraph}</p>`)
-					.join('')}</body></html>`,
-			},
-		)
+			.first<{ username: string; email: string }>()
+		const dispatchPromise = dispatchUserEmailOutboundPausedSubscriptionEvent({
+			env: input.env,
+			event: buildUserEmailOutboundPausedEvent({
+				user: {
+					id: input.userId,
+					username: pausedUser?.username ?? 'unknown',
+					email: pausedUser?.email ?? '',
+				},
+				reason: input.deliveryStatus,
+				bounceThreshold: outboundEmailBouncePauseThresholdPerDay,
+				adminUserUrl: joinAppUrl({
+					env: input.env,
+					path: pausedUser ? `/admin/users/${input.userId}` : '/admin/users',
+				}),
+				occurredAt: new Date().toISOString(),
+			}),
+			waitUntil: input.waitUntil,
+		}).catch((error) => {
+			console.warn('email-outbound-paused-subscription-dispatch-failed', error)
+		})
+		// Do not await fan-out on the queue path: a hung invoke can time out
+		// the consumer after the pause is already committed, and retries skip
+		// this notify because the pause write is a no-op.
+		if (input.waitUntil) {
+			input.waitUntil(dispatchPromise)
+			return
+		}
+		await dispatchPromise
 	} catch (error) {
 		console.warn('email-outbound-pause-notification-failed', error)
 	}

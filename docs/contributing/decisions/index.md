@@ -74,6 +74,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0034 — Origin owns no Durable Object classes](./0034-origin-owns-no-durable-objects.md)
   — platform classes live on `kody-platform`; do not put them on origin,
   runtime, or jobs, and do not add a second origin-facing content worker
+- [0041 — No hardcoded operator correspondence when an admin topic exists](./0041-no-hardcoded-operator-correspondence.md)
+  — platform owns the fact and the event; packages own the reaction; no official
+  `@kody/*` admin-notify package
 
 ## Historical / UI / implementation
 

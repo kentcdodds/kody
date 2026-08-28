@@ -422,14 +422,33 @@ topic. See
 [Package subscriptions](../guides/package-subscriptions.md#fleetentitlementcrossed-admins).
 
 Verification-mail terminal failures are a separate admin-only, best-effort path.
-The first bounce, failure, rejection, or complaint on a signup/verify send
-emails every admin account and fans `user.email_verification.failed` only to
-packages whose owners hold the admin role at dispatch time. The payload is
-stable user id, username, email, delivery status (`bounced` / `failed` /
-`rejected` / `complained`), `class` (`sender_block` / `other` / `null`), an
-admin user URL, and `occurred_at`. It omits SMTP transcripts, tokens, and
-unrelated account content. There is no Queue for this topic. See
+The first bounce, failure, rejection, or complaint on a signup/verify send fans
+`user.email_verification.failed` only to packages whose owners hold the admin
+role at dispatch time. The payload is stable user id, username, email, delivery
+status (`bounced` / `failed` / `rejected` / `complained`), `class`
+(`sender_block` / `other` / `null`), an admin user URL, and `occurred_at`. It
+omits SMTP transcripts, tokens, and unrelated account content. There is no Queue
+for this topic. See
 [Package subscriptions](../guides/package-subscriptions.md#useremailverificationfailed-admins).
+
+Outbound-mail abuse pauses are a separate admin-only, best-effort path. After
+the pause write commits, Kody fans `user.email_outbound.paused` only to packages
+whose owners hold the admin role at dispatch time. The payload is stable user
+id, username, email, reason (`complained` / `bounced`), bounce threshold when
+the reason is `bounced`, an admin user URL, and `occurred_at`. There is no Queue
+for this topic. See
+[Package subscriptions](../guides/package-subscriptions.md#useremailoutboundpaused-admins).
+
+Hourly MCP auth-denial and shared-domain email-delivery bursts are separate
+admin-only, best-effort paths. The `auth_denial_alert` and
+`email_delivery_alert` lanes fan `auth.denial.burst` and `email.delivery.burst`
+only to packages whose owners hold the admin role at dispatch time. Payloads are
+count, threshold, window minutes, insights URL, and `observed_at`. They omit
+user identities, tokens, recipients, and message content. There is no Queue for
+these topics. See
+[Package subscriptions](../guides/package-subscriptions.md#authdenialburst-admins)
+and
+[Package subscriptions](../guides/package-subscriptions.md#emaildeliveryburst-admins).
 
 ## Package-owned workflows
 
