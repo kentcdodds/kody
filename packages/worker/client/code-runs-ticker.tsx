@@ -180,9 +180,7 @@ export function CodeRunsTicker(
 					</span>
 					<span class="landing-hero-runs-label">code runs</span>
 				</span>
-				<span class="landing-hero-runs-caption">
-					Sandboxed executes across Kody accounts
-				</span>
+				<span class="landing-hero-runs-caption">Sandboxed executes</span>
 			</p>
 		)
 	}
