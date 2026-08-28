@@ -119,6 +119,10 @@
 		{
 			"filename": "0029-users-attribution-activation.sql",
 			"sha256": "b1d5d4de974ffd38005433223811ca9b20f560811d42024f2da6bc4fae965384"
+		},
+		{
+			"filename": "0030-saved-package-locked-at.sql",
+			"sha256": "a31bfca5dcd0ddd5da1a5f3efa12aa9499a3e5aaa9082cba16f803e214dc9092"
 		}
 	]
 }

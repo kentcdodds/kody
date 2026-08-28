@@ -490,7 +490,7 @@ Use:
   file set when no local git client is available
 - `package_get` and `package_list` to inspect saved packages
 - `package_update` to change mutable package settings such as hidden search
-  discovery state
+  discovery state. Publish lock (`locked_at`) is website-only.
 - `repo_edit_files`, `repo_apply_patch`, `repo_commit`, `repo_run_checks`, and
   `repo_publish_session` to edit, validate, and publish repo-backed package
   source through the file-level session API
@@ -499,12 +499,14 @@ Use:
 
 When the platform's package API changes, Kody may migrate your published package
 source with a **package codemod**: a versioned, deterministic, code-reviewed
-transform that ships in the open-source repository. An applied codemod
-republishes through the normal checks, records a `codemod(<id>): ...` commit in
-your package's git history, keeps a revert snapshot, and dispatches a
-`package.codemod.applied` event your packages can subscribe to. Ambiguous
-matches are never rewritten — they surface as findings for you instead. What
-this does and does not expose to deployment admins is covered in
+transform that ships in the open-source repository. An applied codemod runs the
+normal checks, records a `codemod(<id>): ...` commit in your package's git
+history, keeps a revert snapshot, and dispatches a `package.codemod.applied`
+event your packages can subscribe to. Unlocked packages also advance
+`published_commit`. Locked packages still receive the commit on HEAD so you can
+review and promote it later; they do not skip the transform. Ambiguous matches
+are never rewritten — they surface as findings for you instead. What this does
+and does not expose to deployment admins is covered in
 [Privacy → Platform maintenance](./privacy.md#platform-maintenance-package-codemods).
 
 ## Hidden packages
@@ -526,6 +528,26 @@ executable, and editable. Hiding is separate from **`package.json#private`**
 package summary. Ranked **search** excludes hidden packages unless the caller
 passes **`includeHiddenPackages: true`**. Known-id **`entity`** lookups still
 resolve hidden packages.
+
+## Publish lock
+
+A package with a **`locked_at`** timestamp on `/account/packages` (and on
+`package_list` / `package_get`) keeps serving its current published tree. Agents
+and the five-minute reconcile job cannot advance `published_commit`. Unlocking
+and the first lock are website-only — `package_update` cannot change
+`locked_at`.
+
+When an agent pushes or saves a locked package, the commit still lands on
+Artifacts HEAD. Publish tools then return **`locked`** with an
+**`approval_url`** that names that commit:
+`/account/packages/:packageId/approve-publish?commit=<sha>`. Opening that URL
+and clicking **Promote this commit** runs the real publish (checks, bundle
+artifacts, projections) for that SHA. Promoting one commit does not unlock the
+package.
+
+Fleet package-codemod apply does the same HEAD write on locked packages: the
+transform commits and pushes so you can review it the next time you publish. It
+does not skip locked packages, and it does not move `published_commit`.
 
 ## Community fork provenance
 
@@ -620,15 +642,17 @@ publish checks run.
    before recording the new published version, writing the published source
    snapshot, rebuilding package bundle artifacts, and refreshing search
    projections. If the pushed HEAD is already current, the tool returns
-   `already_published`. If checks fail, it returns `checks_failed` with the
-   failed check entries and leaves the underlying storage state unchanged.
-   Successful `published` responses, and `already_published` responses when the
-   metadata is available, include a bounded `static_dependents` summary of
-   direct saved packages whose published bundle artifacts statically reference
-   this package. Stale entries mean the dependent bundle captured a dependency
-   commit that differs from the current published commit. Kody does not
-   automatically republish those dependents; inspect and republish only the ones
-   whose static snapshot should reference the current published commit.
+   `already_published`. If the package is locked, it returns `locked` with an
+   `approval_url` after checks pass and leaves `published_commit` unchanged. If
+   checks fail, it returns `checks_failed` with the failed check entries and
+   leaves the underlying storage state unchanged. Successful `published`
+   responses, and `already_published` responses when the metadata is available,
+   include a bounded `static_dependents` summary of direct saved packages whose
+   published bundle artifacts statically reference this package. Stale entries
+   mean the dependent bundle captured a dependency commit that differs from the
+   current published commit. Kody does not automatically republish those
+   dependents; inspect and republish only the ones whose static snapshot should
+   reference the current published commit.
 
 Dynamic package invocation is different from static bundled imports. When a
 runtime feature invokes another package dynamically through the package

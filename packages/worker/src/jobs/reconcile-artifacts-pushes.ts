@@ -8,6 +8,8 @@ import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { revokeStaleArtifactsTokens } from '#worker/repo/artifacts-tokens.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { getSavedPackageLockedAt } from '#worker/package-registry/repo.ts'
+import { isSavedPackageLocked } from '#worker/package-registry/package-publish-lock.ts'
 
 export type ReconcileArtifactsPushesResult = {
 	checked: number
@@ -16,6 +18,7 @@ export type ReconcileArtifactsPushesResult = {
 	missingHead: number
 	checksFailed: number
 	notFastForward: number
+	lockedSkipped: number
 	errors: number
 	tokenCleanupErrors: number
 	tokensRevoked: number
@@ -63,6 +66,7 @@ export async function reconcileArtifactsPushes(input: {
 		missingHead: 0,
 		checksFailed: 0,
 		notFastForward: 0,
+		lockedSkipped: 0,
 		errors: 0,
 		tokenCleanupErrors: 0,
 		tokensRevoked: 0,
@@ -161,6 +165,23 @@ async function reconcileSource(input: {
 			})
 			return
 		}
+		if (
+			source.entity_kind === 'package' &&
+			isSavedPackageLocked(
+				await getSavedPackageLockedAt(env.APP_DB, {
+					userId: source.user_id,
+					packageId: source.entity_id,
+				}),
+			)
+		) {
+			result.lockedSkipped += 1
+			await updateEntitySource(env.APP_DB, {
+				id: source.id,
+				userId: source.user_id,
+				lastExternalCheckAt: now.toISOString(),
+			})
+			return
+		}
 		if (head.commit === source.published_commit) {
 			result.alreadyPublished += 1
 			const horizonPassed =
@@ -199,6 +220,9 @@ async function reconcileSource(input: {
 				break
 			case 'not_fast_forward':
 				result.notFastForward += 1
+				break
+			case 'locked':
+				result.lockedSkipped += 1
 				break
 			default: {
 				const exhaustive: never = publishResult

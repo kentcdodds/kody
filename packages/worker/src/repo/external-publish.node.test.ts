@@ -10,6 +10,7 @@ const mockModule = vi.hoisted(() => ({
 	refreshSavedPackageProjection: vi.fn(),
 	refreshCommunityIconForPackagePublish: vi.fn(async () => undefined),
 	hasPublishedRuntimeArtifacts: vi.fn(() => false),
+	loadLockedSavedPackage: vi.fn(async () => null),
 }))
 
 vi.mock('./entity-sources.ts', () => ({
@@ -43,6 +44,21 @@ vi.mock('#worker/community/community-icon.ts', () => ({
 	refreshCommunityIconForPackagePublish: (...args: Array<unknown>) =>
 		mockModule.refreshCommunityIconForPackagePublish(...args),
 }))
+
+vi.mock(
+	'#worker/package-registry/package-publish-lock.ts',
+	async (importOriginal) => {
+		const actual =
+			await importOriginal<
+				typeof import('#worker/package-registry/package-publish-lock.ts')
+			>()
+		return {
+			...actual,
+			loadLockedSavedPackage: (...args: Array<unknown>) =>
+				mockModule.loadLockedSavedPackage(...args),
+		}
+	},
+)
 
 const { publishFromExternalRef } = await import('./external-publish.ts')
 
@@ -79,6 +95,7 @@ function resetPublishMocks() {
 		files: { 'package.json': '{}' },
 	})
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(false)
+	mockModule.loadLockedSavedPackage.mockResolvedValue(null)
 }
 
 test('publishes an external fast-forward ref after checks pass', async () => {
@@ -447,4 +464,67 @@ test('publishFromExternalRef fails when projection refresh fails after commit', 
 		sourceId: 'source-1',
 		publishedCommit: 'commit-new',
 	})
+})
+
+test('locked package finishes checks then withholds published_commit unless allowLockedPublish', async () => {
+	resetPublishMocks()
+	mockModule.updateEntitySource.mockClear()
+	mockModule.refreshSavedPackageProjection.mockClear()
+	mockModule.getEntitySourceById.mockResolvedValue(source())
+	mockModule.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
+		manifest: {
+			name: '@scope/demo',
+			exports: { '.': './src/index.ts' },
+			kody: { id: 'demo', description: 'Demo' },
+		},
+	})
+	mockModule.loadLockedSavedPackage.mockResolvedValue({
+		id: 'package-1',
+		name: '@scope/demo',
+		lockedAt: '2026-08-28T12:00:00.000Z',
+	})
+
+	const locked = await publishFromExternalRef({
+		env: { APP_DB: {} } as Env,
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'commit-new',
+		isFastForward: async () => true,
+		workspace: workspace(),
+		files: { 'package.json': '{}' },
+		baseUrl: 'https://kody.test',
+	})
+	expect(locked).toMatchObject({
+		status: 'locked',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-new',
+		packageId: 'package-1',
+		packageName: '@scope/demo',
+		approvalPath:
+			'/account/packages/package-1/approve-publish?commit=commit-new',
+	})
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.refreshSavedPackageProjection).not.toHaveBeenCalled()
+
+	const published = await publishFromExternalRef({
+		env: { APP_DB: {} } as Env,
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'commit-new',
+		isFastForward: async () => true,
+		workspace: workspace(),
+		files: { 'package.json': '{}' },
+		baseUrl: 'https://kody.test',
+		allowLockedPublish: true,
+	})
+	expect(published.status).toBe('published')
+	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			id: 'source-1',
+			publishedCommit: 'commit-new',
+		}),
+	)
 })

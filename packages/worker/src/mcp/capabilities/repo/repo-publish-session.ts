@@ -14,6 +14,7 @@ import {
 } from './repo-shared.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from './package-artifact-rebuild.ts'
 import { reportCapabilityProgress } from '#mcp/progress.ts'
+import { buildPackagePublishApprovalUrl } from '#worker/package-registry/package-publish-lock.ts'
 
 export const repoPublishSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
@@ -107,6 +108,27 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					published_commit: result.publishedCommit,
 					message: result.message,
 					...shapedFields,
+				}
+			}
+			if (result.status === 'locked') {
+				const approvalUrl = buildPackagePublishApprovalUrl({
+					baseUrl: ctx.callerContext.baseUrl,
+					packageId: result.packageId,
+					commit: result.pendingCommit,
+				})
+				await reportCapabilityProgress(ctx.reportProgress, {
+					progress: progressTotal,
+					total: progressTotal,
+					message: 'This package is locked — approve the publish in the app.',
+				})
+				return {
+					status: 'locked' as const,
+					session_id: result.sessionId,
+					published_commit: null,
+					pending_commit: result.pendingCommit,
+					current_published_commit: result.currentPublishedCommit,
+					approval_url: approvalUrl,
+					message: `${result.message.replace(result.approvalPath, approvalUrl)}`,
 				}
 			}
 			if (result.status === 'checks_outdated') {

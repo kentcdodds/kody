@@ -1,4 +1,6 @@
 import { type Handle, css } from 'remix/ui'
+import { routes } from '#universal/routes.ts'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -19,7 +21,12 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import { ForkOutdatedCopyButton } from '#universal/fork-outdated-copy-button.tsx'
-import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
+import {
+	getAccentCalloutCss,
+	getDangerPillCss,
+	getGhostButtonCss,
+	getPillButtonCss,
+} from '#universal/styles/style-primitives.ts'
 import {
 	accountDisclosureCss,
 	AccountManagementMessage,
@@ -149,8 +156,42 @@ export function AccountPackagesRoute(handle: Handle) {
 	let lastLoadedListKey = ''
 	let loadingDataKey: string | null = null
 	let lastFailedDataKey: string | null = null
+	const unlockCheck = createDoubleCheck(handle)
+	let lockBusy = false
+
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
+	}
+
+	async function postPackageLockAction(action: 'lock' | 'unlock') {
+		if (!selectedPackage) return
+		lockBusy = true
+		message = null
+		handle.update()
+		const response = await fetch(accountPackagesApiPath, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+			},
+			credentials: 'include',
+			body: JSON.stringify({
+				action,
+				packageId: selectedPackage.id,
+			}),
+		})
+		const payload = await readJson<
+			AccountPackagesLoaderData & { error?: string }
+		>(response)
+		lockBusy = false
+		if (!response.ok || !payload?.ok) {
+			message = payload?.error ?? 'Could not update the publish lock.'
+			handle.update()
+			return
+		}
+		applyPayload(payload, getCurrentHref())
+		unlockCheck.reset()
+		handle.update()
 	}
 
 	function getCurrentSearch() {
@@ -568,8 +609,80 @@ export function AccountPackagesRoute(handle: Handle) {
 												<TimestampValue value={selectedPackage.updatedAt} />
 											),
 										},
+										{
+											label: 'Publish lock',
+											value: selectedPackage.lockedAt
+												? `Locked ${formatTimestampDate(selectedPackage.lockedAt)}`
+												: 'Off',
+										},
 									]}
 								/>
+								<div mix={css(getAccentCalloutCss())}>
+									<p mix={css({ margin: 0, color: colors.textMuted })}>
+										{selectedPackage.lockedAt
+											? 'Publishes stay on this reviewed tree until you promote a commit on the website.'
+											: 'Lock this package so agents cannot publish without your approval.'}
+									</p>
+									<div
+										mix={css({
+											display: 'flex',
+											flexWrap: 'wrap',
+											gap: spacing.xs,
+										})}
+									>
+										{selectedPackage.lockedAt ? (
+											<>
+												<a
+													href={routes.accountPackageApprovePublish.href({
+														packageId: selectedPackage.id,
+													})}
+													data-testid="account-approve-publish"
+													mix={css({
+														...getPillButtonCss({ size: 'sm' }),
+														display: 'inline-flex',
+														textDecoration: 'none',
+													})}
+												>
+													Approve a publish
+												</a>
+												<button
+													type="button"
+													data-testid="account-unlock-package"
+													disabled={lockBusy}
+													mix={[
+														css(getDangerPillCss({ size: 'sm' })),
+														unlockCheck.getButtonMix({
+															onFirstClick: () => undefined,
+															on: {
+																click: () => {
+																	if (unlockCheck.doubleCheck) {
+																		void postPackageLockAction('unlock')
+																	}
+																},
+															},
+														}),
+													]}
+												>
+													{unlockCheck.doubleCheck
+														? 'Click again to unlock'
+														: 'Unlock publishes'}
+												</button>
+											</>
+										) : (
+											<button
+												type="button"
+												data-testid="account-lock-package"
+												disabled={lockBusy}
+												mix={[
+													css(getPillButtonCss({ size: 'sm' })),
+													on('click', () => void postPackageLockAction('lock')),
+												]}
+											>
+												Lock publishes
+											</button>
+										)}
+									</div>
+								</div>
 								<a
 									href={getAccountPackageFilesHref({
 										packageId: selectedPackage.id,

@@ -34,6 +34,9 @@ export const routes = route({
 	accountMcpServersApiPost: post('/account/mcp-servers.json'),
 	accountPackages: '/account/packages',
 	accountPackageDetail: '/account/packages/:packageId',
+	accountPackageApprovePublish: '/account/packages/:packageId/approve-publish',
+	accountPackageApprovePublishApi:
+		'/account/packages/:packageId/approve-publish.json',
 	accountPackageFiles: '/account/packages/:packageId/files(/*relativePath)',
 	accountPackageFilesApi: '/account/packages/:packageId/files.json',
 	accountPackagesApi: '/account/packages.json',

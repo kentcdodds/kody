@@ -3,6 +3,7 @@ import {
 	listSavedPackagesByUserId,
 	listSavedPackagesPage,
 } from '#worker/package-registry/repo.ts'
+import { isSavedPackageLocked } from '#worker/package-registry/package-publish-lock.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
@@ -780,6 +781,7 @@ async function processPackageForMode(input: {
 					sourceId: input.savedPackage.sourceId,
 					files: gated.transformedFiles,
 					destructiveOverwriteConfirmed: true,
+					promotePublished: !isSavedPackageLocked(input.savedPackage.lockedAt),
 					commitMessage: `codemod(${input.codemod.id}): ${input.codemod.description}`,
 				})
 				if (afterCommit == null) {
@@ -1022,6 +1024,9 @@ async function processRevertStep(input: {
 										sourceId: savedPackage.sourceId,
 										files: snapshot.files,
 										destructiveOverwriteConfirmed: true,
+										promotePublished: !isSavedPackageLocked(
+											savedPackage.lockedAt,
+										),
 										commitMessage: `revert codemod(${input.codemod.id})`,
 									})
 									if (afterCommit == null) {

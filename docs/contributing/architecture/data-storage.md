@@ -319,8 +319,10 @@ The schema is defined by migrations in `packages/worker/migrations/`:
 - `saved_packages`: package metadata/search projection derived from published
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
-  intact, and `is_private` (0/1) projecting `package.json#private` for
-  public-profile and timeline filters
+  intact, `is_private` (0/1) projecting `package.json#private` for
+  public-profile and timeline filters, and `locked_at` (nullable ISO timestamp)
+  that blocks agent and reconcile promotion of `published_commit` until the
+  owner approves a specific commit in the account UI
 - `community_listings`, `community_forks`, `community_ratings`,
   `community_reports`, `community_bans`: public community package listings and
   moderation (see [Community packages](../community-packages.md))

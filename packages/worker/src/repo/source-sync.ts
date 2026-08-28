@@ -11,6 +11,7 @@ import {
 } from './large-file-policy.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { parseRepoManifest } from './manifest.ts'
+import { PackagePublishLockedError } from '#worker/package-registry/package-publish-lock.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 import {
 	buildPublishedSourceSnapshotKvKey,
@@ -41,6 +42,13 @@ type SyncArtifactSourceInput = {
 	commitMessage?: string
 	/** Request-scoped phase timings; omitted when the caller does not collect. */
 	serverTiming?: Array<ServerTimingEntry>
+	/** Website or platform-owned rewrites may promote a locked package. */
+	allowLockedPublish?: boolean
+	/**
+	 * When false, commit and push HEAD without advancing published_commit.
+	 * Used by fleet codemods on locked packages.
+	 */
+	promotePublished?: boolean
 }
 
 function validateEntitySourceManifest(input: {
@@ -255,7 +263,19 @@ export async function syncArtifactSourceSnapshot(
 			...(input.commitMessage !== undefined
 				? { commitMessage: input.commitMessage }
 				: {}),
+			...(input.allowLockedPublish === true
+				? { allowLockedPublish: true }
+				: {}),
+			...(input.promotePublished === false ? { promotePublished: false } : {}),
 		})
+		if (publishResult.status === 'locked') {
+			throw new PackagePublishLockedError({
+				packageId: publishResult.packageId,
+				packageName: publishResult.packageName,
+				pendingCommit: publishResult.pendingCommit,
+				currentPublishedCommit: publishResult.currentPublishedCommit,
+			})
+		}
 		if (publishResult.status !== 'ok') {
 			throw new Error(publishResult.message)
 		}

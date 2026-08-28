@@ -299,6 +299,7 @@ export type SavedPackageRow = {
 	has_app: 0 | 1
 	hidden: 0 | 1
 	is_private: 0 | 1
+	locked_at: string | null
 	created_at: string
 	updated_at: string
 }
@@ -315,6 +316,7 @@ export type SavedPackageRecord = {
 	hasApp: boolean
 	hidden: boolean
 	isPrivate: boolean
+	lockedAt: string | null
 	createdAt: string
 	updatedAt: string
 }

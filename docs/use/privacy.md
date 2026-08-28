@@ -183,11 +183,13 @@ change. Nobody can author an ad hoc transform through the admin surface — admi
 only choose when a published, reviewed codemod runs, and can scope it to a dry
 run first.
 
-A codemod apply rewrites only what the reviewed transform matches, republishes
-the package through the same checks as a normal publish, records a
-`codemod(<id>): ...` commit in the package's own git history, keeps a revert
-snapshot, and dispatches a `package.codemod.applied` (or `.reverted`) event your
-packages can subscribe to. Fleet runs are audit-logged.
+A codemod apply rewrites only what the reviewed transform matches, runs the same
+checks as a normal publish, records a `codemod(<id>): ...` commit in the
+package's own git history, keeps a revert snapshot, and dispatches a
+`package.codemod.applied` (or `.reverted`) event your packages can subscribe to.
+Unlocked packages also advance `published_commit`. Locked packages still get
+that commit on HEAD so the owner can review and promote it later; fleet apply
+does not skip them. Fleet runs are audit-logged.
 
 Running a codemod never shows an admin your source. Scan and run results expose
 only package identity (ids), affected file paths, and the codemod's own fixed

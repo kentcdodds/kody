@@ -36,6 +36,7 @@ import {
 	type PendingPackageSecretApprovalsSummary,
 } from '#mcp/secrets/pending-package-secret-approvals.ts'
 import { loadPublishedEntitySource } from '#worker/repo/published-source.ts'
+import { buildPackagePublishApprovalUrl } from '#worker/package-registry/package-publish-lock.ts'
 import { pendingPackageSecretApprovalsSchema } from './shared.ts'
 import { resolveOwnedPackageSource } from './resolve-package-source.ts'
 import {
@@ -251,6 +252,13 @@ const outputSchema = z.discriminatedUnion('status', [
 		status: z.literal('not_fast_forward'),
 		previous_commit: z.string(),
 		published_commit: z.string(),
+		message: z.string(),
+	}),
+	z.object({
+		status: z.literal('locked'),
+		previous_commit: z.string().nullable(),
+		published_commit: z.string(),
+		approval_url: z.string(),
 		message: z.string(),
 	}),
 	z.object({
@@ -587,6 +595,20 @@ async function runExternalPublishAttempt(input: {
 							sourceId: input.source.id,
 						}),
 				} as const
+			}
+			if (result.status === 'locked') {
+				const approvalUrl = buildPackagePublishApprovalUrl({
+					baseUrl: input.baseUrl,
+					packageId: result.packageId,
+					commit: result.published_commit,
+				})
+				return {
+					status: 'locked' as const,
+					previous_commit: result.previous_commit,
+					published_commit: result.published_commit,
+					approval_url: approvalUrl,
+					message: result.message.replace(result.approvalPath, approvalUrl),
+				}
 			}
 			if (result.status !== 'published') {
 				return result

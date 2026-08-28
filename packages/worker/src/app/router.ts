@@ -77,6 +77,10 @@ import {
 	createAccountMemoriesHandler,
 } from '#app/handlers/account-memories.ts'
 import {
+	createAccountPackageApprovePublishApiHandler,
+	createAccountPackageApprovePublishHandler,
+} from '#app/handlers/account-package-approve-publish.ts'
+import {
 	createAccountPackagesApiHandler,
 	createAccountPackagesHandler,
 } from '#app/handlers/account-packages.ts'
@@ -322,6 +326,10 @@ export function createAppRouter(env: Env) {
 			accountMcpServersApiPost: createAccountMcpServersApiHandler(env),
 			accountPackages: createAccountPackagesHandler(env),
 			accountPackageDetail: createAccountPackagesHandler(env),
+			accountPackageApprovePublish:
+				createAccountPackageApprovePublishHandler(env),
+			accountPackageApprovePublishApi:
+				createAccountPackageApprovePublishApiHandler(env),
 			accountPackageFiles: createAccountPackageFilesHandler(env),
 			accountPackageFilesApi: createAccountPackageFilesApiHandler(env),
 			accountPackagesApi: createAccountPackagesApiHandler(env),

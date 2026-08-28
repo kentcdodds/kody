@@ -43,6 +43,7 @@ async function ensureSavedPackageArtifactSchema() {
 		has_app INTEGER NOT NULL DEFAULT 0 CHECK (has_app IN (0, 1)),
 		hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
 		is_private INTEGER NOT NULL DEFAULT 1 CHECK (is_private IN (0, 1)),
+		locked_at TEXT,
 		created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 		updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 	)`)

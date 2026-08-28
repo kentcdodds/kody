@@ -61,6 +61,7 @@ async function rewriteAndPublishPackageScope(input: {
 		files: rewrite.files,
 		expectedPackageScope: input.nextScope,
 		destructiveOverwriteConfirmed: true,
+		allowLockedPublish: true,
 		commitMessage: buildUsernameRenameCommitMessage({
 			previousScope: input.previousScope,
 			nextScope: input.nextScope,

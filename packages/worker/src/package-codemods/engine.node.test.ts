@@ -132,6 +132,7 @@ function savedPackage(input: {
 		hasApp: false,
 		hidden: false,
 		isPrivate: true,
+		lockedAt: null,
 		createdAt: '2026-07-30T00:00:00.000Z',
 		updatedAt: '2026-07-30T00:00:00.000Z',
 	}
@@ -804,6 +805,62 @@ test('package codemod revert skips when HEAD no longer matches applied afterComm
 	})
 	expect(revert.items[0]?.status).toBe('skipped_drift')
 	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
+})
+
+test('fleet apply on a locked package commits HEAD without promoting published_commit', async () => {
+	resetMocks()
+	const { env } = createEnv()
+	const pkg = {
+		...savedPackage({
+			id: 'pkg-locked',
+			userId: 'user-1',
+			kodyId: 'locked',
+			sourceId: 'source-locked',
+		}),
+		lockedAt: '2026-08-28T12:00:00.000Z',
+	}
+	mocks.listSavedPackagesByUserId.mockResolvedValue([pkg])
+	mocks.loadPackageSourceBySourceId.mockResolvedValue(
+		loadedSource({
+			files: ambientFiles(),
+			publishedCommit: 'commit-repo-locked',
+			repoId: 'repo-locked',
+			sourceId: 'source-locked',
+			userId: 'user-1',
+		}),
+	)
+	mocks.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-repo-locked',
+	})
+	mocks.runRepoChecks.mockResolvedValue({
+		ok: true,
+		results: [{ kind: 'lint', ok: true, message: 'ok' }],
+		manifest: {},
+		sourceFiles: {},
+	})
+	mocks.syncArtifactSourceSnapshot.mockResolvedValue('commit-after-locked')
+
+	const apply = await runPackageCodemodStep({
+		env,
+		baseUrl: 'https://example.com',
+		initiatedByUserId: 'user-1',
+		codemodId,
+		mode: 'apply',
+		scope: { kind: 'user', userId: 'user-1' },
+		limit: 10,
+	})
+	expect(apply.items[0]).toMatchObject({
+		status: 'applied',
+		packageId: 'pkg-locked',
+		afterCommit: 'commit-after-locked',
+	})
+	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({
+			sourceId: 'source-locked',
+			promotePublished: false,
+		}),
+	)
 })
 
 test('package codemod ledger bounds stored JSON/text columns', async () => {

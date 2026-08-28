@@ -99,6 +99,9 @@ states:
 - **`checks_outdated`** when a session changed after the last successful check
 - **`base_moved`** with `repair_hint: "repo_rebase_session"` plus both the
   session base commit and current published commit
+- **`locked`** with `approval_url` when the package has `locked_at` set. The
+  session commit is already on HEAD; promoting it is a website click at that
+  URL. Approving one commit does not unlock the package.
 
 That makes it easier for agents to resume or repair a workflow without string
 parsing.

@@ -10,6 +10,9 @@ const savedPackage = {
 	searchText: 'discord gateway websocket',
 	sourceId: 'source-1',
 	hasApp: true,
+	hidden: false,
+	isPrivate: false,
+	lockedAt: null,
 	createdAt: new Date(0).toISOString(),
 	updatedAt: new Date(0).toISOString(),
 }
@@ -59,6 +62,7 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getSavedPackageWithCommunityProvenanceById: vi.fn(),
 	listSavedPackageCommunityProvenanceByIds: vi.fn(),
+	getEntitySourceById: vi.fn(async () => null),
 	listPackageInvocationTokensByPackageId: vi.fn(async () => [tokenRecord]),
 	hashPackageInvocationBearerToken: vi.fn(async () => 'hashed-raw-token'),
 	insertPackageInvocationToken: vi.fn(async () => undefined),
@@ -106,6 +110,11 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 vi.mock('#worker/package-registry/source.ts', () => ({
 	loadPackageManifestBySourceId: (...args: Array<unknown>) =>
 		mockModule.loadPackageManifestBySourceId(...args),
+}))
+
+vi.mock('#worker/repo/entity-sources.ts', () => ({
+	getEntitySourceById: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceById(...args),
 }))
 
 vi.mock('#worker/package-invocations/repo.ts', () => ({

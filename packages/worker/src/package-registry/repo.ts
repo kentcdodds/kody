@@ -19,8 +19,8 @@ export function savedPackageVectorId(packageId: string) {
 const savedPackageSelectColumns = `saved_packages.id, saved_packages.user_id, saved_packages.name,
 				saved_packages.kody_id, saved_packages.description, saved_packages.tags_json,
 				saved_packages.search_text, saved_packages.source_id, saved_packages.has_app,
-				saved_packages.hidden, saved_packages.is_private, saved_packages.created_at,
-				saved_packages.updated_at`
+				saved_packages.hidden, saved_packages.is_private, saved_packages.locked_at,
+				saved_packages.created_at, saved_packages.updated_at`
 
 const savedPackageCommunityProvenanceSelectColumns = `${savedPackageSelectColumns},
 				community_forks.listing_id AS source_listing_id,
@@ -61,6 +61,10 @@ function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 			row['is_private'] === 1 ||
 			row['is_private'] === '1' ||
 			row['is_private'] === true,
+		lockedAt:
+			row['locked_at'] == null || String(row['locked_at']).trim() === ''
+				? null
+				: String(row['locked_at']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}
@@ -118,7 +122,7 @@ const emptyCommunityProvenance: SavedPackageCommunityProvenance = {
 }
 export async function insertSavedPackage(
 	db: D1Database,
-	row: Omit<SavedPackageRow, 'created_at' | 'updated_at'> & {
+	row: Omit<SavedPackageRow, 'created_at' | 'updated_at' | 'locked_at'> & {
 		created_at?: string
 		updated_at?: string
 	},
@@ -216,6 +220,51 @@ export async function updateSavedPackage(
 		.bind(...values, input.packageId, input.userId)
 		.run()
 
+	return (result.meta.changes ?? 0) > 0
+}
+
+export async function getSavedPackageLockedAt(
+	db: D1Database,
+	input: {
+		userId: string
+		packageId: string
+	},
+): Promise<string | null> {
+	const row = await db
+		.prepare(
+			`SELECT locked_at
+			FROM saved_packages
+			WHERE id = ? AND user_id = ?`,
+		)
+		.bind(input.packageId, input.userId)
+		.first<{ locked_at: string | null }>()
+	if (!row || row.locked_at == null || String(row.locked_at).trim() === '') {
+		return null
+	}
+	return String(row.locked_at)
+}
+
+export async function setSavedPackageLockedAt(
+	db: D1Database,
+	input: {
+		userId: string
+		packageId: string
+		lockedAt: string | null
+	},
+): Promise<boolean> {
+	const result = await db
+		.prepare(
+			`UPDATE saved_packages
+			SET locked_at = ?, updated_at = ?
+			WHERE id = ? AND user_id = ?`,
+		)
+		.bind(
+			input.lockedAt,
+			new Date().toISOString(),
+			input.packageId,
+			input.userId,
+		)
+		.run()
 	return (result.meta.changes ?? 0) > 0
 }
 
