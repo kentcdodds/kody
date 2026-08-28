@@ -29,6 +29,7 @@ import {
 } from '#client/first-touch-attribution.ts'
 import { fathomEventNames, trackFathomEvent } from '#client/fathom-events.ts'
 import { serializeFirstTouchAttributionForTransport } from '#universal/first-touch-attribution.ts'
+import { withAccountCreatedQuery } from '#universal/fathom-events.ts'
 import {
 	honeypotFieldName,
 	readPublicFormProtection,
@@ -346,8 +347,21 @@ export function LoginRoute(handle: Handle) {
 			}
 
 			if (mode === 'signup') {
-				trackFathomEvent(fathomEventNames.accountCreated)
+				const tracked = trackFathomEvent(fathomEventNames.accountCreated)
 				clearStoredFirstTouchAttribution()
+				if (typeof window !== 'undefined') {
+					const destination = resolvePasswordAuthRedirect({
+						mode,
+						requiresTwoFactor: payload?.requiresTwoFactor === true,
+						emailVerificationRequired:
+							payload?.emailVerificationRequired === true,
+						redirectTo: getCurrentRedirectTo(handle),
+					})
+					window.location.assign(
+						tracked ? destination : withAccountCreatedQuery(destination),
+					)
+				}
+				return
 			}
 
 			if (typeof window !== 'undefined') {

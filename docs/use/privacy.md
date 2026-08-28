@@ -7,7 +7,8 @@ admin can see.
 
 Each signed-in user gets a fully isolated assistant. Kody stores account profile
 information (email, username, optional display name and bio, and profile
-visibility), first-touch marketing attribution captured at signup when present
+visibility), first-touch marketing attribution captured on public-site visits
+when UTM or landing context is present and associated with the account at signup
 (`utm_source` / `utm_medium` / `utm_campaign` / `utm_content` / `utm_term`,
 landing path, and referrer), first-seen activation timestamps (email verified,
 first MCP connection, first execute, first saved package), MCP client name when
