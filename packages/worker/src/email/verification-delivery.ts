@@ -231,7 +231,12 @@ export async function recordTransactionalEmailDeliveryEvent(input: {
 		input.db,
 		index.user_id,
 	)
-	if (existing?.at) {
+	// `accepted` is stamped on the worker clock after the send API
+	// returns. Immediate provider bounces often carry an earlier SMTP
+	// timestamp, so comparing those clocks would drop the bounce and
+	// leave the account silently pending. Only ignore out-of-order
+	// provider lifecycle events against other provider statuses.
+	if (existing?.at && existing.status !== 'accepted') {
 		const existingAtMs = Date.parse(existing.at)
 		const eventAtMs = Date.parse(input.eventTimestamp)
 		if (

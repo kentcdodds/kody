@@ -7,6 +7,7 @@ import {
 	lookupTransactionalEmailDelivery,
 	recordTransactionalEmailDeliveryEvent,
 	registerTransactionalEmailDelivery,
+	setUserEmailVerificationDelivery,
 } from './verification-delivery.ts'
 
 async function createDeliveryTestDb() {
@@ -227,5 +228,56 @@ test('a newer verification send retires older provider ids and ignores stale eve
 	).toEqual({
 		email_verification_delivery_status: 'delivered',
 		email_verification_delivery_class: null,
+	})
+})
+
+test('an immediate bounce still wins over a later worker-clock accepted stamp', async () => {
+	const db = await createDeliveryTestDb()
+	await registerTransactionalEmailDelivery({
+		db,
+		providerMessageId: 'cf-immediate-bounce',
+		userId: 1,
+		recipient: 'blocked@example.com',
+	})
+	await setUserEmailVerificationDelivery({
+		db,
+		userId: 1,
+		status: 'accepted',
+		class: null,
+		at: '2026-08-27T23:21:00.000Z',
+	})
+
+	const bounce = await recordTransactionalEmailDeliveryEvent({
+		db,
+		providerMessageId: 'cf-immediate-bounce',
+		deliveryStatus: 'bounced',
+		eventTimestamp: '2026-08-27T23:20:00.000Z',
+		smtpResponse:
+			'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613',
+	})
+	expect(bounce).toEqual({
+		outcome: 'recorded',
+		event: {
+			userId: 1,
+			kind: 'email_verification',
+			recipient: 'blocked@example.com',
+			status: 'bounced',
+			class: 'sender_block',
+			alreadyTerminal: false,
+		},
+	})
+	expect(
+		await db
+			.prepare(
+				`SELECT email_verification_delivery_status, email_verification_delivery_class
+				 FROM users WHERE id = 1`,
+			)
+			.first<{
+				email_verification_delivery_status: string
+				email_verification_delivery_class: string
+			}>(),
+	).toEqual({
+		email_verification_delivery_status: 'bounced',
+		email_verification_delivery_class: 'sender_block',
 	})
 })
