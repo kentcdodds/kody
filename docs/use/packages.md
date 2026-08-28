@@ -392,7 +392,8 @@ an event did or did not dispatch, or checking which packages subscribe to
 `email.message.received`, `run.error.recorded`, `integration.auth.failed`,
 `integration.auth.succeeded`, `mcp.server.disconnected`,
 `mcp.server.reconnected`, or admin-only topics such as `status.incident.opened`,
-`fleet.package_error_rate.elevated`, and `fleet.entitlement.crossed`.
+`fleet.package_error_rate.elevated`, `fleet.entitlement.crossed`,
+`user.created`, `user.deleted`, and `user.email_verification.failed`.
 
 For accepted stored inbound email, the topic is `email.message.received`.
 Quarantined inbound email dispatches `email.message.quarantined` instead. Both
