@@ -4,6 +4,7 @@ import { buildSecretHostApprovalUrl } from '#mcp/secrets/host-approval.ts'
 import {
 	buildBasicAuthSecretPlaceholderFromReference,
 	buildSecretPlaceholder,
+	decodeSecretPlaceholderDelimiters,
 	parseBasicAuthSecretPlaceholders,
 	parseBasicAuthSecretPlaceholdersFromFormUrlEncoded,
 	parseSecretPlaceholders,
@@ -247,8 +248,11 @@ function readMeteredRequestHostname(
 ) {
 	const originalHostname = readRequestHostname(originalUrl)
 	if (originalHostname) return originalHostname
-	if (parseSecretPlaceholders(originalUrl).length > 0) return ''
-	if (parseBasicAuthSecretPlaceholders(originalUrl).length > 0) return ''
+	const urlForPlaceholderScan = decodeSecretPlaceholderDelimiters(originalUrl)
+	if (parseSecretPlaceholders(urlForPlaceholderScan).length > 0) return ''
+	if (parseBasicAuthSecretPlaceholders(urlForPlaceholderScan).length > 0) {
+		return ''
+	}
 	if (transformedUrl === null) return ''
 	return readRequestHostname(transformedUrl)
 }
@@ -309,6 +313,7 @@ export async function expandSecretPlaceholders(input: {
 			},
 		)
 	}
+	const requestUrl = decodeSecretPlaceholderDelimiters(input.request.url)
 	const resolvedSecrets: Array<{
 		referenced: ReferencedSecret
 		resolved: ResolvedSecret
@@ -317,7 +322,7 @@ export async function expandSecretPlaceholders(input: {
 	const resolvedValues = new Map<string, string>()
 	const basicAuthPlaceholders = dedupeBasicAuthSecretPlaceholders([
 		...collectReferencedBasicAuthSecretPlaceholders([
-			input.request.url,
+			requestUrl,
 			...Array.from(headers.values()),
 		]),
 		...collectReferencedBasicAuthSecretPlaceholdersFromRequestBody(
@@ -326,10 +331,7 @@ export async function expandSecretPlaceholders(input: {
 		),
 	])
 	const referencedSecrets = dedupeReferencedSecrets([
-		...collectReferencedSecrets([
-			input.request.url,
-			...Array.from(headers.values()),
-		]),
+		...collectReferencedSecrets([requestUrl, ...Array.from(headers.values())]),
 		...collectReferencedSecretsFromRequestBody(headers, requestBody),
 		...basicAuthPlaceholders.flatMap((placeholder) => [
 			placeholder.username,
@@ -414,7 +416,7 @@ export async function expandSecretPlaceholders(input: {
 	let requestedHost = ''
 	if (hasReferencedSecrets) {
 		const nextUrl = resolveRequestUrlForFetchGateway(
-			replaceSecretPlaceholders(input.request.url, replacements),
+			replaceSecretPlaceholders(requestUrl, replacements),
 			baseUrl,
 		)
 		requestedHost = readRequestedHost(nextUrl)
@@ -437,7 +439,7 @@ export async function expandSecretPlaceholders(input: {
 		}
 	}
 	const nextUrl = resolveRequestUrlForFetchGateway(
-		replaceSecretPlaceholders(input.request.url, replacements),
+		replaceSecretPlaceholders(requestUrl, replacements),
 		baseUrl,
 	)
 	for (const [key, value] of Array.from(headers.entries())) {

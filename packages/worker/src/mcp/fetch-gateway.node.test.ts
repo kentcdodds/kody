@@ -121,6 +121,106 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 	}
 })
 
+test('fetch gateway expands secret placeholders in URL paths after Request serialization', async () => {
+	const telegramToken = '123456:AAHfakeTelegramToken'
+	const probeValue = '11111111-1111-4111-8111-111111111111'
+	const allowedResolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockImplementation(async ({ name }: { name: string }) => ({
+			found: true,
+			value: name === 'telegramBotToken' ? telegramToken : probeValue,
+			scope: 'user',
+			allowedHosts: ['api.telegram.org', 'api.notion.com', 'api.example.com'],
+			allowedCapabilities: [],
+		}))
+	try {
+		const pathOnlyRequest = new Request(
+			'https://api.telegram.org/bot{{secret:telegramBotToken|scope=user}}/getMe',
+		)
+		expect(pathOnlyRequest.url).toContain(
+			'%7B%7Bsecret:telegramBotToken|scope=user%7D%7D',
+		)
+		const pathOnlyTransformed = await expandSecretPlaceholders({
+			request: pathOnlyRequest,
+			props,
+			env,
+		})
+		expect(pathOnlyTransformed.url).toBe(
+			`https://api.telegram.org/bot${telegramToken}/getMe`,
+		)
+
+		const headerAndPathRequest = new Request(
+			'https://api.notion.com/v1/users/{{secret:kodyPathProbe|scope=user}}',
+			{
+				headers: {
+					Authorization: 'Bearer {{secret:notionToken|scope=user}}',
+				},
+			},
+		)
+		expect(headerAndPathRequest.url).toContain(
+			'%7B%7Bsecret:kodyPathProbe|scope=user%7D%7D',
+		)
+		const headerAndPathTransformed = await expandSecretPlaceholders({
+			request: headerAndPathRequest,
+			props,
+			env,
+		})
+		expect(headerAndPathTransformed.url).toBe(
+			`https://api.notion.com/v1/users/${probeValue}`,
+		)
+		expect(headerAndPathTransformed.headers.get('Authorization')).toBe(
+			`Bearer ${probeValue}`,
+		)
+
+		const queryRequest = new Request(
+			'https://api.example.com/search?key={{secret:queryToken|scope=user}}',
+		)
+		expect(queryRequest.url).toContain('{{secret:queryToken|scope=user}}')
+		const queryTransformed = await expandSecretPlaceholders({
+			request: queryRequest,
+			props,
+			env,
+		})
+		expect(queryTransformed.url).toBe(
+			`https://api.example.com/search?key=${probeValue}`,
+		)
+	} finally {
+		allowedResolveSpy.mockRestore()
+	}
+
+	const blockedResolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue({
+			found: true,
+			value: telegramToken,
+			scope: 'user',
+			allowedHosts: [],
+			allowedCapabilities: [],
+		})
+	try {
+		await expandSecretPlaceholders({
+			request: new Request(
+				'https://api.telegram.org/bot{{secret:telegramBotToken}}/getMe',
+			),
+			props,
+			env,
+		})
+		throw new Error('Expected host approval error.')
+	} catch (error) {
+		const approvals = parseHostApprovalRequiredBatchMessage(
+			getErrorMessage(error),
+		)
+		expect(approvals).toEqual([
+			expect.objectContaining({
+				secretName: 'telegramBotToken',
+				host: 'api.telegram.org',
+			}),
+		])
+	} finally {
+		blockedResolveSpy.mockRestore()
+	}
+})
+
 test('fetch gateway requires package approval before resolving user secrets', async () => {
 	const request = () =>
 		new Request('https://example.com/api', {
@@ -932,6 +1032,26 @@ test('gateway fetch metering never derives a hostname from expanded secret place
 			globalFetch: fetchStub,
 		})
 		expect(fetchStub).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
+		expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
+			entityId: '',
+			outcome: 'success',
+		})
+
+		// Path-only URL whose placeholder was percent-encoded the same way
+		// `Request.url` serializes `{` / `}` in pathnames.
+		recordUsageSpy.mockClear()
+		fetchStub.mockClear()
+		await executeGatewayFetch({
+			env,
+			props,
+			request: createPathOnlyRequest('/bot%7B%7Bsecret:token%7D%7D/getMe'),
+			globalFetch: fetchStub,
+		})
+		expect(fetchStub).toHaveBeenCalledTimes(1)
+		expect(fetchStub.mock.calls[0]?.[0]?.url).toBe(
+			'https://example.com/botresolved-secret-value/getMe',
+		)
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy.mock.calls[0]?.[1]).toMatchObject({
 			entityId: '',
