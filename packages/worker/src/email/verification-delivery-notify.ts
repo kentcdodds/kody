@@ -42,21 +42,35 @@ export async function notifyAdminsOfVerificationDeliveryFailure(input: {
 			env: input.env,
 			path: adminUsersPath,
 		})
-		await dispatchUserEmailVerificationFailedSubscriptionEvent({
-			env: input.env,
-			event: buildUserEmailVerificationFailedEvent({
-				user: {
-					id: user?.stable_user_id ?? String(input.event.userId),
-					username,
-					email,
-				},
-				status: input.event.status,
-				class: input.event.class,
-				adminUserUrl,
-				occurredAt: new Date().toISOString(),
-			}),
-			waitUntil: input.waitUntil,
-		})
+		const dispatchPromise =
+			dispatchUserEmailVerificationFailedSubscriptionEvent({
+				env: input.env,
+				event: buildUserEmailVerificationFailedEvent({
+					user: {
+						id: user?.stable_user_id ?? String(input.event.userId),
+						username,
+						email,
+					},
+					status: input.event.status,
+					class: input.event.class,
+					adminUserUrl,
+					occurredAt: new Date().toISOString(),
+				}),
+				waitUntil: input.waitUntil,
+			}).catch((error) => {
+				console.warn(
+					'email-verification-failed-subscription-dispatch-failed',
+					error,
+				)
+			})
+		// Do not await fan-out on the queue path: a hung invoke can time out
+		// the consumer after the bounce is already committed, and retries
+		// skip this notify once alreadyTerminal is set.
+		if (input.waitUntil) {
+			input.waitUntil(dispatchPromise)
+			return
+		}
+		await dispatchPromise
 	} catch (error) {
 		console.warn('email-verification-delivery-notification-failed', error)
 	}

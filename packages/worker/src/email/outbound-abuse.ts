@@ -160,7 +160,7 @@ async function notifyAdminsOfOutboundEmailPause(input: {
 		)
 			.bind(input.userId)
 			.first<{ username: string; email: string }>()
-		await dispatchUserEmailOutboundPausedSubscriptionEvent({
+		const dispatchPromise = dispatchUserEmailOutboundPausedSubscriptionEvent({
 			env: input.env,
 			event: buildUserEmailOutboundPausedEvent({
 				user: {
@@ -177,7 +177,17 @@ async function notifyAdminsOfOutboundEmailPause(input: {
 				occurredAt: new Date().toISOString(),
 			}),
 			waitUntil: input.waitUntil,
+		}).catch((error) => {
+			console.warn('email-outbound-paused-subscription-dispatch-failed', error)
 		})
+		// Do not await fan-out on the queue path: a hung invoke can time out
+		// the consumer after the pause is already committed, and retries skip
+		// this notify because the pause write is a no-op.
+		if (input.waitUntil) {
+			input.waitUntil(dispatchPromise)
+			return
+		}
+		await dispatchPromise
 	} catch (error) {
 		console.warn('email-outbound-pause-notification-failed', error)
 	}
