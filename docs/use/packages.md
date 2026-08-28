@@ -176,10 +176,14 @@ exhaustive.
   export is a function. Importing a package from `execute` or another package
   can use any named exports that the module provides.
 - Packages may also export non-callable helper modules and values for reuse.
-- Add JSDoc to exported functions and, when helpful, point the export at a
-  `types` file. Package search detail and `package_get` surface package
-  descriptions, export descriptions, function signatures, JSDoc, and type
-  definitions.
+- Add JSDoc to every public export. Search Purpose comes from that JSDoc;
+  missing comments fall back to `Package export.` See
+  [Export JSDoc](../guides/package-authoring.md#export-jsdoc) in the package
+  authoring guide for the done criteria (`@param`, `@returns`, and an `@example`
+  that imports `kody:@scope/id/export` and calls it). When helpful, point the
+  export at a `types` file and put the JSDoc there. Package search detail and
+  `package_get` surface package descriptions, export descriptions, function
+  signatures, JSDoc, and type definitions.
 
 ### Package reuse
 
