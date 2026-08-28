@@ -40,6 +40,7 @@ export async function handleEmailDeliveryQueue(
 						await notifyAdminsOfVerificationDeliveryFailure({
 							env,
 							event: result.event,
+							waitUntil,
 						})
 					}
 					queueMessage.ack()

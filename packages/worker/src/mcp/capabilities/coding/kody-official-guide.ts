@@ -155,6 +155,8 @@ const allKeywords = [
 		'user created',
 		'user.deleted',
 		'user deleted',
+		'user.email_verification.failed',
+		'email verification failed',
 		'account created',
 		'account deleted',
 		'untrusted feedback',

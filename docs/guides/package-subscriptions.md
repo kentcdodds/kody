@@ -12,8 +12,9 @@ summary:
   community.listing.published community notifications, admin-only
   status.incident.opened / status.incident.resolved operator telemetry,
   admin-only fleet.package_error_rate.elevated package-runtime health,
-  admin-only fleet.entitlement.crossed entitlement crossings, and admin-only
-  user.created / user.deleted account lifecycle notifications.
+  admin-only fleet.entitlement.crossed entitlement crossings, admin-only
+  user.created / user.deleted account lifecycle notifications, and admin-only
+  user.email_verification.failed verification-mail failure notifications.
 category: platform
 ---
 
@@ -133,9 +134,9 @@ publish result. Failed and non-fast-forward results have no test hints.
   `platform.feedback.submitted`, `community.activity.recorded`,
   `community.listing.published`, `status.incident.opened`,
   `fleet.package_error_rate.elevated`, `fleet.entitlement.crossed`,
-  `status.incident.resolved`, `user.created`, `user.deleted`) gate
-  **production** fan-out on admin role; synthetic dispatch still runs your
-  handler directly for smoke testing.
+  `status.incident.resolved`, `user.created`, `user.deleted`,
+  `user.email_verification.failed`) gate **production** fan-out on admin role;
+  synthetic dispatch still runs your handler directly for smoke testing.
 - **Activity.** Synthetic runs appear on the `subscription` surface. Handler
   failures do not emit `run.error.recorded` (recursion guard).
 
@@ -1117,3 +1118,47 @@ Timestamps are ISO-8601 UTC. The event omits passwords, roles, plan, secrets,
 packages, and unrelated account content. Notification copies already delivered
 outside Kody cannot be recalled after account deletion. Idempotency keys include
 the topic, user id, timestamp, and package id.
+
+## `user.email_verification.failed` (admins)
+
+The first terminal Cloudflare lifecycle event on a signup/verify send
+(`bounced`, `failed`, `rejected`, or `complained`) emails every admin account
+and fans `user.email_verification.failed` to packages saved by users who hold
+the admin role at dispatch time. A later replay of the same terminal state does
+not emit again. A non-admin package may declare the topic, but it never receives
+the event. Role revocation stops delivery on the next failure.
+
+There is no Queue / DLQ for this topic. Dispatch is best-effort after the user
+row already carries the bounce: a failed invoke is logged and does not fail
+delivery-event processing.
+
+Handlers receive a metadata-only operator snapshot:
+
+```ts
+type UserEmailVerificationFailedEvent = {
+	event: 'user.email_verification.failed'
+	user: {
+		id: string
+		username: string
+		email: string
+	}
+	status: 'bounced' | 'failed' | 'rejected' | 'complained'
+	class: 'sender_block' | 'other' | null
+	admin_user_url: string
+	occurred_at: string
+}
+```
+
+`user.id` is the stable account user id. `class` is `sender_block` for
+Fastmail-style domain/IP blocks (`RLR613`, `RLR813`, blacklist language),
+`other` for generic terminal failures, or `null` when the event is not
+classified. `admin_user_url` is the operator page for that account. Timestamps
+are ISO-8601 UTC. The event omits SMTP transcripts, verification tokens,
+passwords, roles, plan, secrets, and unrelated account content. Idempotency keys
+include the topic, user id, timestamp, and subscriber package id.
+
+Use this topic for notifier packages that email or page an operator when a
+signup is stranded. `user.created` still fires for every new person account,
+including accounts that later verify themselves. Do not treat this topic as
+permission to mark the account verified or mint a link — call
+`admin_user_verify` from an admin session when ownership is proven.

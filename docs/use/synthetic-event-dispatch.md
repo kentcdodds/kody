@@ -220,9 +220,9 @@ surface) for run records; the run record includes `synthetic: true` (and
   logic.
 - Admin-only delivery rules (for example `platform.feedback.submitted`,
   `status.incident.opened`, `fleet.package_error_rate.elevated`,
-  `fleet.entitlement.crossed`, `user.created`, or `user.deleted`) apply to
-  **production** fan-out only; synthetic dispatch runs your handler directly for
-  smoke testing.
+  `fleet.entitlement.crossed`, `user.created`, `user.deleted`, or
+  `user.email_verification.failed`) apply to **production** fan-out only;
+  synthetic dispatch runs your handler directly for smoke testing.
 - Side effects (`packageStorage()`, outbound APIs, downstream invokes) are real.
   Use a deliberately visible irreversible-side-effect guard when smoke tests
   should stay safe.

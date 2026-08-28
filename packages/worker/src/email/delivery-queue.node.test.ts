@@ -154,6 +154,7 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 			status: 'bounced',
 			class: 'sender_block',
 		}),
+		waitUntil: expect.any(Function),
 	})
 	expect(dispatchFailure.retry).toHaveBeenCalledWith({ delaySeconds: 30 })
 	expect(mocks.dispatchEmailDeliverySubscriptionEvents).toHaveBeenCalledTimes(3)

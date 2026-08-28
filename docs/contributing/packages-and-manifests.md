@@ -421,6 +421,15 @@ It omits emails, plans, secrets, and package source. There is no Queue for this
 topic. See
 [Package subscriptions](../guides/package-subscriptions.md#fleetentitlementcrossed-admins).
 
+Verification-mail terminal failures are a separate admin-only, best-effort path.
+The first bounce, failure, rejection, or complaint on a signup/verify send
+emails every admin account and fans `user.email_verification.failed` only to
+packages whose owners hold the admin role at dispatch time. The payload is
+stable user id, username, email, delivery status, optional `sender_block` class,
+and an admin user URL. It omits SMTP transcripts, tokens, and unrelated account
+content. There is no Queue for this topic. See
+[Package subscriptions](../guides/package-subscriptions.md#useremailverificationfailed-admins).
+
 ## Package-owned workflows
 
 Packages declare workflow entrypoints in runtime code, not in

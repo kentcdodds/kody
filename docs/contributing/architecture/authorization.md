@@ -407,6 +407,15 @@ code when `user.created` used one, and first-touch marketing attribution when
 present. It omits passwords, roles, plan, secrets, and unrelated account
 content. Delivery is best-effort (no Queue) after the account change commits.
 
+**Admins can subscribe to verification-mail terminal failures.** The first
+bounce, failure, rejection, or complaint on a signup/verify send emails every
+admin account and fans `user.email_verification.failed` only to packages whose
+owners hold the admin role at dispatch time. The event contains the stable user
+id, username, email, delivery status, optional `sender_block` class, an
+`/admin/users/:stableUserId` URL, and the observed timestamp. It omits SMTP
+transcripts, tokens, and unrelated account content. Delivery is best-effort (no
+Queue) after the user row already carries the bounce.
+
 **Admins can see** operator-owned system mail for reserved platform addresses
 (`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin`). That mail
 is stored under `system:email` as platform content, not under Kent's or any

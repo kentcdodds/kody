@@ -102,13 +102,17 @@ or delete timestamp, the consumed invite code when `user.created` used one, and
 first-touch marketing attribution fields when present). Those lifecycle events
 omit passwords, roles, plan, secrets, and unrelated account content.
 Admin-configured notification packages may also receive a metadata-only
-`fleet.entitlement.crossed` event when a swept account first crosses 80% or 100%
-of a plan-limit resource, or when a non-admin account first exceeds the monthly
-runtime-duration threshold. Entitlement events include stable user id, username,
-resource counts, and admin dashboard URLs; runtime-duration events include
-stable user id, username, `total_duration_ms`, `threshold_ms`, and admin
-dashboard URLs. Both event kinds omit emails, plans, secrets, package source,
-and unrelated account content.
+`user.email_verification.failed` event when signup/verify mail first hits a
+terminal delivery failure (stable user id, username, email, status, optional
+`sender_block` class, and an admin user URL). That event omits SMTP transcripts,
+tokens, and unrelated account content. Admin-configured notification packages
+may also receive a metadata-only `fleet.entitlement.crossed` event when a swept
+account first crosses 80% or 100% of a plan-limit resource, or when a non-admin
+account first exceeds the monthly runtime-duration threshold. Entitlement events
+include stable user id, username, resource counts, and admin dashboard URLs;
+runtime-duration events include stable user id, username, `total_duration_ms`,
+`threshold_ms`, and admin dashboard URLs. Both event kinds omit emails, plans,
+secrets, package source, and unrelated account content.
 
 ## Platform feedback
 
