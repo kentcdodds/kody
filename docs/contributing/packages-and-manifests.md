@@ -435,7 +435,7 @@ Outbound-mail abuse pauses are a separate admin-only, best-effort path. After
 the pause write commits, Kody fans `user.email_outbound.paused` only to packages
 whose owners hold the admin role at dispatch time. The payload is stable user
 id, username, email, reason (`complained` / `bounced`), bounce threshold when
-the reason is bounces, an admin user URL, and `occurred_at`. There is no Queue
+the reason is `bounced`, an admin user URL, and `occurred_at`. There is no Queue
 for this topic. See
 [Package subscriptions](../guides/package-subscriptions.md#useremailoutboundpaused-admins).
 
