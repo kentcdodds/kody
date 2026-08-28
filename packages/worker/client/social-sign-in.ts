@@ -1,4 +1,8 @@
 import { type SignupMode } from '#universal/signup-mode.ts'
+import {
+	appendAttributionQueryParams,
+	type FirstTouchAttribution,
+} from '#universal/first-touch-attribution.ts'
 
 export type AuthProviderInfo = { id: string; label: string }
 export type PublicAuthConfig = {
@@ -11,11 +15,13 @@ export function buildProviderStartPath(
 	providerId: string,
 	redirectTo: string | null,
 	inviteCode: string | null = null,
+	attribution: FirstTouchAttribution | null = null,
 ) {
 	const params = new URLSearchParams()
 	if (redirectTo) params.set('redirectTo', redirectTo)
 	const trimmedInvite = inviteCode?.trim()
 	if (trimmedInvite) params.set('inviteCode', trimmedInvite)
+	appendAttributionQueryParams(params, attribution)
 	const query = params.toString()
 	return query ? `/auth/${providerId}?${query}` : `/auth/${providerId}`
 }
@@ -72,7 +78,8 @@ export async function fetchPublicAuthConfig(
  * navigation may. Returns an error message, or null when navigation started.
  *
  * Pass `inviteCode` when starting from the invite signup panel so production
- * can create the account on callback.
+ * can create the account on callback. Pass `attribution` so first-touch UTMs
+ * survive the OAuth round-trip in the signed login-state cookie.
  */
 export async function startSocialSignIn(
 	providerId: string,
@@ -82,9 +89,10 @@ export async function startSocialSignIn(
 		website: '',
 		turnstileToken: '',
 	},
+	attribution: FirstTouchAttribution | null = null,
 ): Promise<string | null> {
 	const response = await fetch(
-		buildProviderStartPath(providerId, redirectTo, inviteCode),
+		buildProviderStartPath(providerId, redirectTo, inviteCode, attribution),
 		{
 			method: 'POST',
 			headers: {

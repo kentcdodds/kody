@@ -115,6 +115,10 @@
 		{
 			"filename": "0028-email-verification-delivery.sql",
 			"sha256": "21eacbf3f12130e3f2ef4cccf8eee4cd723c8224e434e103f77bcf3de64ca25a"
+		},
+		{
+			"filename": "0029-users-attribution-activation.sql",
+			"sha256": "b1d5d4de974ffd38005433223811ca9b20f560811d42024f2da6bc4fae965384"
 		}
 	]
 }

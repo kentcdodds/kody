@@ -1,3 +1,10 @@
+import {
+	emptyFirstTouchAttribution,
+	firstTouchAttributionToUserColumns,
+	hasFirstTouchAttribution,
+	type FirstTouchAttribution,
+} from '#universal/first-touch-attribution.ts'
+
 export const userCreatedTopic = 'user.created'
 export const userDeletedTopic = 'user.deleted'
 
@@ -19,12 +26,23 @@ export type UserLifecycleIdentity = {
 	email: string
 }
 
+export type UserCreatedAttribution = {
+	utm_source: string | null
+	utm_medium: string | null
+	utm_campaign: string | null
+	utm_content: string | null
+	utm_term: string | null
+	landing_path: string | null
+	referrer: string | null
+}
+
 export type UserCreatedEvent = {
 	event: UserCreatedTopic
 	user: UserLifecycleIdentity
 	source: UserCreatedSource
 	created_at: string
 	invite_code: string | null
+	attribution: UserCreatedAttribution
 }
 
 export type UserDeletedEvent = {
@@ -41,11 +59,31 @@ export function isUserLifecycleEventTopic(
 	return (userLifecycleEventTopics as ReadonlyArray<string>).includes(value)
 }
 
+function toUserCreatedAttribution(
+	attribution: FirstTouchAttribution | null | undefined,
+): UserCreatedAttribution {
+	const columns = firstTouchAttributionToUserColumns(
+		hasFirstTouchAttribution(attribution)
+			? attribution
+			: emptyFirstTouchAttribution,
+	)
+	return {
+		utm_source: columns.utm_source,
+		utm_medium: columns.utm_medium,
+		utm_campaign: columns.utm_campaign,
+		utm_content: columns.utm_content,
+		utm_term: columns.utm_term,
+		landing_path: columns.first_touch_landing_path,
+		referrer: columns.first_touch_referrer,
+	}
+}
+
 export function buildUserCreatedEvent(input: {
 	user: UserLifecycleIdentity
 	source: UserCreatedSource
 	createdAt: string
 	inviteCode?: string | null
+	attribution?: FirstTouchAttribution | null
 }): UserCreatedEvent {
 	return {
 		event: userCreatedTopic,
@@ -53,6 +91,7 @@ export function buildUserCreatedEvent(input: {
 		source: input.source,
 		created_at: input.createdAt,
 		invite_code: input.inviteCode ?? null,
+		attribution: toUserCreatedAttribution(input.attribution),
 	}
 }
 

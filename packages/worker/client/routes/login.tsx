@@ -24,6 +24,12 @@ import {
 	type AuthProviderInfo,
 } from '#client/social-sign-in.ts'
 import {
+	clearStoredFirstTouchAttribution,
+	readSignupFirstTouchAttribution,
+} from '#client/first-touch-attribution.ts'
+import { fathomEventNames, trackFathomEvent } from '#client/fathom-events.ts'
+import { serializeFirstTouchAttributionForTransport } from '#universal/first-touch-attribution.ts'
+import {
 	honeypotFieldName,
 	readPublicFormProtection,
 	renderTurnstileWidgets,
@@ -145,6 +151,15 @@ export function LoginRoute(handle: Handle) {
 		signupMode,
 	)
 	let prefillInviteCode = readPrefillInviteCode(getSearchParams(handle))
+	let signupStartedTracked = false
+
+	function maybeTrackSignupStarted() {
+		if (signupStartedTracked) return
+		if (getCurrentAuthMode(handle) !== 'signup') return
+		signupStartedTracked = true
+		readSignupFirstTouchAttribution()
+		trackFathomEvent(fathomEventNames.signupStarted)
+	}
 
 	function setState(nextStatus: AuthStatus, nextMessage: string | null = null) {
 		status = nextStatus
@@ -296,6 +311,8 @@ export function LoginRoute(handle: Handle) {
 		setState('submitting')
 
 		try {
+			const attribution =
+				mode === 'signup' ? readSignupFirstTouchAttribution() : null
 			const response = await fetch('/auth', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -311,6 +328,7 @@ export function LoginRoute(handle: Handle) {
 								username,
 								inviteCode,
 								redirectTo: getCurrentRedirectTo(handle),
+								...serializeFirstTouchAttributionForTransport(attribution),
 							}
 						: {}),
 				}),
@@ -324,6 +342,11 @@ export function LoginRoute(handle: Handle) {
 						: 'Unable to authenticate.'
 				setSubmitError(errorMessage)
 				return
+			}
+
+			if (mode === 'signup') {
+				trackFathomEvent(fathomEventNames.accountCreated)
+				clearStoredFirstTouchAttribution()
 			}
 
 			if (typeof window !== 'undefined') {
@@ -365,6 +388,9 @@ export function LoginRoute(handle: Handle) {
 				getCurrentRedirectTo(handle),
 				inviteCode,
 				protection,
+				getCurrentAuthMode(handle) === 'signup'
+					? readSignupFirstTouchAttribution()
+					: null,
 			)
 			if (errorMessage) {
 				setSubmitError(errorMessage)
@@ -531,6 +557,9 @@ export function LoginRoute(handle: Handle) {
 		}
 		if (typeof document !== 'undefined' && sessionStatus === 'idle') {
 			handle.queueTask(loadSessionAndProviders)
+		}
+		if (typeof document !== 'undefined') {
+			maybeTrackSignupStarted()
 		}
 		const mode = getCurrentAuthMode(handle)
 		const currentSignupSearch = readRouterSearch(handle)

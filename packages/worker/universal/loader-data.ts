@@ -254,6 +254,18 @@ export type AdminUserListItem = {
 	email_outbound_paused_at: string | null
 	email_verification_delivery: EmailVerificationDelivery | null
 	email_verification_delivery_detail: string | null
+	utm_source: string | null
+	utm_medium: string | null
+	utm_campaign: string | null
+	utm_content: string | null
+	utm_term: string | null
+	first_touch_landing_path: string | null
+	first_touch_referrer: string | null
+	first_mcp_connected_at: string | null
+	first_execute_at: string | null
+	first_saved_package_at: string | null
+	mcp_client_name: string | null
+	last_active_at: string | null
 	created_at: string
 	updated_at: string
 	roles: Array<RoleName>

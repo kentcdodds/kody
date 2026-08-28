@@ -22,6 +22,7 @@ import {
 	purgePersistedMcpAgentSession,
 	registerMcpAgentSession,
 } from './session-registry.ts'
+import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
 
 export type State = {
 	searchConversationIdsWithPreamble?: Array<string>
@@ -49,6 +50,9 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				db: this.env.APP_DB,
 				userId,
 				doId: this.ctx.id.toString(),
+			})
+			void stampFirstMcpConnected(this.env.APP_DB, {
+				stableUserId: userId,
 			})
 		}
 		const [overlay, registry, popularPackages, retiringNoticeIds] =

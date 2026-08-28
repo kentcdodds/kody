@@ -48,6 +48,11 @@ import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
+import {
+	firstTouchAttributionToUserColumns,
+	parseFirstTouchAttribution,
+} from '#universal/first-touch-attribution.ts'
+import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
 
@@ -110,6 +115,13 @@ export function createAuthHandler(env: Env) {
 				typeof body === 'object' && body !== null
 					? (body as Record<string, unknown>).inviteCode
 					: undefined
+			const signupAttribution =
+				normalizedMode === 'signup'
+					? parseFirstTouchAttribution({
+							body:
+								typeof body === 'object' && body !== null ? body : undefined,
+						})
+					: null
 			const rememberMeValue =
 				typeof body === 'object' && body !== null
 					? (body as Record<string, unknown>).rememberMe
@@ -264,6 +276,7 @@ export function createAuthHandler(env: Env) {
 				try {
 					const stableUserId =
 						await createStableUserIdFromEmail(normalizedEmail)
+					const createdAt = new Date().toISOString()
 					const createdUser = await db.create(
 						usersTable,
 						{
@@ -272,6 +285,8 @@ export function createAuthHandler(env: Env) {
 							stable_user_id: stableUserId,
 							password_hash: passwordHash,
 							plan: resolvePlanWrite(consumedInvitePlan),
+							...firstTouchAttributionCreateFields(signupAttribution),
+							last_active_at: createdAt,
 						},
 						{
 							returnRow: true,
@@ -442,6 +457,7 @@ export function createAuthHandler(env: Env) {
 					},
 					source: 'signup',
 					inviteCode: consumedInviteCode,
+					attribution: signupAttribution,
 				})
 
 				const cookie = await createAuthCookie(
@@ -566,6 +582,9 @@ export function createAuthHandler(env: Env) {
 				},
 				isSecureRequest(request),
 			)
+			void touchLastActiveAt(env.APP_DB, {
+				stableUserId: resolveUserStableId(userRecord),
+			})
 			void logAuditEvent({
 				category: 'auth',
 				action: 'login',

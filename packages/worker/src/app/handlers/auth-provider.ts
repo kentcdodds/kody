@@ -65,8 +65,15 @@ import {
 } from '#app/public-form-protection.ts'
 import { defaultPostVerificationRedirect } from '#universal/safe-redirect.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
+import {
+	firstTouchAttributionToUserColumns,
+	hasFirstTouchAttribution,
+	parseFirstTouchAttribution,
+} from '#universal/first-touch-attribution.ts'
+import { withAccountCreatedQuery } from '#universal/fathom-events.ts'
 import { followDefaultWelcomeAccounts } from '#worker/community/welcome-follow.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
+import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { parseLegacyHosts } from '#worker/app-legacy-redirect.ts'
 import {
 	maybeJoinOfficialDiscordGuild,
@@ -206,6 +213,10 @@ export function createAuthProviderStartHandler(env: Env) {
 			const wantsJson = prefersJsonResponse(request)
 			const redirectTo = normalizeRedirectTo(url.searchParams.get('redirectTo'))
 			const inviteCode = normalizeInviteCode(url.searchParams.get('inviteCode'))
+			const attribution = parseFirstTouchAttribution({
+				searchParams: url.searchParams,
+				body: null,
+			})
 			const { session } = await readAuthSessionResult(request)
 
 			// Always consume the JSON start body. `request.clone().json()` tees
@@ -264,6 +275,9 @@ export function createAuthProviderStartHandler(env: Env) {
 					codeVerifier,
 					redirectTo,
 					inviteCode,
+					attribution: hasFirstTouchAttribution(attribution)
+						? attribution
+						: null,
 				},
 				isSecureRequest(request),
 			)
@@ -403,8 +417,18 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				 * after verification, since the provider already proved the email.
 				 */
 				defaultRedirectTo = '/account',
+				options: {
+					/**
+					 * Absolute post-login destination. When set, wins over both the
+					 * OAuth-state redirectTo and defaultRedirectTo (used so new
+					 * signups can append accountCreated=1 for Fathom).
+					 */
+					destination?: string
+				} = {},
 			) {
 				const stableUserId = resolveUserStableId(user)
+				const postLoginPath =
+					options.destination ?? redirectTo ?? defaultRedirectTo
 				// Two-factor accounts get the same pending-verification gate as
 				// password and passkey logins; the session cookie is only
 				// issued once the TOTP code passes.
@@ -437,6 +461,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					{ stableUserId, email: user.email, rememberMe: false },
 					secure,
 				)
+				void touchLastActiveAt(env.APP_DB, { stableUserId })
 				void logAuditEvent({
 					category: 'auth',
 					action: 'oauth_login',
@@ -446,10 +471,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					path: url.pathname,
 					reason: `provider=${provider}`,
 				})
-				return redirect(redirectTo ?? defaultRedirectTo, [
-					sessionCookie,
-					clearStateCookie,
-				])
+				return redirect(postLoginPath, [sessionCookie, clearStateCookie])
 			}
 
 			const connection = await db.findOne(oauthConnectionsTable, {
@@ -621,6 +643,8 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					profile.username ?? usernameFromEmail(email),
 				)
 				stableUserId = await createStableUserIdFromEmail(email)
+				const createdAt = new Date().toISOString()
+				const signupAttribution = loginState.attribution
 				const createdUser = await db.create(
 					usersTable,
 					{
@@ -628,8 +652,10 @@ export function createAuthProviderCallbackHandler(env: Env) {
 						email,
 						stable_user_id: stableUserId,
 						password_hash: oauthNoUsablePasswordHash,
-						email_verified_at: new Date().toISOString(),
+						email_verified_at: createdAt,
 						plan: resolvePlanWrite(consumedInvitePlan),
+						...firstTouchAttributionCreateFields(signupAttribution),
+						last_active_at: createdAt,
 					},
 					{ returnRow: true },
 				)
@@ -721,6 +747,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				},
 				source: 'oauth',
 				inviteCode: consumedInviteCode,
+				attribution: loginState.attribution,
 			})
 
 			void logAuditEvent({
@@ -743,7 +770,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					reason: `invite_code=${consumedInviteCode};stable_user_id=${stableUserId};provider=${provider};plan=${resolvePlanWrite(consumedInvitePlan)}`,
 				})
 			}
-			return issueLogin(newUser, defaultPostVerificationRedirect)
+			return issueLogin(newUser, defaultPostVerificationRedirect, {
+				destination: withAccountCreatedQuery(
+					redirectTo ?? defaultPostVerificationRedirect,
+				),
+			})
 		},
 	} satisfies Action<typeof routes.authProviderCallback>
 }

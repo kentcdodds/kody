@@ -91,6 +91,53 @@ export const adminUserMetadataSchema = z.object({
 		.describe(
 			'Truncated provider SMTP response or failure detail for the latest verification send.',
 		),
+	utm_source: z
+		.string()
+		.nullable()
+		.describe('First-touch utm_source at signup.'),
+	utm_medium: z
+		.string()
+		.nullable()
+		.describe('First-touch utm_medium at signup.'),
+	utm_campaign: z
+		.string()
+		.nullable()
+		.describe('First-touch utm_campaign at signup.'),
+	utm_content: z
+		.string()
+		.nullable()
+		.describe('First-touch utm_content at signup.'),
+	utm_term: z.string().nullable().describe('First-touch utm_term at signup.'),
+	first_touch_landing_path: z
+		.string()
+		.nullable()
+		.describe('First-touch landing path at signup (pathname only).'),
+	first_touch_referrer: z
+		.string()
+		.nullable()
+		.describe('First-touch document referrer at signup.'),
+	first_mcp_connected_at: z
+		.string()
+		.nullable()
+		.describe('First successful MCP/agent connection timestamp.'),
+	first_execute_at: z
+		.string()
+		.nullable()
+		.describe('First successful execute usage timestamp.'),
+	first_saved_package_at: z
+		.string()
+		.nullable()
+		.describe('First saved package timestamp.'),
+	mcp_client_name: z
+		.string()
+		.nullable()
+		.describe('First-seen MCP client/host name (e.g. claude-ai).'),
+	last_active_at: z
+		.string()
+		.nullable()
+		.describe(
+			'Last activity day stamp (login, MCP, execute, package) for D2/D7 return.',
+		),
 	created_at: z.string(),
 	updated_at: z.string(),
 	roles: z.array(roleNameSchema),

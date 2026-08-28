@@ -6,6 +6,7 @@ import {
 	type UserCreatedSource,
 	type UserLifecycleIdentity,
 } from './user-lifecycle-subscription-event.ts'
+import { type FirstTouchAttribution } from '#universal/first-touch-attribution.ts'
 
 type UserLifecycleScheduleEnv = Pick<
 	Env,
@@ -36,6 +37,7 @@ export function scheduleUserCreatedEvent(input: {
 	source: UserCreatedSource
 	createdAt?: string
 	inviteCode?: string | null
+	attribution?: FirstTouchAttribution | null
 }) {
 	scheduleUserLifecycleSubscriptionEvent({
 		env: input.env,
@@ -44,6 +46,7 @@ export function scheduleUserCreatedEvent(input: {
 			source: input.source,
 			createdAt: input.createdAt ?? new Date().toISOString(),
 			inviteCode: input.inviteCode,
+			attribution: input.attribution,
 		}),
 	})
 }

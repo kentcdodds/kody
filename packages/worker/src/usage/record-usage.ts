@@ -34,6 +34,7 @@
 
 import * as cloudflareWorkers from 'cloudflare:workers'
 import { type UsageEventType } from '#universal/usage-event-types.ts'
+import { stampFirstExecute } from '#worker/identity/activation-stamps.ts'
 
 export {
 	usageEventTypes,
@@ -124,6 +125,16 @@ export async function recordUsage(
 		}
 		emitUsageSpan(event)
 		const timestamp = event.timestamp ?? new Date().toISOString()
+		if (
+			event.eventType === 'execute' &&
+			event.outcome === 'success' &&
+			env.APP_DB
+		) {
+			await stampFirstExecute(env.APP_DB, {
+				stableUserId: event.userId,
+				at: timestamp,
+			})
+		}
 		if (env.USAGE_EVENTS) {
 			writeUsageDataPoint(env, event, timestamp)
 			return
