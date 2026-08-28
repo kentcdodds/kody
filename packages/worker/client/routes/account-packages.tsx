@@ -156,6 +156,7 @@ export function AccountPackagesRoute(handle: Handle) {
 	let loadingDataKey: string | null = null
 	let lastFailedDataKey: string | null = null
 	let lockRequestId = 0
+	let lockBusy = false
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
@@ -175,13 +176,14 @@ export function AccountPackagesRoute(handle: Handle) {
 	}
 
 	async function togglePackageLock() {
-		if (!selectedPackage) return
+		if (!selectedPackage || lockBusy) return
 		const href = getCurrentHref()
 		const packageId = selectedPackage.id
 		const requestId = ++lockRequestId
 		const previousLockedAt = selectedPackage.lockedAt
 		const nextLocked = !isPackageLocked(previousLockedAt)
 		const nextLockedAt = nextLocked ? new Date().toISOString() : null
+		lockBusy = true
 		message = null
 		applyLocalLockState(packageId, nextLockedAt)
 		handle.update()
@@ -224,6 +226,11 @@ export function AccountPackagesRoute(handle: Handle) {
 			applyLocalLockState(packageId, previousLockedAt)
 			message = 'Could not update the publish lock.'
 			handle.update()
+		} finally {
+			if (requestId === lockRequestId) {
+				lockBusy = false
+				handle.update()
+			}
 		}
 	}
 
@@ -268,6 +275,7 @@ export function AccountPackagesRoute(handle: Handle) {
 		selectedPackage = payload.selectedPackage
 		if ((selectedPackage?.id ?? null) !== previousSelectedId) {
 			lockRequestId += 1
+			lockBusy = false
 		}
 		username = payload.username
 		invocationUrlOrigin = payload.invocationUrlOrigin
@@ -598,6 +606,7 @@ export function AccountPackagesRoute(handle: Handle) {
 										</h2>
 										<button
 											type="button"
+											disabled={lockBusy}
 											title={
 												isPackageLocked(selectedPackage.lockedAt)
 													? 'Unlock publishes'
