@@ -3,7 +3,6 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { fleetPackageErrorRateKvKey } from '#worker/usage/fleet-package-error-rate.ts'
 
 const queryAnalyticsEngineSql = vi.fn()
-const sendCloudflareEmail = vi.fn(async () => ({ ok: true }))
 const dispatchFleetPackageErrorRateSubscriptionEvent = vi.fn(async () => [])
 
 vi.mock('#worker/usage/aggregate-rollups.ts', async (importOriginal) => {
@@ -14,11 +13,6 @@ vi.mock('#worker/usage/aggregate-rollups.ts', async (importOriginal) => {
 			queryAnalyticsEngineSql(...args),
 	}
 })
-
-vi.mock('#app/email/cloudflare-email.ts', () => ({
-	sendCloudflareEmail: (...args: Array<unknown>) =>
-		sendCloudflareEmail(...args),
-}))
 
 vi.mock('#worker/usage/fleet-package-error-rate-subscriptions.ts', () => ({
 	dispatchFleetPackageErrorRateSubscriptionEvent: (...args: Array<unknown>) =>
@@ -46,31 +40,9 @@ function createKv(stored = new Map<string, string>()) {
 	}
 }
 
-function createDb() {
-	return {
-		prepare(query: string) {
-			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			return {
-				bind() {
-					return this
-				},
-				async all<T>() {
-					if (normalized.includes('from users u')) {
-						return { results: [{ email: 'admin@example.com' }] } as {
-							results: Array<T>
-						}
-					}
-					return { results: [] }
-				},
-			}
-		},
-	} as unknown as D1Database
-}
-
 test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot and pages once', async () => {
 	consoleWarn.mockImplementation(() => {})
 	const { stored, kv } = createKv()
-	const db = createDb()
 
 	queryAnalyticsEngineSql.mockImplementation(
 		async (input: { query: string }) => {
@@ -110,7 +82,7 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 	const now = new Date('2026-08-22T19:32:00.000Z')
 	const env = {
 		USAGE_EVENTS: {} as AnalyticsEngineDataset,
-		APP_DB: db,
+		APP_DB: {} as D1Database,
 		BUNDLE_ARTIFACTS_KV: kv,
 		APP_BASE_URL: 'https://kody.codes',
 		CLOUDFLARE_ACCOUNT_ID: 'account',
@@ -124,7 +96,7 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 	expect(first).toMatchObject({
 		status: 'refreshed',
 		elevated: true,
-		alert: { status: 'notified', recipients: 1 },
+		alert: { status: 'notified', eventId: 'day:2026-08-22T19:00:00.000Z' },
 	})
 	expect(dispatchFleetPackageErrorRateSubscriptionEvent).toHaveBeenCalledTimes(
 		1,
@@ -136,15 +108,6 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 	expect(payload).not.toContain('admin@example.com')
 	expect(payload).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
 	expect(dispatched.event.event).toBe('fleet.package_error_rate.elevated')
-	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
-	const emailText = String(
-		(sendCloudflareEmail.mock.calls[0]?.[1] as { text?: string } | undefined)
-			?.text ?? '',
-	)
-	expect(emailText).toContain('16/80')
-	expect(emailText).toContain('user-package')
-	expect(emailText).not.toContain('user_id')
-	expect(emailText).not.toContain('admin@')
 
 	const snapshot = JSON.parse(stored.get(fleetPackageErrorRateKvKey) ?? 'null')
 	expect(snapshot?.environment).toBe('production')
@@ -176,9 +139,11 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 		reason: 'missing-analytics-config',
 	})
 
-	sendCloudflareEmail.mockClear()
 	dispatchFleetPackageErrorRateSubscriptionEvent.mockClear()
-	const noAdmin = createKv()
+	dispatchFleetPackageErrorRateSubscriptionEvent.mockRejectedValueOnce(
+		new Error('fan-out failed'),
+	)
+	const failedKv = createKv()
 	queryAnalyticsEngineSql.mockResolvedValue([
 		{
 			window: 'recent',
@@ -196,16 +161,8 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 	const skipped = await refreshFleetPackageErrorRateAndMaybeAlert({
 		env: {
 			USAGE_EVENTS: {} as AnalyticsEngineDataset,
-			APP_DB: {
-				prepare() {
-					return {
-						async all() {
-							return { results: [] }
-						},
-					}
-				},
-			} as unknown as D1Database,
-			BUNDLE_ARTIFACTS_KV: noAdmin.kv,
+			APP_DB: {} as D1Database,
+			BUNDLE_ARTIFACTS_KV: failedKv.kv,
 			CLOUDFLARE_ACCOUNT_ID: 'account',
 			CLOUDFLARE_API_TOKEN: 'token',
 			SENTRY_ENVIRONMENT: 'production',
@@ -215,8 +172,7 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 	expect(skipped).toMatchObject({
 		status: 'refreshed',
 		elevated: true,
-		alert: { status: 'skipped', reason: 'no_system_domain' },
+		alert: { status: 'skipped', reason: 'notify_failed' },
 	})
-	expect(sendCloudflareEmail).not.toHaveBeenCalled()
-	expect(noAdmin.stored.get(fleetPackageErrorRateAlertKvKey)).toBeUndefined()
+	expect(failedKv.stored.get(fleetPackageErrorRateAlertKvKey)).toBeUndefined()
 })

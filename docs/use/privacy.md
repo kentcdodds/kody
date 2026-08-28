@@ -107,6 +107,16 @@ terminal delivery failure (stable user id, username, email, status, `class`
 (`sender_block` / `other` / `null`), an admin user URL, and `occurred_at`). That
 event omits SMTP transcripts, tokens, and unrelated account content.
 Admin-configured notification packages may also receive a metadata-only
+`user.email_outbound.paused` event when outbound sending is paused after a spam
+complaint or repeated bounces (stable user id, username, email, reason, bounce
+threshold when the reason is bounces, an admin user URL, and `occurred_at`).
+That event omits SMTP transcripts, message bodies, and unrelated account
+content. Admin-configured notification packages may also receive metadata-only
+`auth.denial.burst` or `email.delivery.burst` events when hourly MCP auth
+denials or shared-domain bounce/complaint counts cross their thresholds (count,
+threshold, window, insights URL, and `observed_at`). Those events omit user
+identities, tokens, recipients, and message content. Admin-configured
+notification packages may also receive a metadata-only
 `fleet.entitlement.crossed` event when a swept account first crosses 80% or 100%
 of a plan-limit resource, or when a non-admin account first exceeds the monthly
 runtime-duration threshold. Entitlement events include stable user id, username,

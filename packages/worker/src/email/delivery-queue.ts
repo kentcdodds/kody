@@ -64,6 +64,7 @@ export async function handleEmailDeliveryQueue(
 						userId: result.message.userId,
 						deliveryStatus: result.providerEvent.payload.delivery.status,
 						eventRecorded: false,
+						waitUntil,
 					})
 					queueMessage.ack()
 					break
@@ -78,6 +79,7 @@ export async function handleEmailDeliveryQueue(
 						userId: result.message.userId,
 						deliveryStatus: result.providerEvent.payload.delivery.status,
 						eventRecorded: result.outcome === 'recorded',
+						waitUntil,
 					})
 					await dispatchEmailDeliverySubscriptionEvents({
 						env,

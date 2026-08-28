@@ -32,7 +32,6 @@ export type FleetPackageErrorRateEnv = {
 	APP_DB?: D1Database
 	BUNDLE_ARTIFACTS_KV?: KVNamespace
 	APP_BASE_URL?: string
-	SYSTEM_EMAIL_DOMAIN?: string
 	CLOUDFLARE_ACCOUNT_ID?: string
 	CLOUDFLARE_API_TOKEN?: string
 	CLOUDFLARE_API_BASE_URL?: string
