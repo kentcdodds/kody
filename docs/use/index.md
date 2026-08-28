@@ -28,8 +28,8 @@ Read in order for a full tour, or jump to a topic.
   process (vault, CLI, or home devices), publish it with Tunnel and Access, and
   connect it to Kody. Starter:
   [home-mcp-starter](https://github.com/kody-bot/home-mcp-starter)
-- [Connect your agent](./connect-your-agent.md) — run
-  `npx @kodycodes/cli install`, complete OAuth, and use the setup prompt.
+- [Connect your agent](./connect-your-agent.md) — choose one host on Get
+  started, complete OAuth, and use the setup prompt.
   Machine-readable twin: [`/auth.md`](https://kody.codes/auth.md)
 - [Connect remote MCP servers](./mcp-client-servers.md) — add external MCP
   servers so Kody can call their tools (`kody.mcp[...]`)

@@ -24,10 +24,8 @@ Agent notes — for AI agents running a discovery conversation from this page:
   a job, a package, the inbox) and the first concrete step.
 - End with a short "Next steps if you want to connect me to Kody" section
   that points to the /onboarding page on the same origin this guide was
-  fetched from (https://kody.codes/onboarding in production). Local agents
-  (Cursor, Claude Desktop, VS Code, Claude Code, Codex / ChatGPT desktop)
-  can run `npx @kodycodes/cli install`. Web hosts (ChatGPT.com, Claude.ai,
-  Grok) add Kody from that page's Manual section.
+  fetched from (https://kody.codes/onboarding in production). That page asks
+  which agent they want to connect, then shows only that host's steps.
 - Do not set anything up during discovery. Nothing in this flow requires an
   account or an MCP connection.
 -->

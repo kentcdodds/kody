@@ -5,7 +5,7 @@ import { on } from '#client/event-mixin.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { readRouterSearch } from '#client/router-location.tsx'
+import { readRouterSearch, readRouterUrl } from '#client/router-location.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -60,11 +60,21 @@ import {
 	shouldShowOnboardingChecklist,
 } from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
+import {
+	type OnboardingAgentChooserPick,
+	type OnboardingAgentSurface,
+	canonicalOnboardingAgentChooser,
+	onboardingAgentLabel,
+	onboardingDataHref,
+	onboardingMobileAgentMediaQuery,
+	pickOnboardingAgentChooser,
+	readOnboardingAgentParam,
+	readOnboardingSurfaceParam,
+} from '#client/routes/onboarding-mcp-clients.ts'
 import { OnboardingCustomMcpCard } from '#client/routes/onboarding-custom-mcp-card.tsx'
 import { OnboardingMcpChooserCard } from '#client/routes/onboarding-mcp-chooser-card.tsx'
 import { OnboardingExampleCard } from '#client/routes/onboarding-example-card.tsx'
 import { OnboardingPersistCard } from '#client/routes/onboarding-persist-card.tsx'
-import { OnboardingFactoryCard } from '#client/routes/onboarding-factory-card.tsx'
 import { createOnboardingNextConfirmation } from '#client/routes/onboarding-next-confirmation.ts'
 import { OnboardingPackageNextSteps } from '#client/routes/onboarding-package-next-steps.tsx'
 import { OnboardingStarterCard } from '#client/routes/onboarding-starter-card.tsx'
@@ -92,8 +102,9 @@ import {
  * Onboarding wizard: shirt-pattern head, three-step stepper (Connect your
  * agent · Give Kody Access · Try it, then persist), one surface panel at a
  * time with hand-tilted mascot art, and the BYOK argument folded behind a
- * disclosure. Server state (prompts, MCP URL, featured MCP servers,
- * hasMcpClient / OAuth polling) stays in the route state.
+ * disclosure. Step 1 picks one agent, then shows only that host. Server
+ * state (prompts, MCP URL, featured MCP servers, hasMcpClient / OAuth
+ * polling) stays in the route state.
  *
  * Step 2 is "give Kody access to your stuff." Official remote MCP is the
  * easy login path; Connect also forks the matching `@kody/*-mcp` helper
@@ -156,7 +167,10 @@ export async function onboardingRouteLoader(
 			resolveOnboardingPendingVerificationPath(redirectTo),
 		)
 	}
-	return { onboarding: payload }
+	return {
+		onboarding: payload,
+		onboardingAgentChooser: pickOnboardingAgentChooser(),
+	}
 }
 
 export function OnboardingRoute(handle: Handle) {
@@ -265,6 +279,24 @@ export function OnboardingRoute(handle: Handle) {
 		window.history.replaceState(window.history.state, '', url)
 	}
 
+	let viewportSurface: OnboardingAgentSurface = 'desktop'
+	let agentChooser: OnboardingAgentChooserPick | null = null
+
+	handle.queueTask((signal) => {
+		if (typeof matchMedia !== 'function') return
+		const media = matchMedia(onboardingMobileAgentMediaQuery)
+		const sync = () => {
+			const next: OnboardingAgentSurface = media.matches
+				? 'mobile'
+				: 'desktop'
+			if (next === viewportSurface) return
+			viewportSurface = next
+			handle.update()
+		}
+		sync()
+		media.addEventListener('change', sync, { signal })
+	})
+
 	function selectStep(step: OnboardingStep) {
 		panelAnimationArmed = true
 		activeStep = step
@@ -348,14 +380,15 @@ export function OnboardingRoute(handle: Handle) {
 				return
 			}
 			applyPayload(payload)
-			loadLatch.markLoaded(href)
+			if (!agentChooser) agentChooser = pickOnboardingAgentChooser()
+			loadLatch.markLoaded(onboardingDataHref(href))
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load onboarding.'
-			loadLatch.markFailed(href)
+			loadLatch.markFailed(onboardingDataHref(href))
 			handle.update()
 		}
 	}
@@ -462,6 +495,12 @@ export function OnboardingRoute(handle: Handle) {
 
 	function applyRouteLoaderData(href: string) {
 		if (!isOnboardingPath(href)) return false
+		const chooserData = tryConsumeRouteLoaderData(
+			handle,
+			'onboardingAgentChooser',
+			href,
+		)
+		if (chooserData) agentChooser = chooserData
 		const routeData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		if (!routeData) return false
 		if (routeData.loggedIn && !routeData.emailVerified) {
@@ -473,7 +512,7 @@ export function OnboardingRoute(handle: Handle) {
 			return true
 		}
 		applyPayload(routeData)
-		loadLatch.markLoaded(href)
+		loadLatch.markLoaded(onboardingDataHref(href))
 		return true
 	}
 
@@ -483,7 +522,7 @@ export function OnboardingRoute(handle: Handle) {
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const needsLoad = loadLatch.needsLoad({
-			currentHref,
+			currentHref: onboardingDataHref(currentHref),
 			appliedRouteData,
 			needsStaleRefresh,
 		})
@@ -504,6 +543,14 @@ export function OnboardingRoute(handle: Handle) {
 			})
 		}
 
+		const routerSearch = readRouterSearch(handle)
+		const selectedAgent = readOnboardingAgentParam(routerSearch)
+		const selectedSurface =
+			readOnboardingSurfaceParam(routerSearch) ?? viewportSurface
+		const selectedAgentLabel = selectedAgent
+			? onboardingAgentLabel(selectedAgent, selectedSurface)
+			: null
+		const agentLocation = new URL(readRouterUrl(handle), 'https://kody.local')
 		const workspaceLabel = firstConnectedOnboardingWorkspaceLabel({
 			featuredMcpServers,
 			customMcpServers,
@@ -517,23 +564,9 @@ export function OnboardingRoute(handle: Handle) {
 					<h1 data-rise style={{ '--rise': '0' }}>
 						Get started with <em>Kody</em>
 					</h1>
-					<p data-rise style={{ '--rise': '1' }}>
-						Give your agent a personal software factory: connect any MCP-capable
-						host, add {formatOnboardingFeaturedMcpChoice()}, then run an ad hoc
-						request and persist it as a package you own. New here?{' '}
-						<a
-							href="/guides/what-is-kody"
-							target="_blank"
-							rel="noreferrer noopener"
-							mix={css(headerGuideLinkCss)}
-						>
-							Read what Kody can do
-						</a>{' '}
-						first.
-					</p>
 					<p
 						data-rise
-						style={{ '--rise': '2' }}
+						style={{ '--rise': '1' }}
 						mix={css(discordInviteWrapCss)}
 					>
 						<a
@@ -625,55 +658,36 @@ export function OnboardingRoute(handle: Handle) {
 										mix={css(panelArtCss)}
 									/>
 								</div>
-								<div
-									mix={css(connectStatusCss)}
-									role="status"
-									aria-live="polite"
-									data-connected={hasMcpClient ? 'true' : undefined}
-								>
-									{connectStatusContent({
-										connected: hasMcpClient,
-										connectedLabel: 'You are connected',
-										waitingLabel: 'Waiting for your agent to connect…',
-									})}
-								</div>
+								{selectedAgent || hasMcpClient ? (
+									<div
+										mix={css(connectStatusCss)}
+										role="status"
+										aria-live="polite"
+										data-connected={hasMcpClient ? 'true' : undefined}
+									>
+										{connectStatusContent({
+											connected: hasMcpClient,
+											connectedLabel: selectedAgentLabel
+												? `${selectedAgentLabel} is connected`
+												: 'You are connected',
+											waitingLabel: selectedAgentLabel
+												? `Waiting for ${selectedAgentLabel} to connect…`
+												: 'Waiting for your agent to connect…',
+										})}
+									</div>
+								) : null}
 								<OnboardingMcpClientTabs
 									mcpServerUrl={mcpServerUrl}
 									highlights={mcpHighlights}
+									selectedAgent={selectedAgent}
+									surface={selectedSurface}
+									chooser={agentChooser ?? canonicalOnboardingAgentChooser()}
+									agentLocation={{
+										pathname: agentLocation.pathname,
+										search: agentLocation.search,
+										hash: agentLocation.hash,
+									}}
 								/>
-								<div
-									mix={css(authNoteCss)}
-									role="note"
-									data-testid="onboarding-authenticate-callout"
-								>
-									<strong>Authenticate Kody before you continue</strong>
-									<span>
-										<strong>Cursor:</strong> after installing the plugin, open
-										the Cursor MCP list and click <strong>Authenticate</strong>.
-									</span>
-									<span>
-										<strong>Claude Code:</strong> after install, enter{' '}
-										<code>/mcp</code> → Kody → <strong>Authenticate</strong>.
-									</span>
-									<span>
-										<strong>Grok.com:</strong> after adding the custom
-										connector, complete OAuth when Grok prompts you.
-									</span>
-									<span>
-										<strong>Grok Bot:</strong> after adding the plugin, complete{' '}
-										<strong>Authorize</strong> when Grok Bot prompts you.
-									</span>
-									<span>
-										<strong>Grok CLI:</strong> after adding the server, OAuth
-										opens on first use. In the TUI, <code>/mcps</code> then{' '}
-										<strong>i</strong> authenticates.{' '}
-										<code>grok mcp doctor kody</code> checks the connection.
-									</span>
-									<span>
-										Approve the <strong>kody.codes</strong> OAuth window. This
-										is the step that connects your agent to your factory.
-									</span>
-								</div>
 								<WizardNavigation
 									activeStep={activeStep}
 									onSelectStep={selectStep}
@@ -978,23 +992,6 @@ export function OnboardingRoute(handle: Handle) {
 							</section>
 						) : null}
 
-						<OnboardingFactoryCard />
-
-						{/* Outside the wizard panels on purpose: the prototype keeps the
-					    BYOK disclosure visible on every step. */}
-						{renderByokDetails()}
-
-						{loggedIn ? null : (
-							<p mix={css(authLinksCss)}>
-								<a href="/signup" mix={css(primaryLinkCss)}>
-									Sign up
-								</a>
-								{' · '}
-								<a href="/login" mix={css(primaryLinkCss)}>
-									Log in
-								</a>
-							</p>
-						)}
 					</>
 				) : null}
 			</section>
@@ -1075,73 +1072,6 @@ function WizardNavigation(
 			</footer>
 		)
 	}
-}
-
-/**
- * BYOK aside, folded behind a disclosure per the live design: the full
- * argument is one click away, not a second page of reading. This is the
- * prototype's onboarding-specific framing ("Why there's no one-click
- * connect"); the integrations page keeps its own `byok-explainer` copy.
- */
-function renderByokDetails() {
-	return (
-		<details id="byok" mix={css(byokDetailsCss)}>
-			<summary mix={css(byokSummaryCss)}>Bring your own API keys</summary>
-			{/*
-			 * A `section` rather than a `div`: a generic element has no role, so
-			 * the accessible name from `aria-labelledby` would be dropped.
-			 */}
-			<section mix={css(byokBodyCss)} aria-labelledby="byok-note-title">
-				<img
-					{...landingArtAttrs('kody-keys')}
-					width={627}
-					height={627}
-					alt="Kody holding a golden key with both paws"
-				/>
-				<div>
-					<h2 id="byok-note-title" mix={css(byokTitleCss)}>
-						Why bring your own keys?
-					</h2>
-					<p mix={css(byokCopyCss)}>
-						You create the connection yourself, and your agent walks you through
-						it, so it is completely yours: your app, your scopes, no middleman.
-					</p>
-					<dl mix={css(byokCompareCss)}>
-						<div>
-							<dt>Typical apps</dt>
-							<dd>
-								<span>You</span> <span aria-hidden="true">→</span>{' '}
-								<s>their shared app</s> <span aria-hidden="true">→</span>{' '}
-								<span>GitHub</span>
-							</dd>
-						</div>
-						<div>
-							<dt>Kody</dt>
-							<dd>
-								<span>You</span> <span aria-hidden="true">→</span>{' '}
-								<em>your own app</em> <span aria-hidden="true">→</span>{' '}
-								<span>GitHub</span>
-							</dd>
-						</div>
-					</dl>
-					<ul mix={css(byokPointsCss)}>
-						<li>
-							<strong>Your keys, your scopes.</strong> You decide exactly what
-							Kody can touch, and you can revoke it anytime.
-						</li>
-						<li>
-							<strong>No middleman.</strong> Nothing sits between you and the
-							provider: no shared app to trust or get breached.
-						</li>
-						<li>
-							<strong>No fixed list.</strong> If it has an API, your Kody can
-							learn to use it.
-						</li>
-					</ul>
-				</div>
-			</section>
-		</details>
-	)
 }
 
 /* ---------- styles ---------- */
@@ -1391,28 +1321,6 @@ const howItWorksLabelCss = {
 	letterSpacing: '0.06em',
 	textTransform: 'uppercase' as const,
 	color: colors.primaryText,
-}
-
-/* One-time authorization callout follows the install controls because this
-   is the action users must take after copying or adding the MCP config. */
-const authNoteCss = {
-	...getAccentCalloutCss({ accentColor: colors.primary }),
-	gap: '0.55rem',
-	padding: '1.2rem 1.35rem',
-	borderLeftWidth: '6px',
-	backgroundColor: `oklch(from ${colors.primary} l c h / 0.14)`,
-	boxShadow: `0 10px 28px oklch(from ${colors.primary} l c h / 0.12)`,
-	'& > strong': {
-		font: `750 1.2rem/1.15 ${typography.fontFamilyDisplay}`,
-		color: colors.primaryText,
-	},
-	'& > span': {
-		color: colors.text,
-		lineHeight: 1.5,
-	},
-	'& code': {
-		font: '600 0.9em ui-monospace, "SF Mono", Menlo, monospace',
-	},
 }
 
 /* Connection status pill: dashed while the product polls for the grant,
