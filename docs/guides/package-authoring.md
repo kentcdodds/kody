@@ -3,8 +3,9 @@ id: package_authoring
 title: Package authoring guide
 summary:
   START HERE when creating or materially changing a Kody package: package
-  shape, README.md Intent section, secret-using package approval checklist,
-  and scope-update guidance without adding new primitives.
+  shape, README.md Intent section, per-export JSDoc (search Purpose),
+  secret-using package approval checklist, and scope-update guidance
+  without adding new primitives.
 category: platform
 ---
 
@@ -12,6 +13,11 @@ category: platform
 
 Use this guide when creating a new Kody package or materially changing an
 existing one.
+
+A package is not done until README `## Intent` is current, every public export
+has JSDoc as specified in [Export JSDoc](#export-jsdoc), and the smoke tests in
+[Verify your publish](#verify-your-publish) pass (or the user explicitly skips a
+surface).
 
 ## Choose an authoring lane
 
@@ -54,6 +60,10 @@ When you create or materially change a package:
 Do not add a package manifest field, runtime object, saved value, or other Kody
 primitive solely to track intent.
 
+README Intent is package-level. It does not replace per-export JSDoc. Search
+shows Intent and an Exports Purpose column side by side; Purpose comes from each
+export's JSDoc, not from this section.
+
 ## Minimal shape
 
 ```md
@@ -66,6 +76,63 @@ This package exists to ...
 
 Keep the section concise. It should explain why the package exists and what
 success means for the user, not duplicate every implementation detail.
+
+## Export JSDoc
+
+Search detail (`entity: "…:package"`) shows an Exports table whose **Purpose**
+column comes from each export's JSDoc. When JSDoc is missing, Purpose falls back
+to the generic string `Package export.` Agents skim that column first when
+choosing among sibling exports.
+
+TypeScript types and the export name give call shape when present. They do not
+say **when** or **why** to pick one export over another. README `## Intent` is
+package-scoped and often does not name every export. Neither replaces per-export
+JSDoc.
+
+Do not add a package manifest field, runtime object, saved value, or other Kody
+primitive solely to track export purpose. Put it in JSDoc on the exported
+function.
+
+When you create or materially change a public export:
+
+1. Write JSDoc immediately above the exported function (or above
+   `export default` for a local binding in the same file).
+2. Start with one line that states **what** the export does and **when** to call
+   it.
+3. Add `@param` for each input.
+4. Add `@returns`.
+5. Add `@example` that **imports** `kody:@scope/id/export` and **calls** it. Do
+   not lead with `packages.invoke`.
+
+If the export's `package.json` `exports` entry has a `types` condition, put the
+JSDoc on that types file — search reads the types module when it exists. JSDoc
+on an imported re-export (`export default foo` where `foo` is imported) is not
+attributed; implement the function in the export file (or a local binding in
+that file) so the comment sits on the exported symbol.
+
+```ts
+/**
+ * Format a Discord moderation report for a channel.
+ * Use when a human or job needs a readable summary of recent flags.
+ *
+ * @param input - Channel id and optional lookback window
+ * @returns Markdown report body
+ *
+ * @example
+ * import formatReport from 'kody:@scope/discord/format-report'
+ *
+ * const report = await formatReport({ channelId: '123' })
+ */
+export default async function formatReport(input: {
+	channelId: string
+	lookbackHours?: number
+}): Promise<{ markdown: string }> {
+	return { markdown: '' }
+}
+```
+
+Treat missing or generic Purpose (`Package export.`) as unfinished work, the
+same as a missing README `## Intent` section.
 
 ## Package app routing
 
@@ -110,9 +177,9 @@ phrasing such as “Send transactional email via Resend” over inventory lists 
 exports, auth, or APIs.
 
 Put feature lists, API surface, auth notes, and longer guidance in `README.md`
-(including `## Intent`), `kody.searchText`, and export/JSDoc docs — not in
-`kody.description`. Community listings and Open Graph share cards reuse this
-field, so keep it concise.
+(including `## Intent`), `kody.searchText`, and [export JSDoc](#export-jsdoc) —
+not in `kody.description`. Community listings and Open Graph share cards reuse
+this field, so keep it concise.
 
 ## `kody.category` (community browse)
 
@@ -171,11 +238,12 @@ require it.
 
 ## Verify your publish
 
-After publish succeeds — and after any required secret approvals — run synthetic
-smoke tests for every declared surface before calling the package complete.
-Synthetic invocations are real-surface runs with real side effects; use a
-deliberately visible irreversible-side-effect guard when a smoke test should
-stay safe.
+After publish succeeds — and after any required secret approvals — confirm every
+export's search Purpose is real JSDoc (not `Package export.`; see
+[Export JSDoc](#export-jsdoc)), then run synthetic smoke tests for every
+declared surface before calling the package complete. Synthetic invocations are
+real-surface runs with real side effects; use a deliberately visible
+irreversible-side-effect guard when a smoke test should stay safe.
 
 1. Read `test_hints` on the `package_publish_external_push` result when present.
    It lists copy-pasteable calls for declared apps and subscription topics.
@@ -196,8 +264,8 @@ stay safe.
    one; synthetic app fetches do not replace browser verification for layout,
    OAuth redirects, or websocket facets.
 
-Only after these checks pass (or the user explicitly skips a surface) treat the
-package as ready to run.
+Only after README `## Intent`, per-export JSDoc, and these checks pass (or the
+user explicitly skips a surface) treat the package as ready to run.
 
 ## Community icon
 
