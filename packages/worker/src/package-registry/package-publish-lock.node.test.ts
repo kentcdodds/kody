@@ -3,6 +3,8 @@ import {
 	PackagePublishLockedError,
 	buildPackagePublishApprovalPath,
 	buildPackagePublishApprovalUrl,
+	buildPackageUnlockPath,
+	buildPackageUnlockUrl,
 	createPackagePublishLockedMessage,
 	isGitCommitSha,
 	isSavedPackageLocked,
@@ -58,4 +60,12 @@ test('publish lock treats a stored timestamp as locked and builds a commit-named
 	expect(error.message).toContain(
 		'/account/packages/pkg-1/approve-publish?commit=abc1234',
 	)
+
+	expect(buildPackageUnlockPath('pkg-1')).toBe('/account/packages/pkg-1')
+	expect(
+		buildPackageUnlockUrl({
+			baseUrl: 'https://kody.codes',
+			packageId: 'pkg-1',
+		}),
+	).toBe('https://kody.codes/account/packages/pkg-1')
 })

@@ -1,8 +1,10 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	updateSavedPackage: vi.fn(),
+	setSavedPackageLockedAt: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
 }))
 
@@ -11,6 +13,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageById(...args),
 	updateSavedPackage: (...args: Array<unknown>) =>
 		mockModule.updateSavedPackage(...args),
+	setSavedPackageLockedAt: (...args: Array<unknown>) =>
+		mockModule.setSavedPackageLockedAt(...args),
 }))
 
 vi.mock('#worker/package-registry/package-owner.ts', () => ({
@@ -44,7 +48,10 @@ function createCtx(userId = 'user-1') {
 	}
 }
 
-function createSavedPackage(hidden: boolean) {
+function createSavedPackage(input?: {
+	hidden?: boolean
+	lockedAt?: string | null
+}) {
 	return {
 		id: 'pkg-1',
 		userId: 'user-1',
@@ -54,9 +61,9 @@ function createSavedPackage(hidden: boolean) {
 		tags: ['notes'],
 		searchText: null,
 		hasApp: false,
-		hidden,
+		hidden: input?.hidden ?? false,
 		isPrivate: false,
-		lockedAt: null,
+		lockedAt: input?.lockedAt ?? null,
 		sourceId: 'source-1',
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-07-14T00:00:00.000Z',
@@ -66,8 +73,10 @@ function createSavedPackage(hidden: boolean) {
 test('package_update hides and unhides a user-scoped package and returns persisted summaries', async () => {
 	mockModule.updateSavedPackage.mockResolvedValue(true)
 	mockModule.getSavedPackageById
-		.mockResolvedValueOnce(createSavedPackage(true))
-		.mockResolvedValueOnce(createSavedPackage(false))
+		.mockResolvedValueOnce(createSavedPackage())
+		.mockResolvedValueOnce(createSavedPackage({ hidden: true }))
+		.mockResolvedValueOnce(createSavedPackage({ hidden: true }))
+		.mockResolvedValueOnce(createSavedPackage({ hidden: false }))
 
 	await expect(
 		packageUpdateCapability.handler(
@@ -116,7 +125,74 @@ test('package_update hides and unhides a user-scoped package and returns persist
 			hidden: false,
 		},
 	)
-	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(2)
+	expect(mockModule.setSavedPackageLockedAt).not.toHaveBeenCalled()
+	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(4)
+})
+
+test('package_update locks a package and rejects unlock with the owner website URL', async () => {
+	const lockedPackage = createSavedPackage({
+		lockedAt: '2026-08-28T12:00:00.000Z',
+	})
+	mockModule.getSavedPackageById
+		.mockResolvedValueOnce(createSavedPackage())
+		.mockResolvedValueOnce(lockedPackage)
+		.mockResolvedValue(lockedPackage)
+	mockModule.setSavedPackageLockedAt.mockResolvedValue(true)
+
+	await expect(
+		packageUpdateCapability.handler(
+			{ package_id: 'pkg-1', changes: { locked: true } },
+			createCtx(),
+		),
+	).resolves.toMatchObject({
+		ok: true,
+		package: {
+			package_id: 'pkg-1',
+			locked_at: '2026-08-28T12:00:00.000Z',
+		},
+	})
+	expect(mockModule.setSavedPackageLockedAt).toHaveBeenCalledWith(
+		{},
+		{
+			userId: 'user-1',
+			packageId: 'pkg-1',
+			lockedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+		},
+	)
+	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
+
+	await expect(
+		packageUpdateCapability.handler(
+			{ package_id: 'pkg-1', changes: { locked: true } },
+			createCtx(),
+		),
+	).resolves.toMatchObject({
+		ok: true,
+		package: {
+			package_id: 'pkg-1',
+			locked_at: '2026-08-28T12:00:00.000Z',
+		},
+	})
+	expect(mockModule.setSavedPackageLockedAt).toHaveBeenCalledTimes(1)
+
+	const unlockError = await packageUpdateCapability
+		.handler({ package_id: 'pkg-1', changes: { locked: false } }, createCtx())
+		.catch((error: unknown) => error)
+	expect(unlockError).toBeInstanceOf(McpCallerError)
+	expect(unlockError).toMatchObject({
+		message:
+			'Agents cannot unlock packages. Send the owner to https://heykody.dev/account/packages/pkg-1 to unlock publishes.',
+	})
+	expect(mockModule.setSavedPackageLockedAt).toHaveBeenCalledTimes(1)
+	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
+
+	await expect(
+		packageUpdateCapability.handler(
+			{ package_id: 'pkg-1', changes: { hidden: true, locked: false } },
+			createCtx(),
+		),
+	).rejects.toThrow(/cannot unlock/i)
+	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 })
 
 test('package_update rejects invalid changes and cross-user or unauthenticated access', async () => {
@@ -137,21 +213,17 @@ test('package_update rejects invalid changes and cross-user or unauthenticated a
 	).rejects.toThrow('Invalid input for capability "package_update"')
 	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 
-	mockModule.updateSavedPackage.mockResolvedValueOnce(false)
+	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
 	await expect(
 		packageUpdateCapability.handler(
-			{ package_id: 'other-user-package', changes: { hidden: true } },
+			{
+				package_id: 'other-user-package',
+				changes: { hidden: true },
+			},
 			createCtx('user-2'),
 		),
 	).rejects.toThrow(/not found/i)
-	expect(mockModule.updateSavedPackage).toHaveBeenCalledWith(
-		{},
-		{
-			userId: 'user-2',
-			packageId: 'other-user-package',
-			hidden: true,
-		},
-	)
+	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 
 	await expect(
 		packageUpdateCapability.handler(
@@ -167,5 +239,5 @@ test('package_update rejects invalid changes and cross-user or unauthenticated a
 			},
 		),
 	).rejects.toThrow(/authenticated/i)
-	expect(mockModule.updateSavedPackage).toHaveBeenCalledTimes(1)
+	expect(mockModule.updateSavedPackage).not.toHaveBeenCalled()
 })

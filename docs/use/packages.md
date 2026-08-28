@@ -492,7 +492,8 @@ Use:
   file set when no local git client is available
 - `package_get` and `package_list` to inspect saved packages
 - `package_update` to change mutable package settings such as hidden search
-  discovery state. Publish lock (`locked_at`) is website-only.
+  discovery state or to lock publishes (`changes.locked: true`). Unlocking is
+  website-only.
 - `repo_edit_files`, `repo_apply_patch`, `repo_commit`, `repo_run_checks`, and
   `repo_publish_session` to edit, validate, and publish repo-backed package
   source through the file-level session API
@@ -535,9 +536,11 @@ resolve hidden packages.
 
 A package with a **`locked_at`** timestamp on `/account/packages` (and on
 `package_list` / `package_get`) keeps serving its current published tree. Agents
-and the five-minute reconcile job cannot advance `published_commit`. Unlocking
-and the first lock are website-only — `package_update` cannot change
-`locked_at`.
+and the five-minute reconcile job cannot advance `published_commit`. Use
+**`package_update`** with **`changes: { locked: true }`** to lock a package.
+Agents cannot unlock. If an agent needs the package unlocked, it should send the
+owner to `/account/packages/:packageId` so they can click the lock icon.
+`package_update` rejects **`changes.locked: false`** and returns that URL.
 
 When an agent pushes or saves a locked package, the commit still lands on
 Artifacts HEAD. Publish tools then return **`locked`** with an

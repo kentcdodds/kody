@@ -78,6 +78,24 @@ export function buildPackagePublishApprovalUrl(input: {
 	return url.toString()
 }
 
+export function buildPackageUnlockPath(packageId: string): string {
+	return routes.accountPackageDetail.href({ packageId })
+}
+
+export function buildPackageUnlockUrl(input: {
+	baseUrl: string
+	packageId: string
+}): string {
+	return new URL(
+		buildPackageUnlockPath(input.packageId),
+		input.baseUrl,
+	).toString()
+}
+
+export function createPackageUnlockRequiredMessage(unlockUrl: string): string {
+	return `Agents cannot unlock packages. Send the owner to ${unlockUrl} to unlock publishes.`
+}
+
 export function createPackagePublishLockedMessage(input: {
 	packageName: string
 	approvalUrl: string
