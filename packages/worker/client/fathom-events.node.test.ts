@@ -103,3 +103,15 @@ test('scheduleConsumeAccountCreatedFathomSignal retries until Fathom loads', () 
 	cancel()
 	vi.useRealTimers()
 })
+
+test('scheduleConsumeAccountCreatedFathomSignal no-ops without accountCreated query', () => {
+	const setIntervalSpy = vi.fn()
+	vi.stubGlobal('window', {
+		location: { href: 'https://kody.codes/account' },
+		setInterval: setIntervalSpy,
+		clearInterval: vi.fn(),
+	})
+	const cancel = scheduleConsumeAccountCreatedFathomSignal()
+	expect(setIntervalSpy).not.toHaveBeenCalled()
+	cancel()
+})

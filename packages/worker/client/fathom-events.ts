@@ -72,6 +72,12 @@ export function scheduleConsumeAccountCreatedFathomSignal(options?: {
 	maxAttempts?: number
 }): () => void {
 	if (typeof window === 'undefined') return () => {}
+	try {
+		const url = new URL(window.location.href)
+		if (url.searchParams.get(accountCreatedQueryParam) !== '1') return () => {}
+	} catch {
+		return () => {}
+	}
 	const intervalMs = options?.intervalMs ?? accountCreatedRetryIntervalMs
 	const maxAttempts = options?.maxAttempts ?? accountCreatedRetryAttempts
 	if (consumeAccountCreatedFathomSignal()) return () => {}
