@@ -1,4 +1,8 @@
 import {
+	type EmailVerificationDelivery,
+	parseEmailVerificationDelivery,
+} from '#universal/email-verification-delivery.ts'
+import {
 	permissionAccesses,
 	permissionActions,
 	permissionEntities,
@@ -14,6 +18,7 @@ import {
 export type SessionInfo = {
 	email: string
 	emailVerified: boolean
+	emailVerificationDelivery: EmailVerificationDelivery | null
 	username: string
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
@@ -61,8 +66,26 @@ export async function fetchSessionInfo(
 		const permissions = readPermissionStrings(payload?.session?.permissions)
 		const featureFlags = readFeatureFlags(payload?.session?.featureFlags)
 		const emailVerified = payload?.session?.emailVerified === true
+		const emailVerificationDelivery = parseEmailVerificationDelivery(
+			payload?.session?.emailVerificationDelivery &&
+				typeof payload.session.emailVerificationDelivery === 'object'
+				? {
+						status: payload.session.emailVerificationDelivery.status,
+						class: payload.session.emailVerificationDelivery.class,
+						at: payload.session.emailVerificationDelivery.at,
+					}
+				: {},
+		)
 		return email
-			? { email, emailVerified, username, roles, permissions, featureFlags }
+			? {
+					email,
+					emailVerified,
+					emailVerificationDelivery,
+					username,
+					roles,
+					permissions,
+					featureFlags,
+				}
 			: null
 	} catch {
 		return null

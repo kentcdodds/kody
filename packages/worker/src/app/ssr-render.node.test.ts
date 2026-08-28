@@ -348,6 +348,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		ok: true,
 		email: 'user@example.com',
 		emailVerified: false,
+		emailVerificationDelivery: null,
 		username: 'account-user',
 		displayName: 'account-user',
 		bio: null,

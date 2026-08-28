@@ -22,6 +22,7 @@ import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
+import { adminUserVerifyCapability } from './admin-user-verify.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -42,6 +43,10 @@ type UserRow = {
 	updated_at: string
 	password_hash?: string
 	email_verified_at?: string | null
+	email_verification_delivery_status?: string | null
+	email_verification_delivery_at?: string | null
+	email_verification_delivery_detail?: string | null
+	email_verification_delivery_class?: string | null
 }
 
 function adminTestUser(
@@ -209,9 +214,10 @@ function createAdminCapabilityTestDb(input: {
 						return { total: users.length } as T
 					}
 					if (
-						normalizedQuery.includes(
-							'select id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at, email_outbound_paused_at, created_at, updated_at from users where stable_user_id = ?',
-						)
+						normalizedQuery.startsWith(
+							'select id, stable_user_id, username, email',
+						) &&
+						normalizedQuery.includes('from users where stable_user_id = ?')
 					) {
 						return (users.find((user) => user.stable_user_id === params[0]) ??
 							null) as T | null
@@ -236,8 +242,11 @@ function createAdminCapabilityTestDb(input: {
 						) as T | null
 					}
 					if (
+						normalizedQuery.startsWith(
+							'select id, stable_user_id, username, email',
+						) &&
 						normalizedQuery.includes(
-							'select id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at, email_outbound_paused_at, created_at, updated_at from users where email = ? collate nocase',
+							'from users where email = ? collate nocase',
 						)
 					) {
 						const email = String(params[0]).toLowerCase()
@@ -245,8 +254,11 @@ function createAdminCapabilityTestDb(input: {
 							null) as T | null
 					}
 					if (
+						normalizedQuery.startsWith(
+							'select id, stable_user_id, username, email',
+						) &&
 						normalizedQuery.includes(
-							'select id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at, email_outbound_paused_at, created_at, updated_at from users where username = ? collate nocase',
+							'from users where username = ? collate nocase',
 						)
 					) {
 						const username = String(params[0]).toLowerCase()
@@ -319,9 +331,11 @@ function createAdminCapabilityTestDb(input: {
 				},
 				async all<T>() {
 					if (
-						normalizedQuery.includes(
-							'select id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at, email_outbound_paused_at, created_at, updated_at from users order by id asc limit ? offset ?',
-						)
+						normalizedQuery.startsWith(
+							'select id, stable_user_id, username, email',
+						) &&
+						normalizedQuery.includes('from users') &&
+						normalizedQuery.includes('order by id asc limit ? offset ?')
 					) {
 						const pageSize = Number(params[0])
 						const offset = Number(params[1])
@@ -484,6 +498,40 @@ function createAdminCapabilityTestDb(input: {
 							expires_at: Number(expiresAt),
 						})
 						return { meta: { changes: 1, last_row_id: 1 } }
+					}
+					if (
+						normalizedQuery.includes(
+							'update users set email_verified_at = coalesce(email_verified_at, ?)',
+						)
+					) {
+						const user = users.find((row) => row.id === Number(params[2]))
+						if (!user) return { meta: { changes: 0, last_row_id: 0 } }
+						user.email_verified_at = user.email_verified_at ?? String(params[0])
+						user.updated_at = String(params[1])
+						return { meta: { changes: 1, last_row_id: 0 } }
+					}
+					if (
+						normalizedQuery.includes(
+							'update users set email_verification_delivery_status = null',
+						)
+					) {
+						const user = users.find((row) => row.id === Number(params[1]))
+						if (!user) return { meta: { changes: 0, last_row_id: 0 } }
+						user.email_verification_delivery_status = null
+						user.email_verification_delivery_at = null
+						user.email_verification_delivery_detail = null
+						user.email_verification_delivery_class = null
+						user.updated_at = String(params[0])
+						return { meta: { changes: 1, last_row_id: 0 } }
+					}
+					if (
+						normalizedQuery.includes('insert into "email_verifications"') ||
+						normalizedQuery.includes('insert into email_verifications')
+					) {
+						return { meta: { changes: 1, last_row_id: 1 } }
+					}
+					if (normalizedQuery.includes('delete from email_verifications')) {
+						return { meta: { changes: 1, last_row_id: 0 } }
 					}
 					if (
 						normalizedQuery.includes(
@@ -1033,4 +1081,79 @@ test('admin user lookup does not fall through from an invalid stable id', async 
 			email: 'admin@example.com',
 		}),
 	).resolves.toBeNull()
+})
+
+test('admin_user_verify marks verified and mints a one-time url with audit metadata', async () => {
+	const { db, auditEvents, users } = createAdminCapabilityTestDb({
+		users: [
+			adminTestUser({
+				id: 1,
+				username: 'admin',
+				email: 'admin@example.com',
+				created_at: '2026-01-01 00:00:00',
+				updated_at: '2026-01-02 00:00:00',
+			}),
+			adminTestUser({
+				id: 2,
+				username: 'jane',
+				email: 'jane@example.com',
+				email_verified_at: null,
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			}),
+		],
+		userRoles: [
+			{ user_id: 1, role_name: 'admin' },
+			{ user_id: 2, role_name: 'user' },
+		],
+	})
+	const ctx = createAdminCapabilityContext(db)
+
+	const minted = await adminUserVerifyCapability.handler(
+		{ email: 'JANE@example.com', action: 'mint_verify_url' },
+		ctx,
+	)
+	expect(minted.user.email_verified).toBe(false)
+	expect(minted.verifyUrl).toMatch(
+		/^https:\/\/example.com\/verify-email\?token=/,
+	)
+	expect(minted.expiresAt).toBeGreaterThan(Date.now())
+
+	const verified = await adminUserVerifyCapability.handler(
+		{
+			stableUserId: testStableUserIdFromEmail('jane@example.com'),
+			action: 'mark_verified',
+		},
+		ctx,
+	)
+	expect(verified.user.email_verified).toBe(true)
+	expect(verified.verifyUrl).toBeNull()
+	expect(users.find((user) => user.id === 2)?.email_verified_at).toBeTruthy()
+
+	expect(auditEvents).toEqual([
+		expect.objectContaining({
+			action: 'admin_user_verify',
+			result: 'success',
+			reason: `target_stable_user_id=${testStableUserIdFromEmail('jane@example.com')};action=mint_verify_url`,
+		}),
+		expect.objectContaining({
+			action: 'admin_user_verify',
+			result: 'success',
+			reason: `target_stable_user_id=${testStableUserIdFromEmail('jane@example.com')};action=mark_verified`,
+		}),
+	])
+
+	await expect(
+		adminUserVerifyCapability.handler(
+			{ email: 'jane@example.com', action: 'mint_verify_url' },
+			ctx,
+		),
+	).rejects.toThrow('Email is already verified.')
+	expect(auditEvents.at(-1)).toEqual(
+		expect.objectContaining({
+			action: 'admin_user_verify',
+			result: 'failure',
+			reason: 'Email is already verified.',
+		}),
+	)
 })

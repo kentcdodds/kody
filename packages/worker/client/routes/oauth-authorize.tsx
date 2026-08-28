@@ -481,6 +481,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							email: sessionEmail,
 							description:
 								'MCP authorization cannot finish until this account email is verified. Resend the link here if needed. Keep this page open, verify in another tab, then continue without restarting the host connection.',
+							delivery: session?.emailVerificationDelivery ?? null,
 							resendStatus,
 							resendMessage,
 							resendTone,

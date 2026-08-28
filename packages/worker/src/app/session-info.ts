@@ -3,11 +3,13 @@ import {
 	loadRequestFeatureFlags,
 	type EvaluatedFeatureFlags,
 } from '#app/request-feature-flags-cache.ts'
+import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 
 export type SessionInfo = {
 	email: string
 	emailVerified: boolean
+	emailVerificationDelivery: EmailVerificationDelivery | null
 	username: string
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
@@ -42,6 +44,7 @@ export async function loadSessionInfo(
 		session: {
 			email: resolved.user.email,
 			emailVerified: resolved.user.emailVerified,
+			emailVerificationDelivery: resolved.user.emailVerificationDelivery,
 			username: resolved.user.username,
 			roles: resolved.user.roles,
 			permissions: resolved.user.permissions,

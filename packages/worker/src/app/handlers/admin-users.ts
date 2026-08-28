@@ -14,6 +14,11 @@ import {
 	type AdminUserListItem,
 } from '#worker/admin/users-data.ts'
 import {
+	AdminEmailVerificationError,
+	markAdminUserEmailVerified,
+	mintAdminEmailVerificationUrl,
+} from '#worker/identity/email-verification-admin.ts'
+import {
 	parsePlanName,
 	resolvePlanWrite,
 	type PlanName,
@@ -158,6 +163,24 @@ export function createAdminUsersApiHandler(env: Env) {
 						body,
 					})
 				}
+				if (action === 'mark_email_verified') {
+					return handleMarkEmailVerifiedAction({
+						env,
+						request,
+						url,
+						actor,
+						body,
+					})
+				}
+				if (action === 'mint_verify_url') {
+					return handleMintVerifyUrlAction({
+						env,
+						request,
+						url,
+						actor,
+						body,
+					})
+				}
 
 				return jsonResponse({ ok: false, error: 'Invalid action.' }, 400)
 			} catch (error) {
@@ -258,12 +281,13 @@ async function buildMutationResponse(
 	env: Env,
 	requestUrl: string,
 	targetStableUserId: string,
+	extra: { verifyUrl?: string | null; verifyUrlExpiresAt?: number | null } = {},
 ) {
 	const [payload, updatedUser] = await Promise.all([
 		loadAdminUsersData(env, requestUrl),
 		loadAdminUserByTarget(env.APP_DB, { stableUserId: targetStableUserId }),
 	])
-	return jsonResponse({ ...payload, updatedUser })
+	return jsonResponse({ ...payload, updatedUser, ...extra })
 }
 
 async function handleRemoveRoleAction(input: {
@@ -487,6 +511,103 @@ async function handleResumeEmailOutboundAction(input: {
 	})
 
 	return buildMutationResponse(input.env, input.request.url, targetStableUserId)
+}
+
+async function handleMarkEmailVerifiedAction(input: {
+	env: Env
+	request: Request
+	url: URL
+	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
+	body: object
+}) {
+	const targetStableUserId = readStableUserIdField(input.body)
+	if (!targetStableUserId) {
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
+	}
+
+	try {
+		await markAdminUserEmailVerified(input.env.APP_DB, {
+			stableUserId: targetStableUserId,
+		})
+	} catch (error) {
+		if (
+			error instanceof AdminEmailVerificationError &&
+			error.code === 'not_found'
+		) {
+			return jsonResponse({ ok: false, error: 'User not found.' }, 404)
+		}
+		throw error
+	}
+
+	const requestIp = getRequestIp(input.request) ?? undefined
+	void logAuditEvent({
+		category: 'admin',
+		action: 'mark_email_verified',
+		result: 'success',
+		email: input.actor.email,
+		ip: requestIp,
+		path: input.url.pathname,
+		reason: `target_stable_user_id=${targetStableUserId}`,
+	})
+
+	return buildMutationResponse(input.env, input.request.url, targetStableUserId)
+}
+
+async function handleMintVerifyUrlAction(input: {
+	env: Env
+	request: Request
+	url: URL
+	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
+	body: object
+}) {
+	const targetStableUserId = readStableUserIdField(input.body)
+	if (!targetStableUserId) {
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
+	}
+
+	let minted: Awaited<ReturnType<typeof mintAdminEmailVerificationUrl>>
+	try {
+		minted = await mintAdminEmailVerificationUrl({
+			db: input.env.APP_DB,
+			appBaseUrl: new URL(input.request.url).origin,
+			target: { stableUserId: targetStableUserId },
+		})
+	} catch (error) {
+		if (error instanceof AdminEmailVerificationError) {
+			return jsonResponse(
+				{ ok: false, error: error.message },
+				error.code === 'not_found' ? 404 : 400,
+			)
+		}
+		throw error
+	}
+
+	const requestIp = getRequestIp(input.request) ?? undefined
+	void logAuditEvent({
+		category: 'admin',
+		action: 'mint_verify_url',
+		result: 'success',
+		email: input.actor.email,
+		ip: requestIp,
+		path: input.url.pathname,
+		reason: `target_stable_user_id=${targetStableUserId}`,
+	})
+
+	return buildMutationResponse(
+		input.env,
+		input.request.url,
+		targetStableUserId,
+		{
+			verifyUrl: minted.verifyUrl,
+			verifyUrlExpiresAt: minted.expiresAt,
+		},
+	)
 }
 
 /**

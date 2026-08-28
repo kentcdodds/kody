@@ -2,9 +2,18 @@ import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { buildVerificationEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
-import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
-import { createDb, emailVerificationsTable } from '#worker/db.ts'
-import { toHex } from '@kody-internal/shared/hex.ts'
+import {
+	clearUserEmailVerificationDelivery,
+	registerTransactionalEmailDelivery,
+	setUserEmailVerificationDelivery,
+} from '#worker/email/verification-delivery.ts'
+import {
+	buildEmailVerificationUrl,
+	discardEmailVerificationToken,
+	hashVerificationToken,
+	insertEmailVerificationToken,
+	retireOtherEmailVerificationTokens,
+} from '#worker/identity/email-verification-tokens.ts'
 
 /**
  * The read-only verification check moved to
@@ -18,20 +27,7 @@ export {
 	isAccountEmailVerified,
 } from '#worker/identity/email-verification-state.ts'
 
-const verificationTokenBytes = 32
-const verificationTokenExpiryMs = 24 * 60 * 60 * 1000
-
-function generateVerificationToken() {
-	const bytes = new Uint8Array(verificationTokenBytes)
-	crypto.getRandomValues(bytes)
-	return toHex(bytes)
-}
-
-export async function hashVerificationToken(token: string) {
-	const data = new TextEncoder().encode(token)
-	const digest = await crypto.subtle.digest('SHA-256', data)
-	return toHex(new Uint8Array(digest))
-}
+export { buildEmailVerificationUrl, hashVerificationToken }
 
 function getVerificationEmailConfig(input: {
 	env: Pick<Env, 'APP_BASE_URL' | 'SYSTEM_EMAIL_DOMAIN'> & {
@@ -50,21 +46,6 @@ function getVerificationEmailConfig(input: {
 	)
 }
 
-/** Builds `/verify-email` with token and an optional safe post-verify resume target. */
-export function buildEmailVerificationUrl(input: {
-	appBaseUrl: string
-	token: string
-	redirectTo?: string | null
-}) {
-	const verificationUrl = new URL('/verify-email', input.appBaseUrl)
-	verificationUrl.searchParams.set('token', input.token)
-	const safeRedirectTo = normalizeRedirectTo(input.redirectTo)
-	if (safeRedirectTo) {
-		verificationUrl.searchParams.set('redirectTo', safeRedirectTo)
-	}
-	return verificationUrl
-}
-
 export async function createEmailVerification(input: {
 	env: Env
 	userId: number
@@ -72,27 +53,12 @@ export async function createEmailVerification(input: {
 	requestUrl: string | URL
 	redirectTo?: string | null
 }) {
-	const db = createDb(input.env.APP_DB)
-	const token = generateVerificationToken()
-	const tokenHash = await hashVerificationToken(token)
-	const expiresAt = Date.now() + verificationTokenExpiryMs
-
-	// Insert the replacement token before sending so the link works the
-	// moment the email lands, but keep prior tokens valid until the send
-	// succeeds — a failed resend must not invalidate a link the user
-	// already received.
-	await db.create(emailVerificationsTable, {
-		user_id: input.userId,
-		token_hash: tokenHash,
-		expires_at: expiresAt,
+	const minted = await insertEmailVerificationToken({
+		db: input.env.APP_DB,
+		userId: input.userId,
 	})
 	async function discardNewToken() {
-		await input.env.APP_DB.prepare(
-			`DELETE FROM email_verifications WHERE token_hash = ?`,
-		)
-			.bind(tokenHash)
-			.run()
-			.catch(() => undefined)
+		await discardEmailVerificationToken(input.env.APP_DB, minted.tokenHash)
 	}
 
 	const emailConfig = getVerificationEmailConfig({
@@ -101,7 +67,7 @@ export async function createEmailVerification(input: {
 	})
 	const verificationUrl = buildEmailVerificationUrl({
 		appBaseUrl: emailConfig.appBaseUrl,
-		token,
+		token: minted.token,
 		redirectTo: input.redirectTo,
 	})
 	const email = buildVerificationEmail({
@@ -146,20 +112,39 @@ export async function createEmailVerification(input: {
 		console.info('email-verification-send-skipped', input.userId)
 	}
 
+	if (sendResult.ok && sendResult.messageId) {
+		await registerTransactionalEmailDelivery({
+			db: input.env.APP_DB,
+			providerMessageId: sendResult.messageId,
+			userId: input.userId,
+			recipient: input.email,
+		}).catch((error) => {
+			console.warn('email-verification-delivery-index-failed', error)
+		})
+	}
+	if (sendResult.ok || sendResult.skipped) {
+		await setUserEmailVerificationDelivery({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			status: 'accepted',
+			class: null,
+			detail: null,
+		}).catch((error) => {
+			console.warn('email-verification-delivery-status-failed', error)
+		})
+	}
+
 	// The new token is delivered (or the send was deliberately skipped in a
 	// non-production runtime); retire older outstanding tokens. Best-effort
 	// only: the email is already out, so a cleanup failure must not bubble
 	// up and make callers (signup rollback) treat the send as failed —
 	// stale tokens expire on their own and are purged when any token
 	// verifies.
-	await input.env.APP_DB.prepare(
-		`DELETE FROM email_verifications WHERE user_id = ? AND token_hash != ?`,
+	await retireOtherEmailVerificationTokens(
+		input.env.APP_DB,
+		input.userId,
+		minted.tokenHash,
 	)
-		.bind(input.userId, tokenHash)
-		.run()
-		.catch((error) => {
-			console.warn('email-verification-token-cleanup-failed', error)
-		})
 }
 
 export type VerifyEmailResult =
@@ -205,6 +190,9 @@ export async function verifyEmailToken(input: {
 		)
 		.bind(verifiedAt, record.user_id)
 		.run()
+	await clearUserEmailVerificationDelivery(input.db, record.user_id).catch(
+		() => undefined,
+	)
 	await input.db
 		.prepare(`DELETE FROM email_verifications WHERE user_id = ?`)
 		.bind(record.user_id)

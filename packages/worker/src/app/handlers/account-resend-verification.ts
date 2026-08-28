@@ -4,8 +4,13 @@ import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { createEmailVerification } from '#app/email-verification.ts'
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
+import { emailVerificationSenderBlockMessage } from '#universal/email-verification-delivery.ts'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { type routes } from '#universal/routes.ts'
+import {
+	EmailVerificationSendBlockedError,
+	assertVerificationResendAllowed,
+} from '#worker/email/verification-delivery.ts'
 
 export const resendVerificationRateLimitConfig = {
 	maxRequests: 3,
@@ -43,6 +48,31 @@ export function createAccountResendVerificationHandler(env: Env) {
 			}
 
 			const redirectTo = await readResendRedirectTo(request)
+
+			try {
+				await assertVerificationResendAllowed(env.APP_DB, user.userId)
+			} catch (error) {
+				if (error instanceof EmailVerificationSendBlockedError) {
+					void logAuditEvent({
+						category: 'auth',
+						action: 'email_verification_resend',
+						result: 'failure',
+						email: user.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'sender_block',
+					})
+					return jsonResponse(
+						{
+							ok: false,
+							error: emailVerificationSenderBlockMessage,
+							code: 'sender_block',
+						},
+						409,
+					)
+				}
+				throw error
+			}
 
 			const rateLimitKey = `verification-resend:user:${user.userId}`
 			const rateLimit = await checkRateLimit(

@@ -229,6 +229,7 @@ rule.
 - `admin_user_get`
 - `admin_user_create`
 - `admin_user_update`
+- `admin_user_verify`
 - `admin_account_write_lease_list`
 - `admin_account_write_lease_repair`
 - `admin_platform_account_create`

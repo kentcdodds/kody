@@ -32,6 +32,7 @@ export function createPendingVerificationHandler(env: Env) {
 					pendingVerification: {
 						ok: true,
 						email: user.email,
+						emailVerificationDelivery: user.emailVerificationDelivery ?? null,
 					},
 				},
 			})

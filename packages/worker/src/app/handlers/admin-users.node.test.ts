@@ -36,6 +36,10 @@ type UserRow = {
 	stripe_customer_id?: string | null
 	suspended_at?: string | null
 	email_outbound_paused_at?: string | null
+	email_verification_delivery_status?: string | null
+	email_verification_delivery_at?: string | null
+	email_verification_delivery_detail?: string | null
+	email_verification_delivery_class?: string | null
 	created_at: string
 	updated_at: string
 }
@@ -85,6 +89,14 @@ function createAdminTestEnv(input: {
 				stripe_customer_id: user.stripe_customer_id ?? null,
 				suspended_at: user.suspended_at ?? null,
 				email_outbound_paused_at: user.email_outbound_paused_at ?? null,
+				email_verification_delivery_status:
+					user.email_verification_delivery_status ?? null,
+				email_verification_delivery_at:
+					user.email_verification_delivery_at ?? null,
+				email_verification_delivery_detail:
+					user.email_verification_delivery_detail ?? null,
+				email_verification_delivery_class:
+					user.email_verification_delivery_class ?? null,
 			},
 		]),
 	)
@@ -203,9 +215,10 @@ function createAdminTestEnv(input: {
 									return { total: rows.length } as T
 								}
 								if (
-									normalizedQuery.includes(
-										'select id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, stripe_customer_id, suspended_at, email_outbound_paused_at, created_at, updated_at from users where stable_user_id =',
-									)
+									normalizedQuery.startsWith(
+										'select id, stable_user_id, username, email',
+									) &&
+									normalizedQuery.includes('from users where stable_user_id =')
 								) {
 									const user = Array.from(users.values()).find(
 										(row) => row.stable_user_id === params[0],
@@ -294,6 +307,45 @@ function createAdminTestEnv(input: {
 									if (!user) return { meta: { changes: 0 } }
 									user.email_outbound_paused_at = null
 									user.updated_at = String(params[0])
+									return { meta: { changes: 1 } }
+								}
+								if (
+									normalizedQuery.includes(
+										'update users set email_verified_at = coalesce(email_verified_at, ?)',
+									)
+								) {
+									const user = users.get(Number(params[2]))
+									if (!user) return { meta: { changes: 0 } }
+									user.email_verified_at =
+										user.email_verified_at ?? String(params[0])
+									user.updated_at = String(params[1])
+									return { meta: { changes: 1 } }
+								}
+								if (
+									normalizedQuery.includes(
+										'update users set email_verification_delivery_status = null',
+									)
+								) {
+									const user = users.get(Number(params[1]))
+									if (!user) return { meta: { changes: 0 } }
+									user.email_verification_delivery_status = null
+									user.email_verification_delivery_at = null
+									user.email_verification_delivery_detail = null
+									user.email_verification_delivery_class = null
+									user.updated_at = String(params[0])
+									return { meta: { changes: 1 } }
+								}
+								if (
+									normalizedQuery.includes(
+										'insert into "email_verifications"',
+									) ||
+									normalizedQuery.includes('insert into email_verifications')
+								) {
+									return { meta: { changes: 1, last_row_id: 1 } }
+								}
+								if (
+									normalizedQuery.includes('delete from email_verifications')
+								) {
 									return { meta: { changes: 1 } }
 								}
 								return { meta: { changes: 0 } }
@@ -932,4 +984,84 @@ test('admin users API returns 403 without read:user:any permission', async () =>
 		url: new URL('https://example.com/admin/users.json'),
 	} as never)
 	expect(response.status).toBe(403)
+})
+
+test('mark email verified and mint verify url actions update the account and log audit events', async () => {
+	logAuditEventSpy.mockClear()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
+	const env = createAdminTestEnv({
+		users: [
+			{
+				id: 2,
+				username: 'member',
+				email: 'member@example.com',
+				email_verified_at: null,
+				email_verification_delivery_status: 'bounced',
+				email_verification_delivery_class: 'sender_block',
+				email_verification_delivery_detail:
+					'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613',
+				created_at: '2026-01-03 00:00:00',
+				updated_at: '2026-01-04 00:00:00',
+			},
+		],
+		userRoles: [{ user_id: 2, role_name: 'user' }],
+	})
+	const handler = createAdminUsersApiHandler(env as unknown as Env)
+	const postAction = (body: Record<string, unknown>) =>
+		handler.handler({
+			request: new Request('https://example.com/admin/users.json', {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(body),
+			}),
+			params: {},
+			url: new URL('https://example.com/admin/users.json'),
+		} as never)
+
+	const mintResponse = await postAction({
+		action: 'mint_verify_url',
+		stableUserId: stableUserId(2),
+	})
+	expect(mintResponse.status).toBe(200)
+	const minted = await mintResponse.json()
+	expect(minted.verifyUrl).toMatch(
+		/^https:\/\/example.com\/verify-email\?token=/,
+	)
+	expect(minted.users[0].email_verified).toBe(false)
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'mint_verify_url',
+			result: 'success',
+			reason: `target_stable_user_id=${stableUserId(2)}`,
+		}),
+	)
+
+	const verifyResponse = await postAction({
+		action: 'mark_email_verified',
+		stableUserId: stableUserId(2),
+	})
+	expect(verifyResponse.status).toBe(200)
+	const verified = await verifyResponse.json()
+	expect(verified.users[0].email_verified).toBe(true)
+	expect(verified.users[0].email_verification_delivery).toBeNull()
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action: 'mark_email_verified',
+			result: 'success',
+			reason: `target_stable_user_id=${stableUserId(2)}`,
+		}),
+	)
+
+	const alreadyVerified = await postAction({
+		action: 'mint_verify_url',
+		stableUserId: stableUserId(2),
+	})
+	expect(alreadyVerified.status).toBe(400)
 })

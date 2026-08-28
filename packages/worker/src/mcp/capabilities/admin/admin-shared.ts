@@ -4,6 +4,10 @@ import {
 	logAuditEvent,
 	redactEmailRecipient,
 } from '#worker/audit-log.ts'
+import {
+	emailVerificationDeliveryClassValues,
+	emailVerificationDeliveryStatusValues,
+} from '#universal/email-verification-delivery.ts'
 import { roleNames } from '#universal/permissions.ts'
 import { planNames } from '#universal/plans.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -70,6 +74,22 @@ export const adminUserMetadataSchema = z.object({
 		.nullable()
 		.describe(
 			'Set when outbound email was automatically paused after spam complaints or repeated bounces.',
+		),
+	email_verification_delivery: z
+		.object({
+			status: z.enum(emailVerificationDeliveryStatusValues),
+			class: z.enum(emailVerificationDeliveryClassValues).nullable(),
+			at: z.string().nullable(),
+		})
+		.nullable()
+		.describe(
+			'Latest signup/verify mail delivery outcome. Null when no verification send has been tracked.',
+		),
+	email_verification_delivery_detail: z
+		.string()
+		.nullable()
+		.describe(
+			'Truncated provider SMTP response or failure detail for the latest verification send.',
 		),
 	created_at: z.string(),
 	updated_at: z.string(),

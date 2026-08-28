@@ -1,5 +1,6 @@
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
+import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 
@@ -9,6 +10,7 @@ export type AuthenticatedAppUser = {
 	username: string
 	email: string
 	emailVerified: boolean
+	emailVerificationDelivery: EmailVerificationDelivery | null
 	displayName: string
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
@@ -35,6 +37,7 @@ async function readAuthenticatedAppUserInternal(
 		username: resolved.user.username,
 		email: resolved.user.email,
 		emailVerified: resolved.user.emailVerified,
+		emailVerificationDelivery: resolved.user.emailVerificationDelivery,
 		displayName: resolved.user.displayName,
 		roles: resolved.user.roles,
 		permissions: resolved.user.permissions,
