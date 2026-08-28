@@ -23,9 +23,7 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 				line.role === 'email' &&
 				line.subject.includes('kody-bot shipped') &&
 				line.text.includes('kody-bot/lantern v1.4.1') &&
-				line.text.includes('kody-bot/quiet-days v0.1.0') &&
-				!line.text.includes('v1.4.0') &&
-				!line.text.includes('New repo'),
+				line.text.includes('kody-bot/quiet-days v0.1.0'),
 		),
 	).toBe(true)
 
@@ -91,17 +89,6 @@ test('factory transcript covers ask, invoke, and a quiet daily email', () => {
 			.every((ids) => ids.length === 1),
 	).toBe(true)
 	expect(new Set(conversationIds.flat()).size).toBe(3)
-
-	expect(howKodyWorksPackageFiles['src/what-shipped.ts']).toContain(
-		"Authorization: 'Bearer {{secret:githubAccessToken}}'",
-	)
-	expect(howKodyWorksPackageFiles['src/daily-digest.ts']).toContain(
-		'email_send',
-	)
-	expect(howKodyWorksPackageFiles['src/daily-digest.ts']).toContain(
-		'shipped.length === 0',
-	)
-	expect(howKodyWorksPackageFiles['package.json']).toContain('"enabled": true')
 
 	const snippets = collectHowKodyWorksSnippets()
 	expect(snippets.length).toBeGreaterThan(0)

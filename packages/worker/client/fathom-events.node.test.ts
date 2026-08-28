@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	consumeAccountCreatedFathomSignal,
 	fathomEventNames,
@@ -6,38 +6,27 @@ import {
 	trackFathomEvent,
 } from './fathom-events.ts'
 
-afterEach(() => {
-	vi.unstubAllGlobals()
-})
-
-test('trackFathomEvent calls window.fathom.trackEvent when present', () => {
+test('Fathom track and account-created consume strip the query once Fathom is ready', () => {
 	const trackEvent = vi.fn()
 	vi.stubGlobal('window', {
 		fathom: { trackEvent },
 	})
 	expect(trackFathomEvent(fathomEventNames.signupStarted)).toBe(true)
 	expect(trackEvent).toHaveBeenCalledWith('signup_started')
-})
 
-test('trackFathomEvent returns false without fathom and never throws', () => {
 	vi.stubGlobal('window', {})
 	expect(trackFathomEvent('account_created')).toBe(false)
-})
 
-test('consumeAccountCreatedFathomSignal keeps the query when Fathom is unavailable', () => {
-	const replaceState = vi.fn()
+	const replaceStateUnavailable = vi.fn()
 	vi.stubGlobal('window', {
 		location: {
 			href: 'https://kody.codes/onboarding?accountCreated=1',
 		},
-		history: { state: null, replaceState },
+		history: { state: null, replaceState: replaceStateUnavailable },
 	})
 	expect(consumeAccountCreatedFathomSignal()).toBe(false)
-	expect(replaceState).not.toHaveBeenCalled()
-})
+	expect(replaceStateUnavailable).not.toHaveBeenCalled()
 
-test('consumeAccountCreatedFathomSignal fires once and strips the query', () => {
-	const trackEvent = vi.fn()
 	const replaceState = vi.fn()
 	let href = 'https://kody.codes/onboarding?accountCreated=1'
 	vi.stubGlobal('window', {
@@ -57,10 +46,12 @@ test('consumeAccountCreatedFathomSignal fires once and strips the query', () => 
 	expect(trackEvent).toHaveBeenCalledWith('account_created')
 	expect(replaceState).toHaveBeenCalledWith(null, '', '/onboarding')
 	expect(consumeAccountCreatedFathomSignal()).toBe(false)
-	expect(trackEvent).toHaveBeenCalledTimes(1)
+	expect(trackEvent).toHaveBeenCalledTimes(2)
+
+	vi.unstubAllGlobals()
 })
 
-test('scheduleConsumeAccountCreatedFathomSignal retries until Fathom loads', () => {
+test('scheduleConsumeAccountCreatedFathomSignal retries until Fathom loads and no-ops without the query', () => {
 	vi.useFakeTimers()
 	const trackEvent = vi.fn()
 	const replaceState = vi.fn()
@@ -102,16 +93,15 @@ test('scheduleConsumeAccountCreatedFathomSignal retries until Fathom loads', () 
 	expect(replaceState).toHaveBeenCalledWith(null, '', '/onboarding')
 	cancel()
 	vi.useRealTimers()
-})
 
-test('scheduleConsumeAccountCreatedFathomSignal no-ops without accountCreated query', () => {
 	const setIntervalSpy = vi.fn()
 	vi.stubGlobal('window', {
 		location: { href: 'https://kody.codes/account' },
 		setInterval: setIntervalSpy,
 		clearInterval: vi.fn(),
 	})
-	const cancel = scheduleConsumeAccountCreatedFathomSignal()
+	const noopCancel = scheduleConsumeAccountCreatedFathomSignal()
 	expect(setIntervalSpy).not.toHaveBeenCalled()
-	cancel()
+	noopCancel()
+	vi.unstubAllGlobals()
 })
