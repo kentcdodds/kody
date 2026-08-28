@@ -1,10 +1,10 @@
 ---
 name: friction-log
 description: >
-  File contributor or agent papercuts as GitHub issues labeled friction, or
-  investigate those issues as the daily friction-log Cloud Agent. Use when you
-  hit repo friction, when asked to log friction, or when spawned to resolve open
-  friction issues.
+  File contributor or agent papercuts through
+  kody:@kentcdodds/friction-log/create (never raw GitHub), or investigate those
+  issues as the daily friction-log Cloud Agent. Use when you hit repo friction,
+  when asked to log friction, or when spawned to resolve open friction issues.
 ---
 
 # Friction log
@@ -22,7 +22,7 @@ feedback. Use this skill for developing `kentcdodds/kody`.
 When you hit a papercut and cannot (or should not) fix it in the current change,
 file it before you forget.
 
-Search open issues first:
+Search open issues first (`gh issue list --label friction` or the package scan):
 
 ```bash
 gh issue list --repo kentcdodds/kody --label friction --state open --search "in:title Friction:"
@@ -30,37 +30,30 @@ gh issue list --repo kentcdodds/kody --label friction --state open --search "in:
 
 Comment on a match instead of opening a duplicate.
 
-Title: `Friction: <what hurt>`.
+Create through `kody:@kentcdodds/friction-log/create` via Kody MCP `execute`.
+The export always applies the `friction` label, prefixes the title with
+`Friction:`, and reuses or labels an existing open issue with the same title.
 
-Label: `friction`.
+Do not use `gh issue create` or `kody:@kentcdodds/github/request` POST to
+`/repos/kentcdodds/kody/issues`. Those paths can omit the `friction` label, so
+the daily sweep never sees the issue.
 
-Body:
+```ts
+import createFrictionIssue from 'kody:@kentcdodds/friction-log/create'
 
-```markdown
-## What happened
-
-What you were doing and what got in the way.
-
-## What you wanted
-
-The expected path.
-
-## How to reproduce
-
-Commands, files, or conditions. Enough for a later agent to investigate without
-this session.
-
-## Cost
-
-Time lost, how often this happens, who it hits, and the workaround.
+export default async function main() {
+	return await createFrictionIssue({
+		title: 'what hurt',
+		whatHappened: '...',
+		whatYouWanted: '...',
+		howToReproduce: '...',
+		cost: '...',
+	})
+}
 ```
 
-```bash
-gh issue create --repo kentcdodds/kody --title "Friction: …" --label friction --body-file -
-```
-
-Or `kody:@kentcdodds/github/request` `POST /repos/kentcdodds/kody/issues` with
-`labels: ["friction"]`.
+`body` is accepted instead of the structured fields. `dryRun: true` previews
+without posting.
 
 One issue per papercut. Omit secrets. Quote the relevant excerpt, not a
 transcript.

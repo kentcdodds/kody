@@ -14,18 +14,39 @@ when they hit friction or when they are the daily investigator.
 
 ## File an entry
 
-Search open `friction` issues first. Comment on a match instead of opening a
+Search open `friction` issues first (`gh issue list --label friction` or
+`kody:@kentcdodds/friction-log/scan`). Comment on a match instead of opening a
 duplicate.
 
-Title: `Friction: <what hurt>`.
+Humans can use the
+[Friction issue form](../../.github/ISSUE_TEMPLATE/friction.yml), which applies
+the `friction` label.
 
-Label: `friction`.
+Agents create through `kody:@kentcdodds/friction-log/create` via Kody MCP
+`execute`. The export always applies the `friction` label, prefixes the title
+with `Friction:`, and reuses or labels an existing open issue with the same
+title.
 
-Use the [Friction issue form](../../.github/ISSUE_TEMPLATE/friction.yml) or:
+Do not use `gh issue create` or `kody:@kentcdodds/github/request` POST to
+`/repos/kentcdodds/kody/issues`. Those paths can omit the `friction` label, so
+the daily sweep never sees the issue.
 
-```bash
-gh issue create --repo kentcdodds/kody --title "Friction: …" --label friction --body-file -
+```ts
+import createFrictionIssue from 'kody:@kentcdodds/friction-log/create'
+
+export default async function main() {
+	return await createFrictionIssue({
+		title: 'what hurt',
+		whatHappened: '...',
+		whatYouWanted: '...',
+		howToReproduce: '...',
+		cost: '...',
+	})
+}
 ```
+
+`body` is accepted instead of the structured fields. `dryRun: true` previews
+without posting.
 
 Write one issue per papercut. Include what you were doing, the unexpected cost,
 the workaround, and enough reproduction to investigate without the original
@@ -56,6 +77,7 @@ give a different approach).
 
 | Export                                 | Purpose                                        |
 | -------------------------------------- | ---------------------------------------------- |
+| `kody:@kentcdodds/friction-log/create` | File a `friction` issue (always labeled).      |
 | `kody:@kentcdodds/friction-log/scan`   | Read-only eligibility scan. No agent.          |
 | `kody:@kentcdodds/friction-log/sweep`  | Scan and optionally spawn (`dryRun`, `force`). |
 | `kody:@kentcdodds/friction-log/pause`  | Kill switch: stop spawning.                    |
