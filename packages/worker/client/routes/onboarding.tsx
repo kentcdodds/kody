@@ -1,6 +1,6 @@
 import { type Handle, css, ref } from 'remix/ui'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -27,6 +27,8 @@ import { type OnboardingFeaturedListing } from '#universal/community-public-type
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
 import {
+	onboardingWizardStepByNumber,
+	onboardingWizardStepHref,
 	onboardingWizardSteps,
 	readLegacyOnboardingStep,
 	type OnboardingWizardStepNumber,
@@ -193,9 +195,7 @@ export function OnboardingRoute(handle: Handle) {
 	let customMcpServers: Array<OnboardingCustomMcpServer> = []
 	let checklist: OnboardingChecklistLoaderData | null = null
 	let checklistHidden = false
-	let activeStep: OnboardingStep = 1
 	let initializedStep = false
-	let appliedInitialHash = false
 	let awaitingMcpConnection = false
 	let oauthReturnError: string | null = null
 	let oauthReturnSucceeded = false
@@ -240,13 +240,11 @@ export function OnboardingRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
-			activeStep = hasStep2Win ? 3 : payload.hasMcpClient ? 2 : 1
 			initializedStep = true
 		} else if (!wasConnected && payload.hasMcpClient && !hasStep2Win) {
 			panelAnimationArmed = true
-			activeStep = 2
-			updateStepHash(2)
 			scrollToNav('onboarding-steps-nav')
+			goToStep(2)
 		}
 		// Stay on Step 2 when access or an example finishes so the
 		// Connected/Installed state is visible; wizard nav advances.
@@ -268,15 +266,19 @@ export function OnboardingRoute(handle: Handle) {
 		})
 	}
 
-	function updateStepHash(step: OnboardingStep) {
+	function buildStepHref(
+		step: OnboardingStep,
+		href = readCurrentRouterHref(handle),
+	) {
+		const current = new URL(href, 'https://kody.local')
+		return onboardingWizardStepHref(current.pathname, step, current.search)
+	}
+
+	function goToStep(step: OnboardingStep) {
 		if (typeof window === 'undefined') return
-		const stepDefinition = onboardingSteps.find(
-			(candidate) => candidate.number === step,
-		)
-		if (!stepDefinition) return
-		const url = new URL(window.location.href)
-		url.hash = stepDefinition.hash
-		window.history.replaceState(window.history.state, '', url)
+		navigate(buildStepHref(step, window.location.href), {
+			preventScrollReset: true,
+		})
 	}
 
 	let viewportSurface: OnboardingAgentSurface = 'desktop'
@@ -286,9 +288,7 @@ export function OnboardingRoute(handle: Handle) {
 		if (typeof matchMedia !== 'function') return
 		const media = matchMedia(onboardingMobileAgentMediaQuery)
 		const sync = () => {
-			const next: OnboardingAgentSurface = media.matches
-				? 'mobile'
-				: 'desktop'
+			const next: OnboardingAgentSurface = media.matches ? 'mobile' : 'desktop'
 			if (next === viewportSurface) return
 			viewportSurface = next
 			handle.update()
@@ -299,19 +299,14 @@ export function OnboardingRoute(handle: Handle) {
 
 	function selectStep(step: OnboardingStep) {
 		panelAnimationArmed = true
-		activeStep = step
-		updateStepHash(step)
 		scrollToNav('onboarding-steps-nav')
-		void handle.update().then((signal) => {
+		goToStep(step)
+		handle.queueTask((signal) => {
 			if (signal.aborted) return
-			const stepDefinition = onboardingSteps.find(
-				(candidate) => candidate.number === step,
-			)
-			if (!stepDefinition) return
 			// The nav scroll owns the viewport position; focus must not yank
 			// it back down to the panel heading.
 			document
-				.getElementById(stepDefinition.hash)
+				.getElementById(onboardingWizardStepByNumber(step).hash)
 				?.querySelector('h2')
 				?.focus({ preventScroll: true })
 		})
@@ -467,10 +462,6 @@ export function OnboardingRoute(handle: Handle) {
 			onboardingProgressPollIntervalMs,
 		)
 		handle.signal.addEventListener('abort', () => clearInterval(pollIntervalId))
-		window.addEventListener('hashchange', handleHashChange)
-		handle.signal.addEventListener('abort', () =>
-			window.removeEventListener('hashchange', handleHashChange),
-		)
 		listenForOnboardingMcpOAuthDone((outcome) => {
 			if (outcome.auth === 'error' && outcome.reason) {
 				oauthReturnError = outcome.reason
@@ -483,14 +474,6 @@ export function OnboardingRoute(handle: Handle) {
 			}
 			void refreshOnboardingAfterInstall()
 		}, handle.signal)
-	}
-
-	function handleHashChange() {
-		const step = readStepFromHref(window.location.href)
-		if (!step) return
-		panelAnimationArmed = true
-		activeStep = step
-		handle.update()
 	}
 
 	function applyRouteLoaderData(href: string) {
@@ -529,19 +512,9 @@ export function OnboardingRoute(handle: Handle) {
 		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadOnboarding)
 		}
-		if (
-			status === 'ready' &&
-			typeof document !== 'undefined' &&
-			!appliedInitialHash
-		) {
-			appliedInitialHash = true
-			handle.queueTask(() => {
-				const step = readStepFromHref(window.location.href)
-				if (!step || step === activeStep) return
-				activeStep = step
-				handle.update()
-			})
-		}
+
+		const inferredStep: OnboardingStep = hasStep2Win ? 3 : hasMcpClient ? 2 : 1
+		const activeStep = readStepFromHref(currentHref) ?? inferredStep
 
 		const routerSearch = readRouterSearch(handle)
 		const selectedAgent = readOnboardingAgentParam(routerSearch)
@@ -602,14 +575,12 @@ export function OnboardingRoute(handle: Handle) {
 									(step.number === 1 && hasMcpClient) ||
 									(step.number === 2 && hasStep2Win)
 								return (
-									<button
-										key={step.number}
-										type="button"
+									<a
+										href={buildStepHref(step.number, currentHref)}
 										aria-current={isActive ? 'step' : undefined}
-										mix={[
-											css(stepButtonCss),
-											on('click', () => selectStep(step.number)),
-										]}
+										data-testid={`onboarding-step-${step.number}`}
+										data-prevent-scroll-reset=""
+										mix={css(stepButtonCss)}
 									>
 										<span data-wizard-num mix={css(stepNumberCss)}>
 											{step.number}
@@ -624,7 +595,7 @@ export function OnboardingRoute(handle: Handle) {
 												✓
 											</span>
 										) : null}
-									</button>
+									</a>
 								)
 							})}
 						</nav>
@@ -991,7 +962,6 @@ export function OnboardingRoute(handle: Handle) {
 								/>
 							</section>
 						) : null}
-
 					</>
 				) : null}
 			</section>
@@ -1155,6 +1125,7 @@ const stepButtonCss = {
 	gap: '0.7rem',
 	font: `550 0.98rem/1.25 ${typography.fontFamilyBody}`,
 	textAlign: 'left' as const,
+	textDecoration: 'none',
 	color: colors.textMuted,
 	backgroundColor: colors.surface,
 	border: `1.5px solid ${colors.border}`,

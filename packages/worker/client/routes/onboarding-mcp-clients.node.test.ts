@@ -74,7 +74,9 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	const identity = pickOnboardingAgentChooser((max) => max - 1)
 	expect(isValidOnboardingAgentChooserPick(rotated)).toBe(true)
 	expect(isValidOnboardingAgentChooserPick(identity)).toBe(true)
-	expect(identity.desktopFeatured).toEqual([...onboardingDesktopFeaturedAgentIds])
+	expect(identity.desktopFeatured).toEqual([
+		...onboardingDesktopFeaturedAgentIds,
+	])
 	expect(rotated.desktopFeatured).not.toEqual(identity.desktopFeatured)
 	expect(rotated.mobileFeatured).not.toEqual(identity.mobileFeatured)
 	expect(readOnboardingAgentParam('?agent=cursor&redirectTo=%2F')).toBe(
@@ -91,6 +93,9 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(onboardingDataHref('/onboarding?agent=cursor&surface=desktop')).toBe(
 		'/onboarding',
 	)
+	expect(
+		onboardingDataHref('/onboarding?agent=cursor&surface=desktop#connect-mcp'),
+	).toBe('/onboarding')
 	expect(
 		mcpClientTabs.filter((tab) => tab.isNonCodingAgent).map((tab) => tab.id),
 	).toEqual([

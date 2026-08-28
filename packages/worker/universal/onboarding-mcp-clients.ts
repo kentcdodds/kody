@@ -94,7 +94,9 @@ export function onboardingFeaturedAgentIdsFor(
 export function onboardingMoreAgentIdsFor(
 	surface: OnboardingAgentSurface,
 ): Array<McpClientKind> {
-	const featured = new Set<McpClientKind>(onboardingFeaturedAgentIdsFor(surface))
+	const featured = new Set<McpClientKind>(
+		onboardingFeaturedAgentIdsFor(surface),
+	)
 	return mcpClientTabs
 		.map((tab) => tab.id)
 		.filter((id) => id !== 'other' && !featured.has(id))
@@ -194,9 +196,7 @@ export function onboardingFeaturedIdsFromChooser(
 	chooser: OnboardingAgentChooserPick,
 	surface: OnboardingAgentSurface,
 ): ReadonlyArray<McpClientKind> {
-	return surface === 'mobile'
-		? chooser.mobileFeatured
-		: chooser.desktopFeatured
+	return surface === 'mobile' ? chooser.mobileFeatured : chooser.desktopFeatured
 }
 
 export function onboardingMoreIdsFromChooser(
@@ -293,9 +293,7 @@ export function mcpClientById(id: McpClientKind): McpClientTab {
 	return tab
 }
 
-export function readOnboardingAgentParam(
-	search: string,
-): McpClientKind | null {
+export function readOnboardingAgentParam(search: string): McpClientKind | null {
 	const params = new URLSearchParams(
 		search.startsWith('?') ? search.slice(1) : search,
 	)
@@ -347,12 +345,13 @@ export function buildOnboardingAgentHref(input: {
 	)}${input.hash ?? ''}`
 }
 
-/** Drop picker state so ?agent= is not a new data load. */
+/** Drop picker and step-hash state so those are not a new data load. */
 export function onboardingDataHref(href: string): string {
 	const url = new URL(href, 'https://kody.local')
 	url.searchParams.delete(onboardingAgentSearchParam)
 	url.searchParams.delete(onboardingSurfaceSearchParam)
-	return `${url.pathname}${url.search}${url.hash}`
+	url.hash = ''
+	return `${url.pathname}${url.search}`
 }
 
 /** GitHub docs for adding MCP servers in Copilot CLI (also used by the app). */
