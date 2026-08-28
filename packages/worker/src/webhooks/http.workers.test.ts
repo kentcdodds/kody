@@ -74,11 +74,19 @@ async function ensureSchema(db: D1Database) {
 				has_app INTEGER NOT NULL DEFAULT 0,
 				hidden INTEGER NOT NULL DEFAULT 0,
 				is_private INTEGER NOT NULL DEFAULT 1,
+				locked_at TEXT,
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL
 			)`,
 		)
 		.run()
+	try {
+		await db
+			.prepare(`ALTER TABLE saved_packages ADD COLUMN locked_at TEXT`)
+			.run()
+	} catch {
+		// Column already present on newer schemas.
+	}
 	await db
 		.prepare(
 			`CREATE TABLE IF NOT EXISTS webhook_endpoints (

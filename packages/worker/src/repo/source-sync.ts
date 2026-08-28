@@ -11,6 +11,10 @@ import {
 } from './large-file-policy.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { parseRepoManifest } from './manifest.ts'
+import {
+	loadLockedSavedPackage,
+	PackagePublishLockedError,
+} from '#worker/package-registry/package-publish-lock.ts'
 import { repoSessionRpc } from './repo-session-do.ts'
 import {
 	buildPublishedSourceSnapshotKvKey,
@@ -41,6 +45,13 @@ type SyncArtifactSourceInput = {
 	commitMessage?: string
 	/** Request-scoped phase timings; omitted when the caller does not collect. */
 	serverTiming?: Array<ServerTimingEntry>
+	/** Website or platform-owned rewrites may promote a locked package. */
+	allowLockedPublish?: boolean
+	/**
+	 * When false, commit and push HEAD without advancing published_commit.
+	 * Used by fleet codemods on locked packages.
+	 */
+	promotePublished?: boolean
 }
 
 function validateEntitySourceManifest(input: {
@@ -62,6 +73,25 @@ function validateEntitySourceManifest(input: {
 		content: input.content,
 		manifestPath: input.manifestPath,
 	})
+}
+
+async function assertPackageBootstrapUnlocked(input: {
+	env: Env
+	userId: string
+	source: EntitySourceRow
+	allowLockedPublish?: boolean
+}): Promise<void> {
+	if (input.source.entity_kind !== 'package') return
+	if (input.allowLockedPublish === true) return
+	const lockedPackage = await loadLockedSavedPackage({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		packageId: input.source.entity_id,
+	})
+	if (!lockedPackage) return
+	throw new Error(
+		`Package "${lockedPackage.name}" is locked. Unlock it on the website before the first published snapshot can be created.`,
+	)
 }
 
 function canSyncArtifactSource(env: Env) {
@@ -134,6 +164,12 @@ export async function syncArtifactSourceSnapshot(
 	}))
 	try {
 		if (!source.published_commit) {
+			await assertPackageBootstrapUnlocked({
+				env: input.env,
+				userId: input.userId,
+				source,
+				allowLockedPublish: input.allowLockedPublish,
+			})
 			if (
 				input.bootstrapAccess?.remote &&
 				isLoopbackArtifactsRemote(input.bootstrapAccess.remote)
@@ -255,7 +291,19 @@ export async function syncArtifactSourceSnapshot(
 			...(input.commitMessage !== undefined
 				? { commitMessage: input.commitMessage }
 				: {}),
+			...(input.allowLockedPublish === true
+				? { allowLockedPublish: true }
+				: {}),
+			...(input.promotePublished === false ? { promotePublished: false } : {}),
 		})
+		if (publishResult.status === 'locked') {
+			throw new PackagePublishLockedError({
+				packageId: publishResult.packageId,
+				packageName: publishResult.packageName,
+				pendingCommit: publishResult.pendingCommit,
+				currentPublishedCommit: publishResult.currentPublishedCommit,
+			})
+		}
 		if (publishResult.status !== 'ok') {
 			throw new Error(publishResult.message)
 		}

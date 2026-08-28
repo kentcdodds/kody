@@ -560,7 +560,10 @@ commit, and uses `publishFromExternalRef` to run the same package checks before
 advancing `entity_sources.published_commit`. Check failures return the failed
 checks and do not mutate D1, KV snapshots, published bundle artifacts, package
 projections, or vectors. Non-fast-forward external heads are refused unless the
-caller passes `allow_force: true`.
+caller passes `allow_force: true`. When `saved_packages.locked_at` is set,
+checks still run and the result is `locked` with an approval URL;
+`published_commit` does not move until the owner promotes that commit on the
+website.
 
 When publish succeeds, `package_publish_external_push` decorates the response
 with `static_dependents`, a bounded summary of direct saved packages whose
@@ -579,7 +582,8 @@ The scheduled reconcile job in
 `packages/worker/src/jobs/reconcile-artifacts-pushes.ts` is a safety net for
 pushed-but-unpublished commits. Every five minutes it scans a small batch of
 stale `entity_sources` rows, compares Artifacts HEAD with `published_commit`,
-and calls the same external publish path when they differ.
+and calls the same external publish path when they differ. Locked packages are
+skipped so reconcile cannot bypass the website gate.
 `entity_sources.last_external_check_at` throttles the scan. At 03:00 UTC the job
 also asks each checked repo to revoke expired Artifacts tokens through
 `revokeStaleArtifactsTokens`.

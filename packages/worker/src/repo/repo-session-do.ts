@@ -31,6 +31,10 @@ import {
 	updateEntitySource,
 } from './entity-sources.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
+import {
+	createPackagePublishLockedError,
+	loadLockedSavedPackage,
+} from '#worker/package-registry/package-publish-lock.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
@@ -2662,6 +2666,8 @@ class RepoSessionBase extends DurableObject<Env> {
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
 		commitMessage?: string
+		allowLockedPublish?: boolean
+		promotePublished?: boolean
 	}): Promise<RepoSessionPublishResult> {
 		const { sessionRow, source, sessionAccess } = await this.getSessionState(
 			input.sessionId,
@@ -2771,15 +2777,49 @@ class RepoSessionBase extends DurableObject<Env> {
 			throw error
 		}
 		const snapshotFiles = await this.collectWorkspaceFiles()
+		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
+		if (input.promotePublished === false) {
+			return {
+				status: 'ok',
+				sessionId: input.sessionId,
+				publishedCommit,
+				message: `Pushed session ${input.sessionId} to ${source.repo_id} without promoting published_commit.`,
+			}
+		}
+		if (source.entity_kind === 'package' && input.allowLockedPublish !== true) {
+			const lockedPackage = await loadLockedSavedPackage({
+				db: this.env.APP_DB,
+				userId: input.userId,
+				packageId: source.entity_id,
+			})
+			if (lockedPackage) {
+				const error = createPackagePublishLockedError({
+					savedPackage: lockedPackage,
+					pendingCommit: publishedCommit,
+					currentPublishedCommit: source.published_commit,
+				})
+				return {
+					status: 'locked',
+					sessionId: input.sessionId,
+					publishedCommit: null,
+					pendingCommit: publishedCommit,
+					currentPublishedCommit: source.published_commit,
+					packageId: lockedPackage.id,
+					packageName: lockedPackage.name,
+					approvalPath: error.approvalPath,
+					message: error.message,
+				}
+			}
+		}
 		await finalizePublishedEntitySource({
 			env: this.env,
 			source,
-			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
+			publishedCommit,
 			files: snapshotFiles,
 			baseUrl: source.source_root,
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
+			allowLockedPublish: input.allowLockedPublish,
 		})
-		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
 		await this.attachSourcePublishGitNote({
 			source,
 			commitOid: publishedCommit,
@@ -2835,6 +2875,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		baseUrl?: string
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
+		allowLockedPublish?: boolean
 	}): Promise<RepoExternalPublishResult> {
 		const source = await getEntitySourceById(this.env.APP_DB, input.sourceId)
 		if (!source || source.user_id !== input.userId) {
@@ -2908,6 +2949,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			),
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 			expectedPackageScope: input.expectedPackageScope,
+			allowLockedPublish: input.allowLockedPublish,
 		})
 		if (publishResult.status === 'already_published') {
 			// D1 stays a no-op (overlapping inline + durable escalation). Still

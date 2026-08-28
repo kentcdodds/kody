@@ -73,6 +73,7 @@ function createSavedPackage(
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
+		lockedAt: null,
 		createdAt: '2026-04-20T00:00:00.000Z',
 		updatedAt: '2026-04-20T00:00:00.000Z',
 		...overrides,

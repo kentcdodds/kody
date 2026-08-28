@@ -646,6 +646,15 @@ export const repoPublishSessionOutputSchema = z.discriminatedUnion('status', [
 		session_base_commit: z.string(),
 		current_published_commit: z.string().nullable(),
 	}),
+	z.object({
+		status: z.literal('locked'),
+		session_id: z.string(),
+		published_commit: z.null(),
+		pending_commit: z.string(),
+		current_published_commit: z.string().nullable(),
+		approval_url: z.string(),
+		message: z.string(),
+	}),
 ])
 
 export const repoCheckStatusOutputSchema = z.object({

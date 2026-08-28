@@ -144,6 +144,9 @@ const routeDocumentHeads = {
 	[routePattern(routes.accountMcpServerDetail)]: titleOnly('MCP servers'),
 	[routePattern(routes.accountPackages)]: titleOnly('Packages'),
 	[routePattern(routes.accountPackageDetail)]: titleOnly('Packages'),
+	[routePattern(routes.accountPackageApprovePublish)]: titleOnly(
+		'Approve package publish',
+	),
 	[routePattern(routes.accountPackageFiles)]: ({ loaderData }) => {
 		const files = loaderData?.packageFiles
 		return titleOnly(files?.ok ? `${files.title} files` : 'Package files')

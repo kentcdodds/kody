@@ -23,6 +23,7 @@ import {
 	searchSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import {
 	type SavedPackageRecord,
 	type SavedPackageWithCommunityProvenanceRecord,
@@ -125,6 +126,7 @@ function toListItem(
 		tags: record.tags,
 		hasApp: record.hasApp,
 		sourceId: record.sourceId,
+		lockedAt: record.lockedAt,
 		createdAt: record.createdAt,
 		updatedAt: record.updatedAt,
 		listingAhead,
@@ -171,7 +173,7 @@ async function toDetail(input: {
 	userId: string
 	record: SavedPackageWithCommunityProvenanceRecord
 }): Promise<AccountPackageDetail> {
-	const [tokens, exports] = await Promise.all([
+	const [tokens, exports, source] = await Promise.all([
 		listPackageInvocationTokensByPackageId({
 			db: input.env.APP_DB,
 			userId: input.userId,
@@ -183,12 +185,17 @@ async function toDetail(input: {
 			userId: input.userId,
 			sourceId: input.record.sourceId,
 		}),
+		getEntitySourceById(input.env.APP_DB, input.record.sourceId),
 	])
 	return {
 		...toListItem(input.record, toListingAhead(input.record)),
 		searchText: input.record.searchText,
 		exports,
 		tokens: tokens.map(toToken),
+		publishedCommit:
+			source?.user_id === input.userId
+				? (source.published_commit ?? null)
+				: null,
 	}
 }
 

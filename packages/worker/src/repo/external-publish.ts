@@ -1,5 +1,9 @@
 import * as Sentry from '@sentry/cloudflare'
 import { refreshCommunityIconForPackagePublish } from '#worker/community/community-icon.ts'
+import {
+	createPackagePublishLockedError,
+	loadLockedSavedPackage,
+} from '#worker/package-registry/package-publish-lock.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import {
 	deletePublishedSourceSnapshot,
@@ -26,11 +30,29 @@ export type FinalizePublishedSourceInput = {
 	files: Record<string, string>
 	baseUrl?: string
 	rebuildPackageArtifacts?: boolean
+	allowLockedPublish?: boolean
 }
 
 export async function finalizePublishedEntitySource(
 	input: FinalizePublishedSourceInput,
 ) {
+	if (
+		input.source.entity_kind === 'package' &&
+		input.allowLockedPublish !== true
+	) {
+		const lockedPackage = await loadLockedSavedPackage({
+			db: input.env.APP_DB,
+			userId: input.source.user_id,
+			packageId: input.source.entity_id,
+		})
+		if (lockedPackage) {
+			throw createPackagePublishLockedError({
+				savedPackage: lockedPackage,
+				pendingCommit: input.publishedCommit,
+				currentPublishedCommit: input.source.published_commit,
+			})
+		}
+	}
 	const previousPublishedCommit = input.source.published_commit
 	let wrotePublishedSnapshot = false
 	await updateEntitySource(input.env.APP_DB, {
@@ -155,6 +177,7 @@ export async function publishFromExternalRef(input: {
 	runId?: string
 	rebuildPackageArtifacts?: boolean
 	expectedPackageScope?: string
+	allowLockedPublish?: boolean
 }): Promise<RepoExternalPublishResult> {
 	const source = await getEntitySourceById(input.env.APP_DB, input.sourceId)
 	if (!source || source.user_id !== input.userId) {
@@ -212,6 +235,29 @@ export async function publishFromExternalRef(input: {
 			run_id: runId,
 		}
 	}
+	if (source.entity_kind === 'package' && input.allowLockedPublish !== true) {
+		const lockedPackage = await loadLockedSavedPackage({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			packageId: source.entity_id,
+		})
+		if (lockedPackage) {
+			const error = createPackagePublishLockedError({
+				savedPackage: lockedPackage,
+				pendingCommit: input.newCommit,
+				currentPublishedCommit: source.published_commit,
+			})
+			return {
+				status: 'locked',
+				previous_commit: source.published_commit,
+				pending_commit: input.newCommit,
+				message: error.message,
+				packageId: lockedPackage.id,
+				packageName: lockedPackage.name,
+				approvalPath: error.approvalPath,
+			}
+		}
+	}
 	await finalizePublishedEntitySource({
 		env: input.env,
 		source,
@@ -219,6 +265,7 @@ export async function publishFromExternalRef(input: {
 		files: input.files ?? checks.sourceFiles,
 		baseUrl: input.baseUrl,
 		rebuildPackageArtifacts: input.rebuildPackageArtifacts,
+		allowLockedPublish: input.allowLockedPublish,
 	})
 	return {
 		status: 'published',

@@ -30,6 +30,10 @@ export {
 	AccountPackagesRoute,
 	accountPackagesRouteLoader,
 } from './account-packages.tsx'
+export {
+	AccountPackageApprovePublishRoute,
+	accountPackageApprovePublishRouteLoader,
+} from './account-package-approve-publish.tsx'
 export { AccountStarsRoute, accountStarsRouteLoader } from './account-stars.tsx'
 export {
 	AccountPasskeysRoute,

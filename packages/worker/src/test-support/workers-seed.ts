@@ -46,6 +46,7 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 			has_app INTEGER NOT NULL DEFAULT 0,
 			hidden INTEGER NOT NULL DEFAULT 0,
 			is_private INTEGER NOT NULL DEFAULT 1,
+			locked_at TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
@@ -88,6 +89,13 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 			.prepare(
 				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
 			)
+			.run()
+	} catch {
+		// Column already present on newer schemas.
+	}
+	try {
+		await db
+			.prepare(`ALTER TABLE saved_packages ADD COLUMN locked_at TEXT`)
 			.run()
 	} catch {
 		// Column already present on newer schemas.

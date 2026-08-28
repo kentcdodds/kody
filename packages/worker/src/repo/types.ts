@@ -323,6 +323,17 @@ export type RepoSessionPublishResult =
 			currentPublishedCommit: string | null
 			repairHint: 'repo_rebase_session'
 	  }
+	| {
+			status: 'locked'
+			sessionId: string
+			message: string
+			publishedCommit: null
+			pendingCommit: string
+			currentPublishedCommit: string | null
+			packageId: string
+			packageName: string
+			approvalPath: string
+	  }
 
 export type RepoExternalPublishResult =
 	| {
@@ -348,6 +359,15 @@ export type RepoExternalPublishResult =
 			published_commit: string
 			manifest: AuthoredPackageJson
 			checks: NonNullable<RepoSessionCheckStatus['results']>
+	  }
+	| {
+			status: 'locked'
+			previous_commit: string | null
+			pending_commit: string
+			message: string
+			packageId: string
+			packageName: string
+			approvalPath: string
 	  }
 
 export type RepoSourceBootstrapResult = {

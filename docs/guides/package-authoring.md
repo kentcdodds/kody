@@ -32,7 +32,9 @@ local filesystem and git access:
   `git_author` (the signed-in Kody account). Do not invent or guess a git
   identity. Edit normally — binary assets, multi-file refactors, and local
   build/test loops all work — commit, push, then publish with
-  `package_publish_external_push`.
+  `package_publish_external_push`. If that tool returns `locked`, open the
+  returned `approval_url` so the owner can promote the named commit. Do not
+  treat HEAD as live until `published_commit` moves.
 - **Tool-only lane.** Without local filesystem/git access, create with
   `package_save` (complete UTF-8 text file set; no binary files) and edit
   through repo sessions (`repo_open_session`, `repo_edit_files`,

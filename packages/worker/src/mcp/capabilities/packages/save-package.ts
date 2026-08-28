@@ -5,6 +5,11 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
+import {
+	buildPackagePublishApprovalUrl,
+	createPackagePublishLockedMessage,
+	isPackagePublishLockedError,
+} from '#worker/package-registry/package-publish-lock.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import {
 	deleteEntitySource,
@@ -358,17 +363,34 @@ export const savePackageCapability = defineDomainCapability(
 				total: 4,
 				message: 'Syncing your package source — filing bits into the vault…',
 			})
-			await syncArtifactSourceSnapshot({
-				env: ctx.env,
-				userId: owner.ownerUserId,
-				baseUrl: ctx.callerContext.baseUrl,
-				sourceId: ensuredSource.id,
-				bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
-				files,
-				destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
-				privateVisibilityChangeConfirmed:
-					args.confirm_private_visibility_change,
-			})
+			try {
+				await syncArtifactSourceSnapshot({
+					env: ctx.env,
+					userId: owner.ownerUserId,
+					baseUrl: ctx.callerContext.baseUrl,
+					sourceId: ensuredSource.id,
+					bootstrapAccess: ensuredSource.bootstrapAccess ?? null,
+					files,
+					destructiveOverwriteConfirmed: args.confirm_destructive_overwrite,
+					privateVisibilityChangeConfirmed:
+						args.confirm_private_visibility_change,
+				})
+			} catch (error) {
+				if (isPackagePublishLockedError(error)) {
+					throw new McpCallerError(
+						createPackagePublishLockedMessage({
+							packageName: error.packageName,
+							approvalUrl: buildPackagePublishApprovalUrl({
+								baseUrl: ctx.callerContext.baseUrl,
+								packageId: error.packageId,
+								commit: error.pendingCommit,
+							}),
+						}),
+						{ cause: error },
+					)
+				}
+				throw error
+			}
 			if (!existing) {
 				const now = new Date().toISOString()
 				try {
@@ -459,6 +481,7 @@ export const savePackageCapability = defineDomainCapability(
 				tags: saved.tags,
 				has_app: saved.hasApp,
 				hidden: saved.hidden,
+				locked_at: saved.lockedAt ?? null,
 				source_id: saved.sourceId,
 				created_at: saved.createdAt,
 				updated_at: saved.updatedAt,

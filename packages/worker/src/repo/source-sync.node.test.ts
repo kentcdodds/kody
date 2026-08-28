@@ -6,6 +6,7 @@ const mockModule = vi.hoisted(() => ({
 	updateEntitySource: vi.fn(async () => true),
 	repoSessionRpc: vi.fn(),
 	writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
+	loadLockedSavedPackage: vi.fn(async () => null),
 }))
 
 vi.mock('./entity-sources.ts', () => ({
@@ -24,6 +25,21 @@ vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
 	writePublishedSourceSnapshot: (...args: Array<unknown>) =>
 		mockModule.writePublishedSourceSnapshot(...args),
 }))
+
+vi.mock(
+	'#worker/package-registry/package-publish-lock.ts',
+	async (importOriginal) => {
+		const actual =
+			await importOriginal<
+				typeof import('#worker/package-registry/package-publish-lock.ts')
+			>()
+		return {
+			...actual,
+			loadLockedSavedPackage: (...args: Array<unknown>) =>
+				mockModule.loadLockedSavedPackage(...args),
+		}
+	},
+)
 
 const { syncArtifactSourceSnapshot } = await import('./source-sync.ts')
 
@@ -253,4 +269,79 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 	expect(sessionClient.discardSession).toHaveBeenCalledWith(
 		expect.objectContaining({ userId: 'user-1' }),
 	)
+})
+
+test('syncArtifactSourceSnapshot refuses to bootstrap a locked package without allowLockedPublish', async () => {
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.updateEntitySource.mockReset()
+	mockModule.repoSessionRpc.mockReset()
+	mockModule.writePublishedSourceSnapshot.mockReset()
+	mockModule.loadLockedSavedPackage.mockReset()
+	mockModule.loadLockedSavedPackage.mockResolvedValue({
+		id: 'package-1',
+		name: '@scope/demo',
+		lockedAt: '2026-08-28T12:00:00.000Z',
+	})
+
+	const unpublishedPackageSource = {
+		...createUnpublishedSourceRow(),
+		entity_kind: 'package' as const,
+		entity_id: 'package-1',
+		repo_id: 'package-1',
+		manifest_path: 'package.json',
+	}
+	const bootstrapClient = {
+		bootstrapSource: vi.fn(),
+		openSession: vi.fn(),
+		applyEdits: vi.fn(),
+		publishSession: vi.fn(),
+		discardSession: vi.fn(async () => ({
+			ok: true as const,
+			sessionId: 'source-sync-source-1-session',
+			deleted: false,
+		})),
+	}
+	mockModule.getEntitySourceById.mockResolvedValueOnce(unpublishedPackageSource)
+	mockModule.repoSessionRpc.mockReturnValueOnce(bootstrapClient as never)
+
+	await expect(
+		syncArtifactSourceSnapshot({
+			...createSyncEnv(),
+			files: {
+				'package.json':
+					'{"name":"@scope/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"}}',
+			},
+		}),
+	).rejects.toThrow(
+		'Package "@scope/demo" is locked. Unlock it on the website before the first published snapshot can be created.',
+	)
+	expect(bootstrapClient.bootstrapSource).not.toHaveBeenCalled()
+	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+
+	mockModule.getEntitySourceById.mockReset()
+	mockModule.repoSessionRpc.mockReset()
+	mockModule.loadLockedSavedPackage.mockReset()
+	const allowedBootstrapClient = {
+		...bootstrapClient,
+		bootstrapSource: vi.fn(async () => ({
+			sessionId: 'source-sync-source-1-session',
+			publishedCommit: 'commit-bootstrap-locked',
+			message: 'Bootstrapped source source-1 in package-1.',
+		})),
+	}
+	mockModule.getEntitySourceById.mockResolvedValueOnce(unpublishedPackageSource)
+	mockModule.repoSessionRpc.mockReturnValueOnce(allowedBootstrapClient as never)
+
+	const allowedCommit = await syncArtifactSourceSnapshot({
+		...createSyncEnv(),
+		allowLockedPublish: true,
+		files: {
+			'package.json':
+				'{"name":"@scope/demo","exports":{".":"./src/index.ts"},"kody":{"id":"demo","description":"Demo"}}',
+		},
+	})
+	expect(allowedCommit).toBe('commit-bootstrap-locked')
+	expect(allowedBootstrapClient.bootstrapSource).toHaveBeenCalled()
+	expect(mockModule.loadLockedSavedPackage).not.toHaveBeenCalled()
 })

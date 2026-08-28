@@ -184,6 +184,9 @@ export type RepoSessionRpc = {
 		privateVisibilityChangeConfirmed?: boolean
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
+		commitMessage?: string
+		allowLockedPublish?: boolean
+		promotePublished?: boolean
 	}) => Promise<RepoSessionPublishResult>
 	publishFromExternalRef: (payload: {
 		sessionId: string
@@ -196,6 +199,7 @@ export type RepoSessionRpc = {
 		baseUrl?: string
 		rebuildPackageArtifacts?: boolean
 		expectedPackageScope?: string
+		allowLockedPublish?: boolean
 	}) => Promise<RepoExternalPublishResult>
 }
 

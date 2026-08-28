@@ -26,6 +26,12 @@ export const packageSummarySchema = z.object({
 	tags: z.array(z.string()),
 	has_app: z.boolean(),
 	hidden: z.boolean(),
+	locked_at: z
+		.string()
+		.nullable()
+		.describe(
+			'When set, publishes require a website click at /account/packages/:packageId/approve-publish. Agents cannot lock or unlock this package.',
+		),
 	source_id: z.string(),
 	created_at: z.string(),
 	updated_at: z.string(),
@@ -118,6 +124,7 @@ export function toPackageSummary(savedPackage: SavedPackageRecord) {
 		tags: savedPackage.tags,
 		has_app: savedPackage.hasApp,
 		hidden: savedPackage.hidden,
+		locked_at: savedPackage.lockedAt ?? null,
 		source_id: savedPackage.sourceId,
 		created_at: savedPackage.createdAt,
 		updated_at: savedPackage.updatedAt,

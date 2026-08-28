@@ -1167,6 +1167,7 @@ export type AccountPackageListItem = {
 	tags: Array<string>
 	hasApp: boolean
 	sourceId: string
+	lockedAt: string | null
 	createdAt: string
 	updatedAt: string
 	listingAhead: AccountPackageListingAhead | null
@@ -1176,6 +1177,24 @@ export type AccountPackageDetail = AccountPackageListItem & {
 	searchText: string | null
 	exports: Array<string> | null
 	tokens: Array<AccountPackageToken>
+	publishedCommit: string | null
+}
+
+export type AccountPackageApprovePublishLoaderData = {
+	ok: true
+	email: string
+	package: {
+		id: string
+		name: string
+		kodyId: string
+		sourceId: string
+		lockedAt: string | null
+	}
+	publishedCommit: string | null
+	pendingCommit: string | null
+	alreadyPublished: boolean
+	filesHref: string
+	packageHref: string
 }
 
 export type AccountPackagesSort = 'updated' | 'created' | 'name'
@@ -1694,6 +1713,7 @@ export type AppLoaderData = {
 	accountIntegrations?: AccountIntegrationsLoaderData
 	accountMcpServers?: AccountMcpServersLoaderData
 	accountPackages?: AccountPackagesLoaderData
+	accountPackageApprovePublish?: AccountPackageApprovePublishLoaderData
 	accountSecrets?: AccountSecretsLoaderData
 	accountValues?: AccountValuesLoaderData
 	accountJobs?: AccountJobsLoaderData

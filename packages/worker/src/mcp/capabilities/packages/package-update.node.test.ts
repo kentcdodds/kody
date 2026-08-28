@@ -56,6 +56,7 @@ function createSavedPackage(hidden: boolean) {
 		hasApp: false,
 		hidden,
 		isPrivate: false,
+		lockedAt: null,
 		sourceId: 'source-1',
 		createdAt: '2026-01-01T00:00:00.000Z',
 		updatedAt: '2026-07-14T00:00:00.000Z',

@@ -145,6 +145,7 @@ function setupPersistenceMocks() {
 				hasApp: false,
 				hidden: false,
 				isPrivate: false,
+				lockedAt: null,
 				createdAt: '2026-07-10T00:00:00.000Z',
 				updatedAt: '2026-07-10T00:00:00.000Z',
 			},

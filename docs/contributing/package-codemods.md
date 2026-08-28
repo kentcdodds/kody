@@ -34,9 +34,9 @@ and publish paths are covered in
   Artifacts/KV, scoped per saved package and per user.
 - **Repo-session edits.** Codemods do not patch arbitrary git working trees;
   they operate on the published snapshot the checks pipeline already built.
-- **Community listing publishes.** A successful apply republishes the owning
-  user's saved package only. Pinned community listings keep serving the pinned
-  commit; listing snapshots are not advanced by codemod apply or revert.
+- **Community listing publishes.** A successful apply updates the owning user's
+  saved package only. Pinned community listings keep serving the pinned commit;
+  listing snapshots are not advanced by codemod apply or revert.
 - **Personal codemods.** The built-in system is for **platform-authored**
   migrations: the transform ships in this repo, reviewed and fixture-tested in
   CI, because its correctness is pinned to a platform version and it runs
@@ -338,8 +338,14 @@ step matched zero packages.
 | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scan`    | Run `detect` only; record findings per package.                                                                                                                                                                                                                                                                                   |
 | `dry-run` | Run `transform` in memory, then run the full publish check suite (`runRepoChecks`) on **both** the original and transformed trees. Pass only when transformed checks introduce **no new failures** compared to the original. Also verifies mechanical idempotency by transforming twice and requiring an unchanged second result. |
-| `apply`   | Same gates as dry-run. On success: snapshot the original published tree to KV for revert, republish via `syncArtifactSourceSnapshot` with commit message `codemod(<id>): ...`, refresh the saved-package projection, and dispatch subscription events (see below). Re-checks drift immediately before publish.                    |
-| `revert`  | For each `applied` item on a prior apply run: load the KV revert snapshot, verify published HEAD still matches that item's `afterCommit`, republish the snapshot tree, mark the source apply item `reverted`, and dispatch `package.codemod.reverted`.                                                                            |
+| `apply`   | Same gates as dry-run. On success: snapshot the original published tree to KV for revert, commit and push via `syncArtifactSourceSnapshot` with commit message `codemod(<id>): ...`, refresh the saved-package projection, and dispatch subscription events (see below). Re-checks drift immediately before the write.            |
+| `revert`  | For each `applied` item on a prior apply run: load the KV revert snapshot, verify Artifacts HEAD still matches that item's `afterCommit`, write the snapshot tree back, mark the source apply item `reverted`, and dispatch `package.codemod.reverted`.                                                                           |
+
+Locked packages (`saved_packages.locked_at` set) still run apply and revert. The
+engine commits and pushes HEAD and does **not** advance `published_commit`. The
+owner reviews that HEAD commit later at
+`/account/packages/:packageId/approve-publish?commit=…`. Fleet apply does not
+skip locked packages.
 
 Per-package failures are **isolated**; one package error does not abort sibling
 items in the same run step.
