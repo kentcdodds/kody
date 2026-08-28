@@ -480,14 +480,18 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'data-testid="onboarding-join-discord"',
 	)
 	expect(anonymousOnboardingHtml).toContain(
+		'data-testid="onboarding-agent-picker"',
+	)
+	expect(anonymousOnboardingHtml).toContain('data-testid="onboarding-step-2"')
+	expect(anonymousOnboardingHtml).toContain('href="/onboarding#connect-mcp"')
+	expect(anonymousOnboardingHtml).toContain('href="/onboarding#first-build"')
+	expect(anonymousOnboardingHtml.indexOf('onboarding-steps-nav')).toBeLessThan(
+		anonymousOnboardingHtml.indexOf('onboarding-agent-picker'),
+	)
+	expect(anonymousOnboardingHtml).not.toContain(
 		'data-testid="onboarding-factory-card"',
 	)
-	expect(anonymousOnboardingHtml.indexOf('onboarding-steps-nav')).toBeLessThan(
-		anonymousOnboardingHtml.indexOf('onboarding-factory-card'),
-	)
-	expect(
-		anonymousOnboardingHtml.indexOf('onboarding-factory-card'),
-	).toBeLessThan(anonymousOnboardingHtml.indexOf('id="byok"'))
+	expect(anonymousOnboardingHtml).not.toContain('id="byok"')
 
 	const anonymousAccountResponse = await runHtmlHandler(
 		createAccountHandler(env),
