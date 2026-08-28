@@ -225,11 +225,6 @@ export function LandingTestimonialsCarousel(handle: Handle) {
 								)}
 								<span class="landing-testimonial-meta">
 									<span class="landing-testimonial-name">{active.name}</span>
-									{active.title ? (
-										<span class="landing-testimonial-title">
-											{active.title}
-										</span>
-									) : null}
 								</span>
 							</a>
 						</footer>

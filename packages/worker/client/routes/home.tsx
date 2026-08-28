@@ -356,7 +356,7 @@ export function HomeRoute(handle: Handle) {
 					class="landing-testimonials"
 				>
 					<h2 id="testimonials-title" class="landing-section-heading">
-						Early builders, on the record
+						What early builders say
 					</h2>
 					<p class="landing-testimonials-lead">
 						A few notes from people already putting Kody to work with the agents

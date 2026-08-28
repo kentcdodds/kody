@@ -22,7 +22,6 @@ export const landingTestimonials = [
 		name: 'Maciek Sitkowski',
 		photo: '/images/testimonials/maciek-sitkowski.webp',
 		href: 'https://macieksitkowski.com',
-		title: 'Front-end developer',
 	},
 	{
 		quote:
@@ -30,7 +29,6 @@ export const landingTestimonials = [
 		name: 'Justin Elias',
 		photo: '/images/testimonials/justin-elias.webp',
 		href: 'https://www.linkedin.com/in/justin-elias',
-		title: 'Data Engineer',
 	},
 ] as const satisfies ReadonlyArray<LandingTestimonial>
 
