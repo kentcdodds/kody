@@ -11,7 +11,13 @@ export type UserScopedDataTarget =
 			surface?: string
 			reason?: string
 	  }
-	| { kind: 'db_user_id'; table: string }
+	| {
+			kind: 'db_user_id'
+			table: string
+			includeInExport?: boolean
+			surface?: string
+			reason?: string
+	  }
 	// Rows keyed by a `target` column holding the stringified database user id
 	// (Epic Stack-style verifications: 2fa secrets etc).
 	| { kind: 'db_user_target'; table: string }
@@ -307,6 +313,14 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		surface: 'email_outbound_provider_index',
 		reason:
 			'Operational global provider→owner reverse lookup omitted from portable export. Mailbox rows retain provider ids, but no fleet-wide automatic rebuild is claimed; account deletion keeps explicit owner cleanup.',
+	},
+	{
+		kind: 'db_user_id',
+		table: 'transactional_email_delivery_index',
+		includeInExport: false,
+		surface: 'transactional_email_delivery_index',
+		reason:
+			'Operational Cloudflare message-id → user reverse lookup for signup/verify delivery webhooks omitted from portable export; account deletion removes the owner rows.',
 	},
 	{ kind: 'user_id', table: 'email_inbox_addresses' },
 	{ kind: 'user_id', table: 'email_inboxes' },
