@@ -12,7 +12,7 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { loadAccountPackagesData } from '#app/account-packages-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'

@@ -27,7 +27,7 @@ import {
 	buildPackageTestHints,
 	type PackageTestHints,
 } from '#worker/package-registry/package-test-hints.ts'
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { rebuildPublishedPackageArtifactsViaRepoSession } from '#mcp/capabilities/repo/package-artifact-rebuild.ts'
 import { destructiveOverwriteConfirmationDescription } from '#worker/repo/source-safety-policy.ts'

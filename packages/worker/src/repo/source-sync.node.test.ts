@@ -16,7 +16,7 @@ vi.mock('./entity-sources.ts', () => ({
 		mockModule.updateEntitySource(...args),
 }))
 
-vi.mock('./repo-session-do.ts', () => ({
+vi.mock('./repo-session-rpc.ts', () => ({
 	repoSessionRpc: (...args: Array<unknown>) =>
 		mockModule.repoSessionRpc(...args),
 }))

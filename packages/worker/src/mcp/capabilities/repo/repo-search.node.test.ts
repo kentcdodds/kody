@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 	repoSessionRpc: vi.fn(),
 }))
 
-vi.mock('#worker/repo/repo-session-do.ts', () => ({
+vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
 	repoSessionRpc: (...args: Array<unknown>) => mocks.repoSessionRpc(...args),
 }))
 

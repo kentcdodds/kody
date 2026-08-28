@@ -19,7 +19,7 @@ import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { readArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { updateEntitySource } from '#worker/repo/entity-sources.ts'
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { deleteUserRepo } from '#worker/repo/user-repos.ts'
 import { resolveOwnedUserRepo } from './resolve-user-repo.ts'
 

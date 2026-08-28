@@ -5,7 +5,7 @@ import {
 	buildPlainRepoPackageShapedFields,
 	isPlainRepoPackageShapedAtCommit,
 } from './plain-repo-package-shaped.ts'
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import {

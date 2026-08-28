@@ -4,7 +4,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import {
 	countActiveRepoSessions,
 	getActiveRepoSessionByConversation,

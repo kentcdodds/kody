@@ -9,7 +9,7 @@ const mockModule = vi.hoisted(() => ({
 	isPublishedPackageArtifactBuiltForCommit: vi.fn(),
 }))
 
-vi.mock('#worker/repo/repo-session-do.ts', () => ({
+vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
 	repoSessionRpc: () => ({
 		listPublishedPackageArtifactTargets: (...args: Array<unknown>) =>
 			mockModule.listPublishedPackageArtifactTargets(...args),

@@ -10,7 +10,7 @@ vi.mock('#worker/repo/artifacts.ts', () => ({
 		mockModule.resolveArtifactSourceHead(...args),
 }))
 
-vi.mock('#worker/repo/repo-session-do.ts', () => ({
+vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
 	repoSessionRpc: () => ({
 		publishFromExternalRef: (...args: Array<unknown>) =>
 			mockModule.publishFromExternalRef(...args),
