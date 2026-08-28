@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	isValidWalkthroughHostPick,
@@ -16,6 +19,11 @@ import {
 	walkthroughHostForAct,
 	walkthroughHostMarkUrl,
 } from './walkthrough-hosts.ts'
+
+const walkthroughIconDir = join(
+	dirname(fileURLToPath(import.meta.url)),
+	'../public/images/icons',
+)
 
 test('Cursor, Grok, and Grok Bot share SpaceXAI', () => {
 	const spacexai = walkthroughHostCatalog.filter(
@@ -84,15 +92,22 @@ test('every valid pick is a coding host, a chat host, and a third host of either
 		false,
 	)
 	expect(
-		['amp', 'warp', 'goose', 'zed', 'devin'].every((id) =>
+		['amp', 'warp', 'goose', 'zed', 'devin', 'pi', 'openclaw'].every((id) =>
 			listCodingWalkthroughHosts().some((host) => host.id === id),
 		),
 	).toBe(true)
 	expect(
-		['amp', 'warp', 'goose', 'zed', 'devin'].every(
+		['amp', 'warp', 'goose', 'zed', 'devin', 'pi', 'openclaw'].every(
 			(id) => !listChatWalkthroughHosts().some((host) => host.id === id),
 		),
 	).toBe(true)
+	expect(
+		walkthroughHostCatalog
+			.filter(
+				(host) => !existsSync(join(walkthroughIconDir, `${host.icon}.svg`)),
+			)
+			.map((host) => host.icon),
+	).toEqual([])
 	expect(
 		picks.some(
 			(pick) =>

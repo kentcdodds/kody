@@ -112,8 +112,8 @@ Manual on Get started has one tab per host. Use those when you are not running
 Using Kody packages works great with non-coding agents such as Claude Desktop,
 ChatGPT.com, Grok.com, Grok Bot, and the GitHub Copilot app. For creating or
 editing packages, a coding agent (Cursor, Claude Code, Codex / ChatGPT desktop,
-Grok CLI, Copilot, OpenCode, and similar) is usually smoother because those
-hosts can edit files and iterate on code more easily.
+Grok CLI, Copilot, OpenCode, Pi, OpenClaw, and similar) is usually smoother
+because those hosts can edit files and iterate on code more easily.
 
 ## Give Kody Access, then persist a first build
 
