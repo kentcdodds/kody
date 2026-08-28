@@ -66,18 +66,21 @@ export async function registerTransactionalEmailDelivery(input: {
 	recipient: string
 	kind?: string
 }) {
+	const kind = input.kind ?? transactionalEmailVerificationKind
 	await input.db
 		.prepare(
 			`INSERT OR REPLACE INTO transactional_email_delivery_index
 			 (provider_message_id, user_id, kind, recipient)
 			 VALUES (?, ?, ?, ?)`,
 		)
-		.bind(
-			input.providerMessageId,
-			input.userId,
-			input.kind ?? transactionalEmailVerificationKind,
-			input.recipient,
+		.bind(input.providerMessageId, input.userId, kind, input.recipient)
+		.run()
+	await input.db
+		.prepare(
+			`DELETE FROM transactional_email_delivery_index
+			 WHERE user_id = ? AND kind = ? AND provider_message_id != ?`,
 		)
+		.bind(input.userId, kind, input.providerMessageId)
 		.run()
 }
 
@@ -228,6 +231,27 @@ export async function recordTransactionalEmailDeliveryEvent(input: {
 		input.db,
 		index.user_id,
 	)
+	if (existing?.at) {
+		const existingAtMs = Date.parse(existing.at)
+		const eventAtMs = Date.parse(input.eventTimestamp)
+		if (
+			Number.isFinite(existingAtMs) &&
+			Number.isFinite(eventAtMs) &&
+			eventAtMs < existingAtMs
+		) {
+			return {
+				outcome: 'recorded',
+				event: {
+					userId: index.user_id,
+					kind: index.kind,
+					recipient: index.recipient,
+					status: existing.status,
+					class: existing.class,
+					alreadyTerminal: true,
+				},
+			}
+		}
+	}
 	const alreadyTerminal = Boolean(
 		existing && terminalFailureStatuses.has(existing.status),
 	)

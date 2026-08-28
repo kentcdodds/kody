@@ -184,7 +184,7 @@ Email Sending. Provider accept is not delivery: the send stores
 `users.email_verification_delivery_status` to `accepted`. Later Cloudflare
 lifecycle events (`delivered`, `bounced`, `failed`, `rejected`, `complained`)
 update that status. A Fastmail-style sender-domain/IP block (`RLR613`, `RLR813`,
-"blacklisted") is classified as `sender_block`. The pending- verification,
+"blacklisted") is classified as `sender_block`. The pending-verification,
 account, and OAuth authorize UIs surface the bounce instead of staying silently
 pending, and `POST /account/resend-verification.json` refuses to retry into a
 known `sender_block`.

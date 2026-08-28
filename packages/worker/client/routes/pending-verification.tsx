@@ -28,7 +28,10 @@ import { fetchSessionInfo } from '#client/session.ts'
 import { colors } from '#universal/styles/tokens.ts'
 import { layoutMaxWidths } from '#universal/styles/style-primitives.ts'
 import { readRouterSearch } from '#client/router-location.tsx'
-import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
+import {
+	acceptedEmailVerificationDelivery,
+	type EmailVerificationDelivery,
+} from '#universal/email-verification-delivery.ts'
 import { type PendingVerificationLoaderData } from '#universal/loader-data.ts'
 import { buildAuthLink } from '#client/auth-links.ts'
 
@@ -130,7 +133,10 @@ export function PendingVerificationRoute(handle: Handle) {
 		deliveryPollScheduled = false
 		try {
 			const session = await fetchSessionInfo()
-			if (!session) return
+			if (!session) {
+				handle.update()
+				return
+			}
 			if (session.emailVerified) {
 				window.location.assign(
 					resolvePostVerificationRedirect(readPendingRedirectTo(handle)),
@@ -161,6 +167,9 @@ export function PendingVerificationRoute(handle: Handle) {
 			}
 			resendTone = result.ok ? 'info' : 'error'
 			resendMessage = result.message
+			if (result.ok) {
+				emailVerificationDelivery = acceptedEmailVerificationDelivery()
+			}
 		} catch {
 			resendTone = 'error'
 			resendMessage = 'Unable to resend the verification email.'

@@ -66,6 +66,16 @@ export function parseEmailVerificationDelivery(input: {
 	}
 }
 
+export function acceptedEmailVerificationDelivery(
+	at: string | Date = new Date(),
+): EmailVerificationDelivery {
+	return {
+		status: 'accepted',
+		class: null,
+		at: at instanceof Date ? at.toISOString() : at,
+	}
+}
+
 export function isEmailVerificationResendBlocked(
 	delivery: EmailVerificationDelivery | null,
 ) {

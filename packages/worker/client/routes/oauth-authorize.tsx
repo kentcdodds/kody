@@ -235,6 +235,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			const result = await requestResendVerification(readOAuthResumeTarget())
 			resendTone = result.ok ? 'info' : 'error'
 			resendMessage = result.message
+			if (result.ok) {
+				await refreshSession()
+			}
 		} catch {
 			resendTone = 'error'
 			resendMessage = 'Unable to resend the verification email.'

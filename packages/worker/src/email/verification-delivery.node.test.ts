@@ -159,3 +159,73 @@ test('transactional verification delivery records bounce status and stops matchi
 			.first<{ email_verification_delivery_class: string }>(),
 	).toEqual({ email_verification_delivery_class: 'sender_block' })
 })
+
+test('a newer verification send retires older provider ids and ignores stale events', async () => {
+	const db = await createDeliveryTestDb()
+	await registerTransactionalEmailDelivery({
+		db,
+		providerMessageId: 'cf-old',
+		userId: 1,
+		recipient: 'blocked@example.com',
+	})
+	await registerTransactionalEmailDelivery({
+		db,
+		providerMessageId: 'cf-new',
+		userId: 1,
+		recipient: 'blocked@example.com',
+	})
+	expect(
+		await lookupTransactionalEmailDelivery({
+			db,
+			providerMessageId: 'cf-old',
+		}),
+	).toBeNull()
+	expect(
+		await lookupTransactionalEmailDelivery({
+			db,
+			providerMessageId: 'cf-new',
+		}),
+	).toMatchObject({ provider_message_id: 'cf-new' })
+
+	const delivered = await recordTransactionalEmailDeliveryEvent({
+		db,
+		providerMessageId: 'cf-new',
+		deliveryStatus: 'delivered',
+		eventTimestamp: '2026-08-27T23:30:00.000Z',
+	})
+	expect(delivered).toMatchObject({
+		outcome: 'recorded',
+		event: { status: 'delivered', alreadyTerminal: false },
+	})
+
+	const staleBounce = await recordTransactionalEmailDeliveryEvent({
+		db,
+		providerMessageId: 'cf-new',
+		deliveryStatus: 'bounced',
+		eventTimestamp: '2026-08-27T23:20:00.000Z',
+		smtpResponse:
+			'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613',
+	})
+	expect(staleBounce).toMatchObject({
+		outcome: 'recorded',
+		event: {
+			status: 'delivered',
+			class: null,
+			alreadyTerminal: true,
+		},
+	})
+	expect(
+		await db
+			.prepare(
+				`SELECT email_verification_delivery_status, email_verification_delivery_class
+				 FROM users WHERE id = 1`,
+			)
+			.first<{
+				email_verification_delivery_status: string
+				email_verification_delivery_class: string | null
+			}>(),
+	).toEqual({
+		email_verification_delivery_status: 'delivered',
+		email_verification_delivery_class: null,
+	})
+})

@@ -18,6 +18,7 @@ import {
 	type ProfileVisibility,
 } from '#universal/loader-data.ts'
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
+import { acceptedEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
@@ -550,6 +551,9 @@ export function AccountRoute(handle: Handle) {
 			}
 			resendTone = result.ok ? 'info' : 'error'
 			resendMessage = result.message
+			if (result.ok) {
+				emailVerificationDelivery = acceptedEmailVerificationDelivery()
+			}
 		} catch {
 			resendTone = 'error'
 			resendMessage = 'Unable to send the verification email.'
