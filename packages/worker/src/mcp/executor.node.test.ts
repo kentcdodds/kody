@@ -1114,6 +1114,7 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 test('createExecuteExecutor records one usage event per sandbox run with duration and outcome', async () => {
 	const dataPoints: Array<AnalyticsEngineDataPoint> = []
 	const rollupWrites: Array<Array<unknown>> = []
+	const activationStampWrites: Array<string> = []
 	const usageBindings = {
 		USAGE_EVENTS: {
 			writeDataPoint(point?: AnalyticsEngineDataPoint) {
@@ -1121,12 +1122,20 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 			},
 		},
 		APP_DB: {
-			prepare(_sql: string) {
+			prepare(sql: string) {
 				return {
 					bind(...args: Array<unknown>) {
 						return {
 							async run() {
-								rollupWrites.push(args)
+								if (
+									sql.includes('usage_rollups') ||
+									sql.includes('fleet_execute_days')
+								) {
+									rollupWrites.push(args)
+								}
+								if (sql.includes('first_execute_at')) {
+									activationStampWrites.push(sql)
+								}
 								return {}
 							},
 						}
@@ -1161,6 +1170,8 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 	// With USAGE_EVENTS present, rollups are derived from Analytics Engine
 	// by the scheduled aggregation instead of a per-event D1 upsert.
 	expect(rollupWrites).toHaveLength(0)
+	// Activation first-seen stamps still write to D1 (write-once COALESCE).
+	expect(activationStampWrites).toHaveLength(1)
 
 	// Sandbox run returning an error result: one error event.
 	const errorLoader = {

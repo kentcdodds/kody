@@ -66,7 +66,7 @@ import {
 import { defaultPostVerificationRedirect } from '#universal/safe-redirect.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
 import {
-	firstTouchAttributionToUserColumns,
+	firstTouchAttributionCreateFields,
 	hasFirstTouchAttribution,
 	parseFirstTouchAttribution,
 } from '#universal/first-touch-attribution.ts'

@@ -49,7 +49,7 @@ import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
 import {
-	firstTouchAttributionToUserColumns,
+	firstTouchAttributionCreateFields,
 	parseFirstTouchAttribution,
 } from '#universal/first-touch-attribution.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'

@@ -164,6 +164,32 @@ export function firstTouchAttributionToUserColumns(
 	}
 }
 
+/**
+ * Columns to pass into `db.create(usersTable, …)`. The ORM treats optional
+ * text columns as `string | undefined` (omit) rather than SQL NULL, so absent
+ * attribution fields are dropped instead of set to null.
+ */
+export function firstTouchAttributionCreateFields(
+	attribution: FirstTouchAttribution | null | undefined,
+): Partial<{
+	utm_source: string
+	utm_medium: string
+	utm_campaign: string
+	utm_content: string
+	utm_term: string
+	first_touch_landing_path: string
+	first_touch_referrer: string
+}> {
+	const columns = firstTouchAttributionToUserColumns(attribution)
+	const out: Record<string, string> = {}
+	for (const [key, value] of Object.entries(columns)) {
+		if (typeof value === 'string' && value.length > 0) {
+			out[key] = value
+		}
+	}
+	return out
+}
+
 /** Append standard utm_* / landing_path / referrer keys for OAuth start URLs. */
 export function appendAttributionQueryParams(
 	params: URLSearchParams,
