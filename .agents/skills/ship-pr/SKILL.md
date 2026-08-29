@@ -51,8 +51,8 @@ When policy + risk allow: squash-merge via `kody:@kentcdodds/github/pr/merge`
 
 Always summarize (merged or not) by calling
 `kody:@kentcdodds/discord/send-shipped-pr` with structured fields. Do **not**
-use raw `post-message` and do **not** compute or guess token cost — the export
-fetches the billed Cursor Cloud Agent usage and formats the cost line.
+use raw `post-message` and do **not** invent token cost or model id — the export
+fetches billed Cursor usage for cost, and you pass `model` from metadata.
 
 **agentId (required):**
 
@@ -62,12 +62,23 @@ fetches the billed Cursor Cloud Agent usage and formats the cost line.
 - Otherwise pass the `bc-` id from the agent URL you were launched as
   (https://cursor.com/agents/{id}).
 
+**model (deterministic — never infer):**
+
+- In a Cursor Cloud Agent VM, read the model that served this turn: curl -fsS
+  --unix-socket "${CURSOR_AGENT_SOCKET:-/run/cursor/api.sock}"
+  http://cursor-agent/v1/meta-data/turn/model
+  Auto resolves to the concrete model that served, not Auto.
+  See https://cursor.com/docs/cloud-agent/metadata
+- Outside a managed VM, pass the model.id used at create/launch if recorded.
+- If missing, omit model so the export posts Model pending — do not invent one.
+
 ```javascript
 import sendShippedPr from 'kody:@kentcdodds/discord/send-shipped-pr'
 
 export default async function main() {
 	return sendShippedPr({
 		agentId, // bc- id from the metadata socket or launch URL
+		model, // turn/model from metadata socket (deterministic)
 		title: 'PR title',
 		summary: 'What shipped / parked / blocked and why.',
 		prUrl: 'https://github.com/owner/repo/pull/1',
