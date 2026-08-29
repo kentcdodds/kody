@@ -103,10 +103,9 @@ import {
 /**
  * Onboarding wizard: shirt-pattern head, three-step stepper (Connect your
  * agent · Give Kody Access · Try it, then persist), one surface panel at a
- * time with hand-tilted mascot art, and the BYOK argument folded behind a
- * disclosure. Step 1 picks one agent, then shows only that host. Server
- * state (prompts, MCP URL, featured MCP servers, hasMcpClient / OAuth
- * polling) stays in the route state.
+ * time with hand-tilted mascot art. Step 1 picks one agent, then shows only
+ * that host. Server state (prompts, MCP URL, featured MCP servers,
+ * hasMcpClient / OAuth polling) stays in the route state.
  *
  * Step 2 is "give Kody access to your stuff." Official remote MCP is the
  * easy login path; Connect also forks the matching `@kody/*-mcp` helper
@@ -576,6 +575,7 @@ export function OnboardingRoute(handle: Handle) {
 									(step.number === 2 && hasStep2Win)
 								return (
 									<a
+										key={step.number}
 										href={buildStepHref(step.number, currentHref)}
 										aria-current={isActive ? 'step' : undefined}
 										data-testid={`onboarding-step-${step.number}`}
@@ -800,7 +800,7 @@ export function OnboardingRoute(handle: Handle) {
 											Account → Secrets
 										</a>
 										{' · '}
-										<a href="#byok" mix={css(primaryLinkCss)}>
+										<a href="/#byok" mix={css(primaryLinkCss)}>
 											Why bring your own keys?
 										</a>
 									</p>
@@ -1247,12 +1247,6 @@ const panelLedeCss = {
 }
 
 /* Nested surfaces step down to the page ground so they read as wells. */
-const headerGuideLinkCss = {
-	color: colors.primaryText,
-	textDecorationThickness: '1.5px',
-	textUnderlineOffset: '3px',
-}
-
 const discordInviteWrapCss = {
 	margin: '1rem 0 0',
 }
@@ -1608,126 +1602,5 @@ const wizardBackButtonCss = {
 	'&:disabled': {
 		...wizardButtonDisabledCss['&:disabled'],
 		boxShadow: `inset 0 0 0 1.5px ${colors.border}`,
-	},
-}
-
-const authLinksCss = {
-	margin: '2.2rem 0 0',
-	color: colors.textMuted,
-}
-
-/* ---------- BYOK disclosure ---------- */
-
-const byokDetailsCss = {
-	marginTop: 'clamp(2.5rem, 6vw, 4rem)',
-	paddingTop: '1.4rem',
-	borderTop: `1px solid ${colors.border}`,
-	'& > div': {
-		'@media (prefers-reduced-motion: no-preference)': {
-			transition: `opacity 240ms ${transitions.easeOut}, translate 240ms ${transitions.easeOut}`,
-		},
-		'@starting-style': {
-			opacity: 0,
-			translate: '0 6px',
-		},
-	},
-}
-
-const byokSummaryCss = {
-	cursor: 'pointer',
-	width: 'fit-content',
-	padding: '0.3rem 0',
-	font: `700 1.05rem/1.3 ${typography.fontFamilyDisplay}`,
-	color: colors.text,
-	transition: `color ${transitions.fast}`,
-	[hoverMq]: {
-		'&:hover': {
-			color: colors.primaryText,
-		},
-	},
-}
-
-const byokBodyCss = {
-	marginTop: '1.2rem',
-	display: 'grid',
-	gridTemplateColumns: 'clamp(160px, 24vw, 250px) minmax(0, 1fr)',
-	gap: 'clamp(1.5rem, 4vw, 3rem)',
-	alignItems: 'center',
-	'& > img': {
-		width: '100%',
-		height: 'auto',
-	},
-	'@media (max-width: 720px)': {
-		gridTemplateColumns: '1fr',
-		'& > img': {
-			width: 'min(48%, 200px)',
-			marginInline: 'auto',
-		},
-	},
-}
-
-const byokTitleCss = {
-	margin: 0,
-	fontSize: 'clamp(1.4rem, 2.4vw, 1.75rem)',
-	fontWeight: 720,
-	letterSpacing: '-0.018em',
-	lineHeight: 1.15,
-}
-
-const byokCopyCss = {
-	margin: '0.85rem 0 0',
-	color: colors.textMuted,
-	maxWidth: '56ch',
-}
-
-const byokCompareCss = {
-	margin: '1.3rem 0 0',
-	display: 'grid',
-	gap: '0.45rem',
-	fontSize: '0.95rem',
-	'& > div': {
-		display: 'flex',
-		alignItems: 'baseline',
-		flexWrap: 'wrap' as const,
-		gap: '0.6rem',
-	},
-	'& dt': {
-		color: colors.textMuted,
-		minWidth: '7.5ch',
-	},
-	'& dd': {
-		margin: 0,
-		display: 'inline-flex',
-		alignItems: 'baseline',
-		gap: '0.45rem',
-		flexWrap: 'wrap' as const,
-	},
-	'& dd > span:not([aria-hidden]), & dd > s, & dd > em': {
-		backgroundColor: colors.surface,
-		border: `1px solid ${colors.border}`,
-		borderRadius: '999px',
-		padding: '0.15rem 0.7rem',
-	},
-	'& dd > s': {
-		color: colors.textMuted,
-	},
-	'& dd > em': {
-		fontStyle: 'normal',
-		fontWeight: 600,
-		color: colors.primaryText,
-		borderColor: `oklch(from ${colors.primary} l c h / 0.5)`,
-	},
-}
-
-const byokPointsCss = {
-	margin: '1.3rem 0 0',
-	padding: 0,
-	listStyle: 'none',
-	display: 'grid',
-	gap: '0.55rem',
-	color: colors.textMuted,
-	fontSize: '0.98rem',
-	'& strong': {
-		color: colors.text,
 	},
 }
