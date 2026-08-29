@@ -31,6 +31,16 @@ test('runD1WithRetry matches lock errors, retries them, and rethrows other failu
 	).toBe(true)
 	expect(
 		isRetryableD1LockError(
+			new Error('D1_ERROR: D1 DB is overloaded. Too many requests queued.'),
+		),
+	).toBe(true)
+	expect(
+		isRetryableD1LockError(
+			new Error('D1 DB is overloaded. Too many requests queued'),
+		),
+	).toBe(true)
+	expect(
+		isRetryableD1LockError(
 			new Error(
 				'D1_ERROR: internal error; reference = 0u3odos5iotccpol68ppc0eg',
 			),

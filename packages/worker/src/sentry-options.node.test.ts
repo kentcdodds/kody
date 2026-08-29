@@ -90,6 +90,17 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 			exception: {
 				values: [
 					{
+						value: 'D1_ERROR: D1 DB is overloaded. Too many requests queued.',
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterSentryEvent({
+			exception: {
+				values: [
+					{
 						value:
 							'D1_ERROR: internal error; reference = 0u3odos5iotccpol68ppc0eg',
 					},
