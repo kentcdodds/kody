@@ -76,7 +76,11 @@ supporting cast.
    [secrets capabilities](https://github.com/kentcdodds/kody/tree/main/packages/worker/src/mcp/capabilities/secrets)
    are `secret_list`, `secret_set`, `secret_set_many`, `secret_delete`, and
    `secret_jwt_sign`; there is deliberately no `secret_get`. See
-   [Secrets and host approval](../use/secrets-and-values.md).
+   [Secrets and host approval](../use/secrets-and-values.md). When a provider
+   token is coarser than the job — Gmail has a send-only scope and no
+   drafts-only scope — a locked package is the real grant: published code cannot
+   silently start sending. See
+   [Gmail drafts without send](./locked-gmail-drafts.md).
 3. **Every install is a fork you own.** Installing someone else's automation
    puts code in your account, on your credentials, that you can open, change,
    schedule, and republish. Nothing stays locked in someone else's runtime. See
@@ -136,6 +140,9 @@ Concrete examples that combine the blocks:
   thermostats, speakers — driven by schedule or by asking your agent.
 - Forking a community package (say, a YouTube video manager or an RSS digest)
   and having your agent adapt it to your needs.
+- A drafts-only Gmail helper that prepares invoice replies you send yourself,
+  locked so a later agent cannot republish a send path. See
+  [Gmail drafts without send](./locked-gmail-drafts.md).
 
 ## Try it
 

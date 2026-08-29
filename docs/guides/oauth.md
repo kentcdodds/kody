@@ -18,7 +18,9 @@ This guide covers the standard hosted OAuth path. Use it before building a
 package or package app that depends on the resulting integration or tokens.
 
 For a teaching walkthrough of Google OAuth (Gmail inbox reading) as an
-interactive agent transcript, see [google-oauth.md](./google-oauth.md).
+interactive agent transcript, see [google-oauth.md](./google-oauth.md). For
+drafts the agent must not send (Google has no drafts-only scope), see
+[locked-gmail-drafts.md](./locked-gmail-drafts.md).
 
 ## Default path: `/connect/oauth`
 

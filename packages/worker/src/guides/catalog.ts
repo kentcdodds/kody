@@ -18,6 +18,7 @@ import localMcpTunnels from '../../../../docs/guides/local-mcp-tunnels.md'
 import quickExample from '../../../../docs/guides/quick-example.md'
 import integrationBackedAppHappyPath from '../../../../docs/guides/integration-backed-app-happy-path.md'
 import integrationBootstrap from '../../../../docs/guides/integration-bootstrap.md'
+import lockedGmailDrafts from '../../../../docs/guides/locked-gmail-drafts.md'
 import oauth from '../../../../docs/guides/oauth.md'
 import openapiIntegrations from '../../../../docs/guides/openapi-integrations.md'
 import packageAuthoring from '../../../../docs/guides/package-authoring.md'
@@ -55,6 +56,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'package-authoring', raw: packageAuthoring },
 	{ slug: 'package-lifecycle', raw: packageLifecycle },
 	{ slug: 'integration-bootstrap', raw: integrationBootstrap },
+	{ slug: 'locked-gmail-drafts', raw: lockedGmailDrafts },
 	{ slug: 'secret-backed-integration', raw: secretBackedIntegration },
 	{
 		slug: 'integration-backed-app-happy-path',

@@ -77,4 +77,5 @@ Load `google_oauth` when someone wants a teaching walkthrough of Google OAuth
 for Gmail inbox reading, or when an agent should see how to coach a user through
 the console without inventing steps. For the authoritative console checklist,
 load `provider_google`. For the generic OAuth path, load `oauth`. For ordering
-before packages, load `integration_bootstrap`.
+before packages, load `integration_bootstrap`. For drafts the agent must not
+send (Google has no drafts-only scope), load `locked_gmail_drafts`.

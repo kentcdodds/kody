@@ -51,6 +51,8 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(getGuideById('local_mcp_tunnels')?.imageAlt?.length).toBeGreaterThan(0)
 	expect(getGuideBySlug('google-oauth')?.id).toBe('google_oauth')
 	expect(getGuideById('google_oauth')?.slug).toBe('google-oauth')
+	expect(getGuideBySlug('locked-gmail-drafts')?.id).toBe('locked_gmail_drafts')
+	expect(getGuideById('locked_gmail_drafts')?.slug).toBe('locked-gmail-drafts')
 	expect(getGuideBySlug('salesforce')?.id).toBe('provider_salesforce')
 	expect(getGuideById('provider_salesforce')?.slug).toBe('salesforce')
 	expect(getGuideById('provider_salesforce')?.provider).toBe('Salesforce')

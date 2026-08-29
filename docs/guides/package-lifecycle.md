@@ -86,6 +86,10 @@ package approval checklist (`pending_secret_package_approvals` is non-null only
 for unadopted community-forked packages; prefer `community_fork_adopt` after
 review, or bulk approval URLs when present).
 
+When the OAuth token is coarser than the intended export — Gmail can send
+whenever it can create a draft — publish a thin package that only performs the
+allowed call, then lock it. Load `locked_gmail_drafts` for that pattern.
+
 ## Signals to escalate from `execute` to a package
 
 Move the behavior into a package when one or more of these become true:

@@ -554,6 +554,10 @@ Fleet package-codemod apply does the same HEAD write on locked packages: the
 transform commits and pushes so you can review it the next time you publish. It
 does not skip locked packages, and it does not move `published_commit`.
 
+When a provider token is coarser than the job — Gmail has `gmail.send` but no
+drafts-only scope — the lock is the real grant. Worked example:
+[Gmail drafts without send](../guides/locked-gmail-drafts.md).
+
 ## Community fork provenance
 
 **`package_list`** and **`package_get`** return community-fork provenance on
