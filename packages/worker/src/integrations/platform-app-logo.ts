@@ -147,6 +147,11 @@ export async function setPlatformOauthAppLogo(input: {
 	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
 	slug: string
 	sourceBytes: Uint8Array | null
+	/**
+	 * When set, the column update is compare-and-swap on `logo_key` so a
+	 * concurrent ingest cannot be overwritten by a stale lazy refit.
+	 */
+	replaceLogoKey?: string | null
 }): Promise<PlatformOauthApp> {
 	const app = await getPlatformOauthAppBySlug({
 		db: input.db,
@@ -180,14 +185,50 @@ export async function setPlatformOauthAppLogo(input: {
 		})
 	}
 
-	await input.db
+	const casLogoKey = input.replaceLogoKey !== undefined
+	const updated = await input.db
 		.prepare(
-			`UPDATE platform_oauth_apps
+			casLogoKey
+				? `UPDATE platform_oauth_apps
+			SET logo_key = ?, logo_content_type = ?, updated_at = ?
+			WHERE slug = ? AND logo_key IS ?`
+				: `UPDATE platform_oauth_apps
 			SET logo_key = ?, logo_content_type = ?, updated_at = ?
 			WHERE slug = ?`,
 		)
-		.bind(nextKey, nextContentType, new Date().toISOString(), app.slug)
+		.bind(
+			nextKey,
+			nextContentType,
+			new Date().toISOString(),
+			app.slug,
+			...(casLogoKey ? [input.replaceLogoKey] : []),
+		)
 		.run()
+
+	if ((updated.meta.changes ?? 0) === 0) {
+		if (nextKey) {
+			try {
+				await input.env.COMMUNITY_ASSETS.delete(nextKey)
+			} catch (error) {
+				console.error(
+					'platform-oauth-app-logo-raced-refit-delete-failed',
+					nextKey,
+					error,
+				)
+			}
+		}
+		const current = await getPlatformOauthAppBySlug({
+			db: input.db,
+			slug: app.slug,
+			includeDisabled: true,
+		})
+		if (!current) {
+			throw new Error(
+				`Platform OAuth app "${app.slug}" disappeared during logo update.`,
+			)
+		}
+		return current
+	}
 
 	if (previousKey && previousKey !== nextKey) {
 		try {
@@ -279,7 +320,7 @@ export async function loadFittedPlatformOauthAppLogo(input: {
 		env: input.env,
 		logoKey: input.app.logoKey,
 	})
-	if (!object) return null
+	if (!object) return await serveCurrentPlatformOauthAppLogo(input)
 	if (!logoNeedsIconFit(object.customMetadata)) {
 		return servedLogoFromObject(
 			object,
@@ -294,18 +335,20 @@ export async function loadFittedPlatformOauthAppLogo(input: {
 			env: input.env,
 			slug: input.app.slug,
 			sourceBytes,
+			replaceLogoKey: input.app.logoKey,
 		})
 		if (!updated.logoKey) return null
 		const fitted = await getPlatformOauthAppLogoObject({
 			env: input.env,
 			logoKey: updated.logoKey,
 		})
-		if (!fitted) return null
-		return servedLogoFromObject(
-			fitted,
-			updated.logoContentType,
-			platformOauthAppLogoCacheControl,
-		)
+		if (fitted) {
+			return servedLogoFromObject(
+				fitted,
+				updated.logoContentType,
+				platformOauthAppLogoCacheControl,
+			)
+		}
 	} catch (error) {
 		console.error('platform-oauth-app-logo-refit-failed', input.app.slug, error)
 		return servedFittedLogoFromBytes({
@@ -315,4 +358,28 @@ export async function loadFittedPlatformOauthAppLogo(input: {
 			cacheControl: platformOauthAppLogoCacheControl,
 		})
 	}
+	return await serveCurrentPlatformOauthAppLogo(input)
+}
+
+async function serveCurrentPlatformOauthAppLogo(input: {
+	db: D1Database
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
+	app: PlatformOauthApp
+}): Promise<ServedFittedLogo | null> {
+	const current = await getPlatformOauthAppBySlug({
+		db: input.db,
+		slug: input.app.slug,
+		includeDisabled: true,
+	})
+	if (!current?.logoKey || current.logoKey === input.app.logoKey) return null
+	const latest = await getPlatformOauthAppLogoObject({
+		env: input.env,
+		logoKey: current.logoKey,
+	})
+	if (!latest) return null
+	return servedLogoFromObject(
+		latest,
+		current.logoContentType,
+		platformOauthAppLogoCacheControl,
+	)
 }

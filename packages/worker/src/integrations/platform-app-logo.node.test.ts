@@ -226,3 +226,52 @@ test('serving an unfitted logo rewrites it to the current WebP ingest', async ()
 	expect(fitted.bytes).toEqual(tinyWebpBytes)
 	expect(fitted.customMetadata?.iconFitVersion).toBe('2')
 })
+
+test('lazy refit does not overwrite a newer logo key', async () => {
+	const harness = createHarness()
+	const app = await provisionApp(harness)
+	const previousKey = `platform-oauth-app-logos/${app.slug}/aaaaaaaaaaaaaaaa.png`
+	const newerKey = `platform-oauth-app-logos/${app.slug}/bbbbbbbbbbbbbbbb.webp`
+	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
+		httpMetadata: { contentType: 'image/png' },
+	})
+	await harness.env.COMMUNITY_ASSETS.put(newerKey, tinyWebpBytes, {
+		httpMetadata: { contentType: 'image/webp' },
+		customMetadata: { iconFitVersion: '2' },
+	})
+	await harness.db
+		.prepare(
+			`UPDATE platform_oauth_apps
+			SET logo_key = ?, logo_content_type = ?, updated_at = ?
+			WHERE slug = ?`,
+		)
+		.bind(previousKey, 'image/png', new Date().toISOString(), app.slug)
+		.run()
+	const stale = await getPlatformOauthAppBySlug({
+		db: harness.db,
+		slug: 'github',
+		includeDisabled: true,
+	})
+	await harness.db
+		.prepare(
+			`UPDATE platform_oauth_apps
+			SET logo_key = ?, logo_content_type = ?, updated_at = ?
+			WHERE slug = ?`,
+		)
+		.bind(newerKey, 'image/webp', new Date().toISOString(), app.slug)
+		.run()
+
+	const served = await loadFittedPlatformOauthAppLogo({
+		db: harness.db,
+		env: harness.env,
+		app: stale!,
+	})
+	expect(served?.contentType).toBe('image/webp')
+	const current = await getPlatformOauthAppBySlug({
+		db: harness.db,
+		slug: 'github',
+		includeDisabled: true,
+	})
+	expect(current?.logoKey).toBe(newerKey)
+	expect(harness.r2.objects.has(newerKey)).toBe(true)
+})

@@ -73,6 +73,11 @@ export async function setMcpServerLogo(input: {
 	sourceBytes: Uint8Array
 	source: McpServerLogoSource
 	faviconSourceHost: string
+	/**
+	 * When set, the column update is compare-and-swap on `logo_key` so a
+	 * concurrent ingest cannot be overwritten by a stale lazy refit.
+	 */
+	replaceLogoKey?: string | null
 }): Promise<void> {
 	const existing = await getMcpServerSettingRowById({
 		db: input.db,
@@ -100,9 +105,15 @@ export async function setMcpServerLogo(input: {
 		}),
 	})
 
+	const casLogoKey = input.replaceLogoKey !== undefined
 	const updated = await input.db
 		.prepare(
-			`UPDATE mcp_server_settings
+			casLogoKey
+				? `UPDATE mcp_server_settings
+			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
+				favicon_source_host = ?, updated_at = ?
+			WHERE user_id = ? AND id = ? AND logo_key IS ?`
+				: `UPDATE mcp_server_settings
 			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
 				favicon_source_host = ?, updated_at = ?
 			WHERE user_id = ? AND id = ?`,
@@ -115,6 +126,7 @@ export async function setMcpServerLogo(input: {
 			new Date().toISOString(),
 			input.userId,
 			existing.id,
+			...(casLogoKey ? [input.replaceLogoKey] : []),
 		)
 		.run()
 
@@ -179,7 +191,7 @@ export async function loadFittedMcpServerLogo(input: {
 		env: input.env,
 		logoKey: input.logoKey,
 	})
-	if (!object) return null
+	if (!object) return await serveCurrentMcpServerLogo(input)
 	if (!logoNeedsIconFit(object.customMetadata)) {
 		return servedLogoFromObject(
 			object,
@@ -197,6 +209,7 @@ export async function loadFittedMcpServerLogo(input: {
 			sourceBytes,
 			source: input.logoSource ?? 'favicon',
 			faviconSourceHost: input.faviconSourceHost ?? '',
+			replaceLogoKey: input.logoKey,
 		})
 		const row = await getMcpServerSettingRowById({
 			db: input.db,
@@ -208,12 +221,13 @@ export async function loadFittedMcpServerLogo(input: {
 			env: input.env,
 			logoKey: row.logo_key,
 		})
-		if (!fitted) return null
-		return servedLogoFromObject(
-			fitted,
-			row.logo_content_type,
-			mcpServerLogoCacheControl,
-		)
+		if (fitted) {
+			return servedLogoFromObject(
+				fitted,
+				row.logo_content_type,
+				mcpServerLogoCacheControl,
+			)
+		}
 	} catch (error) {
 		console.error('mcp-server-logo-refit-failed', input.serverId, error)
 		return servedFittedLogoFromBytes({
@@ -223,4 +237,30 @@ export async function loadFittedMcpServerLogo(input: {
 			cacheControl: mcpServerLogoCacheControl,
 		})
 	}
+	return await serveCurrentMcpServerLogo(input)
+}
+
+async function serveCurrentMcpServerLogo(input: {
+	db: D1Database
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
+	userId: string
+	serverId: string
+	logoKey: string
+}): Promise<ServedFittedLogo | null> {
+	const row = await getMcpServerSettingRowById({
+		db: input.db,
+		userId: input.userId,
+		id: input.serverId,
+	})
+	if (!row?.logo_key || row.logo_key === input.logoKey) return null
+	const latest = await getMcpServerLogoObject({
+		env: input.env,
+		logoKey: row.logo_key,
+	})
+	if (!latest) return null
+	return servedLogoFromObject(
+		latest,
+		row.logo_content_type,
+		mcpServerLogoCacheControl,
+	)
 }
