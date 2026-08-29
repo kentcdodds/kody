@@ -15,6 +15,7 @@ import {
 	loadPublicOnboardingData,
 } from '#app/onboarding-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { getSignupMode } from '#universal/signup-mode.ts'
 import { pickWalkthroughHosts } from '#universal/walkthrough-hosts.ts'
 import { loadPublicCodeRunsWindow } from '#worker/usage/code-runs-window.ts'
 import { type routes } from '#universal/routes.ts'
@@ -43,6 +44,7 @@ export function createHomeHandler(env: Env) {
 			)
 			const codeRuns = { ok: true as const, window: codeRunsWindow }
 			const walkthroughHosts = pickWalkthroughHosts()
+			const signupMode = getSignupMode(env)
 
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
@@ -61,6 +63,7 @@ export function createHomeHandler(env: Env) {
 								}),
 								codeRuns,
 								walkthroughHosts,
+								signupMode,
 							},
 							serverTiming,
 						}),
@@ -81,7 +84,12 @@ export function createHomeHandler(env: Env) {
 					await renderAppPage({
 						request,
 						env,
-						loaderData: { onboarding, codeRuns, walkthroughHosts },
+						loaderData: {
+							onboarding,
+							codeRuns,
+							walkthroughHosts,
+							signupMode,
+						},
 						serverTiming,
 					}),
 				),

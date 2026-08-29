@@ -27,6 +27,7 @@ import {
 } from '#client/public-form-protection.ts'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { homepageSignupPath } from '#universal/first-touch-attribution.ts'
+import { type SignupMode } from '#universal/signup-mode.ts'
 import {
 	pickWalkthroughHosts,
 	type WalkthroughHostPick,
@@ -117,13 +118,15 @@ export async function homeRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const [onboarding, codeRuns] = await Promise.all([
+	const [onboarding, codeRuns, authConfig] = await Promise.all([
 		fetchOnboardingPayload(signal),
 		fetchCodeRunsPayload(signal),
+		fetchPublicAuthConfig(signal),
 	])
 	const result: RouteLoaderResult = {}
 	if (onboarding) result.onboarding = onboarding
 	if (codeRuns) result.codeRuns = codeRuns
+	if (authConfig) result.signupMode = authConfig.signupMode
 	result.walkthroughHosts = pickWalkthroughHosts()
 	return result
 }
@@ -136,6 +139,7 @@ export function HomeRoute(handle: Handle) {
 	let codeRunsWindow: PublicCodeRunsWindow | null = null
 	let onboardingStatus: 'idle' | 'loading' | 'ready' = 'idle'
 	let walkthroughHosts: WalkthroughHostPick | null = null
+	let signupMode: SignupMode = 'invite'
 	const loadLatch = createRouteLoadLatch()
 
 	function applyOnboardingPayload(payload: OnboardingPayload | null) {
@@ -156,13 +160,15 @@ export function HomeRoute(handle: Handle) {
 	async function loadHomePayload(signal: AbortSignal) {
 		const href = readCurrentRouterHref(handle)
 		try {
-			const [payload, codeRuns] = await Promise.all([
+			const [payload, codeRuns, authConfig] = await Promise.all([
 				fetchOnboardingPayload(signal),
 				fetchCodeRunsPayload(signal),
+				fetchPublicAuthConfig(signal),
 			])
 			if (signal.aborted) return
 			applyOnboardingPayload(payload)
 			applyCodeRunsPayload(codeRuns)
+			if (authConfig) signupMode = authConfig.signupMode
 			if (!walkthroughHosts) walkthroughHosts = pickWalkthroughHosts()
 			loadLatch.markLoaded(href)
 			handle.update()
@@ -184,8 +190,10 @@ export function HomeRoute(handle: Handle) {
 			'walkthroughHosts',
 			href,
 		)
+		const signupModeData = tryConsumeRouteLoaderData(handle, 'signupMode', href)
 		if (hostsData) walkthroughHosts = hostsData
 		if (codeRunsData) applyCodeRunsPayload(codeRunsData)
+		if (signupModeData) signupMode = signupModeData
 		if (!onboardingData) return false
 		applyOnboardingPayload(onboardingData)
 		loadLatch.markLoaded(href)
@@ -239,6 +247,15 @@ export function HomeRoute(handle: Handle) {
 								)}
 								<a href="/account" class="landing-code-link">
 									Open your account
+								</a>
+							</>
+						) : signupMode === 'open' ? (
+							<>
+								<a href={homepageSignupPath} class="landing-pill">
+									Create a free account
+								</a>
+								<a href="/login" class="landing-code-link">
+									I already have an account
 								</a>
 							</>
 						) : (
@@ -528,6 +545,17 @@ export function HomeRoute(handle: Handle) {
 							<p class="landing-invite-cta">
 								<a href={onboardingPath} class="landing-pill">
 									Connect your agent
+								</a>
+							</p>
+						</div>
+					) : signupMode === 'open' ? (
+						<div>
+							<p class="landing-invite-lead">
+								Create a free account and connect the agent you already use.
+							</p>
+							<p class="landing-invite-cta">
+								<a href={homepageSignupPath} class="landing-pill">
+									Create a free account
 								</a>
 							</p>
 						</div>
