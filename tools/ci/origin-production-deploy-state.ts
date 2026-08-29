@@ -24,6 +24,8 @@ export const runtimeOwnedClassNames = [
 	'PackageRealtimeSession',
 ] as const
 
+export const productionOriginBootstrapWorkflowName = `${productionOriginScriptName}-bootstrap-dynamic-callable-workflows`
+
 const transferredClassNames = [
 	...platformOwnedClassNames,
 	...runtimeOwnedClassNames,
@@ -39,6 +41,7 @@ export type DurableObjectNamespaceOwnership = {
 export type OriginProductionScriptState = {
 	mode: OriginProductionDeployMode
 	reason: string
+	originOwnedTransferredClassNames: ReadonlyArray<string>
 }
 
 export type OriginProductionDeployPlan = {
@@ -112,6 +115,22 @@ function anyTransferredClassOnScript(
 	return transferredClassNames.some((className) => owned.has(className))
 }
 
+function transferredClassesOnScript(
+	namespaces: ReadonlyArray<DurableObjectNamespaceOwnership>,
+	script: string,
+) {
+	const owned = classesOnScript(namespaces, script)
+	return transferredClassNames.filter((className) => owned.has(className))
+}
+
+function scriptState(
+	mode: OriginProductionDeployMode,
+	reason: string,
+	originOwnedTransferredClassNames: ReadonlyArray<string> = [],
+): OriginProductionScriptState {
+	return { mode, reason, originOwnedTransferredClassNames }
+}
+
 /**
  * Fail-closed classification of the live production origin script.
  *
@@ -125,14 +144,17 @@ export function classifyOriginProductionScriptState(input: {
 	namespaces: ReadonlyArray<DurableObjectNamespaceOwnership> | null
 }): OriginProductionScriptState {
 	if (input.originScriptExists === null) {
-		return {
-			mode: 'ambiguous',
-			reason:
-				'Origin script existence is unknown; keep the full entry and do not bootstrap transfers.',
-		}
+		return scriptState(
+			'ambiguous',
+			'Origin script existence is unknown; keep the full entry and do not bootstrap transfers.',
+		)
 	}
 
 	if (input.namespaces) {
+		const originOwnedTransferredClassNames = transferredClassesOnScript(
+			input.namespaces,
+			productionOriginScriptName,
+		)
 		const destinationsOwnTransferred =
 			everyClassOnScript(
 				input.namespaces,
@@ -144,29 +166,41 @@ export function classifyOriginProductionScriptState(input: {
 				productionRuntimeScriptName,
 				runtimeOwnedClassNames,
 			)
-		const originOwnsTransferred = anyTransferredClassOnScript(
-			input.namespaces,
-			productionOriginScriptName,
-		)
+		const originOwnsTransferred = originOwnedTransferredClassNames.length > 0
+		const destinationsOwnAnyTransferred =
+			anyTransferredClassOnScript(
+				input.namespaces,
+				productionPlatformScriptName,
+			) ||
+			anyTransferredClassOnScript(input.namespaces, productionRuntimeScriptName)
 
 		if (
 			!input.originScriptExists &&
 			!destinationsOwnTransferred &&
 			!originOwnsTransferred &&
-			!anyTransferredClassOnScript(
-				input.namespaces,
-				productionPlatformScriptName,
-			) &&
-			!anyTransferredClassOnScript(
-				input.namespaces,
-				productionRuntimeScriptName,
-			)
+			!destinationsOwnAnyTransferred
 		) {
-			return {
-				mode: 'fresh',
-				reason:
-					'Origin script is missing and no transferred Durable Object namespace exists on origin, platform, or runtime.',
-			}
+			return scriptState(
+				'fresh',
+				'Origin script is missing and no transferred Durable Object namespace exists on origin, platform, or runtime.',
+			)
+		}
+
+		// Origin bootstrap already created the classes, but platform/runtime
+		// never took ownership. Retry the same first-deploy path: full entry
+		// with local bindings, then the existing transferred_classes tags.
+		// Mixed ownership (destinations already own some names) stays
+		// ambiguous — a second transfer of those names is unsafe.
+		if (
+			input.originScriptExists &&
+			originOwnsTransferred &&
+			!destinationsOwnAnyTransferred
+		) {
+			return scriptState(
+				'fresh',
+				'Origin still owns transferred classes and platform/runtime own none of them; retry full-entry bootstrap then transfer.',
+				originOwnedTransferredClassNames,
+			)
 		}
 
 		if (
@@ -174,18 +208,17 @@ export function classifyOriginProductionScriptState(input: {
 			destinationsOwnTransferred &&
 			!originOwnsTransferred
 		) {
-			return {
-				mode: 'steady',
-				reason:
-					'Origin script exists, platform and runtime own every transferred class, and origin owns none of them.',
-			}
+			return scriptState(
+				'steady',
+				'Origin script exists, platform and runtime own every transferred class, and origin owns none of them.',
+			)
 		}
 
-		return {
-			mode: 'ambiguous',
-			reason:
-				'Durable Object namespace ownership does not match a fresh script or a completed platform/runtime transfer.',
-		}
+		return scriptState(
+			'ambiguous',
+			'Durable Object namespace ownership does not match a fresh script or a completed platform/runtime transfer.',
+			originOwnedTransferredClassNames,
+		)
 	}
 
 	if (
@@ -193,30 +226,33 @@ export function classifyOriginProductionScriptState(input: {
 		input.platformScriptExists === false &&
 		input.runtimeScriptExists === false
 	) {
-		return {
-			mode: 'fresh',
-			reason:
-				'Origin, platform, and runtime scripts are all missing (namespace listing unavailable).',
-		}
+		return scriptState(
+			'fresh',
+			'Origin, platform, and runtime scripts are all missing (namespace listing unavailable).',
+		)
 	}
 
+	// All three scripts exist but we could not list namespace ownership.
+	// Treat as steady and let Cloudflare error 10064 reject a slim upload
+	// if origin still owns a transferred class. Classifying this as
+	// ambiguous would upload the full entry with cross-script bindings,
+	// which serves requests to the wrong script when origin still owns
+	// those classes.
 	if (
 		input.originScriptExists === true &&
 		input.platformScriptExists === true &&
 		input.runtimeScriptExists === true
 	) {
-		return {
-			mode: 'steady',
-			reason:
-				'Origin, platform, and runtime scripts all exist (namespace listing unavailable; Cloudflare rejects a slim upload if origin still owns a class).',
-		}
+		return scriptState(
+			'steady',
+			'Origin, platform, and runtime scripts all exist (namespace listing unavailable; Cloudflare rejects a slim upload if origin still owns a class).',
+		)
 	}
 
-	return {
-		mode: 'ambiguous',
-		reason:
-			'Could not list Durable Object namespaces, and the three production scripts are not uniformly present or missing.',
-	}
+	return scriptState(
+		'ambiguous',
+		'Could not list Durable Object namespaces, and the three production scripts are not uniformly present or missing.',
+	)
 }
 
 export async function getCloudflareWorkerScriptExists(input: {
@@ -335,10 +371,10 @@ export async function inspectOriginProductionScriptState(input: {
 			namespaces,
 		})
 	} catch (error) {
-		return {
-			mode: 'ambiguous',
-			reason: `Cloudflare script probe failed (${error instanceof Error ? error.message : String(error)}); keep the full entry and do not bootstrap transfers.`,
-		}
+		return scriptState(
+			'ambiguous',
+			`Cloudflare script probe failed (${error instanceof Error ? error.message : String(error)}); keep the full entry and do not bootstrap transfers.`,
+		)
 	}
 }
 
@@ -389,10 +425,78 @@ export function stripOriginCrossScriptClassBindings(
 					scriptNames.has(workflow.script_name)
 				) {
 					delete workflow.script_name
+					// Preview's first origin deploy uses a distinct workflow
+					// name for the same reason: workflows cannot transfer, and
+					// kody-runtime later claims kody-runtime-dynamic-callable-workflows.
+					workflow.name = productionOriginBootstrapWorkflowName
 				}
 			}
 		}
 	}
+	return config
+}
+
+/**
+ * Ambiguous mixed ownership: origin still has some transferred classes
+ * while destinations already own others. Keep cross-script bindings for
+ * classes origin no longer owns; bind the rest locally so requests do not
+ * follow `script_name` to a script that does not have the storage.
+ *
+ * Does not force a transfer. A second `transferred_classes` of a name the
+ * destination already owns is unsafe.
+ */
+export function stripOriginBindingsForLocallyOwnedClasses(
+	config: Record<string, unknown>,
+	ownedClassNames: ReadonlyArray<string>,
+) {
+	const owned = new Set(ownedClassNames)
+	if (owned.size === 0) return config
+
+	const env = asRecord(config.env)
+	const productionEnv = env ? asRecord(env.production) : null
+	const targets = [config, productionEnv].filter(
+		(entry): entry is Record<string, unknown> => entry !== null,
+	)
+	const runtimeOwned = new Set<string>(runtimeOwnedClassNames)
+	let strippedRuntimeClass = false
+
+	for (const target of targets) {
+		const durableObjects = asRecord(target.durable_objects)
+		const bindings = durableObjects?.bindings
+		if (Array.isArray(bindings)) {
+			for (const entry of bindings) {
+				const binding = asRecord(entry)
+				if (!binding) continue
+				if (typeof binding.class_name !== 'string') continue
+				if (!owned.has(binding.class_name)) continue
+				if (
+					typeof binding.script_name === 'string' &&
+					(binding.script_name === productionPlatformScriptName ||
+						binding.script_name === productionRuntimeScriptName)
+				) {
+					if (runtimeOwned.has(binding.class_name)) {
+						strippedRuntimeClass = true
+					}
+					delete binding.script_name
+				}
+			}
+		}
+	}
+
+	if (strippedRuntimeClass) {
+		for (const target of targets) {
+			const workflows = target.workflows
+			if (!Array.isArray(workflows)) continue
+			for (const entry of workflows) {
+				const workflow = asRecord(entry)
+				if (!workflow) continue
+				if (workflow.script_name !== productionRuntimeScriptName) continue
+				delete workflow.script_name
+				workflow.name = productionOriginBootstrapWorkflowName
+			}
+		}
+	}
+
 	return config
 }
 

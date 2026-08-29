@@ -3,6 +3,7 @@ import {
 	checkOriginProductionExports,
 	checkOriginProductionExportsInRepo,
 	extractNamedExports,
+	hasExportStarDeclaration,
 	type OriginProductionExportsCheckResult,
 } from './check-origin-production-exports.ts'
 
@@ -285,6 +286,41 @@ export default E
 `),
 	).toEqual(expect.arrayContaining(['A', 'C', 'D', 'E', 'f']))
 	expect(extractNamedExports('export default handler')).toEqual([])
+})
+
+test('extractNamedExports ignores type-only export declarations and specifiers', () => {
+	expect(
+		extractNamedExports(`
+export type { TypeOnlyName }
+export { type TypeOnlySpecifier, RuntimeName }
+export { JobsHost }
+`),
+	).toEqual(['RuntimeName', 'JobsHost'])
+})
+
+test('hasExportStarDeclaration detects runtime export-star and ignores type-only stars', () => {
+	expect(hasExportStarDeclaration('export * from "./index.ts"')).toBe(true)
+	expect(hasExportStarDeclaration('export type * from "./types.ts"')).toBe(
+		false,
+	)
+	expect(hasExportStarDeclaration('export { JobsHost }')).toBe(false)
+})
+
+test('rejects a production entry that star-exports hidden runtime names', () => {
+	const result = checkOriginProductionExports({
+		configPath,
+		config: createConfig({}),
+		devEntrySource,
+		productionEntrySource: `
+export { KodyFetchGateway, JobsHost }
+export * from "./index.ts"
+export default originWorkerHandler
+`,
+	})
+	expect(result.ok).toBe(false)
+	expect(result.errors).toEqual([
+		expect.stringContaining('must not use export *'),
+	])
 })
 
 test('extractNamedExports parses with the TypeScript AST, ignoring export-shaped text in comments and strings', () => {

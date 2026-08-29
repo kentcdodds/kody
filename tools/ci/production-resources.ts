@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import {
 	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
@@ -21,6 +21,7 @@ import { defaultProductionEntryPath } from '../check-origin-production-exports.t
 import {
 	inspectOriginProductionScriptState,
 	planOriginProductionDeploy,
+	stripOriginBindingsForLocallyOwnedClasses,
 	writeOriginBootstrapWranglerConfig,
 	type OriginProductionScriptState,
 } from './origin-production-deploy-state.ts'
@@ -721,6 +722,7 @@ async function ensureProductionResources(options: CliOptions) {
 					mode: 'ambiguous',
 					reason:
 						'Dry-run or missing Cloudflare credentials; keep the full origin entry and do not bootstrap transfers.',
+					originOwnedTransferredClassNames: [],
 				}
 			: await inspectOriginProductionScriptState({
 					accountId,
@@ -780,6 +782,22 @@ async function ensureProductionResources(options: CliOptions) {
 				'-bootstrap.generated.json',
 			),
 		})
+	} else if (
+		deployPlan.originEntry === 'full' &&
+		deployState.originOwnedTransferredClassNames.length > 0
+	) {
+		const generatedConfig = parseJsonc<Record<string, unknown>>(
+			await readFile(generatedConfigPath, 'utf8'),
+		)
+		stripOriginBindingsForLocallyOwnedClasses(
+			generatedConfig,
+			deployState.originOwnedTransferredClassNames,
+		)
+		await writeFile(
+			generatedConfigPath,
+			`${JSON.stringify(generatedConfig, null, '\t')}\n`,
+			'utf8',
+		)
 	}
 
 	// Emit GitHub Actions-friendly outputs (stdout only).

@@ -64,9 +64,11 @@ not run wrangler by hand to "finish" a transfer or to free the package-app zone.
 
 Origin uploads use the same fail-closed classifier as the
 [platform runbook](./platform-worker-migration-runbook.md#later-deploys): a
-fresh origin script bootstraps with the full entry before this worker's
-`transferred_classes` tag runs; steady-state origin uploads the slim entry and
-skip that bootstrap.
+fresh origin script (or an origin that still owns the classes while this worker
+owns none) bootstraps with the full entry before this worker's
+`transferred_classes` tag runs; the bootstrap workflow uses a distinct name so
+it does not collide with `kody-runtime-dynamic-callable-workflows`. Steady-state
+origin uploads the slim entry and skip that bootstrap.
 
 When runtime sources change on a steady-state script, the workflow deploys
 `kody-runtime` before origin so cross-script bindings stay valid. That order is

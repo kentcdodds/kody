@@ -60,13 +60,18 @@ before each production origin upload:
   transferred class and origin owns none of them. Origin uploads the slim
   `production-worker.ts` entry. Platform/runtime deploys stay path-filtered and
   do not re-apply the `v1` transfer.
-- **Fresh** (no origin script and no transferred namespaces): origin uploads the
-  full `index.ts` entry first so `new_sqlite_classes` can replay, then platform
-  and runtime apply the existing `transferred_classes` tags, then origin uploads
-  the slim entry.
-- **Ambiguous** (probe failed, partial ownership, or a missing origin while
+- **Fresh** (no origin script and no transferred namespaces, or origin still
+  owns transferred classes while platform and runtime own none): origin uploads
+  the full `index.ts` entry first so `new_sqlite_classes` can replay, then
+  platform and runtime apply the existing `transferred_classes` tags, then
+  origin uploads the slim entry. The bootstrap workflow binding uses
+  `kody-production-bootstrap-dynamic-callable-workflows` so it does not collide
+  with the runtime-owned name.
+- **Ambiguous** (probe failed, mixed ownership, or a missing origin while
   destinations already own classes): origin keeps the full entry. The workflow
-  does not bootstrap and does not force a transfer.
+  does not bootstrap and does not force a transfer. Bindings for classes origin
+  still owns drop `script_name` so requests do not follow a cross-script binding
+  to a script that does not have the storage.
 
 When platform sources change on a steady-state script, the workflow deploys
 `kody-platform` before origin so cross-script bindings stay valid. That order is

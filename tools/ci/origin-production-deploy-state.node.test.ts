@@ -9,9 +9,11 @@ import {
 	planOriginProductionDeploy,
 	platformOwnedClassNames,
 	productionOriginScriptName,
+	productionOriginBootstrapWorkflowName,
 	productionPlatformScriptName,
 	productionRuntimeScriptName,
 	runtimeOwnedClassNames,
+	stripOriginBindingsForLocallyOwnedClasses,
 	stripOriginCrossScriptClassBindings,
 	writeOriginBootstrapWranglerConfig,
 	type DurableObjectNamespaceOwnership,
@@ -72,6 +74,26 @@ test('refuses to treat a missing origin as fresh when platform already owns a tr
 	})
 })
 
+test('retries fresh bootstrap when origin still owns transferred classes and destinations own none', () => {
+	const state = classifyOriginProductionScriptState({
+		originScriptExists: true,
+		namespaces: [
+			...transferredOn(productionOriginScriptName, platformOwnedClassNames),
+			...transferredOn(productionOriginScriptName, runtimeOwnedClassNames),
+		],
+	})
+	expect(state.mode).toBe('fresh')
+	expect(state.originOwnedTransferredClassNames).toEqual([
+		...platformOwnedClassNames,
+		...runtimeOwnedClassNames,
+	])
+	expect(planOriginProductionDeploy(state)).toMatchObject({
+		originEntry: 'slim',
+		runOriginBootstrap: true,
+		forcePlatformAndRuntime: true,
+	})
+})
+
 test('refuses to slim while origin still owns a transferred class', () => {
 	const state = classifyOriginProductionScriptState({
 		originScriptExists: true,
@@ -82,6 +104,7 @@ test('refuses to slim while origin still owns a transferred class', () => {
 		],
 	})
 	expect(state.mode).toBe('ambiguous')
+	expect(state.originOwnedTransferredClassNames).toEqual(['Mailbox'])
 	expect(planOriginProductionDeploy(state).originEntry).toBe('full')
 })
 
@@ -197,7 +220,11 @@ test('bootstrap config keeps the full entry and locally owns transferred classes
 					durable_objects: {
 						bindings: Array<{ class_name: string; script_name?: string }>
 					}
-					workflows: Array<{ class_name: string; script_name?: string }>
+					workflows: Array<{
+						class_name: string
+						name?: string
+						script_name?: string
+					}>
 				}
 			}
 		}
@@ -218,6 +245,9 @@ test('bootstrap config keeps the full entry and locally owns transferred classes
 			)?.script_name,
 		).toBe('someone-else')
 		expect(written.env.production.workflows[0]?.script_name).toBeUndefined()
+		expect(written.env.production.workflows[0]?.name).toBe(
+			productionOriginBootstrapWorkflowName,
+		)
 		expect(generated.main).toBe('./src/production-worker.ts')
 		expect(
 			(
@@ -271,6 +301,63 @@ test('inspectOriginProductionScriptState classifies a missing fleet from 404 pro
 		},
 	})
 	expect(state.mode).toBe('fresh')
+})
+
+test('stripOriginBindingsForLocallyOwnedClasses keeps transferred destination bindings', () => {
+	const config = {
+		env: {
+			production: {
+				durable_objects: {
+					bindings: [
+						{
+							name: 'MCP_OBJECT',
+							class_name: 'MCP',
+							script_name: productionPlatformScriptName,
+						},
+						{
+							name: 'STORAGE_RUNNER',
+							class_name: 'StorageRunner',
+							script_name: productionRuntimeScriptName,
+						},
+					],
+				},
+				workflows: [
+					{
+						binding: 'DYNAMIC_CALLABLE_WORKFLOWS',
+						name: 'kody-runtime-dynamic-callable-workflows',
+						class_name: 'DynamicCallableWorkflow',
+						script_name: productionRuntimeScriptName,
+					},
+				],
+			},
+		},
+	}
+	stripOriginBindingsForLocallyOwnedClasses(config, ['StorageRunner'])
+	expect(
+		(
+			config.env.production.durable_objects.bindings[0] as {
+				script_name?: string
+			}
+		).script_name,
+	).toBe(productionPlatformScriptName)
+	expect(
+		(
+			config.env.production.durable_objects.bindings[1] as {
+				script_name?: string
+			}
+		).script_name,
+	).toBeUndefined()
+	expect(
+		(
+			config.env.production.workflows[0] as {
+				name?: string
+				script_name?: string
+			}
+		).script_name,
+	).toBeUndefined()
+	expect((config.env.production.workflows[0] as { name?: string }).name).toBe(
+		productionOriginBootstrapWorkflowName,
+	)
 })
 
 test('stripOriginCrossScriptClassBindings is a no-op when there are no matching script names', () => {

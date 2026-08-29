@@ -65,9 +65,11 @@ export function extractNamedExports(source: string): Array<string> {
 
 	for (const statement of sourceFile.statements) {
 		if (ts.isExportDeclaration(statement)) {
+			if (statement.isTypeOnly) continue
 			const clause = statement.exportClause
 			if (clause && ts.isNamedExports(clause)) {
 				for (const element of clause.elements) {
+					if (element.isTypeOnly) continue
 					names.add(element.name.text)
 				}
 			}
@@ -95,6 +97,26 @@ export function extractNamedExports(source: string): Array<string> {
 	}
 
 	return [...names]
+}
+
+/**
+ * `export * from "./module"` forwards every runtime named export. The
+ * production entry allowlist cannot see those names, so the checker
+ * rejects export-star instead of treating the file as empty.
+ */
+export function hasExportStarDeclaration(source: string): boolean {
+	const sourceFile = ts.createSourceFile(
+		'origin-entry.ts',
+		source,
+		ts.ScriptTarget.Latest,
+		false,
+		ts.ScriptKind.TS,
+	)
+	return sourceFile.statements.some((statement) => {
+		if (!ts.isExportDeclaration(statement)) return false
+		if (statement.isTypeOnly) return false
+		return Boolean(statement.moduleSpecifier) && statement.exportClause == null
+	})
 }
 
 function collectClassBindings(envConfig: unknown): Array<ClassBinding> {
@@ -218,6 +240,11 @@ export function checkOriginProductionExports(input: {
 	const devExports = new Set(extractNamedExports(input.devEntrySource))
 	const productionExportsList = extractNamedExports(input.productionEntrySource)
 	const productionExports = new Set(productionExportsList)
+	if (hasExportStarDeclaration(input.productionEntrySource)) {
+		errors.push(
+			`${productionEntryPath}: must not use export * (the production allowlist cannot see star-forwarded runtime names).`,
+		)
+	}
 
 	for (const className of requiredDevClassNames) {
 		if (!devExports.has(className)) {
