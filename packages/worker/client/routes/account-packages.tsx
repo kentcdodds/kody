@@ -1,6 +1,5 @@
 import { type Handle, css } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
-import { createDoubleCheck } from '#client/double-check.ts'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
@@ -23,9 +22,9 @@ import {
 import { ForkOutdatedCopyButton } from '#universal/fork-outdated-copy-button.tsx'
 import {
 	getAccentCalloutCss,
-	getDangerPillCss,
 	getGhostButtonCss,
 	getPillButtonCss,
+	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 import {
 	accountDisclosureCss,
@@ -156,19 +155,58 @@ export function AccountPackagesRoute(handle: Handle) {
 	let lastLoadedListKey = ''
 	let loadingDataKey: string | null = null
 	let lastFailedDataKey: string | null = null
-	const unlockCheck = createDoubleCheck(handle)
-	let lockBusy = false
+	const lockInFlight = new Map<string, string | null>()
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
 	}
 
-	async function postPackageLockAction(action: 'lock' | 'unlock') {
-		if (!selectedPackage) return
+	function isLockInFlight(packageId: string | null | undefined) {
+		return packageId != null && lockInFlight.has(packageId)
+	}
+
+	function isPackageLocked(lockedAt: string | null | undefined) {
+		return typeof lockedAt === 'string' && lockedAt.trim().length > 0
+	}
+
+	function applyLocalLockState(packageId: string, lockedAt: string | null) {
+		if (selectedPackage?.id === packageId) {
+			selectedPackage = { ...selectedPackage, lockedAt }
+		}
+		packageList.updateItems((items) =>
+			items.map((pkg) => (pkg.id === packageId ? { ...pkg, lockedAt } : pkg)),
+		)
+	}
+
+	function restoreInFlightLockState() {
+		if (lockInFlight.size === 0) return
+		if (selectedPackage && lockInFlight.has(selectedPackage.id)) {
+			selectedPackage = {
+				...selectedPackage,
+				lockedAt: lockInFlight.get(selectedPackage.id) ?? null,
+			}
+		}
+		packageList.updateItems((items) =>
+			items.map((pkg) =>
+				lockInFlight.has(pkg.id)
+					? { ...pkg, lockedAt: lockInFlight.get(pkg.id) ?? null }
+					: pkg,
+			),
+		)
+	}
+
+	async function togglePackageLock() {
+		if (!selectedPackage || lockInFlight.has(selectedPackage.id)) return
 		const href = getCurrentHref()
-		lockBusy = true
+		const packageId = selectedPackage.id
+		const previousLockedAt = selectedPackage.lockedAt
+		const nextLocked = !isPackageLocked(previousLockedAt)
+		const nextLockedAt = nextLocked ? new Date().toISOString() : null
+		lockInFlight.set(packageId, nextLockedAt)
 		message = null
+		applyLocalLockState(packageId, nextLockedAt)
 		handle.update()
+
 		try {
 			const response = await fetch(buildPackagesApiRequestUrl(href), {
 				method: 'POST',
@@ -178,25 +216,38 @@ export function AccountPackagesRoute(handle: Handle) {
 				},
 				credentials: 'include',
 				body: JSON.stringify({
-					action,
-					packageId: selectedPackage.id,
+					action: nextLocked ? 'lock' : 'unlock',
+					packageId,
 				}),
 			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
 			const payload = await readJson<
 				AccountPackagesLoaderData & { error?: string }
 			>(response)
-			if (getCurrentHref() !== href) return
 			if (!response.ok || !payload?.ok) {
-				message = payload?.error ?? 'Could not update the publish lock.'
+				applyLocalLockState(packageId, previousLockedAt)
+				if (selectedPackage?.id === packageId) {
+					message = payload?.error ?? 'Could not update the publish lock.'
+				}
+				handle.update()
 				return
 			}
-			applyPayload(payload, href)
-			unlockCheck.reset()
+			applyLocalLockState(
+				packageId,
+				payload.selectedPackage?.lockedAt ?? nextLockedAt,
+			)
+			handle.update()
 		} catch {
-			if (getCurrentHref() !== href) return
-			message = 'Could not update the publish lock.'
+			applyLocalLockState(packageId, previousLockedAt)
+			if (selectedPackage?.id === packageId) {
+				message = 'Could not update the publish lock.'
+			}
+			handle.update()
 		} finally {
-			lockBusy = false
+			lockInFlight.delete(packageId)
 			handle.update()
 		}
 	}
@@ -221,7 +272,6 @@ export function AccountPackagesRoute(handle: Handle) {
 	}
 
 	function applyPayload(payload: AccountPackagesLoaderData, href: string) {
-		const previousSelectedId = selectedPackage?.id ?? null
 		const listKey = getListKey(href)
 		// Selection-only navigations deep in the scroll window keep the
 		// already-loaded pages; anything else reseeds from page one so
@@ -240,9 +290,7 @@ export function AccountPackagesRoute(handle: Handle) {
 			lastLoadedListKey = listKey
 		}
 		selectedPackage = payload.selectedPackage
-		if ((selectedPackage?.id ?? null) !== previousSelectedId) {
-			unlockCheck.reset()
-		}
+		restoreInFlightLockState()
 		username = payload.username
 		invocationUrlOrigin = payload.invocationUrlOrigin
 		message =
@@ -470,13 +518,36 @@ export function AccountPackagesRoute(handle: Handle) {
 					rows={packages.map((pkg) => ({
 						id: pkg.id,
 						href: packagesRoute.buildDetailHref(pkg.id, getCurrentSearch()),
-						...(pkg.listingAhead
+						...(pkg.listingAhead || isPackageLocked(pkg.lockedAt)
 							? {
 									primaryAccessory: (
-										<ForkOutdatedCopyButton
-											prompt={pkg.listingAhead.prompt}
-											testId={`account-package-listing-ahead-${pkg.id}`}
-										/>
+										<span
+											mix={css({
+												display: 'inline-flex',
+												alignItems: 'center',
+												gap: spacing.xs,
+											})}
+										>
+											{isPackageLocked(pkg.lockedAt) ? (
+												<span
+													title="Publish lock on"
+													data-testid={`account-package-locked-${pkg.id}`}
+													mix={css({
+														display: 'inline-flex',
+														color: colors.textMuted,
+														flexShrink: 0,
+													})}
+												>
+													{packageLockGlyph(true)}
+												</span>
+											) : null}
+											{pkg.listingAhead ? (
+												<ForkOutdatedCopyButton
+													prompt={pkg.listingAhead.prompt}
+													testId={`account-package-listing-ahead-${pkg.id}`}
+												/>
+											) : null}
+										</span>
 									),
 								}
 							: {}),
@@ -547,6 +618,34 @@ export function AccountPackagesRoute(handle: Handle) {
 										>
 											{selectedPackage.name}
 										</h2>
+										<button
+											type="button"
+											disabled={isLockInFlight(selectedPackage.id)}
+											title={
+												isPackageLocked(selectedPackage.lockedAt)
+													? 'Unlock publishes'
+													: 'Lock publishes'
+											}
+											data-testid="account-package-lock-toggle"
+											data-locked={
+												isPackageLocked(selectedPackage.lockedAt)
+													? 'true'
+													: 'false'
+											}
+											mix={[
+												css(packageLockToggleCss),
+												on('click', () => void togglePackageLock()),
+											]}
+										>
+											{packageLockGlyph(
+												isPackageLocked(selectedPackage.lockedAt),
+											)}
+											<span mix={css(visuallyHiddenCss)}>
+												{isPackageLocked(selectedPackage.lockedAt)
+													? `Unlock publishes for ${selectedPackage.name}`
+													: `Lock publishes for ${selectedPackage.name}`}
+											</span>
+										</button>
 										{selectedPackage.listingAhead ? (
 											<ForkOutdatedCopyButton
 												prompt={selectedPackage.listingAhead.prompt}
@@ -631,68 +730,32 @@ export function AccountPackagesRoute(handle: Handle) {
 								<div mix={css(getAccentCalloutCss())}>
 									<p mix={css({ margin: 0, color: colors.textMuted })}>
 										{selectedPackage.lockedAt
-											? 'Publishes stay on this reviewed tree until you promote a commit on the website.'
-											: 'Lock this package so agents cannot publish without your approval.'}
+											? 'Publishes stay on this reviewed tree until you promote a commit on the website. Click the lock icon to unlock.'
+											: 'Click the lock icon so agents cannot publish without your approval.'}
 									</p>
-									<div
-										mix={css({
-											display: 'flex',
-											flexWrap: 'wrap',
-											gap: spacing.xs,
-										})}
-									>
-										{selectedPackage.lockedAt ? (
-											<>
-												<a
-													href={routes.accountPackageApprovePublish.href({
-														packageId: selectedPackage.id,
-													})}
-													data-testid="account-approve-publish"
-													mix={css({
-														...getPillButtonCss({ size: 'sm' }),
-														display: 'inline-flex',
-														textDecoration: 'none',
-													})}
-												>
-													Approve a publish
-												</a>
-												<button
-													type="button"
-													data-testid="account-unlock-package"
-													disabled={lockBusy}
-													mix={[
-														css(getDangerPillCss({ size: 'sm' })),
-														unlockCheck.getButtonMix({
-															onFirstClick: () => undefined,
-															on: {
-																click: () => {
-																	if (unlockCheck.doubleCheck) {
-																		void postPackageLockAction('unlock')
-																	}
-																},
-															},
-														}),
-													]}
-												>
-													{unlockCheck.doubleCheck
-														? 'Click again to unlock'
-														: 'Unlock publishes'}
-												</button>
-											</>
-										) : (
-											<button
-												type="button"
-												data-testid="account-lock-package"
-												disabled={lockBusy}
-												mix={[
-													css(getPillButtonCss({ size: 'sm' })),
-													on('click', () => void postPackageLockAction('lock')),
-												]}
+									{selectedPackage.lockedAt ? (
+										<div
+											mix={css({
+												display: 'flex',
+												flexWrap: 'wrap',
+												gap: spacing.xs,
+											})}
+										>
+											<a
+												href={routes.accountPackageApprovePublish.href({
+													packageId: selectedPackage.id,
+												})}
+												data-testid="account-approve-publish"
+												mix={css({
+													...getPillButtonCss({ size: 'sm' }),
+													display: 'inline-flex',
+													textDecoration: 'none',
+												})}
 											>
-												Lock publishes
-											</button>
-										)}
-									</div>
+												Approve a publish
+											</a>
+										</div>
+									) : null}
 								</div>
 								<a
 									href={getAccountPackageFilesHref({
@@ -748,4 +811,61 @@ export function AccountPackagesRoute(handle: Handle) {
 			</AccountManagementShell>
 		)
 	}
+}
+
+function packageLockGlyph(locked: boolean) {
+	return (
+		<svg
+			viewBox="0 0 16 16"
+			width="1em"
+			height="1em"
+			aria-hidden="true"
+			focusable={false}
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="1.5"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			{locked ? (
+				<path d="M5.2 7.4V5.8a2.8 2.8 0 0 1 5.6 0v1.6" />
+			) : (
+				<path d="M5.2 7.4V5.6a2.8 2.8 0 0 1 5.2-1.4" />
+			)}
+			<rect x="3.6" y="7.4" width="8.8" height="6.4" rx="1.3" />
+		</svg>
+	)
+}
+
+const packageLockToggleCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	justifyContent: 'center',
+	width: '1.85rem',
+	height: '1.85rem',
+	padding: 0,
+	border: `1px solid ${colors.border}`,
+	borderRadius: '999px',
+	backgroundColor: 'transparent',
+	color: colors.textMuted,
+	cursor: 'pointer',
+	flexShrink: 0,
+	'&:hover': {
+		color: colors.primaryText,
+		borderColor: colors.primaryText,
+	},
+	'&:focus-visible': {
+		outline: `2px solid ${colors.primary}`,
+		outlineOffset: '2px',
+	},
+	'&[data-locked="true"]': {
+		color: colors.primary,
+		borderColor: colors.primary,
+		backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
+		'&:hover': {
+			color: colors.primaryText,
+			borderColor: colors.primaryText,
+			backgroundColor: `oklch(from ${colors.primary} l c h / 0.2)`,
+		},
+	},
 }

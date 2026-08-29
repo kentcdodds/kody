@@ -626,6 +626,7 @@ entity lookup by UUID or `kody.id`, **`package_list`**, **`package_get`**, and
 context-scope package retrievers are unaffected. Hiding is not deletion,
 community delisting, or entitlement exclusion.
 
-`package_update` is reserved for mutable package settings. Manifest-derived
-metadata and projections remain canonical in `package.json` and change only
-through save or publish.
+`package_update` is reserved for mutable package settings (`hidden`, and
+`locked: true`; unlocking is website-only). Manifest-derived metadata and
+projections remain canonical in `package.json` and change only through save or
+publish.
