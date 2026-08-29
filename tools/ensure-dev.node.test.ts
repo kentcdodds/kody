@@ -5,6 +5,7 @@ import {
 	ensureDev,
 	envWithPreferredNode26,
 	isKodyDevProcess,
+	isKodyDevSupervisor,
 	parseLsofListenPids,
 	parseSsListenPids,
 	replaceStaleKodyListeners,
@@ -60,6 +61,15 @@ test('isKodyDevProcess recognizes leftover wrangler/workerd/cli sessions and ign
 			cmdline: 'nginx: master process',
 		}),
 	).toBe(false)
+	expect(
+		isKodyDevSupervisor({ comm: 'workerd', cmdline: 'workerd --socket' }),
+	).toBe(false)
+	expect(
+		isKodyDevSupervisor({
+			comm: 'node',
+			cmdline: 'node --env-file=packages/worker/.env cli.ts',
+		}),
+	).toBe(true)
 })
 
 test('collectKodyDevKillPids walks only kody leftovers and never protected ancestors', () => {
@@ -90,7 +100,19 @@ test('collectKodyDevKillPids walks only kody leftovers and never protected ances
 			readProcess: (pid) => processes.get(pid) ?? null,
 			protectedPids: new Set([42, 99]),
 		}),
-	).toEqual([43])
+	).toEqual([])
+	expect(
+		collectKodyDevKillPids({
+			startPid: 700,
+			readProcess: () => ({
+				pid: 700,
+				ppid: 1,
+				comm: 'workerd',
+				cmdline: 'workerd --port 3742',
+			}),
+			protectedPids: new Set([1]),
+		}),
+	).toEqual([])
 	expect(
 		collectAncestorPids(43, (pid) => processes.get(pid)?.ppid ?? null),
 	).toEqual(new Set([43, 42, 41, 40]))
@@ -116,7 +138,7 @@ test('ensureDev reuses a healthy origin without starting or killing', async () =
 		},
 		startDev: () => {
 			started.push('start')
-			return { unref() {} }
+			return { unref() {}, async stop() {} }
 		},
 		sleep: async () => {},
 		now: () => 0,
@@ -140,9 +162,10 @@ test('ensureDev replaces a stale workerd leftover then starts until /health is o
 	const killed: Array<string> = []
 	let healthy = false
 	const processes = new Map<number, ProcessIdentity>([
+		[699, { pid: 699, ppid: 1, comm: 'npm', cmdline: 'npm run dev' }],
 		[
 			700,
-			{ pid: 700, ppid: 1, comm: 'workerd', cmdline: 'workerd --port 3742' },
+			{ pid: 700, ppid: 699, comm: 'workerd', cmdline: 'workerd --port 3742' },
 		],
 	])
 	const result = await ensureDev({
@@ -158,7 +181,7 @@ test('ensureDev replaces a stale workerd leftover then starts until /health is o
 		},
 		startDev: () => {
 			healthy = true
-			return { unref() {} }
+			return { unref() {}, async stop() {} }
 		},
 		sleep: async () => {},
 		now: () => 0,
@@ -171,11 +194,11 @@ test('ensureDev replaces a stale workerd leftover then starts until /health is o
 	expect(result).toEqual({
 		status: 'started',
 		origin: 'http://localhost:3742',
-		replacedPids: [700],
+		replacedPids: [699, 700],
 	})
-	expect(killed).toEqual(['700'])
+	expect(killed).toEqual(['699', '700'])
 	expect(logs[0]).toBe(
-		'Replaced stale kody listener pid=700 comm=workerd port=3742',
+		'Replaced stale kody listener pid=699 comm=npm port=3742',
 	)
 	expect(logs.at(-1)).toBe('App running at http://localhost:3742')
 })
@@ -275,4 +298,37 @@ test('envWithPreferredNode26 prepends nvm Node 26 only when the current runtime 
 		hasNodeBin: () => true,
 	})
 	expect(binDir).toBe('/home/agent/.nvm/versions/node/v26.7.0/bin')
+})
+
+test('ensureDev stops the child and surfaces output when /health never becomes ready', async () => {
+	const stopped: Array<string> = []
+	await expect(
+		ensureDev({
+			ports: [3742],
+			probeHealth: async () => false,
+			listListenerPids: () => [],
+			readProcess: () => null,
+			protectedPids: new Set([1]),
+			killProcess: () => {},
+			startDev: () => ({
+				unref() {},
+				async stop() {
+					stopped.push('stop')
+				},
+				lastOutput: () => 'Reloading local server...',
+			}),
+			sleep: async () => {},
+			now: (() => {
+				let t = 0
+				return () => {
+					t += 1
+					return t
+				}
+			})(),
+			readyTimeoutMs: 2,
+			readyPollMs: 1,
+			log: () => {},
+		}),
+	).rejects.toThrow(/Reloading local server/)
+	expect(stopped).toEqual(['stop'])
 })

@@ -32,6 +32,13 @@ export type EnsureDevResult =
 	| { status: 'reused'; origin: string }
 	| { status: 'started'; origin: string; replacedPids: Array<number> }
 
+export type StartedDevHandle = {
+	unref: () => void
+	stop: () => Promise<void>
+	hasExited?: () => boolean
+	lastOutput?: () => string
+}
+
 export type EnsureDevDeps = {
 	ports: ReadonlyArray<number>
 	probeHealth: (origin: string) => Promise<boolean>
@@ -39,7 +46,7 @@ export type EnsureDevDeps = {
 	readProcess: (pid: number) => ProcessIdentity | null
 	protectedPids: ReadonlySet<number>
 	killProcess: (pid: number, signal: NodeJS.Signals) => void
-	startDev: () => { unref: () => void }
+	startDev: () => StartedDevHandle
 	sleep: (ms: number) => Promise<void>
 	now: () => number
 	readyTimeoutMs: number
@@ -47,15 +54,26 @@ export type EnsureDevDeps = {
 	log: (line: string) => void
 }
 
-export function isKodyDevProcess(identity: {
+function normalizeCmdline(cmdline: string) {
+	return cmdline.toLowerCase().replaceAll('\0', ' ')
+}
+
+export function isWorkerdProcess(identity: { comm: string; cmdline: string }) {
+	const comm = identity.comm.toLowerCase()
+	const cmdline = normalizeCmdline(identity.cmdline)
+	return (
+		comm === 'workerd' ||
+		comm.includes('workerd') ||
+		cmdline.includes('workerd')
+	)
+}
+
+export function isKodyDevSupervisor(identity: {
 	comm: string
 	cmdline: string
-}): boolean {
-	const comm = identity.comm.toLowerCase()
-	const cmdline = identity.cmdline.toLowerCase().replaceAll('\0', ' ')
+}) {
+	const cmdline = normalizeCmdline(identity.cmdline)
 	if (cmdline.includes('ensure-dev')) return false
-	if (comm === 'workerd' || comm.includes('workerd')) return true
-	if (cmdline.includes('workerd')) return true
 	if (cmdline.includes('wrangler-env.ts') && cmdline.includes('dev')) {
 		return true
 	}
@@ -64,6 +82,10 @@ export function isKodyDevProcess(identity: {
 		return /(?:^|\s)dev(?::worker)?(?:\s|$)/.test(cmdline)
 	}
 	return false
+}
+
+export function isKodyDevProcess(identity: { comm: string; cmdline: string }) {
+	return isWorkerdProcess(identity) || isKodyDevSupervisor(identity)
 }
 
 export function collectAncestorPids(
@@ -90,19 +112,26 @@ export function collectKodyDevKillPids(input: {
 	maxWalk?: number
 }) {
 	const maxWalk = input.maxWalk ?? 8
-	const pids: Array<number> = []
+	const chain: Array<{ pid: number; identity: ProcessIdentity }> = []
 	let pid = input.startPid
 	for (let index = 0; index < maxWalk; index += 1) {
-		if (pid <= 1 || input.protectedPids.has(pid) || pids.includes(pid)) {
+		if (
+			pid <= 1 ||
+			input.protectedPids.has(pid) ||
+			chain.some((entry) => entry.pid === pid)
+		) {
 			break
 		}
 		const identity = input.readProcess(pid)
 		if (!identity || !isKodyDevProcess(identity)) break
-		pids.push(pid)
+		chain.push({ pid, identity })
 		if (identity.ppid <= 1 || identity.ppid === pid) break
 		pid = identity.ppid
 	}
-	return pids
+	if (!chain.some((entry) => isKodyDevSupervisor(entry.identity))) {
+		return []
+	}
+	return chain.map((entry) => entry.pid)
 }
 
 export function parseLsofListenPids(stdout: string) {
@@ -293,12 +322,14 @@ export async function ensureDev(deps: EnsureDevDeps): Promise<EnsureDevResult> {
 		pollMs: deps.readyPollMs,
 		now: deps.now,
 		sleep: deps.sleep,
+		isCancelled: started.hasExited,
 	})
 	if (!origin) {
-		started.unref()
+		const output = started.lastOutput?.()?.trim()
+		await started.stop()
 		throw new Error(
-			`Local app did not become ready on ${deps.ports[0]}-${deps.ports.at(-1)} within ${deps.readyTimeoutMs}ms. ` +
-				`Check wrangler output from \`npm run dev\`.`,
+			`Local app did not become ready on ${deps.ports[0]}-${deps.ports.at(-1)} within ${deps.readyTimeoutMs}ms.` +
+				(output ? `\n${output}` : ' Check wrangler output from `npm run dev`.'),
 		)
 	}
 	started.unref()
@@ -346,13 +377,14 @@ function defaultKillProcess(pid: number, signal: NodeJS.Signals) {
 	}
 }
 
-function createDefaultStartDev(env: NodeJS.ProcessEnv) {
+function createDefaultStartDev(env: NodeJS.ProcessEnv): StartedDevHandle {
 	const child = spawnInOwnProcessGroup(resolveNpmCommand(), ['run', 'dev'], {
 		stdio: ['ignore', 'pipe', 'pipe'],
 		env,
 		cwd: process.cwd(),
 	})
 	const buffered: Array<string> = []
+	let exited = false
 	const onLine = (chunk: Buffer | string) => {
 		const text = chunk.toString()
 		for (const line of text.split(/\r?\n/)) {
@@ -364,19 +396,28 @@ function createDefaultStartDev(env: NodeJS.ProcessEnv) {
 	child.stdout?.on('data', onLine)
 	child.stderr?.on('data', onLine)
 	child.once('exit', (code, signal) => {
+		exited = true
 		if (code && code !== 0) {
 			console.error(
 				`npm run dev exited (${signal ?? `code ${code}`}). Last output:\n${buffered.join('\n')}`,
 			)
 		}
 	})
+	function detachPipes() {
+		child.stdout?.removeAllListeners()
+		child.stderr?.removeAllListeners()
+		child.stdout?.destroy()
+		child.stderr?.destroy()
+	}
 	return {
+		hasExited: () => exited || child.exitCode !== null,
+		lastOutput: () => buffered.join('\n'),
 		unref() {
-			child.stdout?.resume()
-			child.stderr?.resume()
+			detachPipes()
 			child.unref()
 		},
 		async stop() {
+			detachPipes()
 			await stopChildProcessTree(child)
 		},
 	}
@@ -420,8 +461,8 @@ export async function main() {
 
 if (isExecutedDirectly(import.meta.url)) {
 	void main()
-		.then((result) => {
-			process.exitCode = result ? 0 : 1
+		.then(() => {
+			process.exit(0)
 		})
 		.catch((error) => {
 			console.error(error instanceof Error ? error.message : error)

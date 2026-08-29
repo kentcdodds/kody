@@ -84,9 +84,7 @@ async function startDev() {
 	const ready = await restartDev({ announce: false })
 	setupInteractiveCli({
 		getWorkerOrigin: () => workerOrigin,
-		restart: async () => {
-			await restartDev()
-		},
+		restart: restartDev,
 		ready,
 	})
 	shutdown = setupShutdown(
@@ -194,17 +192,18 @@ function setupShutdown(
 
 function setupInteractiveCli(options: {
 	getWorkerOrigin: () => string
-	restart: () => Promise<void>
+	restart: () => Promise<boolean>
 	ready: boolean
 }) {
 	const stdin = process.stdin
+	let ready = options.ready
 	if (!stdin.isTTY || typeof stdin.setRawMode !== 'function') {
-		if (options.ready) logAppRunning(options.getWorkerOrigin)
+		if (ready) logAppRunning(options.getWorkerOrigin)
 		return
 	}
 
 	showHelp()
-	if (options.ready) logAppRunning(options.getWorkerOrigin)
+	if (ready) logAppRunning(options.getWorkerOrigin)
 
 	readline.emitKeypressEvents(stdin)
 	stdin.setRawMode(true)
@@ -233,11 +232,13 @@ function setupInteractiveCli(options: {
 			case 'c': {
 				console.clear()
 				showHelp()
-				logAppRunning(options.getWorkerOrigin)
+				if (ready) logAppRunning(options.getWorkerOrigin)
 				break
 			}
 			case 'r': {
-				void options.restart()
+				void options.restart().then((nextReady) => {
+					ready = nextReady
+				})
 				break
 			}
 			case 'h':
