@@ -3,6 +3,7 @@ import {
 	checkOriginProductionExports,
 	checkOriginProductionExportsInRepo,
 	extractNamedExports,
+	productionExportAllowlist,
 	type OriginProductionExportsCheckResult,
 } from './check-origin-production-exports.ts'
 
@@ -10,13 +11,23 @@ const configPath = 'packages/worker/wrangler.jsonc'
 
 function createConfig(overrides: {
 	productionDurableObjects?: Array<Record<string, unknown>>
-	productionMain?: unknown
 	previewMain?: unknown
 	testMain?: unknown
 	topLevelMain?: unknown
 	testDurableObjects?: Array<Record<string, unknown>>
+	previewDurableObjects?: Array<Record<string, unknown>>
 }) {
-	const preview: Record<string, unknown> = {}
+	const preview: Record<string, unknown> = {
+		durable_objects: {
+			bindings: overrides.previewDurableObjects ?? [
+				{
+					name: 'MAILBOX',
+					class_name: 'Mailbox',
+					script_name: 'kody-platform',
+				},
+			],
+		},
+	}
 	if (overrides.previewMain !== undefined) preview.main = overrides.previewMain
 
 	const test: Record<string, unknown> = {
@@ -32,7 +43,6 @@ function createConfig(overrides: {
 		main: overrides.topLevelMain ?? './src/index.ts',
 		env: {
 			production: {
-				main: overrides.productionMain ?? './src/production-worker.ts',
 				durable_objects: {
 					bindings: overrides.productionDurableObjects ?? [
 						{
@@ -73,6 +83,20 @@ test('accepts the checked-in production/dev-test-preview split', () => {
 	expect(result).toEqual({ ok: true, errors: [] })
 })
 
+test('accepts a committed config with no env.production.main (deploy-generated only)', () => {
+	const config = createConfig({}) as {
+		env: { production: Record<string, unknown> }
+	}
+	expect(config.env.production.main).toBeUndefined()
+	const result = checkOriginProductionExports({
+		configPath,
+		config,
+		devEntrySource,
+		productionEntrySource,
+	})
+	expect(result).toEqual({ ok: true, errors: [] })
+})
+
 test('rejects a production Durable Object binding without script_name', () => {
 	const result = checkOriginProductionExports({
 		configPath,
@@ -90,7 +114,7 @@ test('rejects a production Durable Object binding without script_name', () => {
 	])
 })
 
-test('rejects the production entry exporting a locally-owned class', () => {
+test('rejects the production entry exporting a class outside the allowlist', () => {
 	const result = checkOriginProductionExports({
 		configPath,
 		config: createConfig({}),
@@ -103,7 +127,25 @@ export default originWorkerHandler
 	expect(result.ok).toBe(false)
 	expect(result.errors).toEqual([
 		expect.stringContaining(
-			'exports "Mailbox", a Durable Object/workflow class env.test owns only locally',
+			'must export exactly JobsHost, KodyFetchGateway (unexpected Mailbox)',
+		),
+	])
+})
+
+test('rejects the production entry missing an allowlisted export', () => {
+	const result = checkOriginProductionExports({
+		configPath,
+		config: createConfig({}),
+		devEntrySource,
+		productionEntrySource: `
+export { KodyFetchGateway }
+export default originWorkerHandler
+`,
+	})
+	expect(result.ok).toBe(false)
+	expect(result.errors).toEqual([
+		expect.stringContaining(
+			'must export exactly JobsHost, KodyFetchGateway (missing JobsHost)',
 		),
 	])
 })
@@ -122,6 +164,59 @@ export default originWorkerHandler
 	expect(result.errors).toEqual([
 		expect.stringContaining('does not export "Mailbox"'),
 	])
+})
+
+test('rejects a dev entry missing a class only env.preview binds (preview-bootstrap candidate)', () => {
+	const result = checkOriginProductionExports({
+		configPath,
+		config: createConfig({
+			testDurableObjects: [],
+			previewDurableObjects: [
+				{
+					name: 'STORAGE_RUNNER',
+					class_name: 'StorageRunner',
+					script_name: 'kody-runtime',
+				},
+			],
+		}),
+		devEntrySource: `
+export { KodyFetchGateway, JobsHost }
+export default originWorkerHandler
+`,
+		productionEntrySource,
+	})
+	expect(result.ok).toBe(false)
+	expect(result.errors).toEqual([
+		expect.stringMatching(
+			/does not export "StorageRunner".*env\.test or env\.preview binds it/,
+		),
+	])
+})
+
+test('accepts env.preview binding a class with script_name as long as the dev entry still exports it', () => {
+	// Preview keeps script_name at steady state, but its bootstrap deploy
+	// strips it (tools/ci/platform-worker-config.ts /
+	// runtime-worker-config.ts), so the dev entry must cover the class
+	// regardless of whether the committed config currently cross-scripts it.
+	const result = checkOriginProductionExports({
+		configPath,
+		config: createConfig({
+			testDurableObjects: [],
+			previewDurableObjects: [
+				{
+					name: 'STORAGE_RUNNER',
+					class_name: 'StorageRunner',
+					script_name: 'kody-runtime',
+				},
+			],
+		}),
+		devEntrySource: `
+export { KodyFetchGateway, JobsHost, StorageRunner }
+export default originWorkerHandler
+`,
+		productionEntrySource,
+	})
+	expect(result).toEqual({ ok: true, errors: [] })
 })
 
 test('rejects env.preview or env.test overriding main', () => {
@@ -148,7 +243,7 @@ test('rejects env.preview or env.test overriding main', () => {
 	])
 })
 
-test('rejects a top-level or env.production main that does not match the expected entries', () => {
+test('rejects a top-level main that does not match the expected dev entry', () => {
 	const wrongTopLevel = checkOriginProductionExports({
 		configPath,
 		config: createConfig({ topLevelMain: './src/other.ts' }),
@@ -159,16 +254,24 @@ test('rejects a top-level or env.production main that does not match the expecte
 	expect(wrongTopLevel.errors).toEqual([
 		expect.stringContaining('top-level "main" is "./src/other.ts"'),
 	])
+})
 
-	const wrongProduction = checkOriginProductionExports({
+test('rejects a committed env.production.main because the slim entry is deploy-generated only', () => {
+	const configWithMain = createConfig({}) as {
+		env: { production: Record<string, unknown> }
+	}
+	configWithMain.env.production.main = './src/production-worker.ts'
+	const result = checkOriginProductionExports({
 		configPath,
-		config: createConfig({ productionMain: './src/index.ts' }),
+		config: configWithMain,
 		devEntrySource,
 		productionEntrySource,
 	})
-	expect(wrongProduction.ok).toBe(false)
-	expect(wrongProduction.errors).toEqual([
-		expect.stringContaining('env.production.main is "./src/index.ts"'),
+	expect(result.ok).toBe(false)
+	expect(result.errors).toEqual([
+		expect.stringContaining(
+			'env.production.main is set ("./src/production-worker.ts")',
+		),
 	])
 })
 
@@ -183,6 +286,26 @@ export default E
 `),
 	).toEqual(expect.arrayContaining(['A', 'C', 'D', 'E', 'f']))
 	expect(extractNamedExports('export default handler')).toEqual([])
+})
+
+test('extractNamedExports parses with the TypeScript AST, ignoring export-shaped text in comments and strings', () => {
+	const source = `
+// export { ShouldNotCount }
+/**
+ * export { AlsoShouldNotCount }
+ */
+const trap = 'export { StillNotReal }'
+const template = \`export { NeitherIsThis }\`
+export { RealExport }
+`
+	expect(extractNamedExports(source)).toEqual(['RealExport'])
+})
+
+test('productionExportAllowlist is exactly KodyFetchGateway and JobsHost', () => {
+	expect([...productionExportAllowlist].sort()).toEqual([
+		'JobsHost',
+		'KodyFetchGateway',
+	])
 })
 
 test('current repository origin production/dev-test-preview split passes the guardrail', async () => {

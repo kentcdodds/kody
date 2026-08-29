@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
+import ts from 'typescript'
 import { parseJsonc } from './ci/resource-utils.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 
@@ -10,6 +11,17 @@ export const defaultWranglerConfigPath = path.join(
 )
 export const defaultDevEntryPath = './src/index.ts'
 export const defaultProductionEntryPath = './src/production-worker.ts'
+
+/**
+ * The only two `ctx.exports` WorkerEntrypoint contracts production actually
+ * calls on its own script (see the doc comment on
+ * `packages/worker/src/production-worker.ts`). Every other class
+ * `index.ts` exports is reached in production only through a cross-script
+ * binding (`script_name`) or the `RUNTIME_WORKER` service forward, so the
+ * production entry must export exactly this set — nothing more, nothing
+ * less.
+ */
+export const productionExportAllowlist = ['JobsHost', 'KodyFetchGateway']
 
 type WranglerConfig = {
 	main?: unknown
@@ -28,33 +40,58 @@ export type OriginProductionExportsCheckResult = {
 }
 
 /**
- * Every `export { A, B as C }` block, plus `export const/class/function X`
- * declarations. `index.ts` and `production-worker.ts` only use the named
- * block form today; the declaration forms are included so this keeps
- * working if either entry switches style.
+ * Every top-level `export { A, B as C }` block, plus `export const/class/
+ * function X` declarations. Parsed with the TypeScript compiler API (not
+ * regex) so comments, string/template literals, and nested scopes that
+ * merely *contain* export-shaped text (for example a docstring quoting
+ * `export { Mailbox }`) can never be mistaken for a real export.
  */
 export function extractNamedExports(source: string): Array<string> {
+	const sourceFile = ts.createSourceFile(
+		'origin-entry.ts',
+		source,
+		ts.ScriptTarget.Latest,
+		false,
+		ts.ScriptKind.TS,
+	)
 	const names = new Set<string>()
 
-	const namedExportBlockPattern = /export\s*\{([^}]*)\}/g
-	for (const match of source.matchAll(namedExportBlockPattern)) {
-		const body = match[1] ?? ''
-		for (const rawEntry of body.split(',')) {
-			const entry = rawEntry.trim()
-			if (!entry) continue
-			const asMatch = /^(\w+)\s+as\s+(\w+)$/.exec(entry)
-			if (asMatch?.[2]) {
-				names.add(asMatch[2])
-				continue
-			}
-			const identifierMatch = /^(\w+)$/.exec(entry)
-			if (identifierMatch?.[1]) names.add(identifierMatch[1])
-		}
-	}
+	const hasExportModifier = (node: ts.Node) =>
+		ts.canHaveModifiers(node) &&
+		ts
+			.getModifiers(node)
+			?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ===
+			true
 
-	const declarationExportPattern = /export\s+(?:const|class|function)\s+(\w+)/g
-	for (const match of source.matchAll(declarationExportPattern)) {
-		if (match[1]) names.add(match[1])
+	for (const statement of sourceFile.statements) {
+		if (ts.isExportDeclaration(statement)) {
+			const clause = statement.exportClause
+			if (clause && ts.isNamedExports(clause)) {
+				for (const element of clause.elements) {
+					names.add(element.name.text)
+				}
+			}
+			continue
+		}
+
+		if (!hasExportModifier(statement)) continue
+
+		if (ts.isVariableStatement(statement)) {
+			for (const declaration of statement.declarationList.declarations) {
+				if (ts.isIdentifier(declaration.name)) {
+					names.add(declaration.name.text)
+				}
+			}
+			continue
+		}
+
+		if (
+			(ts.isClassDeclaration(statement) ||
+				ts.isFunctionDeclaration(statement)) &&
+			statement.name
+		) {
+			names.add(statement.name.text)
+		}
 	}
 
 	return [...names]
@@ -103,6 +140,10 @@ function collectClassBindings(envConfig: unknown): Array<ClassBinding> {
 	return bindings
 }
 
+function classNamesOf(bindings: ReadonlyArray<ClassBinding>) {
+	return [...new Set(bindings.map((binding) => binding.class_name))].sort()
+}
+
 /**
  * Guards the origin production/dev-test-preview entry split (ADR 0034):
  *
@@ -110,17 +151,21 @@ function collectClassBindings(envConfig: unknown): Array<ClassBinding> {
  *   cross-script (`script_name`); a binding without one means production
  *   would locally own the class again, which requires exporting it from the
  *   production entry.
- * - The production entry must never export a class that `env.test` (full
- *   local ownership, no platform/runtime scripts to cross into) binds
- *   locally — that class belongs only to the dev/test/preview entry.
+ * - The production entry must export exactly `productionExportAllowlist` —
+ *   no more, no less. `env.production.main` itself is deploy-generated only
+ *   (see `tools/ci/production-resources.ts`) and is never required or
+ *   checked here.
  * - The dev/test/preview entry must export every class `env.test` binds
- *   locally, so local dev, workers-unit, and Playwright keep working.
- * - Only `env.production` may override `main`; `env.preview` and `env.test`
- *   must keep inheriting the top-level dev/test/preview entry so preview's
- *   bootstrap deploy (which briefly strips `script_name`, see
- *   docs/contributing/architecture/platform-worker-migration-runbook.md and
- *   the runtime-worker counterpart) still finds every class it needs
- *   locally.
+ *   locally, plus every class `env.preview` binds at all (regardless of
+ *   `script_name`): preview's fresh-per-PR bootstrap deploy briefly strips
+ *   `script_name` from the platform/runtime-owned bindings so its
+ *   self-contained first deploy still finds every class locally (see
+ *   `tools/ci/platform-worker-config.ts` / `runtime-worker-config.ts`), so
+ *   every preview-bound class is a bootstrap candidate whether or not the
+ *   committed config currently cross-scripts it.
+ * - No committed environment may override `main`. Production's slim entry is
+ *   applied only to the generated deploy config; local production-mode dev,
+ *   preview, and test all inherit the top-level dev/test/preview entry.
  */
 export function checkOriginProductionExports(input: {
 	configPath: string
@@ -160,36 +205,48 @@ export function checkOriginProductionExports(input: {
 	}
 
 	const testBindings = collectClassBindings(testEnv)
-	const testOwnedClassNames = [
-		...new Set(testBindings.map((binding) => binding.class_name)),
-	].sort()
+	const previewEnv = envRecord.preview
+	const previewBindings = collectClassBindings(previewEnv)
+	// Every class env.test binds locally, union every class env.preview
+	// binds at all (see the preview-bootstrap note in the function
+	// docstring) — the dev/test/preview entry must export all of them.
+	const requiredDevClassNames = classNamesOf([
+		...testBindings,
+		...previewBindings,
+	])
 
 	const devExports = new Set(extractNamedExports(input.devEntrySource))
-	const productionExports = new Set(
-		extractNamedExports(input.productionEntrySource),
-	)
+	const productionExportsList = extractNamedExports(input.productionEntrySource)
+	const productionExports = new Set(productionExportsList)
 
-	for (const className of testOwnedClassNames) {
+	for (const className of requiredDevClassNames) {
 		if (!devExports.has(className)) {
 			errors.push(
-				`${devEntryPath}: does not export "${className}", but env.test binds it locally (no script_name) in ${input.configPath}. The dev/test/preview entry must export every locally-owned Durable Object/workflow class.`,
-			)
-		}
-		if (productionExports.has(className)) {
-			errors.push(
-				`${productionEntryPath}: exports "${className}", a Durable Object/workflow class env.test owns only locally. env.production binds this class with script_name, so production must not export it (ADR 0034).`,
+				`${devEntryPath}: does not export "${className}", but env.test or env.preview binds it (including as a preview-bootstrap candidate) in ${input.configPath}. The dev/test/preview entry must export every locally-owned or bootstrap-candidate Durable Object/workflow class.`,
 			)
 		}
 	}
 
-	const productionMain = (productionEnv as Record<string, unknown>).main
-	if (productionMain !== productionEntryPath) {
+	const allowlist = new Set(productionExportAllowlist)
+	const missingAllowlisted = productionExportAllowlist.filter(
+		(name) => !productionExports.has(name),
+	)
+	const unexpectedExports = productionExportsList
+		.filter((name) => !allowlist.has(name))
+		.sort()
+	if (missingAllowlisted.length > 0 || unexpectedExports.length > 0) {
+		const parts: Array<string> = []
+		if (missingAllowlisted.length > 0) {
+			parts.push(`missing ${missingAllowlisted.join(', ')}`)
+		}
+		if (unexpectedExports.length > 0) {
+			parts.push(`unexpected ${unexpectedExports.join(', ')}`)
+		}
 		errors.push(
-			`${input.configPath}: env.production.main is ${JSON.stringify(productionMain)}, expected ${JSON.stringify(productionEntryPath)}.`,
+			`${productionEntryPath}: must export exactly ${productionExportAllowlist.join(', ')} (${parts.join('; ')}).`,
 		)
 	}
 
-	const previewEnv = envRecord.preview
 	const previewMain =
 		previewEnv && typeof previewEnv === 'object'
 			? (previewEnv as Record<string, unknown>).main
@@ -197,6 +254,13 @@ export function checkOriginProductionExports(input: {
 	if (previewMain !== undefined) {
 		errors.push(
 			`${input.configPath}: env.preview.main is set (${JSON.stringify(previewMain)}); env.preview must inherit the top-level "main" (${devEntryPath}) so its bootstrap deploy keeps every locally-owned class exported.`,
+		)
+	}
+
+	const productionMain = (productionEnv as Record<string, unknown>).main
+	if (productionMain !== undefined) {
+		errors.push(
+			`${input.configPath}: env.production.main is set (${JSON.stringify(productionMain)}); the slim production entry is deploy-generated only so local production-mode dev must inherit the top-level "main" (${devEntryPath}).`,
 		)
 	}
 
@@ -256,7 +320,7 @@ export async function main(): Promise<void> {
 		return
 	}
 	console.log(
-		'Origin production export check ok: production owns zero local Durable Object/workflow classes and the dev/test/preview entry still exports every locally-owned class.',
+		'Origin production export check ok: production exports exactly the allowlisted entrypoints, owns zero local Durable Object/workflow classes, and the dev/test/preview entry still exports every locally-owned or preview-bootstrap-candidate class.',
 	)
 }
 

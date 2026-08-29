@@ -17,6 +17,21 @@ type StartupBundleDefinition = {
 	entryFile: string
 	maxEntryBytes: number
 	forbiddenSources: ReadonlyArray<string>
+	/**
+	 * Positional entry-point override passed to `wrangler deploy`, relative
+	 * to `packageDir`. Only origin needs this: the slim production entry
+	 * (`production-worker.ts`) is reached through a deploy-generated
+	 * Wrangler config's top-level `main` override
+	 * (`tools/ci/production-resources.ts`'s `writeGeneratedWranglerConfig`)
+	 * — the committed `packages/worker/wrangler.jsonc` never points
+	 * `env.production` at it directly (see
+	 * `tools/check-origin-production-exports.ts`), so a dry-run against the
+	 * committed config alone would resolve the dev/test/preview entry
+	 * (`index.ts`) instead of the entry this check exists to guard. Platform
+	 * and runtime already commit their own top-level `main`, so they need no
+	 * override.
+	 */
+	entryOverride?: string
 }
 
 const sharedDeferredGuideSources = [
@@ -25,11 +40,29 @@ const sharedDeferredGuideSources = [
 	'/docs/guides/',
 ] as const
 
+/**
+ * The full parsed guide catalog (with bodies) must never end up inlined into
+ * any of these three main modules — see the `find_additional_modules` rule
+ * in each package's `wrangler.jsonc` and the doc comment on
+ * `tools/build-guide-catalog-modules.ts`. Checked for every bundle,
+ * independent of `forbiddenSources`: origin legitimately imports
+ * `guides/catalog.ts` (its own doc source, not the generated module) for the
+ * synchronous web `/guides` pages, so it can't just forbid every
+ * guide-related source the way platform/runtime do.
+ */
+const guideCatalogGeneratedModuleSourcePath =
+	'/packages/worker/src/generated/guide-catalog.mjs'
+const guideCatalogGeneratedModuleRelativePath = path.join(
+	'generated',
+	'guide-catalog.mjs',
+)
+
 const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 	{
 		name: 'origin',
 		packageDir: 'packages/worker',
 		entryFile: 'production-worker.js',
+		entryOverride: './src/production-worker.ts',
 		maxEntryBytes: 7_750_000,
 		forbiddenSources: ['/packages/worker/src/index.ts'],
 	},
@@ -67,6 +100,7 @@ async function inspectStartupBundle(
 		wranglerBinary,
 		[
 			'deploy',
+			...(definition.entryOverride ? [definition.entryOverride] : []),
 			'--dry-run',
 			'--outdir',
 			outputDir,
@@ -103,6 +137,22 @@ async function inspectStartupBundle(
 	if (violations.length > 0) {
 		throw new Error(
 			`${definition.name} startup bundle includes deferred-only source(s): ${violations.join(', ')}`,
+		)
+	}
+	if (
+		sources.some((source) =>
+			source.includes(guideCatalogGeneratedModuleSourcePath),
+		)
+	) {
+		throw new Error(
+			`${definition.name} startup bundle inlines the generated guide catalog (${guideCatalogGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
+		)
+	}
+	try {
+		await stat(path.join(outputDir, guideCatalogGeneratedModuleRelativePath))
+	} catch {
+		throw new Error(
+			`${definition.name} startup bundle did not emit ${guideCatalogGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
 		)
 	}
 	if (size > definition.maxEntryBytes) {

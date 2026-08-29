@@ -64,9 +64,15 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			// CI injects the app origin the same way; the deploy needs it to publish
 			// a complete custom-domain set.
 			workerVars: { APP_BASE_URL: 'https://heykody.dev' },
+			// Only the production generator overrides top-level `main` (see
+			// tools/ci/production-resources.ts) — the committed config keeps
+			// env.production on the dev/test/preview entry so this override
+			// stays deploy-generated only.
+			mainEntryPath: './src/production-worker.ts',
 		})
 
 		const productionConfig = parseJsonc<{
+			main?: unknown
 			migrations: Array<{
 				tag: string
 				deleted_classes?: Array<string>
@@ -75,6 +81,7 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			assets?: { run_worker_first?: Array<string> }
 			env?: {
 				production?: {
+					main?: unknown
 					assets?: { run_worker_first?: Array<string> }
 					d1_databases?: Array<{
 						binding: string
@@ -93,6 +100,12 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 				}
 			}
 		}>(await readFile(productionOutPath, 'utf8'))
+		// The generated production config is the one the deploy actually runs
+		// `--env production` against without a committed env.production.main
+		// to fall back on, so top-level `main` must resolve to the slim
+		// production entry here — never on the committed base config.
+		expect(productionConfig.main).toBe('./src/production-worker.ts')
+		expect(productionConfig.env?.production?.main).toBeUndefined()
 		const migrationTags = productionConfig.migrations.map(
 			(migration) => migration.tag,
 		)
@@ -175,9 +188,11 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 		})
 
 		const previewConfig = parseJsonc<{
+			main?: unknown
 			assets?: { run_worker_first?: Array<string> }
 			env?: {
 				preview?: {
+					main?: unknown
 					assets?: { run_worker_first?: Array<string> }
 					d1_databases?: Array<{
 						binding: string
@@ -248,6 +263,11 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 		// drop the workers.dev trigger (Cloudflare 1042).
 		expect(previewConfig.env?.preview?.routes).toBeUndefined()
 		expect(previewConfig.env?.preview?.workers_dev).toBe(true)
+		// Preview never overrides `main`: no `mainEntryPath` was passed above,
+		// so the generated preview config keeps inheriting the committed
+		// top-level dev/test/preview entry, same as the base config.
+		expect(previewConfig.main).toBe('./src/index.ts')
+		expect(previewConfig.env?.preview?.main).toBeUndefined()
 		expect(consoleError).toHaveBeenCalledWith(
 			`Wrote generated Wrangler config: ${previewOutPath}`,
 		)
@@ -284,6 +304,20 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 	} finally {
 		await rm(tempDir, { force: true, recursive: true })
 	}
+})
+
+test('the committed wrangler.jsonc keeps env.production on the dev/test/preview entry', async () => {
+	const config = parseJsonc<{
+		main?: unknown
+		env?: { production?: { main?: unknown } }
+	}>(await readFile(workerWranglerConfigPath, 'utf8'))
+	// The slim production origin entry (production-worker.ts, ADR 0034) is
+	// deploy-generated only (see the mainEntryPath override in the test
+	// above and tools/ci/production-resources.ts). Local
+	// `CLOUDFLARE_ENV=production` and any dry-run against this committed
+	// file must keep resolving the full index.ts dev/test/preview entry.
+	expect(config.main).toBe('./src/index.ts')
+	expect(config.env?.production?.main).toBeUndefined()
 })
 
 test('writeGeneratedWranglerConfig keeps legacy app hosts attached during a domain migration', async () => {

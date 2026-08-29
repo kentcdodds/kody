@@ -28,11 +28,14 @@ import { originWorkerHandler } from './origin-handler.ts'
  *   docs/contributing/architecture/platform-worker-migration-runbook.md and
  *   the runtime-worker counterpart).
  *
- * Production uses the slimmer `production-worker.ts` entry
- * (`env.production.main`) instead: every env.production
- * `durable_objects`/`workflows` binding sets `script_name`, so origin owns
- * zero Durable Object classes there (ADR 0034) and none of the classes below
- * need to ship in the production bundle.
+ * Production uses the slimmer `production-worker.ts` entry instead: every
+ * env.production `durable_objects`/`workflows` binding sets `script_name`,
+ * so origin owns zero Durable Object classes there (ADR 0034) and none of
+ * the classes below need to ship in the production bundle. That entry
+ * override is deploy-generated only — `tools/ci/production-resources.ts`
+ * sets the generated config's top-level `main` to it before every
+ * production deploy; this committed config never points env.production at
+ * it directly, so local `CLOUDFLARE_ENV=production` still resolves here.
  */
 export {
 	RepoSession,

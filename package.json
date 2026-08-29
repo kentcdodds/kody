@@ -43,7 +43,7 @@
     "nx-cache:smoke": "node tools/nx-remote-cache-smoke.ts",
     "runtime:build": "node ./wrangler-env.ts deploy --dry-run --outdir .wrangler/runtime-dry-run --config packages/runtime-worker/wrangler.jsonc",
     "platform:build": "node ./wrangler-env.ts deploy --dry-run --outdir .wrangler/platform-dry-run --config packages/platform-worker/wrangler.jsonc",
-    "main:build": "node ./wrangler-env.ts deploy --dry-run --outdir .wrangler/main-dry-run --env production",
+    "main:build": "node ./wrangler-env.ts deploy packages/worker/src/production-worker.ts --dry-run --outdir .wrangler/main-dry-run --env production",
     "jobs:build": "wrangler deploy --dry-run --outdir .tmp/jobs-worker-build --config packages/jobs-worker/wrangler.jsonc --env production",
     "jobs:deploy": "wrangler deploy --config packages/jobs-worker/wrangler.jsonc --env production",
     "highlight:build": "wrangler deploy --dry-run --outdir .tmp/highlight-worker-build --config packages/highlight-worker/wrangler.jsonc --env production",

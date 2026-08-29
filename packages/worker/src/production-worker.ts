@@ -3,8 +3,13 @@ import { JobsHost } from './jobs/jobs-host.ts'
 import { originWorkerHandler } from './origin-handler.ts'
 
 /**
- * Production origin Worker entrypoint (script `kody-production`, deployed
- * from `packages/worker/wrangler.jsonc`'s `env.production.main`).
+ * Production origin Worker entrypoint (script `kody-production`). Reached
+ * only through the deploy-generated Wrangler config's top-level `main`
+ * override (`tools/ci/production-resources.ts`'s
+ * `writeGeneratedWranglerConfig()`) — the committed
+ * `packages/worker/wrangler.jsonc` never points `env.production` at this
+ * file directly, so local `CLOUDFLARE_ENV=production` keeps resolving
+ * `index.ts` instead.
  *
  * ADR 0034: origin owns zero Durable Object classes in production. Every
  * env.production `durable_objects` binding sets `script_name` (kody-platform
