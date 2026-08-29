@@ -130,6 +130,7 @@ test('account files API requires the owner session and does not leak other users
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		mcpUser: { userId: 'stable-user-1' },
+		username: 'owner',
 	})
 	mockModule.loadAccountPackageFilesData.mockResolvedValue(filesPayload)
 	const success = await handler.handler({
@@ -146,6 +147,7 @@ test('account files API requires the owner session and does not leak other users
 		env: {},
 		request: expect.any(Request),
 		userId: 'stable-user-1',
+		username: 'owner',
 		packageId: 'pkg-1',
 		selectedPath: 'src/index.ts',
 		serverTiming: expect.any(Array),

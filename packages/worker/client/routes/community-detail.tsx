@@ -872,6 +872,9 @@ export function CommunityDetailRoute(handle: Handle) {
 		const ref = getListingPageRef(pathname)
 		const listingId = ref?.listingId ?? null
 
+		if (routeData && !routeData.ok) {
+			applyRouteShellData(routeData, pathname, listingId)
+		}
 		if (
 			(routeData && !routeData.ok) ||
 			(shellUnauthorized && shellLoadedForPathname === pathname)

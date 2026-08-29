@@ -12,7 +12,7 @@ import {
 } from '#universal/loader-data.ts'
 
 export type PackagePageAccess =
-	| { kind: 'redirect'; to: string }
+	| { kind: 'redirect'; to: string; shared: boolean }
 	| { kind: 'not_found' }
 	| { kind: 'unauthorized' }
 	| {
@@ -60,6 +60,9 @@ export async function loadPackagePage(input: {
 				username: target.username,
 				kodyId: target.kodyId,
 			}),
+			// Listing moves are public. Unlisted renames are owner-only and
+			// must not land in a shared cache.
+			shared: Boolean(target.listingId),
 		}
 	}
 

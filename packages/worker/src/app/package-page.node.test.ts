@@ -174,6 +174,7 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 	).resolves.toEqual({
 		kind: 'redirect',
 		to: '/@owner/renamed',
+		shared: false,
 	})
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
@@ -189,5 +190,6 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 	).resolves.toEqual({
 		kind: 'redirect',
 		to: '/@owner/notes',
+		shared: true,
 	})
 })

@@ -44,9 +44,24 @@ const reportReasonSchema = z
  * for an hour rather than forever, and only for requests shaped like this one:
  * the same URL serves frame HTML when the target header is present.
  */
-function redirectToCanonicalPath(input: { path: string; url: URL }) {
+function redirectToCanonicalPath(input: {
+	path: string
+	url: URL
+	cache?: 'public' | 'private'
+}) {
 	const destination = new URL(input.path, input.url)
 	destination.search = input.url.search
+	const cache = input.cache ?? 'public'
+	if (cache === 'private') {
+		return new Response(null, {
+			status: 302,
+			headers: {
+				location: destination.toString(),
+				'cache-control': 'private, no-store',
+				vary: `${REMIX_FRAME_TARGET_HEADER}, Cookie`,
+			},
+		})
+	}
 	return new Response(null, {
 		status: 301,
 		headers: {
@@ -184,7 +199,11 @@ export function createCommunityPackageHandler(env: Env) {
 				kodyId: params.kodyId,
 			})
 			if (page.kind === 'redirect') {
-				return redirectToCanonicalPath({ path: page.to, url })
+				return redirectToCanonicalPath({
+					path: page.to,
+					url,
+					cache: page.shared ? 'public' : 'private',
+				})
 			}
 			if (page.kind === 'not_found') {
 				return renderPackageNotFoundPage({ request, env })

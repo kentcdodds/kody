@@ -404,3 +404,47 @@ test('package page URL resolves unpublished saved packages and listed ones', asy
 		}),
 	).resolves.toBeNull()
 })
+
+test('package page URL attaches the saved package when listing kody id lags a rename', async () => {
+	const pkg = await createPublishedPackage('listing-lag')
+	await runSql(
+		`UPDATE saved_packages SET kody_id = 'listing-lag-two' WHERE id = ?`,
+		pkg.packageId,
+	)
+	await retirePackageKodyId({
+		db: env.APP_DB,
+		userId: pkg.userId,
+		packageId: pkg.packageId,
+		oldKodyId: pkg.kodyId,
+		newKodyId: 'listing-lag-two',
+	})
+
+	await expect(
+		resolvePackagePageUrl({
+			db: env.APP_DB,
+			username: pkg.username,
+			kodyId: pkg.kodyId,
+		}),
+	).resolves.toMatchObject({
+		kind: 'package',
+		username: pkg.username,
+		kodyId: 'listing-lag-two',
+		userId: pkg.userId,
+		listingId: pkg.listingId,
+		savedPackage: { id: pkg.packageId, kodyId: 'listing-lag-two' },
+	})
+	await expect(
+		resolvePackagePageUrl({
+			db: env.APP_DB,
+			username: pkg.username,
+			kodyId: 'listing-lag-two',
+		}),
+	).resolves.toMatchObject({
+		kind: 'package',
+		username: pkg.username,
+		kodyId: 'listing-lag-two',
+		userId: pkg.userId,
+		listingId: pkg.listingId,
+		savedPackage: { id: pkg.packageId, kodyId: 'listing-lag-two' },
+	})
+})

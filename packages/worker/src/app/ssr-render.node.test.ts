@@ -36,6 +36,7 @@ import {
 import { planLimits } from '#universal/plans.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
 import type * as CommunitySocialRepo from '#worker/community/social-repo.ts'
+import type * as PackageUrlModule from '#worker/community/package-url.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -77,8 +78,7 @@ vi.mock('#app/community-package-route.ts', () => ({
 }))
 
 vi.mock('#worker/community/package-url.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/community/package-url.ts')>()
+	const actual = await importOriginal<typeof PackageUrlModule>()
 	return {
 		...actual,
 		resolvePackagePageUrl: (...args: Array<unknown>) =>
@@ -1735,6 +1735,61 @@ test('listing-uuid URLs redirect to the canonical pair when possible and keep se
 		ok: true,
 		listingId: 'listing-detail-1',
 	})
+})
+
+test('unlisted package rename redirects stay owner-only and uncached', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const ownerUserId = testStableUserIdFromEmail('owner@example.com')
+	const env = createTestEnv(
+		createUserTestDb([
+			{
+				id: 1,
+				email: 'owner@example.com',
+				username: 'owner',
+				password_hash: 'unused',
+				stable_user_id: ownerUserId,
+				created_at: new Date(0).toISOString(),
+				updated_at: new Date(0).toISOString(),
+			},
+		]),
+	)
+	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'redirect',
+		username: 'owner',
+		kodyId: 'renamed',
+		userId: ownerUserId,
+		listingId: null,
+	})
+
+	const anonymous = await createCommunityPackageHandler(env).handler({
+		request: new Request('https://example.com/@owner/old-notes'),
+		url: new URL('https://example.com/@owner/old-notes'),
+		params: { username: 'owner', kodyId: 'old-notes' },
+	} as never)
+	expect(anonymous.status).toBe(404)
+
+	const cookie = await createAuthCookie(
+		{
+			stableUserId: ownerUserId,
+			email: 'owner@example.com',
+			rememberMe: false,
+		} satisfies AuthSession,
+		false,
+	)
+	const ownerRedirect = await createCommunityPackageHandler(env).handler({
+		request: new Request('https://example.com/@owner/old-notes', {
+			headers: { Cookie: cookie },
+		}),
+		url: new URL('https://example.com/@owner/old-notes'),
+		params: { username: 'owner', kodyId: 'old-notes' },
+	} as never)
+	expect(ownerRedirect.status).toBe(302)
+	expect(ownerRedirect.headers.get('location')).toBe(
+		'https://example.com/@owner/renamed',
+	)
+	expect(ownerRedirect.headers.get('cache-control')).toBe('private, no-store')
+	expect(ownerRedirect.headers.get('vary')).toBe('x-remix-target, Cookie')
 })
 
 test('renderAppPage renders the redesigned blog post', async () => {
