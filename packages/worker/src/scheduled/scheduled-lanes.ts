@@ -3,7 +3,9 @@ import { checkAuthDenialBurstAndNotify } from '#app/auth-denial-alerts.ts'
 import { checkEmailDeliveryBurstAndNotify } from '#app/email-delivery-alerts.ts'
 import { refreshFleetPackageErrorRateAndMaybeAlert } from '#app/fleet-package-error-rate-alerts.ts'
 import { pruneRetention } from '#app/retention.ts'
+import { reconcileKitSubscribers } from '#worker/kit/subscriber-sync.ts'
 import { sendUserEntitlementWarningEmails } from '#app/user-entitlement-warning-emails.ts'
+import { sendUserErrorRateEmails } from '#app/user-error-rate-emails.ts'
 import { emitFleetEntitlementCrossingEvents } from '#app/usage-entitlement-alerts.ts'
 import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
@@ -150,11 +152,34 @@ export async function runScheduledLane(input: {
 				console.warn('user-entitlement-warning-emails-failed', error)
 				userWarnings = { status: 'failed' }
 			}
+			let errorRateEmails:
+				| Awaited<ReturnType<typeof sendUserErrorRateEmails>>
+				| { status: 'failed' }
+			try {
+				errorRateEmails = await sendUserErrorRateEmails({
+					env: input.env,
+					now: input.scheduledAt,
+				})
+			} catch (error) {
+				console.warn('user-error-rate-emails-failed', error)
+				errorRateEmails = { status: 'failed' }
+			}
 			const ops = await emitFleetEntitlementCrossingEvents({
 				env: input.env,
 				now: input.scheduledAt,
 			})
-			return { ...ops, userWarnings }
+			return { ...ops, userWarnings, errorRateEmails }
+		}
+		case 'kit_subscriber_sync': {
+			try {
+				return await reconcileKitSubscribers({
+					env: input.env,
+					now: input.scheduledAt,
+				})
+			} catch (error) {
+				console.warn('kit-subscriber-sync-failed', error)
+				return { status: 'failed' }
+			}
 		}
 		// DR export lanes are dispatched on cadence by the jobs worker without
 		// access to DR configuration; both ticks exit cheaply with a

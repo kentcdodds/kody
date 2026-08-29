@@ -18,6 +18,7 @@ import {
 import { handleStatelessMcpRequest } from './mcp/stateless-lane.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 
 export const mcpResourcePath = '/mcp'
 export const protectedResourceMetadataPath =
@@ -307,10 +308,24 @@ export async function handleMcpRequest({
 		})(),
 	})
 	ctx.waitUntil(
-		stampFirstMcpConnected(env.APP_DB, {
-			stableUserId: mcpUser.userId,
-			clientName: classification.clientName || null,
-		}),
+		(async () => {
+			const before = await env.APP_DB.prepare(
+				`SELECT first_mcp_connected_at FROM users WHERE stable_user_id = ?`,
+			)
+				.bind(mcpUser.userId)
+				.first<{ first_mcp_connected_at: string | null }>()
+			await stampFirstMcpConnected(env.APP_DB, {
+				stableUserId: mcpUser.userId,
+				clientName: classification.clientName || null,
+			})
+			if (!before?.first_mcp_connected_at) {
+				scheduleKitSubscriberSync({
+					env,
+					stableUserId: mcpUser.userId,
+					email: mcpUser.email,
+				})
+			}
+		})(),
 	)
 
 	return await withAccountWriteLease({

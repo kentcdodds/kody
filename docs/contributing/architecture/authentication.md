@@ -104,6 +104,19 @@ Account signup Kit tagging (password and OAuth signup):
 - Leaves existing tags alone (including `waitlist::kody`)
 - Best-effort only: Kit errors or a missing key never fail account creation
 
+Exist-only Kit subscriber sync (`packages/worker/src/kit/subscriber-sync.ts`)
+then keeps tags in step with account facts. Lookup by email; skip if missing;
+add lifecycle tags; remove only paid tags on cancel. Call sites: signup, email
+verify, first MCP connection, first saved package, Stripe plan refresh, and the
+hourly `kit_subscriber_sync` lane. Tags:
+
+- `signed_up::kody`
+- `verified::kody`
+- `agent_connected::kody`
+- `activated::kody`
+- `standard::kody` / `pro::kody` (cleared when the Stripe plan is no longer
+  paid)
+
 The `invites` table stores operator-created invite codes:
 
 - `code` is the primary key shown to the invited user

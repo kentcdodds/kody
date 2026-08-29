@@ -21,6 +21,7 @@ export const scheduledLaneNames = [
 	'auth_denial_alert',
 	'email_delivery_alert',
 	'usage_entitlement_alert',
+	'kit_subscriber_sync',
 	'dr_export',
 	'dr_export_watchdog',
 	'job_schedule_watchdog',
@@ -114,6 +115,10 @@ export function shouldRunUsageEntitlementAlertCron(now: Date) {
 	return now.getUTCMinutes() === 0
 }
 
+export function shouldRunKitSubscriberSyncCron(now: Date) {
+	return now.getUTCMinutes() === 0
+}
+
 /**
  * Nightly DR export window: roughly 00:30–06:10 UTC on the worker's
  * every-5-minute cron (~68 ticks × 20 s ≈ 22 minutes of staging work).
@@ -187,6 +192,9 @@ export function getScheduledLaneCadence(
 	}
 	if (shouldRunUsageEntitlementAlertCron(scheduledAt)) {
 		lanes.push('usage_entitlement_alert')
+	}
+	if (shouldRunKitSubscriberSyncCron(scheduledAt)) {
+		lanes.push('kit_subscriber_sync')
 	}
 	if (
 		shouldRunDrExportCron(scheduledAt) ||

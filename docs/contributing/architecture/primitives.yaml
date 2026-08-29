@@ -142,6 +142,8 @@ primitives:
       - packages/worker/src/app/handlers/waiting-list.ts
       - packages/worker/src/app/kit-waitlist.ts
       - packages/worker/src/app/kit-signup.ts
+      - packages/worker/src/kit/subscriber-sync.ts
+      - packages/worker/src/app/kit-subscriber-sync.ts
       - packages/worker/src/app/handlers/account-connections.ts
       - packages/worker/src/discord/guild-role.ts
       - packages/worker/src/app/oauth-

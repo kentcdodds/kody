@@ -220,7 +220,13 @@ Optional Worker secrets / vars for the public `/signup` waiting-list form
   (defaults to "Kody Waitlist Welcome", from `hello@kentcdodds.com`).
 - `KIT_SIGNED_UP_TAG_ID` — optional override for the Kit tag applied on account
   signup when the email already exists in Kit (defaults to `signed_up::kody`).
-  Signup never creates Kit subscribers and never fails when Kit is unset.
+  Account events never create Kit subscribers and never fail when Kit is unset.
+  When a subscriber already exists, lifecycle tags are added in place
+  (`signed_up::kody`, `verified::kody`, `agent_connected::kody`,
+  `activated::kody`, plus `standard::kody` / `pro::kody` from Stripe). Paid tags
+  are removed on cancel. The hourly `kit_subscriber_sync` lane reconciles the
+  same exist-only tags. Waitlist joins still create subscribers via
+  `POST /waiting-list`.
 
 See [`architecture/authentication.md`](./architecture/authentication.md).
 

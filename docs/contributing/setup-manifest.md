@@ -550,12 +550,11 @@ Configure these GitHub Actions secrets and variables for workflows:
   Discord guild join and role sync. Synced to the Worker under the same names.
   The bot needs Create Instant Invite and Manage Roles.)
 - `KIT_API_KEY` (optional GitHub / Worker secret; Kit / kit.com API key for
-  `/waiting-list` signup and best-effort `signed_up::kody` tagging on account
-  signup when the email already exists in Kit. Production deploy syncs it when
-  set; without it, production waiting-list joins return 503 while the rest of
-  the app still deploys (account signup simply skips Kit tagging). Preview
-  deploys intentionally omit the key so preview/E2E joins do not write to the
-  production Kit audience. Create a Kit API key at
+  `/waiting-list` signup and exist-only lifecycle tagging when the email already
+  exists in Kit. Production deploy syncs it when set; without it, production
+  waiting-list joins return 503 while the rest of the app still deploys (account
+  events skip Kit). Preview deploys intentionally omit the key so preview/E2E
+  joins do not write to the production Kit audience. Create a Kit API key at
   https://app.kit.com/account_settings/developer_settings and use the same value
   as the Kody user secret `kitApiKey` when convenient.)
 - `STRIPE_SECRET_KEY` (optional GitHub / Worker secret; Stripe secret API key
