@@ -64,11 +64,10 @@ fetches billed Cursor usage for cost, and you pass `model` from metadata.
 
 **model (deterministic — never infer):**
 
-- In a Cursor Cloud Agent VM, read the model that served this turn: curl -fsS
-  --unix-socket "${CURSOR_AGENT_SOCKET:-/run/cursor/api.sock}"
-  http://cursor-agent/v1/meta-data/turn/model
-  Auto resolves to the concrete model that served, not Auto.
-  See https://cursor.com/docs/cloud-agent/metadata
+- In a Cursor Cloud Agent VM, read the model that served this turn:
+  `curl -fsS --unix-socket "${CURSOR_AGENT_SOCKET:-/run/cursor/api.sock}" http://cursor-agent/v1/meta-data/turn/model`.
+  Auto resolves to the concrete model that served, not Auto. See
+  https://cursor.com/docs/cloud-agent/metadata
 - Outside a managed VM, pass the model.id used at create/launch if recorded.
 - If missing, omit model so the export posts Model pending — do not invent one.
 
