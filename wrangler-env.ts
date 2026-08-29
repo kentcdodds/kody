@@ -1,5 +1,6 @@
 import { type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { appendFile } from 'node:fs/promises'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import net from 'node:net'
@@ -26,6 +27,24 @@ const portWaitTimeoutMs = 5000
 const args = process.argv.slice(2)
 const defaultWranglerConfigPath = getDefaultWranglerConfigPath()
 
+async function writeAgentLog(
+	hypothesisId: string,
+	location: string,
+	message: string,
+	data: Record<string, unknown>,
+) {
+	await appendFile(
+		'/opt/cursor/logs/debug.log',
+		`${JSON.stringify({
+			hypothesisId,
+			location,
+			message,
+			data,
+			timestamp: Date.now(),
+		})}\n`,
+	)
+}
+
 const hasEnvFlag = args.includes('--env') || args.includes('-e')
 const isDevCommand = args[0] === 'dev'
 const hasPortFlag = args.includes('--port')
@@ -39,6 +58,16 @@ const hasInspectorPortFlag = args.some(
 const commandArgs = [...args]
 let shouldAddRuntimeDevConfig = false
 let shouldAddPlatformDevConfig = false
+
+// #region agent log
+await writeAgentLog('CD', 'wrangler-env.ts:entry', 'wrangler wrapper entered', {
+	pid: process.pid,
+	command: args[0] ?? null,
+	envName,
+	hasConfigFlag,
+	isDevCommand,
+})
+// #endregion
 
 if (
 	!hasConfigFlag &&
@@ -118,9 +147,16 @@ const isRuntimeWorkerConfig = Boolean(
 const isPlatformWorkerConfig = Boolean(
 	configArgValue?.includes('platform-worker'),
 )
+const isDefaultWorkerConfig =
+	configArgValue !== undefined &&
+	resolveWranglerConfigPath(configArgValue, process.cwd()) ===
+		resolveWranglerConfigPath(defaultWranglerConfigPath, process.cwd())
 if (
 	isWorkerBuildCommand &&
-	(!hasConfigFlag || isRuntimeWorkerConfig || isPlatformWorkerConfig)
+	(!hasConfigFlag ||
+		isDefaultWorkerConfig ||
+		isRuntimeWorkerConfig ||
+		isPlatformWorkerConfig)
 ) {
 	await ensureWorkerBundlerModules()
 	await ensureGuideCatalogModules()
@@ -236,6 +272,21 @@ const localWranglerPath = path.join(
 const wranglerCommand =
 	(existsSync(localWranglerPath) && localWranglerPath) ||
 	resolveLocalBinary('wrangler')
+
+const configPaths = commandArgs.flatMap((arg, index) => {
+	if (arg === '--config') return [commandArgs[index + 1] ?? '<missing>']
+	if (arg.startsWith('--config=')) return [arg.slice('--config='.length)]
+	return []
+})
+// #region agent log
+await writeAgentLog('CD', 'wrangler-env.ts:before-spawn', 'spawning wrangler', {
+	pid: process.pid,
+	command: args[0] ?? null,
+	envName,
+	configPaths,
+	configCount: configPaths.length,
+})
+// #endregion
 
 const proc = spawnChildProcess(wranglerCommand, commandArgs, {
 	stdio: ['inherit', 'inherit', 'inherit'],

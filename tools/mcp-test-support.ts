@@ -1,6 +1,6 @@
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { appendFile, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -32,6 +32,24 @@ const localhost = '127.0.0.1'
 const defaultWaitTimeoutMs = process.env.CI ? 60_000 : 45_000
 const perAttemptFetchTimeoutMs = 5_000
 const maxPortBindRetries = 5
+
+async function writeAgentLog(
+	hypothesisId: string,
+	location: string,
+	message: string,
+	data: Record<string, unknown>,
+) {
+	await appendFile(
+		'/opt/cursor/logs/debug.log',
+		`${JSON.stringify({
+			hypothesisId,
+			location,
+			message,
+			data,
+			timestamp: Date.now(),
+		})}\n`,
+	)
+}
 
 type TestUser = {
 	email: string
@@ -106,6 +124,12 @@ export async function startDevServer(
 				'--show-interactive-dev-session=false',
 				'--log-level',
 				'error',
+				// MCP smoke journeys do not call JOBS or HIGHLIGHT. Passing the
+				// origin config explicitly keeps wrangler-env from attaching those
+				// secondary configs; Wrangler's multi-config additional-module
+				// watcher can reload forever on Cloud Agent overlay filesystems.
+				'--config',
+				'packages/worker/wrangler.jsonc',
 				'--var',
 				`APP_BASE_URL:${origin}`,
 				'--var',
@@ -186,6 +210,9 @@ async function startDevServerWithCloudflareMock(persistDir: string) {
 					'--show-interactive-dev-session=false',
 					'--log-level',
 					'error',
+					// Keep this smoke server origin-only; see startDevServer above.
+					'--config',
+					'packages/worker/wrangler.jsonc',
 					'--var',
 					`APP_BASE_URL:${origin}`,
 					'--var',
@@ -609,8 +636,22 @@ async function waitForHttpReady(input: {
 	getStdout: () => string
 	getStderr: () => string
 }) {
+	const startedAt = Date.now()
+	let attemptCount = 0
+	// #region agent log
+	await writeAgentLog(
+		'CD',
+		'tools/mcp-test-support.ts:readiness-entry',
+		'readiness polling started',
+		{
+			url: input.url.toString(),
+			timeoutMs: defaultWaitTimeoutMs,
+		},
+	)
+	// #endregion
 	const deadline = Date.now() + defaultWaitTimeoutMs
 	while (Date.now() < deadline) {
+		attemptCount += 1
 		const exitCode = await Promise.race([
 			input.exited,
 			delay(200).then(() => null),
@@ -641,6 +682,19 @@ async function waitForHttpReady(input: {
 		}
 	}
 
+	// #region agent log
+	await writeAgentLog(
+		'CDE',
+		'tools/mcp-test-support.ts:readiness-timeout',
+		'readiness polling timed out',
+		{
+			attemptCount,
+			durationMs: Date.now() - startedAt,
+			stdout: stripVTControlCharacters(input.getStdout()).slice(-8000),
+			stderr: stripVTControlCharacters(input.getStderr()).slice(-8000),
+		},
+	)
+	// #endregion
 	throw new Error(
 		[
 			`Timed out waiting for ${input.label} at ${input.url.toString()}.`,
