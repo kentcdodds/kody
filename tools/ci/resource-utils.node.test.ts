@@ -890,6 +890,13 @@ test('Cloudflare API requests retry gateway HTML/text blips then succeed', async
 			new Error('Cloudflare API request failed (400): invalid queue name'),
 		),
 	).toBe(false)
+	expect(
+		isRetryableCloudflareApiError(
+			new Error(
+				'Malformed Cloudflare response (200) for /workers/scripts/kody-runtime: --boundary',
+			),
+		),
+	).toBe(false)
 })
 
 test('ensureArtifactsAccountEventSubscription creates account-level lifecycle subscription', async () => {
