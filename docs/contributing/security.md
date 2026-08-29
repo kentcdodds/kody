@@ -452,8 +452,8 @@ blast radius:
   the audited `resume_email_outbound` admin action clears it after review. The
   `/admin/insights` "Email delivery health" chart shows platform-wide outcome
   trends so reputation trouble is visible before providers act on it. The hourly
-  `email_delivery_alert` cron pages admins on a platform-wide burst (see above)
-  without replacing this per-user pause.
+  `email_delivery_alert` cron fans `email.delivery.burst` on a platform-wide
+  spike (see above) without replacing this per-user pause.
 - **Compute quotas.** `execute_calls_per_day` and `outbound_fetches_per_day`
   entitlements bound sandbox compute and egress volume per user per day (see
   [`architecture/entitlements.md`](./architecture/entitlements.md)).

@@ -167,9 +167,9 @@ Operators may attach a logo per platform app (`admin_platform_oauth_app_save`
 `logoBase64`; `null` clears). Uploads accept SVG, PNG, JPEG, or WebP. The shared
 community-icon pipeline sanitizes SVG, then Cloudflare Images fits every
 accepted source to a 256-pixel WebP (`fit: scale-down`, quality 90), so a newly
-ingested asset is stored and served as WebP. GET paths that still hold a
-pre-ingest object (`iconFitVersion` other than `2`) rewrite the hashed key in
-place; if Images fails they fall back to the original bytes so the mark still
+ingested asset is stored and served as WebP. GET paths whose stored object
+predates ingest fitting (`iconFitVersion` other than `2`) rewrite the hashed key
+in place; if Images fails they fall back to the original bytes so the mark still
 renders. Assets live in the `COMMUNITY_ASSETS` R2 bucket under content-hashed
 `platform-oauth-app-logos/{slug}/` keys (operator-owned, like the app row);
 `platform_oauth_apps.logo_key` / `logo_content_type` point at the current asset.
