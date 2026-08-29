@@ -1789,7 +1789,7 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	).toBeNull()
 
 	const errors = [
-		capabilityError,
+		hostBatchError,
 		new Error(createMissingSecretMessage('missingToken')),
 		new Error('kody is not defined'),
 		new Error(unboundStorageMessage),

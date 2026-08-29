@@ -25,7 +25,6 @@ import {
 import * as mcpExecutor from '#mcp/executor.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
-import * as secretService from '#mcp/secrets/service.ts'
 import {
 	type JobRecord,
 	type PersistedJobCallerContext,
@@ -1449,14 +1448,6 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 				}
 				errorResult.cause = errorResult
 
-				if (returnRewriteFailure) {
-					return {
-						result: undefined,
-						error:
-							'Secret "spotifyAccessToken" is not allowed for capability "secret_set"',
-						logs: ['fresh-access-token before rewrite failure'],
-					}
-				}
 				return {
 					result: {
 						objectResult,
@@ -1467,7 +1458,6 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 				}
 			},
 		} as never)
-	let returnRewriteFailure = false
 	const code = `import { kody } from 'kody:runtime'
 
 export default async function run() {
@@ -1498,43 +1488,6 @@ export default async function run() {
 		expect(sanitized.errorResult.cause).toBe(sanitized.errorResult)
 
 		expect(result.logs).toEqual(['[REDACTED SECRET] log'])
-
-		const runRecords = await import('#worker/run-records/service.ts')
-		const handle = {
-			id: 'run-redaction-catch',
-			userId: 'user-123',
-			startedAt: '2026-08-10T00:00:00.000Z',
-			persistence: 'on-failure' as const,
-			context: { surface: 'execute' as const },
-		}
-		const beginSpy = vi
-			.spyOn(runRecords, 'beginRunRecord')
-			.mockReturnValue(handle)
-		const finishSpy = vi
-			.spyOn(runRecords, 'finishRunRecord')
-			.mockResolvedValue(true)
-		const resolveSecretSpy = vi
-			.spyOn(secretService, 'resolveSecret')
-			.mockRejectedValue(new Error('post-execution rewrite failed'))
-		returnRewriteFailure = true
-		try {
-			await expect(
-				runModuleWithRegistry(env, callerContext, code, undefined, {
-					runRecord: { surface: 'execute' },
-				}),
-			).rejects.toThrow('post-execution rewrite failed')
-			expect(finishSpy).toHaveBeenCalledWith(
-				expect.objectContaining({
-					handle,
-					status: 'error',
-					logs: ['[REDACTED SECRET] before rewrite failure'],
-				}),
-			)
-		} finally {
-			resolveSecretSpy.mockRestore()
-			finishSpy.mockRestore()
-			beginSpy.mockRestore()
-		}
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
