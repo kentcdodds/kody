@@ -71,7 +71,6 @@ const userSecretResolved = {
 	value: 'secret',
 	scope: 'user' as const,
 	allowedHosts: [] as Array<string>,
-	allowedCapabilities: [] as Array<string>,
 	allowedPackages: [] as Array<string>,
 }
 
@@ -234,7 +233,6 @@ test('assertCanSetSecrets fails closed for mutate grants before any provider wor
 		value: 'secret',
 		scope: 'user',
 		allowedHosts: [],
-		allowedCapabilities: [],
 		allowedPackages: [],
 	})
 

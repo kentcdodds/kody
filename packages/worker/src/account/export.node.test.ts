@@ -1012,7 +1012,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 			description,
 			encrypted_value,
 			allowed_hosts,
-			allowed_capabilities,
 			allowed_packages,
 			lookup_hash,
 			created_at,
@@ -1024,7 +1023,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 			'API key',
 			'encrypted-secret-value',
 			'["api.example.com"]',
-			'["fetch"]',
 			'["@user/pkg"]',
 			'lookup-hash',
 			'2026-07-05',
@@ -1094,7 +1092,6 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 			bucket_id: 'secret-bucket-a',
 			name: 'api-key',
 			allowed_hosts: '["api.example.com"]',
-			allowed_capabilities: '["fetch"]',
 			allowed_packages: '["@user/pkg"]',
 		}),
 	])

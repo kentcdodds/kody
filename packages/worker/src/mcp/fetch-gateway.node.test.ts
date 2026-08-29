@@ -79,7 +79,6 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 			value: 'secret-value',
 			scope: 'user',
 			allowedHosts: [],
-			allowedCapabilities: [],
 		})
 	try {
 		await expandSecretPlaceholders({ request: createRequest(), props, env })
@@ -107,7 +106,6 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 			value: 'secret-value',
 			scope: 'user',
 			allowedHosts: ['example.com'],
-			allowedCapabilities: [],
 		})
 	try {
 		const transformed = await expandSecretPlaceholders({
@@ -134,7 +132,6 @@ test('fetch gateway expands secret placeholders in URL paths after Request seria
 			value: name === 'telegramBotToken' ? telegramToken : probeValue,
 			scope: 'user',
 			allowedHosts: ['api.telegram.org', 'api.notion.com', 'api.example.com'],
-			allowedCapabilities: [],
 		}))
 	try {
 		const pathOnlyRequest = new Request(
@@ -198,7 +195,6 @@ test('fetch gateway expands secret placeholders in URL paths after Request seria
 			value: telegramToken,
 			scope: 'user',
 			allowedHosts: [],
-			allowedCapabilities: [],
 		})
 	try {
 		await expandSecretPlaceholders({
@@ -278,7 +274,6 @@ test('fetch gateway requires package approval before resolving user secrets', as
 			value: 'secret-value',
 			scope: 'user',
 			allowedHosts: ['example.com'],
-			allowedCapabilities: [],
 			allowedPackages: [],
 		})
 		.mockResolvedValueOnce({
@@ -286,7 +281,6 @@ test('fetch gateway requires package approval before resolving user secrets', as
 			value: 'secret-value',
 			scope: 'user',
 			allowedHosts: ['example.com'],
-			allowedCapabilities: [],
 			allowedPackages: ['pkg-1'],
 		})
 
@@ -371,7 +365,6 @@ test('fetch gateway gates integration-owned token names by the connection grant,
 			value: 'oauth-access',
 			scope: 'user',
 			allowedHosts: ['example.com'],
-			allowedCapabilities: [],
 			allowedPackages: [],
 		})
 	const ownerSpy = vi
@@ -441,7 +434,6 @@ test('opt-out header controls secret resolution and strips itself from forwarded
 			value: 'secret-value',
 			scope: 'user',
 			allowedHosts: ['example.com'],
-			allowedCapabilities: [],
 		})
 		const onRequest = new Request('https://example.com/api', {
 			method: 'POST',
@@ -480,7 +472,6 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 			value: 'secret-value',
 			scope: 'user',
 			allowedHosts: ['discord.com', 'example.com'],
-			allowedCapabilities: [],
 		})
 	try {
 		const binaryBytes = new Uint8Array([
@@ -583,7 +574,6 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 			value: 'secret value+/&=',
 			scope: 'user',
 			allowedHosts: ['example.com'],
-			allowedCapabilities: [],
 		})
 		const formBody = new URLSearchParams({
 			grant_type: 'refresh_token',
@@ -630,7 +620,6 @@ test('fetch gateway derives Basic Auth header and enforces host approval', async
 				value: values[name] ?? null,
 				scope: name in values ? 'user' : null,
 				allowedHosts: name in values ? ['api-m.paypal.com'] : [],
-				allowedCapabilities: [],
 			}
 		})
 	const request = new Request('https://api-m.paypal.com/v1/oauth2/token', {
@@ -690,7 +679,6 @@ test('fetch gateway derives Basic Auth header and enforces host approval', async
 			value: name === 'paypalClientId' ? 'client-id' : null,
 			scope: name === 'paypalClientId' ? 'user' : null,
 			allowedHosts: name === 'paypalClientId' ? ['api-m.paypal.com'] : [],
-			allowedCapabilities: [],
 		}))
 		const missingSecretRequest = new Request(
 			'https://api-m.paypal.com/v1/oauth2/token',
@@ -717,7 +705,6 @@ test('fetch gateway derives Basic Auth header and enforces host approval', async
 					value: values[name] ?? null,
 					scope: name in values ? 'user' : null,
 					allowedHosts: allowedHosts[name as keyof typeof allowedHosts] ?? [],
-					allowedCapabilities: [],
 				}
 			})
 			const blockedRequest = new Request(
@@ -990,7 +977,6 @@ test('gateway fetch metering never derives a hostname from expanded secret place
 			value: 'resolved-secret-value',
 			scope: 'user',
 			allowedHosts: ['example.com'],
-			allowedCapabilities: [],
 		})
 	// Node's Request rejects path-only URLs; workerd allows them for kody outbound fetch.
 	const createPathOnlyRequest = (url: string) =>

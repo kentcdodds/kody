@@ -1,9 +1,7 @@
 import { expect, test } from 'vitest'
-import { normalizeAllowedCapabilities as serverNormalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedHosts as serverNormalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { normalizeAllowedPackages as serverNormalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import {
-	normalizeAllowedCapabilities,
 	normalizeAllowedHosts,
 	normalizeAllowedPackages,
 } from './secret-normalization.ts'
@@ -37,31 +35,6 @@ test('client secret allowlist normalizers match server and collapse empties/dupl
 	])
 	expect(normalizeAllowedHosts(['', '   ', 'dup.test', 'dup.test'])).toEqual([
 		'dup.test',
-	])
-
-	const capabilityFixtures = [
-		'  secret_set  ',
-		'mcp:github',
-		'remote:home',
-		'a',
-		'B',
-		'secret_set',
-		'',
-		'   ',
-	]
-	const capabilityResult = normalizeAllowedCapabilities(capabilityFixtures)
-	expect(capabilityResult).toEqual(
-		serverNormalizeAllowedCapabilities(capabilityFixtures),
-	)
-	expect(capabilityResult).toEqual([
-		'a',
-		'B',
-		'mcp:github',
-		'remote:home',
-		'secret_set',
-	])
-	expect(normalizeAllowedCapabilities(['', '  ', 'cap_a', 'cap_a'])).toEqual([
-		'cap_a',
 	])
 
 	const packageFixtures = [

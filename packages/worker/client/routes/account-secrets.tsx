@@ -57,7 +57,6 @@ import {
 } from './new-secret-query.ts'
 import { SecretEditorFields } from './secret-editor-fields.tsx'
 import {
-	normalizeAllowedCapabilities,
 	normalizeAllowedHosts,
 	normalizeAllowedPackages,
 } from './secret-normalization.ts'
@@ -94,7 +93,6 @@ type EditorState = {
 	expiresAt: string
 	value: string
 	allowedHosts: Array<string>
-	allowedCapabilities: Array<string>
 	allowedPackages: Array<string>
 }
 
@@ -136,7 +134,6 @@ function createEmptyEditorState(
 		expiresAt: '',
 		value: '',
 		allowedHosts: [''],
-		allowedCapabilities: [''],
 		allowedPackages: [],
 	}
 }
@@ -174,9 +171,6 @@ function createEditorStateFromNewSecretQuery(
 	const allowedHosts = normalizeAllowedHosts(
 		readCommaListParams(params, ['allowedHosts', 'allowed-host']),
 	)
-	const allowedCapabilities = normalizeAllowedCapabilities(
-		readCommaListParams(params, ['allowedCapabilities', 'capability']),
-	)
 	const allowedPackages = normalizeAllowedPackages(
 		readCommaListParams(params, ['allowedPackages', 'package_id', 'package']),
 	)
@@ -189,10 +183,6 @@ function createEditorStateFromNewSecretQuery(
 		description: readTrimmedParam(params, 'description') ?? state.description,
 		expiresAt: readNewSecretExpiresAt(params) ?? state.expiresAt,
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : state.allowedHosts,
-		allowedCapabilities:
-			allowedCapabilities.length > 0
-				? allowedCapabilities
-				: state.allowedCapabilities,
 		allowedPackages:
 			scope === 'user' && allowedPackages.length > 0
 				? allowedPackages
@@ -206,7 +196,7 @@ function coerceStringRows(list: Array<unknown>): Array<string> {
 
 function collectRepeatedTextRows(
 	form: HTMLFormElement,
-	listName: 'allowed-hosts' | 'allowed-capabilities',
+	listName: 'allowed-hosts',
 ): Array<string> {
 	const root = form.querySelector(`[data-repeat-list="${listName}"]`)
 	if (!root) return []
@@ -221,7 +211,6 @@ function collectRepeatedTextRows(
 
 function createEditorStateFromSecret(secret: AccountSecretDetail): EditorState {
 	const allowedHosts = coerceStringRows(secret.allowedHosts)
-	const allowedCapabilities = coerceStringRows(secret.allowedCapabilities)
 	const allowedPackages = coerceStringRows(secret.allowedPackages)
 	return {
 		currentId: secret.id,
@@ -232,20 +221,12 @@ function createEditorStateFromSecret(secret: AccountSecretDetail): EditorState {
 		expiresAt: secret.expiresAt ?? '',
 		value: secret.value,
 		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
-		allowedCapabilities:
-			allowedCapabilities.length > 0 ? allowedCapabilities : [''],
 		allowedPackages,
 	}
 }
 
 function buildSecretsHref(pathname: string, search: string) {
 	return `${pathname}${search}`
-}
-
-function readRequestedCapability(href: string) {
-	const url = new URL(href, 'http://localhost')
-	const value = url.searchParams.get('capability')
-	return value?.trim() ? value.trim() : null
 }
 
 function readRequestedHost(href: string) {
@@ -259,11 +240,6 @@ function normalizeSingleAllowedHost(host: string | null) {
 	return normalizeAllowedHosts([host])[0] ?? null
 }
 
-function normalizeSingleAllowedCapability(capability: string | null) {
-	if (!capability) return null
-	return normalizeAllowedCapabilities([capability])[0] ?? null
-}
-
 function getAlreadyAddedNotice(input: {
 	href: string
 	selectedSecret: AccountSecretDetail | null
@@ -273,9 +249,6 @@ function getAlreadyAddedNotice(input: {
 	const requestedHost = normalizeSingleAllowedHost(
 		readRequestedHost(input.href),
 	)
-	const requestedCapability = normalizeSingleAllowedCapability(
-		readRequestedCapability(input.href),
-	)
 	const requestedPackageId =
 		new URL(input.href, 'http://localhost').searchParams
 			.get('package_id')
@@ -284,15 +257,6 @@ function getAlreadyAddedNotice(input: {
 		? normalizeAllowedHosts(coerceStringRows(input.selectedSecret.allowedHosts))
 		: input.approval
 			? normalizeAllowedHosts(input.approval.currentAllowedHosts)
-			: []
-	const allowedCapabilities = input.selectedSecret
-		? normalizeAllowedCapabilities(
-				coerceStringRows(input.selectedSecret.allowedCapabilities),
-			)
-		: input.approval
-			? normalizeAllowedCapabilities(
-					coerceStringRows(input.approval.currentAllowedCapabilities),
-				)
 			: []
 	const allowedPackageIds = input.selectedSecret
 		? Array.from(
@@ -317,16 +281,6 @@ function getAlreadyAddedNotice(input: {
 	if (hostAlreadyAdded) {
 		items.push(`Host ${requestedHost} is already in allowed hosts.`)
 	}
-	const capabilityAlreadyAdded =
-		requestedCapability != null &&
-		requestedHost == null &&
-		requestedPackageId == null &&
-		allowedCapabilities.includes(requestedCapability)
-	if (capabilityAlreadyAdded) {
-		items.push(
-			`Capability ${requestedCapability} is already in allowed capabilities.`,
-		)
-	}
 	const packageAlreadyAdded =
 		requestedPackageId != null && allowedPackageIds.includes(requestedPackageId)
 	if (packageAlreadyAdded) {
@@ -338,7 +292,6 @@ function getAlreadyAddedNotice(input: {
 	return {
 		items,
 		hostAlreadyAdded,
-		capabilityAlreadyAdded,
 		packageAlreadyAdded,
 	}
 }
@@ -372,7 +325,6 @@ function buildBaseSecretsHref(search = '') {
 function getDataRefreshKey(href: string) {
 	const url = new URL(href, 'http://localhost')
 	const requestedHost = url.searchParams.get('allowed-host') ?? ''
-	const requestedCapability = url.searchParams.get('capability') ?? ''
 	const requestedPackageId = url.searchParams.get('package_id') ?? ''
 	const requestedNames = [
 		...url.searchParams.getAll('names'),
@@ -381,7 +333,7 @@ function getDataRefreshKey(href: string) {
 		.join(',')
 		.trim()
 	const newSecretQuery = getNewSecretQueryKey(href)
-	return `${url.pathname}?allowed-host=${requestedHost}&capability=${requestedCapability}&package_id=${requestedPackageId}&names=${requestedNames}&new-secret=${newSecretQuery}`
+	return `${url.pathname}?allowed-host=${requestedHost}&package_id=${requestedPackageId}&names=${requestedNames}&new-secret=${newSecretQuery}`
 }
 
 function buildSecretsApiRequestUrl(href: string) {
@@ -466,7 +418,6 @@ function filterSecrets(
 			secret.packageTitle ?? '',
 			secret.scope,
 			...secret.allowedHosts,
-			...secret.allowedCapabilities,
 			...secret.allowedPackages,
 			...allowedPackageNames,
 		])
@@ -675,10 +626,6 @@ export function AccountSecretsRoute(handle: Handle) {
 
 			const isBulkPackageApproval =
 				Boolean(approval.requestedPackageId) && approval.names.length > 1
-			const isCapabilityApproval =
-				Boolean(approval.requestedCapability) &&
-				!approval.requestedPackageId &&
-				!approval.requestedHost
 			applyPayload(
 				payload,
 				selection,
@@ -687,16 +634,12 @@ export function AccountSecretsRoute(handle: Handle) {
 						? isBulkPackageApproval
 							? `Approved package access for ${approval.names.length} secrets.`
 							: 'Approved requested package.'
-						: isCapabilityApproval
-							? 'Approved requested capability.'
-							: 'Approved requested host.'
+						: 'Approved requested host.'
 					: approval.requestedPackageId
 						? isBulkPackageApproval
 							? 'Rejected bulk package approval request.'
 							: 'Rejected package approval request.'
-						: isCapabilityApproval
-							? 'Rejected capability approval request.'
-							: 'Rejected host approval request.',
+						: 'Rejected host approval request.',
 			)
 			handle.update()
 
@@ -750,9 +693,6 @@ export function AccountSecretsRoute(handle: Handle) {
 			const allowedHosts = normalizeAllowedHosts(
 				collectRepeatedTextRows(form, 'allowed-hosts'),
 			)
-			const allowedCapabilities = normalizeAllowedCapabilities(
-				collectRepeatedTextRows(form, 'allowed-capabilities'),
-			)
 			const allowedPackages =
 				submittedEditorState.scope === 'user'
 					? [...submittedEditorState.allowedPackages].sort((left, right) =>
@@ -779,7 +719,6 @@ export function AccountSecretsRoute(handle: Handle) {
 					expiresAt: submittedEditorState.expiresAt || null,
 					value: submittedEditorState.value,
 					allowedHosts,
-					allowedCapabilities,
 					allowedPackages,
 				}),
 			})
@@ -900,37 +839,6 @@ export function AccountSecretsRoute(handle: Handle) {
 		handle.update()
 	}
 
-	function updateAllowedCapability(index: number, value: string) {
-		editorState = {
-			...editorState,
-			allowedCapabilities: editorState.allowedCapabilities.map(
-				(capabilityName, capabilityIndex) =>
-					capabilityIndex === index ? value : capabilityName,
-			),
-		}
-		handle.update()
-	}
-
-	function addAllowedCapability() {
-		editorState = {
-			...editorState,
-			allowedCapabilities: [...editorState.allowedCapabilities, ''],
-		}
-		handle.update()
-	}
-
-	function removeAllowedCapability(index: number) {
-		const nextCapabilities = editorState.allowedCapabilities.filter(
-			(_capabilityName, capabilityIndex) => capabilityIndex !== index,
-		)
-		editorState = {
-			...editorState,
-			allowedCapabilities:
-				nextCapabilities.length > 0 ? nextCapabilities : [''],
-		}
-		handle.update()
-	}
-
 	function addAllowedPackage(packageId: string) {
 		if (editorState.allowedPackages.includes(packageId)) return
 		editorState = {
@@ -1026,18 +934,12 @@ export function AccountSecretsRoute(handle: Handle) {
 			approval &&
 			!isRefreshingForLocationChange &&
 			!alreadyAddedNotice?.hostAlreadyAdded &&
-			!alreadyAddedNotice?.capabilityAlreadyAdded &&
 			!alreadyAddedNotice?.packageAlreadyAdded
 				? approval
 				: null
 		const requestedPackageMetadata = approvalCard?.requestedPackageId
 			? packagesById.get(approvalCard.requestedPackageId)
 			: null
-		const isCapabilityApprovalCard =
-			Boolean(approvalCard?.requestedCapability) &&
-			!approvalCard?.requestedPackageId &&
-			!approvalCard?.requestedHost
-
 		return (
 			<AccountManagementShell>
 				<AccountPageHeader
@@ -1081,9 +983,7 @@ export function AccountSecretsRoute(handle: Handle) {
 									color: colors.text,
 								})}
 							>
-								{approvalCard.requestedHost &&
-								!approvalCard.requestedPackageId &&
-								!isCapabilityApprovalCard
+								{approvalCard.requestedHost && !approvalCard.requestedPackageId
 									? 'Allow access'
 									: 'Approve secret access'}
 							</h2>
@@ -1126,13 +1026,6 @@ export function AccountSecretsRoute(handle: Handle) {
 										</ul>
 									) : null}
 								</div>
-							) : isCapabilityApprovalCard ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Requested capability:{' '}
-									<code>{approvalCard.requestedCapability}</code> for secret{' '}
-									<code>{approvalCard.name}</code> from the{' '}
-									{getScopeLabel(approvalCard.scope)} scope.
-								</p>
 							) : (
 								<p mix={css({ margin: 0, color: colors.textMuted })}>
 									Let Kody use this connection at{' '}
@@ -1142,12 +1035,6 @@ export function AccountSecretsRoute(handle: Handle) {
 									.
 								</p>
 							)}
-							{approvalCard.requestedCapability && !isCapabilityApprovalCard ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Requested capability:{' '}
-									<code>{approvalCard.requestedCapability}</code>
-								</p>
-							) : null}
 							{approvalCard.requestedPackageId ? (
 								approvalCard.names.length > 1 ? null : (
 									<div mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -1184,13 +1071,6 @@ export function AccountSecretsRoute(handle: Handle) {
 										)}
 									</div>
 								)
-							) : isCapabilityApprovalCard ? (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Current allowed capabilities:{' '}
-									{approvalCard.currentAllowedCapabilities.length > 0
-										? approvalCard.currentAllowedCapabilities.join(', ')
-										: 'none'}
-								</p>
 							) : (
 								<details
 									mix={css(secretApprovalAdvancedCss)}
@@ -1221,8 +1101,7 @@ export function AccountSecretsRoute(handle: Handle) {
 								approvalCard.names.length > 1
 									? `Approve all (${approvalCard.names.length})`
 									: approvalCard.requestedHost &&
-										  !approvalCard.requestedPackageId &&
-										  !isCapabilityApprovalCard
+										  !approvalCard.requestedPackageId
 										? 'Allow access'
 										: 'Approve'}
 							</button>
@@ -1552,12 +1431,7 @@ export function AccountSecretsRoute(handle: Handle) {
 									onUpdateAllowedHost={updateAllowedHost}
 									onAddAllowedHost={addAllowedHost}
 									onRemoveAllowedHost={removeAllowedHost}
-									allowedCapabilities={editorState.allowedCapabilities}
-									onUpdateAllowedCapability={updateAllowedCapability}
-									onAddAllowedCapability={addAllowedCapability}
-									onRemoveAllowedCapability={removeAllowedCapability}
 									allowedHostsListName="allowed-hosts"
-									allowedCapabilitiesListName="allowed-capabilities"
 								/>
 
 								{editorState.scope === 'user' ? (

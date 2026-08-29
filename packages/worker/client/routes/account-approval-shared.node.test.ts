@@ -19,18 +19,18 @@ test('buildHostApprovalRequestUrl maps secret approval links and rejects invalid
 	)
 	expect(
 		buildHostApprovalRequestUrl(
-			'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
+			'https://example.com/account/secrets/user/cloudflareToken?package_id=pkg-1',
 			'https://example.com',
 		),
 	).toBe(
-		'/account/secrets.json?capability=secret_set&selected=user%3A%3A%3A%3AcloudflareToken',
+		'/account/secrets.json?package_id=pkg-1&selected=user%3A%3A%3A%3AcloudflareToken',
 	)
 	expect(
 		buildHostApprovalRequestUrl(
-			'/account/secrets/package/pkg-1/signingSecret?capability=secret_jwt_sign',
+			'/account/secrets/package/pkg-1/signingSecret?package_id=pkg-1',
 		),
 	).toBe(
-		'/account/secrets.json?capability=secret_jwt_sign&selected=package%3A%3Apkg-1%3A%3AsigningSecret',
+		'/account/secrets.json?package_id=pkg-1&selected=package%3A%3Apkg-1%3A%3AsigningSecret',
 	)
 	expect(() =>
 		buildHostApprovalRequestUrl('/account/secrets?allowed-host=slack.com'),

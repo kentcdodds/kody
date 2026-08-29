@@ -269,7 +269,6 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 		value: 'hmac-shared-secret',
 		scope: 'user',
 		allowedHosts: [],
-		allowedCapabilities: [],
 		allowedPackages: [],
 	})
 
@@ -422,7 +421,6 @@ test('package-centered webhook ingress auth, HMAC, size cap, ack/sync, and isola
 		value: null,
 		scope: null,
 		allowedHosts: [],
-		allowedCapabilities: [],
 		allowedPackages: [],
 	})
 	const missingSecret = await postWebhook({

@@ -1,10 +1,7 @@
 import { generateKeyPairSync, createVerify, verify } from 'node:crypto'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import {
-	createCapabilitySecretAccessDeniedMessage,
-	createMissingSecretMessage,
-} from '#mcp/secrets/errors.ts'
+import { createMissingSecretMessage } from '#mcp/secrets/errors.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import { jwtSignCapability } from './jwt-sign.ts'
 import { extractPrivateKeyPem } from './jwt-signing.ts'
@@ -34,7 +31,7 @@ function decodeJwtPart(value: string) {
 	) as Record<string, unknown>
 }
 
-test('secret_jwt_sign resolves keys, enforces secret approval, and never leaks key material', async () => {
+test('secret_jwt_sign resolves keys and never leaks key material', async () => {
 	const { privateKey, publicKey } = createKeyPair()
 	const resolveSecretSpy = vi.spyOn(secretService, 'resolveSecret')
 	const callerContext = createMcpCallerContext({
@@ -42,11 +39,6 @@ test('secret_jwt_sign resolves keys, enforces secret approval, and never leaks k
 		user: { userId: 'user-123' },
 	})
 	const env = {} as Env
-	const approvalMessage = createCapabilitySecretAccessDeniedMessage(
-		'serviceAccountKey',
-		'secret_jwt_sign',
-		'https://heykody.dev/account/secrets/user/serviceAccountKey?capability=secret_jwt_sign',
-	)
 
 	try {
 		resolveSecretSpy.mockResolvedValue({
@@ -54,7 +46,6 @@ test('secret_jwt_sign resolves keys, enforces secret approval, and never leaks k
 			value: privateKey,
 			scope: 'user',
 			allowedHosts: [],
-			allowedCapabilities: ['secret_jwt_sign'],
 			allowedPackages: [],
 		})
 
@@ -114,7 +105,6 @@ test('secret_jwt_sign resolves keys, enforces secret approval, and never leaks k
 			value: ed25519.privateKey,
 			scope: 'user',
 			allowedHosts: [],
-			allowedCapabilities: ['secret_jwt_sign'],
 			allowedPackages: [],
 		})
 		const edSigned = await jwtSignCapability.handler(
@@ -162,7 +152,6 @@ test('secret_jwt_sign resolves keys, enforces secret approval, and never leaks k
 			}),
 			scope: 'user',
 			allowedHosts: [],
-			allowedCapabilities: ['secret_jwt_sign'],
 			allowedPackages: [],
 		})
 		const jsonSigned = await jwtSignCapability.handler(
@@ -177,49 +166,10 @@ test('secret_jwt_sign resolves keys, enforces secret approval, and never leaks k
 		expect(jsonSigned.jwt.split('.')).toHaveLength(3)
 
 		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: privateKey,
-			scope: 'user',
-			allowedHosts: [],
-			allowedCapabilities: [],
-			allowedPackages: [],
-		})
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'serviceAccountKey',
-					algorithm: 'RS256',
-					claims: { iss: 'service@example.com' },
-				},
-				{ env, callerContext },
-			),
-		).rejects.toThrow(approvalMessage)
-
-		resolveSecretSpy.mockResolvedValue({
-			found: true,
-			value: privateKey,
-			scope: null,
-			allowedHosts: [],
-			allowedCapabilities: [],
-			allowedPackages: [],
-		})
-		await expect(
-			jwtSignCapability.handler(
-				{
-					private_key_secret_name: 'serviceAccountKey',
-					algorithm: 'RS256',
-					claims: { iss: 'service@example.com' },
-				},
-				{ env, callerContext },
-			),
-		).rejects.toThrow(approvalMessage)
-
-		resolveSecretSpy.mockResolvedValue({
 			found: false,
 			value: null,
 			scope: null,
 			allowedHosts: [],
-			allowedCapabilities: [],
 			allowedPackages: [],
 		})
 		await expect(

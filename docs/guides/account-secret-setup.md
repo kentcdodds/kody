@@ -33,31 +33,29 @@ Do **not** ask the user to paste secrets into chat.
 
 Provide the user a URL like:
 
-`https://<your-kody-origin>/account/secrets/new?name=exampleApiKey&description=Example%20API%20key&expiresAt=2026-12-01T00:00:00.000Z&allowedHosts=api.example.com&scope=user&allowedCapabilities=example_capability&allowedPackages=pkg_123`
+`https://<your-kody-origin>/account/secrets/new?name=exampleApiKey&description=Example%20API%20key&expiresAt=2026-12-01T00:00:00.000Z&allowedHosts=api.example.com&scope=user&allowedPackages=pkg_123`
 
 When `name` is present, the page focuses and scrolls to the secret value input
 so the user can paste immediately.
 
 ## Query params
 
-| Param                 | Required | Description                                                                                                                                                  |
-| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `name`                | yes      | Secret name (for example `exampleApiKey`).                                                                                                                   |
-| `description`         | no       | Human-readable description shown in the UI.                                                                                                                  |
-| `expiresAt`           | no       | Optional UTC ISO expiry (`2026-12-01T00:00:00.000Z`) or a `YYYY-MM-DD` date stored as midnight UTC. Prefills the Expires field. Leave omitted for no expiry. |
-| `allowedHosts`        | no       | Comma-separated hosts to review for approval.                                                                                                                |
-| `allowedCapabilities` | no       | Comma-separated capability names to review. Use only real Kody capability names from `search` or `meta_list_capabilities`.                                   |
-| `allowedPackages`     | no       | Comma-separated saved package ids to review for approval.                                                                                                    |
-| `scope`               | no       | `user` (default) or `package`.                                                                                                                               |
-| `packageId`           | no       | Required when `scope=package`. Use the saved package id that owns the secret.                                                                                |
+| Param             | Required | Description                                                                                                                                                  |
+| ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`            | yes      | Secret name (for example `exampleApiKey`).                                                                                                                   |
+| `description`     | no       | Human-readable description shown in the UI.                                                                                                                  |
+| `expiresAt`       | no       | Optional UTC ISO expiry (`2026-12-01T00:00:00.000Z`) or a `YYYY-MM-DD` date stored as midnight UTC. Prefills the Expires field. Leave omitted for no expiry. |
+| `allowedHosts`    | no       | Comma-separated hosts to review for approval.                                                                                                                |
+| `allowedPackages` | no       | Comma-separated saved package ids to review for approval.                                                                                                    |
+| `scope`           | no       | `user` (default) or `package`.                                                                                                                               |
+| `packageId`       | no       | Required when `scope=package`. Use the saved package id that owns the secret.                                                                                |
 
 ## Approval policy reminders
 
 - Saving a secret does **not** approve outbound hosts.
-- The account form prefills the requested hosts/capabilities/packages for
-  review.
-- Host, capability, and package approvals are handled in the authenticated
-  account secrets UI after the secret is saved.
+- The account form prefills the requested hosts and packages for review.
+- Host and package approvals are handled in the authenticated account secrets UI
+  after the secret is saved.
 
 ## Package approval URLs (after a package exists)
 
@@ -81,8 +79,6 @@ secret and lets the user approve them in one click.
 
 1. Generate the URL with the required `name` and any optional params.
    - When using `scope=package`, include the saved package id in `packageId`.
-   - Only include `allowedCapabilities` when you have confirmed the capability
-     names exist in Kody.
 2. Ask the user to open the URL in their browser.
 3. Wait until they confirm the secret is saved.
 4. If the secret will back a package or package app, run the authenticated smoke

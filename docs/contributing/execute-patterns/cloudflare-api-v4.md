@@ -15,9 +15,9 @@ import it from other packages with `kody:@...`.
 - The user must approve **`api.cloudflare.com`** for that secret (host approval
   in the account UI). Saving a secret does not approve hosts automatically.
 
-Capability **allowlists** on secrets apply to **capability inputs** that use
-`x-kody-secret`. Package code also needs package approval for user-scoped
-secrets; package-scoped secrets are available only to their owning package.
+Unadopted community-forked packages also need package approval for user-scoped
+secrets. Self-authored packages and adopted forks already have read/use access.
+Package-scoped secrets are available only to their owning package.
 
 ## Paths
 

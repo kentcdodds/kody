@@ -29,13 +29,8 @@ type SecretEditorFieldsProps = {
 	onUpdateAllowedHost: (index: number, value: string) => void
 	onAddAllowedHost: () => void
 	onRemoveAllowedHost: (index: number) => void
-	allowedCapabilities: Array<string>
-	onUpdateAllowedCapability: (index: number, value: string) => void
-	onAddAllowedCapability: () => void
-	onRemoveAllowedCapability: (index: number) => void
 	valuePlaceholder?: string
 	allowedHostsListName?: string
-	allowedCapabilitiesListName?: string
 }
 
 function focusSecretValueInput(root: Element) {
@@ -268,71 +263,6 @@ export function SecretEditorFields(handle: Handle<SecretEditorFieldsProps>) {
 									]}
 								>
 									Add host
-								</button>
-							</div>
-						</div>
-
-						<div mix={css({ display: 'grid', gap: spacing.sm })}>
-							<div mix={css({ display: 'grid', gap: spacing.xs })}>
-								<span mix={css(fieldLabelCss)}>
-									Which tools can use this secret
-								</span>
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Leave this empty to let any tool use this secret. Add names
-									here to restrict it.
-								</p>
-							</div>
-							<div
-								data-repeat-list={props.allowedCapabilitiesListName}
-								mix={css({ display: 'grid', gap: spacing.sm })}
-							>
-								{props.allowedCapabilities.map((capabilityName, index) => (
-									<div key={index} mix={css(repeatedRowCss)}>
-										<input
-											type="text"
-											value={
-												typeof capabilityName === 'string' ? capabilityName : ''
-											}
-											placeholder="home_lutron_set_credentials"
-											mix={[
-												on(
-													'input',
-
-													(event) => {
-														props.onUpdateAllowedCapability(
-															index,
-															event.currentTarget.value,
-														)
-													},
-												),
-
-												css(inputCss),
-											]}
-										/>
-
-										<button
-											type="button"
-											mix={[
-												on('click', () =>
-													props.onRemoveAllowedCapability(index),
-												),
-												css(secondaryButtonCss),
-											]}
-										>
-											Remove
-										</button>
-									</div>
-								))}
-							</div>
-							<div>
-								<button
-									type="button"
-									mix={[
-										on('click', () => props.onAddAllowedCapability()),
-										css(secondaryButtonCss),
-									]}
-								>
-									Add capability
 								</button>
 							</div>
 						</div>

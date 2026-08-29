@@ -1,8 +1,4 @@
 import { expect, test } from 'vitest'
-import {
-	parseAllowedCapabilities,
-	stringifyAllowedCapabilities,
-} from './allowed-capabilities.ts'
 import { parseAllowedHosts, stringifyAllowedHosts } from './allowed-hosts.ts'
 import {
 	parseAllowedPackages,
@@ -33,16 +29,6 @@ test('allowed list helpers normalize persisted secret allow lists', () => {
 		'["pkg-a","pkg-b"]',
 	)
 
-	expect(
-		parseAllowedCapabilities(
-			'["capability_b"," capability_a ","capability_b"]',
-		),
-	).toEqual(['capability_a', 'capability_b'])
-	expect(
-		stringifyAllowedCapabilities([' capability_b ', '', 'capability_a']),
-	).toBe('["capability_a","capability_b"]')
-
 	expect(parseAllowedHosts('not json')).toEqual([])
 	expect(parseAllowedPackages('{"not":"an array"}')).toEqual([])
-	expect(parseAllowedCapabilities(null)).toEqual([])
 })

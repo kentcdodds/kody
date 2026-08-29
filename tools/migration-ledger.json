@@ -127,6 +127,10 @@
 		{
 			"filename": "0031-mcp-server-package-usage.sql",
 			"sha256": "a7c53385105facd65612e9fb674fe59e8e4bd3c64a5fd5a5014958b367e590e8"
+		},
+		{
+			"filename": "0032-drop-secret-allowed-capabilities.sql",
+			"sha256": "9f854123842e94b4b979c941765acbd155bf43c0be2b138877bf062fd552b31c"
 		}
 	]
 }

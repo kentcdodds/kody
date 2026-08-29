@@ -1,8 +1,6 @@
 import { expect, test } from 'vitest'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import {
-	createCapabilitySecretAccessDeniedBatchMessage,
-	createCapabilitySecretAccessDeniedMessage,
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 	createPackageSecretAccessDeniedBatchMessage,
@@ -1462,76 +1460,6 @@ test('createToolDispatchers forwards rest args for codemode ToolDispatcher', asy
 })
 
 test('executor maps secret errors, formats guidance, extracts raw content, and truncates on UTF-8 boundaries', () => {
-	const capabilityError = new Error(
-		createCapabilitySecretAccessDeniedMessage(
-			'cloudflareToken',
-			'secret_set',
-			'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
-		),
-	)
-	expect(getExecutionErrorDetails(capabilityError)).toMatchObject({
-		kind: 'secret_capability_access_required',
-		secretNames: ['cloudflareToken'],
-		capabilityName: 'secret_set',
-		approvalUrl:
-			'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
-		suggestedAction: {
-			type: 'edit_secret_policy',
-			policyField: 'allowed_capabilities',
-		},
-	})
-	expect(getExecutionErrorDetails(capabilityError)?.nextStep).toEqual(
-		expect.any(String),
-	)
-
-	const capabilityErrorWithoutUrl = new Error(
-		createCapabilitySecretAccessDeniedMessage('cloudflareToken', 'secret_set'),
-	)
-	expect(getExecutionErrorDetails(capabilityErrorWithoutUrl)).toMatchObject({
-		kind: 'secret_capability_access_required',
-		secretNames: ['cloudflareToken'],
-		capabilityName: 'secret_set',
-		approvalUrl: null,
-		suggestedAction: {
-			type: 'edit_secret_policy',
-			policyField: 'allowed_capabilities',
-		},
-	})
-
-	const capabilityBatchError = new Error(
-		createCapabilitySecretAccessDeniedBatchMessage([
-			{
-				secretName: 'lutronUsername',
-				capabilityName: 'lighting_lutron_set_credentials',
-				approvalUrl:
-					'https://example.com/account/secrets/user/lutronUsername?capability=lighting_lutron_set_credentials',
-			},
-			{
-				secretName: 'lutronPassword',
-				capabilityName: 'lighting_lutron_set_credentials',
-				approvalUrl:
-					'https://example.com/account/secrets/user/lutronPassword?capability=lighting_lutron_set_credentials',
-			},
-		]),
-	)
-	expect(getExecutionErrorDetails(capabilityBatchError)).toMatchObject({
-		kind: 'secret_capability_access_required_batch',
-		missingApprovals: [
-			{
-				secretName: 'lutronUsername',
-				capabilityName: 'lighting_lutron_set_credentials',
-			},
-			{
-				secretName: 'lutronPassword',
-				capabilityName: 'lighting_lutron_set_credentials',
-			},
-		],
-		suggestedAction: {
-			type: 'edit_secret_policy',
-			policyField: 'allowed_capabilities',
-		},
-	})
-
 	const hostBatchError = new Error(
 		createHostSecretAccessDeniedBatchMessage([
 			{
@@ -1861,7 +1789,7 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	).toBeNull()
 
 	const errors = [
-		capabilityError,
+		hostBatchError,
 		new Error(createMissingSecretMessage('missingToken')),
 		new Error('kody is not defined'),
 		new Error(unboundStorageMessage),

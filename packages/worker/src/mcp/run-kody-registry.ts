@@ -14,26 +14,11 @@ import {
 	createNamedExecutionError,
 } from '#mcp/executor.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
+import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
 import {
-	getAdditionalPropertiesSchema,
-	getArrayItemSchema,
-	getSchemaProperties,
-	isSecretInputSchema,
-	resolveCapabilityInputSecrets,
-} from '#mcp/secrets/capability-inputs.ts'
-import {
-	capabilityInputSecretAuthRequiredMessage,
-	createCapabilitySecretAccessDeniedMessage,
-	createCapabilitySecretAccessDeniedBatchMessage,
-} from '#mcp/secrets/errors.ts'
-import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
-import {
-	assertPackageCanAccessResolvedSecret,
-	resolvePackageMountedSecret,
-} from '#mcp/secrets/package-access.ts'
-import { buildSecretCapabilityApprovalUrl } from '#mcp/secrets/capability-approval-url.ts'
-import { resolveSecret } from '#mcp/secrets/service.ts'
-import { type ReferencedSecret } from '#mcp/secrets/placeholders.ts'
+	createExecutionSecretRedactor,
+	type ExecutionSecretRedactor,
+} from '#mcp/secrets/execution-secret-redactor.ts'
 import { type BuiltCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
@@ -217,10 +202,6 @@ export async function buildKodyFns(
 	env: Env,
 	callerContext: McpCallerContext,
 	options?: {
-		resolveSecretValue?: (
-			secret: ReferencedSecret,
-			capabilityName: string,
-		) => Promise<string>
 		trackSecretInputValue?: (value: string) => void
 		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
@@ -239,10 +220,6 @@ async function buildKodyToolContext(
 	env: Env,
 	callerContext: McpCallerContext,
 	options?: {
-		resolveSecretValue?: (
-			secret: ReferencedSecret,
-			capabilityName: string,
-		) => Promise<string>
 		trackSecretInputValue?: (value: string) => void
 		additionalTools?: AdditionalKodyTools
 		storageTools?: StorageToolOptions
@@ -298,35 +275,20 @@ async function buildKodyToolContext(
 					await assertCallerCanAccessCapability(callerContext, capability, {
 						env,
 					})
-					const resolveSecretValue =
-						options?.resolveSecretValue ??
-						createCapabilityInputSecretResolver(
-							env,
-							callerContext,
-							capabilityName,
-						)
-					const resolvedArgs = await resolveCapabilityInputSecrets({
-						schema: capability.inputSchema,
-						value: (args ?? {}) as Record<string, unknown>,
-						resolveSecretValue: (secret) =>
-							resolveSecretValue(secret, capabilityName),
-					})
-					collectSecretInputValues({
-						schema: capability.inputSchema,
-						value: resolvedArgs,
-						track: options?.trackSecretInputValue,
-					})
-					return await capability.handler(
-						resolvedArgs as Record<string, unknown>,
-						{
-							env,
-							callerContext,
-							...(options?.reportProgress
-								? { reportProgress: options.reportProgress }
-								: {}),
-							...(options?.waitUntil ? { waitUntil: options.waitUntil } : {}),
-						},
+					const toolArgs = (args ?? {}) as Record<string, unknown>
+					trackPersistedSecretInputValues(
+						capabilityName,
+						toolArgs,
+						options?.trackSecretInputValue,
 					)
+					return await capability.handler(toolArgs, {
+						env,
+						callerContext,
+						...(options?.reportProgress
+							? { reportProgress: options.reportProgress }
+							: {}),
+						...(options?.waitUntil ? { waitUntil: options.waitUntil } : {}),
+					})
 				} finally {
 					if (shouldSampleFirstDispatch) {
 						const durationMs = Date.now() - dispatchStartedAtMs
@@ -542,66 +504,6 @@ export async function buildKodyProvider(
 		kodyMcpServers: mcpServers,
 		kodyOpenApiProviders: openApiProviders,
 	}) satisfies KodyResolvedProvider
-}
-
-function createCapabilityInputSecretResolver(
-	env: Env,
-	callerContext: McpCallerContext,
-	capabilityName: string,
-) {
-	return async (secret: ReferencedSecret, _currentCapabilityName: string) => {
-		const userId = callerContext.user?.userId ?? null
-		if (!userId) {
-			throw new Error(capabilityInputSecretAuthRequiredMessage)
-		}
-		const normalizedStorageContext = normalizeStorageContext(
-			callerContext.storageContext ?? null,
-		)
-		const resolved = await resolveSecret({
-			env,
-			userId,
-			name: secret.name,
-			scope: secret.scope,
-			storageContext: normalizedStorageContext,
-		})
-		if (!resolved.found || typeof resolved.value !== 'string') {
-			throw new Error(
-				await createUnresolvedSecretMessage({
-					env,
-					userId,
-					name: secret.name,
-					scope: secret.scope,
-					storageContext: normalizedStorageContext,
-					baseUrl: callerContext.baseUrl,
-				}),
-			)
-		}
-		await assertPackageCanAccessResolvedSecret({
-			env,
-			baseUrl: callerContext.baseUrl,
-			userId,
-			storageContext: callerContext.storageContext,
-			secretName: secret.name,
-			resolved,
-		})
-		if (!resolved.allowedCapabilities.includes(capabilityName)) {
-			const approvalUrl = buildSecretCapabilityApprovalUrl({
-				baseUrl: callerContext.baseUrl,
-				name: secret.name,
-				scope: resolved.scope ?? secret.scope ?? 'user',
-				capabilityName,
-				storageContext: normalizedStorageContext,
-			})
-			throw new Error(
-				createCapabilitySecretAccessDeniedMessage(
-					secret.name,
-					capabilityName,
-					approvalUrl,
-				),
-			)
-		}
-		return resolved.value
-	}
 }
 
 export async function runModuleWithRegistry(
@@ -1114,7 +1016,7 @@ ${runtimeHelperRuntimePropertySource}
 					}
 				}
 			}
-			const sanitizedResult = secretRedactor.sanitizeExecuteResult(result)
+			const sanitizedResult = sanitizeExecuteResult(result, secretRedactor)
 			capturedLogs = sanitizedResult.logs
 			if (!result.error) {
 				await finishObservedRun({
@@ -1125,17 +1027,11 @@ ${runtimeHelperRuntimePropertySource}
 				await recordPackageExportUsage('success')
 				return withRunId(sanitizedResult)
 			}
-			const rewrittenMessage =
-				(await rewriteCapabilitySecretError({
-					error: result.error,
-					env,
-					callerContext,
-				})) ??
-				rewriteUnboundRuntimeHelperError({
-					error: result.error,
-					modules: hydratedModules,
-					unboundHelperNames: unboundOptionalRuntimeHelperNames,
-				})
+			const rewrittenMessage = rewriteUnboundRuntimeHelperError({
+				error: result.error,
+				modules: hydratedModules,
+				unboundHelperNames: unboundOptionalRuntimeHelperNames,
+			})
 			const finalResult = rewrittenMessage
 				? {
 						...sanitizedResult,
@@ -1223,201 +1119,48 @@ function rewriteUnboundRuntimeHelperError(input: {
 	})
 }
 
-async function rewriteCapabilitySecretError(input: {
-	error: unknown
-	env: Env
-	callerContext: McpCallerContext
-}) {
-	const message = getErrorMessage(input.error)
-	const capabilityMatch = message.match(
-		/^Secret "([^"]+)" is not allowed for capability "([^"]+)"/,
-	)
-	if (!capabilityMatch?.[1] || !capabilityMatch?.[2]) return null
-	const capabilityName = capabilityMatch[2]
-	const userId = input.callerContext.user?.userId ?? null
-	if (!userId) return null
-	// Only use the structured error message. Scanning the full wrapped execute
-	// bundle (prelude + user code) via /Secret "…"/ false-positives on unrelated
-	// string literals, comments, or prior-step text and inflates approval lists.
-	const secretNames = collectSecretNamesFromCapabilityError(input.error)
-	if (secretNames.length === 0) return null
-	const normalizedStorageContext = normalizeStorageContext(
-		input.callerContext.storageContext,
-	)
-	const missing = await findMissingCapabilityApprovals({
-		env: input.env,
-		userId,
-		secretNames,
-		capabilityName,
-		storageContext: normalizedStorageContext,
-		baseUrl: input.callerContext.baseUrl,
-	})
-	if (missing.length === 0) return null
-	return createCapabilitySecretAccessDeniedBatchMessage(missing)
-}
-
-function collectSecretNamesFromCapabilityError(error: unknown) {
-	const message =
-		error instanceof Error
-			? error.message
-			: typeof error === 'string'
-				? error
-				: ''
-	const fromError = message ? parseSecretNamesFromMessage(message) : []
-	return normalizeSecretNameList(fromError)
-}
-
-function parseSecretNamesFromMessage(message: string) {
-	const matches = Array.from(message.matchAll(/Secret "([^"]+)"/g))
-	return matches
-		.map((match) => match[1])
-		.filter((value): value is string => Boolean(value))
-}
-
-function normalizeSecretNameList(names: Array<string>) {
-	return Array.from(
-		new Set(names.map((name) => name.trim()).filter((name) => name.length > 0)),
-	).sort((left, right) => left.localeCompare(right))
-}
-
-const redactedSecretText = '[REDACTED SECRET]'
-
-function createExecutionSecretRedactor() {
-	const secretValues = new Set<string>()
-	return {
-		track(value: string) {
-			if (value.length > 0) {
-				secretValues.add(value)
-			}
-		},
-		redactErrorMessage(value: string) {
-			return redactSecretValuesInString(value, secretValues)
-		},
-		sanitizeExecuteResult(result: ExecuteResult): ExecuteResult {
-			return {
-				...result,
-				result: redactUnknownSecretValues(result.result, secretValues),
-				logs: Array.isArray(result.logs)
-					? result.logs.map((entry) =>
-							redactSecretValuesInString(entry, secretValues),
-						)
-					: result.logs,
-				error: redactExecuteError(result.error, secretValues),
-			}
-		},
-	}
-}
-
-function collectSecretInputValues(input: {
-	schema: unknown
-	value: unknown
-	track?: (value: string) => void
-}) {
-	if (!input.track) return
-	visitSecretInputValue(input.schema, input.value, input.track)
-}
-
-function visitSecretInputValue(
-	schema: unknown,
-	value: unknown,
-	track: (value: string) => void,
+function trackPersistedSecretInputValues(
+	capabilityName: string,
+	args: Record<string, unknown>,
+	track?: (value: string) => void,
 ) {
-	if (typeof value === 'string' && isSecretInputSchema(schema)) {
-		track(value)
+	if (!track) return
+	if (capabilityName === 'secret_set' && typeof args.value === 'string') {
+		track(args.value)
 		return
 	}
-	if (Array.isArray(value)) {
-		const itemSchema = getArrayItemSchema(schema)
-		if (!itemSchema) return
-		for (const item of value) {
-			visitSecretInputValue(itemSchema, item, track)
+	if (capabilityName === 'secret_set_many' && Array.isArray(args.secrets)) {
+		for (const entry of args.secrets) {
+			if (isRecord(entry) && typeof entry.value === 'string') {
+				track(entry.value)
+			}
 		}
-		return
-	}
-	if (!isRecord(value)) return
-	const propertySchemas = getSchemaProperties(schema)
-	const additionalProperties = getAdditionalPropertiesSchema(schema)
-	if (!propertySchemas && !additionalProperties) return
-	for (const [key, entryValue] of Object.entries(value)) {
-		const entrySchema = propertySchemas?.[key] ?? additionalProperties
-		if (!entrySchema) continue
-		visitSecretInputValue(entrySchema, entryValue, track)
 	}
 }
 
-function redactUnknownSecretValues(
-	value: unknown,
-	secretValues: ReadonlySet<string>,
-	seen = new WeakMap<object, unknown>(),
-): unknown {
-	if (secretValues.size === 0) return value
-	if (typeof value === 'string') {
-		return redactSecretValuesInString(value, secretValues)
+function sanitizeExecuteResult(
+	result: ExecuteResult,
+	secretRedactor: ExecutionSecretRedactor,
+): ExecuteResult {
+	return {
+		...result,
+		result: secretRedactor.redactUnknown(result.result),
+		logs: Array.isArray(result.logs)
+			? result.logs.map((entry) => secretRedactor.redactErrorMessage(entry))
+			: result.logs,
+		error: redactExecuteError(result.error, secretRedactor),
 	}
-	if (value instanceof Error) {
-		const existing = seen.get(value)
-		if (existing) return existing
-		const next = new Error(
-			redactSecretValuesInString(value.message, secretValues),
-			value.cause !== undefined ? { cause: undefined } : undefined,
-		)
-		seen.set(value, next)
-		if (value.cause !== undefined) {
-			next.cause = redactUnknownSecretValues(value.cause, secretValues, seen)
-		}
-		next.name = value.name
-		if (value.stack) {
-			next.stack = redactSecretValuesInString(value.stack, secretValues)
-		}
-		return next
-	}
-	if (Array.isArray(value)) {
-		const existing = seen.get(value)
-		if (existing) return existing
-		const next: Array<unknown> = []
-		seen.set(value, next)
-		for (const entry of value) {
-			next.push(redactUnknownSecretValues(entry, secretValues, seen))
-		}
-		return next
-	}
-	if (isRecord(value)) {
-		const existing = seen.get(value)
-		if (existing) return existing
-		const next: Record<string, unknown> = {}
-		seen.set(value, next)
-		for (const [key, entry] of Object.entries(value)) {
-			const redactedKey = redactSecretValuesInString(key, secretValues)
-			next[redactedKey] = redactUnknownSecretValues(entry, secretValues, seen)
-		}
-		return next
-	}
-	return value
 }
 
 function redactExecuteError(
 	error: ExecuteResult['error'],
-	secretValues: ReadonlySet<string>,
+	secretRedactor: ExecutionSecretRedactor,
 ): ExecuteResult['error'] {
 	if (error === undefined) return undefined
-	const redacted = redactUnknownSecretValues(error, secretValues)
+	const redacted = secretRedactor.redactUnknown(error)
 	if (typeof redacted === 'string') return redacted
 	if (redacted instanceof Error) return redacted.message
 	return String(redacted)
-}
-
-function redactSecretValuesInString(
-	value: string,
-	secretValues: ReadonlySet<string>,
-) {
-	if (secretValues.size === 0 || value.length === 0) return value
-	let nextValue = value
-	for (const secretValue of [...secretValues].sort(
-		(left, right) => right.length - left.length,
-	)) {
-		nextValue = nextValue.replaceAll(secretValue, redactedSecretText)
-	}
-	return nextValue
 }
 
 function normalizeStorageContext(
@@ -1430,44 +1173,4 @@ function normalizeStorageContext(
 		packageId: storageContext.packageId ?? null,
 		storageId: storageContext.storageId ?? null,
 	}
-}
-
-async function findMissingCapabilityApprovals(input: {
-	env: Env
-	userId: string
-	secretNames: Array<string>
-	capabilityName: string
-	storageContext: McpCallerContext['storageContext'] | null
-	baseUrl: string
-}) {
-	const normalizedStorageContext = normalizeStorageContext(input.storageContext)
-	const entries = await Promise.all(
-		input.secretNames.map(async (name) => {
-			const resolved = await resolveSecret({
-				env: input.env,
-				userId: input.userId,
-				name,
-				storageContext: normalizedStorageContext,
-			})
-			if (!resolved.found) return null
-			if (resolved.allowedCapabilities.includes(input.capabilityName)) {
-				return null
-			}
-			const approvalUrl = buildSecretCapabilityApprovalUrl({
-				baseUrl: input.baseUrl,
-				name,
-				scope: resolved.scope ?? 'user',
-				capabilityName: input.capabilityName,
-				storageContext: normalizedStorageContext,
-			})
-			return {
-				secretName: name,
-				capabilityName: input.capabilityName,
-				approvalUrl,
-			}
-		}),
-	)
-	return entries.filter(
-		(entry): entry is NonNullable<typeof entry> => entry != null,
-	)
 }

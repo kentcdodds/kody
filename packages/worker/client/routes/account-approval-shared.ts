@@ -9,9 +9,7 @@ export type ApprovalView = {
 	names: Array<string>
 	scope: ApprovalScope
 	requestedHost: string
-	requestedCapability: string | null
 	currentAllowedHosts: Array<string>
-	currentAllowedCapabilities: Array<string>
 	requestedPackageId: string | null
 	currentAllowedPackages: Array<string>
 }

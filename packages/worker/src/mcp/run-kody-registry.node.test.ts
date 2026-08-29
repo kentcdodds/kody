@@ -25,7 +25,6 @@ import {
 import * as mcpExecutor from '#mcp/executor.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import * as packageAccess from '#mcp/secrets/package-access.ts'
-import * as secretService from '#mcp/secrets/service.ts'
 import {
 	type JobRecord,
 	type PersistedJobCallerContext,
@@ -1109,138 +1108,8 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	}
 })
 
-test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs', async () => {
+test('buildKodyFns tracks secret_set values for execute redaction', async () => {
 	silenceIncidentalRuntimeWarnings()
-	let toolArguments: Record<string, unknown> | null = null
-
-	function buildSecretMarkedRegistry() {
-		const capability = {
-			name: 'demo_set_credentials',
-			domain: 'demo',
-			description: 'Store demo credentials.',
-			keywords: [],
-			readOnly: false,
-			idempotent: false,
-			destructive: false,
-			inputSchema: {
-				type: 'object',
-				properties: {
-					processorId: { type: 'string' },
-					username: {
-						type: 'string',
-						'x-kody-secret': true,
-					},
-					password: {
-						type: 'string',
-						'x-kody-secret': true,
-					},
-				},
-				required: ['processorId', 'username', 'password'],
-			},
-			outputSchema: {
-				type: 'object',
-				properties: {
-					ok: { type: 'boolean' },
-				},
-			},
-			async handler(args: Record<string, unknown>) {
-				toolArguments = args
-				return { ok: true }
-			},
-		}
-		return {
-			capabilityDomains: [],
-			capabilityDomainDescriptionsByName: {} as Record<string, string>,
-			capabilityHandlers: {},
-			capabilityList: [capability],
-			capabilityMap: {
-				demo_set_credentials: capability,
-			},
-			capabilitySpecs: {},
-			capabilityToolDescriptors: {
-				demo_set_credentials: {
-					description: capability.description,
-					inputSchema: capability.inputSchema,
-					outputSchema: capability.outputSchema,
-				},
-			},
-		} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
-	}
-
-	const resolveRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
-		)
-		.mockResolvedValue(buildSecretMarkedRegistry())
-
-	try {
-		const resolvedKody = await buildKodyFns(
-			{} as Env,
-			createMcpCallerContext({
-				baseUrl: 'https://heykody.dev',
-				user: { userId: 'user-123' },
-			}),
-			{
-				resolveSecretValue: async (secret, capabilityName) =>
-					`${secret.name}-${capabilityName}-resolved`,
-			},
-		)
-		expect(resolvedKody.demo_set_credentials).toEqual(expect.any(Function))
-		await resolvedKody.demo_set_credentials({
-			processorId: 'lutron-192-168-0-41',
-			username: '{{secret:lutronUsername|scope=user}}',
-			password: '{{secret:lutronPassword|scope=user}}',
-		})
-		expect(toolArguments).toEqual({
-			processorId: 'lutron-192-168-0-41',
-			username: 'lutronUsername-demo_set_credentials-resolved',
-			password: 'lutronPassword-demo_set_credentials-resolved',
-		})
-	} finally {
-		resolveRegistrySpy.mockRestore()
-	}
-
-	const resolveSecretSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue({
-			found: true,
-			value: 'lutronUsername-resolved',
-			scope: 'user',
-			allowedHosts: [],
-			allowedCapabilities: ['some_other_capability'],
-		})
-	const denyRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
-		)
-		.mockResolvedValue(buildSecretMarkedRegistry())
-	try {
-		const deniedKody = await buildKodyFns(
-			{} as Env,
-			createMcpCallerContext({
-				baseUrl: 'https://heykody.dev',
-				user: { userId: 'user-123' },
-			}),
-		)
-		await expect(
-			deniedKody.demo_set_credentials({
-				username: '{{secret:lutronUsername|scope=user}}',
-			}),
-		).rejects.toThrow(/not allowed for capability "demo_set_credentials"/)
-		expect(resolveSecretSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				name: 'lutronUsername',
-				scope: 'user',
-				userId: 'user-123',
-			}),
-		)
-	} finally {
-		resolveSecretSpy.mockRestore()
-		denyRegistrySpy.mockRestore()
-	}
-
 	const trackedSecretValues: Array<string> = []
 	const getRegistrySpy = vi
 		.spyOn(
@@ -1264,7 +1133,7 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 						type: 'object',
 						properties: {
 							name: { type: 'string' },
-							value: { type: 'string', 'x-kody-secret': true },
+							value: { type: 'string' },
 						},
 						required: ['name', 'value'],
 					},
@@ -1294,7 +1163,7 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 						type: 'object',
 						properties: {
 							name: { type: 'string' },
-							value: { type: 'string', 'x-kody-secret': true },
+							value: { type: 'string' },
 						},
 						required: ['name', 'value'],
 					},
@@ -1319,7 +1188,7 @@ test('buildKodyFns resolves, denies, and tracks secret-marked capability inputs'
 						type: 'object',
 						properties: {
 							name: { type: 'string' },
-							value: { type: 'string', 'x-kody-secret': true },
+							value: { type: 'string' },
 						},
 						required: ['name', 'value'],
 					},
@@ -1486,7 +1355,7 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 						type: 'object',
 						properties: {
 							name: { type: 'string' },
-							value: { type: 'string', 'x-kody-secret': true },
+							value: { type: 'string' },
 						},
 						required: ['name', 'value'],
 					},
@@ -1516,7 +1385,7 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 						type: 'object',
 						properties: {
 							name: { type: 'string' },
-							value: { type: 'string', 'x-kody-secret': true },
+							value: { type: 'string' },
 						},
 						required: ['name', 'value'],
 					},
@@ -1541,7 +1410,7 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 						type: 'object',
 						properties: {
 							name: { type: 'string' },
-							value: { type: 'string', 'x-kody-secret': true },
+							value: { type: 'string' },
 						},
 						required: ['name', 'value'],
 					},
@@ -1579,14 +1448,6 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 				}
 				errorResult.cause = errorResult
 
-				if (returnRewriteFailure) {
-					return {
-						result: undefined,
-						error:
-							'Secret "spotifyAccessToken" is not allowed for capability "secret_set"',
-						logs: ['fresh-access-token before rewrite failure'],
-					}
-				}
 				return {
 					result: {
 						objectResult,
@@ -1597,7 +1458,6 @@ test('runModuleWithRegistry redacts secret keys and survives cyclic results', as
 				}
 			},
 		} as never)
-	let returnRewriteFailure = false
 	const code = `import { kody } from 'kody:runtime'
 
 export default async function run() {
@@ -1628,43 +1488,6 @@ export default async function run() {
 		expect(sanitized.errorResult.cause).toBe(sanitized.errorResult)
 
 		expect(result.logs).toEqual(['[REDACTED SECRET] log'])
-
-		const runRecords = await import('#worker/run-records/service.ts')
-		const handle = {
-			id: 'run-redaction-catch',
-			userId: 'user-123',
-			startedAt: '2026-08-10T00:00:00.000Z',
-			persistence: 'on-failure' as const,
-			context: { surface: 'execute' as const },
-		}
-		const beginSpy = vi
-			.spyOn(runRecords, 'beginRunRecord')
-			.mockReturnValue(handle)
-		const finishSpy = vi
-			.spyOn(runRecords, 'finishRunRecord')
-			.mockResolvedValue(true)
-		const resolveSecretSpy = vi
-			.spyOn(secretService, 'resolveSecret')
-			.mockRejectedValue(new Error('post-execution rewrite failed'))
-		returnRewriteFailure = true
-		try {
-			await expect(
-				runModuleWithRegistry(env, callerContext, code, undefined, {
-					runRecord: { surface: 'execute' },
-				}),
-			).rejects.toThrow('post-execution rewrite failed')
-			expect(finishSpy).toHaveBeenCalledWith(
-				expect.objectContaining({
-					handle,
-					status: 'error',
-					logs: ['[REDACTED SECRET] before rewrite failure'],
-				}),
-			)
-		} finally {
-			resolveSecretSpy.mockRestore()
-			finishSpy.mockRestore()
-			beginSpy.mockRestore()
-		}
 	} finally {
 		createExecuteExecutorSpy.mockRestore()
 		getRegistrySpy.mockRestore()
