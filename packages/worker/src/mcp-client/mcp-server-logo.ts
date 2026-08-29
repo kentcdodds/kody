@@ -1,8 +1,15 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { routes } from '#universal/routes.ts'
 import {
+	iconFitCustomMetadata,
+	logoNeedsIconFit,
+} from '#worker/community/icon-fit.ts'
+import {
 	processPlatformOauthAppLogo,
+	servedFittedLogoFromBytes,
+	servedLogoFromObject,
 	type PlatformOauthAppLogoContentType,
+	type ServedFittedLogo,
 } from '#worker/integrations/platform-app-logo.ts'
 import { getMcpServerSettingRowById } from './settings-repo.ts'
 import { type McpServerLogoSource } from './settings-types.ts'
@@ -60,7 +67,7 @@ async function sha256Hex(bytes: Uint8Array) {
 
 export async function setMcpServerLogo(input: {
 	db: D1Database
-	env: Pick<Env, 'COMMUNITY_ASSETS'>
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
 	userId: string
 	serverId: string
 	sourceBytes: Uint8Array
@@ -74,7 +81,10 @@ export async function setMcpServerLogo(input: {
 	})
 	if (!existing) return
 	const previousKey = existing.logo_key
-	const processed = await processPlatformOauthAppLogo(input.sourceBytes)
+	const processed = await processPlatformOauthAppLogo(
+		input.sourceBytes,
+		input.env.IMAGES,
+	)
 	const contentHash = (await sha256Hex(processed.bytes)).slice(0, 16)
 	const nextKey = `${mcpServerLogoR2KeyPrefix}${input.userId}/${existing.id}/${contentHash}.${extensionForContentType(processed.contentType)}`
 	await input.env.COMMUNITY_ASSETS.put(nextKey, processed.bytes, {
@@ -82,12 +92,12 @@ export async function setMcpServerLogo(input: {
 			contentType: processed.contentType,
 			cacheControl: mcpServerLogoCacheControl,
 		},
-		customMetadata: {
+		customMetadata: iconFitCustomMetadata({
 			userId: input.userId,
 			mcpServerId: existing.id,
 			logoSource: input.source,
 			contentHash,
-		},
+		}),
 	})
 
 	const updated = await input.db
@@ -153,4 +163,64 @@ export async function getMcpServerLogoObject(input: {
 }): Promise<R2ObjectBody | null> {
 	if (!input.logoKey.startsWith(mcpServerLogoR2KeyPrefix)) return null
 	return await input.env.COMMUNITY_ASSETS.get(input.logoKey)
+}
+
+export async function loadFittedMcpServerLogo(input: {
+	db: D1Database
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
+	userId: string
+	serverId: string
+	logoKey: string
+	logoContentType: string | null
+	logoSource: McpServerLogoSource | null
+	faviconSourceHost: string | null
+}): Promise<ServedFittedLogo | null> {
+	const object = await getMcpServerLogoObject({
+		env: input.env,
+		logoKey: input.logoKey,
+	})
+	if (!object) return null
+	if (!logoNeedsIconFit(object.customMetadata)) {
+		return servedLogoFromObject(
+			object,
+			input.logoContentType,
+			mcpServerLogoCacheControl,
+		)
+	}
+	const sourceBytes = new Uint8Array(await object.arrayBuffer())
+	try {
+		await setMcpServerLogo({
+			db: input.db,
+			env: input.env,
+			userId: input.userId,
+			serverId: input.serverId,
+			sourceBytes,
+			source: input.logoSource ?? 'favicon',
+			faviconSourceHost: input.faviconSourceHost ?? '',
+		})
+		const row = await getMcpServerSettingRowById({
+			db: input.db,
+			userId: input.userId,
+			id: input.serverId,
+		})
+		if (!row?.logo_key) return null
+		const fitted = await getMcpServerLogoObject({
+			env: input.env,
+			logoKey: row.logo_key,
+		})
+		if (!fitted) return null
+		return servedLogoFromObject(
+			fitted,
+			row.logo_content_type,
+			mcpServerLogoCacheControl,
+		)
+	} catch (error) {
+		console.error('mcp-server-logo-refit-failed', input.serverId, error)
+		return servedFittedLogoFromBytes({
+			bytes: sourceBytes,
+			contentType: input.logoContentType,
+			httpEtag: object.httpEtag,
+			cacheControl: mcpServerLogoCacheControl,
+		})
+	}
 }

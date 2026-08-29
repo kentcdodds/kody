@@ -49,8 +49,8 @@ export function CommunityListingIcon(
 					display: 'block',
 					width: '100%',
 					height: '100%',
-					// `contain`, not `cover`: the icon endpoint serves raster
-					// icons at their source dimensions, so a wide logo would be
+					// `contain`, not `cover`: fitted icons keep their source
+					// aspect ratio inside a 256px box, so a wide logo would be
 					// center-cropped. The generated square fallback fills the
 					// well identically either way.
 					objectFit: 'contain',

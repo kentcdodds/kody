@@ -164,16 +164,19 @@ capability use it within the import boundaries.
 ### Provider logos
 
 Operators may attach a logo per platform app (`admin_platform_oauth_app_save`
-`logoBase64`; `null` clears). Uploads accept SVG, PNG, JPEG, or WebP; SVG is
-sanitized and rasterized to PNG through the community-icon pipeline, so an
+`logoBase64`; `null` clears). Uploads accept SVG, PNG, JPEG, or WebP. The shared
+community-icon pipeline sanitizes SVG, then Cloudflare Images fits every
+accepted source to a 256-pixel WebP (`fit: scale-down`, quality 90), so an
 active image format is never stored or served. Assets live in the
 `COMMUNITY_ASSETS` R2 bucket under content-hashed
 `platform-oauth-app-logos/{slug}/` keys (operator-owned, like the app row);
 `platform_oauth_apps.logo_key` / `logo_content_type` point at the current asset.
-Serving is the public `/integrations/logos/:integrationSlug` route with
-immutable caching; projections expose the relative `logoPath`. The connect page
-and account integration views render it, falling back to the auto-favicon and
-then the letter.
+GET paths lazily re-fit objects that predate that ingest (custom metadata
+`iconFitVersion` other than `2`) and rewrite the hashed key so caches pick up
+the smaller file. Serving is the public `/integrations/logos/:integrationSlug`
+route with immutable caching; projections expose the relative `logoPath`. The
+connect page and account integration views render it, falling back to the
+auto-favicon and then the letter.
 
 User-lane OAuth apps have the same asset pipeline on `user_oauth_apps`
 (`logo_key`, `logo_content_type`, `logo_source`, `favicon_source_host`).

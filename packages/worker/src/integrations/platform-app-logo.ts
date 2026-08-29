@@ -2,18 +2,32 @@ import { toHex } from '@kody-internal/shared/hex.ts'
 import { routes } from '#universal/routes.ts'
 import { processCommunityIcon } from '#worker/community/community-icon.ts'
 import {
+	iconFitCustomMetadata,
+	logoNeedsIconFit,
+	publicFittedIconCacheControl,
+	uint8ArrayToStream,
+} from '#worker/community/icon-fit.ts'
+import {
 	getPlatformOauthAppBySlug,
 	type PlatformOauthApp,
 } from './platform-apps.ts'
 
 const platformOauthAppLogoR2KeyPrefix = 'platform-oauth-app-logos/'
-const platformOauthAppLogoCacheControl = 'public, max-age=31536000, immutable'
+const platformOauthAppLogoCacheControl = publicFittedIconCacheControl
 const maxPlatformOauthAppLogoSourceBytes = 1_000_000
 
 export type PlatformOauthAppLogoContentType =
 	| 'image/png'
 	| 'image/jpeg'
 	| 'image/webp'
+
+export type ServedFittedLogo = {
+	body: ReadableStream
+	contentType: string
+	size: number
+	httpEtag: string
+	cacheControl: string
+}
 
 type ProcessedPlatformOauthAppLogo = {
 	bytes: Uint8Array
@@ -38,8 +52,8 @@ export function buildPlatformOauthAppLogoPath(app: {
 
 /**
  * Detects the upload format from magic bytes. SVG is accepted as *input*
- * only: it is sanitized and rasterized to PNG by `processCommunityIcon`, so
- * an active image format is never stored or served.
+ * only: it is sanitized, rasterized, and fitted to WebP by the shared icon
+ * pipeline, so an active image format is never stored or served.
  */
 export function sniffPlatformOauthAppLogoFormat(
 	bytes: Uint8Array,
@@ -67,6 +81,7 @@ export function sniffPlatformOauthAppLogoFormat(
 
 export async function processPlatformOauthAppLogo(
 	sourceBytes: Uint8Array,
+	images: ImagesBinding,
 ): Promise<ProcessedPlatformOauthAppLogo> {
 	if (
 		sourceBytes.byteLength === 0 ||
@@ -88,7 +103,11 @@ export async function processPlatformOauthAppLogo(
 			webp: 'community-icon.webp',
 		} as const
 	)[format]
-	const processed = await processCommunityIcon({ path, sourceBytes })
+	const processed = await processCommunityIcon({
+		path,
+		sourceBytes,
+		images,
+	})
 	return {
 		bytes: processed.bytes,
 		contentType: processed.contentType,
@@ -125,7 +144,7 @@ async function sha256Hex(bytes: Uint8Array) {
  */
 export async function setPlatformOauthAppLogo(input: {
 	db: D1Database
-	env: Pick<Env, 'COMMUNITY_ASSETS'>
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
 	slug: string
 	sourceBytes: Uint8Array | null
 }): Promise<PlatformOauthApp> {
@@ -142,7 +161,10 @@ export async function setPlatformOauthAppLogo(input: {
 	let nextKey: string | null = null
 	let nextContentType: PlatformOauthAppLogoContentType | null = null
 	if (input.sourceBytes) {
-		const processed = await processPlatformOauthAppLogo(input.sourceBytes)
+		const processed = await processPlatformOauthAppLogo(
+			input.sourceBytes,
+			input.env.IMAGES,
+		)
 		const contentHash = (await sha256Hex(processed.bytes)).slice(0, 16)
 		nextKey = `${platformOauthAppLogoR2KeyPrefix}${app.slug}/${contentHash}.${extensionForContentType(processed.contentType)}`
 		nextContentType = processed.contentType
@@ -151,10 +173,10 @@ export async function setPlatformOauthAppLogo(input: {
 				contentType: processed.contentType,
 				cacheControl: platformOauthAppLogoCacheControl,
 			},
-			customMetadata: {
+			customMetadata: iconFitCustomMetadata({
 				platformAppSlug: app.slug,
 				contentHash,
-			},
+			}),
 		})
 	}
 
@@ -212,4 +234,85 @@ export async function getPlatformOauthAppLogoObject(input: {
 }): Promise<R2ObjectBody | null> {
 	if (!input.logoKey.startsWith(platformOauthAppLogoR2KeyPrefix)) return null
 	return await input.env.COMMUNITY_ASSETS.get(input.logoKey)
+}
+
+export function servedLogoFromObject(
+	object: R2ObjectBody,
+	contentType: string | null | undefined,
+	cacheControl: string,
+): ServedFittedLogo {
+	return {
+		body: object.body,
+		contentType: contentType ?? 'application/octet-stream',
+		size: object.size,
+		httpEtag: object.httpEtag,
+		cacheControl,
+	}
+}
+
+export function servedFittedLogoFromBytes(input: {
+	bytes: Uint8Array
+	contentType: string | null | undefined
+	httpEtag: string
+	cacheControl: string
+}): ServedFittedLogo {
+	return {
+		body: uint8ArrayToStream(input.bytes),
+		contentType: input.contentType ?? 'application/octet-stream',
+		size: input.bytes.byteLength,
+		httpEtag: input.httpEtag,
+		cacheControl: input.cacheControl,
+	}
+}
+
+/**
+ * Serves the current platform logo, lazily re-fitting assets stored before
+ * the ingest pipeline started writing 256px WebP derivatives.
+ */
+export async function loadFittedPlatformOauthAppLogo(input: {
+	db: D1Database
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
+	app: PlatformOauthApp
+}): Promise<ServedFittedLogo | null> {
+	if (!input.app.logoKey) return null
+	const object = await getPlatformOauthAppLogoObject({
+		env: input.env,
+		logoKey: input.app.logoKey,
+	})
+	if (!object) return null
+	if (!logoNeedsIconFit(object.customMetadata)) {
+		return servedLogoFromObject(
+			object,
+			input.app.logoContentType,
+			platformOauthAppLogoCacheControl,
+		)
+	}
+	const sourceBytes = new Uint8Array(await object.arrayBuffer())
+	try {
+		const updated = await setPlatformOauthAppLogo({
+			db: input.db,
+			env: input.env,
+			slug: input.app.slug,
+			sourceBytes,
+		})
+		if (!updated.logoKey) return null
+		const fitted = await getPlatformOauthAppLogoObject({
+			env: input.env,
+			logoKey: updated.logoKey,
+		})
+		if (!fitted) return null
+		return servedLogoFromObject(
+			fitted,
+			updated.logoContentType,
+			platformOauthAppLogoCacheControl,
+		)
+	} catch (error) {
+		console.error('platform-oauth-app-logo-refit-failed', input.app.slug, error)
+		return servedFittedLogoFromBytes({
+			bytes: sourceBytes,
+			contentType: input.app.logoContentType,
+			httpEtag: object.httpEtag,
+			cacheControl: platformOauthAppLogoCacheControl,
+		})
+	}
 }

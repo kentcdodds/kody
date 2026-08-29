@@ -115,6 +115,13 @@ This project uses the following resources:
     (same for preview). **Dimensions must match** the embedding model in
     `packages/worker/src/vectorize/embedding.ts` (`@cf/baai/bge-small-en-v1.5`,
     384 dimensions, `cls` pooling).
+- Cloudflare Images binding for package-icon and integration-logo ingest
+  - `binding`: `IMAGES`
+  - Origin (`packages/worker/wrangler.jsonc`) and platform
+    (`packages/platform-worker/wrangler.jsonc`) bind the same Images API.
+    Derived community icons and OAuth / MCP logos are fitted to 256px WebP at
+    ingest. No extra Cloudflare resource to create; local wrangler uses the
+    offline simulator.
 - Workers AI binding for semantic search embeddings
   - `binding`: `AI`
   - Production and preview route embedding calls through this binding. When

@@ -103,7 +103,7 @@ export const integrationSaveSchema = z
 			.nullable()
 			.optional()
 			.describe(
-				'Base64-encoded OAuth app logo (SVG, PNG, JPEG, or WebP; SVG is rasterized to PNG). Omit to keep the current logo, pass null to clear it and re-fetch the provider favicon.',
+				'Base64-encoded OAuth app logo (SVG, PNG, JPEG, or WebP). Kody fits the image to 256px WebP before storage. Omit to keep the current logo, pass null to clear it and re-fetch the provider favicon.',
 			),
 	})
 	.strict()

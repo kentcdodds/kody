@@ -61,7 +61,10 @@ import {
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { deleteAllPackageRetrieverCacheEntriesForUser } from '#worker/package-retrievers/manifest-cache.ts'
 import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
-import { buildCommunityIconCacheKey } from '#worker/community/community-icon.ts'
+import {
+	communityIconKvListingPrefixes,
+	buildCommunityIconCacheKey,
+} from '#worker/community/community-icon.ts'
 import { derivedCacheKeyPrefix } from '#worker/kv-cachified.ts'
 import {
 	maybeRemoveDiscordGuildRoles,
@@ -1102,9 +1105,8 @@ export async function deleteUserAccount(input: {
 					`source-snapshot:v1:${source.sourceId}:`,
 					`source-manifest-snapshot:v1:${source.sourceId}:`,
 				]),
-				...inventory.communityListings.map(
-					(listing) =>
-						`${derivedCacheKeyPrefix}community-icon:v1:${listing.id}:`,
+				...inventory.communityListings.flatMap((listing) =>
+					communityIconKvListingPrefixes(listing.id),
 				),
 				// Package-codemod apply snapshots are user-namespaced in KV
 				// (`package-codemod-revert:{userId}:{itemId}`). D1 run items are

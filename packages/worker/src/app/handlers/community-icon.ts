@@ -1,13 +1,12 @@
 import { type Action } from 'remix/router'
 import {
 	buildCommunityIconFallbackSvg,
+	communityIconCacheControl,
 	getCommunityIconObject,
 	renderCommunityIconFallbackPng,
 } from '#worker/community/community-icon.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
 import { type routes } from '#universal/routes.ts'
-
-const communityIconCacheControl = 'public, max-age=3600'
 
 export function createCommunityIconHandler(env: Env) {
 	return {

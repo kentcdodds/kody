@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
+import type * as IconFitModule from '#worker/community/icon-fit.ts'
 import { createCommunityDetailOgImageHandler } from './community-detail.tsx'
 
 const mocks = vi.hoisted(() => ({
@@ -7,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 	getCommunityListingWithAggregates: vi.fn(),
 	renderCommunityIconFallbackPng: vi.fn(),
 	renderCommunityOgImage: vi.fn(),
+	convertIconRasterToPng: vi.fn(),
 }))
 
 vi.mock('#worker/community/community-icon.ts', () => ({
@@ -21,6 +23,15 @@ vi.mock('#worker/community/service.ts', () => ({
 		mocks.getCommunityListingWithAggregates(...args),
 	reportCommunityListing: vi.fn(),
 }))
+
+vi.mock('#worker/community/icon-fit.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof IconFitModule>()
+	return {
+		...actual,
+		convertIconRasterToPng: (...args: Array<unknown>) =>
+			mocks.convertIconRasterToPng(...args),
+	}
+})
 
 vi.mock('#worker/community/og-image.ts', () => ({
 	renderCommunityOgImage: (...args: Array<unknown>) =>
@@ -67,7 +78,7 @@ const tinyPng = Uint8Array.from([
 	0x44, 0xae, 0x42, 0x60, 0x82,
 ])
 
-test('community detail OG image embeds PNG icons and falls back for WebP', async () => {
+test('community detail OG image embeds PNG icons and converts WebP for satori', async () => {
 	mocks.getCommunityListingWithAggregates.mockResolvedValue(listing)
 	mocks.getCommunityIconObject.mockResolvedValue({
 		descriptor: {
@@ -105,12 +116,13 @@ test('community detail OG image embeds PNG icons and falls back for WebP', async
 
 	mocks.renderCommunityOgImage.mockClear()
 	mocks.renderCommunityIconFallbackPng.mockClear()
+	mocks.convertIconRasterToPng.mockResolvedValue(tinyPng)
 	mocks.getCommunityIconObject.mockResolvedValue({
 		descriptor: {
-			version: 1,
+			version: 2,
 			listingId: listing.id,
 			iconCommit: listing.iconCommit,
-			r2Key: 'community-icon:v1/listing-1/def456/asset',
+			r2Key: 'community-icon:v2/listing-1/def456/asset',
 			contentType: 'image/webp',
 			sourcePath: 'community-icon.webp',
 			byteLength: 12,
@@ -119,7 +131,6 @@ test('community detail OG image embeds PNG icons and falls back for WebP', async
 			arrayBuffer: async () => new ArrayBuffer(12),
 		},
 	})
-	mocks.renderCommunityIconFallbackPng.mockResolvedValue(tinyPng)
 	mocks.renderCommunityOgImage.mockResolvedValue(tinyPng)
 
 	const webpResponse = await handler.handler({
@@ -129,9 +140,8 @@ test('community detail OG image embeds PNG icons and falls back for WebP', async
 	} as never)
 
 	expect(webpResponse.status).toBe(200)
-	expect(mocks.renderCommunityIconFallbackPng).toHaveBeenCalledWith(
-		listing.name,
-	)
+	expect(mocks.convertIconRasterToPng).toHaveBeenCalled()
+	expect(mocks.renderCommunityIconFallbackPng).not.toHaveBeenCalled()
 	expect(mocks.renderCommunityOgImage).toHaveBeenCalledWith(
 		expect.objectContaining({
 			iconDataUri: expect.stringMatching(/^data:image\/png;base64,/),

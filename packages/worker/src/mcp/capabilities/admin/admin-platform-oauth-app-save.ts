@@ -82,7 +82,7 @@ const inputSchema = z
 			.nullable()
 			.optional()
 			.describe(
-				'Base64-encoded provider logo (SVG, PNG, JPEG, or WebP; SVG is rasterized to PNG before storage). Omit to keep the current logo, pass null to remove it.',
+				'Base64-encoded provider logo (SVG, PNG, JPEG, or WebP). Kody fits the image to 256px WebP before storage. Omit to keep the current logo, pass null to remove it.',
 			),
 	})
 	.strict()

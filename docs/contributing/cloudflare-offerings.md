@@ -4,10 +4,10 @@ kody binds a broad set of Cloudflare offerings. Origin
 (`packages/worker/wrangler.jsonc`) is the largest surface — D1 (`APP_DB`), KV
 (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`), **cross-script** Durable Object bindings
 (`MCP_OBJECT` and others), R2 (`COMMUNITY_ASSETS`, `EMAIL_BLOBS`,
-`REPO_SESSION_BLOBS`), Workers AI (`AI`, optionally routed through AI Gateway
-via `AI_GATEWAY_ID`), Vectorize (`CAPABILITY_VECTOR_INDEX`), Queues, Analytics
-Engine (`USAGE_EVENTS`), Workflows, and worker loaders — but it is not the whole
-inventory. Platform, runtime, and jobs wranglers
+`REPO_SESSION_BLOBS`), Images (`IMAGES`), Workers AI (`AI`, optionally routed
+through AI Gateway via `AI_GATEWAY_ID`), Vectorize (`CAPABILITY_VECTOR_INDEX`),
+Queues, Analytics Engine (`USAGE_EVENTS`), Workflows, and worker loaders — but
+it is not the whole inventory. Platform, runtime, and jobs wranglers
 (`packages/platform-worker/wrangler.jsonc`,
 `packages/runtime-worker/wrangler.jsonc`, `packages/jobs-worker/wrangler.jsonc`)
 own Durable Object **classes**, `JOBS_DB`, and runtime-only bindings. See
@@ -19,6 +19,7 @@ This guide covers how those common offerings are added, useful when you need
 another one of:
 
 - R2 (object storage)
+- Images (resize / re-encode)
 - Workers AI
 - AI Gateway
 - An additional KV namespace for app data (separate from `OAUTH_KV`)
@@ -62,6 +63,30 @@ Add these permissions when you add the corresponding offering:
 
 If you use `npx wrangler secret put ...` in CI, your token must also be able to
 edit Worker secrets (covered by `Workers Scripts:Edit`).
+
+## Images (resize / re-encode)
+
+Use the Images binding for off-isolate raster transforms so a large upload
+cannot OOM the Worker. Origin and platform wranglers bind `IMAGES`; package
+icons and integration / MCP logos fit to 256px WebP at ingest.
+
+### Token permissions
+
+Images uses the Worker script binding. Deploy is covered by
+`Workers Scripts:Edit`; there is no extra Images resource to create.
+
+### Bindings (`packages/worker/wrangler.jsonc`)
+
+```jsonc
+"images": { "binding": "IMAGES" }
+```
+
+Local wrangler and workers-unit tests use the offline Images simulator (`width`
+/ `height` / `fit` / `format`). Wrangler does not inherit the `images` key into
+named environments, so production, preview, and test each restate
+`"images": { "binding": "IMAGES" }`. Node-unit tests use
+`createFakeImagesBinding()` in
+`packages/worker/src/test-support/images-binding.ts`.
 
 ## R2 (object storage)
 

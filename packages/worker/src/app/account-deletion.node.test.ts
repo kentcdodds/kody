@@ -921,6 +921,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'derived-cache:v1:community-icon:v1:listing-1:commit-1',
 		'derived-cache:v1:community-icon:v1:listing-1:abc123',
 		'derived-cache:v1:community-icon:v1:listing-1:historical',
+		'derived-cache:v1:community-icon:v2:listing-1:commit-1',
+		'derived-cache:v1:community-icon:v2:listing-1:abc123',
 		'source-snapshot:v1:src-2:def456',
 		`package-codemod-revert:${userAaa}:item-1`,
 		`package-codemod-revert:${userAaa}:item-2`,
@@ -996,6 +998,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'community-icon:v1/listing-1/abc123/asset',
 		'community-icon:v1/listing-1/commit-1/asset',
 		'community-icon:v1/listing-1/historical/asset',
+		'community-icon:v2/listing-1/abc123/asset',
+		'community-icon:v2/listing-1/commit-1/asset',
 		'community-icon:v1/listing-2/other/asset',
 	])
 	const communityAssets = {
@@ -1337,6 +1341,8 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 		'derived-cache:v1:community-icon:v1:listing-1:abc123',
 		'derived-cache:v1:community-icon:v1:listing-1:commit-1',
 		'derived-cache:v1:community-icon:v1:listing-1:historical',
+		'derived-cache:v1:community-icon:v2:listing-1:abc123',
+		'derived-cache:v1:community-icon:v2:listing-1:commit-1',
 		`package-codemod-revert:${userAaa}:item-1`,
 		`package-codemod-revert:${userAaa}:item-2`,
 		'package-retriever-index-entry:v1:user-aaa:context:pkg-1:notes',
@@ -1371,14 +1377,16 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 	expect(result.updatedRowCounts.community_bans).toBe(1)
 	expect(result.deletedRowCounts.platform_feedback).toBe(1)
 	expect(result.updatedRowCounts.platform_feedback).toBe(1)
-	expect(result.deletedKvKeys).toBe(14)
-	expect(result.deletedCommunityAssets).toBe(5)
+	expect(result.deletedKvKeys).toBe(16)
+	expect(result.deletedCommunityAssets).toBe(7)
 	expect(result.deletedEmailBlobs).toBe(2)
 	// Prefix sweeps remove current and historical assets without crossing users.
 	expect(deletedCommunityAssetKeys.sort()).toEqual([
 		'community-icon:v1/listing-1/abc123/asset',
 		'community-icon:v1/listing-1/commit-1/asset',
 		'community-icon:v1/listing-1/historical/asset',
+		'community-icon:v2/listing-1/abc123/asset',
+		'community-icon:v2/listing-1/commit-1/asset',
 		'user-avatars/user-aaa/abc123.png',
 		'user-avatars/user-aaa/old.png',
 	])

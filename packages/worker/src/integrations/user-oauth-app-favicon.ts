@@ -282,7 +282,7 @@ export function shouldFetchUserOauthAppFavicon(app: UserOauthApp): boolean {
 
 export async function fillUserOauthAppFavicon(input: {
 	db: D1Database
-	env: Pick<Env, 'COMMUNITY_ASSETS'>
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
 	userId: string
 	slug: string
 	fetchImpl?: typeof fetch
@@ -326,15 +326,20 @@ export async function fillUserOauthAppFavicon(input: {
 
 export async function scheduleUserOauthAppFaviconFill(input: {
 	db: D1Database
-	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'> | Pick<Env, 'APP_DB'>
+	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS' | 'IMAGES'> | Pick<Env, 'APP_DB'>
 	userId: string
 	slug: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
-	if (!('COMMUNITY_ASSETS' in input.env) || !input.env.COMMUNITY_ASSETS) {
+	if (
+		!('COMMUNITY_ASSETS' in input.env) ||
+		!input.env.COMMUNITY_ASSETS ||
+		!('IMAGES' in input.env) ||
+		!input.env.IMAGES
+	) {
 		return
 	}
-	const env = input.env as Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'>
+	const env = input.env as Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS' | 'IMAGES'>
 	const work = fillUserOauthAppFavicon({
 		db: input.db,
 		env,
@@ -356,19 +361,24 @@ export async function scheduleUserOauthAppFaviconFill(input: {
 
 export async function backfillMissingUserOauthAppFavicons(input: {
 	db: D1Database
-	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'> | Pick<Env, 'APP_DB'>
+	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS' | 'IMAGES'> | Pick<Env, 'APP_DB'>
 	userId: string
 	apps: Array<UserOauthApp>
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
-	if (!('COMMUNITY_ASSETS' in input.env) || !input.env.COMMUNITY_ASSETS) {
+	if (
+		!('COMMUNITY_ASSETS' in input.env) ||
+		!input.env.COMMUNITY_ASSETS ||
+		!('IMAGES' in input.env) ||
+		!input.env.IMAGES
+	) {
 		return
 	}
 	const pending = input.apps
 		.filter((app) => shouldFetchUserOauthAppFavicon(app))
 		.slice(0, maxBackfillPerPage)
 	if (pending.length === 0) return
-	const env = input.env as Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'>
+	const env = input.env as Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS' | 'IMAGES'>
 	const work = (async () => {
 		for (const app of pending) {
 			await fillUserOauthAppFavicon({
