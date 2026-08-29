@@ -195,6 +195,7 @@ export function OnboardingRoute(handle: Handle) {
 	let checklist: OnboardingChecklistLoaderData | null = null
 	let checklistHidden = false
 	let initializedStep = false
+	let pendingAdvanceToAccess = false
 	let awaitingMcpConnection = false
 	let oauthReturnError: string | null = null
 	let oauthReturnSucceeded = false
@@ -240,10 +241,12 @@ export function OnboardingRoute(handle: Handle) {
 		message = null
 		if (!initializedStep) {
 			initializedStep = true
-		} else if (!wasConnected && payload.hasMcpClient && !hasStep2Win) {
+			return
+		}
+		if (!wasConnected && payload.hasMcpClient && !hasStep2Win) {
 			panelAnimationArmed = true
 			scrollToNav('onboarding-steps-nav')
-			goToStep(2)
+			pendingAdvanceToAccess = true
 		}
 		// Stay on Step 2 when access or an example finishes so the
 		// Connected/Installed state is visible; wizard nav advances.
@@ -277,6 +280,23 @@ export function OnboardingRoute(handle: Handle) {
 		if (typeof window === 'undefined') return
 		navigate(buildStepHref(step, window.location.href), {
 			preventScrollReset: true,
+		})
+	}
+
+	function flushPendingAdvanceToAccess(defer: boolean) {
+		if (!pendingAdvanceToAccess) return
+		if (!defer) {
+			pendingAdvanceToAccess = false
+			goToStep(2)
+			return
+		}
+		// Hash navigate is synchronous and calls handle.update(). Loader
+		// consumption and its corrective render both run around this paint,
+		// so keep the flag until the queued task actually navigates.
+		handle.queueTask((signal) => {
+			if (signal.aborted || !pendingAdvanceToAccess) return
+			pendingAdvanceToAccess = false
+			goToStep(2)
 		})
 	}
 
@@ -316,6 +336,7 @@ export function OnboardingRoute(handle: Handle) {
 			const payload = await fetchOnboardingPayload(handle.signal)
 			if (handle.signal.aborted || !payload) return
 			applyPayload(payload)
+			flushPendingAdvanceToAccess(false)
 			handle.update()
 		} catch {
 			// Install already succeeded in the card; the next poll retries.
@@ -374,6 +395,7 @@ export function OnboardingRoute(handle: Handle) {
 				return
 			}
 			applyPayload(payload)
+			flushPendingAdvanceToAccess(false)
 			if (!agentChooser) agentChooser = pickOnboardingAgentChooser()
 			loadLatch.markLoaded(onboardingDataHref(href))
 			handle.update()
@@ -444,6 +466,7 @@ export function OnboardingRoute(handle: Handle) {
 				return
 			}
 			applyPayload(payload)
+			flushPendingAdvanceToAccess(false)
 			handle.update()
 		} catch {
 			// Transient poll failures are fine; the next tick retries.
@@ -501,6 +524,7 @@ export function OnboardingRoute(handle: Handle) {
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const appliedRouteData = applyRouteLoaderData(currentHref)
+		flushPendingAdvanceToAccess(true)
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const needsLoad = loadLatch.needsLoad({
