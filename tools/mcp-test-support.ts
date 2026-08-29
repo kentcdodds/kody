@@ -20,6 +20,8 @@ import {
 	stopProcess,
 } from '#mcp/test-process.ts'
 import { startCloudflareMock } from '#worker/test-support/cloudflare-mock-server.ts'
+import { ensureGuideCatalogModules } from './build-guide-catalog-modules.ts'
+import { ensureWorkerBundlerModules } from './build-worker-bundler-modules.ts'
 import { buildRoleAssignmentSql } from './seed-sql.ts'
 
 const projectRoot = process.cwd()
@@ -160,6 +162,7 @@ export async function startDevServer(
 }
 
 async function startDevServerWithCloudflareMock() {
+	await Promise.all([ensureWorkerBundlerModules(), ensureGuideCatalogModules()])
 	const cloudflareMock = await startCloudflareMock(
 		`mcp-e2e-cloudflare-${randomUUID()}`,
 	)
