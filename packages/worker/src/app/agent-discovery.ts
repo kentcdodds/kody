@@ -162,6 +162,7 @@ function staticPublicPages(): ReadonlyArray<SitemapEntry> {
 	return [
 		{ path: '/' },
 		{ path: '/guides' },
+		{ path: '/guides/connect' },
 		{ path: '/blog' },
 		{ path: '/community' },
 		{ path: '/pricing' },
@@ -351,7 +352,8 @@ export function buildHomeMarkdown(origin: string): string {
 		'',
 		`- [What is Kody?](${origin}/guides/what-is-kody.md) — capability tour, no account`,
 		`- [How to connect](${origin}${authMdPath}) — OAuth and host setup`,
-		`- [Guides](${origin}/guides.md)`,
+		`- [Guides](${origin}/guides.md) — Work with Kody`,
+		`- [Connection guides](${origin}/guides/connect.md) — Discord, GitHub, Google, and more`,
 		`- [Get started](${origin}/onboarding)`,
 		`- [Pricing](${origin}/pricing)`,
 		`- [Community packages](${origin}/community)`,

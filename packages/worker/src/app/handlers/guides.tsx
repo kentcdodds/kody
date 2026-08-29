@@ -3,7 +3,10 @@ import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	getGuideBySlug,
-	listGuides,
+	listMorePlatformGuides,
+	listPlatformGuides,
+	listProviderGuides,
+	listStartHereGuides,
 	toGuideSummary,
 } from '#worker/guides/catalog.ts'
 import {
@@ -29,33 +32,80 @@ import { pickWalkthroughHosts } from '#universal/walkthrough-hosts.ts'
 import { type Guide } from '#worker/guides/parse-frontmatter.ts'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
 
-function buildGuidesIndexMarkdown(baseUrl: string): string {
-	const lines = [
-		'# Kody guides',
-		'',
-		'Official guides for connecting providers and working with Kody',
-		'primitives. Each guide is also available as raw markdown at',
-		'`/guides/<slug>.md` (or send `Accept: text/markdown` to the HTML URL).',
-		'',
-	]
-	const guides = listGuides()
-	const platform = guides.filter((guide) => guide.category === 'platform')
-	const provider = guides.filter((guide) => guide.category === 'provider')
-	lines.push('## Platform guides', '')
-	for (const guide of platform) {
+function appendGuideMarkdownLinks(
+	lines: Array<string>,
+	guides: ReadonlyArray<Guide>,
+	baseUrl: string,
+) {
+	for (const guide of guides) {
 		lines.push(
 			`- [${guide.title}](${baseUrl}/guides/${guide.slug}.md) — ${guide.summary}`,
 		)
 	}
-	if (provider.length > 0) {
-		lines.push('', '## Provider guides', '')
-		for (const guide of provider) {
-			lines.push(
-				`- [${guide.title}](${baseUrl}/guides/${guide.slug}.md) — ${guide.summary}`,
-			)
-		}
-	}
-	lines.push('')
+}
+
+/**
+ * Main `/guides.md` index: Work with Kody first (Start here + more), then a
+ * compact pointer at the connection index — not the full provider dump.
+ */
+export function buildGuidesIndexMarkdown(baseUrl: string): string {
+	const lines = [
+		'# Kody guides',
+		'',
+		'Guides for you and your agent: how Kody works, first builds, and',
+		'recipes. Connection walkthroughs (Discord, GitHub, Google, and more)',
+		`live on [${baseUrl}/guides/connect.md](${baseUrl}/guides/connect.md).`,
+		'Each guide is also available as raw markdown at `/guides/<slug>.md`',
+		'(or send `Accept: text/markdown` to the HTML URL).',
+		'',
+		'## Work with Kody',
+		'',
+		'### Start here',
+		'',
+	]
+	appendGuideMarkdownLinks(lines, listStartHereGuides(), baseUrl)
+	lines.push('', '### More guides', '')
+	appendGuideMarkdownLinks(lines, listMorePlatformGuides(), baseUrl)
+	lines.push(
+		'',
+		'## Connect a provider',
+		'',
+		'How to connect Discord, GitHub, Google, Notion, Origin, Salesforce,',
+		'Slack, or Spotify to Kody:',
+		`[Connection guides](${baseUrl}/guides/connect.md).`,
+		'',
+	)
+	return lines.join('\n')
+}
+
+/**
+ * `/guides/connect.md` — verified provider walkthroughs, with a path back to
+ * Work with Kody for people who landed on connect first.
+ */
+export function buildGuidesConnectMarkdown(baseUrl: string): string {
+	const lines = [
+		'# Connect a provider',
+		'',
+		'Verified walkthroughs for connecting Discord, GitHub, Google, Notion,',
+		'Origin, Salesforce, Slack, or Spotify to Kody. Each guide covers',
+		'console steps, endpoints, scopes, gotchas, and a smoke test.',
+		'',
+		'Looking for how Kody works instead? Start with',
+		`[Work with Kody](${baseUrl}/guides.md) or`,
+		`[How Kody works](${baseUrl}/guides/how-kody-works.md).`,
+		'',
+		'## Provider guides',
+		'',
+	]
+	appendGuideMarkdownLinks(lines, listProviderGuides(), baseUrl)
+	lines.push(
+		'',
+		'## Related',
+		'',
+		`- [Connect a home MCP server](${baseUrl}/guides/local-mcp-tunnels.md) — run a local MCP process and connect it to Kody`,
+		`- [Work with Kody](${baseUrl}/guides.md) — fundamentals and recipes`,
+		'',
+	)
 	return lines.join('\n')
 }
 
@@ -127,7 +177,10 @@ export function createGuidesHandler(env: Env) {
 					env,
 					title: 'Guides',
 					loaderData: {
-						guides: { ok: true, guides: listGuides().map(toGuideSummary) },
+						guides: {
+							ok: true,
+							guides: listPlatformGuides().map(toGuideSummary),
+						},
 					},
 				}),
 			)
@@ -141,7 +194,7 @@ export function createGuidesApiHandler(_env: Env) {
 		async handler() {
 			return jsonResponse({
 				ok: true,
-				guides: listGuides().map(toGuideSummary),
+				guides: listPlatformGuides().map(toGuideSummary),
 			})
 		},
 	} satisfies Action<typeof routes.guidesApi>
@@ -155,6 +208,53 @@ export function createGuidesMarkdownHandler(env: Env) {
 			return markdownResponse(buildGuidesIndexMarkdown(baseUrl))
 		},
 	} satisfies Action<typeof routes.guidesMarkdown>
+}
+
+export function createGuidesConnectHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			if (prefersMarkdown(request)) {
+				const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
+				return markdownResponse(buildGuidesConnectMarkdown(baseUrl))
+			}
+			return withVaryAccept(
+				await renderAppPage({
+					request,
+					env,
+					title: 'Connect a provider',
+					loaderData: {
+						guidesConnect: {
+							ok: true,
+							guides: listProviderGuides().map(toGuideSummary),
+						},
+					},
+				}),
+			)
+		},
+	} satisfies Action<typeof routes.guidesConnect>
+}
+
+export function createGuidesConnectApiHandler(_env: Env) {
+	return {
+		middleware: [],
+		async handler() {
+			return jsonResponse({
+				ok: true,
+				guides: listProviderGuides().map(toGuideSummary),
+			})
+		},
+	} satisfies Action<typeof routes.guidesConnectApi>
+}
+
+export function createGuidesConnectMarkdownHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
+			return markdownResponse(buildGuidesConnectMarkdown(baseUrl))
+		},
+	} satisfies Action<typeof routes.guidesConnectMarkdown>
 }
 
 export function createGuideDetailHandler(env: Env) {

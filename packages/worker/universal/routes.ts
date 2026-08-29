@@ -138,6 +138,11 @@ export const routes = route({
 	guides: '/guides',
 	guidesApi: '/guides.json',
 	guidesMarkdown: '/guides.md',
+	// Static connect index must win over `/guides/:slug` so `connect` is not
+	// treated as a missing guide slug.
+	guidesConnect: '/guides/connect',
+	guidesConnectApi: '/guides/connect.json',
+	guidesConnectMarkdown: '/guides/connect.md',
 	guideDetail: '/guides/:slug',
 	guideDetailApi: '/guides/:slug.json',
 	guideDetailMarkdown: '/guides/:slug.md',

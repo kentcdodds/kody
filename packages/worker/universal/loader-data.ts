@@ -83,6 +83,9 @@ export type GuidesLoaderData = {
 	guides: Array<GuideSummaryLoaderData>
 }
 
+/** Provider connection index (`/guides/connect`) — same summary shape. */
+export type GuidesConnectLoaderData = GuidesLoaderData
+
 export type GuideDetailLoaderData = {
 	ok: true
 	slug: string
@@ -1687,6 +1690,7 @@ export type AppLoaderData = {
 	blog?: BlogLoaderData
 	blogPost?: BlogPostLoaderData
 	guides?: GuidesLoaderData
+	guidesConnect?: GuidesConnectLoaderData
 	guideDetail?: GuideDetailLoaderData
 	communityDetailShell?: CommunityDetailShellLoaderData
 	packageFiles?: PackageFilesLoaderData

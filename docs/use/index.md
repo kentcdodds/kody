@@ -16,8 +16,10 @@ Read in order for a full tour, or jump to a topic.
 
 ## Guides
 
-- [Official guides](https://kody.codes/guides) — bundled setup and workflow
-  markdown (MCP `coding_guide_get`, web index, and raw `.md` per page)
+- [Official guides](https://kody.codes/guides) — Work with Kody (fundamentals
+  and recipes); MCP `coding_guide_get`, web index, and raw `.md` per page
+- [Connection guides](https://kody.codes/guides/connect) — verified walkthroughs
+  for connecting Discord, GitHub, Google, and other providers to Kody
 - [What is Kody?](../guides/what-is-kody.md) — capability tour and discovery
   prompt for people (and agents) deciding whether Kody fits, before any setup
 - [How Kody works](../guides/how-kody-works.md) — ask once, save an export,

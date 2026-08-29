@@ -4,6 +4,10 @@ import {
 	rewriteRelativeGuideLinks,
 	type GuideSourceDir,
 } from './rewrite-relative-links.ts'
+import {
+	isGuidesStartHereSlug,
+	isReservedGuideIndexSlug,
+} from '#universal/guide-sections.ts'
 import accountPackageInvocationTokenSetup from '../../../../docs/guides/account-package-invocation-token-setup.md'
 import accountSecretSetup from '../../../../docs/guides/account-secret-setup.md'
 import firstWin from '../../../../docs/guides/first-win.md'
@@ -86,6 +90,11 @@ function buildCatalog(): ReadonlyArray<Guide> {
 			throw new Error(`Duplicate guide id "${guide.id}".`)
 		}
 		ids.add(guide.id)
+		if (isReservedGuideIndexSlug(guide.slug)) {
+			throw new Error(
+				`Guide slug "${guide.slug}" is reserved for a /guides index route.`,
+			)
+		}
 	}
 	// Authored bodies keep GitHub-relative links; the bundled copies rewrite
 	// them so every serving surface gets resolvable targets.
@@ -122,17 +131,47 @@ export function getGuideById(id: string): Guide | null {
 	return guidesById.get(id) ?? null
 }
 
+/** Advertised platform guides in authored order. */
+export function listPlatformGuides(): ReadonlyArray<Guide> {
+	return guides.filter(
+		(guide) => !guide.unadvertised && guide.category === 'platform',
+	)
+}
+
+/**
+ * Fundamentals for the `/guides` "Start here" group (authored order among
+ * the start-here slug set).
+ */
+export function listStartHereGuides(): ReadonlyArray<Guide> {
+	return listPlatformGuides().filter((guide) =>
+		isGuidesStartHereSlug(guide.slug),
+	)
+}
+
+/** Remaining platform guides after Start here, still in authored order. */
+export function listMorePlatformGuides(): ReadonlyArray<Guide> {
+	return listPlatformGuides().filter(
+		(guide) => !isGuidesStartHereSlug(guide.slug),
+	)
+}
+
+/**
+ * Advertised provider (connection) guides, alphabetically by provider name —
+ * the order `/guides/connect` renders.
+ */
+export function listProviderGuides(): ReadonlyArray<Guide> {
+	return guides
+		.filter((guide) => !guide.unadvertised && guide.category === 'provider')
+		.toSorted((a, b) => (a.provider ?? '').localeCompare(b.provider ?? ''))
+}
+
 /**
  * Platform guides in authored order, then provider guides alphabetically by
- * provider name — the order the web index renders.
+ * provider name. Used by sitemap and surfaces that need every advertised
+ * guide; the web `/guides` index uses the section helpers above instead.
  */
 export function listGuides(): ReadonlyArray<Guide> {
-	const advertised = guides.filter((guide) => !guide.unadvertised)
-	const platform = advertised.filter((guide) => guide.category === 'platform')
-	const provider = advertised
-		.filter((guide) => guide.category === 'provider')
-		.toSorted((a, b) => (a.provider ?? '').localeCompare(b.provider ?? ''))
-	return [...platform, ...provider]
+	return [...listPlatformGuides(), ...listProviderGuides()]
 }
 
 /** Index / API summary shape (no markdown body). */
