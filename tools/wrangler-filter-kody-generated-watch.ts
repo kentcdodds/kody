@@ -36,9 +36,8 @@ const patchedBlock = `if (props.findAdditionalModules) {
               // ${patchMarker}: generated additional modules must not be watched
             }`
 
-const unpatchedBundleWatch = 'watch: config6.dev.watch ?? true'
-const patchedBundleWatch =
-	'watch: config6.dev.watch ?? (process.env.WRANGLER_DISABLE_BUNDLE_WATCH !== "true")'
+const unpatchedBundleWatchPattern = /watch: (config\d+)\.dev\.watch \?\? true/
+const patchedBundleWatchNeedle = 'WRANGLER_DISABLE_BUNDLE_WATCH'
 
 export function wranglerAdditionalModuleWatchSource(source: string) {
 	if (source.includes(patchMarker)) {
@@ -57,16 +56,20 @@ export function wranglerAdditionalModuleWatchSource(source: string) {
 }
 
 export function wranglerBundleWatchSource(source: string) {
-	if (source.includes(patchedBundleWatch)) {
+	if (source.includes(patchedBundleWatchNeedle)) {
 		return { source, patched: true, changed: false }
 	}
-	if (!source.includes(unpatchedBundleWatch)) {
+	const match = unpatchedBundleWatchPattern.exec(source)
+	if (!match?.[1]) {
 		throw new Error(
 			`wrangler ${wranglerCliPath} no longer defaults BundlerController watch to true; rebase the Friction #1789 bundle-watch gate.`,
 		)
 	}
 	return {
-		source: source.replace(unpatchedBundleWatch, patchedBundleWatch),
+		source: source.replace(
+			unpatchedBundleWatchPattern,
+			`watch: ${match[1]}.dev.watch ?? (process.env.WRANGLER_DISABLE_BUNDLE_WATCH !== "true")`,
+		),
 		patched: true,
 		changed: true,
 	}
