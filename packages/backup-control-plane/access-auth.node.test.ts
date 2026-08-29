@@ -10,7 +10,10 @@ import {
 	verifyAccessJwt,
 } from './access-auth.ts'
 import { BackupError } from './backup-policy.ts'
-import { environment } from './backup-control-plane-test-support.ts'
+import {
+	encodeNodeBytesAsBase64,
+	environment,
+} from './backup-control-plane-test-support.ts'
 
 function rsaJwksAndSigner() {
 	const { privateKey, publicKey } = generateKeyPairSync('rsa', {
@@ -28,9 +31,7 @@ function rsaJwksAndSigner() {
 			const signer = createSign('RSA-SHA256')
 			signer.update(encoded)
 			signer.end()
-			const signature = signer
-				.sign(privateKey)
-				.toString('base64')
+			const signature = encodeNodeBytesAsBase64(signer.sign(privateKey))
 				.replaceAll('+', '-')
 				.replaceAll('/', '_')
 				.replaceAll('=', '')
@@ -179,9 +180,7 @@ test('unknown kid refreshes once and JWKS fetch failures use structured errors',
 		const signer = createSign('RSA-SHA256')
 		signer.update(encoded)
 		signer.end()
-		const signature = signer
-			.sign(privateKey)
-			.toString('base64')
+		const signature = encodeNodeBytesAsBase64(signer.sign(privateKey))
 			.replaceAll('+', '-')
 			.replaceAll('/', '_')
 			.replaceAll('=', '')

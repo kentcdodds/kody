@@ -20,6 +20,7 @@ import {
 } from './tools/wrangler-env-config.ts'
 import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
 import { writeLocalPlatformDevConfig } from './tools/local-platform-dev-config.ts'
+import { patchWranglerProxyWorkerErrors } from './tools/patch-wrangler-proxy-worker-errors.ts'
 
 const envName = process.env.CLOUDFLARE_ENV ?? 'production'
 const portWaitTimeoutMs = 5000
@@ -225,6 +226,15 @@ const processEnv = {
 	...process.env,
 	CLOUDFLARE_ENV: envName,
 	...(resolvedPort ? { PORT: resolvedPort } : {}),
+	...(isDevCommand
+		? {
+				// Wrangler 4.127+ enables Miniflare's local explorer by default.
+				// On Cloud Agent / CI hosts, explorer writes under `.wrangler/tmp`
+				// retrigger esbuild and leave ProxyWorker in a pause/reload
+				// loop. Opt in with X_LOCAL_EXPLORER=true.
+				X_LOCAL_EXPLORER: process.env.X_LOCAL_EXPLORER ?? 'false',
+			}
+		: {}),
 	...(envName === 'test'
 		? {
 				X_LOCAL_OBSERVABILITY: process.env.X_LOCAL_OBSERVABILITY ?? 'false',
@@ -243,6 +253,10 @@ const localWranglerPath = path.join(
 const wranglerCommand =
 	(existsSync(localWranglerPath) && localWranglerPath) ||
 	resolveLocalBinary('wrangler')
+
+// workers-sdk#14926: one ProxyWorker fetch failure must not exit `wrangler
+// dev`. Apply the pending upstream exemption before every local launch.
+patchWranglerProxyWorkerErrors()
 
 const proc = spawnChildProcess(wranglerCommand, commandArgs, {
 	stdio: ['inherit', 'inherit', 'inherit'],

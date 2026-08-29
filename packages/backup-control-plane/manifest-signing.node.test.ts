@@ -9,7 +9,10 @@ import { test } from 'vitest'
 
 import { signBackupManifest } from './manifest-signing.ts'
 import { BackupError } from './backup-policy.ts'
-import { environment } from './backup-control-plane-test-support.ts'
+import {
+	encodeNodeBytesAsBase64,
+	environment,
+} from './backup-control-plane-test-support.ts'
 
 function unsignedPayload(): Omit<
 	BackupManifestPayload,
@@ -42,9 +45,10 @@ test('Worker-compatible Ed25519 manifest signatures reject tampering and wrong k
 	const signingKeys = generateKeyPairSync('ed25519')
 	const wrongKeys = generateKeyPairSync('ed25519')
 	const env = environment()
-	env.BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64 = signingKeys.privateKey
-		.export({ format: 'der', type: 'pkcs8' })
-		.toString('base64')
+	env.BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64 =
+		encodeNodeBytesAsBase64(
+			signingKeys.privateKey.export({ format: 'der', type: 'pkcs8' }),
+		)
 	const manifest = await signBackupManifest(env, unsignedPayload())
 	const payloadBytes = new TextEncoder().encode(
 		canonicalBackupManifestPayload(manifest.payload),
