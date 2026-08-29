@@ -15,9 +15,7 @@ import { type DurableExportStep } from './durable-export.ts'
 import { BackupError, objectKeyForBookmark } from './backup-policy.ts'
 import { type BackupEnvironment, type BackupManifest } from './backup-types.ts'
 
-export function encodeNodeBytesAsBase64(
-	bytes: ArrayBuffer | NodeJS.ArrayBufferView,
-) {
+export function encodeNodeBytesAsBase64(bytes: ArrayBuffer | Uint8Array) {
 	return Buffer.from(
 		bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes,
 	).toString('base64')
