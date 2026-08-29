@@ -1,10 +1,9 @@
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { randomUUID } from 'node:crypto'
-import { appendFile, mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { stripVTControlCharacters } from 'node:util'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { type CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
@@ -32,24 +31,6 @@ const localhost = '127.0.0.1'
 const defaultWaitTimeoutMs = process.env.CI ? 60_000 : 45_000
 const perAttemptFetchTimeoutMs = 5_000
 const maxPortBindRetries = 5
-
-async function writeAgentLog(
-	hypothesisId: string,
-	location: string,
-	message: string,
-	data: Record<string, unknown>,
-) {
-	await appendFile(
-		'/opt/cursor/logs/debug.log',
-		`${JSON.stringify({
-			hypothesisId,
-			location,
-			message,
-			data,
-			timestamp: Date.now(),
-		})}\n`,
-	)
-}
 
 type TestUser = {
 	email: string
@@ -636,22 +617,8 @@ async function waitForHttpReady(input: {
 	getStdout: () => string
 	getStderr: () => string
 }) {
-	const startedAt = Date.now()
-	let attemptCount = 0
-	// #region agent log
-	await writeAgentLog(
-		'CD',
-		'tools/mcp-test-support.ts:readiness-entry',
-		'readiness polling started',
-		{
-			url: input.url.toString(),
-			timeoutMs: defaultWaitTimeoutMs,
-		},
-	)
-	// #endregion
 	const deadline = Date.now() + defaultWaitTimeoutMs
 	while (Date.now() < deadline) {
-		attemptCount += 1
 		const exitCode = await Promise.race([
 			input.exited,
 			delay(200).then(() => null),
@@ -682,19 +649,6 @@ async function waitForHttpReady(input: {
 		}
 	}
 
-	// #region agent log
-	await writeAgentLog(
-		'CDE',
-		'tools/mcp-test-support.ts:readiness-timeout',
-		'readiness polling timed out',
-		{
-			attemptCount,
-			durationMs: Date.now() - startedAt,
-			stdout: stripVTControlCharacters(input.getStdout()).slice(-8000),
-			stderr: stripVTControlCharacters(input.getStderr()).slice(-8000),
-		},
-	)
-	// #endregion
 	throw new Error(
 		[
 			`Timed out waiting for ${input.label} at ${input.url.toString()}.`,
