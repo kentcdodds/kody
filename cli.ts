@@ -12,9 +12,13 @@ import {
 	createProcessOutputController,
 	type ProcessOutputMode,
 } from './tools/dev-process-output.ts'
+import {
+	defaultHealthTimeoutMs,
+	defaultWorkerPort,
+	isWorkerHealthOk,
+	workerPortRange,
+} from './tools/dev-server.ts'
 import { resolveNpmCommand } from './tools/node-runtime.ts'
-
-const defaultWorkerPort = 3742
 const defaultMockPort = 8788
 const mockReadyTimeoutMs = 10_000
 const mockReadyPollMs = 200
@@ -77,10 +81,13 @@ void startDev().catch((error) => {
 })
 
 async function startDev() {
-	await restartDev({ announce: false })
+	const ready = await restartDev({ announce: false })
 	setupInteractiveCli({
 		getWorkerOrigin: () => workerOrigin,
-		restart: restartDev,
+		restart: async () => {
+			await restartDev()
+		},
+		ready,
 	})
 	shutdown = setupShutdown(
 		() => devChildren,
@@ -188,12 +195,16 @@ function setupShutdown(
 function setupInteractiveCli(options: {
 	getWorkerOrigin: () => string
 	restart: () => Promise<void>
+	ready: boolean
 }) {
 	const stdin = process.stdin
-	if (!stdin.isTTY || typeof stdin.setRawMode !== 'function') return
+	if (!stdin.isTTY || typeof stdin.setRawMode !== 'function') {
+		if (options.ready) logAppRunning(options.getWorkerOrigin)
+		return
+	}
 
 	showHelp()
-	logAppRunning(options.getWorkerOrigin)
+	if (options.ready) logAppRunning(options.getWorkerOrigin)
 
 	readline.emitKeypressEvents(stdin)
 	stdin.setRawMode(true)
@@ -268,10 +279,7 @@ async function restartDev(
 		process.env.PORT ?? String(defaultWorkerPort),
 		10,
 	)
-	const portRange = Array.from(
-		{ length: 10 },
-		(_, index) => desiredPort + index,
-	)
+	const portRange = workerPortRange(desiredPort)
 	clearLockedPorts()
 	const workerPort = await getPort({ port: portRange })
 	workerOrigin = resolveWorkerOrigin(workerPort)
@@ -319,6 +327,7 @@ async function restartDev(
 		// Only claim the app is running when /health actually responded.
 		if (workerDidStart) logAppRunning(() => workerOrigin)
 	}
+	return workerDidStart
 }
 
 function hasEnvValue(value: string | undefined) {
@@ -354,13 +363,7 @@ async function waitForMockReady(baseUrl: string, child: ChildProcess) {
 }
 
 async function isWorkerReady(workerOrigin: string) {
-	try {
-		const response = await fetch(`${workerOrigin}/health`)
-		await response.body?.cancel()
-		return response.ok
-	} catch {
-		return false
-	}
+	return isWorkerHealthOk(workerOrigin, { timeoutMs: defaultHealthTimeoutMs })
 }
 
 async function waitForWorkerReady(workerOrigin: string, child: ChildProcess) {

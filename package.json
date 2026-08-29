@@ -24,6 +24,7 @@
   },
   "scripts": {
     "dev": "node --env-file=packages/worker/.env cli.ts",
+    "dev:ensure": "node --env-file=packages/worker/.env tools/ensure-dev.ts",
     "dev:client": "npm run dev:client:web",
     "clean:client": "node -e \"const{rmSync}=require('node:fs');for(const p of ['packages/worker/public/assets','packages/worker/public/client-manifest.json'])rmSync(p,{recursive:true,force:true})\"",
     "dev:client:web": "npm run clean:client && esbuild packages/worker/client/entry.tsx --bundle --splitting --format=esm --target=es2022 --outdir=packages/worker/public --entry-names=client-entry --chunk-names=assets/[name]-[hash] --asset-names=assets/[name] --jsx=automatic --jsx-import-source=remix/ui --watch",
