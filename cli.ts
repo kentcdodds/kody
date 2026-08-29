@@ -236,6 +236,7 @@ function setupInteractiveCli(options: {
 				break
 			}
 			case 'r': {
+				ready = false
 				void options.restart().then((nextReady) => {
 					ready = nextReady
 				})
