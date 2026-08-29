@@ -130,7 +130,7 @@
 		},
 		{
 			"filename": "0032-drop-secret-allowed-capabilities.sql",
-			"sha256": "f34b2cdbea22bdce4472b0dc136afc179e88c24d558ddd774edfd090aa820adc"
+			"sha256": "9f854123842e94b4b979c941765acbd155bf43c0be2b138877bf062fd552b31c"
 		}
 	]
 }
