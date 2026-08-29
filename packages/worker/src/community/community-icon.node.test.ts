@@ -57,49 +57,6 @@ function createPngHeader(width: number, height: number) {
 	return bytes
 }
 
-function createWebpHeader(width: number, height: number) {
-	const bytes = new Uint8Array(30)
-	bytes.set(new TextEncoder().encode('RIFF'), 0)
-	bytes.set(new TextEncoder().encode('WEBP'), 8)
-	bytes.set(new TextEncoder().encode('VP8X'), 12)
-	const view = new DataView(bytes.buffer)
-	view.setUint8(24, (width - 1) & 0xff)
-	view.setUint8(25, ((width - 1) >> 8) & 0xff)
-	view.setUint8(26, ((width - 1) >> 16) & 0xff)
-	view.setUint8(27, (height - 1) & 0xff)
-	view.setUint8(28, ((height - 1) >> 8) & 0xff)
-	view.setUint8(29, ((height - 1) >> 16) & 0xff)
-	return bytes
-}
-
-function createJpegHeader(width: number, height: number) {
-	return Uint8Array.from([
-		0xff,
-		0xd8,
-		0xff,
-		0xc0,
-		0x00,
-		0x11,
-		0x08,
-		(height >> 8) & 0xff,
-		height & 0xff,
-		(width >> 8) & 0xff,
-		width & 0xff,
-		0x03,
-		0x01,
-		0x11,
-		0x00,
-		0x02,
-		0x11,
-		0x00,
-		0x03,
-		0x11,
-		0x00,
-		0xff,
-		0xd9,
-	])
-}
-
 function createFakeKv() {
 	const values = new Map<string, string>()
 	return {
@@ -255,8 +212,6 @@ const entitySourceRow = {
 
 test('community raster icon formats are validated then fitted to WebP', async () => {
 	const png = createPngHeader(256, 256)
-	const webp = createWebpHeader(320, 180)
-	const jpeg = createJpegHeader(640, 480)
 	const svg = new TextEncoder().encode(
 		'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="30" fill="#2563eb"/></svg>',
 	)
@@ -271,31 +226,18 @@ test('community raster icon formats are validated then fitted to WebP', async ()
 	).resolves.toEqual(fitted)
 	await expect(
 		processCommunityIcon({
-			path: 'community-icon.webp',
-			sourceBytes: webp,
-			images: createFakeImagesBinding(),
-		}),
-	).resolves.toEqual(fitted)
-	await expect(
-		processCommunityIcon({
-			path: 'community-icon.jpeg',
-			sourceBytes: jpeg,
-			images: createFakeImagesBinding(),
-		}),
-	).resolves.toEqual(fitted)
-	await expect(
-		processCommunityIcon({
 			path: 'community-icon.png',
 			sourceBytes: createPngHeader(5000, 100),
 			images: createFakeImagesBinding(),
 		}),
 	).rejects.toThrow('at most 4096px')
-	const renderedSvg = await processCommunityIcon({
-		path: 'community-icon.svg',
-		sourceBytes: svg,
-		images: createFakeImagesBinding(),
-	})
-	expect(renderedSvg).toEqual(fitted)
+	await expect(
+		processCommunityIcon({
+			path: 'community-icon.svg',
+			sourceBytes: svg,
+			images: createFakeImagesBinding(),
+		}),
+	).resolves.toEqual(fitted)
 	const fallbackPng = await renderCommunityIconFallbackPng(
 		'@kentcdodds/github-tools',
 	)

@@ -16,7 +16,10 @@ vi.mock(
 const { notifyAdminsOfVerificationDeliveryFailure } =
 	await import('./verification-delivery-notify.ts')
 
-test('verification delivery notify fans the admin event without platform mail', async () => {
+test('verification delivery notify fans the admin event via waitUntil without blocking', async () => {
+	mocks.dispatchUserEmailVerificationFailedSubscriptionEvent.mockImplementationOnce(
+		() => new Promise(() => {}),
+	)
 	const first = vi.fn().mockResolvedValue({
 		username: 'ada',
 		email: 'ada@example.com',
@@ -61,37 +64,5 @@ test('verification delivery notify fans the admin event without platform mail', 
 		waitUntil,
 	})
 	expect(prepare).toHaveBeenCalledOnce()
-	expect(waitUntil).toHaveBeenCalledWith(expect.any(Promise))
-})
-
-test('verification delivery notify does not wait for package fan-out when waitUntil is provided', async () => {
-	mocks.dispatchUserEmailVerificationFailedSubscriptionEvent.mockImplementationOnce(
-		() => new Promise(() => {}),
-	)
-	const first = vi.fn().mockResolvedValue({
-		username: 'ada',
-		email: 'ada@example.com',
-		stable_user_id: 'user-1',
-	})
-	const waitUntil = vi.fn()
-	const env = {
-		APP_DB: { prepare: () => ({ bind: () => ({ first }) }) },
-		APP_BASE_URL: 'https://kody.codes',
-		BUNDLE_ARTIFACTS_KV: {},
-	} as unknown as Env
-
-	await notifyAdminsOfVerificationDeliveryFailure({
-		env,
-		event: {
-			userId: 9,
-			kind: 'email_verification',
-			recipient: 'ada@example.com',
-			status: 'bounced',
-			class: 'sender_block',
-			alreadyTerminal: false,
-		},
-		waitUntil,
-	})
-
 	expect(waitUntil).toHaveBeenCalledWith(expect.any(Promise))
 })

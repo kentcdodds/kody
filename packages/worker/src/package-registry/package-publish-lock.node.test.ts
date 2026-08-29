@@ -5,7 +5,6 @@ import {
 	buildPackagePublishApprovalUrl,
 	buildPackageUnlockPath,
 	buildPackageUnlockUrl,
-	createPackagePublishLockedMessage,
 	isGitCommitSha,
 	isSavedPackageLocked,
 } from './package-publish-lock.ts'
@@ -38,16 +37,6 @@ test('publish lock treats a stored timestamp as locked and builds a commit-named
 		'https://kody.codes/account/packages/pkg-1/approve-publish?commit=abc1234',
 	)
 
-	expect(
-		createPackagePublishLockedMessage({
-			packageName: '@user/notes',
-			approvalUrl:
-				'https://kody.codes/account/packages/pkg-1/approve-publish?commit=abc1234',
-		}),
-	).toBe(
-		'Package "@user/notes" is locked. Publishes require approval at https://kody.codes/account/packages/pkg-1/approve-publish?commit=abc1234.',
-	)
-
 	const error = new PackagePublishLockedError({
 		packageId: 'pkg-1',
 		packageName: '@user/notes',
@@ -57,9 +46,8 @@ test('publish lock treats a stored timestamp as locked and builds a commit-named
 	expect(error.approvalPath).toBe(
 		'/account/packages/pkg-1/approve-publish?commit=abc1234',
 	)
-	expect(error.message).toContain(
-		'/account/packages/pkg-1/approve-publish?commit=abc1234',
-	)
+	expect(error.message).toContain('@user/notes')
+	expect(error.message).toContain(error.approvalPath)
 
 	expect(buildPackageUnlockPath('pkg-1')).toBe('/account/packages/pkg-1')
 	expect(

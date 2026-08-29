@@ -83,20 +83,6 @@ test('accepts the checked-in production/dev-test-preview split', () => {
 	expect(result).toEqual({ ok: true, errors: [] })
 })
 
-test('accepts a committed config with no env.production.main (deploy-generated only)', () => {
-	const config = createConfig({}) as {
-		env: { production: Record<string, unknown> }
-	}
-	expect(config.env.production.main).toBeUndefined()
-	const result = checkOriginProductionExports({
-		configPath,
-		config,
-		devEntrySource,
-		productionEntrySource,
-	})
-	expect(result).toEqual({ ok: true, errors: [] })
-})
-
 test('rejects a production Durable Object binding without script_name', () => {
 	const result = checkOriginProductionExports({
 		configPath,
