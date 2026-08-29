@@ -729,6 +729,25 @@ export async function syncPackageJobsForPackage(input: {
 				userId: input.userId,
 				email: callerContext.user.email,
 			})
+			for (const [jobName, definition] of Object.entries(desiredJobs)) {
+				const existing = existingByName.get(jobName)
+				const schedule = normalizeJobSchedule(definition.schedule)
+				const timezone = normalizeJobTimezone(definition.timezone)
+				if (
+					packageJobNeedsIntervalFloor({
+						existingSchedule: existing?.record.schedule,
+						existingTimezone: existing?.record.timezone,
+						schedule,
+						timezone,
+					})
+				) {
+					assertJobScheduleIntervalFloor({
+						plan,
+						schedule,
+						timezone,
+					})
+				}
+			}
 			const now = new Date().toISOString()
 			let schedulerStateChanged = false
 
@@ -849,6 +868,19 @@ export async function syncPackageJobsForPackage(input: {
 			return schedulerStateChanged
 		},
 	})
+}
+
+function packageJobNeedsIntervalFloor(input: {
+	existingSchedule?: JobSchedule
+	existingTimezone?: string | null
+	schedule: JobSchedule
+	timezone?: string | null
+}) {
+	if (input.existingSchedule === undefined) return true
+	return (
+		JSON.stringify(input.existingSchedule) !== JSON.stringify(input.schedule) ||
+		input.existingTimezone !== input.timezone
+	)
 }
 
 function assertJobScheduleIntervalFloor(input: {

@@ -1830,6 +1830,64 @@ test('free plan rejects new or changed schedules faster than 15 minutes and gran
 	expect(paidCreated.schedule).toEqual({ type: 'interval', every: '1m' })
 })
 
+test('package job sync preflights interval floors so a later invalid job writes nothing', async () => {
+	const email = 'interval-preflight@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
+		async (_db: D1Database, id: string) => ({
+			userId: id,
+			email: id === userId ? email : `${id}@example.com`,
+			username: id,
+			displayName: id,
+		}),
+	)
+	const env = createJobServiceTestEnv({
+		APP_DB: createDatabase({
+			users: [{ email, plan: 'free', stable_user_id: userId }],
+		}),
+	})
+	await insertPublishedEntitySource({
+		db: env.APP_DB as ReturnType<typeof createDatabase>,
+		userId,
+		sourceId: 'mixed-interval-source',
+		entityKind: 'package',
+		entityId: 'mixed-interval-package',
+		publishedCommit: 'mixed-interval-commit',
+		manifestPath: 'package.json',
+	})
+	const before = await listJobRowsByUserId(env.APP_DB, userId)
+	await expect(
+		syncPackageJobsForPackage({
+			env,
+			userId,
+			baseUrl: 'https://example.com',
+			packageId: 'mixed-interval-package',
+			sourceId: 'mixed-interval-source',
+			manifest: parseAuthoredPackageJson({
+				content: JSON.stringify({
+					name: '@owner/mixed-interval-package',
+					exports: { '.': './index.ts' },
+					kody: {
+						id: 'mixed-interval-package',
+						description: 'Mixed interval jobs',
+						jobs: {
+							'ok-job': {
+								entry: './ok.ts',
+								schedule: { type: 'interval', every: '15m' },
+							},
+							'too-fast-job': {
+								entry: './fast.ts',
+								schedule: { type: 'interval', every: '5m' },
+							},
+						},
+					},
+				}),
+			}),
+		}),
+	).rejects.toSatisfy((error: unknown) => isJobIntervalFloorError(error))
+	expect(await listJobRowsByUserId(env.APP_DB, userId)).toEqual(before)
+})
+
 test('updateJob and deleteJob sync the job manager alarm', async () => {
 	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase(),
