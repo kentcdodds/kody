@@ -800,7 +800,7 @@ export function OnboardingRoute(handle: Handle) {
 											Account → Secrets
 										</a>
 										{' · '}
-										<a href="/#byok" mix={css(primaryLinkCss)}>
+										<a href="/#byok-title" mix={css(primaryLinkCss)}>
 											Why bring your own keys?
 										</a>
 									</p>

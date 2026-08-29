@@ -27,7 +27,6 @@ import {
 	grokCustomMcpGuideUrl,
 	kodyCursorAddPluginCommand,
 	kodyCursorMarketplaceUrl,
-	mcpClientById,
 	type McpClientKind,
 	type OnboardingAgentChooserPick,
 	type OnboardingAgentSurface,
@@ -223,10 +222,9 @@ function renderPanelContent(
 						{surface === 'mobile' ? (
 							<>
 								On your phone, open the <strong>ChatGPT</strong> app and use{' '}
-								<strong>Codex</strong>. Turn on{' '}
-								<strong>Developer mode</strong> if the app asks for it, then add
-								Kody as a custom app / MCP server with this URL. Complete OAuth
-								when prompted.
+								<strong>Codex</strong>. Turn on <strong>Developer mode</strong>{' '}
+								if the app asks for it, then add Kody as a custom app / MCP
+								server with this URL. Complete OAuth when prompted.
 							</>
 						) : (
 							<>
@@ -270,9 +268,7 @@ function renderPanelContent(
 						copyLabel="Copy icon URL"
 					/>
 					<ClientNote>
-						{surface === 'mobile'
-							? codingAgentPackageHint
-							: nonCodingAgentNote}
+						{surface === 'mobile' ? codingAgentPackageHint : nonCodingAgentNote}
 					</ClientNote>
 				</>
 			)
@@ -382,8 +378,8 @@ function renderPanelContent(
 								>
 									grok.com → Connectors
 								</a>
-								, add a custom connector, and paste this MCP URL. Complete
-								OAuth when Grok prompts you.
+								, add a custom connector, and paste this MCP URL. Complete OAuth
+								when Grok prompts you.
 							</>
 						) : (
 							<>
@@ -471,8 +467,8 @@ function renderPanelContent(
 							Grok CLI MCP docs
 						</a>{' '}
 						for <code>grok mcp list</code>, <code>grok mcp doctor</code>, and
-						project scope. For grok.com or Grok Bot, change selection and
-						choose that host instead.
+						project scope. For grok.com or Grok Bot, change selection and choose
+						that host instead.
 					</p>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
@@ -485,9 +481,9 @@ function renderPanelContent(
 						{surface === 'mobile' ? (
 							<>
 								On your phone, tap <strong>Add to Grok Bot</strong> to install
-								the official Kody plugin. If the app is not installed, add
-								Kody from <strong>Plugins</strong> in Grok Bot on a computer.
-								This is Cursor&apos;s Grok Bot, not grok.com. See{' '}
+								the official Kody plugin. If the app is not installed, add Kody
+								from <strong>Plugins</strong> in Grok Bot on a computer. This is
+								Cursor&apos;s Grok Bot, not grok.com. See{' '}
 								<a
 									href={grokBotConnectPluginsUrl}
 									target="_blank"
@@ -736,9 +732,9 @@ function renderPanelContent(
 					<p>
 						{surface === 'mobile' ? (
 							<>
-								On your phone, open the <strong>GitHub Copilot</strong> app,
-								go to settings → <strong>MCP Servers</strong>, add this URL,
-								and complete OAuth when the app opens it:
+								On your phone, open the <strong>GitHub Copilot</strong> app, go
+								to settings → <strong>MCP Servers</strong>, add this URL, and
+								complete OAuth when the app opens it:
 							</>
 						) : (
 							<>
@@ -906,7 +902,9 @@ function renderAgentAuthHint(
 				</>
 			)
 		case 'chatgpt':
-			return <>Complete OAuth when ChatGPT prompts you after creating the app.</>
+			return (
+				<>Complete OAuth when ChatGPT prompts you after creating the app.</>
+			)
 		case 'codex':
 			return surface === 'mobile' ? (
 				<>Complete OAuth when the ChatGPT app prompts you.</>
@@ -919,7 +917,9 @@ function renderAgentAuthHint(
 		case 'claude-desktop':
 			return <>Complete OAuth in Settings → Connectors.</>
 		case 'grok':
-			return <>Complete OAuth when Grok prompts you after adding the connector.</>
+			return (
+				<>Complete OAuth when Grok prompts you after adding the connector.</>
+			)
 		case 'grok-cli':
 			return surface === 'mobile' ? (
 				<>
@@ -930,8 +930,8 @@ function renderAgentAuthHint(
 			) : (
 				<>
 					OAuth opens on first use. In the TUI, <code>/mcps</code> then{' '}
-					<strong>i</strong> authenticates.{' '}
-					<code>grok mcp doctor kody</code> checks the connection.
+					<strong>i</strong> authenticates. <code>grok mcp doctor kody</code>{' '}
+					checks the connection.
 				</>
 			)
 		case 'grok-bot':
@@ -1040,12 +1040,7 @@ export function OnboardingMcpClientTabs(
 					</a>
 				</div>
 				<div mix={css(selectedPanelCss)}>
-					{renderPanelContent(
-						selectedAgent,
-						mcpServerUrl,
-						highlights,
-						surface,
-					)}
+					{renderPanelContent(selectedAgent, mcpServerUrl, highlights, surface)}
 				</div>
 				{selectedAgent === 'other' ? (
 					<div mix={css(moreAgentsCss)}>
@@ -1057,11 +1052,10 @@ export function OnboardingMcpClientTabs(
 							mix={css(moreAgentListCss)}
 						>
 							{onboardingMoreIdsFromChooser(
-								handle.props.chooser ??
-									canonicalOnboardingAgentChooser(),
+								handle.props.chooser ?? canonicalOnboardingAgentChooser(),
 								surface,
 							).map((id) => (
-								<li>
+								<li key={id}>
 									<a
 										href={buildOnboardingAgentHref({
 											...location,
@@ -1072,7 +1066,7 @@ export function OnboardingMcpClientTabs(
 										data-prevent-scroll-reset=""
 										mix={css(moreAgentChipCss)}
 									>
-										{mcpClientById(id).label}
+										{pickerLabel(id, surface)}
 									</a>
 								</li>
 							))}
@@ -1107,7 +1101,7 @@ function AgentPickerGrid(
 				)}
 			>
 				{[...ids, 'other' as const].map((id) => (
-					<li>
+					<li key={id}>
 						<a
 							href={buildOnboardingAgentHref({
 								...location,

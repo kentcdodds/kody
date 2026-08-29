@@ -10,11 +10,11 @@ block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.
 People following a host-specific walkthrough can stay on this page or use Get
 started (`/onboarding`).
 
-The in-app Get started page (`/onboarding`) asks which agent you want to
-connect first, then shows only that host's install steps. A second client is
-worth it later when you want the same [memories](./memory.md) and packages from
-another agent — you do not need every host on day one. Choose **Not listed**
-for a generic MCP URL, or for Grok CLI, Grok Bot, OpenCode, or the Copilot app.
+The in-app Get started page (`/onboarding`) asks which agent you want to connect
+first, then shows only that host's install steps. A second client is worth it
+later when you want the same [memories](./memory.md) and packages from another
+agent — you do not need every host on day one. Choose **Not listed** for a
+generic MCP URL, or for Grok CLI, OpenCode, or the Copilot app.
 
 ## Add the MCP server
 
@@ -35,8 +35,8 @@ MCP URL and setup prompt.
 
 ### Client notes
 
-Get started shows one host at a time after you pick it. Use **Not listed**
-when your agent is not in the first chooser, or when you only have the MCP URL.
+Get started shows one host at a time after you pick it. Use **Not listed** when
+your agent is not in the first chooser, or when you only have the MCP URL.
 
 - **Cursor** — Install the official
   [Kody plugin](https://cursor.com/marketplace/kody), or in Cursor chat run
