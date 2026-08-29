@@ -155,11 +155,14 @@ export function AccountPackagesRoute(handle: Handle) {
 	let lastLoadedListKey = ''
 	let loadingDataKey: string | null = null
 	let lastFailedDataKey: string | null = null
-	let lockRequestId = 0
-	let lockBusy = false
+	const lockInFlight = new Map<string, string | null>()
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
+	}
+
+	function isLockInFlight(packageId: string | null | undefined) {
+		return packageId != null && lockInFlight.has(packageId)
 	}
 
 	function isPackageLocked(lockedAt: string | null | undefined) {
@@ -175,15 +178,31 @@ export function AccountPackagesRoute(handle: Handle) {
 		)
 	}
 
+	function restoreInFlightLockState() {
+		if (lockInFlight.size === 0) return
+		if (selectedPackage && lockInFlight.has(selectedPackage.id)) {
+			selectedPackage = {
+				...selectedPackage,
+				lockedAt: lockInFlight.get(selectedPackage.id) ?? null,
+			}
+		}
+		packageList.updateItems((items) =>
+			items.map((pkg) =>
+				lockInFlight.has(pkg.id)
+					? { ...pkg, lockedAt: lockInFlight.get(pkg.id) ?? null }
+					: pkg,
+			),
+		)
+	}
+
 	async function togglePackageLock() {
-		if (!selectedPackage || lockBusy) return
+		if (!selectedPackage || lockInFlight.has(selectedPackage.id)) return
 		const href = getCurrentHref()
 		const packageId = selectedPackage.id
-		const requestId = ++lockRequestId
 		const previousLockedAt = selectedPackage.lockedAt
 		const nextLocked = !isPackageLocked(previousLockedAt)
 		const nextLockedAt = nextLocked ? new Date().toISOString() : null
-		lockBusy = true
+		lockInFlight.set(packageId, nextLockedAt)
 		message = null
 		applyLocalLockState(packageId, nextLockedAt)
 		handle.update()
@@ -208,11 +227,9 @@ export function AccountPackagesRoute(handle: Handle) {
 			const payload = await readJson<
 				AccountPackagesLoaderData & { error?: string }
 			>(response)
-			const stillCurrent =
-				requestId === lockRequestId && getCurrentHref() === href
 			if (!response.ok || !payload?.ok) {
 				applyLocalLockState(packageId, previousLockedAt)
-				if (stillCurrent) {
+				if (selectedPackage?.id === packageId) {
 					message = payload?.error ?? 'Could not update the publish lock.'
 				}
 				handle.update()
@@ -225,15 +242,13 @@ export function AccountPackagesRoute(handle: Handle) {
 			handle.update()
 		} catch {
 			applyLocalLockState(packageId, previousLockedAt)
-			if (requestId === lockRequestId && getCurrentHref() === href) {
+			if (selectedPackage?.id === packageId) {
 				message = 'Could not update the publish lock.'
 			}
 			handle.update()
 		} finally {
-			if (requestId === lockRequestId) {
-				lockBusy = false
-				handle.update()
-			}
+			lockInFlight.delete(packageId)
+			handle.update()
 		}
 	}
 
@@ -257,7 +272,6 @@ export function AccountPackagesRoute(handle: Handle) {
 	}
 
 	function applyPayload(payload: AccountPackagesLoaderData, href: string) {
-		const previousSelectedId = selectedPackage?.id ?? null
 		const listKey = getListKey(href)
 		// Selection-only navigations deep in the scroll window keep the
 		// already-loaded pages; anything else reseeds from page one so
@@ -276,10 +290,7 @@ export function AccountPackagesRoute(handle: Handle) {
 			lastLoadedListKey = listKey
 		}
 		selectedPackage = payload.selectedPackage
-		if ((selectedPackage?.id ?? null) !== previousSelectedId) {
-			lockRequestId += 1
-			lockBusy = false
-		}
+		restoreInFlightLockState()
 		username = payload.username
 		invocationUrlOrigin = payload.invocationUrlOrigin
 		message =
@@ -609,7 +620,7 @@ export function AccountPackagesRoute(handle: Handle) {
 										</h2>
 										<button
 											type="button"
-											disabled={lockBusy}
+											disabled={isLockInFlight(selectedPackage.id)}
 											title={
 												isPackageLocked(selectedPackage.lockedAt)
 													? 'Unlock publishes'
