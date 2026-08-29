@@ -53,9 +53,24 @@ Official guide markdown uploads origin and platform.
 The merged main-branch deploy workflow encodes deploy order. Merge and watch; do
 not run wrangler by hand to "finish" a transfer.
 
-When platform sources change, the workflow deploys `kody-platform` before origin
-so cross-script bindings stay valid. That order is binding and healthcheck
-hygiene. It does not re-apply the `v1` transfer.
+`tools/ci/origin-production-deploy-state.ts` classifies the live origin script
+before each production origin upload:
+
+- **Steady-state** (current production): platform and runtime own every
+  transferred class and origin owns none of them. Origin uploads the slim
+  `production-worker.ts` entry. Platform/runtime deploys stay path-filtered and
+  do not re-apply the `v1` transfer.
+- **Fresh** (no origin script and no transferred namespaces): origin uploads the
+  full `index.ts` entry first so `new_sqlite_classes` can replay, then platform
+  and runtime apply the existing `transferred_classes` tags, then origin uploads
+  the slim entry.
+- **Ambiguous** (probe failed, partial ownership, or a missing origin while
+  destinations already own classes): origin keeps the full entry. The workflow
+  does not bootstrap and does not force a transfer.
+
+When platform sources change on a steady-state script, the workflow deploys
+`kody-platform` before origin so cross-script bindings stay valid. That order is
+binding and healthcheck hygiene. It does not re-apply the `v1` transfer.
 
 Remix/blog/UI-only uploads skip platform, runtime, and jobs. Official guide
 markdown deploys origin and platform (MCP bundles those files) and still skips

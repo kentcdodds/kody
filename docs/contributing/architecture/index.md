@@ -146,7 +146,9 @@ user-lane integrations only.
 
 ## Source of truth in code
 
-- Origin entrypoint: `packages/worker/src/index.ts`
+- Origin entrypoint: `packages/worker/src/index.ts` (dev/test/preview and
+  fresh/ambiguous production). Steady-state production uses
+  `packages/worker/src/production-worker.ts` from the generated deploy config.
 - Platform entrypoint: `packages/worker/src/platform-worker.ts`
 - Runtime entrypoint: `packages/worker/src/runtime-worker.ts`
 - Jobs entrypoint: `packages/jobs-worker/src/index.ts`
