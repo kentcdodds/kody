@@ -688,6 +688,7 @@ function createDatabase(
 											name: row['name'],
 											description: row['description'],
 											allowed_hosts: row['allowed_hosts'],
+											allowed_packages: row['allowed_packages'],
 											created_at: row['created_at'],
 											updated_at: row['updated_at'],
 											expires_at: params[2],
