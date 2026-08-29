@@ -542,6 +542,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 			handle.update()
 		} catch (error) {
 			actionState = 'idle'
+			usageSavingId = null
 			setMessage(
 				error instanceof Error ? error.message : input.failureMessage,
 				'error',
