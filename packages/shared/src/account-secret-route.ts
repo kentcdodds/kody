@@ -86,6 +86,23 @@ export function buildAccountSecretPath(input: AccountSecretRouteIdInput) {
 	})
 }
 
+/**
+ * Absolute account-secret URL that keeps Remix path encoding.
+ *
+ * `createHref` encodes `.` as `%2E` because Remix treats `.` as a route
+ * delimiter. `new URL(pathname, baseUrl).toString()` decodes that unreserved
+ * escape back to `.`, and the account secret route 404s.
+ */
+export function buildAccountSecretUrl(
+	input: AccountSecretRouteIdInput & { baseUrl: string },
+) {
+	return joinOriginAndEncodedPath(input.baseUrl, buildAccountSecretPath(input))
+}
+
+export function joinOriginAndEncodedPath(baseUrl: string, pathname: string) {
+	return `${new URL(baseUrl).origin}${pathname}`
+}
+
 export function parseAccountSecretPath(
 	pathname: string,
 ): ParsedAccountSecretRoutePath | null {

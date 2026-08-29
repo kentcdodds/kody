@@ -4,11 +4,13 @@ import {
 	createCapabilitySecretAccessDeniedBatchMessage,
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
+	createSecretScopeUnavailableMessage,
 	parseCapabilityAccessRequiredBatchMessage,
 	parseCapabilityAccessRequiredMessage,
 	parseHostApprovalRequiredBatchMessage,
 	parseHostApprovalRequiredMessage,
 	parseMissingSecretMessage,
+	parseSecretScopeUnavailableMessage,
 } from './errors.ts'
 
 test('secret error message helpers parse auth, missing-secret, and approval payloads', () => {
@@ -82,4 +84,56 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 			createHostSecretAccessDeniedBatchMessage(hostEntries),
 		),
 	).toEqual(hostEntries)
+
+	const scopeUnavailableMessage = createSecretScopeUnavailableMessage([
+		{
+			secretName: 'discordBotToken',
+			scope: 'package',
+			packageId: 'pkg-1',
+			packageName: 'discord-gateway',
+			sessionId: null,
+			editorUrl:
+				'https://example.com/account/secrets/package/pkg-1/discordBotToken',
+		},
+	])
+	expect(scopeUnavailableMessage).toContain(
+		'Either invoke this work through the owning package',
+	)
+	expect(scopeUnavailableMessage).toContain(
+		'https://example.com/account/secrets/package/pkg-1/discordBotToken',
+	)
+	expect(parseSecretScopeUnavailableMessage(scopeUnavailableMessage)).toEqual({
+		secretName: 'discordBotToken',
+		scope: 'package',
+		packageName: 'discord-gateway',
+		packageId: null,
+	})
+	const packageIdOnlyMessage = createSecretScopeUnavailableMessage([
+		{
+			secretName: 'discordBotToken',
+			scope: 'package',
+			packageId: 'pkg-1',
+			packageName: null,
+			sessionId: null,
+			editorUrl:
+				'https://example.com/account/secrets/package/pkg-1/discordBotToken',
+		},
+	])
+	expect(packageIdOnlyMessage).toContain('package id "pkg-1"')
+	expect(parseSecretScopeUnavailableMessage(packageIdOnlyMessage)).toEqual({
+		secretName: 'discordBotToken',
+		scope: 'package',
+		packageName: null,
+		packageId: 'pkg-1',
+	})
+	expect(parseMissingSecretMessage(scopeUnavailableMessage)).toBeNull()
+	expect(
+		parseCapabilityAccessRequiredMessage(scopeUnavailableMessage),
+	).toBeNull()
+	expect(
+		parseSecretScopeUnavailableMessage(
+			createMissingSecretMessage('discordBotToken'),
+		),
+	).toBeNull()
+	expect(parseSecretScopeUnavailableMessage(capabilityMessage)).toBeNull()
 })

@@ -5,10 +5,10 @@ import {
 	buildSecretPackageBulkApprovalUrlIfNeeded,
 } from './package-approval-url.ts'
 import {
-	createMissingSecretMessage,
 	createPackageSecretAccessDeniedBatchMessage,
 	createPackageSecretAccessDeniedMessage,
 } from './errors.ts'
+import { createUnresolvedSecretMessage } from './unresolved-secret.ts'
 import { resolveSecret, type ResolvedSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
 import { type StorageContext } from '#mcp/storage.ts'
@@ -285,7 +285,21 @@ export async function resolvePackageMountedSecret(input: {
 		},
 	})
 	if (!resolved.found || typeof resolved.value !== 'string') {
-		throw new PackageSecretMissingError(createMissingSecretMessage(mount.name))
+		throw new PackageSecretMissingError(
+			await createUnresolvedSecretMessage({
+				env: input.env,
+				userId,
+				name: mount.name,
+				scope: mount.scope,
+				storageContext: {
+					sessionId: input.callerContext.storageContext?.sessionId ?? null,
+					appId: input.callerContext.storageContext?.appId ?? null,
+					packageId: input.callerContext.storageContext?.packageId ?? null,
+					storageId: input.callerContext.storageContext?.storageId ?? null,
+				},
+				baseUrl: input.callerContext.baseUrl,
+			}),
+		)
 	}
 	await assertPackageCanAccessResolvedSecret({
 		env: input.env,

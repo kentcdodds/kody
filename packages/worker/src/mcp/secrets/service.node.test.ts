@@ -5,6 +5,10 @@ import { planLimits } from '#universal/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import {
+	createMissingSecretMessage,
+	parseSecretScopeUnavailableMessage,
+} from './errors.ts'
+import {
 	listPackageSecretsByPackageIds,
 	listSecrets,
 	resolveSecret,
@@ -15,6 +19,7 @@ import {
 	updateUserSecretForPackage,
 	updateUserSecretsForPackageAtomically,
 } from './service.ts'
+import { createUnresolvedSecretMessage } from './unresolved-secret.ts'
 
 type SecretBucketRow = {
 	id: string
@@ -160,6 +165,47 @@ function createSecretTestDb(
 							return null
 						},
 						async all<T>() {
+							if (
+								normalizedQuery.includes('from secret_buckets b') &&
+								normalizedQuery.includes('join secret_entries e') &&
+								normalizedQuery.includes('e.name = ?')
+							) {
+								const [userId, name, now] = params as Array<string>
+								const results = Array.from(entries.values())
+									.flatMap((entry) => {
+										const bucket = Array.from(buckets.values()).find(
+											(candidate) => candidate.id === entry.bucket_id,
+										)
+										if (
+											!bucket ||
+											bucket.user_id !== userId ||
+											entry.name !== name
+										) {
+											return []
+										}
+										if (bucket.expires_at != null && bucket.expires_at <= now) {
+											return []
+										}
+										if (entry.expires_at != null && entry.expires_at <= now) {
+											return []
+										}
+										return [
+											{
+												scope: bucket.scope,
+												binding_key: bucket.binding_key,
+												name: entry.name,
+												entry_expires_at: entry.expires_at,
+												bucket_expires_at: bucket.expires_at,
+											},
+										]
+									})
+									.sort(
+										(left, right) =>
+											left.scope.localeCompare(right.scope) ||
+											left.binding_key.localeCompare(right.binding_key),
+									)
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
 							if (
 								normalizedQuery.includes('from secret_buckets b') &&
 								normalizedQuery.includes("b.scope = 'package'")
@@ -1002,4 +1048,94 @@ test('user secrets persist per-entry expiry, stay listed after expiry, and fail 
 	await expect(
 		resolveSecret({ env, userId, name: 'githubPat', scope: 'user' }),
 	).resolves.toMatchObject({ found: true, value: 'ghp_old' })
+})
+
+test('createUnresolvedSecretMessage explains a package-scoped secret from ad-hoc execute', async () => {
+	const testDb = createSecretTestDb()
+	const env = {
+		APP_DB: testDb.db,
+		COOKIE_SECRET: 'test-cookie-secret',
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
+	}
+	const userId = 'user-123'
+	const secretName = 'discordBotToken'
+	const packageId = 'pkg-discord'
+	await saveSecret({
+		env,
+		userId,
+		scope: 'package',
+		name: secretName,
+		value: 'package-only-value',
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId,
+			storageId: packageId,
+		},
+	})
+
+	await expect(
+		resolveSecret({
+			env,
+			userId,
+			name: secretName,
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				packageId: null,
+				storageId: null,
+			},
+		}),
+	).resolves.toMatchObject({ found: false, value: null })
+
+	const executeMiss = await createUnresolvedSecretMessage({
+		env,
+		userId,
+		name: secretName,
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: null,
+			storageId: null,
+		},
+		baseUrl: 'https://example.com',
+	})
+	expect(parseSecretScopeUnavailableMessage(executeMiss)).toEqual({
+		secretName,
+		scope: 'package',
+		packageName: null,
+		packageId,
+	})
+	expect(executeMiss).toContain(
+		`https://example.com/account/secrets/package/${packageId}/${secretName}`,
+	)
+	expect(executeMiss).toContain('package id "pkg-discord"')
+
+	await expect(
+		createUnresolvedSecretMessage({
+			env,
+			userId,
+			name: 'noSuchSecret',
+			baseUrl: 'https://example.com',
+		}),
+	).resolves.toBe(createMissingSecretMessage('noSuchSecret'))
+
+	await expect(
+		resolveSecret({
+			env,
+			userId,
+			name: secretName,
+			storageContext: {
+				sessionId: null,
+				appId: null,
+				packageId,
+				storageId: packageId,
+			},
+		}),
+	).resolves.toMatchObject({
+		found: true,
+		value: 'package-only-value',
+		scope: 'package',
+	})
 })

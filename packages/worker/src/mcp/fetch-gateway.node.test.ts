@@ -39,6 +39,9 @@ const env = {
 							}
 							return null
 						},
+						async all() {
+							return { results: [], meta: { changes: 0 } }
+						},
 					}
 				},
 			}

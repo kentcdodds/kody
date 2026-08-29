@@ -1,3 +1,5 @@
+import { type SecretScope } from './types.ts'
+
 const hostApprovalRequiredRegex =
 	/^Secret "([^"]+)" is not allowed for host "([^"]+)"/
 const capabilityAccessRequiredRegex =
@@ -8,6 +10,8 @@ const capabilityBatchDeniedPrefix = 'Secrets require capability approval:'
 const hostBatchDeniedPrefix = 'Secrets require host approval:'
 const packageBatchDeniedPrefix = 'Secrets require package approval:'
 const missingSecretRegex = /^Secret "([^"]+)" was not found\.$/
+const secretScopeUnavailableRegex =
+	/^Secret "([^"]+)" exists in (session|package|user) scope(?: for package( id)? "([^"]+)")?/
 
 export const fetchSecretAuthRequiredMessage =
 	'Network requests that use secret placeholders require an authenticated user.'
@@ -22,6 +26,56 @@ const secretAuthRequiredMessages = new Set([
 
 export function createMissingSecretMessage(secretName: string) {
 	return `Secret "${secretName}" was not found.`
+}
+
+export type SecretScopeUnavailableMatch = {
+	secretName: string
+	scope: SecretScope
+	packageId: string | null
+	packageName: string | null
+	sessionId: string | null
+	editorUrl: string | null
+}
+
+function describeSecretScopeLocation(match: SecretScopeUnavailableMatch) {
+	switch (match.scope) {
+		case 'package':
+			if (match.packageName) {
+				return `package scope for package "${match.packageName}"`
+			}
+			if (match.packageId) {
+				return `package scope for package id "${match.packageId}"`
+			}
+			return 'package scope'
+		case 'session':
+			return 'session scope'
+		case 'user':
+			return 'user scope'
+		default: {
+			const _exhaustive: never = match.scope
+			return _exhaustive
+		}
+	}
+}
+
+export function createSecretScopeUnavailableMessage(
+	matches: Array<SecretScopeUnavailableMatch>,
+) {
+	const [first, ...rest] = matches
+	if (!first) {
+		throw new Error('At least one secret scope match is required.')
+	}
+	const extra =
+		rest.length === 0
+			? ''
+			: ` It also exists in ${rest.map(describeSecretScopeLocation).join(', ')}.`
+	const hasPackageMatch = matches.some((match) => match.scope === 'package')
+	const guidance = hasPackageMatch
+		? " Package-scoped secrets are only available while that package runs. Either invoke this work through the owning package, or ask the user to change the secret's scope in the account secrets UI."
+		: " Ask the user to change the secret's scope in the account secrets UI, or retry from a runtime that can see this scope."
+	const editorUrl = matches.find((match) => match.editorUrl)?.editorUrl ?? null
+	const editorSuffix = editorUrl ? ` Editor link: ${editorUrl}` : ''
+	return `Secret "${first.secretName}" exists in ${describeSecretScopeLocation(first)} and is not visible from this runtime.${extra}${guidance}${editorSuffix}`
 }
 
 export function createCapabilitySecretAccessDeniedMessage(
@@ -207,6 +261,32 @@ export function parseMissingSecretMessage(message: string) {
 	if (!match?.[1]) return null
 	return {
 		secretName: match[1],
+	}
+}
+
+function parseSecretErrorScope(value: string): SecretScope | null {
+	switch (value) {
+		case 'session':
+		case 'package':
+		case 'user':
+			return value
+		default:
+			return null
+	}
+}
+
+export function parseSecretScopeUnavailableMessage(message: string) {
+	const match = message.match(secretScopeUnavailableRegex)
+	if (!match?.[1] || !match[2]) return null
+	const scope = parseSecretErrorScope(match[2])
+	if (!scope) return null
+	const label = match[4] ?? null
+	const usesPackageId = Boolean(match[3])
+	return {
+		secretName: match[1],
+		scope,
+		packageName: usesPackageId ? null : label,
+		packageId: usesPackageId ? label : null,
 	}
 }
 

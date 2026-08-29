@@ -1,4 +1,7 @@
-import { buildAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
+import {
+	buildAccountSecretPath,
+	joinOriginAndEncodedPath,
+} from '@kody-internal/shared/account-secret-route.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { type SecretScope } from './types.ts'
 
@@ -15,7 +18,7 @@ export function buildSecretCapabilityApprovalUrl(input: {
 		packageId: input.storageContext?.packageId ?? null,
 		sessionId: input.storageContext?.sessionId ?? null,
 	})
-	const url = new URL(secretPath, input.baseUrl)
-	url.searchParams.set('capability', input.capabilityName)
-	return url.toString()
+	const search = new URLSearchParams()
+	search.set('capability', input.capabilityName)
+	return `${joinOriginAndEncodedPath(input.baseUrl, secretPath)}?${search}`
 }

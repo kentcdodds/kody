@@ -4,10 +4,8 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { buildSecretCapabilityApprovalUrl } from '#mcp/secrets/capability-approval-url.ts'
-import {
-	createCapabilitySecretAccessDeniedMessage,
-	createMissingSecretMessage,
-} from '#mcp/secrets/errors.ts'
+import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
+import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
@@ -88,7 +86,14 @@ export const jwtSignCapability = defineDomainCapability(
 			})
 			if (!resolved.found || typeof resolved.value !== 'string') {
 				throw new Error(
-					createMissingSecretMessage(args.private_key_secret_name),
+					await createUnresolvedSecretMessage({
+						env: ctx.env,
+						userId: user.userId,
+						name: args.private_key_secret_name,
+						scope: args.private_key_secret_scope,
+						storageContext,
+						baseUrl: ctx.callerContext.baseUrl,
+					}),
 				)
 			}
 			await assertPackageCanAccessResolvedSecret({
