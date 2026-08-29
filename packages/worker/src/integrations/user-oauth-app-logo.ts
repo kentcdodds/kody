@@ -166,24 +166,15 @@ export async function setUserOauthAppLogo(input: {
 		.run()
 
 	if ((updated.meta.changes ?? 0) === 0) {
-		const current =
+		// Leave nextKey. A concurrent writer can store the same content hash
+		// after this lookup; deleting here can remove a live object.
+		return (
 			(await getOauthAppBySlug({
 				db: input.db,
 				userId: input.userId,
 				slug: app.slug,
 			})) ?? app
-		if (nextKey && nextKey !== current.logoKey) {
-			try {
-				await input.env.COMMUNITY_ASSETS.delete(nextKey)
-			} catch (error) {
-				console.error(
-					'user-oauth-app-logo-raced-favicon-delete-failed',
-					nextKey,
-					error,
-				)
-			}
-		}
-		return current
+		)
 	}
 
 	if (previousKey && previousKey !== nextKey) {

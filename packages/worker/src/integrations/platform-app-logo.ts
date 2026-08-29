@@ -216,17 +216,8 @@ export async function setPlatformOauthAppLogo(input: {
 				`Platform OAuth app "${app.slug}" disappeared during logo update.`,
 			)
 		}
-		if (nextKey && nextKey !== current.logoKey) {
-			try {
-				await input.env.COMMUNITY_ASSETS.delete(nextKey)
-			} catch (error) {
-				console.error(
-					'platform-oauth-app-logo-raced-refit-delete-failed',
-					nextKey,
-					error,
-				)
-			}
-		}
+		// Leave nextKey. A concurrent writer can store the same content hash
+		// after this lookup; deleting here can remove a live object.
 		return current
 	}
 
