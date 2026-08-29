@@ -3,6 +3,10 @@ export {
 	AccountBillingRoute,
 	accountBillingRouteLoader,
 } from './account-billing.tsx'
+export {
+	AccountBillingSuccessRoute,
+	accountBillingSuccessRouteLoader,
+} from './account-billing-success.tsx'
 export { AccountEmailRoute, accountEmailRouteLoader } from './account-email.tsx'
 export { AccountUsageRoute, accountUsageRouteLoader } from './account-usage.tsx'
 export {

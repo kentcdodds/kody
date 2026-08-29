@@ -148,7 +148,13 @@ export async function createEmailVerification(input: {
 }
 
 export type VerifyEmailResult =
-	| { ok: true; userId: number; email: string }
+	| {
+			ok: true
+			userId: number
+			email: string
+			stableUserId: string
+			newlyVerified: boolean
+	  }
 	| { ok: false; reason: 'missing_token' | 'invalid_token' | 'expired_token' }
 
 export async function verifyEmailToken(input: {
@@ -162,13 +168,21 @@ export async function verifyEmailToken(input: {
 	const tokenHash = await hashVerificationToken(token)
 	const record = await input.db
 		.prepare(
-			`SELECT ev.id, ev.user_id, ev.expires_at, u.email
+			`SELECT ev.id, ev.user_id, ev.expires_at, u.email,
+			        u.stable_user_id, u.email_verified_at
 			 FROM email_verifications ev
 			 INNER JOIN users u ON u.id = ev.user_id
 			 WHERE ev.token_hash = ?`,
 		)
 		.bind(tokenHash)
-		.first<{ id: number; user_id: number; expires_at: number; email: string }>()
+		.first<{
+			id: number
+			user_id: number
+			expires_at: number
+			email: string
+			stable_user_id: string
+			email_verified_at: string | null
+		}>()
 	const now = input.now ?? new Date()
 
 	if (!record) return { ok: false, reason: 'invalid_token' }
@@ -180,6 +194,7 @@ export async function verifyEmailToken(input: {
 		return { ok: false, reason: 'expired_token' }
 	}
 
+	const newlyVerified = !record.email_verified_at
 	const verifiedAt = now.toISOString()
 	await input.db
 		.prepare(
@@ -198,5 +213,11 @@ export async function verifyEmailToken(input: {
 		.bind(record.user_id)
 		.run()
 
-	return { ok: true, userId: record.user_id, email: record.email }
+	return {
+		ok: true,
+		userId: record.user_id,
+		email: record.email,
+		stableUserId: record.stable_user_id,
+		newlyVerified,
+	}
 }

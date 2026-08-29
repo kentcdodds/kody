@@ -34,6 +34,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountBillingRouteLoader,
 	),
+	[routePattern(routes.accountBillingSuccess)]: lazyRouteLoader(
+		accountArea,
+		(m) => m.accountBillingSuccessRouteLoader,
+	),
 	[routePattern(routes.accountUsage)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountUsageRouteLoader,
@@ -306,6 +310,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		marketingArea,
 		(m) => m.discordRouteLoader,
 	),
+	[routePattern(routes.pricing)]: lazyRouteLoader(
+		marketingArea,
+		(m) => m.pricingRouteLoader,
+	),
 }
 
 export const clientRoutes = {
@@ -315,6 +323,9 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountBilling)]: (
 		<LazyAccountRoute render={(m) => <m.AccountBillingRoute />} />
+	),
+	[routePattern(routes.accountBillingSuccess)]: (
+		<LazyAccountRoute render={(m) => <m.AccountBillingSuccessRoute />} />
 	),
 	[routePattern(routes.accountUsage)]: (
 		<LazyAccountRoute render={(m) => <m.AccountUsageRoute />} />

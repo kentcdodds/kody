@@ -3,6 +3,7 @@ import { type Action } from 'remix/router'
 import { loadAccountBillingData } from '#app/account-billing-data.ts'
 import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { userHasMcpOAuthGrants } from '#app/onboarding-data.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
@@ -213,7 +214,22 @@ export function createAccountBillingSuccessHandler(env: Env) {
 					ip: requestIp,
 					path: new URL(request.url).pathname,
 				})
-				return Response.redirect(new URL('/account/billing', request.url), 302)
+				const hasMcpClient = await userHasMcpOAuthGrants(
+					env,
+					user.mcpUser.userId,
+				)
+				const needsOnboarding = !user.emailVerified || !hasMcpClient
+				return renderAppPage({
+					request,
+					env,
+					title: "You're in",
+					loaderData: {
+						accountBillingSuccess: {
+							ok: true,
+							needsOnboarding,
+						},
+					},
+				})
 			} catch (error) {
 				const code =
 					error instanceof BillingLinkError ? error.code : 'link_failed'

@@ -14,6 +14,8 @@ import {
 	record,
 	string,
 } from 'remix/data-schema'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { sendPaymentFailedEmail } from '#app/user-account-emails.ts'
 import { isBillingConfigured } from './billing-config.ts'
 import {
 	BillingLinkError,
@@ -207,6 +209,22 @@ async function handleInvoicePaymentFailed(input: {
 		customerId,
 		subscriptionStatus: result.resolved?.subscriptionStatus ?? null,
 	})
+	const user = await input.env.APP_DB.prepare(
+		`SELECT email, stable_user_id FROM users WHERE id = ?`,
+	)
+		.bind(result.userId)
+		.first<{ email: string; stable_user_id: string }>()
+	if (!user?.email) return
+	try {
+		await sendPaymentFailedEmail({
+			env: input.env,
+			email: user.email,
+			userId: user.stable_user_id,
+			day: utcDayKey(input.now ?? new Date()),
+		})
+	} catch (error) {
+		console.warn('billing-payment-failed-email-failed', error)
+	}
 }
 
 export async function processStripeWebhookEvent(input: {

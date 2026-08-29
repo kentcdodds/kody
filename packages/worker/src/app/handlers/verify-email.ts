@@ -1,6 +1,8 @@
 import { type Action } from 'remix/router'
 import { getRequestIp, logAuditEvent } from '#worker/audit-log.ts'
 import { verifyEmailToken } from '#app/email-verification.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
+import { sendConnectAgentEmail } from '#app/user-account-emails.ts'
 import { resolveVerifyEmailSuccessCta } from '#universal/safe-redirect.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { type routes } from '#universal/routes.ts'
@@ -63,6 +65,20 @@ export function createVerifyEmailHandler(env: Env) {
 				ip: requestIp,
 				path: url.pathname,
 			})
+			if (result.newlyVerified) {
+				void sendConnectAgentEmail({
+					env,
+					email: result.email,
+					userId: result.stableUserId,
+				}).catch((error) => {
+					console.warn('connect-agent-email-failed', error)
+				})
+				scheduleKitSubscriberSync({
+					env,
+					email: result.email,
+					stableUserId: result.stableUserId,
+				})
+			}
 			const cta = resolveVerifyEmailSuccessCta(
 				url.searchParams.get('redirectTo'),
 			)

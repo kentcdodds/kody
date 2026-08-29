@@ -126,6 +126,138 @@ function entitlementWarningCopy(kind: UserEntitlementWarningKind) {
 	}
 }
 
+export function buildConnectAgentEmail(input: {
+	appBaseUrl: string
+	onboardingUrl: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Connect your agent to Kody',
+		preheader: 'One connection and your assistant has a home.',
+		heading: 'Connect the agent you already use',
+		body: [
+			'Your email is verified. Next, connect Cursor, Claude, ChatGPT, or another MCP host so Kody can keep memory, secrets, and jobs for you.',
+			'It takes a couple of minutes. After that, every agent you use can share the same home.',
+		],
+		action: { label: 'Connect your agent', url: input.onboardingUrl },
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote: "You're receiving this because you just verified a Kody account.",
+	})
+}
+
+export function buildBillingSuccessEmail(input: {
+	appBaseUrl: string
+	billingUrl: string
+	discordUrl: string
+	planLabel: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: `You're on Kody ${input.planLabel}`,
+		preheader: 'Thanks for paying for the volume you actually use.',
+		heading: `Welcome to ${input.planLabel}`,
+		body: [
+			`Your Kody account is now on the ${input.planLabel} plan. Same factory, more room for jobs, workflows, and daily volume.`,
+			'Join the Discord if you want help, examples, or to talk to other people building with Kody.',
+		],
+		action: { label: 'Join the Kody Discord', url: input.discordUrl },
+		afterAction: [`You can manage billing anytime: ${input.billingUrl}`],
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote: "You're receiving this because you subscribed to a Kody plan.",
+	})
+}
+
+export function buildPaymentFailedEmail(input: {
+	appBaseUrl: string
+	billingUrl: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Kody could not process your payment',
+		preheader: 'Update your payment method to keep your paid plan.',
+		heading: 'Your payment did not go through',
+		body: [
+			'Stripe could not charge the card on your Kody subscription. Update your payment method so your paid limits stay in place.',
+		],
+		action: { label: 'Update billing', url: input.billingUrl },
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote:
+			"You're receiving this because a Kody subscription payment failed.",
+	})
+}
+
+export function buildPastDueEmail(input: {
+	appBaseUrl: string
+	billingUrl: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Your Kody subscription is past due',
+		preheader: 'Your paid plan is waiting on a successful payment.',
+		heading: 'Your subscription is past due',
+		body: [
+			'Your Kody subscription is past due. Update your payment method to keep Standard or Pro limits. If payment stays failed, the account returns to the free plan.',
+		],
+		action: { label: 'Fix billing', url: input.billingUrl },
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote:
+			"You're receiving this because your Kody subscription is past due.",
+	})
+}
+
+export function buildUserErrorRateEmail(input: {
+	appBaseUrl: string
+	activityUrl: string
+	triagePackageUrl: string
+	errorCount: number
+	eventCount: number
+}) {
+	const percent =
+		input.eventCount > 0
+			? Math.round((input.errorCount / input.eventCount) * 100)
+			: 0
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Your Kody runs are erroring more than usual',
+		preheader: 'A look at the failures, and a package that can help.',
+		heading: 'A few runs need attention',
+		body: [
+			`This month Kody recorded ${input.errorCount.toLocaleString('en-US')} errors across ${input.eventCount.toLocaleString('en-US')} runs (${percent}%).`,
+			'Review the activity log, or fork Kent’s issue-triage package so a cloud agent can inspect the failures for you.',
+		],
+		action: { label: 'Review account activity', url: input.activityUrl },
+		afterAction: [`Loop-safe Cursor triage package: ${input.triagePackageUrl}`],
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote:
+			"You're receiving this because your Kody account crossed an error-rate threshold.",
+	})
+}
+
 export function buildPasswordResetEmail(input: {
 	appBaseUrl: string
 	resetUrl: string

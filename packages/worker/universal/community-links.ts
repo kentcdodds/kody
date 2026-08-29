@@ -3,6 +3,9 @@ import { routes } from '#universal/routes.ts'
 /** Public invite for the Kody community Discord. */
 export const kodyDiscordInviteUrl = 'https://kcd.im/kody-discord'
 
+/** Kent's public issue-triage package — linked from user error-rate mail. */
+export const kodyIssueTriageListingPath = '/@kentcdodds/kody-issue-triage'
+
 const scopedPackageNamePattern = /^@([a-z0-9][a-z0-9._-]*)\//
 
 /**

@@ -246,6 +246,7 @@ registerPreloadPatterns(
 	[
 		routePattern(routes.account),
 		routePattern(routes.accountBilling),
+		routePattern(routes.accountBillingSuccess),
 		routePattern(routes.accountUsage),
 		routePattern(routes.accountIntegrations),
 		routePattern(routes.accountOauthAppDetail),
