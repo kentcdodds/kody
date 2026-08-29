@@ -12,6 +12,7 @@ export type AppRootProps = {
 	} | null
 	loaderData?: AppLoaderData
 	notFound?: boolean
+	unauthorized?: boolean
 }
 
 export const APP_ROOT_ENTRY_ID = '/client-entry.js#AppRoot'

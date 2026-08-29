@@ -284,6 +284,7 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 						session={handle.props.session}
 						loaderData={handle.props.loaderData}
 						notFound={handle.props.notFound}
+						unauthorized={handle.props.unauthorized}
 					/>
 				</div>
 				{/* Blocking classic script (not type=module): restores the

@@ -135,7 +135,7 @@ export type CommunityIndexLoaderData = {
 
 export type CommunityDetailLoaderData = {
 	ok: true
-	listing: PublicCommunityListing
+	listing: PublicCommunityListing | null
 	/** True when `/@owner` is publicly reachable. */
 	ownerProfilePublic: boolean
 	/** True when the signed-in viewer follows the listing owner. */
@@ -149,6 +149,9 @@ export type CommunityDetailLoaderData = {
 	/** Existing fork/install for the signed-in viewer, when one exists. */
 	viewerInstall: ViewerListingInstall | null
 	readmeFences?: Array<HighlightedCode>
+	ownerPackage: AccountPackageDetail | null
+	username: string
+	invocationUrlOrigin: string
 }
 
 export type PackageFilesChildLoaderData = {
@@ -178,7 +181,7 @@ export type PackageFilesLoaderData = {
 /** SSR-embedded shell data for client-only regions on the detail page. */
 export type CommunityDetailShellLoaderData = {
 	ok: true
-	listingId: string
+	listingId: string | null
 	name: string
 	description: string
 	forkPrompt: string
@@ -191,6 +194,14 @@ export type CommunityDetailShellLoaderData = {
 	starCount: number
 	starredByViewer: boolean
 	viewerInstall: ViewerListingInstall | null
+	ownerPackage: AccountPackageDetail | null
+	username: string
+	invocationUrlOrigin: string
+}
+
+export type CommunityPackageUnauthorizedLoaderData = {
+	ok: false
+	unauthorized: true
 }
 
 export type ProfileLoaderData = {
@@ -1174,6 +1185,9 @@ export type AccountPackageListItem = {
 	lockedAt: string | null
 	createdAt: string
 	updatedAt: string
+	hidden: boolean
+	isPrivate: boolean
+	hasCommunityListing: boolean
 	listingAhead: AccountPackageListingAhead | null
 }
 
@@ -1692,7 +1706,9 @@ export type AppLoaderData = {
 	guides?: GuidesLoaderData
 	guidesConnect?: GuidesConnectLoaderData
 	guideDetail?: GuideDetailLoaderData
-	communityDetailShell?: CommunityDetailShellLoaderData
+	communityDetailShell?:
+		| CommunityDetailShellLoaderData
+		| CommunityPackageUnauthorizedLoaderData
 	packageFiles?: PackageFilesLoaderData
 	profileShell?: ProfileShellLoaderData | ProfileUnavailableLoaderData
 	timeline?: TimelineLoaderData

@@ -48,7 +48,12 @@ import {
 	type PublicCommunityListing,
 	type ViewerListingInstall,
 } from '#universal/community-public-types.ts'
-import { type AppLoaderData } from '#universal/loader-data.ts'
+import {
+	type AccountPackageDetail,
+	type AccountPackagesLoaderData,
+	type AppLoaderData,
+} from '#universal/loader-data.ts'
+import { AccountPackageOwnerDetails } from '#client/routes/account-package-owner-details.tsx'
 
 /**
  * Community detail, ported from the redesign prototype
@@ -63,7 +68,7 @@ import { type AppLoaderData } from '#universal/loader-data.ts'
 
 type CommunityDetailApiPayload = {
 	ok: true
-	listing: PublicCommunityListing
+	listing: PublicCommunityListing | null
 	ownerProfilePublic: boolean
 	loggedIn: boolean
 	viewerIsAdmin: boolean
@@ -71,6 +76,9 @@ type CommunityDetailApiPayload = {
 	starredByViewer: boolean
 	viewerInstall: ViewerListingInstall | null
 	readmeFences?: Array<HighlightedCode>
+	ownerPackage: AccountPackageDetail | null
+	username: string
+	invocationUrlOrigin: string
 }
 
 type CommunityPackageMovedPayload = {
@@ -218,6 +226,11 @@ export async function communityDetailRouteLoader(
 	const payload = await readJson<
 		CommunityDetailApiPayload | CommunityPackageMovedPayload
 	>(response)
+	if (response.status === 401) {
+		return {
+			communityDetailShell: { ok: false, unauthorized: true },
+		}
+	}
 	if (response.status === 404) {
 		const movedTo = payload && !payload.ok ? payload.redirectTo : null
 		// A renamed package is a real destination, not a dead link: leave the SPA
@@ -230,25 +243,29 @@ export async function communityDetailRouteLoader(
 	}
 
 	await framePrefetchPromise
-	const listingId = payload.listing.id
-	rememberListingId(ref.pathname, listingId)
+	const listingId = payload.listing?.id ?? null
+	if (listingId) rememberListingId(ref.pathname, listingId)
 
 	return {
 		communityDetailShell: {
 			ok: true,
 			listingId,
-			name: payload.listing.name,
-			description: payload.listing.description,
+			name: payload.listing?.name ?? payload.ownerPackage?.name ?? '',
+			description:
+				payload.listing?.description ?? payload.ownerPackage?.description ?? '',
 			forkPrompt: payload.forkPrompt,
 			loggedIn: payload.loggedIn,
 			viewerIsAdmin: payload.viewerIsAdmin,
-			trusted: payload.listing.trusted,
-			featured: payload.listing.featured,
-			readmeContent: payload.listing.readmeContent,
+			trusted: payload.listing?.trusted ?? false,
+			featured: payload.listing?.featured ?? false,
+			readmeContent: payload.listing?.readmeContent ?? null,
 			readmeFences: payload.readmeFences,
-			starCount: payload.listing.starCount,
+			starCount: payload.listing?.starCount ?? 0,
 			starredByViewer: payload.starredByViewer,
 			viewerInstall: payload.viewerInstall,
+			ownerPackage: payload.ownerPackage,
+			username: payload.username,
+			invocationUrlOrigin: payload.invocationUrlOrigin,
 		},
 	}
 }
@@ -285,6 +302,12 @@ export function CommunityDetailRoute(handle: Handle) {
 	let starMessage: string | null = null
 	let starRequestId = 0
 	let followRequestId = 0
+	let ownerPackage: AccountPackageDetail | null = null
+	let username = ''
+	let invocationUrlOrigin = ''
+	let ownerDetailsMessage: string | null = null
+	const lockInFlight = new Map<string, string | null>()
+	let shellUnauthorized = false
 
 	// Re-lexing markdown on every handle.update() would be wasted work; cache
 	// the rendered README per markdown string (same policy as MarkdownView).
@@ -328,6 +351,13 @@ export function CommunityDetailRoute(handle: Handle) {
 			const payload = await readJson<
 				CommunityDetailApiPayload | CommunityPackageMovedPayload
 			>(response)
+			if (response.status === 401) {
+				shellLoadedForPathname = ref.pathname
+				shellUnauthorized = true
+				shellStatus = 'ready'
+				handle.update()
+				return
+			}
 			if (response.status === 404) {
 				const movedTo = payload && !payload.ok ? payload.redirectTo : null
 				// A renamed package is a real destination, not a dead link.
@@ -343,24 +373,31 @@ export function CommunityDetailRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error('Unable to load community package.')
 			}
-			rememberListingId(ref.pathname, payload.listing.id)
+			if (payload.listing) {
+				rememberListingId(ref.pathname, payload.listing.id)
+			}
 			loggedIn = payload.loggedIn
 			viewerIsAdmin = payload.viewerIsAdmin
-			trusted = payload.listing.trusted
+			trusted = payload.listing?.trusted ?? false
 			trustState = 'idle'
 			trustMessage = null
-			featured = payload.listing.featured
+			featured = payload.listing?.featured ?? false
 			featureState = 'idle'
 			featureMessage = null
 			installState = 'idle'
 			installMessage = null
 			installOutcome = null
-			readmeContent = payload.listing.readmeContent
+			readmeContent = payload.listing?.readmeContent ?? null
 			readmeFences = payload.readmeFences ?? []
 			starredByViewer = payload.starredByViewer
 			starMessage = null
 			reportState = 'idle'
 			reportMessage = null
+			ownerPackage = payload.ownerPackage
+			username = payload.username
+			invocationUrlOrigin = payload.invocationUrlOrigin
+			ownerDetailsMessage = null
+			shellUnauthorized = false
 			shellLoadedForPathname = ref.pathname
 			shellStatus = 'ready'
 			handle.update()
@@ -438,6 +475,74 @@ export function CommunityDetailRoute(handle: Handle) {
 		)
 		if (outcome === 'unauthorized') {
 			window.location.assign('/login')
+		}
+	}
+
+	function applyOwnerPackageLock(packageId: string, lockedAt: string | null) {
+		if (ownerPackage?.id === packageId) {
+			ownerPackage = { ...ownerPackage, lockedAt }
+		}
+	}
+
+	async function togglePackageLock() {
+		if (!ownerPackage || lockInFlight.has(ownerPackage.id)) return
+		const packageId = ownerPackage.id
+		const previousLockedAt = ownerPackage.lockedAt
+		const nextLocked = !(
+			typeof previousLockedAt === 'string' && previousLockedAt.trim().length > 0
+		)
+		const nextLockedAt = nextLocked ? new Date().toISOString() : null
+		lockInFlight.set(packageId, nextLockedAt)
+		ownerDetailsMessage = null
+		applyOwnerPackageLock(packageId, nextLockedAt)
+		handle.update()
+
+		try {
+			const response = await fetch('/account/packages.json', {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: nextLocked ? 'lock' : 'unlock',
+					packageId,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AccountPackagesLoaderData & { error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				applyOwnerPackageLock(packageId, previousLockedAt)
+				if (ownerPackage?.id === packageId) {
+					ownerDetailsMessage =
+						payload?.error ?? 'Could not update the publish lock.'
+				}
+				handle.update()
+				return
+			}
+			applyOwnerPackageLock(
+				packageId,
+				payload.selectedPackage?.lockedAt ?? nextLockedAt,
+			)
+			if (payload.selectedPackage?.id === packageId) {
+				ownerPackage = payload.selectedPackage
+			}
+			handle.update()
+		} catch {
+			applyOwnerPackageLock(packageId, previousLockedAt)
+			if (ownerPackage?.id === packageId) {
+				ownerDetailsMessage = 'Could not update the publish lock.'
+			}
+			handle.update()
+		} finally {
+			lockInFlight.delete(packageId)
+			handle.update()
 		}
 	}
 
@@ -714,7 +819,14 @@ export function CommunityDetailRoute(handle: Handle) {
 		pathname: string,
 		listingId: string | null,
 	) {
-		if (!routeData || !listingId || routeData.listingId !== listingId) {
+		if (!routeData) return false
+		if (!routeData.ok) {
+			shellUnauthorized = true
+			shellLoadedForPathname = pathname
+			shellStatus = 'ready'
+			return true
+		}
+		if (routeData.listingId && listingId && routeData.listingId !== listingId) {
 			return false
 		}
 		loggedIn = routeData.loggedIn
@@ -734,6 +846,11 @@ export function CommunityDetailRoute(handle: Handle) {
 		starMessage = null
 		reportState = 'idle'
 		reportMessage = null
+		ownerPackage = routeData.ownerPackage
+		username = routeData.username
+		invocationUrlOrigin = routeData.invocationUrlOrigin
+		ownerDetailsMessage = null
+		shellUnauthorized = false
 		shellLoadedForPathname = pathname
 		shellStatus = 'ready'
 		return true
@@ -749,11 +866,28 @@ export function CommunityDetailRoute(handle: Handle) {
 		)
 		// The canonical URL carries no listing id, so the server's answer for this
 		// pathname is what makes the page's listing-scoped actions addressable.
-		if (routeData) {
+		if (routeData?.ok && routeData.listingId) {
 			rememberListingId(pathname, routeData.listingId)
 		}
 		const ref = getListingPageRef(pathname)
 		const listingId = ref?.listingId ?? null
+
+		if (
+			(routeData && !routeData.ok) ||
+			(shellUnauthorized && shellLoadedForPathname === pathname)
+		) {
+			return (
+				<article mix={css(detailArticleCss)}>
+					<a href={routes.community.href()} mix={css(backLinkCss)}>
+						← Community packages
+					</a>
+					<header mix={css(missingHeadCss)}>
+						<h1>Unauthorized</h1>
+						<p>You are not allowed to view this page.</p>
+					</header>
+				</article>
+			)
+		}
 
 		if (!ref) {
 			return (
@@ -826,6 +960,21 @@ export function CommunityDetailRoute(handle: Handle) {
 			>
 				<Frame name={COMMUNITY_DETAIL_TARGET} src={frameSrc} />
 
+				{showShellReady && ownerPackage && !listingId ? (
+					<header mix={css(missingHeadCss)}>
+						<h1>{ownerPackage.name}</h1>
+						<p>
+							Owner view for{' '}
+							<a
+								href={routes.profile.href({ username })}
+								mix={css(inlineLinkCss)}
+							>
+								@{username}
+							</a>
+						</p>
+					</header>
+				) : null}
+
 				{/*
 				 * A live region only announces text that changes while the region
 				 * is already in the accessibility tree, so the announcer stays
@@ -850,7 +999,7 @@ export function CommunityDetailRoute(handle: Handle) {
 					{shellStatusMessage}
 				</p>
 
-				{showShellReady ? (
+				{showShellReady && listingId ? (
 					<>
 						<div data-testid="community-install" mix={css(installStripCss)}>
 							<p role="status" mix={css(visuallyHiddenCss)}>
@@ -1052,6 +1201,34 @@ export function CommunityDetailRoute(handle: Handle) {
 							)}
 						</details>
 					</>
+				) : null}
+
+				{showShellReady && ownerPackage ? (
+					<section
+						aria-labelledby="package-owner-details-title"
+						mix={css(detailSectionCss)}
+					>
+						<h2 id="package-owner-details-title">Package details</h2>
+						{ownerDetailsMessage ? (
+							<p mix={css(errorTextCss)} role="alert">
+								{ownerDetailsMessage}
+							</p>
+						) : null}
+						<AccountPackageOwnerDetails
+							packageDetail={ownerPackage}
+							username={username}
+							invocationUrlOrigin={invocationUrlOrigin}
+							currentHref={currentHref}
+							lockInFlight={lockInFlight.has(ownerPackage.id)}
+							onToggleLock={() => void togglePackageLock()}
+							onPackagesPayload={(payload) => {
+								if (payload.selectedPackage?.id === ownerPackage?.id) {
+									ownerPackage = payload.selectedPackage
+									handle.update()
+								}
+							}}
+						/>
+					</section>
 				) : null}
 			</article>
 		)

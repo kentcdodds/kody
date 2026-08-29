@@ -17,8 +17,10 @@ import {
 	type PackageInvocationTokenRecord,
 } from '#worker/package-invocations/repo.ts'
 import { readPagination } from '#worker/query-params.ts'
+import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
 import {
 	getSavedPackageWithCommunityProvenanceById,
+	getSavedPackageWithCommunityProvenanceByKodyId,
 	listSavedPackageCommunityProvenanceByIds,
 	searchSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
@@ -129,6 +131,9 @@ function toListItem(
 		lockedAt: record.lockedAt,
 		createdAt: record.createdAt,
 		updatedAt: record.updatedAt,
+		hidden: record.hidden,
+		isPrivate: record.isPrivate,
+		hasCommunityListing: false,
 		listingAhead,
 	}
 }
@@ -172,6 +177,7 @@ async function toDetail(input: {
 	requestUrl: string
 	userId: string
 	record: SavedPackageWithCommunityProvenanceRecord
+	hasCommunityListing: boolean
 }): Promise<AccountPackageDetail> {
 	const [tokens, exports, source] = await Promise.all([
 		listPackageInvocationTokensByPackageId({
@@ -189,6 +195,7 @@ async function toDetail(input: {
 	])
 	return {
 		...toListItem(input.record, toListingAhead(input.record)),
+		hasCommunityListing: input.hasCommunityListing,
 		searchText: input.record.searchText,
 		exports,
 		tokens: tokens.map(toToken),
@@ -197,6 +204,50 @@ async function toDetail(input: {
 				? (source.published_commit ?? null)
 				: null,
 	}
+}
+
+async function hasActiveCommunityListing(input: {
+	db: D1Database
+	userId: string
+	packageId: string
+}) {
+	const listing = await getCommunityListingByOwnerAndPackage(input.db, {
+		ownerUserId: input.userId,
+		packageId: input.packageId,
+	})
+	return listing?.status === 'active'
+}
+
+export async function loadAccountPackageDetail(input: {
+	env: Env
+	requestUrl: string
+	userId: string
+	packageId?: string
+	kodyId?: string
+}): Promise<AccountPackageDetail | null> {
+	const record = input.kodyId
+		? await getSavedPackageWithCommunityProvenanceByKodyId(input.env.APP_DB, {
+				userId: input.userId,
+				kodyId: input.kodyId,
+			})
+		: input.packageId
+			? await getSavedPackageWithCommunityProvenanceById(input.env.APP_DB, {
+					userId: input.userId,
+					packageId: input.packageId,
+				})
+			: null
+	if (!record) return null
+	return toDetail({
+		env: input.env,
+		requestUrl: input.requestUrl,
+		userId: input.userId,
+		record,
+		hasCommunityListing: await hasActiveCommunityListing({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			packageId: record.id,
+		}),
+	})
 }
 
 export async function loadAccountPackagesData(input: {
@@ -262,6 +313,11 @@ export async function loadAccountPackagesData(input: {
 					requestUrl: input.request.url,
 					userId,
 					record: selectedRecord,
+					hasCommunityListing: await hasActiveCommunityListing({
+						db: input.env.APP_DB,
+						userId,
+						packageId: selectedRecord.id,
+					}),
 				})
 			: null,
 		page,

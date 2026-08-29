@@ -48,6 +48,7 @@ const communityMockModule = vi.hoisted(() => ({
 	getUserSocialRowByUsername: vi.fn(),
 	resolveCommunityListingRoute: vi.fn(),
 	resolveCanonicalListingPath: vi.fn(),
+	resolvePackagePageUrl: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -74,6 +75,16 @@ vi.mock('#app/community-package-route.ts', () => ({
 	resolveCanonicalListingPath: (...args: Array<unknown>) =>
 		communityMockModule.resolveCanonicalListingPath(...args),
 }))
+
+vi.mock('#worker/community/package-url.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/community/package-url.ts')>()
+	return {
+		...actual,
+		resolvePackagePageUrl: (...args: Array<unknown>) =>
+			communityMockModule.resolvePackagePageUrl(...args),
+	}
+})
 
 vi.mock('#worker/community/social-repo.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof CommunitySocialRepo>()
@@ -1638,6 +1649,14 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 
 	communityMockModule.resolveCommunityListingRoute.mockResolvedValue({
 		kind: 'listing',
+		listingId: 'listing-detail-1',
+	})
+	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'package',
+		username: 'kentcdodds',
+		kodyId: 'github-triage',
+		userId: 'owner-mcp-id',
+		savedPackage: null,
 		listingId: 'listing-detail-1',
 	})
 

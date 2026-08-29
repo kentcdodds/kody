@@ -52,6 +52,7 @@ type AppProps = {
 	embeddedSession?: SessionInfo | null
 	loaderData?: AppLoaderData
 	notFound?: boolean
+	unauthorized?: boolean
 }
 
 export function App(handle: Handle<AppProps>) {
@@ -310,6 +311,7 @@ export function App(handle: Handle<AppProps>) {
 								routes={clientRoutes}
 								loaderData={handle.props.loaderData}
 								notFound={handle.props.notFound}
+								unauthorized={handle.props.unauthorized}
 								fallback={
 									<section>
 										<h2
@@ -324,6 +326,23 @@ export function App(handle: Handle<AppProps>) {
 										</h2>
 										<p mix={css({ color: colors.textMuted })}>
 											We could not find that page.
+										</p>
+									</section>
+								}
+								unauthorizedFallback={
+									<section>
+										<h2
+											mix={css({
+												fontSize: typography.fontSize.lg,
+												fontWeight: typography.fontWeight.semibold,
+												marginBottom: spacing.sm,
+												color: colors.text,
+											})}
+										>
+											Unauthorized
+										</h2>
+										<p mix={css({ color: colors.textMuted })}>
+											You are not allowed to view this page.
 										</p>
 									</section>
 								}
