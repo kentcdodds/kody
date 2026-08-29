@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createCommunityIconHandler } from './community-icon.ts'
+import type * as CommunityIconModule from '#worker/community/community-icon.ts'
 import { type CommunityListingRecord } from '#worker/community/types.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -9,10 +10,10 @@ const mocks = vi.hoisted(() => ({
 	renderCommunityIconFallbackPng: vi.fn(),
 }))
 
-vi.mock('#worker/community/community-icon.ts', () => {
+vi.mock('#worker/community/community-icon.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof CommunityIconModule>()
 	return {
-		buildCommunityIconFallbackSvg: (name: string) =>
-			`<svg xmlns="http://www.w3.org/2000/svg"><text>${name}</text></svg>`,
+		...actual,
 		getCommunityIconObject: (...args: Array<unknown>) =>
 			mocks.getCommunityIconObject(...args),
 		renderCommunityIconFallbackPng: (...args: Array<unknown>) =>
@@ -84,6 +85,9 @@ test('community icon handler serves cached R2 bytes for current and pinned commi
 	const currentResponse = await callHandler()
 	expect(currentResponse.status).toBe(200)
 	expect(currentResponse.headers.get('Content-Type')).toBe('image/png')
+	expect(currentResponse.headers.get('Cache-Control')).toBe(
+		'public, max-age=31536000, immutable',
+	)
 	expect(currentResponse.headers.get('ETag')).toBe('"icon-etag"')
 	expect(currentResponse.headers.get('X-Content-Type-Options')).toBe('nosniff')
 	expect(new Uint8Array(await currentResponse.arrayBuffer())).toEqual(bytes)

@@ -13,6 +13,13 @@
 		"global_fetch_strictly_public",
 		"enhanced_error_serialization",
 	],
+	// Resize/re-encode package icons and integration logos at ingest. Local
+	// wrangler uses the offline Images simulator (width/height/fit/format).
+	// Wrangler does not inherit `images` into named envs — restate it on
+	// production, preview, and test.
+	"images": {
+		"binding": "IMAGES",
+	},
 	// Paid default is 10_000 subrequests/invocation. The MCP Agent Durable
 	// Object keeps a long-lived session and each mutating storage_query pays
 	// several D1 + StorageRunner RPCs (entitlement baseline, sqlQuery,
@@ -481,6 +488,9 @@
 			"ai": {
 				"binding": "AI",
 			},
+			"images": {
+				"binding": "IMAGES",
+			},
 			"artifacts": [
 				{
 					"binding": "ARTIFACTS",
@@ -874,6 +884,9 @@
 			"ai": {
 				"binding": "AI",
 			},
+			"images": {
+				"binding": "IMAGES",
+			},
 			"artifacts": [
 				{
 					"binding": "ARTIFACTS",
@@ -1145,6 +1158,9 @@
 					"bucket_name": "kody-preview-repo-session-blobs",
 				},
 			],
+			"images": {
+				"binding": "IMAGES",
+			},
 			"vars": {
 				"SENTRY_ENVIRONMENT": "test",
 				"SIGNUP_MODE": "open",

@@ -52,7 +52,7 @@ import {
 export type { IntegrationConfig, PlatformOauthApp }
 
 type IntegrationWriteEnv = Pick<Env, 'APP_DB'> &
-	Partial<Pick<Env, 'COMMUNITY_ASSETS' | 'SECRET_STORE_KEY'>>
+	Partial<Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES' | 'SECRET_STORE_KEY'>>
 
 type LogoWriteInput = {
 	logoBase64?: string | null
@@ -969,10 +969,11 @@ async function applyUserOauthAppLogoWrite(input: {
 	logoBase64?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
-	if (!input.env.COMMUNITY_ASSETS) return
+	if (!input.env.COMMUNITY_ASSETS || !input.env.IMAGES) return
 	const env = {
 		APP_DB: input.env.APP_DB,
 		COMMUNITY_ASSETS: input.env.COMMUNITY_ASSETS,
+		IMAGES: input.env.IMAGES,
 	}
 	if (input.logoBase64 !== undefined) {
 		await setUserOauthAppLogo({

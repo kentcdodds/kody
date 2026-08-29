@@ -1,6 +1,6 @@
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { getMcpServerLogoObject } from '#worker/mcp-client/mcp-server-logo.ts'
+import { loadFittedMcpServerLogo } from '#worker/mcp-client/mcp-server-logo.ts'
 import { getMcpServerSettingById } from '#worker/mcp-client/settings-service.ts'
 import { type routes } from '#universal/routes.ts'
 
@@ -25,19 +25,25 @@ export function createMcpServerLogoHandler(env: Env) {
 			if (!server?.logoKey) {
 				return new Response('Not found', { status: 404 })
 			}
-			const object = await getMcpServerLogoObject({
+			const logo = await loadFittedMcpServerLogo({
+				db: env.APP_DB,
 				env,
+				userId: user.mcpUser.userId,
+				serverId: server.id,
 				logoKey: server.logoKey,
+				logoContentType: server.logoContentType,
+				logoSource: server.logoSource,
+				faviconSourceHost: server.faviconSourceHost,
 			})
-			if (!object) {
+			if (!logo) {
 				return new Response('Not found', { status: 404 })
 			}
-			return new Response(object.body, {
+			return new Response(logo.body, {
 				headers: {
-					'Cache-Control': 'private, no-store',
-					'Content-Length': String(object.size),
-					'Content-Type': server.logoContentType ?? 'application/octet-stream',
-					ETag: object.httpEtag,
+					'Cache-Control': logo.cacheControl,
+					'Content-Length': String(logo.size),
+					'Content-Type': logo.contentType,
+					ETag: logo.httpEtag,
 					'X-Content-Type-Options': 'nosniff',
 				},
 			})

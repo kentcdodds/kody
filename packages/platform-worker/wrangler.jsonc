@@ -10,6 +10,13 @@
 	"name": "kody-platform",
 	"compatibility_date": "2026-04-16",
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	// Same Images binding as origin: MCP admin/integration logo uploads run
+	// on this script and must fit rasters before they land in R2. Wrangler
+	// does not inherit `images` into named envs — restate it on production
+	// and preview.
+	"images": {
+		"binding": "IMAGES",
+	},
 	// Same rationale as the origin worker: the MCP Agent Durable Object
 	// keeps a long-lived session and fans out into many D1 + Durable
 	// Object subrequests per invocation.
@@ -275,6 +282,9 @@
 			"ai": {
 				"binding": "AI",
 			},
+			"images": {
+				"binding": "IMAGES",
+			},
 			"send_email": [
 				{
 					"name": "EMAIL",
@@ -456,6 +466,9 @@
 			],
 			"ai": {
 				"binding": "AI",
+			},
+			"images": {
+				"binding": "IMAGES",
 			},
 			"send_email": [
 				{

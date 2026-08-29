@@ -25,7 +25,7 @@ export function shouldFetchMcpServerFavicon(
 
 export async function fillMcpServerFavicon(input: {
 	db: D1Database
-	env: Pick<Env, 'COMMUNITY_ASSETS'>
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
 	userId: string
 	serverId: string
 	fetchImpl?: typeof fetch
@@ -71,15 +71,20 @@ export async function fillMcpServerFavicon(input: {
 
 export async function scheduleMcpServerFaviconFill(input: {
 	db: D1Database
-	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'> | Pick<Env, 'APP_DB'>
+	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS' | 'IMAGES'> | Pick<Env, 'APP_DB'>
 	userId: string
 	serverId: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
-	if (!('COMMUNITY_ASSETS' in input.env) || !input.env.COMMUNITY_ASSETS) {
+	if (
+		!('COMMUNITY_ASSETS' in input.env) ||
+		!input.env.COMMUNITY_ASSETS ||
+		!('IMAGES' in input.env) ||
+		!input.env.IMAGES
+	) {
 		return
 	}
-	const env = input.env as Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'>
+	const env = input.env as Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS' | 'IMAGES'>
 	const work = fillMcpServerFavicon({
 		db: input.db,
 		env,
@@ -101,19 +106,24 @@ export async function scheduleMcpServerFaviconFill(input: {
 
 export async function backfillMissingMcpServerFavicons(input: {
 	db: D1Database
-	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'> | Pick<Env, 'APP_DB'>
+	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS' | 'IMAGES'> | Pick<Env, 'APP_DB'>
 	userId: string
 	servers: Array<McpServerSettingMetadata>
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
-	if (!('COMMUNITY_ASSETS' in input.env) || !input.env.COMMUNITY_ASSETS) {
+	if (
+		!('COMMUNITY_ASSETS' in input.env) ||
+		!input.env.COMMUNITY_ASSETS ||
+		!('IMAGES' in input.env) ||
+		!input.env.IMAGES
+	) {
 		return
 	}
 	const pending = input.servers
 		.filter((server) => shouldFetchMcpServerFavicon(server))
 		.slice(0, maxBackfillPerPage)
 	if (pending.length === 0) return
-	const env = input.env as Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'>
+	const env = input.env as Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS' | 'IMAGES'>
 	const work = (async () => {
 		for (const server of pending) {
 			await fillMcpServerFavicon({

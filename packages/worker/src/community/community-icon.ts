@@ -15,19 +15,28 @@ import { readFirstArtifactFileAtCommit } from '#worker/repo/artifact-file.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import {
+	fitIconRaster,
+	iconFitCustomMetadata,
+	iconFitMaxDimension,
+	iconFitVersion,
+	publicFittedIconCacheControl,
+} from './icon-fit.ts'
+import {
 	getCommunityListingById,
 	getCommunityListingByOwnerAndPackage,
 } from './repo.ts'
 import { readCommunitySnapshot } from './snapshot.ts'
 import { type CommunityListingRecord } from './types.ts'
 
-const communityIconVersion = 1 as const
-const communityIconOutputSize = 256
+export const communityIconVersion = iconFitVersion
+const communityIconAssetVersions = [1, communityIconVersion] as const
+const communityIconOutputSize = iconFitMaxDimension
 const maxCommunityIconSourceBytes = 2 * 1024 * 1024
 const maxCommunityIconDimension = 4096
 const maxCommunityIconPixels = 16_777_216
 const maxCommunityIconRenderedBytes = 2 * 1024 * 1024
 const communityIconDescriptorTtlMs = 30 * 24 * 60 * 60 * 1000
+export const communityIconCacheControl = publicFittedIconCacheControl
 
 export const communityIconPaths = [
 	'community-icon.svg',
@@ -61,8 +70,11 @@ export function buildCommunityIconCacheKey(input: {
 	return `community-icon:v${communityIconVersion}:${input.listingId}:${input.commit}`
 }
 
-function buildCommunityIconKvListingPrefix(listingId: string) {
-	return `${derivedCacheKeyPrefix}community-icon:v${communityIconVersion}:${listingId}:`
+export function communityIconKvListingPrefixes(listingId: string) {
+	return communityIconAssetVersions.map(
+		(version) =>
+			`${derivedCacheKeyPrefix}community-icon:v${version}:${listingId}:`,
+	)
 }
 
 export function buildCommunityIconR2Key(input: {
@@ -72,8 +84,10 @@ export function buildCommunityIconR2Key(input: {
 	return `community-icon:v${communityIconVersion}/${input.listingId}/${input.commit}/asset`
 }
 
-function buildCommunityIconR2ListingPrefix(listingId: string) {
-	return `community-icon:v${communityIconVersion}/${listingId}/`
+export function communityIconR2ListingPrefixes(listingId: string) {
+	return communityIconAssetVersions.map(
+		(version) => `community-icon:v${version}/${listingId}/`,
+	)
 }
 
 export function findCommunityIconPath(
@@ -168,34 +182,46 @@ export async function deleteCommunityIconAssets(input: {
 			buildCommunityIconR2Key({ listingId: input.listingId, commit }),
 		),
 	)
-	let kvCursor: string | undefined
-	do {
-		const page = await input.env.BUNDLE_ARTIFACTS_KV.list({
-			prefix: buildCommunityIconKvListingPrefix(input.listingId),
-			cursor: kvCursor,
-		})
-		await Promise.all(
-			page.keys
-				.map((key) => key.name)
-				.filter((name) => !keptKvKeys.has(name))
-				.map((name) => input.env.BUNDLE_ARTIFACTS_KV.delete(name)),
-		)
-		kvCursor = page.list_complete ? undefined : page.cursor
-	} while (kvCursor)
-	let r2Cursor: string | undefined
-	do {
-		const page = await input.env.COMMUNITY_ASSETS.list({
-			prefix: buildCommunityIconR2ListingPrefix(input.listingId),
-			cursor: r2Cursor,
-		})
-		await Promise.all(
-			page.objects
-				.map((object) => object.key)
-				.filter((objectKey) => !keptR2Keys.has(objectKey))
-				.map((objectKey) => input.env.COMMUNITY_ASSETS.delete(objectKey)),
-		)
-		r2Cursor = page.truncated ? page.cursor : undefined
-	} while (r2Cursor)
+	for (const prefix of communityIconKvListingPrefixes(input.listingId)) {
+		let kvCursor: string | undefined
+		do {
+			const page = await input.env.BUNDLE_ARTIFACTS_KV.list({
+				prefix,
+				cursor: kvCursor,
+			})
+			const keepCurrentVersion = prefix.includes(
+				`community-icon:v${communityIconVersion}:`,
+			)
+			await Promise.all(
+				page.keys
+					.map((key) => key.name)
+					.filter((name) => !keepCurrentVersion || !keptKvKeys.has(name))
+					.map((name) => input.env.BUNDLE_ARTIFACTS_KV.delete(name)),
+			)
+			kvCursor = page.list_complete ? undefined : page.cursor
+		} while (kvCursor)
+	}
+	for (const prefix of communityIconR2ListingPrefixes(input.listingId)) {
+		let r2Cursor: string | undefined
+		do {
+			const page = await input.env.COMMUNITY_ASSETS.list({
+				prefix,
+				cursor: r2Cursor,
+			})
+			const keepCurrentVersion = prefix.includes(
+				`community-icon:v${communityIconVersion}/`,
+			)
+			await Promise.all(
+				page.objects
+					.map((object) => object.key)
+					.filter(
+						(objectKey) => !keepCurrentVersion || !keptR2Keys.has(objectKey),
+					)
+					.map((objectKey) => input.env.COMMUNITY_ASSETS.delete(objectKey)),
+			)
+			r2Cursor = page.truncated ? page.cursor : undefined
+		} while (r2Cursor)
+	}
 }
 
 /**
@@ -319,13 +345,14 @@ async function createCommunityIconDescriptor(input: {
 			? await processCommunityIcon({
 					path: iconSource.path,
 					sourceBytes: iconSource.bytes,
+					images: input.env.IMAGES,
 				})
-			: {
+			: await fitIconRaster({
+					images: input.env.IMAGES,
 					bytes: await renderCommunitySvgIcon(
 						buildCommunityIconFallbackSvg(input.listing.name),
 					),
-					contentType: 'image/png',
-				}
+				})
 
 		const r2Key = buildCommunityIconR2Key({
 			listingId: input.listing.id,
@@ -334,13 +361,13 @@ async function createCommunityIconDescriptor(input: {
 		await input.env.COMMUNITY_ASSETS.put(r2Key, processed.bytes, {
 			httpMetadata: {
 				contentType: processed.contentType,
-				cacheControl: 'public, max-age=3600',
+				cacheControl: communityIconCacheControl,
 			},
-			customMetadata: {
+			customMetadata: iconFitCustomMetadata({
 				listingId: input.listing.id,
 				iconCommit: input.iconCommit,
 				sourcePath: iconSource?.path ?? '',
-			},
+			}),
 		})
 		if (!(await isServableIconCommit(input))) {
 			await input.env.COMMUNITY_ASSETS.delete(r2Key)
@@ -403,24 +430,22 @@ async function isServableIconCommit(input: {
 export async function processCommunityIcon(input: {
 	path: (typeof communityIconPaths)[number]
 	sourceBytes: Uint8Array
+	images: ImagesBinding
 }): Promise<ProcessedCommunityIcon> {
 	assertCommunityIconSourceSize(input.sourceBytes)
 	if (input.path.endsWith('.svg')) {
 		const source = decodeSvg(input.sourceBytes)
 		assertSafeCommunitySvg(source)
 		const bytes = await renderCommunitySvgIcon(source)
-		return { bytes, contentType: 'image/png' }
+		return await fitIconRaster({ images: input.images, bytes })
 	}
 
 	const dimensions = readRasterDimensions(input.path, input.sourceBytes)
 	assertCommunityIconDimensions(dimensions)
-	if (input.path.endsWith('.png')) {
-		return { bytes: input.sourceBytes, contentType: 'image/png' }
-	}
-	if (input.path.endsWith('.webp')) {
-		return { bytes: input.sourceBytes, contentType: 'image/webp' }
-	}
-	return { bytes: input.sourceBytes, contentType: 'image/jpeg' }
+	return await fitIconRaster({
+		images: input.images,
+		bytes: input.sourceBytes,
+	})
 }
 
 function assertCommunityIconSourceSize(bytes: Uint8Array) {

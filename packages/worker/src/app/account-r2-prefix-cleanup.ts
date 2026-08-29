@@ -1,11 +1,8 @@
+import { communityIconR2ListingPrefixes } from '#worker/community/community-icon.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 
 function userAvatarPrefix(stableUserId: string) {
 	return `user-avatars/${stableUserId}/`
-}
-
-function communityIconPrefix(listingId: string) {
-	return `community-icon:v1/${listingId}/`
 }
 
 async function deletePrefixStrict(input: {
@@ -57,11 +54,13 @@ export async function deleteAccountCommunityAssetPrefixes(input: {
 		label: 'User avatar',
 	})
 	for (const listingId of new Set(input.listingIds)) {
-		deleted += await deletePrefixStrict({
-			bucket: input.bucket,
-			prefix: communityIconPrefix(listingId),
-			label: 'Community icon',
-		})
+		for (const prefix of communityIconR2ListingPrefixes(listingId)) {
+			deleted += await deletePrefixStrict({
+				bucket: input.bucket,
+				prefix,
+				label: 'Community icon',
+			})
+		}
 	}
 	return deleted
 }

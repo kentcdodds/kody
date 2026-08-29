@@ -24,6 +24,7 @@ import {
 	getCommunityIconObject,
 	renderCommunityIconFallbackPng,
 } from '#worker/community/community-icon.ts'
+import { convertIconRasterToPng } from '#worker/community/icon-fit.ts'
 import {
 	getCommunityListingWithAggregates,
 	reportCommunityListing,
@@ -265,8 +266,8 @@ export function createCommunityPackageApiHandler(env: Env) {
 
 /**
  * Resolve a satori-safe data URI for the package community icon. PNG and JPEG
- * bytes embed directly; WebP (unsupported by satori) and load failures fall
- * back to the same generated mark the public icon route uses.
+ * bytes embed directly; WebP is converted to PNG through Images because satori
+ * cannot decode it. Load failures fall back to the generated mark.
  */
 async function loadCommunityOgIconDataUri(input: {
 	env: Env
@@ -278,12 +279,19 @@ async function loadCommunityOgIconDataUri(input: {
 			listing: input.listing,
 			iconCommit: input.listing.iconCommit,
 		})
+		const bytes = new Uint8Array(await object.arrayBuffer())
 		if (
 			descriptor.contentType === 'image/png' ||
 			descriptor.contentType === 'image/jpeg'
 		) {
-			const bytes = new Uint8Array(await object.arrayBuffer())
 			return `data:${descriptor.contentType};base64,${bytesToBase64(bytes)}`
+		}
+		if (descriptor.contentType === 'image/webp') {
+			const png = await convertIconRasterToPng({
+				images: input.env.IMAGES,
+				bytes,
+			})
+			return `data:image/png;base64,${bytesToBase64(png)}`
 		}
 	} catch (error) {
 		console.error('community-og-icon-load-failed', input.listing.id, error)

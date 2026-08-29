@@ -12,6 +12,10 @@ import {
 	renderCommunityIconFallbackPng,
 } from './community-icon.ts'
 import { type CommunityListingRecord } from './types.ts'
+import {
+	createFakeImagesBinding,
+	tinyWebpBytes,
+} from '#worker/test-support/images-binding.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -165,6 +169,7 @@ function createCommunityIconTestEnv(input: {
 		APP_DB: input.db,
 		BUNDLE_ARTIFACTS_KV: input.kv,
 		COMMUNITY_ASSETS: input.bucket,
+		IMAGES: createFakeImagesBinding(),
 		USER_METER: meter.env.USER_METER,
 	} as Env
 }
@@ -248,46 +253,49 @@ const entitySourceRow = {
 	updated_at: '2026-07-10T00:00:00.000Z',
 }
 
-test('community raster icon formats are validated and preserved', async () => {
+test('community raster icon formats are validated then fitted to WebP', async () => {
 	const png = createPngHeader(256, 256)
 	const webp = createWebpHeader(320, 180)
 	const jpeg = createJpegHeader(640, 480)
 	const svg = new TextEncoder().encode(
 		'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="30" fill="#2563eb"/></svg>',
 	)
+	const fitted = { bytes: tinyWebpBytes, contentType: 'image/webp' as const }
 
 	await expect(
 		processCommunityIcon({
 			path: 'community-icon.png',
 			sourceBytes: png,
+			images: createFakeImagesBinding(),
 		}),
-	).resolves.toEqual({ bytes: png, contentType: 'image/png' })
+	).resolves.toEqual(fitted)
 	await expect(
 		processCommunityIcon({
 			path: 'community-icon.webp',
 			sourceBytes: webp,
+			images: createFakeImagesBinding(),
 		}),
-	).resolves.toEqual({ bytes: webp, contentType: 'image/webp' })
+	).resolves.toEqual(fitted)
 	await expect(
 		processCommunityIcon({
 			path: 'community-icon.jpeg',
 			sourceBytes: jpeg,
+			images: createFakeImagesBinding(),
 		}),
-	).resolves.toEqual({ bytes: jpeg, contentType: 'image/jpeg' })
+	).resolves.toEqual(fitted)
 	await expect(
 		processCommunityIcon({
 			path: 'community-icon.png',
 			sourceBytes: createPngHeader(5000, 100),
+			images: createFakeImagesBinding(),
 		}),
 	).rejects.toThrow('at most 4096px')
 	const renderedSvg = await processCommunityIcon({
 		path: 'community-icon.svg',
 		sourceBytes: svg,
+		images: createFakeImagesBinding(),
 	})
-	expect(renderedSvg.contentType).toBe('image/png')
-	expect(Array.from(renderedSvg.bytes.slice(0, 4))).toEqual([
-		0x89, 0x50, 0x4e, 0x47,
-	])
+	expect(renderedSvg).toEqual(fitted)
 	const fallbackPng = await renderCommunityIconFallbackPng(
 		'@kentcdodds/github-tools',
 	)
@@ -298,6 +306,7 @@ test('community raster icon formats are validated and preserved', async () => {
 			sourceBytes: new TextEncoder().encode(
 				'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
 			),
+			images: createFakeImagesBinding(),
 		}),
 	).rejects.toThrow('active external content')
 	expect(
@@ -316,6 +325,7 @@ test('community SVG icons load directly from the retained listing snapshot', asy
 		APP_DB: {} as D1Database,
 		BUNDLE_ARTIFACTS_KV: kv,
 		COMMUNITY_ASSETS: bucket,
+		IMAGES: createFakeImagesBinding(),
 	} as Env
 	mocks.readCommunitySnapshot.mockResolvedValue({
 		version: 1,
@@ -337,14 +347,10 @@ test('community SVG icons load directly from the retained listing snapshot', asy
 	})
 
 	expect(result.descriptor.sourcePath).toBe('community-icon.svg')
-	expect(result.descriptor.contentType).toBe('image/png')
+	expect(result.descriptor.contentType).toBe('image/webp')
 	expect(
-		Array.from(
-			new Uint8Array(
-				await new Response(result.object.body).arrayBuffer(),
-			).slice(0, 4),
-		),
-	).toEqual([0x89, 0x50, 0x4e, 0x47])
+		new Uint8Array(await new Response(result.object.body).arrayBuffer()),
+	).toEqual(tinyWebpBytes)
 	expect(mocks.getEntitySourceById).not.toHaveBeenCalled()
 	expect(mocks.readFirstArtifactFileAtCommit).not.toHaveBeenCalled()
 })
@@ -357,6 +363,7 @@ test('community icon descriptor caches the R2 reference and repairs a dangling r
 		APP_DB: {} as D1Database,
 		BUNDLE_ARTIFACTS_KV: kv,
 		COMMUNITY_ASSETS: bucket,
+		IMAGES: createFakeImagesBinding(),
 	} as Env
 	mocks.readCommunitySnapshot.mockResolvedValue({
 		version: 1,
@@ -383,7 +390,7 @@ test('community icon descriptor caches the R2 reference and repairs a dangling r
 		listing,
 		iconCommit: listing.pinnedCommit,
 	})
-	expect(first.descriptor.contentType).toBe('image/png')
+	expect(first.descriptor.contentType).toBe('image/webp')
 	expect(second.descriptor.r2Key).toBe(first.descriptor.r2Key)
 	expect(mocks.readFirstArtifactFileAtCommit).toHaveBeenCalledTimes(1)
 
@@ -451,6 +458,7 @@ test('community icons ahead of the pinned snapshot load from the artifact repo a
 		APP_DB: {} as D1Database,
 		BUNDLE_ARTIFACTS_KV: kv,
 		COMMUNITY_ASSETS: bucket,
+		IMAGES: createFakeImagesBinding(),
 	} as Env
 	mocks.readCommunitySnapshot.mockResolvedValue(null)
 	mocks.getEntitySourceById.mockResolvedValue({
@@ -491,22 +499,24 @@ test('community icons ahead of the pinned snapshot load from the artifact repo a
 test('deleteCommunityIconAssets removes superseded revisions and keeps servable commits', async () => {
 	const { kv, values: kvValues } = createFakeKv()
 	const { bucket, values: r2Values } = createFakeR2()
-	const kvKey = (commit: string) =>
-		`derived-cache:v1:community-icon:v1:${listing.id}:${commit}`
-	const r2Key = (commit: string) =>
-		`community-icon:v1/${listing.id}/${commit}/asset`
+	const kvKeyV1 = (listingId: string, commit: string) =>
+		`derived-cache:v1:community-icon:v1:${listingId}:${commit}`
+	const kvKeyV2 = (listingId: string, commit: string) =>
+		`derived-cache:v1:community-icon:v2:${listingId}:${commit}`
+	const r2KeyV1 = (listingId: string, commit: string) =>
+		`community-icon:v1/${listingId}/${commit}/asset`
+	const r2KeyV2 = (listingId: string, commit: string) =>
+		`community-icon:v2/${listingId}/${commit}/asset`
 	for (const commit of ['commit-1', 'commit-2', 'commit-3']) {
-		kvValues.set(kvKey(commit), '{}')
-		r2Values.set(r2Key(commit), Uint8Array.from([1]))
+		kvValues.set(kvKeyV1(listing.id, commit), '{}')
+		kvValues.set(kvKeyV2(listing.id, commit), '{}')
+		r2Values.set(r2KeyV1(listing.id, commit), Uint8Array.from([1]))
+		r2Values.set(r2KeyV2(listing.id, commit), Uint8Array.from([1]))
 	}
-	kvValues.set(
-		'derived-cache:v1:community-icon:v1:other-listing:commit-1',
-		'{}',
-	)
-	r2Values.set(
-		'community-icon:v1/other-listing/commit-1/asset',
-		Uint8Array.from([1]),
-	)
+	kvValues.set(kvKeyV1('other-listing', 'commit-1'), '{}')
+	kvValues.set(kvKeyV2('other-listing', 'commit-1'), '{}')
+	r2Values.set(r2KeyV1('other-listing', 'commit-1'), Uint8Array.from([1]))
+	r2Values.set(r2KeyV2('other-listing', 'commit-1'), Uint8Array.from([1]))
 
 	await deleteCommunityIconAssets({
 		env: { BUNDLE_ARTIFACTS_KV: kv, COMMUNITY_ASSETS: bucket },
@@ -516,14 +526,16 @@ test('deleteCommunityIconAssets removes superseded revisions and keeps servable 
 
 	expect(Array.from(kvValues.keys()).sort()).toEqual(
 		[
-			kvKey('commit-2'),
-			'derived-cache:v1:community-icon:v1:other-listing:commit-1',
+			kvKeyV2(listing.id, 'commit-2'),
+			kvKeyV1('other-listing', 'commit-1'),
+			kvKeyV2('other-listing', 'commit-1'),
 		].sort(),
 	)
 	expect(Array.from(r2Values.keys()).sort()).toEqual(
 		[
-			r2Key('commit-2'),
-			'community-icon:v1/other-listing/commit-1/asset',
+			r2KeyV2(listing.id, 'commit-2'),
+			r2KeyV1('other-listing', 'commit-1'),
+			r2KeyV2('other-listing', 'commit-1'),
 		].sort(),
 	)
 })
@@ -536,14 +548,21 @@ test('refreshCommunityIconForPackagePublish drops superseded icon caches for act
 		APP_DB: {} as D1Database,
 		BUNDLE_ARTIFACTS_KV: kv,
 		COMMUNITY_ASSETS: bucket,
+		IMAGES: createFakeImagesBinding(),
 	} as Env
-	const kvKey = (commit: string) =>
+	const kvKeyV1 = (commit: string) =>
 		`derived-cache:v1:community-icon:v1:${listing.id}:${commit}`
-	const r2Key = (commit: string) =>
+	const kvKeyV2 = (commit: string) =>
+		`derived-cache:v1:community-icon:v2:${listing.id}:${commit}`
+	const r2KeyV1 = (commit: string) =>
 		`community-icon:v1/${listing.id}/${commit}/asset`
+	const r2KeyV2 = (commit: string) =>
+		`community-icon:v2/${listing.id}/${commit}/asset`
 	for (const commit of [listing.pinnedCommit, 'old-publish', 'new-publish']) {
-		kvValues.set(kvKey(commit), '{}')
-		r2Values.set(r2Key(commit), Uint8Array.from([1]))
+		kvValues.set(kvKeyV1(commit), '{}')
+		kvValues.set(kvKeyV2(commit), '{}')
+		r2Values.set(r2KeyV1(commit), Uint8Array.from([1]))
+		r2Values.set(r2KeyV2(commit), Uint8Array.from([1]))
 	}
 
 	mocks.getCommunityListingByOwnerAndPackage.mockResolvedValue({
@@ -558,23 +577,23 @@ test('refreshCommunityIconForPackagePublish drops superseded icon caches for act
 	})
 
 	expect(Array.from(kvValues.keys()).sort()).toEqual(
-		[kvKey(listing.pinnedCommit), kvKey('new-publish')].sort(),
+		[kvKeyV2(listing.pinnedCommit), kvKeyV2('new-publish')].sort(),
 	)
 	expect(Array.from(r2Values.keys()).sort()).toEqual(
-		[r2Key(listing.pinnedCommit), r2Key('new-publish')].sort(),
+		[r2KeyV2(listing.pinnedCommit), r2KeyV2('new-publish')].sort(),
 	)
 	expect(getCommunityPublicCacheVersion()).toBe(1)
 
 	// Without an active listing the hook must be a no-op.
 	mocks.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
-	r2Values.set(r2Key('old-publish'), Uint8Array.from([1]))
+	r2Values.set(r2KeyV2('old-publish'), Uint8Array.from([1]))
 	await refreshCommunityIconForPackagePublish({
 		env,
 		userId: listing.ownerUserId,
 		packageId: listing.packageId,
 		publishedCommit: 'newest-publish',
 	})
-	expect(r2Values.has(r2Key('old-publish'))).toBe(true)
+	expect(r2Values.has(r2KeyV2('old-publish'))).toBe(true)
 	expect(getCommunityPublicCacheVersion()).toBe(1)
 	resetDataCacheForTests()
 })

@@ -1,12 +1,17 @@
 import { env } from 'cloudflare:test'
 import { expect, test } from 'vitest'
+import { Resvg } from '@resvg/resvg-wasm'
 import {
 	buildCommunityIconCacheKey,
 	buildCommunityIconR2Key,
 	getCommunityIconObject,
+	processCommunityIcon,
 } from './community-icon.ts'
 import { type CommunityListingRecord } from './types.ts'
 import { derivedCacheKeyPrefix } from '#worker/kv-cachified.ts'
+import { iconFitMaxDimension, uint8ArrayToStream } from './icon-fit.ts'
+import { ensureResvgWasmReady } from '#worker/og/resvg-wasm-init.ts'
+import { tinyWebpBytes } from '#worker/test-support/images-binding.ts'
 
 test('community icon resolves a cachified descriptor to R2 bytes', async () => {
 	const listing = {
@@ -34,7 +39,7 @@ test('community icon resolves a cachified descriptor to R2 bytes', async () => {
 		updatedAt: '2026-07-10T00:00:00.000Z',
 		publishedAt: '2026-07-10T00:00:00.000Z',
 	} satisfies CommunityListingRecord
-	const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+	const bytes = tinyWebpBytes
 	const r2Key = buildCommunityIconR2Key({
 		listingId: listing.id,
 		commit: listing.iconCommit,
@@ -46,7 +51,7 @@ test('community icon resolves a cachified descriptor to R2 bytes', async () => {
 			commit: listing.iconCommit,
 		})
 	await env.COMMUNITY_ASSETS.put(r2Key, bytes, {
-		httpMetadata: { contentType: 'image/png' },
+		httpMetadata: { contentType: 'image/webp' },
 	})
 	await env.BUNDLE_ARTIFACTS_KV.put(
 		cacheKey,
@@ -56,11 +61,11 @@ test('community icon resolves a cachified descriptor to R2 bytes', async () => {
 				ttl: 30 * 24 * 60 * 60 * 1000,
 			},
 			value: {
-				version: 1,
+				version: 2,
 				listingId: listing.id,
 				iconCommit: listing.iconCommit,
 				r2Key,
-				contentType: 'image/png',
+				contentType: 'image/webp',
 				sourcePath: 'community-icon.png',
 				byteLength: bytes.byteLength,
 			},
@@ -74,5 +79,41 @@ test('community icon resolves a cachified descriptor to R2 bytes', async () => {
 	})
 
 	expect(result.descriptor.r2Key).toBe(r2Key)
+	expect(result.descriptor.contentType).toBe('image/webp')
 	expect(new Uint8Array(await result.object.arrayBuffer())).toEqual(bytes)
+})
+
+test('community icon ingest fits an oversized PNG to 256px WebP via Images', async () => {
+	await ensureResvgWasmReady()
+	const svg =
+		'<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="512"><rect width="1024" height="512" fill="#2563eb"/></svg>'
+	const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: 1024 } })
+	const rendered = resvg.render()
+	let png: Uint8Array
+	try {
+		png = rendered.asPng()
+	} finally {
+		rendered.free()
+		resvg.free()
+	}
+	expect(png.byteLength).toBeGreaterThan(256)
+
+	const processed = await processCommunityIcon({
+		path: 'community-icon.png',
+		sourceBytes: png,
+		images: env.IMAGES,
+	})
+	expect(processed.contentType).toBe('image/webp')
+	expect(processed.bytes.byteLength).toBeGreaterThan(0)
+	expect(processed.bytes.byteLength).toBeLessThan(png.byteLength)
+
+	const info = await env.IMAGES.info(uint8ArrayToStream(processed.bytes))
+	if (info.format === 'image/svg+xml') {
+		throw new Error('Fitted icon info reported SVG instead of a raster.')
+	}
+	expect(info.format).toBe('image/webp')
+	expect(Math.max(info.width, info.height)).toBeLessThanOrEqual(
+		iconFitMaxDimension,
+	)
+	expect(Math.max(info.width, info.height)).toBeGreaterThan(1)
 })

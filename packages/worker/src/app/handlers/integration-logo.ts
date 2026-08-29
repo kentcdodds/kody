@@ -1,9 +1,12 @@
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { getPlatformOauthAppLogoObject } from '#worker/integrations/platform-app-logo.ts'
+import {
+	loadFittedPlatformOauthAppLogo,
+	type ServedFittedLogo,
+} from '#worker/integrations/platform-app-logo.ts'
 import { getPlatformOauthAppBySlug } from '#worker/integrations/platform-apps.ts'
 import { getOauthApp } from '#worker/integrations/service.ts'
-import { getUserOauthAppLogoObject } from '#worker/integrations/user-oauth-app-logo.ts'
+import { loadFittedUserOauthAppLogo } from '#worker/integrations/user-oauth-app-logo.ts'
 import { type routes } from '#universal/routes.ts'
 
 /**
@@ -23,16 +26,12 @@ export function createIntegrationLogoHandler(env: Env) {
 				includeDisabled: true,
 			})
 			if (platformApp?.logoKey) {
-				const object = await getPlatformOauthAppLogoObject({
+				const logo = await loadFittedPlatformOauthAppLogo({
+					db: env.APP_DB,
 					env,
-					logoKey: platformApp.logoKey,
+					app: platformApp,
 				})
-				if (object) {
-					return logoResponse(object, {
-						contentType: platformApp.logoContentType,
-						cacheControl: 'public, max-age=31536000, immutable',
-					})
-				}
+				if (logo) return logoResponse(logo)
 			}
 
 			const user = await readAuthenticatedAppUser(request, env)
@@ -47,31 +46,27 @@ export function createIntegrationLogoHandler(env: Env) {
 			if (!app?.logoKey) {
 				return new Response('Not found', { status: 404 })
 			}
-			const object = await getUserOauthAppLogoObject({
+			const logo = await loadFittedUserOauthAppLogo({
+				db: env.APP_DB,
 				env,
-				logoKey: app.logoKey,
+				userId: user.mcpUser.userId,
+				app,
 			})
-			if (!object) {
+			if (!logo) {
 				return new Response('Not found', { status: 404 })
 			}
-			return logoResponse(object, {
-				contentType: app.logoContentType ?? null,
-				cacheControl: 'private, no-store',
-			})
+			return logoResponse(logo)
 		},
 	} satisfies Action<typeof routes.integrationLogo>
 }
 
-function logoResponse(
-	object: R2ObjectBody,
-	headers: { contentType: string | null; cacheControl: string },
-) {
-	return new Response(object.body, {
+function logoResponse(logo: ServedFittedLogo) {
+	return new Response(logo.body, {
 		headers: {
-			'Cache-Control': headers.cacheControl,
-			'Content-Length': String(object.size),
-			'Content-Type': headers.contentType ?? 'application/octet-stream',
-			ETag: object.httpEtag,
+			'Cache-Control': logo.cacheControl,
+			'Content-Length': String(logo.size),
+			'Content-Type': logo.contentType,
+			ETag: logo.httpEtag,
 			'X-Content-Type-Options': 'nosniff',
 		},
 	})

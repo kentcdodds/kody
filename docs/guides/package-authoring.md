@@ -274,8 +274,9 @@ user explicitly skips a surface) treat the package as ready to run.
 Public community packages should include one root `community-icon.svg`,
 `community-icon.png`, `community-icon.webp`, `community-icon.jpg`, or
 `community-icon.jpeg`. Prefer a square visual with a simple silhouette that
-remains legible at 56 pixels. Keep it under 2 MiB and 16 megapixels. Kody
-generates a package-name fallback when the repository has no icon.
+remains legible at 56 pixels. Keep it under 2 MiB and 16 megapixels. Kody stores
+a 256-pixel WebP derivative of that source (or a generated package-name fallback
+when the repository has no icon).
 
 Publishing the package refreshes the community listing icon automatically. The
 candidate paths win in the order listed above, so when replacing an icon with a

@@ -3,27 +3,29 @@ import { expect, test } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
+	createFakeImagesBinding,
+	tinyPngBytes,
+	tinyWebpBytes,
+} from '#worker/test-support/images-binding.ts'
+import {
 	buildPlatformOauthAppLogoPath,
 	getPlatformOauthAppLogoObject,
+	loadFittedPlatformOauthAppLogo,
 	setPlatformOauthAppLogo,
 } from './platform-app-logo.ts'
-import { upsertPlatformOauthApp } from './platform-apps.ts'
+import {
+	getPlatformOauthAppBySlug,
+	upsertPlatformOauthApp,
+} from './platform-apps.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
-const tinyPngBytes = Uint8Array.from(
-	atob(
-		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
-	),
-	(character) => character.charCodeAt(0),
-)
-
 type StoredObject = {
 	bytes: Uint8Array
-	httpMetadata?: { contentType?: string }
+	httpMetadata?: { contentType?: string; cacheControl?: string }
+	customMetadata?: Record<string, string>
 	httpEtag: string
 	size: number
-	body: Uint8Array
 }
 
 function createInMemoryR2() {
@@ -32,20 +34,35 @@ function createInMemoryR2() {
 		async put(
 			key: string,
 			bytes: Uint8Array,
-			options?: { httpMetadata?: { contentType?: string } },
+			options?: {
+				httpMetadata?: { contentType?: string; cacheControl?: string }
+				customMetadata?: Record<string, string>
+			},
 		) {
 			objects.set(key, {
 				bytes,
 				...(options?.httpMetadata
 					? { httpMetadata: options.httpMetadata }
 					: {}),
+				...(options?.customMetadata
+					? { customMetadata: options.customMetadata }
+					: {}),
 				httpEtag: `"etag-${objects.size}"`,
 				size: bytes.byteLength,
-				body: bytes,
 			})
 		},
 		async get(key: string) {
-			return objects.get(key) ?? null
+			const stored = objects.get(key)
+			if (!stored) return null
+			return {
+				...stored,
+				body: new Blob([stored.bytes]).stream(),
+				async arrayBuffer() {
+					const copy = new Uint8Array(stored.bytes.byteLength)
+					copy.set(stored.bytes)
+					return copy.buffer
+				},
+			}
 		},
 		async delete(key: string) {
 			objects.delete(key)
@@ -62,7 +79,8 @@ function createHarness() {
 	const env = {
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 		COMMUNITY_ASSETS: r2.bucket,
-	} as Pick<Env, 'SECRET_STORE_KEY' | 'COMMUNITY_ASSETS'>
+		IMAGES: createFakeImagesBinding(),
+	} as Pick<Env, 'SECRET_STORE_KEY' | 'COMMUNITY_ASSETS' | 'IMAGES'>
 	return { sqlite, db, env, r2 }
 }
 
@@ -92,10 +110,13 @@ test('logo lifecycle uploads, clears, and survives app upserts without touching 
 		sourceBytes: tinyPngBytes,
 	})
 	expect(withLogo.logoKey).toMatch(
-		/^platform-oauth-app-logos\/github\/[0-9a-f]{16}\.png$/,
+		/^platform-oauth-app-logos\/github\/[0-9a-f]{16}\.webp$/,
 	)
-	expect(withLogo.logoContentType).toBe('image/png')
+	expect(withLogo.logoContentType).toBe('image/webp')
 	expect(harness.r2.objects.size).toBe(1)
+	const stored = harness.r2.objects.get(withLogo.logoKey!)
+	expect(stored?.bytes).toEqual(tinyWebpBytes)
+	expect(stored?.customMetadata?.iconFitVersion).toBe('2')
 	expect(buildPlatformOauthAppLogoPath(withLogo)).toMatch(
 		/^\/integrations\/logos\/github\?v=[0-9a-f]{16}$/,
 	)
@@ -139,7 +160,7 @@ test('logo lifecycle uploads, clears, and survives app upserts without touching 
 	expect(
 		buildPlatformOauthAppLogoPath({
 			slug: 'openai.com',
-			logoKey: 'platform-oauth-app-logos/openai.com/0123456789abcdef.png',
+			logoKey: 'platform-oauth-app-logos/openai.com/0123456789abcdef.webp',
 		}),
 	).toBe('/integrations/logos/openai%2Ecom?v=0123456789abcdef')
 })
@@ -165,4 +186,142 @@ test('uploads reject unknown formats and unknown apps', async () => {
 			sourceBytes: tinyPngBytes,
 		}),
 	).rejects.toThrow('was not found')
+})
+
+test('serving an unfitted logo rewrites it to the current WebP ingest', async () => {
+	const harness = createHarness()
+	const app = await provisionApp(harness)
+	const previousKey = `platform-oauth-app-logos/${app.slug}/aaaaaaaaaaaaaaaa.png`
+	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
+		httpMetadata: { contentType: 'image/png' },
+	})
+	await harness.db
+		.prepare(
+			`UPDATE platform_oauth_apps
+			SET logo_key = ?, logo_content_type = ?, updated_at = ?
+			WHERE slug = ?`,
+		)
+		.bind(previousKey, 'image/png', new Date().toISOString(), app.slug)
+		.run()
+	const stale = await getPlatformOauthAppBySlug({
+		db: harness.db,
+		slug: 'github',
+		includeDisabled: true,
+	})
+	expect(stale?.logoKey).toBe(previousKey)
+
+	const served = await loadFittedPlatformOauthAppLogo({
+		db: harness.db,
+		env: harness.env,
+		app: stale!,
+	})
+	expect(served?.contentType).toBe('image/webp')
+	expect(served?.cacheControl).toBe('public, max-age=31536000, immutable')
+	expect(harness.r2.objects.has(previousKey)).toBe(false)
+	expect(harness.r2.objects.size).toBe(1)
+	const [fittedKey, fitted] = [...harness.r2.objects.entries()][0]!
+	expect(fittedKey).toMatch(
+		/^platform-oauth-app-logos\/github\/[0-9a-f]{16}\.webp$/,
+	)
+	expect(fitted.bytes).toEqual(tinyWebpBytes)
+	expect(fitted.customMetadata?.iconFitVersion).toBe('2')
+})
+
+test('lazy refit does not overwrite a newer logo key', async () => {
+	const harness = createHarness()
+	const app = await provisionApp(harness)
+	const previousKey = `platform-oauth-app-logos/${app.slug}/aaaaaaaaaaaaaaaa.png`
+	const newerKey = `platform-oauth-app-logos/${app.slug}/bbbbbbbbbbbbbbbb.webp`
+	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
+		httpMetadata: { contentType: 'image/png' },
+	})
+	await harness.env.COMMUNITY_ASSETS.put(newerKey, tinyWebpBytes, {
+		httpMetadata: { contentType: 'image/webp' },
+		customMetadata: { iconFitVersion: '2' },
+	})
+	await harness.db
+		.prepare(
+			`UPDATE platform_oauth_apps
+			SET logo_key = ?, logo_content_type = ?, updated_at = ?
+			WHERE slug = ?`,
+		)
+		.bind(previousKey, 'image/png', new Date().toISOString(), app.slug)
+		.run()
+	const stale = await getPlatformOauthAppBySlug({
+		db: harness.db,
+		slug: 'github',
+		includeDisabled: true,
+	})
+	await harness.db
+		.prepare(
+			`UPDATE platform_oauth_apps
+			SET logo_key = ?, logo_content_type = ?, updated_at = ?
+			WHERE slug = ?`,
+		)
+		.bind(newerKey, 'image/webp', new Date().toISOString(), app.slug)
+		.run()
+
+	const served = await loadFittedPlatformOauthAppLogo({
+		db: harness.db,
+		env: harness.env,
+		app: stale!,
+	})
+	expect(served?.contentType).toBe('image/webp')
+	const current = await getPlatformOauthAppBySlug({
+		db: harness.db,
+		slug: 'github',
+		includeDisabled: true,
+	})
+	expect(current?.logoKey).toBe(newerKey)
+	expect(harness.r2.objects.has(newerKey)).toBe(true)
+})
+
+test('lost same-hash refit race keeps the stored object', async () => {
+	const harness = createHarness()
+	const app = await provisionApp(harness)
+	const previousKey = `platform-oauth-app-logos/${app.slug}/aaaaaaaaaaaaaaaa.png`
+	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
+		httpMetadata: { contentType: 'image/png' },
+	})
+	await harness.db
+		.prepare(
+			`UPDATE platform_oauth_apps
+			SET logo_key = ?, logo_content_type = ?, updated_at = ?
+			WHERE slug = ?`,
+		)
+		.bind(previousKey, 'image/png', new Date().toISOString(), app.slug)
+		.run()
+	const stale = await getPlatformOauthAppBySlug({
+		db: harness.db,
+		slug: 'github',
+		includeDisabled: true,
+	})
+	await loadFittedPlatformOauthAppLogo({
+		db: harness.db,
+		env: harness.env,
+		app: stale!,
+	})
+	const winner = await getPlatformOauthAppBySlug({
+		db: harness.db,
+		slug: 'github',
+		includeDisabled: true,
+	})
+	expect(winner?.logoKey).toMatch(
+		/^platform-oauth-app-logos\/github\/[0-9a-f]{16}\.webp$/,
+	)
+
+	await setPlatformOauthAppLogo({
+		db: harness.db,
+		env: harness.env,
+		slug: 'github',
+		sourceBytes: tinyPngBytes,
+		replaceLogoKey: previousKey,
+	})
+	const current = await getPlatformOauthAppBySlug({
+		db: harness.db,
+		slug: 'github',
+		includeDisabled: true,
+	})
+	expect(current?.logoKey).toBe(winner?.logoKey)
+	expect(harness.r2.objects.has(winner!.logoKey!)).toBe(true)
 })

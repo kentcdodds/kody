@@ -26,6 +26,7 @@ interface __BaseEnv_Env {
 	LOADER: WorkerLoader;
 	APP_LOADER: WorkerLoader;
 	AI: Ai;
+	IMAGES: ImagesBinding;
 	ASSETS: Fetcher;
 	SENTRY_ENVIRONMENT: "production";
 	SIGNUP_MODE: "invite";

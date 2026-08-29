@@ -5,6 +5,7 @@ import type * as AuditLog from '#worker/audit-log.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { createFakeImagesBinding } from '#worker/test-support/images-binding.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
@@ -70,6 +71,7 @@ function createHarness() {
 				objects.delete(key)
 			},
 		} as unknown as R2Bucket,
+		IMAGES: createFakeImagesBinding(),
 	} as Env
 	return { sqlite, env, objects }
 }

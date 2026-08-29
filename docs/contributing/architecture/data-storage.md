@@ -364,7 +364,7 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   accessor. `logo_key` / `logo_content_type`
   (`0005-platform-oauth-app-logos.sql`) point at an operator-owned provider logo
   asset in the `COMMUNITY_ASSETS` R2 bucket (content-hashed
-  `platform-oauth-app-logos/{slug}/` keys; SVG uploads are rasterized to PNG
+  `platform-oauth-app-logos/{slug}/` keys; uploads are fitted to 256px WebP
   before storage). See
   [OAuth integrations](./integrations.md#platform-built-in-oauth-apps).
 - `user_integrations` (squashed baseline, rebuilt by
@@ -486,12 +486,15 @@ ticker.
 Processed public community icons live in the private `COMMUNITY_ASSETS` bucket.
 The public icon route reads the active listing first, then resolves a cachified
 descriptor from `BUNDLE_ARTIFACTS_KV` and streams the referenced R2 object.
-Source files remain in the listing's pinned Artifacts commit; R2 stores only
-validated derived output or a generated fallback.
+Source files remain in the listing's pinned Artifacts commit; R2 stores only the
+256-pixel WebP ingest (Cloudflare Images, `fit: scale-down`) or a generated
+fallback.
 
-- Keys use `community-icon:v1/{listingId}/{commit}/asset`, where the commit is
+- Keys use `community-icon:v2/{listingId}/{commit}/asset`, where the commit is
   the listing's icon commit (the owner package's current published commit) or
-  its pinned snapshot commit.
+  its pinned snapshot commit. Derived bytes are a 256-pixel WebP from the
+  Cloudflare Images ingest fit. Account deletion also prefix-deletes leftover
+  `community-icon:v1/` objects.
 - Descriptor keys include the same listing id and commit, so package publish and
   listing re-publish cannot serve an older icon.
 - Unpublish, admin hard delete, and re-publish prune all descriptor and object
@@ -1320,9 +1323,10 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `derived-cache:v1:usage-rollups:user:{userId}:asof:{YYYY-MM}` — derived
   per-user usage read model written with KV `expirationTtl`; retention is five
   minutes, so immediate account-deletion cleanup is not required.
-- `derived-cache:v1:community-icon:v1:{listingId}:...` — derived community
+- `derived-cache:v1:community-icon:v2:{listingId}:...` — derived community
   listing icon cache; registered as a user-owned KV surface and deleted for a
-  user's listings during account deletion.
+  user's listings during account deletion (including leftover
+  `community-icon:v1` prefixes).
 - `webhook-dispatch-payload:v1:{userId}:{deliveryId}` — ephemeral ack-mode
   webhook body spill written with KV `expirationTtl` (24 hours) when the
   serialized queue message would exceed 120 KB. Immediate account-deletion
@@ -1342,10 +1346,11 @@ or a deliberate retention note.
 
 App-owned R2 keys are:
 
-- `community-icon:v1/{listingId}/{commit}/asset` — processed public community
-  icon bytes at the listing's pinned or icon commit. The listing id is the
-  public ownership boundary. Account deletion paginates and strictly deletes
-  every key under each D1-owned listing prefix, including historical revisions.
+- `community-icon:v2/{listingId}/{commit}/asset` — processed public community
+  icon bytes (256px WebP) at the listing's pinned or icon commit. The listing id
+  is the public ownership boundary. Account deletion paginates and strictly
+  deletes every key under each D1-owned listing prefix, including historical
+  `community-icon:v1/` revisions.
 
 - `user-avatars/{stableUserId}/{contentHash}.{extension}` — profile avatars.
   Account deletion paginates and strictly deletes the complete stable-user

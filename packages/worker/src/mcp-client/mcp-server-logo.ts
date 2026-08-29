@@ -1,8 +1,15 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { routes } from '#universal/routes.ts'
 import {
+	iconFitCustomMetadata,
+	logoNeedsIconFit,
+} from '#worker/community/icon-fit.ts'
+import {
 	processPlatformOauthAppLogo,
+	servedFittedLogoFromBytes,
+	servedLogoFromObject,
 	type PlatformOauthAppLogoContentType,
+	type ServedFittedLogo,
 } from '#worker/integrations/platform-app-logo.ts'
 import { getMcpServerSettingRowById } from './settings-repo.ts'
 import { type McpServerLogoSource } from './settings-types.ts'
@@ -60,12 +67,17 @@ async function sha256Hex(bytes: Uint8Array) {
 
 export async function setMcpServerLogo(input: {
 	db: D1Database
-	env: Pick<Env, 'COMMUNITY_ASSETS'>
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
 	userId: string
 	serverId: string
 	sourceBytes: Uint8Array
 	source: McpServerLogoSource
 	faviconSourceHost: string
+	/**
+	 * When set, the column update is compare-and-swap on `logo_key` so a
+	 * concurrent ingest cannot be overwritten by a stale lazy refit.
+	 */
+	replaceLogoKey?: string | null
 }): Promise<void> {
 	const existing = await getMcpServerSettingRowById({
 		db: input.db,
@@ -74,7 +86,10 @@ export async function setMcpServerLogo(input: {
 	})
 	if (!existing) return
 	const previousKey = existing.logo_key
-	const processed = await processPlatformOauthAppLogo(input.sourceBytes)
+	const processed = await processPlatformOauthAppLogo(
+		input.sourceBytes,
+		input.env.IMAGES,
+	)
 	const contentHash = (await sha256Hex(processed.bytes)).slice(0, 16)
 	const nextKey = `${mcpServerLogoR2KeyPrefix}${input.userId}/${existing.id}/${contentHash}.${extensionForContentType(processed.contentType)}`
 	await input.env.COMMUNITY_ASSETS.put(nextKey, processed.bytes, {
@@ -82,17 +97,23 @@ export async function setMcpServerLogo(input: {
 			contentType: processed.contentType,
 			cacheControl: mcpServerLogoCacheControl,
 		},
-		customMetadata: {
+		customMetadata: iconFitCustomMetadata({
 			userId: input.userId,
 			mcpServerId: existing.id,
 			logoSource: input.source,
 			contentHash,
-		},
+		}),
 	})
 
+	const casLogoKey = input.replaceLogoKey !== undefined
 	const updated = await input.db
 		.prepare(
-			`UPDATE mcp_server_settings
+			casLogoKey
+				? `UPDATE mcp_server_settings
+			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
+				favicon_source_host = ?, updated_at = ?
+			WHERE user_id = ? AND id = ? AND logo_key IS ?`
+				: `UPDATE mcp_server_settings
 			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
 				favicon_source_host = ?, updated_at = ?
 			WHERE user_id = ? AND id = ?`,
@@ -105,19 +126,13 @@ export async function setMcpServerLogo(input: {
 			new Date().toISOString(),
 			input.userId,
 			existing.id,
+			...(casLogoKey ? [input.replaceLogoKey] : []),
 		)
 		.run()
 
 	if ((updated.meta.changes ?? 0) === 0) {
-		try {
-			await input.env.COMMUNITY_ASSETS.delete(nextKey)
-		} catch (error) {
-			console.error(
-				'mcp-server-logo-raced-favicon-delete-failed',
-				nextKey,
-				error,
-			)
-		}
+		// Leave nextKey. A concurrent writer can store the same content hash
+		// after this lookup; deleting here can remove a live object.
 		return
 	}
 
@@ -153,4 +168,92 @@ export async function getMcpServerLogoObject(input: {
 }): Promise<R2ObjectBody | null> {
 	if (!input.logoKey.startsWith(mcpServerLogoR2KeyPrefix)) return null
 	return await input.env.COMMUNITY_ASSETS.get(input.logoKey)
+}
+
+export async function loadFittedMcpServerLogo(input: {
+	db: D1Database
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
+	userId: string
+	serverId: string
+	logoKey: string
+	logoContentType: string | null
+	logoSource: McpServerLogoSource | null
+	faviconSourceHost: string | null
+}): Promise<ServedFittedLogo | null> {
+	const object = await getMcpServerLogoObject({
+		env: input.env,
+		logoKey: input.logoKey,
+	})
+	if (!object) return await serveCurrentMcpServerLogo(input)
+	if (!logoNeedsIconFit(object.customMetadata)) {
+		return servedLogoFromObject(
+			object,
+			input.logoContentType,
+			mcpServerLogoCacheControl,
+		)
+	}
+	const sourceBytes = new Uint8Array(await object.arrayBuffer())
+	try {
+		await setMcpServerLogo({
+			db: input.db,
+			env: input.env,
+			userId: input.userId,
+			serverId: input.serverId,
+			sourceBytes,
+			source: input.logoSource ?? 'favicon',
+			faviconSourceHost: input.faviconSourceHost ?? '',
+			replaceLogoKey: input.logoKey,
+		})
+		const row = await getMcpServerSettingRowById({
+			db: input.db,
+			userId: input.userId,
+			id: input.serverId,
+		})
+		if (!row?.logo_key) return null
+		const fitted = await getMcpServerLogoObject({
+			env: input.env,
+			logoKey: row.logo_key,
+		})
+		if (fitted) {
+			return servedLogoFromObject(
+				fitted,
+				row.logo_content_type,
+				mcpServerLogoCacheControl,
+			)
+		}
+	} catch (error) {
+		console.error('mcp-server-logo-refit-failed', input.serverId, error)
+		return servedFittedLogoFromBytes({
+			bytes: sourceBytes,
+			contentType: input.logoContentType,
+			httpEtag: object.httpEtag,
+			cacheControl: mcpServerLogoCacheControl,
+		})
+	}
+	return await serveCurrentMcpServerLogo(input)
+}
+
+async function serveCurrentMcpServerLogo(input: {
+	db: D1Database
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
+	userId: string
+	serverId: string
+	logoKey: string
+}): Promise<ServedFittedLogo | null> {
+	const row = await getMcpServerSettingRowById({
+		db: input.db,
+		userId: input.userId,
+		id: input.serverId,
+	})
+	if (!row?.logo_key || row.logo_key === input.logoKey) return null
+	const latest = await getMcpServerLogoObject({
+		env: input.env,
+		logoKey: row.logo_key,
+	})
+	if (!latest) return null
+	return servedLogoFromObject(
+		latest,
+		row.logo_content_type,
+		mcpServerLogoCacheControl,
+	)
 }

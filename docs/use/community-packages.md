@@ -51,10 +51,9 @@ Include an icon at the package root:
 - `community-icon.jpg` or `community-icon.jpeg`
 
 The first file in that order wins when more than one exists. Icons must be at
-most 2 MiB, 4096 pixels per side, and 16 megapixels total. Kody rasterizes SVG
-icons to PNG before serving them; PNG, WebP, and JPEG files are validated and
-served in their original format. Packages without an icon receive a generated
-visual based on the package name.
+most 2 MiB, 4096 pixels per side, and 16 megapixels total. Kody validates the
+source, then stores a 256-pixel WebP derivative (SVG is rasterized first).
+Packages without an icon receive a generated visual based on the package name.
 
 Icon URLs embed the package's **current published commit** (falling back to the
 listing's pinned commit if the package source no longer exists), so publishing a

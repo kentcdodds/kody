@@ -1,9 +1,16 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { routes } from '#universal/routes.ts'
+import {
+	iconFitCustomMetadata,
+	logoNeedsIconFit,
+} from '#worker/community/icon-fit.ts'
 import { getOauthAppBySlug } from './repo.ts'
 import {
 	processPlatformOauthAppLogo,
+	servedFittedLogoFromBytes,
+	servedLogoFromObject,
 	type PlatformOauthAppLogoContentType,
+	type ServedFittedLogo,
 } from './platform-app-logo.ts'
 import { type UserOauthApp } from './types.ts'
 
@@ -71,12 +78,17 @@ async function sha256Hex(bytes: Uint8Array) {
 
 export async function setUserOauthAppLogo(input: {
 	db: D1Database
-	env: Pick<Env, 'COMMUNITY_ASSETS'>
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
 	userId: string
 	slug: string
 	sourceBytes: Uint8Array | null
 	source: UserOauthAppLogoSource
 	faviconSourceHost?: string | null
+	/**
+	 * When set, the column update is compare-and-swap on `logo_key` so a
+	 * concurrent ingest cannot be overwritten by a stale lazy refit.
+	 */
+	replaceLogoKey?: string | null
 }): Promise<UserOauthApp> {
 	const app = await getOauthAppBySlug({
 		db: input.db,
@@ -102,7 +114,10 @@ export async function setUserOauthAppLogo(input: {
 	let nextSource: UserOauthAppLogoSource | null = null
 	let nextFaviconHost: string | null = null
 	if (input.sourceBytes) {
-		const processed = await processPlatformOauthAppLogo(input.sourceBytes)
+		const processed = await processPlatformOauthAppLogo(
+			input.sourceBytes,
+			input.env.IMAGES,
+		)
 		const contentHash = (await sha256Hex(processed.bytes)).slice(0, 16)
 		nextKey = `${userOauthAppLogoR2KeyPrefix}${input.userId}/${app.slug}/${contentHash}.${extensionForContentType(processed.contentType)}`
 		nextContentType = processed.contentType
@@ -114,28 +129,30 @@ export async function setUserOauthAppLogo(input: {
 				contentType: processed.contentType,
 				cacheControl: userOauthAppLogoCacheControl,
 			},
-			customMetadata: {
+			customMetadata: iconFitCustomMetadata({
 				userId: input.userId,
 				userAppSlug: app.slug,
 				logoSource: input.source,
 				contentHash,
-			},
+			}),
 		})
 	}
 
-	const updated = await input.db
-		.prepare(
-			input.source === 'favicon'
-				? `UPDATE user_oauth_apps
+	const casLogoKey = input.replaceLogoKey !== undefined
+	let updateSql = `UPDATE user_oauth_apps
 			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
 				favicon_source_host = ?, updated_at = ?
-			WHERE user_id = ? AND slug = ?
+			WHERE user_id = ? AND slug = ?`
+	if (input.source === 'favicon') {
+		updateSql += `
 				AND (logo_source IS NULL OR logo_source <> 'upload')`
-				: `UPDATE user_oauth_apps
-			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
-				favicon_source_host = ?, updated_at = ?
-			WHERE user_id = ? AND slug = ?`,
-		)
+	}
+	if (casLogoKey) {
+		updateSql += `
+				AND logo_key IS ?`
+	}
+	const updated = await input.db
+		.prepare(updateSql)
 		.bind(
 			nextKey,
 			nextContentType,
@@ -144,21 +161,13 @@ export async function setUserOauthAppLogo(input: {
 			new Date().toISOString(),
 			input.userId,
 			app.slug,
+			...(casLogoKey ? [input.replaceLogoKey] : []),
 		)
 		.run()
 
-	if (input.source === 'favicon' && (updated.meta.changes ?? 0) === 0) {
-		if (nextKey) {
-			try {
-				await input.env.COMMUNITY_ASSETS.delete(nextKey)
-			} catch (error) {
-				console.error(
-					'user-oauth-app-logo-raced-favicon-delete-failed',
-					nextKey,
-					error,
-				)
-			}
-		}
+	if ((updated.meta.changes ?? 0) === 0) {
+		// Leave nextKey. A concurrent writer can store the same content hash
+		// after this lookup; deleting here can remove a live object.
 		return (
 			(await getOauthAppBySlug({
 				db: input.db,
@@ -210,4 +219,83 @@ export async function getUserOauthAppLogoObject(input: {
 }): Promise<R2ObjectBody | null> {
 	if (!input.logoKey.startsWith(userOauthAppLogoR2KeyPrefix)) return null
 	return await input.env.COMMUNITY_ASSETS.get(input.logoKey)
+}
+
+export async function loadFittedUserOauthAppLogo(input: {
+	db: D1Database
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
+	userId: string
+	app: UserOauthApp
+}): Promise<ServedFittedLogo | null> {
+	if (!input.app.logoKey) return null
+	const object = await getUserOauthAppLogoObject({
+		env: input.env,
+		logoKey: input.app.logoKey,
+	})
+	if (!object) return await serveCurrentUserOauthAppLogo(input)
+	if (!logoNeedsIconFit(object.customMetadata)) {
+		return servedLogoFromObject(
+			object,
+			input.app.logoContentType,
+			userOauthAppLogoCacheControl,
+		)
+	}
+	const sourceBytes = new Uint8Array(await object.arrayBuffer())
+	try {
+		const updated = await setUserOauthAppLogo({
+			db: input.db,
+			env: input.env,
+			userId: input.userId,
+			slug: input.app.slug,
+			sourceBytes,
+			source: input.app.logoSource ?? 'upload',
+			faviconSourceHost: input.app.faviconSourceHost,
+			replaceLogoKey: input.app.logoKey,
+		})
+		if (!updated.logoKey) return null
+		const fitted = await getUserOauthAppLogoObject({
+			env: input.env,
+			logoKey: updated.logoKey,
+		})
+		if (fitted) {
+			return servedLogoFromObject(
+				fitted,
+				updated.logoContentType,
+				userOauthAppLogoCacheControl,
+			)
+		}
+	} catch (error) {
+		console.error('user-oauth-app-logo-refit-failed', input.app.slug, error)
+		return servedFittedLogoFromBytes({
+			bytes: sourceBytes,
+			contentType: input.app.logoContentType,
+			httpEtag: object.httpEtag,
+			cacheControl: userOauthAppLogoCacheControl,
+		})
+	}
+	return await serveCurrentUserOauthAppLogo(input)
+}
+
+async function serveCurrentUserOauthAppLogo(input: {
+	db: D1Database
+	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
+	userId: string
+	app: UserOauthApp
+}): Promise<ServedFittedLogo | null> {
+	const current = await getOauthAppBySlug({
+		db: input.db,
+		userId: input.userId,
+		slug: input.app.slug,
+	})
+	if (!current?.logoKey || current.logoKey === input.app.logoKey) return null
+	const latest = await getUserOauthAppLogoObject({
+		env: input.env,
+		logoKey: current.logoKey,
+	})
+	if (!latest) return null
+	return servedLogoFromObject(
+		latest,
+		current.logoContentType,
+		userOauthAppLogoCacheControl,
+	)
 }

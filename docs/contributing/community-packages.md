@@ -155,17 +155,19 @@ the listing's pinned commit when the source row is gone). Listing reads join the
 entity source, so a plain package publish moves the icon commit forward — and
 with it the icon URL — without a community republish. `@epic-web/cachified`
 stores a small descriptor in `BUNDLE_ARTIFACTS_KV` under
-`derived-cache:v1:community-icon:v1:{listingId}:{commit}`. The processed bytes
+`derived-cache:v1:community-icon:v2:{listingId}:{commit}`. The processed bytes
 live in the private `COMMUNITY_ASSETS` R2 bucket under
-`community-icon:v1/{listingId}/{commit}/asset`.
+`community-icon:v2/{listingId}/{commit}/asset`.
 
 On a descriptor cache miss, the icon service resolves the standardized root
 `community-icon.*` path (from the pinned snapshot when serving the pinned
 commit, otherwise by probing the Artifacts git repo at the icon commit), reads
 the bytes, validates them, and writes the derived asset to R2 before returning
 the descriptor. A dangling descriptor is deleted and regenerated once. Packages
-without an icon receive a generated fallback. SVG input is rasterized to PNG;
-PNG, WebP, and JPEG input remains in its validated source format.
+without an icon receive a generated fallback. Every accepted source (SVG
+rasterized first, then PNG, WebP, and JPEG) is fitted through the Cloudflare
+Images binding to a 256-pixel WebP (`fit: scale-down`, quality 90). Publish and
+account-deletion cleanup also remove leftover `community-icon:v1` keys.
 
 The icon route serves only the current icon commit and the pinned commit; stale
 commit URLs 404. Package publish (`finalizePublishedEntitySource`) calls
