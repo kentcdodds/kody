@@ -4,7 +4,6 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { stripVTControlCharacters } from 'node:util'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { type CallToolRequest } from '@modelcontextprotocol/sdk/types.js'
@@ -13,6 +12,7 @@ import {
 	StreamableHTTPClientTransport as ModernStreamableHTTPClientTransport,
 } from '@modelcontextprotocol/client'
 import getPort from 'get-port'
+import { createTestHarness } from 'wrangler'
 import {
 	captureOutput,
 	nodeBin,
@@ -20,6 +20,8 @@ import {
 	stopProcess,
 } from '#mcp/test-process.ts'
 import { startCloudflareMock } from '#worker/test-support/cloudflare-mock-server.ts'
+import { ensureGuideCatalogModules } from './build-guide-catalog-modules.ts'
+import { ensureWorkerBundlerModules } from './build-worker-bundler-modules.ts'
 import { buildRoleAssignmentSql } from './seed-sql.ts'
 
 const projectRoot = process.cwd()
@@ -75,10 +77,10 @@ export async function startDevServer(
 	persistDir: string,
 	options?: { withCloudflareMock?: boolean },
 ) {
-	await applyMigrations(persistDir)
 	if (options?.withCloudflareMock) {
-		return startDevServerWithCloudflareMock(persistDir)
+		return startDevServerWithCloudflareMock()
 	}
+	await applyMigrations(persistDir)
 
 	// These smoke tests do not exercise Cloudflare APIs. Keeping that client
 	// unconfigured keeps MCP authentication independent of the email mock;
@@ -106,6 +108,12 @@ export async function startDevServer(
 				'--show-interactive-dev-session=false',
 				'--log-level',
 				'error',
+				// MCP smoke journeys do not call JOBS or HIGHLIGHT. Passing the
+				// origin config explicitly keeps wrangler-env from attaching those
+				// secondary configs; Wrangler's multi-config additional-module
+				// watcher can reload forever on Cloud Agent overlay filesystems.
+				'--config',
+				'packages/worker/wrangler.jsonc',
 				'--var',
 				`APP_BASE_URL:${origin}`,
 				'--var',
@@ -153,11 +161,8 @@ export async function startDevServer(
 	)
 }
 
-async function startDevServerWithCloudflareMock(persistDir: string) {
-	// package_save (and related repo persistence) needs the local Cloudflare
-	// Artifacts REST mock. Signup still permits a skipped verification send when
-	// the mock is unavailable; createMcpClient marks the account verified before
-	// OAuth begins either way.
+async function startDevServerWithCloudflareMock() {
+	await Promise.all([ensureWorkerBundlerModules(), ensureGuideCatalogModules()])
 	const cloudflareMock = await startCloudflareMock(
 		`mcp-e2e-cloudflare-${randomUUID()}`,
 	)
@@ -166,77 +171,64 @@ async function startDevServerWithCloudflareMock(persistDir: string) {
 		CLOUDFLARE_API_TOKEN: cloudflareMock.token,
 		CLOUDFLARE_ACCOUNT_ID: 'cf_account_mock_123',
 	}
-	try {
-		for (let attempt = 1; attempt <= maxPortBindRetries; attempt++) {
-			const port = await getPort({ host: localhost })
-			const origin = `http://${localhost}:${port}`
-			const proc = spawnProcess({
-				cmd: [
-					nodeBin,
-					'--env-file=packages/worker/.env',
-					'./wrangler-env.ts',
-					'dev',
-					'--local',
-					'--persist-to',
-					persistDir,
-					'--port',
-					String(port),
-					'--ip',
-					localhost,
-					'--show-interactive-dev-session=false',
-					'--log-level',
-					'error',
-					'--var',
-					`APP_BASE_URL:${origin}`,
-					'--var',
-					`CLOUDFLARE_API_BASE_URL:${cloudflareVars.CLOUDFLARE_API_BASE_URL}`,
-					'--var',
-					`CLOUDFLARE_API_TOKEN:${cloudflareVars.CLOUDFLARE_API_TOKEN}`,
-					'--var',
-					`CLOUDFLARE_ACCOUNT_ID:${cloudflareVars.CLOUDFLARE_ACCOUNT_ID}`,
-				],
-				cwd: projectRoot,
-				env: {
-					...process.env,
-					CLOUDFLARE_ENV: 'test',
-					...cloudflareVars,
+	const harness = createTestHarness({
+		root: projectRoot,
+		workers: [
+			{
+				configPath: 'packages/worker/wrangler.jsonc',
+				env: 'test',
+				vars: cloudflareVars,
+				bindingOverrides: {
+					CLOUDFLARE_API_MOCK: 'kody-mock-cloudflare-test',
 				},
-			})
-			const getStdout = captureOutput(proc.stdout)
-			const getStderr = captureOutput(proc.stderr)
-
-			try {
-				await waitForHttpReady({
-					label: 'Test worker',
-					url: new URL('/mcp', origin),
-					isReady: (response) => response.status === 401 || response.ok,
-					exited: proc.exited,
-					getStdout,
-					getStderr,
-				})
-				return {
-					origin,
-					async [Symbol.asyncDispose]() {
-						try {
-							await stopProcess(proc)
-						} finally {
-							await cloudflareMock[Symbol.asyncDispose]()
-						}
-					},
+			},
+			{
+				configPath: 'packages/mock-servers/cloudflare/wrangler.jsonc',
+				env: 'test',
+				vars: { MOCK_API_TOKEN: cloudflareMock.token },
+			},
+			{
+				configPath: 'packages/jobs-worker/wrangler.jsonc',
+				env: 'test',
+			},
+			{
+				configPath: 'packages/highlight-worker/wrangler.jsonc',
+				env: 'test',
+			},
+		],
+	})
+	try {
+		const { url } = await harness.listen()
+		const worker = harness.getWorker<{
+			APP_DB: D1Database
+			AUDIT_DB: D1Database
+		}>()
+		await worker.applyD1Migrations('APP_DB')
+		await worker.applyD1Migrations('AUDIT_DB')
+		await harness.getWorker('kody-jobs-test').applyD1Migrations('JOBS_DB')
+		const env = await worker.getEnv()
+		return {
+			origin: url.origin,
+			async markEmailVerified(email: string) {
+				await env.APP_DB.prepare(
+					`UPDATE users
+SET email_verified_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+WHERE email = ?`,
+				)
+					.bind(email)
+					.run()
+			},
+			async [Symbol.asyncDispose]() {
+				try {
+					await harness.close()
+				} finally {
+					await cloudflareMock[Symbol.asyncDispose]()
 				}
-			} catch (error) {
-				await stopProcess(proc).catch(() => undefined)
-				if (isPortAlreadyInUseError(error) && attempt < maxPortBindRetries) {
-					continue
-				}
-				throw error
-			}
+			},
 		}
-
-		throw new Error(
-			'Failed to start MCP test dev servers after multiple retries.',
-		)
 	} catch (error) {
+		await harness.close().catch(() => undefined)
 		await cloudflareMock[Symbol.asyncDispose]()
 		throw error
 	}
@@ -377,14 +369,19 @@ export async function createMcpClient(
 		// marked verified in the local D1 database before connecting.
 		persistDir: string
 		extraHeaders?: Record<string, string>
+		markEmailVerified?: (email: string) => Promise<void>
 	},
 ) {
 	const extraHeaders = options.extraHeaders
 	const cookieHeader = await loginToApp(origin, user)
-	await markEmailVerifiedInMcpTestDatabase({
-		persistDir: options.persistDir,
-		email: user.email,
-	})
+	if (options.markEmailVerified) {
+		await options.markEmailVerified(user.email)
+	} else {
+		await markEmailVerifiedInMcpTestDatabase({
+			persistDir: options.persistDir,
+			email: user.email,
+		})
+	}
 	const clientRegistration = await registerOAuthClient(origin)
 	const code = await authorizeOAuthClient(
 		origin,

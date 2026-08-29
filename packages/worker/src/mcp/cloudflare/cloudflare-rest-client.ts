@@ -34,6 +34,7 @@ export type CloudflareRestClientOptions = {
 	apiToken: string
 	baseUrl?: string
 	userAgent?: string
+	fetcher?: Fetcher
 }
 
 export class CloudflareApiError extends Error {
@@ -52,11 +53,13 @@ export class CloudflareRestClient {
 	private readonly apiToken: string
 	private readonly baseUrl: string
 	private readonly userAgent: string
+	private readonly fetcher: Fetcher | undefined
 
 	constructor(options: CloudflareRestClientOptions) {
 		this.apiToken = options.apiToken.trim()
 		this.baseUrl = (options.baseUrl ?? defaultBaseUrl).replace(/\/$/, '')
 		this.userAgent = options.userAgent?.trim() || defaultUserAgent
+		this.fetcher = options.fetcher
 	}
 
 	async rawRequest(input: {
@@ -100,7 +103,8 @@ export class CloudflareRestClient {
 			init.body = JSON.stringify(input.body)
 		}
 
-		const response = await fetch(url.toString(), init)
+		const response = await (this.fetcher?.fetch(url.toString(), init) ??
+			fetch(url.toString(), init))
 		const text = await response.text()
 		const cfRay = response.headers.get('cf-ray')
 
@@ -124,7 +128,9 @@ export class CloudflareRestClient {
 }
 
 export function createCloudflareRestClient(
-	env: Pick<Env, 'CLOUDFLARE_API_TOKEN' | 'CLOUDFLARE_API_BASE_URL'>,
+	env: Pick<Env, 'CLOUDFLARE_API_TOKEN' | 'CLOUDFLARE_API_BASE_URL'> & {
+		CLOUDFLARE_API_MOCK?: Fetcher
+	},
 ): CloudflareRestClient {
 	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!apiToken) {
@@ -133,5 +139,9 @@ export function createCloudflareRestClient(
 		)
 	}
 	const baseUrl = env.CLOUDFLARE_API_BASE_URL?.trim() || defaultBaseUrl
-	return new CloudflareRestClient({ apiToken, baseUrl })
+	return new CloudflareRestClient({
+		apiToken,
+		baseUrl,
+		fetcher: env.CLOUDFLARE_API_MOCK,
+	})
 }

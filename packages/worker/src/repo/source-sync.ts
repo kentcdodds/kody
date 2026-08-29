@@ -15,7 +15,7 @@ import {
 	loadLockedSavedPackage,
 	PackagePublishLockedError,
 } from '#worker/package-registry/package-publish-lock.ts'
-import { repoSessionRpc } from './repo-session-do.ts'
+import { repoSessionRpc } from './repo-session-rpc.ts'
 import {
 	buildPublishedSourceSnapshotKvKey,
 	writePublishedSourceSnapshot,

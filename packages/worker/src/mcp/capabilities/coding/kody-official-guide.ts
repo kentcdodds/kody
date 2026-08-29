@@ -2,17 +2,29 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { getGuideById, guides } from '#worker/guides/catalog.ts'
+import {
+	guideMetadataList,
+	importGuideCatalog,
+} from '#worker/guide-catalog-modules.ts'
 
 /**
  * Guide markdown is bundled from `docs/guides/` at build time (see
- * `#worker/guides/catalog.ts`), so this capability, the `/guides` web pages,
- * and the raw `text/markdown` responses always serve the same deployed
- * content with no request-time GitHub dependency.
+ * `#worker/guides/catalog.ts` for the web-facing catalog), so this
+ * capability, the `/guides` web pages, and the raw `text/markdown`
+ * responses always serve the same deployed content with no request-time
+ * GitHub dependency.
+ *
+ * Only `guideMetadataList` (frontmatter, no bodies) is statically imported
+ * here — registering `coding_guide_get` must not add every guide body's
+ * parse/link cost to every platform/runtime Worker isolate's main-module
+ * cold start. The full catalog is loaded lazily by `importGuideCatalog()`
+ * inside the handler; see `#worker/guide-catalog-modules.ts`.
  */
 
-const advertisedGuides = guides.filter((guide) => !guide.unadvertised)
-const knownGuideIds = new Set(guides.map((guide) => guide.id))
+const advertisedGuides = guideMetadataList.filter(
+	(guide) => !guide.unadvertised,
+)
+const knownGuideIds = new Set(guideMetadataList.map((guide) => guide.id))
 
 function buildCapabilityDescription(): string {
 	return [
@@ -54,7 +66,7 @@ const outputSchema = z.object({
 		),
 })
 
-const providerKeywords = guides
+const providerKeywords = guideMetadataList
 	.filter((guide) => guide.provider !== null)
 	.flatMap((guide) => [
 		guide.provider!.toLowerCase(),
@@ -216,7 +228,8 @@ export const kodyOfficialGuideCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, _ctx: CapabilityContext) {
-			const guide = getGuideById(args.guide)
+			const { guides } = await importGuideCatalog()
+			const guide = guides.find((candidate) => candidate.id === args.guide)
 			if (!guide) {
 				throw new Error(`Unknown Kody guide "${args.guide}".`)
 			}

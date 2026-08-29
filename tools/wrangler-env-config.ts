@@ -16,5 +16,5 @@ export function getDefaultWranglerConfigPath(
 }
 
 export function resolveWranglerConfigPath(configPath: string, cwd: string) {
-	return path.isAbsolute(configPath) ? configPath : path.join(cwd, configPath)
+	return path.resolve(cwd, configPath)
 }

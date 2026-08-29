@@ -49,6 +49,7 @@ export default mergeConfig(
 			include: ['**/*.workers.test.ts'],
 			globalSetup: [
 				resolve(rootDir, 'tools/vitest-global-setup-worker-bundler-modules.ts'),
+				resolve(rootDir, 'tools/vitest-global-setup-guide-catalog-modules.ts'),
 				resolve(rootDir, 'tools/vitest-global-setup-jobs-test-service.ts'),
 				resolve(rootDir, 'tools/vitest-global-setup-highlight-test-service.ts'),
 			],

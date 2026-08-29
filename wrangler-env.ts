@@ -11,6 +11,7 @@ import {
 } from './tools/dev-process-utils.ts'
 import { resolveLocalBinary } from './tools/node-runtime.ts'
 import { ensureWorkerBundlerModules } from './tools/build-worker-bundler-modules.ts'
+import { ensureGuideCatalogModules } from './tools/build-guide-catalog-modules.ts'
 import {
 	getDefaultWranglerConfigPath,
 	highlightWorkerWranglerConfigPath,
@@ -101,8 +102,9 @@ if (
 }
 
 // The main worker config references pre-bundled modules in `src/generated/`
-// (see tools/build-worker-bundler-modules.ts), so make sure they exist before
-// any wrangler command that builds the worker. Skipped for explicit `--config`
+// (see tools/build-worker-bundler-modules.ts and
+// tools/build-guide-catalog-modules.ts), so make sure they exist before any
+// wrangler command that builds the worker. Skipped for explicit `--config`
 // invocations (mock servers, backup control plane) which don't use them —
 // except the runtime worker, whose entry module lives in the same source
 // tree as the main worker and imports the same generated modules.
@@ -116,11 +118,19 @@ const isRuntimeWorkerConfig = Boolean(
 const isPlatformWorkerConfig = Boolean(
 	configArgValue?.includes('platform-worker'),
 )
+const isDefaultWorkerConfig =
+	configArgValue !== undefined &&
+	resolveWranglerConfigPath(configArgValue, process.cwd()) ===
+		resolveWranglerConfigPath(defaultWranglerConfigPath, process.cwd())
 if (
 	isWorkerBuildCommand &&
-	(!hasConfigFlag || isRuntimeWorkerConfig || isPlatformWorkerConfig)
+	(!hasConfigFlag ||
+		isDefaultWorkerConfig ||
+		isRuntimeWorkerConfig ||
+		isPlatformWorkerConfig)
 ) {
 	await ensureWorkerBundlerModules()
+	await ensureGuideCatalogModules()
 }
 
 if (!hasEnvFlag) {

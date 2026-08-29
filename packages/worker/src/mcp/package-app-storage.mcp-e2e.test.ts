@@ -6,6 +6,7 @@ import {
 	createTestDatabase,
 	startDevServer,
 } from '../../../../tools/mcp-test-support.ts'
+import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 
 const kodyId = 'app-storage-smoke'
 const markerKey = 'smoke-marker'
@@ -101,12 +102,16 @@ export default {
 }
 
 test('package app fetch handler can use packageStorage against a real local worker', async () => {
+	silenceExpectedConsoleWarns([
+		/Ignoring duplicate module:.*generated\/esbuild\.wasm/,
+	])
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir, {
 		withCloudflareMock: true,
 	})
 	await using mcp = await createMcpClient(server.origin, database.user, {
 		persistDir: database.persistDir,
+		markEmailVerified: server.markEmailVerified,
 	})
 	const { username } = database.user
 	const files = buildPackageFiles(username)

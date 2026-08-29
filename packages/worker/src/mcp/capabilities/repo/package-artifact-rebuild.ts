@@ -8,7 +8,7 @@ import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import { isPublishedPackageArtifactBuiltForCommit } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
 import { createIsolatedArtifactRebuildRunner } from '#worker/repo/isolated-artifact-rebuild.ts'
-import { repoSessionRpc } from '#worker/repo/repo-session-do.ts'
+import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { isDurableObjectIsolateResetMessage } from '#worker/sentry-options.ts'
 
 /**
