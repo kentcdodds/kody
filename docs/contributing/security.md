@@ -465,11 +465,18 @@ change to these decisions here so future agents do not relitigate them.
 
 - **Stateless sessions revoke after password reset.** `kody_session` is a signed
   cookie with no server store, so there is no global "log out everywhere"
-  button. Password reset confirmation stamps `users.password_changed_at` and
-  every browser session carries `issuedAt`; `resolveRequestAuth` rejects cookies
+  button. Password reset confirmation revokes every MCP OAuth grant for the
+  user, stamps `users.password_changed_at`, then revokes again. Browser and
+  package-app sessions carry `issuedAt`; `resolveRequestAuth` rejects cookies
   issued at or before that timestamp (missing `issuedAt` fails closed once a
-  password change exists). A future hardening could add an explicit "sign out
-  other sessions" control without waiting for a reset.
+  password change exists). `/mcp` applies the same timestamp to the access token
+  `createdAt` (Unix seconds) so already-issued bearers fail closed as
+  `invalid_token`. A future hardening could add an explicit "sign out other
+  sessions" control without waiting for a reset.
+- **OAuth authorize client reset is grant-scoped.** A signed-in user can reset a
+  mismatched DCR client for **their** grants only. `deleteClient` runs only when
+  `user_mcp_oauth_clients` shows they own that registration. Shared host clients
+  (Cursor, Claude, Gemini) stay registered for other users.
 - **Account secret reveal is owner-scoped, not password-reauthenticated.** See
   the "Account secret reveal" section of
   [`architecture/authentication.md`](./architecture/authentication.md).

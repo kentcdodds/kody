@@ -40,9 +40,14 @@ The cookie payload stores:
 - `issuedAt` (epoch ms when the cookie was issued or last renewed)
 - `rememberMe` when the login used remember-me
 
-Password reset confirmation writes `users.password_changed_at`. Session
-resolution rejects cookies whose `issuedAt` is missing or at/before that
-timestamp, so a reset invalidates every existing browser session.
+Password reset confirmation revokes every MCP OAuth grant for that user, writes
+`users.password_changed_at`, then revokes again so a grant created in that
+window cannot survive. Session resolution rejects cookies whose `issuedAt` is
+missing or at/before that timestamp, so a reset invalidates every existing
+browser and package-app session. `/mcp` rejects access tokens whose `createdAt`
+is at or before that timestamp (`invalid_token`), so already-issued bearers die
+immediately; hosts that refresh then hit the revoked grant and must start a new
+OAuth flow.
 
 `users.id` never crosses the cookie boundary. Session resolution looks up the
 stable id and only then uses the numeric primary key for internal D1 joins.

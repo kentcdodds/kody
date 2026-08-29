@@ -158,6 +158,37 @@ export async function listOwnedUserMcpOauthClientIds(
 	return (result.results ?? []).map((row) => row.client_id)
 }
 
+export async function userOwnsMcpOauthClient(
+	db: D1Database,
+	userId: number,
+	clientId: string,
+): Promise<boolean> {
+	const row = await db
+		.prepare(
+			`SELECT client_id
+			FROM user_mcp_oauth_clients
+			WHERE user_id = ? AND client_id = ? AND revoked_at IS NULL`,
+		)
+		.bind(userId, clientId)
+		.first<{ client_id: string }>()
+	return row?.client_id === clientId
+}
+
+export async function markUserMcpOauthClientRevokedByClientId(
+	db: D1Database,
+	userId: number,
+	clientId: string,
+): Promise<void> {
+	await db
+		.prepare(
+			`UPDATE user_mcp_oauth_clients
+			SET revoked_at = ?
+			WHERE user_id = ? AND client_id = ? AND revoked_at IS NULL`,
+		)
+		.bind(new Date().toISOString(), userId, clientId)
+		.run()
+}
+
 async function discardCreatedProviderClient(input: {
 	db: D1Database
 	helpers: McpOauthClientHelpers

@@ -23,6 +23,7 @@ export type McpAuthDenialReason =
 	| 'unidentified_grant'
 	| 'email_unverified'
 	| 'account_suspended'
+	| 'password_changed'
 	| 'no_user'
 	| 'role'
 	| 'permission'

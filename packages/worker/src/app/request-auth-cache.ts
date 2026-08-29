@@ -11,10 +11,10 @@
 import * as Sentry from '@sentry/cloudflare'
 import {
 	destroyAuthCookie,
-	isAuthSessionInvalidatedByPasswordChange,
 	isSecureRequest,
 	readParsedAuthSession,
 } from '#app/auth-session.ts'
+import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 import { getUserRolesAndPermissions } from '#worker/identity/permissions-db.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { resolveDisplayName } from '#worker/identity/username.ts'
@@ -150,25 +150,14 @@ async function resolveRequestAuth(
  * that second so cookies issued later in the same second cannot survive a
  * reset that only recorded second precision.
  */
-export function parsePasswordChangedAtMs(value: string | null | undefined) {
-	if (!value) return null
-	const trimmed = value.trim()
-	if (!trimmed) return null
-	const normalized = trimmed.includes('T')
-		? trimmed
-		: `${trimmed.replace(' ', 'T')}Z`
-	const ms = Date.parse(normalized)
-	if (!Number.isFinite(ms)) return null
-	const hasFractionalSeconds = /(?:[T ])\d{2}:\d{2}:\d{2}\.\d/.test(normalized)
-	return hasFractionalSeconds ? ms : ms + 999
-}
+export { parsePasswordChangedAtMs } from '#worker/password-change-lockout.ts'
 
 /**
  * True when a session predates the account's stored `password_changed_at`.
  *
- * Every session flavor (browser `kody_session`, package-app `kody_pkg_session`)
- * must share this decision, so a password reset can never revoke one and leave
- * another alive.
+ * Every session flavor (browser `kody_session`, package-app `kody_pkg_session`,
+ * and MCP access tokens) must share this decision, so a password reset can
+ * never revoke one and leave another alive.
  *
  * Fail-closed behavior is scoped to accounts that have a stored timestamp: a
  * value that exists but cannot be parsed invalidates the session, and so does a
@@ -181,12 +170,9 @@ export function isSessionInvalidatedByStoredPasswordChange(input: {
 	issuedAt: number | undefined
 	storedPasswordChangedAt: string | null | undefined
 }): boolean {
-	const passwordChangedAtRaw = input.storedPasswordChangedAt?.trim() ?? ''
-	const passwordChangedAtMs = parsePasswordChangedAtMs(passwordChangedAtRaw)
-	if (passwordChangedAtRaw !== '' && passwordChangedAtMs === null) return true
-	return isAuthSessionInvalidatedByPasswordChange({
-		issuedAt: input.issuedAt,
-		passwordChangedAtMs,
+	return isCredentialInvalidatedByStoredPasswordChange({
+		issuedAtMs: input.issuedAt,
+		storedPasswordChangedAt: input.storedPasswordChangedAt,
 	})
 }
 

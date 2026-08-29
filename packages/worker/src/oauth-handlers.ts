@@ -28,6 +28,11 @@ import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { mcpResourcePath } from './mcp-auth.ts'
+import { listUserOAuthGrantsForClient } from '#worker/oauth-grants.ts'
+import {
+	markUserMcpOauthClientRevokedByClientId,
+	userOwnsMcpOauthClient,
+} from '#app/account-mcp-oauth-clients.ts'
 
 export { oauthPaths }
 
@@ -331,27 +336,6 @@ async function requestHasRedirectUriMismatch(
 	return !redirectUriMatchesRegisteredUri(redirectUri, registeredUris)
 }
 
-async function listUserGrantsForClient(
-	helpers: OAuthHelpers,
-	userId: string,
-	clientId: string,
-) {
-	const grants = new Array<{ id: string }>()
-	let cursor: string | undefined
-
-	do {
-		const page = await helpers.listUserGrants(userId, { cursor })
-		for (const grant of page.items) {
-			if (grant.clientId === clientId) {
-				grants.push({ id: grant.id })
-			}
-		}
-		cursor = page.cursor
-	} while (cursor)
-
-	return grants
-}
-
 function resolveScopes(requestedScopes: Array<string>) {
 	if (requestedScopes.length === 0) return oauthScopes
 	const invalidScopes = requestedScopes.filter(
@@ -469,7 +453,7 @@ async function handleResetClientRequest(
 		})
 		return respondAuthorizeError(
 			request,
-			'Sign in before deleting stored client records.',
+			'Sign in before resetting this connection.',
 			401,
 			'unauthorized',
 			createSetCookieHeaders([clearResetVerificationCookie]),
@@ -500,11 +484,23 @@ async function handleResetClientRequest(
 			)
 		}
 		const userId = resolveUserStableId(userRecord)
-		const grants = await listUserGrantsForClient(helpers, userId, clientId)
+		const grants = await listUserOAuthGrantsForClient(helpers, userId, clientId)
 		await Promise.all(
 			grants.map((grant) => helpers.revokeGrant(grant.id, userId)),
 		)
-		await helpers.deleteClient(clientId)
+		const ownsClient = await userOwnsMcpOauthClient(
+			env.APP_DB,
+			userRecord.id,
+			clientId,
+		)
+		if (ownsClient) {
+			await helpers.deleteClient(clientId)
+			await markUserMcpOauthClientRevokedByClientId(
+				env.APP_DB,
+				userRecord.id,
+				clientId,
+			)
+		}
 		void logAuditEvent({
 			category: 'oauth',
 			action: 'reset_client',
@@ -512,12 +508,14 @@ async function handleResetClientRequest(
 			email: sessionEmail,
 			ip: requestIp,
 			clientId,
+			reason: ownsClient ? 'deleted_owned_client' : 'revoked_grants_only',
 		})
 		return jsonResponse(
 			{
 				ok: true,
-				message:
-					'Deleted the stored client records for this connection. Start the connection again from your client to create a fresh trusted client.',
+				message: ownsClient
+					? "Deleted your stored client registration and revoked this account's grants. Start the connection again from your client to create a fresh trusted client."
+					: "Revoked this account's grants for the client. Shared client registrations stay in place. Start the connection again from your client.",
 			},
 			{
 				headers: createSetCookieHeaders([
@@ -538,7 +536,7 @@ async function handleResetClientRequest(
 		})
 		return respondAuthorizeError(
 			request,
-			'Unable to delete stored client records right now.',
+			'Unable to reset this connection right now.',
 			500,
 			'server_error',
 			createSetCookieHeaders([clearResetVerificationCookie]),

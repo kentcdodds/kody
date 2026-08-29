@@ -108,7 +108,10 @@ function createHelpers(overrides: Partial<OAuthHelpers> = {}): OAuthHelpers {
 
 async function createDatabase(
 	password: string,
-	options: { emailVerifiedAt?: string | null } = {},
+	options: {
+		emailVerifiedAt?: string | null
+		ownedClientIds?: ReadonlyArray<string>
+	} = {},
 ) {
 	const passwordHash = await createPasswordHash(password)
 	const email = 'user@example.com'
@@ -130,30 +133,43 @@ async function createDatabase(
 			// The 2FA gate queries verifications during inline OAuth login; the
 			// mocked user has no verification rows, so those queries are empty.
 			const isVerificationsQuery = query.includes('FROM verifications')
+			const isOwnedClientQuery = query.includes('FROM user_mcp_oauth_clients')
 			const isEmailVerifiedQuery =
 				query.includes('email_verified_at') && !query.includes('stable_user_id')
-			return {
-				bind() {
+			let bound: Array<unknown> = []
+			const statement = {
+				bind(...params: Array<unknown>) {
+					bound = params
+					return statement
+				},
+				async all() {
 					return {
-						async all() {
-							return {
-								results: isVerificationsQuery ? [] : [userRow],
-								meta: { changes: 0, last_row_id: 0 },
-							}
-						},
-						async first() {
-							if (isVerificationsQuery) return null
-							if (isEmailVerifiedQuery) {
-								return { email_verified_at: emailVerifiedAt }
-							}
-							return userRow
-						},
-						async run() {
-							return { meta: { changes: 1, last_row_id: 1 } }
-						},
+						results: isVerificationsQuery ? [] : [userRow],
+						meta: { changes: 0, last_row_id: 0 },
 					}
 				},
+				async first() {
+					if (isVerificationsQuery) return null
+					if (isOwnedClientQuery) {
+						const clientId = bound.find((value) => typeof value === 'string')
+						if (
+							typeof clientId === 'string' &&
+							options.ownedClientIds?.includes(clientId)
+						) {
+							return { client_id: clientId }
+						}
+						return null
+					}
+					if (isEmailVerifiedQuery) {
+						return { email_verified_at: emailVerifiedAt }
+					}
+					return userRow
+				},
+				async run() {
+					return { meta: { changes: 1, last_row_id: 1 } }
+				},
 			}
+			return statement
 		},
 		async exec() {
 			return
@@ -927,7 +943,7 @@ test('worker entrypoint renders OAuth errors for delegated authorize route excep
 	})
 })
 
-test('reset client deletes matching grants for redirect-uri, client-id, and authorize-info mismatches', async () => {
+test('reset client revokes matching grants without deleting a shared DCR client', async () => {
 	const userId = await createStableUserIdFromEmail('user@example.com')
 	const appDb = await createDatabase('password123')
 	setAuthSessionSecret(cookieSecret)
@@ -1007,10 +1023,10 @@ test('reset client deletes matching grants for redirect-uri, client-id, and auth
 	expect(redirectUriResponse.status).toBe(200)
 	await expect(redirectUriResponse.json()).resolves.toMatchObject({
 		ok: true,
-		message: expect.stringMatching(/deleted the stored client records/i),
+		message: expect.stringMatching(/revoked this account/i),
 	})
 	expect(redirectUriRevokedGrantIds).toEqual(['grant-1', 'grant-3'])
-	expect(redirectUriDeletedClientIds).toEqual(['client-123'])
+	expect(redirectUriDeletedClientIds).toEqual([])
 
 	const clientMismatchRevokedGrantIds = new Array<string>()
 	const clientMismatchDeletedClientIds = new Array<string>()
@@ -1077,10 +1093,10 @@ test('reset client deletes matching grants for redirect-uri, client-id, and auth
 	expect(clientMismatchResponse.status).toBe(200)
 	await expect(clientMismatchResponse.json()).resolves.toMatchObject({
 		ok: true,
-		message: expect.stringMatching(/deleted the stored client records/i),
+		message: expect.stringMatching(/revoked this account/i),
 	})
 	expect(clientMismatchRevokedGrantIds).toEqual(['grant-1', 'grant-2'])
-	expect(clientMismatchDeletedClientIds).toEqual(['client-123'])
+	expect(clientMismatchDeletedClientIds).toEqual([])
 
 	const authorizeInfoRevokedGrantIds = new Array<string>()
 	const authorizeInfoDeletedClientIds = new Array<string>()
@@ -1129,10 +1145,81 @@ test('reset client deletes matching grants for redirect-uri, client-id, and auth
 	expect(authorizeInfoResetResponse.status).toBe(200)
 	await expect(authorizeInfoResetResponse.json()).resolves.toMatchObject({
 		ok: true,
-		message: expect.stringMatching(/deleted the stored client records/i),
+		message: expect.stringMatching(/revoked this account/i),
 	})
 	expect(authorizeInfoRevokedGrantIds).toEqual(['grant-1'])
-	expect(authorizeInfoDeletedClientIds).toEqual(['client-123'])
+	expect(authorizeInfoDeletedClientIds).toEqual([])
+})
+
+test("reset client deletes an owned MCP OAuth client after revoking this user's grants", async () => {
+	const userId = await createStableUserIdFromEmail('user@example.com')
+	const appDb = await createDatabase('password123', {
+		ownedClientIds: ['client-123'],
+	})
+	setAuthSessionSecret(cookieSecret)
+	const cookie = await createAuthCookie(
+		{
+			stableUserId: userId,
+			email: 'user@example.com',
+			rememberMe: false,
+		},
+		false,
+	)
+	const revokedGrantIds = new Array<string>()
+	const deletedClientIds = new Array<string>()
+	const helpers = createHelpers({
+		parseAuthRequest: async () => {
+			throw new Error(
+				'Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.',
+			)
+		},
+		listUserGrants: async (requestedUserId) => {
+			expect(requestedUserId).toBe(userId)
+			return {
+				items: [
+					{
+						id: 'grant-owned',
+						clientId: 'client-123',
+						userId,
+						scope: ['profile'],
+						metadata: {},
+						createdAt: 0,
+					},
+				],
+			}
+		},
+		revokeGrant: async (grantId, requestedUserId) => {
+			expect(requestedUserId).toBe(userId)
+			revokedGrantIds.push(grantId)
+		},
+		deleteClient: async (clientId) => {
+			deletedClientIds.push(clientId)
+		},
+	})
+
+	const response = await handleAuthorizeRequest(
+		new Request(
+			`https://example.com/oauth/authorize?client_id=client-123&redirect_uri=${encodeURIComponent('https://example.com/invalid')}&error_description=${encodeURIComponent('Invalid redirect URI. The redirect URI provided does not match any registered URI for this client.')}`,
+			{
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					Cookie: cookie,
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({ decision: 'reset-client' }),
+			},
+		),
+		createEnv(helpers, appDb),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		message: expect.stringMatching(/deleted your stored client registration/i),
+	})
+	expect(revokedGrantIds).toEqual(['grant-owned'])
+	expect(deletedClientIds).toEqual(['client-123'])
 })
 
 test('reset client rejects requests without a stale or mismatched client registration', async () => {

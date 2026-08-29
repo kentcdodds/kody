@@ -21,12 +21,14 @@ type GrantUserRow = {
 	deleting_at: string | null
 	email_verified_at: string | null
 	suspended_at: string | null
+	password_changed_at: string | null
 }
 
 export type McpAuthUserContext = {
 	user: McpUserContext
 	emailVerified: boolean
 	suspended: boolean
+	passwordChangedAt: string | null
 }
 
 function buildBaseUserFromGrant(
@@ -76,7 +78,7 @@ export async function buildMcpUserContextFromGrantProps(
 	try {
 		const row = await env.APP_DB.prepare(
 			`SELECT id, email, username, display_name, stable_user_id,
-				deleting_at, email_verified_at, suspended_at
+				deleting_at, email_verified_at, suspended_at, password_changed_at
 			 FROM users
 			 WHERE stable_user_id = ?`,
 		)
@@ -111,6 +113,7 @@ export async function buildMcpUserContextFromGrantProps(
 			},
 			emailVerified: Boolean(row.email_verified_at),
 			suspended: Boolean(row.suspended_at),
+			passwordChangedAt: row.password_changed_at ?? null,
 		}
 	} catch (error) {
 		console.error('Failed to load MCP auth user context:', error)

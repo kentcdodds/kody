@@ -92,6 +92,7 @@ type MockAccountRow = {
 	email_verified_at: string | null
 	deleting_at?: string | null
 	suspended_at?: string | null
+	password_changed_at?: string | null
 }
 
 type VerificationLookupKind =
@@ -104,6 +105,8 @@ type MockDbOptions = {
 	emailVerifiedAt?: string | null
 	// Row returned for the `suspended_at` lookup keyed by account identity.
 	suspendedAt?: string | null
+	// Row returned for the password-reset lockout lookup.
+	passwordChangedAt?: string | null
 	// Row returned for the indexed `stable_user_id` verification lookup.
 	stableUserVerifiedAt?: string | null
 	// Expected bind values for the default verified fixture identity.
@@ -196,6 +199,7 @@ function createMockDb(options: MockDbOptions = {}) {
 						email_verified_at: verifiedAt,
 						deleting_at: null,
 						suspended_at: options.suspendedAt ?? null,
+						password_changed_at: options.passwordChangedAt ?? null,
 					} satisfies MockAccountRow
 				}
 				if (normalized.includes('select deleting_at from users')) {
@@ -618,6 +622,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 	expect(userSelects).toHaveLength(1)
 	expect(userSelects[0]).toContain('email_verified_at')
 	expect(userSelects[0]).toContain('suspended_at')
+	expect(userSelects[0]).toContain('password_changed_at')
 	expect(verificationLookups).toHaveLength(0)
 
 	const withConnectorResponse = await handleMcpRequestAndDrain({
@@ -965,4 +970,83 @@ test('mcp request rejects unverified and unidentifiable accounts fail-closed', a
 	expect(fallbackUserSelects).toHaveLength(1)
 	expect(fallbackUserSelects[0]).toContain('email_verified_at')
 	expect(fallbackUserSelects[0]).toContain('suspended_at')
+	expect(fallbackUserSelects[0]).toContain('password_changed_at')
+})
+
+test('mcp request rejects access tokens issued before a password reset', async () => {
+	const origin = 'https://example.com'
+	const passwordChangedAt = '2026-08-29T15:00:00.000Z'
+	const passwordChangedAtSeconds = Math.floor(
+		Date.parse(passwordChangedAt) / 1000,
+	)
+	const auditInserts: Array<Array<unknown>> = []
+	function createToken(createdAt: number): TokenSummary {
+		return {
+			id: 'token',
+			grantId: 'grant',
+			userId: 'user',
+			createdAt,
+			expiresAt: passwordChangedAtSeconds + 3600,
+			audience: `${origin}${mcpResourcePath}`,
+			grant: {
+				clientId: 'client',
+				scope: oauthScopes,
+				props: { userId: 'user', email: 'user@example.com' },
+			},
+		}
+	}
+
+	let fetchMcpCalled = false
+	const fetchMcp = () => {
+		fetchMcpCalled = true
+		return new Response('ok')
+	}
+
+	const staleResponse = await handleMcpRequestAndDrain({
+		request: new Request(`${origin}${mcpResourcePath}`, {
+			headers: { Authorization: 'Bearer token' },
+		}),
+		env: createEnv(
+			createHelpers({
+				unwrapToken: async () => createToken(passwordChangedAtSeconds - 60),
+			}),
+			{},
+			{
+				emailVerifiedAt: new Date(0).toISOString(),
+				passwordChangedAt,
+				auditInserts,
+			},
+		),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(staleResponse.status).toBe(401)
+	expect(await staleResponse.json()).toEqual({
+		error: 'invalid_token',
+		error_description: mcpInvalidTokenDescription,
+	})
+	expect(fetchMcpCalled).toBe(false)
+	expect(auditInserts[0]).toEqual(
+		expect.arrayContaining(['auth', 'mcp_token_rejected', 'failure']),
+	)
+
+	const freshResponse = await handleMcpRequestAndDrain({
+		request: new Request(`${origin}${mcpResourcePath}`, {
+			headers: { Authorization: 'Bearer token' },
+		}),
+		env: createEnv(
+			createHelpers({
+				unwrapToken: async () => createToken(passwordChangedAtSeconds + 1),
+			}),
+			{},
+			{
+				emailVerifiedAt: new Date(0).toISOString(),
+				passwordChangedAt,
+			},
+		),
+		ctx: createContext(),
+		fetchMcp,
+	})
+	expect(freshResponse.status).toBe(200)
+	expect(fetchMcpCalled).toBe(true)
 })
