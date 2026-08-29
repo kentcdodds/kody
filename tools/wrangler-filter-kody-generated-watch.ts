@@ -14,6 +14,12 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * catalog). This patch leaves `find_additional_modules` upload alone and
  * clears esbuild `watchFiles` / `watchDirs` for that collector so overlay
  * events cannot rebuild the worker.
+ *
+ * Esbuild's native source-graph watcher still rebuilds on this overlay even
+ * when Node `fs.watch` reports no generated-file events. For Playwright /
+ * `CLOUDFLARE_ENV=test`, wrangler-env also sets
+ * `WRANGLER_DISABLE_BUNDLE_WATCH=true` and this rewrite honors it so the
+ * main bundle does not watch after the first compile.
  */
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -29,6 +35,10 @@ const watchBlockPattern =
 const patchedBlock = `if (props.findAdditionalModules) {
               // ${patchMarker}: generated additional modules must not be watched
             }`
+
+const unpatchedBundleWatch = 'watch: config6.dev.watch ?? true'
+const patchedBundleWatch =
+	'watch: config6.dev.watch ?? (process.env.WRANGLER_DISABLE_BUNDLE_WATCH !== "true")'
 
 export function wranglerAdditionalModuleWatchSource(source: string) {
 	if (source.includes(patchMarker)) {
@@ -46,13 +56,31 @@ export function wranglerAdditionalModuleWatchSource(source: string) {
 	}
 }
 
+export function wranglerBundleWatchSource(source: string) {
+	if (source.includes(patchedBundleWatch)) {
+		return { source, patched: true, changed: false }
+	}
+	if (!source.includes(unpatchedBundleWatch)) {
+		throw new Error(
+			`wrangler ${wranglerCliPath} no longer defaults BundlerController watch to true; rebase the Friction #1789 bundle-watch gate.`,
+		)
+	}
+	return {
+		source: source.replace(unpatchedBundleWatch, patchedBundleWatch),
+		patched: true,
+		changed: true,
+	}
+}
+
 export async function ensureWranglerFiltersKodyGeneratedWatch() {
 	const source = await readFile(wranglerCliPath, 'utf8')
-	const result = wranglerAdditionalModuleWatchSource(source)
-	if (result.changed) {
-		await writeFile(wranglerCliPath, result.source)
+	const additional = wranglerAdditionalModuleWatchSource(source)
+	const bundle = wranglerBundleWatchSource(additional.source)
+	const changed = additional.changed || bundle.changed
+	if (changed) {
+		await writeFile(wranglerCliPath, bundle.source)
 	}
-	return result
+	return { source: bundle.source, patched: true, changed }
 }
 
 if (isExecutedDirectly(import.meta.url)) {

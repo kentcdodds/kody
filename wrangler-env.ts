@@ -246,6 +246,11 @@ const processEnv = {
 				X_LOCAL_OBSERVABILITY: process.env.X_LOCAL_OBSERVABILITY ?? 'false',
 				WRANGLER_CI_DISABLE_CONFIG_WATCHING:
 					process.env.WRANGLER_CI_DISABLE_CONFIG_WATCHING ?? 'true',
+				// Overlay FS retriggers esbuild's native source-graph watcher
+				// after the first compile (Friction #1789). Playwright does not
+				// edit worker source; skip that watch in the test env.
+				WRANGLER_DISABLE_BUNDLE_WATCH:
+					process.env.WRANGLER_DISABLE_BUNDLE_WATCH ?? 'true',
 			}
 		: {}),
 }

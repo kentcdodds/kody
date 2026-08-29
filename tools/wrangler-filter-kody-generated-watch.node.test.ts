@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	ensureWranglerFiltersKodyGeneratedWatch,
 	wranglerAdditionalModuleWatchSource,
+	wranglerBundleWatchSource,
 	wranglerCliPath,
 } from './wrangler-filter-kody-generated-watch.ts'
 import { readFile } from 'node:fs/promises'
@@ -37,10 +38,21 @@ test('the additional-module watch filter is idempotent and marked', () => {
 	}
 })
 
+test('the bundle-watch gate is idempotent and env-gated', () => {
+	const first = wranglerBundleWatchSource('watch: config6.dev.watch ?? true')
+	expect(first.changed).toBe(true)
+	expect(first.source).toContain('WRANGLER_DISABLE_BUNDLE_WATCH')
+	const second = wranglerBundleWatchSource(first.source)
+	expect(second.changed).toBe(false)
+	expect(second.source).toBe(first.source)
+})
+
 test('ensureWranglerFiltersKodyGeneratedWatch patches the installed wrangler CLI', async () => {
 	const applied = await ensureWranglerFiltersKodyGeneratedWatch()
 	expect(applied.patched).toBe(true)
 	const disk = await readFile(wranglerCliPath, 'utf8')
 	expect(disk.includes('kody-1789')).toBe(true)
 	expect(disk.includes('watchFiles = foundModulePaths;')).toBe(false)
+	expect(disk).toContain('WRANGLER_DISABLE_BUNDLE_WATCH')
+	expect(disk.includes('watch: config6.dev.watch ?? true')).toBe(false)
 })
