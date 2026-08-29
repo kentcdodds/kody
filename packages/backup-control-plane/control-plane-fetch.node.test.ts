@@ -7,7 +7,10 @@ import {
 	encodeJwtPartForTests,
 	resetAccessJwksCacheForTests,
 } from './access-auth.ts'
-import { environment } from './backup-control-plane-test-support.ts'
+import {
+	encodeNodeBytesAsBase64,
+	environment,
+} from './backup-control-plane-test-support.ts'
 import { handleControlPlaneFetch } from './control-plane-fetch.ts'
 
 afterEach(() => {
@@ -28,9 +31,7 @@ function rsaJwksAndSigner() {
 			const signer = createSign('RSA-SHA256')
 			signer.update(encoded)
 			signer.end()
-			const signature = signer
-				.sign(privateKey)
-				.toString('base64')
+			const signature = encodeNodeBytesAsBase64(signer.sign(privateKey))
 				.replaceAll('+', '-')
 				.replaceAll('/', '_')
 				.replaceAll('=', '')

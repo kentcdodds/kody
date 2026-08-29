@@ -1,5 +1,4 @@
 import { createHash, generateKeyPairSync, sign as signBytes } from 'node:crypto'
-
 import {
 	backupManifestSchemaVersion,
 	backupManifestSignatureAlgorithm,
@@ -15,6 +14,15 @@ import { type BackupRuntimeStep } from './backup-runtime.ts'
 import { type DurableExportStep } from './durable-export.ts'
 import { BackupError, objectKeyForBookmark } from './backup-policy.ts'
 import { type BackupEnvironment, type BackupManifest } from './backup-types.ts'
+
+export function encodeNodeBytesAsBase64(
+	bytes: ArrayBuffer | NodeJS.ArrayBufferView,
+) {
+	return Buffer.from(
+		bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes,
+	).toString('base64')
+}
+
 class TestDigestStream extends WritableStream<Uint8Array> {
 	readonly digest: Promise<ArrayBuffer>
 	private readonly bytes: () => number
@@ -239,14 +247,12 @@ export function environment(bucket = new MemoryBucket()): BackupEnvironment {
 		BACKUP_BENCHMARK_APPROVED: 'true',
 		BUILD_COMMIT: 'abc123',
 		BACKUP_MANIFEST_SIGNING_KEY_ID: 'backup-manifest-2026',
-		BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64:
-			manifestSigningKeys.privateKey
-				.export({ format: 'der', type: 'pkcs8' })
-				.toString('base64'),
-		BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64:
-			manifestSigningKeys.publicKey
-				.export({ format: 'der', type: 'spki' })
-				.toString('base64'),
+		BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64: encodeNodeBytesAsBase64(
+			manifestSigningKeys.privateKey.export({ format: 'der', type: 'pkcs8' }),
+		),
+		BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64: encodeNodeBytesAsBase64(
+			manifestSigningKeys.publicKey.export({ format: 'der', type: 'spki' }),
+		),
 		TRUSTED_RESTORE_BASELINE_ID: 'production-baseline-2026',
 		TRUSTED_RESTORE_BASELINE_SHA256: BASELINE_SHA256,
 		ACCESS_TEAM_DOMAIN: 'example.cloudflareaccess.com',
@@ -573,11 +579,13 @@ export function signedManifest(payload: BackupManifestPayload): BackupManifest {
 		signature: {
 			algorithm: backupManifestSignatureAlgorithm,
 			keyId: payload.signing.keyId,
-			value: signBytes(
-				null,
-				Buffer.from(canonicalBackupManifestPayload(payload)),
-				manifestSigningKeys.privateKey,
-			).toString('base64'),
+			value: encodeNodeBytesAsBase64(
+				signBytes(
+					null,
+					Buffer.from(canonicalBackupManifestPayload(payload)),
+					manifestSigningKeys.privateKey,
+				),
+			),
 		},
 	}
 }

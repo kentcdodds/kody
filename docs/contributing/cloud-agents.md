@@ -70,6 +70,9 @@ Playwright E2E is not in the push hook: wrangler can enter a
 `generated/esbuild.wasm` reload loop on these VMs, and a failed e2e leg skips
 the unit gate when the push is retried with `--no-verify`. Run
 `npm run test:e2e:run` or `npm run validate` for the Playwright gate locally.
+`wrangler-env.ts` applies `tools/patch-wrangler-proxy-worker-errors.ts` before
+`wrangler dev` so a request-scoped ProxyWorker failure does not exit the
+Playwright webServer.
 
 Cloud Agent environment `start` should run `npm run hooks:ensure` so a snapshot
 boot that skips `npm ci` still composes hooks after Cursor installs the

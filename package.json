@@ -86,7 +86,7 @@
     "test:e2e:install": "playwright install chromium --with-deps",
     "test:mcp": "nx run worker:test-mcp",
     "hooks:ensure": "node tools/ensure-cloud-agent-hooks.ts",
-    "prepare": "husky && node tools/ensure-cloud-agent-hooks.ts",
+    "prepare": "husky && node tools/ensure-cloud-agent-hooks.ts && node tools/patch-wrangler-proxy-worker-errors.ts",
     "nx:graph": "nx graph",
     "nx:show-projects": "nx show projects",
     "audit:prod": "npm audit --omit=dev"
@@ -94,7 +94,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@cloudflare/vitest-pool-workers": "^0.20.1",
-    "@cloudflare/workers-types": "^5.20260801.1",
+    "@cloudflare/workers-types": "^5.20260828.1",
     "@epic-web/config": "^3.2.1",
     "@kody-internal/shared": "file:packages/shared",
     "@modelcontextprotocol/client": "2.0.0",
@@ -115,7 +115,7 @@
     "set-cookie-parser": "^3.1.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10",
-    "wrangler": "^4.118.0"
+    "wrangler": "^4.127.1"
   },
   "overrides": {
     "@modelcontextprotocol/sdk": "1.30.0",
