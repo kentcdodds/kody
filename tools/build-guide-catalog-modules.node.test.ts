@@ -91,7 +91,7 @@ test('ensureGuideCatalogModules generates metadata and a full catalog matching t
 	)
 })
 
-test('ensureGuideCatalogModules is idempotent: a warm re-run does not rewrite the stamp', async () => {
+test('ensureGuideCatalogModules skips complete warm output and repairs a missing generated module', async () => {
 	await ensureGuideCatalogModules()
 	const before = await stat(stampPath)
 	const beforeContent = await readFile(stampPath, 'utf8')
@@ -102,6 +102,12 @@ test('ensureGuideCatalogModules is idempotent: a warm re-run does not rewrite th
 	const afterContent = await readFile(stampPath, 'utf8')
 	expect(afterContent).toBe(beforeContent)
 	expect(after.mtimeMs).toBe(before.mtimeMs)
+
+	await rm(metadataOutputPath)
+	await ensureGuideCatalogModules()
+	expect(await readFile(metadataOutputPath, 'utf8')).toMatch(
+		/^export const guideMetadata = JSON\.parse\(/m,
+	)
 })
 
 // Simulates the real trigger for this hardening: a clean checkout where

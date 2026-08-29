@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
+	access,
 	mkdir,
 	open,
 	readdir,
@@ -300,6 +301,15 @@ async function readStamp(): Promise<string | null> {
 	}
 }
 
+async function generatedOutputsExist() {
+	try {
+		await Promise.all([access(metadataOutputPath), access(catalogOutputPath)])
+		return true
+	} catch {
+		return false
+	}
+}
+
 async function fsyncGeneratedDir() {
 	const handle = await open(generatedDir, 'r')
 	try {
@@ -322,11 +332,18 @@ async function fsyncGeneratedDir() {
 export async function ensureGuideCatalogModules() {
 	const filePaths = await findGuideMarkdownFiles()
 	const stampContent = await buildStampContent(filePaths)
-	if ((await readStamp()) === stampContent) return
+	if ((await readStamp()) === stampContent && (await generatedOutputsExist())) {
+		return
+	}
 
 	const release = await acquireLock()
 	try {
-		if ((await readStamp()) === stampContent) return
+		if (
+			(await readStamp()) === stampContent &&
+			(await generatedOutputsExist())
+		) {
+			return
+		}
 
 		const sources = await readGuideSources(filePaths)
 		const fullCatalog = buildFullCatalog(sources)
