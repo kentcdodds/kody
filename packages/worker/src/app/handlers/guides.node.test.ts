@@ -114,9 +114,9 @@ test('guides connect index serves HTML twins, JSON, and markdown without collidi
 		true,
 	)
 	expect(payload.guides.map((guide) => guide.provider)).toEqual(
-		payload.guides.map((guide) => guide.provider ?? '').toSorted((a, b) =>
-			a.localeCompare(b),
-		),
+		payload.guides
+			.map((guide) => guide.provider ?? '')
+			.toSorted((a, b) => a.localeCompare(b)),
 	)
 
 	const markdown = await callHandler(
