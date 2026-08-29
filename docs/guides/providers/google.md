@@ -138,6 +138,12 @@ Start minimal and widen only when a task needs it:
   this setup stays a personal unverified app.
 - Send-only: `https://www.googleapis.com/auth/gmail.send` is sensitive rather
   than restricted, so an app that only sends mail avoids the restricted tier.
+- Drafts: Google has no drafts-only scope.
+  [`gmail.compose`](https://developers.google.com/workspace/gmail/api/auth/scopes)
+  is restricted and "Manage drafts and send emails." Creating a draft requires
+  that grant (or a wider write scope). Publish a drafts-only package and lock it
+  so the token cannot grow into send — see
+  [locked-gmail-drafts.md](../locked-gmail-drafts.md).
 - Fuller tier: read-write Calendar (`.../auth/calendar`) or Drive
   (`.../auth/drive`) let Kody create events and files, at the cost of a much
   bigger blast radius if misused.

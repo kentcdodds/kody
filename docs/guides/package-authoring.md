@@ -34,7 +34,9 @@ local filesystem and git access:
   build/test loops all work — commit, push, then publish with
   `package_publish_external_push`. If that tool returns `locked`, open the
   returned `approval_url` so the owner can promote the named commit. Do not
-  treat HEAD as live until `published_commit` moves.
+  treat HEAD as live until `published_commit` moves. When the OAuth token is
+  coarser than the export (Gmail drafts without send), lock after the first
+  publish — see [locked-gmail-drafts.md](./locked-gmail-drafts.md).
 - **Tool-only lane.** Without local filesystem/git access, create with
   `package_save` (complete UTF-8 text file set; no binary files) and edit
   through repo sessions (`repo_open_session`, `repo_edit_files`,

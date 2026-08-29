@@ -101,7 +101,9 @@ appear in search under `mcp:<name>`.
 4. Fork a close community package or author an owned package when the behavior
    should be reusable, reviewed, or scheduled.
 5. Keep runtime state in `packageStorage()` and expose only the app, webhook,
-   export, or job surfaces the package needs.
+   export, or job surfaces the package needs. When the provider token is coarser
+   than that surface, lock the package
+   ([Gmail drafts without send](./locked-gmail-drafts.md)).
 6. Save a memory only when the user wants Kody to retain a durable fact or
    preference.
 

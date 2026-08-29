@@ -26,6 +26,8 @@ Read in order for a full tour, or jump to a topic.
   daily email only when something shipped
 - [The Kody factory map](../guides/kody-factory.md) — the primitives your
   assistant gets and the boundary around local files and processes
+- [Gmail drafts without send](../guides/locked-gmail-drafts.md) — lock a
+  drafts-only package when Google cannot issue a drafts-only token
 - [Connect a home MCP server](../guides/local-mcp-tunnels.md) — run a local MCP
   process (vault, CLI, or home devices), publish it with Tunnel and Access, and
   connect it to Kody. Starter:
