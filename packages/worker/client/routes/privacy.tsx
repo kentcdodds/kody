@@ -138,18 +138,48 @@ export function PrivacyRoute(_handle: Handle) {
 					includes private package source, rating notes, email, stable user ids,
 					private profiles, secrets, or unrelated account content.
 					Admin-configured notification packages may receive the same community
-					metadata, and a metadata-only notice when a person account is created
-					or self-deleted (stable user id, username, email, the create source or
-					delete timestamp, the consumed invite code when signup used one, and
-					first-touch marketing attribution fields when present). Those
-					lifecycle events omit passwords, roles, plan, secrets, and unrelated
-					account content. Admin-configured notification packages may also
-					receive a metadata-only notice when a swept account first crosses 80%
-					or 100% of a plan-limit resource, or when a non-admin account first
-					exceeds the monthly runtime-duration threshold. Entitlement and
-					runtime-duration events include stable user id, username, resource or
-					duration counts, and admin dashboard URLs; they omit emails, plans,
-					secrets, package source, and unrelated account content.
+					metadata, and a metadata-only <code>user.created</code> or{' '}
+					<code>user.deleted</code> event when a person account is created or
+					self-deleted (stable user id, username, email, the create source or
+					delete timestamp, the consumed invite code when{' '}
+					<code>user.created</code> used one, and first-touch marketing
+					attribution fields when present). Those lifecycle events omit
+					passwords, roles, plan, secrets, and unrelated account content.
+					Admin-configured notification packages may also receive a
+					metadata-only <code>user.email_verification.failed</code> event when
+					signup/verify mail first hits a terminal delivery failure (stable user
+					id, username, email, status, <code>class</code> (
+					<code>sender_block</code> / <code>other</code> / <code>null</code>),
+					an admin user URL, and <code>occurred_at</code>). That event omits
+					SMTP transcripts, tokens, and unrelated account content.
+					Admin-configured notification packages may also receive a
+					metadata-only <code>user.email_outbound.paused</code> event when
+					outbound sending is paused after a spam complaint or repeated bounces
+					(stable user id, username, email, reason, bounce threshold when the
+					reason is <code>bounced</code>, an admin user URL, and{' '}
+					<code>occurred_at</code>). That event omits SMTP transcripts, message
+					bodies, and unrelated account content. Admin-configured notification
+					packages may also receive metadata-only <code>auth.denial.burst</code>{' '}
+					or <code>email.delivery.burst</code> events when hourly MCP auth
+					denials or shared-domain bounce/complaint counts cross their
+					thresholds (count, threshold, window, insights URL, and{' '}
+					<code>observed_at</code>). Those events omit user identities, tokens,
+					recipients, and message content. Admin-configured notification
+					packages may also receive a metadata-only{' '}
+					<code>fleet.package_error_rate.elevated</code> event when anonymous
+					package-runtime error rates rise (window bounds, per-metric counts and
+					rates, public status URL, and insights URL). That event omits user
+					ids, package ids, error strings, logs, and unrelated account content.
+					Admin-configured notification packages may also receive a
+					metadata-only <code>fleet.entitlement.crossed</code> event when a
+					swept account first crosses 80% or 100% of a plan-limit resource, or
+					when a non-admin account first exceeds the monthly runtime-duration
+					threshold. Entitlement events include stable user id, username,
+					resource counts, and admin dashboard URLs; runtime-duration events
+					include stable user id, username, <code>total_duration_ms</code>,{' '}
+					<code>threshold_ms</code>, and admin dashboard URLs. Both event kinds
+					omit emails, plans, secrets, package source, and unrelated account
+					content.
 				</p>
 			</section>
 
@@ -228,12 +258,14 @@ export function PrivacyRoute(_handle: Handle) {
 				</p>
 				<p mix={css(descriptionCss)}>
 					A codemod apply rewrites only what the reviewed transform matches,
-					republishes the package through the same checks as a normal publish,
-					records a <code>codemod(&lt;id&gt;)</code> commit in the
-					package&apos;s own git history, keeps a revert snapshot, and
-					dispatches a <code>package.codemod.applied</code> (or{' '}
-					<code>.reverted</code>) event your packages can subscribe to. Fleet
-					runs are audit-logged.
+					runs the same checks as a normal publish, records a{' '}
+					<code>codemod(&lt;id&gt;): ...</code> commit in the package&apos;s own
+					git history, keeps a revert snapshot, and dispatches a{' '}
+					<code>package.codemod.applied</code> (or <code>.reverted</code>) event
+					your packages can subscribe to. Unlocked packages also advance{' '}
+					<code>published_commit</code>. Locked packages still get that commit
+					on HEAD so the owner can review and promote it later; fleet apply does
+					not skip them. Fleet runs are audit-logged.
 				</p>
 				<p mix={css(descriptionCss)}>
 					Running a codemod never shows an admin your source. Scan and run

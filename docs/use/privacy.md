@@ -117,13 +117,17 @@ denials or shared-domain bounce/complaint counts cross their thresholds (count,
 threshold, window, insights URL, and `observed_at`). Those events omit user
 identities, tokens, recipients, and message content. Admin-configured
 notification packages may also receive a metadata-only
-`fleet.entitlement.crossed` event when a swept account first crosses 80% or 100%
-of a plan-limit resource, or when a non-admin account first exceeds the monthly
-runtime-duration threshold. Entitlement events include stable user id, username,
-resource counts, and admin dashboard URLs; runtime-duration events include
-stable user id, username, `total_duration_ms`, `threshold_ms`, and admin
-dashboard URLs. Both event kinds omit emails, plans, secrets, package source,
-and unrelated account content.
+`fleet.package_error_rate.elevated` event when anonymous package-runtime error
+rates rise (window bounds, per-metric counts and rates, public status URL, and
+insights URL). That event omits user ids, package ids, error strings, logs, and
+unrelated account content. Admin-configured notification packages may also
+receive a metadata-only `fleet.entitlement.crossed` event when a swept account
+first crosses 80% or 100% of a plan-limit resource, or when a non-admin account
+first exceeds the monthly runtime-duration threshold. Entitlement events include
+stable user id, username, resource counts, and admin dashboard URLs;
+runtime-duration events include stable user id, username, `total_duration_ms`,
+`threshold_ms`, and admin dashboard URLs. Both event kinds omit emails, plans,
+secrets, package source, and unrelated account content.
 
 ## Platform feedback
 
