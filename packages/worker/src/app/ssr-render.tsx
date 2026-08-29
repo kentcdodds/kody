@@ -71,6 +71,7 @@ export type RenderAppPageInput = {
 	title?: string
 	loaderData?: AppLoaderData
 	notFound?: boolean
+	unauthorized?: boolean
 	status?: number
 	extraSetCookies?: Array<string>
 	/** Loader phases already recorded for this request; session + ssr append. */
@@ -78,8 +79,16 @@ export type RenderAppPageInput = {
 }
 
 export async function renderAppPage(input: RenderAppPageInput) {
-	const { request, env, title, loaderData, notFound, status, extraSetCookies } =
-		input
+	const {
+		request,
+		env,
+		title,
+		loaderData,
+		notFound,
+		unauthorized,
+		status,
+		extraSetCookies,
+	} = input
 	const serverTiming = input.serverTiming ?? []
 	// OAuth authorize (and any SSR entry) can run outside appHandler, so configure
 	// the session cookie before reading request cookies.
@@ -143,6 +152,7 @@ export async function renderAppPage(input: RenderAppPageInput) {
 					session={session}
 					loaderData={loaderData}
 					notFound={notFound}
+					unauthorized={unauthorized}
 					clientEntryHref={clientEntryHref}
 					stylesheetHref={stylesheetHref}
 					modulePreloadHrefs={modulePreloadHrefs}

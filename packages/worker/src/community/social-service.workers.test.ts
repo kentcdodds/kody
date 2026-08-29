@@ -552,4 +552,23 @@ test('listPublicProfilePackages filters private/hidden packages and supports que
 		limit: 10,
 	})
 	expect(searchTextOnly).toEqual([])
+
+	const ownInventory = await listPublicProfilePackages({
+		env,
+		ownerStableUserId: owner.userId,
+		limit: 10,
+		includePrivate: true,
+	})
+	expect(ownInventory.map((pkg) => pkg.kodyId).sort()).toEqual([
+		'calendar',
+		'hidden-notes',
+		'public-notes',
+		'secret-notes',
+	])
+	expect(
+		ownInventory.find((pkg) => pkg.kodyId === 'hidden-notes')?.hidden,
+	).toBe(true)
+	expect(
+		ownInventory.find((pkg) => pkg.kodyId === 'secret-notes')?.isPrivate,
+	).toBe(true)
 })

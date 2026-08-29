@@ -342,10 +342,12 @@ export async function listPublicProfilePackages(input: {
 	ownerStableUserId: string
 	query?: string
 	limit: number
+	includePrivate?: boolean
 }): Promise<Array<PublicProfilePackage>> {
 	return await listPublicProfilePackagesFromDb(input.env.APP_DB, {
 		ownerStableUserId: input.ownerStableUserId,
 		query: input.query,
 		limit: input.limit,
+		includePrivate: input.includePrivate,
 	})
 }

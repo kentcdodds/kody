@@ -36,7 +36,7 @@ import { colors } from '#universal/styles/tokens.ts'
  */
 
 export type CommunityDetailContentProps = {
-	listing: PublicCommunityListing
+	listing: PublicCommunityListing | null
 	ownerProfilePublic: boolean
 	loggedIn: boolean
 	starredByViewer: boolean
@@ -59,6 +59,10 @@ export function CommunityDetailContent(
 		returnTo,
 		followError,
 	} = handle.props
+
+	if (!listing) {
+		return () => null
+	}
 
 	return () => (
 		<div data-testid="community-detail-frame">

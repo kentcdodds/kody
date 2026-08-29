@@ -50,6 +50,7 @@ const {
 
 const user = {
 	email: 'user@example.com',
+	username: 'user',
 	mcpUser: {
 		userId: 'user-1',
 		email: 'user@example.com',
@@ -234,7 +235,7 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 		publishedCommit: 'commit-old',
 		pendingCommit: 'abc1234',
 		alreadyPublished: false,
-		packageHref: '/account/packages/pkg-1',
+		packageHref: '/@user/notes',
 		package: {
 			id: 'pkg-1',
 			lockedAt: '2026-08-28T12:00:00.000Z',

@@ -75,8 +75,9 @@ export async function loadAccountPackageApprovePublishData(input: {
 			publishedCommit != null &&
 			pendingCommit === publishedCommit,
 		filesHref: getAccountPackageFilesHref({ packageId: savedPackage.id }),
-		packageHref: routes.accountPackageDetail.href({
-			packageId: savedPackage.id,
+		packageHref: routes.communityPackage.href({
+			username: input.user.username,
+			kodyId: savedPackage.kodyId,
 		}),
 	}
 }

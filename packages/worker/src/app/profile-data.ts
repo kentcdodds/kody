@@ -78,6 +78,7 @@ async function loadProfileDataUncached(
 			ownerStableUserId: profile.userId,
 			query: query || undefined,
 			limit: packageLimit,
+			includePrivate: isSelf,
 		}),
 		getProfileActivity({
 			env,
@@ -96,7 +97,9 @@ async function loadProfileDataUncached(
 	return {
 		ok: true,
 		profile: toPublicCommunityProfile(profile),
-		packages: packages.map(toPublicProfilePackageItem),
+		packages: packages.map((pkg) =>
+			toPublicProfilePackageItem(pkg, { includeOwnerVisibility: isSelf }),
+		),
 		activity: activity.map(toPublicCommunityActivityItem),
 		query: query || null,
 		isSelf,

@@ -42,6 +42,8 @@ type RouterSetup = {
 	fallback?: JSX.Element
 	loaderData?: AppLoaderData
 	notFound?: boolean
+	unauthorized?: boolean
+	unauthorizedFallback?: JSX.Element
 }
 
 type FormMethod = 'get' | 'post'
@@ -1089,6 +1091,9 @@ export function Router(handle: RouterHandle) {
 	return () => {
 		// The server's 404 verdict only applies to the URL it rendered;
 		// after SPA navigation, match routes normally again.
+		if (handle.props.unauthorized && isOnSsrUrl(handle)) {
+			return handle.props.unauthorizedFallback ?? handle.props.fallback ?? null
+		}
 		if (handle.props.notFound && isOnSsrUrl(handle)) {
 			return handle.props.fallback ?? null
 		}

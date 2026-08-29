@@ -39,6 +39,18 @@ export const communityProfilePackageSchema = z.object({
 		.describe(
 			'Last time the package was published to its community listing, or null when it has no active listing.',
 		),
+	hidden: z
+		.boolean()
+		.optional()
+		.describe(
+			'Present only on the caller’s own profile. Hidden packages stay off ranked search.',
+		),
+	is_private: z
+		.boolean()
+		.optional()
+		.describe(
+			'Present only on the caller’s own profile. Mirrors package.json#private.',
+		),
 })
 
 export const communityProfileGetOutputSchema = z.object({
@@ -83,6 +95,8 @@ export function toCommunityProfilePackageOutput(
 		updated_at: string
 		community_listing_id: string | null
 		community_published_at: string | null
+		hidden?: boolean
+		is_private?: boolean
 	} = {
 		name: pkg.name,
 		kody_id: pkg.kodyId,
@@ -94,6 +108,8 @@ export function toCommunityProfilePackageOutput(
 	}
 	if (options.includePackageId) {
 		output.package_id = pkg.packageId
+		output.hidden = pkg.hidden
+		output.is_private = pkg.isPrivate
 	}
 	return output
 }

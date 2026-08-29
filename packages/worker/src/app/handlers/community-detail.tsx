@@ -3,14 +3,8 @@ import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { toPublicCommunityListing } from '#app/community-public.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
-import {
-	resolveCanonicalListingPath,
-	resolveCommunityListingRoute,
-} from '#app/community-package-route.ts'
-import {
-	getCommunityPackageHref,
-	resolveCommunityPackageUrl,
-} from '#worker/community/package-url.ts'
+import { loadPackagePage } from '#app/package-page.ts'
+import { resolveCanonicalListingPath } from '#app/community-package-route.ts'
 import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
 import { handleFrameRequest } from '#app/frame-registry.ts'
 import '#app/frame-registrations.ts'
@@ -50,9 +44,24 @@ const reportReasonSchema = z
  * for an hour rather than forever, and only for requests shaped like this one:
  * the same URL serves frame HTML when the target header is present.
  */
-function redirectToCanonicalPath(input: { path: string; url: URL }) {
+function redirectToCanonicalPath(input: {
+	path: string
+	url: URL
+	cache?: 'public' | 'private'
+}) {
 	const destination = new URL(input.path, input.url)
 	destination.search = input.url.search
+	const cache = input.cache ?? 'public'
+	if (cache === 'private') {
+		return new Response(null, {
+			status: 302,
+			headers: {
+				location: destination.toString(),
+				'cache-control': 'private, no-store',
+				vary: `${REMIX_FRAME_TARGET_HEADER}, Cookie`,
+			},
+		})
+	}
 	return new Response(null, {
 		status: 301,
 		headers: {
@@ -71,14 +80,8 @@ async function renderCommunityListingPage(input: {
 	const detail = input.listingId
 		? await loadCommunityDetailData(input.env, input.request, input.listingId)
 		: null
-	if (!input.listingId || !detail) {
-		return renderAppPage({
-			request: input.request,
-			env: input.env,
-			title: 'Community package not found',
-			notFound: true,
-			status: 404,
-		})
+	if (!input.listingId || !detail?.listing) {
+		return renderPackageNotFoundPage(input)
 	}
 
 	const serverTiming: Array<ServerTimingEntry> = []
@@ -108,8 +111,31 @@ async function renderCommunityListingPage(input: {
 				starCount: detail.listing.starCount,
 				starredByViewer: detail.starredByViewer,
 				viewerInstall: detail.viewerInstall,
+				ownerPackage: detail.ownerPackage,
+				username: detail.username,
+				invocationUrlOrigin: detail.invocationUrlOrigin,
 			},
 		},
+	})
+}
+
+function renderPackageNotFoundPage(input: { request: Request; env: Env }) {
+	return renderAppPage({
+		request: input.request,
+		env: input.env,
+		title: 'Community package not found',
+		notFound: true,
+		status: 404,
+	})
+}
+
+function renderPackageUnauthorizedPage(input: { request: Request; env: Env }) {
+	return renderAppPage({
+		request: input.request,
+		env: input.env,
+		title: 'Unauthorized',
+		unauthorized: true,
+		status: 401,
 	})
 }
 
@@ -138,12 +164,13 @@ export function createCommunityDetailHandler(env: Env) {
 			if (frameResponse) return frameResponse
 
 			const detail = await loadCommunityDetailData(env, request, listingId)
-			const canonicalPath = detail
+			const listing = detail?.listing
+			const canonicalPath = listing
 				? await resolveCanonicalListingPath({
 						env,
 						listingId,
-						ownerUsername: detail.listing.ownerUsername,
-						kodyId: detail.listing.kodyId,
+						ownerUsername: listing.ownerUsername,
+						kodyId: listing.kodyId,
 					})
 				: null
 			// A listing whose canonical pair no longer resolves stays served here
@@ -160,20 +187,94 @@ export function createCommunityDetailHandler(env: Env) {
 export function createCommunityPackageHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request }) {
+		async handler({ request, params }) {
 			const url = new URL(request.url)
 			const frameResponse = await handleFrameRequest(request, env, url.pathname)
 			if (frameResponse) return frameResponse
 
-			const target = await resolveCommunityListingRoute({ env, url })
-			if (target?.kind === 'redirect') {
-				return redirectToCanonicalPath({ path: target.to, url })
+			const page = await loadPackagePage({
+				env,
+				request,
+				username: params.username,
+				kodyId: params.kodyId,
+			})
+			if (page.kind === 'redirect') {
+				return redirectToCanonicalPath({
+					path: page.to,
+					url,
+					cache: page.shared ? 'public' : 'private',
+				})
+			}
+			if (page.kind === 'not_found') {
+				return renderPackageNotFoundPage({ request, env })
+			}
+			if (page.kind === 'unauthorized') {
+				return renderPackageUnauthorizedPage({ request, env })
 			}
 
-			return renderCommunityListingPage({
+			if (page.listing?.listing) {
+				const serverTiming: Array<ServerTimingEntry> = []
+				const readmeFences = await highlightReadmeFences(
+					env,
+					page.listing.listing.readmeContent,
+					serverTiming,
+				)
+				return renderAppPage({
+					request,
+					env,
+					serverTiming,
+					loaderData: {
+						communityDetailShell: {
+							ok: true,
+							listingId: page.listing.listing.id,
+							name: page.listing.listing.name,
+							description: page.listing.listing.description,
+							forkPrompt: page.listing.forkPrompt,
+							loggedIn: page.listing.loggedIn,
+							viewerIsAdmin: page.listing.viewerIsAdmin,
+							trusted: page.listing.listing.trusted,
+							featured: page.listing.listing.featured,
+							readmeContent: page.listing.listing.readmeContent,
+							readmeFences,
+							starCount: page.listing.listing.starCount,
+							starredByViewer: page.listing.starredByViewer,
+							viewerInstall: page.listing.viewerInstall,
+							ownerPackage: page.ownerPackage,
+							username: page.username,
+							invocationUrlOrigin: page.invocationUrlOrigin,
+						},
+					},
+				})
+			}
+
+			if (!page.ownerPackage) {
+				return renderPackageNotFoundPage({ request, env })
+			}
+
+			return renderAppPage({
 				request,
 				env,
-				listingId: target?.listingId ?? null,
+				title: page.ownerPackage.name,
+				loaderData: {
+					communityDetailShell: {
+						ok: true,
+						listingId: null,
+						name: page.ownerPackage.name,
+						description: page.ownerPackage.description,
+						forkPrompt: '',
+						loggedIn: page.loggedIn,
+						viewerIsAdmin: false,
+						trusted: false,
+						featured: false,
+						readmeContent: null,
+						starCount: 0,
+						starredByViewer: false,
+						viewerInstall: null,
+						ownerPackage: page.ownerPackage,
+						username: page.username,
+						invocationUrlOrigin: page.invocationUrlOrigin,
+					},
+				},
 			})
 		},
 	} satisfies Action<typeof routes.communityPackage>
@@ -185,7 +286,7 @@ export function createCommunityDetailApiHandler(env: Env) {
 		async handler({ request, params }) {
 			const listingId = params.listingId
 			const detail = await loadCommunityDetailData(env, request, listingId)
-			if (!detail) {
+			if (!detail?.listing) {
 				return jsonResponse(
 					request,
 					{ ok: false, error: 'Community listing not found.' },
@@ -215,47 +316,59 @@ export function createCommunityPackageApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, params }) {
-			const target = await resolveCommunityPackageUrl({
-				db: env.APP_DB,
+			const page = await loadPackagePage({
+				env,
+				request,
 				username: params.username,
 				kodyId: params.kodyId,
 			})
-			// A stale pair reports where the package lives now instead of its data:
-			// the client turns that into a document navigation so the visitor's URL
-			// is corrected rather than kept on a name that no longer exists.
-			if (target?.kind === 'redirect') {
+			if (page.kind === 'redirect') {
 				return jsonResponse(
 					request,
 					{
 						ok: false,
 						error: 'Community package moved.',
-						redirectTo: getCommunityPackageHref(target),
+						redirectTo: page.to,
 					},
 					404,
 				)
 			}
-
-			const detail = target
-				? await loadCommunityDetailData(env, request, target.listingId)
-				: null
-			if (!detail) {
+			if (page.kind === 'not_found') {
 				return jsonResponse(
 					request,
 					{ ok: false, error: 'Community listing not found.' },
 					404,
 				)
 			}
+			if (page.kind === 'unauthorized') {
+				return jsonResponse(request, { ok: false, error: 'Unauthorized.' }, 401)
+			}
 
 			const serverTiming: Array<ServerTimingEntry> = []
+			const readmeFences = page.listing?.listing?.readmeContent
+				? await highlightReadmeFences(
+						env,
+						page.listing.listing.readmeContent,
+						serverTiming,
+					)
+				: []
 			return jsonResponse(
 				request,
 				{
-					...detail,
-					readmeFences: await highlightReadmeFences(
-						env,
-						detail.listing.readmeContent,
-						serverTiming,
-					),
+					ok: true,
+					listing: page.listing?.listing ?? null,
+					ownerProfilePublic: page.listing?.ownerProfilePublic ?? false,
+					viewerFollowsOwner: page.listing?.viewerFollowsOwner ?? false,
+					viewerIsOwner: page.viewerIsOwner,
+					loggedIn: page.loggedIn,
+					viewerIsAdmin: page.listing?.viewerIsAdmin ?? false,
+					forkPrompt: page.listing?.forkPrompt ?? '',
+					starredByViewer: page.listing?.starredByViewer ?? false,
+					viewerInstall: page.listing?.viewerInstall ?? null,
+					readmeFences,
+					ownerPackage: page.ownerPackage,
+					username: page.username,
+					invocationUrlOrigin: page.invocationUrlOrigin,
 				},
 				200,
 				serverTiming,

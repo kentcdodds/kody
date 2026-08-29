@@ -11,6 +11,7 @@ export type AppRootProps = {
 	session: SessionInfo | null
 	loaderData?: AppLoaderData
 	notFound?: boolean
+	unauthorized?: boolean
 }
 
 export const AppRoot: EntryComponent<AppRootProps> = clientEntry(
@@ -22,6 +23,7 @@ export const AppRoot: EntryComponent<AppRootProps> = clientEntry(
 					embeddedSession={handle.props.session}
 					loaderData={handle.props.loaderData}
 					notFound={handle.props.notFound === true}
+					unauthorized={handle.props.unauthorized === true}
 				/>
 			</RouterLocationProvider>
 		)

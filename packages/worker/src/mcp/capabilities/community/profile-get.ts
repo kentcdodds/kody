@@ -24,7 +24,7 @@ export const communityProfileGetCapability = defineDomainCapability(
 	{
 		name: 'community_profile_get',
 		description:
-			'Load a community user profile with public packages and recent activity. Omit username to load your own profile (includes private visibility). Private profiles of other users return user_found false without leaking existence.',
+			'Load a community user profile with packages and recent activity. Omit username to load your own profile (includes a private profile and private, hidden, or unpublished packages). Other users see only public packages. Private profiles of other users return user_found false without leaking existence.',
 		keywords: [
 			'community',
 			'profile',
@@ -85,6 +85,7 @@ export const communityProfileGetCapability = defineDomainCapability(
 					env: ctx.env,
 					ownerStableUserId: profile.userId,
 					limit: profilePackageLimit,
+					includePrivate: isSelf,
 				}),
 				getProfileActivity({
 					env: ctx.env,

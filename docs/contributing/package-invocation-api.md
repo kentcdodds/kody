@@ -64,7 +64,7 @@ The token is not a global backdoor:
 ### Managing tokens
 
 Signed-in users manage invocation tokens on the package details page at
-`/account/packages/:packageId`.
+`/@{username}/{kodyId}`.
 
 The creation form accepts the raw token exactly once, hashes it server-side, and
 stores only the hash. Token list/detail payloads never return the raw token or
@@ -277,7 +277,7 @@ Recommended flow for a trusted external client:
 2. copy the raw token to the clipboard or keep it in the client's local secret
    storage
 3. open Kody at
-   `/account/packages/<packageId>?newToken=1&name=Trusted%20External%20Client&exportNames=*`
+   `/@{username}/{kodyId}?newToken=1&name=Trusted%20External%20Client&exportNames=*`
 4. paste the raw token into the form and create the token
 5. send invocation requests with `Authorization: Bearer <raw-token>` and an
    optional JSON `source` label for logs

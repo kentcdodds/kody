@@ -36,6 +36,7 @@ import {
 import { planLimits } from '#universal/plans.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
 import type * as CommunitySocialRepo from '#worker/community/social-repo.ts'
+import type * as PackageUrlModule from '#worker/community/package-url.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -48,6 +49,7 @@ const communityMockModule = vi.hoisted(() => ({
 	getUserSocialRowByUsername: vi.fn(),
 	resolveCommunityListingRoute: vi.fn(),
 	resolveCanonicalListingPath: vi.fn(),
+	resolvePackagePageUrl: vi.fn(),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -74,6 +76,15 @@ vi.mock('#app/community-package-route.ts', () => ({
 	resolveCanonicalListingPath: (...args: Array<unknown>) =>
 		communityMockModule.resolveCanonicalListingPath(...args),
 }))
+
+vi.mock('#worker/community/package-url.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof PackageUrlModule>()
+	return {
+		...actual,
+		resolvePackagePageUrl: (...args: Array<unknown>) =>
+			communityMockModule.resolvePackagePageUrl(...args),
+	}
+})
 
 vi.mock('#worker/community/social-repo.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof CommunitySocialRepo>()
@@ -1640,6 +1651,14 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 		kind: 'listing',
 		listingId: 'listing-detail-1',
 	})
+	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'package',
+		username: 'kentcdodds',
+		kodyId: 'github-triage',
+		userId: 'owner-mcp-id',
+		savedPackage: null,
+		listingId: 'listing-detail-1',
+	})
 
 	const response = await createCommunityPackageHandler(env).handler({
 		request: new Request('https://example.com/@kentcdodds/github-triage'),
@@ -1716,6 +1735,120 @@ test('listing-uuid URLs redirect to the canonical pair when possible and keep se
 		ok: true,
 		listingId: 'listing-detail-1',
 	})
+})
+
+test('unlisted package rename redirects stay owner-only and uncached', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const ownerUserId = testStableUserIdFromEmail('owner@example.com')
+	const env = createTestEnv(
+		createUserTestDb([
+			{
+				id: 1,
+				email: 'owner@example.com',
+				username: 'owner',
+				password_hash: 'unused',
+				stable_user_id: ownerUserId,
+				created_at: new Date(0).toISOString(),
+				updated_at: new Date(0).toISOString(),
+			},
+		]),
+	)
+	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'redirect',
+		username: 'owner',
+		kodyId: 'renamed',
+		userId: ownerUserId,
+		listingId: null,
+	})
+
+	const anonymous = await createCommunityPackageHandler(env).handler({
+		request: new Request('https://example.com/@owner/old-notes'),
+		url: new URL('https://example.com/@owner/old-notes'),
+		params: { username: 'owner', kodyId: 'old-notes' },
+	} as never)
+	expect(anonymous.status).toBe(404)
+
+	const cookie = await createAuthCookie(
+		{
+			stableUserId: ownerUserId,
+			email: 'owner@example.com',
+			rememberMe: false,
+		} satisfies AuthSession,
+		false,
+	)
+	const ownerRedirect = await createCommunityPackageHandler(env).handler({
+		request: new Request('https://example.com/@owner/old-notes', {
+			headers: { Cookie: cookie },
+		}),
+		url: new URL('https://example.com/@owner/old-notes'),
+		params: { username: 'owner', kodyId: 'old-notes' },
+	} as never)
+	expect(ownerRedirect.status).toBe(302)
+	expect(ownerRedirect.headers.get('location')).toBe(
+		'https://example.com/@owner/renamed',
+	)
+	expect(ownerRedirect.headers.get('cache-control')).toBe('private, no-store')
+	expect(ownerRedirect.headers.get('vary')).toBe('x-remix-target, Cookie')
+})
+
+test('listed package rename does not 301 anonymous visitors to the unpublished id', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+	const detailListing = {
+		...sampleListing,
+		id: 'listing-detail-1',
+		kodyId: 'github-triage',
+	} satisfies CommunityListingWithAggregates
+	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue(
+		detailListing,
+	)
+	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'package',
+		username: 'kentcdodds',
+		kodyId: 'github-triage',
+		userId: 'owner-mcp-id',
+		savedPackage: {
+			id: 'pkg-1',
+			kodyId: 'github-triage-two',
+			hidden: false,
+			isPrivate: false,
+		},
+		listingId: 'listing-detail-1',
+		listingKodyId: 'github-triage',
+	})
+
+	const listingUrl = await createCommunityPackageHandler(env).handler({
+		request: new Request('https://example.com/@kentcdodds/github-triage'),
+		url: new URL('https://example.com/@kentcdodds/github-triage'),
+		params: { username: 'kentcdodds', kodyId: 'github-triage' },
+	} as never)
+	expect(listingUrl.status).toBe(200)
+	expect(listingUrl.headers.get('location')).toBeNull()
+
+	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'redirect',
+		username: 'kentcdodds',
+		kodyId: 'github-triage',
+		userId: 'owner-mcp-id',
+		listingId: 'listing-detail-1',
+		listingKodyId: 'github-triage',
+	})
+	const caseCorrect = await createCommunityPackageHandler(env).handler({
+		request: new Request('https://example.com/@KentCDodds/GITHUB-TRIAGE'),
+		url: new URL('https://example.com/@KentCDodds/GITHUB-TRIAGE'),
+		params: { username: 'KentCDodds', kodyId: 'GITHUB-TRIAGE' },
+	} as never)
+	expect(caseCorrect.status).toBe(301)
+	expect(caseCorrect.headers.get('location')).toBe(
+		'https://example.com/@kentcdodds/github-triage',
+	)
+	expect(caseCorrect.headers.get('location')).not.toContain('github-triage-two')
 })
 
 test('renderAppPage renders the redesigned blog post', async () => {

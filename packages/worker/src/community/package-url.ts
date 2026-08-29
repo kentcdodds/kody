@@ -1,8 +1,19 @@
 import { routes } from '#universal/routes.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { normalizeUsername } from '#worker/identity/username.ts'
-import { kodyPackageIdPattern } from '#worker/package-registry/types.ts'
-import { getCommunityListingByOwnerAndKodyId } from './repo.ts'
+import {
+	getSavedPackageById,
+	getSavedPackageByKodyId,
+} from '#worker/package-registry/repo.ts'
+import {
+	kodyPackageIdPattern,
+	type SavedPackageRecord,
+} from '#worker/package-registry/types.ts'
+import {
+	getCommunityListingByOwnerAndKodyId,
+	getCommunityListingByOwnerAndPackage,
+} from './repo.ts'
+import { type CommunityListingRecord } from './types.ts'
 
 /**
  * Canonical public URL of a published package: `/@owner/kody-id`. Both halves
@@ -26,6 +37,25 @@ export type CommunityPackageUrlTarget =
 	// listing that pair resolves to — a caller redirecting *to* the canonical URL
 	// can check it lands on the listing it started from.
 	| { kind: 'redirect'; listingId: string; username: string; kodyId: string }
+
+export type PackagePageUrlTarget =
+	| {
+			kind: 'package'
+			username: string
+			kodyId: string
+			userId: string
+			savedPackage: SavedPackageRecord | null
+			listingId: string | null
+			listingKodyId: string | null
+	  }
+	| {
+			kind: 'redirect'
+			username: string
+			kodyId: string
+			userId: string
+			listingId: string | null
+			listingKodyId: string | null
+	  }
 
 // A rename chain collapses in one hop because retirement rows point at the
 // package, not at the next name in the chain. Username hops can still stack (a
@@ -116,6 +146,157 @@ export async function resolveCommunityPackageUrl(input: {
 		moved = true
 	}
 	return null
+}
+
+/**
+ * Resolve `/@username/kodyId` to a saved package and optional community
+ * listing. Used by the canonical package page so owners can open unpublished
+ * packages at the same URL visitors use for listings.
+ */
+export async function resolvePackagePageUrl(input: {
+	db: D1Database
+	username: string
+	kodyId: string
+}): Promise<PackagePageUrlTarget | null> {
+	const requestedUsername = input.username.trim()
+	const requestedKodyId = input.kodyId.trim()
+	let username = normalizeUsername(requestedUsername)
+	const kodyId = normalizeKodyId(requestedKodyId)
+	if (!username || !kodyPackageIdPattern.test(kodyId)) return null
+
+	let moved = username !== requestedUsername || kodyId !== requestedKodyId
+
+	for (let hop = 0; hop <= maxUsernameRedirectHops; hop++) {
+		const identity = await findPublicUserIdentityByUsername({
+			db: input.db,
+			username,
+		})
+		if (identity) {
+			const [listing, savedPackage] = await Promise.all([
+				getCommunityListingByOwnerAndKodyId(input.db, {
+					ownerUserId: identity.mcpUserId,
+					kodyId,
+				}),
+				getSavedPackageByKodyId(input.db, {
+					userId: identity.mcpUserId,
+					kodyId,
+				}),
+			])
+			if (listing || savedPackage) {
+				const resolved = await resolveListingAndSavedPackage({
+					db: input.db,
+					ownerUserId: identity.mcpUserId,
+					listing,
+					savedPackage,
+				})
+				// Public pair is the listing id until republish. The saved
+				// package's local kody.id can move first and must not become
+				// the shared redirect target.
+				const publicKodyId =
+					resolved.listingKodyId ?? resolved.savedPackage?.kodyId ?? kodyId
+				const servedKodyId =
+					resolved.listingKodyId === kodyId
+						? resolved.listingKodyId
+						: (resolved.savedPackage?.kodyId ?? publicKodyId)
+				return moved
+					? {
+							kind: 'redirect',
+							username: identity.username,
+							kodyId: publicKodyId,
+							userId: identity.mcpUserId,
+							listingId: resolved.listingId,
+							listingKodyId: resolved.listingKodyId,
+						}
+					: {
+							kind: 'package',
+							username: identity.username,
+							kodyId: servedKodyId,
+							userId: identity.mcpUserId,
+							savedPackage: resolved.savedPackage,
+							listingId: resolved.listingId,
+							listingKodyId: resolved.listingKodyId,
+						}
+			}
+
+			const currentKodyId = await findCurrentKodyIdForRetiredKodyId({
+				db: input.db,
+				userId: identity.mcpUserId,
+				oldKodyId: kodyId,
+			})
+			if (currentKodyId == null || currentKodyId === kodyId) return null
+			const [currentListing, currentSaved] = await Promise.all([
+				getCommunityListingByOwnerAndKodyId(input.db, {
+					ownerUserId: identity.mcpUserId,
+					kodyId: currentKodyId,
+				}),
+				getSavedPackageByKodyId(input.db, {
+					userId: identity.mcpUserId,
+					kodyId: currentKodyId,
+				}),
+			])
+			if (!currentListing && !currentSaved) return null
+			const resolved = await resolveListingAndSavedPackage({
+				db: input.db,
+				ownerUserId: identity.mcpUserId,
+				listing: currentListing,
+				savedPackage: currentSaved,
+			})
+			return {
+				kind: 'redirect',
+				username: identity.username,
+				kodyId: resolved.listingKodyId ?? currentKodyId,
+				userId: identity.mcpUserId,
+				listingId: resolved.listingId,
+				listingKodyId: resolved.listingKodyId,
+			}
+		}
+
+		const currentUsername = await findCurrentUsernameForRetiredUsername({
+			db: input.db,
+			oldUsername: username,
+		})
+		if (currentUsername == null || currentUsername === username) return null
+		username = currentUsername
+		moved = true
+	}
+	return null
+}
+
+/**
+ * Listing `kody_id` only moves on republish, so a local rename can leave the
+ * listing on the old id while `saved_packages` already has the new one. Fill
+ * whichever side the kody-id lookup missed so owners still get package
+ * details and visitors still see an active listing.
+ */
+async function resolveListingAndSavedPackage(input: {
+	db: D1Database
+	ownerUserId: string
+	listing: CommunityListingRecord | null
+	savedPackage: SavedPackageRecord | null
+}) {
+	let listing = input.listing
+	let savedPackage = input.savedPackage
+	if (!listing && savedPackage) {
+		const packageListing = await getCommunityListingByOwnerAndPackage(
+			input.db,
+			{
+				ownerUserId: input.ownerUserId,
+				packageId: savedPackage.id,
+			},
+		)
+		listing = packageListing?.status === 'active' ? packageListing : null
+	}
+	if (!savedPackage && listing) {
+		savedPackage = await getSavedPackageById(input.db, {
+			userId: input.ownerUserId,
+			packageId: listing.packageId,
+		})
+	}
+	return {
+		listingId: listing?.id ?? null,
+		listingKodyId: listing?.kodyId ?? null,
+		savedPackage,
+	}
 }
 
 async function findCurrentUsernameForRetiredUsername(input: {

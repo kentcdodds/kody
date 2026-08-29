@@ -398,6 +398,9 @@ export function composeCommunityDetailLoaderData(input: {
 		}),
 		starredByViewer: input.starredByViewer ?? false,
 		viewerInstall: input.viewerInstall ?? null,
+		ownerPackage: null,
+		username: input.listing.ownerUsername,
+		invocationUrlOrigin: '',
 	}
 }
 

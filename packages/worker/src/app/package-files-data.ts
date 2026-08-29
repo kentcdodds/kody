@@ -120,6 +120,7 @@ export async function loadAccountPackageFilesData(input: {
 	env: Env
 	request: Request
 	userId: string
+	username: string
 	packageId: string
 	selectedPath: string
 	serverTiming?: Array<ServerTimingEntry>
@@ -152,7 +153,10 @@ export async function loadAccountPackageFilesData(input: {
 	return toLoaderData({
 		env: input.env,
 		title: record.name,
-		backHref: routes.accountPackageDetail.href({ packageId: record.id }),
+		backHref: routes.communityPackage.href({
+			username: input.username,
+			kodyId: record.kodyId,
+		}),
 		backLabel: 'Package',
 		filesBasePath: getAccountPackageFilesHref({ packageId: record.id }),
 		view,

@@ -57,7 +57,7 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	// Listed packages get one fork control; unpublished packages do not.
 	expect(guestHtml.match(/aria-label="fork"/g)).toHaveLength(1)
 	expect(guestHtml).toContain('notes')
-	expect(guestHtml).not.toContain('href="/@kody/notes"')
+	expect(guestHtml).toContain('href="/@kody/notes"')
 	expect(guestHtml).toContain('data-testid="profile-follow"')
 	expect(guestHtml).toContain('/login?redirectTo=%2F%40kody')
 
@@ -111,6 +111,7 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(followingHtml).toContain('data-community-follower-count')
 	expect(followingHtml).toContain('/profiles/kody/follow.json')
 	expect(followingHtml).toContain('data-testid="profile-follow-error"')
+	expect(followingHtml).toContain('No public packages yet.')
 	expect(followingHtml.indexOf('data-testid="profile-follow"')).toBeGreaterThan(
 		followingHtml.indexOf('data-testid="profile-username"'),
 	)
@@ -131,4 +132,40 @@ test('profile packages link listings, prefer listing kody ids, and separate publ
 	expect(ownHtml).not.toContain('data-testid="profile-follow"')
 	// Owners also see that the listing is behind their local edits.
 	expect(ownHtml).toContain('edited August 7, 2026, not republished')
+
+	const ownInventoryHtml = await renderProfileContentHtml({
+		profile,
+		packages: [
+			{
+				...unpublishedPackage,
+				hidden: true,
+				isPrivate: true,
+			},
+		],
+		activity: [],
+		query: null,
+		isSelf: true,
+		loggedIn: true,
+		isFollowing: false,
+		returnTo: '/@kody',
+		followError: null,
+	})
+	expect(ownInventoryHtml).toContain('href="/@kody/notes"')
+	expect(ownInventoryHtml).toContain('Hidden')
+	expect(ownInventoryHtml).toContain('Private')
+	expect(ownInventoryHtml).toContain('Not published')
+
+	const ownEmptyHtml = await renderProfileContentHtml({
+		profile,
+		packages: [],
+		activity: [],
+		query: null,
+		isSelf: true,
+		loggedIn: true,
+		isFollowing: false,
+		returnTo: '/@kody',
+		followError: null,
+	})
+	expect(ownEmptyHtml).toContain('No packages yet.')
+	expect(ownEmptyHtml).not.toContain('No public packages yet.')
 })

@@ -2,7 +2,7 @@
 id: package_invocation_token_setup
 title: Package invocation token setup guide
 summary:
-  Hosted /account/packages/:packageId?newToken=1 setup URL shape, owner-scoped
+  Hosted /@{username}/{kodyId}?newToken=1 setup URL shape, owner-scoped
   /@:username/api/package-invocations invocation route shape, query params, and
   bearer-token safety policy for external package invocation clients.
 category: platform
@@ -24,7 +24,7 @@ forked modules). Package invocation tokens are for external systems such as
 webhooks, gateway proxies, CLIs, or other trusted personal clients that call
 Kody over HTTP.
 
-## When to use `/account/packages/:packageId?newToken=1`
+## When to use `/@{username}/{kodyId}?newToken=1`
 
 Use it when:
 
@@ -56,18 +56,18 @@ will not show the raw value again.
 ## URL format
 
 This section is only for token setup. Setup URLs under
-`/account/packages/:packageId?newToken=1` open the browser UI where the
-signed-in user creates a token for that package. They are **not** package
-invocation URLs and must not be used by external workers, webhooks, or CLIs as
-the HTTP API endpoint.
+`/@{username}/{kodyId}?newToken=1` open the browser UI where the signed-in user
+creates a token for that package. They are **not** package invocation URLs and
+must not be used by external workers, webhooks, or CLIs as the HTTP API
+endpoint.
 
 Provide the user a URL like:
 
-`https://<your-kody-origin>/account/packages/<packageId>?newToken=1&name=Webhook%20Dispatcher&exportNames=dispatch-event`
+`https://<your-kody-origin>/@<username>/<kodyId>?newToken=1&name=Webhook%20Dispatcher&exportNames=dispatch-event`
 
 Wildcard export setup for a highly trusted client of one package:
 
-`https://<your-kody-origin>/account/packages/<packageId>?newToken=1&name=Trusted%20External%20Client&exportNames=*`
+`https://<your-kody-origin>/@<username>/<kodyId>?newToken=1&name=Trusted%20External%20Client&exportNames=*`
 
 ## Query params
 
@@ -137,9 +137,9 @@ that orchestrator; it does not use tokens. Or they speak MCP.
    export scopes match the external caller. Do not ask the user to read token
    metadata out of the browser UI unless the capability response is
    insufficient.
-3. Generate an `/account/packages/<packageId>?newToken=1` URL with `name` and
-   export scope. Those query params prefill the create form: `exportNames`
-   checks the matching export boxes, and `*` checks **Any export**.
+3. Generate an `/@<username>/<kodyId>?newToken=1` URL with `name` and export
+   scope. Those query params prefill the create form: `exportNames` checks the
+   matching export boxes, and `*` checks **Any export**.
 4. Ask the user to open the URL, confirm the export selection, paste their
    locally generated raw token into the Raw token field, or click **Generate**
    and copy/deliver the generated value before creating the token.
@@ -158,10 +158,10 @@ that orchestrator; it does not use tokens. Or they speak MCP.
 ## Verification notes for agents
 
 The package details page is a browser-session UI route. Fetching
-`/account/packages/:packageId` from MCP `execute` returns an HTML app shell, not
-the client-loaded token list, and `/account/packages.json` requires the
-signed-in browser session cookie. Agents should not treat missing token metadata
-in the HTML shell as proof that a token was not saved.
+`/@{username}/{kodyId}` from MCP `execute` returns an HTML app shell, not the
+client-loaded token list, and `/account/packages.json` requires the signed-in
+browser session cookie. Agents should not treat missing token metadata in the
+HTML shell as proof that a token was not saved.
 
 For external invocation smoke tests, check failures in this order:
 

@@ -80,6 +80,10 @@ export type PublicProfilePackageItem = {
 	/** The listing's `kody.id`, which can lag the package's until republish. */
 	communityListingKodyId: string | null
 	communityPublishedAt: string | null
+	/** Present on the owner's own profile list; omitted for other viewers. */
+	isPrivate?: boolean
+	/** Present on the owner's own profile list; omitted for other viewers. */
+	hidden?: boolean
 }
 
 export type CommunityActivityEventType =

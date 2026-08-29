@@ -28,7 +28,7 @@ Agent notes — for AI agents explaining or recreating this loop:
   saved_packages.locked_at via package_update { locked: true } or the
   website lock icon.
 - Agents can lock. Agents cannot unlock. Unlock is website-only at
-  /account/packages/:packageId. package_update { locked: false } is
+  /@{username}/{kodyId}. package_update { locked: false } is
   rejected and returns that URL.
 - Lock does not shrink the OAuth token. Ad hoc execute and other packages
   that share the same connection can still call messages.send / drafts.send
@@ -71,7 +71,7 @@ The Google token stays as wide as Google issued it.
 **Publish lock** (`locked_at` on the saved package) keeps serving that published
 tree. Agents and the five-minute reconcile job cannot advance
 `published_commit`. `package_update` accepts `changes: { locked: true }`. Agents
-cannot unlock; send the owner to `/account/packages/:packageId`.
+cannot unlock; send the owner to `/@{username}/{kodyId}`.
 
 Lock does **not** revoke send on the token, hide `createAuthenticatedFetch` from
 `execute`, or stop a different unlocked package from calling send. It stops
@@ -102,8 +102,8 @@ Usage detail: [Packages → Publish lock](../use/packages.md#publish-lock).
    creates a draft and does not send.
 5. **Publish, then lock.** After checks pass and `published_commit` moves, call
    `package_update` with `changes: { locked: true }` (or the lock icon on
-   `/account/packages/:packageId`). Say so in chat so the owner knows later
-   publishes need their **Promote this commit** click.
+   `/@{username}/{kodyId}`). Say so in chat so the owner knows later publishes
+   need their **Promote this commit** click.
 
 ## Draft-create export
 
@@ -198,8 +198,8 @@ Pushes still land on Artifacts HEAD. Publish tools return `locked` with
 owner opens that URL and clicks **Promote this commit**. Promoting one commit
 does not unlock the package.
 
-If an agent needs the lock off, it sends the owner to
-`/account/packages/:packageId`. It does not pass `locked: false`.
+If an agent needs the lock off, it sends the owner to `/@{username}/{kodyId}`.
+It does not pass `locked: false`.
 
 ## Same pattern on other coarse tokens
 
