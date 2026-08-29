@@ -6,6 +6,7 @@ import {
 	deletePackageKodyIdRedirects,
 	releasePackageKodyIdRedirect,
 	resolveCommunityPackageUrl,
+	resolvePackagePageUrl,
 	retirePackageKodyId,
 	retireUsername,
 } from './package-url.ts'
@@ -354,4 +355,52 @@ test('one owner cannot have two active listings on one kody id', async () => {
 			kodyId: pkg.kodyId,
 		}),
 	).rejects.toThrow(/UNIQUE/i)
+})
+
+test('package page URL resolves unpublished saved packages and listed ones', async () => {
+	const listed = await createPublishedPackage('listed-notes')
+	await expect(
+		resolvePackagePageUrl({
+			db: env.APP_DB,
+			username: listed.username,
+			kodyId: listed.kodyId,
+		}),
+	).resolves.toMatchObject({
+		kind: 'package',
+		username: listed.username,
+		kodyId: listed.kodyId,
+		userId: listed.userId,
+		listingId: listed.listingId,
+		savedPackage: { id: listed.packageId, kodyId: listed.kodyId },
+	})
+
+	const suffix = uniqueSuffix()
+	const owner = await insertUser(`unlisted${suffix}`)
+	const packageId = `pkg-${suffix}`
+	await insertPackage({
+		id: packageId,
+		userId: owner.userId,
+		kodyId: 'private-notes',
+	})
+	await expect(
+		resolvePackagePageUrl({
+			db: env.APP_DB,
+			username: owner.username,
+			kodyId: 'private-notes',
+		}),
+	).resolves.toMatchObject({
+		kind: 'package',
+		username: owner.username,
+		kodyId: 'private-notes',
+		userId: owner.userId,
+		listingId: null,
+		savedPackage: { id: packageId, kodyId: 'private-notes' },
+	})
+	await expect(
+		resolveCommunityPackageUrl({
+			db: env.APP_DB,
+			username: owner.username,
+			kodyId: 'private-notes',
+		}),
+	).resolves.toBeNull()
 })
