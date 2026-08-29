@@ -11,10 +11,9 @@ switching to **execute**.
 
 During **execute**, **`await kody.secret_list({})`** (or a narrowed **`scope`**
 such as **`package`**) returns **metadata only**: names, descriptions, allowed
-hosts, allowed capabilities, **`expires_at`**, and remaining **`ttl_ms`** — not
-plaintext values. Expired secrets stay in the list with **`ttl_ms: 0`**. Fetch
-placeholders and **`resolve`** treat them as missing so Kody stops sending the
-value.
+hosts, **`expires_at`**, and remaining **`ttl_ms`** — not plaintext values.
+Expired secrets stay in the list with **`ttl_ms: 0`**. Fetch placeholders and
+**`resolve`** treat them as missing so Kody stops sending the value.
 
 Package-scoped secrets belong to one saved package and are available only while
 that package runs. Access rules for user-scoped secrets from package code are
@@ -40,7 +39,7 @@ as you on that provider. Kody does not control or supervise what your agent does
 with the access you grant; scope connections deliberately and revoke unused
 ones. See the [Terms](/terms).
 
-## Placeholders in `fetch` and capability inputs
+## Placeholders in `fetch`
 
 Outbound **`fetch`** can include placeholders such as **`{{secret:tokenName}}`**
 or **`{{secret:tokenName|scope=user}}`** in the URL, headers, or body. The host
@@ -72,12 +71,8 @@ Kody resolves both secrets and sends only the derived `Basic ...` header to the
 approved host. The target host must be approved separately for both saved
 secrets.
 
-Some capability fields opt in with **`x-kody-secret: true`**; those accept the
-same placeholder form instead of raw credentials.
-
 Placeholders are **not** general-purpose string interpolation. They only work in
-secret-aware **`fetch`** paths and in capability inputs that explicitly allow
-them.
+secret-aware **`fetch`** paths.
 
 ## Signing JWTs with saved private keys
 
@@ -85,8 +80,7 @@ Use **`kody.secret_jwt_sign(...)`** when a workflow needs a JWT signed by a
 private key stored in a saved secret. The primitive returns
 **`{ jwt, algorithm }`**: use **`result.jwt`** as the compact JWT and
 **`result.algorithm`** for the signing algorithm. It never returns private key
-material. The saved secret must approve the **`secret_jwt_sign`** capability
-before it can be used.
+material.
 
 The caller supplies the JWT header and claims, then performs any provider-
 specific token exchange with ordinary **`fetch`**. For service-account JSON
@@ -124,16 +118,16 @@ does not by itself approve new hosts.
 ## Package approval
 
 User-scoped secrets are available automatically for **reading and using**
-(mounts, fetch placeholders, capability inputs) to packages the user authored
-themselves and adopted community forks (`community_fork_adopt` after a real
-source review). Unadopted community-forked packages need explicit **package**
-approval (`allowed_packages`) before those read/use paths. Updating or deleting
-a user secret from package code (`secret_set`, `secret_delete`) always needs the
-grant, including for self-authored and adopted packages. Official OAuth token
-rotation (`createAuthenticatedFetch`, `refreshAccessToken`, OpenAPI integration
-401 retry) persists host-side and does not need that write grant. Saving a
-secret, approving a host, or succeeding in an ad hoc execute smoke test does not
-grant package access. Host and capability approvals are unchanged.
+(mounts, fetch placeholders, named capability lookups) to packages the user
+authored themselves and adopted community forks (`community_fork_adopt` after a
+real source review). Unadopted community-forked packages need explicit
+**package** approval (`allowed_packages`) before those read/use paths. Updating
+or deleting a user secret from package code (`secret_set`, `secret_delete`)
+always needs the grant, including for self-authored and adopted packages.
+Official OAuth token rotation (`createAuthenticatedFetch`, `refreshAccessToken`,
+OpenAPI integration 401 retry) persists host-side and does not need that write
+grant. Saving a secret, approving a host, or succeeding in an ad hoc execute
+smoke test does not grant package access. Host approvals are unchanged.
 
 When several secrets need the same package approved, Kody can provide a bulk
 approval URL shaped like

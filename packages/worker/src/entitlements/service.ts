@@ -413,7 +413,6 @@ export async function calculateUserD1StorageBytes(input: {
 					'se.description',
 					'se.encrypted_value',
 					'se.allowed_hosts',
-					'se.allowed_capabilities',
 					'se.allowed_packages',
 				])}
 			), 0) AS count

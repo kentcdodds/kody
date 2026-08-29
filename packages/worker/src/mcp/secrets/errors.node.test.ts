@@ -1,12 +1,8 @@
 import { expect, test } from 'vitest'
 import {
-	createCapabilitySecretAccessDeniedMessage,
-	createCapabilitySecretAccessDeniedBatchMessage,
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 	createSecretScopeUnavailableMessage,
-	parseCapabilityAccessRequiredBatchMessage,
-	parseCapabilityAccessRequiredMessage,
 	parseHostApprovalRequiredBatchMessage,
 	parseHostApprovalRequiredMessage,
 	parseMissingSecretMessage,
@@ -28,42 +24,6 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 		secretName: 'cloudflareToken',
 		host: 'api.cloudflare.com',
 	})
-
-	const capabilityMessage = createCapabilitySecretAccessDeniedMessage(
-		'cloudflareToken',
-		'secret_set',
-		'https://example.com/account/secrets/user/cloudflareToken?capability=secret_set',
-	)
-	expect(capabilityMessage).toContain(
-		'ask the user whether to approve that capability in the account secrets UI',
-	)
-	expect(capabilityMessage).not.toContain(
-		'add "secret_set" to the secret\'s allowed capabilities',
-	)
-	expect(parseCapabilityAccessRequiredMessage(capabilityMessage)).toEqual({
-		secretName: 'cloudflareToken',
-		capabilityName: 'secret_set',
-	})
-
-	const capabilityEntries = [
-		{
-			secretName: 'lutronUsername',
-			capabilityName: 'lighting_lutron_set_credentials',
-			approvalUrl:
-				'https://example.com/account/secrets/user/lutronUsername?capability=lighting_lutron_set_credentials',
-		},
-		{
-			secretName: 'lutronPassword',
-			capabilityName: 'lighting_lutron_set_credentials',
-			approvalUrl:
-				'https://example.com/account/secrets/user/lutronPassword?capability=lighting_lutron_set_credentials',
-		},
-	]
-	expect(
-		parseCapabilityAccessRequiredBatchMessage(
-			createCapabilitySecretAccessDeniedBatchMessage(capabilityEntries),
-		),
-	).toEqual(capabilityEntries)
 
 	const hostEntries = [
 		{
@@ -121,12 +81,8 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 	})
 	expect(parseMissingSecretMessage(scopeUnavailableMessage)).toBeNull()
 	expect(
-		parseCapabilityAccessRequiredMessage(scopeUnavailableMessage),
-	).toBeNull()
-	expect(
 		parseSecretScopeUnavailableMessage(
 			createMissingSecretMessage('discordBotToken'),
 		),
 	).toBeNull()
-	expect(parseSecretScopeUnavailableMessage(capabilityMessage)).toBeNull()
 })

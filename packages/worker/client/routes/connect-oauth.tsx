@@ -659,7 +659,6 @@ export function ConnectOauthRoute(handle: Handle) {
 				scope: 'user',
 				description,
 				allowedHosts,
-				allowedCapabilities: [],
 			}),
 		})
 		if (redirectToLoginOn401(response)) {

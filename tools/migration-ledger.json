@@ -125,8 +125,13 @@
 			"sha256": "a31bfca5dcd0ddd5da1a5f3efa12aa9499a3e5aaa9082cba16f803e214dc9092"
 		},
 		{
+<<<<<<< HEAD
 			"filename": "0031-mcp-server-package-usage.sql",
 			"sha256": "a7c53385105facd65612e9fb674fe59e8e4bd3c64a5fd5a5014958b367e590e8"
+=======
+			"filename": "0031-drop-secret-allowed-capabilities.sql",
+			"sha256": "f34b2cdbea22bdce4472b0dc136afc179e88c24d558ddd774edfd090aa820adc"
+>>>>>>> 2eb0c9e3 (Remove capability-input secret placeholders and allowlists)
 		}
 	]
 }

@@ -81,9 +81,9 @@ async function insertSecretEntry(
 		.prepare(
 			`INSERT INTO secret_entries (
 				bucket_id, name, description, encrypted_value,
-				allowed_hosts, allowed_capabilities, allowed_packages,
+				allowed_hosts, allowed_packages,
 				created_at, updated_at
-			) VALUES (?, ?, '', ?, '[]', '[]', '[]', '2026-08-01', '2026-08-01')`,
+			) VALUES (?, ?, '', ?, '[]', '[]', '2026-08-01', '2026-08-01')`,
 		)
 		.run(input.bucketId, input.name, input.encryptedValue)
 }

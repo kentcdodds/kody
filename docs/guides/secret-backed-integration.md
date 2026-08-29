@@ -127,8 +127,8 @@ Rules:
 
 - `kody.secret_list({})` returns metadata only (names, allowed hosts) — use it
   to find the right secret name, then reference that name in a placeholder.
-- Placeholders only resolve in secret-aware `fetch` paths and capability inputs
-  marked `x-kody-secret`; they are not general string interpolation.
+- Placeholders only resolve in secret-aware `fetch` paths; they are not general
+  string interpolation.
 - Never echo a resolvable literal placeholder into chat, logs, issue bodies, or
   any content that may later be sent over `fetch`. To mention the syntax in
   prose, use the inert `{{secret:<name>}}` form — angle brackets are outside the

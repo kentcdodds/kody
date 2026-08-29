@@ -37,7 +37,6 @@ type SecretEntryRow = {
 	description: string
 	encrypted_value: string
 	allowed_hosts: string
-	allowed_capabilities: string
 	allowed_packages: string
 	expires_at: string | null
 	created_at: string
@@ -88,7 +87,6 @@ function createSecretTestDb(
 				description: '',
 				encrypted_value: `seeded-value-${index}`,
 				allowed_hosts: '[]',
-				allowed_capabilities: '[]',
 				allowed_packages: '[]',
 				expires_at: null,
 				created_at: now,
@@ -232,7 +230,6 @@ function createSecretTestDb(
 												name: entry.name,
 												description: entry.description,
 												allowed_hosts: entry.allowed_hosts,
-												allowed_capabilities: entry.allowed_capabilities,
 												allowed_packages: entry.allowed_packages,
 												created_at: entry.created_at,
 												updated_at: entry.updated_at,
@@ -246,7 +243,7 @@ function createSecretTestDb(
 							}
 							if (
 								normalizedQuery.startsWith(
-									'select ? as scope, ? as binding_key, name, description, allowed_hosts, allowed_capabilities, allowed_packages, created_at, updated_at, expires_at as entry_expires_at, ? as bucket_expires_at from secret_entries',
+									'select ? as scope, ? as binding_key, name, description, allowed_hosts, allowed_packages, created_at, updated_at, expires_at as entry_expires_at, ? as bucket_expires_at from secret_entries',
 								)
 							) {
 								const [scope, bindingKey, expiresAt, bucketId] =
@@ -260,7 +257,6 @@ function createSecretTestDb(
 										name: entry.name,
 										description: entry.description,
 										allowed_hosts: entry.allowed_hosts,
-										allowed_capabilities: entry.allowed_capabilities,
 										allowed_packages: entry.allowed_packages,
 										created_at: entry.created_at,
 										updated_at: entry.updated_at,
@@ -389,7 +385,6 @@ function createSecretTestDb(
 									description,
 									encryptedValue,
 									allowedHosts,
-									allowedCapabilities,
 									allowedPackages,
 									expiresAt,
 									createdAt,
@@ -403,7 +398,6 @@ function createSecretTestDb(
 									description: String(description),
 									encrypted_value: String(encryptedValue),
 									allowed_hosts: String(allowedHosts),
-									allowed_capabilities: String(allowedCapabilities),
 									allowed_packages: String(allowedPackages),
 									expires_at: expiresAt == null ? null : String(expiresAt),
 									created_at: existing?.created_at ?? String(createdAt),
@@ -518,7 +512,6 @@ test('resolveSecret returns the first scope hit in precedence order', async () =
 		value: 'session-value',
 		scope: 'session',
 		allowedHosts: [],
-		allowedCapabilities: [],
 		allowedPackages: [],
 	})
 })

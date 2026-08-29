@@ -297,7 +297,6 @@ test('injects auth headers and overrides caller attempts', async () => {
 			value: 'resolved-secret',
 			scope: 'user',
 			allowedHosts: ['api.widgets.example'],
-			allowedCapabilities: [],
 		})
 	const seen: Array<Headers> = []
 	const fetchStub = vi.fn(async (request: Request) => {
@@ -389,7 +388,6 @@ test('requires package approval before OpenAPI resolves a user secret', async ()
 			value: 'resolved-secret',
 			scope: 'user',
 			allowedHosts: ['api.widgets.example'],
-			allowedCapabilities: [],
 			allowedPackages: [],
 		})
 	const packageSpy = vi
@@ -514,7 +512,6 @@ test('integration auth 401 triggers host-side refresh retry', async () => {
 			value: 'token-value',
 			scope: 'user',
 			allowedHosts: ['api.spotify.com', 'accounts.spotify.com'],
-			allowedCapabilities: [],
 			allowedPackages: [],
 		})
 	const refreshSpy = vi
@@ -602,7 +599,6 @@ test('failed host-side refresh guidance omits provider error details', async () 
 			value: 'token-value',
 			scope: 'user',
 			allowedHosts: ['api.spotify.com', 'accounts.spotify.com'],
-			allowedCapabilities: [],
 			allowedPackages: [],
 		})
 	const refreshSpy = vi

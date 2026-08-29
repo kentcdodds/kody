@@ -25,14 +25,12 @@ import {
 	listSecrets,
 	resolveSecret,
 	saveSecret,
-	setSecretAllowedCapabilities,
 	setSecretAllowedHosts,
 	setSecretAllowedPackages,
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { type routes } from '#universal/routes.ts'
-import { normalizeAllowedCapabilities } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import {
@@ -991,11 +989,6 @@ function readRequestedSecretNames(url: URL) {
 	)
 }
 
-function readRequestedCapability(url: URL) {
-	const value = url.searchParams.get('capability')
-	return value?.trim() ? value.trim() : null
-}
-
 async function handleApprovalAction(input: {
 	request: Request
 	env: Env
@@ -1008,7 +1001,6 @@ async function handleApprovalAction(input: {
 			secretId: readAccountSecretsSelectedSecretId(input.request.url),
 			requestedHost: readApprovalHost(url),
 			requestedPackageId: readRequestedPackageId(url),
-			requestedCapability: readRequestedCapability(url),
 			requestedSecretNames: readRequestedSecretNames(url),
 		})
 
@@ -1120,42 +1112,6 @@ async function handleApprovalAction(input: {
 			return jsonResponse(payload)
 		}
 
-		if (approval.kind === 'capability') {
-			if (input.action === 'approve') {
-				const current = await listSecrets({
-					env: input.env,
-					userId: input.user.mcpUser.userId,
-					scope: approval.scope,
-					storageContext: approval.storageContext,
-					includeIntegrationOwned: true,
-				})
-				const secret = current.find(
-					(item) =>
-						item.name === approval.name && item.scope === approval.scope,
-				)
-				if (!secret) {
-					return jsonResponse({ ok: false, error: 'Secret not found.' }, 404)
-				}
-				await setSecretAllowedCapabilities({
-					env: input.env,
-					userId: input.user.mcpUser.userId,
-					name: approval.name,
-					scope: approval.scope,
-					allowedCapabilities: Array.from(
-						new Set([...secret.allowedCapabilities, approval.capabilityName]),
-					),
-					storageContext: approval.storageContext,
-				})
-			}
-			const payload = await loadAccountSecretsData({
-				request: input.request,
-				env: input.env,
-				user: input.user,
-				selectedSecretId: readAccountSecretsSelectedSecretId(input.request.url),
-			})
-			return jsonResponse(payload)
-		}
-
 		if (approval.kind === 'host') {
 			if (input.action === 'approve') {
 				const current = await listSecrets({
@@ -1234,9 +1190,6 @@ async function handleSaveAction(input: {
 	}
 	const allowedHosts = normalizeAllowedHosts(
 		readStringArray(input.body, 'allowedHosts'),
-	)
-	const allowedCapabilities = normalizeAllowedCapabilities(
-		readStringArray(input.body, 'allowedCapabilities'),
 	)
 	const allowedPackages = normalizeAllowedPackages(
 		readStringArray(input.body, 'allowedPackages'),
@@ -1342,17 +1295,6 @@ async function handleSaveAction(input: {
 			name,
 			scope,
 			allowedHosts,
-			storageContext: getSecretContextForAccountSecret({
-				scope,
-				packageId,
-			}),
-		})
-		await setSecretAllowedCapabilities({
-			env: input.env,
-			userId: input.user.mcpUser.userId,
-			name,
-			scope,
-			allowedCapabilities,
 			storageContext: getSecretContextForAccountSecret({
 				scope,
 				packageId,

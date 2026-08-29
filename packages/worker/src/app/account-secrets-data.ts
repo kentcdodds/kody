@@ -14,7 +14,6 @@ import {
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
-import { parseAllowedCapabilityName } from '#mcp/secrets/allowed-capabilities.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -44,7 +43,6 @@ type AccountSecretListItem = {
 	packageId: string | null
 	packageTitle: string | null
 	allowedHosts: Array<string>
-	allowedCapabilities: Array<string>
 	allowedPackages: Array<string>
 	createdAt: string
 	updatedAt: string
@@ -61,10 +59,8 @@ type SecretApprovalView = {
 	names: Array<string>
 	scope: SecretScope
 	requestedHost: string
-	requestedCapability: string | null
 	requestedPackageId: string | null
 	currentAllowedHosts: Array<string>
-	currentAllowedCapabilities: Array<string>
 	currentAllowedPackages: Array<string>
 }
 
@@ -114,7 +110,6 @@ async function buildAccountSecretsPayload(input: {
 }): Promise<AccountSecretsLoaderData> {
 	const url = new URL(input.request.url)
 	const requestedApprovalHost = readApprovalHost(url)
-	const requestedCapability = readRequestedCapability(url)
 	const requestedPackageId = readRequestedPackageId(url)
 	const requestedSecretNames = readRequestedSecretNames(url)
 	const savedPackages =
@@ -140,9 +135,7 @@ async function buildAccountSecretsPayload(input: {
 
 	let approval: SecretApprovalView | null = null
 	let approvalError: string | null = null
-	const hasApprovalTarget = Boolean(
-		requestedApprovalHost || requestedPackageId || requestedCapability,
-	)
+	const hasApprovalTarget = Boolean(requestedApprovalHost || requestedPackageId)
 	const hasApprovalSubject = Boolean(
 		input.selectedSecretId || requestedSecretNames.length > 0,
 	)
@@ -153,7 +146,6 @@ async function buildAccountSecretsPayload(input: {
 				userId: input.user.mcpUser.userId,
 				secretId: input.selectedSecretId ?? null,
 				requestedHost: requestedApprovalHost,
-				requestedCapability,
 				requestedPackageId,
 				requestedSecretNames,
 				savedPackageIds: new Set(savedPackages.map((entry) => entry.id)),
@@ -244,19 +236,11 @@ type ResolvedSecretApproval =
 			packageId: string
 			storageContext: StorageContext | null
 	  }
-	| {
-			kind: 'capability'
-			name: string
-			scope: SecretScope
-			capabilityName: string
-			storageContext: StorageContext | null
-	  }
 
 function resolveApprovalRequest(input: {
 	secretId: string | null
 	requestedHost: string | null
 	requestedPackageId: string | null
-	requestedCapability?: string | null
 	requestedSecretNames?: Array<string>
 }): ResolvedSecretApproval {
 	const requestedSecretNames = normalizeBulkPackageSecretApprovalNames(
@@ -315,22 +299,7 @@ function resolveApprovalRequest(input: {
 			storageContext,
 		}
 	}
-	if (input.requestedCapability) {
-		const requestedCapability = parseAllowedCapabilityName(
-			input.requestedCapability,
-		)
-		if (!requestedCapability) {
-			throw new Error('Invalid approval request capability.')
-		}
-		return {
-			kind: 'capability',
-			name: parsed.name,
-			scope: parsed.scope,
-			capabilityName: requestedCapability,
-			storageContext,
-		}
-	}
-	throw new Error('Approval request is missing a host, package, or capability.')
+	throw new Error('Approval request is missing a host or package.')
 }
 
 async function resolveSecretApprovalView(input: {
@@ -338,7 +307,6 @@ async function resolveSecretApprovalView(input: {
 	userId: string
 	secretId: string | null
 	requestedHost: string | null
-	requestedCapability: string | null
 	requestedPackageId: string | null
 	requestedSecretNames: Array<string>
 	savedPackageIds: Set<string>
@@ -347,7 +315,6 @@ async function resolveSecretApprovalView(input: {
 		secretId: input.secretId,
 		requestedHost: input.requestedHost,
 		requestedPackageId: input.requestedPackageId,
-		requestedCapability: input.requestedCapability,
 		requestedSecretNames: input.requestedSecretNames,
 	})
 	if (approval.kind === 'package_bulk') {
@@ -384,10 +351,8 @@ async function resolveSecretApprovalView(input: {
 				names: foundNames,
 				scope: 'user',
 				requestedHost: '',
-				requestedCapability: input.requestedCapability,
 				requestedPackageId: approval.packageId,
 				currentAllowedHosts: [],
-				currentAllowedCapabilities: [],
 				currentAllowedPackages: [approval.packageId],
 			} satisfies SecretApprovalView
 		}
@@ -398,10 +363,8 @@ async function resolveSecretApprovalView(input: {
 			names: pendingNames,
 			scope: 'user',
 			requestedHost: '',
-			requestedCapability: input.requestedCapability,
 			requestedPackageId: approval.packageId,
 			currentAllowedHosts: firstSecret?.allowedHosts ?? [],
-			currentAllowedCapabilities: firstSecret?.allowedCapabilities ?? [],
 			currentAllowedPackages: firstSecret?.allowedPackages ?? [],
 		} satisfies SecretApprovalView
 	}
@@ -429,13 +392,8 @@ async function resolveSecretApprovalView(input: {
 		names: [approval.name],
 		scope: approval.scope,
 		requestedHost: approval.kind === 'host' ? approval.requestedHost : '',
-		requestedCapability:
-			approval.kind === 'capability'
-				? approval.capabilityName
-				: input.requestedCapability,
 		requestedPackageId: approval.kind === 'package' ? approval.packageId : null,
 		currentAllowedHosts: secret.allowedHosts,
-		currentAllowedCapabilities: secret.allowedCapabilities,
 		currentAllowedPackages: secret.allowedPackages,
 	} satisfies SecretApprovalView
 }
@@ -472,7 +430,6 @@ function toAccountSecretListItem(
 		description: string
 		packageId: string | null
 		allowedHosts: Array<string>
-		allowedCapabilities: Array<string>
 		allowedPackages: Array<string>
 		createdAt: string
 		updatedAt: string
@@ -500,7 +457,6 @@ function toAccountSecretListItem(
 			? (packageTitles.get(secret.packageId) ?? null)
 			: null,
 		allowedHosts: secret.allowedHosts,
-		allowedCapabilities: secret.allowedCapabilities,
 		allowedPackages: secret.allowedPackages,
 		createdAt: secret.createdAt,
 		updatedAt: secret.updatedAt,
@@ -568,11 +524,6 @@ function readApprovalHost(url: URL) {
 
 function readRequestedPackageId(url: URL) {
 	const value = url.searchParams.get('package_id')
-	return value?.trim() ? value.trim() : null
-}
-
-function readRequestedCapability(url: URL) {
-	const value = url.searchParams.get('capability')
 	return value?.trim() ? value.trim() : null
 }
 

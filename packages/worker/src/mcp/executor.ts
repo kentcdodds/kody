@@ -27,8 +27,6 @@ import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
 	isSecretAuthRequiredMessage,
-	parseCapabilityAccessRequiredBatchMessage,
-	parseCapabilityAccessRequiredMessage,
 	parseHostApprovalRequiredBatchMessage,
 	parseHostApprovalRequiredMessage,
 	parseMissingSecretMessage,
@@ -1144,32 +1142,6 @@ export type ExecutionErrorDetails =
 			}
 	  }
 	| {
-			kind: 'secret_capability_access_required'
-			message: string
-			nextStep: string
-			secretNames: Array<string>
-			capabilityName: string
-			approvalUrl: string | null
-			suggestedAction: {
-				type: 'edit_secret_policy'
-				policyField: 'allowed_capabilities'
-			}
-	  }
-	| {
-			kind: 'secret_capability_access_required_batch'
-			message: string
-			nextStep: string
-			missingApprovals: Array<{
-				secretName: string
-				capabilityName: string
-				approvalUrl: string
-			}>
-			suggestedAction: {
-				type: 'edit_secret_policy'
-				policyField: 'allowed_capabilities'
-			}
-	  }
-	| {
 			kind: 'secret_package_access_required'
 			message: string
 			nextStep: string
@@ -1383,41 +1355,6 @@ export function getExecutionErrorDetails(
 			missingApprovals: hostApprovalBatch,
 			suggestedAction: {
 				type: 'approve_secret_host',
-			},
-		}
-	}
-
-	const capabilityAccessBatch =
-		parseCapabilityAccessRequiredBatchMessage(message)
-	if (capabilityAccessBatch) {
-		return {
-			kind: 'secret_capability_access_required_batch',
-			message,
-			nextStep:
-				'Ask the user whether they want to approve these capabilities for the listed secrets in the account secrets UI, then retry after approval.',
-			missingApprovals: capabilityAccessBatch,
-			suggestedAction: {
-				type: 'edit_secret_policy',
-				policyField: 'allowed_capabilities',
-			},
-		}
-	}
-
-	const capabilityAccessDetails = parseCapabilityAccessRequiredMessage(message)
-	if (capabilityAccessDetails) {
-		const approvalUrl = extractFirstUrl(message)
-		return {
-			kind: 'secret_capability_access_required',
-			message,
-			nextStep: approvalUrl
-				? 'Send the user the capability approval link so they can approve with one click in the account secrets UI, then retry after approval.'
-				: "Ask the user whether this capability should be allowed to use the secret. If they approve, help them add this capability name to the secret's allowed capabilities in the account secrets UI, then retry.",
-			secretNames: [capabilityAccessDetails.secretName],
-			capabilityName: capabilityAccessDetails.capabilityName,
-			approvalUrl,
-			suggestedAction: {
-				type: 'edit_secret_policy',
-				policyField: 'allowed_capabilities',
 			},
 		}
 	}

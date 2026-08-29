@@ -1245,7 +1245,6 @@ export type AccountSecretListItem = {
 	packageId: string | null
 	packageTitle: string | null
 	allowedHosts: Array<string>
-	allowedCapabilities: Array<string>
 	allowedPackages: Array<string>
 	createdAt: string
 	updatedAt: string
@@ -1277,10 +1276,8 @@ export type AccountSecretsLoaderData = {
 		names: Array<string>
 		scope: 'package' | 'session' | 'user'
 		requestedHost: string
-		requestedCapability: string | null
 		requestedPackageId: string | null
 		currentAllowedHosts: Array<string>
-		currentAllowedCapabilities: Array<string>
 		currentAllowedPackages: Array<string>
 	} | null
 	approvalError: string | null

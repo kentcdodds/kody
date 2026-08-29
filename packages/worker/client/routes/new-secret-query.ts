@@ -10,8 +10,6 @@ const newSecretQueryKeys = [
 	'packageId',
 	'allowedHosts',
 	'allowed-host',
-	'allowedCapabilities',
-	'capability',
 	'allowedPackages',
 	'package_id',
 	'package',

@@ -49,7 +49,6 @@ test('admin RBAC controls access, role assignment, and privacy boundaries', asyn
 			value: 'super-secret-value',
 			description: 'Seeded for admin privacy test',
 			allowedHosts: ['api.example.com'],
-			allowedCapabilities: [],
 			allowedPackages: [],
 		},
 		headers: { 'Content-Type': 'application/json' },

@@ -1,4 +1,3 @@
-import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -24,23 +23,20 @@ const getGitRemoteInputSchema = z.object({
 	ttl_seconds: z.number().int().min(60).max(86_400).default(14_400),
 })
 
-const outputSchema = markSecretInputFields(
-	z.toJSONSchema(
-		z.object({
-			repo_id: z.string(),
-			name: z.string(),
-			source_id: z.string(),
-			remote: z.string(),
-			authenticated_remote: z.string(),
-			git_extra_header: z.string(),
-			scope: z.enum(['read', 'write']),
-			expires_at: z.string(),
-			git_author: gitAuthorIdentitySchema,
-			setup_commands: z.array(z.string()),
-			live_at_head: z.literal(true),
-		}),
-	) as Record<string, unknown>,
-	['authenticated_remote', 'git_extra_header', 'setup_commands'],
+const outputSchema = z.toJSONSchema(
+	z.object({
+		repo_id: z.string(),
+		name: z.string(),
+		source_id: z.string(),
+		remote: z.string(),
+		authenticated_remote: z.string(),
+		git_extra_header: z.string(),
+		scope: z.enum(['read', 'write']),
+		expires_at: z.string(),
+		git_author: gitAuthorIdentitySchema,
+		setup_commands: z.array(z.string()),
+		live_at_head: z.literal(true),
+	}),
 ) as Record<string, unknown>
 
 export const repoGetGitRemoteCapability = defineDomainCapability(

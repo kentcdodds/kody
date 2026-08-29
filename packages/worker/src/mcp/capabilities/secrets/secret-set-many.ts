@@ -1,4 +1,3 @@
-import { secretInputSchemaFlag } from '@kody-internal/shared/secret-input-schema.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -62,71 +61,9 @@ const secretSetManyInputSchema = z
 		}
 	})
 
-const secretSetManyCapabilityInputJsonSchema = (() => {
-	const schema = z.toJSONSchema(secretSetManyInputSchema) as Record<
-		string,
-		unknown
-	>
-	const properties = schema.properties
-	if (
-		!properties ||
-		typeof properties !== 'object' ||
-		Array.isArray(properties)
-	) {
-		return schema
-	}
-	const propertyMap = properties as Record<string, unknown>
-	const secretsProperty = propertyMap.secrets
-	if (
-		!secretsProperty ||
-		typeof secretsProperty !== 'object' ||
-		Array.isArray(secretsProperty)
-	) {
-		return schema
-	}
-	const secretsObject = secretsProperty as Record<string, unknown>
-	const items = secretsObject.items
-	if (!items || typeof items !== 'object' || Array.isArray(items)) {
-		return schema
-	}
-	const itemsObject = items as Record<string, unknown>
-	const itemProperties = itemsObject.properties
-	if (
-		!itemProperties ||
-		typeof itemProperties !== 'object' ||
-		Array.isArray(itemProperties)
-	) {
-		return schema
-	}
-	const itemPropertyMap = itemProperties as Record<string, unknown>
-	const valueProperty = itemPropertyMap.value
-	if (
-		!valueProperty ||
-		typeof valueProperty !== 'object' ||
-		Array.isArray(valueProperty)
-	) {
-		return schema
-	}
-	return {
-		...schema,
-		properties: {
-			...propertyMap,
-			secrets: {
-				...secretsObject,
-				items: {
-					...itemsObject,
-					properties: {
-						...itemPropertyMap,
-						value: {
-							...(valueProperty as Record<string, unknown>),
-							[secretInputSchemaFlag]: true,
-						},
-					},
-				},
-			},
-		},
-	}
-})() as Record<string, unknown>
+const secretSetManyCapabilityInputJsonSchema = z.toJSONSchema(
+	secretSetManyInputSchema,
+) as Record<string, unknown>
 
 const secretSetManyOutputSchema = z.object({
 	ok: z.literal(true),
@@ -139,7 +76,7 @@ export const secretSetManyCapability = defineDomainCapability(
 	{
 		name: 'secret_set_many',
 		description:
-			'Assert authorization for, and optionally atomically persist, multiple secret references for the signed-in user (API keys, PATs, HMAC secrets). Use assertOnly before a multi-write that must not partially succeed. Do not use this for OAuth access or refresh tokens — `/connect/oauth` and `createAuthenticatedFetch` / `integration_token_refresh` persist those on the connection. Host use and direct capability access are authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
+			'Assert authorization for, and optionally atomically persist, multiple secret references for the signed-in user (API keys, PATs, HMAC secrets). Use assertOnly before a multi-write that must not partially succeed. Do not use this for OAuth access or refresh tokens — `/connect/oauth` and `createAuthenticatedFetch` / `integration_token_refresh` persist those on the connection. Host use is authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
 		keywords: [
 			'secret',
 			'persist',

@@ -77,6 +77,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0041 — No hardcoded operator correspondence when an admin topic exists](./0041-no-hardcoded-operator-correspondence.md)
   — platform owns the fact and the event; packages own the reaction; no official
   `@kody/*` admin-notify package
+- [0042 — No capability-input secret placeholders or capability allowlists](./0042-no-capability-input-secrets.md)
+  — fetch host approval and package grants remain; do not re-add `x-kody-secret`
+  input resolution or `allowed_capabilities`
 
 ## Historical / UI / implementation
 

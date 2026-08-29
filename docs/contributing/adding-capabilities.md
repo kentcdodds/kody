@@ -265,78 +265,14 @@ Use raw JSON Schema only when you need an escape hatch that Zod does not model
 cleanly. The registry and Code Mode layer consume normalized JSON Schema after
 normalization runs.
 
-## Secret-capable input fields
+## Secrets in capability handlers
 
-Some capability input fields may accept secret placeholders such as
-`{{secret:exampleUsername}}` or `{{secret:examplePassword|scope=user}}` instead
-of raw strings.
-
-This is an explicit opt-in. A field only participates when its JSON Schema marks
-that string property with `x-kody-secret: true`.
-
-At execute time, Kody resolves those placeholders before the capability handler
-runs. Missing secrets fail with the same "secret not found" guidance used
-elsewhere, and secret-bearing capability inputs require an authenticated user.
-
-Those inputs are also treated as write-only for the rest of that execution: once
-plaintext crosses an `x-kody-secret` capability boundary, Kody redacts that
-plaintext from later execute results and logs before returning them to the
-caller. Capability authors should avoid returning or logging secret material,
-but the runtime adds this extra defense-in-depth layer.
-
-When a secret has an `allowed_capabilities` policy, Kody also checks that the
-current capability name is explicitly listed before resolving the placeholder.
-An empty `allowed_capabilities` list means no capability is allowed to resolve
-the secret until entries are added.
-
-Use this for capabilities that need to accept a secret value as an argument but
-are not themselves the host-approval boundary. Good fits include:
-
-- storing or updating credentials on a local connector or device
-- writing a secret into local persistence owned by the capability
-- passing a credential to a host-side action that does not itself perform
-  agent-directed outbound egress
-
-Do not use this as a shortcut for arbitrary remote API calls. If the capability
-is making outbound requests with a user secret, prefer execute-time `fetch(...)`
-placeholders so host approval happens through the normal policy path.
-
-Use the shared helper from `@kody-internal/shared/secret-input-schema.ts` rather
-than mutating schema properties by hand.
-
-How to annotate:
-
-1. Start with a JSON Schema object for the capability input.
-2. Call `markSecretInputFields(schema, [...])` with only the sensitive string
-   field names.
-3. Leave non-secret fields unannotated.
-4. Document the intended use in the capability description when it may not be
-   obvious.
-5. If the capability persists or hands off a secret value, make the description
-   say that the input is write-only and must never be returned to chat.
-
-Example:
-
-```ts
-import { markSecretInputFields } from '@kody-internal/shared/secret-input-schema.ts'
-
-const inputSchema = markSecretInputFields(
-	{
-		type: 'object',
-		properties: {
-			processorId: { type: 'string' },
-			username: { type: 'string' },
-			password: { type: 'string' },
-		},
-		required: ['processorId', 'username', 'password'],
-	},
-	['username', 'password'],
-)
-```
-
-If you are starting from Zod, call `markSecretInputFields(...)` after
-`z.toJSONSchema(...)` produces the schema object. Use that pattern for
-connector-style credential setup capabilities that store write-only values.
+Capability arguments do not resolve `{{secret:name}}` placeholders. If a
+capability needs a saved secret, look it up by name with `resolveSecret`
+(package access still applies) or tell callers to use execute-time `fetch(...)`
+placeholders so host approval remains the egress boundary. See
+[`secret-host-approval.md`](./secret-host-approval.md) and
+[0042](./decisions/0042-no-capability-input-secrets.md).
 
 ## Directory layout
 
@@ -486,17 +422,6 @@ the description explicit about the approval model:
 - secret save/update does not authorize outbound use
 - a blocked host must be approved through the account admin UI
 - the agent should stop and surface the approval link instead of retrying
-
-If a capability marks any input fields with `x-kody-secret: true`, keep the
-scope narrow:
-
-- annotate only the exact credential fields, not the whole object
-- prefer this for local persistence or device-side credential flows
-- treat those inputs as write-only even if the runtime redacts accidental echoes
-- tell users which capability names should be added to a secret's
-  `allowed_capabilities` policy when a workflow depends on restricted secrets
-- avoid using it for generic remote API wrappers where fetch-time host approval
-  should remain the enforcement point
 
 ## Testing
 

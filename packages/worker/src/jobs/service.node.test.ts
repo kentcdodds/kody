@@ -9,7 +9,6 @@ import {
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
-import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import { saveValue } from '#mcp/values/service.ts'
 import { buildPublishedSourceSnapshotKvKey } from '#worker/package-runtime/published-runtime-artifacts.ts'
@@ -689,7 +688,6 @@ function createDatabase(
 											name: row['name'],
 											description: row['description'],
 											allowed_hosts: row['allowed_hosts'],
-											allowed_capabilities: row['allowed_capabilities'],
 											created_at: row['created_at'],
 											updated_at: row['updated_at'],
 											expires_at: params[2],
@@ -779,9 +777,10 @@ function createDatabase(
 									description: params[2],
 									encrypted_value: params[3],
 									allowed_hosts: params[4],
-									allowed_capabilities: params[5],
-									created_at: params[6],
-									updated_at: params[7],
+									allowed_packages: params[5],
+									expires_at: params[6],
+									created_at: params[7],
+									updated_at: params[8],
 								}
 								upsert(
 									'secret_entries',
@@ -4880,11 +4879,7 @@ test('executeJobOnce failure modes workflow', async () => {
 				'runBundledModuleWithRegistry',
 			)
 			.mockResolvedValue({
-				error: createCapabilitySecretAccessDeniedMessage(
-					'apiToken',
-					'secret_set',
-					'https://example.com/account/secrets/user/apiToken?capability=secret_set',
-				),
+				error: 'Secret "apiToken" is not allowed for host "api.example.com".',
 				logs: [],
 			})
 
@@ -4957,11 +4952,7 @@ test('executeJobOnce failure modes workflow', async () => {
 			})
 			expect(outcome.execution).toEqual({
 				ok: false,
-				error: createCapabilitySecretAccessDeniedMessage(
-					'apiToken',
-					'secret_set',
-					'https://example.com/account/secrets/user/apiToken?capability=secret_set',
-				),
+				error: 'Secret "apiToken" is not allowed for host "api.example.com".',
 				logs: [],
 			})
 			repoSessionRpcSpy.mockRestore()
