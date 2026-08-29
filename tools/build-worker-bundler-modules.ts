@@ -26,13 +26,14 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * repo-check paths actually import them.
  *
  * Wrangler discovers additional ES modules by walking the entry directory
- * (`packages/worker/src`) and watches every subdirectory except `node_modules`
- * and `.git`. Writing the ~17 MB `esbuild.wasm` into `src/generated/` therefore
- * arms that watcher: overlay-FS create events retrigger reload (Friction
- * #1789). The files live in `packages/worker/.generated/` (outside `src/`) and
- * are hardlinked under `src/node_modules/.kody-generated/` so the walk finds
- * them, the import specifier matches the uploaded name, and the watcher skips
- * the directory.
+ * (`packages/worker/src`) and file-watches every discovered module. A separate
+ * CompiledWasm `esbuild.wasm` under `src/` retriggers that watcher when
+ * wrangler re-attaches the wasm (Friction #1789). The files live in
+ * `packages/worker/.generated/` and are hardlinked under
+ * `src/node_modules/.kody-generated/` so the walk finds them. Wasm is inlined
+ * into `esbuild-wasm.mjs` (an ES module) instead of uploaded as CompiledWasm,
+ * so reload does not re-copy a 17 MB wasm file. The `node_modules/` prefix
+ * also keeps the additional-module *directory* watcher off this tree.
  *
  * The output is deterministic for a given installed package version, so a
  * stamp file makes re-runs a no-op (important: this runs in front of every
@@ -61,6 +62,10 @@ export const leftoverSrcGeneratedBundlerNames = [
 const generatedArtifactNames = [
 	'worker-bundler.mjs',
 	'worker-bundler-typescript.mjs',
+	'esbuild-wasm.mjs',
+] as const
+const leftoverWranglerVisibleNames = [
+	...generatedArtifactNames,
 	'esbuild.wasm',
 ] as const
 const stampPath = path.join(
@@ -178,12 +183,38 @@ export async function removeLeftoverSrcGeneratedBundlerArtifacts() {
 	)
 }
 
+async function writeInlinedWasmModule(wasmPath: string, outPath: string) {
+	const base64 = (await readFile(wasmPath)).toString('base64')
+	await writeFile(
+		outPath,
+		`const bytes = Uint8Array.from(atob("${base64}"), (char) => char.charCodeAt(0))\nexport default await WebAssembly.compile(bytes)\n`,
+	)
+}
+
+async function rewriteWasmImport(bundlerModulePath: string) {
+	const source = await readFile(bundlerModulePath, 'utf8')
+	const rewritten = source.replaceAll(
+		'import("./esbuild.wasm")',
+		'import("./esbuild-wasm.mjs")',
+	)
+	if (rewritten === source) {
+		throw new Error(
+			`${path.basename(bundlerModulePath)} did not contain import("./esbuild.wasm")`,
+		)
+	}
+	await writeFile(bundlerModulePath, rewritten)
+}
+
 async function materializeWranglerVisibleModules() {
 	await mkdir(workerBundlerWranglerDir, { recursive: true })
+	await Promise.all(
+		leftoverWranglerVisibleNames.map((name) =>
+			rm(path.join(workerBundlerWranglerDir, name), { force: true }),
+		),
+	)
 	for (const name of generatedArtifactNames) {
 		const from = path.join(workerBundlerGeneratedDir, name)
 		const to = path.join(workerBundlerWranglerDir, name)
-		await rm(to, { force: true })
 		try {
 			await link(from, to)
 		} catch {
@@ -223,9 +254,14 @@ export async function ensureWorkerBundlerModules() {
 		plugins: [externalsPlugin],
 		logLevel: 'silent',
 	})
-	await copyFile(
-		path.join(bundlerPackageDir, 'dist/esbuild.wasm'),
-		path.join(workerBundlerGeneratedDir, 'esbuild.wasm'),
+	const wasmPath = path.join(bundlerPackageDir, 'dist/esbuild.wasm')
+	await copyFile(wasmPath, path.join(workerBundlerGeneratedDir, 'esbuild.wasm'))
+	await writeInlinedWasmModule(
+		wasmPath,
+		path.join(workerBundlerGeneratedDir, 'esbuild-wasm.mjs'),
+	)
+	await rewriteWasmImport(
+		path.join(workerBundlerGeneratedDir, 'worker-bundler.mjs'),
 	)
 	await writeFile(stampPath, stampContent)
 	await materializeWranglerVisibleModules()

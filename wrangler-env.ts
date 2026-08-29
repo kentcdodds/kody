@@ -149,9 +149,9 @@ if (
 	!args.some((arg) => arg.startsWith('--live-reload='))
 ) {
 	// Playwright / MCP e2e do not edit worker source. HTML live-reload
-	// still arms wrangler's additional-module watcher; bundler wasm lives
-	// under `src/node_modules/.kody-generated/` so that watcher skips it
-	// (Friction #1789).
+	// still arms wrangler's additional-module watcher; bundler wasm is
+	// inlined into an ES module under `src/node_modules/.kody-generated/`
+	// so that watcher never re-attaches CompiledWasm (Friction #1789).
 	commandArgs.push('--live-reload', 'false')
 }
 

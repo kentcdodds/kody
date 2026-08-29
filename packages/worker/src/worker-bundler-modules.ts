@@ -15,9 +15,9 @@ import type * as workerBundlerTypescript from '@cloudflare/worker-bundler/typesc
  * that only load and evaluate when repo checks actually run.
  *
  * The `node_modules/` prefix is load-bearing: wrangler's additional-module
- * walker discovers these files under `src/`, but its watcher skips
- * `node_modules`, so overlay-FS create events on `esbuild.wasm` do not
- * retrigger `wrangler dev` (Friction #1789).
+ * walker discovers these files under `src/`, but its directory watcher skips
+ * `node_modules`. Wasm is inlined into `esbuild-wasm.mjs` so wrangler does
+ * not re-attach a CompiledWasm additional module (Friction #1789).
  */
 
 export function importWorkerBundler(): Promise<typeof workerBundler> {

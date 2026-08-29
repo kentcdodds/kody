@@ -14,10 +14,10 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   remote-cache hit is possible after push. Playwright E2E stays in
   `npm run validate` and the CI E2E job. The push hook stops short of that suite
   because Playwright E2E is heavier than the unit gate, and a failed e2e leg
-  skips the unit gate when the push is retried with `--no-verify`. Bundler
-  `esbuild.wasm` lives outside wrangler's additional-module watch set so
-  `wrangler dev` does not loop on overlay create events. Cursor Cloud Agent VMs
-  keep Cursor's hook dispatcher as `core.hooksPath` and compose Husky through
+  skips the unit gate when the push is retried with `--no-verify`. Bundler wasm
+  is inlined into an ES additional module so `wrangler dev` does not loop on
+  CompiledWasm re-attach / overlay create events. Cursor Cloud Agent VMs keep
+  Cursor's hook dispatcher as `core.hooksPath` and compose Husky through
   `npm run hooks:ensure` (`prepare` runs it after `husky`; Cloud Agent
   environment `start` should run it too) so `pre-push` still reaches `.husky/_`
   — see [cloud-agents.md](../cloud-agents.md#git-hooks). Vitest's default

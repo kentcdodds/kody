@@ -61,6 +61,11 @@ const workerBundlerGeneratedModuleRelativePath = path.join(
 	'.kody-generated',
 	'worker-bundler.mjs',
 )
+const workerBundlerWasmModuleRelativePath = path.join(
+	'node_modules',
+	'.kody-generated',
+	'esbuild-wasm.mjs',
+)
 const workerBundlerWasmRelativePath = path.join(
 	'node_modules',
 	'.kody-generated',
@@ -179,11 +184,25 @@ async function inspectStartupBundle(
 	}
 	try {
 		await stat(path.join(outputDir, workerBundlerGeneratedModuleRelativePath))
-		await stat(path.join(outputDir, workerBundlerWasmRelativePath))
+		await stat(path.join(outputDir, workerBundlerWasmModuleRelativePath))
 	} catch {
 		throw new Error(
-			`${definition.name} startup bundle did not emit ${workerBundlerGeneratedModuleRelativePath} and ${workerBundlerWasmRelativePath} as separate additional modules (find_additional_modules regression?).`,
+			`${definition.name} startup bundle did not emit ${workerBundlerGeneratedModuleRelativePath} and ${workerBundlerWasmModuleRelativePath} as separate additional modules (find_additional_modules regression?).`,
 		)
+	}
+	try {
+		await stat(path.join(outputDir, workerBundlerWasmRelativePath))
+		throw new Error(
+			`${definition.name} startup bundle still emits ${workerBundlerWasmRelativePath} as CompiledWasm; wasm must stay inlined in ${workerBundlerWasmModuleRelativePath} so wrangler does not watch/re-attach it.`,
+		)
+	} catch (error) {
+		if (
+			!(error instanceof Error) ||
+			!('code' in error) ||
+			error.code !== 'ENOENT'
+		) {
+			throw error
+		}
 	}
 	if (size > definition.maxEntryBytes) {
 		throw new Error(

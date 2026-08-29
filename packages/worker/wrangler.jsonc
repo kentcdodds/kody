@@ -73,9 +73,11 @@
 			//
 			// Worker-bundler lives under `src/node_modules/.kody-generated/`
 			// (hardlinked from `packages/worker/.generated/`) so wrangler's
-			// additional-module watcher — which skips `node_modules` — does not
-			// loop on `esbuild.wasm` create events (Friction #1789). Guide
-			// catalog stays in `src/generated/`.
+			// additional-module directory watcher — which skips `node_modules`
+			// — does not see those files. Wasm is inlined into
+			// `esbuild-wasm.mjs` instead of a CompiledWasm additional module
+			// so overlay-FS create events on `esbuild.wasm` cannot retrigger
+			// reload (Friction #1789). Guide catalog stays in `src/generated/`.
 			"type": "ESModule",
 			"globs": [
 				"generated/*.mjs",
@@ -83,11 +85,6 @@
 				"node_modules/.kody-generated/*.mjs",
 				"./node_modules/.kody-generated/*.mjs",
 			],
-			"fallthrough": true,
-		},
-		{
-			"type": "CompiledWasm",
-			"globs": ["node_modules/.kody-generated/*.wasm"],
 			"fallthrough": true,
 		},
 	],
