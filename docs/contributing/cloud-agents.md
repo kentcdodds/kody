@@ -80,7 +80,7 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
 | Task               | Command                                                         |
 | ------------------ | --------------------------------------------------------------- |
 | Install deps       | `npm install`                                                   |
-| Start dev          | `npm run dev` (prints the resolved URL)                         |
+| Start or reuse dev | `npm run dev:ensure` (prints the resolved URL)                  |
 | Migrate local D1   | `npm run migrate:local`                                         |
 | Seed test login    | `node tools/seed-test-data.ts --local` (see seeding note below) |
 | Full validate gate | `npm run validate` (CI runs the same checks as parallel jobs)   |
@@ -88,12 +88,20 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
 
 ## Dev server
 
+- `npm run dev:ensure` is the agent entry point. It probes origin `/health` on
+  3742–3751, prints `App running at http://localhost:<port>` and exits 0 when a
+  server is already up, replaces a stale kody/workerd leftover that accepts TCP
+  but does not serve `/health`, then starts `npm run dev` and waits until
+  `/health` is actually ok before printing the resolved URL.
 - `npm run dev` starts the client esbuild watcher, optional Cloudflare API mock
   worker, and Wrangler with origin plus generated platform, runtime, and jobs
-  siblings in one Miniflare (local D1/KV/DO persistence).
+  siblings in one Miniflare (local D1/KV/DO persistence). Non-TTY sessions print
+  `App running at` only after `/health` responds.
 - Default worker port is **3742** (`cli.ts`); the CLI picks a free port when
   3742 is taken and prints `App running at http://localhost:<port>`.
-- Run long-lived dev in tmux so the session survives tool timeouts.
+- Run long-lived interactive `npm run dev` in tmux so the session survives tool
+  timeouts. `dev:ensure` detaches the started process so the ensure command can
+  exit.
 - Health check (no auth): `curl http://localhost:<port>/health` →
   `{"ok":true,"commitSha":...,"commit":...,"pullRequest":...,"deploy":...}`.
   Locally the extra fields are `null` unless a deploy var is set. Platform and

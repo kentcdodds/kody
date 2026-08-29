@@ -81,10 +81,13 @@ npm run migrate:local
 3. Start local development:
 
 ```bash
-npm run dev
+npm run dev:ensure
 ```
 
-The CLI prints the resolved URL (default port `3742`). Health check:
+That reuses a healthy origin if one is already up, otherwise starts
+`npm run dev`. Either way it prints the resolved URL (default port `3742`) once
+`/health` is ok. For an interactive session, run `npm run dev` instead. Health
+check:
 
 ```bash
 curl http://localhost:<port>/health

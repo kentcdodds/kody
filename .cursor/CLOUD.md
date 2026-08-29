@@ -6,7 +6,7 @@ A full-stack web application built on Cloudflare Workers with Remix 3 (beta).
 
 | Task                          | Command                |
 | ----------------------------- | ---------------------- |
-| Start dev server              | `npm run dev`          |
+| Start or reuse dev server     | `npm run dev:ensure`   |
 | Full validation               | `npm run validate`     |
 | Compose Cloud Agent git hooks | `npm run hooks:ensure` |
 | Apply formatter / lint        | `npm run validate:fix` |
@@ -23,10 +23,11 @@ so a green local `validate` means CI will pass. `validate` is read-only; use
 
 ## Services
 
-- **Dev server**: Runs at `localhost:3742` by default (the CLI picks the next
-  free port and prints the resolved URL)
-- `npm run dev` starts both the client esbuild watcher and Wrangler worker
-  server
+- **Dev server**: `npm run dev:ensure` reuses or starts the origin and prints
+  `App running at http://localhost:<port>` once `/health` is ok (default 3742;
+  the CLI hops if that port is taken by a non-kody process)
+- `npm run dev` starts the client esbuild watcher and Wrangler worker server and
+  stays attached for an interactive session
 
 ## Architecture
 
