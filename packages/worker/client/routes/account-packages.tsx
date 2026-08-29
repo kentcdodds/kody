@@ -13,27 +13,13 @@ import { infiniteScrollSentinel } from '#client/infinite-scroll.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
-import {
-	colors,
-	radius,
-	spacing,
-	typography,
-} from '#universal/styles/tokens.ts'
+import { colors } from '#universal/styles/tokens.ts'
 import { ForkOutdatedCopyButton } from '#universal/fork-outdated-copy-button.tsx'
+import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import {
-	getAccentCalloutCss,
-	getGhostButtonCss,
-	getPillButtonCss,
-	visuallyHiddenCss,
-} from '#universal/styles/style-primitives.ts'
-import {
-	accountDisclosureCss,
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountPageHeader,
-	IdValue,
-	MetadataGrid,
-	TimestampValue,
 } from './account-management-components.tsx'
 import {
 	RecordChips,
@@ -41,14 +27,11 @@ import {
 	RecordTable,
 	RecordTableSearch,
 	RecordTableSelect,
-	recordBodyCss,
 	recordCellClamp,
 	recordStampCss,
 } from './record-table.tsx'
-import { AccountPackageTokens } from './account-package-tokens.tsx'
-import { getAccountPackageFilesHref } from '#universal/package-files.ts'
+import { packageLockGlyph } from './account-package-owner-details.tsx'
 import {
-	type AccountPackageDetail,
 	type AccountPackageListItem,
 	type AccountPackagesAppFilter,
 	type AccountPackagesLoaderData,
@@ -81,18 +64,21 @@ function readFilterState(href: string): PackageFilterState {
 	}
 }
 
-/**
- * The list window only depends on the filters, not on which package is
- * selected — selection-only navigations keep the loaded scroll window.
- */
 function getListKey(href: string) {
 	const filters = readFilterState(href)
 	return `q=${filters.search}&app=${filters.app}&sort=${filters.sort}`
 }
 
 function getDataKey(href: string) {
-	const pathname = new URL(href, 'http://localhost').pathname
-	return `${pathname}?${getListKey(href)}`
+	return `/account/packages?${getListKey(href)}`
+}
+
+function isPackageLocked(lockedAt: string | null | undefined) {
+	return typeof lockedAt === 'string' && lockedAt.trim().length > 0
+}
+
+function buildOwnerPackageHref(username: string, kodyId: string) {
+	return routes.communityPackage.href({ username, kodyId })
 }
 
 function buildPackagesApiRequestUrl(
@@ -119,17 +105,34 @@ export async function accountPackagesRouteLoader(
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const href = `${url.pathname}${url.search}`
-	const response = await fetch(buildPackagesApiRequestUrl(href), {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
+	const selectedPackageId = packagesRoute.getSelection(href).selectedId
+	const response = await fetch(
+		buildPackagesApiRequestUrl(href, {
+			includeSelected: Boolean(selectedPackageId),
+		}),
+		{
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+			signal,
+		},
+	)
 	if (response.status === 401) {
 		return routeLoaderRedirect('/login')
 	}
 	const payload = await readJson<AccountPackagesLoaderData>(response)
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load your packages.')
+	}
+	if (selectedPackageId && payload.selectedPackage) {
+		const destination = new URL(
+			buildOwnerPackageHref(payload.username, payload.selectedPackage.kodyId),
+			url,
+		)
+		destination.search = url.search
+		return routeLoaderRedirect(`${destination.pathname}${destination.search}`)
+	}
+	if (selectedPackageId && !payload.selectedPackage) {
+		throw new Error('Package not found.')
 	}
 	return { accountPackages: payload }
 }
@@ -146,114 +149,16 @@ export function AccountPackagesRoute(handle: Handle) {
 	})
 	let packagesSnapshot: InfiniteListSnapshot<AccountPackageListItem> =
 		packageList.getSnapshot()
-	let selectedPackage: AccountPackageDetail | null = null
 	let username = ''
-	let invocationUrlOrigin = ''
 	let message: string | null = null
 	let loadRequestId = 0
 	let lastLoadedDataKey = ''
 	let lastLoadedListKey = ''
 	let loadingDataKey: string | null = null
 	let lastFailedDataKey: string | null = null
-	const lockInFlight = new Map<string, string | null>()
 
 	function getCurrentHref() {
 		return readCurrentRouterHref(handle)
-	}
-
-	function isLockInFlight(packageId: string | null | undefined) {
-		return packageId != null && lockInFlight.has(packageId)
-	}
-
-	function isPackageLocked(lockedAt: string | null | undefined) {
-		return typeof lockedAt === 'string' && lockedAt.trim().length > 0
-	}
-
-	function applyLocalLockState(packageId: string, lockedAt: string | null) {
-		if (selectedPackage?.id === packageId) {
-			selectedPackage = { ...selectedPackage, lockedAt }
-		}
-		packageList.updateItems((items) =>
-			items.map((pkg) => (pkg.id === packageId ? { ...pkg, lockedAt } : pkg)),
-		)
-	}
-
-	function restoreInFlightLockState() {
-		if (lockInFlight.size === 0) return
-		if (selectedPackage && lockInFlight.has(selectedPackage.id)) {
-			selectedPackage = {
-				...selectedPackage,
-				lockedAt: lockInFlight.get(selectedPackage.id) ?? null,
-			}
-		}
-		packageList.updateItems((items) =>
-			items.map((pkg) =>
-				lockInFlight.has(pkg.id)
-					? { ...pkg, lockedAt: lockInFlight.get(pkg.id) ?? null }
-					: pkg,
-			),
-		)
-	}
-
-	async function togglePackageLock() {
-		if (!selectedPackage || lockInFlight.has(selectedPackage.id)) return
-		const href = getCurrentHref()
-		const packageId = selectedPackage.id
-		const previousLockedAt = selectedPackage.lockedAt
-		const nextLocked = !isPackageLocked(previousLockedAt)
-		const nextLockedAt = nextLocked ? new Date().toISOString() : null
-		lockInFlight.set(packageId, nextLockedAt)
-		message = null
-		applyLocalLockState(packageId, nextLockedAt)
-		handle.update()
-
-		try {
-			const response = await fetch(buildPackagesApiRequestUrl(href), {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				credentials: 'include',
-				body: JSON.stringify({
-					action: nextLocked ? 'lock' : 'unlock',
-					packageId,
-				}),
-			})
-			if (response.status === 401) {
-				window.location.assign('/login')
-				return
-			}
-			const payload = await readJson<
-				AccountPackagesLoaderData & { error?: string }
-			>(response)
-			if (!response.ok || !payload?.ok) {
-				applyLocalLockState(packageId, previousLockedAt)
-				if (selectedPackage?.id === packageId) {
-					message = payload?.error ?? 'Could not update the publish lock.'
-				}
-				handle.update()
-				return
-			}
-			applyLocalLockState(
-				packageId,
-				payload.selectedPackage?.lockedAt ?? nextLockedAt,
-			)
-			handle.update()
-		} catch {
-			applyLocalLockState(packageId, previousLockedAt)
-			if (selectedPackage?.id === packageId) {
-				message = 'Could not update the publish lock.'
-			}
-			handle.update()
-		} finally {
-			lockInFlight.delete(packageId)
-			handle.update()
-		}
-	}
-
-	function getCurrentSearch() {
-		return new URL(getCurrentHref(), 'http://localhost').search
 	}
 
 	function buildHrefWithUpdatedFilters(
@@ -273,14 +178,8 @@ export function AccountPackagesRoute(handle: Handle) {
 
 	function applyPayload(payload: AccountPackagesLoaderData, href: string) {
 		const listKey = getListKey(href)
-		// Selection-only navigations deep in the scroll window keep the
-		// already-loaded pages; anything else reseeds from page one so
-		// filter changes and plain revisits always show fresh data.
 		if (listKey !== lastLoadedListKey || loadedThroughPage <= 1) {
 			loadedThroughPage = payload.page
-			// reset() invalidates any in-flight load-more so a stale page
-			// fetched for the previous filters can never append into the
-			// fresh window.
 			packageList.reset()
 			packageList.replaceWindow({
 				items: payload.packages,
@@ -289,14 +188,8 @@ export function AccountPackagesRoute(handle: Handle) {
 			})
 			lastLoadedListKey = listKey
 		}
-		selectedPackage = payload.selectedPackage
-		restoreInFlightLockState()
 		username = payload.username
-		invocationUrlOrigin = payload.invocationUrlOrigin
-		message =
-			packagesRoute.getSelection(href).selectedId && !payload.selectedPackage
-				? 'Package not found.'
-				: null
+		message = null
 		status = 'ready'
 		lastLoadedDataKey = getDataKey(href)
 		lastFailedDataKey = null
@@ -308,10 +201,13 @@ export function AccountPackagesRoute(handle: Handle) {
 		loadingDataKey = dataKey
 		const requestId = ++loadRequestId
 		try {
-			const response = await fetch(buildPackagesApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-			})
+			const response = await fetch(
+				buildPackagesApiRequestUrl(href, { includeSelected: false }),
+				{
+					headers: { Accept: 'application/json' },
+					credentials: 'include',
+				},
+			)
 			if (
 				requestId !== loadRequestId ||
 				getDataKey(getCurrentHref()) !== dataKey
@@ -392,18 +288,11 @@ export function AccountPackagesRoute(handle: Handle) {
 	return () => {
 		const currentHref = getCurrentHref()
 		const currentDataKey = getDataKey(currentHref)
-		// The failure latch only guards retry loops for the location that
-		// failed; leaving it (or coming back) must allow a fresh attempt.
 		if (currentDataKey !== lastSeenDataKey) {
 			lastSeenDataKey = currentDataKey
 			lastFailedDataKey = null
 		}
-		// Consume route-loader data before deriving the list snapshot below;
-		// deriving first would render this pass from stale pre-navigation
-		// closure state.
 		const appliedRouteData = applyRouteLoaderData(currentHref)
-		// A same-path refresh whose loader failed leaves no preload and no
-		// data-key change; the stale marker forces the fallback refetch.
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const needsLoad =
@@ -426,14 +315,12 @@ export function AccountPackagesRoute(handle: Handle) {
 		} = packagesSnapshot
 		const filters = readFilterState(currentHref)
 		const hasActiveFilters = Boolean(filters.search || filters.app !== 'all')
-		const selectedPackageId = packagesRoute.getSelection(currentHref).selectedId
-		const activePackageId = selectedPackageId ?? selectedPackage?.id ?? null
 
 		return (
 			<AccountManagementShell>
 				<AccountPageHeader
 					title="Packages"
-					description="Browse your saved packages and review their metadata. Packages are created and edited through Kody's MCP tools."
+					description="Browse your saved packages. Open a row to see details on the package page."
 					currentHref={currentHref}
 				/>
 				{status === 'loading' && lastLoadedDataKey === '' ? (
@@ -449,13 +336,9 @@ export function AccountPackagesRoute(handle: Handle) {
 					</AccountManagementMessage>
 				) : null}
 				<RecordTable
-					mode="expand"
+					mode="none"
 					busy={status === 'loading'}
 					ariaLabel="Saved packages"
-					selectedId={activePackageId}
-					// Unconditional: the snapshot keeps the previous window during a
-					// refetch, and dropping the slot mid-refetch resized the search
-					// field the reader is typing into.
 					countLabel={`${packages.length} of ${totalCount} ${totalCount === 1 ? 'package' : 'packages'}`}
 					emptyLabel={
 						status === 'ready'
@@ -517,7 +400,9 @@ export function AccountPackagesRoute(handle: Handle) {
 					]}
 					rows={packages.map((pkg) => ({
 						id: pkg.id,
-						href: packagesRoute.buildDetailHref(pkg.id, getCurrentSearch()),
+						href: username
+							? buildOwnerPackageHref(username, pkg.kodyId)
+							: undefined,
 						...(pkg.listingAhead || isPackageLocked(pkg.lockedAt)
 							? {
 									primaryAccessory: (
@@ -525,7 +410,7 @@ export function AccountPackagesRoute(handle: Handle) {
 											mix={css({
 												display: 'inline-flex',
 												alignItems: 'center',
-												gap: spacing.xs,
+												gap: '0.35rem',
 											})}
 										>
 											{isPackageLocked(pkg.lockedAt) ? (
@@ -594,278 +479,8 @@ export function AccountPackagesRoute(handle: Handle) {
 							</div>
 						) : null
 					}
-					record={
-						selectedPackage ? (
-							<div mix={css(recordBodyCss)}>
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<div
-										mix={css({
-											display: 'flex',
-											alignItems: 'center',
-											gap: spacing.xs,
-											flexWrap: 'wrap',
-											minWidth: 0,
-										})}
-									>
-										<h2
-											mix={css({
-												margin: 0,
-												fontSize: typography.fontSize.lg,
-												fontWeight: typography.fontWeight.semibold,
-												color: colors.text,
-												overflowWrap: 'anywhere',
-											})}
-										>
-											{selectedPackage.name}
-										</h2>
-										<button
-											type="button"
-											disabled={isLockInFlight(selectedPackage.id)}
-											title={
-												isPackageLocked(selectedPackage.lockedAt)
-													? 'Unlock publishes'
-													: 'Lock publishes'
-											}
-											data-testid="account-package-lock-toggle"
-											data-locked={
-												isPackageLocked(selectedPackage.lockedAt)
-													? 'true'
-													: 'false'
-											}
-											mix={[
-												css(packageLockToggleCss),
-												on('click', () => void togglePackageLock()),
-											]}
-										>
-											{packageLockGlyph(
-												isPackageLocked(selectedPackage.lockedAt),
-											)}
-											<span mix={css(visuallyHiddenCss)}>
-												{isPackageLocked(selectedPackage.lockedAt)
-													? `Unlock publishes for ${selectedPackage.name}`
-													: `Lock publishes for ${selectedPackage.name}`}
-											</span>
-										</button>
-										{selectedPackage.listingAhead ? (
-											<ForkOutdatedCopyButton
-												prompt={selectedPackage.listingAhead.prompt}
-												testId="account-package-listing-ahead"
-											/>
-										) : null}
-									</div>
-									{selectedPackage.description ? (
-										<p
-											mix={css({
-												margin: 0,
-												color: colors.textMuted,
-												overflowWrap: 'anywhere',
-											})}
-										>
-											{selectedPackage.description}
-										</p>
-									) : (
-										<p mix={css({ margin: 0, color: colors.textMuted })}>
-											This package has no description.
-										</p>
-									)}
-								</div>
-								{selectedPackage.tags.length > 0 ? (
-									<RecordChips items={selectedPackage.tags} />
-								) : null}
-								<MetadataGrid
-									items={[
-										{
-											label: 'Kody id',
-											value: (
-												<IdValue
-													value={selectedPackage.kodyId}
-													label="Kody id"
-												/>
-											),
-										},
-										{
-											label: 'Package id',
-											value: (
-												<IdValue
-													value={selectedPackage.id}
-													label="package id"
-												/>
-											),
-										},
-										{
-											label: 'App',
-											value: selectedPackage.hasApp
-												? 'Declares a package app'
-												: 'No app',
-										},
-										{
-											label: 'Source id',
-											value: (
-												<IdValue
-													value={selectedPackage.sourceId}
-													label="source id"
-												/>
-											),
-										},
-										{
-											label: 'Created',
-											value: (
-												<TimestampValue value={selectedPackage.createdAt} />
-											),
-										},
-										{
-											label: 'Updated',
-											value: (
-												<TimestampValue value={selectedPackage.updatedAt} />
-											),
-										},
-										{
-											label: 'Publish lock',
-											value: selectedPackage.lockedAt
-												? `Locked ${formatTimestampDate(selectedPackage.lockedAt)}`
-												: 'Off',
-										},
-									]}
-								/>
-								<div mix={css(getAccentCalloutCss())}>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										{selectedPackage.lockedAt
-											? 'Publishes stay on this reviewed tree until you promote a commit on the website. Click the lock icon to unlock.'
-											: 'Click the lock icon so agents cannot publish without your approval.'}
-									</p>
-									{selectedPackage.lockedAt ? (
-										<div
-											mix={css({
-												display: 'flex',
-												flexWrap: 'wrap',
-												gap: spacing.xs,
-											})}
-										>
-											<a
-												href={routes.accountPackageApprovePublish.href({
-													packageId: selectedPackage.id,
-												})}
-												data-testid="account-approve-publish"
-												mix={css({
-													...getPillButtonCss({ size: 'sm' }),
-													display: 'inline-flex',
-													textDecoration: 'none',
-												})}
-											>
-												Approve a publish
-											</a>
-										</div>
-									) : null}
-								</div>
-								<a
-									href={getAccountPackageFilesHref({
-										packageId: selectedPackage.id,
-									})}
-									data-testid="account-browse-files"
-									mix={css({
-										...getGhostButtonCss({ size: 'sm' }),
-										width: 'fit-content',
-									})}
-								>
-									Browse files
-								</a>
-								<AccountPackageTokens
-									packageDetail={selectedPackage}
-									currentHref={currentHref}
-									username={username}
-									invocationUrlOrigin={invocationUrlOrigin}
-									onPackagesPayload={(payload) => {
-										applyPayload(payload, currentHref)
-										handle.update()
-									}}
-								/>
-								{selectedPackage.searchText ? (
-									// The search index is a wall of concatenated text with no
-									// reading order. Left in flow it set the height of the whole
-									// screen; behind a disclosure it costs a line until asked
-									// for, and the box scrolls rather than growing.
-									<details mix={css(accountDisclosureCss)}>
-										<summary>Search text</summary>
-										<p
-											mix={css({
-												margin: 0,
-												maxHeight: '12rem',
-												overflowY: 'auto',
-												padding: spacing.sm,
-												borderRadius: radius.md,
-												border: `1px solid ${colors.border}`,
-												backgroundColor: colors.background,
-												color: colors.textMuted,
-												fontSize: typography.fontSize.sm,
-												overflowWrap: 'anywhere',
-											})}
-										>
-											{selectedPackage.searchText}
-										</p>
-									</details>
-								) : null}
-							</div>
-						) : null
-					}
 				/>
 			</AccountManagementShell>
 		)
 	}
-}
-
-function packageLockGlyph(locked: boolean) {
-	return (
-		<svg
-			viewBox="0 0 16 16"
-			width="1em"
-			height="1em"
-			aria-hidden="true"
-			focusable={false}
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.5"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			{locked ? (
-				<path d="M5.2 7.4V5.8a2.8 2.8 0 0 1 5.6 0v1.6" />
-			) : (
-				<path d="M5.2 7.4V5.6a2.8 2.8 0 0 1 5.2-1.4" />
-			)}
-			<rect x="3.6" y="7.4" width="8.8" height="6.4" rx="1.3" />
-		</svg>
-	)
-}
-
-const packageLockToggleCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	justifyContent: 'center',
-	width: '1.85rem',
-	height: '1.85rem',
-	padding: 0,
-	border: `1px solid ${colors.border}`,
-	borderRadius: '999px',
-	backgroundColor: 'transparent',
-	color: colors.textMuted,
-	cursor: 'pointer',
-	flexShrink: 0,
-	'&:hover': {
-		color: colors.primaryText,
-		borderColor: colors.primaryText,
-	},
-	'&:focus-visible': {
-		outline: `2px solid ${colors.primary}`,
-		outlineOffset: '2px',
-	},
-	'&[data-locked="true"]': {
-		color: colors.primary,
-		borderColor: colors.primary,
-		backgroundColor: `oklch(from ${colors.primary} l c h / 0.13)`,
-		'&:hover': {
-			color: colors.primaryText,
-			borderColor: colors.primaryText,
-			backgroundColor: `oklch(from ${colors.primary} l c h / 0.2)`,
-		},
-	},
 }

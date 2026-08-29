@@ -72,6 +72,8 @@ const mockModule = vi.hoisted(() => ({
 	deletePackageInvocationToken: vi.fn(async () => true),
 	getAppBaseUrl: () => 'https://example.com',
 	loadPackageManifestBySourceId: vi.fn(),
+	getCommunityListingByOwnerAndPackage: vi.fn(async () => null),
+	requireAuthenticatedPageUser: vi.fn(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -86,6 +88,16 @@ vi.mock('#app/auth-session.ts', () => ({
 vi.mock('#app/auth-redirect.ts', () => ({
 	redirectToLogin: () => new Response(null, { status: 302 }),
 	redirectToLoginWhenUnauthenticated: () => new Response(null, { status: 302 }),
+}))
+
+vi.mock('#app/page-auth.ts', () => ({
+	requireAuthenticatedPageUser: (...args: Array<unknown>) =>
+		mockModule.requireAuthenticatedPageUser(...args),
+}))
+
+vi.mock('#worker/community/repo.ts', () => ({
+	getCommunityListingByOwnerAndPackage: (...args: Array<unknown>) =>
+		mockModule.getCommunityListingByOwnerAndPackage(...args),
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
@@ -134,7 +146,7 @@ vi.mock('#worker/package-invocations/repo.ts', () => ({
 		mockModule.deletePackageInvocationToken(...args),
 }))
 
-const { createAccountPackagesApiHandler } =
+const { createAccountPackagesApiHandler, createAccountPackagesHandler } =
 	await import('./account-packages.ts')
 
 function createEnv() {
@@ -559,4 +571,38 @@ test('packages API creates, updates, revokes, reinstates, and deletes package to
 	const deletePayload = await deleteResponse.json()
 	expect(deletePayload).toMatchObject({ ok: true })
 	expect(deletePayload).not.toHaveProperty('selectedTokenId')
+})
+
+test('account package detail redirects the owner to the canonical package URL', async () => {
+	const user = {
+		username: 'test-user',
+		email: 'user@example.com',
+		mcpUser: {
+			userId: 'stable-user-1',
+			email: 'user@example.com',
+			username: 'test-user',
+			displayName: 'user',
+		},
+	}
+	mockModule.requireAuthenticatedPageUser.mockResolvedValue(user)
+	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
+	const handler = createAccountPackagesHandler(createEnv())
+
+	const redirect = await handler.handler({
+		request: new Request(
+			'https://example.com/account/packages/pkg-1?newToken=1&exportNames=.',
+		),
+		params: { packageId: 'pkg-1' },
+	} as never)
+	expect(redirect.status).toBe(302)
+	expect(redirect.headers.get('location')).toBe(
+		'https://example.com/@test-user/discord-gateway?newToken=1&exportNames=.',
+	)
+
+	mockModule.getSavedPackageById.mockResolvedValue(null)
+	const missing = await handler.handler({
+		request: new Request('https://example.com/account/packages/missing'),
+		params: { packageId: 'missing' },
+	} as never)
+	expect(missing.status).toBe(404)
 })

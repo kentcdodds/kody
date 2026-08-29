@@ -9,7 +9,8 @@ import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { absorbCommunityForkUpstream } from '#worker/community/service.ts'
-import { type routes } from '#universal/routes.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { routes } from '#universal/routes.ts'
 
 export function createAccountPackagesHandler(env: Env) {
 	return {
@@ -20,17 +21,46 @@ export function createAccountPackagesHandler(env: Env) {
 				return user
 			}
 
+			const pathPackageId =
+				typeof params === 'object' &&
+				params !== null &&
+				'packageId' in params &&
+				typeof params.packageId === 'string'
+					? params.packageId
+					: undefined
+			const url = new URL(request.url)
+			if (pathPackageId) {
+				const savedPackage = await getSavedPackageById(env.APP_DB, {
+					userId: user.mcpUser.userId,
+					packageId: pathPackageId,
+				})
+				if (!savedPackage) {
+					return renderAppPage({
+						request,
+						env,
+						title: 'Package not found',
+						notFound: true,
+						status: 404,
+					})
+				}
+				const destination = new URL(
+					routes.communityPackage.href({
+						username: user.username,
+						kodyId: savedPackage.kodyId,
+					}),
+					url,
+				)
+				destination.search = url.search
+				return new Response(null, {
+					status: 302,
+					headers: { location: destination.toString() },
+				})
+			}
+
 			const accountPackages = await loadAccountPackagesData({
 				env,
 				request,
 				user,
-				pathPackageId:
-					typeof params === 'object' &&
-					params !== null &&
-					'packageId' in params &&
-					typeof params.packageId === 'string'
-						? params.packageId
-						: undefined,
 			})
 			return renderAppPage({
 				request,

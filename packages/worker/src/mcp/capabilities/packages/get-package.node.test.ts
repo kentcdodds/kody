@@ -180,7 +180,7 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 					route_export_name: '__root__',
 					normalized_export_name: '.',
 					token_setup_url:
-						'https://heykody.dev/account/packages/package-1?newToken=1&exportNames=.',
+						'https://heykody.dev/@kody/discord-gateway?newToken=1&exportNames=.',
 					source_guidance: expect.any(String),
 				},
 			},
@@ -198,7 +198,7 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 					route_export_name: 'post-message',
 					normalized_export_name: './post-message',
 					token_setup_url:
-						'https://heykody.dev/account/packages/package-1?newToken=1&exportNames=post-message',
+						'https://heykody.dev/@kody/discord-gateway?newToken=1&exportNames=post-message',
 					source_guidance: expect.any(String),
 				},
 			},

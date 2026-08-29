@@ -4,6 +4,7 @@ import {
 	buildPackageInvocationUrl,
 	normalizePackageInvocationExportName,
 } from '@kody-internal/shared/public-urls.ts'
+import { routes } from '#universal/routes.ts'
 
 export type ExternalPackageInvocationDescriptor = {
 	method: 'POST'
@@ -27,11 +28,15 @@ function buildPackageInvocationTokenSetupExportName(exportName: string) {
 
 export function buildPackageInvocationTokenSetupUrl(input: {
 	baseUrl: string
-	packageId: string
+	ownerUsername: string
+	kodyId: string
 	exportName: string
 }) {
 	const url = new URL(
-		`/account/packages/${encodeURIComponent(input.packageId)}`,
+		routes.communityPackage.href({
+			username: input.ownerUsername,
+			kodyId: input.kodyId,
+		}),
 		input.baseUrl,
 	)
 	url.searchParams.set('newToken', '1')
@@ -73,7 +78,8 @@ export function buildExternalPackageInvocationDescriptor(input: {
 		normalizedExportName,
 		tokenSetupUrl: buildPackageInvocationTokenSetupUrl({
 			baseUrl: input.baseUrl,
-			packageId: input.packageId,
+			ownerUsername: input.ownerUsername,
+			kodyId: input.kodyId,
 			exportName: normalizedExportName,
 		}),
 		sourceGuidance,

@@ -213,7 +213,7 @@ There is no author-facing `packages.invoke`. External trusted clients that must
 call a named export over HTTP use package invocation tokens. Before sending a
 user to create one, load `coding_guide_get` with
 `guide: "package_invocation_token_setup"` and construct a prefilled
-`/account/packages/:packageId?newToken=1` URL without raw token material.
+`/@{username}/{kodyId}?newToken=1` URL without raw token material.
 
 Scoped resolution is exact: `kody:@kentcdodds/google` selects the caller's
 package under that person scope. A person scope never grants access to another
@@ -539,7 +539,7 @@ A package with a **`locked_at`** timestamp on `/account/packages` (and on
 and the five-minute reconcile job cannot advance `published_commit`. Use
 **`package_update`** with **`changes: { locked: true }`** to lock a package.
 Agents cannot unlock. If an agent needs the package unlocked, it should send the
-owner to `/account/packages/:packageId` so they can click the lock icon.
+owner to `/@{username}/{kodyId}` so they can click the lock icon.
 `package_update` rejects **`changes.locked: false`** and returns that URL.
 
 When an agent pushes or saves a locked package, the commit still lands on

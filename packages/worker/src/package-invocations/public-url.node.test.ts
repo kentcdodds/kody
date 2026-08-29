@@ -19,7 +19,7 @@ test('buildExternalPackageInvocationDescriptor normalizes subpath and root expor
 		routeExportName: 'process-video',
 		normalizedExportName: './process-video',
 		tokenSetupUrl:
-			'https://heykody.dev/account/packages/pkg-youtube?newToken=1&exportNames=process-video',
+			'https://heykody.dev/@kentcdodds/youtube-livestream-vod-manager?newToken=1&exportNames=process-video',
 	})
 	expect(subpathDescriptor.sourceGuidance).toBeTypeOf('string')
 
@@ -37,6 +37,6 @@ test('buildExternalPackageInvocationDescriptor normalizes subpath and root expor
 		routeExportName: '__root__',
 		normalizedExportName: '.',
 		tokenSetupUrl:
-			'https://heykody.dev/account/packages/pkg-discord?newToken=1&exportNames=.',
+			'https://heykody.dev/@kentcdodds/discord-gateway?newToken=1&exportNames=.',
 	})
 })

@@ -69,11 +69,11 @@ An entire saved-package UUID or `kody.id` is treated as an exact package
 identity when it resolves for the signed-in user, except when that identity also
 names a synthesized provider; that query participates in ranking so the package
 and provider card can appear together. Kody also recognizes current-origin
-`/account/packages/:packageId` URLs, owner-matching
-`/@username/packages/:kodyId` URLs, and per-user package-app subdomain URLs
-(`https://{username}.<package-app host>/packages/:kodyId`) — so a URL copied
-from an open app resolves too. Exact package identities never compete with
-semantic capability results. Hidden exact query matches still require
+`/account/packages/:packageId` URLs (which redirect to the package page),
+owner-matching `/@username/:kodyId` package pages, and per-user package-app
+subdomain URLs (`https://{username}.<package-app host>/packages/:kodyId`) — so a
+URL copied from an open app resolves too. Exact package identities never compete
+with semantic capability results. Hidden exact query matches still require
 `includeHiddenPackages: true`; exact `entity` lookup by UUID or `kody.id`
 ignores the hidden discovery preference.
 
