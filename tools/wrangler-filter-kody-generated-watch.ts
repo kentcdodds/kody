@@ -24,7 +24,7 @@ export const wranglerCliPath = path.join(
 
 const patchMarker = 'kody-1789'
 const watchBlockPattern =
-	/if \(props\.findAdditionalModules\) \{\s*watchFiles = foundModulePaths(?:\.filter\(\(p\) => !p\.includes\("\.kody-generated"\)\))?;\s*const root = path31__namespace\.default\.resolve\(props\.entry\.moduleRoot\);\s*for await \(const dir5 of findAdditionalModuleWatchDirs\(root\)\) \{\s*watchDirs\.push\(dir5\);\s*\}\s*\}/
+	/if \(props\.findAdditionalModules\) \{\s*watchFiles = foundModulePaths(?:\.filter\(\(p\) => !p\.includes\("\.kody-generated"\)\))?;\s*const root = path31__namespace\.default\.resolve\(props\.entry\.moduleRoot\);\s*for await \(const dir\d+ of findAdditionalModuleWatchDirs\(root\)\) \{\s*watchDirs\.push\(dir\d+\);\s*\}\s*\}/
 
 const patchedBlock = `if (props.findAdditionalModules) {
               // ${patchMarker}: generated additional modules must not be watched
