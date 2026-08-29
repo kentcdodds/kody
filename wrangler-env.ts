@@ -12,6 +12,7 @@ import {
 import { resolveLocalBinary } from './tools/node-runtime.ts'
 import { ensureWorkerBundlerModules } from './tools/build-worker-bundler-modules.ts'
 import { ensureGuideCatalogModules } from './tools/build-guide-catalog-modules.ts'
+import { ensureWranglerFiltersKodyGeneratedWatch } from './tools/wrangler-filter-kody-generated-watch.ts'
 import {
 	getDefaultWranglerConfigPath,
 	highlightWorkerWranglerConfigPath,
@@ -132,6 +133,9 @@ if (
 ) {
 	await ensureWorkerBundlerModules()
 	await ensureGuideCatalogModules()
+	if (isDevCommand) {
+		await ensureWranglerFiltersKodyGeneratedWatch()
+	}
 }
 
 if (!hasEnvFlag) {
@@ -149,9 +153,9 @@ if (
 	!args.some((arg) => arg.startsWith('--live-reload='))
 ) {
 	// Playwright / MCP e2e do not edit worker source. HTML live-reload
-	// still arms wrangler's additional-module watcher; bundler wasm is
-	// inlined into an ES module under `src/node_modules/.kody-generated/`
-	// so that watcher never re-attaches CompiledWasm (Friction #1789).
+	// still arms wrangler's additional-module watcher; bundler artifacts
+	// live under `src/node_modules/.kody-generated/` and are dropped from
+	// esbuild watchFiles (Friction #1789).
 	commandArgs.push('--live-reload', 'false')
 }
 

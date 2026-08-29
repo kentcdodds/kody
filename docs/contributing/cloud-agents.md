@@ -68,9 +68,9 @@ exist. `git push` then runs `npm run test:push` (`test:node` + `test:workers`)
 and can upload those Nx remote-cache artifacts before GitHub Actions starts.
 Playwright E2E is not in the push hook: that suite is heavier than the unit
 gate, and a failed e2e leg skips the unit gate when the push is retried with
-`--no-verify`. Bundler wasm is inlined into an ES additional module under
-`src/node_modules/.kody-generated/` so `wrangler dev` does not loop on
-CompiledWasm re-attach / overlay create events. Run `npm run test:e2e:run` or
+`--no-verify`. Bundler artifacts live under `src/node_modules/.kody-generated/`
+and are dropped from wrangler's additional-module `watchFiles` so `wrangler dev`
+does not loop on overlay create events. Run `npm run test:e2e:run` or
 `npm run validate` for the Playwright gate locally.
 
 Cloud Agent environment `start` should run `npm run hooks:ensure` so a snapshot

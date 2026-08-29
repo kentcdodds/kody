@@ -31,7 +31,6 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 	for (const name of [
 		'worker-bundler.mjs',
 		'worker-bundler-typescript.mjs',
-		'esbuild-wasm.mjs',
 		'esbuild.wasm',
 		'worker-bundler.stamp.json',
 	] as const) {
@@ -42,22 +41,23 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 	for (const name of [
 		'worker-bundler.mjs',
 		'worker-bundler-typescript.mjs',
-		'esbuild-wasm.mjs',
+		'esbuild.wasm',
 	] as const) {
 		expect(await pathExists(path.join(workerBundlerWranglerDir, name))).toBe(
 			true,
 		)
 	}
 	expect(
-		await pathExists(path.join(workerBundlerWranglerDir, 'esbuild.wasm')),
+		await pathExists(path.join(workerBundlerWranglerDir, 'esbuild-wasm.mjs')),
 	).toBe(false)
 
-	const bundlerSource = await readFile(
-		path.join(workerBundlerWranglerDir, 'worker-bundler.mjs'),
-		'utf8',
+	const generatedWasm = await readFile(
+		path.join(workerBundlerGeneratedDir, 'esbuild.wasm'),
 	)
-	expect(bundlerSource.includes('import("./esbuild-wasm.mjs")')).toBe(true)
-	expect(bundlerSource.includes('import("./esbuild.wasm")')).toBe(false)
+	const wranglerWasm = await readFile(
+		path.join(workerBundlerWranglerDir, 'esbuild.wasm'),
+	)
+	expect(generatedWasm.equals(wranglerWasm)).toBe(true)
 })
 
 test('ensureWorkerBundlerModules removes leftover src/generated bundler artifacts', async () => {

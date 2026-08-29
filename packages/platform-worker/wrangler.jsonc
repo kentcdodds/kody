@@ -49,6 +49,11 @@
 			],
 			"fallthrough": true,
 		},
+		{
+			"type": "CompiledWasm",
+			"globs": ["node_modules/.kody-generated/*.wasm"],
+			"fallthrough": true,
+		},
 	],
 	// Production Durable Object storage moves with the classes from the
 	// origin `kody` script via a transfer migration; this applies on the
