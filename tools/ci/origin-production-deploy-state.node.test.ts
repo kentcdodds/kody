@@ -6,6 +6,7 @@ import {
 	classifyOriginProductionScriptState,
 	inspectOriginProductionScriptState,
 	isCloudflareNotFoundError,
+	originBootstrapConfigPath,
 	planOriginProductionDeploy,
 	platformOwnedClassNames,
 	productionOriginScriptName,
@@ -384,4 +385,15 @@ test('stripOriginCrossScriptClassBindings is a no-op when there are no matching 
 			}
 		).script_name,
 	).toBe(productionPlatformScriptName)
+})
+
+test('originBootstrapConfigPath writes beside the generated config and rejects other suffixes', () => {
+	expect(
+		originBootstrapConfigPath(
+			'packages/worker/wrangler-production.generated.json',
+		),
+	).toBe('packages/worker/wrangler-production-bootstrap.generated.json')
+	expect(() =>
+		originBootstrapConfigPath('packages/worker/wrangler-production.json'),
+	).toThrow(/\.generated\.json/)
 })

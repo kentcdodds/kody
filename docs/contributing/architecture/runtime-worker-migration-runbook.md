@@ -68,7 +68,8 @@ fresh origin script (or an origin that still owns the classes while this worker
 owns none) bootstraps with the full entry before this worker's
 `transferred_classes` tag runs; the bootstrap workflow uses a distinct name so
 it does not collide with `kody-runtime-dynamic-callable-workflows`. Steady-state
-origin uploads the slim entry and skip that bootstrap.
+origin uploads the slim entry and skip that bootstrap. Ambiguous Cloudflare
+state keeps the full entry and does not force a transfer.
 
 When runtime sources change on a steady-state script, the workflow deploys
 `kody-runtime` before origin so cross-script bindings stay valid. That order is

@@ -300,10 +300,19 @@ export { JobsHost }
 
 test('hasExportStarDeclaration detects runtime export-star and ignores type-only stars', () => {
 	expect(hasExportStarDeclaration('export * from "./index.ts"')).toBe(true)
+	expect(hasExportStarDeclaration('export * as Legacy from "./index.ts"')).toBe(
+		true,
+	)
 	expect(hasExportStarDeclaration('export type * from "./types.ts"')).toBe(
 		false,
 	)
 	expect(hasExportStarDeclaration('export { JobsHost }')).toBe(false)
+})
+
+test('extractNamedExports ignores default and declare-only declarations', () => {
+	expect(extractNamedExports('export default class JobsHost {}')).toEqual([])
+	expect(extractNamedExports('export declare class JobsHost {}')).toEqual([])
+	expect(extractNamedExports('export class JobsHost {}')).toEqual(['JobsHost'])
 })
 
 test('rejects a production entry that star-exports hidden runtime names', () => {
@@ -319,6 +328,21 @@ export default originWorkerHandler
 	})
 	expect(result.ok).toBe(false)
 	expect(result.errors).toEqual([
+		expect.stringContaining('must not use export *'),
+	])
+
+	const namespaceResult = checkOriginProductionExports({
+		configPath,
+		config: createConfig({}),
+		devEntrySource,
+		productionEntrySource: `
+export { KodyFetchGateway, JobsHost }
+export * as Legacy from "./index.ts"
+export default originWorkerHandler
+`,
+	})
+	expect(namespaceResult.ok).toBe(false)
+	expect(namespaceResult.errors).toEqual([
 		expect.stringContaining('must not use export *'),
 	])
 })

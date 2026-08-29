@@ -20,6 +20,7 @@ import { parseProductionQueueResources } from './production-queue-resources.ts'
 import { defaultProductionEntryPath } from '../check-origin-production-exports.ts'
 import {
 	inspectOriginProductionScriptState,
+	originBootstrapConfigPath,
 	planOriginProductionDeploy,
 	stripOriginBindingsForLocallyOwnedClasses,
 	writeOriginBootstrapWranglerConfig,
@@ -777,10 +778,7 @@ async function ensureProductionResources(options: CliOptions) {
 		)
 		bootstrapConfigPath = await writeOriginBootstrapWranglerConfig({
 			generatedConfig,
-			outConfigPath: options.outConfigPath.replace(
-				/\.generated\.json$/u,
-				'-bootstrap.generated.json',
-			),
+			outConfigPath: originBootstrapConfigPath(options.outConfigPath),
 		})
 	} else if (
 		deployPlan.originEntry === 'full' &&

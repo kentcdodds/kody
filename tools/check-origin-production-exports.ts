@@ -56,12 +56,9 @@ export function extractNamedExports(source: string): Array<string> {
 	)
 	const names = new Set<string>()
 
-	const hasExportModifier = (node: ts.Node) =>
+	const hasModifier = (node: ts.Node, kind: ts.SyntaxKind) =>
 		ts.canHaveModifiers(node) &&
-		ts
-			.getModifiers(node)
-			?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ===
-			true
+		ts.getModifiers(node)?.some((modifier) => modifier.kind === kind) === true
 
 	for (const statement of sourceFile.statements) {
 		if (ts.isExportDeclaration(statement)) {
@@ -76,7 +73,9 @@ export function extractNamedExports(source: string): Array<string> {
 			continue
 		}
 
-		if (!hasExportModifier(statement)) continue
+		if (!hasModifier(statement, ts.SyntaxKind.ExportKeyword)) continue
+		if (hasModifier(statement, ts.SyntaxKind.DefaultKeyword)) continue
+		if (hasModifier(statement, ts.SyntaxKind.DeclareKeyword)) continue
 
 		if (ts.isVariableStatement(statement)) {
 			for (const declaration of statement.declarationList.declarations) {
@@ -100,9 +99,9 @@ export function extractNamedExports(source: string): Array<string> {
 }
 
 /**
- * `export * from "./module"` forwards every runtime named export. The
- * production entry allowlist cannot see those names, so the checker
- * rejects export-star instead of treating the file as empty.
+ * `export * from "./module"` and `export * as ns from "./module"` forward
+ * runtime names the production allowlist cannot see, so the checker
+ * rejects them instead of treating the file as empty.
  */
 export function hasExportStarDeclaration(source: string): boolean {
 	const sourceFile = ts.createSourceFile(
@@ -115,7 +114,11 @@ export function hasExportStarDeclaration(source: string): boolean {
 	return sourceFile.statements.some((statement) => {
 		if (!ts.isExportDeclaration(statement)) return false
 		if (statement.isTypeOnly) return false
-		return Boolean(statement.moduleSpecifier) && statement.exportClause == null
+		if (!statement.moduleSpecifier) return false
+		return (
+			statement.exportClause == null ||
+			ts.isNamespaceExport(statement.exportClause)
+		)
 	})
 }
 
@@ -242,7 +245,7 @@ export function checkOriginProductionExports(input: {
 	const productionExports = new Set(productionExportsList)
 	if (hasExportStarDeclaration(input.productionEntrySource)) {
 		errors.push(
-			`${productionEntryPath}: must not use export * (the production allowlist cannot see star-forwarded runtime names).`,
+			`${productionEntryPath}: must not use export * or export * as (the production allowlist cannot see star-forwarded runtime names).`,
 		)
 	}
 

@@ -500,6 +500,18 @@ export function stripOriginBindingsForLocallyOwnedClasses(
 	return config
 }
 
+export function originBootstrapConfigPath(generatedConfigPath: string) {
+	if (!generatedConfigPath.endsWith('.generated.json')) {
+		throw new Error(
+			`Origin bootstrap config path requires a .generated.json out-config (got ${JSON.stringify(generatedConfigPath)}) so the bootstrap file cannot overwrite the slim generated config.`,
+		)
+	}
+	return generatedConfigPath.replace(
+		/\.generated\.json$/u,
+		'-bootstrap.generated.json',
+	)
+}
+
 export async function writeOriginBootstrapWranglerConfig(input: {
 	generatedConfig: Record<string, unknown>
 	outConfigPath: string
