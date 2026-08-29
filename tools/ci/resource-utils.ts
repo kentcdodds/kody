@@ -1576,6 +1576,7 @@ export async function writeGeneratedWranglerConfig({
 	queueBindings,
 	serviceBindings,
 	extraMigrations,
+	mainEntryPath,
 }: {
 	baseConfigPath: string
 	outConfigPath: string
@@ -1590,6 +1591,7 @@ export async function writeGeneratedWranglerConfig({
 	communityAssetsBucketName: string
 	emailBlobsBucketName: string
 	repoSessionBlobsBucketName: string
+	mainEntryPath?: string
 	workerVars?: Record<string, string | undefined>
 	queueBindings?: Array<{
 		binding: string
@@ -1617,6 +1619,10 @@ export async function writeGeneratedWranglerConfig({
 
 	if (workerName) {
 		config.name = workerName
+	}
+
+	if (mainEntryPath) {
+		config.main = mainEntryPath
 	}
 
 	const targetAssets = (targetEnv as Record<string, unknown>).assets

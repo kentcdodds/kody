@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import {
 	ensureArtifactsAccountEventSubscription,
 	ensureCloudflareQueue,
@@ -17,6 +17,15 @@ import {
 	writeGeneratedWranglerConfig,
 } from './resource-utils.ts'
 import { parseProductionQueueResources } from './production-queue-resources.ts'
+import { defaultProductionEntryPath } from '../check-origin-production-exports.ts'
+import {
+	inspectOriginProductionScriptState,
+	originBootstrapConfigPath,
+	planOriginProductionDeploy,
+	stripOriginBindingsForLocallyOwnedClasses,
+	writeOriginBootstrapWranglerConfig,
+	type OriginProductionScriptState,
+} from './origin-production-deploy-state.ts'
 
 type Command = 'ensure'
 
@@ -708,11 +717,37 @@ async function ensureProductionResources(options: CliOptions) {
 		})
 	}
 
+	const deployState: OriginProductionScriptState =
+		options.dryRun || !accountId || !apiToken
+			? {
+					mode: 'ambiguous',
+					reason:
+						'Dry-run or missing Cloudflare credentials; keep the full origin entry and do not bootstrap transfers.',
+					originOwnedTransferredClassNames: [],
+				}
+			: await inspectOriginProductionScriptState({
+					accountId,
+					apiToken,
+				})
+	const deployPlan = planOriginProductionDeploy(deployState)
+	console.error(
+		`Origin production deploy state: ${deployPlan.mode} (${deployPlan.originEntry} entry${deployPlan.runOriginBootstrap ? ', bootstrap then transfer' : ''}). ${deployPlan.reason}`,
+	)
+
 	const generatedConfigPath = await writeGeneratedWranglerConfig({
 		baseConfigPath: options.wranglerConfigPath,
 		outConfigPath: options.outConfigPath,
 		envName: 'production',
 		workerName: bindings.workerName,
+		// The committed config keeps env.production on the dev/test/preview
+		// entry. Only this generated config — the one the production deploy
+		// actually runs against — points top-level `main` at the slim
+		// production origin entry, and only after the live script is
+		// classified as steady-state or a fresh bootstrap that will transfer
+		// before the slim upload.
+		...(deployPlan.originEntry === 'slim'
+			? { mainEntryPath: defaultProductionEntryPath }
+			: {}),
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
 		auditD1DatabaseName: auditD1.name,
@@ -736,8 +771,46 @@ async function ensureProductionResources(options: CliOptions) {
 		},
 	})
 
+	let bootstrapConfigPath = ''
+	if (deployPlan.runOriginBootstrap) {
+		const generatedConfig = parseJsonc<Record<string, unknown>>(
+			await readFile(generatedConfigPath, 'utf8'),
+		)
+		bootstrapConfigPath = await writeOriginBootstrapWranglerConfig({
+			generatedConfig,
+			outConfigPath: originBootstrapConfigPath(options.outConfigPath),
+		})
+	} else if (
+		deployPlan.originEntry === 'full' &&
+		deployState.originOwnedTransferredClassNames.length > 0
+	) {
+		const generatedConfig = parseJsonc<Record<string, unknown>>(
+			await readFile(generatedConfigPath, 'utf8'),
+		)
+		stripOriginBindingsForLocallyOwnedClasses(
+			generatedConfig,
+			deployState.originOwnedTransferredClassNames,
+		)
+		await writeFile(
+			generatedConfigPath,
+			`${JSON.stringify(generatedConfig, null, '\t')}\n`,
+			'utf8',
+		)
+	}
+
 	// Emit GitHub Actions-friendly outputs (stdout only).
 	console.log(`wrangler_config=${generatedConfigPath}`)
+	console.log(`origin_deploy_mode=${deployPlan.mode}`)
+	console.log(`origin_entry=${deployPlan.originEntry}`)
+	console.log(
+		`origin_bootstrap=${deployPlan.runOriginBootstrap ? 'true' : 'false'}`,
+	)
+	console.log(
+		`origin_force_platform_runtime=${deployPlan.forcePlatformAndRuntime ? 'true' : 'false'}`,
+	)
+	if (bootstrapConfigPath) {
+		console.log(`origin_bootstrap_wrangler_config=${bootstrapConfigPath}`)
+	}
 	console.log(`d1_database_name=${d1.name}`)
 	console.log(`d1_database_id=${d1.id}`)
 	console.log(`audit_d1_database_name=${auditD1.name}`)

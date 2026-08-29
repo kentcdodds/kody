@@ -286,6 +286,38 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 	}
 })
 
+test('writeGeneratedWranglerConfig can override top-level main for the slim production entry', async () => {
+	consoleError.mockImplementation(() => {})
+	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-main-entry-'))
+	try {
+		const outPath = path.join(tempDir, 'wrangler-production.generated.json')
+		await writeGeneratedWranglerConfig({
+			baseConfigPath: workerWranglerConfigPath,
+			outConfigPath: outPath,
+			envName: 'production',
+			d1DatabaseName: 'kody',
+			d1DatabaseId: 'dry-run-kody',
+			auditD1DatabaseName: 'kody-audit',
+			auditD1DatabaseId: 'dry-run-kody-audit',
+			oauthKvId: 'dry-run-kody-oauth',
+			bundleArtifactsKvId: 'dry-run-kody-bundle-artifacts',
+			communityAssetsBucketName: 'kody-community-assets',
+			emailBlobsBucketName: 'kody-email-blobs',
+			repoSessionBlobsBucketName: 'kody-repo-session-blobs',
+			workerVars: { APP_BASE_URL: 'https://heykody.dev' },
+			mainEntryPath: './src/production-worker.ts',
+		})
+		const config = parseJsonc<{
+			main?: string
+			env?: { production?: { main?: string } }
+		}>(await readFile(outPath, 'utf8'))
+		expect(config.main).toBe('./src/production-worker.ts')
+		expect(config.env?.production?.main).toBeUndefined()
+	} finally {
+		await rm(tempDir, { force: true, recursive: true })
+	}
+})
+
 test('writeGeneratedWranglerConfig keeps legacy app hosts attached during a domain migration', async () => {
 	consoleError.mockImplementation(() => {})
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), 'kody-legacy-hosts-'))

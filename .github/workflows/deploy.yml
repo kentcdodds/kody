@@ -440,7 +440,8 @@ jobs:
         id: runtime_config
         if: >-
           needs.sha-guard.outputs.deploy_runtime == 'true' ||
-          needs.sha-guard.outputs.deploy_platform == 'true'
+          needs.sha-guard.outputs.deploy_platform == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         run: |
           set -euo pipefail
           node tools/ci/runtime-worker-config.ts generate \
@@ -457,7 +458,9 @@ jobs:
       # and origin retarget their bindings.
       - name: 🧩 Generate platform worker config
         id: platform_config
-        if: needs.sha-guard.outputs.deploy_platform == 'true'
+        if: >-
+          needs.sha-guard.outputs.deploy_platform == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         run: |
           set -euo pipefail
           node tools/ci/platform-worker-config.ts generate \
@@ -526,7 +529,9 @@ jobs:
       # COOKIE_SECRET to kody-runtime-production while deploy uploads
       # kody-runtime. Preview uses the same empty-env pin.
       - name: 🔐 Sync Cloudflare Secrets to runtime worker (bulk)
-        if: needs.sha-guard.outputs.deploy_runtime == 'true'
+        if: >-
+          needs.sha-guard.outputs.deploy_runtime == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WRANGLER_CONFIG:
@@ -546,7 +551,9 @@ jobs:
       # Objects execute capabilities that need OAuth, Stripe, and the rest.
       # --env "" with --name: same wrangler suffix pitfall as runtime.
       - name: 🔐 Sync Cloudflare Secrets to platform worker (bulk)
-        if: needs.sha-guard.outputs.deploy_platform == 'true'
+        if: >-
+          needs.sha-guard.outputs.deploy_platform == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           WRANGLER_CONFIG:
@@ -601,12 +608,63 @@ jobs:
           node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config "$WRANGLER_CONFIG"
           node ./wrangler-env.ts d1 migrations apply AUDIT_DB --remote --config "$WRANGLER_CONFIG"
 
+      # Fresh production origin only: replay new_sqlite_classes with the full
+      # entry so platform/runtime transferred_classes have a source script.
+      # Steady-state production never takes this path.
+      - name: ☁️ Bootstrap fresh origin Worker (full entry)
+        if: steps.resources.outputs.origin_deploy_mode == 'fresh'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
+          WRANGLER_CONFIG:
+            ${{ steps.resources.outputs.origin_bootstrap_wrangler_config }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WRANGLER_CONFIG:-}" ]; then
+            echo "Fresh origin bootstrap is missing origin_bootstrap_wrangler_config." >&2
+            exit 1
+          fi
+
+          is_retryable_deploy_failure() {
+            node tools/ci/is-retryable-deploy-failure.ts deploy-origin-bootstrap.log
+          }
+
+          deploy_attempts=3
+          deploy_delay_seconds=10
+          for attempt in $(seq 1 "$deploy_attempts"); do
+            echo "Origin bootstrap deploy attempt $attempt/$deploy_attempts"
+            set +e
+            npm run deploy -- --config "$WRANGLER_CONFIG" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-origin-bootstrap.log
+            deploy_status="${PIPESTATUS[0]}"
+            set -e
+
+            if [ "$deploy_status" -eq 0 ]; then
+              break
+            fi
+
+            if [ "$attempt" -eq "$deploy_attempts" ]; then
+              echo "Origin bootstrap deploy failed after $deploy_attempts attempts." >&2
+              exit "$deploy_status"
+            fi
+
+            if ! is_retryable_deploy_failure; then
+              echo "Origin bootstrap deploy failed with a non-retryable error." >&2
+              exit "$deploy_status"
+            fi
+
+            echo "Retryable Cloudflare deploy failure detected; retrying in ${deploy_delay_seconds}s."
+            sleep "$deploy_delay_seconds"
+            deploy_delay_seconds=$((deploy_delay_seconds * 2))
+          done
+
       # Deploys before runtime and origin: applies transferred_classes while
       # the still-running origin script owns those classes. See
       # docs/contributing/architecture/platform-worker-migration-runbook.md.
       - name: ☁️ Deploy platform worker to Cloudflare Workers
         id: deploy_platform
-        if: needs.sha-guard.outputs.deploy_platform == 'true'
+        if: >-
+          needs.sha-guard.outputs.deploy_platform == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
@@ -662,7 +720,9 @@ jobs:
       # docs/contributing/architecture/runtime-worker-migration-runbook.md.
       - name: ☁️ Deploy runtime worker to Cloudflare Workers
         id: deploy_runtime
-        if: needs.sha-guard.outputs.deploy_runtime == 'true'
+        if: >-
+          needs.sha-guard.outputs.deploy_runtime == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
@@ -713,7 +773,9 @@ jobs:
 
       - name: 🧾 Collect deploy info
         id: deploy_info
-        if: needs.sha-guard.outputs.deploy_main == 'true'
+        if: >-
+          needs.sha-guard.outputs.deploy_main == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           DEPLOY_COMMIT_SHA: ${{ needs.sha-guard.outputs.deploy_sha }}
           DEPLOY_ENVIRONMENT: production
@@ -725,7 +787,9 @@ jobs:
 
       - name: ☁️ Deploy to Cloudflare Workers
         id: deploy
-        if: needs.sha-guard.outputs.deploy_main == 'true'
+        if: >-
+          needs.sha-guard.outputs.deploy_main == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           APP_BASE_URL: ${{ vars.APP_BASE_URL }}
@@ -792,7 +856,9 @@ jobs:
           npm run sentry:upload-sourcemaps
 
       - name: 🩺 Healthcheck (production)
-        if: needs.sha-guard.outputs.deploy_main == 'true'
+        if: >-
+          needs.sha-guard.outputs.deploy_main == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         shell: bash
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}
@@ -835,7 +901,9 @@ jobs:
           exit 1
 
       - name: 🩺 Healthcheck platform worker (production)
-        if: needs.sha-guard.outputs.deploy_platform == 'true'
+        if: >-
+          needs.sha-guard.outputs.deploy_platform == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         shell: bash
         env:
           PLATFORM_URL: ${{ steps.deploy_platform.outputs.url }}
@@ -878,7 +946,9 @@ jobs:
           exit 1
 
       - name: 🩺 Healthcheck runtime worker (production)
-        if: needs.sha-guard.outputs.deploy_runtime == 'true'
+        if: >-
+          needs.sha-guard.outputs.deploy_runtime == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         shell: bash
         env:
           RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
@@ -921,7 +991,9 @@ jobs:
           exit 1
 
       - name: 🧪 Origin-only execute smoke check (production)
-        if: needs.sha-guard.outputs.deploy_main == 'true'
+        if: >-
+          needs.sha-guard.outputs.deploy_main == 'true' ||
+          steps.resources.outputs.origin_deploy_mode == 'fresh'
         shell: bash
         env:
           DEPLOY_URL: ${{ steps.deploy.outputs.url }}

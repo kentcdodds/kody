@@ -62,10 +62,19 @@ deploy can publish" — that first publish already happened.
 The merged main-branch deploy workflow encodes deploy order. Merge and watch; do
 not run wrangler by hand to "finish" a transfer or to free the package-app zone.
 
-When runtime sources change, the workflow deploys `kody-runtime` before origin
-so cross-script bindings stay valid. That order is binding and healthcheck
-hygiene. It does not re-apply the `v1` transfer and it does not republish
-package-app zone routes as a first-time attach.
+Origin uploads use the same fail-closed classifier as the
+[platform runbook](./platform-worker-migration-runbook.md#later-deploys): a
+fresh origin script (or an origin that still owns the classes while this worker
+owns none) bootstraps with the full entry before this worker's
+`transferred_classes` tag runs; the bootstrap workflow uses a distinct name so
+it does not collide with `kody-runtime-dynamic-callable-workflows`. Steady-state
+origin uploads the slim entry and skip that bootstrap. Ambiguous Cloudflare
+state keeps the full entry and does not force a transfer.
+
+When runtime sources change on a steady-state script, the workflow deploys
+`kody-runtime` before origin so cross-script bindings stay valid. That order is
+binding and healthcheck hygiene. It does not re-apply the `v1` transfer and it
+does not republish package-app zone routes as a first-time attach.
 
 Remix/blog/UI-only uploads skip runtime. Official guide markdown still skips
 runtime.
