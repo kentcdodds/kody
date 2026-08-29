@@ -6,6 +6,11 @@ summary:
   drafts and send. Publish a drafts-only package, then lock it so the token
   cannot grow into send without the owner.
 category: platform
+image: /images/kody-gmail-drafts-lock.webp
+imageAlt:
+  Kody locking a sealed envelope with a gold padlock while a paper airplane sits
+  tied with a gold ribbon
+ogImage: /images/kody-gmail-drafts-lock-og.jpg
 ---
 
 # Gmail drafts without send — lock what Google cannot scope
