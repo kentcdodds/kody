@@ -51,6 +51,18 @@ async function claimAndSend(input: {
 	})
 	if (await kv.get(key)) return false
 
+	try {
+		await kv.put(key, String(Date.now()), {
+			expirationTtl: userAccountEmailClaimTtlSeconds,
+		})
+	} catch (error) {
+		console.warn('user-account-email-claim-failed', {
+			kind: input.kind,
+			error,
+		})
+		return false
+	}
+
 	const email = input.build(emailConfig)
 	let sendResult: Awaited<ReturnType<typeof sendCloudflareEmail>>
 	try {
@@ -73,6 +85,7 @@ async function claimAndSend(input: {
 			kind: input.kind,
 			error,
 		})
+		await releaseEmailClaim(kv, key)
 		return false
 	}
 	if (!sendResult.ok) {
@@ -80,20 +93,18 @@ async function claimAndSend(input: {
 			kind: input.kind,
 			reason: sendResult.error ?? 'unconfigured',
 		})
+		await releaseEmailClaim(kv, key)
 		return false
 	}
-
-	try {
-		await kv.put(key, String(Date.now()), {
-			expirationTtl: userAccountEmailClaimTtlSeconds,
-		})
-	} catch (error) {
-		console.warn('user-account-email-claim-failed', {
-			kind: input.kind,
-			error,
-		})
-	}
 	return true
+}
+
+async function releaseEmailClaim(kv: KVNamespace, key: string) {
+	try {
+		await kv.delete(key)
+	} catch (error) {
+		console.warn('user-account-email-claim-release-failed', { key, error })
+	}
 }
 
 export async function sendConnectAgentEmail(input: {

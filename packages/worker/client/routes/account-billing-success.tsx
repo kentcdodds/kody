@@ -37,6 +37,8 @@ export async function accountBillingSuccessRouteLoader(
 }
 
 export function AccountBillingSuccessRoute(handle: Handle) {
+	let persisted: AccountBillingSuccessLoaderData | null = null
+
 	return () => {
 		const href = readCurrentRouterHref(handle)
 		const routeData = tryConsumeRouteLoaderData(
@@ -44,7 +46,8 @@ export function AccountBillingSuccessRoute(handle: Handle) {
 			'accountBillingSuccess',
 			href,
 		)
-		const data: AccountBillingSuccessLoaderData = routeData ?? {
+		if (routeData) persisted = routeData
+		const data: AccountBillingSuccessLoaderData = persisted ?? {
 			ok: true,
 			needsOnboarding: true,
 		}

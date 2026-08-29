@@ -766,7 +766,8 @@ export async function syncPackageJobsForPackage(input: {
 					}
 					if (
 						JSON.stringify(existing.record.schedule) !==
-						JSON.stringify(schedule)
+							JSON.stringify(schedule) ||
+						existing.record.timezone !== timezone
 					) {
 						assertJobScheduleIntervalFloor({
 							plan,
@@ -1001,7 +1002,8 @@ export async function updateJob(input: {
 				: (input.body.enabled ?? existing.enabled)
 			const scheduleChanged =
 				JSON.stringify(nextSchedule) !== JSON.stringify(existing.schedule)
-			if (scheduleChanged) {
+			const timezoneChanged = nextTimezone !== existing.timezone
+			if (scheduleChanged || timezoneChanged) {
 				assertJobScheduleIntervalFloor({
 					plan: await getCachedUserPlan(input.env.APP_DB, {
 						userId: callerContext.user.userId,

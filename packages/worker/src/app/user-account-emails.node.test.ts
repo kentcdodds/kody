@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const sendCloudflareEmail = vi.fn(async () => ({ ok: true }))
 
@@ -37,6 +38,9 @@ function createKv() {
 			) {
 				puts.push({ key, value, options })
 				store.set(key, value)
+			},
+			async delete(key: string) {
+				store.delete(key)
 			},
 		} as unknown as KVNamespace,
 	}
@@ -123,4 +127,54 @@ test('account emails claim once per kind and skip when KV or sender is missing',
 		}),
 	).toBe(true)
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(3)
+})
+
+test('account emails reserve the KV claim before sending and release it on send failure', async () => {
+	const { kv, store } = createKv()
+	const env = createEnv(kv)
+	const order: Array<string> = []
+	const originalPut = kv.put.bind(kv)
+	kv.put = async (...args: Parameters<KVNamespace['put']>) => {
+		order.push('put')
+		return originalPut(...args)
+	}
+	sendCloudflareEmail.mockImplementation(async () => {
+		order.push('send')
+		return { ok: true }
+	})
+
+	expect(
+		await sendConnectAgentEmail({
+			env,
+			email: 'ada@example.com',
+			userId: 'user-claim',
+		}),
+	).toBe(true)
+	expect(order).toEqual(['put', 'send'])
+
+	sendCloudflareEmail.mockImplementation(async () => {
+		throw new Error('smtp down')
+	})
+	consoleWarn.mockImplementation(() => {})
+	expect(
+		await sendBillingSuccessEmail({
+			env,
+			email: 'ada@example.com',
+			userId: 'user-claim',
+			planLabel: 'Pro',
+		}),
+	).toBe(false)
+	expect(consoleWarn).toHaveBeenCalledWith('user-account-email-send-failed', {
+		kind: 'billing_success',
+		error: expect.any(Error),
+	})
+	expect(
+		store.get(
+			userAccountEmailKvKey({
+				userId: 'user-claim',
+				kind: 'billing_success',
+				suffix: 'pro',
+			}),
+		),
+	).toBeUndefined()
 })

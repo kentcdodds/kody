@@ -1807,6 +1807,16 @@ test('free plan rejects new or changed schedules faster than 15 minutes and gran
 			},
 		}),
 	).rejects.toSatisfy((error: unknown) => isJobIntervalFloorError(error))
+	await expect(
+		updateJob({
+			env,
+			callerContext,
+			body: {
+				id: grandfathered.id,
+				timezone: 'America/Denver',
+			},
+		}),
+	).rejects.toSatisfy((error: unknown) => isJobIntervalFloorError(error))
 
 	const paidCreated = await syncSinglePackageJob({
 		env,

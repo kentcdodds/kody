@@ -325,7 +325,9 @@ export async function handleMcpRequest({
 					email: mcpUser.email,
 				})
 			}
-		})(),
+		})().catch((error) => {
+			console.warn('mcp-first-connected-kit-sync-failed', error)
+		}),
 	)
 
 	return await withAccountWriteLease({

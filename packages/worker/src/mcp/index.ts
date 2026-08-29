@@ -69,7 +69,9 @@ class MCPBase extends McpAgent<Env, State, Props> {
 							email: caller.user?.email,
 						})
 					}
-				})(),
+				})().catch((error) => {
+					console.warn('mcp-first-connected-kit-sync-failed', error)
+				}),
 			)
 		}
 		const [overlay, registry, popularPackages, retiringNoticeIds] =

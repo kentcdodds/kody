@@ -318,13 +318,20 @@ export async function refreshSavedPackageProjection(input: {
 					email: input.userEmail,
 					resource: 'saved_packages',
 				})
-				const beforePackage = await input.env.APP_DB.prepare(
-					`SELECT first_saved_package_at FROM users WHERE stable_user_id = ?`,
-				)
-					.bind(input.userId)
-					.first<{ first_saved_package_at: string | null }>()
+				let isFirstSavedPackage = false
+				try {
+					const beforePackage = await input.env.APP_DB.prepare(
+						`SELECT first_saved_package_at FROM users WHERE stable_user_id = ?`,
+					)
+						.bind(input.userId)
+						.first<{ first_saved_package_at: string | null }>()
+					isFirstSavedPackage = !beforePackage?.first_saved_package_at
+				} catch (error) {
+					console.warn('kit-first-package-pre-read-failed', error)
+					isFirstSavedPackage = true
+				}
 				await insertSavedPackage(input.env.APP_DB, row)
-				if (!beforePackage?.first_saved_package_at) {
+				if (isFirstSavedPackage) {
 					scheduleKitSubscriberSync({
 						env: input.env,
 						stableUserId: input.userId,
