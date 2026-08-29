@@ -124,6 +124,16 @@ test('password-change invalidation covers legacy cookies, second-precision SQLit
 		}),
 	).toBe(false)
 
+	expect(parsePasswordChangedAtMs('2026-07-25T12:00:00+00:00')).toBe(
+		Date.parse('2026-07-25T12:00:00+00:00') + 999,
+	)
+	expect(parsePasswordChangedAtMs('2026-07-25 12:00:00+00:00')).toBe(
+		Date.parse('2026-07-25T12:00:00+00:00') + 999,
+	)
+	expect(parsePasswordChangedAtMs('2026-07-25T12:00:00Z')).toBe(
+		Date.parse('2026-07-25T12:00:00Z') + 999,
+	)
+
 	const msPrecisionChangedAt = parsePasswordChangedAtMs(
 		'2026-07-25T12:00:00.400Z',
 	)

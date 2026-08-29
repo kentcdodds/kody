@@ -13,9 +13,9 @@ export function parsePasswordChangedAtMs(value: string | null | undefined) {
 	if (!value) return null
 	const trimmed = value.trim()
 	if (!trimmed) return null
-	const normalized = trimmed.includes('T')
-		? trimmed
-		: `${trimmed.replace(' ', 'T')}Z`
+	const withT = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T')
+	const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(withT)
+	const normalized = hasTimezone ? withT : `${withT}Z`
 	const ms = Date.parse(normalized)
 	if (!Number.isFinite(ms)) return null
 	const hasFractionalSeconds = /(?:[T ])\d{2}:\d{2}:\d{2}\.\d/.test(normalized)

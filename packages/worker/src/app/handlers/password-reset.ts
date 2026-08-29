@@ -297,31 +297,41 @@ export function createPasswordResetConfirmHandler(env: Env) {
 				)
 			}
 
-			// Revoke MCP grants before stamping password_changed_at so a failed
-			// revoke cannot leave refresh tokens alive after the user thinks
-			// lockout succeeded. Retrying the same reset token is safe.
-			try {
-				await revokeAllOAuthGrantsForUser({
-					helpers,
-					userId: resolveUserStableId(userRecord),
-				})
-			} catch (error) {
-				void logAuditEvent({
-					category: 'auth',
-					action: 'password_reset_confirm',
-					result: 'failure',
-					ip: requestIp,
-					path: url.pathname,
-					reason:
-						error instanceof Error
-							? error.message
-							: 'oauth_grant_revoke_failed',
-				})
-				return Response.json(
-					{ error: 'Unable to finish password reset right now.' },
-					{ status: 500 },
-				)
+			const stableUserId = resolveUserStableId(userRecord)
+			const oauthHelpers = helpers
+			async function revokeGrantsOrFail() {
+				try {
+					await revokeAllOAuthGrantsForUser({
+						helpers: oauthHelpers,
+						userId: stableUserId,
+					})
+					return null
+				} catch (error) {
+					void logAuditEvent({
+						category: 'auth',
+						action: 'password_reset_confirm',
+						result: 'failure',
+						ip: requestIp,
+						path: url.pathname,
+						reason:
+							error instanceof Error
+								? error.message
+								: 'oauth_grant_revoke_failed',
+					})
+					return Response.json(
+						{ error: 'Unable to finish password reset right now.' },
+						{ status: 500 },
+					)
+				}
 			}
+
+			// Revoke before stamping so a failed listing/revoke cannot leave
+			// refresh tokens alive after the user thinks lockout succeeded.
+			// Stamp, then revoke again so a grant created in that window is
+			// still collected. Reset tokens stay until the second pass
+			// succeeds so retry remains safe.
+			const beforeStampFailure = await revokeGrantsOrFail()
+			if (beforeStampFailure) return beforeStampFailure
 
 			const passwordHash = await createPasswordHash(password)
 			// Millisecond ISO so same-second re-login after reset is not
@@ -331,6 +341,10 @@ export function createPasswordResetConfirmHandler(env: Env) {
 				password_changed_at: new Date().toISOString(),
 				updated_at: utcSqliteTimestamp(),
 			})
+
+			const afterStampFailure = await revokeGrantsOrFail()
+			if (afterStampFailure) return afterStampFailure
+
 			await db.deleteMany(passwordResetsTable, {
 				where: { user_id: resetRecord.user_id },
 			})

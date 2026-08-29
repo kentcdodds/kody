@@ -249,20 +249,33 @@ test('password reset skips sending when APP_BASE_URL is missing and logs a redac
 	}
 })
 
+function createTrackingGrantHelpers(
+	initialGrants: Array<{ id: string; clientId: string }>,
+) {
+	const revokedGrantIds = new Array<string>()
+	const liveGrants = [...initialGrants]
+	return {
+		revokedGrantIds,
+		liveGrants,
+		helpers: {
+			listUserGrants: vi.fn(async () => ({
+				items: liveGrants.filter(
+					(grant) => !revokedGrantIds.includes(grant.id),
+				),
+			})),
+			revokeGrant: vi.fn(async (grantId: string) => {
+				revokedGrantIds.push(grantId)
+			}),
+		},
+	}
+}
+
 test('password reset confirm revokes MCP grants before stamping password_changed_at', async () => {
 	vi.clearAllMocks()
-	const revokedGrantIds = new Array<string>()
-	const helpers = {
-		listUserGrants: vi.fn(async () => ({
-			items: [
-				{ id: 'grant-1', clientId: 'client-a' },
-				{ id: 'grant-2', clientId: 'client-b' },
-			],
-		})),
-		revokeGrant: vi.fn(async (grantId: string) => {
-			revokedGrantIds.push(grantId)
-		}),
-	}
+	const { helpers, revokedGrantIds } = createTrackingGrantHelpers([
+		{ id: 'grant-1', clientId: 'client-a' },
+		{ id: 'grant-2', clientId: 'client-b' },
+	])
 	const handler = createPasswordResetConfirmHandler(
 		createEnv({
 			OAUTH_PROVIDER: helpers,
@@ -302,6 +315,38 @@ test('password reset confirm revokes MCP grants before stamping password_changed
 			result: 'success',
 		}),
 	)
+})
+
+test('password reset confirm revokes a grant created between first revoke and password_changed_at', async () => {
+	vi.clearAllMocks()
+	const { helpers, revokedGrantIds, liveGrants } = createTrackingGrantHelpers([
+		{ id: 'grant-a', clientId: 'client-a' },
+	])
+	mockModule.update.mockImplementationOnce(async () => {
+		liveGrants.push({ id: 'grant-raced', clientId: 'client-b' })
+	})
+	const handler = createPasswordResetConfirmHandler(
+		createEnv({
+			OAUTH_PROVIDER: helpers,
+		}),
+	)
+
+	const response = await handler.handler({
+		request: new Request('https://example.com/password-reset/confirm', {
+			method: 'POST',
+			body: JSON.stringify({
+				token: 'a'.repeat(64),
+				password: 'new-password-123',
+			}),
+		}),
+		url: new URL('https://example.com/password-reset/confirm'),
+		params: {},
+	})
+
+	expect(response.status).toBe(200)
+	expect(revokedGrantIds).toEqual(['grant-a', 'grant-raced'])
+	expect(mockModule.update).toHaveBeenCalled()
+	expect(mockModule.deleteMany).toHaveBeenCalled()
 })
 
 test('password reset confirm fails closed when MCP grants cannot be revoked', async () => {
