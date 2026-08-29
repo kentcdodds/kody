@@ -658,9 +658,13 @@ export async function listPublicProfilePackages(
 		ownerStableUserId: string
 		query?: string
 		limit: number
+		/** When true, include private and hidden packages (own-profile inventory). */
+		includePrivate?: boolean
 	},
 ): Promise<Array<PublicProfilePackage>> {
-	const conditions = ['user_id = ?', 'is_private = 0', 'hidden = 0']
+	const conditions = input.includePrivate
+		? ['user_id = ?']
+		: ['user_id = ?', 'is_private = 0', 'hidden = 0']
 	const bindings: Array<unknown> = [input.ownerStableUserId]
 	const tokens = extractCommunityListingLikeTokens(input.query ?? '')
 	if (tokens.length > 0) {
@@ -677,7 +681,8 @@ export async function listPublicProfilePackages(
 
 	const rows = await db
 		.prepare(
-			`SELECT id, name, kody_id, description, tags_json, updated_at
+			`SELECT id, name, kody_id, description, tags_json, updated_at,
+				is_private, hidden
 			FROM saved_packages
 			WHERE ${conditions.join(' AND ')}
 			ORDER BY updated_at DESC
@@ -696,6 +701,8 @@ export async function listPublicProfilePackages(
 		communityListingId: null as string | null,
 		communityListingKodyId: null as string | null,
 		communityPublishedAt: null as string | null,
+		isPrivate: Number(row['is_private']) === 1,
+		hidden: Number(row['hidden']) === 1,
 	}))
 
 	if (packages.length === 0) return packages

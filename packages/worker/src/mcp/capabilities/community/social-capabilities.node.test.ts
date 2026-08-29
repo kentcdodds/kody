@@ -121,7 +121,10 @@ function makePackage(
 		tags: ['demo'],
 		updatedAt: '2026-07-01T00:00:00.000Z',
 		communityListingId: 'listing-1',
+		communityListingKodyId: 'demo',
 		communityPublishedAt: '2026-07-01T00:00:00.000Z',
+		isPrivate: false,
+		hidden: false,
 		...overrides,
 	}
 }
@@ -207,6 +210,12 @@ test('community_profile_get respects visibility and package id exposure', async 
 	expect(mocks.getCommunityProfileByStableId).toHaveBeenCalledWith({
 		env: expect.anything(),
 		stableUserId: 'user-alice',
+		includePrivate: true,
+	})
+	expect(mocks.listPublicProfilePackages).toHaveBeenCalledWith({
+		env: expect.anything(),
+		ownerStableUserId: 'user-alice',
+		limit: 50,
 		includePrivate: true,
 	})
 	expect(ownResult).toMatchObject({

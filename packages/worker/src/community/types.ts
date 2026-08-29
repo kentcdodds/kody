@@ -137,6 +137,10 @@ export type PublicProfilePackage = {
 	communityListingKodyId: string | null
 	/** published_at of the active community listing, when the package has one. */
 	communityPublishedAt: string | null
+	/** Owner-only: `package.json#private`. Always false on public profile lists. */
+	isPrivate: boolean
+	/** Owner-only: hidden from ranked search. Always false on public profile lists. */
+	hidden: boolean
 }
 
 export type CommunityStargazer = {

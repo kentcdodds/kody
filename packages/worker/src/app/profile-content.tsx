@@ -14,6 +14,7 @@ import {
 	type PublicProfilePackageItem,
 } from '#universal/community-public-types.ts'
 import { getCommunityListingHref } from '#universal/community-links.ts'
+import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import { renderProfileFollowControl } from '#app/profile-follow-control.tsx'
 import {
@@ -178,11 +179,17 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 					<p mix={css(descriptionCss)}>
 						{query
 							? 'No packages matched your search.'
-							: 'No public packages yet.'}
+							: isSelf
+								? 'No packages yet.'
+								: 'No public packages yet.'}
 					</p>
 				) : (
 					<ul mix={css(packageListCss)}>
 						{packages.map((pkg) => {
+							const packageHref = routes.communityPackage.href({
+								username: profile.username,
+								kodyId: pkg.communityListingKodyId ?? pkg.kodyId,
+							})
 							const listingHref = pkg.communityListingId
 								? getCommunityListingHref({
 										listingId: pkg.communityListingId,
@@ -205,15 +212,17 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 												</a>
 											) : null}
 											<h3 mix={css(packageNameCss)}>
-												{listingHref ? (
-													<a href={listingHref} mix={css(packageNameLinkCss)}>
-														{renderCommunityListingName(pkg.name)}
-													</a>
-												) : (
-													renderCommunityListingName(pkg.name)
-												)}
+												<a href={packageHref} mix={css(packageNameLinkCss)}>
+													{renderCommunityListingName(pkg.name)}
+												</a>
 											</h3>
 										</div>
+										{pkg.hidden ? (
+											<span mix={css(unpublishedBadgeCss)}>Hidden</span>
+										) : null}
+										{pkg.isPrivate ? (
+											<span mix={css(unpublishedBadgeCss)}>Private</span>
+										) : null}
 										{pkg.communityListingId ? (
 											<span mix={css(communityBadgeCss)}>Community</span>
 										) : (

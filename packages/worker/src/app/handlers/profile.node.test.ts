@@ -95,7 +95,10 @@ const packageFixture = [
 		tags: ['tools'],
 		updatedAt: '2026-07-01T00:00:00.000Z',
 		communityListingId: 'listing-1',
+		communityListingKodyId: 'helper',
 		communityPublishedAt: '2026-07-01T00:00:00.000Z',
+		isPrivate: false,
+		hidden: false,
 	},
 ]
 
@@ -143,6 +146,12 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(publicBody.activity).toHaveLength(1)
 	expect(publicBody.isSelf).toBe(false)
 	expect(publicBody.loggedIn).toBe(false)
+	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ownerStableUserId: 'stable-alice',
+			includePrivate: false,
+		}),
+	)
 
 	// Private profile hidden from others.
 	mockModule.getCommunityProfileByUsername.mockResolvedValue({
@@ -187,6 +196,12 @@ test('profile API and page respect visibility and expose packages/activity', asy
 	expect(ownBody.ok).toBe(true)
 	expect(ownBody.isSelf).toBe(true)
 	expect(ownBody.profile.visibility).toBe('private')
+	expect(mockModule.listPublicProfilePackages).toHaveBeenCalledWith(
+		expect.objectContaining({
+			ownerStableUserId: 'stable-alice',
+			includePrivate: true,
+		}),
+	)
 
 	// Page shell 404 for unavailable profiles.
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
