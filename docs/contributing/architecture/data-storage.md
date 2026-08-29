@@ -1239,7 +1239,7 @@ on write unless a migration backfills existing rows.
   bucket expiry.
 - `secret_entries.allowed_hosts` and `secret_entries.allowed_packages` are JSON
   string lists used as security policy inputs (`0001-squashed-init.sql`,
-  `0031-drop-secret-allowed-capabilities.sql`). Tightening parse-error behavior
+  `0032-drop-secret-allowed-capabilities.sql`). Tightening parse-error behavior
   requires explicit compatibility review. `allowed_packages` applies only to
   user-scoped secrets. Unadopted community-forked packages need it for every
   package read/use path (provenance via `community_forks.forked_package_id` +
