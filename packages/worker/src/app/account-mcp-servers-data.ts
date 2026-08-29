@@ -6,6 +6,7 @@ import {
 } from '#mcp/capabilities/mcp-servers/shared.ts'
 import { backfillMissingMcpServerFavicons } from '#worker/mcp-client/mcp-server-favicon.ts'
 import { buildMcpServerAutoLogoPath } from '#worker/mcp-client/mcp-server-logo.ts'
+import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import {
 	listMcpServerSettings,
 	resolveMcpServerOAuthClientUrls,
@@ -26,7 +27,10 @@ export async function loadAccountMcpServersData(input: {
 		env: input.env,
 		requestUrl: input.requestUrl,
 	})
-	const settings = await listMcpServerSettings({ env: input.env, userId })
+	const [settings, savedPackages] = await Promise.all([
+		listMcpServerSettings({ env: input.env, userId }),
+		listSavedPackagesByUserId(input.env.APP_DB, { userId }),
+	])
 	await backfillMissingMcpServerFavicons({
 		db: input.env.APP_DB,
 		env: input.env,
@@ -56,6 +60,10 @@ export async function loadAccountMcpServersData(input: {
 				oauthClientMetadataUrl: oauth.clientMetadataUrl,
 			}),
 			autoLogoPath: buildMcpServerAutoLogoPath(setting),
+		})),
+		savedPackages: savedPackages.map((entry) => ({
+			id: entry.id,
+			kodyId: entry.kodyId,
 		})),
 	}
 }

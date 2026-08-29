@@ -104,6 +104,8 @@ type McpServerListItem = {
 	createdAt: string
 	updatedAt: string
 	autoLogoPath: string | null
+	usageMode: 'any' | 'packages'
+	allowedPackageIds: Array<string>
 }
 
 type AccountMcpServersPayload = {
@@ -114,6 +116,7 @@ type AccountMcpServersPayload = {
 	oauthCallbackUrl: string
 	oauthClientMetadataUrl: string | null
 	servers: Array<McpServerListItem>
+	savedPackages: Array<{ id: string; kodyId: string }>
 	selectedServerId?: string
 }
 
@@ -142,8 +145,152 @@ function filterServers(servers: Array<McpServerListItem>, search: string) {
 			server.url,
 			server.state,
 			server.error,
+			server.usageMode,
 		]),
 	)
+}
+
+function McpServerUsageForm(
+	handle: Handle<{
+		server: McpServerListItem
+		savedPackages: ReadonlyArray<{ id: string; kodyId: string }>
+		draft: { usageMode: 'any' | 'packages'; allowedPackageIds: Array<string> }
+		saving: boolean
+		onDraftChange: (draft: {
+			usageMode: 'any' | 'packages'
+			allowedPackageIds: Array<string>
+		}) => void
+		onSave: () => void
+	}>,
+) {
+	return () => {
+		const { server, savedPackages, draft, saving, onDraftChange, onSave } =
+			handle.props
+		return (
+			<section
+				data-testid="mcp-server-usage"
+				mix={css({ display: 'grid', gap: spacing.xs })}
+			>
+				<p
+					mix={css({
+						...fieldLabelCss,
+						margin: 0,
+					})}
+				>
+					Usage
+				</p>
+				<p mix={css({ ...descriptionCss, margin: 0 })}>
+					Limit this server so only listed packages can call{' '}
+					<code>kody.mcp[&quot;{server.name}&quot;]</code>. Execute and other
+					packages are denied.
+				</p>
+				<label
+					mix={css({
+						display: 'flex',
+						gap: spacing.xs,
+						alignItems: 'flex-start',
+						color: colors.text,
+						fontSize: typography.fontSize.sm,
+					})}
+				>
+					<input
+						type="radio"
+						name={`mcp-usage-mode-${server.id}`}
+						checked={draft.usageMode === 'any'}
+						disabled={saving}
+						mix={[
+							on('change', () =>
+								onDraftChange({
+									usageMode: 'any',
+									allowedPackageIds: [],
+								}),
+							),
+						]}
+					/>
+					<span>Any context (execute and every package)</span>
+				</label>
+				<label
+					mix={css({
+						display: 'flex',
+						gap: spacing.xs,
+						alignItems: 'flex-start',
+						color: colors.text,
+						fontSize: typography.fontSize.sm,
+					})}
+				>
+					<input
+						type="radio"
+						name={`mcp-usage-mode-${server.id}`}
+						checked={draft.usageMode === 'packages'}
+						disabled={saving}
+						mix={[
+							on('change', () =>
+								onDraftChange({
+									usageMode: 'packages',
+									allowedPackageIds: draft.allowedPackageIds,
+								}),
+							),
+						]}
+					/>
+					<span>Specific packages only</span>
+				</label>
+				{draft.usageMode === 'packages' ? (
+					savedPackages.length === 0 ? (
+						<p mix={css({ ...descriptionCss, margin: 0 })}>
+							Save a package first, then approve it here. Execute cannot use
+							this server while it is limited to specific packages.
+						</p>
+					) : (
+						<div mix={css({ display: 'grid', gap: spacing.xs })}>
+							{savedPackages.map((savedPackage) => {
+								const checked = draft.allowedPackageIds.includes(
+									savedPackage.id,
+								)
+								return (
+									<label
+										key={savedPackage.id}
+										mix={css({
+											display: 'flex',
+											gap: spacing.xs,
+											alignItems: 'center',
+											fontSize: typography.fontSize.sm,
+										})}
+									>
+										<input
+											type="checkbox"
+											checked={checked}
+											disabled={saving}
+											mix={[
+												on('change', () =>
+													onDraftChange({
+														usageMode: 'packages',
+														allowedPackageIds: checked
+															? draft.allowedPackageIds.filter(
+																	(id) => id !== savedPackage.id,
+																)
+															: [...draft.allowedPackageIds, savedPackage.id],
+													}),
+												),
+											]}
+										/>
+										<span>{savedPackage.kodyId}</span>
+									</label>
+								)
+							})}
+						</div>
+					)
+				) : null}
+				<button
+					type="button"
+					data-testid="save-mcp-server-usage"
+					disabled={saving}
+					mix={[css(getPillButtonCss({ size: 'sm' })), on('click', onSave)]}
+				>
+					{saving ? 'Saving…' : 'Save usage'}
+				</button>
+			</section>
+		)
+	}
 }
 
 export async function accountMcpServersRouteLoader(
@@ -243,6 +390,12 @@ export function AccountMcpServersRoute(handle: Handle) {
 	let status: AccountStatus = 'loading'
 	let actionState: 'idle' | 'busy' = 'idle'
 	let servers: Array<McpServerListItem> = []
+	let savedPackages: Array<{ id: string; kodyId: string }> = []
+	let usageDrafts = new Map<
+		string,
+		{ usageMode: 'any' | 'packages'; allowedPackageIds: Array<string> }
+	>()
+	let usageSavingId: string | null = null
 	let oauthClientOrigin = ''
 	let oauthCallbackUrl = ''
 	let oauthClientMetadataUrl: string | null = null
@@ -294,9 +447,20 @@ export function AccountMcpServersRoute(handle: Handle) {
 
 	function applyPayload(payload: AccountMcpServersPayload) {
 		servers = payload.servers
+		savedPackages = payload.savedPackages ?? []
 		oauthClientOrigin = payload.oauthClientOrigin
 		oauthCallbackUrl = payload.oauthCallbackUrl
 		oauthClientMetadataUrl = payload.oauthClientMetadataUrl
+		usageDrafts = new Map(
+			payload.servers.map((server) => [
+				server.id,
+				{
+					usageMode: server.usageMode === 'packages' ? 'packages' : 'any',
+					allowedPackageIds: [...(server.allowedPackageIds ?? [])],
+				},
+			]),
+		)
+		usageSavingId = null
 		deleteServerCheck.reset()
 	}
 
@@ -378,6 +542,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 			handle.update()
 		} catch (error) {
 			actionState = 'idle'
+			usageSavingId = null
 			setMessage(
 				error instanceof Error ? error.message : input.failureMessage,
 				'error',
@@ -887,6 +1052,48 @@ export function AccountMcpServersRoute(handle: Handle) {
 											</div>
 										</div>
 									) : null}
+
+									<McpServerUsageForm
+										server={server}
+										savedPackages={savedPackages}
+										draft={
+											usageDrafts.get(server.id) ?? {
+												usageMode:
+													server.usageMode === 'packages' ? 'packages' : 'any',
+												allowedPackageIds: [
+													...(server.allowedPackageIds ?? []),
+												],
+											}
+										}
+										saving={usageSavingId === server.id}
+										onDraftChange={(draft) => {
+											usageDrafts.set(server.id, draft)
+											handle.update()
+										}}
+										onSave={() => {
+											const draft = usageDrafts.get(server.id) ?? {
+												usageMode:
+													server.usageMode === 'packages' ? 'packages' : 'any',
+												allowedPackageIds: [
+													...(server.allowedPackageIds ?? []),
+												],
+											}
+											usageSavingId = server.id
+											void postAction({
+												body: {
+													action: 'set-usage',
+													id: server.id,
+													usageMode: draft.usageMode,
+													allowedPackageIds:
+														draft.usageMode === 'packages'
+															? draft.allowedPackageIds
+															: [],
+												},
+												successMessage: () => 'Updated MCP server usage.',
+												failureMessage: 'Unable to update MCP server usage.',
+											})
+										}}
+									/>
 
 									{server.connected && server.tools.length > 0 ? (
 										<div mix={css(fieldCss)}>

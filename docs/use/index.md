@@ -28,6 +28,8 @@ Read in order for a full tour, or jump to a topic.
   assistant gets and the boundary around local files and processes
 - [Gmail drafts without send](../guides/locked-gmail-drafts.md) — lock a
   drafts-only package when Google cannot issue a drafts-only token
+- [Lock an MCP server to a package](../guides/locked-mcp-server.md) — keep
+  `kody.mcp["name"]` off execute and other packages
 - [Connect a home MCP server](../guides/local-mcp-tunnels.md) — run a local MCP
   process (vault, CLI, or home devices), publish it with Tunnel and Access, and
   connect it to Kody. Starter:

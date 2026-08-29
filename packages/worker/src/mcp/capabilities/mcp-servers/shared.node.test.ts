@@ -14,7 +14,8 @@ vi.mock('#worker/mcp-client/settings-service.ts', () => ({
 		mockModule.listMcpServerSettings(...args),
 }))
 
-const { resolveMcpServerSetting } = await import('./shared.ts')
+const { buildMcpServerStatusView, resolveMcpServerSetting } =
+	await import('./shared.ts')
 
 function setting(
 	overrides: Partial<McpServerSettingMetadata> = {},
@@ -30,6 +31,8 @@ function setting(
 		logoContentType: null,
 		logoSource: null,
 		faviconSourceHost: null,
+		usageMode: 'any',
+		allowedPackageIds: [],
 		...overrides,
 	}
 }
@@ -77,4 +80,18 @@ test('resolveMcpServerSetting resolves by id/name and rejects blank or unknown s
 		server: 'recipe-keeper',
 	})
 	await expect(missing).rejects.toThrow(McpCallerError)
+})
+
+test('buildMcpServerStatusView defaults missing usage to any context', () => {
+	const view = buildMcpServerStatusView({
+		setting: {
+			...setting(),
+			usageMode: undefined as never,
+			allowedPackageIds: undefined as never,
+		},
+		snapshot: null,
+	})
+	expect(view.usageMode).toBe('any')
+	expect(view.allowedPackageIds).toEqual([])
+	expect(view.connected).toBe(false)
 })

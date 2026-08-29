@@ -14,7 +14,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
-import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
+import { listVisibleEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
 import { type OpenApiBinding } from '#worker/openapi/binding-shared.ts'
 import { listOpenApiBindingsCached } from '#worker/openapi/binding-service.ts'
@@ -127,13 +127,15 @@ async function resolveFeatureFlagsForRegistry(input: {
 async function loadEnabledMcpServerRefs(input: {
 	env: Env
 	userId: string
+	packageId?: string | null
 }): Promise<ReadonlyArray<McpServerRef>> {
 	try {
 		// Per-user 30s cache: registry assembly runs on every execute /
 		// package invocation, so this must not cost a D1 read per call.
-		return await listEnabledMcpServerRefsCached({
+		return await listVisibleEnabledMcpServerRefsCached({
 			env: input.env,
 			userId: input.userId,
+			packageId: input.packageId,
 		})
 	} catch {
 		// A missing/unavailable settings table must not break builtin
@@ -203,6 +205,7 @@ export async function getCapabilityRegistryForContext(input: {
 		loadEnabledMcpServerRefs({
 			env: input.env,
 			userId,
+			packageId: input.callerContext.storageContext?.packageId,
 		}),
 		loadOpenApiBindingsForRegistry({
 			env: input.env,

@@ -80,7 +80,9 @@ supporting cast.
    token is coarser than the job — Gmail has a send-only scope and no
    drafts-only scope — a locked package is the real grant: published code cannot
    silently start sending. See
-   [Gmail drafts without send](./locked-gmail-drafts.md).
+   [Gmail drafts without send](./locked-gmail-drafts.md). A connected MCP server
+   can be locked to a package so execute cannot call the raw tools. See
+   [Lock an MCP server to a package](./locked-mcp-server.md).
 3. **Every install is a fork you own.** Installing someone else's automation
    puts code in your account, on your credentials, that you can open, change,
    schedule, and republish. Nothing stays locked in someone else's runtime. See
@@ -119,7 +121,8 @@ supporting cast.
   [Community packages](../use/community-packages.md).
 - **Extensibility** — connect your own remote MCP servers, OpenAPI providers, or
   a local-network connector so your agent can reach devices at home through
-  Kody.
+  Kody. Lock a connected MCP server to a package when execute should not call
+  its tools. See [Lock an MCP server to a package](./locked-mcp-server.md).
 
 ## What people use it for
 

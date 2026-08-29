@@ -23,6 +23,8 @@ export const mcpServerStatusSchema = z.object({
 	tools: z.array(z.string()),
 	createdAt: z.string(),
 	updatedAt: z.string(),
+	usageMode: z.enum(['any', 'packages']),
+	allowedPackageIds: z.array(z.string()),
 })
 
 export type McpServerStatusView = z.infer<typeof mcpServerStatusSchema>
@@ -58,6 +60,8 @@ export function buildMcpServerStatusView(input: {
 		tools: connected ? (snapshot?.tools.map((tool) => tool.name) ?? []) : [],
 		createdAt: setting.createdAt,
 		updatedAt: setting.updatedAt,
+		usageMode: setting.usageMode === 'packages' ? 'packages' : 'any',
+		allowedPackageIds: [...(setting.allowedPackageIds ?? [])],
 	}
 }
 

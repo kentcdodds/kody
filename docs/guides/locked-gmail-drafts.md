@@ -77,6 +77,11 @@ Lock does **not** revoke send on the token, hide `createAuthenticatedFetch` from
 `execute`, or stop a different unlocked package from calling send. It stops
 _this_ package's jobs and exports from silently becoming a sender.
 
+A connected MCP server is different: lock the **server** to a package so execute
+and other packages cannot call `kody.mcp["name"]`. That grant lives on the
+server, not on `locked_at`. See
+[Lock an MCP server to a package](./locked-mcp-server.md).
+
 Usage detail: [Packages → Publish lock](../use/packages.md#publish-lock).
 
 ## The loop
