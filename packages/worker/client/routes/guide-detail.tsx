@@ -3,6 +3,7 @@ import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type GuideDetailLoaderData } from '#universal/loader-data.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { routes } from '#universal/routes.ts'
+import { isReservedGuideIndexSlug } from '#universal/guide-sections.ts'
 import { renderMarkdownNodes } from '#client/markdown-view.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -60,8 +61,16 @@ export function getGuideSlugFromPathname(pathname: string) {
 		return null
 	}
 	// Dots mark non-page paths under /guides (.json / .md twins); real guide
-	// slugs are kebab-case and never contain one.
-	if (!slug || slug.includes('/') || slug.includes('.')) return null
+	// slugs are kebab-case and never contain one. Reserved index segments
+	// (`connect`) are dedicated routes, not guide details.
+	if (
+		!slug ||
+		slug.includes('/') ||
+		slug.includes('.') ||
+		isReservedGuideIndexSlug(slug)
+	) {
+		return null
+	}
 	return slug
 }
 
@@ -221,6 +230,12 @@ export function GuideDetailRoute(handle: Handle) {
 		const showError = status === 'error' && contentMatchesSlug
 		const showReady = status === 'ready' && guide !== null && contentMatchesSlug
 		const showLoading = !showNotFound && !showError && !showReady
+		const backHref =
+			guide?.category === 'provider'
+				? routes.guidesConnect.href()
+				: routes.guides.href()
+		const backLabel =
+			guide?.category === 'provider' ? '← Connection guides' : '← All guides'
 
 		if (showNotFound) {
 			return (
@@ -243,10 +258,10 @@ export function GuideDetailRoute(handle: Handle) {
 				<a
 					data-rise
 					style={{ '--rise': '0' }}
-					href={routes.guides.href()}
+					href={backHref}
 					mix={css(guideBackCss)}
 				>
-					← All guides
+					{backLabel}
 				</a>
 
 				{showLoading ? (

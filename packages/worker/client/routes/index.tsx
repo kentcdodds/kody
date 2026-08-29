@@ -242,6 +242,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		blogArea,
 		(m) => m.guidesRouteLoader,
 	),
+	[routePattern(routes.guidesConnect)]: lazyRouteLoader(
+		blogArea,
+		(m) => m.guidesConnectRouteLoader,
+	),
 	[routePattern(routes.guideDetail)]: lazyRouteLoader(
 		blogArea,
 		(m) => m.guideDetailRouteLoader,
@@ -467,6 +471,9 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.guides)]: (
 		<LazyBlogRoute render={(m) => <m.GuidesRoute />} />
+	),
+	[routePattern(routes.guidesConnect)]: (
+		<LazyBlogRoute render={(m) => <m.GuidesConnectRoute />} />
 	),
 	[routePattern(routes.guideDetail)]: (
 		<LazyBlogRoute render={(m) => <m.GuideDetailRoute />} />

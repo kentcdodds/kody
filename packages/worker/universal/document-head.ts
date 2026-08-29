@@ -225,6 +225,7 @@ const routeDocumentHeads = {
 		}
 	},
 	[routePattern(routes.guides)]: titleOnly('Guides'),
+	[routePattern(routes.guidesConnect)]: titleOnly('Connect a provider'),
 	[routePattern(routes.guideDetail)]: ({ loaderData, pathname }) => {
 		const guide = loaderData?.guideDetail
 		if (!guide?.ok) {

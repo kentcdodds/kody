@@ -1,5 +1,14 @@
 import { expect, test } from 'vitest'
-import { getGuideById, getGuideBySlug, guides, listGuides } from './catalog.ts'
+import {
+	getGuideById,
+	getGuideBySlug,
+	guides,
+	listGuides,
+	listPlatformGuides,
+	listProviderGuides,
+	listStartHereGuides,
+} from './catalog.ts'
+import { isReservedGuideIndexSlug } from '#universal/guide-sections.ts'
 
 test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(guides.length).toBeGreaterThanOrEqual(12)
@@ -17,6 +26,7 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		// catalog rewrites them to /guides routes or GitHub blob URLs.
 		expect(guide.body).not.toMatch(/\]\(\.{1,2}\//)
 		expect(guide.body).not.toMatch(/\]\([a-z0-9-]+\.md/)
+		expect(isReservedGuideIndexSlug(guide.slug)).toBe(false)
 	}
 	for (const guide of guides.filter((g) => g.category === 'provider')) {
 		expect(guide.provider).toBeTruthy()
@@ -46,6 +56,7 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(getGuideById('provider_salesforce')?.provider).toBe('Salesforce')
 	expect(getGuideById('values')?.unadvertised).toBe(true)
 	expect(listGuides().some((guide) => guide.id === 'values')).toBe(false)
+	expect(getGuideBySlug('connect')).toBeNull()
 
 	// Web ordering: platform guides first, then provider guides sorted by
 	// provider name.
@@ -62,4 +73,15 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(providers).toEqual(
 		[...providers].toSorted((a, b) => a.localeCompare(b)),
 	)
+
+	expect(
+		listPlatformGuides().every((guide) => guide.category === 'platform'),
+	).toBe(true)
+	expect(listProviderGuides().map((guide) => guide.provider)).toEqual(providers)
+	expect(listStartHereGuides().map((guide) => guide.slug)).toEqual([
+		'what-is-kody',
+		'how-kody-works',
+		'kody-factory',
+		'quick-example',
+	])
 })

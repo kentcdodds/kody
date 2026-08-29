@@ -8,9 +8,13 @@ bundled into origin and `kody-platform` at build time so web `/guides` and MCP
 upload those two scripts and skip runtime and jobs:
 
 - **`coding_guide_get`** over MCP — pass the stable `id` from frontmatter
-- **`/guides`** on the web — browsable index and detail pages
-- **Raw markdown** — `/guides/<slug>.md` or `Accept: text/markdown` on the
-  detail route
+- **`/guides`** on the web — Work with Kody index (Start here + more guides)
+- **`/guides/connect`** — connection (provider) walkthrough index
+- **Raw markdown** — `/guides/<slug>.md`, `/guides.md`, `/guides/connect.md`, or
+  `Accept: text/markdown` on the HTML URLs
+
+The `connect` path segment is reserved for the connection index; do not add a
+catalog guide with that slug.
 
 ## Platform guides
 
@@ -38,8 +42,10 @@ upload those two scripts and skip runtime and jobs:
 
 ## Provider guides
 
-Per-provider connect walkthroughs (`category: provider`). Load by MCP id or web
-slug.
+Per-provider connect walkthroughs (`category: provider`). Indexed on the web at
+[`/guides/connect`](https://kody.codes/guides/connect) (markdown twin
+`/guides/connect.md`). Load by MCP id or web slug; detail URLs stay under
+`/guides/<slug>` (not nested under `/guides/connect/`).
 
 | File                                                 | MCP id                | Web slug     |
 | ---------------------------------------------------- | --------------------- | ------------ |

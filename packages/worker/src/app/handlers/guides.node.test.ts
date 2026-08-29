@@ -10,11 +10,20 @@ import {
 	isValidWalkthroughHostPick,
 	type WalkthroughHostPick,
 } from '#universal/walkthrough-hosts.ts'
-import { getGuideBySlug, listGuides } from '#worker/guides/catalog.ts'
 import {
+	getGuideBySlug,
+	listPlatformGuides,
+	listProviderGuides,
+	listStartHereGuides,
+} from '#worker/guides/catalog.ts'
+import {
+	buildGuidesConnectMarkdown,
+	buildGuidesIndexMarkdown,
 	createGuideDetailApiHandler,
 	createGuideDetailMarkdownHandler,
 	createGuidesApiHandler,
+	createGuidesConnectApiHandler,
+	createGuidesConnectMarkdownHandler,
 	createGuidesMarkdownHandler,
 } from './guides.tsx'
 
@@ -29,7 +38,7 @@ function callHandler(
 	return action.handler(args)
 }
 
-test('guides API, markdown index, and markdown detail serve the bundled catalog', async () => {
+test('guides API and markdown lead with Work with Kody, not the provider dump', async () => {
 	const apiResponse = await callHandler(createGuidesApiHandler(env) as never, {
 		request: new Request('https://kody.example/guides.json'),
 		params: { slug: '' },
@@ -37,13 +46,21 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 	expect(apiResponse.status).toBe(200)
 	const payload = (await apiResponse.json()) as {
 		ok: boolean
-		guides: Array<{ slug: string; id: string; title: string }>
+		guides: Array<{ slug: string; id: string; title: string; category: string }>
 	}
 	expect(payload.ok).toBe(true)
-	expect(payload.guides.length).toBe(listGuides().length)
+	expect(payload.guides.length).toBe(listPlatformGuides().length)
+	expect(payload.guides.every((guide) => guide.category === 'platform')).toBe(
+		true,
+	)
 	expect(payload.guides.some((guide) => guide.id === 'values')).toBe(false)
+	expect(payload.guides.some((guide) => guide.slug === 'github')).toBe(false)
 	// Bodies stay out of the index payload.
 	expect(JSON.stringify(payload)).not.toContain('## ')
+
+	const startHere = listStartHereGuides()
+	expect(startHere[0]?.slug).toBe('what-is-kody')
+	expect(payload.guides[0]?.slug).toBe(startHere[0]?.slug)
 
 	const markdownIndex = await callHandler(
 		createGuidesMarkdownHandler(env) as never,
@@ -56,13 +73,88 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 		'text/markdown; charset=utf-8',
 	)
 	const indexBody = await markdownIndex.text()
+	expect(indexBody).toBe(buildGuidesIndexMarkdown('https://kody.example'))
 	expect(indexBody.startsWith('#')).toBe(true)
-	for (const guide of listGuides()) {
-		expect(indexBody).toContain(`https://kody.example/guides/${guide.slug}.md`)
-	}
+	expect(indexBody.indexOf('## Work with Kody')).toBeLessThan(
+		indexBody.indexOf('## Connect a provider'),
+	)
+	expect(indexBody.indexOf('### Start here')).toBeLessThan(
+		indexBody.indexOf('### More guides'),
+	)
+	expect(indexBody).toContain('https://kody.example/guides/connect.md')
+	expect(indexBody).toContain('https://kody.example/guides/what-is-kody.md')
+	expect(indexBody).toContain('https://kody.example/guides/how-kody-works.md')
+	// Full provider dump stays off the main index.
+	expect(indexBody).not.toContain('https://kody.example/guides/github.md')
+	expect(indexBody).not.toContain('https://kody.example/guides/discord.md')
 	expect(indexBody).not.toContain('https://kody.example/guides/values.md')
 	expect(getGuideBySlug('values')?.unadvertised).toBe(true)
+})
 
+test('guides connect index serves HTML twins, JSON, and markdown without colliding with guide slugs', async () => {
+	const apiResponse = await callHandler(
+		createGuidesConnectApiHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/connect.json'),
+			params: { slug: '' },
+		},
+	)
+	expect(apiResponse.status).toBe(200)
+	const payload = (await apiResponse.json()) as {
+		ok: boolean
+		guides: Array<{
+			slug: string
+			category: string
+			provider: string | null
+		}>
+	}
+	expect(payload.ok).toBe(true)
+	expect(payload.guides.length).toBe(listProviderGuides().length)
+	expect(payload.guides.every((guide) => guide.category === 'provider')).toBe(
+		true,
+	)
+	expect(payload.guides.map((guide) => guide.provider)).toEqual(
+		payload.guides.map((guide) => guide.provider ?? '').toSorted((a, b) =>
+			a.localeCompare(b),
+		),
+	)
+
+	const markdown = await callHandler(
+		createGuidesConnectMarkdownHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/connect.md'),
+			params: { slug: '' },
+		},
+	)
+	expect(markdown.status).toBe(200)
+	expect(markdown.headers.get('content-type')).toBe(
+		'text/markdown; charset=utf-8',
+	)
+	const body = await markdown.text()
+	expect(body).toBe(buildGuidesConnectMarkdown('https://kody.example'))
+	expect(body).toContain('# Connect a provider')
+	expect(body).toContain('https://kody.example/guides.md')
+	expect(body).toContain('https://kody.example/guides/how-kody-works.md')
+	expect(body).toContain('https://kody.example/guides/local-mcp-tunnels.md')
+	for (const guide of listProviderGuides()) {
+		expect(body).toContain(`https://kody.example/guides/${guide.slug}.md`)
+	}
+
+	// Reserved `connect` is an index route, not a guide detail slug.
+	expect(getGuideBySlug('connect')).toBeNull()
+	const connectAsDetail = await callHandler(
+		createGuideDetailMarkdownHandler(env) as never,
+		{
+			request: new Request('https://kody.example/guides/connect.md'),
+			params: { slug: 'connect' },
+		},
+	)
+	// The dedicated markdown handler is what routers register for
+	// `/guides/connect.md`; the detail handler would 404 if somehow matched.
+	expect(connectAsDetail.status).toBe(404)
+})
+
+test('provider and platform guide markdown details stay stable', async () => {
 	const valuesDetail = await callHandler(
 		createGuideDetailMarkdownHandler(env) as never,
 		{
@@ -85,10 +177,19 @@ test('guides API, markdown index, and markdown detail serve the bundled catalog'
 		'text/markdown; charset=utf-8',
 	)
 	const detailBody = await detail.text()
-	// The markdown twin serves the authored body (heading included, no
-	// frontmatter fence).
 	expect(detailBody.startsWith('#')).toBe(true)
 	expect(detailBody).not.toContain('\nid: oauth\n')
+
+	for (const slug of ['github', 'discord', 'google', 'slack'] as const) {
+		const providerMd = await callHandler(
+			createGuideDetailMarkdownHandler(env) as never,
+			{
+				request: new Request(`https://kody.example/guides/${slug}.md`),
+				params: { slug },
+			},
+		)
+		expect(providerMd.status).toBe(200)
+	}
 
 	const googleOauthMd = await callHandler(
 		createGuideDetailMarkdownHandler(env) as never,
