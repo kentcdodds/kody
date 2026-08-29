@@ -49,6 +49,18 @@ test('fetchFrameResolve retries once on GET network TypeErrors only', async () =
 		vi.unstubAllGlobals()
 	}
 
+	const chromiumWithOrigin = vi
+		.fn()
+		.mockRejectedValueOnce(new TypeError('Failed to fetch (kody.codes)'))
+		.mockResolvedValueOnce(ok)
+	vi.stubGlobal('fetch', chromiumWithOrigin)
+	try {
+		expect(await fetchFrameResolve('/')).toBe(ok)
+		expect(chromiumWithOrigin).toHaveBeenCalledTimes(2)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+
 	const postNoRetry = vi
 		.fn()
 		.mockRejectedValueOnce(new TypeError('Failed to fetch'))

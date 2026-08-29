@@ -779,3 +779,72 @@ test('browser Sentry filters drop resolveFrame fetch network TypeErrors (KODY-CL
 		}),
 	).not.toBeNull()
 })
+
+test('browser Sentry filters drop Chromium Failed to fetch (host) via createFrameResolveInit (KODY-6A)', () => {
+	// Production Chrome Mobile: exception value includes the origin, and
+	// sourcemapped frames name createFrameResolveInit / boot — not resolveFrame.
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value: 'Failed to fetch (kody.codes)',
+						stacktrace: {
+							frames: [
+								{
+									function: 'createFrameResolveInit',
+									filename: '../client/frame-resolve.ts',
+								},
+								{
+									function: 'boot',
+									filename: '../client/entry.tsx',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).toBeNull()
+	expect(
+		filterBrowserSentryEvent(
+			{
+				exception: {
+					values: [
+						{
+							type: 'TypeError',
+							value: 'Failed to fetch (kody.codes)',
+						},
+					],
+				},
+			},
+			Object.assign(new TypeError('Failed to fetch (kody.codes)'), {
+				stack:
+					'TypeError: Failed to fetch\n    at Yn (https://kody.codes/client-entry.js:3:2497)\n    at Object.resolveFrame (https://kody.codes/client-entry.js:3:76468)',
+			}),
+		),
+	).toBeNull()
+	// Dynamic-import failures must stay visible even with a host-looking suffix.
+	expect(
+		filterBrowserSentryEvent({
+			exception: {
+				values: [
+					{
+						type: 'TypeError',
+						value:
+							'Failed to fetch dynamically imported module: https://kody.codes/assets/blog-area-ABC123.js',
+						stacktrace: {
+							frames: [
+								{
+									function: 'createFrameResolveInit',
+									filename: '../client/frame-resolve.ts',
+								},
+							],
+						},
+					},
+				],
+			},
+		}),
+	).not.toBeNull()
+})

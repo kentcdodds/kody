@@ -35,8 +35,9 @@ export function createFrameResolveInit(options?: ResolveFrameOptions) {
 /**
  * Fetch a Remix frame document. Idempotent GET/HEAD retries once on browser
  * `fetch` network TypeErrors (WebKit "Load failed", Chromium "Failed to
- * fetch", Firefox NetworkError) — KODY-CLOUDFLARE-5Y Mobile Safari blips after
- * the same URL already succeeded.
+ * fetch" / "Failed to fetch (host)", Firefox NetworkError) — KODY-CLOUDFLARE-5Y
+ * / KODY-6A Mobile Safari and Chrome Mobile blips after the same URL already
+ * succeeded.
  */
 export async function fetchFrameResolve(
 	src: string,

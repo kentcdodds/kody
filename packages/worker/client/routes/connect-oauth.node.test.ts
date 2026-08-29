@@ -949,9 +949,11 @@ test('browser fetch network TypeErrors map to a stable in-page status (KODY-CLOU
 		'NetworkError when attempting to fetch resource.',
 	)
 	const chromium = new TypeError('Failed to fetch')
+	const chromiumWithOrigin = new TypeError('Failed to fetch (kody.codes)')
 	const webkit = new TypeError('Load failed')
 	expect(isBrowserFetchNetworkError(firefox)).toBe(true)
 	expect(isBrowserFetchNetworkError(chromium)).toBe(true)
+	expect(isBrowserFetchNetworkError(chromiumWithOrigin)).toBe(true)
 	expect(isBrowserFetchNetworkError(webkit)).toBe(true)
 	expect(
 		isBrowserFetchNetworkError(new TypeError('null is not an object')),
@@ -960,6 +962,13 @@ test('browser fetch network TypeErrors map to a stable in-page status (KODY-CLOU
 	expect(
 		isBrowserFetchNetworkError(new TypeError('TypeError: Failed to fetch')),
 	).toBe(true)
+	expect(
+		isBrowserFetchNetworkError(
+			new TypeError(
+				'Failed to fetch dynamically imported module: https://kody.codes/assets/x.js',
+			),
+		),
+	).toBe(false)
 
 	const networkStatus = formatConnectOauthCaughtError(firefox, 'fallback')
 	expect(networkStatus).not.toBe('fallback')

@@ -983,12 +983,13 @@ export function filterSyntaxHighlightCoreDynamicImportFailureSentryEvent<
 
 /**
  * Remix `resolveFrame` `fetch()` network TypeErrors (WebKit "Load failed",
- * Chromium "Failed to fetch", Firefox NetworkError). Observed as a handled
- * client hydration error after a successful GET of the same frame URL
- * (KODY-CLOUDFLARE-5Y, Mobile Safari on `/@kody/planetscale`). External
- * connectivity blips — not an app defect. Match only when a stack frame names
- * `resolveFrame` or `fetchFrameResolve` so other fetch TypeErrors stay
- * Sentry-visible.
+ * Chromium "Failed to fetch" / "Failed to fetch (host)", Firefox NetworkError).
+ * Observed as a handled client hydration error after a successful GET of the
+ * same frame URL (KODY-CLOUDFLARE-5Y, Mobile Safari on `/@kody/planetscale`;
+ * KODY-6A, Chrome Mobile on `/` with sourcemapped `createFrameResolveInit`).
+ * External connectivity blips — not an app defect. Match only when a stack
+ * frame names `resolveFrame`, `fetchFrameResolve`, or `createFrameResolveInit`
+ * so other fetch TypeErrors stay Sentry-visible.
  */
 export function isResolveFrameFetchNetworkSentryEvent(
 	event: SentryErrorEventLike,
@@ -1015,9 +1016,16 @@ export function isResolveFrameFetchNetworkSentryEvent(
 	if (!networkFromException && !networkFromEvent) return false
 
 	if (errorStackMentionsResolveFrame(originalException)) return true
-	return sentryEventStackFrameFunctions(event).some(
-		(name) =>
-			name.includes('resolveFrame') || name.includes('fetchFrameResolve'),
+	return sentryEventStackFrameFunctions(event).some((name) =>
+		isResolveFrameFetchStackFunction(name),
+	)
+}
+
+function isResolveFrameFetchStackFunction(name: string) {
+	return (
+		name.includes('resolveFrame') ||
+		name.includes('fetchFrameResolve') ||
+		name.includes('createFrameResolveInit')
 	)
 }
 
