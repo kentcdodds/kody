@@ -90,7 +90,7 @@ function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function isLockStale(): Promise<boolean> {
+export async function isLockStale(): Promise<boolean> {
 	let lockStat
 	try {
 		lockStat = await stat(lockPath)
@@ -99,17 +99,23 @@ async function isLockStale(): Promise<boolean> {
 		// gone — the next create attempt will simply succeed.
 		return false
 	}
-	if (Date.now() - lockStat.mtimeMs > staleLockAgeMs) return true
-
 	try {
 		const ownerPid = Number.parseInt(await readFile(lockPath, 'utf8'), 10)
-		if (!Number.isInteger(ownerPid)) return false
-		// Signal 0 probes liveness without actually sending a signal.
-		process.kill(ownerPid, 0)
-		return false
+		if (Number.isInteger(ownerPid)) {
+			// Signal 0 probes liveness without actually sending a signal. A
+			// live owner keeps its lock regardless of age; a slow build must
+			// never be mistaken for an abandoned one.
+			process.kill(ownerPid, 0)
+			return false
+		}
 	} catch (error) {
-		return (error as NodeJS.ErrnoException).code === 'ESRCH'
+		const code = (error as NodeJS.ErrnoException).code
+		if (code === 'ESRCH') return true
+		if (code !== undefined) return false
 	}
+
+	// Only malformed owner data falls back to age-based recovery.
+	return Date.now() - lockStat.mtimeMs > staleLockAgeMs
 }
 
 /**
@@ -330,14 +336,19 @@ async function fsyncGeneratedDir() {
  * matches before the catalog/metadata files it describes are fully written.
  */
 export async function ensureGuideCatalogModules() {
-	const filePaths = await findGuideMarkdownFiles()
-	const stampContent = await buildStampContent(filePaths)
+	let filePaths = await findGuideMarkdownFiles()
+	let stampContent = await buildStampContent(filePaths)
 	if ((await readStamp()) === stampContent && (await generatedOutputsExist())) {
 		return
 	}
 
 	const release = await acquireLock()
 	try {
+		// The guide tree may have changed while this process waited. Refresh
+		// the snapshot under the lock so the cache check and generated output
+		// describe the same source state.
+		filePaths = await findGuideMarkdownFiles()
+		stampContent = await buildStampContent(filePaths)
 		if (
 			(await readStamp()) === stampContent &&
 			(await generatedOutputsExist())

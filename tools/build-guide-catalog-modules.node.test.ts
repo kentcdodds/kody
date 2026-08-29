@@ -1,10 +1,18 @@
 import { spawn } from 'node:child_process'
-import { readFile, readdir, rm, stat } from 'node:fs/promises'
+import {
+	readFile,
+	readdir,
+	rm,
+	stat,
+	utimes,
+	writeFile,
+} from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	ensureGuideCatalogModules,
+	isLockStale,
 	lockPath,
 } from './build-guide-catalog-modules.ts'
 import {
@@ -108,6 +116,20 @@ test('ensureGuideCatalogModules skips complete warm output and repairs a missing
 	expect(await readFile(metadataOutputPath, 'utf8')).toMatch(
 		/^export const guideMetadata = JSON\.parse\(/m,
 	)
+})
+
+test('guide catalog lock keeps a live owner regardless of age and recovers abandoned owners', async () => {
+	const oldTime = new Date(Date.now() - 120_000)
+	try {
+		await writeFile(lockPath, String(process.pid))
+		await utimes(lockPath, oldTime, oldTime)
+		expect(await isLockStale()).toBe(false)
+
+		await writeFile(lockPath, '2147483647')
+		expect(await isLockStale()).toBe(true)
+	} finally {
+		await rm(lockPath, { force: true })
+	}
 })
 
 // Simulates the real trigger for this hardening: a clean checkout where
