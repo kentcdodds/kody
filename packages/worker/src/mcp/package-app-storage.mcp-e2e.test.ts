@@ -103,7 +103,7 @@ export default {
 
 test('package app fetch handler can use packageStorage against a real local worker', async () => {
 	silenceExpectedConsoleWarns([
-		/Ignoring duplicate module: generated\/esbuild\.wasm/,
+		/Ignoring duplicate module:.*generated\/esbuild\.wasm/,
 	])
 	await using database = await createTestDatabase()
 	await using server = await startDevServer(database.persistDir, {
