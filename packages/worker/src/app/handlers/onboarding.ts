@@ -42,7 +42,10 @@ import {
 	highlightResultsByKey,
 	highlightSnippets,
 } from '#app/highlight-code.ts'
-import { collectOnboardingMcpSnippets } from '#universal/onboarding-mcp-clients.ts'
+import {
+	collectOnboardingMcpSnippets,
+	pickOnboardingAgentChooser,
+} from '#universal/onboarding-mcp-clients.ts'
 import {
 	pushServerTiming,
 	type ServerTimingEntry,
@@ -257,7 +260,10 @@ export function createOnboardingHandler(env: Env) {
 				return renderAppPage({
 					request,
 					env,
-					loaderData: { onboarding },
+					loaderData: {
+						onboarding,
+						onboardingAgentChooser: pickOnboardingAgentChooser(),
+					},
 					serverTiming,
 				})
 			}
@@ -291,6 +297,7 @@ export function createOnboardingHandler(env: Env) {
 						onboarding,
 						serverTiming,
 					),
+					onboardingAgentChooser: pickOnboardingAgentChooser(),
 				},
 				serverTiming,
 			})

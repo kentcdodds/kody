@@ -16,7 +16,16 @@ import {
 	buildVsCodeMcpJson,
 	defaultKodyMcpUrl,
 	isDefaultKodyMcpUrl,
+	isValidOnboardingAgentChooserPick,
 	mcpClientTabs,
+	onboardingAgentLabel,
+	onboardingDataHref,
+	onboardingDesktopFeaturedAgentIds,
+	onboardingMobileFeaturedAgentIds,
+	onboardingMoreAgentIdsFor,
+	pickOnboardingAgentChooser,
+	readOnboardingAgentParam,
+	writeOnboardingAgentSearch,
 } from './onboarding-mcp-clients.ts'
 
 const mcpServerUrl = defaultKodyMcpUrl
@@ -34,11 +43,69 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		'opencode',
 		'copilot',
 		'copilot-app',
+		'devin',
+		'gemini',
 		'other',
 	])
+	expect(onboardingDesktopFeaturedAgentIds).toEqual([
+		'claude-code',
+		'cursor',
+		'codex',
+		'copilot',
+		'devin',
+		'opencode',
+		'grok-bot',
+	])
+	expect(onboardingMobileFeaturedAgentIds).toEqual([
+		'chatgpt',
+		'claude-desktop',
+		'devin',
+		'cursor',
+		'copilot-app',
+		'gemini',
+		'grok-bot',
+	])
+	expect(onboardingMoreAgentIdsFor('desktop')).not.toContain('claude-code')
+	expect(onboardingMoreAgentIdsFor('mobile')).not.toContain('chatgpt')
+	expect(onboardingAgentLabel('chatgpt', 'mobile')).toBe('Codex')
+	expect(onboardingAgentLabel('claude-desktop', 'mobile')).toBe('Claude Code')
+	expect(onboardingAgentLabel('chatgpt', 'desktop')).toBe('ChatGPT.com')
+	const rotated = pickOnboardingAgentChooser(() => 0)
+	const identity = pickOnboardingAgentChooser((max) => max - 1)
+	expect(isValidOnboardingAgentChooserPick(rotated)).toBe(true)
+	expect(isValidOnboardingAgentChooserPick(identity)).toBe(true)
+	expect(identity.desktopFeatured).toEqual([
+		...onboardingDesktopFeaturedAgentIds,
+	])
+	expect(rotated.desktopFeatured).not.toEqual(identity.desktopFeatured)
+	expect(rotated.mobileFeatured).not.toEqual(identity.mobileFeatured)
+	expect(readOnboardingAgentParam('?agent=cursor&redirectTo=%2F')).toBe(
+		'cursor',
+	)
+	expect(readOnboardingAgentParam('?agent=nope')).toBeNull()
+	expect(writeOnboardingAgentSearch('?redirectTo=%2F', 'claude-code')).toBe(
+		'?redirectTo=%2F&agent=claude-code',
+	)
+	expect(writeOnboardingAgentSearch('?agent=cursor', null)).toBe('')
+	expect(
+		writeOnboardingAgentSearch('?redirectTo=%2F', 'chatgpt', 'mobile'),
+	).toBe('?redirectTo=%2F&agent=chatgpt&surface=mobile')
+	expect(onboardingDataHref('/onboarding?agent=cursor&surface=desktop')).toBe(
+		'/onboarding',
+	)
+	expect(
+		onboardingDataHref('/onboarding?agent=cursor&surface=desktop#connect-mcp'),
+	).toBe('/onboarding')
 	expect(
 		mcpClientTabs.filter((tab) => tab.isNonCodingAgent).map((tab) => tab.id),
-	).toEqual(['chatgpt', 'claude-desktop', 'grok', 'grok-bot', 'copilot-app'])
+	).toEqual([
+		'chatgpt',
+		'claude-desktop',
+		'grok',
+		'grok-bot',
+		'copilot-app',
+		'gemini',
+	])
 
 	expect(isDefaultKodyMcpUrl(`${mcpServerUrl}/`)).toBe(true)
 	expect(isDefaultKodyMcpUrl('http://localhost:3742/mcp')).toBe(false)

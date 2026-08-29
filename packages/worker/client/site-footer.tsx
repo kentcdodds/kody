@@ -19,7 +19,7 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					<img src="/images/kody-mark.png" alt="" width={28} height={28} />
 					<span>Kody</span>
 				</a>
-				<p mix={css(taglineCss)}>Make it permanent.</p>
+				<p mix={css(taglineCss)}>Make it portable.</p>
 				<nav aria-label="Footer" mix={css(footerNavCss)}>
 					<a href="/community">Community</a>
 					<a href="/discord">Discord</a>

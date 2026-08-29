@@ -99,6 +99,14 @@ export function onboardingWizardStepByNumber(
 	return step
 }
 
+export function onboardingWizardStepHref(
+	onboardingPath: string,
+	number: OnboardingWizardStepNumber,
+	search = '',
+) {
+	return `${onboardingPath}${search}#${onboardingWizardStepByNumber(number).hash}`
+}
+
 export function onboardingChecklistItemHref(
 	id: OnboardingChecklistItemId,
 	onboardingPath: string,
@@ -108,6 +116,5 @@ export function onboardingChecklistItemHref(
 		throw new Error(`Unknown onboarding checklist item ${id}`)
 	}
 	if ('href' in item) return item.href
-	const step = onboardingWizardStepByNumber(item.wizardStep)
-	return `${onboardingPath}#${step.hash}`
+	return onboardingWizardStepHref(onboardingPath, item.wizardStep)
 }

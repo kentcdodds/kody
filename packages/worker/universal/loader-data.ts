@@ -25,6 +25,7 @@ import { type CommunityListingSort } from '#universal/community-search.ts'
 import { type PublicCodeRunsWindow } from '#universal/code-runs.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
+import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clients.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 
 export type { ProfileVisibility }
@@ -1729,6 +1730,7 @@ export type AppLoaderData = {
 	discord?: DiscordPageLoaderData
 	codeRuns?: CodeRunsLoaderData
 	walkthroughHosts?: WalkthroughHostPick
+	onboardingAgentChooser?: OnboardingAgentChooserPick
 }
 
 export type CodeRunsLoaderData = {

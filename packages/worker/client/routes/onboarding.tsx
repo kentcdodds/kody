@@ -1,11 +1,11 @@
 import { type Handle, css, ref } from 'remix/ui'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { createRouteLoadLatch } from '#client/route-load-latch.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import { readRouterSearch } from '#client/router-location.tsx'
+import { readRouterSearch, readRouterUrl } from '#client/router-location.tsx'
 import {
 	type AccountStatus,
 	readJson,
@@ -27,6 +27,8 @@ import { type OnboardingFeaturedListing } from '#universal/community-public-type
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
 import {
+	onboardingWizardStepByNumber,
+	onboardingWizardStepHref,
 	onboardingWizardSteps,
 	readLegacyOnboardingStep,
 	type OnboardingWizardStepNumber,
@@ -60,11 +62,21 @@ import {
 	shouldShowOnboardingChecklist,
 } from '#client/routes/onboarding-checklist.tsx'
 import { OnboardingMcpClientTabs } from '#client/routes/onboarding-mcp-client-tabs.tsx'
+import {
+	type OnboardingAgentChooserPick,
+	type OnboardingAgentSurface,
+	canonicalOnboardingAgentChooser,
+	onboardingAgentLabel,
+	onboardingDataHref,
+	onboardingMobileAgentMediaQuery,
+	pickOnboardingAgentChooser,
+	readOnboardingAgentParam,
+	readOnboardingSurfaceParam,
+} from '#client/routes/onboarding-mcp-clients.ts'
 import { OnboardingCustomMcpCard } from '#client/routes/onboarding-custom-mcp-card.tsx'
 import { OnboardingMcpChooserCard } from '#client/routes/onboarding-mcp-chooser-card.tsx'
 import { OnboardingExampleCard } from '#client/routes/onboarding-example-card.tsx'
 import { OnboardingPersistCard } from '#client/routes/onboarding-persist-card.tsx'
-import { OnboardingFactoryCard } from '#client/routes/onboarding-factory-card.tsx'
 import { createOnboardingNextConfirmation } from '#client/routes/onboarding-next-confirmation.ts'
 import { OnboardingPackageNextSteps } from '#client/routes/onboarding-package-next-steps.tsx'
 import { OnboardingStarterCard } from '#client/routes/onboarding-starter-card.tsx'
@@ -91,8 +103,8 @@ import {
 /**
  * Onboarding wizard: shirt-pattern head, three-step stepper (Connect your
  * agent · Give Kody Access · Try it, then persist), one surface panel at a
- * time with hand-tilted mascot art, and the BYOK argument folded behind a
- * disclosure. Server state (prompts, MCP URL, featured MCP servers,
+ * time with hand-tilted mascot art. Step 1 picks one agent, then shows only
+ * that host. Server state (prompts, MCP URL, featured MCP servers,
  * hasMcpClient / OAuth polling) stays in the route state.
  *
  * Step 2 is "give Kody access to your stuff." Official remote MCP is the
@@ -156,7 +168,10 @@ export async function onboardingRouteLoader(
 			resolveOnboardingPendingVerificationPath(redirectTo),
 		)
 	}
-	return { onboarding: payload }
+	return {
+		onboarding: payload,
+		onboardingAgentChooser: pickOnboardingAgentChooser(),
+	}
 }
 
 export function OnboardingRoute(handle: Handle) {
@@ -179,9 +194,8 @@ export function OnboardingRoute(handle: Handle) {
 	let customMcpServers: Array<OnboardingCustomMcpServer> = []
 	let checklist: OnboardingChecklistLoaderData | null = null
 	let checklistHidden = false
-	let activeStep: OnboardingStep = 1
 	let initializedStep = false
-	let appliedInitialHash = false
+	let pendingAdvanceToAccess = false
 	let awaitingMcpConnection = false
 	let oauthReturnError: string | null = null
 	let oauthReturnSucceeded = false
@@ -226,13 +240,13 @@ export function OnboardingRoute(handle: Handle) {
 		status = 'ready'
 		message = null
 		if (!initializedStep) {
-			activeStep = hasStep2Win ? 3 : payload.hasMcpClient ? 2 : 1
 			initializedStep = true
-		} else if (!wasConnected && payload.hasMcpClient && !hasStep2Win) {
+			return
+		}
+		if (!wasConnected && payload.hasMcpClient && !hasStep2Win) {
 			panelAnimationArmed = true
-			activeStep = 2
-			updateStepHash(2)
 			scrollToNav('onboarding-steps-nav')
+			pendingAdvanceToAccess = true
 		}
 		// Stay on Step 2 when access or an example finishes so the
 		// Connected/Installed state is visible; wizard nav advances.
@@ -254,32 +268,64 @@ export function OnboardingRoute(handle: Handle) {
 		})
 	}
 
-	function updateStepHash(step: OnboardingStep) {
-		if (typeof window === 'undefined') return
-		const stepDefinition = onboardingSteps.find(
-			(candidate) => candidate.number === step,
-		)
-		if (!stepDefinition) return
-		const url = new URL(window.location.href)
-		url.hash = stepDefinition.hash
-		window.history.replaceState(window.history.state, '', url)
+	function buildStepHref(
+		step: OnboardingStep,
+		href = readCurrentRouterHref(handle),
+	) {
+		const current = new URL(href, 'https://kody.local')
+		return onboardingWizardStepHref(current.pathname, step, current.search)
 	}
+
+	function goToStep(step: OnboardingStep) {
+		if (typeof window === 'undefined') return
+		navigate(buildStepHref(step, window.location.href), {
+			preventScrollReset: true,
+		})
+	}
+
+	function flushPendingAdvanceToAccess(defer: boolean) {
+		if (!pendingAdvanceToAccess) return
+		if (!defer) {
+			pendingAdvanceToAccess = false
+			goToStep(2)
+			return
+		}
+		// Hash navigate is synchronous and calls handle.update(). Loader
+		// consumption and its corrective render both run around this paint,
+		// so keep the flag until the queued task actually navigates.
+		handle.queueTask((signal) => {
+			if (signal.aborted || !pendingAdvanceToAccess) return
+			pendingAdvanceToAccess = false
+			goToStep(2)
+		})
+	}
+
+	let viewportSurface: OnboardingAgentSurface = 'desktop'
+	let agentChooser: OnboardingAgentChooserPick | null = null
+
+	handle.queueTask((signal) => {
+		if (typeof matchMedia !== 'function') return
+		const media = matchMedia(onboardingMobileAgentMediaQuery)
+		const sync = () => {
+			const next: OnboardingAgentSurface = media.matches ? 'mobile' : 'desktop'
+			if (next === viewportSurface) return
+			viewportSurface = next
+			handle.update()
+		}
+		sync()
+		media.addEventListener('change', sync, { signal })
+	})
 
 	function selectStep(step: OnboardingStep) {
 		panelAnimationArmed = true
-		activeStep = step
-		updateStepHash(step)
 		scrollToNav('onboarding-steps-nav')
-		void handle.update().then((signal) => {
+		goToStep(step)
+		handle.queueTask((signal) => {
 			if (signal.aborted) return
-			const stepDefinition = onboardingSteps.find(
-				(candidate) => candidate.number === step,
-			)
-			if (!stepDefinition) return
 			// The nav scroll owns the viewport position; focus must not yank
 			// it back down to the panel heading.
 			document
-				.getElementById(stepDefinition.hash)
+				.getElementById(onboardingWizardStepByNumber(step).hash)
 				?.querySelector('h2')
 				?.focus({ preventScroll: true })
 		})
@@ -290,6 +336,7 @@ export function OnboardingRoute(handle: Handle) {
 			const payload = await fetchOnboardingPayload(handle.signal)
 			if (handle.signal.aborted || !payload) return
 			applyPayload(payload)
+			flushPendingAdvanceToAccess(false)
 			handle.update()
 		} catch {
 			// Install already succeeded in the card; the next poll retries.
@@ -348,14 +395,16 @@ export function OnboardingRoute(handle: Handle) {
 				return
 			}
 			applyPayload(payload)
-			loadLatch.markLoaded(href)
+			flushPendingAdvanceToAccess(false)
+			if (!agentChooser) agentChooser = pickOnboardingAgentChooser()
+			loadLatch.markLoaded(onboardingDataHref(href))
 			handle.update()
 		} catch (error) {
 			if (signal.aborted) return
 			status = 'error'
 			message =
 				error instanceof Error ? error.message : 'Unable to load onboarding.'
-			loadLatch.markFailed(href)
+			loadLatch.markFailed(onboardingDataHref(href))
 			handle.update()
 		}
 	}
@@ -417,6 +466,7 @@ export function OnboardingRoute(handle: Handle) {
 				return
 			}
 			applyPayload(payload)
+			flushPendingAdvanceToAccess(false)
 			handle.update()
 		} catch {
 			// Transient poll failures are fine; the next tick retries.
@@ -434,10 +484,6 @@ export function OnboardingRoute(handle: Handle) {
 			onboardingProgressPollIntervalMs,
 		)
 		handle.signal.addEventListener('abort', () => clearInterval(pollIntervalId))
-		window.addEventListener('hashchange', handleHashChange)
-		handle.signal.addEventListener('abort', () =>
-			window.removeEventListener('hashchange', handleHashChange),
-		)
 		listenForOnboardingMcpOAuthDone((outcome) => {
 			if (outcome.auth === 'error' && outcome.reason) {
 				oauthReturnError = outcome.reason
@@ -452,16 +498,14 @@ export function OnboardingRoute(handle: Handle) {
 		}, handle.signal)
 	}
 
-	function handleHashChange() {
-		const step = readStepFromHref(window.location.href)
-		if (!step) return
-		panelAnimationArmed = true
-		activeStep = step
-		handle.update()
-	}
-
 	function applyRouteLoaderData(href: string) {
 		if (!isOnboardingPath(href)) return false
+		const chooserData = tryConsumeRouteLoaderData(
+			handle,
+			'onboardingAgentChooser',
+			href,
+		)
+		if (chooserData) agentChooser = chooserData
 		const routeData = tryConsumeRouteLoaderData(handle, 'onboarding', href)
 		if (!routeData) return false
 		if (routeData.loggedIn && !routeData.emailVerified) {
@@ -473,37 +517,36 @@ export function OnboardingRoute(handle: Handle) {
 			return true
 		}
 		applyPayload(routeData)
-		loadLatch.markLoaded(href)
+		loadLatch.markLoaded(onboardingDataHref(href))
 		return true
 	}
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const appliedRouteData = applyRouteLoaderData(currentHref)
+		flushPendingAdvanceToAccess(true)
 		const needsStaleRefresh =
 			consumeStaleNavigationData(currentHref) && !appliedRouteData
 		const needsLoad = loadLatch.needsLoad({
-			currentHref,
+			currentHref: onboardingDataHref(currentHref),
 			appliedRouteData,
 			needsStaleRefresh,
 		})
 		if (needsLoad && typeof document !== 'undefined') {
 			handle.queueTask(loadOnboarding)
 		}
-		if (
-			status === 'ready' &&
-			typeof document !== 'undefined' &&
-			!appliedInitialHash
-		) {
-			appliedInitialHash = true
-			handle.queueTask(() => {
-				const step = readStepFromHref(window.location.href)
-				if (!step || step === activeStep) return
-				activeStep = step
-				handle.update()
-			})
-		}
 
+		const inferredStep: OnboardingStep = hasStep2Win ? 3 : hasMcpClient ? 2 : 1
+		const activeStep = readStepFromHref(currentHref) ?? inferredStep
+
+		const routerSearch = readRouterSearch(handle)
+		const selectedAgent = readOnboardingAgentParam(routerSearch)
+		const selectedSurface =
+			readOnboardingSurfaceParam(routerSearch) ?? viewportSurface
+		const selectedAgentLabel = selectedAgent
+			? onboardingAgentLabel(selectedAgent, selectedSurface)
+			: null
+		const agentLocation = new URL(readRouterUrl(handle), 'https://kody.local')
 		const workspaceLabel = firstConnectedOnboardingWorkspaceLabel({
 			featuredMcpServers,
 			customMcpServers,
@@ -517,23 +560,9 @@ export function OnboardingRoute(handle: Handle) {
 					<h1 data-rise style={{ '--rise': '0' }}>
 						Get started with <em>Kody</em>
 					</h1>
-					<p data-rise style={{ '--rise': '1' }}>
-						Give your agent a personal software factory: connect any MCP-capable
-						host, add {formatOnboardingFeaturedMcpChoice()}, then run an ad hoc
-						request and persist it as a package you own. New here?{' '}
-						<a
-							href="/guides/what-is-kody"
-							target="_blank"
-							rel="noreferrer noopener"
-							mix={css(headerGuideLinkCss)}
-						>
-							Read what Kody can do
-						</a>{' '}
-						first.
-					</p>
 					<p
 						data-rise
-						style={{ '--rise': '2' }}
+						style={{ '--rise': '1' }}
 						mix={css(discordInviteWrapCss)}
 					>
 						<a
@@ -569,14 +598,13 @@ export function OnboardingRoute(handle: Handle) {
 									(step.number === 1 && hasMcpClient) ||
 									(step.number === 2 && hasStep2Win)
 								return (
-									<button
+									<a
 										key={step.number}
-										type="button"
+										href={buildStepHref(step.number, currentHref)}
 										aria-current={isActive ? 'step' : undefined}
-										mix={[
-											css(stepButtonCss),
-											on('click', () => selectStep(step.number)),
-										]}
+										data-testid={`onboarding-step-${step.number}`}
+										data-prevent-scroll-reset=""
+										mix={css(stepButtonCss)}
 									>
 										<span data-wizard-num mix={css(stepNumberCss)}>
 											{step.number}
@@ -591,7 +619,7 @@ export function OnboardingRoute(handle: Handle) {
 												✓
 											</span>
 										) : null}
-									</button>
+									</a>
 								)
 							})}
 						</nav>
@@ -625,55 +653,36 @@ export function OnboardingRoute(handle: Handle) {
 										mix={css(panelArtCss)}
 									/>
 								</div>
-								<div
-									mix={css(connectStatusCss)}
-									role="status"
-									aria-live="polite"
-									data-connected={hasMcpClient ? 'true' : undefined}
-								>
-									{connectStatusContent({
-										connected: hasMcpClient,
-										connectedLabel: 'You are connected',
-										waitingLabel: 'Waiting for your agent to connect…',
-									})}
-								</div>
+								{selectedAgent || hasMcpClient ? (
+									<div
+										mix={css(connectStatusCss)}
+										role="status"
+										aria-live="polite"
+										data-connected={hasMcpClient ? 'true' : undefined}
+									>
+										{connectStatusContent({
+											connected: hasMcpClient,
+											connectedLabel: selectedAgentLabel
+												? `${selectedAgentLabel} is connected`
+												: 'You are connected',
+											waitingLabel: selectedAgentLabel
+												? `Waiting for ${selectedAgentLabel} to connect…`
+												: 'Waiting for your agent to connect…',
+										})}
+									</div>
+								) : null}
 								<OnboardingMcpClientTabs
 									mcpServerUrl={mcpServerUrl}
 									highlights={mcpHighlights}
+									selectedAgent={selectedAgent}
+									surface={selectedSurface}
+									chooser={agentChooser ?? canonicalOnboardingAgentChooser()}
+									agentLocation={{
+										pathname: agentLocation.pathname,
+										search: agentLocation.search,
+										hash: agentLocation.hash,
+									}}
 								/>
-								<div
-									mix={css(authNoteCss)}
-									role="note"
-									data-testid="onboarding-authenticate-callout"
-								>
-									<strong>Authenticate Kody before you continue</strong>
-									<span>
-										<strong>Cursor:</strong> after installing the plugin, open
-										the Cursor MCP list and click <strong>Authenticate</strong>.
-									</span>
-									<span>
-										<strong>Claude Code:</strong> after install, enter{' '}
-										<code>/mcp</code> → Kody → <strong>Authenticate</strong>.
-									</span>
-									<span>
-										<strong>Grok.com:</strong> after adding the custom
-										connector, complete OAuth when Grok prompts you.
-									</span>
-									<span>
-										<strong>Grok Bot:</strong> after adding the plugin, complete{' '}
-										<strong>Authorize</strong> when Grok Bot prompts you.
-									</span>
-									<span>
-										<strong>Grok CLI:</strong> after adding the server, OAuth
-										opens on first use. In the TUI, <code>/mcps</code> then{' '}
-										<strong>i</strong> authenticates.{' '}
-										<code>grok mcp doctor kody</code> checks the connection.
-									</span>
-									<span>
-										Approve the <strong>kody.codes</strong> OAuth window. This
-										is the step that connects your agent to your factory.
-									</span>
-								</div>
 								<WizardNavigation
 									activeStep={activeStep}
 									onSelectStep={selectStep}
@@ -815,7 +824,7 @@ export function OnboardingRoute(handle: Handle) {
 											Account → Secrets
 										</a>
 										{' · '}
-										<a href="#byok" mix={css(primaryLinkCss)}>
+										<a href="/#byok-title" mix={css(primaryLinkCss)}>
 											Why bring your own keys?
 										</a>
 									</p>
@@ -977,24 +986,6 @@ export function OnboardingRoute(handle: Handle) {
 								/>
 							</section>
 						) : null}
-
-						<OnboardingFactoryCard />
-
-						{/* Outside the wizard panels on purpose: the prototype keeps the
-					    BYOK disclosure visible on every step. */}
-						{renderByokDetails()}
-
-						{loggedIn ? null : (
-							<p mix={css(authLinksCss)}>
-								<a href="/signup" mix={css(primaryLinkCss)}>
-									Sign up
-								</a>
-								{' · '}
-								<a href="/login" mix={css(primaryLinkCss)}>
-									Log in
-								</a>
-							</p>
-						)}
 					</>
 				) : null}
 			</section>
@@ -1075,73 +1066,6 @@ function WizardNavigation(
 			</footer>
 		)
 	}
-}
-
-/**
- * BYOK aside, folded behind a disclosure per the live design: the full
- * argument is one click away, not a second page of reading. This is the
- * prototype's onboarding-specific framing ("Why there's no one-click
- * connect"); the integrations page keeps its own `byok-explainer` copy.
- */
-function renderByokDetails() {
-	return (
-		<details id="byok" mix={css(byokDetailsCss)}>
-			<summary mix={css(byokSummaryCss)}>Bring your own API keys</summary>
-			{/*
-			 * A `section` rather than a `div`: a generic element has no role, so
-			 * the accessible name from `aria-labelledby` would be dropped.
-			 */}
-			<section mix={css(byokBodyCss)} aria-labelledby="byok-note-title">
-				<img
-					{...landingArtAttrs('kody-keys')}
-					width={627}
-					height={627}
-					alt="Kody holding a golden key with both paws"
-				/>
-				<div>
-					<h2 id="byok-note-title" mix={css(byokTitleCss)}>
-						Why bring your own keys?
-					</h2>
-					<p mix={css(byokCopyCss)}>
-						You create the connection yourself, and your agent walks you through
-						it, so it is completely yours: your app, your scopes, no middleman.
-					</p>
-					<dl mix={css(byokCompareCss)}>
-						<div>
-							<dt>Typical apps</dt>
-							<dd>
-								<span>You</span> <span aria-hidden="true">→</span>{' '}
-								<s>their shared app</s> <span aria-hidden="true">→</span>{' '}
-								<span>GitHub</span>
-							</dd>
-						</div>
-						<div>
-							<dt>Kody</dt>
-							<dd>
-								<span>You</span> <span aria-hidden="true">→</span>{' '}
-								<em>your own app</em> <span aria-hidden="true">→</span>{' '}
-								<span>GitHub</span>
-							</dd>
-						</div>
-					</dl>
-					<ul mix={css(byokPointsCss)}>
-						<li>
-							<strong>Your keys, your scopes.</strong> You decide exactly what
-							Kody can touch, and you can revoke it anytime.
-						</li>
-						<li>
-							<strong>No middleman.</strong> Nothing sits between you and the
-							provider: no shared app to trust or get breached.
-						</li>
-						<li>
-							<strong>No fixed list.</strong> If it has an API, your Kody can
-							learn to use it.
-						</li>
-					</ul>
-				</div>
-			</section>
-		</details>
-	)
 }
 
 /* ---------- styles ---------- */
@@ -1225,6 +1149,7 @@ const stepButtonCss = {
 	gap: '0.7rem',
 	font: `550 0.98rem/1.25 ${typography.fontFamilyBody}`,
 	textAlign: 'left' as const,
+	textDecoration: 'none',
 	color: colors.textMuted,
 	backgroundColor: colors.surface,
 	border: `1.5px solid ${colors.border}`,
@@ -1346,12 +1271,6 @@ const panelLedeCss = {
 }
 
 /* Nested surfaces step down to the page ground so they read as wells. */
-const headerGuideLinkCss = {
-	color: colors.primaryText,
-	textDecorationThickness: '1.5px',
-	textUnderlineOffset: '3px',
-}
-
 const discordInviteWrapCss = {
 	margin: '1rem 0 0',
 }
@@ -1391,28 +1310,6 @@ const howItWorksLabelCss = {
 	letterSpacing: '0.06em',
 	textTransform: 'uppercase' as const,
 	color: colors.primaryText,
-}
-
-/* One-time authorization callout follows the install controls because this
-   is the action users must take after copying or adding the MCP config. */
-const authNoteCss = {
-	...getAccentCalloutCss({ accentColor: colors.primary }),
-	gap: '0.55rem',
-	padding: '1.2rem 1.35rem',
-	borderLeftWidth: '6px',
-	backgroundColor: `oklch(from ${colors.primary} l c h / 0.14)`,
-	boxShadow: `0 10px 28px oklch(from ${colors.primary} l c h / 0.12)`,
-	'& > strong': {
-		font: `750 1.2rem/1.15 ${typography.fontFamilyDisplay}`,
-		color: colors.primaryText,
-	},
-	'& > span': {
-		color: colors.text,
-		lineHeight: 1.5,
-	},
-	'& code': {
-		font: '600 0.9em ui-monospace, "SF Mono", Menlo, monospace',
-	},
 }
 
 /* Connection status pill: dashed while the product polls for the grant,
@@ -1729,126 +1626,5 @@ const wizardBackButtonCss = {
 	'&:disabled': {
 		...wizardButtonDisabledCss['&:disabled'],
 		boxShadow: `inset 0 0 0 1.5px ${colors.border}`,
-	},
-}
-
-const authLinksCss = {
-	margin: '2.2rem 0 0',
-	color: colors.textMuted,
-}
-
-/* ---------- BYOK disclosure ---------- */
-
-const byokDetailsCss = {
-	marginTop: 'clamp(2.5rem, 6vw, 4rem)',
-	paddingTop: '1.4rem',
-	borderTop: `1px solid ${colors.border}`,
-	'& > div': {
-		'@media (prefers-reduced-motion: no-preference)': {
-			transition: `opacity 240ms ${transitions.easeOut}, translate 240ms ${transitions.easeOut}`,
-		},
-		'@starting-style': {
-			opacity: 0,
-			translate: '0 6px',
-		},
-	},
-}
-
-const byokSummaryCss = {
-	cursor: 'pointer',
-	width: 'fit-content',
-	padding: '0.3rem 0',
-	font: `700 1.05rem/1.3 ${typography.fontFamilyDisplay}`,
-	color: colors.text,
-	transition: `color ${transitions.fast}`,
-	[hoverMq]: {
-		'&:hover': {
-			color: colors.primaryText,
-		},
-	},
-}
-
-const byokBodyCss = {
-	marginTop: '1.2rem',
-	display: 'grid',
-	gridTemplateColumns: 'clamp(160px, 24vw, 250px) minmax(0, 1fr)',
-	gap: 'clamp(1.5rem, 4vw, 3rem)',
-	alignItems: 'center',
-	'& > img': {
-		width: '100%',
-		height: 'auto',
-	},
-	'@media (max-width: 720px)': {
-		gridTemplateColumns: '1fr',
-		'& > img': {
-			width: 'min(48%, 200px)',
-			marginInline: 'auto',
-		},
-	},
-}
-
-const byokTitleCss = {
-	margin: 0,
-	fontSize: 'clamp(1.4rem, 2.4vw, 1.75rem)',
-	fontWeight: 720,
-	letterSpacing: '-0.018em',
-	lineHeight: 1.15,
-}
-
-const byokCopyCss = {
-	margin: '0.85rem 0 0',
-	color: colors.textMuted,
-	maxWidth: '56ch',
-}
-
-const byokCompareCss = {
-	margin: '1.3rem 0 0',
-	display: 'grid',
-	gap: '0.45rem',
-	fontSize: '0.95rem',
-	'& > div': {
-		display: 'flex',
-		alignItems: 'baseline',
-		flexWrap: 'wrap' as const,
-		gap: '0.6rem',
-	},
-	'& dt': {
-		color: colors.textMuted,
-		minWidth: '7.5ch',
-	},
-	'& dd': {
-		margin: 0,
-		display: 'inline-flex',
-		alignItems: 'baseline',
-		gap: '0.45rem',
-		flexWrap: 'wrap' as const,
-	},
-	'& dd > span:not([aria-hidden]), & dd > s, & dd > em': {
-		backgroundColor: colors.surface,
-		border: `1px solid ${colors.border}`,
-		borderRadius: '999px',
-		padding: '0.15rem 0.7rem',
-	},
-	'& dd > s': {
-		color: colors.textMuted,
-	},
-	'& dd > em': {
-		fontStyle: 'normal',
-		fontWeight: 600,
-		color: colors.primaryText,
-		borderColor: `oklch(from ${colors.primary} l c h / 0.5)`,
-	},
-}
-
-const byokPointsCss = {
-	margin: '1.3rem 0 0',
-	padding: 0,
-	listStyle: 'none',
-	display: 'grid',
-	gap: '0.55rem',
-	color: colors.textMuted,
-	fontSize: '0.98rem',
-	'& strong': {
-		color: colors.text,
 	},
 }

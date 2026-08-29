@@ -10,26 +10,21 @@ block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.
 People following a host-specific walkthrough can stay on this page or use Get
 started (`/onboarding`).
 
-The in-app Get started page (`/onboarding`) shows one Automatic command first:
-`npx @kodycodes/cli install`. That CLI detects running local agents and writes
-each host's remote MCP entry for this deployment. Host-specific deeplinks,
-vendor CLIs, the MCP URL, and JSON/TOML merge stay under Manual. A second client
-is worth it when you want the same [memories](./memory.md) and packages from
-another agent — you do not need every Manual tab.
+The in-app Get started page (`/onboarding`) asks which agent you want to connect
+first, then shows only that host's install steps. A second client is worth it
+later when you want the same [memories](./memory.md) and packages from another
+agent — you do not need every host on day one. Choose **Not listed** for a
+generic MCP URL, or for Grok CLI, OpenCode, or the Copilot app.
 
 ## Add the MCP server
 
 1. Open Get started (`/onboarding`).
-2. Copy and run the Automatic command. On [kody.codes](https://kody.codes) that
-   is `npx @kodycodes/cli install` (the CLI default MCP URL is
-   `https://kody.codes/mcp`). Preview and local origins add `--mcp-url` with
-   that deployment's MCP URL (`https://<this-host>/mcp`).
-3. Complete the OAuth flow when the host opens it. Sign in to Kody if needed,
+2. Choose the agent you want to connect.
+3. Follow that host's steps (plugin, vendor CLI, or the MCP URL). Preview and
+   local origins use that deployment's MCP URL (`https://<this-host>/mcp`). On
+   [kody.codes](https://kody.codes) the MCP URL is `https://kody.codes/mcp`.
+4. Complete the OAuth flow when the host opens it. Sign in to Kody if needed,
    then approve access.
-
-The CLI configures local agents it finds (Cursor, Claude Desktop, VS Code,
-Claude Code, Codex, and similar). It does not configure web hosts such as
-ChatGPT, Claude.ai, or Grok — those stay under Manual.
 
 Your account email must be verified before authorize can finish or MCP can run.
 If authorize asks you to verify, keep that tab open, finish verification (from
@@ -40,8 +35,8 @@ MCP URL and setup prompt.
 
 ### Client notes
 
-Manual on Get started has one tab per host. Use those when you are not running
-`@kodycodes/cli`, or when the host is web-only.
+Get started shows one host at a time after you pick it. Use **Not listed** when
+your agent is not in the first chooser, or when you only have the MCP URL.
 
 - **Cursor** — Install the official
   [Kody plugin](https://cursor.com/marketplace/kody), or in Cursor chat run

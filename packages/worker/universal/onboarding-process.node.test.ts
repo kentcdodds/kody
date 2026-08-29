@@ -6,6 +6,7 @@ import {
 	onboardingChecklistItemHref,
 	onboardingChecklistItems,
 	onboardingWizardStepByNumber,
+	onboardingWizardStepHref,
 	onboardingWizardSteps,
 	readLegacyOnboardingStep,
 } from './onboarding-process.ts'
@@ -60,6 +61,12 @@ test('the derived checklist covers verify-email plus each wizard step', () => {
 			`/onboarding#${step.hash}`,
 		)
 	}
+	expect(onboardingWizardStepHref('/onboarding', 2)).toBe(
+		'/onboarding#connect-mcp',
+	)
+	expect(
+		onboardingWizardStepHref('/onboarding', 3, '?agent=cursor&surface=desktop'),
+	).toBe('/onboarding?agent=cursor&surface=desktop#first-build')
 	expect(readLegacyOnboardingStep('first-win')).toBe(3)
 	expect(readLegacyOnboardingStep('toString')).toBe(null)
 })
