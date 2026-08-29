@@ -117,6 +117,11 @@ enforcement loop for the compute surfaces `usage-metering.md` already observes:
   (`packages/worker/src/jobs/service.ts`) after caller-context resolution and
   before sandbox work, so over-limit ticks fail cheaply. This is separate from
   `scheduled_jobs` (how many job rows an account may own).
+- **Job interval floor** (`planLimits.*.minJobIntervalMs`) applies only to free:
+  recurring jobs cannot run more often than every 15 minutes. The floor is
+  asserted on create and on an actual schedule change (`JobIntervalFloorError`).
+  Identity-only refreshes of an existing faster job are grandfathered. Paid
+  plans have no extra floor.
 
 These consume only when the context has a `userId`, matching the usage-metering
 rule that events without an owning user are skipped. Daily consumption is
@@ -687,21 +692,21 @@ workflows via RunLog, and similar).
 
 ## Enforcement points
 
-| Resource                   | Enforcement point                                                                                                                                                                                                                     |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scheduled_jobs`           | Full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot)                             |
-| `saved_packages`           | new-package branch of `package_save` and projection insert                                                                                                                                                                            |
-| `repo_sessions`            | `repo_open_session` before creating a new session                                                                                                                                                                                     |
-| `email_sends_per_day`      | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                   |
-| `email_receives_per_day`   | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                     |
-| `stored_email_messages`    | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                                                                                                                     |
-| `email_message_bytes`      | `handleInboundEmail` before quota/parse (per-message raw size via `resolvePlanLimit`)                                                                                                                                                 |
-| `secrets`                  | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                      |
-| `concurrent_workflows`     | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                               |
-| `execute_calls_per_day`    | MCP `execute` tool handler (`consumeDailyEntitlement` before bundling/sandbox)                                                                                                                                                        |
-| `outbound_fetches_per_day` | `executeGatewayFetch` (`consumeDailyEntitlement` before secret expansion)                                                                                                                                                             |
-| `job_runs_per_day`         | `executeJobOnce` (`consumeDailyEntitlement` before sandbox work; cron, interval, and run-now)                                                                                                                                         |
-| `storage_bytes`            | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component) |
+| Resource                   | Enforcement point                                                                                                                                                                                                                                                                                                                  |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scheduled_jobs`           | Full-addition preflight in `syncPackageJobsForPackage` in `packages/worker/src/jobs/service.ts` (package sync subtracts same-sync removals before checking, so replacements do not consume an extra slot). Free also asserts `minJobIntervalMs` (15 minutes) on create or schedule change; existing faster jobs are grandfathered. |
+| `saved_packages`           | new-package branch of `package_save` and projection insert                                                                                                                                                                                                                                                                         |
+| `repo_sessions`            | `repo_open_session` before creating a new session                                                                                                                                                                                                                                                                                  |
+| `email_sends_per_day`      | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                                                                                                                |
+| `email_receives_per_day`   | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                                                                                                                  |
+| `stored_email_messages`    | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`)                                                                                                                                                                                                                                  |
+| `email_message_bytes`      | `handleInboundEmail` before quota/parse (per-message raw size via `resolvePlanLimit`)                                                                                                                                                                                                                                              |
+| `secrets`                  | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                                                                                                                   |
+| `concurrent_workflows`     | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                                                                                                                            |
+| `execute_calls_per_day`    | MCP `execute` tool handler (`consumeDailyEntitlement` before bundling/sandbox)                                                                                                                                                                                                                                                     |
+| `outbound_fetches_per_day` | `executeGatewayFetch` (`consumeDailyEntitlement` before secret expansion)                                                                                                                                                                                                                                                          |
+| `job_runs_per_day`         | `executeJobOnce` (`consumeDailyEntitlement` before sandbox work; cron, interval, and run-now)                                                                                                                                                                                                                                      |
+| `storage_bytes`            | UserMeter DO reserve via `assertWithinStorageBytesEntitlement` (atomic `reserveStorageBytes`; cold zero-init bootstrap; required `env.USER_METER`); StorageRunner write tools/app RPCs (`getCurrent` check-only for bucket component)                                                                                              |
 
 ## Billing
 
@@ -722,9 +727,10 @@ Checkout sessions are created server-side for authenticated users via
 `metadata.kody_stable_user_id`). There is no public Payment Link path — checkout
 requires a signed-in session so unauthenticated card-testing is not possible.
 `GET /account/billing/success` verifies `client_reference_id` before linking
-`users.stripe_customer_id`, then refreshes `users.stripe_plan`. A successful
-`stripe_plan` write also best-effort re-syncs official Kody Discord Standard/Pro
-roles when the user has a Discord social-login connection (see
+`users.stripe_customer_id`, then refreshes `users.stripe_plan` and renders a
+thank-you page (Discord invite; connect-your-agent when `needsOnboarding`). A
+successful `stripe_plan` write also best-effort re-syncs official Kody Discord
+Standard/Pro roles when the user has a Discord social-login connection (see
 [`social-login.md`](../social-login.md)). `GET /account/billing/portal` opens
 the Stripe customer portal for linked customers.
 

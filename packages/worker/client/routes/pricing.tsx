@@ -1,7 +1,16 @@
 import { type Handle, css } from 'remix/ui'
 import { readAppSession } from '#client/app-session-context.tsx'
+import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { reveal } from '#client/reveal.ts'
-import { planLimits, type PlanLimits } from '#universal/plans.ts'
+import { type RouteLoaderResult } from '#client/route-loader.ts'
+import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
+import {
+	formatMinJobInterval,
+	planLimits,
+	type PlanLimits,
+} from '#universal/plans.ts'
+import { type SignupMode } from '#universal/signup-mode.ts'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
@@ -46,6 +55,11 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 			{ label: 'Connected repos', key: 'maxRepos' },
 			{ label: 'Saved packages', key: 'maxSavedPackages' },
 			{ label: 'Scheduled jobs', key: 'maxScheduledJobs' },
+			{
+				label: 'Fastest job interval',
+				key: 'minJobIntervalMs',
+				format: (value) => ({ text: formatMinJobInterval(value) }),
+			},
 			{ label: 'Active repo sessions', key: 'maxRepoSessions' },
 		],
 	},
@@ -84,9 +98,25 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 	},
 ]
 
+export async function pricingRouteLoader(
+	_url: URL,
+	signal: AbortSignal,
+): Promise<RouteLoaderResult> {
+	const config = await fetchPublicAuthConfig(signal)
+	return { signupMode: config?.signupMode ?? 'invite' }
+}
+
 export function PricingRoute(handle: Handle) {
+	let signupMode: SignupMode = 'invite'
 	return () => {
 		const isSignedIn = readAppSession(handle).session !== null
+		const href = readCurrentRouterHref(handle)
+		const loadedSignupMode = tryConsumeRouteLoaderData(
+			handle,
+			'signupMode',
+			href,
+		)
+		if (loadedSignupMode) signupMode = loadedSignupMode
 		return (
 			<section mix={css(pricingCss)}>
 				<header mix={css(pageHeadCss)}>
@@ -108,11 +138,21 @@ export function PricingRoute(handle: Handle) {
 						</h2>
 						<p mix={css(planPriceCss)}>$0</p>
 						<p mix={css(planCopyCss)}>
-							The whole factory. Tight caps so you can see if it earns a place.
+							The whole factory. 5 jobs, no faster than every 15 minutes.
 						</p>
-						<a href="/signup" mix={css(planPillButtonCss)}>
-							Create a free account
-						</a>
+						{isSignedIn ? (
+							<a href="/account" mix={css(planPillButtonCss)}>
+								Open your account
+							</a>
+						) : signupMode === 'open' ? (
+							<a href="/signup" mix={css(planPillButtonCss)}>
+								Create a free account
+							</a>
+						) : (
+							<a href="/#invite" mix={css(planPillButtonCss)}>
+								Join the waiting list
+							</a>
+						)}
 					</section>
 
 					{/*
@@ -208,6 +248,10 @@ export function PricingRoute(handle: Handle) {
 						<a href="/account" mix={css(limitsCtaButtonCss)}>
 							Open your account
 						</a>
+					) : signupMode === 'open' ? (
+						<a href="/signup" mix={css(limitsCtaButtonCss)}>
+							Create a free account
+						</a>
 					) : (
 						<a href="/#invite" mix={css(limitsCtaButtonCss)}>
 							Join the waiting list
@@ -228,9 +272,9 @@ function renderPaidPlanCta(isSignedIn: boolean) {
 		)
 	}
 	return (
-		<button type="button" disabled mix={css(planGhostButtonCss)}>
-			Launch coming soon
-		</button>
+		<a href="/signup" mix={css(planGhostButtonCss)}>
+			Create a free account
+		</a>
 	)
 }
 

@@ -6,7 +6,10 @@ import {
 	createInMemoryUserMeterEnv,
 	createPermissiveAccountWriteLeaseDbHooks,
 } from '#worker/test-support/user-meter.ts'
-import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import {
+	isEntitlementLimitError,
+	isJobIntervalFloorError,
+} from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createCapabilitySecretAccessDeniedMessage } from '#mcp/secrets/errors.ts'
@@ -1499,7 +1502,7 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 	const intervalJob = {
 		'event-runner': {
 			entry: './src/jobs/event-runner.ts',
-			schedule: { type: 'interval', every: '1m' },
+			schedule: { type: 'interval', every: '15m' },
 			timezone: 'America/Denver',
 			enabled: true,
 		},
@@ -1551,7 +1554,7 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 			manifest: createManifest({
 				'event-runner': {
 					...intervalJob['event-runner'],
-					schedule: { type: 'interval', every: '5m' },
+					schedule: { type: 'interval', every: '30m' },
 				},
 			}),
 		}),
@@ -1559,7 +1562,7 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 	const rowsAfterUpdate = await listJobRowsByUserId(env.APP_DB, input.userId)
 	expect(rowsAfterUpdate[0]?.record.schedule).toEqual({
 		type: 'interval',
-		every: '5m',
+		every: '30m',
 	})
 
 	expect(
@@ -1725,6 +1728,96 @@ test('package job sync preflights the full addition set without partial inserts'
 		current: existingJobCount,
 	})
 	expect(await listJobRowsByUserId(db, userId)).toHaveLength(existingJobCount)
+})
+
+test('free plan rejects new or changed schedules faster than 15 minutes and grandfathers existing jobs', async () => {
+	const email = 'interval-floor@example.com'
+	const userId = await createStableUserIdFromEmail(email)
+	const paidEmail = 'interval-floor-paid@example.com'
+	const paidUserId = await createStableUserIdFromEmail(paidEmail)
+	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
+		async (_db: D1Database, id: string) => ({
+			userId: id,
+			email:
+				id === paidUserId
+					? paidEmail
+					: id === userId
+						? email
+						: `${id}@example.com`,
+			username: id,
+			displayName: id,
+		}),
+	)
+	const env = createJobServiceTestEnv({
+		APP_DB: createDatabase({
+			users: [
+				{ email, plan: 'free', stable_user_id: userId },
+				{ email: paidEmail, plan: 'standard', stable_user_id: paidUserId },
+			],
+		}),
+	})
+	const callerContext = createPlanUserCallerContext({ userId, email })
+
+	await expect(
+		syncSinglePackageJob({
+			env,
+			userId,
+			baseUrl: 'https://example.com',
+			packageId: 'too-fast-package',
+			sourceId: 'too-fast-package-source',
+			jobName: 'quota-job',
+			schedule: { type: 'interval', every: '5m' },
+		}),
+	).rejects.toSatisfy((error: unknown) => isJobIntervalFloorError(error))
+
+	const created = await syncSinglePackageJob({
+		env,
+		userId,
+		baseUrl: 'https://example.com',
+		packageId: 'ok-interval-package',
+		sourceId: 'ok-interval-package-source',
+		jobName: 'ok-job',
+		schedule: { type: 'interval', every: '15m' },
+	})
+	expect(created.schedule).toEqual({ type: 'interval', every: '15m' })
+
+	const grandfathered = await insertLeftoverJob({
+		env,
+		callerContext,
+		body: {
+			name: 'Legacy five-minute poller',
+			schedule: { type: 'interval', every: '5m' },
+			sourceId: 'legacy-5m-source',
+		},
+	})
+	await expect(
+		updateJob({
+			env,
+			callerContext,
+			body: { id: grandfathered.id, enabled: false },
+		}),
+	).resolves.toMatchObject({ enabled: false })
+	await expect(
+		updateJob({
+			env,
+			callerContext,
+			body: {
+				id: grandfathered.id,
+				schedule: { type: 'interval', every: '1m' },
+			},
+		}),
+	).rejects.toSatisfy((error: unknown) => isJobIntervalFloorError(error))
+
+	const paidCreated = await syncSinglePackageJob({
+		env,
+		userId: paidUserId,
+		baseUrl: 'https://example.com',
+		packageId: 'paid-fast-package',
+		sourceId: 'paid-fast-package-source',
+		jobName: 'fast-job',
+		schedule: { type: 'interval', every: '1m' },
+	})
+	expect(paidCreated.schedule).toEqual({ type: 'interval', every: '1m' })
 })
 
 test('updateJob and deleteJob sync the job manager alarm', async () => {

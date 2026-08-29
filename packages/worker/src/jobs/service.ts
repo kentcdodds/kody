@@ -29,6 +29,7 @@ import {
 } from './execution-safety.ts'
 import {
 	computeNextRunAt,
+	estimateScheduleMinIntervalMs,
 	formatJobError,
 	isJobExpired,
 	normalizeJobExpiresAt,
@@ -41,15 +42,21 @@ import {
 	type JobExecutionResult,
 	type JobRepoCheckPolicy,
 	type JobRecord,
+	type JobSchedule,
 	type JobUpdateInput,
 	type PersistedJobCallerContext,
 } from './types.ts'
 import { createJobStorageId, storageRunnerRpc } from '#worker/storage-runner.ts'
-import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import {
+	isEntitlementLimitError,
+	JobIntervalFloorError,
+} from '#worker/entitlements/errors.ts'
 import {
 	assertWithinEntitlement,
 	consumeDailyEntitlement,
+	getCachedUserPlan,
 } from '#worker/entitlements/service.ts'
+import { planLimits, type PlanName } from '#universal/plans.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
@@ -718,6 +725,10 @@ export async function syncPackageJobsForPackage(input: {
 						),
 				})
 			}
+			const plan = await getCachedUserPlan(input.env.APP_DB, {
+				userId: input.userId,
+				email: callerContext.user.email,
+			})
 			const now = new Date().toISOString()
 			let schedulerStateChanged = false
 
@@ -753,6 +764,16 @@ export async function syncPackageJobsForPackage(input: {
 						}
 						continue
 					}
+					if (
+						JSON.stringify(existing.record.schedule) !==
+						JSON.stringify(schedule)
+					) {
+						assertJobScheduleIntervalFloor({
+							plan,
+							schedule,
+							timezone,
+						})
+					}
 					const updated: JobRecord = {
 						...existing.record,
 						name: jobName,
@@ -776,6 +797,11 @@ export async function syncPackageJobsForPackage(input: {
 					continue
 				}
 
+				assertJobScheduleIntervalFloor({
+					plan,
+					schedule,
+					timezone,
+				})
 				const created: JobRecord = {
 					version: 1,
 					id: buildPackageJobId(input.packageId, jobName),
@@ -821,6 +847,24 @@ export async function syncPackageJobsForPackage(input: {
 			}
 			return schedulerStateChanged
 		},
+	})
+}
+
+function assertJobScheduleIntervalFloor(input: {
+	plan: PlanName
+	schedule: JobSchedule
+	timezone?: string | null
+}) {
+	const minIntervalMs = planLimits[input.plan].minJobIntervalMs
+	if (minIntervalMs <= 0) return
+	const intervalMs = estimateScheduleMinIntervalMs({
+		schedule: input.schedule,
+		timezone: input.timezone,
+	})
+	if (intervalMs == null || intervalMs >= minIntervalMs) return
+	throw new JobIntervalFloorError({
+		plan: input.plan,
+		minIntervalMs,
 	})
 }
 
@@ -955,8 +999,20 @@ export async function updateJob(input: {
 			const nextEnabled = expired
 				? false
 				: (input.body.enabled ?? existing.enabled)
+			const scheduleChanged =
+				JSON.stringify(nextSchedule) !== JSON.stringify(existing.schedule)
+			if (scheduleChanged) {
+				assertJobScheduleIntervalFloor({
+					plan: await getCachedUserPlan(input.env.APP_DB, {
+						userId: callerContext.user.userId,
+						email: callerContext.user.email,
+					}),
+					schedule: nextSchedule,
+					timezone: nextTimezone,
+				})
+			}
 			const shouldRecomputeNextRunAt =
-				JSON.stringify(nextSchedule) !== JSON.stringify(existing.schedule) ||
+				scheduleChanged ||
 				nextTimezone !== existing.timezone ||
 				(existing.enabled === false && nextEnabled === true)
 			const shape = resolveUpdatedShape({

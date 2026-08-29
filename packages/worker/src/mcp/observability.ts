@@ -2,7 +2,10 @@ import * as Sentry from '@sentry/cloudflare'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
-import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import {
+	isEntitlementLimitError,
+	isJobIntervalFloorError,
+} from '#worker/entitlements/errors.ts'
 import { PackageScopeAccessError } from '#worker/package-registry/package-owner.ts'
 import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
 import {
@@ -106,6 +109,7 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	if (payload.callerError) return true
 	if (isUserCodeError(cause)) return true
 	if (getErrorCauseChain(cause).some(isEntitlementLimitError)) return true
+	if (getErrorCauseChain(cause).some(isJobIntervalFloorError)) return true
 	// Community preconditions (rate before fork, self-rate, banned, …) are
 	// caller-clearable; keep them on mcp-event and out of Sentry.
 	if (

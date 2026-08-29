@@ -1578,6 +1578,11 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 		count.format(planLimits.standard.maxExecuteCallsPerDay),
 	)
 	expect(html).toContain(count.format(planLimits.pro.maxExecuteCallsPerDay))
+	expect(html).toContain('Fastest job interval')
+	expect(html).toContain('15 minutes')
+	expect(html).toContain('5 jobs, no faster than every 15 minutes')
+	expect(html).toContain('None')
+	expect(html).not.toContain('Launch coming soon')
 })
 
 test('renderAppPage renders the public Discord connect page', async () => {

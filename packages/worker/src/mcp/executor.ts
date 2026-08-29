@@ -39,6 +39,7 @@ import {
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import {
 	isEntitlementLimitError,
+	isJobIntervalFloorError,
 	parseEntitlementLimitMessage,
 	type EntitlementLimitErrorDetails,
 } from '#worker/entitlements/errors.ts'
@@ -1258,6 +1259,15 @@ export type ExecutionErrorDetails =
 			}
 	  }
 	| {
+			kind: 'job_interval_floor'
+			message: string
+			nextStep: string
+			suggestedAction: {
+				type: 'review_plan_limit'
+				resource: 'scheduled_jobs'
+			}
+	  }
+	| {
 			kind: 'sandbox_runtime_stale'
 			message: string
 			nextStep: string
@@ -1302,6 +1312,18 @@ export function getExecutionErrorDetails(
 
 	if (isEntitlementLimitError(error)) {
 		return toEntitlementExecutionErrorDetails(message, error.details)
+	}
+
+	if (isJobIntervalFloorError(error)) {
+		return {
+			kind: 'job_interval_floor',
+			message,
+			nextStep: error.details.upgradeHint,
+			suggestedAction: {
+				type: 'review_plan_limit',
+				resource: 'scheduled_jobs',
+			},
+		}
 	}
 
 	const entitlementDetails = parseEntitlementLimitMessage(message)
