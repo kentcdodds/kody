@@ -7,12 +7,18 @@ import type * as McpClientStatus from '#worker/mcp-client/status.ts'
 const mocks = vi.hoisted(() => ({
 	callTool: vi.fn(),
 	getMcpServerStatus: vi.fn(),
+	assertCanUseMcpServer: vi.fn(),
 }))
 
 vi.mock('#worker/mcp-client/hub-client.ts', () => ({
 	createMcpClientHubClient: () => ({
 		callTool: (...args: Array<unknown>) => mocks.callTool(...args),
 	}),
+}))
+
+vi.mock('#worker/mcp-client/package-access.ts', () => ({
+	assertCanUseMcpServer: (...args: Array<unknown>) =>
+		mocks.assertCanUseMcpServer(...args),
 }))
 
 vi.mock('#worker/mcp-client/status.ts', async () => {
@@ -64,6 +70,7 @@ function createContext() {
 }
 
 test('mcp-server tool and availability failures throw McpCallerError', async () => {
+	mocks.assertCanUseMcpServer.mockResolvedValue(undefined)
 	mocks.callTool.mockRejectedValueOnce(
 		new Error(
 			"ProtocolError: Structured content does not match the tool's output schema",
@@ -115,4 +122,17 @@ test('mcp-server tool and availability failures throw McpCallerError', async () 
 
 	expect(disconnected).toBeInstanceOf(McpCallerError)
 	expect((disconnected as Error).message).toMatch(/not connected/)
+
+	mocks.assertCanUseMcpServer.mockRejectedValueOnce(
+		new McpCallerError(
+			'MCP server "supermemory" is limited to specific packages and cannot be used from execute. Approve a package at https://example.com/account/mcp-servers/server-1, or switch the server back to any context.',
+		),
+	)
+	const denied = await capability!.handler({}, createContext()).then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+	expect(denied).toBeInstanceOf(McpCallerError)
+	expect((denied as Error).message).toContain('cannot be used from execute')
+	expect(mocks.callTool).toHaveBeenCalledTimes(2)
 })

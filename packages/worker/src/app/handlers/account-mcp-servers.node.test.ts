@@ -29,6 +29,8 @@ const mockModule = vi.hoisted(() => ({
 			enabled: true,
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			usageMode: 'any' as const,
+			allowedPackageIds: [],
 		},
 	]),
 	getMcpServerSettingById: vi.fn(async () => ({
@@ -38,6 +40,8 @@ const mockModule = vi.hoisted(() => ({
 		enabled: true,
 		createdAt: new Date(0).toISOString(),
 		updatedAt: new Date(0).toISOString(),
+		usageMode: 'any' as const,
+		allowedPackageIds: [],
 	})),
 	addMcpServer: vi.fn(async () => ({
 		setting: {
@@ -47,6 +51,8 @@ const mockModule = vi.hoisted(() => ({
 			enabled: true,
 			createdAt: new Date(0).toISOString(),
 			updatedAt: new Date(0).toISOString(),
+			usageMode: 'any' as const,
+			allowedPackageIds: [],
 		},
 		connection: {
 			serverId: 'server-2',
@@ -63,6 +69,18 @@ const mockModule = vi.hoisted(() => ({
 		enabled: false,
 		createdAt: new Date(0).toISOString(),
 		updatedAt: new Date(0).toISOString(),
+		usageMode: 'any' as const,
+		allowedPackageIds: [],
+	})),
+	setMcpServerUsage: vi.fn(async () => ({
+		id: 'server-1',
+		name: 'linear',
+		url: 'https://mcp.example.com/mcp',
+		enabled: true,
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		usageMode: 'packages' as const,
+		allowedPackageIds: ['pkg-drafts'],
 	})),
 	deleteMcpServer: vi.fn(async () => true),
 	getCachedMcpClientHubSnapshot: vi.fn(async () => ({
@@ -133,6 +151,8 @@ vi.mock('#worker/mcp-client/settings-service.ts', () => ({
 	addMcpServer: (...args: Array<unknown>) => mockModule.addMcpServer(...args),
 	setMcpServerEnabled: (...args: Array<unknown>) =>
 		mockModule.setMcpServerEnabled(...args),
+	setMcpServerUsage: (...args: Array<unknown>) =>
+		mockModule.setMcpServerUsage(...args),
 	deleteMcpServer: (...args: Array<unknown>) =>
 		mockModule.deleteMcpServer(...args),
 	resolveMcpServerOAuthClientUrls: (input: {
@@ -151,6 +171,12 @@ vi.mock('#worker/mcp-client/settings-service.ts', () => ({
 				: null,
 		}
 	},
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	listSavedPackagesByUserId: async () => [
+		{ id: 'pkg-drafts', kodyId: 'gmail-drafts' },
+	],
 }))
 
 vi.mock('#worker/mcp-client/hub-client.ts', () => ({
@@ -207,8 +233,11 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 				createdAt: new Date(0).toISOString(),
 				updatedAt: new Date(0).toISOString(),
 				autoLogoPath: null,
+				usageMode: 'any',
+				allowedPackageIds: [],
 			},
 		],
+		savedPackages: [{ id: 'pkg-drafts', kodyId: 'gmail-drafts' }],
 	})
 
 	const addResponse = await handler.handler({
@@ -276,6 +305,29 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 			userId: 'stable-user-1',
 			id: 'server-1',
 			enabled: false,
+		}),
+	)
+
+	const usageResponse = await handler.handler({
+		request: new Request('https://example.com/account/mcp-servers.json', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				action: 'set-usage',
+				id: 'server-1',
+				usageMode: 'packages',
+				allowedPackageIds: ['pkg-drafts'],
+			}),
+		}),
+		params: {},
+	} as never)
+	expect(usageResponse.status).toBe(200)
+	expect(mockModule.setMcpServerUsage).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'stable-user-1',
+			id: 'server-1',
+			usageMode: 'packages',
+			allowedPackageIds: ['pkg-drafts'],
 		}),
 	)
 

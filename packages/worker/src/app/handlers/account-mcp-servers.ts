@@ -23,6 +23,7 @@ import {
 	getMcpServerSettingById,
 	resolveMcpServerOAuthClientUrls,
 	setMcpServerEnabled,
+	setMcpServerUsage,
 } from '#worker/mcp-client/settings-service.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -112,6 +113,9 @@ export function createAccountMcpServersApiHandler(env: Env) {
 				}
 				if (action === 'set-enabled') {
 					return await handleSetEnabledAction({ env, user, body, request })
+				}
+				if (action === 'set-usage') {
+					return await handleSetUsageAction({ env, user, body, request })
 				}
 				if (action === 'delete') {
 					return await handleDeleteAction({ env, user, body, request })
@@ -310,6 +314,40 @@ async function handleSetEnabledAction(input: {
 	})
 }
 
+async function handleSetUsageAction(input: {
+	env: Env
+	user: AuthenticatedUser
+	body: object
+	request: Request
+}) {
+	const setting = await requireSetting(input)
+	const usageMode = readTrimmedStringOrEmpty(input.body, 'usageMode')
+	if (usageMode !== 'any' && usageMode !== 'packages') {
+		throw new Error('Usage must be any or packages.')
+	}
+	const allowedPackageIds =
+		usageMode === 'packages'
+			? readStringArray(input.body, 'allowedPackageIds')
+			: []
+	const updated = await setMcpServerUsage({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		id: setting.id,
+		usageMode,
+		allowedPackageIds,
+	})
+	const payload = await loadAccountMcpServersData({
+		env: input.env,
+		user: input.user,
+		requestUrl: input.request.url,
+		waitUntil,
+	})
+	return jsonResponse({
+		...payload,
+		selectedServerId: updated.id,
+	})
+}
+
 async function handleDeleteAction(input: {
 	env: Env
 	user: AuthenticatedUser
@@ -358,4 +396,10 @@ async function requireSetting(input: {
 function readBoolean(body: object, key: string, defaultValue: boolean) {
 	const value = (body as Record<string, unknown>)[key]
 	return typeof value === 'boolean' ? value : defaultValue
+}
+
+function readStringArray(body: object, key: string) {
+	const value = (body as Record<string, unknown>)[key]
+	if (!Array.isArray(value)) return []
+	return value.filter((entry): entry is string => typeof entry === 'string')
 }

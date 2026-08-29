@@ -558,6 +558,11 @@ When a provider token is coarser than the job — Gmail has `gmail.send` but no
 drafts-only scope — the lock is the real grant. Worked example:
 [Gmail drafts without send](../guides/locked-gmail-drafts.md).
 
+Publish lock does not shrink an OAuth token or an MCP connector. To keep a
+connected MCP server off execute and other packages, lock the **server** to this
+package instead:
+[Lock an MCP server to a package](../guides/locked-mcp-server.md).
+
 ## Community fork provenance
 
 **`package_list`** and **`package_get`** return community-fork provenance on

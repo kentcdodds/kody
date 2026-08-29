@@ -1128,6 +1128,8 @@ export type AccountMcpServerListItem = {
 	updatedAt: string
 	/** Auto-fetched registrable-domain favicon for the server URL. */
 	autoLogoPath: string | null
+	usageMode: 'any' | 'packages'
+	allowedPackageIds: Array<string>
 }
 
 export type AccountMcpServersLoaderData = {
@@ -1141,6 +1143,7 @@ export type AccountMcpServersLoaderData = {
 	/** HTTPS CIMD URL Kody presents as client_id, or null on http origins. */
 	oauthClientMetadataUrl: string | null
 	servers: Array<AccountMcpServerListItem>
+	savedPackages: Array<{ id: string; kodyId: string }>
 }
 
 export type AccountPackageToken = {

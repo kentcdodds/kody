@@ -25,6 +25,7 @@ const guideOrder: ReadonlyArray<string> = [
 	'package-lifecycle',
 	'integration-bootstrap',
 	'locked-gmail-drafts',
+	'locked-mcp-server',
 	'secret-backed-integration',
 	'integration-backed-app-happy-path',
 	'oauth',

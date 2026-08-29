@@ -1,10 +1,18 @@
 import {
+	parseAllowedPackages,
+	stringifyAllowedPackages,
+} from '#mcp/secrets/allowed-packages.ts'
+import {
 	type McpServerLogoSource,
 	type McpServerSettingRow,
 } from './settings-types.ts'
+import {
+	normalizeMcpServerUsageMode,
+	type McpServerUsageMode,
+} from './usage-mode.ts'
 
 const selectColumns =
-	'id, user_id, name, url, enabled, created_at, updated_at, logo_key, logo_content_type, logo_source, favicon_source_host'
+	'id, user_id, name, url, enabled, created_at, updated_at, logo_key, logo_content_type, logo_source, favicon_source_host, usage_mode, allowed_packages_json'
 
 export async function listMcpServerSettingRows(input: {
 	db: D1Database
@@ -83,8 +91,9 @@ export async function insertMcpServerSettingRow(input: {
 	await input.db
 		.prepare(
 			`INSERT INTO mcp_server_settings (
-				id, user_id, name, url, enabled, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				id, user_id, name, url, enabled, created_at, updated_at,
+				usage_mode, allowed_packages_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			input.row.id,
@@ -94,6 +103,8 @@ export async function insertMcpServerSettingRow(input: {
 			input.row.enabled ? 1 : 0,
 			input.row.created_at ?? now,
 			input.row.updated_at ?? now,
+			input.row.usage_mode,
+			stringifyAllowedPackages(input.row.allowedPackageIds),
 		)
 		.run()
 }
@@ -121,6 +132,34 @@ export async function updateMcpServerSettingRow(input: {
 			input.row.updated_at ?? now,
 			input.row.user_id,
 			input.row.id,
+		)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
+export async function updateMcpServerSettingUsageRow(input: {
+	db: D1Database
+	userId: string
+	id: string
+	usageMode: McpServerUsageMode
+	allowedPackageIds: Array<string>
+	updatedAt?: string
+}): Promise<boolean> {
+	const now = new Date().toISOString()
+	const result = await input.db
+		.prepare(
+			`UPDATE mcp_server_settings
+			SET usage_mode = ?,
+				allowed_packages_json = ?,
+				updated_at = ?
+			WHERE user_id = ? AND id = ?`,
+		)
+		.bind(
+			input.usageMode,
+			stringifyAllowedPackages(input.allowedPackageIds),
+			input.updatedAt ?? now,
+			input.userId,
+			input.id,
 		)
 		.run()
 	return (result.meta.changes ?? 0) > 0
@@ -163,5 +202,13 @@ function mapMcpServerSettingRow(
 			row['favicon_source_host'] == null
 				? null
 				: String(row['favicon_source_host']),
+		usage_mode: normalizeMcpServerUsageMode(
+			row['usage_mode'] == null ? null : String(row['usage_mode']),
+		),
+		allowedPackageIds: parseAllowedPackages(
+			row['allowed_packages_json'] == null
+				? null
+				: String(row['allowed_packages_json']),
+		),
 	}
 }

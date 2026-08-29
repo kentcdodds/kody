@@ -16,7 +16,7 @@ import {
 } from '#mcp/run-kody-registry.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createRemovedValueWriteError } from '#mcp/capabilities/values/shared.ts'
-import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
+import { listVisibleEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import {
 	createAuthenticatedFetch,
 	refreshAccessToken,
@@ -1020,9 +1020,10 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 
 	async listMcpServerNames(): Promise<Array<string>> {
 		try {
-			const refs = await listEnabledMcpServerRefsCached({
+			const refs = await listVisibleEnabledMcpServerRefsCached({
 				env: this.env,
 				userId: this.ctx.props.userId,
+				packageId: this.ctx.props.packageId,
 			})
 			return refs.map((ref) => ref.name)
 		} catch {

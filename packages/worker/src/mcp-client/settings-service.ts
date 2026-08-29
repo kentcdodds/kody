@@ -7,13 +7,21 @@ import {
 	validateMcpServerUrl,
 	type McpServerRef,
 } from '@kody-internal/shared/mcp-servers.ts'
+import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import {
 	mcpServerOAuthCallbackPath,
 	resolveMcpClientMetadataUrl,
 } from './client-id-metadata.ts'
 import { createMcpClientHubClient } from './hub-client.ts'
+import { scheduleMcpServerFaviconFill } from './mcp-server-favicon.ts'
+import { deleteMcpServerLogoAsset } from './mcp-server-logo.ts'
+import {
+	filterEnabledMcpServerRefsForCaller,
+	type EnabledMcpServerRef,
+} from './package-access.ts'
 import {
 	deleteMcpServerSettingRow,
 	getMcpServerSettingRowById,
@@ -22,14 +30,17 @@ import {
 	listEnabledMcpServerSettingRows,
 	listMcpServerSettingRows,
 	updateMcpServerSettingRow,
+	updateMcpServerSettingUsageRow,
 } from './settings-repo.ts'
-import { scheduleMcpServerFaviconFill } from './mcp-server-favicon.ts'
-import { deleteMcpServerLogoAsset } from './mcp-server-logo.ts'
 import {
 	type McpServerSettingMetadata,
 	type McpServerSettingRow,
 } from './settings-types.ts'
 import { type McpServerConnectResult } from './types.ts'
+import {
+	normalizeMcpServerUsageMode,
+	type McpServerUsageMode,
+} from './usage-mode.ts'
 
 export { mcpServerOAuthCallbackPath } from './client-id-metadata.ts'
 
@@ -74,6 +85,8 @@ function toMetadata(row: McpServerSettingRow): McpServerSettingMetadata {
 		logoContentType: row.logo_content_type,
 		logoSource: row.logo_source,
 		faviconSourceHost: row.favicon_source_host,
+		usageMode: row.usage_mode,
+		allowedPackageIds: [...row.allowedPackageIds],
 	}
 }
 
@@ -91,7 +104,7 @@ export async function listMcpServerSettings(input: {
 export async function listEnabledMcpServerRefs(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
-}): Promise<Array<McpServerRef>> {
+}): Promise<Array<EnabledMcpServerRef>> {
 	const rows = await listEnabledMcpServerSettingRows({
 		db: input.env.APP_DB,
 		userId: input.userId,
@@ -99,6 +112,8 @@ export async function listEnabledMcpServerRefs(input: {
 	return rows.map((row) => ({
 		serverId: row.id,
 		name: row.name,
+		usageMode: row.usage_mode,
+		allowedPackageIds: [...row.allowedPackageIds],
 	}))
 }
 
@@ -106,7 +121,7 @@ export const enabledMcpServerRefsCacheTtlMs = 30_000
 export const enabledMcpServerRefsCacheLimit = 200
 
 function createEnabledMcpServerRefsCache() {
-	return new PromiseLruCache<ReadonlyArray<McpServerRef>>({
+	return new PromiseLruCache<ReadonlyArray<EnabledMcpServerRef>>({
 		ttlMs: enabledMcpServerRefsCacheTtlMs,
 		limit: enabledMcpServerRefsCacheLimit,
 	})
@@ -126,10 +141,22 @@ let enabledMcpServerRefsCache = createEnabledMcpServerRefsCache()
 export function listEnabledMcpServerRefsCached(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
-}): Promise<ReadonlyArray<McpServerRef>> {
+}): Promise<ReadonlyArray<EnabledMcpServerRef>> {
 	return enabledMcpServerRefsCache.getOrCreate({
 		cacheKey: input.userId,
 		create: async () => Object.freeze(await listEnabledMcpServerRefs(input)),
+	})
+}
+
+export async function listVisibleEnabledMcpServerRefsCached(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	packageId?: string | null
+}): Promise<ReadonlyArray<McpServerRef>> {
+	const refs = await listEnabledMcpServerRefsCached(input)
+	return filterEnabledMcpServerRefsForCaller({
+		refs,
+		packageId: input.packageId,
 	})
 }
 
@@ -203,6 +230,8 @@ export async function addMcpServer(input: {
 		logo_content_type: null,
 		logo_source: null,
 		favicon_source_host: null,
+		usage_mode: 'any',
+		allowedPackageIds: [],
 	} satisfies McpServerSettingRow
 
 	const hub = createMcpClientHubClient({
@@ -318,4 +347,91 @@ export async function getMcpServerSettingById(input: {
 		id: input.id,
 	})
 	return row ? toMetadata(row) : null
+}
+
+export async function setMcpServerUsage(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	id: string
+	usageMode: McpServerUsageMode
+	allowedPackageIds?: Array<string>
+}): Promise<McpServerSettingMetadata> {
+	const existing = await getMcpServerSettingRowById({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		id: input.id,
+	})
+	if (!existing) {
+		throw new Error('MCP server setting not found.')
+	}
+	const usageMode = normalizeMcpServerUsageMode(input.usageMode)
+	const allowedPackageIds =
+		usageMode === 'packages'
+			? normalizeAllowedPackages(input.allowedPackageIds ?? [])
+			: []
+	const updated = await updateMcpServerSettingUsageRow({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		id: input.id,
+		usageMode,
+		allowedPackageIds,
+	})
+	if (!updated) {
+		throw new Error('MCP server setting not found.')
+	}
+	invalidateEnabledMcpServerRefsCache({ userId: input.userId })
+	return toMetadata({
+		...existing,
+		usage_mode: usageMode,
+		allowedPackageIds,
+		updated_at: new Date().toISOString(),
+	})
+}
+
+/**
+ * One-way lock: switch the server to `packages` and grant this saved package.
+ * Additional grants accumulate. Unlocking or removing a grant is website-only.
+ */
+export async function lockMcpServerToPackage(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	id: string
+	packageId: string
+}): Promise<McpServerSettingMetadata> {
+	const packageId = input.packageId.trim()
+	if (!packageId) {
+		throw new Error('Package id is required.')
+	}
+	const existing = await getMcpServerSettingRowById({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		id: input.id,
+	})
+	if (!existing) {
+		throw new Error('MCP server setting not found.')
+	}
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.userId,
+		packageId,
+	})
+	if (!savedPackage) {
+		throw new Error('Saved package not found for this user.')
+	}
+	if (
+		existing.usage_mode === 'packages' &&
+		existing.allowedPackageIds.includes(packageId)
+	) {
+		return toMetadata(existing)
+	}
+	const allowedPackageIds = normalizeAllowedPackages([
+		...existing.allowedPackageIds,
+		packageId,
+	])
+	return setMcpServerUsage({
+		env: input.env,
+		userId: input.userId,
+		id: input.id,
+		usageMode: 'packages',
+		allowedPackageIds,
+	})
 }

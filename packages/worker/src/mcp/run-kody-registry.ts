@@ -92,7 +92,7 @@ import {
 	getMcpServerStatus,
 } from '#worker/mcp-client/status.ts'
 import { mcpServerKodyName } from '#worker/mcp-client/mcp-domain-id.ts'
-import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
+import { listVisibleEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import {
 	reportExecutePhaseProgress,
 	type McpReportProgress,
@@ -396,9 +396,10 @@ async function buildKodyMcpServerMetadata(input: {
 	if (userId) {
 		// Per-user 30s cache: runtime metadata assembly runs on every execute /
 		// package invocation, so this must not cost a D1 read per call.
-		const refs = await listEnabledMcpServerRefsCached({
+		const refs = await listVisibleEnabledMcpServerRefsCached({
 			env: input.env,
 			userId,
+			packageId: input.callerContext.storageContext?.packageId,
 		}).catch((error: unknown) => {
 			// Degrade to "no MCP servers" but leave a trail: silently losing
 			// kody.mcp[...] accessors is very hard to debug otherwise.

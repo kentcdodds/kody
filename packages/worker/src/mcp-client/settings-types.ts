@@ -1,3 +1,5 @@
+import { type McpServerUsageMode } from './usage-mode.ts'
+
 export type McpServerLogoSource = 'favicon'
 
 export type McpServerSettingRow = {
@@ -12,6 +14,8 @@ export type McpServerSettingRow = {
 	logo_content_type: string | null
 	logo_source: McpServerLogoSource | null
 	favicon_source_host: string | null
+	usage_mode: McpServerUsageMode
+	allowedPackageIds: Array<string>
 }
 
 export type McpServerSettingMetadata = {
@@ -25,4 +29,6 @@ export type McpServerSettingMetadata = {
 	logoContentType: string | null
 	logoSource: McpServerLogoSource | null
 	faviconSourceHost: string | null
+	usageMode: McpServerUsageMode
+	allowedPackageIds: Array<string>
 }

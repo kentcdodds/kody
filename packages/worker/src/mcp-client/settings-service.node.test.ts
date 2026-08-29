@@ -8,6 +8,8 @@ const mockModule = vi.hoisted(() => ({
 	updateMcpServerSettingRow: vi.fn(),
 	deleteMcpServerSettingRow: vi.fn(),
 	listMcpServerSettingRows: vi.fn(),
+	updateMcpServerSettingUsageRow: vi.fn(),
+	getSavedPackageById: vi.fn(),
 	hubClient: {
 		addServer: vi.fn(),
 		removeServer: vi.fn(),
@@ -29,6 +31,13 @@ vi.mock('./settings-repo.ts', () => ({
 		mockModule.deleteMcpServerSettingRow(...args),
 	listMcpServerSettingRows: (...args: Array<unknown>) =>
 		mockModule.listMcpServerSettingRows(...args),
+	updateMcpServerSettingUsageRow: (...args: Array<unknown>) =>
+		mockModule.updateMcpServerSettingUsageRow(...args),
+}))
+
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageById: (...args: Array<unknown>) =>
+		mockModule.getSavedPackageById(...args),
 }))
 
 vi.mock('./hub-client.ts', () => ({
@@ -41,7 +50,10 @@ const {
 	enabledMcpServerRefsCacheTtlMs,
 	listEnabledMcpServerRefsCached,
 	resolveMcpServerOAuthClientUrls,
+	listVisibleEnabledMcpServerRefsCached,
+	lockMcpServerToPackage,
 	setMcpServerEnabled,
+	setMcpServerUsage,
 } = await import('./settings-service.ts')
 
 function createSettingRow(input: { id: string; enabled?: boolean }) {
@@ -57,6 +69,8 @@ function createSettingRow(input: { id: string; enabled?: boolean }) {
 		logo_content_type: null,
 		logo_source: null,
 		favicon_source_host: null,
+		usage_mode: 'any' as const,
+		allowedPackageIds: [],
 	}
 }
 
@@ -69,7 +83,14 @@ test('listEnabledMcpServerRefsCached warms per user, expires, and invalidates on
 	const env = { APP_DB: {} } as Env
 	const first = await listEnabledMcpServerRefsCached({ env, userId: 'user-1' })
 	const second = await listEnabledMcpServerRefsCached({ env, userId: 'user-1' })
-	expect(first).toEqual([{ serverId: 'server-1', name: 'server-server-1' }])
+	expect(first).toEqual([
+		{
+			serverId: 'server-1',
+			name: 'server-server-1',
+			usageMode: 'any',
+			allowedPackageIds: [],
+		},
+	])
 	expect(second).toBe(first)
 	expect(mockModule.listEnabledMcpServerSettingRows).toHaveBeenCalledTimes(1)
 
@@ -187,4 +208,69 @@ test('addMcpServer forwards bearer tokens as Authorization headers to the hub', 
 		?.row as Record<string, unknown>
 	expect(insertedRow).not.toHaveProperty('bearerToken')
 	expect(JSON.stringify(insertedRow)).not.toContain('secret-token')
+})
+
+test('MCP server usage lock hides the server from execute and grants a package', async () => {
+	clearEnabledMcpServerRefsCacheForTests()
+	const env = { APP_DB: {} } as Env
+	const lockedRow = {
+		...createSettingRow({ id: 'server-1' }),
+		usage_mode: 'packages' as const,
+		allowedPackageIds: ['pkg-drafts'],
+	}
+	mockModule.getMcpServerSettingRowById.mockResolvedValue(
+		createSettingRow({ id: 'server-1' }),
+	)
+	mockModule.updateMcpServerSettingUsageRow.mockResolvedValue(true)
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'pkg-drafts',
+		kodyId: 'gmail-drafts',
+	})
+
+	const locked = await lockMcpServerToPackage({
+		env,
+		userId: 'user-1',
+		id: 'server-1',
+		packageId: 'pkg-drafts',
+	})
+	expect(locked.usageMode).toBe('packages')
+	expect(locked.allowedPackageIds).toEqual(['pkg-drafts'])
+	expect(mockModule.updateMcpServerSettingUsageRow).toHaveBeenCalledWith(
+		expect.objectContaining({
+			id: 'server-1',
+			usageMode: 'packages',
+			allowedPackageIds: ['pkg-drafts'],
+		}),
+	)
+
+	mockModule.getMcpServerSettingRowById.mockResolvedValue(lockedRow)
+	const unlocked = await setMcpServerUsage({
+		env,
+		userId: 'user-1',
+		id: 'server-1',
+		usageMode: 'any',
+	})
+	expect(unlocked.usageMode).toBe('any')
+	expect(unlocked.allowedPackageIds).toEqual([])
+
+	mockModule.listEnabledMcpServerSettingRows.mockResolvedValue([lockedRow])
+	const executeRefs = await listVisibleEnabledMcpServerRefsCached({
+		env,
+		userId: 'user-1',
+	})
+	expect(executeRefs).toEqual([])
+	const packageRefs = await listVisibleEnabledMcpServerRefsCached({
+		env,
+		userId: 'user-1',
+		packageId: 'pkg-drafts',
+	})
+	expect(packageRefs).toEqual([
+		{ serverId: 'server-1', name: 'server-server-1' },
+	])
+	const otherPackageRefs = await listVisibleEnabledMcpServerRefsCached({
+		env,
+		userId: 'user-1',
+		packageId: 'pkg-other',
+	})
+	expect(otherPackageRefs).toEqual([])
 })

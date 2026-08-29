@@ -90,6 +90,8 @@ async function provisionServer(harness: ReturnType<typeof createHarness>) {
 		logo_content_type: null,
 		logo_source: null,
 		favicon_source_host: null,
+		usage_mode: 'any' as const,
+		allowedPackageIds: [],
 	}
 	await insertMcpServerSettingRow({ db: harness.db, row })
 	return row

@@ -30,6 +30,8 @@ function setting(
 		logoContentType: null,
 		logoSource: null,
 		faviconSourceHost: null,
+		usageMode: 'any',
+		allowedPackageIds: [],
 		...overrides,
 	}
 }

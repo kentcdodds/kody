@@ -10,6 +10,7 @@ import {
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
 import { wrapDownstreamMcpToolResult } from '#mcp/downstream-mcp-result.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
+import { assertCanUseMcpServer } from '#worker/mcp-client/package-access.ts'
 import {
 	mcpServerCapabilityId,
 	mcpServerDomainId,
@@ -93,6 +94,14 @@ function createCapabilityFromTool(input: {
 					`MCP server capability "${ref.name}:${tool.name}" requires an authenticated user.`,
 				)
 			}
+			await assertCanUseMcpServer({
+				env: ctx.env,
+				baseUrl: ctx.callerContext.baseUrl,
+				userId,
+				serverId: binding.serverId,
+				serverName: ref.name,
+				packageId: ctx.callerContext.storageContext?.packageId,
+			})
 			const hub = createMcpClientHubClient({
 				env: ctx.env,
 				userId,

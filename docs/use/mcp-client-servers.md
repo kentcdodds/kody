@@ -22,6 +22,23 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 4. Confirm with `mcp_server_list` (or refresh the account page). Connected tools
    show up in `search` under a `mcp:<name>` domain.
 
+## Lock a server to a package
+
+By default every enabled server is callable from execute and every package. Set
+**Usage** on `/account/mcp-servers/:serverId` to **Specific packages only**, or
+ask an agent to call `mcp_server_lock` with the server and a saved `package_id`.
+
+After that lock:
+
+- Ad hoc execute cannot call `kody.mcp["server-name"]`.
+- Packages that are not on the grant list cannot call it either.
+- Approved packages still can, including jobs and package apps.
+- `mcp_server_list` still shows the server to the owner.
+
+Agents can lock (grant). Unlocking or removing a grant is website-only on that
+server's account page. See
+[Lock an MCP server to a package](../guides/locked-mcp-server.md).
+
 ## OAuth allowlists (common failure)
 
 When Kody connects, it identifies itself as an OAuth client using:
