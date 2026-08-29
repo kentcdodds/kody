@@ -101,7 +101,8 @@ vi.mock('#worker/community/repo.ts', () => ({
 }))
 
 vi.mock('#app/ssr-render.tsx', () => ({
-	renderAppPage: async () => new Response('ok'),
+	renderAppPage: async (input: { status?: number }) =>
+		new Response('ok', { status: input.status ?? 200 }),
 }))
 
 vi.mock('#worker/app-base-url.ts', () => ({
