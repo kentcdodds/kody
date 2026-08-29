@@ -201,7 +201,6 @@ export function AccountPackagesRoute(handle: Handle) {
 					packageId,
 				}),
 			})
-			if (requestId !== lockRequestId || getCurrentHref() !== href) return
 			if (response.status === 401) {
 				window.location.assign('/login')
 				return
@@ -209,10 +208,13 @@ export function AccountPackagesRoute(handle: Handle) {
 			const payload = await readJson<
 				AccountPackagesLoaderData & { error?: string }
 			>(response)
-			if (requestId !== lockRequestId || getCurrentHref() !== href) return
+			const stillCurrent =
+				requestId === lockRequestId && getCurrentHref() === href
 			if (!response.ok || !payload?.ok) {
 				applyLocalLockState(packageId, previousLockedAt)
-				message = payload?.error ?? 'Could not update the publish lock.'
+				if (stillCurrent) {
+					message = payload?.error ?? 'Could not update the publish lock.'
+				}
 				handle.update()
 				return
 			}
@@ -222,9 +224,10 @@ export function AccountPackagesRoute(handle: Handle) {
 			)
 			handle.update()
 		} catch {
-			if (requestId !== lockRequestId || getCurrentHref() !== href) return
 			applyLocalLockState(packageId, previousLockedAt)
-			message = 'Could not update the publish lock.'
+			if (requestId === lockRequestId && getCurrentHref() === href) {
+				message = 'Could not update the publish lock.'
+			}
 			handle.update()
 		} finally {
 			if (requestId === lockRequestId) {
