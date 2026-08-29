@@ -459,9 +459,12 @@ export function getLanternGlowCss(options: { maxWidth: string }) {
 
 export const proseCss = {
 	marginTop: 'clamp(1.8rem, 4vw, 2.5rem)',
-	// Long literal URLs in link text must never force a horizontal scroll on
-	// narrow screens.
-	overflowWrap: 'break-word' as const,
+	minWidth: 0,
+	// `anywhere` (not `break-word`) shrinks min-content, so a grid list item
+	// with a long URL in `<code>` cannot stretch the page past the viewport.
+	// `body { overflow-x: clip }` would otherwise hide the overflow with no
+	// scrollbar. Interactive walkthroughs do not use this object.
+	overflowWrap: 'anywhere' as const,
 	'& a': {
 		color: colors.primaryText,
 		textDecorationThickness: '1.5px',
@@ -493,10 +496,15 @@ export const proseCss = {
 		paddingLeft: '1.25rem',
 		display: 'grid',
 		gap: '0.6rem',
+		// Grid items default to `min-width: auto` (min-content). Without this,
+		// one long token in a list item blows the column out on a phone.
+		minWidth: 0,
 	},
 	'& li': {
+		minWidth: 0,
 		paddingLeft: '0.25rem',
 		textWrap: 'pretty' as const,
+		overflowWrap: 'anywhere' as const,
 	},
 	'& li::marker': {
 		color: colors.primaryText,
@@ -520,11 +528,10 @@ export const proseCss = {
 		border: `1px solid ${colors.border}`,
 		borderRadius: '6px',
 		padding: '0.1em 0.4em',
-		// Inline code has to wrap. `nowrap` here would defeat the container's
-		// `overflow-wrap` guard above: one long package name or id would push
-		// the measure wider than a phone screen. `& pre code` keeps `nowrap`
-		// because the `pre` scrolls itself.
-		overflowWrap: 'break-word' as const,
+		// Inline code has to wrap, and the wrap has to affect min-content so
+		// a grid `<li>` can shrink. `break-word` does not; `anywhere` does.
+		// `& pre code` resets this so fenced blocks keep scrolling.
+		overflowWrap: 'anywhere' as const,
 	},
 	'& pre': {
 		margin: '1.4rem 0 0',
@@ -541,6 +548,7 @@ export const proseCss = {
 		borderRadius: 0,
 		padding: 0,
 		whiteSpace: 'pre' as const,
+		overflowWrap: 'normal' as const,
 	},
 }
 

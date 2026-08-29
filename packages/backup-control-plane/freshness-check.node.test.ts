@@ -15,6 +15,7 @@ import {
 	DATABASE_ID,
 	MemoryBucket,
 	badSqlStatsFixture,
+	encodeNodeBytesAsBase64,
 	environment,
 	identityApi,
 	identityEnvelope,
@@ -221,9 +222,12 @@ test('freshness requires a valid Ed25519 signature from the configured key', asy
 		}),
 		false,
 	)
-	const wrongPublicKey = generateKeyPairSync('ed25519')
-		.publicKey.export({ format: 'der', type: 'spki' })
-		.toString('base64')
+	const wrongPublicKey = encodeNodeBytesAsBase64(
+		generateKeyPairSync('ed25519').publicKey.export({
+			format: 'der',
+			type: 'spki',
+		}),
+	)
 	assert.equal(
 		await check(validManifest, {
 			...env,

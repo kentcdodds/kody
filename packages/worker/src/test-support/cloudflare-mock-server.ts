@@ -86,6 +86,7 @@ async function waitForCloudflareMock(
 		(error: unknown) => ({ status: 'error' as const, error }),
 	)
 	let origin: string | undefined
+	let lastProbeReason: string | undefined
 	while (Date.now() < deadline) {
 		const output = `${readStdout()}\n${readStderr()}`
 		if (!origin) {
@@ -102,6 +103,7 @@ async function waitForCloudflareMock(
 			if (probe.ready) {
 				return origin
 			}
+			lastProbeReason = probe.reason
 		}
 
 		const exitResult = await Promise.race([exited, delay(200).then(() => null)])
@@ -116,8 +118,10 @@ async function waitForCloudflareMock(
 			)
 		}
 	}
+	const lastProbe =
+		lastProbeReason === undefined ? '' : ` (last probe: ${lastProbeReason})`
 	throw new Error(
-		`mock cloudflare did not become ready within ${startupTimeout}ms\n${readStdout()}\n${readStderr()}`,
+		`mock cloudflare did not become ready within ${startupTimeout}ms${lastProbe}\n${readStdout()}\n${readStderr()}`,
 	)
 }
 
@@ -165,6 +169,11 @@ export async function startCloudflareMock(token: string) {
 			// contend with parallel mock wranglers during `test:node` and
 			// return 503 / empty JSON on the first DO-backed request.
 			X_LOCAL_OBSERVABILITY: 'false',
+			// Wrangler 4.127+ starts Miniflare's local explorer by default.
+			// On Cloud Agent / CI hosts, explorer writes under `.wrangler/tmp`
+			// retrigger esbuild and leave ProxyWorker in a pause/reload loop
+			// (Ready prints; authenticated `/__mocks/meta` hangs).
+			X_LOCAL_EXPLORER: 'false',
 			WRANGLER_CI_DISABLE_CONFIG_WATCHING: 'true',
 		},
 	})
