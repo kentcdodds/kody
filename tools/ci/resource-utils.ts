@@ -52,7 +52,8 @@ export function isRetryableCloudflareApiError(error: unknown) {
 	if (error.name === 'AbortError') return true
 	const message = error.message
 	return (
-		message.includes('Malformed Cloudflare response') ||
+		(message.includes('Malformed Cloudflare response') &&
+			!/Malformed Cloudflare response \(200\).*--/u.test(message)) ||
 		message.includes('upstream connect error') ||
 		message.includes('Cloudflare API request failed (429)') ||
 		/Cloudflare API request failed \(5\d\d\)/.test(message) ||

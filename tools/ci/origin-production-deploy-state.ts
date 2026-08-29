@@ -57,6 +57,16 @@ export function isCloudflareNotFoundError(error: unknown) {
 	return /Cloudflare API request failed \(404\)/.test(error.message)
 }
 
+/**
+ * GET /workers/scripts/:name returns the Worker upload as multipart, not
+ * the JSON envelope `cloudflareApiRequest` expects. HTTP 200 still means
+ * the script exists.
+ */
+export function isCloudflareOkNonJsonError(error: unknown) {
+	if (!(error instanceof Error)) return false
+	return /Malformed Cloudflare response \(200\)/.test(error.message)
+}
+
 export function planOriginProductionDeploy(
 	state: OriginProductionScriptState,
 ): OriginProductionDeployPlan {
@@ -273,6 +283,7 @@ export async function getCloudflareWorkerScriptExists(input: {
 		return true
 	} catch (error) {
 		if (isCloudflareNotFoundError(error)) return false
+		if (isCloudflareOkNonJsonError(error)) return true
 		throw error
 	}
 }

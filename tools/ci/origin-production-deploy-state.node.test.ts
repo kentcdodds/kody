@@ -5,7 +5,9 @@ import { expect, test } from 'vitest'
 import {
 	classifyOriginProductionScriptState,
 	inspectOriginProductionScriptState,
+	getCloudflareWorkerScriptExists,
 	isCloudflareNotFoundError,
+	isCloudflareOkNonJsonError,
 	originBootstrapConfigPath,
 	planOriginProductionDeploy,
 	platformOwnedClassNames,
@@ -154,6 +156,86 @@ test('falls back to script existence only when namespace listing is unavailable'
 			namespaces: null,
 		}).mode,
 	).toBe('ambiguous')
+})
+
+test('isCloudflareOkNonJsonError matches only HTTP 200 non-JSON bodies', () => {
+	expect(
+		isCloudflareOkNonJsonError(
+			new Error(
+				'Malformed Cloudflare response (200) for /workers/scripts/kody-runtime: --boundary',
+			),
+		),
+	).toBe(true)
+	expect(
+		isCloudflareOkNonJsonError(
+			new Error(
+				'Malformed Cloudflare response (502) for /workers/scripts/kody-runtime: upstream',
+			),
+		),
+	).toBe(false)
+})
+
+test('getCloudflareWorkerScriptExists treats a 200 multipart script download as present', async () => {
+	await expect(
+		getCloudflareWorkerScriptExists({
+			accountId: 'acct',
+			apiToken: 'token',
+			scriptName: productionRuntimeScriptName,
+			apiBaseUrl: 'https://cf.test',
+			fetcher: async () =>
+				new Response(
+					'--fe71c953c6db05262becd226201515a4e42a8860e6be9669fec682876e63',
+					{
+						status: 200,
+						headers: {
+							'Content-Type':
+								'multipart/form-data; boundary=fe71c953c6db05262becd226201515a4e42a8860e6be9669fec682876e63',
+						},
+					},
+				),
+		}),
+	).resolves.toBe(true)
+})
+
+test('inspectOriginProductionScriptState classifies a multipart script GET plus ownership as steady', async () => {
+	const state = await inspectOriginProductionScriptState({
+		accountId: 'acct',
+		apiToken: 'token',
+		apiBaseUrl: 'https://cf.test',
+		fetcher: async (input) => {
+			const url = String(input)
+			if (url.includes('/workers/durable_objects/namespaces')) {
+				return new Response(
+					JSON.stringify({
+						success: true,
+						result: [
+							...platformOwnedClassNames.map((className) => ({
+								script: productionPlatformScriptName,
+								class: className,
+							})),
+							...runtimeOwnedClassNames.map((className) => ({
+								script: productionRuntimeScriptName,
+								class: className,
+							})),
+						],
+						result_info: { total_pages: 1 },
+					}),
+					{ status: 200, headers: { 'Content-Type': 'application/json' } },
+				)
+			}
+			return new Response(
+				'--fe71c953c6db05262becd226201515a4e42a8860e6be9669fec682876e63',
+				{
+					status: 200,
+					headers: {
+						'Content-Type':
+							'multipart/form-data; boundary=fe71c953c6db05262becd226201515a4e42a8860e6be9669fec682876e63',
+					},
+				},
+			)
+		},
+	})
+	expect(state.mode).toBe('steady')
 })
 
 test('isCloudflareNotFoundError matches only 404 probe failures', () => {
