@@ -166,7 +166,13 @@ export async function setUserOauthAppLogo(input: {
 		.run()
 
 	if ((updated.meta.changes ?? 0) === 0) {
-		if (nextKey) {
+		const current =
+			(await getOauthAppBySlug({
+				db: input.db,
+				userId: input.userId,
+				slug: app.slug,
+			})) ?? app
+		if (nextKey && nextKey !== current.logoKey) {
 			try {
 				await input.env.COMMUNITY_ASSETS.delete(nextKey)
 			} catch (error) {
@@ -177,13 +183,7 @@ export async function setUserOauthAppLogo(input: {
 				)
 			}
 		}
-		return (
-			(await getOauthAppBySlug({
-				db: input.db,
-				userId: input.userId,
-				slug: app.slug,
-			})) ?? app
-		)
+		return current
 	}
 
 	if (previousKey && previousKey !== nextKey) {

@@ -8,7 +8,7 @@ import {
 	tinyWebpBytes,
 } from '#worker/test-support/images-binding.ts'
 import { shouldFetchMcpServerFavicon } from './mcp-server-favicon.ts'
-import { loadFittedMcpServerLogo } from './mcp-server-logo.ts'
+import { loadFittedMcpServerLogo, setMcpServerLogo } from './mcp-server-logo.ts'
 import {
 	getMcpServerSettingRowById,
 	insertMcpServerSettingRow,
@@ -223,4 +223,69 @@ test('lazy refit does not overwrite a newer MCP logo key', async () => {
 	})
 	expect(current?.logo_key).toBe(newerKey)
 	expect(harness.r2.objects.has(newerKey)).toBe(true)
+})
+
+test('lost same-hash refit race keeps the stored MCP logo', async () => {
+	const harness = createHarness()
+	const server = await provisionServer(harness)
+	const previousKey = `user-mcp-server-logos/${server.user_id}/${server.id}/aaaaaaaaaaaaaaaa.png`
+	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
+		httpMetadata: { contentType: 'image/png' },
+	})
+	await harness.db
+		.prepare(
+			`UPDATE mcp_server_settings
+			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
+				favicon_source_host = ?, updated_at = ?
+			WHERE user_id = ? AND id = ?`,
+		)
+		.bind(
+			previousKey,
+			'image/png',
+			'favicon',
+			'linear.app',
+			new Date().toISOString(),
+			server.user_id,
+			server.id,
+		)
+		.run()
+	const stale = await getMcpServerSettingRowById({
+		db: harness.db,
+		userId: server.user_id,
+		id: server.id,
+	})
+	await loadFittedMcpServerLogo({
+		db: harness.db,
+		env: harness.env,
+		userId: server.user_id,
+		serverId: server.id,
+		logoKey: stale!.logo_key!,
+		logoContentType: stale!.logo_content_type,
+		logoSource: stale!.logo_source,
+		faviconSourceHost: stale!.favicon_source_host,
+	})
+	const winner = await getMcpServerSettingRowById({
+		db: harness.db,
+		userId: server.user_id,
+		id: server.id,
+	})
+	expect(winner?.logo_key).toMatch(/\.webp$/)
+
+	await setMcpServerLogo({
+		db: harness.db,
+		env: harness.env,
+		userId: server.user_id,
+		serverId: server.id,
+		sourceBytes: tinyPngBytes,
+		source: 'favicon',
+		faviconSourceHost: 'linear.app',
+		replaceLogoKey: previousKey,
+	})
+	const current = await getMcpServerSettingRowById({
+		db: harness.db,
+		userId: server.user_id,
+		id: server.id,
+	})
+	expect(current?.logo_key).toBe(winner?.logo_key)
+	expect(harness.r2.objects.has(winner!.logo_key!)).toBe(true)
 })

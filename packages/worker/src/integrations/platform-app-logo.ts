@@ -206,17 +206,6 @@ export async function setPlatformOauthAppLogo(input: {
 		.run()
 
 	if ((updated.meta.changes ?? 0) === 0) {
-		if (nextKey) {
-			try {
-				await input.env.COMMUNITY_ASSETS.delete(nextKey)
-			} catch (error) {
-				console.error(
-					'platform-oauth-app-logo-raced-refit-delete-failed',
-					nextKey,
-					error,
-				)
-			}
-		}
 		const current = await getPlatformOauthAppBySlug({
 			db: input.db,
 			slug: app.slug,
@@ -226,6 +215,17 @@ export async function setPlatformOauthAppLogo(input: {
 			throw new Error(
 				`Platform OAuth app "${app.slug}" disappeared during logo update.`,
 			)
+		}
+		if (nextKey && nextKey !== current.logoKey) {
+			try {
+				await input.env.COMMUNITY_ASSETS.delete(nextKey)
+			} catch (error) {
+				console.error(
+					'platform-oauth-app-logo-raced-refit-delete-failed',
+					nextKey,
+					error,
+				)
+			}
 		}
 		return current
 	}

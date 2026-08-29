@@ -131,14 +131,21 @@ export async function setMcpServerLogo(input: {
 		.run()
 
 	if ((updated.meta.changes ?? 0) === 0) {
-		try {
-			await input.env.COMMUNITY_ASSETS.delete(nextKey)
-		} catch (error) {
-			console.error(
-				'mcp-server-logo-raced-favicon-delete-failed',
-				nextKey,
-				error,
-			)
+		const current = await getMcpServerSettingRowById({
+			db: input.db,
+			userId: input.userId,
+			id: existing.id,
+		})
+		if (nextKey !== current?.logo_key) {
+			try {
+				await input.env.COMMUNITY_ASSETS.delete(nextKey)
+			} catch (error) {
+				console.error(
+					'mcp-server-logo-raced-favicon-delete-failed',
+					nextKey,
+					error,
+				)
+			}
 		}
 		return
 	}

@@ -10,7 +10,10 @@ import {
 import { getOauthAppBySlug } from './repo.ts'
 import { upsertOauthAppWithoutConnection } from './service.ts'
 import { shouldFetchUserOauthAppFavicon } from './user-oauth-app-favicon.ts'
-import { loadFittedUserOauthAppLogo } from './user-oauth-app-logo.ts'
+import {
+	loadFittedUserOauthAppLogo,
+	setUserOauthAppLogo,
+} from './user-oauth-app-logo.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
@@ -212,4 +215,65 @@ test('lazy refit does not overwrite a newer user logo key', async () => {
 	})
 	expect(current?.logoKey).toBe(newerKey)
 	expect(harness.r2.objects.has(newerKey)).toBe(true)
+})
+
+test('lost same-hash refit race keeps the stored user logo', async () => {
+	const harness = createHarness()
+	const app = await provisionApp(harness)
+	const previousKey = `user-oauth-app-logos/${app.userId}/${app.slug}/aaaaaaaaaaaaaaaa.png`
+	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
+		httpMetadata: { contentType: 'image/png' },
+	})
+	await harness.db
+		.prepare(
+			`UPDATE user_oauth_apps
+			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
+				favicon_source_host = ?, updated_at = ?
+			WHERE user_id = ? AND slug = ?`,
+		)
+		.bind(
+			previousKey,
+			'image/png',
+			'favicon',
+			'dropbox.com',
+			new Date().toISOString(),
+			app.userId,
+			app.slug,
+		)
+		.run()
+	const stale = await getOauthAppBySlug({
+		db: harness.db,
+		userId: app.userId,
+		slug: app.slug,
+	})
+	await loadFittedUserOauthAppLogo({
+		db: harness.db,
+		env: harness.env,
+		userId: app.userId,
+		app: stale!,
+	})
+	const winner = await getOauthAppBySlug({
+		db: harness.db,
+		userId: app.userId,
+		slug: app.slug,
+	})
+	expect(winner?.logoKey).toMatch(/\.webp$/)
+
+	await setUserOauthAppLogo({
+		db: harness.db,
+		env: harness.env,
+		userId: app.userId,
+		slug: app.slug,
+		sourceBytes: tinyPngBytes,
+		source: 'favicon',
+		faviconSourceHost: 'dropbox.com',
+		replaceLogoKey: previousKey,
+	})
+	const current = await getOauthAppBySlug({
+		db: harness.db,
+		userId: app.userId,
+		slug: app.slug,
+	})
+	expect(current?.logoKey).toBe(winner?.logoKey)
+	expect(harness.r2.objects.has(winner!.logoKey!)).toBe(true)
 })
