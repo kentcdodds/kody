@@ -194,6 +194,64 @@ export function normalizeJobSchedule(schedule: JobSchedule) {
 	return assertNeverJobSchedule(schedule)
 }
 
+const cronIntervalSampleCount = 24
+
+/**
+ * Smallest gap between recurring firings. `once` schedules (and crons that
+ * do not produce two future runs) return null so a one-shot is never treated
+ * as a polling interval.
+ */
+export function estimateScheduleMinIntervalMs(input: {
+	schedule: JobSchedule
+	timezone?: string | null
+	from?: Date | string | null
+}): number | null {
+	const schedule = normalizeJobSchedule(input.schedule)
+	switch (schedule.type) {
+		case 'once':
+			return null
+		case 'interval':
+			return parseIntervalEvery(schedule.every).everyMs
+		case 'cron': {
+			const timezone = normalizeJobTimezone(input.timezone)
+			assertValidJobTimezone(timezone)
+			const from =
+				input.from instanceof Date
+					? input.from
+					: input.from
+						? new Date(input.from)
+						: new Date()
+			if (Number.isNaN(from.valueOf())) {
+				throw new Error(
+					'Cannot estimate a cron interval from an invalid reference date.',
+				)
+			}
+			const cron = new Cron(schedule.expression, {
+				paused: true,
+				timezone,
+			})
+			const dates: Array<Date> = []
+			let cursor = from
+			for (let i = 0; i < cronIntervalSampleCount; i += 1) {
+				const next = cron.nextRun(cursor)
+				if (!next) break
+				dates.push(next)
+				cursor = next
+			}
+			if (dates.length < 2) return null
+			let min = Number.POSITIVE_INFINITY
+			for (let i = 1; i < dates.length; i += 1) {
+				const previous = dates[i - 1]
+				const current = dates[i]
+				if (!previous || !current) continue
+				min = Math.min(min, current.getTime() - previous.getTime())
+			}
+			return Number.isFinite(min) ? min : null
+		}
+	}
+	return assertNeverJobSchedule(schedule)
+}
+
 export function formatScheduleSummary(input: {
 	schedule: JobSchedule
 	timezone?: string | null

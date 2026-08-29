@@ -1,16 +1,54 @@
 import { expect, test, vi } from 'vitest'
 import type * as StripeClient from '#worker/billing/stripe-client.ts'
-import { createAccountBillingCheckoutApiHandler } from './account-billing.ts'
+import {
+	createAccountBillingCheckoutApiHandler,
+	createAccountBillingSuccessHandler,
+} from './account-billing.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
+	requireAuthenticatedPageUser: vi.fn<() => Promise<unknown>>(),
+	userHasMcpOAuthGrants: vi.fn<() => Promise<boolean>>(),
+	linkStripeCustomerFromCheckoutSessionAttribution:
+		vi.fn<(...args: Array<unknown>) => Promise<unknown>>(),
 	createCheckoutSession:
 		vi.fn<(...args: Array<unknown>) => Promise<{ id: string; url: string }>>(),
+	renderAppPage: vi.fn(async ({ loaderData }: { loaderData?: unknown }) =>
+		Response.json({ ok: true, loaderData }),
+	),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
 	readAuthenticatedAppUser: (...args: Array<unknown>) =>
 		mockModule.readAuthenticatedAppUser(...args),
+}))
+
+vi.mock('#app/page-auth.ts', () => ({
+	requireAuthenticatedPageUser: (...args: Array<unknown>) =>
+		mockModule.requireAuthenticatedPageUser(...args),
+}))
+
+vi.mock('#app/onboarding-data.ts', () => ({
+	userHasMcpOAuthGrants: (...args: Array<unknown>) =>
+		mockModule.userHasMcpOAuthGrants(...args),
+}))
+
+vi.mock('#app/ssr-render.tsx', () => ({
+	renderAppPage: (...args: Array<unknown>) =>
+		mockModule.renderAppPage(...(args as [never])),
+}))
+
+vi.mock('#worker/billing/subscription-sync.ts', () => ({
+	BillingLinkError: class BillingLinkError extends Error {
+		readonly code: string
+		constructor(code: string, message: string) {
+			super(message)
+			this.name = 'BillingLinkError'
+			this.code = code
+		}
+	},
+	linkStripeCustomerFromCheckoutSessionAttribution: (...args: Array<unknown>) =>
+		mockModule.linkStripeCustomerFromCheckoutSessionAttribution(...args),
 }))
 
 vi.mock('#worker/billing/stripe-client.ts', async (importOriginal) => {
@@ -144,4 +182,47 @@ test('billing checkout selects monthly vs yearly Stripe price ids', async () => 
 	)
 	expect(yearlyMissing.status).toBe(409)
 	expect(mockModule.createCheckoutSession).toHaveBeenCalledTimes(4)
+})
+
+test('billing success renders a thank-you page instead of redirecting', async () => {
+	mockModule.requireAuthenticatedPageUser.mockResolvedValue({
+		...authenticatedUser,
+		emailVerified: true,
+	})
+	mockModule.userHasMcpOAuthGrants.mockResolvedValue(false)
+	mockModule.linkStripeCustomerFromCheckoutSessionAttribution.mockResolvedValue(
+		{},
+	)
+
+	const handler = createAccountBillingSuccessHandler(createEnv())
+	const missingSession = await handler.handler({
+		request: new Request('https://example.com/account/billing/success'),
+		params: {},
+		url: new URL('https://example.com/account/billing/success'),
+	} as never)
+	expect(missingSession.status).toBe(302)
+	expect(missingSession.headers.get('location')).toContain(
+		'/account/billing?error=missing_session',
+	)
+
+	const success = await handler.handler({
+		request: new Request(
+			'https://example.com/account/billing/success?session_id=cs_test',
+		),
+		params: {},
+		url: new URL(
+			'https://example.com/account/billing/success?session_id=cs_test',
+		),
+	} as never)
+	expect(success.status).toBe(200)
+	expect(await success.json()).toEqual({
+		ok: true,
+		loaderData: {
+			accountBillingSuccess: {
+				ok: true,
+				needsOnboarding: true,
+			},
+		},
+	})
+	expect(success.headers.get('location')).toBeNull()
 })

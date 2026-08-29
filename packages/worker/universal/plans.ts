@@ -146,6 +146,12 @@ export type PlanLimits = {
 	 * own) so a handful of minutely jobs cannot burn unbounded compute.
 	 */
 	maxJobRunsPerDay: number
+	/**
+	 * Fastest allowed recurring job interval on this plan. `0` means no extra
+	 * floor beyond the schedule itself. Enforced when a schedule is created
+	 * or changed — existing faster jobs are grandfathered.
+	 */
+	minJobIntervalMs: number
 }
 
 export const entitlementResources = [
@@ -246,6 +252,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxExecuteCallsPerDay: 250,
 		maxOutboundFetchesPerDay: 500,
 		maxJobRunsPerDay: 500,
+		minJobIntervalMs: 15 * 60 * 1000,
 	},
 	standard: {
 		maxRepos: 200,
@@ -262,6 +269,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxExecuteCallsPerDay: 5_000,
 		maxOutboundFetchesPerDay: 20_000,
 		maxJobRunsPerDay: 10_000,
+		minJobIntervalMs: 0,
 	},
 	pro: {
 		maxRepos: 400,
@@ -278,6 +286,7 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxExecuteCallsPerDay: 10_000,
 		maxOutboundFetchesPerDay: 40_000,
 		maxJobRunsPerDay: 20_000,
+		minJobIntervalMs: 0,
 	},
 	max: {
 		// 25× pro (400) → 10_000.
@@ -305,7 +314,29 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 2_000_000,
 		// 50× pro (20_000) → 1_000_000.
 		maxJobRunsPerDay: 1_000_000,
+		minJobIntervalMs: 0,
 	},
+}
+
+/** 15-minute floor on free recurring jobs. Paid plans have no extra floor. */
+export const freeMinJobIntervalMs = planLimits.free.minJobIntervalMs
+
+/**
+ * Human label for a plan's fastest job interval. `0` means no extra floor.
+ */
+export function formatMinJobInterval(minJobIntervalMs: number): string {
+	if (minJobIntervalMs <= 0) return 'None'
+	const minuteMs = 60 * 1000
+	const hourMs = 60 * minuteMs
+	if (minJobIntervalMs % hourMs === 0) {
+		const hours = minJobIntervalMs / hourMs
+		return hours === 1 ? '1 hour' : `${hours} hours`
+	}
+	if (minJobIntervalMs % minuteMs === 0) {
+		const minutes = minJobIntervalMs / minuteMs
+		return minutes === 1 ? '1 minute' : `${minutes} minutes`
+	}
+	return `${minJobIntervalMs} ms`
 }
 
 /**

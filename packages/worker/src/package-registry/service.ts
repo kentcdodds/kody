@@ -29,6 +29,7 @@ import { deleteSavedPackageVector } from './vectorize.ts'
 import { scheduleSavedPackageSearchIndexUpsert } from './search-index-debt.ts'
 import { deletePackageInvocationTokensForPackage } from '#worker/package-invocations/repo.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import { rebuildPublishedPackageArtifacts } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import {
@@ -317,7 +318,26 @@ export async function refreshSavedPackageProjection(input: {
 					email: input.userEmail,
 					resource: 'saved_packages',
 				})
+				let isFirstSavedPackage = false
+				try {
+					const beforePackage = await input.env.APP_DB.prepare(
+						`SELECT first_saved_package_at FROM users WHERE stable_user_id = ?`,
+					)
+						.bind(input.userId)
+						.first<{ first_saved_package_at: string | null }>()
+					isFirstSavedPackage = !beforePackage?.first_saved_package_at
+				} catch (error) {
+					console.warn('kit-first-package-pre-read-failed', error)
+					isFirstSavedPackage = true
+				}
 				await insertSavedPackage(input.env.APP_DB, row)
+				if (isFirstSavedPackage) {
+					scheduleKitSubscriberSync({
+						env: input.env,
+						stableUserId: input.userId,
+						email: input.userEmail,
+					})
+				}
 				// A brand new package claims its id outright, so an earlier package's
 				// retirement row must not keep forwarding it elsewhere.
 				await releasePackageKodyIdRedirect({

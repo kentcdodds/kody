@@ -1,5 +1,6 @@
 import {
 	entitlementResourceLabels,
+	formatMinJobInterval,
 	parsePlanName,
 	type EntitlementResource,
 	type PlanName,
@@ -90,6 +91,60 @@ export function isEntitlementLimitError(
 			error.details !== null &&
 			'code' in error.details &&
 			error.details.code === entitlementLimitErrorCode)
+	)
+}
+
+export const jobIntervalFloorErrorCode = 'job_interval_floor' as const
+
+export type JobIntervalFloorErrorDetails = {
+	code: typeof jobIntervalFloorErrorCode
+	plan: PlanName
+	minIntervalMs: number
+	upgradeHint: string
+}
+
+export function buildJobIntervalFloorUpgradeHint() {
+	return 'Space this job out, or upgrade at /account/billing.'
+}
+
+export function buildJobIntervalFloorMessage(
+	details: JobIntervalFloorErrorDetails,
+) {
+	const interval = formatMinJobInterval(details.minIntervalMs)
+	return `Your "${details.plan}" plan cannot run jobs more often than every ${interval}. ${details.upgradeHint}`
+}
+
+export class JobIntervalFloorError extends Error {
+	readonly details: JobIntervalFloorErrorDetails
+
+	constructor(
+		details: Omit<JobIntervalFloorErrorDetails, 'code' | 'upgradeHint'> & {
+			upgradeHint?: string
+		},
+	) {
+		const fullDetails: JobIntervalFloorErrorDetails = {
+			code: jobIntervalFloorErrorCode,
+			upgradeHint: details.upgradeHint ?? buildJobIntervalFloorUpgradeHint(),
+			plan: details.plan,
+			minIntervalMs: details.minIntervalMs,
+		}
+		super(buildJobIntervalFloorMessage(fullDetails))
+		this.name = 'JobIntervalFloorError'
+		this.details = fullDetails
+	}
+}
+
+export function isJobIntervalFloorError(
+	error: unknown,
+): error is JobIntervalFloorError {
+	return (
+		error instanceof JobIntervalFloorError ||
+		(error instanceof Error &&
+			'details' in error &&
+			typeof error.details === 'object' &&
+			error.details !== null &&
+			'code' in error.details &&
+			error.details.code === jobIntervalFloorErrorCode)
 	)
 }
 

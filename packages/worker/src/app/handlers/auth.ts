@@ -46,6 +46,7 @@ import {
 } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getSignupMode } from '#universal/signup-mode.ts'
 import {
@@ -443,6 +444,11 @@ export function createAuthHandler(env: Env) {
 				await maybeTagKitSubscriberOnSignup({
 					env,
 					email: normalizedEmail,
+				})
+				scheduleKitSubscriberSync({
+					env,
+					email: normalizedEmail,
+					stableUserId: record.stableUserId,
 				})
 				await followDefaultWelcomeAccounts({
 					db: env.APP_DB,

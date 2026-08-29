@@ -14,6 +14,9 @@ import {
 	record,
 	string,
 } from 'remix/data-schema'
+import { waitUntil } from 'cloudflare:workers'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { sendPaymentFailedEmail } from '#app/user-account-emails.ts'
 import { isBillingConfigured } from './billing-config.ts'
 import {
 	BillingLinkError,
@@ -202,11 +205,34 @@ async function handleInvoicePaymentFailed(input: {
 		console.error('stripe_webhook_invoice_user_not_found', { customerId })
 		return
 	}
+	const subscriptionStatus = result.resolved?.subscriptionStatus ?? null
 	console.error('stripe_webhook_invoice_payment_failed', {
 		userId: result.userId,
 		customerId,
-		subscriptionStatus: result.resolved?.subscriptionStatus ?? null,
+		subscriptionStatus,
 	})
+	// refreshStripePlanForUser already sends past-due when Stripe has moved
+	// the subscription there. Skip the invoice-specific mail in that case so
+	// one failed charge is not two emails.
+	if (subscriptionStatus === 'past_due' || subscriptionStatus === 'unpaid') {
+		return
+	}
+	const user = await input.env.APP_DB.prepare(
+		`SELECT email, stable_user_id FROM users WHERE id = ?`,
+	)
+		.bind(result.userId)
+		.first<{ email: string; stable_user_id: string }>()
+	if (!user?.email) return
+	waitUntil(
+		sendPaymentFailedEmail({
+			env: input.env,
+			email: user.email,
+			userId: user.stable_user_id,
+			day: utcDayKey(input.now ?? new Date()),
+		}).catch((error) => {
+			console.warn('billing-payment-failed-email-failed', error)
+		}),
+	)
 }
 
 export async function processStripeWebhookEvent(input: {

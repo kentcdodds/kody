@@ -10,6 +10,7 @@ import {
 } from '#app/auth-session.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { getAvailableUsernameFromBase } from '#worker/identity/generated-username.ts'
 import {
 	consumeInviteCode,
@@ -733,6 +734,11 @@ export function createAuthProviderCallbackHandler(env: Env) {
 			await maybeTagKitSubscriberOnSignup({
 				env,
 				email,
+			})
+			scheduleKitSubscriberSync({
+				env,
+				email,
+				stableUserId,
 			})
 			await followDefaultWelcomeAccounts({
 				db: env.APP_DB,

@@ -48,17 +48,21 @@ export const publicOgPages = {
 		path: '/blog',
 	},
 	login: {
-		imageTitle: 'Welcome back',
-		imageSubtitle: 'Log in to continue to kody.',
+		imageTitle: 'The Home Your Agents Share',
+		imageSubtitle:
+			"For all the agents you use today,\nand the ones you'll use tomorrow",
 		ogTitle: 'Sign in — Kody',
-		ogDescription: 'Log in to continue to kody.',
+		ogDescription:
+			"For all the agents you use today, and the ones you'll use tomorrow.",
 		path: '/login',
 	},
 	signup: {
-		imageTitle: 'Create your account',
-		imageSubtitle: 'Sign up to start using kody.',
+		imageTitle: 'The Home Your Agents Share',
+		imageSubtitle:
+			"For all the agents you use today,\nand the ones you'll use tomorrow",
 		ogTitle: 'Sign up — Kody',
-		ogDescription: 'Sign up to start using kody.',
+		ogDescription:
+			"For all the agents you use today, and the ones you'll use tomorrow.",
 		path: '/signup',
 	},
 	pricing: {

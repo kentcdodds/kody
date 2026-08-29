@@ -1746,11 +1746,13 @@ export type AppLoaderData = {
 	emailVerification?: EmailVerificationLoaderData
 	oauthAuthorize?: OAuthAuthorizeLoaderData
 	accountBilling?: AccountBillingLoaderData
+	accountBillingSuccess?: AccountBillingSuccessLoaderData
 	accountUsage?: AccountUsageLoaderData
 	discord?: DiscordPageLoaderData
 	codeRuns?: CodeRunsLoaderData
 	walkthroughHosts?: WalkthroughHostPick
 	onboardingAgentChooser?: OnboardingAgentChooserPick
+	signupMode?: SignupMode
 }
 
 export type CodeRunsLoaderData = {
@@ -1772,6 +1774,11 @@ export type AccountBillingLoaderData = {
 	/** Deep link to the account usage page (limits / consumption). */
 	usageHref: '/account/usage'
 	error?: string
+}
+
+export type AccountBillingSuccessLoaderData = {
+	ok: true
+	needsOnboarding: boolean
 }
 
 export type AccountUsageEntitlementConsumption = {

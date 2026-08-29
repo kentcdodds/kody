@@ -1,5 +1,6 @@
 import { type Action } from 'remix/router'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import { getSignupMode } from '#universal/signup-mode.ts'
 import { type routes } from '#universal/routes.ts'
 
 export function createPricingHandler(env: Env) {
@@ -9,6 +10,9 @@ export function createPricingHandler(env: Env) {
 			return renderAppPage({
 				request,
 				env,
+				loaderData: {
+					signupMode: getSignupMode(env),
+				},
 			})
 		},
 	} satisfies Action<typeof routes.pricing>

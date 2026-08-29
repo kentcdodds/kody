@@ -23,6 +23,7 @@ import {
 	registerMcpAgentSession,
 } from './session-registry.ts'
 import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 
 export type State = {
 	searchConversationIdsWithPreamble?: Array<string>
@@ -52,8 +53,24 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				doId: this.ctx.id.toString(),
 			})
 			this.ctx.waitUntil(
-				stampFirstMcpConnected(this.env.APP_DB, {
-					stableUserId: userId,
+				(async () => {
+					const before = await this.env.APP_DB.prepare(
+						`SELECT first_mcp_connected_at FROM users WHERE stable_user_id = ?`,
+					)
+						.bind(userId)
+						.first<{ first_mcp_connected_at: string | null }>()
+					await stampFirstMcpConnected(this.env.APP_DB, {
+						stableUserId: userId,
+					})
+					if (!before?.first_mcp_connected_at) {
+						scheduleKitSubscriberSync({
+							env: this.env,
+							stableUserId: userId,
+							email: caller.user?.email,
+						})
+					}
+				})().catch((error) => {
+					console.warn('mcp-first-connected-kit-sync-failed', error)
 				}),
 			)
 		}

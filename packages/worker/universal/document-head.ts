@@ -134,6 +134,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.home)]: publicPageHead('home', DEFAULT_DOCUMENT_TITLE),
 	[routePattern(routes.account)]: titleOnly('Account'),
 	[routePattern(routes.accountBilling)]: titleOnly('Billing'),
+	[routePattern(routes.accountBillingSuccess)]: titleOnly("You're in"),
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
 	[routePattern(routes.accountIntegrations)]: titleOnly('Integrations'),
 	[routePattern(routes.accountOauthAppDetail)]: titleOnly('Integrations'),

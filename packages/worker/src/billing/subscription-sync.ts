@@ -1,4 +1,10 @@
 import { waitUntil } from 'cloudflare:workers'
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
+import {
+	sendBillingSuccessEmail,
+	sendPastDueEmail,
+} from '#app/user-account-emails.ts'
 import { maybeSyncDiscordGuildRolesForUser } from '#worker/discord/guild-role.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { parseStripePlanName, type PlanName } from '#universal/plans.ts'
@@ -53,6 +59,16 @@ export async function refreshStripePlanForUser(input: {
 	now?: Date
 }): Promise<ResolvedSubscriptionPlan> {
 	const now = input.now ?? new Date()
+	const previous = await input.env.APP_DB.prepare(
+		`SELECT email, stable_user_id, stripe_plan
+		 FROM users WHERE id = ?`,
+	)
+		.bind(input.userId)
+		.first<{
+			email: string
+			stable_user_id: string
+			stripe_plan: string | null
+		}>()
 	const subscriptions = await listSubscriptions(input.env, input.customerId)
 	const resolved = resolveSubscriptionPlan(subscriptions, input.env)
 	await input.env.APP_DB.prepare(
@@ -74,6 +90,43 @@ export async function refreshStripePlanForUser(input: {
 			stripePlan: resolved.stripePlan,
 		}),
 	)
+	if (previous?.email) {
+		const previousPlan = parseStripePlanName(previous.stripe_plan)
+		const nextPlan = resolved.stripePlan
+		if (
+			(nextPlan === 'standard' || nextPlan === 'pro') &&
+			nextPlan !== previousPlan
+		) {
+			waitUntil(
+				sendBillingSuccessEmail({
+					env: input.env,
+					email: previous.email,
+					userId: previous.stable_user_id,
+					planLabel: nextPlan === 'pro' ? 'Pro' : 'Standard',
+				}).catch((error) => {
+					console.warn('billing-success-email-failed', error)
+				}),
+			)
+		}
+		const status = resolved.subscriptionStatus
+		if (status === 'past_due' || status === 'unpaid') {
+			waitUntil(
+				sendPastDueEmail({
+					env: input.env,
+					email: previous.email,
+					userId: previous.stable_user_id,
+					day: utcDayKey(now),
+				}).catch((error) => {
+					console.warn('billing-past-due-email-failed', error)
+				}),
+			)
+		}
+		scheduleKitSubscriberSync({
+			env: input.env,
+			email: previous.email,
+			stableUserId: previous.stable_user_id,
+		})
+	}
 	return resolved
 }
 

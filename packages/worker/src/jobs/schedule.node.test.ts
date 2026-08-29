@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	computeNextRunAt,
+	estimateScheduleMinIntervalMs,
 	isJobDue,
 	isJobExpired,
 	normalizeJobExpiresAt,
@@ -55,6 +56,33 @@ test('job schedule helpers normalize schedules and compute the next run time', (
 			from: '2026-04-17T15:00:00.000Z',
 		}),
 	).toBe('2026-04-17T15:15:00.000Z')
+})
+
+test('estimateScheduleMinIntervalMs measures interval and cron gaps and ignores once', () => {
+	expect(
+		estimateScheduleMinIntervalMs({
+			schedule: { type: 'once', runAt: '2026-04-17T15:00:00Z' },
+		}),
+	).toBeNull()
+	expect(
+		estimateScheduleMinIntervalMs({
+			schedule: { type: 'interval', every: '5m' },
+		}),
+	).toBe(5 * 60 * 1000)
+	expect(
+		estimateScheduleMinIntervalMs({
+			schedule: { type: 'cron', expression: '*/5 * * * *' },
+			timezone: 'UTC',
+			from: '2026-04-17T15:00:00.000Z',
+		}),
+	).toBe(5 * 60 * 1000)
+	expect(
+		estimateScheduleMinIntervalMs({
+			schedule: { type: 'cron', expression: '0 * * * *' },
+			timezone: 'UTC',
+			from: '2026-04-17T15:00:00.000Z',
+		}),
+	).toBe(60 * 60 * 1000)
 })
 
 test('expires_at helpers treat UTC expiry as a schedule gate separate from enabled', () => {

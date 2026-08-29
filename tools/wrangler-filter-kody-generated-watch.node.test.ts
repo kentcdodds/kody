@@ -39,12 +39,18 @@ test('the additional-module watch filter is idempotent and marked', () => {
 })
 
 test('the bundle-watch gate is idempotent and env-gated', () => {
-	const first = wranglerBundleWatchSource('watch: config6.dev.watch ?? true')
-	expect(first.changed).toBe(true)
-	expect(first.source).toContain('WRANGLER_DISABLE_BUNDLE_WATCH')
-	const second = wranglerBundleWatchSource(first.source)
-	expect(second.changed).toBe(false)
-	expect(second.source).toBe(first.source)
+	for (const identifier of ['config5', 'config6']) {
+		const first = wranglerBundleWatchSource(
+			`watch: ${identifier}.dev.watch ?? true`,
+		)
+		expect(first.changed).toBe(true)
+		expect(first.source).toBe(
+			`watch: ${identifier}.dev.watch ?? (process.env.WRANGLER_DISABLE_BUNDLE_WATCH !== "true")`,
+		)
+		const second = wranglerBundleWatchSource(first.source)
+		expect(second.changed).toBe(false)
+		expect(second.source).toBe(first.source)
+	}
 })
 
 test('ensureWranglerFiltersKodyGeneratedWatch patches the installed wrangler CLI', async () => {

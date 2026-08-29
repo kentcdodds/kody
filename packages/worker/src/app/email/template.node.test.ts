@@ -1,6 +1,9 @@
 import { expect, test } from 'vitest'
 import {
+	buildBillingSuccessEmail,
+	buildConnectAgentEmail,
 	buildUserEntitlementWarningEmail,
+	buildUserErrorRateEmail,
 	buildVerificationEmail,
 } from './messages.ts'
 import { renderTransactionalEmail } from './template.ts'
@@ -73,4 +76,32 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	})
 	expect(reached.subject).toContain('reached')
 	expect(reached.html).toContain('250 of 250 (100%)')
+
+	const connect = buildConnectAgentEmail({
+		appBaseUrl: 'https://kody.codes',
+		onboardingUrl: 'https://kody.codes/onboarding',
+	})
+	expect(connect.subject).toContain('Connect your agent')
+	expect(connect.html).toContain('https://kody.codes/onboarding')
+
+	const billing = buildBillingSuccessEmail({
+		appBaseUrl: 'https://kody.codes',
+		billingUrl: 'https://kody.codes/account/billing',
+		discordUrl: 'https://kcd.im/kody-discord',
+		planLabel: 'Pro',
+	})
+	expect(billing.subject).toContain('Pro')
+	expect(billing.html).toContain('https://kcd.im/kody-discord')
+	expect(billing.text).toContain('https://kody.codes/account/billing')
+
+	const errorRate = buildUserErrorRateEmail({
+		appBaseUrl: 'https://kody.codes',
+		activityUrl: 'https://kody.codes/account/activity',
+		triagePackageUrl: 'https://kody.codes/@kentcdodds/kody-issue-triage',
+		errorCount: 10,
+		eventCount: 40,
+	})
+	expect(errorRate.html).toContain('https://kody.codes/account/activity')
+	expect(errorRate.text).toContain('/@kentcdodds/kody-issue-triage')
+	expect(errorRate.html).toContain('25%')
 })
