@@ -22,6 +22,7 @@ type GrantUserRow = {
 	deleting_at?: string | null
 	email_verified_at?: string | null
 	suspended_at?: string | null
+	password_changed_at?: string | null
 }
 
 function createMockAppDb(options: {
@@ -86,11 +87,13 @@ test('buildMcpUserContextFromGrantProps resolves identity from the stable user i
 		},
 		emailVerified: false,
 		suspended: false,
+		passwordChangedAt: null,
 	})
 	expect(refreshed.queries).toHaveLength(1)
 	expect(refreshed.queries[0]?.params).toEqual(['stable-admin-id'])
 	expect(refreshed.queries[0]?.sql).toContain('email_verified_at')
 	expect(refreshed.queries[0]?.sql).toContain('suspended_at')
+	expect(refreshed.queries[0]?.sql).toContain('password_changed_at')
 	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledWith(
 		refreshed.db,
 		42,
@@ -129,6 +132,7 @@ test('buildMcpUserContextFromGrantProps resolves identity from the stable user i
 		},
 		emailVerified: false,
 		suspended: false,
+		passwordChangedAt: null,
 	})
 	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledWith(
 		staleEmailOwnedElsewhere.db,
@@ -163,6 +167,7 @@ test('buildMcpUserContextFromGrantProps resolves identity from the stable user i
 		},
 		emailVerified: false,
 		suspended: false,
+		passwordChangedAt: null,
 	})
 	expect(emailOmitted.queries[0]?.params).toEqual(['legacy-id'])
 

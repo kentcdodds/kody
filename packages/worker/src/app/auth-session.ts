@@ -1,4 +1,5 @@
 import { createCookie } from 'remix/cookie'
+import { isIssuedAtInvalidatedByPasswordChange } from '#worker/password-change-lockout.ts'
 import { isStableUserId } from '#worker/user-id.ts'
 
 const defaultSessionMaxAgeSeconds = 60 * 60 * 24 * 7
@@ -124,9 +125,10 @@ export function isAuthSessionInvalidatedByPasswordChange(input: {
 	issuedAt: number | undefined
 	passwordChangedAtMs: number | null
 }): boolean {
-	if (input.passwordChangedAtMs == null) return false
-	if (typeof input.issuedAt !== 'number') return true
-	return input.issuedAt <= input.passwordChangedAtMs
+	return isIssuedAtInvalidatedByPasswordChange({
+		issuedAtMs: input.issuedAt,
+		passwordChangedAtMs: input.passwordChangedAtMs,
+	})
 }
 
 function normalizeAuthSession(session: StoredAuthSession): AuthSession {

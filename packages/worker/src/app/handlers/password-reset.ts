@@ -20,6 +20,11 @@ import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { buildPasswordResetEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
+import {
+	type OAuthGrantHelpers,
+	revokeAllOAuthGrantsForUser,
+} from '#worker/oauth-grants.ts'
+import { resolveUserStableId } from '#worker/user-id.ts'
 
 const resetRequestSchema = object({
 	email: string(),
@@ -254,6 +259,67 @@ export function createPasswordResetConfirmHandler(env: Env) {
 				return Response.json(
 					{ error: 'Reset link is invalid or expired.' },
 					{ status: 400 },
+				)
+			}
+
+			const userRecord = await db.findOne(usersTable, {
+				where: { id: resetRecord.user_id },
+			})
+			if (!userRecord) {
+				void logAuditEvent({
+					category: 'auth',
+					action: 'password_reset_confirm',
+					result: 'failure',
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'user_not_found',
+				})
+				return Response.json(
+					{ error: 'Reset link is invalid or expired.' },
+					{ status: 400 },
+				)
+			}
+
+			const helpers = (env as Env & { OAUTH_PROVIDER?: OAuthGrantHelpers })
+				.OAUTH_PROVIDER
+			if (!helpers) {
+				void logAuditEvent({
+					category: 'auth',
+					action: 'password_reset_confirm',
+					result: 'failure',
+					ip: requestIp,
+					path: url.pathname,
+					reason: 'oauth_provider_unavailable',
+				})
+				return Response.json(
+					{ error: 'Unable to finish password reset right now.' },
+					{ status: 500 },
+				)
+			}
+
+			// Revoke MCP grants before stamping password_changed_at so a failed
+			// revoke cannot leave refresh tokens alive after the user thinks
+			// lockout succeeded. Retrying the same reset token is safe.
+			try {
+				await revokeAllOAuthGrantsForUser({
+					helpers,
+					userId: resolveUserStableId(userRecord),
+				})
+			} catch (error) {
+				void logAuditEvent({
+					category: 'auth',
+					action: 'password_reset_confirm',
+					result: 'failure',
+					ip: requestIp,
+					path: url.pathname,
+					reason:
+						error instanceof Error
+							? error.message
+							: 'oauth_grant_revoke_failed',
+				})
+				return Response.json(
+					{ error: 'Unable to finish password reset right now.' },
+					{ status: 500 },
 				)
 			}
 

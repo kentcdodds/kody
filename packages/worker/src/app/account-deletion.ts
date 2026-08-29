@@ -1,5 +1,9 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
+	type OAuthGrantHelpers,
+	revokeAllOAuthGrantsBestEffort,
+} from '#worker/oauth-grants.ts'
+import {
 	cancelSubscription,
 	deleteCustomer,
 	listSubscriptions,
@@ -75,16 +79,7 @@ import {
 // node-only unit tests can require this module without dragging in
 // `cloudflare:workers` (the OAuth provider package re-exports through that
 // runtime symbol). The shape mirrors the subset of OAuthHelpers we use.
-type OAuthGrantPage = {
-	items: Array<{ id: string; clientId: string }>
-	cursor: string | undefined
-}
-type OAuthHelpersShape = {
-	listUserGrants(
-		userId: string,
-		options: { cursor: string | undefined },
-	): Promise<OAuthGrantPage>
-	revokeGrant(grantId: string, userId: string): Promise<unknown>
+type OAuthHelpersShape = OAuthGrantHelpers & {
 	deleteClient?(clientId: string): Promise<unknown>
 }
 
@@ -456,44 +451,6 @@ async function cancelSubscriptionsAndDeleteStripeCustomer(input: {
 			failures,
 			`Stripe account cleanup encountered ${failures.length} failure(s).`,
 		)
-	}
-}
-
-async function revokeAllOAuthGrants(input: {
-	helpers: OAuthHelpersShape
-	userId: string
-	warnings: Array<string>
-}): Promise<number> {
-	// Both the page listing and the individual revoke calls can throw, and
-	// neither failure should abort the larger account-deletion cascade -
-	// the rest of the steps still need to run so the user's data is
-	// removed even if the OAuth provider is briefly unavailable.
-	let cursor: string | undefined
-	let revoked = 0
-	while (true) {
-		let page: Awaited<ReturnType<OAuthHelpersShape['listUserGrants']>>
-		try {
-			page = await input.helpers.listUserGrants(input.userId, { cursor })
-		} catch (error) {
-			const message = getErrorMessage(error)
-			input.warnings.push(
-				`OAuth grant listing failed; revoked ${revoked} grant(s) before the failure: ${message}`,
-			)
-			return revoked
-		}
-		for (const grant of page.items) {
-			try {
-				await input.helpers.revokeGrant(grant.id, input.userId)
-				revoked += 1
-			} catch (error) {
-				const message = getErrorMessage(error)
-				input.warnings.push(
-					`OAuth grant revoke failed for grant ${grant.id}: ${message}`,
-				)
-			}
-		}
-		if (!page.cursor) return revoked
-		cursor = page.cursor
 	}
 }
 
@@ -1211,7 +1168,7 @@ export async function deleteUserAccount(input: {
 			}
 		}
 		try {
-			result.revokedOAuthGrants = await revokeAllOAuthGrants({
+			result.revokedOAuthGrants = await revokeAllOAuthGrantsBestEffort({
 				helpers,
 				userId: input.mcpUserId,
 				warnings,

@@ -443,8 +443,8 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 				: 'Authorize'
 		const resetClientLabel =
 			submittingDecision === 'reset-client'
-				? 'Deleting stored client...'
-				: 'Delete stored client'
+				? 'Resetting this connection...'
+				: 'Reset this connection'
 
 		return (
 			<section mix={css(pageCss)}>
@@ -526,9 +526,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					<section mix={css(cardCss)}>
 						<p mix={css(sectionTitleCss)}>Reset stored connection</p>
 						<p mix={css(descriptionCss)}>
-							Delete this trusted client&apos;s saved registration and grants,
-							then start the connection again from the client to create a fresh
-							record.
+							Revoke this account&apos;s grants for the client, then start the
+							connection again. Shared client registrations used by other
+							accounts stay in place.
 						</p>
 						{isLoggedIn ? (
 							<button
@@ -543,7 +543,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							</button>
 						) : isSessionReady ? (
 							<p mix={css(descriptionCss)}>
-								Sign in first, then delete the stored client record.
+								Sign in first, then reset this connection.
 							</p>
 						) : null}
 					</section>

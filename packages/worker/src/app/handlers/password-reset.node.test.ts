@@ -5,10 +5,24 @@ import type * as AuditLog from '#worker/audit-log.ts'
 const mockModule = vi.hoisted(() => ({
 	createRecord: vi.fn(async () => undefined),
 	deleteMany: vi.fn(async () => undefined),
-	findOne: vi.fn(async () => ({
-		id: 123,
-		email: 'user@example.com',
-	})),
+	update: vi.fn(async () => undefined),
+	findOne: vi.fn(
+		async (_table: unknown, query?: { where?: Record<string, unknown> }) => {
+			if (query?.where && 'token_hash' in query.where) {
+				return {
+					id: 1,
+					user_id: 123,
+					token_hash: query.where.token_hash,
+					expires_at: Date.now() + 60_000,
+				}
+			}
+			return {
+				id: 123,
+				email: 'user@example.com',
+				stable_user_id: 'a'.repeat(64),
+			}
+		},
+	),
 	sendCloudflareEmail: vi.fn(async () => ({ ok: true })),
 }))
 
@@ -17,6 +31,7 @@ vi.mock('#worker/db.ts', () => ({
 		create: mockModule.createRecord,
 		deleteMany: mockModule.deleteMany,
 		findOne: mockModule.findOne,
+		update: mockModule.update,
 	}),
 	passwordResetsTable: {},
 	usersTable: {},
@@ -39,7 +54,7 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 		mockModule.sendCloudflareEmail(...args),
 }))
 
-const { createPasswordResetRequestHandler } =
+const { createPasswordResetRequestHandler, createPasswordResetConfirmHandler } =
 	await import('./password-reset.ts')
 
 function createPasswordResetD1Mock() {
@@ -68,7 +83,7 @@ function createPasswordResetD1Mock() {
 	} as unknown as D1Database
 }
 
-function createEnv(overrides: Partial<Env> = {}) {
+function createEnv(overrides: Record<string, unknown> = {}) {
 	return {
 		APP_DB: createPasswordResetD1Mock(),
 		CLOUDFLARE_ACCOUNT_ID: 'account-id',
@@ -232,4 +247,101 @@ test('password reset skips sending when APP_BASE_URL is missing and logs a redac
 	} finally {
 		warnSpy.mockRestore()
 	}
+})
+
+test('password reset confirm revokes MCP grants before stamping password_changed_at', async () => {
+	vi.clearAllMocks()
+	const revokedGrantIds = new Array<string>()
+	const helpers = {
+		listUserGrants: vi.fn(async () => ({
+			items: [
+				{ id: 'grant-1', clientId: 'client-a' },
+				{ id: 'grant-2', clientId: 'client-b' },
+			],
+		})),
+		revokeGrant: vi.fn(async (grantId: string) => {
+			revokedGrantIds.push(grantId)
+		}),
+	}
+	const handler = createPasswordResetConfirmHandler(
+		createEnv({
+			OAUTH_PROVIDER: helpers,
+		}),
+	)
+
+	const response = await handler.handler({
+		request: new Request('https://example.com/password-reset/confirm', {
+			method: 'POST',
+			body: JSON.stringify({
+				token: 'a'.repeat(64),
+				password: 'new-password-123',
+			}),
+		}),
+		url: new URL('https://example.com/password-reset/confirm'),
+		params: {},
+	})
+
+	expect(response.status).toBe(200)
+	expect(await response.json()).toEqual({ ok: true })
+	expect(helpers.listUserGrants).toHaveBeenCalledWith('a'.repeat(64), {
+		cursor: undefined,
+	})
+	expect(revokedGrantIds).toEqual(['grant-1', 'grant-2'])
+	expect(mockModule.update).toHaveBeenCalledWith(
+		{},
+		123,
+		expect.objectContaining({
+			password_changed_at: expect.any(String),
+		}),
+	)
+	expect(mockModule.deleteMany).toHaveBeenCalled()
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'password_reset_confirm',
+			result: 'success',
+		}),
+	)
+})
+
+test('password reset confirm fails closed when MCP grants cannot be revoked', async () => {
+	vi.clearAllMocks()
+	const handler = createPasswordResetConfirmHandler(
+		createEnv({
+			OAUTH_PROVIDER: {
+				listUserGrants: async () => ({
+					items: [{ id: 'grant-1', clientId: 'client-a' }],
+				}),
+				revokeGrant: async () => {
+					throw new Error('kv unavailable')
+				},
+			},
+		}),
+	)
+
+	const response = await handler.handler({
+		request: new Request('https://example.com/password-reset/confirm', {
+			method: 'POST',
+			body: JSON.stringify({
+				token: 'a'.repeat(64),
+				password: 'new-password-123',
+			}),
+		}),
+		url: new URL('https://example.com/password-reset/confirm'),
+		params: {},
+	})
+
+	expect(response.status).toBe(500)
+	expect(await response.json()).toEqual({
+		error: 'Unable to finish password reset right now.',
+	})
+	expect(mockModule.update).not.toHaveBeenCalled()
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'auth',
+			action: 'password_reset_confirm',
+			result: 'failure',
+			reason: 'kv unavailable',
+		}),
+	)
 })

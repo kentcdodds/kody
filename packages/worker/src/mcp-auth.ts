@@ -19,6 +19,7 @@ import { handleStatelessMcpRequest } from './mcp/stateless-lane.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 import { stampFirstMcpConnected } from '#worker/identity/activation-stamps.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
+import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 
 export const mcpResourcePath = '/mcp'
 export const protectedResourceMetadataPath =
@@ -277,6 +278,20 @@ export async function handleMcpRequest({
 	if (authContext.suspended) {
 		await recordRejection('account_suspended', mcpUser.email)
 		return createAccountSuspendedResponse()
+	}
+
+	// Password reset stamps password_changed_at and revokes grants. Already-
+	// issued access tokens can still unwrap for up to an hour, so reject them
+	// the same way browser cookies die — hosts then refresh, the revoked grant
+	// fails, and they start a new OAuth flow.
+	if (
+		isCredentialInvalidatedByStoredPasswordChange({
+			issuedAtMs: tokenSummary.createdAt * 1000,
+			storedPasswordChangedAt: authContext.passwordChangedAt,
+		})
+	) {
+		await recordRejection('password_changed', mcpUser.email)
+		return createUnauthorizedResponse(origin, 'invalid_token')
 	}
 
 	const props: OAuthContextProps = createMcpCallerContext({
