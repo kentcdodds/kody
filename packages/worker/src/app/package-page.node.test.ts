@@ -193,3 +193,83 @@ test('loadPackagePage applies the owner / community / public visibility matrix',
 		shared: true,
 	})
 })
+
+test('loadPackagePage does not send anonymous visitors to an unpublished listing rename', async () => {
+	const listingLagPackage = {
+		id: 'pkg-1',
+		kodyId: 'notes-two',
+		hidden: false,
+		isPrivate: false,
+	}
+	mockModule.loadCommunityDetailData.mockResolvedValue(listingDetail())
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	mockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'package',
+		username: 'owner',
+		kodyId: 'notes',
+		userId: 'owner-1',
+		savedPackage: listingLagPackage,
+		listingId: 'listing-1',
+		listingKodyId: 'notes',
+	})
+	const anonymousListing = await loadPackagePage({
+		env,
+		request,
+		username: 'owner',
+		kodyId: 'notes',
+	})
+	expect(anonymousListing).toMatchObject({
+		kind: 'page',
+		viewerIsOwner: false,
+		listing: { listing: { id: 'listing-1' } },
+	})
+	expect(anonymousListing).not.toMatchObject({
+		kind: 'redirect',
+		to: '/@owner/notes-two',
+	})
+
+	mockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'package',
+		username: 'owner',
+		kodyId: 'notes-two',
+		userId: 'owner-1',
+		savedPackage: listingLagPackage,
+		listingId: 'listing-1',
+		listingKodyId: 'notes',
+	})
+	await expect(
+		loadPackagePage({
+			env,
+			request,
+			username: 'owner',
+			kodyId: 'notes-two',
+		}),
+	).resolves.toEqual({
+		kind: 'redirect',
+		to: '/@owner/notes',
+		shared: true,
+	})
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(ownerUser())
+	mockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'package',
+		username: 'owner',
+		kodyId: 'notes',
+		userId: 'owner-1',
+		savedPackage: listingLagPackage,
+		listingId: 'listing-1',
+		listingKodyId: 'notes',
+	})
+	await expect(
+		loadPackagePage({
+			env,
+			request,
+			username: 'owner',
+			kodyId: 'notes',
+		}),
+	).resolves.toEqual({
+		kind: 'redirect',
+		to: '/@owner/notes-two',
+		shared: false,
+	})
+})

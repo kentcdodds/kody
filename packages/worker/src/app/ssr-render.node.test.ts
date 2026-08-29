@@ -1792,6 +1792,65 @@ test('unlisted package rename redirects stay owner-only and uncached', async () 
 	expect(ownerRedirect.headers.get('vary')).toBe('x-remix-target, Cookie')
 })
 
+test('listed package rename does not 301 anonymous visitors to the unpublished id', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+	const detailListing = {
+		...sampleListing,
+		id: 'listing-detail-1',
+		kodyId: 'github-triage',
+	} satisfies CommunityListingWithAggregates
+	communityMockModule.getCommunityListingWithAggregates.mockResolvedValue(
+		detailListing,
+	)
+	communityMockModule.getUserSocialRowByUsername.mockResolvedValue({
+		profile_visibility: 'public',
+		stable_user_id: 'owner-mcp-id',
+	})
+	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'package',
+		username: 'kentcdodds',
+		kodyId: 'github-triage',
+		userId: 'owner-mcp-id',
+		savedPackage: {
+			id: 'pkg-1',
+			kodyId: 'github-triage-two',
+			hidden: false,
+			isPrivate: false,
+		},
+		listingId: 'listing-detail-1',
+		listingKodyId: 'github-triage',
+	})
+
+	const listingUrl = await createCommunityPackageHandler(env).handler({
+		request: new Request('https://example.com/@kentcdodds/github-triage'),
+		url: new URL('https://example.com/@kentcdodds/github-triage'),
+		params: { username: 'kentcdodds', kodyId: 'github-triage' },
+	} as never)
+	expect(listingUrl.status).toBe(200)
+	expect(listingUrl.headers.get('location')).toBeNull()
+
+	communityMockModule.resolvePackagePageUrl.mockResolvedValue({
+		kind: 'redirect',
+		username: 'kentcdodds',
+		kodyId: 'github-triage',
+		userId: 'owner-mcp-id',
+		listingId: 'listing-detail-1',
+		listingKodyId: 'github-triage',
+	})
+	const caseCorrect = await createCommunityPackageHandler(env).handler({
+		request: new Request('https://example.com/@KentCDodds/GITHUB-TRIAGE'),
+		url: new URL('https://example.com/@KentCDodds/GITHUB-TRIAGE'),
+		params: { username: 'KentCDodds', kodyId: 'GITHUB-TRIAGE' },
+	} as never)
+	expect(caseCorrect.status).toBe(301)
+	expect(caseCorrect.headers.get('location')).toBe(
+		'https://example.com/@kentcdodds/github-triage',
+	)
+	expect(caseCorrect.headers.get('location')).not.toContain('github-triage-two')
+})
+
 test('renderAppPage renders the redesigned blog post', async () => {
 	resetDataCacheForTests()
 	setAuthSessionSecret(testCookieSecret)

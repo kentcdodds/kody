@@ -46,6 +46,7 @@ export type PackagePageUrlTarget =
 			userId: string
 			savedPackage: SavedPackageRecord | null
 			listingId: string | null
+			listingKodyId: string | null
 	  }
 	| {
 			kind: 'redirect'
@@ -53,6 +54,7 @@ export type PackagePageUrlTarget =
 			kodyId: string
 			userId: string
 			listingId: string | null
+			listingKodyId: string | null
 	  }
 
 // A rename chain collapses in one hop because retirement rows point at the
@@ -187,23 +189,32 @@ export async function resolvePackagePageUrl(input: {
 					listing,
 					savedPackage,
 				})
-				const canonicalKodyId =
-					resolved.savedPackage?.kodyId ?? listing?.kodyId ?? kodyId
+				// Public pair is the listing id until republish. The saved
+				// package's local kody.id can move first and must not become
+				// the shared redirect target.
+				const publicKodyId =
+					resolved.listingKodyId ?? resolved.savedPackage?.kodyId ?? kodyId
+				const servedKodyId =
+					resolved.listingKodyId === kodyId
+						? resolved.listingKodyId
+						: (resolved.savedPackage?.kodyId ?? publicKodyId)
 				return moved
 					? {
 							kind: 'redirect',
 							username: identity.username,
-							kodyId: canonicalKodyId,
+							kodyId: publicKodyId,
 							userId: identity.mcpUserId,
 							listingId: resolved.listingId,
+							listingKodyId: resolved.listingKodyId,
 						}
 					: {
 							kind: 'package',
 							username: identity.username,
-							kodyId: canonicalKodyId,
+							kodyId: servedKodyId,
 							userId: identity.mcpUserId,
 							savedPackage: resolved.savedPackage,
 							listingId: resolved.listingId,
+							listingKodyId: resolved.listingKodyId,
 						}
 			}
 
@@ -233,9 +244,10 @@ export async function resolvePackagePageUrl(input: {
 			return {
 				kind: 'redirect',
 				username: identity.username,
-				kodyId: currentKodyId,
+				kodyId: resolved.listingKodyId ?? currentKodyId,
 				userId: identity.mcpUserId,
 				listingId: resolved.listingId,
+				listingKodyId: resolved.listingKodyId,
 			}
 		}
 
@@ -282,6 +294,7 @@ async function resolveListingAndSavedPackage(input: {
 	}
 	return {
 		listingId: listing?.id ?? null,
+		listingKodyId: listing?.kodyId ?? null,
 		savedPackage,
 	}
 }

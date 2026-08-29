@@ -30,6 +30,10 @@ function isPublicSavedPackage(pkg: { hidden: boolean; isPrivate: boolean }) {
 	return !pkg.hidden && !pkg.isPrivate
 }
 
+function sameKodyId(left: string, right: string) {
+	return left.trim().toLowerCase() === right.trim().toLowerCase()
+}
+
 export async function loadPackagePage(input: {
 	env: Env
 	request: Request
@@ -54,19 +58,49 @@ export async function loadPackagePage(input: {
 		if (!target.listingId && !viewerOwnsRedirect) {
 			return { kind: 'not_found' }
 		}
+		const listingKodyId = target.listingKodyId
+		const shared =
+			Boolean(target.listingId) &&
+			(listingKodyId == null || sameKodyId(target.kodyId, listingKodyId))
 		return {
 			kind: 'redirect',
 			to: getCommunityPackageHref({
 				username: target.username,
 				kodyId: target.kodyId,
 			}),
-			// Listing moves are public. Unlisted renames are owner-only and
-			// must not land in a shared cache.
-			shared: Boolean(target.listingId),
+			// Shared caches may only store hops to the listing public pair.
+			shared,
 		}
 	}
 
 	const viewerIsOwner = viewerUserId != null && viewerUserId === target.userId
+	const listingKodyId = target.listingKodyId
+	const savedKodyId = target.savedPackage?.kodyId ?? null
+	if (listingKodyId && savedKodyId && !sameKodyId(listingKodyId, savedKodyId)) {
+		// Listing kody_id lags a local rename until republish. Owners may
+		// hop to the unpublished pair; visitors stay on (or return to) the
+		// listing URL.
+		if (viewerIsOwner && sameKodyId(input.kodyId, listingKodyId)) {
+			return {
+				kind: 'redirect',
+				to: getCommunityPackageHref({
+					username: target.username,
+					kodyId: savedKodyId,
+				}),
+				shared: false,
+			}
+		}
+		if (!viewerIsOwner && sameKodyId(input.kodyId, savedKodyId)) {
+			return {
+				kind: 'redirect',
+				to: getCommunityPackageHref({
+					username: target.username,
+					kodyId: listingKodyId,
+				}),
+				shared: true,
+			}
+		}
+	}
 	const invocationUrlOrigin = getAppBaseUrl({
 		env: input.env,
 		requestUrl: input.request.url,

@@ -428,9 +428,10 @@ test('package page URL attaches the saved package when listing kody id lags a re
 	).resolves.toMatchObject({
 		kind: 'package',
 		username: pkg.username,
-		kodyId: 'listing-lag-two',
+		kodyId: pkg.kodyId,
 		userId: pkg.userId,
 		listingId: pkg.listingId,
+		listingKodyId: pkg.kodyId,
 		savedPackage: { id: pkg.packageId, kodyId: 'listing-lag-two' },
 	})
 	await expect(
@@ -445,6 +446,20 @@ test('package page URL attaches the saved package when listing kody id lags a re
 		kodyId: 'listing-lag-two',
 		userId: pkg.userId,
 		listingId: pkg.listingId,
+		listingKodyId: pkg.kodyId,
 		savedPackage: { id: pkg.packageId, kodyId: 'listing-lag-two' },
+	})
+	await expect(
+		resolvePackagePageUrl({
+			db: env.APP_DB,
+			username: pkg.username.toUpperCase(),
+			kodyId: pkg.kodyId.toUpperCase(),
+		}),
+	).resolves.toMatchObject({
+		kind: 'redirect',
+		username: pkg.username,
+		kodyId: pkg.kodyId,
+		listingId: pkg.listingId,
+		listingKodyId: pkg.kodyId,
 	})
 })
