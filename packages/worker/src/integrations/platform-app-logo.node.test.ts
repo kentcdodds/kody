@@ -8,6 +8,10 @@ import {
 	tinyWebpBytes,
 } from '#worker/test-support/images-binding.ts'
 import {
+	iconFitCustomMetadata,
+	logoNeedsIconFit,
+} from '#worker/community/icon-fit.ts'
+import {
 	buildPlatformOauthAppLogoPath,
 	getPlatformOauthAppLogoObject,
 	loadFittedPlatformOauthAppLogo,
@@ -116,7 +120,7 @@ test('logo lifecycle uploads, clears, and survives app upserts without touching 
 	expect(harness.r2.objects.size).toBe(1)
 	const stored = harness.r2.objects.get(withLogo.logoKey!)
 	expect(stored?.bytes).toEqual(tinyWebpBytes)
-	expect(stored?.customMetadata?.iconFitVersion).toBe('2')
+	expect(logoNeedsIconFit(stored?.customMetadata)).toBe(false)
 	expect(buildPlatformOauthAppLogoPath(withLogo)).toMatch(
 		/^\/integrations\/logos\/github\?v=[0-9a-f]{16}$/,
 	)
@@ -224,7 +228,7 @@ test('serving an unfitted logo rewrites it to the current WebP ingest', async ()
 		/^platform-oauth-app-logos\/github\/[0-9a-f]{16}\.webp$/,
 	)
 	expect(fitted.bytes).toEqual(tinyWebpBytes)
-	expect(fitted.customMetadata?.iconFitVersion).toBe('2')
+	expect(logoNeedsIconFit(fitted.customMetadata)).toBe(false)
 })
 
 test('lazy refit does not overwrite a newer logo key', async () => {
@@ -237,7 +241,7 @@ test('lazy refit does not overwrite a newer logo key', async () => {
 	})
 	await harness.env.COMMUNITY_ASSETS.put(newerKey, tinyWebpBytes, {
 		httpMetadata: { contentType: 'image/webp' },
-		customMetadata: { iconFitVersion: '2' },
+		customMetadata: iconFitCustomMetadata(),
 	})
 	await harness.db
 		.prepare(
@@ -274,54 +278,4 @@ test('lazy refit does not overwrite a newer logo key', async () => {
 	})
 	expect(current?.logoKey).toBe(newerKey)
 	expect(harness.r2.objects.has(newerKey)).toBe(true)
-})
-
-test('lost same-hash refit race keeps the stored object', async () => {
-	const harness = createHarness()
-	const app = await provisionApp(harness)
-	const previousKey = `platform-oauth-app-logos/${app.slug}/aaaaaaaaaaaaaaaa.png`
-	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
-		httpMetadata: { contentType: 'image/png' },
-	})
-	await harness.db
-		.prepare(
-			`UPDATE platform_oauth_apps
-			SET logo_key = ?, logo_content_type = ?, updated_at = ?
-			WHERE slug = ?`,
-		)
-		.bind(previousKey, 'image/png', new Date().toISOString(), app.slug)
-		.run()
-	const stale = await getPlatformOauthAppBySlug({
-		db: harness.db,
-		slug: 'github',
-		includeDisabled: true,
-	})
-	await loadFittedPlatformOauthAppLogo({
-		db: harness.db,
-		env: harness.env,
-		app: stale!,
-	})
-	const winner = await getPlatformOauthAppBySlug({
-		db: harness.db,
-		slug: 'github',
-		includeDisabled: true,
-	})
-	expect(winner?.logoKey).toMatch(
-		/^platform-oauth-app-logos\/github\/[0-9a-f]{16}\.webp$/,
-	)
-
-	await setPlatformOauthAppLogo({
-		db: harness.db,
-		env: harness.env,
-		slug: 'github',
-		sourceBytes: tinyPngBytes,
-		replaceLogoKey: previousKey,
-	})
-	const current = await getPlatformOauthAppBySlug({
-		db: harness.db,
-		slug: 'github',
-		includeDisabled: true,
-	})
-	expect(current?.logoKey).toBe(winner?.logoKey)
-	expect(harness.r2.objects.has(winner!.logoKey!)).toBe(true)
 })

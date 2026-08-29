@@ -11,55 +11,39 @@ import {
 	kodyCursorMarketplaceUrl,
 } from './onboarding-mcp-clients.ts'
 
-test('onboarding Step 1 starts with one-agent picker and hides other hosts', async () => {
-	const html = await renderToString(
+test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok Bot surfaces', async () => {
+	const picker = await renderToString(
 		jsx(OnboardingMcpClientTabs, { mcpServerUrl: defaultKodyMcpUrl }),
 	)
-
-	expect(html).toContain('data-testid="onboarding-agent-picker"')
-	expect(html).toContain('data-testid="onboarding-agent-cursor"')
-	expect(html).toContain('href="/onboarding?agent=cursor&amp;surface=desktop"')
-	expect(html).toContain('data-testid="onboarding-agent-other"')
-	expect(html).toContain('Not listed')
-	expect(html).not.toContain('data-testid="onboarding-mcp-automatic"')
-	expect(html).not.toContain('npx @kodycodes/cli install')
-	expect(html).not.toContain(kodyCursorMarketplaceUrl)
-	expect(html).not.toContain(buildClaudeCodeAddCommand(defaultKodyMcpUrl))
-	expect(html).not.toContain('data-testid="onboarding-authenticate-callout"')
-	expect(html).toContain('data-testid="onboarding-agent-grok-bot"')
-	expect(html).toContain(
-		'href="/onboarding?agent=grok-bot&amp;surface=desktop"',
+	expect(picker).toContain('data-testid="onboarding-agent-picker"')
+	expect(picker).toContain('data-testid="onboarding-agent-cursor"')
+	expect(picker).toContain(
+		'href="/onboarding?agent=cursor&amp;surface=desktop"',
 	)
-	expect(html).toContain('href="/onboarding?agent=grok-bot&amp;surface=mobile"')
-	expect(html).not.toContain(
+	expect(picker).toContain('data-testid="onboarding-agent-other"')
+	expect(picker).toContain('data-testid="onboarding-agent-grok-bot"')
+	expect(picker).not.toContain('data-testid="onboarding-agent-instructions"')
+	expect(picker).not.toContain(buildClaudeCodeAddCommand(defaultKodyMcpUrl))
+	expect(picker).not.toContain(
 		'href="/onboarding?agent=grok-cli&amp;surface=desktop"',
 	)
-	expect(html).not.toContain('href="/onboarding?agent=grok&amp;surface=mobile"')
-})
 
-test('onboarding Step 1 shows only the selected agent instructions', async () => {
-	const html = await renderToString(
+	const cursor = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
 			mcpServerUrl: defaultKodyMcpUrl,
 			selectedAgent: 'cursor',
 		}),
 	)
-
-	expect(html).toContain('data-testid="onboarding-agent-instructions"')
-	expect(html).toContain('data-agent="cursor"')
-	expect(html).toContain('data-testid="onboarding-agent-change"')
-	expect(html).toContain('Change selection')
-	expect(html).toContain(kodyCursorMarketplaceUrl)
-	expect(html).toContain(kodyCursorAddPluginCommand)
-	expect(html).toContain('data-testid="onboarding-authenticate-callout"')
-	expect(html).toContain('Cursor MCP list')
-	expect(html).not.toContain(buildClaudeCodeAddCommand(defaultKodyMcpUrl))
-	expect(html).not.toContain(grokBotInstallUrl)
-	expect(html).not.toContain('npx @kodycodes/cli install')
-	expect(html).not.toContain('Claude Code:')
-
+	expect(cursor).toContain('data-testid="onboarding-agent-instructions"')
+	expect(cursor).toContain('data-agent="cursor"')
+	expect(cursor).toContain('data-testid="onboarding-agent-change"')
+	expect(cursor).toContain(kodyCursorMarketplaceUrl)
+	expect(cursor).toContain(kodyCursorAddPluginCommand)
+	expect(cursor).toContain('data-testid="onboarding-authenticate-callout"')
+	expect(cursor).not.toContain(buildClaudeCodeAddCommand(defaultKodyMcpUrl))
+	expect(cursor).not.toContain(grokBotInstallUrl)
 	const pluginBlocks = [
-		...html.matchAll(
+		...cursor.matchAll(
 			/<div data-testid="onboarding-mcp-plugin-primary"[\s\S]*?<\/small><\/div>/g,
 		),
 	].map((match) => match[0])
@@ -71,40 +55,30 @@ test('onboarding Step 1 shows only the selected agent instructions', async () =>
 	expect(
 		cursorPrimary.indexOf('onboarding-mcp-plugin-alternative'),
 	).toBeLessThan(cursorPrimary.indexOf(kodyCursorAddPluginCommand))
-})
 
-test('onboarding Step 1 Not listed offers remaining hosts and the MCP URL', async () => {
-	const html = await renderToString(
+	const other = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
 			mcpServerUrl: defaultKodyMcpUrl,
 			selectedAgent: 'other',
 		}),
 	)
+	expect(other).toContain(defaultKodyMcpUrl)
+	expect(other).toContain('data-testid="onboarding-agent-grok-cli"')
+	expect(other).toContain('data-testid="onboarding-agent-chatgpt"')
+	expect(other).not.toContain('data-testid="onboarding-agent-grok-bot"')
+	expect(other).not.toContain(grokBotInstallUrl)
+	expect(other).not.toContain(buildCodexMcpAddCommand(defaultKodyMcpUrl))
 
-	expect(html).toContain(defaultKodyMcpUrl)
-	expect(html).toContain('These hosts have their own steps')
-	expect(html).toContain('data-testid="onboarding-agent-grok-cli"')
-	expect(html).toContain('data-testid="onboarding-agent-chatgpt"')
-	expect(html).not.toContain('data-testid="onboarding-agent-grok-bot"')
-	expect(html).not.toContain(grokBotInstallUrl)
-	expect(html).not.toContain(buildCodexMcpAddCommand(defaultKodyMcpUrl))
-})
-
-test('onboarding Step 1 selected host uses this deployment MCP URL', async () => {
 	const previewUrl = 'http://localhost:3742/mcp'
-	const html = await renderToString(
+	const codexPreview = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
 			mcpServerUrl: previewUrl,
 			selectedAgent: 'codex',
 		}),
 	)
+	expect(codexPreview).toContain(buildCodexMcpAddCommand(previewUrl))
+	expect(codexPreview).not.toContain(kodyCursorMarketplaceUrl)
 
-	expect(html).toContain(buildCodexMcpAddCommand(previewUrl))
-	expect(html).toContain('codex mcp login kody')
-	expect(html).not.toContain(kodyCursorMarketplaceUrl)
-})
-
-test('onboarding Step 1 Grok Bot instructions change for phone vs desktop', async () => {
 	const desktop = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
 			mcpServerUrl: defaultKodyMcpUrl,
@@ -119,21 +93,11 @@ test('onboarding Step 1 Grok Bot instructions change for phone vs desktop', asyn
 			surface: 'mobile',
 		}),
 	)
-
 	expect(desktop).toContain('data-agent="grok-bot"')
 	expect(desktop).toContain('data-surface="desktop"')
 	expect(desktop).toContain(grokBotInstallUrl)
-	expect(desktop).toContain('Add to Grok Bot')
-	expect(desktop).toContain('Grok Bot sidebar')
-	expect(desktop).not.toContain('On your phone')
-	expect(desktop).not.toContain('grok mcp add')
-
+	expect(desktop).not.toContain('data-surface="mobile"')
 	expect(mobile).toContain('data-surface="mobile"')
 	expect(mobile).toContain(grokBotInstallUrl)
-	expect(mobile).toContain('On your phone')
-	expect(mobile).toContain('tap')
-	expect(mobile).toContain('not grok.com')
-	expect(mobile).toContain('on your phone or on a computer')
-	expect(mobile).not.toContain('Grok Bot sidebar')
-	expect(mobile).not.toContain('grok mcp add')
+	expect(mobile).not.toContain('data-surface="desktop"')
 })

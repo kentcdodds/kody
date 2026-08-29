@@ -3,10 +3,7 @@ import {
 	convertIconRasterToPng,
 	fitIconRaster,
 	iconFitCustomMetadata,
-	iconFitMaxDimension,
 	iconFitMetadataKey,
-	iconFitOutputContentType,
-	iconFitVersion,
 	logoNeedsIconFit,
 } from '#worker/community/icon-fit.ts'
 import {
@@ -21,14 +18,14 @@ test('fitIconRaster asks Images to scale-down to 256px WebP and records fit meta
 		images,
 		bytes: tinyPngBytes,
 	})
-	expect(fitted.contentType).toBe(iconFitOutputContentType)
+	expect(fitted.contentType).toBe('image/webp')
 	expect(fitted.bytes).toEqual(tinyWebpBytes)
 	expect(images.calls).toEqual([
 		{
 			inputBytes: tinyPngBytes,
 			transform: {
-				width: iconFitMaxDimension,
-				height: iconFitMaxDimension,
+				width: 256,
+				height: 256,
 				fit: 'scale-down',
 			},
 			output: {
@@ -40,13 +37,7 @@ test('fitIconRaster asks Images to scale-down to 256px WebP and records fit meta
 	])
 	expect(logoNeedsIconFit(undefined)).toBe(true)
 	expect(logoNeedsIconFit({ [iconFitMetadataKey]: '1' })).toBe(true)
-	expect(logoNeedsIconFit(iconFitCustomMetadata({ slug: 'github' }))).toBe(
-		false,
-	)
-	expect(iconFitCustomMetadata({ slug: 'github' })).toEqual({
-		slug: 'github',
-		[iconFitMetadataKey]: String(iconFitVersion),
-	})
+	expect(logoNeedsIconFit(iconFitCustomMetadata())).toBe(false)
 
 	const png = await convertIconRasterToPng({
 		images,

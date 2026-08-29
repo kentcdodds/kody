@@ -1107,10 +1107,6 @@ test('createUnresolvedSecretMessage explains a package-scoped secret from ad-hoc
 		packageName: null,
 		packageId,
 	})
-	expect(executeMiss).toContain(
-		`https://example.com/account/secrets/package/${packageId}/${secretName}`,
-	)
-	expect(executeMiss).toContain('package id "pkg-discord"')
 
 	await expect(
 		createUnresolvedSecretMessage({

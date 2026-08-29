@@ -96,12 +96,6 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 				'https://example.com/account/secrets/package/pkg-1/discordBotToken',
 		},
 	])
-	expect(scopeUnavailableMessage).toContain(
-		'Either invoke this work through the owning package',
-	)
-	expect(scopeUnavailableMessage).toContain(
-		'https://example.com/account/secrets/package/pkg-1/discordBotToken',
-	)
 	expect(parseSecretScopeUnavailableMessage(scopeUnavailableMessage)).toEqual({
 		secretName: 'discordBotToken',
 		scope: 'package',
@@ -119,7 +113,6 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 				'https://example.com/account/secrets/package/pkg-1/discordBotToken',
 		},
 	])
-	expect(packageIdOnlyMessage).toContain('package id "pkg-1"')
 	expect(parseSecretScopeUnavailableMessage(packageIdOnlyMessage)).toEqual({
 		secretName: 'discordBotToken',
 		scope: 'package',

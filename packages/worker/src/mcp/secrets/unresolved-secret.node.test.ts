@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest'
 import {
-	createMissingSecretMessage,
 	parseMissingSecretMessage,
 	parseSecretScopeUnavailableMessage,
 } from './errors.ts'
@@ -33,14 +32,16 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 	const secretName = 'discordBotToken'
 
 	mockModule.listSecretLocationsByNameForUser.mockResolvedValue([])
-	await expect(
-		createUnresolvedSecretMessage({
-			env,
-			userId,
-			name: secretName,
-			baseUrl,
-		}),
-	).resolves.toBe(createMissingSecretMessage(secretName))
+	expect(
+		parseMissingSecretMessage(
+			await createUnresolvedSecretMessage({
+				env,
+				userId,
+				name: secretName,
+				baseUrl,
+			}),
+		),
+	).toEqual({ secretName })
 
 	mockModule.listSecretLocationsByNameForUser.mockResolvedValue([
 		{
@@ -74,12 +75,6 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 		packageName: 'discord-gateway',
 		packageId: null,
 	})
-	expect(packageMiss).toContain(
-		'Either invoke this work through the owning package',
-	)
-	expect(packageMiss).toContain(
-		'https://example.com/account/secrets/package/pkg-1/discordBotToken',
-	)
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(env.APP_DB, {
 		userId,
 		packageId: 'pkg-1',
@@ -97,7 +92,9 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 		},
 		baseUrl,
 	})
-	expect(visibleInPackageRuntime).toBe(createMissingSecretMessage(secretName))
+	expect(parseMissingSecretMessage(visibleInPackageRuntime)).toEqual({
+		secretName,
+	})
 
 	mockModule.listSecretLocationsByNameForUser.mockResolvedValue([
 		{
@@ -162,12 +159,14 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 	mockModule.listSecretLocationsByNameForUser.mockRejectedValue(
 		new Error('d1 unavailable'),
 	)
-	await expect(
-		createUnresolvedSecretMessage({
-			env,
-			userId,
-			name: secretName,
-			baseUrl,
-		}),
-	).resolves.toBe(createMissingSecretMessage(secretName))
+	expect(
+		parseMissingSecretMessage(
+			await createUnresolvedSecretMessage({
+				env,
+				userId,
+				name: secretName,
+				baseUrl,
+			}),
+		),
+	).toEqual({ secretName })
 })

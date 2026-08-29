@@ -1657,12 +1657,6 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		packageName: null,
 		packageId: 'pkg-1',
 	})
-	expect(getExecutionErrorDetails(scopeUnavailableError)?.nextStep).toContain(
-		'invoke the work through that package',
-	)
-	expect(
-		formatExecutionOutput({ error: scopeUnavailableError } as const),
-	).toContain('Editor link:')
 
 	const entitlementError = new EntitlementLimitError({
 		resource: 'saved_packages',

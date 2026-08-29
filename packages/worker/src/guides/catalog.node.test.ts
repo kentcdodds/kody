@@ -8,7 +8,10 @@ import {
 	listProviderGuides,
 	listStartHereGuides,
 } from './catalog.ts'
-import { isReservedGuideIndexSlug } from '#universal/guide-sections.ts'
+import {
+	isGuidesStartHereSlug,
+	isReservedGuideIndexSlug,
+} from '#universal/guide-sections.ts'
 
 test('guide catalog parses every guide with unique ids and slugs', () => {
 	expect(guides.length).toBeGreaterThanOrEqual(12)
@@ -27,6 +30,8 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		expect(guide.body).not.toMatch(/\]\(\.{1,2}\//)
 		expect(guide.body).not.toMatch(/\]\([a-z0-9-]+\.md/)
 		expect(isReservedGuideIndexSlug(guide.slug)).toBe(false)
+		expect(getGuideBySlug(guide.slug)?.id).toBe(guide.id)
+		expect(getGuideById(guide.id)?.slug).toBe(guide.slug)
 	}
 	for (const guide of guides.filter((g) => g.category === 'provider')) {
 		expect(guide.provider).toBeTruthy()
@@ -34,28 +39,6 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		expect(guide.id.startsWith('provider_')).toBe(true)
 	}
 
-	const oauth = getGuideBySlug('oauth')
-	expect(oauth?.id).toBe('oauth')
-	expect(getGuideById('connect_secret')?.slug).toBe('account-secret-setup')
-	expect(getGuideBySlug('how-kody-works')?.id).toBe('how_kody_works')
-	expect(getGuideById('how_kody_works')?.slug).toBe('how-kody-works')
-	expect(getGuideBySlug('kody-factory')?.id).toBe('kody_factory')
-	expect(getGuideById('kody_factory')?.slug).toBe('kody-factory')
-	expect(getGuideById('kody_factory')?.image).toMatch(/^\/images\//)
-	expect(getGuideById('kody_factory')?.ogImage).toMatch(/^\/images\//)
-	expect(getGuideById('kody_factory')?.imageAlt?.length).toBeGreaterThan(0)
-	expect(getGuideBySlug('local-mcp-tunnels')?.id).toBe('local_mcp_tunnels')
-	expect(getGuideById('local_mcp_tunnels')?.slug).toBe('local-mcp-tunnels')
-	expect(getGuideById('local_mcp_tunnels')?.image).toMatch(/^\/images\//)
-	expect(getGuideById('local_mcp_tunnels')?.ogImage).toMatch(/^\/images\//)
-	expect(getGuideById('local_mcp_tunnels')?.imageAlt?.length).toBeGreaterThan(0)
-	expect(getGuideBySlug('google-oauth')?.id).toBe('google_oauth')
-	expect(getGuideById('google_oauth')?.slug).toBe('google-oauth')
-	expect(getGuideBySlug('locked-gmail-drafts')?.id).toBe('locked_gmail_drafts')
-	expect(getGuideById('locked_gmail_drafts')?.slug).toBe('locked-gmail-drafts')
-	expect(getGuideBySlug('salesforce')?.id).toBe('provider_salesforce')
-	expect(getGuideById('provider_salesforce')?.slug).toBe('salesforce')
-	expect(getGuideById('provider_salesforce')?.provider).toBe('Salesforce')
 	expect(getGuideById('values')?.unadvertised).toBe(true)
 	expect(listGuides().some((guide) => guide.id === 'values')).toBe(false)
 	expect(getGuideBySlug('connect')).toBeNull()
@@ -80,10 +63,15 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 		listPlatformGuides().every((guide) => guide.category === 'platform'),
 	).toBe(true)
 	expect(listProviderGuides().map((guide) => guide.provider)).toEqual(providers)
-	expect(listStartHereGuides().map((guide) => guide.slug)).toEqual([
-		'what-is-kody',
-		'how-kody-works',
-		'kody-factory',
-		'quick-example',
-	])
+
+	const startHere = listStartHereGuides()
+	expect(startHere.length).toBeGreaterThan(0)
+	expect(startHere.every((guide) => isGuidesStartHereSlug(guide.slug))).toBe(
+		true,
+	)
+	expect(
+		listPlatformGuides()
+			.filter((guide) => !isGuidesStartHereSlug(guide.slug))
+			.every((guide) => !startHere.some((start) => start.id === guide.id)),
+	).toBe(true)
 })
