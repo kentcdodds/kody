@@ -86,9 +86,13 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   `handleErrorEvent` so a request-scoped ProxyWorker failure is logged instead
   of exiting `wrangler dev` (workers-sdk#14926; same exemption as pending #15207
   / #15252). Playwright also keeps wrangler's default incoming-body drain
-  enabled so unused proxy tees do not kill the isolate. On CI, the `🎭 E2E` job
-  uploads `logs.local/` as the `e2e-wrangler-logs` artifact when the suite
-  fails.
+  enabled so unused proxy tees do not kill the isolate. `wrangler-env.ts` and
+  the Playwright webServer set `X_LOCAL_EXPLORER=false` because wrangler 4.127+
+  starts Miniflare's local explorer by default; on Cloud Agent / CI hosts,
+  explorer writes under `.wrangler/tmp` retrigger esbuild and leave ProxyWorker
+  in a pause/reload loop after Ready. Opt in with `X_LOCAL_EXPLORER=true`. On
+  CI, the `🎭 E2E` job uploads `logs.local/` as the `e2e-wrangler-logs` artifact
+  when the suite fails.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
   assets, KV, and durable objects since these are not inherited from top-level
   Wrangler config.

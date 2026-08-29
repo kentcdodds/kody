@@ -226,6 +226,15 @@ const processEnv = {
 	...process.env,
 	CLOUDFLARE_ENV: envName,
 	...(resolvedPort ? { PORT: resolvedPort } : {}),
+	...(isDevCommand
+		? {
+				// Wrangler 4.127+ enables Miniflare's local explorer by default.
+				// On Cloud Agent / CI hosts, explorer writes under `.wrangler/tmp`
+				// retrigger esbuild and leave ProxyWorker in a pause/reload
+				// loop. Opt in with X_LOCAL_EXPLORER=true.
+				X_LOCAL_EXPLORER: process.env.X_LOCAL_EXPLORER ?? 'false',
+			}
+		: {}),
 	...(envName === 'test'
 		? {
 				X_LOCAL_OBSERVABILITY: process.env.X_LOCAL_OBSERVABILITY ?? 'false',

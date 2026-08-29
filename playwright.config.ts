@@ -52,6 +52,10 @@ export default defineConfig({
 			// `wrangler dev`. The extra collector/tail services have crashed the
 			// Playwright webServer mid-suite here; opt out for e2e stability.
 			X_LOCAL_OBSERVABILITY: 'false',
+			// Wrangler 4.127+ local explorer writes under `.wrangler/tmp` on
+			// Cloud Agent / CI hosts, retriggers esbuild, and leaves
+			// ProxyWorker in a pause/reload loop after Ready.
+			X_LOCAL_EXPLORER: 'false',
 			// Reduce ProxyWorker "Network connection lost" flakes under e2e load.
 			WRANGLER_CI_DISABLE_CONFIG_WATCHING: 'true',
 		},
