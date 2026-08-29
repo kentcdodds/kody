@@ -5,7 +5,7 @@
 	// content/UI deploys of the origin script do not reset those objects.
 	// The entry module lives in packages/worker/src/platform-worker.ts so
 	// the shared source tree, `#worker`/`#app` import maps, and the
-	// pre-bundled `src/generated/` modules resolve identically to the
+	// pre-bundled generated modules resolve identically to the
 	// origin Worker.
 	"name": "kody-platform",
 	"compatibility_date": "2026-04-16",
@@ -28,8 +28,10 @@
 	"upload_source_maps": true,
 	// Mirrors packages/worker/wrangler.jsonc: the module-graph builders
 	// dynamically import the pre-bundled worker-bundler modules from
-	// `packages/worker/src/generated/` (base_dir defaults to the entry
-	// module's directory, which is packages/worker/src).
+	// `packages/worker/src/node_modules/.kody-generated/` (base_dir
+	// defaults to the entry module's directory, which is
+	// packages/worker/src). That `node_modules/` prefix keeps wrangler's
+	// additional-module watcher off `esbuild.wasm` (Friction #1789).
 	"find_additional_modules": true,
 	"rules": [
 		{
@@ -39,12 +41,17 @@
 		},
 		{
 			"type": "ESModule",
-			"globs": ["generated/*.mjs", "./generated/*.mjs"],
+			"globs": [
+				"generated/*.mjs",
+				"./generated/*.mjs",
+				"node_modules/.kody-generated/*.mjs",
+				"./node_modules/.kody-generated/*.mjs",
+			],
 			"fallthrough": true,
 		},
 		{
 			"type": "CompiledWasm",
-			"globs": ["generated/*.wasm"],
+			"globs": ["node_modules/.kody-generated/*.wasm"],
 			"fallthrough": true,
 		},
 	],

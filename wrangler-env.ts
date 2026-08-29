@@ -101,9 +101,10 @@ if (
 	}
 }
 
-// The main worker config references pre-bundled modules in `src/generated/`
-// (see tools/build-worker-bundler-modules.ts and
-// tools/build-guide-catalog-modules.ts), so make sure they exist before any
+// The main worker config references pre-bundled modules in
+// `packages/worker/.generated/` (worker-bundler) and `src/generated/`
+// (guide catalog); see tools/build-worker-bundler-modules.ts and
+// tools/build-guide-catalog-modules.ts. Make sure they exist before any
 // wrangler command that builds the worker. Skipped for explicit `--config`
 // invocations (mock servers, backup control plane) which don't use them —
 // except the runtime worker, whose entry module lives in the same source
@@ -148,8 +149,9 @@ if (
 	!args.some((arg) => arg.startsWith('--live-reload='))
 ) {
 	// Playwright / MCP e2e do not edit worker source. HTML live-reload
-	// still arms a watcher that has looped on `generated/esbuild.wasm`
-	// on Cloud Agent VMs (Friction #1789).
+	// still arms wrangler's additional-module watcher; bundler wasm lives
+	// under `src/node_modules/.kody-generated/` so that watcher skips it
+	// (Friction #1789).
 	commandArgs.push('--live-reload', 'false')
 }
 

@@ -41,10 +41,12 @@
 	"upload_source_maps": true,
 	// `find_additional_modules` uploads files matching `rules` (below `base_dir`,
 	// which defaults to `./src`) as separate external modules instead of inlining
-	// them into the main module. The pre-bundled worker-bundler modules in
-	// `src/generated/` (built by `tools/build-worker-bundler-modules.ts`) rely on
-	// this so their ~4 MB only loads when repo checks dynamically import them,
-	// instead of being parsed and evaluated on every isolate cold start.
+	// them into the main module. The pre-bundled worker-bundler modules
+	// (`src/node_modules/.kody-generated/`, built by
+	// `tools/build-worker-bundler-modules.ts`) and the guide catalog
+	// (`src/generated/`) rely on this so their payloads only load when those
+	// paths dynamically import them, instead of being parsed and evaluated on
+	// every isolate cold start.
 	"find_additional_modules": true,
 	"rules": [
 		{
@@ -64,16 +66,28 @@
 			// Both spellings are required: the bare glob matches file names during
 			// the on-disk traversal that discovers additional modules, while the
 			// `./`-prefixed glob matches the import specifier so wrangler keeps
-			// `import('./generated/…')` external instead of inlining it. Single-star
-			// globs on purpose: wrangler's specifier matcher converts globs without
-			// globstar support, so `**/*` can never match a flat specifier.
+			// `import('./generated/…')` / `import('./node_modules/.kody-generated/…')`
+			// external instead of inlining it. Single-star globs on purpose:
+			// wrangler's specifier matcher converts globs without globstar
+			// support, so `**/*` can never match a flat specifier.
+			//
+			// Worker-bundler lives under `src/node_modules/.kody-generated/`
+			// (hardlinked from `packages/worker/.generated/`) so wrangler's
+			// additional-module watcher — which skips `node_modules` — does not
+			// loop on `esbuild.wasm` create events (Friction #1789). Guide
+			// catalog stays in `src/generated/`.
 			"type": "ESModule",
-			"globs": ["generated/*.mjs", "./generated/*.mjs"],
+			"globs": [
+				"generated/*.mjs",
+				"./generated/*.mjs",
+				"node_modules/.kody-generated/*.mjs",
+				"./node_modules/.kody-generated/*.mjs",
+			],
 			"fallthrough": true,
 		},
 		{
 			"type": "CompiledWasm",
-			"globs": ["generated/*.wasm"],
+			"globs": ["node_modules/.kody-generated/*.wasm"],
 			"fallthrough": true,
 		},
 	],

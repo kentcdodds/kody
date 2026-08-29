@@ -11,8 +11,8 @@ package invocation API, dynamic callable workflows (`DynamicCallableWorkflow`),
 The Worker entry module is
 [`packages/worker/src/runtime-worker.ts`](../worker/src/runtime-worker.ts): the
 runtime lane shares the main Worker's source tree, import maps, and pre-bundled
-`src/generated/` modules, so this package holds only the deploy configuration.
-The entry module is typechecked and tested through the `worker` Nx project.
+generated modules, so this package holds only the deploy configuration. The
+entry module is typechecked and tested through the `worker` Nx project.
 
 - `wrangler.jsonc` — the committed base config (script name `kody-runtime`).
   Deployable configs are generated from it plus the main Worker's generated
