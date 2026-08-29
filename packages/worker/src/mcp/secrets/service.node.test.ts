@@ -1104,7 +1104,8 @@ test('createUnresolvedSecretMessage explains a package-scoped secret from ad-hoc
 	expect(parseSecretScopeUnavailableMessage(executeMiss)).toEqual({
 		secretName,
 		scope: 'package',
-		packageName: packageId,
+		packageName: null,
+		packageId,
 	})
 	expect(executeMiss).toContain(
 		`https://example.com/account/secrets/package/${packageId}/${secretName}`,

@@ -1204,6 +1204,7 @@ export type ExecutionErrorDetails =
 			secretNames: Array<string>
 			scope: SecretScope
 			packageName: string | null
+			packageId: string | null
 			editorUrl: string | null
 			suggestedAction: {
 				type: 'edit_secret_policy'
@@ -1468,6 +1469,7 @@ export function getExecutionErrorDetails(
 			secretNames: [scopeUnavailableDetails.secretName],
 			scope: scopeUnavailableDetails.scope,
 			packageName: scopeUnavailableDetails.packageName,
+			packageId: scopeUnavailableDetails.packageId,
 			editorUrl,
 			suggestedAction: {
 				type: 'edit_secret_policy',

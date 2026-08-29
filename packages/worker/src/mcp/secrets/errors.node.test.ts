@@ -106,6 +106,25 @@ test('secret error message helpers parse auth, missing-secret, and approval payl
 		secretName: 'discordBotToken',
 		scope: 'package',
 		packageName: 'discord-gateway',
+		packageId: null,
+	})
+	const packageIdOnlyMessage = createSecretScopeUnavailableMessage([
+		{
+			secretName: 'discordBotToken',
+			scope: 'package',
+			packageId: 'pkg-1',
+			packageName: null,
+			sessionId: null,
+			editorUrl:
+				'https://example.com/account/secrets/package/pkg-1/discordBotToken',
+		},
+	])
+	expect(packageIdOnlyMessage).toContain('package id "pkg-1"')
+	expect(parseSecretScopeUnavailableMessage(packageIdOnlyMessage)).toEqual({
+		secretName: 'discordBotToken',
+		scope: 'package',
+		packageName: null,
+		packageId: 'pkg-1',
 	})
 	expect(parseMissingSecretMessage(scopeUnavailableMessage)).toBeNull()
 	expect(

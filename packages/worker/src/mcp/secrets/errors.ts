@@ -11,7 +11,7 @@ const hostBatchDeniedPrefix = 'Secrets require host approval:'
 const packageBatchDeniedPrefix = 'Secrets require package approval:'
 const missingSecretRegex = /^Secret "([^"]+)" was not found\.$/
 const secretScopeUnavailableRegex =
-	/^Secret "([^"]+)" exists in (session|package|user) scope(?: for package(?: id)? "([^"]+)")?/
+	/^Secret "([^"]+)" exists in (session|package|user) scope(?: for package( id)? "([^"]+)")?/
 
 export const fetchSecretAuthRequiredMessage =
 	'Network requests that use secret placeholders require an authenticated user.'
@@ -280,10 +280,13 @@ export function parseSecretScopeUnavailableMessage(message: string) {
 	if (!match?.[1] || !match[2]) return null
 	const scope = parseSecretErrorScope(match[2])
 	if (!scope) return null
+	const label = match[4] ?? null
+	const usesPackageId = Boolean(match[3])
 	return {
 		secretName: match[1],
 		scope,
-		packageName: match[3] ?? null,
+		packageName: usesPackageId ? null : label,
+		packageId: usesPackageId ? label : null,
 	}
 }
 

@@ -1631,12 +1631,31 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		secretNames: ['discordBotToken'],
 		scope: 'package',
 		packageName: 'discord-gateway',
+		packageId: null,
 		editorUrl:
 			'https://example.com/account/secrets/package/pkg-1/discordBotToken',
 		suggestedAction: {
 			type: 'edit_secret_policy',
 			policyField: 'scope',
 		},
+	})
+	const packageIdOnlyError = new Error(
+		createSecretScopeUnavailableMessage([
+			{
+				secretName: 'discordBotToken',
+				scope: 'package',
+				packageId: 'pkg-1',
+				packageName: null,
+				sessionId: null,
+				editorUrl:
+					'https://example.com/account/secrets/package/pkg-1/discordBotToken',
+			},
+		]),
+	)
+	expect(getExecutionErrorDetails(packageIdOnlyError)).toMatchObject({
+		kind: 'secret_scope_unavailable',
+		packageName: null,
+		packageId: 'pkg-1',
 	})
 	expect(getExecutionErrorDetails(scopeUnavailableError)?.nextStep).toContain(
 		'invoke the work through that package',

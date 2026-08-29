@@ -72,6 +72,7 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 		secretName,
 		scope: 'package',
 		packageName: 'discord-gateway',
+		packageId: null,
 	})
 	expect(packageMiss).toContain(
 		'Either invoke this work through the owning package',
@@ -123,6 +124,7 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 		secretName,
 		scope: 'user',
 		packageName: null,
+		packageId: null,
 	})
 	expect(pinnedPackageMiss).toContain(
 		'https://example.com/account/secrets/user/discordBotToken',
