@@ -54,6 +54,18 @@ const guideCatalogGeneratedModuleRelativePath = path.join(
 	'generated',
 	'guide-catalog.mjs',
 )
+const workerBundlerGeneratedModuleSourcePath =
+	'/packages/worker/.generated/worker-bundler.mjs'
+const workerBundlerGeneratedModuleRelativePath = path.join(
+	'node_modules',
+	'.kody-generated',
+	'worker-bundler.mjs',
+)
+const workerBundlerWasmRelativePath = path.join(
+	'node_modules',
+	'.kody-generated',
+	'esbuild.wasm',
+)
 
 const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 	{
@@ -154,6 +166,23 @@ async function inspectStartupBundle(
 	} catch {
 		throw new Error(
 			`${definition.name} startup bundle did not emit ${guideCatalogGeneratedModuleRelativePath} as a separate additional module (find_additional_modules regression?).`,
+		)
+	}
+	if (
+		sources.some((source) =>
+			source.includes(workerBundlerGeneratedModuleSourcePath),
+		)
+	) {
+		throw new Error(
+			`${definition.name} startup bundle inlines the generated worker bundler (${workerBundlerGeneratedModuleSourcePath}) into its main module instead of loading it as a separate additional module.`,
+		)
+	}
+	try {
+		await stat(path.join(outputDir, workerBundlerGeneratedModuleRelativePath))
+		await stat(path.join(outputDir, workerBundlerWasmRelativePath))
+	} catch {
+		throw new Error(
+			`${definition.name} startup bundle did not emit ${workerBundlerGeneratedModuleRelativePath} and ${workerBundlerWasmRelativePath} as separate additional modules (find_additional_modules regression?).`,
 		)
 	}
 	if (size > definition.maxEntryBytes) {

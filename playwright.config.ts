@@ -58,6 +58,9 @@ export default defineConfig({
 			X_LOCAL_EXPLORER: 'false',
 			// Reduce ProxyWorker "Network connection lost" flakes under e2e load.
 			WRANGLER_CI_DISABLE_CONFIG_WATCHING: 'true',
+			// Overlay FS retriggers esbuild's native source-graph watcher after
+			// the first compile (Friction #1789). wrangler-env honors this.
+			WRANGLER_DISABLE_BUNDLE_WATCH: 'true',
 		},
 	},
 	projects: [

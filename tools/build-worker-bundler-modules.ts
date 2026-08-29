@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto'
-import { copyFile, mkdir, open, readFile, writeFile } from 'node:fs/promises'
+import {
+	copyFile,
+	link,
+	mkdir,
+	open,
+	readFile,
+	rm,
+	stat,
+	writeFile,
+} from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build, type Plugin } from 'esbuild'
@@ -7,7 +16,7 @@ import { isExecutedDirectly } from './node-runtime.ts'
 
 /**
  * Pre-bundles `@cloudflare/worker-bundler` (and its `/typescript` entry) into
- * standalone ES modules under `packages/worker/src/generated/`.
+ * standalone ES modules under `packages/worker/.generated/`.
  *
  * Why: wrangler inlines every dynamic `import()` into the single main worker
  * module, so the ~3.6 MB runtime bundler/TypeScript compiler was parsed and
@@ -16,14 +25,54 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * `.mjs` files upload as separate external modules that only load when the
  * repo-check paths actually import them.
  *
+ * Wrangler discovers additional ES modules by walking the entry directory
+ * (`packages/worker/src`) and file-watches every discovered module. Overlay-FS
+ * create events on those files retrigger `wrangler dev` (Friction #1789).
+ * Artifacts live in `packages/worker/.generated/` and are hardlinked under
+ * `src/node_modules/.kody-generated/` so the walk finds them, the directory
+ * watcher skips `node_modules`, and `tools/wrangler-filter-kody-generated-watch.ts`
+ * clears that collector's esbuild `watchFiles` / `watchDirs`. workerd still
+ * requires CompiledWasm for `esbuild.wasm` (`WebAssembly.compile` is
+ * disallowed).
+ *
  * The output is deterministic for a given installed package version, so a
  * stamp file makes re-runs a no-op (important: this runs in front of every
  * wrangler dev/build/deploy and once per vitest run).
  */
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
-const generatedDir = path.join(repoRoot, 'packages/worker/src/generated')
-const stampPath = path.join(generatedDir, 'worker-bundler.stamp.json')
+export const workerBundlerGeneratedDir = path.join(
+	repoRoot,
+	'packages/worker/.generated',
+)
+export const workerBundlerWranglerDir = path.join(
+	repoRoot,
+	'packages/worker/src/node_modules/.kody-generated',
+)
+const leftoverSrcGeneratedDir = path.join(
+	repoRoot,
+	'packages/worker/src/generated',
+)
+export const leftoverSrcGeneratedBundlerNames = [
+	'worker-bundler.mjs',
+	'worker-bundler-typescript.mjs',
+	'esbuild.wasm',
+	'esbuild-wasm.mjs',
+	'worker-bundler.stamp.json',
+] as const
+const generatedArtifactNames = [
+	'worker-bundler.mjs',
+	'worker-bundler-typescript.mjs',
+	'esbuild.wasm',
+] as const
+const leftoverWranglerVisibleNames = [
+	...generatedArtifactNames,
+	'esbuild-wasm.mjs',
+] as const
+const stampPath = path.join(
+	workerBundlerGeneratedDir,
+	'worker-bundler.stamp.json',
+)
 
 const nodeBuiltins = new Set([
 	'assert',
@@ -109,13 +158,66 @@ async function buildStampContent(bundlerPackageDir: string) {
 	return JSON.stringify({ hash }, null, '\t')
 }
 
+async function pathExists(filePath: string) {
+	try {
+		await stat(filePath)
+		return true
+	} catch {
+		return false
+	}
+}
+
+async function wranglerVisibleModulesExist() {
+	const results = await Promise.all(
+		generatedArtifactNames.map((name) =>
+			pathExists(path.join(workerBundlerWranglerDir, name)),
+		),
+	)
+	return results.every(Boolean)
+}
+
+export async function removeLeftoverSrcGeneratedBundlerArtifacts() {
+	await Promise.all(
+		leftoverSrcGeneratedBundlerNames.map((name) =>
+			rm(path.join(leftoverSrcGeneratedDir, name), { force: true }),
+		),
+	)
+}
+
+async function materializeWranglerVisibleModules() {
+	await mkdir(workerBundlerWranglerDir, { recursive: true })
+	await Promise.all(
+		leftoverWranglerVisibleNames.map((name) =>
+			rm(path.join(workerBundlerWranglerDir, name), { force: true }),
+		),
+	)
+	for (const name of generatedArtifactNames) {
+		const from = path.join(workerBundlerGeneratedDir, name)
+		const to = path.join(workerBundlerWranglerDir, name)
+		try {
+			await link(from, to)
+		} catch {
+			await copyFile(from, to)
+		}
+	}
+}
+
 /** Idempotent: skips the esbuild work when the stamp is already current. */
 export async function ensureWorkerBundlerModules() {
 	const bundlerPackageDir = resolveWorkerBundlerDistDir()
 	const stampContent = await buildStampContent(bundlerPackageDir)
-	if ((await readStamp()) === stampContent) return
+	await removeLeftoverSrcGeneratedBundlerArtifacts()
+	await rm(path.join(workerBundlerGeneratedDir, 'esbuild-wasm.mjs'), {
+		force: true,
+	})
+	if (
+		(await readStamp()) === stampContent &&
+		(await wranglerVisibleModulesExist())
+	) {
+		return
+	}
 
-	await mkdir(generatedDir, { recursive: true })
+	await mkdir(workerBundlerGeneratedDir, { recursive: true })
 	await build({
 		entryPoints: {
 			'worker-bundler': path.join(bundlerPackageDir, 'dist/index.js'),
@@ -129,25 +231,25 @@ export async function ensureWorkerBundlerModules() {
 		platform: 'browser',
 		target: 'es2022',
 		minify: true,
-		outdir: generatedDir,
+		outdir: workerBundlerGeneratedDir,
 		outExtension: { '.js': '.mjs' },
 		plugins: [externalsPlugin],
 		logLevel: 'silent',
 	})
 	await copyFile(
 		path.join(bundlerPackageDir, 'dist/esbuild.wasm'),
-		path.join(generatedDir, 'esbuild.wasm'),
+		path.join(workerBundlerGeneratedDir, 'esbuild.wasm'),
 	)
 	await writeFile(stampPath, stampContent)
-	// Flush before `wrangler dev` starts watching `src/`. On Cloud Agent
-	// overlay FS, pending create events for `generated/esbuild.wasm` have
-	// retriggered wrangler's additional-module watcher into a reload loop
-	// (Friction #1789).
+	await rm(path.join(workerBundlerGeneratedDir, 'esbuild-wasm.mjs'), {
+		force: true,
+	})
+	await materializeWranglerVisibleModules()
 	await fsyncGeneratedDir()
 }
 
 async function fsyncGeneratedDir() {
-	const handle = await open(generatedDir, 'r')
+	const handle = await open(workerBundlerGeneratedDir, 'r')
 	try {
 		await handle.sync()
 	} finally {

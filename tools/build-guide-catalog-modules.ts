@@ -70,11 +70,12 @@ const stampPath = path.join(generatedDir, 'guide-catalog.stamp.json')
 const metadataOutputPath = path.join(generatedDir, 'guide-metadata.mjs')
 const catalogOutputPath = path.join(generatedDir, 'guide-catalog.mjs')
 
-// Outside `src/generated` on purpose: that tree is wrangler's additional-
-// modules watch root (see the fsync note below / Friction #1789), so a lock
-// file churning there could retrigger its reload loop. Keyed by a hash of
-// `generatedDir` (not a fixed name) so unrelated checkouts/worktrees on the
-// same machine never contend on the same lock.
+// Outside `src/generated` on purpose: that tree is still inside wrangler's
+// additional-modules watch root (bundler wasm is not; see
+// tools/build-worker-bundler-modules.ts / Friction #1789), so a lock file
+// churning there could retrigger reload. Keyed by a hash of `generatedDir`
+// (not a fixed name) so unrelated checkouts/worktrees on the same machine
+// never contend on the same lock.
 export const lockPath = path.join(
 	tmpdir(),
 	`kody-guide-catalog-modules-${createHash('sha256').update(generatedDir).digest('hex').slice(0, 16)}.lock`,
@@ -370,8 +371,9 @@ export async function ensureGuideCatalogModules() {
 			renderGeneratedModule('guides', fullCatalog),
 		)
 		await writeFileAtomic(stampPath, stampContent)
-		// Flush before `wrangler dev` starts watching `src/` (see the matching
-		// note in tools/build-worker-bundler-modules.ts / Friction #1789).
+		// Flush before `wrangler dev` starts watching `src/` (guide catalog
+		// stays under the additional-module watch root; bundler wasm does
+		// not — see tools/build-worker-bundler-modules.ts / Friction #1789).
 		await fsyncGeneratedDir()
 	} finally {
 		await release()

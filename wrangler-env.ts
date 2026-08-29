@@ -12,6 +12,7 @@ import {
 import { resolveLocalBinary } from './tools/node-runtime.ts'
 import { ensureWorkerBundlerModules } from './tools/build-worker-bundler-modules.ts'
 import { ensureGuideCatalogModules } from './tools/build-guide-catalog-modules.ts'
+import { ensureWranglerFiltersKodyGeneratedWatch } from './tools/wrangler-filter-kody-generated-watch.ts'
 import {
 	getDefaultWranglerConfigPath,
 	highlightWorkerWranglerConfigPath,
@@ -102,9 +103,10 @@ if (
 	}
 }
 
-// The main worker config references pre-bundled modules in `src/generated/`
-// (see tools/build-worker-bundler-modules.ts and
-// tools/build-guide-catalog-modules.ts), so make sure they exist before any
+// The main worker config references pre-bundled modules in
+// `packages/worker/.generated/` (worker-bundler) and `src/generated/`
+// (guide catalog); see tools/build-worker-bundler-modules.ts and
+// tools/build-guide-catalog-modules.ts. Make sure they exist before any
 // wrangler command that builds the worker. Skipped for explicit `--config`
 // invocations (mock servers, backup control plane) which don't use them —
 // except the runtime worker, whose entry module lives in the same source
@@ -132,6 +134,9 @@ if (
 ) {
 	await ensureWorkerBundlerModules()
 	await ensureGuideCatalogModules()
+	if (isDevCommand) {
+		await ensureWranglerFiltersKodyGeneratedWatch()
+	}
 }
 
 if (!hasEnvFlag) {
@@ -149,8 +154,9 @@ if (
 	!args.some((arg) => arg.startsWith('--live-reload='))
 ) {
 	// Playwright / MCP e2e do not edit worker source. HTML live-reload
-	// still arms a watcher that has looped on `generated/esbuild.wasm`
-	// on Cloud Agent VMs (Friction #1789).
+	// still arms wrangler's additional-module watcher; bundler artifacts
+	// live under `src/node_modules/.kody-generated/` and that collector's
+	// watchFiles / watchDirs are cleared (Friction #1789).
 	commandArgs.push('--live-reload', 'false')
 }
 
@@ -240,6 +246,11 @@ const processEnv = {
 				X_LOCAL_OBSERVABILITY: process.env.X_LOCAL_OBSERVABILITY ?? 'false',
 				WRANGLER_CI_DISABLE_CONFIG_WATCHING:
 					process.env.WRANGLER_CI_DISABLE_CONFIG_WATCHING ?? 'true',
+				// Overlay FS retriggers esbuild's native source-graph watcher
+				// after the first compile (Friction #1789). Playwright does not
+				// edit worker source; skip that watch in the test env.
+				WRANGLER_DISABLE_BUNDLE_WATCH:
+					process.env.WRANGLER_DISABLE_BUNDLE_WATCH ?? 'true',
 			}
 		: {}),
 }
