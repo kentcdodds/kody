@@ -15,13 +15,13 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   `npm run validate` and the CI E2E job. The push hook stops short of that suite
   because Playwright E2E is heavier than the unit gate, and a failed e2e leg
   skips the unit gate when the push is retried with `--no-verify`. Bundler
-  artifacts live under `src/node_modules/.kody-generated/` and are dropped from
-  wrangler's additional-module `watchFiles` so `wrangler dev` does not loop on
-  overlay create events. Cursor Cloud Agent VMs keep Cursor's hook dispatcher as
-  `core.hooksPath` and compose Husky through `npm run hooks:ensure` (`prepare`
-  runs it after `husky`; Cloud Agent environment `start` should run it too) so
-  `pre-push` still reaches `.husky/_` — see
-  [cloud-agents.md](../cloud-agents.md#git-hooks). Vitest's default
+  artifacts live under `src/node_modules/.kody-generated/` and wrangler-env
+  clears that collector's additional-module watches so `wrangler dev` does not
+  loop on overlay create events. Cursor Cloud Agent VMs keep Cursor's hook
+  dispatcher as `core.hooksPath` and compose Husky through
+  `npm run hooks:ensure` (`prepare` runs it after `husky`; Cloud Agent
+  environment `start` should run it too) so `pre-push` still reaches `.husky/_`
+  — see [cloud-agents.md](../cloud-agents.md#git-hooks). Vitest's default
   `testTimeout` is 20s so the workers pool's first Durable Object RPC in a file
   (~10s) does not fail the default budget (see
   [decision 0011](../decisions/0011-workers-unit-pool-harness.md)); the push

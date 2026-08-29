@@ -16,8 +16,8 @@ import type * as workerBundlerTypescript from '@cloudflare/worker-bundler/typesc
  *
  * The `node_modules/` prefix is load-bearing: wrangler's additional-module
  * walker discovers these files under `src/`, but its directory watcher skips
- * `node_modules`. `wrangler-env.ts` also drops `.kody-generated` paths from
- * esbuild `watchFiles` so overlay-FS create events do not retrigger
+ * `node_modules`. `wrangler-env.ts` also clears that collector's esbuild
+ * `watchFiles` / `watchDirs` so overlay-FS create events do not retrigger
  * `wrangler dev` (Friction #1789).
  */
 

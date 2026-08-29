@@ -31,8 +31,9 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * Artifacts live in `packages/worker/.generated/` and are hardlinked under
  * `src/node_modules/.kody-generated/` so the walk finds them, the directory
  * watcher skips `node_modules`, and `tools/wrangler-filter-kody-generated-watch.ts`
- * drops them from esbuild `watchFiles`. workerd still requires CompiledWasm
- * for `esbuild.wasm` (`WebAssembly.compile` is disallowed).
+ * clears that collector's esbuild `watchFiles` / `watchDirs`. workerd still
+ * requires CompiledWasm for `esbuild.wasm` (`WebAssembly.compile` is
+ * disallowed).
  *
  * The output is deterministic for a given installed package version, so a
  * stamp file makes re-runs a no-op (important: this runs in front of every

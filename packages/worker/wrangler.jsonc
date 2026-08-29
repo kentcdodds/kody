@@ -74,9 +74,9 @@
 			// Worker-bundler lives under `src/node_modules/.kody-generated/`
 			// (hardlinked from `packages/worker/.generated/`) so wrangler's
 			// additional-module directory watcher — which skips `node_modules`
-			// — does not see those files. `wrangler-env.ts` also filters those
-			// paths out of esbuild `watchFiles` (Friction #1789). Guide catalog
-			// stays in `src/generated/`.
+			// — does not see those files. `wrangler-env.ts` also clears that
+			// collector's esbuild `watchFiles` / `watchDirs` (Friction #1789).
+			// Guide catalog stays in `src/generated/`.
 			"type": "ESModule",
 			"globs": [
 				"generated/*.mjs",

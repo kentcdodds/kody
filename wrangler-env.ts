@@ -154,8 +154,8 @@ if (
 ) {
 	// Playwright / MCP e2e do not edit worker source. HTML live-reload
 	// still arms wrangler's additional-module watcher; bundler artifacts
-	// live under `src/node_modules/.kody-generated/` and are dropped from
-	// esbuild watchFiles (Friction #1789).
+	// live under `src/node_modules/.kody-generated/` and that collector's
+	// watchFiles / watchDirs are cleared (Friction #1789).
 	commandArgs.push('--live-reload', 'false')
 }
 
