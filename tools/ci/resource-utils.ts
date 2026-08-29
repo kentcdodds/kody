@@ -1563,7 +1563,6 @@ export async function writeGeneratedWranglerConfig({
 	outConfigPath,
 	envName,
 	workerName,
-	mainEntryPath,
 	d1DatabaseName,
 	d1DatabaseId,
 	auditD1DatabaseName,
@@ -1582,13 +1581,6 @@ export async function writeGeneratedWranglerConfig({
 	outConfigPath: string
 	envName: WranglerEnvName
 	workerName?: string
-	// Overrides the *generated* config's top-level `main` (never the
-	// committed base config). Only the production generator passes this
-	// (see tools/ci/production-resources.ts): the actual production deploy
-	// runs `--env production` against this generated file without ever
-	// falling back to the committed entry, so the slim production origin
-	// entry stays deploy-generated only.
-	mainEntryPath?: string
 	d1DatabaseName: string
 	d1DatabaseId: string
 	auditD1DatabaseName: string
@@ -1625,10 +1617,6 @@ export async function writeGeneratedWranglerConfig({
 
 	if (workerName) {
 		config.name = workerName
-	}
-
-	if (mainEntryPath) {
-		config.main = mainEntryPath
 	}
 
 	const targetAssets = (targetEnv as Record<string, unknown>).assets

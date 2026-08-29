@@ -183,19 +183,6 @@
 	// 0016); the main worker has no scheduled handler.
 	"env": {
 		"production": {
-			// The slimmer origin entry (ADR 0034: every durable_objects/workflows
-			// binding below sets `script_name`, so production owns zero Durable
-			// Object classes and does not need index.ts's class exports; see
-			// packages/worker/src/production-worker.ts and
-			// docs/contributing/architecture/platform-worker-migration-runbook.md)
-			// is deploy-generated only, never committed here. Only
-			// `tools/ci/production-resources.ts`'s `writeGeneratedWranglerConfig()`
-			// overrides the *generated* config's top-level `main` to
-			// production-worker.ts before a production deploy. This checked-in
-			// env.production intentionally has no `main` override, so local
-			// `CLOUDFLARE_ENV=production` and any dry-run against this file keep
-			// resolving the top-level `./src/index.ts` dev/test/preview entry —
-			// env.preview and env.test inherit it the same way.
 			"ratelimits": [
 				{
 					"name": "AUTH_RATE_LIMITER",

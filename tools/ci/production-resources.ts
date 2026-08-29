@@ -17,7 +17,6 @@ import {
 	writeGeneratedWranglerConfig,
 } from './resource-utils.ts'
 import { parseProductionQueueResources } from './production-queue-resources.ts'
-import { defaultProductionEntryPath } from '../check-origin-production-exports.ts'
 
 type Command = 'ensure'
 
@@ -714,11 +713,6 @@ async function ensureProductionResources(options: CliOptions) {
 		outConfigPath: options.outConfigPath,
 		envName: 'production',
 		workerName: bindings.workerName,
-		// The committed config keeps env.production on the dev/test/preview
-		// entry (see packages/worker/wrangler.jsonc); only this generated
-		// config — the one the production deploy actually runs against —
-		// points top-level `main` at the slim production origin entry.
-		mainEntryPath: defaultProductionEntryPath,
 		d1DatabaseName: d1.name,
 		d1DatabaseId: d1.id,
 		auditD1DatabaseName: auditD1.name,

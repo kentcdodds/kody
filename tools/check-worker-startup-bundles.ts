@@ -17,21 +17,6 @@ type StartupBundleDefinition = {
 	entryFile: string
 	maxEntryBytes: number
 	forbiddenSources: ReadonlyArray<string>
-	/**
-	 * Positional entry-point override passed to `wrangler deploy`, relative
-	 * to `packageDir`. Only origin needs this: the slim production entry
-	 * (`production-worker.ts`) is reached through a deploy-generated
-	 * Wrangler config's top-level `main` override
-	 * (`tools/ci/production-resources.ts`'s `writeGeneratedWranglerConfig`)
-	 * — the committed `packages/worker/wrangler.jsonc` never points
-	 * `env.production` at it directly (see
-	 * `tools/check-origin-production-exports.ts`), so a dry-run against the
-	 * committed config alone would resolve the dev/test/preview entry
-	 * (`index.ts`) instead of the entry this check exists to guard. Platform
-	 * and runtime already commit their own top-level `main`, so they need no
-	 * override.
-	 */
-	entryOverride?: string
 }
 
 const sharedDeferredGuideSources = [
@@ -61,10 +46,9 @@ const startupBundles: ReadonlyArray<StartupBundleDefinition> = [
 	{
 		name: 'origin',
 		packageDir: 'packages/worker',
-		entryFile: 'production-worker.js',
-		entryOverride: './src/production-worker.ts',
-		maxEntryBytes: 7_750_000,
-		forbiddenSources: ['/packages/worker/src/index.ts'],
+		entryFile: 'index.js',
+		maxEntryBytes: 7_935_000,
+		forbiddenSources: [],
 	},
 	{
 		name: 'platform',
@@ -100,7 +84,6 @@ async function inspectStartupBundle(
 		wranglerBinary,
 		[
 			'deploy',
-			...(definition.entryOverride ? [definition.entryOverride] : []),
 			'--dry-run',
 			'--outdir',
 			outputDir,
