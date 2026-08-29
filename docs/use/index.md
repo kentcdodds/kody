@@ -29,8 +29,8 @@ Read in order for a full tour, or jump to a topic.
   connect it to Kody. Starter:
   [home-mcp-starter](https://github.com/kody-bot/home-mcp-starter)
 - [Connect your agent](./connect-your-agent.md) — choose one host on Get
-  started, complete OAuth, and use the setup prompt.
-  Machine-readable twin: [`/auth.md`](https://kody.codes/auth.md)
+  started, complete OAuth, and use the setup prompt. Machine-readable twin:
+  [`/auth.md`](https://kody.codes/auth.md)
 - [Connect remote MCP servers](./mcp-client-servers.md) — add external MCP
   servers so Kody can call their tools (`kody.mcp[...]`)
 - [First steps — what to ask Kody to do](./first-steps.md)

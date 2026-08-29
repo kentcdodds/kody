@@ -27,7 +27,9 @@ test('onboarding Step 1 starts with one-agent picker and hides other hosts', asy
 	expect(html).not.toContain(buildClaudeCodeAddCommand(defaultKodyMcpUrl))
 	expect(html).not.toContain('data-testid="onboarding-authenticate-callout"')
 	expect(html).toContain('data-testid="onboarding-agent-grok-bot"')
-	expect(html).toContain('href="/onboarding?agent=grok-bot&amp;surface=desktop"')
+	expect(html).toContain(
+		'href="/onboarding?agent=grok-bot&amp;surface=desktop"',
+	)
 	expect(html).toContain('href="/onboarding?agent=grok-bot&amp;surface=mobile"')
 	expect(html).not.toContain(
 		'href="/onboarding?agent=grok-cli&amp;surface=desktop"',
