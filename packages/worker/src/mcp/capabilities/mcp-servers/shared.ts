@@ -60,8 +60,8 @@ export function buildMcpServerStatusView(input: {
 		tools: connected ? (snapshot?.tools.map((tool) => tool.name) ?? []) : [],
 		createdAt: setting.createdAt,
 		updatedAt: setting.updatedAt,
-		usageMode: setting.usageMode,
-		allowedPackageIds: [...setting.allowedPackageIds],
+		usageMode: setting.usageMode === 'packages' ? 'packages' : 'any',
+		allowedPackageIds: [...(setting.allowedPackageIds ?? [])],
 	}
 }
 

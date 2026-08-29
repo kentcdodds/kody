@@ -135,6 +135,8 @@ test('onboarding featured MCP servers overlay Notion and Linear connection state
 			enabled: true,
 			createdAt: '2026-08-01T00:00:00.000Z',
 			updatedAt: '2026-08-01T00:00:00.000Z',
+			usageMode: 'any',
+			allowedPackageIds: [],
 		},
 	])
 	mockModule.loadMcpClientHubSnapshotOrNull.mockResolvedValue({
@@ -186,6 +188,8 @@ test('onboarding custom MCP servers exclude featured remotes', async () => {
 			enabled: true,
 			createdAt: '2026-08-01T00:00:00.000Z',
 			updatedAt: '2026-08-01T00:00:00.000Z',
+			usageMode: 'any',
+			allowedPackageIds: [],
 		},
 		{
 			id: 'srv-acme',
@@ -194,6 +198,8 @@ test('onboarding custom MCP servers exclude featured remotes', async () => {
 			enabled: true,
 			createdAt: '2026-08-01T00:00:00.000Z',
 			updatedAt: '2026-08-01T00:00:00.000Z',
+			usageMode: 'any',
+			allowedPackageIds: [],
 		},
 	])
 	mockModule.loadMcpClientHubSnapshotOrNull.mockResolvedValue({
