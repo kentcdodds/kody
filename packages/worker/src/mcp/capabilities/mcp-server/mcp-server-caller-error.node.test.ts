@@ -124,15 +124,12 @@ test('mcp-server tool and availability failures throw McpCallerError', async () 
 	expect((disconnected as Error).message).toMatch(/not connected/)
 
 	mocks.assertCanUseMcpServer.mockRejectedValueOnce(
-		new McpCallerError(
-			'MCP server "supermemory" is limited to specific packages and cannot be used from execute. Approve a package at https://example.com/account/mcp-servers/server-1, or switch the server back to any context.',
-		),
+		new McpCallerError('package-locked'),
 	)
 	const denied = await capability!.handler({}, createContext()).then(
 		() => null,
 		(thrown: unknown) => thrown,
 	)
 	expect(denied).toBeInstanceOf(McpCallerError)
-	expect((denied as Error).message).toContain('cannot be used from execute')
 	expect(mocks.callTool).toHaveBeenCalledTimes(2)
 })

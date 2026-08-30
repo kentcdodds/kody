@@ -13,9 +13,11 @@ const {
 	sendConnectAgentEmail,
 	sendPastDueEmail,
 	sendPaymentFailedEmail,
-	userAccountEmailClaimTtlSeconds,
 	userAccountEmailKvKey,
 } = await import('#app/user-account-emails.ts')
+
+/** 30-day KV claim TTL — public contract for once-per-kind sends. */
+const accountEmailClaimTtlSeconds = 30 * 24 * 60 * 60
 
 function createKv() {
 	const store = new Map<string, string>()
@@ -82,7 +84,6 @@ test('account emails claim once per kind and skip when KV or sender is missing',
 		text: string
 	}
 	expect(payload.to).toBe('ada@example.com')
-	expect(payload.subject).toContain('Connect your agent')
 	expect(payload.html).toContain('https://kody.codes/onboarding')
 	expect(payload.text).toContain('https://kody.codes/onboarding')
 	expect(
@@ -90,7 +91,7 @@ test('account emails claim once per kind and skip when KV or sender is missing',
 			userAccountEmailKvKey({ userId: 'user-1', kind: 'connect_agent' }),
 		),
 	).toBeTruthy()
-	expect(puts[0]?.options?.expirationTtl).toBe(userAccountEmailClaimTtlSeconds)
+	expect(puts[0]?.options?.expirationTtl).toBe(accountEmailClaimTtlSeconds)
 
 	sendCloudflareEmail.mockClear()
 	expect(

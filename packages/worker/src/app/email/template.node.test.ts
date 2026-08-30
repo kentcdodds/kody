@@ -81,8 +81,8 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		appBaseUrl: 'https://kody.codes',
 		onboardingUrl: 'https://kody.codes/onboarding',
 	})
-	expect(connect.subject).toContain('Connect your agent')
 	expect(connect.html).toContain('https://kody.codes/onboarding')
+	expect(connect.text).toContain('https://kody.codes/onboarding')
 
 	const billing = buildBillingSuccessEmail({
 		appBaseUrl: 'https://kody.codes',

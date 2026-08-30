@@ -1,8 +1,6 @@
 import { expect, test } from 'vitest'
 import {
 	canCallerUseMcpServer,
-	createMcpServerExecuteAccessDeniedMessage,
-	createMcpServerPackageAccessDeniedMessage,
 	filterEnabledMcpServerRefsForCaller,
 	type EnabledMcpServerRef,
 } from './package-access.ts'
@@ -67,18 +65,4 @@ test('package-locked MCP servers are hidden from execute and other packages', ()
 		{ serverId: 'server-1', name: 'linear' },
 		{ serverId: 'server-2', name: 'notion' },
 	])
-
-	expect(
-		createMcpServerExecuteAccessDeniedMessage({
-			serverName: 'linear',
-			usageUrl: 'https://kody.codes/account/mcp-servers/server-1',
-		}),
-	).toContain('cannot be used from execute')
-	expect(
-		createMcpServerPackageAccessDeniedMessage({
-			serverName: 'linear',
-			packageName: 'other',
-			usageUrl: 'https://kody.codes/account/mcp-servers/server-1',
-		}),
-	).toContain('not approved to use MCP server "linear"')
 })

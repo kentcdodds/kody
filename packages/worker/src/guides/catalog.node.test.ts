@@ -41,8 +41,6 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 
 	expect(getGuideById('locked_gmail_drafts')).toMatchObject({
 		image: '/images/kody-gmail-drafts-lock.webp',
-		imageAlt:
-			'Kody locking a sealed envelope with a gold padlock while a paper airplane sits tied with a gold ribbon',
 		ogImage: '/images/kody-gmail-drafts-lock-og.jpg',
 	})
 

@@ -5,9 +5,7 @@ import { expect, test } from 'vitest'
 import {
 	defaultWranglerCliPath,
 	patchWranglerProxyWorkerErrors,
-	patchedProxyControllerExemption,
 	rewriteWranglerProxyWorkerErrors,
-	wranglerProxyWorkerErrorReason,
 } from './patch-wrangler-proxy-worker-errors.ts'
 
 const fullDevEnvBundle = `
@@ -26,14 +24,18 @@ handleErrorEvent(event) {
 }
 `
 
+/** Independent oracle for the ProxyWorker exemption reason string. */
+const proxyWorkerErrorReason = 'Error inside ProxyWorker'
+const patchedExemptionNeedle = `event.reason === "${proxyWorkerErrorReason}"`
+
 test('rewriteWranglerProxyWorkerErrors keeps ProxyWorker errors request-scoped', () => {
 	const both = `${fullDevEnvBundle}\n${apiDevEnvBundle}`
 	const first = rewriteWranglerProxyWorkerErrors(both)
 	expect(first.status).toBe('patched')
 	expect(first.replacements).toBe(2)
-	expect(first.source).toContain(patchedProxyControllerExemption)
+	expect(first.source).toContain(patchedExemptionNeedle)
 	expect(first.source).toContain(
-		`event.reason === "${wranglerProxyWorkerErrorReason}" || event.reason.startsWith("Failed to send message to") || event.reason.startsWith("Could not connect to InspectorProxyWorker")`,
+		`event.reason === "${proxyWorkerErrorReason}" || event.reason.startsWith("Failed to send message to") || event.reason.startsWith("Could not connect to InspectorProxyWorker")`,
 	)
 	expect(first.source).not.toContain(
 		'event.source === "ProxyController" && event.reason.startsWith("Failed to send message to")',
@@ -61,7 +63,7 @@ test('patchWranglerProxyWorkerErrors writes the rewrite and is idempotent', asyn
 		const first = patchWranglerProxyWorkerErrors(cliPath)
 		expect(first).toEqual({ status: 'patched', replacements: 2 })
 		const written = await readFile(cliPath, 'utf8')
-		expect(written).toContain(patchedProxyControllerExemption)
+		expect(written).toContain(patchedExemptionNeedle)
 
 		const second = patchWranglerProxyWorkerErrors(cliPath)
 		expect(second).toEqual({ status: 'already-present' })
