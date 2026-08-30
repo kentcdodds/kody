@@ -4,6 +4,7 @@ import {
 	type PackageBundleTarget,
 	type PackageCallableTypecheckTarget,
 } from './checks.ts'
+import { isolatedRunnerResourceLimitAdvice } from './isolated-runner-limit-message.ts'
 
 /**
  * Heavy repo-check phases (esbuild-wasm bundle validation, TypeScript
@@ -155,9 +156,7 @@ export function createIsolatedCheckPhaseRunner(
 						ok: false,
 						message:
 							`${phaseLabel(request)} exceeded the isolated check runner's ` +
-							'memory or CPU limits even on its own. Reduce the package ' +
-							'source size (split large generated modules, remove vendored ' +
-							'or data files) and run the checks again.',
+							`memory or CPU limits even on its own. ${isolatedRunnerResourceLimitAdvice()}`,
 					}
 				}
 				throw error
