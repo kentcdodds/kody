@@ -138,7 +138,7 @@ AI-generated apps.
 | `Record<string, any>` in hand-written code                       | **0**                                                                   |
 | Emoji decoration in comments                                     | **0** (one test mentions `🐨` as the subject under test)                |
 
-Scale of the tree those zeros sit in: **2,378** TypeScript files, **~558k**
+Scale of the tree those zeros sit in: **2,378** TypeScript files, **~556k**
 lines (`packages/` + `tools/`). `packages/worker` is ~296k production lines and
 ~203k test lines (test/prod ratio **0.68**).
 
@@ -195,7 +195,7 @@ typings, so most of these are idiomatic, not bug-hiding.
 
 ### Structure — the real debt
 
-**49** production files are 1,000+ lines; **18** are 1,500+.
+**48** production files are 1,000+ lines; **18** are 1,500+.
 
 Intentional concentration (weak critic argument if you know the constraint):
 
