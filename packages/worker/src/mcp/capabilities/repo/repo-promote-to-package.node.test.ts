@@ -143,7 +143,10 @@ function createSessionRpc(overrides?: {
 	}
 }) {
 	return {
-		openSession: vi.fn(async () => undefined),
+		openSession: vi.fn(async () => ({
+			id: 'repo-promote-source-1-test',
+			base_commit: 'commit-1',
+		})),
 		runChecks: vi.fn(async () => ({
 			ok: overrides?.checkOk ?? true,
 			results:
@@ -214,9 +217,19 @@ test('repo_promote_to_package rejects repos without package.json at HEAD', async
 	expect(mockModule.repoSessionRpc).not.toHaveBeenCalled()
 })
 
-test('repo_promote_to_package seeds published_commit from HEAD so publish is not treated as a stale session', async () => {
+test('repo_promote_to_package seeds published_commit from the opened session base so publish is not treated as a stale session', async () => {
 	resetMocks()
+	// HEAD snapshot can lag a concurrent git-lane push; the opened session
+	// base is the commit publishSession will compare against.
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: 'commit-stale',
+	})
 	const rpc = createSessionRpc()
+	rpc.openSession.mockResolvedValue({
+		id: 'repo-promote-source-1-test',
+		base_commit: 'commit-1',
+	})
 	mockModule.repoSessionRpc.mockReturnValue(rpc)
 	const { ctx } = createCapabilityContext()
 
