@@ -74,7 +74,15 @@ export default async function extractInvoiceText(input: { objectKey: string }) {
 	if (!response.ok) {
 		throw new Error(`Extractor returned ${response.status}.`)
 	}
-	return (await response.json()) as { text: string }
+	const contentLength = Number(response.headers.get('content-length'))
+	if (Number.isFinite(contentLength) && contentLength > 200_000) {
+		throw new Error('Extractor response exceeded 200 KB.')
+	}
+	const body = await response.text()
+	if (new TextEncoder().encode(body).byteLength > 200_000) {
+		throw new Error('Extractor response exceeded 200 KB.')
+	}
+	return JSON.parse(body) as { text: string }
 }
 ```
 
