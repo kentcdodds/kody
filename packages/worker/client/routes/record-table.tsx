@@ -1,4 +1,4 @@
-import { css, ref, type Handle } from 'remix/ui'
+import { css, ref, type Handle, type RemixNode } from 'remix/ui'
 import { shouldRouterHandleClick } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import {
@@ -34,7 +34,7 @@ import {
  * about how much room the table actually has.
  */
 
-type Slot = any
+type Slot = RemixNode
 
 export type RecordTableColumn = {
 	/** Pairs the column with the value under the same key in `row.cells`. */

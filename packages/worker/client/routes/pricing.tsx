@@ -305,16 +305,12 @@ export function formatLimitBytes(value: number): string {
 	return `${size.format(value / kibibyte)}\u00A0KiB`
 }
 
-/* ---------- styles ---------- */
-
 const pricingCss = {
 	maxWidth: layoutMaxWidths.extended,
 	marginInline: 'auto',
 	padding:
 		'clamp(3rem, 7vw, 5.5rem) clamp(1.25rem, 4vw, 2.5rem) clamp(4rem, 8vw, 6.5rem)',
 }
-
-/* ---------- plan panels ---------- */
 
 /*
  * Three tiers on the prototype's two-up measure would squeeze each card under
@@ -423,8 +419,6 @@ const planGhostButtonCss = {
 	...getGhostButtonCss(),
 	...planButtonSizeCss,
 }
-
-/* ---------- limits table ---------- */
 
 /* One honest table, no marketing checkmarks. Spec-sheet measure — narrow
    enough that the eye never loses the row between label and value. */

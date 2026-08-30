@@ -221,7 +221,6 @@ export function HomeRoute(handle: Handle) {
 
 		return (
 			<div>
-				{/* ============ hero ============ */}
 				<section data-parallax-scope class="landing-hero">
 					<h1 data-rise style={{ '--rise': '0' }} class="landing-hero-title">
 						The Home Your Agents <em>Share</em>
@@ -293,7 +292,6 @@ export function HomeRoute(handle: Handle) {
 					) : null}
 				</section>
 
-				{/* ============ nothing new to learn ============ */}
 				<section aria-labelledby="pitch-title" class="landing-pitch">
 					<h2 id="pitch-title" class="landing-pitch-title">
 						Nothing new <br />
@@ -312,7 +310,6 @@ export function HomeRoute(handle: Handle) {
 					</div>
 				</section>
 
-				{/* ============ factory loop ============ */}
 				<section aria-labelledby="factory-title" class="landing-factory">
 					<h2 id="factory-title" class="landing-section-heading">
 						From ad hoc prompts to durable software
@@ -375,7 +372,6 @@ export function HomeRoute(handle: Handle) {
 					</section>
 				</section>
 
-				{/* ============ testimonials ============ */}
 				<section
 					aria-labelledby="testimonials-title"
 					class="landing-testimonials"
@@ -390,7 +386,6 @@ export function HomeRoute(handle: Handle) {
 					<LandingTestimonialsCarousel />
 				</section>
 
-				{/* ============ honest runtime ============ */}
 				<section aria-labelledby="honest-title" class="landing-honest">
 					<h2 id="honest-title" class="landing-section-heading">
 						The agent reasons.
@@ -415,7 +410,6 @@ export function HomeRoute(handle: Handle) {
 					</dl>
 				</section>
 
-				{/* ============ git + npm ecosystem ============ */}
 				<section aria-labelledby="ecosystem-title" class="landing-ecosystem">
 					<div>
 						<h2 id="ecosystem-title" class="landing-section-heading">
@@ -442,7 +436,6 @@ export function HomeRoute(handle: Handle) {
 					/>
 				</section>
 
-				{/* ============ byok ============ */}
 				<section aria-labelledby="byok-title" class="landing-byok">
 					<img
 						{...landingArtAttrs('kody-keys')}
@@ -468,7 +461,6 @@ export function HomeRoute(handle: Handle) {
 					</div>
 				</section>
 
-				{/* ============ works with ============ */}
 				<section aria-labelledby="world-title" class="landing-world">
 					<h2 id="world-title" class="landing-section-heading">
 						It already speaks your stack
@@ -500,7 +492,6 @@ export function HomeRoute(handle: Handle) {
 					</ul>
 				</section>
 
-				{/* ============ trust ============ */}
 				<section aria-labelledby="trust-title" class="landing-trust">
 					<h2 id="trust-title" class="landing-section-heading">
 						Check out Kody&apos;s Source on GitHub
@@ -519,7 +510,6 @@ export function HomeRoute(handle: Handle) {
 					</p>
 				</section>
 
-				{/* ============ closing invite ============ */}
 				<section
 					id="invite"
 					aria-labelledby="invite-title"

@@ -326,7 +326,7 @@ export function GuideDetailRoute(handle: Handle) {
 	}
 }
 
-/* ---------- styles (blog post rhythm on the 43rem measure) ---------- */
+/* Blog post rhythm on the 43rem measure. */
 
 const guidePageCss = {
 	maxWidth: articleMeasure,

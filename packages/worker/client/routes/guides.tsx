@@ -226,7 +226,7 @@ export function renderGuideItem(guide: GuideSummaryLoaderData, index: number) {
 	)
 }
 
-/* ---------- styles (blog index rhythm on the same 46rem measure) ---------- */
+/* Blog index rhythm on the same 46rem measure. */
 
 export const guidesPageCss = {
 	maxWidth: '46rem',

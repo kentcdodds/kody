@@ -278,8 +278,6 @@ export function HeroStage(handle: Handle<HeroStageProps>) {
 	)
 }
 
-/* ---------- styles ---------- */
-
 const stageBaseCss = {
 	position: 'relative' as const,
 	aspectRatio: '1',

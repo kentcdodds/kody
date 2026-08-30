@@ -1068,8 +1068,6 @@ function WizardNavigation(
 	}
 }
 
-/* ---------- styles ---------- */
-
 const onboardCss = {
 	maxWidth: '56rem',
 	marginInline: 'auto',

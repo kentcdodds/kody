@@ -1233,22 +1233,21 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok || !payload.app) {
 				throw new Error(payload?.error || 'Unable to rotate credentials.')
 			}
+			const rotatedApp = payload.app
 			apps = apps.map((entry) =>
-				entry.slug === payload.app!.slug && !entry.platform
-					? payload.app!
-					: entry,
+				entry.slug === rotatedApp.slug && !entry.platform ? rotatedApp : entry,
 			)
 			integrations = integrations.map((entry) =>
-				entry.appSlug === payload.app!.slug && !entry.platform
+				entry.appSlug === rotatedApp.slug && !entry.platform
 					? {
 							...entry,
-							clientId: payload.app!.clientId,
-							clientSecretSecretName: payload.app!.clientSecretSecretName,
-							appLabel: payload.app!.label,
+							clientId: rotatedApp.clientId,
+							clientSecretSecretName: rotatedApp.clientSecretSecretName,
+							appLabel: rotatedApp.label,
 						}
 					: entry,
 			)
-			resetRotateForm(payload.app)
+			resetRotateForm(rotatedApp)
 			rotateMessage = 'Rotated shared credentials for this integration.'
 			rotateMessageTone = 'info'
 			handle.update()

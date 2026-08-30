@@ -253,8 +253,6 @@ export function TimelineRoute(handle: Handle) {
 	}
 }
 
-/* ---------- feed pieces ---------- */
-
 function renderDay(day: TimelineDay) {
 	const headingId = `timeline-day-${day.dayKey}`
 	return (
@@ -331,10 +329,10 @@ function renderEvent(event: PublicCommunityActivityItem) {
 	)
 }
 
-/* ---------- event glyphs ----------
-   Inlined rather than sprited (the app does not use SVG sprites — see
-   `client/provider-icons.tsx`). Always aria-hidden: the verb word beside each
-   glyph already says which event this is, so color and shape only reinforce. */
+/* Event glyphs are inlined rather than sprited (the app does not use SVG
+   sprites — see `client/provider-icons.tsx`). Always aria-hidden: the verb
+   word beside each glyph already says which event this is, so color and
+   shape only reinforce. */
 
 const glyphAttrs = {
 	viewBox: '0 0 16 16',
@@ -381,8 +379,6 @@ function renderEventIcon(type: CommunityActivityEventType) {
 		}
 	}
 }
-
-/* ---------- styles ---------- */
 
 const pageCss = {
 	maxWidth: layoutMaxWidths.extended,
@@ -627,8 +623,6 @@ const endNoteCss = {
 	fontSize: '0.92rem',
 }
 
-/* ---------- empty ---------- */
-
 const emptyCss = {
 	width: 'min(100%, 56rem)',
 	marginTop: 'clamp(2.5rem, 6vw, 3.5rem)',
@@ -674,8 +668,6 @@ const emptyArtCss = {
 	},
 }
 
-/* ---------- loading ---------- */
-
 const loadingCss = {
 	display: 'flex',
 	alignItems: 'center',
@@ -683,8 +675,6 @@ const loadingCss = {
 	margin: 'clamp(2.5rem, 6vw, 3.5rem) 0 0',
 	color: colors.textMuted,
 }
-
-/* ---------- error ---------- */
 
 const errorCardCss = {
 	...getSurfaceCardCss(),

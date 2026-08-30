@@ -165,8 +165,6 @@ export function CommunityRoute(handle: Handle) {
 	}
 }
 
-/* ---------- styles ---------- */
-
 /* The route owns its gutters — the app shell leaves redesigned marketing
    paths unpadded. 72rem browse measure. */
 const communityPageCss = {

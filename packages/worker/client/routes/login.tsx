@@ -621,7 +621,6 @@ export function LoginRoute(handle: Handle) {
 
 		return (
 			<div mix={css(authLayoutCss)}>
-				{/* ============ brand panel ============ */}
 				<aside data-parallax-scope aria-hidden="true" mix={css(authVisualCss)}>
 					{renderBrand(authBrandCss, { decorative: true })}
 					<div mix={css(authSceneCss)}>
@@ -638,7 +637,6 @@ export function LoginRoute(handle: Handle) {
 					</p>
 				</aside>
 
-				{/* ============ form panel ============ */}
 				<div mix={css(authPanelCss)}>
 					{renderBrand(authBrandMobileCss)}
 
@@ -988,8 +986,6 @@ export function LoginRoute(handle: Handle) {
 		)
 	}
 }
-
-/* ---------- styles ---------- */
 
 const motionOk = '@media (prefers-reduced-motion: no-preference)'
 const mobileMq = '@media (max-width: 900px)'

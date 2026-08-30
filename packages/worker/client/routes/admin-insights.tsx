@@ -1,4 +1,4 @@
-import { css, type Handle } from 'remix/ui'
+import { css, type Handle, type RemixNode } from 'remix/ui'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -628,8 +628,8 @@ type ChartCardProps = {
 	sub?: string
 	/** Grid column span on wide screens out of 12. */
 	span?: 4 | 6 | 8 | 12
-	legend?: any
-	children: any
+	legend?: RemixNode
+	children: RemixNode
 }
 
 function ChartCard(handle: Handle<ChartCardProps>) {
