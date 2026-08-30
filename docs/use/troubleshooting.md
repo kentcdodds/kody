@@ -69,6 +69,15 @@ Cloudflare Tunnel and Access, also see
   empty ranked **`query`** into better matches — rephrase or list capabilities
   instead.
 
+## Package checks fail with isolate memory or CPU limits
+
+Bundle validation and publish artifact rebuild run in a short-lived isolate. A
+large npm dependency graph can exceed that isolate even when ad hoc `execute`
+imported the same library. The failure is the graph, not a missing file. Do not
+vendor the library or switch to a dynamic import. Keep the package as a thin
+orchestrator and run the heavy work in a process the owner operates. See
+[Offload work that does not fit a Worker isolate](../guides/heavy-work-offload.md).
+
 ## Saved packages missing
 
 Saved packages require an **authenticated MCP user**. If the client is not

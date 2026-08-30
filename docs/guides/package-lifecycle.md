@@ -71,7 +71,10 @@ close. Create a new package only when no suitable listing exists.
 
 Create or extend a saved package when behavior is reusable, expected to evolve,
 or needs a named package-owned schedule that evolves with its implementation,
-and no suitable community listing (or existing saved package) covers it. The
+and no suitable community listing (or existing saved package) covers it. If the
+implementation needs a library that does not fit a Worker isolate, keep this
+package as the orchestrator and offload the heavy process — see
+[Offload work that does not fit a Worker isolate](./heavy-work-offload.md). The
 repo rooted at `package.json` is the durable source of truth. Package exports
 form the callable surface, while jobs, subscriptions, retrievers, and apps
 remain package-owned behavior.

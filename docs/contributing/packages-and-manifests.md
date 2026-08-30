@@ -59,6 +59,9 @@ Important behavior:
 - If a package declares a dependency that the bundler cannot resolve or bundle,
   repo checks fail with the underlying bundling error instead of allowing a
   publish that will only fail later at runtime.
+- An isolate memory or CPU reset during bundle validation is the same class of
+  failure: the npm graph does not fit a Worker isolate. The check message points
+  at `coding_guide_get({ guide: "heavy_work_offload" })`.
 - Runtime execution does not invent a new dependency policy or ask callers to
   choose one. Dependency handling is part of the saved-package pipeline itself.
 

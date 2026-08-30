@@ -18,6 +18,7 @@ const guideOrder: ReadonlyArray<string> = [
 	'how-kody-works',
 	'kody-factory',
 	'local-mcp-tunnels',
+	'heavy-work-offload',
 	'google-oauth',
 	'quick-example',
 	'first-win',

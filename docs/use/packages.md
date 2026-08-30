@@ -116,6 +116,10 @@ Cloudflare Workers runtime.
 - If a declared dependency cannot be resolved or bundled, package checks fail
   with the bundling error instead of allowing a publish that only fails later at
   runtime.
+- If bundle validation exceeds the isolated check runner's memory or CPU limits,
+  the usual cause is the npm graph, not the package source. Keep the package as
+  a thin orchestrator and offload that work; see
+  [Offload work that does not fit a Worker isolate](../guides/heavy-work-offload.md).
 - After changing `dependencies`, republish the package so Kody can rebuild the
   published runtime bundle artifacts that execution paths use.
 

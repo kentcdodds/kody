@@ -34,6 +34,9 @@ Read in order for a full tour, or jump to a topic.
   process (vault, CLI, or home devices), publish it with Tunnel and Access, and
   connect it to Kody. Starter:
   [home-mcp-starter](https://github.com/kody-bot/home-mcp-starter)
+- [Offload work that does not fit a Worker isolate](../guides/heavy-work-offload.md)
+  — large npm graphs (PDF.js-class libraries) stay out of the package isolate;
+  the owner operates a container or machine and the package calls it
 - [Connect your agent](./connect-your-agent.md) — choose one host on Get
   started, complete OAuth, and use the setup prompt. Machine-readable twin:
   [`/auth.md`](https://kody.codes/auth.md)
