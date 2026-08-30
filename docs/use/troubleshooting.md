@@ -78,16 +78,25 @@ signed in, user-scoped package results are empty.
 
 - **Host not approved:** complete the approval flow in the app for that secret
   and host.
-- **Capability not allowed for secret:** adjust the secret’s allowed-capability
-  policy or use a capability that is on the allowlist.
+- **Package not approved for secret:** self-authored and adopted packages can
+  read and use user secrets; unadopted community forks need an
+  `allowed_packages` grant (or adoption after review). See
+  [Secrets and host approval](./secrets-and-values.md#package-approval).
 
 ## MCP servers
 
 If tools from a connected MCP server appear missing, open
 [`/account/mcp-servers`](./mcp-client-servers.md) (or ask `mcp_server_list`) and
-confirm the server is connected and authorized. Home automation is a normal
-outbound MCP server (`kody.mcp["home"]`). See
-[Connect remote MCP servers](./mcp-client-servers.md).
+confirm the server is connected and authorized. When **Usage** is **Specific
+packages only**, ad hoc execute and other packages cannot see or call
+`kody.mcp["server-name"]` — only granted packages can. Home automation is a
+normal outbound MCP server (`kody.mcp["home"]`). See
+[Connect remote MCP servers](./mcp-client-servers.md) and
+[Lock an MCP server to a package](../guides/locked-mcp-server.md).
+
+After a password reset, reconnect the MCP host: Kody revokes OAuth grants and
+rejects access tokens issued at or before the reset, so a refresh alone is not
+enough.
 
 ## Job, webhook, or package app failed
 

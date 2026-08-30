@@ -390,8 +390,13 @@ Password reset handlers are in
 `packages/worker/src/app/handlers/password-reset.ts`.
 
 - `POST /password-reset` creates a one-time token and stores only its hash
-- `POST /password-reset/confirm` verifies token hash and expiry, then updates
-  password
+- `POST /password-reset/confirm` verifies token hash and expiry, updates the
+  password, revokes every MCP OAuth grant for that user, stamps
+  `users.password_changed_at`, then revokes again so a grant created in that
+  window cannot survive
+- Session cookies and package-app sessions whose `issuedAt` is missing or at or
+  before `password_changed_at` fail closed; `/mcp` rejects access tokens whose
+  `createdAt` is at or before that timestamp (`invalid_token`)
 - reset tokens expire after 1 hour
 - when configured, email delivery is done via Cloudflare Email API
 - when required Cloudflare Email API credentials are unset, the helper logs a

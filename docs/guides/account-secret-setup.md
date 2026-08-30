@@ -24,7 +24,8 @@ secret-collection step only.
 Use it when:
 
 - the user must provide a sensitive value
-- a capability requires a secret placeholder that is missing
+- a named secret needed for `fetch` placeholders or a named lookup (for example
+  `secret_jwt_sign`) is missing
 - the user needs to rotate a stored secret value
 
 Do **not** ask the user to paste secrets into chat.
@@ -86,4 +87,5 @@ secret and lets the user approve them in one click.
    downstream package.
 5. For common non-OAuth integrations, continue with
    `guide: "secret_backed_integration"` after the secret exists.
-6. Proceed using `{{secret:name}}` placeholders or the relevant capability.
+6. Proceed using `{{secret:name}}` fetch placeholders or a named secret lookup
+   such as `secret_jwt_sign`.
