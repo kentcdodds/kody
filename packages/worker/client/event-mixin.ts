@@ -4,6 +4,9 @@ import {
 	on as remixOn,
 } from 'remix/ui'
 
+// Remix `on()` call sites annotate SubmitEvent / MouseEvent / InputEvent and
+// also read `currentTarget.value` on untyped handlers. This wrapper is the
+// single typed hole; `typescript/no-explicit-any` is off for this file only.
 type EventHandler = (event: any, signal: AbortSignal) => void | Promise<void>
 
 export function on<target extends Element>(

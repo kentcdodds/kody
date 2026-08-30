@@ -90,9 +90,13 @@ export async function loadSearchRowsAndRegistry(input: {
 		loadOptionalSearchRows({
 			userId: input.userId,
 			loadPackages: async () => {
+				const userId = input.userId
+				if (!userId) {
+					return { rows: [], warnings: [] }
+				}
 				const [savedPackages, platformPackages] = await Promise.all([
 					listSavedPackagesWithCommunityProvenanceByUserId(input.env.APP_DB, {
-						userId: input.userId!,
+						userId,
 					}),
 					listPlatformPackagesForSearch(input.env.APP_DB),
 				])
@@ -102,7 +106,7 @@ export async function loadSearchRowsAndRegistry(input: {
 				const packageRows = await buildSavedPackageSearchRows({
 					env: input.env,
 					baseUrl: input.callerContext.baseUrl,
-					userId: input.userId!,
+					userId,
 					records: ownRecords,
 				})
 				// Platform (built-in) packages are discoverable for everyone;
@@ -116,7 +120,7 @@ export async function loadSearchRowsAndRegistry(input: {
 							buildSavedPackageSearchRows({
 								env: input.env,
 								baseUrl: input.callerContext.baseUrl,
-								userId: input.userId!,
+								userId,
 								records: records.filter(
 									(record) =>
 										!ownNames.has(record.name) &&
@@ -134,17 +138,23 @@ export async function loadSearchRowsAndRegistry(input: {
 					warnings: packageRows.warnings,
 				}
 			},
-			loadUserSecrets: () =>
-				listUserSecretsForSearch({
+			loadUserSecrets: async () => {
+				const userId = input.userId
+				if (!userId) return []
+				return listUserSecretsForSearch({
 					env: input.env,
-					userId: input.userId!,
-				}),
+					userId,
+				})
+			},
 			loadUserValues: async () => [],
-			loadUserIntegrations: () =>
-				listJoinedIntegrations({
+			loadUserIntegrations: async () => {
+				const userId = input.userId
+				if (!userId) return []
+				return listJoinedIntegrations({
 					env: input.env,
-					userId: input.userId!,
-				}),
+					userId,
+				})
+			},
 		}),
 	])
 	return {

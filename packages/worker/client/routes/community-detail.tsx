@@ -1238,8 +1238,6 @@ export function CommunityDetailRoute(handle: Handle) {
 	}
 }
 
-/* ---------- styles (prototype: `.pkg-detail` in landing/styles.css) ---------- */
-
 /* 46rem article measure mirroring the blog post; the route owns its gutters
    (the app shell leaves redesigned marketing paths unpadded). The shirt-
    pattern whisper anchors to the article in rem, not to the short icon-row

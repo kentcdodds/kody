@@ -316,8 +316,6 @@ export function BlogPostRoute(handle: Handle) {
 	}
 }
 
-/* ---------- styles (prototype: `.post` in landing/styles.css) ---------- */
-
 const postCss = {
 	maxWidth: '43rem',
 	marginInline: 'auto',
@@ -403,8 +401,6 @@ const placeholderCalloutCss = {
 		textWrap: 'pretty' as const,
 	},
 }
-
-/* ---------- post foot: read next + the standing invitation ---------- */
 
 const postFootCss = {
 	marginTop: 'clamp(3rem, 7vw, 4.5rem)',

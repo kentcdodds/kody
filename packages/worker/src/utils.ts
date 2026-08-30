@@ -13,7 +13,6 @@ export function withCors<Props>({
 			return handler(request, env, ctx)
 		}
 
-		// Handle CORS preflight requests
 		if (request.method === 'OPTIONS') {
 			const headers = mergeHeaders(corsHeaders, {
 				'Access-Control-Max-Age': '86400',
@@ -22,7 +21,6 @@ export function withCors<Props>({
 			return new Response(null, { status: 204, headers })
 		}
 
-		// Call the original handler
 		const response = await handler(request, env, ctx)
 
 		// WebSocket upgrade responses must be returned as-is or the upgrade breaks.
@@ -30,7 +28,6 @@ export function withCors<Props>({
 			return response
 		}
 
-		// Add CORS headers to ALL responses, including early returns
 		const newHeaders = mergeHeaders(response.headers, corsHeaders)
 
 		return new Response(response.body, {

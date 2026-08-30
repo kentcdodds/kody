@@ -340,14 +340,17 @@ export async function expandSecretPlaceholders(input: {
 		]),
 	])
 	const hasReferencedSecrets = referencedSecrets.length > 0
-	if (hasReferencedSecrets) {
-		ensureFetchAllowed(input.props)
-	}
+	const userId = hasReferencedSecrets
+		? requireFetchUserId(input.props)
+		: input.props.userId
 	const resolvedSecretResults = await Promise.all(
 		referencedSecrets.map(async (referenced) => {
+			if (!userId) {
+				throw new Error(fetchSecretAuthRequiredMessage)
+			}
 			const resolved = await resolveSecret({
 				env: input.env,
-				userId: input.props.userId!,
+				userId,
 				name: referenced.name,
 				scope: referenced.scope,
 				storageContext: input.props.storageContext,
@@ -356,7 +359,7 @@ export async function expandSecretPlaceholders(input: {
 				throw new Error(
 					await createUnresolvedSecretMessage({
 						env: input.env,
-						userId: input.props.userId!,
+						userId,
 						name: referenced.name,
 						scope: referenced.scope,
 						storageContext: input.props.storageContext,
@@ -368,7 +371,7 @@ export async function expandSecretPlaceholders(input: {
 				resolved.scope === 'user'
 					? await findIntegrationOwningSecretName({
 							db: input.env.APP_DB,
-							userId: input.props.userId!,
+							userId,
 							secretName: referenced.name,
 						})
 					: null
@@ -379,7 +382,7 @@ export async function expandSecretPlaceholders(input: {
 				await assertCanUseIntegration({
 					env: input.env,
 					baseUrl: input.props.baseUrl,
-					userId: input.props.userId!,
+					userId,
 					name: owningIntegration.name,
 					packageId: input.props.storageContext?.packageId ?? null,
 				})
@@ -387,7 +390,7 @@ export async function expandSecretPlaceholders(input: {
 				await assertPackageCanAccessResolvedSecret({
 					env: input.env,
 					baseUrl: input.props.baseUrl,
-					userId: input.props.userId!,
+					userId,
 					storageContext: input.props.storageContext,
 					secretName: referenced.name,
 					resolved,
@@ -543,10 +546,11 @@ function readRequestedHost(url: string) {
 	return new URL(url).hostname
 }
 
-function ensureFetchAllowed(props: FetchGatewayProps) {
+function requireFetchUserId(props: FetchGatewayProps): string {
 	if (!props.userId) {
 		throw new Error(fetchSecretAuthRequiredMessage)
 	}
+	return props.userId
 }
 
 /**

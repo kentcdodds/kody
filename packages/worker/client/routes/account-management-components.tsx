@@ -1,4 +1,4 @@
-import { css, type Handle } from 'remix/ui'
+import { css, type Handle, type RemixNode } from 'remix/ui'
 import { routes } from '#universal/routes.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -132,7 +132,7 @@ export const accountDisclosureCss = {
 	},
 }
 
-type AccountManagementSlot = any
+type AccountManagementSlot = RemixNode
 
 type AccountManagementLinkNavItem = {
 	href: string

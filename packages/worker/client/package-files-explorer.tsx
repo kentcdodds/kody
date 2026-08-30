@@ -375,8 +375,6 @@ function renderContent(data: PackageFilesLoaderData): RemixNode {
 	)
 }
 
-/* ---------- icons ---------- */
-
 function arrowLeftIcon() {
 	return (
 		<svg
@@ -469,8 +467,6 @@ function searchIcon() {
 		</svg>
 	)
 }
-
-/* ---------- styles ---------- */
 
 // Same box as the site header (`navCss`): `layoutMaxWidths.extended` centered,
 // inset by `pageGutter`. A container that picks its own padding renders wider

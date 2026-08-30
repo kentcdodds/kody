@@ -215,8 +215,6 @@ function renderPostItem(post: BlogPostSummaryLoaderData, index: number) {
 	)
 }
 
-/* ---------- styles ---------- */
-
 const blogPageCss = {
 	maxWidth: '46rem',
 	marginInline: 'auto',
@@ -312,8 +310,6 @@ const featuredDescriptionCss = {
 	...postDescriptionCss,
 	textWrap: 'pretty' as const,
 }
-
-/* ---------- featured (newest) post ---------- */
 
 const featuredItemCss = {
 	border: 'none',

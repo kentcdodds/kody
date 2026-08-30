@@ -929,7 +929,10 @@ function compilePredicate(
 	throw new Error('Unsupported predicate')
 }
 
-function compileComparisonValue(predicate: any, context: SqliteCompileContext) {
+function compileComparisonValue(
+	predicate: { type: string; [column: string]: unknown },
+	context: SqliteCompileContext,
+) {
 	if (predicate.valueType === 'column') {
 		return quotePath(String(predicate.value))
 	}

@@ -61,6 +61,15 @@ plugin, and the matching helpers are exported so
 without spawning the linter. See [import boundaries](./import-boundaries.md) for
 the layering it enforces.
 
+Repo-wide syntactic bans that do not need a custom visitor live in the same
+config as built-in rules: `typescript/no-explicit-any` and
+`eslint/no-warning-comments` for `TODO` / `FIXME` / `HACK`. The Remix `on()`
+wrapper in `packages/worker/client/event-mixin.ts` is the one `no-explicit-any`
+override — call sites mix SubmitEvent, MouseEvent, and untyped
+`currentTarget.value` reads. File-size allowlists and decorative comment banners
+are separate `validate` scripts (`npm run slop-ratchet:check`) because they are
+inventory checks, not AST rules.
+
 ## Verify manually
 
 Create a temporary file containing the sentinel identifier and run:

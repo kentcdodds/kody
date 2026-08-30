@@ -16,7 +16,10 @@ of narrating a rollout (“Kody now stores…”, “We no longer accept…”).
 
 `npm run docs:check-temporal` checks durable documentation and docs-like MCP
 instructions for common rollout phrases. `npm run docs:check-decisions` rejects
-duplicate decision-record numbers. Both run as part of `npm run validate`.
+duplicate decision-record numbers. `npm run slop-ratchet:check` holds the
+client-route and node-test file-size allowlists and rejects decorative
+`========` / `----------` comment banners. `npm run knip` fails on unused files
+against the configured entrypoints. These run as part of `npm run validate`.
 
 Docs-like product copy follows the same rule: MCP server instructions, tool and
 schema descriptions, and user-visible UI strings should not read like release

@@ -93,7 +93,6 @@ export const breakpoints = {
 	tablet: '1024px',
 } as const
 
-// Helper to create media query string (mq = media query)
 export const mq = {
 	mobile: `@media (max-width: ${breakpoints.mobile})`,
 	tablet: `@media (max-width: ${breakpoints.tablet})`,

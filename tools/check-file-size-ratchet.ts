@@ -1,0 +1,251 @@
+import { readdir, readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { isExecutedDirectly } from './node-runtime.ts'
+
+export const defaultSnapshotRelativePath = path.join(
+	'tools',
+	'file-size-ratchet.json',
+)
+
+export type FileSizeRatchetGroupId = 'client-routes' | 'node-tests'
+
+export type FileSizeRatchetGroup = {
+	id: FileSizeRatchetGroupId
+	description: string
+	maxLines: number
+}
+
+export const fileSizeRatchetGroups: ReadonlyArray<FileSizeRatchetGroup> = [
+	{
+		id: 'client-routes',
+		description: 'packages/worker/client/routes/*.tsx',
+		maxLines: 800,
+	},
+	{
+		id: 'node-tests',
+		description: '*.node.test.ts',
+		maxLines: 2000,
+	},
+]
+
+export type FileSizeRatchetSnapshot = {
+	[K in FileSizeRatchetGroupId]: Array<string>
+}
+
+export type FileSizeRatchetIssue = {
+	groupId: FileSizeRatchetGroupId
+	file: string
+	lineCount: number
+	maxLines: number
+	kind: 'new-over-budget' | 'stale-snapshot'
+}
+
+export type FileSizeRatchetResult = {
+	ok: boolean
+	issues: Array<FileSizeRatchetIssue>
+	underBudgetSnapshotEntries: Array<{
+		groupId: FileSizeRatchetGroupId
+		file: string
+		lineCount: number
+		maxLines: number
+	}>
+}
+
+const skipDirectoryNames = new Set([
+	'.git',
+	'.wrangler',
+	'build',
+	'dist',
+	'node_modules',
+	'playwright-report',
+	'test-results',
+])
+
+export function countLines(content: string) {
+	if (content.length === 0) return 0
+	const normalized = content.endsWith('\n') ? content.slice(0, -1) : content
+	if (normalized.length === 0) return 1
+	return normalized.split('\n').length
+}
+
+export function parseFileSizeRatchetSnapshot(
+	raw: string,
+): FileSizeRatchetSnapshot {
+	const parsed: unknown = JSON.parse(raw)
+	if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		throw new Error('file-size ratchet snapshot must be an object')
+	}
+	const snapshot = parsed as Record<string, unknown>
+	const result = {} as FileSizeRatchetSnapshot
+	for (const group of fileSizeRatchetGroups) {
+		const value = snapshot[group.id]
+		if (
+			!Array.isArray(value) ||
+			value.some((entry) => typeof entry !== 'string')
+		) {
+			throw new Error(
+				`file-size ratchet snapshot.${group.id} must be an array of paths`,
+			)
+		}
+		result[group.id] = [...value].sort()
+	}
+	return result
+}
+
+async function collectMatchingFiles(
+	cwd: string,
+	directory: string,
+	predicate: (relativePath: string) => boolean,
+): Promise<Array<string>> {
+	const matches: Array<string> = []
+	const root = path.join(cwd, directory)
+	const stack = [root]
+	while (stack.length > 0) {
+		const current = stack.pop()
+		if (!current) continue
+		const entries = await readdir(current, { withFileTypes: true })
+		for (const entry of entries) {
+			const absolutePath = path.join(current, entry.name)
+			if (entry.isDirectory()) {
+				if (skipDirectoryNames.has(entry.name)) continue
+				stack.push(absolutePath)
+				continue
+			}
+			if (!entry.isFile()) continue
+			const relativePath = path
+				.relative(cwd, absolutePath)
+				.replaceAll('\\', '/')
+			if (predicate(relativePath)) matches.push(relativePath)
+		}
+	}
+	return matches.sort()
+}
+
+export async function listRatchetGroupFiles(
+	cwd: string,
+	groupId: FileSizeRatchetGroupId,
+): Promise<Array<string>> {
+	if (groupId === 'client-routes') {
+		return collectMatchingFiles(
+			cwd,
+			path.join('packages', 'worker', 'client', 'routes'),
+			(relativePath) =>
+				/^packages\/worker\/client\/routes\/[^/]+\.tsx$/.test(relativePath),
+		)
+	}
+	return collectMatchingFiles(cwd, '.', (relativePath) =>
+		relativePath.endsWith('.node.test.ts'),
+	)
+}
+
+export async function checkFileSizeRatchet(
+	cwd: string,
+	snapshot: FileSizeRatchetSnapshot,
+): Promise<FileSizeRatchetResult> {
+	const issues: Array<FileSizeRatchetIssue> = []
+	const underBudgetSnapshotEntries: FileSizeRatchetResult['underBudgetSnapshotEntries'] =
+		[]
+
+	for (const group of fileSizeRatchetGroups) {
+		const files = await listRatchetGroupFiles(cwd, group.id)
+		const allowlist = new Set(snapshot[group.id])
+		const existing = new Set(files)
+
+		for (const relativePath of files) {
+			const lineCount = countLines(
+				await readFile(path.join(cwd, relativePath), 'utf8'),
+			)
+			if (lineCount <= group.maxLines) {
+				if (allowlist.has(relativePath)) {
+					underBudgetSnapshotEntries.push({
+						groupId: group.id,
+						file: relativePath,
+						lineCount,
+						maxLines: group.maxLines,
+					})
+				}
+				continue
+			}
+			if (allowlist.has(relativePath)) continue
+			issues.push({
+				groupId: group.id,
+				file: relativePath,
+				lineCount,
+				maxLines: group.maxLines,
+				kind: 'new-over-budget',
+			})
+		}
+
+		for (const relativePath of snapshot[group.id]) {
+			if (existing.has(relativePath)) continue
+			issues.push({
+				groupId: group.id,
+				file: relativePath,
+				lineCount: 0,
+				maxLines: group.maxLines,
+				kind: 'stale-snapshot',
+			})
+		}
+	}
+
+	return {
+		ok: issues.length === 0,
+		issues,
+		underBudgetSnapshotEntries,
+	}
+}
+
+function formatIssues(issues: ReadonlyArray<FileSizeRatchetIssue>) {
+	return issues
+		.map((issue) => {
+			if (issue.kind === 'stale-snapshot') {
+				return `${issue.file} is listed in the ${issue.groupId} snapshot but no longer exists. Remove it from ${defaultSnapshotRelativePath}.`
+			}
+			return `${issue.file} has ${String(issue.lineCount)} lines (budget ${String(issue.maxLines)}). Split it or add it to ${defaultSnapshotRelativePath} only when shrinking an existing grandfathered file is impossible.`
+		})
+		.join('\n')
+}
+
+export async function loadFileSizeRatchetSnapshot(
+	cwd: string,
+	snapshotRelativePath: string = defaultSnapshotRelativePath,
+): Promise<FileSizeRatchetSnapshot> {
+	return parseFileSizeRatchetSnapshot(
+		await readFile(path.join(cwd, snapshotRelativePath), 'utf8'),
+	)
+}
+
+export async function main(cwd: string = process.cwd()): Promise<void> {
+	const snapshot = await loadFileSizeRatchetSnapshot(cwd)
+	const result = await checkFileSizeRatchet(cwd, snapshot)
+	if (!result.ok) {
+		console.error(
+			[
+				`File-size ratchet failed (${String(result.issues.length)} issue(s)).`,
+				'Client routes stay at or under 800 lines unless they are already in the snapshot. Node tests stay at or under 2000 lines unless they are already in the snapshot. The snapshot is an allowlist of existing oversized files; it must not grow except to record a file that was already over budget.',
+				'',
+				formatIssues(result.issues),
+			].join('\n'),
+		)
+		process.exitCode = 1
+		return
+	}
+	if (result.underBudgetSnapshotEntries.length > 0) {
+		console.log(
+			[
+				'File-size ratchet passed.',
+				'These snapshot entries are now under budget and can be removed:',
+				...result.underBudgetSnapshotEntries.map(
+					(entry) =>
+						`- ${entry.file} (${String(entry.lineCount)} / ${String(entry.maxLines)})`,
+				),
+			].join('\n'),
+		)
+		return
+	}
+	console.log('File-size ratchet passed.')
+}
+
+if (isExecutedDirectly(import.meta.url)) {
+	await main()
+}

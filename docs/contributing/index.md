@@ -30,12 +30,11 @@ style, tests, MCP capabilities, and runtime architecture.
 ## Code and tooling
 
 - [Code style](./code-style.md), [TypeScript setup](./typescript-setup.md)
-- [AI-generated code quality audit](./ai-slop-audit.md) (2026-08-30 snapshot:
-  how sloppy the tree is, and which cleanups are worth doing)
 - [Import boundaries](./import-boundaries.md) (enforced app / MCP / worker /
   universal layering)
 - [Oxlint JS plugins](./oxlint-js-plugins.md),
   [dependency overrides](./dependency-overrides.md)
+  (`typescript/no-explicit-any`, `TODO`/`FIXME`/`HACK`, file-size ratchet, knip)
 - [Remix skills and page checklist](./remix.md), [frames](./frames.md)
 - [Cloudflare Agents SDK usage](./cloudflare-agents-sdk.md)
 

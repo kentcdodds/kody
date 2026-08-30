@@ -772,8 +772,6 @@ export const inputCss = {
 	boxSizing: 'border-box' as const,
 }
 
-/* ---------- redesigned form fields (auth surfaces) ---------- */
-
 /** Label-over-input stack from the redesign's `.field` (login prototype). */
 export const authFieldCss = {
 	display: 'flex',
