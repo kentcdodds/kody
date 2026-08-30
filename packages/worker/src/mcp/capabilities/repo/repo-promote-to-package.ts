@@ -165,6 +165,10 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				created_at: now,
 				updated_at: now,
 			})
+			// Seed published_commit to the HEAD the session opened on. After
+			// the kind flip, publishSession compares that pointer to the
+			// session base. A null pointer looks like "source has moved" even
+			// though this is the first package publish.
 			await updateEntitySource(ctx.env.APP_DB, {
 				id: source.id,
 				userId: user.userId,
@@ -172,6 +176,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				entityId: packageId,
 				manifestPath: 'package.json',
 				sourceRoot: source.source_root,
+				publishedCommit: head.commit,
 			})
 			const publishResult = await session.publishSession({
 				sessionId,
@@ -193,6 +198,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					// leaves the entity source byte-identical to its prior state.
 					manifestPath: source.manifest_path,
 					sourceRoot: source.source_root,
+					publishedCommit: source.published_commit,
 				})
 				await session
 					.discardSession({ sessionId, userId: user.userId })

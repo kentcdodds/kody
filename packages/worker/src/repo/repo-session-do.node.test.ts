@@ -2735,3 +2735,30 @@ test('publishSession maps non-fast-forward PushRejectedError to base_moved witho
 		expect.not.objectContaining({ force: true }),
 	)
 })
+
+test('runChecks forwards expectedPackageScope for a still-plain repo so promote can run package checks', async () => {
+	setCommonSessionFixtures()
+	mockModule.getEntitySourceById.mockResolvedValue({
+		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'repo',
+		entity_id: 'repo-1',
+		repo_id: 'source-repo',
+		published_commit: null,
+		manifest_path: 'package.json',
+		source_root: '/',
+	})
+	mockModule.runRepoChecks.mockClear()
+	const repoSession = new RepoSession(createDurableObjectState(), createEnv())
+	const result = await repoSession.runChecks({
+		sessionId: 'session-1',
+		userId: 'user-1',
+		expectedPackageScope: 'user',
+	})
+	expect(result.ok).toBe(true)
+	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
+		expect.objectContaining({
+			expectedPackageScope: 'user',
+		}),
+	)
+})

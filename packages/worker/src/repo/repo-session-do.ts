@@ -2149,10 +2149,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			env: this.env,
 			baseUrl: source.source_root,
 			userId: input.userId,
-			expectedPackageScope:
-				source.entity_kind === 'package'
-					? input.expectedPackageScope
-					: undefined,
+			// Honor an explicit scope even on a still-plain repo: promote
+			// runs package checks before flipping entity_kind.
+			expectedPackageScope: input.expectedPackageScope,
 		})
 		const { sourceFiles: _sourceFiles, ...publicResult } = result
 		const runId = crypto.randomUUID()
