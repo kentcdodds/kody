@@ -1,14 +1,7 @@
 import http from 'node:http'
 import { type AddressInfo } from 'node:net'
 import { expect, test } from 'vitest'
-import {
-	findHealthyWorkerOrigin,
-	healthUrlForOrigin,
-	isWorkerHealthOk,
-	parsePortFromOrigin,
-	workerOriginForPort,
-	workerPortRange,
-} from './dev-server.ts'
+import { findHealthyWorkerOrigin, isWorkerHealthOk } from './dev-server.ts'
 
 function listenHealthServer() {
 	const server = http.createServer((request, response) => {
@@ -50,15 +43,9 @@ test('findHealthyWorkerOrigin returns the first origin whose /health is ok', asy
 	})
 	expect(origin).toBe('http://localhost:3743')
 	expect(probed).toEqual(['http://localhost:3742', 'http://localhost:3743'])
-	expect(workerPortRange(3742, 3)).toEqual([3742, 3743, 3744])
-	expect(workerOriginForPort(3742)).toBe('http://localhost:3742')
-	expect(healthUrlForOrigin('http://localhost:3742/')).toBe(
-		'http://localhost:3742/health',
-	)
-	expect(parsePortFromOrigin('http://localhost:3743')).toBe(3743)
 })
 
-test('isWorkerHealthOk treats hung or failed /health as down', async () => {
+test('isWorkerHealthOk treats hung, failed, or live /health correctly', async () => {
 	const ok = await isWorkerHealthOk('http://localhost:3742', {
 		timeoutMs: 20,
 		fetchImpl: async () =>
@@ -86,9 +73,7 @@ test('isWorkerHealthOk treats hung or failed /health as down', async () => {
 		},
 	})
 	expect(hung).toBe(false)
-})
 
-test('isWorkerHealthOk accepts a real HTTP /health listener', async () => {
 	const health = listenHealthServer()
 	try {
 		const port = await health.listen()

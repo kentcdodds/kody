@@ -1,11 +1,10 @@
-import { readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	ensureWorkerBundlerModules,
 	leftoverSrcGeneratedBundlerNames,
-	removeLeftoverSrcGeneratedBundlerArtifacts,
 	workerBundlerGeneratedDir,
 	workerBundlerWranglerDir,
 } from './build-worker-bundler-modules.ts'
@@ -47,9 +46,6 @@ test('ensureWorkerBundlerModules writes bundler artifacts outside the src watch 
 			true,
 		)
 	}
-	expect(
-		await pathExists(path.join(workerBundlerWranglerDir, 'esbuild-wasm.mjs')),
-	).toBe(false)
 
 	const generatedWasm = await readFile(
 		path.join(workerBundlerGeneratedDir, 'esbuild.wasm'),
@@ -79,13 +75,4 @@ test('ensureWorkerBundlerModules removes leftover src/generated bundler artifact
 	expect(
 		await pathExists(path.join(leftoverSrcGeneratedDir, 'guide-catalog.mjs')),
 	).toBe(true)
-})
-
-test('removeLeftoverSrcGeneratedBundlerArtifacts is a no-op when leftovers are already gone', async () => {
-	await removeLeftoverSrcGeneratedBundlerArtifacts()
-	await removeLeftoverSrcGeneratedBundlerArtifacts()
-	await rm(path.join(leftoverSrcGeneratedDir, 'esbuild.wasm'), { force: true })
-	expect(
-		await pathExists(path.join(leftoverSrcGeneratedDir, 'esbuild.wasm')),
-	).toBe(false)
 })

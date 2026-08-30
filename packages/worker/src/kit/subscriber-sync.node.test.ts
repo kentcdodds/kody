@@ -62,7 +62,17 @@ function kitFetchImpl(input: {
 	return { calls, fetchImpl: fetchImpl as typeof fetch }
 }
 
-test('kitFactsFromUserRow maps activation and paid-plan columns', () => {
+test('syncExistingKitSubscriber adds lifecycle tags and removes paid tags on cancel', async () => {
+	expect(
+		desiredKitTagKeys(
+			kitFactsFromUserRow({
+				email_verified_at: '2026-08-01T00:00:00.000Z',
+				first_mcp_connected_at: '2026-08-02T00:00:00.000Z',
+				first_saved_package_at: '2026-08-03T00:00:00.000Z',
+				stripe_plan: 'pro',
+			}),
+		),
+	).toEqual(['signedUp', 'verified', 'agentConnected', 'activated', 'pro'])
 	expect(
 		kitFactsFromUserRow({
 			email_verified_at: null,
@@ -77,34 +87,7 @@ test('kitFactsFromUserRow maps activation and paid-plan columns', () => {
 		activated: false,
 		paidPlan: null,
 	})
-	expect(
-		desiredKitTagKeys(
-			kitFactsFromUserRow({
-				email_verified_at: '2026-08-01T00:00:00.000Z',
-				first_mcp_connected_at: '2026-08-02T00:00:00.000Z',
-				first_saved_package_at: '2026-08-03T00:00:00.000Z',
-				stripe_plan: 'pro',
-			}),
-		),
-	).toEqual(['signedUp', 'verified', 'agentConnected', 'activated', 'pro'])
-})
 
-test('syncExistingKitSubscriber skips missing subscribers and never creates them', async () => {
-	const { calls, fetchImpl } = kitFetchImpl({ subscriberId: null })
-	expect(
-		await syncExistingKitSubscriber({
-			apiKey: 'key',
-			email: 'new@example.com',
-			facts: kitFactsFromUserRow({}),
-			fetchImpl,
-		}),
-	).toEqual({ synced: false, reason: 'not_found' })
-	expect(calls).toHaveLength(1)
-	expect(calls[0]?.url).toContain('/subscribers?email_address=')
-	expect(calls.some((call) => call.method === 'POST')).toBe(false)
-})
-
-test('syncExistingKitSubscriber adds lifecycle tags and removes paid tags on cancel', async () => {
 	const { calls, fetchImpl } = kitFetchImpl({ subscriberId: 9 })
 	expect(
 		await syncExistingKitSubscriber({
@@ -135,6 +118,21 @@ test('syncExistingKitSubscriber adds lifecycle tags and removes paid tags on can
 	expect(
 		calls.some((call) => call.url === 'https://api.kit.com/v4/subscribers'),
 	).toBe(false)
+})
+
+test('syncExistingKitSubscriber skips missing subscribers and never creates them', async () => {
+	const { calls, fetchImpl } = kitFetchImpl({ subscriberId: null })
+	expect(
+		await syncExistingKitSubscriber({
+			apiKey: 'key',
+			email: 'new@example.com',
+			facts: kitFactsFromUserRow({}),
+			fetchImpl,
+		}),
+	).toEqual({ synced: false, reason: 'not_found' })
+	expect(calls).toHaveLength(1)
+	expect(calls[0]?.url).toContain('/subscribers?email_address=')
+	expect(calls.some((call) => call.method === 'POST')).toBe(false)
 })
 
 test('maybeSyncKitSubscriber no-ops without Kit config and swallows failures', async () => {

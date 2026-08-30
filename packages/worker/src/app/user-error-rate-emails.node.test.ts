@@ -14,21 +14,6 @@ const {
 	userErrorRateMinErrors,
 } = await import('#app/user-error-rate-emails.ts')
 
-test('shouldSendUserErrorRateEmail uses the 20% or absolute-error floor', () => {
-	expect(shouldSendUserErrorRateEmail({ errorCount: 4, eventCount: 10 })).toBe(
-		false,
-	)
-	expect(shouldSendUserErrorRateEmail({ errorCount: 5, eventCount: 30 })).toBe(
-		false,
-	)
-	expect(shouldSendUserErrorRateEmail({ errorCount: 5, eventCount: 25 })).toBe(
-		true,
-	)
-	expect(
-		shouldSendUserErrorRateEmail({ errorCount: 10, eventCount: 200 }),
-	).toBe(true)
-})
-
 function createKv() {
 	const store = new Map<string, string>()
 	return {
@@ -78,6 +63,19 @@ function createEnv(input: {
 }
 
 test('error-rate emails skip below-threshold users and claim once per month', async () => {
+	expect(shouldSendUserErrorRateEmail({ errorCount: 4, eventCount: 10 })).toBe(
+		false,
+	)
+	expect(shouldSendUserErrorRateEmail({ errorCount: 5, eventCount: 30 })).toBe(
+		false,
+	)
+	expect(shouldSendUserErrorRateEmail({ errorCount: 5, eventCount: 25 })).toBe(
+		true,
+	)
+	expect(
+		shouldSendUserErrorRateEmail({ errorCount: 10, eventCount: 200 }),
+	).toBe(true)
+
 	const { kv, store } = createKv()
 	const now = new Date('2026-08-15T12:00:00.000Z')
 	const env = createEnv({
