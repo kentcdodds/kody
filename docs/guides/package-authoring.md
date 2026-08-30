@@ -211,6 +211,17 @@ Account publishing is unaffected, so the owner can run the package privately.
 - Community publish additionally requires `"private": false` or omitting
   `private`, plus MIT license and README `## Intent`.
 
+## Work that does not fit a Worker isolate
+
+Package checks and publish rebuilds bundle every declared npm dependency inside
+a short-lived isolate. A large graph (PDF.js / `unpdf`, native addons, browsers,
+big WASM) can fail with an isolate memory or CPU reset even when the same import
+works in ad hoc `execute`.
+
+Do not vendor the library, switch to a dynamic import, or skip checks. Keep the
+Kody package as a thin orchestrator and run the heavy work in a process the
+owner operates. Load `coding_guide_get({ guide: "heavy_work_offload" })`.
+
 ## Secret-using packages
 
 When a package will use user-scoped secrets (`{{secret:name}}` placeholders or

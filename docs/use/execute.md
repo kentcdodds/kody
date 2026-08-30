@@ -99,7 +99,10 @@ version during bundling. Relative and absolute imports and `kody:`,
 `cloudflare:`, and `node:` specifiers are not npm dependencies. Registry
 resolution failures and packages that cannot bundle for the Workers runtime are
 reported as bundle errors. Saved packages continue to declare dependency
-versions in their checked-in `package.json`.
+versions in their checked-in `package.json`. Ad hoc execute skips publish
+checks, so a large import can succeed here and still fail package bundle
+validation; see
+[Offload work that does not fit a Worker isolate](../guides/heavy-work-offload.md).
 
 For runtime details, see Cloudflare's
 [Node.js compatibility](https://developers.cloudflare.com/workers/runtime-apis/nodejs/).

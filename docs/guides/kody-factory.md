@@ -93,6 +93,11 @@ Access pattern and points at
 its URL as a [remote MCP server](../use/mcp-client-servers.md), and its tools
 appear in search under `mcp:<name>`.
 
+Work that does not fit a Worker isolate — a large npm graph, native code, or
+multi-minute CPU — follows the same split: the saved package orchestrates, and
+the owner operates the process. See
+[Offload work that does not fit a Worker isolate](./heavy-work-offload.md).
+
 ## A practical route through the map
 
 1. Search for the outcome and inspect the exact capability shape.
