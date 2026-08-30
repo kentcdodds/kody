@@ -667,7 +667,7 @@ How to get/set each value:
     sync a different worker secret than production.
 - `KODY_PACKAGE_INVOCATION_TOKEN` (optional)
   - In Kody: open
-    `/account/packages/<weekly-site-perf-package-id>?newToken=1&name=Weekly%20site%20perf&exportNames=.`,
+    `/@kentcdodds/weekly-site-perf?newToken=1&name=Weekly%20site%20perf&exportNames=.`,
     generate a raw token in the browser, and store that value as the repository
     secret `KODY_PACKAGE_INVOCATION_TOKEN`. Scope it to the `weekly-site-perf`
     package. The weekly workflow uses it only to invoke that package; it is not
