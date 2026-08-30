@@ -57,7 +57,9 @@ When a plain repo has `package.json` at HEAD, `repo_get` and publish surfaces
 surface progressive disclosure (`package_shaped`, `activated: false`, promote
 notice). `repo_promote_to_package` enforces the `saved_packages` entitlement,
 runs full publish checks, creates the `saved_packages` row, flips
-`entity_sources` to `package`, and deletes the `user_repos` row.
+`entity_sources` to `package` while seeding `published_commit` from the
+session's HEAD (plain repos have no publish pointer, and a null pointer after
+the flip looks like a stale session), and deletes the `user_repos` row.
 
 ## Mental model
 
