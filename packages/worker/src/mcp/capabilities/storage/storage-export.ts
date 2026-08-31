@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { authorizeCapabilityStorageId } from '#mcp/capabilities/storage-access.ts'
 import {
 	storageExportOutputSchema,
 	storageIdSchema,
@@ -26,16 +27,21 @@ export const storageExportCapability = defineDomainCapability(
 		outputSchema: storageExportOutputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireStorageUser(ctx)
+			const storageId = authorizeCapabilityStorageId({
+				callerContext: ctx.callerContext,
+				capabilityName: 'storage_export',
+				storageId: args.storage_id,
+			})
 			const result = await storageRunnerRpc({
 				env: ctx.env,
 				userId: user.userId,
-				storageId: args.storage_id,
+				storageId,
 			}).exportStorage({
 				pageSize: args.page_size,
 				startAfter: args.start_after,
 			})
 			return {
-				storage_id: args.storage_id,
+				storage_id: storageId,
 				export: result,
 			}
 		},

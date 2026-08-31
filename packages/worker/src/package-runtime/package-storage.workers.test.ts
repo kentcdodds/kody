@@ -4,8 +4,8 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { getExecutionErrorDetails } from '#mcp/executor.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { buildPackageStorageId } from '#worker/storage-ids.ts'
 import {
-	buildPackageStorageId,
 	createPackageStorageAccessDeniedMessage,
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'

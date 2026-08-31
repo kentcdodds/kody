@@ -18,6 +18,7 @@ import {
 	storageBucketKindFromStorageId,
 } from '#worker/storage-buckets/service.ts'
 import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
+import { buildPackageStorageId } from '#worker/storage-ids.ts'
 import { storageRunnerDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 
@@ -1180,16 +1181,6 @@ export function createStorageKodyTools(input: {
 				}
 			: {}),
 	}
-}
-
-/**
- * Durable storage id of a saved package's own bucket. Reached via
- * `packageStorage()` from every package surface (invocations, jobs,
- * and package apps). Saved-package runtimes do not bind ambient `storage` to
- * this bucket; bundler provenance grants access through `packageStorage()`.
- */
-export function buildPackageStorageId(packageId: string) {
-	return `package:${encodeURIComponent(packageId)}`
 }
 
 export function createPackageStorageAccessDeniedMessage(packageId: string) {

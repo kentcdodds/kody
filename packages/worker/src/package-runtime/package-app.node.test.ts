@@ -1,10 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
-import {
-	buildPackageStorageId,
-	createPackageStorageAccessDeniedMessage,
-} from '#worker/storage-runner.ts'
+import { buildPackageStorageId } from '#worker/storage-ids.ts'
+import { createPackageStorageAccessDeniedMessage } from '#worker/storage-runner.ts'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as ModuleGraph from './module-graph.ts'
 import type * as PublishedBundleArtifacts from './published-bundle-artifacts.ts'
