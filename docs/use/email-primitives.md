@@ -360,6 +360,33 @@ the system message. Use the metadata for routing and notifications (for example
 a Discord report), and follow `admin_url` (or the admin `admin_system_email_get`
 capability) for full contents.
 
+## `email.system-message.sent` package subscription (admins)
+
+A successful send from a reserved system sender (`admin_system_email_send` /
+`sendSystemEmail`) fans `email.system-message.sent` to packages saved by users
+who hold the admin role at dispatch time. Raw capability calls and utility
+wrappers both go through that send path, so archive packages see every operator
+send.
+
+Outbound system mail is not stored on the dedicated inbound `system_email_*`
+graph, so this topic carries the sent copy (recipients, subject, text, and HTML)
+rather than a metadata-only pointer. Production fan-out is admin-only; synthetic
+dispatch still runs a named handler for smoke tests.
+
+```ts
+type SystemEmailSentEvent = {
+	event: 'email.system-message.sent'
+	from: string
+	to: Array<string>
+	subject: string
+	text: string | null
+	html: string | null
+	reply_to: string | null
+	provider_message_id: string | null
+	sent_at: string
+}
+```
+
 ## Local inbound testing
 
 Run the worker locally with `APP_BASE_URL` set, sign up a user, then post raw

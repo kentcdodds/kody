@@ -1,7 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as AuditLog from '#worker/audit-log.ts'
-import type * as SystemOutbound from '#worker/email/system-outbound.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -20,10 +19,10 @@ vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 	}
 })
 
-vi.mock('#worker/email/system-outbound.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof SystemOutbound>()
-	return { ...actual, sendSystemEmail: mockModule.sendSystemEmail }
-})
+vi.mock('#worker/email/system-outbound.ts', () => ({
+	maxSystemOutboundRecipients: 5,
+	sendSystemEmail: mockModule.sendSystemEmail,
+}))
 
 const { adminSystemEmailSendCapability } =
 	await import('./admin-system-email-send.ts')
@@ -112,6 +111,7 @@ test('admin_system_email_send is admin-gated, validates input, and audits a reda
 			text: 'We shipped the fix.',
 			html: null,
 			replyTo: null,
+			waitUntil: undefined,
 		}),
 	)
 	const auditCall = mockModule.logAuditEvent.mock.calls.at(-1)?.[0] as

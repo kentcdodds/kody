@@ -9,11 +9,14 @@ import {
 	systemEmailLocals,
 	type SystemEmailLocal,
 } from './system-email.ts'
+import { dispatchSystemEmailSentSubscriptionEvent } from './system-email-sent-package-subscriptions.ts'
+import { buildSystemEmailSentEvent } from './system-email-sent-subscription-event.ts'
 
 type SystemOutboundEnv = Pick<
 	Env,
 	| 'APP_DB'
 	| 'APP_BASE_URL'
+	| 'BUNDLE_ARTIFACTS_KV'
 	| 'CLOUDFLARE_ACCOUNT_ID'
 	| 'CLOUDFLARE_API_BASE_URL'
 	| 'CLOUDFLARE_API_TOKEN'
@@ -101,6 +104,7 @@ export async function sendSystemEmail(input: {
 	html?: string | null
 	replyTo?: string | null
 	now?: Date
+	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<SystemOutboundResult> {
 	const localPart = input.localPart ?? 'kody'
 	if (!isSystemEmailLocal(localPart)) {
@@ -177,5 +181,25 @@ export async function sendSystemEmail(input: {
 				: (result.error ?? 'System email send failed.'),
 		)
 	}
-	return { from, to, providerMessageId: result.messageId ?? null }
+	const providerMessageId = result.messageId ?? null
+	const resolvedHtml = html ?? htmlFromText(text ?? '')
+	try {
+		await dispatchSystemEmailSentSubscriptionEvent({
+			env: input.env,
+			event: buildSystemEmailSentEvent({
+				from,
+				to,
+				subject,
+				text,
+				html: resolvedHtml,
+				replyTo,
+				providerMessageId,
+				sentAt: now.toISOString(),
+			}),
+			waitUntil: input.waitUntil,
+		})
+	} catch (error) {
+		console.warn('system-email-sent-subscription-dispatch-failed', error)
+	}
+	return { from, to, providerMessageId }
 }

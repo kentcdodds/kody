@@ -15,8 +15,8 @@ summary:
   admin-only fleet.entitlement.crossed entitlement crossings, admin-only
   auth.denial.burst / email.delivery.burst operator bursts, admin-only
   user.created / user.deleted account lifecycle notifications, and admin-only
-  user.email_verification.failed / user.email_outbound.paused mail-operator
-  notifications.
+  user.email_verification.failed / user.email_outbound.paused /
+  email.system-message.sent mail-operator notifications.
 category: platform
 ---
 
@@ -138,8 +138,9 @@ publish result. Failed and non-fast-forward results have no test hints.
   `fleet.package_error_rate.elevated`, `fleet.entitlement.crossed`,
   `auth.denial.burst`, `email.delivery.burst`, `status.incident.resolved`,
   `user.created`, `user.deleted`, `user.email_verification.failed`,
-  `user.email_outbound.paused`) gate **production** fan-out on admin role;
-  synthetic dispatch still runs your handler directly for smoke testing.
+  `user.email_outbound.paused`, `email.system-message.sent`) gate **production**
+  fan-out on admin role; synthetic dispatch still runs your handler directly for
+  smoke testing.
 - **Activity.** Synthetic runs appear on the `subscription` surface. Handler
   failures do not emit `run.error.recorded` (recursion guard).
 
@@ -353,6 +354,43 @@ Handlers run as the admin package owner, so the user-scoped email capabilities
 and the `email` runtime helper cannot read the system message — use the metadata
 and `admin_url` for notifications, and the admin `admin_system_email_get`
 capability for full contents.
+
+## `email.system-message.sent` (admins)
+
+A successful `admin_system_email_send` / `sendSystemEmail` fans
+`email.system-message.sent` to packages saved by users who hold the admin role
+at dispatch time. This includes sends from the `@kentcdodds/system-email`
+utility and raw capability calls. A non-admin package may declare the topic, but
+it never receives the event. Role revocation stops delivery on the next send.
+
+There is no Queue / DLQ for this topic. Dispatch is best-effort after the
+provider send already succeeded: a failed invoke is logged and does not fail the
+send or refund the daily cap.
+
+Outbound system mail is not stored on the dedicated inbound `system_email_*`
+graph (that graph refuses provider-message-id rows), so this topic carries the
+sent correspondence itself — recipients, subject, text, and HTML — for admin
+archive packages. It is the documented exception to metadata-only admin topics.
+
+Handlers receive:
+
+```ts
+type SystemEmailSentEvent = {
+	event: 'email.system-message.sent'
+	from: string
+	to: Array<string>
+	subject: string
+	text: string | null
+	html: string | null
+	reply_to: string | null
+	provider_message_id: string | null
+	sent_at: string
+}
+```
+
+Idempotency keys include the topic, provider message id (or `sent_at` when the
+provider omitted one), and subscriber package id. Deduplicate in package storage
+on `provider_message_id` when a utility already recorded the same send.
 
 ## `platform.feedback.submitted` (admins)
 

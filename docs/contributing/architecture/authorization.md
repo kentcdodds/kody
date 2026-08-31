@@ -445,6 +445,11 @@ mail also fans out metadata (never bodies or attachment bytes) on the
 `email.system-message.received` package subscription topic, and only to packages
 saved by users who hold the admin role at dispatch time — a non-admin subscriber
 never receives the event, and revoking admin stops delivery immediately.
+Successful reserved-sender sends fan `email.system-message.sent` the same
+admin-only way. That outbound topic includes the sent correspondence
+(recipients, subject, and bodies) because those sends are not written to the
+dedicated inbound graph (the graph refuses provider-message-id rows). It does
+not include user-owned mailbox content.
 
 This boundary is enforced structurally:
 

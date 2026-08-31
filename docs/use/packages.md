@@ -398,7 +398,8 @@ an event did or did not dispatch, or checking which packages subscribe to
 `mcp.server.reconnected`, or admin-only topics such as `status.incident.opened`,
 `fleet.package_error_rate.elevated`, `fleet.entitlement.crossed`,
 `auth.denial.burst`, `email.delivery.burst`, `user.created`, `user.deleted`,
-`user.email_verification.failed`, and `user.email_outbound.paused`.
+`user.email_verification.failed`, `user.email_outbound.paused`, and
+`email.system-message.sent`.
 
 For accepted stored inbound email, the topic is `email.message.received`.
 Quarantined inbound email dispatches `email.message.quarantined` instead. Both
@@ -409,8 +410,12 @@ Fetch parsed bodies or attachment bytes only when needed with
 `kody:runtime`. Operator system-inbox mail dispatches the separate
 `email.system-message.received` topic to packages saved by admin users when the
 message is accepted (quarantined system mail is stored but not dispatched); its
-payload adds an `admin_url` link to the message in the admin interface. See
-[Email primitives](./email-primitives.md) for the full payload shapes.
+payload adds an `admin_url` link to the message in the admin interface.
+Successful operator sends from reserved system senders dispatch
+`email.system-message.sent` with the sent correspondence (recipients, subject,
+and bodies) so an admin archive package can record mail that did not go through
+a utility wrapper. See [Email primitives](./email-primitives.md) for the full
+payload shapes.
 
 When a run in your Activity finishes with an error, Kody dispatches
 `run.error.recorded` to your packages that declare that topic. The payload is

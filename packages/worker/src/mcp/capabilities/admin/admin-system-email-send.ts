@@ -82,6 +82,7 @@ export const adminSystemEmailSendCapability = defineDomainCapability(
 						text: args.text ?? null,
 						html: args.html ?? null,
 						replyTo: args.reply_to ?? null,
+						waitUntil: ctx.waitUntil,
 					})
 					return {
 						from: result.from,
