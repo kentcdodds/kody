@@ -208,4 +208,5 @@ test('fetchOpenApiSpecText keeps the redirect destination out of failures', asyn
 
 	expect(result).toBeInstanceOf(Error)
 	expect((result as Error).message).not.toContain('internal.example')
+	expect((result as Error).message).not.toContain('403')
 })

@@ -13,12 +13,7 @@ export const defaultOpenApiSpecMaxBytes = 4_000_000
 export const defaultOpenApiSpecTimeoutMs = 30_000
 const maxRedirectHops = 5
 
-/**
- * Spec fetches leave through the same gateway as every other outbound
- * request so they consume the caller's `outbound_fetches_per_day`
- * entitlement and land in usage metering. There is deliberately no direct
- * `fetch` path here: the gateway is the only egress for user-supplied URLs.
- */
+/** Spec fetches egress through the fetch gateway; there is no direct `fetch` path. */
 export type OpenApiSpecFetchGateway = {
 	env: FetchGatewayEnv
 	props: FetchGatewayProps
@@ -118,13 +113,12 @@ export async function fetchOpenApiSpecText(input: {
 	}
 
 	if (!response.ok) {
-		// The redirected-to URL stays out of the message: echoing it back
-		// turns the fetch into a probe that reports where a redirect chain
-		// actually landed.
+		// Neither the redirect destination nor its status is reported back: both
+		// would turn a redirecting spec URL into a probe of where the chain landed.
 		throw new Error(
-			`OpenAPI spec fetch failed: HTTP ${response.status}${
-				redirected ? ' (after redirect)' : ` for ${input.specUrl}`
-			}`,
+			redirected
+				? 'OpenAPI spec fetch failed: redirect destination did not return the spec'
+				: `OpenAPI spec fetch failed: HTTP ${response.status} for ${input.specUrl}`,
 		)
 	}
 
