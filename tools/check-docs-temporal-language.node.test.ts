@@ -143,6 +143,7 @@ test.each([
 	],
 	['Post-squash, the follow-up migration renames stored tiers.', 'post-squash'],
 	['The guard now runs only for local applies.', 'now support'],
+	['The helper now persists through that path.', 'now support'],
 ])('flags rollout prose %j', (content, pattern) => {
 	expect(
 		findTemporalLanguageMatches({
