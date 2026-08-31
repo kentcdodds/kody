@@ -39,7 +39,9 @@ import { WalkthroughHostIntro } from './walkthrough-host-intro.tsx'
  * Positioning (public door): Kody is the home your agents share — for the
  * agents you use today and the ones you'll use tomorrow. The hero stage
  * (Kody with the host agents tethered around it) names the agents; the H1
- * matches the OG card. Factory / npm / packages stay below the fold.
+ * matches the OG card. The Ogygia beat names the guest trap (work locked in
+ * one agent's chat). Factory / npm / packages stay below the fold. The
+ * factory closer is the ritual: ask once, save it, trigger it.
  *
  * Layout styles live in `public/styles.css` (`.landing-*`) so SSR does not
  * emit a per-node `<style data-rmx>` tag for every marketing block.
@@ -284,6 +286,25 @@ export function HomeRoute(handle: Handle) {
 					) : null}
 				</section>
 
+				<section
+					aria-labelledby="villain-title"
+					class="landing-pitch landing-villain"
+				>
+					<h2 id="villain-title" class="landing-pitch-title">
+						Leave <em>Ogygia</em>
+					</h2>
+					<div>
+						<p class="landing-pitch-lead">
+							Calypso keeps a lovely guest. She does not send you home.
+						</p>
+						<p class="landing-pitch-body">
+							Claude, ChatGPT, Cursor — each one is a beautiful island. The work
+							stays in that chat, and tomorrow&apos;s agent cannot find the
+							door.
+						</p>
+					</div>
+				</section>
+
 				<section aria-labelledby="pitch-title" class="landing-pitch">
 					<h2 id="pitch-title" class="landing-pitch-title">
 						Nothing new <br />
@@ -333,6 +354,7 @@ export function HomeRoute(handle: Handle) {
 							</article>
 						))}
 					</div>
+					<p class="landing-factory-ritual">Ask once. Save it. Trigger it.</p>
 					<p class="landing-factory-close">
 						Kody has the primitives for your agent to build you{' '}
 						<strong>pretty much anything</strong>. What will{' '}

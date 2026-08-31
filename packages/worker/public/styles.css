@@ -923,6 +923,19 @@ html.is-settled {
 	line-height: 1.04;
 }
 
+.landing-pitch-title em {
+	font-style: normal;
+	color: var(--color-primary-text);
+}
+
+.landing-villain {
+	padding-bottom: 0;
+}
+
+.landing-villain + .landing-pitch {
+	padding-top: clamp(2.25rem, 5vw, 3.5rem);
+}
+
 .landing-pitch-lead {
 	margin: 0;
 	font-size: clamp(1.15rem, 1.8vw, 1.35rem);
@@ -1261,8 +1274,18 @@ html.is-settled {
 	text-wrap: pretty;
 }
 
+.landing-factory-ritual {
+	margin: clamp(2.5rem, 5vw, 3.5rem) auto 0;
+	font-size: clamp(1.85rem, 3.6vw, 2.6rem);
+	font-weight: 740;
+	letter-spacing: -0.025em;
+	line-height: 1.12;
+	text-wrap: balance;
+	max-width: 16ch;
+}
+
 .landing-factory-close {
-	margin: clamp(2rem, 4vw, 2.75rem) auto 0;
+	margin: 1rem auto 0;
 	color: var(--color-text-muted);
 	font-size: 1.02rem;
 	max-width: 42ch;
@@ -2060,6 +2083,10 @@ html.is-settled {
 		grid-template-columns: 1fr;
 		text-align: center;
 		padding: 3.25rem 1.25rem 1.75rem;
+	}
+
+	.landing-villain + .landing-pitch {
+		padding-top: 2rem;
 	}
 
 	.landing-pitch-title {
