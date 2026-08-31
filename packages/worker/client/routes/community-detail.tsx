@@ -489,7 +489,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		const decision = decideCommunityInstallClick({
 			installState,
 			alreadyInstalled: installOutcome != null,
-			listingTrusted: false,
 		})
 		switch (decision) {
 			case 'ignore':

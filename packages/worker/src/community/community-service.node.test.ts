@@ -39,6 +39,7 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageByName: vi.fn(),
 	updateSavedPackage: vi.fn(),
 	ensureEntitySource: vi.fn(),
+	getEntitySourceById: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
 	deleteEntitySource: vi.fn(),
 	cleanupArtifactReposForPackage: vi.fn(),
@@ -97,6 +98,8 @@ vi.mock('#worker/repo/source-sync.ts', () => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	deleteEntitySource: (...args: Array<unknown>) =>
 		mockModule.deleteEntitySource(...args),
+	getEntitySourceById: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceById(...args),
 }))
 
 vi.mock('#worker/repo/artifact-repo-cleanup.ts', () => ({

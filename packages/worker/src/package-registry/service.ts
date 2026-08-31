@@ -358,8 +358,8 @@ export async function refreshSavedPackageProjection(input: {
 				hasApp: row.has_app === 1,
 				// Preserve visibility across projection refresh / re-save.
 				hidden: existing?.hidden ?? false,
-				// Privacy is recomputed from the manifest on every refresh.
-				isPrivate: row.is_private === 1,
+				// Visibility is a repo setting, not a manifest field.
+				isPrivate: existing?.isPrivate ?? true,
 				// Website lock is not a projection field; keep the stored timestamp.
 				lockedAt: existing?.lockedAt ?? null,
 				createdAt: existing?.createdAt ?? refreshedAt,

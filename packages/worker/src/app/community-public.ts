@@ -140,7 +140,7 @@ export function toPublicCommunityListing(
 		pinnedCommit: listing.pinnedCommit,
 		publishedAt: listing.publishedAt,
 		ownerUsername: getOwnerUsernameFromListingName(listing.name),
-		trusted: listing.trusted,
+		trusted: false,
 		featured: listing.featured,
 		averageStars: listing.averageStars,
 		ratingCount: listing.ratingCount,
