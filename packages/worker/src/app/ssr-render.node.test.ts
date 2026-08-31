@@ -16,6 +16,7 @@ import {
 	createCommunityPackageHandler,
 } from '#app/handlers/community-detail.tsx'
 import { createDiscordHandler } from '#app/handlers/discord.ts'
+import { createFaqHandler } from '#app/handlers/faq.ts'
 import { createOnboardingHandler } from '#app/handlers/onboarding.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
 import { resetInlineStylesheetCache } from '#app/inline-stylesheet.ts'
@@ -1577,6 +1578,40 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	// Free floor and paid "no floor" labels from the plan table (not marketing copy).
 	expect(html).toContain('15 minutes')
 	expect(html).toContain('None')
+})
+
+test('renderAppPage renders the public FAQ page for anonymous visitors', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv(createUserTestDb([]))
+
+	const response = await createFaqHandler(env).handler({
+		request: new Request('https://example.com/faq'),
+	} as never)
+
+	expect(response.status).toBe(200)
+	const html = await readResponseText(response)
+	expect(html).toContain('<title>FAQ</title>')
+	expect(html).toContain('data-faq="replace-agents"')
+	expect(html).toContain('Does Kody replace Claude, Cursor, ChatGPT, or Codex?')
+	expect(html).toContain('Does Kody call a model / make inference calls?')
+	expect(html).toContain('What is a package vs a prompt vs a memory?')
+	expect(html).toContain('Can my team share one Kody account?')
+	expect(html).toContain('How do secrets work? Can my agent read the key?')
+	expect(html).toContain('What happens if I switch agents?')
+	expect(html).toContain('What does the free plan include?')
+	expect(html).toContain('Can I export or self-host?')
+	expect(html).toContain(
+		'How is this different from a Claude Project, a local folder of skills, or n8n?',
+	)
+	expect(html).toContain('How do I get started?')
+	expect(html).toContain(
+		'Your assistant is yours unless you publish a community package.',
+	)
+	expect(html).toContain('secret_get')
+	expect(html).toContain('<details')
+	expect(html).toContain('<summary>')
+	expect(html).toContain('href="/faq">FAQ</a>')
 })
 
 test('renderAppPage renders the public Discord connect page', async () => {

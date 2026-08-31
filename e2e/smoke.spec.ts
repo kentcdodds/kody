@@ -89,6 +89,19 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 		page.getByRole('heading', { name: 'What an admin can never see' }),
 	).toBeVisible()
 
+	await page.goto('/faq')
+	await expect(
+		page.getByRole('heading', { name: /before you connect/i }),
+	).toBeVisible()
+	await expect(
+		page.getByRole('group', {
+			name: 'Does Kody replace Claude, Cursor, ChatGPT, or Codex?',
+		}),
+	).toBeVisible()
+	await expect(
+		page.getByRole('link', { name: 'FAQ', exact: true }),
+	).toBeVisible()
+
 	await page.goto('/pricing')
 	await expect(
 		page.getByRole('heading', { name: 'Free', exact: true }),
