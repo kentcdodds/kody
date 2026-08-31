@@ -37,6 +37,12 @@ export type PublicCommunityListing = {
 	readmeContent: string | null
 	license: string
 	pinnedCommit: string
+	/**
+	 * Git default-branch name for public `/tree/:ref` URLs. Omitted on cached
+	 * catalog rows; the listing overlay sets it from artifact head lookup
+	 * (`main` when lookup misses). Not `master` unless that is the repo default.
+	 */
+	defaultBranch?: string
 	/** Default-branch HEAD SHA when it differs from the package runtime pin. */
 	headCommit?: string | null
 	/** True when default-branch HEAD is ahead of `pinnedCommit` (package publish). */

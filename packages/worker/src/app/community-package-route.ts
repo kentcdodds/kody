@@ -4,10 +4,15 @@ import {
 	resolveCommunityPackageUrl,
 } from '#worker/community/package-url.ts'
 import {
+	fallbackDefaultBranchName,
 	getCommunityPackageFilesHref,
+	isPublicTreeDefaultRefAlias,
 	isReservedPackageFilesKodyId,
 	normalizePackageFilesPath,
 } from '#universal/package-files.ts'
+import { getCommunityListingById } from '#worker/community/repo.ts'
+import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { routes } from '#universal/routes.ts'
 
 const communityDetailMatcher = createMatcher(routes.communityDetail.pattern)
@@ -92,9 +97,36 @@ function selectedPathFromParams(relativePath: string | undefined) {
 	return normalizePackageFilesPath(relativePath ?? '')
 }
 
-function normalizeTreeRef(ref: string | undefined) {
-	const trimmed = ref?.trim() ?? ''
-	return trimmed.length > 0 ? trimmed : 'HEAD'
+function requestedTreeRef(ref: string | undefined) {
+	return ref?.trim() ?? ''
+}
+
+async function resolveListingDefaultTreeRef(env: Env, listingId: string) {
+	try {
+		const listing = await getCommunityListingById(env.APP_DB, {
+			listingId,
+			includeDelisted: false,
+		})
+		if (!listing) return fallbackDefaultBranchName
+		const source = await getEntitySourceById(env.APP_DB, listing.sourceId)
+		if (!source?.repo_id) return fallbackDefaultBranchName
+		const head = await resolveArtifactSourceHead(env, source.repo_id)
+		const branch = head.branch?.trim()
+		return branch || fallbackDefaultBranchName
+	} catch {
+		return fallbackDefaultBranchName
+	}
+}
+
+async function canonicalPublicTreeRef(input: {
+	env: Env
+	listingId: string
+	ref: string | undefined
+}) {
+	if (!isPublicTreeDefaultRefAlias(input.ref)) {
+		return requestedTreeRef(input.ref)
+	}
+	return resolveListingDefaultTreeRef(input.env, input.listingId)
 }
 
 export async function resolveCommunityFilesRoute(input: {
@@ -105,11 +137,16 @@ export async function resolveCommunityFilesRoute(input: {
 	if (detailMatch) {
 		const selectedPath = selectedPathFromParams(detailMatch.params.relativePath)
 		if (selectedPath == null) return { kind: 'invalid-path' }
+		const ref = await canonicalPublicTreeRef({
+			env: input.env,
+			listingId: detailMatch.params.listingId,
+			ref: input.url.searchParams.get('ref') ?? '',
+		})
 		return {
 			kind: 'listing',
 			listingId: detailMatch.params.listingId,
 			selectedPath,
-			ref: normalizeTreeRef(input.url.searchParams.get('ref') ?? 'HEAD'),
+			ref,
 		}
 	}
 
@@ -128,6 +165,11 @@ export async function resolveCommunityFilesRoute(input: {
 			kodyId: leftoverFilesMatch.params.kodyId,
 		})
 		if (!target) return null
+		const ref = await canonicalPublicTreeRef({
+			env: input.env,
+			listingId: target.listingId,
+			ref: input.url.searchParams.get('ref') ?? '',
+		})
 		return {
 			kind: 'redirect',
 			to: getCommunityPackageFilesHref({
@@ -135,7 +177,7 @@ export async function resolveCommunityFilesRoute(input: {
 				ownerUsername: target.username,
 				kodyId: target.kodyId,
 				relativePath: selectedPath,
-				ref: 'HEAD',
+				ref,
 			}),
 		}
 	}
@@ -152,23 +194,29 @@ export async function resolveCommunityFilesRoute(input: {
 		kodyId: treeMatch.params.kodyId,
 	})
 	if (!target) return null
-	if (target.kind === 'redirect') {
+	const ref = await canonicalPublicTreeRef({
+		env: input.env,
+		listingId: target.listingId,
+		ref: treeMatch.params.ref,
+	})
+	const canonicalPath = getCommunityPackageFilesHref({
+		listingId: target.listingId,
+		ownerUsername: target.username,
+		kodyId: target.kodyId,
+		relativePath: selectedPath,
+		ref,
+	})
+	if (target.kind === 'redirect' || canonicalPath !== input.url.pathname) {
 		return {
 			kind: 'redirect',
-			to: getCommunityPackageFilesHref({
-				listingId: target.listingId,
-				ownerUsername: target.username,
-				kodyId: target.kodyId,
-				relativePath: selectedPath,
-				ref: normalizeTreeRef(treeMatch.params.ref),
-			}),
+			to: canonicalPath,
 		}
 	}
 	return {
 		kind: 'listing',
 		listingId: target.listingId,
 		selectedPath,
-		ref: normalizeTreeRef(treeMatch.params.ref),
+		ref,
 	}
 }
 

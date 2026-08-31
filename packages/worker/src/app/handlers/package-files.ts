@@ -94,7 +94,7 @@ export function createCommunityPackageFilesHandler(env: Env) {
 				env,
 				listingId: target?.listingId ?? null,
 				selectedPath: target?.selectedPath ?? '',
-				ref: target?.kind === 'listing' ? target.ref : 'HEAD',
+				ref: target?.kind === 'listing' ? target.ref : undefined,
 			})
 		},
 	} satisfies Action<typeof routes.communityPackageFiles>
