@@ -8,8 +8,7 @@
 		"packages/worker/client/routes/admin-users.tsx",
 		"packages/worker/client/routes/community-detail.tsx",
 		"packages/worker/client/routes/login.tsx",
-		"packages/worker/client/routes/onboarding-mcp-client-tabs.tsx",
-		"packages/worker/client/routes/record-table.tsx"
+		"packages/worker/client/routes/onboarding-mcp-client-tabs.tsx"
 	],
 	"node-tests": [
 		"packages/worker/src/account/export.node.test.ts",
