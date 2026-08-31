@@ -14,8 +14,8 @@ the project must follow the same convention; user-scoped tests should exercise
 both the "happy" path and a cross-user denial path.
 
 The deliberate storage exception is **operator-owned system email** for reserved
-platform local parts (`kody`, `support`, `abuse`, `postmaster`, `security`, and
-`admin`). The permanent D1 tables are `system_email_threads`,
+platform local parts (`kody`, `support`, `abuse`, `postmaster`, `security`,
+`admin`, and `psl`). The permanent D1 tables are `system_email_threads`,
 `system_email_messages`, `system_email_attachments`, and
 `system_email_delivery_events`. They omit `user_id` because the operator owner
 is implicit. They are the sole live `system:email` graph authority. The reserved

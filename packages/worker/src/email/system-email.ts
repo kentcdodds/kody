@@ -26,6 +26,8 @@ export const systemEmailLocals = [
 	'postmaster',
 	'security',
 	'admin',
+	// Public Suffix List contact for the kody.run listing (#1405).
+	'psl',
 ] as const
 
 export type SystemEmailLocal = (typeof systemEmailLocals)[number]

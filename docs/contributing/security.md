@@ -258,7 +258,8 @@ to one account), but it is not zero.
 requires a `_psl` TXT record on the zone and a PR to
 [publicsuffix/list](https://github.com/publicsuffix/list) by the domain owner,
 plus 2+ years remaining on the registration. Abuse/contact mail is
-`psl@kody.codes`. Do not enable `allowPrivateDomains` on tldts:
+`psl@kody.codes`, a reserved operator system inbox (same storage as `abuse@` and
+`security@`). Do not enable `allowPrivateDomains` on tldts:
 `readPackageAppZoneName` must keep resolving the public-suffix zone without the
 PRIVATE list. The `__Host-` cookie is the primary cookie-tossing control; PSL
 entry is an additional layer.
