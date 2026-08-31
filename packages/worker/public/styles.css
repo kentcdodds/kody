@@ -1520,7 +1520,10 @@ html.is-settled {
 
 .landing-loop-you p {
 	margin: 0;
+	min-width: 0;
 	text-wrap: pretty;
+	overflow-wrap: anywhere;
+	white-space: pre-line;
 }
 
 .landing-loop-line * {
