@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -73,31 +74,14 @@ export const repoPublishSessionCapability = defineDomainCapability(
 						publishedCommit: result.publishedCommit,
 						baseUrl: ctx.callerContext.baseUrl,
 					})
-					if (args.absorbed_upstream_commit) {
-						const source = await getEntitySourceByIdForUser(ctx.env.APP_DB, {
-							id: sessionInfo.source_id,
-							userId: user.userId,
-						})
-						if (source) {
-							try {
-								await absorbCommunityForkUpstream({
-									env: ctx.env,
-									userId: user.userId,
-									packageId: source.entity_id,
-									originCommit: args.absorbed_upstream_commit,
-								})
-							} catch (error) {
-								if (
-									error instanceof CommunityActionError &&
-									error.message.includes('self-authored')
-								) {
-									// Self-authored packages have no fork row.
-								} else {
-									throw error
-								}
-							}
-						}
-					}
+					const absorbNotice = args.absorbed_upstream_commit
+						? await absorbForkUpstreamAfterPublish({
+								env: ctx.env,
+								userId: user.userId,
+								sourceId: sessionInfo.source_id,
+								originCommit: args.absorbed_upstream_commit,
+							})
+						: null
 					await reportCapabilityProgress(ctx.reportProgress, {
 						progress: 3,
 						total: progressTotal,
@@ -108,6 +92,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 						session_id: result.sessionId,
 						published_commit: result.publishedCommit,
 						message: result.message,
+						...(absorbNotice ? { notice: absorbNotice } : {}),
 					}
 				}
 				const source = await getEntitySourceByIdForUser(ctx.env.APP_DB, {
@@ -190,3 +175,35 @@ export const repoPublishSessionCapability = defineDomainCapability(
 		},
 	},
 )
+
+async function absorbForkUpstreamAfterPublish(input: {
+	env: Env
+	userId: string
+	sourceId: string
+	originCommit: string
+}) {
+	const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
+		id: input.sourceId,
+		userId: input.userId,
+	})
+	if (!source) {
+		return 'Published, but absorb could not find the package source for this session. Retry repo_publish_session with absorbed_upstream_commit.'
+	}
+	try {
+		await absorbCommunityForkUpstream({
+			env: input.env,
+			userId: input.userId,
+			packageId: source.entity_id,
+			originCommit: input.originCommit,
+		})
+		return null
+	} catch (error) {
+		if (
+			error instanceof CommunityActionError &&
+			error.message.includes('self-authored')
+		) {
+			return null
+		}
+		return `Published, but the behind-upstream banner did not clear: ${getErrorMessage(error)}. Retry repo_publish_session with absorbed_upstream_commit.`
+	}
+}

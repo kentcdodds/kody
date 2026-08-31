@@ -252,6 +252,7 @@ test('repo_promote_to_package seeds published_commit from the opened session bas
 		name: '@user/brave-search',
 		published_commit: 'commit-1',
 	})
+	expect(result).not.toHaveProperty('message')
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
@@ -371,7 +372,7 @@ test('repo_promote_to_package rolls back the kind flip and published_commit when
 	expect(mockModule.deleteUserRepo).not.toHaveBeenCalled()
 })
 
-test('repo_promote_to_package surfaces community listing publish failure', async () => {
+test('repo_promote_to_package still finishes when community listing publish fails', async () => {
 	resetMocks()
 	mockModule.publishCommunityListing.mockRejectedValue(
 		new Error('listing failed'),
@@ -380,8 +381,21 @@ test('repo_promote_to_package surfaces community listing publish failure', async
 	mockModule.repoSessionRpc.mockReturnValue(rpc)
 	const { ctx } = createCapabilityContext()
 
-	await expect(
-		repoPromoteToPackageCapability.handler({ name: 'brave-search' }, ctx),
-	).rejects.toThrow(/listing failed/)
-	expect(mockModule.deleteUserRepo).not.toHaveBeenCalled()
+	const result = await repoPromoteToPackageCapability.handler(
+		{ name: 'brave-search' },
+		ctx,
+	)
+
+	expect(result).toMatchObject({
+		status: 'promoted',
+		kody_id: 'brave-search',
+		published_commit: 'commit-1',
+	})
+	expect(result.message).toContain('listing failed')
+	expect(result.message).toContain('community_publish')
+	expect(result.message).toContain(result.package_id)
+	expect(mockModule.deleteUserRepo).toHaveBeenCalledWith(expect.anything(), {
+		userId: 'user-1',
+		repoId: 'repo-1',
+	})
 })

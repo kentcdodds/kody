@@ -58,6 +58,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			kody_id: z.string(),
 			name: z.string(),
 			published_commit: z.string(),
+			message: z.string().optional(),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
@@ -224,6 +225,11 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				packageId,
 				sourceId: source.id,
 			}).catch(() => undefined)
+			// Listing is best-effort after publish committed: throwing here
+			// would fail a successful promote, leave the plain-repo row, and
+			// make retry report "already promoted". community_publish retries
+			// the catalog row for an already-public package.
+			let listingMessage: string | undefined
 			if (!userRepo.isPrivate) {
 				try {
 					await publishCommunityListing({
@@ -234,11 +240,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 						packageId,
 					})
 				} catch (error) {
-					throw new McpCallerError(
-						getErrorMessage(error) ||
-							'Failed to list the promoted public package on /community.',
-						{ cause: error },
-					)
+					listingMessage = `Promoted to a public package, but listing on /community failed: ${getErrorMessage(error)}. Retry community_publish for package_id ${packageId}.`
 				}
 			}
 			await deleteUserRepo(ctx.env.APP_DB, {
@@ -251,6 +253,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				kody_id: manifest.kody.id,
 				name: manifest.name,
 				published_commit: publishResult.publishedCommit,
+				...(listingMessage ? { message: listingMessage } : {}),
 			}
 		},
 	},
