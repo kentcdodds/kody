@@ -11,54 +11,18 @@ export const searchTool = {
 	name: 'search',
 	title: 'Search Capabilities, Packages, Integrations, and Secrets',
 	description: `
-Find **built-in capabilities**, **saved packages**,
-**saved integrations**, and **user secret references** (metadata only)
-before \`execute\`.
+Find built-in capabilities, saved packages, integrations, and secret references (metadata only) before \`execute\`.
 
-**query** — compact ranked markdown + structured matches (order matters). Query
-markdown is summary-only: type, title/name, one-line description, and entity ref.
-An empty call and broad/exploratory queries ("what can you do with email")
-return a compact **domain index** instead of individual hits; drill in with
-\`domain\`. General provider-name discovery returns one provider card and ranks
-a matching saved wrapper package above raw OpenAPI/MCP operations.
+**query** — compact ranked markdown + structured matches. Empty or broad queries return a domain index; search again with a more specific query. Domain ids appear on capability hits.
 
-**domain** — optional capability domain id (e.g. \`email\`, \`jobs\`,
-\`mcp:linear\`). With \`query\`, ranks only that domain's
-capabilities. Without \`query\`, lists the domain's capabilities in curated
-order. Domain ids appear on every capability hit and in domain summaries.
+**entity: "{id}:{type}"** — detail for one hit (\`capability\` | \`integration\` | \`package\` | \`secret\`), or 1–10 refs. Capability detail includes an execute snippet.
 
-An entire saved-package UUID, kody id, current-origin account package URL, or
-owner-matching hosted package URL resolves as exact user-scoped package identity
-without competing semantic matches. Hidden exact queries require
-\`includeHiddenPackages: true\`.
-
-**entity: "{id}:{type}"** — detail for one hit (\`capability\`
-| \`integration\` | \`package\` | \`secret\`), or an array of 1–10 refs to batch
-related lookups in one call. Package detail defaults to a slim index (export
-subpaths, job/retriever names, README Intent). Capability detail includes an
-exact \`execute\` module snippet plus TypeScript call-shape definitions.
-Synthesized provider detail reports its related-operation count. Integration
-detail may include a small set of
-same-provider package suggestions (user packages first, else trusted-first
-community listings). Package ids may be UUIDs or kody ids, and hidden packages
-resolve here regardless of \`includeHiddenPackages\`.
-
-Secret results expose metadata only; credential values never appear.
-
-If results look incomplete: \`meta_list_capabilities()\` for a domain index,
-then \`meta_list_capabilities({ domain })\` for one domain.
-
-Optional **limit** (default 15) and **maxResponseSize** trim low-ranked
-capability hits. Auto-surfaced memory one-liners are reserved first so a
-tight size budget does not drop them.
 Example arguments:
-- \`{ "query": "saved github automation package", "limit": 10 }\`
+- \`{ "query": "send a message" }\`
 - \`{}\`
 - \`{ "query": "send a message", "domain": "email" }\`
 - \`{ "domain": "jobs" }\`
 - \`{ "entity": "coding_guide_get:capability" }\`
-- \`{ "entity": ["openapi:canva:createdesignexportjob:capability", "openapi:canva:getdesignexportjob:capability"] }\`
-- \`{ "entity": "github:integration" }\`
 
 https://github.com/kentcdodds/kody/blob/main/docs/use/search.md
 	`.trim(),

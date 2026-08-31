@@ -993,6 +993,8 @@ test('domain overview matches format as compact structured summaries', () => {
 		},
 	]
 	const markdown = formatSearchMarkdown({ matches: domainMatches })
+	expect(markdown).toContain('Search again with a more specific query')
+	expect(markdown).not.toContain('Drill in with')
 	expect(markdown).toContain('**domain** `email` (9 capabilities)')
 	expect(markdown).toContain('`email_send`')
 	expect(markdown).not.toContain('entity-backed')

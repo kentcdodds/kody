@@ -291,13 +291,20 @@ Users can read or replace their own MCP server instruction overlay with
 **`meta_get_mcp_server_instructions`** and
 **`meta_set_mcp_server_instructions`**.
 
-This overlay is appended to Kody's built-in server instructions for that user.
-Prefer **memories** for durable facts and preferences; use the overlay only for
-rare always-on session policy — not for maintaining a package inventory. When
-agents have used saved packages via MCP `execute`, Kody may include a short
-“often used packages” hint automatically; discover others with **`search`**.
-Pass an empty string to clear the overlay. Changes apply to new MCP sessions, so
-reconnect the MCP client if the host caches server instructions.
+This overlay is appended after Kody's built-in server instructions for that
+user. Prefer **memories** for durable facts and preferences; use the overlay
+only for rare always-on session policy — not for maintaining a package
+inventory. When agents have used saved packages via MCP `execute`, Kody may
+include a short “often used packages” hint automatically; discover others with
+**`search`**. Pass an empty string to clear the overlay. Changes apply to new
+MCP sessions, so reconnect the MCP client if the host caches server
+instructions.
+
+Some MCP clients keep only the first 2048 characters of server instructions.
+**`meta_get_mcp_server_instructions`** and
+**`meta_set_mcp_server_instructions`** report `assembled_chars` and a `warning`
+when the assembled text meets that cut, so the overlay may never reach the
+model.
 
 ## Network and OAuth helpers
 
