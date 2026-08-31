@@ -88,8 +88,8 @@ export function AppIconCard(handle: Handle<AppIconCardProps>) {
 				<img
 					src={handle.props.src}
 					alt="Kody app icon"
-					width={144}
-					height={144}
+					width={256}
+					height={256}
 					mix={css(appIconImgCss)}
 				/>
 				<p mix={css(appIconHintCss)}>
@@ -244,8 +244,9 @@ const appIconBodyCss = {
 
 const appIconImgCss = {
 	display: 'block',
-	width: '144px',
-	height: '144px',
+	width: 'min(256px, 100%)',
+	height: 'auto',
+	aspectRatio: '1',
 	borderRadius: radius.md,
 	border: `1px solid ${colors.border}`,
 }

@@ -406,8 +406,9 @@ export const grokBotConnectPluginsUrl =
 	'https://cursor.com/help/grok-bot/connect-plugins'
 
 /**
- * Dedicated ChatGPT / Codex connector icon. ChatGPT rejects uploaded icons
- * over 10 KB; `/apple-touch-icon.png` is larger, so onboarding points here.
+ * Dedicated ChatGPT / Codex connector icon. ChatGPT wants 256×256 and
+ * rejects uploads over 10 KB; `/apple-touch-icon.png` is larger, so
+ * onboarding points here.
  */
 export const kodyAppIconPath = '/images/kody-app-icon.png'
 export const kodyAppIconFilename = kodyAppIconPath.slice(

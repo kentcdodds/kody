@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
@@ -181,13 +181,18 @@ test('onboarding MCP client builders emit the structured configs each host expec
 	expect(buildKodyAppIconUrl(mcpServerUrl)).toBe(
 		'https://kody.codes/images/kody-app-icon.png',
 	)
+	const appIconPath = fileURLToPath(
+		new URL('../../public/images/kody-app-icon.png', import.meta.url),
+	)
+	expect(statSync(appIconPath).size).toBeLessThanOrEqual(10 * 1024)
+	const appIconPng = readFileSync(appIconPath)
 	expect(
-		statSync(
-			fileURLToPath(
-				new URL('../../public/images/kody-app-icon.png', import.meta.url),
-			),
-		).size,
-	).toBeLessThanOrEqual(10 * 1024)
+		appIconPng
+			.subarray(0, 8)
+			.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+	).toBe(true)
+	expect(appIconPng.readUInt32BE(16)).toBe(256)
+	expect(appIconPng.readUInt32BE(20)).toBe(256)
 
 	const vsCodeInstallUrl = buildVsCodeInstallUrl(mcpServerUrl)
 	expect(vsCodeInstallUrl.startsWith('vscode:mcp/install?')).toBe(true)
