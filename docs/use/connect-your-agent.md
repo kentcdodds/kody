@@ -1,9 +1,9 @@
 # Connect your agent
 
 Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
-Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, OpenClaw, GitHub Copilot
-(VS Code or CLI), the GitHub Copilot app, or any other AI agent that supports
-MCP — not from a separate Kody chat app.
+Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, OpenClaw, Devin, Gemini,
+GitHub Copilot (VS Code or CLI), the GitHub Copilot app, or any other AI agent
+that supports MCP — not from a separate Kody chat app.
 
 Agents discovering this host can read `/auth.md` for the OAuth registration
 block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.
@@ -13,8 +13,7 @@ started (`/onboarding`).
 The in-app Get started page (`/onboarding`) asks which agent you want to connect
 first, then shows only that host's install steps. A second client is worth it
 later when you want the same [memories](./memory.md) and packages from another
-agent — you do not need every host on day one. Choose **Not listed** for a
-generic MCP URL, or for Grok CLI, OpenCode, or the Copilot app.
+agent — you do not need every host on day one.
 
 ## Add the MCP server
 
@@ -36,7 +35,8 @@ MCP URL and setup prompt.
 ### Client notes
 
 Get started shows one host at a time after you pick it. Use **Not listed** when
-your agent is not in the first chooser, or when you only have the MCP URL.
+your agent is not in the featured chooser (More hosts are listed there), or when
+you only have the MCP URL.
 
 - **Cursor** — Install the official
   [Kody plugin](https://cursor.com/marketplace/kody), or in Cursor chat run
@@ -92,6 +92,11 @@ your agent is not in the first chooser, or when you only have the MCP URL.
 - **Copilot App** — In the GitHub Copilot app, open settings → **MCP Servers**
   and add a custom remote HTTP server with the MCP URL. Servers from Copilot CLI
   or repository MCP config are also available in the app.
+- **Devin** — In Devin Desktop, add a custom remote MCP server and paste the MCP
+  URL. Complete OAuth when Devin opens it. The same connector works from the
+  mobile-friendly web app.
+- **Gemini** — In the Gemini app or Jules, add a custom MCP connector and paste
+  the MCP URL. Complete OAuth when Google prompts you.
 - **OpenClaw** — Run
   `openclaw mcp add kody --url <url> --transport streamable-http --auth oauth`,
   then `openclaw mcp login kody`. `openclaw mcp doctor kody --probe` checks the
@@ -111,10 +116,11 @@ your agent is not in the first chooser, or when you only have the MCP URL.
 ### Coding vs non-coding agents
 
 Using Kody packages works great with non-coding agents such as Claude Desktop,
-ChatGPT.com, Grok.com, Grok Bot, and the GitHub Copilot app. For creating or
-editing packages, a coding agent (Cursor, Claude Code, Codex / ChatGPT desktop,
-Grok CLI, Copilot, OpenCode, Pi, OpenClaw, and similar) is usually smoother
-because those hosts can edit files and iterate on code more easily.
+ChatGPT.com, Grok.com, Grok Bot, Gemini, and the GitHub Copilot app. For
+creating or editing packages, a coding agent (Cursor, Claude Code, Codex /
+ChatGPT desktop, Grok CLI, Copilot, OpenCode, Devin, Pi, OpenClaw, and similar)
+is usually smoother because those hosts can edit files and iterate on code more
+easily.
 
 ## Give Kody Access, then persist a first build
 

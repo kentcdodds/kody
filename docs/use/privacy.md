@@ -179,7 +179,6 @@ does not let admins browse:
 
 - Secret values or secret metadata (names, scopes, allowlists)
 - Package invocation tokens
-- Values
 - Memories
 - Private packages and their source
 - Jobs
