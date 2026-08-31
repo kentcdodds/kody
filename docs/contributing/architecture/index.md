@@ -139,9 +139,9 @@ arbitrary hosts:
 This invariant must hold for any code path that materializes an integration
 token and then attaches it to an outbound request. Host-side refresh via
 `integration_token_refresh` materializes tokens only server-side and returns
-metadata. `refreshAccessToken` is the existing residual raw-token helper; it now
-persists through that same host path, then returns the access token for
-user-lane integrations only.
+metadata. `refreshAccessToken` is the raw-token helper: it persists through that
+same host path, then returns the access token for user-lane integrations only.
+See [OAuth integrations](./integrations.md).
 
 ## Source of truth in code
 

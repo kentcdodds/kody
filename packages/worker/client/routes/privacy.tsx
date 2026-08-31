@@ -228,7 +228,6 @@ export function PrivacyRoute(_handle: Handle) {
 				<ul mix={css(listCss)}>
 					<li>Secret values or secret metadata (names, scopes, allowlists)</li>
 					<li>Package invocation tokens</li>
-					<li>Values</li>
 					<li>Memories</li>
 					<li>Private packages and their source</li>
 					<li>Jobs</li>
