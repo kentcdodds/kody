@@ -54,6 +54,7 @@ import {
 import {
 	getAccentCalloutCss,
 	getGhostButtonCss,
+	getLogoWellCss,
 	getPillButtonCss,
 	hoverMq,
 } from '#universal/styles/style-primitives.ts'
@@ -1262,13 +1263,7 @@ const pickerCardCss = {
 	},
 }
 
-const pickerMarkCss = {
-	display: 'grid',
-	placeItems: 'center',
-	width: '2.4rem',
-	height: '2.4rem',
-	color: colors.text,
-}
+const pickerMarkCss = getLogoWellCss({ size: '2.4rem', radius: '12px' })
 
 const pickerIconImgCss = {
 	display: 'block',
