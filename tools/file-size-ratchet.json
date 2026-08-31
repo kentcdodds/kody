@@ -1,22 +1,4 @@
 {
-	"client-routes": [
-		"packages/worker/client/routes/account-activity.tsx",
-		"packages/worker/client/routes/account-jobs.tsx",
-		"packages/worker/client/routes/admin-codemods.tsx",
-		"packages/worker/client/routes/admin-insights.tsx",
-		"packages/worker/client/routes/admin-platform-integrations.tsx",
-		"packages/worker/client/routes/admin-users.tsx",
-		"packages/worker/client/routes/community-detail.tsx",
-		"packages/worker/client/routes/login.tsx",
-		"packages/worker/client/routes/onboarding-mcp-client-tabs.tsx"
-	],
-	"node-tests": [
-		"packages/worker/src/app/account-deletion.node.test.ts",
-		"packages/worker/src/jobs/service.node.test.ts",
-		"packages/worker/src/mcp/run-kody-registry.node.test.ts",
-		"packages/worker/src/package-invocations/service.node.test.ts",
-		"packages/worker/src/package-runtime/module-graph.node.test.ts",
-		"packages/worker/src/package-runtime/package-workflows.node.test.ts",
-		"packages/worker/src/repo/repo-session-do.node.test.ts"
-	]
+	"client-routes": [],
+	"node-tests": []
 }
