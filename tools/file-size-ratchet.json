@@ -3,7 +3,6 @@
 	"node-tests": [
 		"packages/worker/src/account/export.node.test.ts",
 		"packages/worker/src/app/account-deletion.node.test.ts",
-		"packages/worker/src/package-runtime/package-workflows.node.test.ts",
-		"packages/worker/src/repo/repo-session-do.node.test.ts"
+		"packages/worker/src/package-runtime/package-workflows.node.test.ts"
 	]
 }
