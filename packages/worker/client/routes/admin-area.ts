@@ -2,10 +2,8 @@ export {
 	AdminCommunityReportsRoute,
 	adminCommunityReportsRouteLoader,
 } from './admin-community-reports.tsx'
-export {
-	AdminInsightsRoute,
-	adminInsightsRouteLoader,
-} from './admin-insights.tsx'
+export { AdminInsightsRoute } from './admin-insights.tsx'
+export { adminInsightsRouteLoader } from './admin-insights-shared.ts'
 export { AdminInvitesRoute, adminInvitesRouteLoader } from './admin-invites.tsx'
 export {
 	AdminFeatureFlagsRoute,
@@ -13,10 +11,8 @@ export {
 } from './admin-feature-flags.tsx'
 export { AdminPlatformIntegrationsRoute } from './admin-platform-integrations.tsx'
 export { adminPlatformIntegrationsRouteLoader } from './admin-platform-integrations-shared.ts'
-export {
-	AdminCodemodsRoute,
-	adminCodemodsRouteLoader,
-} from './admin-codemods.tsx'
+export { AdminCodemodsRoute } from './admin-codemods.tsx'
+export { adminCodemodsRouteLoader } from './admin-codemods-shared.ts'
 export {
 	AdminPlatformFeedbackRoute,
 	adminPlatformFeedbackRouteLoader,
