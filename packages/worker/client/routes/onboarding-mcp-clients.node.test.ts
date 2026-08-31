@@ -1,3 +1,5 @@
+import { statSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import {
 	buildClaudeCodeAddCommand,
@@ -177,8 +179,15 @@ test('onboarding MCP client builders emit the structured configs each host expec
 		['[mcp_servers.kody]', `url = "${mcpServerUrl}"`, ''].join('\n'),
 	)
 	expect(buildKodyAppIconUrl(mcpServerUrl)).toBe(
-		'https://kody.codes/apple-touch-icon.png',
+		'https://kody.codes/images/kody-app-icon.png',
 	)
+	expect(
+		statSync(
+			fileURLToPath(
+				new URL('../../public/images/kody-app-icon.png', import.meta.url),
+			),
+		).size,
+	).toBeLessThanOrEqual(10 * 1024)
 
 	const vsCodeInstallUrl = buildVsCodeInstallUrl(mcpServerUrl)
 	expect(vsCodeInstallUrl.startsWith('vscode:mcp/install?')).toBe(true)

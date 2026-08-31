@@ -149,4 +149,31 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(openclawMobile).toContain('data-surface="mobile"')
 	expect(openclawMobile).toContain('openclaw mcp login kody')
 	expect(openclawMobile).toContain('on a computer')
+
+	const chatgpt = await renderToString(
+		jsx(OnboardingMcpClientTabs, {
+			mcpServerUrl: defaultKodyMcpUrl,
+			selectedAgent: 'chatgpt',
+		}),
+	)
+	expect(chatgpt).toContain('data-testid="onboarding-mcp-app-icon"')
+	expect(chatgpt).toContain('src="https://kody.codes/images/kody-app-icon.png"')
+	expect(chatgpt).toContain('alt="Kody app icon"')
+	expect(chatgpt).toContain('download="kody-app-icon.png"')
+	expect(chatgpt).toContain('Right-click the icon')
+	expect(chatgpt).not.toContain('https://kody.codes/apple-touch-icon.png')
+
+	const codexMobile = await renderToString(
+		jsx(OnboardingMcpClientTabs, {
+			mcpServerUrl: defaultKodyMcpUrl,
+			selectedAgent: 'codex',
+			surface: 'mobile',
+		}),
+	)
+	expect(codexMobile).toContain('data-testid="onboarding-mcp-app-icon"')
+	expect(codexMobile).toContain(
+		'src="https://kody.codes/images/kody-app-icon.png"',
+	)
+	expect(codexMobile).toContain('download="kody-app-icon.png"')
+	expect(codexMobile).not.toContain('https://kody.codes/apple-touch-icon.png')
 })

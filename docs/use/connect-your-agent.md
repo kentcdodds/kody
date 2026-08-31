@@ -70,9 +70,10 @@ you only have the MCP URL.
   turn on Developer mode (Settings → Security and login), then create an app
   under Settings → Plugins → Browse plugins → Create app with the MCP URL. In a
   managed workspace, ask an admin to enable access if the setting or Plugins UI
-  is missing. You can use the site favicon (`/apple-touch-icon.png`) for the app
-  icon; the owner can edit a developer-mode app's name and logo later from
-  Manage in Apps settings. ChatGPT desktop is Codex — use that entry instead.
+  is missing. Use the connector icon (`/images/kody-app-icon.png`, under
+  ChatGPT's 10 KB limit) — right-click Save as on the connect page, then upload
+  it. The owner can edit a developer-mode app's name and logo later from Manage
+  in Apps settings. ChatGPT desktop is Codex — use that entry instead.
 - **Codex** — ChatGPT desktop is Codex. After the CLI writes the shared config,
   run `codex mcp login kody` if OAuth does not start. Manual includes
   `codex mcp add kody --url <url>` and the shared `~/.codex/config.toml`

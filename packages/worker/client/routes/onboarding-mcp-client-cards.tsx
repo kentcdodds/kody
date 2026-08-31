@@ -1,7 +1,10 @@
 import { type Handle, css } from 'remix/ui'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
-import { getPillButtonCss } from '#universal/styles/style-primitives.ts'
+import {
+	getGhostButtonCss,
+	getPillButtonCss,
+} from '#universal/styles/style-primitives.ts'
 import { renderHighlightedCode } from '#client/syntax-highlight.tsx'
 import {
 	highlightSnippetKey,
@@ -46,6 +49,53 @@ export function CopyCard(handle: Handle<CopyCardProps>) {
 						})
 					] ?? plainHighlightedCode(handle.props.value, handle.props.lang),
 				)}
+			</div>
+		</div>
+	)
+}
+
+type AppIconCardProps = {
+	src: string
+	downloadName: string
+}
+
+/**
+ * ChatGPT wants a PNG you can upload, not a URL to copy. Render the icon so
+ * right-click / long-press Save as works, and keep a same-origin download
+ * plus a quiet URL copy for hosts that still fetch by URL.
+ */
+export function AppIconCard(handle: Handle<AppIconCardProps>) {
+	return () => (
+		<div data-testid="onboarding-mcp-app-icon" mix={css(snippetCss)}>
+			<div mix={css(snippetHeadCss)}>
+				<span mix={css(snippetLabelCss)}>App icon</span>
+				<div mix={css(snippetActionCss)}>
+					<a
+						href={handle.props.src}
+						download={handle.props.downloadName}
+						mix={css(appIconDownloadCss)}
+					>
+						Download PNG
+					</a>
+					<CopyTextButton
+						value={handle.props.src}
+						idleLabel="Copy icon URL"
+						variant="ghost"
+					/>
+				</div>
+			</div>
+			<div mix={css(appIconBodyCss)}>
+				<img
+					src={handle.props.src}
+					alt="Kody app icon"
+					width={144}
+					height={144}
+					mix={css(appIconImgCss)}
+				/>
+				<p mix={css(appIconHintCss)}>
+					Right-click the icon and choose Save as (on a phone, long-press), then
+					upload it in ChatGPT. Icons over 10 KB are rejected.
+				</p>
 			</div>
 		</div>
 	)
@@ -172,10 +222,39 @@ const snippetLabelCss = {
 
 /* Header copy buttons run one size down from the standalone pills. */
 const snippetActionCss = {
-	'& > button': {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	alignItems: 'center',
+	justifyContent: 'flex-end',
+	gap: '0.4rem',
+	'& > button, & > a': {
 		fontSize: '0.88rem',
 		padding: '0.5rem 1rem',
 	},
+}
+
+const appIconDownloadCss = getGhostButtonCss()
+
+const appIconBodyCss = {
+	display: 'grid',
+	justifyItems: 'start',
+	gap: '0.75rem',
+	padding: '1rem 1.2rem',
+}
+
+const appIconImgCss = {
+	display: 'block',
+	width: '144px',
+	height: '144px',
+	borderRadius: radius.md,
+	border: `1px solid ${colors.border}`,
+}
+
+const appIconHintCss = {
+	margin: 0,
+	color: colors.textMuted,
+	fontSize: '0.88rem',
+	maxWidth: '48ch',
 }
 
 const snippetPreCss = {
