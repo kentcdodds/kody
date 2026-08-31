@@ -9,7 +9,11 @@ import {
 	type McpAuthDenialReason,
 	recordMcpAuthDenial,
 } from './mcp/auth-audit.ts'
-import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
+import {
+	AccountDeletionInProgressError,
+	AccountWriteLeaseLostError,
+	withAccountWriteLease,
+} from '#worker/account/deletion-state.ts'
 import { createMcpCallerContext, type McpServerProps } from './mcp/context.ts'
 import {
 	classifyMcpProtocolRequest,
@@ -189,6 +193,19 @@ export function createAccountSuspendedResponse() {
 	)
 }
 
+function createAccountDeletingResponse(status: 409 | 503) {
+	return Response.json(
+		{
+			error: 'account_deleting',
+			error_description:
+				status === 503
+					? 'Account deletion is in progress; retry after the current write finishes.'
+					: 'Account deletion is in progress; user-owned writes are disabled.',
+		},
+		{ status },
+	)
+}
+
 function audienceMatches(
 	audience: string | Array<string> | undefined,
 	origin: string,
@@ -345,26 +362,36 @@ export async function handleMcpRequest({
 		}),
 	)
 
-	return await withAccountWriteLease({
-		db: env.APP_DB,
-		stableUserId: mcpUser.userId,
-		holder: `mcp:${request.method} ${url.pathname}`,
-		env,
-		write: async () =>
-			classification.lane === 'legacy'
-				? await fetchMcp(
-						request,
-						env,
-						context as ExecutionContext<OAuthContextProps>,
-					)
-				: await handleStatelessMcpRequest({
-						request,
-						env,
-						ctx,
-						callerContext: props,
-						...(classification.parsedBody === undefined
-							? {}
-							: { parsedBody: classification.parsedBody }),
-					}),
-	})
+	try {
+		return await withAccountWriteLease({
+			db: env.APP_DB,
+			stableUserId: mcpUser.userId,
+			holder: `mcp:${request.method} ${url.pathname}`,
+			env,
+			write: async () =>
+				classification.lane === 'legacy'
+					? await fetchMcp(
+							request,
+							env,
+							context as ExecutionContext<OAuthContextProps>,
+						)
+					: await handleStatelessMcpRequest({
+							request,
+							env,
+							ctx,
+							callerContext: props,
+							...(classification.parsedBody === undefined
+								? {}
+								: { parsedBody: classification.parsedBody }),
+						}),
+		})
+	} catch (error) {
+		if (error instanceof AccountDeletionInProgressError) {
+			return createAccountDeletingResponse(409)
+		}
+		if (error instanceof AccountWriteLeaseLostError) {
+			return createAccountDeletingResponse(503)
+		}
+		throw error
+	}
 }

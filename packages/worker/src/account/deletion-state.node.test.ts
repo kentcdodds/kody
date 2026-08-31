@@ -12,6 +12,7 @@ import {
 	AccountWriteLeaseLostError,
 	abortAccountDeleting,
 	abortAccountDeletingByStableUserId,
+	clearUserMeterDeletionTombstone,
 	listActiveAccountWriteLeases,
 	markAccountDeleting,
 	repairAccountWriteLease,
@@ -1283,6 +1284,91 @@ test('abortAccountDeletingByStableUserId resolves the user then clears the fence
 		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
 	).toEqual({ deleting_at: null })
 	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
+})
+
+test('withAccountWriteLease drops a leftover UserMeter tombstone when D1 is live', async () => {
+	const { db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	await meterA.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
+	expect(await meterA.readDeletionState()).toEqual({
+		deletingAt: '2026-08-31 15:22:12',
+	})
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: meter.env,
+			async write() {
+				return 'ok'
+			},
+		}),
+	).resolves.toBe('ok')
+	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
+})
+
+test('withAccountWriteLease restores the meter tombstone when deletion starts during leftover heal', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const base = createInMemoryUserMeterEnv()
+	const namespace = base.env.USER_METER!
+	const deletingAt = '2026-08-31 16:04:00'
+	const env = {
+		USER_METER: {
+			idFromName: namespace.idFromName.bind(namespace),
+			get(id: DurableObjectId) {
+				const stub = namespace.get(id)
+				return new Proxy(stub, {
+					get(target, prop, receiver) {
+						const value = Reflect.get(target, prop, receiver)
+						if (prop === 'clearDeleting') {
+							return async (
+								args?: Parameters<typeof stub.clearDeleting>[0],
+							) => {
+								sqlite
+									.prepare(
+										`UPDATE users SET deleting_at = ? WHERE stable_user_id = ?`,
+									)
+									.run(deletingAt, 'user-a')
+								return target.clearDeleting(args)
+							}
+						}
+						return typeof value === 'function' ? value.bind(target) : value
+					},
+				})
+			},
+		},
+	} as unknown as UserMeterEnv
+	const meterA = userMeterRpc({ env, userId: 'user-a' })
+
+	await meterA.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env,
+			async write() {
+				return 'ok'
+			},
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	expect(
+		sqlite
+			.prepare(`SELECT deleting_at FROM users WHERE stable_user_id = ?`)
+			.get('user-a'),
+	).toEqual({ deleting_at: deletingAt })
+	expect(await meterA.readDeletionState()).toEqual({ deletingAt })
+})
+
+test('clearUserMeterDeletionTombstone is a no-op without USER_METER', async () => {
+	await expect(
+		clearUserMeterDeletionTombstone({
+			env: {},
+			stableUserId: 'user-a',
+		}),
+	).resolves.toEqual({ cleared: false })
 })
 
 test('abortAccountDeletingByStableUserId fails closed for an unknown user', async () => {

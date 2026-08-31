@@ -58,6 +58,7 @@ import {
 import {
 	AccountDeletionWritersActiveError,
 	abortAccountDeleting,
+	clearUserMeterDeletionTombstone,
 	markAccountDeleting,
 } from '#worker/account/deletion-state.ts'
 import {
@@ -1265,6 +1266,21 @@ export async function deleteUserAccount(input: {
 		const failure = `Atomic D1 account deletion failed: ${getErrorMessage(error)}`
 		warnings.push(failure)
 		throw new AccountDeletionCleanupError(warnings, result)
+	}
+
+	// The D1 user row is gone, so a later signup with the same email is a new
+	// account. Drop the UserMeter tombstone `purge()` restored; leaving it
+	// would fence every write (including `/mcp`) for that hashed stable id.
+	try {
+		await clearUserMeterDeletionTombstone({
+			env: input.env,
+			stableUserId: input.mcpUserId,
+		})
+	} catch (error) {
+		console.error('account_deletion_user_meter_tombstone_clear_failed', {
+			userId: input.mcpUserId,
+			error,
+		})
 	}
 
 	return result

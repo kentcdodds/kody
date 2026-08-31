@@ -355,6 +355,11 @@ Both are opt-in and adapted from the Epic Stack.
     `storageRunnerRpc` stub,
   - all OAuth grants for the user via the bound OAuth provider,
   - the user row itself last so a partial failure can be retried.
+- After the user row is gone, origin clears the UserMeter deletion tombstone
+  `purge()` restored. `users.stable_user_id` is SHA-256 of the signup email, so
+  a later account with that email reuses the same Durable Object id and must not
+  inherit the previous deletion fence. Username reuse with a different email is
+  a different `stable_user_id` and does not share that object.
 - Returns a structured
   `{ ok, deletedRowCounts, deletedKvKeys, revokedOAuthGrants, clearedDurableObjects, deletedVectors, warnings }`
   payload alongside a `Set-Cookie` that destroys the session.
