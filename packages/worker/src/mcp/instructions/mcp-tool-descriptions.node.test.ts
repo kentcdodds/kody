@@ -15,6 +15,9 @@ test('search and execute tool descriptions fit a 2048-character client cut', () 
 	expect(executeToolDescription.length).toBeLessThan(
 		mcpServerInstructionsClientHeadLimitChars,
 	)
+	expect(executeToolDescription).toContain(
+		'export default async function main(input = {})',
+	)
 	expect(executeToolDescription).toContain('kody.capability_id(input)')
 	expect(executeToolDescription).toContain("from 'kody:runtime'")
 })
