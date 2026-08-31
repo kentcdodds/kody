@@ -1,7 +1,6 @@
 {
 	"client-routes": [
 		"packages/worker/client/routes/account-activity.tsx",
-		"packages/worker/client/routes/account-jobs.tsx",
 		"packages/worker/client/routes/admin-codemods.tsx",
 		"packages/worker/client/routes/admin-platform-integrations.tsx"
 	],
