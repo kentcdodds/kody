@@ -85,6 +85,27 @@ test('client route and loader matching prefer specific static routes over dynami
 	)
 })
 
+test('package approve-publish is not swallowed by the package detail route', () => {
+	const packageDetailRoute = 'package-detail-route' as unknown as JSX.Element
+	const approvePublishRoute = 'approve-publish-route' as unknown as JSX.Element
+	const packageRoutes = {
+		[routePattern(routes.accountPackageDetail)]: packageDetailRoute,
+		[routePattern(routes.accountPackageApprovePublish)]: approvePublishRoute,
+	}
+	expect(matchRoute('/account/packages/pkg-1', packageRoutes)).toBe(
+		packageDetailRoute,
+	)
+	expect(
+		matchRoute('/account/packages/pkg-1/approve-publish', packageRoutes),
+	).toBe(approvePublishRoute)
+	expect(
+		matchRoute(
+			'/account/packages/pkg-1/approve-publish?commit=abc1234',
+			packageRoutes,
+		),
+	).toBe(approvePublishRoute)
+})
+
 test('view transitions skip shell tab switches, including when from-path was never recorded', () => {
 	// Tab switching inside the account/admin shell: the rail is unchanged and
 	// full-height, so a snapshot transition would squash it between two page
