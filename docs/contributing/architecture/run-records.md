@@ -377,8 +377,9 @@ retention anchors only. History browsers (`/account/activity`, `run_list` /
 Execution `status` stays `running` / `success` / `error`. Retained **error**
 rows may also carry soft triage (`error_triage`: `ignored` | `resolved`, plus
 optional `triage_note`, `triaged_at`, `triaged_by`). Triage is non-destructive:
-error name/message/logs stay put; Activity and `run_list` default to
-`error_triage=open` so handled noise drops out of the default view;
+error name/message/logs stay put; Activity's Open errors view and `run_list`
+default to `error_triage=open` so handled noise drops out of the default view;
+Activity's Recent runs view lists the last 7 days with `error_triage=all`;
 `run_summary.errors` counts only open errors and exposes separate `ignored` /
 `resolved` totals. Terminal `finishRun` upserts preserve triage on error
 finishes and clear it if a row somehow finishes non-error. A later successful
@@ -399,9 +400,10 @@ Schema version 10 on the RunLog DO.
 
 ## Reading the data
 
-- UI: `/account/activity` (open failures first by default; status / triage /
-  surface filters, 7-day summary with ignored/resolved counts, log viewer,
-  cursor pagination). `/account/jobs` recent runs link into it.
+- UI: `/account/activity` (open failures first by default; Recent runs lists the
+  last 7 days of successes and errors; status / triage / surface filters, 7-day
+  summary with ignored/resolved counts, log viewer, cursor pagination).
+  `/account/jobs` recent runs link into it.
 - MCP domain `runs`: `run_list`, `run_get`, `run_summary`, `run_update`,
   `run_update_bulk`.
 - Account export: section `run_records` pages through the user’s `RunLog`.

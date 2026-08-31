@@ -27,6 +27,12 @@ import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clients.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
+import {
+	type AccountActivityStatusFilter,
+	type AccountActivitySurfaceFilter,
+	type AccountActivityTriageFilter,
+	type AccountActivityViewFilter,
+} from '#universal/account-activity-filters.ts'
 
 export type { ProfileVisibility }
 export type { AdminFeatureFlag }
@@ -1444,25 +1450,12 @@ export type AccountWorkflowsLoaderData = {
 	selectedWorkflowId: string | null
 }
 
-export type AccountActivityStatusFilter = 'error' | 'all' | 'running'
-
-export type AccountActivitySurfaceFilter =
-	| 'all'
-	| 'execute'
-	| 'export'
-	| 'subscription'
-	| 'app_fetch'
-	| 'app_realtime'
-	| 'job'
-	| 'workflow'
-	| 'retriever'
-	| 'webhook'
-
-export type AccountActivityTriageFilter =
-	| 'open'
-	| 'ignored'
-	| 'resolved'
-	| 'all'
+export type {
+	AccountActivityStatusFilter,
+	AccountActivitySurfaceFilter,
+	AccountActivityTriageFilter,
+	AccountActivityViewFilter,
+}
 
 export type AccountActivityRunListItem = {
 	id: string
@@ -1516,6 +1509,7 @@ export type AccountActivitySummary = {
 
 export type AccountActivityLoaderData = {
 	ok: true
+	viewFilter: AccountActivityViewFilter
 	statusFilter: AccountActivityStatusFilter
 	surfaceFilter: AccountActivitySurfaceFilter
 	triageFilter: AccountActivityTriageFilter

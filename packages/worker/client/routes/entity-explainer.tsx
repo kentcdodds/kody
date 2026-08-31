@@ -129,8 +129,8 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is activity?',
 		match: accountSection(routes.accountActivity.href()),
 		paragraphs: [
-			'Activity is a short execution history for jobs, package apps, webhooks, and other runtimes. When something fails, the run, logs, and a triage state (open, ignored, or resolved) show up here.',
-			'Use this page to see what broke and whether to ignore, resolve, or fix it. Your agent can review open errors through the runs capabilities. A later successful run for the same job automatically resolves earlier open errors.',
+			'Activity is a short execution history for jobs, package apps, webhooks, and other runtimes. Open errors shows failures with logs and triage (open, ignored, or resolved). Recent runs lists the last week of successes and errors from the same records.',
+			'Use Open errors to decide whether to ignore, resolve, or fix a failure. Switch to Recent runs to see what ran. Your agent can review the same data through the runs capabilities. A later successful run for the same job automatically resolves earlier open errors.',
 		],
 	},
 	{

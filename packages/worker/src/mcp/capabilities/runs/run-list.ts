@@ -66,7 +66,7 @@ export const runListCapability = defineDomainCapability(
 	{
 		name: 'run_list',
 		description:
-			'List recent execution history across jobs, webhooks, package apps, workflows, and other runtimes so you can debug failures, crashes, and "why did my job stop working" questions. Key-less successful ad-hoc execute runs are intentionally not recorded (only execute failures are, plus execute calls that supplied an idempotencyKey); every other surface records both success and error. Terminal rows may include a bounded metadata.result snapshot. By default, ignored/resolved error runs are hidden (error_triage defaults to open); use run_update or run_update_bulk to triage noise, or pass error_triage all/ignored/resolved to inspect those rows. Records are retained about 30 days, capped per user, and cap-pruned in this order: handled errors, successes, then open errors.',
+			'List recent execution history across jobs, webhooks, package apps, workflows, and other runtimes so you can debug failures or inspect what ran. Key-less successful ad-hoc execute runs are intentionally not recorded (only execute failures are, plus execute calls that supplied an idempotencyKey); every other surface records both success and error. Terminal rows may include a bounded metadata.result snapshot. By default, ignored/resolved error runs are hidden (error_triage defaults to open); use run_update or run_update_bulk to triage noise, or pass error_triage all/ignored/resolved to inspect those rows. Pass status success (or omit status with error_triage all) for a recent "what ran" list. Records are retained about 30 days, capped per user, and cap-pruned in this order: handled errors, successes, then open errors.',
 		keywords: [
 			'run',
 			'runs',
@@ -77,6 +77,9 @@ export const runListCapability = defineDomainCapability(
 			'failures',
 			'error',
 			'errors',
+			'success',
+			'recent',
+			'what ran',
 			'crash',
 			'job failed',
 			'scheduled job',

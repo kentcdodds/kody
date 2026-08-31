@@ -9,41 +9,39 @@ import {
 } from '#worker/run-records/service.ts'
 import {
 	type RunErrorTriage,
-	type RunErrorTriageFilter,
 	type RunLogLevel,
 	type RunRecord,
 	type RunRecordLog,
 	type RunStatus,
 	type RunSurface,
-	runErrorTriageFilterValues,
 	runRecordRetentionDays,
-	runSurfaceValues,
 } from '#worker/run-records/types.ts'
+import {
+	readAccountActivityFilters,
+	statusFilterToRunStatus,
+	surfaceFilterToRunSurface,
+	type AccountActivityStatusFilter,
+	type AccountActivitySurfaceFilter,
+	type AccountActivityTriageFilter,
+	type AccountActivityViewFilter,
+} from '#universal/account-activity-filters.ts'
+
+export {
+	readAccountActivityFilters,
+	statusFilterToRunStatus,
+	surfaceFilterToRunSurface,
+}
+
+export type {
+	AccountActivityStatusFilter,
+	AccountActivitySurfaceFilter,
+	AccountActivityTriageFilter,
+	AccountActivityViewFilter,
+}
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
 >
-
-export const accountActivityStatusFilterValues = [
-	'error',
-	'all',
-	'running',
-] as const
-
-export type AccountActivityStatusFilter =
-	(typeof accountActivityStatusFilterValues)[number]
-
-export const accountActivitySurfaceFilterValues = [
-	'all',
-	...runSurfaceValues,
-] as const
-
-export type AccountActivitySurfaceFilter =
-	(typeof accountActivitySurfaceFilterValues)[number]
-
-export const accountActivityTriageFilterValues = runErrorTriageFilterValues
-
-export type AccountActivityTriageFilter = RunErrorTriageFilter
 
 export type AccountActivityRunListItem = {
 	id: string
@@ -97,6 +95,7 @@ export type AccountActivitySummary = {
 
 export type AccountActivityLoaderData = {
 	ok: true
+	viewFilter: AccountActivityViewFilter
 	statusFilter: AccountActivityStatusFilter
 	surfaceFilter: AccountActivitySurfaceFilter
 	triageFilter: AccountActivityTriageFilter
@@ -111,35 +110,6 @@ export type AccountActivityLoaderData = {
 const accountActivityBasePath = '/account/activity'
 const summaryWindowMs = 7 * 24 * 60 * 60 * 1000
 const defaultPageSize = 25
-
-export function isAccountActivityStatusFilter(
-	value: string | null | undefined,
-): value is AccountActivityStatusFilter {
-	return (
-		typeof value === 'string' &&
-		(accountActivityStatusFilterValues as ReadonlyArray<string>).includes(value)
-	)
-}
-
-export function isAccountActivitySurfaceFilter(
-	value: string | null | undefined,
-): value is AccountActivitySurfaceFilter {
-	return (
-		typeof value === 'string' &&
-		(accountActivitySurfaceFilterValues as ReadonlyArray<string>).includes(
-			value,
-		)
-	)
-}
-
-export function isAccountActivityTriageFilter(
-	value: string | null | undefined,
-): value is AccountActivityTriageFilter {
-	return (
-		typeof value === 'string' &&
-		(accountActivityTriageFilterValues as ReadonlyArray<string>).includes(value)
-	)
-}
 
 export function readAccountActivitySelectedRunId(
 	requestUrl: string,
@@ -161,53 +131,6 @@ export function readAccountActivitySelectedRunId(
 	}
 	const selected = url.searchParams.get('selected')?.trim()
 	return selected ? selected : null
-}
-
-export function readAccountActivityFilters(requestUrl: string) {
-	const url = new URL(requestUrl, 'http://localhost')
-	const statusRaw = url.searchParams.get('status')?.trim() ?? null
-	const surfaceRaw = url.searchParams.get('surface')?.trim() ?? null
-	const triageRaw =
-		url.searchParams.get('error_triage')?.trim() ??
-		url.searchParams.get('triage')?.trim() ??
-		null
-	const cursor = url.searchParams.get('cursor')?.trim() || null
-	return {
-		statusFilter: isAccountActivityStatusFilter(statusRaw)
-			? statusRaw
-			: ('error' satisfies AccountActivityStatusFilter),
-		surfaceFilter: isAccountActivitySurfaceFilter(surfaceRaw)
-			? surfaceRaw
-			: ('all' satisfies AccountActivitySurfaceFilter),
-		triageFilter: isAccountActivityTriageFilter(triageRaw)
-			? triageRaw
-			: ('open' satisfies AccountActivityTriageFilter),
-		cursor,
-	}
-}
-
-export function statusFilterToRunStatus(
-	filter: AccountActivityStatusFilter,
-): RunStatus | null {
-	switch (filter) {
-		case 'error':
-			return 'error'
-		case 'running':
-			return 'running'
-		case 'all':
-			return null
-		default: {
-			const exhaustive: never = filter
-			return exhaustive
-		}
-	}
-}
-
-export function surfaceFilterToRunSurface(
-	filter: AccountActivitySurfaceFilter,
-): RunSurface | null {
-	if (filter === 'all') return null
-	return filter
 }
 
 function toListItem(run: RunRecord): AccountActivityRunListItem {
@@ -282,7 +205,7 @@ export async function loadAccountActivityData(input: {
 		input.request.url,
 		input.pathRunId,
 	)
-	const { statusFilter, surfaceFilter, triageFilter, cursor } =
+	const { viewFilter, statusFilter, surfaceFilter, triageFilter, cursor } =
 		readAccountActivityFilters(input.request.url)
 	const since = summarySince(now)
 
@@ -315,6 +238,7 @@ export async function loadAccountActivityData(input: {
 
 	return {
 		ok: true,
+		viewFilter,
 		statusFilter,
 		surfaceFilter,
 		triageFilter,

@@ -5,14 +5,30 @@ import {
 	type RouteLoaderResult,
 } from '#client/route-loader.ts'
 import {
-	type AccountActivityLoaderData,
-	type AccountActivityRunDetail,
-	type AccountActivityRunListItem,
+	readAccountActivityStatusFilter,
+	readAccountActivitySurfaceFilter,
+	readAccountActivityTriageFilter,
+	readAccountActivityViewFilter,
 	type AccountActivityStatusFilter,
 	type AccountActivitySurfaceFilter,
 	type AccountActivityTriageFilter,
+	type AccountActivityViewFilter,
+} from '#universal/account-activity-filters.ts'
+import {
+	type AccountActivityLoaderData,
+	type AccountActivityRunDetail,
+	type AccountActivityRunListItem,
 } from '#universal/loader-data.ts'
 import { colors } from '#universal/styles/tokens.ts'
+
+export {
+	activityEmptyLabel,
+	buildActivitySearch,
+	readAccountActivityStatusFilter as readStatusFilter,
+	readAccountActivitySurfaceFilter as readSurfaceFilter,
+	readAccountActivityTriageFilter as readTriageFilter,
+	readAccountActivityViewFilter as readViewFilter,
+} from '#universal/account-activity-filters.ts'
 
 export const activityErrorReviewPrompt = [
 	'Look at my open Kody activity errors.',
@@ -23,12 +39,21 @@ export const activityErrorReviewPrompt = [
 export const accountActivityApiPath = '/account/activity.json'
 export const activityRoute = createListDetailRoute('/account/activity')
 
+export const viewFilterOptions: Array<{
+	value: AccountActivityViewFilter
+	label: string
+}> = [
+	{ value: 'errors', label: 'Open errors' },
+	{ value: 'recent', label: 'Recent runs' },
+]
+
 export const statusFilterOptions: Array<{
 	value: AccountActivityStatusFilter
 	label: string
 }> = [
 	{ value: 'error', label: 'Errors' },
 	{ value: 'all', label: 'All' },
+	{ value: 'success', label: 'Success' },
 	{ value: 'running', label: 'Running' },
 ]
 
@@ -123,30 +148,6 @@ export function runDisplayName(run: AccountActivityRunListItem) {
 	return run.name?.trim() || surfaceLabel(run.surface)
 }
 
-export function readStatusFilter(href: string): AccountActivityStatusFilter {
-	const value = new URL(href, 'http://localhost').searchParams
-		.get('status')
-		?.trim()
-	if (value === 'all' || value === 'running' || value === 'error') return value
-	return 'error'
-}
-
-export function readSurfaceFilter(href: string): AccountActivitySurfaceFilter {
-	const value = new URL(href, 'http://localhost').searchParams
-		.get('surface')
-		?.trim()
-	const match = surfaceFilterOptions.find((option) => option.value === value)
-	return match?.value ?? 'all'
-}
-
-export function readTriageFilter(href: string): AccountActivityTriageFilter {
-	const params = new URL(href, 'http://localhost').searchParams
-	const value =
-		params.get('error_triage')?.trim() ?? params.get('triage')?.trim()
-	const match = triageFilterOptions.find((option) => option.value === value)
-	return match?.value ?? 'open'
-}
-
 export function triageLabel(
 	run: Pick<AccountActivityRunListItem, 'status' | 'errorTriage'>,
 ) {
@@ -165,25 +166,13 @@ export function triageLabel(
 	}
 }
 
-export function buildActivitySearch(input: {
-	status: AccountActivityStatusFilter
-	surface: AccountActivitySurfaceFilter
-	triage: AccountActivityTriageFilter
-}) {
-	const params = new URLSearchParams()
-	if (input.status !== 'error') params.set('status', input.status)
-	if (input.surface !== 'all') params.set('surface', input.surface)
-	if (input.triage !== 'open') params.set('error_triage', input.triage)
-	const search = params.toString()
-	return search ? `?${search}` : ''
-}
-
 export function getDataLatchKey(href: string) {
 	const selection = activityRoute.getSelection(href)
-	const status = readStatusFilter(href)
-	const surface = readSurfaceFilter(href)
-	const triage = readTriageFilter(href)
-	const filterKey = `${status}:${surface}:${triage}`
+	const view = readAccountActivityViewFilter(href)
+	const status = readAccountActivityStatusFilter(href)
+	const surface = readAccountActivitySurfaceFilter(href)
+	const triage = readAccountActivityTriageFilter(href)
+	const filterKey = `${view}:${status}:${surface}:${triage}`
 	return selection.selectedId
 		? `/account/activity/${encodeURIComponent(selection.selectedId)}?${filterKey}`
 		: `/account/activity?${filterKey}`
@@ -194,13 +183,14 @@ export function buildActivityApiRequestUrl(
 	cursor?: string | null,
 ) {
 	const requestUrl = new URL(accountActivityApiPath, 'http://localhost')
-	const status = readStatusFilter(href)
-	const surface = readSurfaceFilter(href)
-	const triage = readTriageFilter(href)
-	if (status !== 'error') requestUrl.searchParams.set('status', status)
-	else requestUrl.searchParams.set('status', 'error')
+	const view = readAccountActivityViewFilter(href)
+	const status = readAccountActivityStatusFilter(href)
+	const surface = readAccountActivitySurfaceFilter(href)
+	const triage = readAccountActivityTriageFilter(href)
+	if (view !== 'errors') requestUrl.searchParams.set('view', view)
+	requestUrl.searchParams.set('status', status)
 	if (surface !== 'all') requestUrl.searchParams.set('surface', surface)
-	if (triage !== 'open') requestUrl.searchParams.set('error_triage', triage)
+	requestUrl.searchParams.set('error_triage', triage)
 	const selectedRunId = activityRoute.getSelection(href).selectedId
 	if (selectedRunId) {
 		requestUrl.searchParams.set('selected', selectedRunId)
