@@ -26,8 +26,15 @@ explicitly.
 ## AI reviewers
 
 Prefer **Cursor Bugbot** (`Cursor Bugbot` check / `cursor[bot]` review
-comments). Trigger with `bugbot run` or `@cursor review` on the PR if it has not
-started.
+comments). Never comment `bugbot run` or `cursor review` yourself, including via
+`gh` or GitHub request as kody-bot. Trigger with `kody:@kentcdodds/bugbot` using
+`{ prUrl }` or `{ owner, repo, prNumber }`. Do not pass a GitHub account.
+
+```javascript
+import triggerBugbot from 'kody:@kentcdodds/bugbot'
+
+await triggerBugbot({ prUrl })
+```
 
 **CodeRabbit:** if it is rate-limited, errored, or otherwise unavailable, **do
 not wait** on it for low/medium risk — proceed with Bugbot + CI. Only wait on
