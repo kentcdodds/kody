@@ -41,6 +41,7 @@ export const repoGetCapability = defineDomainCapability(
 			repo_id: z.string(),
 			name: z.string(),
 			description: z.string().nullable(),
+			visibility: z.enum(['public', 'private']),
 			source_id: z.string(),
 			repo_git_id: z.string(),
 			head_branch: z.string(),
@@ -71,6 +72,9 @@ export const repoGetCapability = defineDomainCapability(
 				repo_id: userRepo.id,
 				name: userRepo.name,
 				description: userRepo.description,
+				visibility: userRepo.isPrivate
+					? ('private' as const)
+					: ('public' as const),
 				source_id: source.id,
 				repo_git_id: source.repo_id,
 				head_branch: head.branch,

@@ -1606,7 +1606,7 @@ test('renderAppPage renders the public FAQ page for anonymous visitors', async (
 	)
 	expect(html).toContain('How do I get started?')
 	expect(html).toContain(
-		'Your assistant is yours unless you publish a community package.',
+		'Your assistant is yours unless you publish a public package.',
 	)
 	expect(html).toContain('secret_get')
 	expect(html).toContain('<details')
@@ -1705,7 +1705,7 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 	expect(html).toContain('data-testid="community-detail-frame"')
 	expect(html).toContain('data-testid="community-listing-icon-detail"')
 	expect(html).toContain('/community/listing-detail-1/icon/abc1234567890')
-	expect(html).toContain('data-testid="community-detail-trusted-badge"')
+	expect(html).not.toContain('data-testid="community-detail-trusted-badge"')
 	expect(html).toContain('data-testid="community-readme"')
 	expect(html).toContain('data-testid="community-detail-install"')
 	expect(html).toContain('data-testid="community-detail-star"')
@@ -1714,7 +1714,7 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 		ok: true,
 		listingId: 'listing-detail-1',
 		name: '@kentcdodds/github-triage',
-		trusted: true,
+		trusted: false,
 	})
 })
 

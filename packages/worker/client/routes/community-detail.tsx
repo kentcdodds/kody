@@ -44,7 +44,6 @@ import {
 	inlineLinkCss,
 	missingHeadCss,
 	renderAdminFeatureSection,
-	renderAdminTrustSection,
 	renderInstallStrip,
 	renderMissingListing,
 	renderOwnerPackageSection,
@@ -71,9 +70,6 @@ function getCurrentListingId(handle: Handle) {
 export function CommunityDetailRoute(handle: Handle) {
 	let loggedIn = false
 	let viewerIsAdmin = false
-	let trusted = false
-	let trustState: 'idle' | 'submitting' | 'error' = 'idle'
-	let trustMessage: string | null = null
 	let featured = false
 	let featureState: 'idle' | 'submitting' | 'error' = 'idle'
 	let featureMessage: string | null = null
@@ -131,9 +127,6 @@ export function CommunityDetailRoute(handle: Handle) {
 	) {
 		loggedIn = snapshot.loggedIn
 		viewerIsAdmin = snapshot.viewerIsAdmin
-		trusted = snapshot.trusted
-		trustState = 'idle'
-		trustMessage = null
 		featured = snapshot.featured
 		featureState = 'idle'
 		featureMessage = null
@@ -195,7 +188,7 @@ export function CommunityDetailRoute(handle: Handle) {
 				return
 			}
 			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load community package.')
+				throw new Error('Unable to load public package.')
 			}
 			if (payload.listing) {
 				rememberListingId(ref.pathname, payload.listing.id)
@@ -372,55 +365,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		}
 	}
 
-	async function submitTrust(nextTrusted: boolean) {
-		const listingId = getCurrentListingId(handle)
-		if (!listingId || trustState === 'submitting') return
-
-		trustState = 'submitting'
-		trustMessage = null
-		handle.update()
-
-		try {
-			const response = await fetch(
-				routes.communityTrustApiPost.href({ listingId }),
-				{
-					method: 'POST',
-					headers: {
-						Accept: 'application/json',
-						'Content-Type': 'application/json',
-					},
-					credentials: 'include',
-					body: JSON.stringify({ trusted: nextTrusted }),
-				},
-			)
-			const payload = await readJson<{
-				ok: boolean
-				trusted?: boolean
-				featured?: boolean
-				error?: string
-			}>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error(payload?.error ?? 'Unable to update trust.')
-			}
-			trusted = payload.trusted ?? nextTrusted
-			trustState = 'idle'
-			// Featuring is only effective while the listing is trusted: revoking
-			// trust pulls it from onboarding, and re-trusting a listing whose
-			// featured mark survived restores it. Sync from the server response.
-			featured = payload.featured ?? (trusted ? featured : false)
-			handle.update()
-			// The trusted badge renders inside the server frame; reload it so
-			// the header reflects the new state immediately.
-			const frame = handle.frames.get(COMMUNITY_DETAIL_TARGET)
-			if (frame) void frame.reload()
-		} catch (error) {
-			trustState = 'error'
-			trustMessage =
-				error instanceof Error ? error.message : 'Unable to update trust.'
-			handle.update()
-		}
-	}
-
 	async function submitFeature(nextFeatured: boolean) {
 		const listingId = getCurrentListingId(handle)
 		if (!listingId || featureState === 'submitting') return
@@ -483,9 +427,8 @@ export function CommunityDetailRoute(handle: Handle) {
 						'Content-Type': 'application/json',
 					},
 					credentials: 'include',
-					// Reaching this point means the user either saw the untrusted
-					// warning and confirmed, or the listing is trusted.
-					body: JSON.stringify({ acknowledged_untrusted: !trusted }),
+					// The user already confirmed on the listing page.
+					body: JSON.stringify({ acknowledged: true }),
 				},
 			)
 			if (response.status === 401) {
@@ -497,9 +440,6 @@ export function CommunityDetailRoute(handle: Handle) {
 			// state of the listing currently on screen.
 			if (getCurrentListingId(handle) !== listingId) return
 			if (response.status === 409 && payload?.requiresAcknowledgement) {
-				// Trust was revoked after this page loaded; surface the warning
-				// so the retry carries an explicit acknowledgement.
-				trusted = false
 				installState = 'confirming'
 				installMessage = null
 				handle.update()
@@ -513,7 +453,7 @@ export function CommunityDetailRoute(handle: Handle) {
 				!payload.agentPrompt
 			) {
 				throw new Error(
-					payload?.error ?? 'Unable to install this community package.',
+					payload?.error ?? 'Unable to install this public package.',
 				)
 			}
 			installOutcome = {
@@ -534,7 +474,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			installMessage =
 				error instanceof Error
 					? error.message
-					: 'Unable to install this community package.'
+					: 'Unable to install this public package.'
 			handle.update()
 		}
 	}
@@ -548,7 +488,6 @@ export function CommunityDetailRoute(handle: Handle) {
 		const decision = decideCommunityInstallClick({
 			installState,
 			alreadyInstalled: installOutcome != null,
-			listingTrusted: trusted,
 		})
 		switch (decision) {
 			case 'ignore':
@@ -652,7 +591,7 @@ export function CommunityDetailRoute(handle: Handle) {
 
 		if (!ref) {
 			return renderMissingListing(
-				'Community package not found',
+				'Public package not found',
 				'This listing is unavailable.',
 			)
 		}
@@ -693,7 +632,7 @@ export function CommunityDetailRoute(handle: Handle) {
 			? 'Unable to load fork and report details for this listing.'
 			: showShellReady
 				? ''
-				: 'Loading community package details…'
+				: 'Loading public package details…'
 
 		return (
 			<article
@@ -745,17 +684,7 @@ export function CommunityDetailRoute(handle: Handle) {
 							: null}
 
 						{viewerIsAdmin
-							? renderAdminTrustSection({
-									trusted,
-									trustState,
-									trustMessage,
-									onToggleTrust: () => void submitTrust(!trusted),
-								})
-							: null}
-
-						{viewerIsAdmin
 							? renderAdminFeatureSection({
-									trusted,
 									featured,
 									featureState,
 									featureMessage,

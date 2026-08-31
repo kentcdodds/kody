@@ -5,6 +5,7 @@ export type UserRepoRow = {
 	user_id: string
 	name: string
 	description: string | null
+	is_private: 0 | 1
 	created_at: string
 	updated_at: string
 }
@@ -14,6 +15,7 @@ export type UserRepoRecord = {
 	userId: string
 	name: string
 	description: string | null
+	isPrivate: boolean
 	createdAt: string
 	updatedAt: string
 }
@@ -24,12 +26,19 @@ export const plainRepoPromotionNotice =
 export const plainRepoPackageShapedNotice =
 	'Root package.json detected at HEAD. Promote with repo_promote_to_package to activate package runtime surfaces.'
 
+const userRepoSelectColumns = `id, user_id, name, description, is_private, created_at, updated_at`
+
 function mapUserRepoRow(row: Record<string, unknown>): UserRepoRecord {
 	return {
 		id: String(row['id']),
 		userId: String(row['user_id']),
 		name: String(row['name']),
 		description: row['description'] == null ? null : String(row['description']),
+		isPrivate:
+			row['is_private'] === 1 ||
+			row['is_private'] === '1' ||
+			row['is_private'] === true ||
+			row['is_private'] == null,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 	}
@@ -54,9 +63,10 @@ export function assertValidUserRepoName(name: string) {
 
 export async function insertUserRepo(
 	db: D1Database,
-	row: Omit<UserRepoRow, 'created_at' | 'updated_at'> & {
+	row: Omit<UserRepoRow, 'created_at' | 'updated_at' | 'is_private'> & {
 		created_at?: string
 		updated_at?: string
+		is_private?: 0 | 1
 	},
 ) {
 	const now = new Date().toISOString()
@@ -66,14 +76,15 @@ export async function insertUserRepo(
 	await db
 		.prepare(
 			`INSERT INTO user_repos (
-				id, user_id, name, description, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?)`,
+				id, user_id, name, description, is_private, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		)
 		.bind(
 			row.id,
 			row.user_id,
 			name,
 			row.description,
+			row.is_private ?? 1,
 			row.created_at ?? now,
 			row.updated_at ?? now,
 		)
@@ -86,7 +97,7 @@ export async function getUserRepoById(
 ): Promise<UserRepoRecord | null> {
 	const row = await db
 		.prepare(
-			`SELECT id, user_id, name, description, created_at, updated_at
+			`SELECT ${userRepoSelectColumns}
 			FROM user_repos
 			WHERE user_id = ? AND id = ?`,
 		)
@@ -102,7 +113,7 @@ export async function getUserRepoByName(
 	const normalized = normalizeUserRepoName(input.name)
 	const row = await db
 		.prepare(
-			`SELECT id, user_id, name, description, created_at, updated_at
+			`SELECT ${userRepoSelectColumns}
 			FROM user_repos
 			WHERE user_id = ? AND name = ?`,
 		)
@@ -117,7 +128,7 @@ export async function listUserRepos(
 ): Promise<Array<UserRepoRecord>> {
 	const result = await db
 		.prepare(
-			`SELECT id, user_id, name, description, created_at, updated_at
+			`SELECT ${userRepoSelectColumns}
 			FROM user_repos
 			WHERE user_id = ?
 			ORDER BY name ASC`,
@@ -125,6 +136,38 @@ export async function listUserRepos(
 		.bind(userId)
 		.all<Record<string, unknown>>()
 	return (result.results ?? []).map(mapUserRepoRow)
+}
+
+export async function updateUserRepo(
+	db: D1Database,
+	input: {
+		userId: string
+		repoId: string
+		isPrivate?: boolean
+		description?: string | null
+	},
+): Promise<boolean> {
+	const assignments: Array<string> = ['updated_at = ?']
+	const values: Array<string | number | null> = [new Date().toISOString()]
+	if (input.isPrivate !== undefined) {
+		assignments.push('is_private = ?')
+		values.push(input.isPrivate ? 1 : 0)
+	}
+	if (input.description !== undefined) {
+		assignments.push('description = ?')
+		values.push(input.description)
+	}
+	if (assignments.length === 1) return false
+	values.push(input.userId, input.repoId)
+	const result = await db
+		.prepare(
+			`UPDATE user_repos
+			SET ${assignments.join(', ')}
+			WHERE user_id = ? AND id = ?`,
+		)
+		.bind(...values)
+		.run()
+	return (result.meta.changes ?? 0) > 0
 }
 
 export async function deleteUserRepo(

@@ -1231,7 +1231,7 @@ test('refreshSavedPackageProjection preserves hidden across projection refresh',
 	expect(refreshed.record.description).toBe('Updated description')
 })
 
-test('refreshSavedPackageProjection recomputes isPrivate from the manifest', async () => {
+test('refreshSavedPackageProjection does not overwrite isPrivate from the manifest', async () => {
 	setupDefaultMocks()
 	const env = createEnv()
 	mockModule.buildPackageSearchProjection.mockReturnValue({
@@ -1280,12 +1280,12 @@ test('refreshSavedPackageProjection recomputes isPrivate from the manifest', asy
 		string,
 		unknown
 	>
+	expect(updateArg).not.toHaveProperty('isPrivate')
 	expect(updateArg).toMatchObject({
 		userId: 'user-1',
 		packageId: 'package-1',
-		isPrivate: true,
 	})
-	expect(refreshed.record.isPrivate).toBe(true)
+	expect(refreshed.record.isPrivate).toBe(false)
 	expect(refreshed.record.hidden).toBe(false)
 })
 

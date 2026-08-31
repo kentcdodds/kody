@@ -86,7 +86,7 @@ supporting cast.
 3. **Every install is a fork you own.** Installing someone else's automation
    puts code in your account, on your credentials, that you can open, change,
    schedule, and republish. Nothing stays locked in someone else's runtime. See
-   [Community packages](../use/community-packages.md).
+   [Public packages](../use/community-packages.md).
 
 ## The building blocks
 
@@ -116,9 +116,9 @@ supporting cast.
 - **Long-term memory** — durable memories that surface across conversations and
   across every agent connected to the same account. See
   [Memory and conversation context](../use/memory.md).
-- **Community packages** — browse automations other people published, and fork
-  them into your own account with one click. See
-  [Community packages](../use/community-packages.md).
+- **Public packages** — browse automations other people published, and fork them
+  into your own account with one click. See
+  [Public packages](../use/community-packages.md).
 - **Extensibility** — connect your own remote MCP servers, OpenAPI providers, or
   a local-network connector so your agent can reach devices at home through
   Kody. Lock a connected MCP server to a package when execute should not call
@@ -141,8 +141,8 @@ Concrete examples that combine the blocks:
   investigation instead of a flood.
 - Home automation routines through a local-network connector — scenes,
   thermostats, speakers — driven by schedule or by asking your agent.
-- Forking a community package (say, a YouTube video manager or an RSS digest)
-  and having your agent adapt it to your needs.
+- Forking a public package (say, a YouTube video manager or an RSS digest) and
+  having your agent adapt it to your needs.
 - A drafts-only Gmail helper that prepares invoice replies you send yourself,
   locked so a later agent cannot republish a send path. See
   [Gmail drafts without send](./locked-gmail-drafts.md).

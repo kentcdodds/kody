@@ -105,6 +105,9 @@ export const getPackageCapability = defineDomainCapability(
 				tags: saved.tags,
 				has_app: saved.hasApp,
 				hidden: saved.hidden,
+				visibility: saved.isPrivate
+					? ('private' as const)
+					: ('public' as const),
 				locked_at: saved.lockedAt ?? null,
 				source_id: saved.sourceId,
 				source_listing_id: saved.sourceListingId,

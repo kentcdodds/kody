@@ -90,13 +90,13 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	expect(mockModule.installCommunityListing).not.toHaveBeenCalled()
 
 	const invalidBody = await handler.handler(
-		buildInstallRequest({ acknowledged_untrusted: 'yes' }),
+		buildInstallRequest({ acknowledged: 'yes' }),
 	)
 	expect(invalidBody.status).toBe(400)
 	expect(mockModule.installCommunityListing).not.toHaveBeenCalled()
 
 	mockModule.getMcpUserPackageScope.mockResolvedValue('userb')
-	// Untrusted listings install once the caller acknowledged the warning.
+	// Community installs require an explicit acknowledgement on every listing.
 	mockModule.installCommunityListing.mockResolvedValue({
 		status: 'installed',
 		forkId: 'fork-1',
@@ -107,7 +107,7 @@ test('community install POST enforces gates and maps install outcomes', async ()
 		originCommit: 'commit-1',
 	})
 	const installed = await handler.handler(
-		buildInstallRequest({ acknowledged_untrusted: true }),
+		buildInstallRequest({ acknowledged: true }),
 	)
 	expect(installed.status).toBe(200)
 	const installedPayload = (await installed.json()) as Record<string, unknown>
@@ -128,7 +128,7 @@ test('community install POST enforces gates and maps install outcomes', async ()
 			expectedPackageScope: 'userb',
 			listingId: 'listing-1',
 			// The acknowledgement is bound to the commit the listing pinned
-			// when the handler checked trust.
+			// when the handler checked acknowledgement.
 			expectedPinnedCommit: 'commit-1',
 			// cloudflare:workers waitUntil — defers search-index / retriever
 			// projection work off the install response critical path.
@@ -136,12 +136,6 @@ test('community install POST enforces gates and maps install outcomes', async ()
 		}),
 	)
 
-	// Trusted listings install without an acknowledgement.
-	mockModule.getCommunityListingById.mockResolvedValue({
-		id: 'listing-1',
-		trusted: true,
-		pinnedCommit: 'commit-1',
-	})
 	mockModule.installCommunityListing.mockResolvedValue({
 		status: 'adaptation_required',
 		forkId: 'fork-1',
@@ -153,7 +147,9 @@ test('community install POST enforces gates and maps install outcomes', async ()
 		failedChecks: [{ kind: 'bundle', ok: false, message: 'unresolved' }],
 		crossScopeReferences: [{ file: 'src/index.ts', specifier: 'kody:@usera/' }],
 	})
-	const adaptation = await handler.handler(buildInstallRequest({}))
+	const adaptation = await handler.handler(
+		buildInstallRequest({ acknowledged: true }),
+	)
 	expect(adaptation.status).toBe(200)
 	const adaptationPayload = (await adaptation.json()) as Record<string, unknown>
 	expect(adaptationPayload).toMatchObject({
@@ -170,7 +166,9 @@ test('community install POST enforces gates and maps install outcomes', async ()
 			'You already have a saved package with kody id "demo". Pass a different kody_id to fork this listing.',
 		),
 	)
-	const userFacingError = await handler.handler(buildInstallRequest({}))
+	const userFacingError = await handler.handler(
+		buildInstallRequest({ acknowledged: true }),
+	)
 	expect(userFacingError.status).toBe(400)
 	expect(await userFacingError.json()).toMatchObject({
 		ok: false,
@@ -181,11 +179,13 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	mockModule.installCommunityListing.mockRejectedValue(
 		new Error('artifacts unavailable'),
 	)
-	const serverError = await handler.handler(buildInstallRequest({}))
+	const serverError = await handler.handler(
+		buildInstallRequest({ acknowledged: true }),
+	)
 	expect(serverError.status).toBe(500)
 	expect(await serverError.json()).toEqual({
 		ok: false,
-		error: 'Unable to install this community package.',
+		error: 'Unable to install this public package.',
 	})
 	expect(consoleError).toHaveBeenCalled()
 	consoleError.mockRestore()

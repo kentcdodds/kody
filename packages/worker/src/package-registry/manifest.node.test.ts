@@ -28,6 +28,21 @@ test('parseAuthoredPackageJson validates scoped package names against kody.id', 
 	expect(manifest.name).toBe('@kentcdodds/cursor-cloud-agents')
 	expect(manifest.kody.id).toBe('cursor-cloud-agents')
 
+	const omittedKodyId = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kentcdodds/cursor-cloud-agents',
+			exports: {
+				'.': './index.ts',
+			},
+			kody: {
+				description: 'Defaults kody.id from the package name leaf',
+			},
+		}),
+		manifestPath: 'package.json',
+		expectedPackageScope: 'kentcdodds',
+	})
+	expect(omittedKodyId.kody.id).toBe('cursor-cloud-agents')
+
 	expect(() =>
 		parseAuthoredPackageJson({
 			content: JSON.stringify({

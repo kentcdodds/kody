@@ -1,6 +1,5 @@
 import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '../domain-metadata.ts'
-import { communityForkAbsorbCapability } from './absorb.ts'
 import { communityForkAdoptCapability } from './adopt.ts'
 import { communityFollowCapability } from './follow.ts'
 import { communityForkCapability } from './fork.ts'
@@ -12,7 +11,6 @@ import { communityRateCapability } from './rate.ts'
 import { communityReportCapability } from './report.ts'
 import { communitySearchCapability } from './search.ts'
 import { communitySetFeaturedCapability } from './set-featured.ts'
-import { communitySetTrustedCapability } from './set-trusted.ts'
 import { communityStarCapability } from './star.ts'
 import { communityStarredListCapability } from './starred-list.ts'
 import { communityTimelineCapability } from './timeline.ts'
@@ -30,9 +28,6 @@ export const communityDomain = defineDomain({
 		'listing',
 		'fork',
 		'adopt',
-		'absorb',
-		'upstream',
-		'publish',
 		'rating',
 		'report',
 		'marketplace',
@@ -50,10 +45,8 @@ export const communityDomain = defineDomain({
 		communityGetCapability,
 		communityForkCapability,
 		communityForkAdoptCapability,
-		communityForkAbsorbCapability,
 		communityRateCapability,
 		communityReportCapability,
-		communitySetTrustedCapability,
 		communitySetFeaturedCapability,
 		communityProfileGetCapability,
 		communityProfileUpdateCapability,

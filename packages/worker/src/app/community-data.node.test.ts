@@ -22,6 +22,8 @@ const mockModule = vi.hoisted(() => ({
 	listFeaturedCommunityListingsWithAggregates: vi.fn(),
 	getCommunityListingWithAggregates: vi.fn(),
 	listCommunityForksByListingIdsAndUser: vi.fn(),
+	getCommunityListingById: vi.fn(),
+	getEntitySourceById: vi.fn(),
 	listSavedPackagesByKodyIds: vi.fn(),
 	listSavedPackagesByIds: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
@@ -51,8 +53,15 @@ vi.mock('#worker/community/service.ts', () => ({
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
+	getCommunityListingById: (...args: Array<unknown>) =>
+		mockModule.getCommunityListingById(...args),
 	listCommunityForksByListingIdsAndUser: (...args: Array<unknown>) =>
 		mockModule.listCommunityForksByListingIdsAndUser(...args),
+}))
+
+vi.mock('#worker/repo/entity-sources.ts', () => ({
+	getEntitySourceById: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceById(...args),
 }))
 
 vi.mock('#worker/community/social-repo.ts', () => ({
@@ -239,6 +248,8 @@ test('onboarding featured listings overlay inert forks as adaptation_required', 
 test('community detail overlays viewerInstall for forked listings and omits it when not forked', async () => {
 	resetDataCacheForTests()
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
+	mockModule.getEntitySourceById.mockResolvedValue(null)
 	mockModule.getUserSocialRowByUsername.mockResolvedValue({
 		profile_visibility: 'public',
 		stable_user_id: 'owner-mcp-id',

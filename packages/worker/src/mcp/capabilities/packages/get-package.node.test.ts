@@ -158,6 +158,7 @@ test('getPackageCapability returns export metadata for owner and delegated packa
 		description: 'Discord helpers',
 		tags: ['discord'],
 		has_app: true,
+		visibility: 'public',
 		source_id: 'source-1',
 		source_listing_id: 'listing-1',
 		listing_current: true,

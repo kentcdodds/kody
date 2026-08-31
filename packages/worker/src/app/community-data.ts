@@ -25,7 +25,12 @@ import {
 } from '#universal/loader-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { setRequestDataCacheLookup } from '#app/request-cache.ts'
-import { listCommunityForksByListingIdsAndUser } from '#worker/community/repo.ts'
+import {
+	getCommunityListingById,
+	listCommunityForksByListingIdsAndUser,
+} from '#worker/community/repo.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
+import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import {
 	getCommunityCategoryCounts,
 	getCommunityListingWithAggregates,
@@ -320,9 +325,33 @@ async function loadCommunityDetailDataUncached(
 
 	if (!listing) return null
 
+	const listingRecord = await getCommunityListingById(env.APP_DB, {
+		listingId,
+		includeDelisted: false,
+	})
+	let sourceAheadListing = listing
+	if (listingRecord) {
+		const source = await getEntitySourceById(env.APP_DB, listingRecord.sourceId)
+		if (source) {
+			try {
+				const head = await resolveArtifactSourceHead(env, source.repo_id)
+				const headCommit = head.commit
+				if (headCommit && headCommit !== listing.pinnedCommit) {
+					sourceAheadListing = {
+						...listing,
+						headCommit,
+						sourceAhead: true,
+					}
+				}
+			} catch {
+				// Public HEAD is best-effort; the listing page still renders.
+			}
+		}
+	}
+
 	const ownerRow = await getUserSocialRowByUsername(
 		env.APP_DB,
-		listing.ownerUsername,
+		sourceAheadListing.ownerUsername,
 	)
 	const ownerProfilePublic = ownerRow?.profile_visibility === 'public'
 	const ownerUserId = ownerRow ? resolveUserStableId(ownerRow) : null
@@ -362,8 +391,11 @@ async function loadCommunityDetailDataUncached(
 			}),
 		])
 	const viewerInstall = viewerInstalls.get(listing.id) ?? null
+	const listingWithHead = viewerInstall
+		? { ...sourceAheadListing, viewerInstall }
+		: sourceAheadListing
 	return composeCommunityDetailLoaderData({
-		listing: viewerInstall ? { ...listing, viewerInstall } : listing,
+		listing: listingWithHead,
 		loggedIn: Boolean(user),
 		viewerIsAdmin: user?.roles.includes('admin') ?? false,
 		starredByViewer,

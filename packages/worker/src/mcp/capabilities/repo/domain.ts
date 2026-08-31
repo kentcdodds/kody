@@ -25,6 +25,7 @@ import { repoShowPublishNoteCapability } from './repo-show-publish-note.ts'
 import { repoSearchCapability } from './repo-search.ts'
 import { repoStatusCapability } from './repo-status.ts'
 import { repoTreeCapability } from './repo-tree.ts'
+import { repoUpdateCapability } from './repo-update.ts'
 import { repoWriteFileCapability } from './repo-write-file.ts'
 
 export const repoDomain = defineDomain({
@@ -36,6 +37,7 @@ export const repoDomain = defineDomain({
 		repoCreateCapability,
 		repoListCapability,
 		repoGetCapability,
+		repoUpdateCapability,
 		repoDeleteCapability,
 		repoGetGitRemoteCapability,
 		repoPromoteToPackageCapability,

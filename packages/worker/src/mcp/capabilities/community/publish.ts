@@ -17,7 +17,7 @@ export const communityPublishCapability = defineDomainCapability(
 	{
 		name: 'community_publish',
 		description:
-			'Publish a saved package as a public community listing on this deployment. Requires MIT license in package.json `license`, `"private"` not set to true, a root README with a `## Intent` section, and a published commit. Set `package.json#kody.category` to integrations, examples, productivity, apps, or utilities so `/community` can group the listing; omitted categories infer from well-known tags. Publishing shares the pinned snapshot publicly with all users on this deployment. Re-publishing the same package updates the listing to the current published commit. Listings owned by a platform account are automatically trusted at each successfully published commit; person-owned listings require admin review.',
+			'Make a saved package public: default-branch HEAD becomes world-readable and forkable, and the package appears on /community. Prefer package_update with changes.visibility: "public". No license, logo, or Intent gates. Runtime still uses published_commit. Listings owned by anyone are third-party code — review before forking.',
 		keywords: [
 			'community',
 			'publish',

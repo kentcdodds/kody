@@ -72,7 +72,7 @@ export function CommunityDetailContent(
 				href={routes.community.href()}
 				mix={css(backLinkCss)}
 			>
-				← Community packages
+				← Public packages
 			</a>
 
 			<header data-rise style={{ '--rise': '1' }} mix={css(detailHeadCss)}>
@@ -88,13 +88,13 @@ export function CommunityDetailContent(
 						})}
 					</div>
 					<span mix={css(detailBadgeGroupCss)}>
-						{listing.trusted ? (
+						{listing.sourceAhead ? (
 							<span
-								data-testid="community-detail-trusted-badge"
-								title="An admin reviewed this exact version and marked it trusted."
+								data-testid="community-detail-source-ahead-badge"
+								title="Default-branch HEAD is newer than the last package publish. Source at HEAD is already public; runtime still uses the published commit."
 								mix={css(badgeCss)}
 							>
-								Trusted
+								HEAD ahead of published
 							</span>
 						) : null}
 						{listing.featured ? (

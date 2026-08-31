@@ -178,7 +178,6 @@ async function collectSameProviderCommunitySuggestions(input: {
 			env: input.env,
 			query: provider,
 			limit: communitySuggestionCandidateLimit,
-			trustedFirst: true,
 			resultFilter: (listing) =>
 				packageIdentityMentionsProvider(
 					{
@@ -203,12 +202,7 @@ async function collectSameProviderCommunitySuggestions(input: {
 			provider,
 		),
 	)
-	const trusted = sameProvider.filter((listing) => listing.trusted)
-	const untrusted = sameProvider.filter((listing) => !listing.trusted)
-	const ordered = [...trusted, ...untrusted].slice(
-		0,
-		maxIntegrationPackageSuggestions,
-	)
+	const ordered = sameProvider.slice(0, maxIntegrationPackageSuggestions)
 	return ordered.map((listing) =>
 		toCommunitySuggestion({ listing, baseUrl: input.baseUrl }),
 	)
@@ -217,7 +211,7 @@ async function collectSameProviderCommunitySuggestions(input: {
 /**
  * Detail-only helper: suggest same-provider packages for an integration.
  * Prefers the user's own packages and skips community lookup when any exist.
- * Community suggestions are trusted-first and capped.
+ * Community suggestions are popularity-ranked and capped.
  */
 export async function collectIntegrationPackageSuggestions(input: {
 	env: Env

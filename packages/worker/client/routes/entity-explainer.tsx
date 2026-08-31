@@ -137,7 +137,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		question: 'What is a star?',
 		match: accountSection(routes.accountStars.href()),
 		paragraphs: [
-			'A star is your bookmark for a community package listing. It is separate from the 1–5 rating you can leave on a listing.',
+			'A star is your bookmark for a public package listing. It is separate from the 1–5 rating you can leave on a listing.',
 			'Star packages you want to find again, fork later, or keep an eye on. Stars are public on listings; this page is your personal list.',
 		],
 	},
@@ -160,7 +160,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		match: (pathname) => pathname === routes.community.href(),
 		paragraphs: [
 			"Community is the public catalog of published packages on this deployment. A listing is a pinned snapshot of someone else's package, not a live link to their private copy.",
-			'Browse and search without an account. Installing creates a fork you own — you can change it, schedule it, and publish your own version. Prefer a close community package before creating one from scratch.',
+			'Browse and search without an account. Installing creates a fork you own — you can change it, schedule it, and publish your own version. Prefer a close public package before creating one from scratch.',
 		],
 		learnMore: {
 			href: routes.guideDetail.href({ slug: 'what-is-kody' }),

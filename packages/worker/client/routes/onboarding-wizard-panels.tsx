@@ -409,7 +409,7 @@ export function renderPersistPanel(
 						rel="noreferrer noopener"
 						mix={css(primaryLinkCss)}
 					>
-						Browse all community packages
+						Browse all public packages
 					</a>
 				</p>
 			</div>

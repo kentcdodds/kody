@@ -37,7 +37,9 @@ const mockModule = vi.hoisted(() => ({
 	readCommunitySnapshot: vi.fn(),
 	getSavedPackageByKodyId: vi.fn(),
 	getSavedPackageByName: vi.fn(),
+	updateSavedPackage: vi.fn(),
 	ensureEntitySource: vi.fn(),
+	getEntitySourceById: vi.fn(),
 	syncArtifactSourceSnapshot: vi.fn(),
 	deleteEntitySource: vi.fn(),
 	cleanupArtifactReposForPackage: vi.fn(),
@@ -46,7 +48,6 @@ const mockModule = vi.hoisted(() => ({
 	deleteCommunityRatingsByListingId: vi.fn(),
 	deleteCommunitySnapshot: vi.fn(),
 	setCommunityListingStatus: vi.fn(),
-	setCommunityListingTrustedCommit: vi.fn(),
 	resolveCommunityReportRow: vi.fn(),
 	isPlatformAccountStableUserId: vi.fn(),
 }))
@@ -75,6 +76,8 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.getSavedPackageByKodyId(...args),
 	getSavedPackageByName: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByName(...args),
+	updateSavedPackage: (...args: Array<unknown>) =>
+		mockModule.updateSavedPackage(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -95,6 +98,8 @@ vi.mock('#worker/repo/source-sync.ts', () => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	deleteEntitySource: (...args: Array<unknown>) =>
 		mockModule.deleteEntitySource(...args),
+	getEntitySourceById: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceById(...args),
 }))
 
 vi.mock('#worker/repo/artifact-repo-cleanup.ts', () => ({
@@ -156,8 +161,6 @@ vi.mock('./repo.ts', async (importOriginal) => {
 			mockModule.resolveCommunityReportRow(...args),
 		setCommunityListingStatus: (...args: Array<unknown>) =>
 			mockModule.setCommunityListingStatus(...args),
-		setCommunityListingTrustedCommit: (...args: Array<unknown>) =>
-			mockModule.setCommunityListingTrustedCommit(...args),
 	}
 })
 
@@ -365,227 +368,6 @@ function validSavedPackage() {
 		updatedAt: '2026-07-01T00:00:00.000Z',
 	}
 }
-
-test('publishCommunityListing pins platform trust on publish and republish but not for people', async () => {
-	mockModule.getCommunityBan.mockResolvedValue(null)
-	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
-	const firstSource = validPublishSource()
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue(firstSource)
-	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
-	mockModule.insertCommunityListing.mockResolvedValue(undefined)
-	mockModule.writeCommunitySnapshot.mockResolvedValue(undefined)
-	mockModule.isPlatformAccountStableUserId.mockImplementation(
-		async (_db: unknown, userId: string) => userId === 'platform-owner-1',
-	)
-	mockModule.setCommunityListingTrustedCommit.mockResolvedValue(true)
-	mockModule.getCommunityListingById.mockImplementation(
-		async (_db: unknown, input: { listingId: string }) =>
-			sampleListing({
-				id: input.listingId,
-				ownerUserId: 'platform-owner-1',
-				trustedCommit: firstSource.source.published_commit,
-				trusted: true,
-			}),
-	)
-	mockModule.insertCommunityActivityEvent.mockResolvedValue(undefined)
-
-	await publishCommunityListing({
-		env: createEnv(),
-		baseUrl: 'https://heykody.dev',
-		userId: 'platform-owner-1',
-		packageId: 'package-1',
-	})
-
-	const listingId = mockModule.insertCommunityListing.mock.calls[0]?.[1]
-		?.id as string
-	expect(mockModule.setCommunityListingTrustedCommit).toHaveBeenNthCalledWith(
-		1,
-		expect.anything(),
-		{
-			listingId,
-			trustedCommit: 'commit-1',
-			trustedByUserId: 'platform-owner-1',
-		},
-	)
-	expect(
-		mockModule.writeCommunitySnapshot.mock.invocationCallOrder[0],
-	).toBeLessThan(
-		mockModule.setCommunityListingTrustedCommit.mock.invocationCallOrder[0] ??
-			0,
-	)
-	expect(
-		mockModule.setCommunityListingTrustedCommit.mock.invocationCallOrder[0],
-	).toBeLessThan(
-		mockModule.insertCommunityActivityEvent.mock.invocationCallOrder[0] ?? 0,
-	)
-
-	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
-		sampleListing({
-			id: listingId,
-			ownerUserId: 'platform-owner-1',
-			trustedCommit: 'commit-1',
-			trusted: true,
-		}),
-	)
-	mockModule.updateCommunityListing.mockResolvedValue(true)
-	const republishedSource = validPublishSource()
-	republishedSource.source.published_commit = 'commit-2'
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue(republishedSource)
-	mockModule.getCommunityListingById.mockResolvedValue(
-		sampleListing({
-			id: listingId,
-			ownerUserId: 'platform-owner-1',
-			pinnedCommit: 'commit-2',
-			trustedCommit: 'commit-2',
-			trusted: true,
-		}),
-	)
-
-	await publishCommunityListing({
-		env: createEnv(),
-		baseUrl: 'https://heykody.dev',
-		userId: 'platform-owner-1',
-		actorUserId: 'operator-1',
-		packageId: 'package-1',
-	})
-
-	expect(mockModule.setCommunityListingTrustedCommit).toHaveBeenNthCalledWith(
-		2,
-		expect.anything(),
-		{
-			listingId,
-			trustedCommit: 'commit-2',
-			trustedByUserId: 'operator-1',
-		},
-	)
-	expect(
-		mockModule.writeCommunitySnapshot.mock.invocationCallOrder[1],
-	).toBeLessThan(
-		mockModule.setCommunityListingTrustedCommit.mock.invocationCallOrder[1] ??
-			0,
-	)
-	expect(
-		mockModule.setCommunityListingTrustedCommit.mock.invocationCallOrder[1],
-	).toBeLessThan(
-		mockModule.insertCommunityActivityEvent.mock.invocationCallOrder[1] ?? 0,
-	)
-
-	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
-	mockModule.getCommunityListingById.mockImplementation(
-		async (_db: unknown, input: { listingId: string }) =>
-			sampleListing({ id: input.listingId, ownerUserId: 'person-1' }),
-	)
-
-	await publishCommunityListing({
-		env: createEnv(),
-		baseUrl: 'https://heykody.dev',
-		userId: 'person-1',
-		packageId: 'package-1',
-	})
-
-	expect(mockModule.setCommunityListingTrustedCommit).toHaveBeenCalledTimes(2)
-})
-
-test('publishCommunityListing restores listing snapshots when platform trust pinning fails', async () => {
-	mockModule.getCommunityBan.mockResolvedValue(null)
-	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue(validPublishSource())
-	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
-	mockModule.insertCommunityListing.mockResolvedValue(undefined)
-	mockModule.writeCommunitySnapshot.mockResolvedValue(undefined)
-	mockModule.isPlatformAccountStableUserId.mockResolvedValue(true)
-	mockModule.setCommunityListingTrustedCommit.mockRejectedValue(
-		new Error('trust unavailable'),
-	)
-	mockModule.deleteCommunityListing.mockResolvedValue(true)
-	mockModule.deleteCommunitySnapshot.mockResolvedValue(undefined)
-
-	await expect(
-		publishCommunityListing({
-			env: createEnv(),
-			baseUrl: 'https://heykody.dev',
-			userId: 'platform-owner-1',
-			packageId: 'package-1',
-		}),
-	).rejects.toThrow('trust unavailable')
-
-	const firstListingId = mockModule.insertCommunityListing.mock.calls[0]?.[1]
-		?.id as string
-	expect(mockModule.deleteCommunityListing).toHaveBeenCalledWith(
-		expect.anything(),
-		{
-			listingId: firstListingId,
-			ownerUserId: 'platform-owner-1',
-		},
-	)
-	expect(mockModule.deleteCommunitySnapshot).toHaveBeenCalledWith(
-		expect.anything(),
-		firstListingId,
-	)
-	expect(mockModule.insertCommunityActivityEvent).not.toHaveBeenCalled()
-
-	mockModule.updateCommunityListing.mockClear()
-	mockModule.writeCommunitySnapshot.mockClear()
-	mockModule.deleteCommunityListing.mockClear()
-	mockModule.deleteCommunitySnapshot.mockClear()
-	const existingListing = sampleListing({
-		ownerUserId: 'platform-owner-1',
-		trustedCommit: 'commit-1',
-		trusted: true,
-		featuredAt: '2026-07-02T00:00:00.000Z',
-		featured: true,
-	})
-	const previousSnapshot = {
-		version: 1 as const,
-		listingId: existingListing.id,
-		pinnedCommit: existingListing.pinnedCommit,
-		files: {
-			'package.json': '{"name":"@owner/discord-gateway"}',
-			'README.md': existingListing.readmeContent ?? '',
-		},
-		createdAt: existingListing.publishedAt,
-	}
-	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(
-		existingListing,
-	)
-	mockModule.readCommunitySnapshot.mockResolvedValue(previousSnapshot)
-	mockModule.updateCommunityListing.mockResolvedValue(true)
-	const republishedSource = validPublishSource()
-	republishedSource.source.published_commit = 'commit-2'
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue(republishedSource)
-
-	await expect(
-		publishCommunityListing({
-			env: createEnv(),
-			baseUrl: 'https://heykody.dev',
-			userId: 'platform-owner-1',
-			actorUserId: 'operator-1',
-			packageId: 'package-1',
-		}),
-	).rejects.toThrow('trust unavailable')
-
-	expect(mockModule.readCommunitySnapshot).toHaveBeenCalledWith(
-		expect.anything(),
-		existingListing.id,
-	)
-	expect(mockModule.updateCommunityListing).toHaveBeenLastCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			listingId: existingListing.id,
-			ownerUserId: 'platform-owner-1',
-			pinnedCommit: 'commit-1',
-			publishedAt: existingListing.publishedAt,
-		}),
-	)
-	expect(mockModule.writeCommunitySnapshot).toHaveBeenLastCalledWith(
-		expect.anything(),
-		previousSnapshot,
-	)
-	expect(mockModule.deleteCommunityListing).not.toHaveBeenCalled()
-	expect(mockModule.deleteCommunitySnapshot).not.toHaveBeenCalled()
-	expect(mockModule.insertCommunityActivityEvent).not.toHaveBeenCalled()
-})
 
 test('publishCommunityListing rolls back D1 when KV snapshot write fails', async () => {
 	mockModule.getCommunityBan.mockResolvedValue(null)
@@ -994,7 +776,7 @@ test('listCommunityIndexOverview queries only populated categories and uses SQL 
 	expect(overview.categoryCounts.examples).toBe(0)
 })
 
-test('publishCommunityListing accepts Intent heading beyond storage truncation', async () => {
+test('publishCommunityListing stores long README content and drops binary icon bytes from snapshots', async () => {
 	const padding = 'x'.repeat(20_000)
 	mockModule.getCommunityBan.mockResolvedValue(null)
 	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
@@ -1022,7 +804,7 @@ test('publishCommunityListing accepts Intent heading beyond storage truncation',
 	expect(mockModule.insertCommunityListing).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			readme_content: expect.stringMatching(/…$/),
+			readme_content: expect.stringContaining('## Intent'),
 			category: 'integrations',
 		}),
 	)
@@ -1163,153 +945,6 @@ test('publishCommunityListing invalidates old and reused icon revisions', async 
 	)
 	expect(testCommunityAssets.delete).toHaveBeenCalledWith(
 		'community-icon:v1/listing-1/commit-2/asset',
-	)
-})
-
-test('publishCommunityListing requires MIT license and Intent heading', async () => {
-	mockModule.getCommunityBan.mockResolvedValue(null)
-	mockModule.getSavedPackageById.mockResolvedValue({
-		id: 'package-1',
-		userId: 'user-1',
-		name: '@owner/discord-gateway',
-		kodyId: 'discord-gateway',
-		description: 'Discord helpers',
-		tags: ['discord'],
-		searchText: null,
-		sourceId: 'source-1',
-		hasApp: false,
-		hidden: false,
-		isPrivate: false,
-		createdAt: '2026-07-01T00:00:00.000Z',
-		updatedAt: '2026-07-01T00:00:00.000Z',
-	})
-	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
-
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		source: {
-			id: 'source-1',
-			published_commit: 'commit-1',
-		},
-		manifest: {
-			name: '@owner/discord-gateway',
-			exports: { '.': './src/index.ts' },
-			kody: {
-				id: 'discord-gateway',
-				description: 'Discord helpers',
-			},
-		},
-		files: {
-			'package.json': JSON.stringify({
-				name: '@owner/discord-gateway',
-				license: 'Apache-2.0',
-				exports: { '.': './src/index.ts' },
-				kody: {
-					id: 'discord-gateway',
-					description: 'Discord helpers',
-				},
-			}),
-			'README.md': '# Discord Gateway\n\nNo intent here.',
-		},
-	})
-
-	await expect(
-		publishCommunityListing({
-			env: createEnv(),
-			baseUrl: 'https://heykody.dev',
-			userId: 'user-1',
-			packageId: 'package-1',
-		}),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof CommunityActionError &&
-			/MIT license/.test(error.message),
-	)
-
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		source: {
-			id: 'source-1',
-			published_commit: 'commit-1',
-		},
-		manifest: {
-			name: '@owner/discord-gateway',
-			exports: { '.': './src/index.ts' },
-			kody: {
-				id: 'discord-gateway',
-				description: 'Discord helpers',
-			},
-		},
-		files: {
-			'package.json': JSON.stringify({
-				name: '@owner/discord-gateway',
-				license: 'MIT',
-				exports: { '.': './src/index.ts' },
-				kody: {
-					id: 'discord-gateway',
-					description: 'Discord helpers',
-				},
-			}),
-			'README.md': '# Discord Gateway\n\nNo intent here.',
-		},
-	})
-
-	await expect(
-		publishCommunityListing({
-			env: createEnv(),
-			baseUrl: 'https://heykody.dev',
-			userId: 'user-1',
-			packageId: 'package-1',
-		}),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof CommunityActionError && /Intent/.test(error.message),
-	)
-})
-
-test('publishCommunityListing rejects private packages', async () => {
-	mockModule.getCommunityBan.mockResolvedValue(null)
-	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
-	mockModule.getCommunityListingByOwnerAndPackage.mockResolvedValue(null)
-	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
-		source: {
-			id: 'source-1',
-			published_commit: 'commit-1',
-		},
-		manifest: {
-			name: '@owner/discord-gateway',
-			exports: { '.': './src/index.ts' },
-			kody: {
-				id: 'discord-gateway',
-				description: 'Discord helpers',
-			},
-		},
-		files: {
-			'package.json': JSON.stringify({
-				name: '@owner/discord-gateway',
-				private: true,
-				license: 'MIT',
-				exports: { '.': './src/index.ts' },
-				kody: {
-					id: 'discord-gateway',
-					description: 'Discord helpers',
-				},
-			}),
-			'README.md': '# Discord Gateway\n\n## Intent\n\nBridge Discord events.',
-		},
-	})
-
-	await expect(
-		publishCommunityListing({
-			env: createEnv(),
-			baseUrl: 'https://heykody.dev',
-			userId: 'user-1',
-			packageId: 'package-1',
-		}),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof CommunityActionError &&
-			error.message.includes(
-				'community listings cannot publish packages with `"private": true`',
-			),
 	)
 })
 

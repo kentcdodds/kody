@@ -18,8 +18,10 @@ rights.
 
 The repo is public and has already merged outside human commits, including
 substantial UI work. Almost all other history is Kent C. Dodds and allowlisted
-automation (Cursor, Kody, Devin, Sentry, Dependabot). Community packages are a
-separate MIT surface and are not this question.
+automation (Cursor, Kody, Devin, Sentry, Dependabot). Public packages are a
+separate catalog surface (authors keep their own copyright; no CLA and no
+license gate — see [0043](./0043-repo-visibility-no-community-kind.md)) and are
+not this question.
 
 Alternatives considered:
 
@@ -29,7 +31,7 @@ Alternatives considered:
   single-licensor Fair Source tree.
 - **Copyright assignment.** Heavier than needed; inbound license is enough.
 - **Close the repo to outside pull requests.** Legally simplest, but the repo is
-  already public and has taken outside patches. Issues and community packages
+  already public and has taken outside patches. Issues and public packages
   remain the preferred place for most work; they do not replace a rule for the
   patches that do land here.
 
@@ -48,8 +50,8 @@ alone).
 
 How it works:
 
-- **Scope.** This git repository only. User packages, community listings (MIT),
-  and unsubmitted forks are out of scope.
+- **Scope.** This git repository only. User packages, catalog listings, and
+  unsubmitted forks are out of scope.
 - **Who signs.** Every GitHub identity that authors a commit on the pull
   request, unless that identity is `kentcdodds`, `kody-bot`, `cursoragent`, a
   `*[bot]` or `app/*` account, or an email listed as Licensor-owned in
@@ -79,8 +81,9 @@ How it works:
 - Individual signatures do not need a maintainer to edit the signers file. The
   recorder is a first-party `issue_comment` job that writes `main` only. Do not
   replace it with an unmaintained `pull_request_target` signing bot.
-- Community package authors keep their own MIT copyright; they never sign this
-  CLA unless they also patch this repository.
+- Public package authors keep their own copyright; they never sign this CLA
+  unless they also patch this repository. Listings have no license gate (see
+  [0043](./0043-repo-visibility-no-community-kind.md)).
 - Revisit if the Licensor becomes a company (assign the inbound grants to that
   successor), if counsel revises the CLA text, or if contribution volume
   justifies hosted click-to-sign.

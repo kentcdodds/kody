@@ -242,6 +242,7 @@ primitives:
       - packages/worker/src/mcp/capabilities/repo/repo-delete.ts
       - packages/worker/src/mcp/capabilities/repo/repo-get-git-remote.ts
       - packages/worker/src/mcp/capabilities/repo/repo-promote-to-package.ts
+      - packages/worker/src/mcp/capabilities/repo/repo-update.ts
     docs:
       - docs/use/repos.md
 
@@ -268,7 +269,7 @@ primitives:
 
   - id: community-listings
     group: assistant
-    name: Community package listings
+    name: Public package listings
     summary: Public pinned package listings, forks, ratings, and moderation.
     code:
       - packages/worker/src/community/

@@ -132,6 +132,7 @@ export function packageFileLanguageLabel(path: string | null | undefined) {
  */
 const packageFilesPathMatcher = (() => {
 	const matcher = createMultiMatcher<true>()
+	matcher.add(routes.communityPackageTree.pattern, true)
 	matcher.add(routes.communityPackageFiles.pattern, true)
 	matcher.add(routes.communityDetailFiles.pattern, true)
 	matcher.add(routes.accountPackageFiles.pattern, true)
@@ -328,27 +329,31 @@ export function buildPackageFilesView(input: {
 	}
 }
 
-export function getCommunityPackageFilesHref(input: {
+export function getCommunityPackageTreeHref(input: {
 	listingId: string
 	ownerUsername?: string | null
 	kodyId?: string | null
+	ref?: string
 	relativePath?: string
 }) {
 	const relativePath = input.relativePath?.trim() || undefined
+	const ref = input.ref?.trim() || 'HEAD'
 	if (
 		input.ownerUsername &&
 		input.kodyId &&
 		!isReservedPackageFilesKodyId(input.kodyId)
 	) {
 		return relativePath
-			? routes.communityPackageFiles.href({
+			? routes.communityPackageTree.href({
 					username: input.ownerUsername,
 					kodyId: input.kodyId,
+					ref,
 					relativePath,
 				})
-			: routes.communityPackageFiles.href({
+			: routes.communityPackageTree.href({
 					username: input.ownerUsername,
 					kodyId: input.kodyId,
+					ref,
 				})
 	}
 	return relativePath
@@ -357,6 +362,16 @@ export function getCommunityPackageFilesHref(input: {
 				relativePath,
 			})
 		: routes.communityDetailFiles.href({ listingId: input.listingId })
+}
+
+export function getCommunityPackageFilesHref(input: {
+	listingId: string
+	ownerUsername?: string | null
+	kodyId?: string | null
+	relativePath?: string
+	ref?: string
+}) {
+	return getCommunityPackageTreeHref(input)
 }
 
 export function getAccountPackageFilesHref(input: {

@@ -102,7 +102,7 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 				: ''
 		const listingAheadNote =
 			match.listingAhead === true
-				? ' Listing ahead — community listing republished since this fork; community_get then community_fork_absorb.'
+				? ' Listing ahead — origin has new commits; community_get then repo_publish_session with absorbed_upstream_commit.'
 				: ''
 		return `${String(index + 1)}. **package** ${escapeMarkdownText(match.title)} (${formatMarkdownInlineCode(match.kodyId)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${actionSummary}${listingAheadNote}`
 	}

@@ -75,8 +75,9 @@ function createDatabase(
 									user_id: params[1],
 									name: params[2],
 									description: params[3],
-									created_at: params[4],
-									updated_at: params[5],
+									is_private: params[4],
+									created_at: params[5],
+									updated_at: params[6],
 								}
 								const table = tables.get('user_repos') ?? []
 								const duplicate = table.some(
