@@ -7,7 +7,10 @@ import { authorizeCapabilityStorageId } from './storage-access.ts'
 const packageId = 'b2fda105-005a-4e2b-9f22-1513b6752da2'
 const victimPackageId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 
-function createCallerContext(callerPackageId: string | null) {
+function createCallerContext(
+	callerPackageId: string | null,
+	boundStorageId?: string,
+) {
 	return createMcpCallerContext({
 		baseUrl: 'https://example.com',
 		user: {
@@ -19,16 +22,20 @@ function createCallerContext(callerPackageId: string | null) {
 			sessionId: null,
 			appId: callerPackageId,
 			packageId: callerPackageId,
-			storageId: callerPackageId
-				? buildPackageStorageId(callerPackageId)
-				: null,
+			storageId:
+				boundStorageId ??
+				(callerPackageId ? buildPackageStorageId(callerPackageId) : null),
 		},
 	})
 }
 
-function authorize(callerPackageId: string | null, storageId: string) {
+function authorize(
+	callerPackageId: string | null,
+	storageId: string,
+	boundStorageId?: string,
+) {
 	return authorizeCapabilityStorageId({
-		callerContext: createCallerContext(callerPackageId),
+		callerContext: createCallerContext(callerPackageId, boundStorageId),
 		capabilityName: 'storage_query',
 		storageId,
 	})
@@ -63,6 +70,16 @@ test('package callers reach only buckets their package owns', () => {
 	]) {
 		expect(() => authorize(packageId, storageId)).toThrow(McpCallerError)
 	}
+})
+
+test('a package caller keeps the bucket the host bound for its run', () => {
+	const boundJobBucket = `job:${crypto.randomUUID()}`
+	expect(authorize(packageId, boundJobBucket, boundJobBucket)).toBe(
+		boundJobBucket,
+	)
+	expect(() =>
+		authorize(packageId, `job:${crypto.randomUUID()}`, boundJobBucket),
+	).toThrow(McpCallerError)
 })
 
 test('non-UUID package ids get no prefix reach into reserved namespaces', () => {

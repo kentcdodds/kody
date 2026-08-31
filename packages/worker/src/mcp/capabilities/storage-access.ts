@@ -24,6 +24,10 @@ export function createStorageBucketAccessDeniedMessage(input: {
  * boundary `packageStorage()` and the package-app storage bridge enforce.
  * User-driven callers (chat, MCP clients, `execute` outside a package) keep
  * account-scoped access to their own buckets.
+ *
+ * A package caller may also name the bucket the host already bound for this run
+ * (`storageContext.storageId`) even when that id is not package-shaped, so a job
+ * a package created keeps reaching the bucket its own run writes.
  */
 export function authorizeCapabilityStorageId(input: {
 	callerContext: McpCallerContext
@@ -36,6 +40,9 @@ export function authorizeCapabilityStorageId(input: {
 	}
 	const packageId = input.callerContext.storageContext?.packageId?.trim()
 	if (!packageId) return storageId
+	if (storageId === input.callerContext.storageContext?.storageId?.trim()) {
+		return storageId
+	}
 	if (isPackageOwnedStorageId({ packageId, storageId })) return storageId
 	throw new McpCallerError(
 		createStorageBucketAccessDeniedMessage({
