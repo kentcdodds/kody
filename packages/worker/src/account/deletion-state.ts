@@ -356,6 +356,32 @@ export async function assertAccountWritableDb(
 	}
 }
 
+/**
+ * After dropping a leftover UserMeter tombstone, re-read D1. A deletion that
+ * started in that window already wrote `users.deleting_at` and may have had
+ * its DO fence cleared; restore that tombstone before failing closed.
+ */
+async function assertAccountWritableAfterLeftoverTombstoneClear(input: {
+	db: D1Database
+	env: UserMeterEnv
+	stableUserId: string
+}) {
+	const row = await input.db
+		.prepare(`SELECT deleting_at FROM users WHERE stable_user_id = ?`)
+		.bind(input.stableUserId)
+		.first<{ deleting_at: string | null }>()
+	const deletingAt = row?.deleting_at
+	if (row && !deletingAt) return
+	if (deletingAt) {
+		await runUserMeterRpc({
+			env: input.env,
+			stableUserId: input.stableUserId,
+			operation: async (meter) => await meter.markDeleting({ deletingAt }),
+		})
+	}
+	throw new AccountDeletionInProgressError()
+}
+
 export async function assertAccountWritable(env: Env, stableUserId: string) {
 	await assertAccountWritableDb(env.APP_DB, stableUserId)
 }
@@ -440,9 +466,15 @@ async function acquireDoAccountWriteLeaseAndWrite<T>(input: {
 		// Live D1 + meter tombstone is a leftover fence (completed deletion
 		// restored the tombstone; the same email signed up again). Re-check D1
 		// before clearing so a deletion that started after the first acquire
-		// keeps its tombstone.
+		// keeps its tombstone, then re-check after the clear so a deletion that
+		// landed in that window cannot acquire a write lease.
 		await assertAccountWritableDb(input.db, input.stableUserId)
 		await clearUserMeterDeletionTombstone({
+			env: input.env,
+			stableUserId: lease.stableUserId,
+		})
+		await assertAccountWritableAfterLeftoverTombstoneClear({
+			db: input.db,
 			env: input.env,
 			stableUserId: lease.stableUserId,
 		})
