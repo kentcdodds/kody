@@ -25,6 +25,7 @@ import {
 	grokCliMcpGuideUrl,
 	grokConnectorsUrl,
 	grokCustomMcpGuideUrl,
+	kodyAppIconFilename,
 	kodyCursorAddPluginCommand,
 	kodyCursorMarketplaceUrl,
 	type McpClientKind,
@@ -37,6 +38,7 @@ import {
 } from '#client/routes/onboarding-mcp-clients.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import {
+	AppIconCard,
 	ClientNote,
 	CopyCard,
 	InstallDeepLink,
@@ -120,16 +122,10 @@ export function renderPanelContent(
 						copyLabel="Copy MCP URL"
 					/>
 					<p>
-						For the app icon, download Kody&apos;s favicon from the URL below.
 						Owners can edit a developer-mode app&apos;s name and logo later from
 						its <strong>Manage</strong> menu in Apps settings.
 					</p>
-					<CopyCard
-						highlights={highlights}
-						label="App icon (favicon)"
-						value={appIconUrl}
-						copyLabel="Copy icon URL"
-					/>
+					<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
 					<ClientNote>
 						{surface === 'mobile' ? codingAgentPackageHint : nonCodingAgentNote}
 					</ClientNote>
@@ -155,12 +151,7 @@ export function renderPanelContent(
 							value={mcpServerUrl}
 							copyLabel="Copy MCP URL"
 						/>
-						<CopyCard
-							highlights={highlights}
-							label="App icon (favicon)"
-							value={appIconUrl}
-							copyLabel="Copy icon URL"
-						/>
+						<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
 						<ClientNote>{codingAgentPackageHint}</ClientNote>
 					</>
 				)

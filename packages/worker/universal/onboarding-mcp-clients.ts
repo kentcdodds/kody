@@ -405,9 +405,19 @@ export const grokBotInstallUrl = `grokbot://app/v1/plugin/add?id=${kodyMarketpla
 export const grokBotConnectPluginsUrl =
 	'https://cursor.com/help/grok-bot/connect-plugins'
 
-/** Square favicon suitable for ChatGPT plugin / connector app icons. */
+/**
+ * Dedicated ChatGPT / Codex connector icon. ChatGPT wants 256×256 and
+ * rejects uploads over 10 KB; `/apple-touch-icon.png` is larger, so
+ * onboarding points here.
+ */
+export const kodyAppIconPath = '/images/kody-app-icon.png'
+export const kodyAppIconFilename = kodyAppIconPath.slice(
+	kodyAppIconPath.lastIndexOf('/') + 1,
+)
+
+/** Square PNG suitable for ChatGPT plugin / connector app icons. */
 export function buildKodyAppIconUrl(mcpServerUrl: string) {
-	return new URL('/apple-touch-icon.png', mcpServerUrl).href
+	return new URL(kodyAppIconPath, mcpServerUrl).href
 }
 
 export const nonCodingAgentNote =
