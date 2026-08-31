@@ -285,7 +285,9 @@ tombstone, the D1 fence is rolled back.
 **`abortAccountDeleting`:** used when deletion fails before cleanup (active
 writes or incomplete inventory). Clears D1 `users.deleting_at` first, then
 `UserMeter.clearDeleting()` so the account is not left fenced. Cleanup failures
-still keep the tombstone so a retry can finish.
+still keep the tombstone so a retry can finish. Operators restore a leftover
+fence with `admin_account_deletion_abort` (stable user id + audit reason), which
+resolves `users.id` internally.
 
 **Admin list / repair:** `listActiveAccountWriteLeases(env, userId)` reads DO
 leases via `listWriteLeases` pages — no D1 union. Repair is DO-only and

@@ -11,6 +11,7 @@ import {
 	AccountDeletionInProgressError,
 	AccountWriteLeaseLostError,
 	abortAccountDeleting,
+	abortAccountDeletingByStableUserId,
 	listActiveAccountWriteLeases,
 	markAccountDeleting,
 	repairAccountWriteLease,
@@ -1251,4 +1252,41 @@ test('abortAccountDeleting clears the D1 gate and UserMeter tombstone', async ()
 			},
 		}),
 	).resolves.toBe('ok')
+})
+
+test('abortAccountDeletingByStableUserId resolves the user then clears the fence', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	await markAccountDeleting({
+		db,
+		dbUserId: 1,
+		now: new Date('2099-01-01T00:00:00.000Z'),
+		env: meter.env,
+	})
+
+	await abortAccountDeletingByStableUserId({
+		db,
+		stableUserId: 'user-a',
+		now: new Date('2099-01-01T00:02:00.000Z'),
+		env: meter.env,
+	})
+	expect(
+		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
+	).toEqual({ deleting_at: null })
+	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
+})
+
+test('abortAccountDeletingByStableUserId fails closed for an unknown user', async () => {
+	const { db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+
+	await expect(
+		abortAccountDeletingByStableUserId({
+			db,
+			stableUserId: 'missing-user',
+			env: meter.env,
+		}),
+	).rejects.toThrow('User not found.')
 })

@@ -269,6 +269,35 @@ export async function abortAccountDeleting(input: {
 	})
 }
 
+/**
+ * Operator entry for {@link abortAccountDeleting}. Resolves `users.id` from
+ * `stable_user_id` so admin tools never take the numeric D1 join key.
+ */
+export async function abortAccountDeletingByStableUserId(input: {
+	db: D1Database
+	stableUserId: string
+	now?: Date
+	env: UserMeterEnv
+}) {
+	const userRow = await input.db
+		.prepare(
+			`SELECT id
+			FROM users
+			WHERE stable_user_id = ?`,
+		)
+		.bind(input.stableUserId)
+		.first<{ id: number }>()
+	if (!userRow) {
+		throw new Error('User not found.')
+	}
+	await abortAccountDeleting({
+		db: input.db,
+		dbUserId: userRow.id,
+		now: input.now,
+		env: input.env,
+	})
+}
+
 export async function assertAccountWritableDb(
 	db: D1Database,
 	stableUserId: string,

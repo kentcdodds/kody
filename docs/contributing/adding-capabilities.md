@@ -232,6 +232,7 @@ rule.
 - `admin_user_verify`
 - `admin_account_write_lease_list`
 - `admin_account_write_lease_repair`
+- `admin_account_deletion_abort`
 - `admin_platform_account_create`
 - `admin_package_scope_grant_create`
 - `admin_package_scope_grant_revoke`

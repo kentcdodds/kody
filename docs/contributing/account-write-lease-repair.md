@@ -35,3 +35,15 @@ held) → audit insert/verify → finalize DO deletion. Retries after a lost
 finalize response succeed when the matching audit exists and the DO lease is
 already gone. Wrong user, stale timestamp, or short reason requests fail closed.
 Retry account deletion only after inspection shows no active leases.
+
+A failed delete that marked `users.deleting_at` before cleanup can leave the
+account fenced with no active leases. Confirm with `admin_user_meter_parity`
+(`deletion.d1DeletingAt` / `deletion.meterDeletingAt`), then clear both sides:
+
+```javascript
+await kody.admin_account_deletion_abort({
+	stable_user_id: 'user-id-from-admin-account-lookup',
+	reason:
+		'Leftover fence after a pre-cleanup delete failure; no writers remain.',
+})
+```
