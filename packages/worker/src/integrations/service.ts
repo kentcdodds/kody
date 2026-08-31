@@ -9,6 +9,7 @@ import {
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
 import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	getPlatformOauthAppBySlug,
 	listPlatformOauthApps,
@@ -1327,4 +1328,69 @@ export async function grantIntegrationPackage(input: {
 		name,
 	})
 	return saved?.connection ?? null
+}
+
+/**
+ * Tighten-only usage lock. Switches the connection from any context to
+ * packages mode and adds `packageId`. Additional grants accumulate.
+ * Unlocking or removing a grant is website-only.
+ */
+export async function lockIntegrationToPackage(input: {
+	env: Pick<Env, 'APP_DB'>
+	userId: string
+	name: string
+	packageId: string
+}): Promise<UserIntegrationConnection> {
+	const name = canonicalIntegrationName(input.name)
+	const packageId = input.packageId.trim()
+	if (!name) {
+		throw new Error('Integration name is required.')
+	}
+	if (!packageId) {
+		throw new Error('Package id is required.')
+	}
+	const existing = await getJoinedIntegrationByName({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name,
+	})
+	if (!existing) {
+		throw new Error(`Integration "${input.name}" was not found.`)
+	}
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
+		userId: input.userId,
+		packageId,
+	})
+	if (!savedPackage) {
+		throw new Error('Saved package not found for this user.')
+	}
+	if (
+		existing.connection.usageMode === 'packages' &&
+		existing.connection.allowedPackageIds.includes(packageId)
+	) {
+		return existing.connection
+	}
+	const allowedPackageIds = normalizeAllowedPackages([
+		...existing.connection.allowedPackageIds,
+		packageId,
+	])
+	const updated = await updateIntegrationUsage({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name,
+		usageMode: 'packages',
+		allowedPackageIds,
+	})
+	if (!updated) {
+		throw new Error(`Unable to lock integration "${name}" to a package.`)
+	}
+	const saved = await getJoinedIntegrationByName({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		name,
+	})
+	if (!saved) {
+		throw new Error(`Unable to lock integration "${name}" to a package.`)
+	}
+	return saved.connection
 }

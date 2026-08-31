@@ -4,6 +4,7 @@ import { integrationDeleteCapability } from './integration-delete.ts'
 import { integrationDiscoverCapability } from './integration-discover.ts'
 import { integrationGetCapability } from './integration-get.ts'
 import { integrationListCapability } from './integration-list.ts'
+import { integrationLockCapability } from './integration-lock.ts'
 import { integrationOauthAppDeleteCapability } from './integration-oauth-app-delete.ts'
 import { integrationOauthAppListCapability } from './integration-oauth-app-list.ts'
 import { integrationOauthAppRotateCredentialsCapability } from './integration-oauth-app-rotate-credentials.ts'
@@ -34,11 +35,14 @@ export const integrationsDomain = defineDomain({
 		'scaffold',
 		'oauth app',
 		'client credentials',
+		'lock',
+		'usage',
 	],
 	capabilities: [
 		integrationSaveCapability,
 		integrationGetCapability,
 		integrationListCapability,
+		integrationLockCapability,
 		integrationDeleteCapability,
 		integrationOauthAppListCapability,
 		integrationOauthAppDeleteCapability,

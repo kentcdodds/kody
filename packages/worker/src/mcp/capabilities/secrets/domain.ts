@@ -3,6 +3,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { jwtSignCapability } from './jwt-sign.ts'
 import { secretDeleteCapability } from './secret-delete.ts'
 import { secretListCapability } from './secret-list.ts'
+import { secretLockCapability } from './secret-lock.ts'
 import { secretSetCapability } from './secret-set.ts'
 import { secretSetManyCapability } from './secret-set-many.ts'
 
@@ -10,11 +11,19 @@ export const secretsDomain = defineDomain({
 	name: capabilityDomainNames.secrets,
 	description:
 		'Server-side secret references (never paste secret values into chat).',
-	keywords: ['secret', 'credentials', 'reference', 'secure input'],
+	keywords: [
+		'secret',
+		'credentials',
+		'reference',
+		'secure input',
+		'lock',
+		'usage',
+	],
 	capabilities: [
 		secretListCapability,
 		secretSetCapability,
 		secretSetManyCapability,
+		secretLockCapability,
 		secretDeleteCapability,
 		jwtSignCapability,
 	],
