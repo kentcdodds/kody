@@ -386,8 +386,10 @@ const oauthProvider = new OAuthProvider({
 	// 2026-07-28 revision deprecates RFC 7591 DCR in favor of CIMD, so both
 	// stay enabled: CIMD clients present their URL client_id with no
 	// registration step, and clients that do not use CIMD register via
-	// /oauth/register. A failed CIMD metadata fetch returns invalid_client;
-	// whether a client then registers via DCR is the client's own recovery.
+	// /oauth/register. A failed CIMD metadata fetch throws CimdFetchError;
+	// authorize maps that to an unknown-client page, and the token endpoint
+	// still returns generic invalid_client. Whether a client then registers
+	// via DCR is the client's own recovery.
 	// Requires the global_fetch_strictly_public compatibility flag (set in
 	// wrangler.jsonc) so metadata fetches are SSRF-safe; the provider only
 	// advertises CIMD support when both are on.
@@ -397,15 +399,28 @@ const oauthProvider = new OAuthProvider({
 	// the defaults). Access tokens stay at the 1-hour default.
 	refreshTokenTTL: undefined,
 	clientRegistrationTTL: undefined,
+	// Do not pin resourceMetadata.resource: preview, local, and production
+	// origins all serve MCP. Unconfigured 0.10 inherits an explicit RFC 8707
+	// resource (ChatGPT sends `/mcp`) and Kody's authorize handler defaults
+	// omitted resources to `/mcp` (Gemini). Custom PRM below advertises
+	// `<origin>/mcp` so discovery matches that audience.
 	// Provider default onError logs every structured OAuth error via console.warn.
 	// Keep those responses on the wire without duplicating them into worker logs /
-	// test console guards; unexpected throws still reach our fetch catch + Sentry.
-	onError: () => undefined,
-	// NOTE: we intentionally do NOT set `allowPlainPKCE: false`. In this provider
-	// version that option rejects EVERY authorize request whose
-	// `code_challenge_method` is absent or `plain` — including confidential
-	// clients that legitimately use no PKCE — which breaks real MCP clients. See
-	// the OAuth section of docs/contributing/security.md before changing this.
+	// test console guards. CIMD fetch failures stay generic on the wire and are
+	// reported here for Sentry; unexpected throws still reach fetch catch + Sentry.
+	onError: (error) => {
+		if (error.internal?.category === 'client-id-metadata-document') {
+			Sentry.captureException(
+				new Error(
+					`CIMD metadata resolution failed (${error.internal.reason}): ${error.description}`,
+				),
+			)
+		}
+	},
+	// 0.10+ defaults allowPlainPKCE to false (S256-only) while still allowing
+	// confidential clients to omit PKCE. Do not set allowPlainPKCE: true. App
+	// layer getPkceValidationError remains defense in depth. See
+	// docs/contributing/security.md.
 })
 
 /**
@@ -539,7 +554,11 @@ const workerHandler = {
 			return addOAuthDiscoveryCorsHeaders(clientIdMetadataResponse, request)
 		}
 
-		if (url.pathname === protectedResourceMetadataPath) {
+		// Serve both RFC 9728 PRM paths before OAuthProvider: the root document
+		// and the path-aware `.../mcp` document. 0.10+ would otherwise publish
+		// origin-only resource metadata on the path-aware URL and disagree with
+		// `<origin>/mcp` token audiences.
+		if (isProtectedResourceMetadataRequest(url.pathname)) {
 			if (request.method === 'OPTIONS') {
 				return addOAuthDiscoveryCorsHeaders(
 					new Response(null, {

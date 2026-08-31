@@ -1,6 +1,8 @@
 import { jsonResponse } from '#worker/json-response.ts'
+import * as Sentry from '@sentry/cloudflare'
 import {
 	type AuthRequest,
+	CimdFetchError,
 	type ClientInfo,
 	type OAuthHelpers,
 } from '@cloudflare/workers-oauth-provider'
@@ -239,6 +241,15 @@ function defaultMcpResourceForAuthRequest(
 	authRequest.resource = `${origin}${mcpResourcePath}`
 }
 
+function isCimdMetadataResolutionError(error: unknown) {
+	return (
+		error instanceof CimdFetchError ||
+		(error instanceof Error &&
+			error.name === 'CimdFetchError' &&
+			'metadataUrl' in error)
+	)
+}
+
 async function resolveAuthRequest(
 	helpers: OAuthHelpers,
 	request: Request,
@@ -259,6 +270,10 @@ async function resolveAuthRequest(
 		defaultMcpResourceForAuthRequest(authRequest, request, env)
 		return { authRequest, client }
 	} catch (error) {
+		if (isCimdMetadataResolutionError(error)) {
+			Sentry.captureException(error)
+			return { error: 'Unknown OAuth client.' }
+		}
 		const message =
 			error instanceof TypeError
 				? invalidOAuthClientRegistrationMessage
