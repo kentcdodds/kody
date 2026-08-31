@@ -7,6 +7,10 @@ import { type RepoSessionRow } from './types.ts'
 function sessionRow(
 	overrides: Partial<RepoSessionRow> & Pick<RepoSessionRow, 'id' | 'user_id'>,
 ): RepoSessionRow {
+	// Keep `updated_at` and published `expires_at` in the future of "now" so
+	// insertSession does not set an immediate due-cleanup alarm. See
+	// unusedAbandonedSessionRetentionMs in repo-session-due.ts.
+	const now = new Date().toISOString()
 	return {
 		source_id: 'source-1',
 		source_repo_id: 'repo-1',
@@ -21,8 +25,8 @@ function sessionRow(
 		last_checkpoint_commit: null,
 		last_check_run_id: null,
 		last_check_tree_hash: null,
-		created_at: '2026-06-24T19:00:00.000Z',
-		updated_at: '2026-06-24T19:00:00.000Z',
+		created_at: now,
+		updated_at: now,
 		...overrides,
 	}
 }
@@ -58,7 +62,7 @@ test('RepoSessionIndex is the catalog authority for one user', async () => {
 				user_id: userId,
 				source_id: 'source-2',
 				status: 'published',
-				expires_at: '2026-06-24T12:00:00.000Z',
+				expires_at: '2099-01-01T00:00:00.000Z',
 			}),
 		})
 		expect(await instance.countActive({ ownerId: userId })).toBe(1)

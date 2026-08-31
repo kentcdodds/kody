@@ -20,6 +20,10 @@ import { ensureUserStorageBucketsTestSchema } from './test-schema.ts'
 function catalogSessionRow(
 	overrides: Partial<RepoSessionRow> & Pick<RepoSessionRow, 'id' | 'user_id'>,
 ): RepoSessionRow {
+	// Fresh timestamps keep unused-active sessions outside the due window
+	// (`unusedAbandonedSessionRetentionMs`) so insertSession does not arm an
+	// immediate cleanup alarm that hangs workers-unit when console.warn throws.
+	const now = new Date().toISOString()
 	return {
 		source_id: 'source-1',
 		source_repo_id: 'repo-1',
@@ -34,8 +38,8 @@ function catalogSessionRow(
 		last_checkpoint_commit: null,
 		last_check_run_id: null,
 		last_check_tree_hash: null,
-		created_at: '2026-06-24T19:00:00.000Z',
-		updated_at: '2026-06-24T19:00:00.000Z',
+		created_at: now,
+		updated_at: now,
 		...overrides,
 	}
 }
@@ -182,6 +186,13 @@ test('missing repo-session inventory reconciliation registers only active sessio
 	await registerMissingRepoSessionStorageBuckets({ db: env.APP_DB, env })
 	const after = await listUserStorageBucketEstimates({ env, userId })
 	expect(after.length).toBe(estimates.length)
+
+	await index.deleteSession({ ownerId: userId, sessionId: activeSession })
+	await index.deleteSession({ ownerId: userId, sessionId: discardedSession })
+	await index.deleteSession({
+		ownerId: userId,
+		sessionId: registeredSession,
+	})
 })
 
 test('estimate persistence is UPDATE-only, listable, and throttled per isolate', async () => {
