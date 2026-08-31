@@ -185,6 +185,38 @@ export async function listMemoriesByUserId(
 	return (results ?? []).map(mapMemoryRow)
 }
 
+/**
+ * Keyset-paged listing of one user's memories. The account memories export
+ * uses this so a single query never loads the whole table.
+ */
+export async function listMemoriesByUserIdPage(input: {
+	db: D1Database
+	userId: string
+	afterId: string | null
+	limit: number
+	statuses?: Array<McpMemoryRow['status']>
+}): Promise<Array<McpMemoryRow>> {
+	const statuses =
+		input.statuses && input.statuses.length > 0 ? input.statuses : null
+	const statusClause = statuses
+		? `AND status IN (${statuses.map(() => '?').join(', ')})`
+		: ''
+	const { results } = await input.db
+		.prepare(
+			`SELECT id, user_id, category, status, subject, summary, details, tags_json,
+				source_uris_json, dedupe_key, created_at, updated_at, last_accessed_at, deleted_at
+			FROM mcp_memories
+			WHERE user_id = ?
+				AND id > ?
+				${statusClause}
+			ORDER BY id
+			LIMIT ?`,
+		)
+		.bind(input.userId, input.afterId ?? '', ...(statuses ?? []), input.limit)
+		.all<Record<string, unknown>>()
+	return (results ?? []).map(mapMemoryRow)
+}
+
 export async function listMemoriesByIds(
 	db: D1Database,
 	userId: string,

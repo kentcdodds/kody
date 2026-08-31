@@ -67,6 +67,9 @@ export const routes = route({
 	accountActivityApi: '/account/activity.json',
 	accountMemories: '/account/memories',
 	accountMemoryDetail: '/account/memories/:memoryId',
+	// Sibling of `/account/memories.json` so `:memoryId` cannot claim the
+	// signed-in user's memories download.
+	accountMemoriesExport: '/account/memories-export.json',
 	accountMemoriesApi: '/account/memories.json',
 	accountMemoriesApiPost: post('/account/memories.json'),
 	accountEmail: '/account/email',

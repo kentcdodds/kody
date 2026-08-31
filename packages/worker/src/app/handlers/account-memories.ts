@@ -3,10 +3,13 @@ import { type Action } from 'remix/router'
 import {
 	type AccountMemoriesLoaderData,
 	loadAccountMemoriesData,
+	loadAccountMemoriesExport,
+	readAccountMemoriesIncludeDeleted,
 } from '#app/account-memories-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
+import { buildMemoriesExportFilename } from '#universal/memory-export.ts'
 import { type routes } from '#universal/routes.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { deleteMemory } from '#mcp/memory/service.ts'
@@ -43,6 +46,42 @@ export function createAccountMemoriesHandler(env: Env) {
 	} satisfies Action<
 		typeof routes.accountMemories | typeof routes.accountMemoryDetail
 	>
+}
+
+/**
+ * GET /account/memories-export.json for the signed-in user only.
+ * Follows the page Include deleted toggle: active and archived by default;
+ * deleted rows only when that control is on.
+ */
+export function createAccountMemoriesExportHandler(env: Env) {
+	return {
+		middleware: [],
+		async handler({ request }) {
+			const user = await readAuthenticatedAppUser(request, env)
+			if (!user) {
+				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+			if (request.method !== 'GET') {
+				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
+			}
+
+			const includeDeleted = readAccountMemoriesIncludeDeleted(request.url)
+			const payload = await loadAccountMemoriesExport({
+				env,
+				user,
+				includeDeleted,
+			})
+			const filename = buildMemoriesExportFilename()
+			return new Response(JSON.stringify(payload, null, 2), {
+				status: 200,
+				headers: {
+					'Cache-Control': 'no-store',
+					'Content-Disposition': `attachment; filename="${filename}"`,
+					'Content-Type': 'application/json; charset=utf-8',
+				},
+			})
+		},
+	} satisfies Action<typeof routes.accountMemoriesExport>
 }
 
 export function createAccountMemoriesApiHandler(env: Env) {

@@ -74,6 +74,7 @@ import {
 } from '#app/handlers/account-mcp-servers.ts'
 import {
 	createAccountMemoriesApiHandler,
+	createAccountMemoriesExportHandler,
 	createAccountMemoriesHandler,
 } from '#app/handlers/account-memories.ts'
 import {
@@ -391,6 +392,7 @@ export function createAppRouter(env: Env) {
 			accountActivityDetail: createAccountActivityHandler(env),
 			accountActivityApi: createAccountActivityApiHandler(env),
 			accountMemories: createAccountMemoriesHandler(env),
+			accountMemoriesExport: createAccountMemoriesExportHandler(env),
 			accountMemoryDetail: createAccountMemoriesHandler(env),
 			accountMemoriesApi: createAccountMemoriesApiHandler(env),
 			accountMemoriesApiPost: createAccountMemoriesApiHandler(env),

@@ -1,8 +1,15 @@
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
-import { listMemoriesByUserId } from '#mcp/memory/repo.ts'
+import {
+	listMemoriesByUserId,
+	listMemoriesByUserIdPage,
+} from '#mcp/memory/repo.ts'
 import { getMemory } from '#mcp/memory/service.ts'
-import { type MemoryRecord, type MemoryStatus } from '#mcp/memory/types.ts'
+import {
+	type McpMemoryRow,
+	type MemoryRecord,
+	type MemoryStatus,
+} from '#mcp/memory/types.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -36,6 +43,21 @@ export type AccountMemoriesLoaderData = {
 	query: string
 	includeDeleted: boolean
 }
+
+/**
+ * Portable memories document for the signed-in user. Includes deleted
+ * rows only when the page's Include deleted control is on. Omits
+ * credentials and other account primitives.
+ */
+export type AccountMemoriesExport = {
+	kind: 'kody-memories'
+	version: 1
+	exportedAt: string
+	includeDeleted: boolean
+	memories: Array<AccountMemoryDetail>
+}
+
+const accountMemoriesExportPageSize = 200
 
 const accountMemoriesBasePath = '/account/memories'
 
@@ -96,6 +118,30 @@ function toDetail(memory: MemoryRecord): AccountMemoryDetail {
 	}
 }
 
+function toExportItem(row: McpMemoryRow): AccountMemoryDetail {
+	return {
+		id: row.id,
+		subject: row.subject,
+		category: row.category,
+		status: row.status,
+		tags: parseJsonStringArray(row.tags_json),
+		summary: row.summary,
+		updatedAt: row.updated_at,
+		details: row.details,
+		sourceUris: parseJsonStringArray(row.source_uris_json),
+		dedupeKey: row.dedupe_key,
+		createdAt: row.created_at,
+		lastAccessedAt: row.last_accessed_at,
+		deletedAt: row.deleted_at,
+	}
+}
+
+function memoryStatusesForExport(includeDeleted: boolean): Array<MemoryStatus> {
+	return includeDeleted
+		? ['active', 'archived', 'deleted']
+		: ['active', 'archived']
+}
+
 export function memoryMatchesQuery(
 	memory: AccountMemoryListItem,
 	query: string,
@@ -128,9 +174,7 @@ export async function loadAccountMemoriesData(input: {
 		input.request.url,
 		input.pathMemoryId,
 	)
-	const statuses: Array<MemoryStatus> = includeDeleted
-		? ['active', 'archived', 'deleted']
-		: ['active', 'archived']
+	const statuses = memoryStatusesForExport(includeDeleted)
 
 	const rows = await listMemoriesByUserId(input.env.APP_DB, userId, {
 		statuses,
@@ -186,4 +230,38 @@ async function resolveSelectedMemory(input: {
 		memoryId: input.memoryId,
 	})
 	return memory ? toDetail(memory) : null
+}
+
+export async function loadAccountMemoriesExport(input: {
+	env: Env
+	user: AuthenticatedUser
+	includeDeleted: boolean
+}): Promise<AccountMemoriesExport> {
+	const userId = input.user.mcpUser.userId
+	const statuses = memoryStatusesForExport(input.includeDeleted)
+	const memories: Array<AccountMemoryDetail> = []
+	let afterId: string | null = null
+	while (true) {
+		const rows = await listMemoriesByUserIdPage({
+			db: input.env.APP_DB,
+			userId,
+			afterId,
+			statuses,
+			limit: accountMemoriesExportPageSize,
+		})
+		for (const row of rows) {
+			memories.push(toExportItem(row))
+		}
+		if (rows.length < accountMemoriesExportPageSize) break
+		const lastId = rows.at(-1)?.id
+		if (!lastId) break
+		afterId = lastId
+	}
+	return {
+		kind: 'kody-memories',
+		version: 1,
+		exportedAt: new Date().toISOString(),
+		includeDeleted: input.includeDeleted,
+		memories,
+	}
 }
