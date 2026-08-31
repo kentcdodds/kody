@@ -242,6 +242,7 @@ primitives:
       - packages/worker/src/mcp/capabilities/repo/repo-delete.ts
       - packages/worker/src/mcp/capabilities/repo/repo-get-git-remote.ts
       - packages/worker/src/mcp/capabilities/repo/repo-promote-to-package.ts
+      - packages/worker/src/mcp/capabilities/repo/repo-update.ts
     docs:
       - docs/use/repos.md
 
