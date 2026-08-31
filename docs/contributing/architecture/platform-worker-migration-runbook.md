@@ -5,9 +5,6 @@ Production owns the platform Durable Object classes on `kody-platform`.
 add `deleted_classes` for those names.
 
 This page records current ownership and the invariants later deploys must keep.
-The cutover that landed is in the
-[historical appendix](#historical-appendix-2026-platform-cutover). Do not follow
-that appendix as a live playbook.
 
 How the remaining platform Durable Objects live on the `kody-platform` Worker
 (`packages/platform-worker/`), per
@@ -83,34 +80,3 @@ runtime and jobs, so those Durable Objects are not reset.
 
 Healthchecks: origin `/health`, platform `/__platform/health`, runtime
 `/__runtime/health`.
-
-## Historical appendix: 2026 platform cutover
-
-**Do not re-run these steps.** They describe the one-shot script migration that
-already landed. Re-issuing `transferred_classes` or adding `deleted_classes` for
-the names above destroys or orphans production Durable Object storage.
-
-The storage of `MCP`, `McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`,
-`Mailbox`, `RepoSession`, `RepoSessionIndex`, and `StripePlanRefresh` moved from
-the `kody` script to the `kody-platform` script via a Wrangler
-`transferred_classes` migration.
-
-Coordinated order that landed (encoded in `.github/workflows/deploy.yml`):
-
-1. Preview verification on a fresh `kody-pr-<n>` set (healthchecks, sign-in,
-   account/mailbox/session surfaces, unauthenticated `GET /mcp` → 401). Preview
-   used `new_sqlite_classes`, so it did not rehearse the transfer.
-2. Deploy `kody-platform` first — this applied the `v1` `transferred_classes`
-   migration. From that moment the still-running old `kody` deployment served
-   those objects against namespaces that had moved. Alarms on `Mailbox`,
-   `RepoSessionIndex`, and `StripePlanRefresh` moved with the classes.
-3. Deploy `kody-runtime` with platform bindings retargeted to `kody-platform`.
-4. Deploy `kody` with `script_name: "kody-platform"` on those eight classes.
-5. Healthchecks, then execute smoke. Post-deploy checks loaded pre-cutover
-   account, mailbox, and repo-session objects and confirmed an existing MCP
-   session still resumed.
-
-After the transfer applied, the recovery path was roll _forward_ on
-`kody-platform`. A reverse `transferred_classes` migration is a second risky
-migration and needs its own reviewed config change; deploy guardrails refuse
-unreviewed migration edits.

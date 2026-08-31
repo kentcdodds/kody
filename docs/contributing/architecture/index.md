@@ -78,18 +78,17 @@ smoke does not prove MCP execute health.
 - [Run records](./run-records.md): per-user execution history and logs across
   every runtime surface (`RunLog` Durable Object, `runs` MCP domain,
   `/account/activity`).
-- [Runtime worker migration runbook](./runtime-worker-migration-runbook.md): the
-  coordinated deploy order and Durable Object script migration for extracting
-  the package runtime lane into the `kody-runtime` Worker
+- [Runtime worker migration runbook](./runtime-worker-migration-runbook.md):
+  ownership of the package runtime lane on `kody-runtime` and the deploy
+  invariants later uploads must keep
   ([ADR 0016](../decisions/0016-mono-worker-extraction.md)).
 - [Platform worker migration runbook](./platform-worker-migration-runbook.md):
-  Durable Object script migration for extracting the remaining platform classes
-  onto the `kody-platform` Worker so the origin script owns none
+  ownership of remaining platform Durable Object classes on `kody-platform` and
+  the deploy invariants that keep origin owning none
   ([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)).
-- [Jobs worker migration runbook](./jobs-worker-migration-runbook.md): Durable
-  Object transfer and bounded D1 copy for extracting the jobs/scheduled lane
-  into the `kody-jobs` Worker
-  ([ADR 0016](../decisions/0016-mono-worker-extraction.md)).
+- [Jobs worker migration runbook](./jobs-worker-migration-runbook.md): ownership
+  of `JobManager` and `JOBS_DB` on `kody-jobs` and the deploy invariants later
+  uploads must keep ([ADR 0016](../decisions/0016-mono-worker-extraction.md)).
 - [Values retirement runbook](./values-retirement-runbook.md): absorb values
   into memories, package storage, repos, secrets, and integrations
   ([ADR 0022](../decisions/0022-retire-values-primitive.md)).

@@ -5,9 +5,6 @@ routes on `kody-runtime`. `transferred_classes` is a one-shot cutover; do not
 invent a second transfer or add `deleted_classes` for those names.
 
 This page records current ownership and the invariants later deploys must keep.
-The cutover that landed is in the
-[historical appendix](#historical-appendix-2026-runtime-cutover). Do not follow
-that appendix as a live playbook.
 
 How the package runtime lane lives on the `kody-runtime` Worker
 (`packages/runtime-worker/`), per
@@ -99,45 +96,3 @@ together so they elide.
 `PackageServiceInstance` is gone from production `kody-runtime` (tag `v2`; no
 stub export). Preview applies `v1` `new_sqlite_classes` then `v2`
 `deleted_classes` on first deploy so create and delete elide.
-
-## Historical appendix: 2026 runtime cutover
-
-**Do not re-run these steps.** They describe the one-shot script migration that
-already landed. Re-issuing `transferred_classes`, detaching `kody.run` /
-`kodyapps.dev` zone routes, or adding `deleted_classes` for the live runtime
-classes destroys or orphans production storage and unserves package-app traffic.
-
-The storage of `StorageRunner`, `RunLog`, and `PackageRealtimeSession` moved
-from the `kody` script to the `kody-runtime` script via a Wrangler
-`transferred_classes` migration. `PackageServiceInstance` transferred in the
-same `v1` tag and was later removed with tag `v2`.
-
-`DynamicCallableWorkflow` was created on `kody-runtime` as a new workflow.
-Instances still running on the old `kody`-owned workflow at cutover were
-orphaned once origin stopped exporting that binding.
-
-Coordinated order that landed:
-
-1. Preview verification on a fresh worker set (healthchecks, `/apps/...` package
-   app, an end-to-end invocation). Preview used `new_sqlite_classes`.
-2. One-time detach of leftover `kody.run` / `kodyapps.dev` custom domains or
-   zone routes from the main worker so the first `kody-runtime` deploy could
-   publish those zone routes. That detach window is closed; the routes belong to
-   `kody-runtime`.
-3. Deploy `kody-runtime` first — this applied the `v1` `transferred_classes`
-   migration. There was no maintenance-mode traffic gate (ADR 0016): requests
-   that hit the old `kody` deployment in that seconds-long window failed.
-4. Deploy `kody` with `script_name: "kody-runtime"` on the three classes plus
-   the `RUNTIME_WORKER` service binding.
-5. Healthchecks and execute smoke. Post-deploy checks loaded a production
-   package app on `{username}.kody.run`, ran an invocation (RunLog storage
-   transferred, not recreated empty), and opened a pre-migration run's logs.
-
-After the transfer applied, the recovery path was roll _forward_ on
-`kody-runtime`. A reverse `transferred_classes` migration is a second risky
-migration and needs its own reviewed config change; deploy guardrails refuse
-unreviewed migration edits. The main worker can roll back independently as long
-as its config keeps the cross-script bindings.
-
-Leftovers that wait on a later tag or deploy follow
-[Cleanup after migrations](../cleanup-after-migrations.md).
