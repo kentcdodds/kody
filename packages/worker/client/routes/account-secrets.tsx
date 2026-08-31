@@ -1,4 +1,3 @@
-import { readCommaListParams, readTrimmedParam } from '#client/url-params.ts'
 import {
 	type AccountSecretDetail,
 	type AccountSecretListItem,
@@ -6,24 +5,12 @@ import {
 } from '#universal/loader-data.ts'
 import { type Handle, css } from 'remix/ui'
 import { on } from '#client/event-mixin.ts'
-import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
-import {
-	buildAccountSecretPath,
-	parseAccountSecretPath,
-} from '@kody-internal/shared/account-secret-route.ts'
-import { normalizeSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
+import { buildAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
-import {
-	createListDetailRoute,
-	type ListDetailSelection,
-} from '#client/list-detail-route.ts'
+import { type ListDetailSelection } from '#client/list-detail-route.ts'
 import { replaceLocation } from '#client/replace-location.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
-import {
-	routeLoaderRedirect,
-	type RouteLoaderResult,
-} from '#client/route-loader.ts'
 import { createDoubleCheck } from '#client/double-check.ts'
 import {
 	type AccountStatus,
@@ -35,394 +22,49 @@ import {
 	submitApprovalRequest,
 } from '#client/routes/account-approval-shared.ts'
 import { Combobox } from '#client/combobox.tsx'
-import { matchesSearchQuery } from '#client/search-filter.ts'
-import {
-	colors,
-	mq,
-	radius,
-	spacing,
-	typography,
-} from '#universal/styles/tokens.ts'
-import {
-	fieldCss,
-	fieldLabelCss,
-	getDangerPillCss,
-	getGhostButtonCss,
-	getPillButtonCss,
-	getSelectCss,
-} from '#universal/styles/style-primitives.ts'
-import {
-	getNewSecretQueryKey,
-	getNewSecretValueAutofocusKey,
-} from './new-secret-query.ts'
-import { SecretEditorFields } from './secret-editor-fields.tsx'
-import {
-	normalizeAllowedHosts,
-	normalizeAllowedPackages,
-} from './secret-normalization.ts'
+import { colors } from '#universal/styles/tokens.ts'
+import { getPillButtonCss } from '#universal/styles/style-primitives.ts'
+import { getNewSecretValueAutofocusKey } from './new-secret-query.ts'
+import { normalizeAllowedHosts } from './secret-normalization.ts'
 import {
 	AccountManagementMessage,
 	AccountManagementShell,
 	AccountPageHeader,
-	MetadataGrid,
-	TimestampValue,
-	accountDisclosureCss,
-	accountInputCss,
 } from './account-management-components.tsx'
 import {
 	RecordTable,
 	RecordTableSearch,
 	RecordTableSelect,
-	recordBodyCss,
 	recordCellClamp,
 	recordStampCss,
 } from './record-table.tsx'
+import {
+	renderAlreadyAddedNotice,
+	renderSecretApprovalCard,
+} from './account-secrets-approval.tsx'
+import { renderSecretEditor } from './account-secrets-editor.tsx'
+import {
+	type PackageOption,
+	type SecretFilterScope,
+	accountSecretsRouteLoader,
+	buildBaseSecretsHref,
+	buildNewSecretHref,
+	buildSecretHref,
+	buildSecretsApiRequestUrl,
+	collectRepeatedTextRows,
+	createEditorStateFromNewSecretQuery,
+	createEditorStateFromSecret,
+	createEmptyEditorState,
+	filterSecrets,
+	formatRelativeTtl,
+	getAlreadyAddedNotice,
+	getDataRefreshKey,
+	readFilterState,
+	secretsBasePath,
+	secretsRoute,
+} from './account-secrets-shared.ts'
 
-const selectCss = getSelectCss()
-
-type SecretScope = AccountSecretListItem['scope']
-
-type PackageOption = AccountSecretsLoaderData['packageOptions'][number]
-
-type EditorState = {
-	currentId: string | null
-	name: string
-	scope: SecretScope
-	packageId: string
-	description: string
-	expiresAt: string
-	value: string
-	allowedHosts: Array<string>
-	allowedPackages: Array<string>
-}
-
-type SecretFilterScope = 'all' | 'user' | 'package'
-
-type SecretFilterState = {
-	search: string
-	scope: SecretFilterScope
-	packageId: string
-}
-
-const secretsBasePath = '/account/secrets'
-const secretsRoute = createListDetailRoute(secretsBasePath, {
-	parseDetailId(pathname) {
-		return parseAccountSecretPath(pathname)?.id ?? null
-	},
-})
-
-function formatRelativeTtl(ttlMs: number | null) {
-	if (ttlMs == null) return 'No expiry'
-	if (ttlMs <= 0) return 'Expired'
-	const totalMinutes = Math.max(1, Math.round(ttlMs / 60_000))
-	if (totalMinutes < 60) return `Expires in ${totalMinutes} min`
-	const totalHours = Math.round(totalMinutes / 60)
-	if (totalHours < 48) return `Expires in ${totalHours} hr`
-	const totalDays = Math.round(totalHours / 24)
-	return `Expires in ${totalDays} day${totalDays === 1 ? '' : 's'}`
-}
-
-function createEmptyEditorState(
-	packageOptions: Array<PackageOption>,
-): EditorState {
-	return {
-		currentId: null,
-		name: '',
-		scope: 'user',
-		packageId: packageOptions[0]?.id ?? '',
-		description: '',
-		expiresAt: '',
-		value: '',
-		allowedHosts: [''],
-		allowedPackages: [],
-	}
-}
-
-function readNewSecretScope(value: string | null): SecretScope | null {
-	return value === 'package' || value === 'user' ? value : null
-}
-
-function readNewSecretExpiresAt(params: URLSearchParams) {
-	const value = readTrimmedParam(params, 'expiresAt')
-	if (!value) return null
-	try {
-		return normalizeSecretExpiresAt(value) ?? ''
-	} catch {
-		return null
-	}
-}
-
-function createEditorStateFromNewSecretQuery(
-	packageOptions: Array<PackageOption>,
-	href: string,
-): EditorState {
-	const params = new URL(href, 'http://localhost').searchParams
-	const state = createEmptyEditorState(packageOptions)
-	const requestedScope = readNewSecretScope(readTrimmedParam(params, 'scope'))
-	const requestedPackageId = readTrimmedParam(params, 'packageId')
-	const packageId =
-		packageOptions.find(
-			(packageOption) => packageOption.id === requestedPackageId,
-		)?.id ??
-		packageOptions[0]?.id ??
-		''
-	const scope: SecretScope =
-		requestedScope ?? (requestedPackageId ? 'package' : 'user')
-	const allowedHosts = normalizeAllowedHosts(
-		readCommaListParams(params, ['allowedHosts', 'allowed-host']),
-	)
-	const allowedPackages = normalizeAllowedPackages(
-		readCommaListParams(params, ['allowedPackages', 'package_id', 'package']),
-	)
-
-	return {
-		...state,
-		name: readTrimmedParam(params, 'name') ?? state.name,
-		scope,
-		packageId: scope === 'package' ? packageId : '',
-		description: readTrimmedParam(params, 'description') ?? state.description,
-		expiresAt: readNewSecretExpiresAt(params) ?? state.expiresAt,
-		allowedHosts: allowedHosts.length > 0 ? allowedHosts : state.allowedHosts,
-		allowedPackages:
-			scope === 'user' && allowedPackages.length > 0
-				? allowedPackages
-				: state.allowedPackages,
-	}
-}
-
-function coerceStringRows(list: Array<unknown>): Array<string> {
-	return list.filter((item): item is string => typeof item === 'string')
-}
-
-function collectRepeatedTextRows(
-	form: HTMLFormElement,
-	listName: 'allowed-hosts',
-): Array<string> {
-	const root = form.querySelector(`[data-repeat-list="${listName}"]`)
-	if (!root) return []
-	const out: Array<string> = []
-	for (const row of root.children) {
-		if (!(row instanceof HTMLElement)) continue
-		const input = row.querySelector('input[type="text"]')
-		if (input instanceof HTMLInputElement) out.push(input.value)
-	}
-	return out
-}
-
-function createEditorStateFromSecret(secret: AccountSecretDetail): EditorState {
-	const allowedHosts = coerceStringRows(secret.allowedHosts)
-	const allowedPackages = coerceStringRows(secret.allowedPackages)
-	return {
-		currentId: secret.id,
-		name: secret.name,
-		scope: secret.scope,
-		packageId: secret.packageId ?? '',
-		description: secret.description,
-		expiresAt: secret.expiresAt ?? '',
-		value: secret.value,
-		allowedHosts: allowedHosts.length > 0 ? allowedHosts : [''],
-		allowedPackages,
-	}
-}
-
-function buildSecretsHref(pathname: string, search: string) {
-	return `${pathname}${search}`
-}
-
-function readRequestedHost(href: string) {
-	const url = new URL(href, 'http://localhost')
-	const value = url.searchParams.get('allowed-host')
-	return value?.trim() ? value.trim() : null
-}
-
-function normalizeSingleAllowedHost(host: string | null) {
-	if (!host) return null
-	return normalizeAllowedHosts([host])[0] ?? null
-}
-
-function getAlreadyAddedNotice(input: {
-	href: string
-	selectedSecret: AccountSecretDetail | null
-	approval: ApprovalView | null
-	formatPackageId: (packageId: string) => string
-}) {
-	const requestedHost = normalizeSingleAllowedHost(
-		readRequestedHost(input.href),
-	)
-	const requestedPackageId =
-		new URL(input.href, 'http://localhost').searchParams
-			.get('package_id')
-			?.trim() ?? null
-	const allowedHosts = input.selectedSecret
-		? normalizeAllowedHosts(coerceStringRows(input.selectedSecret.allowedHosts))
-		: input.approval
-			? normalizeAllowedHosts(input.approval.currentAllowedHosts)
-			: []
-	const allowedPackageIds = input.selectedSecret
-		? Array.from(
-				new Set(
-					coerceStringRows(input.selectedSecret.allowedPackages).filter(
-						(value) => value.length > 0,
-					),
-				),
-			).sort((left, right) => left.localeCompare(right))
-		: input.approval
-			? Array.from(
-					new Set(
-						coerceStringRows(input.approval.currentAllowedPackages).filter(
-							(value) => value.length > 0,
-						),
-					),
-				).sort((left, right) => left.localeCompare(right))
-			: []
-	const items: Array<string> = []
-	const hostAlreadyAdded =
-		requestedHost != null && allowedHosts.includes(requestedHost)
-	if (hostAlreadyAdded) {
-		items.push(`Host ${requestedHost} is already in allowed hosts.`)
-	}
-	const packageAlreadyAdded =
-		requestedPackageId != null && allowedPackageIds.includes(requestedPackageId)
-	if (packageAlreadyAdded) {
-		items.push(
-			`Package ${input.formatPackageId(requestedPackageId)} is already in allowed packages.`,
-		)
-	}
-	if (items.length === 0) return null
-	return {
-		items,
-		hostAlreadyAdded,
-		packageAlreadyAdded,
-	}
-}
-
-function buildSecretHref(
-	secret: {
-		name: string
-		scope: SecretScope
-		packageId: string | null
-	},
-	search: string,
-) {
-	return buildSecretsHref(
-		buildAccountSecretPath({
-			name: secret.name,
-			scope: secret.scope,
-			packageId: secret.packageId,
-		}),
-		search,
-	)
-}
-
-function buildNewSecretHref(search = '') {
-	return secretsRoute.buildNewHref(search)
-}
-
-function buildBaseSecretsHref(search = '') {
-	return secretsRoute.buildListHref(search)
-}
-
-function getDataRefreshKey(href: string) {
-	const url = new URL(href, 'http://localhost')
-	const requestedHost = url.searchParams.get('allowed-host') ?? ''
-	const requestedPackageId = url.searchParams.get('package_id') ?? ''
-	const requestedNames = [
-		...url.searchParams.getAll('names'),
-		...url.searchParams.getAll('name'),
-	]
-		.join(',')
-		.trim()
-	const newSecretQuery = getNewSecretQueryKey(href)
-	return `${url.pathname}?allowed-host=${requestedHost}&package_id=${requestedPackageId}&names=${requestedNames}&new-secret=${newSecretQuery}`
-}
-
-function buildSecretsApiRequestUrl(href: string) {
-	const pageUrl = new URL(href, 'http://localhost')
-	const selection = secretsRoute.getSelection(href)
-	const requestUrl = new URL(accountSecretsApiPath, 'http://localhost')
-	requestUrl.search = pageUrl.search
-	if (selection.selectedId) {
-		requestUrl.searchParams.set('selected', selection.selectedId)
-	} else {
-		requestUrl.searchParams.delete('selected')
-	}
-	return requestUrl
-}
-
-export async function accountSecretsRouteLoader(
-	url: URL,
-	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const href = `${url.pathname}${url.search}`
-	const requestUrl = buildSecretsApiRequestUrl(href)
-	const response = await fetch(`${requestUrl.pathname}${requestUrl.search}`, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
-		signal,
-	})
-	if (response.status === 401) {
-		return routeLoaderRedirect('/login')
-	}
-	const payload = await readJson<AccountSecretsLoaderData>(response)
-	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load your secrets.')
-	}
-	return { accountSecrets: payload }
-}
-
-function readFilterState(
-	href: string,
-	packageOptions: Array<PackageOption>,
-): SecretFilterState {
-	const url = new URL(href, 'http://localhost')
-	const search = url.searchParams.get('q')?.trim() ?? ''
-	const rawScope = url.searchParams.get('scope')
-	const scope =
-		rawScope === 'user' || rawScope === 'package' ? rawScope : ('all' as const)
-	const rawPackageId = url.searchParams.get('package')?.trim() ?? ''
-	const packageId =
-		scope === 'user'
-			? ''
-			: packageOptions.some(
-						(packageOption) => packageOption.id === rawPackageId,
-				  )
-				? rawPackageId
-				: ''
-	return {
-		search,
-		scope,
-		packageId,
-	}
-}
-
-function filterSecrets(
-	secrets: Array<AccountSecretListItem>,
-	filters: SecretFilterState,
-	packagesById: ReadonlyMap<string, { kodyId: string; name: string }>,
-) {
-	return secrets.filter((secret) => {
-		if (filters.scope !== 'all' && secret.scope !== filters.scope) return false
-		if (
-			filters.scope !== 'user' &&
-			filters.packageId &&
-			secret.packageId !== filters.packageId
-		)
-			return false
-		const allowedPackageNames = secret.allowedPackages.flatMap((packageId) => {
-			const metadata = packagesById.get(packageId)
-			return metadata ? [metadata.kodyId, metadata.name] : []
-		})
-		return matchesSearchQuery(filters.search, [
-			secret.name,
-			secret.description,
-			secret.packageTitle ?? '',
-			secret.scope,
-			...secret.allowedHosts,
-			...secret.allowedPackages,
-			...allowedPackageNames,
-		])
-	})
-}
+export { accountSecretsRouteLoader }
 
 const clampedCellCss = css(recordCellClamp(26))
 
@@ -454,7 +96,7 @@ export function AccountSecretsRoute(handle: Handle) {
 	}
 
 	function buildHrefWithUpdatedFilters(
-		nextFilters: Partial<SecretFilterState>,
+		nextFilters: Partial<ReturnType<typeof readFilterState>>,
 		options?: { pathname?: string },
 	) {
 		const currentUrl = new URL(getCurrentHref(), 'http://localhost')
@@ -937,9 +579,6 @@ export function AccountSecretsRoute(handle: Handle) {
 			!alreadyAddedNotice?.packageAlreadyAdded
 				? approval
 				: null
-		const requestedPackageMetadata = approvalCard?.requestedPackageId
-			? packagesById.get(approvalCard.requestedPackageId)
-			: null
 		return (
 			<AccountManagementShell>
 				<AccountPageHeader
@@ -963,203 +602,17 @@ export function AccountSecretsRoute(handle: Handle) {
 					}
 				/>
 
-				{approvalCard ? (
-					<section
-						mix={css({
-							display: 'grid',
-							gap: spacing.md,
-							padding: spacing.lg,
-							borderRadius: radius.lg,
-							border: `1px solid ${colors.primary}`,
-							backgroundColor: colors.primarySoftest,
-						})}
-					>
-						<div mix={css({ display: 'grid', gap: spacing.xs })}>
-							<h2
-								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-									color: colors.text,
-								})}
-							>
-								{approvalCard.requestedHost && !approvalCard.requestedPackageId
-									? 'Allow access'
-									: 'Approve secret access'}
-							</h2>
-							{approvalCard.requestedPackageId ? (
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										Allow package{' '}
-										<strong mix={css({ color: colors.text })}>
-											{requestedPackageMetadata?.kodyId ?? 'Unknown package'}
-										</strong>{' '}
-										{approvalCard.names.length > 1 ? (
-											<>
-												to use these {approvalCard.names.length} secrets from
-												the {getScopeLabel(approvalCard.scope)} scope.
-											</>
-										) : (
-											<>
-												to use secret <code>{approvalCard.name}</code> from the{' '}
-												{getScopeLabel(approvalCard.scope)} scope.
-											</>
-										)}
-									</p>
-									<code mix={css({ color: colors.textMuted })}>
-										{approvalCard.requestedPackageId}
-									</code>
-									{approvalCard.names.length > 1 ? (
-										<ul
-											mix={css({
-												margin: 0,
-												paddingLeft: spacing.lg,
-												display: 'grid',
-												gap: spacing.xs,
-											})}
-										>
-											{approvalCard.names.map((secretName) => (
-												<li key={secretName}>
-													<code>{secretName}</code>
-												</li>
-											))}
-										</ul>
-									) : null}
-								</div>
-							) : (
-								<p mix={css({ margin: 0, color: colors.textMuted })}>
-									Let Kody use this connection at{' '}
-									<strong mix={css({ color: colors.text })}>
-										{approvalCard.requestedHost}
-									</strong>
-									.
-								</p>
-							)}
-							{approvalCard.requestedPackageId ? (
-								approvalCard.names.length > 1 ? null : (
-									<div mix={css({ display: 'grid', gap: spacing.xs })}>
-										<span mix={css({ color: colors.textMuted })}>
-											Current allowed packages:
-										</span>
-										{approvalCard.currentAllowedPackages.length > 0 ? (
-											<ul
-												mix={css({
-													margin: 0,
-													paddingLeft: spacing.lg,
-													display: 'grid',
-													gap: spacing.xs,
-												})}
-											>
-												{approvalCard.currentAllowedPackages.map(
-													(packageId) => {
-														const metadata = packagesById.get(packageId)
-														return (
-															<li key={packageId}>
-																<span mix={css(packageIdentityCss)}>
-																	<strong>
-																		{metadata?.kodyId ?? 'Unknown package'}
-																	</strong>
-																	<code>{packageId}</code>
-																</span>
-															</li>
-														)
-													},
-												)}
-											</ul>
-										) : (
-											<span mix={css({ color: colors.textMuted })}>None</span>
-										)}
-									</div>
-								)
-							) : (
-								<details
-									mix={css(secretApprovalAdvancedCss)}
-									data-testid="secret-approval-advanced"
-								>
-									<summary>Advanced details</summary>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										Secret <code>{approvalCard.name}</code>
-										{approvalCard.currentAllowedHosts.length > 0
-											? ` · already allowed: ${approvalCard.currentAllowedHosts.join(', ')}`
-											: ''}
-									</p>
-								</details>
-							)}
-						</div>
-						<div
-							mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}
-						>
-							<button
-								type="button"
-								disabled={isMutating || isRefreshingForLocationChange}
-								mix={[
-									on('click', () => void submitApproval('approve')),
-									css(primaryButtonCss),
-								]}
-							>
-								{approvalCard.requestedPackageId &&
-								approvalCard.names.length > 1
-									? `Approve all (${approvalCard.names.length})`
-									: approvalCard.requestedHost &&
-										  !approvalCard.requestedPackageId
-										? 'Allow access'
-										: 'Approve'}
-							</button>
-							<button
-								type="button"
-								disabled={isMutating || isRefreshingForLocationChange}
-								mix={[
-									on('click', () => void submitApproval('reject')),
-									css(secondaryButtonCss),
-								]}
-							>
-								Reject
-							</button>
-						</div>
-					</section>
-				) : null}
-				{alreadyAddedNotice ? (
-					<section
-						role="status"
-						mix={css({
-							display: 'grid',
-							gap: spacing.sm,
-							padding: spacing.lg,
-							borderRadius: radius.lg,
-							border: `1px solid ${colors.primary}`,
-							backgroundColor: colors.primarySoftest,
-						})}
-					>
-						<div mix={css({ display: 'grid', gap: spacing.xs })}>
-							<h2
-								mix={css({
-									margin: 0,
-									fontSize: typography.fontSize.lg,
-									fontWeight: typography.fontWeight.semibold,
-									color: colors.text,
-								})}
-							>
-								Already added
-							</h2>
-							<p mix={css({ margin: 0, color: colors.textMuted })}>
-								This request is already complete for this secret.
-							</p>
-						</div>
-						<ul
-							mix={css({
-								margin: 0,
-								paddingLeft: spacing.lg,
-								color: colors.textMuted,
-								display: 'grid',
-								gap: spacing.xs,
-							})}
-						>
-							{alreadyAddedNotice.items.map((item) => (
-								<li key={item}>{item}</li>
-							))}
-						</ul>
-					</section>
-				) : null}
+				{approvalCard
+					? renderSecretApprovalCard({
+							approvalCard,
+							packagesById,
+							disabled: isMutating || isRefreshingForLocationChange,
+							onSubmit: (action) => void submitApproval(action),
+						})
+					: null}
+				{alreadyAddedNotice
+					? renderAlreadyAddedNotice(alreadyAddedNotice.items)
+					: null}
 
 				{status === 'loading' ? (
 					<p mix={css({ color: colors.textMuted, margin: 0 })}>
@@ -1282,306 +735,38 @@ export function AccountSecretsRoute(handle: Handle) {
 						},
 					}))}
 					record={
-						showEditor ? (
-							<form
-								{...passwordManagerIgnoreProps}
-								mix={[css(recordBodyCss), on('submit', saveSecretChanges)]}
-							>
-								<div mix={css({ display: 'grid', gap: spacing.xs })}>
-									<h2
-										mix={css({
-											margin: 0,
-											fontSize: typography.fontSize.lg,
-											fontWeight: typography.fontWeight.semibold,
-											color: colors.text,
-										})}
-									>
-										{selection.isCreating ? 'New secret' : selectedSecret?.name}
-									</h2>
-									<p mix={css({ margin: 0, color: colors.textMuted })}>
-										{selection.isCreating
-											? 'Create a new user or package secret.'
-											: 'Update the secret value and metadata for this entry.'}
-									</p>
-								</div>
-
-								<div
-									mix={css({
-										display: 'grid',
-										gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-										gap: spacing.md,
-										[mq.mobile]: {
-											gridTemplateColumns: '1fr',
-										},
-									})}
-								>
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Name</span>
-										<input
-											data-field-ring
-											type="text"
-											required
-											value={editorState.name}
-											placeholder="api-token"
-											mix={[
-												on(
-													'input',
-
-													(event) => {
-														editorState = {
-															...editorState,
-															name: event.currentTarget.value,
-														}
-														handle.update()
-													},
-												),
-
-												css(accountInputCss),
-											]}
-										/>
-									</label>
-
-									<label mix={css(fieldCss)}>
-										<span mix={css(fieldLabelCss)}>Scope</span>
-										<select
-											data-field-ring
-											value={editorState.scope}
-											mix={[
-												on(
-													'change',
-
-													(event) => {
-														const scope = event.currentTarget
-															.value as SecretScope
-														editorState = {
-															...editorState,
-															scope,
-															packageId:
-																scope === 'package'
-																	? editorState.packageId ||
-																		packageOptions[0]?.id ||
-																		''
-																	: '',
-														}
-														handle.update()
-													},
-												),
-
-												css(selectCss),
-											]}
-										>
-											<option value="user">User</option>
-											{canCreatePackageSecrets ? (
-												<option value="package">Package</option>
-											) : null}
-										</select>
-									</label>
-								</div>
-
-								{editorState.scope === 'package' ? (
-									<Combobox
-										key={`secret-editor-package:${editorState.packageId}`}
-										id="secret-editor-package"
-										label="Package"
-										placeholder="Choose a package"
-										value={editorState.packageId}
-										options={packageSelectOptions}
-										onChange={(packageId) => {
-											editorState = {
-												...editorState,
-												packageId,
-											}
-											handle.update()
-										}}
-									/>
-								) : null}
-
-								<SecretEditorFields
-									autoFocusKey={secretValueAutofocusKey}
-									description={editorState.description}
-									onDescriptionChange={(description) => {
-										editorState = {
-											...editorState,
-											description,
-										}
+						showEditor
+							? renderSecretEditor({
+									isCreating: selection.isCreating,
+									selectedSecret,
+									editorState,
+									setEditorState: (next) => {
+										editorState = next
 										handle.update()
-									}}
-									expiresAt={editorState.expiresAt}
-									onExpiresAtChange={(expiresAt) => {
-										editorState = {
-											...editorState,
-											expiresAt,
-										}
-										handle.update()
-									}}
-									value={editorState.value}
-									onValueChange={(value) => {
-										editorState = {
-											...editorState,
-											value,
-										}
-										handle.update()
-									}}
-									showSecretValue={showSecretValue}
-									onToggleShowSecretValue={() => {
+									},
+									packageOptions,
+									packageSelectOptions,
+									availableAllowedPackageOptions,
+									packagesById,
+									canCreatePackageSecrets,
+									isMutating,
+									saveState,
+									showSecretValue,
+									onToggleShowSecretValue: () => {
 										showSecretValue = !showSecretValue
 										handle.update()
-									}}
-									allowedHosts={editorState.allowedHosts}
-									onUpdateAllowedHost={updateAllowedHost}
-									onAddAllowedHost={addAllowedHost}
-									onRemoveAllowedHost={removeAllowedHost}
-									allowedHostsListName="allowed-hosts"
-								/>
-
-								{editorState.scope === 'user' ? (
-									<div mix={css({ display: 'grid', gap: spacing.sm })}>
-										<div mix={css({ display: 'grid', gap: spacing.xs })}>
-											<span mix={css(fieldLabelCss)}>Allowed packages</span>
-											<p mix={css({ margin: 0, color: colors.textMuted })}>
-												Only selected packages may access this user secret from
-												package runtimes.
-											</p>
-										</div>
-										{editorState.allowedPackages.length > 0 ? (
-											<div mix={css({ display: 'grid', gap: spacing.sm })}>
-												{editorState.allowedPackages.map((packageId) => {
-													const metadata = packagesById.get(packageId)
-													const packageLabel =
-														metadata?.kodyId ?? 'Unknown package'
-													return (
-														<div
-															key={packageId}
-															mix={css({
-																display: 'grid',
-																gridTemplateColumns: 'minmax(0, 1fr) auto',
-																gap: spacing.sm,
-																alignItems: 'center',
-																padding: spacing.sm,
-																border: `1px solid ${colors.border}`,
-																borderRadius: radius.md,
-															})}
-														>
-															<span mix={css(packageIdentityCss)}>
-																<strong>{packageLabel}</strong>
-																<code>{packageId}</code>
-															</span>
-															<button
-																type="button"
-																aria-label={`Remove package ${packageLabel}`}
-																mix={[
-																	on(
-																		'click',
-
-																		() => removeAllowedPackage(packageId),
-																	),
-
-																	css(secondaryButtonCss),
-																]}
-															>
-																Remove
-															</button>
-														</div>
-													)
-												})}
-											</div>
-										) : (
-											<p mix={css({ margin: 0, color: colors.textMuted })}>
-												No packages currently have access.
-											</p>
-										)}
-										{availableAllowedPackageOptions.length > 0 ? (
-											<Combobox
-												key={`allowed-package-picker:${editorState.allowedPackages.join(',')}`}
-												id="secret-allowed-package"
-												label="Add allowed package"
-												placeholder="Search saved packages"
-												value=""
-												options={availableAllowedPackageOptions}
-												onChange={addAllowedPackage}
-											/>
-										) : packageOptions.length > 0 ? (
-											<p mix={css({ margin: 0, color: colors.textMuted })}>
-												All saved packages are already allowed.
-											</p>
-										) : null}
-									</div>
-								) : null}
-
-								{selectedSecret ? (
-									<MetadataGrid
-										items={[
-											{
-												label: 'Created',
-												value: (
-													<TimestampValue value={selectedSecret.createdAt} />
-												),
-											},
-											{
-												label: 'Updated',
-												value: (
-													<TimestampValue value={selectedSecret.updatedAt} />
-												),
-											},
-											{
-												label: 'Expiry',
-												value: formatRelativeTtl(selectedSecret.ttlMs),
-											},
-										]}
-									/>
-								) : null}
-
-								<div
-									mix={css({
-										display: 'flex',
-										gap: spacing.sm,
-										flexWrap: 'wrap',
-									})}
-								>
-									<button
-										type="submit"
-										disabled={
-											isMutating ||
-											(editorState.scope === 'package' &&
-												!editorState.packageId)
-										}
-										mix={css(primaryButtonCss)}
-									>
-										{saveState === 'saving' ? 'Saving...' : 'Save'}
-									</button>
-									{editorState.currentId ? (
-										<button
-											type="button"
-											disabled={isMutating}
-											aria-label={
-												deleteSecretCheck.doubleCheck
-													? `Confirm delete secret "${editorState.name}"`
-													: `Delete secret "${editorState.name}"`
-											}
-											title={
-												deleteSecretCheck.doubleCheck
-													? `Click again to delete "${editorState.name}"`
-													: `Delete secret "${editorState.name}"`
-											}
-											mix={[
-												...deleteSecretCheck.getButtonMix({
-													on: {
-														click: () => void deleteSelectedSecret(),
-													},
-												}),
-												css(dangerButtonCss),
-											]}
-										>
-											{saveState === 'deleting'
-												? 'Deleting...'
-												: deleteSecretCheck.doubleCheck
-													? 'Confirm delete'
-													: 'Delete'}
-										</button>
-									) : null}
-								</div>
-							</form>
-						) : null
+									},
+									secretValueAutofocusKey,
+									deleteSecretCheck,
+									onSave: saveSecretChanges,
+									onDelete: () => void deleteSelectedSecret(),
+									updateAllowedHost,
+									addAllowedHost,
+									removeAllowedHost,
+									addAllowedPackage,
+									removeAllowedPackage,
+								})
+							: null
 					}
 				/>
 			</AccountManagementShell>
@@ -1589,22 +774,4 @@ export function AccountSecretsRoute(handle: Handle) {
 	}
 }
 
-const packageIdentityCss = {
-	display: 'grid',
-	gap: spacing.xs,
-	minWidth: 0,
-	'& code': {
-		color: colors.textMuted,
-		overflowWrap: 'anywhere' as const,
-	},
-}
-
 const primaryButtonCss = getPillButtonCss({ size: 'sm' })
-const secondaryButtonCss = getGhostButtonCss({ size: 'sm' })
-const dangerButtonCss = getDangerPillCss({ size: 'sm' })
-
-const secretApprovalAdvancedCss = {
-	...accountDisclosureCss,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
-}

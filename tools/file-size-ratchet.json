@@ -4,7 +4,6 @@
 		"packages/worker/client/routes/account-email.tsx",
 		"packages/worker/client/routes/account-jobs.tsx",
 		"packages/worker/client/routes/account-mcp-servers.tsx",
-		"packages/worker/client/routes/account-secrets.tsx",
 		"packages/worker/client/routes/account.tsx",
 		"packages/worker/client/routes/admin-codemods.tsx",
 		"packages/worker/client/routes/admin-insights.tsx",
