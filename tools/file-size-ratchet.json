@@ -5,8 +5,7 @@
 		"packages/worker/client/routes/admin-codemods.tsx",
 		"packages/worker/client/routes/admin-insights.tsx",
 		"packages/worker/client/routes/admin-platform-integrations.tsx",
-		"packages/worker/client/routes/login.tsx",
-		"packages/worker/client/routes/onboarding-mcp-client-tabs.tsx"
+		"packages/worker/client/routes/login.tsx"
 	],
 	"node-tests": [
 		"packages/worker/src/account/export.node.test.ts",
