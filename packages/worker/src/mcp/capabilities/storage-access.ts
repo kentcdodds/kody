@@ -28,19 +28,22 @@ export function createStorageBucketAccessDeniedMessage(input: {
  * A package caller may also name the bucket the host already bound for this run
  * (`storageContext.storageId`) even when that id is not package-shaped, so a job
  * a package created keeps reaching the bucket its own run writes.
+ *
+ * The id is returned verbatim: durable object names come from the raw string, so
+ * normalizing here would silently retarget a bucket whose id carries whitespace.
  */
 export function authorizeCapabilityStorageId(input: {
 	callerContext: McpCallerContext
 	capabilityName: string
 	storageId: string
 }) {
-	const storageId = input.storageId.trim()
-	if (!storageId) {
+	const storageId = input.storageId
+	if (!storageId.trim()) {
 		throw new McpCallerError('storage id must be a non-empty string.')
 	}
-	const packageId = input.callerContext.storageContext?.packageId?.trim()
-	if (!packageId) return storageId
-	if (storageId === input.callerContext.storageContext?.storageId?.trim()) {
+	const packageId = input.callerContext.storageContext?.packageId
+	if (!packageId?.trim()) return storageId
+	if (storageId === input.callerContext.storageContext?.storageId) {
 		return storageId
 	}
 	if (isPackageOwnedStorageId({ packageId, storageId })) return storageId

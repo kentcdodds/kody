@@ -27,14 +27,17 @@ export function buildPackageStorageId(packageId: string) {
  * (`%`, `_`) when this feeds inventory queries. A UUID cannot contain `:` or
  * those metacharacters and cannot equal the reserved namespace literals, which
  * makes `{uuid}:…` and `job:package-job:{uuid}:…` unambiguous.
+ *
+ * Ids compare exactly: normalizing here would let a whitespace-padded package id
+ * claim another package's buckets, and durable object names are derived from the
+ * raw id anyway.
  */
 export function isPackageOwnedStorageId(input: {
 	packageId: string
 	storageId: string
 }) {
-	const packageId = input.packageId.trim()
-	const storageId = input.storageId.trim()
-	if (!packageId || !storageId) return false
+	const { packageId, storageId } = input
+	if (!packageId.trim() || !storageId.trim()) return false
 	if (storageId === packageId) return true
 	if (storageId === buildPackageStorageId(packageId)) return true
 	if (!savedPackageIdUuidPattern.test(packageId)) return false

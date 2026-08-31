@@ -45,8 +45,17 @@ test('user-driven callers keep account-scoped storage ids', () => {
 	expect(authorize(null, buildPackageStorageId(victimPackageId))).toBe(
 		buildPackageStorageId(victimPackageId),
 	)
-	expect(authorize(null, ' exec:scratch-1 ')).toBe('exec:scratch-1')
+	expect(authorize(null, ' exec:scratch-1 ')).toBe(' exec:scratch-1 ')
 	expect(() => authorize(null, '   ')).toThrow(McpCallerError)
+})
+
+test("padded package ids cannot claim another package's buckets", () => {
+	expect(() =>
+		authorize(` ${packageId} `, buildPackageStorageId(packageId)),
+	).toThrow(McpCallerError)
+	expect(() => authorize(` ${packageId} `, `${packageId}:facet:main`)).toThrow(
+		McpCallerError,
+	)
 })
 
 test('package callers reach only buckets their package owns', () => {
