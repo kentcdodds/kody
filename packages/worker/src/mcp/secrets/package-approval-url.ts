@@ -1,9 +1,9 @@
 import {
 	buildAccountSecretPath,
+	buildAccountSecretUrl,
 	joinOriginAndEncodedPath,
 } from '@kody-internal/shared/account-secret-route.ts'
 import { type StorageContext } from '#mcp/storage.ts'
-import { routes } from '#universal/routes.ts'
 import { type SecretScope } from './types.ts'
 
 const accountSecretsApprovePath = '/account/secrets/approve'
@@ -43,10 +43,11 @@ export function buildSecretPackageApprovalUrl(input: {
 }
 
 export function buildSecretUsageUrl(input: { baseUrl: string; name: string }) {
-	return new URL(
-		routes.accountSecretUserDetail.href({ secretName: input.name }),
-		input.baseUrl,
-	).toString()
+	return buildAccountSecretUrl({
+		baseUrl: input.baseUrl,
+		name: input.name,
+		scope: 'user',
+	})
 }
 
 export function normalizeBulkPackageSecretApprovalNames(names: Array<string>) {
