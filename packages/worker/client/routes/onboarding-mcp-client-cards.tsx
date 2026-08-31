@@ -137,8 +137,8 @@ export function PluginPrimaryInstall(
 	handle: Handle<{
 		href: string
 		label: 'Add to Cursor' | 'Add to Grok Bot'
-		alternativeValue: string
-		alternativeCopyLabel: string
+		alternativeValue?: string
+		alternativeCopyLabel?: string
 	}>,
 ) {
 	return () => (
@@ -146,18 +146,20 @@ export function PluginPrimaryInstall(
 			<a href={handle.props.href} mix={css(deepLinkButtonCss)}>
 				{handle.props.label}
 			</a>
-			<p
-				data-testid="onboarding-mcp-plugin-alternative"
-				mix={css(pluginAlternativeCss)}
-			>
-				Or do this: <code>{handle.props.alternativeValue}</code>
-				<CopyTextButton
-					value={handle.props.alternativeValue}
-					idleLabel="Copy"
-					variant="chip"
-					ariaLabel={handle.props.alternativeCopyLabel}
-				/>
-			</p>
+			{handle.props.alternativeValue ? (
+				<p
+					data-testid="onboarding-mcp-plugin-alternative"
+					mix={css(pluginAlternativeCss)}
+				>
+					Or do this: <code>{handle.props.alternativeValue}</code>
+					<CopyTextButton
+						value={handle.props.alternativeValue}
+						idleLabel="Copy"
+						variant="chip"
+						ariaLabel={handle.props.alternativeCopyLabel}
+					/>
+				</p>
+			) : null}
 			<small mix={css(deepLinkNoteCss)}>
 				Your client will still ask you to authorize access afterwards.
 			</small>

@@ -58,7 +58,8 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	)
 	expect(cursor).toContain('data-testid="onboarding-agent-instructions"')
 	expect(cursor).toContain('data-agent="cursor"')
-	expect(cursor).toContain('data-testid="onboarding-agent-change"')
+	expect(cursor).not.toContain('data-testid="onboarding-agent-change"')
+	expect(cursor).not.toContain('Connecting')
 	expect(cursor).toContain(kodyCursorMarketplaceUrl)
 	expect(cursor).toContain(kodyCursorAddPluginCommand)
 	expect(cursor).toContain('data-testid="onboarding-authenticate-callout"')
@@ -122,9 +123,11 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(desktop).toContain('data-agent="grok-bot"')
 	expect(desktop).toContain('data-surface="desktop"')
 	expect(desktop).toContain(grokBotInstallUrl)
+	expect(desktop).not.toContain('onboarding-mcp-plugin-alternative')
 	expect(desktop).not.toContain('data-surface="mobile"')
 	expect(mobile).toContain('data-surface="mobile"')
 	expect(mobile).toContain(grokBotInstallUrl)
+	expect(mobile).not.toContain('onboarding-mcp-plugin-alternative')
 	expect(mobile).not.toContain('data-surface="desktop"')
 
 	const openclaw = await renderToString(

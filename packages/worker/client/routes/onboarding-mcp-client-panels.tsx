@@ -17,7 +17,6 @@ import {
 	chatGptDeveloperModeGuideUrl,
 	claudeDesktopToolHint,
 	codexMcpLoginCommand,
-	codingAgentPackageHint,
 	copilotAppCustomizeGuideUrl,
 	copilotCliMcpGuideUrl,
 	grokBotConnectPluginsUrl,
@@ -30,7 +29,6 @@ import {
 	kodyCursorMarketplaceUrl,
 	type McpClientKind,
 	type OnboardingAgentSurface,
-	nonCodingAgentNote,
 	openClawMcpDoctorCommand,
 	openClawMcpGuideUrl,
 	openClawMcpLoginCommand,
@@ -76,7 +74,6 @@ export function renderPanelContent(
 						alternativeValue={kodyCursorAddPluginCommand}
 						alternativeCopyLabel="Copy /add-plugin kody"
 					/>
-					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
 		case 'chatgpt': {
@@ -126,9 +123,6 @@ export function renderPanelContent(
 						its <strong>Manage</strong> menu in Apps settings.
 					</p>
 					<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
-					<ClientNote>
-						{surface === 'mobile' ? codingAgentPackageHint : nonCodingAgentNote}
-					</ClientNote>
 				</>
 			)
 		}
@@ -152,7 +146,6 @@ export function renderPanelContent(
 							copyLabel="Copy MCP URL"
 						/>
 						<AppIconCard src={appIconUrl} downloadName={kodyAppIconFilename} />
-						<ClientNote>{codingAgentPackageHint}</ClientNote>
 					</>
 				)
 			}
@@ -179,7 +172,6 @@ export function renderPanelContent(
 						copyLabel="Copy TOML"
 						lang="toml"
 					/>
-					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
 		}
@@ -215,7 +207,6 @@ export function renderPanelContent(
 						new chat and ask Claude to list Kody tools before the first task.
 					</p>
 					<ClientNote>{claudeDesktopToolHint}</ClientNote>
-					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
 		case 'grok':
@@ -273,7 +264,6 @@ export function renderPanelContent(
 						Grok CLI and Grok Bot are separate products. Change selection if you
 						meant one of those instead.
 					</p>
-					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
 		case 'grok-cli': {
@@ -324,7 +314,6 @@ export function renderPanelContent(
 						project scope. For grok.com or Grok Bot, change selection and choose
 						that host instead.
 					</p>
-					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
 		}
@@ -367,14 +356,11 @@ export function renderPanelContent(
 					<PluginPrimaryInstall
 						href={grokBotInstallUrl}
 						label="Add to Grok Bot"
-						alternativeValue={grokBotInstallUrl}
-						alternativeCopyLabel="Copy Grok Bot plugin link"
 					/>
 					<p>
 						Grok.com (xAI web connectors) and Grok CLI are separate products.
 						Change selection if you meant one of those instead.
 					</p>
-					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
 		case 'claude-code': {
@@ -396,7 +382,6 @@ export function renderPanelContent(
 							copyLabel="Copy MCP URL"
 						/>
 						<ClientNote>{claudeDesktopToolHint}</ClientNote>
-						<ClientNote>{codingAgentPackageHint}</ClientNote>
 					</>
 				)
 			}
@@ -422,7 +407,6 @@ export function renderPanelContent(
 						copyLabel="Copy JSON"
 						lang="json"
 					/>
-					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
 		}
@@ -459,7 +443,6 @@ export function renderPanelContent(
 						copyLabel="Copy JSON"
 						lang="json"
 					/>
-					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
 		}
@@ -515,7 +498,6 @@ export function renderPanelContent(
 						for the Control UI, composer connectors, and{' '}
 						<code>doctor --probe</code>.
 					</p>
-					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
 		}
@@ -539,7 +521,6 @@ export function renderPanelContent(
 							value={mcpServerUrl}
 							copyLabel="Copy MCP URL"
 						/>
-						<ClientNote>{codingAgentPackageHint}</ClientNote>
 					</>
 				)
 			}
@@ -597,7 +578,6 @@ export function renderPanelContent(
 						for details. The GitHub Copilot app has its own picker entry
 						(Copilot App).
 					</p>
-					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
 		}
@@ -615,7 +595,6 @@ export function renderPanelContent(
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
 					/>
-					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
 			)
 		case 'gemini':
@@ -632,7 +611,6 @@ export function renderPanelContent(
 						value={mcpServerUrl}
 						copyLabel="Copy MCP URL"
 					/>
-					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
 		case 'copilot-app': {
@@ -687,7 +665,6 @@ export function renderPanelContent(
 						</a>{' '}
 						for MCP Servers, skills, and plugins.
 					</p>
-					<ClientNote>{nonCodingAgentNote}</ClientNote>
 				</>
 			)
 		}
