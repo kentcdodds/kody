@@ -721,7 +721,7 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 			listingId: cleanListing.listing_id,
 			expectedPinnedCommit: 'stale-commit-from-before-republish',
 		}),
-	).rejects.toThrow('republished after you confirmed')
+	).rejects.toThrow('This listing changed after you confirmed')
 
 	const installed = await installCommunityListing({
 		env: testEnv,
