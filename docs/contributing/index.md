@@ -22,6 +22,8 @@ style, tests, MCP capabilities, and runtime architecture.
   shared by agents and CI)
 - [Harness engineering](./harness-engineering.md) (agent-first loop, promoting
   lessons into checkers before should-lists)
+- [Code health receipts](./code-health-receipts.md) (measured quality numbers
+  and the oversized-file cleanup record)
 - [Cleanup after migrations](./cleanup-after-migrations.md) (drop leftovers in
   the same change, or open a GitHub issue)
 - [Friction log](./friction-log.md) (file through
