@@ -307,7 +307,7 @@ export function HomeRoute(handle: Handle) {
 
 				<section aria-labelledby="pitch-title" class="landing-pitch">
 					<h2 id="pitch-title" class="landing-pitch-title">
-						Nothing new <br />
+						<em>Nothing</em> new <br />
 						to learn
 					</h2>
 					<div>
