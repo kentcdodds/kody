@@ -6,7 +6,7 @@ import {
 } from './fork-outdated-copy.ts'
 import { clientRouteLoaders, clientRoutes } from './routes/index.tsx'
 import { getSlugFromPathname } from './routes/blog-post.tsx'
-import { isCommunityListingPathname } from './routes/community-detail.tsx'
+import { isCommunityListingPathname } from './routes/community-detail-shared.ts'
 import {
 	listenToRouterMutations,
 	listenToRouterNavigation,
