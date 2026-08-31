@@ -56,6 +56,15 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 
 	expect(
 		resolveAppPageCacheControl({
+			pathname: '/faq',
+			session: null,
+			request: request('https://example.com/faq'),
+			responseSetsCookie: false,
+		}).cacheControl,
+	).toBe(anonymousHtmlCacheControl)
+
+	expect(
+		resolveAppPageCacheControl({
 			pathname: '/onboarding',
 			session: null,
 			request: request('https://example.com/onboarding'),

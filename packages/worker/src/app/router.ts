@@ -223,6 +223,7 @@ import {
 	createDiscordHandler,
 } from '#app/handlers/discord.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
+import { createFaqHandler } from '#app/handlers/faq.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createTermsHandler } from '#app/handlers/terms.ts'
 import { createResetPasswordHandler } from '#app/handlers/reset-password.ts'
@@ -300,6 +301,7 @@ export function createAppRouter(env: Env) {
 			guideDetailMarkdown: createGuideDetailMarkdownHandler(env),
 			guideDetailOgImage: createGuideDetailOgImageHandler(env),
 			pricing: createPricingHandler(env),
+			faq: createFaqHandler(env),
 			privacy: createPrivacyHandler(env),
 			terms: createTermsHandler(env),
 			discord: createDiscordHandler(env),

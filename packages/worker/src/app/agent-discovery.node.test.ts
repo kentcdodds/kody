@@ -43,6 +43,7 @@ test('agent discovery documents describe the MCP server and public pages', async
 	)
 	expect(sitemap).toContain(`<loc>${origin}/</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/discord</loc>`)
+	expect(sitemap).toContain(`<loc>${origin}/faq</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/guides</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/guides/connect</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/auth.md</loc>`)

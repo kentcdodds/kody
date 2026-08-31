@@ -746,6 +746,50 @@ export const descriptionCss = {
 	color: colors.textMuted,
 }
 
+/**
+ * Native `<details>` / `<summary>` treatment used by account entity
+ * explainers and the public FAQ. Keep new disclosures on this object
+ * instead of inventing a second accordion.
+ */
+export const nativeDisclosureCss = {
+	margin: 0,
+	'& > summary': {
+		cursor: 'pointer',
+		fontWeight: 600,
+		color: colors.primaryText,
+		width: 'fit-content',
+		transition: `color ${transitions.fast}`,
+	},
+	[hoverMq]: {
+		'& > summary:hover': { color: colors.text },
+	},
+	'&[open] > summary': { marginBottom: '0.4rem' },
+	'& > :not(summary)': {
+		display: 'grid',
+		gap: '0.7rem',
+		color: colors.textMuted,
+		fontSize: '0.98rem',
+		lineHeight: 1.5,
+		'@media (prefers-reduced-motion: no-preference)': {
+			transition: `opacity 200ms ${transitions.easeOut}, translate 200ms ${transitions.easeOut}`,
+		},
+		'@starting-style': {
+			opacity: 0,
+			translate: '0 4px',
+		},
+	},
+	'& p': {
+		margin: 0,
+		textWrap: 'pretty' as const,
+	},
+	'& a': {
+		color: colors.primaryText,
+		fontWeight: 600,
+		width: 'fit-content',
+		fontSize: typography.fontSize.sm,
+	},
+}
+
 export const fieldCss = {
 	display: 'grid',
 	gap: spacing.xs,

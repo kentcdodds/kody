@@ -73,6 +73,15 @@ export const publicOgPages = {
 			'Every plan is the whole factory. You pay for volume. Paid plans raise the caps.',
 		path: '/pricing',
 	},
+	faq: {
+		imageTitle: 'FAQ',
+		imageSubtitle:
+			'What Kody is, what it is not, and how your assistant stays yours.',
+		ogTitle: 'FAQ — Kody',
+		ogDescription:
+			'Common questions about what Kody is, what it is not, and how your assistant stays yours.',
+		path: '/faq',
+	},
 	privacy: {
 		imageTitle: 'Privacy',
 		imageSubtitle:
