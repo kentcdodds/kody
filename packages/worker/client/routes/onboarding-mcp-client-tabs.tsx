@@ -223,8 +223,8 @@ function renderAgentAuthHint(
 
 /**
  * Step 1: pick one agent, then show only that host's install path and
- * authenticate hint. Featured hosts are the first chooser; the rest live
- * under Not listed.
+ * authenticate hint. Featured hosts are the first chooser; other named
+ * hosts are under More; **Not listed** is the generic MCP URL path.
  */
 export function OnboardingMcpClientTabs(
 	handle: Handle<OnboardingMcpClientTabsProps>,

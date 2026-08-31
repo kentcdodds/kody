@@ -603,8 +603,8 @@ export function renderPanelContent(
 						>
 							Copilot CLI MCP docs
 						</a>{' '}
-						for details. For the desktop GitHub Copilot app, choose it under{' '}
-						<strong>Not listed</strong>.
+						for details. The GitHub Copilot app has its own picker entry
+						(Copilot App).
 					</p>
 					<ClientNote>{codingAgentPackageHint}</ClientNote>
 				</>
