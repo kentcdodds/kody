@@ -10,6 +10,7 @@ import { createAccountHandler } from '#app/handlers/account.ts'
 import { createAccountPasskeysHandler } from '#app/handlers/account-passkeys.ts'
 import { createAccountMcpOauthClientsHandler } from '#app/handlers/account-mcp-oauth-clients.ts'
 import { createAccountTwoFactorHandler } from '#app/handlers/account-two-factor.ts'
+import { createAccountWaitingHandler } from '#app/handlers/account-waiting.ts'
 import { createCommunityHandler } from '#app/handlers/community.tsx'
 import {
 	createCommunityDetailHandler,
@@ -355,6 +356,9 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(accountResponse.status).toBe(200)
 	const accountHtml = await readResponseText(accountResponse)
 	expect(accountHtml).toContain('aria-label="Account sections"')
+	expect(accountHtml).toContain('data-testid="site-header-waiting"')
+	expect(accountHtml).toContain('href="/account/waiting"')
+	expect(accountHtml).toContain('Waiting — account-user')
 	const accountProps = readAppRootProps(accountHtml)
 	expect(accountProps.loaderData?.accountProfile).toEqual({
 		ok: true,
@@ -421,6 +425,20 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	expect(readAppRootProps(passkeysHtml).loaderData?.accountPasskeys).toEqual({
 		ok: true,
 		passkeys: [],
+	})
+
+	const waitingResponse = await runHtmlHandler(
+		createAccountWaitingHandler(env),
+		new Request('https://example.com/account/waiting', {
+			headers: { Cookie: accountCookie },
+		}),
+	)
+	expect(waitingResponse.status).toBe(200)
+	const waitingHtml = await readResponseText(waitingResponse)
+	expect(waitingHtml).toContain('>Waiting<')
+	expect(readAppRootProps(waitingHtml).loaderData?.accountWaiting).toEqual({
+		ok: true,
+		items: expect.any(Array),
 	})
 
 	const mcpOauthClientsResponse = await runHtmlHandler(
