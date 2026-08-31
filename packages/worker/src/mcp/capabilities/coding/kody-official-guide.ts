@@ -185,6 +185,8 @@ const allKeywords = [
 		'email verification failed',
 		'user.email_outbound.paused',
 		'outbound email paused',
+		'email.system-message.sent',
+		'system email sent',
 		'auth.denial.burst',
 		'auth denial burst',
 		'email.delivery.burst',

@@ -1,11 +1,22 @@
 import { env } from 'cloudflare:workers'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { systemEmailDayKey, systemEmailLimits } from './system-email.ts'
-import { sendSystemEmail } from './system-outbound.ts'
+import { systemEmailSentTopic } from './system-email-sent-subscription-event.ts'
+
+const mocks = vi.hoisted(() => ({
+	dispatchSystemEmailSentSubscriptionEvent: vi.fn(async () => []),
+}))
+
+vi.mock('./system-email-sent-package-subscriptions.ts', () => ({
+	dispatchSystemEmailSentSubscriptionEvent:
+		mocks.dispatchSystemEmailSentSubscriptionEvent,
+}))
+
+const { sendSystemEmail } = await import('./system-outbound.ts')
 
 const cloudflareEmailApi =
 	'https://api.cloudflare.test/client/v4/accounts/account-123/email/sending/send'
@@ -50,6 +61,7 @@ test('sendSystemEmail sends from the reserved system sender to external recipien
 		mswOptions,
 	)
 
+	mocks.dispatchSystemEmailSentSubscriptionEvent.mockClear()
 	const result = await sendSystemEmail({
 		env: createSystemEnv(),
 		to: ['Reporter@Example.com', 'reporter@example.com'],
@@ -64,6 +76,20 @@ test('sendSystemEmail sends from the reserved system sender to external recipien
 		to: ['reporter@example.com'],
 		providerMessageId: 'system-message-1',
 	})
+	expect(mocks.dispatchSystemEmailSentSubscriptionEvent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			event: expect.objectContaining({
+				event: systemEmailSentTopic,
+				from: 'kody@kody.example.com',
+				to: ['reporter@example.com'],
+				subject: 'Thanks for the report',
+				text: 'We shipped the fix.',
+				reply_to: 'support@kody.example.com',
+				provider_message_id: 'system-message-1',
+				sent_at: now.toISOString(),
+			}),
+		}),
+	)
 	expect(payloads).toEqual([
 		expect.objectContaining({
 			from: 'kody@kody.example.com',

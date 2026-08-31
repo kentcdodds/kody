@@ -111,12 +111,17 @@ Admin-configured notification packages may also receive a metadata-only
 complaint or repeated bounces (stable user id, username, email, reason, bounce
 threshold when the reason is `bounced`, an admin user URL, and `occurred_at`).
 That event omits SMTP transcripts, message bodies, and unrelated account
-content. Admin-configured notification packages may also receive metadata-only
-`auth.denial.burst` or `email.delivery.burst` events when hourly MCP auth
-denials or shared-domain bounce/complaint counts cross their thresholds (count,
-threshold, window, insights URL, and `observed_at`). Those events omit user
-identities, tokens, recipients, and message content. Admin-configured
-notification packages may also receive a metadata-only
+content. Admin-configured notification packages may also receive
+`email.system-message.sent` when operator correspondence leaves a reserved
+system sender (`kody@`, `support@`, and the other system locals). That event
+includes the recipients, subject, and sent text/HTML because outbound system
+mail is not stored on the inbound system-email graph; it is admin-only and omits
+unrelated account content. Admin-configured notification packages may also
+receive metadata-only `auth.denial.burst` or `email.delivery.burst` events when
+hourly MCP auth denials or shared-domain bounce/complaint counts cross their
+thresholds (count, threshold, window, insights URL, and `observed_at`). Those
+events omit user identities, tokens, recipients, and message content.
+Admin-configured notification packages may also receive a metadata-only
 `fleet.package_error_rate.elevated` event when anonymous package-runtime error
 rates rise (window bounds, per-metric counts and rates, public status URL, and
 insights URL). That event omits user ids, package ids, error strings, logs, and

@@ -340,6 +340,11 @@ metadata-first envelope plus an `admin_url` link to the message in
 `/admin/system-email`. Handlers run as the admin package owner (not the system
 owner), so user-scoped email reads do not apply to the system message.
 
+Successful reserved-sender sends dispatch `email.system-message.sent` the same
+admin-only way. Outbound system mail is not stored on the dedicated inbound
+graph, so that payload includes the sent correspondence (recipients, subject,
+text, and HTML) for archive packages.
+
 Successful consent-gated platform-feedback inserts enqueue
 `platform.feedback.submitted` for durable package-subscription delivery. Fan-out
 selects only packages whose owners hold the admin role when the Queue message is

@@ -420,12 +420,14 @@ Authentication-Results (DMARC fail, or SPF fail/softfail without DKIM pass →
 quarantine; missing header fails open). Accepted user mail dispatches
 `email.message.received`; quarantined user mail dispatches
 `email.message.quarantined` instead. Quarantined operator system-inbox mail is
-stored but suppresses `email.system-message.received`. Reclassification never
-retroactively fires subscription events. Users manage rules via
-`email_sender_rule_*` (200-rule cap) and reclassify via `email_message_classify`
-or `/account/email`; operators use `admin_system_email_sender_rule_*` for system
-inboxes. Upstream, Cloudflare Email Routing already rejects mail failing both
-SPF and DKIM and honors sender DMARC policy.
+stored but suppresses `email.system-message.received`. Successful
+reserved-sender sends fan `email.system-message.sent` (admin-only) with the sent
+correspondence. Reclassification never retroactively fires subscription events.
+Users manage rules via `email_sender_rule_*` (200-rule cap) and reclassify via
+`email_message_classify` or `/account/email`; operators use
+`admin_system_email_sender_rule_*` for system inboxes. Upstream, Cloudflare
+Email Routing already rejects mail failing both SPF and DKIM and honors sender
+DMARC policy.
 
 ## Abuse controls (suspension, email pause, compute quotas)
 
