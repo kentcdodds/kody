@@ -375,6 +375,9 @@ const postImageCss = {
 	display: 'block',
 	width: '100%',
 	height: 'auto',
+	// HTML width/height stay a 16:9 reservation for older posts; let the
+	// file's intrinsic ratio win so square art is not stretched.
+	aspectRatio: 'auto',
 	margin: 'clamp(1.5rem, 4vw, 2.2rem) 0 0',
 	borderRadius: radius.card,
 	border: `1px solid ${colors.border}`,
