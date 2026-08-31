@@ -17,7 +17,6 @@
 		"packages/worker/src/mcp/run-kody-registry.node.test.ts",
 		"packages/worker/src/package-invocations/service.node.test.ts",
 		"packages/worker/src/package-runtime/module-graph.node.test.ts",
-		"packages/worker/src/package-runtime/package-workflows.node.test.ts",
 		"packages/worker/src/repo/repo-session-do.node.test.ts"
 	]
 }
