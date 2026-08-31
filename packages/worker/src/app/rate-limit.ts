@@ -13,6 +13,11 @@ type AuthRateLimitEnv = {
 	AUTH_RATE_LIMITER?: RateLimit
 }
 
+type SentryTunnelRateLimitEnv = {
+	APP_DB: D1Database
+	SENTRY_TUNNEL_RATE_LIMITER?: RateLimit
+}
+
 const initializedDbs = new WeakSet<D1Database>()
 
 async function ensureRateLimitTable(db: D1Database) {
@@ -111,21 +116,54 @@ export const twoFactorVerifyRateLimitConfig: RateLimitConfig = {
 }
 
 /**
- * Uses Cloudflare's per-location rate-limit binding on deployed auth ingress,
- * keeping a D1 fallback for local development, tests, and self-hosted configs.
+ * A browser tab with session replay enabled posts an envelope every few
+ * seconds, so the ceiling has to clear steady replay traffic while still
+ * capping a scripted flood from a single address.
  */
+export const sentryTunnelRateLimitConfig: RateLimitConfig = {
+	maxRequests: 120,
+	windowSeconds: 60,
+}
+
+/**
+ * Uses Cloudflare's per-location rate-limit binding when deployed, keeping a
+ * D1 fallback for local development, tests, and self-hosted configs.
+ */
+async function checkBoundRateLimit(
+	limiter: RateLimit | undefined,
+	db: D1Database,
+	key: string,
+	config: RateLimitConfig,
+): Promise<RateLimitResult> {
+	if (!limiter) {
+		return checkRateLimit(db, key, config)
+	}
+	const result = await limiter.limit({ key })
+	return result.success
+		? { allowed: true, retryAfterSeconds: null }
+		: { allowed: false, retryAfterSeconds: config.windowSeconds }
+}
+
 export async function checkAuthRateLimit(
 	env: AuthRateLimitEnv,
 	key: string,
 ): Promise<RateLimitResult> {
-	if (!env.AUTH_RATE_LIMITER) {
-		return checkRateLimit(env.APP_DB, key, authRateLimitConfig)
-	}
-	const result = await env.AUTH_RATE_LIMITER.limit({ key })
-	return result.success
-		? { allowed: true, retryAfterSeconds: null }
-		: {
-				allowed: false,
-				retryAfterSeconds: authRateLimitConfig.windowSeconds,
-			}
+	return checkBoundRateLimit(
+		env.AUTH_RATE_LIMITER,
+		env.APP_DB,
+		key,
+		authRateLimitConfig,
+	)
+}
+
+export async function checkSentryTunnelRateLimit(
+	env: SentryTunnelRateLimitEnv,
+	key: string,
+): Promise<RateLimitResult> {
+	return checkBoundRateLimit(
+		env.SENTRY_TUNNEL_RATE_LIMITER,
+		env.APP_DB,
+		key,
+		sentryTunnelRateLimitConfig,
+	)
 }

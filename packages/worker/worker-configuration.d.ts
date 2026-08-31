@@ -23,6 +23,7 @@ interface __BaseEnv_Env {
 	WEBHOOK_DISPATCH_QUEUE: Queue;
 	ARTIFACTS: Artifacts;
 	AUTH_RATE_LIMITER: RateLimit;
+	SENTRY_TUNNEL_RATE_LIMITER: RateLimit;
 	LOADER: WorkerLoader;
 	APP_LOADER: WorkerLoader;
 	AI: Ai;
