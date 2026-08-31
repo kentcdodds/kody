@@ -290,6 +290,20 @@ Excess requests receive `429 Too Many Requests` with a `Retry-After` header. The
 D1 approach uses a batched INSERT + COUNT in a single transaction, avoiding the
 read-then-write race that KV-backed limiters suffer under concurrency.
 
+## Sentry tunnel rate limiting
+
+`POST /sentry-tunnel` is unauthenticated and exempt from cross-origin
+protection, and its DSN check authorizes nothing: a Sentry DSN ships inside the
+client bundle. The forward target is always derived from the Worker's own
+`SENTRY_DSN`, so the exposure is ingestion quota and a polluted error stream
+rather than an open proxy. The handler therefore consumes a per-IP bucket
+(`sentry-tunnel:ip:<ip>`, 120 requests per 60-second window) before it buffers
+the body, using the `SENTRY_TUNNEL_RATE_LIMITER` binding when deployed and the
+same D1 limiter elsewhere. The ceiling clears steady error-replay traffic from
+one browser while capping a scripted flood. Requests without a `content-length`
+header are refused with `411 Length Required` so no unbounded body is read
+before the 10 MB cap can apply.
+
 ## Password policy
 
 Signup and password-reset confirmation enforce a minimum password length via
