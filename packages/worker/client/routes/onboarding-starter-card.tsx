@@ -89,7 +89,7 @@ export function OnboardingStarterCard(
 						'Content-Type': 'application/json',
 					},
 					credentials: 'include',
-					body: JSON.stringify({}),
+					body: JSON.stringify({ acknowledged: true }),
 				},
 			)
 			if (response.status === 401) {

@@ -427,8 +427,7 @@ export function CommunityDetailRoute(handle: Handle) {
 						'Content-Type': 'application/json',
 					},
 					credentials: 'include',
-					// Reaching this point means the user either saw the untrusted
-					// warning and confirmed, or the listing is trusted.
+					// The user already confirmed on the listing page.
 					body: JSON.stringify({ acknowledged: true }),
 				},
 			)
