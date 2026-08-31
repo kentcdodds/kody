@@ -56,7 +56,7 @@ const connectKodySkillBody = `# Connect Kody
 
 Kody is an OAuth-protected MCP personal assistant. You use it from an existing
 MCP host (Cursor, ChatGPT, Claude Desktop, Claude Code, Codex, Copilot, Grok,
-OpenCode). There is no separate Kody chat app.
+OpenCode, OpenClaw). There is no separate Kody chat app.
 
 ## When to use
 
@@ -316,8 +316,8 @@ export function buildAuthMarkdown(origin: string): string {
 		'4. After the connection works, call `search` before `execute`.',
 		'',
 		'Client-specific setup (Cursor, ChatGPT, Claude Desktop, Claude Code,',
-		'Codex, Copilot, Grok, OpenCode) lives on `/onboarding`. A no-account',
-		`capability tour is at \`${origin}/guides/what-is-kody.md\`.`,
+		'Codex, Copilot, Grok, OpenCode, OpenClaw) lives on `/onboarding`. A',
+		`no-account capability tour is at \`${origin}/guides/what-is-kody.md\`.`,
 		'',
 		'## OAuth',
 		'',

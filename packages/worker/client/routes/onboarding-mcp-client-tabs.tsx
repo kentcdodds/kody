@@ -10,6 +10,8 @@ import {
 	buildGrokCliAddCommand,
 	buildGrokCliMcpToml,
 	buildKodyAppIconUrl,
+	buildOpenClawMcpAddCommand,
+	buildOpenClawMcpJson,
 	buildOpenCodeMcpAddCommand,
 	buildOpenCodeMcpJson,
 	buildVsCodeInstallUrl,
@@ -38,6 +40,9 @@ import {
 	onboardingFeaturedIdsFromChooser,
 	onboardingMobileAgentMq,
 	onboardingMoreIdsFromChooser,
+	openClawMcpDoctorCommand,
+	openClawMcpGuideUrl,
+	openClawMcpLoginCommand,
 	openCodeMcpAuthCommand,
 } from '#client/routes/onboarding-mcp-clients.ts'
 import {
@@ -609,6 +614,62 @@ function renderPanelContent(
 				</>
 			)
 		}
+		case 'openclaw': {
+			const openClawCommand = buildOpenClawMcpAddCommand(mcpServerUrl)
+			const openClawJson = buildOpenClawMcpJson(mcpServerUrl)
+			return (
+				<>
+					{surface === 'mobile' ? (
+						<p>
+							OpenClaw 2&apos;s browser app works from a phone. You can also run
+							the CLI later on a computer. Add Kody as a remote Streamable HTTP
+							server, then complete OAuth.
+						</p>
+					) : null}
+					<p>
+						Run this to add Kody, then <code>{openClawMcpLoginCommand}</code> to
+						authorize. <code>{openClawMcpDoctorCommand}</code> proves the server
+						answers. Or add the same entry in the Control UI under{' '}
+						<strong>Settings → MCP → Add server</strong> (Streamable HTTP), or
+						merge it into <code>~/.openclaw/openclaw.json</code>:
+					</p>
+					<CopyCard
+						highlights={highlights}
+						label="openclaw CLI"
+						value={openClawCommand}
+						copyLabel="Copy command"
+						lang="sh"
+					/>
+					<CopyCard
+						highlights={highlights}
+						label="openclaw mcp login"
+						value={openClawMcpLoginCommand}
+						copyLabel="Copy command"
+						lang="sh"
+					/>
+					<CopyCard
+						highlights={highlights}
+						label="~/.openclaw/openclaw.json"
+						value={openClawJson}
+						copyLabel="Copy JSON"
+						lang="json"
+					/>
+					<p>
+						See OpenClaw&apos;s{' '}
+						<a
+							href={openClawMcpGuideUrl}
+							target="_blank"
+							rel="noreferrer noopener"
+						>
+							MCP docs
+						</a>{' '}
+						for the Control UI, composer connectors, and{' '}
+						<code>doctor --probe</code>.
+					</p>
+					<ClientNote>{codingAgentPackageHint}</ClientNote>
+				</>
+			)
+		}
 		case 'copilot': {
 			const vsCodeJson = buildVsCodeMcpJson(mcpServerUrl)
 			const installUrl = buildVsCodeInstallUrl(mcpServerUrl)
@@ -952,6 +1013,19 @@ function renderAgentAuthHint(
 			) : (
 				<>
 					Run <code>{openCodeMcpAuthCommand}</code> if prompted.
+				</>
+			)
+		case 'openclaw':
+			return surface === 'mobile' ? (
+				<>
+					Save the server in the Control UI, then run{' '}
+					<code>{openClawMcpLoginCommand}</code> on a computer. Approve the Kody
+					OAuth window.
+				</>
+			) : (
+				<>
+					Run <code>{openClawMcpLoginCommand}</code> after the server is saved.
+					Approve the Kody OAuth window.
 				</>
 			)
 		case 'copilot':

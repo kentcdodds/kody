@@ -1,9 +1,9 @@
 # Connect your agent
 
 Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
-Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, GitHub Copilot (VS Code or
-CLI), the GitHub Copilot app, or any other AI agent that supports MCP — not from
-a separate Kody chat app.
+Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, OpenClaw, GitHub Copilot
+(VS Code or CLI), the GitHub Copilot app, or any other AI agent that supports
+MCP — not from a separate Kody chat app.
 
 Agents discovering this host can read `/auth.md` for the OAuth registration
 block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.
@@ -92,6 +92,12 @@ your agent is not in the first chooser, or when you only have the MCP URL.
 - **Copilot App** — In the GitHub Copilot app, open settings → **MCP Servers**
   and add a custom remote HTTP server with the MCP URL. Servers from Copilot CLI
   or repository MCP config are also available in the app.
+- **OpenClaw** — Run
+  `openclaw mcp add kody --url <url> --transport streamable-http --auth oauth`,
+  then `openclaw mcp login kody`. `openclaw mcp doctor kody --probe` checks the
+  live connection. Or in the Control UI: Settings → MCP → Add server, choose
+  Streamable HTTP, and paste the MCP URL. See OpenClaw's
+  [MCP docs](https://docs.openclaw.ai/tools/mcp).
 - **Open WebUI** — Add an MCP Streamable HTTP connection to this deployment’s
   MCP URL and use **OAuth 2.1** (dynamic registration) first. Enabling the tool
   in a chat must open the Kody authorize window. If that window never opens on
