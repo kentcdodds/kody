@@ -72,7 +72,7 @@ export const temporalLanguagePatterns: ReadonlyArray<TemporalLanguagePattern> =
 		{
 			label: 'now support/accept/require/use/store/return/call/read/pass/run',
 			regex:
-				/\bnow (?:support|accept|require|use|store|return|call|read|pass|run)(?:es|s)?\b/i,
+				/\bnow (?:support|accept|require|use|store|return|call|read|pass|run|persist)(?:es|s)?\b/i,
 		},
 		{ label: 'is now a/the', regex: /\bis now (?:a|an|the)\b/i },
 		{ label: 'are now', regex: /\bare now\b/i },
