@@ -178,6 +178,33 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 	expect((openclaw?.body ?? '').replace(/\s+/g, ' ')).toContain(
 		'openclaw mcp add kody',
 	)
+	const factoryLoop = getBlogPost(
+		'how-to-turn-agent-work-into-software-you-own',
+	)
+	expect(factoryLoop?.title).toBe(
+		'How to turn agent work into software you own',
+	)
+	expect(factoryLoop?.date).toBe('2026-08-31')
+	expect(factoryLoop?.order).toBe(8)
+	expect(factoryLoop?.placeholder).toBe(true)
+	expect(factoryLoop?.image).toBe('/images/kody-factory-map.webp')
+	expect(factoryLoop?.ogImage).toBe('/images/kody-factory-map-og.jpg')
+	const factoryLoopBody = (factoryLoop?.body ?? '').replace(/\s+/g, ' ')
+	expect(factoryLoopBody).toContain('I call that the factory loop')
+	expect(factoryLoopBody).toContain('https://kody.codes/guides/how-kody-works')
+	expect(factoryLoopBody).toContain('https://kody.codes/onboarding')
+	expect(factoryLoopBody).toContain(
+		'https://kody.codes/blog/your-assistants-home',
+	)
+	expect(factoryLoopBody).toContain(
+		'https://kody.codes/blog/the-automations-you-never-built',
+	)
+	expect(factoryLoopBody).toContain(
+		'https://kody.codes/blog/zero-inference-calls',
+	)
+	expect(factoryLoopBody).toContain(
+		'https://kody.codes/blog/every-install-is-a-fork-you-own',
+	)
 	expect(comparison?.image).toBe('/images/kody-vs-executor.webp')
 	expect(comparison?.ogImage).toBe('/images/kody-vs-executor-og.jpg')
 	const comparisonBody = (comparison?.body ?? '').replace(/\s+/g, ' ')
