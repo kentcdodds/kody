@@ -1,4 +1,4 @@
-export const heavyWorkOffloadGuideId = 'heavy_work_offload'
+const heavyWorkOffloadGuideId = 'heavy_work_offload'
 
 /**
  * Shared advice appended when a throwaway check/rebuild isolate hits a
