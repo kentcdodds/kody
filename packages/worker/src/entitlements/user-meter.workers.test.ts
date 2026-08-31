@@ -836,6 +836,23 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	expect(await meterA.clearDeleting()).toEqual({ cleared: true })
 	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
 	expect(await meterA.clearDeleting()).toEqual({ cleared: false })
+	const thirdMark = await meterA.markDeleting({
+		deletingAt: '2026-08-01 12:00:00',
+	})
+	expect(thirdMark.created).toBe(true)
+	expect(
+		await meterA.clearDeleting({
+			expectedDeletingAt: '2026-08-01 10:00:00',
+		}),
+	).toEqual({ cleared: false })
+	expect(await meterA.readDeletionState()).toEqual({
+		deletingAt: '2026-08-01 12:00:00',
+	})
+	expect(
+		await meterA.clearDeleting({
+			expectedDeletingAt: '2026-08-01 12:00:00',
+		}),
+	).toEqual({ cleared: true })
 	const rematch = await meterA.markDeleting({
 		deletingAt: '2026-08-01 10:00:00',
 	})

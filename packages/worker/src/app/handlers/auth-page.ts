@@ -46,6 +46,7 @@ export function createAuthPageHandler(
 			return renderAppPage({
 				request,
 				env,
+				extraSetCookies: setCookie ? [setCookie] : undefined,
 				loaderData: {
 					authProviders: {
 						ok: true,

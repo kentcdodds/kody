@@ -10,11 +10,16 @@ import { createAuthPageHandler } from '#app/handlers/auth-page.ts'
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
 vi.mock('#app/ssr-render.tsx', () => ({
-	renderAppPage: async () =>
-		new Response('login-page', {
+	renderAppPage: async (input: { extraSetCookies?: Array<string> }) => {
+		const headers = new Headers({ 'Content-Type': 'text/html' })
+		for (const cookie of input.extraSetCookies ?? []) {
+			headers.append('Set-Cookie', cookie)
+		}
+		return new Response('login-page', {
 			status: 200,
-			headers: { 'Content-Type': 'text/html' },
-		}),
+			headers,
+		})
+	},
 }))
 
 function createStaleSessionTestEnv() {
@@ -141,4 +146,7 @@ test('auth page renders login for a deleting account instead of redirecting to /
 
 	expect(response.status).toBe(200)
 	expect(await response.text()).toBe('login-page')
+	const setCookie = response.headers.get('Set-Cookie') ?? ''
+	expect(setCookie).toContain('kody_session=')
+	expect(setCookie).toContain('Max-Age=0')
 })

@@ -160,36 +160,34 @@ async function findMatchingRepairAudit(input: {
 		.first<{ id: string }>()
 }
 
+export type MarkAccountDeletingResult = {
+	leaseCount: number
+	/** True when this invocation wrote `users.deleting_at`. */
+	created: boolean
+	deletingAt: string
+}
+
 export async function markAccountDeleting(input: {
 	db: D1Database
 	dbUserId: number
 	now?: Date
 	env: UserMeterEnv
-}) {
+}): Promise<MarkAccountDeletingResult> {
 	// D1 deleting_at is set first: it is the permanent point gate and must be
 	// written before any UserMeter call so the gate is never missed even if
-	// the DO call subsequently fails. If that DO call fails, roll back a
-	// tombstone we just created so the account is not left half-fenced.
+	// the DO call subsequently fails. Only roll back a tombstone this
+	// invocation created (`WHERE deleting_at IS NULL`) so a concurrent or
+	// retrying delete cannot wipe another attempt's fence.
 	const now = utcSqliteTimestamp(input.now ?? new Date())
-	const prior = await input.db
-		.prepare(
-			`SELECT stable_user_id, deleting_at
-			FROM users
-			WHERE id = ?`,
-		)
-		.bind(input.dbUserId)
-		.first<{ stable_user_id: string; deleting_at: string | null }>()
-	const result = await input.db
+	const createResult = await input.db
 		.prepare(
 			`UPDATE users
-			SET deleting_at = COALESCE(deleting_at, ?), updated_at = ?
-			WHERE id = ?`,
+			SET deleting_at = ?, updated_at = ?
+			WHERE id = ? AND deleting_at IS NULL`,
 		)
 		.bind(now, now, input.dbUserId)
 		.run()
-	if ((result.meta.changes ?? 0) !== 1) {
-		throw new Error('Account could not be marked for deletion.')
-	}
+	const created = (createResult.meta.changes ?? 0) === 1
 	const userRow = await input.db
 		.prepare(
 			`SELECT stable_user_id, deleting_at
@@ -210,16 +208,20 @@ export async function markAccountDeleting(input: {
 			stableUserId,
 			operation: async (meter) => await meter.markDeleting({ deletingAt }),
 		})
-		return marked.leaseCount
+		return {
+			leaseCount: marked.leaseCount,
+			created,
+			deletingAt,
+		}
 	} catch (error) {
-		if (prior?.deleting_at == null) {
+		if (created) {
 			await input.db
 				.prepare(
 					`UPDATE users
 					SET deleting_at = NULL, updated_at = ?
-					WHERE id = ?`,
+					WHERE id = ? AND deleting_at = ?`,
 				)
-				.bind(now, input.dbUserId)
+				.bind(now, input.dbUserId, now)
 				.run()
 		}
 		throw error
@@ -229,13 +231,19 @@ export async function markAccountDeleting(input: {
 /**
  * Undo {@link markAccountDeleting} when deletion aborts before cleanup.
  * Clears D1 `users.deleting_at` first (permanent gate), then the UserMeter
- * tombstone. A later write may still fail closed if the DO clear is delayed.
+ * tombstone. Pass `expectedDeletingAt` so a concurrent/retry fence is left
+ * alone. A later write may still fail closed if the DO clear is delayed.
  */
 export async function abortAccountDeleting(input: {
 	db: D1Database
 	dbUserId: number
 	now?: Date
 	env: UserMeterEnv
+	/**
+	 * When set, clear D1 and UserMeter only if they still hold this exact
+	 * fence. Omit for an operator abort of whatever leftover tombstone exists.
+	 */
+	expectedDeletingAt?: string
 }) {
 	const userRow = await input.db
 		.prepare(
@@ -246,15 +254,24 @@ export async function abortAccountDeleting(input: {
 		.bind(input.dbUserId)
 		.first<{ stable_user_id: string }>()
 	const now = utcSqliteTimestamp(input.now ?? new Date())
-	const result = await input.db
-		.prepare(
-			`UPDATE users
-			SET deleting_at = NULL, updated_at = ?
-			WHERE id = ?`,
-		)
-		.bind(now, input.dbUserId)
-		.run()
-	if ((result.meta.changes ?? 0) !== 1) {
+	const result = input.expectedDeletingAt
+		? await input.db
+				.prepare(
+					`UPDATE users
+					SET deleting_at = NULL, updated_at = ?
+					WHERE id = ? AND deleting_at = ?`,
+				)
+				.bind(now, input.dbUserId, input.expectedDeletingAt)
+				.run()
+		: await input.db
+				.prepare(
+					`UPDATE users
+					SET deleting_at = NULL, updated_at = ?
+					WHERE id = ?`,
+				)
+				.bind(now, input.dbUserId)
+				.run()
+	if (!input.expectedDeletingAt && (result.meta.changes ?? 0) !== 1) {
 		throw new Error('Account deletion fence could not be cleared.')
 	}
 	const stableUserId = userRow?.stable_user_id
@@ -265,7 +282,12 @@ export async function abortAccountDeleting(input: {
 	await runUserMeterRpc({
 		env,
 		stableUserId,
-		operation: async (meter) => await meter.clearDeleting(),
+		operation: async (meter) =>
+			await meter.clearDeleting(
+				input.expectedDeletingAt
+					? { expectedDeletingAt: input.expectedDeletingAt }
+					: undefined,
+			),
 	})
 }
 

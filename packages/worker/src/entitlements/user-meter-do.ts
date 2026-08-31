@@ -1242,9 +1242,22 @@ class UserMeterBase extends DurableObject<Env> {
 	 * later writes and a retry can proceed. D1 `users.deleting_at` is cleared
 	 * by the caller first (permanent gate).
 	 */
-	async clearDeleting(): Promise<UserMeterClearDeletingResult> {
+	async clearDeleting(input?: {
+		expectedDeletingAt?: string
+	}): Promise<UserMeterClearDeletingResult> {
+		const expectedDeletingAt =
+			input?.expectedDeletingAt == null
+				? undefined
+				: assertDeletionTimestamp(
+						'expectedDeletingAt',
+						input.expectedDeletingAt,
+					)
 		return await this.ctx.blockConcurrencyWhile(async () => {
-			if (this.readDeletingAt() == null) return { cleared: false }
+			const current = this.readDeletingAt()
+			if (current == null) return { cleared: false }
+			if (expectedDeletingAt != null && current !== expectedDeletingAt) {
+				return { cleared: false }
+			}
 			this.ctx.storage.sql.exec(
 				`DELETE FROM deletion_state WHERE id = ?`,
 				deletionStateRowId,
@@ -1594,7 +1607,9 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 		deletingAt: string
 	}) => Promise<UserMeterMarkDeletingResult>
 	/** Drop the deletion tombstone after a pre-cleanup abort. */
-	clearDeleting: () => Promise<UserMeterClearDeletingResult>
+	clearDeleting: (input?: {
+		expectedDeletingAt?: string
+	}) => Promise<UserMeterClearDeletingResult>
 	/** Authoritative lease acquire. */
 	acquireWriteLease: (input: {
 		token: string

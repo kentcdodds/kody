@@ -953,18 +953,21 @@ export async function deleteUserAccount(input: {
 	dbUserId: number
 	mcpUserId: string
 }): Promise<AccountDeletionResult> {
-	const activeWriteCount = await markAccountDeleting({
+	const marked = await markAccountDeleting({
 		db: input.env.APP_DB,
 		dbUserId: input.dbUserId,
 		env: input.env,
 	})
-	if (activeWriteCount > 0) {
-		await abortAccountDeleting({
-			db: input.env.APP_DB,
-			dbUserId: input.dbUserId,
-			env: input.env,
-		})
-		throw new AccountDeletionWritersActiveError(activeWriteCount)
+	if (marked.leaseCount > 0) {
+		if (marked.created) {
+			await abortAccountDeleting({
+				db: input.env.APP_DB,
+				dbUserId: input.dbUserId,
+				env: input.env,
+				expectedDeletingAt: marked.deletingAt,
+			})
+		}
+		throw new AccountDeletionWritersActiveError(marked.leaseCount)
 	}
 	const warnings: Array<string> = []
 	const clearedDurableObjects: Record<string, number> = {}
@@ -993,11 +996,12 @@ export async function deleteUserAccount(input: {
 			warnings,
 		})
 	} catch (error) {
-		if (error instanceof AccountDeletionInventoryError) {
+		if (error instanceof AccountDeletionInventoryError && marked.created) {
 			await abortAccountDeleting({
 				db: input.env.APP_DB,
 				dbUserId: input.dbUserId,
 				env: input.env,
+				expectedDeletingAt: marked.deletingAt,
 			})
 		}
 		throw error

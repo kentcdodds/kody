@@ -1154,3 +1154,41 @@ test('deleteUserAccount clears the deletion fence when inventory cannot be colle
 	])
 	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
 })
+
+test('deleteUserAccount keeps an existing fence when writers are still active', async () => {
+	const { db, rows } = createTestDb({
+		users: [
+			{
+				id: 1,
+				email: 'a@example.com',
+				deleting_at: '2026-08-31 15:22:12',
+			},
+		],
+	})
+	const env = createSuccessfulDeletionEnv(db)
+	const meter = userMeterRpc({ env, userId: 'user-aaa' })
+	await meter.acquireWriteLease({
+		token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+		holder: 'test:cleanup-retry',
+		acquiredAt: '2026-08-31 15:23:00',
+	})
+	await meter.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
+
+	await expect(
+		deleteUserAccount({
+			env,
+			dbUserId: 1,
+			mcpUserId: 'user-aaa',
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
+	expect(rows.users).toEqual([
+		expect.objectContaining({
+			id: 1,
+			stable_user_id: 'user-aaa',
+			deleting_at: '2026-08-31 15:22:12',
+		}),
+	])
+	expect(await meter.readDeletionState()).toEqual({
+		deletingAt: '2026-08-31 15:22:12',
+	})
+})
