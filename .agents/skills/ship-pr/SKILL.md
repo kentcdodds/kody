@@ -13,9 +13,9 @@ description: >
 
 Self-assess; user policy overrides.
 
-**Kent's standing policy (2026-08-08):** auto-ship (squash-merge + verify deploy)
-once AI reviewer feedback is addressed and CI is green, unless **high** risk.
-High risk still parks ready-for-review unless merge authority was granted
+**Kent's standing policy (2026-08-08):** auto-ship (squash-merge + verify
+deploy) once AI reviewer feedback is addressed and CI is green, unless **high**
+risk. High risk still parks ready-for-review unless merge authority was granted
 explicitly.
 
 - **Low** — green CI; nits ignorable; squash-merge when policy allows.
@@ -25,11 +25,12 @@ explicitly.
 
 ## AI reviewers
 
-Prefer **Cursor Bugbot** (`Cursor Bugbot` check / `cursor[bot]` review comments).
-Trigger with `bugbot run` or `@cursor review` on the PR if it has not started.
+Prefer **Cursor Bugbot** (`Cursor Bugbot` check / `cursor[bot]` review
+comments). Trigger with `bugbot run` or `@cursor review` on the PR if it has not
+started.
 
-**CodeRabbit:** if it is rate-limited, errored, or otherwise unavailable, **do not
-wait** on it for low/medium risk — proceed with Bugbot + CI. Only wait on
+**CodeRabbit:** if it is rate-limited, errored, or otherwise unavailable, **do
+not wait** on it for low/medium risk — proceed with Bugbot + CI. Only wait on
 CodeRabbit when the change is **high** risk (or the user explicitly asks).
 
 ## Loop
@@ -49,8 +50,7 @@ CodeRabbit when the change is **high** risk (or the user explicitly asks).
 
 Blocked on soak / parity CHECK / calendar gate → **end the run** and schedule a
 wake (`execute` + `workflows.create({ runAt, idempotencyKey })` calling
-`createRun`). Don't sleep-poll or code-thrash an
-intentional time window.
+`createRun`). Don't sleep-poll or code-thrash an intentional time window.
 Leftovers that wait on that gate need a GitHub issue (`Cleanup:` title); see
 [cleanup-after-migrations](../cleanup-after-migrations/SKILL.md).
 
@@ -82,8 +82,8 @@ When the work deployed user-visible pages, put clickable links to those pages in
 - In a Cursor Cloud Agent VM, read the model that **served this turn** from the
   metadata socket (not a guess from writing style):
   `curl -fsS --unix-socket "${CURSOR_AGENT_SOCKET:-/run/cursor/api.sock}" http://cursor-agent/v1/meta-data/turn/model`
-  If you selected Auto, this is the concrete model that served, not `Auto`.
-  See https://cursor.com/docs/cloud-agent/metadata
+  If you selected Auto, this is the concrete model that served, not `Auto`. See
+  https://cursor.com/docs/cloud-agent/metadata
 - Outside a managed VM, pass the `model.id` used at create/launch if you still
   have that record.
 - If the key is missing (`404` / empty), omit `model` so the export posts
