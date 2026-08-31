@@ -57,6 +57,7 @@ import {
 } from '#mcp/session-registry.ts'
 import {
 	AccountDeletionWritersActiveError,
+	abortAccountDeleting,
 	markAccountDeleting,
 } from '#worker/account/deletion-state.ts'
 import {
@@ -952,13 +953,21 @@ export async function deleteUserAccount(input: {
 	dbUserId: number
 	mcpUserId: string
 }): Promise<AccountDeletionResult> {
-	const activeWriteCount = await markAccountDeleting({
+	const marked = await markAccountDeleting({
 		db: input.env.APP_DB,
 		dbUserId: input.dbUserId,
 		env: input.env,
 	})
-	if (activeWriteCount > 0) {
-		throw new AccountDeletionWritersActiveError(activeWriteCount)
+	if (marked.leaseCount > 0) {
+		if (marked.created) {
+			await abortAccountDeleting({
+				db: input.env.APP_DB,
+				dbUserId: input.dbUserId,
+				env: input.env,
+				expectedDeletingAt: marked.deletingAt,
+			})
+		}
+		throw new AccountDeletionWritersActiveError(marked.leaseCount)
 	}
 	const warnings: Array<string> = []
 	const clearedDurableObjects: Record<string, number> = {}
@@ -978,12 +987,25 @@ export async function deleteUserAccount(input: {
 		warnings,
 	}
 
-	const inventory = await collectUserDeletionInventory({
-		env: input.env,
-		userId: input.mcpUserId,
-		dbUserId: input.dbUserId,
-		warnings,
-	})
+	let inventory: UserDeletionInventory
+	try {
+		inventory = await collectUserDeletionInventory({
+			env: input.env,
+			userId: input.mcpUserId,
+			dbUserId: input.dbUserId,
+			warnings,
+		})
+	} catch (error) {
+		if (error instanceof AccountDeletionInventoryError && marked.created) {
+			await abortAccountDeleting({
+				db: input.env.APP_DB,
+				dbUserId: input.dbUserId,
+				env: input.env,
+				expectedDeletingAt: marked.deletingAt,
+			})
+		}
+		throw error
+	}
 
 	result.deletedVectors = await deleteVectorsByIds({
 		env: input.env,

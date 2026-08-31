@@ -160,27 +160,34 @@ async function findMatchingRepairAudit(input: {
 		.first<{ id: string }>()
 }
 
+export type MarkAccountDeletingResult = {
+	leaseCount: number
+	/** True when this invocation wrote `users.deleting_at`. */
+	created: boolean
+	deletingAt: string
+}
+
 export async function markAccountDeleting(input: {
 	db: D1Database
 	dbUserId: number
 	now?: Date
 	env: UserMeterEnv
-}) {
+}): Promise<MarkAccountDeletingResult> {
 	// D1 deleting_at is set first: it is the permanent point gate and must be
 	// written before any UserMeter call so the gate is never missed even if
-	// the DO call subsequently fails.
+	// the DO call subsequently fails. Only roll back a tombstone this
+	// invocation created (`WHERE deleting_at IS NULL`) so a concurrent or
+	// retrying delete cannot wipe another attempt's fence.
 	const now = utcSqliteTimestamp(input.now ?? new Date())
-	const result = await input.db
+	const createResult = await input.db
 		.prepare(
 			`UPDATE users
-			SET deleting_at = COALESCE(deleting_at, ?), updated_at = ?
-			WHERE id = ?`,
+			SET deleting_at = ?, updated_at = ?
+			WHERE id = ? AND deleting_at IS NULL`,
 		)
 		.bind(now, now, input.dbUserId)
 		.run()
-	if ((result.meta.changes ?? 0) !== 1) {
-		throw new Error('Account could not be marked for deletion.')
-	}
+	const created = (createResult.meta.changes ?? 0) === 1
 	const userRow = await input.db
 		.prepare(
 			`SELECT stable_user_id, deleting_at
@@ -194,13 +201,123 @@ export async function markAccountDeleting(input: {
 	if (!stableUserId || !deletingAt) {
 		throw new Error('Account could not be marked for deletion.')
 	}
+	try {
+		const env = requireUserMeterEnv(input.env)
+		const marked = await runUserMeterRpc({
+			env,
+			stableUserId,
+			operation: async (meter) => await meter.markDeleting({ deletingAt }),
+		})
+		return {
+			leaseCount: marked.leaseCount,
+			created,
+			deletingAt,
+		}
+	} catch (error) {
+		if (created) {
+			await input.db
+				.prepare(
+					`UPDATE users
+					SET deleting_at = NULL, updated_at = ?
+					WHERE id = ? AND deleting_at = ?`,
+				)
+				.bind(now, input.dbUserId, now)
+				.run()
+		}
+		throw error
+	}
+}
+
+/**
+ * Undo {@link markAccountDeleting} when deletion aborts before cleanup.
+ * Clears D1 `users.deleting_at` first (permanent gate), then the UserMeter
+ * tombstone. Pass `expectedDeletingAt` so a concurrent/retry fence is left
+ * alone. A later write may still fail closed if the DO clear is delayed.
+ */
+export async function abortAccountDeleting(input: {
+	db: D1Database
+	dbUserId: number
+	now?: Date
+	env: UserMeterEnv
+	/**
+	 * When set, clear D1 and UserMeter only if they still hold this exact
+	 * fence. Omit for an operator abort of whatever leftover tombstone exists.
+	 */
+	expectedDeletingAt?: string
+}) {
+	const userRow = await input.db
+		.prepare(
+			`SELECT stable_user_id
+			FROM users
+			WHERE id = ?`,
+		)
+		.bind(input.dbUserId)
+		.first<{ stable_user_id: string }>()
+	const now = utcSqliteTimestamp(input.now ?? new Date())
+	const result = input.expectedDeletingAt
+		? await input.db
+				.prepare(
+					`UPDATE users
+					SET deleting_at = NULL, updated_at = ?
+					WHERE id = ? AND deleting_at = ?`,
+				)
+				.bind(now, input.dbUserId, input.expectedDeletingAt)
+				.run()
+		: await input.db
+				.prepare(
+					`UPDATE users
+					SET deleting_at = NULL, updated_at = ?
+					WHERE id = ?`,
+				)
+				.bind(now, input.dbUserId)
+				.run()
+	if (!input.expectedDeletingAt && (result.meta.changes ?? 0) !== 1) {
+		throw new Error('Account deletion fence could not be cleared.')
+	}
+	const stableUserId = userRow?.stable_user_id
+	if (!stableUserId) {
+		throw new Error('Account deletion fence could not be cleared.')
+	}
 	const env = requireUserMeterEnv(input.env)
-	const marked = await runUserMeterRpc({
+	await runUserMeterRpc({
 		env,
 		stableUserId,
-		operation: async (meter) => await meter.markDeleting({ deletingAt }),
+		operation: async (meter) =>
+			await meter.clearDeleting(
+				input.expectedDeletingAt
+					? { expectedDeletingAt: input.expectedDeletingAt }
+					: undefined,
+			),
 	})
-	return marked.leaseCount
+}
+
+/**
+ * Operator entry for {@link abortAccountDeleting}. Resolves `users.id` from
+ * `stable_user_id` so admin tools never take the numeric D1 join key.
+ */
+export async function abortAccountDeletingByStableUserId(input: {
+	db: D1Database
+	stableUserId: string
+	now?: Date
+	env: UserMeterEnv
+}) {
+	const userRow = await input.db
+		.prepare(
+			`SELECT id
+			FROM users
+			WHERE stable_user_id = ?`,
+		)
+		.bind(input.stableUserId)
+		.first<{ id: number }>()
+	if (!userRow) {
+		throw new Error('User not found.')
+	}
+	await abortAccountDeleting({
+		db: input.db,
+		dbUserId: userRow.id,
+		now: input.now,
+		env: input.env,
+	})
 }
 
 export async function assertAccountWritableDb(

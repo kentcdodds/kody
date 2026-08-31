@@ -97,6 +97,7 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 
 	expect(adminRegistry.capabilityMap.admin_user_list).toBeTruthy()
 	expect(adminRegistry.capabilityMap.admin_user_meter_parity).toBeTruthy()
+	expect(adminRegistry.capabilityMap.admin_account_deletion_abort).toBeTruthy()
 	expect(adminRegistry.capabilityMap.admin_mailbox_maintenance).toBeTruthy()
 	expect(
 		adminRegistry.capabilityMap.admin_user_meter_storage_reconcile,
@@ -106,6 +107,9 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	).toBe(true)
 	expect(regularRegistry.capabilityMap.admin_user_list).toBeUndefined()
 	expect(regularRegistry.capabilityMap.admin_user_meter_parity).toBeUndefined()
+	expect(
+		regularRegistry.capabilityMap.admin_account_deletion_abort,
+	).toBeUndefined()
 	expect(
 		regularRegistry.capabilityMap.admin_user_meter_storage_reconcile,
 	).toBeUndefined()

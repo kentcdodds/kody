@@ -10,6 +10,8 @@ import { durableObjectInstanceInactiveCloseMessage } from '#worker/sentry-option
 import {
 	AccountDeletionInProgressError,
 	AccountWriteLeaseLostError,
+	abortAccountDeleting,
+	abortAccountDeletingByStableUserId,
 	listActiveAccountWriteLeases,
 	markAccountDeleting,
 	repairAccountWriteLease,
@@ -293,7 +295,11 @@ test('env is required: UserMeter authoritative for acquire/held/release with D1 
 			now: new Date('2099-01-01T00:00:00.000Z'),
 			env: meter.env,
 		}),
-	).resolves.toBe(1)
+	).resolves.toEqual({
+		leaseCount: 1,
+		created: true,
+		deletingAt: '2099-01-01 00:00:00',
+	})
 	expect(await meterA.readDeletionState()).toEqual({
 		deletingAt: '2099-01-01 00:00:00',
 	})
@@ -810,7 +816,7 @@ test('DO repair prepare/audit/finalize is idempotent and lease-lost aware', asyn
 })
 
 test('USER_METER failures fail closed (missing binding throws)', async () => {
-	const { db } = createLeaseTestDb()
+	const { sqlite, db } = createLeaseTestDb()
 	const failingEnv = {
 		USER_METER: {
 			idFromName: (name: string) => ({ name, toString: () => name }),
@@ -843,6 +849,9 @@ test('USER_METER failures fail closed (missing binding throws)', async () => {
 			env: failingEnv,
 		}),
 	).rejects.toThrow('do mark failed')
+	expect(
+		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
+	).toEqual({ deleting_at: null })
 
 	await expect(
 		withAccountWriteLease({
@@ -1210,4 +1219,147 @@ test('purge resets lease state but preserves deletingAt tombstone', async () => 
 	await expect(held.operation).rejects.toBeInstanceOf(
 		AccountWriteLeaseLostError,
 	)
+})
+
+test('abortAccountDeleting clears the D1 gate and UserMeter tombstone', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	await markAccountDeleting({
+		db,
+		dbUserId: 1,
+		now: new Date('2099-01-01T00:00:00.000Z'),
+		env: meter.env,
+	})
+	expect(
+		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
+	).toEqual({ deleting_at: '2099-01-01 00:00:00' })
+	expect(await meterA.readDeletionState()).toEqual({
+		deletingAt: '2099-01-01 00:00:00',
+	})
+
+	await abortAccountDeleting({
+		db,
+		dbUserId: 1,
+		now: new Date('2099-01-01T00:01:00.000Z'),
+		env: meter.env,
+	})
+	expect(
+		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
+	).toEqual({ deleting_at: null })
+	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: meter.env,
+			async write() {
+				return 'ok'
+			},
+		}),
+	).resolves.toBe('ok')
+})
+
+test('abortAccountDeletingByStableUserId resolves the user then clears the fence', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	await markAccountDeleting({
+		db,
+		dbUserId: 1,
+		now: new Date('2099-01-01T00:00:00.000Z'),
+		env: meter.env,
+	})
+
+	await abortAccountDeletingByStableUserId({
+		db,
+		stableUserId: 'user-a',
+		now: new Date('2099-01-01T00:02:00.000Z'),
+		env: meter.env,
+	})
+	expect(
+		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
+	).toEqual({ deleting_at: null })
+	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
+})
+
+test('abortAccountDeletingByStableUserId fails closed for an unknown user', async () => {
+	const { db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+
+	await expect(
+		abortAccountDeletingByStableUserId({
+			db,
+			stableUserId: 'missing-user',
+			env: meter.env,
+		}),
+	).rejects.toThrow('User not found.')
+})
+
+test('markAccountDeleting does not roll back a fence another attempt owns', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	await markAccountDeleting({
+		db,
+		dbUserId: 1,
+		now: new Date('2099-01-01T00:00:00.000Z'),
+		env: meter.env,
+	})
+
+	const failingEnv = {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => ({
+				async markDeleting() {
+					throw new Error('do mark failed')
+				},
+			}),
+		},
+	} as unknown as UserMeterEnv
+
+	await expect(
+		markAccountDeleting({
+			db,
+			dbUserId: 1,
+			now: new Date('2099-01-01T00:05:00.000Z'),
+			env: failingEnv,
+		}),
+	).rejects.toThrow('do mark failed')
+	expect(
+		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
+	).toEqual({ deleting_at: '2099-01-01 00:00:00' })
+	expect(
+		await userMeterRpc({
+			env: meter.env,
+			userId: 'user-a',
+		}).readDeletionState(),
+	).toEqual({ deletingAt: '2099-01-01 00:00:00' })
+})
+
+test('abortAccountDeleting leaves a newer fence when expectedDeletingAt does not match', async () => {
+	const { sqlite, db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	await markAccountDeleting({
+		db,
+		dbUserId: 1,
+		now: new Date('2099-01-01T00:00:00.000Z'),
+		env: meter.env,
+	})
+
+	await abortAccountDeleting({
+		db,
+		dbUserId: 1,
+		now: new Date('2099-01-01T00:05:00.000Z'),
+		env: meter.env,
+		expectedDeletingAt: '2098-12-31 00:00:00',
+	})
+	expect(
+		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
+	).toEqual({ deleting_at: '2099-01-01 00:00:00' })
+	expect(await meterA.readDeletionState()).toEqual({
+		deletingAt: '2099-01-01 00:00:00',
+	})
 })

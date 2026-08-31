@@ -1,3 +1,4 @@
+import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
 import {
 	loadRequestFeatureFlags,
@@ -26,12 +27,19 @@ export async function loadSessionInfo(
 	env: Env,
 ): Promise<LoadedSessionResult> {
 	const resolved = await loadResolvedRequestAuth(request, env)
-	// A suspended account's session is treated as signed out everywhere,
-	// including the SSR shell (matching readAuthenticatedAppUser).
-	if (!resolved.user || resolved.user.accountSuspended) {
+	// Suspended and deleting accounts are signed out in the SSR shell
+	// (matching readAuthenticatedAppUser). Deleting also clears the cookie
+	// so /login does not bounce back to /account.
+	if (
+		!resolved.user ||
+		resolved.user.accountSuspended ||
+		resolved.user.accountDeleting
+	) {
 		return {
 			session: null,
-			setCookie: resolved.setCookie,
+			setCookie: resolved.user?.accountDeleting
+				? await destroyAuthCookie(isSecureRequest(request))
+				: resolved.setCookie,
 		}
 	}
 

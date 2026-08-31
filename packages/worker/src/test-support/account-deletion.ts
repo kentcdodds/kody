@@ -93,6 +93,15 @@ export function createTestDb(
 									}))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
+							if (lower === 'select stable_user_id from users where id = ?') {
+								const numericId = Number(params[0])
+								results = (rows.users ?? [])
+									.filter((row) => Number(row['id']) === numericId)
+									.map((row) => ({
+										stable_user_id: row['stable_user_id'],
+									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
 							if (
 								lower ===
 								'select stable_user_id, deleting_at from users where id = ?'
@@ -265,13 +274,41 @@ export function createTestDb(
 							const userId = params[0] as string | number
 							if (
 								lower ===
-								'update users set deleting_at = coalesce(deleting_at, ?), updated_at = ? where id = ?'
+								'update users set deleting_at = ?, updated_at = ? where id = ? and deleting_at is null'
 							) {
 								let changed = 0
 								for (const row of rows.users ?? []) {
 									if (row['id'] !== params[2]) continue
-									row['deleting_at'] ??= params[0]
+									if (row['deleting_at'] != null) continue
+									row['deleting_at'] = params[0]
 									row['updated_at'] = params[1]
+									changed += 1
+								}
+								return { meta: { changes: changed } }
+							}
+							if (
+								lower ===
+								'update users set deleting_at = null, updated_at = ? where id = ? and deleting_at = ?'
+							) {
+								let changed = 0
+								for (const row of rows.users ?? []) {
+									if (row['id'] !== params[1]) continue
+									if (row['deleting_at'] !== params[2]) continue
+									row['deleting_at'] = null
+									row['updated_at'] = params[0]
+									changed += 1
+								}
+								return { meta: { changes: changed } }
+							}
+							if (
+								lower ===
+								'update users set deleting_at = null, updated_at = ? where id = ?'
+							) {
+								let changed = 0
+								for (const row of rows.users ?? []) {
+									if (row['id'] !== params[1]) continue
+									row['deleting_at'] = null
+									row['updated_at'] = params[0]
 									changed += 1
 								}
 								return { meta: { changes: changed } }

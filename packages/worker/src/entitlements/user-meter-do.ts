@@ -153,6 +153,10 @@ export type UserMeterMarkDeletingResult = {
 	leaseCount: number
 }
 
+export type UserMeterClearDeletingResult = {
+	cleared: boolean
+}
+
 export type UserMeterAcquireWriteLeaseResult = {
 	acquired: boolean
 }
@@ -1233,6 +1237,35 @@ class UserMeterBase extends DurableObject<Env> {
 		})
 	}
 
+	/**
+	 * Abort a deletion that has not started cleanup: drop the DO tombstone so
+	 * later writes and a retry can proceed. D1 `users.deleting_at` is cleared
+	 * by the caller first (permanent gate).
+	 */
+	async clearDeleting(input?: {
+		expectedDeletingAt?: string
+	}): Promise<UserMeterClearDeletingResult> {
+		const expectedDeletingAt =
+			input?.expectedDeletingAt == null
+				? undefined
+				: assertDeletionTimestamp(
+						'expectedDeletingAt',
+						input.expectedDeletingAt,
+					)
+		return await this.ctx.blockConcurrencyWhile(async () => {
+			const current = this.readDeletingAt()
+			if (current == null) return { cleared: false }
+			if (expectedDeletingAt != null && current !== expectedDeletingAt) {
+				return { cleared: false }
+			}
+			this.ctx.storage.sql.exec(
+				`DELETE FROM deletion_state WHERE id = ?`,
+				deletionStateRowId,
+			)
+			return { cleared: true }
+		})
+	}
+
 	/** Authoritative lease acquire. */
 	async acquireWriteLease(input: {
 		token: string
@@ -1573,6 +1606,10 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 	markDeleting: (input: {
 		deletingAt: string
 	}) => Promise<UserMeterMarkDeletingResult>
+	/** Drop the deletion tombstone after a pre-cleanup abort. */
+	clearDeleting: (input?: {
+		expectedDeletingAt?: string
+	}) => Promise<UserMeterClearDeletingResult>
 	/** Authoritative lease acquire. */
 	acquireWriteLease: (input: {
 		token: string

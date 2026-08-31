@@ -279,7 +279,16 @@ is the audit log for repairs. ALS nested-lease reuse propagates per
 
 **`markAccountDeleting`:** `COALESCE`s D1 `deleting_at` (idempotent), then calls
 `markDeleting` on the DO (sets/preserves the tombstone). Returns the active DO
-lease count for drain waits.
+lease count for drain waits. If the DO call fails and D1 did not already have a
+tombstone, the D1 fence is rolled back.
+
+**`abortAccountDeleting`:** used when deletion fails before cleanup (active
+writes or incomplete inventory) **and this invocation created the fence**.
+Automatic abort passes `expectedDeletingAt` so D1 and
+`UserMeter.clearDeleting()` only drop a matching tombstone. Cleanup failures and
+retries against an already-fenced account keep the tombstone so a retry can
+finish. Operators restore a leftover fence with `admin_account_deletion_abort`
+(stable user id + audit reason), which resolves `users.id` internally.
 
 **Admin list / repair:** `listActiveAccountWriteLeases(env, userId)` reads DO
 leases via `listWriteLeases` pages — no D1 union. Repair is DO-only and
