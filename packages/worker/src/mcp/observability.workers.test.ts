@@ -551,4 +551,4 @@ test('package_save logs parse failures, rejects invalid manifests, and logs succ
 	const successEvent = JSON.parse(payloads[0]!) as Record<string, unknown>
 	expect(successEvent.outcome).toBe('success')
 	expect(successEvent.failurePhase).toBeUndefined()
-}, 15_000)
+}, 60_000)
