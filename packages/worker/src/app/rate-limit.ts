@@ -101,6 +101,16 @@ export const authRateLimitConfig: RateLimitConfig = {
 }
 
 /**
+ * Guessing a 6-digit TOTP code only works with many attempts, so the second
+ * factor gets a far tighter per-account budget than the per-IP auth ingress
+ * limit (which a distributed attacker can spread across addresses).
+ */
+export const twoFactorVerifyRateLimitConfig: RateLimitConfig = {
+	maxRequests: 5,
+	windowSeconds: 60 * 15,
+}
+
+/**
  * Uses Cloudflare's per-location rate-limit binding on deployed auth ingress,
  * keeping a D1 fallback for local development, tests, and self-hosted configs.
  */
