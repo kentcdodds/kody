@@ -138,7 +138,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				(connection) => connection.name !== name,
 			)
 			if (connections.length === app.connections.length) return [app]
-			if (connections.length === 0 && !isBuiltInApp(app)) return []
+			if (connections.length === 0) return []
 			return [
 				{
 					...app,

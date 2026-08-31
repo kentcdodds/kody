@@ -39,18 +39,14 @@ import {
 	integrationConfigSchema,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import {
-	assertScopesAllowedForPlatformApp,
-	getAvailablePlatformApp,
 	getJoinedIntegration,
 	upsertIntegration,
 	upsertOauthAppWithoutConnection,
-	upsertPlatformIntegration,
 } from '#worker/integrations/service.ts'
 import {
 	persistIntegrationTokens,
 	persistUserOauthAppClientSecret,
 } from '#worker/integrations/credentials.ts'
-import { getPlatformOauthAppClientSecret } from '#worker/integrations/platform-apps.ts'
 import { dispatchIntegrationAuthSucceededSubscriptionEvents } from '#worker/integrations/package-subscriptions.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import {
@@ -306,52 +302,33 @@ async function handleConnectOauthAction(input: {
 }) {
 	const provider = readString(input.body, 'provider')
 	const platformAppSlug = readOptionalString(input.body, 'platformAppSlug')
-	const platformApp = platformAppSlug
-		? await getAvailablePlatformApp({ env: input.env, slug: platformAppSlug })
-		: null
-	if (platformAppSlug && !platformApp) {
+	if (platformAppSlug) {
 		return jsonResponse(
-			{ ok: false, error: 'Platform integration is not available.' },
+			{
+				ok: false,
+				error:
+					'Built-in platform OAuth apps are no longer a connect path. Create your own OAuth app and connect it at /connect/oauth.',
+			},
 			400,
 		)
 	}
-	// Platform lane: endpoints and hosts come from the operator-provisioned
-	// app row, not the request body.
-	const tokenUrl = platformApp
-		? platformApp.tokenUrl
-		: readOptionalString(input.body, 'tokenUrl')
-	const apiBaseUrl = platformApp
-		? platformApp.apiBaseUrl
-		: readOptionalString(input.body, 'apiBaseUrl')
-	const authorizeUrl = platformApp
-		? platformApp.authorizeUrl
-		: readOptionalString(input.body, 'authorizeUrl')
-	const flow = platformApp
-		? platformApp.flow
-		: readOptionalString(input.body, 'flow')
-	const usePkce = platformApp
-		? platformApp.usePkce
-		: readOptionalBoolean(input.body, 'usePkce')
-	const clientId = platformApp
-		? platformApp.clientId
-		: readOptionalString(input.body, 'clientId')
-	const clientSecretSecretName = platformApp
-		? null
-		: readOptionalString(input.body, 'clientSecretSecretName')
+	const tokenUrl = readOptionalString(input.body, 'tokenUrl')
+	const apiBaseUrl = readOptionalString(input.body, 'apiBaseUrl')
+	const authorizeUrl = readOptionalString(input.body, 'authorizeUrl')
+	const flow = readOptionalString(input.body, 'flow')
+	const usePkce = readOptionalBoolean(input.body, 'usePkce')
+	const clientId = readOptionalString(input.body, 'clientId')
+	const clientSecretSecretName = readOptionalString(
+		input.body,
+		'clientSecretSecretName',
+	)
 	const accessTokenSecretName = readString(input.body, 'accessTokenSecretName')
 	const refreshTokenSecretName = readOptionalString(
 		input.body,
 		'refreshTokenSecretName',
 	)
 	const allowedHosts = normalizeAllowedHosts(
-		platformApp
-			? [
-					...platformApp.requiredHosts,
-					...(platformApp.apiBaseUrl
-						? [safeParseHost(platformApp.apiBaseUrl) ?? '']
-						: []),
-				]
-			: readStringArray(input.body, 'allowedHosts'),
+		readStringArray(input.body, 'allowedHosts'),
 	)
 	const scopes = readStringArray(input.body, 'scopes')
 	const scopeSeparator = readRawOptionalString(input.body, 'scopeSeparator')
@@ -404,25 +381,6 @@ async function handleConnectOauthAction(input: {
 			400,
 		)
 	}
-	// Scope validation must precede token persistence: a rejected scope set
-	// must not leave orphan token secrets behind.
-	if (platformApp) {
-		try {
-			assertScopesAllowedForPlatformApp(platformApp, scopes)
-		} catch (error) {
-			return jsonResponse(
-				{
-					ok: false,
-					error:
-						error instanceof Error
-							? error.message
-							: 'Requested scopes are not allowed.',
-				},
-				400,
-			)
-		}
-	}
-
 	const approvedHostsBySecretName = new Map(
 		(
 			await listSecrets({
@@ -465,49 +423,32 @@ async function handleConnectOauthAction(input: {
 			? refreshTokenSecretName
 			: null
 
-	let integrationName: string
-	if (platformApp) {
-		const saved = await upsertPlatformIntegration({
-			env: input.env,
-			userId: input.user.mcpUser.userId,
-			platformAppSlug: platformApp.slug,
-			name: provider,
-			scopes,
-			accessTokenSecretName,
-			refreshTokenSecretName: persistRefreshTokenSecretName,
-		})
-		integrationName = saved.name
-	} else {
-		integrationName = await saveIntegrationConfig({
-			env: input.env,
-			userId: input.user.mcpUser.userId,
-			provider,
+	const integrationName = await saveIntegrationConfig({
+		env: input.env,
+		userId: input.user.mcpUser.userId,
+		provider,
+		tokenUrl,
+		apiBaseUrl,
+		flow: flow === 'confidential' ? 'confidential' : 'pkce',
+		usePkce,
+		clientId,
+		clientSecretSecretName,
+		accessTokenSecretName,
+		refreshTokenSecretName: persistRefreshTokenSecretName,
+		tokenExchangeStyle: resolveTokenExchangeStyle({
 			tokenUrl,
-			apiBaseUrl,
-			flow: flow === 'confidential' ? 'confidential' : 'pkce',
-			usePkce,
-			clientId,
-			clientSecretSecretName,
-			accessTokenSecretName,
-			refreshTokenSecretName: persistRefreshTokenSecretName,
-			tokenExchangeStyle: resolveTokenExchangeStyle({
-				tokenUrl,
-				tokenExchangeStyle: readOptionalString(
-					input.body,
-					'tokenExchangeStyle',
-				),
-			}),
-			allowedHosts,
-			authorization: authorizeUrl
-				? {
-						authorizeUrl,
-						scopes,
-						scopeSeparator,
-						extraAuthorizeParams,
-					}
-				: null,
-		})
-	}
+			tokenExchangeStyle: readOptionalString(input.body, 'tokenExchangeStyle'),
+		}),
+		allowedHosts,
+		authorization: authorizeUrl
+			? {
+					authorizeUrl,
+					scopes,
+					scopeSeparator,
+					extraAuthorizeParams,
+				}
+			: null,
+	})
 	await persistIntegrationTokens({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
@@ -520,7 +461,7 @@ async function handleConnectOauthAction(input: {
 		refreshTokenSecretName: persistRefreshTokenSecretName,
 		descriptionPrefix: provider,
 	})
-	if (!platformApp && clientSecretSecretName) {
+	if (clientSecretSecretName) {
 		const resolvedClientSecret = await resolveSecret({
 			env: input.env,
 			userId: input.user.mcpUser.userId,
@@ -597,11 +538,11 @@ async function handleConnectOauthAction(input: {
 		userId: input.user.mcpUser.userId,
 		integration: {
 			name: integrationName,
-			lane: platformApp ? 'platform' : 'user',
+			lane: 'user',
 			account_label: null,
 			description: null,
-			provider: platformApp?.provider ?? null,
-			platform_app_slug: platformApp?.slug ?? null,
+			provider: null,
+			platform_app_slug: null,
 			scopes,
 			connected_at: null,
 			token_refreshed_at: null,
@@ -725,115 +666,71 @@ async function handleOAuthExchangeAction(input: {
 	if (!paramsRaw) {
 		return jsonResponse({ ok: false, error: 'Token params are required.' }, 400)
 	}
-	const platformAppSlug = readOptionalString(input.body, 'platformAppSlug')
+	if (readOptionalString(input.body, 'platformAppSlug')) {
+		return jsonResponse(
+			{
+				ok: false,
+				error:
+					'Built-in platform OAuth apps are no longer a connect path. Create your own OAuth app and connect it at /connect/oauth.',
+			},
+			400,
+		)
+	}
 
-	// Platform lane: every exchange input comes from the operator-provisioned
-	// app row, never from the request body, so a caller cannot point the
-	// decrypted shared client secret at an arbitrary token URL.
-	let tokenUrl: string | null
-	let flow: string
-	let tokenExchangeStyle: TokenExchangeStyle
+	const tokenUrl = readOptionalString(input.body, 'tokenUrl')
+	const flow = readOptionalString(input.body, 'flow') ?? 'pkce'
+	const clientSecretSecretName = readOptionalString(
+		input.body,
+		'clientSecretSecretName',
+	)
+	const allowedHosts = normalizeAllowedHosts(
+		readStringArray(input.body, 'allowedHosts'),
+	)
 	let clientSecret: string | null = null
-	let platformClientId: string | null = null
-	if (platformAppSlug) {
-		const platformApp = await getAvailablePlatformApp({
-			env: input.env,
-			slug: platformAppSlug,
-		})
-		if (!platformApp) {
-			return jsonResponse(
-				{ ok: false, error: 'Platform integration is not available.' },
-				400,
-			)
-		}
-		tokenUrl = platformApp.tokenUrl
-		flow = platformApp.flow
-		platformClientId = platformApp.clientId
-		tokenExchangeStyle = resolveTokenExchangeStyle({
-			tokenUrl: platformApp.tokenUrl,
-			tokenExchangeStyle: platformApp.tokenExchangeStyle,
-		})
-		if (platformApp.flow === 'confidential') {
-			clientSecret = await getPlatformOauthAppClientSecret({
-				db: input.env.APP_DB,
-				env: input.env,
-				slug: platformApp.slug,
-			})
-			if (!clientSecret) {
-				return jsonResponse(
-					{ ok: false, error: 'Platform client secret is not configured.' },
-					500,
-				)
-			}
-		}
-	} else {
-		tokenUrl = readOptionalString(input.body, 'tokenUrl')
-		flow = readOptionalString(input.body, 'flow') ?? 'pkce'
-		const clientSecretSecretName = readOptionalString(
-			input.body,
-			'clientSecretSecretName',
-		)
-		const allowedHosts = normalizeAllowedHosts(
-			readStringArray(input.body, 'allowedHosts'),
-		)
 
-		if (!tokenUrl) {
-			return jsonResponse({ ok: false, error: 'Token URL is required.' }, 400)
-		}
-		if (flow !== 'pkce' && flow !== 'confidential') {
-			return jsonResponse({ ok: false, error: 'Invalid OAuth flow.' }, 400)
-		}
-		const tokenHost = safeParseHost(tokenUrl)
-		if (!tokenHost) {
-			return jsonResponse({ ok: false, error: 'Token URL is invalid.' }, 400)
-		}
-		if (allowedHosts.length > 0 && !allowedHosts.includes(tokenHost)) {
-			return jsonResponse(
-				{ ok: false, error: 'Token host is not in allowed hosts.' },
-				400,
-			)
-		}
-
-		tokenExchangeStyle = resolveTokenExchangeStyle({
-			tokenUrl,
-			tokenExchangeStyle: readOptionalString(input.body, 'tokenExchangeStyle'),
-		})
-
-		if (flow === 'confidential') {
-			if (!clientSecretSecretName) {
-				return jsonResponse(
-					{ ok: false, error: 'Client secret name is required.' },
-					400,
-				)
-			}
-			const resolved = await resolveSecret({
-				env: input.env,
-				userId: input.user.mcpUser.userId,
-				name: clientSecretSecretName,
-				scope: 'user',
-				storageContext: { sessionId: null, appId: null, packageId: null },
-			})
-			if (!resolved.found || !resolved.value) {
-				return jsonResponse(
-					{ ok: false, error: 'Client secret not found.' },
-					400,
-				)
-			}
-			clientSecret = resolved.value
-		}
+	if (!tokenUrl) {
+		return jsonResponse({ ok: false, error: 'Token URL is required.' }, 400)
 	}
 	if (flow !== 'pkce' && flow !== 'confidential') {
 		return jsonResponse({ ok: false, error: 'Invalid OAuth flow.' }, 400)
 	}
+	const tokenHost = safeParseHost(tokenUrl)
+	if (!tokenHost) {
+		return jsonResponse({ ok: false, error: 'Token URL is invalid.' }, 400)
+	}
+	if (allowedHosts.length > 0 && !allowedHosts.includes(tokenHost)) {
+		return jsonResponse(
+			{ ok: false, error: 'Token host is not in allowed hosts.' },
+			400,
+		)
+	}
+
+	const tokenExchangeStyle = resolveTokenExchangeStyle({
+		tokenUrl,
+		tokenExchangeStyle: readOptionalString(input.body, 'tokenExchangeStyle'),
+	})
+
+	if (flow === 'confidential') {
+		if (!clientSecretSecretName) {
+			return jsonResponse(
+				{ ok: false, error: 'Client secret name is required.' },
+				400,
+			)
+		}
+		const resolved = await resolveSecret({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			name: clientSecretSecretName,
+			scope: 'user',
+			storageContext: { sessionId: null, appId: null, packageId: null },
+		})
+		if (!resolved.found || !resolved.value) {
+			return jsonResponse({ ok: false, error: 'Client secret not found.' }, 400)
+		}
+		clientSecret = resolved.value
+	}
 
 	const params = new URLSearchParams(paramsRaw)
-	if (platformClientId) {
-		// Every credential in a platform exchange comes from the app row: pin
-		// the client id and drop any caller-supplied client_secret so it can
-		// never reach the provider.
-		params.set('client_id', platformClientId)
-		params.delete('client_secret')
-	}
 
 	let exchangeRequest: { headers: Record<string, string>; body: string }
 	try {

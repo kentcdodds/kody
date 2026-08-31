@@ -240,11 +240,9 @@ export function renderConnectStep(input: {
 		typeof renderReplaceConfirmation
 	>[0]['existingConnection']
 	replaceConfirmed: boolean
-	renameInput: string
 	submitting: boolean
 	offeredScopeMenu: Array<string>
 	onConfirmReplace: () => void
-	onRenameInput: (value: string) => void
 	onConnect: () => void
 	onToggleScope: (scope: string) => void
 	wouldReplace: boolean
@@ -255,10 +253,8 @@ export function renderConnectStep(input: {
 				config: input.config,
 				existingConnection: input.existingConnection,
 				replaceConfirmed: input.replaceConfirmed,
-				renameInput: input.renameInput,
 				submitting: input.submitting,
 				onConfirm: input.onConfirmReplace,
-				onRenameInput: input.onRenameInput,
 			})}
 			<p mix={css({ margin: 0, color: colors.text })}>
 				Connecting authorizes your agent — and any code you run or install — to

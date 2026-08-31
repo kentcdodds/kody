@@ -70,5 +70,8 @@ test('oauth scope helpers unique, order the menu, and steer reconnect prompts', 
 		allowedScopes: ['openid', 'email'],
 	})
 	expect(platform).toContain('Do not call integration_save')
+	expect(platform).toContain('being retired')
+	expect(platform).toContain('bring-your-own OAuth app')
 	expect(platform).toContain('/connect/oauth?provider=google')
+	expect(platform).not.toContain('operator-verified menu')
 })

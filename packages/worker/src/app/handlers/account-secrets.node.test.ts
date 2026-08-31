@@ -1522,63 +1522,15 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 	)
 })
 
-const githubPlatformApp = {
-	slug: 'github',
-	provider: 'github',
-	label: 'GitHub',
-	clientId: 'platform-github-client-id',
-	hasClientSecret: true,
-	tokenUrl: 'https://github.com/login/oauth/access_token',
-	authorizeUrl: 'https://github.com/login/oauth/authorize',
-	apiBaseUrl: 'https://api.github.com',
-	flow: 'confidential' as const,
-	usePkce: null,
-	tokenExchangeStyle: null,
-	scopeSeparator: null,
-	extraAuthorizeParams: {},
-	allowedScopes: ['repo', 'read:user'],
-	defaultScopes: ['read:user'],
-	requiredHosts: ['api.github.com'],
-	enabled: true,
-	createdAt: new Date(0).toISOString(),
-	updatedAt: new Date(0).toISOString(),
-}
-
-test('platform-lane oauth exchange and connect ignore spoofed body fields and enforce scope policy', async () => {
+test('platform-lane oauth exchange and connect are rejected', async () => {
 	const fetchMock = vi.fn()
 	vi.stubGlobal('fetch', fetchMock)
 	const handler = createAccountSecretsApiHandler(createEnv())
-
-	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(null)
-	const unknownExchange = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'oauth_exchange',
-				platformAppSlug: 'unknown',
-				params: 'grant_type=authorization_code',
-			}),
-		}),
-		params: {},
-	} as never)
-	expect(unknownExchange.status).toBe(400)
-	await expect(unknownExchange.json()).resolves.toEqual({
+	const retired = {
 		ok: false,
-		error: 'Platform integration is not available.',
-	})
-	expect(fetchMock).not.toHaveBeenCalled()
-
-	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(githubPlatformApp)
-	mockModule.getPlatformOauthAppClientSecret.mockResolvedValueOnce(
-		'platform-github-client-secret-value',
-	)
-	fetchMock.mockResolvedValueOnce(
-		new Response(JSON.stringify({ access_token: 'gh-access' }), {
-			status: 200,
-			headers: { 'Content-Type': 'application/json' },
-		}),
-	)
+		error:
+			'Built-in platform OAuth apps are no longer a connect path. Create your own OAuth app and connect it at /connect/oauth.',
+	}
 
 	const exchangeResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
@@ -1587,39 +1539,14 @@ test('platform-lane oauth exchange and connect ignore spoofed body fields and en
 			body: JSON.stringify({
 				action: 'oauth_exchange',
 				platformAppSlug: 'github',
-				tokenUrl: 'https://evil.example.com/token',
-				flow: 'pkce',
-				clientSecretSecretName: 'attackerSecret',
-				params: new URLSearchParams({
-					grant_type: 'authorization_code',
-					client_id: 'spoofed-client-id',
-					code: 'auth-code',
-					redirect_uri: 'https://example.com/connect/oauth',
-				}).toString(),
+				params: 'grant_type=authorization_code',
 			}),
 		}),
 		params: {},
 	} as never)
-	expect(exchangeResponse.status).toBe(200)
-	await expect(exchangeResponse.json()).resolves.toMatchObject({
-		access_token: 'gh-access',
-	})
-	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
-	expect(fetchMock).toHaveBeenCalledTimes(1)
-	expect(fetchMock.mock.calls[0]?.[0]).toBe(
-		'https://github.com/login/oauth/access_token',
-	)
-	const exchangeRequest = fetchMock.mock.calls[0]?.[1] as RequestInit
-	const body = new URLSearchParams(String(exchangeRequest.body))
-	expect(body.get('client_secret')).toBe('platform-github-client-secret-value')
-	expect(body.get('client_id')).toBe('platform-github-client-id')
-
-	vi.unstubAllGlobals()
-
-	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(githubPlatformApp)
-	mockModule.saveSecret.mockClear()
-	mockModule.upsertPlatformIntegration.mockClear()
-	mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
+	expect(exchangeResponse.status).toBe(400)
+	await expect(exchangeResponse.json()).resolves.toEqual(retired)
+	expect(fetchMock).not.toHaveBeenCalled()
 
 	const connectResponse = await handler.handler({
 		request: new Request('https://example.com/account/secrets.json', {
@@ -1631,85 +1558,15 @@ test('platform-lane oauth exchange and connect ignore spoofed body fields and en
 				platformAppSlug: 'github',
 				scopes: ['read:user'],
 				accessTokenSecretName: 'githubAccessToken',
-				refreshTokenSecretName: 'githubRefreshToken',
-				tokenPayload: {
-					access_token: 'gh-access-token',
-					refresh_token: 'gh-refresh-token',
-				},
-			}),
-		}),
-		params: {},
-	} as never)
-	expect(connectResponse.status).toBe(200)
-	await expect(connectResponse.json()).resolves.toMatchObject({
-		ok: true,
-		accessTokenSaved: true,
-		refreshTokenSaved: true,
-		integrationName: 'github',
-	})
-	expect(mockModule.upsertPlatformIntegration).toHaveBeenCalledWith(
-		expect.objectContaining({
-			platformAppSlug: 'github',
-			name: 'github',
-			scopes: ['read:user'],
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: 'githubRefreshToken',
-		}),
-	)
-	expect(
-		mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents,
-	).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 'stable-user-1',
-			source: 'oauth_connect',
-			integration: expect.objectContaining({
-				name: 'github',
-				lane: 'platform',
-				platform_app_slug: 'github',
-			}),
-		}),
-	)
-	expect(mockModule.upsertIntegration).not.toHaveBeenCalledWith(
-		expect.objectContaining({
-			config: expect.objectContaining({ name: 'github' }),
-		}),
-	)
-	expect(mockModule.saveSecret).toHaveBeenCalledWith(
-		expect.objectContaining({
-			name: 'githubAccessToken',
-			value: 'gh-access-token',
-			scope: 'user',
-		}),
-	)
-
-	mockModule.getAvailablePlatformApp.mockResolvedValueOnce(githubPlatformApp)
-	mockModule.saveSecret.mockClear()
-	mockModule.upsertPlatformIntegration.mockClear()
-	mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
-
-	const rejectedScopes = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'connect_oauth',
-				provider: 'github',
-				platformAppSlug: 'github',
-				scopes: ['admin:org'],
-				accessTokenSecretName: 'githubAccessToken',
 				tokenPayload: { access_token: 'gh-access-token' },
 			}),
 		}),
 		params: {},
 	} as never)
-	expect(rejectedScopes.status).toBe(400)
-	await expect(rejectedScopes.json()).resolves.toMatchObject({
-		ok: false,
-		error: expect.stringContaining('Scopes not allowed'),
-	})
-	expect(mockModule.saveSecret).not.toHaveBeenCalled()
+	expect(connectResponse.status).toBe(400)
+	await expect(connectResponse.json()).resolves.toEqual(retired)
 	expect(mockModule.upsertPlatformIntegration).not.toHaveBeenCalled()
-	expect(
-		mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents,
-	).not.toHaveBeenCalled()
+	expect(mockModule.saveSecret).not.toHaveBeenCalled()
+
+	vi.unstubAllGlobals()
 })

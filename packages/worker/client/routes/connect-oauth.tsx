@@ -94,13 +94,10 @@ export function ConnectOauthRoute(handle: Handle) {
 	let hasConfigError = false
 	let connectOauthHandled = false
 	let hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
-	/** An enabled built-in exists that this user-lane connection is not using. */
-	let builtInAvailable = false
 	/** The connection currently stored under the target name, when any. */
 	let existingConnection: ConnectOauthExistingConnection | null = null
 	/** The user explicitly confirmed replacing a different-app connection. */
 	let replaceConfirmed = false
-	let renameInput = ''
 	let chooserOptions: Array<ConnectOauthChooserOption> = []
 	let chooserFilter = ''
 	let requestedProvider: string | null = null
@@ -117,9 +114,9 @@ export function ConnectOauthRoute(handle: Handle) {
 	let routeDataApplied = false
 	/**
 	 * Normalized pathname+search the current resolution state belongs to.
-	 * SPA navigations to a different connect URL (another provider, a
-	 * platform lane switch) reset and re-resolve instead of keeping the
-	 * previous provider's config on screen.
+	 * SPA navigations to a different connect URL (another provider)
+	 * reset and re-resolve instead of keeping the previous provider's
+	 * config on screen.
 	 */
 	let resolvedHref: string | null = null
 	/** Server-computed redirect URI so SSR renders the card `window` builds. */
@@ -137,11 +134,9 @@ export function ConnectOauthRoute(handle: Handle) {
 		config = null
 		existingIntegrationConfig = null
 		existingConnection = null
-		builtInAvailable = false
 		hasStoredClientSecret = false
 		hasConfigError = false
 		replaceConfirmed = false
-		renameInput = ''
 		chooserOptions = []
 		chooserFilter = ''
 		requestedProvider = null
@@ -224,7 +219,6 @@ export function ConnectOauthRoute(handle: Handle) {
 			.json()
 			.catch(() => null)) as AccountIntegrationDetailLoaderData | null
 		if (!response.ok || payload?.ok !== true) return null
-		builtInAvailable = payload.builtInAvailable ?? false
 		existingConnection = payload.existingConnection ?? null
 		hasStoredClientSecret = payload.hasStoredClientSecret === true
 		if (!payload.integration) return null
@@ -481,7 +475,6 @@ export function ConnectOauthRoute(handle: Handle) {
 		if (!routeData) return
 		routeDataApplied = true
 		ssrRedirectUri = routeData.redirectUri ?? null
-		builtInAvailable = routeData.builtInAvailable ?? false
 		existingConnection = routeData.existingConnection ?? null
 		chooserOptions = routeData.chooser?.options ?? []
 		if (url.searchParams.get('code') || url.searchParams.get('error')) {
@@ -745,15 +738,10 @@ export function ConnectOauthRoute(handle: Handle) {
 							config: currentConfig,
 							existingConnection,
 							replaceConfirmed,
-							renameInput,
 							submitting,
 							offeredScopeMenu,
 							onConfirmReplace: () => {
 								replaceConfirmed = true
-								update()
-							},
-							onRenameInput: (value) => {
-								renameInput = value
 								update()
 							},
 							onConnect: () => {
@@ -786,7 +774,6 @@ export function ConnectOauthRoute(handle: Handle) {
 						})
 					: renderAdvancedDetails({
 							config: currentConfig,
-							builtInAvailable,
 							existingIntegrationConfig,
 						})}
 			</section>

@@ -9,7 +9,6 @@ import {
 } from '#worker/integrations/service.ts'
 import { upsertPlatformOauthApp } from '#worker/integrations/platform-apps.ts'
 import {
-	hasAlternativeBuiltInApp,
 	loadAccountIntegrationByName,
 	loadAccountIntegrationsData,
 	loadAccountOauthAppBySlug,
@@ -149,7 +148,7 @@ test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-sl
 	})
 })
 
-test('endpoint-incomplete user records defer to an enabled built-in of the same name', async () => {
+test('connect lookup never prefills a built-in and converts platform reconnects to BYO', async () => {
 	const { env } = createEnv()
 	const userId = 'user-platform-priority'
 	const platformEnv = {
@@ -171,39 +170,36 @@ test('endpoint-incomplete user records defer to an enabled built-in of the same 
 		},
 	})
 
-	// API-use-only connection (the shape agents save: token endpoint and API
-	// base, no authorize URL). It cannot drive the connect page, so the
-	// built-in wins.
-	await upsertIntegration({
+	expect(
+		await loadAccountIntegrationByName(env, fakeUser(userId), 'github'),
+	).toBeNull()
+
+	await upsertPlatformIntegration({
 		env,
 		userId,
-		config: {
-			name: 'github',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			apiBaseUrl: 'https://api.github.com',
-			flow: 'confidential',
-			clientId: 'user-github-client',
-			clientSecretSecretName: 'githubClientSecret',
-			accessTokenSecretName: 'githubAccessToken',
-			refreshTokenSecretName: null,
-			requiredHosts: ['api.github.com'],
-		},
+		platformAppSlug: 'github',
+		name: 'github',
+		scopes: ['read:user'],
+		accessTokenSecretName: 'githubAccessToken',
 	})
-	const deferred = await loadAccountIntegrationByName(
+	const platformReconnect = await loadAccountIntegrationByName(
 		env,
 		fakeUser(userId),
 		'github',
 	)
-	expect(deferred).toMatchObject({
+	expect(platformReconnect).toMatchObject({
 		name: 'github',
-		platform: true,
-		clientId: 'platform-github-client',
+		platform: false,
+		clientId: '',
 		authorization: {
 			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			scopes: ['read:user'],
 		},
 	})
+	expect(
+		await loadExistingConnectionSummary(env, fakeUser(userId), 'github'),
+	).toEqual({ lane: 'platform', appSlug: 'github' })
 
-	// A complete bring-your-own record still wins over the built-in.
 	await upsertIntegration({
 		env,
 		userId,
@@ -232,73 +228,19 @@ test('endpoint-incomplete user records defer to an enabled built-in of the same 
 	)
 	expect(byoWins?.clientId).toBe('user-github-client')
 	expect(byoWins?.platform ?? false).toBe(false)
-	// The winning BYO record shadows an enabled built-in — the connect page
-	// surfaces the alternative lane instead of hiding it.
-	expect(await hasAlternativeBuiltInApp(env, 'github', byoWins)).toBe(true)
 
-	// Explicit built-in intent overrides the BYO win.
-	const forced = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'github',
-		{ preferPlatform: true },
-	)
-	expect(forced?.platform).toBe(true)
-	expect(forced?.clientId).toBe('platform-github-client')
-	expect(await hasAlternativeBuiltInApp(env, 'github', forced)).toBe(false)
-
-	// platform=<slug>: the built-in connects under a different name so the
-	// existing connection survives (rename-instead-of-replace).
-	const renamed = await loadAccountIntegrationByName(
+	const familyPrefill = await loadAccountIntegrationByName(
 		env,
 		fakeUser(userId),
 		'github-2',
-		{ platformSlug: 'github' },
 	)
-	expect(renamed).toMatchObject({
+	expect(familyPrefill).toMatchObject({
 		name: 'github-2',
 		appSlug: 'github',
-		platform: true,
-		accessTokenSecretName: 'github-2AccessToken',
+		clientId: 'user-github-client',
 	})
+	expect(familyPrefill?.platform ?? false).toBe(false)
 
-	// The existing-connection summary powers the replace confirmation.
-	expect(
-		await loadExistingConnectionSummary(env, fakeUser(userId), 'github'),
-	).toEqual({ lane: 'user', appSlug: 'github' })
-	expect(
-		await loadExistingConnectionSummary(env, fakeUser(userId), 'github-2'),
-	).toBeNull()
-
-	// Exact platform slug beats the fuzzy provider-family prefill: with a
-	// built-in named github-platform, a user who owns a github app must
-	// still land on the built-in (the family matcher would otherwise treat
-	// github-platform as a github multi-account name).
-	await upsertPlatformOauthApp({
-		db: env.APP_DB,
-		env: platformEnv,
-		app: {
-			slug: 'github-platform',
-			clientId: 'platform-suffixed-client',
-			clientSecret: 'platform-suffixed-secret',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
-			flow: 'confidential',
-		},
-	})
-	const suffixed = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'github-platform',
-	)
-	expect(suffixed).toMatchObject({
-		name: 'github-platform',
-		platform: true,
-		clientId: 'platform-suffixed-client',
-	})
-
-	// No built-in for the slug: the incomplete record still returns so the
-	// setup form can prefill what exists.
 	await upsertIntegration({
 		env,
 		userId,
@@ -311,13 +253,13 @@ test('endpoint-incomplete user records defer to an enabled built-in of the same 
 			refreshTokenSecretName: null,
 		},
 	})
-	const noFallback = await loadAccountIntegrationByName(
+	const incomplete = await loadAccountIntegrationByName(
 		env,
 		fakeUser(userId),
 		'linear',
 	)
-	expect(noFallback?.clientId).toBe('user-linear-client')
-	expect(noFallback?.platform ?? false).toBe(false)
+	expect(incomplete?.clientId).toBe('user-linear-client')
+	expect(incomplete?.platform ?? false).toBe(false)
 
 	const pinnedByo = await loadAccountIntegrationByName(
 		env,
@@ -332,8 +274,6 @@ test('endpoint-incomplete user records defer to an enabled built-in of the same 
 	})
 	expect(pinnedByo?.platform ?? false).toBe(false)
 
-	// An incomplete pinned app must not fall back to a built-in that
-	// happens to share the typed connection name.
 	const pinnedIncomplete = await loadAccountIntegrationByName(
 		env,
 		fakeUser(userId),

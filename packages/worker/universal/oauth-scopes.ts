@@ -80,25 +80,18 @@ export function buildChangeIntegrationScopesPrompt(input: {
 }): string {
 	const name = input.name.trim() || 'this'
 	const current = uniqueOauthScopes(input.currentScopes)
-	const allowed = uniqueOauthScopes(input.allowedScopes)
 	const currentList =
 		current.length > 0
 			? current.map((scope) => `\`${scope}\``).join(', ')
 			: 'none'
 	const reconnectHref = `/connect/oauth?provider=${encodeURIComponent(name)}`
 	if (input.platform) {
-		const allowedList =
-			allowed.length > 0
-				? allowed.map((scope) => `\`${scope}\``).join(', ')
-				: 'none'
 		return [
-			`The "${name}" connection is a built-in (platform) integration.`,
+			`The "${name}" connection is a built-in (platform) integration that is being retired.`,
 			`It currently requests these scopes: ${currentList}.`,
-			`The operator-verified menu is: ${allowedList}.`,
 			`Do not call integration_save to change authorization.scopes on a built-in — that capability refuses platform connections.`,
-			`If the access I need is already on that menu, send me to ${reconnectHref} so I can check those scopes and reconnect.`,
-			`If it is outside the menu, explain that I need a bring-your-own OAuth app and give me a complete /connect/oauth URL after loading the oauth and provider_* guides.`,
-			`Make clear that updating stored scopes does not enlarge the current token until I reconnect.`,
+			`To change access or reconnect, set up a bring-your-own OAuth app at ${reconnectHref} (or a complete /connect/oauth URL after loading the oauth and provider_* guides).`,
+			`Reconnecting replaces this built-in connection with the user's own app. Existing tokens stay valid until then.`,
 		].join(' ')
 	}
 	return [

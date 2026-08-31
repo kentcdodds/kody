@@ -259,8 +259,9 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 	})
 	expect(platformGoogle).toMatchObject({
 		scopes: ['openid', 'email'],
-		platformAppSlug: 'google',
-		platformAllowedScopes: ['openid', 'email', 'profile'],
+		platformAppSlug: null,
+		platformAllowedScopes: [],
+		clientId: '',
 	})
 
 	const spotifyConfig = mergeConnectOauthConfig({

@@ -381,7 +381,6 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 						<a
 							href={buildConnectOauthHref({
 								name: selectedApp.slug,
-								platform: isBuiltInApp(selectedApp),
 								appSlug: selectedApp.slug,
 							})}
 							mix={css({
@@ -411,8 +410,9 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 								: 'Needs setup'
 							const connectHref = buildConnectOauthHref({
 								name: connectionRef.name,
-								platform: connection?.platform ?? isBuiltInApp(selectedApp),
-								appSlug: connection?.appSlug ?? selectedApp.slug,
+								appSlug: connection?.platform
+									? undefined
+									: (connection?.appSlug ?? selectedApp.slug),
 							})
 							const disconnectCheck = getDisconnectCheck(connectionRef.name)
 							const confirmingDisconnect = disconnectCheck.doubleCheck
@@ -542,7 +542,6 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 						})}
 						<AddAccountForm
 							slug={selectedApp.slug}
-							platform={isBuiltInApp(selectedApp)}
 							existingNames={[
 								...integrations.map((entry) => entry.name),
 								...apps.map((app) => app.slug),
