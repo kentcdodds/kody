@@ -1,6 +1,7 @@
 import { parseBlogPostMarkdown, type BlogPost } from './parse-frontmatter.ts'
 import everyInstallIsAForkYouOwn from './posts/every-install-is-a-fork-you-own.md'
 import gatewaysConnectHomesAccumulate from './posts/gateways-connect-homes-accumulate.md'
+import howToTurnAgentWorkIntoSoftwareYouOwn from './posts/how-to-turn-agent-work-into-software-you-own.md'
 import selfServiceMeansOwnership from './posts/self-service-means-ownership.md'
 import theAssistantThatCantLeakYourKeychain from './posts/the-assistant-that-cant-leak-your-keychain.md'
 import theAutomationsYouNeverBuilt from './posts/the-automations-you-never-built.md'
@@ -41,6 +42,10 @@ const postSources: Array<{ slug: string; raw: string }> = [
 	{
 		slug: 'openclaw-2-needs-a-home',
 		raw: openclaw2NeedsAHome,
+	},
+	{
+		slug: 'how-to-turn-agent-work-into-software-you-own',
+		raw: howToTurnAgentWorkIntoSoftwareYouOwn,
 	},
 ]
 
