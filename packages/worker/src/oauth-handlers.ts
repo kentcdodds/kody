@@ -768,7 +768,10 @@ export async function handleAuthorizeRequest(
 
 	const requestIp = getRequestIp(request) ?? undefined
 	const helpers = getOAuthHelpers(env)
-	const formData = await request.formData()
+	const formData = await request.formData().catch(() => null)
+	if (!formData) {
+		return respondAuthorizeError(request, 'Invalid form data')
+	}
 	const decision = String(formData.get('decision') ?? 'approve')
 	if (decision === 'reset-client') {
 		return handleResetClientRequest(request, env, helpers, requestIp)
