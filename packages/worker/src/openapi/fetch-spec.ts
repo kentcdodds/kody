@@ -3,10 +3,29 @@ import {
 	BoundedBodyTooLargeError,
 	readBoundedBody,
 } from '#mcp/capabilities/integrations/read-bounded-body.ts'
+import {
+	executeGatewayFetch,
+	type FetchGatewayEnv,
+	type FetchGatewayProps,
+} from '#mcp/fetch-gateway.ts'
 
 export const defaultOpenApiSpecMaxBytes = 4_000_000
 export const defaultOpenApiSpecTimeoutMs = 30_000
 const maxRedirectHops = 5
+
+/**
+ * Spec fetches leave through the same gateway as every other outbound
+ * request so they consume the caller's `outbound_fetches_per_day`
+ * entitlement and land in usage metering. There is deliberately no direct
+ * `fetch` path here: the gateway is the only egress for user-supplied URLs.
+ */
+export type OpenApiSpecFetchGateway = {
+	env: FetchGatewayEnv
+	props: FetchGatewayProps
+	/** Test seam; the gateway defaults to the global `fetch`. */
+	globalFetch?: typeof fetch
+	waitUntil?: (promise: Promise<unknown>) => void
+}
 
 function assertHttpsSpecUrl(specUrl: string): URL {
 	let url: URL
@@ -37,24 +56,31 @@ function isRedirectStatus(status: number): boolean {
 
 export async function fetchOpenApiSpecText(input: {
 	specUrl: string
+	gateway: OpenApiSpecFetchGateway
 	maxBytes?: number
 	timeoutMs?: number
-	fetchImpl?: typeof fetch
 }): Promise<string> {
 	let url = assertHttpsSpecUrl(input.specUrl)
 	const maxBytes = input.maxBytes ?? defaultOpenApiSpecMaxBytes
 	const timeoutMs = input.timeoutMs ?? defaultOpenApiSpecTimeoutMs
-	const fetchImpl = input.fetchImpl ?? fetch
 
 	let response: Response
+	let redirected = false
 	try {
 		for (let hop = 0; ; hop += 1) {
-			response = await fetchImpl(url.toString(), {
-				headers: {
-					Accept: 'application/json, application/yaml, text/yaml, */*',
-				},
-				redirect: 'manual',
-				signal: AbortSignal.timeout(timeoutMs),
+			response = await executeGatewayFetch({
+				env: input.gateway.env,
+				props: input.gateway.props,
+				globalFetch: input.gateway.globalFetch,
+				waitUntil: input.gateway.waitUntil,
+				timeoutMs,
+				request: new Request(url.toString(), {
+					headers: {
+						Accept: 'application/json, application/yaml, text/yaml, */*',
+					},
+					redirect: 'manual',
+					signal: AbortSignal.timeout(timeoutMs),
+				}),
 			})
 
 			if (!isRedirectStatus(response.status)) {
@@ -78,6 +104,7 @@ export async function fetchOpenApiSpecText(input: {
 
 			const nextUrl = new URL(location, url)
 			url = assertHttpsSpecUrl(nextUrl.toString())
+			redirected = true
 		}
 	} catch (cause) {
 		if (
@@ -91,8 +118,13 @@ export async function fetchOpenApiSpecText(input: {
 	}
 
 	if (!response.ok) {
+		// The redirected-to URL stays out of the message: echoing it back
+		// turns the fetch into a probe that reports where a redirect chain
+		// actually landed.
 		throw new Error(
-			`OpenAPI spec fetch failed: HTTP ${response.status} for ${url.toString()}`,
+			`OpenAPI spec fetch failed: HTTP ${response.status}${
+				redirected ? ' (after redirect)' : ` for ${input.specUrl}`
+			}`,
 		)
 	}
 

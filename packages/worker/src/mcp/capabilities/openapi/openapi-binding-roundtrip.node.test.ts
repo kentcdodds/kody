@@ -5,6 +5,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { openapiBindingDeleteCapability } from './openapi-binding-delete.ts'
 import { openapiBindingGetCapability } from './openapi-binding-get.ts'
 import { openapiBindingListCapability } from './openapi-binding-list.ts'
@@ -23,9 +24,15 @@ function applyAllMigrations(db: DatabaseSync) {
 function createEnv() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite)
+	// Spec fetches leave through the fetch gateway, which consumes the
+	// caller's daily outbound-fetch entitlement from USER_METER.
+	const userMeter = createInMemoryUserMeterEnv()
 	return {
 		sqlite,
-		env: { APP_DB: createD1FromSqlite(sqlite) } as unknown as Env,
+		env: {
+			APP_DB: createD1FromSqlite(sqlite),
+			USER_METER: userMeter.env.USER_METER,
+		} as unknown as Env,
 	}
 }
 
