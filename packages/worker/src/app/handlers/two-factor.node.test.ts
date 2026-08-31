@@ -17,7 +17,11 @@ const { createAuthHandler } = await import('#app/handlers/auth.ts')
 import { confirmTwoFactorSetup } from '#app/two-factor.ts'
 import { createAccountTwoFactorApiHandler } from '#app/handlers/account-two-factor.ts'
 import { createTwoFactorVerifyApiHandler } from '#app/handlers/verify.ts'
-import { setVerifySessionSecret } from '#app/verify-session.ts'
+import {
+	createVerifySessionCookie,
+	setVerifySessionSecret,
+} from '#app/verify-session.ts'
+import { twoFactorVerifyRateLimitConfig } from '#app/rate-limit.ts'
 import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import {
@@ -463,6 +467,88 @@ test('login with 2fa enabled defers the session cookie to code verification', as
 		ok: false,
 		code: 'expired',
 	})
+})
+
+test('repeated invalid codes lock the account out of 2fa verification', async () => {
+	initTestSecrets()
+	const { sqlite, db } = createMigratedDb()
+	await seedPrimaryUser(sqlite)
+	const appEnv = createAppEnv(db)
+	const twoFactorHandler = createAccountTwoFactorApiHandler(appEnv)
+
+	await runHandler(
+		twoFactorHandler,
+		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
+	)
+	const verificationRow = readVerificationRow(sqlite, '1')!
+	await runHandler(
+		twoFactorHandler,
+		await createTwoFactorApiRequest({
+			session,
+			body: {
+				intent: 'confirm',
+				code: await generateCurrentCode(verificationRow),
+			},
+		}),
+	)
+
+	const verifyHandler = createTwoFactorVerifyApiHandler(appEnv)
+	const pendingCookie = await createVerifySessionCookie(
+		{
+			stableUserId: session.stableUserId,
+			email: session.email,
+			rememberMe: false,
+		},
+		false,
+	)
+	const pendingCookieValue = pendingCookie.split(';')[0] ?? ''
+	function submitCode(code: string) {
+		return runHandler(
+			verifyHandler,
+			new Request('http://example.com/verify/2fa.json', {
+				method: 'POST',
+				headers: {
+					Cookie: pendingCookieValue,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ code }),
+			}),
+		)
+	}
+
+	for (
+		let attempt = 0;
+		attempt < twoFactorVerifyRateLimitConfig.maxRequests;
+		attempt++
+	) {
+		const response = await submitCode('000000')
+		expect(response.status).toBe(400)
+	}
+
+	const lockedResponse = await submitCode('000000')
+	expect(lockedResponse.status).toBe(429)
+	expect(await lockedResponse.json()).toMatchObject({
+		ok: false,
+		code: 'locked',
+	})
+	expect(lockedResponse.headers.get('Retry-After')).toBe(
+		String(twoFactorVerifyRateLimitConfig.windowSeconds),
+	)
+	expect(
+		lockedResponse.headers
+			.getSetCookie()
+			.some(
+				(cookie) =>
+					cookie.startsWith('kody_verify=') && cookie.includes('Max-Age=0'),
+			),
+	).toBe(true)
+
+	// The budget is keyed on the account, so re-minting the pending cookie by
+	// logging in again does not buy more guesses.
+	const validAfterLockout = await submitCode(
+		await generateCurrentCode(verificationRow),
+	)
+	expect(validAfterLockout.status).toBe(429)
 })
 
 test('login without 2fa still issues the session cookie directly', async () => {
