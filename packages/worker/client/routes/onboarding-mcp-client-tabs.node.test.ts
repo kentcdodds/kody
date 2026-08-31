@@ -1,6 +1,7 @@
 import { jsx } from 'remix/ui/jsx-runtime'
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
+import { colors } from '#universal/styles/tokens.ts'
 import { OnboardingMcpClientTabs } from './onboarding-mcp-client-tabs.tsx'
 import {
 	buildClaudeCodeAddCommand,
@@ -33,6 +34,12 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	expect(picker).not.toContain(
 		'href="/onboarding?agent=grok-cli&amp;surface=desktop"',
 	)
+	expect(picker).toContain('/images/icons/cursor.svg')
+	expect(picker).toContain('/images/icons/grokbot.svg')
+	// Black Simple Icons sit on the shared white logo well so they stay
+	// readable when prefers-color-scheme is dark.
+	expect(picker).toContain(colors.logoWell)
+	expect(picker).toContain(colors.logoWellInk)
 
 	const cursor = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
