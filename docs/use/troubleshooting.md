@@ -86,7 +86,7 @@ signed in, user-scoped package results are empty.
 ## Fetch or secret errors
 
 - **Host not approved:** complete the approval flow in the app for that secret
-  and host.
+  and host. Self-authored and adopted packages still need this host grant.
 - **Package not approved for secret:** self-authored and adopted packages can
   read and use user secrets; unadopted community forks need an
   `allowed_packages` grant (or adoption after review). See

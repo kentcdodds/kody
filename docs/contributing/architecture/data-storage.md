@@ -347,7 +347,8 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   read path. Updating or deleting a user secret from package code (`secret_set`
   / `secret_delete`) always requires that grant, regardless of fork or adoption
   state. Official OAuth token rotation persists host-side and does not use that
-  write grant.
+  write grant. Host allowlists (`secret_entries.allowed_hosts`) stay a separate
+  gate and are never implied by authorship or adoption.
 - `user_oauth_apps` (`0001-squashed-init.sql`): per-user OAuth app rows keyed by
   `(user_id, slug)`. Holds shared client id, client-secret ciphertext (soak
   dual-write also keeps `client_secret_secret_name`), provider endpoints, and
@@ -1252,8 +1253,9 @@ on write unless a migration backfills existing rows.
   and adopted forks (`community_forks.adopted_at` / `adoption_note`) skip that
   grant for read/use only. Mutations from package code (`secret_set` /
   `secret_delete`) always require the grant. Official OAuth token rotation
-  persists host-side and does not use that write grant. Package-scoped secrets
-  are owned exclusively by the package id in their bucket binding.
+  persists host-side and does not use that write grant. Authorship and adoption
+  never imply a host allowlist. Package-scoped secrets are owned exclusively by
+  the package id in their bucket binding.
 - `user_oauth_apps.extra_authorize_params_json`,
   `user_integrations.scopes_json`, `user_integrations.required_hosts_json`, and
   `user_integrations.allowed_packages_json` (`0001-squashed-init.sql` /
