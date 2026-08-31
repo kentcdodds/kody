@@ -14,6 +14,7 @@ import {
 } from './mcp-auth.ts'
 import { oauthScopes } from './oauth-handlers.ts'
 import { createStableUserIdFromEmail } from './user-id.ts'
+import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createWaitUntilDrain } from '#worker/test-support/user-meter.ts'
 
@@ -1049,4 +1050,64 @@ test('mcp request rejects access tokens issued before a password reset', async (
 	})
 	expect(freshResponse.status).toBe(200)
 	expect(fetchMcpCalled).toBe(true)
+})
+
+test('mcp request heals a leftover UserMeter tombstone for a live account', async () => {
+	const leftoverUserId = 'leftover-meter-user'
+	const leftoverEmail = 'leftover@example.com'
+	const verifiedAt = new Date(0).toISOString()
+	const request = new Request(`https://example.com${mcpResourcePath}`, {
+		headers: { Authorization: 'Bearer token' },
+	})
+	const env = createEnv(
+		createHelpers({
+			unwrapToken: async () => ({
+				id: 'token',
+				grantId: 'grant',
+				userId: leftoverUserId,
+				createdAt: 0,
+				expiresAt: 999999,
+				audience: `https://example.com${mcpResourcePath}`,
+				grant: {
+					clientId: 'client',
+					scope: oauthScopes,
+					props: { userId: leftoverUserId, email: leftoverEmail },
+				},
+			}),
+		}),
+		{},
+		{
+			emailVerifiedAt: verifiedAt,
+			expectedEmail: leftoverEmail,
+			expectedStableUserId: leftoverUserId,
+			accountByStableId: {
+				id: 21,
+				email: leftoverEmail,
+				username: 'leftover',
+				display_name: null,
+				stable_user_id: leftoverUserId,
+				email_verified_at: verifiedAt,
+				deleting_at: null,
+			},
+		},
+	)
+	const meter = userMeterRpc({ env, userId: leftoverUserId })
+	await meter.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
+	expect(await meter.readDeletionState()).toEqual({
+		deletingAt: '2026-08-31 15:22:12',
+	})
+
+	let fetchMcpCalled = false
+	const response = await handleMcpRequestAndDrain({
+		request,
+		env,
+		ctx: createContext(),
+		fetchMcp: () => {
+			fetchMcpCalled = true
+			return new Response('ok')
+		},
+	})
+	expect(response.status).toBe(200)
+	expect(fetchMcpCalled).toBe(true)
+	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
 })

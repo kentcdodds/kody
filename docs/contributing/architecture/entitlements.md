@@ -262,7 +262,11 @@ reads UserMeter via `readStorageBytesFromUserMeter`.
 (`startAfter` absent). Subsequent pages return `null` for each so paged
 consumers never double-count them. `UserMeter.purge()` clears counters, inbound
 delivery claims, storage state, and write leases via `deleteAll`, then restores
-an existing deletion tombstone.
+an existing deletion tombstone so in-flight cleanup stays fenced. After the D1
+`users` row is deleted, origin calls `clearUserMeterDeletionTombstone` so the
+next signup with the same email (same SHA-256 `stable_user_id`) can acquire
+write leases. A live D1 row that collides with a leftover DO tombstone also
+clears that tombstone on the next `withAccountWriteLease` acquire.
 
 ### Account-deletion write fencing
 
@@ -301,9 +305,13 @@ closed.
 
 **Account export / purge:** first-page sanitized `deletionState` omits raw
 token/holder (count and `acquiredAt` only). `purge()` clears leases and counters
-via `deleteAll` then restores any deleting tombstone; D1 `deleting_at` remains
-the gate. Post-write held checks treat pending repair as held until finalize,
-then surface `AccountWriteLeaseLostError`.
+via `deleteAll` then restores any deleting tombstone while the D1 user row still
+exists. After that row is deleted, origin drops the restored tombstone so a
+later account with the same email-derived `stable_user_id` is writable. Live D1
+plus a leftover meter tombstone heals on the next write-lease acquire (D1 is
+re-checked first so an in-progress deletion keeps its fence). D1 `deleting_at`
+remains the gate. Post-write held checks treat pending repair as held until
+finalize, then surface `AccountWriteLeaseLostError`.
 
 **Current UserMeter authority:** all write leases (including email) and storage
 bytes are authoritative in UserMeter. See the storage and write-fencing sections

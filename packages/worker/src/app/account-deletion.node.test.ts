@@ -1099,6 +1099,24 @@ test('account deletion cancels Stripe billing and remains non-blocking on Stripe
 	}
 })
 
+test('deleteUserAccount drops the UserMeter tombstone after the user row is gone', async () => {
+	const { db, rows } = createTestDb({
+		users: [{ id: 1, email: 'a@example.com' }],
+	})
+	const env = createSuccessfulDeletionEnv(db)
+	const meter = userMeterRpc({ env, userId: 'user-aaa' })
+	await meter.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
+
+	await deleteUserAccount({
+		env,
+		dbUserId: 1,
+		mcpUserId: 'user-aaa',
+	})
+
+	expect(rows.users).toEqual([])
+	expect(await meter.readDeletionState()).toEqual({ deletingAt: null })
+})
+
 test('deleteUserAccount clears the deletion fence when writers are still active', async () => {
 	const { db, rows } = createTestDb({
 		users: [{ id: 1, email: 'a@example.com' }],

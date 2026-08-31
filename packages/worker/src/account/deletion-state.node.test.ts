@@ -12,6 +12,7 @@ import {
 	AccountWriteLeaseLostError,
 	abortAccountDeleting,
 	abortAccountDeletingByStableUserId,
+	clearUserMeterDeletionTombstone,
 	listActiveAccountWriteLeases,
 	markAccountDeleting,
 	repairAccountWriteLease,
@@ -1283,6 +1284,38 @@ test('abortAccountDeletingByStableUserId resolves the user then clears the fence
 		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
 	).toEqual({ deleting_at: null })
 	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
+})
+
+test('withAccountWriteLease drops a leftover UserMeter tombstone when D1 is live', async () => {
+	const { db } = createLeaseTestDb()
+	const meter = createInMemoryUserMeterEnv()
+	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+
+	await meterA.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
+	expect(await meterA.readDeletionState()).toEqual({
+		deletingAt: '2026-08-31 15:22:12',
+	})
+
+	await expect(
+		withAccountWriteLease({
+			db,
+			stableUserId: 'user-a',
+			env: meter.env,
+			async write() {
+				return 'ok'
+			},
+		}),
+	).resolves.toBe('ok')
+	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
+})
+
+test('clearUserMeterDeletionTombstone is a no-op without USER_METER', async () => {
+	await expect(
+		clearUserMeterDeletionTombstone({
+			env: {},
+			stableUserId: 'user-a',
+		}),
+	).resolves.toEqual({ cleared: false })
 })
 
 test('abortAccountDeletingByStableUserId fails closed for an unknown user', async () => {

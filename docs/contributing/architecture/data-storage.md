@@ -644,8 +644,10 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   / `pending_repair_id`). Schema v8 is authoritative for all leases. All callers
   supply `USER_METER`. D1 `account_write_lease_repairs` is the repair audit log
   and `users.deleting_at` remains the permanent point gate. `purge()` preserves
-  an existing deleting tombstone across `deleteAll`. Account export emits a
-  sanitized `deletionState` without raw token/holder.
+  an existing deleting tombstone across `deleteAll` while cleanup still has a D1
+  user row. After that row is deleted, origin clears the tombstone so the
+  email-derived `stable_user_id` can be reused by a later signup. Account export
+  emits a sanitized `deletionState` without raw token/holder.
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter and claim rows older than seven UTC days
@@ -666,7 +668,9 @@ D1 for enforcement.
 
 Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
 `deleteAll` clears counters, claims, storage bytes, and write leases while
-preserving an existing deleting tombstone). Account export pages
+preserving an existing deleting tombstone during cleanup). After the D1 user row
+is removed, origin drops that tombstone so a later signup with the same email
+can use the hashed `stable_user_id` again. Account export pages
 `UserMeter.exportCounters` through the `user_meter` manifest section /
 `account_export_section` (daily counters plus authoritative `storageBytesState`
 and sanitized `deletionState` on the first page only when present).
