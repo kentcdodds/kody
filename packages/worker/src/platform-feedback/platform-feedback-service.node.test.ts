@@ -449,3 +449,22 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 			.get(),
 	).toEqual({ total: 100 })
 })
+
+test('platform feedback accepts the cancellation category', async () => {
+	const { db, sqlite } = createPlatformFeedbackDb()
+	const submitted = await submitPlatformFeedback({
+		db,
+		submitterUserId: 'user-c',
+		submitterUsername: 'user-c-name',
+		submitterEmail: 'user-c@example.com',
+		category: 'cancellation',
+		summary: 'Subscription cancellation feedback',
+		details: 'Too expensive for my current usage.',
+	})
+	expect(submitted.category).toBe('cancellation')
+	expect(
+		sqlite
+			.prepare(`SELECT category FROM platform_feedback WHERE id = ?`)
+			.get(submitted.id),
+	).toEqual({ category: 'cancellation' })
+})

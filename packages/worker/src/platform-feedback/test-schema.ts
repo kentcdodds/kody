@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS "platform_feedback" (
 	id TEXT PRIMARY KEY NOT NULL,
 	submitter_user_id TEXT NOT NULL,
 	category TEXT NOT NULL CHECK (
-		category IN ('friction', 'bug', 'experience', 'suggestion', 'other')
+		category IN ('friction', 'bug', 'experience', 'suggestion', 'cancellation', 'other')
 	),
 	summary TEXT NOT NULL CHECK (
 		length(summary) BETWEEN 1 AND 200

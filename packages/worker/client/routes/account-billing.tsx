@@ -42,6 +42,10 @@ import {
 
 const billingApiPath = '/account/billing.json'
 const billingCheckoutApiPath = '/account/billing/checkout.json'
+const jsonRequestHeaders = {
+	Accept: 'application/json',
+	'Content-Type': 'application/json',
+}
 const billingCancellationFeedbackApiPath =
 	'/account/billing/cancellation-feedback.json'
 const billingPath = '/account/billing'
@@ -272,10 +276,7 @@ export function AccountBillingRoute(handle: Handle) {
 		try {
 			const response = await fetch(billingCheckoutApiPath, {
 				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
+				headers: jsonRequestHeaders,
 				credentials: 'include',
 				body: JSON.stringify({ plan, interval }),
 			})
@@ -307,18 +308,21 @@ export function AccountBillingRoute(handle: Handle) {
 	}
 
 	async function submitCancellationFeedback() {
+		const sendFallback = 'Unable to send feedback. Try again shortly.'
+		if (cancellationFeedbackPending) return
 		const details = cancellationFeedbackText.trim()
-		if (!details || cancellationFeedbackPending) return
+		if (!details) {
+			cancellationFeedbackError = 'Share a sentence or two before sending.'
+			handle.update()
+			return
+		}
 		cancellationFeedbackPending = true
 		cancellationFeedbackError = null
 		handle.update()
 		try {
 			const response = await fetch(billingCancellationFeedbackApiPath, {
 				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
+				headers: jsonRequestHeaders,
 				credentials: 'include',
 				body: JSON.stringify({ details }),
 			})
@@ -326,16 +330,11 @@ export function AccountBillingRoute(handle: Handle) {
 			if (response.ok && payload?.ok) {
 				cancellationFeedbackSent = true
 			} else {
-				cancellationFeedbackError =
-					typeof payload?.error === 'string' && payload.error.length > 0
-						? payload.error
-						: 'Unable to send feedback. Try again shortly.'
+				cancellationFeedbackError = payload?.error || sendFallback
 			}
 		} catch (error) {
 			cancellationFeedbackError =
-				error instanceof Error
-					? error.message
-					: 'Unable to send feedback. Try again shortly.'
+				error instanceof Error ? error.message : sendFallback
 		}
 		cancellationFeedbackPending = false
 		handle.update()
@@ -540,6 +539,7 @@ export function AccountBillingRoute(handle: Handle) {
 														cancellationFeedbackText = (
 															event.currentTarget as HTMLTextAreaElement
 														).value
+														handle.update()
 													}),
 													css({
 														padding: spacing.sm,
