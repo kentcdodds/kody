@@ -19,6 +19,8 @@ import {
 	type AccountMemoryListItem,
 	type AccountMemoriesLoaderData,
 } from '#universal/loader-data.ts'
+import { buildMemoriesExportFilename } from '#universal/memory-export.ts'
+import { routes } from '#universal/routes.ts'
 import { matchesSearchQuery } from '#client/search-filter.ts'
 import {
 	AccountManagementMessage,
@@ -51,8 +53,9 @@ import {
 
 const clampedCellCss = css(recordCellClamp(30))
 
-const accountMemoriesApiPath = '/account/memories.json'
-const memoriesRoute = createListDetailRoute('/account/memories')
+const accountMemoriesApiPath = routes.accountMemoriesApi.href()
+const accountMemoriesExportPath = routes.accountMemoriesExport.href()
+const memoriesRoute = createListDetailRoute(routes.accountMemories.href())
 
 type MessageTone = 'info' | 'error'
 type DeleteMode = 'soft' | 'hard' | null
@@ -93,6 +96,13 @@ function filterMemories(
 			...memory.tags,
 		]),
 	)
+}
+
+function buildMemoriesExportHref(includeDeleted: boolean) {
+	if (!includeDeleted) return accountMemoriesExportPath
+	const requestUrl = new URL(accountMemoriesExportPath, 'http://localhost')
+	requestUrl.searchParams.set('includeDeleted', 'true')
+	return `${requestUrl.pathname}${requestUrl.search}`
 }
 
 function buildMemoriesApiRequestUrl(href: string) {
@@ -417,6 +427,13 @@ export function AccountMemoriesRoute(handle: Handle) {
 										/>
 										Include deleted
 									</label>
+									<a
+										href={buildMemoriesExportHref(includeDeleted)}
+										download={buildMemoriesExportFilename()}
+										mix={css(secondaryButtonCss)}
+									>
+										Export
+									</a>
 								</>
 							}
 							columns={[
