@@ -92,6 +92,7 @@ const rateLimitedAuthPaths = new Set([
 	'/password-reset/confirm',
 	'/verify/2fa.json',
 	'/account/two-factor.json',
+	'/account/password.json',
 	'/webauthn/authentication',
 ])
 

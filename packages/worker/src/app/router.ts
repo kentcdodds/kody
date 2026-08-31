@@ -50,6 +50,7 @@ import {
 	createAccountEmailHandler,
 } from '#app/handlers/account-email.ts'
 import { createAccountEmailChangeHandler } from '#app/handlers/account-email-change.ts'
+import { createAccountPasswordHandler } from '#app/handlers/account-password.ts'
 import { createAccountExportHandler } from '#app/handlers/account-export.ts'
 import {
 	createAccountIntegrationsApiHandler,
@@ -369,6 +370,7 @@ export function createAppRouter(env: Env) {
 			accountUsage: createAccountUsageHandler(env),
 			accountUsageApi: createAccountUsageApiHandler(env),
 			accountEmailChange: createAccountEmailChangeHandler(env),
+			accountPassword: createAccountPasswordHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
 			accountSecrets: createAccountSecretsHandler(env),
 			accountSecretNew: createAccountSecretsHandler(env),

@@ -103,9 +103,11 @@ normal outbound MCP server (`kody.mcp["home"]`). See
 [Connect remote MCP servers](./mcp-client-servers.md) and
 [Lock an MCP server to a package](../guides/locked-mcp-server.md).
 
-After a password reset, reconnect the MCP host: Kody revokes OAuth grants and
-rejects access tokens issued at or before the reset, so a refresh alone is not
-enough.
+After a password reset or an in-account password change, reconnect the MCP host:
+Kody revokes OAuth grants and rejects access tokens issued at or before the
+change, so a refresh alone is not enough. Signed-in users can also change or set
+a password from [Account](https://kody.codes/account) without waiting for a
+reset email.
 
 ## Job, webhook, or package app failed
 
