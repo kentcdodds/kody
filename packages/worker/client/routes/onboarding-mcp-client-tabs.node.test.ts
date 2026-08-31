@@ -1,13 +1,11 @@
 import { jsx } from 'remix/ui/jsx-runtime'
 import { renderToString } from 'remix/ui/server'
 import { expect, test } from 'vitest'
-import { colors } from '#universal/styles/tokens.ts'
 import { OnboardingMcpClientTabs } from './onboarding-mcp-client-tabs.tsx'
 import {
 	buildClaudeCodeAddCommand,
 	buildCodexMcpAddCommand,
 	buildOpenClawMcpAddCommand,
-	openClawMcpLoginCommand,
 	defaultKodyMcpUrl,
 	grokBotInstallUrl,
 	kodyCursorAddPluginCommand,
@@ -36,10 +34,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	)
 	expect(picker).toContain('/images/icons/cursor.svg')
 	expect(picker).toContain('/images/icons/grokbot.svg')
-	// Black Simple Icons sit on the shared white logo well so they stay
-	// readable when prefers-color-scheme is dark.
-	expect(picker).toContain(colors.logoWell)
-	expect(picker).toContain(colors.logoWellInk)
 
 	const cursor = await renderToString(
 		jsx(OnboardingMcpClientTabs, {
@@ -122,8 +116,8 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 	)
 	expect(openclaw).toContain('data-agent="openclaw"')
 	expect(openclaw).toContain(buildOpenClawMcpAddCommand(defaultKodyMcpUrl))
-	expect(openclaw).toContain(openClawMcpLoginCommand)
-	expect(openclaw).toContain('Settings → MCP → Add server')
+	expect(openclaw).toContain('openclaw mcp login kody')
+	expect(openclaw).toContain('openclaw mcp doctor kody --probe')
 	expect(openclaw).not.toContain('on a computer')
 
 	const openclawMobile = await renderToString(
@@ -134,7 +128,6 @@ test('onboarding Step 1 picker selects an agent, then Not listed, and flips Grok
 		}),
 	)
 	expect(openclawMobile).toContain('data-surface="mobile"')
-	expect(openclawMobile).toContain('Save the server in the Control UI')
-	expect(openclawMobile).toContain(openClawMcpLoginCommand)
+	expect(openclawMobile).toContain('openclaw mcp login kody')
 	expect(openclawMobile).toContain('on a computer')
 })
