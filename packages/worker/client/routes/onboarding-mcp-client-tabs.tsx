@@ -6,6 +6,7 @@ import {
 	buildOnboardingAgentHref,
 	canonicalOnboardingAgentChooser,
 	codexMcpLoginCommand,
+	onboardingAgentHelp,
 	onboardingAgentIconName,
 	onboardingAgentLabel,
 	onboardingFeaturedIdsFromChooser,
@@ -22,12 +23,13 @@ import {
 } from '#universal/styles/tokens.ts'
 import {
 	getAccentCalloutCss,
-	getGhostButtonCss,
-	getLogoWellCss,
 	hoverMq,
 } from '#universal/styles/style-primitives.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
-import { renderPanelContent } from './onboarding-mcp-client-panels.tsx'
+import {
+	renderPanelContent,
+	renderPanelWarning,
+} from './onboarding-mcp-client-panels.tsx'
 
 type OnboardingAgentLocation = {
 	pathname: string
@@ -48,8 +50,12 @@ function pickerLabel(id: McpClientKind, surface: OnboardingAgentSurface) {
 	return onboardingAgentLabel(id, surface)
 }
 
-function AgentPickerMark(
-	handle: Handle<{ agent: McpClientKind; surface: OnboardingAgentSurface }>,
+export function AgentPickerMark(
+	handle: Handle<{
+		agent: McpClientKind
+		surface: OnboardingAgentSurface
+		testId?: string
+	}>,
 ) {
 	return () => {
 		const icon = onboardingAgentIconName(
@@ -58,7 +64,11 @@ function AgentPickerMark(
 		)
 		if (!icon) {
 			return (
-				<span mix={css(pickerMarkCss)} aria-hidden="true">
+				<span
+					mix={css(pickerMarkCss)}
+					aria-hidden="true"
+					data-testid={handle.props.testId}
+				>
 					<svg
 						viewBox="0 0 24 24"
 						width="22"
@@ -74,7 +84,11 @@ function AgentPickerMark(
 			)
 		}
 		return (
-			<span mix={css(pickerMarkCss)} aria-hidden="true">
+			<span
+				mix={css(pickerMarkCss)}
+				aria-hidden="true"
+				data-testid={handle.props.testId}
+			>
 				<img
 					src={`/images/icons/${icon}.svg`}
 					alt=""
@@ -83,6 +97,24 @@ function AgentPickerMark(
 					mix={css(pickerIconImgCss)}
 				/>
 			</span>
+		)
+	}
+}
+
+function AgentHelpLink(handle: Handle<{ agent: McpClientKind }>) {
+	return () => {
+		const help = onboardingAgentHelp(handle.props.agent)
+		return (
+			<p mix={css(agentHelpCss)}>
+				<a
+					href={help.href}
+					target="_blank"
+					rel="noreferrer noopener"
+					data-testid="onboarding-agent-help"
+				>
+					{help.label}
+				</a>
+			</p>
 		)
 	}
 }
@@ -260,11 +292,6 @@ export function OnboardingMcpClientTabs(
 			)
 		}
 
-		const changeHref = buildOnboardingAgentHref({
-			...location,
-			agent: null,
-		})
-
 		return (
 			<div
 				data-testid="onboarding-agent-instructions"
@@ -272,21 +299,10 @@ export function OnboardingMcpClientTabs(
 				data-surface={surface}
 				mix={css(installLayoutCss)}
 			>
-				<div mix={css(selectedHeadCss)}>
-					<p mix={css(selectedKickerCss)}>
-						Connecting <strong>{pickerLabel(selectedAgent, surface)}</strong>
-					</p>
-					<a
-						href={changeHref}
-						data-testid="onboarding-agent-change"
-						data-prevent-scroll-reset=""
-						mix={css(changeSelectionCss)}
-					>
-						Change selection
-					</a>
-				</div>
 				<div mix={css(selectedPanelCss)}>
 					{renderPanelContent(selectedAgent, mcpServerUrl, highlights, surface)}
+					<AgentHelpLink agent={selectedAgent} />
+					{renderPanelWarning(selectedAgent, surface)}
 				</div>
 				{selectedAgent === 'other' ? (
 					<div mix={css(moreAgentsCss)}>
@@ -434,34 +450,21 @@ const pickerCardCss = {
 	},
 }
 
-const pickerMarkCss = getLogoWellCss({ size: '2.4rem', radius: '12px' })
+const pickerMarkCss = {
+	display: 'grid',
+	placeItems: 'center',
+	flex: 'none',
+	color: colors.text,
+}
 
 const pickerIconImgCss = {
 	display: 'block',
-	width: '1.55rem',
-	height: '1.55rem',
+	width: '1.75rem',
+	height: '1.75rem',
 	objectFit: 'contain' as const,
-}
-
-const selectedHeadCss = {
-	display: 'flex',
-	flexWrap: 'wrap' as const,
-	alignItems: 'center',
-	justifyContent: 'space-between',
-	gap: '0.6rem 1rem',
-}
-
-const selectedKickerCss = {
-	margin: 0,
-	color: colors.textMuted,
-	'& strong': {
-		color: colors.text,
+	'@media (prefers-color-scheme: dark)': {
+		filter: 'invert(1)',
 	},
-}
-
-const changeSelectionCss = {
-	...getGhostButtonCss(),
-	textDecoration: 'none',
 }
 
 const selectedPanelCss = {
@@ -500,6 +503,10 @@ const selectedPanelCss = {
 		borderRadius: 0,
 		padding: 0,
 	},
+}
+
+const agentHelpCss = {
+	fontSize: typography.fontSize.sm,
 }
 
 const moreAgentsCss = {
