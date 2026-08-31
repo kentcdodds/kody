@@ -480,6 +480,8 @@ const agentMarkCss = {
 
 const bubbleCss = {
 	margin: 0,
+	minWidth: 0,
+	maxWidth: '100%',
 	'& figcaption': {
 		display: 'flex',
 		alignItems: 'center',
@@ -496,10 +498,16 @@ const bubbleCss = {
 		padding: `${spacing.sm} ${spacing.md}`,
 		borderRadius: radius.lg,
 		border: `1px solid ${colors.border}`,
+		minWidth: 0,
 	},
 	'& p': {
 		margin: 0,
+		minWidth: 0,
 		textWrap: 'pretty' as const,
+		// Long tokens (prefilled /connect/oauth URLs) have no wrap points.
+		// `anywhere` also shrinks grid min-content; `break-word` does not.
+		overflowWrap: 'anywhere' as const,
+		whiteSpace: 'pre-line' as const,
 	},
 }
 
@@ -550,10 +558,13 @@ const agentReasoningCss = {
 	},
 	'& p': {
 		margin: 0,
+		minWidth: 0,
 		fontSize: '0.92rem',
 		fontStyle: 'italic' as const,
 		color: colors.textMuted,
 		textWrap: 'pretty' as const,
+		overflowWrap: 'anywhere' as const,
+		whiteSpace: 'pre-line' as const,
 	},
 }
 
@@ -641,8 +652,10 @@ const toolNoteCss = {
 	},
 	'& p': {
 		margin: 0,
+		minWidth: 0,
 		fontSize: '0.95rem',
 		textWrap: 'pretty' as const,
+		overflowWrap: 'anywhere' as const,
 	},
 	'& code': {
 		font: '500 0.9em/1.2 ui-monospace, "SF Mono", Menlo, monospace',
@@ -650,6 +663,7 @@ const toolNoteCss = {
 		border: `1px solid ${colors.primarySoft}`,
 		borderRadius: '5px',
 		padding: '0.1em 0.35em',
+		overflowWrap: 'anywhere' as const,
 	},
 }
 
