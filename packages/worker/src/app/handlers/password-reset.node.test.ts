@@ -56,6 +56,22 @@ vi.mock('#app/email/cloudflare-email.ts', () => ({
 
 const { createPasswordResetRequestHandler, createPasswordResetConfirmHandler } =
 	await import('./password-reset.ts')
+const { runWithDeferredWork } = await import('#app/deferred-work.ts')
+
+// The request handler defers token creation and the email send past the
+// response so latency cannot reveal whether the address is registered; tests
+// collect the deferred work the way `ctx.waitUntil` does in the worker.
+async function requestResetAndFlush(
+	handler: ReturnType<typeof createPasswordResetRequestHandler>,
+	args: { request: Request; url: URL },
+) {
+	const deferred = new Array<Promise<unknown>>()
+	const response = await runWithDeferredWork(
+		(promise) => deferred.push(promise),
+		() => handler.handler({ ...args, params: {} }),
+	)
+	return { response, flush: () => Promise.all(deferred) }
+}
 
 function createPasswordResetD1Mock() {
 	return {
@@ -112,13 +128,14 @@ test('password reset keeps local action links on the request origin', async () =
 		}),
 	)
 
-	const response = await handler.handler({
+	const { response, flush } = await requestResetAndFlush(handler, {
 		request: createResetRequest(),
 		url: new URL('http://localhost:3742/password-reset'),
-		params: {},
 	})
 
 	expect(response.status).toBe(200)
+	expect(mockModule.sendCloudflareEmail).not.toHaveBeenCalled()
+	await flush()
 	const [, message] = mockModule.sendCloudflareEmail.mock.calls[0]!
 	expect((message as { from: string }).from).toBe('kody@kody.codes')
 	expect((message as { text: string }).text).toContain(
@@ -135,11 +152,11 @@ test('password reset sends from the sending domain when SYSTEM_EMAIL_DOMAIN over
 		}),
 	)
 
-	const response = await handler.handler({
+	const { response, flush } = await requestResetAndFlush(handler, {
 		request: createResetRequest(),
 		url: new URL('https://heykody.dev/password-reset'),
-		params: {},
 	})
+	await flush()
 
 	expect(response.status).toBe(200)
 	expect(mockModule.sendCloudflareEmail).toHaveBeenCalledWith(
@@ -168,11 +185,11 @@ test('password reset sends from the APP_BASE_URL hostname without logging the to
 	)
 
 	try {
-		const response = await handler.handler({
+		const { response, flush } = await requestResetAndFlush(handler, {
 			request: createResetRequest(),
 			url: new URL('https://request-origin.test/password-reset'),
-			params: {},
 		})
+		await flush()
 
 		expect(response.status).toBe(200)
 		expect(mockModule.sendCloudflareEmail).toHaveBeenCalledWith(
@@ -215,11 +232,11 @@ test('password reset skips sending when APP_BASE_URL is missing and logs a redac
 	)
 
 	try {
-		const response = await handler.handler({
+		const { response, flush } = await requestResetAndFlush(handler, {
 			request: createResetRequest(),
 			url: new URL('https://request-origin.test/password-reset'),
-			params: {},
 		})
+		await flush()
 
 		expect(response.status).toBe(200)
 		expect(mockModule.sendCloudflareEmail).not.toHaveBeenCalled()
