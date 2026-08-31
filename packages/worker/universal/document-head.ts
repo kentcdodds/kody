@@ -314,6 +314,7 @@ const routeDocumentHeads = {
 	),
 	[routePattern(routes.pendingVerification)]: titleOnly('Verify your email'),
 	[routePattern(routes.pricing)]: publicPageHead('pricing', 'Pricing'),
+	[routePattern(routes.faq)]: publicPageHead('faq', 'FAQ'),
 	[routePattern(routes.privacy)]: publicPageHead('privacy', 'Privacy'),
 	[routePattern(routes.terms)]: publicPageHead('terms', 'Terms'),
 	[routePattern(routes.discord)]: publicPageHead('discord', 'Discord'),

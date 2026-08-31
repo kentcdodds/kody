@@ -13,6 +13,7 @@ export const anonymousHtmlCacheControl =
 const cacheableAnonymousExactPaths = new Set([
 	'/',
 	'/pricing',
+	'/faq',
 	'/blog',
 	'/community',
 	'/onboarding',

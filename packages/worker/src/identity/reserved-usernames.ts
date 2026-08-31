@@ -106,6 +106,7 @@ const reservedUsernameList = [
 	'reset',
 	'password',
 	'privacy',
+	'faq',
 	'terms',
 	'legal',
 	'dmca',

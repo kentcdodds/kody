@@ -184,6 +184,7 @@ export function App(handle: Handle<AppProps>) {
 		const isRedesignedMarketingPath =
 			currentPathname === '/' ||
 			currentPathname === '/pricing' ||
+			currentPathname === '/faq' ||
 			currentPathname === '/blog' ||
 			currentPathname === '/community' ||
 			currentPathname === '/timeline' ||

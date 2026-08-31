@@ -25,6 +25,7 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					<a href="/discord">Discord</a>
 					<a href="/guides">Guides</a>
 					<a href="/pricing">Pricing</a>
+					<a href="/faq">FAQ</a>
 					<a href="/blog">Blog</a>
 					{handle.props.loggedIn ? (
 						<a href="/account">Account</a>
