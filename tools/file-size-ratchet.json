@@ -14,7 +14,6 @@
 		"packages/worker/client/routes/home.tsx",
 		"packages/worker/client/routes/login.tsx",
 		"packages/worker/client/routes/onboarding-mcp-client-tabs.tsx",
-		"packages/worker/client/routes/onboarding.tsx",
 		"packages/worker/client/routes/record-table.tsx"
 	],
 	"node-tests": [
