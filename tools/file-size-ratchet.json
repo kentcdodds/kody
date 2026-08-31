@@ -8,7 +8,6 @@
 		"packages/worker/client/routes/admin-platform-integrations.tsx",
 		"packages/worker/client/routes/admin-users.tsx",
 		"packages/worker/client/routes/community-detail.tsx",
-		"packages/worker/client/routes/home.tsx",
 		"packages/worker/client/routes/login.tsx",
 		"packages/worker/client/routes/onboarding-mcp-client-tabs.tsx",
 		"packages/worker/client/routes/record-table.tsx"
