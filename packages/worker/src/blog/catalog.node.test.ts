@@ -173,6 +173,8 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 	expect(openclaw?.title).toBe('OpenClaw 2 needs a home')
 	expect(openclaw?.date).toBe('2026-08-31')
 	expect(openclaw?.placeholder).toBe(true)
+	expect(openclaw?.image).toBe('/images/openclaw-2-needs-a-home.webp')
+	expect(openclaw?.ogImage).toBe('/images/openclaw-2-needs-a-home-og.jpg')
 	expect((openclaw?.body ?? '').replace(/\s+/g, ' ')).toContain(
 		'openclaw mcp add kody',
 	)

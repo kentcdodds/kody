@@ -6,6 +6,11 @@ description:
   that keeps its memory, keys, packages, and jobs running when that machine
   sleeps. Here's how they stack.
 order: 1
+image: /images/openclaw-2-needs-a-home.webp
+imageAlt:
+  Kody, a 3D koala in a white jacket, stands with his arm around OpenClaw, a
+  glossy red lobster, in a warm living room.
+ogImage: /images/openclaw-2-needs-a-home-og.jpg
 ---
 
 [OpenClaw 2.0 shipped this morning](https://x.com/openclaw/status/2094266903204434431).
