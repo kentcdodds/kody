@@ -54,7 +54,7 @@ package `dryRun` and fresh user confirmation before a live mutation.
 
 Community listings are excluded from general `search`. When you need durable
 reusable behavior and nothing in the user's account fits, call
-`community_search` and prefer **trusted** matches.
+`community_search` for a close public package.
 
 If a listing is close to the user's goal:
 
@@ -109,8 +109,7 @@ Move the behavior into a package when one or more of these become true:
   helpers (`createAuthenticatedFetch`, `refreshAccessToken`, or equivalent)
   beyond a cheap smoke test — **integrations = auth; packages = how agents
   should call the product**. Search for an existing wrapper package first, then
-  `community_search` (prefer **trusted**), then fork or create a thin helpers
-  package
+  `community_search`, then fork or create a thin helpers package
 
 Do not create a package merely to wrap one clear call to an existing capability
 or package export. One-shot reminders and deferred work belong in workflows, not

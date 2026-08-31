@@ -81,8 +81,9 @@ Open these before proposing a new primitive, surface, or storage home.
   — fetch host approval and package grants remain; do not re-add `x-kody-secret`
   input resolution or `allowed_capabilities`
 - [0043 — Repo visibility is the share switch; no community-package kind](./0043-repo-visibility-no-community-kind.md)
-  — no `package.json#private` SoT, no second publish verb, no license bureau, no
-  trusted listings
+  — no `package.json#private` SoT, no second publish semantics
+  (`community_publish` stays a visibility alias), no license bureau, no trusted
+  listings
 
 ## Historical / UI / implementation
 

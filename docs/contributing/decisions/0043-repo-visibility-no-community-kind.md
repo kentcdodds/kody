@@ -19,9 +19,10 @@ bureau, or a trusted-listing review badge.
 
 - Visibility lives on the repo record (D1), default private, not derived from
   `package.json#private`.
-- Public ⇔ the default-branch HEAD is world-readable and forkable, and the repo
-  appears on `/community` and `/@username/:name`. Package **runtime** still uses
-  `published_commit`.
+- Public ⇔ the default-branch HEAD is world-readable and forkable. Public
+  **packages** appear on `/community` and `/@username/:name`. Public plain repos
+  store the same visibility flag and inherit it on promote; they do not yet
+  appear on `/community`. Package **runtime** still uses `published_commit`.
 - Private ⇔ owner only. Hidden and locked stay separate jobs.
 - No MIT, logo, or Intent gates. Featured stays as onboarding editorial.
 - Forks copy HEAD into an inert source. Behind-upstream compares origin HEAD to
@@ -31,7 +32,8 @@ bureau, or a trusted-listing review badge.
 ## Consequences
 
 Teaser packages (`private: false` with no listing) backfill to **private**.
-Active listings backfill to **public**. `community_publish` /
-`community_set_trusted` / `community_fork_absorb` go away. Revisit if Kody needs
-a real review program or SPDX matrix; do not re-add a twin publish verb or a
-`package.json` visibility field.
+Active listings backfill to **public**. `community_publish` remains a
+compatibility alias that sets visibility public. `community_set_trusted` /
+`community_fork_absorb` go away. Revisit if Kody needs a real review program or
+SPDX matrix; do not re-add a twin publish verb or a `package.json` visibility
+field.

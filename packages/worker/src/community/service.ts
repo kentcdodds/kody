@@ -1210,6 +1210,7 @@ export async function prepareCommunityFork(
 		}
 	}
 	let files = snapshot?.files ?? null
+	let filesCommit = listing.pinnedCommit
 	if (source && originCommit) {
 		try {
 			const published = await readPublishedSourceSnapshot({
@@ -1217,7 +1218,10 @@ export async function prepareCommunityFork(
 				sourceId: listing.sourceId,
 				publishedCommit: originCommit,
 			})
-			if (published?.files) files = published.files
+			if (published?.files) {
+				files = published.files
+				filesCommit = originCommit
+			}
 		} catch {
 			// Fall through to git snapshot / listing pin.
 		}
@@ -1228,7 +1232,10 @@ export async function prepareCommunityFork(
 					repoId: source.repo_id,
 					commit: originCommit,
 				})
-				if (mock?.files) files = mock.files
+				if (mock?.files) {
+					files = mock.files
+					filesCommit = originCommit
+				}
 			} catch {
 				// Fall through to listing pin snapshot.
 			}
@@ -1239,6 +1246,7 @@ export async function prepareCommunityFork(
 			`Community listing snapshot for "${input.listingId}" was not found.`,
 		)
 	}
+	originCommit = filesCommit
 	if (
 		input.expectedPinnedCommit &&
 		originCommit !== input.expectedPinnedCommit

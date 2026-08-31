@@ -13,6 +13,8 @@ import { installCommunityListing } from '#worker/community/install.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
+import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 
 const communityInstallPostSchema = z.object({
@@ -71,6 +73,18 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					env.APP_DB,
 					user.mcpUser,
 				)
+				let expectedPinnedCommit = listing.pinnedCommit
+				if (listing.sourceId) {
+					const source = await getEntitySourceById(env.APP_DB, listing.sourceId)
+					if (source?.repo_id) {
+						try {
+							const head = await resolveArtifactSourceHead(env, source.repo_id)
+							if (head.commit) expectedPinnedCommit = head.commit
+						} catch {
+							// Fall back to the listing pin when HEAD cannot be read.
+						}
+					}
+				}
 				const result = await installCommunityListing({
 					env,
 					baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
@@ -79,10 +93,9 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					expectedPackageScope,
 					listingId: listing.id,
 					kodyId: parsed.data.kody_id,
-					// Bind the install to the commit the trust/acknowledgement
-					// decision was made against so a concurrent republish cannot
-					// activate content the user never saw.
-					expectedPinnedCommit: listing.pinnedCommit,
+					// Bind the install to origin HEAD (the commit the fork copies)
+					// so a concurrent push cannot activate content the user never saw.
+					expectedPinnedCommit,
 					// Projection already supports deferred search-index upsert and
 					// retriever-cache refresh; without waitUntil those await on the
 					// install response and stretch one-click / onboarding latency.

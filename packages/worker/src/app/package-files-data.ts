@@ -103,7 +103,7 @@ export async function loadCommunityPackageFilesData(input: {
 		pinnedCommit: listing.pinnedCommit,
 		ref: treeRef,
 	})
-	const files = await loadPublicTreeFiles({
+	const loaded = await loadPublicTreeFiles({
 		env: input.env,
 		listingId: listing.id,
 		sourceId: listing.sourceId,
@@ -111,11 +111,24 @@ export async function loadCommunityPackageFilesData(input: {
 		commit: resolvedCommit,
 		pinnedCommit: listing.pinnedCommit,
 	})
+	const requestedHex = /^[0-9a-f]{7,40}$/i.test(treeRef)
+	if (
+		requestedHex &&
+		loaded.fromListingSnapshot &&
+		resolvedCommit !== listing.pinnedCommit &&
+		!(
+			listing.pinnedCommit.startsWith(treeRef) ||
+			treeRef.startsWith(listing.pinnedCommit)
+		)
+	) {
+		return null
+	}
+	const files = loaded.files
 	const filesBasePath = getCommunityPackageFilesHref({
 		listingId: listing.id,
 		ownerUsername,
 		kodyId: listing.kodyId,
-		ref: resolvedCommit ?? treeRef,
+		ref: treeRef,
 	})
 	const view = buildPackageFilesView({
 		files,
@@ -188,7 +201,10 @@ async function loadPublicTreeFiles(input: {
 	sourceRepoId: string | null
 	commit: string | null
 	pinnedCommit: string
-}): Promise<Record<string, string>> {
+}): Promise<{
+	files: Record<string, string>
+	fromListingSnapshot: boolean
+}> {
 	const commit = input.commit
 	if (commit && input.env.BUNDLE_ARTIFACTS_KV) {
 		try {
@@ -197,7 +213,9 @@ async function loadPublicTreeFiles(input: {
 				sourceId: input.sourceId,
 				publishedCommit: commit,
 			})
-			if (snapshot?.files) return snapshot.files
+			if (snapshot?.files) {
+				return { files: snapshot.files, fromListingSnapshot: false }
+			}
 		} catch {
 			// Fall through to git / listing snapshot.
 		}
@@ -209,7 +227,9 @@ async function loadPublicTreeFiles(input: {
 				repoId: input.sourceRepoId,
 				commit,
 			})
-			if (mock?.files) return mock.files
+			if (mock?.files) {
+				return { files: mock.files, fromListingSnapshot: false }
+			}
 		} catch {
 			// Fall through to the listing pin snapshot.
 		}
@@ -219,9 +239,11 @@ async function loadPublicTreeFiles(input: {
 			input.env.BUNDLE_ARTIFACTS_KV,
 			input.listingId,
 		)
-		if (listingSnapshot?.files) return listingSnapshot.files
+		if (listingSnapshot?.files) {
+			return { files: listingSnapshot.files, fromListingSnapshot: true }
+		}
 	}
-	return {}
+	return { files: {}, fromListingSnapshot: true }
 }
 
 export async function loadAccountPackageFilesData(input: {

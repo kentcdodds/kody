@@ -225,13 +225,21 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				sourceId: source.id,
 			}).catch(() => undefined)
 			if (!userRepo.isPrivate) {
-				await publishCommunityListing({
-					env: ctx.env,
-					baseUrl: ctx.callerContext.baseUrl,
-					userId: user.userId,
-					actorUserId: user.userId,
-					packageId,
-				}).catch(() => undefined)
+				try {
+					await publishCommunityListing({
+						env: ctx.env,
+						baseUrl: ctx.callerContext.baseUrl,
+						userId: user.userId,
+						actorUserId: user.userId,
+						packageId,
+					})
+				} catch (error) {
+					throw new McpCallerError(
+						getErrorMessage(error) ||
+							'Failed to list the promoted public package on /community.',
+						{ cause: error },
+					)
+				}
 			}
 			await deleteUserRepo(ctx.env.APP_DB, {
 				userId: user.userId,

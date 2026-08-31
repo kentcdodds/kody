@@ -16,6 +16,7 @@ import { rebuildPublishedPackageArtifactsViaRepoSession } from './package-artifa
 import { reportCapabilityProgress } from '#mcp/progress.ts'
 import { buildPackagePublishApprovalUrl } from '#worker/package-registry/package-publish-lock.ts'
 import { absorbCommunityForkUpstream } from '#worker/community/service.ts'
+import { CommunityActionError } from '#worker/community/errors.ts'
 
 export const repoPublishSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
@@ -78,14 +79,23 @@ export const repoPublishSessionCapability = defineDomainCapability(
 							userId: user.userId,
 						})
 						if (source) {
-							await absorbCommunityForkUpstream({
-								env: ctx.env,
-								userId: user.userId,
-								packageId: source.entity_id,
-								originCommit: args.absorbed_upstream_commit,
-							}).catch(() => {
-								// Self-authored packages have no fork row.
-							})
+							try {
+								await absorbCommunityForkUpstream({
+									env: ctx.env,
+									userId: user.userId,
+									packageId: source.entity_id,
+									originCommit: args.absorbed_upstream_commit,
+								})
+							} catch (error) {
+								if (
+									error instanceof CommunityActionError &&
+									error.message.includes('self-authored')
+								) {
+									// Self-authored packages have no fork row.
+								} else {
+									throw error
+								}
+							}
 						}
 					}
 					await reportCapabilityProgress(ctx.reportProgress, {

@@ -135,8 +135,9 @@ export function renderInstallStrip(props: InstallStripProps) {
 					role="alert"
 				>
 					<p mix={css({ margin: 0 })}>
-						This is someone else&apos;s code and will run in your account.
-						Installing publishes a fork you own. Confirm to continue.
+						This is someone else&apos;s code. It can run in your account.
+						Installing creates a fork you own. It can need adaptation before it
+						can run. Confirm to continue.
 					</p>
 					<div mix={css(buttonRowCss)}>
 						<button

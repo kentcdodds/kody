@@ -1,13 +1,16 @@
 # Public packages
 
-Public repos and packages are the community catalog. Visibility lives on the
-**repo record in D1** (default private), not `package.json#private`. Making a
-package public lists it on `/community` and `/@username/:name` with full source
-and fork. Package **runtime** still uses `published_commit`; pushing to a public
-default branch is world-readable at HEAD even before the next package publish.
+Public **packages** are the community catalog. Visibility lives on the **repo
+record in D1** (default private), not `package.json#private`. Making a package
+public lists it on `/community` and `/@username/:name` with full source and
+fork. Public plain repos store the same visibility flag and inherit it on
+promote; they do not yet appear on `/community`. Package **runtime** still uses
+`published_commit`; pushing to a public default branch is world-readable at HEAD
+even before the next package publish.
 
-A successful one-click install creates a fork you own (inert until you publish).
-Open it, change it, schedule it, or publish your own version.
+One-click install forks the listing into your account and publishes it when
+checks pass. If checks fail, the fork stays inert until you adapt and publish.
+`community_fork` always leaves an inert source.
 
 Public pages work without a Kody account: `/community` (searchable index) and
 `/@username/:name` (detail). Forking, rating, and reporting require a signed-in

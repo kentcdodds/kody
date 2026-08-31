@@ -15,6 +15,7 @@ const mockModule = vi.hoisted(() => ({
 	upsertSavedPackageVector: vi.fn(),
 	refreshSavedPackageProjection: vi.fn(),
 	deleteUserRepo: vi.fn(),
+	publishCommunityListing: vi.fn(),
 }))
 
 vi.mock('./resolve-user-repo.ts', () => ({
@@ -69,6 +70,11 @@ vi.mock('#worker/package-registry/service.ts', () => ({
 vi.mock('#worker/repo/user-repos.ts', () => ({
 	deleteUserRepo: (...args: Array<unknown>) =>
 		mockModule.deleteUserRepo(...args),
+}))
+
+vi.mock('#worker/community/service.ts', () => ({
+	publishCommunityListing: (...args: Array<unknown>) =>
+		mockModule.publishCommunityListing(...args),
 }))
 
 const { repoPromoteToPackageCapability } =
@@ -206,6 +212,7 @@ function resetMocks() {
 	mockModule.upsertSavedPackageVector.mockResolvedValue(undefined)
 	mockModule.refreshSavedPackageProjection.mockResolvedValue({ record: {} })
 	mockModule.deleteUserRepo.mockResolvedValue(undefined)
+	mockModule.publishCommunityListing.mockResolvedValue({ id: 'listing-1' })
 }
 
 test('repo_promote_to_package rejects repos without package.json at HEAD', async () => {
@@ -268,6 +275,12 @@ test('repo_promote_to_package seeds published_commit from the opened session bas
 		}),
 	)
 	expect(rpc.publishSession).toHaveBeenCalled()
+	expect(mockModule.publishCommunityListing).toHaveBeenCalledWith(
+		expect.objectContaining({
+			packageId: result.package_id,
+			userId: 'user-1',
+		}),
+	)
 	expect(mockModule.deleteUserRepo).toHaveBeenCalledWith(expect.anything(), {
 		userId: 'user-1',
 		repoId: 'repo-1',
@@ -313,6 +326,7 @@ test('repo_promote_to_package inherits repo visibility, not package.json private
 			is_private: 1,
 		}),
 	)
+	expect(mockModule.publishCommunityListing).not.toHaveBeenCalled()
 })
 
 test('repo_promote_to_package rolls back the kind flip and published_commit when publish reports base_moved', async () => {
@@ -354,5 +368,20 @@ test('repo_promote_to_package rolls back the kind flip and published_commit when
 	)
 	expect(deleted[0]?.[0]).toMatch(/DELETE FROM saved_packages/)
 	expect(rpc.discardSession).toHaveBeenCalled()
+	expect(mockModule.deleteUserRepo).not.toHaveBeenCalled()
+})
+
+test('repo_promote_to_package surfaces community listing publish failure', async () => {
+	resetMocks()
+	mockModule.publishCommunityListing.mockRejectedValue(
+		new Error('listing failed'),
+	)
+	const rpc = createSessionRpc()
+	mockModule.repoSessionRpc.mockReturnValue(rpc)
+	const { ctx } = createCapabilityContext()
+
+	await expect(
+		repoPromoteToPackageCapability.handler({ name: 'brave-search' }, ctx),
+	).rejects.toThrow(/listing failed/)
 	expect(mockModule.deleteUserRepo).not.toHaveBeenCalled()
 })
