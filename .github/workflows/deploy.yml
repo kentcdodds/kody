@@ -139,10 +139,8 @@ jobs:
             echo "Nx cache worker deploy: skipped (no relevant path changes)."
           fi
 
-  # The jobs worker deploys before the main worker on every production
-  # deploy: its JobManager script-transfer migration must run while the main
-  # worker still owns the class, and the main worker's JOBS service binding
-  # requires the jobs worker script to exist. See
+  # The jobs worker deploys before origin so origin's JOBS service binding
+  # can validate against an existing jobs-worker script. See
   # docs/contributing/architecture/jobs-worker-migration-runbook.md.
   deploy-highlight-worker:
     runs-on: ubuntu-latest
@@ -453,9 +451,8 @@ jobs:
             --out-config packages/runtime-worker/wrangler-production.generated.json | tee -a "$GITHUB_OUTPUT"
 
       # Platform Durable Object worker (ADR 0034). Shares the origin worker's
-      # data plane and applies transferred_classes while the still-running
-      # origin script owns those classes. Deploy this script before runtime
-      # and origin retarget their bindings.
+      # data plane. Deploy this script before runtime and origin so their
+      # cross-script bindings target a live kody-platform script.
       - name: 🧩 Generate platform worker config
         id: platform_config
         if: >-
@@ -657,8 +654,8 @@ jobs:
             deploy_delay_seconds=$((deploy_delay_seconds * 2))
           done
 
-      # Deploys before runtime and origin: applies transferred_classes while
-      # the still-running origin script owns those classes. See
+      # Deploys before runtime and origin so cross-script Durable Object
+      # bindings stay valid. See
       # docs/contributing/architecture/platform-worker-migration-runbook.md.
       - name: ☁️ Deploy platform worker to Cloudflare Workers
         id: deploy_platform
@@ -713,10 +710,8 @@ jobs:
             echo "url=$PLATFORM_URL" >> "$GITHUB_OUTPUT"
           fi
 
-      # Deploys before the main worker: the main worker's cross-script
-      # Durable Object / service bindings require the kody-runtime script to
-      # exist. On the first production deploy this also runs the
-      # transferred_classes migration; see
+      # Deploys before origin so origin's cross-script Durable Object and
+      # service bindings target a live kody-runtime script. See
       # docs/contributing/architecture/runtime-worker-migration-runbook.md.
       - name: ☁️ Deploy runtime worker to Cloudflare Workers
         id: deploy_runtime
