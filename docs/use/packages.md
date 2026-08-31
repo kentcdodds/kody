@@ -533,8 +533,9 @@ name, description, tags, `kody.id`, app presence, and source projection remains
 derived from `package.json` and changes through save or publish.
 
 Hiding is a discovery preference, not deletion. The package stays saved,
-executable, and editable. Hiding is separate from **`package.json#private`**
-(community publishing) and from entitlement or access grants.
+executable, and editable. Hiding is separate from **visibility**
+(`package_update` `changes.visibility`, which lists or unlists the catalog) and
+from entitlement or access grants.
 
 **`package_list`** and **`package_get`** return a **`hidden`** boolean on each
 package summary. Ranked **search** excludes hidden packages unless the caller

@@ -24,7 +24,7 @@ export function decideCommunityInstallClick(input: {
 			return 'ignore'
 		case 'idle':
 		case 'error':
-			return input.listingTrusted ? 'submit' : 'confirm'
+			return 'confirm'
 		default: {
 			const exhaustive: never = input.installState
 			throw new Error(`Unhandled install state: ${String(exhaustive)}`)

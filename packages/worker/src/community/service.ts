@@ -24,19 +24,26 @@ import {
 	getSavedPackageById,
 	getSavedPackageByKodyId,
 	getSavedPackageByName,
+	updateSavedPackage,
 } from '#worker/package-registry/repo.ts'
 import { rewriteForkedPackageSelfReferences } from '#worker/package-registry/platform-package-policy.ts'
-import { isPlatformAccountStableUserId } from '#worker/package-registry/scope-grants.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
-import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
+import {
+	deleteEntitySource,
+	getEntitySourceById,
+} from '#worker/repo/entity-sources.ts'
+import {
+	readMockArtifactSnapshot,
+	resolveArtifactSourceHead,
+} from '#worker/repo/artifacts.ts'
+import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { ensureEntitySource } from '#worker/repo/source-service.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import {
 	pushServerTiming,
 	type ServerTimingEntry,
 } from '#worker/server-timing.ts'
-import { assertPackageNotPrivateForCommunityPublish } from '#worker/package-registry/package-private.ts'
 import { KODY_DESCRIPTION_MAX_LENGTH } from '#worker/package-registry/types.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { enqueueCommunityActivityDispatch } from './activity-dispatch-queue-producer.ts'
@@ -77,7 +84,6 @@ import {
 	resolveCommunityReportRow,
 	setCommunityListingFeaturedAt,
 	setCommunityListingStatus,
-	setCommunityListingTrustedCommit,
 	updateCommunityListing,
 	upsertCommunityRating,
 	deleteCommunityBan,
@@ -115,12 +121,10 @@ import {
 	type ForkCommunityListingResult,
 } from './types.ts'
 
-const communityReadmeMaxChars = 20_000
 const communityBayesianPriorMean = 3.25
 const communityBayesianPriorWeight = 5
 const communityActivityDefaultPageSize = 20
 const communityActivityMaxPageSize = 100
-const intentHeadingPattern = /^##\s+intent\b/im
 
 // Offline deterministic embeddings produce small positive cosine scores for
 // unrelated text (~0.10). Related lexical hits use lexical > 0; vector-only
@@ -327,39 +331,6 @@ async function cleanupFailedCommunityFork(input: {
 	})
 }
 
-function parseRawPackageLicense(packageJsonContent: string) {
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(packageJsonContent)
-	} catch {
-		throw new CommunityActionError(
-			'Saved package package.json must be valid JSON.',
-		)
-	}
-	if (typeof parsed !== 'object' || parsed == null || !('license' in parsed)) {
-		// Caller-clearable listing precondition — keep off Sentry
-		// (KODY-CLOUDFLARE-5S).
-		throw new CommunityActionError(
-			'community listings require the MIT license in package.json',
-		)
-	}
-	const license = (parsed as { license?: unknown }).license
-	if (typeof license !== 'string' || license.trim() !== 'MIT') {
-		throw new CommunityActionError(
-			'community listings require the MIT license in package.json',
-		)
-	}
-	return license.trim()
-}
-
-function assertReadmeIntent(readmeContent: string) {
-	if (!intentHeadingPattern.test(readmeContent)) {
-		throw new CommunityActionError(
-			'Community listings require README.md to include a "## Intent" section.',
-		)
-	}
-}
-
 function buildListingSearchDocument(listing: CommunityListingRecord) {
 	return buildCommunityListingSearchDocument(listing)
 }
@@ -546,6 +517,19 @@ export async function publishCommunityListing(input: {
 		)
 	}
 
+	const existingListing = await getCommunityListingByOwnerAndPackage(
+		input.env.APP_DB,
+		{
+			ownerUserId: input.userId,
+			packageId: input.packageId,
+		},
+	)
+	if (existingListing?.status === 'delisted') {
+		throw new CommunityActionError(
+			`Community listing for package "${input.packageId}" was delisted by an admin and cannot be re-published.`,
+		)
+	}
+
 	const loadedSource = await loadPackageSourceBySourceId({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -571,54 +555,13 @@ export async function publishCommunityListing(input: {
 			'kody.description must be at most 200 characters (short public tagline).',
 		)
 	}
-	const license = parseRawPackageLicense(packageJsonContent)
-	assertPackageNotPrivateForCommunityPublish(packageJsonContent)
-
-	const readme = buildPackageReadmeDetail({
-		files: loadedSource.files,
-		maxChars: communityReadmeMaxChars,
-	})
-	if (!readme) {
-		throw new CommunityActionError(
-			'Community listings require a root README file.',
-		)
-	}
+	const license = existingListing?.license ?? ''
 	const fullReadme = buildPackageReadmeDetail({
 		files: loadedSource.files,
 		maxChars: Number.MAX_SAFE_INTEGER,
 	})
-	if (!fullReadme) {
-		throw new CommunityActionError(
-			'Community listings require a root README file.',
-		)
-	}
-	assertReadmeIntent(fullReadme.content)
 
-	const existingListing = await getCommunityListingByOwnerAndPackage(
-		input.env.APP_DB,
-		{
-			ownerUserId: input.userId,
-			packageId: input.packageId,
-		},
-	)
-	if (existingListing?.status === 'delisted') {
-		throw new CommunityActionError(
-			`Community listing for package "${input.packageId}" was delisted by an admin and cannot be re-published.`,
-		)
-	}
-
-	const platformOwner = await isPlatformAccountStableUserId(
-		input.env.APP_DB,
-		input.userId,
-	)
 	const listingId = existingListing?.id ?? crypto.randomUUID()
-	const previousSnapshot =
-		platformOwner && existingListing
-			? await readCommunitySnapshot(
-					input.env.BUNDLE_ARTIFACTS_KV,
-					existingListing.id,
-				)
-			: null
 	const releasedListingId = await releaseContestedCommunityPackageUrl({
 		env: input.env,
 		ownerUserId: input.userId,
@@ -664,7 +607,7 @@ export async function publishCommunityListing(input: {
 				tagsJson,
 				category,
 				searchText: savedPackage.searchText,
-				readmeContent: readme.content,
+				readmeContent: fullReadme?.content ?? '',
 				license,
 				pinnedCommit: publishedCommit,
 				publishedAt: now,
@@ -687,7 +630,7 @@ export async function publishCommunityListing(input: {
 				tags_json: tagsJson,
 				category,
 				search_text: savedPackage.searchText,
-				readme_content: readme.content,
+				readme_content: fullReadme?.content ?? '',
 				license,
 				pinned_commit: publishedCommit,
 				status: 'active',
@@ -716,49 +659,6 @@ export async function publishCommunityListing(input: {
 			})
 			throw snapshotError
 		}
-		if (platformOwner) {
-			try {
-				const trusted = await setCommunityListingTrustedCommit(
-					input.env.APP_DB,
-					{
-						listingId,
-						trustedCommit: publishedCommit,
-						trustedByUserId: input.actorUserId ?? input.userId,
-					},
-				)
-				if (!trusted) {
-					throw new Error(
-						`Community listing "${listingId}" could not be marked trusted.`,
-					)
-				}
-			} catch (trustError) {
-				await restoreCommunityListingAfterPublishFailure({
-					env: input.env,
-					ownerUserId: input.userId,
-					listingId,
-					existingListing,
-				})
-				try {
-					if (previousSnapshot) {
-						await writeCommunitySnapshot(
-							input.env.BUNDLE_ARTIFACTS_KV,
-							previousSnapshot,
-						)
-					} else {
-						await deleteCommunitySnapshot(
-							input.env.BUNDLE_ARTIFACTS_KV,
-							listingId,
-						)
-					}
-				} catch (revertError) {
-					console.error(
-						'Failed to revert community snapshot after trust failure:',
-						revertError,
-					)
-				}
-				throw trustError
-			}
-		}
 	} catch (publishError) {
 		await restoreReleasedCommunityPackageUrl({
 			env: input.env,
@@ -784,6 +684,11 @@ export async function publishCommunityListing(input: {
 	if (!listing) {
 		throw new Error(`Community listing "${listingId}" could not be loaded.`)
 	}
+	await updateSavedPackage(input.env.APP_DB, {
+		userId: input.userId,
+		packageId: input.packageId,
+		isPrivate: false,
+	})
 	try {
 		await insertCommunityActivityEvent(input.env.APP_DB, {
 			id: crypto.randomUUID(),
@@ -861,59 +766,17 @@ export async function unpublishCommunityListing(input: {
 	)
 	await deleteCommunityStarsByListingId(input.env.APP_DB, input.listingId)
 	await deleteCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, input.listingId)
-	invalidateCommunityPublicCache()
-}
-
-/**
- * Admin curation: mark a listing's current pinned commit as reviewed and
- * trusted, or revoke the mark. Trust is stored per commit, so an owner
- * republish (which moves the pinned commit) automatically drops the
- * effective trusted state until an admin reviews the new content.
- */
-export async function setCommunityListingTrusted(input: {
-	env: Env
-	adminUserId: string
-	listingId: string
-	trusted: boolean
-}): Promise<CommunityListingRecord> {
-	const listing = await getCommunityListingById(input.env.APP_DB, {
-		listingId: input.listingId,
-		includeDelisted: true,
-	})
-	if (!listing) {
-		throw new CommunityActionError(
-			`Community listing "${input.listingId}" was not found.`,
-		)
-	}
-	if (input.trusted && listing.status !== 'active') {
-		throw new CommunityActionError(
-			'Delisted community listings cannot be marked trusted.',
-		)
-	}
-	await setCommunityListingTrustedCommit(input.env.APP_DB, {
-		listingId: input.listingId,
-		trustedCommit: input.trusted ? listing.pinnedCommit : null,
-		trustedByUserId: input.trusted ? input.adminUserId : null,
+	await updateSavedPackage(input.env.APP_DB, {
+		userId: input.userId,
+		packageId: listing.packageId,
+		isPrivate: true,
 	})
 	invalidateCommunityPublicCache()
-	const updated = await getCommunityListingById(input.env.APP_DB, {
-		listingId: input.listingId,
-		includeDelisted: true,
-	})
-	if (!updated) {
-		throw new Error(
-			`Community listing "${input.listingId}" could not be loaded.`,
-		)
-	}
-	return updated
 }
 
 /**
  * Admin curation: mark a listing as an onboarding starter package, or remove
- * the mark. Featuring requires the listing to be effectively trusted at its
- * current commit, because onboarding presents featured listings for one-click
- * install. The mark itself survives republishes; the effective `featured`
- * flag drops with trust and returns when the same commit is re-trusted.
+ * the mark. Featured is editorial only — it is not a trust or safety badge.
  */
 export async function setCommunityListingFeatured(input: {
 	env: Env
@@ -934,11 +797,6 @@ export async function setCommunityListingFeatured(input: {
 			'Delisted community listings cannot be featured.',
 		)
 	}
-	if (input.featured && !listing.trusted) {
-		throw new CommunityActionError(
-			'Only trusted community listings can be featured in onboarding. Mark the listing trusted first.',
-		)
-	}
 	await setCommunityListingFeaturedAt(input.env.APP_DB, {
 		listingId: input.listingId,
 		featured: input.featured,
@@ -957,8 +815,8 @@ export async function setCommunityListingFeatured(input: {
 }
 
 /**
- * Onboarding starter packages: featured listings that are still effectively
- * trusted, with rating/fork aggregates attached for public display.
+ * Onboarding starter packages: admin-featured listings with rating/fork
+ * aggregates attached for public display.
  */
 export async function listFeaturedCommunityListingsWithAggregates(input: {
 	env: Env
@@ -1076,7 +934,6 @@ export async function searchCommunityListings(input: {
 	limit: number
 	sort?: CommunityListingSort
 	category?: CommunityListingCategory | null
-	trustedFirst?: boolean
 	resultFilter?: (listing: CommunityListingWithAggregates) => boolean
 }): Promise<Array<CommunityListingSearchResult>> {
 	const trimmedQuery = input.query.trim()
@@ -1180,7 +1037,6 @@ function finalizeCommunitySearchResults(
 	input: {
 		limit: number
 		category?: CommunityListingCategory | null
-		trustedFirst?: boolean
 		resultFilter?: (listing: CommunityListingWithAggregates) => boolean
 	},
 ): Array<CommunityListingSearchResult> {
@@ -1191,9 +1047,6 @@ function finalizeCommunitySearchResults(
 	const filtered = input.resultFilter
 		? categoryFiltered.filter(input.resultFilter)
 		: categoryFiltered
-	if (input.trustedFirst) {
-		filtered.sort((left, right) => Number(right.trusted) - Number(left.trusted))
-	}
 	return filtered.slice(0, input.limit)
 }
 
@@ -1346,21 +1199,56 @@ export async function prepareCommunityFork(
 			`Community listing "${input.listingId}" was not found.`,
 		)
 	}
-	if (!snapshot) {
+	const source = await getEntitySourceById(input.env.APP_DB, listing.sourceId)
+	let originCommit = listing.pinnedCommit
+	if (source) {
+		try {
+			const head = await resolveArtifactSourceHead(input.env, source.repo_id)
+			if (head.commit) originCommit = head.commit
+		} catch {
+			originCommit = source.published_commit || listing.pinnedCommit
+		}
+	}
+	let files = snapshot?.files ?? null
+	if (source && originCommit) {
+		try {
+			const published = await readPublishedSourceSnapshot({
+				env: input.env,
+				sourceId: listing.sourceId,
+				publishedCommit: originCommit,
+			})
+			if (published?.files) files = published.files
+		} catch {
+			// Fall through to git snapshot / listing pin.
+		}
+		if (files === snapshot?.files || files == null) {
+			try {
+				const mock = await readMockArtifactSnapshot({
+					env: input.env,
+					repoId: source.repo_id,
+					commit: originCommit,
+				})
+				if (mock?.files) files = mock.files
+			} catch {
+				// Fall through to listing pin snapshot.
+			}
+		}
+	}
+	if (!files) {
 		throw new Error(
 			`Community listing snapshot for "${input.listingId}" was not found.`,
 		)
 	}
 	if (
 		input.expectedPinnedCommit &&
-		snapshot.pinnedCommit !== input.expectedPinnedCommit
+		originCommit !== input.expectedPinnedCommit
 	) {
 		throw new CommunityActionError(
-			'This listing was republished after you confirmed the install. Review the updated listing and try again.',
+			'This listing changed after you confirmed the install. Review the updated listing and try again.',
 		)
 	}
 
-	const packageJsonContent = snapshot.files['package.json']
+	const packageJsonContent = files['package.json']
 	if (!packageJsonContent) {
 		throw new Error('Community listing snapshot is missing package.json.')
 	}
@@ -1419,7 +1307,7 @@ export async function prepareCommunityFork(
 
 	const rewrittenFiles = rewriteForkedPackageSelfReferences({
 		files: {
-			...snapshot.files,
+			...files,
 			'package.json': rewrittenManifest.content,
 		},
 		originPackageName: listing.name,
@@ -1437,7 +1325,7 @@ export async function prepareCommunityFork(
 		listingId: input.listingId,
 		listingName: listing.name,
 		listingKodyId: listing.kodyId,
-		originCommit: listing.pinnedCommit,
+		originCommit,
 		actor: input.actor ?? null,
 		packageId: crypto.randomUUID(),
 		targetKodyId,
@@ -1648,6 +1536,7 @@ export async function absorbCommunityForkUpstream(input: {
 	userId: string
 	packageId?: string
 	kodyId?: string
+	originCommit?: string
 }): Promise<AbsorbCommunityForkUpstreamResult> {
 	const packageIdCount =
 		(input.packageId !== undefined ? 1 : 0) +
@@ -1694,7 +1583,8 @@ export async function absorbCommunityForkUpstream(input: {
 			`The source community listing for package "${savedPackage.kodyId}" is no longer active.`,
 		)
 	}
-	if (fork.originCommit === listing.pinnedCommit) {
+	const originCommit = input.originCommit?.trim() || listing.pinnedCommit
+	if (fork.originCommit === originCommit) {
 		return {
 			packageId: savedPackage.id,
 			kodyId: savedPackage.kodyId,
@@ -1708,7 +1598,7 @@ export async function absorbCommunityForkUpstream(input: {
 	const updated = await updateCommunityForkOriginCommit(input.env.APP_DB, {
 		forkerUserId: input.userId,
 		forkedPackageId: savedPackage.id,
-		originCommit: listing.pinnedCommit,
+		originCommit,
 	})
 	if (!updated) {
 		throw new CommunityActionError(

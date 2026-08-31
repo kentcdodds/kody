@@ -15,13 +15,14 @@ import {
 import { rebuildPublishedPackageArtifactsViaRepoSession } from './package-artifact-rebuild.ts'
 import { reportCapabilityProgress } from '#mcp/progress.ts'
 import { buildPackagePublishApprovalUrl } from '#worker/package-registry/package-publish-lock.ts'
+import { absorbCommunityForkUpstream } from '#worker/community/service.ts'
 
 export const repoPublishSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repo_publish_session',
 		description:
-			'Publish an active repo session back to the source repo after checks pass on the current tree and the base commit is still current. Changing package.json `"private"` requires confirm_private_visibility_change after explicit user approval.',
+			'Publish an active repo session back to the source repo after checks pass on the current tree and the base commit is still current. Visibility is a repo setting (`package_update` / `repo_update`), not package.json#private. When publishing a community fork after absorbing origin updates, pass absorbed_upstream_commit.',
 		keywords: ['repo', 'publish', 'session', 'checks', 'artifact'],
 		readOnly: false,
 		idempotent: false,
@@ -71,6 +72,22 @@ export const repoPublishSessionCapability = defineDomainCapability(
 						publishedCommit: result.publishedCommit,
 						baseUrl: ctx.callerContext.baseUrl,
 					})
+					if (args.absorbed_upstream_commit) {
+						const source = await getEntitySourceByIdForUser(ctx.env.APP_DB, {
+							id: sessionInfo.source_id,
+							userId: user.userId,
+						})
+						if (source) {
+							await absorbCommunityForkUpstream({
+								env: ctx.env,
+								userId: user.userId,
+								packageId: source.entity_id,
+								originCommit: args.absorbed_upstream_commit,
+							}).catch(() => {
+								// Self-authored packages have no fork row.
+							})
+						}
+					}
 					await reportCapabilityProgress(ctx.reportProgress, {
 						progress: 3,
 						total: progressTotal,

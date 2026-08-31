@@ -200,7 +200,7 @@ function toSavedPackageInsertRow(input: {
 		source_id: input.sourceId,
 		has_app: projection.hasApp ? 1 : 0,
 		hidden: 0,
-		is_private: projection.isPrivate ? 1 : 0,
+		is_private: 1,
 	}
 }
 
@@ -298,7 +298,6 @@ export async function refreshSavedPackageProjection(input: {
 					searchText: row.search_text,
 					sourceId: row.source_id,
 					hasApp: row.has_app === 1,
-					isPrivate: row.is_private === 1,
 				})
 				// `kody.id` is the second half of the package's canonical URL, so
 				// editing it in the manifest moves that URL. Retire the old id here

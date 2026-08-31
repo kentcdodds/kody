@@ -272,6 +272,14 @@ const routeDocumentHeads = {
 			canonicalPath: pathname,
 		}
 	},
+	[routePattern(routes.communityPackageTree)]: ({ loaderData, pathname }) => {
+		const files = loaderData?.packageFiles
+		if (!files?.ok) return titleOnly('Package files')
+		return {
+			title: `${files.title} files`,
+			canonicalPath: pathname,
+		}
+	},
 	[routePattern(routes.profile)]: ({ loaderData, params, pathname }) => {
 		const shell = loaderData?.profileShell
 		if (shell && !shell.ok) {

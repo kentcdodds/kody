@@ -4,6 +4,7 @@ import {
 	resetDataCacheForTests,
 } from '#app/data-cache.ts'
 import {
+	communityIconPaths,
 	deleteCommunityIconAssets,
 	findCommunityIconPath,
 	getCommunityIconObject,
@@ -425,13 +426,7 @@ test('community icons ahead of the pinned snapshot load from the artifact repo a
 	expect(mocks.readFirstArtifactFileAtCommit).toHaveBeenCalledWith(
 		expect.objectContaining({
 			commit: iconCommit,
-			filePaths: [
-				'community-icon.svg',
-				'community-icon.png',
-				'community-icon.webp',
-				'community-icon.jpg',
-				'community-icon.jpeg',
-			],
+			filePaths: [...communityIconPaths],
 		}),
 	)
 	// The pinned snapshot is never consulted for ahead-of-snapshot commits.

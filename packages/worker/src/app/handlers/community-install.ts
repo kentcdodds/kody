@@ -16,12 +16,12 @@ import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 
 const communityInstallPostSchema = z.object({
-	acknowledged_untrusted: z.boolean().optional(),
+	acknowledged: z.boolean().optional(),
 	kody_id: z.string().trim().min(1).optional(),
 })
 
-const untrustedAcknowledgementError =
-	'This listing has not been reviewed by an admin. Confirm the untrusted-content warning to install it.'
+const thirdPartyInstallConfirmError =
+	"This is someone else's code and will run in your account. Confirm to install it."
 
 export function createCommunityInstallApiPostHandler(env: Env) {
 	return {
@@ -55,12 +55,12 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 			// The UI shows the untrusted warning before calling this endpoint;
 			// this re-check keeps direct API calls behind the same explicit
 			// acknowledgement.
-			if (!listing.trusted && parsed.data.acknowledged_untrusted !== true) {
+			if (parsed.data.acknowledged !== true) {
 				return jsonResponse(
 					{
 						ok: false,
 						requiresAcknowledgement: true,
-						error: untrustedAcknowledgementError,
+						error: thirdPartyInstallConfirmError,
 					},
 					409,
 				)

@@ -1,113 +1,62 @@
 # Community packages
 
-Kody users on the same deployment can share **saved packages** with everyone
-through **community listings**. A listing is a pinned public snapshot of a
-published package — not a live link to the owner's private copy.
+Public repos and packages are the community catalog. Visibility lives on the
+**repo record in D1** (default private), not `package.json#private`. Making a
+package public lists it on `/community` and `/@username/:name` with full source
+and fork. Package **runtime** still uses `published_commit`; pushing to a public
+default branch is world-readable at HEAD even before the next package publish.
 
-A successful one-click install creates and publishes a fork you own. Open it,
-change it, schedule it, or publish your own version back to the community.
+A successful one-click install creates a fork you own (inert until you publish).
+Open it, change it, schedule it, or publish your own version.
 
-Community listings are **public**: `/community` (searchable index) and
-`/@username/kody-id` (detail) work without a Kody account. Forking, rating, and
-reporting require a signed-in MCP user.
+Public pages work without a Kody account: `/community` (searchable index) and
+`/@username/:name` (detail). Forking, rating, and reporting require a signed-in
+MCP user. Anonymous git remotes are not offered.
 
-Community discovery uses the MCP **`community`** domain. Community listings do
-**not** appear in the general MCP **`search`** tool, so agents never pull
-cross-user packages by accident.
+Community discovery uses the MCP **`community`** domain. Catalog listings do
+**not** appear in the general MCP **`search`** tool.
 
-## Publishing a listing
+## Making a package public
 
-Ask your agent to publish a saved package to the community with
-`community_publish`. The package must already be **published** in your account.
+Ask your agent to set visibility with `package_update`
+(`changes.visibility: "public"`). `community_publish` still exists as an alias
+for the same action.
 
-Requirements:
+There are **no** MIT, logo, README Intent, or `package.json#private` gates.
+Tags, description, category, and an icon are optional (ranking can prefer
+filled-in cards).
 
-- **`package.json#license`** must be `"MIT"`. Community publishing accepts
-  permissive licensing only; MIT is the only accepted value.
-- **`package.json#private`** must not be `true`. Like npm, `"private": true`
-  blocks public community publishing; set `"private": false` or remove `private`
-  only after the user explicitly approves public sharing. Note that
-  `package_save` always creates **new** packages as `"private": true` when the
-  manifest omits `private` — even when `confirm_private_visibility_change` is
-  true, because that flag only confirms an explicit manifest state. To create a
-  community-publishable package, send `"private": false` explicitly along with
-  the confirmation. Removing `private` (with confirmation) works when
-  **updating** an existing package.
-- A root **`README.md`** with a **`## Intent`** section (same guidance as
-  [Packages](./packages.md#save-and-edit-packages)).
-- A short **`kody.description`** tagline (~80–120 characters ideal; max 200).
-  Community listings and Open Graph share cards use this field, so keep it
-  concise — not a feature dump.
-- A **published** saved package commit. Publishing creates a **pinned snapshot**
-  of the files at that commit.
+- New packages are always created **private**.
+- Making a package **private** unlists it: public URLs 404; existing forks keep
+  their copies. Type the package slug to confirm (`confirm_name` for agents).
+- Hidden and locked stay separate from visibility.
 
-### Community icon
+### Icon
 
-Include an icon at the package root:
-
-- `community-icon.svg`
-- `community-icon.png`
-- `community-icon.webp`
-- `community-icon.jpg` or `community-icon.jpeg`
-
-The first file in that order wins when more than one exists. Icons must be at
-most 2 MiB, 4096 pixels per side, and 16 megapixels total. Kody validates the
-source, then stores a 256-pixel WebP derivative (SVG is rasterized first).
-Packages without an icon receive a generated visual based on the package name.
-
-Icon URLs embed the package's **current published commit** (falling back to the
-listing's pinned commit if the package source no longer exists), so publishing a
-new package version with an updated `community-icon.*` refreshes the listing
-icon without re-running `community_publish`. Remember the priority order above:
-an old `community-icon.svg` left at the package root keeps winning over a newly
-added `community-icon.png`, so delete superseded icon files when switching
-formats.
-
-Re-running `community_publish` updates the public listing to the package's
-current published commit. Private edits after publishing do not change the
-listing until you publish again and re-run `community_publish`. When you change
-your username on `/account`, Kody republishes any of your listings that were
-already pinned to the package's latest commit so the public `@{username}/…` name
-stays current.
-
-`community_unpublish` removes an active listing you own. If an admin **delists**
-a listing, the owner cannot unpublish or re-publish it; only an admin hard
-delete can remove the delisted row.
+Prefer a root `icon.svg`, `icon.png`, `icon.webp`, `icon.jpg`, or `icon.jpeg`.
+`community-icon.*` is still accepted. The first existing file in that combined
+order wins.
 
 ## Browsing listings
 
-Anyone can browse `/community` and open a package at `/@username/kody-id` — for
+Anyone can browse `/community` and open a package at `/@username/:name` — for
 example `/@kentcdodds/devin`. `/community/:listingId` redirects to that
-canonical URL; username and `kody.id` redirect tables resolve renamed owners and
-package ids the same way. The unfiltered catalog opens as a few cards per
-**category** (Integrations, Examples, Productivity, Apps, Utilities, and Other)
-instead of one long shelf. Category chips filter to that set
-(`?category=integrations`) and only appear for categories that have listings —
-an empty shelf hides the facet entirely. **All** returns to the grouped
-overview. When a category has more cards than the overview shows, **See all
-{category}** opens the filtered grid. The catalog defaults to **Best** (ratings,
-then recency). **Newest** (`?sort=newest`) orders by last community publish —
-republishing a listing moves it to the top. Cards show that published date.
-Authors set `package.json#kody.category`; when it is omitted, Kody infers a
-category from well-known tags such as `github` or `zero-auth`. Detail pages show
-metadata, aggregate ratings, **star count** (stargazers — distinct from 1–5
-ratings), fork count, the README, a **Browse files** link to the published
-snapshot at `/@username/kody-id/files`, and a dynamically generated Open Graph
-image (1200×630). When the owner keeps a
-[public profile](./community-profiles.md), the listing links to `/@username` and
-shows a follow control next to the username. Private owners show as `@username`
-with a lock that explains the profile is private.
+canonical URL. Browse files at `/@username/:name/tree/:ref/...` (branch name,
+SHA, or `HEAD`). Leftover `/files` URLs redirect to `/tree/HEAD`.
 
-The detail page opens with the README. A star control sits next to the package
-name — filled when you have starred the listing. Next to **Trusted** (and
-**Featured**, when present) a pill says **Install**, **Installed**, **Forked**,
-or **Fork outdated**. You can also ask your agent to use `community_search` or
-`community_get` from the `community` domain.
+The catalog defaults to **Best**. **Newest** orders by last community publish.
+**Featured** is editorial onboarding placement only — not a safety badge. There
+is no trusted-listing review mark.
+
+The detail page opens with the README. Next to **Featured** (when present) a
+pill says **Install**, **Installed**, **Forked**, or **Fork outdated**. When
+default-branch HEAD is newer than the last package publish, a **HEAD ahead of
+published** badge appears. You can also ask your agent to use `community_search`
+or `community_get`.
 
 ## Forking a listing
 
-`community_fork` copies the listing's **pinned snapshot** into your account as
-an **inert** source:
+`community_fork` copies **HEAD** into your account as an **inert** source:
 
 - `package.json` `name` and `kody.id` are rewritten to your username scope.
 - **No saved package row is created**, so nothing runs yet — no imports, jobs,
@@ -143,90 +92,42 @@ Your agent should:
 
 Only after publish does the package become a live saved package in your account.
 
-If the listing owner later republishes, your fork keeps the snapshot you copied.
-`package_get` / `package_list` set `listing_ahead` when the listing's current
-pinned commit differs from the commit your fork last absorbed (`origin_commit`).
+If the listing owner later pushes to a public default branch, your fork keeps
+the snapshot you copied. `package_get` / `package_list` set `listing_ahead` when
+origin HEAD differs from the commit your fork last absorbed (`origin_commit`).
 `/account/packages` and the listing page then replace Installed / Forked with a
-yellow **Fork outdated** button. Click it to copy a prompt: compare the current
-public snapshot with your package, port useful changes, keep your
-customizations, publish, and call `community_fork_absorb` so the fork records
-that listing commit. Package **search** and `{kodyId}:package` entity detail
-surface the same `listingAhead` flag with a one-line next step when the listing
-is ahead.
+yellow **Fork outdated** button. Click it to copy a prompt: compare origin HEAD
+with your package, port useful changes, keep your customizations, then publish
+with `repo_publish_session` and `absorbed_upstream_commit` so the
+behind-upstream banner clears.
 
 ## One-click install
 
-Each listing detail page has an **Install** pill next to **Trusted** for
-signed-in users. Logged-out visitors get the same pill as a login link. Get
-started Step 2–3 follow
-[Connect your agent](./connect-your-agent.md#give-kody-access-then-persist-a-first-build)
-(Give Kody Access or Just-try-Kody, then ad hoc → persist). If you already have
-a saved package with the same `kody_id`, or a fork of that listing, listing
-cards and the detail page show **Installed** or **Forked** instead of Install.
-Clicking that pill copies a prompt so your agent can look up the installed
-package and adapt it. Listing cards and the detail page place **Trusted** /
-**Installed** (or **Forked**) pills on their own row under the package name.
-Install forks the listing into your account and, when the fork passes the same
-publish checks a repo session would run, publishes it immediately as a live
-saved package. **Publishing activates the package right away** — declared jobs
-are scheduled.
+Each listing detail page has an **Install** pill for signed-in users. Logged-out
+visitors get the same pill as a login link. Every public install asks for one
+generic confirm (`acknowledged: true` on
+`POST /community/:listingId/install.json`, or the endpoint responds `409`).
 
-- **Untrusted listings** show a warning first: no admin has reviewed the code,
-  and installing runs it in your account. You must explicitly confirm. Direct
-  API calls need the same acknowledgement (`acknowledged_untrusted: true`), or
-  the endpoint responds `409`.
-- **Trusted listings** install without the warning step.
+If you already have a saved package with the same slug, or a fork of that
+listing, cards and the detail page show **Installed** or **Forked** instead.
+Install forks the listing into your account and, when the fork passes publish
+checks, publishes it as a live saved package. **Publishing activates the package
+right away** — declared jobs are scheduled.
 
 When checks fail — most commonly because the package imports code from the
 original author's scope (`kody:@originuser/...`) — nothing is published. The
-fork stays **inert** exactly as a manual `community_fork` would, and the
-**Forked** pill copies a prompt so your agent can review, adapt, and publish it
-through a repo session.
+fork stays **inert**, and the **Forked** pill copies a prompt so your agent can
+review, adapt, and publish it through a repo session.
 
-After a successful install the **Installed** pill copies a prompt so your agent
-can look up that package and adapt it to your needs.
-
-One-click install is deliberately a **UI-only** flow. Agents use
-`community_fork` plus a repo session instead, which keeps a human review step
-between community content and live code.
-
-## Trusted listings
-
-Admins can mark a person-owned listing as **trusted** after reviewing its
-content. Listings owned by an official platform account such as `@kody` are
-trusted automatically whenever they are published successfully. A username alone
-does not grant this behavior: person accounts, including `@kentcdodds`, still
-require review. Trusted listings show a **Trusted** badge on `/community` cards
-and detail pages, and `community_search` / `community_get` include a `trusted`
-field.
-
-Trust is pinned to the **exact trusted commit**. For person-owned listings, that
-is the commit an admin reviewed. When the owner republishes with new content,
-the badge disappears until an admin reviews the new version and re-trusts it. A
-platform-owned listing instead re-pins trust to the newly published commit
-automatically. Admins can still revoke trust from either kind of listing. It is
-still your responsibility (and your agent's) to review forked code before
-publishing it into your account.
-
-Admins toggle trust from the listing detail page or with the
-`community_set_trusted` capability.
+One-click install is a **UI-only** flow. Agents use `community_fork` plus a repo
+session instead.
 
 ## Featured listings
 
-Admins can additionally mark trusted listings as **featured**. Featured listings
-appear on the onboarding page (`/onboarding`) as starter packages new users can
-one-click install. Official starter packages are published under platform scopes
-such as `@kody` by operators who hold a package scope grant on that account —
-they show up like any other community listing, owned by `@kody/...` rather than
-a personal username. Only trusted listings can be featured, and a listing is
-only _shown_ in onboarding while it remains effectively trusted. Platform-owned
-listings re-pin trust on republish, so official featured listings stay in
-onboarding. A person-owned listing silently drops out until an admin re-trusts
-the new version (the featured mark itself is kept, so re-trusting restores it).
-
-Featured listings show a **Featured** badge on their detail page. Admins toggle
-featuring from the listing detail page or with the `community_set_featured`
-capability.
+Admins can mark listings as **featured**. Featured listings appear on
+`/onboarding` as starter packages. Featured is editorial placement, not a safety
+review. Admins toggle featuring from the listing detail page or with
+`community_set_featured`.
 
 ## Stars (stargazers)
 
@@ -267,27 +168,24 @@ rating, or reporting community listings.
 
 Use the MCP `community` domain:
 
-- `community_publish` — publish or update a listing from a saved package
-- `community_unpublish` — remove your active listing (not delisted listings)
+- `community_publish` — alias for making a saved package public (prefer
+  `package_update` with `changes.visibility: "public"`)
+- `community_unpublish` — make a package private / unlist it (prefer
+  `package_update` with `changes.visibility: "private"` and `confirm_name`)
 - `community_search` — search active listings (`sort: "newest"` for last
   published first; optional `category` to browse one listing category)
 - `community_get` — fetch one listing's metadata and aggregates (including star
   count, stargazers, and owner profile linkage when the owner is public)
-- `community_fork` — copy a pinned snapshot into your account (inert until
-  published)
+- `community_fork` — copy HEAD into your account (inert until published)
 - `community_fork_adopt` — mark a reviewed fork as adopted, granting it
   self-authored-like secret read/use access (see
   [Secrets and host approval](./secrets-and-values.md))
-- `community_fork_absorb` — after porting a newer listing snapshot into a fork,
-  record the listing's current pinned commit so `listing_ahead` clears
 - `community_rate` — rate a listing after forking
 - `community_star` / `community_unstar` — bookmark a listing (see
   [Community profiles](./community-profiles.md))
 - `community_report` — report a listing (requires login)
-- `community_set_trusted` — admin-only: mark or unmark a listing as trusted at
-  its current pinned commit
-- `community_set_featured` — admin-only: feature or unfeature a trusted listing
-  as an onboarding starter package
+- `community_set_featured` — admin-only: feature or unfeature a listing as an
+  onboarding starter package
 
 Profiles, follows, and timelines use additional `community_*` capabilities
 documented in [Community profiles](./community-profiles.md).

@@ -189,27 +189,25 @@ this field, so keep it concise.
 
 Public community listings browse by a closed category. Set
 `package.json#kody.category` to one of `integrations`, `examples`,
-`productivity`, `apps`, or `utilities` before `community_publish`. When the
-field is omitted, Kody infers a category from well-known tags such as `github`
-or `zero-auth`, or files the listing under Other. Tags stay freeform search
-keywords; do not use `kody.tags` as a second category vocabulary.
+`productivity`, `apps`, or `utilities` before making the package public. When
+the field is omitted, Kody infers a category from well-known tags such as
+`github` or `zero-auth`, or files the listing under Other. Tags stay freeform
+search keywords; do not use `kody.tags` as a second category vocabulary.
 
-## Package visibility (`private`)
+`package.json#kody.id` is optional. If present it must match the package name
+leaf (the URL slug). Prefer omitting it and letting the leaf be the slug.
 
-Default new saved packages to `"private": true` in `package.json` unless the
-user explicitly wants public **community** publishing.
+## Package visibility
 
-Like npm, `"private": true` blocks community listings on this deployment.
-Account publishing is unaffected, so the owner can run the package privately.
+New packages are always **private**. Visibility is a repo setting
+(`package_update` `changes.visibility` or `repo_update`), not
+`package.json#private`. Ignore leftover `"private"` in manifests.
 
-- Set `"private": true` when creating or forking a package unless the user asks
-  to share it publicly.
-- Require explicit user approval before changing `"private"` or creating a
-  package without `"private": true`.
-- Pass `confirm_private_visibility_change: true` on `package_save` or repo
-  publish only after that approval.
-- Community publish additionally requires `"private": false` or omitting
-  `private`, plus MIT license and README `## Intent`.
+- Public means default-branch HEAD is world-readable and forkable and the
+  package appears on `/community`.
+- Private is owner-only. Going private 404s public URLs; existing forks keep
+  their copies. Type the package slug to confirm (`confirm_name` for agents).
+- There are no MIT, logo, or README Intent gates to become public.
 
 ## Work that does not fit a Worker isolate
 

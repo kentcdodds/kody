@@ -80,6 +80,9 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0042 — No capability-input secret placeholders or capability allowlists](./0042-no-capability-input-secrets.md)
   — fetch host approval and package grants remain; do not re-add `x-kody-secret`
   input resolution or `allowed_capabilities`
+- [0043 — Repo visibility is the share switch; no community-package kind](./0043-repo-visibility-no-community-kind.md)
+  — no `package.json#private` SoT, no second publish verb, no license bureau, no
+  trusted listings
 
 ## Historical / UI / implementation
 

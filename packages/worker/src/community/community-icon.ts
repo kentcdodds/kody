@@ -37,6 +37,11 @@ const communityIconDescriptorTtlMs = 30 * 24 * 60 * 60 * 1000
 export const communityIconCacheControl = publicFittedIconCacheControl
 
 export const communityIconPaths = [
+	'icon.svg',
+	'icon.png',
+	'icon.webp',
+	'icon.jpg',
+	'icon.jpeg',
 	'community-icon.svg',
 	'community-icon.png',
 	'community-icon.webp',

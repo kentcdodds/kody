@@ -4,6 +4,7 @@ import { getCommunityListingById } from '#worker/community/repo.ts'
 import { readCommunitySnapshot } from '#worker/community/snapshot.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
+import { readPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { getCommunityListingHref } from '#universal/community-links.ts'
 import {
 	buildPackageFilesView,
@@ -20,6 +21,11 @@ import {
 } from '#app/highlight-code.ts'
 import { plainHighlightedCode } from '#universal/highlighted-code.ts'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
+import {
+	readMockArtifactSnapshot,
+	resolveArtifactSourceHead,
+} from '#worker/repo/artifacts.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 
 export function readPackageFilesSelectedPath(requestUrl: string) {
 	const url = new URL(requestUrl, 'http://localhost')
@@ -78,6 +84,7 @@ export async function loadCommunityPackageFilesData(input: {
 	env: Env
 	listingId: string
 	selectedPath: string
+	ref?: string
 	serverTiming?: Array<ServerTimingEntry>
 }): Promise<PackageFilesLoaderData | null> {
 	const listing = await getCommunityListingById(input.env.APP_DB, {
@@ -87,16 +94,31 @@ export async function loadCommunityPackageFilesData(input: {
 	if (!listing) return null
 
 	const ownerUsername = getOwnerUsernameFromListingName(listing.name)
+	const treeRef = input.ref?.trim() || 'HEAD'
+	const source = await getEntitySourceById(input.env.APP_DB, listing.sourceId)
+	const resolvedCommit = await resolvePublicTreeCommit({
+		env: input.env,
+		sourceRepoId: source?.repo_id ?? null,
+		publishedCommit: source?.published_commit ?? listing.pinnedCommit,
+		pinnedCommit: listing.pinnedCommit,
+		ref: treeRef,
+	})
+	const files = await loadPublicTreeFiles({
+		env: input.env,
+		listingId: listing.id,
+		sourceId: listing.sourceId,
+		sourceRepoId: source?.repo_id ?? null,
+		commit: resolvedCommit,
+		pinnedCommit: listing.pinnedCommit,
+	})
 	const filesBasePath = getCommunityPackageFilesHref({
 		listingId: listing.id,
 		ownerUsername,
 		kodyId: listing.kodyId,
+		ref: resolvedCommit ?? treeRef,
 	})
-	const snapshot = input.env.BUNDLE_ARTIFACTS_KV
-		? await readCommunitySnapshot(input.env.BUNDLE_ARTIFACTS_KV, listing.id)
-		: null
 	const view = buildPackageFilesView({
-		files: snapshot?.files ?? {},
+		files,
 		selectedPath: input.selectedPath,
 	})
 	if (!view) return null
@@ -114,6 +136,92 @@ export async function loadCommunityPackageFilesData(input: {
 		view,
 		serverTiming: input.serverTiming,
 	})
+}
+
+async function resolvePublicTreeCommit(input: {
+	env: Env
+	sourceRepoId: string | null
+	publishedCommit: string | null
+	pinnedCommit: string
+	ref: string
+}): Promise<string | null> {
+	const ref = input.ref.trim() || 'HEAD'
+	let headCommit: string | null = null
+	let defaultBranch = 'main'
+	if (input.sourceRepoId) {
+		try {
+			const head = await resolveArtifactSourceHead(
+				input.env,
+				input.sourceRepoId,
+			)
+			headCommit = head.commit
+			defaultBranch = head.branch || 'main'
+		} catch {
+			headCommit = input.publishedCommit
+		}
+	}
+	if (ref === 'HEAD' || ref === defaultBranch) {
+		return headCommit ?? input.publishedCommit ?? input.pinnedCommit
+	}
+	if (headCommit && (headCommit === ref || headCommit.startsWith(ref))) {
+		return headCommit
+	}
+	if (
+		input.publishedCommit &&
+		(input.publishedCommit === ref || input.publishedCommit.startsWith(ref))
+	) {
+		return input.publishedCommit
+	}
+	if (input.pinnedCommit === ref || input.pinnedCommit.startsWith(ref)) {
+		return input.pinnedCommit
+	}
+	if (/^[0-9a-f]{7,40}$/i.test(ref)) {
+		return ref
+	}
+	return headCommit ?? input.publishedCommit ?? input.pinnedCommit
+}
+
+async function loadPublicTreeFiles(input: {
+	env: Env
+	listingId: string
+	sourceId: string
+	sourceRepoId: string | null
+	commit: string | null
+	pinnedCommit: string
+}): Promise<Record<string, string>> {
+	const commit = input.commit
+	if (commit && input.env.BUNDLE_ARTIFACTS_KV) {
+		try {
+			const snapshot = await readPublishedSourceSnapshot({
+				env: input.env,
+				sourceId: input.sourceId,
+				publishedCommit: commit,
+			})
+			if (snapshot?.files) return snapshot.files
+		} catch {
+			// Fall through to git / listing snapshot.
+		}
+	}
+	if (input.sourceRepoId && commit) {
+		try {
+			const mock = await readMockArtifactSnapshot({
+				env: input.env,
+				repoId: input.sourceRepoId,
+				commit,
+			})
+			if (mock?.files) return mock.files
+		} catch {
+			// Fall through to the listing pin snapshot.
+		}
+	}
+	if (input.env.BUNDLE_ARTIFACTS_KV) {
+		const listingSnapshot = await readCommunitySnapshot(
+			input.env.BUNDLE_ARTIFACTS_KV,
+			input.listingId,
+		)
+		if (listingSnapshot?.files) return listingSnapshot.files
+	}
+	return {}
 }
 
 export async function loadAccountPackageFilesData(input: {

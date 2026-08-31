@@ -21,6 +21,7 @@ export const repoListCapability = defineDomainCapability(
 					repo_id: z.string(),
 					name: z.string(),
 					description: z.string().nullable(),
+					visibility: z.enum(['public', 'private']),
 					created_at: z.string(),
 					updated_at: z.string(),
 				}),
@@ -34,6 +35,9 @@ export const repoListCapability = defineDomainCapability(
 					repo_id: repo.id,
 					name: repo.name,
 					description: repo.description,
+					visibility: repo.isPrivate
+						? ('private' as const)
+						: ('public' as const),
 					created_at: repo.createdAt,
 					updated_at: repo.updatedAt,
 				})),

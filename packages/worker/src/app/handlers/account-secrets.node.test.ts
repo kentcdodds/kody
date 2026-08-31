@@ -1495,7 +1495,6 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 		env: expect.anything(),
 		query: 'canva',
 		limit: 12,
-		trustedFirst: true,
 		resultFilter: expect.any(Function),
 	})
 	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(

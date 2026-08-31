@@ -41,6 +41,7 @@ async function renderCommunityFilesPage(input: {
 	env: Env
 	listingId: string | null
 	selectedPath: string
+	ref?: string
 }) {
 	const serverTiming: Array<ServerTimingEntry> = []
 	const data = input.listingId
@@ -48,6 +49,7 @@ async function renderCommunityFilesPage(input: {
 				env: input.env,
 				listingId: input.listingId,
 				selectedPath: input.selectedPath,
+				ref: input.ref,
 				serverTiming,
 			})
 		: null
@@ -92,9 +94,16 @@ export function createCommunityPackageFilesHandler(env: Env) {
 				env,
 				listingId: target?.listingId ?? null,
 				selectedPath: target?.selectedPath ?? '',
+				ref: target?.kind === 'listing' ? target.ref : 'HEAD',
 			})
 		},
 	} satisfies Action<typeof routes.communityPackageFiles>
+}
+
+export function createCommunityPackageTreeHandler(env: Env) {
+	return createCommunityPackageFilesHandler(env) as unknown as Action<
+		typeof routes.communityPackageTree
+	>
 }
 
 export function createCommunityDetailFilesHandler(env: Env) {
@@ -130,6 +139,7 @@ export function createCommunityDetailFilesHandler(env: Env) {
 							ownerUsername,
 							kodyId: listing.kodyId,
 							selectedPath: target.selectedPath,
+							ref: target.ref,
 						})
 					: null
 			if (canonicalPath && canonicalPath !== url.pathname) {
@@ -141,6 +151,7 @@ export function createCommunityDetailFilesHandler(env: Env) {
 				env,
 				listingId: target.listingId,
 				selectedPath: target.selectedPath,
+				ref: target.ref,
 			})
 		},
 	} satisfies Action<typeof routes.communityDetailFiles>
@@ -150,6 +161,7 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request, params }) {
+			const url = new URL(request.url)
 			const selectedPath = readPackageFilesSelectedPath(request.url)
 			if (selectedPath == null) {
 				return jsonResponse(
@@ -157,6 +169,7 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 					400,
 				)
 			}
+			const treeRef = url.searchParams.get('ref')?.trim() || 'HEAD'
 			const target = await resolveCommunityPackageUrl({
 				db: env.APP_DB,
 				username: params.username,
@@ -172,6 +185,7 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 							ownerUsername: target.username,
 							kodyId: target.kodyId,
 							relativePath: selectedPath,
+							ref: treeRef,
 						}),
 					},
 					404,
@@ -183,6 +197,7 @@ export function createCommunityPackageFilesApiHandler(env: Env) {
 						env,
 						listingId: target.listingId,
 						selectedPath,
+						ref: treeRef,
 						serverTiming,
 					})
 				: null
@@ -208,11 +223,14 @@ export function createCommunityDetailFilesApiHandler(env: Env) {
 					400,
 				)
 			}
+			const treeRef =
+				new URL(request.url).searchParams.get('ref')?.trim() || 'HEAD'
 			const serverTiming: Array<ServerTimingEntry> = []
 			const data = await loadCommunityPackageFilesData({
 				env,
 				listingId: params.listingId,
 				selectedPath,
+				ref: treeRef,
 				serverTiming,
 			})
 			if (!data) {

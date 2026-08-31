@@ -109,7 +109,7 @@ export function codeUsesIntegrationAuthHelpers(code: string) {
 /**
  * One-line packages-first steer when ad hoc execute repeatedly raw-fetches a
  * product API host. Integrations are auth; packages are how agents should call
- * the product. Prefer trusted community packages when forking.
+ * the product. Prefer a close community package when forking.
  */
 export function formatRawFetchHostNudge(input: {
 	hostname: string
@@ -119,7 +119,7 @@ export function formatRawFetchHostNudge(input: {
 	const mentalModel =
 		'Integrations = auth; packages = how agents should call the product.'
 	const packagesFirst =
-		'Prefer a package: search for an existing wrapper, then community_search (prefer trusted), then fork or create a thin helpers package.'
+		'Prefer a package: search for an existing wrapper, then community_search, then fork or create a thin helpers package.'
 	const openapiAside =
 		'Use openapi_binding_save only when an OpenAPI binding fits.'
 	if (input.usedIntegrationAuthHelpers) {

@@ -128,18 +128,19 @@ servers), capability detail reports the **related operation count**. Use
 
 Integration entity detail may include a small set of **related package
 suggestions** for the same provider (the user's packages first; otherwise
-trusted-first community listings whose name, kody id, or tags mention that
-provider, capped). Ranked query results stay lean and do not run community
-lookup or expand those suggestions.
+community listings whose name, kody id, or tags mention that provider, capped).
+Ranked query results stay lean and do not run community lookup or expand those
+suggestions.
 
 Package entity detail is a slim index: summary, export subpaths with one-line
 purposes, job and retriever names, and the README `Intent` section. Structured
 content mirrors that index and does not contain a full export tree. When a
 community fork is behind its listing, detail includes `listingAhead: true` and a
-one-line absorb next step (`community_get`, then `community_fork_absorb`).
-Ranked package hits include that same notice only when the fork is behind.
-Follow the returned `package_get` / `package_authoring` pointer when you need
-types, external token URLs, the full README, source, or maintenance steps.
+one-line absorb next step (`community_get`, then `repo_publish_session` with
+`absorbed_upstream_commit`). Ranked package hits include that same notice only
+when the fork is behind. Follow the returned `package_get` / `package_authoring`
+pointer when you need types, external token URLs, the full README, source, or
+maintenance steps.
 
 Capability detail shows the exact runtime pattern for **execute**:
 

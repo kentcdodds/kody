@@ -11,7 +11,7 @@ export const communitySetFeaturedCapability = defineDomainCapability(
 	{
 		name: 'community_set_featured',
 		description:
-			'Admin-only curation: mark a trusted community listing as an onboarding starter package, or remove the mark. Featured listings are offered for one-click install during onboarding, so featuring requires the listing to be trusted at its current commit. A person-owned republish drops the listing from onboarding until an admin re-trusts it; a platform-owned republish re-pins trust automatically so the listing stays featured.',
+			'Admin-only curation: mark a public community listing as an onboarding starter package, or remove the mark. Featured is editorial placement on /onboarding, not a safety review.',
 		keywords: [
 			'community',
 			'featured',
@@ -33,14 +33,13 @@ export const communitySetFeaturedCapability = defineDomainCapability(
 			featured: z
 				.boolean()
 				.describe(
-					'True to feature this trusted listing in onboarding; false to remove it.',
+					'True to feature this listing in onboarding; false to remove it.',
 				),
 		}),
 		outputSchema: z.object({
 			listing_id: z.string(),
 			name: z.string(),
 			status: communityListingStatusSchema,
-			trusted: z.boolean(),
 			featured: z.boolean(),
 			featured_at: z.string().nullable(),
 		}),
@@ -59,7 +58,6 @@ export const communitySetFeaturedCapability = defineDomainCapability(
 						listing_id: listing.id,
 						name: listing.name,
 						status: listing.status,
-						trusted: listing.trusted,
 						featured: listing.featured,
 						featured_at: listing.featuredAt,
 					}

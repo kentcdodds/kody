@@ -37,11 +37,15 @@ export type PublicCommunityListing = {
 	readmeContent: string | null
 	license: string
 	pinnedCommit: string
+	/** Default-branch HEAD SHA when it differs from the package runtime pin. */
+	headCommit?: string | null
+	/** True when default-branch HEAD is ahead of `pinnedCommit` (package publish). */
+	sourceAhead?: boolean
 	publishedAt: string
 	ownerUsername: string
-	/** True when an admin marked the current pinned commit as reviewed. */
+	/** Always false. Trusted listings were removed. */
 	trusted: boolean
-	/** True when an admin featured this trusted listing in onboarding. */
+	/** True when an admin featured this listing in onboarding. */
 	featured: boolean
 	averageStars: number | null
 	ratingCount: number

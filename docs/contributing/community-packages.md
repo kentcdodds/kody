@@ -9,20 +9,20 @@ workflows.
 ## Architecture overview
 
 ```
-Owner publishes saved package
+Owner sets visibility public (package_update)
         │
         ▼
-community_publish ──► D1 community_listings row
-        │              KV snapshot (pinned files)
+D1 saved_packages.is_private = 0 + community_listings row
+        │              KV source snapshot keyed by SHA
         ▼
-Public /community pages + community_search / community_get
+Public /community + /@username/:name + /tree/:ref
         │
         ▼
 Visitor forks ──► community_fork ──► entity_sources (no saved_packages row)
-        │                              cross-scope reference scan
+        │                              copy of HEAD, inert until publish
         ▼
 repo_open_session → review → fix imports → repo_publish_session
-        │
+        │                              (optional absorbed_upstream_commit)
         ▼
 Live saved package in forker's account
 ```
@@ -46,21 +46,24 @@ defines the community tables and social columns.
 | `community_reports`  | Reports with denormalized `listing_name` / `listing_owner_user_id`                 |
 | `community_bans`     | Community-wide bans (publish, fork, rate, report)                                  |
 
-| Table / column                    | Purpose                                                           |
-| --------------------------------- | ----------------------------------------------------------------- |
-| `users.display_name`, `users.bio` | Optional public profile fields                                    |
-| `users.profile_visibility`        | `public` (default) or `private`                                   |
-| `saved_packages.is_private`       | Projection of `package.json#private` for profile/timeline filters |
-| `user_follows`                    | Follow edges keyed by MCP stable user ids                         |
-| `community_stars`                 | Listing stargazers (bookmark stars; not 1–5 ratings)              |
-| `community_activity_events`       | Stored `listing_published` / `listing_updated` events only        |
+| Table / column                    | Purpose                                                                          |
+| --------------------------------- | -------------------------------------------------------------------------------- |
+| `users.display_name`, `users.bio` | Optional public profile fields                                                   |
+| `users.profile_visibility`        | `public` (default) or `private`                                                  |
+| `saved_packages.is_private`       | Repo visibility (`0` public / catalog, `1` private). Not `package.json#private`. |
+| `user_repos.is_private`           | Same visibility flag on plain repos (default private).                           |
+| `user_follows`                    | Follow edges keyed by MCP stable user ids                                        |
+| `community_stars`                 | Listing stargazers (bookmark stars; not 1–5 ratings)                             |
+| `community_activity_events`       | Stored `listing_published` / `listing_updated` events only                       |
 
 Follow, star, and activity actor columns store the MCP **stable user id**
 (`users.stable_user_id`), matching other community ownership columns such as
 `community_listings.owner_user_id`.
 
-`saved_packages.is_private` defaults to `1`. Package save and publish paths keep
-the column in sync with `package.json#private`.
+`saved_packages.is_private` defaults to `1`. Visibility is a repo setting
+(`package_update` / `repo_update`), not a `package.json#private` projection.
+Active community listings backfill to public; leftover `"private": false`
+teasers stay private.
 
 ### Derived timeline events
 
@@ -71,47 +74,30 @@ drops the star item immediately. Ratings are never projected into timelines.
 Storing only publish/update events avoids orphaned fork/star timeline rows when
 privacy flips or a star is removed — see `social-repo.ts` / `social-service.ts`.
 
-`community_forks.origin_commit` is the listing pin the fork last absorbed. It
-starts as the pinned snapshot copied at fork time. When an active listing later
-republishes a different pin, `package_get` / `package_list` set `listing_ahead`,
-and `/account/packages` plus the listing page replace Installed / Forked with a
-**Fork outdated** button that copies an absorb prompt. Package search hits and
-`{kodyId}:package` entity detail also set `listingAhead` with a one-line
-`community_get` / `community_fork_absorb` next step. `community_fork_absorb`
-updates `origin_commit` to the listing's current `pinned_commit` after the
-forker ports those changes; it does not copy files.
+`community_forks.origin_commit` is the origin SHA the fork last absorbed. It
+starts as HEAD copied at fork time. When origin HEAD later moves, `package_get`
+/ `package_list` set `listing_ahead`, and `/account/packages` plus the listing
+page replace Installed / Forked with a **Fork outdated** button. Package search
+hits and `{kodyId}:package` entity detail also set `listingAhead`. Clearing the
+banner is done by publishing with `repo_publish_session` and
+`absorbed_upstream_commit`; that does not copy files.
 
 `community_listings` enforces one listing per `(owner_user_id, package_id)`.
 Admin **delist** sets `status = 'delisted'`, blocks owner re-publish, and blocks
 owner unpublish. **Hard delete** (admin report action) removes the listing row,
 KV snapshot, and ratings.
 
-Admin **trust** marks live in `trusted_commit` / `trusted_by_user_id` /
-`trusted_at`. A listing is effectively trusted only while
-`trusted_commit = pinned_commit`. `publishCommunityListing` automatically pins
-trust after a successful snapshot write when `owner_user_id` belongs to a
-platform account (`users.account_type = 'platform'`), including republishes.
-Person-owned listings are never auto-trusted, regardless of username, so their
-republishes move `pinned_commit` and drop the effective mark without an explicit
-revoke. `setCommunityListingTrusted` in `service.ts` sets or clears the mark;
-delisted listings cannot be trusted, and admins can revoke trust from
-platform-owned listings between publishes. Surfaces: the `Trusted` badge on
-`/community` cards and detail pages, the admin-only toggle on the detail page
-(`POST /community/:listingId/trust.json`, audited), and the admin-only
-`community_set_trusted` capability. `community_search` and `community_get`
-expose the effective `trusted` flag.
+Trusted listings are **removed**. `trusted_*` columns remain until a follow-up
+schema drop. Product reads always treat `trusted` as false.
+`POST /community/:listingId/trust.json` returns 410.
 
 Admin **featured** marks live in `featured_at` and highlight onboarding starter
-packages. Operators publish official starters under a platform scope (for
-example `@kody`) by passing `package_scope` to `community_publish` while holding
-a package scope grant; see
+packages. Featured is editorial only (`featured_at IS NOT NULL`). Operators
+publish official starters under a platform scope (for example `@kody`) by
+passing `package_scope` while holding a package scope grant; see
 [Platform accounts](./architecture/platform-accounts.md).
-`setCommunityListingFeatured` in `service.ts` requires the listing to be
-effectively trusted before featuring; the effective `featured` flag
-(`featured_at IS NOT NULL AND trusted`) is computed in `repo.ts`. A platform
-republish re-pins trust and leaves an official listing effectively featured. A
-person republish drops trust and pulls the listing from onboarding while keeping
-the stored mark. `listFeaturedCommunityListings` feeds the onboarding page (slim
+`setCommunityListingFeatured` does not require trust.
+`listFeaturedCommunityListings` feeds the onboarding page (slim
 `OnboardingFeaturedListing` shapes, capped at 12). Surfaces: the `Featured`
 badge on the detail page, the admin-only toggle
 (`POST /community/:listingId/feature.json`, audited), the admin-only
@@ -124,11 +110,9 @@ run the owned copy, not the platform package. Step 3 leads with an ad hoc
 execute → persist prompt. Step 2 Connect forks the matching `@kody/*-mcp`
 listing automatically. Signed-in onboarding, `/community` cards, and listing
 detail overlay a per-request `viewerInstall` when the viewer already has a
-matching `kody_id` saved package or a `community_forks` row for that listing, so
-those surfaces show Copy prompt instead of Install. Listing cards and detail
-place Trusted / Installed / Forked badges on a row under the title so wrapping
-`@scope/name` stays aligned. `community_get` exposes the effective `featured`
-flag. Onboarding loads up to 12 featured listings.
+matching slug saved package or a `community_forks` row for that listing, so
+those surfaces show Copy prompt instead of Install. `community_get` exposes the
+`featured` flag. Onboarding loads up to 12 featured listings.
 
 Reports survive listing deletion via denormalized listing name and owner on the
 report row.
@@ -193,10 +177,10 @@ Core logic: `packages/worker/src/community/`
 | `og-image.ts`       | Community listing 1200×630 PNG on the shared `#worker/og` pipeline  |
 | `types.ts`          | Shared record types                                                 |
 
-`publishCommunityListing` validates MIT license, non-private
-`package.json#private`, README `## Intent`, published commit, and ban status;
-copies published source into KV; upserts D1 metadata including the resolved
-browse `category` from `package.json#kody.category` or well-known tags.
+`publishCommunityListing` has no MIT, logo, or Intent gates. It requires a
+published commit and that the owner is not community-banned. It upserts D1
+metadata including optional browse `category` from `package.json#kody.category`
+or well-known tags, and writes a SHA-keyed source snapshot.
 
 `forkCommunityListing` reads the KV snapshot, rewrites `package.json` name/kody
 id to the forker's scope, scans cross-scope references, calls
@@ -233,11 +217,11 @@ pass, `refreshSavedPackageProjection` — the same projection step
 `repo_publish_session` ends with, so declared jobs are scheduled immediately.
 When checks fail (typically cross-scope imports), the fork stays inert and the
 failing checks are returned for agent follow-up. The HTTP surface is
-`POST /community/:listingId/install.json` (authenticated); untrusted listings
-require `acknowledged_untrusted: true` or the handler responds `409`. There is
-intentionally **no** MCP capability for install: agents must go through
-`community_fork` + repo-session review, so a prompt-injected agent cannot
-silently activate community code.
+`POST /community/:listingId/install.json` (authenticated); callers must send
+`acknowledged: true` or the handler responds `409`. There is intentionally
+**no** MCP capability for install: agents must go through `community_fork` +
+repo-session review, so a prompt-injected agent cannot silently activate
+community code.
 
 ## MCP capabilities
 
@@ -251,14 +235,12 @@ Capabilities:
 - `community_get`
 - `community_fork`
 - `community_fork_adopt`
-- `community_fork_absorb`
 - `community_rate`
 - `community_star` / `community_unstar` / `community_starred_list`
 - `community_profile_get` / `community_profile_update`
 - `community_follow` / `community_unfollow`
 - `community_timeline`
 - `community_report`
-- `community_set_trusted` (admin-only via `requiredRole`)
 - `community_set_featured` (admin-only via `requiredRole`)
 
 The admin domain also exposes `admin_community_activity_list`, guarded by
@@ -279,14 +261,15 @@ Client routes: `packages/worker/client/routes/community*`
   unfiltered browse page (`?category=` filters to one category). Empty
   categories omit their chip; an empty catalog hides the facet and sort row.
 - `/@:username/:kodyId` — the canonical package page, resolved from the owner
-  plus the active listing's `kody_id` (JSON companion:
+  plus the listing slug (JSON companion:
   `/profiles/:username/packages/:kodyId.json`). `username_redirects` and
-  `package_kody_id_redirects` map prior owner usernames and package `kody.id`
-  values to a redirect at that URL
+  `package_kody_id_redirects` map prior owner usernames and package slugs to a
+  redirect at that URL
+- `/@:username/:kodyId/tree/:ref(/*relativePath)` — GitHub-lite source explorer
+  (branch, SHA, or `HEAD`). Leftover `/files` URLs 301 here
 - `/community/:listingId` — the same page by listing id; redirects to the
-  canonical URL. Metadata, ratings, README, one-click install (requires login;
-  untrusted listings require a confirmed warning), fork prompt, and report link
-  (report requires login)
+  canonical URL. Metadata, ratings, README, one-click install (requires login
+  and a generic confirm), fork prompt, and report link (report requires login)
 - `/community/:listingId/icon/:iconCommit` — cached package icon or generated
   fallback; serves the current icon commit or the pinned snapshot commit, and
   rejects stale commit URLs

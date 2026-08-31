@@ -185,6 +185,7 @@ function resetMocks() {
 			userId: 'user-1',
 			name: 'brave-search',
 			description: null,
+			isPrivate: false,
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-01T00:00:00.000Z',
 		},
@@ -244,6 +245,13 @@ test('repo_promote_to_package seeds published_commit from the opened session bas
 		name: '@user/brave-search',
 		published_commit: 'commit-1',
 	})
+	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			is_private: 0,
+			kody_id: 'brave-search',
+		}),
+	)
 	expect(rpc.runChecks).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-1',
@@ -264,6 +272,47 @@ test('repo_promote_to_package seeds published_commit from the opened session bas
 		userId: 'user-1',
 		repoId: 'repo-1',
 	})
+})
+
+test('repo_promote_to_package inherits repo visibility, not package.json private', async () => {
+	resetMocks()
+	mockModule.resolveOwnedUserRepo.mockResolvedValue({
+		userRepo: {
+			id: 'repo-1',
+			userId: 'user-1',
+			name: 'brave-search',
+			description: null,
+			isPrivate: true,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		},
+		source: createPlainRepoSource(),
+	})
+	mockModule.readArtifactFileAtCommit.mockResolvedValue(
+		new TextEncoder().encode(
+			JSON.stringify({
+				name: '@user/brave-search',
+				private: false,
+				exports: { '.': './src/index.ts' },
+				kody: {
+					id: 'brave-search',
+					description: 'Search the web with Brave.',
+				},
+			}),
+		),
+	)
+	const rpc = createSessionRpc()
+	mockModule.repoSessionRpc.mockReturnValue(rpc)
+	const { ctx } = createCapabilityContext()
+
+	await repoPromoteToPackageCapability.handler({ name: 'brave-search' }, ctx)
+
+	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({
+			is_private: 1,
+		}),
+	)
 })
 
 test('repo_promote_to_package rolls back the kind flip and published_commit when publish reports base_moved', async () => {

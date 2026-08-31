@@ -135,10 +135,8 @@ export function renderInstallStrip(props: InstallStripProps) {
 					role="alert"
 				>
 					<p mix={css({ margin: 0 })}>
-						This package is not trusted: no admin has reviewed its code, and it
-						was written by another user. Installing publishes it into your
-						account and can activate its scheduled jobs immediately. Only
-						continue if you accept that risk.
+						This is someone else&apos;s code and will run in your account.
+						Installing publishes a fork you own. Confirm to continue.
 					</p>
 					<div mix={css(buttonRowCss)}>
 						<button
@@ -147,7 +145,7 @@ export function renderInstallStrip(props: InstallStripProps) {
 								css(dangerPillButtonCss),
 							]}
 						>
-							Install anyway
+							Install
 						</button>
 						<button
 							mix={[
@@ -185,49 +183,7 @@ export function renderReadmeSection(readme: Array<RemixNode>) {
 	)
 }
 
-export type AdminTrustSectionProps = {
-	trusted: boolean
-	trustState: 'idle' | 'submitting' | 'error'
-	trustMessage: string | null
-	onToggleTrust: () => void
-}
-
-export function renderAdminTrustSection(props: AdminTrustSectionProps) {
-	return (
-		<section
-			aria-labelledby="admin-trust-title"
-			mix={css(detailSectionCss)}
-			data-testid="community-admin-trust"
-		>
-			<h2 id="admin-trust-title">Admin: trust</h2>
-			<p>
-				{props.trusted
-					? 'This listing is marked trusted at its current version. Revoking removes the badge immediately.'
-					: 'Marking this listing trusted applies to the exact current version only. A republish by the owner drops the mark until it is re-reviewed.'}
-			</p>
-			<div mix={css(sectionActionCss)}>
-				<button
-					disabled={props.trustState === 'submitting'}
-					mix={[on('click', props.onToggleTrust), css(smallGhostButtonCss)]}
-				>
-					{props.trustState === 'submitting'
-						? 'Saving…'
-						: props.trusted
-							? 'Revoke trust'
-							: 'Mark as trusted'}
-				</button>
-			</div>
-			{props.trustMessage ? (
-				<p mix={css(errorTextCss)} role="alert">
-					{props.trustMessage}
-				</p>
-			) : null}
-		</section>
-	)
-}
-
 export type AdminFeatureSectionProps = {
-	trusted: boolean
 	featured: boolean
 	featureState: 'idle' | 'submitting' | 'error'
 	featureMessage: string | null
@@ -245,16 +201,11 @@ export function renderAdminFeatureSection(props: AdminFeatureSectionProps) {
 			<p>
 				{props.featured
 					? 'This listing is featured as an onboarding starter package. Removing it hides it from onboarding immediately.'
-					: props.trusted
-						? 'Featuring offers this listing for one-click install during onboarding. A republish by the owner drops it from onboarding until the new version is re-trusted.'
-						: 'Only trusted listings can be featured in onboarding. Mark the listing trusted first.'}
+					: 'Featuring offers this listing during onboarding. Featured is editorial placement, not a safety review.'}
 			</p>
 			<div mix={css(sectionActionCss)}>
 				<button
-					disabled={
-						props.featureState === 'submitting' ||
-						(!props.featured && !props.trusted)
-					}
+					disabled={props.featureState === 'submitting'}
 					mix={[on('click', props.onToggleFeature), css(smallGhostButtonCss)]}
 				>
 					{props.featureState === 'submitting'

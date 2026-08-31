@@ -95,7 +95,7 @@ test('package files views normalize paths and distinguish root, directories, fil
 	).toEqual(['src', 'lib', 'util.ts'])
 })
 
-test('files hrefs use /files paths and avoid reserved kody ids', () => {
+test('files hrefs use /tree/HEAD paths and avoid reserved kody ids', () => {
 	expect(isReservedPackageFilesKodyId('packages')).toBe(true)
 	expect(isReservedPackageFilesKodyId('devin')).toBe(false)
 	expect(
@@ -105,7 +105,14 @@ test('files hrefs use /files paths and avoid reserved kody ids', () => {
 			kodyId: 'devin',
 			relativePath: 'src/index.ts',
 		}),
-	).toBe('/@kentcdodds/devin/files/src/index.ts')
+	).toBe('/@kentcdodds/devin/tree/HEAD/src/index.ts')
+	expect(
+		getCommunityPackageFilesHref({
+			listingId: 'listing-1',
+			ownerUsername: 'kentcdodds',
+			kodyId: 'devin',
+		}),
+	).toBe('/@kentcdodds/devin/tree/HEAD')
 	expect(
 		getCommunityPackageFilesHref({
 			listingId: 'listing-1',
@@ -117,9 +124,9 @@ test('files hrefs use /files paths and avoid reserved kody ids', () => {
 	expect(getAccountPackageFilesHref({ packageId: 'pkg-1' })).toBe(
 		'/account/packages/pkg-1/files',
 	)
-	expect(joinPackageFilesPath('/@kentcdodds/devin/files', 'src/index.ts')).toBe(
-		'/@kentcdodds/devin/files/src/index.ts',
-	)
+	expect(
+		joinPackageFilesPath('/@kentcdodds/devin/tree/HEAD', 'src/index.ts'),
+	).toBe('/@kentcdodds/devin/tree/HEAD/src/index.ts')
 	expect(
 		buildPackageFilesApiHref(
 			'/profiles/kentcdodds/packages/devin/files.json',

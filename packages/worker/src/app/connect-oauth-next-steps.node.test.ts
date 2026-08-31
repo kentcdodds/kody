@@ -75,7 +75,7 @@ function githubIntegration() {
 	}
 }
 
-test('buildConnectOauthNextSteps ranks trusted-first, caps suggestions, and varies guidance by trust', () => {
+test('buildConnectOauthNextSteps preserves relevance order, caps suggestions, and varies guidance by count', () => {
 	expect(
 		rankTrustedFirstCommunityListings([
 			{ id: 'u1', trusted: false },
@@ -83,25 +83,25 @@ test('buildConnectOauthNextSteps ranks trusted-first, caps suggestions, and vari
 			{ id: 'u2', trusted: false },
 			{ id: 't2', trusted: true },
 		]).map((entry) => entry.id),
-	).toEqual(['t1', 't2', 'u1', 'u2'])
+	).toEqual(['u1', 't1', 'u2', 't2'])
 
-	const trustedListing = listing({
-		id: 'trusted-google',
-		name: 'google-helpers',
-		trusted: true,
-		description: 'Trusted google helpers',
+	const firstListing = listing({
+		id: 'untrusted-google',
+		name: 'google-untrusted',
+		trusted: false,
+		description: 'Community google helpers',
 	})
 	const nextSteps = buildConnectOauthNextSteps({
 		integrationName: 'google',
 		baseUrl: 'https://example.com',
 		listings: [
+			firstListing,
 			listing({
-				id: 'untrusted-google',
-				name: 'google-untrusted',
-				trusted: false,
-				description: 'Community google helpers',
+				id: 'trusted-google',
+				name: 'google-helpers',
+				trusted: true,
+				description: 'Trusted google helpers',
 			}),
-			trustedListing,
 			listing({
 				id: 'other',
 				name: 'google-extra',
@@ -119,27 +119,26 @@ test('buildConnectOauthNextSteps ranks trusted-first, caps suggestions, and vari
 	expect(nextSteps.suggestions).toHaveLength(connectOauthPackageSuggestionLimit)
 	expect(
 		nextSteps.suggestions.map((suggestion) => suggestion.listingId),
-	).toEqual(['trusted-google', 'fourth', 'untrusted-google'])
+	).toEqual(['untrusted-google', 'trusted-google', 'other'])
 	expect(nextSteps.suggestions[0]).toEqual(
 		buildConnectOauthPackageSuggestion({
 			baseUrl: 'https://example.com',
-			listing: trustedListing,
+			listing: firstListing,
 		}),
 	)
 	expect(nextSteps.suggestions[0]?.forkPrompt).toBe(
 		buildForkPrompt({
-			name: '@owner/google-helpers',
-			listingId: 'trusted-google',
+			name: '@owner/google-untrusted',
+			listingId: 'untrusted-google',
 		}),
 	)
 	expect(nextSteps.suggestions[0]?.publicUrl).toBe(
-		'https://example.com/@owner/google-helpers',
+		'https://example.com/@owner/google-untrusted',
 	)
 	expect(nextSteps.guidance).toBe(
 		buildConnectOauthNextStepsGuidance({
 			integrationName: 'google',
 			suggestionCount: connectOauthPackageSuggestionLimit,
-			trustedSuggestionCount: 2,
 		}),
 	)
 	expect(nextSteps.createHelpersCta).toEqual({
@@ -157,7 +156,6 @@ test('buildConnectOauthNextSteps ranks trusted-first, caps suggestions, and vari
 		buildConnectOauthNextStepsGuidance({
 			integrationName: 'linear',
 			suggestionCount: 0,
-			trustedSuggestionCount: 0,
 		}),
 	)
 	expect(empty.createHelpersCta.prompt).toBe(
@@ -181,14 +179,6 @@ test('buildConnectOauthNextSteps ranks trusted-first, caps suggestions, and vari
 		buildConnectOauthNextStepsGuidance({
 			integrationName: 'notion',
 			suggestionCount: 1,
-			trustedSuggestionCount: 0,
-		}),
-	)
-	expect(untrustedOnly.guidance).not.toBe(
-		buildConnectOauthNextStepsGuidance({
-			integrationName: 'notion',
-			suggestionCount: 1,
-			trustedSuggestionCount: 1,
 		}),
 	)
 })
@@ -285,7 +275,6 @@ test('post-OAuth suggestions keep only listings that use the connected provider'
 		buildConnectOauthNextStepsGuidance({
 			integrationName: 'github',
 			suggestionCount: 2,
-			trustedSuggestionCount: 0,
 		}),
 	)
 
@@ -349,7 +338,6 @@ test('loadConnectOauthNextSteps searches with bounded limit and fails open', asy
 		env,
 		query: 'GitHub',
 		limit: connectOauthCommunitySearchCandidateLimit,
-		trustedFirst: true,
 		resultFilter: expect.any(Function),
 	})
 	expect(nextSteps.suggestions.map((entry) => entry.listingId)).toEqual([
@@ -370,7 +358,6 @@ test('loadConnectOauthNextSteps searches with bounded limit and fails open', asy
 		buildConnectOauthNextStepsGuidance({
 			integrationName: 'github',
 			suggestionCount: 0,
-			trustedSuggestionCount: 0,
 		}),
 	)
 	expect(failedOpen.createHelpersCta.prompt).toBe(
