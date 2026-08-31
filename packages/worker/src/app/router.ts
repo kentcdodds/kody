@@ -124,6 +124,10 @@ import {
 	createAccountUsageApiHandler,
 	createAccountUsageHandler,
 } from '#app/handlers/account-usage.ts'
+import {
+	createAccountWaitingApiHandler,
+	createAccountWaitingHandler,
+} from '#app/handlers/account-waiting.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import {
@@ -368,6 +372,8 @@ export function createAppRouter(env: Env) {
 			accountBillingPortal: createAccountBillingPortalHandler(env),
 			accountUsage: createAccountUsageHandler(env),
 			accountUsageApi: createAccountUsageApiHandler(env),
+			accountWaiting: createAccountWaitingHandler(env),
+			accountWaitingApi: createAccountWaitingApiHandler(env),
 			accountEmailChange: createAccountEmailChangeHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
 			accountSecrets: createAccountSecretsHandler(env),

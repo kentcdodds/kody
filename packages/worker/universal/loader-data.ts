@@ -27,6 +27,7 @@ import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clients.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
+import { type WaitingItem } from '#universal/waiting.ts'
 import {
 	type AccountActivityStatusFilter,
 	type AccountActivitySurfaceFilter,
@@ -1742,6 +1743,7 @@ export type AppLoaderData = {
 	accountBilling?: AccountBillingLoaderData
 	accountBillingSuccess?: AccountBillingSuccessLoaderData
 	accountUsage?: AccountUsageLoaderData
+	accountWaiting?: AccountWaitingLoaderData
 	discord?: DiscordPageLoaderData
 	codeRuns?: CodeRunsLoaderData
 	walkthroughHosts?: WalkthroughHostPick
@@ -1796,4 +1798,9 @@ export type AccountUsageLoaderData = {
 	today: string
 	entitlementConsumption: Array<AccountUsageEntitlementConsumption>
 	warnings: Array<AccountUsageEntitlementConsumption>
+}
+
+export type AccountWaitingLoaderData = {
+	ok: true
+	items: Array<WaitingItem>
 }
