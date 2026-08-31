@@ -23,7 +23,7 @@ everything else:
 **In Kody's community, every install is a fork you own.**
 
 Not a subscription to someone's code. Not a pointer to their copy. When you
-click Install on a community package, Kody creates a published fork in your
+click Install on a public package, Kody creates a published fork in your
 account. Your copy, in your account, yours to open, read, edit, schedule, and
 run. The original author can't change it out from under you, because it isn't
 theirs anymore.
@@ -106,7 +106,7 @@ If you want to see what this feels like, the loop is short. Browse
 your agent to show you the code. That second step is the one most people have
 never done with software they installed, and it's the one that makes the rest of
 the ladder feel real. The docs on
-[community packages](https://github.com/kentcdodds/kody/blob/main/docs/use/community-packages.md)
+[public packages](https://github.com/kentcdodds/kody/blob/main/docs/use/community-packages.md)
 and
 [packages generally](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md)
 cover the details, and the whole platform is

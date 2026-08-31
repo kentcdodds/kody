@@ -358,7 +358,7 @@ export function buildHomeMarkdown(origin: string): string {
 		`- [Get started](${origin}/onboarding)`,
 		`- [Pricing](${origin}/pricing)`,
 		`- [FAQ](${origin}/faq)`,
-		`- [Community packages](${origin}/community)`,
+		`- [Public packages](${origin}/community)`,
 		'',
 		'## Machine-readable discovery',
 		'',

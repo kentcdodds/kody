@@ -64,6 +64,7 @@ export const adminSystemEmailSendCapability = defineDomainCapability(
 			'outreach',
 			'transactional',
 			'kody@',
+			'psl@',
 			'operator',
 			'reply to feedback',
 		],

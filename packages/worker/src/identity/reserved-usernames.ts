@@ -36,6 +36,7 @@ const reservedUsernameList = [
 	'feedback',
 	'contact',
 	'info',
+	'psl',
 
 	// Staff / elevated roles
 	'admin',

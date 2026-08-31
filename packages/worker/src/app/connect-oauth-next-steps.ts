@@ -42,22 +42,13 @@ export type ConnectOauthNextSteps = {
 }
 
 /**
- * Prefer trusted listings while preserving the incoming relevance order within
- * each trust group. Callers should pass score-ranked search results.
+ * Community listings related to a provider. Relevance order is preserved;
+ * there is no trusted-listing rank.
  */
 export function rankTrustedFirstCommunityListings<
 	T extends { trusted: boolean },
 >(listings: ReadonlyArray<T>): Array<T> {
-	const trusted: Array<T> = []
-	const untrusted: Array<T> = []
-	for (const listing of listings) {
-		if (listing.trusted) {
-			trusted.push(listing)
-		} else {
-			untrusted.push(listing)
-		}
-	}
-	return [...trusted, ...untrusted]
+	return [...listings]
 }
 
 export function buildConnectOauthCreateHelpersPrompt(integrationName: string) {
@@ -67,16 +58,12 @@ export function buildConnectOauthCreateHelpersPrompt(integrationName: string) {
 export function buildConnectOauthNextStepsGuidance(input: {
 	integrationName: string
 	suggestionCount: number
-	trustedSuggestionCount: number
 }) {
 	const base = `Connected. "${input.integrationName}" is an OAuth integration (auth credentials only) — not an agent-callable package. Durable agent interaction goes through a helpers package.`
 	if (input.suggestionCount <= 0) {
 		return `${base} No close community helpers package was found for this provider — create a thin helpers package next.`
 	}
-	if (input.trustedSuggestionCount > 0) {
-		return `${base} Prefer a trusted community listing below (fork or one-click install, then adapt). Create a thin helpers package only when none of these fit.`
-	}
-	return `${base} Community listings below may help, but none are trusted yet — review carefully before forking, or create a thin helpers package.`
+	return `${base} Community listings below may help — review them before forking, or create a thin helpers package.`
 }
 
 /**
@@ -134,23 +121,18 @@ export function buildConnectOauthNextSteps(input: {
 	const related = input.listings.filter((listing) =>
 		communityListingUsesProvider(listing, providerName),
 	)
-	const ranked = rankTrustedFirstCommunityListings(related).slice(
-		0,
-		connectOauthPackageSuggestionLimit,
-	)
-	const suggestions = ranked.map((listing) =>
-		buildConnectOauthPackageSuggestion({
-			listing,
-			baseUrl: input.baseUrl,
-		}),
-	)
+	const suggestions = related
+		.slice(0, connectOauthPackageSuggestionLimit)
+		.map((listing) =>
+			buildConnectOauthPackageSuggestion({
+				listing,
+				baseUrl: input.baseUrl,
+			}),
+		)
 	return {
 		guidance: buildConnectOauthNextStepsGuidance({
 			integrationName: input.integrationName,
 			suggestionCount: suggestions.length,
-			trustedSuggestionCount: suggestions.filter(
-				(suggestion) => suggestion.trusted,
-			).length,
 		}),
 		integrationName: input.integrationName,
 		suggestions,
@@ -186,19 +168,15 @@ export async function loadConnectOauthNextSteps(input: {
 				env: input.env,
 				query,
 				limit: connectOauthCommunitySearchCandidateLimit,
-				trustedFirst: true,
 				resultFilter: (listing) =>
 					communityListingUsesProvider(listing, providerName),
 			})
 		} catch (error) {
-			console.error(
-				'Failed to load post-OAuth community package suggestions.',
-				{
-					integrationName: input.integrationName,
-					query,
-					error,
-				},
-			)
+			console.error('Failed to load post-OAuth public package suggestions.', {
+				integrationName: input.integrationName,
+				query,
+				error,
+			})
 			listings = []
 		}
 	}

@@ -21,6 +21,7 @@ import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
 import { updateEntitySource } from '#worker/repo/entity-sources.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { deleteUserRepo } from '#worker/repo/user-repos.ts'
+import { publishCommunityListing } from '#worker/community/service.ts'
 import { resolveOwnedUserRepo } from './resolve-user-repo.ts'
 
 const repoIdentitySchema = z
@@ -57,6 +58,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			kody_id: z.string(),
 			name: z.string(),
 			published_commit: z.string(),
+			message: z.string().optional(),
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
@@ -161,7 +163,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				source_id: source.id,
 				has_app: manifest.kody.app !== undefined ? 1 : 0,
 				hidden: 0,
-				is_private: manifest.private === true ? 1 : 0,
+				is_private: userRepo.isPrivate ? 1 : 0,
 				created_at: now,
 				updated_at: now,
 			})
@@ -223,6 +225,24 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				packageId,
 				sourceId: source.id,
 			}).catch(() => undefined)
+			// Listing is best-effort after publish committed: throwing here
+			// would fail a successful promote, leave the plain-repo row, and
+			// make retry report "already promoted". community_publish retries
+			// the catalog row for an already-public package.
+			let listingMessage: string | undefined
+			if (!userRepo.isPrivate) {
+				try {
+					await publishCommunityListing({
+						env: ctx.env,
+						baseUrl: ctx.callerContext.baseUrl,
+						userId: user.userId,
+						actorUserId: user.userId,
+						packageId,
+					})
+				} catch (error) {
+					listingMessage = `Promoted to a public package, but listing on /community failed: ${getErrorMessage(error)}. Retry community_publish for package_id ${packageId}.`
+				}
+			}
 			await deleteUserRepo(ctx.env.APP_DB, {
 				userId: user.userId,
 				repoId: userRepo.id,
@@ -233,6 +253,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				kody_id: manifest.kody.id,
 				name: manifest.name,
 				published_commit: publishResult.publishedCommit,
+				...(listingMessage ? { message: listingMessage } : {}),
 			}
 		},
 	},

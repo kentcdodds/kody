@@ -36,7 +36,7 @@ function buildCapabilityDescription(): string {
 		'Use `guide: "package_lifecycle"` to choose reuse vs temporary execute vs community fork vs deferred workflows vs a new durable package, and before enabling package-owned schedules.',
 		'Use `guide: "locked_gmail_drafts"` when an OAuth token is coarser than the intended published surface — Gmail has send-only and no drafts-only scope — and the owner should lock a drafts-only package so it cannot grow into send.',
 		'Use `guide: "locked_mcp_server"` when a connected MCP server should be callable only from a named package — not from ad hoc execute or other packages.',
-		'Integration bootstrap covers checking saved `integration` / `secret` entities, running a cheap authenticated smoke test, then preferring a trusted community fork before building.',
+		'Integration bootstrap covers checking saved `integration` / `secret` entities, running a cheap authenticated smoke test, then preferring a close community fork before building.',
 		'Use `guide: "platform_friction"` for meaningful Kody friction, bugs, poor experiences, or suggestions; it distinguishes inline fixes, approved memory changes, and consent-gated attributed feedback.',
 		'Provider guides (`provider_*`) give verified per-provider connect walkthroughs (console steps, endpoints, scopes, gotchas, smoke test); load one before improvising OAuth-app or API-key setup for that provider.',
 		'',

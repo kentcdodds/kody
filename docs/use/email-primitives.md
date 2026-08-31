@@ -27,9 +27,9 @@ platform-assigned sender address.
   `inbox.` subdomain by default), while the apex hosts only system mail — the
   transactional sender (`kody@<apex>`, used for verification and password-reset
   mail) and the operator-owned system inboxes (`kody`, `support`, `abuse`,
-  `postmaster`, `security`, and `admin` at the apex route to Kody's system
-  inbox, so replies to transactional mail land there). All other apex mail is
-  rejected.
+  `postmaster`, `security`, `admin`, and `psl` at the apex route to Kody's
+  system inbox, so replies to transactional mail land there). All other apex
+  mail is rejected.
 - Reserved local parts never route to a user inbox and can never be registered
   as usernames.
 - User outbound mail always sends from `{username}@<platform domain>`. The from
@@ -327,11 +327,11 @@ do not dispatch after a newer delivery state has already been stored.
 ## `email.system-message.received` package subscription (admins)
 
 Mail stored in the operator-owned system inbox (`kody`, `support`, `abuse`,
-`postmaster`, `security`, and `admin` at the apex) dispatches the separate
-package subscription topic `email.system-message.received` when the message is
-accepted. It fans out to packages saved by users who hold the admin role at
-dispatch time — a non-admin saving the same subscription never receives system
-mail, and a revoked admin stops receiving immediately.
+`postmaster`, `security`, `admin`, and `psl` at the apex) dispatches the
+separate package subscription topic `email.system-message.received` when the
+message is accepted. It fans out to packages saved by users who hold the admin
+role at dispatch time — a non-admin saving the same subscription never receives
+system mail, and a revoked admin stops receiving immediately.
 
 Quarantined system-inbox mail is stored for operators but never dispatches
 `email.system-message.received` (or any other admin package subscription).

@@ -19,6 +19,11 @@ import {
 	readVerifySession,
 	setVerifySessionSecret,
 } from '#app/verify-session.ts'
+import {
+	checkRateLimit,
+	releaseRateLimit,
+	twoFactorVerifyRateLimitConfig,
+} from '#app/rate-limit.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 
@@ -82,6 +87,46 @@ export function createTwoFactorVerifyApiHandler(env: Env) {
 				)
 			}
 
+			// Per-account budget for code guesses. The pending cookie is a
+			// stateless 10-minute credential that can be re-minted by logging in
+			// again, so the attempt counter has to live outside it.
+			const rateLimitKey = `auth:2fa-verify:${pendingSession.stableUserId}`
+			const rateLimit = await checkRateLimit(
+				env.APP_DB,
+				rateLimitKey,
+				twoFactorVerifyRateLimitConfig,
+			)
+			if (!rateLimit.allowed) {
+				void logAuditEvent({
+					category: 'auth',
+					action: 'login_2fa_verify',
+					result: 'rate_limited',
+					email: pendingSession.email,
+					ip: requestIp,
+					path: url.pathname,
+				})
+				return jsonResponse(
+					{
+						ok: false,
+						code: 'locked',
+						error:
+							'Too many verification attempts. Please log in again in a few minutes.',
+					},
+					{
+						status: 429,
+						headers: {
+							'Retry-After': String(
+								rateLimit.retryAfterSeconds ??
+									twoFactorVerifyRateLimitConfig.windowSeconds,
+							),
+							'Set-Cookie': await destroyVerifySessionCookie(
+								isSecureRequest(request),
+							),
+						},
+					},
+				)
+			}
+
 			const db = createDb(env.APP_DB)
 			const userRecord = await db.findOne(usersTable, {
 				where: { stable_user_id: pendingSession.stableUserId },
@@ -106,6 +151,10 @@ export function createTwoFactorVerifyApiHandler(env: Env) {
 				})
 				return jsonResponse({ ok: false, error: 'Invalid code.' }, 400)
 			}
+
+			// A completed sign-in should not leave the account's remaining
+			// attempt budget spent.
+			await releaseRateLimit(env.APP_DB, rateLimitKey).catch(() => undefined)
 
 			const secure = isSecureRequest(request)
 			const headers = new Headers({

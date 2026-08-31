@@ -1,3 +1,4 @@
+import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -15,13 +16,15 @@ import {
 import { rebuildPublishedPackageArtifactsViaRepoSession } from './package-artifact-rebuild.ts'
 import { reportCapabilityProgress } from '#mcp/progress.ts'
 import { buildPackagePublishApprovalUrl } from '#worker/package-registry/package-publish-lock.ts'
+import { absorbCommunityForkUpstream } from '#worker/community/service.ts'
+import { CommunityActionError } from '#worker/community/errors.ts'
 
 export const repoPublishSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repo_publish_session',
 		description:
-			'Publish an active repo session back to the source repo after checks pass on the current tree and the base commit is still current. Changing package.json `"private"` requires confirm_private_visibility_change after explicit user approval.',
+			'Publish an active repo session back to the source repo after checks pass on the current tree and the base commit is still current. Visibility is a repo setting (`package_update` / `repo_update`), not package.json#private. When publishing a community fork after absorbing origin updates, pass absorbed_upstream_commit.',
 		keywords: ['repo', 'publish', 'session', 'checks', 'artifact'],
 		readOnly: false,
 		idempotent: false,
@@ -71,6 +74,14 @@ export const repoPublishSessionCapability = defineDomainCapability(
 						publishedCommit: result.publishedCommit,
 						baseUrl: ctx.callerContext.baseUrl,
 					})
+					const absorbNotice = args.absorbed_upstream_commit
+						? await absorbForkUpstreamAfterPublish({
+								env: ctx.env,
+								userId: user.userId,
+								sourceId: sessionInfo.source_id,
+								originCommit: args.absorbed_upstream_commit,
+							})
+						: null
 					await reportCapabilityProgress(ctx.reportProgress, {
 						progress: 3,
 						total: progressTotal,
@@ -81,6 +92,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 						session_id: result.sessionId,
 						published_commit: result.publishedCommit,
 						message: result.message,
+						...(absorbNotice ? { notice: absorbNotice } : {}),
 					}
 				}
 				const source = await getEntitySourceByIdForUser(ctx.env.APP_DB, {
@@ -163,3 +175,35 @@ export const repoPublishSessionCapability = defineDomainCapability(
 		},
 	},
 )
+
+async function absorbForkUpstreamAfterPublish(input: {
+	env: Env
+	userId: string
+	sourceId: string
+	originCommit: string
+}) {
+	const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
+		id: input.sourceId,
+		userId: input.userId,
+	})
+	if (!source) {
+		return 'Published, but absorb could not find the package source for this session. Retry repo_publish_session with absorbed_upstream_commit.'
+	}
+	try {
+		await absorbCommunityForkUpstream({
+			env: input.env,
+			userId: input.userId,
+			packageId: source.entity_id,
+			originCommit: input.originCommit,
+		})
+		return null
+	} catch (error) {
+		if (
+			error instanceof CommunityActionError &&
+			error.message.includes('self-authored')
+		) {
+			return null
+		}
+		return `Published, but the behind-upstream banner did not clear: ${getErrorMessage(error)}. Retry repo_publish_session with absorbed_upstream_commit.`
+	}
+}

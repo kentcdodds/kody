@@ -26,6 +26,11 @@ export const packageSummarySchema = z.object({
 	tags: z.array(z.string()),
 	has_app: z.boolean(),
 	hidden: z.boolean(),
+	visibility: z
+		.enum(['public', 'private'])
+		.describe(
+			'Repo visibility. Public means default-branch HEAD is world-readable and forkable and the package appears on /community. Private is owner-only.',
+		),
 	locked_at: z
 		.string()
 		.nullable()
@@ -67,7 +72,7 @@ export const packageSummaryWithCommunityProvenanceSchema =
 			.string()
 			.nullable()
 			.describe(
-				'Listing pinned commit this fork last absorbed. Starts as the fork-time snapshot and moves when community_fork_absorb records a later listing publish.',
+				'Listing pinned commit this fork last absorbed. Starts as the fork-time snapshot and moves when a later publish passes absorbed_upstream_commit.',
 			),
 		listing_pinned_commit: z
 			.string()
@@ -124,6 +129,9 @@ export function toPackageSummary(savedPackage: SavedPackageRecord) {
 		tags: savedPackage.tags,
 		has_app: savedPackage.hasApp,
 		hidden: savedPackage.hidden,
+		visibility: savedPackage.isPrivate
+			? ('private' as const)
+			: ('public' as const),
 		locked_at: savedPackage.lockedAt ?? null,
 		source_id: savedPackage.sourceId,
 		created_at: savedPackage.createdAt,

@@ -223,7 +223,7 @@ export function TimelineRoute(handle: Handle) {
 							</p>
 							<p mix={css(emptyCtaCss)}>
 								<a href={routes.community.href()} mix={css(getPillButtonCss())}>
-									Browse community packages
+									Browse public packages
 								</a>
 							</p>
 						</div>

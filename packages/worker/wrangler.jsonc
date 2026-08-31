@@ -219,6 +219,14 @@
 						"period": 60,
 					},
 				},
+				{
+					"name": "SENTRY_TUNNEL_RATE_LIMITER",
+					"namespace_id": "1003",
+					"simple": {
+						"limit": 120,
+						"period": 60,
+					},
+				},
 			],
 			// Replaces the top-level observability block (wrangler env keys
 			// override wholesale, so "enabled" is restated): same tracing,
@@ -699,6 +707,14 @@
 					"namespace_id": "1002",
 					"simple": {
 						"limit": 10,
+						"period": 60,
+					},
+				},
+				{
+					"name": "SENTRY_TUNNEL_RATE_LIMITER",
+					"namespace_id": "1004",
+					"simple": {
+						"limit": 120,
 						"period": 60,
 					},
 				},

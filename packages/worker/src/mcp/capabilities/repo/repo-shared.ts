@@ -3,7 +3,6 @@ import {
 	entityKindValues,
 	repoSessionStatusValues,
 } from '#worker/repo/types.ts'
-import { privateVisibilityChangeConfirmationDescription } from '#worker/repo/source-safety-policy.ts'
 
 export const repoSearchModeSchema = z.enum(['literal', 'regex'])
 export const repoSearchOutputModeSchema = z.enum(['content', 'files'])
@@ -131,7 +130,16 @@ export const repoPublishSessionInputSchema = repoSessionIdSchema.extend({
 		.boolean()
 		.optional()
 		.default(false)
-		.describe(privateVisibilityChangeConfirmationDescription),
+		.describe(
+			'Unused. Visibility is a repo setting via package_update, not package.json#private.',
+		),
+	absorbed_upstream_commit: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			'When publishing a community fork after porting (or skipping) origin updates, pass origin HEAD so the behind-upstream banner clears. Does not copy files.',
+		),
 })
 
 export const repoOpenSessionInputSchema = z

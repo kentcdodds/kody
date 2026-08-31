@@ -123,7 +123,7 @@ function renderPackageNotFoundPage(input: { request: Request; env: Env }) {
 	return renderAppPage({
 		request: input.request,
 		env: input.env,
-		title: 'Community package not found',
+		title: 'Public package not found',
 		notFound: true,
 		status: 404,
 	})
@@ -327,7 +327,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 					request,
 					{
 						ok: false,
-						error: 'Community package moved.',
+						error: 'Public package moved.',
 						redirectTo: page.to,
 					},
 					404,

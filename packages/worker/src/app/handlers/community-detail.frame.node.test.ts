@@ -8,6 +8,8 @@ const mockModule = vi.hoisted(() => ({
 	getUserSocialRowByUsername: vi.fn(),
 	getUserFollow: vi.fn(),
 	listCommunityForksByListingIdsAndUser: vi.fn(),
+	getCommunityListingById: vi.fn(),
+	getEntitySourceById: vi.fn(),
 	listSavedPackagesByKodyIds: vi.fn(),
 	listSavedPackagesByIds: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
@@ -34,8 +36,15 @@ vi.mock('#worker/community/social-repo.ts', () => ({
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
+	getCommunityListingById: (...args: Array<unknown>) =>
+		mockModule.getCommunityListingById(...args),
 	listCommunityForksByListingIdsAndUser: (...args: Array<unknown>) =>
 		mockModule.listCommunityForksByListingIdsAndUser(...args),
+}))
+
+vi.mock('#worker/repo/entity-sources.ts', () => ({
+	getEntitySourceById: (...args: Array<unknown>) =>
+		mockModule.getEntitySourceById(...args),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -85,6 +94,8 @@ const env = {} as Env
 
 test('community detail handler returns bare detail frame HTML for target header', async () => {
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
+	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
+	mockModule.getEntitySourceById.mockResolvedValue(null)
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
 	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
@@ -124,7 +135,7 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(publicHtml).toContain('data-testid="community-detail-star"')
 	expect(publicHtml).toContain('data-testid="community-detail-forks"')
 	expect(publicHtml).toContain('data-testid="community-browse-files"')
-	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/files"')
+	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/HEAD"')
 	expect(publicHtml).not.toContain('<html')
 
 	mockModule.getUserSocialRowByUsername.mockResolvedValue({

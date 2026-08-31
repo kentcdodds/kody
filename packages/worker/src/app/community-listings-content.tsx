@@ -87,7 +87,7 @@ function renderCommunityBrowseToolbar(input: {
 		<div mix={css(browseToolbarCss)}>
 			{input.showCategoryNav ? (
 				<nav
-					aria-label="Filter community packages by category"
+					aria-label="Filter public packages by category"
 					data-testid="community-listings-categories"
 					mix={css(categoryNavCss)}
 				>
@@ -120,7 +120,7 @@ function renderCommunityBrowseToolbar(input: {
 			) : null}
 			{input.showSort ? (
 				<nav
-					aria-label="Sort community packages"
+					aria-label="Sort public packages"
 					data-testid="community-listings-sort"
 					mix={css(sortToolbarCss)}
 				>

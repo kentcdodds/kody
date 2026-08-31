@@ -294,66 +294,25 @@ test('community scoring and search rank listings and filter by query', async () 
 	expect(productivityOnly).toEqual([])
 })
 
-test('trusted-first community search promotes a trusted relevance rank 13 before limiting', async () => {
-	const untrusted = Array.from({ length: 12 }, (_, index) => ({
+test('community search resultFilter applies before limiting', async () => {
+	const falsePositives = Array.from({ length: 12 }, (_, index) => ({
 		...githubListing(),
-		id: `listing-untrusted-${String(index + 1).padStart(2, '0')}`,
-		kodyId: `github-untrusted-${index + 1}`,
-		name: `@owner/github-untrusted-${index + 1}`,
+		id: `listing-workflow-${String(index + 1).padStart(2, '0')}`,
+		kodyId: `workflow-${index + 1}`,
+		name: `@owner/workflow-${index + 1}`,
 	}))
-	const trusted = {
-		...githubListing(),
-		id: 'listing-trusted-13',
-		kodyId: 'github-trusted',
-		name: '@kody/github-trusted',
-		trustedCommit: 'trusted-commit',
-		trustedAt: '2026-07-20T00:00:00.000Z',
-		trusted: true,
-	}
-	mockListings([...untrusted, trusted])
-
-	const relevanceOnly = await searchCommunityListings({
-		env: createEnv(),
-		query: 'github',
-		limit: 12,
-	})
-	expect(relevanceOnly.map((listing) => listing.id)).not.toContain(
-		'listing-trusted-13',
-	)
-
-	const trustedFirst = await searchCommunityListings({
-		env: createEnv(),
-		query: 'github',
-		limit: 12,
-		trustedFirst: true,
-	})
-	expect(trustedFirst[0]?.id).toBe('listing-trusted-13')
-	expect(trustedFirst.slice(1).map((listing) => listing.id)).toEqual(
-		relevanceOnly.slice(0, 11).map((listing) => listing.id),
-	)
-
-	const trustedFalsePositive = {
-		...githubListing(),
-		id: 'trusted-false-positive',
-		kodyId: 'workflow-tools',
-		name: '@owner/workflow-tools',
-		trustedCommit: 'trusted-commit',
-		trustedAt: '2026-07-20T00:00:00.000Z',
-		trusted: true,
-	}
 	const realProviderListing = {
 		...githubListing(),
 		id: 'real-provider-listing',
 		kodyId: 'github-helpers',
 		name: '@owner/github-helpers',
 	}
-	mockListings([trustedFalsePositive, realProviderListing])
+	mockListings([...falsePositives, realProviderListing])
 
 	const providerFiltered = await searchCommunityListings({
 		env: createEnv(),
 		query: 'github',
 		limit: 1,
-		trustedFirst: true,
 		resultFilter: (listing) => listing.id === 'real-provider-listing',
 	})
 	expect(providerFiltered.map((listing) => listing.id)).toEqual([

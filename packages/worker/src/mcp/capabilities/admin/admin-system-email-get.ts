@@ -51,6 +51,7 @@ export const adminSystemEmailGetCapability = defineDomainCapability(
 			'message content',
 			'abuse',
 			'postmaster',
+			'psl',
 		],
 		inputSchema,
 		outputSchema,

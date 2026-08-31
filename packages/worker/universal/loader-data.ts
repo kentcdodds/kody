@@ -881,7 +881,7 @@ export type OnboardingLoaderData = {
 	hasMcpClient: boolean
 	emailVerified: boolean
 	needsOnboarding: boolean
-	/** Admin-featured trusted listings offered as one-click starter installs. */
+	/** Admin-featured listings offered as one-click starter installs. */
 	featuredListings: Array<OnboardingFeaturedListing>
 	/** Official workspace MCP chooser cards, with viewer connection overlay. */
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>

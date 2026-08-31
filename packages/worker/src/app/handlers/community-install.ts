@@ -13,15 +13,17 @@ import { installCommunityListing } from '#worker/community/install.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
+import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
+import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 
 const communityInstallPostSchema = z.object({
-	acknowledged_untrusted: z.boolean().optional(),
+	acknowledged: z.boolean().optional(),
 	kody_id: z.string().trim().min(1).optional(),
 })
 
-const untrustedAcknowledgementError =
-	'This listing has not been reviewed by an admin. Confirm the untrusted-content warning to install it.'
+const thirdPartyInstallConfirmError =
+	"This is someone else's code and will run in your account. Confirm to install it."
 
 export function createCommunityInstallApiPostHandler(env: Env) {
 	return {
@@ -55,12 +57,12 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 			// The UI shows the untrusted warning before calling this endpoint;
 			// this re-check keeps direct API calls behind the same explicit
 			// acknowledgement.
-			if (!listing.trusted && parsed.data.acknowledged_untrusted !== true) {
+			if (parsed.data.acknowledged !== true) {
 				return jsonResponse(
 					{
 						ok: false,
 						requiresAcknowledgement: true,
-						error: untrustedAcknowledgementError,
+						error: thirdPartyInstallConfirmError,
 					},
 					409,
 				)
@@ -71,6 +73,18 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					env.APP_DB,
 					user.mcpUser,
 				)
+				let expectedPinnedCommit = listing.pinnedCommit
+				if (listing.sourceId) {
+					const source = await getEntitySourceById(env.APP_DB, listing.sourceId)
+					if (source?.repo_id) {
+						try {
+							const head = await resolveArtifactSourceHead(env, source.repo_id)
+							if (head.commit) expectedPinnedCommit = head.commit
+						} catch {
+							// Fall back to the listing pin when HEAD cannot be read.
+						}
+					}
+				}
 				const result = await installCommunityListing({
 					env,
 					baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
@@ -79,10 +93,9 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 					expectedPackageScope,
 					listingId: listing.id,
 					kodyId: parsed.data.kody_id,
-					// Bind the install to the commit the trust/acknowledgement
-					// decision was made against so a concurrent republish cannot
-					// activate content the user never saw.
-					expectedPinnedCommit: listing.pinnedCommit,
+					// Bind the install to origin HEAD (the commit the fork copies)
+					// so a concurrent push cannot activate content the user never saw.
+					expectedPinnedCommit,
 					// Projection already supports deferred search-index upsert and
 					// retriever-cache refresh; without waitUntil those await on the
 					// install response and stretch one-click / onboarding latency.
@@ -124,7 +137,7 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 				}
 				console.error('Community install failed:', error)
 				return jsonResponse(
-					{ ok: false, error: 'Unable to install this community package.' },
+					{ ok: false, error: 'Unable to install this public package.' },
 					500,
 				)
 			}

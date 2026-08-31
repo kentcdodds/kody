@@ -247,7 +247,7 @@ export function assertKodyDescriptionLength(description: string) {
 }
 
 export const authoredPackageKodySchema = z.object({
-	id: z.string().regex(kodyPackageIdPattern),
+	id: z.string().regex(kodyPackageIdPattern).optional(),
 	// No max here: this schema is shared by load/parse. Enforce
 	// KODY_DESCRIPTION_MAX_LENGTH only at write/publish boundaries via
 	// assertKodyDescriptionLength so existing longer descriptions still load.
@@ -276,7 +276,12 @@ export const authoredPackageKodySchema = z.object({
 	webhooks: packageWebhooksSchema.optional(),
 })
 
-export type AuthoredPackageKody = z.infer<typeof authoredPackageKodySchema>
+export type AuthoredPackageKody = Omit<
+	z.infer<typeof authoredPackageKodySchema>,
+	'id'
+> & {
+	id: string
+}
 
 export const authoredPackageJsonSchema = z.object({
 	name: z.string().min(1),
@@ -285,7 +290,12 @@ export const authoredPackageJsonSchema = z.object({
 	kody: authoredPackageKodySchema,
 })
 
-export type AuthoredPackageJson = z.infer<typeof authoredPackageJsonSchema>
+export type AuthoredPackageJson = Omit<
+	z.infer<typeof authoredPackageJsonSchema>,
+	'kody'
+> & {
+	kody: AuthoredPackageKody
+}
 
 export type SavedPackageRow = {
 	id: string

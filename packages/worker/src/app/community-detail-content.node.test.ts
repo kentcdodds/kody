@@ -42,13 +42,15 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(installHtml).toContain('data-testid="community-detail-install"')
 	expect(installHtml).toContain('data-community-install')
 	expect(installHtml).toContain('data-trusted="false"')
+	expect(installHtml).not.toContain(
+		'data-testid="community-detail-trusted-badge"',
+	)
 
 	const agentPrompt =
 		'Call package_get for @me/github-triage and adapt it to my needs.'
 	const installedHtml = await renderCommunityDetailContentHtml({
 		listing: {
 			...sampleListing,
-			trusted: true,
 			viewerInstall: {
 				status: 'installed',
 				targetName: '@me/github-triage',
@@ -62,7 +64,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		loggedIn: true,
 		starredByViewer: false,
 	})
-	expect(installedHtml).toContain(
+	expect(installedHtml).not.toContain(
 		'data-testid="community-detail-trusted-badge"',
 	)
 	expect(installedHtml).toContain(
@@ -72,6 +74,19 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(installedHtml).not.toContain('data-copy-prompt')
 	expect(installedHtml).not.toContain(agentPrompt)
 	expect(installedHtml).not.toContain('data-testid="community-detail-install"')
+
+	const sourceAheadHtml = await renderCommunityDetailContentHtml({
+		listing: {
+			...sampleListing,
+			sourceAhead: true,
+		},
+		...detailBase,
+		loggedIn: true,
+		starredByViewer: false,
+	})
+	expect(sourceAheadHtml).toContain(
+		'data-testid="community-detail-source-ahead-badge"',
+	)
 
 	const ownInstalledHtml = await renderCommunityDetailContentHtml({
 		listing: {
@@ -99,7 +114,7 @@ test('community detail head covers install, installed, and listing-ahead badges'
 	expect(ownInstalledHtml).not.toContain('data-copy-prompt')
 
 	const aheadPrompt =
-		'Compare the current listing snapshot, keep local customizations, then call community_fork_absorb.'
+		'Compare the current listing snapshot, keep local customizations, then publish with repo_publish_session and absorbed_upstream_commit.'
 	const aheadHtml = await renderCommunityDetailContentHtml({
 		listing: {
 			...sampleListing,

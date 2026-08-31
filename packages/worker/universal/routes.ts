@@ -174,6 +174,7 @@ export const routes = route({
 	// with `/@:username/{packages,connectors,webhooks,api}` ingress.
 	communityPackage: '/@:username/:kodyId',
 	communityPackageFiles: '/@:username/:kodyId/files(/*relativePath)',
+	communityPackageTree: '/@:username/:kodyId/tree/:ref(/*relativePath)',
 	// JSON companion lives under `/profiles/…` with the other username-keyed
 	// APIs, keeping the `/@…` namespace to human-shareable page URLs.
 	communityPackageApi: '/profiles/:username/packages/:kodyId.json',

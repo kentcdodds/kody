@@ -332,7 +332,7 @@ payloads. Text a user explicitly approves as part of a feedback submission is
 visible only through the dedicated feedback exception.
 
 **Admins separately moderate deliberately shared community content.** Public
-community listing snapshots can be reviewed for trust, featuring, delisting, and
+community listing snapshots can be reviewed for featuring, delisting, and
 deletion, and attributed community reports can be reviewed and resolved. Those
 community surfaces expose content users chose to publish or report; they do not
 grant access to private package source or unrelated account content.
@@ -433,8 +433,8 @@ identities, tokens, recipients, and message content. A six-hour KV cooldown
 suppresses repeat pages. Delivery is best-effort (no Queue).
 
 **Admins can see** operator-owned system mail for reserved platform addresses
-(`kody`, `support`, `abuse`, `postmaster`, `security`, and `admin`). That mail
-is stored under `system:email` as platform content, not under Kent's or any
+(`kody`, `support`, `abuse`, `postmaster`, `security`, `admin`, and `psl`). That
+mail is stored under `system:email` as platform content, not under Kent's or any
 other user's account. Admin reads through MCP (`admin_system_email_list`,
 `admin_system_email_get`) and the `/admin/system-email` UI are audit logged.
 Admins can also **send** from those reserved addresses with

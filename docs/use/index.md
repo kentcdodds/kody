@@ -48,8 +48,8 @@ Read in order for a full tour, or jump to a topic.
 - [Offload work that does not fit a Worker isolate](../guides/heavy-work-offload.md)
   — large npm graphs (PDF.js-class libraries) stay out of the package isolate;
   the owner operates a container or machine and the package calls it
-- [Community packages](./community-packages.md) — share, browse, and fork
-  published packages on the same deployment
+- [Public packages](./community-packages.md) — share, browse, and fork published
+  packages on the same deployment
 - [Community profiles](./community-profiles.md) — public profiles, follows,
   timelines, and listing stars
 - [Repo-backed editing sessions](./repo-sessions.md)

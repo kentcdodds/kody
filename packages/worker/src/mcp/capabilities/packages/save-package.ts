@@ -405,7 +405,7 @@ export const savePackageCapability = defineDomainCapability(
 						source_id: ensuredSource.id,
 						has_app: manifest.kody.app ? 1 : 0,
 						hidden: 0,
-						is_private: manifest.private === true ? 1 : 0,
+						is_private: 1,
 						created_at: now,
 						updated_at: now,
 					})
@@ -481,6 +481,9 @@ export const savePackageCapability = defineDomainCapability(
 				tags: saved.tags,
 				has_app: saved.hasApp,
 				hidden: saved.hidden,
+				visibility: saved.isPrivate
+					? ('private' as const)
+					: ('public' as const),
 				locked_at: saved.lockedAt ?? null,
 				source_id: saved.sourceId,
 				created_at: saved.createdAt,

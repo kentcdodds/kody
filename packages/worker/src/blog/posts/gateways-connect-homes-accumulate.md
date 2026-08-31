@@ -118,7 +118,7 @@ Behind a gateway: other people's tools, reached through managed plumbing.
 
 Behind Kody: your stuff. Your host agent does all the reasoning (Kody makes zero
 inference calls, so there's no second model bill), and ownership runs through
-the whole design. Installing a [community package](https://kody.codes/community)
+the whole design. Installing a [public package](https://kody.codes/community)
 creates a published fork you own and can edit
 ([docs](https://github.com/kentcdodds/kody/blob/main/docs/use/community-packages.md)).
 OAuth connections use your own OAuth app, created at the provider and connected

@@ -30,9 +30,6 @@ export function mapCommunityListingRow(
 	row: Record<string, unknown>,
 ): CommunityListingRecord {
 	const pinnedCommit = String(row['pinned_commit'])
-	const trustedCommit =
-		row['trusted_commit'] == null ? null : String(row['trusted_commit'])
-	const trusted = trustedCommit != null && trustedCommit === pinnedCommit
 	const featuredAt =
 		row['featured_at'] == null ? null : String(row['featured_at'])
 	return {
@@ -58,14 +55,11 @@ export function mapCommunityListingRow(
 				? pinnedCommit
 				: String(row['source_published_commit']),
 		status: String(row['status']) as CommunityListingStatus,
-		trustedCommit,
-		trustedAt: row['trusted_at'] == null ? null : String(row['trusted_at']),
-		trusted,
+		trustedCommit: null,
+		trustedAt: null,
+		trusted: false,
 		featuredAt,
-		// Featured is an onboarding placement, so it never outlives trust: a
-		// republish (or trust revocation) pulls the listing from onboarding
-		// even though featured_at stays set.
-		featured: featuredAt != null && trusted,
+		featured: featuredAt != null,
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
 		publishedAt: String(row['published_at']),
@@ -279,9 +273,8 @@ export function extractCommunityListingLikeTokens(
 
 export async function insertCommunityListing(
 	db: D1Database,
-	// New listings are never trusted or featured; those columns start NULL
-	// and are only set through setCommunityListingTrustedCommit /
-	// setCommunityListingFeaturedAt.
+	// New listings are never featured; featured_at starts NULL and is only
+	// set through setCommunityListingFeaturedAt. trusted_* columns are unused.
 	row: Omit<
 		CommunityListingRow,
 		| 'created_at'
@@ -607,32 +600,6 @@ export async function deleteCommunityListing(
 	return (result.meta.changes ?? 0) > 0
 }
 
-export async function setCommunityListingTrustedCommit(
-	db: D1Database,
-	input: {
-		listingId: string
-		trustedCommit: string | null
-		trustedByUserId: string | null
-	},
-): Promise<boolean> {
-	const now = new Date().toISOString()
-	const result = await db
-		.prepare(
-			`UPDATE community_listings
-			SET trusted_commit = ?, trusted_by_user_id = ?, trusted_at = ?, updated_at = ?
-			WHERE id = ?`,
-		)
-		.bind(
-			input.trustedCommit,
-			input.trustedCommit == null ? null : input.trustedByUserId,
-			input.trustedCommit == null ? null : now,
-			now,
-			input.listingId,
-		)
-		.run()
-	return (result.meta.changes ?? 0) > 0
-}
-
 export async function setCommunityListingFeaturedAt(
 	db: D1Database,
 	input: {
@@ -657,8 +624,7 @@ export async function setCommunityListingFeaturedAt(
 
 /**
  * Listings that should be offered as onboarding starter packages: featured
- * by an admin AND still effectively trusted (the trusted commit matches the
- * pinned commit). Ordered by when they were featured so the curated order
+ * by an admin. Ordered by when they were featured so the curated order
  * stays stable as new packages are added.
  */
 export async function listFeaturedCommunityListings(
@@ -674,7 +640,6 @@ export async function listFeaturedCommunityListings(
 			${communityListingSourceJoin}
 			WHERE community_listings.status = 'active'
 				AND community_listings.featured_at IS NOT NULL
-				AND community_listings.trusted_commit = community_listings.pinned_commit
 			ORDER BY community_listings.featured_at ASC
 			LIMIT ?`,
 		)

@@ -93,12 +93,12 @@ const faqItems: ReadonlyArray<FaqItem> = [
 					storage. There is no org tenancy or shared-team workspace.
 				</p>
 				<p>
-					Your assistant is yours unless you publish a community package.
+					Your assistant is yours unless you publish a public package.
 					Publishing puts a snapshot in the public catalog; installing creates a
 					fork the installer owns.
 				</p>
 				<p>
-					<a href={routes.community.href()}>Community packages</a>
+					<a href={routes.community.href()}>Public packages</a>
 				</p>
 			</>
 		),
@@ -203,7 +203,7 @@ const faqItems: ReadonlyArray<FaqItem> = [
 					n8n is a workflow builder you assemble by hand. Kody is the home your
 					agents share: your agent writes the code, saves it as a package you
 					own, and can schedule it so the work keeps running without another
-					inference call. Installing a community package puts a fork in your
+					inference call. Installing a public package puts a fork in your
 					account, on your credentials.
 				</p>
 			</>

@@ -31,11 +31,11 @@ export const publicOgPages = {
 		path: '/',
 	},
 	community: {
-		imageTitle: 'Community packages',
+		imageTitle: 'Public packages',
 		imageSubtitle:
 			'Browse packages shared by Kody users, fork them into your own assistant, and rate what works.',
-		ogTitle: 'Community packages — Kody',
-		ogDescription: 'Browse community packages shared by Kody users.',
+		ogTitle: 'Public packages — Kody',
+		ogDescription: 'Browse public packages shared by Kody users.',
 		path: '/community',
 	},
 	blog: {

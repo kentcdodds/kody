@@ -2,6 +2,7 @@ import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { handleAccountPackagePublishLockAction } from '#app/account-package-publish-lock.ts'
 import { handleAccountPackageTokenAction } from '#app/account-package-tokens.ts'
+import { handleAccountPackageVisibilityAction } from '#app/account-package-visibility.ts'
 import { loadAccountPackagesData } from '#app/account-packages-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
@@ -113,6 +114,14 @@ export function createAccountPackagesApiHandler(env: Env) {
 				body,
 			})
 			if (publishLockResponse) return publishLockResponse
+
+			const visibilityResponse = await handleAccountPackageVisibilityAction({
+				env,
+				request,
+				user,
+				body,
+			})
+			if (visibilityResponse) return visibilityResponse
 
 			const action = readTrimmedStringOrEmpty(body, 'action')
 			if (action === 'absorb-listing') {

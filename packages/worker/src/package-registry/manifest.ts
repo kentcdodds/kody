@@ -116,32 +116,34 @@ export function parseAuthoredPackageJson(input: {
 	const manifest = result.data
 	if (!isScopedPackageName(manifest.name)) {
 		throw new Error(
-			`Invalid ${input.manifestPath ?? packageManifestPath}:\npackage.json name "${manifest.name}" must be a scoped package name like "@scope/${manifest.kody.id}".`,
+			`Invalid ${input.manifestPath ?? packageManifestPath}:\npackage.json name "${manifest.name}" must be a scoped package name like "@scope/${getExpectedKodyName(manifest.name) || 'name'}".`,
 		)
 	}
 	const expectedKodyId = getExpectedKodyName(manifest.name)
-	if (expectedKodyId !== manifest.kody.id) {
+	if (manifest.kody.id !== undefined && expectedKodyId !== manifest.kody.id) {
 		throw new Error(
 			`Invalid ${input.manifestPath ?? packageManifestPath}:\npackage.json name "${manifest.name}" must use a leaf package name that matches kody.id "${manifest.kody.id}".`,
 		)
 	}
+	manifest.kody.id = expectedKodyId
+	const authored = manifest as AuthoredPackageJson
 	if (input.expectedPackageScope !== undefined) {
 		assertAuthoredPackageJsonNameScope({
-			manifest,
+			manifest: authored,
 			expectedPackageScope: input.expectedPackageScope,
 			manifestPath: input.manifestPath,
 		})
 	}
 	assertPackageEmittedEventTopics({
-		manifest,
+		manifest: authored,
 		manifestPath: input.manifestPath,
 	})
 	assertPackageWebhooks({
-		manifest,
+		manifest: authored,
 		manifestPath: input.manifestPath,
 	})
 
-	return manifest
+	return authored
 }
 
 const retiredKodyFieldMessages = {

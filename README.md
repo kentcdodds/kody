@@ -116,7 +116,7 @@ kody.run    → kody-runtime (package-app zone routes)
 
 Outside pull requests to this repository need a signed inbound
 [Contributor License Agreement](./docs/contributing/inbound-contributions.md).
-Community packages stay MIT and do not use that CLA.
+Public packages do not use that CLA.
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md) and
 [`docs/contributing/index.md`](./docs/contributing/index.md).
@@ -135,8 +135,8 @@ the same or substantially similar functionality. Each version becomes available
 under the Apache License 2.0 on the second anniversary of the date that version
 was made available.
 
-Community packages published through Kody remain MIT-licensed; that requirement
-is separate from this repository's license.
+Public packages published through Kody do not use this repository's CLA and have
+no license gate; that is separate from this repository's license.
 
 ---
 

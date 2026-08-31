@@ -17,6 +17,11 @@ import {
 	setSavedPackageLockedAt,
 	updateSavedPackage,
 } from '#worker/package-registry/repo.ts'
+import {
+	publishCommunityListing,
+	unpublishCommunityListing,
+} from '#worker/community/service.ts'
+import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
 import { packageSummarySchema, toPackageSummary } from './shared.ts'
 
 const packageUpdateChangesSchema = z
@@ -33,9 +38,18 @@ const packageUpdateChangesSchema = z
 			.describe(
 				'When true, lock publishes so later agent publishes need a website click. Agents can lock but cannot unlock; send the owner to the package page (/@{username}/{kodyId}) to unlock.',
 			),
+		visibility: z
+			.enum(['public', 'private'])
+			.optional()
+			.describe(
+				'Repo visibility. Public means default-branch HEAD is world-readable and forkable and the package appears on /community. Private is owner-only. Changing to private unlists the catalog entry; existing forks keep their copies.',
+			),
 	})
 	.refine(
-		(changes) => changes.hidden !== undefined || changes.locked !== undefined,
+		(changes) =>
+			changes.hidden !== undefined ||
+			changes.locked !== undefined ||
+			changes.visibility !== undefined,
 		{
 			message: 'Provide at least one supported package change.',
 		},
@@ -46,8 +60,17 @@ export const packageUpdateCapability = defineDomainCapability(
 	{
 		name: 'package_update',
 		description:
-			'Update mutable settings for a saved package. Supports hidden search-discovery state and locking publishes (`changes.locked: true`). Agents cannot unlock; send the owner to the package page (/@{username}/{kodyId}). Canonical package metadata such as name, description, tags, kody id, app projection, and source remains derived from package.json and must change through package save or publish.',
-		keywords: ['package', 'update', 'hidden', 'visibility', 'search', 'lock'],
+			'Update mutable settings for a saved package: hidden search-discovery, publish lock (`changes.locked: true`; agents cannot unlock), and repo visibility (`changes.visibility`). Making a package public lists it on /community with full source and fork. Making it private unlists it (public URLs 404; forks keep their copies) — pass confirm_name matching the package slug after the owner typed that name. Canonical package metadata such as name, description, and tags remains derived from package.json. Visibility is not package.json#private.',
+		keywords: [
+			'package',
+			'update',
+			'hidden',
+			'visibility',
+			'public',
+			'private',
+			'search',
+			'lock',
+		],
 		readOnly: false,
 		idempotent: true,
 		destructive: false,
@@ -59,6 +82,13 @@ export const packageUpdateCapability = defineDomainCapability(
 				.optional()
 				.describe(packageScopeInputDescription),
 			changes: packageUpdateChangesSchema,
+			confirm_name: z
+				.string()
+				.min(1)
+				.optional()
+				.describe(
+					'Required when changes.visibility is private. Must equal the package slug (URL name). Confirm with the user first: going private 404s public URLs and unlists the catalog; existing forks keep their copies.',
+				),
 		}),
 		outputSchema: z.object({
 			ok: z.literal(true),
@@ -109,6 +139,47 @@ export const packageUpdateCapability = defineDomainCapability(
 				})
 				if (!locked) {
 					throw new McpCallerError('Saved package not found for this user.')
+				}
+			}
+			if (args.changes.visibility === 'public' && existing.isPrivate) {
+				await publishCommunityListing({
+					env: ctx.env,
+					baseUrl: ctx.callerContext.baseUrl,
+					userId: owner.ownerUserId,
+					actorUserId: owner.actorUserId,
+					packageId: args.package_id,
+				})
+			}
+			if (args.changes.visibility === 'private' && !existing.isPrivate) {
+				const expectedName = existing.kodyId
+				if (args.confirm_name?.trim() !== expectedName) {
+					throw new McpCallerError(
+						`Making this package private unlists it from /community and 404s public URLs. Existing forks keep their copies. Confirm with the user, then pass confirm_name: "${expectedName}" (the package slug).`,
+					)
+				}
+				const listing = await getCommunityListingByOwnerAndPackage(
+					ctx.env.APP_DB,
+					{
+						ownerUserId: owner.ownerUserId,
+						packageId: args.package_id,
+					},
+				)
+				if (listing && listing.status === 'active') {
+					await unpublishCommunityListing({
+						env: ctx.env,
+						userId: owner.ownerUserId,
+						actorUserId: owner.actorUserId,
+						listingId: listing.id,
+					})
+				} else {
+					const changed = await updateSavedPackage(ctx.env.APP_DB, {
+						userId: owner.ownerUserId,
+						packageId: args.package_id,
+						isPrivate: true,
+					})
+					if (!changed) {
+						throw new McpCallerError('Saved package not found for this user.')
+					}
 				}
 			}
 			const savedPackage = await getSavedPackageById(ctx.env.APP_DB, {

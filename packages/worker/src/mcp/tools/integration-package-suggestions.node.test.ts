@@ -235,34 +235,30 @@ test('integration package suggestions stay same-provider, user-first, and capped
 		env: {},
 		query: 'github',
 		limit: 12,
-		trustedFirst: true,
 		resultFilter: expect.any(Function),
 	})
 	expect(communityOnly).toEqual([
 		expect.objectContaining({
 			source: 'community',
+			kodyId: 'github-helpers',
+			listingId: 'listing-github-untrusted',
+			trusted: false,
+			publicUrl: 'https://example.com/@someone/github-helpers',
+		}),
+		expect.objectContaining({
+			source: 'community',
 			kodyId: 'github',
 			listingId: 'listing-github-trusted',
 			trusted: true,
-			publicUrl: 'https://example.com/@kody/github',
 		}),
 		expect.objectContaining({
 			source: 'community',
 			kodyId: 'github-pr',
 			trusted: true,
 		}),
-		expect.objectContaining({
-			source: 'community',
-			kodyId: 'github-extra',
-			trusted: true,
-		}),
 	])
 	expect(communityOnly).toHaveLength(maxIntegrationPackageSuggestions)
-	expect(
-		communityOnly.every(
-			(item) => item.source === 'community' && item.trusted === true,
-		),
-	).toBe(true)
+	expect(communityOnly.every((item) => item.source === 'community')).toBe(true)
 
 	mockModule.searchCommunityListings.mockRejectedValueOnce(
 		new Error('community unavailable'),
@@ -285,13 +281,13 @@ test('integration package suggestions stay same-provider, user-first, and capped
 	expect(failedCommunity).toEqual([])
 })
 
-test('community suggestions provider-filter before trust ordering and limiting', async () => {
-	const trustedFalsePositives = Array.from({ length: 12 }, (_, index) =>
+test('community suggestions provider-filter before limiting', async () => {
+	const falsePositives = Array.from({ length: 12 }, (_, index) =>
 		createCommunityListing({
-			id: `trusted-false-positive-${index + 1}`,
+			id: `false-positive-${index + 1}`,
 			kodyId: `workflow-${index + 1}`,
 			name: `@owner/workflow-${index + 1}`,
-			description: 'A trusted workflow whose prose mentions GitHub.',
+			description: 'A workflow whose prose mentions GitHub.',
 			tags: ['workflow'],
 			trusted: true,
 		}),
@@ -303,23 +299,16 @@ test('community suggestions provider-filter before trust ordering and limiting',
 		tags: ['github'],
 		trusted: false,
 	})
-	const relevanceOrdered = [...trustedFalsePositives, realProviderListing]
+	const relevanceOrdered = [...falsePositives, realProviderListing]
 	mockModule.searchCommunityListings.mockImplementationOnce(
 		async (input: {
 			limit: number
-			trustedFirst?: boolean
 			resultFilter?: (listing: CommunityListingFixture) => boolean
 		}) => {
 			const providerMatches = input.resultFilter
 				? relevanceOrdered.filter(input.resultFilter)
 				: relevanceOrdered
-			const trustedFirst = input.trustedFirst
-				? [
-						...providerMatches.filter((listing) => listing.trusted),
-						...providerMatches.filter((listing) => !listing.trusted),
-					]
-				: providerMatches
-			return trustedFirst.slice(0, input.limit)
+			return providerMatches.slice(0, input.limit)
 		},
 	)
 

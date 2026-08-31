@@ -133,7 +133,11 @@
 			"sha256": "9f854123842e94b4b979c941765acbd155bf43c0be2b138877bf062fd552b31c"
 		},
 		{
-			"filename": "0033-platform-feedback-cancellation-category.sql",
+			"filename": "0033-repo-visibility-public-catalog.sql",
+			"sha256": "95693b6c8925f88ace5ee84ffedd567eb82d01632fbf5c7587ad7b2e4002e82b"
+		},
+		{
+			"filename": "0034-platform-feedback-cancellation-category.sql",
 			"sha256": "a082c7c2674791cbb4b6fca52f7e4faebaecbb6ec16bc0f5572bd21d63a12e5a"
 		}
 	]
