@@ -20,6 +20,7 @@ export type McpClientKind =
 	| 'copilot-app'
 	| 'devin'
 	| 'gemini'
+	| 'openclaw'
 	| 'other'
 
 export type OnboardingAgentSurface = 'desktop' | 'mobile'
@@ -45,13 +46,15 @@ export const mcpClientTabs = [
 	{ id: 'copilot-app', label: 'Copilot App', isNonCodingAgent: true },
 	{ id: 'devin', label: 'Devin', isNonCodingAgent: false },
 	{ id: 'gemini', label: 'Gemini', isNonCodingAgent: true },
+	{ id: 'openclaw', label: 'OpenClaw', isNonCodingAgent: false },
 	{ id: 'other', label: 'Other', isNonCodingAgent: false },
 ] as const satisfies ReadonlyArray<McpClientTab>
 
 /**
  * Desktop chooser: coding agents first. Devin stands in for Devin Desktop
- * (ex-Windsurf). OpenCode is the Cline / OpenCode slot. Grok Bot fills the
- * seventh seat (Aider is not a Kody connect path yet).
+ * (ex-Windsurf). OpenCode is the Cline / OpenCode slot. OpenClaw is the
+ * local-first personal-AI slot. Grok Bot fills the last featured seat
+ * (Aider is not a Kody connect path yet).
  */
 export const onboardingDesktopFeaturedAgentIds = [
 	'claude-code',
@@ -60,6 +63,7 @@ export const onboardingDesktopFeaturedAgentIds = [
 	'copilot',
 	'devin',
 	'opencode',
+	'openclaw',
 	'grok-bot',
 ] as const satisfies ReadonlyArray<McpClientKind>
 
@@ -261,6 +265,8 @@ export function onboardingAgentIconName(
 			return 'devin'
 		case 'gemini':
 			return 'gemini'
+		case 'openclaw':
+			return 'openclaw'
 		case 'other':
 			return null
 		default: {
@@ -373,6 +379,9 @@ export const grokCustomMcpGuideUrl = 'https://docs.x.ai/grok/connectors'
 /** Grok CLI (`grok`) MCP add / config.toml docs. */
 export const grokCliMcpGuideUrl = 'https://docs.x.ai/build/features/mcp-servers'
 
+/** OpenClaw Control UI + CLI docs for adding a remote MCP server. */
+export const openClawMcpGuideUrl = 'https://docs.openclaw.ai/tools/mcp'
+
 /** Cursor Marketplace listing for the official Kody plugin (production). */
 export const kodyCursorMarketplaceUrl = 'https://cursor.com/marketplace/kody'
 
@@ -395,7 +404,7 @@ export function buildKodyAppIconUrl(mcpServerUrl: string) {
 }
 
 export const nonCodingAgentNote =
-	'Using Kody packages works great with non-coding agents. For creating or editing packages, a coding agent such as Cursor, Claude Code, Codex, Grok CLI, Copilot, or OpenCode is usually smoother — those hosts can edit files and iterate on code more easily.'
+	'Using Kody packages works great with non-coding agents. For creating or editing packages, a coding agent such as Cursor, Claude Code, Codex, Grok CLI, Copilot, OpenCode, or OpenClaw is usually smoother — those hosts can edit files and iterate on code more easily.'
 
 /** Claude Desktop often does not bind MCP tools until the next turn. */
 export const claudeDesktopToolHint =
@@ -476,6 +485,18 @@ export function buildOpenCodeMcpAddCommand(mcpServerUrl: string) {
 
 export const openCodeMcpAuthCommand = 'opencode mcp auth kody'
 
+/**
+ * OpenClaw remote Streamable HTTP add. OAuth needs
+ * `openclaw mcp login kody` after the definition is saved.
+ */
+export function buildOpenClawMcpAddCommand(mcpServerUrl: string) {
+	return `openclaw mcp add kody --url ${mcpServerUrl} --transport streamable-http --auth oauth`
+}
+
+export const openClawMcpLoginCommand = 'openclaw mcp login kody'
+
+export const openClawMcpDoctorCommand = 'openclaw mcp doctor kody --probe'
+
 /** VS Code Copilot `.vscode/mcp.json` (root key is `servers`, not `mcpServers`). */
 export function buildVsCodeMcpJson(mcpServerUrl: string) {
 	return prettyJson({
@@ -516,6 +537,22 @@ export function buildOpenCodeMcpJson(mcpServerUrl: string) {
 				type: 'remote',
 				url: mcpServerUrl,
 				enabled: true,
+			},
+		},
+	})
+}
+
+/** OpenClaw `~/.openclaw/openclaw.json` `mcp.servers` entry. */
+export function buildOpenClawMcpJson(mcpServerUrl: string) {
+	return prettyJson({
+		mcp: {
+			servers: {
+				kody: {
+					url: mcpServerUrl,
+					transport: 'streamable-http',
+					auth: 'oauth',
+					enabled: true,
+				},
 			},
 		},
 	})
@@ -562,6 +599,10 @@ export function collectOnboardingMcpSnippets(mcpServerUrl: string) {
 		{ code: buildClaudeCodeMcpJson(mcpServerUrl), lang: 'json' },
 		{ code: buildOpenCodeMcpAddCommand(mcpServerUrl), lang: 'sh' },
 		{ code: buildOpenCodeMcpJson(mcpServerUrl), lang: 'json' },
+		{ code: buildOpenClawMcpAddCommand(mcpServerUrl), lang: 'sh' },
+		{ code: buildOpenClawMcpJson(mcpServerUrl), lang: 'json' },
+		{ code: openClawMcpLoginCommand, lang: 'sh' },
+		{ code: openClawMcpDoctorCommand, lang: 'sh' },
 		{ code: buildCopilotCliAddCommand(mcpServerUrl), lang: 'sh' },
 		{ code: buildVsCodeMcpJson(mcpServerUrl), lang: 'json' },
 		{ code: buildCopilotCliMcpJson(mcpServerUrl), lang: 'json' },
